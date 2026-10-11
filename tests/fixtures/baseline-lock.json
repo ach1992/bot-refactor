@@ -1,0 +1,24 @@
+{
+  "baseline_commit": "a89e63713131d16b5d6461fd41c01bb002d0be63",
+  "files": {
+    "baseInfo.example.php": "f49adcbb7e563008d4682bc9db82b435016d4d7d98eb7742c8be19f3d092ba8e",
+    "bot.php": "a453a85da7e93d074eb3c37e1934353b998603ac1e8465cc1b81d58b01fb1eba",
+    "buy_helpers.php": "43921bf9224fe58058152cf4b337b9f544c4c003bbfe1fae72f79c3461832fae",
+    "config.php": "ed8106d79366545b073c0918464c46306dff72c666612d663cba55e19e8cab81",
+    "health.php": "d7372abb5ba44ccfe4643909041e8ce3b628e9c2dfb98702cfc40ec7af2e5e9f",
+    "index.html": "7345551756bf9a5c8b3b49eb9ef4e27421deef3dd8e0d3d1ae3a1002c874a7a0",
+    "pay/back.php": "47657c4434bbfa0f0bd58662667643cb03113444a50949781bf7db028fe31e97",
+    "pay/index.php": "f100862733fa0cfb1cafb65fae543e461364fe621a18b00310d990370fc086db",
+    "phpqrcode/phpqrcode.php": "1c85fb1ba453646697e432986031dbc5d5daf081cd0bf55a08523ec0580b91b0",
+    "phpqrcode/qrlib.php": "08bc2c827e9fc926332f9a691260826341b2068cbdb3d7ed91aef1649011e401",
+    "settings/gift2all.php": "20b6ef070018f00f94a9ccee0a7a6927a4a10a0f8f7872d80f5d7767aee722e8",
+    "settings/jdf.php": "dcd27141100bfa67f1f367c7cb6f87569e18b4b3006ed2155dc5e11ab4b3a33d",
+    "settings/messagewizwiz.php": "9e03d97d3db1312a9c5871c2e38db6c55f41cd86a44652f1f13c20d4d669ae64",
+    "settings/rewardReport.php": "c7aac09c4918d350cad710fa5e261b50685d44fa2254a7e795ac66ee2c114e32",
+    "settings/subLink.php": "9eb7ad3f2973fd566fe881d77a767de6c6fe617387804b6f0a86730de5fb9dde",
+    "settings/tronChecker.php": "245ec50e9611d327add4476837408ad67dd74cf54f048573dd0ef6dc7c28ecf1",
+    "settings/values.php": "481d1c2e232a52f9de81500b79047ac2cc56e0afcbe4d6ee48eb570af699a610",
+    "settings/warnusers.php": "81bc9216e0c6fe23fcaf4872cb30e837c5ddecdda046c6d78a5f19ea15652fd2",
+    "database/legacy-schema.sql": "f790a6257e28916430c44172498bd08cb70c803f8690298dc5c8c7d145568a88"
+  }
+}
