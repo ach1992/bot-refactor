@@ -1,0 +1,25 @@
+# Active environment-specific configuration (NEVER commit)
+/baseInfo.php
+/.env
+/.env.*
+!/.env.example
+
+# Runtime state, logs and backups
+/backup/
+/error_log*
+/settings/error_log*
+/admins_list_check.txt
+/health_cache.json
+/settings/temp.txt
+*.log
+*.sql.gz
+*.sql.zip
+*.bak
+*.backup
+
+# Non-source local dependencies and environment
+/.idea/
+/.vscode/
+/vendor/
+/node_modules/
+.DS_Store
