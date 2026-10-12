@@ -10,9 +10,9 @@ concurrency:
   group: compatibility-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 jobs:
-  v5-complete:
+  v6-complete:
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    timeout-minutes: 35
     steps:
       - name: Checkout exact candidate without retained write credentials
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -31,33 +31,33 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends mariadb-server
-      - name: Exact-HEAD frozen V0-V4 plus complete V5 synthetic acceptance
+      - name: Exact-HEAD frozen V0-V5 plus complete V6 native and differential acceptance
         run: |
           php --version
           printf 'Candidate HEAD: %s\n' "$(git rev-parse HEAD)"
           printf 'Candidate tree: %s\n' "$(git rev-parse HEAD^{tree})"
-          python3 tools/check_v5.py --report "$RUNNER_TEMP/v5-check.json" --evidence-dir "$RUNNER_TEMP/achbot-v5"
-      - name: Build 43-member source-only AChBot V5 and verify every Git blob
+          python3 tools/check_v6.py --report "$RUNNER_TEMP/v6-check.json" --evidence-dir "$RUNNER_TEMP/achbot-v6"
+      - name: Build 53-member source-only AChBot V6 and verify every Git blob
         run: |
-          python3 tools/package_v5.py --output "$RUNNER_TEMP/achbot-v5/achbot-v5-runtime.zip"
-          python3 tools/verify_v5_package.py --zip "$RUNNER_TEMP/achbot-v5/achbot-v5-runtime.zip" --manifest "$RUNNER_TEMP/achbot-v5/achbot-v5-runtime.zip.manifest.json"
-          cp "$RUNNER_TEMP/v5-check.json" "$RUNNER_TEMP/achbot-v5/v5-check.json"
+          python3 tools/package_v6.py --output "$RUNNER_TEMP/achbot-v6/achbot-v6-runtime.zip"
+          python3 tools/verify_v6_package.py --zip "$RUNNER_TEMP/achbot-v6/achbot-v6-runtime.zip" --manifest "$RUNNER_TEMP/achbot-v6/achbot-v6-runtime.zip.manifest.json"
+          cp "$RUNNER_TEMP/v6-check.json" "$RUNNER_TEMP/achbot-v6/v6-check.json"
       - name: Exact-candidate evidence summary
         run: |
-          printf '## AChBot V5 exact-HEAD compatibility\n\n' >> "$GITHUB_STEP_SUMMARY"
+          printf '## AChBot V6 exact-HEAD compatibility\n\n' >> "$GITHUB_STEP_SUMMARY"
           printf 'HEAD: `%s`\n\n' "$(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
           printf 'Tree: `%s`\n\n' "$(git rev-parse HEAD^{tree})" >> "$GITHUB_STEP_SUMMARY"
-          printf 'Full source-only runtime: 43 verified members.\n\n' >> "$GITHUB_STEP_SUMMARY"
-          printf 'The full V0-V4 frozen gate, native original-schema tests, old/new V5 SQL/Telegram parity, recovery, rollback, negative controls and direct-module guards executed.\n\n' >> "$GITHUB_STEP_SUMMARY"
+          printf 'Full source-only runtime: 53 verified members.\n\n' >> "$GITHUB_STEP_SUMMARY"
+          printf 'The full V0-V5 frozen gate, native panel and public-subLink tests, old/new V6 SQL/Telegram parity, source-only rollback, negative controls and direct-module guards executed.\n\n' >> "$GITHUB_STEP_SUMMARY"
           printf 'Independent review and operator approval are separate gates.\n\n' >> "$GITHUB_STEP_SUMMARY"
           printf '```json\n' >> "$GITHUB_STEP_SUMMARY"
-          cat "$RUNNER_TEMP/v5-check.json" >> "$GITHUB_STEP_SUMMARY"
+          cat "$RUNNER_TEMP/v6-check.json" >> "$GITHUB_STEP_SUMMARY"
           printf '\n```\n' >> "$GITHUB_STEP_SUMMARY"
       - name: Retain source-only package, Git blob manifest and full gate evidence
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: achbot-v5-${{ github.event.pull_request.head.sha || github.sha }}
-          path: ${{ runner.temp }}/achbot-v5/
+          name: achbot-v6-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/achbot-v6/
           if-no-files-found: error
           retention-days: 14
           compression-level: 0
