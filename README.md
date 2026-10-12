@@ -4,22 +4,19 @@ This repository is a **public, sanitized reference baseline** for a staged, beha
 
 > **Safety:** no real tokens, passwords, user records, payment credentials, live backups or runtime caches belong in this repository. Use isolated test infrastructure. Existing credentials in the source database dump should be rotated if still valid.
 
-## Current development boundary: V2 Telegram integration
+## Current development boundary: V3 support/ticket lifecycle
 
-V0 and V1 have independent technical approval and are integrated in PRs #3 and #5. V2 extracts sixteen Telegram transport/message operations and moves the existing incoming-update assignments into a scoped compatibility adapter. Only `config.php` changes among existing runtime files; three new files extend the five unchanged V1 modules. This is not an accepted production release.
+V2 source was independently approved and merged. V3 separates the complete existing support lifecycle into six scoped modules while preserving dispatch positions, caller state, SQL, callback values and notification order. Only `bot.php` changes among earlier runtime/reference files. This is a staging candidate, not a production release or a claim that all backend refactoring is finished.
 
-Start with [V2 module map](docs/v2/README.md), [test commands and evidence limits](docs/v2/TESTING.md), and [staging replacement/rollback](docs/v2/OPERATIONS.md). [Issue #6](https://github.com/ach1992/bot-refactor/issues/6) and its PR own current V2 acceptance. [Issue #4](https://github.com/ach1992/bot-refactor/issues/4) retains deployment-specific V1 operator evidence separately; the owner's subsequent instruction authorized delegated checks and starting V2, not a claim that manual tests occurred.
+- [V3 boundary and module map](docs/v3/README.md)
+- [Current tests and evidence limits](docs/v3/TESTING.md)
+- [Source replacement and rollback](docs/v3/OPERATIONS.md)
+- [Preserved support behavior](docs/v3/LEGACY-BEHAVIOR.md)
+- [V3 work and acceptance](https://github.com/ach1992/bot-refactor/issues/8)
 
-```sh
-python3 tools/check_v2.py --report /tmp/achbot-v2-check.json
-python3 tools/test_schema.py --run-disposable --report /tmp/achbot-v2-schema.json
-python3 tools/test_native_telegram.py --run-loopback --report /tmp/achbot-v2-http.json
-python3 tools/rehearse_swap.py --report /tmp/achbot-v2-swap.json
-```
+Run `python3 tools/check_v3.py` and the native DB/transport/support/HTTP/swap checks listed in the V3 guide. The main gate runs frozen V2/V1/V0 references before comparing the current source; do not re-record earlier goldens. The 18-request native support lifecycle adds real synthetic persisted-wizard continuity across code swap/rollback, not production/FPM/provider certification.
 
-Use a development checkout and existing prerequisites only. The aggregate gate reconstructs and executes frozen V1/V0 references before comparing current source; do not run their old byte-lock gates directly against modified runtime source or re-record snapshots to accept changes. The native HTTP test uses only an owned loopback listener, never the real Telegram API.
-
-Keep the real `baseInfo.php`, database and existing runtime assets/state unchanged during every source swap. The schema reference is not a live migration. Old callback/Cron naming remains compatible and tracked in Issue #2. Exact independent review and applicable owner acceptance remain required before V2 integration or deployment.
+Keep the real `baseInfo.php`, existing database and private assets/state untouched. Install all modules before the matching root file. Earlier deployment-specific operator evidence remains in Issues #4/#6; the owner explicitly authorized progression, not invented test results. V3 needs its own independent review and applicable integration decision.
 
 ## Project contract
 
@@ -40,8 +37,6 @@ Keep the real `baseInfo.php`, database and existing runtime assets/state unchang
 
 See source entrypoints in `bot.php`, `config.php`, `pay/`, and `settings/`. The existing target used MariaDB 10.11 and PHP 8.4. Provision `baseInfo.php` **locally only**, configure webhooks, scheduled tasks and integrations as they were in the existing deployment, and keep deployment state out of Git.
 
-## Historical reference evidence
+## Earlier reference stages
 
-[V0 documentation](docs/v0/README.md) contains the lexical atlas, database contract, behavior matrix, risk register and original harness design. [V1 documentation](docs/v1/README.md) describes the accepted presentation-helper extraction. Their scripts, fixtures and snapshots remain byte-identical; the current V2 driver runs them inside the correct pinned source trees.
-
-Known legacy SQL errors are recorded, not repaired. Passing tests do not establish full-route, provider, concurrency, FPM/OPcache or production compatibility. Current decisions and unresolved gates live in the controlling issues/PRs rather than this README.
+The immutable [V0 analysis](docs/v0/README.md), [V1 presentation boundary](docs/v1/README.md) and [V2 Telegram boundary](docs/v2/README.md) remain available. Their historical test drivers run in pinned reference trees through the current gate, not directly against later changed runtime code. Current source and acceptance belong to Issue #8 and its PR/CI; source integration never implies production rollout.
