@@ -3,7 +3,7 @@
 | Increment | Proposed target | Acceptance focus |
 |---|---|---|
 | V0 | Baseline, characterization tests, deployment/entrypoint inventory | Source and DDL references; capture actual paths/callbacks, critical flows |
-| V1 | Modular bootstrapping and low-risk pure helpers | Existing bootstrap and globals unaffected |
+| V1 | Twenty presentation/payload helpers in five modules; legacy wrappers | Eager bootstrap order unchanged; immutable-reference differential checks |
 | V2 | Telegram transport/input adapters | Old callbacks, polling/webhook contract and response parity |
 | V3 | Customer menus, support and stateful flows | Message/callback text and per-user state parity |
 | V4 | Admin and agent flows | Permissions, operations, messages, account segregation |

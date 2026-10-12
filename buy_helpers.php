@@ -967,13 +967,8 @@ if (!function_exists('createIncreaseOrder')) {
 if (!function_exists('payTypeToDescription')) {
     function payTypeToDescription($payType)
     {
-        if ($payType === "BUY_SUB") return "خرید اشتراک";
-        if ($payType === "RENEW_ACCOUNT") return "تمدید اشتراک";
-        if ($payType === "RENEW_SCONFIG") return "تمدید اشتراک";
-        if ($payType === "INCREASE_WALLET") return "شارژ کیف پول";
-        if (preg_match('/^INCREASE_DAY_(\d+)_(\d+)/', $payType)) return "افزایش زمان اشتراک";
-        if (preg_match('/^INCREASE_VOLUME_(\d+)_(\d+)/', $payType)) return "افزایش حجم اشتراک";
-        return "پرداخت";
+        require_once __DIR__ . '/src/Presentation/Labels.php';
+        return \AchBot\Presentation\Labels\paymentType($payType);
     }
 }
 
@@ -1059,7 +1054,8 @@ function prepareStartFallback() {
 }
 
 function inlineKeyboard(array $rows): string {
-    return json_encode(['inline_keyboard' => $rows], JSON_UNESCAPED_UNICODE);
+    require_once __DIR__ . '/src/Telegram/Markup.php';
+    return \AchBot\Telegram\Markup\inlineKeyboard($rows);
 }
 
 function generateHigherRandomizedAmount(int $amountToman): array {
@@ -1181,15 +1177,8 @@ function resolveCartToCartMessageType(int $priceToman, int $userId = 0): string 
 }
 
 function getCartToCartMessageKey(string $messageType): string {
-    if ($messageType === 'usdt') {
-        return 'brw_cart_to_cart_usdt';
-    }
-
-    if ($messageType === 'gift') {
-        return 'brw_cart_to_cart_gift';
-    }
-
-    return 'brw_cart_to_cart_detail';
+    require_once __DIR__ . '/src/Presentation/Labels.php';
+    return \AchBot\Presentation\Labels\cardToCardMessageKey($messageType);
 }
 
 function buildCartToCartInfoMessage(array $paymentKeys, array $mainValues, int $priceToman, int $userId = 0): string {
@@ -1241,32 +1230,13 @@ function buildCartToCartInfoMessage(array $paymentKeys, array $mainValues, int $
 }
 
 function kbSendReceiptAndCancel(string $sendPrefix, string $cancelPrefix, string $hashId): string {
-    $messageType = $GLOBALS['lastCartToCartMessageType'] ?? 'detail';
-
-    if ($messageType === 'gift') {
-        return inlineKeyboard([
-            [
-                //['text' => '📤 ارسال رسید', 'callback_data' => $sendPrefix . $hashId],
-				['text' => '📤 ارسال گیفت کارت', 'callback_data' => $sendPrefix . $hashId],
-                ['text' => '🎁 خرید گیفت کارت', 'url' => 'https://blinko.ir/gift-card/#giftcard-products'],
-            ]
-        ]);
-    }
-
-    return inlineKeyboard([
-        [
-            ['text' => '📤 ارسال رسید', 'callback_data' => $sendPrefix . $hashId],
-            ['text' => '❌ لغو عملیات', 'callback_data' => $cancelPrefix . $hashId],
-        ]
-    ]);
+    require_once __DIR__ . '/src/Telegram/Markup.php';
+    return \AchBot\Telegram\Markup\receiptAndCancel($sendPrefix, $cancelPrefix, $hashId, $GLOBALS['lastCartToCartMessageType'] ?? 'detail');
 }
 
 function kbOnlyCancel(string $cancelPrefix, string $hashId): string {
-    return inlineKeyboard([
-        [
-            ['text' => '❌ لغو عملیات', 'callback_data' => $cancelPrefix . $hashId],
-        ]
-    ]);
+    require_once __DIR__ . '/src/Telegram/Markup.php';
+    return \AchBot\Telegram\Markup\onlyCancel($cancelPrefix, $hashId);
 }
 
 function handleCancelFlow(array $mainValues, $removeKeyboard) {
@@ -1278,9 +1248,8 @@ function handleCancelFlow(array $mainValues, $removeKeyboard) {
 }
 
 function extractPhotoFileId($update): ?string {
-    if (!isset($update->message->photo)) return null;
-    $photos = $update->message->photo;
-    return end($photos)->file_id ?? null;
+    require_once __DIR__ . '/src/Telegram/Response.php';
+    return \AchBot\Telegram\Response\photoFileId($update);
 }
 
 function duplicateReceiptGuard(mysqli $connection, array $payInfo, int $nowTs): ?string {

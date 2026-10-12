@@ -4,13 +4,18 @@ This repository is a **public, sanitized reference baseline** for a staged, beha
 
 > **Safety:** no real tokens, passwords, user records, payment credentials, live backups or runtime caches belong in this repository. Use isolated test infrastructure. Existing credentials in the source database dump should be rotated if still valid.
 
-## Current state
+## Current candidate: V1 presentation extraction
 
-- Initial imported PHP source is preserved byte-for-byte for tracked legacy source files; the local-only `baseInfo.php` configuration is intentionally excluded.
-- `baseInfo.example.php` is a **template**, not a drop-in replacement for an active environment. When replacing deployed source later, keep the existing local `baseInfo.php` unchanged.
-- `database/legacy-schema.sql` has the original DDL, indexes and AUTO_INCREMENT definitions, **without any actual row data**. It is a compatibility reference, **not a migration to run on a live database**.
-- A number of legacy `wizwiz` identifiers are present as Telegram callback values or a cron-visible script path. They are **not renamed in this baseline** because existing Telegram messages and existing scheduler paths must still work. AchBot branding applies to new documentation and modules; legacy identifiers will be handled by compatibility adapters during the refactor.
-- The repo is **not safe to deploy directly** without provisioned local config and careful staging validation.
+V0 was independently approved, accepted by the owner and merged in PR #3. V1 moves 20 presentation/payload helpers into five `src/` modules while retaining legacy global entrypoints. Only the selected bodies in `config.php` and `buy_helpers.php` change; all other original runtime/reference files and the database schema remain fixed. This is not an accepted production release.
+
+- [V1 boundary and module map](docs/v1/README.md)
+- [Current test commands and evidence limits](docs/v1/TESTING.md)
+- [Staging package, operator checks and rollback](docs/v1/OPERATIONS.md)
+- [V1 acceptance work](https://github.com/ach1992/bot-refactor/issues/4)
+
+Run `python3 tools/check_v1.py`, then `python3 tools/test_schema.py --run-disposable --report /tmp/achbot-v1-schema.json` in a development checkout. The aggregate check reconstructs and runs the frozen V0 reference before comparing the new source. Do not re-record V0 goldens to bless V1 behavior.
+
+The real `baseInfo.php` is still local-only; preserve it on every source swap. The schema reference is not a live migration. Old callback/cron naming remains compatible and tracked in Issue #2. Review and operator acceptance are required before this increment becomes the next accepted base.
 
 ## Project contract
 
