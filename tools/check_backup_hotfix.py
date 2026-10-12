@@ -59,9 +59,10 @@ def main():
                 '--report',str(Path(tmp)/'frozen-v6.json'),
                 '--evidence-dir',str(Path(tmp)/'v6-evidence')],pinned,timeout=1100)
             past=json.loads((Path(tmp)/'frozen-v6.json').read_text())
-            if not past['complete_acceptance_suite'] or past['required_suites_run']!=11:
+            if (not past['complete_acceptance_suite'] or past['required_suites_run']!=12
+                or past['new_suites']!=11 or not past['frozen_v5']['complete']):
                 raise RuntimeError('Historical V6 suite incomplete')
-            print('PASS pinned V6 full historical/native gate 11/11',flush=True)
+            print('PASS pinned V6 full historical/native gate: 11 V6 suites + 1 frozen V0-V5 suite',flush=True)
         import package_backup_hotfix
         archive,meta=package_backup_hotfix.build()
         checks['package']={'source_members':meta['file_count'],'zip_sha256':meta['zip_sha256'],
