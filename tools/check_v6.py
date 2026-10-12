@@ -88,6 +88,7 @@ def main():
         ('subscription_telegram_differential','test_v6_routes.py',[]),
         ('account_deletion_and_url_negative_controls','test_v6_mutation.py',[]),
         ('cross_consumer_original_bytes','test_v6_consumers.py',[]),
+        ('qr_refresh_nonroot_cwd_and_negative','test_v6_qr_path.py',[]),
     ]
     if not args.focused:
         commands += [

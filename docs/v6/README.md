@@ -9,6 +9,8 @@
 - `src/Subscription/{ExternalAccounts,ManualAccounts,OrderManagement,ConfigRefresh,CustomerRoutes,SubLinkSettings,AccountTransfers,AccountDeletion}.php`: eight original ordered `bot.php` route segments, preserving callback literals, `return`/`exit`, SQL, shared variables and original route position. Account deletion remains an `elseif` dependency of the historical gift wizard through an original-equivalent `else` include; account transfer's duplicate callback routing and commented blocks remain unchanged.
 - `settings/subLink.php` remains **exactly the original public HTTP entrypoint**, including token parsing, error output, panel sync, remark/link database update and encoded body. `baseInfo.php` is neither distributed nor modified.
 
+**One necessary path relocation adjustment:** the legacy QR refresh callback's `include_once 'phpqrcode/qrlib.php'` must become `include_once dirname(__DIR__, 2) . '/phpqrcode/qrlib.php'` inside `src/Subscription/ConfigRefresh.php`. Otherwise the QR handler fails when PHP's working directory differs from the bot root. The source contract allows **only this single path-anchoring exception** to the original V5 route bytes, characterized with a real PHP non-root-CWD old/new callback and a deliberate negative regression control. Original public QR helper code and generated filenames are unchanged.
+
 The full runtime ZIP is **53 members** (original 43 plus ten new guarded modules), carrying all old entrypoint/asset filenames, without private config, DDL/data, tests, logs, customer files, or backups. Keep byte-unchanged all payment, purchase, wallet, sensitive Cron, warnings, gift and financial consumers.
 
 ## Evidence and boundaries

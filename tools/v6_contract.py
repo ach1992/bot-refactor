@@ -123,9 +123,20 @@ def expected_runtime():
     for name,start,end in ROUTES:
         repl=(b"if ((require __DIR__ . '/"+name.encode()+b"') === null) return;\n\n")
         bot,moved=region(bot,start,end,repl)
+        # PHP resolves include_once paths relative to the current CWD and the
+        # including source directory. This particular original bot.php include
+        # must remain anchored to the bot root when its route is moved two
+        # directories deeper. All other V5 body bytes stay exactly preserved.
+        original_body=moved
+        if name=='src/Subscription/ConfigRefresh.php':
+            old=b"include_once 'phpqrcode/qrlib.php';"
+            anchored=b"include_once dirname(__DIR__, 2) . '/phpqrcode/qrlib.php';"
+            if moved.count(old)!=1:
+                raise RuntimeError('Missing or ambiguous root QR loader')
+            moved=moved.replace(old,anchored,1)
         result[name]=(b'<?php\n/** AChBot V6: original Telegram account/subscription routes; keep caller scope. */\n'
                       +guard()+moved)
-        hashes['routes'][name]=hashlib.sha256(moved).hexdigest()
+        hashes['routes'][name]=hashlib.sha256(original_body).hexdigest()
     bot,deletion=extract_deletion(bot)
     result['src/Subscription/AccountDeletion.php']=deletion
     hashes['deletion']=hashlib.sha256(deletion).hexdigest()

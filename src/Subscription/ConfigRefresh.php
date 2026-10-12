@@ -49,7 +49,7 @@ if (preg_match('/sConfigUpdate(\d+)/', $data, $match)) {
 
     if ($vraylink == null) { delMessage(); exit(); }
 
-    include_once 'phpqrcode/qrlib.php';
+    include_once dirname(__DIR__, 2) . '/phpqrcode/qrlib.php';
 
     if (!defined('IMAGE_WIDTH'))  define('IMAGE_WIDTH', 540);
     if (!defined('IMAGE_HEIGHT')) define('IMAGE_HEIGHT', 540);
