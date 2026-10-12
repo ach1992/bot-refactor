@@ -10,54 +10,78 @@ concurrency:
   group: compatibility-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 jobs:
-  v6-complete:
+  backup-php81-compatibility:
     runs-on: ubuntu-24.04
-    timeout-minutes: 35
+    timeout-minutes: 20
     steps:
-      - name: Checkout exact candidate without retained write credentials
+      - name: Checkout exact candidate with read-only permissions
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
           persist-credentials: false
-      - name: PHP 8.4 test runtime
+      - name: PHP 8.1 with native ZipArchive and mysqli
         uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2
         with:
-          php-version: '8.4'
-          extensions: mysqli, tokenizer, curl
+          php-version: '8.1'
+          extensions: mysqli, tokenizer, curl, zip
           coverage: none
           tools: none
-      - name: Disposable native MariaDB prerequisites (ephemeral runner only)
+      - name: Install disposable MariaDB test requirements
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends mariadb-server
-      - name: Exact-HEAD frozen V0-V5 plus complete V6 native and differential acceptance
+      - name: PHP 8.1 source-only backup acceptance with real ZIP and synthetic MariaDB
         run: |
-          php --version
-          printf 'Candidate HEAD: %s\n' "$(git rev-parse HEAD)"
-          printf 'Candidate tree: %s\n' "$(git rev-parse HEAD^{tree})"
-          python3 tools/check_v6.py --report "$RUNNER_TEMP/v6-check.json" --evidence-dir "$RUNNER_TEMP/achbot-v6"
-      - name: Build 53-member source-only AChBot V6 and verify every Git blob
+          php -r 'if (!class_exists("ZipArchive") || !extension_loaded("mysqli")) exit(8);'
+          python3 tools/backup_hotfix_contract.py
+          python3 tools/test_backup_hotfix.py --native-zip
+          python3 tools/test_backup_hotfix_native.py
+          python3 tools/test_backup_hotfix_http.py
+  backup-v6-maintenance-complete:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    steps:
+      - name: Checkout exact candidate with read-only permissions
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: PHP 8.4 with native ZipArchive and mysqli
+        uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2
+        with:
+          php-version: '8.4'
+          extensions: mysqli, tokenizer, curl, zip
+          coverage: none
+          tools: none
+      - name: Install disposable MariaDB test requirements
         run: |
-          python3 tools/package_v6.py --output "$RUNNER_TEMP/achbot-v6/achbot-v6-runtime.zip"
-          python3 tools/verify_v6_package.py --zip "$RUNNER_TEMP/achbot-v6/achbot-v6-runtime.zip" --manifest "$RUNNER_TEMP/achbot-v6/achbot-v6-runtime.zip.manifest.json"
-          cp "$RUNNER_TEMP/v6-check.json" "$RUNNER_TEMP/achbot-v6/v6-check.json"
-      - name: Exact-candidate evidence summary
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends mariadb-server
+      - name: Full pinned V0-V6 and maintenance native acceptance
         run: |
-          printf '## AChBot V6 exact-HEAD compatibility\n\n' >> "$GITHUB_STEP_SUMMARY"
+          php -r 'if (!class_exists("ZipArchive") || !extension_loaded("mysqli")) exit(8);'
+          python3 tools/check_backup_hotfix.py --report "$RUNNER_TEMP/backup-check.json"
+      - name: Package 54 tracked runtime files, verify exact Git blobs
+        run: |
+          python3 tools/package_backup_hotfix.py --output "$RUNNER_TEMP/achbot-backup/achbot-backup-runtime.zip"
+          python3 tools/verify_backup_hotfix_package.py --zip "$RUNNER_TEMP/achbot-backup/achbot-backup-runtime.zip" --manifest "$RUNNER_TEMP/achbot-backup/achbot-backup-runtime.zip.manifest.json"
+          cp "$RUNNER_TEMP/backup-check.json" "$RUNNER_TEMP/achbot-backup/backup-check.json"
+      - name: Record exact candidate evidence
+        run: |
+          printf '## AChBot V6.1 backup reliability\n\n' >> "$GITHUB_STEP_SUMMARY"
           printf 'HEAD: `%s`\n\n' "$(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
           printf 'Tree: `%s`\n\n' "$(git rev-parse HEAD^{tree})" >> "$GITHUB_STEP_SUMMARY"
-          printf 'Full source-only runtime: 53 verified members.\n\n' >> "$GITHUB_STEP_SUMMARY"
-          printf 'The full V0-V5 frozen gate, native panel and public-subLink tests, old/new V6 SQL/Telegram parity, source-only rollback, negative controls and direct-module guards executed.\n\n' >> "$GITHUB_STEP_SUMMARY"
-          printf 'Independent review and operator approval are separate gates.\n\n' >> "$GITHUB_STEP_SUMMARY"
+          printf '54 tracked runtime members, no real operator testing, no deployment.\n\n' >> "$GITHUB_STEP_SUMMARY"
           printf '```json\n' >> "$GITHUB_STEP_SUMMARY"
-          cat "$RUNNER_TEMP/v6-check.json" >> "$GITHUB_STEP_SUMMARY"
+          cat "$RUNNER_TEMP/backup-check.json" >> "$GITHUB_STEP_SUMMARY"
           printf '\n```\n' >> "$GITHUB_STEP_SUMMARY"
-      - name: Retain source-only package, Git blob manifest and full gate evidence
+      - name: Upload exact-candidate source-only package and evidence
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: achbot-v6-${{ github.event.pull_request.head.sha || github.sha }}
-          path: ${{ runner.temp }}/achbot-v6/
+          name: achbot-backup-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/achbot-backup/
           if-no-files-found: error
           retention-days: 14
           compression-level: 0

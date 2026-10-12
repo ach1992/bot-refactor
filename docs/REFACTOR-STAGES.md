@@ -33,6 +33,11 @@ schema; later automatic renewal, wallets, financial settlement and VPN account
 provisioning remain byte-unchanged and outside the V5 extraction. See
 `docs/v5/README.md`, `docs/v5/CRON-INVENTORY.md`,
 `docs/v5/LEGACY-BEHAVIOR.md` and `docs/v5/TESTING.md`.
-V5 is still a **development candidate** until one exact-candidate independent
-HIGH_ASSURANCE review and explicit owner integration gate; no previous V4
-approval automatically grants V5 merge or production deployment.
+V5 and V6 were independently reviewed, merged and published as test-only
+pre-releases. Actual operator acceptance remains outstanding in Issues #14 and #16;
+source integration is not production certification.
+
+**V6.1 incident maintenance:** scoped backup self-containment and reliability
+(Issue #18, `docs/backup-hotfix/`), not the future planned V7 product-plan stage.
+The operational bot/server, `baseInfo.php`, live data and existing Cron registrations
+remain untouched until separate owner integration and operator approval.

@@ -60,3 +60,17 @@
 - New V6 module extraction is pinned by `tools/v6_contract.py` to V5 merged main `38dcdfc0703911133d3bc4b5df145f46b0b7a070`; ten guarded internal PHP modules plus original legacy facades/route location. The original 23-table DDL, all V0–V5 frozen historical evidence, public `settings/subLink.php` and other sensitive runtime consumers stay byte-unchanged.
 - Required stable full source gate: `python3 tools/check_v6.py --report <outside-repo-json> --evidence-dir <outside-repo-dir>`; development `--focused` is NOT acceptable as final CI. Full suite includes native original-schema socket MariaDB, localhost provider/sublink HTTP, old/new SQL/Telegram, negatives, and persisted source swap. ZIP must be 53 source members, built from exact clean committed Git HEAD by `tools/package_v6.py` and verified with `tools/verify_v6_package.py`.
 - One author-separated exact-candidate HIGH_ASSURANCE independent review after full stable CI; explicit new owner integration/release/deployment gates. Real `baseInfo.php`, wallets, schemas, Cron and real panels/Telegram are outside development authorization. No inherited behavior/security fixes disguised as parity.
+
+## V6.1 incident-driven backup maintenance (Issue #18)
+
+- V6.1 is a narrow source-only backup reliability patch, **not** the proposed V7
+  product-plan increment. Preserve all existing public Cron, webhook,
+  payment/panel/subscription entrypoints, DB schema and user-visible behavior.
+- The only authorized production-runtime code changes are the backup facade in
+  `config.php`, backup scheduling in `settings/rewardReport.php`, and
+  `src/Backup/Database.php`. No host-wide configuration, production DB/Cron,
+  Telegram or real customer data changes are authorized.
+- Read `docs/backup-hotfix/` and run the new exact-candidate source/history,
+  synthetic, real isolated MariaDB/ZIP, packaging and CI gates. The old bot
+  remains untouched; independent author-separated review and separate explicit
+  integration/release/deployment approvals remain mandatory.

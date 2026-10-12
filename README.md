@@ -4,33 +4,28 @@ This repository is a **public, sanitized reference baseline** for a staged, beha
 
 > **Safety:** no real tokens, passwords, user records, payment credentials, live backups or runtime caches belong in this repository. Use isolated test infrastructure. Existing credentials in the source database dump should be rotated if still valid.
 
-## Current development boundary: V5 complete broadcast and scheduled jobs
+## Current shipped test baseline and pending maintenance
 
-V0 through V4 are integrated and independently reviewed. The V4 source-only
-operator candidate is [`v0.4.0-rc.1`](https://github.com/ach1992/bot-refactor/releases/tag/v0.4.0-rc.1).
-The owner approved proceeding with V5 development after an initial positive
-source trial, **not** V5 production deployment.
+- V5 broadcast/Cron source was independently reviewed, merged and published as
+  [`v0.5.0-rc.1`](https://github.com/ach1992/bot-refactor/releases/tag/v0.5.0-rc.1).
+- V6 VPN/account/subscription source was independently reviewed, merged and published
+  as [`v0.6.0-rc.1`](https://github.com/ach1992/bot-refactor/releases/tag/v0.6.0-rc.1).
+- **Neither pre-release is a production-certified build.** Real operator acceptances
+  remain open in [V5 Issue #14](https://github.com/ach1992/bot-refactor/issues/14)
+  and [V6 Issue #16](https://github.com/ach1992/bot-refactor/issues/16).
 
-V5 isolates the **complete legacy broadcast administration lifecycle**, both
-`bc_jobs` and `send_list` scheduled processors, and the notification/expiry
-portion of `warnusers.php` into five guarded internal modules. The legacy
-Cron/webhook paths, callbacks, MariaDB DDL and original automated renewal,
-wallet, subscription and payment code remain unchanged. The full **43-file**
-source-only runtime retains the operator's existing `baseInfo.php` outside
-this public repository. No production certification is implied.
+**Active scoped maintenance (NOT yet merged, released or deployed):**
+[V6.1 automatic-backup reliability Issue #18](https://github.com/ach1992/bot-refactor/issues/18).
+Owner's read-only aaPanel diagnostics showed unqualified `mysqldump` is missing
+from Cron's explicit `PATH`, despite an executable in `/www/server/mysql/bin`.
+The old backup function/scheduler were unchanged throughout V0–V6; the new
+source-only compatibility patch resolves the runtime path and makes dump,
+ZIP, Telegram status, privacy and retry failures observable/recoverable without
+host package or Cron modifications. See [scope](docs/backup-hotfix/README.md),
+[tests](docs/backup-hotfix/TESTING.md) and
+[operator precautions](docs/backup-hotfix/OPERATIONS.md).
 
-See [V5 scope](docs/v5/README.md), [testing](docs/v5/TESTING.md),
-[cron inventory](docs/v5/CRON-INVENTORY.md),
-[rollback](docs/v5/OPERATIONS.md) and
-[preserved legacy behavior](docs/v5/LEGACY-BEHAVIOR.md).
-[Issue #14](https://github.com/ach1992/bot-refactor/issues/14)
-is the controlling acceptance and continuation contract.
-
-Run `python3 tools/check_v5.py --report /tmp/achbot-v5-full.json`
-for full frozen V0–V4 plus V5 checks on a **disposable** development runner;
-`--focused` skips native/historical suites and is not acceptance. Neither CI
-nor an author test substitutes for an exact-candidate independent review and
-explicit operator staging/merge approval.
+The planned later V7 product-plan stage remains separate from this maintenance.
 
 **Official name: AChBot.** Lowercase `achbot` is a technical slug only;
 legacy `wizwiz` callback strings and Cron filenames remain functional.
