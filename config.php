@@ -19,199 +19,14 @@ function tgRetryAfter($res){
 
 function bot($method, $datas = []) {
     global $botToken;
-    $url = "https://api.telegram.org/bot" . $botToken . "/" . $method;
-
-    $ch = curl_init();
-    curl_setopt($ch, CURLOPT_URL, $url);
-    curl_setopt($ch, CURLOPT_POST, true);
-
-    $hasFile = false;
-    if (is_array($datas)) {
-        foreach ($datas as $v) {
-            if ($v instanceof CURLFile) { $hasFile = true; break; }
-        }
-    }
-
-    if ($hasFile) {
-        curl_setopt($ch, CURLOPT_POSTFIELDS, $datas);
-    } else {
-        curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($datas, '', '&'));
-    }
-
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-
-    // ⏱ Timeout برای جلوگیری از هنگ
-    curl_setopt($ch, CURLOPT_TIMEOUT, 10);
-    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 5);
-
-    curl_setopt($ch, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
-    curl_setopt($ch, CURLOPT_HTTPHEADER, ['Expect:']);
-    curl_setopt($ch, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_1_1);
-    curl_setopt($ch, CURLOPT_NOSIGNAL, true);
-
-    curl_setopt($ch, CURLOPT_DNS_CACHE_TIMEOUT, 300);
-    if (defined('CURLOPT_DNS_SERVERS')) {
-        curl_setopt($ch, CURLOPT_DNS_SERVERS, '1.1.1.1,9.9.9.9,8.8.8.8');
-    }
-    if (defined('CURLOPT_TCP_KEEPALIVE')) {
-        curl_setopt($ch, CURLOPT_TCP_KEEPALIVE, 1);
-    }
-    if (defined('CURLOPT_TCP_KEEPIDLE')) {
-        curl_setopt($ch, CURLOPT_TCP_KEEPIDLE, 30);
-    }
-    if (defined('CURLOPT_TCP_KEEPINTVL')) {
-        curl_setopt($ch, CURLOPT_TCP_KEEPINTVL, 15);
-    }
-
-    $res  = curl_exec($ch);
-    $errn = curl_errno($ch);
-    $err  = curl_error($ch);
-    $http = curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
-
-    if ($errn !== 0) {
-        // ❗️خطای cURL
-        $logFile = __DIR__ . "/error_log.txt";
-        $maxSize = 1024 * 1024; // 1MB
-        if (file_exists($logFile) && filesize($logFile) > $maxSize) {
-            file_put_contents($logFile, "");
-        }
-        $log  = "❌ Curl Error ({$errn}): {$err}\n";
-        $log .= "🕒 Time: " . date("Y-m-d H:i:s") . "\n";
-        $log .= "📡 Method: {$method}\n";
-        $log .= "📤 Data Sent: " . print_r($datas, true) . "\n";
-        $log .= "---------------------------\n";
-        file_put_contents($logFile, $log, FILE_APPEND);
-
-        curl_close($ch);
-        return null;
-    }
-
-    // در صورت پاسخ مشکوک/کدهای HTTP نامعمول، یک لاگ سبک ثبت کن
-    if ($http < 200 || $http >= 500 || $res === false || $res === '') {
-        $logFile = __DIR__ . "/error_log.txt";
-        $maxSize = 1024 * 1024; // 1MB
-        if (file_exists($logFile) && filesize($logFile) > $maxSize) {
-            file_put_contents($logFile, "");
-        }
-        $snippet = is_string($res) ? substr($res, 0, 500) : '';
-        $log  = "⚠️ HTTP {$http} or Empty Response\n";
-        $log .= "🕒 Time: " . date("Y-m-d H:i:s") . "\n";
-        $log .= "📡 Method: {$method}\n";
-        $log .= "📤 Data Sent: " . print_r($datas, true) . "\n";
-        if ($snippet !== '') {
-            $log .= "📥 Resp Snippet: {$snippet}\n";
-        }
-        $log .= "---------------------------\n";
-        file_put_contents($logFile, $log, FILE_APPEND);
-    }
-
-    $decoded = json_decode($res);
-
-    $retryAfter = tgRetryAfter($decoded);
-    if ($retryAfter !== null) {
-        // NO_SLEEP_ON_TELEGRAM_429
-        $logFile = __DIR__ . "/error_log.txt";
-        $log  = "⛔ Telegram Flood Limit / 429\\n";
-        $log .= "🕒 Time: " . date("Y-m-d H:i:s") . "\\n";
-        $log .= "📡 Method: {$method}\\n";
-        $log .= "⏳ Retry After: {$retryAfter}\\n";
-        $log .= "📤 Data Sent: " . print_r($datas, true) . "\\n";
-        $log .= "---------------------------\\n";
-        file_put_contents($logFile, $log, FILE_APPEND);
-
-        curl_close($ch);
-        return $decoded;
-    }
-
-    curl_close($ch);
-    return $decoded;
+    require_once __DIR__ . '/src/Telegram/Transport.php';
+    return \AchBot\Telegram\Transport\request($botToken, __DIR__, $method, $datas);
 }
 
 function sendFileToTelegram($method, $datas = []) {
     global $botToken;
-
-    $url = "https://api.telegram.org/bot" . $botToken . "/" . $method;
-
-    // اطمینان از json بودن reply_markup
-    if (isset($datas['reply_markup']) && is_array($datas['reply_markup'])) {
-        $datas['reply_markup'] = json_encode($datas['reply_markup'], JSON_UNESCAPED_UNICODE);
-    }
-
-    $ch = curl_init();
-    curl_setopt($ch, CURLOPT_URL, $url);
-    curl_setopt($ch, CURLOPT_POST, true);
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_POSTFIELDS, $datas);
-
-    // ⏱ Timeout برای جلوگیری از هنگ (فایل ممکنه کمی بیشتر طول بکشه)
-    curl_setopt($ch, CURLOPT_TIMEOUT, 20);
-    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 8);
-
-    curl_setopt($ch, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
-    curl_setopt($ch, CURLOPT_HTTPHEADER, ['Expect:']);
-    curl_setopt($ch, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_1_1);
-    curl_setopt($ch, CURLOPT_NOSIGNAL, true);
-
-    curl_setopt($ch, CURLOPT_DNS_CACHE_TIMEOUT, 300);
-    if (defined('CURLOPT_DNS_SERVERS')) {
-        curl_setopt($ch, CURLOPT_DNS_SERVERS, '1.1.1.1,9.9.9.9,8.8.8.8');
-    }
-    if (defined('CURLOPT_TCP_KEEPALIVE')) {
-        curl_setopt($ch, CURLOPT_TCP_KEEPALIVE, 1);
-    }
-    if (defined('CURLOPT_TCP_KEEPIDLE')) {
-        curl_setopt($ch, CURLOPT_TCP_KEEPIDLE, 30);
-    }
-    if (defined('CURLOPT_TCP_KEEPINTVL')) {
-        curl_setopt($ch, CURLOPT_TCP_KEEPINTVL, 15);
-    }
-
-    $res  = curl_exec($ch);
-    $errn = curl_errno($ch);
-    $err  = curl_error($ch);
-    $http = curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
-
-    if ($errn !== 0) {
-        // ❗️خطای cURL
-        $logFile = __DIR__ . "/error_log.txt";
-        $maxSize = 1024 * 1024; // 1MB
-        if (file_exists($logFile) && filesize($logFile) > $maxSize) {
-            file_put_contents($logFile, "");
-        }
-        $log  = "❌ Curl Error ({$errn}): {$err}\n";
-        $log .= "🕒 Time: " . date("Y-m-d H:i:s") . "\n";
-        $log .= "📡 Method: {$method}\n";
-        $log .= "📤 Data Sent: " . print_r($datas, true) . "\n";
-        $log .= "---------------------------\n";
-        file_put_contents($logFile, $log, FILE_APPEND);
-
-        curl_close($ch);
-        return false;
-    }
-
-    // لاگ سبک برای HTTP نامعمول/پاسخ خالی
-    if ($http < 200 || $http >= 500 || $res === false || $res === '') {
-        $logFile = __DIR__ . "/error_log.txt";
-        $maxSize = 1024 * 1024; // 1MB
-        if (file_exists($logFile) && filesize($logFile) > $maxSize) {
-            file_put_contents($logFile, "");
-        }
-        $snippet = is_string($res) ? substr($res, 0, 500) : '';
-        $log  = "⚠️ HTTP {$http} or Empty Response (File)\n";
-        $log .= "🕒 Time: " . date("Y-m-d H:i:s") . "\n";
-        $log .= "📡 Method: {$method}\n";
-        $log .= "📤 Data Sent: " . print_r($datas, true) . "\n";
-        if ($snippet !== '') {
-            $log .= "📥 Resp Snippet: {$snippet}\n";
-        }
-        $log .= "---------------------------\n";
-        file_put_contents($logFile, $log, FILE_APPEND);
-    }
-
-    curl_close($ch);
-
-    $decoded = json_decode($res, true);
-    return $decoded ?: false;
+    require_once __DIR__ . '/src/Telegram/Transport.php';
+    return \AchBot\Telegram\Transport\sendFile($botToken, __DIR__, $method, $datas);
 }
 
 function normalizeReplyMarkup($key){
@@ -221,29 +36,8 @@ function normalizeReplyMarkup($key){
 
 function sendMessage($txt, $key = null, $parse ="MarkDown", $ci= null, $msg = null){
     global $from_id;
-    $ci = $ci ?? $from_id;
-
-    $payload = [
-        'chat_id' => $ci,
-        'text' => $txt,
-        'reply_to_message_id' => $msg,
-        'reply_markup' => normalizeReplyMarkup($key),
-    ];
-
-    if ($parse !== null) {
-        $payload['parse_mode'] = $parse;
-    }
-
-    $res = bot('sendMessage', $payload);
-
-    if ($res && isset($res->ok) && $res->ok === false && isset($res->description)) {
-        if (strpos($res->description, "can't parse entities") !== false) {
-            unset($payload['parse_mode']);
-            $res = bot('sendMessage', $payload);
-        }
-    }
-
-    return $res;
+    require_once __DIR__ . '/src/Telegram/Messages.php';
+    return \AchBot\Telegram\Messages\sendMessage('bot', $from_id, $txt, $key, $parse, $ci, $msg);
 }
 
 function sendDatabaseBackup($channelId) {
@@ -305,79 +99,40 @@ function sendDatabaseBackup($channelId) {
 
 function sendDocument($filePath, $caption = "", $ci = null){
     global $from_id;
-    $ci = $ci ?? $from_id;
-
-    if (!file_exists($filePath)) return false;
-
-    $response = sendFileToTelegram('sendDocument', [
-        'chat_id' => $ci,
-        'caption' => $caption,
-        'document' => new CURLFile(realpath($filePath))
-    ]);
-
-    return is_array($response) && isset($response['ok']) && $response['ok'] === true;
+    require_once __DIR__ . '/src/Telegram/Messages.php';
+    return \AchBot\Telegram\Messages\sendDocument('sendFileToTelegram', $from_id, $filePath, $caption, $ci);
 }
 
 function answerCallbackQuery($callbackId, $text = "", $show_alert = false) {
-    $url = $GLOBALS['botUrl'] . "answerCallbackQuery";
-    $post = [
-        'callback_query_id' => $callbackId,
-        'text' => $text,
-        'show_alert' => $show_alert
-    ];
-    file_get_contents($url . "?" . http_build_query($post));
+    require_once __DIR__ . '/src/Telegram/Messages.php';
+    return \AchBot\Telegram\Messages\answerCallbackQuery('file_get_contents', $GLOBALS['botUrl'], $callbackId, $text, $show_alert);
 }
 
 function editKeys($keys = null, $msgId = null, $ci = null){
     global $from_id,$message_id;
-    $ci = $ci??$from_id;
-    $msgId = $msgId??$message_id;
-   
-    bot('editMessageReplyMarkup',[
-		'chat_id' => $ci,
-		'message_id' => $msgId,
-		'reply_markup' => $keys
-    ]);
+    require_once __DIR__ . '/src/Telegram/Messages.php';
+    return \AchBot\Telegram\Messages\editKeys('bot', $from_id, $message_id, $keys, $msgId, $ci);
 }
 function editText($msgId, $txt, $key = null, $parse = 'HTML', $ci = null) {
     global $from_id;
-    $ci = $ci??$from_id;
-
-    return bot('editMessageText', [
-        'chat_id' => $ci,
-        'message_id' => $msgId,
-        'text' => $txt,
-        'parse_mode' => $parse,
-        'reply_markup' =>  $key
-    ]);
+    require_once __DIR__ . '/src/Telegram/Messages.php';
+    return \AchBot\Telegram\Messages\editText('bot', $from_id, $msgId, $txt, $key, $parse, $ci);
 }
 
 function delMessage($msg = null, $chat_id = null){
     global $from_id, $message_id;
-    $msg = $msg??$message_id;
-    $chat_id = $chat_id??$from_id;
-    
-    return bot('deleteMessage',[
-        'chat_id'=>$chat_id,
-        'message_id'=>$msg
-        ]);
+    require_once __DIR__ . '/src/Telegram/Messages.php';
+    return \AchBot\Telegram\Messages\deleteMessage('bot', $from_id, $message_id, $msg, $chat_id);
 }
 function sendAction($action, $ci= null){
     global $from_id;
-    $ci = $ci??$from_id;
-
-    return bot('sendChatAction',[
-        'chat_id'=>$ci,
-        'action'=>$action
-    ]);
+    require_once __DIR__ . '/src/Telegram/Messages.php';
+    return \AchBot\Telegram\Messages\sendAction('bot', $from_id, $action, $ci);
 }
 // BEGIN send to all
 function forwardmessage($tochatId, $fromchatId, $message_id){
-    return bot('forwardMessage',[
-        'chat_id'=>$tochatId,
-        'from_chat_id'=>$fromchatId,
-        'message_id'=>$message_id
-    ]);
+    require_once __DIR__ . '/src/Telegram/Messages.php';
+    return \AchBot\Telegram\Messages\forwardMessage('bot', $tochatId, $fromchatId, $message_id);
 }
 
 function isForwardedMessageObj($msg){
@@ -464,86 +219,36 @@ function logBroadcastUserMessage($connection, $broadcastId, $userid, $messageId)
 }
 
 function pinOne($chatId, $messageId){
-    return bot('pinChatMessage', [
-        'chat_id' => $chatId,
-        'message_id' => $messageId,
-        'disable_notification' => true
-    ]);
+    require_once __DIR__ . '/src/Telegram/Messages.php';
+    return \AchBot\Telegram\Messages\pinOne('bot', $chatId, $messageId);
 }
 
 function unpinOne($chatId, $messageId){
-    $res = bot('unpinChatMessage', [
-        'chat_id' => $chatId,
-        'message_id' => $messageId
-    ]);
-
-    if(apiOk($res)) return $res;
-
-    // fallback: unpin آخرین پین
-    return bot('unpinChatMessage', [
-        'chat_id' => $chatId
-    ]);
+    require_once __DIR__ . '/src/Telegram/Messages.php';
+    return \AchBot\Telegram\Messages\unpinOne('bot', $chatId, $messageId);
 }
 
 function deleteOne($chatId, $messageId){
-    return bot('deleteMessage', [
-        'chat_id' => $chatId,
-        'message_id' => $messageId
-    ]);
+    require_once __DIR__ . '/src/Telegram/Messages.php';
+    return \AchBot\Telegram\Messages\deleteOne('bot', $chatId, $messageId);
 }
 // END send to all
 function sendPhoto($photo, $caption = null, $keyboard = null, $parse = "MarkDown", $ci = null, $replyTo = null){
     global $from_id;
-    $ci = $ci ?? $from_id;
-
-    $data = [
-        'chat_id' => $ci,
-        'caption' => $caption,
-        'reply_markup' => normalizeReplyMarkup($keyboard),
-        'photo' => $photo,
-        'parse_mode' => $parse
-    ];
-
-    if($replyTo != null){
-        $data['reply_to_message_id'] = $replyTo;
-        $data['allow_sending_without_reply'] = true;
-    }
-
-    $res = bot('sendPhoto', $data);
-	
-    if ($res && isset($res->ok) && $res->ok === false && isset($res->description)) {
-        if (strpos($res->description, "can't parse entities") !== false) {
-            unset($data['parse_mode']);
-            $res = bot('sendPhoto', $data);
-        }
-    }
-
-    return $res;
+    require_once __DIR__ . '/src/Telegram/Messages.php';
+    return \AchBot\Telegram\Messages\sendPhoto('bot', $from_id, $photo, $caption, $keyboard, $parse, $ci, $replyTo);
 }
 
 function getFileUrl($fileid){
     global $botToken;
-
-    $r = bot('getFile', [
-        'file_id' => $fileid
-    ]);
-
-    if(!$r || !isset($r->ok) || $r->ok !== true) return null;
-
-    $filePath = $r->result->file_path ?? null;
-    if(!$filePath) return null;
-
-    return "https://api.telegram.org/file/bot{$botToken}/{$filePath}";
+    require_once __DIR__ . '/src/Telegram/Messages.php';
+    return \AchBot\Telegram\Messages\getFileUrl('bot', $botToken, $fileid);
 }
 
 function alert($txt, $type = false, $callid = null){
     global $callbackId;
-    $callid = $callid??$callbackId;
-    return bot('answercallbackquery', [
-        'callback_query_id' => $callid,
-        'text' => $txt,
-        'show_alert' => $type
-    ]);
+    require_once __DIR__ . '/src/Telegram/Messages.php';
+    return \AchBot\Telegram\Messages\alert('bot', $callbackId, $txt, $type, $callid);
 }
 
 $range = [
@@ -599,39 +304,7 @@ function ip_in_range($ip, $range){
 
 $time = time();
 $update = json_decode(file_get_contents("php://input"));
-if(isset($update->message)){
-    $from_id    = $update->message->from->id;
-    $text       = $update->message->text ?? null;
-    $caption    = $update->message->caption ?? null;
-    $chat_id    = $update->message->chat->id;
-    $message_id = $update->message->message_id;
-
-    $first_name = htmlspecialchars($update->message->from->first_name ?? '');
-    $last_name  = htmlspecialchars($update->message->from->last_name ?? '');
-    $username   = $update->message->from->username ?? " ندارد ";
-
-    $forward_from_name = null;
-    $forward_from_id   = null;
-    $reply_text        = null;
-
-    if(isset($update->message->reply_to_message)){
-        $reply_text = $update->message->reply_to_message->text ?? null;
-        $forward_from_name = $update->message->reply_to_message->forward_sender_name ?? null;
-        $forward_from_id   = $update->message->reply_to_message->forward_from->id ?? null;
-    }
-}
-if(isset($update->callback_query)){
-    $callbackId = $update->callback_query->id;
-    $data = $update->callback_query->data;
-    $text = $update->callback_query->message->text;
-    $message_id = $update->callback_query->message->message_id;
-    $chat_id = $update->callback_query->message->chat->id;
-    $chat_type = $update->callback_query->message->chat->type;
-    $username = htmlspecialchars($update->callback_query->from->username)?? " ندارد ";
-    $from_id = $update->callback_query->from->id;
-    $first_name = htmlspecialchars($update->callback_query->from->first_name);
-    $markup = json_decode(json_encode($update->callback_query->message->reply_markup->inline_keyboard),true);
-}
+require __DIR__ . '/src/Telegram/UpdateBindings.php';
 if($from_id < 0) exit();
 $stmt = $connection->prepare("SELECT * FROM `users` WHERE `userid`=?");
 $stmt->bind_param("i", $from_id);
