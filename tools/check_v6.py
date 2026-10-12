@@ -93,6 +93,7 @@ def main():
         commands += [
             ('real_php_mariadb_http_providers','test_v6_native.py',['--run-disposable']),
             ('native_mariadb_telegram_account_ops','test_v6_native_routes.py',['--run-disposable']),
+            ('full_config_bootstrap_global_facades','test_v6_bootstrap.py',['--run-disposable']),
             ('public_sublink_native_http','test_v6_subscription_http.py',['--run-disposable']),
             ('source_only_persistent_rollback','test_v6_swap.py',['--run-disposable']),
             ('new_internal_guards','test_v6_http.py',['--run-loopback'])]
