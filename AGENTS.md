@@ -10,13 +10,37 @@
 - Use AchBot naming for new internal structures. Do not mass-replace legacy `wizwiz` literals used in persisted Telegram callbacks or existing scheduled paths.
 - Source of truth is code, issues, CI, project spec and verified environment; do not rely on ChatGPT memory.
 
-## Current checks and references
+## Current V4 contract and gates
 
-- Read `docs/v3/README.md`, `TESTING.md`, `OPERATIONS.md` and `LEGACY-BEHAVIOR.md`. Run `python3 tools/check_v3.py` and all additional native/HTTP/swap checks listed there on the final candidate. Focused options are for authoring only.
-- Keep V0/V1/V2 tools, tests, goldens, provenance and docs immutable. The current driver executes frozen references via existing Git objects; never re-record expectations to bless a refactor. `tools/v3_contract.py` defines the current source envelope.
-- Only the six specified support regions in bot.php may be extracted in V3. Keep all prior runtime files/modules, schema, callback bytes and real configuration fixed. Scoped handlers require caller scope, original include positions, `require` reentry and existing exit/fall-through behavior.
-- Keep tests out of deployed web roots. New support modules have direct-script guards; normal inclusion must preserve caller state. Do not introduce arbitrary input extraction or a first-match dispatcher.
-- Native tests own their private temporary DB/socket/datadir or loopback listeners and must remove only those resources. Never add an existing production endpoint override, use real credentials or install host packages as an incidental test fix.
-- `tools/test_support_state.py` proves selected support wizard continuity with real synthetic MariaDB rows, not whole-webhook/FPM/provider/manual acceptance. `tools/rehearse_v3.py` is file-copy/CLI smoke with private sentinels, not a database test.
-- Build with `tools/package_v3.py --output <outside-repository.zip>` from a clean committed checkout only. The fixed 32-file staging package excludes tests/tools/SQL/private configuration/state. Verify the actual artifact against its manifest and Git objects.
-- Preserve owner progression decisions and unresolved operator evidence in their issues. Previous technical approvals and passing CI never approve the next candidate or authorize deployment.
+- Integrated reviewed V3 reference:
+  `283165f19777ad6ab62cfcb03de329c5bb0f8b74` / tree
+  `b172f48120a6febf3ee654de2b50acb45ace6a1c`.
+  Read `docs/v4/README.md`, TESTING.md,
+  OPERATIONS.md, LEGACY-BEHAVIOR.md and Issue #10.
+- Only six specified admin/agent regions in bot.php may
+  be moved to src/Admin/* and src/Agent/*; the expected
+  transformation is in `tools/v4_contract.py`.
+  Preserve earlier V1/V2/V3 modules, the other 31 original
+  runtime members, all 62 frozen historical evidence files,
+  23-table original DDL and the real baseInfo.php.
+- Preserve original top-level route positions, the exact
+  original PHP bodies and SQL/bindings/callbacks, shared
+  caller variables, mutable aliases, partial state, require
+  reentry and existing legacy bugs. Never silently normalize
+  authorization behavior or convert to a first-match router.
+- Run full `python3 tools/check_v4.py` without
+  --focused/--case; also run original-schema disposable
+  MariaDB, real local cURL, direct HTTP and source-swap checks
+  in `docs/v4/TESTING.md`. Never record new expected
+  outputs merely to bless a changed runtime.
+- Native DB and HTTP fixture processes must be strictly
+  owned, socket/loopback only and cleaned. No host service
+  change, existing database override, real credentials,
+  real payment/VPN/Telegram call or production access.
+- Build with `tools/package_v4.py --output <outside-repo.zip>`
+  only from clean committed source. 38 runtime members only;
+  no SQL, test tools, private state or live config.
+- Independent exact-candidate author-separated review is a
+  gate before V4 integration. Operator/FPM/provider staging
+  and production rollout are separate gates. Previous CI or
+  technical approvals do not automatically transfer.

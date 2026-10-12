@@ -1,22 +1,31 @@
 # AchBot — PHP Telegram VPN bot (refactoring project)
 
-This repository is a **public, sanitized reference baseline** for a staged, behavior-preserving refactor of an existing PHP Telegram bot. **Not a new product and not yet a refactored release.**
+This repository is a **public, sanitized reference baseline** for a staged, behavior-preserving refactor of an existing PHP Telegram bot. **This repository is not a production-certified release.**
 
 > **Safety:** no real tokens, passwords, user records, payment credentials, live backups or runtime caches belong in this repository. Use isolated test infrastructure. Existing credentials in the source database dump should be rotated if still valid.
 
-## Current development boundary: V3 support/ticket lifecycle
+## Current development boundary: V4 administrator and agent lifecycle
 
-V2 source was independently approved and merged. V3 separates the complete existing support lifecycle into six scoped modules while preserving dispatch positions, caller state, SQL, callback values and notification order. Only `bot.php` changes among earlier runtime/reference files. This is a staging candidate, not a production release or a claim that all backend refactoring is finished.
+V3 support was independently approved and merged into main as
+`283165f19777ad6ab62cfcb03de329c5bb0f8b74`.
+V4 isolates complete administrator-role/ban and agent lifecycle
+routes into six scoped modules. Only `bot.php` changes
+among earlier runtime files; old behavior, database and state
+remain fixed. **V4 is a review candidate, not a production release.**
 
-- [V3 boundary and module map](docs/v3/README.md)
-- [Current tests and evidence limits](docs/v3/TESTING.md)
-- [Source replacement and rollback](docs/v3/OPERATIONS.md)
-- [Preserved support behavior](docs/v3/LEGACY-BEHAVIOR.md)
-- [V3 work and acceptance](https://github.com/ach1992/bot-refactor/issues/8)
+Start with [V4 modules](docs/v4/README.md),
+[testing](docs/v4/TESTING.md), [staging / rollback](docs/v4/OPERATIONS.md),
+and [known legacy behavior](docs/v4/LEGACY-BEHAVIOR.md).
+[Issue #10](https://github.com/ach1992/bot-refactor/issues/10)
+owns this candidate and its remaining acceptance.
 
-Run `python3 tools/check_v3.py` and the native DB/transport/support/HTTP/swap checks listed in the V3 guide. The main gate runs frozen V2/V1/V0 references before comparing the current source; do not re-record earlier goldens. The 18-request native support lifecycle adds real synthetic persisted-wizard continuity across code swap/rollback, not production/FPM/provider certification.
-
-Keep the real `baseInfo.php`, existing database and private assets/state untouched. Install all modules before the matching root file. Earlier deployment-specific operator evidence remains in Issues #4/#6; the owner explicitly authorized progression, not invented test results. V3 needs its own independent review and applicable integration decision.
+Run `python3 tools/check_v4.py` plus all native,
+HTTP and swap gates in V4 TESTING.md. Earlier reference
+snapshots/goldens remain immutable. Keep the real
+`baseInfo.php`, original MariaDB and private state
+unchanged. V1-V3 operator acceptance is still independently
+tracked in Issues #4/#6/#8, and name/callback compatibility in #2.
+Owner V3 merge permission did not authorize V4 merge or deployment.
 
 ## Project contract
 
@@ -39,4 +48,4 @@ See source entrypoints in `bot.php`, `config.php`, `pay/`, and `settings/`. The 
 
 ## Earlier reference stages
 
-The immutable [V0 analysis](docs/v0/README.md), [V1 presentation boundary](docs/v1/README.md) and [V2 Telegram boundary](docs/v2/README.md) remain available. Their historical test drivers run in pinned reference trees through the current gate, not directly against later changed runtime code. Current source and acceptance belong to Issue #8 and its PR/CI; source integration never implies production rollout.
+The immutable [V0 analysis](docs/v0/README.md), [V1 presentation boundary](docs/v1/README.md) and [V2 Telegram boundary](docs/v2/README.md) remain available. Their historical test drivers run in pinned reference trees through the current gate, not directly against later changed runtime code. V4 source and acceptance belong to Issue #10 and its PR/CI; source integration never implies production rollout.

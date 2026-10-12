@@ -31,39 +31,39 @@ jobs:
         run: |
           php --version
           git rev-parse HEAD
-          python3 tools/check_v3.py --report "$RUNNER_TEMP/v3-check.json"
+          python3 tools/check_v4.py --report "$RUNNER_TEMP/v4-check.json"
       - name: Disposable MariaDB prerequisites (ephemeral runner only)
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends mariadb-server
       - name: Existing schema and real transaction checks
         run: |
-          python3 tools/test_schema.py --run-disposable --report "$RUNNER_TEMP/v3-schema.json"
+          python3 tools/test_schema.py --run-disposable --report "$RUNNER_TEMP/v4-schema.json"
       - name: Real cURL against owned loopback fixture
-        run: python3 tools/test_v3_transport.py --run-loopback --report "$RUNNER_TEMP/v3-wire.json"
-      - name: Native support wizard persistence across source swap
-        run: python3 tools/test_support_state.py --run-disposable --report "$RUNNER_TEMP/v3-state.json"
-      - name: Direct support handler HTTP guards
-        run: python3 tools/test_support_http.py --run-loopback --report "$RUNNER_TEMP/v3-direct.json"
+        run: python3 tools/test_v4_transport.py --run-loopback --report "$RUNNER_TEMP/v4-wire.json"
+      - name: Native admin/agent wizard persistence and code rollback
+        run: python3 tools/test_access_state.py --run-disposable --report "$RUNNER_TEMP/v4-state.json"
+      - name: Direct admin/agent handler HTTP guards
+        run: python3 tools/test_access_http.py --run-loopback --report "$RUNNER_TEMP/v4-direct.json"
       - name: Private source swap and rollback rehearsal
-        run: python3 tools/rehearse_v3.py --report "$RUNNER_TEMP/v3-swap.json"
+        run: python3 tools/rehearse_v4.py --report "$RUNNER_TEMP/v4-swap.json"
       - name: Build identified staging-only runtime package
         run: |
-          python3 tools/package_v3.py --output "$RUNNER_TEMP/achbot-v3/achbot-v3-runtime.zip"
-          cp "$RUNNER_TEMP/v3-check.json" "$RUNNER_TEMP/v3-schema.json" "$RUNNER_TEMP/v3-wire.json" "$RUNNER_TEMP/v3-swap.json" "$RUNNER_TEMP/v3-state.json" "$RUNNER_TEMP/v3-direct.json" "$RUNNER_TEMP/achbot-v3/"
+          python3 tools/package_v4.py --output "$RUNNER_TEMP/achbot-v4/achbot-v4-runtime.zip"
+          cp "$RUNNER_TEMP/v4-check.json" "$RUNNER_TEMP/v4-schema.json" "$RUNNER_TEMP/v4-wire.json" "$RUNNER_TEMP/v4-swap.json" "$RUNNER_TEMP/v4-state.json" "$RUNNER_TEMP/v4-direct.json" "$RUNNER_TEMP/achbot-v4/"
       - name: Evidence summary
         run: |
           printf '## Exact-candidate compatibility\n\n' >> "$GITHUB_STEP_SUMMARY"
           printf 'Candidate: `%s`\n\n' "$(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
           printf 'Staging-only source; independent review and operator acceptance are separate gates.\n\n' >> "$GITHUB_STEP_SUMMARY"
           printf '```json\n' >> "$GITHUB_STEP_SUMMARY"
-          cat "$RUNNER_TEMP/v3-check.json" "$RUNNER_TEMP/v3-schema.json" "$RUNNER_TEMP/v3-wire.json" "$RUNNER_TEMP/v3-state.json" "$RUNNER_TEMP/v3-direct.json" "$RUNNER_TEMP/v3-swap.json" >> "$GITHUB_STEP_SUMMARY"
+          cat "$RUNNER_TEMP/v4-check.json" "$RUNNER_TEMP/v4-schema.json" "$RUNNER_TEMP/v4-wire.json" "$RUNNER_TEMP/v4-state.json" "$RUNNER_TEMP/v4-direct.json" "$RUNNER_TEMP/v4-swap.json" >> "$GITHUB_STEP_SUMMARY"
           printf '\n```\n' >> "$GITHUB_STEP_SUMMARY"
       - name: Retain staging package and evidence
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: achbot-v3-${{ github.event.pull_request.head.sha || github.sha }}
-          path: ${{ runner.temp }}/achbot-v3/
+          name: achbot-v4-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/achbot-v4/
           if-no-files-found: error
           retention-days: 14
           compression-level: 0
