@@ -13,14 +13,8 @@ if($connection->connect_error){
 $connection->set_charset("utf8mb4");
 
 function tgRetryAfter($res){
-    if (!is_object($res)) return null;
-    if (isset($res->error_code) && (int)$res->error_code === 429) {
-        if (isset($res->parameters->retry_after)) {
-            return (int)$res->parameters->retry_after;
-        }
-        return 1;
-    }
-    return null;
+    require_once __DIR__ . '/src/Telegram/Response.php';
+    return \AchBot\Telegram\Response\retryAfter($res);
 }
 
 function bot($method, $datas = []) {
@@ -221,9 +215,8 @@ function sendFileToTelegram($method, $datas = []) {
 }
 
 function normalizeReplyMarkup($key){
-    if ($key === null) return null;
-    if (is_array($key)) return json_encode($key, JSON_UNESCAPED_UNICODE);
-    return $key;
+    require_once __DIR__ . '/src/Telegram/Markup.php';
+    return \AchBot\Telegram\Markup\normalize($key);
 }
 
 function sendMessage($txt, $key = null, $parse ="MarkDown", $ci= null, $msg = null){
@@ -388,27 +381,18 @@ function forwardmessage($tochatId, $fromchatId, $message_id){
 }
 
 function isForwardedMessageObj($msg){
-    if (!is_object($msg)) return false;
-
-    return isset($msg->forward_origin)
-        || isset($msg->forward_from)
-        || isset($msg->forward_from_chat)
-        || isset($msg->forward_sender_name);
+    require_once __DIR__ . '/src/Telegram/Response.php';
+    return \AchBot\Telegram\Response\isForwardedMessage($msg);
 }
 
 function groupFa($g){
-    if($g === 'has') return "دارای اشتراک";
-    if($g === 'none') return "بدون اشتراک";
-    if($g === 'agents') return "همکاران";
-    return "همه کاربران";
+    require_once __DIR__ . '/src/Presentation/Labels.php';
+    return \AchBot\Presentation\Labels\audience($g);
 }
 
 function stateFa($s){
-    if($s == 1) return "در صف";
-    if($s == 2) return "در حال ارسال";
-    if($s == 3) return "کامل شده";
-    if($s == 4) return "لغو شده";
-    return "پیش‌نویس";
+    require_once __DIR__ . '/src/Presentation/Labels.php';
+    return \AchBot\Presentation\Labels\broadcastState($s);
 }
 function getUsersCountByGroup($connection, $group){
     if($group === 'has'){
@@ -454,14 +438,13 @@ function getUsersCountByGroup($connection, $group){
 
 // ✅ Helpers for Broadcast Pin/Unpin/Delete
 function apiOk($res){
-    return (is_object($res) && isset($res->ok) && $res->ok === true);
+    require_once __DIR__ . '/src/Telegram/Response.php';
+    return \AchBot\Telegram\Response\isSuccessful($res);
 }
 
 function getApiMessageId($res){
-    if(is_object($res) && isset($res->result) && isset($res->result->message_id)){
-        return (int)$res->result->message_id;
-    }
-    return 0;
+    require_once __DIR__ . '/src/Telegram/Response.php';
+    return \AchBot\Telegram\Response\messageId($res);
 }
 
 function logBroadcastUserMessage($connection, $broadcastId, $userid, $messageId){
@@ -766,38 +749,14 @@ function startWalletPayment($connection, $botState, $buttonValues, $botUrl, $fro
 }
 
 function replaceAllPlaceholdersInMainValues(array $mainValues, array $botState, $userId = '') {
-    $placeholders = [
-        'SUPPORTID'   => $botState['supportID']   ?? '',
-        'LOCKCHANNEL' => $botState['lockChannel'] ?? '',
-        'userid'      => (string)$userId,
-    ];
-
-    foreach ($mainValues as $key => $value) {
-        if (is_string($value)) {
-
-            foreach ($placeholders as $placeholder => $replacement) {
-                $value = str_replace($placeholder, $replacement, $value);
-            }
-
-            $mainValues[$key] = $value;
-        }
-        elseif (is_array($value)) {
-            $mainValues[$key] = replaceAllPlaceholdersInMainValues($value, $botState, $userId);
-        }
-    }
-
-    return $mainValues;
+    require_once __DIR__ . '/src/Presentation/Text.php';
+    return \AchBot\Presentation\Text\replacePlaceholders($mainValues, $botState, $userId);
 }
 $mainValues = replaceAllPlaceholdersInMainValues($mainValues, $botState, $from_id ?? '');
 
 function getSupportUrl(array $botState, string $fallback = '') {
-    $support = trim($botState['supportID'] ?? '');
-
-    if ($support === '') return $fallback;
-    if (preg_match('~^https?://t\.me/~i', $support)) {
-        return $support;
-    }
-    return 'https://t.me/' . ltrim($support, '@');
+    require_once __DIR__ . '/src/Presentation/Text.php';
+    return \AchBot\Presentation\Text\supportUrl($botState, $fallback);
 }
 
 if (isset($update->message->document->file_id)) {
@@ -3755,52 +3714,18 @@ function getOrderTrafficInfo($serverType, $server_id, $remark, $uuid, $inbound_i
 }
 
 function buildConfigLinks($acc_link, $botState, $showIndexes) {
-
-    if ($botState['configLinkState'] == "off") return "";
-
-    if (!is_array($acc_link)) $acc_link = [];
-
-    $total = count($acc_link);
-    $out = [];
-
-    if ($total <= 3) {
-        foreach ($acc_link as $link) {
-            $out[] = "<code>$link</code>";
-        }
-    } else {
-        $i = 1;
-        foreach ($acc_link as $link) {
-            if (in_array($i, $showIndexes)) {
-                $out[] = "<code>$link</code>";
-            }
-            $i++;
-        }
-    }
-
-    return implode("\n\n", $out);
+    require_once __DIR__ . '/src/Subscription/Presentation.php';
+    return \AchBot\Subscription\Presentation\configLinks($acc_link, $botState, $showIndexes);
 }
 
 function buildSubLink($serverType, $panelUrl, $botUrl, $token, $botState) {
-    if ($botState['subLinkState'] != "on") return "";
-
-    if ($serverType == "marzban") {
-        return "<code>" . rtrim($panelUrl, '/') . "/sub/$token</code>";
-    }
-
-    return "<code>{$botUrl}settings/subLink.php?token=$token</code>";
+    require_once __DIR__ . '/src/Subscription/Presentation.php';
+    return \AchBot\Subscription\Presentation\primaryLink($serverType, $panelUrl, $botUrl, $token, $botState);
 }
 
 function buildSubBackupSection($subRaw, $token) {
-    if (empty($subRaw)) return "";
-
-    $domains = array_filter(array_map('trim', explode(',', $subRaw)));
-    $links = [];
-
-    foreach ($domains as $d) {
-        $links[] = "<code>" . rtrim($d, '/') . "/sub/$token</code>";
-    }
-
-    return "\n🔁 لینک کمکی اشتراک:\n" . implode("\n\n", $links);
+    require_once __DIR__ . '/src/Subscription/Presentation.php';
+    return \AchBot\Subscription\Presentation\backupLinks($subRaw, $token);
 }
 
 function buildConfigMessage($enableText, $remark, $configLinks, $subLink, $backupSection, $serverType) {
@@ -4397,20 +4322,13 @@ function addBorderImage($add){
     ImagePNG($newimage, $add, 5);
 }
 function sumerize($amount){
-    $gb = $amount / (1024 * 1024 * 1024);
-    if($gb > 1){
-      return round($gb,2) . " گیگابایت"; 
-    }
-    else{
-        $gb *= 1024;
-        return round($gb,2) . " مگابایت";
-    }
-
+    require_once __DIR__ . '/src/Subscription/Presentation.php';
+    return \AchBot\Subscription\Presentation\formatTraffic($amount);
 }
 
 function sumerize2($amount){
-    $gb = $amount / (1024 * 1024 * 1024);
-    return round($gb,2);
+    require_once __DIR__ . '/src/Subscription/Presentation.php';
+    return \AchBot\Subscription\Presentation\trafficInGigabytes($amount);
 }
 function deleteClient($server_id, $inbound_id, $uuid, $delete = 0){
     global $connection;

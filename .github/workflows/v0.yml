@@ -1,4 +1,4 @@
-name: V0 baseline
+name: Compatibility
 on:
   pull_request:
   push:
@@ -7,7 +7,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: v0-${{ github.workflow }}-${{ github.ref }}
+  group: compatibility-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 jobs:
   baseline:
@@ -27,23 +27,35 @@ jobs:
           extensions: mysqli, tokenizer
           coverage: none
           tools: none
-      - name: Reference and isolated behavior checks
+      - name: Frozen reference and candidate compatibility
         run: |
           php --version
           git rev-parse HEAD
-          python3 tools/check.py --report "$RUNNER_TEMP/v0-mock.json"
+          python3 tools/check_v1.py --report "$RUNNER_TEMP/v1-check.json"
       - name: Disposable MariaDB prerequisites (ephemeral runner only)
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends mariadb-server
       - name: Existing schema and real transaction checks
         run: |
-          python3 tools/test_schema.py --run-disposable --report "$RUNNER_TEMP/v0-schema.json"
+          python3 tools/test_schema.py --run-disposable --report "$RUNNER_TEMP/v1-schema.json"
+      - name: Build identified staging-only runtime package
+        run: |
+          python3 tools/package_v1.py --output "$RUNNER_TEMP/achbot-v1/achbot-v1-runtime.zip"
+          cp "$RUNNER_TEMP/v1-check.json" "$RUNNER_TEMP/v1-schema.json" "$RUNNER_TEMP/achbot-v1/"
       - name: Evidence summary
         run: |
-          printf '## V0 exact-candidate checks\n\n' >> "$GITHUB_STEP_SUMMARY"
+          printf '## Exact-candidate compatibility\n\n' >> "$GITHUB_STEP_SUMMARY"
           printf 'Candidate: `%s`\n\n' "$(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
-          printf 'Known baseline defects are characterized, not repaired. No production acceptance is claimed.\n\n' >> "$GITHUB_STEP_SUMMARY"
+          printf 'Staging-only source; independent review and operator acceptance are separate gates.\n\n' >> "$GITHUB_STEP_SUMMARY"
           printf '```json\n' >> "$GITHUB_STEP_SUMMARY"
-          cat "$RUNNER_TEMP/v0-mock.json" "$RUNNER_TEMP/v0-schema.json" >> "$GITHUB_STEP_SUMMARY"
+          cat "$RUNNER_TEMP/v1-check.json" "$RUNNER_TEMP/v1-schema.json" >> "$GITHUB_STEP_SUMMARY"
           printf '\n```\n' >> "$GITHUB_STEP_SUMMARY"
+      - name: Retain staging package and evidence
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: achbot-v1-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/achbot-v1/
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
