@@ -11,7 +11,7 @@
 - Use AChBot naming for new internal structures. Do not mass-replace legacy `wizwiz` literals used in persisted Telegram callbacks or existing scheduled paths.
 - Source of truth is code, issues, CI, project spec and verified environment; do not rely on ChatGPT memory.
 
-## Current V4 contract and gates
+## Frozen integrated V4 contract (historical reference)
 
 - Integrated reviewed V3 reference:
   `283165f19777ad6ab62cfcb03de329c5bb0f8b74` / tree
@@ -45,3 +45,11 @@
   gate before V4 integration. Operator/FPM/provider staging
   and production rollout are separate gates. Previous CI or
   technical approvals do not automatically transfer.
+
+## Current V5 broadcast and scheduled worker contract
+
+- Controlling issue: #14; exact pinned V4 integration reference `ff81d1b8d8832ec17fea7b07dabebc37614d29f2` (tree `80a84c8dff6edd0754acd2d4f17d1211c2112267`).
+- Move only original broadcast administration, both messagewizwiz scheduled processors and notification-warning segment; leave financial/wallet/auto-renewal behavior unmodified. Preserve callback bytes, 23-table DDL, old cron filenames, original `baseInfo.php`, 429 offset/retry behavior and checkpoints.
+- Source/body exactness and old-file preservation: `tools/v5_contract.py`. Full frozen V0–V4 plus V5 native, SQL/Telegram differential, HTTP direct-guard, negative-control and file-swap checks: `python3 tools/check_v5.py`. `--focused` is not a release gate.
+- Source-only runtime **43 tracked members** packaged from clean committed HEAD by `tools/package_v5.py --output <outside-repository-path.zip>` with full member SHA256/Git blob SHA1/HEAD comparison; no real `baseInfo.php`, DDL, tests, secrets or private state.
+- Read `docs/v5/{README,TESTING,OPERATIONS,CRON-INVENTORY,LEGACY-BEHAVIOR}.md`. Exact-HEAD CI, separate author-independent HIGH_ASSURANCE review, owner merge and operator deployment approval are hard gates. No change to unrelated Issue #12 or inherited 429 loss semantics.
