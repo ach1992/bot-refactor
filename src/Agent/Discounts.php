@@ -1,0 +1,205 @@
+<?php
+/**
+ * AchBot Access: Agent listing, details, plan/server/default discount management.
+ * Scoped, re-entrant, byte-compatible route at original bot.php position.
+ * Internal include only. Do not execute via HTTP directly.
+ */
+if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
+    http_response_code(404);
+    exit;
+}
+
+if(($data == "agentsList" || preg_match('/^nextAgentList(\d+)/',$data,$match)) && ($from_id == $admin || $userInfo['isAdmin'] == true)){
+    $keys = getAgentsList($match[1]??0);
+    if($keys != null) editText($message_id,$mainValues['agents_list'], $keys);
+    else alert("همکاری یافت نشد.");
+}
+if(preg_match('/^agentDetails(\d+)/',$data,$match) && ($from_id == $admin || $userInfo['isAdmin'] == true)){
+    $userDetail = bot('getChat',['chat_id'=>$match[1]])->result;
+    $userUserName = $userDetail->username;
+    $fullName = $userDetail->first_name . " " . $userDetail->last_name;
+
+    editText($message_id,str_replace("AGENT-NAME", $fullName, $mainValues['agent_details']), getAgentDetails($match[1]));
+}
+if(preg_match('/^removeAgent(\d+)/',$data,$match) && ($from_id == $admin || $userInfo['isAdmin'] == true)){
+    $stmt = $connection->prepare("UPDATE `users` SET `is_agent` = 0 WHERE `userid` = ?");
+    $stmt->bind_param("i", $match[1]);
+    $stmt->execute();
+    $stmt->close();
+    
+    alert($mainValues['agent_deleted_successfuly']);
+    $keys = getAgentsList();
+    if($keys != null) editKeys($keys);
+    else editKeys(json_encode(['inline_keyboard'=>[[['text'=>$buttonValues['back_button'],'callback_data'=>"managePanel"]]]]));
+}
+if(preg_match('/^agentPercentDetails(\d+)/',$data,$match) && ($from_id == $admin || $userInfo['isAdmin'] == true)){
+    $stmt = $connection->prepare("SELECT * FROM `users` WHERE `userid` = ?");
+    $stmt->bind_param('i',$match[1]);
+    $stmt->execute();
+    $info = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+    
+    $userName = $info['name'];
+    editText($message_id, str_replace("AGENT-NAME", $userName, $mainValues['agent_discount_settings']), getAgentDiscounts($match[1]));
+}
+if(preg_match('/^addDiscount(Server|Plan)Agent(\d+)/',$data,$match) && ($from_id == $admin || $userInfo['isAdmin'] == true)){
+    $stmt = $connection->prepare("SELECT * FROM `users` WHERE `userid` = ?");
+    $stmt->bind_param('i',$match[2]);
+    $stmt->execute();
+    $info = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+    $userName = $info['name'];
+    
+    if($match[1] == "Plan"){
+        $offset = 0;
+        $limit = 20;
+        
+        $condition = array_values(array_keys(json_decode($info['discount_percent'],true)['plans']??array()));
+        $condition = count($condition) > 0? "WHERE `id` NOT IN (" . implode(",", $condition) . ")":"";
+        $stmt = $connection->prepare("SELECT * FROM `server_plans` $condition LIMIT ? OFFSET ?");
+        $stmt->bind_param("ii", $limit, $offset);
+        $stmt->execute();
+        $list = $stmt->get_result();
+        $stmt->close();
+        
+        if($list->num_rows > 0){
+            $keys = array();
+            while($row = $list->fetch_assoc()){
+                $stmt = $connection->prepare("SELECT * FROM `server_categories` WHERE `id` = ?");
+                $stmt->bind_param("i", $row['catid']);
+                $stmt->execute();
+                $catInfo = $stmt->get_result()->fetch_assoc();
+                $stmt->close();
+                
+                $keys[] = [['text'=>$row['title'] . " " . $catInfo['title'],'callback_data'=>"editAgentDiscountPlan" . $match[2] . "_" . $row['id']]];
+            }
+            
+            if($list->num_rows >= $limit){
+                $keys[] = [['text'=>"▶️",'callback_data'=>"nextAgentDiscountPlan" . $match[2] . "_" . ($offset + $limit)]];
+            }
+            $keys[] = [['text' => $buttonValues['back_button'], 'callback_data' => "agentPercentDetails" . $match[2]]];
+            $keys = json_encode(['inline_keyboard'=>$keys]);
+            
+            editText($message_id,"لطفا سرور مورد نظر را برای افزودن تخفیف به همکار $userName انتخاب کنید.",$keys);
+        }else alert("سروری باقی نمانده است.");
+    }else{
+        $condition = array_values(array_keys(json_decode($info['discount_percent'],true)['servers']??array()));
+        $condition = count($condition) > 0? "WHERE `id` NOT IN (" . implode(",", $condition) . ")":"";
+        $stmt = $connection->prepare("SELECT * FROM `server_info` $condition");
+        $stmt->execute();
+        $list = $stmt->get_result();
+        $stmt->close();
+        
+        if($list->num_rows > 0){
+            $keys = array();
+            while($row = $list->fetch_assoc()){
+                $keys[] = [['text'=>$row['title'],'callback_data'=>"editAgentDiscountServer" . $match[2] . "_" . $row['id']]];
+            }
+            
+            $keys[] = [['text' => $buttonValues['back_button'], 'callback_data' => "agentPercentDetails" . $match[2]]];
+            $keys = json_encode(['inline_keyboard'=>$keys]);
+            
+            editText($message_id,"لطفا سرور مورد نظر را برای افزودن تخفیف به همکار $userName انتخاب کنید.",$keys);
+        }else alert("سروری باقی نمانده است.");
+    }
+}
+if(preg_match('/^nextAgentDiscountPlan(?<agentId>\d+)_(?<offset>\d+)/',$data,$match) &&($from_id == $admin || $userInfo['isAdmin'] == true)){
+    $stmt = $connection->prepare("SELECT * FROM `users` WHERE `userid` = ?");
+    $stmt->bind_param('i',$match['agentId']);
+    $stmt->execute();
+    $info = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+    $userName = $info['name'];
+    
+    $offset = $match['offset'];
+    $limit = 20;
+    
+    $condition = array_values(array_keys(json_decode($info['discount_percent'],true)['plans']??array()));
+    $condition = count($condition) > 0? "WHERE `id` NOT IN (" . implode(",", $condition) . ")":"";
+    $stmt = $connection->prepare("SELECT * FROM `server_plans` $condition LIMIT ? OFFSET ?");
+    $stmt->bind_param("ii", $limit, $offset);
+    $stmt->execute();
+    $list = $stmt->get_result();
+    $stmt->close();
+    
+    if($list->num_rows > 0){
+        $keys = array();
+        while($row = $list->fetch_assoc()){
+            $stmt = $connection->prepare("SELECT * FROM `server_categories` WHERE `id` = ?");
+            $stmt->bind_param("i", $row['catid']);
+            $stmt->execute();
+            $catInfo = $stmt->get_result()->fetch_assoc();
+            $stmt->close();
+            
+            $keys[] = [['text'=>$row['title'] . " " . $catInfo['title'],'callback_data'=>"editAgentDiscountPlan" . $match['agentId'] . "_" . $row['id']]];
+        }
+        
+        if($list->num_rows >= $limit && $offset == 0){
+            $keys[] = [['text'=>"▶️",'callback_data'=>"nextAgentDiscountPlan" . $match['agentId'] . "_" . ($offset + $limit)]];
+        }
+        elseif($list->num_rows >= $limit && $offset != 0){
+            $keys[] = [
+                ['text'=>"◀️️",'callback_data'=>"nextAgentDiscountPlan" . $match['agentId'] . "_" . ($offset - $limit)],
+                ['text'=>"▶️",'callback_data'=>"nextAgentDiscountPlan" . $match['agentId'] . "_" . ($offset + $limit)]
+                ];
+        }
+        elseif($offset != 0){
+            $keys[] = [
+                ['text'=>"◀️️",'callback_data'=>"nextAgentDiscountPlan" . $match['agentId'] . "_" . ($offset - $limit)]
+                ];
+        }
+        $keys[] = [['text' => $buttonValues['back_button'], 'callback_data' => "agentPercentDetails" . $match['agentId']]];
+        $keys = json_encode(['inline_keyboard'=>$keys]);
+        
+        editText($message_id,"لطفا سرور مورد نظر را برای افزودن تخفیف به همکار $userName انتخاب کنید.",$keys);
+    }else alert("سروری باقی نمانده است.");
+}
+if(preg_match('/^removePercentOfAgent(?<type>Server|Plan)(?<agentId>\d+)_(?<serverId>\d+)/',$data,$match) && ($from_id == $admin || $userInfo['isAdmin'] == true)){
+    $stmt = $connection->prepare("SELECT * FROM `users` WHERE `userid` = ?");
+    $stmt->bind_param('i',$match['agentId']);
+    $stmt->execute();
+    $info = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+    
+    $discounts = json_decode($info['discount_percent'],true);
+    if($match['type'] == "Server") unset($discounts['servers'][$match['serverId']]);
+    elseif($match['type'] == "Plan") unset($discounts['plans'][$match['serverId']]);
+    
+    $discounts = json_encode($discounts,488);
+    $stmt = $connection->prepare("UPDATE `users` SET `discount_percent` = ? WHERE `userid` = ?");
+    $stmt->bind_param("si", $discounts, $match['agentId']);
+    $stmt->execute();
+    $stmt->close();
+    
+    alert('با موفقیت حذف شد.');
+    editText($message_id, str_replace("AGENT-NAME", $userName, $mainValues['agent_discount_settings']), getAgentDiscounts($match['agentId']));
+}
+if(preg_match('/^editAgentDiscount(Server|Plan|Normal)(\d+)_(.*)/',$data,$match) && ($from_id == $admin || $userInfo['isAdmin'] == true)){
+    delMessage();
+    sendMessage($mainValues['send_agent_discount_percent'], $cancelKey);
+    setUser($data);
+}
+if(preg_match('/^editAgentDiscount(Server|Plan|Normal)(\d+)_(.*)/',$userInfo['step'],$match) && ($from_id == $admin || $userInfo['isAdmin'] == true) && $text != $buttonValues['cancel']){
+    if(is_numeric($text)){
+        $stmt = $connection->prepare("SELECT * FROM `users` WHERE `userid` = ?");
+        $stmt->bind_param('i',$match[2]);
+        $stmt->execute();
+        $info = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        
+        $discountInfo = json_decode($info['discount_percent'],true);
+        if($match[1] == "Server") $discountInfo['servers'][$match[3]] = $text;
+        elseif($match[1] == "Plan") $discountInfo['plans'][$match[3]] = $text;
+        elseif($match[1] == "Normal") $discountInfo['normal'] = $text;
+        $text = json_encode($discountInfo);
+        
+        sendMessage($mainValues['saved_successfuly'],$removeKeyboard);
+        
+        $stmt = $connection->prepare("UPDATE `users` SET `discount_percent` = ? WHERE `userid` = ?");
+        $stmt->bind_param("si", $text, $match[2]);
+        $stmt->execute();
+        $stmt->close();
+        sendMessage(str_replace("AGENT-NAME", $userName, $mainValues['agent_discount_settings']), getAgentDiscounts($match[2]));
+        setUser();
+    }else sendMessage($mainValues['send_only_number']);
+}
