@@ -1,4 +1,4 @@
-# AchBot — project contract (Phase 1)
+# AChBot — project contract (Phase 1)
 
 ## Outcome
 
@@ -29,4 +29,6 @@ Never place original SQL with customer/financial/integration data into a public 
 
 ## Future naming
 
-New code and docs use **AchBot** / `achbot`. Legacy `wizwiz` callback payloads and script paths are compatibility contracts, not just branding: replace them only with backward-compatible decoding/aliases, and do not break previously sent Telegram inline keyboards. Internal names can be simplified where not observable externally.
+The official, case-sensitive product name is **AChBot** (not **AchBot**). Use this spelling in all new user-facing names, release titles, project docs, and source comments. Lowercase `achbot` remains an acceptable technical slug in paths, tests, release filenames and identifiers; do not rename working interfaces for spelling alone. Legacy `wizwiz` callback payloads and script paths are compatibility contracts, not just branding: replace them only with backward-compatible decoding/aliases, and do not break previously sent Telegram inline keyboards. Internal names can be simplified where not observable externally.
+
+Previously approved, byte-frozen source excerpts and historical reference fixtures may retain earlier spelling. Branding changes never authorize changing runtime behavior, callbacks, Cron filenames, or database records.

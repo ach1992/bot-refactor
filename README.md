@@ -1,4 +1,4 @@
-# AchBot — PHP Telegram VPN bot (refactoring project)
+# AChBot — PHP Telegram VPN bot (refactoring project)
 
 This repository is a **public, sanitized reference baseline** for a staged, behavior-preserving refactor of an existing PHP Telegram bot. **This repository is not a production-certified release.**
 
@@ -26,6 +26,8 @@ snapshots/goldens remain immutable. Keep the real
 unchanged. V1-V3 operator acceptance is still independently
 tracked in Issues #4/#6/#8, and name/callback compatibility in #2.
 Owner V3 merge permission did not authorize V4 merge or deployment.
+
+**Official name: AChBot.** Lowercase `achbot` is the technical slug for package/test paths; legacy callbacks and Cron identifiers remain unchanged. Previously approved, frozen source comments may retain earlier spelling pending the relevant refactor stage.
 
 ## Project contract
 

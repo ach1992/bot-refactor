@@ -1,4 +1,4 @@
-# AchBot repository rules
+# AChBot repository rules
 
 - This is a public repository: never commit customer data, deployment secrets, raw SQL dumps, runtime backups or logs.
 - Phase 1 is strictly a behavior-preserving PHP refactor over the unchanged legacy MariaDB schema. DO NOT change the DB, run migrations or alter observable admin/customer behavior.
@@ -7,7 +7,8 @@
 - Build characterization tests and compare old vs new database side effects, external calls and messages before changing a high-risk flow.
 - Keep small independent deliverable stages with targeted tests, required exact-candidate review and explicit operator test acceptance before starting the next stage.
 - For ambiguous bugs, preserve current behavior; track a fix independently rather than silently changing it.
-- Use AchBot naming for new internal structures. Do not mass-replace legacy `wizwiz` literals used in persisted Telegram callbacks or existing scheduled paths.
+- The **case-sensitive official product name is AChBot**, not AchBot. Use AChBot for all new project/release-facing text and source comments; lowercase `achbot` may be used as a technical slug. Do not rewrite frozen historical source/tests or change protocol identifiers solely for branding.
+- Use AChBot naming for new internal structures. Do not mass-replace legacy `wizwiz` literals used in persisted Telegram callbacks or existing scheduled paths.
 - Source of truth is code, issues, CI, project spec and verified environment; do not rely on ChatGPT memory.
 
 ## Current V4 contract and gates
