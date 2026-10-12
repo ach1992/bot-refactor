@@ -1,0 +1,6131 @@
+{
+  "baseline_commit": "a89e63713131d16b5d6461fd41c01bb002d0be63",
+  "clock_epoch": 1800000000,
+  "cases": {
+    "pure.contracts": {
+      "result": {
+        "retry": [
+          null,
+          null,
+          1,
+          17
+        ],
+        "support": [
+          "fallback",
+          "https://t.me/fixture_support",
+          "https://t.me/fixture_support",
+          "https://t.me/fixture_support",
+          "https://t.me/https://example.invalid"
+        ],
+        "markup": [
+          null,
+          "{\"inline_keyboard\":[]}",
+          "raw"
+        ],
+        "groups": [
+          "همه کاربران",
+          "همکاران",
+          "همه کاربران",
+          "همه کاربران"
+        ],
+        "states": [
+          "پیش‌نویس",
+          "در صف",
+          "در حال ارسال",
+          "کامل شده",
+          "لغو شده",
+          "پیش‌نویس"
+        ],
+        "sizes": [
+          [
+            "0 مگابایت",
+            0
+          ],
+          [
+            "0 مگابایت",
+            0
+          ],
+          [
+            "1024 مگابایت",
+            1
+          ],
+          [
+            "1 گیگابایت",
+            1
+          ],
+          [
+            "2 گیگابایت",
+            2
+          ]
+        ],
+        "placeholders": {
+          "a": "@fixture_support @fixture_channel 1001",
+          "b": [
+            "1001",
+            7
+          ]
+        },
+        "types": [
+          "خرید اشتراک",
+          "تمدید اشتراک",
+          "تمدید اشتراک",
+          "شارژ کیف پول",
+          "افزایش زمان اشتراک",
+          "افزایش حجم اشتراک",
+          "پرداخت"
+        ],
+        "forward": [
+          false,
+          true
+        ],
+        "api": [
+          true,
+          false,
+          501
+        ]
+      },
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "price.customer": {
+      "result": [
+        10000,
+        false,
+        0
+      ],
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "price.plan": {
+      "result": [
+        8000,
+        true,
+        20
+      ],
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "price.server": {
+      "result": [
+        7000,
+        true,
+        30
+      ],
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "price.malformed": {
+      "result": [
+        10000,
+        true,
+        0
+      ],
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "price.over100_legacy": {
+      "result": [
+        -1000,
+        true,
+        110
+      ],
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "remark.manual": {
+      "result": "manual-label",
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "remark.forced": {
+      "result": "forced-label",
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "remark.digits": {
+      "result": "fixture-10001",
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "remark.default": {
+      "result": "fixture-1001-1112",
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "port.auto": {
+      "result": {
+        "returned": [
+          10001,
+          9
+        ],
+        "file": "10001-9"
+      },
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "port.manual": {
+      "result": {
+        "returned": [
+          1149,
+          9
+        ],
+        "file": "10000-8"
+      },
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "port.missing": {
+      "result": {
+        "returned": [
+          1112,
+          0
+        ],
+        "file": "1112-0"
+      },
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "wallet.missing": {
+      "result": {
+        "status": "not_found",
+        "payInfo": null,
+        "userRow": null,
+        "userReferrer": null,
+        "uid": null,
+        "price": null
+      },
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        },
+        {
+          "kind": "db.begin"
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `pays` WHERE `hash_id` = ? FOR UPDATE",
+          "types": "s",
+          "params": [
+            "fixturehash1"
+          ]
+        },
+        {
+          "kind": "db.rollback"
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "wallet.already": {
+      "result": {
+        "status": "already_paid",
+        "payInfo": {
+          "id": 31,
+          "hash_id": "fixturehash1",
+          "user_id": 1001,
+          "type": "BUY_SUB",
+          "price": 12000,
+          "state": "paid_with_wallet",
+          "plan_id": 101,
+          "server_id": 42,
+          "order_id": 0,
+          "request_date": 1799999940
+        },
+        "userRow": null,
+        "userReferrer": null,
+        "uid": null,
+        "price": null
+      },
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        },
+        {
+          "kind": "db.begin"
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `pays` WHERE `hash_id` = ? FOR UPDATE",
+          "types": "s",
+          "params": [
+            "fixturehash1"
+          ]
+        },
+        {
+          "kind": "db.rollback"
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "wallet.busy": {
+      "result": {
+        "status": "in_progress",
+        "payInfo": {
+          "id": 31,
+          "hash_id": "fixturehash1",
+          "user_id": 1001,
+          "type": "BUY_SUB",
+          "price": 12000,
+          "state": "processing_wallet",
+          "plan_id": 101,
+          "server_id": 42,
+          "order_id": 0,
+          "request_date": 1799999940
+        },
+        "userRow": null,
+        "userReferrer": null,
+        "uid": null,
+        "price": null
+      },
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        },
+        {
+          "kind": "db.begin"
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `pays` WHERE `hash_id` = ? FOR UPDATE",
+          "types": "s",
+          "params": [
+            "fixturehash1"
+          ]
+        },
+        {
+          "kind": "db.rollback"
+        },
+        {
+          "kind": "http.fake",
+          "url": "https://api.telegram.org/botfixture-token/answercallbackquery",
+          "options": {
+            "CURLOPT_URL": "https://api.telegram.org/botfixture-token/answercallbackquery",
+            "CURLOPT_POST": true,
+            "CURLOPT_POSTFIELDS": "callback_query_id=fixture-callback&text=%E2%8F%B3+%D8%AF%D8%B1%D8%AE%D9%88%D8%A7%D8%B3%D8%AA+%D8%B4%D9%85%D8%A7+%D8%AF%D8%B1+%D8%AD%D8%A7%D9%84+%D9%BE%D8%B1%D8%AF%D8%A7%D8%B2%D8%B4+%D8%A7%D8%B3%D8%AA.+%DA%A9%D9%85%DB%8C+%D8%A8%D8%B9%D8%AF+%D8%AF%D9%88%D8%A8%D8%A7%D8%B1%D9%87+%D8%AA%D9%84%D8%A7%D8%B4+%DA%A9%D9%86%DB%8C%D8%AF.&show_alert=1",
+            "CURLOPT_RETURNTRANSFER": true,
+            "CURLOPT_TIMEOUT": 10,
+            "CURLOPT_CONNECTTIMEOUT": 5,
+            "CURLOPT_IPRESOLVE": 10007,
+            "CURLOPT_HTTPHEADER": [
+              "Expect:"
+            ],
+            "CURLOPT_HTTP_VERSION": 10010,
+            "CURLOPT_NOSIGNAL": true,
+            "CURLOPT_DNS_CACHE_TIMEOUT": 300,
+            "CURLOPT_DNS_SERVERS": "1.1.1.1,9.9.9.9,8.8.8.8",
+            "CURLOPT_TCP_KEEPALIVE": 1,
+            "CURLOPT_TCP_KEEPIDLE": 30,
+            "CURLOPT_TCP_KEEPINTVL": 15
+          }
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "wallet.approved": {
+      "result": {
+        "status": "invalid_state",
+        "payInfo": {
+          "id": 31,
+          "hash_id": "fixturehash1",
+          "user_id": 1001,
+          "type": "BUY_SUB",
+          "price": 12000,
+          "state": "approved",
+          "plan_id": 101,
+          "server_id": 42,
+          "order_id": 0,
+          "request_date": 1799999940
+        },
+        "userRow": null,
+        "userReferrer": null,
+        "uid": null,
+        "price": null
+      },
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        },
+        {
+          "kind": "db.begin"
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `pays` WHERE `hash_id` = ? FOR UPDATE",
+          "types": "s",
+          "params": [
+            "fixturehash1"
+          ]
+        },
+        {
+          "kind": "db.rollback"
+        },
+        {
+          "kind": "http.fake",
+          "url": "https://api.telegram.org/botfixture-token/answercallbackquery",
+          "options": {
+            "CURLOPT_URL": "https://api.telegram.org/botfixture-token/answercallbackquery",
+            "CURLOPT_POST": true,
+            "CURLOPT_POSTFIELDS": "callback_query_id=fixture-callback&text=%E2%9B%94%EF%B8%8F+%D8%A7%DB%8C%D9%86+%D9%BE%D8%B1%D8%AF%D8%A7%D8%AE%D8%AA+%D9%82%D8%A7%D8%A8%D9%84+%D9%BE%D8%B1%D8%AF%D8%A7%D8%AE%D8%AA+%D8%A8%D8%A7+%DA%A9%DB%8C%D9%81+%D9%BE%D9%88%D9%84+%D9%86%DB%8C%D8%B3%D8%AA%3A+approved&show_alert=1",
+            "CURLOPT_RETURNTRANSFER": true,
+            "CURLOPT_TIMEOUT": 10,
+            "CURLOPT_CONNECTTIMEOUT": 5,
+            "CURLOPT_IPRESOLVE": 10007,
+            "CURLOPT_HTTPHEADER": [
+              "Expect:"
+            ],
+            "CURLOPT_HTTP_VERSION": 10010,
+            "CURLOPT_NOSIGNAL": true,
+            "CURLOPT_DNS_CACHE_TIMEOUT": 300,
+            "CURLOPT_DNS_SERVERS": "1.1.1.1,9.9.9.9,8.8.8.8",
+            "CURLOPT_TCP_KEEPALIVE": 1,
+            "CURLOPT_TCP_KEEPIDLE": 30,
+            "CURLOPT_TCP_KEEPINTVL": 15
+          }
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "wallet.declined": {
+      "result": {
+        "status": "invalid_state",
+        "payInfo": {
+          "id": 31,
+          "hash_id": "fixturehash1",
+          "user_id": 1001,
+          "type": "BUY_SUB",
+          "price": 12000,
+          "state": "declined",
+          "plan_id": 101,
+          "server_id": 42,
+          "order_id": 0,
+          "request_date": 1799999940
+        },
+        "userRow": null,
+        "userReferrer": null,
+        "uid": null,
+        "price": null
+      },
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        },
+        {
+          "kind": "db.begin"
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `pays` WHERE `hash_id` = ? FOR UPDATE",
+          "types": "s",
+          "params": [
+            "fixturehash1"
+          ]
+        },
+        {
+          "kind": "db.rollback"
+        },
+        {
+          "kind": "http.fake",
+          "url": "https://api.telegram.org/botfixture-token/answercallbackquery",
+          "options": {
+            "CURLOPT_URL": "https://api.telegram.org/botfixture-token/answercallbackquery",
+            "CURLOPT_POST": true,
+            "CURLOPT_POSTFIELDS": "callback_query_id=fixture-callback&text=%E2%9B%94%EF%B8%8F+%D8%A7%DB%8C%D9%86+%D9%BE%D8%B1%D8%AF%D8%A7%D8%AE%D8%AA+%D9%82%D8%A7%D8%A8%D9%84+%D9%BE%D8%B1%D8%AF%D8%A7%D8%AE%D8%AA+%D8%A8%D8%A7+%DA%A9%DB%8C%D9%81+%D9%BE%D9%88%D9%84+%D9%86%DB%8C%D8%B3%D8%AA%3A+declined&show_alert=1",
+            "CURLOPT_RETURNTRANSFER": true,
+            "CURLOPT_TIMEOUT": 10,
+            "CURLOPT_CONNECTTIMEOUT": 5,
+            "CURLOPT_IPRESOLVE": 10007,
+            "CURLOPT_HTTPHEADER": [
+              "Expect:"
+            ],
+            "CURLOPT_HTTP_VERSION": 10010,
+            "CURLOPT_NOSIGNAL": true,
+            "CURLOPT_DNS_CACHE_TIMEOUT": 300,
+            "CURLOPT_DNS_SERVERS": "1.1.1.1,9.9.9.9,8.8.8.8",
+            "CURLOPT_TCP_KEEPALIVE": 1,
+            "CURLOPT_TCP_KEEPIDLE": 30,
+            "CURLOPT_TCP_KEEPINTVL": 15
+          }
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "wallet.expired_sent": {
+      "result": {
+        "status": "invalid_state",
+        "payInfo": {
+          "id": 31,
+          "hash_id": "fixturehash1",
+          "user_id": 1001,
+          "type": "BUY_SUB",
+          "price": 12000,
+          "state": "expired_have_sent",
+          "plan_id": 101,
+          "server_id": 42,
+          "order_id": 0,
+          "request_date": 1799999940
+        },
+        "userRow": null,
+        "userReferrer": null,
+        "uid": null,
+        "price": null
+      },
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        },
+        {
+          "kind": "db.begin"
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `pays` WHERE `hash_id` = ? FOR UPDATE",
+          "types": "s",
+          "params": [
+            "fixturehash1"
+          ]
+        },
+        {
+          "kind": "db.rollback"
+        },
+        {
+          "kind": "http.fake",
+          "url": "https://api.telegram.org/botfixture-token/answercallbackquery",
+          "options": {
+            "CURLOPT_URL": "https://api.telegram.org/botfixture-token/answercallbackquery",
+            "CURLOPT_POST": true,
+            "CURLOPT_POSTFIELDS": "callback_query_id=fixture-callback&text=%E2%9B%94%EF%B8%8F+%D8%A7%DB%8C%D9%86+%D9%BE%D8%B1%D8%AF%D8%A7%D8%AE%D8%AA+%D9%82%D8%A7%D8%A8%D9%84+%D9%BE%D8%B1%D8%AF%D8%A7%D8%AE%D8%AA+%D8%A8%D8%A7+%DA%A9%DB%8C%D9%81+%D9%BE%D9%88%D9%84+%D9%86%DB%8C%D8%B3%D8%AA%3A+expired_have_sent&show_alert=1",
+            "CURLOPT_RETURNTRANSFER": true,
+            "CURLOPT_TIMEOUT": 10,
+            "CURLOPT_CONNECTTIMEOUT": 5,
+            "CURLOPT_IPRESOLVE": 10007,
+            "CURLOPT_HTTPHEADER": [
+              "Expect:"
+            ],
+            "CURLOPT_HTTP_VERSION": 10010,
+            "CURLOPT_NOSIGNAL": true,
+            "CURLOPT_DNS_CACHE_TIMEOUT": 300,
+            "CURLOPT_DNS_SERVERS": "1.1.1.1,9.9.9.9,8.8.8.8",
+            "CURLOPT_TCP_KEEPALIVE": 1,
+            "CURLOPT_TCP_KEEPIDLE": 30,
+            "CURLOPT_TCP_KEEPINTVL": 15
+          }
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "wallet.low": {
+      "result": {
+        "status": "low_wallet",
+        "payInfo": {
+          "id": 31,
+          "hash_id": "fixturehash1",
+          "user_id": 1001,
+          "type": "BUY_SUB",
+          "price": 12000,
+          "state": "pending",
+          "plan_id": 101,
+          "server_id": 42,
+          "order_id": 0,
+          "request_date": 1799999940
+        },
+        "userRow": {
+          "wallet": 100,
+          "refered_by": 2002
+        },
+        "userReferrer": 2002,
+        "uid": 1001,
+        "price": 12000
+      },
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        },
+        {
+          "kind": "db.begin"
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `pays` WHERE `hash_id` = ? FOR UPDATE",
+          "types": "s",
+          "params": [
+            "fixturehash1"
+          ]
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT `wallet`, `refered_by` FROM `users` WHERE `userid` = ? FOR UPDATE",
+          "types": "i",
+          "params": [
+            1001
+          ]
+        },
+        {
+          "kind": "db.sql",
+          "sql": "UPDATE `pays` SET `state` = 'low_wallet' WHERE `hash_id` = ? LIMIT 1",
+          "types": "s",
+          "params": [
+            "fixturehash1"
+          ]
+        },
+        {
+          "kind": "db.commit"
+        },
+        {
+          "kind": "http.fake",
+          "url": "https://api.telegram.org/botfixture-token/answercallbackquery",
+          "options": {
+            "CURLOPT_URL": "https://api.telegram.org/botfixture-token/answercallbackquery",
+            "CURLOPT_POST": true,
+            "CURLOPT_POSTFIELDS": "callback_query_id=fixture-callback&text=%E2%9D%8C+%D9%85%D9%88%D8%AC%D9%88%D8%AF%DB%8C+%DA%A9%DB%8C%D9%81+%D9%BE%D9%88%D9%84+%D8%B4%D9%85%D8%A7+%DA%A9%D8%A7%D9%81%DB%8C+%D9%86%DB%8C%D8%B3%D8%AA.%0A%F0%9F%92%B5+%D9%85%D9%88%D8%AC%D9%88%D8%AF%DB%8C+%D9%81%D8%B9%D9%84%DB%8C%3A+100+%D8%AA%D9%88%D9%85%D8%A7%D9%86%0A%F0%9F%94%BA+%D9%85%D9%88%D8%B1%D8%AF+%D9%86%DB%8C%D8%A7%D8%B2%3A+11%2C900+%D8%AA%D9%88%D9%85%D8%A7%D9%86&show_alert=1",
+            "CURLOPT_RETURNTRANSFER": true,
+            "CURLOPT_TIMEOUT": 10,
+            "CURLOPT_CONNECTTIMEOUT": 5,
+            "CURLOPT_IPRESOLVE": 10007,
+            "CURLOPT_HTTPHEADER": [
+              "Expect:"
+            ],
+            "CURLOPT_HTTP_VERSION": 10010,
+            "CURLOPT_NOSIGNAL": true,
+            "CURLOPT_DNS_CACHE_TIMEOUT": 300,
+            "CURLOPT_DNS_SERVERS": "1.1.1.1,9.9.9.9,8.8.8.8",
+            "CURLOPT_TCP_KEEPALIVE": 1,
+            "CURLOPT_TCP_KEEPIDLE": 30,
+            "CURLOPT_TCP_KEEPINTVL": 15
+          }
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "wallet.success": {
+      "result": {
+        "status": "ok",
+        "payInfo": {
+          "id": 31,
+          "hash_id": "fixturehash1",
+          "user_id": 1001,
+          "type": "BUY_SUB",
+          "price": 12000,
+          "state": "paid_with_wallet",
+          "plan_id": 101,
+          "server_id": 42,
+          "order_id": 0,
+          "request_date": 1799999940
+        },
+        "userRow": {
+          "wallet": 50000,
+          "refered_by": 2002
+        },
+        "userReferrer": 2002,
+        "uid": 1001,
+        "price": 12000
+      },
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        },
+        {
+          "kind": "db.begin"
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `pays` WHERE `hash_id` = ? FOR UPDATE",
+          "types": "s",
+          "params": [
+            "fixturehash1"
+          ]
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT `wallet`, `refered_by` FROM `users` WHERE `userid` = ? FOR UPDATE",
+          "types": "i",
+          "params": [
+            1001
+          ]
+        },
+        {
+          "kind": "db.sql",
+          "sql": "UPDATE `pays` SET `state`='processing_wallet' WHERE `hash_id`=? LIMIT 1",
+          "types": "s",
+          "params": [
+            "fixturehash1"
+          ]
+        },
+        {
+          "kind": "db.sql",
+          "sql": "UPDATE `users` SET `wallet` = `wallet` - ? WHERE `userid` = ? LIMIT 1",
+          "types": "ii",
+          "params": [
+            12000,
+            1001
+          ]
+        },
+        {
+          "kind": "business.handler",
+          "pay_id": 31,
+          "wallet_before": 50000
+        },
+        {
+          "kind": "db.sql",
+          "sql": "UPDATE `pays` SET `state` = 'paid_with_wallet' WHERE `hash_id` = ? LIMIT 1",
+          "types": "s",
+          "params": [
+            "fixturehash1"
+          ]
+        },
+        {
+          "kind": "db.commit"
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "wallet.business_false": {
+      "result": {
+        "status": "business_failed",
+        "payInfo": {
+          "id": 31,
+          "hash_id": "fixturehash1",
+          "user_id": 1001,
+          "type": "BUY_SUB",
+          "price": 12000,
+          "state": "pending",
+          "plan_id": 101,
+          "server_id": 42,
+          "order_id": 0,
+          "request_date": 1799999940
+        },
+        "userRow": {
+          "wallet": 50000,
+          "refered_by": 2002
+        },
+        "userReferrer": 2002,
+        "uid": 1001,
+        "price": 12000
+      },
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        },
+        {
+          "kind": "db.begin"
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `pays` WHERE `hash_id` = ? FOR UPDATE",
+          "types": "s",
+          "params": [
+            "fixturehash1"
+          ]
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT `wallet`, `refered_by` FROM `users` WHERE `userid` = ? FOR UPDATE",
+          "types": "i",
+          "params": [
+            1001
+          ]
+        },
+        {
+          "kind": "db.sql",
+          "sql": "UPDATE `pays` SET `state`='processing_wallet' WHERE `hash_id`=? LIMIT 1",
+          "types": "s",
+          "params": [
+            "fixturehash1"
+          ]
+        },
+        {
+          "kind": "db.sql",
+          "sql": "UPDATE `users` SET `wallet` = `wallet` - ? WHERE `userid` = ? LIMIT 1",
+          "types": "ii",
+          "params": [
+            12000,
+            1001
+          ]
+        },
+        {
+          "kind": "business.handler",
+          "pay_id": 31,
+          "wallet_before": 50000
+        },
+        {
+          "kind": "db.rollback"
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "wallet.handler_exception": {
+      "result": {
+        "status": "error",
+        "payInfo": null,
+        "userRow": null,
+        "userReferrer": null,
+        "uid": null,
+        "price": null
+      },
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        },
+        {
+          "kind": "db.begin"
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `pays` WHERE `hash_id` = ? FOR UPDATE",
+          "types": "s",
+          "params": [
+            "fixturehash1"
+          ]
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT `wallet`, `refered_by` FROM `users` WHERE `userid` = ? FOR UPDATE",
+          "types": "i",
+          "params": [
+            1001
+          ]
+        },
+        {
+          "kind": "db.sql",
+          "sql": "UPDATE `pays` SET `state`='processing_wallet' WHERE `hash_id`=? LIMIT 1",
+          "types": "s",
+          "params": [
+            "fixturehash1"
+          ]
+        },
+        {
+          "kind": "db.sql",
+          "sql": "UPDATE `users` SET `wallet` = `wallet` - ? WHERE `userid` = ? LIMIT 1",
+          "types": "ii",
+          "params": [
+            12000,
+            1001
+          ]
+        },
+        {
+          "kind": "business.handler",
+          "pay_id": 31,
+          "wallet_before": 50000
+        },
+        {
+          "kind": "db.rollback"
+        },
+        {
+          "kind": "http.fake",
+          "url": "https://api.telegram.org/botfixture-token/sendMessage",
+          "options": {
+            "CURLOPT_URL": "https://api.telegram.org/botfixture-token/sendMessage",
+            "CURLOPT_POST": true,
+            "CURLOPT_POSTFIELDS": "chat_id=9001&text=%E2%9A%A0%EF%B8%8F+%D8%AE%D8%B7%D8%A7+%D8%AF%D8%B1+%D9%BE%D8%B1%D8%AF%D8%A7%D8%AE%D8%AA+%D8%A8%D8%A7+%DA%A9%DB%8C%D9%81+%D9%BE%D9%88%D9%84%0A%0A%F0%9F%86%94+Hash+ID%3A+fixturehash1%0A%F0%9F%91%A4+User%3A+1001%0A%F0%9F%93%84+Error%3A+fixture-business-failure",
+            "CURLOPT_RETURNTRANSFER": true,
+            "CURLOPT_TIMEOUT": 10,
+            "CURLOPT_CONNECTTIMEOUT": 5,
+            "CURLOPT_IPRESOLVE": 10007,
+            "CURLOPT_HTTPHEADER": [
+              "Expect:"
+            ],
+            "CURLOPT_HTTP_VERSION": 10010,
+            "CURLOPT_NOSIGNAL": true,
+            "CURLOPT_DNS_CACHE_TIMEOUT": 300,
+            "CURLOPT_DNS_SERVERS": "1.1.1.1,9.9.9.9,8.8.8.8",
+            "CURLOPT_TCP_KEEPALIVE": 1,
+            "CURLOPT_TCP_KEEPIDLE": 30,
+            "CURLOPT_TCP_KEEPINTVL": 15
+          }
+        },
+        {
+          "kind": "http.fake",
+          "url": "https://api.telegram.org/botfixture-token/answercallbackquery",
+          "options": {
+            "CURLOPT_URL": "https://api.telegram.org/botfixture-token/answercallbackquery",
+            "CURLOPT_POST": true,
+            "CURLOPT_POSTFIELDS": "callback_query_id=fixture-callback&text=%E2%9D%8C+%D9%85%D8%B4%DA%A9%D9%84%DB%8C+%D9%BE%DB%8C%D8%B4+%D8%A7%D9%88%D9%85%D8%AF.%0A%F0%9F%94%81+%D9%84%D8%B7%D9%81%D8%A7%D9%8B+%DA%A9%D9%85%DB%8C+%D8%A8%D8%B9%D8%AF+%D8%AF%D9%88%D8%A8%D8%A7%D8%B1%D9%87+%D8%AA%D9%84%D8%A7%D8%B4+%DA%A9%D9%86%DB%8C%D8%AF.%0A%D8%A7%DA%AF%D8%B1+%D9%85%D8%B4%DA%A9%D9%84+%D8%A7%D8%AF%D8%A7%D9%85%D9%87+%D8%AF%D8%A7%D8%B4%D8%AA%D8%8C+%D8%A8%D9%87+%D9%85%D8%AF%DB%8C%D8%B1%DB%8C%D8%AA+%D8%A7%D8%B7%D9%84%D8%A7%D8%B9+%D8%AF%D9%87%DB%8C%D8%AF.&show_alert=1",
+            "CURLOPT_RETURNTRANSFER": true,
+            "CURLOPT_TIMEOUT": 10,
+            "CURLOPT_CONNECTTIMEOUT": 5,
+            "CURLOPT_IPRESOLVE": 10007,
+            "CURLOPT_HTTPHEADER": [
+              "Expect:"
+            ],
+            "CURLOPT_HTTP_VERSION": 10010,
+            "CURLOPT_NOSIGNAL": true,
+            "CURLOPT_DNS_CACHE_TIMEOUT": 300,
+            "CURLOPT_DNS_SERVERS": "1.1.1.1,9.9.9.9,8.8.8.8",
+            "CURLOPT_TCP_KEEPALIVE": 1,
+            "CURLOPT_TCP_KEEPIDLE": 30,
+            "CURLOPT_TCP_KEEPINTVL": 15
+          }
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "wallet.write_exception": {
+      "result": {
+        "status": "error",
+        "payInfo": null,
+        "userRow": null,
+        "userReferrer": null,
+        "uid": null,
+        "price": null
+      },
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        },
+        {
+          "kind": "db.begin"
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `pays` WHERE `hash_id` = ? FOR UPDATE",
+          "types": "s",
+          "params": [
+            "fixturehash1"
+          ]
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT `wallet`, `refered_by` FROM `users` WHERE `userid` = ? FOR UPDATE",
+          "types": "i",
+          "params": [
+            1001
+          ]
+        },
+        {
+          "kind": "db.sql",
+          "sql": "UPDATE `pays` SET `state`='processing_wallet' WHERE `hash_id`=? LIMIT 1",
+          "types": "s",
+          "params": [
+            "fixturehash1"
+          ]
+        },
+        {
+          "kind": "db.sql",
+          "sql": "UPDATE `users` SET `wallet` = `wallet` - ? WHERE `userid` = ? LIMIT 1",
+          "types": "ii",
+          "params": [
+            12000,
+            1001
+          ]
+        },
+        {
+          "kind": "db.rollback"
+        },
+        {
+          "kind": "http.fake",
+          "url": "https://api.telegram.org/botfixture-token/sendMessage",
+          "options": {
+            "CURLOPT_URL": "https://api.telegram.org/botfixture-token/sendMessage",
+            "CURLOPT_POST": true,
+            "CURLOPT_POSTFIELDS": "chat_id=9001&text=%E2%9A%A0%EF%B8%8F+%D8%AE%D8%B7%D8%A7+%D8%AF%D8%B1+%D9%BE%D8%B1%D8%AF%D8%A7%D8%AE%D8%AA+%D8%A8%D8%A7+%DA%A9%DB%8C%D9%81+%D9%BE%D9%88%D9%84%0A%0A%F0%9F%86%94+Hash+ID%3A+fixturehash1%0A%F0%9F%91%A4+User%3A+1001%0A%F0%9F%93%84+Error%3A+fixture-write-failure",
+            "CURLOPT_RETURNTRANSFER": true,
+            "CURLOPT_TIMEOUT": 10,
+            "CURLOPT_CONNECTTIMEOUT": 5,
+            "CURLOPT_IPRESOLVE": 10007,
+            "CURLOPT_HTTPHEADER": [
+              "Expect:"
+            ],
+            "CURLOPT_HTTP_VERSION": 10010,
+            "CURLOPT_NOSIGNAL": true,
+            "CURLOPT_DNS_CACHE_TIMEOUT": 300,
+            "CURLOPT_DNS_SERVERS": "1.1.1.1,9.9.9.9,8.8.8.8",
+            "CURLOPT_TCP_KEEPALIVE": 1,
+            "CURLOPT_TCP_KEEPIDLE": 30,
+            "CURLOPT_TCP_KEEPINTVL": 15
+          }
+        },
+        {
+          "kind": "http.fake",
+          "url": "https://api.telegram.org/botfixture-token/answercallbackquery",
+          "options": {
+            "CURLOPT_URL": "https://api.telegram.org/botfixture-token/answercallbackquery",
+            "CURLOPT_POST": true,
+            "CURLOPT_POSTFIELDS": "callback_query_id=fixture-callback&text=%E2%9D%8C+%D9%85%D8%B4%DA%A9%D9%84%DB%8C+%D9%BE%DB%8C%D8%B4+%D8%A7%D9%88%D9%85%D8%AF.%0A%F0%9F%94%81+%D9%84%D8%B7%D9%81%D8%A7%D9%8B+%DA%A9%D9%85%DB%8C+%D8%A8%D8%B9%D8%AF+%D8%AF%D9%88%D8%A8%D8%A7%D8%B1%D9%87+%D8%AA%D9%84%D8%A7%D8%B4+%DA%A9%D9%86%DB%8C%D8%AF.%0A%D8%A7%DA%AF%D8%B1+%D9%85%D8%B4%DA%A9%D9%84+%D8%A7%D8%AF%D8%A7%D9%85%D9%87+%D8%AF%D8%A7%D8%B4%D8%AA%D8%8C+%D8%A8%D9%87+%D9%85%D8%AF%DB%8C%D8%B1%DB%8C%D8%AA+%D8%A7%D8%B7%D9%84%D8%A7%D8%B9+%D8%AF%D9%87%DB%8C%D8%AF.&show_alert=1",
+            "CURLOPT_RETURNTRANSFER": true,
+            "CURLOPT_TIMEOUT": 10,
+            "CURLOPT_CONNECTTIMEOUT": 5,
+            "CURLOPT_IPRESOLVE": 10007,
+            "CURLOPT_HTTPHEADER": [
+              "Expect:"
+            ],
+            "CURLOPT_HTTP_VERSION": 10010,
+            "CURLOPT_NOSIGNAL": true,
+            "CURLOPT_DNS_CACHE_TIMEOUT": 300,
+            "CURLOPT_DNS_SERVERS": "1.1.1.1,9.9.9.9,8.8.8.8",
+            "CURLOPT_TCP_KEEPALIVE": 1,
+            "CURLOPT_TCP_KEEPIDLE": 30,
+            "CURLOPT_TCP_KEEPINTVL": 15
+          }
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "wallet.expired_legacy": {
+      "result": {
+        "status": "ok",
+        "payInfo": {
+          "id": 31,
+          "hash_id": "fixturehash1",
+          "user_id": 1001,
+          "type": "BUY_SUB",
+          "price": 12000,
+          "state": "paid_with_wallet",
+          "plan_id": 101,
+          "server_id": 42,
+          "order_id": 0,
+          "request_date": 1799999940
+        },
+        "userRow": {
+          "wallet": 50000,
+          "refered_by": 2002
+        },
+        "userReferrer": 2002,
+        "uid": 1001,
+        "price": 12000
+      },
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        },
+        {
+          "kind": "db.begin"
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `pays` WHERE `hash_id` = ? FOR UPDATE",
+          "types": "s",
+          "params": [
+            "fixturehash1"
+          ]
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT `wallet`, `refered_by` FROM `users` WHERE `userid` = ? FOR UPDATE",
+          "types": "i",
+          "params": [
+            1001
+          ]
+        },
+        {
+          "kind": "db.sql",
+          "sql": "UPDATE `pays` SET `state`='processing_wallet' WHERE `hash_id`=? LIMIT 1",
+          "types": "s",
+          "params": [
+            "fixturehash1"
+          ]
+        },
+        {
+          "kind": "db.sql",
+          "sql": "UPDATE `users` SET `wallet` = `wallet` - ? WHERE `userid` = ? LIMIT 1",
+          "types": "ii",
+          "params": [
+            12000,
+            1001
+          ]
+        },
+        {
+          "kind": "business.handler",
+          "pay_id": 31,
+          "wallet_before": 50000
+        },
+        {
+          "kind": "db.sql",
+          "sql": "UPDATE `pays` SET `state` = 'paid_with_wallet' WHERE `hash_id` = ? LIMIT 1",
+          "types": "s",
+          "params": [
+            "fixturehash1"
+          ]
+        },
+        {
+          "kind": "db.commit"
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "wallet.foreign_owner_legacy": {
+      "result": {
+        "status": "ok",
+        "payInfo": {
+          "id": 31,
+          "hash_id": "fixturehash1",
+          "user_id": 2002,
+          "type": "BUY_SUB",
+          "price": 12000,
+          "state": "paid_with_wallet",
+          "plan_id": 101,
+          "server_id": 42,
+          "order_id": 0,
+          "request_date": 1799999940
+        },
+        "userRow": {
+          "wallet": 50000,
+          "refered_by": 2002
+        },
+        "userReferrer": 2002,
+        "uid": 2002,
+        "price": 12000
+      },
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        },
+        {
+          "kind": "db.begin"
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `pays` WHERE `hash_id` = ? FOR UPDATE",
+          "types": "s",
+          "params": [
+            "fixturehash1"
+          ]
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT `wallet`, `refered_by` FROM `users` WHERE `userid` = ? FOR UPDATE",
+          "types": "i",
+          "params": [
+            2002
+          ]
+        },
+        {
+          "kind": "db.sql",
+          "sql": "UPDATE `pays` SET `state`='processing_wallet' WHERE `hash_id`=? LIMIT 1",
+          "types": "s",
+          "params": [
+            "fixturehash1"
+          ]
+        },
+        {
+          "kind": "db.sql",
+          "sql": "UPDATE `users` SET `wallet` = `wallet` - ? WHERE `userid` = ? LIMIT 1",
+          "types": "ii",
+          "params": [
+            12000,
+            2002
+          ]
+        },
+        {
+          "kind": "business.handler",
+          "pay_id": 31,
+          "wallet_before": 50000
+        },
+        {
+          "kind": "db.sql",
+          "sql": "UPDATE `pays` SET `state` = 'paid_with_wallet' WHERE `hash_id` = ? LIMIT 1",
+          "types": "s",
+          "params": [
+            "fixturehash1"
+          ]
+        },
+        {
+          "kind": "db.commit"
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "capacity.inbound_empty": {
+      "result": null,
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        },
+        {
+          "kind": "http.fake",
+          "url": "https://api.telegram.org/botfixture-token/answercallbackquery",
+          "options": {
+            "CURLOPT_URL": "https://api.telegram.org/botfixture-token/answercallbackquery",
+            "CURLOPT_POST": true,
+            "CURLOPT_POSTFIELDS": "callback_query_id=fixture-callback&text=%D8%B8%D8%B1%D9%81%DB%8C%D8%AA+%D8%A7%DB%8C%D9%86+%DA%A9%D8%A7%D9%86%DA%A9%D8%B4%D9%86+%D9%BE%D8%B1+%D8%B4%D8%AF%D9%87+%D8%A7%D8%B3%D8%AA.&show_alert=0",
+            "CURLOPT_RETURNTRANSFER": true,
+            "CURLOPT_TIMEOUT": 10,
+            "CURLOPT_CONNECTTIMEOUT": 5,
+            "CURLOPT_IPRESOLVE": 10007,
+            "CURLOPT_HTTPHEADER": [
+              "Expect:"
+            ],
+            "CURLOPT_HTTP_VERSION": 10010,
+            "CURLOPT_NOSIGNAL": true,
+            "CURLOPT_DNS_CACHE_TIMEOUT": 300,
+            "CURLOPT_DNS_SERVERS": "1.1.1.1,9.9.9.9,8.8.8.8",
+            "CURLOPT_TCP_KEEPALIVE": 1,
+            "CURLOPT_TCP_KEEPIDLE": 30,
+            "CURLOPT_TCP_KEEPINTVL": 15
+          }
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "capacity.server_empty": {
+      "result": null,
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `server_info` WHERE `id`=?",
+          "types": "i",
+          "params": [
+            42
+          ]
+        },
+        {
+          "kind": "http.fake",
+          "url": "https://api.telegram.org/botfixture-token/answercallbackquery",
+          "options": {
+            "CURLOPT_URL": "https://api.telegram.org/botfixture-token/answercallbackquery",
+            "CURLOPT_POST": true,
+            "CURLOPT_POSTFIELDS": "callback_query_id=fixture-callback&text=%D8%B8%D8%B1%D9%81%DB%8C%D8%AA+%D8%A7%DB%8C%D9%86+%D8%B3%D8%B1%D9%88%D8%B1+%D9%BE%D8%B1+%D8%B4%D8%AF%D9%87+%D8%A7%D8%B3%D8%AA.&show_alert=0",
+            "CURLOPT_RETURNTRANSFER": true,
+            "CURLOPT_TIMEOUT": 10,
+            "CURLOPT_CONNECTTIMEOUT": 5,
+            "CURLOPT_IPRESOLVE": 10007,
+            "CURLOPT_HTTPHEADER": [
+              "Expect:"
+            ],
+            "CURLOPT_HTTP_VERSION": 10010,
+            "CURLOPT_NOSIGNAL": true,
+            "CURLOPT_DNS_CACHE_TIMEOUT": 300,
+            "CURLOPT_DNS_SERVERS": "1.1.1.1,9.9.9.9,8.8.8.8",
+            "CURLOPT_TCP_KEEPALIVE": 1,
+            "CURLOPT_TCP_KEEPIDLE": 30,
+            "CURLOPT_TCP_KEEPINTVL": 15
+          }
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "capacity.ok": {
+      "result": {
+        "id": 42,
+        "ucount": "3"
+      },
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `server_info` WHERE `id`=?",
+          "types": "i",
+          "params": [
+            42
+          ]
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "provision.marzban": {
+      "result": [
+        {
+          "success": true,
+          "obj": {
+            "id": 81
+          }
+        },
+        "fixture-remark",
+        12345
+      ],
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        },
+        {
+          "kind": "panel.fake",
+          "method": "addMarzbanUser",
+          "args": [
+            42,
+            "fixture-remark",
+            10,
+            31,
+            101
+          ]
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "provision.marzban_duplicate": {
+      "result": [
+        {
+          "success": true,
+          "obj": {
+            "id": 81
+          }
+        },
+        "fixture-remark1112",
+        12345
+      ],
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        },
+        {
+          "kind": "panel.fake",
+          "method": "addMarzbanUser",
+          "args": [
+            42,
+            "fixture-remark",
+            10,
+            31,
+            101
+          ]
+        },
+        {
+          "kind": "panel.fake",
+          "method": "addMarzbanUser",
+          "args": [
+            42,
+            "fixture-remark1112",
+            10,
+            31,
+            101
+          ]
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "provision.xui": {
+      "result": [
+        {
+          "success": true,
+          "obj": {
+            "id": 81
+          }
+        },
+        "fixture-remark",
+        12345
+      ],
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        },
+        {
+          "kind": "panel.fake",
+          "method": "addUser",
+          "args": [
+            42,
+            "fixture-uuid",
+            "vless",
+            12345,
+            1802678400000,
+            "fixture-remark",
+            10,
+            "ws",
+            "none",
+            false,
+            101
+          ]
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "provision.xui_duplicate": {
+      "result": [
+        {
+          "success": true,
+          "obj": {
+            "id": 81
+          }
+        },
+        "fixture-remarkBmOzbDoQ2",
+        12345
+      ],
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        },
+        {
+          "kind": "panel.fake",
+          "method": "addUser",
+          "args": [
+            42,
+            "fixture-uuid",
+            "vless",
+            12345,
+            1802678400000,
+            "fixture-remark",
+            10,
+            "ws",
+            "none",
+            false,
+            101
+          ]
+        },
+        {
+          "kind": "panel.fake",
+          "method": "addUser",
+          "args": [
+            42,
+            "fixture-uuid",
+            "vless",
+            12345,
+            1802678400000,
+            "fixture-remarkBmOzbDoQ2",
+            10,
+            "ws",
+            "none",
+            false,
+            101
+          ]
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "provision.xui_port": {
+      "result": [
+        {
+          "success": true,
+          "obj": {
+            "id": 81
+          }
+        },
+        "fixture-remark",
+        1112
+      ],
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        },
+        {
+          "kind": "panel.fake",
+          "method": "addUser",
+          "args": [
+            42,
+            "fixture-uuid",
+            "vless",
+            12345,
+            1802678400000,
+            "fixture-remark",
+            10,
+            "ws",
+            "none",
+            false,
+            101
+          ]
+        },
+        {
+          "kind": "panel.fake",
+          "method": "addUser",
+          "args": [
+            42,
+            "fixture-uuid",
+            "vless",
+            1112,
+            1802678400000,
+            "fixture-remark",
+            10,
+            "ws",
+            "none",
+            false,
+            101
+          ]
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "provision.inbound": {
+      "result": [
+        {
+          "success": true,
+          "obj": {
+            "id": 81
+          }
+        },
+        "fixture-remark",
+        12345
+      ],
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        },
+        {
+          "kind": "panel.fake",
+          "method": "addInboundAccount",
+          "args": [
+            42,
+            "fixture-uuid",
+            9,
+            1802678400000,
+            "fixture-remark",
+            10,
+            1,
+            null,
+            101
+          ]
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "provision.inbound_duplicate": {
+      "result": [
+        {
+          "success": true,
+          "obj": {
+            "id": 81
+          }
+        },
+        "fixture-remarkBmOzbDoQ2",
+        12345
+      ],
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        },
+        {
+          "kind": "panel.fake",
+          "method": "addInboundAccount",
+          "args": [
+            42,
+            "fixture-uuid",
+            9,
+            1802678400000,
+            "fixture-remark",
+            10,
+            1,
+            null,
+            101
+          ]
+        },
+        {
+          "kind": "panel.fake",
+          "method": "addInboundAccount",
+          "args": [
+            42,
+            "fixture-uuid",
+            9,
+            1802678400000,
+            "fixture-remarkBmOzbDoQ2",
+            10,
+            1,
+            null,
+            101
+          ]
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "renew.marzban": {
+      "result": {
+        "success": true,
+        "obj": {
+          "id": 81
+        }
+      },
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `server_info` WHERE `id`=?",
+          "types": "i",
+          "params": [
+            42
+          ]
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `server_config` WHERE `id`=?",
+          "types": "i",
+          "params": [
+            42
+          ]
+        },
+        {
+          "kind": "panel.fake",
+          "method": "editMarzbanConfig",
+          "args": [
+            42,
+            {
+              "remark": "fixture-remark",
+              "days": 31,
+              "volume": 10
+            }
+          ]
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "renew.client": {
+      "result": {
+        "success": true,
+        "obj": {
+          "id": 81
+        }
+      },
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `server_info` WHERE `id`=?",
+          "types": "i",
+          "params": [
+            42
+          ]
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `server_config` WHERE `id`=?",
+          "types": "i",
+          "params": [
+            42
+          ]
+        },
+        {
+          "kind": "panel.fake",
+          "method": "editClientTraffic",
+          "args": [
+            42,
+            9,
+            "fixture-uuid",
+            10,
+            31,
+            "renew"
+          ]
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "renew.inbound": {
+      "result": {
+        "success": true,
+        "obj": {
+          "id": 81
+        }
+      },
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `server_info` WHERE `id`=?",
+          "types": "i",
+          "params": [
+            42
+          ]
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `server_config` WHERE `id`=?",
+          "types": "i",
+          "params": [
+            42
+          ]
+        },
+        {
+          "kind": "panel.fake",
+          "method": "editInboundTraffic",
+          "args": [
+            42,
+            "fixture-uuid",
+            10,
+            31,
+            "renew"
+          ]
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "account_error.null": {
+      "result": "server_connection_null",
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "account_error.inbound": {
+      "result": "inbound_not_found",
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "account_error.response": {
+      "result": "server_response_failed | خطای سرور fixture-server:\n\nfixture-error",
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "account_error.array_success": {
+      "result": "accepted",
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "order.insert": {
+      "result": null,
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        },
+        {
+          "kind": "db.sql",
+          "sql": "INSERT INTO `orders_list` (`userid`, `token`, `transid`, `fileid`, `server_id`, `inbound_id`, `remark`, `uuid`, `protocol`, `expire_date`, `link`, `amount`, `status`, `date`, `notif`, `rahgozar`, `agent_bought`) VALUES (?, ?, '', ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, 0, ?, ?);",
+          "types": "ssiiisssisiiii",
+          "params": [
+            1001,
+            "fixture-sub-token",
+            101,
+            42,
+            9,
+            "fixture-remark",
+            "fixture-uuid",
+            "vless",
+            1802678400,
+            "[\"vless://fixture\"]",
+            12000,
+            1800000000,
+            0,
+            1
+          ]
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "order.increase": {
+      "result": null,
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        },
+        {
+          "kind": "db.sql",
+          "sql": "INSERT INTO `increase_order` (`userid`, `server_id`, `inbound_id`, `remark`, `amount`, `date`, `volume`, `day`) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+          "types": "iiisiiii",
+          "params": [
+            1001,
+            42,
+            9,
+            "fixture-remark",
+            12000,
+            1800000000,
+            null,
+            31
+          ]
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "order.capacity": {
+      "result": null,
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        },
+        {
+          "kind": "db.sql",
+          "sql": "UPDATE `server_info` SET `ucount` = `ucount` - ? WHERE `id` = ?",
+          "types": "ii",
+          "params": [
+            2,
+            42
+          ]
+        },
+        {
+          "kind": "db.sql",
+          "sql": "UPDATE `server_plans` SET `acount` = `acount` - ? WHERE `id` = ?",
+          "types": "ii",
+          "params": [
+            3,
+            101
+          ]
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "order.plan": {
+      "result": {
+        "plan": {
+          "id": 101,
+          "days": 31.5,
+          "volume": 10.5,
+          "price": 12000
+        },
+        "days": 31,
+        "volume": 10,
+        "price": 12000,
+        "date": 1800000000,
+        "expire_microdate": 1802678400125,
+        "expire_date": 1802678400
+      },
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `server_plans` WHERE `id`=?",
+          "types": "i",
+          "params": [
+            101
+          ]
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "referral.wallet_skip": {
+      "result": null,
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "referral.external": {
+      "result": null,
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT `value` FROM `setting` WHERE `type` = 'INVITE_BANNER_AMOUNT'",
+          "types": "",
+          "params": []
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT `wallet` FROM `users` WHERE `userid` = ?",
+          "types": "i",
+          "params": [
+            2002
+          ]
+        },
+        {
+          "kind": "db.sql",
+          "sql": "UPDATE `users` SET `wallet` = `wallet` + ? WHERE `userid` = ?",
+          "types": "ii",
+          "params": [
+            300,
+            2002
+          ]
+        },
+        {
+          "kind": "http.fake",
+          "url": "https://api.telegram.org/botfixture-token/sendMessage",
+          "options": {
+            "CURLOPT_URL": "https://api.telegram.org/botfixture-token/sendMessage",
+            "CURLOPT_POST": true,
+            "CURLOPT_POSTFIELDS": "chat_id=2002&text=%F0%9F%8E%81+%D8%AA%D8%A8%D8%B1%DB%8C%DA%A9%21+%DB%8C%DA%A9%DB%8C+%D8%A7%D8%B2+%D8%B2%DB%8C%D8%B1%D9%85%D8%AC%D9%85%D9%88%D8%B9%D9%87%E2%80%8C%D9%87%D8%A7%DB%8C+%D8%B4%D9%85%D8%A7+%D8%AE%D8%B1%DB%8C%D8%AF+%D8%A7%D9%86%D8%AC%D8%A7%D9%85+%D8%AF%D8%A7%D8%AF.+%D8%B4%D9%85%D8%A7+%D9%85%D8%A8%D9%84%D8%BA+300+%D8%AA%D9%88%D9%85%D8%A7%D9%86+%D8%AC%D8%A7%DB%8C%D8%B2%D9%87+%D8%AF%D8%B1%DB%8C%D8%A7%D9%81%D8%AA+%DA%A9%D8%B1%D8%AF%DB%8C%D8%AF.%0A%0A%F0%9F%92%B0+%D9%85%D9%88%D8%AC%D9%88%D8%AF%DB%8C+%D9%82%D8%AF%DB%8C%D9%85%3A+700+%D8%AA%D9%88%D9%85%D8%A7%D9%86%0A%F0%9F%92%B5+%D9%85%D9%88%D8%AC%D9%88%D8%AF%DB%8C+%D8%AC%D8%AF%DB%8C%D8%AF%3A+1%2C000+%D8%AA%D9%88%D9%85%D8%A7%D9%86",
+            "CURLOPT_RETURNTRANSFER": true,
+            "CURLOPT_TIMEOUT": 10,
+            "CURLOPT_CONNECTTIMEOUT": 5,
+            "CURLOPT_IPRESOLVE": 10007,
+            "CURLOPT_HTTPHEADER": [
+              "Expect:"
+            ],
+            "CURLOPT_HTTP_VERSION": 10010,
+            "CURLOPT_NOSIGNAL": true,
+            "CURLOPT_DNS_CACHE_TIMEOUT": 300,
+            "CURLOPT_DNS_SERVERS": "1.1.1.1,9.9.9.9,8.8.8.8",
+            "CURLOPT_TCP_KEEPALIVE": 1,
+            "CURLOPT_TCP_KEEPIDLE": 30,
+            "CURLOPT_TCP_KEEPINTVL": 15
+          }
+        },
+        {
+          "kind": "http.fake",
+          "url": "https://api.telegram.org/botfixture-token/sendMessage",
+          "options": {
+            "CURLOPT_URL": "https://api.telegram.org/botfixture-token/sendMessage",
+            "CURLOPT_POST": true,
+            "CURLOPT_POSTFIELDS": "chat_id=9001&text=%F0%9F%91%A5+%DA%A9%D8%A7%D8%B1%D8%A8%D8%B1+1001+%D8%B2%DB%8C%D8%B1%D9%85%D8%AC%D9%85%D9%88%D8%B9%D9%87+%DA%A9%D8%A7%D8%B1%D8%A8%D8%B1+2002+%DB%8C%DA%A9+%D8%AE%D8%B1%DB%8C%D8%AF+%D8%A7%D9%86%D8%AC%D8%A7%D9%85+%D8%AF%D8%A7%D8%AF.%0A%0A%F0%9F%92%B0+%D9%85%D9%88%D8%AC%D9%88%D8%AF%DB%8C+%D9%82%D8%AF%DB%8C%D9%85%3A+700+%D8%AA%D9%88%D9%85%D8%A7%D9%86%0A%F0%9F%92%B5+%D9%85%D9%88%D8%AC%D9%88%D8%AF%DB%8C+%D8%AC%D8%AF%DB%8C%D8%AF%3A+1%2C000+%D8%AA%D9%88%D9%85%D8%A7%D9%86&parse_mode=html",
+            "CURLOPT_RETURNTRANSFER": true,
+            "CURLOPT_TIMEOUT": 10,
+            "CURLOPT_CONNECTTIMEOUT": 5,
+            "CURLOPT_IPRESOLVE": 10007,
+            "CURLOPT_HTTPHEADER": [
+              "Expect:"
+            ],
+            "CURLOPT_HTTP_VERSION": 10010,
+            "CURLOPT_NOSIGNAL": true,
+            "CURLOPT_DNS_CACHE_TIMEOUT": 300,
+            "CURLOPT_DNS_SERVERS": "1.1.1.1,9.9.9.9,8.8.8.8",
+            "CURLOPT_TCP_KEEPALIVE": 1,
+            "CURLOPT_TCP_KEEPIDLE": 30,
+            "CURLOPT_TCP_KEEPINTVL": 15
+          }
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "discount.missing_pay": {
+      "result": {
+        "success": false,
+        "price": 0,
+        "hash_id": "",
+        "discount_value": 0,
+        "discount_text": "",
+        "payInfo": null
+      },
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `pays` WHERE `id` = ?",
+          "types": "i",
+          "params": [
+            31
+          ]
+        },
+        {
+          "kind": "http.fake",
+          "url": "https://api.telegram.org/botfixture-token/sendMessage",
+          "options": {
+            "CURLOPT_URL": "https://api.telegram.org/botfixture-token/sendMessage",
+            "CURLOPT_POST": true,
+            "CURLOPT_POSTFIELDS": "chat_id=1001&text=%F0%9F%98%94+%DA%A9%D8%AF+%D8%AA%D8%AE%D9%81%DB%8C%D9%81+%D9%86%D8%A7%D9%85%D8%B9%D8%AA%D8%A8%D8%B1+%D8%A7%D8%B3%D8%AA.&parse_mode=MarkDown",
+            "CURLOPT_RETURNTRANSFER": true,
+            "CURLOPT_TIMEOUT": 10,
+            "CURLOPT_CONNECTTIMEOUT": 5,
+            "CURLOPT_IPRESOLVE": 10007,
+            "CURLOPT_HTTPHEADER": [
+              "Expect:"
+            ],
+            "CURLOPT_HTTP_VERSION": 10010,
+            "CURLOPT_NOSIGNAL": true,
+            "CURLOPT_DNS_CACHE_TIMEOUT": 300,
+            "CURLOPT_DNS_SERVERS": "1.1.1.1,9.9.9.9,8.8.8.8",
+            "CURLOPT_TCP_KEEPALIVE": 1,
+            "CURLOPT_TCP_KEEPIDLE": 30,
+            "CURLOPT_TCP_KEEPINTVL": 15
+          }
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "discount.missing_code": {
+      "result": {
+        "success": false,
+        "price": 12000,
+        "hash_id": "fixturehash1",
+        "discount_value": 0,
+        "discount_text": "",
+        "payInfo": {
+          "id": 31,
+          "hash_id": "fixturehash1",
+          "user_id": 1001,
+          "type": "BUY_SUB",
+          "price": 12000,
+          "state": "pending",
+          "plan_id": 101,
+          "server_id": 42,
+          "order_id": 0,
+          "request_date": 1799999940
+        }
+      },
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `pays` WHERE `id` = ?",
+          "types": "i",
+          "params": [
+            31
+          ]
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `discounts` WHERE (`expire_date` > 1800000000 OR `expire_date` = 0) AND (`expire_count` > 0 OR `expire_count` = -1) AND `is_active` = 1 AND `hash_id` = ?",
+          "types": "s",
+          "params": [
+            "FIXTURE20"
+          ]
+        },
+        {
+          "kind": "http.fake",
+          "url": "https://api.telegram.org/botfixture-token/sendMessage",
+          "options": {
+            "CURLOPT_URL": "https://api.telegram.org/botfixture-token/sendMessage",
+            "CURLOPT_POST": true,
+            "CURLOPT_POSTFIELDS": "chat_id=1001&text=%DA%A9%D8%AF+%D8%AA%D8%AE%D9%81%DB%8C%D9%81+%D9%88%D8%A7%D8%B1%D8%AF+%D8%B4%D8%AF%D9%87+%D8%A7%D8%B4%D8%AA%D8%A8%D8%A7%D9%87+%D8%A7%D8%B3%D8%AA.&parse_mode=MarkDown",
+            "CURLOPT_RETURNTRANSFER": true,
+            "CURLOPT_TIMEOUT": 10,
+            "CURLOPT_CONNECTTIMEOUT": 5,
+            "CURLOPT_IPRESOLVE": 10007,
+            "CURLOPT_HTTPHEADER": [
+              "Expect:"
+            ],
+            "CURLOPT_HTTP_VERSION": 10010,
+            "CURLOPT_NOSIGNAL": true,
+            "CURLOPT_DNS_CACHE_TIMEOUT": 300,
+            "CURLOPT_DNS_SERVERS": "1.1.1.1,9.9.9.9,8.8.8.8",
+            "CURLOPT_TCP_KEEPALIVE": 1,
+            "CURLOPT_TCP_KEEPIDLE": 30,
+            "CURLOPT_TCP_KEEPINTVL": 15
+          }
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "discount.wrong_audience": {
+      "result": {
+        "success": false,
+        "price": 12000,
+        "hash_id": "fixturehash1",
+        "discount_value": 0,
+        "discount_text": "",
+        "payInfo": {
+          "id": 31,
+          "hash_id": "fixturehash1",
+          "user_id": 1001,
+          "type": "BUY_SUB",
+          "price": 12000,
+          "state": "pending",
+          "plan_id": 101,
+          "server_id": 42,
+          "order_id": 0,
+          "request_date": 1799999940
+        }
+      },
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `pays` WHERE `id` = ?",
+          "types": "i",
+          "params": [
+            31
+          ]
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `discounts` WHERE (`expire_date` > 1800000000 OR `expire_date` = 0) AND (`expire_count` > 0 OR `expire_count` = -1) AND `is_active` = 1 AND `hash_id` = ?",
+          "types": "s",
+          "params": [
+            "FIXTURE20"
+          ]
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT `is_agent` FROM `users` WHERE `userid` = ? LIMIT 1",
+          "types": "i",
+          "params": [
+            1001
+          ]
+        },
+        {
+          "kind": "http.fake",
+          "url": "https://api.telegram.org/botfixture-token/sendMessage",
+          "options": {
+            "CURLOPT_URL": "https://api.telegram.org/botfixture-token/sendMessage",
+            "CURLOPT_POST": true,
+            "CURLOPT_POSTFIELDS": "chat_id=1001&text=%D8%A7%DB%8C%D9%86+%DA%A9%D8%AF+%D8%A8%D8%B1%D8%A7%DB%8C+%D8%AD%D8%B3%D8%A7%D8%A8+%D8%B4%D9%85%D8%A7+%D9%81%D8%B9%D8%A7%D9%84+%D9%86%DB%8C%D8%B3%D8%AA.&parse_mode=MarkDown",
+            "CURLOPT_RETURNTRANSFER": true,
+            "CURLOPT_TIMEOUT": 10,
+            "CURLOPT_CONNECTTIMEOUT": 5,
+            "CURLOPT_IPRESOLVE": 10007,
+            "CURLOPT_HTTPHEADER": [
+              "Expect:"
+            ],
+            "CURLOPT_HTTP_VERSION": 10010,
+            "CURLOPT_NOSIGNAL": true,
+            "CURLOPT_DNS_CACHE_TIMEOUT": 300,
+            "CURLOPT_DNS_SERVERS": "1.1.1.1,9.9.9.9,8.8.8.8",
+            "CURLOPT_TCP_KEEPALIVE": 1,
+            "CURLOPT_TCP_KEEPIDLE": 30,
+            "CURLOPT_TCP_KEEPINTVL": 15
+          }
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "discount.minprice": {
+      "result": {
+        "success": false,
+        "price": 12000,
+        "hash_id": "fixturehash1",
+        "discount_value": 0,
+        "discount_text": "",
+        "payInfo": {
+          "id": 31,
+          "hash_id": "fixturehash1",
+          "user_id": 1001,
+          "type": "BUY_SUB",
+          "price": 12000,
+          "state": "pending",
+          "plan_id": 101,
+          "server_id": 42,
+          "order_id": 0,
+          "request_date": 1799999940
+        }
+      },
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `pays` WHERE `id` = ?",
+          "types": "i",
+          "params": [
+            31
+          ]
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `discounts` WHERE (`expire_date` > 1800000000 OR `expire_date` = 0) AND (`expire_count` > 0 OR `expire_count` = -1) AND `is_active` = 1 AND `hash_id` = ?",
+          "types": "s",
+          "params": [
+            "FIXTURE20"
+          ]
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT `is_agent` FROM `users` WHERE `userid` = ? LIMIT 1",
+          "types": "i",
+          "params": [
+            1001
+          ]
+        },
+        {
+          "kind": "http.fake",
+          "url": "https://api.telegram.org/botfixture-token/sendMessage",
+          "options": {
+            "CURLOPT_URL": "https://api.telegram.org/botfixture-token/sendMessage",
+            "CURLOPT_POST": true,
+            "CURLOPT_POSTFIELDS": "chat_id=1001&text=%D8%A7%DB%8C%D9%86+%DA%A9%D8%AF+%D9%81%D9%82%D8%B7+%D8%A8%D8%B1%D8%A7%DB%8C+%D8%B3%D9%81%D8%A7%D8%B1%D8%B4%E2%80%8C%D9%87%D8%A7%DB%8C+%D8%A8%D8%A7%D9%84%D8%A7%D8%AA%D8%B1+%D8%A7%D8%B2+20%2C000+%D8%AA%D9%88%D9%85%D8%A7%D9%86+%D9%82%D8%A7%D8%A8%D9%84+%D8%A7%D8%B3%D8%AA%D9%81%D8%A7%D8%AF%D9%87+%D8%A7%D8%B3%D8%AA.&parse_mode=MarkDown",
+            "CURLOPT_RETURNTRANSFER": true,
+            "CURLOPT_TIMEOUT": 10,
+            "CURLOPT_CONNECTTIMEOUT": 5,
+            "CURLOPT_IPRESOLVE": 10007,
+            "CURLOPT_HTTPHEADER": [
+              "Expect:"
+            ],
+            "CURLOPT_HTTP_VERSION": 10010,
+            "CURLOPT_NOSIGNAL": true,
+            "CURLOPT_DNS_CACHE_TIMEOUT": 300,
+            "CURLOPT_DNS_SERVERS": "1.1.1.1,9.9.9.9,8.8.8.8",
+            "CURLOPT_TCP_KEEPALIVE": 1,
+            "CURLOPT_TCP_KEEPIDLE": 30,
+            "CURLOPT_TCP_KEEPINTVL": 15
+          }
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "discount.used": {
+      "result": {
+        "success": false,
+        "price": 12000,
+        "hash_id": "fixturehash1",
+        "discount_value": 0,
+        "discount_text": "",
+        "payInfo": {
+          "id": 31,
+          "hash_id": "fixturehash1",
+          "user_id": 1001,
+          "type": "BUY_SUB",
+          "price": 12000,
+          "state": "pending",
+          "plan_id": 101,
+          "server_id": 42,
+          "order_id": 0,
+          "request_date": 1799999940
+        }
+      },
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `pays` WHERE `id` = ?",
+          "types": "i",
+          "params": [
+            31
+          ]
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `discounts` WHERE (`expire_date` > 1800000000 OR `expire_date` = 0) AND (`expire_count` > 0 OR `expire_count` = -1) AND `is_active` = 1 AND `hash_id` = ?",
+          "types": "s",
+          "params": [
+            "FIXTURE20"
+          ]
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT `is_agent` FROM `users` WHERE `userid` = ? LIMIT 1",
+          "types": "i",
+          "params": [
+            1001
+          ]
+        },
+        {
+          "kind": "http.fake",
+          "url": "https://api.telegram.org/botfixture-token/sendMessage",
+          "options": {
+            "CURLOPT_URL": "https://api.telegram.org/botfixture-token/sendMessage",
+            "CURLOPT_POST": true,
+            "CURLOPT_POSTFIELDS": "chat_id=1001&text=%D8%A7%D8%B2+%D8%A7%DB%8C%D9%86+%DA%A9%D8%AF+%D8%A8%D9%87+%D8%AD%D8%AF%D8%A7%DA%A9%D8%AB%D8%B1+%D8%AA%D8%B9%D8%AF%D8%A7%D8%AF+%D9%85%D8%AC%D8%A7%D8%B2+%D8%A7%D8%B3%D8%AA%D9%81%D8%A7%D8%AF%D9%87+%DA%A9%D8%B1%D8%AF%D9%87%E2%80%8C%D8%A7%DB%8C%D8%AF.&parse_mode=MarkDown",
+            "CURLOPT_RETURNTRANSFER": true,
+            "CURLOPT_TIMEOUT": 10,
+            "CURLOPT_CONNECTTIMEOUT": 5,
+            "CURLOPT_IPRESOLVE": 10007,
+            "CURLOPT_HTTPHEADER": [
+              "Expect:"
+            ],
+            "CURLOPT_HTTP_VERSION": 10010,
+            "CURLOPT_NOSIGNAL": true,
+            "CURLOPT_DNS_CACHE_TIMEOUT": 300,
+            "CURLOPT_DNS_SERVERS": "1.1.1.1,9.9.9.9,8.8.8.8",
+            "CURLOPT_TCP_KEEPALIVE": 1,
+            "CURLOPT_TCP_KEEPIDLE": 30,
+            "CURLOPT_TCP_KEEPINTVL": 15
+          }
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "discount.percent": {
+      "result": {
+        "success": true,
+        "price": 9600,
+        "hash_id": "fixturehash1",
+        "discount_value": 2400,
+        "discount_text": "2,400 تومان",
+        "payInfo": {
+          "id": 31,
+          "hash_id": "fixturehash1",
+          "user_id": 1001,
+          "type": "BUY_SUB",
+          "price": 12000,
+          "state": "pending",
+          "plan_id": 101,
+          "server_id": 42,
+          "order_id": 0,
+          "request_date": 1799999940
+        }
+      },
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `pays` WHERE `id` = ?",
+          "types": "i",
+          "params": [
+            31
+          ]
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `discounts` WHERE (`expire_date` > 1800000000 OR `expire_date` = 0) AND (`expire_count` > 0 OR `expire_count` = -1) AND `is_active` = 1 AND `hash_id` = ?",
+          "types": "s",
+          "params": [
+            "FIXTURE20"
+          ]
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT `is_agent` FROM `users` WHERE `userid` = ? LIMIT 1",
+          "types": "i",
+          "params": [
+            1001
+          ]
+        },
+        {
+          "kind": "db.sql",
+          "sql": "UPDATE `discounts` SET `expire_count` = `expire_count` - 1, `used_by` = ? WHERE `id` = ?",
+          "types": "si",
+          "params": [
+            "[1001]",
+            41
+          ]
+        },
+        {
+          "kind": "db.sql",
+          "sql": "UPDATE `pays` SET `price` = ? WHERE `id` = ?",
+          "types": "ii",
+          "params": [
+            9600,
+            31
+          ]
+        },
+        {
+          "kind": "http.fake",
+          "url": "https://api.telegram.org/botfixture-token/sendMessage",
+          "options": {
+            "CURLOPT_URL": "https://api.telegram.org/botfixture-token/sendMessage",
+            "CURLOPT_POST": true,
+            "CURLOPT_POSTFIELDS": "chat_id=1001&text=%E2%9C%85+%DA%A9%D8%AF+%D8%AA%D8%AE%D9%81%DB%8C%D9%81+%D8%A8%D8%A7+%D9%85%D9%88%D9%81%D9%82%DB%8C%D8%AA+%D8%A7%D8%B3%D8%AA%D9%81%D8%A7%D8%AF%D9%87+%D8%B4%D8%AF.%0A%F0%9F%8E%81+%D9%85%D9%82%D8%AF%D8%A7%D8%B1+%D8%AA%D8%AE%D9%81%DB%8C%D9%81+2%2C400+%D8%AA%D9%88%D9%85%D8%A7%D9%86&parse_mode=MarkDown",
+            "CURLOPT_RETURNTRANSFER": true,
+            "CURLOPT_TIMEOUT": 10,
+            "CURLOPT_CONNECTTIMEOUT": 5,
+            "CURLOPT_IPRESOLVE": 10007,
+            "CURLOPT_HTTPHEADER": [
+              "Expect:"
+            ],
+            "CURLOPT_HTTP_VERSION": 10010,
+            "CURLOPT_NOSIGNAL": true,
+            "CURLOPT_DNS_CACHE_TIMEOUT": 300,
+            "CURLOPT_DNS_SERVERS": "1.1.1.1,9.9.9.9,8.8.8.8",
+            "CURLOPT_TCP_KEEPALIVE": 1,
+            "CURLOPT_TCP_KEEPIDLE": 30,
+            "CURLOPT_TCP_KEEPINTVL": 15
+          }
+        },
+        {
+          "kind": "http.fake",
+          "url": "https://api.telegram.org/botfixture-token/sendMessage",
+          "options": {
+            "CURLOPT_URL": "https://api.telegram.org/botfixture-token/sendMessage",
+            "CURLOPT_POST": true,
+            "CURLOPT_POSTFIELDS": "chat_id=9001&text=%E2%98%91%EF%B8%8F+%7C+%F0%9F%8E%81+%DA%A9%D8%AF+%D8%AA%D8%AE%D9%81%DB%8C%D9%81+%D8%A7%D8%B3%D8%AA%D9%81%D8%A7%D8%AF%D9%87+%D8%B4%D8%AF.%0A%0A%F0%9F%94%B0+%D8%B4%D9%86%D8%A7%D8%B3%D9%87+%D8%B9%D8%AF%D8%AF%DB%8C%3A+1001%0A%F0%9F%91%A8+%D8%A7%D8%B3%D9%85+%DA%A9%D8%A7%D8%B1%D8%A8%D8%B1%3A+Fixture%0A%E2%9A%A1%EF%B8%8F+%D9%86%D8%A7%D9%85+%DA%A9%D8%A7%D8%B1%D8%A8%D8%B1%DB%8C%3A+%40fixture_user%0A%F0%9F%8E%81+%DA%A9%D8%AF+%D8%AA%D8%AE%D9%81%DB%8C%D9%81%3A+FIXTURE20%0A%F0%9F%92%B0+%D9%85%D9%82%D8%AF%D8%A7%D8%B1+%D8%AA%D8%AE%D9%81%DB%8C%D9%81%3A+2%2C400+%D8%AA%D9%88%D9%85%D8%A7%D9%86%0A&reply_markup=%7B%22inline_keyboard%22%3A%5B%5B%7B%22text%22%3A%22%5Cu2764%5Cufe0f%22%2C%22callback_data%22%3A%22wizwizch%22%7D%5D%5D%7D",
+            "CURLOPT_RETURNTRANSFER": true,
+            "CURLOPT_TIMEOUT": 10,
+            "CURLOPT_CONNECTTIMEOUT": 5,
+            "CURLOPT_IPRESOLVE": 10007,
+            "CURLOPT_HTTPHEADER": [
+              "Expect:"
+            ],
+            "CURLOPT_HTTP_VERSION": 10010,
+            "CURLOPT_NOSIGNAL": true,
+            "CURLOPT_DNS_CACHE_TIMEOUT": 300,
+            "CURLOPT_DNS_SERVERS": "1.1.1.1,9.9.9.9,8.8.8.8",
+            "CURLOPT_TCP_KEEPALIVE": 1,
+            "CURLOPT_TCP_KEEPIDLE": 30,
+            "CURLOPT_TCP_KEEPINTVL": 15
+          }
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "discount.fixed_cap": {
+      "result": {
+        "success": true,
+        "price": 10500,
+        "hash_id": "fixturehash1",
+        "discount_value": 1500,
+        "discount_text": "1,500 تومان",
+        "payInfo": {
+          "id": 31,
+          "hash_id": "fixturehash1",
+          "user_id": 1001,
+          "type": "BUY_SUB",
+          "price": 12000,
+          "state": "pending",
+          "plan_id": 101,
+          "server_id": 42,
+          "order_id": 0,
+          "request_date": 1799999940
+        }
+      },
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `pays` WHERE `id` = ?",
+          "types": "i",
+          "params": [
+            31
+          ]
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `discounts` WHERE (`expire_date` > 1800000000 OR `expire_date` = 0) AND (`expire_count` > 0 OR `expire_count` = -1) AND `is_active` = 1 AND `hash_id` = ?",
+          "types": "s",
+          "params": [
+            "FIXTURE20"
+          ]
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT `is_agent` FROM `users` WHERE `userid` = ? LIMIT 1",
+          "types": "i",
+          "params": [
+            1001
+          ]
+        },
+        {
+          "kind": "db.sql",
+          "sql": "UPDATE `discounts` SET `expire_count` = `expire_count` - 1, `used_by` = ? WHERE `id` = ?",
+          "types": "si",
+          "params": [
+            "[1001]",
+            41
+          ]
+        },
+        {
+          "kind": "db.sql",
+          "sql": "UPDATE `pays` SET `price` = ? WHERE `id` = ?",
+          "types": "ii",
+          "params": [
+            10500,
+            31
+          ]
+        },
+        {
+          "kind": "http.fake",
+          "url": "https://api.telegram.org/botfixture-token/sendMessage",
+          "options": {
+            "CURLOPT_URL": "https://api.telegram.org/botfixture-token/sendMessage",
+            "CURLOPT_POST": true,
+            "CURLOPT_POSTFIELDS": "chat_id=1001&text=%E2%9C%85+%DA%A9%D8%AF+%D8%AA%D8%AE%D9%81%DB%8C%D9%81+%D8%A8%D8%A7+%D9%85%D9%88%D9%81%D9%82%DB%8C%D8%AA+%D8%A7%D8%B3%D8%AA%D9%81%D8%A7%D8%AF%D9%87+%D8%B4%D8%AF.%0A%F0%9F%8E%81+%D9%85%D9%82%D8%AF%D8%A7%D8%B1+%D8%AA%D8%AE%D9%81%DB%8C%D9%81+1%2C500+%D8%AA%D9%88%D9%85%D8%A7%D9%86&parse_mode=MarkDown",
+            "CURLOPT_RETURNTRANSFER": true,
+            "CURLOPT_TIMEOUT": 10,
+            "CURLOPT_CONNECTTIMEOUT": 5,
+            "CURLOPT_IPRESOLVE": 10007,
+            "CURLOPT_HTTPHEADER": [
+              "Expect:"
+            ],
+            "CURLOPT_HTTP_VERSION": 10010,
+            "CURLOPT_NOSIGNAL": true,
+            "CURLOPT_DNS_CACHE_TIMEOUT": 300,
+            "CURLOPT_DNS_SERVERS": "1.1.1.1,9.9.9.9,8.8.8.8",
+            "CURLOPT_TCP_KEEPALIVE": 1,
+            "CURLOPT_TCP_KEEPIDLE": 30,
+            "CURLOPT_TCP_KEEPINTVL": 15
+          }
+        },
+        {
+          "kind": "http.fake",
+          "url": "https://api.telegram.org/botfixture-token/sendMessage",
+          "options": {
+            "CURLOPT_URL": "https://api.telegram.org/botfixture-token/sendMessage",
+            "CURLOPT_POST": true,
+            "CURLOPT_POSTFIELDS": "chat_id=9001&text=%E2%98%91%EF%B8%8F+%7C+%F0%9F%8E%81+%DA%A9%D8%AF+%D8%AA%D8%AE%D9%81%DB%8C%D9%81+%D8%A7%D8%B3%D8%AA%D9%81%D8%A7%D8%AF%D9%87+%D8%B4%D8%AF.%0A%0A%F0%9F%94%B0+%D8%B4%D9%86%D8%A7%D8%B3%D9%87+%D8%B9%D8%AF%D8%AF%DB%8C%3A+1001%0A%F0%9F%91%A8+%D8%A7%D8%B3%D9%85+%DA%A9%D8%A7%D8%B1%D8%A8%D8%B1%3A+Fixture%0A%E2%9A%A1%EF%B8%8F+%D9%86%D8%A7%D9%85+%DA%A9%D8%A7%D8%B1%D8%A8%D8%B1%DB%8C%3A+%40fixture_user%0A%F0%9F%8E%81+%DA%A9%D8%AF+%D8%AA%D8%AE%D9%81%DB%8C%D9%81%3A+FIXTURE20%0A%F0%9F%92%B0+%D9%85%D9%82%D8%AF%D8%A7%D8%B1+%D8%AA%D8%AE%D9%81%DB%8C%D9%81%3A+1%2C500+%D8%AA%D9%88%D9%85%D8%A7%D9%86%0A&reply_markup=%7B%22inline_keyboard%22%3A%5B%5B%7B%22text%22%3A%22%5Cu2764%5Cufe0f%22%2C%22callback_data%22%3A%22wizwizch%22%7D%5D%5D%7D",
+            "CURLOPT_RETURNTRANSFER": true,
+            "CURLOPT_TIMEOUT": 10,
+            "CURLOPT_CONNECTTIMEOUT": 5,
+            "CURLOPT_IPRESOLVE": 10007,
+            "CURLOPT_HTTPHEADER": [
+              "Expect:"
+            ],
+            "CURLOPT_HTTP_VERSION": 10010,
+            "CURLOPT_NOSIGNAL": true,
+            "CURLOPT_DNS_CACHE_TIMEOUT": 300,
+            "CURLOPT_DNS_SERVERS": "1.1.1.1,9.9.9.9,8.8.8.8",
+            "CURLOPT_TCP_KEEPALIVE": 1,
+            "CURLOPT_TCP_KEEPIDLE": 30,
+            "CURLOPT_TCP_KEEPINTVL": 15
+          }
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "discount.unlimited": {
+      "result": {
+        "success": true,
+        "price": 9600,
+        "hash_id": "fixturehash1",
+        "discount_value": 2400,
+        "discount_text": "2,400 تومان",
+        "payInfo": {
+          "id": 31,
+          "hash_id": "fixturehash1",
+          "user_id": 1001,
+          "type": "BUY_SUB",
+          "price": 12000,
+          "state": "pending",
+          "plan_id": 101,
+          "server_id": 42,
+          "order_id": 0,
+          "request_date": 1799999940
+        }
+      },
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `pays` WHERE `id` = ?",
+          "types": "i",
+          "params": [
+            31
+          ]
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `discounts` WHERE (`expire_date` > 1800000000 OR `expire_date` = 0) AND (`expire_count` > 0 OR `expire_count` = -1) AND `is_active` = 1 AND `hash_id` = ?",
+          "types": "s",
+          "params": [
+            "FIXTURE20"
+          ]
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT `is_agent` FROM `users` WHERE `userid` = ? LIMIT 1",
+          "types": "i",
+          "params": [
+            1001
+          ]
+        },
+        {
+          "kind": "db.sql",
+          "sql": "UPDATE `discounts` SET `used_by` = ? WHERE `id` = ?",
+          "types": "si",
+          "params": [
+            "[1001,1001]",
+            41
+          ]
+        },
+        {
+          "kind": "db.sql",
+          "sql": "UPDATE `pays` SET `price` = ? WHERE `id` = ?",
+          "types": "ii",
+          "params": [
+            9600,
+            31
+          ]
+        },
+        {
+          "kind": "http.fake",
+          "url": "https://api.telegram.org/botfixture-token/sendMessage",
+          "options": {
+            "CURLOPT_URL": "https://api.telegram.org/botfixture-token/sendMessage",
+            "CURLOPT_POST": true,
+            "CURLOPT_POSTFIELDS": "chat_id=1001&text=%E2%9C%85+%DA%A9%D8%AF+%D8%AA%D8%AE%D9%81%DB%8C%D9%81+%D8%A8%D8%A7+%D9%85%D9%88%D9%81%D9%82%DB%8C%D8%AA+%D8%A7%D8%B3%D8%AA%D9%81%D8%A7%D8%AF%D9%87+%D8%B4%D8%AF.%0A%F0%9F%8E%81+%D9%85%D9%82%D8%AF%D8%A7%D8%B1+%D8%AA%D8%AE%D9%81%DB%8C%D9%81+2%2C400+%D8%AA%D9%88%D9%85%D8%A7%D9%86&parse_mode=MarkDown",
+            "CURLOPT_RETURNTRANSFER": true,
+            "CURLOPT_TIMEOUT": 10,
+            "CURLOPT_CONNECTTIMEOUT": 5,
+            "CURLOPT_IPRESOLVE": 10007,
+            "CURLOPT_HTTPHEADER": [
+              "Expect:"
+            ],
+            "CURLOPT_HTTP_VERSION": 10010,
+            "CURLOPT_NOSIGNAL": true,
+            "CURLOPT_DNS_CACHE_TIMEOUT": 300,
+            "CURLOPT_DNS_SERVERS": "1.1.1.1,9.9.9.9,8.8.8.8",
+            "CURLOPT_TCP_KEEPALIVE": 1,
+            "CURLOPT_TCP_KEEPIDLE": 30,
+            "CURLOPT_TCP_KEEPINTVL": 15
+          }
+        },
+        {
+          "kind": "http.fake",
+          "url": "https://api.telegram.org/botfixture-token/sendMessage",
+          "options": {
+            "CURLOPT_URL": "https://api.telegram.org/botfixture-token/sendMessage",
+            "CURLOPT_POST": true,
+            "CURLOPT_POSTFIELDS": "chat_id=9001&text=%E2%98%91%EF%B8%8F+%7C+%F0%9F%8E%81+%DA%A9%D8%AF+%D8%AA%D8%AE%D9%81%DB%8C%D9%81+%D8%A7%D8%B3%D8%AA%D9%81%D8%A7%D8%AF%D9%87+%D8%B4%D8%AF.%0A%0A%F0%9F%94%B0+%D8%B4%D9%86%D8%A7%D8%B3%D9%87+%D8%B9%D8%AF%D8%AF%DB%8C%3A+1001%0A%F0%9F%91%A8+%D8%A7%D8%B3%D9%85+%DA%A9%D8%A7%D8%B1%D8%A8%D8%B1%3A+Fixture%0A%E2%9A%A1%EF%B8%8F+%D9%86%D8%A7%D9%85+%DA%A9%D8%A7%D8%B1%D8%A8%D8%B1%DB%8C%3A+%40fixture_user%0A%F0%9F%8E%81+%DA%A9%D8%AF+%D8%AA%D8%AE%D9%81%DB%8C%D9%81%3A+FIXTURE20%0A%F0%9F%92%B0+%D9%85%D9%82%D8%AF%D8%A7%D8%B1+%D8%AA%D8%AE%D9%81%DB%8C%D9%81%3A+2%2C400+%D8%AA%D9%88%D9%85%D8%A7%D9%86%0A&reply_markup=%7B%22inline_keyboard%22%3A%5B%5B%7B%22text%22%3A%22%5Cu2764%5Cufe0f%22%2C%22callback_data%22%3A%22wizwizch%22%7D%5D%5D%7D",
+            "CURLOPT_RETURNTRANSFER": true,
+            "CURLOPT_TIMEOUT": 10,
+            "CURLOPT_CONNECTTIMEOUT": 5,
+            "CURLOPT_IPRESOLVE": 10007,
+            "CURLOPT_HTTPHEADER": [
+              "Expect:"
+            ],
+            "CURLOPT_HTTP_VERSION": 10010,
+            "CURLOPT_NOSIGNAL": true,
+            "CURLOPT_DNS_CACHE_TIMEOUT": 300,
+            "CURLOPT_DNS_SERVERS": "1.1.1.1,9.9.9.9,8.8.8.8",
+            "CURLOPT_TCP_KEEPALIVE": 1,
+            "CURLOPT_TCP_KEEPIDLE": 30,
+            "CURLOPT_TCP_KEEPINTVL": 15
+          }
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "discount.wrong_target": {
+      "result": {
+        "success": false,
+        "price": 12000,
+        "hash_id": "fixturehash1",
+        "discount_value": 0,
+        "discount_text": "",
+        "payInfo": {
+          "id": 31,
+          "hash_id": "fixturehash1",
+          "user_id": 1001,
+          "type": "BUY_SUB",
+          "price": 12000,
+          "state": "pending",
+          "plan_id": 101,
+          "server_id": 42,
+          "order_id": 0,
+          "request_date": 1799999940
+        }
+      },
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `pays` WHERE `id` = ?",
+          "types": "i",
+          "params": [
+            31
+          ]
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `discounts` WHERE (`expire_date` > 1800000000 OR `expire_date` = 0) AND (`expire_count` > 0 OR `expire_count` = -1) AND `is_active` = 1 AND `hash_id` = ?",
+          "types": "s",
+          "params": [
+            "FIXTURE20"
+          ]
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT `is_agent` FROM `users` WHERE `userid` = ? LIMIT 1",
+          "types": "i",
+          "params": [
+            1001
+          ]
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT `server_id`, `catid` FROM `server_plans` WHERE `id` = ? LIMIT 1",
+          "types": "i",
+          "params": [
+            101
+          ]
+        },
+        {
+          "kind": "http.fake",
+          "url": "https://api.telegram.org/botfixture-token/sendMessage",
+          "options": {
+            "CURLOPT_URL": "https://api.telegram.org/botfixture-token/sendMessage",
+            "CURLOPT_POST": true,
+            "CURLOPT_POSTFIELDS": "chat_id=1001&text=%D8%A7%DB%8C%D9%86+%DA%A9%D8%AF+%D8%A8%D8%B1%D8%A7%DB%8C+%D8%A7%DB%8C%D9%86+%D8%B3%D8%B1%D9%88%DB%8C%D8%B3+%D9%82%D8%A7%D8%A8%D9%84+%D8%A7%D8%B3%D8%AA%D9%81%D8%A7%D8%AF%D9%87+%D9%86%DB%8C%D8%B3%D8%AA.&parse_mode=MarkDown",
+            "CURLOPT_RETURNTRANSFER": true,
+            "CURLOPT_TIMEOUT": 10,
+            "CURLOPT_CONNECTTIMEOUT": 5,
+            "CURLOPT_IPRESOLVE": 10007,
+            "CURLOPT_HTTPHEADER": [
+              "Expect:"
+            ],
+            "CURLOPT_HTTP_VERSION": 10010,
+            "CURLOPT_NOSIGNAL": true,
+            "CURLOPT_DNS_CACHE_TIMEOUT": 300,
+            "CURLOPT_DNS_SERVERS": "1.1.1.1,9.9.9.9,8.8.8.8",
+            "CURLOPT_TCP_KEEPALIVE": 1,
+            "CURLOPT_TCP_KEEPIDLE": 30,
+            "CURLOPT_TCP_KEEPINTVL": 15
+          }
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "discount.zero_clamp": {
+      "result": {
+        "success": true,
+        "price": 0,
+        "hash_id": "fixturehash1",
+        "discount_value": 20000,
+        "discount_text": "20,000 تومان",
+        "payInfo": {
+          "id": 31,
+          "hash_id": "fixturehash1",
+          "user_id": 1001,
+          "type": "BUY_SUB",
+          "price": 12000,
+          "state": "pending",
+          "plan_id": 101,
+          "server_id": 42,
+          "order_id": 0,
+          "request_date": 1799999940
+        }
+      },
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `pays` WHERE `id` = ?",
+          "types": "i",
+          "params": [
+            31
+          ]
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `discounts` WHERE (`expire_date` > 1800000000 OR `expire_date` = 0) AND (`expire_count` > 0 OR `expire_count` = -1) AND `is_active` = 1 AND `hash_id` = ?",
+          "types": "s",
+          "params": [
+            "FIXTURE20"
+          ]
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT `is_agent` FROM `users` WHERE `userid` = ? LIMIT 1",
+          "types": "i",
+          "params": [
+            1001
+          ]
+        },
+        {
+          "kind": "db.sql",
+          "sql": "UPDATE `discounts` SET `expire_count` = `expire_count` - 1, `used_by` = ? WHERE `id` = ?",
+          "types": "si",
+          "params": [
+            "[1001]",
+            41
+          ]
+        },
+        {
+          "kind": "db.sql",
+          "sql": "UPDATE `pays` SET `price` = ? WHERE `id` = ?",
+          "types": "ii",
+          "params": [
+            0,
+            31
+          ]
+        },
+        {
+          "kind": "http.fake",
+          "url": "https://api.telegram.org/botfixture-token/sendMessage",
+          "options": {
+            "CURLOPT_URL": "https://api.telegram.org/botfixture-token/sendMessage",
+            "CURLOPT_POST": true,
+            "CURLOPT_POSTFIELDS": "chat_id=1001&text=%E2%9C%85+%DA%A9%D8%AF+%D8%AA%D8%AE%D9%81%DB%8C%D9%81+%D8%A8%D8%A7+%D9%85%D9%88%D9%81%D9%82%DB%8C%D8%AA+%D8%A7%D8%B3%D8%AA%D9%81%D8%A7%D8%AF%D9%87+%D8%B4%D8%AF.%0A%F0%9F%8E%81+%D9%85%D9%82%D8%AF%D8%A7%D8%B1+%D8%AA%D8%AE%D9%81%DB%8C%D9%81+20%2C000+%D8%AA%D9%88%D9%85%D8%A7%D9%86&parse_mode=MarkDown",
+            "CURLOPT_RETURNTRANSFER": true,
+            "CURLOPT_TIMEOUT": 10,
+            "CURLOPT_CONNECTTIMEOUT": 5,
+            "CURLOPT_IPRESOLVE": 10007,
+            "CURLOPT_HTTPHEADER": [
+              "Expect:"
+            ],
+            "CURLOPT_HTTP_VERSION": 10010,
+            "CURLOPT_NOSIGNAL": true,
+            "CURLOPT_DNS_CACHE_TIMEOUT": 300,
+            "CURLOPT_DNS_SERVERS": "1.1.1.1,9.9.9.9,8.8.8.8",
+            "CURLOPT_TCP_KEEPALIVE": 1,
+            "CURLOPT_TCP_KEEPIDLE": 30,
+            "CURLOPT_TCP_KEEPINTVL": 15
+          }
+        },
+        {
+          "kind": "http.fake",
+          "url": "https://api.telegram.org/botfixture-token/sendMessage",
+          "options": {
+            "CURLOPT_URL": "https://api.telegram.org/botfixture-token/sendMessage",
+            "CURLOPT_POST": true,
+            "CURLOPT_POSTFIELDS": "chat_id=9001&text=%E2%98%91%EF%B8%8F+%7C+%F0%9F%8E%81+%DA%A9%D8%AF+%D8%AA%D8%AE%D9%81%DB%8C%D9%81+%D8%A7%D8%B3%D8%AA%D9%81%D8%A7%D8%AF%D9%87+%D8%B4%D8%AF.%0A%0A%F0%9F%94%B0+%D8%B4%D9%86%D8%A7%D8%B3%D9%87+%D8%B9%D8%AF%D8%AF%DB%8C%3A+1001%0A%F0%9F%91%A8+%D8%A7%D8%B3%D9%85+%DA%A9%D8%A7%D8%B1%D8%A8%D8%B1%3A+Fixture%0A%E2%9A%A1%EF%B8%8F+%D9%86%D8%A7%D9%85+%DA%A9%D8%A7%D8%B1%D8%A8%D8%B1%DB%8C%3A+%40fixture_user%0A%F0%9F%8E%81+%DA%A9%D8%AF+%D8%AA%D8%AE%D9%81%DB%8C%D9%81%3A+FIXTURE20%0A%F0%9F%92%B0+%D9%85%D9%82%D8%AF%D8%A7%D8%B1+%D8%AA%D8%AE%D9%81%DB%8C%D9%81%3A+20%2C000+%D8%AA%D9%88%D9%85%D8%A7%D9%86%0A&reply_markup=%7B%22inline_keyboard%22%3A%5B%5B%7B%22text%22%3A%22%5Cu2764%5Cufe0f%22%2C%22callback_data%22%3A%22wizwizch%22%7D%5D%5D%7D",
+            "CURLOPT_RETURNTRANSFER": true,
+            "CURLOPT_TIMEOUT": 10,
+            "CURLOPT_CONNECTTIMEOUT": 5,
+            "CURLOPT_IPRESOLVE": 10007,
+            "CURLOPT_HTTPHEADER": [
+              "Expect:"
+            ],
+            "CURLOPT_HTTP_VERSION": 10010,
+            "CURLOPT_NOSIGNAL": true,
+            "CURLOPT_DNS_CACHE_TIMEOUT": 300,
+            "CURLOPT_DNS_SERVERS": "1.1.1.1,9.9.9.9,8.8.8.8",
+            "CURLOPT_TCP_KEEPALIVE": 1,
+            "CURLOPT_TCP_KEEPIDLE": 30,
+            "CURLOPT_TCP_KEEPINTVL": 15
+          }
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "receipt.current": {
+      "result": "⛔️ شما درخواست مشابه‌ای قبلا ثبت کرده‌اید.\n⚠️ لطفاً منتظر بررسی پشتیبانی بمانید.",
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "receipt.recent_buy": {
+      "result": "⛔️ شما اخیراً یک درخواست مشابه با وضعیت تایید شده داشته‌اید.\n⚠️ لطفاً حدود 1 دقیقه دیگر دوباره تلاش کنید.",
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT `state`, `request_date` FROM `pays` WHERE `user_id` = ? AND `hash_id` <> ? AND `type` = ? AND IFNULL(`plan_id`,0) = ? AND IFNULL(`server_id`,0) = ? AND IFNULL(`price`,0) = ? AND `request_date` >= ? ORDER BY `request_date` DESC LIMIT 200",
+          "types": "issiiii",
+          "params": [
+            1001,
+            "fixturehash1",
+            "BUY_SUB",
+            101,
+            42,
+            12000,
+            1799978400
+          ]
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "receipt.boundary_buy": {
+      "result": null,
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT `state`, `request_date` FROM `pays` WHERE `user_id` = ? AND `hash_id` <> ? AND `type` = ? AND IFNULL(`plan_id`,0) = ? AND IFNULL(`server_id`,0) = ? AND IFNULL(`price`,0) = ? AND `request_date` >= ? ORDER BY `request_date` DESC LIMIT 200",
+          "types": "issiiii",
+          "params": [
+            1001,
+            "fixturehash1",
+            "BUY_SUB",
+            101,
+            42,
+            12000,
+            1799978400
+          ]
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "receipt.renew": {
+      "result": "⛔️ شما اخیراً یک درخواست مشابه با وضعیت تایید شده داشته‌اید.\n⚠️ لطفاً حدود 1 دقیقه دیگر دوباره تلاش کنید.",
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT `state`, `request_date` FROM `pays` WHERE `user_id` = ? AND `hash_id` <> ? AND `type` = ? AND IFNULL(`plan_id`,0) = ? AND IFNULL(`server_id`,0) = ? AND IFNULL(`order_id`,0) = ? AND IFNULL(`price`,0) = ? AND `request_date` >= ? ORDER BY `request_date` DESC LIMIT 200",
+          "types": "issiiiii",
+          "params": [
+            1001,
+            "fixturehash1",
+            "RENEW_ACCOUNT",
+            101,
+            42,
+            0,
+            12000,
+            1799978400
+          ]
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "receipt.declined": {
+      "result": "⛔️ درخواست مشابه قبلی شما اخیراً رد شده است.\n⚠️ لطفاً 1 ثانیه دیگر دوباره تلاش کنید.",
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT `state`, `request_date` FROM `pays` WHERE `user_id` = ? AND `hash_id` <> ? AND `type` = ? AND IFNULL(`plan_id`,0) = ? AND IFNULL(`server_id`,0) = ? AND IFNULL(`price`,0) = ? AND `request_date` >= ? ORDER BY `request_date` DESC LIMIT 200",
+          "types": "issiiii",
+          "params": [
+            1001,
+            "fixturehash1",
+            "BUY_SUB",
+            101,
+            42,
+            12000,
+            1799978400
+          ]
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "receipt.decline_boundary": {
+      "result": null,
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT `state`, `request_date` FROM `pays` WHERE `user_id` = ? AND `hash_id` <> ? AND `type` = ? AND IFNULL(`plan_id`,0) = ? AND IFNULL(`server_id`,0) = ? AND IFNULL(`price`,0) = ? AND `request_date` >= ? ORDER BY `request_date` DESC LIMIT 200",
+          "types": "issiiii",
+          "params": [
+            1001,
+            "fixturehash1",
+            "BUY_SUB",
+            101,
+            42,
+            12000,
+            1799978400
+          ]
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "receipt.have_sent": {
+      "result": "⛔️ یک درخواست مشابه شما در حال بررسی است.\n⚠️ لطفاً حدود 1 دقیقه دیگر دوباره تلاش کنید.",
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT `state`, `request_date` FROM `pays` WHERE `user_id` = ? AND `hash_id` <> ? AND `type` = ? AND IFNULL(`plan_id`,0) = ? AND IFNULL(`server_id`,0) = ? AND IFNULL(`price`,0) = ? AND `request_date` >= ? ORDER BY `request_date` DESC LIMIT 200",
+          "types": "issiiii",
+          "params": [
+            1001,
+            "fixturehash1",
+            "BUY_SUB",
+            101,
+            42,
+            12000,
+            1799978400
+          ]
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "receipt.none": {
+      "result": null,
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT `state`, `request_date` FROM `pays` WHERE `user_id` = ? AND `hash_id` <> ? AND `type` = ? AND IFNULL(`plan_id`,0) = ? AND IFNULL(`server_id`,0) = ? AND IFNULL(`price`,0) = ? AND `request_date` >= ? ORDER BY `request_date` DESC LIMIT 200",
+          "types": "issiiii",
+          "params": [
+            1001,
+            "fixturehash1",
+            "BUY_SUB",
+            101,
+            42,
+            12000,
+            1799978400
+          ]
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "cart.low": {
+      "result": "gift",
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "cart.usdt": {
+      "result": "usdt",
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "cart.new": {
+      "result": "gift",
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT `date`, `is_agent` FROM `users` WHERE `userid` = ? LIMIT 1",
+          "types": "i",
+          "params": [
+            1001
+          ]
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT COUNT(*) AS approved_total, COALESCE(SUM(CASE WHEN `request_date` < ? THEN 1 ELSE 0 END), 0) AS approved_before_cutoff FROM `pays` WHERE `user_id` = ? AND `type` IN ('BUY_SUB', 'RENEW_ACCOUNT') AND `state` = 'approved'",
+          "types": "ii",
+          "params": [
+            1772323200,
+            1001
+          ]
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "cart.agent": {
+      "result": "detail",
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT `date`, `is_agent` FROM `users` WHERE `userid` = ? LIMIT 1",
+          "types": "i",
+          "params": [
+            1001
+          ]
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT COUNT(*) AS approved_total, COALESCE(SUM(CASE WHEN `request_date` < ? THEN 1 ELSE 0 END), 0) AS approved_before_cutoff FROM `pays` WHERE `user_id` = ? AND `type` IN ('BUY_SUB', 'RENEW_ACCOUNT') AND `state` = 'approved'",
+          "types": "ii",
+          "params": [
+            1772323200,
+            1001
+          ]
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "cart.old_one": {
+      "result": "detail",
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT `date`, `is_agent` FROM `users` WHERE `userid` = ? LIMIT 1",
+          "types": "i",
+          "params": [
+            1001
+          ]
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT COUNT(*) AS approved_total, COALESCE(SUM(CASE WHEN `request_date` < ? THEN 1 ELSE 0 END), 0) AS approved_before_cutoff FROM `pays` WHERE `user_id` = ? AND `type` IN ('BUY_SUB', 'RENEW_ACCOUNT') AND `state` = 'approved'",
+          "types": "ii",
+          "params": [
+            1772323200,
+            1001
+          ]
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "cart.old_two": {
+      "result": "detail",
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT `date`, `is_agent` FROM `users` WHERE `userid` = ? LIMIT 1",
+          "types": "i",
+          "params": [
+            1001
+          ]
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT COUNT(*) AS approved_total, COALESCE(SUM(CASE WHEN `request_date` < ? THEN 1 ELSE 0 END), 0) AS approved_before_cutoff FROM `pays` WHERE `user_id` = ? AND `type` IN ('BUY_SUB', 'RENEW_ACCOUNT') AND `state` = 'approved'",
+          "types": "ii",
+          "params": [
+            1772323200,
+            1001
+          ]
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "cart.ten_days_three": {
+      "result": "detail",
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT `date`, `is_agent` FROM `users` WHERE `userid` = ? LIMIT 1",
+          "types": "i",
+          "params": [
+            1001
+          ]
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT COUNT(*) AS approved_total, COALESCE(SUM(CASE WHEN `request_date` < ? THEN 1 ELSE 0 END), 0) AS approved_before_cutoff FROM `pays` WHERE `user_id` = ? AND `type` IN ('BUY_SUB', 'RENEW_ACCOUNT') AND `state` = 'approved'",
+          "types": "ii",
+          "params": [
+            1772323200,
+            1001
+          ]
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "cart.ten_days_two": {
+      "result": "gift",
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT `date`, `is_agent` FROM `users` WHERE `userid` = ? LIMIT 1",
+          "types": "i",
+          "params": [
+            1001
+          ]
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT COUNT(*) AS approved_total, COALESCE(SUM(CASE WHEN `request_date` < ? THEN 1 ELSE 0 END), 0) AS approved_before_cutoff FROM `pays` WHERE `user_id` = ? AND `type` IN ('BUY_SUB', 'RENEW_ACCOUNT') AND `state` = 'approved'",
+          "types": "ii",
+          "params": [
+            1772323200,
+            1001
+          ]
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "menu.customer": {
+      "result": {
+        "inline_keyboard": [
+          [],
+          [
+            {
+              "text": "💳 شارژ کیف پول",
+              "callback_data": "increaseMyWallet"
+            },
+            {
+              "text": "🛍 خرید اشتراک جدید",
+              "callback_data": "buySubscription"
+            }
+          ],
+          [],
+          [
+            {
+              "text": "🔄 تمدید یا مشاهده اشتراک ها",
+              "callback_data": "mySubscriptions"
+            }
+          ],
+          [
+            {
+              "text": "📚 آموزش و قوانین",
+              "callback_data": "reciveApplications"
+            },
+            {
+              "text": "🔐 حساب کاربری",
+              "callback_data": "myInfo"
+            }
+          ],
+          [],
+          [],
+          [],
+          [
+            {
+              "text": "🔰 دریافت پنل همکاری",
+              "url": "https://t.me/fixture_support"
+            }
+          ],
+          [
+            {
+              "text": "🧲 کسب درآمد با معرفی❗️",
+              "callback_data": "inviteFriends"
+            }
+          ],
+          [
+            {
+              "text": "➕ افزودن یا مشاهده مشخصات اشتراک ➕",
+              "callback_data": "showUUIDLeft"
+            }
+          ],
+          []
+        ]
+      },
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `setting` WHERE `type` LIKE '%MAIN_BUTTONS%'",
+          "types": "",
+          "params": []
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "menu.agent": {
+      "result": {
+        "inline_keyboard": [
+          [
+            {
+              "text": "➰ پنل همکاری ➰",
+              "callback_data": "agencySettings"
+            }
+          ],
+          [
+            {
+              "text": "💳 شارژ کیف پول",
+              "callback_data": "increaseMyWallet"
+            }
+          ],
+          [
+            {
+              "text": "➕ خرید تکی",
+              "callback_data": "agentOneBuy"
+            },
+            {
+              "text": "♾ خرید انبوه",
+              "callback_data": "agentMuchBuy"
+            }
+          ],
+          [],
+          [
+            {
+              "text": "🔄 تمدید یا مشاهده اشتراک ها",
+              "callback_data": "agentConfigsList"
+            }
+          ],
+          [
+            {
+              "text": "📚 آموزش و قوانین",
+              "callback_data": "reciveApplications"
+            },
+            {
+              "text": "🔐 حساب کاربری",
+              "callback_data": "myInfo"
+            }
+          ],
+          [],
+          [],
+          [],
+          [
+            {
+              "text": "🔰 دریافت پنل همکاری",
+              "url": "https://t.me/fixture_support"
+            }
+          ],
+          [
+            {
+              "text": "🧲 کسب درآمد با معرفی❗️",
+              "callback_data": "inviteFriends"
+            }
+          ],
+          [
+            {
+              "text": "➕ افزودن یا مشاهده مشخصات اشتراک ➕",
+              "callback_data": "showUUIDLeft"
+            }
+          ],
+          []
+        ]
+      },
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `setting` WHERE `type` LIKE '%MAIN_BUTTONS%'",
+          "types": "",
+          "params": []
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "menu.sale_off": {
+      "result": {
+        "inline_keyboard": [
+          [],
+          [
+            {
+              "text": "💳 شارژ کیف پول",
+              "callback_data": "increaseMyWallet"
+            }
+          ],
+          [],
+          [
+            {
+              "text": "🔄 تمدید یا مشاهده اشتراک ها",
+              "callback_data": "mySubscriptions"
+            }
+          ],
+          [
+            {
+              "text": "📚 آموزش و قوانین",
+              "callback_data": "reciveApplications"
+            },
+            {
+              "text": "🔐 حساب کاربری",
+              "callback_data": "myInfo"
+            }
+          ],
+          [],
+          [],
+          [],
+          [
+            {
+              "text": "🔰 دریافت پنل همکاری",
+              "url": "https://t.me/fixture_support"
+            }
+          ],
+          [
+            {
+              "text": "🧲 کسب درآمد با معرفی❗️",
+              "callback_data": "inviteFriends"
+            }
+          ],
+          [
+            {
+              "text": "➕ افزودن یا مشاهده مشخصات اشتراک ➕",
+              "callback_data": "showUUIDLeft"
+            }
+          ],
+          []
+        ]
+      },
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `setting` WHERE `type` LIKE '%MAIN_BUTTONS%'",
+          "types": "",
+          "params": []
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "menu.custom": {
+      "result": {
+        "inline_keyboard": [
+          [],
+          [
+            {
+              "text": "💳 شارژ کیف پول",
+              "callback_data": "increaseMyWallet"
+            },
+            {
+              "text": "🛍 خرید اشتراک جدید",
+              "callback_data": "buySubscription"
+            }
+          ],
+          [],
+          [
+            {
+              "text": "🔄 تمدید یا مشاهده اشتراک ها",
+              "callback_data": "mySubscriptions"
+            }
+          ],
+          [
+            {
+              "text": "📚 آموزش و قوانین",
+              "callback_data": "reciveApplications"
+            },
+            {
+              "text": "🔐 حساب کاربری",
+              "callback_data": "myInfo"
+            }
+          ],
+          [],
+          [],
+          [],
+          [
+            {
+              "text": "🔰 دریافت پنل همکاری",
+              "url": "https://t.me/fixture_support"
+            }
+          ],
+          [
+            {
+              "text": "🧲 کسب درآمد با معرفی❗️",
+              "callback_data": "inviteFriends"
+            }
+          ],
+          [
+            {
+              "text": "➕ افزودن یا مشاهده مشخصات اشتراک ➕",
+              "callback_data": "showUUIDLeft"
+            }
+          ],
+          [
+            {
+              "text": "Fixture Link",
+              "callback_data": "showMainButtonAns88"
+            }
+          ]
+        ]
+      },
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `setting` WHERE `type` LIKE '%MAIN_BUTTONS%'",
+          "types": "",
+          "params": []
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "menu.admin_main": {
+      "result": {
+        "inline_keyboard": [
+          [],
+          [
+            {
+              "text": "💳 شارژ کیف پول",
+              "callback_data": "increaseMyWallet"
+            },
+            {
+              "text": "🛍 خرید اشتراک جدید",
+              "callback_data": "buySubscription"
+            }
+          ],
+          [],
+          [
+            {
+              "text": "🔄 تمدید یا مشاهده اشتراک ها",
+              "callback_data": "mySubscriptions"
+            }
+          ],
+          [
+            {
+              "text": "📚 آموزش و قوانین",
+              "callback_data": "reciveApplications"
+            },
+            {
+              "text": "🔐 حساب کاربری",
+              "callback_data": "myInfo"
+            }
+          ],
+          [],
+          [],
+          [],
+          [],
+          [],
+          [
+            {
+              "text": "➕ افزودن یا مشاهده مشخصات اشتراک ➕",
+              "callback_data": "showUUIDLeft"
+            }
+          ],
+          [],
+          [
+            {
+              "text": "🔍 جستجوی اشتراک کاربر",
+              "callback_data": "searchUsersConfig"
+            }
+          ],
+          [
+            {
+              "text": "⚙️ مدیریت ربات",
+              "callback_data": "managePanel"
+            }
+          ]
+        ]
+      },
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `setting` WHERE `type` LIKE '%MAIN_BUTTONS%'",
+          "types": "",
+          "params": []
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "menu.regular_admin": {
+      "result": {
+        "inline_keyboard": [
+          [
+            {
+              "text": "🔑 اطلاعات کاربر",
+              "callback_data": "userReports"
+            },
+            {
+              "text": "📞 پیام خصوصی",
+              "callback_data": "messageToSpeceficUser"
+            }
+          ],
+          [
+            {
+              "text": "💵 افزایش موجودی",
+              "callback_data": "increaseUserWallet"
+            },
+            {
+              "text": "💸 کاهش موجودی",
+              "callback_data": "decreaseUserWallet"
+            }
+          ],
+          [
+            {
+              "text": "⌨️ ایجاد اکانت انبوه",
+              "callback_data": "createMultipleAccounts"
+            },
+            {
+              "text": "🎯 هدیه حجم و زمان",
+              "callback_data": "giftVolumeAndDay"
+            }
+          ],
+          [
+            {
+              "text": "❌ مسدود کردن کاربر",
+              "callback_data": "banUser"
+            },
+            {
+              "text": "✅ آزاد کردن کاربر",
+              "callback_data": "unbanUser"
+            }
+          ],
+          [
+            {
+              "text": "📁 ویرایش سفارش در دیتابیس",
+              "callback_data": "manageorderdatabase"
+            }
+          ],
+          [
+            {
+              "text": "🎁 مدیریت تخفیف ها",
+              "callback_data": "discount_codes"
+            },
+            {
+              "text": "🕹 مدیریت دکمه ها ",
+              "callback_data": "mainMenuButtons"
+            }
+          ],
+          [
+            {
+              "text": "📪 تیکت ها",
+              "callback_data": "ticketsList"
+            },
+            {
+              "text": "🗳 ارسال پیام همگانی",
+              "callback_data": "message2All"
+            }
+          ],
+          [
+            {
+              "text": "📍 مدیریت همکاران 📍",
+              "callback_data": "agentsList"
+            },
+            {
+              "text": "📌 مدیریت پیام همگانی",
+              "callback_data": "pinManageAll"
+            }
+          ],
+          [
+            {
+              "text": "↪️ بازگشت",
+              "callback_data": "mainMenu"
+            }
+          ]
+        ]
+      },
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "menu.special_admin": {
+      "result": {
+        "inline_keyboard": [
+          [
+            {
+              "text": "📉 آمار کلی ربات",
+              "callback_data": "botReports"
+            }
+          ],
+          [
+            {
+              "text": "🔑 اطلاعات کاربر",
+              "callback_data": "userReports"
+            },
+            {
+              "text": "📞 پیام خصوصی",
+              "callback_data": "messageToSpeceficUser"
+            }
+          ],
+          [
+            {
+              "text": "💵 افزایش موجودی",
+              "callback_data": "increaseUserWallet"
+            },
+            {
+              "text": "💸 کاهش موجودی",
+              "callback_data": "decreaseUserWallet"
+            }
+          ],
+          [
+            {
+              "text": "⌨️ ایجاد اکانت انبوه",
+              "callback_data": "createMultipleAccounts"
+            },
+            {
+              "text": "🎯 هدیه حجم و زمان",
+              "callback_data": "giftVolumeAndDay"
+            }
+          ],
+          [
+            {
+              "text": "❌ مسدود کردن کاربر",
+              "callback_data": "banUser"
+            },
+            {
+              "text": "✅ آزاد کردن کاربر",
+              "callback_data": "unbanUser"
+            }
+          ],
+          [
+            {
+              "text": "📁 ویرایش سفارش در دیتابیس",
+              "callback_data": "manageorderdatabase"
+            }
+          ],
+          [
+            {
+              "text": "🚦 مدیریت و تنظیمات سرورها",
+              "callback_data": "serversSetting"
+            }
+          ],
+          [
+            {
+              "text": "🗂 مدیریت دسته ها",
+              "callback_data": "categoriesSetting"
+            },
+            {
+              "text": "🪣 مدیریت پلن ها",
+              "callback_data": "backplan"
+            }
+          ],
+          [
+            {
+              "text": "🎁 مدیریت تخفیف ها",
+              "callback_data": "discount_codes"
+            },
+            {
+              "text": "🕹 مدیریت دکمه ها ",
+              "callback_data": "mainMenuButtons"
+            }
+          ],
+          [
+            {
+              "text": "📪 تیکت ها",
+              "callback_data": "ticketsList"
+            },
+            {
+              "text": "🗳 ارسال پیام همگانی",
+              "callback_data": "message2All"
+            }
+          ],
+          [
+            {
+              "text": "📍 مدیریت همکاران 📍",
+              "callback_data": "agentsList"
+            },
+            {
+              "text": "📌 مدیریت پیام همگانی",
+              "callback_data": "pinManageAll"
+            }
+          ],
+          [
+            {
+              "text": "👤 لیست ادمین ها",
+              "callback_data": "adminsList"
+            }
+          ],
+          [
+            {
+              "text": "💳 تنظیمات درگاه و کانال",
+              "callback_data": "gateWays_Channels"
+            },
+            {
+              "text": "⚙️ تنظیمات ربات",
+              "callback_data": "botSettings"
+            }
+          ],
+          [
+            {
+              "text": "↪️ بازگشت",
+              "callback_data": "mainMenu"
+            }
+          ]
+        ]
+      },
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "command.buy": {
+      "result": "buySubscription",
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "command.buy_off": {
+      "result": null,
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        },
+        {
+          "kind": "http.fake",
+          "url": "https://api.telegram.org/botfixture-token/sendMessage",
+          "options": {
+            "CURLOPT_URL": "https://api.telegram.org/botfixture-token/sendMessage",
+            "CURLOPT_POST": true,
+            "CURLOPT_POSTFIELDS": "chat_id=1001&text=%E2%9B%94%EF%B8%8F+%D8%B3%DB%8C%D8%B3%D8%AA%D9%85+%D9%81%D8%B1%D9%88%D8%B4+%D8%BA%DB%8C%D8%B1%D9%81%D8%B9%D8%A7%D9%84+%D8%A7%D8%B3%D8%AA.&parse_mode=MarkDown",
+            "CURLOPT_RETURNTRANSFER": true,
+            "CURLOPT_TIMEOUT": 10,
+            "CURLOPT_CONNECTTIMEOUT": 5,
+            "CURLOPT_IPRESOLVE": 10007,
+            "CURLOPT_HTTPHEADER": [
+              "Expect:"
+            ],
+            "CURLOPT_HTTP_VERSION": 10010,
+            "CURLOPT_NOSIGNAL": true,
+            "CURLOPT_DNS_CACHE_TIMEOUT": 300,
+            "CURLOPT_DNS_SERVERS": "1.1.1.1,9.9.9.9,8.8.8.8",
+            "CURLOPT_TCP_KEEPALIVE": 1,
+            "CURLOPT_TCP_KEEPIDLE": 30,
+            "CURLOPT_TCP_KEEPINTVL": 15
+          }
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "command.gateways_off": {
+      "result": null,
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        },
+        {
+          "kind": "http.fake",
+          "url": "https://api.telegram.org/botfixture-token/sendMessage",
+          "options": {
+            "CURLOPT_URL": "https://api.telegram.org/botfixture-token/sendMessage",
+            "CURLOPT_POST": true,
+            "CURLOPT_POSTFIELDS": "chat_id=1001&text=%E2%9B%94%EF%B8%8F+%D8%B3%DB%8C%D8%B3%D8%AA%D9%85+%D9%81%D8%B1%D9%88%D8%B4+%D8%BA%DB%8C%D8%B1%D9%81%D8%B9%D8%A7%D9%84+%D8%A7%D8%B3%D8%AA.&parse_mode=MarkDown",
+            "CURLOPT_RETURNTRANSFER": true,
+            "CURLOPT_TIMEOUT": 10,
+            "CURLOPT_CONNECTTIMEOUT": 5,
+            "CURLOPT_IPRESOLVE": 10007,
+            "CURLOPT_HTTPHEADER": [
+              "Expect:"
+            ],
+            "CURLOPT_HTTP_VERSION": 10010,
+            "CURLOPT_NOSIGNAL": true,
+            "CURLOPT_DNS_CACHE_TIMEOUT": 300,
+            "CURLOPT_DNS_SERVERS": "1.1.1.1,9.9.9.9,8.8.8.8",
+            "CURLOPT_TCP_KEEPALIVE": 1,
+            "CURLOPT_TCP_KEEPIDLE": 30,
+            "CURLOPT_TCP_KEEPINTVL": 15
+          }
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "command.agent_buy": {
+      "result": null,
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        },
+        {
+          "kind": "http.fake",
+          "url": "https://api.telegram.org/botfixture-token/sendMessage",
+          "options": {
+            "CURLOPT_URL": "https://api.telegram.org/botfixture-token/sendMessage",
+            "CURLOPT_POST": true,
+            "CURLOPT_POSTFIELDS": "chat_id=1001&text=%E2%9B%94%EF%B8%8F+%D9%84%D8%B7%D9%81%D8%A7+%D8%A7%D8%B2+%D8%AF%DA%A9%D9%85%D9%87+%D8%AE%D8%B1%DB%8C%D8%AF+%D8%AA%DA%A9%DB%8C+%DB%8C%D8%A7+%D8%AE%D8%B1%DB%8C%D8%AF+%D8%A7%D9%86%D8%A8%D9%88%D9%87+%D8%A7%D8%B3%D8%AA%D9%81%D8%A7%D8%AF%D9%87+%DA%A9%D9%86%DB%8C%D8%AF.&reply_markup=%7B%22inline_keyboard%22%3A%5B%5B%7B%22text%22%3A%22%5Cu2795+%5Cu062e%5Cu0631%5Cu06cc%5Cu062f+%5Cu062a%5Cu06a9%5Cu06cc%22%2C%22callback_data%22%3A%22agentOneBuy%22%7D%2C%7B%22text%22%3A%22%5Cu267e+%5Cu062e%5Cu0631%5Cu06cc%5Cu062f+%5Cu0627%5Cu0646%5Cu0628%5Cu0648%5Cu0647%22%2C%22callback_data%22%3A%22agentMuchBuy%22%7D%5D%2C%5B%7B%22text%22%3A%22%5Cu21aa%5Cufe0f+%5Cu0628%5Cu0627%5Cu0632%5Cu06af%5Cu0634%5Cu062a%22%2C%22callback_data%22%3A%22mainMenu%22%7D%5D%5D%7D&parse_mode=MarkDown",
+            "CURLOPT_RETURNTRANSFER": true,
+            "CURLOPT_TIMEOUT": 10,
+            "CURLOPT_CONNECTTIMEOUT": 5,
+            "CURLOPT_IPRESOLVE": 10007,
+            "CURLOPT_HTTPHEADER": [
+              "Expect:"
+            ],
+            "CURLOPT_HTTP_VERSION": 10010,
+            "CURLOPT_NOSIGNAL": true,
+            "CURLOPT_DNS_CACHE_TIMEOUT": 300,
+            "CURLOPT_DNS_SERVERS": "1.1.1.1,9.9.9.9,8.8.8.8",
+            "CURLOPT_TCP_KEEPALIVE": 1,
+            "CURLOPT_TCP_KEEPIDLE": 30,
+            "CURLOPT_TCP_KEEPINTVL": 15
+          }
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "command.mysubs": {
+      "result": "mySubscriptions",
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "command.agent_mysubs": {
+      "result": "agentConfigsList",
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "command.unknown": {
+      "result": null,
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "broadcast.helpers": {
+      "result": null,
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        },
+        {
+          "kind": "db.sql",
+          "sql": "UPDATE `bc_jobs` SET `offset`=?, `updated_at`=NOW() WHERE `id`=? AND `state`=2",
+          "types": "ii",
+          "params": [
+            80,
+            51
+          ]
+        },
+        {
+          "kind": "db.sql",
+          "sql": "UPDATE `bc_jobs` SET `offset`=?, `state`=1, `updated_at`=NOW() WHERE `id`=? AND `state`=2",
+          "types": "ii",
+          "params": [
+            80,
+            51
+          ]
+        },
+        {
+          "kind": "db.sql",
+          "sql": "UPDATE `send_list` SET `offset`=?, `state`=4, `updated_at`=NOW() WHERE `id`=?",
+          "types": "ii",
+          "params": [
+            80,
+            51
+          ]
+        },
+        {
+          "kind": "db.sql",
+          "sql": "UPDATE `send_list` SET `offset`=?, `state`=3, `updated_at`=NOW() WHERE `id`=? AND `state`=2",
+          "types": "ii",
+          "params": [
+            80,
+            51
+          ]
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "broadcast.cancelled": {
+      "result": true,
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT `state` FROM `bc_jobs` WHERE `id`=? LIMIT 1",
+          "types": "i",
+          "params": [
+            51
+          ]
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "broadcast.running": {
+      "result": false,
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT `state` FROM `bc_jobs` WHERE `id`=? LIMIT 1",
+          "types": "i",
+          "params": [
+            51
+          ]
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "transport.json": {
+      "result": {
+        "ok": true,
+        "result": {
+          "message_id": 501,
+          "status": "member",
+          "id": 9001,
+          "username": "FixtureBot"
+        }
+      },
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        },
+        {
+          "kind": "http.fake",
+          "url": "https://api.telegram.org/botfixture-token/sendMessage",
+          "options": {
+            "CURLOPT_URL": "https://api.telegram.org/botfixture-token/sendMessage",
+            "CURLOPT_POST": true,
+            "CURLOPT_POSTFIELDS": "chat_id=1001&text=fixture&reply_markup=%7B%22inline_keyboard%22%3A%5B%5D%7D",
+            "CURLOPT_RETURNTRANSFER": true,
+            "CURLOPT_TIMEOUT": 10,
+            "CURLOPT_CONNECTTIMEOUT": 5,
+            "CURLOPT_IPRESOLVE": 10007,
+            "CURLOPT_HTTPHEADER": [
+              "Expect:"
+            ],
+            "CURLOPT_HTTP_VERSION": 10010,
+            "CURLOPT_NOSIGNAL": true,
+            "CURLOPT_DNS_CACHE_TIMEOUT": 300,
+            "CURLOPT_DNS_SERVERS": "1.1.1.1,9.9.9.9,8.8.8.8",
+            "CURLOPT_TCP_KEEPALIVE": 1,
+            "CURLOPT_TCP_KEEPIDLE": 30,
+            "CURLOPT_TCP_KEEPINTVL": 15
+          }
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "transport.429": {
+      "result": {
+        "ok": false,
+        "error_code": 429,
+        "parameters": {
+          "retry_after": 7
+        }
+      },
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        },
+        {
+          "kind": "http.fake",
+          "url": "https://api.telegram.org/botfixture-token/sendMessage",
+          "options": {
+            "CURLOPT_URL": "https://api.telegram.org/botfixture-token/sendMessage",
+            "CURLOPT_POST": true,
+            "CURLOPT_POSTFIELDS": "chat_id=1001&text=fixture&reply_markup=%7B%22inline_keyboard%22%3A%5B%5D%7D",
+            "CURLOPT_RETURNTRANSFER": true,
+            "CURLOPT_TIMEOUT": 10,
+            "CURLOPT_CONNECTTIMEOUT": 5,
+            "CURLOPT_IPRESOLVE": 10007,
+            "CURLOPT_HTTPHEADER": [
+              "Expect:"
+            ],
+            "CURLOPT_HTTP_VERSION": 10010,
+            "CURLOPT_NOSIGNAL": true,
+            "CURLOPT_DNS_CACHE_TIMEOUT": 300,
+            "CURLOPT_DNS_SERVERS": "1.1.1.1,9.9.9.9,8.8.8.8",
+            "CURLOPT_TCP_KEEPALIVE": 1,
+            "CURLOPT_TCP_KEEPIDLE": 30,
+            "CURLOPT_TCP_KEEPINTVL": 15
+          }
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "transport.failure": {
+      "result": null,
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        },
+        {
+          "kind": "http.fake",
+          "url": "https://api.telegram.org/botfixture-token/sendMessage",
+          "options": {
+            "CURLOPT_URL": "https://api.telegram.org/botfixture-token/sendMessage",
+            "CURLOPT_POST": true,
+            "CURLOPT_POSTFIELDS": "chat_id=1001&text=fixture&reply_markup=%7B%22inline_keyboard%22%3A%5B%5D%7D",
+            "CURLOPT_RETURNTRANSFER": true,
+            "CURLOPT_TIMEOUT": 10,
+            "CURLOPT_CONNECTTIMEOUT": 5,
+            "CURLOPT_IPRESOLVE": 10007,
+            "CURLOPT_HTTPHEADER": [
+              "Expect:"
+            ],
+            "CURLOPT_HTTP_VERSION": 10010,
+            "CURLOPT_NOSIGNAL": true,
+            "CURLOPT_DNS_CACHE_TIMEOUT": 300,
+            "CURLOPT_DNS_SERVERS": "1.1.1.1,9.9.9.9,8.8.8.8",
+            "CURLOPT_TCP_KEEPALIVE": 1,
+            "CURLOPT_TCP_KEEPIDLE": 30,
+            "CURLOPT_TCP_KEEPINTVL": 15
+          }
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "transport.500": {
+      "result": {
+        "ok": false
+      },
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        },
+        {
+          "kind": "http.fake",
+          "url": "https://api.telegram.org/botfixture-token/sendMessage",
+          "options": {
+            "CURLOPT_URL": "https://api.telegram.org/botfixture-token/sendMessage",
+            "CURLOPT_POST": true,
+            "CURLOPT_POSTFIELDS": "chat_id=1001&text=fixture&reply_markup=%7B%22inline_keyboard%22%3A%5B%5D%7D",
+            "CURLOPT_RETURNTRANSFER": true,
+            "CURLOPT_TIMEOUT": 10,
+            "CURLOPT_CONNECTTIMEOUT": 5,
+            "CURLOPT_IPRESOLVE": 10007,
+            "CURLOPT_HTTPHEADER": [
+              "Expect:"
+            ],
+            "CURLOPT_HTTP_VERSION": 10010,
+            "CURLOPT_NOSIGNAL": true,
+            "CURLOPT_DNS_CACHE_TIMEOUT": 300,
+            "CURLOPT_DNS_SERVERS": "1.1.1.1,9.9.9.9,8.8.8.8",
+            "CURLOPT_TCP_KEEPALIVE": 1,
+            "CURLOPT_TCP_KEEPIDLE": 30,
+            "CURLOPT_TCP_KEEPINTVL": 15
+          }
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "transport.bad_json": {
+      "result": null,
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        },
+        {
+          "kind": "http.fake",
+          "url": "https://api.telegram.org/botfixture-token/sendMessage",
+          "options": {
+            "CURLOPT_URL": "https://api.telegram.org/botfixture-token/sendMessage",
+            "CURLOPT_POST": true,
+            "CURLOPT_POSTFIELDS": "chat_id=1001&text=fixture&reply_markup=%7B%22inline_keyboard%22%3A%5B%5D%7D",
+            "CURLOPT_RETURNTRANSFER": true,
+            "CURLOPT_TIMEOUT": 10,
+            "CURLOPT_CONNECTTIMEOUT": 5,
+            "CURLOPT_IPRESOLVE": 10007,
+            "CURLOPT_HTTPHEADER": [
+              "Expect:"
+            ],
+            "CURLOPT_HTTP_VERSION": 10010,
+            "CURLOPT_NOSIGNAL": true,
+            "CURLOPT_DNS_CACHE_TIMEOUT": 300,
+            "CURLOPT_DNS_SERVERS": "1.1.1.1,9.9.9.9,8.8.8.8",
+            "CURLOPT_TCP_KEEPALIVE": 1,
+            "CURLOPT_TCP_KEEPIDLE": 30,
+            "CURLOPT_TCP_KEEPINTVL": 15
+          }
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "transport.multipart": {
+      "result": {
+        "ok": true,
+        "result": {
+          "message_id": 501,
+          "status": "member",
+          "id": 9001,
+          "username": "FixtureBot"
+        }
+      },
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        },
+        {
+          "kind": "http.fake",
+          "url": "https://api.telegram.org/botfixture-token/sendDocument",
+          "options": {
+            "CURLOPT_URL": "https://api.telegram.org/botfixture-token/sendDocument",
+            "CURLOPT_POST": true,
+            "CURLOPT_RETURNTRANSFER": true,
+            "CURLOPT_POSTFIELDS": {
+              "chat_id": 1001,
+              "document": {
+                "name": "fixture.txt",
+                "mime": "",
+                "postname": ""
+              },
+              "reply_markup": "{\"inline_keyboard\":[]}"
+            },
+            "CURLOPT_TIMEOUT": 20,
+            "CURLOPT_CONNECTTIMEOUT": 8,
+            "CURLOPT_IPRESOLVE": 10007,
+            "CURLOPT_HTTPHEADER": [
+              "Expect:"
+            ],
+            "CURLOPT_HTTP_VERSION": 10010,
+            "CURLOPT_NOSIGNAL": true,
+            "CURLOPT_DNS_CACHE_TIMEOUT": 300,
+            "CURLOPT_DNS_SERVERS": "1.1.1.1,9.9.9.9,8.8.8.8",
+            "CURLOPT_TCP_KEEPALIVE": 1,
+            "CURLOPT_TCP_KEEPIDLE": 30,
+            "CURLOPT_TCP_KEEPINTVL": 15
+          }
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "entry.health_method": {
+      "result": null,
+      "events": [],
+      "stdout": "{\"app\":\"fail\",\"error\":\"method_not_allowed\"}",
+      "http_status": 405,
+      "harness_errors": []
+    },
+    "entry.health_no_token": {
+      "result": null,
+      "events": [],
+      "stdout": "{\"app\":\"fail\",\"error\":\"no_bot_token\"}",
+      "http_status": 500,
+      "harness_errors": []
+    },
+    "entry.health_get": {
+      "result": null,
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        },
+        {
+          "kind": "db.charset",
+          "charset": "utf8mb4"
+        },
+        {
+          "kind": "http.fake",
+          "url": "https://api.telegram.org/botfixture-token/getMe",
+          "options": {
+            "CURLOPT_URL": "https://api.telegram.org/botfixture-token/getMe",
+            "CURLOPT_RETURNTRANSFER": true,
+            "CURLOPT_TIMEOUT": 5,
+            "CURLOPT_CONNECTTIMEOUT": 3,
+            "CURLOPT_IPRESOLVE": 10007,
+            "CURLOPT_HTTP_VERSION": 10010,
+            "CURLOPT_NOSIGNAL": true,
+            "CURLOPT_HTTPHEADER": [
+              "Expect:"
+            ]
+          }
+        }
+      ],
+      "stdout": "{\"app\":\"ok\",\"time\":\"2027-01-15T08:00:00+00:00\",\"checks\":{\"db\":\"ok\",\"telegram_api\":\"ok\"},\"bot_username\":\"FixtureBot\"}",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "entry.health_head": {
+      "result": null,
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        },
+        {
+          "kind": "db.charset",
+          "charset": "utf8mb4"
+        },
+        {
+          "kind": "http.fake",
+          "url": "https://api.telegram.org/botfixture-token/getMe",
+          "options": {
+            "CURLOPT_URL": "https://api.telegram.org/botfixture-token/getMe",
+            "CURLOPT_RETURNTRANSFER": true,
+            "CURLOPT_TIMEOUT": 5,
+            "CURLOPT_CONNECTTIMEOUT": 3,
+            "CURLOPT_IPRESOLVE": 10007,
+            "CURLOPT_HTTP_VERSION": 10010,
+            "CURLOPT_NOSIGNAL": true,
+            "CURLOPT_HTTPHEADER": [
+              "Expect:"
+            ]
+          }
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "entry.health_cached_failure": {
+      "result": null,
+      "events": [],
+      "stdout": "{\"app\":\"fail\",\"checks\":{\"db\":\"fail\"}}",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "entry.health_db_failure": {
+      "result": null,
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        },
+        {
+          "kind": "db.charset",
+          "charset": "utf8mb4"
+        },
+        {
+          "kind": "http.fake",
+          "url": "https://api.telegram.org/botfixture-token/getMe",
+          "options": {
+            "CURLOPT_URL": "https://api.telegram.org/botfixture-token/getMe",
+            "CURLOPT_RETURNTRANSFER": true,
+            "CURLOPT_TIMEOUT": 5,
+            "CURLOPT_CONNECTTIMEOUT": 3,
+            "CURLOPT_IPRESOLVE": 10007,
+            "CURLOPT_HTTP_VERSION": 10010,
+            "CURLOPT_NOSIGNAL": true,
+            "CURLOPT_HTTPHEADER": [
+              "Expect:"
+            ]
+          }
+        }
+      ],
+      "stdout": "{\"app\":\"fail\",\"time\":\"2027-01-15T08:00:00+00:00\",\"checks\":{\"db\":\"fail\",\"telegram_api\":\"ok\"},\"error_db\":\"db_fail\",\"bot_username\":\"FixtureBot\"}",
+      "http_status": 500,
+      "harness_errors": []
+    },
+    "entry.bot_banned": {
+      "result": null,
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        },
+        {
+          "kind": "db.charset",
+          "charset": "utf8mb4"
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `users` WHERE `userid`=?",
+          "types": "i",
+          "params": [
+            1001
+          ]
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `setting` WHERE `type` = 'PAYMENT_KEYS'",
+          "types": "",
+          "params": []
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `setting` WHERE `type` = 'BOT_STATES'",
+          "types": "",
+          "params": []
+        },
+        {
+          "kind": "http.fake",
+          "url": "https://api.telegram.org/botfixture-token/getChatMember",
+          "options": {
+            "CURLOPT_URL": "https://api.telegram.org/botfixture-token/getChatMember",
+            "CURLOPT_POST": true,
+            "CURLOPT_POSTFIELDS": "chat_id=%40fixture_channel&user_id=1001",
+            "CURLOPT_RETURNTRANSFER": true,
+            "CURLOPT_TIMEOUT": 10,
+            "CURLOPT_CONNECTTIMEOUT": 5,
+            "CURLOPT_IPRESOLVE": 10007,
+            "CURLOPT_HTTPHEADER": [
+              "Expect:"
+            ],
+            "CURLOPT_HTTP_VERSION": 10010,
+            "CURLOPT_NOSIGNAL": true,
+            "CURLOPT_DNS_CACHE_TIMEOUT": 300,
+            "CURLOPT_DNS_SERVERS": "1.1.1.1,9.9.9.9,8.8.8.8",
+            "CURLOPT_TCP_KEEPALIVE": 1,
+            "CURLOPT_TCP_KEEPIDLE": 30,
+            "CURLOPT_TCP_KEEPINTVL": 15
+          }
+        },
+        {
+          "kind": "http.fake",
+          "url": "https://api.telegram.org/botfixture-token/sendMessage",
+          "options": {
+            "CURLOPT_URL": "https://api.telegram.org/botfixture-token/sendMessage",
+            "CURLOPT_POST": true,
+            "CURLOPT_POSTFIELDS": "chat_id=1001&text=%E2%9D%8C+%D8%B4%D9%85%D8%A7+%D9%85%D8%B3%D8%AF%D9%88%D8%AF+%D8%B4%D8%AF%DB%8C%D8%AF.%0A%F0%9F%9B%91+%D8%A8%D8%B1%D8%A7%DB%8C+%D8%A2%D8%B2%D8%A7%D8%AF%D8%B3%D8%A7%D8%B2%DB%8C+%D8%A8%D9%87+%D9%BE%D8%B4%D8%AA%DB%8C%D8%A8%D8%A7%D9%86%DB%8C+%D9%BE%DB%8C%D8%A7%D9%85+%D8%AF%D9%87%DB%8C%D8%AF.%0A%0A%F0%9F%86%94+%40fixture_support&parse_mode=MarkDown",
+            "CURLOPT_RETURNTRANSFER": true,
+            "CURLOPT_TIMEOUT": 10,
+            "CURLOPT_CONNECTTIMEOUT": 5,
+            "CURLOPT_IPRESOLVE": 10007,
+            "CURLOPT_HTTPHEADER": [
+              "Expect:"
+            ],
+            "CURLOPT_HTTP_VERSION": 10010,
+            "CURLOPT_NOSIGNAL": true,
+            "CURLOPT_DNS_CACHE_TIMEOUT": 300,
+            "CURLOPT_DNS_SERVERS": "1.1.1.1,9.9.9.9,8.8.8.8",
+            "CURLOPT_TCP_KEEPALIVE": 1,
+            "CURLOPT_TCP_KEEPIDLE": 30,
+            "CURLOPT_TCP_KEEPINTVL": 15
+          }
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "entry.bot_off": {
+      "result": null,
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        },
+        {
+          "kind": "db.charset",
+          "charset": "utf8mb4"
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `users` WHERE `userid`=?",
+          "types": "i",
+          "params": [
+            1001
+          ]
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `setting` WHERE `type` = 'PAYMENT_KEYS'",
+          "types": "",
+          "params": []
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `setting` WHERE `type` = 'BOT_STATES'",
+          "types": "",
+          "params": []
+        },
+        {
+          "kind": "http.fake",
+          "url": "https://api.telegram.org/botfixture-token/getChatMember",
+          "options": {
+            "CURLOPT_URL": "https://api.telegram.org/botfixture-token/getChatMember",
+            "CURLOPT_POST": true,
+            "CURLOPT_POSTFIELDS": "chat_id=%40fixture_channel&user_id=1001",
+            "CURLOPT_RETURNTRANSFER": true,
+            "CURLOPT_TIMEOUT": 10,
+            "CURLOPT_CONNECTTIMEOUT": 5,
+            "CURLOPT_IPRESOLVE": 10007,
+            "CURLOPT_HTTPHEADER": [
+              "Expect:"
+            ],
+            "CURLOPT_HTTP_VERSION": 10010,
+            "CURLOPT_NOSIGNAL": true,
+            "CURLOPT_DNS_CACHE_TIMEOUT": 300,
+            "CURLOPT_DNS_SERVERS": "1.1.1.1,9.9.9.9,8.8.8.8",
+            "CURLOPT_TCP_KEEPALIVE": 1,
+            "CURLOPT_TCP_KEEPIDLE": 30,
+            "CURLOPT_TCP_KEEPINTVL": 15
+          }
+        },
+        {
+          "kind": "db.sql",
+          "sql": "UPDATE `users` SET `spam_info` = ? WHERE `userid` = ?",
+          "types": "si",
+          "params": [
+            "{\"count\":1,\"date\":1800000060}",
+            1001
+          ]
+        },
+        {
+          "kind": "http.fake",
+          "url": "https://api.telegram.org/botfixture-token/sendMessage",
+          "options": {
+            "CURLOPT_URL": "https://api.telegram.org/botfixture-token/sendMessage",
+            "CURLOPT_POST": true,
+            "CURLOPT_POSTFIELDS": "chat_id=1001&text=%F0%9F%8C%9B+%D8%B1%D8%A8%D8%A7%D8%AA+%D8%AF%D8%B1+%D8%AD%D8%A7%D9%84+%D8%A8%D8%B1%D9%88%D8%B2%D8%B1%D8%B3%D8%A7%D9%86%DB%8C+%D9%85%DB%8C+%D8%A8%D8%A7%D8%B4%D8%AF+...&parse_mode=MarkDown",
+            "CURLOPT_RETURNTRANSFER": true,
+            "CURLOPT_TIMEOUT": 10,
+            "CURLOPT_CONNECTTIMEOUT": 5,
+            "CURLOPT_IPRESOLVE": 10007,
+            "CURLOPT_HTTPHEADER": [
+              "Expect:"
+            ],
+            "CURLOPT_HTTP_VERSION": 10010,
+            "CURLOPT_NOSIGNAL": true,
+            "CURLOPT_DNS_CACHE_TIMEOUT": 300,
+            "CURLOPT_DNS_SERVERS": "1.1.1.1,9.9.9.9,8.8.8.8",
+            "CURLOPT_TCP_KEEPALIVE": 1,
+            "CURLOPT_TCP_KEEPIDLE": 30,
+            "CURLOPT_TCP_KEEPINTVL": 15
+          }
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "entry.bot_start": {
+      "result": null,
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        },
+        {
+          "kind": "db.charset",
+          "charset": "utf8mb4"
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `users` WHERE `userid`=?",
+          "types": "i",
+          "params": [
+            1001
+          ]
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `setting` WHERE `type` = 'PAYMENT_KEYS'",
+          "types": "",
+          "params": []
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `setting` WHERE `type` = 'BOT_STATES'",
+          "types": "",
+          "params": []
+        },
+        {
+          "kind": "http.fake",
+          "url": "https://api.telegram.org/botfixture-token/getChatMember",
+          "options": {
+            "CURLOPT_URL": "https://api.telegram.org/botfixture-token/getChatMember",
+            "CURLOPT_POST": true,
+            "CURLOPT_POSTFIELDS": "chat_id=%40fixture_channel&user_id=1001",
+            "CURLOPT_RETURNTRANSFER": true,
+            "CURLOPT_TIMEOUT": 10,
+            "CURLOPT_CONNECTTIMEOUT": 5,
+            "CURLOPT_IPRESOLVE": 10007,
+            "CURLOPT_HTTPHEADER": [
+              "Expect:"
+            ],
+            "CURLOPT_HTTP_VERSION": 10010,
+            "CURLOPT_NOSIGNAL": true,
+            "CURLOPT_DNS_CACHE_TIMEOUT": 300,
+            "CURLOPT_DNS_SERVERS": "1.1.1.1,9.9.9.9,8.8.8.8",
+            "CURLOPT_TCP_KEEPALIVE": 1,
+            "CURLOPT_TCP_KEEPIDLE": 30,
+            "CURLOPT_TCP_KEEPINTVL": 15
+          }
+        },
+        {
+          "kind": "db.sql",
+          "sql": "UPDATE `users` SET `spam_info` = ? WHERE `userid` = ?",
+          "types": "si",
+          "params": [
+            "{\"count\":1,\"date\":1800000060}",
+            1001
+          ]
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `users` WHERE `userid`=?",
+          "types": "i",
+          "params": [
+            1001
+          ]
+        },
+        {
+          "kind": "db.sql",
+          "sql": "UPDATE `users` SET `step` = ? WHERE `userid` = ?",
+          "types": "si",
+          "params": [
+            "none",
+            1001
+          ]
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `users` WHERE `userid`=?",
+          "types": "i",
+          "params": [
+            1001
+          ]
+        },
+        {
+          "kind": "db.sql",
+          "sql": "UPDATE `users` SET `temp` = ? WHERE `userid` = ?",
+          "types": "si",
+          "params": [
+            "",
+            1001
+          ]
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `setting` WHERE `type` LIKE '%MAIN_BUTTONS%'",
+          "types": "",
+          "params": []
+        },
+        {
+          "kind": "http.fake",
+          "url": "https://api.telegram.org/botfixture-token/sendMessage",
+          "options": {
+            "CURLOPT_URL": "https://api.telegram.org/botfixture-token/sendMessage",
+            "CURLOPT_POST": true,
+            "CURLOPT_POSTFIELDS": "chat_id=1001&text=%F0%9F%94%A5+%D8%A8%D8%A7+Hell+Service+%D8%A7%DB%8C%D9%86%D8%AA%D8%B1%D9%86%D8%AA+%D9%85%D8%AD%D8%AF%D9%88%D8%AF+%D9%85%DB%8C%D8%B1%D9%87+%D8%A8%D9%87+%D8%AC%D9%87%D9%86%D9%85%21%0A%0A%E2%99%BE%EF%B8%8F+%D9%85%D9%86%D8%A7%D8%B3%D8%A8+%D8%A7%DB%8C%D9%86%D8%AA%D8%B1%D9%86%D8%AA+%D9%85%D9%84%DB%8C+%D9%88+%D9%86%DB%8C%D9%85+%D8%A8%D9%87%D8%A7%0A%E2%9A%A1%EF%B8%8F+%D8%B3%D8%B1%D8%B9%D8%AA+%D9%88+%D9%BE%D8%A7%DB%8C%D8%AF%D8%A7%D8%B1%DB%8C+%D8%A8%D8%A7%D9%84%D8%A7+%D8%A8%D9%87+%D9%87%D9%85%D8%B1%D8%A7%D9%87+%D9%BE%D8%A7%DB%8C%DB%8C%D9%86%D8%AA%D8%B1%DB%8C%D9%86+%D9%BE%DB%8C%D9%86%DA%AF%0A%F0%9F%9A%80+%D9%85%D9%86%D8%A7%D8%B3%D8%A8+%D8%A8%D8%A7%D8%B2%DB%8C+%D9%88+Game%0A%F0%9F%8F%B3%EF%B8%8F%E2%80%8D%F0%9F%8C%88+%D9%85%D9%88%D9%84%D8%AA%DB%8C+%D9%84%D9%88%DA%A9%DB%8C%D8%B4%D9%86%0A%F0%9F%93%B6+%D9%85%D9%86%D8%A7%D8%B3%D8%A8+%D8%AA%D8%B1%DB%8C%D8%AF+%D9%88+%D8%AF%D8%A7%D8%B1%D8%A7%DB%8C+IP+%D8%AB%D8%A7%D8%A8%D8%AA%0A%0A%F0%9F%94%B0+%D9%84%D8%B7%D9%81%D8%A7+%DB%8C%DA%A9%DB%8C+%D8%A7%D8%B2+%D8%AF%DA%A9%D9%85%D9%87+%D9%87%D8%A7%DB%8C+%D8%B2%DB%8C%D8%B1+%D8%B1%D8%A7+%D8%A7%D9%86%D8%AA%D8%AE%D8%A7%D8%A8+%DA%A9%D9%86%DB%8C%D8%AF.%0A%0A%F0%9F%8E%AB+%D8%B4%D9%86%D8%A7%D8%B3%D9%87+%D8%B9%D8%AF%D8%AF%DB%8C%3A+1001&reply_markup=%7B%22inline_keyboard%22%3A%5B%5B%5D%2C%5B%7B%22text%22%3A%22%5Cud83d%5Cudcb3+%5Cu0634%5Cu0627%5Cu0631%5Cu0698+%5Cu06a9%5Cu06cc%5Cu0641+%5Cu067e%5Cu0648%5Cu0644%22%2C%22callback_data%22%3A%22increaseMyWallet%22%7D%2C%7B%22text%22%3A%22%5Cud83d%5Cudecd+%5Cu062e%5Cu0631%5Cu06cc%5Cu062f+%5Cu0627%5Cu0634%5Cu062a%5Cu0631%5Cu0627%5Cu06a9+%5Cu062c%5Cu062f%5Cu06cc%5Cu062f%22%2C%22callback_data%22%3A%22buySubscription%22%7D%5D%2C%5B%5D%2C%5B%7B%22text%22%3A%22%5Cud83d%5Cudd04+%5Cu062a%5Cu0645%5Cu062f%5Cu06cc%5Cu062f+%5Cu06cc%5Cu0627+%5Cu0645%5Cu0634%5Cu0627%5Cu0647%5Cu062f%5Cu0647+%5Cu0627%5Cu0634%5Cu062a%5Cu0631%5Cu0627%5Cu06a9+%5Cu0647%5Cu0627%22%2C%22callback_data%22%3A%22mySubscriptions%22%7D%5D%2C%5B%7B%22text%22%3A%22%5Cud83d%5Cudcda+%5Cu0622%5Cu0645%5Cu0648%5Cu0632%5Cu0634+%5Cu0648+%5Cu0642%5Cu0648%5Cu0627%5Cu0646%5Cu06cc%5Cu0646%22%2C%22callback_data%22%3A%22reciveApplications%22%7D%2C%7B%22text%22%3A%22%5Cud83d%5Cudd10+%5Cu062d%5Cu0633%5Cu0627%5Cu0628+%5Cu06a9%5Cu0627%5Cu0631%5Cu0628%5Cu0631%5Cu06cc%22%2C%22callback_data%22%3A%22myInfo%22%7D%5D%2C%5B%5D%2C%5B%5D%2C%5B%5D%2C%5B%7B%22text%22%3A%22%5Cud83d%5Cudd30+%5Cu062f%5Cu0631%5Cu06cc%5Cu0627%5Cu0641%5Cu062a+%5Cu067e%5Cu0646%5Cu0644+%5Cu0647%5Cu0645%5Cu06a9%5Cu0627%5Cu0631%5Cu06cc%22%2C%22url%22%3A%22https%3A%5C%2F%5C%2Ft.me%5C%2Ffixture_support%22%7D%5D%2C%5B%7B%22text%22%3A%22%5Cud83e%5Cuddf2+%5Cu06a9%5Cu0633%5Cu0628+%5Cu062f%5Cu0631%5Cu0622%5Cu0645%5Cu062f+%5Cu0628%5Cu0627+%5Cu0645%5Cu0639%5Cu0631%5Cu0641%5Cu06cc%5Cu2757%5Cufe0f%22%2C%22callback_data%22%3A%22inviteFriends%22%7D%5D%2C%5B%7B%22text%22%3A%22%5Cu2795+%5Cu0627%5Cu0641%5Cu0632%5Cu0648%5Cu062f%5Cu0646+%5Cu06cc%5Cu0627+%5Cu0645%5Cu0634%5Cu0627%5Cu0647%5Cu062f%5Cu0647+%5Cu0645%5Cu0634%5Cu062e%5Cu0635%5Cu0627%5Cu062a+%5Cu0627%5Cu0634%5Cu062a%5Cu0631%5Cu0627%5Cu06a9+%5Cu2795%22%2C%22callback_data%22%3A%22showUUIDLeft%22%7D%5D%2C%5B%5D%5D%7D&parse_mode=MarkDown",
+            "CURLOPT_RETURNTRANSFER": true,
+            "CURLOPT_TIMEOUT": 10,
+            "CURLOPT_CONNECTTIMEOUT": 5,
+            "CURLOPT_IPRESOLVE": 10007,
+            "CURLOPT_HTTPHEADER": [
+              "Expect:"
+            ],
+            "CURLOPT_HTTP_VERSION": 10010,
+            "CURLOPT_NOSIGNAL": true,
+            "CURLOPT_DNS_CACHE_TIMEOUT": 300,
+            "CURLOPT_DNS_SERVERS": "1.1.1.1,9.9.9.9,8.8.8.8",
+            "CURLOPT_TCP_KEEPALIVE": 1,
+            "CURLOPT_TCP_KEEPIDLE": 30,
+            "CURLOPT_TCP_KEEPINTVL": 15
+          }
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "entry.bot_main_callback": {
+      "result": null,
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        },
+        {
+          "kind": "db.charset",
+          "charset": "utf8mb4"
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `users` WHERE `userid`=?",
+          "types": "i",
+          "params": [
+            1001
+          ]
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `setting` WHERE `type` = 'PAYMENT_KEYS'",
+          "types": "",
+          "params": []
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `setting` WHERE `type` = 'BOT_STATES'",
+          "types": "",
+          "params": []
+        },
+        {
+          "kind": "http.fake",
+          "url": "https://api.telegram.org/botfixture-token/getChatMember",
+          "options": {
+            "CURLOPT_URL": "https://api.telegram.org/botfixture-token/getChatMember",
+            "CURLOPT_POST": true,
+            "CURLOPT_POSTFIELDS": "chat_id=%40fixture_channel&user_id=1001",
+            "CURLOPT_RETURNTRANSFER": true,
+            "CURLOPT_TIMEOUT": 10,
+            "CURLOPT_CONNECTTIMEOUT": 5,
+            "CURLOPT_IPRESOLVE": 10007,
+            "CURLOPT_HTTPHEADER": [
+              "Expect:"
+            ],
+            "CURLOPT_HTTP_VERSION": 10010,
+            "CURLOPT_NOSIGNAL": true,
+            "CURLOPT_DNS_CACHE_TIMEOUT": 300,
+            "CURLOPT_DNS_SERVERS": "1.1.1.1,9.9.9.9,8.8.8.8",
+            "CURLOPT_TCP_KEEPALIVE": 1,
+            "CURLOPT_TCP_KEEPIDLE": 30,
+            "CURLOPT_TCP_KEEPINTVL": 15
+          }
+        },
+        {
+          "kind": "db.sql",
+          "sql": "UPDATE `users` SET `spam_info` = ? WHERE `userid` = ?",
+          "types": "si",
+          "params": [
+            "{\"count\":1,\"date\":1800000060}",
+            1001
+          ]
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `users` WHERE `userid`=?",
+          "types": "i",
+          "params": [
+            1001
+          ]
+        },
+        {
+          "kind": "db.sql",
+          "sql": "UPDATE `users` SET `step` = ? WHERE `userid` = ?",
+          "types": "si",
+          "params": [
+            "none",
+            1001
+          ]
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `users` WHERE `userid`=?",
+          "types": "i",
+          "params": [
+            1001
+          ]
+        },
+        {
+          "kind": "db.sql",
+          "sql": "UPDATE `users` SET `temp` = ? WHERE `userid` = ?",
+          "types": "si",
+          "params": [
+            "",
+            1001
+          ]
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `setting` WHERE `type` LIKE '%MAIN_BUTTONS%'",
+          "types": "",
+          "params": []
+        },
+        {
+          "kind": "http.fake",
+          "url": "https://api.telegram.org/botfixture-token/editMessageText",
+          "options": {
+            "CURLOPT_URL": "https://api.telegram.org/botfixture-token/editMessageText",
+            "CURLOPT_POST": true,
+            "CURLOPT_POSTFIELDS": "chat_id=1001&message_id=71&text=%F0%9F%94%A5+%D8%A8%D8%A7+Hell+Service+%D8%A7%DB%8C%D9%86%D8%AA%D8%B1%D9%86%D8%AA+%D9%85%D8%AD%D8%AF%D9%88%D8%AF+%D9%85%DB%8C%D8%B1%D9%87+%D8%A8%D9%87+%D8%AC%D9%87%D9%86%D9%85%21%0A%0A%E2%99%BE%EF%B8%8F+%D9%85%D9%86%D8%A7%D8%B3%D8%A8+%D8%A7%DB%8C%D9%86%D8%AA%D8%B1%D9%86%D8%AA+%D9%85%D9%84%DB%8C+%D9%88+%D9%86%DB%8C%D9%85+%D8%A8%D9%87%D8%A7%0A%E2%9A%A1%EF%B8%8F+%D8%B3%D8%B1%D8%B9%D8%AA+%D9%88+%D9%BE%D8%A7%DB%8C%D8%AF%D8%A7%D8%B1%DB%8C+%D8%A8%D8%A7%D9%84%D8%A7+%D8%A8%D9%87+%D9%87%D9%85%D8%B1%D8%A7%D9%87+%D9%BE%D8%A7%DB%8C%DB%8C%D9%86%D8%AA%D8%B1%DB%8C%D9%86+%D9%BE%DB%8C%D9%86%DA%AF%0A%F0%9F%9A%80+%D9%85%D9%86%D8%A7%D8%B3%D8%A8+%D8%A8%D8%A7%D8%B2%DB%8C+%D9%88+Game%0A%F0%9F%8F%B3%EF%B8%8F%E2%80%8D%F0%9F%8C%88+%D9%85%D9%88%D9%84%D8%AA%DB%8C+%D9%84%D9%88%DA%A9%DB%8C%D8%B4%D9%86%0A%F0%9F%93%B6+%D9%85%D9%86%D8%A7%D8%B3%D8%A8+%D8%AA%D8%B1%DB%8C%D8%AF+%D9%88+%D8%AF%D8%A7%D8%B1%D8%A7%DB%8C+IP+%D8%AB%D8%A7%D8%A8%D8%AA%0A%0A%F0%9F%94%B0+%D9%84%D8%B7%D9%81%D8%A7+%DB%8C%DA%A9%DB%8C+%D8%A7%D8%B2+%D8%AF%DA%A9%D9%85%D9%87+%D9%87%D8%A7%DB%8C+%D8%B2%DB%8C%D8%B1+%D8%B1%D8%A7+%D8%A7%D9%86%D8%AA%D8%AE%D8%A7%D8%A8+%DA%A9%D9%86%DB%8C%D8%AF.%0A%0A%F0%9F%8E%AB+%D8%B4%D9%86%D8%A7%D8%B3%D9%87+%D8%B9%D8%AF%D8%AF%DB%8C%3A+1001&parse_mode=HTML&reply_markup=%7B%22inline_keyboard%22%3A%5B%5B%5D%2C%5B%7B%22text%22%3A%22%5Cud83d%5Cudcb3+%5Cu0634%5Cu0627%5Cu0631%5Cu0698+%5Cu06a9%5Cu06cc%5Cu0641+%5Cu067e%5Cu0648%5Cu0644%22%2C%22callback_data%22%3A%22increaseMyWallet%22%7D%2C%7B%22text%22%3A%22%5Cud83d%5Cudecd+%5Cu062e%5Cu0631%5Cu06cc%5Cu062f+%5Cu0627%5Cu0634%5Cu062a%5Cu0631%5Cu0627%5Cu06a9+%5Cu062c%5Cu062f%5Cu06cc%5Cu062f%22%2C%22callback_data%22%3A%22buySubscription%22%7D%5D%2C%5B%5D%2C%5B%7B%22text%22%3A%22%5Cud83d%5Cudd04+%5Cu062a%5Cu0645%5Cu062f%5Cu06cc%5Cu062f+%5Cu06cc%5Cu0627+%5Cu0645%5Cu0634%5Cu0627%5Cu0647%5Cu062f%5Cu0647+%5Cu0627%5Cu0634%5Cu062a%5Cu0631%5Cu0627%5Cu06a9+%5Cu0647%5Cu0627%22%2C%22callback_data%22%3A%22mySubscriptions%22%7D%5D%2C%5B%7B%22text%22%3A%22%5Cud83d%5Cudcda+%5Cu0622%5Cu0645%5Cu0648%5Cu0632%5Cu0634+%5Cu0648+%5Cu0642%5Cu0648%5Cu0627%5Cu0646%5Cu06cc%5Cu0646%22%2C%22callback_data%22%3A%22reciveApplications%22%7D%2C%7B%22text%22%3A%22%5Cud83d%5Cudd10+%5Cu062d%5Cu0633%5Cu0627%5Cu0628+%5Cu06a9%5Cu0627%5Cu0631%5Cu0628%5Cu0631%5Cu06cc%22%2C%22callback_data%22%3A%22myInfo%22%7D%5D%2C%5B%5D%2C%5B%5D%2C%5B%5D%2C%5B%7B%22text%22%3A%22%5Cud83d%5Cudd30+%5Cu062f%5Cu0631%5Cu06cc%5Cu0627%5Cu0641%5Cu062a+%5Cu067e%5Cu0646%5Cu0644+%5Cu0647%5Cu0645%5Cu06a9%5Cu0627%5Cu0631%5Cu06cc%22%2C%22url%22%3A%22https%3A%5C%2F%5C%2Ft.me%5C%2Ffixture_support%22%7D%5D%2C%5B%7B%22text%22%3A%22%5Cud83e%5Cuddf2+%5Cu06a9%5Cu0633%5Cu0628+%5Cu062f%5Cu0631%5Cu0622%5Cu0645%5Cu062f+%5Cu0628%5Cu0627+%5Cu0645%5Cu0639%5Cu0631%5Cu0641%5Cu06cc%5Cu2757%5Cufe0f%22%2C%22callback_data%22%3A%22inviteFriends%22%7D%5D%2C%5B%7B%22text%22%3A%22%5Cu2795+%5Cu0627%5Cu0641%5Cu0632%5Cu0648%5Cu062f%5Cu0646+%5Cu06cc%5Cu0627+%5Cu0645%5Cu0634%5Cu0627%5Cu0647%5Cu062f%5Cu0647+%5Cu0645%5Cu0634%5Cu062e%5Cu0635%5Cu0627%5Cu062a+%5Cu0627%5Cu0634%5Cu062a%5Cu0631%5Cu0627%5Cu06a9+%5Cu2795%22%2C%22callback_data%22%3A%22showUUIDLeft%22%7D%5D%2C%5B%5D%5D%7D",
+            "CURLOPT_RETURNTRANSFER": true,
+            "CURLOPT_TIMEOUT": 10,
+            "CURLOPT_CONNECTTIMEOUT": 5,
+            "CURLOPT_IPRESOLVE": 10007,
+            "CURLOPT_HTTPHEADER": [
+              "Expect:"
+            ],
+            "CURLOPT_HTTP_VERSION": 10010,
+            "CURLOPT_NOSIGNAL": true,
+            "CURLOPT_DNS_CACHE_TIMEOUT": 300,
+            "CURLOPT_DNS_SERVERS": "1.1.1.1,9.9.9.9,8.8.8.8",
+            "CURLOPT_TCP_KEEPALIVE": 1,
+            "CURLOPT_TCP_KEEPIDLE": 30,
+            "CURLOPT_TCP_KEEPINTVL": 15
+          }
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "entry.bot_legacy_callback": {
+      "result": null,
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        },
+        {
+          "kind": "db.charset",
+          "charset": "utf8mb4"
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `users` WHERE `userid`=?",
+          "types": "i",
+          "params": [
+            1001
+          ]
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `setting` WHERE `type` = 'PAYMENT_KEYS'",
+          "types": "",
+          "params": []
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `setting` WHERE `type` = 'BOT_STATES'",
+          "types": "",
+          "params": []
+        },
+        {
+          "kind": "http.fake",
+          "url": "https://api.telegram.org/botfixture-token/getChatMember",
+          "options": {
+            "CURLOPT_URL": "https://api.telegram.org/botfixture-token/getChatMember",
+            "CURLOPT_POST": true,
+            "CURLOPT_POSTFIELDS": "chat_id=%40fixture_channel&user_id=1001",
+            "CURLOPT_RETURNTRANSFER": true,
+            "CURLOPT_TIMEOUT": 10,
+            "CURLOPT_CONNECTTIMEOUT": 5,
+            "CURLOPT_IPRESOLVE": 10007,
+            "CURLOPT_HTTPHEADER": [
+              "Expect:"
+            ],
+            "CURLOPT_HTTP_VERSION": 10010,
+            "CURLOPT_NOSIGNAL": true,
+            "CURLOPT_DNS_CACHE_TIMEOUT": 300,
+            "CURLOPT_DNS_SERVERS": "1.1.1.1,9.9.9.9,8.8.8.8",
+            "CURLOPT_TCP_KEEPALIVE": 1,
+            "CURLOPT_TCP_KEEPIDLE": 30,
+            "CURLOPT_TCP_KEEPINTVL": 15
+          }
+        },
+        {
+          "kind": "db.sql",
+          "sql": "UPDATE `users` SET `spam_info` = ? WHERE `userid` = ?",
+          "types": "si",
+          "params": [
+            "{\"count\":1,\"date\":1800000060}",
+            1001
+          ]
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "entry.pay_unknown": {
+      "result": null,
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        },
+        {
+          "kind": "db.charset",
+          "charset": "utf8mb4"
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `users` WHERE `userid`=?",
+          "types": "i",
+          "params": [
+            1001
+          ]
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `setting` WHERE `type` = 'PAYMENT_KEYS'",
+          "types": "",
+          "params": []
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `setting` WHERE `type` = 'BOT_STATES'",
+          "types": "",
+          "params": []
+        },
+        {
+          "kind": "http.fake",
+          "url": "https://api.telegram.org/botfixture-token/getChatMember",
+          "options": {
+            "CURLOPT_URL": "https://api.telegram.org/botfixture-token/getChatMember",
+            "CURLOPT_POST": true,
+            "CURLOPT_POSTFIELDS": "chat_id=%40fixture_channel&user_id=1001",
+            "CURLOPT_RETURNTRANSFER": true,
+            "CURLOPT_TIMEOUT": 10,
+            "CURLOPT_CONNECTTIMEOUT": 5,
+            "CURLOPT_IPRESOLVE": 10007,
+            "CURLOPT_HTTPHEADER": [
+              "Expect:"
+            ],
+            "CURLOPT_HTTP_VERSION": 10010,
+            "CURLOPT_NOSIGNAL": true,
+            "CURLOPT_DNS_CACHE_TIMEOUT": 300,
+            "CURLOPT_DNS_SERVERS": "1.1.1.1,9.9.9.9,8.8.8.8",
+            "CURLOPT_TCP_KEEPALIVE": 1,
+            "CURLOPT_TCP_KEEPIDLE": 30,
+            "CURLOPT_TCP_KEEPINTVL": 15
+          }
+        }
+      ],
+      "stdout": "    <html dir=\"rtl\">\n        <head>\n            <script>\n          (function(w,d,s,l,i){w[l]=w[l]||[];\n            w[l].push({'gtm.start': new Date().getTime(),event:'gtm.js', });\n            var f=d.getElementsByTagName(s)[0],j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';\n            j.async=true;j.src='https://www.googletagmanager.com/gtm.js?id='+i+dl+'&gtm_auth=&gtm_preview=&gtm_cookies_win=x';\n            f.parentNode.insertBefore(j,f);\n          })(window,document,'script','dataLayer','GTM-MSN6P6G');</script>\n          <meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width\">\n            <title>درگاه پرداخت شناسایی نشد!</title>\n            <meta name=\"next-head-count\" content=\"4\">\n            <link rel=\"stylesheet\" href=\"../assets/20bb620751bbea45.css\">\n            <noscript data-n-css=\"\"></noscript>\n    \n        </head>\n        <body>\n            <div id=\"__next\">\n                <section class=\"ant-layout ant-layout-rtl PayPing-layout background--primary justify-center\" style=\"min-height:100vh\">\n                    <header class=\"ant-layout-header PayPing-header-logo justify-center align-center\"></header>\n                    <main class=\"ant-layout-content justify-center align-center flex-column\">\n                        <div class=\"ant-row ant-row-center ant-row-rtl PayPing-row w-100\">\n                            <div class=\"ant-col PayPing-col PayPing-error-card ant-col-xs-23 ant-col-rtl ant-col-sm-20 ant-col-md-16 ant-col-lg-12 ant-col-xl-8 ant-col-xxl-6\">\n                                <div class=\"py-2 align-center color--danger flex-column\">\n                                    <svg fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\" viewBox=\"0 0 24 24\" class=\"PayPing-icon\" stroke-width=\"1\" width=\"100\">\n                                        <circle cx=\"12\" cy=\"12\" r=\"11\"></circle>\n                                        <path d=\"M15.3 8.7l-6.6 6.6M8.7 8.7l6.6 6.6\"></path>\n                                    </svg>\n                                    <div class=\"py-2\">درگاه پرداخت شناسایی نشد!</div>\n                                </div>\n                            </div>\n                        </div>\n                    </main>\n                </section>\n            </div>\n        </body>\n    </html>\n",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "entry.pay_missing": {
+      "result": null,
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        },
+        {
+          "kind": "db.charset",
+          "charset": "utf8mb4"
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `users` WHERE `userid`=?",
+          "types": "i",
+          "params": [
+            1001
+          ]
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `setting` WHERE `type` = 'PAYMENT_KEYS'",
+          "types": "",
+          "params": []
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `setting` WHERE `type` = 'BOT_STATES'",
+          "types": "",
+          "params": []
+        },
+        {
+          "kind": "http.fake",
+          "url": "https://api.telegram.org/botfixture-token/getChatMember",
+          "options": {
+            "CURLOPT_URL": "https://api.telegram.org/botfixture-token/getChatMember",
+            "CURLOPT_POST": true,
+            "CURLOPT_POSTFIELDS": "chat_id=%40fixture_channel&user_id=1001",
+            "CURLOPT_RETURNTRANSFER": true,
+            "CURLOPT_TIMEOUT": 10,
+            "CURLOPT_CONNECTTIMEOUT": 5,
+            "CURLOPT_IPRESOLVE": 10007,
+            "CURLOPT_HTTPHEADER": [
+              "Expect:"
+            ],
+            "CURLOPT_HTTP_VERSION": 10010,
+            "CURLOPT_NOSIGNAL": true,
+            "CURLOPT_DNS_CACHE_TIMEOUT": 300,
+            "CURLOPT_DNS_SERVERS": "1.1.1.1,9.9.9.9,8.8.8.8",
+            "CURLOPT_TCP_KEEPALIVE": 1,
+            "CURLOPT_TCP_KEEPIDLE": 30,
+            "CURLOPT_TCP_KEEPINTVL": 15
+          }
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `pays` WHERE `hash_id` = ? AND `state` = 'pending'",
+          "types": "s",
+          "params": [
+            "fixturehash1"
+          ]
+        }
+      ],
+      "stdout": "    <html dir=\"rtl\">\n        <head>\n            <script>\n          (function(w,d,s,l,i){w[l]=w[l]||[];\n            w[l].push({'gtm.start': new Date().getTime(),event:'gtm.js', });\n            var f=d.getElementsByTagName(s)[0],j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';\n            j.async=true;j.src='https://www.googletagmanager.com/gtm.js?id='+i+dl+'&gtm_auth=&gtm_preview=&gtm_cookies_win=x';\n            f.parentNode.insertBefore(j,f);\n          })(window,document,'script','dataLayer','GTM-MSN6P6G');</script>\n          <meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width\">\n            <title>کد پرداخت یافت نشد.</title>\n            <meta name=\"next-head-count\" content=\"4\">\n            <link rel=\"stylesheet\" href=\"../assets/20bb620751bbea45.css\">\n            <noscript data-n-css=\"\"></noscript>\n    \n        </head>\n        <body>\n            <div id=\"__next\">\n                <section class=\"ant-layout ant-layout-rtl PayPing-layout background--primary justify-center\" style=\"min-height:100vh\">\n                    <header class=\"ant-layout-header PayPing-header-logo justify-center align-center\"></header>\n                    <main class=\"ant-layout-content justify-center align-center flex-column\">\n                        <div class=\"ant-row ant-row-center ant-row-rtl PayPing-row w-100\">\n                            <div class=\"ant-col PayPing-col PayPing-error-card ant-col-xs-23 ant-col-rtl ant-col-sm-20 ant-col-md-16 ant-col-lg-12 ant-col-xl-8 ant-col-xxl-6\">\n                                <div class=\"py-2 align-center color--danger flex-column\">\n                                    <svg fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\" viewBox=\"0 0 24 24\" class=\"PayPing-icon\" stroke-width=\"1\" width=\"100\">\n                                        <circle cx=\"12\" cy=\"12\" r=\"11\"></circle>\n                                        <path d=\"M15.3 8.7l-6.6 6.6M8.7 8.7l6.6 6.6\"></path>\n                                    </svg>\n                                    <div class=\"py-2\">کد پرداخت یافت نشد.</div>\n                                </div>\n                            </div>\n                        </div>\n                    </main>\n                </section>\n            </div>\n        </body>\n    </html>\n",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "entry.pay_return_missing": {
+      "result": null,
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        },
+        {
+          "kind": "db.charset",
+          "charset": "utf8mb4"
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `users` WHERE `userid`=?",
+          "types": "i",
+          "params": [
+            1001
+          ]
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `setting` WHERE `type` = 'PAYMENT_KEYS'",
+          "types": "",
+          "params": []
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `setting` WHERE `type` = 'BOT_STATES'",
+          "types": "",
+          "params": []
+        },
+        {
+          "kind": "http.fake",
+          "url": "https://api.telegram.org/botfixture-token/getChatMember",
+          "options": {
+            "CURLOPT_URL": "https://api.telegram.org/botfixture-token/getChatMember",
+            "CURLOPT_POST": true,
+            "CURLOPT_POSTFIELDS": "chat_id=%40fixture_channel&user_id=1001",
+            "CURLOPT_RETURNTRANSFER": true,
+            "CURLOPT_TIMEOUT": 10,
+            "CURLOPT_CONNECTTIMEOUT": 5,
+            "CURLOPT_IPRESOLVE": 10007,
+            "CURLOPT_HTTPHEADER": [
+              "Expect:"
+            ],
+            "CURLOPT_HTTP_VERSION": 10010,
+            "CURLOPT_NOSIGNAL": true,
+            "CURLOPT_DNS_CACHE_TIMEOUT": 300,
+            "CURLOPT_DNS_SERVERS": "1.1.1.1,9.9.9.9,8.8.8.8",
+            "CURLOPT_TCP_KEEPALIVE": 1,
+            "CURLOPT_TCP_KEEPIDLE": 30,
+            "CURLOPT_TCP_KEEPINTVL": 15
+          }
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `setting` WHERE `type` = 'PAYMENT_KEYS'",
+          "types": "",
+          "params": []
+        }
+      ],
+      "stdout": "    <html dir=\"rtl\">\n    <head>\n      <meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width\">\n        <title>خطا!</title>\n        <meta name=\"next-head-count\" content=\"4\">\n        <link rel=\"stylesheet\" href=\"../assets/20bb620751bbea45.css\">\n        <noscript data-n-css=\"\"></noscript>\n    </head>\n    <body style=\"margin: 0 auto;\">\n        <div id=\"__next\">\n            <section class=\"ant-layout ant-layout-rtl PayPing-layout background--primary justify-center\" style=\"min-height:100vh\">\n                <main class=\"ant-layout-content justify-center align-center flex-column\">\n                    <div class=\"ant-row ant-row-center ant-row-rtl PayPing-row w-100\">\n                        <div class=\"ant-col PayPing-col PayPing-error-card ant-col-xs-23 ant-col-rtl ant-col-sm-20 ant-col-md-16 ant-col-lg-12 ant-col-xl-8 ant-col-xxl-6\">\n                            <div class=\"py-2 align-center color--danger flex-column\">\n                                                                    <svg fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\" viewBox=\"0 0 24 24\" class=\"PayPing-icon\" stroke-width=\"1\" width=\"100\">\n                                        <circle cx=\"12\" cy=\"12\" r=\"11\"></circle>\n                                        <path d=\"M15.3 8.7l-6.6 6.6M8.7 8.7l6.6 6.6\"></path>\n                                    </svg>\n                                                                <div class=\"py-2\">پرداخت انجام نشد.</div>\n                            </div>\n                        </div>\n                    </div>\n                </main>\n            </section>\n        </div>\n    </body>\n</html>\n",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "entry.sub_missing": {
+      "result": null,
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        },
+        {
+          "kind": "db.charset",
+          "charset": "utf8mb4"
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `users` WHERE `userid`=?",
+          "types": "i",
+          "params": [
+            1001
+          ]
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `setting` WHERE `type` = 'PAYMENT_KEYS'",
+          "types": "",
+          "params": []
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `setting` WHERE `type` = 'BOT_STATES'",
+          "types": "",
+          "params": []
+        },
+        {
+          "kind": "http.fake",
+          "url": "https://api.telegram.org/botfixture-token/getChatMember",
+          "options": {
+            "CURLOPT_URL": "https://api.telegram.org/botfixture-token/getChatMember",
+            "CURLOPT_POST": true,
+            "CURLOPT_POSTFIELDS": "chat_id=%40fixture_channel&user_id=1001",
+            "CURLOPT_RETURNTRANSFER": true,
+            "CURLOPT_TIMEOUT": 10,
+            "CURLOPT_CONNECTTIMEOUT": 5,
+            "CURLOPT_IPRESOLVE": 10007,
+            "CURLOPT_HTTPHEADER": [
+              "Expect:"
+            ],
+            "CURLOPT_HTTP_VERSION": 10010,
+            "CURLOPT_NOSIGNAL": true,
+            "CURLOPT_DNS_CACHE_TIMEOUT": 300,
+            "CURLOPT_DNS_SERVERS": "1.1.1.1,9.9.9.9,8.8.8.8",
+            "CURLOPT_TCP_KEEPALIVE": 1,
+            "CURLOPT_TCP_KEEPIDLE": 30,
+            "CURLOPT_TCP_KEEPINTVL": 15
+          }
+        },
+        {
+          "kind": "db.connect",
+          "fake": true
+        },
+        {
+          "kind": "db.charset",
+          "charset": "utf8mb4"
+        }
+      ],
+      "stdout": "Wrong token",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "entry.sub_short": {
+      "result": null,
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        },
+        {
+          "kind": "db.charset",
+          "charset": "utf8mb4"
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `users` WHERE `userid`=?",
+          "types": "i",
+          "params": [
+            1001
+          ]
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `setting` WHERE `type` = 'PAYMENT_KEYS'",
+          "types": "",
+          "params": []
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `setting` WHERE `type` = 'BOT_STATES'",
+          "types": "",
+          "params": []
+        },
+        {
+          "kind": "http.fake",
+          "url": "https://api.telegram.org/botfixture-token/getChatMember",
+          "options": {
+            "CURLOPT_URL": "https://api.telegram.org/botfixture-token/getChatMember",
+            "CURLOPT_POST": true,
+            "CURLOPT_POSTFIELDS": "chat_id=%40fixture_channel&user_id=1001",
+            "CURLOPT_RETURNTRANSFER": true,
+            "CURLOPT_TIMEOUT": 10,
+            "CURLOPT_CONNECTTIMEOUT": 5,
+            "CURLOPT_IPRESOLVE": 10007,
+            "CURLOPT_HTTPHEADER": [
+              "Expect:"
+            ],
+            "CURLOPT_HTTP_VERSION": 10010,
+            "CURLOPT_NOSIGNAL": true,
+            "CURLOPT_DNS_CACHE_TIMEOUT": 300,
+            "CURLOPT_DNS_SERVERS": "1.1.1.1,9.9.9.9,8.8.8.8",
+            "CURLOPT_TCP_KEEPALIVE": 1,
+            "CURLOPT_TCP_KEEPIDLE": 30,
+            "CURLOPT_TCP_KEEPINTVL": 15
+          }
+        },
+        {
+          "kind": "db.connect",
+          "fake": true
+        },
+        {
+          "kind": "db.charset",
+          "charset": "utf8mb4"
+        }
+      ],
+      "stdout": "Wrong token",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "entry.gift_idle": {
+      "result": null,
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        },
+        {
+          "kind": "db.charset",
+          "charset": "utf8mb4"
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `users` WHERE `userid`=?",
+          "types": "i",
+          "params": [
+            1001
+          ]
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `setting` WHERE `type` = 'PAYMENT_KEYS'",
+          "types": "",
+          "params": []
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `setting` WHERE `type` = 'BOT_STATES'",
+          "types": "",
+          "params": []
+        },
+        {
+          "kind": "http.fake",
+          "url": "https://api.telegram.org/botfixture-token/getChatMember",
+          "options": {
+            "CURLOPT_URL": "https://api.telegram.org/botfixture-token/getChatMember",
+            "CURLOPT_POST": true,
+            "CURLOPT_POSTFIELDS": "chat_id=%40fixture_channel&user_id=1001",
+            "CURLOPT_RETURNTRANSFER": true,
+            "CURLOPT_TIMEOUT": 10,
+            "CURLOPT_CONNECTTIMEOUT": 5,
+            "CURLOPT_IPRESOLVE": 10007,
+            "CURLOPT_HTTPHEADER": [
+              "Expect:"
+            ],
+            "CURLOPT_HTTP_VERSION": 10010,
+            "CURLOPT_NOSIGNAL": true,
+            "CURLOPT_DNS_CACHE_TIMEOUT": 300,
+            "CURLOPT_DNS_SERVERS": "1.1.1.1,9.9.9.9,8.8.8.8",
+            "CURLOPT_TCP_KEEPALIVE": 1,
+            "CURLOPT_TCP_KEEPIDLE": 30,
+            "CURLOPT_TCP_KEEPINTVL": 15
+          }
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `gift_list` LIMIT 1",
+          "types": "",
+          "params": []
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "entry.tron_disabled": {
+      "result": null,
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        },
+        {
+          "kind": "db.charset",
+          "charset": "utf8mb4"
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `users` WHERE `userid`=?",
+          "types": "i",
+          "params": [
+            1001
+          ]
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `setting` WHERE `type` = 'PAYMENT_KEYS'",
+          "types": "",
+          "params": []
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `setting` WHERE `type` = 'BOT_STATES'",
+          "types": "",
+          "params": []
+        },
+        {
+          "kind": "http.fake",
+          "url": "https://api.telegram.org/botfixture-token/getChatMember",
+          "options": {
+            "CURLOPT_URL": "https://api.telegram.org/botfixture-token/getChatMember",
+            "CURLOPT_POST": true,
+            "CURLOPT_POSTFIELDS": "chat_id=%40fixture_channel&user_id=1001",
+            "CURLOPT_RETURNTRANSFER": true,
+            "CURLOPT_TIMEOUT": 10,
+            "CURLOPT_CONNECTTIMEOUT": 5,
+            "CURLOPT_IPRESOLVE": 10007,
+            "CURLOPT_HTTPHEADER": [
+              "Expect:"
+            ],
+            "CURLOPT_HTTP_VERSION": 10010,
+            "CURLOPT_NOSIGNAL": true,
+            "CURLOPT_DNS_CACHE_TIMEOUT": 300,
+            "CURLOPT_DNS_SERVERS": "1.1.1.1,9.9.9.9,8.8.8.8",
+            "CURLOPT_TCP_KEEPALIVE": 1,
+            "CURLOPT_TCP_KEEPIDLE": 30,
+            "CURLOPT_TCP_KEEPINTVL": 15
+          }
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `pays` WHERE `payid` IS NOT NULL AND `state` REGEXP '^[0-9]+$'",
+          "types": "",
+          "params": []
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "entry.warn_idle": {
+      "result": null,
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        },
+        {
+          "kind": "db.charset",
+          "charset": "utf8mb4"
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `users` WHERE `userid`=?",
+          "types": "i",
+          "params": [
+            1001
+          ]
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `setting` WHERE `type` = 'PAYMENT_KEYS'",
+          "types": "",
+          "params": []
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `setting` WHERE `type` = 'BOT_STATES'",
+          "types": "",
+          "params": []
+        },
+        {
+          "kind": "http.fake",
+          "url": "https://api.telegram.org/botfixture-token/getChatMember",
+          "options": {
+            "CURLOPT_URL": "https://api.telegram.org/botfixture-token/getChatMember",
+            "CURLOPT_POST": true,
+            "CURLOPT_POSTFIELDS": "chat_id=%40fixture_channel&user_id=1001",
+            "CURLOPT_RETURNTRANSFER": true,
+            "CURLOPT_TIMEOUT": 10,
+            "CURLOPT_CONNECTTIMEOUT": 5,
+            "CURLOPT_IPRESOLVE": 10007,
+            "CURLOPT_HTTPHEADER": [
+              "Expect:"
+            ],
+            "CURLOPT_HTTP_VERSION": 10010,
+            "CURLOPT_NOSIGNAL": true,
+            "CURLOPT_DNS_CACHE_TIMEOUT": 300,
+            "CURLOPT_DNS_SERVERS": "1.1.1.1,9.9.9.9,8.8.8.8",
+            "CURLOPT_TCP_KEEPALIVE": 1,
+            "CURLOPT_TCP_KEEPIDLE": 30,
+            "CURLOPT_TCP_KEEPINTVL": 15
+          }
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT `value` FROM `setting` WHERE `type` = 'warnOffset'",
+          "types": "",
+          "params": []
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `orders_list` WHERE `status`=1 AND (`notif`=0 OR `notif` = -1) ORDER BY `id` ASC LIMIT ? OFFSET ?",
+          "types": "ii",
+          "params": [
+            100,
+            "0"
+          ]
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `orders_list` WHERE `status`=1 AND `notif` > 0 AND `notif` < ? LIMIT 50",
+          "types": "i",
+          "params": [
+            1800000000
+          ]
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `setting` WHERE `type` = 'AutoRenewCheck'",
+          "types": "",
+          "params": []
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "entry.broadcast_idle": {
+      "result": null,
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        },
+        {
+          "kind": "db.charset",
+          "charset": "utf8mb4"
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `users` WHERE `userid`=?",
+          "types": "i",
+          "params": [
+            1001
+          ]
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `setting` WHERE `type` = 'PAYMENT_KEYS'",
+          "types": "",
+          "params": []
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `setting` WHERE `type` = 'BOT_STATES'",
+          "types": "",
+          "params": []
+        },
+        {
+          "kind": "http.fake",
+          "url": "https://api.telegram.org/botfixture-token/getChatMember",
+          "options": {
+            "CURLOPT_URL": "https://api.telegram.org/botfixture-token/getChatMember",
+            "CURLOPT_POST": true,
+            "CURLOPT_POSTFIELDS": "chat_id=%40fixture_channel&user_id=1001",
+            "CURLOPT_RETURNTRANSFER": true,
+            "CURLOPT_TIMEOUT": 10,
+            "CURLOPT_CONNECTTIMEOUT": 5,
+            "CURLOPT_IPRESOLVE": 10007,
+            "CURLOPT_HTTPHEADER": [
+              "Expect:"
+            ],
+            "CURLOPT_HTTP_VERSION": 10010,
+            "CURLOPT_NOSIGNAL": true,
+            "CURLOPT_DNS_CACHE_TIMEOUT": 300,
+            "CURLOPT_DNS_SERVERS": "1.1.1.1,9.9.9.9,8.8.8.8",
+            "CURLOPT_TCP_KEEPALIVE": 1,
+            "CURLOPT_TCP_KEEPIDLE": 30,
+            "CURLOPT_TCP_KEEPINTVL": 15
+          }
+        },
+        {
+          "kind": "db.sql",
+          "sql": "UPDATE `bc_jobs` SET `state`=1, `updated_at`=NOW() WHERE `state`=2 AND `updated_at` < (NOW() - INTERVAL 30 MINUTE)",
+          "types": "",
+          "params": []
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `bc_jobs` WHERE `state`=1 ORDER BY `id` ASC LIMIT 1",
+          "types": "",
+          "params": []
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT `id` FROM `send_list` WHERE `state` = 1 OR (`state` = 2 AND `updated_at` < (NOW() - INTERVAL 15 MINUTE)) ORDER BY `id` ASC LIMIT 1",
+          "types": "",
+          "params": []
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "entry.broadcast_pin": {
+      "result": null,
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        },
+        {
+          "kind": "db.charset",
+          "charset": "utf8mb4"
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `users` WHERE `userid`=?",
+          "types": "i",
+          "params": [
+            1001
+          ]
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `setting` WHERE `type` = 'PAYMENT_KEYS'",
+          "types": "",
+          "params": []
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `setting` WHERE `type` = 'BOT_STATES'",
+          "types": "",
+          "params": []
+        },
+        {
+          "kind": "http.fake",
+          "url": "https://api.telegram.org/botfixture-token/getChatMember",
+          "options": {
+            "CURLOPT_URL": "https://api.telegram.org/botfixture-token/getChatMember",
+            "CURLOPT_POST": true,
+            "CURLOPT_POSTFIELDS": "chat_id=%40fixture_channel&user_id=1001",
+            "CURLOPT_RETURNTRANSFER": true,
+            "CURLOPT_TIMEOUT": 10,
+            "CURLOPT_CONNECTTIMEOUT": 5,
+            "CURLOPT_IPRESOLVE": 10007,
+            "CURLOPT_HTTPHEADER": [
+              "Expect:"
+            ],
+            "CURLOPT_HTTP_VERSION": 10010,
+            "CURLOPT_NOSIGNAL": true,
+            "CURLOPT_DNS_CACHE_TIMEOUT": 300,
+            "CURLOPT_DNS_SERVERS": "1.1.1.1,9.9.9.9,8.8.8.8",
+            "CURLOPT_TCP_KEEPALIVE": 1,
+            "CURLOPT_TCP_KEEPIDLE": 30,
+            "CURLOPT_TCP_KEEPINTVL": 15
+          }
+        },
+        {
+          "kind": "db.sql",
+          "sql": "UPDATE `bc_jobs` SET `state`=1, `updated_at`=NOW() WHERE `state`=2 AND `updated_at` < (NOW() - INTERVAL 30 MINUTE)",
+          "types": "",
+          "params": []
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `bc_jobs` WHERE `state`=1 ORDER BY `id` ASC LIMIT 1",
+          "types": "",
+          "params": []
+        },
+        {
+          "kind": "db.sql",
+          "sql": "UPDATE `bc_jobs` SET `state`=2, `updated_at`=NOW() WHERE `id`=? AND `state`=1",
+          "types": "i",
+          "params": [
+            51
+          ]
+        },
+        {
+          "kind": "http.fake",
+          "url": "https://api.telegram.org/botfixture-token/sendMessage",
+          "options": {
+            "CURLOPT_URL": "https://api.telegram.org/botfixture-token/sendMessage",
+            "CURLOPT_POST": true,
+            "CURLOPT_POSTFIELDS": "chat_id=9001&text=%E2%96%B6%EF%B8%8F+%D9%81%D8%B1%D8%A2%DB%8C%D9%86%D8%AF+%D8%A8%D8%A7+ID%3A51+%D9%88+%D8%B9%D9%85%D9%84+pin+%D8%A8%D8%B1%D8%A7%DB%8C+%D8%A7%D8%B1%D8%B3%D8%A7%D9%84+%D8%A8%D8%A7+ID%3A61+%D8%B4%D8%B1%D9%88%D8%B9+%D8%B4%D8%AF.",
+            "CURLOPT_RETURNTRANSFER": true,
+            "CURLOPT_TIMEOUT": 10,
+            "CURLOPT_CONNECTTIMEOUT": 5,
+            "CURLOPT_IPRESOLVE": 10007,
+            "CURLOPT_HTTPHEADER": [
+              "Expect:"
+            ],
+            "CURLOPT_HTTP_VERSION": 10010,
+            "CURLOPT_NOSIGNAL": true,
+            "CURLOPT_DNS_CACHE_TIMEOUT": 300,
+            "CURLOPT_DNS_SERVERS": "1.1.1.1,9.9.9.9,8.8.8.8",
+            "CURLOPT_TCP_KEEPALIVE": 1,
+            "CURLOPT_TCP_KEEPIDLE": 30,
+            "CURLOPT_TCP_KEEPINTVL": 15
+          }
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT id, userid, message_id FROM bc_messages WHERE broadcast_id=? AND deleted=0 AND pinned=0 AND id > ? ORDER BY id LIMIT 200",
+          "types": "ii",
+          "params": [
+            61,
+            70
+          ]
+        },
+        {
+          "kind": "db.sql",
+          "sql": "UPDATE `bc_jobs` SET `offset`=?, `updated_at`=NOW() WHERE `id`=? AND `state`=2",
+          "types": "ii",
+          "params": [
+            70,
+            51
+          ]
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT `state` FROM `bc_jobs` WHERE `id`=? LIMIT 1",
+          "types": "i",
+          "params": [
+            51
+          ]
+        },
+        {
+          "kind": "http.fake",
+          "url": "https://api.telegram.org/botfixture-token/pinChatMessage",
+          "options": {
+            "CURLOPT_URL": "https://api.telegram.org/botfixture-token/pinChatMessage",
+            "CURLOPT_POST": true,
+            "CURLOPT_POSTFIELDS": "chat_id=1001&message_id=71&disable_notification=1",
+            "CURLOPT_RETURNTRANSFER": true,
+            "CURLOPT_TIMEOUT": 10,
+            "CURLOPT_CONNECTTIMEOUT": 5,
+            "CURLOPT_IPRESOLVE": 10007,
+            "CURLOPT_HTTPHEADER": [
+              "Expect:"
+            ],
+            "CURLOPT_HTTP_VERSION": 10010,
+            "CURLOPT_NOSIGNAL": true,
+            "CURLOPT_DNS_CACHE_TIMEOUT": 300,
+            "CURLOPT_DNS_SERVERS": "1.1.1.1,9.9.9.9,8.8.8.8",
+            "CURLOPT_TCP_KEEPALIVE": 1,
+            "CURLOPT_TCP_KEEPIDLE": 30,
+            "CURLOPT_TCP_KEEPINTVL": 15
+          }
+        },
+        {
+          "kind": "db.sql",
+          "sql": "UPDATE bc_messages SET pinned=1,pinned_at=NOW() WHERE id=?",
+          "types": "i",
+          "params": [
+            70
+          ]
+        },
+        {
+          "kind": "db.sql",
+          "sql": "UPDATE `bc_jobs` SET `ok_cnt` = `ok_cnt` + 1 WHERE `id`=?",
+          "types": "i",
+          "params": [
+            51
+          ]
+        },
+        {
+          "kind": "usleep",
+          "microseconds": 40000
+        },
+        {
+          "kind": "db.sql",
+          "sql": "UPDATE `bc_jobs` SET `offset`=?, `state`=1, `updated_at`=NOW() WHERE `id`=? AND `state`=2",
+          "types": "ii",
+          "params": [
+            70,
+            51
+          ]
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT `id` FROM `send_list` WHERE `state` = 1 OR (`state` = 2 AND `updated_at` < (NOW() - INTERVAL 15 MINUTE)) ORDER BY `id` ASC LIMIT 1",
+          "types": "",
+          "params": []
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "entry.broadcast_429": {
+      "result": null,
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        },
+        {
+          "kind": "db.charset",
+          "charset": "utf8mb4"
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `users` WHERE `userid`=?",
+          "types": "i",
+          "params": [
+            1001
+          ]
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `setting` WHERE `type` = 'PAYMENT_KEYS'",
+          "types": "",
+          "params": []
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `setting` WHERE `type` = 'BOT_STATES'",
+          "types": "",
+          "params": []
+        },
+        {
+          "kind": "http.fake",
+          "url": "https://api.telegram.org/botfixture-token/getChatMember",
+          "options": {
+            "CURLOPT_URL": "https://api.telegram.org/botfixture-token/getChatMember",
+            "CURLOPT_POST": true,
+            "CURLOPT_POSTFIELDS": "chat_id=%40fixture_channel&user_id=1001",
+            "CURLOPT_RETURNTRANSFER": true,
+            "CURLOPT_TIMEOUT": 10,
+            "CURLOPT_CONNECTTIMEOUT": 5,
+            "CURLOPT_IPRESOLVE": 10007,
+            "CURLOPT_HTTPHEADER": [
+              "Expect:"
+            ],
+            "CURLOPT_HTTP_VERSION": 10010,
+            "CURLOPT_NOSIGNAL": true,
+            "CURLOPT_DNS_CACHE_TIMEOUT": 300,
+            "CURLOPT_DNS_SERVERS": "1.1.1.1,9.9.9.9,8.8.8.8",
+            "CURLOPT_TCP_KEEPALIVE": 1,
+            "CURLOPT_TCP_KEEPIDLE": 30,
+            "CURLOPT_TCP_KEEPINTVL": 15
+          }
+        },
+        {
+          "kind": "db.sql",
+          "sql": "UPDATE `bc_jobs` SET `state`=1, `updated_at`=NOW() WHERE `state`=2 AND `updated_at` < (NOW() - INTERVAL 30 MINUTE)",
+          "types": "",
+          "params": []
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `bc_jobs` WHERE `state`=1 ORDER BY `id` ASC LIMIT 1",
+          "types": "",
+          "params": []
+        },
+        {
+          "kind": "db.sql",
+          "sql": "UPDATE `bc_jobs` SET `state`=2, `updated_at`=NOW() WHERE `id`=? AND `state`=1",
+          "types": "i",
+          "params": [
+            51
+          ]
+        },
+        {
+          "kind": "http.fake",
+          "url": "https://api.telegram.org/botfixture-token/sendMessage",
+          "options": {
+            "CURLOPT_URL": "https://api.telegram.org/botfixture-token/sendMessage",
+            "CURLOPT_POST": true,
+            "CURLOPT_POSTFIELDS": "chat_id=9001&text=%E2%96%B6%EF%B8%8F+%D9%81%D8%B1%D8%A2%DB%8C%D9%86%D8%AF+%D8%A8%D8%A7+ID%3A51+%D9%88+%D8%B9%D9%85%D9%84+pin+%D8%A8%D8%B1%D8%A7%DB%8C+%D8%A7%D8%B1%D8%B3%D8%A7%D9%84+%D8%A8%D8%A7+ID%3A61+%D8%B4%D8%B1%D9%88%D8%B9+%D8%B4%D8%AF.",
+            "CURLOPT_RETURNTRANSFER": true,
+            "CURLOPT_TIMEOUT": 10,
+            "CURLOPT_CONNECTTIMEOUT": 5,
+            "CURLOPT_IPRESOLVE": 10007,
+            "CURLOPT_HTTPHEADER": [
+              "Expect:"
+            ],
+            "CURLOPT_HTTP_VERSION": 10010,
+            "CURLOPT_NOSIGNAL": true,
+            "CURLOPT_DNS_CACHE_TIMEOUT": 300,
+            "CURLOPT_DNS_SERVERS": "1.1.1.1,9.9.9.9,8.8.8.8",
+            "CURLOPT_TCP_KEEPALIVE": 1,
+            "CURLOPT_TCP_KEEPIDLE": 30,
+            "CURLOPT_TCP_KEEPINTVL": 15
+          }
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT id, userid, message_id FROM bc_messages WHERE broadcast_id=? AND deleted=0 AND pinned=0 AND id > ? ORDER BY id LIMIT 200",
+          "types": "ii",
+          "params": [
+            61,
+            70
+          ]
+        },
+        {
+          "kind": "db.sql",
+          "sql": "UPDATE `bc_jobs` SET `offset`=?, `updated_at`=NOW() WHERE `id`=? AND `state`=2",
+          "types": "ii",
+          "params": [
+            70,
+            51
+          ]
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT `state` FROM `bc_jobs` WHERE `id`=? LIMIT 1",
+          "types": "i",
+          "params": [
+            51
+          ]
+        },
+        {
+          "kind": "http.fake",
+          "url": "https://api.telegram.org/botfixture-token/pinChatMessage",
+          "options": {
+            "CURLOPT_URL": "https://api.telegram.org/botfixture-token/pinChatMessage",
+            "CURLOPT_POST": true,
+            "CURLOPT_POSTFIELDS": "chat_id=1001&message_id=71&disable_notification=1",
+            "CURLOPT_RETURNTRANSFER": true,
+            "CURLOPT_TIMEOUT": 10,
+            "CURLOPT_CONNECTTIMEOUT": 5,
+            "CURLOPT_IPRESOLVE": 10007,
+            "CURLOPT_HTTPHEADER": [
+              "Expect:"
+            ],
+            "CURLOPT_HTTP_VERSION": 10010,
+            "CURLOPT_NOSIGNAL": true,
+            "CURLOPT_DNS_CACHE_TIMEOUT": 300,
+            "CURLOPT_DNS_SERVERS": "1.1.1.1,9.9.9.9,8.8.8.8",
+            "CURLOPT_TCP_KEEPALIVE": 1,
+            "CURLOPT_TCP_KEEPIDLE": 30,
+            "CURLOPT_TCP_KEEPINTVL": 15
+          }
+        },
+        {
+          "kind": "db.sql",
+          "sql": "UPDATE `bc_jobs` SET `offset`=?, `updated_at`=NOW() WHERE `id`=? AND `state`=2",
+          "types": "ii",
+          "params": [
+            70,
+            51
+          ]
+        },
+        {
+          "kind": "sleep",
+          "seconds": 3
+        },
+        {
+          "kind": "db.sql",
+          "sql": "UPDATE `bc_jobs` SET `fail_cnt` = `fail_cnt` + 1 WHERE `id`=?",
+          "types": "i",
+          "params": [
+            51
+          ]
+        },
+        {
+          "kind": "usleep",
+          "microseconds": 40000
+        },
+        {
+          "kind": "db.sql",
+          "sql": "UPDATE `bc_jobs` SET `offset`=?, `state`=1, `updated_at`=NOW() WHERE `id`=? AND `state`=2",
+          "types": "ii",
+          "params": [
+            70,
+            51
+          ]
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT `id` FROM `send_list` WHERE `state` = 1 OR (`state` = 2 AND `updated_at` < (NOW() - INTERVAL 15 MINUTE)) ORDER BY `id` ASC LIMIT 1",
+          "types": "",
+          "params": []
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    },
+    "entry.reward_idle": {
+      "result": null,
+      "events": [
+        {
+          "kind": "db.connect",
+          "fake": true
+        },
+        {
+          "kind": "db.charset",
+          "charset": "utf8mb4"
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `users` WHERE `userid`=?",
+          "types": "i",
+          "params": [
+            1001
+          ]
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `setting` WHERE `type` = 'PAYMENT_KEYS'",
+          "types": "",
+          "params": []
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT * FROM `setting` WHERE `type` = 'BOT_STATES'",
+          "types": "",
+          "params": []
+        },
+        {
+          "kind": "http.fake",
+          "url": "https://api.telegram.org/botfixture-token/getChatMember",
+          "options": {
+            "CURLOPT_URL": "https://api.telegram.org/botfixture-token/getChatMember",
+            "CURLOPT_POST": true,
+            "CURLOPT_POSTFIELDS": "chat_id=%40fixture_channel&user_id=1001",
+            "CURLOPT_RETURNTRANSFER": true,
+            "CURLOPT_TIMEOUT": 10,
+            "CURLOPT_CONNECTTIMEOUT": 5,
+            "CURLOPT_IPRESOLVE": 10007,
+            "CURLOPT_HTTPHEADER": [
+              "Expect:"
+            ],
+            "CURLOPT_HTTP_VERSION": 10010,
+            "CURLOPT_NOSIGNAL": true,
+            "CURLOPT_DNS_CACHE_TIMEOUT": 300,
+            "CURLOPT_DNS_SERVERS": "1.1.1.1,9.9.9.9,8.8.8.8",
+            "CURLOPT_TCP_KEEPALIVE": 1,
+            "CURLOPT_TCP_KEEPIDLE": 30,
+            "CURLOPT_TCP_KEEPINTVL": 15
+          }
+        },
+        {
+          "kind": "db.sql",
+          "sql": "SELECT `value` FROM `setting` WHERE `type` = 'LAST_BACKUP_TIME'",
+          "types": "",
+          "params": []
+        }
+      ],
+      "stdout": "",
+      "http_status": 200,
+      "harness_errors": []
+    }
+  }
+}

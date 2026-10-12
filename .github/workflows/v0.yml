@@ -1,0 +1,49 @@
+name: V0 baseline
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: v0-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  baseline:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: PHP 8.4 test runtime
+        uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2
+        with:
+          php-version: '8.4'
+          extensions: mysqli, tokenizer
+          coverage: none
+          tools: none
+      - name: Reference and isolated behavior checks
+        run: |
+          php --version
+          git rev-parse HEAD
+          python3 tools/check.py --report "$RUNNER_TEMP/v0-mock.json"
+      - name: Disposable MariaDB prerequisites (ephemeral runner only)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends mariadb-server
+      - name: Existing schema and real transaction checks
+        run: |
+          python3 tools/test_schema.py --run-disposable --report "$RUNNER_TEMP/v0-schema.json"
+      - name: Evidence summary
+        run: |
+          printf '## V0 exact-candidate checks\n\n' >> "$GITHUB_STEP_SUMMARY"
+          printf 'Candidate: `%s`\n\n' "$(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
+          printf 'Known baseline defects are characterized, not repaired. No production acceptance is claimed.\n\n' >> "$GITHUB_STEP_SUMMARY"
+          printf '```json\n' >> "$GITHUB_STEP_SUMMARY"
+          cat "$RUNNER_TEMP/v0-mock.json" "$RUNNER_TEMP/v0-schema.json" >> "$GITHUB_STEP_SUMMARY"
+          printf '\n```\n' >> "$GITHUB_STEP_SUMMARY"

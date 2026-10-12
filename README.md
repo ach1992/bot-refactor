@@ -1,6 +1,6 @@
 # AchBot — PHP Telegram VPN bot (refactoring project)
 
-This repository is a **public, credential-free baseline** for a staged, behavior-preserving refactor of an existing PHP Telegram bot. **Not a new product and not yet a refactored release.**
+This repository is a **public, sanitized reference baseline** for a staged, behavior-preserving refactor of an existing PHP Telegram bot. **Not a new product and not yet a refactored release.**
 
 > **Safety:** no real tokens, passwords, user records, payment credentials, live backups or runtime caches belong in this repository. Use isolated test infrastructure. Existing credentials in the source database dump should be rotated if still valid.
 
@@ -31,4 +31,15 @@ This repository is a **public, credential-free baseline** for a staged, behavior
 
 See source entrypoints in `bot.php`, `config.php`, `pay/`, and `settings/`. The existing target used MariaDB 10.11 and PHP 8.4. Provision `baseInfo.php` **locally only**, configure webhooks, scheduled tasks and integrations as they were in the existing deployment, and keep deployment state out of Git.
 
-No claim of integration equivalence, runtime acceptance, staging readiness or successful deployment is made at this point. Baseline tests and runtime inventory still need to be established.
+## V0 analysis and test harness
+
+Start at [V0 documentation](docs/v0/README.md). It includes the complete lexical source atlas, database contract, behavior matrix, known-risk register and isolated testing/operations runbooks.
+
+```sh
+python3 tools/check.py --report /tmp/achbot-v0-check.json
+python3 tools/test_schema.py --run-disposable --report /tmp/achbot-v0-schema.json
+```
+
+Use only a development checkout and existing test prerequisites. These commands never use local production configuration. Review [test isolation and limitations](docs/v0/TESTING.md) before running them. Known legacy SQL errors are recorded, not repaired; passing checks do not establish full integration equivalence or production acceptance. Current review/acceptance state belongs to Issue #1 and its PR/CI.
+
+V0 preserves all runtime/reference source bytes. It is not a refactored deployment package and does not authorize V1 or a production source swap.

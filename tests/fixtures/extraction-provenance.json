@@ -1,0 +1,576 @@
+[
+  {
+    "file": "config.php",
+    "function": "tgRetryAfter",
+    "line": 15,
+    "end_line": 24,
+    "sha256": "4bb869eaa66173e07c540d974c70909532ebac083af6764ecfcd4583df022f62"
+  },
+  {
+    "file": "config.php",
+    "function": "bot",
+    "line": 26,
+    "end_line": 134,
+    "sha256": "978a8af6e089e844baff8c43d7937587024eeb0e34ebd2892e2a1840d3f79f62"
+  },
+  {
+    "file": "config.php",
+    "function": "sendFileToTelegram",
+    "line": 136,
+    "end_line": 221,
+    "sha256": "5303825bb5f16dc5a71524008d6336c97494fde99cf947747f74488755dd9e02"
+  },
+  {
+    "file": "config.php",
+    "function": "normalizeReplyMarkup",
+    "line": 223,
+    "end_line": 227,
+    "sha256": "9b2d32bed54c6db773f8bb0900a49e921d697c1c2cc98b0229ae8863fa6713e9"
+  },
+  {
+    "file": "config.php",
+    "function": "sendMessage",
+    "line": 229,
+    "end_line": 254,
+    "sha256": "8172d7d9e5786b6917381dfb5164291cd4d884b5c5e6e1a80b964754bf02fff9"
+  },
+  {
+    "file": "config.php",
+    "function": "answerCallbackQuery",
+    "line": 328,
+    "end_line": 336,
+    "sha256": "1dee3290e1b3ae6a3540aeea327e9be03011a7a18c3a196f3530940fe2ee82af"
+  },
+  {
+    "file": "config.php",
+    "function": "editKeys",
+    "line": 338,
+    "end_line": 348,
+    "sha256": "581f9252d0956af5da977d124030d740a0a54419949033ad9093c2ca0cb779c9"
+  },
+  {
+    "file": "config.php",
+    "function": "editText",
+    "line": 349,
+    "end_line": 360,
+    "sha256": "1fa0c77693cc5effb65d3176270c905317c5f5f4f40e1bd988785ba42ad26c9c"
+  },
+  {
+    "file": "config.php",
+    "function": "delMessage",
+    "line": 362,
+    "end_line": 371,
+    "sha256": "0b5c80efd2968870187ee6a4f20440d159bd1e7894a10cd1fe4f5c6eb6e6a64f"
+  },
+  {
+    "file": "config.php",
+    "function": "sendAction",
+    "line": 372,
+    "end_line": 380,
+    "sha256": "e5fe9879411abc87f7c4df407fa2950776f6f2510d3d1e8df9cc304394032e75"
+  },
+  {
+    "file": "config.php",
+    "function": "forwardmessage",
+    "line": 382,
+    "end_line": 388,
+    "sha256": "c07164942e53609e61add200f27fe9a638a051b1df9024f71536cab3247cc32d"
+  },
+  {
+    "file": "config.php",
+    "function": "isForwardedMessageObj",
+    "line": 390,
+    "end_line": 397,
+    "sha256": "ef7ada8cbabc8243da4a2c51e8828cc8db5320c2954fe1a811eb1dfde48a6e89"
+  },
+  {
+    "file": "config.php",
+    "function": "groupFa",
+    "line": 399,
+    "end_line": 404,
+    "sha256": "c4cfa9d177a0b94402ecbe097ab02bea3dc65d1e4fe4f41e723f78ad42a18745"
+  },
+  {
+    "file": "config.php",
+    "function": "stateFa",
+    "line": 406,
+    "end_line": 412,
+    "sha256": "c08e67bb548ad0549008b59e887cd71cb8eb001b080caf5ab5a432373146586e"
+  },
+  {
+    "file": "config.php",
+    "function": "apiOk",
+    "line": 456,
+    "end_line": 458,
+    "sha256": "8bf45977715a8c54a18c90e47732bd13e2d654351523cc94cb17d9ea130d2761"
+  },
+  {
+    "file": "config.php",
+    "function": "getApiMessageId",
+    "line": 460,
+    "end_line": 465,
+    "sha256": "cb1a44d320274b189aaef948eaf1e8859907f9d619b9e8ac7efaf7e19dcf75df"
+  },
+  {
+    "file": "config.php",
+    "function": "logBroadcastUserMessage",
+    "line": 467,
+    "end_line": 481,
+    "sha256": "9af39d96fd18174a60ce44322c5f6831c17fe48699fed096db2a0f08d5ebc881"
+  },
+  {
+    "file": "config.php",
+    "function": "pinOne",
+    "line": 483,
+    "end_line": 489,
+    "sha256": "888601b8902741e43c4a404b606c1f65ff7dcd4f360684fe911cbfbb68ae333a"
+  },
+  {
+    "file": "config.php",
+    "function": "unpinOne",
+    "line": 491,
+    "end_line": 503,
+    "sha256": "f7c82165e97424199ea9bb06604b625b9adbf3fff100f18d0fc1a5df04199efe"
+  },
+  {
+    "file": "config.php",
+    "function": "deleteOne",
+    "line": 505,
+    "end_line": 510,
+    "sha256": "09ee7769d9e9e349e627184fec89bb2419996477123353476b8230ba0102105c"
+  },
+  {
+    "file": "config.php",
+    "function": "alert",
+    "line": 556,
+    "end_line": 564,
+    "sha256": "b4b72f3d55daa0ae261eb5270d0fee0bc812e55b4284fc1a6053df2a4eb1aa8c"
+  },
+  {
+    "file": "config.php",
+    "function": "ip_in_range",
+    "line": 604,
+    "end_line": 615,
+    "sha256": "83085e7a67f2fa1e6743f4914024c5aff605a3cd1f1e8315d53a379aa4f3bd64"
+  },
+  {
+    "file": "config.php",
+    "function": "getSupportUrl",
+    "line": 793,
+    "end_line": 801,
+    "sha256": "659dc0d959521deb45f6bf92bdff12013a1062c026d5c866a7bde7229887330d"
+  },
+  {
+    "file": "config.php",
+    "function": "replaceAllPlaceholdersInMainValues",
+    "line": 768,
+    "end_line": 790,
+    "sha256": "308afa3b55ad99563f18f44689d8b1ab741e19a8bc5acf1afbebd7218e9e0c25"
+  },
+  {
+    "file": "config.php",
+    "function": "getMainKeys",
+    "line": 837,
+    "end_line": 923,
+    "sha256": "2073f7fec0c7cde2337e6fa496cecf0daf7df9c477b07651239cad52bd03ed2f"
+  },
+  {
+    "file": "config.php",
+    "function": "getAgentKeys",
+    "line": 925,
+    "end_line": 941,
+    "sha256": "0ae033db07ded5bd2d7104f567dd4c3a734a19b07bc1d35de63e7c3c07b71ce1"
+  },
+  {
+    "file": "config.php",
+    "function": "getAdminKeys",
+    "line": 943,
+    "end_line": 985,
+    "sha256": "3c05073e5c820fdea808b07e79acad29b239b51222fd5ddbe00df28275dc2c5d"
+  },
+  {
+    "file": "config.php",
+    "function": "canSeeButton",
+    "line": 8564,
+    "end_line": 8571,
+    "sha256": "edcd08f3e64be4d40870431829f1403dad127880fb67f65ae8143388206d9228"
+  },
+  {
+    "file": "config.php",
+    "function": "getCallbackFromCommand",
+    "line": 2875,
+    "end_line": 2922,
+    "sha256": "755cde33f97863d6060b58e2904a8e4f9283f7db6106dbd9625f7e7a0ada1f52"
+  },
+  {
+    "file": "config.php",
+    "function": "buildConfigLinks",
+    "line": 3757,
+    "end_line": 3781,
+    "sha256": "8c954ef49ea35d1782481664cb643f86998a6d6a1f50949d78a2f6c4493f96e7"
+  },
+  {
+    "file": "config.php",
+    "function": "buildSubLink",
+    "line": 3783,
+    "end_line": 3791,
+    "sha256": "2a7148d10ddc1eb2f51c32a6097e4e700dbefb5682890a98448a8d0b7e366c39"
+  },
+  {
+    "file": "config.php",
+    "function": "buildSubBackupSection",
+    "line": 3793,
+    "end_line": 3804,
+    "sha256": "8c1663e95e05c395a75d4b9253b0079c032f863d89f73290cc0a37e01b043a37"
+  },
+  {
+    "file": "config.php",
+    "function": "buildConfigMessage",
+    "line": 3806,
+    "end_line": 3825,
+    "sha256": "5b9d2f6c59382c3555d1f166c161e5b797c7025fe60072c78d0afd275ecdaa1b"
+  },
+  {
+    "file": "config.php",
+    "function": "sumerize",
+    "line": 4399,
+    "end_line": 4409,
+    "sha256": "63c9e92fa7c85d9cfa59d83830b539ec2eab0bd43bfb99489c5f1e47f431af25"
+  },
+  {
+    "file": "config.php",
+    "function": "sumerize2",
+    "line": 4411,
+    "end_line": 4414,
+    "sha256": "3c02ca8f9ad034b29803184558a48b0ee43a00fa2d40d30ef80e8a49c56d5926"
+  },
+  {
+    "file": "config.php",
+    "function": "RandomString",
+    "line": 4305,
+    "end_line": 4317,
+    "sha256": "a523268d46c006a91f8f05221bbc8e000885f77cf8c8573c986187e62b14dc4b"
+  },
+  {
+    "file": "config.php",
+    "function": "generateUID",
+    "line": 4318,
+    "end_line": 4335,
+    "sha256": "c251e46c662ab3b4e6c14f4a0c932dfdfe9c3349d9902e43fc31a103dbedbc35"
+  },
+  {
+    "file": "config.php",
+    "function": "getUsersCountByGroup",
+    "line": 413,
+    "end_line": 453,
+    "sha256": "2950ca360e6e37ce6b07f949a1a80c74bed3e5d27e54b7f615fc032cded3577b"
+  },
+  {
+    "file": "config.php",
+    "function": "findOrder",
+    "line": 3578,
+    "end_line": 3594,
+    "sha256": "a77c98f4f9feee0bac302cffe533e317b3a5dc76c1117b7f5d03a907a643f56a"
+  },
+  {
+    "file": "config.php",
+    "function": "applyDiscountToPay",
+    "line": 2976,
+    "end_line": 3315,
+    "sha256": "e980bbdc042a6c1bb518e0e0393d561e2a83b304a4f219920ff902e4b2734bf4"
+  },
+  {
+    "file": "config.php",
+    "function": "startWalletPayment",
+    "line": 727,
+    "end_line": 766,
+    "sha256": "5f87fed9ec84014ca485d8460fd39659ead00e97a2885ba12283535d7ac7994e"
+  },
+  {
+    "file": "buy_helpers.php",
+    "function": "getPlanDetails",
+    "line": 4,
+    "end_line": 33,
+    "sha256": "e5bd801e78b45bf5c2d1daacb0d4591539b119b7d5805ba1cef0e4afbab4cba1"
+  },
+  {
+    "file": "buy_helpers.php",
+    "function": "ensureServerCapacity",
+    "line": 37,
+    "end_line": 59,
+    "sha256": "d0b19d3e725ca8cdd1b6ec6a40811e52e801626ee877a093fccfed06d89821cf"
+  },
+  {
+    "file": "buy_helpers.php",
+    "function": "getServerInfoAndConfig",
+    "line": 63,
+    "end_line": 83,
+    "sha256": "7aebae9dda706af9628961e0627bca574a5472401de8e660343b7831109c69f6"
+  },
+  {
+    "file": "buy_helpers.php",
+    "function": "buildRemark",
+    "line": 87,
+    "end_line": 104,
+    "sha256": "a717bb07a67ed2c2d836b4397e15b18bb5538acb733b988b9c02295eada33ee7"
+  },
+  {
+    "file": "buy_helpers.php",
+    "function": "getNextPortAndIncrease",
+    "line": 108,
+    "end_line": 133,
+    "sha256": "cec5b25cb87b840e0ef9bd8e6605655353d91b4e7f300aa16aee1add427cce28"
+  },
+  {
+    "file": "buy_helpers.php",
+    "function": "createServerAccount",
+    "line": 137,
+    "end_line": 232,
+    "sha256": "21d0fb0c7558cd06644392a0fae6327b3f099dfff51f0e78ce453ba03559a6bd"
+  },
+  {
+    "file": "buy_helpers.php",
+    "function": "insertOrder",
+    "line": 517,
+    "end_line": 556,
+    "sha256": "d4f1d9a571c36b2fa22f5e3a7f592b928fd3a904365506508663afc5cfbc399a"
+  },
+  {
+    "file": "buy_helpers.php",
+    "function": "decreaseServerCapacity",
+    "line": 560,
+    "end_line": 586,
+    "sha256": "cebd6e0aafa8974c9f25bf963003777b2d61ce31b7fb5269a5f714770e1ba527"
+  },
+  {
+    "file": "buy_helpers.php",
+    "function": "ensureAccountCreationSucceeded",
+    "line": 590,
+    "end_line": 648,
+    "sha256": "e40997db9306f030bac5cd9730ebcd17256cbe354140aa0eec62724106fb4ad4"
+  },
+  {
+    "file": "buy_helpers.php",
+    "function": "giveReferralReward",
+    "line": 652,
+    "end_line": 698,
+    "sha256": "98170e4dd7b4748a97e5c0d980c6e5efb569325831cacd1d39b2284d35094ebd"
+  },
+  {
+    "file": "buy_helpers.php",
+    "function": "renewConfigOnServer",
+    "line": 702,
+    "end_line": 722,
+    "sha256": "4f256437a39e0b5e89174b9b5fdd30079b9e33b6ca6a73ad1ee8eded3ac54ae3"
+  },
+  {
+    "file": "buy_helpers.php",
+    "function": "processWalletPayment",
+    "line": 726,
+    "end_line": 891,
+    "sha256": "7112d099fb33dd829631efed88f34b378c89cd466f9340c987f276f672009a92"
+  },
+  {
+    "file": "buy_helpers.php",
+    "function": "calculateAgentPrice",
+    "line": 895,
+    "end_line": 931,
+    "sha256": "b8a8d8415a550fd8bce9f04860a7777425f6ff86a2942c714136d0a0ac4af923"
+  },
+  {
+    "file": "buy_helpers.php",
+    "function": "createIncreaseOrder",
+    "line": 935,
+    "end_line": 964,
+    "sha256": "4f73c145105e80888988fd8104d192e119038780d000363e43a537cbc528ef2c"
+  },
+  {
+    "file": "buy_helpers.php",
+    "function": "payTypeToDescription",
+    "line": 968,
+    "end_line": 977,
+    "sha256": "bcf4e50181b114d63e82aa8460830e70b73a2954412d8936f9166ffc5cef9b37"
+  },
+  {
+    "file": "buy_helpers.php",
+    "function": "addToWallet",
+    "line": 981,
+    "end_line": 990,
+    "sha256": "0cfef6b22715261f4a424def2a53e6ec463b621ba380b4f50c35159f772e3b21"
+  },
+  {
+    "file": "buy_helpers.php",
+    "function": "notifyAllAdminsSimple",
+    "line": 994,
+    "end_line": 1010,
+    "sha256": "d730df12183665a0d76bd1b734004870a918f767f9ac9b17df0375f314470ad4"
+  },
+  {
+    "file": "buy_helpers.php",
+    "function": "refundToWalletAndNotify",
+    "line": 1014,
+    "end_line": 1040,
+    "sha256": "a7576d66a219bde30ade4182535b9be025f5348821413071f795d7215816f453"
+  },
+  {
+    "file": "buy_helpers.php",
+    "function": "dbFetchPayByHash",
+    "line": 1043,
+    "end_line": 1051,
+    "sha256": "783fec1673d3282528714c9c76f96c11684ca41a352f023582cea0f611dbed9b"
+  },
+  {
+    "file": "buy_helpers.php",
+    "function": "inlineKeyboard",
+    "line": 1061,
+    "end_line": 1063,
+    "sha256": "a94f66744c3b97aeb09ef1f922ef5dfc20a1d26d4ac9d13f4c9b441b77208b68"
+  },
+  {
+    "file": "buy_helpers.php",
+    "function": "generateHigherRandomizedAmount",
+    "line": 1065,
+    "end_line": 1079,
+    "sha256": "736e3d5617841f08765cd17034e24412e7c8744b9bb7cad74c5604f021a9f8f0"
+  },
+  {
+    "file": "buy_helpers.php",
+    "function": "fetchCartToCartUserEligibility",
+    "line": 1081,
+    "end_line": 1139,
+    "sha256": "538e5e9744d1976a16e201d646037331565b119acf1d827c6e2d3e3010749e14"
+  },
+  {
+    "file": "buy_helpers.php",
+    "function": "resolveCartToCartMessageType",
+    "line": 1141,
+    "end_line": 1181,
+    "sha256": "70ccfcfa636702bbf4e2d05657919d3bcfe96951f0562f088f05bd869c24ff65"
+  },
+  {
+    "file": "buy_helpers.php",
+    "function": "getCartToCartMessageKey",
+    "line": 1183,
+    "end_line": 1193,
+    "sha256": "21c5d1e9480413c37c7f6aac4af42b527fe9750ab8777f93ca54492026f5bd42"
+  },
+  {
+    "file": "buy_helpers.php",
+    "function": "buildCartToCartInfoMessage",
+    "line": 1195,
+    "end_line": 1241,
+    "sha256": "0216391fa51848e69cf92172d400cab222659467ebf8a21a4ef6442d212df67f"
+  },
+  {
+    "file": "buy_helpers.php",
+    "function": "kbSendReceiptAndCancel",
+    "line": 1243,
+    "end_line": 1262,
+    "sha256": "843c3faa36b2e2b525f4682507b7494ef6d58e957b0122096b766fff4652bbfa"
+  },
+  {
+    "file": "buy_helpers.php",
+    "function": "kbOnlyCancel",
+    "line": 1264,
+    "end_line": 1270,
+    "sha256": "3759ee4b88e7cbca29282456cc7c608039e3c3b5e19392c54a023a64110b00ed"
+  },
+  {
+    "file": "buy_helpers.php",
+    "function": "extractPhotoFileId",
+    "line": 1280,
+    "end_line": 1284,
+    "sha256": "ac4245c433d77b12a65f1354f9e6193edd76653a845d5d360e1a9b36a74cb84e"
+  },
+  {
+    "file": "buy_helpers.php",
+    "function": "duplicateReceiptGuard",
+    "line": 1286,
+    "end_line": 1401,
+    "sha256": "2eb8c2ff9cb8554c91d500c4d809485668807589331f797528ac331f9ed4be22"
+  },
+  {
+    "file": "buy_helpers.php",
+    "function": "countUserPaysByState",
+    "line": 1403,
+    "end_line": 1410,
+    "sha256": "39fd72af5765ca1a5d9e2bd2c18512c4a462a909789127179944aeef71b89d79"
+  },
+  {
+    "file": "buy_helpers.php",
+    "function": "sumUserPaysByState",
+    "line": 1412,
+    "end_line": 1424,
+    "sha256": "75d865acff0515003fdf55ff47d040d8d98c499dddf1bc6e964ff2b0b056a548"
+  },
+  {
+    "file": "buy_helpers.php",
+    "function": "buildAdminKeyboardWithStats",
+    "line": 1426,
+    "end_line": 1460,
+    "sha256": "7f228c16fadb4d8ec6e9a9cd63a769e0b862208426e6be15c491068f91d7208b"
+  },
+  {
+    "file": "buy_helpers.php",
+    "function": "sendReceiptToAdminsAndUpdatePay",
+    "line": 1462,
+    "end_line": 1486,
+    "sha256": "a5b82683c07208fddea4e5ba1cacbcd6049272599f380c33b3e3a13b8073832a"
+  },
+  {
+    "file": "buy_helpers.php",
+    "function": "sendWithStartButton",
+    "line": 1488,
+    "end_line": 1500,
+    "sha256": "097655d0a91f2fcfc13cbb5954a7170e9035b46a8917f759167e3987e9738036"
+  },
+  {
+    "file": "settings/messagewizwiz.php",
+    "function": "nowTs",
+    "line": 34,
+    "end_line": 34,
+    "sha256": "0297c9dd6953cf0712d62a90f42e4f41f21e61d0ae0a61b677585bfccbc29db2"
+  },
+  {
+    "file": "settings/messagewizwiz.php",
+    "function": "safeClose",
+    "line": 36,
+    "end_line": 38,
+    "sha256": "c845feeb5bf4bf132cb63023063b83f066c69848d94d402b6ab2ef247bc03ea0"
+  },
+  {
+    "file": "settings/messagewizwiz.php",
+    "function": "hbUpdate",
+    "line": 40,
+    "end_line": 48,
+    "sha256": "537e9d25754f57a99d560454cf0d54a7de6a7dfc79767290f8a081a4cde237e4"
+  },
+  {
+    "file": "settings/messagewizwiz.php",
+    "function": "markPaused",
+    "line": 50,
+    "end_line": 58,
+    "sha256": "381e594289e50ad85368667542b31de055947d61e21249bc9c1ac257ced541f1"
+  },
+  {
+    "file": "settings/messagewizwiz.php",
+    "function": "isCancelled",
+    "line": 60,
+    "end_line": 72,
+    "sha256": "73c8e9725f325bbf093362b2bbfa35612405627ddc5ac05861fe959add8a20a2"
+  },
+  {
+    "file": "settings/messagewizwiz.php",
+    "function": "markCancelled",
+    "line": 74,
+    "end_line": 82,
+    "sha256": "c882650c7b37acbea07d6c1cd98751c046d232c0db8c05d15cb412c91353442a"
+  },
+  {
+    "file": "settings/messagewizwiz.php",
+    "function": "markFinished",
+    "line": 84,
+    "end_line": 92,
+    "sha256": "834711ded22c74e7caf87d5dd8bf48aae755d0cc5a7e9258514a1db162243491"
+  }
+]

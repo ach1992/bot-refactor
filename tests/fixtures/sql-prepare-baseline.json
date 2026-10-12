@@ -1,0 +1,44 @@
+[
+  {
+    "file": "bot.php",
+    "line": 2384,
+    "code": 1054,
+    "sql_sha256": "0c3722caf2c8ab8a38da82754f6397371d4c38f4ee6177cbc5f2adb98a0ca73f",
+    "classification": "statement_error"
+  },
+  {
+    "file": "bot.php",
+    "line": 13439,
+    "code": 1064,
+    "sql_sha256": "9d64b586bd7dc6bf7a23a4b683f2b78f7343fbc65bf31f6ef7ff579f90eb8e30",
+    "classification": "construction_fragment"
+  },
+  {
+    "file": "bot.php",
+    "line": 13442,
+    "code": 1064,
+    "sql_sha256": "ff576c47fadfe60b6767ec0eb2f8e10d49e60da1b02675ee977e3fe48d3558c2",
+    "classification": "construction_fragment"
+  },
+  {
+    "file": "bot.php",
+    "line": 13445,
+    "code": 1064,
+    "sql_sha256": "10d82e7b99472f0991a2790fcb4b69cfb5f9596c4ad61b8e5ea6cd1be0d46146",
+    "classification": "construction_fragment"
+  },
+  {
+    "file": "bot.php",
+    "line": 13448,
+    "code": 1064,
+    "sql_sha256": "7991f8fb7af8fd3eb65e78f9d7468e5b243bb779f8078362c61c6e966ddb7ea9",
+    "classification": "construction_fragment"
+  },
+  {
+    "file": "settings/rewardReport.php",
+    "line": 455,
+    "code": 1136,
+    "sql_sha256": "21c9338d14d0244078ea518ffad28b1593ad954d4847393978e7ac641d568397",
+    "classification": "statement_error"
+  }
+]

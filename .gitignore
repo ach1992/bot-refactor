@@ -23,3 +23,8 @@
 /vendor/
 /node_modules/
 .DS_Store
+
+# V0 development-only outputs (fixtures in tests/fixtures ARE intentionally tracked)
+__pycache__/
+*.pyc
+/.test-results/
