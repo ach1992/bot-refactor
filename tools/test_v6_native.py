@@ -86,10 +86,21 @@ class Handler(BaseHTTPRequestHandler):
         elif self.path=='/api/user' and self.command=='POST':
             payload={'links':['vless://fixture']};headers={}
         elif self.path.endswith('/panel/inbound/list') or self.path.endswith('/xui/inbound/list'):
-            client={'id':'fixture-uuid','email':'fixture-user','enable':True}
+            client={'id':'fixture-uuid','email':'fixture-user','enable':True,'flow':'xtls-rprx-vision'}
+            transport=getattr(self.server,'transport','ws')
+            security=getattr(self.server,'security','none')
+            stream={'network':transport,'security':security,
+              'tcpSettings':{'header':{'type':'none','request':{'path':['/'],'headers':{'Host':['fixture.invalid']}}}},
+              'wsSettings':{'header':{'type':'http'},'path':'/socket','headers':{'Host':'cdn.fixture.invalid'}},
+              'grpcSettings':{'serviceName':'fixture-grpc'},
+              'kcpSettings':{'header':{'type':'none'},'seed':'fixture-seed'},
+              'tlsSettings':{'serverName':'tls.fixture.invalid','certificates':{'alpn':['h2']}},
+              'xtlsSettings':{'serverName':'xtls.fixture.invalid','alpn':['h2']},
+              'realitySettings':{'settings':{'fingerprint':'chrome','spiderX':'/','publicKey':'fixture-pubkey'},
+                                'serverNames':['reality.fixture.invalid'],'shortIds':['fixture-short']}}
             payload={'success':True,'obj':[{'id':7,'port':443,'protocol':'vless',
                'settings':json.dumps({'clients':[client]}),
-               'streamSettings':json.dumps({'network':'ws','security':'none'}),
+               'streamSettings':json.dumps(stream),
                'clientStats':[{'email':'fixture-user','up':0,'down':0,'total':2147483648,'enable':True}],
                'total':2147483648,'up':0,'down':0}]};headers={}
         else:
@@ -136,6 +147,14 @@ def case_defs():
       'alireza.list':('getJson',[4]),
       'sanaei.traffic':('getOrderTrafficInfo',['sanaei',3,'fixture-user','fixture-uuid',7]),
       'alireza.traffic':('getOrderTrafficInfo',['alireza',4,'fixture-user','fixture-uuid',7]),
+      'sanaei.link.vmess_ws':('getConnectionLink',[3,'fixture-uuid','vmess','fixture-user',443,'ws',7]),
+      'sanaei.link.trojan_ws':('getConnectionLink',[3,'fixture-uuid','trojan','fixture-user',443,'ws',7]),
+      'sanaei.link.vless_grpc_tls':('getConnectionLink',[3,'fixture-uuid','vless','fixture-user',443,'grpc',7]),
+      'sanaei.link.vmess_grpc_tls':('getConnectionLink',[3,'fixture-uuid','vmess','fixture-user',443,'grpc',7]),
+      'sanaei.link.vless_tcp_reality':('getConnectionLink',[3,'fixture-uuid','vless','fixture-user',443,'tcp',7]),
+      'alireza.link.vless_tcp_tls':('getConnectionLink',[4,'fixture-uuid','vless','fixture-user',443,'tcp',7]),
+      'alireza.link.vless_kcp_none':('getConnectionLink',[4,'fixture-uuid','vless','fixture-user',443,'kcp',7]),
+      'alireza.link.trojan_grpc_tls':('getConnectionLink',[4,'fixture-uuid','trojan','fixture-user',443,'grpc',7]),
       'sanaei.links':('getConnectionLink',[3,'fixture-uuid','vless','fixture-user',443,'ws',7]),
       'alireza.links':('getConnectionLink',[4,'fixture-uuid','vless','fixture-user',443,'ws',7]),
       'sanaei.remark':('editClientRemark',[3,7,'fixture-uuid','renamed']),
@@ -212,6 +231,9 @@ def main():
         prepare(ROOT,old,False);prepare(ROOT,new,True)
         sentinel={name:hashlib.sha256((new/name).read_bytes()).hexdigest() for name in ('baseInfo.php','private-state.json')}
         for name,(fn,arguments) in cases.items():
+            provider.transport=('grpc' if '_grpc_' in name else 'tcp' if '_tcp_' in name
+                else 'kcp' if '_kcp_' in name else 'ws')
+            provider.security=('reality' if '_reality' in name else 'tls' if '_tls' in name else 'none')
             provider.mode=('marzban-invalid' if name.endswith('.invalid') and name.startswith('marzban')
                 or name=='marzban.user.unauthorized' else 'marzban-503' if name=='marzban.token.service_503'
                 else 'xui-invalid' if name in ('sanaei.login.invalid','alireza.login.invalid') else 'ok')
