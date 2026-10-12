@@ -61,10 +61,20 @@ class Handler(BaseHTTPRequestHandler):
                 body=json.dumps(request,ensure_ascii=False,separators=(',',':')).encode()
         self.server.trace.append({'method':self.command,'path':self.path,
             'body':body.decode('utf-8','replace'),'headers':headers})
+        status=200
+        mode=getattr(self.server,'mode','ok')
         if self.path.endswith('/login'):
-            payload={'success':True};headers={'Set-Cookie':'session=fixture-session; Path=/; HttpOnly'}
+            if mode=='xui-invalid':
+                status=401;payload={'success':False,'msg':'Invalid credentials'};headers={}
+            else:
+                payload={'success':True};headers={'Set-Cookie':'session=fixture-session; Path=/; HttpOnly'}
         elif self.path.endswith('/api/admin/token'):
-            payload={'access_token':'fixture-access'};headers={}
+            if mode=='marzban-invalid':
+                status=401;payload={'detail':'Invalid credentials'}
+            elif mode=='marzban-503':
+                status=503;payload={'detail':'Unavailable'}
+            else:payload={'access_token':'fixture-access'}
+            headers={}
         elif '/api/user/' in self.path:
             payload={'username':'fixture-user','status':'active','data_limit':2147483648,
               'used_traffic':1073741824,'expire':1800000100,'inbounds':{},'proxies':{},
@@ -85,7 +95,7 @@ class Handler(BaseHTTPRequestHandler):
         else:
             payload={'success':True,'obj':[]};headers={}
         encoded=json.dumps(payload,ensure_ascii=False).encode()
-        self.send_response(200)
+        self.send_response(status)
         self.send_header('Content-Type','application/json')
         self.send_header('Content-Length',str(len(encoded)))
         for k,v in headers.items():self.send_header(k,v)
@@ -113,6 +123,11 @@ def seed(work,env,port):
 def case_defs():
     return {
       'marzban.token':('getMarzbanToken',[2]),
+      'marzban.token.invalid':('getMarzbanToken',[2]),
+      'marzban.token.service_503':('getMarzbanToken',[2]),
+      'marzban.user.unauthorized':('getMarzbanUser',[2,'fixture-user']),
+      'sanaei.login.invalid':('getJson',[3]),
+      'alireza.login.invalid':('getJson',[4]),
       'marzban.users':('getMarzbanJson',[2]),
       'marzban.user':('getMarzbanUser',[2,'fixture-user']),
       'marzban.status':('changeMarzbanState',[2,'fixture-user']),
@@ -197,6 +212,9 @@ def main():
         prepare(ROOT,old,False);prepare(ROOT,new,True)
         sentinel={name:hashlib.sha256((new/name).read_bytes()).hexdigest() for name in ('baseInfo.php','private-state.json')}
         for name,(fn,arguments) in cases.items():
+            provider.mode=('marzban-invalid' if name.endswith('.invalid') and name.startswith('marzban')
+                or name=='marzban.user.unauthorized' else 'marzban-503' if name=='marzban.token.service_503'
+                else 'xui-invalid' if name in ('sanaei.login.invalid','alireza.login.invalid') else 'ok')
             # No live DB mutations: the owned fixtures must remain equivalent throughout.
             results=[];traces=[]
             for app,db in ((old,DBS[0]),(new,DBS[1])):

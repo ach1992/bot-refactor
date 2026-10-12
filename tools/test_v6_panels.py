@@ -51,6 +51,16 @@ def cases():
     add('marzban.login.ok','getMarzbanToken',[2],[read('server_config',[config_row()])],token_ok)
     add('marzban.login.network','getMarzbanToken',[2],[read('server_config',[config_row()])],
         [{'method':'token','body':'','errno':7}])
+    add('marzban.login.invalid_credentials','getMarzbanToken',[2],[read('server_config',[config_row()])],
+        [{'method':'token','body':{'detail':'Invalid credentials'},'status':401}])
+    add('marzban.login.backend_503','getMarzbanToken',[2],[read('server_config',[config_row()])],
+        [{'method':'token','body':{'detail':'Unavailable'},'status':503}])
+    add('marzban.user.auth_denied','getMarzbanUser',[2,'alice'],
+        [read('server_config',[config_row()]),read('server_config',[config_row()])],
+        [{'method':'token','body':{'detail':'Invalid credentials'},'status':401}])
+    add('marzban.users.auth_denied','getMarzbanJson',[2],
+        [read('server_config',[config_row()]),read('server_config',[config_row()])],
+        [{'method':'token','body':{'detail':'Invalid credentials'},'status':401}])
     add('marzban.users.explicit-token','getMarzbanJson',[2],
         [read('server_config',[config_row()]),read('server_config',[config_row()])],[*token_ok,{'method':'users','body':[{'username':'one'}]}])
     add('marzban.user.explicit-token','getMarzbanUser',[2,'user X'],
