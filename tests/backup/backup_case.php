@@ -71,9 +71,17 @@ $sender = static function ($file, $caption, $recipient) use (&$delivered, $case,
 if (strpos($case, 'schedule.') === 0) {
     $attempts = 0;
     $success = $case !== 'schedule.failure';
-    $mockBackup = function ($id) use (&$attempts, $success) {
+    $mockBackup = function ($id) use (&$attempts, $success, $case, $connection, $sender, $root) {
         if ($id !== 'synthetic-channel') throw new RuntimeException('incorrect_recipient');
         $attempts++;
+        if ($case === 'schedule.invalid_large') {
+            // Real send() with an exit-zero, >1000-byte non-dump fixture.
+            // The scheduler must NOT mark this attempt successful.
+            return \AchBot\Backup\Database\send(
+                $connection, 'synthetic_user', 'synthetic_password', 'synthetic_db',
+                $id, $sender, $root
+            );
+        }
         return $success;
     };
     $lock = null;
@@ -93,6 +101,7 @@ if (strpos($case, 'schedule.') === 0) {
         'attempts' => $attempts,
         'db_writes' => count($connection->writes),
         'timestamp_advanced' => $connection->nextDue > time(),
+        'deliveries' => $delivered,
         'queries' => count($connection->queryLog),
     ], JSON_UNESCAPED_UNICODE), "\n";
     exit;

@@ -70,6 +70,54 @@ function safeRemove($path) {
     if (is_string($path) && is_file($path)) @unlink($path);
 }
 
+/**
+ * Bounded-memory integrity gate for the plain mysqldump format we invoke.
+ *
+ * A zero exit status and nonzero byte count are not enough: e.g. a wrapper
+ * can return a large error banner or end a dump early and still exit 0.
+ * Check MySQL/MariaDB header, schema DDL and final completion marker before
+ * any ZIP or Telegram delivery. This is NOT a full SQL parser/restore proof.
+ */
+function completeSqlDump($path) {
+    $file = @fopen($path, 'rb');
+    if (!$file) return false;
+    try {
+        $header = fread($file, 8192);
+        if (!is_string($header) ||
+            !preg_match('/(?:^|\n)-- (?:MariaDB|MySQL) dump [^\r\n]{1,240}(?:\r?\n|$)/', $header) ||
+            !preg_match('/(?:^|\n)-- Host: [^\r\n]{1,240}Database: [^\r\n]{1,240}/', $header)) {
+            return false;
+        }
+
+        if (fseek($file, 0, SEEK_SET) !== 0) return false;
+        $tableComment = false;
+        $createTable = false;
+        $overlap = '';
+        while (!feof($file)) {
+            $chunk = fread($file, 65536);
+            if ($chunk === false || ($chunk === '' && !feof($file))) return false;
+            $scan = $overlap . $chunk;
+            if (strpos($scan, '-- Table structure for table `') !== false) $tableComment = true;
+            if (strpos($scan, 'CREATE TABLE `') !== false) $createTable = true;
+            // Small overlap permits markers split across chunk boundaries.
+            $overlap = substr($scan, -128);
+        }
+        if (!$tableComment || !$createTable) return false;
+
+        clearstatcache(true, $path);
+        $bytes = filesize($path);
+        if ($bytes === false || $bytes < 1000 ||
+            fseek($file, -min($bytes, 8192), SEEK_END) !== 0) return false;
+        $tail = stream_get_contents($file);
+        // Both stock mysql/mariadb dump clients append this default trailer.
+        // Require it to be the last non-whitespace line, not buried in junk.
+        return is_string($tail) &&
+            preg_match('/(?:^|\r?\n)-- Dump completed on \\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}[ \\t]*(?:\\r?\\n)*\\z/D', $tail) === 1;
+    } finally {
+        fclose($file);
+    }
+}
+
 function send($connection, $dbUserName, $dbPassword, $dbName, $channelId, callable $deliver, $applicationRoot) {
     if ($channelId === null || trim((string)$channelId) === '') {
         reportFailure('recipient_missing');
@@ -136,6 +184,10 @@ function send($connection, $dbUserName, $dbPassword, $dbName, $channelId, callab
         }
         if (!is_file($sql) || filesize($sql) < 1000) {
             reportFailure('dump_too_small');
+            return false;
+        }
+        if (!completeSqlDump($sql)) {
+            reportFailure('dump_invalid_or_incomplete');
             return false;
         }
 

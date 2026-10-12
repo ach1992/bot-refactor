@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify exact V7 ZIP against manifest and committed candidate Git blob IDs."""
+"""Verify exact V6.1 ZIP against manifest and committed candidate Git blob IDs."""
 from __future__ import annotations
 import argparse,hashlib,io,json,subprocess,zipfile
 from pathlib import Path
