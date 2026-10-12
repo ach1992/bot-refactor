@@ -42,59 +42,11 @@ function sendMessage($txt, $key = null, $parse ="MarkDown", $ci= null, $msg = nu
 
 function sendDatabaseBackup($channelId) {
     global $connection, $dbUserName, $dbPassword, $dbName;
-
-    $backupDir = __DIR__ . "/backup";
-    if (!is_dir($backupDir)) {
-        mkdir($backupDir, 0755, true);
-    }
-
-    $backupFile = $backupDir . "/bot_backup.sql";
-    $zipFile    = $backupDir . "/bot_backup.zip";
-
-    $dbHost = 'localhost';
-
-    exec(
-        "mysqldump --default-character-set=utf8mb4 --routines --events --triggers " .
-        "-h $dbHost -u $dbUserName -p\"$dbPassword\" $dbName > \"$backupFile\" 2> /dev/null"
+    require_once __DIR__ . '/src/Backup/Database.php';
+    return \AchBot\Backup\Database\send(
+        $connection, $dbUserName, $dbPassword, $dbName, $channelId,
+        'sendDocument', __DIR__
     );
-	
-	if (!file_exists($backupFile) || filesize($backupFile) < 1000) {
-        return false;
-    }
-
-    $stmt = $connection->prepare("SELECT COUNT(*) as count FROM `users`");
-    $stmt->execute();
-    $userCount = $stmt->get_result()->fetch_assoc()['count'] ?? 0;
-    $stmt->close();
-
-    $stmt = $connection->prepare("SELECT COUNT(*) as count FROM `orders_list`");
-    $stmt->execute();
-    $orderCount = $stmt->get_result()->fetch_assoc()['count'] ?? 0;
-    $stmt->close();
-
-    date_default_timezone_set('Asia/Tehran');
-    $now = date("Y-m-d H:i:s");
-
-    $caption = "
-📦 Bot Database Backup
-
-⏰ Time: $now
-👤 Users: $userCount
-📋 Subscriptions: $orderCount
-";
-
-    $zip = new ZipArchive();
-    if ($zip->open($zipFile, ZipArchive::CREATE) === TRUE) {
-        $zip->addFile($backupFile, basename($backupFile));
-        $zip->close();
-
-        unlink($backupFile);
-
-        $sent = sendDocument($zipFile, $caption, $channelId);
-        if ($sent) {
-            unlink($zipFile);
-        }
-    }
 }
 
 function sendDocument($filePath, $caption = "", $ci = null){

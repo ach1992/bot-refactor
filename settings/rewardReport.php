@@ -47,38 +47,12 @@ if($rewaredTime>0 && $rewaredChannel != null){
     }
 }
 
-$backupInterval = 10 * 60; // ثانیه
-$now = time();
-
-// گرفتن زمان آخرین بکاپ از جدول setting
-$stmt = $connection->prepare("SELECT `value` FROM `setting` WHERE `type` = 'LAST_BACKUP_TIME'");
-$stmt->execute();
-$result = $stmt->get_result();
-$lastBackupTime = 0;
-
-if ($result->num_rows > 0) {
-    $lastBackupTime = (int) $result->fetch_assoc()['value'];
-}
-$stmt->close();
-
-// اگر زمان فعلی از زمان ذخیره شده بیشتره، بکاپ بگیر
-if ($now >= $lastBackupTime) {
-    sendDatabaseBackup($rewaredChannel);
-
-    // زمان جدید باید دقیقاً فاصله داشته باشه از آخرین زمان، نه از now
-    $newTime = max($now, $lastBackupTime + $backupInterval);
-
-    // بروزرسانی زمان جدید
-    if ($lastBackupTime > 0) {
-        $stmt = $connection->prepare("UPDATE `setting` SET `value` = ? WHERE `type` = 'LAST_BACKUP_TIME'");
-    } else {
-        $stmt = $connection->prepare("INSERT INTO `setting` (`type`, `value`) VALUES ('LAST_BACKUP_TIME', ?)");
-    }
-
-    $stmt->bind_param("s", $newTime);
-    $stmt->execute();
-    $stmt->close();
-}
+// AChBot backup: source-only compatibility for aaPanel Cron without host PATH changes.
+// The original public Cron filename and all financial/reward logic below are preserved.
+require_once __DIR__ . '/../src/Backup/Database.php';
+\AchBot\Backup\Database\schedule(
+    $connection, $rewaredChannel, 'sendDatabaseBackup', dirname(__DIR__)
+);
 
 if($botState['cartToCartAutoAcceptState']=="on"){
     $date = strtotime("-" . ($botState['cartToCartAutoAcceptTime']??10) . " minutes");
