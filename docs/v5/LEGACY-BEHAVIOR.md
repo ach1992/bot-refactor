@@ -1,0 +1,18 @@
+# AChBot V5 — deliberately preserved legacy semantics and risks
+
+All items below come from the pinned V4 source and remain unchanged in V5; they are **not** claimed as new corrected features.
+
+1. **`bc_jobs` 429 handling advances `offset` before sleeping:** `MessageActions.php` records the current `bc_messages.id` even if the Telegram call fails with 429, then sleeps for `retry_after + 1` without re-sending that recipient. It increments `fail_cnt`. The skipped item may not be revisited, including after worker restart. Fixing this needs a separately authorized behavior change and migration/recovery policy for in-flight jobs.
+2. **`send_list` 429 handling advances the persisted last-user-ID:** `BroadcastSend.php` persists the current `users.id` immediately on 429 and sleeps for `retry_after + 1`, without retrying the same user. That user is skipped on subsequent batches. No compensating delivery has been added.
+3. **`bc_jobs` first heartbeat precedes the first API action.** After cancellation the original job can already have advanced its in-memory cursor for the next row; shutdown/cancellation sequencing is byte-preserved rather than normalized.
+4. **Non-transactional Telegram/API and database writes:** Remote success followed by local write failure may produce partial counts/missing `bc_messages`; retry semantics are unchanged. There are no new idempotency guarantees or concurrent-worker locks.
+5. **`send_list` audience filters and stored user-ID cursors:** SQL uses original `step`, `is_agent`, `orders_list` joins and pagination. Historical `id` ordering, `offset`, and completion `COUNT` estimates are unchanged, including estimates that may count excluded users.
+6. **`warnusers.php` original `warnOffset` skip, expiry/deletion and notice order:** The warning module preserves all original checks and writes. The later auto-renewal processor still uses `AutoRenewCheck`, VPN-panel calls, wallet updates and entitlements in the unchanged original file; no financial behavior was refactored or verified with real providers. A warning-cycle DB test uses synthetic panel doubles only.
+7. **Legacy cancellation vs pause:** Broadcast `state=4` is cancellation, `state=1` queue/pause, `state=2` executing, `state=3` completed, `state=0` draft. Scheduled workers may change `2`→`1` between batches. V5 does not add any previously absent resume button, new state or a retry scheduler.
+8. **External exchange rate**: the original `messagewizwiz.php` refreshes the USD/TRX cached rate when `rateLimit` has expired, before scanning queues; no tests contact that external provider. In synthetic execution the cache is valid. Externally observable failures/currency effects are unverified.
+9. **Deployment working directory and include hazards** outside scoped modules remain: `config.php` resolves `settings/values.php` relative to runtime CWD; unscoped Cron/payment scripts contain relative QR / temporary-file references. Do not change Cron CWD unless separately verified.
+10. **Legacy Issue #12** (wrong-target agent decline) remains out of scope and untouched.
+
+**Separate-fix recommendation:** The two documented 429 offset-advance defects deserve a dedicated subsequent, non-Phase-1 behavior-change Issue, with operator-approved retry semantics, duplicate-delivery safety, checkpoints and native interruption tests. Do not silently repair them during a source-only refactor.
+
+**Verification limits:** Synthetic original-schema tests prove selected recoveries and V4 parity; they do not prove real Telegram 429 delivery, production overlaps, live MariaDB configuration, PHP-FPM/OPcache, real cron cadence, VPN panel correctness, financial settlement or manual operator acceptance.

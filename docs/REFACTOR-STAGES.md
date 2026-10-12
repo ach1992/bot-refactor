@@ -23,3 +23,16 @@ lifecycle (applications, approvals/discounts/rejections). Other
 admin settings and customer navigation remain future work.
 Scoped extraction is a compatibility seam, not a completed
 domain/authorization/storage redesign.
+
+V5 is the single cohesive broadcast-and-worker package controlled by Issue #14.
+It extracts the complete existing broadcast administration lifecycle, both
+`send_list` and `bc_jobs` processors, and the warning/notification segment
+of `warnusers.php`. It preserves all three legacy entrypoint filenames, 429
+checkpoint/offset behavior, current callback bytes, and the original MariaDB
+schema; later automatic renewal, wallets, financial settlement and VPN account
+provisioning remain byte-unchanged and outside the V5 extraction. See
+`docs/v5/README.md`, `docs/v5/CRON-INVENTORY.md`,
+`docs/v5/LEGACY-BEHAVIOR.md` and `docs/v5/TESTING.md`.
+V5 is still a **development candidate** until one exact-candidate independent
+HIGH_ASSURANCE review and explicit owner integration gate; no previous V4
+approval automatically grants V5 merge or production deployment.

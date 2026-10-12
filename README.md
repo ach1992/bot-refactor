@@ -4,30 +4,36 @@ This repository is a **public, sanitized reference baseline** for a staged, beha
 
 > **Safety:** no real tokens, passwords, user records, payment credentials, live backups or runtime caches belong in this repository. Use isolated test infrastructure. Existing credentials in the source database dump should be rotated if still valid.
 
-## Current development boundary: V4 administrator and agent lifecycle
+## Current development boundary: V5 complete broadcast and scheduled jobs
 
-V3 support was independently approved and merged into main as
-`283165f19777ad6ab62cfcb03de329c5bb0f8b74`.
-V4 isolates complete administrator-role/ban and agent lifecycle
-routes into six scoped modules. Only `bot.php` changes
-among earlier runtime files; old behavior, database and state
-remain fixed. **V4 is a review candidate, not a production release.**
+V0 through V4 are integrated and independently reviewed. The V4 source-only
+operator candidate is [`v0.4.0-rc.1`](https://github.com/ach1992/bot-refactor/releases/tag/v0.4.0-rc.1).
+The owner approved proceeding with V5 development after an initial positive
+source trial, **not** V5 production deployment.
 
-Start with [V4 modules](docs/v4/README.md),
-[testing](docs/v4/TESTING.md), [staging / rollback](docs/v4/OPERATIONS.md),
-and [known legacy behavior](docs/v4/LEGACY-BEHAVIOR.md).
-[Issue #10](https://github.com/ach1992/bot-refactor/issues/10)
-owns this candidate and its remaining acceptance.
+V5 isolates the **complete legacy broadcast administration lifecycle**, both
+`bc_jobs` and `send_list` scheduled processors, and the notification/expiry
+portion of `warnusers.php` into five guarded internal modules. The legacy
+Cron/webhook paths, callbacks, MariaDB DDL and original automated renewal,
+wallet, subscription and payment code remain unchanged. The full **43-file**
+source-only runtime retains the operator's existing `baseInfo.php` outside
+this public repository. No production certification is implied.
 
-Run `python3 tools/check_v4.py` plus all native,
-HTTP and swap gates in V4 TESTING.md. Earlier reference
-snapshots/goldens remain immutable. Keep the real
-`baseInfo.php`, original MariaDB and private state
-unchanged. V1-V3 operator acceptance is still independently
-tracked in Issues #4/#6/#8, and name/callback compatibility in #2.
-Owner V3 merge permission did not authorize V4 merge or deployment.
+See [V5 scope](docs/v5/README.md), [testing](docs/v5/TESTING.md),
+[cron inventory](docs/v5/CRON-INVENTORY.md),
+[rollback](docs/v5/OPERATIONS.md) and
+[preserved legacy behavior](docs/v5/LEGACY-BEHAVIOR.md).
+[Issue #14](https://github.com/ach1992/bot-refactor/issues/14)
+is the controlling acceptance and continuation contract.
 
-**Official name: AChBot.** Lowercase `achbot` is the technical slug for package/test paths; legacy callbacks and Cron identifiers remain unchanged. Previously approved, frozen source comments may retain earlier spelling pending the relevant refactor stage.
+Run `python3 tools/check_v5.py --report /tmp/achbot-v5-full.json`
+for full frozen V0–V4 plus V5 checks on a **disposable** development runner;
+`--focused` skips native/historical suites and is not acceptance. Neither CI
+nor an author test substitutes for an exact-candidate independent review and
+explicit operator staging/merge approval.
+
+**Official name: AChBot.** Lowercase `achbot` is a technical slug only;
+legacy `wizwiz` callback strings and Cron filenames remain functional.
 
 ## Project contract
 
@@ -50,4 +56,4 @@ See source entrypoints in `bot.php`, `config.php`, `pay/`, and `settings/`. The 
 
 ## Earlier reference stages
 
-The immutable [V0 analysis](docs/v0/README.md), [V1 presentation boundary](docs/v1/README.md) and [V2 Telegram boundary](docs/v2/README.md) remain available. Their historical test drivers run in pinned reference trees through the current gate, not directly against later changed runtime code. V4 source and acceptance belong to Issue #10 and its PR/CI; source integration never implies production rollout.
+The immutable [V0 analysis](docs/v0/README.md), [V1 presentation boundary](docs/v1/README.md) and [V2 Telegram boundary](docs/v2/README.md) remain available. Their historical test drivers run in pinned reference trees through the current gate, not directly against later changed runtime code. V4 source and operator limitations remain recorded in Issue #10 and its historical PR/CI; V5 development is separately controlled by Issue #14. Source integration never implies production rollout.
