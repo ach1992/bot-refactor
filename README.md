@@ -4,28 +4,16 @@ This repository is a **public, sanitized reference baseline** for a staged, beha
 
 > **Safety:** no real tokens, passwords, user records, payment credentials, live backups or runtime caches belong in this repository. Use isolated test infrastructure. Existing credentials in the source database dump should be rotated if still valid.
 
-## Current shipped test baseline and pending maintenance
+## Current test releases and operator evidence
 
-- V5 broadcast/Cron source was independently reviewed, merged and published as
-  [`v0.5.0-rc.1`](https://github.com/ach1992/bot-refactor/releases/tag/v0.5.0-rc.1).
-- V6 VPN/account/subscription source was independently reviewed, merged and published
-  as [`v0.6.0-rc.1`](https://github.com/ach1992/bot-refactor/releases/tag/v0.6.0-rc.1).
-- **Neither pre-release is a production-certified build.** Real operator acceptances
-  remain open in [V5 Issue #14](https://github.com/ach1992/bot-refactor/issues/14)
-  and [V6 Issue #16](https://github.com/ach1992/bot-refactor/issues/16).
+- [V5 `v0.5.0-rc.1`](https://github.com/ach1992/bot-refactor/releases/tag/v0.5.0-rc.1): merged/released; real V5 operator acceptance remains unverified in [Issue #14](https://github.com/ach1992/bot-refactor/issues/14).
+- [V6 `v0.6.0-rc.1`](https://github.com/ach1992/bot-refactor/releases/tag/v0.6.0-rc.1): merged/released; full V6 operator acceptance remains unverified in [Issue #16](https://github.com/ach1992/bot-refactor/issues/16).
+- [V6.1 backup RC2 `v0.6.1-rc.2`](https://github.com/ach1992/bot-refactor/releases/tag/v0.6.1-rc.2): independently reviewed, merged and source-only released after the aaPanel MariaDB completion-hour regression in RC1. **Owner reports installing RC2 on the affected bot and receiving the first real backup ZIP in the intended Telegram report channel.** The submitted ZIP was previously reported as passing archive/structural checks; this is owner/chat evidence, not an automated CI claim. **No actual restore into an isolated database was performed; owner explicitly chose to skip further restoration experiments.** Backup transmission is observed, but recoverability remains unproved. See [Issue #18](https://github.com/ach1992/bot-refactor/issues/18) and [backup notes](docs/backup-hotfix/README.md).
+- None of these source releases implies full production certification for the bot, wallet, providers or backups. GitHub CI exercises disposable synthetic services; user-installed source and real-channel receipt are separate evidence. An unrelated older working bot must remain untouched.
 
-**Active scoped maintenance (NOT yet merged, released or deployed):**
-[V6.1 automatic-backup reliability Issue #18](https://github.com/ach1992/bot-refactor/issues/18).
-Owner's read-only aaPanel diagnostics showed unqualified `mysqldump` is missing
-from Cron's explicit `PATH`, despite an executable in `/www/server/mysql/bin`.
-The old backup function/scheduler were unchanged throughout V0–V6; the new
-source-only compatibility patch resolves the runtime path and makes dump,
-ZIP, Telegram status, privacy and retry failures observable/recoverable without
-host package or Cron modifications. See [scope](docs/backup-hotfix/README.md),
-[tests](docs/backup-hotfix/TESTING.md) and
-[operator precautions](docs/backup-hotfix/OPERATIONS.md).
+The owner authorized moving to **isolated V7 plan/purchase/provisioning development** without requiring additional backup-restore exercises or retroactively marking V5/V6 acceptance as PASS. The next bounded outcome is [Issue #21](https://github.com/ach1992/bot-refactor/issues/21). This is development authority **only**, not owner permission for V7 merge, publication or production installation.
 
-The planned later V7 product-plan stage remains separate from this maintenance.
+**Incident root causes:** old Cron could not find aaPanel's `mysqldump` through its overridden `PATH`, and initial V6.1 RC1 incorrectly rejected MariaDB's legitimate space-padded single-digit dump-completion hour. RC2 fixes both in the source and retains SQL validation, Telegram success-gating and private temporary-file cleanup. Details and regression commands: [backup README](docs/backup-hotfix/README.md), [test matrix](docs/backup-hotfix/TESTING.md), [operations precautions](docs/backup-hotfix/OPERATIONS.md).
 
 **Official name: AChBot.** Lowercase `achbot` is a technical slug only;
 legacy `wizwiz` callback strings and Cron filenames remain functional.
@@ -33,7 +21,7 @@ legacy `wizwiz` callback strings and Cron filenames remain functional.
 ## Project contract
 
 - **Phase 1:** refactor code only; retain existing MariaDB schema, data formats, behavior, SQL semantics, Telegram callback compatibility, bot/admin UX, integration URLs and cron entrypoints.
-- Refactor in incremental independently runnable releases, each with regression tests, an independent review and explicit operator acceptance before proceeding.
+- Refactor in incremental independently runnable releases, with regression tests and independent review. Operator acceptance remains a separate gate; a specifically documented owner waiver may authorize **isolated development** of the next stage without treating unperformed tests as PASS.
 - **Phase 2 (later):** database refactor and migrations, after Phase 1 has been accepted and only with separate explicit authorization.
 - `baseInfo.php` is preserved and considered for modification only in the last Phase 1 increment if necessary.
 
@@ -47,7 +35,7 @@ legacy `wizwiz` callback strings and Cron filenames remain functional.
 
 ## Prerequisites
 
-See source entrypoints in `bot.php`, `config.php`, `pay/`, and `settings/`. The existing target used MariaDB 10.11 and PHP 8.4. Provision `baseInfo.php` **locally only**, configure webhooks, scheduled tasks and integrations as they were in the existing deployment, and keep deployment state out of Git.
+See source entrypoints in `bot.php`, `config.php`, `pay/`, and `settings/`. Native CI covers PHP 8.1 (observed aaPanel CLI/Cron) and PHP 8.4; the source remains compatible with the original 23-table MariaDB schema. Provision `baseInfo.php` **locally only**, configure webhooks, scheduled tasks and integrations as they were in the existing deployment, and keep deployment state out of Git.
 
 ## Earlier reference stages
 
