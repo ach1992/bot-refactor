@@ -110,9 +110,10 @@ function completeSqlDump($path) {
             fseek($file, -min($bytes, 8192), SEEK_END) !== 0) return false;
         $tail = stream_get_contents($file);
         // Both stock mysql/mariadb dump clients append this default trailer.
-        // Require it to be the last non-whitespace line, not buried in junk.
+        // MariaDB uses a space-padded hour (e.g. " 4") before 10:00;
+        // accept both formats but require a valid time and EOF-anchored marker.
         return is_string($tail) &&
-            preg_match('/(?:^|\r?\n)-- Dump completed on \\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}[ \\t]*(?:\\r?\\n)*\\z/D', $tail) === 1;
+            preg_match('/(?:^|\r?\n)-- Dump completed on \\d{4}-\\d{2}-\\d{2} (?:[01]\\d|2[0-3]| ?[0-9]):[0-5]\\d:[0-5]\\d[ \\t]*(?:\\r?\\n)*\\z/D', $tail) === 1;
     } finally {
         fclose($file);
     }

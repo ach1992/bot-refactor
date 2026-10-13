@@ -49,7 +49,14 @@ while [ "$i" -le "$limit" ]; do
   i=$((i + 1))
 done
 if [ "$mode" = 'truncated' ]; then exit 0; fi
-printf '%s\n' '-- Dump completed on 2026-10-12 00:00:00'
+case "$mode" in
+  mariadb_space_hour) printf '%s\n' '-- Dump completed on 2026-10-13  4:31:51' ;;
+  mariadb_space_zero) printf '%s\n' '-- Dump completed on 2026-10-13  0:31:51' ;;
+  mariadb_space_nine) printf '%s\n' '-- Dump completed on 2026-10-13  9:31:51' ;;
+  malformed_hour) printf '%s\n' '-- Dump completed on 2026-10-13  24:31:51' ;;
+  malformed_minute) printf '%s\n' '-- Dump completed on 2026-10-13  4:61:51' ;;
+  *) printf '%s\n' '-- Dump completed on 2026-10-12 00:00:00' ;;
+esac
 if [ "$mode" = 'trailing_junk' ]; then
   printf '%s\n' 'NON_SQL_AFTER_COMPLETION'
 fi
@@ -57,6 +64,11 @@ fi
 
 EXPECT={
   'send.success':(True,1,2),
+  'send.mariadb_space_hour':(True,1,2),
+  'send.mariadb_space_zero':(True,1,2),
+  'send.mariadb_space_nine':(True,1,2),
+  'send.malformed_hour':(False,0,0),
+  'send.malformed_minute':(False,0,0),
   'send.mysql_header':(True,1,2),
   'send.large_valid':(True,1,2),
   'send.telegram_failure':(False,1,2),
@@ -130,6 +142,11 @@ def run(*, only:str|None=None, native:bool=False):
                      ACHBOT_MYSQLDUMP_BIN=str(f), ACHBOT_TEST_ZIP_SHIM='0' if native else '1',
                      ACHBOT_TEST_ZIP_ERROR='1' if scenario=='send.zip_error' else '0',
                      ACHBOT_TEST_DUMP_MODE={
+                         'send.mariadb_space_hour':'mariadb_space_hour',
+                         'send.mariadb_space_zero':'mariadb_space_zero',
+                         'send.mariadb_space_nine':'mariadb_space_nine',
+                         'send.malformed_hour':'malformed_hour',
+                         'send.malformed_minute':'malformed_minute',
                          'send.mysql_header':'mysql_header',
                          'send.large_valid':'large_valid',
                          'send.dump_failure':'fail',
