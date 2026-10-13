@@ -34,10 +34,24 @@ provisioning remain byte-unchanged and outside the V5 extraction. See
 `docs/v5/README.md`, `docs/v5/CRON-INVENTORY.md`,
 `docs/v5/LEGACY-BEHAVIOR.md` and `docs/v5/TESTING.md`.
 V5 and V6 were independently reviewed, merged and published as test-only
-pre-releases. Actual operator acceptance remains outstanding in Issues #14 and #16;
-source integration is not production certification.
+pre-releases. The corresponding **full operator acceptance** still remains unverified
+in Issues #14 and #16; source integration is not production certification.
 
-**V6.1 incident maintenance:** scoped backup self-containment and reliability
-(Issue #18, `docs/backup-hotfix/`), not the future planned V7 product-plan stage.
-The operational bot/server, `baseInfo.php`, live data and existing Cron registrations
-remain untouched until separate owner integration and operator approval.
+**V6.1 incident maintenance:** independent backup compatibility/security fix
+(Issue #18, `docs/backup-hotfix/`) integrated and released as `v0.6.1-rc.2`.
+The first fix addressed aaPanel Cron's restricted dump executable PATH;
+the RC2 fix accepts MariaDB's legitimate space-padded single-digit dump
+completion hour. The owner installed RC2 on the affected bot and reported
+a real backup ZIP arriving in its Telegram channel. **Isolated database
+restoration was not tested, by explicit owner decision.** Do not claim complete
+backup recovery or full V5/V6 operator acceptance from the single upload.
+An unrelated older working bot must remain untouched.
+
+**Next approved isolated-development increment:** V7 product-plan/purchase
+and provisioning lifecycle, controlled by [Issue #21](https://github.com/ach1992/bot-refactor/issues/21).
+The owner authorized beginning V7 source development without repeating the
+declined restore experiment or treating V5/V6 pending gates as PASS. That is
+a **scoped development waiver only**, not permission to merge, release, deploy,
+change real payment/financial policy, touch the database or operate on live bots.
+Retain the full V6.1 native MariaDB/footer regression and historical suites
+when building V7; financial/wallet/settlement rework remains in V8.

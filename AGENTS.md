@@ -5,7 +5,7 @@
 - Preserve current webhook, payment/subscription, Telegram callback-data and Cron file-path contracts until validated compatibility adapters exist.
 - Keep local `baseInfo.php` untouched and excluded from Git; any evaluation of changes to its structure belongs to the LAST refactor increment.
 - Build characterization tests and compare old vs new database side effects, external calls and messages before changing a high-risk flow.
-- Keep small independent deliverable stages with targeted tests, required exact-candidate review and explicit operator test acceptance before starting the next stage.
+- Keep small independent deliverable stages with targeted tests, required exact-candidate review and explicit operator test acceptance before starting the next stage **unless a scoped owner development waiver is recorded**. A waived operator test remains NOT TESTED, not PASS; waivers do not authorize integration, publication or deployment.
 - For ambiguous bugs, preserve current behavior; track a fix independently rather than silently changing it.
 - The **case-sensitive official product name is AChBot**, not AchBot. Use AChBot for all new project/release-facing text and source comments; lowercase `achbot` may be used as a technical slug. Do not rewrite frozen historical source/tests or change protocol identifiers solely for branding.
 - Use AChBot naming for new internal structures. Do not mass-replace legacy `wizwiz` literals used in persisted Telegram callbacks or existing scheduled paths.
@@ -74,3 +74,27 @@
   synthetic, real isolated MariaDB/ZIP, packaging and CI gates. The old bot
   remains untouched; independent author-separated review and separate explicit
   integration/release/deployment approvals remain mandatory.
+
+## External tool/output compatibility and operator evidence (V6.1 lesson)
+
+- For parsers of external program output (MariaDB/MySQL dumps, HTTP/provider
+  responses, dates/time formatting), obtain representative **actual** client
+  output and add deterministic boundary fixtures for whitespace, padding,
+  timezone/hour ranges, EOF and invalid/incomplete responses. Demonstrate a
+  RED regression against the previous source before accepting a GREEN fix;
+  never bypass fail-closed structural validation simply to silence logs.
+- Preserve V6.1's **26** synthetic backup cases and PHP 8.1 native MariaDB/ZIP
+  acceptance (plus PHP 8.4 full historical suites) when touching the backup
+  or its consumers. Specifically cover MariaDB space-padded hours 0/4/9,
+  malformed hours/minutes, truncated SQL, Telegram failure, concurrency and
+  success-only LAST_BACKUP_TIME updates.
+- Distinguish code/CI PASS, owner-reported real Telegram ZIP receipt, archive
+  structural checks and actual isolated SQL **restore**. The owner chose to
+  skip the latter for RC2: mark restore NOT TESTED, never silently PASS.
+- Never directly execute `settings/rewardReport.php` as a backup-only smoke
+  test; it also contains financial/reward side effects. The existing Telegram
+  transport has its own potentially sensitive logs despite the new module's
+  sanitized reason codes. Protect all owner credentials, SQL and runtime logs.
+- V7 development is controlled by Issue #21 and separate owner integration/
+  release/production gates. Preserve all real bots, live database schema,
+  Cron registrations and `baseInfo.php` without explicit authorizations.

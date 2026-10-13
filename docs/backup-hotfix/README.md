@@ -1,6 +1,6 @@
 # AChBot V6.1 — automatic database backup reliability maintenance
 
-**Controlling Issue:** [#18](https://github.com/ach1992/bot-refactor/issues/18). Source base: merged V6 `b43b12132537e0e383729cbef26745b420d0553d`. **Candidate only — NOT merged, released, installed or operator-approved.**
+**Controlling Issue:** [#18](https://github.com/ach1992/bot-refactor/issues/18). Source base: merged V6 `b43b12132537e0e383729cbef26745b420d0553d`. **Current maintenance release:** [`v0.6.1-rc.2`](https://github.com/ach1992/bot-refactor/releases/tag/v0.6.1-rc.2), integrated at `d5718b087827944d685d044ec5e227cddcfc91cb`; separately reviewed and CI-validated. The affected app was updated by its owner, who reports real Telegram ZIP delivery; restore remains NOT TESTED.
 
 ## Evidence and root cause
 
@@ -16,10 +16,20 @@ The owner reported automatic Telegram backup failing since approximately V5 depl
 - Preserve existing ZIP member `bot_backup.sql`, Telegram `sendDocument` request/caption/recipient and count queries. A bounded-memory structural check requires the MySQL/MariaDB dump header, host/database identity line, table DDL and final completion marker before accepting a status-zero SQL file; this is **not** a SQL parser or restore verification. Only the new `[AChBot backup]` error-log entries contain sanitized reason codes (without credentials, SQL, recipient/channel IDs, raw command errors or local file paths). **The unchanged legacy Telegram transport emits its own diagnostics on failures, potentially including `chat_id`, a CURLFile temporary ZIP path and cURL error messages.** Operators must protect PHP and transport logs as sensitive data.
 - Preserve `setting.LAST_BACKUP_TIME` as the **next-due timestamp**: check it under one per-installation advisory file lock; advance only after confirmed Telegram success, and apply 60-second private retry cooldown after failure. No database schema migration or new DB setting keys.
 
-## Guardrails / limitations
+## Observed outcome and the two root causes
 
-The operational host has **not** received any script or configuration changes and has not been connected to for testing. Passing CI/native synthetic acceptance does not verify its actual DB credentials, `mysqldump` permissions, SMTP/Telegram channel, backup archive size, operator paths, runtime `open_basedir` or production Cron behavior. Live backup success and restoration have **not** been claimed.
+1. **V0-V6 legacy:** absolute aaPanel `mysqldump` was invisible to the wrapper's explicit Cron `PATH`. The old scheduler advanced `LAST_BACKUP_TIME` even on dump/send failure; V6.1 RC1 fixed command discovery, private output and failure gating.
+2. **V6.1 RC1 format false-negative:** real MariaDB 10.11 dumps can end with `-- Dump completed on 2026-10-13  4:31:51` (space-padded hour). RC1 expected exactly two digits and logged `dump_invalid_or_incomplete` despite a successful exit. RC2 added deterministic successful 0/4/9-hour cases and still rejects impossible hours, invalid minutes, missing footer and trailing junk. CI covered both native PHP 8.1 and PHP 8.4, real disposable MariaDB, native ZIP, negative mutation controls and previous V0-V6 historical regression.
+3. **Operator report after RC2 installation:** the affected bot delivered a ZIP to the intended Telegram reports channel; an uploaded sample was previously inspected for ZIP and SQL structure. The owner declined a further isolated database restore exercise and asked to continue to V7. **Actual recovery of this archive has NOT been demonstrated; do not claim a restore PASS, broad bot acceptance or scheduled-backup long-term reliability from one receipt.** No raw SQL or user records may be stored in this repository. The other, older working bot stays untouched.
 
-Keep the existing bot/source live until independent review, exact-candidate CI, owner authorization and a controlled operator trial. Do **not** casually run `settings/rewardReport.php` to test backup; that file may process automatic financial approval. Never place real backup ZIPs, `baseInfo.php` or SQL dumps in GitHub/test transcripts.
+## Durable future-regression policy
 
-V7 product-plan development in `docs/REFACTOR-STAGES.md` remains a separate future scope; V6.1 is an incident-driven maintenance patch.
+- When recognizing output from another utility (especially `mysqldump`), test **real vendor formatting variants**, not only a hand-authored ideal-case fixture: MariaDB/MySQL headers, leading spaces versus leading zeros, hours 00-09 and 10-23, client switches (comments, dump-date, compact), EOF and truncation. The accepted parser must remain bounded-memory and fail closed on incomplete or non-dump output.
+- Every proposed parser-format fix should demonstrate **RED before fix / GREEN after fix** on the same deterministic regression case. Keep invalid/corrupt/truncated negative cases, send-failure mutation control, scheduler failure/timestamp and concurrent Cron tests. Run exact-candidate PHP 8.1/native MariaDB/ZIP plus PHP 8.4 full pinned V0-V6.1 CI when relevant.
+- Distinguish **source CI PASS**, **owner-observed Telegram delivery**, **archive structural validation**, and **actual isolated database restoration**; none automatically proves another. If an owner declines a restore, record it as **NOT TESTED / explicitly deferred**, not successful.
+- Avoid direct execution of `settings/rewardReport.php` solely for backup testing; it has financial/reward side effects. Never modify host PATH, system MariaDB, shared Cron, the other working bot, real `baseInfo.php` or production databases to make an isolated source test pass.
+- The unchanged Telegram transport may write recipient metadata/temporary paths to separate logs. Only the new `[AChBot backup]` failure reason code is sanitized; redact legacy transport logs before sharing.
+
+For read-only checks, restricted rollback and operator stages, see [OPERATIONS.md](OPERATIONS.md); for the deterministic tests and exact-command list, see [TESTING.md](TESTING.md).
+
+**Next scoped development:** [V7 Issue #21](https://github.com/ach1992/bot-refactor/issues/21) (product-plan, purchase and provisioning parity), not an extension of the V6.1 incident repair. V7 integration/release/deployment requires fresh separate gates.
