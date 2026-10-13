@@ -55,3 +55,14 @@ a **scoped development waiver only**, not permission to merge, release, deploy,
 change real payment/financial policy, touch the database or operate on live bots.
 Retain the full V6.1 native MariaDB/footer regression and historical suites
 when building V7; financial/wallet/settlement rework remains in V8.
+
+**V7 source-development checkpoint (Issue #21):** eleven mechanically
+extracted modules cover the original plan/category catalogue, purchase wizard,
+customer/agent checkout input, admin multi-account provision, free/trial
+account creation and unchanged helper facades. All 65 tracked source
+members, 47-step real original-schema native E2E, five mutation controls,
+24 helper signatures, internal HTTP guard and reversible persisted-order
+V6.1/V7 source swap are described in `docs/v7/`. Historical V0-V6.1
+acceptance remains pinned. Financial policy, MariaDB schema and production
+assets stay untouched. Independent review and owner integration approval
+remain mandatory.

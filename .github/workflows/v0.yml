@@ -24,20 +24,17 @@ jobs:
         uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2
         with:
           php-version: '8.1'
-          extensions: mysqli, tokenizer, curl, zip
+          extensions: mysqli, tokenizer, curl, zip, gd
           coverage: none
           tools: none
       - name: Install disposable MariaDB test requirements
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends mariadb-server
-      - name: PHP 8.1 source-only backup acceptance with real ZIP and synthetic MariaDB
+      - name: PHP 8.1 V7 owned native E2E, swap, and pinned V6.1 compatibility
         run: |
           php -r 'if (!class_exists("ZipArchive") || !extension_loaded("mysqli")) exit(8);'
-          python3 tools/backup_hotfix_contract.py
-          python3 tools/test_backup_hotfix.py --native-zip
-          python3 tools/test_backup_hotfix_native.py
-          python3 tools/test_backup_hotfix_http.py
+          python3 tools/check_v7.py --php81 --report "$RUNNER_TEMP/v7-php81.json"
   backup-v6-maintenance-complete:
     runs-on: ubuntu-24.04
     timeout-minutes: 50
@@ -52,36 +49,37 @@ jobs:
         uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2
         with:
           php-version: '8.4'
-          extensions: mysqli, tokenizer, curl, zip
+          extensions: mysqli, tokenizer, curl, zip, gd
           coverage: none
           tools: none
       - name: Install disposable MariaDB test requirements
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends mariadb-server
-      - name: Full pinned V0-V6 and maintenance native acceptance
+      - name: Exact V7 E2E plus full immutable V0-V6.1 historical acceptance
         run: |
           php -r 'if (!class_exists("ZipArchive") || !extension_loaded("mysqli")) exit(8);'
-          python3 tools/check_backup_hotfix.py --report "$RUNNER_TEMP/backup-check.json"
-      - name: Package 54 tracked runtime files, verify exact Git blobs
+          python3 tools/check_v7.py --report "$RUNNER_TEMP/v7-check.json" --evidence-dir "$RUNNER_TEMP/achbot-v7-evidence"
+      - name: Package 65 tracked runtime files, verify exact Git blobs
         run: |
-          python3 tools/package_backup_hotfix.py --output "$RUNNER_TEMP/achbot-backup/achbot-backup-runtime.zip"
-          python3 tools/verify_backup_hotfix_package.py --zip "$RUNNER_TEMP/achbot-backup/achbot-backup-runtime.zip" --manifest "$RUNNER_TEMP/achbot-backup/achbot-backup-runtime.zip.manifest.json"
-          cp "$RUNNER_TEMP/backup-check.json" "$RUNNER_TEMP/achbot-backup/backup-check.json"
+          python3 tools/package_v7.py --output "$RUNNER_TEMP/achbot-v7/achbot-v7-runtime.zip"
+          python3 tools/verify_v7_package.py --zip "$RUNNER_TEMP/achbot-v7/achbot-v7-runtime.zip" --manifest "$RUNNER_TEMP/achbot-v7/achbot-v7-runtime.zip.manifest.json"
+          cp "$RUNNER_TEMP/v7-check.json" "$RUNNER_TEMP/achbot-v7/v7-check.json"
+          cp -R "$RUNNER_TEMP/achbot-v7-evidence" "$RUNNER_TEMP/achbot-v7/evidence"
       - name: Record exact candidate evidence
         run: |
-          printf '## AChBot V6.1 backup reliability\n\n' >> "$GITHUB_STEP_SUMMARY"
+          printf '## AChBot V7 product plans/purchase/provisioning\n\n' >> "$GITHUB_STEP_SUMMARY"
           printf 'HEAD: `%s`\n\n' "$(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
           printf 'Tree: `%s`\n\n' "$(git rev-parse HEAD^{tree})" >> "$GITHUB_STEP_SUMMARY"
-          printf '54 tracked runtime members, no real operator testing, no deployment.\n\n' >> "$GITHUB_STEP_SUMMARY"
+          printf '65 tracked runtime members, immutable historical V0-V6.1 suite, no operator approval/merge/deployment.\n\n' >> "$GITHUB_STEP_SUMMARY"
           printf '```json\n' >> "$GITHUB_STEP_SUMMARY"
-          cat "$RUNNER_TEMP/backup-check.json" >> "$GITHUB_STEP_SUMMARY"
+          cat "$RUNNER_TEMP/v7-check.json" >> "$GITHUB_STEP_SUMMARY"
           printf '\n```\n' >> "$GITHUB_STEP_SUMMARY"
       - name: Upload exact-candidate source-only package and evidence
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: achbot-backup-${{ github.event.pull_request.head.sha || github.sha }}
-          path: ${{ runner.temp }}/achbot-backup/
+          name: achbot-v7-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/achbot-v7/
           if-no-files-found: error
           retention-days: 14
           compression-level: 0

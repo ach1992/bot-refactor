@@ -98,3 +98,33 @@
 - V7 development is controlled by Issue #21 and separate owner integration/
   release/production gates. Preserve all real bots, live database schema,
   Cron registrations and `baseInfo.php` without explicit authorizations.
+
+## V7 plans, checkout and provisioning (Issue #21)
+
+- Development authority is isolated source-only. Do not touch production bot,
+  PHP/MariaDB/aaPanel/Cron settings, actual panels, Telegram, wallets,
+  transactions or `baseInfo.php`. No owner approval for V7 merge, publication
+  or deployment is inherited from V6.1.
+- `tools/v7_contract.py` pins the **exact** original V6.1 source to
+  `ca0405442e98481ec2107772f5d2df94adb2b134`, extracts eight original
+  scoped routes and three original helper groups mechanically, verifies
+  original callback bytes/function parameters/persistence semantics and all
+  54 existing runtime members. New internal modules have direct HTTP guards.
+- Existing public `bot.php` and `buy_helpers.php` stay as compatibility
+  loaders. The original wallet consumer, settlements, discounts, external
+  payments, `pay/back.php`, reward/Tron/Cron, public `settings/subLink.php`,
+  `config.php` backup footer fix, 23-table DDL and all previous goldens remain
+  unchanged. Do not rewrite historical references or prices to gain parity.
+- Development checks: `python3 tools/check_v7.py --focused` only for feedback.
+  Exact PHP 8.4 gate: `python3 tools/check_v7.py --report /tmp/v7.json`
+  including pinned V0–V6.1. PHP 8.1 gate:
+  `python3 tools/check_v7.py --php81`. Both require owned disposable MariaDB,
+  loopback HTTP, synthetic Telegram/wallet inputs and GD. Independent
+  author-separated high-assurance review is strictly read-only and requires
+  stable exact-HEAD GitHub Actions first.
+- Exact source-only 65-member artifact is built only from clean, committed
+  candidate HEAD by `tools/package_v7.py`, with manifest and
+  `tools/verify_v7_package.py`. Operator V5/V6 remain NOT TESTED and V6.1
+  actual MariaDB restore NOT TESTED; do not conflate those with source tests.
+- Documentation, test matrix, source-only swap/rollback and operational gates:
+  `docs/v7/`. Record new evidence and remaining gates in Issue #21 and PR.

@@ -1,0 +1,290 @@
+<?php
+/** AChBot V7: immutable V6.1 purchase or plan route. */
+if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
+    http_response_code(404);
+    exit;
+}
+
+if(preg_match('/selectServer(?<serverId>\d+)_(?<buyType>\w+)/',$data, $match) && ($botState['sellState']=="on" || ($from_id == $admin || $userInfo['isAdmin'] == true)) ) {
+    $sid = $match['serverId'];
+        
+    $stmt = $connection->prepare("SELECT * FROM `server_categories` WHERE `parent`=0 order by `id` asc");
+    $stmt->execute();
+    $respd = $stmt->get_result();
+    $stmt->close();
+    if($respd->num_rows == 0){
+        alert($mainValues['category_not_avilable']);
+    }else{
+        
+        $keyboard = [];
+        while ($file = $respd->fetch_assoc()){
+            $id = $file['id'];
+            $name = $file['title'];
+            $stmt = $connection->prepare("SELECT * FROM `server_plans` WHERE `server_id`=? and `catid`=? and `active`=1");
+            $stmt->bind_param("ii", $sid, $id);
+            $stmt->execute();
+            $rowcount = $stmt->get_result()->num_rows; 
+            $stmt->close();
+            if($rowcount>0) $keyboard[] = ['text' => "$name", 'callback_data' => "selectCategory{$id}_{$sid}_{$match['buyType']}"];
+        }
+        if(empty($keyboard)){
+            alert($mainValues['category_not_avilable']);exit;
+        }
+        alert($mainValues['receive_categories']);
+
+        $keyboard[] = ['text' => $buttonValues['back_to_main'], 'callback_data' => 
+        ($match['buyType'] == "one"?"agentOneBuy":($match['buyType'] == "much"?"agentMuchBuy":"buySubscription"))];
+        $keyboard = array_chunk($keyboard,1);
+        editText($message_id,$mainValues['buy_sub_select_category'], json_encode(['inline_keyboard'=>$keyboard]));
+    }
+
+}
+if(preg_match('/selectCategory(?<categoryId>\d+)_(?<serverId>\d+)_(?<buyType>\w+)/',$data,$match) && ($botState['sellState']=="on" || $from_id == $admin || $userInfo['isAdmin'] == true)) {
+    $call_id = $match['categoryId'];
+    $sid = $match['serverId'];
+    $stmt = $connection->prepare("SELECT * FROM `server_plans` WHERE `server_id`=? and `price` != 0 and `catid`=? and `active`=1 order by `id` asc");
+    $stmt->bind_param("ii", $sid, $call_id);
+    $stmt->execute();
+    $respd = $stmt->get_result();
+    $stmt->close();
+    if($respd->num_rows==0){
+        alert($mainValues['no_plan_available']); 
+    }else{
+        alert($mainValues['receive_plans']);
+        $keyboard = [];
+        while($file = $respd->fetch_assoc()){
+            $id = $file['id'];
+            $name = $file['title'];
+            $price = $file['price'];
+            if($userInfo['is_agent'] == true && ($match['buyType'] == "one" || $match['buyType'] == "much")){
+                $discounts = json_decode($userInfo['discount_percent'],true);
+                if($botState['agencyPlanDiscount']=="on") $discount = $discounts['plans'][$id]?? $discounts['normal'];
+                else $discount = $discounts['servers'][$sid]?? $discounts['normal'];
+                
+                $price -= floor($price * $discount / 100);
+            }
+            $price = ($price == 0) ? 'رایگان' : number_format($price).' تومان ';
+            $keyboard[] = ['text' => "$name - $price", 'callback_data' => "selectPlan{$id}_{$call_id}_{$match['buyType']}"];
+        }
+        if($botState['plandelkhahState'] == "on" && $match['buyType'] != "much"){
+	        $keyboard[] = ['text' => $mainValues['buy_custom_plan'], 'callback_data' => "selectCustomPlan{$call_id}_{$sid}_{$match['buyType']}"];
+        }
+        $keyboard[] = ['text' => $buttonValues['back_to_main'], 'callback_data' => "selectServer{$sid}_{$match['buyType']}"];
+        $keyboard = array_chunk($keyboard,1);
+        editText($message_id,$mainValues['buy_sub_select_plan'], json_encode(['inline_keyboard'=>$keyboard]));
+    }
+
+}
+if(preg_match('/selectCustomPlan(?<categoryId>\d+)_(?<serverId>\d+)_(?<buyType>\w+)/',$data,$match) && ($botState['sellState']=="on" || $from_id == $admin || $userInfo['isAdmin'] == true)) {
+    $call_id = $match['categoryId'];
+    $sid = $match['serverId'];
+    $stmt = $connection->prepare("SELECT * FROM `server_plans` WHERE `server_id`=? and `catid`=? and `active`=1 order by `id` asc");
+    $stmt->bind_param("ii", $sid, $call_id);
+    $stmt->execute();
+    $respd = $stmt->get_result();
+    $stmt->close();
+    alert($mainValues['receive_plans']);
+    $keyboard = [];
+    while($file = $respd->fetch_assoc()){
+        $id = $file['id'];
+        $name = preg_replace("/پلن\s(\d+)\sگیگ\s/","",$file['title']);
+        $keyboard[] = ['text' => "$name", 'callback_data' => "selectCustomePlan{$id}_{$call_id}_{$match['buyType']}"];
+    }
+    $keyboard[] = ['text' => $buttonValues['back_to_main'], 'callback_data' => "selectServer{$sid}_{$match['buyType']}"];
+    $keyboard = array_chunk($keyboard,1);
+    editText($message_id, $mainValues['select_one_plan_to_edit'], json_encode(['inline_keyboard'=>$keyboard]));
+
+}
+if(preg_match('/selectCustomePlan(?<planId>\d+)_(?<categoryId>\d+)_(?<buyType>\w+)/',$data, $match) && ($botState['sellState']=="on" ||$from_id == $admin)){
+	delMessage();
+	$price = $botState['gbPrice'];
+	if($match['buyType'] == "one" && $userInfo['is_agent'] == true){ 
+        $stmt = $connection->prepare("SELECT * FROM `server_plans` WHERE `id` = ?");
+        $stmt->bind_param("i", $match[1]);
+        $stmt->execute();
+        $serverId = $stmt->get_result()->fetch_assoc()['server_id'];
+        $stmt->close();
+
+        $discounts = json_decode($userInfo['discount_percent'],true);
+        if($botState['agencyPlanDiscount']=="on") $discount = $discounts['plans'][$match[1]]?? $discounts['normal'];
+        else $discount = $discounts['servers'][$serverId]?? $discounts['normal'];
+        $price -= floor($price * $discount / 100);
+	}
+	sendMessage(str_replace("VOLUME-PRICE", $price, $mainValues['customer_custome_plan_volume']),$cancelKey);
+	setUser("selectCustomPlanGB" . $match[1] . "_" . $match[2] . "_" . $match['buyType']);
+}
+if(preg_match('/selectCustomPlanGB(?<planId>\d+)_(?<categoryId>\d+)_(?<buyType>\w+)/',$userInfo['step'], $match) && ($botState['sellState']=="on" ||$from_id == $admin) && $text != $buttonValues['cancel']){
+    if(!is_numeric($text)){
+        sendMessage("😡 لطفا فقط عدد ارسال کن");
+        exit();
+    }
+    elseif($text <1){
+        sendMessage("لطفا عددی بزرگتر از 0 وارد کن");
+        exit();
+    }
+    elseif(strstr($text,".")){
+        sendMessage(" عدد اعشاری مجاز نیست");
+        exit();
+    }
+    elseif(substr($text, 0, 1) == '0'){
+        sendMessage("❌ عدد وارد شده نمیتواند با 0 شروع شود!");
+        exit();
+    }
+    
+    $id = $match['planId'];
+    $price = $botState['dayPrice'];
+	if($match['buyType'] == "one" && $userInfo['is_agent'] == true){
+        $stmt = $connection->prepare("SELECT * FROM `server_plans` WHERE `id` = ?");
+        $stmt->bind_param("i", $id);
+        $stmt->execute();
+        $serverId = $stmt->get_result()->fetch_assoc()['server_id'];
+        $stmt->close();
+
+        $discounts = json_decode($userInfo['discount_percent'],true);
+        if($botState['agencyPlanDiscount']=="on") $discount = $discounts['plans'][$id]?? $discounts['normal'];
+        else $discount = $discounts['servers'][$serverId]?? $discounts['normal'];
+        $price -= floor($price * $discount / 100);
+	}
+    
+	sendMessage(str_replace("DAY-PRICE", $price, $mainValues['customer_custome_plan_day']));
+	setUser("selectCustomPlanDay" . $id . "_" . $match['categoryId'] . "_" . $text . "_" . $match['buyType']);
+}
+if((preg_match('/selectCustomPlanDay(?<planId>\d+)_(?<categoryId>\d+)_(?<accountCount>\d+)_(?<buyType>\w+)/',$userInfo['step'], $match)) && ($botState['sellState']=="on" ||$from_id == $admin) && $text != $buttonValues['cancel']){
+    if(!is_numeric($text)){
+        sendMessage("😡 لطفا فقط عدد ارسال کن");
+        exit();
+    }
+    elseif($text <1){
+        sendMessage("لطفا عددی بزرگتر از 0 وارد کن");
+        exit();
+    }
+    elseif(strstr($text,".")){
+        sendMessage("عدد اعشاری مجاز نیست");
+        exit();
+    }
+    elseif(substr($text, 0, 1) == '0'){
+        sendMessage("❌ عدد وارد شده نمیتواند با 0 شروع شود!");
+        exit();
+    }
+
+	sendMessage($mainValues['customer_custome_plan_name']);
+	setUser("enterCustomPlanName" . $match['planId'] . "_" . $match['categoryId'] . "_" . $match['accountCount'] . "_" . $text . "_" . $match['buyType']);
+}
+
+if((preg_match('/^discountCustomPlanDay(\d+)/',$userInfo['step'], $match) || preg_match('/enterCustomPlanName(\d+)_(\d+)_(\d+)_(\d+)_(?<buyType>\w+)/',$userInfo['step'], $match)) && ($botState['sellState']=="on" ||$from_id ==$admin) && $text != $buttonValues['cancel']){ 
+    if(preg_match('/^discountCustomPlanDay/', $userInfo['step'])){ 
+        $rowId = $match[1];
+
+        // استفاده از تابع مشترک تخفیف
+        $discountResult = applyDiscountToPay(
+            $connection,
+            $rowId,
+            $text,
+            $from_id,
+            $username,
+            $first_name,
+            $admin,
+            $mainValues,
+            $botState
+        );
+
+        // در هر صورت (موفق یا ناموفق)، اطلاعات pays را از خروجی می‌گیریم
+        if(isset($discountResult['payInfo']) && is_array($discountResult['payInfo'])) {
+            $payInfo = $discountResult['payInfo'];
+            $hash_id = $discountResult['hash_id'];
+            $price   = $discountResult['price'];
+            $id      = $payInfo['type'];
+            $volume  = $payInfo['volume'];
+            $days    = $payInfo['day'];
+        } else {
+            // اگر به هر دلیلی payInfo برنگشت، به عنوان کد نامعتبر رفتار می‌کنیم
+            sendMessage($mainValues['not_valid_discount_code']);
+            exit();
+        }
+    }else{ 
+        $id = $match[1]; 
+    	$call_id = $match[2]; 
+    	$volume = $match[3]; 
+        $days = $match[4]; 
+        if($match['buyType'] != "much"){ 
+            if(preg_match('/^[a-z]+[0-9]+$/',$text)){} else{ 
+                sendMessage($mainValues['incorrect_config_name']); 
+                exit(); 
+            } 
+        } 
+    } 
+    $stmt = $connection->prepare("SELECT * FROM `server_plans` WHERE `id`=? and `active`=1"); 
+    $stmt->bind_param("i", $id); 
+    $stmt->execute(); 
+    $respd = $stmt->get_result()->fetch_assoc(); 
+    $stmt->close(); 
+     
+    $stmt = $connection->prepare("SELECT * FROM `server_categories` WHERE `id`=?"); 
+    $stmt->bind_param("i", $respd['catid']); 
+    $stmt->execute(); 
+    $catname = $stmt->get_result()->fetch_assoc()['title']; 
+    $stmt->close(); 
+     
+    $name = $catname." ".$respd['title']; 
+    $desc = $respd['descr']; 
+	$sid = $respd['server_id']; 
+	$keyboard = array(); 
+    $token = base64_encode("{$from_id}.{$id}"); 
+ 
+    if(!preg_match('/^discountCustomPlanDay/', $userInfo['step'])){ 
+        $discountPrice = 0; 
+        $gbPrice = $botState['gbPrice']; 
+        $dayPrice = $botState['dayPrice']; 
+         
+        if($userInfo['is_agent'] == true && $match['buyType'] == "one") { 
+            $stmt = $connection->prepare("SELECT * FROM `server_plans` WHERE `id` = ?"); 
+            $stmt->bind_param("i", $match[1]); 
+            $stmt->execute(); 
+            $serverId = $stmt->get_result()->fetch_assoc()['server_id']; 
+            $stmt->close(); 
+             
+            $discounts = json_decode($userInfo['discount_percent'],true); 
+            if($botState['agencyPlanDiscount']=="on") $discount = $discounts['plans'][$id]?? $discounts['normal']; 
+            else $discount = $discounts['servers'][$sid]?? $discounts['normal']; 
+             
+            $gbPrice -= floor($gbPrice * $discount /100); 
+            $dayPrice -= floor($dayPrice * $discount / 100); 
+        } 
+         
+        $agentBought = false; 
+        if($userInfo['is_agent'] == 1 && ($match['buyType'] == "one" || $match['buyType'] == "much")) { 
+            $agentBought = true; 
+        } 
+         
+        $price =  ($volume * $gbPrice) + ($days * $dayPrice); 
+        $hash_id = RandomString(); 
+        $stmt = $connection->prepare("DELETE FROM `pays` WHERE `user_id` = ? AND `type` = 'BUY_SUB' AND `state` = 'pending'"); 
+        $stmt->bind_param("i", $from_id); 
+        $stmt->execute(); 
+        $stmt->close(); 
+         
+        $time = time(); 
+        $stmt = $connection->prepare("INSERT INTO `pays` (`hash_id`, `description`, `user_id`, `type`, `plan_id`, `server_id`, `volume`, `day`, `price`, `request_date`, `state`, `agent_bought`) 
+									VALUES (?, ?, ?, 'BUY_SUB', ?, ?, ?, ?, ?, ?, 'pending', ?)"); 
+		$stmt->bind_param("ssiiiiiiii", $hash_id, $text, $from_id, $id, $sid, $volume, $days, $price, $time, $agentBought); 
+        $stmt->execute(); 
+        $rowId = $stmt->insert_id; 
+        $stmt->close(); 
+    } 
+     
+     
+    if($botState['cartToCartState'] == "on") $keyboard[] = [['text' => $buttonValues['cart_to_cart'],  'callback_data' => "payCustomWithCartToCart$hash_id"]]; 
+    if($botState['nowPaymentOther'] == "on") $keyboard[] = [['text' => $buttonValues['now_payment_gateway'],  'url' => $botUrl . "pay/?nowpayment&hash_id=" . $hash_id]]; 
+    if($botState['zarinpal'] == "on") $keyboard[] = [['text' => $buttonValues['zarinpal_gateway'],  'url' => $botUrl . "pay/?zarinpal&hash_id=" . $hash_id]]; 
+    if($botState['nextpay'] == "on") $keyboard[] = [['text' => $buttonValues['nextpay_gateway'],  'url' => $botUrl . "pay/?nextpay&hash_id=" . $hash_id]]; 
+    if($botState['weSwapState'] == "on") $keyboard[] = [['text' => $buttonValues['weswap_gateway'],  'callback_data' => "payWithWeSwap" . $hash_id]]; 
+    if($botState['walletState'] == "on") $keyboard[] = [['text' => $buttonValues['pay_with_wallet'],  'callback_data' => "payCustomWithWallet$hash_id"]]; 
+    if($botState['tronWallet'] == "on") $keyboard[] = [['text' => $buttonValues['tron_gateway'],  'callback_data' => "payWithTronWallet" . $hash_id]]; 
+ 
+    if(!preg_match('/^discountCustomPlanDay/', $userInfo['step'])) $keyboard[] = [['text' => " 🎟 افزودن کد تخفیف ",  'callback_data' => "haveDiscountCustom_" . $rowId]]; 
+	$keyboard[] = [['text' => $buttonValues['cancel'], 'callback_data' => "mainMenu"]]; 
+    $price = ($price == 0) ? 'رایگان' : number_format($price).' تومان '; 
+    sendMessage(str_replace(['VOLUME', 'DAYS', 'PLAN-NAME', 'PRICE', 'DESCRIPTION'], [$volume, $days, $name, $price, $desc], $mainValues['buy_subscription_detail']),json_encode(['inline_keyboard'=>$keyboard]), "HTML"); 
+    setUser(); 
+}
+
