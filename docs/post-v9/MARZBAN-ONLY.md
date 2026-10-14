@@ -77,6 +77,23 @@ The wrapper validates:
   rejected before calling any provider;
 - actual PHP HTTP 410 for an obsolete valid X-UI token, 200 for malformed
   input, 405 for POST; this script is unable to load real DB credentials.
+- **17 Marzban purchase/admin/agent/discount/free-trial scenarios, 46 actual
+  PHP steps**, using the original source V9 and current code staged in separate
+  owned-original-23-table socket MariaDBs. Ordered synthetic Telegram outputs,
+  real local Marzban HTTP calls, SQL row transitions, paid-wallet outcomes,
+  provider failures and synthetic private-file hashes must match **exactly**.
+  This caught an unexpected CRLF/LF user-message drift in
+  `buy_helpers.php`, corrected by preserving the original line endings
+  **inside legacy PHP string/SQL literals**. Path-specific
+  `.gitattributes` treats only carriage returns at ends of those literal
+  lines as intentional; the rest of the source remains LF.
+
+Seven actual processWalletPayment function negative preflight cases
+(tools/test_post_v9_wallet_guard.php) use only **in-memory SQL doubles**:
+retired panels, unknown panels, old inbound metadata and missing plans are
+rejected **before wallet debit, payment-state mutation or provider calls**.
+The 17 positive purchase scenarios use real disposable socket-only MariaDB.
+Neither setup uses real bank/wallet/provider money.
 
 CI executes current suite on PHP 8.1 and PHP 8.4 separately, then creates
 a NEW source-only candidate ZIP and manifest from the exact committed

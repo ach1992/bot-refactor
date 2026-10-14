@@ -101,8 +101,25 @@ def main():
         marzban=json.loads(native.read_text())
         if not marzban.get("complete") or not marzban.get("marzban_http_wire_sql_parity"):
             raise RuntimeError("Current candidate Marzban native source proof incomplete")
+        purchase_path=Path(tmp)/"marzban-purchase.json"
+        subprocess.run(["python3",str(ROOT/"tools/test_post_v9_purchases.py"),
+                        "--run-disposable","--report",str(purchase_path)],
+                       cwd=ROOT,check=True,timeout=300,capture_output=True)
+        purchases=json.loads(purchase_path.read_text())
+        if not (purchases.get("complete") and purchases.get("scenarios")==17 and
+                purchases.get("php_sql_telegram_fake_provider_parity")):
+            raise RuntimeError("Actual post-V9 purchase/renewal/agent SQL/Telegram parity incomplete")
+        wallet_cli=subprocess.run(["php",str(ROOT/"tools/test_post_v9_wallet_guard.php")],
+                                  cwd=ROOT,check=True,timeout=25,
+                                  capture_output=True,text=True)
+        wallet_guard=json.loads(wallet_cli.stdout)
+        if not (wallet_guard.get("complete") and wallet_guard.get("cases")==7
+                and wallet_guard.get("http_calls")==0
+                and wallet_guard.get("committed_sql_mutations")==0):
+            raise RuntimeError("Unsupported wallet checkout mutated money or failed to reject panel")
         if a.report:a.report.write_text(json.dumps({"complete":True,
-                    "source":result,"marzban":marzban,
+                    "source":result,"marzban":marzban,"purchases":purchases,
+                    "unsupported_wallet_preflight":wallet_guard,
                     "historical_suite_executed_by_this_script":False,
                     "historical_suite_requires_separate_pinned_ci_execution":True,
                     "actual_operator_installed_acceptance":False,
@@ -111,6 +128,9 @@ def main():
     print(json.dumps({"complete":True,"source":result,
                       "marzban_positive":marzban["marzban_positive_cases"],
                       "legacy_negative":marzban["retired_provider_negative_cases"],
+                      "purchase_scenarios":purchases["scenarios"],
+                      "purchase_steps":purchases["steps"],
+                      "unsupported_wallet_negatives":wallet_guard["cases"],
                       "current_php_version":subprocess.check_output(["php","-r","echo PHP_VERSION_ID;"]).decode()}))
 
 

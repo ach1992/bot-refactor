@@ -5,6 +5,12 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     exit;
 }
 
+// A cached admin keyboard may still send a former X-UI plan callback.
+if (in_array((string)$data, ['addNewPlan','addNewRahgozarPlan'], true) &&
+    ($from_id == $admin || ($userInfo['isAdmin'] ?? false) == true)) {
+    alert("ثبت پلن پنل قدیمی حذف شده است؛ از پلن مرزبان استفاده کنید.", true);
+    return;
+}
 // Only active Marzban plan onboarding is accepted.
 if ($data == "addNewMarzbanPlan" && ($from_id == $admin || $userInfo['isAdmin'] == true)){
     setUser($data);

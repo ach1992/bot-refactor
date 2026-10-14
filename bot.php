@@ -1486,6 +1486,12 @@ if(preg_match('/^changesServerIp(\d+)/',$userInfo['step'],$match) && ($from_id =
     sendMessage("☑️ مدیریت سرور ها: $cname",$keys);
     exit();
 }
+// Old buttons can still arrive from a Telegram message sent before
+// upgrading. Respond safely instead of silently dropping the callback.
+if ($data === 'addNewServer' && ($from_id == $admin || ($userInfo['isAdmin'] ?? false) == true)) {
+    alert("ثبت پنل‌های قدیمی حذف شده است؛ از ثبت سرور مرزبان استفاده کنید.", true);
+    return;
+}
 // Obsolete X-UI transport/Reality callbacks are intentionally retired.
 if(preg_match('/^(?:changePortType|changeRealityState)\d+$/', (string)$data)){
     alert("تنظیمات پنل‌های قدیمی دیگر پشتیبانی نمی‌شود.", true);
