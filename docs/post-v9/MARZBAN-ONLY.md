@@ -88,12 +88,16 @@ The wrapper validates:
   `.gitattributes` treats only carriage returns at ends of those literal
   lines as intentional; the rest of the source remains LF.
 
-Seven actual processWalletPayment function negative preflight cases
-(tools/test_post_v9_wallet_guard.php) use only **in-memory SQL doubles**:
-retired panels, unknown panels, old inbound metadata and missing plans are
-rejected **before wallet debit, payment-state mutation or provider calls**.
-The 17 positive purchase scenarios use real disposable socket-only MariaDB.
-Neither setup uses real bank/wallet/provider money.
+A shared read-only supported-plan check now gates both **wallet purchases**
+and **manual receipt approvals**, before the first wallet debit or manual
+receipt state-claim. The synthetic tools/test_post_v9_wallet_guard.php fixture
+executes **seven wallet negatives plus seven manual-approval negatives** with
+in-memory SQL doubles only: unknown/retired provider IDs, old inbounds,
+obsolete renewal inbound metadata and missing plans. None may issue SQL
+mutations, call a provider or change payment states. The 17 positive purchase
+scenarios use real disposable socket-only MariaDB and real local mock-HTTP
+Marzban; this does **not** certify a full manual receipt approval, real payment
+reconciliation, live Telegram, installed operations or provider financial safety.
 
 CI executes current suite on PHP 8.1 and PHP 8.4 separately, then creates
 a NEW source-only candidate ZIP and manifest from the exact committed

@@ -8,6 +8,7 @@ $alerts = [];
 function alert($message, $urgent = false) {
     $GLOBALS['alerts'][] = (string)$message;
 }
+function setUser(...$args) {}
 function sendMessage(...$args) {
     throw new RuntimeException('Unexpected notification in preflight');
 }
@@ -33,7 +34,7 @@ final class FixtureStatement {
         if (strpos($this->sql, 'FROM `pays`') !== false) {
             return new FixtureRows([
                 'hash_id' => 'synthetic-only',
-                'state' => 'pending',
+                'state' => $this->connection->case['state'] ?? 'pending',
                 'type' => $this->connection->case['paytype'],
                 'plan_id' => 7,
                 'volume' => $this->connection->case['renew_inbound'],
@@ -65,6 +66,7 @@ final class FixtureDatabase {
     public function rollback() { $this->rollbacks++; }
     public function commit() { $this->commits++; }
 }
+require dirname(__DIR__) . '/src/Purchase/Core.php';
 require dirname(__DIR__) . '/src/Finance/WalletSettlement.php';
 $cases = [
     ['paytype'=>'BUY_SUB','renew_inbound'=>0,'row'=>['type'=>'sanaei','inbound_id'=>0]],
@@ -89,5 +91,34 @@ foreach ($cases as $case) {
 if (count($alerts) !== count($cases)) {
     throw new RuntimeException('No safe user-visible unsupported panel feedback');
 }
+// The separate manual-approval route is loaded as source, with the same
+// synthetic SQL double. A stale callback must not claim the payment state.
+$text = '';
+$buttonValues = ['cancel' => 'cancel'];
+$userInfo = ['isAdmin' => true];
+$manualCases = 0;
+foreach ($cases as $case) {
+    $case['state'] = 'have_sent';
+    $db = new FixtureDatabase($case);
+    $connection = $db;
+    $data = 'acceptsynthetic-only';
+    require dirname(__DIR__) . '/src/Finance/Routes/ManualApproval.php';
+    if ($db->reads !== 2 || $db->rollbacks !== 0 || $db->commits !== 0) {
+        throw new RuntimeException('Manual receipt was mutated before provider validation');
+    }
+    $manualCases++;
+}
+// Positive read-only guard probe: genuine Marzban plan remains selectable.
+$valid = new FixtureDatabase([
+    'paytype' => 'BUY_SUB', 'renew_inbound' => 0,
+    'row' => ['type'=>'marzban', 'inbound_id'=>0]
+]);
+if (!achbotSupportsMarzbanPlan($valid, 7, 0) || $valid->reads !== 1) {
+    throw new RuntimeException('Supported Marzban plan rejected by new boundary');
+}
+if (count($alerts) !== 2 * count($cases)) {
+    throw new RuntimeException('Missing admin-safe manual receipt rejection message');
+}
 echo json_encode(['complete'=>true,'cases'=>count($cases),
-                  'http_calls'=>0,'committed_sql_mutations'=>0]);
+                  'manual_cases'=>$manualCases,'http_calls'=>0,
+                  'committed_sql_mutations'=>0]);

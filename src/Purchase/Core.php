@@ -64,6 +64,28 @@ if (!function_exists('ensureServerCapacity')) {
     }
 }
 
+// Shared read-only preflight for current purchase/manual approval/wallet.
+// Type + inbound are validated as one provider contract before settlement.
+if (!function_exists('achbotSupportsMarzbanPlan')) {
+    function achbotSupportsMarzbanPlan($connection, $planId, $requestedInboundId = 0)
+    {
+        $planId = (int)$planId;
+        $stmt = $connection->prepare(
+            "SELECT p.`inbound_id`, c.`type`
+             FROM `server_plans` p
+             INNER JOIN `server_config` c ON c.`id` = p.`server_id`
+             WHERE p.`id` = ? LIMIT 1"
+        );
+        $stmt->bind_param("i", $planId);
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        return $planId > 0 && (int)$requestedInboundId === 0 &&
+            $row && $row['type'] === 'marzban' &&
+            (int)$row['inbound_id'] === 0;
+    }
+}
+
 if (!function_exists('getServerInfoAndConfig')) {
     function getServerInfoAndConfig($connection, $server_id)
     {

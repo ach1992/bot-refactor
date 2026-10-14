@@ -78,23 +78,9 @@ if (!function_exists('processWalletPayment')) {
             // mutations may already have occurred within this transaction.
             // Uses the original schema; no migrations or new payment policy.
             $preflightPlanId = (int)($payInfo['plan_id'] ?? 0);
-            $stmt = $connection->prepare(
-                "SELECT p.`inbound_id`, c.`type`
-                 FROM `server_plans` p
-                 INNER JOIN `server_config` c ON c.`id` = p.`server_id`
-                 WHERE p.`id` = ? LIMIT 1"
-            );
-            $stmt->bind_param("i", $preflightPlanId);
-            $stmt->execute();
-            $supportedPlan = $stmt->get_result()->fetch_assoc();
-            $stmt->close();
-
-            $isObsoleteRenewal = ($payInfo['type'] ?? '') === 'RENEW_SCONFIG'
-                && (int)($payInfo['volume'] ?? 0) !== 0;
-            if (!$supportedPlan ||
-                $supportedPlan['type'] !== 'marzban' ||
-                (int)$supportedPlan['inbound_id'] !== 0 ||
-                $isObsoleteRenewal) {
+            $renewalInbound = ($payInfo['type'] ?? '') === 'RENEW_SCONFIG'
+                ? (int)($payInfo['volume'] ?? 0) : 0;
+            if (!achbotSupportsMarzbanPlan($connection, $preflightPlanId, $renewalInbound)) {
                 $connection->rollback();
                 alert("⛔️ پنل این اشتراک دیگر پشتیبانی نمی‌شود؛ هیچ مبلغی از کیف پول کسر نشد.", true);
                 return [

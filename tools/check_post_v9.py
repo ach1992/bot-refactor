@@ -114,6 +114,7 @@ def main():
                                   capture_output=True,text=True)
         wallet_guard=json.loads(wallet_cli.stdout)
         if not (wallet_guard.get("complete") and wallet_guard.get("cases")==7
+                and wallet_guard.get("manual_cases")==7
                 and wallet_guard.get("http_calls")==0
                 and wallet_guard.get("committed_sql_mutations")==0):
             raise RuntimeError("Unsupported wallet checkout mutated money or failed to reject panel")
@@ -130,7 +131,8 @@ def main():
                       "legacy_negative":marzban["retired_provider_negative_cases"],
                       "purchase_scenarios":purchases["scenarios"],
                       "purchase_steps":purchases["steps"],
-                      "unsupported_wallet_negatives":wallet_guard["cases"],
+                       "unsupported_wallet_negatives":wallet_guard["cases"],
+                      "unsupported_manual_negatives":wallet_guard["manual_cases"],
                       "current_php_version":subprocess.check_output(["php","-r","echo PHP_VERSION_ID;"]).decode()}))
 
 
