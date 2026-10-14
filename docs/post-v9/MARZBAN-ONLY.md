@@ -82,11 +82,12 @@ The wrapper validates:
   owned-original-23-table socket MariaDBs. Ordered synthetic Telegram outputs,
   real local Marzban HTTP calls, SQL row transitions, paid-wallet outcomes,
   provider failures and synthetic private-file hashes must match **exactly**.
-  This caught an unexpected CRLF/LF user-message drift in
-  `buy_helpers.php`, corrected by preserving the original line endings
-  **inside legacy PHP string/SQL literals**. Path-specific
-  `.gitattributes` treats only carriage returns at ends of those literal
-  lines as intentional; the rest of the source remains LF.
+  The native suite caught an accidental CRLF-to-LF user-message change.
+  The original V9 bytes were subsequently restored in otherwise untouched
+  spans of the preexisting PHP files, including multiline Telegram messages
+  and SQL literals. Path-specific .gitattributes recognizes original CR-at-EOL
+  in those files; newly authored lines may use LF. This keeps the effective
+  V9-to-current code diff reviewable without modifying historical goldens.
 
 A shared read-only supported-plan check now gates both **wallet purchases**
 and **manual receipt approvals**, before the first wallet debit or manual
