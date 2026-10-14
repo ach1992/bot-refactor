@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Real paid V7 -> V8 -> V7 -> V8 source-only swap on one disposable 23-table DB.
 
-Retains private state, source entrypoints, existing paid order and production-
-style dormant internal module bytes. Never starts external Cron/services.
+Retains private state, source entrypoints, existing paid order, discounts,
+renewal records and dormant internal module bytes. Never starts external Cron/services.
 """
 from __future__ import annotations
 import argparse
@@ -85,8 +85,50 @@ def main():
         paid=e2e.run(work,env,app,db,"wallet",{"data":"payBuyWithWalletxxxxxxxxx","actor":1001},modern=False)
         if paid["exception"] or len(provider.trace)<3:
             raise RuntimeError("Pinned V7 failed to provision a paid order")
+        if native.sql(work,env,"SELECT COUNT(*) FROM orders_list WHERE userid=1001 AND status=1",db).strip()!="1":
+            raise RuntimeError("V7 rollback fixture must have one real paid order")
+        # Seed both financial record classes required by Issue #24 onto the
+        # SAME disposable MariaDB used for all four physical source phases.
+        # SELECT links each fixture to the actually paid order, rather than
+        # inventing an unassociated renewal/discount record.
+        native.sql(work,env,"""
+INSERT INTO discounts
+ (id,hash_id,type,amount,expire_date,expire_count,used_by,can_use,
+  audience_type,audience_user_id,target_type,target_id,min_price,max_discount,is_active)
+ SELECT 910001,'SOURCE-SWAP-COUPON','percent',15,2147000000,5,'[1001]',5,
+        'users',userid,'plan',fileid,0,0,1
+ FROM orders_list WHERE userid=1001 AND status=1;
+INSERT INTO increase_order
+ (id,userid,server_id,inbound_id,remark,amount,date,volume,day)
+ SELECT 910001,userid,server_id,inbound_id,remark,100,'1780000000',2,30
+ FROM orders_list WHERE userid=1001 AND status=1;
+""",db)
+        # Full-row snapshots pin EVERY persisted column, including coupon
+        # audience/use fields and renewal amount, date, volume and days.
+        persistence_queries={
+            "discounts":"SELECT * FROM discounts ORDER BY id",
+            "renewals":"SELECT * FROM increase_order ORDER BY id",
+        }
+        persistence_before={kind:native.sql(work,env,query,db)
+                            for kind,query in persistence_queries.items()}
+        if any(len(rows.splitlines())!=1 for rows in persistence_before.values()):
+            raise RuntimeError("Discount/renewal preservation fixtures were not seeded exactly once")
+        association=native.sql(work,env,"""
+SELECT COUNT(*) FROM increase_order AS i JOIN orders_list AS o
+ ON i.userid=o.userid AND i.server_id=o.server_id
+ AND i.inbound_id=o.inbound_id AND i.remark=o.remark
+ WHERE i.id=910001 AND o.userid=1001 AND o.status=1
+""",db).strip()
+        if association!="1":
+            raise RuntimeError("Synthetic renewal not associated with paid order")
+        coupon_link=native.sql(work,env,"""
+SELECT COUNT(*) FROM discounts AS d JOIN orders_list AS o
+ ON d.audience_user_id=o.userid AND d.target_id=o.fileid
+ WHERE d.id=910001 AND o.userid=1001 AND o.status=1
+""",db).strip()
+        if coupon_link!="1":
+            raise RuntimeError("Synthetic discount not associated with paid order")
         before=e2e.snapshot(work,env,db)
-        assert native.sql(work,env,"SELECT COUNT(*) FROM orders_list",db).strip()=="1"
         tables=native.sql(work,env,"SHOW TABLES",db).splitlines()
         if len(tables)!=23:raise RuntimeError("Not the original MariaDB schema")
         def ddl():
@@ -104,6 +146,11 @@ def main():
                 raise RuntimeError("Purchase catalogue failed across rollback: "+version)
             if e2e.snapshot(work,env,db)!=before:
                 raise RuntimeError("Persisted V7 paid order/financial state lost")
+            observed_persistence={kind:native.sql(work,env,query,db)
+                                  for kind,query in persistence_queries.items()}
+            for kind,expected_rows in persistence_before.items():
+                if observed_persistence[kind]!=expected_rows:
+                    raise RuntimeError("Source rollback modified complete "+kind+" rows: "+version)
             if ddl()!=ddl_before:
                 raise RuntimeError("Original schema modified by source-only overlay")
             if index==1:
@@ -113,10 +160,17 @@ def main():
             phases.append({"step":index,"version":version,"source_members":count,
                            "actual_inventory_verified":True,
                            "actual_runtime_members":len(inventory(app)-HARNESS_FILES-PRIVATE_FILES),
-                           "persisted_paid_order":True,"original_schema_unchanged":True})
+                           "persisted_paid_order":True,
+                           "financial_records":{
+                               kind:{"row_count":len(rows.splitlines()),"unchanged":True,
+                                     "sha256":hashlib.sha256(rows.encode()).hexdigest()}
+                               for kind,rows in observed_persistence.items()},
+                           "original_schema_unchanged":True})
             print("PASS source-only swap "+str(index)+" "+version,flush=True)
     result={"phases":phases,"private_sentinels_unchanged":True,"no_database_rollback":True,
-            "persisted_paid_order_survived":True,"original_23_table_schema_unchanged":True}
+            "persisted_paid_order_survived":True,
+            "persisted_discount_and_renewal_records_survived":True,
+            "original_23_table_schema_unchanged":True}
     if a.report:a.report.write_text(json.dumps(result,indent=2)+"\n")
     print(json.dumps(result))
 

@@ -80,7 +80,14 @@ inventory (not just allowlist membership) in each isolated
 `V7 -> V8 -> V7 -> V8` phase: 65, 92, 65, 92 members. It removes
 only known V8 modules in the owned disposable rehearsal and verifies
 the preserved paid order, wallet, original DDL, and private-file sentinel
-hashes. An ordinary production file copy is **not** an exact source-set
+hashes. The same single original-schema MariaDB is seeded with a synthetic
+discount linked to the purchased plan/user and a synthetic renewal/increase
+record tied to the actual paid order. Complete `SELECT *` rows for both
+financial tables must survive **unchanged in all four phases**; each phase
+exports independently checkable row counts and SHA256 digests to
+`source_only_rollback.json`. The aggregate acceptance gate independently
+rejects missing records, changed digests, or missing audit evidence.
+An ordinary production file copy is **not** an exact source-set
 rollback procedure: a separately authorized deployment/rollback must
 apply a version-specific manifest and remove only files explicitly
 authorized for removal. No live rollback has been attempted.

@@ -110,6 +110,15 @@ def main():
                 or not all(p["actual_inventory_verified"] for p in result["phases"])
                 or not result["private_sentinels_unchanged"]
                 or not result["persisted_paid_order_survived"]
+                or not result["persisted_discount_and_renewal_records_survived"]
+                or any(
+                    set(phase.get("financial_records",{}))!={"discounts","renewals"}
+                    or any(record.get("row_count")!=1 or not record.get("unchanged")
+                           for record in phase["financial_records"].values())
+                    for phase in result["phases"])
+                or any(len({phase["financial_records"][kind]["sha256"]
+                            for phase in result["phases"]})!=1
+                       for kind in ("discounts","renewals"))
                 or not result["no_database_rollback"]):
             raise RuntimeError("Exact V7/V8/V7/V8 runtime inventory/rollback acceptance incomplete")
         if label=="direct_http_guards" and result["guarded_http_requests"]!=54:

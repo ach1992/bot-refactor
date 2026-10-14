@@ -31,9 +31,12 @@ For a separately authorized, owner-controlled deployment only:
    reconciliation before any monetary intervention.
 
 The disposable acceptance suite rehearses `V7 → V8 → V7 → V8` with
-a persisted paid order, exact 65/92/65/92 source inventory and preserved
-private sentinels. This is source
-and SQL compatibility evidence, not live installation approval.
+a persisted paid order, the original wallet state, synthetic coupon and
+order-linked renewal/increase rows, exact 65/92/65/92 source inventory,
+unchanged original DDL and preserved private sentinels. Its rollback
+evidence captures complete-row discount/renewal digests in each of four
+phases **on the same DB without restoration**. This is source and SQL
+compatibility evidence, not live installation approval.
 
 Operator gates that remain open: V5 #14, V6 #16, V7 #21 installed acceptance,
 V6.1 #18 full MariaDB restore (explicitly not tested), V8 #24 independent
