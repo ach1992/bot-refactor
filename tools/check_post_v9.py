@@ -118,9 +118,21 @@ def main():
                 and wallet_guard.get("http_calls")==0
                 and wallet_guard.get("committed_sql_mutations")==0):
             raise RuntimeError("Unsupported wallet checkout mutated money or failed to reject panel")
+        overlay_report=Path(tmp)/"source-overlay.json"
+        subprocess.run(["python3",str(ROOT/"tools/test_post_v9_swap.py"),
+                        "--run-disposable","--report",str(overlay_report)],
+                       cwd=ROOT,check=True,timeout=60,capture_output=True)
+        swap=json.loads(overlay_report.read_text())
+        if not (swap.get("complete") and swap.get("phase_count")==4
+                and swap.get("runtime_members")==92
+                and swap.get("source_roll_forward_and_back_byte_identical")
+                and swap.get("unchanged_original_sql_ddl")
+                and swap.get("synthetic_private_files_untouched")):
+            raise RuntimeError("Physical post-V9/V9 source-only overlay or private-state check failed")
         if a.report:a.report.write_text(json.dumps({"complete":True,
                     "source":result,"marzban":marzban,"purchases":purchases,
-                    "unsupported_wallet_preflight":wallet_guard,
+                     "unsupported_wallet_preflight":wallet_guard,
+                    "source_only_overlays":swap,
                     "historical_suite_executed_by_this_script":False,
                     "historical_suite_requires_separate_pinned_ci_execution":True,
                     "actual_operator_installed_acceptance":False,
@@ -132,7 +144,8 @@ def main():
                       "purchase_scenarios":purchases["scenarios"],
                       "purchase_steps":purchases["steps"],
                        "unsupported_wallet_negatives":wallet_guard["cases"],
-                      "unsupported_manual_negatives":wallet_guard["manual_cases"],
+                       "unsupported_manual_negatives":wallet_guard["manual_cases"],
+                      "verified_source_swaps":swap["phase_count"],
                       "current_php_version":subprocess.check_output(["php","-r","echo PHP_VERSION_ID;"]).decode()}))
 
 

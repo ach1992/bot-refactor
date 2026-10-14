@@ -111,6 +111,14 @@ python3 tools/package_post_v9.py verify \
   --manifest /tmp/achbot-marzban-only.zip.manifest.json
 ```
 
+A separate actual-disposable-filesystem rollback verification is run via
+tools/test_post_v9_swap.py. It uses the genuine pinned V9 file bytes and
+current source to perform **V9 -> candidate -> V9 -> candidate**, checking all
+92 runtime members at every phase, original SQL DDL unchanged, and that
+synthetic local baseInfo/private sentinels remain untouched. This proves
+source overlay byte integrity, **not** installed rollback, full data restore
+or safe live payment continuity.
+
 The package requires a **clean committed** source worktree, verifies each
 actual member SHA256 and SHA-1 Git Blob, pins exact source SHA/TREE, omits
 all secrets and data/DDL, and sets rollout/financial/operator flags false.
