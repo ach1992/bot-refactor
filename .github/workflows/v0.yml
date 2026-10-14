@@ -10,7 +10,7 @@ concurrency:
   group: compatibility-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 jobs:
-  finance-php81-compatibility:
+  phase1-php81-compatibility:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -31,17 +31,17 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends mariadb-server
-      - name: V8 source and finance E2E with pinned V7 plus PHP 8.1 V6.1 regression
+      - name: V9 global source/bootstrap plus full V8 PHP 8.1 financial history
         run: |
           php -r 'if (!class_exists("ZipArchive") || !extension_loaded("mysqli")) exit(8);'
-          python3 tools/check_v8.py --php81 --report "$RUNNER_TEMP/v8-php81.json"
+          python3 tools/check_v9.py --php81 --report "$RUNNER_TEMP/v9-php81.json"
       - name: Record exact PHP 8.1 evidence
         run: |
-          printf '## AChBot V8 PHP 8.1 financial compatibility\n\n' >> "$GITHUB_STEP_SUMMARY"
+          printf '## AChBot V9 PHP 8.1 global compatibility\n\n' >> "$GITHUB_STEP_SUMMARY"
           printf 'HEAD: `%s`\n\n' "$(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
           printf 'Tree: `%s`\n\n' "$(git rev-parse HEAD^{tree})" >> "$GITHUB_STEP_SUMMARY"
-          printf 'Source-only candidate, no operator acceptance or deployment.\n' >> "$GITHUB_STEP_SUMMARY"
-  finance-php84-full-history:
+          printf 'V9 source-only, inherited financial behavior, no operator acceptance or deployment.\n' >> "$GITHUB_STEP_SUMMARY"
+  phase1-php84-full-history:
     runs-on: ubuntu-24.04
     timeout-minutes: 65
     steps:
@@ -62,30 +62,30 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends mariadb-server
-      - name: Exact V8 financial E2E, rollback, mutation plus full V0-V7 history
+      - name: Exact V9 global config and source rollback plus complete V0-V8 history
         run: |
           php -r 'if (!class_exists("ZipArchive") || !extension_loaded("mysqli")) exit(8);'
-          python3 tools/check_v8.py --report "$RUNNER_TEMP/v8-check.json" --evidence-dir "$RUNNER_TEMP/achbot-v8-evidence"
-      - name: Package 92 tracked runtime members from clean exact Git HEAD
+          python3 tools/check_v9.py --report "$RUNNER_TEMP/v9-check.json" --evidence-dir "$RUNNER_TEMP/achbot-v9-evidence"
+      - name: Package 92 integrated runtime members from clean V9 HEAD
         run: |
-          python3 tools/package_v8.py --output "$RUNNER_TEMP/achbot-v8/achbot-v8-runtime.zip"
-          python3 tools/verify_v8_package.py --zip "$RUNNER_TEMP/achbot-v8/achbot-v8-runtime.zip" --manifest "$RUNNER_TEMP/achbot-v8/achbot-v8-runtime.zip.manifest.json"
-          cp "$RUNNER_TEMP/v8-check.json" "$RUNNER_TEMP/achbot-v8/v8-check.json"
-          cp -R "$RUNNER_TEMP/achbot-v8-evidence" "$RUNNER_TEMP/achbot-v8/evidence"
+          python3 tools/package_v9.py --output "$RUNNER_TEMP/achbot-v9/achbot-v9-runtime.zip"
+          python3 tools/verify_v9_package.py --zip "$RUNNER_TEMP/achbot-v9/achbot-v9-runtime.zip" --manifest "$RUNNER_TEMP/achbot-v9/achbot-v9-runtime.zip.manifest.json"
+          cp "$RUNNER_TEMP/v9-check.json" "$RUNNER_TEMP/achbot-v9/v9-check.json"
+          cp -R "$RUNNER_TEMP/achbot-v9-evidence" "$RUNNER_TEMP/achbot-v9/evidence"
       - name: Record exact candidate identity and acceptance evidence
         run: |
-          printf '## AChBot V8 financial lifecycle source-only acceptance\n\n' >> "$GITHUB_STEP_SUMMARY"
+          printf '## AChBot V9 final Phase 1 global acceptance\n\n' >> "$GITHUB_STEP_SUMMARY"
           printf 'HEAD: `%s`\n\n' "$(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
           printf 'Tree: `%s`\n\n' "$(git rev-parse HEAD^{tree})" >> "$GITHUB_STEP_SUMMARY"
-          printf '92 source-only runtime members, original 23 tables, V0–V7 pinned history. No merge, release or deployment approval.\n\n' >> "$GITHUB_STEP_SUMMARY"
+          printf '92 unchanged V8 runtime source members, original 23 tables, V0-V8 pinned history. No merge, release or deployment approval.\n\n' >> "$GITHUB_STEP_SUMMARY"
           printf '```json\n' >> "$GITHUB_STEP_SUMMARY"
-          cat "$RUNNER_TEMP/v8-check.json" >> "$GITHUB_STEP_SUMMARY"
+          cat "$RUNNER_TEMP/v9-check.json" >> "$GITHUB_STEP_SUMMARY"
           printf '\n```\n' >> "$GITHUB_STEP_SUMMARY"
       - name: Upload exact-candidate archive and acceptance evidence
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: achbot-v8-${{ github.event.pull_request.head.sha || github.sha }}
-          path: ${{ runner.temp }}/achbot-v8/
+          name: achbot-v9-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/achbot-v9/
           if-no-files-found: error
           retention-days: 14
           compression-level: 0

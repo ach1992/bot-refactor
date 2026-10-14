@@ -128,3 +128,13 @@
   actual MariaDB restore NOT TESTED; do not conflate those with source tests.
 - Documentation, test matrix, source-only swap/rollback and operational gates:
   `docs/v7/`. Record new evidence and remaining gates in Issue #21 and PR.
+
+
+## V9 final Phase 1 integration acceptance (Issue #27)
+
+- Exact accepted previous source: merged V8 9ca6cabe43121a528db8d32c9b4aa1b5d10168ea (TREE 434f2d7aac6f23e0afb16b320782641aab81a6e0), public source-only RC1 v0.8.0-rc.1 with 92 runtime members. V9 is global integration acceptance, not redesign.
+- The whole V8 runtime, tracked synthetic private example and original 23-table DDL stay byte-identical: tools/v9_contract.py and tools/v8_contract.py enforce this. Any genuinely required change must be root-cause-justified and independently reviewed, not silently waive the pinned baseline.
+- Full acceptance: python3 tools/check_v9.py --report /tmp/v9.json --evidence-dir /tmp/v9-evidence under PHP 8.4, or python3 tools/check_v9.py --php81 under PHP 8.1. --focused is NOT full acceptance. Full untouched V8->V7->V0-V6.1 history mandatory.
+- V9 synthetic native bootstrap tests 40 global facade signatures, loopback provider requests in two CWD contexts with complete 23-table row parity; physical full-source swap tests the 92-file source inventory, synthetic private files and unchanged schema. Do not confuse source proof with installed acceptance.
+- Package from clean exact committed V9 HEAD with tools/package_v9.py and tools/verify_v9_package.py. Never package real baseInfo.php, production/customer DB data, secrets, credentials, backups, logs or test harness.
+- No real wallet/payment/chain/provider/Cron/Telegram calls, DB migration or monetary policy change. Issue #26 inherited finance risks and all unperformed operator acceptance remain open. New fresh author-separated HIGH_ASSURANCE independent review, Owner merge, Owner publication and operator deployment gates remain separate.

@@ -56,13 +56,22 @@ merged and published as `v0.7.0-rc.1`; its real operator acceptance
 remains **NOT TESTED**. Source publication does not waive earlier pending
 V5/V6 operator checks or V6.1 full restore.
 
-**V8 financial lifecycle (Issue #24):** the next authorized isolated
-source-development increment covers the existing payment initiation/callback
-paths, wallets, card/crypto consumers, refunds, discounts, referral rewards,
-renewals and financial Cron logic. Pin the integrated V7 source as the exact
-behavioral authority; keep the original 23-table schema, public entrypoints,
-SQL, callbacks and amounts. Original-vs-candidate real mysqli/provider
-fixtures, concurrency, historical V0-V7 regressions, swap/rollback,
-PHP 8.1/8.4 and fresh independent review must precede the separate
-owner-gated merge/release. See `docs/v8/`. Inherited unsafe financial
-semantics need an explicit owner decision, not silent policy changes.
+**V8 reviewed and source-only published (Issue #24):** the 27-module
+financial lifecycle extraction was independently approved and merged
+in PR #25 with its PHP 8.1/8.4 complete V0-V7 frozen history.
+[Public test prerelease v0.8.0-rc.1](https://github.com/ach1992/bot-refactor/releases/tag/v0.8.0-rc.1)
+contains exactly 92 runtime members and no private configuration.
+Synthetic finance/renewal/payment parity does not prove live financial safety;
+Issue #26 tracks the inherited defects and real provider/Cron/installed
+operator acceptance remains **NOT TESTED**.
+
+**Current last Phase 1 source-acceptance increment — V9 (Issue #27):**
+from integrated V8 commit 9ca6cabe43121a528db8d32c9b4aa1b5d10168ea.
+The global acceptance tests full original PHP config bootstrap, 40 legacy
+facades across root/foreign CWD, 23-table original synthetic MariaDB,
+real loopback HTTP panel responses, physical whole-app source inventory
+and V8/V9/V8/V9 source-only rollback. The V9 candidate currently keeps
+all 92 runtime files **byte-for-byte equal to V8** and reviews only the
+tracked sanitized baseInfo.example.php, never real private baseInfo.php.
+Phase 2 schema or money/security fixes are separate owner decisions.
+V9 integration, publication and installation require separate gates.
