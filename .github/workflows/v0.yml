@@ -10,17 +10,17 @@ concurrency:
   group: compatibility-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 jobs:
-  backup-php81-compatibility:
+  finance-php81-compatibility:
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 45
     steps:
-      - name: Checkout exact candidate with read-only permissions
+      - name: Checkout exact candidate without retained credentials
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
           persist-credentials: false
-      - name: PHP 8.1 with native ZipArchive and mysqli
+      - name: PHP 8.1 native compatibility
         uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2
         with:
           php-version: '8.1'
@@ -31,21 +31,27 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends mariadb-server
-      - name: PHP 8.1 V7 owned native E2E, swap, and pinned V6.1 compatibility
+      - name: V8 source and finance E2E with pinned V7 plus PHP 8.1 V6.1 regression
         run: |
           php -r 'if (!class_exists("ZipArchive") || !extension_loaded("mysqli")) exit(8);'
-          python3 tools/check_v7.py --php81 --report "$RUNNER_TEMP/v7-php81.json"
-  backup-v6-maintenance-complete:
+          python3 tools/check_v8.py --php81 --report "$RUNNER_TEMP/v8-php81.json"
+      - name: Record exact PHP 8.1 evidence
+        run: |
+          printf '## AChBot V8 PHP 8.1 financial compatibility\n\n' >> "$GITHUB_STEP_SUMMARY"
+          printf 'HEAD: `%s`\n\n' "$(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
+          printf 'Tree: `%s`\n\n' "$(git rev-parse HEAD^{tree})" >> "$GITHUB_STEP_SUMMARY"
+          printf 'Source-only candidate, no operator acceptance or deployment.\n' >> "$GITHUB_STEP_SUMMARY"
+  finance-php84-full-history:
     runs-on: ubuntu-24.04
-    timeout-minutes: 50
+    timeout-minutes: 65
     steps:
-      - name: Checkout exact candidate with read-only permissions
+      - name: Checkout exact candidate without retained credentials
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
           persist-credentials: false
-      - name: PHP 8.4 with native ZipArchive and mysqli
+      - name: PHP 8.4 full acceptance with native extensions
         uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2
         with:
           php-version: '8.4'
@@ -56,30 +62,30 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends mariadb-server
-      - name: Exact V7 E2E plus full immutable V0-V6.1 historical acceptance
+      - name: Exact V8 financial E2E, rollback, mutation plus full V0-V7 history
         run: |
           php -r 'if (!class_exists("ZipArchive") || !extension_loaded("mysqli")) exit(8);'
-          python3 tools/check_v7.py --report "$RUNNER_TEMP/v7-check.json" --evidence-dir "$RUNNER_TEMP/achbot-v7-evidence"
-      - name: Package 65 tracked runtime files, verify exact Git blobs
+          python3 tools/check_v8.py --report "$RUNNER_TEMP/v8-check.json" --evidence-dir "$RUNNER_TEMP/achbot-v8-evidence"
+      - name: Package 92 tracked runtime members from clean exact Git HEAD
         run: |
-          python3 tools/package_v7.py --output "$RUNNER_TEMP/achbot-v7/achbot-v7-runtime.zip"
-          python3 tools/verify_v7_package.py --zip "$RUNNER_TEMP/achbot-v7/achbot-v7-runtime.zip" --manifest "$RUNNER_TEMP/achbot-v7/achbot-v7-runtime.zip.manifest.json"
-          cp "$RUNNER_TEMP/v7-check.json" "$RUNNER_TEMP/achbot-v7/v7-check.json"
-          cp -R "$RUNNER_TEMP/achbot-v7-evidence" "$RUNNER_TEMP/achbot-v7/evidence"
-      - name: Record exact candidate evidence
+          python3 tools/package_v8.py --output "$RUNNER_TEMP/achbot-v8/achbot-v8-runtime.zip"
+          python3 tools/verify_v8_package.py --zip "$RUNNER_TEMP/achbot-v8/achbot-v8-runtime.zip" --manifest "$RUNNER_TEMP/achbot-v8/achbot-v8-runtime.zip.manifest.json"
+          cp "$RUNNER_TEMP/v8-check.json" "$RUNNER_TEMP/achbot-v8/v8-check.json"
+          cp -R "$RUNNER_TEMP/achbot-v8-evidence" "$RUNNER_TEMP/achbot-v8/evidence"
+      - name: Record exact candidate identity and acceptance evidence
         run: |
-          printf '## AChBot V7 product plans/purchase/provisioning\n\n' >> "$GITHUB_STEP_SUMMARY"
+          printf '## AChBot V8 financial lifecycle source-only acceptance\n\n' >> "$GITHUB_STEP_SUMMARY"
           printf 'HEAD: `%s`\n\n' "$(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
           printf 'Tree: `%s`\n\n' "$(git rev-parse HEAD^{tree})" >> "$GITHUB_STEP_SUMMARY"
-          printf '65 tracked runtime members, immutable historical V0-V6.1 suite, no operator approval/merge/deployment.\n\n' >> "$GITHUB_STEP_SUMMARY"
+          printf '92 source-only runtime members, original 23 tables, V0–V7 pinned history. No merge, release or deployment approval.\n\n' >> "$GITHUB_STEP_SUMMARY"
           printf '```json\n' >> "$GITHUB_STEP_SUMMARY"
-          cat "$RUNNER_TEMP/v7-check.json" >> "$GITHUB_STEP_SUMMARY"
+          cat "$RUNNER_TEMP/v8-check.json" >> "$GITHUB_STEP_SUMMARY"
           printf '\n```\n' >> "$GITHUB_STEP_SUMMARY"
-      - name: Upload exact-candidate source-only package and evidence
+      - name: Upload exact-candidate archive and acceptance evidence
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: achbot-v7-${{ github.event.pull_request.head.sha || github.sha }}
-          path: ${{ runner.temp }}/achbot-v7/
+          name: achbot-v8-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/achbot-v8/
           if-no-files-found: error
           retention-days: 14
           compression-level: 0
