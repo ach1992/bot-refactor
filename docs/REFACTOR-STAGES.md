@@ -1,4 +1,13 @@
-# Refactoring increments (proposal — re-order by dependency evidence)
+# AChBot source refactor — historical stages and current continuation
+
+**Status:** V0–V9 Phase 1 source-only extraction/integration is completed and [V9 `v0.9.0-rc.1`](https://github.com/ach1992/bot-refactor/releases/tag/v0.9.0-rc.1) was published. Real installed/operator acceptance and legacy financial hazards remain independently OPEN. The following historical stage descriptions are **frozen scope/evidence**, not current approval for using old panel types. [PR #30](https://github.com/ach1992/bot-refactor/pull/30) adds published V9 artifact staging coverage and is separately gated.
+
+**Current next stage ([#31](https://github.com/ach1992/bot-refactor/issues/31)):** the Owner confirmed no legacy X-UI/Sanaei/Alireza/normal panels **ever existed in operation** and authorized retiring all their functionality, with no legacy-panel migration/backup. Desired Marzban functions, original 23-table MariaDB and live public bot/payment/Cron paths must be preserved. Keep a narrow future-provider seam without implementing PasarGuard/new X-UI now. Use a **separate post-V9 acceptance contract**; previous golden/history runs only on the pinned old revision. No user/finance/Marzban backup exemption and no automatic release/deploy.
+
+**Roadmap:** [#29](https://github.com/ach1992/bot-refactor/issues/29) (operator acceptance, financial/role defects, Marzban-only source simplification, audited optional DB trimming) and [#26](https://github.com/ach1992/bot-refactor/issues/26) (TRON, gateways, **privileged negative wallet debt** and user non-overdraft). Full database modernization, new panel integrations and comprehensive optimization are **later phases**, not part of the immediate Marzban-only retirement.
+
+## Archived V0–V9 stages (historical planned goals, not live status)
+
 
 | Increment | Proposed target | Acceptance focus |
 |---|---|---|

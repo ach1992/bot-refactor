@@ -1,7 +1,10 @@
 # AChBot repository rules
 
 - This is a public repository: never commit customer data, deployment secrets, raw SQL dumps, runtime backups or logs.
-- Phase 1 is strictly a behavior-preserving PHP refactor over the unchanged legacy MariaDB schema. DO NOT change the DB, run migrations or alter observable admin/customer behavior.
+- **CURRENT POST-V9 OWNER DECISION** ([Issue #31](https://github.com/ach1992/bot-refactor/issues/31)): support **Marzban only**. Legacy X-UI/Sanaei/Alireza/normal variants were **never deployed** and are authorized for complete source/code/UI retirement with **no old-panel-only backup or account migration**. New/future PasarGuard and next-generation X-UI are NOT implemented. Maintain an explicit fail-closed supported-provider boundary, preserve all desired Marzban flows and original DB. No merge/release/real deployment is implied.
+- **TEST GENERATION BOUNDARY:** pinned V0–V9 tests and exact V8/V9 byte-parity artifacts are **frozen historical evidence**. They belong on a detached **original V9 checkout**, NOT directly against the intentional post-V9 runtime, and MUST NOT be rewritten or relaxed to forge historical PASS. New post-V9 tests must examine the actual new runtime, desired Marzban behavior and legacy negative controls. This also applies to CI, packaging and rollback.
+- **CURRENT WALLET DEBT POLICY:** privileged administrators may deliberately set negative wallet balances as debt; no ordinary user-initiated purchase/transfer may create/deepen debt. Do not blanket-clamp wallet >= 0. Details and separate finance remediation under #26; no real money movements authorized.
+- **Historical** Phase 1 V0–V9 was strictly a behavior-preserving PHP refactor over unchanged MariaDB; the prior byte-frozen contract below applies only to its pinned immutable history. Its original all-panel behavior is *not* a requirement of new post-V9 Marzban-only source.
 - Preserve current webhook, payment/subscription, Telegram callback-data and Cron file-path contracts until validated compatibility adapters exist.
 - Keep local `baseInfo.php` untouched and excluded from Git; any evaluation of changes to its structure belongs to the LAST refactor increment.
 - Build characterization tests and compare old vs new database side effects, external calls and messages before changing a high-risk flow.
