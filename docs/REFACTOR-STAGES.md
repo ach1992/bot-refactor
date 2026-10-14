@@ -47,22 +47,22 @@ restoration was not tested, by explicit owner decision.** Do not claim complete
 backup recovery or full V5/V6 operator acceptance from the single upload.
 An unrelated older working bot must remain untouched.
 
-**Next approved isolated-development increment:** V7 product-plan/purchase
-and provisioning lifecycle, controlled by [Issue #21](https://github.com/ach1992/bot-refactor/issues/21).
-The owner authorized beginning V7 source development without repeating the
-declined restore experiment or treating V5/V6 pending gates as PASS. That is
-a **scoped development waiver only**, not permission to merge, release, deploy,
-change real payment/financial policy, touch the database or operate on live bots.
-Retain the full V6.1 native MariaDB/footer regression and historical suites
-when building V7; financial/wallet/settlement rework remains in V8.
+**V7 source-only delivery (Issue #21):** eleven mechanically extracted
+modules cover the plan catalogue, purchase/agent wizards, provisioning and
+unchanged helper facades. The 65-member source-only candidate passed
+47-step native original-schema testing, five mutation controls, helper
+reflection, HTTP access checks and reversible V6.1/V7 swap. V7 was reviewed,
+merged and published as `v0.7.0-rc.1`; its real operator acceptance
+remains **NOT TESTED**. Source publication does not waive earlier pending
+V5/V6 operator checks or V6.1 full restore.
 
-**V7 source-development checkpoint (Issue #21):** eleven mechanically
-extracted modules cover the original plan/category catalogue, purchase wizard,
-customer/agent checkout input, admin multi-account provision, free/trial
-account creation and unchanged helper facades. All 65 tracked source
-members, 47-step real original-schema native E2E, five mutation controls,
-24 helper signatures, internal HTTP guard and reversible persisted-order
-V6.1/V7 source swap are described in `docs/v7/`. Historical V0-V6.1
-acceptance remains pinned. Financial policy, MariaDB schema and production
-assets stay untouched. Independent review and owner integration approval
-remain mandatory.
+**V8 financial lifecycle (Issue #24):** the next authorized isolated
+source-development increment covers the existing payment initiation/callback
+paths, wallets, card/crypto consumers, refunds, discounts, referral rewards,
+renewals and financial Cron logic. Pin the integrated V7 source as the exact
+behavioral authority; keep the original 23-table schema, public entrypoints,
+SQL, callbacks and amounts. Original-vs-candidate real mysqli/provider
+fixtures, concurrency, historical V0-V7 regressions, swap/rollback,
+PHP 8.1/8.4 and fresh independent review must precede the separate
+owner-gated merge/release. See `docs/v8/`. Inherited unsafe financial
+semantics need an explicit owner decision, not silent policy changes.
