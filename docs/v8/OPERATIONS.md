@@ -21,13 +21,18 @@ For a separately authorized, owner-controlled deployment only:
    Reconciliation involving real payments, wallets, renewal or Cron
    requires an additional explicit owner gate and controlled procedure.
 5. If regressions appear, revert source members to the known-good
-   matching V7 package **without a database rollback**. Do not try
+   matching V7 package **without a database rollback**. Verify actual
+   on-disk runtime members against the version-specific manifest, including
+   **removal of all 27 V8-only module files** when reverting to the 65-member
+   V7 release. Never delete non-manifest/private files or assume copying
+   V7 files over V8 removes the additional PHP modules. Do not try
    to undo real monetary transitions by restoring a database dump; stop
    financial processors and consult the operator for transaction
    reconciliation before any monetary intervention.
 
 The disposable acceptance suite rehearses `V7 → V8 → V7 → V8` with
-a persisted paid order and preserved private sentinels. This is source
+a persisted paid order, exact 65/92/65/92 source inventory and preserved
+private sentinels. This is source
 and SQL compatibility evidence, not live installation approval.
 
 Operator gates that remain open: V5 #14, V6 #16, V7 #21 installed acceptance,

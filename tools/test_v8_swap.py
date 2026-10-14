@@ -16,8 +16,33 @@ import test_access_state as support
 import v8_contract as c
 
 
+# The owned test harness is not part of either release manifest.
+HARNESS_FILES = {
+    "native-purchase.php", "access-sequence.php", "case.json",
+    "result.json", "settings/temp.txt",
+}
+PRIVATE_FILES = {"baseInfo.php", "private-state.json", "settings/live-like-sentinel"}
+
+
+def inventory(app):
+    if any(x.is_symlink() for x in app.rglob("*")):
+        raise RuntimeError("Unexpected symlink in isolated source swap tree")
+    return {x.relative_to(app).as_posix() for x in app.rglob("*") if x.is_file()}
+
+
 def overlay(app,version):
-    if version=="v8":
+    if version not in ("v7", "v8"):
+        raise ValueError("Unknown rollback target")
+    # Never prune an arbitrary directory: remove only the 27 known V8 additions
+    # from this freshly owned disposable fixture, leaving all private files alone.
+    if version == "v7":
+        for name in c.MODULES:
+            target=app/name
+            if target.is_symlink():
+                raise RuntimeError("Unsafe module symlink: "+name)
+            if target.is_file():
+                target.unlink()
+    else:
         for name in c.MODULES:
             target=app/name;target.parent.mkdir(parents=True,exist_ok=True)
             target.write_bytes((c.ROOT/name).read_bytes())
@@ -25,12 +50,19 @@ def overlay(app,version):
         target=app/name;target.parent.mkdir(parents=True,exist_ok=True)
         content=(c.ROOT/name).read_bytes() if version=="v8" else c.old(name)
         target.write_bytes(content)
-    actual=c.members() if version=="v8" else c.v7.members()
-    for name in actual:
+    expected_runtime=set(c.members() if version=="v8" else c.v7.members())
+    actual_inventory=inventory(app)
+    actual_runtime=actual_inventory-HARNESS_FILES-PRIVATE_FILES
+    if actual_runtime != expected_runtime or not PRIVATE_FILES <= actual_inventory:
+        raise RuntimeError("Source-only inventory mismatch for "+version+": "+
+            repr({"extra":sorted(actual_runtime-expected_runtime),
+                  "missing":sorted(expected_runtime-actual_runtime),
+                  "private_missing":sorted(PRIVATE_FILES-actual_inventory)}))
+    for name in expected_runtime:
         expectation=(c.ROOT/name).read_bytes() if version=="v8" else c.old(name)
         if (app/name).read_bytes()!=expectation:
             raise RuntimeError("Invalid source-only overlay identity: "+name)
-    return len(actual)
+    return len(actual_inventory-HARNESS_FILES-PRIVATE_FILES)
 
 
 def main():
@@ -79,6 +111,8 @@ def main():
             elif output!=control:
                 raise RuntimeError("Telegram callback output changed under code rollback")
             phases.append({"step":index,"version":version,"source_members":count,
+                           "actual_inventory_verified":True,
+                           "actual_runtime_members":len(inventory(app)-HARNESS_FILES-PRIVATE_FILES),
                            "persisted_paid_order":True,"original_schema_unchanged":True})
             print("PASS source-only swap "+str(index)+" "+version,flush=True)
     result={"phases":phases,"private_sentinels_unchanged":True,"no_database_rollback":True,

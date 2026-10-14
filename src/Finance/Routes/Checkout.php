@@ -187,7 +187,7 @@ if (preg_match('/^showQr(Sub|Config)(\d+)/', $data, $match)) {
     $order = $stmt->get_result()->fetch_assoc();
     $stmt->close();
 
-    include_once 'phpqrcode/qrlib.php';
+    include_once (stream_resolve_include_path('phpqrcode/qrlib.php') ?: dirname(__DIR__, 3) . '/phpqrcode/qrlib.php');
 
     if (!defined('IMAGE_WIDTH'))  define('IMAGE_WIDTH', 540);
     if (!defined('IMAGE_HEIGHT')) define('IMAGE_HEIGHT', 540);

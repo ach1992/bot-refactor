@@ -26,6 +26,8 @@ ROUTE = {name.rsplit("/",1)[-1].replace(".php","").lower(): (name,start,end)
 TRIM_DDL = re.compile(r" AUTO_INCREMENT=\d+")
 GATEWAY_INVOICE=b"https://api.nowpayments.io/v1/invoice"
 GATEWAY_VERIFY=b"https://api.nowpayments.io/v1/payment/"
+NEXTPAY_TOKEN=b"https://nextpay.org/nx/gateway/token"
+NEXTPAY_VERIFY=b"https://nextpay.org/nx/gateway/verify"
 TRON_ENDPOINT=b"https://apilist.tronscan.org/api/transaction-info?hash="
 test_crypto_url=None
 
@@ -57,6 +59,20 @@ class OwnedGateway(BaseHTTPRequestHandler):
             payload={"invoice_id":"NP-Fixture-001",
                      "payment_status":mapping.get(server.mode,"failed")}
             if server.mode=="callback_provider_error":status=503
+        elif self.command=="POST" and self.path=="/nx/gateway/token":
+            payload={"code":"-1","trans_id":"NXT-Fixture-001"}
+        elif self.command=="POST" and self.path=="/nx/gateway/verify":
+            payload={"code":"-2" if server.mode=="nextpay_verify_failed" else "0"}
+        elif self.command=="POST" and self.path=="/soap/zarinpal/verify":
+            details=json.loads(body.decode())
+            if details.get("method")!="verify" or details["args"].get("MerchantID")!="owned-zarinpal":
+                raise RuntimeError("Unexpected owned SOAP verification arguments")
+            payload={"Status":101 if server.mode=="zarinpal_verify_failed" else 100}
+        elif self.command=="POST" and self.path=="/soap/zarinpal/request":
+            details=json.loads(body.decode())
+            if details.get("method")!="request" or details["args"].get("MerchantID")!="owned-zarinpal":
+                raise RuntimeError("Unexpected owned SOAP request arguments")
+            payload={"Status":100,"Authority":"ZP-Fixture-001"}
         elif self.command=="GET" and self.path=="/api/transaction-info?hash=deadbeef":
             payload={"contractRet":"FAILED" if server.mode=="crypto_failed_contract" else "SUCCESS",
                 "timestamp":server.crypto_timestamp,
@@ -91,14 +107,27 @@ def rewrite_owned_gateway(root,modern,url):
     url=url.encode()
     for old_name,new_name,needle,endpoint in (
        ("pay/index.php","src/Finance/GatewayInitiation.php",GATEWAY_INVOICE,b"/v1/invoice"),
-       ("pay/back.php","src/Finance/GatewayReturn.php",GATEWAY_VERIFY,b"/v1/payment/")):
+       ("pay/back.php","src/Finance/GatewayReturn.php",GATEWAY_VERIFY,b"/v1/payment/"),
+       ("pay/index.php","src/Finance/GatewayInitiation.php",NEXTPAY_TOKEN,b"/nx/gateway/token"),
+       ("pay/back.php","src/Finance/GatewayReturn.php",NEXTPAY_VERIFY,b"/nx/gateway/verify"),
+    ):
         path=root/(new_name if modern else old_name)
         raw=path.read_bytes()
         if raw.count(needle)!=1:raise RuntimeError("Gateway staging URL mismatch: "+str(path))
         changed=raw.replace(needle,url+endpoint)
-        if b"https://api.nowpayments.io" in changed:
-            raise RuntimeError("Live NowPayments endpoint remains in staged code")
+        if any(live in changed for live in (GATEWAY_INVOICE,GATEWAY_VERIFY,NEXTPAY_TOKEN,NEXTPAY_VERIFY)):
+            # Other fixtures can remain until their own replacement iteration.
+            for remaining in (GATEWAY_INVOICE,GATEWAY_VERIFY,NEXTPAY_TOKEN,NEXTPAY_VERIFY):
+                if remaining == needle and remaining in changed:
+                    raise RuntimeError("Live gateway URL survived staged rewrite")
         path.write_bytes(changed)
+    for rel in ("pay/index.php","pay/back.php","src/Finance/GatewayInitiation.php",
+                "src/Finance/GatewayReturn.php"):
+        path=root/rel
+        if path.exists() and (rel.startswith("src/Finance/") == modern):
+            if any(u in path.read_bytes() for u in (
+                GATEWAY_INVOICE,GATEWAY_VERIFY,NEXTPAY_TOKEN,NEXTPAY_VERIFY)):
+                raise RuntimeError("Real payment provider URL remains in owned fixture: "+rel)
 
 
 def stage_finance(root: Path, modern: bool, gateway_url: str):
@@ -106,11 +135,57 @@ def stage_finance(root: Path, modern: bool, gateway_url: str):
     (root/"pay").mkdir(exist_ok=True)
     for script in ("pay/index.php","pay/back.php"):
         (root/script).write_bytes((c.ROOT/script).read_bytes() if modern else c.old(script))
+    for qr in ("phpqrcode/qrlib.php","phpqrcode/phpqrcode.php"):
+        target=root/qr
+        target.parent.mkdir(parents=True,exist_ok=True)
+        target.write_bytes(c.old(qr))
     labels=root/"src/Presentation/Labels.php"
     labels.parent.mkdir(parents=True,exist_ok=True)
     labels.write_bytes(c.old("src/Presentation/Labels.php"))
     (root/"baseInfo.php").write_text("<?php // owned test placeholder only\n")
     (root/"config.php").write_text("<?php // owned safe gateway test stub; never contacts provider\n")
+    # Extend only the owned copy of the immutable V7 PHP runner. The real
+    # SoapClient WSDL and every provider HTTP path are prohibited in fixtures.
+    harness=root/"native-purchase.php"
+    source=harness.read_text()
+    marker="try {require __DIR__.'/access-sequence.php';$ach_return=true;}"
+    if source.count(marker)!=1:
+        raise RuntimeError("Immutable V7 fixture entrypoint changed")
+    soap_endpoint=json.dumps(gateway_url+"/soap/zarinpal/verify")
+    soap_request=json.dumps(gateway_url+"/soap/zarinpal/request")
+    adapters=r"""
+function getMarzbanUser(...$args){
+    $value=\AchBot\Panel\Accounts\getMarzbanUser(...$args);
+    if (($GLOBALS['spec']['renew_fixture']??'')==='due' && isset($value->data_limit)) {
+        $value->used_traffic=$value->data_limit;
+    }
+    return $value;
+}
+function editMarzbanConfig(...$args){return \AchBot\Panel\Accounts\editMarzbanConfig(...$args);}
+function editClientTraffic(...$args){return \AchBot\Panel\Accounts\editClientTraffic(...$args);}
+function editInboundTraffic(...$args){return \AchBot\Panel\Accounts\editInboundTraffic(...$args);}
+class SoapClient {
+    function __construct($wsdl,$options){
+        if($wsdl!=='https://www.zarinpal.com/pg/services/WebGate/wsdl'){
+            throw new RuntimeException('Blocked non-fixture WSDL');
+        }
+        achEvent('owned_soap_wsdl',[$wsdl,$options]);
+    }
+    private function request($url,$method,$args){
+        $ch=curl_init($url);
+        curl_setopt($ch,CURLOPT_POST,true);
+        curl_setopt($ch,CURLOPT_POSTFIELDS,json_encode(['method'=>$method,'args'=>$args]));
+        curl_setopt($ch,CURLOPT_RETURNTRANSFER,true);
+        $body=curl_exec($ch);
+        curl_close($ch);
+        if($body===false)throw new RuntimeException('Owned SOAP fixture failed');
+        return (object)json_decode($body,true,512,JSON_THROW_ON_ERROR);
+    }
+    function PaymentRequest($args){return $this->request("__REQUEST__","request",$args);}
+    function PaymentVerification($args){return $this->request("__VERIFY__","verify",$args);}
+}
+""".replace("__REQUEST__",json.loads(soap_request)).replace("__VERIFY__",json.loads(soap_endpoint))
+    harness.write_text(source.replace(marker,adapters+"\n"+marker))
     rewrite_owned_gateway(root,modern,gateway_url)
     if modern:
         crypto=root/"src/Finance/CryptoChecker.php"
@@ -263,7 +338,76 @@ def finance_state(work,env,db):
         "increase_order":"SELECT userid,server_id,inbound_id,remark,amount,date,volume,day FROM increase_order ORDER BY id",
         "setting":"SELECT type,value FROM setting ORDER BY type",
     }
-    return {key:sql(work,env,q,db) for key,q in queries.items()}
+    for table,key in (
+        ("users","userid"),("pays","id"),("orders_list","id"),
+        ("discounts","id"),("increase_order","id"),
+        ("increase_day","id"),("increase_plan","id"),
+        ("server_info","id"),("server_plans","id"),
+        ("server_categories","id"),("server_config","id"),
+        ("setting","type"),
+    ):
+        queries["complete_"+table]=f"SELECT * FROM `{table}` ORDER BY `{key}`"
+    # One owned MariaDB connection per observation: output is still exactly
+    # that of every individual SELECT, but avoids 18 CLI launches/side/step.
+    # Explicit markers keep empty tables distinct from missing query results.
+    marker="__ACHBOT_V8_FINANCE_SNAPSHOT_"
+    batch="".join(
+        "SELECT '"+marker+str(index)+"__'; "+q+";\n"
+        for index,q in enumerate(queries.values())
+    )
+    response=sql(work,env,batch,db)
+    result={}
+    current=None
+    collected=[]
+    ids=list(queries)
+    for line in response.splitlines(keepends=True):
+        tag=line.rstrip("\n")
+        if tag.startswith(marker):
+            if current is not None:
+                result[ids[current]]="".join(collected)
+            suffix=tag[len(marker):]
+            if not suffix.endswith("__") or not suffix[:-2].isdigit():
+                raise RuntimeError("Invalid batch snapshot marker")
+            index=int(suffix[:-2])
+            if index!=len(result) or index>=len(ids):
+                raise RuntimeError("Batch snapshot missing/duplicate/out-of-order query")
+            current=index
+            collected=[]
+        elif current is None:
+            raise RuntimeError("Batch snapshot unexpected leading SQL output")
+        else:
+            collected.append(line)
+    if current is None:
+        raise RuntimeError("Batch snapshot returned no results")
+    result[ids[current]]="".join(collected)
+    if len(result)!=len(ids):
+        raise RuntimeError("Batch snapshot omitted tables")
+    return result
+
+
+# The immutable legacy PHP uses wall-clock time() and uniqid() directly.
+# Bound these two unmockable data sources instead of requiring subsecond
+# equality between separate V7/V8 PHP processes. All other row bytes, effects
+# and provider request fields remain compared without transformation.
+FRESH_PAYMENT_ID=re.compile(r"(?<![a-z0-9])pay_[0-9a-f]{13}(?![a-z0-9])")
+UNIX_SECONDS=re.compile(r"(?<![0-9])1[6-9][0-9]{8}(?![0-9])")
+
+
+def canonical_execution(value,now):
+    if isinstance(value,dict):
+        return {key:canonical_execution(v,now) for key,v in value.items()}
+    if isinstance(value,list):
+        return [canonical_execution(v,now) for v in value]
+    if not isinstance(value,str):
+        return value
+    result=FRESH_PAYMENT_ID.sub("<fixture-pay-uniqid>",value)
+    def normalize_time(m):
+        observed=int(m.group())
+        for delta,label in ((0,"now"),(30*86400,"now+30d"),(5*86400,"now+5d")):
+            if abs(observed-(now+delta))<=5:
+                return "<fixture-"+label+">"
+        return m.group()
+    return UNIX_SECONDS.sub(normalize_time,result)
 
 
 def seed_pay(work,env,db,record,extra=""):
@@ -334,6 +478,36 @@ def flows():
           ("automatic_receipts",dict(actor=1001)),
       ],
       "auto_card_wallet_agent_skipped":[("automatic_receipts",dict(actor=1001,autoType=1))],
+      "qr_checkout_external_cwd":[("checkout",dict(actor=1001,data="showQrSub91"))],
+      "manual_renew_quote":[("renewalcheckout",dict(actor=1001,data="renewAccount91"))],
+      "manual_renew_paid":[
+          ("renewalcheckout",dict(actor=1001,data="renewAccount91")),
+          ("renewalcheckout",dict(actor=1001,data="payRenewWithWalletxxxxxxxxx")),
+          ("renewalcheckout",dict(actor=1001,data="payRenewWithWalletxxxxxxxxx")),
+      ],
+      "manual_renew_low_wallet":[
+          ("renewalcheckout",dict(actor=1001,data="renewAccount91")),
+          ("renewalcheckout",dict(actor=1001,data="payRenewWithWalletxxxxxxxxx")),
+      ],
+      "extension_day_quote":[("extensions",dict(actor=1001,data="selectPlanDayIncrease91_1"))],
+      "extension_day_wallet":[
+          ("extensions",dict(actor=1001,data="selectPlanDayIncrease91_1")),
+          ("extensions",dict(actor=1001,data="payIncreaseDayWithWalletxxxxxxxxx")),
+          ("extensions",dict(actor=1001,data="payIncreaseDayWithWalletxxxxxxxxx")),
+      ],
+      "extension_day_low_wallet":[
+          ("extensions",dict(actor=1001,data="selectPlanDayIncrease91_1")),
+          ("extensions",dict(actor=1001,data="payIncreaseDayWithWalletxxxxxxxxx")),
+      ],
+      "extension_volume_quote":[("extensions",dict(actor=1001,data="increaseVolumePlan91_1"))],
+      "extension_volume_wallet":[
+          ("extensions",dict(actor=1001,data="increaseVolumePlan91_1")),
+          ("extensions",dict(actor=1001,data="payIncreaseWithWalletxxxxxxxxx")),
+          ("extensions",dict(actor=1001,data="payIncreaseWithWalletxxxxxxxxx")),
+      ],
+      "extension_volume_expired":[("extensions",dict(actor=1001,data="increaseAVolume91"))],
+      "auto_renew_eligible":[("automatic_renewal",dict(actor=1001,enabled="on",renew_fixture="due"))],
+      "auto_renew_low_wallet":[("automatic_renewal",dict(actor=1001,enabled="on",renew_fixture="due"))],
       "auto_renew_off":[("automatic_renewal",dict(actor=1001,enabled="off"))],
       "auto_renew_no_orders":[("automatic_renewal",dict(actor=1001,enabled="on"))],
       "crypto_empty":[("crypto_checker",dict(actor=1001,wallet="fixture-wallet"))],
@@ -348,6 +522,28 @@ def flows():
       "payment_invoice_created":[("gateway_initiation",dict(actor=1001,query={"hash_id":"abcdefgh","nowpayment":""}))],
       "payment_invoice_http_error":[("gateway_initiation",dict(actor=1001,query={"hash_id":"abcdefgh","nowpayment":""}))],
       "payment_invoice_invalid_body":[("gateway_initiation",dict(actor=1001,query={"hash_id":"abcdefgh","nowpayment":""}))],
+      "payment_zarinpal_initiation":[
+          ("gateway_initiation",dict(actor=1001,query={"zarinpal":"","hash_id":"abcdefgh"}))],
+      "payment_nextpay_initiation":[
+          ("gateway_initiation",dict(actor=1001,query={"nextpay":"","hash_id":"abcdefgh"}))],
+      "payment_zarinpal_verify_success":[
+          ("gateway_return",dict(actor=1001,query={
+              "zarinpal":"","hash_id":"abcdefgh","Status":"OK","Authority":"ZP-Fixture-001"})),
+          ("gateway_return",dict(actor=1001,query={
+              "zarinpal":"","hash_id":"abcdefgh","Status":"OK","Authority":"ZP-Fixture-001"})),
+      ],
+      "payment_zarinpal_verify_failed":[
+          ("gateway_return",dict(actor=1001,query={
+              "zarinpal":"","hash_id":"abcdefgh","Status":"OK","Authority":"ZP-Fixture-001"}))],
+      "payment_nextpay_verify_success":[
+          ("gateway_return",dict(actor=1001,query={
+              "nextpay":"","trans_id":"NXT-Fixture-001"})),
+          ("gateway_return",dict(actor=1001,query={
+              "nextpay":"","trans_id":"NXT-Fixture-001"})),
+      ],
+      "payment_nextpay_verify_failed":[
+          ("gateway_return",dict(actor=1001,query={
+              "nextpay":"","trans_id":"NXT-Fixture-001"}))],
       "payment_callback_success":[
           ("gateway_return",dict(actor=1001,query={"nowpayment":"","NP_id":"NPTX-1"})),
           ("gateway_return",dict(actor=1001,query={"nowpayment":"","NP_id":"NPTX-1"})),
@@ -374,20 +570,66 @@ def flows():
       "discount_admin_unauthorized":[("discountadministration",dict(actor=1001,data="discount_codes"))],
       "discount_admin_list":[("discountadministration",dict(actor=9001,data="discount_codes"))],
       "discount_admin_toggle_missing":[("discountadministration",dict(actor=9001,data="toggleDiscount777"))],
+      "discount_admin_toggle_existing":[
+          ("discountadministration",dict(actor=9001,data="toggleDiscount<seeded>")),
+          ("discountadministration",dict(actor=9001,data="toggleDiscount<seeded>")),
+      ],
+      "discount_admin_create":[
+          ("discountadministration",dict(actor=9001,data="addDiscountCode")),
+          ("discountadministration",dict(actor=9001,text="V8NEW")),
+          ("discountadministration",dict(actor=9001,text="20%")),
+          ("discountadministration",dict(actor=9001,text="0")),
+          ("discountadministration",dict(actor=9001,text="3")),
+          ("discountadministration",dict(actor=9001,text="2")),
+          ("discountadministration",dict(actor=9001,data="setDiscountAudience_all")),
+          ("discountadministration",dict(actor=9001,data="setDiscountTarget_all")),
+          ("discountadministration",dict(actor=9001,text="10")),
+          ("discountadministration",dict(actor=9001,text="25")),
+      ],
+      "discount_admin_create_invalid":[
+          ("discountadministration",dict(actor=9001,data="addDiscountCode")),
+          ("discountadministration",dict(actor=9001,text="INVALID CODE!")),
+      ],
     }
 
 
 def prepare_label(work,env,label,url):
     n.init(work,env,url)
+    # One synthetic payment creation instant across old/candidate DBs.
+    # Otherwise even immutable baseline fixture setup diverges on time().
+    fixture_now=int(time.time())
     for db in SIDE:
-        sql(work,env,"DELETE FROM discounts; DELETE FROM increase_order; DELETE FROM setting WHERE type='INVITE_BANNER_AMOUNT'",db)
+        sql(work,env,"DELETE FROM discounts; DELETE FROM increase_order; DELETE FROM setting WHERE type IN ('INVITE_BANNER_AMOUNT','AutoRenewCheck','PAYMENT_KEYS')",db)
+        if label.startswith(("manual_renew_","extension_","auto_renew_")) or label.startswith("qr_checkout_"):
+            # n.init deliberately clears V6 fixture orders. Seed a genuinely
+            # owned paid order; otherwise renewal/extension tests pass vacuously.
+            sql(work,env,"INSERT INTO orders_list "
+                "(id,userid,token,transid,fileid,server_id,inbound_id,remark,uuid,"
+                "protocol,expire_date,link,amount,status,date,notif,autoRenew) VALUES "
+                "(91,1001,REPEAT('a',30),'fixture',7,2,0,'fixture-user',"
+                "'fixture-uuid','vless',1800000100,'[\"vless://fixture\"]',"
+                "100,1,'fixture',1,'off')",db)
+            if label.endswith("low_wallet"):
+                sql(work,env,"UPDATE users SET wallet=25 WHERE userid=1001",db)
+            if label=="extension_volume_expired":
+                sql(work,env,"UPDATE orders_list SET expire_date=1000000000 WHERE id=91",db)
+            if label.startswith("auto_renew_") and label not in ("auto_renew_off","auto_renew_no_orders"):
+                sql(work,env,"UPDATE orders_list SET server_id=2, inbound_id=0, "
+                             "notif=1, autoRenew='on' WHERE id=91",db)
+            if label.startswith("extension_day"):
+                sql(work,env,"DELETE FROM increase_day; INSERT INTO increase_day "
+                             "(id,volume,price) VALUES (1,5,75)",db)
+            if label.startswith("extension_volume"):
+                sql(work,env,"DELETE FROM increase_plan; INSERT INTO increase_plan "
+                             "(id,volume,price) VALUES (1,3,90)",db)
         if label.startswith("prepay_") and label != "prepay_missing":
             fields = {"prepay_expired_pending":{"date":"UNIX_TIMESTAMP()-10801"},
                       "prepay_expired_paid":{"date":"UNIX_TIMESTAMP()-10801","state":"paid"},
-                      "prepay_renew_mismatch":{"type":"RENEW_ACCOUNT"}}.get(label,{})
+                      "prepay_renew_mismatch":{"type":"RENEW_ACCOUNT"}}.get(label,{}).copy()
+            fields["date"]=str(fixture_now - 10801 if "expired" in label else fixture_now)
             seed_pay(work,env,db,fields)
         if label.startswith("discount_") and label not in (
-              "discount_entry","discount_admin_unauthorized","discount_admin_list","discount_admin_toggle_missing"):
+              "discount_entry","discount_admin_unauthorized","discount_admin_list","discount_admin_toggle_missing","discount_admin_toggle_existing","discount_admin_create","discount_admin_create_invalid"):
             seed_pay(work,env,db,{"price":101,"date":"1780000000"})
             settings={
               "discount_percent":{"type":"percent","amount":20},
@@ -422,6 +664,13 @@ def prepare_label(work,env,label,url):
             if label.endswith("agent_skipped"):
                 # Original cron agent type 1 declines agent auto-accept.
                 pass
+        if label.startswith(("payment_zarinpal","payment_nextpay")):
+            payid="NXT-Fixture-001" if "nextpay_verify" in label else ""
+            seed_pay(work,env,db,{"price":150,"type":"INCREASE_WALLET","date":"1780000000"},
+                     "UPDATE pays SET payid='"+payid+"' WHERE hash_id='abcdefgh';")
+            sql(work,env,"INSERT INTO setting (type,value) VALUES "
+                         "('PAYMENT_KEYS','{\"zarinpal\":\"owned-zarinpal\","
+                         "\"nextpay\":\"owned-nextpay\"}')",db)
         if label.startswith("payment_invoice"):
             seed_pay(work,env,db,{"price":150,"type":"INCREASE_WALLET","date":"1780000000"})
             sql(work,env,"INSERT INTO setting (type,value) VALUES "
@@ -438,6 +687,9 @@ def prepare_label(work,env,label,url):
                      "UPDATE pays SET payid='deadbeef' WHERE hash_id='abcdefgh';")
         if label.startswith("referral_"):
             sql(work,env,"INSERT INTO setting (type,value) VALUES ('INVITE_BANNER_AMOUNT','150')",db)
+        if label=="discount_admin_toggle_existing":
+            sql(work,env,"INSERT INTO discounts (hash_id,type,amount,expire_date,expire_count) "
+                         "VALUES ('V8TOGGLE','percent',15,0,3)",db)
         if label=="discount_admin_list":
             sql(work,env,"INSERT INTO discounts (hash_id,type,amount,expire_date,expire_count) "
                          "VALUES ('V8FIX','percent',20,0,3)",db)
@@ -496,6 +748,73 @@ def assert_expected(label,state,events):
             raise RuntimeError("Automatic card receipt settlement mismatched")
     if label=="auto_card_wallet_agent_skipped" and wallet[1001]!=50000:
         raise RuntimeError("Agent auto-card filter mutated wallet")
+    def requires_balance(expected):
+        if wallet[1001]!=expected:
+            raise RuntimeError(label+" wallet expected "+str(expected)+", got "+str(wallet[1001]))
+    def requires_state(state):
+        if not any("\t"+state+"\t" in row for row in pays):
+            raise RuntimeError(label+" missing payment state "+state+": "+repr(pays))
+    if label=="manual_renew_quote":
+        requires_balance(50000);requires_state("pending")
+    if label=="manual_renew_paid":
+        requires_balance(49900);requires_state("paid_with_wallet")
+        if "\t100\t" not in "\t"+new["increase_order"]:
+            raise RuntimeError("Manual renewal did not persist increase_order")
+    if label=="manual_renew_low_wallet":
+        requires_balance(25);requires_state("low_wallet")
+        if new["increase_order"]:raise RuntimeError("Unfunded renewal created increase_order")
+    if label=="extension_day_wallet":
+        requires_balance(49925);requires_state("paid_with_wallet")
+        if not any(row.endswith("\t5") for row in new["increase_order"].strip().splitlines()):
+            raise RuntimeError("Day extension amount not recorded")
+    if label=="extension_day_low_wallet":
+        requires_balance(25);requires_state("low_wallet")
+        if new["increase_order"]:raise RuntimeError("Unfunded day extension recorded increase")
+    if label=="extension_volume_wallet":
+        requires_balance(49910);requires_state("paid_with_wallet")
+        if not any("\t3\t" in "\t"+row for row in new["increase_order"].splitlines()):
+            raise RuntimeError("Volume extension not recorded")
+    if label=="auto_renew_eligible":
+        requires_balance(49900);requires_state("paid_with_wallet")
+        if not new["increase_order"]:
+            raise RuntimeError("Eligible auto renewal did not persist increase_order")
+        if "AutoRenewCheck" not in new["setting"]:
+            raise RuntimeError("Auto renewal did not advance scheduled cursor")
+    if label=="auto_renew_low_wallet":
+        requires_balance(25)
+        if "\toff" not in new["orders"]:
+            raise RuntimeError("Low-fund auto-renew did not disable autoRenew")
+        if new["increase_order"]:
+            raise RuntimeError("Low-fund auto-renew extended without settlement")
+    if label.endswith("verify_success") and label.startswith(("payment_zarinpal","payment_nextpay")):
+        requires_balance(50150);requires_state("paid")
+    if label=="payment_zarinpal_verify_failed":
+        requires_balance(50000);requires_state("canceled")
+    if label=="payment_nextpay_verify_failed":
+        # Inherited V7 bug: rejection writes WHERE hash_id=trans_id even
+        # though the queried row was selected by payid=trans_id. The update
+        # does not match. Preserve this unsafe baseline result under V8.
+        requires_balance(50000);requires_state("pending")
+    if label=="payment_nextpay_initiation":
+        if not any("NXT-Fixture-001" in row for row in pays):
+            raise RuntimeError("NextPay token not retained")
+    if label=="payment_zarinpal_initiation":
+        requires_balance(50000);requires_state("pending")
+    if label=="discount_admin_toggle_existing":
+        if not any("V8TOGGLE" in x and x.endswith("\t1") for x in new["discounts"].splitlines()):
+            raise RuntimeError("Discount admin double toggle did not restore active state")
+    if label=="discount_admin_create":
+        rows=[r.split("\t") for r in new["complete_discounts"].strip().splitlines()]
+        if len(rows)!=1:
+            raise RuntimeError("Discount admin did not create exactly one coupon")
+        col_names=["id","hash_id","type","amount","expire_date","expire_count"]
+        expect={"hash_id":"V8NEW","type":"percent","amount":"20",
+                "expire_date":"0","expire_count":"3"}
+        observed=dict(zip(col_names,rows[0]))
+        if any(observed.get(k)!=v for k,v in expect.items()):
+            raise RuntimeError("Discount admin creation persisted wrong financial fields: "+str(observed))
+    if label=="discount_admin_create_invalid" and new["complete_discounts"].strip():
+        raise RuntimeError("Invalid admin coupon input created a discount")
     if label=="auto_renew_off" and "AutoRenewCheck" not in new["setting"]:
         raise RuntimeError("Auto-renew original schedule cursor absent")
     if label=="payment_invoice_created" and not any("NP-Fixture-001" in p for p in pays):
@@ -541,11 +860,15 @@ def main():
                   "payment_callback_partial":"callback_partial",
                   "payment_callback_canceled":"callback_canceled",
                   "payment_callback_provider_error":"callback_provider_error",
+                  "payment_zarinpal_verify_failed":"zarinpal_verify_failed",
+                  "payment_nextpay_verify_failed":"nextpay_verify_failed",
                   "crypto_paid_wallet":"crypto_success",
                   "crypto_failed_flag_inherited":"crypto_failed_contract",
                   "crypto_wrong_wallet":"crypto_wrong_wallet",
                   "crypto_amount_mismatch":"crypto_amount_mismatch"}.get(label,"invoice_ok")
             gateway.mode=mode
+            historical_wires=[]
+            historical_states=[]
             for index,(kind,spec) in enumerate(steps):
                 outputs=[];states=[];wire=[]
                 if kind=="discount_function":
@@ -553,17 +876,56 @@ def main():
                         spec["rowId"]=int(sql(work,env,"SELECT id FROM pays ORDER BY id DESC LIMIT 1",db).strip())
                 for root,db in ((old,SIDE[0]),(new,SIDE[1])):
                     provider.trace.clear();gateway.trace.clear()
-                    outputs.append(n.run(work,env,root,db,kind,spec))
+                    owned_spec=dict(spec)
+                    if label=="discount_admin_toggle_existing":
+                        discount_id=sql(work,env,"SELECT id FROM discounts WHERE hash_id='V8TOGGLE'",db).strip()
+                        if not discount_id.isdigit():
+                            raise RuntimeError("Missing seeded toggle discount")
+                        owned_spec["data"]="toggleDiscount"+discount_id
+                    foreign_cwd=None
+                    if label=="qr_checkout_external_cwd":
+                        foreign_cwd=work/"owned-foreign-cwd"
+                        foreign_cwd.mkdir(exist_ok=True)
+                    outputs.append(n.run(work,env,root,db,kind,owned_spec,
+                                         execution_cwd=foreign_cwd))
                     wire.append({"panel":list(provider.trace),"payment":list(gateway.trace)})
                     states.append(finance_state(work,env,db))
-                if outputs[0]!=outputs[1] or states[0]!=states[1] or wire[0]!=wire[1]:
+                captured_now=int(time.time())
+                observed=[canonical_execution(x,captured_now) for x in outputs]
+                persisted=[canonical_execution(x,captured_now) for x in states]
+                requests=[canonical_execution(x,captured_now) for x in wire]
+                if observed[0]!=observed[1] or persisted[0]!=persisted[1] or requests[0]!=requests[1]:
                     raise RuntimeError("V8 financial side-effect mismatch: "+json.dumps({
                       "label":label,"step":index,"old":outputs[0],"new":outputs[1],
                       "old_sql":states[0],"new_sql":states[1],
                       "old_wire":wire[0],"new_wire":wire[1]},ensure_ascii=False)[:6000])
+                historical_wires.append(wire[0])
+                historical_states.append(states[0])
                 cases.append({"scenario":label,"step":index,"route":kind,"actor":spec["actor"],
                               "events":len(outputs[0]["events"]),
                               "state_sha256":hashlib.sha256(json.dumps(states[0],sort_keys=True).encode()).hexdigest()})
+            if label=="qr_checkout_external_cwd":
+                if not any(e["name"]=="sendPhoto" for x in outputs for e in x["events"]):
+                    raise RuntimeError("QR route did not render and send a synthetic photo")
+            if label in ("manual_renew_paid","extension_day_wallet","extension_volume_wallet",
+                         "auto_renew_eligible"):
+                if not any(x["panel"] for x in historical_wires):
+                    raise RuntimeError(label+" did not call owned provisioning endpoint")
+            if label in ("payment_zarinpal_initiation","payment_zarinpal_verify_success",
+                         "payment_zarinpal_verify_failed"):
+                endpoint="/soap/zarinpal/request" if label.endswith("initiation") else "/soap/zarinpal/verify"
+                if not any(w["path"]==endpoint for step in historical_wires for w in step["payment"]):
+                    raise RuntimeError("No owned Zarinpal HTTP fixture request")
+            if label.startswith("payment_nextpay_"):
+                endpoint="/nx/gateway/token" if label.endswith("initiation") else "/nx/gateway/verify"
+                if not any(w["path"]==endpoint for step in historical_wires for w in step["payment"]):
+                    raise RuntimeError("No owned NextPay HTTP fixture request")
+            if label in ("manual_renew_paid","extension_day_wallet","extension_volume_wallet",
+                         "payment_zarinpal_verify_success","payment_nextpay_verify_success"):
+                if historical_wires[-1]["panel"] or historical_wires[-1]["payment"]:
+                    raise RuntimeError("Replay invoked external provider: "+label)
+                if historical_states[-1]!=historical_states[-2]:
+                    raise RuntimeError("Replay modified settled financial rows: "+label)
             assert_expected(label,states,[e for x in outputs for e in x["events"]])
             finished.append(label)
             print("PASS V8 finance "+label,flush=True)

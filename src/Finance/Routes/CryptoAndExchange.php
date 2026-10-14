@@ -344,7 +344,7 @@ if (preg_match('/havePaiedWeSwap(.*)/', $data, $match)) {
             $serverType = $serverConfig['type'];
             $portType   = $serverConfig['port_type'];
 
-            include_once 'phpqrcode/qrlib.php';
+            include_once (stream_resolve_include_path('phpqrcode/qrlib.php') ?: dirname(__DIR__, 3) . '/phpqrcode/qrlib.php');
 
             alert($mainValues['sending_config_to_user']);
 

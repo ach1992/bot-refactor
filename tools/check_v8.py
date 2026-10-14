@@ -81,6 +81,7 @@ def main():
         ("financial_facades","test_v8_facades.py",False),
         ("v7_purchase_regression","test_v8_native.py",True),
         ("financial_lifecycle","test_v8_finance.py",True),
+        ("relative_include_compatibility","test_v8_include_paths.py",False),
         ("finance_mutation_controls","test_v8_mutation.py",True),
         ("source_only_rollback","test_v8_swap.py",True),
         ("concurrent_financial_attempts","test_v8_concurrency.py",True),
@@ -95,12 +96,22 @@ def main():
         result=json.loads(checks[label]["last_line"])
         if label=="v7_purchase_regression" and (result["scenarios"],result["cases"])!=(18,47):
             raise RuntimeError("V7 purchase coverage incomplete")
-        if label=="financial_lifecycle" and (result["scenarios"],result["steps"])!=(52,68):
+        if label=="financial_lifecycle" and (result["scenarios"],result["steps"])!=(73,110):
             raise RuntimeError("V8 finance coverage incomplete")
+        if label=="relative_include_compatibility" and (
+                result["sites"]!=4 or result["entrypoint_php_cases"]!=16
+                or not result["v7_v8_resolve_identically"]):
+            raise RuntimeError("Legacy PHP include_path/CWD parity incomplete")
         if label=="finance_mutation_controls" and (result["mutants"]!=8 or not result["all_detected"]):
             raise RuntimeError("Mutation sensitivity degraded")
-        if label=="source_only_rollback" and len(result["phases"])!=4:
-            raise RuntimeError("V7/V8/V7/V8 source rollback did not finish")
+        if label=="source_only_rollback" and (
+                [p["version"] for p in result["phases"]] != ["v7","v8","v7","v8"]
+                or [p["actual_runtime_members"] for p in result["phases"]] != [65,92,65,92]
+                or not all(p["actual_inventory_verified"] for p in result["phases"])
+                or not result["private_sentinels_unchanged"]
+                or not result["persisted_paid_order_survived"]
+                or not result["no_database_rollback"]):
+            raise RuntimeError("Exact V7/V8/V7/V8 runtime inventory/rollback acceptance incomplete")
         if label=="direct_http_guards" and result["guarded_http_requests"]!=54:
             raise RuntimeError("Missing direct module access protection")
         if label=="concurrent_financial_attempts" and (result["cases"]!=2 or not result["no_double_spend"]):

@@ -31,7 +31,9 @@ byte span to the integrated V7 Git tree, validates each public loader and
 module, and refuses unrelated runtime PHP files or DDL changes.
 
 The only mechanically authorized adaptations are relocated `__DIR__`
-semantics and the 26 former `goto GOTOSTART` jumps: their internal-module
+semantics, two entrypoint-root fallback corrections for original QR
+`include_once` paths (without overriding cwd/include_path precedence),
+and the 26 former `goto GOTOSTART` jumps: their internal-module
 return sentinel is forwarded back to the **unchanged label in the original
 caller**, preserving the legacy control-flow boundary. No global facade,
 callback ID, financial formula, price, SQL state, refund or transaction
@@ -59,7 +61,12 @@ API or exactly-once guarantee.
    claim/unique idempotency key. Serialized callback replay and wallet
    transfer row-lock races are tested, but do not guarantee exactly-once
    behavior for every concurrent provider/Cron combination.
-4. **Partial effects across payment and external provisioning:** original
+4. **NextPay failed verification remains pending (inherited):**
+   original return code locates a payment by `payid = trans_id` but uses
+   `hash_id = trans_id` in the failed-verification UPDATE, so a rejected
+   callback may leave a pending row; isolated original-V7 vs V8 tests
+   characterize this, not authorize a correction.
+5. **Partial effects across payment and external provisioning:** original
    code can transition a payment before contacting a VPN panel and may
    credit a wallet on panel failure. The refactor deliberately retains
    the original order, handling and error messages. Provider/service
@@ -67,8 +74,10 @@ API or exactly-once guarantee.
 
 These are **legacy observations / risks**, not newly introduced
 refactor regressions, and not permission to change amounts or customer
-state. Keep Issue #12 separate. Record owner decisions in a new bounded
-authorization before altering financial behavior.
+state. The inherited safety work is tracked in [Issue #26](https://github.com/ach1992/bot-refactor/issues/26),
+separately from the behavior-preserving V8 acceptance in Issue #24.
+Record an explicit owner decision and distinct implementation authority
+before altering financial behavior.
 
 ## Boundaries and downstream work
 

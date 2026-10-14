@@ -63,6 +63,20 @@ MODULES = sorted(x[0] for group in GROUPS.values() for x in group)
 EXACT_GOTO = b"goto GOTOSTART;"
 PATH_REWRITE = b"__DIR__ . '/src/"
 PATH_ROOT = b"dirname(__DIR__, 2) . '/src/"
+# Preserve caller-entrypoint relative-include precedence after relocating QR
+# users. PHP searches include_path/cwd first, then the *original* entrypoint
+# directory. Only the fallback path needs relocation correction.
+QR_INCLUDE_COMPAT = {
+    "src/Finance/Routes/Checkout.php": (
+        b"include_once 'phpqrcode/qrlib.php';",
+        b"include_once (stream_resolve_include_path('phpqrcode/qrlib.php') ?: dirname(__DIR__, 3) . '/phpqrcode/qrlib.php');",
+    ),
+    "src/Finance/Routes/CryptoAndExchange.php": (
+        b"include_once 'phpqrcode/qrlib.php';",
+        b"include_once (stream_resolve_include_path('phpqrcode/qrlib.php') ?: dirname(__DIR__, 3) . '/phpqrcode/qrlib.php');",
+    ),
+
+}
 
 
 def git(*args: str) -> bytes:
@@ -85,6 +99,11 @@ def material(name: str, module: str, body: bytes) -> tuple[bytes, int]:
         body = body.replace(b"__DIR__", b"dirname(__DIR__, 2) . '/pay'")
     elif b"__DIR__" in body or b"__FILE__" in body or b"__LINE__" in body:
         raise RuntimeError("Unexpected relocating PHP magic path: " + module)
+    if module in QR_INCLUDE_COMPAT:
+        original, compatible = QR_INCLUDE_COMPAT[module]
+        if body.count(original) != 1:
+            raise RuntimeError("Ambiguous original QR include site: " + module)
+        body = body.replace(original, compatible)
     if b"goto " in body and name != "bot.php":
         raise RuntimeError("Unexpected goto in non-bot module: " + module)
     gotos = body.count(EXACT_GOTO)
