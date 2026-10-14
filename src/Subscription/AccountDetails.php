@@ -61,131 +61,20 @@ function getServerConfigById($server_id) {
 
 
 function getOrderTrafficInfo($serverType, $server_id, $remark, $uuid, $inbound_id, $rahgozar=false) {
-
     $result = [
-        'found'    => false,
-        'enable'   => false,
-        'leftgb'   => "⚠️",
-        'netType'  => null,
-        'security' => null,
+        'found' => false, 'enable' => false, 'leftgb' => "⚠️",
+        'netType' => null, 'security' => null,
     ];
+    if ($serverType !== 'marzban' || (int)$inbound_id !== 0) return $result;
 
-    // ---- Marzban ----
-    if ($serverType == "marzban") {
-        $info = getMarzbanUser($server_id, $remark);
+    $info = getMarzbanUser($server_id, $remark);
+    if (!is_object($info) || !isset($info->username)) return $result;
 
-        if (!isset($info->username)) {
-            return $result;
-        }
-
-        $result['found']  = true;
-        $result['enable'] = ($info->status == "active");
-
-        $total = $info->data_limit ?? 0;
-        $used  = $info->used_traffic ?? 0;
-
-        $result['leftgb'] = round(($total - $used) / 1073741824, 2) . " GB";
-        return $result;
-    }
-
-    // ---- Non-Marzban ----
-    $data = getJson($server_id)->obj ?? null;
-    if (!$data) return $result;
-
-    foreach ($data as $row) {
-
-        $settings = json_decode($row->settings ?? '{}');
-        $clients  = $settings->clients ?? [];
-
-        if ($inbound_id == 0) {
-            if (empty($clients) || !isset($clients[0])) continue;
-
-            $c0 = $clients[0];
-            $cid = $c0->id ?? null;
-            $cpw = $c0->password ?? null;
-
-            if ($cid != $uuid && $cpw != $uuid) continue;
-
-            $result['found'] = true;
-
-            $stream = json_decode($row->streamSettings ?? '{}');
-            $result['netType']  = $stream->network ?? null;
-            $result['security'] = $stream->security ?? null;
-
-            $total  = $row->total ?? 0;
-            $up     = $row->up ?? 0;
-            $down   = $row->down ?? 0;
-            $enable = $row->enable ?? false;
-			
-            if (!empty($row->clientStats)) {
-                $stats = $row->clientStats;
-                $email = $c0->email ?? null;
-
-                if ($email) {
-                    $emails = array_column($stats, 'email');
-                    $k = array_search($email, $emails);
-
-                    if ($k !== false) {
-                        $clientTotal = $stats[$k]->total ?? null;
-                        $clientUp    = $stats[$k]->up ?? 0;
-                        $clientDown  = $stats[$k]->down ?? 0;
-
-                        $clientExpiry = $stats[$k]->expiryTime ?? null;
-
-                        if ($clientTotal !== null && $clientTotal != 0) {
-                            if ($clientExpiry === null || $clientExpiry != 0) {
-                                $total = $clientTotal;
-                                $up   += $clientUp;
-                                $down += $clientDown;
-                            }
-                        }
-                    }
-                }
-            }
-
-            $result['enable'] = $enable;
-            $result['leftgb'] = round(($total - $up - $down) / 1073741824, 2) . " GB";
-            return $result;
-        }
-
-        // inbound_id != 0
-        if (($row->id ?? null) != $inbound_id) continue;
-
-        $stream = json_decode($row->streamSettings ?? '{}');
-        $result['netType']  = $stream->network ?? null;
-        $result['security'] = $stream->security ?? null;
-
-        $clientsStates = $row->clientStats ?? [];
-
-        foreach ($clients as $client) {
-            $cid = $client->id ?? null;
-            $cpw = $client->password ?? null;
-
-            if ($cid == $uuid || $cpw == $uuid) {
-                $result['found'] = true;
-
-                $email = $client->email ?? null;
-                if (!$email) return $result;
-
-                $emails = array_column($clientsStates, 'email');
-                $k = array_search($email, $emails);
-
-                if ($k === false) return $result;
-
-                $up    = $clientsStates[$k]->up ?? 0;
-                $down  = $clientsStates[$k]->down ?? 0;
-                $total = $clientsStates[$k]->total ?? 0;
-
-                $stateEnable = $clientsStates[$k]->enable ?? false;
-                $clientEnable = $client->enable ?? true;
-
-                $result['enable'] = ($stateEnable && $clientEnable);
-                $result['leftgb'] = round(($total - $up - $down) / 1073741824, 2) . " GB";
-                return $result;
-            }
-        }
-    }
-
+    $result['found'] = true;
+    $result['enable'] = ($info->status == 'active');
+    $total = $info->data_limit ?? 0;
+    $used = $info->used_traffic ?? 0;
+    $result['leftgb'] = round(($total - $used) / 1073741824, 2) . ' GB';
     return $result;
 }
 

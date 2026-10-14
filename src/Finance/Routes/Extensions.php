@@ -283,11 +283,7 @@ if (preg_match('/approveIncreaseDay(.*)/', $data, $match) && ($from_id == $admin
         if ($serverType == "marzban") {
             $response = editMarzbanConfig($server_id, ['remark' => $remark, 'plus_day' => $volume]);
         } else {
-            if ($inbound_id > 0) {
-                $response = editClientTraffic($server_id, $inbound_id, $uuid, 0, $volume);
-            } else {
-                $response = editInboundTraffic($server_id, $uuid, 0, $volume);
-            }
+            throw new \UnexpectedValueException('unsupported_panel');
         }
 
         if (is_null($response)) {
@@ -456,10 +452,7 @@ if(preg_match('/payIncreaseDayWithWallet(.*)/', $data, $match)){
         if($serverType == "marzban"){
             $response = editMarzbanConfig($server_id, ['remark'=>$remark, 'plus_day'=>$volume]);
         } else {
-            if($inbound_id > 0)
-                $response = editClientTraffic($server_id, $inbound_id, $uuid, 0, $volume);
-            else
-                $response = editInboundTraffic($server_id, $uuid, 0, $volume);
+            throw new \UnexpectedValueException('unsupported_panel');
         }
 
         if (is_null($response)) {
@@ -942,11 +935,7 @@ if (preg_match('/approveIncreaseVolume(.*)/', $data, $match) && ($from_id == $ad
         if ($serverType == "marzban") {
             $response = editMarzbanConfig($server_id, ['remark' => $remark, 'plus_volume' => $volume]);
         } else {
-            if ($inbound_id > 0) {
-                $response = editClientTraffic($server_id, $inbound_id, $uuid, $volume, 0);
-            } else {
-                $response = editInboundTraffic($server_id, $uuid, $volume, 0);
-            }
+            throw new \UnexpectedValueException('unsupported_panel');
         }
 
         if (is_null($response)) {
@@ -1119,10 +1108,7 @@ if(preg_match('/payIncreaseWithWallet(.*)/', $data, $match)){
         if($serverType == "marzban"){
             $response = editMarzbanConfig($server_id, ['remark'=>$remark, 'plus_volume'=>$volume]);
         } else {
-            if($inbound_id > 0)
-                $response = editClientTraffic($server_id, $inbound_id, $uuid, $volume, 0);
-            else
-                $response = editInboundTraffic($server_id, $uuid, $volume, 0);
+            throw new \UnexpectedValueException('unsupported_panel');
         }
 
         if (is_null($response)) {

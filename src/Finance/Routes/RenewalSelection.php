@@ -17,57 +17,20 @@ if(preg_match('/sConfigRenew(\d+)/', $data,$match)){
     $uuid = $configInfo['uuid'];
     $remark = $configInfo['remark'];
 
-    if(isset($configInfo['marzban'])){
-        $stmt = $connection->prepare("SELECT * FROM `server_plans` WHERE `server_id` = ? AND `custom_sni` LIKE '%inbounds%' AND `active` = 1 AND `price` != 0 ORDER BY id ASC");
-        $stmt->bind_param("i", $server_id);
-    }else{
-        $response = getJson($server_id)->obj;
-        if($response == null){delMessage(); exit();}
-        if($inboundId == 0){
-            foreach($response as $row){
-                $clients = json_decode($row->settings)->clients;
-                if($clients[0]->id == $uuid || $clients[0]->password == $uuid) {
-                    $port = $row->port;
-                    $protocol = $row->protocol;
-                    $configReality = json_decode($row->streamSettings)->security == "reality"?"true":"false";
-                    break;
-                }
-            }
-            $stmt = $connection->prepare("SELECT * FROM `server_plans` WHERE `server_id` = ? AND `inbound_id` = 0 AND `protocol` = ? AND `active` = 1 AND `price` != 0 AND `rahgozar` = 0 ORDER BY id ASC");
-        }else{
-            foreach($response as $row){
-                if($row->id == $inboundId) {
-                    $port = $row->port;
-                    $protocol = $row->protocol;
-                    $configReality = json_decode($row->streamSettings)->security == "reality"?"true":"false";
-                    break;
-                }
-            }
-            $stmt = $connection->prepare("SELECT * FROM `server_plans` WHERE `server_id` = ? AND `inbound_id` != 0 AND `protocol` = ? AND `active` = 1 AND `price` != 0 AND `rahgozar` = 0 ORDER BY id ASC");
-        }
-        $stmt->bind_param("is", $server_id, $protocol);
+    if (empty($configInfo['marzban']) || (int)$inboundId !== 0) {
+        alert("پنل این اشتراک دیگر پشتیبانی نمی‌شود.", true);
+        return;
     }
-    
+    $stmt = $connection->prepare("SELECT * FROM `server_plans` WHERE `server_id` = ? AND `custom_sni` LIKE '%inbounds%' AND `active` = 1 AND `price` != 0 ORDER BY id ASC");
+    $stmt->bind_param("i", $server_id);
+
     $stmt->execute();
     $plans = $stmt->get_result();
     $stmt->close();
     if($plans->num_rows > 0){
         $keyboard = [];
         while($file = $plans->fetch_assoc()){ 
-            $add = false;
-            
-            if(isset($configInfo['marzban'])) $add = true;
-            else{
-                $stmt = $connection->prepare("SELECT * FROM `server_config` WHERE `id` = ?");
-                $stmt->bind_param("i", $server_id);
-                $stmt->execute();
-                $isReality = $stmt->get_result()->fetch_assoc()['reality'];
-                $stmt->close();
-                
-                if($isReality == $configReality) $add = true;
-            }
-            
-            if($add){
+            {
                 $id = $file['id'];
                 $name = $file['title'];
                 $price = $file['price'];

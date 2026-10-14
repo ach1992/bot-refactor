@@ -31,16 +31,23 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends mariadb-server
-      - name: V9 global source/bootstrap plus full V8 PHP 8.1 financial history
+      - name: Verify immutable historical V9 PHP 8.1 from pinned original checkout
         run: |
-          php -r 'if (!class_exists("ZipArchive") || !extension_loaded("mysqli")) exit(8);'
-          python3 tools/check_v9.py --php81 --report "$RUNNER_TEMP/v9-php81.json"
-      - name: Record exact PHP 8.1 evidence
+          set -euo pipefail
+          ref="$RUNNER_TEMP/frozen-v9-php81"
+          git worktree add --detach "$ref" 7eb077fd8e6d0a303421626d1500f69e295a6664
+          (cd "$ref" && python3 tools/check_v9.py --php81 --report "$RUNNER_TEMP/frozen-v9-php81.json")
+          git worktree remove "$ref"
+      - name: Verify NEW Marzban-only runtime under actual PHP 8.1
         run: |
-          printf '## AChBot V9 PHP 8.1 global compatibility\n\n' >> "$GITHUB_STEP_SUMMARY"
-          printf 'HEAD: `%s`\n\n' "$(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
-          printf 'Tree: `%s`\n\n' "$(git rev-parse HEAD^{tree})" >> "$GITHUB_STEP_SUMMARY"
-          printf 'V9 source-only, inherited financial behavior, no operator acceptance or deployment.\n' >> "$GITHUB_STEP_SUMMARY"
+          set -euo pipefail
+          python3 tools/check_post_v9.py --report "$RUNNER_TEMP/post-v9-php81.json"
+      - name: Record candidate-vs-history PHP 8.1 evidence
+        run: |
+          printf '## AChBot post-V9 Marzban-only PHP 8.1\n\n' >> "$GITHUB_STEP_SUMMARY"
+          printf 'New HEAD: `%s`\n\n' "$(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
+          printf 'New tree: `%s`\n\n' "$(git rev-parse HEAD^{tree})" >> "$GITHUB_STEP_SUMMARY"
+          printf 'Original V9 frozen baseline exercised in its own pinned checkout; new runtime Marzban-only tests separate. No real operator/deploy/finance approval.\n' >> "$GITHUB_STEP_SUMMARY"
   phase1-php84-full-history:
     runs-on: ubuntu-24.04
     timeout-minutes: 65
@@ -62,30 +69,40 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends mariadb-server
-      - name: Exact V9 global config and source rollback plus complete V0-V8 history
+      - name: Verify original frozen V9 source and full historical V0-V8 under PHP 8.4
         run: |
-          php -r 'if (!class_exists("ZipArchive") || !extension_loaded("mysqli")) exit(8);'
-          python3 tools/check_v9.py --report "$RUNNER_TEMP/v9-check.json" --evidence-dir "$RUNNER_TEMP/achbot-v9-evidence"
-      - name: Package 92 integrated runtime members from clean V9 HEAD
+          set -euo pipefail
+          ref="$RUNNER_TEMP/frozen-v9-php84"
+          git worktree add --detach "$ref" 7eb077fd8e6d0a303421626d1500f69e295a6664
+          (cd "$ref" && python3 tools/check_v9.py --report "$RUNNER_TEMP/frozen-v9-php84.json" --evidence-dir "$RUNNER_TEMP/frozen-v9-evidence")
+          git worktree remove "$ref"
+      - name: Verify NEW Marzban-only runtime and native HTTP/MariaDB tests under PHP 8.4
         run: |
-          python3 tools/package_v9.py --output "$RUNNER_TEMP/achbot-v9/achbot-v9-runtime.zip"
-          python3 tools/verify_v9_package.py --zip "$RUNNER_TEMP/achbot-v9/achbot-v9-runtime.zip" --manifest "$RUNNER_TEMP/achbot-v9/achbot-v9-runtime.zip.manifest.json"
-          cp "$RUNNER_TEMP/v9-check.json" "$RUNNER_TEMP/achbot-v9/v9-check.json"
-          cp -R "$RUNNER_TEMP/achbot-v9-evidence" "$RUNNER_TEMP/achbot-v9/evidence"
-      - name: Record exact candidate identity and acceptance evidence
+          set -euo pipefail
+          python3 tools/check_post_v9.py --report "$RUNNER_TEMP/post-v9-php84.json"
+      - name: Package and verify NEW exact-head Marzban-only runtime
         run: |
-          printf '## AChBot V9 final Phase 1 global acceptance\n\n' >> "$GITHUB_STEP_SUMMARY"
-          printf 'HEAD: `%s`\n\n' "$(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
-          printf 'Tree: `%s`\n\n' "$(git rev-parse HEAD^{tree})" >> "$GITHUB_STEP_SUMMARY"
-          printf '92 unchanged V8 runtime source members, original 23 tables, V0-V8 pinned history. No merge, release or deployment approval.\n\n' >> "$GITHUB_STEP_SUMMARY"
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/achbot-marzban-only"
+          python3 tools/package_post_v9.py create --output "$RUNNER_TEMP/achbot-marzban-only/runtime.zip"
+          python3 tools/package_post_v9.py verify --zip "$RUNNER_TEMP/achbot-marzban-only/runtime.zip" --manifest "$RUNNER_TEMP/achbot-marzban-only/runtime.zip.manifest.json"
+          cp "$RUNNER_TEMP/post-v9-php84.json" "$RUNNER_TEMP/achbot-marzban-only/post-v9-acceptance.json"
+          cp "$RUNNER_TEMP/frozen-v9-php84.json" "$RUNNER_TEMP/achbot-marzban-only/frozen-v9-historical.json"
+          cp -R "$RUNNER_TEMP/frozen-v9-evidence" "$RUNNER_TEMP/achbot-marzban-only/frozen-v9-evidence"
+      - name: Record exact candidate identity and distinct frozen historical evidence
+        run: |
+          printf '## AChBot post-V9 Marzban-only acceptance\n\n' >> "$GITHUB_STEP_SUMMARY"
+          printf 'New candidate HEAD: `%s`\n\n' "$(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
+          printf 'New candidate tree: `%s`\n\n' "$(git rev-parse HEAD^{tree})" >> "$GITHUB_STEP_SUMMARY"
+          printf 'Current 92-member Marzban-only source on original 23-table schema; historical V9 full suite independently exercised at pinned commit 7eb077fd. No installed-operator/financial/deployment approval.\n\n' >> "$GITHUB_STEP_SUMMARY"
           printf '```json\n' >> "$GITHUB_STEP_SUMMARY"
-          cat "$RUNNER_TEMP/v9-check.json" >> "$GITHUB_STEP_SUMMARY"
+          cat "$RUNNER_TEMP/post-v9-php84.json" >> "$GITHUB_STEP_SUMMARY"
           printf '\n```\n' >> "$GITHUB_STEP_SUMMARY"
-      - name: Upload exact-candidate archive and acceptance evidence
+      - name: Upload post-V9 exact-candidate source and separate historical evidence
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: achbot-v9-${{ github.event.pull_request.head.sha || github.sha }}
-          path: ${{ runner.temp }}/achbot-v9/
+          name: achbot-marzban-only-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/achbot-marzban-only/
           if-no-files-found: error
           retention-days: 14
           compression-level: 0

@@ -54,7 +54,11 @@ if (!function_exists('buildLinksAndSendQr')) {
         $panelUrl    = $serverConfig['panel_url']  ?? '';
         $subLinksRaw = $serverConfig['sub_links'] ?? '';
 
-        if ($serverType === "marzban") {
+        if (!achbotSupportsPanel($serverType) || (int)$inbound_id !== 0) {
+            // Marzban-only: never deliver an unsupported VPN account link.
+            throw new \UnexpectedValueException('unsupported_panel');
+        }
+
 
             // sub_link مثال: /sub/xxxxx
             $uniqid = $token = str_replace("/sub/", "", $response->sub_link ?? '');
@@ -83,32 +87,6 @@ if (!function_exists('buildLinksAndSendQr')) {
             }
 
             $vray_link = json_encode($response->vray_links ?? []);
-        } else {
-
-            $token = RandomString(30);
-
-            $mainSubLink = (($botState['subLinkState'] ?? '') === "on")
-                ? $botUrl . "settings/subLink.php?token=" . $token
-                : "";
-
-            $subLinkArray = [];
-
-            $vraylink = getConnectionLink(
-                $server_id,
-                $uniqid,
-                $protocol,
-                $remark,
-                $port,
-                $netType,
-                $inbound_id,
-                $rahgozar,
-                $customPath,
-                $customPort,
-                $customSni
-            );
-
-            $vray_link = json_encode($vraylink);
-        }
 
         if (empty($vraylink)) {
             if (!empty($mainSubLink)) {
@@ -220,7 +198,7 @@ if (!function_exists('buildLinksAndSendQr')) {
         if ($resPhoto && isset($resPhoto->ok) && $resPhoto->ok === true) {
             @unlink($fsPath);
         }
-		
+
         sendMessage($acc_text, $keys, "HTML", $uid);
         return [$token, $vray_link, $uniqid];
     }

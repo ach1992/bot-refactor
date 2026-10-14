@@ -134,7 +134,7 @@ if(strstr($text, "/start ")){
             $stmt->bind_param("issii", $from_id, $first_name, $username, $time, $inviter);
             $stmt->execute();
             $stmt->close();
-			
+
 				if ($inviteReward > 0) {
 
 					// موجودی قدیم دعوت‌کننده
@@ -190,10 +190,10 @@ if($userInfo['phone'] == null && $from_id != $admin && $userInfo['isAdmin'] != t
                 exit();
             }
             setUser($phone_number, 'phone');
-            
+
             sendMessage($mainValues['phone_confirmed'],$removeKeyboard);
             $text = "/start";
-            
+
             $stmt = $connection->prepare("SELECT * FROM `users` WHERE `userid`=?");
             $stmt->bind_param("i", $from_id);
             $stmt->execute();
@@ -471,13 +471,13 @@ if(preg_match('/^changePaymentKeys(\w+)/',$userInfo['step'],$match) && $text != 
     $paymentKeys = json_decode($paymentInfo->fetch_assoc()['value'],true)??array();
     $paymentKeys[$match[1]] = $text;
     $paymentKeys = json_encode($paymentKeys);
-    
+
     if($paymentInfo->num_rows > 0) $stmt = $connection->prepare("UPDATE `setting` SET `value` = ? WHERE `type` = 'PAYMENT_KEYS'");
     else $stmt = $connection->prepare("INSERT INTO `setting` (`type`, `value`) VALUES ('PAYMENT_KEYS', ?)");
     $stmt->bind_param("s", $paymentKeys);
-    $stmt->execute(); 
+    $stmt->execute();
     $stmt->close();
-    
+
 
     sendMessage($mainValues['saved_successfuly'],$removeKeyboard);
     sendMessage($mainValues['change_bot_settings_message'],getGateWaysKeys());
@@ -488,7 +488,7 @@ if(preg_match('/^edit(RewaredTime|cartToCartAutoAcceptTime)/', $data, $match) &&
     delMessage();
     if($match[1] == "RewaredTime") $txt = "🙃 لطفا زمان تأخیر در ارسال گزارش رو به ساعت وارد کن\n\nنکته: هر n ساعت گزارش به ربات ارسال میشه! ";
     else $txt = "لطفا زمان مورد نظر را به دقیقه وارد کنید.";
-    
+
     sendMessage($txt,$cancelKey);
     setUser($data);
 }
@@ -533,13 +533,13 @@ if($data=="inviteSetting" && ($from_id == $admin || $userInfo['isAdmin'] == true
         [
             ['text'=>$buttonValues['back_button'],'callback_data'=>"botSettings"]
             ],
-        ]]); 
+        ]]);
     $res = editText($message_id,"✅ تنظیمات بازاریابی",$keys);
     if(!$res->ok){
         delMessage();
         sendMessage("✅ تنظیمات بازاریابی",$keys);
     }
-} 
+}
 if($data=="inviteBanner" && ($from_id == $admin || $userInfo['isAdmin'] == true)){
     $stmt = $connection->prepare("SELECT * FROM `setting` WHERE `type` = 'INVITE_BANNER_TEXT'");
     $stmt->execute();
@@ -580,7 +580,7 @@ if($userInfo['step']=="editInviteBannerText" && ($from_id == $admin || $userInfo
         sendMessage("🥺 بنر ارسال شده پشتیبانی نمی شود.");
         exit();
     }
-    
+
     $stmt = $connection->prepare("SELECT * FROM `setting` WHERE `type` = 'INVITE_BANNER_TEXT'");
     $stmt->execute();
     $checkExist = $stmt->get_result();
@@ -599,7 +599,7 @@ if($userInfo['step']=="editInviteBannerText" && ($from_id == $admin || $userInfo
         $checkExist = $stmt->get_result();
         $stmt->close();
     }
-    
+
     sendMessage($mainValues['saved_successfuly'],$removeKeyboard);
     $keys = json_encode(['inline_keyboard'=>[
         [['text'=>"ویرایش",'callback_data'=>'editInviteBannerText']],
@@ -616,14 +616,14 @@ if($data=="editInviteAmount" && ($from_id == $admin || $userInfo['isAdmin'] == t
     delMessage();
     sendMessage("لطفا مبلغ پورسانت را به تومان وارد کنید.",$cancelKey);
     setUser($data);
-} 
+}
 if($userInfo['step'] == "editInviteAmount" && ($from_id == $admin || $userInfo['isAdmin'] == true)){
     if(is_numeric($text)){
         $stmt = $connection->prepare("SELECT * FROM `setting` WHERE `type` = 'INVITE_BANNER_AMOUNT'");
         $stmt->execute();
         $checkExist = $stmt->get_result();
         $stmt->close();
-        
+
         if($checkExist->num_rows > 0){
             $stmt = $connection->prepare("UPDATE `setting` SET `value` = ? WHERE `type` = 'INVITE_BANNER_AMOUNT'");
             $stmt->bind_param("s", $text);
@@ -638,17 +638,17 @@ if($userInfo['step'] == "editInviteAmount" && ($from_id == $admin || $userInfo['
             $stmt->close();
         }
         sendMessage($mainValues['saved_successfuly'],$removeKeyboard);
-        
+
         $keys = json_encode(['inline_keyboard'=>[
             [['text'=>"❗️بنر دعوت",'callback_data'=>"inviteBanner"]],
             [
                 ['text'=>number_format($text) . " تومان",'callback_data'=>"editInviteAmount"],
                 ['text'=>"مقدار پورسانت",'callback_data'=>"wizwizch"]
-                ], 
+                ],
             [
                 ['text'=>$buttonValues['back_button'],'callback_data'=>"botSettings"]
                 ],
-            ]]); 
+            ]]);
         sendMessage("✅ تنظیمات بازاریابی",$keys);
         setUser();
     }else sendMessage($mainValues['send_only_number']);
@@ -662,7 +662,7 @@ if(preg_match('/^edit(RewaredTime|cartToCartAutoAcceptTime)/', $userInfo['step']
         sendMessage("مقدار وارد شده معتبر نیست.");
         exit();
     }
-    
+
     setSettings(lcfirst($match[1]), $text);
     sendMessage($mainValues['change_bot_settings_message'],getBotSettingKeys());
     setUser();
@@ -752,9 +752,9 @@ if($data=="myInfo"){
     $stmt->execute();
     $totalBuys = $stmt->get_result()->num_rows;
     $stmt->close();
-    
+
     $myWallet = number_format($userInfo['wallet']) . " تومان";
-    
+
     $keys = json_encode(['inline_keyboard'=>[
         [
             ['text'=>"شارژ کیف پول 💵",'callback_data'=>"increaseMyWallet"],
@@ -766,7 +766,7 @@ if($data=="myInfo"){
         ]]);
     editText($message_id, "
 📊 اطلاعات حساب شما:
-    
+
 🎫 شناسه عددی: <code>$from_id</code>
 🔰 نام کاربری: @$username
 👤 اسم: $first_name
@@ -1088,7 +1088,7 @@ if($data=="availableServers"){
 
         if($name->num_rows>0){
             $name = $name->fetch_assoc()['title'];
-            
+
             $keys[] = [
                 ['text'=>$acount . " اکانت",'callback_data'=>"wizwizch"],
                 ['text'=>$title??" ",'callback_data'=>"wizwizch"],
@@ -1116,7 +1116,7 @@ if($data=="availableServers2"){
         $title2 = $file_detail2['title'];
         $server_id2 = $file_detail2['server_id'];
         $inbound_id2 = $file_detail2['inbound_id'];
-        
+
         $stmt = $connection->prepare("SELECT * FROM `server_info` WHERE `id` = ?");
         $stmt->bind_param("i", $server_id2);
         $stmt->execute();
@@ -1127,7 +1127,7 @@ if($data=="availableServers2"){
             $sInfo = $name->fetch_assoc();
             $name = $sInfo['title'];
             $acount2 = $sInfo['ucount'];
-            
+
             $keys[] = [
                 ['text'=>$acount2 . " اکانت",'callback_data'=>"wizwizch"],
                 ['text'=>$title2??" ",'callback_data'=>"wizwizch"],
@@ -1155,7 +1155,7 @@ if(preg_match('/^delMainButton(\d+)/',$data,$match) && ($from_id == $admin || $u
     $stmt->bind_param("i", $match[1]);
     $stmt->execute();
     $stmt->close();
-    
+
     alert("با موفقیت حذف شد.");
     editText($message_id,"🧮 مدیریت دکمه ها",getMainMenuButtonsKeys());
 }
@@ -1182,7 +1182,7 @@ if (preg_match('/^setMainButtonAnswer(.*)/', $userInfo['step'], $match) && ($fro
 
     $btn = "MAIN_BUTTONS" . trim($match[1]);
 
-    $encoded = json_encode($text);  
+    $encoded = json_encode($text);
     $encoded = substr($encoded, 1, -1);
 
     $stmt = $connection->prepare("INSERT INTO `setting` (`type`, `value`) VALUES (?, ?)");
@@ -1235,7 +1235,7 @@ if(preg_match('/^marzbanHostSettings(\d+)/',$data,$match) && ($from_id == $admin
     $stmt->execute();
     $serverId = $stmt->get_result()->fetch_assoc()['server_id'];
     $stmt->close();
-    
+
     $hosts = getMarzbanHosts($serverId)->inbounds;
     $networkType = array();
     foreach($hosts as $key => $inbound){
@@ -1252,7 +1252,7 @@ if(preg_match('/^selectHost(?<planId>\d+)\*_\*(?<protocol>.+)\*_\*(?<tag>.*)/',$
     foreach($markup as $key => $keyboard){
         if($keyboard[0]['callback_data'] == $data) $markup[$key][0]['text'] = $keyboard['0']['text'] == $match['tag'] . " ✅" ? $match['tag']:$match['tag'] . " ✅";
     }
-        
+
     if(strstr(json_encode($markup,JSON_UNESCAPED_UNICODE), "✅") && !strstr(json_encode($markup,JSON_UNESCAPED_UNICODE), $saveBtn)){
         $markup[] = [['text'=>$saveBtn,'callback_data'=>"saveServerHost" . $match['planId']]];
     }
@@ -1265,7 +1265,7 @@ if(preg_match('/^saveServerHost(\d+)/',$data,$match) && ($from_id == $admin || $
     $proxies = array();
     unset($markup[count($markup)-1]);
     unset($markup[count($markup)-1]);
-    
+
     foreach($markup as $key=>$value){
         $tag = trim(str_replace("✅", "", $value[0]['text'], $state));
         if($state > 0){
@@ -1286,7 +1286,7 @@ if(preg_match('/^saveServerHost(\d+)/',$data,$match) && ($from_id == $admin || $
     $stmt->bind_param("si", $info, $match[1]);
     $stmt->execute();
     $stmt->close();
-    
+
     editText($message_id, "با موفقیت ذخیره شد.",getPlanDetailsKeys($match[1]));
     setUser();
 }
@@ -1421,7 +1421,7 @@ if(preg_match('/^giftServerVolume(\d+)_(\d+)/',$userInfo['step'],$match) && ($fr
             $stmt->bind_param("iii", $match[1], $text, $match[2]);
             $stmt->execute();
             $stmt->close();
-            
+
             sendMessage($mainValues['saved_successfuly'],$removeKeyboard);
             sendMessage($mainValues['reached_main_menu'],getMainKeys());
 
@@ -1442,7 +1442,7 @@ if ((require __DIR__ . '/src/Plans/Categories.php') === null) return;
 if(($data=='serversSetting' || preg_match('/^nextServerPage(\d+)/',$data,$match)) and ($from_id == $admin || $userInfo['isAdmin'] == true)){
     if(isset($match[1])) $keys = getServerListKeys($match[1]);
     else $keys = getServerListKeys();
-    
+
     editText($message_id,"☑️ مدیریت سرور ها:",$keys);
 }
 if(preg_match('/^toggleServerState(\d+)_(\d+)/',$data,$match) && ($from_id == $admin || $userInfo['isAdmin'] == true)){
@@ -1451,9 +1451,9 @@ if(preg_match('/^toggleServerState(\d+)_(\d+)/',$data,$match) && ($from_id == $a
     $stmt->execute();
     $cats= $stmt->get_result();
     $stmt->close();
-    
+
     alert("وضعیت سرور با موفقیت تغییر کرد.");
-    
+
     $keys = getServerListKeys($match[2]);
     editText($message_id,"☑️ مدیریت سرور ها:",$keys);
 }
@@ -1467,7 +1467,7 @@ if(preg_match('/^changesServerIp(\d+)/',$data,$match) && ($from_id == $admin || 
     $stmt->execute();
     $serverIp= $stmt->get_result()->fetch_assoc()['ip']??"اطلاعاتی یافت نشد";
     $stmt->close();
-    
+
     delMessage();
     sendMessage("لیست آیپی های فعلی: \n$serverIp\nلطفا آیپی های جدید را در خط های جدا بفرستید\n\nبرای خالی کردن متن /empty را وارد کنید",$cancelKey,null,null,null);
     setUser($data);
@@ -1481,72 +1481,32 @@ if(preg_match('/^changesServerIp(\d+)/',$userInfo['step'],$match) && ($from_id =
     $stmt->close();
     sendMessage($mainValues['saved_successfuly'],$removeKeyboard);
     setUser();
-    
+
     $keys = getServerConfigKeys($match[1]);
     sendMessage("☑️ مدیریت سرور ها: $cname",$keys);
     exit();
 }
-if(preg_match('/^changePortType(\d+)/',$data,$match) && ($from_id == $admin || $userInfo['isAdmin'] == true)){
-    $stmt = $connection->prepare("UPDATE `server_config` SET `port_type` = IF(`port_type` = 'auto', 'random', 'auto') WHERE `id`=?");
-    $stmt->bind_param("i", $match[1]);
-    $stmt->execute();
-    $stmt->close();
-    alert("نوع پورت سرور مورد نظر با موفقیت تغییر کرد.");
-    
-    $keys = getServerConfigKeys($match[1]);
-    editText($message_id,"☑️ مدیریت سرور ها: $cname",$keys);
-    
-    exit();
+// Obsolete X-UI transport/Reality callbacks are intentionally retired.
+if(preg_match('/^(?:changePortType|changeRealityState)\d+$/', (string)$data)){
+    alert("تنظیمات پنل‌های قدیمی دیگر پشتیبانی نمی‌شود.", true);
+    return;
 }
-if(preg_match('/^changeRealityState(\d+)/',$data,$match) && ($from_id == $admin || $userInfo['isAdmin'] == true)){
-    $stmt = $connection->prepare("UPDATE `server_config` SET `reality` = IF(`reality` = 'true', 'false', 'true') WHERE `id` = ?");
-    $stmt->bind_param("i", $match[1]);
-    $stmt->execute();
-    $stmt->close();
-    
-    $keys = getServerConfigKeys($match[1]);
-    editText($message_id,"☑️ مدیریت سرور ها: $cname",$keys);
-    
-    exit();
+// Previously sent legacy admin panel-selector callbacks must never
+// mutate provider type or accidentally switch a Marzban server to X-UI.
+if(preg_match('/^(?:changeServerType\d+|chhangeServerType\w+_\d+)$/', (string)$data)){
+    alert("پنل‌های قدیمی حذف شده‌اند؛ تنها مرزبان پشتیبانی می‌شود.", true);
+    return;
 }
-if(preg_match('/^changeServerType(\d+)/',$data,$match) && ($from_id == $admin || $userInfo['isAdmin'] == true)){
-    editText($message_id,"
-    
-🔰 نکته مهم: ( پنل x-ui خود را به آخرین نسخه آپدیت کنید ) 
-
-❤️ اگر از پنل سنایی استفاده میکنید لطفا نوع پنل را ( سنایی ) انتخاب کنید.
-🧡 اگر از پنل علیرضا استفاده میکنید لطفا نوع پنل را ( علیرضا ) انتخاب کنید.
-💚 اگر از پنل نیدوکا استفاده میکنید لطفا نوع پنل را ( ساده ) انتخاب کنید. 
-💙 اگر از پنل چینی استفاده میکنید لطفا نوع پنل را ( ساده ) انتخاب کنید. 
-⁮⁮ ⁮⁮ ⁮⁮ ⁮⁮
-📣 حتما نوع پنل را انتخاب کنید وگرنه براتون مشکل ساز میشه!
-⁮⁮ ⁮⁮ ⁮⁮ ⁮⁮
-",json_encode(['inline_keyboard'=>[
-        [['text'=>"ساده",'callback_data'=>"chhangeServerTypenormal_" . $match[1]],['text'=>"سنایی",'callback_data'=>"chhangeServerTypesanaei_" . $match[1]]],
-        [['text'=>"علیرضا",'callback_data'=>"chhangeServerTypealireza_" . $match[1]]]
-        ]]));
-    exit();
-}
-if(preg_match('/^chhangeServerType(\w+)_(\d+)/',$data,$match) && ($from_id == $admin || $userInfo['isAdmin'] == true)){
-    alert($mainValues['saved_successfuly']);
-    $stmt = $connection->prepare("UPDATE `server_config` SET `type` = ? WHERE `id`=?");
-    $stmt->bind_param("si",$match[1], $match[2]);
-    $stmt->execute();
-    $stmt->close();
-    
-    $keys = getServerConfigKeys($match[2]);
-    editText($message_id, "☑️ مدیریت سرور ها: $cname",$keys);
-}
-if(($data == "addNewMarzbanPanel" || $data=='addNewServer') and ($from_id == $admin || $userInfo['isAdmin'] == true)){
+if($data == "addNewMarzbanPanel" and ($from_id == $admin || $userInfo['isAdmin'] == true)){
     delMessage();
     setUser($data, 'temp');
     setUser('addserverName');
-    sendMessage("مرحله اول: 
+    sendMessage("مرحله اول:
 ▪️ یه اسم برا سرورت انتخاب کن:",$cancelKey);
     exit();
 }
 if($userInfo['step'] == 'addserverName' and $text != $buttonValues['cancel'] && ($from_id == $admin || $userInfo['isAdmin'] == true)) {
-	sendMessage('مرحله دوم: 
+	sendMessage('مرحله دوم:
 ▪️ ظرفیت تعداد ساخت اشتراک رو برای سرورت مشخص کن ( عدد باشه )');
     $data = array();
     $data['title'] = $text;
@@ -1558,7 +1518,7 @@ if(preg_match('/^addServerUCount(.*)/',$userInfo['step'],$match) and $text != $b
     $data = json_decode($match[1],true);
     $data['ucount'] = $text;
 
-    sendMessage("مرحله سوم: 
+    sendMessage("مرحله سوم:
 ▪️ یه اسم (نام کاربری) برای اشتراک انتخاب کن:
  ( به صورت انگیلیسی و بدون فاصله )
 ");
@@ -1579,7 +1539,7 @@ if(preg_match('/^addServerFlag(.*)/',$userInfo['step'], $match) and $text != $bu
     $data['flag'] = $text;
     sendMessage("مرحله پنجم:
 
-▪️ لطفا آدرس پنل x-ui رو به صورت مثال زیر وارد کن:
+▪️ لطفا آدرس پنل مرزبان رو به صورت مثال زیر وارد کن:
 
 ❕https://yourdomain.com:54321
 ❕https://yourdomain.com:54321/path
@@ -1596,102 +1556,27 @@ if(preg_match('/^addServerFlag(.*)/',$userInfo['step'], $match) and $text != $bu
 if(preg_match('/^addServerPanelUrl(.*)/',$userInfo['step'],$match) and $text != $buttonValues['cancel'] && ($from_id == $admin || $userInfo['isAdmin'] == true)) {
     $data = json_decode($match[1],true);
     $data['panel_url'] = $text;
-    if($userInfo['temp'] == "addNewMarzbanPanel"){
-        $data['panel_ip'] = "/empty";
-        $data['sni'] = "/empty";
-        $data['header_type'] = "/empty";
-        $data['response_header'] = "/empty";
-        $data['request_header'] = "/empty";
-        $data['security'] = "/empty";
-        $data['tls_setting'] = "/empty";
-        
-        setUser('addServerPanelUser' . json_encode($data, JSON_UNESCAPED_UNICODE));
-        sendMessage( "مرحله ششم: 
-    ▪️ لطفا یوزر پنل را وارد کنید:");
-    
-        exit();
-    }else{
-        setUser('addServerIp' . json_encode($data,JSON_UNESCAPED_UNICODE));
-        sendMessage( "🔅 لطفا ip یا دامنه تانل شده پنل را وارد کنید:
-    
-    نمونه: 
-    91.257.142.14
-    sub.domain.com
-    ❗️ در صورتی که میخواید چند دامنه یا ip کانفیگ بگیرید باید زیر هم بنویسید و برای ربات بفرستین:
-        \n\n🔻برای خالی گذاشتن متن /empty را وارد کنید.");
-        exit();
+    if(($userInfo['temp'] ?? '') !== "addNewMarzbanPanel"){
+        alert("این نوع پنل دیگر پشتیبانی نمی‌شود.", true);
+        return;
     }
-}
-if(preg_match('/^addServerIp(.*)/',$userInfo['step'],$match) and $text != $buttonValues['cancel'] && ($from_id == $admin || $userInfo['isAdmin'] == true)) {
-    $data = json_decode($match[1],true);
-    $data['panel_ip'] = $text;
-    setUser('addServerSni' . json_encode($data, JSON_UNESCAPED_UNICODE));
-    sendMessage( "🔅 لطفا sni پنل را وارد کنید\n\n🔻برای خالی گذاشتن متن /empty را وارد کنید.");
-    exit();
-}
-if(preg_match('/^addServerSni(.*)/',$userInfo['step'],$match) and $text != $buttonValues['cancel'] && ($from_id == $admin || $userInfo['isAdmin'] == true)) {
-    $data = json_decode($match[1],true);
-    $data['sni'] = $text;
-    setUser('addServerHeaderType' . json_encode($data, JSON_UNESCAPED_UNICODE));
-    sendMessage( "🔅 اگر از header type استفاده میکنید لطفا http را تایپ کنید:\n\n🔻برای خالی گذاشتن متن /empty را وارد کنید.");
-    exit();
-}
-if(preg_match('/^addServerHeaderType(.*)/',$userInfo['step'],$match) and $text != $buttonValues['cancel'] && ($from_id == $admin || $userInfo['isAdmin'] == true)) {
-    $data = json_decode($match[1],true);
-    $data['header_type'] = $text;
-    setUser('addServerRequestHeader' . json_encode($data, JSON_UNESCAPED_UNICODE));
-    sendMessage( "🔅 اگر از هدر استفاده میکنید لطفا آدرس رو به این صورت Host:test.com وارد کنید و به جای test.com آدرس دلخواه بزنید:\n\n🔻برای خالی گذاشتن متن /empty را وارد کنید.");
-    exit();
-}
-if(preg_match('/^addServerRequestHeader(.*)/',$userInfo['step'],$match) and $text != $buttonValues['cancel'] && ($from_id == $admin || $userInfo['isAdmin'] == true)) {
-    $data = json_decode($match[1],true);
-    $data['request_header'] = $text;
-    setUser('addServerResponseHeader' . json_encode($data, JSON_UNESCAPED_UNICODE));
-    sendMessage( "🔅 لطفا response header پنل را وارد کنید\n\n🔻برای خالی گذاشتن متن /empty را وارد کنید.");
-    exit();
-}
-if(preg_match('/^addServerResponseHeader(.*)/',$userInfo['step'],$match) and $text != $buttonValues['cancel'] && ($from_id == $admin || $userInfo['isAdmin'] == true)) {
-    $data = json_decode($match[1],true);
-    $data['response_header'] = $text;
-    setUser('addServerSecurity' . json_encode($data, JSON_UNESCAPED_UNICODE));
-    sendMessage( "🔅 لطفا security پنل را وارد کنید
+    $data['panel_ip'] = "/empty";
+    $data['sni'] = "/empty";
+    $data['header_type'] = "/empty";
+    $data['response_header'] = "/empty";
+    $data['request_header'] = "/empty";
+    $data['security'] = "/empty";
+    $data['tls_setting'] = "/empty";
 
-⚠️ توجه: برای استفاده از tls یا xtls لطفا کلمه tls یا xtls رو تایپ کنید در غیر این صورت 👇
-\n🔻برای خالی گذاشتن متن /empty را وارد کنید.");
-exit();
-}
-if(preg_match('/^addServerSecurity(.*)/',$userInfo['step'],$match) and $text != $buttonValues['cancel'] && ($from_id == $admin || $userInfo['isAdmin'] == true)) {
-    $data = json_decode($match[1],true);
-    $data['security'] = $text;
-    setUser('addServerTlsSetting' . json_encode($data, JSON_UNESCAPED_UNICODE));
-    sendMessage("
-    🔅 لطفا tls|xtls setting پنل را وارد کنید🔻برای  خالی گذاشتن متن /empty را وارد کنید.
-
-⚠️ لطفا تنظیمات سرتیفیکیت رو با دقت انجام بدید مثال:
-▫️serverName: yourdomain
-▫️certificateFile: /root/cert.crt
-▫️keyFile: /root/private.key
-\n
-"
-        .'<b>tls setting:</b> <code>{"serverName": "","certificates": [{"certificateFile": "","keyFile": ""}]}</code>' . "\n"
-        .'<b>xtls setting:</b> <code>{"serverName": "","certificates": [{"certificateFile": "","keyFile": ""}],"alpn": []}</code>', null, "HTML");
-
-    exit();
-}
-if(preg_match('/^addServerTlsSetting(.*)/',$userInfo['step'],$match) and $text != $buttonValues['cancel'] && ($from_id == $admin || $userInfo['isAdmin'] == true)) {
-    $data = json_decode($match[1],true);
-    $data['tls_setting'] = $text;
     setUser('addServerPanelUser' . json_encode($data, JSON_UNESCAPED_UNICODE));
-    sendMessage( "مرحله ششم: 
-▪️لطفا یوزر پنل را وارد کنید:");
-
+    sendMessage("مرحله ششم: ▪️ لطفا نام کاربری پنل مرزبان را وارد کنید:");
     exit();
 }
 if(preg_match('/^addServerPanelUser(.*)/',$userInfo['step'],$match) and $text != $buttonValues['cancel'] && ($from_id == $admin || $userInfo['isAdmin'] == true)) {
     $data = json_decode($match[1],true);
     $data['panel_user'] = $text;
     setUser('addServerPanePassword' . json_encode($data, JSON_UNESCAPED_UNICODE));
-    sendMessage( "مرحله هفتم: 
+    sendMessage( "مرحله هفتم:
 ▪️لطفا پسورد پنل را وارد کنید:");
 exit();
 }
@@ -1713,60 +1598,48 @@ if(preg_match('/^addServerPanePassword(.*)/',$userInfo['step'],$match) and $text
     $tlsSettings = $data['tls_setting']!="/empty"?$data['tls_setting']:"";
     $serverName = $data['panel_user'];
     $serverPass = $text;
-    
-    
+
+
     $loginResponse['success'] = false;
-    if($userInfo['temp'] == "addNewMarzbanPanel"){
+    if(($userInfo['temp'] ?? '') !== 'addNewMarzbanPanel'){
+        alert("این نوع پنل دیگر پشتیبانی نمی‌شود.", true);
+        return;
+    }
+    $loginResponse['success'] = false;
+
         $loginUrl = $panel_url .'/api/admin/token';
         $postFields = array(
             'username' => $serverName,
             'password' => $serverPass
         );
-        
+
         $curl = curl_init();
         curl_setopt($curl, CURLOPT_URL, $loginUrl);
         curl_setopt($curl, CURLOPT_FOLLOWLOCATION, 1);
         curl_setopt($curl, CURLOPT_RETURNTRANSFER, 1);
         curl_setopt($curl, CURLOPT_POST, 1);
         curl_setopt($curl, CURLOPT_CONNECTTIMEOUT, 3);
-        curl_setopt($curl, CURLOPT_TIMEOUT, 3); 
+        curl_setopt($curl, CURLOPT_TIMEOUT, 3);
         curl_setopt($curl, CURLOPT_POSTFIELDS, http_build_query($postFields));
         curl_setopt($curl, CURLOPT_HTTPHEADER, array(
                 'Content-Type: application/x-www-form-urlencoded',
                 'accept: application/json'
             ));
         $response = json_decode(curl_exec($curl),true);
-        
+
         if(curl_error($curl)){
             $loginResponse = ['success' => false, 'error'=>curl_error($curl)];
         }
         curl_close($curl);
-    
+
         if(isset($response['access_token'])){
             $loginResponse['success'] = true;
         }
-    }else{
-        $loginUrl = $panel_url . '/login';
-        $postFields = array(
-            "username" => $serverName,
-            "password" => $serverPass
-            );
-        $ch = curl_init();
-        curl_setopt($ch, CURLOPT_URL, $loginUrl);
-        curl_setopt($ch, CURLOPT_FOLLOWLOCATION, 1);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
-        curl_setopt($ch, CURLOPT_POST, 1);
-        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 15);
-        curl_setopt($ch, CURLOPT_TIMEOUT, 15); 
-        curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($postFields));
-        $loginResponse = json_decode(curl_exec($ch),true);
-        curl_close($ch);
-        
-    }
+
     if(!$loginResponse['success']){
         setUser('addServerPanelUser' . json_encode($data, JSON_UNESCAPED_UNICODE));
         sendMessage( "
-⚠️ با خطا مواجه شدی! 
+⚠️ با خطا مواجه شدی!
 
 برای رفع این مشکل روی لینک زیر بزن و ویس رو با دقت گوش کن 👇
 
@@ -1784,39 +1657,19 @@ if(preg_match('/^addServerPanePassword(.*)/',$userInfo['step'],$match) and $text
     $rowId = $stmt->insert_id;
     $stmt->close();
 
-    $stmt = $connection->prepare("INSERT INTO `server_config` (`id`, `panel_url`, `ip`, `sni`, `header_type`, `request_header`, `response_header`, `security`, `tlsSettings`, `username`, `password`)
-                                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+    // The server_config id is explicitly supplied from server_info. Do not
+    // overwrite it with insert_id (which need not return explicit IDs).
+    // Record the supported provider atomically with initial configuration.
+    $stmt = $connection->prepare("INSERT INTO `server_config` (`id`, `panel_url`, `ip`, `sni`, `header_type`, `request_header`, `response_header`, `security`, `tlsSettings`, `username`, `password`, `type`)
+                                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'marzban')");
     $stmt->bind_param("issssssssss", $rowId, $panel_url, $ip, $sni, $header_type, $request_header, $response_header, $security, $tlsSettings, $serverName, $serverPass);
     $stmt->execute();
-    $rowId = $stmt->insert_id;
     $stmt->close();
 
     sendMessage(" تبریک، سرورت رو ثبت کردی 🥹",$removeKeyboard);
-    if($userInfo['temp'] == "addNewMarzbanPanel"){
-        $stmt = $connection->prepare("UPDATE `server_config` SET `type` = 'marzban' WHERE `id`=?");
-        $stmt->bind_param("i",$rowId);
-        $stmt->execute();
-        $stmt->close();
-        
-        $keys = getServerListKeys();
-        sendMessage("☑️ مدیریت سرور ها",$keys);
-    }else{
-        sendMessage("
-    
-🔰 نکته مهم: ( پنل x-ui خود را به آخرین نسخه آپدیت کنید ) 
+    $keys = getServerListKeys();
+    sendMessage("☑️ مدیریت سرور ها",$keys);
 
-❤️ اگر از پنل سنایی استفاده میکنید لطفا نوع پنل را ( سنایی ) انتخاب کنید.
-🧡 اگر از پنل علیرضا استفاده میکنید لطفا نوع پنل را ( علیرضا ) انتخاب کنید.
-💚 اگر از پنل نیدوکا استفاده میکنید لطفا نوع پنل را ( ساده ) انتخاب کنید. 
-💙 اگر از پنل چینی استفاده میکنید لطفا نوع پنل را ( ساده ) انتخاب کنید. 
-⁮⁮ ⁮⁮ ⁮⁮ ⁮⁮
-📣 حتما نوع پنل را انتخاب کنید وگرنه براتون مشکل ساز میشه!
-⁮⁮ ⁮⁮ ⁮⁮ ⁮⁮
-    ",json_encode(['inline_keyboard'=>[
-            [['text'=>"ساده",'callback_data'=>"chhangeServerTypenormal_" . $rowId],['text'=>"سنایی",'callback_data'=>"chhangeServerTypesanaei_" . $rowId]],
-            [['text'=>"علیرضا",'callback_data'=>"chhangeServerTypealireza_" . $rowId]]
-            ]]));
-    }
     setUser();
     exit();
 }
@@ -1848,71 +1701,59 @@ if(preg_match('/^editServerPanePassword(.*)/',$userInfo['step'],$match) and $tex
     $panel_url = $data['panel_url'];
     $serverName = $data['panel_user'];
     $serverPass = $text;
-    
-    
+
+
     $stmt = $connection->prepare("SELECT * FROM `server_config` WHERE `id` = ?");
     $stmt->bind_param('i', $rowId);
     $stmt->execute();
     $serverInfo = $stmt->get_result()->fetch_assoc();
     $stmt->close();
+    if(!achbotSupportsPanel($serverInfo['type'] ?? null)){
+        alert("این نوع پنل دیگر پشتیبانی نمی‌شود.", true);
+        setUser();
+        return;
+    }
     $serverType = $serverInfo['type'];
     $loginResponse['success'] = false;
-    
-    if($serverType == "marzban"){
+
+
         $loginUrl = $panel_url .'/api/admin/token';
         $postFields = array(
             'username' => $serverName,
             'password' => $serverPass
         );
-        
+
         $curl = curl_init();
         curl_setopt($curl, CURLOPT_URL, $loginUrl);
         curl_setopt($curl, CURLOPT_FOLLOWLOCATION, 1);
         curl_setopt($curl, CURLOPT_RETURNTRANSFER, 1);
         curl_setopt($curl, CURLOPT_POST, 1);
         curl_setopt($curl, CURLOPT_CONNECTTIMEOUT, 3);
-        curl_setopt($curl, CURLOPT_TIMEOUT, 3); 
+        curl_setopt($curl, CURLOPT_TIMEOUT, 3);
         curl_setopt($curl, CURLOPT_POSTFIELDS, http_build_query($postFields));
         curl_setopt($curl, CURLOPT_HTTPHEADER, array(
                 'Content-Type: application/x-www-form-urlencoded',
                 'accept: application/json'
             ));
         $response = json_decode(curl_exec($curl),true);
-        
+
         if(curl_error($curl)){
             $loginResponse = ['success' => false, 'error'=>curl_error($curl)];
         }
         curl_close($curl);
-    
+
         if(isset($response['access_token'])){
             $loginResponse['success'] = true;
         }
-    }else{
-        $loginUrl = $panel_url . '/login';
-        $postFields = array(
-            "username" => $serverName,
-            "password" => $serverPass
-            );
-    
-        $ch = curl_init();
-        curl_setopt($ch, CURLOPT_URL, $loginUrl);
-        curl_setopt($ch, CURLOPT_FOLLOWLOCATION, 1);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
-        curl_setopt($ch, CURLOPT_POST, 1);
-        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 15);
-        curl_setopt($ch, CURLOPT_TIMEOUT, 15); 
-        curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($postFields));
-        $loginResponse = json_decode(curl_exec($ch),true);
-        curl_close($ch);
-    }
-    
+
+
     if(!$loginResponse['success']) sendMessage( "اطلاعاتی که وارد کردی اشتباهه 😂");
     else{
         $stmt = $connection->prepare("UPDATE `server_config` SET `panel_url` = ?, `username` = ?, `password` = ? WHERE `id` = ?");
         $stmt->bind_param("sssi", $panel_url, $serverName, $serverPass, $rowId);
         $stmt->execute();
         $stmt->close();
-        
+
         sendMessage("اطلاعات ورود سرور با موفقیت عوض شد.",$removeKeyboard);
     }
     $keys = getServerConfigKeys($rowId);
@@ -1932,14 +1773,14 @@ if(preg_match('/^yesDeleteServer(\d+)/',$data,$match) && ($from_id == $admin || 
     $stmt->bind_param("i", $match[1]);
     $stmt->execute();
     $stmt->close();
-    
+
     $stmt = $connection->prepare("DELETE FROM `server_config` WHERE `id`=?");
     $stmt->bind_param("i", $match[1]);
     $stmt->execute();
     $stmt->close();
 
     alert("🙂 سرور رو چرا حذف کردی اخه ...");
-    
+
 
     $keys = getServerListKeys();
     if($keys == null) editText($message_id,"موردی یافت نشد.");
@@ -1952,12 +1793,12 @@ if(preg_match('/^editServer(\D+)(\d+)/',$data,$match) && $text != $buttonValues[
             break;
         case "Max":
             $txt = "ظرفیت";
-            break; 
+            break;
         case "Remark":
             $txt ="ریمارک";
             break;
         case "Flag":
-            $txt = "پرچم"; 
+            $txt = "پرچم";
             break;
         default:
             $txt = str_replace("_", " ", $match[1]);
@@ -1984,7 +1825,7 @@ if(preg_match('/^editServer(\D+)(\d+)/',$userInfo['step'],$match) && $text != $b
             $sql = "UPDATE `server_info` SET `ucount`";
             break;
     }
-    
+
     if($text == "/empty"){
         $stmt = $connection->prepare("$sql IS NULL WHERE `id`=?");
         $stmt->bind_param("i", $match[2]);
@@ -1996,10 +1837,10 @@ if(preg_match('/^editServer(\D+)(\d+)/',$userInfo['step'],$match) && $text != $b
         $stmt->execute();
         $stmt->close();
     }
-    
+
     sendMessage($mainValues['saved_successfuly'],$removeKeyboard);
     setUser();
-    
+
     $keys = getServerConfigKeys($match[2]);
     sendMessage("مدیریت سرور $cname",$keys);
     exit();
@@ -2042,10 +1883,10 @@ if(preg_match('/^editsServer(\D+)(\d+)/',$userInfo['step'],$match) && $text != $
     }
     $stmt->execute();
     $stmt->close();
-    
+
     sendMessage($mainValues['saved_successfuly'],$removeKeyboard);
     setUser();
-    
+
     $keys = getServerConfigKeys($match[2]);
     sendMessage("مدیریت سرور $cname",$keys);
     exit();
@@ -2084,21 +1925,21 @@ if(preg_match('/^editServer(\D+)(\d+)/',$userInfo['step'],$match) && $text != $b
             $stmt = $connection->prepare("UPDATE `server_info` SET `flag`=? WHERE `id`=?");
             break;
     }
-    
+
     $stmt->bind_param("si",$text, $match[2]);
     $stmt->execute();
     $stmt->close();
-    
+
     sendMessage($mainValues['saved_successfuly'],$removeKeyboard);
     setUser();
-    
+
     $keys = getServerConfigKeys($match[2]);
     sendMessage("مدیریت سرور $cname",$keys);
 }
 
 if (($achbotV8Result = require __DIR__ . '/src/Finance/Routes/DiscountAdministration.php') === null) return;
 if($data == "managePanel" and (($from_id == $admin || $userInfo['isAdmin'] == true))){
-    
+
     setUser();
     $msg = "
 👤 به بخش مدیریت خوش اومدی $first_name
@@ -2113,14 +1954,14 @@ if($data == 'reciveApplications') {
     $respd= $stmt->get_result();
     $stmt->close();
 
-    $keyboard = []; 
-    while($file =  $respd->fetch_assoc()){ 
+    $keyboard = [];
+    while($file =  $respd->fetch_assoc()){
         $link = $file['link'];
         $title = $file['title'];
         $keyboard[] = ['text' => "$title", 'url' => $link];
     }
 	$keyboard[] = ['text'=>$buttonValues['back_to_main'],'callback_data'=>"mainMenu"];
-    $keyboard = array_chunk($keyboard,1); 
+    $keyboard = array_chunk($keyboard,1);
     editText($message_id, "
 ⁉️  <b>نرم افزارها و آموزش های لازم جهت اتصال 🔌 به سرویس</b>
 

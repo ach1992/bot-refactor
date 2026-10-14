@@ -60,27 +60,8 @@ if ($orders && $orders->num_rows > 0) {
                 $enable = $info->status == "active";
             }
         } else {
-            $response = getJson($server_id);
-            if ($response->success) {
-                foreach ($response->obj as $row) {
-                    if ($row->id == $inbound_id || $inbound_id == 0) {
-                        $clients = json_decode($row->settings)->clients ?? [];
-                        foreach ($clients as $client) {
-                            if ($client->id == $uuid || $client->password == $uuid) {
-                                $found = true;
-                                $total = $row->total ?? ($client->totalGB * 1073741824);
-                                $up = $row->up ?? 0;
-                                $down = $row->down ?? 0;
-                                $totalLeft = $total - $up - $down;
-                                $expiryTime = substr($row->expiryTime ?? '', 0, -3);
-                                $enable = $row->enable ?? false;
-                                break 2;
-                            }
-                        }
-                    }
-                }
+                continue; // Retired panel; do not notify/delete a different account.
             }
-        }
 
         if (!$found) continue;
 
@@ -190,48 +171,7 @@ if ($orders) {
                     if ($info->detail == "User not found") $logedIn = true;
                 }
             } else {
-                $response = getJson($server_id);
-                if ($response->success) {
-                    $logedIn = true;
-                    $response = $response->obj;
-                    foreach ($response as $row) {
-                        if ($inbound_id == 0) {
-                            $clients = json_decode($row->settings)->clients;
-                            if ($clients[0]->id == $uuid || $clients[0]->password == $uuid) {
-                                $total = $row->total;
-                                $up = $row->up;
-                                $down = $row->down;
-                                $expiryTime = substr($row->expiryTime, 0, -3);
-                                $enable = $row->enable;
-                                $found = true;
-                                break;
-                            }
-                        } else {
-                            if ($row->id == $inbound_id) {
-                                $settings = json_decode($row->settings, true);
-                                $clients = $settings['clients'];
-
-                                $clientsStates = $row->clientStats;
-                                foreach ($clients as $key => $client) {
-                                    if ($client['id'] == $uuid || $client['password'] == $uuid) {
-                                        $email = $client['email'];
-                                        $emails = array_column($clientsStates, 'email');
-                                        $emailKey = array_search($email, $emails);
-
-                                        $total = $client['totalGB'];
-                                        $up = $clientsStates[$emailKey]->up;
-                                        $enable = $clientsStates[$emailKey]->enable;
-                                        $down = $clientsStates[$emailKey]->down;
-                                        $expiryTime = substr($clientsStates[$emailKey]->expiryTime, 0, -3);
-                                        $found = true;
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    $totalLeft = $total - $up - $down;
-                }
+                continue; // Retired panel; do not notify/delete a different account.
             }
 
             if (!$found && !$logedIn) continue;
@@ -241,11 +181,8 @@ if ($orders) {
             elseif ($leftgb <= 0) $send = true;
 
             if ($send) {
-                if ($serverType == "marzban") $res = deleteMarzban($server_id, $remark);
-                else {
-                    if ($inbound_id > 0) $res = deleteClient($server_id, $inbound_id, $uuid, 1);
-                    else $res = deleteInbound($server_id, $uuid, 1);
-                }
+                if (!achbotSupportsPanel($serverType)) continue;
+                $res = deleteMarzban($server_id, $remark);
 
                 if (!is_null($res)) {
                     $msg = "💡 کاربر گرامی، اشتراک  <code>$remark</code>  تمام شده بود و از لیست اشتراک ها حذف گردید. لطفا اشتراک جدید خریداری کنید.";

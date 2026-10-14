@@ -155,85 +155,19 @@ if (!function_exists('createServerAccount')) {
         $rahgozar,
         $limitip
     ) {
-        // حالت بدون inbound (کاربر مستقل)
-        if ((int)$inbound_id === 0) {
-            if ($serverType === "marzban") {
-                $response = addMarzbanUser($server_id, $remark, $volume, $days, $fid);
-
-                if (is_object($response) && !$response->success && isset($response->msg) && $response->msg == "User already exists") {
-                    $remark .= rand(1111, 99999);
-                    $response = addMarzbanUser($server_id, $remark, $volume, $days, $fid);
-                }
-            } else {
-                $response = addUser(
-                    $server_id,
-                    $uniqid,
-                    $protocol,
-                    $port,
-                    $expire_microdate,
-                    $remark,
-                    $volume,
-                    $netType,
-                    'none',
-                    $rahgozar,
-                    $fid
-                );
-
-                if (is_object($response) && !$response->success && isset($response->msg)) {
-
-                    if (strstr($response->msg, "Duplicate email")) {
-                        $remark .= RandomString();
-                    } elseif (strstr($response->msg, "Port already exists")) {
-                        $port = rand(1111, 65000);
-                    }
-
-                    $response = addUser(
-                        $server_id,
-                        $uniqid,
-                        $protocol,
-                        $port,
-                        $expire_microdate,
-                        $remark,
-                        $volume,
-                        $netType,
-                        'none',
-                        $rahgozar,
-                        $fid
-                    );
-                }
-            }
-        }
-        // حالت با inbound
-        else {
-            $response = addInboundAccount(
-                $server_id,
-                $uniqid,
-                $inbound_id,
-                $expire_microdate,
-                $remark,
-                $volume,
-                $limitip,
-                null,
-                $fid
-            );
-
-            if (is_object($response) && !$response->success && isset($response->msg) && strstr($response->msg, "Duplicate email")) {
-                $remark .= RandomString();
-                $response = addInboundAccount(
-                    $server_id,
-                    $uniqid,
-                    $inbound_id,
-                    $expire_microdate,
-                    $remark,
-                    $volume,
-                    $limitip,
-                    null,
-                    $fid
-                );
-            }
+        // This provider seam is explicit: do not reinterpret unknown/retired
+        // X-UI or inbound-based plan records as Marzban. Never send an API
+        // request to a legacy panel or create a phantom paid account.
+        if (!achbotSupportsPanel($serverType) || (int)$inbound_id !== 0) {
+            return [(object)['success' => false, 'msg' => 'unsupported_panel'], $remark, $port];
         }
 
+        $response = addMarzbanUser($server_id, $remark, $volume, $days, $fid);
+        if (is_object($response) && !$response->success
+            && isset($response->msg) && $response->msg === 'User already exists') {
+            $remark .= rand(1111, 99999);
+            $response = addMarzbanUser($server_id, $remark, $volume, $days, $fid);
+        }
         return [$response, $remark, $port];
     }
 }
-

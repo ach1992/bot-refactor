@@ -241,77 +241,10 @@ if(preg_match('/^changeCustomPath(\d+)/',$data,$match) && ($from_id == $admin ||
     
     editKeys(getPlanDetailsKeys($match[1]));
 }
+// Retired inbound/X-UI network-mode callbacks have no Marzban analogue.
 if(preg_match('/changeNetworkType(\d+)_(\d+)/', $data, $match)){
-    $fid = $match[1];
-    $oid = $match[2];
-    
-	$stmt = $connection->prepare("SELECT * FROM `server_plans` WHERE `id`=? AND `active`=1"); 
-    $stmt->bind_param("i", $fid);
-    $stmt->execute();
-    $respd = $stmt->get_result();
-    $stmt->close();
-
-
-	if($respd){
-		$respd = $respd->fetch_assoc(); 
-		$stmt = $connection->prepare("SELECT * FROM `server_categories` WHERE `id`=?");
-        $stmt->bind_param("i", $respd['catid']);
-        $stmt->execute();
-        $cadquery = $stmt->get_result();
-        $stmt->close();
-
-
-		if($cadquery) {
-			$catname = $cadquery->fetch_assoc()['title'];
-			$name = $catname." ".$respd['title'];
-		}else $name = "$oid";
-		
-	}else $name = "$oid";
-
-    $stmt = $connection->prepare("SELECT * FROM `orders_list` WHERE `id`=?");
-    $stmt->bind_param("i", $oid);
-    $stmt->execute();
-    $order = $stmt->get_result()->fetch_assoc();
-    $stmt->close();
-
-
-    $date = jdate("Y-m-d H:i",$order['date']);
-    $expire_date = jdate("Y-m-d H:i",$order['expire_date']);
-    $remark = $order['remark'];
-    $uuid = $order['uuid']??"0";
-    $acc_link = $order['link'];
-    $protocol = $order['protocol'];
-    $server_id = $order['server_id'];
-    $price = $order['amount'];
-    
-    $response = getJson($server_id)->obj;
-    foreach($response as $row){
-        $clients = json_decode($row->settings)->clients;
-        if($clients[0]->id == $uuid || $clients[0]->password == $uuid) {
-            $total = $row->total;
-            $up = $row->up;
-            $down = $row->down;
-            $port = $row->port;
-            $netType = json_decode($row->streamSettings)->network; 
-            $security = json_decode($row->streamSettings)->security;
-            $netType = ($netType == 'tcp') ? 'ws' : 'tcp';
-        break;
-        }
-    }
-
-    if($protocol == 'trojan') $netType = 'tcp';
-
-    $update_response = editInbound($server_id, $uuid, $uuid, $protocol, $netType);
-    $vraylink = getConnectionLink($server_id, $uuid, $protocol, $remark, $port, $netType);
-
-    $vray_link = json_encode($vraylink);
-    $stmt = $connection->prepare("UPDATE `orders_list` SET `protocol`=?,`link`=? WHERE `id`=?");
-    $stmt->bind_param("ssi", $protocol, $vray_link, $oid);
-    $stmt->execute();
-    $stmt->close();
-    
-    $keys = getOrderDetailKeys($from_id, $oid);
-    editText($message_id, $keys['msg'], $keys['keyboard'], "HTML");
+    alert("تغییر نوع شبکه در پنل قدیمی دیگر پشتیبانی نمی‌شود.", true);
+    return;
 }
 if($data=="changeProtocolIsDisable"){
     alert("تغییر پروتکل غیر فعال است.");
@@ -363,44 +296,8 @@ if(preg_match('/updateConfigConnectionLink(\d+)/', $data,$match)){
             $vraylink = "خطا در دریافت لینک";
         }
     } else {
-        $response = getJson($server_id)->obj;
-        if($inboundId == 0){
-            foreach($response as $row){
-                $clients = json_decode($row->settings)->clients;
-                if($clients[0]->id == $uuid || $clients[0]->password == $uuid) {
-                    $inboundRemark = $row->remark;
-                    $iId = $row->id;
-                    $port = $row->port;
-                    $protocol = $row->protocol;
-                    $netType = json_decode($row->streamSettings)->network;
-                    break;
-                }
-            }
-        } else {
-            foreach($response as $row){
-                if($row->id == $inboundId) {
-                    $iId = $row->id;
-                    $inboundRemark = $row->remark;
-                    $port = $row->port;
-                    $protocol = $row->protocol;
-                    $netType = json_decode($row->streamSettings)->network;
-                    break;
-                }
-            }
+            throw new \UnexpectedValueException('unsupported_panel');
         }
-    
-        if($botState['updateConnectionState'] == "robot"){
-            $updateResult = updateConfig($server_id, $iId, $protocol, $netType, $security, $rahgozar);
-            if($updateResult) {
-                $success = true;
-            }
-        }
-        
-        $vraylink = getConnectionLink($server_id, $uuid, $protocol, $remark, $port, $netType, $inboundId, $rahgozar, $customPath, $customPort, $customSni);
-        if(!empty($vraylink) && $vraylink != "خطا") {
-            $success = true;
-        }
-    }
     
     if($success) {
         // ذخیره لینک در دیتابیس
@@ -478,35 +375,9 @@ if(preg_match('/changAccountConnectionLink(\d+)/', $data,$match)){
         $res = renewMarzbanUUID($server_id, $remark); 
         $vraylink = $res->links; 
         $newUuid = $newToken = str_replace("/sub/", "", $res->subscription_url); 
-    }else{ 
-        $response = getJson($server_id)->obj; 
-        if($inboundId == 0){ 
-            foreach($response as $row){ 
-                $clients = json_decode($row->settings)->clients; 
-                if($clients[0]->id == $uuid || $clients[0]->password == $uuid) { 
-                    $port = $row->port; 
-                    $protocol = $row->protocol; 
-                    $netType = json_decode($row->streamSettings)->network; 
-                    break; 
-                } 
-            } 
-             
-            $update_response = renewInboundUuid($server_id, $uuid); 
-        }else{ 
-            foreach($response as $row){ 
-                if($row->id == $inboundId) { 
-                    $port = $row->port;  
-                    $protocol = $row->protocol; 
-                    $netType = json_decode($row->streamSettings)->network; 
-                    break; 
-                } 
-            } 
-            $update_response = renewClientUuid($server_id, $inboundId, $uuid); 
+    }else{
+            throw new \UnexpectedValueException('unsupported_panel');
         } 
-        $newUuid = $update_response->newUuid; 
-        $vraylink = getConnectionLink($server_id, $newUuid, $protocol, $remark, $port, $netType, $inboundId, $rahgozar, $customPath, $customPort, $customSni); 
-        $newToken = RandomString(30); 
-    } 
  
     $vray_link = json_encode($vraylink); 
     $stmt = $connection->prepare("UPDATE `orders_list` SET `link`=?, `uuid` = ?, `token` = ? WHERE `id`=?"); 
@@ -554,12 +425,11 @@ if(preg_match('/changeUserConfigState(\d+)/', $data,$match)){
     $serverType = $server_info['type'];
 
     
-    if($inboundId == 0){
-        if($serverType == "marzban") $update_response = changeMarzbanState($server_id, $remark);
-        else $update_response = changeInboundState($server_id, $uuid);
-    }else{
-        $update_response = changeClientState($server_id, $inboundId, $uuid);
+    if (!achbotSupportsPanel($serverType) || (int)$inboundId !== 0) {
+        alert("پنل این اشتراک دیگر پشتیبانی نمی‌شود.", true);
+        return;
     }
+    $update_response = changeMarzbanState($server_id, $remark);
     
     if($update_response->success){
         alert($mainValues['please_wait_message']);
@@ -605,16 +475,13 @@ if (preg_match('/agentChangeUserConfigState(\d+)/', $data, $match)) {
 
     $serverType = $server_info['type'];
 
-    // تغییر وضعیت کانفیگ
-    if ($inboundId == 0) {
-        if ($serverType == "marzban") {
-            $update_response = changeMarzbanState($server_id, $remark);
-        } else {
-            $update_response = changeInboundState($server_id, $uuid);
-        }
-    } else {
-        $update_response = changeClientState($server_id, $inboundId, $uuid);
+    // Marzban-only: refuse obsolete inbound metadata instead of altering a
+    // different panel/account by guesswork.
+    if (!achbotSupportsPanel($serverType) || (int)$inboundId !== 0) {
+        alert("پنل این اشتراک دیگر پشتیبانی نمی‌شود.", true);
+        return;
     }
+    $update_response = changeMarzbanState($server_id, $remark);
 
     // بروزرسانی موفق بود
     if ($update_response->success) {
@@ -629,84 +496,8 @@ if (preg_match('/agentChangeUserConfigState(\d+)/', $data, $match)) {
     }
 }
 
-if(preg_match('/changeAccProtocol(\d+)_(\d+)_(.*)/', $data,$match)){
-    $fid = $match[1];
-    $oid = $match[2];
-    $protocol = $match[3];
-
-	$stmt = $connection->prepare("SELECT * FROM `server_plans` WHERE `id`=? AND `active`=1"); 
-    $stmt->bind_param("i", $fid);
-    $stmt->execute();
-    $respd = $stmt->get_result();
-    $stmt->close();
-
-
-	if($respd){
-		$respd = $respd->fetch_assoc(); 
-		$stmt= $connection->prepare("SELECT * FROM `server_categories` WHERE `id`=?");
-        $stmt->bind_param("i", $respd['catid']);
-        $stmt->execute();
-        $cadquery = $stmt->get_result();
-        $stmt->close();
-
-
-		if($cadquery) {
-			$catname = $cadquery->fetch_assoc()['title'];
-			$name = $catname." ".$respd['title'];
-		}else $name = "$id";
-		
-	}else $name = "$id";
-
-    $stmt = $connection->prepare("SELECT * FROM `orders_list` WHERE `id`=?");
-    $stmt->bind_param("i", $oid);
-    $stmt->execute();
-    $order = $stmt->get_result()->fetch_assoc();
-    $stmt->close();
-
-
-    $date = jdate("Y-m-d H:i",$order['date']);
-    $expire_date = jdate("Y-m-d H:i",$order['expire_date']);
-    $remark = $order['remark'];
-    $uuid = $order['uuid']??"0";
-    $acc_link = $order['link'];
-    $server_id = $order['server_id'];
-    $price = $order['amount'];
-    $rahgozar = $order['rahgozar'];
-    $file_id = $order['fileid'];
-    
-    $stmt = $connection->prepare("SELECT * FROM `server_plans` WHERE `id`=?");
-    $stmt->bind_param("i", $file_id);
-    $stmt->execute();
-    $file_detail = $stmt->get_result()->fetch_assoc();
-    $customPath = $file_detail['custom_path'];
-    $customPort = $file_detail['custom_port'];
-    $customSni = $file_detail['custom_sni'];
-    
-    $response = getJson($server_id)->obj;
-    foreach($response as $row){
-        $clients = json_decode($row->settings)->clients;
-        if($clients[0]->id == $uuid || $clients[0]->password == $uuid) {
-            $total = $row->total;
-            $up = $row->up;
-            $down = $row->down;
-            $port = $row->port;
-            $netType = json_decode($row->streamSettings)->network;
-            $security = json_decode($row->streamSettings)->security;
-            break;
-        }
-    }
-    if($protocol == 'trojan') $netType = 'tcp';
-    $uniqid = generateRandomString(42,$protocol); 
-    $leftgb = round( ($total - $up - $down) / 1073741824, 2) . " GB"; 
-    $update_response = editInbound($server_id, $uniqid, $uuid, $protocol, $netType, $security, $rahgozar);
-    $vraylink = getConnectionLink($server_id, $uniqid, $protocol, $remark, $port, $netType, 0, $rahgozar, $customPath, $customPort, $customSni);
-    
-    $vray_link = json_encode($vraylink);
-    $stmt = $connection->prepare("UPDATE `orders_list` SET `protocol`=?,`link`=?, `uuid` = ? WHERE `id`=?");
-    $stmt->bind_param("sssi", $protocol, $vray_link, $uniqid, $oid);
-    $stmt->execute();
-    $stmt->close();
-    $keys = getOrderDetailKeys($from_id, $oid);
-    editText($message_id, $keys['msg'], $keys['keyboard'],"HTML");
+// Old X-UI protocol mutation must not alter a Marzban order or its payment.
+if(preg_match('/changeAccProtocol(\d+)_(\d+)_(.*)/', $data, $match)){
+    alert("تغییر پروتکل پنل قدیمی دیگر پشتیبانی نمی‌شود.", true);
+    return;
 }
-

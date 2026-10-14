@@ -194,11 +194,7 @@ function handleAutoRenewCallback($data) {
         if ($serverType == "marzban") {
             $response = editMarzbanConfig($server_id, ['remark' => $remark, 'days' => $days, 'volume' => $volume]);
         } else {
-            if ($inbound_id > 0) {
-                $response = editClientTraffic($server_id, $inbound_id, $order['uuid'], $volume, $days, "renew");
-            } else {
-                $response = editInboundTraffic($server_id, $order['uuid'], $volume, $days, "renew");
-            }
+            throw new \UnexpectedValueException('unsupported_panel');
         }
 
         if (is_null($response)) {

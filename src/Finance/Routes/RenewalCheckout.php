@@ -375,11 +375,8 @@ if(preg_match('/approveRenewAcc(.*)/',$data,$match) && ($from_id == $admin || $u
 
         if ($serverType == "marzban") { 
             $response = editMarzbanConfig($server_id, ['remark'=>$remark, 'days'=>$days, 'volume' => $volume]); 
-        } else { 
-            if ($inbound_id > 0) 
-                $response = editClientTraffic($server_id, $inbound_id, $uuid, $volume, $days, "renew"); 
-            else 
-                $response = editInboundTraffic($server_id, $uuid, $volume, $days, "renew"); 
+        } else {
+            throw new \UnexpectedValueException('unsupported_panel');
         } 
 
         if (is_null($response)) { 
@@ -550,10 +547,7 @@ if(preg_match('/payRenewWithWallet(.*)/', $data, $match)){
         if($serverType == "marzban"){
             $response = editMarzbanConfig($server_id, ['remark'=>$remark, 'days'=>$days, 'volume' => $volume]);
         } else {
-            if($inbound_id > 0)
-                $response = editClientTraffic($server_id, $inbound_id, $uuid, $volume, $days, "renew");
-            else
-                $response = editInboundTraffic($server_id, $uuid, $volume, $days, "renew");
+            throw new \UnexpectedValueException('unsupported_panel');
         }
 
         if (is_null($response)) {

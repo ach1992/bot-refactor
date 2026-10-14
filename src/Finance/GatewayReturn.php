@@ -293,10 +293,9 @@ function doAction($payRowId, $gateType) {
             $forcedRemark = (!empty($description)) ? $description : null;
             $remark = buildRemark($botState, $srv_remark, $description, $user_id, $forcedRemark);
 
+            // First-use expiry staging was exclusive to never-deployed
+            // Sanaei/Alireza inbound plans. Marzban keeps normal expiry.
             $expire_microdate_local = $expire_microdate;
-            if (($botState['firstUseState'] ?? '') == "on" && $inbound_id != 0 && ($serverType == "sanaei" || $serverType == "alireza")) {
-                $expire_microdate_local = $days * -86400000;
-            }
 
             [$response, $remark, $port] = createServerAccount(
                 $serverType,
@@ -596,10 +595,7 @@ function doAction($payRowId, $gateType) {
         if ($serverType == "marzban") {
             $response = editMarzbanConfig($server_id, ['remark' => $remark, 'plus_day' => $plusDays]);
         } else {
-            if ($inbound_id > 0)
-                $response = editClientTraffic($server_id, $inbound_id, $uuid, 0, $plusDays);
-            else
-                $response = editInboundTraffic($server_id, $uuid, 0, $plusDays);
+            throw new \UnexpectedValueException('unsupported_panel');
         }
 
         if (!empty($response->success)) {
@@ -688,10 +684,7 @@ function doAction($payRowId, $gateType) {
         if ($serverType == "marzban") {
             $response = editMarzbanConfig($server_id, ['remark' => $remark, 'plus_volume' => $plusVolume]);
         } else {
-            if ($inbound_id > 0)
-                $response = editClientTraffic($server_id, $inbound_id, $uuid, $plusVolume, 0);
-            else
-                $response = editInboundTraffic($server_id, $uuid, $plusVolume, 0);
+            throw new \UnexpectedValueException('unsupported_panel');
         }
 
         if (!empty($response->success)) {
