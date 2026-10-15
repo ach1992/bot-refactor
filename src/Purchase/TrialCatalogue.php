@@ -10,7 +10,7 @@ if($data=="getTestAccount"){
         alert("شما اکانت تست را قبلا استفاده کرده اید.");
         exit();
     }
-    $stmt = $connection->prepare("SELECT * FROM `server_plans` WHERE `price`=0");
+    $stmt = $connection->prepare("SELECT p.* FROM `server_plans` p INNER JOIN `server_config` sc ON sc.`id`=p.`server_id` AND sc.`type`='marzban' WHERE p.`price`=0 AND p.`active`=1 AND p.`inbound_id`=0");
     $stmt->execute();
     $respd = $stmt->get_result();
     $stmt->close();

@@ -27,8 +27,14 @@ if($giftList->num_rows>0){
     $stmt->bind_param('i', $server_id);
     $stmt->execute();
     $serverConfig = $stmt->get_result()->fetch_assoc();
-    $serverType = $serverConfig['type'];
+    $serverType = $serverConfig['type'] ?? null;
     $stmt->close();
+
+    // Never advance the gift cursor for a removed/unknown panel type.
+    if (!achbotSupportsPanel($serverType)) {
+        sendMessage("پنل انتخابی پشتیبانی نمی‌شود؛ عملیات هدیه متوقف شد.", null, null, $admin);
+        exit;
+    }
 
     if($offset == 0) sendMessage("عملیات هدیه حجم و زمان سرور $serverName شروع شد.",null,null,$admin);
     sendToAllAdmins('sendMessage', ['text' => "عملیات هدیه حجم و زمان سرور $serverName شروع شد.", 'reply_markup' => null, 'parse_mode' => null]);
@@ -83,119 +89,6 @@ if($giftList->num_rows>0){
             $stmt->bind_param("i", $rowId);
             $stmt->execute();
             $stmt->close();
-        }
-    }else{
-        $response = getJson($server_id)->obj; 
-        foreach($response as $row){
-            $total = $row->total;
-            $up = $row->up;
-            $down = $row->down;
-            $expiry_time = $row->expiryTime;
-            $remark = $row->remark;
-            $inbound_id = $row->id;
-            $inboundEnable = $row->enable;
-
-            $settings = json_decode($row->settings, true); 
-            $clients = $settings['clients'];
-            if(isset($row->clientStats)){
-                foreach($clients as $key => $client) {
-                    $rowCount++;
-                    if($rowCount < $offset) continue;
-                    $found = true;
-                    $clientRemark = $client['email'];
-                    $uuid = $client['id']??$client['password'];
-                    $clientTotal = $client['totalGB'];
-                    $clientUp = $client['up'];
-                    $clientDown = $client['down'];
-                    $clientExpiry = $client['expiryTime'];
-                    $clientEnable = $client['enable'];
-
-                    $responseEdit = null;
-                    if(count($clients) > 1 && $clientTotal > 0 && $clientExpiry > 0 && $clientEnable){
-                        $responseEdit = editClientTraffic($server_id, $inbound_id, $uuid, ($volume / 1024), $day);
-                        $orderExistStmt = $connection->prepare("SELECT * FROM `orders_list` WHERE `server_id` = ? AND `inbound_id` = ? AND `uuid` = ?");
-                        $orderExistStmt->bind_param("iis", $server_id, $inbound_id, $uuid);
-                    }
-                    elseif($total > 0 && $expiry_time > 0 && $inboundEnable){
-                        $responseEdit = editInboundTraffic($server_id, $uuid, ($volume/1024), $day);
-                        $orderExistStmt = $connection->prepare("SELECT * FROM `orders_list` WHERE `server_id` = ? AND `inbound_id` = 0 AND `uuid` = ?");
-                        $orderExistStmt->bind_param("is", $server_id, $uuid);
-                    }
-                    
-                    if(!is_null($responseEdit)){
-                        $orderExistStmt->execute();
-                        $orderExist = $orderExistStmt->get_result();
-                        $orderExistStmt->close();
-                        
-                        if($orderExist->num_rows > 0){
-                            $orderInfo = $orderExist->fetch_assoc();
-                            $orderId = $orderInfo['id'];
-                            $user_id = $orderInfo['userid'];
-                            $gift = "";
-                            if($volume != 0) $gift = "$volume مگابایت حجم ";
-                            if($day != 0){
-                                $expire_date = $day * 86400;
-                                $gift .= " و $day روز زمان";
-                                $stmt = $connection->prepare("UPDATE `orders_list` SET `expire_date` = `expire_date` + ? WHERE `id` = ?");
-                                $stmt->bind_param("ii", $expire_date, $orderId);
-                                $stmt->execute();
-                                $stmt->close();
-                            }
-                                
-                            
-                            sendMessage("به اشتراک $clientRemark شما $gift اضافه شد",null,null,$user_id);
-                        }
-                    }
-                    
-                    $stmt = $connection->prepare("UPDATE `gift_list` SET `offset` = `offset` + 1 WHERE `id` = ?");
-                    $stmt->bind_param("i", $rowId);
-                    $stmt->execute();
-                    $stmt->close();
-                }
-            }else{
-                $rowCount++;
-                if($rowCount < $offset) continue;
-                $found = true;
-                $uuid = $clients[0]['id']??$clients[0]['password'];
-                if($total > 0 && $expiry_time > 0 && $inboundEnable){
-                    $responseEdit = editInboundTraffic($server_id, $uuid, ($volume/1024), $day);
-                    if(!is_null($responseEdit)){
-                        $stmt = $connection->prepare("UPDATE `gift_list` SET `offset` = `offset` + 1 WHERE `id` = ?");
-                        $stmt->bind_param("i", $rowId);
-                        $stmt->execute();
-                        $stmt->close();
-                        
-                        $stmt = $connection->prepare("SELECT * FROM `orders_list` WHERE `server_id` = ? AND `inbound_id` = ? AND `uuid` = ?");
-                        $stmt->bind_param("iis", $server_id, $inbound_id, $uuid);
-                        $stmt->execute();
-                        $orderExist = $stmt->get_result();
-                        $stmt->close();
-                        
-                        if($orderExist->num_rows > 0){
-                            $orderInfo = $orderExist->fetch_assoc();
-                            $orderId = $orderInfo['id'];
-                            $user_id = $orderInfo['userid'];
-                            $gift = "";
-                            if($volume != 0) $gift = "$volume مگابایت حجم ";
-                            if($day != 0){
-                                $expire_date = $day * 86400;
-                                $gift .= " و $day روز زمان";
-                                $stmt = $connection->prepare("UPDATE `orders_list` SET `expire_date` = `expire_date` + ? WHERE `id` = ?");
-                                $stmt->bind_param("ii", $expire_date, $orderId);
-                                $stmt->execute();
-                                $stmt->close();
-                            }
-                            
-                            sendMessage("به اشتراک $remark شما $gift اضافه شد",null,null,$user_id);
-                        }
-                    }
-                }
-                $stmt = $connection->prepare("UPDATE `gift_list` SET `offset` = `offset` + 1 WHERE `id` = ?");
-                $stmt->bind_param("i", $rowId);
-                $stmt->execute();
-                $stmt->close();
-            }
-            
         }
     }
     

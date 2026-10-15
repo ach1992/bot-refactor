@@ -8,8 +8,34 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
 if (isset($_GET['nowpayment'])) {
 
     if (isset($_GET['NP_id'])) {
-        $hash_id = $_GET['NP_id'];
-        $base_url = 'https://api.nowpayments.io/v1/payment/' . $hash_id;
+        // Validate a local pending payment and its provider subject before
+        // contacting NowPayments. An arbitrary/retired callback must not
+        // cause even a payment-provider verification request.
+        $incomingPaymentId = (string) $_GET['NP_id'];
+        $callbackHash = (string) ($_GET['hash_id'] ?? '');
+        if ($incomingPaymentId === '') {
+            showForm("کد پرداخت نامعتبر است.", "خطا!");
+            return;
+        }
+        if ($callbackHash !== '') {
+            $stmt = $connection->prepare("SELECT * FROM `pays` WHERE `hash_id` = ? AND (`state` = 'pending' OR `state` = 'send') LIMIT 1");
+            $stmt->bind_param('s', $callbackHash);
+        } else {
+            // Legacy callbacks without a hash can only be admitted when
+            // their provider ID directly matches the stored invoice ID.
+            $stmt = $connection->prepare("SELECT * FROM `pays` WHERE `payid` = ? AND (`state` = 'pending' OR `state` = 'send') LIMIT 1");
+            $stmt->bind_param('s', $incomingPaymentId);
+        }
+        $stmt->execute();
+        $preflightPay = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        if (!$preflightPay || empty($preflightPay['payid']) ||
+            !achbotSupportsPaymentSubject($connection, $preflightPay)) {
+            showForm("تایید این پرداخت برای سرویس غیرقابل پشتیبانی متوقف شد؛ با پشتیبانی تماس بگیرید.", "خطا");
+            return;
+        }
+
+        $base_url = 'https://api.nowpayments.io/v1/payment/' . rawurlencode($incomingPaymentId);
 
         $ch = curl_init();
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
@@ -21,7 +47,11 @@ if (isset($_GET['nowpayment'])) {
         $res = json_decode(curl_exec($ch));
         curl_close($ch);
 
-        $hash_id = $res->invoice_id ?? null;
+        $hash_id = (string) ($res->invoice_id ?? '');
+        if ($hash_id === '' || $hash_id !== (string) $preflightPay['payid']) {
+            showForm("شناسه فاکتور پرداخت با سفارش مطابقت ندارد.", "خطا");
+            return;
+        }
 
         $stmt = $connection->prepare("SELECT * FROM `pays` WHERE `payid` = ? AND (`state` = 'pending' OR `state` = 'send')");
         $stmt->bind_param("s", $hash_id);
@@ -33,6 +63,11 @@ if (isset($_GET['nowpayment'])) {
             showForm("کد پرداخت یافت نشد.", "خطا!");
         } else {
             $payParam = $payInfo->fetch_assoc();
+        if (!achbotSupportsPaymentSubject($connection, $payParam)) {
+            showForm("تایید این پرداخت برای سرویس غیرقابل پشتیبانی متوقف شد؛ با پشتیبانی تماس بگیرید.", "خطا");
+            return;
+        }
+
             $rowId = (int)$payParam['id'];
             $payDescription = payTypeToDescription($payParam['type']);
 
@@ -76,6 +111,11 @@ if (isset($_GET['nowpayment'])) {
         showForm("کد پرداخت یافت نشد.", "خطا!");
     } else {
         $payParam = $payInfo->fetch_assoc();
+        if (!achbotSupportsPaymentSubject($connection, $payParam)) {
+            showForm("تایید این پرداخت برای سرویس غیرقابل پشتیبانی متوقف شد؛ با پشتیبانی تماس بگیرید.", "خطا");
+            return;
+        }
+
         $rowId = (int)$payParam['id'];
         $amount = (int)$payParam['price'];
 
@@ -116,6 +156,11 @@ if (isset($_GET['nowpayment'])) {
         showForm("کد پرداخت یافت نشد.", "خطا!");
     } else {
         $payParam = $payInfo->fetch_assoc();
+        if (!achbotSupportsPaymentSubject($connection, $payParam)) {
+            showForm("تایید این پرداخت برای سرویس غیرقابل پشتیبانی متوقف شد؛ با پشتیبانی تماس بگیرید.", "خطا");
+            return;
+        }
+
         $rowId  = (int)$payParam['id'];
         $amount = (int)$payParam['price'];
         $payid  = $payParam['payid'];
@@ -185,6 +230,11 @@ function doAction($payRowId, $gateType) {
     }
 
     $payParam = $payInfo->fetch_assoc();
+        if (!achbotSupportsPaymentSubject($connection, $payParam)) {
+            showForm("تایید این پرداخت برای سرویس غیرقابل پشتیبانی متوقف شد؛ با پشتیبانی تماس بگیرید.", "خطا");
+            return;
+        }
+
 
     $rowId      = (int)$payParam['id'];
     $amount     = (int)$payParam['price'];
@@ -293,10 +343,9 @@ function doAction($payRowId, $gateType) {
             $forcedRemark = (!empty($description)) ? $description : null;
             $remark = buildRemark($botState, $srv_remark, $description, $user_id, $forcedRemark);
 
+            // First-use expiry staging was exclusive to never-deployed
+            // Sanaei/Alireza inbound plans. Marzban keeps normal expiry.
             $expire_microdate_local = $expire_microdate;
-            if (($botState['firstUseState'] ?? '') == "on" && $inbound_id != 0 && ($serverType == "sanaei" || $serverType == "alireza")) {
-                $expire_microdate_local = $days * -86400000;
-            }
 
             [$response, $remark, $port] = createServerAccount(
                 $serverType,
@@ -596,10 +645,7 @@ function doAction($payRowId, $gateType) {
         if ($serverType == "marzban") {
             $response = editMarzbanConfig($server_id, ['remark' => $remark, 'plus_day' => $plusDays]);
         } else {
-            if ($inbound_id > 0)
-                $response = editClientTraffic($server_id, $inbound_id, $uuid, 0, $plusDays);
-            else
-                $response = editInboundTraffic($server_id, $uuid, 0, $plusDays);
+            throw new \UnexpectedValueException('unsupported_panel');
         }
 
         if (!empty($response->success)) {
@@ -688,10 +734,7 @@ function doAction($payRowId, $gateType) {
         if ($serverType == "marzban") {
             $response = editMarzbanConfig($server_id, ['remark' => $remark, 'plus_volume' => $plusVolume]);
         } else {
-            if ($inbound_id > 0)
-                $response = editClientTraffic($server_id, $inbound_id, $uuid, $plusVolume, 0);
-            else
-                $response = editInboundTraffic($server_id, $uuid, $plusVolume, 0);
+            throw new \UnexpectedValueException('unsupported_panel');
         }
 
         if (!empty($response->success)) {

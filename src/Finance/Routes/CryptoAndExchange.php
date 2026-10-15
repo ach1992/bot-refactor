@@ -19,6 +19,11 @@ if(preg_match('/payWithTronWallet(.*)/',$data,$match)) {
         return '__ACHBOT_V8_GOTO_START__';
     }
     $payInfo = $payInfo->fetch_assoc();
+    if (!achbotSupportsPaymentSubject($connection, $payInfo)) {
+        alert("⛔️ پرداخت برای این سرویس پشتیبانی نمی‌شود.", true);
+        return;
+    }
+
 
     $fid = $payInfo['plan_id'];
     $type = $payInfo['type'];
@@ -98,6 +103,16 @@ if(preg_match('/^payWithTronWallet(.*)/',$userInfo['step'], $match) && $text != 
         $stmt->close();
         
         if($checkExist->num_rows == 0){
+            $stmt = $connection->prepare("SELECT * FROM pays WHERE hash_id = ? LIMIT 1");
+            $stmt->bind_param("s", $match[1]);
+            $stmt->execute();
+            $currentPayment = $stmt->get_result()->fetch_assoc();
+            $stmt->close();
+            if (!achbotSupportsPaymentSubject($connection, $currentPayment)) {
+                alert("⛔️ ارسال تراکنش برای این سرویس پشتیبانی نمی‌شود.", true);
+                return;
+            }
+
             $stmt = $connection->prepare("UPDATE `pays` SET `payid` = ?, `state` = '0' WHERE `hash_id` = ?");
             $stmt->bind_param("ss", $text, $match[1]);
             $stmt->execute();
@@ -124,6 +139,11 @@ if(preg_match('/payWithWeSwap(.*)/',$data,$match)) {
         return '__ACHBOT_V8_GOTO_START__';
     }
     $payInfo = $payInfo->fetch_assoc();
+    if (!achbotSupportsPaymentSubject($connection, $payInfo)) {
+        alert("⛔️ پرداخت برای این سرویس پشتیبانی نمی‌شود.", true);
+        return;
+    }
+
 
     $fid = $payInfo['plan_id'];
     $type = $payInfo['type'];
@@ -239,6 +259,11 @@ if (preg_match('/havePaiedWeSwap(.*)/', $data, $match)) {
     }
 
     $payInfo = $payRes->fetch_assoc();
+    if (!achbotSupportsPaymentSubject($connection, $payInfo)) {
+        alert("⛔️ تأیید پرداخت این سرویس پشتیبانی نمی‌شود.", true);
+        return;
+    }
+
 
     if ($payInfo['state'] != "pending") {
         alert("این لینک پرداخت منقضی شده است.");
@@ -546,12 +571,8 @@ if (preg_match('/havePaiedWeSwap(.*)/', $data, $match)) {
                     'volume' => $volume
                 ]);
             } else {
-                if ($inbound_id > 0) {
-                    $response = editClientTraffic($server_id, $inbound_id, $uuid, $volume, $days, "renew");
-                } else {
-                    $response = editInboundTraffic($server_id, $uuid, $volume, $days, "renew");
-                }
-            }
+            throw new \UnexpectedValueException('unsupported_panel');
+        }
 
             if (is_null($response)) {
                 alert('⚠️ مشکل فنی در اتصال به سرور، لطفا به پشتیبانی اطلاع دهید.', true);
@@ -651,12 +672,8 @@ if (preg_match('/havePaiedWeSwap(.*)/', $data, $match)) {
             if ($serverType == "marzban") {
                 $response = editMarzbanConfig($server_id, ['remark' => $remark, 'plus_day' => $volume]);
             } else {
-                if ($inbound_id > 0) {
-                    $response = editClientTraffic($server_id, $inbound_id, $uuid, 0, $volume);
-                } else {
-                    $response = editInboundTraffic($server_id, $uuid, 0, $volume);
-                }
-            }
+            throw new \UnexpectedValueException('unsupported_panel');
+        }
 
             if (!is_null($response) && !empty($response->success)) {
 
@@ -758,12 +775,8 @@ if (preg_match('/havePaiedWeSwap(.*)/', $data, $match)) {
             if ($serverType == "marzban") {
                 $response = editMarzbanConfig($server_id, ['remark' => $remark, 'plus_volume' => $volume]);
             } else {
-                if ($inbound_id > 0) {
-                    $response = editClientTraffic($server_id, $inbound_id, $uuid, $volume, 0);
-                } else {
-                    $response = editInboundTraffic($server_id, $uuid, $volume, 0);
-                }
-            }
+            throw new \UnexpectedValueException('unsupported_panel');
+        }
 
             if (!is_null($response) && !empty($response->success)) {
 

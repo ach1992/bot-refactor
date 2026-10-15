@@ -11,19 +11,14 @@ if (!function_exists('renewConfigOnServer')) {
         list($serverInfo, $serverConfig) = getServerInfoAndConfig($connection, $server_id);
         $serverType = $serverConfig['type'] ?? '';
 
-        if ($isMarzban || $serverType === 'marzban') {
-            $response = editMarzbanConfig($server_id, [
-                'remark' => $remark,
-                'days'   => $days,
-                'volume' => $volume,
-            ]);
-        } else {
-            if ((int)$inbound_id > 0) {
-                $response = editClientTraffic($server_id, $inbound_id, $uuid, $volume, $days, "renew");
-            } else {
-                $response = editInboundTraffic($server_id, $uuid, $volume, $days, "renew");
-            }
+        if (!achbotSupportsPanel($serverType) || (int)$inbound_id !== 0) {
+            throw new \UnexpectedValueException('unsupported_panel');
         }
+        $response = editMarzbanConfig($server_id, [
+            'remark' => $remark,
+            'days' => $days,
+            'volume' => $volume,
+        ]);
 
         return $response;
     }

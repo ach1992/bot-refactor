@@ -13,6 +13,10 @@ if(empty($paymentKeys['tronwallet'])) exit();
 $wallet = $paymentKeys['tronwallet'];
 
 while($payParam = $paysList->fetch_assoc()){
+    if (!achbotSupportsPaymentSubject($connection, $payParam)) {
+        continue;
+    }
+
     $rowId = $payParam['id'];
     $amount = $payParam['price'];
     $user_id = $payParam['user_id'];
@@ -162,22 +166,11 @@ while($payParam = $paysList->fetch_assoc()){
                                     }
                                 }
                             }else{
-                                $response = addUser($server_id, $uniqid, $protocol, $port, $expire_microdate, $remark, $volume, $netType, 'none', $rahgozar, $fid); 
-                                if(! $response->success){
-                                    if(strstr($response->msg, "Duplicate email")) $remark .= RandomString();
-                                    elseif(strstr($response->msg, "Port already exists")) $port = rand(1111,65000);
-
-                                    $response = addUser($server_id, $uniqid, $protocol, $port, $expire_microdate, $remark, $volume, $netType, 'none', $rahgozar, $fid);
-                                }
-                            }
+            throw new \UnexpectedValueException('unsupported_panel');
+        }
                         }else {
-                            $response = addInboundAccount($server_id, $uniqid, $inbound_id, $expire_microdate, $remark, $volume, $limitip, null, $fid); 
-                            if(! $response->success){
-                                if(strstr($response->msg, "Duplicate email")) $remark .= RandomString();
-
-                                $response = addInboundAccount($server_id, $uniqid, $inbound_id, $expire_microdate, $remark, $volume, $limitip, null, $fid);
-                            } 
-                        }
+                    throw new \UnexpectedValueException('unsupported_panel');
+                }
                         
                         if(is_null($response)){
                             $stmt = $connection->prepare("UPDATE `users` SET `wallet` = `wallet` + ? WHERE `userid` = ?");
@@ -221,11 +214,8 @@ while($payParam = $paysList->fetch_assoc()){
                             $vray_link = json_encode($response->vray_links);
                         }
                         else{
-                            $vraylink = getConnectionLink($server_id, $uniqid, $protocol, $remark, $port, $netType, $inbound_id, $rahgozar, $customPath, $customPort, $customSni);
-                            $token = RandomString(30);
-                            $subLink = $botState['subLinkState']=="on"?$botUrl . "settings/subLink.php?token=" . $token:"";
-                            $vray_link = json_encode($vraylink);
-                        }
+            throw new \UnexpectedValueException('unsupported_panel');
+        }
 
                         foreach($vraylink as $link){
                             $acc_text = "
@@ -386,11 +376,8 @@ while($payParam = $paysList->fetch_assoc()){
                     if($serverType == "marzban"){
                         $response = editMarzbanConfig($server_id, ['remark'=>$remark, 'days'=>$days, 'volume' => $volume]);
                     }else{
-                        if($inbound_id > 0)
-                            $response = editClientTraffic($server_id, $inbound_id, $uuid, $volume, $days, "renew");
-                        else
-                            $response = editInboundTraffic($server_id, $uuid, $volume, $days, "renew");
-                    }
+            throw new \UnexpectedValueException('unsupported_panel');
+        }
                     
                 	if(is_null($response)){
                         $stmt = $connection->prepare("UPDATE `users` SET `wallet` = `wallet` + ? WHERE `userid` = ?");
@@ -473,11 +460,8 @@ while($payParam = $paysList->fetch_assoc()){
                     if($serverType == "marzban"){
                         $response = editMarzbanConfig($server_id, ['remark'=>$remark, 'plus_day'=>$volume]);
                     }else{
-                        if($inbound_id > 0)
-                            $response = editClientTraffic($server_id, $inbound_id, $uuid, 0, $volume);
-                        else
-                            $response = editInboundTraffic($server_id, $uuid, 0, $volume);
-                    }
+            throw new \UnexpectedValueException('unsupported_panel');
+        }
                         
                     if($response->success){
                         $stmt = $connection->prepare("UPDATE `orders_list` SET `expire_date` = `expire_date` + ?, `notif` = 0 WHERE `uuid` = ?");
@@ -562,11 +546,8 @@ while($payParam = $paysList->fetch_assoc()){
                     if($serverType == "marzban"){
                         $response = editMarzbanConfig($server_id, ['remark'=>$remark, 'plus_day'=>$volume]);
                     }else{
-                        if($inbound_id > 0)
-                            $response = editClientTraffic($server_id, $inbound_id, $uuid, $volume, 0);
-                        else
-                            $response = editInboundTraffic($server_id, $uuid, $volume, 0);
-                    }
+            throw new \UnexpectedValueException('unsupported_panel');
+        }
                     if($response->success){
                         $stmt = $connection->prepare("UPDATE `orders_list` SET `notif` = 0 WHERE `uuid` = ?");
                         $stmt->bind_param("s", $uuid);
@@ -641,11 +622,8 @@ while($payParam = $paysList->fetch_assoc()){
                     if($isMarzban){
                         $response = editMarzbanConfig($server_id, ['remark'=>$remark, 'days'=>$days, 'volume' => $volume]);
                     }else{
-                        if($inbound_id > 0)
-                            $response = editClientTraffic($server_id, $inbound_id, $uuid, $volume, $days, "renew");
-                        else
-                            $response = editInboundTraffic($server_id, $uuid, $volume, $days, "renew");
-                    }
+            throw new \UnexpectedValueException('unsupported_panel');
+        }
                     
                 	if(is_null($response)){
                 		sendMessage('🔻مشکل فنی در اتصال به سرور. لطفا به مدیریت اطلاع بدید',null,null,$user_id);

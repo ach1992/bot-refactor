@@ -14,6 +14,10 @@ if($botState['cartToCartAutoAcceptState']=="on"){
     $stmt->close();
 
     while($payInfo = $info->fetch_assoc()){
+        if (!achbotSupportsPaymentSubject($connection, $payInfo)) {
+            continue;
+        }
+
         $time = time();
         $rowId = $payInfo['id'];
         $price = $payInfo['price'];
@@ -175,21 +179,10 @@ if($botState['cartToCartAutoAcceptState']=="on"){
                             }
                         }
                     }else{
-                        $response = addUser($server_id, $uniqid, $protocol, $port, $expire_microdate, $remark, $volume, $netType, 'none', $rahgozar, $fid); 
-                        if(!$response->success){
-                            if(strstr($response->msg, "Duplicate email")) $remark .= RandomString();
-                            elseif(strstr($response->msg, "Port already exists")) $port = rand(1111,65000);
-                            
-                            $response = addUser($server_id, $uniqid, $protocol, $port, $expire_microdate, $remark, $volume, $netType, 'none', $rahgozar, $fid);
-                        } 
-                    }
+            throw new \UnexpectedValueException('unsupported_panel');
+        }
                 }else {
-                    $response = addInboundAccount($server_id, $uniqid, $inbound_id, $expire_microdate, $remark, $volume, $limitip, null, $fid); 
-                    if(!$response->success){
-                        if(strstr($response->msg, "Duplicate email")) $remark .= RandomString();
-        
-                        $response = addInboundAccount($server_id, $uniqid, $inbound_id, $expire_microdate, $remark, $volume, $limitip, null, $fid);
-                    } 
+                    throw new \UnexpectedValueException('unsupported_panel');
                 }
                 
                 if(is_null($response)){
@@ -235,12 +228,8 @@ if($botState['cartToCartAutoAcceptState']=="on"){
                     $vraylink = [$subLink];
                     $vray_link = json_encode($response->vray_links);
                 }else{
-                    $token = RandomString(30);
-                    $subLink = $botState['subLinkState']=="on"?$botUrl . "settings/subLink.php?token=" . $token:"";
-            
-                    $vraylink = getConnectionLink($server_id, $uniqid, $protocol, $remark, $port, $netType, $inbound_id, $rahgozar, $customPath, $customPort, $customSni);
-                    $vray_link = json_encode($vraylink);
-                }
+            throw new \UnexpectedValueException('unsupported_panel');
+        }
                 foreach($vraylink as $link){
                 $acc_text = "
                 
@@ -354,11 +343,8 @@ if($botState['cartToCartAutoAcceptState']=="on"){
             if($serverType == "marzban"){
                 $response = editMarzbanConfig($server_id, ['remark'=>$remark, 'days'=>$days, 'volume' => $volume]);
             }else{
-                if($inbound_id > 0)
-                    $response = editClientTraffic($server_id, $inbound_id, $uuid, $volume, $days, "renew");
-                else
-                    $response = editInboundTraffic($server_id, $uuid, $volume, $days, "renew");
-            }
+            throw new \UnexpectedValueException('unsupported_panel');
+        }
             
             if(is_null($response)){
         		sendMessage('پرداخت شما با موفقیت انجام شد ولی مشکل فنی در اتصال به سرور وجود داشت. لطفا به مدیریت اطلاع بدید، مبلغ ' . number_format($price) . "تومان به کیف پول شما اضافه شد.",null,null,$user_id);
@@ -420,11 +406,8 @@ if($botState['cartToCartAutoAcceptState']=="on"){
             if($serverType == "marzban"){
                 $response = editMarzbanConfig($server_id, ['remark'=>$remark, 'plus_day'=>$volume]);
             }else{
-                if($inbound_id > 0)
-                    $response = editClientTraffic($server_id, $inbound_id, $uuid, 0, $volume);
-                else
-                    $response = editInboundTraffic($server_id, $uuid, 0, $volume);
-            }
+            throw new \UnexpectedValueException('unsupported_panel');
+        }
             
             if($response->success){
                 $stmt = $connection->prepare("UPDATE `orders_list` SET `expire_date` = `expire_date` + ?, `notif` = 0 WHERE `uuid` = ?");
@@ -485,11 +468,8 @@ if($botState['cartToCartAutoAcceptState']=="on"){
                 if($serverType == "marzban"){
                     $response = editMarzbanConfig($server_id, ['remark'=>$remark, 'plus_volume'=>$volume]);
                 }else{
-                    if($inbound_id > 0)
-                        $response = editClientTraffic($server_id, $inbound_id, $uuid, $volume, 0);
-                    else
-                        $response = editInboundTraffic($server_id, $uuid, $volume, 0);
-                }
+            throw new \UnexpectedValueException('unsupported_panel');
+        }
                 
             if($response->success){
                 $stmt = $connection->prepare("UPDATE `orders_list` SET `notif` = 0 WHERE `uuid` = ?");
@@ -535,11 +515,8 @@ if($botState['cartToCartAutoAcceptState']=="on"){
             if($isMarzban){
                 $response = editMarzbanConfig($server_id, ['remark'=>$remark, 'days'=>$days, 'volume' => $volume]);
             }else{
-                if($inbound_id > 0)
-                    $response = editClientTraffic($server_id, $inbound_id, $uuid, $volume, $days, "renew");
-                else
-                    $response = editInboundTraffic($server_id, $uuid, $volume, $days, "renew");
-            }
+            throw new \UnexpectedValueException('unsupported_panel');
+        }
             
         	if(is_null($response)){
         		sendMessage('🔻مشکل فنی در اتصال به سرور، لطفا به مدیریت اطلاع دهید.',null,null,$user_Id);

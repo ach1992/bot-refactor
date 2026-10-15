@@ -15,37 +15,13 @@ if (preg_match('/sConfigUpdate(\d+)/', $data, $match)) {
     $uuid = $configInfo['uuid'];
     $remark = $configInfo['remark'];
 
-    if (isset($configInfo['marzban'])) {
-        $info = getMarzbanUserInfo($server_id, $remark);
-        $vraylink = $info->links;
-    } else {
-        $response = getJson($server_id)->obj;
-        if ($response == null) { delMessage(); exit(); }
-
-        if ($inboundId == 0) {
-            foreach ($response as $row) {
-                $clients = json_decode($row->settings)->clients;
-                if ($clients[0]->id == $uuid || $clients[0]->password == $uuid) {
-                    $port = $row->port;
-                    $protocol = $row->protocol;
-                    $netType = json_decode($row->streamSettings)->network;
-                    break;
-                }
-            }
-        } else {
-            foreach ($response as $row) {
-                if ($row->id == $inboundId) {
-                    $port = $row->port;
-                    $protocol = $row->protocol;
-                    $netType = json_decode($row->streamSettings)->network;
-                    break;
-                }
-            }
-        }
-
-        if ($uuid == null) { delMessage(); exit(); }
-        $vraylink = getConnectionLink($server_id, $uuid, $protocol, $remark, $port, $netType, $inboundId);
+    // All active subscriptions are Marzban; never parse obsolete X-UI links.
+    if (empty($configInfo['marzban'])) {
+        alert("این نوع پنل دیگر پشتیبانی نمی‌شود.", true);
+        return;
     }
+    $info = getMarzbanUserInfo($server_id, $remark);
+    $vraylink = $info->links ?? null;
 
     if ($vraylink == null) { delMessage(); exit(); }
 

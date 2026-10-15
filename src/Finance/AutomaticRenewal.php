@@ -38,6 +38,7 @@ if ($botState['renewAutoState'] == "on") {
             $remark = $order['remark'];
             $oid = $order['id'];
             $server_id = $order['server_id'];
+            if (!achbotSupportsMarzbanOrder($connection, (int)$order['id'])) continue;
             $notif = $order['notif'];
             $expiryTime = "";
             $found = false;
@@ -51,7 +52,7 @@ if ($botState['renewAutoState'] == "on") {
             $stmt->close();
             $serverType = $serverConfig['type'];
 
-            if ($serverType == "marzban") {
+            if (achbotSupportsMarzbanAccount($serverType, $order['inbound_id'])) {
                 $info = getMarzbanUser($server_id, $remark);
                 if (isset($info->username)) {
                     $found = true;
@@ -110,7 +111,7 @@ function handleAutoRenewCallback($data) {
         $stmt->execute();
         $order = $stmt->get_result()->fetch_assoc();
         $stmt->close();
-        if (!$order) return;
+        if (!$order || !achbotSupportsMarzbanOrder($connection, $oid)) return;
 
         $remark = $order['remark'];
         $server_id = $order['server_id'];
@@ -191,14 +192,10 @@ function handleAutoRenewCallback($data) {
         $serverType = $server_info['type'] ?? '';
 
         // تمدید روی سرور
-        if ($serverType == "marzban") {
+        if (achbotSupportsMarzbanAccount($serverType, $inbound_id)) {
             $response = editMarzbanConfig($server_id, ['remark' => $remark, 'days' => $days, 'volume' => $volume]);
         } else {
-            if ($inbound_id > 0) {
-                $response = editClientTraffic($server_id, $inbound_id, $order['uuid'], $volume, $days, "renew");
-            } else {
-                $response = editInboundTraffic($server_id, $order['uuid'], $volume, $days, "renew");
-            }
+            throw new \UnexpectedValueException('unsupported_panel');
         }
 
         if (is_null($response)) {

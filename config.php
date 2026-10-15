@@ -11,6 +11,7 @@ if($connection->connect_error){
     exit("error " . $connection->connect_error);  
 }
 $connection->set_charset("utf8mb4");
+require_once __DIR__ . '/src/Purchase/Core.php';
 
 function tgRetryAfter($res){
     require_once __DIR__ . '/src/Telegram/Response.php';
@@ -695,121 +696,76 @@ function getAgentsList($offset = 0){
 }
 require_once __DIR__ . '/src/Finance/AgentDiscounts.php';
 require_once __DIR__ . '/src/Finance/GatewayClient.php';
+function getMarzbanPanelGroupKeys($mode, $serverId = 0) {
+    global $connection, $buttonValues;
+    $keys = [];
+    foreach (achbotMarzbanPanelGroups($connection) as $group) {
+        $id = (int)$group['id'];
+        $cb = $mode === 'add'
+            ? "selectNewPanelGroup_$id"
+            : "setServerPanelGroup_{$serverId}_{$id}";
+        $keys[] = [['text'=>'🏷 ' . $group['name'], 'callback_data'=>$cb]];
+    }
+    $none = $mode === 'add'
+        ? 'selectNewPanelGroup_0'
+        : "setServerPanelGroup_{$serverId}_0";
+    $keys[] = [['text'=>'⭕ بدون گروه (انتقال غیرفعال)', 'callback_data'=>$none]];
+    $keys[] = [['text'=>$buttonValues['back_button'] ?? '🔙 بازگشت',
+                'callback_data'=>$mode === 'add' ? 'serversSetting' : "showServerSettings{$serverId}_0"]];
+    return json_encode(['inline_keyboard'=>$keys], JSON_UNESCAPED_UNICODE);
+}
+function getMarzbanPanelGroupsManagementKeys() {
+    global $connection, $buttonValues;
+    $keys = [];
+    foreach (achbotMarzbanPanelGroups($connection) as $group) {
+        $id = (int)$group['id'];
+        $keys[] = [
+            ['text'=>'🏷 ' . $group['name'], 'callback_data'=>'wizwizch'],
+            ['text'=>'🗑 حذف گروه بدون سرور', 'callback_data'=>"deleteMarzbanPanelGroup_$id"],
+        ];
+    }
+    if (!$keys) $keys[] = [['text'=>'هنوز گروهی تعریف نشده', 'callback_data'=>'wizwizch']];
+    $keys[] = [['text'=>'➕ تعریف گروه پنل جدید', 'callback_data'=>'addMarzbanPanelGroup']];
+    $keys[] = [['text'=>$buttonValues['back_button'] ?? '🔙 بازگشت', 'callback_data'=>'serversSetting']];
+    return json_encode(['inline_keyboard'=>$keys], JSON_UNESCAPED_UNICODE);
+}
 function getServerConfigKeys($serverId,$offset = 0){
-    global $connection, $mainValues, $buttonValues;
+    global $connection, $buttonValues;
     $stmt = $connection->prepare("SELECT * FROM `server_info` WHERE `id`=?");
     $stmt->bind_param("i", $serverId);
     $stmt->execute();
-    $cats= $stmt->get_result();
+    $info = $stmt->get_result()->fetch_assoc();
     $stmt->close();
-    
-    $cty = $cats->fetch_assoc();
-    $id = $cty['id'];
-    $cname = $cty['title'];
-    $flagwizwiz = $cty['flag'];
-    $remarkwizwiz = $cty['remark'];
-    $ucount = $cty['ucount'];
     $stmt = $connection->prepare("SELECT * FROM `server_config` WHERE `id`=?");
-    $stmt->bind_param("i", $id);
+    $stmt->bind_param("i", $serverId);
     $stmt->execute();
-    $serverConfig= $stmt->get_result()->fetch_assoc();
+    $config = $stmt->get_result()->fetch_assoc();
     $stmt->close();
-    $reality = $serverConfig['reality']=="true"?$buttonValues['active']:$buttonValues['deactive'];
-    $panelUrl = $serverConfig['panel_url'];
-    $sni = !empty($serverConfig['sni'])?$serverConfig['sni']:" ";
-    $headerType = !empty($serverConfig['header_type'])?$serverConfig['header_type']:" ";
-    $requestHeader = !empty($serverConfig['request_header'])?$serverConfig['request_header']:" ";
-    $responseHeader = !empty($serverConfig['response_header'])?$serverConfig['response_header']:" ";
-    $security = !empty($serverConfig['security'])?$serverConfig['security']:" ";
-    $portType = $serverConfig['port_type']=="auto"?"خودکار":"تصادفی";
-    $serverType = " ";
-    switch ($serverConfig['type']){
-        case "sanaei":
-            $serverType = "سنایی";
-            break;
-        case "alireza":
-            $serverType = "علیرضا";
-            break;
-        case "normal":
-            $serverType = "ساده";
-            break;
-        case "marzban":
-            $serverType = "مرزبان";
-            break;
+
+    $back = [['text' => $buttonValues['back_button'], 'callback_data' => "nextServerPage" . $offset]];
+    if (!$info || !achbotSupportsPanel($config['type'] ?? null)) {
+        return json_encode(['inline_keyboard' => [
+            [['text'=>'پنل پشتیبانی نمی‌شود', 'callback_data'=>'wizwizch']],
+            $back,
+        ]]);
     }
-    return json_encode(['inline_keyboard'=>array_merge([
-        [
-            ['text'=>$panelUrl,'callback_data'=>"wizwizch"],
-            ],
-        [
-            ['text'=>$cname,'callback_data'=>"editServerName$id"],
-            ['text'=>"❕نام سرور",'callback_data'=>"wizwizch"]
-            ],
-        [
-            ['text'=>$flagwizwiz,'callback_data'=>"editServerFlag$id"],
-            ['text'=>"🚩 پرچم سرور",'callback_data'=>"wizwizch"]
-            ],
-        [
-            ['text'=>$remarkwizwiz,'callback_data'=>"editServerRemark$id"],
-            ['text'=>"📣 ریمارک سرور",'callback_data'=>"wizwizch"]
-            ],
-        [
-            ['text'=>$serverType??" ",'callback_data'=>"changeServerType$id"],
-            ['text'=>"نوع سرور",'callback_data'=>"wizwizch"]
-            ],
-        [
-            ['text'=>$ucount,'callback_data'=>"editServerMax$id"],
-            ['text'=>"ظرفیت سرور",'callback_data'=>"wizwizch"]
-            ]
-            ],
-            ($serverConfig['type'] != "marzban"?[
-        [
-            ['text'=>$portType,'callback_data'=>"changePortType$id"],
-            ['text'=>"نوع پورت",'callback_data'=>"wizwizch"]
-            ],
-        [
-            ['text'=>$sni,'callback_data'=>"editsServersni$id"],
-            ['text'=>"sni",'callback_data'=>"wizwizch"],
-            ],
-        [
-            ['text'=>$headerType,'callback_data'=>"editsServerheader_type$id"],
-            ['text'=>"header type",'callback_data'=>"wizwizch"],
-            ],
-        [
-            ['text'=>$requestHeader,'callback_data'=>"editsServerrequest_header$id"],
-            ['text'=>"request header",'callback_data'=>"wizwizch"],
-            ],
-        [
-            ['text'=>$responseHeader,'callback_data'=>"editsServerresponse_header$id"],
-            ['text'=>"response header",'callback_data'=>"wizwizch"],
-            ],
-        [
-            ['text'=>$security,'callback_data'=>"editsServersecurity$id"],
-            ['text'=>"security",'callback_data'=>"wizwizch"],
-            ],
-        (($serverConfig['type'] == "sanaei" || $serverConfig['type'] == "alireza")?
-        [
-            ['text'=>$reality,'callback_data'=>"changeRealityState$id"],
-            ['text'=>"reality",'callback_data'=>"wizwizch"],
-            ]:[]),
-        [
-            ['text'=>"♻️ تغییر آیپی های سرور",'callback_data'=>"changesServerIp$id"],
-            ],
-        [
-            ['text'=>"♻️ تغییر security setting",'callback_data'=>"editsServertlsSettings$id"],
-            ]
-            ]:[]),[
-        [
-			['text'=>"🔅 تغییر اطلاعات ورود",'callback_data'=>"changesServerLoginInfo$id"],
-		],
-		[
-			['text'=>"🔗 لینک اشتراک کمکی",'callback_data'=>"editSubLinks$id"],
-		],
-		[
-			['text'=>"✂️ حذف سرور",'callback_data'=>"wizwizdeleteserver$id"],
-		],
-        [['text' => $buttonValues['back_button'], 'callback_data' => "nextServerPage" . $offset]]
-        ])]);
+    $id = $info['id'];
+    $panelGroup = achbotMarzbanGroup($connection, $id);
+    $groupLabel = $panelGroup === null ? 'بدون گروه' : $panelGroup['name'];
+    $keys = [
+        [['text'=>$config['panel_url'], 'callback_data'=>'wizwizch']],
+        [['text'=>$info['title'], 'callback_data'=>"editServerName$id"], ['text'=>'❕نام سرور', 'callback_data'=>'wizwizch']],
+        [['text'=>$info['flag'], 'callback_data'=>"editServerFlag$id"], ['text'=>'🚩 پرچم سرور', 'callback_data'=>'wizwizch']],
+        [['text'=>$groupLabel, 'callback_data'=>"editMarzbanGroup$id"], ['text'=>'🏷 گروه پنل مشترک', 'callback_data'=>'wizwizch']],
+        [['text'=>$info['remark'], 'callback_data'=>"editServerRemark$id"], ['text'=>'📣 ریمارک سرور', 'callback_data'=>'wizwizch']],
+        [['text'=>'مرزبان', 'callback_data'=>'wizwizch'], ['text'=>'نوع سرور', 'callback_data'=>'wizwizch']],
+        [['text'=>$info['ucount'], 'callback_data'=>"editServerMax$id"], ['text'=>'ظرفیت سرور', 'callback_data'=>'wizwizch']],
+        [['text'=>'🔅 تغییر اطلاعات ورود', 'callback_data'=>"changesServerLoginInfo$id"]],
+        [['text'=>'🔗 لینک اشتراک کمکی', 'callback_data'=>"editSubLinks$id"]],
+        [['text'=>'✂️ حذف سرور', 'callback_data'=>"wizwizdeleteserver$id"]],
+        $back,
+    ];
+    return json_encode(['inline_keyboard'=>$keys]);
 }
 function getServerListKeys($offset = 0){
     global $connection, $mainValues, $buttonValues;
@@ -840,22 +796,8 @@ function getServerListKeys($offset = 0){
             $stmt->execute();
             $serverTypeInfo= $stmt->get_result()->fetch_assoc();
             $stmt->close(); 
-            $portType = $serverTypeInfo['port_type']=="auto"?"خودکار":"تصادفی";
-            $serverType = " ";
-            switch ($serverTypeInfo['type']){
-                case "sanaei":
-                    $serverType = "سنایی";
-                    break;
-                case "alireza":
-                    $serverType = "علیرضا";
-                    break;
-                case "normal":
-                    $serverType = "ساده";
-                    break;
-                case "marzban":
-                    $serverType = "مرزبان";
-                    break;
-            }
+            $serverType = achbotSupportsPanel($serverTypeInfo['type'] ?? null)
+                ? 'مرزبان' : 'پشتیبانی نمی‌شود';
             $keys[] = [['text'=>$state,'callback_data'=>'toggleServerState' . $id . "_" . $offset],['text'=>"⚙️",'callback_data'=>"showServerSettings" . $id . "_" . $offset],['text'=>$serverType??" ",'callback_data'=>"wizwizch"],['text'=>$cname,'callback_data'=>"wizwizch"]];
         } 
     }
@@ -872,9 +814,9 @@ function getServerListKeys($offset = 0){
         $keys[] = [['text'=>" «« صفحه قبلی ««",'callback_data'=>"nextServerPage" . ($offset - $limit)]];
     }
     $keys[] = [
-        ['text'=>'➕ ثبت سرور xui','callback_data'=>"addNewServer"],
         ['text'=>"➕ ثبت سرور مرزبان",'callback_data'=>"addNewMarzbanPanel"]
         ];
+    $keys[] = [['text'=>'🏷 مدیریت گروه‌های پنل مرزبان', 'callback_data'=>'manageMarzbanPanelGroups']];
     $keys[] = [['text' => $buttonValues['back_button'], 'callback_data' => "managePanel"]];
     return json_encode(['inline_keyboard'=>$keys]);
 }
@@ -2799,74 +2741,12 @@ function sumerize2($amount){
     require_once __DIR__ . '/src/Subscription/Presentation.php';
     return \AchBot\Subscription\Presentation\trafficInGigabytes($amount);
 }
-function deleteClient($server_id, $inbound_id, $uuid, $delete = 0) {
-    require_once __DIR__ . '/src/Panel/Accounts.php';
-    return \AchBot\Panel\Accounts\deleteClient($server_id, $inbound_id, $uuid, $delete);
+// Post-V9: legacy X-UI/Sanaei/Alireza facades have been removed.
+// Marzban remains the sole supported panel for this candidate.
+function achbotSupportsPanel($type) {
+    return $type === 'marzban';
 }
-function editInboundRemark($server_id, $uuid, $newRemark) {
-    require_once __DIR__ . '/src/Panel/Accounts.php';
-    return \AchBot\Panel\Accounts\editInboundRemark($server_id, $uuid, $newRemark);
-}
-function editInboundTraffic($server_id, $uuid, $volume, $days, $editType = null) {
-    require_once __DIR__ . '/src/Panel/Accounts.php';
-    return \AchBot\Panel\Accounts\editInboundTraffic($server_id, $uuid, $volume, $days, $editType);
-}
-function changeInboundState($server_id, $uuid) {
-    require_once __DIR__ . '/src/Panel/Accounts.php';
-    return \AchBot\Panel\Accounts\changeInboundState($server_id, $uuid);
-}
-function renewInboundUuid($server_id, $uuid) {
-    require_once __DIR__ . '/src/Panel/Accounts.php';
-    return \AchBot\Panel\Accounts\renewInboundUuid($server_id, $uuid);
-}
-function changeClientState($server_id, $inbound_id, $uuid) {
-    require_once __DIR__ . '/src/Panel/Accounts.php';
-    return \AchBot\Panel\Accounts\changeClientState($server_id, $inbound_id, $uuid);
-}
-function renewClientUuid($server_id, $inbound_id, $uuid) {
-    require_once __DIR__ . '/src/Panel/Accounts.php';
-    return \AchBot\Panel\Accounts\renewClientUuid($server_id, $inbound_id, $uuid);
-}
-function editClientRemark($server_id, $inbound_id, $uuid, $newRemark) {
-    require_once __DIR__ . '/src/Panel/Accounts.php';
-    return \AchBot\Panel\Accounts\editClientRemark($server_id, $inbound_id, $uuid, $newRemark);
-}
-function editClientTraffic($server_id, $inbound_id, $uuid, $volume, $days, $editType = null) {
-    require_once __DIR__ . '/src/Panel/Accounts.php';
-    return \AchBot\Panel\Accounts\editClientTraffic($server_id, $inbound_id, $uuid, $volume, $days, $editType);
-}
-function deleteInbound($server_id, $uuid, $delete = 0) {
-    require_once __DIR__ . '/src/Panel/Accounts.php';
-    return \AchBot\Panel\Accounts\deleteInbound($server_id, $uuid, $delete);
-}
-function resetIpLog($server_id, $remark) {
-    require_once __DIR__ . '/src/Panel/Accounts.php';
-    return \AchBot\Panel\Accounts\resetIpLog($server_id, $remark);
-}
-function resetClientTraffic($server_id, $remark, $inboundId = null) {
-    require_once __DIR__ . '/src/Panel/Accounts.php';
-    return \AchBot\Panel\Accounts\resetClientTraffic($server_id, $remark, $inboundId);
-}
-function addInboundAccount($server_id, $client_id, $inbound_id, $expiryTime, $remark, $volume, $limitip = 1, $newarr = '', $planId = null) {
-    require_once __DIR__ . '/src/Panel/Accounts.php';
-    return \AchBot\Panel\Accounts\addInboundAccount($server_id, $client_id, $inbound_id, $expiryTime, $remark, $volume, $limitip, $newarr, $planId);
-}
-function getNewHeaders($netType, $request_header, $response_header, $type) {
-    require_once __DIR__ . '/src/Panel/Accounts.php';
-    return \AchBot\Panel\Accounts\getNewHeaders($netType, $request_header, $response_header, $type);
-}
-function getConnectionLink($server_id, $uniqid, $protocol, $remark, $port, $netType, $inbound_id = 0, $rahgozar = false, $customPath = false, $customPort = 0, $customSni = null) {
-    require_once __DIR__ . '/src/Panel/Accounts.php';
-    return \AchBot\Panel\Accounts\getConnectionLink($server_id, $uniqid, $protocol, $remark, $port, $netType, $inbound_id, $rahgozar, $customPath, $customPort, $customSni);
-}
-function updateConfig($server_id, $inboundId, $protocol, $netType = 'tcp', $security = 'none', $rahgozar = false) {
-    require_once __DIR__ . '/src/Panel/Accounts.php';
-    return \AchBot\Panel\Accounts\updateConfig($server_id, $inboundId, $protocol, $netType, $security, $rahgozar);
-}
-function editInbound($server_id, $uniqid, $uuid, $protocol, $netType = 'tcp', $security = 'none', $rahgozar = false) {
-    require_once __DIR__ . '/src/Panel/Accounts.php';
-    return \AchBot\Panel\Accounts\editInbound($server_id, $uniqid, $uuid, $protocol, $netType, $security, $rahgozar);
-}
+
 function getMarzbanToken($server_id) {
     require_once __DIR__ . '/src/Panel/Accounts.php';
     return \AchBot\Panel\Accounts\getMarzbanToken($server_id);
@@ -2910,18 +2790,6 @@ function deleteMarzban($server_id,$remark) {
 function changeMarzbanState($server_id,$remark) {
     require_once __DIR__ . '/src/Panel/Accounts.php';
     return \AchBot\Panel\Accounts\changeMarzbanState($server_id, $remark);
-}
-function getJson($server_id) {
-    require_once __DIR__ . '/src/Panel/Accounts.php';
-    return \AchBot\Panel\Accounts\getJson($server_id);
-}
-function getNewCert($server_id) {
-    require_once __DIR__ . '/src/Panel/Accounts.php';
-    return \AchBot\Panel\Accounts\getNewCert($server_id);
-}
-function addUser($server_id, $client_id, $protocol, $port, $expiryTime, $remark, $volume, $netType, $security = 'none', $rahgozar = false, $planId = null) {
-    require_once __DIR__ . '/src/Panel/Accounts.php';
-    return \AchBot\Panel\Accounts\addUser($server_id, $client_id, $protocol, $port, $expiryTime, $remark, $volume, $netType, $security, $rahgozar, $planId);
 }
 // Added by ACh
 

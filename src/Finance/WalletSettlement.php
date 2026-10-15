@@ -72,6 +72,24 @@ if (!function_exists('processWalletPayment')) {
 				];
 			}
 
+            // Reject retired or unknown panel plans before marking a pending
+            // wallet payment processing or debiting the customer. The outbound
+            // provider call is not the first acceptable guard: by then wallet
+            // mutations may already have occurred within this transaction.
+            // Uses the original schema; no migrations or new payment policy.
+            if (!achbotSupportsPaymentSubject($connection, $payInfo)) {
+                $connection->rollback();
+                alert("⛔️ پنل این اشتراک دیگر پشتیبانی نمی‌شود؛ هیچ مبلغی از کیف پول کسر نشد.", true);
+                return [
+                    'status' => 'unsupported_panel',
+                    'payInfo' => $payInfo,
+                    'userRow' => null,
+                    'userReferrer' => null,
+                    'uid' => null,
+                    'price' => null,
+                ];
+            }
+
             $uid   = (int)($payInfo['user_id'] ?: $from_id);
             $price = (int)$payInfo['price'];
 

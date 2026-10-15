@@ -366,65 +366,125 @@ if (preg_match('/^awaitingUUID_(\\d+)/', $userInfo['step'], $match) && $text != 
     setUser();
 }
 
-if (preg_match('/^changeServerId_(\\d+)/', $data, $match)) {
-    $id = intval($match[1]);
-    $stmt = $connection->query("SELECT * FROM server_info");
-    $keyboard = [];
-    while ($row = $stmt->fetch_assoc()) {
-        $keyboard[] = [["text" => $row['title'], "callback_data" => "selectServerId_{$id}_{$row['id']}"]];
+// An admin may change the logical service label only within one verified
+// Marzban panel. Cached callbacks are revalidated against current SQL state.
+if (preg_match('/^changeServerId_(\d+)$/D', (string)($data ?? ''), $match)) {
+    if (!($from_id == $admin || ($userInfo['isAdmin'] ?? false))) {
+        alert("⛔️ دسترسی لازم وجود ندارد.", true);
+        return;
     }
-    $keyboard[] = [["text" => "🔙 بازگشت", "callback_data" => "returnToPanel_$id"]];
-    sendMessage("🌐 لطفا سرور جدید را انتخاب کنید:", json_encode(['inline_keyboard' => $keyboard]));
+    $id = (int)$match[1];
+    $stmt = $connection->prepare(
+        "SELECT `server_id` FROM `orders_list` WHERE `id` = ? AND `status` = 1"
+    );
+    $stmt->bind_param('i', $id);
+    $stmt->execute();
+    $order = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+    if (!$order || !achbotSupportsMarzbanOrder($connection, $id)) {
+        alert("⛔️ سفارش مرزبان معتبر نیست.", true);
+        return;
+    }
+    $targets = achbotMarzbanRelocationTargets($connection, (int)$order['server_id']);
+    if (!$targets) {
+        alert("هیچ سرور دیگری با همان پنل مرزبان وجود ندارد.", true);
+        return;
+    }
+    $keyboard = [];
+    foreach ($targets as $server) {
+        $keyboard[] = [['text'=>$server['title'],
+            'callback_data'=>'selectServerId_' . $id . '_' . (int)$server['id']]];
+    }
+    $keyboard[] = [['text'=>'🔙 بازگشت', 'callback_data'=>'returnToPanel_' . $id]];
+    sendMessage("🌐 سرور منطقی مقصد را انتخاب کنید. حساب در خود مرزبان تغییر نمی‌کند.",
+        json_encode(['inline_keyboard'=>$keyboard], JSON_UNESCAPED_UNICODE));
+    return;
 }
 
-if (preg_match('/^selectServerId_(\\d+)_(\\d+)/', $data, $match)) {
-    $id = intval($match[1]);
-    $newServerId = intval($match[2]);
-    $stmt = $connection->prepare("UPDATE `orders_list` SET `server_id` = ? WHERE `id` = ?");
-    $stmt->bind_param("ii", $newServerId, $id);
-    $stmt->execute();
-    $stmt->close();
-    sendMessage("✅ مقدار Server ID با موفقیت تغییر یافت.");
+if (preg_match('/^selectServerId_(\d+)_(\d+)$/D', (string)($data ?? ''), $match)) {
+    if (!($from_id == $admin || ($userInfo['isAdmin'] ?? false))) {
+        alert("⛔️ دسترسی لازم وجود ندارد.", true);
+        return;
+    }
+    $id = (int)$match[1];
+    $targetId = (int)$match[2];
+    $result = achbotReassignMarzbanLogicalServer($connection, $id, $targetId, $from_id, true);
+    if (!$result) {
+        alert("⛔️ سرور مقصد باید با سرور فعلی به یک پنل مرزبان تعلق داشته باشد.", true);
+        return;
+    }
+    sendMessage("✅ فقط Server ID منطقی سفارش تغییر کرد؛ حساب مرزبان و پلن محفوظ هستند.");
     $stmt = $connection->prepare("SELECT * FROM `orders_list` WHERE `id` = ?");
-    $stmt->bind_param("i", $id);
+    $stmt->bind_param('i', $id);
     $stmt->execute();
-    $result = $stmt->get_result();
+    $order = $stmt->get_result()->fetch_assoc();
     $stmt->close();
-    $order = $result->fetch_assoc();
     showOrderManagementPanel($order, $message_id);
     setUser();
+    return;
 }
 
-if (preg_match('/^changeFileId_(\\d+)_(\\d+)/', $data, $match)) {
-    $id = intval($match[1]);
-    $serverId = intval($match[2]);
-    $stmt = $connection->prepare("SELECT * FROM server_plans WHERE server_id = ?");
-    $stmt->bind_param("i", $serverId);
+if (preg_match('/^changeFileId_(\\d+)_(\\d+)$/', (string) ($data ?? ''), $match)) {
+    $id = (int)$match[1];
+    $serverId = (int)$match[2];
+    // A cached plan-selector callback cannot supply another server id.
+    if (!achbotSupportsMarzbanOrder($connection, $id) || $serverId <= 0) {
+        alert("⛔️ سفارش مرزبان معتبر نیست.", true);
+        return;
+    }
+    $stmt = $connection->prepare(
+        "SELECT p.`id`, p.`title` FROM `server_plans` p
+         INNER JOIN `server_config` c ON c.`id` = p.`server_id`
+         INNER JOIN `orders_list` o ON o.`id` = ? AND o.`server_id` = p.`server_id`
+         WHERE p.`server_id` = ? AND p.`inbound_id` = 0 AND c.`type` = 'marzban'"
+    );
+    $stmt->bind_param("ii", $id, $serverId);
     $stmt->execute();
     $result = $stmt->get_result();
     $keyboard = [];
     while ($row = $result->fetch_assoc()) {
         $keyboard[] = [["text" => $row['title'], "callback_data" => "selectFileId_{$id}_{$row['id']}"]];
     }
+    $stmt->close();
     $keyboard[] = [["text" => "🔙 بازگشت", "callback_data" => "returnToPanel_$id"]];
     sendMessage("📦 لطفا پلن جدید را انتخاب کنید:", json_encode(['inline_keyboard' => $keyboard]));
-    $stmt->close();
 }
 
-if (preg_match('/^selectFileId_(\\d+)_(\\d+)/', $data, $match)) {
-    $id = intval($match[1]);
-    $newFileId = intval($match[2]);
-    $stmt = $connection->prepare("UPDATE `orders_list` SET `fileid` = ? WHERE `id` = ?");
-    $stmt->bind_param("ii", $newFileId, $id);
-    $stmt->execute();
-    $stmt->close();
+if (preg_match('/^selectFileId_(\\d+)_(\\d+)$/', (string) ($data ?? ''), $match)) {
+    $id = (int)$match[1];
+    $newFileId = (int)$match[2];
+    // Lock the order before rechecking its server and destination plan:
+    // no forged/stale callback may attach an obsolete inbound or another
+    // server's plan to an otherwise supported Marzban account.
+    $connection->begin_transaction();
+    try {
+        $stmt = $connection->prepare("SELECT `server_id` FROM `orders_list` WHERE `id` = ? FOR UPDATE");
+        $stmt->bind_param("i", $id);
+        $stmt->execute();
+        $locked = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        if (!$locked || !achbotSupportsMarzbanOrder($connection, $id) ||
+            !achbotSupportsMarzbanPlan($connection, $newFileId, 0, $locked['server_id'])) {
+            $connection->rollback();
+            alert("⛔️ پلن انتخابی با سرور مرزبان این سفارش سازگار نیست.", true);
+            return;
+        }
+        $stmt = $connection->prepare("UPDATE `orders_list` SET `fileid` = ? WHERE `id` = ?");
+        $stmt->bind_param("ii", $newFileId, $id);
+        $stmt->execute();
+        $stmt->close();
+        $connection->commit();
+    } catch (\Throwable $e) {
+        $connection->rollback();
+        alert("⛔️ خطا در تغییر پلن؛ اطلاعات سفارش تغییر نکرد.", true);
+        return;
+    }
     sendMessage("✅ مقدار Fileid (پلن) با موفقیت تغییر یافت.");
     $stmt = $connection->prepare("SELECT * FROM `orders_list` WHERE `id` = ?");
     $stmt->bind_param("i", $id);
     $stmt->execute();
-    $result = $stmt->get_result();
+    $order = $stmt->get_result()->fetch_assoc();
     $stmt->close();
-    $order = $result->fetch_assoc();
     showOrderManagementPanel($order, $message_id);
     setUser();
 }

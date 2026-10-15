@@ -14,7 +14,7 @@ if(($data == "agentOneBuy" || $data=='buySubscription' || $data == "agentMuchBuy
     elseif($data=="agentOneBuy") $buyType = "one";
     elseif($data== "agentMuchBuy") $buyType = "much";
     
-    $stmt = $connection->prepare("SELECT * FROM `server_info` WHERE `active`=1 and `state` = 1 and `ucount` > 0 ORDER BY `id` ASC");
+    $stmt = $connection->prepare("SELECT si.* FROM `server_info` si INNER JOIN `server_config` sc ON sc.`id`=si.`id` AND sc.`type`='marzban' WHERE si.`active`=1 and si.`state`=1 and si.`ucount` > 0 ORDER BY si.`id` ASC");
     $stmt->execute();
     $respd = $stmt->get_result();
     $stmt->close();
@@ -35,7 +35,7 @@ if(($data == "agentOneBuy" || $data=='buySubscription' || $data == "agentMuchBuy
 }
 
 if($data=='createMultipleAccounts' && ($from_id == $admin || $userInfo['isAdmin'] == true)){
-    $stmt = $connection->prepare("SELECT * FROM `server_info` WHERE `active`=1 and `ucount` > 0 ORDER BY `id` ASC");
+    $stmt = $connection->prepare("SELECT si.* FROM `server_info` si INNER JOIN `server_config` sc ON sc.`id`=si.`id` AND sc.`type`='marzban' WHERE si.`active`=1 and si.`ucount` > 0 ORDER BY si.`id` ASC");
     $stmt->execute();
     $respd = $stmt->get_result();
     $stmt->close();
@@ -71,7 +71,7 @@ if(preg_match('/createAccServer(\d+)/',$data, $match) && ($from_id == $admin || 
         while ($file = $respd->fetch_assoc()){
             $id = $file['id'];
             $name = $file['title'];
-            $stmt = $connection->prepare("SELECT * FROM `server_plans` WHERE `server_id`=? and `catid`=? and `active`=1");
+            $stmt = $connection->prepare("SELECT p.* FROM `server_plans` p INNER JOIN `server_config` sc ON sc.`id`=p.`server_id` AND sc.`type`='marzban' WHERE p.`server_id`=? and p.`catid`=? and p.`active`=1 AND p.`inbound_id`=0");
             $stmt->bind_param("ii", $sid, $id);
             $stmt->execute();
             $rowcount = $stmt->get_result()->num_rows; 
@@ -93,7 +93,7 @@ if(preg_match('/createAccServer(\d+)/',$data, $match) && ($from_id == $admin || 
 if(preg_match('/createAccCategory(\d+)_(\d+)/',$data,$match) && ($from_id == $admin || $userInfo['isAdmin'] == true)) {
     $call_id = $match[1];
     $sid = $match[2];
-    $stmt = $connection->prepare("SELECT * FROM `server_plans` WHERE `server_id`=? and `catid`=? and `active`=1 order by `id` asc");
+    $stmt = $connection->prepare("SELECT p.* FROM `server_plans` p INNER JOIN `server_config` sc ON sc.`id`=p.`server_id` AND sc.`type`='marzban' WHERE p.`server_id`=? and p.`catid`=? and p.`active`=1 AND p.`inbound_id`=0 order by p.`id` asc");
     $stmt->bind_param("ii", $sid, $call_id);
     $stmt->execute();
     $respd = $stmt->get_result();
@@ -117,6 +117,10 @@ if(preg_match('/createAccCategory(\d+)_(\d+)/',$data,$match) && ($from_id == $ad
 
 }
 if(preg_match('/^createAccPlan(\d+)/',$data,$match) && $text != $buttonValues['cancel'] && ($from_id == $admin || $userInfo['isAdmin'] == true)){
+    if (!achbotSupportsMarzbanPlan($connection, (int)$match[1])) {
+        alert("⛔️ این پلن مرزبان معتبر نیست.", true);
+        return;
+    }
     delMessage();
     sendMessage("❗️ لطفا مدت زمان اکانت را به ( روز ) وارد کن:",$cancelKey);
     setUser('createAccDate' . $match[1]);
@@ -168,6 +172,10 @@ if (
     $daysFromStep   = (int)$match[2];
     $volumeFromStep = (int)$match[3];
 
+    if (!achbotSupportsMarzbanPlan($connection, $fidFromStep)) {
+        alert("⛔️ این پلن مرزبان معتبر نیست.", true);
+        return;
+    }
     $planDetails = getPlanDetails($connection, $fidFromStep);
     $plan        = $planDetails['plan'];
 

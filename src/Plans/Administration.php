@@ -5,17 +5,21 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     exit;
 }
 
-if (($data == 'addNewPlan' || $data=="addNewRahgozarPlan" || $data == "addNewMarzbanPlan") and (($from_id == $admin || $userInfo['isAdmin'] == true))){
+// A cached admin keyboard may still send a former X-UI plan callback.
+if (in_array((string)$data, ['addNewPlan','addNewRahgozarPlan'], true) &&
+    ($from_id == $admin || ($userInfo['isAdmin'] ?? false) == true)) {
+    alert("ثبت پلن پنل قدیمی حذف شده است؛ از پلن مرزبان استفاده کنید.", true);
+    return;
+}
+// Only active Marzban plan onboarding is accepted.
+if ($data == "addNewMarzbanPlan" && ($from_id == $admin || $userInfo['isAdmin'] == true)){
     setUser($data);
     $stmt = $connection->prepare("DELETE FROM `server_plans` WHERE `active`=0");
     $stmt->execute();
     $stmt->close();
-    if($data=="addNewPlan" || $data == "addNewMarzbanPlan"){
+    {
         $sql = "INSERT INTO `server_plans` (`fileid`, `catid`, `server_id`, `inbound_id`, `acount`, `limitip`, `title`, `protocol`, `days`, `volume`, `type`, `price`, `descr`, `pic`, `active`, `step`, `date`)
                                             VALUES ('', 0,0,0,0, 1, '', '', 0, 0, '', 0, '', '',0,1, ?);";
-    }elseif($data=="addNewRahgozarPlan"){
-        $sql = "INSERT INTO `server_plans` (`fileid`, `catid`, `server_id`, `inbound_id`, `acount`, `limitip`, `title`, `protocol`, `days`, `volume`, `type`, `price`, `descr`, `pic`, `active`, `step`, `date`, `rahgozar`)
-                    VALUES ('', 0,0,0,0, 1, '', '', 0, 0, '', 0, '', '',0,1, ?, 1);";
     }
     $stmt = $connection->prepare($sql);
     $stmt->bind_param("i", $time);
@@ -26,7 +30,7 @@ if (($data == 'addNewPlan' || $data=="addNewRahgozarPlan" || $data == "addNewMar
     sendMessage($msg,$cancelKey);
     exit;
 }
-if(preg_match('/(addNewRahgozarPlan|addNewPlan|addNewMarzbanPlan)/',$userInfo['step']) and $text!=$buttonValues['cancel'] && ($from_id == $admin || $userInfo['isAdmin'] == true)){
+if(($userInfo['step'] ?? '') === 'addNewMarzbanPlan' and $text!=$buttonValues['cancel'] && ($from_id == $admin || $userInfo['isAdmin'] == true)){
     $catkey = [];
     $stmt = $connection->prepare("SELECT * FROM `server_categories` WHERE `parent` =0 and `active`=1");
     $stmt->execute();
@@ -51,7 +55,7 @@ if(preg_match('/(addNewRahgozarPlan|addNewPlan|addNewMarzbanPlan)/',$userInfo['s
             $stmt->close();
             sendMessage($msg,$cancelKey);
         }
-    } 
+    }
     if($step==2 and $text!=$buttonValues['cancel']){
         $msg = '🔰 لطفا یه دسته از لیست زیر برا پلن انتخاب کن ';
         if(is_numeric($text)){
@@ -64,7 +68,7 @@ if(preg_match('/(addNewRahgozarPlan|addNewPlan|addNewMarzbanPlan)/',$userInfo['s
             $msg = '‼️ لطفا یک مقدار عددی وارد کنید.';
             sendMessage($msg,$cancelKey);
         }
-    } 
+    }
     if($step==3 and $text!=$buttonValues['cancel']){
         $srvkey = [];
 
@@ -72,17 +76,16 @@ if(preg_match('/(addNewRahgozarPlan|addNewPlan|addNewMarzbanPlan)/',$userInfo['s
         $stmt->execute();
         $info = $stmt->get_result()->fetch_all();
         $stmt->close();
-        
-        
-        
-        $marzbanList = array_column($info, 0); 
-        if(count($marzbanList) > 0) $condition  = " AND `id` " .($userInfo['step'] == "addNewMarzbanPlan"?"IN":"NOT IN") . " (" . implode(", ", $marzbanList) . ")";
-        else $condition = "";
 
 
-        $stmt = $connection->prepare("SELECT * FROM `server_info` WHERE `active`=1 $condition");
+
+        $stmt = $connection->prepare(
+            "SELECT si.* FROM `server_info` si
+             INNER JOIN `server_config` sc ON sc.`id`=si.`id` AND sc.`type`='marzban'
+             WHERE si.`active`=1 ORDER BY si.`id`"
+        );
         $stmt->execute();
-        
+
         $srvs = $stmt->get_result();
         $stmt->close();
         sendMessage($mainValues['please_wait_message'],$cancelKey);
@@ -90,6 +93,10 @@ if(preg_match('/(addNewRahgozarPlan|addNewPlan|addNewMarzbanPlan)/',$userInfo['s
             $id = $srv['id'];
             $title = $srv['title'];
             $srvkey[] = ['text' => "$title", 'callback_data' => "selectNewPlanServer$id"];
+        }
+        if (!$srvkey) {
+            sendMessage("⛔️ هیچ سرور مرزبان فعالی برای ثبت پلن موجود نیست.", $cancelKey);
+            return;
         }
         $srvkey = array_chunk($srvkey,2);
         sendMessage("لطفا یکی از سرورها رو انتخاب کن 👇 ", json_encode([
@@ -113,156 +120,22 @@ if(preg_match('/(addNewRahgozarPlan|addNewPlan|addNewMarzbanPlan)/',$userInfo['s
             $msg = '‼️ لطفا فقط یکی از گزینه های پیشنهادی زیر را انتخاب کنید.';
             sendMessage($msg,$catkey);
         }
-    } 
-    if($step==50 and $text!=$buttonValues['cancel'] and preg_match('/selectNewPlanServer(\d+)/', $data,$match)){
-        $newStep = $userInfo['step'] == "addNewMarzbanPlan"?53:51;
-        
+    }
+    if ($step == 50 && $text != $buttonValues['cancel'] &&
+        preg_match('/^selectNewPlanServer(\d+)$/D', (string)$data, $match)) {
+        $newStep = 53; // Marzban-only plan wizard
         $stmt = $connection->prepare("UPDATE `server_plans` SET `server_id`=?,`step`=? WHERE `active`=0");
         $stmt->bind_param("ii", $match[1], $newStep);
         $stmt->execute();
         $stmt->close();
-
-        $keys = json_encode(['inline_keyboard'=>[
-            [['text'=>"🎖 پورت اختصاصی",'callback_data'=>"withSpecificPort"]],
-            [['text'=>"🎗 پورت اشتراکی",'callback_data'=>"withSharedPort"]]
-            ]]);
-        if($userInfo['step'] != "addNewMarzbanPlan") editText($message_id, "لطفا نوع پورت پنل رو انتخاب کنید.", $keys);
-        else editText($message_id, "📅 لطفا تعداد روز های اعتبار این پلن را وارد کنید:");
-    }
-    if($step==51 and $text!=$buttonValues['cancel'] and preg_match('/^with(Specific|Shared)Port/',$data,$match)){
-        if($userInfo['step'] == "addNewRahgozarPlan") $msg =  "📡 لطفا پروتکل پلن مورد نظر را وارد کنید (vless | vmess)";
-        else $msg =  "📡 لطفا پروتکل پلن مورد نظر را وارد کنید (vless | vmess | trojan)";
-        editText($message_id,$msg);
-        if($match[1] == "Shared"){
-            $stmt = $connection->prepare("UPDATE `server_plans` SET `step`=60 WHERE `active`=0");
-            $stmt->execute();
-            $stmt->close();
-        }
-        elseif($match[1] == "Specific"){
-            $stmt = $connection->prepare("UPDATE server_plans SET step=52 WHERE active=0");
-            $stmt->execute();
-            $stmt->close();
-        }
-    }
-    if($step==60 and $text!=$buttonValues['cancel']){
-        if($text != "vless" && $text != "vmess" && $text != "trojan" && $userInfo['step'] == "addNewPlan"){
-            sendMessage("لطفا فقط پروتکل های vless و vmess را وارد کنید",$cancelKey);
-            exit();
-        }
-        elseif($text != "vless" && $text != "vmess" && $userInfo['step'] == "addNewRahgozarPlan"){
-            sendMessage("لطفا فقط پروتکل های vless و vmess را وارد کنید.",$cancelKey);
-            exit();
-        }
-        
-        $stmt = $connection->prepare("UPDATE `server_plans` SET `protocol`=?,`step`=61 WHERE `active`=0");
-        $stmt->bind_param("s", $text);
-        $stmt->execute();
-        $stmt->close();
-        sendMessage("📅 لطفا تعداد روز های اعتبار این پلن را وارد کنید:");
-    }
-    if($step==61 and $text!=$buttonValues['cancel']){
-        if(!is_numeric($text)){
-            sendMessage($mainValues['send_only_number']);
-            exit();
-        }
-        
-        $stmt = $connection->prepare("UPDATE `server_plans` SET `days`=?,`step`=62 WHERE `active`=0");
-        $stmt->bind_param("i", $text);
-        $stmt->execute();
-        $stmt->close();
-
-        sendMessage("🔋 لطفا مقدار حجم به GB این پلن را وارد کنید:");
-    }
-    if($step==62 and $text!=$buttonValues['cancel']){
-        if(!is_numeric($text)){
-            sendMessage($mainValues['send_only_number']);
-            exit();
-        }
-        
-        $stmt = $connection->prepare("UPDATE `server_plans` SET `volume`=?,`step`=63 WHERE `active`=0");
-        $stmt->bind_param("d", $text);
-        $stmt->execute();
-        $stmt->close();
-        sendMessage("🛡 لطفا آیدی سطر کانکشن در پنل را وارد کنید:");
-    }
-    if($step==63 and $text!=$buttonValues['cancel']){
-        if(!is_numeric($text)){
-            sendMessage($mainValues['send_only_number']);
-            exit();
-        }
-        
-        $stmt = $connection->prepare("SELECT * FROM `server_plans` WHERE `active` = 0");
-        $stmt->execute();
-        $res = $stmt->get_result()->fetch_assoc();
-        $stmt->close();
-
-        
-        $response = getJson($res['server_id'])->obj;
-        foreach($response as $row){
-            if($row->id == $text) {
-                $netType = json_decode($row->streamSettings)->network;
-            }
-        }        
-        if(is_null($netType)){
-            sendMessage("اشتراکی با این سطر آیدی یافت نشد.");
-            exit();
-        }
-        
-        $stmt = $connection->prepare("UPDATE `server_plans` SET `type` = ?, `inbound_id`=?,`step`=64 WHERE `active`=0");
-        $stmt->bind_param("si", $netType, $text);
-        $stmt->execute();
-        $stmt->close();
-
-        sendMessage("لطفا ظرفیت تعداد اکانت رو پورت مورد نظر را وارد کنید.");
-    }
-    if($step==64 and $text!=$buttonValues['cancel']){
-        if(!is_numeric($text)){
-            sendMessage($mainValues['send_only_number']);
-            exit();
-        }
-        
-        $stmt = $connection->prepare("UPDATE `server_plans` SET `acount`=?,`step`=65 WHERE `active`=0");
-        $stmt->bind_param("i", $text);
-        $stmt->execute();
-        $stmt->close();
-
-        sendMessage("🧲 لطفا تعداد چند کاربره این پلن را وارد کنید ( 0 نامحدود است )");
-    }
-    if($step==65 and $text!=$buttonValues['cancel']){
-        if(!is_numeric($text)){
-            sendMessage($mainValues['send_only_number']);
-            exit();
-        }
-        $stmt = $connection->prepare("UPDATE `server_plans` SET `limitip`=?,`step`=4 WHERE `active`=0");
-        $stmt->bind_param("s", $text);
-        $stmt->execute();
-        $stmt->close();
-
-        $msg = '🔻یه توضیح برای پلن مورد نظرت بنویس:';
-        sendMessage($msg,$cancelKey); 
-    }
-    if($step==52 and $text!=$buttonValues['cancel']){
-        if($userInfo['step'] == "addNewPlan" && $text != "vless" && $text != "vmess" && $text != "trojan"){
-            sendMessage("لطفا فقط پروتکل های vless و vmess را وارد کنید",$cancelKey);
-            exit();
-        }elseif($userInfo['step'] == "addNewRahgozarPlan" && $text != "vless" && $text != "vmess"){
-            sendMessage("لطفا فقط پروتکل های vless و vmess را وارد کنید",$cancelKey);
-            exit();
-        }
-        
-        $stmt = $connection->prepare("UPDATE `server_plans` SET `protocol`=?,`step`=53 WHERE `active`=0");
-        $stmt->bind_param("s", $text);
-        $stmt->execute();
-        $stmt->close();
-
-        sendMessage("📅 لطفا تعداد روز های اعتبار این پلن را وارد کنید:");
+        editText($message_id, "📅 لطفا تعداد روز های اعتبار این پلن را وارد کنید:");
     }
     if($step==53 and $text!=$buttonValues['cancel']){
         if(!is_numeric($text)){
             sendMessage($mainValues['send_only_number']);
             exit();
         }
-        
+
         $stmt = $connection->prepare("UPDATE `server_plans` SET `days`=?,`step`=54 WHERE `active`=0");
         $stmt->bind_param("i", $text);
         $stmt->execute();
@@ -270,49 +143,26 @@ if(preg_match('/(addNewRahgozarPlan|addNewPlan|addNewMarzbanPlan)/',$userInfo['s
 
         sendMessage("🔋 لطفا مقدار حجم به GB این پلن را وارد کنید:");
     }
-    if($step==54 and $text!=$buttonValues['cancel']){
-        if(!is_numeric($text)){
+    if ($step == 54 && $text != $buttonValues['cancel']) {
+        if (!is_numeric($text)) {
             sendMessage($mainValues['send_only_number']);
             exit();
         }
-        
-        if($userInfo['step'] == "addNewPlan"){
-            $sql = ("UPDATE `server_plans` SET `volume`=?,`step`=55 WHERE `active`=0");
-            $msg = "🔉 لطفا نوع شبکه این پلن را در انتخاب کنید  (ws | tcp | grpc):";
-        }elseif($userInfo['step'] == "addNewRahgozarPlan" || $userInfo['step'] == "addNewMarzbanPlan"){
-            $sql = ("UPDATE `server_plans` SET `volume`=?, `type`='ws', `step`=4 WHERE `active`=0");
-            $msg = '🔻یه توضیح برای پلن مورد نظرت بنویس:';
-        }
+        $sql = "UPDATE `server_plans` SET `volume`=?, `type`='ws', `step`=4 WHERE `active`=0";
         $stmt = $connection->prepare($sql);
         $stmt->bind_param("d", $text);
         $stmt->execute();
         $stmt->close();
-
-        sendMessage($msg);
+        sendMessage('🔻یه توضیح برای پلن مورد نظرت بنویس:');
     }
-    if($step==55 and $text!=$buttonValues['cancel']){
-        if($text != "tcp" && $text != "ws" && $text != "grpc"){
-            sendMessage("لطفا فقط نوع (ws | tcp | grpc) را وارد کنید.");
-            exit();
-        }
-        $stmt = $connection->prepare("UPDATE `server_plans` SET `type`=?,`step`=4 WHERE `active`=0");
-        $stmt->bind_param("s", $text);
-        $stmt->execute();
-        $stmt->close();
-
-
-        $msg = '🔻یه توضیح برای پلن مورد نظرت بنویس:';
-        sendMessage($msg,$cancelKey); 
-    }
-    
     if($step==4 and $text!=$buttonValues['cancel']){
-        
-        if($userInfo['step'] == "addNewMarzbanPlan"){
+
+
             $stmt = $connection->prepare("SELECT * FROM `server_plans` WHERE `active` = 0 AND `step` = 4");
             $stmt->execute();
             $serverId = $stmt->get_result()->fetch_assoc()['server_id'];
             $stmt->close();
-        
+
             $hosts = getMarzbanHosts($serverId)->inbounds;
             $networkType = array();
             foreach($hosts as $key => $inbound){
@@ -322,20 +172,12 @@ if(preg_match('/(addNewRahgozarPlan|addNewPlan|addNewMarzbanPlan)/',$userInfo['s
 
             $stmt = $connection->prepare("UPDATE `server_plans` SET `descr`=?, `step` = 5 WHERE `step` = 4");
             sendMessage("لطفا نوع شبکه های این پلن را انتخاب کنید.",$networkType);
-        }
-        else{
-            $stmt = $connection->prepare("UPDATE `server_plans` SET `descr`=?, `active`=1,`step`=10 WHERE `step`=4");
-            $imgtxt = '☑️ پنل با موفقیت ثبت و ایجاد شد.';
-            
-            sendMessage($imgtxt,$removeKeyboard);
-            sendMessage($mainValues['reached_main_menu'],getAdminKeys());
-            setUser();
-        }
+
         $stmt->bind_param("s", $text);
         $stmt->execute();
         $stmt->close();
 
-    } 
+    }
     elseif($step == 5 and $text != $buttonValues['cancel'] && preg_match('/^planNetworkType(?<protocol>.+)\*_\*(?<tag>.*)/',$data,$match)){
         $saveBtn = "ذخیره ✅";
         if($markup[count($markup)-1][0]['text'] == $saveBtn) unset($markup[count($markup)-1]);
@@ -348,7 +190,7 @@ if(preg_match('/(addNewRahgozarPlan|addNewPlan|addNewMarzbanPlan)/',$userInfo['s
             $markup[] = [['text'=>$saveBtn,'callback_data'=>"savePlanNetworkType"]];
         }
         $markup = json_encode(['inline_keyboard'=>array_values($markup)]);
-        
+
         editKeys($markup);
     }
     elseif($step == 5 && $text != $buttonValues['cancel'] && $data == "savePlanNetworkType"){
@@ -363,7 +205,7 @@ if(preg_match('/(addNewRahgozarPlan|addNewPlan|addNewMarzbanPlan)/',$userInfo['s
                 preg_match('/^planNetworkType(?<protocol>.+)\*_\*(?<tag>.*)/',$value[0]['callback_data'],$info);
                 $inbounds[$info['protocol']][] = $tag;
                 $proxies[$info['protocol']] = array();
-    
+
                 if($info['protocol'] == "vless"){
                     $proxies["vless"] = ["flow" => ""];
                 }
@@ -372,13 +214,13 @@ if(preg_match('/(addNewRahgozarPlan|addNewPlan|addNewMarzbanPlan)/',$userInfo['s
                 }
             }
         }
-        
+
         $info = json_encode(['inbounds'=>$inbounds, 'proxies'=>$proxies]);
         $stmt = $connection->prepare("UPDATE `server_plans` SET `custom_sni`=?, `active`=1,`step`=10 WHERE `step`=5");
         $stmt->bind_param("s", $info);
         $stmt->execute();
         $stmt->close();
-        
+
         $imgtxt = '☑️ پنل با موفقیت ثبت و ایجاد شد.';
         sendMessage($imgtxt,$removeKeyboard);
         sendMessage($mainValues['reached_main_menu'],getAdminKeys());
@@ -386,7 +228,7 @@ if(preg_match('/(addNewRahgozarPlan|addNewPlan|addNewMarzbanPlan)/',$userInfo['s
     }
 }
 if($data == 'backplan' and ($from_id == $admin || $userInfo['isAdmin'] == true)){
-    $stmt = $connection->prepare("SELECT * FROM `server_info` WHERE `active`=1");
+    $stmt = $connection->prepare("SELECT si.* FROM `server_info` si INNER JOIN `server_config` sc ON sc.`id`=si.`id` AND sc.`type`='marzban' WHERE si.`active`=1");
     $stmt->execute();
     $res = $stmt->get_result();
     $stmt->close();
@@ -399,31 +241,27 @@ if($data == 'backplan' and ($from_id == $admin || $userInfo['isAdmin'] == true))
     }
     $keyboard = array_chunk($keyboard,2);
     $keyboard[] = [['text'=>"➖➖➖",'callback_data'=>"wizwizch"]];
-    $keyboard[] = [['text'=>'➕ افزودن پلن اختصاصی و اشتراکی','callback_data'=>"addNewPlan"]];
-    $keyboard[] = [
-        ['text'=>'➕ افزودن پلن رهگذر','callback_data'=>"addNewRahgozarPlan"],
-        ['text'=>"➕ افزودن پلن مرزبان",'callback_data'=>"addNewMarzbanPlan"]
-                    ];
+    $keyboard[] = [['text'=>"➕ افزودن پلن مرزبان",'callback_data'=>"addNewMarzbanPlan"]];
     $keyboard[] = [['text'=>'➕ افزودن پلن حجمی','callback_data'=>"volumePlanSettings"],['text'=>'➕ افزودن پلن زمانی','callback_data'=>"dayPlanSettings"]];
     $keyboard[] = [['text' => "➕ افزودن پلن دلخواه", 'callback_data' => "editCustomPlan"]];
     $keyboard[] = [['text' => $buttonValues['back_button'], 'callback_data' => "managePanel"]];
 
     $msg = '☑️ مدیریت پلن ها:';
-    
+
     if(isset($data) and $data=='backplan') {
         editText($message_id, $msg, json_encode(['inline_keyboard'=>$keyboard]));
     }else { sendAction('typing');
         sendmessage($msg, json_encode(['inline_keyboard'=>$keyboard]));
     }
-    
-    
+
+
     exit;
 }
 if(($data=="editCustomPlan" || preg_match('/^editCustom(gbPrice|dayPrice)/',$userInfo['step'],$match)) && ($from_id == $admin || $userInfo['isAdmin'] == true) && $text != $buttonValues['cancel']){
     if(!isset($data)){
         if(is_numeric($text)){
             setSettings($match[1], $text);
-            sendMessage($mainValues['saved_successfuly'],$removeKeyboard); 
+            sendMessage($mainValues['saved_successfuly'],$removeKeyboard);
         }else{
             sendMessage("فقط عدد ارسال کن");
             exit();
@@ -431,7 +269,7 @@ if(($data=="editCustomPlan" || preg_match('/^editCustom(gbPrice|dayPrice)/',$use
     }
     $gbPrice=number_format($botState['gbPrice']??0) . " تومان";
     $dayPrice=number_format($botState['dayPrice']??0) . " تومان";
-    
+
     $keys = json_encode(['inline_keyboard'=>[
         [
             ['text'=>$gbPrice,'callback_data'=>"editCustomgbPrice"],
@@ -444,7 +282,7 @@ if(($data=="editCustomPlan" || preg_match('/^editCustom(gbPrice|dayPrice)/',$use
         [
             ['text'=>$buttonValues['back_button'],'callback_data'=>"backplan"]
             ]
-            
+
         ]]);
     if(!isset($data)){
         sendMessage("تنظیمات پلن دلخواه",$keys);
@@ -460,7 +298,7 @@ if(preg_match('/^editCustom(gbPrice|dayPrice)/',$data,$match) && ($from_id == $a
     setUser($data);
 }
 if(preg_match('/plansList(\d+)/', $data,$match) && ($from_id == $admin || $userInfo['isAdmin'] == true)){
-    $stmt = $connection->prepare("SELECT * FROM `server_plans` WHERE `server_id`=? ORDER BY`id` ASC");
+    $stmt = $connection->prepare("SELECT p.* FROM `server_plans` p INNER JOIN `server_config` sc ON sc.`id`=p.`server_id` AND sc.`type`='marzban' WHERE p.`server_id`=? AND p.`inbound_id`=0 ORDER BY p.`id` ASC");
     $stmt->bind_param("i", $match[1]);
     $stmt->execute();
     $res = $stmt->get_result();
@@ -532,7 +370,7 @@ if(preg_match('/^wizwizplandelete(\d+)/',$data,$match) and ($from_id == $admin |
     $stmt->execute();
     $stmt->close();
     alert("پلن رو برات حذفش کردم ☹️☑️");
-    
+
     editText($message_id,"لطفا یکی از کلید های زیر را انتخاب کنید.",getMainKeys());
 }
 if(preg_match('/^wizwizplanname(\d+)/',$data) and ($from_id == $admin || $userInfo['isAdmin'] == true) && $text != $buttonValues['cancel']){
@@ -548,7 +386,7 @@ if(preg_match('/^wizwizplanname(\d+)/',$userInfo['step'], $match) && $text != $b
 
     sendMessage("☑️ با موفقیت برات تغییر دادم.");
     setUser();
-    
+
     $keys = getPlanDetailsKeys($match[1]);
     if($keys == null){
         alert("موردی یافت نشد.");
@@ -568,7 +406,7 @@ if(preg_match('/^wizwizplanslimit(\d+)/',$userInfo['step'], $match) && $text != 
 
     sendMessage("☑️ با موفقیت برات تغییر دادم.");
     setUser();
-    
+
     $keys = getPlanDetailsKeys($match[1]);
     if($keys == null){
         alert("موردی یافت نشد.");
@@ -588,7 +426,7 @@ if(preg_match('/^wizwizplansinobundid(\d+)/',$userInfo['step'], $match) && ($fro
 
     sendMessage("☑️ با موفقیت برات تغییر دادم.");
     setUser();
-    
+
     $keys = getPlanDetailsKeys($match[1]);
     if($keys == null){
         alert("موردی یافت نشد.");
@@ -609,7 +447,7 @@ if(preg_match('/^wizwizplaneditdes(\d+)/',$userInfo['step'], $match) && ($from_i
 
     sendMessage("☑️ با موفقیت برات تغییر دادم.");
     setUser();
-    
+
     $keys = getPlanDetailsKeys($match[1]);
     if($keys == null){
         alert("موردی یافت نشد.");
@@ -635,7 +473,7 @@ if(preg_match('/^editDestName(\d+)/',$userInfo['step'], $match) && ($from_id == 
 
     sendMessage("☑️ با موفقیت برات تغییر دادم.");
     setUser();
-    
+
     $keys = getPlanDetailsKeys($match[1]);
     if($keys == null){
         alert("موردی یافت نشد.");
@@ -661,7 +499,7 @@ if(preg_match('/^editSpiderX(\d+)/',$userInfo['step'], $match) && ($from_id == $
 
     sendMessage("☑️ با موفقیت برات تغییر دادم.");
     setUser();
-    
+
     $keys = getPlanDetailsKeys($match[1]);
     if($keys == null){
         alert("موردی یافت نشد.");
@@ -692,7 +530,7 @@ if(preg_match('/^editServerNames(\d+)/',$userInfo['step'], $match) && ($from_id 
 
     sendMessage("☑️ با موفقیت برات تغییر دادم.");
     setUser();
-    
+
     $keys = getPlanDetailsKeys($match[1]);
     if($keys == null){
         alert("موردی یافت نشد.");
@@ -716,7 +554,7 @@ if(preg_match('/^editPFlow(\d+)_(.*)/',$data, $match) && ($from_id == $admin || 
 
     alert("☑️ با موفقیت برات تغییر دادم.");
     setUser();
-    
+
     $keys = getPlanDetailsKeys($match[1]);
     editText($message_id, "ویرایش تنظیمات پلن:", $keys, "HTML");
 }
@@ -734,7 +572,7 @@ if(preg_match('/^wizwizplanrial(\d+)/',$userInfo['step'], $match) && ($from_id =
 
         sendMessage("☑️ با موفقیت برات تغییر دادم.");
         setUser();
-        
+
         $keys = getPlanDetailsKeys($match[1]);
         if($keys == null){
             alert("موردی یافت نشد.");

@@ -8,12 +8,27 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
 if(preg_match('/sConfigRenewPlan(\d+)_(\d+)/',$data, $match) && ($botState['sellState']=="on" ||$from_id ==$admin) && $text != $buttonValues['cancel']){
     $id = $match[1];
 	$inbound_id = $match[2];
+    if (!achbotSupportsMarzbanPlan($connection, (int)$id, (int)$inbound_id)) {
+        alert("⛔️ این تمدید برای پنل مرزبان پشتیبانی نمی‌شود.", true);
+        return;
+    }
+
 
 
     if(empty($userInfo['temp'])){delMessage(); exit();}
     
-    $configInfo = json_decode($userInfo['temp'],true);
-    $uuid = $configInfo['uuid'];
+    $configInfo = json_decode($userInfo['temp'], true);
+    // A stale plan callback can point at a different Marzban host. Bind
+    // the external account to the verified origin rather than trusting the
+    // plan id or the user-supplied callback alone.
+    $accountServer = (int)($configInfo['server_id'] ?? 0);
+    if (!is_array($configInfo) || ($configInfo['marzban'] ?? null) !== true ||
+        empty($configInfo['remark']) || $accountServer <= 0 ||
+        !achbotSupportsMarzbanPlan($connection, (int)$id, 0, $accountServer)) {
+        alert("⛔️ پلن انتخابی با سرور مرزبان این اشتراک مطابقت ندارد.", true);
+        return;
+    }
+    $uuid = $configInfo['uuid'] ?? '';
     $remark = $configInfo['remark'];
 
     alert($mainValues['receving_information']);
@@ -44,11 +59,12 @@ if(preg_match('/sConfigRenewPlan(\d+)_(\d+)/',$data, $match) && ($botState['sell
     $stmt->close();
 
     setUser('', 'temp');
-    $description = json_encode(["uuid"=>$uuid, "remark"=>$remark, 'marzban' => isset($configInfo['marzban'])],488);
+    $description = json_encode(["uuid"=>$uuid, "remark"=>$remark,
+                                "server_id"=>$accountServer, "marzban"=>true],488);
     $time = time();
-    $stmt = $connection->prepare("INSERT INTO `pays` (`hash_id`, `description`, `user_id`, `type`, `plan_id`, `volume`, `day`, `price`, `request_date`, `state`)
-                                VALUES (?, ?, ?, 'RENEW_SCONFIG', ?, ?, '0', ?, ?, 'pending')");
-    $stmt->bind_param("ssiiiii", $hash_id, $description, $from_id, $id, $inbound_id, $price, $time);
+    $stmt = $connection->prepare("INSERT INTO `pays` (`hash_id`, `description`, `user_id`, `type`, `plan_id`, `server_id`, `volume`, `day`, `price`, `request_date`, `state`)
+                                VALUES (?, ?, ?, 'RENEW_SCONFIG', ?, ?, ?, '0', ?, ?, 'pending')");
+    $stmt->bind_param("ssiiiiii", $hash_id, $description, $from_id, $id, $accountServer, $inbound_id, $price, $time);
     $stmt->execute();
     $rowId = $stmt->insert_id;
     $stmt->close();

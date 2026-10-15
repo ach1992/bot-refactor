@@ -7,6 +7,10 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
 
 if (preg_match('/freeTrial(\d+)_(?<buyType>\w+)/', $data, $match)) {
     $planId  = (int)$match[1];
+    if (!achbotSupportsMarzbanPlan($connection, $planId)) {
+        alert("⛔️ پلن آزمایشی در مرزبان پشتیبانی نمی‌شود.", true);
+        return;
+    }
     $buyType = $match['buyType'] ?? '';
     $discountsRaw  = $userInfo['discount_percent'] ?? '{}';
     $discountsData = json_decode($discountsRaw, true);

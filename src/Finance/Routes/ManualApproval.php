@@ -38,6 +38,14 @@ if (
         return;
     }
 
+    // A previously sent manual receipt could reference a retired panel.
+    // Reject before the claim-to-processing write; leave it reviewable and
+    // do not call any obsolete provider or mutate an order.
+    if (!achbotSupportsPaymentSubject($connection, $payInfo)) {
+        alert("⛔️ پنل این پلن دیگر پشتیبانی نمی‌شود؛ درخواست تأیید نشد.", true);
+        return;
+    }
+
     $stmt = $connection->prepare("
         UPDATE `pays`
         SET `state`='processing', `approved_by`=?

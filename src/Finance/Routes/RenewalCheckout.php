@@ -48,6 +48,10 @@ if (
     
     $order = $order->fetch_assoc();
     $fid = $order['fileid'];
+    if (!achbotSupportsMarzbanOrder($connection, (int)$oid, (int)$fid, (int)$order['userid'])) {
+        alert("⛔️ این سفارش برای تمدید مرزبان معتبر نیست.", true);
+        return;
+    }
     // بررسی اگر fileid برابر 0 باشد
     if($fid == 0){
         sendMessage("✋ لطفاً ابتدا با زدن دکمه: 
@@ -298,7 +302,12 @@ if(preg_match('/approveRenewAcc(.*)/',$data,$match) && ($from_id == $admin || $u
         $stmt = $connection->prepare("SELECT * FROM `pays` WHERE `hash_id` = ? FOR UPDATE"); 
         $stmt->bind_param("s", $match[1]); 
         $stmt->execute(); 
-        $payInfo = $stmt->get_result()->fetch_assoc(); 
+        $payInfo = $stmt->get_result()->fetch_assoc();
+        if (!achbotSupportsPaymentSubject($connection, $payInfo)) {
+            $connection->rollback();
+            alert("⛔️ تأیید پرداخت این سرویس در مرزبان مجاز نیست.", true);
+            return;
+        }
         $stmt->close(); 
 
         if (!$payInfo || ($payInfo['state'] === 'expired_have_sent')) { 
@@ -375,11 +384,8 @@ if(preg_match('/approveRenewAcc(.*)/',$data,$match) && ($from_id == $admin || $u
 
         if ($serverType == "marzban") { 
             $response = editMarzbanConfig($server_id, ['remark'=>$remark, 'days'=>$days, 'volume' => $volume]); 
-        } else { 
-            if ($inbound_id > 0) 
-                $response = editClientTraffic($server_id, $inbound_id, $uuid, $volume, $days, "renew"); 
-            else 
-                $response = editInboundTraffic($server_id, $uuid, $volume, $days, "renew"); 
+        } else {
+            throw new \UnexpectedValueException('unsupported_panel');
         } 
 
         if (is_null($response)) { 
@@ -469,6 +475,11 @@ if(preg_match('/payRenewWithWallet(.*)/', $data, $match)){
         }
 
         $payInfo = $payRes->fetch_assoc();
+        if (!achbotSupportsPaymentSubject($connection, $payInfo)) {
+            $connection->rollback();
+            alert("⛔️ تمدید پنل غیرقابل پشتیبانی انجام نشد.", true);
+            return;
+        }
         $hash_id   = $payInfo['hash_id'];
         $oid       = intval($payInfo['order_id']);
         $price     = intval($payInfo['price']);
@@ -550,10 +561,7 @@ if(preg_match('/payRenewWithWallet(.*)/', $data, $match)){
         if($serverType == "marzban"){
             $response = editMarzbanConfig($server_id, ['remark'=>$remark, 'days'=>$days, 'volume' => $volume]);
         } else {
-            if($inbound_id > 0)
-                $response = editClientTraffic($server_id, $inbound_id, $uuid, $volume, $days, "renew");
-            else
-                $response = editInboundTraffic($server_id, $uuid, $volume, $days, "renew");
+            throw new \UnexpectedValueException('unsupported_panel');
         }
 
         if (is_null($response)) {

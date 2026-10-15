@@ -62,17 +62,10 @@ elseif(preg_match('/^yesDeleteConfig(\d+)/',$data,$match)){
     $serverType = $serverConfig['type'];
 
 	
-	if($serverType != "marzban"){
-        if($inbound_id > 0) $res = deleteClient($server_id, $inbound_id, $uuid, 1);
-        else $res = deleteInbound($server_id, $uuid, 1);
-        
-        $leftMb = sumerize($res['total'] - $res['up'] - $res['down']);
-        $expiryDay = $res['expiryTime'] != 0?
-            floor(
-                (substr($res['expiryTime'],0,-3)-time())/(60 * 60 * 24))
-                :
-                "نامحدود";
-	}else{
+    if (!achbotSupportsPanel($serverType) || (int)$inbound_id !== 0) {
+        alert("پنل این اشتراک دیگر پشتیبانی نمی‌شود.", true);
+        exit;
+    } else {
 	    $configInfo = getMarzbanUser($server_id, $remark);
 	    deleteMarzban($server_id, $remark);
 	    $leftMb = sumerize($configInfo->data_limit - $configInfo->used_traffic);
@@ -160,10 +153,10 @@ elseif(preg_match('/^yesDeleteUserConfig(\d+)/',$data,$match) && ($from_id == $a
     $serverType = $serverConfig['type'];
     
 	
-	if($serverType != "marzban"){
-        if($inbound_id > 0) $res = deleteClient($server_id, $inbound_id, $uuid, 1);
-        else $res = deleteInbound($server_id, $uuid, 1);
-	}else{
+    if (!achbotSupportsPanel($serverType) || (int)$inbound_id !== 0) {
+        alert("پنل این اشتراک دیگر پشتیبانی نمی‌شود.", true);
+        exit;
+    } else {
 	    $res = deleteMarzban($server_id, $remark);
 	}
     

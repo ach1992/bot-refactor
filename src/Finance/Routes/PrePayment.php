@@ -24,6 +24,10 @@ if (preg_match('/^prePayCheck_([a-zA-Z0-9]+)_([a-zA-Z0-9]+)_([a-zA-Z0-9]+)/', $d
         exit;
     }
 
+    if (!achbotSupportsPaymentSubject($connection, $payInfo)) {
+        alert("⛔️ این درخواست برای پنل مرزبان پشتیبانی نمی‌شود.", true);
+        return;
+    }
     $now = time();
     if ($now - $payInfo['request_date'] > 10800) {
 		if ($payInfo['state'] === 'pending') {
