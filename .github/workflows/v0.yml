@@ -80,6 +80,10 @@ jobs:
         run: |
           set -euo pipefail
           python3 tools/check_post_v9.py --report "$RUNNER_TEMP/post-v9-php84.json"
+      - name: Validate read-only installed-release verifier and negative controls
+        run: |
+          python3 -m py_compile tools/verify_installed_runtime.py tools/test_verify_installed_runtime.py
+          python3 -m unittest tools.test_verify_installed_runtime -v
       - name: Package and verify NEW exact-head Marzban-only runtime
         run: |
           set -euo pipefail
