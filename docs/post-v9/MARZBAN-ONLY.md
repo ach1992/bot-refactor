@@ -1,12 +1,10 @@
-# AChBot — Marzban-only post-V9 source candidate
+# AChBot — Marzban-only post-V9 source and acceptance
 
-**Controlling:** [Issue #31](https://github.com/ach1992/bot-refactor/issues/31);
-[roadmap #29](https://github.com/ach1992/bot-refactor/issues/29).
-**Historical public V9:** [v0.9.0-rc.1](https://github.com/ach1992/bot-refactor/releases/tag/v0.9.0-rc.1),
-`main` merged commit `7eb077fd8e6d0a303421626d1500f69e295a6664`.
-**Current development branch:** `feature/post-v9-marzban-only`. It is NOT
-the installed/released version, and all proposed behavioral changes still
-require independent review, Owner merge, release, staging and rollout gates.
+**Current source:** Integrated on `main` by [PR #32](https://github.com/ach1992/bot-refactor/pull/32) (merge `7c22dccc4d1ee3f4ef77032f1933481abe8e4279`, 2026-10-15). The author-separated independent R6 review was **COMPLETE / APPROVE** and the exact merged source passed [PHP 8.1 and PHP 8.4 post-merge CI](https://github.com/ach1992/bot-refactor/actions/runs/38686398872).
+
+**Historical public V9:** [`v0.9.0-rc.1`](https://github.com/ach1992/bot-refactor/releases/tag/v0.9.0-rc.1), frozen source `7eb077fd8e6d0a303421626d1500f69e295a6664`.
+
+**Delivery boundary:** The post-V9 source has **not** been publicly released, installed, exercised on a real tenant, or migrated on a live MariaDB. See [Issue #31](https://github.com/ach1992/bot-refactor/issues/31) and [roadmap #29](https://github.com/ach1992/bot-refactor/issues/29) for remaining acceptance and separate release/rollout gates.
 
 ## Owner decisions / desired outcomes
 
@@ -63,13 +61,14 @@ detached V9 source worktree**, not current Marzban-only code. Their
 source/evidence is historical; **do not relax them or re-record golden
 outputs** to call removed X-UI behavior 'backwards-compatible'.
 
-This candidate's CI does a detached
+Current CI on the merged source does a detached
 `git worktree add --detach "$RUNNER_TEMP/frozen-v9" 7eb077f...`
 and executes V9's historical full suites under PHP 8.4 (PHP 8.1
 compatibility subset separately) before returning to the new candidate.
-PR #30, if independently approved and merged first, adds a further
-historical **published V9 release ZIP** acceptance test. That work should
-remain in the detached V9 reference, not be executed against new runtime.
+[PR #30](https://github.com/ach1992/bot-refactor/pull/30) remains a separate,
+open historical **published V9 release ZIP** acceptance effort. Any such
+V9-only tests belong to the detached original V9 reference, never to the
+new Marzban-only runtime.
 
 ### 2. CURRENT Marzban-only runtime — independent new proof
 
@@ -195,6 +194,8 @@ transactional pre-mutation fail-closed guarantees**. Reviewers must trace
 purchase→payment→fulfillment ordering and report any partial-settlement
 risk clearly; do not green-light real finance on these tests alone.
 
-No merge, release, installation or production operation is implied by a
-green source-only CI. Record exact candidate SHA/TREE, changed PHP source,
-executed evidence and remaining gaps in Issue #31 and the linked new Pull Request.
+Source integration is complete, but a green source-only CI does **not**
+authorize release, installation, migration or production operations.
+Keep the unperformed operator/recovery/financial evidence and any results
+of staged testing in [Issue #31](https://github.com/ach1992/bot-refactor/issues/31).
+Use the [operator acceptance checklist](MARZBAN-OPERATOR-ACCEPTANCE.md) for the next gate.
