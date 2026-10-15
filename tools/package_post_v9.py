@@ -12,6 +12,7 @@ import io
 import json
 import subprocess
 import zipfile
+from datetime import datetime, timezone
 from pathlib import Path
 
 import v9_contract as historical
@@ -36,6 +37,27 @@ def identity() -> tuple[str, str]:
     return head, tree
 
 
+def zip_timestamp_utc(epoch: int) -> tuple[int, int, int, int, int, int]:
+    """Deterministic ZIP DOS mtime in UTC; unlike 1980, it changes across releases."""
+    try:
+        date = datetime.fromtimestamp(epoch, timezone.utc)
+    except (OverflowError, OSError, ValueError) as exc:
+        raise RuntimeError("Commit timestamp cannot be represented in ZIP") from exc
+    if not 1980 <= date.year <= 2107:
+        raise RuntimeError("Commit timestamp outside ZIP DOS date range")
+    return (date.year, date.month, date.day, date.hour,
+            date.minute, date.second - date.second % 2)
+
+
+def committed_zip_timestamp(head: str) -> tuple[int, int, int, int, int, int]:
+    """The exact HEAD commit time makes ZIP bytes reproducible but cache-visible."""
+    try:
+        epoch = int(git("show", "-s", "--format=%ct", head).strip())
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError("Git commit timestamp is unavailable") from exc
+    return zip_timestamp_utc(epoch)
+
+
 def members() -> list[str]:
     paths = historical.members()
     if len(paths)!=92 or len(set(paths))!=92:
@@ -53,6 +75,7 @@ def members() -> list[str]:
 
 def build() -> tuple[bytes, dict]:
     head,tree=identity()
+    zip_time=committed_zip_timestamp(head)
     names=members()
     file_map={}
     mem=io.BytesIO()
@@ -64,7 +87,7 @@ def build() -> tuple[bytes, dict]:
             if blob!=expected:
                 raise RuntimeError("Uncommitted/untracked byte difference: "+name)
             file_map[name]={"size":len(raw),"sha256":digest(raw),"git_blob_sha1":blob}
-            info=zipfile.ZipInfo(name,(1980,1,1,0,0,0))
+            info=zipfile.ZipInfo(name,zip_time)
             info.create_system=3
             info.external_attr=0o100644<<16
             info.compress_type=zipfile.ZIP_DEFLATED
@@ -73,6 +96,7 @@ def build() -> tuple[bytes, dict]:
     metadata={
         "name":"AChBot post-V9 Marzban-only source-only development candidate",
         "candidate":head,"tree":tree,"historical_base":V9,
+        "zip_timestamp_utc":list(zip_time),
         "file_count":len(names),"zip_sha256":digest(data),
         "files":file_map,
         "legacy_xui_removed":True,
@@ -90,6 +114,9 @@ def build() -> tuple[bytes, dict]:
 def verify(path: Path, manifest_path: Path) -> dict:
     head,tree=identity()
     metadata=json.loads(manifest_path.read_text())
+    expected_zip_time=committed_zip_timestamp(head)
+    if metadata.get("zip_timestamp_utc") != list(expected_zip_time):
+        raise RuntimeError("ZIP timestamp not bound to exact commit")
     expected_flags={"schema_migration_included":False,
         "private_config_included":False,"sql_data_included":False,
         "real_payment_tested_or_approved":False,
@@ -113,6 +140,8 @@ def verify(path: Path, manifest_path: Path) -> dict:
         for item in archive.infolist():
             if item.is_dir() or item.filename.startswith("/") or ".." in Path(item.filename).parts:
                 raise RuntimeError("Unsafe ZIP member")
+            if item.date_time != expected_zip_time:
+                raise RuntimeError("ZIP member timestamp does not match exact commit")
             field=metadata["files"][item.filename]
             current=(ROOT/item.filename).read_bytes()
             blob=git("rev-parse","HEAD:"+item.filename).decode().strip()
