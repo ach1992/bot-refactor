@@ -696,6 +696,39 @@ function getAgentsList($offset = 0){
 }
 require_once __DIR__ . '/src/Finance/AgentDiscounts.php';
 require_once __DIR__ . '/src/Finance/GatewayClient.php';
+function getMarzbanPanelGroupKeys($mode, $serverId = 0) {
+    global $connection, $buttonValues;
+    $keys = [];
+    foreach (achbotMarzbanPanelGroups($connection) as $group) {
+        $id = (int)$group['id'];
+        $cb = $mode === 'add'
+            ? "selectNewPanelGroup_$id"
+            : "setServerPanelGroup_{$serverId}_{$id}";
+        $keys[] = [['text'=>'🏷 ' . $group['name'], 'callback_data'=>$cb]];
+    }
+    $none = $mode === 'add'
+        ? 'selectNewPanelGroup_0'
+        : "setServerPanelGroup_{$serverId}_0";
+    $keys[] = [['text'=>'⭕ بدون گروه (انتقال غیرفعال)', 'callback_data'=>$none]];
+    $keys[] = [['text'=>$buttonValues['back_button'] ?? '🔙 بازگشت',
+                'callback_data'=>$mode === 'add' ? 'serversSetting' : "showServerSettings{$serverId}_0"]];
+    return json_encode(['inline_keyboard'=>$keys], JSON_UNESCAPED_UNICODE);
+}
+function getMarzbanPanelGroupsManagementKeys() {
+    global $connection, $buttonValues;
+    $keys = [];
+    foreach (achbotMarzbanPanelGroups($connection) as $group) {
+        $id = (int)$group['id'];
+        $keys[] = [
+            ['text'=>'🏷 ' . $group['name'], 'callback_data'=>'wizwizch'],
+            ['text'=>'🗑 حذف گروه بدون سرور', 'callback_data'=>"deleteMarzbanPanelGroup_$id"],
+        ];
+    }
+    if (!$keys) $keys[] = [['text'=>'هنوز گروهی تعریف نشده', 'callback_data'=>'wizwizch']];
+    $keys[] = [['text'=>'➕ تعریف گروه پنل جدید', 'callback_data'=>'addMarzbanPanelGroup']];
+    $keys[] = [['text'=>$buttonValues['back_button'] ?? '🔙 بازگشت', 'callback_data'=>'serversSetting']];
+    return json_encode(['inline_keyboard'=>$keys], JSON_UNESCAPED_UNICODE);
+}
 function getServerConfigKeys($serverId,$offset = 0){
     global $connection, $buttonValues;
     $stmt = $connection->prepare("SELECT * FROM `server_info` WHERE `id`=?");
@@ -718,8 +751,7 @@ function getServerConfigKeys($serverId,$offset = 0){
     }
     $id = $info['id'];
     $panelGroup = achbotMarzbanGroup($connection, $id);
-    $groupLabel = $panelGroup === null ? '⚠️ ناسازگار' :
-        ($panelGroup === '' ? 'خودکار' : $panelGroup);
+    $groupLabel = $panelGroup === null ? 'بدون گروه' : $panelGroup['name'];
     $keys = [
         [['text'=>$config['panel_url'], 'callback_data'=>'wizwizch']],
         [['text'=>$info['title'], 'callback_data'=>"editServerName$id"], ['text'=>'❕نام سرور', 'callback_data'=>'wizwizch']],
@@ -784,6 +816,7 @@ function getServerListKeys($offset = 0){
     $keys[] = [
         ['text'=>"➕ ثبت سرور مرزبان",'callback_data'=>"addNewMarzbanPanel"]
         ];
+    $keys[] = [['text'=>'🏷 مدیریت گروه‌های پنل مرزبان', 'callback_data'=>'manageMarzbanPanelGroups']];
     $keys[] = [['text' => $buttonValues['back_button'], 'callback_data' => "managePanel"]];
     return json_encode(['inline_keyboard'=>$keys]);
 }

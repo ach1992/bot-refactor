@@ -20,8 +20,8 @@ orders, wallet/payments, future schema deletion or actual server backups.
 
 Keep actual Marzban subscription, purchase/provision, renewal, extensions,
 traffic, status, UUID, deletion, plan and server onboarding, user/agent/admin
-access, support, broadcast and Cron. Keep all original **23 MariaDB tables**
-intact for now. Future PasarGuard, new X-UI and unknown panels are *not*
+access, support, broadcast and Cron. Preserve all 23 original MariaDB tables and data; the R4 group identity adds
+only a separately gated nullable server_info column to the current runtime. Future PasarGuard, new X-UI and unknown panels are *not*
 supported yet; add each later with its own provider-specific API contract,
 without reinstating or guessing old X-UI semantics.
 
@@ -31,40 +31,22 @@ tokens still say `Wrong token`, but a legacy-shaped valid token returns
 HTTP **410** without DB access. Original URL filename remains, preventing
 accidental execution of removed X-UI SQL/API.
 
-## Owner-approved logical server switching on one real Marzban panel
+## Owner-approved Marzban shared-panel groups — R4 (2026-10-15)
 
-The Owner's revised Issue #31 decision (2026-10-15) explicitly confirms that
-multiple bot "servers" normally represent **different logical services,
-plans and prices on the same Marzban panel**, rather than distinct account
-stores. In that case, the supported switch intentionally changes **only**
-`orders_list.server_id`, as the inherited bot did. The actual Marzban
-account, proxies/inbounds, tokens, UUID, link, traffic, order plan/fileid,
-wallet, price paid and capacity counters **are not rewritten** by switching.
-Renewal using an old plan remains available if its original plan server and
-new logical server are verified to share the same panel; its original
-plan price stays in force until separately changed.
+**Owner clarified after R3:** two logical "servers" can point to the **same real Marzban backend** even if their API URLs and administrative usernames differ. Matching URLs or user names can also refer to different logical/physical deployments. **Only a valid admin-managed shared panel-group ID identifies the same real panel for switching.** R3's automatic endpoint/username inference is retired.
 
-The admin can set an ASCII **shared panel group** during Marzban server
-onboarding or edit it later in the server settings. No new SQL schema,
-columns or migrations are required: optional per-server group values live in
-the existing `setting` table. `server_info.flag` remains only the display
-flag. Existing untagged entries may switch automatically if their normalized
-configured panel URL and admin username match. Explicit conflicting group
-labels isolate entries, while matching labels alone **never** override
-different panel URLs, usernames or retired provider types. A legacy callback
-cannot authorize a switch: both user and admin handlers recheck current
-owner/admin privileges, order status, same-panel identity and target
-availability, with a guarded SQL transaction and no remote panel API call.
-Changing an explicit group may affect eligibility of previously switched
-orders; use matching tags for entries representing the same backend.
+A group is defined by an administrator in Server Management → Panel Groups; its display name (including Persian) is persisted in an ordinary `setting` row with `type='ACHBOT_MARZBAN_PANEL_GROUP'`. The stable `setting.id` identifies that group. Each logical Marzban server has a dedicated nullable `server_info.panel_group_id` column. During Marzban onboarding and server configuration the administrator chooses an existing group from an inline keyboard, or deliberately leaves the server unassigned. No free-text per-server arbitrary tag creates a group. `server_info.flag` remains only a display emoji/flag.
 
-**Cross-panel relocation remains unsupported** and deliberately fails
-closed. A future separately approved provider-specific increment may migrate
-accounts between actual panels and reconcile selected protocols/inbounds,
-plans and subscription settings on Marzban or a future PasarGuard backend.
-Do not interpret today's logical switch as an actual service migration.
-No actual tenant, customer credentials or live server may be accessed in
-source-only tests.
+**No group is NOT a shared group.** All preexisting servers remain NULL/unassigned after the migration and cannot switch with any other server until explicitly grouped by the admin. Different URLs or credentials in the **same valid group** are allowed; even identical URLs/credentials in different groups are rejected. Unknown/retired panel types and missing/deleted groups fail closed. Admin and user callbacks check current permissions, order status, group membership, destination capacity/active state and plan compatibility. Transactions and row locks protect the DB-only order reassignment; changing a group cannot strand an active order already logically reassigned with an original plan on another group.
+
+**What the switch does:** update **only** `orders_list.server_id`. It does NOT change the real Marzban account, proxies/inbounds, protocol, token/UUID/link, order `fileid` or original plan, price, wallet/transactions or capacity counters. Same-group plan-linked accounts retain their renewal eligibility and original plan pricing. Individual logical servers can continue to offer different configurable product plans/prices. For true changes of physical panel or real user profile based on selected plan, create a separate Owner-gated provider-specific design for Marzban and eventually PasarGuard; **do not claim remote migration here**.
+
+### One explicitly accepted additive MariaDB migration
+
+This is a narrow exception to the initial Issue #31 no-schema-change rule, explicitly authorized by the Owner in [the R4 correction](https://github.com/ach1992/bot-refactor/issues/31#issuecomment-6184330243).
+- Original **historical** `database/legacy-schema.sql` remains byte-identical and all 23 table names and data stay. The current post-V9 schema adds only **one nullable `server_info.panel_group_id` column**, from `migrations/post-v9/001_marzban_panel_group_id.sql`.
+- The migration is **NOT automatically included/executed** by the source ZIP. GitHub acceptance tests run it *only on owned disposable MariaDB*, verify old values, all other tables, idempotence and fresh NULL memberships. The true production backup/restore, maintenance window, DDL application and admin membership assignment remain separately gated.
+- See [PANEL-GROUPS-MIGRATION.md](PANEL-GROUPS-MIGRATION.md) for prerequisites, ordering, fail-closed recovery and roll-forward strategy. Source-only rollback to the frozen V9 source does **not** require dropping the additive nullable column; don't drop it blindly to pretend the migration was reversed.
 
 Current financial/TRON issues are **not fixed by this refactor**; see
 [Issue #26](https://github.com/ach1992/bot-refactor/issues/26). Signed negative
@@ -149,13 +131,15 @@ resolver now covers **23** native scenarios including provider mismatch and
 external renewal record identity. Disabled-cURL spies replace actual payment
 transport, so no real provider, money or tenant is touched. NowPayments
 callback preflight is deliberately before the remote verification request.
-Admin and customer server reassignment now use one guarded shared-panel
-contract; cross-panel and stale/forged callbacks still fail closed. **32
-additional original-schema logical relocation/onboarding cases** validate
-the former callback shapes, owner/admin privileges, explicit/automatic tags,
-different physical endpoints, plan retention and actual admin group wizard
-against only a local fake Marzban login. No payment or remote account mutation
-is exercised. Real-world financial exactly-once and settlement risks remain
+Admin and customer server reassignment now use the explicit named panel-group
+identity; original R3 URL/username inference is gone. **34 native PHP
+cases** exercise real server-group creation, catalog selection during
+Marzban onboarding and editing, different URLs/admin credentials in one
+group, same URL in a different group, unassigned servers, stale/forged
+callbacks, plan-linked order protection and a separately verified additive
+nullable-column migration on 23 original disposable MariaDB tables.
+There are no remote account moves or real payment/provider mutations.
+Real-world financial exactly-once and settlement risks remain
 under Issue #26.
 
 CI executes current suite on PHP 8.1 and PHP 8.4 separately, then creates
@@ -172,10 +156,15 @@ python3 tools/package_post_v9.py verify \
 A separate actual-disposable-filesystem rollback verification is run via
 tools/test_post_v9_swap.py. It uses the genuine pinned V9 file bytes and
 current source to perform **V9 -> candidate -> V9 -> candidate**, checking all
-92 runtime members at every phase, original SQL DDL unchanged, and that
-synthetic local baseInfo/private sentinels remain untouched. This proves
+92 runtime members at every phase, the frozen historical SQL DDL **source file**
+unchanged (not an installed database rollback), and synthetic local
+baseInfo/private sentinels untouched. This proves
 source overlay byte integrity, **not** installed rollback, full data restore
 or safe live payment continuity.
+
+The CI artifact also contains the separately named additive migration SQL
+and SHA256 digest beside (not inside) the source ZIP. The SQL requires
+its own production owner gate and manual/preapproved execution sequence.
 
 The package requires a **clean committed** source worktree, verifies each
 actual member SHA256 and SHA-1 Git Blob, pins exact source SHA/TREE, omits

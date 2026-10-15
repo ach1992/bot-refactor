@@ -89,7 +89,8 @@ if (!function_exists('achbotSupportsMarzbanPlan')) {
 }
 
 // Post-V9: read-only order and payment-subject validation at *entrance*.
-// All consumers use the same current provider and original 23-table schema.
+// All consumers use the same current provider and 23-table schema; R4 adds
+// only one separately migrated nullable server_info column.
 if (!function_exists('achbotSupportsMarzbanAccount')) {
     function achbotSupportsMarzbanAccount($type, $inboundId)
     {
@@ -97,112 +98,158 @@ if (!function_exists('achbotSupportsMarzbanAccount')) {
     }
 }
 
-// Logical server entries can share one real Marzban API. Do not confuse
-// their separate prices/plans with separate provider account stores.
-// These helpers reuse existing setting rows; original 23-table DDL is frozen.
+// R4: physical panel is explicitly identified by an admin-managed group.
+// Different API URLs and admin users can access the SAME backend.
+// Only a nullable server_info.panel_group_id column is added by separate SQL
+// migration; historical V9 DDL remains frozen.
 if (!function_exists('achbotMarzbanGroupValid')) {
-    function achbotMarzbanGroupValid($group)
-    {
-        return is_string($group) && preg_match('/^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$/D', $group) === 1;
+    function achbotMarzbanGroupValid($name) {
+        $name = is_string($name) ? trim($name) : '';
+        return $name !== '' && strlen($name) <= 200 &&
+            preg_match('/^.{1,60}$/us', $name) === 1;
     }
 }
-
-if (!function_exists('achbotMarzbanGroupKey')) {
-    function achbotMarzbanGroupKey($serverId)
-    {
-        return 'ACHBOT_MARZBAN_PANEL_GROUP_' . (int)$serverId;
-    }
-}
-
-if (!function_exists('achbotMarzbanGroup')) {
-    function achbotMarzbanGroup($connection, $serverId)
-    {
-        if ((int)$serverId <= 0) return null;
-        $key = achbotMarzbanGroupKey($serverId);
-        $stmt = $connection->prepare("SELECT `value` FROM `setting` WHERE `type` = ? LIMIT 2");
-        $stmt->bind_param('s', $key);
+if (!function_exists('achbotMarzbanPanelGroups')) {
+    function achbotMarzbanPanelGroups($connection) {
+        $stmt = $connection->prepare(
+            "SELECT id, value AS name FROM setting WHERE type = 'ACHBOT_MARZBAN_PANEL_GROUP' ORDER BY id"
+        );
         $stmt->execute();
         $result = $stmt->get_result();
-        $count = $result->num_rows;
-        $row = $result->fetch_assoc();
+        $groups = [];
+        while ($row = $result->fetch_assoc()) {
+            $groups[] = ['id'=>(int)$row['id'], 'name'=>(string)$row['name']];
+        }
         $stmt->close();
-        if ($count > 1) return null; // ambiguous configuration: fail closed
-        if (!$row) return ''; // legacy untagged server, match exact endpoint
-        $group = (string)$row['value'];
-        return achbotMarzbanGroupValid($group) ? $group : null;
+        return $groups;
     }
 }
-
+if (!function_exists('achbotCreateMarzbanPanelGroup')) {
+    function achbotCreateMarzbanPanelGroup($connection, $name) {
+        $name = trim((string)$name);
+        if (!achbotMarzbanGroupValid($name)) return null;
+        $stmt = $connection->prepare(
+            "SELECT id FROM setting WHERE type = 'ACHBOT_MARZBAN_PANEL_GROUP' AND value = ? LIMIT 1"
+        );
+        $stmt->bind_param('s', $name);
+        $stmt->execute();
+        $exists = $stmt->get_result()->num_rows > 0;
+        $stmt->close();
+        if ($exists) return null;
+        $stmt = $connection->prepare(
+            "INSERT INTO setting (type,value) VALUES ('ACHBOT_MARZBAN_PANEL_GROUP', ?)"
+        );
+        $stmt->bind_param('s', $name);
+        $stmt->execute();
+        $id = (int)$stmt->insert_id;
+        $stmt->close();
+        return $id > 0 ? $id : null;
+    }
+}
+if (!function_exists('achbotMarzbanGroup')) {
+    function achbotMarzbanGroup($connection, $serverId) {
+        if ((int)$serverId <= 0) return null;
+        $stmt = $connection->prepare(
+            "SELECT g.id, g.value AS name
+             FROM server_info s INNER JOIN server_config c ON c.id = s.id
+             INNER JOIN setting g ON g.id = s.panel_group_id
+                     AND g.type = 'ACHBOT_MARZBAN_PANEL_GROUP'
+             WHERE s.id = ? AND c.type = 'marzban' LIMIT 1"
+        );
+        $serverId = (int)$serverId;
+        $stmt->bind_param('i', $serverId);
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        return $row ? ['id'=>(int)$row['id'], 'name'=>(string)$row['name']] : null;
+    }
+}
 if (!function_exists('achbotSetMarzbanGroup')) {
-    function achbotSetMarzbanGroup($connection, $serverId, $group)
-    {
-        // Creation/edit callers own a transaction; untag/deletion cleanup
-        // is also idempotent when invoked by an existing legacy handler.
-        if ((int)$serverId <= 0 || ($group !== '' && !achbotMarzbanGroupValid($group))) {
-            throw new \InvalidArgumentException('invalid_marzban_panel_group');
+    function achbotSetMarzbanGroup($connection, $serverId, $groupId) {
+        // Caller must own SQL transaction and server_config row lock.
+        $serverId = (int)$serverId;
+        $groupId = ($groupId === null || (int)$groupId === 0) ? null : (int)$groupId;
+        if ($serverId <= 0 || ($groupId !== null && $groupId <= 0)) {
+            throw new \InvalidArgumentException('invalid_panel_group_assignment');
         }
-        $key = achbotMarzbanGroupKey($serverId);
-        $stmt = $connection->prepare("DELETE FROM `setting` WHERE `type` = ?");
-        $stmt->bind_param('s', $key);
+        if ($groupId !== null) {
+            $stmt = $connection->prepare(
+                "SELECT id FROM setting WHERE id = ? AND type = 'ACHBOT_MARZBAN_PANEL_GROUP' FOR UPDATE"
+            );
+            $stmt->bind_param('i', $groupId);
+            $stmt->execute();
+            $exists = $stmt->get_result()->num_rows === 1;
+            $stmt->close();
+            if (!$exists) throw new \RuntimeException('unknown_panel_group');
+        }
+        $stmt = $connection->prepare(
+            "SELECT o.server_id AS order_server, p.server_id AS plan_server,
+                    os.panel_group_id AS order_group, ps.panel_group_id AS plan_group
+             FROM orders_list o
+             INNER JOIN server_plans p ON p.id = o.fileid
+             INNER JOIN server_info os ON os.id = o.server_id
+             INNER JOIN server_info ps ON ps.id = p.server_id
+             WHERE o.status = 1 AND (o.server_id = ? OR p.server_id = ?)
+                   AND o.server_id != p.server_id"
+        );
+        $stmt->bind_param('ii', $serverId, $serverId);
+        $stmt->execute();
+        $affected = $stmt->get_result();
+        while ($row = $affected->fetch_assoc()) {
+            $orderGroup = (int)$row['order_server'] === $serverId
+                ? $groupId : ($row['order_group'] === null ? null : (int)$row['order_group']);
+            $planGroup = (int)$row['plan_server'] === $serverId
+                ? $groupId : ($row['plan_group'] === null ? null : (int)$row['plan_group']);
+            if ($orderGroup === null || $planGroup === null || $orderGroup !== $planGroup) {
+                $stmt->close();
+                throw new \RuntimeException('group_change_would_strand_order');
+            }
+        }
+        $stmt->close();
+        $stmt = $connection->prepare("UPDATE server_info SET panel_group_id = ? WHERE id = ?");
+        $stmt->bind_param('ii', $groupId, $serverId);
         $stmt->execute();
         $stmt->close();
-        if ($group !== '') {
-            $stmt = $connection->prepare("INSERT INTO `setting` (`type`, `value`) VALUES (?, ?)");
-            $stmt->bind_param('ss', $key, $group);
-            $stmt->execute();
-            $stmt->close();
-        }
     }
 }
-
+if (!function_exists('achbotDeleteMarzbanPanelGroup')) {
+    function achbotDeleteMarzbanPanelGroup($connection, $groupId) {
+        $groupId = (int)$groupId;
+        if ($groupId <= 0) return false;
+        $stmt = $connection->prepare(
+            "DELETE FROM setting WHERE id = ?
+               AND type = 'ACHBOT_MARZBAN_PANEL_GROUP'
+               AND NOT EXISTS (SELECT 1 FROM server_info WHERE panel_group_id = ?)"
+        );
+        $stmt->bind_param('ii', $groupId, $groupId);
+        $stmt->execute();
+        $success = $stmt->affected_rows === 1;
+        $stmt->close();
+        return $success;
+    }
+}
 if (!function_exists('achbotSameMarzbanPanel')) {
-    function achbotSameMarzbanPanel($connection, $sourceId, $targetId)
-    {
+    function achbotSameMarzbanPanel($connection, $sourceId, $targetId) {
         $sourceId = (int)$sourceId;
         $targetId = (int)$targetId;
-        if ($sourceId <= 0 || $targetId <= 0) return false;
+        if ($sourceId <= 0 || $targetId <= 0 || $sourceId === $targetId) return false;
+        // ONLY explicit valid shared group membership is authoritative;
+        // no assumptions from URL, username, an empty group or panel type.
         $stmt = $connection->prepare(
-            "SELECT `id`, `type`, `panel_url`, `username`
-             FROM `server_config` WHERE `id` IN (?, ?)"
+            "SELECT a.id FROM server_info a
+             INNER JOIN server_config ac ON ac.id = a.id AND ac.type = 'marzban'
+             INNER JOIN server_info b ON b.id = ?
+             INNER JOIN server_config bc ON bc.id = b.id AND bc.type = 'marzban'
+             INNER JOIN setting g ON g.id = a.panel_group_id
+                  AND g.type = 'ACHBOT_MARZBAN_PANEL_GROUP'
+             WHERE a.id = ? AND a.panel_group_id IS NOT NULL
+                   AND a.panel_group_id = b.panel_group_id LIMIT 1"
         );
-        $stmt->bind_param('ii', $sourceId, $targetId);
+        $stmt->bind_param('ii', $targetId, $sourceId);
         $stmt->execute();
-        $rows = [];
-        $result = $stmt->get_result();
-        while ($row = $result->fetch_assoc()) {
-            $rows[(int)$row['id']] = $row;
-        }
+        $same = $stmt->get_result()->num_rows === 1;
         $stmt->close();
-        if (!isset($rows[$sourceId], $rows[$targetId]) ||
-            $rows[$sourceId]['type'] !== 'marzban' ||
-            $rows[$targetId]['type'] !== 'marzban') return false;
-
-        // This version permits logical reassignment only for the same
-        // configured API endpoint and admin identity. Matching text tags
-        // alone cannot prove two distinct URLs point to one live panel.
-        $endpoint = static function ($raw) {
-            $url = parse_url(trim((string)$raw));
-            if (!is_array($url) || !isset($url['scheme'], $url['host']) ||
-                !in_array(strtolower($url['scheme']), ['http', 'https'], true) ||
-                isset($url['user']) || isset($url['pass']) ||
-                isset($url['query']) || isset($url['fragment'])) return null;
-            return strtolower($url['scheme']) . '://' . strtolower($url['host']) .
-                (isset($url['port']) ? ':' . (int)$url['port'] : '') .
-                rtrim((string)($url['path'] ?? ''), '/');
-        };
-        $a = $endpoint($rows[$sourceId]['panel_url']);
-        $b = $endpoint($rows[$targetId]['panel_url']);
-        if ($a === null || $a === '' || $a !== $b ||
-            trim((string)$rows[$sourceId]['username']) === '' ||
-            $rows[$sourceId]['username'] !== $rows[$targetId]['username']) return false;
-
-        $sourceGroup = achbotMarzbanGroup($connection, $sourceId);
-        $targetGroup = achbotMarzbanGroup($connection, $targetId);
-        if ($sourceGroup === null || $targetGroup === null) return false;
-        // No tag is required for old entries with the same verified endpoint.
-        // Explicitly conflicting labels isolate logical server offerings.
-        return $sourceGroup === '' || $targetGroup === '' ||
-            $sourceGroup === $targetGroup;
+        return $same;
     }
 }
 

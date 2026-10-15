@@ -83,7 +83,9 @@ def source_checks():
     if any(x in old_link for x in ("baseInfo.php","config.php","mysqli","curl_","getJson(")):
         raise RuntimeError("Retired old-panel subscription link still accesses real state")
     return {"source_files":len(files),"php_lint":len(php_files),
-            "schema_unchanged":True,"synthetic_baseinfo_example_unchanged":True,
+            "original_historical_schema_file_unchanged":True,
+            "current_additive_migration_separately_tested":True,
+            "synthetic_baseinfo_example_unchanged":True,
             "historic_contract_changed":False,"retired_provider_api_removed":True,
             "future_pasarguard_or_new_xui_implemented":False}
 
@@ -153,11 +155,12 @@ def main():
                         "--run-disposable","--report",str(logical_path)],
                        cwd=ROOT,check=True,timeout=180,capture_output=True)
         logical=json.loads(logical_path.read_text())
-        if not (logical.get("complete") and logical.get("cases")>=32
-                and logical.get("original_schema_tables")==23
-                and logical.get("original_schema_unchanged")
-                and logical.get("source_only_logical_reassignment")
-                and logical.get("no_real_panel_or_financial_calls")):
+        if not (logical.get("complete") and logical.get("cases")>=34
+                and logical.get("schema_tables")==23
+                and logical.get("additive_server_info_column_verified")
+                and logical.get("original_historical_schema_file_unchanged")
+                and logical.get("same_panel_group_not_derived_from_url_or_username")
+                and logical.get("no_real_provider_or_payment_calls")):
             raise RuntimeError("Same-Marzban-panel logical reassignment contract incomplete")
         overlay_report=Path(tmp)/"source-overlay.json"
         subprocess.run(["python3",str(ROOT/"tools/test_post_v9_swap.py"),
