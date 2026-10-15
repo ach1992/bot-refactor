@@ -258,9 +258,17 @@ achEvent('probe',[
             emoji_name='🟩'*60
             result=do('wizard',text=emoji_name,actor=9001)
             if not has(result,'✅'):raise RuntimeError('60 Unicode emoji group name rejected')
-            emoji_id=int(sql(work,env,
-                "SELECT id FROM setting WHERE type='ACHBOT_MARZBAN_PANEL_GROUP' "
-                f"AND value='{emoji_name}'").strip())
+            # The mariadb CLI can default to utf8mb3 on older CI runners.
+            # Compare the stored utf8mb4 bytes using ASCII HEX(), not an
+            # emoji literal interpreted through the client's default charset.
+            emoji_row=sql(work,env,
+                "SELECT id,HEX(value),CHAR_LENGTH(value) FROM setting "
+                "WHERE type='ACHBOT_MARZBAN_PANEL_GROUP' ORDER BY id DESC LIMIT 1"
+            ).strip().split('\t')
+            if (len(emoji_row)!=3 or emoji_row[1].lower()!=emoji_name.encode().hex()
+                    or emoji_row[2]!='60'):
+                raise RuntimeError('Stored Unicode name is not exact UTF-8: '+repr(emoji_row))
+            emoji_id=int(emoji_row[0])
             do('wizard',data=f'deleteMarzbanPanelGroup_{emoji_id}',actor=9001)
             if sql(work,env,f'SELECT COUNT(*) FROM setting WHERE id={emoji_id}').strip()!='0':
                 raise RuntimeError('Unicode test group deletion failed')

@@ -151,9 +151,15 @@ def main():
                 finance.get("real_provider_requests")==0):
             raise RuntimeError("Original-schema financial route and stale admin callback assurance incomplete")
         logical_path=Path(tmp)/"marzban-logical-transfer.json"
-        subprocess.run(["python3",str(ROOT/"tools/test_post_v9_logical_transfer.py"),
-                        "--run-disposable","--report",str(logical_path)],
-                       cwd=ROOT,check=True,timeout=180,capture_output=True)
+        try:
+            subprocess.run(["python3",str(ROOT/"tools/test_post_v9_logical_transfer.py"),
+                            "--run-disposable","--report",str(logical_path)],
+                           cwd=ROOT,check=True,timeout=180,capture_output=True)
+        except subprocess.CalledProcessError as exc:
+            # A failed isolated child previously hid its useful traceback.
+            # Surface only the bounded synthetic test stderr in Actions.
+            error=(exc.stderr or b'').decode(errors='replace')[-6000:]
+            raise RuntimeError("Marzban logical-group regression failed:\n"+error) from exc
         logical=json.loads(logical_path.read_text())
         if not (logical.get("complete") and logical.get("cases")>=38
                 and logical.get("schema_tables")==23
