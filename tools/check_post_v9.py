@@ -155,11 +155,14 @@ def main():
                         "--run-disposable","--report",str(logical_path)],
                        cwd=ROOT,check=True,timeout=180,capture_output=True)
         logical=json.loads(logical_path.read_text())
-        if not (logical.get("complete") and logical.get("cases")>=34
+        if not (logical.get("complete") and logical.get("cases")>=38
                 and logical.get("schema_tables")==23
                 and logical.get("additive_server_info_column_verified")
                 and logical.get("original_historical_schema_file_unchanged")
                 and logical.get("same_panel_group_not_derived_from_url_or_username")
+                and logical.get("concurrent_two_admin_group_creation_verified")
+                and logical.get("pinned_v9_source_on_migrated_schema_verified")
+                and logical.get("unicode_group_name_contract_verified")
                 and logical.get("no_real_provider_or_payment_calls")):
             raise RuntimeError("Same-Marzban-panel logical reassignment contract incomplete")
         overlay_report=Path(tmp)/"source-overlay.json"

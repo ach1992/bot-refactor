@@ -13,7 +13,7 @@ ALTER TABLE server_info
     ADD COLUMN IF NOT EXISTS panel_group_id int(11) DEFAULT NULL AFTER flag;
 ```
 
-This keeps the same 23 tables. No previous row is reclassified: every old server has `panel_group_id=NULL`, meaning no logical transfer until an admin assigns a group. Group definitions live in *existing* `setting` records with `type='ACHBOT_MARZBAN_PANEL_GROUP'`, `value` as a human-readable name and `setting.id` as the group ID. The schema intentionally has no FK into the polymorphic `setting` table; PHP validates the group type, membership, permissions and locks at write/switch time. The display `server_info.flag` is unrelated.
+This keeps the same 23 tables. No previous row is reclassified: every old server has `panel_group_id=NULL`, meaning no logical transfer until an admin assigns a group. Group definitions live in *existing* `setting` records with `type='ACHBOT_MARZBAN_PANEL_GROUP'`, `value` as a human-readable name and `setting.id` as the group ID. The schema intentionally has no FK into the polymorphic `setting` table; PHP validates the group type, membership, permissions and locks at write/switch time. The display `server_info.flag` is unrelated. Group creation uses a named MariaDB advisory lock held through commit/rollback to prevent concurrent same-name group definitions; no additional table, index or column is required.
 
 ## Separately authorized production/staging procedure
 
@@ -34,4 +34,4 @@ This keeps the same 23 tables. No previous row is reclassified: every old server
 
 ## Evidence boundary
 
-`python3 tools/test_post_v9_logical_transfer.py --run-disposable` runs real PHP callbacks, original 23-table disposable MariaDB restored from fixtures, the additive migration twice and local fake Marzban authentication. `python3 tools/check_post_v9.py` integrates it with other current source/history tests. No connected production tenant/database or real payment/Telegram/Marzban operation has been exercised or approved. The source-only ZIP does **not** include or execute SQL; CI publishes the migration beside the ZIP as a separately identifiable source file.
+`python3 tools/test_post_v9_logical_transfer.py --run-disposable` runs real PHP callbacks, original 23-table disposable MariaDB restored from fixtures, the additive migration twice, two simultaneous administrator group-creation callbacks on independent PHP/MySQL connections with a disposable delay trigger, Unicode name cases and local fake Marzban authentication. It also runs a read-oriented pinned V9 catalogue handler after the additive migration (not a complete installed-source rollback or live recovery drill). `python3 tools/check_post_v9.py` integrates it with other current source/history tests. No connected production tenant/database or real payment/Telegram/Marzban operation has been exercised or approved. The source-only ZIP does **not** include or execute SQL; CI publishes the migration beside the ZIP as a separately identifiable source file.

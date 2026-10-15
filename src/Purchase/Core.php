@@ -104,9 +104,12 @@ if (!function_exists('achbotSupportsMarzbanAccount')) {
 // migration; historical V9 DDL remains frozen.
 if (!function_exists('achbotMarzbanGroupValid')) {
     function achbotMarzbanGroupValid($name) {
-        $name = is_string($name) ? trim($name) : '';
-        return $name !== '' && strlen($name) <= 200 &&
-            preg_match('/^.{1,60}$/us', $name) === 1;
+        $name = is_string($name) ? $name : '';
+        // Reject ALL line breaks, including trailing ones before trimming.
+        // 60 Unicode characters fit setting.value TEXT, including emoji.
+        if (preg_match('/\R/u', $name) !== 0) return false;
+        $name = trim($name);
+        return $name !== '' && preg_match('/\A.{1,60}\z/u', $name) === 1;
     }
 }
 if (!function_exists('achbotMarzbanPanelGroups')) {
@@ -126,24 +129,55 @@ if (!function_exists('achbotMarzbanPanelGroups')) {
 }
 if (!function_exists('achbotCreateMarzbanPanelGroup')) {
     function achbotCreateMarzbanPanelGroup($connection, $name) {
-        $name = trim((string)$name);
         if (!achbotMarzbanGroupValid($name)) return null;
-        $stmt = $connection->prepare(
-            "SELECT id FROM setting WHERE type = 'ACHBOT_MARZBAN_PANEL_GROUP' AND value = ? LIMIT 1"
-        );
-        $stmt->bind_param('s', $name);
+        $name = trim((string)$name);
+        // No extra schema/index is authorized. MariaDB's connection-scoped
+        // advisory lock serializes ALL group-name checks and inserts.
+        // This helper owns its transaction: release the lock only AFTER
+        // commit/rollback so another creator cannot observe uncommitted data.
+        $lockName = 'achbot_post_v9_marzban_group_create';
+        $stmt = $connection->prepare('SELECT GET_LOCK(?, 10) AS acquired');
+        $stmt->bind_param('s', $lockName);
         $stmt->execute();
-        $exists = $stmt->get_result()->num_rows > 0;
+        $acquired = $stmt->get_result()->fetch_assoc();
         $stmt->close();
-        if ($exists) return null;
-        $stmt = $connection->prepare(
-            "INSERT INTO setting (type,value) VALUES ('ACHBOT_MARZBAN_PANEL_GROUP', ?)"
-        );
-        $stmt->bind_param('s', $name);
-        $stmt->execute();
-        $id = (int)$stmt->insert_id;
-        $stmt->close();
-        return $id > 0 ? $id : null;
+        if ((int)($acquired['acquired'] ?? 0) !== 1) {
+            throw new \RuntimeException('panel_group_create_lock_unavailable');
+        }
+        try {
+            $connection->begin_transaction();
+            try {
+                $stmt = $connection->prepare(
+                    "SELECT id FROM setting WHERE type = 'ACHBOT_MARZBAN_PANEL_GROUP' AND value = ? LIMIT 1"
+                );
+                $stmt->bind_param('s', $name);
+                $stmt->execute();
+                $exists = $stmt->get_result()->num_rows > 0;
+                $stmt->close();
+                if ($exists) {
+                    $connection->rollback();
+                    return null;
+                }
+                $stmt = $connection->prepare(
+                    "INSERT INTO setting (type,value) VALUES ('ACHBOT_MARZBAN_PANEL_GROUP', ?)"
+                );
+                $stmt->bind_param('s', $name);
+                $stmt->execute();
+                $id = (int)$stmt->insert_id;
+                $stmt->close();
+                if ($id <= 0) throw new \RuntimeException('panel_group_insert_failed');
+                $connection->commit();
+                return $id;
+            } catch (\Throwable $e) {
+                $connection->rollback();
+                throw $e;
+            }
+        } finally {
+            $stmt = $connection->prepare('SELECT RELEASE_LOCK(?)');
+            $stmt->bind_param('s', $lockName);
+            $stmt->execute();
+            $stmt->close();
+        }
     }
 }
 if (!function_exists('achbotMarzbanGroup')) {

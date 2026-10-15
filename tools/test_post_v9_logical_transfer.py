@@ -6,7 +6,10 @@ the separately shipped one-column additive MariaDB migration and its rerun.
 """
 from __future__ import annotations
 import argparse
+import concurrent.futures
 import json
+import shutil
+import time
 from pathlib import Path
 import test_access_state as owned
 import test_v6_native as native
@@ -71,6 +74,24 @@ def main():
             raise RuntimeError('MariaDB migration is not idempotent')
         passed('additive_migration_original_rows_intact')
         passed('repeat_migration_unchanged')
+        # Execute pinned V9 PHP source on the real, already-migrated fixture DB.
+        old=work/'pinned-v9-on-migrated-db'
+        stages.stage_source(old,False)
+        pre_v9=snapshot(work,env)
+        z=purchase.run(work,env,old,DB,'catalogue',
+                       {'actor':1001,'data':'selectServer2_none'},modern=True)
+        if z['exception'] or z['warnings'] or z['stdout']:
+            raise RuntimeError('Pinned V9 source failed on migrated DB: '+repr(z)[:1000])
+        post_v9=snapshot(work,env)
+        # V9 selectors legitimately record the customer's wizard step/temp.
+        # Financial state, provider catalogue, orders and group data cannot move.
+        protected=('payments','orders','capacity','plans','categories')
+        changed=[k for k in protected if pre_v9[0][k]!=post_v9[0][k]]
+        if changed or pre_v9[1:]!=post_v9[1:]:
+            raise RuntimeError('Pinned V9 changed '+repr(changed)+
+                               '; server/catalog SQL delta '+repr(pre_v9[1:]!=post_v9[1:]))
+        sql(work,env,"UPDATE users SET step='none',temp=NULL WHERE userid=1001")
+        passed('pinned_v9_native_source_on_additive_column')
         sql(work,env,"""
         DELETE FROM server_config WHERE id IN (3,4,5,6);
         INSERT INTO server_info (id,title,ucount,remark,flag,active,state)
@@ -109,6 +130,14 @@ def main():
             if kind=='transfer': return b"<?php require __DIR__.'/src/Subscription/AccountTransfers.php';"
             if kind=='admin_transfer': return b"<?php require __DIR__.'/src/Subscription/OrderManagement.php';"
             if kind=='wizard': return wizard
+            if kind=='race_wizard':
+                # Two independent PHP admin sessions enter the real bot handler.
+                gate=(b"<?php\nfile_put_contents(__DIR__.'/race-ready','1');\n"
+                      b"$deadline=microtime(true)+8;\n"
+                      b"while (!file_exists(__DIR__.'/../group-race-go')) {\n"
+                      b"  if(microtime(true)>$deadline) throw new RuntimeException('race_barrier_timeout');\n"
+                      b"  usleep(1000);\n}\n")
+                return gate+wizard[len(b'<?php\n'):]
             if kind=='group':
                 return b"""<?php
 $connection->begin_transaction();
@@ -164,6 +193,53 @@ achEvent('probe',[
         def getid():
             return int(sql(work,env,f'SELECT server_id FROM orders_list WHERE id={oid}').strip())
         try:
+            # Two real admin callbacks, two independent mysqli connections.
+            # A disposable trigger delays INSERT so an unlocked SELECT/INSERT
+            # implementation would admit duplicate normalized names.
+            race_name='پنل همزمان'
+            sql(work,env,"UPDATE users SET step='newMarzbanPanelGroup' WHERE userid IN (9001,9002)")
+            roots=[work/'group-race-a',work/'group-race-b']
+            for root in roots: shutil.copytree(stage,root)
+            sql(work,env,
+                "CREATE TRIGGER achbot_race_delay BEFORE INSERT ON setting "
+                "FOR EACH ROW SET @achbot_race_delay = SLEEP(0.35)")
+            try:
+                with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+                    futures=[
+                        pool.submit(purchase.run,work,env,root,DB,'race_wizard',
+                                    {'actor':actor,
+                                     'text':' '+race_name+'  ' if actor==9001 else race_name},
+                                    modern=True)
+                        for root,actor in zip(roots,(9001,9002))
+                    ]
+                    for _ in range(240):
+                        if all((root/'race-ready').exists() for root in roots):
+                            break
+                        if any(f.done() for f in futures):
+                            raise RuntimeError('Race worker ended before synchronized start')
+                        time.sleep(0.02)
+                    else:
+                        raise RuntimeError('Two admin PHP workers did not rendezvous')
+                    (work/'group-race-go').write_text('go')
+                    outcomes=[f.result(timeout=28) for f in futures]
+                if any(z['exception'] or z['warnings'] or z['stdout'] for z in outcomes):
+                    raise RuntimeError('Admin race PHP exception/warning: '+repr(outcomes)[:1800])
+                accepted=sum(has(z,'✅') for z in outcomes)
+                rejected=sum(has(z,'قبلاً') for z in outcomes)
+                rows=sql(work,env,
+                    "SELECT id,value FROM setting WHERE type='ACHBOT_MARZBAN_PANEL_GROUP' "
+                    "AND value='پنل همزمان' ORDER BY id").splitlines()
+                if accepted!=1 or rejected!=1 or len(rows)!=1:
+                    raise RuntimeError('Concurrent admin create did not produce one stable ID: '+
+                                       repr((accepted,rejected,rows,outcomes))[:2000])
+                stable_id=int(rows[0].split('\t')[0])
+                if stable_id<=0:raise RuntimeError('Concurrent group ID invalid')
+                sql(work,env,f"DELETE FROM setting WHERE id={stable_id}")
+            finally:
+                (work/'group-race-go').write_text('go')
+                sql(work,env,'DROP TRIGGER IF EXISTS achbot_race_delay')
+                sql(work,env,"UPDATE users SET step='none' WHERE userid IN (9001,9002)")
+            passed('concurrent_two_admin_same_normalized_name_one_group')
             refuse('same_url_without_group_blocked','transfer',f'switchServer5_{oid}')
             refused=do('transfer',f'switchLocation{oid}_2_0_0')
             if not any(x['name']=='alert' for x in refused['events']):
@@ -178,6 +254,24 @@ achEvent('probe',[
             dupe=do('wizard',text='پنل اصلی',actor=9001)
             if not has(dupe,'قبلاً'):raise RuntimeError('Duplicate group accepted')
             passed('duplicate_group_name_rejected')
+            do('wizard',data='addMarzbanPanelGroup',actor=9001)
+            emoji_name='🟩'*60
+            result=do('wizard',text=emoji_name,actor=9001)
+            if not has(result,'✅'):raise RuntimeError('60 Unicode emoji group name rejected')
+            emoji_id=int(sql(work,env,
+                "SELECT id FROM setting WHERE type='ACHBOT_MARZBAN_PANEL_GROUP' "
+                f"AND value='{emoji_name}'").strip())
+            do('wizard',data=f'deleteMarzbanPanelGroup_{emoji_id}',actor=9001)
+            if sql(work,env,f'SELECT COUNT(*) FROM setting WHERE id={emoji_id}').strip()!='0':
+                raise RuntimeError('Unicode test group deletion failed')
+            passed('sixty_unicode_emoji_group_name_accepted')
+            do('wizard',data='addMarzbanPanelGroup',actor=9001)
+            for invalid in ('بخش\nدیگر','نام\n'):
+                state=snapshot(work,env)
+                rejected=do('wizard',text=invalid,actor=9001)
+                if not has(rejected,'نام گروه نامعتبر') or snapshot(work,env)!=state:
+                    raise RuntimeError('Name containing newline passed admin validation')
+            passed('embedded_and_trailing_newline_groups_rejected')
             initial=snapshot(work,env)
             do('wizard',data='addMarzbanPanelGroup',actor=1001)
             if snapshot(work,env)!=initial:raise RuntimeError('Customer wrote group')
@@ -282,6 +376,9 @@ achEvent('probe',[
             'additive_server_info_column_verified':True,
             'original_historical_schema_file_unchanged':True,
             'same_panel_group_not_derived_from_url_or_username':True,
+            'concurrent_two_admin_group_creation_verified':True,
+            'pinned_v9_source_on_migrated_schema_verified':True,
+            'unicode_group_name_contract_verified':True,
             'no_real_provider_or_payment_calls':True,'scenarios':checks}
     if args.report:args.report.write_text(json.dumps(report,indent=2,ensure_ascii=False)+'\n')
     print(json.dumps({k:v for k,v in report.items() if k!='scenarios'},ensure_ascii=False))

@@ -1526,17 +1526,14 @@ if (($userInfo['step'] ?? '') === 'newMarzbanPanelGroup' &&
         sendMessage("نام گروه نامعتبر است؛ حداکثر ۶۰ کاراکتر و بدون خط جدید.");
         return;
     }
-    $connection->begin_transaction();
     try {
+        // Creation owns the transaction and cross-connection catalog lock.
         $groupId = achbotCreateMarzbanPanelGroup($connection, $text);
         if ($groupId === null) {
-            $connection->rollback();
             sendMessage("این نام قبلاً تعریف شده است یا معتبر نیست؛ نام دیگری وارد کنید.");
             return;
         }
-        $connection->commit();
     } catch (\Throwable $e) {
-        $connection->rollback();
         sendMessage("ذخیره گروه پنل انجام نشد.");
         return;
     }

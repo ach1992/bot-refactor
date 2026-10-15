@@ -35,7 +35,7 @@ accidental execution of removed X-UI SQL/API.
 
 **Owner clarified after R3:** two logical "servers" can point to the **same real Marzban backend** even if their API URLs and administrative usernames differ. Matching URLs or user names can also refer to different logical/physical deployments. **Only a valid admin-managed shared panel-group ID identifies the same real panel for switching.** R3's automatic endpoint/username inference is retired.
 
-A group is defined by an administrator in Server Management → Panel Groups; its display name (including Persian) is persisted in an ordinary `setting` row with `type='ACHBOT_MARZBAN_PANEL_GROUP'`. The stable `setting.id` identifies that group. Each logical Marzban server has a dedicated nullable `server_info.panel_group_id` column. During Marzban onboarding and server configuration the administrator chooses an existing group from an inline keyboard, or deliberately leaves the server unassigned. No free-text per-server arbitrary tag creates a group. `server_info.flag` remains only a display emoji/flag.
+A group is defined by an administrator in Server Management → Panel Groups; its display name (including Persian) is persisted in an ordinary `setting` row with `type='ACHBOT_MARZBAN_PANEL_GROUP'`. Names accept 1–60 Unicode characters (including emoji), trim surrounding whitespace, and reject line breaks. To prevent indistinguishable distinct IDs under concurrent admin submissions, creation uses a MariaDB advisory lock spanning duplicate-name lookup, INSERT and transaction COMMIT/ROLLBACK; the duplicate request is refused. The stable `setting.id` identifies that group. Each logical Marzban server has a dedicated nullable `server_info.panel_group_id` column. During Marzban onboarding and server configuration the administrator chooses an existing group from an inline keyboard, or deliberately leaves the server unassigned. No free-text per-server arbitrary tag creates a group. `server_info.flag` remains only a display emoji/flag.
 
 **No group is NOT a shared group.** All preexisting servers remain NULL/unassigned after the migration and cannot switch with any other server until explicitly grouped by the admin. Different URLs or credentials in the **same valid group** are allowed; even identical URLs/credentials in different groups are rejected. Unknown/retired panel types and missing/deleted groups fail closed. Admin and user callbacks check current permissions, order status, group membership, destination capacity/active state and plan compatibility. Transactions and row locks protect the DB-only order reassignment; changing a group cannot strand an active order already logically reassigned with an original plan on another group.
 
@@ -132,12 +132,15 @@ external renewal record identity. Disabled-cURL spies replace actual payment
 transport, so no real provider, money or tenant is touched. NowPayments
 callback preflight is deliberately before the remote verification request.
 Admin and customer server reassignment now use the explicit named panel-group
-identity; original R3 URL/username inference is gone. **34 native PHP
-cases** exercise real server-group creation, catalog selection during
-Marzban onboarding and editing, different URLs/admin credentials in one
+identity; original R3 URL/username inference is gone. **38 native PHP
+cases** exercise real server-group creation (including two simultaneous admin
+requests on separate connections), catalog selection during Marzban onboarding
+and editing, Unicode name limits, different URLs/admin credentials in one
 group, same URL in a different group, unassigned servers, stale/forged
 callbacks, plan-linked order protection and a separately verified additive
-nullable-column migration on 23 original disposable MariaDB tables.
+nullable-column migration on 23 original disposable MariaDB tables. A pinned
+V9 native catalogue handler also executes successfully on that migrated test
+schema, providing a bounded source-rollback compatibility smoke.
 There are no remote account moves or real payment/provider mutations.
 Real-world financial exactly-once and settlement risks remain
 under Issue #26.
