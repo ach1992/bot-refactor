@@ -48,6 +48,12 @@ def source_checks():
     for rel in php_files:
         p=subprocess.run(["php","-l",str(ROOT/rel)],capture_output=True,text=True,timeout=15)
         if p.returncode:raise RuntimeError("PHP syntax failed: "+rel+"\n"+p.stdout+p.stderr)
+    # Current runtime must never write administrator identifiers to a web-root debug artifact.
+    for rel in php_files:
+        php_source=(ROOT/rel).read_text()
+        if ("admins_list_check.txt" in php_source or
+                re.search(r"print_r\\s*\\(\\s*\\$admins_list\\b", php_source)):
+            raise RuntimeError("Unsafe administrator-list debug dump in runtime: "+rel)
     module=(ROOT/"src/Panel/Accounts.php").read_text()
     definitions=re.findall(r"(?m)^function (\w+)\s*\(",module)
     if sorted(definitions)!=sorted(MARZBAN_NAMES):
@@ -87,6 +93,7 @@ def source_checks():
             "current_additive_migration_separately_tested":True,
             "synthetic_baseinfo_example_unchanged":True,
             "historic_contract_changed":False,"retired_provider_api_removed":True,
+            "admin_list_debug_artifact_writer_absent":True,
             "future_pasarguard_or_new_xui_implemented":False}
 
 
