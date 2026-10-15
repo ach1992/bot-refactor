@@ -1,0 +1,41 @@
+# Post-V9 Marzban-only — isolated operator acceptance
+
+**Status:** NOT EXECUTED on an installed real bot. This checklist is an operator plan, **not** permission to change a running bot or database. [Controlling Issue #31](https://github.com/ach1992/bot-refactor/issues/31) tracks evidence and authorizations. Prior synthetic CI results are **not** installed acceptance.
+
+## Source and migration identity
+
+- Merged source: [`main@7c22dccc4d1ee3f4ef77032f1933481abe8e4279`](https://github.com/ach1992/bot-refactor/commit/7c22dccc4d1ee3f4ef77032f1933481abe8e4279), same effective source files as independently reviewed R6 `8ef7810ed39a4af2846604ef4975636a1456e822`.
+- [Exact post-merge CI — PHP 8.1 and PHP 8.4 PASS](https://github.com/ach1992/bot-refactor/actions/runs/38686398872). [Official source-only artifact](https://github.com/ach1992/bot-refactor/actions/runs/38686398872/artifacts/11950701682) includes a `runtime.zip`, manifest, migration and acceptance reports. Artifact retention is time-limited; it is **not** a public release.
+- Migration SHA256: `786c0e7b64b44420597ba86e9ff6ec38743af62011fe42433ceb01c6bb53aa30` for [`001_marzban_panel_group_id.sql`](../../migrations/post-v9/001_marzban_panel_group_id.sql). It is supplied **outside** the 92-member runtime ZIP.
+- Existing last-tagged version [`v0.9.0-rc.1`](https://github.com/ach1992/bot-refactor/releases/tag/v0.9.0-rc.1) does **not** require this column; the post-V9 runtime **does**.
+
+## Gate A — prerequisites before any installation or real SQL
+
+- [ ] Receive **separate explicit Owner authorization** naming the isolated test environment, any actual database to be modified, intended source package and rollout/migration scope. Owner's permission to merge PR #32 alone is not this authorization.
+- [ ] Confirm this is an independently controlled test bot/database, not the unrelated older working bot or an unapproved production tenant. Inventory the installed source revision, PHP and MariaDB versions, webhook/Cron/payment jobs and current schema without exposing credentials or customer data.
+- [ ] Preserve a current **full MariaDB backup** and private installation/config backup under access control. Actually restore the SQL backup into a **separate isolated MariaDB** and verify table/data integrity. A successful backup ZIP or Telegram delivery is not restore proof.
+- [ ] Prepare a source-only rollback to the previous pinned, verified installation; plan maintenance/write freeze for webhooks, payment callbacks, renewals and Cron. Do not let two application versions concurrently mutate the same schema during rollout.
+- [ ] Verify exact official package manifest/source SHA and the reviewed migration SHA256. Never deploy an unverified generic GitHub source archive as though it were the verified runtime ZIP.
+
+## Gate B — isolated recovery and schema rehearsal
+
+- [ ] On the restored **isolated** database, verify the original 23 tables, `server_info` structure, server IDs/row counts and critical payments, orders, plans and wallet values **without publishing them**.
+- [ ] Apply only the separately approved single nullable `server_info.panel_group_id` column; verify that all previously ungrouped servers remain `NULL`, all original rows/columns and table names remain, and a second application does not change DDL/rows.
+- [ ] Verify the proposed post-V9 source against the migrated isolated copy, with financial/Cron external effects blocked. Revert to the previous source on the isolated copy as a **bounded compatibility smoke**; do not infer that real production recovery is proven.
+
+## Gate C — staged operator checks after explicit install approval
+
+- [ ] Keep only test Telegram identities, provider accounts and artificial balances; use a truly isolated bot/webhook and Marzban test account. No real payment gateway, TRON transfer, wallet debit, customer migration or active production Cron testing.
+- [ ] Confirm `/start`, normal customer/admin authorization, existing subscriptions, catalog/plan selection, account details, safe renewal and callback behavior; check PHP-FPM/webhook/Cron readiness without enabling unintended settlement jobs.
+- [ ] Under **Server Management → Panel Groups**, create a named group in Persian, reject a duplicate name, assign two logical server records **only when they are known to be the same actual physical Marzban backend**, including the case of different API URLs/admin accounts.
+- [ ] On a consenting **test** subscription, confirm permitted same-group relocation changes **only `orders_list.server_id`**. Verify original plan, price, UUID/link, Marzban remote account, payment/wallet and capacity are unchanged and renewal eligibility remains.
+- [ ] Confirm negative controls: unassigned server, different group, deleted/invalid group, inactive or zero-capacity destination, non-admin/other-user request, stale/replayed callback, unsupported old panel. These must fail safely without unintended account, finance or server changes.
+- [ ] Capture redacted test timestamps/outcomes, installed source identity, schema/column presence, webhook/PHP logs and failures. **Never** paste customer exports, database credentials, Telegram bot tokens or complete payment callbacks into GitHub.
+
+## Stop / recovery rule
+
+If preconditions, restore, schema, webhook, authorization or state assertions fail: **stop and do not enable normal traffic or real payment/Cron processing**. Disable the new application path as approved, restore the previous source from its verified manifest, inspect the database and report the exact redacted failure in Issue #31. A source rollback may safely **leave the added nullable column**; do **not** drop it or restore an old live database blindly. Any destructive DB rollback is a **new Owner decision**, with data reconciliation.
+
+## Reporting and completion
+
+Record environment identification (without secrets), exact source/package SHA, verified backup/isolated restore, schema identity, staged scenario matrix, failures/recovery outcome and approvals in [Issue #31](https://github.com/ach1992/bot-refactor/issues/31). **Only after those real installation tests pass** should the owner decide on broader rollout, separate finance remediation and issue closure. Read the [detailed migration runbook](PANEL-GROUPS-MIGRATION.md) for ordering and boundaries.

@@ -1,6 +1,6 @@
 # AChBot — post-V9 R4 panel-group schema migration
 
-**Status:** SOURCE PREPARATION / DISPOSABLE TEST PASS ONLY. Not deployed. [Owner's controlling decision](https://github.com/ach1992/bot-refactor/issues/31#issuecomment-6184330243). This document does not authorize a real SQL write, installation, tag, release, or merge.
+**Status:** Source integrated into `main` as [PR #32](https://github.com/ach1992/bot-refactor/pull/32), with successful [post-merge PHP 8.1/8.4 CI](https://github.com/ach1992/bot-refactor/actions/runs/38686398872). **Not released, installed or applied to a live database.** [Owner's controlling decision](https://github.com/ach1992/bot-refactor/issues/31#issuecomment-6184330243) allows the additive design, **not** an automatic live SQL write. Production/staging schema operations, bot rollout, backup/restore and release each have separate gates.
 
 ## Purpose / scope
 

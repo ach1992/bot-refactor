@@ -2,7 +2,7 @@
 
 ## Current post-V9 supported-product contract — Owner-confirmed 2026-10-14
 
-**Source of truth for current development:** [Issue #31](https://github.com/ach1992/bot-refactor/issues/31) owns the Marzban-only implementation and acceptance. [Issue #29](https://github.com/ach1992/bot-refactor/issues/29) is the four-stage roadmap. The latest **released** version remains [V9 `v0.9.0-rc.1`](https://github.com/ach1992/bot-refactor/releases/tag/v0.9.0-rc.1) with all original 92 runtime files **unchanged from V8**. The scope below is for the **next, not-yet-integrated/released** source candidate and must not be represented as completed deployed behavior.
+**Authoritative contract:** [Issue #31](https://github.com/ach1992/bot-refactor/issues/31) owns the post-V9 Marzban-only acceptance, and [Issue #29](https://github.com/ach1992/bot-refactor/issues/29) defines the remaining roadmap. The intentionally changed post-V9 implementation is integrated into `main` by [PR #32](https://github.com/ach1992/bot-refactor/pull/32); the frozen published V9 source and its historical evidence remain separate. **Source integration, public release, installed behavior, real MariaDB migration and operator approval are different gates.** The current post-V9 contract must never be misrepresented as a completed production rollout.
 
 **Purpose:** retain the desired bot, user/admin/agent, purchase/renewal, support, reporting, scheduled and wallet functions with less coupling and obsolete code, while **keeping the original 23-table MariaDB schema and persisted data unchanged by default**. Broad schema redesign/new features/performance reengineering belong to a later independently accepted phase.
 
