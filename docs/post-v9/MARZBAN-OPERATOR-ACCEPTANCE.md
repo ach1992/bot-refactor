@@ -1,10 +1,10 @@
 # Post-V9 Marzban-only — isolated operator acceptance
 
-**Status:** NOT EXECUTED on an installed real bot. This checklist is an operator plan, **not** permission to change a running bot or database. [Controlling Issue #31](https://github.com/ach1992/bot-refactor/issues/31) tracks evidence and authorizations. Prior synthetic CI results are **not** installed acceptance.
+**Status (2026-10-15):** Owner reports installing the source ZIP and applying SQL, but the bot still shows legacy X-UI menus and the active PHP/webhook source identity is **unverified**. The operator checklist is **not passed**; diagnose first with [INSTALL-DIAGNOSTICS.md](INSTALL-DIAGNOSTICS.md). This checklist is not permission to change any other running bot or database. [Controlling Issue #31](https://github.com/ach1992/bot-refactor/issues/31) tracks evidence and authorizations. Prior synthetic CI results are **not** installed acceptance.
 
 ## Source and migration identity
 
-- Merged source: [`main@7c22dccc4d1ee3f4ef77032f1933481abe8e4279`](https://github.com/ach1992/bot-refactor/commit/7c22dccc4d1ee3f4ef77032f1933481abe8e4279), same effective source files as independently reviewed R6 `8ef7810ed39a4af2846604ef4975636a1456e822`.
+- Published [source-only v0.10.0-rc.1](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.1) at exact commit [`6645ac16a1f8a8a99aa8fc2bd203a7937bd01c7c`](https://github.com/ach1992/bot-refactor/commit/6645ac16a1f8a8a99aa8fc2bd203a7937bd01c7c), tree `39263d483e801e3b617af41131feb2b9d9d85654`, 92 runtime files; the only post-R6 difference is documents. Release ZIP SHA256: `1d9f65e1275afa5b19be44f7d8c6d10527e56f40a40a708031cecb8c5d05aa3e`.
 - [Exact post-merge CI — PHP 8.1 and PHP 8.4 PASS](https://github.com/ach1992/bot-refactor/actions/runs/38686398872). [Official source-only artifact](https://github.com/ach1992/bot-refactor/actions/runs/38686398872/artifacts/11950701682) includes a `runtime.zip`, manifest, migration and acceptance reports. Artifact retention is time-limited; it is **not** a public release.
 - Migration SHA256: `786c0e7b64b44420597ba86e9ff6ec38743af62011fe42433ceb01c6bb53aa30` for [`001_marzban_panel_group_id.sql`](../../migrations/post-v9/001_marzban_panel_group_id.sql). It is supplied **outside** the 92-member runtime ZIP.
 - Existing last-tagged version [`v0.9.0-rc.1`](https://github.com/ach1992/bot-refactor/releases/tag/v0.9.0-rc.1) does **not** require this column; the post-V9 runtime **does**.
