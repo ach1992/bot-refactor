@@ -47,7 +47,7 @@ class InstalledSourceVerifierTests(unittest.TestCase):
         self.assertTrue(report["core_files_match"])
         self.assertFalse(report["private_config_read"])
         self.assertFalse(report["active_webhook_verified"])
-        self.assertFalse(report["php_fpm_opcache_verified"])
+        self.assertFalse(report["web_sapi_opcache_verified"])
         self.assertEqual(report["matched"], 2)
 
     def test_stale_same_size_detected(self):

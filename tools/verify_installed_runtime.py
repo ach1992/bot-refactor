@@ -3,7 +3,7 @@
 
 No database, PHP include/execute, webhook request, network call, or private
 configuration read is performed. Matching disk files do not prove that the
-active Telegram webhook or PHP-FPM pool serves this directory.
+active Telegram webhook or web PHP handler (LSAPI/PHP-FPM) serves these files.
 """
 from __future__ import annotations
 
@@ -101,7 +101,7 @@ def verify_install(install_dir, metadata, expected_commit=None):
         "differences": errors,
         "verified": not errors,
         "active_webhook_verified": False,
-        "php_fpm_opcache_verified": False,
+        "web_sapi_opcache_verified": False,
         "database_schema_verified": False,
         "private_config_read": False,
     }
@@ -137,7 +137,7 @@ def main():
             print("  " + mismatch["file"] + ": " + mismatch["reason"])
         if len(report["differences"]) > 20:
             print("  ... " + str(len(report["differences"]) - 20) + " additional file mismatches")
-        print("WARNING: This checks disk source only, not Telegram webhook URL or PHP-FPM OPcache.")
+        print("WARNING: This checks disk source only, not the live Telegram webhook or web-SAPI OPcache (LSAPI/PHP-FPM).")
         print("WARNING: No SQL migrations, private config, credentials or runtime actions were accessed.")
     return 0 if report["verified"] else 1
 

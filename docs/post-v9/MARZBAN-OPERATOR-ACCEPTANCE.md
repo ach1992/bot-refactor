@@ -1,6 +1,6 @@
 # Post-V9 Marzban-only — isolated operator acceptance
 
-**Status (2026-10-15):** Owner reports installing the source ZIP and applying SQL, but the bot still shows legacy X-UI menus and the active PHP/webhook source identity is **unverified**. The operator checklist is **not passed**; diagnose first with [INSTALL-DIAGNOSTICS.md](INSTALL-DIAGNOSTICS.md). This checklist is not permission to change any other running bot or database. [Controlling Issue #31](https://github.com/ach1992/bot-refactor/issues/31) tracks evidence and authorizations. Prior synthetic CI results are **not** installed acceptance.
+**Status (2026-10-15): PARTIAL operator acceptance.** The stale X-UI menu symptom on one aaPanel **OpenLiteSpeed / PHP 8.4 LSAPI** installation was resolved after a one-time, explicitly authorized, installation-scoped mtime-only refresh of exact released `bot.php` and `config.php`. The Owner confirmed the new Marzban groups menu, initial empty state and successful group creation after separately applying the additive migration. These are operator-reported UI/write-flow results; no independent DB row/ID check or full subscription, permission, migration recovery, financial or logical-transfer acceptance has passed. This checklist is **not complete** and authorizes no new live operation. See [INSTALL-DIAGNOSTICS.md](INSTALL-DIAGNOSTICS.md) and [Issue #31](https://github.com/ach1992/bot-refactor/issues/31#issuecomment-6199206127).
 
 ## Source and migration identity
 
@@ -26,7 +26,7 @@
 ## Gate C — staged operator checks after explicit install approval
 
 - [ ] Keep only test Telegram identities, provider accounts and artificial balances; use a truly isolated bot/webhook and Marzban test account. No real payment gateway, TRON transfer, wallet debit, customer migration or active production Cron testing.
-- [ ] Confirm `/start`, normal customer/admin authorization, existing subscriptions, catalog/plan selection, account details, safe renewal and callback behavior; check PHP-FPM/webhook/Cron readiness without enabling unintended settlement jobs.
+- [ ] Confirm `/start`, normal customer/admin authorization, existing subscriptions, catalog/plan selection, account details, safe renewal and callback behavior; check actual web SAPI (OpenLiteSpeed LSAPI or PHP-FPM), webhook and Cron readiness without enabling unintended settlement jobs.
 - [ ] Under **Server Management → Panel Groups**, create a named group in Persian, reject a duplicate name, assign two logical server records **only when they are known to be the same actual physical Marzban backend**, including the case of different API URLs/admin accounts.
 - [ ] On a consenting **test** subscription, confirm permitted same-group relocation changes **only `orders_list.server_id`**. Verify original plan, price, UUID/link, Marzban remote account, payment/wallet and capacity are unchanged and renewal eligibility remains.
 - [ ] Confirm negative controls: unassigned server, different group, deleted/invalid group, inactive or zero-capacity destination, non-admin/other-user request, stale/replayed callback, unsupported old panel. These must fail safely without unintended account, finance or server changes.
