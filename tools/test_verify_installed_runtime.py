@@ -51,12 +51,14 @@ class InstalledSourceVerifierTests(unittest.TestCase):
         self.assertEqual(report["matched"], 2)
 
     def test_stale_same_size_detected(self):
-        (self.root / "config.php").write_bytes(b"<?php /* older keyboard */\n")
+        changed = b"X" + self.config[1:]
+        self.assertEqual(len(changed), len(self.config))
+        (self.root / "config.php").write_bytes(changed)
         report = verify_install(self.root, self.meta)
         self.assertEqual(report["status"], "MISMATCH")
         self.assertFalse(report["core_files_match"])
         self.assertEqual(report["differences"][0]["file"], "config.php")
-        self.assertIn(report["differences"][0]["reason"], ("sha256_mismatch", "size_mismatch"))
+        self.assertEqual(report["differences"][0]["reason"], "sha256_mismatch")
 
     def test_missing_detected(self):
         (self.root / "bot.php").unlink()
