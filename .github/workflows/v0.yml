@@ -80,6 +80,8 @@ jobs:
         run: |
           set -euo pipefail
           python3 tools/check_post_v9.py --report "$RUNNER_TEMP/post-v9-php84.json"
+      - name: Regression check for reproducible, release-specific ZIP timestamps
+        run: python3 tools/test_post_v9_zip_timestamp.py -v
       - name: Package and verify NEW exact-head Marzban-only runtime
         run: |
           set -euo pipefail
