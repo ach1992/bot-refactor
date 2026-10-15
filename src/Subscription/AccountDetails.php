@@ -379,6 +379,12 @@ function getOrderDetailKeys($from_id, $id, $offset = 0){
             $temp[] = ['text' => $buttonValues['renew_config'], 'callback_data' => "renewAccountAsk{$id}"];
         }
 
+        if (($botState['switchLocationState'] ?? 'off') === 'on' &&
+            $serverType === 'marzban' && (int)$inbound_id === 0) {
+            // The callback carries the old shape but never grants authority.
+            $temp[] = ['text' => '📍 تغییر سرور',
+                       'callback_data' => "switchLocation{$id}_{$server_id}_0_0"];
+        }
 
         if (!empty($temp)) {
             $keyboard[] = $temp;

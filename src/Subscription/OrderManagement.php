@@ -165,6 +165,7 @@ function showOrderManagementPanel($order, $msgId = null){
         [["text" => "🗑 حذف سفارش", "callback_data" => "deleteOrder_{$order['id']}"]],
         [["text" => "📅 تغییر تاریخ انقضا", "callback_data" => "changeExpireDate_{$order['id']}"]],
         [["text" => "🔑 تغییر Token", "callback_data" => "changeToken_{$order['id']}"]],
+        [["text" => "🖥 تغییر Server ID", "callback_data" => "changeServerId_{$order['id']}"]],
         [["text" => "📦 تغییر Plan", "callback_data" => "changeFileId_{$order['id']}_{$order['server_id']}"]],
         [["text" => "🧬 تغییر UUID", "callback_data" => "changeUUID_{$order['id']}"]],
 		[["text" => "💎 خرید همکار ←  $agentStatus", "callback_data" => "toggleAgent_{$order['id']}"]],
@@ -365,11 +366,61 @@ if (preg_match('/^awaitingUUID_(\\d+)/', $userInfo['step'], $match) && $text != 
     setUser();
 }
 
-// A second inherited admin route changed orders_list.server_id without
-// moving the remote account. Refuse even forged/cached callbacks until real
-// recoverable Marzban-to-Marzban relocation is implemented and accepted.
-if (preg_match('/^(?:changeServerId_\\d+|selectServerId_\\d+_\\d+)$/', (string) ($data ?? ''))) {
-    alert("⛔️ انتقال سرور بدون انتقال واقعی حساب مجاز نیست؛ با پشتیبانی تماس بگیرید.", true);
+// An admin may change the logical service label only within one verified
+// Marzban panel. Cached callbacks are revalidated against current SQL state.
+if (preg_match('/^changeServerId_(\d+)$/D', (string)($data ?? ''), $match)) {
+    if (!($from_id == $admin || ($userInfo['isAdmin'] ?? false))) {
+        alert("⛔️ دسترسی لازم وجود ندارد.", true);
+        return;
+    }
+    $id = (int)$match[1];
+    $stmt = $connection->prepare(
+        "SELECT `server_id` FROM `orders_list` WHERE `id` = ? AND `status` = 1"
+    );
+    $stmt->bind_param('i', $id);
+    $stmt->execute();
+    $order = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+    if (!$order || !achbotSupportsMarzbanOrder($connection, $id)) {
+        alert("⛔️ سفارش مرزبان معتبر نیست.", true);
+        return;
+    }
+    $targets = achbotMarzbanRelocationTargets($connection, (int)$order['server_id']);
+    if (!$targets) {
+        alert("هیچ سرور دیگری با همان پنل مرزبان وجود ندارد.", true);
+        return;
+    }
+    $keyboard = [];
+    foreach ($targets as $server) {
+        $keyboard[] = [['text'=>$server['title'],
+            'callback_data'=>'selectServerId_' . $id . '_' . (int)$server['id']]];
+    }
+    $keyboard[] = [['text'=>'🔙 بازگشت', 'callback_data'=>'returnToPanel_' . $id]];
+    sendMessage("🌐 سرور منطقی مقصد را انتخاب کنید. حساب در خود مرزبان تغییر نمی‌کند.",
+        json_encode(['inline_keyboard'=>$keyboard], JSON_UNESCAPED_UNICODE));
+    return;
+}
+
+if (preg_match('/^selectServerId_(\d+)_(\d+)$/D', (string)($data ?? ''), $match)) {
+    if (!($from_id == $admin || ($userInfo['isAdmin'] ?? false))) {
+        alert("⛔️ دسترسی لازم وجود ندارد.", true);
+        return;
+    }
+    $id = (int)$match[1];
+    $targetId = (int)$match[2];
+    $result = achbotReassignMarzbanLogicalServer($connection, $id, $targetId, $from_id, true);
+    if (!$result) {
+        alert("⛔️ سرور مقصد باید با سرور فعلی به یک پنل مرزبان تعلق داشته باشد.", true);
+        return;
+    }
+    sendMessage("✅ فقط Server ID منطقی سفارش تغییر کرد؛ حساب مرزبان و پلن محفوظ هستند.");
+    $stmt = $connection->prepare("SELECT * FROM `orders_list` WHERE `id` = ?");
+    $stmt->bind_param('i', $id);
+    $stmt->execute();
+    $order = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+    showOrderManagementPanel($order, $message_id);
+    setUser();
     return;
 }
 

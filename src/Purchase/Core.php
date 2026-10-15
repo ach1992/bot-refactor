@@ -97,6 +97,221 @@ if (!function_exists('achbotSupportsMarzbanAccount')) {
     }
 }
 
+// Logical server entries can share one real Marzban API. Do not confuse
+// their separate prices/plans with separate provider account stores.
+// These helpers reuse existing setting rows; original 23-table DDL is frozen.
+if (!function_exists('achbotMarzbanGroupValid')) {
+    function achbotMarzbanGroupValid($group)
+    {
+        return is_string($group) && preg_match('/^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$/D', $group) === 1;
+    }
+}
+
+if (!function_exists('achbotMarzbanGroupKey')) {
+    function achbotMarzbanGroupKey($serverId)
+    {
+        return 'ACHBOT_MARZBAN_PANEL_GROUP_' . (int)$serverId;
+    }
+}
+
+if (!function_exists('achbotMarzbanGroup')) {
+    function achbotMarzbanGroup($connection, $serverId)
+    {
+        if ((int)$serverId <= 0) return null;
+        $key = achbotMarzbanGroupKey($serverId);
+        $stmt = $connection->prepare("SELECT `value` FROM `setting` WHERE `type` = ? LIMIT 2");
+        $stmt->bind_param('s', $key);
+        $stmt->execute();
+        $result = $stmt->get_result();
+        $count = $result->num_rows;
+        $row = $result->fetch_assoc();
+        $stmt->close();
+        if ($count > 1) return null; // ambiguous configuration: fail closed
+        if (!$row) return ''; // legacy untagged server, match exact endpoint
+        $group = (string)$row['value'];
+        return achbotMarzbanGroupValid($group) ? $group : null;
+    }
+}
+
+if (!function_exists('achbotSetMarzbanGroup')) {
+    function achbotSetMarzbanGroup($connection, $serverId, $group)
+    {
+        // Creation/edit callers own a transaction; untag/deletion cleanup
+        // is also idempotent when invoked by an existing legacy handler.
+        if ((int)$serverId <= 0 || ($group !== '' && !achbotMarzbanGroupValid($group))) {
+            throw new \InvalidArgumentException('invalid_marzban_panel_group');
+        }
+        $key = achbotMarzbanGroupKey($serverId);
+        $stmt = $connection->prepare("DELETE FROM `setting` WHERE `type` = ?");
+        $stmt->bind_param('s', $key);
+        $stmt->execute();
+        $stmt->close();
+        if ($group !== '') {
+            $stmt = $connection->prepare("INSERT INTO `setting` (`type`, `value`) VALUES (?, ?)");
+            $stmt->bind_param('ss', $key, $group);
+            $stmt->execute();
+            $stmt->close();
+        }
+    }
+}
+
+if (!function_exists('achbotSameMarzbanPanel')) {
+    function achbotSameMarzbanPanel($connection, $sourceId, $targetId)
+    {
+        $sourceId = (int)$sourceId;
+        $targetId = (int)$targetId;
+        if ($sourceId <= 0 || $targetId <= 0) return false;
+        $stmt = $connection->prepare(
+            "SELECT `id`, `type`, `panel_url`, `username`
+             FROM `server_config` WHERE `id` IN (?, ?)"
+        );
+        $stmt->bind_param('ii', $sourceId, $targetId);
+        $stmt->execute();
+        $rows = [];
+        $result = $stmt->get_result();
+        while ($row = $result->fetch_assoc()) {
+            $rows[(int)$row['id']] = $row;
+        }
+        $stmt->close();
+        if (!isset($rows[$sourceId], $rows[$targetId]) ||
+            $rows[$sourceId]['type'] !== 'marzban' ||
+            $rows[$targetId]['type'] !== 'marzban') return false;
+
+        // This version permits logical reassignment only for the same
+        // configured API endpoint and admin identity. Matching text tags
+        // alone cannot prove two distinct URLs point to one live panel.
+        $endpoint = static function ($raw) {
+            $url = parse_url(trim((string)$raw));
+            if (!is_array($url) || !isset($url['scheme'], $url['host']) ||
+                !in_array(strtolower($url['scheme']), ['http', 'https'], true) ||
+                isset($url['user']) || isset($url['pass']) ||
+                isset($url['query']) || isset($url['fragment'])) return null;
+            return strtolower($url['scheme']) . '://' . strtolower($url['host']) .
+                (isset($url['port']) ? ':' . (int)$url['port'] : '') .
+                rtrim((string)($url['path'] ?? ''), '/');
+        };
+        $a = $endpoint($rows[$sourceId]['panel_url']);
+        $b = $endpoint($rows[$targetId]['panel_url']);
+        if ($a === null || $a === '' || $a !== $b ||
+            trim((string)$rows[$sourceId]['username']) === '' ||
+            $rows[$sourceId]['username'] !== $rows[$targetId]['username']) return false;
+
+        $sourceGroup = achbotMarzbanGroup($connection, $sourceId);
+        $targetGroup = achbotMarzbanGroup($connection, $targetId);
+        if ($sourceGroup === null || $targetGroup === null) return false;
+        // No tag is required for old entries with the same verified endpoint.
+        // Explicitly conflicting labels isolate logical server offerings.
+        return $sourceGroup === '' || $targetGroup === '' ||
+            $sourceGroup === $targetGroup;
+    }
+}
+
+// Panel grouping is a permission to remap the bot's logical server label,
+// not an authorization to modify or migrate the actual Marzban account.
+if (!function_exists('achbotMarzbanRelocationTargets')) {
+    function achbotMarzbanRelocationTargets($connection, $sourceId)
+    {
+        $stmt = $connection->prepare(
+            "SELECT s.`id`, s.`title` FROM `server_info` s
+             INNER JOIN `server_config` c ON c.`id` = s.`id`
+             WHERE s.`active` = 1 AND s.`state` = 1 AND s.`ucount` > 0
+               AND c.`type` = 'marzban' AND s.`id` != ? ORDER BY s.`id`"
+        );
+        $sourceId = (int)$sourceId;
+        $stmt->bind_param('i', $sourceId);
+        $stmt->execute();
+        $res = $stmt->get_result();
+        $targets = [];
+        while ($server = $res->fetch_assoc()) {
+            if (achbotSameMarzbanPanel($connection, $sourceId, (int)$server['id'])) {
+                $targets[] = $server;
+            }
+        }
+        $stmt->close();
+        return $targets;
+    }
+}
+
+if (!function_exists('achbotReassignMarzbanLogicalServer')) {
+    function achbotReassignMarzbanLogicalServer($connection, $orderId, $targetId, $actorId, $adminAllowed = false)
+    {
+        $orderId = (int)$orderId;
+        $targetId = (int)$targetId;
+        if ($orderId <= 0 || $targetId <= 0) return null;
+        $connection->begin_transaction();
+        try {
+            $stmt = $connection->prepare(
+                "SELECT `id`, `userid`, `server_id`, `inbound_id`, `remark`
+                 FROM `orders_list` WHERE `id` = ? AND `status` = 1 FOR UPDATE"
+            );
+            $stmt->bind_param('i', $orderId);
+            $stmt->execute();
+            $order = $stmt->get_result()->fetch_assoc();
+            $stmt->close();
+            if (!$order || (!$adminAllowed && (int)$order['userid'] !== (int)$actorId) ||
+                (int)$order['inbound_id'] !== 0 ||
+                (int)$order['server_id'] === $targetId) {
+                $connection->rollback();
+                return null;
+            }
+
+            $oldId = (int)$order['server_id'];
+            // Serialize an in-flight reassignment with admin panel/group edits
+            // and concurrent reassignments. Always lock panel IDs in order.
+            $stmt = $connection->prepare(
+                "SELECT `id` FROM `server_config`
+                 WHERE `id` IN (?, ?) ORDER BY `id` FOR UPDATE"
+            );
+            $stmt->bind_param('ii', $oldId, $targetId);
+            $stmt->execute();
+            $count = $stmt->get_result()->num_rows;
+            $stmt->close();
+            if ($count !== 2 ||
+                !achbotSupportsMarzbanOrder($connection, $orderId) ||
+                !achbotSameMarzbanPanel($connection, $oldId, $targetId)) {
+                $connection->rollback();
+                return null;
+            }
+
+            $stmt = $connection->prepare(
+                "SELECT s.`title` FROM `server_info` s
+                 INNER JOIN `server_config` c ON c.`id` = s.`id`
+                 WHERE s.`id` = ? AND s.`active` = 1 AND s.`state` = 1
+                   AND s.`ucount` > 0 AND c.`type` = 'marzban' FOR UPDATE"
+            );
+            $stmt->bind_param('i', $targetId);
+            $stmt->execute();
+            $server = $stmt->get_result()->fetch_assoc();
+            $stmt->close();
+            if (!$server) {
+                $connection->rollback();
+                return null;
+            }
+
+            // Preserve V9's DB-only logical reassignment. No capacity,
+            // fileid, money, token, remote panel, proxy or link mutation.
+            $stmt = $connection->prepare(
+                "UPDATE `orders_list` SET `server_id` = ? WHERE `id` = ? AND `server_id` = ?"
+            );
+            $stmt->bind_param('iii', $targetId, $orderId, $oldId);
+            $stmt->execute();
+            $changed = $stmt->affected_rows === 1;
+            $stmt->close();
+            if (!$changed) {
+                $connection->rollback();
+                return null;
+            }
+            $connection->commit();
+            return ['id'=>$orderId, 'userid'=>$order['userid'],
+                    'remark'=>$order['remark'], 'title'=>$server['title'],
+                    'source_id'=>$oldId, 'target_id'=>$targetId];
+        } catch (\Throwable $e) {
+            $connection->rollback();
+            return null;
+        }
+    }
+}
+
 if (!function_exists('achbotSupportsMarzbanOrder')) {
     function achbotSupportsMarzbanOrder($connection, $orderId, $requiredPlanId = null, $requiredUser = null)
     {
@@ -124,8 +339,10 @@ if (!function_exists('achbotSupportsMarzbanOrder')) {
         // financial renewal a real matching plan is explicitly required.
         if ((int)$order['fileid'] === 0) return $requiredPlanId === null;
         return $order['plan_server'] !== null &&
-            (int)$order['plan_server'] === (int)$order['server_id'] &&
-            (int)$order['plan_inbound'] === 0;
+            (int)$order['plan_inbound'] === 0 &&
+            ((int)$order['plan_server'] === (int)$order['server_id'] ||
+             achbotSameMarzbanPanel($connection,
+                 (int)$order['plan_server'], (int)$order['server_id']));
     }
 }
 

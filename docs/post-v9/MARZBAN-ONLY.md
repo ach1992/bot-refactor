@@ -31,22 +31,40 @@ tokens still say `Wrong token`, but a legacy-shaped valid token returns
 HTTP **410** without DB access. Original URL filename remains, preventing
 accidental execution of removed X-UI SQL/API.
 
-## Open Owner gate: real Marzban relocation
+## Owner-approved logical server switching on one real Marzban panel
 
-The independent review of PR #32 identified that the inherited
-`switchServer` handler only changed `orders_list.server_id`, without
-moving an account between the two real Marzban servers. The current
-remediation deliberately **hides that button and rejects cached old
-callbacks before a database/provider mutation**. This is defensive
-containment, **not** implementation or acceptance of account relocation.
-Because the Issue #31 contract includes relocation and the Owner wants
-existing Marzban features preserved, the PR is **not yet accepted**.
-Before any merge, the Owner must either explicitly authorize temporary
-relocation unavailability as a scoped exception, or the implementation
-must prove a recoverable real two-Marzban-server transfer (destination
-creation/verification, source handling, original-schema state update last,
-failed intermediate steps and compensation). No real tenant/account/server
-or customer credentials may be used in source-only testing.
+The Owner's revised Issue #31 decision (2026-10-15) explicitly confirms that
+multiple bot "servers" normally represent **different logical services,
+plans and prices on the same Marzban panel**, rather than distinct account
+stores. In that case, the supported switch intentionally changes **only**
+`orders_list.server_id`, as the inherited bot did. The actual Marzban
+account, proxies/inbounds, tokens, UUID, link, traffic, order plan/fileid,
+wallet, price paid and capacity counters **are not rewritten** by switching.
+Renewal using an old plan remains available if its original plan server and
+new logical server are verified to share the same panel; its original
+plan price stays in force until separately changed.
+
+The admin can set an ASCII **shared panel group** during Marzban server
+onboarding or edit it later in the server settings. No new SQL schema,
+columns or migrations are required: optional per-server group values live in
+the existing `setting` table. `server_info.flag` remains only the display
+flag. Existing untagged entries may switch automatically if their normalized
+configured panel URL and admin username match. Explicit conflicting group
+labels isolate entries, while matching labels alone **never** override
+different panel URLs, usernames or retired provider types. A legacy callback
+cannot authorize a switch: both user and admin handlers recheck current
+owner/admin privileges, order status, same-panel identity and target
+availability, with a guarded SQL transaction and no remote panel API call.
+Changing an explicit group may affect eligibility of previously switched
+orders; use matching tags for entries representing the same backend.
+
+**Cross-panel relocation remains unsupported** and deliberately fails
+closed. A future separately approved provider-specific increment may migrate
+accounts between actual panels and reconcile selected protocols/inbounds,
+plans and subscription settings on Marzban or a future PasarGuard backend.
+Do not interpret today's logical switch as an actual service migration.
+No actual tenant, customer credentials or live server may be accessed in
+source-only tests.
 
 Current financial/TRON issues are **not fixed by this refactor**; see
 [Issue #26](https://github.com/ach1992/bot-refactor/issues/26). Signed negative
@@ -131,9 +149,14 @@ resolver now covers **23** native scenarios including provider mismatch and
 external renewal record identity. Disabled-cURL spies replace actual payment
 transport, so no real provider, money or tenant is touched. NowPayments
 callback preflight is deliberately before the remote verification request.
-The inherited administration `changeServerId` DB-only rewrite is hidden and
-rejected as **containment**, not completed account relocation. Real-world
-financial exactly-once and settlement risks remain under Issue #26.
+Admin and customer server reassignment now use one guarded shared-panel
+contract; cross-panel and stale/forged callbacks still fail closed. **32
+additional original-schema logical relocation/onboarding cases** validate
+the former callback shapes, owner/admin privileges, explicit/automatic tags,
+different physical endpoints, plan retention and actual admin group wizard
+against only a local fake Marzban login. No payment or remote account mutation
+is exercised. Real-world financial exactly-once and settlement risks remain
+under Issue #26.
 
 CI executes current suite on PHP 8.1 and PHP 8.4 separately, then creates
 a NEW source-only candidate ZIP and manifest from the exact committed
@@ -163,9 +186,10 @@ version-specific manifests and the original database (no data rollback).
 
 ## What is NOT yet certified
 
-- Installed Marzban panel, actual Telegram webhook, active admin onboarding
+- Installed Marzban panel, actual Telegram webhook, live admin onboarding
   and purchase/plan wizard, cron/broadcast actions and PHP-FPM/OPcache
-  (the current PHP native tests cover only enumerated provider routes);
+  (the new group/onboarding wizard has only been exercised on a fake local
+  panel and disposable original-schema SQL, not a real installed bot);
 - real payment/TRON/NextPay/NowPayments, concurrent provisioning or partial
   settlement safety. Legacy financial issues remain separate;
 - actual full DB restore or any table/column removal;

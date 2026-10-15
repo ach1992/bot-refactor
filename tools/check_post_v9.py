@@ -148,6 +148,17 @@ def main():
                 finance.get("synthetic_payment_spy") and
                 finance.get("real_provider_requests")==0):
             raise RuntimeError("Original-schema financial route and stale admin callback assurance incomplete")
+        logical_path=Path(tmp)/"marzban-logical-transfer.json"
+        subprocess.run(["python3",str(ROOT/"tools/test_post_v9_logical_transfer.py"),
+                        "--run-disposable","--report",str(logical_path)],
+                       cwd=ROOT,check=True,timeout=180,capture_output=True)
+        logical=json.loads(logical_path.read_text())
+        if not (logical.get("complete") and logical.get("cases")>=32
+                and logical.get("original_schema_tables")==23
+                and logical.get("original_schema_unchanged")
+                and logical.get("source_only_logical_reassignment")
+                and logical.get("no_real_panel_or_financial_calls")):
+            raise RuntimeError("Same-Marzban-panel logical reassignment contract incomplete")
         overlay_report=Path(tmp)/"source-overlay.json"
         subprocess.run(["python3",str(ROOT/"tools/test_post_v9_swap.py"),
                         "--run-disposable","--report",str(overlay_report)],
@@ -166,6 +177,7 @@ def main():
                     "financial_subject_preflight":subject,
                     "catalogue_and_subscription_qr":catalogue,
                     "financial_native_route_guards":finance,
+                    "marzban_logical_transfer":logical,
                     "historical_suite_executed_by_this_script":False,
                     "historical_suite_requires_separate_pinned_ci_execution":True,
                     "actual_operator_installed_acceptance":False,
@@ -182,6 +194,7 @@ def main():
                       "payment_subject_cases":subject["cases"],
                       "catalogue_qr_cases":catalogue["cases"],
                       "financial_native_route_cases":finance["cases"],
+                      "marzban_logical_transfer_cases":logical["cases"],
                       "current_php_version":subprocess.check_output(["php","-r","echo PHP_VERSION_ID;"]).decode()}))
 
 

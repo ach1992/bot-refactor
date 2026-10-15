@@ -717,10 +717,14 @@ function getServerConfigKeys($serverId,$offset = 0){
         ]]);
     }
     $id = $info['id'];
+    $panelGroup = achbotMarzbanGroup($connection, $id);
+    $groupLabel = $panelGroup === null ? '⚠️ ناسازگار' :
+        ($panelGroup === '' ? 'خودکار' : $panelGroup);
     $keys = [
         [['text'=>$config['panel_url'], 'callback_data'=>'wizwizch']],
         [['text'=>$info['title'], 'callback_data'=>"editServerName$id"], ['text'=>'❕نام سرور', 'callback_data'=>'wizwizch']],
         [['text'=>$info['flag'], 'callback_data'=>"editServerFlag$id"], ['text'=>'🚩 پرچم سرور', 'callback_data'=>'wizwizch']],
+        [['text'=>$groupLabel, 'callback_data'=>"editMarzbanGroup$id"], ['text'=>'🏷 گروه پنل مشترک', 'callback_data'=>'wizwizch']],
         [['text'=>$info['remark'], 'callback_data'=>"editServerRemark$id"], ['text'=>'📣 ریمارک سرور', 'callback_data'=>'wizwizch']],
         [['text'=>'مرزبان', 'callback_data'=>'wizwizch'], ['text'=>'نوع سرور', 'callback_data'=>'wizwizch']],
         [['text'=>$info['ucount'], 'callback_data'=>"editServerMax$id"], ['text'=>'ظرفیت سرور', 'callback_data'=>'wizwizch']],

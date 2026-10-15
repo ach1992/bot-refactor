@@ -1574,15 +1574,32 @@ if(preg_match('/^addServerPanelUrl(.*)/',$userInfo['step'],$match) and $text != 
     $data['security'] = "/empty";
     $data['tls_setting'] = "/empty";
 
+    setUser('addServerPanelGroup' . json_encode($data, JSON_UNESCAPED_UNICODE));
+    sendMessage("مرحله ششم: 🏷 شناسه گروه پنل مشترک را وارد کنید.\n\n"
+        . "برای چند سرور منطقی روی یک پنل، تگ یکسان (حروف انگلیسی/عدد/-/_) انتخاب کنید؛ مثلاً panel-main.\n"
+        . "برای تشخیص خودکار سرورهای قدیمی با URL و نام کاربری یکسان، /auto را بفرستید.\n"
+        . "تگ به‌تنهایی اجازه انتقال بین آدرس‌های متفاوت پنل را نمی‌دهد.");
+    exit();
+}
+if (preg_match('/^addServerPanelGroup(.*)/', (string)($userInfo['step'] ?? ''), $match) &&
+    $text != $buttonValues['cancel'] && ($from_id == $admin || ($userInfo['isAdmin'] ?? false))) {
+    $data = json_decode($match[1], true);
+    $group = trim((string)$text);
+    if ($group === '/auto') $group = '';
+    if (!is_array($data) || ($group !== '' && !achbotMarzbanGroupValid($group))) {
+        sendMessage("تگ نامعتبر است؛ حداکثر ۴۰ کاراکتر انگلیسی، عدد، - یا _ ؛ یا /auto");
+        return;
+    }
+    $data['panel_group'] = $group;
     setUser('addServerPanelUser' . json_encode($data, JSON_UNESCAPED_UNICODE));
-    sendMessage("مرحله ششم: ▪️ لطفا نام کاربری پنل مرزبان را وارد کنید:");
+    sendMessage("مرحله هفتم: ▪️ لطفا نام کاربری پنل مرزبان را وارد کنید:");
     exit();
 }
 if(preg_match('/^addServerPanelUser(.*)/',$userInfo['step'],$match) and $text != $buttonValues['cancel'] && ($from_id == $admin || $userInfo['isAdmin'] == true)) {
     $data = json_decode($match[1],true);
     $data['panel_user'] = $text;
     setUser('addServerPanePassword' . json_encode($data, JSON_UNESCAPED_UNICODE));
-    sendMessage( "مرحله هفتم:
+    sendMessage( "مرحله هشتم:
 ▪️لطفا پسورد پنل را وارد کنید:");
 exit();
 }
@@ -1604,7 +1621,11 @@ if(preg_match('/^addServerPanePassword(.*)/',$userInfo['step'],$match) and $text
     $tlsSettings = $data['tls_setting']!="/empty"?$data['tls_setting']:"";
     $serverName = $data['panel_user'];
     $serverPass = $text;
-
+    $panelGroup = (string)($data['panel_group'] ?? '');
+    if ($panelGroup !== '' && !achbotMarzbanGroupValid($panelGroup)) {
+        alert("شناسه گروه پنل معتبر نیست.", true);
+        return;
+    }
 
     $loginResponse['success'] = false;
     if(($userInfo['temp'] ?? '') !== 'addNewMarzbanPanel'){
@@ -1656,21 +1677,29 @@ if(preg_match('/^addServerPanePassword(.*)/',$userInfo['step'],$match) and $text
         ");
         exit();
     }
-    $stmt = $connection->prepare("INSERT INTO `server_info` (`title`, `ucount`, `remark`, `flag`, `active`)
-                                                    VALUES (?,?,?,?,1)");
-    $stmt->bind_param("siss", $title, $ucount, $remark, $flag);
-    $stmt->execute();
-    $rowId = $stmt->insert_id;
-    $stmt->close();
+    // One atomic original-schema write: a failed group setting cannot
+    // leave an orphan logical server with uncertain panel identity.
+    $connection->begin_transaction();
+    try {
+        $stmt = $connection->prepare("INSERT INTO `server_info` (`title`, `ucount`, `remark`, `flag`, `active`)
+                                                        VALUES (?,?,?,?,1)");
+        $stmt->bind_param("siss", $title, $ucount, $remark, $flag);
+        $stmt->execute();
+        $rowId = $stmt->insert_id;
+        $stmt->close();
 
-    // The server_config id is explicitly supplied from server_info. Do not
-    // overwrite it with insert_id (which need not return explicit IDs).
-    // Record the supported provider atomically with initial configuration.
-    $stmt = $connection->prepare("INSERT INTO `server_config` (`id`, `panel_url`, `ip`, `sni`, `header_type`, `request_header`, `response_header`, `security`, `tlsSettings`, `username`, `password`, `type`)
-                                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'marzban')");
-    $stmt->bind_param("issssssssss", $rowId, $panel_url, $ip, $sni, $header_type, $request_header, $response_header, $security, $tlsSettings, $serverName, $serverPass);
-    $stmt->execute();
-    $stmt->close();
+        $stmt = $connection->prepare("INSERT INTO `server_config` (`id`, `panel_url`, `ip`, `sni`, `header_type`, `request_header`, `response_header`, `security`, `tlsSettings`, `username`, `password`, `type`)
+                                               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'marzban')");
+        $stmt->bind_param("issssssssss", $rowId, $panel_url, $ip, $sni, $header_type, $request_header, $response_header, $security, $tlsSettings, $serverName, $serverPass);
+        $stmt->execute();
+        $stmt->close();
+        achbotSetMarzbanGroup($connection, $rowId, $panelGroup);
+        $connection->commit();
+    } catch (\Throwable $e) {
+        $connection->rollback();
+        sendMessage("ثبت سرور انجام نشد؛ هیچ سرور ناقصی در دیتابیس ذخیره نشد.");
+        return;
+    }
 
     sendMessage(" تبریک، سرورت رو ثبت کردی 🥹",$removeKeyboard);
     $keys = getServerListKeys();
@@ -1678,6 +1707,60 @@ if(preg_match('/^addServerPanePassword(.*)/',$userInfo['step'],$match) and $text
 
     setUser();
     exit();
+}
+// Admin-only panel identity editor. Server flags/emojis remain presentation.
+if (preg_match('/^editMarzbanGroup(\d+)$/D', (string)($data ?? ''), $match) &&
+    ($from_id == $admin || ($userInfo['isAdmin'] ?? false))) {
+    $id = (int)$match[1];
+    $stmt = $connection->prepare("SELECT type FROM server_config WHERE id = ?");
+    $stmt->bind_param('i', $id);
+    $stmt->execute();
+    $panel = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+    if (!achbotSupportsPanel($panel['type'] ?? null)) {
+        alert("این نوع سرور پشتیبانی نمی‌شود.", true);
+        return;
+    }
+    $group = achbotMarzbanGroup($connection, $id);
+    // An invalid/duplicated legacy setting can be repaired here by admin.
+    setUser('editMarzbanGroup' . $id);
+    sendMessage("🏷 گروه فعلی پنل: " . ($group === null ? '⚠️ ناسازگار' : ($group === '' ? 'خودکار (بدون تگ)' : $group))
+        . "\nتگ مشترک جدید را وارد کنید (حروف انگلیسی/عدد/-/_، حداکثر ۴۰ کاراکتر)."
+        . "\nبرای حالت خودکار /auto را بفرستید. پنل‌ها باید URL و نام کاربری یکسان داشته باشند.",
+        $cancelKey);
+    return;
+}
+if (preg_match('/^editMarzbanGroup(\d+)$/D', (string)($userInfo['step'] ?? ''), $match) &&
+    $text != $buttonValues['cancel'] && ($from_id == $admin || ($userInfo['isAdmin'] ?? false))) {
+    $id = (int)$match[1];
+    $group = trim((string)$text);
+    if ($group === '/auto') $group = '';
+    if ($group !== '' && !achbotMarzbanGroupValid($group)) {
+        sendMessage("تگ نامعتبر است. از حروف انگلیسی/عدد/-/_ (حداکثر ۴۰ کاراکتر) یا /auto استفاده کنید.");
+        return;
+    }
+    $connection->begin_transaction();
+    try {
+        $stmt = $connection->prepare("SELECT type FROM server_config WHERE id = ? FOR UPDATE");
+        $stmt->bind_param('i', $id);
+        $stmt->execute();
+        $config = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        if (!achbotSupportsPanel($config['type'] ?? null)) {
+            $connection->rollback();
+            alert("این نوع سرور پشتیبانی نمی‌شود.", true);
+            return;
+        }
+        achbotSetMarzbanGroup($connection, $id, $group);
+        $connection->commit();
+    } catch (\Throwable $e) {
+        $connection->rollback();
+        alert("ثبت گروه پنل انجام نشد؛ تغییری ذخیره نشد.", true);
+        return;
+    }
+    setUser();
+    sendMessage("✅ گروه پنل به‌روزرسانی شد.", getServerConfigKeys($id));
+    return;
 }
 if(preg_match('/^changesServerLoginInfo(\d+)/',$data,$match) && ($from_id == $admin || $userInfo['isAdmin'] == true)) {
     delMessage();
@@ -1784,6 +1867,8 @@ if(preg_match('/^yesDeleteServer(\d+)/',$data,$match) && ($from_id == $admin || 
     $stmt->bind_param("i", $match[1]);
     $stmt->execute();
     $stmt->close();
+    // Never leave a stale panel group for a deleted logical server ID.
+    achbotSetMarzbanGroup($connection, (int)$match[1], '');
 
     alert("🙂 سرور رو چرا حذف کردی اخه ...");
 
