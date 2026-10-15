@@ -4,7 +4,7 @@
 
 **Historical public V9:** [`v0.9.0-rc.1`](https://github.com/ach1992/bot-refactor/releases/tag/v0.9.0-rc.1), frozen source `7eb077fd8e6d0a303421626d1500f69e295a6664`.
 
-**Delivery boundary:** The post-V9 source has **not** been publicly released, installed, exercised on a real tenant, or migrated on a live MariaDB. See [Issue #31](https://github.com/ach1992/bot-refactor/issues/31) and [roadmap #29](https://github.com/ach1992/bot-refactor/issues/29) for remaining acceptance and separate release/rollout gates.
+**Delivery boundary (2026-10-15):** The Marzban-only source is published as [v0.10.0-rc.1 source-only pre-release](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.1). On one Owner-operated aaPanel/OpenLiteSpeed PHP 8.4 LSAPI installation, exact released `bot.php`/`config.php` hashes were observed and a narrowly approved mtime refresh activated the new administrator keyboard: X-UI disappeared and Marzban Panel Groups appeared. The Owner also reported successful group creation after separately applying the migration. **The stale-menu incident is resolved; group-row persistence, server assignment, logical transfers and full end-to-end/financial acceptance remain unverified.** See [INSTALL-DIAGNOSTICS.md](INSTALL-DIAGNOSTICS.md), [Issue #31](https://github.com/ach1992/bot-refactor/issues/31) and [roadmap #29](https://github.com/ach1992/bot-refactor/issues/29). No finance/production certification or automated deployment/SQL migration is implied.
 
 ## Owner decisions / desired outcomes
 

@@ -1,13 +1,13 @@
 # Post-V9 Marzban-only — isolated operator acceptance
 
-**Status:** NOT EXECUTED on an installed real bot. This checklist is an operator plan, **not** permission to change a running bot or database. [Controlling Issue #31](https://github.com/ach1992/bot-refactor/issues/31) tracks evidence and authorizations. Prior synthetic CI results are **not** installed acceptance.
+**Status (2026-10-15): PARTIAL operator acceptance.** The stale X-UI menu symptom on one aaPanel **OpenLiteSpeed / PHP 8.4 LSAPI** installation was resolved after a one-time, explicitly authorized, installation-scoped mtime-only refresh of exact released `bot.php` and `config.php`. The Owner confirmed the new Marzban groups menu, initial empty state and successful group creation after separately applying the additive migration. These are operator-reported UI/write-flow results; no independent DB row/ID check or full subscription, permission, migration recovery, financial or logical-transfer acceptance has passed. This checklist is **not complete** and authorizes no new live operation. See [INSTALL-DIAGNOSTICS.md](INSTALL-DIAGNOSTICS.md) and [Issue #31](https://github.com/ach1992/bot-refactor/issues/31#issuecomment-6199206127).
 
 ## Source and migration identity
 
-- Merged source: [`main@7c22dccc4d1ee3f4ef77032f1933481abe8e4279`](https://github.com/ach1992/bot-refactor/commit/7c22dccc4d1ee3f4ef77032f1933481abe8e4279), same effective source files as independently reviewed R6 `8ef7810ed39a4af2846604ef4975636a1456e822`.
-- [Exact post-merge CI — PHP 8.1 and PHP 8.4 PASS](https://github.com/ach1992/bot-refactor/actions/runs/38686398872). [Official source-only artifact](https://github.com/ach1992/bot-refactor/actions/runs/38686398872/artifacts/11950701682) includes a `runtime.zip`, manifest, migration and acceptance reports. Artifact retention is time-limited; it is **not** a public release.
+- Published [source-only v0.10.0-rc.1](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.1) at exact commit [`6645ac16a1f8a8a99aa8fc2bd203a7937bd01c7c`](https://github.com/ach1992/bot-refactor/commit/6645ac16a1f8a8a99aa8fc2bd203a7937bd01c7c), tree `39263d483e801e3b617af41131feb2b9d9d85654`, 92 runtime files; the only post-R6 difference is documents. Release ZIP SHA256: `1d9f65e1275afa5b19be44f7d8c6d10527e56f40a40a708031cecb8c5d05aa3e`.
+- [Exact v0.10.0-rc.1 main CI — PHP 8.1 and PHP 8.4 PASS](https://github.com/ach1992/bot-refactor/actions/runs/38688393237). Its official source-only artifact contains the same verified 92-member runtime ZIP as the [public pre-release](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.1), with the migration distributed separately.
 - Migration SHA256: `786c0e7b64b44420597ba86e9ff6ec38743af62011fe42433ceb01c6bb53aa30` for [`001_marzban_panel_group_id.sql`](../../migrations/post-v9/001_marzban_panel_group_id.sql). It is supplied **outside** the 92-member runtime ZIP.
-- Existing last-tagged version [`v0.9.0-rc.1`](https://github.com/ach1992/bot-refactor/releases/tag/v0.9.0-rc.1) does **not** require this column; the post-V9 runtime **does**.
+- Previous historical source-only release [`v0.9.0-rc.1`](https://github.com/ach1992/bot-refactor/releases/tag/v0.9.0-rc.1) does **not** require this column; current published [`v0.10.0-rc.1`](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.1) **does**.
 
 ## Gate A — prerequisites before any installation or real SQL
 
@@ -26,7 +26,7 @@
 ## Gate C — staged operator checks after explicit install approval
 
 - [ ] Keep only test Telegram identities, provider accounts and artificial balances; use a truly isolated bot/webhook and Marzban test account. No real payment gateway, TRON transfer, wallet debit, customer migration or active production Cron testing.
-- [ ] Confirm `/start`, normal customer/admin authorization, existing subscriptions, catalog/plan selection, account details, safe renewal and callback behavior; check PHP-FPM/webhook/Cron readiness without enabling unintended settlement jobs.
+- [ ] Confirm `/start`, normal customer/admin authorization, existing subscriptions, catalog/plan selection, account details, safe renewal and callback behavior; check actual web SAPI (OpenLiteSpeed LSAPI or PHP-FPM), webhook and Cron readiness without enabling unintended settlement jobs.
 - [ ] Under **Server Management → Panel Groups**, create a named group in Persian, reject a duplicate name, assign two logical server records **only when they are known to be the same actual physical Marzban backend**, including the case of different API URLs/admin accounts.
 - [ ] On a consenting **test** subscription, confirm permitted same-group relocation changes **only `orders_list.server_id`**. Verify original plan, price, UUID/link, Marzban remote account, payment/wallet and capacity are unchanged and renewal eligibility remains.
 - [ ] Confirm negative controls: unassigned server, different group, deleted/invalid group, inactive or zero-capacity destination, non-admin/other-user request, stale/replayed callback, unsupported old panel. These must fail safely without unintended account, finance or server changes.
