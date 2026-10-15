@@ -52,7 +52,7 @@ def source_checks():
     for rel in php_files:
         php_source=(ROOT/rel).read_text()
         if ("admins_list_check.txt" in php_source or
-                re.search(r"print_r\\s*\\(\\s*\\$admins_list\\b", php_source)):
+                re.search(r"print_r\s*\(\s*\$admins_list\b", php_source)):
             raise RuntimeError("Unsafe administrator-list debug dump in runtime: "+rel)
     module=(ROOT/"src/Panel/Accounts.php").read_text()
     definitions=re.findall(r"(?m)^function (\w+)\s*\(",module)
