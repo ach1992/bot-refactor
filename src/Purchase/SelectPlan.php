@@ -11,6 +11,10 @@ if((preg_match('/^discountSelectPlan(\d+)_(\d+)_(\d+)/',$userInfo['step'],$match
     preg_match('/selectPlan(\d+)_(\d+)_(?<buyType>\w+)/',$data, $match)) &&  
     ($botState['sellState']=="on" ||$from_id ==$admin) &&  
     $text != $buttonValues['cancel']){ 
+    if (!achbotSupportsMarzbanPlan($connection, (int)($match[1] ?? 0))) {
+        alert("⛔️ این پلن دیگر در سرور مرزبان قابل خرید نیست.", true);
+        return;
+    }
     if(preg_match('/^discountSelectPlan/', $userInfo['step'])){ 
         $rowId = $match[3]; 
 
@@ -79,6 +83,10 @@ if((preg_match('/^discountSelectPlan(\d+)_(\d+)_(\d+)/',$userInfo['step'],$match
     $respd = $stmt->get_result()->fetch_assoc(); 
     $stmt->close(); 
      
+    if (!$respd) {
+        alert("⛔️ پلن موردنظر معتبر نیست.", true);
+        return;
+    }
     $stmt = $connection->prepare("SELECT * FROM `server_categories` WHERE `id`=?"); 
     $stmt->bind_param("i", $respd['catid']); 
     $stmt->execute(); 

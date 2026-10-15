@@ -118,6 +118,25 @@ def main():
                 and wallet_guard.get("http_calls")==0
                 and wallet_guard.get("committed_sql_mutations")==0):
             raise RuntimeError("Unsupported wallet checkout mutated money or failed to reject panel")
+        subject_path=Path(tmp)/"payment-subjects.json"
+        subprocess.run(["python3",str(ROOT/"tools/test_post_v9_subjects.py"),
+                        "--run-disposable","--report",str(subject_path)],
+                       cwd=ROOT,check=True,timeout=180,capture_output=True)
+        subject=json.loads(subject_path.read_text())
+        if not (subject.get("complete") and subject.get("cases")>=17
+                and subject.get("schema_tables")==23
+                and subject.get("financial_sql_mutations")==0
+                and subject.get("payment_provider_requests")==0):
+            raise RuntimeError("Actual original-schema payment subject preflight proof incomplete")
+        catalogue_path=Path(tmp)/"catalogue-and-qr.json"
+        subprocess.run(["python3",str(ROOT/"tools/test_post_v9_catalogue_qr.py"),
+                        "--run-disposable","--report",str(catalogue_path)],
+                       cwd=ROOT,check=True,timeout=180,capture_output=True)
+        catalogue=json.loads(catalogue_path.read_text())
+        if not (catalogue.get("complete") and catalogue.get("cases")>=11
+                and catalogue.get("original_schema_tables")==23
+                and catalogue.get("financial_mutations")==0):
+            raise RuntimeError("Marzban-only catalogue, forged callback or QR proof incomplete")
         overlay_report=Path(tmp)/"source-overlay.json"
         subprocess.run(["python3",str(ROOT/"tools/test_post_v9_swap.py"),
                         "--run-disposable","--report",str(overlay_report)],
@@ -133,6 +152,8 @@ def main():
                     "source":result,"marzban":marzban,"purchases":purchases,
                      "unsupported_wallet_preflight":wallet_guard,
                     "source_only_overlays":swap,
+                    "financial_subject_preflight":subject,
+                    "catalogue_and_subscription_qr":catalogue,
                     "historical_suite_executed_by_this_script":False,
                     "historical_suite_requires_separate_pinned_ci_execution":True,
                     "actual_operator_installed_acceptance":False,
@@ -146,6 +167,8 @@ def main():
                        "unsupported_wallet_negatives":wallet_guard["cases"],
                        "unsupported_manual_negatives":wallet_guard["manual_cases"],
                       "verified_source_swaps":swap["phase_count"],
+                      "payment_subject_cases":subject["cases"],
+                      "catalogue_qr_cases":catalogue["cases"],
                       "current_php_version":subprocess.check_output(["php","-r","echo PHP_VERSION_ID;"]).decode()}))
 
 

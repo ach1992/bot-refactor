@@ -260,6 +260,10 @@ if(preg_match('/updateConfigConnectionLink(\d+)/', $data,$match)){
     $order = $stmt->get_result()->fetch_assoc();
     $stmt->close();
 
+    if (!$order || !achbotSupportsMarzbanOrder($connection, (int)$oid)) {
+        alert("⛔️ این سفارش در پنل مرزبان پشتیبانی نمی‌شود.", true);
+        return;
+    }
     $remark = $order['remark'];
     $uuid = $order['uuid']??"0";
     $inboundId = $order['inbound_id'];
@@ -287,7 +291,7 @@ if(preg_match('/updateConfigConnectionLink(\d+)/', $data,$match)){
     
     $success = false; // Flag برای موفقیت آمیز بودن عملیات
     
-    if($serverType == "marzban"){
+    if (achbotSupportsMarzbanAccount($serverType, $inboundId)) {
         $info = getMarzbanUser($server_id, $remark);
         if(isset($info->links) && !empty($info->links)) {
             $vraylink = $info->links;
@@ -296,7 +300,8 @@ if(preg_match('/updateConfigConnectionLink(\d+)/', $data,$match)){
             $vraylink = "خطا در دریافت لینک";
         }
     } else {
-            throw new \UnexpectedValueException('unsupported_panel');
+        alert("⛔️ پنل این اشتراک دیگر پشتیبانی نمی‌شود.", true);
+        return;
         }
     
     if($success) {
@@ -343,6 +348,10 @@ if(preg_match('/changAccountConnectionLink(\d+)/', $data,$match)){
     $order = $stmt->get_result()->fetch_assoc(); 
     $stmt->close(); 
  
+    if (!$order || !achbotSupportsMarzbanOrder($connection, (int)$oid)) {
+        alert("⛔️ این سفارش در پنل مرزبان پشتیبانی نمی‌شود.", true);
+        return;
+    }
     $date = jdate("Y-m-d H:i",$order['date']); 
     $expire_date = jdate("Y-m-d H:i",$order['expire_date']); 
     $remark = $order['remark']; 
@@ -371,12 +380,13 @@ if(preg_match('/changAccountConnectionLink(\d+)/', $data,$match)){
      
     $serverType = $server_info['type']; 
  
-    if($serverType == "marzban"){ 
+    if (achbotSupportsMarzbanAccount($serverType, $inboundId)) {
         $res = renewMarzbanUUID($server_id, $remark); 
         $vraylink = $res->links; 
         $newUuid = $newToken = str_replace("/sub/", "", $res->subscription_url); 
     }else{
-            throw new \UnexpectedValueException('unsupported_panel');
+        alert("⛔️ پنل این اشتراک دیگر پشتیبانی نمی‌شود.", true);
+        return;
         } 
  
     $vray_link = json_encode($vraylink); 

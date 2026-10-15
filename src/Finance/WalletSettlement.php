@@ -77,10 +77,7 @@ if (!function_exists('processWalletPayment')) {
             // provider call is not the first acceptable guard: by then wallet
             // mutations may already have occurred within this transaction.
             // Uses the original schema; no migrations or new payment policy.
-            $preflightPlanId = (int)($payInfo['plan_id'] ?? 0);
-            $renewalInbound = ($payInfo['type'] ?? '') === 'RENEW_SCONFIG'
-                ? (int)($payInfo['volume'] ?? 0) : 0;
-            if (!achbotSupportsMarzbanPlan($connection, $preflightPlanId, $renewalInbound)) {
+            if (!achbotSupportsPaymentSubject($connection, $payInfo)) {
                 $connection->rollback();
                 alert("⛔️ پنل این اشتراک دیگر پشتیبانی نمی‌شود؛ هیچ مبلغی از کیف پول کسر نشد.", true);
                 return [

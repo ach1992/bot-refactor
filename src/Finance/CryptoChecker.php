@@ -13,6 +13,10 @@ if(empty($paymentKeys['tronwallet'])) exit();
 $wallet = $paymentKeys['tronwallet'];
 
 while($payParam = $paysList->fetch_assoc()){
+    if (!achbotSupportsPaymentSubject($connection, $payParam)) {
+        continue;
+    }
+
     $rowId = $payParam['id'];
     $amount = $payParam['price'];
     $user_id = $payParam['user_id'];

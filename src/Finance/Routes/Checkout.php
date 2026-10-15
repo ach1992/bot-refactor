@@ -187,13 +187,27 @@ if (preg_match('/^showQr(Sub|Config)(\d+)/', $data, $match)) {
     $order = $stmt->get_result()->fetch_assoc();
     $stmt->close();
 
+    if (!$order || !achbotSupportsMarzbanOrder($connection, (int)$order['id'])) {
+        alert("⛔️ این اشتراک در پنل مرزبان پشتیبانی نمی‌شود.", true);
+        return;
+    }
+
     include_once (stream_resolve_include_path('phpqrcode/qrlib.php') ?: dirname(__DIR__, 3) . '/phpqrcode/qrlib.php');
 
     if (!defined('IMAGE_WIDTH'))  define('IMAGE_WIDTH', 540);
     if (!defined('IMAGE_HEIGHT')) define('IMAGE_HEIGHT', 540);
 
     if ($match[1] == "Sub") {
-        $subLink = $botUrl . "settings/subLink.php?token=" . $order['token'];
+        $stmt = $connection->prepare("SELECT `panel_url` FROM `server_config` WHERE `id` = ? AND `type` = 'marzban' LIMIT 1");
+        $stmt->bind_param("i", $order['server_id']);
+        $stmt->execute();
+        $panel = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        if (!$panel || empty($panel['panel_url']) || empty($order['token'])) {
+            alert("⛔️ لینک اشتراک در سرور مرزبان یافت نشد.", true);
+            return;
+        }
+        $subLink = rtrim($panel['panel_url'], '/') . "/sub/" . $order['token'];
 
         $file = RandomString() . ".png";
         $ecc = 'L';
@@ -204,10 +218,10 @@ if (preg_match('/^showQr(Sub|Config)(\d+)/', $data, $match)) {
 
         sendPhoto(
             $botUrl . $file,
-            $acc_text,
+            ($acc_text ?? ''),
             json_encode(['inline_keyboard' => [[['text' => $buttonValues['back_to_main'], 'callback_data' => "mainMenu"]]]]),
             "HTML",
-            $uid
+            ($uid ?? $from_id)
         );
         unlink($file);
     }

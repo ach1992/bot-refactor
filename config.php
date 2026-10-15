@@ -11,6 +11,7 @@ if($connection->connect_error){
     exit("error " . $connection->connect_error);  
 }
 $connection->set_charset("utf8mb4");
+require_once __DIR__ . '/src/Purchase/Core.php';
 
 function tgRetryAfter($res){
     require_once __DIR__ . '/src/Telegram/Response.php';

@@ -33,6 +33,11 @@ if (isset($_GET['nowpayment'])) {
             showForm("کد پرداخت یافت نشد.", "خطا!");
         } else {
             $payParam = $payInfo->fetch_assoc();
+        if (!achbotSupportsPaymentSubject($connection, $payParam)) {
+            showForm("تایید این پرداخت برای سرویس غیرقابل پشتیبانی متوقف شد؛ با پشتیبانی تماس بگیرید.", "خطا");
+            return;
+        }
+
             $rowId = (int)$payParam['id'];
             $payDescription = payTypeToDescription($payParam['type']);
 
@@ -76,6 +81,11 @@ if (isset($_GET['nowpayment'])) {
         showForm("کد پرداخت یافت نشد.", "خطا!");
     } else {
         $payParam = $payInfo->fetch_assoc();
+        if (!achbotSupportsPaymentSubject($connection, $payParam)) {
+            showForm("تایید این پرداخت برای سرویس غیرقابل پشتیبانی متوقف شد؛ با پشتیبانی تماس بگیرید.", "خطا");
+            return;
+        }
+
         $rowId = (int)$payParam['id'];
         $amount = (int)$payParam['price'];
 
@@ -116,6 +126,11 @@ if (isset($_GET['nowpayment'])) {
         showForm("کد پرداخت یافت نشد.", "خطا!");
     } else {
         $payParam = $payInfo->fetch_assoc();
+        if (!achbotSupportsPaymentSubject($connection, $payParam)) {
+            showForm("تایید این پرداخت برای سرویس غیرقابل پشتیبانی متوقف شد؛ با پشتیبانی تماس بگیرید.", "خطا");
+            return;
+        }
+
         $rowId  = (int)$payParam['id'];
         $amount = (int)$payParam['price'];
         $payid  = $payParam['payid'];
@@ -185,6 +200,11 @@ function doAction($payRowId, $gateType) {
     }
 
     $payParam = $payInfo->fetch_assoc();
+        if (!achbotSupportsPaymentSubject($connection, $payParam)) {
+            showForm("تایید این پرداخت برای سرویس غیرقابل پشتیبانی متوقف شد؛ با پشتیبانی تماس بگیرید.", "خطا");
+            return;
+        }
+
 
     $rowId      = (int)$payParam['id'];
     $amount     = (int)$payParam['price'];

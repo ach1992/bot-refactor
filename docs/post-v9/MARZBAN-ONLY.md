@@ -31,6 +31,23 @@ tokens still say `Wrong token`, but a legacy-shaped valid token returns
 HTTP **410** without DB access. Original URL filename remains, preventing
 accidental execution of removed X-UI SQL/API.
 
+## Open Owner gate: real Marzban relocation
+
+The independent review of PR #32 identified that the inherited
+`switchServer` handler only changed `orders_list.server_id`, without
+moving an account between the two real Marzban servers. The current
+remediation deliberately **hides that button and rejects cached old
+callbacks before a database/provider mutation**. This is defensive
+containment, **not** implementation or acceptance of account relocation.
+Because the Issue #31 contract includes relocation and the Owner wants
+existing Marzban features preserved, the PR is **not yet accepted**.
+Before any merge, the Owner must either explicitly authorize temporary
+relocation unavailability as a scoped exception, or the implementation
+must prove a recoverable real two-Marzban-server transfer (destination
+creation/verification, source handling, original-schema state update last,
+failed intermediate steps and compensation). No real tenant/account/server
+or customer credentials may be used in source-only testing.
+
 Current financial/TRON issues are **not fixed by this refactor**; see
 [Issue #26](https://github.com/ach1992/bot-refactor/issues/26). Signed negative
 wallet as deliberate **administrator debt** remains a required future feature;
@@ -66,6 +83,10 @@ The wrapper validates:
 - original 92-source-member set; all 91 PHP members pass PHP lint;
 - pinned original `database/legacy-schema.sql` and
   `baseInfo.example.php` bytes, without any real `baseInfo.php`;
+- native original-schema payment-subject validation for wallet, purchase,
+  renewal and extension cases, including retirement/inbound negatives;
+- mixed old/new purchase-catalogue, forged Telegram purchase callbacks and
+  QR payloads tested on original-schema MariaDB with synthetic fixtures;
 - no old X-UI adapter function definitions/references or network paths
   in the live Marzban module; safe server-type selection and onboarding;
 - 15 positive **Marzban provider** native cases executed on both a genuine

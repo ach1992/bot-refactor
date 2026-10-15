@@ -19,6 +19,11 @@ if(preg_match('/payWithTronWallet(.*)/',$data,$match)) {
         return '__ACHBOT_V8_GOTO_START__';
     }
     $payInfo = $payInfo->fetch_assoc();
+    if (!achbotSupportsPaymentSubject($connection, $payInfo)) {
+        alert("⛔️ پرداخت برای این سرویس پشتیبانی نمی‌شود.", true);
+        return;
+    }
+
 
     $fid = $payInfo['plan_id'];
     $type = $payInfo['type'];
@@ -98,6 +103,16 @@ if(preg_match('/^payWithTronWallet(.*)/',$userInfo['step'], $match) && $text != 
         $stmt->close();
         
         if($checkExist->num_rows == 0){
+            $stmt = $connection->prepare("SELECT * FROM pays WHERE hash_id = ? LIMIT 1");
+            $stmt->bind_param("s", $match[1]);
+            $stmt->execute();
+            $currentPayment = $stmt->get_result()->fetch_assoc();
+            $stmt->close();
+            if (!achbotSupportsPaymentSubject($connection, $currentPayment)) {
+                alert("⛔️ ارسال تراکنش برای این سرویس پشتیبانی نمی‌شود.", true);
+                return;
+            }
+
             $stmt = $connection->prepare("UPDATE `pays` SET `payid` = ?, `state` = '0' WHERE `hash_id` = ?");
             $stmt->bind_param("ss", $text, $match[1]);
             $stmt->execute();
@@ -124,6 +139,11 @@ if(preg_match('/payWithWeSwap(.*)/',$data,$match)) {
         return '__ACHBOT_V8_GOTO_START__';
     }
     $payInfo = $payInfo->fetch_assoc();
+    if (!achbotSupportsPaymentSubject($connection, $payInfo)) {
+        alert("⛔️ پرداخت برای این سرویس پشتیبانی نمی‌شود.", true);
+        return;
+    }
+
 
     $fid = $payInfo['plan_id'];
     $type = $payInfo['type'];
@@ -239,6 +259,11 @@ if (preg_match('/havePaiedWeSwap(.*)/', $data, $match)) {
     }
 
     $payInfo = $payRes->fetch_assoc();
+    if (!achbotSupportsPaymentSubject($connection, $payInfo)) {
+        alert("⛔️ تأیید پرداخت این سرویس پشتیبانی نمی‌شود.", true);
+        return;
+    }
+
 
     if ($payInfo['state'] != "pending") {
         alert("این لینک پرداخت منقضی شده است.");

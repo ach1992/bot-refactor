@@ -50,7 +50,7 @@ if ($orders && $orders->num_rows > 0) {
         $stmt->close();
         $serverType = $serverConfig['type'];
 
-        if ($serverType == "marzban") {
+        if (achbotSupportsMarzbanAccount($serverType, $inbound_id)) {
             $info = getMarzbanUser($server_id, $remark);
             if (isset($info->username)) {
                 $found = true;
@@ -158,7 +158,7 @@ if ($orders) {
             $found = false;
             $logedIn = false;
 
-            if ($serverType == "marzban") {
+            if (achbotSupportsMarzbanAccount($serverType, $inbound_id)) {
                 $info = getMarzbanUser($server_id, $remark);
                 if (isset($info->username)) {
                     $found = true;

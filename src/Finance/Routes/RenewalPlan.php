@@ -8,6 +8,11 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
 if(preg_match('/sConfigRenewPlan(\d+)_(\d+)/',$data, $match) && ($botState['sellState']=="on" ||$from_id ==$admin) && $text != $buttonValues['cancel']){
     $id = $match[1];
 	$inbound_id = $match[2];
+    if (!achbotSupportsMarzbanPlan($connection, (int)$id, (int)$inbound_id)) {
+        alert("⛔️ این تمدید برای پنل مرزبان پشتیبانی نمی‌شود.", true);
+        return;
+    }
+
 
 
     if(empty($userInfo['temp'])){delMessage(); exit();}

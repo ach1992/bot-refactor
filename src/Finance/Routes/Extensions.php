@@ -16,6 +16,11 @@ if(preg_match('/increaseADay(.*)/', $data, $match)){
     $stmt->execute();
     $orderInfo = $stmt->get_result()->fetch_assoc();
     $stmt->close();
+    if (!$orderInfo || !achbotSupportsMarzbanOrder($connection, (int)$orderInfo['id'])) {
+        alert("⛔️ این سرویس برای افزایش حجم یا مدت در مرزبان پشتیبانی نمی‌شود.", true);
+        return;
+    }
+
     $agentBought = $orderInfo['agent_bought'];
 
     if($res->num_rows == 0){
@@ -58,6 +63,11 @@ if(preg_match('/selectPlanDayIncrease(?<orderId>.+)_(?<dayId>.+)/',$data,$match)
     $stmt->execute();
     $orderInfo = $stmt->get_result()->fetch_assoc();
     $stmt->close();
+    if (!$orderInfo || !achbotSupportsMarzbanOrder($connection, (int)$orderInfo['id'])) {
+        alert("⛔️ این سرویس برای افزایش حجم یا مدت در مرزبان پشتیبانی نمی‌شود.", true);
+        return;
+    }
+
     $agentBought = $orderInfo['agent_bought'];
     
     if($agentBought == true){
@@ -172,6 +182,11 @@ if (preg_match('/waitIncreaseDayReceipt(.*)/', $userInfo['step'], $match)) {
     $stmt->execute();
     $orderInfo = $stmt->get_result()->fetch_assoc();
     $stmt->close();
+    if (!$orderInfo || !achbotSupportsMarzbanOrder($connection, (int)$orderInfo['id'])) {
+        alert("⛔️ این سرویس برای افزایش حجم یا مدت در مرزبان پشتیبانی نمی‌شود.", true);
+        return;
+    }
+
 
     $remark = $orderInfo['remark'];
 
@@ -215,6 +230,12 @@ if (preg_match('/approveIncreaseDay(.*)/', $data, $match) && ($from_id == $admin
         $stmt->bind_param("s", $hash_id);
         $stmt->execute();
         $payParam = $stmt->get_result()->fetch_assoc();
+        if (!achbotSupportsPaymentSubject($connection, $payParam)) {
+            $connection->rollback();
+            alert("⛔️ تایید دستی افزایشی برای این پنل مجاز نیست.", true);
+            return;
+        }
+
         $stmt->close();
 
         if (!$payParam || ($payParam['state'] === 'expired_have_sent')) {
@@ -242,7 +263,12 @@ if (preg_match('/approveIncreaseDay(.*)/', $data, $match) && ($from_id == $admin
         $stmt->bind_param("i", $orderId);
         $stmt->execute();
         $orderInfo = $stmt->get_result()->fetch_assoc();
-        $stmt->close();
+    $stmt->close();
+    if (!$orderInfo || !achbotSupportsMarzbanOrder($connection, (int)$orderInfo['id'])) {
+        alert("⛔️ این سرویس برای افزایش حجم یا مدت در مرزبان پشتیبانی نمی‌شود.", true);
+        return;
+    }
+
 
         if (!$orderInfo) {
             throw new Exception("order_not_found");
@@ -375,6 +401,12 @@ if(preg_match('/payIncreaseDayWithWallet(.*)/', $data, $match)){
         }
 
         $payParam = $payRes->fetch_assoc();
+        if (!achbotSupportsPaymentSubject($connection, $payParam)) {
+            $connection->rollback();
+            alert("⛔️ پرداخت افزایشی برای پنل غیرقابل پشتیبانی انجام نشد.", true);
+            return;
+        }
+
         $hash_id  = $payParam['hash_id'];
 
         if ($payParam['state'] === "paid_with_wallet") {
@@ -394,7 +426,12 @@ if(preg_match('/payIncreaseDayWithWallet(.*)/', $data, $match)){
         $stmt->bind_param("i", $orderId);
         $stmt->execute();
         $orderInfo = $stmt->get_result()->fetch_assoc();
-        $stmt->close();
+    $stmt->close();
+    if (!$orderInfo || !achbotSupportsMarzbanOrder($connection, (int)$orderInfo['id'])) {
+        alert("⛔️ این سرویس برای افزایش حجم یا مدت در مرزبان پشتیبانی نمی‌شود.", true);
+        return;
+    }
+
 
         if (!$orderInfo){
             throw new Exception("order_not_found");
@@ -549,6 +586,11 @@ if (preg_match('/^changePlan_(\d+)/', $data, $match)) {
     $stmt->execute();
     $orderInfo = $stmt->get_result()->fetch_assoc();
     $stmt->close();
+    if (!$orderInfo || !achbotSupportsMarzbanOrder($connection, (int)$orderInfo['id'])) {
+        alert("⛔️ این سرویس برای افزایش حجم یا مدت در مرزبان پشتیبانی نمی‌شود.", true);
+        return;
+    }
+
 	
 	if ((int)$orderInfo['amount'] === 0) {
 		alert("⚠️ امکان تغییر پلن برای این نوع اشتراک وجود ندارد.", true);
@@ -591,6 +633,11 @@ if (preg_match('/^confirmChangePlan_(\d+)_(\d+)/', $data, $match)) {
     $stmt->execute();
     $orderInfo = $stmt->get_result()->fetch_assoc();
     $stmt->close();
+    if (!$orderInfo || !achbotSupportsMarzbanOrder($connection, (int)$orderInfo['id'])) {
+        alert("⛔️ این سرویس برای افزایش حجم یا مدت در مرزبان پشتیبانی نمی‌شود.", true);
+        return;
+    }
+
 
     if ($orderInfo['fileid'] == $newPlanId) {
         sendMessage("❗️پلن فعلی شما همین است. لطفاً پلن متفاوتی انتخاب کنید.");
@@ -643,6 +690,11 @@ if (preg_match('/^increaseAVolume(.*)/', $data, $match)) {
     $stmt->execute();
     $orderInfo = $stmt->get_result()->fetch_assoc();
     $stmt->close();
+    if (!$orderInfo || !achbotSupportsMarzbanOrder($connection, (int)$orderInfo['id'])) {
+        alert("⛔️ این سرویس برای افزایش حجم یا مدت در مرزبان پشتیبانی نمی‌شود.", true);
+        return;
+    }
+
     
     $expireDate = (int) $orderInfo['expire_date']; // تبدیل به عدد صحیح
     $currentDate = time();
@@ -710,6 +762,11 @@ if(preg_match('/increaseVolumePlan(?<orderId>.+)_(?<volumeId>.+)/',$data,$match)
     $stmt->execute();
     $orderInfo = $stmt->get_result()->fetch_assoc();
     $stmt->close();
+    if (!$orderInfo || !achbotSupportsMarzbanOrder($connection, (int)$orderInfo['id'])) {
+        alert("⛔️ این سرویس برای افزایش حجم یا مدت در مرزبان پشتیبانی نمی‌شود.", true);
+        return;
+    }
+
     $agentBought = $orderInfo['agent_bought'];
  
     if($agentBought == true){
@@ -827,6 +884,11 @@ if (preg_match('/waitIncreaseVolumeReceipt(.*)/', $userInfo['step'], $match)) {
     $stmt->execute();
     $orderInfo = $stmt->get_result()->fetch_assoc();
     $stmt->close();
+    if (!$orderInfo || !achbotSupportsMarzbanOrder($connection, (int)$orderInfo['id'])) {
+        alert("⛔️ این سرویس برای افزایش حجم یا مدت در مرزبان پشتیبانی نمی‌شود.", true);
+        return;
+    }
+
 
     $remark = $orderInfo['remark'];
 
@@ -869,6 +931,12 @@ if (preg_match('/approveIncreaseVolume(.*)/', $data, $match) && ($from_id == $ad
         $stmt->bind_param("s", $hash_id);
         $stmt->execute();
         $payParam = $stmt->get_result()->fetch_assoc();
+        if (!achbotSupportsPaymentSubject($connection, $payParam)) {
+            $connection->rollback();
+            alert("⛔️ تایید دستی افزایشی برای این پنل مجاز نیست.", true);
+            return;
+        }
+
         $stmt->close();
 
         if (!$payParam || ($payParam['state'] === 'expired_have_sent')) {
@@ -896,7 +964,12 @@ if (preg_match('/approveIncreaseVolume(.*)/', $data, $match) && ($from_id == $ad
         $stmt->bind_param("i", $orderId);
         $stmt->execute();
         $orderInfo = $stmt->get_result()->fetch_assoc();
-        $stmt->close();
+    $stmt->close();
+    if (!$orderInfo || !achbotSupportsMarzbanOrder($connection, (int)$orderInfo['id'])) {
+        alert("⛔️ این سرویس برای افزایش حجم یا مدت در مرزبان پشتیبانی نمی‌شود.", true);
+        return;
+    }
+
 
         if (!$orderInfo) {
             throw new Exception("order_not_found");
@@ -1029,6 +1102,12 @@ if(preg_match('/payIncreaseWithWallet(.*)/', $data, $match)){
         }
 
         $payParam = $payRes->fetch_assoc();
+        if (!achbotSupportsPaymentSubject($connection, $payParam)) {
+            $connection->rollback();
+            alert("⛔️ پرداخت افزایشی برای پنل غیرقابل پشتیبانی انجام نشد.", true);
+            return;
+        }
+
         $hash_id  = $payParam['hash_id'];
 
         if ($payParam['state'] === "paid_with_wallet") {
@@ -1047,7 +1126,12 @@ if(preg_match('/payIncreaseWithWallet(.*)/', $data, $match)){
         $stmt->bind_param("i", $orderId);
         $stmt->execute();
         $orderInfo = $stmt->get_result()->fetch_assoc();
-        $stmt->close();
+    $stmt->close();
+    if (!$orderInfo || !achbotSupportsMarzbanOrder($connection, (int)$orderInfo['id'])) {
+        alert("⛔️ این سرویس برای افزایش حجم یا مدت در مرزبان پشتیبانی نمی‌شود.", true);
+        return;
+    }
+
 
         if (!$orderInfo){
             throw new Exception("order_not_found");

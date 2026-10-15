@@ -22,6 +22,11 @@ if(mysqli_num_rows($payInfo)==0){
     showForm("کد پرداخت یافت نشد.");
 }else{
     $payParam = $payInfo->fetch_assoc();
+    if (!achbotSupportsPaymentSubject($connection, $payParam)) {
+        showForm("این سرویس در پنل مرزبان قابل پرداخت نیست.");
+        exit();
+    }
+
     
     $fid = $payParam['plan_id'];
     

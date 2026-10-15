@@ -14,6 +14,10 @@ if($botState['cartToCartAutoAcceptState']=="on"){
     $stmt->close();
 
     while($payInfo = $info->fetch_assoc()){
+        if (!achbotSupportsPaymentSubject($connection, $payInfo)) {
+            continue;
+        }
+
         $time = time();
         $rowId = $payInfo['id'];
         $price = $payInfo['price'];

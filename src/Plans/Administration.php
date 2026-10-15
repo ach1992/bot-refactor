@@ -79,12 +79,11 @@ if(($userInfo['step'] ?? '') === 'addNewMarzbanPlan' and $text!=$buttonValues['c
 
 
 
-        $marzbanList = array_column($info, 0);
-        if(count($marzbanList) > 0) $condition  = " AND `id` " .($userInfo['step'] == "addNewMarzbanPlan"?"IN":"NOT IN") . " (" . implode(", ", $marzbanList) . ")";
-        else $condition = "";
-
-
-        $stmt = $connection->prepare("SELECT * FROM `server_info` WHERE `active`=1 $condition");
+        $stmt = $connection->prepare(
+            "SELECT si.* FROM `server_info` si
+             INNER JOIN `server_config` sc ON sc.`id`=si.`id` AND sc.`type`='marzban'
+             WHERE si.`active`=1 ORDER BY si.`id`"
+        );
         $stmt->execute();
 
         $srvs = $stmt->get_result();
@@ -94,6 +93,10 @@ if(($userInfo['step'] ?? '') === 'addNewMarzbanPlan' and $text!=$buttonValues['c
             $id = $srv['id'];
             $title = $srv['title'];
             $srvkey[] = ['text' => "$title", 'callback_data' => "selectNewPlanServer$id"];
+        }
+        if (!$srvkey) {
+            sendMessage("⛔️ هیچ سرور مرزبان فعالی برای ثبت پلن موجود نیست.", $cancelKey);
+            return;
         }
         $srvkey = array_chunk($srvkey,2);
         sendMessage("لطفا یکی از سرورها رو انتخاب کن 👇 ", json_encode([
@@ -225,7 +228,7 @@ if(($userInfo['step'] ?? '') === 'addNewMarzbanPlan' and $text!=$buttonValues['c
     }
 }
 if($data == 'backplan' and ($from_id == $admin || $userInfo['isAdmin'] == true)){
-    $stmt = $connection->prepare("SELECT * FROM `server_info` WHERE `active`=1");
+    $stmt = $connection->prepare("SELECT si.* FROM `server_info` si INNER JOIN `server_config` sc ON sc.`id`=si.`id` AND sc.`type`='marzban' WHERE si.`active`=1");
     $stmt->execute();
     $res = $stmt->get_result();
     $stmt->close();
@@ -295,7 +298,7 @@ if(preg_match('/^editCustom(gbPrice|dayPrice)/',$data,$match) && ($from_id == $a
     setUser($data);
 }
 if(preg_match('/plansList(\d+)/', $data,$match) && ($from_id == $admin || $userInfo['isAdmin'] == true)){
-    $stmt = $connection->prepare("SELECT * FROM `server_plans` WHERE `server_id`=? ORDER BY`id` ASC");
+    $stmt = $connection->prepare("SELECT p.* FROM `server_plans` p INNER JOIN `server_config` sc ON sc.`id`=p.`server_id` AND sc.`type`='marzban' WHERE p.`server_id`=? AND p.`inbound_id`=0 ORDER BY p.`id` ASC");
     $stmt->bind_param("i", $match[1]);
     $stmt->execute();
     $res = $stmt->get_result();

@@ -41,9 +41,7 @@ if (
     // A previously sent manual receipt could reference a retired panel.
     // Reject before the claim-to-processing write; leave it reviewable and
     // do not call any obsolete provider or mutate an order.
-    $renewalInbound = ($payInfo['type'] ?? '') === 'RENEW_SCONFIG'
-        ? (int)($payInfo['volume'] ?? 0) : 0;
-    if (!achbotSupportsMarzbanPlan($connection, (int)$payInfo['plan_id'], $renewalInbound)) {
+    if (!achbotSupportsPaymentSubject($connection, $payInfo)) {
         alert("⛔️ پنل این پلن دیگر پشتیبانی نمی‌شود؛ درخواست تأیید نشد.", true);
         return;
     }

@@ -223,10 +223,10 @@ function getUserOrderDetailKeys($id, $offset = 0){
         ['text' => $buttonValues['volume_left'], 'callback_data' => "wizwizch"],
     ];
 
-    // change plan + switch location
+    // Physical relocation is held by Issue #31 until cross-panel transfer
+    // and failure recovery are proved; never expose the DB-only legacy route.
     $keyboard[] = [
         ['text' => $buttonValues['change_plan'], 'callback_data' => "changePlan_{$id}"],
-        ['text' => $buttonValues['change_config_location'], 'callback_data' => "switchLocation{$id}_{$server_id}_{$leftgb}_".$order['expire_date']],
     ];
 
     if (($botState['renewAutoState'] ?? "off") == "on") {
@@ -379,13 +379,6 @@ function getOrderDetailKeys($from_id, $id, $offset = 0){
             $temp[] = ['text' => $buttonValues['renew_config'], 'callback_data' => "renewAccountAsk{$id}"];
         }
 
-        if (
-            ($price != 0 || $agentBought == true) &&
-            ($botState['switchLocationState'] ?? "off") == "on" &&
-            $rahgozar != true
-        ) {
-            $temp[] = ['text' => $buttonValues['change_config_location'], 'callback_data' => "switchLocation{$id}_{$server_id}_{$leftgb}_".$order['expire_date']];
-        }
 
         if (!empty($temp)) {
             $keyboard[] = $temp;
