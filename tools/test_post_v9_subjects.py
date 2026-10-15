@@ -61,6 +61,23 @@ def main():
             ('marzban_purchase',dict(type='BUY_SUB',plan_id=7,server_id=2),True),
             ('marzban_renew',dict(type='RENEW_ACCOUNT',plan_id=7,order_id=oid,user_id=1001),True),
             ('wallet_credit',dict(type='INCREASE_WALLET',plan_id=0),True),
+            ('marzban_external_renew',dict(type='RENEW_SCONFIG',plan_id=7,
+                 user_id=1001,server_id=2,volume=0,description=json.dumps(
+                     {'marzban':True,'remark':'synthetic','server_id':2,'uuid':'id'})),True),
+            ('old_external_renew_without_identity',dict(type='RENEW_SCONFIG',
+                 plan_id=7,user_id=1001,server_id=2,volume=0),False),
+            ('retired_external_renew',dict(type='RENEW_SCONFIG',plan_id=7,
+                 user_id=1001,server_id=2,volume=0,description=json.dumps(
+                     {'marzban':False,'remark':'synthetic','server_id':2})),False),
+            ('external_renew_server_mismatch',dict(type='RENEW_SCONFIG',
+                 plan_id=7,user_id=1001,server_id=2,volume=0,description=json.dumps(
+                     {'marzban':True,'remark':'synthetic','server_id':3})),False),
+            ('external_renew_plan_server_mismatch',dict(type='RENEW_SCONFIG',
+                 plan_id=7,user_id=1001,server_id=3,volume=0,description=json.dumps(
+                     {'marzban':True,'remark':'synthetic','server_id':3})),False),
+            ('external_renew_missing_remark',dict(type='RENEW_SCONFIG',
+                 plan_id=7,user_id=1001,server_id=2,volume=0,description=json.dumps(
+                     {'marzban':True,'server_id':2})),False),
             ('missing_plan',dict(type='BUY_SUB',plan_id=999,server_id=2),False),
             ('plan_server_mismatch',dict(type='BUY_SUB',plan_id=7,server_id=999),False),
             ('missing_order',dict(type='RENEW_ACCOUNT',plan_id=7,order_id=999,user_id=1001),False),

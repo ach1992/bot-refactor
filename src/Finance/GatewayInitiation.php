@@ -28,17 +28,27 @@ if(mysqli_num_rows($payInfo)==0){
     }
 
     
-    $fid = $payParam['plan_id'];
-    
-    $stmt = $connection->prepare("SELECT * FROM `server_plans` WHERE `id`=?");
-    $stmt->bind_param("i", $fid);
-    $stmt->execute();
-    $file_detail = $stmt->get_result()->fetch_assoc();
-    $stmt->close();
-    
-    $server_id = $file_detail['server_id'];
-    $acount = $file_detail['acount'];
-    $inbound_id = $file_detail['inbound_id'];
+    // Only purchases depend on the plan's capacity and inbound fields.
+    // In particular, an independent INCREASE_WALLET has no plan_id and
+    // must not dereference a nonexistent plan to initiate payment.
+    $fid = (int) ($payParam['plan_id'] ?? 0);
+    $server_id = 0;
+    $acount = 0;
+    $inbound_id = 0;
+    if ($payParam['type'] === 'BUY_SUB') {
+        $stmt = $connection->prepare("SELECT * FROM `server_plans` WHERE `id`=?");
+        $stmt->bind_param("i", $fid);
+        $stmt->execute();
+        $file_detail = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        if (!$file_detail) {
+            showForm("پلن مورد نظر یافت نشد.");
+            exit;
+        }
+        $server_id = $file_detail['server_id'];
+        $acount = $file_detail['acount'];
+        $inbound_id = $file_detail['inbound_id'];
+    }
     
     
     $orderId= $payParam['id'];

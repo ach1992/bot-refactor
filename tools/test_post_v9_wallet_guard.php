@@ -79,12 +79,15 @@ $cases = [
 ];
 foreach ($cases as $case) {
     $db = new FixtureDatabase($case);
+    // Legacy external renewal is rejected by its missing Marzban identity
+    // even before consulting any plan row; only the pending pay row is read.
+    $expectedReads = $case['paytype'] === 'RENEW_SCONFIG' ? 1 : 2;
     $invoked = false;
     $result = processWalletPayment($db, 'synthetic-only',
         function () use (&$invoked) { $invoked = true; return true; });
     if ($result['status'] !== 'unsupported_panel' ||
         $invoked || $db->rollbacks !== 1 || $db->commits !== 0 ||
-        $db->reads !== 2) {
+        $db->reads !== $expectedReads) {
         throw new RuntimeException('Unrecognized panel failed pre-commit guard');
     }
 }
@@ -103,7 +106,8 @@ foreach ($cases as $case) {
     $connection = $db;
     $data = 'acceptsynthetic-only';
     require dirname(__DIR__) . '/src/Finance/Routes/ManualApproval.php';
-    if ($db->reads !== 2 || $db->rollbacks !== 0 || $db->commits !== 0) {
+    $expectedReads = $case['paytype'] === 'RENEW_SCONFIG' ? 1 : 2;
+    if ($db->reads !== $expectedReads || $db->rollbacks !== 0 || $db->commits !== 0) {
         throw new RuntimeException('Manual receipt was mutated before provider validation');
     }
     $manualCases++;

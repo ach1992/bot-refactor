@@ -138,11 +138,24 @@ if (!function_exists('achbotSupportsPaymentSubject')) {
         if ($type === 'INCREASE_WALLET') return true;
         $pid = (int)($pay['plan_id'] ?? 0);
         $uid = (int)($pay['user_id'] ?? 0);
-        if ($type === 'BUY_SUB' || $type === 'RENEW_SCONFIG') {
-            $inbound = $type === 'RENEW_SCONFIG' ? (int)($pay['volume'] ?? 0) : 0;
+        if ($type === 'BUY_SUB') {
             return $pid > 0 && achbotSupportsMarzbanPlan(
-                $connection, $pid, $inbound, $pay['server_id'] ?? null
+                $connection, $pid, 0, $pay['server_id'] ?? null
             );
+        }
+        if ($type === 'RENEW_SCONFIG') {
+            // External-account renewal is not an orders_list renewal. Its
+            // saved Marzban identity must match the selected plan server;
+            // a stale X-UI-shaped receipt or another server's remark must
+            // never be treated as the current Marzban account.
+            $source = json_decode((string)($pay['description'] ?? ''), true);
+            $sid = (int)($pay['server_id'] ?? 0);
+            return $pid > 0 && $uid > 0 && $sid > 0 &&
+                (int)($pay['volume'] ?? -1) === 0 &&
+                is_array($source) && ($source['marzban'] ?? null) === true &&
+                !empty($source['remark']) &&
+                (int)($source['server_id'] ?? 0) === $sid &&
+                achbotSupportsMarzbanPlan($connection, $pid, 0, $sid);
         }
         if ($type === 'RENEW_ACCOUNT') {
             return $pid > 0 && achbotSupportsMarzbanOrder(

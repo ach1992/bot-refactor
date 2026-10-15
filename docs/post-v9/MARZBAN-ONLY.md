@@ -121,6 +121,20 @@ scenarios use real disposable socket-only MariaDB and real local mock-HTTP
 Marzban; this does **not** certify a full manual receipt approval, real payment
 reconciliation, live Telegram, installed operations or provider financial safety.
 
+An additional original-schema financial-route regression exercises
+**19 real PHP route-level scenarios**, rather than only the read-only resolver:
+retired/unknown callback and invoice-initiation rejection before any
+simulated external provider call; forged inbound/cross-server admin plan
+callbacks; supported same-server admin plan updates; and positive/negative
+external Marzban-account renewal identity matching. The standalone subject
+resolver now covers **23** native scenarios including provider mismatch and
+external renewal record identity. Disabled-cURL spies replace actual payment
+transport, so no real provider, money or tenant is touched. NowPayments
+callback preflight is deliberately before the remote verification request.
+The inherited administration `changeServerId` DB-only rewrite is hidden and
+rejected as **containment**, not completed account relocation. Real-world
+financial exactly-once and settlement risks remain under Issue #26.
+
 CI executes current suite on PHP 8.1 and PHP 8.4 separately, then creates
 a NEW source-only candidate ZIP and manifest from the exact committed
 `HEAD^{tree}` using:

@@ -123,7 +123,7 @@ def main():
                         "--run-disposable","--report",str(subject_path)],
                        cwd=ROOT,check=True,timeout=180,capture_output=True)
         subject=json.loads(subject_path.read_text())
-        if not (subject.get("complete") and subject.get("cases")>=17
+        if not (subject.get("complete") and subject.get("cases")>=23
                 and subject.get("schema_tables")==23
                 and subject.get("financial_sql_mutations")==0
                 and subject.get("payment_provider_requests")==0):
@@ -137,6 +137,17 @@ def main():
                 and catalogue.get("original_schema_tables")==23
                 and catalogue.get("financial_mutations")==0):
             raise RuntimeError("Marzban-only catalogue, forged callback or QR proof incomplete")
+        finance_path=Path(tmp)/"finance-native-routes.json"
+        subprocess.run(["python3",str(ROOT/"tools/test_post_v9_finance_routes.py"),
+                        "--run-disposable","--report",str(finance_path)],
+                       cwd=ROOT,check=True,timeout=180,capture_output=True)
+        finance=json.loads(finance_path.read_text())
+        if not (finance.get("complete") and finance.get("cases")>=19 and
+                finance.get("schema_tables")==23 and
+                finance.get("original_mariadb_socket_only") and
+                finance.get("synthetic_payment_spy") and
+                finance.get("real_provider_requests")==0):
+            raise RuntimeError("Original-schema financial route and stale admin callback assurance incomplete")
         overlay_report=Path(tmp)/"source-overlay.json"
         subprocess.run(["python3",str(ROOT/"tools/test_post_v9_swap.py"),
                         "--run-disposable","--report",str(overlay_report)],
@@ -154,6 +165,7 @@ def main():
                     "source_only_overlays":swap,
                     "financial_subject_preflight":subject,
                     "catalogue_and_subscription_qr":catalogue,
+                    "financial_native_route_guards":finance,
                     "historical_suite_executed_by_this_script":False,
                     "historical_suite_requires_separate_pinned_ci_execution":True,
                     "actual_operator_installed_acceptance":False,
@@ -169,6 +181,7 @@ def main():
                       "verified_source_swaps":swap["phase_count"],
                       "payment_subject_cases":subject["cases"],
                       "catalogue_qr_cases":catalogue["cases"],
+                      "financial_native_route_cases":finance["cases"],
                       "current_php_version":subprocess.check_output(["php","-r","echo PHP_VERSION_ID;"]).decode()}))
 
 
