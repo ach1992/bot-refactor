@@ -157,6 +157,20 @@ def main():
                 finance.get("synthetic_payment_spy") and
                 finance.get("real_provider_requests")==0):
             raise RuntimeError("Original-schema financial route and stale admin callback assurance incomplete")
+        agency_path=Path(tmp)/"agency-state-regression.json"
+        subprocess.run(["python3",str(ROOT/"tools/test_post_v9_agency.py"),
+                        "--run-disposable","--report",str(agency_path)],
+                       cwd=ROOT,check=True,timeout=180,capture_output=True)
+        agency=json.loads(agency_path.read_text())
+        if not (agency.get("complete") and agency.get("cases")>=20
+                and agency.get("schema_tables")==23
+                and agency.get("original_setUser_extracted")
+                and agency.get("actual_current_handler_executed")
+                and agency.get("admin_decline_targeted")
+                and agency.get("approval_stale_and_replay_guarded")
+                and agency.get("concurrent_approval_guarded")
+                and agency.get("real_telegram_marzban_payment_calls")==0):
+            raise RuntimeError("Post-V9 agency authorization/state regression incomplete")
         logical_path=Path(tmp)/"marzban-logical-transfer.json"
         try:
             subprocess.run(["python3",str(ROOT/"tools/test_post_v9_logical_transfer.py"),
@@ -196,6 +210,7 @@ def main():
                     "financial_subject_preflight":subject,
                     "catalogue_and_subscription_qr":catalogue,
                     "financial_native_route_guards":finance,
+                     "agency_state_regression":agency,
                     "marzban_logical_transfer":logical,
                     "historical_suite_executed_by_this_script":False,
                     "historical_suite_requires_separate_pinned_ci_execution":True,
@@ -213,6 +228,7 @@ def main():
                       "payment_subject_cases":subject["cases"],
                       "catalogue_qr_cases":catalogue["cases"],
                       "financial_native_route_cases":finance["cases"],
+                       "agency_state_cases":agency["cases"],
                       "marzban_logical_transfer_cases":logical["cases"],
                       "current_php_version":subprocess.check_output(["php","-r","echo PHP_VERSION_ID;"]).decode()}))
 
