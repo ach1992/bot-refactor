@@ -1,7 +1,5 @@
 <?php
 
-file_put_contents(__DIR__.'/admins_list_check.txt', print_r($admins_list, true));
-
 include_once "settings/values.php";
 include_once 'settings/jdf.php';
 require_once 'baseInfo.php';
