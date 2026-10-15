@@ -198,4 +198,4 @@ Source integration is complete, but a green source-only CI does **not**
 authorize release, installation, migration or production operations.
 Keep the unperformed operator/recovery/financial evidence and any results
 of staged testing in [Issue #31](https://github.com/ach1992/bot-refactor/issues/31).
-Use the [operator acceptance checklist](OPERATOR-ACCEPTANCE.md) for the next gate.
+Use the [operator acceptance checklist](MARZBAN-OPERATOR-ACCEPTANCE.md) for the next gate.

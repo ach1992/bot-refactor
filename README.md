@@ -23,7 +23,7 @@ AChBot is a PHP Telegram bot for managing VPN subscriptions through **Marzban**.
 
 In **Server Management → Panel Groups**, an administrator can name a group and assign several logical server entries to it **only when they actually point to the same physical Marzban account store**. Different URLs or admin usernames can still represent the same backend. Unassigned or differently grouped servers cannot be switched between. An approved same-group logical switch updates the bot's `orders_list.server_id` only; it **does not migrate or modify a remote Marzban account**.
 
-Use the [post-V9 operator acceptance checklist](docs/post-v9/OPERATOR-ACCEPTANCE.md) before considering a test installation accepted.
+Use the [post-V9 operator acceptance checklist](docs/post-v9/MARZBAN-OPERATOR-ACCEPTANCE.md) before considering a test installation accepted.
 
 ## Development and tests
 
@@ -48,7 +48,7 @@ These tests and archives do **not** certify live payment settlement, full databa
 
 - [Post-V9 Marzban behavior and validation](docs/post-v9/MARZBAN-ONLY.md)
 - [Schema migration and rollback precautions](docs/post-v9/PANEL-GROUPS-MIGRATION.md)
-- [Operator acceptance checklist](docs/post-v9/OPERATOR-ACCEPTANCE.md)
+- [Operator acceptance checklist](docs/post-v9/MARZBAN-OPERATOR-ACCEPTANCE.md)
 - [Project specification and historical V0–V9 contract](docs/PROJECT-SPEC.md)
 - [Historical V9 operator notes](docs/v9/OPERATIONS.md)
 - [Public repository security guidance](docs/SECURITY.md)
