@@ -33,6 +33,10 @@ $_GET = $spec['get'];
 $GLOBALS['network_calls'] = [];
 $GLOBALS['error'] = null;
 $GLOBALS['mock_invoice'] = $spec['mock_invoice'] ?? '';
+$GLOBALS['fake_nextpay_code'] = $spec['nextpay_code'] ?? -2;
+$GLOBALS['fake_nextpay_http'] = $spec['nextpay_http'] ?? 200;
+$GLOBALS['fake_nextpay_raw'] = $spec['nextpay_raw'] ?? null;
+$GLOBALS['fake_nextpay_transport_failure'] = $spec['nextpay_transport_failure'] ?? false;
 $botState = [];
 $botUrl = 'http://127.0.0.1:9/owned-fixture/';
 $USDTPrice = 100000;
@@ -50,7 +54,9 @@ function curl_setopt_array($handle,$options) {
 function curl_exec($handle) {
     $GLOBALS['network_calls'][] = $handle->url;
     if (str_contains($handle->url, '/nx/gateway/verify')) {
-        return json_encode(['code'=>-1]); // Synthetic negative verification, never success.
+        if ($GLOBALS['fake_nextpay_transport_failure']) return false;
+        if ($GLOBALS['fake_nextpay_raw'] !== null) return $GLOBALS['fake_nextpay_raw'];
+        return json_encode(['code'=>$GLOBALS['fake_nextpay_code']]);
     }
     if (str_contains($handle->url, '/v1/invoice')) {
         return json_encode(['id'=>'owned-new-invoice',
@@ -61,7 +67,7 @@ function curl_exec($handle) {
 }
 function curl_close($handle) {}
 function curl_error($handle) { return ''; }
-function curl_getinfo($handle,$option) { return 200; }
+function curl_getinfo($handle,$option) { return $GLOBALS['fake_nextpay_http']; }
 ob_start();
 register_shutdown_function(function () {
     $html = ob_get_contents();
@@ -255,6 +261,37 @@ def main():
             raise RuntimeError('NextPay identifier collision across states reached verifier')
         records.append(dict(case='nextpay_cross_state_payid_collision_rejected',
                             pass_=True,external_requests=0))
+        # NextPay documents -1 / -3 as pending and -2 / -4 as definitive
+        # rejection/cancellation. Unknown/HTTP/transport errors must preserve
+        # payment state rather than silently recording a cancellation.
+        synthetic_nextpay_cases=[
+            ('awaiting_payer',-1,200,None,False,'pending'),
+            ('awaiting_bank',-3,200,None,False,'pending'),
+            ('provider_unavailable',-42,200,None,False,'pending'),
+            ('transport_error',-2,200,None,True,'pending'),
+            ('bad_json',-2,200,'not-json',False,'pending'),
+            ('http_503_denial',-2,503,None,False,'pending'),
+            ('http_503_success',0,503,None,False,'pending'),
+            ('confirmed_cancellation',-4,200,None,False,'canceled'),
+        ]
+        for name,code,http,raw,fail,want in synthetic_nextpay_cases:
+            hash_id='nextpay-'+name
+            invoice='nextpay-'+name+'-invoice'
+            seed_payment(work,env,hash_id,'INCREASE_WALLET',0,0,invoice)
+            before=snapshot(work,env)
+            spec=dict(route='return',get={'nextpay':'','trans_id':invoice},
+                      nextpay_code=code,nextpay_http=http,
+                      nextpay_transport_failure=fail)
+            if raw is not None: spec['nextpay_raw']=raw
+            outcome=run_php(work,env,stage,spec)
+            got=sql(work,env,f"SELECT state FROM pays WHERE hash_id='{hash_id}'").strip()
+            if got!=want:
+                raise RuntimeError(f'NextPay {name} changed state to {got}, expected {want}')
+            if want=='pending': verify_unchanged(work,env,before,name)
+            if len(outcome['network_calls'])!=1 or not outcome['form']:
+                raise RuntimeError('NextPay mocked verification not exercised: '+name)
+            records.append(dict(case='nextpay_'+name,pass_=True,
+                                external_requests=1,real_provider_requests=0))
         # Actual admin route, including old cached/forged callbacks, cannot
         # perform the inherited database-only server rewrite.
         native.sql(work,env,'''

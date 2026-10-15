@@ -175,21 +175,28 @@ if (isset($_GET['nowpayment'])) {
             CURLOPT_URL => 'https://nextpay.org/nx/gateway/verify',
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_ENCODING => '',
-            CURLOPT_MAXREDIRS => 10,
-            CURLOPT_TIMEOUT => 0,
-            CURLOPT_FOLLOWLOCATION => true,
+            CURLOPT_MAXREDIRS => 0,
+            CURLOPT_CONNECTTIMEOUT => 10,
+            CURLOPT_TIMEOUT => 30,
+            CURLOPT_FOLLOWLOCATION => false,
             CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
             CURLOPT_CUSTOMREQUEST => 'POST',
             CURLOPT_POSTFIELDS => 'api_key=' . ($paymentKeys['nextpay'] ?? '') . '&amount=' . $amount . '&currency=IRT&trans_id=' . $payid,
         ));
 
-        $response = curl_exec($curl);
+        $rawResponse = curl_exec($curl);
+        $httpStatus = curl_getinfo($curl, CURLINFO_HTTP_CODE);
         curl_close($curl);
-        $response = json_decode($response);
+        // A transport/HTTP/JSON failure is NOT proof of a declined payment.
+        $response = $rawResponse !== false && $httpStatus === 200
+            ? json_decode($rawResponse) : null;
+        $verifyCode = $response->code ?? null;
 
-        if (($response->code ?? '') == '0') {
+        if ($verifyCode === 0 || $verifyCode === '0') {
             doAction($rowId, "nextpay");
-        } else {
+        } elseif (in_array($verifyCode, [-2, '-2', -4, '-4'], true)) {
+            // Official NextPay codes -2 (rejected) and -4 (canceled) are
+            // definitive. -1/-3 are pending; other errors need reconciliation.
             // Cancel only the selected pending row; never clobber a replayed or
             // concurrently changed payment with an external payid.
             $stmt = $connection->prepare("UPDATE `pays` SET `state` = 'canceled' WHERE `id` = ? AND `state` IN ('pending', 'send')");
@@ -202,6 +209,10 @@ if (isset($_GET['nowpayment'])) {
                 return;
             }
             showForm("پرداخت شما انجام نشد!", "درگاه نکست پی");
+        } else {
+            // Preserve the current payment for a later trusted verification.
+            // Do not debit, credit or settle an unknown payment outcome.
+            showForm("وضعیت پرداخت هنوز قطعی نیست یا استعلام در دسترس نیست؛ لطفاً بعداً دوباره بررسی کنید.", "درگاه نکست پی");
         }
     }
 
