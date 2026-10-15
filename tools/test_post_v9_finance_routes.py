@@ -37,14 +37,21 @@ $botState = [];
 $botUrl = 'http://127.0.0.1:9/owned-fixture/';
 $USDTPrice = 100000;
 $USDTPriceagent = 100000;
-$paymentKeys = ['nowpayment'=>'SYNTHETIC-LOCAL-ONLY'];
+$paymentKeys = ['nowpayment'=>'SYNTHETIC-LOCAL-ONLY', 'nextpay'=>'SYNTHETIC-LOCAL-ONLY'];
 function curl_init() { return (object)['url' => '']; }
 function curl_setopt($handle,$option,$value) {
     if ($option === CURLOPT_URL) $handle->url = (string)$value;
     return true;
 }
+function curl_setopt_array($handle,$options) {
+    foreach ($options as $option => $value) curl_setopt($handle,$option,$value);
+    return true;
+}
 function curl_exec($handle) {
     $GLOBALS['network_calls'][] = $handle->url;
+    if (str_contains($handle->url, '/nx/gateway/verify')) {
+        return json_encode(['code'=>-1]); // Synthetic negative verification, never success.
+    }
     if (str_contains($handle->url, '/v1/invoice')) {
         return json_encode(['id'=>'owned-new-invoice',
                              'invoice_url'=>'http://127.0.0.1:9/owned-no-navigation']);
@@ -92,7 +99,7 @@ def run_php(work, env, stage, spec):
         script.write_text(PHP_DRIVER)
     cmd=['php','-n','-d','extension=mysqlnd','-d','extension=mysqli',
          '-d','extension=curl','-d','allow_url_fopen=0',
-         '-d','disable_functions=curl_init,curl_setopt,curl_exec,curl_close,curl_error,curl_getinfo,exec,shell_exec,system,passthru,popen,proc_open,mail',
+         '-d','disable_functions=curl_init,curl_setopt,curl_setopt_array,curl_exec,curl_close,curl_error,curl_getinfo,exec,shell_exec,system,passthru,popen,proc_open,mail',
          str(script),str(stage),DB,str(work/'mysql.sock'),json.dumps(spec)]
     p=subprocess.run(cmd,env=env,cwd=work,capture_output=True,timeout=20)
     if p.returncode or p.stderr:
@@ -143,6 +150,9 @@ def main():
         seed_payment(work,env,'wallet-init','INCREASE_WALLET',0,0)
         seed_payment(work,env,'nohash-now','RETIRED_PANEL',7,2,'retired-fallback-id')
         seed_payment(work,env,'inbound-now','BUY_SUB',7,2,'inbound-invoice')
+        seed_payment(work,env,'supported-nextpay','INCREASE_WALLET',0,0,'owned-nextpay-decline')
+        seed_payment(work,env,'other-nextpay','INCREASE_WALLET',0,0,'owned-different-invoice')
+        seed_payment(work,env,'owned-nextpay-decline','INCREASE_WALLET',0,0,'owned-other-nextpay-invoice')
         for name, spec in [
             ('retired_callback',dict(route='return',get={'nowpayment':'','NP_id':'owned-pmt','hash_id':'unsupported-now'})),
             ('unknown_callback',dict(route='return',get={'nowpayment':'','NP_id':'owned-pmt','hash_id':'no-such-pay'})),
@@ -195,6 +205,56 @@ def main():
         if sql(work,env,"SELECT payid FROM pays WHERE hash_id='wallet-init'").strip()!='owned-new-invoice':
             raise RuntimeError('Wallet top-up invoice ID was not stored')
         records.append(dict(case='positive_wallet_gateway_initiation',pass_=True,synthetic_invoice=True,external_requests=1))
+        # RED regression: historical NextPay cancellation used hash_id=trans_id
+        # even though the callback resolves the invoice through pays.payid.
+        res=run_php(work,env,stage,dict(route='return',
+                    get={'nextpay':'','trans_id':'owned-nextpay-decline'}))
+        if len(res['network_calls'])!=1 or '/nx/gateway/verify' not in res['network_calls'][0]:
+            raise RuntimeError('NextPay fixture failed to exercise synthetic negative verification')
+        if sql(work,env,"SELECT state FROM pays WHERE hash_id='supported-nextpay'").strip()!='canceled':
+            raise RuntimeError('NextPay failed verification did not cancel selected pending row')
+        if sql(work,env,"SELECT state FROM pays WHERE hash_id='other-nextpay'").strip()!='pending':
+            raise RuntimeError('NextPay cancellation modified unrelated payment')
+        if sql(work,env,"SELECT state FROM pays WHERE hash_id='owned-nextpay-decline'").strip()!='pending':
+            raise RuntimeError('NextPay incorrectly canceled unrelated row whose hash_id equals external payid')
+        records.append(dict(case='nextpay_negative_verification_targets_row',
+                            pass_=True,external_requests=1,real_provider_requests=0))
+        before=snapshot(work,env)
+        replay=run_php(work,env,stage,dict(route='return',
+                    get={'nextpay':'','trans_id':'owned-nextpay-decline'}))
+        verify_unchanged(work,env,before,'nextpay_declined_replay')
+        if replay['network_calls']:
+            raise RuntimeError('Already-canceled NextPay callback reached external verifier')
+        records.append(dict(case='nextpay_canceled_replay_rejected',pass_=True,external_requests=0))
+        seed_payment(work,env,'duplicate-nextpay-a','INCREASE_WALLET',0,0,'same-external-id')
+        seed_payment(work,env,'duplicate-nextpay-b','INCREASE_WALLET',0,0,'same-external-id')
+        before=snapshot(work,env)
+        duplicate=run_php(work,env,stage,dict(route='return',
+                     get={'nextpay':'','trans_id':'same-external-id'}))
+        verify_unchanged(work,env,before,'nextpay_ambiguous_payid')
+        if duplicate['network_calls'] or not duplicate['form']:
+            raise RuntimeError('Ambiguous NextPay payid entered external verification path')
+        records.append(dict(case='nextpay_duplicate_payid_fails_closed',pass_=True,external_requests=0))
+        seed_payment(work,env,'already-paid-nextpay','INCREASE_WALLET',0,0,'processed-nextpay-id')
+        sql(work,env,"UPDATE pays SET state='paid' WHERE hash_id='already-paid-nextpay'")
+        before=snapshot(work,env)
+        processed=run_php(work,env,stage,dict(route='return',
+                   get={'nextpay':'','trans_id':'processed-nextpay-id'}))
+        verify_unchanged(work,env,before,'nextpay_processed_invoice')
+        if processed['network_calls']:
+            raise RuntimeError('Previously processed NextPay invoice reached verifier')
+        records.append(dict(case='nextpay_final_state_replay_rejected',pass_=True,external_requests=0))
+        seed_payment(work,env,'cross-state-pending','INCREASE_WALLET',0,0,'cross-state-payid')
+        seed_payment(work,env,'cross-state-paid','INCREASE_WALLET',0,0,'cross-state-payid')
+        sql(work,env,"UPDATE pays SET state='paid' WHERE hash_id='cross-state-paid'")
+        before=snapshot(work,env)
+        collision=run_php(work,env,stage,dict(route='return',
+                    get={'nextpay':'','trans_id':'cross-state-payid'}))
+        verify_unchanged(work,env,before,'nextpay_cross_state_collision')
+        if collision['network_calls']:
+            raise RuntimeError('NextPay identifier collision across states reached verifier')
+        records.append(dict(case='nextpay_cross_state_payid_collision_rejected',
+                            pass_=True,external_requests=0))
         # Actual admin route, including old cached/forged callbacks, cannot
         # perform the inherited database-only server rewrite.
         native.sql(work,env,'''
