@@ -13,6 +13,33 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
  * This small adapter decision is shared by the present callback routes;
  * durable payment/effect claims and external fulfillment need a later gate.
  */
+/**
+ * Legacy pays.payid has no provider dimension or uniqueness constraint.
+ * New provider-scoped attempts MAY reuse an ID held by a different NEW
+ * provider, but must fail closed if an older unscoped row has that ID.
+ * A database error is unknown identity, not permission to settle or redirect.
+ * Called only when the new payment_attempts table is available.
+ */
+function achbotHasUnscopedPaymentReferenceCollision(mysqli $db,
+                                                     string $reference,
+                                                     int $ownerRowId): bool {
+    if ($reference==='' || $ownerRowId<=0) return true;
+    try {
+        $stmt=$db->prepare("SELECT p.id FROM pays p
+            WHERE p.payid=? AND p.id<>?
+              AND NOT EXISTS (SELECT 1 FROM payment_attempts a
+                              WHERE a.pay_row_id=p.id)
+            LIMIT 1");
+        $stmt->bind_param('si',$reference,$ownerRowId);
+        $stmt->execute();
+        $collision=$stmt->get_result()->num_rows>0;
+        $stmt->close();
+        return $collision;
+    } catch (Throwable $error) {
+        return true;
+    }
+}
+
 function achbotVerifiedGatewayOutcome(string $provider, $status): string {
     if ($provider === 'nowpayment') {
         if (!is_string($status)) return 'review';

@@ -80,10 +80,7 @@ if(preg_match('/selectPlanDayIncrease(?<orderId>.+)_(?<dayId>.+)/',$data,$match)
     
     
     $hash_id = RandomString();
-    $stmt = $connection->prepare("DELETE FROM `pays` WHERE `user_id` = ? AND `type` LIKE '%INCREASE_DAY%' AND `state` = 'pending'");
-    $stmt->bind_param("i", $from_id);
-    $stmt->execute();
-    $stmt->close();
+    achbotRemoveUnclaimedPendingPayments($connection,$from_id,'INCREASE_DAY');
 	
     $time = time();
     $plan_id = $orderInfo['fileid'];
@@ -774,10 +771,7 @@ if(preg_match('/increaseVolumePlan(?<orderId>.+)_(?<volumeId>.+)/',$data,$match)
     }
 
     $hash_id = RandomString();
-    $stmt = $connection->prepare("DELETE FROM `pays` WHERE `user_id` = ? AND `type` LIKE '%INCREASE_VOLUME%' AND `state` = 'pending'");
-    $stmt->bind_param("i", $from_id);
-    $stmt->execute();
-    $stmt->close();
+    achbotRemoveUnclaimedPendingPayments($connection,$from_id,'INCREASE_VOLUME');
     
     $time = time();
     $plan_id = $orderInfo['fileid'];

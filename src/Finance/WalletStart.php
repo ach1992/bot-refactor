@@ -11,10 +11,7 @@ function startWalletPayment($connection, $botState, $buttonValues, $botUrl, $fro
     $hash_id = RandomString();
 
     // حذف موارد pending قبلی
-    $stmt = $connection->prepare("DELETE FROM `pays` WHERE `user_id` = ? AND `type` = 'INCREASE_WALLET' AND `state` = 'pending'");
-    $stmt->bind_param("i", $from_id);
-    $stmt->execute();
-    $stmt->close();
+    achbotRemoveUnclaimedPendingPayments($connection,$from_id,'INCREASE_WALLET');
 
     $time = time();
     $stmt = $connection->prepare("INSERT INTO `pays` 

@@ -150,6 +150,7 @@ function delMessage() {
         $GLOBALS['fake_prepayment_flip_hash']=null;
     }
 }
+function RandomString($count=9, $type='all') { return 'new-wallet-safe-hash'; }
 function getMainKeys() { return '{}'; }
 function alert(...$args) { $GLOBALS['events'][]=['name'=>'alert','args'=>$args]; }
 function answerCallbackQuery(...$args) { $GLOBALS['events'][]=['name'=>'callback','args'=>$args]; }
@@ -356,6 +357,13 @@ try {
             $GLOBALS['events'][]=['name'=>'alert_result','result'=>achbotNpAlertOperator(
                 $connection,$spec['alert_admin'] ?? $admin,5)];
         }
+    } elseif ($spec['route'] === 'wallet_start') {
+        require $root . '/src/Finance/WalletStart.php';
+        $state=array_fill_keys(
+            ['cartToCartState','nowPaymentWallet','zarinpal',
+             'nextpay','weSwapState','tronWallet'], 'off');
+        startWalletPayment($connection,$state,['cancel'=>'لغو'],
+                           $botUrl,1001,null,100);
     } elseif ($spec['route'] === 'wallet_refund') {
         $result=refundToWalletAndNotify($connection,
             (int)($spec['refund_user']??1001),(int)($spec['refund_amount']??100),
@@ -673,6 +681,104 @@ def main():
             raise RuntimeError('Provider-scoped Zarinpal callback selected the wrong order')
         records.append(dict(case='zarinpal_callback_provider_scoped_colliding_external_reference',
                             pass_=True,external_requests=1))
+        # A gateway-neutral ledger cannot retroactively identify older
+        # pays.payid rows. A scoped provider match with an unscoped historical
+        # duplicate must remain in review, never silently settle that ID.
+        for provider in ('nextpay','zarinpal'):
+            reference='mixed-generation-ref-'+provider
+            seed_payment(work,env,'legacy-ref-'+provider,
+                         'INCREASE_WALLET',0,0,reference)
+            name='scoped-ref-'+provider
+            seed_payment(work,env,name,'INCREASE_WALLET',0,0,reference)
+            sql(work,env,"INSERT INTO payment_attempts "
+                "(pay_row_id,provider,order_hash,provider_reference,"
+                "quote_amount,quote_currency,local_amount_toman,stage) "
+                f"SELECT id,'{provider}',hash_id,'{reference}',"
+                "100,'toman',100,'pending' FROM pays "
+                f"WHERE hash_id='{name}'")
+            before=snapshot(work,env)
+            spec=(dict(route='return',get={'nextpay':'','trans_id':reference},
+                       nextpay_code=0) if provider=='nextpay'
+                  else dict(route='return',get={'zarinpal':'',
+                       'hash_id':name,'Authority':reference,'Status':'OK'},
+                       zarin_status=100))
+            refused=run_php(work,env,stage,spec)
+            verify_unchanged(work,env,before,'ambiguous_legacy_scoped_'+provider)
+            if refused['network_calls'] or not refused['form']:
+                raise RuntimeError('Mixed-generation '+provider+
+                                   ' reference reached provider verification')
+            records.append(dict(case=provider+'_legacy_scoped_id_collision_refused',
+                                pass_=True,external_requests=0))
+        # A legacy callback must not reclassify a duplicate ID belonging to
+        # a different gateway with a new provider-scoped attempt.
+        ref='legacy-nextpay-vs-scoped-zarin'
+        seed_payment(work,env,'legacy-np-vs-zp','INCREASE_WALLET',0,0,ref)
+        seed_payment(work,env,'scoped-zp-vs-np','INCREASE_WALLET',0,0,ref)
+        sql(work,env,"INSERT INTO payment_attempts "
+            "(pay_row_id,provider,order_hash,provider_reference,"
+            "quote_amount,quote_currency,local_amount_toman,stage) "
+            f"SELECT id,'zarinpal',hash_id,'{ref}',"
+            "100,'toman',100,'pending' FROM pays "
+            "WHERE hash_id='scoped-zp-vs-np'")
+        before=snapshot(work,env)
+        refused=run_php(work,env,stage,dict(route='return',
+            get={'nextpay':'','trans_id':ref},nextpay_code=0))
+        verify_unchanged(work,env,before,'legacy_nextpay_vs_new_zarinpal')
+        if refused['network_calls'] or not refused['form']:
+            raise RuntimeError('Ambiguous historical NextPay ID was accepted')
+        records.append(dict(case='legacy_nextpay_vs_new_zarinpal_collision_refused',
+                            pass_=True,external_requests=0))
+        # Provider references and child IDs are opaque case-sensitive IDs.
+        # The SAME gateway must be able to represent case-distinct identities.
+        for name in ('upper','lower'):
+            ref='CaseSensitiveABC' if name=='upper' else 'CaseSensitiveabc'
+            child='ChildCaseABC' if name=='upper' else 'ChildCaseabc'
+            seed_payment(work,env,'case-sensitive-'+name,
+                         'INCREASE_WALLET',0,0,ref)
+            sql(work,env,"INSERT INTO payment_attempts "
+                "(pay_row_id,provider,order_hash,provider_reference,"
+                "payment_id,quote_amount,quote_currency,local_amount_toman,stage) "
+                f"SELECT id,'nextpay',hash_id,'{ref}','{child}',"
+                "100,'toman',100,'pending' FROM pays "
+                f"WHERE hash_id='case-sensitive-{name}'")
+            aid=int(sql(work,env,"SELECT id FROM payment_attempts "
+                f"WHERE order_hash='case-sensitive-{name}'").strip())
+            sql(work,env,"INSERT INTO payment_transactions "
+                f"(attempt_id,provider,payment_id) VALUES ({aid},'nextpay','{child}')")
+        if sql(work,env,"SELECT COUNT(*) FROM payment_attempts "
+               "WHERE provider='nextpay' AND provider_reference LIKE 'CaseSensitive%'").strip()!='2':
+            raise RuntimeError('Case-distinct external provider references merged')
+        if sql(work,env,"SELECT COUNT(*) FROM payment_transactions "
+               "WHERE provider='nextpay' AND payment_id LIKE 'ChildCase%'").strip()!='2':
+            raise RuntimeError('Case-distinct child payment IDs merged')
+        records.append(dict(case='provider_identifiers_exact_case_persistence',
+                            pass_=True,external_requests=0))
+        # Even BEFORE exposing a newly issued provider URL, reject a token
+        # already present in legacy unscoped pays rows and retain the durable
+        # creating reservation for operator-led reconciliation.
+        for provider in ('nextpay','zarinpal'):
+            target='issuer-duplicate-'+provider
+            ref=('next-' if provider=='nextpay' else 'zarin-')+target
+            seed_payment(work,env,'legacy-issuer-'+provider,
+                         'INCREASE_WALLET',0,0,ref)
+            seed_payment(work,env,target,'INCREASE_WALLET',0,0,'unset')
+            sql(work,env,f"UPDATE pays SET payid=NULL,price=100000 "
+                         f"WHERE hash_id='{target}'")
+            issued=run_php(work,env,stage,dict(route='initiate',
+                            get={provider:'','hash_id':target}))
+            attempt=sql(work,env,"SELECT provider,stage,"
+                "COALESCE(provider_reference,'NULL') FROM payment_attempts "
+                f"WHERE order_hash='{target}'").strip()
+            bound=sql(work,env,f"SELECT payid FROM pays "
+                f"WHERE hash_id='{target}'").strip()
+            if (len(issued['network_calls'])!=1 or
+                attempt!=provider+'\treview\tNULL' or
+                bound==ref or not issued['form']):
+                raise RuntimeError('New '+provider+
+                                   ' checkout published a legacy-colliding ID: '+
+                                   repr((attempt,bound,issued['network_calls'])))
+            records.append(dict(case=provider+'_issuance_legacy_reference_collision_held',
+                                pass_=True,external_requests=1))
         seed_payment(work,env,'switch-pending','INCREASE_WALLET',0,0,'old')
         sql(work,env,"UPDATE pays SET payid='achbot_nextpay_creating_999' WHERE hash_id='switch-pending'")
         before=snapshot(work,env)
@@ -1910,6 +2016,73 @@ def main():
             srv.terminate()
             try:srv.wait(timeout=5)
             except subprocess.TimeoutExpired:srv.kill();srv.wait(timeout=3)
+
+        # All seven original pending-order cleanup sites must protect a
+        # provider-issued reference; do not silently remove signed callbacks
+        # or Marzban deliveries after a customer requests another quote.
+        cleanup_paths=[
+            'src/Purchase/SelectPlan.php','src/Purchase/Catalogue.php',
+            'src/Finance/Routes/RenewalPlan.php',
+            'src/Finance/Routes/Extensions.php',
+            'src/Finance/Routes/RenewalCheckout.php',
+            'src/Finance/WalletStart.php'
+        ]
+        checked=0
+        for source_path in cleanup_paths:
+            code=(ROOT/source_path).read_text()
+            checked+=code.count('achbotRemoveUnclaimedPendingPayments($connection,$from_id,')
+        helper=(ROOT/'src/Purchase/Core.php').read_text()
+        if (checked!=7 or
+            "AND NOT EXISTS (" not in helper or
+            "a.pay_row_id=pays.id" not in helper or
+            "(payid IS NULL OR payid='')" not in helper):
+            raise RuntimeError('Pending checkout cleanup can orphan issued claims: '+
+                               str(checked))
+        records.append(dict(case='all_pending_quote_cleanup_routes_preserve_issued_ids',
+                            pass_=True,routes=checked))
+
+        # Execute ACTUAL current WalletStart PHP against the owned database,
+        # proving a fresh quote no longer deletes an already-issued checkout.
+        seed_payment(work,env,'wallet-previous-issued',
+                     'INCREASE_WALLET',0,0,'old-issued-ref')
+        sql(work,env,"INSERT INTO payment_attempts "
+            "(pay_row_id,provider,order_hash,provider_reference,quote_amount,"
+            "quote_currency,local_amount_toman,stage) "
+            "SELECT id,'nextpay',hash_id,payid,100,'toman',100,'pending' "
+            "FROM pays WHERE hash_id='wallet-previous-issued'")
+        seed_payment(work,env,'wallet-unused-draft',
+                     'INCREASE_WALLET',0,0,'unused')
+        sql(work,env,"UPDATE pays SET payid=NULL "
+                     "WHERE hash_id='wallet-unused-draft'")
+        wallet_route=run_php(work,env,stage,dict(route='wallet_start',get={}))
+        if wallet_route['network_calls']:
+            raise RuntimeError('WalletStart reached external provider')
+        active=sql(work,env,"SELECT COUNT(*) FROM pays "
+            "WHERE hash_id='wallet-previous-issued'").strip()
+        draft=sql(work,env,"SELECT COUNT(*) FROM pays "
+            "WHERE hash_id='wallet-unused-draft'").strip()
+        fresh=sql(work,env,"SELECT COUNT(*) FROM pays "
+            "WHERE hash_id='new-wallet-safe-hash'").strip()
+        linked=sql(work,env,"SELECT COUNT(*) FROM payment_attempts a "
+            "JOIN pays p ON p.id=a.pay_row_id "
+            "WHERE p.hash_id='wallet-previous-issued'").strip()
+        if (active,draft,fresh,linked)!=('1','0','1','1'):
+            raise RuntimeError('Creating a new wallet quote erased issued payment history: '+
+                               repr((active,draft,fresh,linked)))
+        records.append(dict(case='wallet_requote_preserves_existing_issued_payment',
+                            pass_=True,real_php=True))
+        # The schema itself also enforces the lifetime of the parent pays row.
+        try:
+            sql(work,env,"DELETE FROM pays WHERE hash_id='wallet-previous-issued'")
+        except Exception:
+            pass
+        else:
+            raise RuntimeError('Database permitted deletion of a claimed payment')
+        if sql(work,env,"SELECT COUNT(*) FROM pays "
+               "WHERE hash_id='wallet-previous-issued'").strip()!='1':
+            raise RuntimeError('Claimed pays row deleted despite attempt FK')
+        records.append(dict(case='database_fk_prevents_claim_orphan',
+                            pass_=True,external_requests=0))
     report={'complete':True,'cases':len(records),'schema_tables':23, 'current_schema_tables':25,
        'shared_payment_attempt_ledger_tested':True,
        'original_mariadb_socket_only':True,'real_provider_requests':0,

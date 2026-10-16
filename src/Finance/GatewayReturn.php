@@ -500,7 +500,7 @@ if (isset($_GET['nowpayment_ipn'])) {
         $ledger=$connection->query("SHOW TABLES LIKE 'payment_attempts'");
         if ($ledger && $ledger->num_rows===1) {
             $stmt=$connection->prepare("SELECT provider,provider_reference,
-                       quote_currency,quote_amount,local_amount_toman
+                       order_hash,quote_currency,quote_amount,local_amount_toman
                 FROM payment_attempts WHERE pay_row_id=? LIMIT 2");
             $stmt->bind_param('i',$rowId);
             $stmt->execute();
@@ -511,6 +511,7 @@ if (isset($_GET['nowpayment_ipn'])) {
             if ($ambiguous || ($attempt && (
                 (string)$attempt['provider']!=='zarinpal' ||
                 (string)$attempt['provider_reference']!==$Authority ||
+                (string)$attempt['order_hash']!==(string)$payParam['hash_id'] ||
                 (string)$attempt['quote_currency']!=='toman' ||
                 (int)$attempt['local_amount_toman']!==$amount ||
                 !achbotNpDecimalAtLeast($attempt['quote_amount'],(string)$amount) ||
@@ -519,6 +520,12 @@ if (isset($_GET['nowpayment_ipn'])) {
                 return;
             }
             $scoped=$attempt!==null;
+            if ($scoped &&
+                achbotHasUnscopedPaymentReferenceCollision($connection,$Authority,$rowId)) {
+                showForm("شناسه پرداخت نیازمند بررسی پشتیبانی است؛ سفارش محفوظ ماند.",
+                         "پیگیری پرداخت");
+                return;
+            }
         }
         if (!$scoped) {
             // Unscoped historical pays.payid is NOT unique and may describe
@@ -579,7 +586,8 @@ if (isset($_GET['nowpayment_ipn'])) {
             // The new issuer wrote the exact provider identity BEFORE
             // redirecting. Other providers may reuse this same external ID
             // without selecting a different user's payment.
-            $stmt=$connection->prepare("SELECT p.*,a.quote_amount,a.quote_currency,
+            $stmt=$connection->prepare("SELECT p.*,a.order_hash AS attempt_order_hash,
+                        a.quote_amount,a.quote_currency,
                         a.local_amount_toman AS attempt_local_amount
                 FROM payment_attempts a JOIN pays p ON p.id=a.pay_row_id
                 WHERE a.provider='nextpay' AND a.provider_reference=?
@@ -592,11 +600,18 @@ if (isset($_GET['nowpayment_ipn'])) {
             $stmt->close();
             if ($ambiguous || ($payParam && (
                 (string)$payParam['payid']!==$hash_id ||
+                (string)$payParam['attempt_order_hash']!==(string)$payParam['hash_id'] ||
                 (string)$payParam['quote_currency']!=='toman' ||
                 (int)$payParam['attempt_local_amount']!==(int)$payParam['price'] ||
                 !achbotNpDecimalAtLeast($payParam['quote_amount'],(string)$payParam['price']) ||
                 !achbotNpDecimalAtLeast((string)$payParam['price'],$payParam['quote_amount'])))) {
                 showForm("هویت یا مبلغ این پرداخت نیازمند بررسی است.", "پیگیری پرداخت");
+                return;
+            }
+            if ($payParam && achbotHasUnscopedPaymentReferenceCollision(
+                $connection,$hash_id,(int)$payParam['id'])) {
+                showForm("شناسه تراکنش نیازمند تطبیق پشتیبانی است؛ سفارش محفوظ ماند.",
+                         "پیگیری پرداخت");
                 return;
             }
             if (!$payParam) {
@@ -611,6 +626,21 @@ if (isset($_GET['nowpayment_ipn'])) {
                 $legacy=$stmt->get_result();
                 if ($legacy->num_rows===1) $payParam=$legacy->fetch_assoc();
                 $stmt->close();
+                if ($payParam) {
+                    // Preserve the historical GLOBAL uniqueness check,
+                    // including new attempts owned by another provider.
+                    // Excluding ledger rows in the first query alone would
+                    // incorrectly turn a collision into a unique old order.
+                    $stmt=$connection->prepare("SELECT id FROM pays
+                        WHERE payid=? LIMIT 2");
+                    $stmt->bind_param('s',$hash_id);
+                    $stmt->execute();
+                    $all=$stmt->get_result();
+                    $unique=$all->num_rows===1 &&
+                        (int)$all->fetch_assoc()['id']===(int)$payParam['id'];
+                    $stmt->close();
+                    if (!$unique) $payParam=null;
+                }
             }
         } else {
             // Released RC3/RC4 callbacks that have not migrated the new

@@ -67,7 +67,19 @@ def run():
             "FROM achbot_nowpayments_child_payments ORDER BY id").strip()
         if len(sql(work,env,"SHOW TABLES").splitlines())!=25:
             raise RuntimeError("Original RC4 fixture has invalid table count")
-        native.sql(work,env,(ROOT/"migrations/post-v9/003_payment_attempts.sql").read_text(),DB)
+        shared_sql=(ROOT/"migrations/post-v9/003_payment_attempts.sql").read_text()
+        if ('CREATE TABLE IF NOT EXISTS payment_attempts' in shared_sql or
+            'CONSTRAINT fk_payment_attempt_order' not in shared_sql):
+            raise RuntimeError("Shared schema does not fail closed on table identity")
+        native.sql(work,env,shared_sql,DB)
+        # Do not treat existing generic names as proof that a matching schema
+        # was applied; blind reruns must fail before importing financial data.
+        try:
+            native.sql(work,env,shared_sql,DB)
+        except Exception:
+            pass
+        else:
+            raise RuntimeError("Shared migration silently reused existing tables")
         if len(sql(work,env,"SHOW TABLES").splitlines())!=27:
             raise RuntimeError("Shared ledger did not add two separate tables")
         if sql(work,env,"SELECT COUNT(*) FROM payment_attempts").strip()!='0':

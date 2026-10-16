@@ -73,6 +73,11 @@ function achbotRecordCheckoutReference(mysqli $db, int $orderId, string $provide
             (string)$order['payid']!==$marker) {
             throw new RuntimeException('checkout_order_changed');
         }
+        // Provider-scoped uniqueness cannot certify an older payid whose
+        // gateway was never recorded. Never expose a colliding checkout URL.
+        if (achbotHasUnscopedPaymentReferenceCollision($db,$reference,$orderId)) {
+            throw new RuntimeException('legacy_checkout_reference_ambiguous');
+        }
         $stmt=$db->prepare("UPDATE payment_attempts
             SET provider_reference=?,checkout_url=?,stage='pending'
             WHERE pay_row_id=? AND provider=? AND stage='creating'
