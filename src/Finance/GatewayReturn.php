@@ -518,9 +518,12 @@ if (isset($_GET['nowpayment_ipn'])) {
                      "پیگیری زرین پال");
             return;
         }
+        // SOAP Status is an exact protocol code, not a numeric amount:
+        // is_numeric() plus an int cast would turn "100.9" into false success.
+        // Only native integer 100 or the canonical SOAP string "100" settle.
         $verifiedStatus=is_object($result) && isset($result->Status) &&
-            is_numeric($result->Status) ? (int)$result->Status : null;
-        if ($verifiedStatus === 100) {
+            ($result->Status===100 || $result->Status==='100');
+        if ($verifiedStatus) {
             // A forged/stale browser NOK cannot cancel trusted positive funds.
             doAction($rowId, "zarinpal");
         } else {

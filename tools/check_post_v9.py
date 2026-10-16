@@ -151,7 +151,7 @@ def main():
                         "--run-disposable","--report",str(finance_path)],
                        cwd=ROOT,check=True,timeout=180,capture_output=True)
         finance=json.loads(finance_path.read_text())
-        # Current R8 financial contract: preserve authenticated settlement,
+        # Current R10 financial contract: preserve authenticated settlement,
         # durable compensation proof and concurrency-safe operator recovery.
         mandatory_finance = {
             "legacy_nowpayment_browser_only_read_only",
@@ -225,10 +225,37 @@ def main():
             "prepayment_stale_button_preserves_creating",
             "nowpayments_concurrent_alert_child_highwater_cas",
             "nowpayments_concurrent_alert_worker_lease_exclusive",
+            "prepayment_renewal_terminal_paid_immutable",
+            "prepayment_renewal_terminal_canceled_immutable",
+            "prepayment_renewal_terminal_expired_immutable",
+            "prepayment_renewal_terminal_mismatched_plan_immutable",
+            "prepayment_renewal_unclaimed_mismatch_cas",
+            "prepayment_renewal_pending_to_paid_midflight_cas",
+            "prepayment_renewal_issued_external_claim_preserved",
+            "prepayment_renewal_np_invoice_nowpayment_preserved",
+            "prepayment_renewal_np_invoice_zarinpal_preserved",
+            "prepayment_renewal_unchanged_plan_checkout_compatible",
+            "zarinpal_strict_status_canonical_int",
+            "zarinpal_strict_status_canonical_string",
+            "zarinpal_strict_status_fractional_string",
+            "zarinpal_strict_status_fractional_float",
+            "zarinpal_strict_status_scientific_string",
+            "zarinpal_strict_status_scientific_float",
+            "zarinpal_strict_status_float_whole",
+            "zarinpal_strict_status_boolean_true",
+            "zarinpal_strict_status_boolean_false",
+            "zarinpal_strict_status_null",
+            "zarinpal_strict_status_plus_prefix",
+            "zarinpal_strict_status_zero_prefix",
+            "zarinpal_strict_status_space_prefix",
+            "zarinpal_strict_status_decimal_string",
+            "zarinpal_strict_status_status101",
+            "zarinpal_strict_status_status52",
+            "zarinpal_strict_status_negative52",
         }
         cases_finance = {case.get("case") for case in finance.get("scenarios",[])
                          if case.get("pass_")}
-        if not (finance.get("complete") and finance.get("cases")>=120 and
+        if not (finance.get("complete") and finance.get("cases")>=148 and
                 mandatory_finance.issubset(cases_finance) and
                 finance.get("schema_tables")==23 and
                 finance.get("current_schema_tables")==25 and

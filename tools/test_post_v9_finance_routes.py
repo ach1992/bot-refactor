@@ -64,8 +64,12 @@ $GLOBALS['fake_nextpay_raw'] = $spec['nextpay_raw'] ?? null;
 $GLOBALS['fake_nextpay_transport_failure'] = $spec['nextpay_transport_failure'] ?? false;
 $GLOBALS['fake_nextpay_flip_hash'] = $spec['nextpay_flip_hash'] ?? null;
 $GLOBALS['fake_nextpay_flip_state'] = $spec['nextpay_flip_state'] ?? 'paid';
-$GLOBALS['fake_zarin_status'] = $spec['zarin_status'] ?? -11;
+$GLOBALS['fake_zarin_status'] = array_key_exists('zarin_status',$spec)
+    ? $spec['zarin_status'] : -11;
 $GLOBALS['fake_zarin_flip_hash'] = $spec['zarin_flip_hash'] ?? null;
+$GLOBALS['fake_prepayment_flip_hash'] = $spec['prepayment_flip_hash'] ?? null;
+$GLOBALS['owned_finance_dbname'] = $dbname;
+$GLOBALS['owned_finance_socket'] = $socket;
 $GLOBALS['fake_zarin_throw'] = $spec['zarin_throw'] ?? false;
 $GLOBALS['fake_zarin_malformed'] = $spec['zarin_malformed'] ?? false;
 $GLOBALS['fake_marzban_http'] = $spec['marzban_http'] ?? 200;
@@ -128,7 +132,24 @@ function renewConfigOnServer(...$args) {
     $GLOBALS['events'][]=['name'=>'renewConfigOnServer','result'=>$GLOBALS['fake_renew_success']];
     return (object)['success'=>$GLOBALS['fake_renew_success']];
 }
-function delMessage() { $GLOBALS['events'][]=['name'=>'delMessage']; }
+function delMessage() {
+    $GLOBALS['events'][]=['name'=>'delMessage'];
+    if ($GLOBALS['fake_prepayment_flip_hash'] !== null) {
+        // Independent worker commits between the route SELECT and
+        // its conditional mismatch UPDATE, without modifying production PHP.
+        $other=new mysqli('localhost','root','',
+            $GLOBALS['owned_finance_dbname'],0,$GLOBALS['owned_finance_socket']);
+        $stmt=$other->prepare("UPDATE pays SET state='paid'
+                              WHERE hash_id=? AND state='pending'");
+        $hash=(string)$GLOBALS['fake_prepayment_flip_hash'];
+        $stmt->bind_param('s',$hash);
+        $stmt->execute();
+        $GLOBALS['race_flip_applied']=$stmt->affected_rows===1;
+        $stmt->close();
+        $other->close();
+        $GLOBALS['fake_prepayment_flip_hash']=null;
+    }
+}
 function getMainKeys() { return '{}'; }
 function alert(...$args) { $GLOBALS['events'][]=['name'=>'alert','args'=>$args]; }
 function answerCallbackQuery(...$args) { $GLOBALS['events'][]=['name'=>'callback','args'=>$args]; }
@@ -1288,6 +1309,52 @@ def main():
             if unverified['network_calls']!=['zarinpal:verify']:
                 raise RuntimeError('Zarinpal failed transport was not executed')
             records.append(dict(case='zarinpal_'+scenario+'_preserves_pending',pass_=True))
+        # SOAP numeric conversion must never transform "100.9", 1e2,
+        # bool, float or a padded/alternate string into a trusted code 100.
+        # Exercise the unchanged actual GatewayReturn callback + wallet SQL.
+        zarin_strict_codes=[
+            ('canonical_int',100,True),
+            ('canonical_string','100',True),
+            ('fractional_string','100.9',False),
+            ('fractional_float',100.9,False),
+            ('scientific_string','1e2',False),
+            ('scientific_float',1e2,False),
+            ('float_whole',100.0,False),
+            ('boolean_true',True,False),
+            ('boolean_false',False,False),
+            ('null',None,False),
+            ('plus_prefix','+100',False),
+            ('zero_prefix','0100',False),
+            ('space_prefix',' 100',False),
+            ('decimal_string','100.0',False),
+            ('status101',101,False),
+            ('status52',52,False),
+            ('negative52',-52,False)
+        ]
+        for label,code,should_settle in zarin_strict_codes:
+            name='zpstrict'+label.replace('_','')
+            seed_payment(work,env,name,'INCREASE_WALLET',0,0,name+'authority')
+            before=snapshot(work,env)
+            wallet_before=int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())
+            returned=run_php(work,env,stage,dict(route='return',
+                get={'zarinpal':'','hash_id':name,'Authority':name+'authority',
+                     'Status':'NOK'},zarin_status=code))
+            if returned['network_calls']!=['zarinpal:verify']:
+                raise RuntimeError('Strict SOAP code missed actual verification '+label)
+            state=sql(work,env,f"SELECT state FROM pays WHERE hash_id='{name}'").strip()
+            wallet_after=int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())
+            if should_settle:
+                if state!='paid' or wallet_after!=wallet_before+100:
+                    raise RuntimeError('Canonical trusted code rejected '+label)
+            else:
+                verify_unchanged(work,env,before,'zarinpal_strict_'+label)
+                if state!='pending' or wallet_after!=wallet_before:
+                    raise RuntimeError('Malformed SOAP code settled money '+label)
+                if not returned['form'] or 'نیازمند تطبیق' not in returned['form']:
+                    raise RuntimeError('Malformed SOAP code lacked review state '+label)
+            records.append(dict(case='zarinpal_strict_status_'+label,
+                                pass_=True,external_requests=1,real_provider_requests=0))
+
         # Execute the ACTUAL Marzban PHP PUT adapter, not a substitute
         # success flag: only a 2xx parsed UserResponse matching requested
         # account/expiry/traffic is verified remote success.
@@ -1492,6 +1559,120 @@ def main():
            "SELECT state FROM pays WHERE hash_id='stalecreating'").strip()!='pending':
             raise RuntimeError('Old button canceled uncertain invoice issuance')
         records.append(dict(case='prepayment_stale_button_preserves_creating',pass_=True))
+
+        # A stale RENEW_ACCOUNT button must never undo a provider-finalized
+        # pays.state='paid', nor invalidate a reserved provider invoice.
+        # Execute the actual prePayCheck route against the original MariaDB.
+        sql(work,env,"INSERT INTO orders_list "
+            "(userid,token,transid,fileid,server_id,inbound_id,remark,uuid,"
+            "protocol,expire_date,link,amount,status,date) VALUES "
+            "(1001,'callback-renew-token','',8,2,0,'callback-renew-mismatch',"
+            "'callback-renew-uuid','vless',2000000000,'[]',100,1,'synthetic')")
+        mismatch_oid=int(sql(work,env,
+            "SELECT id FROM orders_list WHERE remark='callback-renew-mismatch'").strip())
+        def mismatch_payment(name, status='pending', invoice=''):
+            seed_payment(work,env,name,'RENEW_ACCOUNT',7,2,invoice)
+            sql(work,env,f"UPDATE pays SET state='{status}', "
+                f"order_id={mismatch_oid},request_date=UNIX_TIMESTAMP() "
+                f"WHERE hash_id='{name}'")
+        for name,status in [
+            ('rnoldpaid','paid'),
+            ('rnoldcanceled','canceled'),
+            ('rnoldexpired','expired'),
+            ('rnoldmismatch','mismatched_plan')
+        ]:
+            mismatch_payment(name,status)
+            before=snapshot(work,env)
+            stale=run_php(work,env,stage,dict(route='prepayment',get={},
+                callback_data='prePayCheck_RENEWACCOUNT_nextpay_'+name))
+            verify_unchanged(work,env,before,'renewal_terminal_stale_'+status)
+            if stale['network_calls'] or any(
+               'pay/?' in str(e) for e in stale['events']):
+                raise RuntimeError('Terminal renewal offered competing checkout '+status)
+            if not any(e['name']=='callback' for e in stale['events']):
+                raise RuntimeError('Terminal renewal lacked early-state guard '+status)
+            records.append(dict(case='prepayment_renewal_terminal_'+status+'_immutable',
+                                pass_=True,external_requests=0))
+
+        mismatch_payment('rnordinary')
+        ordinary=run_php(work,env,stage,dict(route='prepayment',get={},
+            callback_data='prePayCheck_RENEWACCOUNT_nextpay_rnordinary'))
+        if sql(work,env,"SELECT state FROM pays WHERE hash_id='rnordinary'").strip()!='mismatched_plan':
+            raise RuntimeError('Unclaimed renewal plan mismatch was not rejected')
+        if not any('پلن فعلی' in str(e.get('args')) for e in ordinary['events']
+                   if e['name']=='sendMessage'):
+            raise RuntimeError('Safe plan mismatch did not inform the customer')
+        if ordinary['network_calls']:
+            raise RuntimeError('Mismatched unclaimed renewal contacted provider')
+        records.append(dict(case='prepayment_renewal_unclaimed_mismatch_cas',
+                            pass_=True,external_requests=0))
+
+        mismatch_payment('rnmidrace')
+        prior_balance=int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())
+        concurrent=run_php(work,env,stage,dict(route='prepayment',get={},
+            callback_data='prePayCheck_RENEWACCOUNT_nextpay_rnmidrace',
+            prepayment_flip_hash='rnmidrace'))
+        if not concurrent['race_flip_applied'] or sql(work,env,
+            "SELECT state FROM pays WHERE hash_id='rnmidrace'").strip()!='paid':
+            raise RuntimeError('Concurrent settled payment overwritten by old renewal callback')
+        if int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())!=prior_balance:
+            raise RuntimeError('Stale renewal race changed wallet balance')
+        if any('پلن فعلی' in str(e.get('args')) for e in concurrent['events']
+               if e['name']=='sendMessage'):
+            raise RuntimeError('CAS-lost renewal incorrectly announced mismatch')
+        records.append(dict(case='prepayment_renewal_pending_to_paid_midflight_cas',
+                            pass_=True,external_requests=0))
+
+        mismatch_payment('rnpayclaimed',invoice='zarin-old-authority')
+        before=snapshot(work,env)
+        claimed=run_php(work,env,stage,dict(route='prepayment',get={},
+            callback_data='prePayCheck_RENEWACCOUNT_nextpay_rnpayclaimed'))
+        verify_unchanged(work,env,before,'renewal_issued_external_authority')
+        if claimed['network_calls'] or not any(
+           'محفوظ' in str(e.get('args')) for e in claimed['events']
+           if e['name']=='sendMessage'):
+            raise RuntimeError('Issued provider Authority not retained for operator review')
+        records.append(dict(case='prepayment_renewal_issued_external_claim_preserved',
+                            pass_=True,external_requests=0))
+
+        seed_np_attempt(work,env,'rnnpclaimed','rnnp-invoice','rnnp-payment')
+        sql(work,env,"UPDATE pays SET type='RENEW_ACCOUNT',plan_id=7,"
+            f"server_id=2,order_id={mismatch_oid},request_date=UNIX_TIMESTAMP() "
+            "WHERE hash_id='rnnpclaimed'")
+        np_identity=sql(work,env,"SELECT invoice_id,payment_id,stage "
+            "FROM achbot_nowpayments_attempts WHERE order_hash='rnnpclaimed'").strip()
+        for gateway in ('nowpayment','zarinpal'):
+            before=snapshot(work,env)
+            retained=run_php(work,env,stage,dict(route='prepayment',get={},
+                callback_data='prePayCheck_RENEWACCOUNT_'+gateway+'_rnnpclaimed'))
+            verify_unchanged(work,env,before,'renewal_np_invoice_'+gateway)
+            if sql(work,env,"SELECT invoice_id,payment_id,stage "
+                "FROM achbot_nowpayments_attempts WHERE order_hash='rnnpclaimed'").strip()!=np_identity:
+                raise RuntimeError('Existing NOWPayments invoice/child evidence modified')
+            if retained['network_calls'] or any(
+               'pay/?' in str(e) or 'https://nowpayments.io/pay/' in str(e)
+               for e in retained['events']):
+                raise RuntimeError('Mismatched renewal offered an unsafe payable invoice')
+            records.append(dict(case='prepayment_renewal_np_invoice_'+gateway+'_preserved',
+                                pass_=True,external_requests=0))
+
+        # Valid unchanged renewal retains the original redirect behavior.
+        seed_payment(work,env,'rnstillvalid','RENEW_ACCOUNT',8,2,'')
+        sql(work,env,f"UPDATE pays SET order_id={mismatch_oid},"
+            "request_date=UNIX_TIMESTAMP() WHERE hash_id='rnstillvalid'")
+        ready=run_php(work,env,stage,dict(route='prepayment',get={},
+            callback_data='prePayCheck_RENEWACCOUNT_zarinpal_rnstillvalid'))
+        redirect_markup=[
+            json.loads(e['args'][1]) for e in ready['events']
+            if e['name']=='sendMessage' and len(e['args'])>1
+            and isinstance(e['args'][1],str)]
+        if not any('pay/?zarinpal' in json.dumps(markup,ensure_ascii=False)
+                   for markup in redirect_markup) or ready['network_calls']:
+            raise RuntimeError('Valid renewal callback lost checkout compatibility')
+        if sql(work,env,"SELECT state FROM pays WHERE hash_id='rnstillvalid'").strip()!='pending':
+            raise RuntimeError('Valid renewal unexpectedly changed payment state')
+        records.append(dict(case='prepayment_renewal_unchanged_plan_checkout_compatible',
+                            pass_=True,external_requests=0))
 
         # Actual admin route, including old cached/forged callbacks, cannot
         # perform the inherited database-only server rewrite.
