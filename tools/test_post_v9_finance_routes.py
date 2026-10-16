@@ -638,8 +638,8 @@ def main():
             payment_id='np-extra-deposit',payment_status='finished')))
         if extra['events'][-1].get('code')!=200:
             raise RuntimeError('Valid additional deposit was not acknowledged for review')
-        if sql(work,env,"SELECT stage,provider_status FROM achbot_nowpayments_attempts "
-               "WHERE order_hash='wallet-init'").strip()!='review\tadditional_payment':
+        if sql(work,env,"SELECT stage,provider_status,review_payment_id FROM achbot_nowpayments_attempts "
+               "WHERE order_hash='wallet-init'").strip()!='review\tadditional_payment\tnp-extra-deposit':
             raise RuntimeError('Later child deposit was not surfaced for operator review')
         if int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())!=paid_wallet:
             raise RuntimeError('Additional child payment duplicated an order credit')
@@ -649,12 +649,27 @@ def main():
         # erase the operator-review reason for the additional child deposit.
         old_child_replay=run_php(work,env,stage,signed_ipn(ipn))
         if old_child_replay['events'][-1].get('code')!=200 or sql(work,env,
-           "SELECT stage,provider_status FROM achbot_nowpayments_attempts "
-           "WHERE order_hash='wallet-init'").strip()!='review\tadditional_payment':
+           "SELECT stage,provider_status,review_payment_id FROM achbot_nowpayments_attempts "
+           "WHERE order_hash='wallet-init'").strip()!='review\tadditional_payment\tnp-extra-deposit':
             raise RuntimeError('Old IPN replay erased an extra-payment review marker')
         if int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())!=paid_wallet:
             raise RuntimeError('Old IPN replay after extra deposit changed wallet')
         records.append(dict(case='nowpayments_replay_preserves_additional_payment_review',
+                            pass_=True,external_requests=0))
+        extra_replay=run_php(work,env,stage,signed_ipn(dict(ipn,
+            payment_id='np-extra-deposit',payment_status='finished')))
+        if extra_replay['events'][-1].get('code')!=200:
+            raise RuntimeError('Identical additional-child signed replay rejected')
+        another_child=run_php(work,env,stage,signed_ipn(dict(ipn,
+            payment_id='np-third-child',payment_status='finished')))
+        if another_child['events'][-1].get('code')!=409:
+            raise RuntimeError('Third child was falsely accepted without durable identity slot')
+        if sql(work,env,"SELECT review_payment_id FROM achbot_nowpayments_attempts "
+               "WHERE order_hash='wallet-init'").strip()!='np-extra-deposit':
+            raise RuntimeError('Third child silently overwrote the earlier extra-payment identity')
+        if int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())!=paid_wallet:
+            raise RuntimeError('Third child changed wallet outside verified one-time settlement')
+        records.append(dict(case='nowpayments_third_child_not_silently_acknowledged',
                             pass_=True,external_requests=0))
         # A finished provider payment whose deposit is smaller than the
         # promised quote is quarantined, never auto-reconciled as successful.

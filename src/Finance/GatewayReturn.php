@@ -48,24 +48,45 @@ function achbotNpIngestIpn(mysqli $connection, string $ipnSecret,
     // signed deposit; retain a visible operator-review state.
     if ($attempt['payment_id'] !== null &&
         (string)$attempt['payment_id'] !== $paymentId) {
+        // Keep the first extra child identity durable so an operator can
+        // verify the actual deposit by API key, not merely see a review flag.
+        // One attempt cannot represent unlimited child payments; if another
+        // child arrives, return non-2xx so its IPN is not falsely accepted.
+        if ($attempt['review_payment_id'] !== null &&
+            (string)$attempt['review_payment_id'] !== $paymentId) return 409;
         $stmt = $connection->prepare("UPDATE achbot_nowpayments_attempts
-            SET provider_status=CASE
+            SET review_payment_id=COALESCE(review_payment_id,?),
+                provider_status=CASE
                     WHEN provider_status='additional_payment' THEN provider_status
                     WHEN stage='done' THEN 'additional_payment'
                     ELSE 'multiple_payments' END,
                 stage='review'
-            WHERE id=?");
+            WHERE id=? AND (review_payment_id IS NULL OR review_payment_id=?)");
+        $stmt->bind_param('sis', $paymentId, $attempt['id'], $paymentId);
+        try {
+            $stmt->execute();
+            $changed=$stmt->affected_rows;
+        } catch (Throwable $ignored) {
+            $stmt->close();
+            return 409;
+        }
+        $stmt->close();
+        if ($changed === 1) return 200;
+        // No-op replays are valid only for the exact persisted child ID.
+        $stmt=$connection->prepare("SELECT review_payment_id FROM achbot_nowpayments_attempts WHERE id=?");
         $stmt->bind_param('i',$attempt['id']);
         $stmt->execute();
+        $stored=$stmt->get_result()->fetch_assoc();
         $stmt->close();
-        return 200;
+        return (string)($stored['review_payment_id'] ?? '') === $paymentId ? 200 : 409;
     }
     if (!in_array($attempt['stage'],['pending','checking','review'],true)) return 200;
     $stmt = $connection->prepare("UPDATE achbot_nowpayments_attempts SET
         payment_id=COALESCE(payment_id,?),
         provider_status=CASE WHEN stage='review' THEN provider_status ELSE ? END,
         stage=CASE WHEN stage='review' THEN 'review' ELSE 'pending' END
-        WHERE id=? AND (payment_id IS NULL OR payment_id=?)");
+        WHERE id=? AND stage IN ('pending','checking','review')
+          AND (payment_id IS NULL OR payment_id=?)");
     $stmt->bind_param('ssis',$paymentId,$providerStatus,$attempt['id'],$paymentId);
     try {
         $stmt->execute();
@@ -75,7 +96,15 @@ function achbotNpIngestIpn(mysqli $connection, string $ipnSecret,
         return 409;
     }
     $stmt->close();
-    return $changed === 1 || $changed === 0 ? 200 : 409;
+    if ($changed === 1) return 200;
+    // A CAS loser is not automatically a successful replay. Check whether
+    // the *same* child was stored or a distinct one won the race.
+    $stmt=$connection->prepare("SELECT payment_id,stage FROM achbot_nowpayments_attempts WHERE id=?");
+    $stmt->bind_param('i',$attempt['id']);
+    $stmt->execute();
+    $stored=$stmt->get_result()->fetch_assoc();
+    $stmt->close();
+    return (string)($stored['payment_id'] ?? '') === $paymentId ? 200 : 409;
 }
 
 /**

@@ -8,6 +8,8 @@ CREATE TABLE IF NOT EXISTS achbot_nowpayments_attempts (
   -- exist BEFORE the non-idempotent external create request.
   invoice_id VARCHAR(128) DEFAULT NULL,
   payment_id VARCHAR(128) DEFAULT NULL,
+  -- Preserve the first distinct child payment needing manual reconciliation.
+  review_payment_id VARCHAR(128) DEFAULT NULL,
   invoice_url VARCHAR(2048) DEFAULT NULL,
   quote_usd DECIMAL(18,2) NOT NULL,
   stage VARCHAR(32) NOT NULL DEFAULT 'pending',
@@ -20,5 +22,6 @@ CREATE TABLE IF NOT EXISTS achbot_nowpayments_attempts (
   UNIQUE KEY uq_achbot_np_order_hash (order_hash),
   UNIQUE KEY uq_achbot_np_invoice (invoice_id),
   UNIQUE KEY uq_achbot_np_payment_id (payment_id),
+  UNIQUE KEY uq_achbot_np_review_payment_id (review_payment_id),
   KEY idx_achbot_np_reconcile (stage,last_checked_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
