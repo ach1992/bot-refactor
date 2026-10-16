@@ -95,20 +95,10 @@ function achbotNpReconcileBatch(mysqli $connection, array $paymentKeys,
     $rows = $connection->query($sql);
     while ($rows && ($attempt = $rows->fetch_assoc())) {
         $done['examined']++;
-        // A permanently stalled/expired provider attempt is not polled forever.
-        // Quarantine for bounded operator reconciliation without destroying
-        // the original payment/order/quote or declaring funds never arrived.
-        if (isset($attempt['created_at']) &&
-            strtotime((string)$attempt['created_at']) < time()-7*86400) {
-            $stmt=$connection->prepare("UPDATE achbot_nowpayments_attempts
-                SET stage='review',provider_status='stale_provider_payment'
-                WHERE id=? AND stage IN ('pending','checking')");
-            $stmt->bind_param('i',$attempt['id']);
-            $stmt->execute();
-            $stmt->close();
-            $done['review']++;
-            continue;
-        }
+        // NOWPayments invoices do not expire. A child payment can be created
+        // long after invoice creation, so never quarantine by created_at.
+        // Keep bounded polling of the known payment_id; terminal/unknown
+        // provider statuses are assessed independently below.
         // A prior run may have exited inside the inherited doAction().
         // Never trigger remote provisioning again after an ambiguous result.
         if ($attempt['stage']==='fulfilling' ||
@@ -527,6 +517,50 @@ if (isset($_GET['nowpayment_ipn'])) {
 
 $rewardChannel = $botState['rewardChannel'] ?? null;
 
+/**
+ * A verified wallet top-up is entirely local to MariaDB. Persist the payment
+ * claim and balance credit in ONE transaction, never a paid-but-uncredited
+ * state. This does not replace a durable remote Marzban fulfillment ledger.
+ */
+function achbotClaimAndCreditWallet(mysqli $db, int $payId, int $userId,
+                                    int $amount): bool {
+    if ($payId <= 0 || $userId <= 0 || $amount <= 0) return false;
+    $db->begin_transaction();
+    try {
+        $stmt = $db->prepare("UPDATE pays SET state='paid'
+            WHERE id=? AND user_id=? AND price=? AND type='INCREASE_WALLET'
+              AND state IN ('pending','send')");
+        $stmt->bind_param('iii', $payId, $userId, $amount);
+        $stmt->execute();
+        $claimed = $stmt->affected_rows;
+        $stmt->close();
+        if ($claimed !== 1) {
+            $db->rollback();
+            return false;
+        }
+
+        // Preserve deliberate negative admin debt. A genuine credit reduces
+        // debt, but may not overflow the existing signed INT wallet column.
+        $stmt = $db->prepare("UPDATE users SET wallet=wallet+?
+            WHERE userid=? AND wallet <= 2147483647 - ?");
+        $stmt->bind_param('iii', $amount, $userId, $amount);
+        $stmt->execute();
+        $credited = $stmt->affected_rows;
+        $stmt->close();
+        if ($credited !== 1) {
+            $db->rollback();
+            return false;
+        }
+        if (!$db->commit()) {
+            throw new RuntimeException('wallet_payment_commit_failed');
+        }
+        return true;
+    } catch (Throwable $error) {
+        $db->rollback();
+        throw $error;
+    }
+}
+
 function doAction($payRowId, $gateType) {
     global $connection, $admin, $userInfo, $from_id, $botUrl, $botState;
     global $buttonValues, $linkIndices, $hideConfigIfMany;
@@ -577,12 +611,20 @@ function doAction($payRowId, $gateType) {
     $payDescription = payTypeToDescription($payType);
     if ($gateType == "zarinpal" || $gateType == "nextpay") $payDescription = "خرید اشتراک";
 
-    $stmt = $connection->prepare("UPDATE `pays` SET `state` = 'paid'
-        WHERE `id` = ? AND `state` IN ('pending','send')");
-    $stmt->bind_param('i',$payRowId);
-    $stmt->execute();
-    $claimed=$stmt->affected_rows;
-    $stmt->close();
+    if ($payType === 'INCREASE_WALLET') {
+        // The state claim and actual user credit commit together. Telegram
+        // notification remains outside the DB transaction.
+        $claimed = achbotClaimAndCreditWallet(
+            $connection, $rowId, $user_id, $amount
+        ) ? 1 : 0;
+    } else {
+        $stmt = $connection->prepare("UPDATE `pays` SET `state` = 'paid'
+            WHERE `id` = ? AND `state` IN ('pending','send')");
+        $stmt->bind_param('i',$payRowId);
+        $stmt->execute();
+        $claimed=$stmt->affected_rows;
+        $stmt->close();
+    }
     if ($claimed !== 1) {
         showForm("این پرداخت در حال پردازش یا قبلاً نهایی شده است.", "پیگیری پرداخت");
         return false;
@@ -837,8 +879,8 @@ function doAction($payRowId, $gateType) {
 
     elseif ($payType == "INCREASE_WALLET") {
 
-        addToWallet($connection, $user_id, $amount);
-
+        // Credit was already committed atomically with pays.state='paid'.
+        // Repeating it here would double-credit on the same verified event.
         showForm("✅ پرداخت شما با موفقیت انجام شد، مبلغ " . number_format($amount) . " تومان به کیف پول شما اضافه شد.", $payDescription, true);
 
         sendMessage("✅ مبلغ " . number_format($amount) . " تومان به حساب شما اضافه شد.\n\n<blockquote>

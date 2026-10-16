@@ -587,6 +587,30 @@ def main():
             raise RuntimeError('Underpaid gateway did not enter reconciliation queue')
         records.append(dict(case='nowpayments_underpayment_quarantined',
                             pass_=True,external_requests=1))
+        # NOWPayments invoices have no expiry; an IPN for a payment on an
+        # older invoice is not itself stale. The child payment has its own
+        # seven-day lifespan. The old created_at cutoff incorrectly stranded
+        # a genuine finished payment before making any provider status request.
+        seed_payment(work,env,'np-late-invoice','INCREASE_WALLET',0,0,
+                     'np-late-invoice-id')
+        sql(work,env,"INSERT INTO achbot_nowpayments_attempts "
+            "(pay_row_id,order_hash,invoice_id,payment_id,invoice_url,quote_usd,created_at) "
+            "SELECT id,hash_id,'np-late-invoice-id','np-late-child-payment',"
+            "'https://nowpayments.io/pay/np-late',1,"
+            "DATE_SUB(NOW(), INTERVAL 12 DAY) FROM pays WHERE hash_id='np-late-invoice'")
+        balance_before=int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())
+        late=run_php(work,env,stage,dict(route='reconcile',get={},
+            mock_invoice='np-late-invoice-id',
+            nowpayment_payment_id='np-late-child-payment',
+            nowpayment_order_id='np-late-invoice',
+            nowpayment_status='finished'))
+        if len(late['network_calls'])!=1 or sql(work,env,
+           "SELECT stage FROM achbot_nowpayments_attempts WHERE order_hash='np-late-invoice'").strip()!='done':
+            raise RuntimeError('Valid payment on older timeless invoice was stranded')
+        if int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())!=balance_before+100:
+            raise RuntimeError('Late-invoice finished payment failed to credit wallet')
+        records.append(dict(case='nowpayments_late_payment_on_timeless_invoice',
+                            pass_=True,external_requests=1,real_provider_requests=0))
         # RED regression: historical NextPay cancellation used hash_id=trans_id
         # even though the callback resolves the invoice through pays.payid.
         res=run_php(work,env,stage,dict(route='return',
@@ -695,6 +719,70 @@ def main():
         records.append(dict(case='nextpay_http_200_code_zero_actual_wallet_fulfillment',
                             pass_=True,external_requests=1,real_provider_requests=0,
                             real_current_wallet_helper=True))
+
+        # A verified payment must NOT become paid unless the matching wallet
+        # was actually credited. Reproduce the inherited paid-before-credit
+        # bug using an intentionally missing synthetic customer.
+        seed_payment(work,env,'nextpay-missing-wallet-user','INCREASE_WALLET',0,0,
+                     'missing-wallet-user-transid')
+        sql(work,env,"UPDATE pays SET user_id=99999999 "
+                     "WHERE hash_id='nextpay-missing-wallet-user'")
+        before=snapshot(work,env)
+        missing_user=run_php(work,env,stage,dict(route='return',
+            get={'nextpay':'','trans_id':'missing-wallet-user-transid'},
+            nextpay_code=0))
+        verify_unchanged(work,env,before,'nextpay_missing_wallet_user_atomic_rollback')
+        if len(missing_user['network_calls'])!=1 or not missing_user['form']:
+            raise RuntimeError('Missing-wallet-user negative fixture was not exercised')
+        records.append(dict(case='nextpay_missing_wallet_user_atomic_rollback',
+                            pass_=True,external_requests=1,real_provider_requests=0))
+
+        # Keep Owner-authorized negative wallet debt: a legitimate credit
+        # offsets it without applying a zero floor or inventing debt removal.
+        wallet_saved=int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())
+        sql(work,env,"UPDATE users SET wallet=-200 WHERE userid=1001")
+        seed_payment(work,env,'nextpay-debt-offset','INCREASE_WALLET',0,0,
+                     'nextpay-debt-offset-transid')
+        run_php(work,env,stage,dict(route='return',
+            get={'nextpay':'','trans_id':'nextpay-debt-offset-transid'},
+            nextpay_code=0))
+        if int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())!=-100:
+            raise RuntimeError('Valid gateway credit did not offset signed admin debt')
+        if sql(work,env,"SELECT state FROM pays WHERE hash_id='nextpay-debt-offset'").strip()!='paid':
+            raise RuntimeError('Debt-offset payment did not settle with wallet credit')
+        records.append(dict(case='nextpay_signed_debt_offset_transaction',
+                            pass_=True,external_requests=1,real_provider_requests=0))
+        sql(work,env,f"UPDATE users SET wallet={wallet_saved} WHERE userid=1001")
+
+        # Existing wallet INT must not overflow; failing the credit must
+        # leave the payment pending, not falsely paid.
+        sql(work,env,"UPDATE users SET wallet=2147483640 WHERE userid=1001")
+        seed_payment(work,env,'nextpay-wallet-overflow','INCREASE_WALLET',0,0,
+                     'nextpay-wallet-overflow-transid')
+        before=snapshot(work,env)
+        overflow=run_php(work,env,stage,dict(route='return',
+            get={'nextpay':'','trans_id':'nextpay-wallet-overflow-transid'},
+            nextpay_code=0))
+        verify_unchanged(work,env,before,'nextpay_wallet_overflow_atomic_rollback')
+        if len(overflow['network_calls'])!=1 or not overflow['form']:
+            raise RuntimeError('Wallet-overflow negative fixture not exercised')
+        records.append(dict(case='nextpay_wallet_overflow_atomic_rollback',
+                            pass_=True,external_requests=1,real_provider_requests=0))
+        sql(work,env,f"UPDATE users SET wallet={wallet_saved} WHERE userid=1001")
+
+        # A zero-price wallet credit cannot be marked as a settled purchase.
+        seed_payment(work,env,'nextpay-wallet-zero','INCREASE_WALLET',0,0,
+                     'nextpay-wallet-zero-transid')
+        sql(work,env,"UPDATE pays SET price=0 WHERE hash_id='nextpay-wallet-zero'")
+        before=snapshot(work,env)
+        zero=run_php(work,env,stage,dict(route='return',
+            get={'nextpay':'','trans_id':'nextpay-wallet-zero-transid'},
+            nextpay_code=0))
+        verify_unchanged(work,env,before,'nextpay_zero_wallet_credit_fails_closed')
+        if len(zero['network_calls'])!=1 or not zero['form']:
+            raise RuntimeError('Zero wallet-credit negative fixture not exercised')
+        records.append(dict(case='nextpay_zero_wallet_credit_fails_closed',
+                            pass_=True,external_requests=1,real_provider_requests=0))
 
         # Mid-verification deterministic race: synthetic second-worker state
         # transition occurs INSIDE fake cURL, before this route attempts its
