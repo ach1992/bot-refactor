@@ -1,7 +1,10 @@
 <?php
 /**
  * AchBot Telegram boundary. Dependencies and request context are explicit.
- * Preserve legacy payloads, transport policies, return values and diagnostics.
+ * Preserve legacy payloads, transport policies and return values.
+ * Keep failure logs limited to safe metadata: outgoing payload values,
+ * provider responses and transport error strings may contain customer data,
+ * private admin diagnostics or credentials.
  */
 namespace AchBot\Telegram\Transport;
 
@@ -56,7 +59,6 @@ function request($botToken, $runtimeDir, $method, $datas = []) {
 
     $res  = curl_exec($ch);
     $errn = curl_errno($ch);
-    $err  = curl_error($ch);
     $http = curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
 
     if ($errn !== 0) {
@@ -66,10 +68,10 @@ function request($botToken, $runtimeDir, $method, $datas = []) {
         if (file_exists($logFile) && filesize($logFile) > $maxSize) {
             file_put_contents($logFile, "");
         }
-        $log  = "❌ Curl Error ({$errn}): {$err}\n";
+        $log  = "❌ Curl Error ({$errn}): [details redacted]\n";
         $log .= "🕒 Time: " . date("Y-m-d H:i:s") . "\n";
         $log .= "📡 Method: {$method}\n";
-        $log .= "📤 Data Sent: " . print_r($datas, true) . "\n";
+        $log .= "📤 Data Sent: " . '[REDACTED]' . "\n";
         $log .= "---------------------------\n";
         file_put_contents($logFile, $log, FILE_APPEND);
 
@@ -84,14 +86,10 @@ function request($botToken, $runtimeDir, $method, $datas = []) {
         if (file_exists($logFile) && filesize($logFile) > $maxSize) {
             file_put_contents($logFile, "");
         }
-        $snippet = is_string($res) ? substr($res, 0, 500) : '';
         $log  = "⚠️ HTTP {$http} or Empty Response\n";
         $log .= "🕒 Time: " . date("Y-m-d H:i:s") . "\n";
         $log .= "📡 Method: {$method}\n";
-        $log .= "📤 Data Sent: " . print_r($datas, true) . "\n";
-        if ($snippet !== '') {
-            $log .= "📥 Resp Snippet: {$snippet}\n";
-        }
+        $log .= "📤 Data Sent: " . '[REDACTED]' . "\n";
         $log .= "---------------------------\n";
         file_put_contents($logFile, $log, FILE_APPEND);
     }
@@ -106,7 +104,7 @@ function request($botToken, $runtimeDir, $method, $datas = []) {
         $log .= "🕒 Time: " . date("Y-m-d H:i:s") . "\\n";
         $log .= "📡 Method: {$method}\\n";
         $log .= "⏳ Retry After: {$retryAfter}\\n";
-        $log .= "📤 Data Sent: " . print_r($datas, true) . "\\n";
+        $log .= "📤 Data Sent: " . '[REDACTED]' . "\\n";
         $log .= "---------------------------\\n";
         file_put_contents($logFile, $log, FILE_APPEND);
 
@@ -158,7 +156,6 @@ function sendFile($botToken, $runtimeDir, $method, $datas = []) {
 
     $res  = curl_exec($ch);
     $errn = curl_errno($ch);
-    $err  = curl_error($ch);
     $http = curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
 
     if ($errn !== 0) {
@@ -168,10 +165,10 @@ function sendFile($botToken, $runtimeDir, $method, $datas = []) {
         if (file_exists($logFile) && filesize($logFile) > $maxSize) {
             file_put_contents($logFile, "");
         }
-        $log  = "❌ Curl Error ({$errn}): {$err}\n";
+        $log  = "❌ Curl Error ({$errn}): [details redacted]\n";
         $log .= "🕒 Time: " . date("Y-m-d H:i:s") . "\n";
         $log .= "📡 Method: {$method}\n";
-        $log .= "📤 Data Sent: " . print_r($datas, true) . "\n";
+        $log .= "📤 Data Sent: " . '[REDACTED]' . "\n";
         $log .= "---------------------------\n";
         file_put_contents($logFile, $log, FILE_APPEND);
 
@@ -186,14 +183,10 @@ function sendFile($botToken, $runtimeDir, $method, $datas = []) {
         if (file_exists($logFile) && filesize($logFile) > $maxSize) {
             file_put_contents($logFile, "");
         }
-        $snippet = is_string($res) ? substr($res, 0, 500) : '';
         $log  = "⚠️ HTTP {$http} or Empty Response (File)\n";
         $log .= "🕒 Time: " . date("Y-m-d H:i:s") . "\n";
         $log .= "📡 Method: {$method}\n";
-        $log .= "📤 Data Sent: " . print_r($datas, true) . "\n";
-        if ($snippet !== '') {
-            $log .= "📥 Resp Snippet: {$snippet}\n";
-        }
+        $log .= "📤 Data Sent: " . '[REDACTED]' . "\n";
         $log .= "---------------------------\n";
         file_put_contents($logFile, $log, FILE_APPEND);
     }
