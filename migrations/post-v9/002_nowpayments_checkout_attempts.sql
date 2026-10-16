@@ -4,9 +4,11 @@ CREATE TABLE IF NOT EXISTS achbot_nowpayments_attempts (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   pay_row_id INT NOT NULL,
   order_hash VARCHAR(50) NOT NULL,
-  invoice_id VARCHAR(128) NOT NULL,
+  -- Nullable until the provider returns its invoice. The local row must
+  -- exist BEFORE the non-idempotent external create request.
+  invoice_id VARCHAR(128) DEFAULT NULL,
   payment_id VARCHAR(128) DEFAULT NULL,
-  invoice_url VARCHAR(2048) NOT NULL,
+  invoice_url VARCHAR(2048) DEFAULT NULL,
   quote_usd DECIMAL(18,2) NOT NULL,
   stage VARCHAR(32) NOT NULL DEFAULT 'pending',
   provider_status VARCHAR(32) DEFAULT NULL,

@@ -44,6 +44,7 @@ $GLOBALS['network_calls'] = [];
 $GLOBALS['error'] = null;
 $GLOBALS['mock_invoice'] = $spec['mock_invoice'] ?? '';
 $GLOBALS['fake_nowpayment_status'] = $spec['nowpayment_status'] ?? 'waiting';
+$GLOBALS['fake_invoice_transport_failure'] = $spec['invoice_transport_failure'] ?? false;
 $GLOBALS['fake_nowpayment_http'] = $spec['nowpayment_http'] ?? 200;
 $GLOBALS['fake_nowpayment_raw'] = $spec['nowpayment_raw'] ?? null;
 $GLOBALS['fake_nowpayment_transport_failure'] = $spec['nowpayment_transport_failure'] ?? false;
@@ -61,6 +62,7 @@ $GLOBALS['fake_nextpay_transport_failure'] = $spec['nextpay_transport_failure'] 
 $GLOBALS['fake_nextpay_flip_hash'] = $spec['nextpay_flip_hash'] ?? null;
 $GLOBALS['fake_nextpay_flip_state'] = $spec['nextpay_flip_state'] ?? 'paid';
 $GLOBALS['race_flip_applied'] = false;
+$GLOBALS['invoice_reservation_seen'] = null;
 $GLOBALS['events'] = [];
 $GLOBALS['known_inherited_warnings'] = [];
 $botState = [];
@@ -103,6 +105,17 @@ function curl_exec($handle) {
         return json_encode(['code'=>$GLOBALS['fake_nextpay_code']]);
     }
     if (str_contains($handle->url, '/v1/invoice')) {
+        // Confirm a durable local claim exists BEFORE the provider receives
+        // the non-idempotent invoice creation request.
+        $stmt=$GLOBALS['connection']->prepare(
+            "SELECT stage FROM achbot_nowpayments_attempts WHERE order_hash=? LIMIT 1");
+        $key=(string)($_GET['hash_id'] ?? '');
+        $stmt->bind_param('s',$key);
+        $stmt->execute();
+        $reservation=$stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        $GLOBALS['invoice_reservation_seen']=$reservation['stage'] ?? null;
+        if ($GLOBALS['fake_invoice_transport_failure'] ?? false) return false;
         return json_encode(['id'=>'owned-new-invoice',
                              'invoice_url'=>'https://nowpayments.io/payment?iid=owned-new-invoice']);
     }
@@ -153,6 +166,7 @@ register_shutdown_function(function () {
       'network_calls'=>$GLOBALS['network_calls'],
       'events'=>$GLOBALS['events'],
       'race_flip_applied'=>$GLOBALS['race_flip_applied'],
+      'invoice_reservation_seen'=>$GLOBALS['invoice_reservation_seen'],
       'known_inherited_warnings'=>$GLOBALS['known_inherited_warnings'],
       'error'=>$GLOBALS['error'],
       'form'=>$html,
@@ -448,6 +462,8 @@ def main():
                     get={'nowpayment':'','hash_id':'wallet-init'}))
         if len(res['network_calls'])!=1 or '/v1/invoice' not in res['network_calls'][0]:
             raise RuntimeError('Independent wallet top-up did not initiate mock invoice: '+repr(res)[:1000])
+        if res['invoice_reservation_seen']!='creating':
+            raise RuntimeError('External invoice was created before a durable local reservation')
         if sql(work,env,"SELECT payid FROM pays WHERE hash_id='wallet-init'").strip()!='owned-new-invoice':
             raise RuntimeError('Wallet top-up invoice ID was not stored')
         records.append(dict(case='positive_wallet_gateway_initiation',pass_=True,synthetic_invoice=True,external_requests=1))
@@ -465,6 +481,43 @@ def main():
             raise RuntimeError('Checkout URL or quote not durable')
         records.append(dict(case='nowpayments_checkout_url_reused_without_new_invoice',
                             pass_=True,real_provider_requests=0))
+        # A second click during a first provider POST must not trigger another
+        # POST. Only the initial request may own the durable 'creating' row.
+        seed_payment(work,env,'np-creating','INCREASE_WALLET',0,0,'unused-id')
+        sql(work,env,"UPDATE pays SET price=100000,payid=NULL WHERE hash_id='np-creating'")
+        sql(work,env,"INSERT INTO achbot_nowpayments_attempts "
+            "(pay_row_id,order_hash,quote_usd,stage) "
+            "SELECT id,hash_id,1,'creating' FROM pays WHERE hash_id='np-creating'")
+        before=snapshot(work,env)
+        in_progress=run_php(work,env,stage,dict(route='initiate',
+            get={'nowpayment':'','hash_id':'np-creating'}))
+        verify_unchanged(work,env,before,'nowpay_in_flight_reservation')
+        if in_progress['network_calls']:
+            raise RuntimeError('Overlapping checkout issued a duplicate provider invoice')
+        records.append(dict(case='nowpayments_inflight_reservation_no_double_invoice',
+                            pass_=True,external_requests=0))
+
+        # HTTP timeouts can occur AFTER the provider created an invoice. The
+        # local reservation must enter review, not permit a second POST.
+        seed_payment(work,env,'np-create-timeout','INCREASE_WALLET',0,0,'unused-id')
+        sql(work,env,"UPDATE pays SET price=100000,payid=NULL WHERE hash_id='np-create-timeout'")
+        timed_out=run_php(work,env,stage,dict(route='initiate',
+            get={'nowpayment':'','hash_id':'np-create-timeout'},
+            invoice_transport_failure=True))
+        if len(timed_out['network_calls'])!=1 or timed_out['invoice_reservation_seen']!='creating':
+            raise RuntimeError('Timeout test did not reserve before ambiguous provider POST')
+        if sql(work,env,"SELECT stage FROM achbot_nowpayments_attempts "
+               "WHERE order_hash='np-create-timeout'").strip()!='review':
+            raise RuntimeError('Ambiguous invoice creation was not quarantined')
+        before=snapshot(work,env)
+        repeated=run_php(work,env,stage,dict(route='initiate',
+            get={'nowpayment':'','hash_id':'np-create-timeout'}))
+        verify_unchanged(work,env,before,'nowpay_ambiguous_invoice_retry')
+        if repeated['network_calls'] or sql(work,env,
+           "SELECT IFNULL(payid,'') FROM pays WHERE hash_id='np-create-timeout'").strip():
+            raise RuntimeError('Provider timeout led to unsafe automatic reissue')
+        records.append(dict(case='nowpayments_unknown_creation_prevents_orphan_reissue',
+                            pass_=True,external_requests=1,real_provider_requests=0))
         # Direct browser query with forged NP_id must NOT bypass the new
         # quote/attempt validation even when the fake provider returns finished.
         before=snapshot(work,env)
@@ -569,6 +622,31 @@ def main():
             raise RuntimeError('Finished replay attempted another API verification')
         records.append(dict(case='nowpayments_finished_webhook_replay_no_double_credit',
                             pass_=True,external_requests=0))
+        # NOWPayments invoices can receive additional child payments after
+        # the first settlement. The second signed event is NOT a second order.
+        paid_wallet=int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())
+        extra=run_php(work,env,stage,signed_ipn(dict(ipn,
+            payment_id='np-extra-deposit',payment_status='finished')))
+        if extra['events'][-1].get('code')!=200:
+            raise RuntimeError('Valid additional deposit was not acknowledged for review')
+        if sql(work,env,"SELECT stage,provider_status FROM achbot_nowpayments_attempts "
+               "WHERE order_hash='wallet-init'").strip()!='review\tadditional_payment':
+            raise RuntimeError('Later child deposit was not surfaced for operator review')
+        if int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())!=paid_wallet:
+            raise RuntimeError('Additional child payment duplicated an order credit')
+        records.append(dict(case='nowpayments_later_child_after_done_needs_review',
+                            pass_=True,external_requests=0))
+        # A delayed replay of the originally settled payment must never
+        # erase the operator-review reason for the additional child deposit.
+        old_child_replay=run_php(work,env,stage,signed_ipn(ipn))
+        if old_child_replay['events'][-1].get('code')!=200 or sql(work,env,
+           "SELECT stage,provider_status FROM achbot_nowpayments_attempts "
+           "WHERE order_hash='wallet-init'").strip()!='review\tadditional_payment':
+            raise RuntimeError('Old IPN replay erased an extra-payment review marker')
+        if int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())!=paid_wallet:
+            raise RuntimeError('Old IPN replay after extra deposit changed wallet')
+        records.append(dict(case='nowpayments_replay_preserves_additional_payment_review',
+                            pass_=True,external_requests=0))
         # A finished provider payment whose deposit is smaller than the
         # promised quote is quarantined, never auto-reconciled as successful.
         seed_payment(work,env,'np-underpaid','INCREASE_WALLET',0,0,'np-underpaid-invoice')
@@ -587,6 +665,29 @@ def main():
             raise RuntimeError('Underpaid gateway did not enter reconciliation queue')
         records.append(dict(case='nowpayments_underpayment_quarantined',
                             pass_=True,external_requests=1))
+        # NOWPayments partially_paid is a completed, underfunded child
+        # payment. Do not credit or poll it indefinitely as pending.
+        seed_payment(work,env,'np-partial-final','INCREASE_WALLET',0,0,
+                     'np-partial-final-invoice')
+        sql(work,env,"INSERT INTO achbot_nowpayments_attempts "
+            "(pay_row_id,order_hash,invoice_id,payment_id,invoice_url,quote_usd) "
+            "SELECT id,hash_id,'np-partial-final-invoice','np-partial-child',"
+            "'https://nowpayments.io/pay/np-partial-final',1 FROM pays "
+            "WHERE hash_id='np-partial-final'")
+        before_balance=int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())
+        partial=run_php(work,env,stage,dict(route='reconcile',get={},
+            mock_invoice='np-partial-final-invoice',
+            nowpayment_payment_id='np-partial-child',
+            nowpayment_order_id='np-partial-final',
+            nowpayment_status='partially_paid',
+            nowpayment_price=1,nowpayment_pay_amount=1,nowpayment_actual=0.5))
+        if len(partial['network_calls'])!=1 or sql(work,env,
+           "SELECT stage FROM achbot_nowpayments_attempts WHERE order_hash='np-partial-final'").strip()!='review':
+            raise RuntimeError('Terminal partially_paid child payment was not quarantined')
+        if int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())!=before_balance:
+            raise RuntimeError('Partial child incorrectly changed wallet')
+        records.append(dict(case='nowpayments_terminal_partial_review_no_credit',
+                            pass_=True,external_requests=1,real_provider_requests=0))
         # NOWPayments invoices have no expiry; an IPN for a payment on an
         # older invoice is not itself stale. The child payment has its own
         # seven-day lifespan. The old created_at cutoff incorrectly stranded

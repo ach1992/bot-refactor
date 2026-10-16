@@ -43,21 +43,27 @@ function achbotNpIngestIpn(mysqli $connection, string $ipnSecret,
         !is_numeric($payload['price_amount']) ||
         number_format((float)$payload['price_amount'],2,'.','') !==
         number_format((float)$attempt['quote_usd'],2,'.','')) return 422;
-    // A single provider payment is currently supported per invoice; other
-    // child payments or redemptions require explicit reconciliation, not reuse.
+    // An invoice can receive several child payments, even after the first
+    // order was fulfilled. Never credit twice or silently drop a subsequent
+    // signed deposit; retain a visible operator-review state.
     if ($attempt['payment_id'] !== null &&
         (string)$attempt['payment_id'] !== $paymentId) {
         $stmt = $connection->prepare("UPDATE achbot_nowpayments_attempts
-            SET stage='review',provider_status='multiple_payments'
-            WHERE id=? AND stage NOT IN ('done','review')");
+            SET provider_status=CASE
+                    WHEN provider_status='additional_payment' THEN provider_status
+                    WHEN stage='done' THEN 'additional_payment'
+                    ELSE 'multiple_payments' END,
+                stage='review'
+            WHERE id=?");
         $stmt->bind_param('i',$attempt['id']);
         $stmt->execute();
         $stmt->close();
-        return 409;
+        return 200;
     }
     if (!in_array($attempt['stage'],['pending','checking','review'],true)) return 200;
     $stmt = $connection->prepare("UPDATE achbot_nowpayments_attempts SET
-        payment_id=COALESCE(payment_id,?), provider_status=?,
+        payment_id=COALESCE(payment_id,?),
+        provider_status=CASE WHEN stage='review' THEN provider_status ELSE ? END,
         stage=CASE WHEN stage='review' THEN 'review' ELSE 'pending' END
         WHERE id=? AND (payment_id IS NULL OR payment_id=?)");
     $stmt->bind_param('ssis',$paymentId,$providerStatus,$attempt['id'],$paymentId);
@@ -149,7 +155,9 @@ function achbotNpReconcileBatch(mysqli $connection, array $paymentKeys,
         $status=(string)($remote['payment_status'] ?? '');
         $kind=achbotVerifiedGatewayOutcome('nowpayment',$status);
         if ($kind!=='verified') {
-            $nextStage=$kind==='pending'||$kind==='partial'?'pending':'review';
+            // NOWPayments treats a partially_paid child payment as complete
+            // but short-funded. It needs operator review, not endless polling.
+            $nextStage=$kind==='pending'?'pending':'review';
             // Do not silently auto-expire a payment that may arrive late.
             $stmt=$connection->prepare("UPDATE achbot_nowpayments_attempts
                 SET stage=?,provider_status=? WHERE id=? AND stage='checking'");
