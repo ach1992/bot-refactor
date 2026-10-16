@@ -1221,11 +1221,11 @@ def main():
         negative=run_php(work,env,stage,dict(route='return',
             get={'zarinpal':'','hash_id':'zarin-negative','Authority':'zarin-neg',
                  'Status':'NOK'},zarin_status=52))
-        if sql(work,env,"SELECT state FROM pays WHERE hash_id='zarin-negative'").strip()!='canceled':
-            raise RuntimeError('Zarinpal negative response did not cancel exact row')
+        if sql(work,env,"SELECT state FROM pays WHERE hash_id='zarin-negative'").strip()!='pending':
+            raise RuntimeError('Unproven provider code 52 canceled an existing payment')
         if negative['network_calls']!=['zarinpal:verify']:
             raise RuntimeError('Zarinpal fake negative verification did not run')
-        records.append(dict(case='zarinpal_negative_exact_order_cas',pass_=True))
+        records.append(dict(case='zarinpal_unproven_52_retains_pending',pass_=True))
         seed_payment(work,env,'zarin-race','INCREASE_WALLET',0,0,'zarin-race-auth')
         race_wallet=int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())
         race=run_php(work,env,stage,dict(route='return',
@@ -1236,8 +1236,8 @@ def main():
             raise RuntimeError('Stale Zarinpal denial overwrote positive concurrent state')
         if int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())!=race_wallet:
             raise RuntimeError('Zarinpal late negative changed wallet')
-        if 'وضعیت سفارش تغییر کرده است' not in race['form']:
-            raise RuntimeError('Zarinpal CAS race not surfaced to user')
+        if 'سفارش لغو نشد' not in race['form']:
+            raise RuntimeError('Zarinpal unconfirmed result was not surfaced for review')
         records.append(dict(case='zarinpal_mid_verify_cas_preserves_paid',pass_=True))
         seed_payment(work,env,'zarin-success','INCREASE_WALLET',0,0,'zarin-good-auth')
         before_wallet=int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())

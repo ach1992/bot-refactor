@@ -196,7 +196,7 @@ def main():
             "nextpay_wallet_overflow_atomic_rollback",
             "zarinpal_mismatched_authority_refused",
             "zarinpal_duplicated_authority_refused",
-            "zarinpal_negative_exact_order_cas",
+            "zarinpal_unproven_52_retains_pending",
             "zarinpal_mid_verify_cas_preserves_paid",
             "zarinpal_authenticated_positive_wallet_credit",
             "zarinpal_browser_nok_provider_100_settled",

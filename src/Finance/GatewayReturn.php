@@ -523,19 +523,12 @@ if (isset($_GET['nowpayment_ipn'])) {
         if ($verifiedStatus === 100) {
             // A forged/stale browser NOK cannot cancel trusted positive funds.
             doAction($rowId, "zarinpal");
-        } elseif ($verifiedStatus === 52) {
-            // Provider-documented nonpayment/cancellation, NOT browser Status.
-            $stmt = $connection->prepare("UPDATE pays SET state='canceled'
-                WHERE id=? AND payid=? AND state IN ('pending','send')");
-            $stmt->bind_param('is',$rowId,$Authority);
-            $stmt->execute();
-            $changed=$stmt->affected_rows;
-            $stmt->close();
-            showForm($changed===1 ? "پرداخت توسط پذیرنده تایید نشد." :
-                "وضعیت سفارش تغییر کرده است؛ نیازمند بررسی است.", "درگاه زرین پال");
         } else {
-            // Status 101 means previously verified; other/malformed responses
-            // also cannot prove nonpayment. Preserve the local payment.
+            // WebGate error-code lists vary by API generation. 101 is an
+            // already-verified result, and other codes (including 52/-52)
+            // are not documented here as irreversible nonpayment. Never
+            // cancel an order without independently established, exact
+            // provider-specific terminal-negative proof.
             showForm("نتیجه تراکنش نیازمند تطبیق با پذیرنده است؛ سفارش لغو نشد.",
                      "پیگیری زرین پال");
         }
