@@ -569,6 +569,18 @@ function achbotClaimAndCreditWallet(mysqli $db, int $payId, int $userId,
     }
 }
 
+/**
+ * A provider payment can be final while its remote Marzban side effect is
+ * uncertain. Do not issue a compensating wallet credit that could give away
+ * both an actually-created account and a refund. The worker records review;
+ * provider/remote reconstruction is a separate recovery gate.
+ */
+function achbotNpDeferUncertainRemoteEffect($gateType, $payDescription): bool {
+    if ($gateType !== 'nowpayment') return false;
+    showForm('پرداخت تایید شده است اما نتیجه عملیات سرویس هنوز قطعی نیست. وضعیت برای بررسی امن ثبت می‌شود و بازپرداخت خودکار انجام نمی‌شود.', $payDescription);
+    return true;
+}
+
 function doAction($payRowId, $gateType) {
     global $connection, $admin, $userInfo, $from_id, $botUrl, $botState;
     global $buttonValues, $linkIndices, $hideConfigIfMany;
@@ -747,6 +759,7 @@ function doAction($payRowId, $gateType) {
             );
 
             if (is_null($response)) {
+                if (achbotNpDeferUncertainRemoteEffect($gateType, $payDescription)) return 'ambiguous';
                 showForm('⚠️ پرداخت شما با موفقیت انجام شد. ولی اتصال به سرور برقرار نیست لطفا مدیر رو در جریان بزار ... مبلغ ' . number_format($amount) . " به کیف پولت اضافه شد.", $payDescription);
 
                 refundToWalletAndNotify(
@@ -762,6 +775,7 @@ function doAction($payRowId, $gateType) {
             }
 
             if ($response == "inbound not Found") {
+                if (achbotNpDeferUncertainRemoteEffect($gateType, $payDescription)) return 'ambiguous';
                 showForm("پرداخت شما با موفقیت انجام شد. ولی ❌ | 🥺 سطر (inbound) با آیدی $inbound_id تو این سرور وجود نداره، مدیر رو در جریان بزار ... مبلغ " . number_format($amount) . " به کیف پول شما اضافه شد.", $payDescription);
 
                 refundToWalletAndNotify(
@@ -787,6 +801,7 @@ function doAction($payRowId, $gateType) {
             }
 
             if (!$ok) {
+                if (achbotNpDeferUncertainRemoteEffect($gateType, $payDescription)) return 'ambiguous';
                 showForm('⚠️ پرداخت شما با موفقیت انجام شد. ولی خطا داد لطفا به مدیر اطلاع دهید ... مبلغ ' . number_format($amount) . " تومان به کیف پولت اضافه شد.", $payDescription);
 
                 $adminErr = "خطای سرور " . ($serverInfo['title'] ?? '-') . ":\n\n" . ($msg ?: 'بدون پیام خطا');
@@ -943,6 +958,7 @@ function doAction($payRowId, $gateType) {
         $response = renewConfigOnServer($connection, $server_id, $inbound_id, $uuid, $remark, $days, $volume, $isMarzban);
 
         if (is_null($response)) {
+            if (achbotNpDeferUncertainRemoteEffect($gateType, $payDescription)) return 'ambiguous';
             showForm('⚠️ پرداخت شما با موفقیت انجام شد ولی مشکل فنی در اتصال به سرور، لطفا به مدیریت اطلاع بدید، مبلغ ' . number_format($amount) . " تومان به کیف پول شما اضافه شد.", $payDescription);
 
             refundToWalletAndNotify(
@@ -955,6 +971,11 @@ function doAction($payRowId, $gateType) {
 				$rewardChannel
             );
             return 'compensated';
+        }
+
+        if ($gateType === 'nowpayment' && (!is_object($response) || empty($response->success))) {
+            achbotNpDeferUncertainRemoteEffect($gateType, $payDescription);
+            return 'ambiguous';
         }
 
         $newExpire = $time + $days * 86400;
@@ -1071,6 +1092,7 @@ function doAction($payRowId, $gateType) {
 			return 'delivered';
 
         } else {
+            if (achbotNpDeferUncertainRemoteEffect($gateType, $payDescription)) return 'ambiguous';
             showForm("⚠️ پرداخت شما با موفقیت انجام شد ولی به دلیل مشکل فنی امکان افزایش حجم نیست. لطفا به مدیریت اطلاع بدید یا 5 دقیقه دیگر دوباره تست کنید مبلغ " . number_format($amount) . " تومان به کیف پول شما اضافه شد.", $payDescription, true);
 
             refundToWalletAndNotify(
@@ -1159,6 +1181,7 @@ function doAction($payRowId, $gateType) {
             return 'delivered';
 
         } else {
+            if (achbotNpDeferUncertainRemoteEffect($gateType, $payDescription)) return 'ambiguous';
             showForm("⚠️ پرداخت شما با موفقیت انجام شد ولی مشکل فنی در ارتباط با سرور، لطفا سلامت سرور را بررسی کنید مبلغ " . number_format($amount) . " تومان به کیف پول شما اضافه شد.", $payDescription, true);
 
             refundToWalletAndNotify(
@@ -1244,6 +1267,7 @@ function doAction($payRowId, $gateType) {
 
 		} catch (Exception $e) {
 
+            if (achbotNpDeferUncertainRemoteEffect($gateType, $payDescription)) return 'ambiguous';
 			$reason = "پرداخت انجام شد ولی تمدید به دلیل خطای سرور انجام نشد.\n"
 				. "لطفاً به مدیریت اطلاع دهید.\n"
 				. "کد خطا: " . $e->getMessage();

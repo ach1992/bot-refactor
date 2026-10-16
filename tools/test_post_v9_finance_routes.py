@@ -76,6 +76,15 @@ function sendMessage(...$args) {
     $GLOBALS['events'][] = ['name'=>'sendMessage', 'args'=>$args];
     return (object)['ok'=>true];
 }
+function generateRandomString($length, $protocol) {
+    return str_repeat('a', $length);
+}
+function createServerAccount(...$args) {
+    // Replace ONLY the external Marzban boundary with an ambiguous result.
+    // The real doAction() payment/compensation handling remains unmodified.
+    $GLOBALS['events'][] = ['name'=>'marzban_unknown_result'];
+    return [null, $args[4] ?? '', $args[9] ?? 0];
+}
 function curl_init() { return (object)['url' => '']; }
 function curl_setopt($handle,$option,$value) {
     if ($option === CURLOPT_URL) $handle->url = (string)$value;
@@ -688,6 +697,34 @@ def main():
             raise RuntimeError('Partial child incorrectly changed wallet')
         records.append(dict(case='nowpayments_terminal_partial_review_no_credit',
                             pass_=True,external_requests=1,real_provider_requests=0))
+        # Once the provider has verified finished, an uncertain Marzban
+        # create must NOT automatically refund, since the remote operation
+        # may have succeeded despite an ambiguous transport response.
+        seed_payment(work,env,'np-remote-uncertain','BUY_SUB',7,2,
+                     'np-remote-uncertain-invoice')
+        sql(work,env,"INSERT INTO achbot_nowpayments_attempts "
+            "(pay_row_id,order_hash,invoice_id,payment_id,invoice_url,quote_usd) "
+            "SELECT id,hash_id,'np-remote-uncertain-invoice','np-remote-uncertain-payment',"
+            "'https://nowpayments.io/payment/np-remote-uncertain',1 FROM pays "
+            "WHERE hash_id='np-remote-uncertain'")
+        wallet_before=int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())
+        remote_uncertain=run_php(work,env,stage,dict(route='reconcile',get={},
+            mock_invoice='np-remote-uncertain-invoice',
+            nowpayment_payment_id='np-remote-uncertain-payment',
+            nowpayment_order_id='np-remote-uncertain',
+            nowpayment_status='finished',nowpayment_price=1,
+            nowpayment_pay_amount=1,nowpayment_actual=1))
+        if not any(e['name']=='marzban_unknown_result' for e in remote_uncertain['events']):
+            raise RuntimeError('Uncertain provider fixture did not reach Marzban create seam: '+repr(remote_uncertain)[:700]+' DB '+repr(sql(work,env,"SELECT a.stage,a.provider_status,p.state FROM achbot_nowpayments_attempts a JOIN pays p ON p.id=a.pay_row_id WHERE a.order_hash='np-remote-uncertain'")))
+        if sql(work,env,"SELECT stage FROM achbot_nowpayments_attempts "
+               "WHERE order_hash='np-remote-uncertain'").strip()!='review':
+            raise RuntimeError('Uncertain remote create was not held for operator review')
+        if int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())!=wallet_before:
+            raise RuntimeError('Uncertain remote Marzban operation triggered automatic wallet refund')
+        if sql(work,env,"SELECT state FROM pays WHERE hash_id='np-remote-uncertain'").strip()!='paid':
+            raise RuntimeError('Verified provider paid identity was lost on uncertain fulfillment')
+        records.append(dict(case='nowpayments_uncertain_marzban_no_automatic_refund',
+                            pass_=True,real_provider_requests=0,remote_spy=True))
         # NOWPayments invoices have no expiry; an IPN for a payment on an
         # older invoice is not itself stale. The child payment has its own
         # seven-day lifespan. The old created_at cutoff incorrectly stranded
