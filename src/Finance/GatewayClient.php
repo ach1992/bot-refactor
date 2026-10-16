@@ -71,22 +71,70 @@ function achbotNpValidInvoiceUrl(string $url): bool {
     return $host === 'nowpayments.io' || str_ends_with($host, '.nowpayments.io');
 }
 
-/** Validate original USD quote and paid in full before fixed-price delivery. */
+/**
+ * Compare provider decimal values exactly without relying on floating point
+ * or an optional PHP extension. Numeric exponent notation is not accepted as
+ * money, and negative, missing or malformed amounts are never settlement.
+ */
+function achbotNpDecimalAtLeast($amount, $minimum): bool {
+    $valid = static fn($v): bool =>
+        (is_string($v) || is_int($v) || is_float($v)) &&
+        preg_match('/^\\d{1,18}(?:\\.\\d{1,18})?$/D',(string)$v) === 1;
+    if (!$valid($amount) || !$valid($minimum)) return false;
+    $parts = static function($v): array {
+        $p=explode('.',(string)$v,2);
+        $whole=ltrim($p[0],'0');
+        return [$whole===''?'0':$whole,str_pad($p[1]??'',18,'0')];
+    };
+    [$i,$f]=$parts($amount);
+    [$mi,$mf]=$parts($minimum);
+    return strlen($i)>strlen($mi) ||
+        (strlen($i)===strlen($mi) &&
+         (strcmp($i,$mi)>0 || ($i===$mi && strcmp($f,$mf)>=0)));
+}
+
+/** Snapshot an explicit operator-approved minimum net payout per USD. */
+function achbotNpMinimumPayout(string $quoteUsd, string $rate): ?string {
+    if (!preg_match('/^\\d{1,12}\\.\\d{2}$/D',$quoteUsd) ||
+        !preg_match('/^\\d{1,6}(?:\\.\\d{1,6})?$/D',$rate)) return null;
+    [$dollars,$cents]=explode('.',$quoteUsd,2);
+    [$units,$fraction]=array_pad(explode('.',$rate,2),2,'');
+    $quoteCents=(int)$dollars*100+(int)$cents;
+    $rateMicros=(int)$units*1000000+(int)str_pad($fraction,6,'0');
+    if ($quoteCents<=0 || $rateMicros<=0 ||
+        $quoteCents>intdiv(PHP_INT_MAX-99,$rateMicros)) return null;
+    $micros=intdiv($quoteCents*$rateMicros+99,100); // ceil to 1e-6
+    return intdiv($micros,1000000).'.'.str_pad((string)($micros%1000000),6,'0',STR_PAD_LEFT);
+}
+
+/**
+ * Server-verified fixed-price funds are insufficient on status alone.
+ * An operator-approved payout policy is captured at invoice issuance, and
+ * the ACTUAL net merchant outcome must cover that immutable threshold in
+ * exactly the same crypto asset/network; otherwise the case stays in review.
+ */
 function achbotNpValidFinalAmount(array $attempt, array $response): bool {
-    if (strtolower((string)($response['price_currency'] ?? '')) !== 'usd' ||
-        !isset($response['price_amount'], $response['pay_amount'],
-                $response['actually_paid'], $response['pay_currency'])) return false;
-    foreach (['price_amount','pay_amount','actually_paid'] as $field) {
-        if (!is_numeric($response[$field]) || !is_finite((float)$response[$field]) ||
-            (float)$response[$field] <= 0) return false;
-    }
-    $quote = (float)$attempt['quote_usd'];
-    if ($quote <= 0 ||
-        number_format((float)$response['price_amount'], 2, '.', '') !==
-        number_format($quote, 2, '.', '')) return false;
-    // Payment covering or unexpected underpayments cannot auto-deliver.
-    return (float)$response['actually_paid'] + 0.00000001 >=
-           (float)$response['pay_amount'];
+    $expectedCurrency=strtolower((string)($attempt['expected_outcome_currency']??''));
+    if ($expectedCurrency==='' ||
+        strtolower((string)($response['price_currency']??''))!=='usd' ||
+        strtolower((string)($response['outcome_currency']??''))!==$expectedCurrency ||
+        !preg_match('/^[a-z0-9]{2,32}$/D', $expectedCurrency) ||
+        !isset($response['price_amount'],$response['pay_amount'],
+               $response['actually_paid'],$response['pay_currency'],
+               $response['outcome_amount']) ||
+        !preg_match('/^[a-z0-9]{2,32}$/Di',(string)$response['pay_currency']))
+        return false;
+    if (!achbotNpDecimalAtLeast($attempt['minimum_outcome_amount']??null,'0.000001') ||
+        !achbotNpDecimalAtLeast($response['outcome_amount'],$attempt['minimum_outcome_amount']) ||
+        !achbotNpDecimalAtLeast($response['actually_paid'],$response['pay_amount']) ||
+        !achbotNpDecimalAtLeast($response['pay_amount'],'0.000000000000000001'))
+        return false;
+    $quote = (string)($attempt['quote_usd']??'');
+    if (!preg_match('/^\\d{1,12}\\.\\d{2}$/D',$quote) ||
+        !achbotNpDecimalAtLeast($response['price_amount'],$quote) ||
+        !achbotNpDecimalAtLeast($quote,$response['price_amount']))
+        return false;
+    return true;
 }
 
 function achbotNpGetVerifiedPayment(string $paymentId, string $apiKey): ?array {

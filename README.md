@@ -27,7 +27,7 @@ In **Server Management → Panel Groups**, an administrator can name a group and
 
 Use the [post-V9 operator acceptance checklist](docs/post-v9/MARZBAN-OPERATOR-ACCEPTANCE.md) before considering a test installation accepted.
 
-**UNRELEASED finance candidate (#26/#42):** the next source-only candidate uses an **additional, separately gated** `achbot_nowpayments_attempts` table in `migrations/post-v9/002_nowpayments_checkout_attempts.sql` and a private `$nowpaymentsIpnSecret` in installed `baseInfo.php`, plus an already configured scheduled `settings/rewardReport.php` Cron. These do NOT exist in the Owner-reported RC3 installation. Do not copy the draft ZIP or run the new SQL on the live bot. See the staged [NOWPayments migration checklist](docs/post-v9/NOWPAYMENTS-MIGRATION.md); frozen historical DDL and secret examples remain untouched.
+**UNRELEASED finance candidate (#26/#42):** the next source-only candidate proposes **two separately gated** invoice/child-evidence tables in `migrations/post-v9/002_nowpayments_checkout_attempts.sql`, a private `$nowpaymentsIpnSecret` and merchant-approved `$nowpaymentsSettlementPolicy` (net payout currency/minimum) in installed `baseInfo.php`, plus the already configured scheduled `settings/rewardReport.php` Cron for reconciliation and operator alerts. These do NOT exist in the Owner-reported RC3 installation. Do not copy the draft ZIP or run the new SQL on the live bot. See the staged [NOWPayments migration checklist](docs/post-v9/NOWPAYMENTS-MIGRATION.md); frozen historical DDL and secret examples remain untouched.
 
 ## Development and tests
 

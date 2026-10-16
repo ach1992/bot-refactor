@@ -151,36 +151,61 @@ def main():
                         "--run-disposable","--report",str(finance_path)],
                        cwd=ROOT,check=True,timeout=180,capture_output=True)
         finance=json.loads(finance_path.read_text())
+        # Current R6 financial contract: replace superseded legacy auto-credit
+        # expectations with stricter read-only/immutable-payout evidence.
         mandatory_finance = {
-            "nowpayments_browser_only_return_not_proof",
+            "legacy_nowpayment_browser_only_read_only",
+            "legacy_nowpayment_finished_read_only",
+            "legacy_nowpayment_confirmed_read_only",
+            "legacy_nowpayment_sending_read_only",
+            "legacy_nowpayment_failed_read_only",
+            "legacy_nowpayment_duplicate_invoice_refused",
             "nowpayments_checkout_url_reused_without_new_invoice",
-            "nowpayments_invalid_signature_no_effect",
+            "nowpayments_inflight_reservation_no_double_invoice",
+            "nowpayments_unknown_creation_prevents_orphan_reissue",
+            "gateway_now_to_nextpay_blocked",
+            "gateway_now_to_zarinpal_blocked",
+            "gateway_nextpay_to_now_blocked",
+            "gateway_zarinpal_to_now_blocked",
+            "all_gateway_switches_blocked_on_inflight_claim",
+            "nowpayments_review_alert_retry_and_throttle",
             "nowpayments_new_attempt_browser_bypass_closed",
-            "nowpayments_browser_only_readonly_paid_status",
+            "nowpayments_invalid_signature_no_effect",
             "nowpayments_real_loopback_http_ipn_minimal_bootstrap",
             "nowpayments_authenticated_order_binding",
             "nowpayments_signed_ipn_durable_without_browser",
             "nowpayments_signed_confirmed_background_nonfinal",
+            "nowpayments_browser_only_readonly_paid_status",
             "nowpayments_no_browser_return_final_telegram_credit",
             "nowpayments_finished_webhook_replay_no_double_credit",
+            "nowpayments_multiple_children_durably_stored",
+            "nowpayments_extra_child_replay_is_idempotent",
             "nowpayments_underpayment_quarantined",
-            "nowpayments_confirmed_not_final",
-            "nowpayments_sending_not_final",
-            "nowpayments_partially_paid_not_final",
-            "nowpayments_finished_real_wallet_helper_once",
-            "nowpayments_sequential_replay_no_duplicate_credit",
-            "nowpayments_negative_race_preserves_paid",
-            "nowpayments_duplicate_invoice_no_settlement",
-            "nowpayments_mismatched_merchant_order_guard",
+            "nowpayments_terminal_partial_review_no_credit",
+            "nowpayments_uncertain_marzban_no_automatic_refund",
+            "nowpayments_late_payment_on_timeless_invoice",
+            "nowpayments_output_short_needs_review",
+            "nowpayments_output_wrong_asset_needs_review",
+            "nowpayments_output_fee_short_needs_review",
+            "nowpayments_locked_local_toman_price",
+            "nowpayments_missing_payout_policy_fails_before_invoice",
             "nextpay_http_200_code_zero_actual_wallet_fulfillment",
             "nextpay_mid_verify_state_change_cas_preserves_paid",
+            "nextpay_missing_wallet_user_atomic_rollback",
+            "nextpay_signed_debt_offset_transaction",
+            "nextpay_wallet_overflow_atomic_rollback",
+            "zarinpal_mismatched_authority_refused",
+            "zarinpal_duplicated_authority_refused",
+            "zarinpal_negative_exact_order_cas",
+            "zarinpal_mid_verify_cas_preserves_paid",
+            "zarinpal_authenticated_positive_wallet_credit",
         }
         cases_finance = {case.get("case") for case in finance.get("scenarios",[])
                          if case.get("pass_")}
-        if not (finance.get("complete") and finance.get("cases")>=64 and
+        if not (finance.get("complete") and finance.get("cases")>=80 and
                 mandatory_finance.issubset(cases_finance) and
                 finance.get("schema_tables")==23 and
-                finance.get("current_schema_tables")==24 and
+                finance.get("current_schema_tables")==25 and
                 finance.get("additive_nowpayments_attempts_tested") and
                 finance.get("original_mariadb_socket_only") and
                 finance.get("synthetic_payment_spy") and

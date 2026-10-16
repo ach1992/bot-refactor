@@ -15,96 +15,147 @@ require_once __DIR__ . '/GatewayClient.php';
  */
 function achbotNpIngestIpn(mysqli $connection, string $ipnSecret,
                            string $raw, string $signature): int {
-    $payload = achbotNpValidIpn($raw, $signature, $ipnSecret);
-    if ($payload === null) return 401;
+    $payload=achbotNpValidIpn($raw,$signature,$ipnSecret);
+    if ($payload===null) return 401;
     foreach (['payment_id','invoice_id','order_id','payment_status',
               'price_amount','price_currency'] as $field) {
         if (!isset($payload[$field]) || !is_scalar($payload[$field])) return 422;
     }
-    $paymentId = (string)$payload['payment_id'];
-    $invoiceId = (string)$payload['invoice_id'];
-    $orderHash = (string)$payload['order_id'];
-    $providerStatus = (string)$payload['payment_status'];
-    if (!preg_match('/^[A-Za-z0-9_-]{1,128}$/D', $paymentId) ||
-        !preg_match('/^[A-Za-z0-9_-]{1,128}$/D', $invoiceId) ||
-        strlen($orderHash) > 50 || $orderHash === '' ||
-        strlen($providerStatus) > 32) return 422;
-    $stmt = $connection->prepare("SELECT a.*,p.state AS pay_state,p.payid AS original_invoice
-        FROM achbot_nowpayments_attempts a JOIN pays p ON p.id=a.pay_row_id
-        WHERE a.order_hash=? AND a.invoice_id=? LIMIT 2");
-    $stmt->bind_param('ss', $orderHash, $invoiceId);
-    $stmt->execute();
-    $match = $stmt->get_result();
-    $stmt->close();
-    if ($match->num_rows !== 1) return 409;
-    $attempt = $match->fetch_assoc();
-    if ((string)$attempt['original_invoice'] !== $invoiceId ||
-        strtolower((string)$payload['price_currency']) !== 'usd' ||
-        !is_numeric($payload['price_amount']) ||
-        number_format((float)$payload['price_amount'],2,'.','') !==
-        number_format((float)$attempt['quote_usd'],2,'.','')) return 422;
-    // An invoice can receive several child payments, even after the first
-    // order was fulfilled. Never credit twice or silently drop a subsequent
-    // signed deposit; retain a visible operator-review state.
-    if ($attempt['payment_id'] !== null &&
-        (string)$attempt['payment_id'] !== $paymentId) {
-        // Keep the first extra child identity durable so an operator can
-        // verify the actual deposit by API key, not merely see a review flag.
-        // One attempt cannot represent unlimited child payments; if another
-        // child arrives, return non-2xx so its IPN is not falsely accepted.
-        if ($attempt['review_payment_id'] !== null &&
-            (string)$attempt['review_payment_id'] !== $paymentId) return 409;
-        $stmt = $connection->prepare("UPDATE achbot_nowpayments_attempts
-            SET review_payment_id=COALESCE(review_payment_id,?),
-                provider_status=CASE
-                    WHEN provider_status='additional_payment' THEN provider_status
-                    WHEN stage='done' THEN 'additional_payment'
-                    ELSE 'multiple_payments' END,
-                stage='review'
-            WHERE id=? AND (review_payment_id IS NULL OR review_payment_id=?)");
-        $stmt->bind_param('sis', $paymentId, $attempt['id'], $paymentId);
-        try {
-            $stmt->execute();
-            $changed=$stmt->affected_rows;
-        } catch (Throwable $ignored) {
-            $stmt->close();
+    $paymentId=(string)$payload['payment_id'];
+    $invoiceId=(string)$payload['invoice_id'];
+    $orderHash=(string)$payload['order_id'];
+    $status=(string)$payload['payment_status'];
+    if (!preg_match('/^[A-Za-z0-9_-]{1,128}$/D',$paymentId) ||
+        !preg_match('/^[A-Za-z0-9_-]{1,128}$/D',$invoiceId) ||
+        $orderHash==='' || strlen($orderHash)>50 || strlen($status)>32 ||
+        strtolower((string)$payload['price_currency'])!=='usd') return 422;
+    try {
+        // Lock the entire local invoice decision, then claim provider child
+        // identity in ONE UNIQUE ledger shared by primary and extra deposits.
+        // No HTTP 200 is returned before child evidence and state commit.
+        $connection->begin_transaction();
+        $stmt=$connection->prepare("SELECT a.*,p.payid AS original_invoice
+            FROM achbot_nowpayments_attempts a JOIN pays p ON p.id=a.pay_row_id
+            WHERE a.order_hash=? AND a.invoice_id=? LIMIT 2 FOR UPDATE");
+        $stmt->bind_param('ss',$orderHash,$invoiceId);
+        $stmt->execute();
+        $rows=$stmt->get_result();
+        $attempt=$rows->num_rows===1?$rows->fetch_assoc():null;
+        $stmt->close();
+        if (!$attempt || (string)$attempt['original_invoice']!==$invoiceId) {
+            $connection->rollback();
             return 409;
         }
-        $stmt->close();
-        if ($changed === 1) return 200;
-        // No-op replays are valid only for the exact persisted child ID.
-        $stmt=$connection->prepare("SELECT review_payment_id FROM achbot_nowpayments_attempts WHERE id=?");
-        $stmt->bind_param('i',$attempt['id']);
+        if (!achbotNpDecimalAtLeast($payload['price_amount'],$attempt['quote_usd']) ||
+            !achbotNpDecimalAtLeast($attempt['quote_usd'],$payload['price_amount'])) {
+            $connection->rollback();
+            return 422;
+        }
+        $stmt=$connection->prepare("SELECT attempt_id FROM achbot_nowpayments_child_payments
+            WHERE payment_id=? LIMIT 1 FOR UPDATE");
+        $stmt->bind_param('s',$paymentId);
         $stmt->execute();
-        $stored=$stmt->get_result()->fetch_assoc();
+        $existing=$stmt->get_result()->fetch_assoc();
         $stmt->close();
-        return (string)($stored['review_payment_id'] ?? '') === $paymentId ? 200 : 409;
-    }
-    if (!in_array($attempt['stage'],['pending','checking','review'],true)) return 200;
-    $stmt = $connection->prepare("UPDATE achbot_nowpayments_attempts SET
-        payment_id=COALESCE(payment_id,?),
-        provider_status=CASE WHEN stage='review' THEN provider_status ELSE ? END,
-        stage=CASE WHEN stage='review' THEN 'review' ELSE 'pending' END
-        WHERE id=? AND stage IN ('pending','checking','review')
-          AND (payment_id IS NULL OR payment_id=?)");
-    $stmt->bind_param('ssis',$paymentId,$providerStatus,$attempt['id'],$paymentId);
-    try {
-        $stmt->execute();
-        $changed=$stmt->affected_rows;
-    } catch (Throwable $ignored) {
-        $stmt->close();
+        if ($existing && (int)$existing['attempt_id']!==(int)$attempt['id']) {
+            $connection->rollback();
+            return 409;
+        }
+        if (!$existing) {
+            $stmt=$connection->prepare("INSERT INTO achbot_nowpayments_child_payments
+                (attempt_id,payment_id,observed_status) VALUES (?,?,?)");
+            $stmt->bind_param('iss',$attempt['id'],$paymentId,$status);
+            $stmt->execute();
+            $stmt->close();
+        }
+        if ($attempt['payment_id']===null) {
+            $stmt=$connection->prepare("UPDATE achbot_nowpayments_attempts SET
+                payment_id=?, provider_status=CASE
+                    WHEN stage='review' THEN provider_status ELSE ? END,
+                stage=CASE WHEN stage='review' THEN 'review'
+                           WHEN stage='checking' THEN 'checking'
+                           ELSE 'pending' END WHERE id=?");
+            $stmt->bind_param('ssi',$paymentId,$status,$attempt['id']);
+            $stmt->execute();
+            $stmt->close();
+        } elseif ((string)$attempt['payment_id']!==$paymentId) {
+            $stmt=$connection->prepare("UPDATE achbot_nowpayments_attempts SET
+                provider_status=CASE WHEN stage='done' OR
+                    provider_status='additional_payment' THEN 'additional_payment'
+                    ELSE 'multiple_payments' END,
+                stage='review',review_notified_at=NULL WHERE id=?");
+            $stmt->bind_param('i',$attempt['id']);
+            $stmt->execute();
+            $stmt->close();
+        }
+        if (!$connection->commit()) throw new RuntimeException('ipn_evidence_commit_failed');
+        return 200;
+    } catch (Throwable $error) {
+        $connection->rollback();
         return 409;
     }
-    $stmt->close();
-    if ($changed === 1) return 200;
-    // A CAS loser is not automatically a successful replay. Check whether
-    // the *same* child was stored or a distinct one won the race.
-    $stmt=$connection->prepare("SELECT payment_id,stage FROM achbot_nowpayments_attempts WHERE id=?");
-    $stmt->bind_param('i',$attempt['id']);
-    $stmt->execute();
-    $stored=$stmt->get_result()->fetch_assoc();
-    $stmt->close();
-    return (string)($stored['payment_id'] ?? '') === $paymentId ? 200 : 409;
+}
+
+/**
+ * Surface unresolved financial work to an existing private operator chat.
+ * This is only an alert: there is intentionally NO automatic replay, refund,
+ * cancellation or remote provisioning. Re-alert daily if still unresolved;
+ * update the timestamp only after Telegram confirms sending succeeded.
+ */
+function achbotNpAlertOperator(mysqli $connection, $adminChatId,
+                               int $maxItems=3): array {
+    $counts=['examined'=>0,'notified'=>0,'failed'=>0];
+    if (!is_scalar($adminChatId) ||
+        !preg_match('/^[1-9][0-9]*$/D',(string)$adminChatId)) return $counts;
+    $maxItems=max(1,min(5,$maxItems));
+    $sql="SELECT a.id,a.order_hash,a.invoice_id,a.payment_id,a.stage,
+                 a.provider_status,a.created_at,a.updated_at,
+                 (SELECT COUNT(*) FROM achbot_nowpayments_child_payments c
+                  WHERE c.attempt_id=a.id) AS child_count
+          FROM achbot_nowpayments_attempts a
+          WHERE (a.stage='review' OR
+                (a.stage='creating' AND a.created_at < NOW()-INTERVAL 10 MINUTE))
+            AND (a.review_notified_at IS NULL OR
+                 a.review_notified_at < NOW()-INTERVAL 24 HOUR)
+          ORDER BY a.updated_at ASC LIMIT ".$maxItems;
+    $rows=$connection->query($sql);
+    while ($rows && ($a=$rows->fetch_assoc())) {
+        $counts['examined']++;
+        $safe=static fn($s): string =>
+            substr((string)preg_replace('/[^a-zA-Z0-9_-]/','',(string)$s),0,128);
+        $message="AChBot NOWPayments requires operator review\n".
+                 "Attempt: ".(int)$a['id']."\n".
+                 "Order: ".$safe($a['order_hash'])."\n".
+                 "Invoice: ".$safe($a['invoice_id'])."\n".
+                 "Primary payment: ".$safe($a['payment_id'])."\n".
+                 "Stored children: ".(int)$a['child_count']."\n".
+                 "Stage: ".$safe($a['stage'])."\n".
+                 "Reason: ".$safe($a['provider_status'])."\n".
+                 "Last update: ".(string)$a['updated_at']."\n".
+                 "Verify provider and remote effects before any refund/retry.";
+        try {
+            $sent=sendMessage($message,null,null,(int)$adminChatId);
+            if (!is_object($sent) || empty($sent->ok)) {
+                $counts['failed']++;
+                continue;
+            }
+            $stmt=$connection->prepare("UPDATE achbot_nowpayments_attempts
+                SET review_notified_at=NOW()
+                WHERE id=? AND stage=?
+                  AND (review_notified_at IS NULL OR
+                       review_notified_at < NOW()-INTERVAL 24 HOUR)");
+            $stmt->bind_param('is',$a['id'],$a['stage']);
+            $stmt->execute();
+            $updated=$stmt->affected_rows;
+            $stmt->close();
+            if ($updated===1) $counts['notified']++;
+        } catch (Throwable $error) {
+            // The durable review queue remains queryable even if Telegram
+            // transport is temporarily unavailable.
+            $counts['failed']++;
+        }
+    }
+    return $counts;
 }
 
 /**
@@ -118,7 +169,8 @@ function achbotNpReconcileBatch(mysqli $connection, array $paymentKeys,
     $apiKey = (string)($paymentKeys['nowpayment'] ?? '');
     if ($apiKey === '') return $done;
     $limit = max(1,min(5,$maxItems));
-    $sql = "SELECT a.*,p.payid AS original_invoice,p.state AS pay_state
+    $sql = "SELECT a.*,p.payid AS original_invoice,p.state AS pay_state,
+                   p.price AS current_local_amount
             FROM achbot_nowpayments_attempts a JOIN pays p ON p.id=a.pay_row_id
             WHERE a.payment_id IS NOT NULL AND
             (a.stage='pending' OR
@@ -181,6 +233,17 @@ function achbotNpReconcileBatch(mysqli $connection, array $paymentKeys,
             $done['review']++;
             continue;
         }
+        if ((int)$attempt['local_amount_toman'] <= 0 ||
+            (int)$attempt['local_amount_toman'] !== (int)$attempt['current_local_amount']) {
+            $stmt=$connection->prepare("UPDATE achbot_nowpayments_attempts
+                SET stage='review',provider_status='local_amount_changed'
+                WHERE id=? AND stage='checking'");
+            $stmt->bind_param('i',$attempt['id']);
+            $stmt->execute();
+            $stmt->close();
+            $done['review']++;
+            continue;
+        }
         $status=(string)($remote['payment_status'] ?? '');
         $kind=achbotVerifiedGatewayOutcome('nowpayment',$status);
         if ($kind!=='verified') {
@@ -205,9 +268,12 @@ function achbotNpReconcileBatch(mysqli $connection, array $paymentKeys,
             $done['review']++;
             continue;
         }
-        $stmt=$connection->prepare("UPDATE achbot_nowpayments_attempts
-            SET stage='fulfilling',provider_status='finished'
-            WHERE id=? AND stage='checking'");
+        $stmt=$connection->prepare("UPDATE achbot_nowpayments_attempts a
+            JOIN pays p ON p.id=a.pay_row_id
+            SET a.stage='fulfilling',a.provider_status='finished'
+            WHERE a.id=? AND a.stage='checking'
+              AND p.price=a.local_amount_toman
+              AND p.state IN ('pending','send')");
         $stmt->bind_param('i',$attempt['id']);
         $stmt->execute();
         $lease=$stmt->affected_rows;
@@ -316,92 +382,13 @@ if (isset($_GET['nowpayment_ipn'])) {
             }
         }
 
-        $base_url = 'https://api.nowpayments.io/v1/payment/' . rawurlencode($incomingPaymentId);
-
-        $ch = curl_init();
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, 1);
-        curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);
-        curl_setopt($ch, CURLOPT_HTTPHEADER, ['X-API-KEY: ' . ($paymentKeys['nowpayment'] ?? '')]);
-        curl_setopt($ch, CURLOPT_URL, $base_url);
-
-        $rawResponse = curl_exec($ch);
-        $httpStatus = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        $curlError = curl_error($ch);
-        curl_close($ch);
-        // A timeout, unexpected HTTP status or malformed provider response
-        // is NOT evidence of a failed payment. Keep its order reconcilable.
-        $res = $rawResponse !== false && $httpStatus === 200 && $curlError === ''
-            ? json_decode($rawResponse) : null;
-        if (!is_object($res)) {
-            showForm("وضعیت پرداخت هنوز قابل تایید نیست؛ لطفا بعدا بررسی کنید.", "در حال بررسی");
-            return;
-        }
-        // Match a provider payment ID when supplied by the verified API.
-        $providerPaymentId = $res->payment_id ?? $res->id ?? null;
-        if ($providerPaymentId !== null && (string) $providerPaymentId !== $incomingPaymentId) {
-            showForm("شناسه تراکنش درگاه با درخواست مطابقت ندارد.", "خطا");
-            return;
-        }
-        // The signed API may also carry the original merchant order_id.
-        // Do not allow it to identify a different order than our local row.
-        if (isset($res->order_id) && (string) $res->order_id !== (string) $preflightPay['hash_id']) {
-            showForm("شناسه سفارش درگاه با فاکتور مطابقت ندارد.", "خطا");
-            return;
-        }
-
-        $hash_id = (string) ($res->invoice_id ?? '');
-        if ($hash_id === '' || $hash_id !== (string) $preflightPay['payid']) {
-            showForm("شناسه فاکتور پرداخت با سفارش مطابقت ندارد.", "خطا");
-            return;
-        }
-
-        // Provider invoice IDs are not UNIQUE in the inherited schema.
-        // Do not credit an arbitrary matching row or cross another local order.
-        $stmt = $connection->prepare("SELECT * FROM `pays` WHERE `payid` = ? LIMIT 2");
-        $stmt->bind_param("s", $hash_id);
-        $stmt->execute();
-        $payInfo = $stmt->get_result();
-        $stmt->close();
-
-        if (mysqli_num_rows($payInfo) !== 1) {
-            showForm("شناسه فاکتور پرداخت یکتا نیست یا یافت نشد.", "خطا!");
-            return;
-        }
-        $payParam = $payInfo->fetch_assoc();
-        if ((int)$payParam['id'] !== (int)$preflightPay['id'] ||
-            !in_array($payParam['state'], ['pending', 'send'], true) ||
-            !achbotSupportsPaymentSubject($connection, $payParam)) {
-            showForm("وضعیت یا مالک فاکتور پرداخت نامعتبر است؛ با پشتیبانی تماس بگیرید.", "خطا");
-            return;
-        }
-
-        $rowId = (int)$payParam['id'];
-        $payDescription = payTypeToDescription($payParam['type']);
-        $disposition = achbotVerifiedGatewayOutcome('nowpayment', $res->payment_status ?? null);
-        if ($disposition === 'verified') {
-            // This still enters the inherited doAction() settlement path.
-            // Whole-lifecycle idempotency/fulfillment is tracked in Issue #26.
-            doAction($rowId, 'nowpayment');
-        } elseif ($disposition === 'rejected') {
-            // Reject only this still-pending row; do not overwrite a parallel
-            // verification that may already have finalized the payment.
-            $stmt = $connection->prepare("UPDATE `pays` SET `state`='canceled' WHERE `id`=? AND `state` IN ('pending','send')");
-            $stmt->bind_param('i', $rowId);
-            $stmt->execute();
-            $changed = $stmt->affected_rows;
-            $stmt->close();
-            showForm($changed === 1 ? "پرداخت توسط درگاه ناموفق یا منقضی اعلام شد." :
-                "وضعیت پرداخت تغییر کرده است؛ لطفا مجددا بررسی کنید.", $payDescription);
-        } elseif ($disposition === 'partial') {
-            // A partial receipt may later complete. Keep it pending so a
-            // subsequent trusted verification can still settle this order.
-            showForm("پرداخت ناقص ثبت شده است؛ تا تکمیل یا بررسی پشتیبانی، سفارش باز می‌ماند.", $payDescription);
-        } else {
-            // confirmed/sending are NOT finished. Unknown/refunded/transport
-            // states require a later trusted check or manual reconciliation.
-            showForm("پرداخت هنوز نهایی نشده است؛ وضعیت آن بعدا بررسی می‌شود.", $payDescription);
-        }
+        // Historical invoices lack an immutable source-captured quote and
+        // payout policy. Even an authenticated 'finished' GET cannot prove
+        // that this particular order's agreed fiat amount was settled.
+        // Never auto-credit or auto-cancel from a legacy browser callback.
+        showForm("این فاکتور قدیمی نیازمند بررسی تایید مبلغ توسط پشتیبانی است؛ وضعیت آن بدون تغییر محفوظ ماند.",
+                 "پیگیری پرداخت");
+        return;
     } else {
         // The success_url carries only the merchant order hash, not a trusted
         // payment ID; it is a read-only UX view of our locally verified state.
@@ -449,7 +436,25 @@ if (isset($_GET['nowpayment_ipn'])) {
         $rowId = (int)$payParam['id'];
         $amount = (int)$payParam['price'];
 
-        $Authority = $_GET['Authority'];
+        $Authority = (string)($_GET['Authority'] ?? '');
+        // A verified provider reply must belong to the AUTHORITY issued for
+        // this exact order. Old orders without stored Authority need manual
+        // review: there is no safe auto-settlement identity binding.
+        if ($Authority === '' || (string)($payParam['payid'] ?? '') !== $Authority) {
+            showForm("شناسه پرداخت زرین پال با سفارش مطابقت ندارد؛ نیازمند بررسی است.", "درگاه زرین پال");
+            return;
+        }
+        // The historical payid column is not UNIQUE. Never verify and
+        // settle an Authority shared by two local payment rows.
+        $stmt=$connection->prepare("SELECT id FROM pays WHERE payid=? LIMIT 2");
+        $stmt->bind_param('s',$Authority);
+        $stmt->execute();
+        $authorities=$stmt->get_result();
+        $stmt->close();
+        if ($authorities->num_rows!==1 || (int)$authorities->fetch_assoc()['id']!==$rowId) {
+            showForm("شناسه تراکنش یکتا نیست؛ تسویه برای بررسی متوقف شد.", "درگاه زرین پال");
+            return;
+        }
 
         //==============================================================
         $client = new SoapClient('https://www.zarinpal.com/pg/services/WebGate/wsdl', ['encoding' => 'UTF-8']);
@@ -463,12 +468,14 @@ if (isset($_GET['nowpayment_ipn'])) {
         if ($_GET['Status'] == 'OK' and $result->Status == 100) {
             doAction($rowId, "zarinpal");
         } else {
-            $stmt = $connection->prepare("UPDATE `pays` SET `state` = 'canceled' WHERE `hash_id` = ?");
-            $stmt->bind_param("s", $hash_id);
+            $stmt = $connection->prepare("UPDATE pays SET state='canceled'
+                WHERE id=? AND payid=? AND state IN ('pending','send')");
+            $stmt->bind_param('is',$rowId,$Authority);
             $stmt->execute();
+            $changed=$stmt->affected_rows;
             $stmt->close();
-
-            showForm("پرداخت شما انجام نشد!", "درگاه زرین پال");
+            showForm($changed === 1 ? "پرداخت انجام نشد." :
+                "وضعیت پرداخت تغییر کرده است؛ نتیجه نیازمند بررسی است.", "درگاه زرین پال");
         }
     }
 
@@ -605,7 +612,9 @@ function achbotClaimAndCreditWallet(mysqli $db, int $payId, int $userId,
  * provider/remote reconstruction is a separate recovery gate.
  */
 function achbotNpDeferUncertainRemoteEffect($gateType, $payDescription): bool {
-    if ($gateType !== 'nowpayment') return false;
+    // Provider settlement cannot prove remote Marzban success. A timeout
+    // after remote success is NOT evidence that a refund is safe.
+    if (!in_array($gateType,['nowpayment','nextpay','zarinpal'],true)) return false;
     showForm('پرداخت تایید شده است اما نتیجه عملیات سرویس هنوز قطعی نیست. وضعیت برای بررسی امن ثبت می‌شود و بازپرداخت خودکار انجام نمی‌شود.', $payDescription);
     return true;
 }
@@ -660,6 +669,20 @@ function doAction($payRowId, $gateType) {
     $payDescription = payTypeToDescription($payType);
     if ($gateType == "zarinpal" || $gateType == "nextpay") $payDescription = "خرید اشتراک";
 
+    if ($gateType === 'nowpayment') {
+        $stmt=$connection->prepare("SELECT local_amount_toman FROM achbot_nowpayments_attempts
+            WHERE pay_row_id=? AND stage='fulfilling' LIMIT 1");
+        $stmt->bind_param('i',$rowId);
+        $stmt->execute();
+        $expected=$stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        if (!$expected || (int)$expected['local_amount_toman'] <= 0 ||
+            (int)$expected['local_amount_toman'] !== $amount) {
+            showForm("مبلغ سفارش پس از صدور فاکتور تغییر کرده است؛ تحویل متوقف شد.", "پیگیری پرداخت");
+            return false;
+        }
+    }
+
     if ($payType === 'INCREASE_WALLET') {
         // The state claim and actual user credit commit together. Telegram
         // notification remains outside the DB transaction.
@@ -668,8 +691,8 @@ function doAction($payRowId, $gateType) {
         ) ? 1 : 0;
     } else {
         $stmt = $connection->prepare("UPDATE `pays` SET `state` = 'paid'
-            WHERE `id` = ? AND `state` IN ('pending','send')");
-        $stmt->bind_param('i',$payRowId);
+            WHERE `id` = ? AND `price`=? AND `state` IN ('pending','send')");
+        $stmt->bind_param('ii',$payRowId,$amount);
         $stmt->execute();
         $claimed=$stmt->affected_rows;
         $stmt->close();

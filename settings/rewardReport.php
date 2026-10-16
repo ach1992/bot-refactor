@@ -65,6 +65,9 @@ require_once __DIR__ . '/../src/Finance/GatewayReturn.php';
 $npTable=$connection->query("SHOW TABLES LIKE 'achbot_nowpayments_attempts'");
 if ($npTable && $npTable->num_rows === 1) {
     achbotNpReconcileBatch($connection, is_array($paymentKeys ?? null)?$paymentKeys:[], 3);
+    // Send bounded operator notices for unresolved payments or stalled
+    // invoice creation. No money/provisioning effects are retried here.
+    achbotNpAlertOperator($connection, $admin ?? null, 3);
 }
 
 require __DIR__ . '/../src/Finance/AutomaticReceipts.php';

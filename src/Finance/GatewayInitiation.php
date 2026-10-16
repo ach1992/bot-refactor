@@ -5,6 +5,40 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     exit;
 }
 
+/**
+ * Claim one gateway per local order before an external, non-idempotent API
+ * request. A persisted payid (including a pending claim) cannot be replaced
+ * by another gateway. The marker remains on an ambiguous provider response;
+ * only an operator with independent provider evidence may release it.
+ */
+function achbotReserveCheckoutProvider(mysqli $db, int $orderId, string $provider): ?string {
+    if (!in_array($provider, ['nextpay','zarinpal'], true) || $orderId <= 0) return null;
+    $marker = 'achbot_' . $provider . '_creating_' . $orderId;
+    try {
+        $db->begin_transaction();
+        $stmt = $db->prepare("SELECT payid,state FROM pays WHERE id=? FOR UPDATE");
+        $stmt->bind_param('i',$orderId);
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        if (!$row || $row['state'] !== 'pending' || !empty($row['payid'])) {
+            $db->rollback();
+            return null;
+        }
+        $stmt = $db->prepare("UPDATE pays SET payid=? WHERE id=? AND state='pending'
+            AND (payid IS NULL OR payid='')");
+        $stmt->bind_param('si',$marker,$orderId);
+        $stmt->execute();
+        $changed = $stmt->affected_rows;
+        $stmt->close();
+        if ($changed !== 1 || !$db->commit()) throw new RuntimeException('checkout_claim_failed');
+        return $marker;
+    } catch (Throwable $error) {
+        $db->rollback();
+        return null;
+    }
+}
+
 //====================//  Get  //==============================
 $hash_id = (string)($_GET['hash_id'] ?? '');
 if(!isset($_GET['zarinpal']) && !isset($_GET['nowpayment']) && !isset($_GET['nextpay'])){
@@ -201,8 +235,22 @@ if(mysqli_num_rows($payInfo)==0){
         $base_url = 'https://api.nowpayments.io/v1/invoice';
 
         $quoteUsd = number_format(round($amount / $dollarPrice, 2), 2, '.', '');
-        if ((float)$quoteUsd <= 0) {
-            showForm("مبلغ دلاری فاکتور معتبر نیست.");
+        if ((float)$quoteUsd <= 0 || (int)$amount <= 0) {
+            showForm("مبلغ فاکتور معتبر نیست.");
+            exit;
+        }
+        // Payout currency and minimum NET merchant amount are an explicit
+        // merchant risk/pricing decision. Without a configured asset-specific
+        // policy, do NOT accept a payment that cannot be safely fulfilled.
+        $settlementPolicy = $nowpaymentsSettlementPolicy ?? null;
+        $payoutCurrency = is_array($settlementPolicy)
+            ? strtolower((string)($settlementPolicy['outcome_currency'] ?? '')) : '';
+        $payoutRate = is_array($settlementPolicy)
+            ? (string)($settlementPolicy['minimum_outcome_per_usd'] ?? '') : '';
+        $minimumOutcome = preg_match('/^[a-z0-9]{2,32}$/D',$payoutCurrency)
+            ? achbotNpMinimumPayout($quoteUsd,$payoutRate) : null;
+        if ($minimumOutcome === null) {
+            showForm("سیاست امن ارز و حداقل مبلغ تسویه پذیرنده هنوز تنظیم نشده است؛ فاکتور صادر نشد.");
             exit;
         }
         $payload = [
@@ -219,6 +267,7 @@ if(mysqli_num_rows($payInfo)==0){
         // non-idempotent invoice endpoint. An overlapping click cannot
         // create an orphan provider invoice. A crashed/uncertain request
         // remains visibly reserved until safe operator reconciliation.
+        $checkoutMarker = 'achbot_nowpayment_creating_' . (int)$orderId;
         try {
             $connection->begin_transaction();
             $stmt = $connection->prepare(
@@ -231,12 +280,22 @@ if(mysqli_num_rows($payInfo)==0){
                 throw new RuntimeException('checkout_already_reserved');
             }
             $stmt = $connection->prepare("INSERT INTO achbot_nowpayments_attempts
-                (pay_row_id,order_hash,invoice_id,invoice_url,quote_usd,stage)
-                VALUES (?,?,NULL,NULL,?,'creating')");
-            $stmt->bind_param('iss', $orderId, $hash_id, $quoteUsd);
+                (pay_row_id,order_hash,invoice_id,invoice_url,quote_usd,
+                 local_amount_toman,expected_outcome_currency,minimum_outcome_amount,stage)
+                VALUES (?,?,NULL,NULL,?,?,?,?,'creating')");
+            $stmt->bind_param('ississ', $orderId, $hash_id, $quoteUsd,
+                $amount, $payoutCurrency, $minimumOutcome);
             $stmt->execute();
             $stmt->close();
-            if (!$connection->commit()) throw new RuntimeException('reservation_commit_failed');
+            $stmt = $connection->prepare("UPDATE pays SET payid=? WHERE id=? AND state='pending'
+                AND (payid IS NULL OR payid='')");
+            $stmt->bind_param('si',$checkoutMarker,$orderId);
+            $stmt->execute();
+            $reserved = $stmt->affected_rows;
+            $stmt->close();
+            if ($reserved !== 1 || !$connection->commit()) {
+                throw new RuntimeException('reservation_commit_failed');
+            }
         } catch (Throwable $error) {
             $connection->rollback();
             showForm("فاکتور این سفارش در حال صدور یا نیازمند بررسی است؛ درخواست تکراری ایجاد نشد.");
@@ -310,7 +369,8 @@ if(mysqli_num_rows($payInfo)==0){
             $stmt->execute();
             $locked = $stmt->get_result()->fetch_assoc();
             $stmt->close();
-            if (!$locked || $locked['state'] !== 'pending' || !empty($locked['payid'])) {
+            if (!$locked || $locked['state'] !== 'pending' ||
+                (string)$locked['payid'] !== $checkoutMarker) {
                 throw new RuntimeException('checkout_order_changed');
             }
             $stmt = $connection->prepare("UPDATE achbot_nowpayments_attempts
@@ -322,8 +382,8 @@ if(mysqli_num_rows($payInfo)==0){
             $saved = $stmt->affected_rows;
             $stmt->close();
             if ($saved !== 1) throw new RuntimeException('checkout_reservation_changed');
-            $stmt = $connection->prepare("UPDATE pays SET payid=? WHERE id=? AND state='pending' AND payid IS NULL");
-            $stmt->bind_param('si', $payid, $orderId);
+            $stmt = $connection->prepare("UPDATE pays SET payid=? WHERE id=? AND state='pending' AND payid=?");
+            $stmt->bind_param('sis', $payid, $orderId, $checkoutMarker);
             $stmt->execute();
             $changed = $stmt->affected_rows;
             $stmt->close();
@@ -354,22 +414,49 @@ if(mysqli_num_rows($payInfo)==0){
     }
     
     elseif(isset($_GET['zarinpal'])){
-        $CallbackURL = $botUrl . "pay/back.php?zarinpal&hash_id=$hash_id";
-        $client = new SoapClient('https://www.zarinpal.com/pg/services/WebGate/wsdl', ['encoding' => 'UTF-8']);
-        $result = $client->PaymentRequest([
-            'MerchantID' => $paymentKeys['zarinpal'],
-            'Amount' => $amount,
-            'Description' => "خرید بک لینک ایرانی",
-            'Email' => $Email,
-            'Mobile' => $Mobile,
-            'CallbackURL' => $CallbackURL,
-        ]);
-        //==============================================================
-        Header('Location: https://www.zarinpal.com/pg/StartPay/'.$result->Authority.'/ZarinGate');
+        $marker=achbotReserveCheckoutProvider($connection,(int)$orderId,'zarinpal');
+        if ($marker === null) {
+            showForm("یک درخواست پرداخت برای این سفارش قبلاً صادر شده است؛ تغییر درگاه نیازمند بررسی است.");
+            exit;
+        }
+        $CallbackURL = $botUrl . "pay/back.php?zarinpal&hash_id=" . urlencode($hash_id);
+        try {
+            $client = new SoapClient('https://www.zarinpal.com/pg/services/WebGate/wsdl', ['encoding' => 'UTF-8']);
+            $result = $client->PaymentRequest([
+                'MerchantID' => $paymentKeys['zarinpal'],
+                'Amount' => $amount,
+                'Description' => $type,
+                'Email' => $Email ?? '',
+                'Mobile' => $Mobile ?? '',
+                'CallbackURL' => $CallbackURL,
+            ]);
+            $authority=(string)($result->Authority ?? '');
+            if (!preg_match('/^[A-Za-z0-9_-]{1,128}$/D',$authority) ||
+                !in_array((int)($result->Status ?? -1),[100,0],true)) {
+                throw new RuntimeException('zarinpal_checkout_unconfirmed');
+            }
+            $stmt=$connection->prepare("UPDATE pays SET payid=? WHERE id=? AND payid=? AND state='pending'");
+            $stmt->bind_param('sis',$authority,$orderId,$marker);
+            $stmt->execute();
+            $saved=$stmt->affected_rows;
+            $stmt->close();
+            if ($saved !== 1) throw new RuntimeException('zarinpal_checkout_write_conflict');
+            header('Location: https://www.zarinpal.com/pg/StartPay/' . rawurlencode($authority) . '/ZarinGate');
+            exit;
+        } catch (Throwable $error) {
+            // Do not reissue when provider may already have accepted a request.
+            showForm("وضعیت صدور فاکتور نامشخص است؛ برای جلوگیری از پرداخت تکراری نیاز به بررسی دارد.");
+            exit;
+        }
     }
 
-    elseif(isset($_GET['nextpay'])){        
-        $Description = "خرید بک لینک ایرانی";
+    elseif(isset($_GET['nextpay'])){
+        $marker=achbotReserveCheckoutProvider($connection,(int)$orderId,'nextpay');
+        if ($marker === null) {
+            showForm("یک درخواست پرداخت برای این سفارش قبلاً صادر شده است؛ تغییر درگاه نیازمند بررسی است.");
+            exit;
+        }
+        $Description = $type;
         $CallbackURL = $botUrl . "pay/back.php?nextpay&hash_id=$hash_id";
     
         $curl = curl_init();
@@ -378,8 +465,10 @@ if(mysqli_num_rows($payInfo)==0){
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_ENCODING => '',
             CURLOPT_MAXREDIRS => 10,
-            CURLOPT_TIMEOUT => 0,
-            CURLOPT_FOLLOWLOCATION => true,
+            CURLOPT_TIMEOUT => 20,
+            CURLOPT_FOLLOWLOCATION => false,
+            CURLOPT_SSL_VERIFYPEER => true,
+            CURLOPT_SSL_VERIFYHOST => 2,
             CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
             CURLOPT_CUSTOMREQUEST => 'POST',
             CURLOPT_POSTFIELDS => 'api_key='.$paymentKeys['nextpay'] .'&amount='.$amount.'&order_id='.$orderId.'&currency=IRT&callback_uri='.$CallbackURL,
@@ -388,17 +477,20 @@ if(mysqli_num_rows($payInfo)==0){
         curl_close($curl);
         $response = json_decode($response);
 
-        if ($response->code == '-1'){
-            $startGateWayUrl = "https://nextpay.org/nx/gateway/payment/".$response->trans_id;
-            $transId = $response->trans_id;            
-            $stmt = $connection->prepare("UPDATE `pays` SET `payid` = ? WHERE `hash_id` = ?");
-            $stmt->bind_param("ss", $transId, $hash_id);
+        $transId=(string)($response->trans_id ?? '');
+        if ((string)($response->code ?? '') === '-1' &&
+            preg_match('/^[A-Za-z0-9_-]{1,128}$/D',$transId)) {
+            $stmt = $connection->prepare("UPDATE pays SET payid=? WHERE id=? AND payid=? AND state='pending'");
+            $stmt->bind_param('sis',$transId,$orderId,$marker);
             $stmt->execute();
+            $saved=$stmt->affected_rows;
             $stmt->close();
-            header('location: '.$startGateWayUrl);
-        } else {
-            showForm("تراکنش با خطا مواجه شده است.");
+            if ($saved === 1) {
+                header('Location: https://nextpay.org/nx/gateway/payment/' . rawurlencode($transId));
+                exit;
+            }
         }
+        showForm("وضعیت ایجاد تراکنش نامشخص است؛ درخواست پرداخت جدید خودکار صادر نمی‌شود.");
     }
 }
 
