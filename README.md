@@ -2,7 +2,7 @@
 
 AChBot is a PHP Telegram bot for managing VPN subscriptions through **Marzban**. It includes customer subscription and account flows, administrator server/plan management, support and scheduled operations. The current source is **Marzban-only**; the retired X-UI/Sanaei/Alireza/legacy normal panel adapters are not supported.
 
-> **Release status (2026-10-16):** [v0.10.0-rc.2](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.2) is the current **Marzban-only source-only prerelease**, containing a security-only `config.php` hotfix over [v0.10.0-rc.1](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.1). The historical V9 source is separately preserved at [v0.9.0-rc.1](https://github.com/ach1992/bot-refactor/releases/tag/v0.9.0-rc.1). Full installed/operator acceptance is **not complete**, so this is **not production-certified**. Replacing a ZIP is neither atomic nor a proof of running-code identity.
+> **Release status:** Consult [GitHub Releases](https://github.com/ach1992/bot-refactor/releases) for the latest **Marzban-only source-only prerelease** and exact artifact identity. Earlier [v0.10.0-rc.2](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.2) was a security-only `config.php` hotfix to [RC1](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.1); historical V9 remains at [v0.9.0-rc.1](https://github.com/ach1992/bot-refactor/releases/tag/v0.9.0-rc.1). **Full installed/operator and financial acceptance is incomplete; source-only prereleases are not production-certified.** A ZIP replacement is neither atomic nor proof of active running code. Preserve local configuration and require separate deployment authorization.
 
 ## Requirements
 
