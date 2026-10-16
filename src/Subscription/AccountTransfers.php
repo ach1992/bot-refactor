@@ -32,7 +32,7 @@ if (preg_match('/^switchLocation([0-9]+)_([0-9]+)_[^_]{1,40}_[^_]{1,40}$/D', (st
 
     $targets = achbotMarzbanRelocationTargets($connection, $sourceId);
     if (!$targets) {
-        alert("در حال حاضر سرور دیگری با همین پنل مرزبان برای تغییر سرویس موجود نیست.", true);
+        alert("در حال حاضر گزینه مقصد سازگار دیگری برای این اشتراک وجود ندارد.", true);
         return;
     }
     $buttons = [];
@@ -44,7 +44,7 @@ if (preg_match('/^switchLocation([0-9]+)_([0-9]+)_[^_]{1,40}_[^_]{1,40}$/D', (st
     $keyboard[] = [['text'=>$buttonValues['back_button'] ?? 'بازگشت',
                     'callback_data'=>'orderDetails' . $orderId]];
     editText($message_id,
-        "📍 سرور مقصد را انتخاب کنید. فقط نام سرور در ربات تغییر می‌کند؛ حساب واقعی و کانفیگ‌های مرزبان تغییر نمی‌کنند.",
+        "📍 سرور مقصد را انتخاب کنید. این جابه‌جایی فقط محل نمایش اشتراک در ربات را تغییر می‌دهد و اطلاعات اتصال شما ثابت می‌ماند.",
         json_encode(['inline_keyboard'=>$keyboard], JSON_UNESCAPED_UNICODE));
     return;
 }
@@ -60,13 +60,13 @@ if (preg_match('/^switchServer([0-9]+)_([0-9]+)$/D', (string)($data ?? ''), $mat
         $connection, $orderId, $targetId, $from_id, false
     );
     if (!$result) {
-        alert("⛔️ انتقال مجاز نیست؛ سفارش باید متعلق به شما و هر دو سرور مربوط به یک پنل مرزبان باشند.", true);
+        alert("⛔️ انتقال این اشتراک به مقصد انتخاب‌شده امکان‌پذیر نیست.", true);
         return;
     }
 
     $title = htmlspecialchars((string)$result['title'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
     $remark = htmlspecialchars((string)$result['remark'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
-    editText($message_id, "✅ سرویس {$remark} در ربات به سرور {$title} اختصاص یافت. تنظیمات حساب در مرزبان بدون تغییر باقی ماند.",
+    editText($message_id, "✅ سرویس {$remark} در ربات به سرور {$title} اختصاص یافت. اطلاعات اتصال شما تغییر نکرد.",
         json_encode(['inline_keyboard'=>[[['text'=>$buttonValues['back_button'] ?? 'بازگشت',
         'callback_data'=>'orderDetails' . $orderId]]]], JSON_UNESCAPED_UNICODE));
     $adminMessage = "🌐 تغییر سرور منطقی مرزبان در ربات\n"

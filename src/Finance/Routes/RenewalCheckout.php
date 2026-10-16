@@ -49,7 +49,7 @@ if (
     $order = $order->fetch_assoc();
     $fid = $order['fileid'];
     if (!achbotSupportsMarzbanOrder($connection, (int)$oid, (int)$fid, (int)$order['userid'])) {
-        alert("⛔️ این سفارش برای تمدید مرزبان معتبر نیست.", true);
+        alert("⛔️ تمدید این اشتراک در حال حاضر امکان‌پذیر نیست.", true);
         return;
     }
     // بررسی اگر fileid برابر 0 باشد
@@ -397,9 +397,7 @@ if(preg_match('/approveRenewAcc(.*)/',$data,$match) && ($from_id == $admin || $u
         $success = (is_object($response) && !empty($response->success))
                 || (is_array($response)  && !empty($response['success']));
         if (!$success) {
-            $msg = is_object($response) ? ($response->msg ?? 'no_msg')
-                 : ($response['msg'] ?? 'no_msg');
-            throw new Exception("server_response_failed: ".$msg);
+            throw new Exception("provider_rejected");
         }
 
         // آپدیت expire + notif
@@ -449,10 +447,10 @@ if(preg_match('/approveRenewAcc(.*)/',$data,$match) && ($from_id == $admin || $u
         $err = "⚠️ خطا در تایید تمدید کارت‌به‌کارت\n\n"
              . "🆔 Hash ID: {$match[1]}\n"
              . "👤 Admin: {$from_id}\n"
-             . "📄 Error: " . $e->getMessage();
+             . "⚠️ External effect: unverified; verify before retry or compensation\n📄 Reason (sanitized): " . achbotFinanceDiagnosticReason($e);
         sendMessage($err, null, null, $admin);
 
-        alert('❌ تمدید انجام نشد. لطفاً وضعیت سرور یا اطلاعات را بررسی کنید.', true);
+        alert('⚠️ نتیجه تمدید نیاز به بررسی دارد. وضعیت اشتراک و پرداخت را کنترل کنید؛ پیش از اقدام مجدد با پشتیبانی هماهنگ شوید.', true);
         return;
     }
 }
@@ -477,7 +475,7 @@ if(preg_match('/payRenewWithWallet(.*)/', $data, $match)){
         $payInfo = $payRes->fetch_assoc();
         if (!achbotSupportsPaymentSubject($connection, $payInfo)) {
             $connection->rollback();
-            alert("⛔️ تمدید پنل غیرقابل پشتیبانی انجام نشد.", true);
+            alert("⚠️ وضعیت این تمدید نیاز به بررسی دارد. لطفاً وضعیت اشتراک و پرداخت را با پشتیبانی بررسی کنید.", true);
             return;
         }
         $hash_id   = $payInfo['hash_id'];
@@ -573,9 +571,7 @@ if(preg_match('/payRenewWithWallet(.*)/', $data, $match)){
         $success = (is_object($response) && !empty($response->success))
                 || (is_array($response)  && !empty($response['success']));
         if (!$success) {
-            $msg = is_object($response) ? ($response->msg ?? 'no_msg')
-                 : ($response['msg'] ?? 'no_msg');
-            throw new Exception("server_response_failed: ".$msg);
+            throw new Exception("provider_rejected");
         }
 
         $timeNow  = time();
@@ -635,10 +631,10 @@ if(preg_match('/payRenewWithWallet(.*)/', $data, $match)){
         $adminErr = "⚠️ خطا در تمدید با کیف پول\n\n"
                   . "🆔 Hash ID: {$match[1]}\n"
                   . "👤 User: {$from_id}\n"
-                  . "📄 Error: ".$e->getMessage();
+                  . "⚠️ External effect: unverified; verify before retry or compensation\n📄 Reason (sanitized): ".achbotFinanceDiagnosticReason($e);
         sendMessage($adminErr, null, null, $admin);
 
-        sendMessage("❌ مشکلی پیش اومد.\n🔁 لطفاً ۳۰ ثانیه بعد دوباره تلاش کنید.\nاگر مشکل ادامه داشت، به مدیریت اطلاع دهید.", null, null, $uid);
+        sendMessage("⚠️ وضعیت درخواست مشخص نیست. لطفاً وضعیت اشتراک و پرداخت را بررسی کنید و پیش از ثبت دوباره با پشتیبانی هماهنگ شوید.", null, null, $uid);
 
         return;
     }

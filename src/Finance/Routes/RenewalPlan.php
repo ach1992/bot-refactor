@@ -9,7 +9,7 @@ if(preg_match('/sConfigRenewPlan(\d+)_(\d+)/',$data, $match) && ($botState['sell
     $id = $match[1];
 	$inbound_id = $match[2];
     if (!achbotSupportsMarzbanPlan($connection, (int)$id, (int)$inbound_id)) {
-        alert("⛔️ این تمدید برای پنل مرزبان پشتیبانی نمی‌شود.", true);
+        alert("⛔️ تمدید این اشتراک در حال حاضر امکان‌پذیر نیست.", true);
         return;
     }
 
@@ -25,7 +25,7 @@ if(preg_match('/sConfigRenewPlan(\d+)_(\d+)/',$data, $match) && ($botState['sell
     if (!is_array($configInfo) || ($configInfo['marzban'] ?? null) !== true ||
         empty($configInfo['remark']) || $accountServer <= 0 ||
         !achbotSupportsMarzbanPlan($connection, (int)$id, 0, $accountServer)) {
-        alert("⛔️ پلن انتخابی با سرور مرزبان این اشتراک مطابقت ندارد.", true);
+        alert("⛔️ طرح انتخابی با اشتراک شما سازگار نیست.", true);
         return;
     }
     $uuid = $configInfo['uuid'] ?? '';

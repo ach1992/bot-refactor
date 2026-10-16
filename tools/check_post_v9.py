@@ -13,6 +13,7 @@ import tempfile
 from pathlib import Path
 
 import v9_contract as historical
+import test_post_v9_customer_errors as customer_errors
 
 ROOT = Path(__file__).resolve().parents[1]
 V9 = "7eb077fd8e6d0a303421626d1500f69e295a6664"
@@ -102,6 +103,7 @@ def main():
     parser.add_argument("--report",type=Path)
     a=parser.parse_args()
     result=source_checks()
+    audience=customer_errors.verify(ROOT)
     with tempfile.TemporaryDirectory(prefix="achbot-post-v9-acceptance-") as tmp:
         native=Path(tmp)/"marzban-native.json"
         subprocess.run(["python3",str(ROOT/"tools/test_post_v9_marzban.py"),
@@ -118,6 +120,15 @@ def main():
         if not (purchases.get("complete") and purchases.get("scenarios")==17 and
                 purchases.get("php_sql_telegram_fake_provider_parity")):
             raise RuntimeError("Actual post-V9 purchase/renewal/agent SQL/Telegram parity incomplete")
+        transport_cli=subprocess.run(
+            ["php","-n",str(ROOT/"tools/test_post_v9_telegram_log_privacy.php")],
+            cwd=ROOT,check=True,timeout=20,capture_output=True,text=True)
+        transport_privacy=json.loads(transport_cli.stdout)
+        if not (transport_privacy.get("complete")
+                and transport_privacy.get("cases")==7
+                and transport_privacy.get("network_requests")==0
+                and transport_privacy.get("raw_payload_log_records")==0):
+            raise RuntimeError("Telegram transport failure logs exposed private data")
         wallet_cli=subprocess.run(["php",str(ROOT/"tools/test_post_v9_wallet_guard.php")],
                                   cwd=ROOT,check=True,timeout=25,
                                   capture_output=True,text=True)
@@ -127,6 +138,39 @@ def main():
                 and wallet_guard.get("http_calls")==0
                 and wallet_guard.get("committed_sql_mutations")==0):
             raise RuntimeError("Unsupported wallet checkout mutated money or failed to reject panel")
+        wallet_transfer_path=Path(tmp)/"wallet-transfer-current.json"
+        subprocess.run(["python3",str(ROOT/"tools/test_post_v9_wallet_transfer.py"),
+                        "--run-disposable","--report",str(wallet_transfer_path)],
+                       cwd=ROOT,check=True,timeout=180,capture_output=True)
+        wallet_transfer=json.loads(wallet_transfer_path.read_text())
+        privacy_path=Path(tmp)/"finance-error-audience.json"
+        subprocess.run(["python3",str(ROOT/"tools/test_post_v9_finance_error_privacy.py"),
+                        "--run-disposable","--report",str(privacy_path)],
+                       cwd=ROOT,check=True,timeout=180,capture_output=True)
+        finance_privacy=json.loads(privacy_path.read_text())
+        if not (finance_privacy.get("complete") and finance_privacy.get("cases")==23
+                and finance_privacy.get("mutant_privacy_failures_proved")==2
+                and finance_privacy.get("external_requests")==0):
+            raise RuntimeError("Executed finance error privacy/uncertain-effects proof incomplete")
+        required_transfer_cases={
+            "transfer_positive_atomic", "transfer_replay_claim_consumed",
+            "transfer_negative_debt_no_spend", "transfer_recipient_overflow_refused",
+            "transfer_debit_failure_rolls_back_and_redacts_user_error",
+            "transfer_postcommit_notification_failure_preserves_commit",
+            "transfer_telegram_null_is_unconfirmed_not_success",
+            "transfer_receiving_credit_offsets_debt", "transfer_two_workers_exactly_one",
+            "transfer_opposing_lock_order_no_deadlock",
+            "sender_duplicate_userid_fails_closed",
+            "recipient_duplicate_userid_fails_closed",
+            "transfer_concurrent_registration_duplicate_identity_rejected",
+            "transfer_real_commit_lost_ack_outcome_unknown",
+            "transfer_false_commit_return_is_unknown",
+        }
+        if not (wallet_transfer.get("complete") and wallet_transfer.get("cases")>=24
+                and required_transfer_cases.issubset(wallet_transfer.get("scenarios",[]))
+                and wallet_transfer.get("original_mariadb_socket_only")
+                and wallet_transfer.get("external_requests")==0):
+            raise RuntimeError("Current wallet transfer safety/diagnostic acceptance incomplete")
         subject_path=Path(tmp)/"payment-subjects.json"
         subprocess.run(["python3",str(ROOT/"tools/test_post_v9_subjects.py"),
                         "--run-disposable","--report",str(subject_path)],
@@ -313,6 +357,9 @@ def main():
         if a.report:a.report.write_text(json.dumps({"complete":True,
                     "source":result,"marzban":marzban,"purchases":purchases,
                      "unsupported_wallet_preflight":wallet_guard,
+                     "wallet_transfer_safety":wallet_transfer,
+                     "customer_error_privacy":audience,
+                     "telegram_transport_log_privacy":transport_privacy,
                     "source_only_overlays":swap,
                     "financial_subject_preflight":subject,
                     "catalogue_and_subscription_qr":catalogue,
@@ -331,6 +378,10 @@ def main():
                       "purchase_steps":purchases["steps"],
                        "unsupported_wallet_negatives":wallet_guard["cases"],
                        "unsupported_manual_negatives":wallet_guard["manual_cases"],
+                       "wallet_transfer_scenarios":wallet_transfer["cases"],
+                       "customer_literal_first_argument_messages_inspected":audience["literal_first_argument_calls_inspected"],
+                       "finance_error_audience_execution_cases":finance_privacy["cases"],
+                       "telegram_transport_privacy_cases":transport_privacy["cases"],
                       "verified_source_swaps":swap["phase_count"],
                       "payment_subject_cases":subject["cases"],
                       "catalogue_qr_cases":catalogue["cases"],

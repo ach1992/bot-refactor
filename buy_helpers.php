@@ -2,6 +2,28 @@
 
 require_once __DIR__ . '/src/Purchase/Core.php';
 
+// Only bounded, internally defined reasons may be forwarded to Telegram
+// operators. Never send provider response bodies or Throwable::getMessage().
+if (!function_exists('achbotFinanceDiagnosticReason')) {
+    function achbotFinanceDiagnosticReason(Throwable $error): string
+    {
+        if ($error instanceof mysqli_sql_exception) {
+            $state = (string)$error->getSqlState();
+            return preg_match('/^[A-Z0-9]{5}$/D', $state)
+                ? 'database_error_' . $state : 'database_error';
+        }
+        $message = $error->getMessage();
+        $allowed = [
+            'unsupported_panel', 'server_config_missing', 'order_not_found',
+            'increase_day_plan_not_found', 'increase_plan_not_found',
+            'invalid_increase_type', 'invalid_response_type',
+            'server_connection_null', 'server_null_response',
+            'provider_rejected',
+        ];
+        return in_array($message, $allowed, true) ? $message : 'runtime_error';
+    }
+}
+
 if (!function_exists('buildLinksAndSendQr')) {
     function buildLinksAndSendQr(
         $serverType,

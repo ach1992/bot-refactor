@@ -118,7 +118,7 @@ if(preg_match('/createAccCategory(\d+)_(\d+)/',$data,$match) && ($from_id == $ad
 }
 if(preg_match('/^createAccPlan(\d+)/',$data,$match) && $text != $buttonValues['cancel'] && ($from_id == $admin || $userInfo['isAdmin'] == true)){
     if (!achbotSupportsMarzbanPlan($connection, (int)$match[1])) {
-        alert("⛔️ این پلن مرزبان معتبر نیست.", true);
+        alert("⛔️ طرح انتخابی در حال حاضر قابل خرید نیست.", true);
         return;
     }
     delMessage();
@@ -173,7 +173,7 @@ if (
     $volumeFromStep = (int)$match[3];
 
     if (!achbotSupportsMarzbanPlan($connection, $fidFromStep)) {
-        alert("⛔️ این پلن مرزبان معتبر نیست.", true);
+        alert("⛔️ طرح انتخابی در حال حاضر قابل خرید نیست.", true);
         return;
     }
     $planDetails = getPlanDetails($connection, $fidFromStep);

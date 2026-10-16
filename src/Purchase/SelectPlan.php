@@ -12,7 +12,7 @@ if((preg_match('/^discountSelectPlan(\d+)_(\d+)_(\d+)/',$userInfo['step'],$match
     ($botState['sellState']=="on" ||$from_id ==$admin) &&  
     $text != $buttonValues['cancel']){ 
     if (!achbotSupportsMarzbanPlan($connection, (int)($match[1] ?? 0))) {
-        alert("⛔️ این پلن دیگر در سرور مرزبان قابل خرید نیست.", true);
+        alert("⛔️ طرح انتخابی در حال حاضر قابل خرید نیست.", true);
         return;
     }
     if(preg_match('/^discountSelectPlan/', $userInfo['step'])){ 

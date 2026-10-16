@@ -1,6 +1,6 @@
 # AChBot financial lifecycle — current contract and controlled consolidation
 
-**Owner acceptance:** 2026-10-16, roadmap [#29](https://github.com/ach1992/bot-refactor/issues/29), controlling finance [#26](https://github.com/ach1992/bot-refactor/issues/26).  Current source baseline: released `v0.10.0-rc.3`, `main@9d2f731bb23e0618ff3607df5bcbdd8ecdcb8b71`. The Owner reports the RC3 runtime installed and generally working; this is **not** full financial acceptance. This file is the specialized *implementation/assurance* contract; `docs/PROJECT-SPEC.md` remains canonical product intent and GitHub Issues/PRs own current work/evidence.
+**Owner acceptance:** 2026-10-16, roadmap [#29](https://github.com/ach1992/bot-refactor/issues/29), controlling finance [#26](https://github.com/ach1992/bot-refactor/issues/26).  Current source baseline: source-only [PR #42](https://github.com/ach1992/bot-refactor/pull/42) merged to `main@3958ece78d79fafd6ae0f851fe11946ad2061904`, tree `0eaa5a5911f3dcc44f4c1ab43919821ca2d8a6eb`. Last published/Owner-reported installed release remains `v0.10.0-rc.3`; no financial migration or operational acceptance is implied. This file is the specialized *implementation/assurance* contract; `docs/PROJECT-SPEC.md` remains canonical product intent and GitHub Issues/PRs own current work/evidence.
 
 ## Accepted objective, boundaries and non-goals
 
@@ -70,7 +70,7 @@ Verified primary guidance: [NOWPayments status definitions](https://nowpayments.
 
 ## R2 — owner-prioritized browser-independent invoice recovery (SOURCE ONLY)
 
-The Owner observed missed hosted-website Return-to-Merchant clicks in production and explicitly prioritized automatically completing real provider-verified orders. NOWPayments `confirmed` is a blockchain signal; for fixed-price VPN goods it **cannot by itself** certify merchant payout. To remove the human browser dependency without relaxing status rules, Draft PR #42 now adds:
+The Owner observed missed hosted-website Return-to-Merchant clicks in production and explicitly prioritized automatically completing real provider-verified orders. NOWPayments `confirmed` is a blockchain signal; for fixed-price VPN goods it **cannot by itself** certify merchant payout. To remove the human browser dependency without relaxing status rules, merged source-only PR #42 introduced (not yet operationally activated):
 
 - a **separately shipped and migration-gated additive** attempt ledger `migrations/post-v9/002_nowpayments_checkout_attempts.sql` (23 frozen original tables + 2 proposed narrow tables in disposable tests). It stores trusted order↔invoice↔child-payment correlation, original USD quote, same provider HTTPS invoice URL, recovery progress. No private secret or customer dump in SQL history;
 - hosted new-invoice `ipn_callback_url`, direct Telegram invoice link, and safe reuse on subsequent checkout clicks; even after the older bot message's three-hour window, an already-issued pending invoice is not silently expired. A durable `creating` reservation is committed before the provider POST; a timeout/unknown result is held for review rather than issuing a second invoice;
@@ -89,7 +89,7 @@ The independent R9 review of `551efb3` was **COMPLETE / CHANGES_REQUIRED** becau
 
 - **Stale renewal callbacks:** `prePayCheck` rejects paid, expired, canceled and other terminal rows before any payout/expiration/plan mutation. A changed current plan is handled only after verifying the same account owner, supported Marzban account and original supported renewal plan. A local mismatch state transition uses an exact conditional `pending`-only `UPDATE` bound to the original row/user/order/plan and the current differing `orders_list.fileid`, and only if `payid` is unclaimed and no NOWPayments attempt exists. Already-issued NOWPayments invoices, external Authorities and `send`/paid rows are retained for manual review; stale or newly changed states never generate competing payment links. The original unchanged valid renewal checkout remains functional.
 - **Exact Zarinpal SOAP success value:** only native integer `100` or the canonical string `"100"` authorizes fulfillment after the existing exact Authority and identity checks. Floats, fractional or scientific-notation strings, booleans, padded/alternate strings, null and unknown status codes remain pending for merchant review, without credit, order completion or automatic cancellation. Browser `Status=NOK` still cannot override an actual canonical provider success.
-- **Proof:** new actual-route native tests cover paid/canceled/expired stale renewal replay, pending unclaimed mismatch, an independently connected second worker finalizing payment after the SELECT and before the mismatch UPDATE, claimed external and NOWPayments renewal invoices, normal renewal compatibility, and strict SOAP results across authentic/invalid types. The existing original 23-table fixture and frozen historical evidence remain unmodified; all external provider/Telegram effects are synthetic. Exact PHP 8.1/8.4 CI and author-separated final delta review remain separate gates before Owner merge consideration.
+- **Proof:** new actual-route native tests cover paid/canceled/expired stale renewal replay, pending unclaimed mismatch, an independently connected second worker finalizing payment after the SELECT and before the mismatch UPDATE, claimed external and NOWPayments renewal invoices, normal renewal compatibility, and strict SOAP results across authentic/invalid types. The existing original 23-table fixture and frozen historical evidence remain unmodified; all external provider/Telegram effects are synthetic. Exact R10 PHP 8.1/8.4 CI and author-separated final delta review were completed for the separately Owner-authorized PR #42 source merge; installed operator acceptance remains a separate gate.
 
 ### R8 — second independent review remediation (source-only; NOT deployed)
 
@@ -119,3 +119,25 @@ These corrections were driven by native source execution on disposable MariaDB w
 **E. Assurance and operations.** PHP 8.1/8.4 exact-head CI, native 23-table tests, initial public callback/entrypoint compatibility and no-real-provider controls, author-separated financial-security review, Owner approval before high-consequence merge, separate real DB migration (if accepted), staged operator verification and production rollout. Preserve RC3 rollback artifacts and private configs; no production banking/Marzban/SQL/Cron or shared aaPanel/LSAPI change is authorized by source work.
 
 **Current open questions for later Owner decision:** whether old records/attempts can be safely backfilled into a unique provider/effect ledger; handling actual partial/late/refunded receipts and multi-asset quotes; TRON amount units, token contract/network and finality; external provisioning retry and compensation policy. Do not invent these outcomes from synthetic tests.
+
+
+**PR #43 source remediation — wallet identity, ambiguous acknowledgement and finance error audiences
+(draft, not yet integrated or published):** The original users.userid index is
+**not unique**; the transfer route locks and checks *all* matching records and
+fails closed on duplicate sender/recipient identity, then binds each monetary
+write to the captured users.id plus the expected userid/guards. No legacy
+DDL or uniqueness migration is implied. An attempted COMMIT whose
+acknowledgement is lost/false is an **unknown financial outcome**, even if a
+later rollback API call reports success; support must verify the account
+history before suggesting any compensation or retry. In manual/wallet
+extension and renewal error paths, a remote effect followed by local SQL or
+notification failure is likewise under review, not a proven remote failure.
+Customers receive review/status/support guidance without infrastructure
+terms; private operators receive only bounded reason codes, transaction/order
+references and the unverified remote-effect warning, never raw upstream
+exceptions or response bodies. The bounded privacy checks consist of
+first-argument literal inspections **plus** executable synthetic-provider/
+owned-MariaDB audience tests; static counts alone do not certify dynamic or
+mixed-audience safety. No global exactly-once effect ledger, active-schema
+migration, installed-log rotation, real provider/financial effect or production
+acceptance is part of this PR. Issue #26 remains OPEN.

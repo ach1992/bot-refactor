@@ -243,7 +243,7 @@ if(preg_match('/^changeCustomPath(\d+)/',$data,$match) && ($from_id == $admin ||
 }
 // Retired inbound/X-UI network-mode callbacks have no Marzban analogue.
 if(preg_match('/changeNetworkType(\d+)_(\d+)/', $data, $match)){
-    alert("تغییر نوع شبکه در پنل قدیمی دیگر پشتیبانی نمی‌شود.", true);
+    alert("⛔️ تغییر نوع شبکه برای این اشتراک در دسترس نیست.", true);
     return;
 }
 if($data=="changeProtocolIsDisable"){
@@ -261,7 +261,7 @@ if(preg_match('/updateConfigConnectionLink(\d+)/', $data,$match)){
     $stmt->close();
 
     if (!$order || !achbotSupportsMarzbanOrder($connection, (int)$oid)) {
-        alert("⛔️ این سفارش در پنل مرزبان پشتیبانی نمی‌شود.", true);
+        alert("⛔️ انجام این درخواست برای اشتراک انتخاب‌شده امکان‌پذیر نیست.", true);
         return;
     }
     $remark = $order['remark'];
@@ -300,7 +300,7 @@ if(preg_match('/updateConfigConnectionLink(\d+)/', $data,$match)){
             $vraylink = "خطا در دریافت لینک";
         }
     } else {
-        alert("⛔️ پنل این اشتراک دیگر پشتیبانی نمی‌شود.", true);
+        alert("⛔️ انجام این درخواست برای اشتراک انتخاب‌شده امکان‌پذیر نیست.", true);
         return;
         }
     
@@ -349,7 +349,7 @@ if(preg_match('/changAccountConnectionLink(\d+)/', $data,$match)){
     $stmt->close(); 
  
     if (!$order || !achbotSupportsMarzbanOrder($connection, (int)$oid)) {
-        alert("⛔️ این سفارش در پنل مرزبان پشتیبانی نمی‌شود.", true);
+        alert("⛔️ انجام این درخواست برای اشتراک انتخاب‌شده امکان‌پذیر نیست.", true);
         return;
     }
     $date = jdate("Y-m-d H:i",$order['date']); 
@@ -385,7 +385,7 @@ if(preg_match('/changAccountConnectionLink(\d+)/', $data,$match)){
         $vraylink = $res->links; 
         $newUuid = $newToken = str_replace("/sub/", "", $res->subscription_url); 
     }else{
-        alert("⛔️ پنل این اشتراک دیگر پشتیبانی نمی‌شود.", true);
+        alert("⛔️ انجام این درخواست برای اشتراک انتخاب‌شده امکان‌پذیر نیست.", true);
         return;
         } 
  
@@ -436,7 +436,7 @@ if(preg_match('/changeUserConfigState(\d+)/', $data,$match)){
 
     
     if (!achbotSupportsPanel($serverType) || (int)$inboundId !== 0) {
-        alert("پنل این اشتراک دیگر پشتیبانی نمی‌شود.", true);
+        alert("⛔️ انجام این درخواست برای اشتراک انتخاب‌شده امکان‌پذیر نیست.", true);
         return;
     }
     $update_response = changeMarzbanState($server_id, $remark);
@@ -488,7 +488,7 @@ if (preg_match('/agentChangeUserConfigState(\d+)/', $data, $match)) {
     // Marzban-only: refuse obsolete inbound metadata instead of altering a
     // different panel/account by guesswork.
     if (!achbotSupportsPanel($serverType) || (int)$inboundId !== 0) {
-        alert("پنل این اشتراک دیگر پشتیبانی نمی‌شود.", true);
+        alert("⛔️ انجام این درخواست برای اشتراک انتخاب‌شده امکان‌پذیر نیست.", true);
         return;
     }
     $update_response = changeMarzbanState($server_id, $remark);
@@ -508,6 +508,6 @@ if (preg_match('/agentChangeUserConfigState(\d+)/', $data, $match)) {
 
 // Old X-UI protocol mutation must not alter a Marzban order or its payment.
 if(preg_match('/changeAccProtocol(\d+)_(\d+)_(.*)/', $data, $match)){
-    alert("تغییر پروتکل پنل قدیمی دیگر پشتیبانی نمی‌شود.", true);
+    alert("⛔️ تغییر نوع اتصال برای این اشتراک در دسترس نیست.", true);
     return;
 }

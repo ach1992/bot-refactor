@@ -116,7 +116,7 @@ if ($userInfo['step'] == "showAccount" && $text != $buttonValues['cancel']) {
     } 
 
     if (!$found || empty($config)) { 
-        sendMessage("❌ اشتراک شما در پنل ما پیدا نشد. دقت کنید اگر زمان یا حجم اشتراک تمام شده باشد و بیشتر از 15 روز گذشته باشد حذف می شود.", $cancelKey); 
+        sendMessage("❌ اشتراک موردنظر پیدا نشد. اگر اعتبار آن تمام شده و بیش از ۱۵ روز گذشته باشد، ممکن است حذف شده باشد.", $cancelKey);
         exit(); 
     } 
 

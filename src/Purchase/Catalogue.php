@@ -97,7 +97,7 @@ if(preg_match('/selectCustomPlan(?<categoryId>\d+)_(?<serverId>\d+)_(?<buyType>\
 }
 if(preg_match('/selectCustomePlan(?<planId>\d+)_(?<categoryId>\d+)_(?<buyType>\w+)/',$data, $match) && ($botState['sellState']=="on" ||$from_id == $admin)){
     if (!achbotSupportsMarzbanPlan($connection, (int)$match['planId'])) {
-        alert("⛔️ پلن مرزبان یافت نشد.", true);
+        alert("⛔️ طرح انتخابی یافت نشد.", true);
         return;
     }
 	delMessage();
@@ -186,7 +186,7 @@ if((preg_match('/^discountCustomPlanDay(\d+)/',$userInfo['step'], $match) || pre
         $selectedCustomPlanId = (int)($discountPay['plan_id'] ?? 0);
     }
     if (!achbotSupportsMarzbanPlan($connection, $selectedCustomPlanId)) {
-        alert("⛔️ پلن مرزبان برای این درخواست پشتیبانی نمی‌شود.", true);
+        alert("⛔️ طرح انتخابی برای این درخواست قابل استفاده نیست.", true);
         return;
     }
     if(preg_match('/^discountCustomPlanDay/', $userInfo['step'])){ 

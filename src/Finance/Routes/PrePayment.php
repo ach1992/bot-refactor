@@ -36,7 +36,7 @@ if (preg_match('/^prePayCheck_([a-zA-Z0-9]+)_([a-zA-Z0-9]+)_([a-zA-Z0-9]+)/', $d
     // A changed RENEW_ACCOUNT plan is deliberately handled below with its
     // own owner/provider preflight; other unsupported subjects fail here.
     if (!$subjectSupported && $payInfo['type']!=='RENEW_ACCOUNT') {
-        alert("⛔️ این درخواست برای پنل مرزبان پشتیبانی نمی‌شود.", true);
+        alert("⛔️ انجام این درخواست برای اشتراک انتخاب‌شده امکان‌پذیر نیست. با پشتیبانی تماس بگیرید.", true);
         return;
     }
     $now = time();
@@ -74,7 +74,7 @@ if (preg_match('/^prePayCheck_([a-zA-Z0-9]+)_([a-zA-Z0-9]+)_([a-zA-Z0-9]+)/', $d
             if ($userId<=0 || (int)$order['userid']!==$userId ||
                 !achbotSupportsMarzbanOrder($connection,$oid,null,$userId) ||
                 !achbotSupportsMarzbanPlan($connection,$savedFid,0,$payInfo['server_id']??null)) {
-                alert("⛔️ این درخواست برای پنل مرزبان پشتیبانی نمی‌شود.",true);
+                alert("⛔️ انجام این درخواست برای اشتراک انتخاب‌شده امکان‌پذیر نیست. با پشتیبانی تماس بگیرید.",true);
                 return;
             }
 
@@ -121,7 +121,7 @@ if (preg_match('/^prePayCheck_([a-zA-Z0-9]+)_([a-zA-Z0-9]+)_([a-zA-Z0-9]+)/', $d
             return;
         }
         if (!$subjectSupported) {
-            alert("⛔️ این درخواست برای پنل مرزبان پشتیبانی نمی‌شود.",true);
+            alert("⛔️ انجام این درخواست برای اشتراک انتخاب‌شده امکان‌پذیر نیست. با پشتیبانی تماس بگیرید.",true);
             return;
         }
     }

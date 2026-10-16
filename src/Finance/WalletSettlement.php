@@ -47,7 +47,7 @@ if (!function_exists('processWalletPayment')) {
 
             if ($payInfo['state'] === 'processing_wallet') {
                 $connection->rollback();
-                alert("⏳ درخواست شما در حال پردازش است. کمی بعد دوباره تلاش کنید.", true);
+                alert("⏳ وضعیت درخواست هنوز در حال بررسی است. لطفاً وضعیت سفارش را کنترل کنید و پیش از ثبت دوباره با پشتیبانی هماهنگ شوید.", true);
                 return [
                     'status'       => 'in_progress',
                     'payInfo'      => $payInfo,
@@ -61,7 +61,7 @@ if (!function_exists('processWalletPayment')) {
             $blockedStates = ['approved', 'declined', 'expired_have_sent'];
 			if (in_array($payInfo['state'], $blockedStates, true)) {
 				$connection->rollback();
-				alert("⛔️ این پرداخت قابل پرداخت با کیف پول نیست: " . $payInfo['state'], true);
+				alert("⛔️ پرداخت این سفارش از کیف پول در حال حاضر امکان‌پذیر نیست. وضعیت سفارش را بررسی کنید.", true);
 				return [
 					'status'       => 'invalid_state',
 					'payInfo'      => $payInfo,
@@ -79,7 +79,7 @@ if (!function_exists('processWalletPayment')) {
             // Uses the original schema; no migrations or new payment policy.
             if (!achbotSupportsPaymentSubject($connection, $payInfo)) {
                 $connection->rollback();
-                alert("⛔️ پنل این اشتراک دیگر پشتیبانی نمی‌شود؛ هیچ مبلغی از کیف پول کسر نشد.", true);
+                alert("⛔️ پرداخت این اشتراک در حال حاضر امکان‌پذیر نیست؛ مبلغی از کیف پول کسر نشد.", true);
                 return [
                     'status' => 'unsupported_panel',
                     'payInfo' => $payInfo,
@@ -175,10 +175,10 @@ if (!function_exists('processWalletPayment')) {
             $adminErr = "⚠️ خطا در پرداخت با کیف پول\n\n"
                 . "🆔 Hash ID: {$hashId}\n"
                 . "👤 User: {$from_id}\n"
-                . "📄 Error: " . $e->getMessage();
+                . "⚠️ External effect: unverified; verify before retry or compensation\n📄 Reason (sanitized): " . achbotFinanceDiagnosticReason($e);
             sendMessage($adminErr, null, null, $admin);
 
-            alert("❌ مشکلی پیش اومد.\n🔁 لطفاً کمی بعد دوباره تلاش کنید.\nاگر مشکل ادامه داشت، به مدیریت اطلاع دهید.", true);
+            alert("⚠️ وضعیت درخواست پرداخت نیاز به بررسی دارد. لطفاً وضعیت سفارش و پرداخت را بررسی کنید و پیش از تکرار با پشتیبانی هماهنگ شوید.", true);
 
             return [
                 'status'       => 'error',

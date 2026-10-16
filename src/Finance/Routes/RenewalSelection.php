@@ -18,7 +18,7 @@ if(preg_match('/sConfigRenew(\d+)/', $data,$match)){
     $remark = $configInfo['remark'];
 
     if (empty($configInfo['marzban']) || (int)$inboundId !== 0) {
-        alert("پنل این اشتراک دیگر پشتیبانی نمی‌شود.", true);
+        alert("⛔️ تمدید این اشتراک در حال حاضر امکان‌پذیر نیست.", true);
         return;
     }
     $stmt = $connection->prepare("SELECT * FROM `server_plans` WHERE `server_id` = ? AND `custom_sni` LIKE '%inbounds%' AND `active` = 1 AND `price` != 0 AND `inbound_id` = 0 ORDER BY id ASC");
