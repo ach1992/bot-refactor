@@ -37,30 +37,79 @@ if($data=="requestAgency"){
     }elseif($userInfo['is_agent'] == -1) alert($mainValues['agency_request_declined']);
     elseif($userInfo['is_agent'] == 1) editText($message_id,"لطفا یکی از کلید های زیر را انتخاب کنید.",getMainKeys());
 }
-if(preg_match('/^agencyDecline(\d+)/',$data,$match) && ($from_id == $admin || $userInfo['isAdmin'] == true)){
-    editKeys(json_encode(['inline_keyboard'=>[
-        [['text'=>$buttonValues['declined'],'callback_data'=>"wizwizch"]]
-        ]]));
-    sendMessage($mainValues['agency_request_declined'], null,null,$match[1]);
-    setUser(-1, 'is_agent', $match[1]);
-}
-if(preg_match('/^agencyApprove(\d+)/',$data,$match) && ($from_id == $admin || $userInfo['isAdmin'] == true)){
-    setUser($data . "_" . $message_id);
-    sendMessage($mainValues['send_agent_discount_percent'], $cancelKey);
-}
-if(preg_match('/^agencyApprove(\d+)_(\d+)/',$userInfo['step'],$match) && $text != $buttonValues['cancel'] && ($from_id == $admin || $userInfo['isAdmin'] == true)){
-    if(is_numeric($text)){
-        editKeys(json_encode(['inline_keyboard'=>[
-            [['text'=>$buttonValues['approved'],'callback_data'=>"wizwizch"]]
-            ]]), $match[2]);
-        sendMessage($mainValues['saved_successfuly']);
-        setUser();
-        $discount = json_encode(['normal'=>$text]);
-        $stmt = $connection->prepare("UPDATE `users` SET `is_agent` = 1, `discount_percent` = ?, `agent_date` = ? WHERE `userid` = ?");
-        $stmt->bind_param("sii", $discount, $time, $match[1]);
-        $stmt->execute();
-        $stmt->close();
-        sendMessage($mainValues['agency_request_approved'], null,null,$match[1]);
-    }else sendMessage($mainValues['send_only_number']);
+// Resolve exactly one pending applicant before a state transition. The legacy
+// schema does not enforce uniqueness on users.userid; ambiguous IDs fail closed.
+function achbotPendingAgencyApplicantId(mysqli $connection, int $applicantUserId): ?int {
+    $stmt = $connection->prepare("SELECT `id`, `is_agent` FROM `users` WHERE `userid` = ? LIMIT 2");
+    $stmt->bind_param("i", $applicantUserId);
+    $stmt->execute();
+    $rows = $stmt->get_result();
+    $row = $rows->num_rows === 1 ? $rows->fetch_assoc() : null;
+    $stmt->close();
+    return $row !== null && (int)$row['is_agent'] === 2 ? (int)$row['id'] : null;
 }
 
+if(preg_match('/^agencyDecline([1-9][0-9]*)$/D', (string)$data, $match) &&
+    ($from_id == $admin || !empty($userInfo['isAdmin']))){
+    $applicant = filter_var($match[1], FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+    $rowId = $applicant !== false ? achbotPendingAgencyApplicantId($connection, $applicant) : null;
+    if ($rowId !== null) {
+        // The acting administrator's setUser() is deliberately NOT used here.
+        // Compare-and-set prevents stale/replayed callbacks from succeeding.
+        $stmt = $connection->prepare("UPDATE `users` SET `is_agent` = -1 WHERE `id` = ? AND `is_agent` = 2");
+        $stmt->bind_param("i", $rowId);
+        $stmt->execute();
+        $changed = $stmt->affected_rows === 1;
+        $stmt->close();
+        if ($changed) {
+            editKeys(json_encode(['inline_keyboard'=>[
+                [['text'=>$buttonValues['declined'],'callback_data'=>"wizwizch"]]
+            ]]));
+            sendMessage($mainValues['agency_request_declined'], null, null, $applicant);
+        } else {
+            alert($mainValues['config_not_found']);
+        }
+    } else {
+        alert($mainValues['config_not_found']);
+    }
+}
+if(preg_match('/^agencyApprove([1-9][0-9]*)$/D', (string)$data, $match) &&
+    ($from_id == $admin || !empty($userInfo['isAdmin']))){
+    $applicant = filter_var($match[1], FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+    if ($applicant !== false && achbotPendingAgencyApplicantId($connection, $applicant) !== null) {
+        setUser($data . "_" . $message_id);
+        sendMessage($mainValues['send_agent_discount_percent'], $cancelKey);
+    } else {
+        alert($mainValues['config_not_found']);
+    }
+}
+if(preg_match('/^agencyApprove([1-9][0-9]*)_([1-9][0-9]*)$/D', (string)($userInfo['step'] ?? ''), $match) &&
+    $text != $buttonValues['cancel'] && ($from_id == $admin || !empty($userInfo['isAdmin']))){
+    if(is_numeric($text)){
+        $applicant = filter_var($match[1], FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+        $originalMessage = filter_var($match[2], FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+        $rowId = $applicant !== false && $originalMessage !== false
+            ? achbotPendingAgencyApplicantId($connection, $applicant) : null;
+        if ($rowId !== null) {
+            $discount = json_encode(['normal'=>$text]);
+            $stmt = $connection->prepare("UPDATE `users` SET `is_agent` = 1, `discount_percent` = ?, `agent_date` = ? WHERE `id` = ? AND `is_agent` = 2");
+            $stmt->bind_param("sii", $discount, $time, $rowId);
+            $stmt->execute();
+            $changed = $stmt->affected_rows === 1;
+            $stmt->close();
+            setUser(); // Only the acting administrator's wizard step is cleared.
+            if ($changed) {
+                editKeys(json_encode(['inline_keyboard'=>[
+                    [['text'=>$buttonValues['approved'],'callback_data'=>"wizwizch"]]
+                ]]), $originalMessage);
+                sendMessage($mainValues['saved_successfuly']);
+                sendMessage($mainValues['agency_request_approved'], null, null, $applicant);
+            } else {
+                alert($mainValues['config_not_found']);
+            }
+        } else {
+            setUser();
+            alert($mainValues['config_not_found']);
+        }
+    } else sendMessage($mainValues['send_only_number']);
+}

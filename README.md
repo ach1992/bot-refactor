@@ -2,7 +2,7 @@
 
 AChBot is a PHP Telegram bot for managing VPN subscriptions through **Marzban**. It includes customer subscription and account flows, administrator server/plan management, support and scheduled operations. The current source is **Marzban-only**; the retired X-UI/Sanaei/Alireza/legacy normal panel adapters are not supported.
 
-> **Release status (2026-10-15):** [v0.10.0-rc.1](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.1) is the current **Marzban-only source-only pre-release**; the immutable historical V9 source remains available at [v0.9.0-rc.1](https://github.com/ach1992/bot-refactor/releases/tag/v0.9.0-rc.1). This pre-release has not completed full installed/operator acceptance and is **not production-certified**; verify your own runtime and schema before upgrading. Replacing a ZIP is not an atomic or self-verifying update.
+> **Release status (2026-10-16):** [v0.10.0-rc.2](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.2) is the current **Marzban-only source-only prerelease**, containing a security-only `config.php` hotfix over [v0.10.0-rc.1](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.1). The historical V9 source is separately preserved at [v0.9.0-rc.1](https://github.com/ach1992/bot-refactor/releases/tag/v0.9.0-rc.1). Full installed/operator acceptance is **not complete**, so this is **not production-certified**. Replacing a ZIP is neither atomic nor a proof of running-code identity.
 
 ## Requirements
 

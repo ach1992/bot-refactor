@@ -1,6 +1,6 @@
 # AChBot source refactor — historical stages and current continuation
 
-**Status:** V0–V9 Phase 1 source-only extraction/integration is completed and [V9 `v0.9.0-rc.1`](https://github.com/ach1992/bot-refactor/releases/tag/v0.9.0-rc.1) was published. Real installed/operator acceptance and legacy financial hazards remain independently OPEN. The following historical stage descriptions are **frozen scope/evidence**, not current approval for using old panel types. [PR #30](https://github.com/ach1992/bot-refactor/pull/30) adds published V9 artifact staging coverage and is separately gated.
+**Status:** V0–V9 Phase 1 source-only extraction/integration is completed and [V9 `v0.9.0-rc.1`](https://github.com/ach1992/bot-refactor/releases/tag/v0.9.0-rc.1) was published. Real installed/operator acceptance and legacy financial hazards remain independently OPEN. The following historical stage descriptions are **frozen scope/evidence**, not current approval for using old panel types. [PR #30](https://github.com/ach1992/bot-refactor/pull/30) was closed without merge; it is not an active gate. The current [v0.10.0-rc.2](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.2) is a Marzban-only source hotfix, not proof of full installed acceptance.
 
 Current acceptance and safe future-recovery details: [Marzban-only notes](post-v9/MARZBAN-ONLY.md).
 
