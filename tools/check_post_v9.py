@@ -151,8 +151,8 @@ def main():
                         "--run-disposable","--report",str(finance_path)],
                        cwd=ROOT,check=True,timeout=180,capture_output=True)
         finance=json.loads(finance_path.read_text())
-        # Current R6 financial contract: replace superseded legacy auto-credit
-        # expectations with stricter read-only/immutable-payout evidence.
+        # Current R8 financial contract: preserve authenticated settlement,
+        # durable compensation proof and concurrency-safe operator recovery.
         mandatory_finance = {
             "legacy_nowpayment_browser_only_read_only",
             "legacy_nowpayment_finished_read_only",
@@ -199,10 +199,36 @@ def main():
             "zarinpal_negative_exact_order_cas",
             "zarinpal_mid_verify_cas_preserves_paid",
             "zarinpal_authenticated_positive_wallet_credit",
+            "zarinpal_browser_nok_provider_100_settled",
+            "zarinpal_ok_provider_101_review",
+            "zarinpal_nok_provider_101_review",
+            "zarinpal_transport_preserves_pending",
+            "zarinpal_malformed_preserves_pending",
+            "marzban_put_valid_update_native_contract",
+            "marzban_put_http_rejection_native_contract",
+            "marzban_put_http_503_native_contract",
+            "marzban_put_lost_response_native_contract",
+            "marzban_put_bad_json_native_contract",
+            "marzban_put_wrong_get_account_native_contract",
+            "marzban_reset_reset_rejected_native_contract",
+            "wallet_compensation_user_missing_no_claim",
+            "wallet_compensation_overflow_no_claim",
+            "wallet_compensation_verified_credit_and_debt_offset",
+            "nowpayments_capacity_missing_user_never_done",
+            "nowpayments_capacity_verified_refund_done",
+            "renewal_nowpayment_explicit_failure_is_ambiguous",
+            "renewal_nextpay_explicit_failure_is_ambiguous",
+            "renewal_zarinpal_explicit_failure_is_ambiguous",
+            "prepayment_stale_nextpay_preserves_np_invoice",
+            "prepayment_stale_zarinpal_preserves_np_invoice",
+            "prepayment_stale_button_allows_later_ipn",
+            "prepayment_stale_button_preserves_creating",
+            "nowpayments_concurrent_alert_child_highwater_cas",
+            "nowpayments_concurrent_alert_worker_lease_exclusive",
         }
         cases_finance = {case.get("case") for case in finance.get("scenarios",[])
                          if case.get("pass_")}
-        if not (finance.get("complete") and finance.get("cases")>=80 and
+        if not (finance.get("complete") and finance.get("cases")>=120 and
                 mandatory_finance.issubset(cases_finance) and
                 finance.get("schema_tables")==23 and
                 finance.get("current_schema_tables")==25 and

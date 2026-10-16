@@ -19,6 +19,10 @@ CREATE TABLE IF NOT EXISTS achbot_nowpayments_attempts (
   provider_status VARCHAR(32) DEFAULT NULL,
   last_checked_at DATETIME DEFAULT NULL,
   review_notified_at DATETIME DEFAULT NULL,
+  -- Bounded, leased operator alert delivery; child count acts as a receipt
+  -- high-water mark when acknowledging a notification after network I/O.
+  review_notice_claim_token CHAR(32) DEFAULT NULL,
+  review_notice_claimed_at DATETIME DEFAULT NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
@@ -27,7 +31,7 @@ CREATE TABLE IF NOT EXISTS achbot_nowpayments_attempts (
   UNIQUE KEY uq_achbot_np_invoice (invoice_id),
   UNIQUE KEY uq_achbot_np_payment_id (payment_id),
   KEY idx_achbot_np_reconcile (stage,last_checked_at),
-  KEY idx_achbot_np_alerts (stage,review_notified_at)
+  KEY idx_achbot_np_alerts (stage,review_notified_at,review_notice_claimed_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- A single hosted invoice may receive multiple distinct child deposits.

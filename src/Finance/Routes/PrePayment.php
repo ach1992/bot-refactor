@@ -29,33 +29,64 @@ if (preg_match('/^prePayCheck_([a-zA-Z0-9]+)_([a-zA-Z0-9]+)_([a-zA-Z0-9]+)/', $d
         return;
     }
     $now = time();
-    // An existing NOWPayments invoice can finish without any browser return,
-    // including after the old three-hour bot-menu checkout window. Never
-    // expire such an invoice solely because its chat button was clicked late.
-    $hasNpInvoice = false;
-    if ($payMethod === 'nowpayment' && !empty($payInfo['payid'])) {
-        $npTable=$connection->query("SHOW TABLES LIKE 'achbot_nowpayments_attempts'");
-        if ($npTable && $npTable->num_rows===1) {
-            $npStmt=$connection->prepare("SELECT id FROM achbot_nowpayments_attempts
-                WHERE pay_row_id=? AND invoice_id=? LIMIT 1");
-            $npStmt->bind_param('is',$payInfo['id'],$payInfo['payid']);
-            $npStmt->execute();
-            $hasNpInvoice=$npStmt->get_result()->num_rows===1;
-            $npStmt->close();
-        }
+    // Protect an issued NOWPayments invoice AND an uncertain pre-POST
+    // reservation regardless of which OLD gateway button the buyer clicked.
+    $npAttempt=null;
+    $npTable=$connection->query("SHOW TABLES LIKE 'achbot_nowpayments_attempts'");
+    if ($npTable && $npTable->num_rows===1) {
+        $npStmt=$connection->prepare("SELECT stage,invoice_id,invoice_url
+            FROM achbot_nowpayments_attempts WHERE pay_row_id=? LIMIT 1");
+        $npStmt->bind_param('i',$payInfo['id']);
+        $npStmt->execute();
+        $npAttempt=$npStmt->get_result()->fetch_assoc() ?: null;
+        $npStmt->close();
     }
-    if ($now - $payInfo['request_date'] > 10800 && !$hasNpInvoice) {
-		if ($payInfo['state'] === 'pending') {
-			$stmt = $connection->prepare("UPDATE pays SET state = 'expired' WHERE id = ?");
-			$stmt->bind_param("i", $payInfo['id']);
-			$stmt->execute();
-			$stmt->close();
-		}
-    
-		delMessage();
-		sendMessage("⏳ مهلت پرداخت این سفارش به پایان رسیده است.\n🔄 لطفاً دوباره اقدام کنید.", getMainKeys());
-		exit;
-	}
+    $activeNpClaim=$npAttempt!==null &&
+        in_array($npAttempt['stage'],['creating','pending','checking','fulfilling','review'],true);
+
+    // Never turn a late NextPay/Zarinpal selection into a cancellation or
+    // second checkout for an already reserved NOWPayments order.
+    if ($activeNpClaim && $payMethod!=='nowpayment') {
+        answerCallbackQuery($callbackId,"این سفارش قبلاً در درگاه رمزارزی ثبت شده است.");
+        $invoiceUrl=(string)($npAttempt['invoice_url']??'');
+        if ($invoiceUrl!=='' && function_exists('achbotNpValidInvoiceUrl') &&
+            achbotNpValidInvoiceUrl($invoiceUrl)) {
+            $keyboard=json_encode(['inline_keyboard'=>[[
+                ['text'=>'🔗 ادامه همان فاکتور','url'=>$invoiceUrl]
+            ]]],JSON_UNESCAPED_UNICODE);
+            sendMessage("💳 فاکتور اصلی این سفارش هنوز معتبر است؛ از همان لینک پرداخت استفاده کنید.",
+                        $keyboard,"html",$from_id);
+        } else {
+            sendMessage("وضعیت صدور فاکتور این سفارش در حال بررسی است. برای جلوگیری از درخواست تکراری با پشتیبانی تماس بگیرید.",
+                        getMainKeys(),null,$from_id);
+        }
+        return;
+    }
+
+    if ($now - (int)$payInfo['request_date'] > 10800 && !$activeNpClaim) {
+        if ($payInfo['state']==='pending') {
+            // A provider may have claimed payid after the SELECT above.
+            // Expire only the same still-unclaimed row; never orphan an
+            // external invoice through an old menu button.
+            $stmt=$connection->prepare("UPDATE pays SET state='expired'
+                WHERE id=? AND state='pending' AND (payid IS NULL OR payid='')");
+            $stmt->bind_param('i',$payInfo['id']);
+            $stmt->execute();
+            $expired=$stmt->affected_rows===1;
+            $stmt->close();
+            if (!$expired) {
+                answerCallbackQuery($callbackId,"پرداخت این سفارش در حال بررسی است.");
+                return;
+            }
+        } elseif ($payInfo['state']!=='expired') {
+            answerCallbackQuery($callbackId,"وضعیت این سفارش تغییر کرده است.");
+            return;
+        }
+
+        delMessage();
+        sendMessage("⏳ مهلت پرداخت این سفارش به پایان رسیده است.\n🔄 لطفاً دوباره اقدام کنید.",getMainKeys());
+        exit;
+    }
 
     // چک پلن فقط برای تمدید
     if ($payInfo['type'] === 'RENEW_ACCOUNT') {

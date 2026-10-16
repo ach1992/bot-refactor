@@ -19,10 +19,21 @@ if (!function_exists('addToWallet')) {
         $amount = (int)$amount;
         $userId = (int)$userId;
 
-        $stmt = $connection->prepare("UPDATE `users` SET `wallet` = `wallet` + ? WHERE `userid` = ?");
-        $stmt->bind_param("ii", $amount, $userId);
-        $stmt->execute();
-        $stmt->close();
+        // Confirm the exact row and avoid INT overflow while retaining
+        // intentional negative administrator debt.
+        if ($userId<=0 || $amount<=0 || $amount>2147483647) return false;
+        $maximum=2147483647-$amount;
+        try {
+            $stmt=$connection->prepare("UPDATE users SET wallet=wallet+?
+                WHERE userid=? AND wallet<=?");
+            $stmt->bind_param('iii',$amount,$userId,$maximum);
+            $saved=$stmt->execute();
+            $changed=$stmt->affected_rows;
+            $stmt->close();
+            return $saved && $changed===1;
+        } catch (\Throwable $error) {
+            return false;
+        }
     }
 }
 
@@ -57,7 +68,7 @@ if (!function_exists('refundToWalletAndNotify')) {
         $rewardChannel = null,
         $userReasonText = null
     ) {
-        addToWallet($connection, $userId, $amount);
+        if (!addToWallet($connection, $userId, $amount)) return false;
 
         $userMsg = "✅ مبلغ " . number_format($amount) . " تومان به حساب شما اضافه شد.";
         if (!empty($userReasonText)) {
@@ -73,6 +84,7 @@ if (!function_exists('refundToWalletAndNotify')) {
         }
 
         notifyAllAdminsSimple($adminText, $admin, null, null, $rewardChannel);
+        return true;
     }
 }
 
