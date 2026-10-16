@@ -151,12 +151,28 @@ def main():
                         "--run-disposable","--report",str(finance_path)],
                        cwd=ROOT,check=True,timeout=180,capture_output=True)
         finance=json.loads(finance_path.read_text())
-        if not (finance.get("complete") and finance.get("cases")>=19 and
+        mandatory_finance = {
+            "nowpayments_browser_only_return_not_proof",
+            "nowpayments_confirmed_not_final",
+            "nowpayments_sending_not_final",
+            "nowpayments_partially_paid_not_final",
+            "nowpayments_finished_real_wallet_helper_once",
+            "nowpayments_sequential_replay_no_duplicate_credit",
+            "nowpayments_negative_race_preserves_paid",
+            "nowpayments_duplicate_invoice_no_settlement",
+            "nowpayments_mismatched_merchant_order_guard",
+            "nextpay_http_200_code_zero_actual_wallet_fulfillment",
+            "nextpay_mid_verify_state_change_cas_preserves_paid",
+        }
+        cases_finance = {case.get("case") for case in finance.get("scenarios",[])
+                         if case.get("pass_")}
+        if not (finance.get("complete") and finance.get("cases")>=53 and
+                mandatory_finance.issubset(cases_finance) and
                 finance.get("schema_tables")==23 and
                 finance.get("original_mariadb_socket_only") and
                 finance.get("synthetic_payment_spy") and
                 finance.get("real_provider_requests")==0):
-            raise RuntimeError("Original-schema financial route and stale admin callback assurance incomplete")
+            raise RuntimeError("Original-schema finance and NOWPayments finality assurance incomplete")
         agency_path=Path(tmp)/"agency-state-regression.json"
         subprocess.run(["python3",str(ROOT/"tools/test_post_v9_agency.py"),
                         "--run-disposable","--report",str(agency_path)],

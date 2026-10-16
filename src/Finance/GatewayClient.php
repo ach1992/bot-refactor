@@ -5,6 +5,34 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     exit;
 }
 
+/**
+ * Classify only server-verified provider outcomes; browser redirects are not proof.
+ * Do not conflate blockchain confirmation with merchant payout completion.
+ * An unknown value remains reviewable rather than becoming a false negative.
+ *
+ * This small adapter decision is shared by the present callback routes;
+ * durable payment/effect claims and external fulfillment need a later gate.
+ */
+function achbotVerifiedGatewayOutcome(string $provider, $status): string {
+    if ($provider === 'nowpayment') {
+        if (!is_string($status)) return 'review';
+        return match ($status) {
+            'finished' => 'verified',
+            'partially_paid' => 'partial',
+            'waiting', 'confirming', 'confirmed', 'sending' => 'pending',
+            'failed', 'expired' => 'rejected',
+            'refunded' => 'review',
+            default => 'review',
+        };
+    }
+    if ($provider === 'nextpay') {
+        if ($status === 0 || $status === '0') return 'verified';
+        if (in_array($status, [-2, '-2', -4, '-4'], true)) return 'rejected';
+        if (in_array($status, [-1, '-1', -3, '-3'], true)) return 'pending';
+    }
+    return 'review';
+}
+
 function NOWPayments($method, $endpoint, $datas = []){
     global $paymentKeys;
 

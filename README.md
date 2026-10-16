@@ -44,11 +44,12 @@ python3 tools/package_post_v9.py verify \
   --manifest /tmp/achbot-runtime.zip.manifest.json
 ```
 
-These tests and archives do **not** certify live payment settlement, full database recovery, Telegram webhooks, real Marzban provisioning or production deployment. The inherited financial/settlement risks are tracked in [Issue #26](https://github.com/ach1992/bot-refactor/issues/26).
+These tests and archives do **not** certify live payment settlement, full database recovery, Telegram webhooks, real Marzban provisioning or production deployment. The Owner has reported installing RC3 and observing no obvious initial regression, including an agency-decline smoke check; the finance refactor under [Issue #26](https://github.com/ach1992/bot-refactor/issues/26) is a separate **unreleased, independently review-gated** candidate and must not be copied over that installation. For NOWPayments, a hosted browser return is not proof of payment; only verified provider `finished` can be eligible for settlement, subject to identity/amount and effect-idempotency checks still under development. The inherited financial/settlement risks are tracked in [Issue #26](https://github.com/ach1992/bot-refactor/issues/26).
 
 ## Documentation
 
 - [Post-V9 Marzban behavior and validation](docs/post-v9/MARZBAN-ONLY.md)
+- [Financial consolidation, NOWPayments finality and migration gates](docs/post-v9/FINANCIAL-CONSOLIDATION.md)
 - [Schema migration and rollback precautions](docs/post-v9/PANEL-GROUPS-MIGRATION.md)
 - [Operator acceptance checklist](docs/post-v9/MARZBAN-OPERATOR-ACCEPTANCE.md)
 - [Project specification and historical V0–V9 contract](docs/PROJECT-SPEC.md)

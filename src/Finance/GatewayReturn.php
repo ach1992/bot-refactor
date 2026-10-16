@@ -5,6 +5,8 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     exit;
 }
 
+require_once __DIR__ . '/GatewayClient.php';
+
 if (isset($_GET['nowpayment'])) {
 
     if (isset($_GET['NP_id'])) {
@@ -44,8 +46,30 @@ if (isset($_GET['nowpayment'])) {
         curl_setopt($ch, CURLOPT_HTTPHEADER, ['X-API-KEY: ' . ($paymentKeys['nowpayment'] ?? '')]);
         curl_setopt($ch, CURLOPT_URL, $base_url);
 
-        $res = json_decode(curl_exec($ch));
+        $rawResponse = curl_exec($ch);
+        $httpStatus = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $curlError = curl_error($ch);
         curl_close($ch);
+        // A timeout, unexpected HTTP status or malformed provider response
+        // is NOT evidence of a failed payment. Keep its order reconcilable.
+        $res = $rawResponse !== false && $httpStatus === 200 && $curlError === ''
+            ? json_decode($rawResponse) : null;
+        if (!is_object($res)) {
+            showForm("وضعیت پرداخت هنوز قابل تایید نیست؛ لطفا بعدا بررسی کنید.", "در حال بررسی");
+            return;
+        }
+        // Match a provider payment ID when supplied by the verified API.
+        $providerPaymentId = $res->payment_id ?? $res->id ?? null;
+        if ($providerPaymentId !== null && (string) $providerPaymentId !== $incomingPaymentId) {
+            showForm("شناسه تراکنش درگاه با درخواست مطابقت ندارد.", "خطا");
+            return;
+        }
+        // The signed API may also carry the original merchant order_id.
+        // Do not allow it to identify a different order than our local row.
+        if (isset($res->order_id) && (string) $res->order_id !== (string) $preflightPay['hash_id']) {
+            showForm("شناسه سفارش درگاه با فاکتور مطابقت ندارد.", "خطا");
+            return;
+        }
 
         $hash_id = (string) ($res->invoice_id ?? '');
         if ($hash_id === '' || $hash_id !== (string) $preflightPay['payid']) {
@@ -53,48 +77,58 @@ if (isset($_GET['nowpayment'])) {
             return;
         }
 
-        $stmt = $connection->prepare("SELECT * FROM `pays` WHERE `payid` = ? AND (`state` = 'pending' OR `state` = 'send')");
+        // Provider invoice IDs are not UNIQUE in the inherited schema.
+        // Do not credit an arbitrary matching row or cross another local order.
+        $stmt = $connection->prepare("SELECT * FROM `pays` WHERE `payid` = ? LIMIT 2");
         $stmt->bind_param("s", $hash_id);
         $stmt->execute();
         $payInfo = $stmt->get_result();
         $stmt->close();
 
-        if (mysqli_num_rows($payInfo) == 0) {
-            showForm("کد پرداخت یافت نشد.", "خطا!");
-        } else {
-            $payParam = $payInfo->fetch_assoc();
-        if (!achbotSupportsPaymentSubject($connection, $payParam)) {
-            showForm("تایید این پرداخت برای سرویس غیرقابل پشتیبانی متوقف شد؛ با پشتیبانی تماس بگیرید.", "خطا");
+        if (mysqli_num_rows($payInfo) !== 1) {
+            showForm("شناسه فاکتور پرداخت یکتا نیست یا یافت نشد.", "خطا!");
+            return;
+        }
+        $payParam = $payInfo->fetch_assoc();
+        if ((int)$payParam['id'] !== (int)$preflightPay['id'] ||
+            !in_array($payParam['state'], ['pending', 'send'], true) ||
+            !achbotSupportsPaymentSubject($connection, $payParam)) {
+            showForm("وضعیت یا مالک فاکتور پرداخت نامعتبر است؛ با پشتیبانی تماس بگیرید.", "خطا");
             return;
         }
 
-            $rowId = (int)$payParam['id'];
-            $payDescription = payTypeToDescription($payParam['type']);
-
-            //==============================================================
-            $st = $res->payment_status ?? '';
-            if ($st == 'finished' || $st == 'confirmed' || $st == 'sending') {
-                doAction($rowId, "nowpayment");
-            } else {
-                if ($st == 'partially_paid') {
-                    $stmt = $connection->prepare("UPDATE `pays` SET `state` = 'low_payment' WHERE `payid` =?");
-                    $stmt->bind_param("s", $hash_id);
-                    $stmt->execute();
-                    $stmt->close();
-
-                    showForm("#$hash_id - شما هزینه کمتری واریز کردید، لطفا به پشتیبانی مراجعه کنید", $payDescription);
-                } else {
-                    $stmt = $connection->prepare("UPDATE `pays` SET `state` = 'canceled' WHERE `payid` =?");
-					$stmt->bind_param("s", $hash_id);
-                    $stmt->execute();
-                    $stmt->close();
-
-                    showForm("پرداخت انجام نشد.", $payDescription);
-                }
-            }
+        $rowId = (int)$payParam['id'];
+        $payDescription = payTypeToDescription($payParam['type']);
+        $disposition = achbotVerifiedGatewayOutcome('nowpayment', $res->payment_status ?? null);
+        if ($disposition === 'verified') {
+            // This still enters the inherited doAction() settlement path.
+            // Whole-lifecycle idempotency/fulfillment is tracked in Issue #26.
+            doAction($rowId, 'nowpayment');
+        } elseif ($disposition === 'rejected') {
+            // Reject only this still-pending row; do not overwrite a parallel
+            // verification that may already have finalized the payment.
+            $stmt = $connection->prepare("UPDATE `pays` SET `state`='canceled' WHERE `id`=? AND `state` IN ('pending','send')");
+            $stmt->bind_param('i', $rowId);
+            $stmt->execute();
+            $changed = $stmt->affected_rows;
+            $stmt->close();
+            showForm($changed === 1 ? "پرداخت توسط درگاه ناموفق یا منقضی اعلام شد." :
+                "وضعیت پرداخت تغییر کرده است؛ لطفا مجددا بررسی کنید.", $payDescription);
+        } elseif ($disposition === 'partial') {
+            // A partial receipt may later complete. Keep it pending so a
+            // subsequent trusted verification can still settle this order.
+            showForm("پرداخت ناقص ثبت شده است؛ تا تکمیل یا بررسی پشتیبانی، سفارش باز می‌ماند.", $payDescription);
+        } else {
+            // confirmed/sending are NOT finished. Unknown/refunded/transport
+            // states require a later trusted check or manual reconciliation.
+            showForm("پرداخت هنوز نهایی نشده است؛ وضعیت آن بعدا بررسی می‌شود.", $payDescription);
         }
     } else {
-        showForm("پرداخت انجام نشد.", "خطا!");
+        // A hosted invoice success_url may carry only the merchant hash and
+        // no provider payment ID. A browser return is NOT a negative verdict.
+        // A signed IPN or authenticated payment-ID reconciliation is still
+        // needed; do not cancel or credit an unverified local payment.
+        showForm("وضعیت پرداخت هنوز از درگاه تایید نشده است؛ بعدا دوباره بررسی کنید.", "در حال بررسی");
     }
 
 } elseif (isset($_GET['zarinpal'])) {
@@ -192,9 +226,10 @@ if (isset($_GET['nowpayment'])) {
             ? json_decode($rawResponse) : null;
         $verifyCode = $response->code ?? null;
 
-        if ($verifyCode === 0 || $verifyCode === '0') {
+        $disposition = achbotVerifiedGatewayOutcome('nextpay', $verifyCode);
+        if ($disposition === 'verified') {
             doAction($rowId, "nextpay");
-        } elseif (in_array($verifyCode, [-2, '-2', -4, '-4'], true)) {
+        } elseif ($disposition === 'rejected') {
             // Official NextPay codes -2 (rejected) and -4 (canceled) are
             // definitive. -1/-3 are pending; other errors need reconciliation.
             // Cancel only the selected pending row; never clobber a replayed or
