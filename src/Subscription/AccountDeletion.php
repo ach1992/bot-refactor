@@ -63,7 +63,7 @@ elseif(preg_match('/^yesDeleteConfig(\d+)/',$data,$match)){
 
 	
     if (!achbotSupportsPanel($serverType) || (int)$inbound_id !== 0) {
-        alert("پنل این اشتراک دیگر پشتیبانی نمی‌شود.", true);
+        alert("⛔️ حذف این اشتراک در حال حاضر امکان‌پذیر نیست.", true);
         exit;
     } else {
 	    $configInfo = getMarzbanUser($server_id, $remark);
@@ -154,7 +154,7 @@ elseif(preg_match('/^yesDeleteUserConfig(\d+)/',$data,$match) && ($from_id == $a
     
 	
     if (!achbotSupportsPanel($serverType) || (int)$inbound_id !== 0) {
-        alert("پنل این اشتراک دیگر پشتیبانی نمی‌شود.", true);
+        alert("⛔️ حذف این اشتراک در حال حاضر امکان‌پذیر نیست.", true);
         exit;
     } else {
 	    $res = deleteMarzban($server_id, $remark);

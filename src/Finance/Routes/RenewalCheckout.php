@@ -49,7 +49,7 @@ if (
     $order = $order->fetch_assoc();
     $fid = $order['fileid'];
     if (!achbotSupportsMarzbanOrder($connection, (int)$oid, (int)$fid, (int)$order['userid'])) {
-        alert("⛔️ این سفارش برای تمدید مرزبان معتبر نیست.", true);
+        alert("⛔️ تمدید این اشتراک در حال حاضر امکان‌پذیر نیست.", true);
         return;
     }
     // بررسی اگر fileid برابر 0 باشد
@@ -452,7 +452,7 @@ if(preg_match('/approveRenewAcc(.*)/',$data,$match) && ($from_id == $admin || $u
              . "📄 Error: " . $e->getMessage();
         sendMessage($err, null, null, $admin);
 
-        alert('❌ تمدید انجام نشد. لطفاً وضعیت سرور یا اطلاعات را بررسی کنید.', true);
+        alert('❌ تمدید انجام نشد. لطفاً وضعیت اشتراک را بررسی کنید و در صورت نیاز با پشتیبانی تماس بگیرید.', true);
         return;
     }
 }
@@ -477,7 +477,7 @@ if(preg_match('/payRenewWithWallet(.*)/', $data, $match)){
         $payInfo = $payRes->fetch_assoc();
         if (!achbotSupportsPaymentSubject($connection, $payInfo)) {
             $connection->rollback();
-            alert("⛔️ تمدید پنل غیرقابل پشتیبانی انجام نشد.", true);
+            alert("⛔️ تمدید این اشتراک انجام نشد؛ لطفاً با پشتیبانی تماس بگیرید.", true);
             return;
         }
         $hash_id   = $payInfo['hash_id'];

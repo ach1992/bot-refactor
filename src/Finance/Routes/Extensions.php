@@ -17,7 +17,7 @@ if(preg_match('/increaseADay(.*)/', $data, $match)){
     $orderInfo = $stmt->get_result()->fetch_assoc();
     $stmt->close();
     if (!$orderInfo || !achbotSupportsMarzbanOrder($connection, (int)$orderInfo['id'])) {
-        alert("⛔️ این سرویس برای افزایش حجم یا مدت در مرزبان پشتیبانی نمی‌شود.", true);
+        alert("⛔️ افزایش حجم یا مدت برای این اشتراک در حال حاضر امکان‌پذیر نیست.", true);
         return;
     }
 
@@ -64,7 +64,7 @@ if(preg_match('/selectPlanDayIncrease(?<orderId>.+)_(?<dayId>.+)/',$data,$match)
     $orderInfo = $stmt->get_result()->fetch_assoc();
     $stmt->close();
     if (!$orderInfo || !achbotSupportsMarzbanOrder($connection, (int)$orderInfo['id'])) {
-        alert("⛔️ این سرویس برای افزایش حجم یا مدت در مرزبان پشتیبانی نمی‌شود.", true);
+        alert("⛔️ افزایش حجم یا مدت برای این اشتراک در حال حاضر امکان‌پذیر نیست.", true);
         return;
     }
 
@@ -183,7 +183,7 @@ if (preg_match('/waitIncreaseDayReceipt(.*)/', $userInfo['step'], $match)) {
     $orderInfo = $stmt->get_result()->fetch_assoc();
     $stmt->close();
     if (!$orderInfo || !achbotSupportsMarzbanOrder($connection, (int)$orderInfo['id'])) {
-        alert("⛔️ این سرویس برای افزایش حجم یا مدت در مرزبان پشتیبانی نمی‌شود.", true);
+        alert("⛔️ افزایش حجم یا مدت برای این اشتراک در حال حاضر امکان‌پذیر نیست.", true);
         return;
     }
 
@@ -265,7 +265,7 @@ if (preg_match('/approveIncreaseDay(.*)/', $data, $match) && ($from_id == $admin
         $orderInfo = $stmt->get_result()->fetch_assoc();
     $stmt->close();
     if (!$orderInfo || !achbotSupportsMarzbanOrder($connection, (int)$orderInfo['id'])) {
-        alert("⛔️ این سرویس برای افزایش حجم یا مدت در مرزبان پشتیبانی نمی‌شود.", true);
+        alert("⛔️ افزایش حجم یا مدت برای این اشتراک در حال حاضر امکان‌پذیر نیست.", true);
         return;
     }
 
@@ -403,7 +403,7 @@ if(preg_match('/payIncreaseDayWithWallet(.*)/', $data, $match)){
         $payParam = $payRes->fetch_assoc();
         if (!achbotSupportsPaymentSubject($connection, $payParam)) {
             $connection->rollback();
-            alert("⛔️ پرداخت افزایشی برای پنل غیرقابل پشتیبانی انجام نشد.", true);
+            alert("⛔️ افزایش اشتراک در حال حاضر امکان‌پذیر نیست. اگر پرداختی انجام داده‌اید، وضعیت آن را با پشتیبانی بررسی کنید.", true);
             return;
         }
 
@@ -428,7 +428,7 @@ if(preg_match('/payIncreaseDayWithWallet(.*)/', $data, $match)){
         $orderInfo = $stmt->get_result()->fetch_assoc();
     $stmt->close();
     if (!$orderInfo || !achbotSupportsMarzbanOrder($connection, (int)$orderInfo['id'])) {
-        alert("⛔️ این سرویس برای افزایش حجم یا مدت در مرزبان پشتیبانی نمی‌شود.", true);
+        alert("⛔️ افزایش حجم یا مدت برای این اشتراک در حال حاضر امکان‌پذیر نیست.", true);
         return;
     }
 
@@ -587,7 +587,7 @@ if (preg_match('/^changePlan_(\d+)/', $data, $match)) {
     $orderInfo = $stmt->get_result()->fetch_assoc();
     $stmt->close();
     if (!$orderInfo || !achbotSupportsMarzbanOrder($connection, (int)$orderInfo['id'])) {
-        alert("⛔️ این سرویس برای افزایش حجم یا مدت در مرزبان پشتیبانی نمی‌شود.", true);
+        alert("⛔️ افزایش حجم یا مدت برای این اشتراک در حال حاضر امکان‌پذیر نیست.", true);
         return;
     }
 
@@ -634,7 +634,7 @@ if (preg_match('/^confirmChangePlan_(\d+)_(\d+)/', $data, $match)) {
     $orderInfo = $stmt->get_result()->fetch_assoc();
     $stmt->close();
     if (!$orderInfo || !achbotSupportsMarzbanOrder($connection, (int)$orderInfo['id'])) {
-        alert("⛔️ این سرویس برای افزایش حجم یا مدت در مرزبان پشتیبانی نمی‌شود.", true);
+        alert("⛔️ افزایش حجم یا مدت برای این اشتراک در حال حاضر امکان‌پذیر نیست.", true);
         return;
     }
 
@@ -691,7 +691,7 @@ if (preg_match('/^increaseAVolume(.*)/', $data, $match)) {
     $orderInfo = $stmt->get_result()->fetch_assoc();
     $stmt->close();
     if (!$orderInfo || !achbotSupportsMarzbanOrder($connection, (int)$orderInfo['id'])) {
-        alert("⛔️ این سرویس برای افزایش حجم یا مدت در مرزبان پشتیبانی نمی‌شود.", true);
+        alert("⛔️ افزایش حجم یا مدت برای این اشتراک در حال حاضر امکان‌پذیر نیست.", true);
         return;
     }
 
@@ -763,7 +763,7 @@ if(preg_match('/increaseVolumePlan(?<orderId>.+)_(?<volumeId>.+)/',$data,$match)
     $orderInfo = $stmt->get_result()->fetch_assoc();
     $stmt->close();
     if (!$orderInfo || !achbotSupportsMarzbanOrder($connection, (int)$orderInfo['id'])) {
-        alert("⛔️ این سرویس برای افزایش حجم یا مدت در مرزبان پشتیبانی نمی‌شود.", true);
+        alert("⛔️ افزایش حجم یا مدت برای این اشتراک در حال حاضر امکان‌پذیر نیست.", true);
         return;
     }
 
@@ -885,7 +885,7 @@ if (preg_match('/waitIncreaseVolumeReceipt(.*)/', $userInfo['step'], $match)) {
     $orderInfo = $stmt->get_result()->fetch_assoc();
     $stmt->close();
     if (!$orderInfo || !achbotSupportsMarzbanOrder($connection, (int)$orderInfo['id'])) {
-        alert("⛔️ این سرویس برای افزایش حجم یا مدت در مرزبان پشتیبانی نمی‌شود.", true);
+        alert("⛔️ افزایش حجم یا مدت برای این اشتراک در حال حاضر امکان‌پذیر نیست.", true);
         return;
     }
 
@@ -966,7 +966,7 @@ if (preg_match('/approveIncreaseVolume(.*)/', $data, $match) && ($from_id == $ad
         $orderInfo = $stmt->get_result()->fetch_assoc();
     $stmt->close();
     if (!$orderInfo || !achbotSupportsMarzbanOrder($connection, (int)$orderInfo['id'])) {
-        alert("⛔️ این سرویس برای افزایش حجم یا مدت در مرزبان پشتیبانی نمی‌شود.", true);
+        alert("⛔️ افزایش حجم یا مدت برای این اشتراک در حال حاضر امکان‌پذیر نیست.", true);
         return;
     }
 
@@ -1104,7 +1104,7 @@ if(preg_match('/payIncreaseWithWallet(.*)/', $data, $match)){
         $payParam = $payRes->fetch_assoc();
         if (!achbotSupportsPaymentSubject($connection, $payParam)) {
             $connection->rollback();
-            alert("⛔️ پرداخت افزایشی برای پنل غیرقابل پشتیبانی انجام نشد.", true);
+            alert("⛔️ افزایش اشتراک در حال حاضر امکان‌پذیر نیست. اگر پرداختی انجام داده‌اید، وضعیت آن را با پشتیبانی بررسی کنید.", true);
             return;
         }
 
@@ -1128,7 +1128,7 @@ if(preg_match('/payIncreaseWithWallet(.*)/', $data, $match)){
         $orderInfo = $stmt->get_result()->fetch_assoc();
     $stmt->close();
     if (!$orderInfo || !achbotSupportsMarzbanOrder($connection, (int)$orderInfo['id'])) {
-        alert("⛔️ این سرویس برای افزایش حجم یا مدت در مرزبان پشتیبانی نمی‌شود.", true);
+        alert("⛔️ افزایش حجم یا مدت برای این اشتراک در حال حاضر امکان‌پذیر نیست.", true);
         return;
     }
 

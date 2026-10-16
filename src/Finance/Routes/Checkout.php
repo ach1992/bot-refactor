@@ -188,7 +188,7 @@ if (preg_match('/^showQr(Sub|Config)(\d+)/', $data, $match)) {
     $stmt->close();
 
     if (!$order || !achbotSupportsMarzbanOrder($connection, (int)$order['id'])) {
-        alert("⛔️ این اشتراک در پنل مرزبان پشتیبانی نمی‌شود.", true);
+        alert("⛔️ اطلاعات این اشتراک در حال حاضر قابل نمایش نیست.", true);
         return;
     }
 
@@ -204,7 +204,7 @@ if (preg_match('/^showQr(Sub|Config)(\d+)/', $data, $match)) {
         $panel = $stmt->get_result()->fetch_assoc();
         $stmt->close();
         if (!$panel || empty($panel['panel_url']) || empty($order['token'])) {
-            alert("⛔️ لینک اشتراک در سرور مرزبان یافت نشد.", true);
+            alert("⛔️ لینک این اشتراک در حال حاضر در دسترس نیست.", true);
             return;
         }
         $subLink = rtrim($panel['panel_url'], '/') . "/sub/" . $order['token'];

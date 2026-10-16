@@ -17,7 +17,7 @@ if (preg_match('/sConfigUpdate(\d+)/', $data, $match)) {
 
     // All active subscriptions are Marzban; never parse obsolete X-UI links.
     if (empty($configInfo['marzban'])) {
-        alert("این نوع پنل دیگر پشتیبانی نمی‌شود.", true);
+        alert("⛔️ به‌روزرسانی اطلاعات این اشتراک در حال حاضر امکان‌پذیر نیست.", true);
         return;
     }
     $info = getMarzbanUserInfo($server_id, $remark);

@@ -13,6 +13,7 @@ import tempfile
 from pathlib import Path
 
 import v9_contract as historical
+import test_post_v9_customer_errors as customer_errors
 
 ROOT = Path(__file__).resolve().parents[1]
 V9 = "7eb077fd8e6d0a303421626d1500f69e295a6664"
@@ -102,6 +103,7 @@ def main():
     parser.add_argument("--report",type=Path)
     a=parser.parse_args()
     result=source_checks()
+    audience=customer_errors.verify(ROOT)
     with tempfile.TemporaryDirectory(prefix="achbot-post-v9-acceptance-") as tmp:
         native=Path(tmp)/"marzban-native.json"
         subprocess.run(["python3",str(ROOT/"tools/test_post_v9_marzban.py"),
@@ -127,6 +129,24 @@ def main():
                 and wallet_guard.get("http_calls")==0
                 and wallet_guard.get("committed_sql_mutations")==0):
             raise RuntimeError("Unsupported wallet checkout mutated money or failed to reject panel")
+        wallet_transfer_path=Path(tmp)/"wallet-transfer-current.json"
+        subprocess.run(["python3",str(ROOT/"tools/test_post_v9_wallet_transfer.py"),
+                        "--run-disposable","--report",str(wallet_transfer_path)],
+                       cwd=ROOT,check=True,timeout=180,capture_output=True)
+        wallet_transfer=json.loads(wallet_transfer_path.read_text())
+        required_transfer_cases={
+            "transfer_positive_atomic", "transfer_replay_claim_consumed",
+            "transfer_negative_debt_no_spend", "transfer_recipient_overflow_refused",
+            "transfer_debit_failure_rolls_back_and_redacts_user_error",
+            "transfer_postcommit_notification_failure_preserves_commit",
+            "transfer_receiving_credit_offsets_debt", "transfer_two_workers_exactly_one",
+            "transfer_opposing_lock_order_no_deadlock",
+        }
+        if not (wallet_transfer.get("complete") and wallet_transfer.get("cases")>=18
+                and required_transfer_cases.issubset(wallet_transfer.get("scenarios",[]))
+                and wallet_transfer.get("original_mariadb_socket_only")
+                and wallet_transfer.get("external_requests")==0):
+            raise RuntimeError("Current wallet transfer safety/diagnostic acceptance incomplete")
         subject_path=Path(tmp)/"payment-subjects.json"
         subprocess.run(["python3",str(ROOT/"tools/test_post_v9_subjects.py"),
                         "--run-disposable","--report",str(subject_path)],
@@ -313,6 +333,8 @@ def main():
         if a.report:a.report.write_text(json.dumps({"complete":True,
                     "source":result,"marzban":marzban,"purchases":purchases,
                      "unsupported_wallet_preflight":wallet_guard,
+                     "wallet_transfer_safety":wallet_transfer,
+                     "customer_error_privacy":audience,
                     "source_only_overlays":swap,
                     "financial_subject_preflight":subject,
                     "catalogue_and_subscription_qr":catalogue,
@@ -331,6 +353,8 @@ def main():
                       "purchase_steps":purchases["steps"],
                        "unsupported_wallet_negatives":wallet_guard["cases"],
                        "unsupported_manual_negatives":wallet_guard["manual_cases"],
+                       "wallet_transfer_scenarios":wallet_transfer["cases"],
+                       "customer_messages_privacy_checked":audience["explicit_customer_messages_checked"],
                       "verified_source_swaps":swap["phase_count"],
                       "payment_subject_cases":subject["cases"],
                       "catalogue_qr_cases":catalogue["cases"],

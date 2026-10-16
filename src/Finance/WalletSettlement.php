@@ -61,7 +61,7 @@ if (!function_exists('processWalletPayment')) {
             $blockedStates = ['approved', 'declined', 'expired_have_sent'];
 			if (in_array($payInfo['state'], $blockedStates, true)) {
 				$connection->rollback();
-				alert("⛔️ این پرداخت قابل پرداخت با کیف پول نیست: " . $payInfo['state'], true);
+				alert("⛔️ پرداخت این سفارش از کیف پول در حال حاضر امکان‌پذیر نیست. وضعیت سفارش را بررسی کنید.", true);
 				return [
 					'status'       => 'invalid_state',
 					'payInfo'      => $payInfo,
@@ -79,7 +79,7 @@ if (!function_exists('processWalletPayment')) {
             // Uses the original schema; no migrations or new payment policy.
             if (!achbotSupportsPaymentSubject($connection, $payInfo)) {
                 $connection->rollback();
-                alert("⛔️ پنل این اشتراک دیگر پشتیبانی نمی‌شود؛ هیچ مبلغی از کیف پول کسر نشد.", true);
+                alert("⛔️ پرداخت این اشتراک در حال حاضر امکان‌پذیر نیست؛ مبلغی از کیف پول کسر نشد.", true);
                 return [
                     'status' => 'unsupported_panel',
                     'payInfo' => $payInfo,
