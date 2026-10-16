@@ -669,14 +669,35 @@ def main():
             raise RuntimeError('Additional child payment duplicated credit')
         records.append(dict(case='nowpayments_multiple_children_durably_stored',
                             pass_=True,external_requests=0))
+        # A stored extra-child replay must neither duplicate credit nor
+        # re-arm an operator alert that was already delivered. A genuinely
+        # NEW later child may re-arm the alert to surface new financial data.
+        sql(work,env,"UPDATE achbot_nowpayments_attempts SET "
+                     "review_notified_at='2026-10-16 01:00:00' "
+                     "WHERE order_hash='wallet-init'")
         for replay_id in ('np-pmt-wallet-init','np-extra-deposit','np-third-child'):
             again=run_php(work,env,stage,signed_ipn(dict(ipn,
                 payment_id=replay_id,payment_status='finished')))
             if again['events'][-1].get('code')!=200:
                 raise RuntimeError('Replay of persisted child rejected: '+replay_id)
+        if sql(work,env,"SELECT IFNULL(DATE_FORMAT(review_notified_at,'%Y-%m-%d %H:%i:%s'),'') "
+           "FROM achbot_nowpayments_attempts WHERE order_hash='wallet-init'").strip()!='2026-10-16 01:00:00':
+            raise RuntimeError('Extra-child replay cleared already-sent operator notification')
         if int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())!=paid_wallet:
             raise RuntimeError('Replay after extra deposits changed balance')
         records.append(dict(case='nowpayments_extra_child_replay_is_idempotent',
+                            pass_=True,external_requests=0))
+        new_child=run_php(work,env,stage,signed_ipn(dict(ipn,
+            payment_id='np-fifth-child',payment_status='finished')))
+        if new_child['events'][-1].get('code')!=200 or sql(work,env,
+           "SELECT COUNT(*) FROM achbot_nowpayments_child_payments e "
+           "JOIN achbot_nowpayments_attempts a ON a.id=e.attempt_id "
+           "WHERE a.order_hash='wallet-init'").strip()!='5':
+            raise RuntimeError('New signed child was not durably retained')
+        if sql(work,env,"SELECT review_notified_at IS NULL FROM achbot_nowpayments_attempts "
+           "WHERE order_hash='wallet-init'").strip()!='1':
+            raise RuntimeError('New child receipt did not re-arm operator alert')
+        records.append(dict(case='nowpayments_new_child_rearms_operator_notice',
                             pass_=True,external_requests=0))
         # A finished provider payment whose deposit is smaller than the
         # promised quote is quarantined, never auto-reconciled as successful.

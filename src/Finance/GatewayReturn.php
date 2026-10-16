@@ -78,7 +78,9 @@ function achbotNpIngestIpn(mysqli $connection, string $ipnSecret,
             $stmt->bind_param('ssi',$paymentId,$status,$attempt['id']);
             $stmt->execute();
             $stmt->close();
-        } elseif ((string)$attempt['payment_id']!==$paymentId) {
+        } elseif ((string)$attempt['payment_id']!==$paymentId && !$existing) {
+            // An already-persisted extra child is a true replay: it must not
+            // reopen operator review or clear a successfully sent alert.
             $stmt=$connection->prepare("UPDATE achbot_nowpayments_attempts SET
                 provider_status=CASE WHEN stage='done' OR
                     provider_status='additional_payment' THEN 'additional_payment'
