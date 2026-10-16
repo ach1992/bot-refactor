@@ -242,6 +242,28 @@ def main():
             raise RuntimeError("Lost Telegram notifications lack private recovery report")
         reports.append("transfer_postcommit_notification_failure_preserves_commit")
 
+        # The real Telegram transport also returns None on a connection
+        # failure. No response is NOT an acknowledged delivery.
+        stub = synthetic_php.read_text()
+        false_delivery = "if (($args[3] ?? null) === 9002) return (object)['ok'=>false];"
+        if stub.count(false_delivery) != 1:
+            raise RuntimeError("Expected synthetic failed-delivery stub absent")
+        synthetic_php.write_text(stub.replace(
+            false_delivery, "if (($args[3] ?? null) === 9002) return null;"
+        ))
+        prepare(work, env)
+        missing_ack = execute(work, env, notify_stage, "300")
+        assert_events(missing_ack, True)
+        if balances(work, env) != [(1001, 49700, "none"), (9002, 50300, "none")]:
+            raise RuntimeError("No-response Telegram delivery changed committed money")
+        missing_reports = [str(e["args"][0]) for e in missing_ack["events"]
+                           if e["name"] == "sendMessage" and len(e["args"]) > 3
+                           and e["args"][3] == 9001]
+        if not any("recipient,sender_menu" in msg and
+                   "transfer_notification_unconfirmed" in msg for msg in missing_reports):
+            raise RuntimeError("Telegram null response incorrectly counted as delivered")
+        reports.append("transfer_telegram_null_is_unconfirmed_not_success")
+
         prepare(work, env, sender=50000, recipient=-500)
         assert_events(execute(work, env, stage, "300"), True)
         if balances(work, env) != [(1001, 49700, "none"), (9002, -200, "none")]:

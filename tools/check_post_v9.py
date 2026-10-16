@@ -139,10 +139,11 @@ def main():
             "transfer_negative_debt_no_spend", "transfer_recipient_overflow_refused",
             "transfer_debit_failure_rolls_back_and_redacts_user_error",
             "transfer_postcommit_notification_failure_preserves_commit",
+            "transfer_telegram_null_is_unconfirmed_not_success",
             "transfer_receiving_credit_offsets_debt", "transfer_two_workers_exactly_one",
             "transfer_opposing_lock_order_no_deadlock",
         }
-        if not (wallet_transfer.get("complete") and wallet_transfer.get("cases")>=18
+        if not (wallet_transfer.get("complete") and wallet_transfer.get("cases")>=19
                 and required_transfer_cases.issubset(wallet_transfer.get("scenarios",[]))
                 and wallet_transfer.get("original_mariadb_socket_only")
                 and wallet_transfer.get("external_requests")==0):

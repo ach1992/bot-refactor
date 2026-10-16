@@ -182,8 +182,7 @@ if (preg_match('/^tranfserUserAmount(\d+)$/D', (string)$userInfo['step'], $match
         if (isset($admin) && (int)$admin > 0) {
             try {
                 $reply = sendMessage($adminReport, null, 'HTML', $admin);
-                $reported = $reply !== false &&
-                    !(is_object($reply) && isset($reply->ok) && $reply->ok !== true);
+                $reported = is_object($reply) && isset($reply->ok) && $reply->ok === true;
             } catch (Throwable $notifyError) {
                 // A missing Telegram notification must not hide the failure.
             }
@@ -207,8 +206,7 @@ if (preg_match('/^tranfserUserAmount(\d+)$/D', (string)$userInfo['step'], $match
         use (&$deliveryProblems) {
         try {
             $result = sendMessage($message, $keyboard, $parse, $recipient);
-            if ($result === false ||
-                (is_object($result) && isset($result->ok) && $result->ok !== true)) {
+            if (!is_object($result) || !isset($result->ok) || $result->ok !== true) {
                 $deliveryProblems[] = $role;
             }
         } catch (Throwable $noticeError) {
@@ -281,8 +279,7 @@ if (preg_match('/^tranfserUserAmount(\d+)$/D', (string)$userInfo['step'], $match
         if (!in_array('admin', $deliveryProblems, true) && isset($admin) && (int)$admin > 0) {
             try {
                 $reply = sendMessage($notice, null, 'HTML', $admin);
-                $operatorNotified = $reply !== false &&
-                    !(is_object($reply) && isset($reply->ok) && $reply->ok !== true);
+                $operatorNotified = is_object($reply) && isset($reply->ok) && $reply->ok === true;
             } catch (Throwable $noticeError) {
                 // Non-financial notification failure must not invalidate the payment.
             }
