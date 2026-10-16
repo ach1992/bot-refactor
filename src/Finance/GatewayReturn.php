@@ -146,16 +146,21 @@ if (isset($_GET['nowpayment'])) {
 
     $hash_id = $_GET['trans_id'];
 
-    $stmt = $connection->prepare("SELECT * FROM `pays` WHERE `payid` = ? AND (`state` = 'pending' OR `state` = 'send')");
+    $stmt = $connection->prepare("SELECT * FROM `pays` WHERE `payid` = ? LIMIT 2");
     $stmt->bind_param("s", $hash_id);
     $stmt->execute();
     $payInfo = $stmt->get_result();
     $stmt->close();
 
-    if (mysqli_num_rows($payInfo) == 0) {
-        showForm("کد پرداخت یافت نشد.", "خطا!");
+    if (mysqli_num_rows($payInfo) !== 1) {
+        // pays.payid is not UNIQUE in the original schema. Reject ambiguity.
+        showForm("کد پرداخت یافت نشد یا یکتا نیست.", "خطا!");
     } else {
         $payParam = $payInfo->fetch_assoc();
+        if (!in_array($payParam['state'], ['pending', 'send'], true)) {
+            showForm("این پرداخت قبلاً بررسی شده است.", "خطا!");
+            return;
+        }
         if (!achbotSupportsPaymentSubject($connection, $payParam)) {
             showForm("تایید این پرداخت برای سرویس غیرقابل پشتیبانی متوقف شد؛ با پشتیبانی تماس بگیرید.", "خطا");
             return;
@@ -170,27 +175,44 @@ if (isset($_GET['nowpayment'])) {
             CURLOPT_URL => 'https://nextpay.org/nx/gateway/verify',
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_ENCODING => '',
-            CURLOPT_MAXREDIRS => 10,
-            CURLOPT_TIMEOUT => 0,
-            CURLOPT_FOLLOWLOCATION => true,
+            CURLOPT_MAXREDIRS => 0,
+            CURLOPT_CONNECTTIMEOUT => 10,
+            CURLOPT_TIMEOUT => 30,
+            CURLOPT_FOLLOWLOCATION => false,
             CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
             CURLOPT_CUSTOMREQUEST => 'POST',
             CURLOPT_POSTFIELDS => 'api_key=' . ($paymentKeys['nextpay'] ?? '') . '&amount=' . $amount . '&currency=IRT&trans_id=' . $payid,
         ));
 
-        $response = curl_exec($curl);
+        $rawResponse = curl_exec($curl);
+        $httpStatus = curl_getinfo($curl, CURLINFO_HTTP_CODE);
         curl_close($curl);
-        $response = json_decode($response);
+        // A transport/HTTP/JSON failure is NOT proof of a declined payment.
+        $response = $rawResponse !== false && $httpStatus === 200
+            ? json_decode($rawResponse) : null;
+        $verifyCode = $response->code ?? null;
 
-        if (($response->code ?? '') == '0') {
+        if ($verifyCode === 0 || $verifyCode === '0') {
             doAction($rowId, "nextpay");
-        } else {
-            $stmt = $connection->prepare("UPDATE `pays` SET `state` = 'canceled' WHERE `hash_id` = ?");
-            $stmt->bind_param("s", $hash_id);
+        } elseif (in_array($verifyCode, [-2, '-2', -4, '-4'], true)) {
+            // Official NextPay codes -2 (rejected) and -4 (canceled) are
+            // definitive. -1/-3 are pending; other errors need reconciliation.
+            // Cancel only the selected pending row; never clobber a replayed or
+            // concurrently changed payment with an external payid.
+            $stmt = $connection->prepare("UPDATE `pays` SET `state` = 'canceled' WHERE `id` = ? AND `state` IN ('pending', 'send')");
+            $stmt->bind_param("i", $rowId);
             $stmt->execute();
+            $changed = $stmt->affected_rows === 1;
             $stmt->close();
-
+            if (!$changed) {
+                showForm("وضعیت پرداخت تغییر کرده است؛ با پشتیبانی تماس بگیرید.", "خطا!");
+                return;
+            }
             showForm("پرداخت شما انجام نشد!", "درگاه نکست پی");
+        } else {
+            // Preserve the current payment for a later trusted verification.
+            // Do not debit, credit or settle an unknown payment outcome.
+            showForm("وضعیت پرداخت هنوز قطعی نیست یا استعلام در دسترس نیست؛ لطفاً بعداً دوباره بررسی کنید.", "درگاه نکست پی");
         }
     }
 
