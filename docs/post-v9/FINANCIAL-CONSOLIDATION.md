@@ -119,3 +119,25 @@ These corrections were driven by native source execution on disposable MariaDB w
 **E. Assurance and operations.** PHP 8.1/8.4 exact-head CI, native 23-table tests, initial public callback/entrypoint compatibility and no-real-provider controls, author-separated financial-security review, Owner approval before high-consequence merge, separate real DB migration (if accepted), staged operator verification and production rollout. Preserve RC3 rollback artifacts and private configs; no production banking/Marzban/SQL/Cron or shared aaPanel/LSAPI change is authorized by source work.
 
 **Current open questions for later Owner decision:** whether old records/attempts can be safely backfilled into a unique provider/effect ledger; handling actual partial/late/refunded receipts and multi-asset quotes; TRON amount units, token contract/network and finality; external provisioning retry and compensation policy. Do not invent these outcomes from synthetic tests.
+
+
+**PR #43 source remediation — wallet identity, ambiguous acknowledgement and finance error audiences
+(draft, not yet integrated or published):** The original users.userid index is
+**not unique**; the transfer route locks and checks *all* matching records and
+fails closed on duplicate sender/recipient identity, then binds each monetary
+write to the captured users.id plus the expected userid/guards. No legacy
+DDL or uniqueness migration is implied. An attempted COMMIT whose
+acknowledgement is lost/false is an **unknown financial outcome**, even if a
+later rollback API call reports success; support must verify the account
+history before suggesting any compensation or retry. In manual/wallet
+extension and renewal error paths, a remote effect followed by local SQL or
+notification failure is likewise under review, not a proven remote failure.
+Customers receive review/status/support guidance without infrastructure
+terms; private operators receive only bounded reason codes, transaction/order
+references and the unverified remote-effect warning, never raw upstream
+exceptions or response bodies. The bounded privacy checks consist of
+first-argument literal inspections **plus** executable synthetic-provider/
+owned-MariaDB audience tests; static counts alone do not certify dynamic or
+mixed-audience safety. No global exactly-once effect ledger, active-schema
+migration, installed-log rotation, real provider/financial effect or production
+acceptance is part of this PR. Issue #26 remains OPEN.

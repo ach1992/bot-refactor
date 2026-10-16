@@ -143,6 +143,15 @@ def main():
                         "--run-disposable","--report",str(wallet_transfer_path)],
                        cwd=ROOT,check=True,timeout=180,capture_output=True)
         wallet_transfer=json.loads(wallet_transfer_path.read_text())
+        privacy_path=Path(tmp)/"finance-error-audience.json"
+        subprocess.run(["python3",str(ROOT/"tools/test_post_v9_finance_error_privacy.py"),
+                        "--run-disposable","--report",str(privacy_path)],
+                       cwd=ROOT,check=True,timeout=180,capture_output=True)
+        finance_privacy=json.loads(privacy_path.read_text())
+        if not (finance_privacy.get("complete") and finance_privacy.get("cases")==23
+                and finance_privacy.get("mutant_privacy_failures_proved")==2
+                and finance_privacy.get("external_requests")==0):
+            raise RuntimeError("Executed finance error privacy/uncertain-effects proof incomplete")
         required_transfer_cases={
             "transfer_positive_atomic", "transfer_replay_claim_consumed",
             "transfer_negative_debt_no_spend", "transfer_recipient_overflow_refused",
@@ -151,8 +160,13 @@ def main():
             "transfer_telegram_null_is_unconfirmed_not_success",
             "transfer_receiving_credit_offsets_debt", "transfer_two_workers_exactly_one",
             "transfer_opposing_lock_order_no_deadlock",
+            "sender_duplicate_userid_fails_closed",
+            "recipient_duplicate_userid_fails_closed",
+            "transfer_concurrent_registration_duplicate_identity_rejected",
+            "transfer_real_commit_lost_ack_outcome_unknown",
+            "transfer_false_commit_return_is_unknown",
         }
-        if not (wallet_transfer.get("complete") and wallet_transfer.get("cases")>=19
+        if not (wallet_transfer.get("complete") and wallet_transfer.get("cases")>=24
                 and required_transfer_cases.issubset(wallet_transfer.get("scenarios",[]))
                 and wallet_transfer.get("original_mariadb_socket_only")
                 and wallet_transfer.get("external_requests")==0):
@@ -365,7 +379,8 @@ def main():
                        "unsupported_wallet_negatives":wallet_guard["cases"],
                        "unsupported_manual_negatives":wallet_guard["manual_cases"],
                        "wallet_transfer_scenarios":wallet_transfer["cases"],
-                       "customer_messages_privacy_checked":audience["explicit_customer_messages_checked"],
+                       "customer_literal_first_argument_messages_inspected":audience["literal_first_argument_calls_inspected"],
+                       "finance_error_audience_execution_cases":finance_privacy["cases"],
                        "telegram_transport_privacy_cases":transport_privacy["cases"],
                       "verified_source_swaps":swap["phase_count"],
                       "payment_subject_cases":subject["cases"],

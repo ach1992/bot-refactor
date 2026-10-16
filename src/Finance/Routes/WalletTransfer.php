@@ -60,7 +60,9 @@ if (preg_match('/^tranfserUserAmount(\d+)$/D', (string)$userInfo['step'], $match
     $transactionActive = false;
     $commitStarted = false;
     try {
-        $connection->begin_transaction();
+        if ($connection->begin_transaction() !== true) {
+            throw new RuntimeException('transfer_begin_failed');
+        }
         $transactionActive = true;
 
         // Stable lock order avoids inverse-direction transfer deadlocks.
@@ -68,13 +70,23 @@ if (preg_match('/^tranfserUserAmount(\d+)$/D', (string)$userInfo['step'], $match
         sort($userIds, SORT_NUMERIC);
         $locked = [];
         foreach ($userIds as $userId) {
+            // userid has only a NON-UNIQUE legacy index. Lock all matching
+            // records, reject ambiguity and bind monetary writes to the PK.
             $stmt = $connection->prepare(
-                "SELECT userid,name,username,wallet,step FROM users WHERE userid = ? FOR UPDATE"
+                "SELECT id,userid,name,username,wallet,step FROM users WHERE userid = ? FOR UPDATE"
             );
             $stmt->bind_param("i", $userId);
-            $stmt->execute();
-            $locked[$userId] = $stmt->get_result()->fetch_assoc();
+            if ($stmt->execute() !== true) {
+                throw new RuntimeException('transfer_identity_lookup_failed');
+            }
+            $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
             $stmt->close();
+            if (count($rows) > 1) {
+                throw new RuntimeException($userId === (int)$from_id
+                    ? 'transfer_sender_identity_ambiguous'
+                    : 'transfer_recipient_identity_ambiguous');
+            }
+            $locked[$userId] = $rows[0] ?? null;
         }
         $sender = $locked[(int)$from_id] ?? null;
         $receiver = $locked[$to_id] ?? null;
@@ -116,11 +128,16 @@ if (preg_match('/^tranfserUserAmount(\d+)$/D', (string)$userInfo['step'], $match
 
         // Both wallet effects and step consumption must commit atomically.
         $maxReceiverBefore = 2147483647 - $amount;
+        $receiverPk = (int)$receiver['id'];
+        $senderPk = (int)$sender['id'];
         $stmt = $connection->prepare(
-            "UPDATE users SET wallet = wallet + ? WHERE userid = ? AND wallet <= ? LIMIT 1"
+            "UPDATE users SET wallet = wallet + ? "
+            . "WHERE id = ? AND userid = ? AND wallet <= ?"
         );
-        $stmt->bind_param("iii", $amount, $to_id, $maxReceiverBefore);
-        $stmt->execute();
+        $stmt->bind_param("iiii", $amount, $receiverPk, $to_id, $maxReceiverBefore);
+        if ($stmt->execute() !== true) {
+            throw new RuntimeException('transfer_recipient_credit_execution_failed');
+        }
         $credited = $stmt->affected_rows;
         $stmt->close();
         if ($credited !== 1) {
@@ -128,11 +145,14 @@ if (preg_match('/^tranfserUserAmount(\d+)$/D', (string)$userInfo['step'], $match
         }
 
         $stmt = $connection->prepare(
-            "UPDATE users SET wallet = wallet - ?, step = 'none' " .
-            "WHERE userid = ? AND step = ? AND wallet >= ? LIMIT 1"
+            "UPDATE users SET wallet = wallet - ?, step = 'none' "
+            . "WHERE id = ? AND userid = ? AND step = ? AND wallet >= ?"
         );
-        $stmt->bind_param("iisi", $amount, $from_id, $expectedStep, $amount);
-        $stmt->execute();
+        $senderUserId = (int)$from_id;
+        $stmt->bind_param("iiisi", $amount, $senderPk, $senderUserId, $expectedStep, $amount);
+        if ($stmt->execute() !== true) {
+            throw new RuntimeException('transfer_sender_debit_execution_failed');
+        }
         $debited = $stmt->affected_rows;
         $stmt->close();
         if ($debited !== 1) {
@@ -143,16 +163,26 @@ if (preg_match('/^tranfserUserAmount(\d+)$/D', (string)$userInfo['step'], $match
         $receiver_after = $receiver_before + $amount;
 
         $commitStarted = true;
-        $connection->commit();
+        // A false or lost COMMIT acknowledgement is NOT evidence of rollback.
+        if ($connection->commit() !== true) {
+            throw new RuntimeException('transfer_commit_unconfirmed');
+        }
         $transactionActive = false;
     } catch (Throwable $e) {
-        $rollbackState = 'not_needed';
+        $rollbackApi = 'not_called';
+        $transactionOutcome = $commitStarted ? 'unknown' : 'not_started';
         if ($transactionActive) {
             try {
-                $connection->rollback();
-                $rollbackState = 'completed';
+                $rollbackApi = $connection->rollback() === true
+                    ? 'returned_success' : 'returned_failure';
             } catch (Throwable $rollbackError) {
-                $rollbackState = 'unconfirmed';
+                $rollbackApi = 'raised_exception';
+            }
+            // A successful rollback call AFTER an ambiguous COMMIT cannot
+            // prove that the server never committed. Never label it rolled back.
+            if (!$commitStarted) {
+                $transactionOutcome = $rollbackApi === 'returned_success'
+                    ? 'confirmed_rolled_back' : 'unknown';
             }
         }
 
@@ -162,6 +192,13 @@ if (preg_match('/^tranfserUserAmount(\d+)$/D', (string)$userInfo['step'], $match
         $reference = strtoupper(bin2hex(random_bytes(6)));
         $knownReasons = [
             'transfer_sender_missing',
+            'transfer_sender_identity_ambiguous',
+            'transfer_recipient_identity_ambiguous',
+            'transfer_identity_lookup_failed',
+            'transfer_begin_failed',
+            'transfer_commit_unconfirmed',
+            'transfer_recipient_credit_execution_failed',
+            'transfer_sender_debit_execution_failed',
             'transfer_recipient_credit_missing',
             'transfer_sender_debit_claim_missing',
         ];
@@ -174,7 +211,8 @@ if (preg_match('/^tranfserUserAmount(\d+)$/D', (string)$userInfo['step'], $match
             . "Exception class: <code>" . htmlspecialchars(get_class($e), ENT_QUOTES, 'UTF-8') . "</code>\n"
             . "SQLSTATE: <code>" . htmlspecialchars((string)$sqlstate, ENT_QUOTES, 'UTF-8') . "</code>\n"
             . "Commit attempted: <code>" . ($commitStarted ? 'yes' : 'no') . "</code>\n"
-            . "Rollback: <code>{$rollbackState}</code>\n"
+            . "Transaction outcome: <code>{$transactionOutcome}</code>\n"
+            . "Rollback API: <code>{$rollbackApi}</code> (not proof after ambiguous COMMIT)\n"
             . "Sender: <code>" . (int)$from_id . "</code>\n"
             . "Recipient: <code>{$to_id}</code>\n"
             . "Amount (Toman): <code>{$amount}</code>";
@@ -191,7 +229,7 @@ if (preg_match('/^tranfserUserAmount(\d+)$/D', (string)$userInfo['step'], $match
             error_log("ACHBOT_WALLET_TRANSFER_FAILURE reference={$reference} "
                 . "reason={$reason} sqlstate={$sqlstate} "
                 . "commit_attempted=" . ($commitStarted ? 'yes' : 'no')
-                . " rollback={$rollbackState}");
+                . " outcome={$transactionOutcome} rollback_api={$rollbackApi}");
         }
         sendMessage("❌ وضعیت درخواست انتقال شما نیاز به بررسی دارد. "
             . "لطفاً موجودی کیف پول را بررسی کنید و در صورت نیاز "

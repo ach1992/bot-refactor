@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """Customer-visible diagnostic privacy guard for the active post-V9 runtime.
 
-Static guard catches explicit Telegram literal regressions on customer-only
-surfaces. Finance wallet errors also have real MariaDB/Telegram audience tests
-in test_post_v9_wallet_transfer.py. Admin configuration is intentionally exempt.
+Static guard catches ONLY first-argument literal Telegram regressions on
+customer-only surfaces. It does not prove full customer or administrator privacy.
+Mixed finance customer/admin branches are executed using owned MariaDB and
+synthetic sensitive provider errors in test_post_v9_finance_error_privacy.py.
+Authorized administration/configuration screens are intentionally excluded.
 """
 from __future__ import annotations
 
@@ -60,7 +62,7 @@ def verify(root: Path = ROOT) -> dict:
         ),
         "src/Finance/Routes/RenewalCheckout.php": (
             "تمدید این اشتراک در حال حاضر امکان‌پذیر نیست",
-            "تمدید این اشتراک انجام نشد",
+            "نتیجه تمدید نیاز به بررسی دارد",
         ),
         "src/Finance/Routes/Extensions.php": (
             "افزایش حجم یا مدت برای این اشتراک در حال حاضر امکان‌پذیر نیست",
@@ -74,9 +76,10 @@ def verify(root: Path = ROOT) -> dict:
     return {
         "complete": True,
         "customer_surface_files": len(CUSTOMER_SURFACES),
-        "explicit_customer_messages_checked": examined,
-        "mixed_financial_customer_routes_checked": len(mixed),
-        "admin_only_diagnostic_copy_preserved": True,
+        "literal_first_argument_calls_inspected": examined,
+        "mixed_financial_routes_copy_markers_checked": len(mixed),
+        "coverage": "first-argument literal inspection only; runtime fixtures required",
+        "dynamic_audience_privacy_proved": False,
     }
 
 

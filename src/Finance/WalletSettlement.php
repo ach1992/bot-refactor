@@ -47,7 +47,7 @@ if (!function_exists('processWalletPayment')) {
 
             if ($payInfo['state'] === 'processing_wallet') {
                 $connection->rollback();
-                alert("⏳ درخواست شما در حال پردازش است. کمی بعد دوباره تلاش کنید.", true);
+                alert("⏳ وضعیت درخواست هنوز در حال بررسی است. لطفاً وضعیت سفارش را کنترل کنید و پیش از ثبت دوباره با پشتیبانی هماهنگ شوید.", true);
                 return [
                     'status'       => 'in_progress',
                     'payInfo'      => $payInfo,
@@ -175,10 +175,10 @@ if (!function_exists('processWalletPayment')) {
             $adminErr = "⚠️ خطا در پرداخت با کیف پول\n\n"
                 . "🆔 Hash ID: {$hashId}\n"
                 . "👤 User: {$from_id}\n"
-                . "📄 Error: " . $e->getMessage();
+                . "⚠️ External effect: unverified; verify before retry or compensation\n📄 Reason (sanitized): " . achbotFinanceDiagnosticReason($e);
             sendMessage($adminErr, null, null, $admin);
 
-            alert("❌ مشکلی پیش اومد.\n🔁 لطفاً کمی بعد دوباره تلاش کنید.\nاگر مشکل ادامه داشت، به مدیریت اطلاع دهید.", true);
+            alert("⚠️ وضعیت درخواست پرداخت نیاز به بررسی دارد. لطفاً وضعیت سفارش و پرداخت را بررسی کنید و پیش از تکرار با پشتیبانی هماهنگ شوید.", true);
 
             return [
                 'status'       => 'error',

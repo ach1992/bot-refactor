@@ -321,9 +321,7 @@ if (preg_match('/approveIncreaseDay(.*)/', $data, $match) && ($from_id == $admin
         $success = (is_object($response) && !empty($response->success))
                 || (is_array($response)  && !empty($response['success']));
         if (!$success) {
-            $msg = is_object($response) ? ($response->msg ?? 'no_msg')
-                 : ($response['msg'] ?? 'no_msg');
-            throw new Exception("server_response_failed: ".$msg);
+            throw new Exception("provider_rejected");
         }
 
         $addSeconds = $volume * 86400;
@@ -375,10 +373,10 @@ if (preg_match('/approveIncreaseDay(.*)/', $data, $match) && ($from_id == $admin
         $err = "⚠️ خطا در تایید افزایش زمان (کارت‌به‌کارت)\n\n"
              . "🆔 Hash ID: {$match[1]}\n"
              . "👤 Admin: {$from_id}\n"
-             . "📄 Error: " . $e->getMessage();
+             . "⚠️ External effect: unverified; verify before retry or compensation\n📄 Reason (sanitized): " . achbotFinanceDiagnosticReason($e);
         sendMessage($err, null, null, $admin);
 
-        alert("❌ افزایش زمان انجام نشد. لطفاً وضعیت سرور/اطلاعات را بررسی کنید.", true);
+        alert("⚠️ نتیجه افزایش زمان نیاز به بررسی دارد. وضعیت اشتراک و پرداخت را کنترل کنید؛ از اجرای مجدد خودکار خودداری کنید.", true);
         return;
     }
 }
@@ -501,9 +499,7 @@ if(preg_match('/payIncreaseDayWithWallet(.*)/', $data, $match)){
         $success = (is_object($response) && !empty($response->success))
                 || (is_array($response)  && !empty($response['success']));
         if (!$success) {
-            $msg = is_object($response) ? ($response->msg ?? 'no_msg')
-                 : ($response['msg'] ?? 'no_msg');
-            throw new Exception("server_response_failed: ".$msg);
+            throw new Exception("provider_rejected");
         }
 
         $addSeconds = $volume * 86400;
@@ -569,10 +565,10 @@ if(preg_match('/payIncreaseDayWithWallet(.*)/', $data, $match)){
         $adminErr = "⚠️ خطا در افزایش زمان با کیف پول\n\n"
                   . "🆔 Hash ID: {$match[1]}\n"
                   . "👤 User: {$from_id}\n"
-                  . "📄 Error: ".$e->getMessage();
+                  . "⚠️ External effect: unverified; verify before retry or compensation\n📄 Reason (sanitized): ".achbotFinanceDiagnosticReason($e);
         sendMessage($adminErr, null, null, $admin);
 
-        sendMessage("❌ مشکلی پیش اومد.\n🔁 لطفاً ۳۰ ثانیه بعد دوباره تلاش کنید.\nاگر مشکل ادامه داشت، به مدیریت اطلاع دهید.", null, null, $uid);
+        sendMessage("⚠️ وضعیت درخواست مشخص نیست. لطفاً وضعیت اشتراک و پرداخت را بررسی کنید و پیش از ثبت دوباره با پشتیبانی هماهنگ شوید.", null, null, $uid);
 
         return;
     }
@@ -1020,9 +1016,7 @@ if (preg_match('/approveIncreaseVolume(.*)/', $data, $match) && ($from_id == $ad
         $success = (is_object($response) && !empty($response->success))
                 || (is_array($response)  && !empty($response['success']));
         if (!$success) {
-            $msg = is_object($response) ? ($response->msg ?? 'no_msg')
-                 : ($response['msg'] ?? 'no_msg');
-            throw new Exception("server_response_failed: ".$msg);
+            throw new Exception("provider_rejected");
         }
 
         $now = time();
@@ -1076,10 +1070,10 @@ if (preg_match('/approveIncreaseVolume(.*)/', $data, $match) && ($from_id == $ad
         $err = "⚠️ خطا در تایید افزایش حجم (کارت‌به‌کارت)\n\n"
              . "🆔 Hash ID: {$match[1]}\n"
              . "👤 Admin: {$from_id}\n"
-             . "📄 Error: " . $e->getMessage();
+             . "⚠️ External effect: unverified; verify before retry or compensation\n📄 Reason (sanitized): " . achbotFinanceDiagnosticReason($e);
         sendMessage($err, null, null, $admin);
 
-        alert("❌ افزایش حجم انجام نشد. لطفاً وضعیت سرور/اطلاعات را بررسی کنید.", true);
+        alert("⚠️ نتیجه افزایش حجم نیاز به بررسی دارد. وضعیت اشتراک و پرداخت را کنترل کنید؛ از اجرای مجدد خودکار خودداری کنید.", true);
         return;
     }
 }
@@ -1204,9 +1198,7 @@ if(preg_match('/payIncreaseWithWallet(.*)/', $data, $match)){
         $success = (is_object($response) && !empty($response->success))
                 || (is_array($response)  && !empty($response['success']));
         if (!$success) {
-            $msg = is_object($response) ? ($response->msg ?? 'no_msg')
-                 : ($response['msg'] ?? 'no_msg');
-            throw new Exception("server_response_failed: ".$msg);
+            throw new Exception("provider_rejected");
         }
 
         $stmt = $connection->prepare("UPDATE `users` SET `wallet` = `wallet` - ? WHERE `userid` = ?");
@@ -1273,10 +1265,10 @@ if(preg_match('/payIncreaseWithWallet(.*)/', $data, $match)){
         $adminErr = "⚠️ خطا در افزایش حجم با کیف پول\n\n"
                   . "🆔 Hash ID: {$match[1]}\n"
                   . "👤 User: {$from_id}\n"
-                  . "📄 Error: ".$e->getMessage();
+                  . "⚠️ External effect: unverified; verify before retry or compensation\n📄 Reason (sanitized): ".achbotFinanceDiagnosticReason($e);
         sendMessage($adminErr, null, null, $admin);
 
-        sendMessage("❌ مشکلی پیش اومد.\n🔁 لطفاً ۳۰ ثانیه بعد دوباره تلاش کنید.\nاگر مشکل ادامه داشت، به مدیریت اطلاع دهید.", null, null, $uid);
+        sendMessage("⚠️ وضعیت درخواست مشخص نیست. لطفاً وضعیت اشتراک و پرداخت را بررسی کنید و پیش از ثبت دوباره با پشتیبانی هماهنگ شوید.", null, null, $uid);
 
         return;
     }
