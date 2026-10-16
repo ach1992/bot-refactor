@@ -114,8 +114,10 @@ function achbotNpMinimumPayout(string $quoteUsd, string $rate): ?string {
  * exactly the same crypto asset/network; otherwise the case stays in review.
  */
 function achbotNpValidFinalAmount(array $attempt, array $response): bool {
-    $expectedCurrency=strtolower((string)($attempt['expected_outcome_currency']??''));
+    $expectedCurrency=strtolower((string)($attempt['settlement_currency']??''));
     if ($expectedCurrency==='' ||
+        (string)($attempt['provider']??'')!=='nowpayments' ||
+        (string)($attempt['quote_currency']??'')!=='usd' ||
         strtolower((string)($response['price_currency']??''))!=='usd' ||
         strtolower((string)($response['outcome_currency']??''))!==$expectedCurrency ||
         !preg_match('/^[a-z0-9]{2,32}$/D', $expectedCurrency) ||
@@ -124,13 +126,13 @@ function achbotNpValidFinalAmount(array $attempt, array $response): bool {
                $response['outcome_amount']) ||
         !preg_match('/^[a-z0-9]{2,32}$/Di',(string)$response['pay_currency']))
         return false;
-    if (!achbotNpDecimalAtLeast($attempt['minimum_outcome_amount']??null,'0.000001') ||
-        !achbotNpDecimalAtLeast($response['outcome_amount'],$attempt['minimum_outcome_amount']) ||
+    if (!achbotNpDecimalAtLeast($attempt['minimum_settlement_amount']??null,'0.000001') ||
+        !achbotNpDecimalAtLeast($response['outcome_amount'],$attempt['minimum_settlement_amount']) ||
         !achbotNpDecimalAtLeast($response['actually_paid'],$response['pay_amount']) ||
         !achbotNpDecimalAtLeast($response['pay_amount'],'0.000000000000000001'))
         return false;
-    $quote = (string)($attempt['quote_usd']??'');
-    if (!preg_match('/^\\d{1,12}\\.\\d{2}$/D',$quote) ||
+    $quote = (string)($attempt['quote_amount']??'');
+    if (!preg_match('/^\\d{1,12}\\.\\d{2}(?:0{0,6})?$/D',$quote) ||
         !achbotNpDecimalAtLeast($response['price_amount'],$quote) ||
         !achbotNpDecimalAtLeast($quote,$response['price_amount']))
         return false;

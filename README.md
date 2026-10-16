@@ -27,7 +27,8 @@ In **Server Management → Panel Groups**, an administrator can name a group and
 
 Use the [post-V9 operator acceptance checklist](docs/post-v9/MARZBAN-OPERATOR-ACCEPTANCE.md) before considering a test installation accepted.
 
-**UNRELEASED finance candidate (#26/#42):** the next source-only candidate proposes **two separately gated** invoice/child-evidence tables in `migrations/post-v9/002_nowpayments_checkout_attempts.sql`, a private `$nowpaymentsIpnSecret` and merchant-approved `$nowpaymentsSettlementPolicy` (net payout currency/minimum) in installed `baseInfo.php`, plus the already configured scheduled `settings/rewardReport.php` Cron for reconciliation and operator alerts. These do NOT exist in the Owner-reported RC3 installation. Do not copy the draft ZIP or run the new SQL on the live bot. See the staged [NOWPayments migration checklist](docs/post-v9/NOWPAYMENTS-MIGRATION.md); frozen historical DDL and secret examples remain untouched.
+**Finance source and migration status:** the published **v0.10.0-rc.4** contains the historical NOWPayments-specific, unapplied migration 002. The next **unmerged/unreleased** source candidate supersedes that design with two provider-shared tables named payment_attempts and payment_transactions, with no achbot prefix. NOWPayments, NextPay and Zarinpal share checkout-attempt storage; their settlement proof remains provider-specific. The new SQL is migrations/post-v9/003_payment_attempts.sql and requires a separately authorized database migration. **Do not run the historical RC4 002 merely to prepare the new shared 003.** If the RC4 SQL was already applied, use the controlled non-destructive import route described in docs/post-v9/PAYMENT-LEDGER-MIGRATION.md. Private NOWPayments IPN signing and payout policy, correct scheduled runner, operator acceptance and real installation are still separate gates. The original historical DDL, actual private configuration and installed bot are unchanged by this candidate.
+
 
 ## Development and tests
 
@@ -46,12 +47,13 @@ python3 tools/package_post_v9.py verify \
   --manifest /tmp/achbot-runtime.zip.manifest.json
 ```
 
-These tests and archives do **not** certify live payment settlement, full database recovery, Telegram webhooks, real Marzban provisioning or production deployment. The Owner has reported installing RC3 and observing no obvious initial regression, including an agency-decline smoke check; the finance refactor under [Issue #26](https://github.com/ach1992/bot-refactor/issues/26) is a separate **unreleased, independently review-gated** candidate and must not be copied over that installation. For NOWPayments, a hosted browser return is not proof of payment; only verified provider `finished` can be eligible for settlement, subject to identity/amount and effect-idempotency checks still under development. The inherited financial/settlement risks are tracked in [Issue #26](https://github.com/ach1992/bot-refactor/issues/26).
+These tests and archives do **not** certify live payment settlement, full database recovery, Telegram webhooks, real Marzban provisioning or production deployment. The Owner has reported installing RC3 and observing no obvious initial regression, including an agency-decline smoke check; this shared-ledger follow-up under [Issue #26](https://github.com/ach1992/bot-refactor/issues/26) is a separate **unmerged/unreleased, independently review-gated** candidate and must not be copied over that installation. For NOWPayments, a hosted browser return is not proof of payment; only verified provider `finished` can be eligible for settlement, subject to identity/amount and effect-idempotency checks still under development. The inherited financial/settlement risks are tracked in [Issue #26](https://github.com/ach1992/bot-refactor/issues/26).
 
 ## Documentation
 
 - [Post-V9 Marzban behavior and validation](docs/post-v9/MARZBAN-ONLY.md)
 - [Financial consolidation, NOWPayments finality and migration gates](docs/post-v9/FINANCIAL-CONSOLIDATION.md)
+- [Shared payment ledger: migration, old RC4 data and recovery](docs/post-v9/PAYMENT-LEDGER-MIGRATION.md)
 - [NOWPayments unattended IPN, checkout recovery and additive migration](docs/post-v9/NOWPAYMENTS-MIGRATION.md)
 - [Schema migration and rollback precautions](docs/post-v9/PANEL-GROUPS-MIGRATION.md)
 - [Operator acceptance checklist](docs/post-v9/MARZBAN-OPERATOR-ACCEPTANCE.md)

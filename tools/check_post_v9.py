@@ -296,18 +296,37 @@ def main():
             "zarinpal_strict_status_status101",
             "zarinpal_strict_status_status52",
             "zarinpal_strict_status_negative52",
+            "gateway_nextpay_shared_ledger_identity_and_quote",
+            "gateway_zarinpal_shared_ledger_identity_and_quote",
+            "shared_ledger_composite_provider_uniqueness_and_fk",
+            "nextpay_callback_provider_scoped_colliding_external_reference",
+            "zarinpal_callback_provider_scoped_colliding_external_reference",
         }
         cases_finance = {case.get("case") for case in finance.get("scenarios",[])
                          if case.get("pass_")}
-        if not (finance.get("complete") and finance.get("cases")>=148 and
+        if not (finance.get("complete") and finance.get("cases")>=153 and
                 mandatory_finance.issubset(cases_finance) and
                 finance.get("schema_tables")==23 and
                 finance.get("current_schema_tables")==25 and
-                finance.get("additive_nowpayments_attempts_tested") and
+                finance.get("shared_payment_attempt_ledger_tested") and
                 finance.get("original_mariadb_socket_only") and
                 finance.get("synthetic_payment_spy") and
                 finance.get("real_provider_requests")==0):
             raise RuntimeError("Original-schema finance and NOWPayments finality assurance incomplete")
+        migration_path=Path(tmp)/"shared-payment-ledger-rc4-import.json"
+        subprocess.run(["python3",str(ROOT/"tools/test_post_v9_payment_migration.py"),
+                        "--run-disposable","--report",str(migration_path)],
+                       cwd=ROOT,check=True,timeout=180,capture_output=True)
+        migration=json.loads(migration_path.read_text())
+        if not (migration.get("complete")
+                and migration.get("original_tables")==23
+                and migration.get("old_rc4_tables")==2
+                and migration.get("new_shared_tables")==2
+                and migration.get("imported_attempts")==1
+                and migration.get("imported_children")==2
+                and migration.get("preserved_rc4_rows_and_ids")
+                and migration.get("live_database_touched") is False):
+            raise RuntimeError("Lossless RC4 payment ledger migration rehearsal incomplete")
         agency_path=Path(tmp)/"agency-state-regression.json"
         subprocess.run(["python3",str(ROOT/"tools/test_post_v9_agency.py"),
                         "--run-disposable","--report",str(agency_path)],
@@ -364,6 +383,7 @@ def main():
                     "financial_subject_preflight":subject,
                     "catalogue_and_subscription_qr":catalogue,
                     "financial_native_route_guards":finance,
+                    "shared_payment_ledger_rc4_import":migration,
                      "agency_state_regression":agency,
                     "marzban_logical_transfer":logical,
                     "historical_suite_executed_by_this_script":False,
@@ -386,6 +406,7 @@ def main():
                       "payment_subject_cases":subject["cases"],
                       "catalogue_qr_cases":catalogue["cases"],
                       "financial_native_route_cases":finance["cases"],
+                      "historical_rc4_payment_import_verified":migration["preserved_rc4_rows_and_ids"],
                        "agency_state_cases":agency["cases"],
                       "marzban_logical_transfer_cases":logical["cases"],
                       "current_php_version":subprocess.check_output(["php","-r","echo PHP_VERSION_ID;"]).decode()}))

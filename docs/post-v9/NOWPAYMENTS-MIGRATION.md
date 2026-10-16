@@ -1,6 +1,6 @@
 # NOWPayments invoice continuity/IPN/reconciliation: source-only deployment gate
 
-**Controlling work:** [Issue #26](https://github.com/ach1992/bot-refactor/issues/26), [merged source-only PR #42](https://github.com/ach1992/bot-refactor/pull/42), [financial architecture](FINANCIAL-CONSOLIDATION.md). Source is integrated into `main@3958ece78d79fafd6ae0f851fe11946ad2061904`, but latest public/Owner-reported installed release is RC3. This implementation is **unreleased, not migrated and not operationally accepted**, not a live feature.
+**Controlling work:** Issue #26, merged finance PR #42 and the shared-ledger source-only change under development. The **public v0.10.0-rc.4** release exists, but operator installation and migration 002 have NOT been verified. That immutable RC4 bundle contains the historical NOWPayments-specific 002 SQL. The NEW source candidate replaces it with provider-shared payment_attempts / payment_transactions tables. See PAYMENT-LEDGER-MIGRATION.md before applying **any** SQL to a database. Neither design has been authorized for live migration/settlement by publication alone.
 
 ## User result and payment meaning
 
@@ -10,15 +10,40 @@ The buyer receives a durable HTTPS provider invoice link in Telegram. The provid
 
 The customer does **not** have to click Return to Merchant. When the existing business fulfillment succeeds, it already emits Telegram notifications and subscription links; final IPN handling does not depend on browser lifecycle.
 
-## Additive storage (NOT approved for live database)
+## Shared additive storage (NOT approved for live database)
 
-`migrations/post-v9/002_nowpayments_checkout_attempts.sql` proposes **two additive tables**: `achbot_nowpayments_attempts` (one row per original `pays.id`, merchant order, invoice, primary payment ID, original hosted URL, USD quote, **original Toman price**, approved payout currency and minimum net payout, workflow status, last operator notification) and `achbot_nowpayments_child_payments` (globally unique durable child `payment_id` evidence for **every signed deposit**). The first provider invoice request is preceded by a MariaDB `creating` reservation **and an atomic `pays.payid` gateway claim**. A response timeout/crash never silently creates a second invoice. NextPay and Zarinpal now also reserve the same order identity before their respective external requests; a buyer cannot overwrite a NOWPayments invoice by switching gateways. The original historical 23 tables and `001` panel-group migration remain unchanged. Both new tables are **proposed/source-only**, separate from the 92-member runtime ZIP.
+The new source-only migration is migrations/post-v9/003_payment_attempts.sql.
+It defines **two common domain tables**, not a new table per gateway:
+payment_attempts (provider, merchant order, quote amount/currency, provider
+reference, original checkout URL, local Toman amount, payout floor and stage)
+and payment_transactions (signed or otherwise independently verified
+child evidence; unique external ID per provider, with a provider-matching FK).
+NextPay and Zarinpal now also reserve their gateway attempt and external
+checkout reference in the common ledger before/after issuing a non-idempotent
+provider request; their callback verification policies are unchanged.
 
-Existing `pays.payid` is neither provider-scoped nor UNIQUE; without the proposed tables it cannot hold the original quote, primary/extra payment IDs or alert state. The two narrow additive tables address current NOWPayments evidence/recovery without redesigning historical schema; they are **not a universal shared business-effect/outbox ledger**. Each child deposit is only acknowledged after its globally unique ID is durable and linked to the invoice; additional deposits are review-only and never duplicate service or credit. Historical late/partial payments are not silently reinterpreted.
+The released RC4 file migrations/post-v9/002_nowpayments_checkout_attempts.sql
+created historical achbot_nowpayments_attempts and
+achbot_nowpayments_child_payments tables **if an operator ran it**.
+Those old tables and any payment records MUST NOT be silently dropped, ignored,
+renamed or auto-backfilled. The separately gated one-time data-copy script
+migrations/post-v9/legacy_rc4_nowpayments_import.sql is only for exact-schema
+RC4 old -> empty common tables, after a verified isolated restore and
+owner-authorized maintenance plan. See PAYMENT-LEDGER-MIGRATION.md.
 
-**R8 migration revision warning:** the still-unapplied `002` proposal now includes two optional alert-claim columns on the NOWPayments attempt table in addition to the prior `review_notified_at`. `CREATE TABLE IF NOT EXISTS` does not add columns to a staging database that previously ran an older draft. In an isolated disposable/staging environment, compare its actual DDL and rebuild/explicitly rehearse the updated additive proposal; do **not** silently treat a previously applied draft as current. Production migration, any schema alteration/backfill, and source deployment remain separately gated by the Owner.
+Existing pays.payid is not unique or provider-scoped. The shared ledger
+preserves exact provider-scoped identities, a snapshot of merchant amount
+and payout obligations, and all additional provider child IDs without
+mistaking checkout/browser return for confirmed payment. Multiple deposits
+do not create duplicate service or credits; extra/partial/refunded deposits
+stay under operator review. These tables are **not** an atomic outbox for
+remote Marzban effects or a universal exactly-once financial accounting
+ledger. Original 23 historical tables and migration 001 are unchanged.
 
-**Live migration requires separate Owner authorization and recovery evidence**: back up the *actual* MariaDB and private configuration, prove isolated restore, inspect existing `SHOW TABLES` and overlapping identifiers, rehearse `002` on a disposable restored copy, validate unique constraints and column types, and only then decide installation and production cutover. Source rollback can leave this additive table in place; database deletion/data cleanup is not authorized. Do **not** execute the SQL merely by installing a runtime ZIP.
+**Live schema changes require separate explicit Owner authorization,
+a restorable backup, original data audit and staging rehearsal.** A source
+ZIP neither includes nor executes SQL. CREATE TABLE IF NOT EXISTS does
+not repair draft/incompatible table definitions, even with the same name.
 
 ## Single private IPN secret (never send into Telegram chats)
 
@@ -49,7 +74,7 @@ A new hosted invoice is issued with `ipn_callback_url = {$botUrl}pay/back.php?no
 
 `settings/rewardReport.php` is an **existing** Cron filename: it retains reward reports, backups and automatic card receipts. It additionally processes at most three matching pending NOWPayments attempts per run after verifying status against the actual provider API; there is no new daemon, service or standalone Cron job. The **actual live schedule and runner were never verified**. For prompt completion the Owner/operator should confirm it executes safely approximately every 1–5 minutes and doesn't get blocked by slow backups/provider calls; do not assume a one-hour Cron gives real-time service.
 
-NOWPayments explicitly states that **invoices have no expiration date**, while an individual child payment is tracked for seven days and repeated deposits can create a *new* payment ID. Do not treat `attempt.created_at` as child-payment expiry: a valid `finished` payment can arrive on an older invoice and still needs verified settlement. Known child payments are polled at bounded per-tick frequency; terminal negative, ambiguous and underpaid outcomes require an explicit review policy. Repeated/extra child deposits must not trigger duplicate financial effects. All authenticated child IDs are durably stored in `achbot_nowpayments_child_payments` with a unique provider ID, before acknowledging IPN. Even a third or later child remains findable. Additional child deposits never trigger a second credit/provisioning; they move the invoice to operator `review`. Failed identity persistence returns non-2xx for provider retry. **Partial/refunded/additional-deposit allocation and refunds remain operator-led decisions**, not automated financial effects.
+NOWPayments explicitly states that **invoices have no expiration date**, while an individual child payment is tracked for seven days and repeated deposits can create a *new* payment ID. Do not treat `attempt.created_at` as child-payment expiry: a valid `finished` payment can arrive on an older invoice and still needs verified settlement. Known child payments are polled at bounded per-tick frequency; terminal negative, ambiguous and underpaid outcomes require an explicit review policy. Repeated/extra child deposits must not trigger duplicate financial effects. All authenticated child IDs are durably stored in `payment_transactions` with a unique provider ID, before acknowledging IPN. Even a third or later child remains findable. Additional child deposits never trigger a second credit/provisioning; they move the invoice to operator `review`. Failed identity persistence returns non-2xx for provider retry. **Partial/refunded/additional-deposit allocation and refunds remain operator-led decisions**, not automated financial effects.
 
 Concurrent Cron runs use compare-and-set attempt claims, leaving unfinished or ambiguous remote fulfillment for **manual reconciliation without blind replay**. A NOWPayments-verified payment with an uncertain Marzban create/renew/update result is marked `review` **without automatic wallet compensation**, because a remote timeout does not prove failure; this avoids refunding an account that may have been created or modified. This **no-refund-on-uncertain-remote-effect** guard also covers NextPay and Zarinpal provider-driven Marzban operations; old/manual/card financial paths remain separate work in Issue #26. An already-paid local order is never provisioned a second time merely due to late repeated IPN. This does not yet guarantee durable exactly-once Marzban fulfillment after process crash: inherited `doAction()` changes payment state before all remote side effects and remains part of Issue #26's next coherent work. The scheduled runner now invokes `achbotNpAlertOperator()` to send bounded **private administrator alerts** for `review` attempts and `creating` reservations older than ten minutes. Alerts include an opaque order reference, provider IDs, child count and reason, not secret keys or user data; a successful Telegram send is recorded in `review_notified_at` and only re-alerted after 24 hours while unresolved. Failed sends do not acknowledge the alert. Alert delivery now uses a five-minute exclusive claim (`review_notice_claim_token`/`review_notice_claimed_at`) and a child-count high-water mark for the post-Telegram acknowledgment CAS: a new signed child clears the claim and cannot be hidden by the preceding alert. Overlapping Cron workers cannot both claim an identical notification snapshot. This is an operator *notice only* and must never trigger a blind refund, financial replay or remote account recreation.
 
@@ -58,17 +83,17 @@ Concurrent Cron runs use compare-and-set attempt claims, leaving unfinished or a
 On an **authorized, access-controlled installation**, the operator may run these **READ-ONLY** queries against the actual current schema, after confirming the proposed migration has been separately approved and executed. Do not paste output into public issue/CI logs.
 
 ```sql
-SELECT id, order_hash, invoice_id, payment_id, stage,
+SELECT id, provider, order_hash, provider_reference, payment_id, stage,
        provider_status, created_at, updated_at, review_notified_at
-FROM achbot_nowpayments_attempts
-WHERE stage = 'review'
-   OR (stage = 'creating' AND created_at < NOW() - INTERVAL 10 MINUTE)
+FROM payment_attempts
+WHERE provider = 'nowpayments' AND (stage = 'review'
+   OR (stage = 'creating' AND created_at < NOW() - INTERVAL 10 MINUTE))
 ORDER BY updated_at ASC;
 
 SELECT c.attempt_id, c.payment_id, c.observed_status, c.received_at
-FROM achbot_nowpayments_child_payments c
-JOIN achbot_nowpayments_attempts a ON a.id = c.attempt_id
-WHERE a.order_hash = 'REPLACE_WITH_OPERATOR_ORDER_REFERENCE'
+FROM payment_transactions c
+JOIN payment_attempts a ON a.id = c.attempt_id AND a.provider = c.provider
+WHERE a.provider = 'nowpayments' AND a.order_hash = 'REPLACE_WITH_OPERATOR_ORDER_REFERENCE'
 ORDER BY c.id;
 ```
 
@@ -78,7 +103,7 @@ For each case: verify invoice/payment identity in the official provider dashboar
 
 ## Acceptance / rollback checklist
 
-- Confirm exact developer-reviewed GitHub SHA, runtime ZIP manifest 92-member integrity, original 23 tables plus existing `server_info.panel_group_id`, and new 002 migration separately backed up and verified; never run SQL on an unsupported version.
+- Confirm exact developer-reviewed GitHub SHA, runtime ZIP manifest 92-member integrity, original 23 tables plus existing `server_info.panel_group_id`, and new shared 003 migration separately backed up and verified; never run SQL on an unsupported version.
 - Verify direct Marzban PUT/reset transport, HTTP and user-response validation (including genuine success, rejected status, timeout, malformed body), Zarinpal browser NOK with provider 100/101 and transport uncertainty, three-provider renewal `success=false`, stale alternative-gateway callback after original invoice creation, nested operator-alert/new-child race, and missing-user/overflow/successful wallet compensation on actual native PHP/SQL.
 - Test atomic cross-gateway claim (both directions), pre-POST `creating` reservation, timeout/no reissue, saved URL reopening, signed/invalid/duplicated multi-child IPNs, immutable Toman amount, output asset/net payout amount and fee shortfall, no-policy issuance refusal, old legacy browser read-only route, real loopback HTTP bootstrap, `confirmed`/`sending` pending, authoritative `finished`, Telegram delivery without browser return, safe operator alerts, Marzban uncertainty with no auto-refund, replay/worker crash, provider API timeout, stale Cron and every IPN blocked.
 - Actual browser return path should display locally **pending** or **paid** only, not issue a second provider payment nor automatically credit based on query arguments.
