@@ -54,4 +54,20 @@ require_once __DIR__ . '/../src/Backup/Database.php';
     $connection, $rewaredChannel, 'sendDatabaseBackup', dirname(__DIR__)
 );
 
+
+// Existing operator-managed Cron runner also reconciles signed NOWPayments
+// status notifications. It is not a public anonymous payment trigger.
+if (!defined('ACHBOT_NP_RECONCILE_ONLY')) define('ACHBOT_NP_RECONCILE_ONLY',true);
+// Existing browser gateway always loads these QR/subscription helpers. Cron
+// must load the same source before processing BUY_SUB or RENEW_ACCOUNT.
+require_once __DIR__ . '/../buy_helpers.php';
+require_once __DIR__ . '/../src/Finance/GatewayReturn.php';
+$npTable=$connection->query("SHOW TABLES LIKE 'achbot_nowpayments_attempts'");
+if ($npTable && $npTable->num_rows === 1) {
+    achbotNpReconcileBatch($connection, is_array($paymentKeys ?? null)?$paymentKeys:[], 3);
+    // Send bounded operator notices for unresolved payments or stalled
+    // invoice creation. No money/provisioning effects are retried here.
+    achbotNpAlertOperator($connection, $admin ?? null, 3);
+}
+
 require __DIR__ . '/../src/Finance/AutomaticReceipts.php';

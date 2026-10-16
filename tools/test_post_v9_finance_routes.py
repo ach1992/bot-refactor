@@ -43,28 +43,153 @@ $_GET = $spec['get'];
 $GLOBALS['network_calls'] = [];
 $GLOBALS['error'] = null;
 $GLOBALS['mock_invoice'] = $spec['mock_invoice'] ?? '';
+$GLOBALS['fake_nowpayment_status'] = $spec['nowpayment_status'] ?? 'waiting';
+$GLOBALS['fake_invoice_transport_failure'] = $spec['invoice_transport_failure'] ?? false;
+$GLOBALS['fake_nowpayment_http'] = $spec['nowpayment_http'] ?? 200;
+$GLOBALS['fake_nowpayment_raw'] = $spec['nowpayment_raw'] ?? null;
+$GLOBALS['fake_nowpayment_transport_failure'] = $spec['nowpayment_transport_failure'] ?? false;
+$GLOBALS['fake_nowpayment_payment_id'] = $spec['nowpayment_payment_id'] ?? null;
+$GLOBALS['fake_nowpayment_order_id'] = $spec['nowpayment_order_id'] ?? null;
+$GLOBALS['fake_nowpayment_price'] = $spec['nowpayment_price'] ?? 1;
+$GLOBALS['fake_nowpayment_actual'] = $spec['nowpayment_actual'] ?? 1;
+$GLOBALS['fake_nowpayment_outcome'] = $spec['nowpayment_outcome'] ?? 1;
+$GLOBALS['fake_nowpayment_outcome_currency'] = $spec['nowpayment_outcome_currency'] ?? 'usdttrc20';
+$GLOBALS['fake_nowpayment_pay_currency'] = $spec['nowpayment_pay_currency'] ?? 'usdttrc20';
+$GLOBALS['fake_nowpayment_pay_amount'] = $spec['nowpayment_pay_amount'] ?? 1;
+$GLOBALS['fake_nowpayment_force_id'] = $spec['nowpayment_force_id'] ?? null;
+$GLOBALS['fake_nowpayment_flip_hash'] = $spec['nowpayment_flip_hash'] ?? null;
 $GLOBALS['fake_nextpay_code'] = $spec['nextpay_code'] ?? -2;
 $GLOBALS['fake_nextpay_http'] = $spec['nextpay_http'] ?? 200;
 $GLOBALS['fake_nextpay_raw'] = $spec['nextpay_raw'] ?? null;
 $GLOBALS['fake_nextpay_transport_failure'] = $spec['nextpay_transport_failure'] ?? false;
 $GLOBALS['fake_nextpay_flip_hash'] = $spec['nextpay_flip_hash'] ?? null;
 $GLOBALS['fake_nextpay_flip_state'] = $spec['nextpay_flip_state'] ?? 'paid';
+$GLOBALS['fake_zarin_status'] = array_key_exists('zarin_status',$spec)
+    ? $spec['zarin_status'] : -11;
+$GLOBALS['fake_zarin_flip_hash'] = $spec['zarin_flip_hash'] ?? null;
+$GLOBALS['fake_prepayment_flip_hash'] = $spec['prepayment_flip_hash'] ?? null;
+$GLOBALS['owned_finance_dbname'] = $dbname;
+$GLOBALS['owned_finance_socket'] = $socket;
+$GLOBALS['fake_zarin_throw'] = $spec['zarin_throw'] ?? false;
+$GLOBALS['fake_zarin_malformed'] = $spec['zarin_malformed'] ?? false;
+$GLOBALS['fake_marzban_http'] = $spec['marzban_http'] ?? 200;
+$GLOBALS['fake_marzban_raw'] = $spec['marzban_raw'] ?? null;
+$GLOBALS['fake_marzban_transport_failure'] = $spec['marzban_transport_failure'] ?? false;
+$GLOBALS['fake_marzban_reset_http'] = $spec['marzban_reset_http'] ?? 200;
+$GLOBALS['fake_marzban_username'] = $spec['marzban_username'] ?? 'syntheticMarzban';
+$GLOBALS['fake_renew_success'] = $spec['renew_success'] ?? false;
+$GLOBALS['fake_alert_inject_child'] = $spec['alert_inject_child'] ?? null;
+$GLOBALS['fake_alert_inject_order'] = $spec['alert_inject_order'] ?? 'wallet-init';
+$GLOBALS['fake_alert_inject_invoice'] = $spec['alert_inject_invoice'] ?? 'owned-new-invoice';
+$GLOBALS['fake_alert_nested_worker'] = $spec['alert_nested_worker'] ?? false;
 $GLOBALS['race_flip_applied'] = false;
+$GLOBALS['fake_alert_send_failure'] = $spec['alert_send_failure'] ?? false;
+$GLOBALS['invoice_reservation_seen'] = null;
 $GLOBALS['events'] = [];
 $GLOBALS['known_inherited_warnings'] = [];
 $botState = [];
 $botUrl = 'http://127.0.0.1:9/owned-fixture/';
 $USDTPrice = 100000;
 $USDTPriceagent = 100000;
-$paymentKeys = ['nowpayment'=>'SYNTHETIC-LOCAL-ONLY', 'nextpay'=>'SYNTHETIC-LOCAL-ONLY'];
+$nowpaymentsIpnSecret = 'LOCAL-IPN-SECRET';
+$nowpaymentsSettlementPolicy = $spec['settlement_policy'] ??
+    ['outcome_currency'=>'usdttrc20','minimum_outcome_per_usd'=>'1.000000'];
+$paymentKeys = ['nowpayment'=>'SYNTHETIC-LOCAL-ONLY', 'nextpay'=>'SYNTHETIC-LOCAL-ONLY', 'zarinpal'=>'SYNTHETIC-LOCAL-ONLY'];
 $admin = 9001;
 function sendMessage(...$args) {
     $GLOBALS['events'][] = ['name'=>'sendMessage', 'args'=>$args];
-    return (object)['ok'=>true];
+    if (is_string($args[0] ?? null) &&
+        str_contains($args[0],'NOWPayments requires operator review')) {
+        if ($GLOBALS['fake_alert_nested_worker']) {
+            $GLOBALS['fake_alert_nested_worker']=false;
+            $GLOBALS['events'][]=['name'=>'nested_alert','result'=>achbotNpAlertOperator(
+                $GLOBALS['connection'],9001,5)];
+        }
+        if ($GLOBALS['fake_alert_inject_child'] !== null) {
+            $child=(string)$GLOBALS['fake_alert_inject_child'];
+            $GLOBALS['fake_alert_inject_child']=null;
+            $payload=[
+                'payment_id'=>$child,
+                'invoice_id'=>$GLOBALS['fake_alert_inject_invoice'],
+                'order_id'=>$GLOBALS['fake_alert_inject_order'],
+                'payment_status'=>'finished',
+                'price_amount'=>1,'price_currency'=>'usd'
+            ];
+            $raw=json_encode($payload,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
+            $sig=hash_hmac('sha512',json_encode(achbotNpSortedPayload($payload),
+                 JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES),'LOCAL-IPN-SECRET');
+            $GLOBALS['events'][]=['name'=>'inflight_ipn',
+                'code'=>achbotNpIngestIpn($GLOBALS['connection'],
+                    'LOCAL-IPN-SECRET',$raw,$sig)];
+        }
+    }
+    return (object)['ok'=>!$GLOBALS['fake_alert_send_failure']];
 }
-function curl_init() { return (object)['url' => '']; }
+function generateRandomString($length, $protocol) {
+    return str_repeat('a', $length);
+}
+function renewConfigOnServer(...$args) {
+    $GLOBALS['events'][]=['name'=>'renewConfigOnServer','result'=>$GLOBALS['fake_renew_success']];
+    return (object)['success'=>$GLOBALS['fake_renew_success']];
+}
+function delMessage() {
+    $GLOBALS['events'][]=['name'=>'delMessage'];
+    if ($GLOBALS['fake_prepayment_flip_hash'] !== null) {
+        // Independent worker commits between the route SELECT and
+        // its conditional mismatch UPDATE, without modifying production PHP.
+        $other=new mysqli('localhost','root','',
+            $GLOBALS['owned_finance_dbname'],0,$GLOBALS['owned_finance_socket']);
+        $stmt=$other->prepare("UPDATE pays SET state='paid'
+                              WHERE hash_id=? AND state='pending'");
+        $hash=(string)$GLOBALS['fake_prepayment_flip_hash'];
+        $stmt->bind_param('s',$hash);
+        $stmt->execute();
+        $GLOBALS['race_flip_applied']=$stmt->affected_rows===1;
+        $stmt->close();
+        $other->close();
+        $GLOBALS['fake_prepayment_flip_hash']=null;
+    }
+}
+function getMainKeys() { return '{}'; }
+function alert(...$args) { $GLOBALS['events'][]=['name'=>'alert','args'=>$args]; }
+function answerCallbackQuery(...$args) { $GLOBALS['events'][]=['name'=>'callback','args'=>$args]; }
+function createServerAccount(...$args) {
+    // Replace ONLY the external Marzban boundary with an ambiguous result.
+    // The real doAction() payment/compensation handling remains unmodified.
+    $GLOBALS['events'][] = ['name'=>'marzban_unknown_result'];
+    return [null, $args[4] ?? '', $args[9] ?? 0];
+}
+// Native PHP -n has no SOAP extension. Mirror the real callback/request
+// method contract while recording provider effects without external traffic.
+if (!class_exists('SoapClient')) {
+    class SoapClient {
+        function __construct(...$args) {}
+        function PaymentRequest($params) {
+            $GLOBALS['network_calls'][]='zarinpal:request';
+            return (object)['Status'=>100,'Authority'=>'zarin-'.($_GET['hash_id']??'unknown')];
+        }
+        function PaymentVerification($params) {
+            $GLOBALS['network_calls'][]='zarinpal:verify';
+            if ($GLOBALS['fake_zarin_flip_hash'] !== null) {
+                $stmt=$GLOBALS['connection']->prepare(
+                    "UPDATE pays SET state='paid' WHERE hash_id=? AND state='pending'");
+                $stmt->bind_param('s',$GLOBALS['fake_zarin_flip_hash']);
+                $stmt->execute();
+                $GLOBALS['race_flip_applied']=$stmt->affected_rows===1;
+                $stmt->close();
+            }
+            if ($GLOBALS['fake_zarin_throw']) throw new RuntimeException('simulated_provider_transport');
+            if ($GLOBALS['fake_zarin_malformed']) return (object)[];
+            return (object)['Status'=>$GLOBALS['fake_zarin_status']];
+        }
+    }
+}
+function curl_init() { return (object)['url'=>'','method'=>'GET','fields'=>null]; }
 function curl_setopt($handle,$option,$value) {
     if ($option === CURLOPT_URL) $handle->url = (string)$value;
+    if ($option === CURLOPT_CUSTOMREQUEST) $handle->method=(string)$value;
+    if ($option === CURLOPT_POSTFIELDS) $handle->fields=$value;
+    if ($option === CURLOPT_POST && $value) $handle->method='POST';
     return true;
 }
 function curl_setopt_array($handle,$options) {
@@ -73,6 +198,40 @@ function curl_setopt_array($handle,$options) {
 }
 function curl_exec($handle) {
     $GLOBALS['network_calls'][] = $handle->url;
+    if (str_contains($handle->url, '/api/admin/token')) {
+        return json_encode(['access_token'=>'TEST-ONLY']);
+    }
+    if (str_contains($handle->url, '/api/user/') &&
+        str_ends_with($handle->url, '/reset')) {
+        if ($GLOBALS['fake_marzban_reset_http'] !== 200) return '{"detail":"reset rejected"}';
+        return json_encode(['username'=>$GLOBALS['fake_marzban_username']]);
+    }
+    if (str_contains($handle->url, '/api/user/') && $handle->method==='PUT') {
+        if ($GLOBALS['fake_marzban_transport_failure']) return false;
+        if ($GLOBALS['fake_marzban_raw'] !== null) return $GLOBALS['fake_marzban_raw'];
+        $post=json_decode($handle->fields ?? '{}',true);
+        return json_encode([
+            'username'=>$GLOBALS['fake_marzban_username'],
+            'expire'=>$post['expire'] ?? 0,
+            'data_limit'=>$post['data_limit'] ?? 0,
+            'status'=>'active'
+        ]);
+    }
+    if (str_contains($handle->url, '/api/user/')) {
+        return json_encode([
+            'username'=>$GLOBALS['fake_marzban_username'],
+            'expire'=>time()+86400,
+            'data_limit'=>1073741824,
+            'inbounds'=>['vless'=>['fake-inbound']],
+            'proxies'=>['vless'=>new stdClass()],
+            'note'=>'fixture',
+            'data_limit_reset_strategy'=>'no_reset',
+            'status'=>'active'
+        ]);
+    }
+    if (str_contains($handle->url, '/nx/gateway/token')) {
+        return json_encode(['code'=>-1,'trans_id'=>'next-'.($_GET['hash_id']??'unknown')]);
+    }
     if (str_contains($handle->url, '/nx/gateway/verify')) {
         // Deterministically emulate a second worker settling the EXACT row
         // after this callback's SELECT and while provider verification is in flight.
@@ -91,15 +250,68 @@ function curl_exec($handle) {
         return json_encode(['code'=>$GLOBALS['fake_nextpay_code']]);
     }
     if (str_contains($handle->url, '/v1/invoice')) {
+        // Confirm a durable local claim exists BEFORE the provider receives
+        // the non-idempotent invoice creation request.
+        $stmt=$GLOBALS['connection']->prepare(
+            "SELECT stage FROM achbot_nowpayments_attempts WHERE order_hash=? LIMIT 1");
+        $key=(string)($_GET['hash_id'] ?? '');
+        $stmt->bind_param('s',$key);
+        $stmt->execute();
+        $reservation=$stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        $GLOBALS['invoice_reservation_seen']=$reservation['stage'] ?? null;
+        if ($GLOBALS['fake_invoice_transport_failure'] ?? false) return false;
         return json_encode(['id'=>'owned-new-invoice',
-                             'invoice_url'=>'http://127.0.0.1:9/owned-no-navigation']);
+                             'invoice_url'=>'https://nowpayments.io/payment?iid=owned-new-invoice']);
+    }
+    if (str_contains($handle->url, '/v1/payment/')) {
+        if ($GLOBALS['fake_nowpayment_flip_hash'] !== null) {
+            $stmt = $GLOBALS['connection']->prepare(
+                "UPDATE pays SET state='paid' WHERE hash_id=? AND state IN ('pending','send')"
+            );
+            $stmt->bind_param('s', $GLOBALS['fake_nowpayment_flip_hash']);
+            $stmt->execute();
+            $GLOBALS['race_flip_applied'] = $stmt->affected_rows === 1;
+            $stmt->close();
+        }
+        if ($GLOBALS['fake_nowpayment_transport_failure']) return false;
+        if ($GLOBALS['fake_nowpayment_raw'] !== null) return $GLOBALS['fake_nowpayment_raw'];
+        $record = ['invoice_id'=>$GLOBALS['mock_invoice'],
+                   'payment_status'=>$GLOBALS['fake_nowpayment_status']];
+        if ($GLOBALS['fake_nowpayment_payment_id'] !== null) {
+            $record['payment_id'] = $GLOBALS['fake_nowpayment_payment_id'];
+        }
+        if ($GLOBALS['fake_nowpayment_order_id'] !== null) {
+            $record['order_id'] = $GLOBALS['fake_nowpayment_order_id'];
+        }
+        $record['payment_id'] = $GLOBALS['fake_nowpayment_force_id'] ??
+            $GLOBALS['fake_nowpayment_payment_id'] ?? $record['payment_id'] ?? null;
+        $record['price_currency']='usd';
+        $record['price_amount']=$GLOBALS['fake_nowpayment_price'];
+        $record['pay_amount']=$GLOBALS['fake_nowpayment_pay_amount'];
+        $record['actually_paid']=$GLOBALS['fake_nowpayment_actual'];
+        $record['pay_currency']=$GLOBALS['fake_nowpayment_pay_currency'];
+        $record['outcome_currency']=$GLOBALS['fake_nowpayment_outcome_currency'];
+        $record['outcome_amount']=$GLOBALS['fake_nowpayment_outcome'];
+        return json_encode($record);
     }
     return json_encode(['invoice_id'=>$GLOBALS['mock_invoice'],
                         'payment_status'=>'waiting']);
 }
 function curl_close($handle) {}
-function curl_error($handle) { return ''; }
-function curl_getinfo($handle,$option) { return $GLOBALS['fake_nextpay_http']; }
+function curl_error($handle) {
+    if (str_contains($handle->url,'/api/user/') && $handle->method==='PUT' &&
+        $GLOBALS['fake_marzban_transport_failure']) return 'synthetic_timeout';
+    return '';
+}
+function curl_getinfo($handle,$option) {
+    if (str_contains($handle->url,'/api/user/') &&
+        str_ends_with($handle->url,'/reset')) return $GLOBALS['fake_marzban_reset_http'];
+    if (str_contains($handle->url,'/api/user/') && $handle->method==='PUT') return $GLOBALS['fake_marzban_http'];
+    if (str_contains($handle->url,'/api/user/') || str_contains($handle->url,'/api/admin/token')) return 200;
+    if (str_contains($handle->url, '/v1/payment/')) return $GLOBALS['fake_nowpayment_http'];
+    return $GLOBALS['fake_nextpay_http'];
+}
 ob_start();
 register_shutdown_function(function () {
     $html = ob_get_contents();
@@ -109,6 +321,7 @@ register_shutdown_function(function () {
       'network_calls'=>$GLOBALS['network_calls'],
       'events'=>$GLOBALS['events'],
       'race_flip_applied'=>$GLOBALS['race_flip_applied'],
+      'invoice_reservation_seen'=>$GLOBALS['invoice_reservation_seen'],
       'known_inherited_warnings'=>$GLOBALS['known_inherited_warnings'],
       'error'=>$GLOBALS['error'],
       'form'=>$html,
@@ -122,7 +335,54 @@ try {
     // Use the ACTUAL current wallet-credit helper; only outbound Telegram is
     // captured by the transport spy. No fake settlement implementation.
     require $root . '/src/Finance/ReceiptHelpers.php';
-    if ($spec['route'] === 'return') {
+    require $root . '/src/Finance/GatewayClient.php';
+    if ($spec['route'] === 'ipn' || $spec['route'] === 'reconcile' || $spec['route'] === 'alert') {
+        define('ACHBOT_NP_RECONCILE_ONLY',true);
+        $_GET=[];
+        require $root . '/src/Finance/GatewayReturn.php';
+        if ($spec['route'] === 'ipn') {
+            $raw = $spec['ipn_raw'] ?? '{}';
+            $key = $spec['ipn_secret'] ?? 'LOCAL-IPN-SECRET';
+            $signed = json_decode($raw,true);
+            $canonical = json_encode(achbotNpSortedPayload($signed),
+                JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            $signature = $spec['ipn_wrong_signature'] ?? hash_hmac('sha512',$canonical,$key);
+            $GLOBALS['events'][]=['name'=>'ipn_result','code'=>achbotNpIngestIpn(
+                $connection,$key,$raw,$signature)];
+        } elseif ($spec['route'] === 'reconcile') {
+            $GLOBALS['events'][]=['name'=>'reconcile_result','result'=>achbotNpReconcileBatch(
+                $connection,$paymentKeys,1)];
+        } else {
+            $GLOBALS['events'][]=['name'=>'alert_result','result'=>achbotNpAlertOperator(
+                $connection,$spec['alert_admin'] ?? $admin,5)];
+        }
+    } elseif ($spec['route'] === 'wallet_refund') {
+        $result=refundToWalletAndNotify($connection,
+            (int)($spec['refund_user']??1001),(int)($spec['refund_amount']??100),
+            'nowpayment',9001,'synthetic compensation',null);
+        $GLOBALS['events'][]=['name'=>'refund_result','success'=>$result];
+    } elseif ($spec['route'] === 'prepayment') {
+        $data=(string)($spec['callback_data']??'');
+        $callbackId='test-callback';
+        $from_id=1001;
+        require $root . '/src/Finance/Routes/PrePayment.php';
+    } elseif ($spec['route'] === 'marzban_edit') {
+        require $root . '/src/Panel/Accounts.php';
+        $change=$spec['marzban_change']??
+            ['remark'=>'syntheticMarzban','plus_day'=>1];
+        $result=\AchBot\Panel\Accounts\editMarzbanConfig(
+            (int)($spec['marzban_server']??2),$change);
+        $GLOBALS['events'][]=['name'=>'marzban_edit_result',
+            'success'=>$result->success??false,'uncertain'=>$result->uncertain??null,
+            'msg'=>$result->msg??null];
+    } elseif ($spec['route'] === 'do_action') {
+        define('ACHBOT_NP_RECONCILE_ONLY',true);
+        require $root . '/src/Finance/GatewayReturn.php';
+        $id=(int)($spec['pay_row_id']??0);
+        $gate=(string)($spec['provider']??'nextpay');
+        $GLOBALS['events'][]=['name'=>'do_action_result',
+            'result'=>doAction($id,$gate)];
+    } elseif ($spec['route'] === 'return') {
         require $root . '/src/Finance/GatewayReturn.php';
     } elseif ($spec['route'] === 'initiate') {
         require $root . '/src/Finance/GatewayInitiation.php';
@@ -165,6 +425,16 @@ def seed_payment(work,env,name,type_name,plan=0,server=0,payid=None):
     sql(work,env,query)
     return invoice
 
+def seed_np_attempt(work,env,name,invoice,payment_id):
+    seed_payment(work,env,name,'INCREASE_WALLET',0,0,invoice)
+    sql(work,env,
+        "INSERT INTO achbot_nowpayments_attempts "
+        "(pay_row_id,order_hash,invoice_id,payment_id,invoice_url,quote_usd,"
+        "local_amount_toman,expected_outcome_currency,minimum_outcome_amount) "
+        f"SELECT id,hash_id,'{invoice}','{payment_id}',"
+        f"'https://nowpayments.io/pay/{invoice}',1,price,'usdttrc20',1 "
+        f"FROM pays WHERE hash_id='{name}'")
+
 def snapshot(work,env):
     return purchase.snapshot(work,env,DB)
 
@@ -184,7 +454,13 @@ def main():
         purchase.init(work,env,'http://127.0.0.1:9')
         if len(sql(work,env,'SHOW TABLES').splitlines()) != 23:
             raise RuntimeError('Original schema missing')
-        sql(work,env,"INSERT INTO setting (type,value) VALUES ('PAYMENT_KEYS','{\"nowpayment\":\"SYNTHETIC-LOCAL-ONLY\"}')")
+        keys=json.dumps({'nowpayment':'SYNTHETIC-LOCAL-ONLY','nextpay':'SYNTHETIC-LOCAL-ONLY','zarinpal':'SYNTHETIC-LOCAL-ONLY','nowpayment_ipn_secret':'LOCAL-IPN-SECRET'})
+        sql(work,env,"INSERT INTO setting (type,value) VALUES ('PAYMENT_KEYS','" + keys + "')")
+        # Original 23 tables remain frozen; the new proposed attempt table
+        # is layered on top ONLY after documenting the original table count.
+        native.sql(work,env,(ROOT/'migrations/post-v9/002_nowpayments_checkout_attempts.sql').read_text(),DB)
+        assert len(sql(work,env,'SHOW TABLES').splitlines()) == 25
+
         seed_payment(work,env,'unsupported-now','RETIRED_PANEL',7,2)
         seed_payment(work,env,'marzban-now','BUY_SUB',7,2,'owned-verified-invoice')
         seed_payment(work,env,'wallet-now','INCREASE_WALLET',0,0,'wallet-verified-invoice')
@@ -231,24 +507,517 @@ def main():
             raise RuntimeError('Retired panel reached payment provider')
         records.append(dict(case='retired_provider_live_reference',pass_=True,financial_mutations=0,external_requests=0))
         sql(work,env,"UPDATE server_config SET type='marzban' WHERE id=2")
+        # Legacy NOWPayments browser callbacks have NO stored USD/merchant
+        # payout evidence and cannot be reconciled safely from NP_id alone.
+        # Even a provider 'finished' reply must not be consulted for credit:
+        # the entire legacy browser route is read-only and requires review.
+        for status in ('waiting','confirming','confirmed','sending',
+                       'partially_paid','refunded','finished','failed','expired'):
+            name='legacy-nowpay-'+status
+            invoice='legacy-'+status+'-invoice'
+            seed_payment(work,env,name,'INCREASE_WALLET',0,0,invoice)
+            before=snapshot(work,env)
+            result=run_php(work,env,stage,dict(route='return',
+                get={'nowpayment':'','NP_id':'np-'+status,'hash_id':name},
+                mock_invoice=invoice,nowpayment_status=status,
+                nowpayment_actual=0.01,nowpayment_price=999,
+                nowpayment_outcome_currency='wrong-asset',
+                nowpayment_outcome=0.0001))
+            verify_unchanged(work,env,before,'legacy_'+status)
+            if result['network_calls'] or 'بررسی' not in result['form']:
+                raise RuntimeError('Legacy browser callback escaped safe review: '+status)
+            records.append(dict(case='legacy_nowpayment_'+status+'_read_only',
+                                pass_=True,financial_mutations=0,external_requests=0))
+        seed_payment(work,env,'legacy-nowpay-duplicate-a','INCREASE_WALLET',0,0,'legacy-same-invoice')
+        seed_payment(work,env,'legacy-nowpay-duplicate-b','INCREASE_WALLET',0,0,'legacy-same-invoice')
+        for name in ('legacy-nowpay-duplicate-a','legacy-nowpay-duplicate-b'):
+            before=snapshot(work,env)
+            result=run_php(work,env,stage,dict(route='return',
+                get={'nowpayment':'','NP_id':'legacy-same-invoice','hash_id':name},
+                mock_invoice='legacy-same-invoice',nowpayment_status='finished'))
+            verify_unchanged(work,env,before,'legacy_invoice_collision')
+            if result['network_calls'] or not result['form']:
+                raise RuntimeError('Ambiguous legacy invoice reached settlement')
+            records.append(dict(case='legacy_nowpayment_duplicate_invoice_refused',
+                                pass_=True,financial_mutations=0,external_requests=0))
         before=snapshot(work,env)
-        res=run_php(work,env,stage,dict(route='return',
-            get={'nowpayment':'','NP_id':'owned-pmt','hash_id':'wallet-now'},
-            mock_invoice='different-invoice'))
-        verify_unchanged(work,env,before,'mismatched_confirmed_invoice')
-        if len(res['network_calls'])!=1 or 'v1/payment/owned-pmt' not in res['network_calls'][0]:
-            raise RuntimeError('Supported wallet payment never reached fake verifier')
-        if 'مطابقت' not in res['form']:
-            raise RuntimeError('Invoice mismatch did not fail closed')
-        records.append(dict(case='positive_subject_invoice_mismatch',pass_=True,financial_mutations=0,external_requests=1))
+        browser=run_php(work,env,stage,dict(route='return',
+            get={'nowpayment':'','hash_id':'wallet-now'}))
+        verify_unchanged(work,env,before,'legacy_browser_return')
+        if browser['network_calls'] or 'در حال بررسی' not in browser['form']:
+            raise RuntimeError('Untrusted browser-only return declared settlement')
+        records.append(dict(case='legacy_nowpayment_browser_only_read_only',
+                            pass_=True,financial_mutations=0,external_requests=0))
+        sql(work,env,"UPDATE pays SET price=100000,payid=NULL WHERE hash_id='wallet-init'")
         before=snapshot(work,env)
         res=run_php(work,env,stage,dict(route='initiate',
                     get={'nowpayment':'','hash_id':'wallet-init'}))
         if len(res['network_calls'])!=1 or '/v1/invoice' not in res['network_calls'][0]:
-            raise RuntimeError('Independent wallet top-up did not initiate mock invoice')
+            raise RuntimeError('Independent wallet top-up did not initiate mock invoice: '+repr(res)[:1000])
+        if res['invoice_reservation_seen']!='creating':
+            raise RuntimeError('External invoice was created before a durable local reservation')
         if sql(work,env,"SELECT payid FROM pays WHERE hash_id='wallet-init'").strip()!='owned-new-invoice':
             raise RuntimeError('Wallet top-up invoice ID was not stored')
         records.append(dict(case='positive_wallet_gateway_initiation',pass_=True,synthetic_invoice=True,external_requests=1))
+
+        # The exact hosted checkout URL must be durable and resumable: a second
+        # click cannot create or replace another external provider invoice.
+        before=snapshot(work,env)
+        second=run_php(work,env,stage,dict(route='initiate',
+            get={'nowpayment':'','hash_id':'wallet-init'}))
+        verify_unchanged(work,env,before,'nowpay-existing-checkout-resume')
+        if second['network_calls']:
+            raise RuntimeError('Opening existing checkout spawned another invoice')
+        persisted=sql(work,env,"SELECT invoice_id,quote_usd,invoice_url FROM achbot_nowpayments_attempts WHERE order_hash='wallet-init'").strip()
+        if 'owned-new-invoice' not in persisted or 'nowpayments.io' not in persisted:
+            raise RuntimeError('Checkout URL or quote not durable')
+        records.append(dict(case='nowpayments_checkout_url_reused_without_new_invoice',
+                            pass_=True,real_provider_requests=0))
+        # Switching providers for the SAME order cannot overwrite an
+        # existing NOWPayments invoice or issue a second request.
+        for p in ('nextpay','zarinpal'):
+            before=snapshot(work,env)
+            refused=run_php(work,env,stage,dict(route='initiate',
+                get={p:'','hash_id':'wallet-init'}))
+            verify_unchanged(work,env,before,'now_to_'+p)
+            if refused['network_calls'] or sql(work,env,
+               "SELECT payid FROM pays WHERE hash_id='wallet-init'").strip()!='owned-new-invoice':
+                raise RuntimeError('NOWPayments switched to '+p)
+            records.append(dict(case='gateway_now_to_'+p+'_blocked',pass_=True))
+        # Reverse order: NextPay and Zarinpal claim payid before external
+        # requests, preventing another gateway from issuing a new invoice.
+        for p in ('nextpay','zarinpal'):
+            name='switch-'+p
+            seed_payment(work,env,name,'INCREASE_WALLET',0,0,'initial')
+            sql(work,env,f"UPDATE pays SET price=100000,payid=NULL WHERE hash_id='{name}'")
+            issued=run_php(work,env,stage,dict(route='initiate',get={p:'','hash_id':name}))
+            if len(issued['network_calls'])!=1:
+                raise RuntimeError('Expected first '+p+' provider issuance')
+            external=sql(work,env,f"SELECT payid FROM pays WHERE hash_id='{name}'").strip()
+            if not external.startswith('next-' if p=='nextpay' else 'zarin-'):
+                raise RuntimeError('Original '+p+' identity was not preserved')
+            before=snapshot(work,env)
+            refused=run_php(work,env,stage,dict(route='initiate',
+                get={'nowpayment':'','hash_id':name}))
+            verify_unchanged(work,env,before,'switch_'+p+'_now')
+            if refused['network_calls'] or sql(work,env,
+               f"SELECT payid FROM pays WHERE hash_id='{name}'").strip()!=external:
+                raise RuntimeError('Competing NOWPayments invoice after '+p)
+            records.append(dict(case='gateway_'+p+'_to_now_blocked',pass_=True))
+        seed_payment(work,env,'switch-pending','INCREASE_WALLET',0,0,'old')
+        sql(work,env,"UPDATE pays SET payid='achbot_nextpay_creating_999' WHERE hash_id='switch-pending'")
+        before=snapshot(work,env)
+        for p in ('nowpayment','nextpay','zarinpal'):
+            refused=run_php(work,env,stage,dict(route='initiate',
+                get={p:'','hash_id':'switch-pending'}))
+            verify_unchanged(work,env,before,'switch_inflight_'+p)
+            if refused['network_calls']:
+                raise RuntimeError('Pending provider claim allowed double issuance')
+        records.append(dict(case='all_gateway_switches_blocked_on_inflight_claim',pass_=True))
+        # A second click during a first provider POST must not trigger another
+        # POST. Only the initial request may own the durable 'creating' row.
+        seed_payment(work,env,'np-creating','INCREASE_WALLET',0,0,'unused-id')
+        sql(work,env,"UPDATE pays SET price=100000,payid=NULL WHERE hash_id='np-creating'")
+        sql(work,env,"INSERT INTO achbot_nowpayments_attempts "
+            "(pay_row_id,order_hash,quote_usd,stage) "
+            "SELECT id,hash_id,1,'creating' FROM pays WHERE hash_id='np-creating'")
+        before=snapshot(work,env)
+        in_progress=run_php(work,env,stage,dict(route='initiate',
+            get={'nowpayment':'','hash_id':'np-creating'}))
+        verify_unchanged(work,env,before,'nowpay_in_flight_reservation')
+        if in_progress['network_calls']:
+            raise RuntimeError('Overlapping checkout issued a duplicate provider invoice')
+        records.append(dict(case='nowpayments_inflight_reservation_no_double_invoice',
+                            pass_=True,external_requests=0))
+
+        # HTTP timeouts can occur AFTER the provider created an invoice. The
+        # local reservation must enter review, not permit a second POST.
+        seed_payment(work,env,'np-create-timeout','INCREASE_WALLET',0,0,'unused-id')
+        sql(work,env,"UPDATE pays SET price=100000,payid=NULL WHERE hash_id='np-create-timeout'")
+        timed_out=run_php(work,env,stage,dict(route='initiate',
+            get={'nowpayment':'','hash_id':'np-create-timeout'},
+            invoice_transport_failure=True))
+        if len(timed_out['network_calls'])!=1 or timed_out['invoice_reservation_seen']!='creating':
+            raise RuntimeError('Timeout test did not reserve before ambiguous provider POST')
+        if sql(work,env,"SELECT stage FROM achbot_nowpayments_attempts "
+               "WHERE order_hash='np-create-timeout'").strip()!='review':
+            raise RuntimeError('Ambiguous invoice creation was not quarantined')
+        before=snapshot(work,env)
+        repeated=run_php(work,env,stage,dict(route='initiate',
+            get={'nowpayment':'','hash_id':'np-create-timeout'}))
+        verify_unchanged(work,env,before,'nowpay_ambiguous_invoice_retry')
+        if repeated['network_calls'] or not sql(work,env,
+           "SELECT IFNULL(payid,'') FROM pays WHERE hash_id='np-create-timeout'").strip().startswith('achbot_nowpayment_creating_'):
+            raise RuntimeError('Provider timeout lost its durable provider claim or reissued')
+        records.append(dict(case='nowpayments_unknown_creation_prevents_orphan_reissue',
+                            pass_=True,external_requests=1,real_provider_requests=0))
+        # Operator backlog must be visible without money/replay effects:
+        # ambiguous invoice and a genuinely stalled creating reservation.
+        sql(work,env,"UPDATE achbot_nowpayments_attempts SET "
+            "created_at=NOW()-INTERVAL 25 MINUTE "
+            "WHERE order_hash='np-creating'")
+        failure=run_php(work,env,stage,dict(route='alert',get={},
+            alert_send_failure=True))
+        if failure['events'][-1]['result']['failed']!=2:
+            raise RuntimeError('Failed Telegram alert was not left retryable')
+        if sql(work,env,"SELECT COUNT(*) FROM achbot_nowpayments_attempts "
+               "WHERE review_notified_at IS NOT NULL").strip()!='0':
+            raise RuntimeError('Failed Telegram send incorrectly acknowledged backlog')
+        notices=run_php(work,env,stage,dict(route='alert',get={}))
+        if notices['events'][-1]['result']['notified']!=2:
+            raise RuntimeError('Operator was not alerted to creation/review backlog')
+        sent=[e for e in notices['events'] if e['name']=='sendMessage']
+        if len(sent)!=2 or not all(e['args'][3]==9001 and
+              'operator review' in e['args'][0] and 'Order:' in e['args'][0]
+              for e in sent):
+            raise RuntimeError('Operator alert target or safe correlation missing')
+        again=run_php(work,env,stage,dict(route='alert',get={}))
+        if again['events'][-1]['result']['notified'] or any(
+            e['name']=='sendMessage' for e in again['events']):
+            raise RuntimeError('Recent operator alert spammed Cron')
+        if sql(work,env,"SELECT COUNT(*) FROM achbot_nowpayments_attempts "
+               "WHERE review_notified_at IS NOT NULL").strip()!='2':
+            raise RuntimeError('Operator notice acknowledgements not durable')
+        records.append(dict(case='nowpayments_review_alert_retry_and_throttle',
+                            pass_=True,external_requests=0))
+        # Direct browser query with forged NP_id must NOT bypass the new
+        # quote/attempt validation even when the fake provider returns finished.
+        before=snapshot(work,env)
+        forged_browser=run_php(work,env,stage,dict(route='return',
+            get={'nowpayment':'','NP_id':'forged-provider-id','hash_id':'wallet-init'},
+            mock_invoice='owned-new-invoice',nowpayment_status='finished'))
+        verify_unchanged(work,env,before,'nowpay-new-attempt-browser-bypass')
+        if forged_browser['network_calls']:
+            raise RuntimeError('Browser bypassed IPN worker and called provider')
+        records.append(dict(case='nowpayments_new_attempt_browser_bypass_closed',
+                            pass_=True,external_requests=0))
+        import hmac,hashlib
+        def signed_ipn(spec, *, wrong=False):
+            raw=json.dumps(spec,ensure_ascii=False,sort_keys=True,separators=(',',':'))
+            signature=hmac.new(b'LOCAL-IPN-SECRET',raw.encode('utf-8'),hashlib.sha512).hexdigest()
+            if wrong:signature='a'*128
+            return dict(route='ipn',get={},ipn_raw=raw,
+                        ipn_wrong_signature=signature)
+        ipn={
+          'payment_id':'np-pmt-wallet-init','invoice_id':'owned-new-invoice',
+          'order_id':'wallet-init','payment_status':'confirmed',
+          'price_amount':1,'price_currency':'usd',
+          'pay_amount':1,'actually_paid':1,'pay_currency':'usdttrc20',
+          'fee':{'withdrawalFee':'0.010','depositFee':'0.001'}
+        }
+        before=snapshot(work,env)
+        spoof=run_php(work,env,stage,signed_ipn(ipn,wrong=True))
+        verify_unchanged(work,env,before,'nowpay-ipn-invalid-signature')
+        if spoof['events'][-1].get('code')!=401 or spoof['network_calls']:
+            raise RuntimeError('Unsigned NOWPayments IPN was accepted')
+        records.append(dict(case='nowpayments_invalid_signature_no_effect',
+                            pass_=True,external_requests=0))
+        forged=dict(ipn,order_id='not-wallet-init')
+        before=snapshot(work,env)
+        mismatch=run_php(work,env,stage,signed_ipn(forged))
+        verify_unchanged(work,env,before,'nowpay-ipn-mismatched-order')
+        if mismatch['events'][-1].get('code')!=409 or mismatch['network_calls']:
+            raise RuntimeError('Signed IPN for unrelated order admitted')
+        records.append(dict(case='nowpayments_authenticated_order_binding',
+                            pass_=True,external_requests=0))
+        before=snapshot(work,env)
+        before_wallet=int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())
+        accepted=run_php(work,env,stage,signed_ipn(ipn))
+        if accepted['events'][-1].get('code')!=200 or accepted['network_calls']:
+            raise RuntimeError('Correct signed IPN not stored cheaply: '+repr(accepted)[:400])
+        got=sql(work,env,"SELECT payment_id,provider_status,stage FROM achbot_nowpayments_attempts WHERE order_hash='wallet-init'").strip()
+        if 'np-pmt-wallet-init' not in got or 'confirmed' not in got:
+            raise RuntimeError('IPN provider ID/status was not durable')
+        if int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())!=before_wallet:
+            raise RuntimeError('IPN handler mutated a balance')
+        records.append(dict(case='nowpayments_signed_ipn_durable_without_browser',
+                            pass_=True,external_requests=0))
+        again=run_php(work,env,stage,signed_ipn(ipn))
+        if again['events'][-1].get('code')!=200:
+            raise RuntimeError('Replay of same signed IPN not idempotent')
+        wallet_start=int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())
+        intermediate=run_php(work,env,stage,dict(route='reconcile',get={},
+            mock_invoice='owned-new-invoice',
+            nowpayment_payment_id='np-pmt-wallet-init',
+            nowpayment_order_id='wallet-init',
+            nowpayment_status='confirmed',
+            nowpayment_price=1,nowpayment_pay_amount=1,nowpayment_actual=1))
+        if int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())!=wallet_start:
+            raise RuntimeError('Confirmed provider status prematurely credited wallet')
+        if intermediate['events'][-1]['result']['pending']!=1:
+            raise RuntimeError('Background confirmation not retained as pending: '+repr(intermediate)[-500:])
+        records.append(dict(case='nowpayments_signed_confirmed_background_nonfinal',
+                            pass_=True,external_requests=1))
+        sql(work,env,"UPDATE achbot_nowpayments_attempts SET last_checked_at=NOW()-INTERVAL 120 SECOND WHERE order_hash='wallet-init'")
+        final=run_php(work,env,stage,dict(route='reconcile',get={},
+            mock_invoice='owned-new-invoice',
+            nowpayment_payment_id='np-pmt-wallet-init',
+            nowpayment_order_id='wallet-init',
+            nowpayment_status='finished',
+            nowpayment_price=1,nowpayment_pay_amount=1,nowpayment_actual=1))
+        if int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())!=wallet_start+100000:
+            raise RuntimeError('Finished IPN+Cron did not autonomously credit existing wallet path')
+        if sql(work,env,"SELECT state FROM pays WHERE hash_id='wallet-init'").strip()!='paid':
+            raise RuntimeError('Finished Cron did not mark exact order paid')
+        confirmed_in_browser=run_php(work,env,stage,dict(route='return',
+            get={'nowpayment':'','hash_id':'wallet-init'}))
+        if confirmed_in_browser['network_calls'] or 'ثبت شده' not in confirmed_in_browser['form']:
+            raise RuntimeError('Post-settlement browser return did not show read-only success')
+        records.append(dict(case='nowpayments_browser_only_readonly_paid_status',
+                            pass_=True,external_requests=0))
+        if sql(work,env,"SELECT stage FROM achbot_nowpayments_attempts WHERE order_hash='wallet-init'").strip()!='done':
+            raise RuntimeError('Cron did not persist completed gateway attempt')
+        if not any(x['name']=='sendMessage' and len(x['args'])>3 and x['args'][3]==1001
+                   for x in final['events']):
+            raise RuntimeError('Finished gateway was not delivered to Telegram recipient')
+        records.append(dict(case='nowpayments_no_browser_return_final_telegram_credit',
+                            pass_=True,real_provider_requests=0))
+        after=snapshot(work,env)
+        run_php(work,env,stage,signed_ipn(dict(ipn,payment_status='finished')))
+        duplicate=run_php(work,env,stage,dict(route='reconcile',get={},
+            mock_invoice='owned-new-invoice',
+            nowpayment_payment_id='np-pmt-wallet-init',
+            nowpayment_order_id='wallet-init',
+            nowpayment_status='finished'))
+        verify_unchanged(work,env,after,'nowpay-finished-ipn-replay')
+        if duplicate['network_calls']:
+            raise RuntimeError('Finished replay attempted another API verification')
+        records.append(dict(case='nowpayments_finished_webhook_replay_no_double_credit',
+                            pass_=True,external_requests=0))
+        # Repeated deposits create independent provider child IDs. Capture
+        # all authenticated extra IDs durably before returning 200, without
+        # crediting the original order again.
+        paid_wallet=int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())
+        for name in ('np-extra-deposit','np-third-child','np-fourth-child'):
+            extra=run_php(work,env,stage,signed_ipn(dict(ipn,
+                payment_id=name,payment_status='finished')))
+            if extra['events'][-1].get('code')!=200:
+                raise RuntimeError('Valid extra child lacked durable acceptance: '+name)
+        children=sql(work,env,"SELECT e.payment_id FROM achbot_nowpayments_child_payments e "
+            "JOIN achbot_nowpayments_attempts a ON a.id=e.attempt_id "
+            "WHERE a.order_hash='wallet-init' AND e.payment_id<>a.payment_id ORDER BY e.payment_id").strip().splitlines()
+        if children!=['np-extra-deposit','np-fourth-child','np-third-child']:
+            raise RuntimeError('Distinct signed child identifiers were lost: '+repr(children))
+        if sql(work,env,"SELECT stage,provider_status FROM achbot_nowpayments_attempts "
+               "WHERE order_hash='wallet-init'").strip()!='review\tadditional_payment':
+            raise RuntimeError('Additional deposit not surfaced for operator review')
+        if int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())!=paid_wallet:
+            raise RuntimeError('Additional child payment duplicated credit')
+        records.append(dict(case='nowpayments_multiple_children_durably_stored',
+                            pass_=True,external_requests=0))
+        # A stored extra-child replay must neither duplicate credit nor
+        # re-arm an operator alert that was already delivered. A genuinely
+        # NEW later child may re-arm the alert to surface new financial data.
+        sql(work,env,"UPDATE achbot_nowpayments_attempts SET "
+                     "review_notified_at='2026-10-16 01:00:00' "
+                     "WHERE order_hash='wallet-init'")
+        for replay_id in ('np-pmt-wallet-init','np-extra-deposit','np-third-child'):
+            again=run_php(work,env,stage,signed_ipn(dict(ipn,
+                payment_id=replay_id,payment_status='finished')))
+            if again['events'][-1].get('code')!=200:
+                raise RuntimeError('Replay of persisted child rejected: '+replay_id)
+        if sql(work,env,"SELECT IFNULL(DATE_FORMAT(review_notified_at,'%Y-%m-%d %H:%i:%s'),'') "
+           "FROM achbot_nowpayments_attempts WHERE order_hash='wallet-init'").strip()!='2026-10-16 01:00:00':
+            raise RuntimeError('Extra-child replay cleared already-sent operator notification')
+        if int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())!=paid_wallet:
+            raise RuntimeError('Replay after extra deposits changed balance')
+        records.append(dict(case='nowpayments_extra_child_replay_is_idempotent',
+                            pass_=True,external_requests=0))
+        new_child=run_php(work,env,stage,signed_ipn(dict(ipn,
+            payment_id='np-fifth-child',payment_status='finished')))
+        if new_child['events'][-1].get('code')!=200 or sql(work,env,
+           "SELECT COUNT(*) FROM achbot_nowpayments_child_payments e "
+           "JOIN achbot_nowpayments_attempts a ON a.id=e.attempt_id "
+           "WHERE a.order_hash='wallet-init'").strip()!='5':
+            raise RuntimeError('New signed child was not durably retained')
+        if sql(work,env,"SELECT review_notified_at IS NULL FROM achbot_nowpayments_attempts "
+           "WHERE order_hash='wallet-init'").strip()!='1':
+            raise RuntimeError('New child receipt did not re-arm operator alert')
+        records.append(dict(case='nowpayments_new_child_rearms_operator_notice',
+                            pass_=True,external_requests=0))
+        # Deterministically interleave a NEW signed child after an alert
+        # worker has read N children but BEFORE it acknowledges Telegram.
+        # Also simulate overlapping Cron: the nested worker must not send
+        # the same leased snapshot.
+        sql(work,env,"UPDATE achbot_nowpayments_attempts SET "
+            "review_notified_at=NULL,review_notice_claim_token=NULL,"
+            "review_notice_claimed_at=NULL WHERE order_hash='wallet-init'")
+        overlapping=run_php(work,env,stage,dict(route='alert',get={},
+            alert_nested_worker=True,alert_inject_child='np-child-mid-notice',
+            alert_inject_order='wallet-init',alert_inject_invoice='owned-new-invoice'))
+        notice=[e for e in overlapping['events'] if e['name']=='alert_result']
+        nested=[e for e in overlapping['events'] if e['name']=='nested_alert']
+        injected=[e for e in overlapping['events'] if e['name']=='inflight_ipn']
+        sends=[e for e in overlapping['events'] if e['name']=='sendMessage']
+        if len(notice)!=1 or notice[0]['result']['notified']!=0 or len(nested)!=1 or (
+           nested[0]['result']['notified']!=0) or len(injected)!=1 or (
+           injected[0]['code']!=200) or len(sends)!=1:
+            raise RuntimeError('Concurrent alert/child interleaving was not guarded: '+
+                               repr(overlapping['events'])[:800])
+        if sql(work,env,"SELECT review_notified_at IS NULL, "
+           "review_notice_claim_token IS NULL FROM achbot_nowpayments_attempts "
+           "WHERE order_hash='wallet-init'").strip()!='1\t1':
+            raise RuntimeError('Old alert hid a new signed child')
+        latest=run_php(work,env,stage,dict(route='alert',get={}))
+        sent=[e for e in latest['events'] if e['name']=='sendMessage']
+        if latest['events'][-1]['result']['notified']!=1 or len(sent)!=1 or not (
+            'Stored children: 6' in sent[0]['args'][0]):
+            raise RuntimeError('New child was not notified after stale acknowledgment')
+        quiet=run_php(work,env,stage,dict(route='alert',get={}))
+        if quiet['events'][-1]['result']['notified'] or any(
+           e['name']=='sendMessage' for e in quiet['events']):
+            raise RuntimeError('Successful new child notice was not throttled')
+        records.append(dict(case='nowpayments_concurrent_alert_child_highwater_cas',
+                            pass_=True,external_requests=0))
+        records.append(dict(case='nowpayments_concurrent_alert_worker_lease_exclusive',
+                            pass_=True,external_requests=0))
+        # A finished provider payment whose deposit is smaller than the
+        # promised quote is quarantined, never auto-reconciled as successful.
+        seed_payment(work,env,'np-underpaid','INCREASE_WALLET',0,0,'np-underpaid-invoice')
+        sql(work,env,"INSERT INTO achbot_nowpayments_attempts (pay_row_id,order_hash,invoice_id,payment_id,invoice_url,quote_usd,local_amount_toman,expected_outcome_currency,minimum_outcome_amount) "
+            "SELECT id,hash_id,'np-underpaid-invoice','np-underpaid-pmt','https://nowpayments.io/pay/np-underpaid',1,price,'usdttrc20',1 FROM pays WHERE hash_id='np-underpaid'")
+        wallet_prior=int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())
+        review=run_php(work,env,stage,dict(route='reconcile',get={},
+            mock_invoice='np-underpaid-invoice',
+            nowpayment_payment_id='np-underpaid-pmt',
+            nowpayment_order_id='np-underpaid',
+            nowpayment_status='finished',
+            nowpayment_price=1,nowpayment_pay_amount=1,nowpayment_actual=0.5))
+        if int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())!=wallet_prior:
+            raise RuntimeError('Underpaid crypto gateway credited wallet')
+        if sql(work,env,"SELECT stage FROM achbot_nowpayments_attempts WHERE order_hash='np-underpaid'").strip()!='review':
+            raise RuntimeError('Underpaid gateway did not enter reconciliation queue')
+        records.append(dict(case='nowpayments_underpayment_quarantined',
+                            pass_=True,external_requests=1))
+        # NOWPayments partially_paid is a completed, underfunded child
+        # payment. Do not credit or poll it indefinitely as pending.
+        seed_payment(work,env,'np-partial-final','INCREASE_WALLET',0,0,
+                     'np-partial-final-invoice')
+        sql(work,env,"INSERT INTO achbot_nowpayments_attempts "
+            "(pay_row_id,order_hash,invoice_id,payment_id,invoice_url,quote_usd,local_amount_toman,expected_outcome_currency,minimum_outcome_amount) "
+            "SELECT id,hash_id,'np-partial-final-invoice','np-partial-child',"
+            "'https://nowpayments.io/pay/np-partial-final',1,price,'usdttrc20',1 FROM pays "
+            "WHERE hash_id='np-partial-final'")
+        before_balance=int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())
+        partial=run_php(work,env,stage,dict(route='reconcile',get={},
+            mock_invoice='np-partial-final-invoice',
+            nowpayment_payment_id='np-partial-child',
+            nowpayment_order_id='np-partial-final',
+            nowpayment_status='partially_paid',
+            nowpayment_price=1,nowpayment_pay_amount=1,nowpayment_actual=0.5))
+        if len(partial['network_calls'])!=1 or sql(work,env,
+           "SELECT stage FROM achbot_nowpayments_attempts WHERE order_hash='np-partial-final'").strip()!='review':
+            raise RuntimeError('Terminal partially_paid child payment was not quarantined')
+        if int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())!=before_balance:
+            raise RuntimeError('Partial child incorrectly changed wallet')
+        records.append(dict(case='nowpayments_terminal_partial_review_no_credit',
+                            pass_=True,external_requests=1,real_provider_requests=0))
+        # Once the provider has verified finished, an uncertain Marzban
+        # create must NOT automatically refund, since the remote operation
+        # may have succeeded despite an ambiguous transport response.
+        seed_payment(work,env,'np-remote-uncertain','BUY_SUB',7,2,
+                     'np-remote-uncertain-invoice')
+        sql(work,env,"INSERT INTO achbot_nowpayments_attempts "
+            "(pay_row_id,order_hash,invoice_id,payment_id,invoice_url,quote_usd,local_amount_toman,expected_outcome_currency,minimum_outcome_amount) "
+            "SELECT id,hash_id,'np-remote-uncertain-invoice','np-remote-uncertain-payment',"
+            "'https://nowpayments.io/payment/np-remote-uncertain',1,price,'usdttrc20',1 FROM pays "
+            "WHERE hash_id='np-remote-uncertain'")
+        wallet_before=int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())
+        remote_uncertain=run_php(work,env,stage,dict(route='reconcile',get={},
+            mock_invoice='np-remote-uncertain-invoice',
+            nowpayment_payment_id='np-remote-uncertain-payment',
+            nowpayment_order_id='np-remote-uncertain',
+            nowpayment_status='finished',nowpayment_price=1,
+            nowpayment_pay_amount=1,nowpayment_actual=1))
+        if not any(e['name']=='marzban_unknown_result' for e in remote_uncertain['events']):
+            raise RuntimeError('Uncertain provider fixture did not reach Marzban create seam: '+repr(remote_uncertain)[:700]+' DB '+repr(sql(work,env,"SELECT a.stage,a.provider_status,p.state FROM achbot_nowpayments_attempts a JOIN pays p ON p.id=a.pay_row_id WHERE a.order_hash='np-remote-uncertain'")))
+        if sql(work,env,"SELECT stage FROM achbot_nowpayments_attempts "
+               "WHERE order_hash='np-remote-uncertain'").strip()!='review':
+            raise RuntimeError('Uncertain remote create was not held for operator review')
+        if int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())!=wallet_before:
+            raise RuntimeError('Uncertain remote Marzban operation triggered automatic wallet refund')
+        if sql(work,env,"SELECT state FROM pays WHERE hash_id='np-remote-uncertain'").strip()!='paid':
+            raise RuntimeError('Verified provider paid identity was lost on uncertain fulfillment')
+        records.append(dict(case='nowpayments_uncertain_marzban_no_automatic_refund',
+                            pass_=True,real_provider_requests=0,remote_spy=True))
+        # NOWPayments invoices have no expiry; an IPN for a payment on an
+        # older invoice is not itself stale. The child payment has its own
+        # seven-day lifespan. The old created_at cutoff incorrectly stranded
+        # a genuine finished payment before making any provider status request.
+        seed_payment(work,env,'np-late-invoice','INCREASE_WALLET',0,0,
+                     'np-late-invoice-id')
+        sql(work,env,"INSERT INTO achbot_nowpayments_attempts "
+            "(pay_row_id,order_hash,invoice_id,payment_id,invoice_url,quote_usd,local_amount_toman,expected_outcome_currency,minimum_outcome_amount,created_at) "
+            "SELECT id,hash_id,'np-late-invoice-id','np-late-child-payment',"
+            "'https://nowpayments.io/pay/np-late',1,price,'usdttrc20',1,"
+            "DATE_SUB(NOW(), INTERVAL 12 DAY) FROM pays WHERE hash_id='np-late-invoice'")
+        balance_before=int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())
+        late=run_php(work,env,stage,dict(route='reconcile',get={},
+            mock_invoice='np-late-invoice-id',
+            nowpayment_payment_id='np-late-child-payment',
+            nowpayment_order_id='np-late-invoice',
+            nowpayment_status='finished'))
+        if len(late['network_calls'])!=1 or sql(work,env,
+           "SELECT stage FROM achbot_nowpayments_attempts WHERE order_hash='np-late-invoice'").strip()!='done':
+            raise RuntimeError('Valid payment on older timeless invoice was stranded')
+        if int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())!=balance_before+100:
+            raise RuntimeError('Late-invoice finished payment failed to credit wallet')
+        records.append(dict(case='nowpayments_late_payment_on_timeless_invoice',
+                            pass_=True,external_requests=1,real_provider_requests=0))
+        # A provider 'finished' status must prove the exact net payout
+        # asset and amount against the immutable per-order acceptance floor.
+        for name,overrides,reason in [
+            ('output_short',dict(nowpayment_outcome=0.75),'amount_mismatch'),
+            ('output_fee_short',dict(nowpayment_outcome=0.98,
+                nowpayment_pay_amount=1,nowpayment_actual=1),'amount_mismatch'),
+            ('output_wrong_asset',dict(nowpayment_outcome_currency='btc'),'amount_mismatch'),
+            ('output_zero',dict(nowpayment_outcome=0),'amount_mismatch'),
+            ('output_wrong_quote',dict(nowpayment_price=2),'amount_mismatch'),
+            ('input_short',dict(nowpayment_actual=0.3),'amount_mismatch'),
+        ]:
+            h='np-safety-'+name
+            invoice=h+'-invoice'
+            payid=h+'-payment'
+            seed_np_attempt(work,env,h,invoice,payid)
+            start_wallet=int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())
+            obs=run_php(work,env,stage,dict(route='reconcile',get={},
+                mock_invoice=invoice,
+                nowpayment_payment_id=payid,
+                nowpayment_order_id=h,
+                nowpayment_status='finished',**overrides))
+            if len(obs['network_calls'])!=1:
+                raise RuntimeError('Provider outcome fixture not exercised: '+name)
+            if sql(work,env,f"SELECT stage,provider_status FROM achbot_nowpayments_attempts WHERE order_hash='{h}'").strip()!='review\t'+reason:
+                raise RuntimeError('Unsafe net merchant outcome was accepted: '+name)
+            if sql(work,env,f"SELECT state FROM pays WHERE hash_id='{h}'").strip()!='pending' or int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())!=start_wallet:
+                raise RuntimeError('Unsafe finished outcome mutated funds: '+name)
+            records.append(dict(case='nowpayments_'+name+'_needs_review',pass_=True))
+        # Changing pays.price after invoice issuance must never let a
+        # previously valid USD quote settle a larger local Toman obligation.
+        name='np-safety-local-price-change'
+        inv=name+'-invoice'
+        pid=name+'-payment'
+        seed_np_attempt(work,env,name,inv,pid)
+        sql(work,env,f"UPDATE pays SET price=999 WHERE hash_id='{name}'")
+        before_wallet=int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())
+        drift=run_php(work,env,stage,dict(route='reconcile',get={},
+            mock_invoice=inv,nowpayment_payment_id=pid,
+            nowpayment_order_id=name,nowpayment_status='finished'))
+        if sql(work,env,f"SELECT stage,provider_status FROM achbot_nowpayments_attempts WHERE order_hash='{name}'").strip()!='review\tlocal_amount_changed':
+            raise RuntimeError('Mutated local amount was not quarantined')
+        if sql(work,env,f"SELECT state FROM pays WHERE hash_id='{name}'").strip()!='pending' or int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())!=before_wallet:
+            raise RuntimeError('Tampered local price was settled')
+        records.append(dict(case='nowpayments_locked_local_toman_price',pass_=True))
+        # No private policy: checkout must reject BEFORE external creation.
+        seed_payment(work,env,'np-no-policy','INCREASE_WALLET',0,0,'no-policy')
+        sql(work,env,"UPDATE pays SET price=100000,payid=NULL WHERE hash_id='np-no-policy'")
+        no_policy=run_php(work,env,stage,dict(route='initiate',
+            get={'nowpayment':'','hash_id':'np-no-policy'},settlement_policy={}))
+        if no_policy['network_calls'] or sql(work,env,
+           "SELECT IFNULL(payid,'') FROM pays WHERE hash_id='np-no-policy'").strip():
+            raise RuntimeError('Payment accepted without approved payout policy')
+        records.append(dict(case='nowpayments_missing_payout_policy_fails_before_invoice',
+                            pass_=True))
         # RED regression: historical NextPay cancellation used hash_id=trans_id
         # even though the callback resolves the invoice through pays.payid.
         res=run_php(work,env,stage,dict(route='return',
@@ -358,6 +1127,70 @@ def main():
                             pass_=True,external_requests=1,real_provider_requests=0,
                             real_current_wallet_helper=True))
 
+        # A verified payment must NOT become paid unless the matching wallet
+        # was actually credited. Reproduce the inherited paid-before-credit
+        # bug using an intentionally missing synthetic customer.
+        seed_payment(work,env,'nextpay-missing-wallet-user','INCREASE_WALLET',0,0,
+                     'missing-wallet-user-transid')
+        sql(work,env,"UPDATE pays SET user_id=99999999 "
+                     "WHERE hash_id='nextpay-missing-wallet-user'")
+        before=snapshot(work,env)
+        missing_user=run_php(work,env,stage,dict(route='return',
+            get={'nextpay':'','trans_id':'missing-wallet-user-transid'},
+            nextpay_code=0))
+        verify_unchanged(work,env,before,'nextpay_missing_wallet_user_atomic_rollback')
+        if len(missing_user['network_calls'])!=1 or not missing_user['form']:
+            raise RuntimeError('Missing-wallet-user negative fixture was not exercised')
+        records.append(dict(case='nextpay_missing_wallet_user_atomic_rollback',
+                            pass_=True,external_requests=1,real_provider_requests=0))
+
+        # Keep Owner-authorized negative wallet debt: a legitimate credit
+        # offsets it without applying a zero floor or inventing debt removal.
+        wallet_saved=int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())
+        sql(work,env,"UPDATE users SET wallet=-200 WHERE userid=1001")
+        seed_payment(work,env,'nextpay-debt-offset','INCREASE_WALLET',0,0,
+                     'nextpay-debt-offset-transid')
+        run_php(work,env,stage,dict(route='return',
+            get={'nextpay':'','trans_id':'nextpay-debt-offset-transid'},
+            nextpay_code=0))
+        if int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())!=-100:
+            raise RuntimeError('Valid gateway credit did not offset signed admin debt')
+        if sql(work,env,"SELECT state FROM pays WHERE hash_id='nextpay-debt-offset'").strip()!='paid':
+            raise RuntimeError('Debt-offset payment did not settle with wallet credit')
+        records.append(dict(case='nextpay_signed_debt_offset_transaction',
+                            pass_=True,external_requests=1,real_provider_requests=0))
+        sql(work,env,f"UPDATE users SET wallet={wallet_saved} WHERE userid=1001")
+
+        # Existing wallet INT must not overflow; failing the credit must
+        # leave the payment pending, not falsely paid.
+        sql(work,env,"UPDATE users SET wallet=2147483640 WHERE userid=1001")
+        seed_payment(work,env,'nextpay-wallet-overflow','INCREASE_WALLET',0,0,
+                     'nextpay-wallet-overflow-transid')
+        before=snapshot(work,env)
+        overflow=run_php(work,env,stage,dict(route='return',
+            get={'nextpay':'','trans_id':'nextpay-wallet-overflow-transid'},
+            nextpay_code=0))
+        verify_unchanged(work,env,before,'nextpay_wallet_overflow_atomic_rollback')
+        if len(overflow['network_calls'])!=1 or not overflow['form']:
+            raise RuntimeError('Wallet-overflow negative fixture not exercised')
+        records.append(dict(case='nextpay_wallet_overflow_atomic_rollback',
+                            pass_=True,external_requests=1,real_provider_requests=0))
+        sql(work,env,f"UPDATE users SET wallet={wallet_saved} WHERE userid=1001")
+
+        # A zero-price wallet credit cannot be marked as a settled purchase.
+        seed_payment(work,env,'nextpay-wallet-zero','INCREASE_WALLET',0,0,
+                     'nextpay-wallet-zero-transid')
+        sql(work,env,"UPDATE pays SET price=0 WHERE hash_id='nextpay-wallet-zero'")
+        before=snapshot(work,env)
+        zero=run_php(work,env,stage,dict(route='return',
+            get={'nextpay':'','trans_id':'nextpay-wallet-zero-transid'},
+            nextpay_code=0))
+        verify_unchanged(work,env,before,'nextpay_zero_wallet_credit_fails_closed')
+        if len(zero['network_calls'])!=1 or not zero['form']:
+            raise RuntimeError('Zero wallet-credit negative fixture not exercised')
+        records.append(dict(case='nextpay_zero_wallet_credit_fails_closed',
+                            pass_=True,external_requests=1,real_provider_requests=0))
+
         # Mid-verification deterministic race: synthetic second-worker state
         # transition occurs INSIDE fake cURL, before this route attempts its
         # -2 cancellation compare-and-set. No threads or real gateway needed.
@@ -382,6 +1215,464 @@ def main():
             raise RuntimeError('Controlled race did not execute exactly one fake verification')
         records.append(dict(case='nextpay_mid_verify_state_change_cas_preserves_paid',
                             pass_=True,external_requests=1,real_provider_requests=0))
+
+        # Zarinpal: local order MUST bind the exact unique Authority before
+        # contacting provider; stale/negative verification may never clobber
+        # a parallel paid state.
+        seed_payment(work,env,'zarin-wrong-authority','INCREASE_WALLET',0,0,'zarin-owned')
+        before=snapshot(work,env)
+        forged=run_php(work,env,stage,dict(route='return',
+            get={'zarinpal':'','hash_id':'zarin-wrong-authority',
+                 'Authority':'zarin-forged','Status':'OK'},zarin_status=100))
+        verify_unchanged(work,env,before,'zarin_wrong_authority')
+        if forged['network_calls']:
+            raise RuntimeError('Zarinpal callback verified unrelated Authority')
+        records.append(dict(case='zarinpal_mismatched_authority_refused',pass_=True))
+        seed_payment(work,env,'zarin-duplicate-one','INCREASE_WALLET',0,0,'zarin-duplicated')
+        seed_payment(work,env,'zarin-duplicate-two','INCREASE_WALLET',0,0,'zarin-duplicated')
+        before=snapshot(work,env)
+        duplicated=run_php(work,env,stage,dict(route='return',
+            get={'zarinpal':'','hash_id':'zarin-duplicate-one',
+                 'Authority':'zarin-duplicated','Status':'OK'},zarin_status=100))
+        verify_unchanged(work,env,before,'zarin_duplicate_authority')
+        if duplicated['network_calls']:
+            raise RuntimeError('Ambiguous Zarinpal Authority entered provider verification')
+        records.append(dict(case='zarinpal_duplicated_authority_refused',pass_=True))
+        seed_payment(work,env,'zarin-negative','INCREASE_WALLET',0,0,'zarin-neg')
+        negative=run_php(work,env,stage,dict(route='return',
+            get={'zarinpal':'','hash_id':'zarin-negative','Authority':'zarin-neg',
+                 'Status':'NOK'},zarin_status=52))
+        if sql(work,env,"SELECT state FROM pays WHERE hash_id='zarin-negative'").strip()!='pending':
+            raise RuntimeError('Unproven provider code 52 canceled an existing payment')
+        if negative['network_calls']!=['zarinpal:verify']:
+            raise RuntimeError('Zarinpal fake negative verification did not run')
+        records.append(dict(case='zarinpal_unproven_52_retains_pending',pass_=True))
+        seed_payment(work,env,'zarin-race','INCREASE_WALLET',0,0,'zarin-race-auth')
+        race_wallet=int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())
+        race=run_php(work,env,stage,dict(route='return',
+            get={'zarinpal':'','hash_id':'zarin-race','Authority':'zarin-race-auth',
+                 'Status':'NOK'},zarin_status=52,zarin_flip_hash='zarin-race'))
+        if not race['race_flip_applied'] or sql(work,env,
+           "SELECT state FROM pays WHERE hash_id='zarin-race'").strip()!='paid':
+            raise RuntimeError('Stale Zarinpal denial overwrote positive concurrent state')
+        if int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())!=race_wallet:
+            raise RuntimeError('Zarinpal late negative changed wallet')
+        if 'سفارش لغو نشد' not in race['form']:
+            raise RuntimeError('Zarinpal unconfirmed result was not surfaced for review')
+        records.append(dict(case='zarinpal_mid_verify_cas_preserves_paid',pass_=True))
+        seed_payment(work,env,'zarin-success','INCREASE_WALLET',0,0,'zarin-good-auth')
+        before_wallet=int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())
+        positive=run_php(work,env,stage,dict(route='return',
+            get={'zarinpal':'','hash_id':'zarin-success','Authority':'zarin-good-auth',
+                 'Status':'OK'},zarin_status=100))
+        if sql(work,env,"SELECT state FROM pays WHERE hash_id='zarin-success'").strip()!='paid':
+            raise RuntimeError('Zarinpal legitimate success not settled')
+        if int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())!=before_wallet+100:
+            raise RuntimeError('Zarinpal wallet top-up did not credit atomically')
+        records.append(dict(case='zarinpal_authenticated_positive_wallet_credit',pass_=True))
+
+        # Status supplied by the browser is presentation metadata, not
+        # settlement authority. A verified 100 must win over a forged NOK.
+        seed_payment(work,env,'zarin-browser-nok-paid','INCREASE_WALLET',0,0,'zarin-nok-ok')
+        funds=int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())
+        verified=run_php(work,env,stage,dict(route='return',
+            get={'zarinpal':'','hash_id':'zarin-browser-nok-paid',
+                 'Authority':'zarin-nok-ok','Status':'NOK'},zarin_status=100))
+        if sql(work,env,"SELECT state FROM pays WHERE hash_id='zarin-browser-nok-paid'").strip()!='paid':
+            raise RuntimeError('Browser NOK canceled provider-verifiable funds')
+        if int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())!=funds+100:
+            raise RuntimeError('Provider-verified payment did not credit wallet')
+        records.append(dict(case='zarinpal_browser_nok_provider_100_settled',pass_=True))
+        for browser,provider_status in [('OK',101),('NOK',101),('OK',-11),('NOK',-11)]:
+            name='zp-review-'+browser.lower()+'-'+str(provider_status).replace('-','m')
+            seed_payment(work,env,name,'INCREASE_WALLET',0,0,name+'-auth')
+            before=snapshot(work,env)
+            disputed=run_php(work,env,stage,dict(route='return',
+                get={'zarinpal':'','hash_id':name,'Authority':name+'-auth',
+                     'Status':browser},zarin_status=provider_status))
+            verify_unchanged(work,env,before,'zarin_unconfirmed_'+name)
+            if disputed['network_calls']!=['zarinpal:verify'] or not disputed['form']:
+                raise RuntimeError('Zarinpal provider ambiguity was not surfaced')
+            records.append(dict(case='zarinpal_'+browser.lower()+'_provider_'+str(provider_status)+'_review',
+                                pass_=True))
+        for scenario,overrides in [
+            ('transport',dict(zarin_throw=True)),
+            ('malformed',dict(zarin_malformed=True))
+        ]:
+            name='zp-'+scenario
+            seed_payment(work,env,name,'INCREASE_WALLET',0,0,name+'-auth')
+            before=snapshot(work,env)
+            unverified=run_php(work,env,stage,dict(route='return',
+                get={'zarinpal':'','hash_id':name,'Authority':name+'-auth',
+                     'Status':'OK'},**overrides))
+            verify_unchanged(work,env,before,'zarin_'+scenario)
+            if unverified['network_calls']!=['zarinpal:verify']:
+                raise RuntimeError('Zarinpal failed transport was not executed')
+            records.append(dict(case='zarinpal_'+scenario+'_preserves_pending',pass_=True))
+        # SOAP numeric conversion must never transform "100.9", 1e2,
+        # bool, float or a padded/alternate string into a trusted code 100.
+        # Exercise the unchanged actual GatewayReturn callback + wallet SQL.
+        zarin_strict_codes=[
+            ('canonical_int',100,True),
+            ('canonical_string','100',True),
+            ('fractional_string','100.9',False),
+            ('fractional_float',100.9,False),
+            ('scientific_string','1e2',False),
+            ('scientific_float',1e2,False),
+            ('float_whole',100.0,False),
+            ('boolean_true',True,False),
+            ('boolean_false',False,False),
+            ('null',None,False),
+            ('plus_prefix','+100',False),
+            ('zero_prefix','0100',False),
+            ('space_prefix',' 100',False),
+            ('decimal_string','100.0',False),
+            ('status101',101,False),
+            ('status52',52,False),
+            ('negative52',-52,False)
+        ]
+        for label,code,should_settle in zarin_strict_codes:
+            name='zpstrict'+label.replace('_','')
+            seed_payment(work,env,name,'INCREASE_WALLET',0,0,name+'authority')
+            before=snapshot(work,env)
+            wallet_before=int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())
+            returned=run_php(work,env,stage,dict(route='return',
+                get={'zarinpal':'','hash_id':name,'Authority':name+'authority',
+                     'Status':'NOK'},zarin_status=code))
+            if returned['network_calls']!=['zarinpal:verify']:
+                raise RuntimeError('Strict SOAP code missed actual verification '+label)
+            state=sql(work,env,f"SELECT state FROM pays WHERE hash_id='{name}'").strip()
+            wallet_after=int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())
+            if should_settle:
+                if state!='paid' or wallet_after!=wallet_before+100:
+                    raise RuntimeError('Canonical trusted code rejected '+label)
+            else:
+                verify_unchanged(work,env,before,'zarinpal_strict_'+label)
+                if state!='pending' or wallet_after!=wallet_before:
+                    raise RuntimeError('Malformed SOAP code settled money '+label)
+                if not returned['form'] or 'نیازمند تطبیق' not in returned['form']:
+                    raise RuntimeError('Malformed SOAP code lacked review state '+label)
+            records.append(dict(case='zarinpal_strict_status_'+label,
+                                pass_=True,external_requests=1,real_provider_requests=0))
+
+        # Execute the ACTUAL Marzban PHP PUT adapter, not a substitute
+        # success flag: only a 2xx parsed UserResponse matching requested
+        # account/expiry/traffic is verified remote success.
+        for name,override,want in [
+            ('valid_update',{},True),
+            ('http_rejection',dict(marzban_http=422,
+                marzban_raw='{"detail":"unacceptable"}'),False),
+            ('http_503',dict(marzban_http=503),False),
+            ('lost_response',dict(marzban_transport_failure=True),False),
+            ('bad_json',dict(marzban_raw='not-json'),False),
+            ('explicit_detail_200',dict(marzban_raw='{"detail":"no"}'),False),
+            ('wrong_get_account',dict(marzban_username='other-account'),False),
+            ('wrong_account_200',dict(marzban_raw=
+                '{"username":"other","expire":1,"data_limit":1}'),False),
+            ('wrong_amount_200',dict(marzban_raw=
+                '{"username":"syntheticMarzban","expire":1,"data_limit":1}'),False),
+        ]:
+            before=snapshot(work,env)
+            result=run_php(work,env,stage,dict(route='marzban_edit',get={},
+                marzban_change={'remark':'syntheticMarzban','plus_day':2},
+                **override))
+            verify_unchanged(work,env,before,'marzban_adapter_'+name)
+            effect=[x for x in result['events'] if x['name']=='marzban_edit_result']
+            if len(effect)!=1 or effect[0]['success'] is not want:
+                raise RuntimeError('Marzban PUT misclassified '+name+': '+repr(effect))
+            if not want and effect[0]['uncertain'] is not True:
+                raise RuntimeError('Marzban failed PUT lost uncertainty classification '+name)
+            if not any('/api/user/syntheticMarzban' in v for v in result['network_calls']):
+                raise RuntimeError('Real Marzban PUT adapter was not exercised: '+name)
+            records.append(dict(case='marzban_put_'+name+'_native_contract',
+                                pass_=True,real_provider_requests=0))
+        for name,http,want in [('reset_ok',200,True),('reset_rejected',503,False)]:
+            before=snapshot(work,env)
+            res=run_php(work,env,stage,dict(route='marzban_edit',get={},
+                marzban_reset_http=http,
+                marzban_change={'remark':'syntheticMarzban','days':2,'volume':2}))
+            verify_unchanged(work,env,before,'marzban_reset_'+name)
+            out=[x for x in res['events'] if x['name']=='marzban_edit_result']
+            if len(out)!=1 or out[0]['success'] is not want or not any(
+                '/reset' in c for c in res['network_calls']):
+                raise RuntimeError('Marzban reset/renew verification failed '+name)
+            records.append(dict(case='marzban_reset_'+name+'_native_contract',pass_=True))
+
+        # Real wallet credit helper (not a test-only SQL copy) must confirm
+        # one updated user row before success or any Telegram compensation
+        # notice. Explicit negative admin debt remains a valid balance.
+        wallet_before=int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())
+        for name,user,amount in [
+            ('user_missing',99999991,100),
+            ('zero_amount',1001,0),
+            ('negative_amount',1001,-10)
+        ]:
+            before=snapshot(work,env)
+            fail=run_php(work,env,stage,dict(route='wallet_refund',get={},
+                refund_user=user,refund_amount=amount))
+            verify_unchanged(work,env,before,'compensate_'+name)
+            if [x for x in fail['events'] if x['name']=='refund_result']!=[
+               {'name':'refund_result','success':False}] or any(
+                x['name']=='sendMessage' for x in fail['events']):
+                raise RuntimeError('Failed compensation claimed successful credit: '+name)
+            records.append(dict(case='wallet_compensation_'+name+'_no_claim',pass_=True))
+        sql(work,env,"UPDATE users SET wallet=2147483640 WHERE userid=1001")
+        before=snapshot(work,env)
+        over=run_php(work,env,stage,dict(route='wallet_refund',get={},
+            refund_user=1001,refund_amount=100))
+        verify_unchanged(work,env,before,'refund_overflow')
+        if over['events'][-1].get('success') is not False or any(
+            x['name']=='sendMessage' for x in over['events']):
+            raise RuntimeError('Wallet overflow falsely compensated')
+        records.append(dict(case='wallet_compensation_overflow_no_claim',pass_=True))
+        sql(work,env,"UPDATE users SET wallet=-150 WHERE userid=1001")
+        credited=run_php(work,env,stage,dict(route='wallet_refund',get={},
+            refund_user=1001,refund_amount=100))
+        if credited['events'][-1].get('success') is not True or sql(work,env,
+           'SELECT wallet FROM users WHERE userid=1001').strip()!='-50':
+            raise RuntimeError('Durable valid refund could not offset signed admin debt')
+        if not any(x['name']=='sendMessage' and x['args'][3]==1001 for x in credited['events']):
+            raise RuntimeError('Successful refund did not notify beneficiary')
+        records.append(dict(case='wallet_compensation_verified_credit_and_debt_offset',
+                            pass_=True))
+        sql(work,env,f"UPDATE users SET wallet={wallet_before} WHERE userid=1001")
+
+        # Execute the REAL shared doAction renewal decision with only
+        # its outgoing Marzban boundary mocked. A non-null success=false
+        # must be an ambiguous fulfillment for ALL 3 payment providers.
+        sql(work,env,"INSERT INTO orders_list "
+           "(userid,token,transid,fileid,server_id,inbound_id,remark,uuid,"
+           "protocol,expire_date,link,amount,status,date) VALUES "
+           "(1001,'renew-test-token','',7,2,0,'renew-fixture',"
+           "'renew-uuid','vless',2000000000,'[]',100,1,'synthetic')")
+        oid=int(sql(work,env,"SELECT id FROM orders_list WHERE remark='renew-fixture'").strip())
+        original_exp=sql(work,env,f"SELECT expire_date FROM orders_list WHERE id={oid}").strip()
+        for provider in ('nowpayment','nextpay','zarinpal'):
+            name='renewfail'+provider
+            seed_payment(work,env,name,'RENEW_ACCOUNT',7,2,name+'-invoice')
+            sql(work,env,f"UPDATE pays SET order_id={oid} WHERE hash_id='{name}'")
+            if provider=='nowpayment':
+                sql(work,env,
+                  "INSERT INTO achbot_nowpayments_attempts "
+                  "(pay_row_id,order_hash,invoice_id,payment_id,invoice_url,quote_usd,"
+                  "local_amount_toman,expected_outcome_currency,minimum_outcome_amount,stage) "
+                  f"SELECT id,hash_id,'{name}-invoice','{name}-payment',"
+                  f"'https://nowpayments.io/pay/{name}',1,price,'usdttrc20',1,'fulfilling' "
+                  f"FROM pays WHERE hash_id='{name}'")
+            before_wallet=int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())
+            pay_id=int(sql(work,env,f"SELECT id FROM pays WHERE hash_id='{name}'").strip())
+            failed=run_php(work,env,stage,dict(route='do_action',get={},
+                pay_row_id=pay_id,provider=provider,renew_success=False))
+            responses=[e for e in failed['events'] if e['name']=='do_action_result']
+            if len(responses)!=1 or responses[0]['result']!='ambiguous' or not any(
+               e['name']=='renewConfigOnServer' for e in failed['events']):
+                raise RuntimeError('False remote renewal accepted for '+provider)
+            if sql(work,env,f"SELECT expire_date FROM orders_list WHERE id={oid}").strip()!=original_exp:
+                raise RuntimeError('Failed remote renewal extended local service '+provider)
+            if int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())!=before_wallet:
+                raise RuntimeError('Failed remote renewal applied unsafe wallet refund '+provider)
+            if any(e['name']=='sendMessage' for e in failed['events']):
+                raise RuntimeError('Failed renewal announced false success '+provider)
+            if provider=='nowpayment':
+                # The direct doAction unit route skips the enclosing worker;
+                # reflect the review handoff a real worker would perform.
+                sql(work,env,f"UPDATE achbot_nowpayments_attempts "
+                             f"SET stage='review',provider_status='fulfillment_unconfirmed' "
+                             f"WHERE order_hash='{name}' AND stage='fulfilling'")
+            records.append(dict(case='renewal_'+provider+'_explicit_failure_is_ambiguous',
+                                pass_=True,external_requests=0))
+
+        # NOWPayments finished + known pre-provision capacity failure must
+        # not mark compensated/done until the wallet refund actually commits.
+        sql(work,env,"UPDATE server_info SET ucount=0 WHERE id=2")
+        for name,missing_user,want_done in [
+            ('np-compensation-missing-user',True,False),
+            ('np-compensation-verified',False,True)
+        ]:
+            seed_np_attempt(work,env,name,name+'-invoice',name+'-payment')
+            sql(work,env,f"UPDATE pays SET type='BUY_SUB',plan_id=7,server_id=2 "
+                         f"WHERE hash_id='{name}'")
+            if missing_user:
+                sql(work,env,f"UPDATE pays SET user_id=99999991 WHERE hash_id='{name}'")
+            # Existing unrelated pending test invoices must not consume
+            # this deliberately bounded one-attempt reconciliation tick.
+            sql(work,env,"UPDATE achbot_nowpayments_attempts SET last_checked_at=NOW() "
+                         f"WHERE order_hash<>'{name}' AND stage IN ('pending','checking')")
+            before_wallet=int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())
+            run=run_php(work,env,stage,dict(route='reconcile',get={},
+                mock_invoice=name+'-invoice',nowpayment_order_id=name,
+                nowpayment_payment_id=name+'-payment',
+                nowpayment_status='finished'))
+            stage_status=sql(work,env,
+                "SELECT a.stage,a.provider_status FROM achbot_nowpayments_attempts a "
+                f"WHERE a.order_hash='{name}'").strip()
+            if want_done:
+                if stage_status!='done\tcompensated':
+                    raise RuntimeError('Verified wallet compensation was not marked done')
+                if int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())!=before_wallet+100:
+                    raise RuntimeError('Verified capacity refund was not credited exactly once')
+            else:
+                if not stage_status.startswith('review\t') or int(sql(work,env,
+                   'SELECT wallet FROM users WHERE userid=1001').strip())!=before_wallet:
+                    raise RuntimeError('Missing-user refund falsely completed: '+stage_status)
+                if any(e['name']=='sendMessage' and 'اضافه شد' in str(e['args']) for e in run['events']):
+                    raise RuntimeError('Missing-user refund was falsely announced')
+            records.append(dict(case='nowpayments_capacity_'+
+                ('missing_user_never_done' if missing_user else 'verified_refund_done'),
+                pass_=True,external_requests=1))
+        sql(work,env,"UPDATE server_info SET ucount=10 WHERE id=2")
+
+        # Stale buttons from OTHER gateways must not expire an issued
+        # NOWPayments invoice or a still-unresolved creating reservation.
+        seed_np_attempt(work,env,'staleinvoice','stale-invoice','stale-payment')
+        for gateway in ('nextpay','zarinpal'):
+            before=snapshot(work,env)
+            selected=run_php(work,env,stage,dict(route='prepayment',get={},
+                callback_data='prePayCheck_BUYSUB_'+gateway+'_staleinvoice'))
+            verify_unchanged(work,env,before,'stale_alternative_'+gateway)
+            if selected['network_calls'] or sql(work,env,
+               "SELECT state,payid FROM pays WHERE hash_id='staleinvoice'").strip()!='pending\tstale-invoice':
+                raise RuntimeError('Old gateway button expired or clobbered active invoice')
+            if not any(e['name']=='sendMessage' and 'stale-invoice' in
+                       str(e['args']) for e in selected['events']):
+                raise RuntimeError('Stale gateway did not retain hosted invoice URL')
+            records.append(dict(case='prepayment_stale_'+gateway+'_preserves_np_invoice',
+                                pass_=True,external_requests=0))
+        signed=signed_ipn(dict(payment_id='stale-payment',
+            invoice_id='stale-invoice',order_id='staleinvoice',
+            payment_status='confirmed',price_amount=1,price_currency='usd'))
+        stored=run_php(work,env,stage,signed)
+        if stored['events'][-1].get('code')!=200:
+            raise RuntimeError('Stale alternative gateway blocked later signed IPN')
+        records.append(dict(case='prepayment_stale_button_allows_later_ipn',pass_=True))
+        seed_payment(work,env,'stalecreating','INCREASE_WALLET',0,0,'unused')
+        sql(work,env,"UPDATE pays SET payid='achbot_nowpayment_creating_100' "
+                     "WHERE hash_id='stalecreating'")
+        sql(work,env,"INSERT INTO achbot_nowpayments_attempts "
+            "(pay_row_id,order_hash,quote_usd,stage) "
+            "SELECT id,hash_id,1,'creating' FROM pays WHERE hash_id='stalecreating'")
+        before=snapshot(work,env)
+        pending=run_php(work,env,stage,dict(route='prepayment',get={},
+            callback_data='prePayCheck_BUYSUB_nextpay_stalecreating'))
+        verify_unchanged(work,env,before,'stale_creating_reservation')
+        if pending['network_calls'] or sql(work,env,
+           "SELECT state FROM pays WHERE hash_id='stalecreating'").strip()!='pending':
+            raise RuntimeError('Old button canceled uncertain invoice issuance')
+        records.append(dict(case='prepayment_stale_button_preserves_creating',pass_=True))
+
+        # A stale RENEW_ACCOUNT button must never undo a provider-finalized
+        # pays.state='paid', nor invalidate a reserved provider invoice.
+        # Execute the actual prePayCheck route against the original MariaDB.
+        sql(work,env,"INSERT INTO orders_list "
+            "(userid,token,transid,fileid,server_id,inbound_id,remark,uuid,"
+            "protocol,expire_date,link,amount,status,date) VALUES "
+            "(1001,'callback-renew-token','',8,2,0,'callback-renew-mismatch',"
+            "'callback-renew-uuid','vless',2000000000,'[]',100,1,'synthetic')")
+        mismatch_oid=int(sql(work,env,
+            "SELECT id FROM orders_list WHERE remark='callback-renew-mismatch'").strip())
+        def mismatch_payment(name, status='pending', invoice=''):
+            seed_payment(work,env,name,'RENEW_ACCOUNT',7,2,invoice)
+            sql(work,env,f"UPDATE pays SET state='{status}', "
+                f"order_id={mismatch_oid},request_date=UNIX_TIMESTAMP() "
+                f"WHERE hash_id='{name}'")
+        for name,status in [
+            ('rnoldpaid','paid'),
+            ('rnoldcanceled','canceled'),
+            ('rnoldexpired','expired'),
+            ('rnoldmismatch','mismatched_plan')
+        ]:
+            mismatch_payment(name,status)
+            before=snapshot(work,env)
+            stale=run_php(work,env,stage,dict(route='prepayment',get={},
+                callback_data='prePayCheck_RENEWACCOUNT_nextpay_'+name))
+            verify_unchanged(work,env,before,'renewal_terminal_stale_'+status)
+            if stale['network_calls'] or any(
+               'pay/?' in str(e) for e in stale['events']):
+                raise RuntimeError('Terminal renewal offered competing checkout '+status)
+            if not any(e['name']=='callback' for e in stale['events']):
+                raise RuntimeError('Terminal renewal lacked early-state guard '+status)
+            records.append(dict(case='prepayment_renewal_terminal_'+status+'_immutable',
+                                pass_=True,external_requests=0))
+
+        mismatch_payment('rnordinary')
+        ordinary=run_php(work,env,stage,dict(route='prepayment',get={},
+            callback_data='prePayCheck_RENEWACCOUNT_nextpay_rnordinary'))
+        if sql(work,env,"SELECT state FROM pays WHERE hash_id='rnordinary'").strip()!='mismatched_plan':
+            raise RuntimeError('Unclaimed renewal plan mismatch was not rejected')
+        if not any('پلن فعلی' in str(e.get('args')) for e in ordinary['events']
+                   if e['name']=='sendMessage'):
+            raise RuntimeError('Safe plan mismatch did not inform the customer')
+        if ordinary['network_calls']:
+            raise RuntimeError('Mismatched unclaimed renewal contacted provider')
+        records.append(dict(case='prepayment_renewal_unclaimed_mismatch_cas',
+                            pass_=True,external_requests=0))
+
+        mismatch_payment('rnmidrace')
+        prior_balance=int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())
+        concurrent=run_php(work,env,stage,dict(route='prepayment',get={},
+            callback_data='prePayCheck_RENEWACCOUNT_nextpay_rnmidrace',
+            prepayment_flip_hash='rnmidrace'))
+        if not concurrent['race_flip_applied'] or sql(work,env,
+            "SELECT state FROM pays WHERE hash_id='rnmidrace'").strip()!='paid':
+            raise RuntimeError('Concurrent settled payment overwritten by old renewal callback')
+        if int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())!=prior_balance:
+            raise RuntimeError('Stale renewal race changed wallet balance')
+        if any('پلن فعلی' in str(e.get('args')) for e in concurrent['events']
+               if e['name']=='sendMessage'):
+            raise RuntimeError('CAS-lost renewal incorrectly announced mismatch')
+        records.append(dict(case='prepayment_renewal_pending_to_paid_midflight_cas',
+                            pass_=True,external_requests=0))
+
+        mismatch_payment('rnpayclaimed',invoice='zarin-old-authority')
+        before=snapshot(work,env)
+        claimed=run_php(work,env,stage,dict(route='prepayment',get={},
+            callback_data='prePayCheck_RENEWACCOUNT_nextpay_rnpayclaimed'))
+        verify_unchanged(work,env,before,'renewal_issued_external_authority')
+        if claimed['network_calls'] or not any(
+           'محفوظ' in str(e.get('args')) for e in claimed['events']
+           if e['name']=='sendMessage'):
+            raise RuntimeError('Issued provider Authority not retained for operator review')
+        records.append(dict(case='prepayment_renewal_issued_external_claim_preserved',
+                            pass_=True,external_requests=0))
+
+        seed_np_attempt(work,env,'rnnpclaimed','rnnp-invoice','rnnp-payment')
+        sql(work,env,"UPDATE pays SET type='RENEW_ACCOUNT',plan_id=7,"
+            f"server_id=2,order_id={mismatch_oid},request_date=UNIX_TIMESTAMP() "
+            "WHERE hash_id='rnnpclaimed'")
+        np_identity=sql(work,env,"SELECT invoice_id,payment_id,stage "
+            "FROM achbot_nowpayments_attempts WHERE order_hash='rnnpclaimed'").strip()
+        for gateway in ('nowpayment','zarinpal'):
+            before=snapshot(work,env)
+            retained=run_php(work,env,stage,dict(route='prepayment',get={},
+                callback_data='prePayCheck_RENEWACCOUNT_'+gateway+'_rnnpclaimed'))
+            verify_unchanged(work,env,before,'renewal_np_invoice_'+gateway)
+            if sql(work,env,"SELECT invoice_id,payment_id,stage "
+                "FROM achbot_nowpayments_attempts WHERE order_hash='rnnpclaimed'").strip()!=np_identity:
+                raise RuntimeError('Existing NOWPayments invoice/child evidence modified')
+            if retained['network_calls'] or any(
+               'pay/?' in str(e) or 'https://nowpayments.io/pay/' in str(e)
+               for e in retained['events']):
+                raise RuntimeError('Mismatched renewal offered an unsafe payable invoice')
+            records.append(dict(case='prepayment_renewal_np_invoice_'+gateway+'_preserved',
+                                pass_=True,external_requests=0))
+
+        # Valid unchanged renewal retains the original redirect behavior.
+        seed_payment(work,env,'rnstillvalid','RENEW_ACCOUNT',8,2,'')
+        sql(work,env,f"UPDATE pays SET order_id={mismatch_oid},"
+            "request_date=UNIX_TIMESTAMP() WHERE hash_id='rnstillvalid'")
+        ready=run_php(work,env,stage,dict(route='prepayment',get={},
+            callback_data='prePayCheck_RENEWACCOUNT_zarinpal_rnstillvalid'))
+        redirect_markup=[
+            json.loads(e['args'][1]) for e in ready['events']
+            if e['name']=='sendMessage' and len(e['args'])>1
+            and isinstance(e['args'][1],str)]
+        if not any('pay/?zarinpal' in json.dumps(markup,ensure_ascii=False)
+                   for markup in redirect_markup) or ready['network_calls']:
+            raise RuntimeError('Valid renewal callback lost checkout compatibility')
+        if sql(work,env,"SELECT state FROM pays WHERE hash_id='rnstillvalid'").strip()!='pending':
+            raise RuntimeError('Valid renewal unexpectedly changed payment state')
+        records.append(dict(case='prepayment_renewal_unchanged_plan_checkout_compatible',
+                            pass_=True,external_requests=0))
 
         # Actual admin route, including old cached/forged callbacks, cannot
         # perform the inherited database-only server rewrite.
@@ -481,7 +1772,77 @@ def main():
                                 original_schema_payment_insert=True,external_requests=0))
         finally:
             purchase.block=old
-    report={'complete':True,'cases':len(records),'schema_tables':23,
+
+        # Exercise the real public pay/back.php IPN HTTP entrypoint on an
+        # owned loopback PHP server; production baseInfo and webhooks are not
+        # loaded, and the only DB is the disposable Unix-socket MariaDB.
+        import socket, time, urllib.request, urllib.error
+        seed_payment(work,env,'np-http-signed','INCREASE_WALLET',0,0,'np-http-invoice')
+        sql(work,env,"INSERT INTO achbot_nowpayments_attempts "
+            "(pay_row_id,order_hash,invoice_id,invoice_url,quote_usd) "
+            "SELECT id,hash_id,'np-http-invoice','https://nowpayments.io/pay/np-http',1 "
+            "FROM pays WHERE hash_id='np-http-signed'")
+        (stage/'baseInfo.php').write_text(
+            "<?php\n$dbUserName='root';\n$dbPassword='';\n"
+            "$dbName='"+DB+"';\n$nowpaymentsIpnSecret='LOCAL-IPN-SECRET';\n")
+        with socket.socket() as port_socket:
+            port_socket.bind(('127.0.0.1',0))
+            port=port_socket.getsockname()[1]
+        cmd=['php','-n','-d','extension=mysqlnd','-d','extension=mysqli',
+             '-d','extension=curl','-d','mysqli.default_socket='+str(work/'mysql.sock'),
+             '-d','allow_url_fopen=0','-S','127.0.0.1:'+str(port),'-t',str(stage)]
+        srv=subprocess.Popen(cmd,env=env,cwd=stage,
+                             stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,
+                             stderr=subprocess.DEVNULL)
+        try:
+            url=f'http://127.0.0.1:{port}/pay/back.php?nowpayment_ipn=1'
+            for attempt in range(25):
+                try:
+                    urllib.request.urlopen(url,timeout=1)
+                except urllib.error.HTTPError as ready:
+                    if ready.code==405:break
+                except (OSError,TimeoutError):
+                    pass
+                time.sleep(0.10)
+            else:
+                raise RuntimeError('Owned PHP IPN loopback server not ready')
+            posted={
+                'payment_id':'np-http-payment','invoice_id':'np-http-invoice',
+                'order_id':'np-http-signed','payment_status':'confirmed',
+                'price_amount':1,'price_currency':'usd',
+                'pay_amount':1,'actually_paid':1,'pay_currency':'usdttrc20'
+            }
+            body=json.dumps(posted,sort_keys=True,separators=(',',':')).encode('utf-8')
+            mac=hmac.new(b'LOCAL-IPN-SECRET',body,hashlib.sha512).hexdigest()
+            def post(sig):
+                request=urllib.request.Request(url,data=body,method='POST',
+                    headers={'Content-Type':'application/json','x-nowpayments-sig':sig})
+                try:
+                    with urllib.request.urlopen(request,timeout=4) as response:
+                        return response.status,response.read()
+                except urllib.error.HTTPError as error:
+                    return error.code,error.read()
+            refused,_=post('0'*128)
+            if refused!=401:
+                raise RuntimeError('Real HTTP entrypoint accepted wrong IPN HMAC: '+str(refused))
+            if sql(work,env,"SELECT payment_id FROM achbot_nowpayments_attempts "
+                   "WHERE order_hash='np-http-signed'").strip() not in ('NULL',''):
+                raise RuntimeError('Forged HTTP IPN modified invoice')
+            accepted,reply=post(mac)
+            if accepted!=200 or json.loads(reply).get('accepted') is not True:
+                raise RuntimeError('Real signed IPN HTTP rejected: '+repr((accepted,reply[:150])))
+            got=sql(work,env,"SELECT payment_id FROM achbot_nowpayments_attempts "
+                   "WHERE order_hash='np-http-signed'").strip()
+            if got!='np-http-payment':
+                raise RuntimeError('Real IPN HTTP path did not persist exact payment ID')
+            records.append(dict(case='nowpayments_real_loopback_http_ipn_minimal_bootstrap',
+                                pass_=True,real_provider_requests=0,external_requests=0))
+        finally:
+            srv.terminate()
+            try:srv.wait(timeout=5)
+            except subprocess.TimeoutExpired:srv.kill();srv.wait(timeout=3)
+    report={'complete':True,'cases':len(records),'schema_tables':23, 'current_schema_tables':25,
+       'additive_nowpayments_attempts_tested':True,
        'original_mariadb_socket_only':True,'real_provider_requests':0,
        'synthetic_payment_spy':True,'operator_finance_acceptance':False,
        'scenarios':records}

@@ -243,108 +243,148 @@ function addMarzbanUser($server_id, $remark, $volume, $days, $plan_id){
 
 function editMarzbanConfig($server_id,$info){
     global $connection;
-    
-    $stmt = $connection->prepare("SELECT * FROM server_config WHERE id=?");
-    $stmt->bind_param("i", $server_id);
+
+    $stmt=$connection->prepare("SELECT * FROM server_config WHERE id=?");
+    $stmt->bind_param("i",$server_id);
     $stmt->execute();
-    $server_info = $stmt->get_result()->fetch_assoc();
+    $serverInfo=$stmt->get_result()->fetch_assoc();
     $stmt->close();
-
-    $panel_url = $server_info['panel_url'];
-    $serverName = $server_info['username'];
-    $serverPass = $server_info['password'];
-
-    $token = getMarzbanToken($server_id);
-    if(isset($token->detail)){return (object) ['success'=>false, 'msg'=>$token->error];}
-
-    $remark = $info['remark'];
-    $configInfo = getMarzbanUser($server_id, $remark, $token);
-    
-    
-    $expireTime = $configInfo->expire;
-    $volume = $configInfo->data_limit;
-    $configState = $configInfo->status;
-    
-    if(isset($info['plus_day'])){
-        if($expireTime < time()) $expireTime = time() + (86400 * $info['plus_day']);
-        else $expireTime += (86400 * $info['plus_day']);
+    if (!$serverInfo || ($serverInfo['type'] ?? '') !== 'marzban') {
+        return (object)['success'=>false,'uncertain'=>false,'msg'=>'unsupported_panel'];
     }
-    elseif(isset($info['days'])) $expireTime = time() + (86400 * $info['days']);
-    
-    if(isset($info['plus_volume'])) $volume += $info['plus_volume'] * 1073741824;
-    elseif(isset($info['volume'])){
-        $volume = $info['volume'] * 1073741824;
-        $response = resetMarzbanTraffic($server_id, $remark, $token);
-        
-        if(!$response->success) return $response;
+    $token=getMarzbanToken($server_id);
+    if (!is_object($token) || empty($token->access_token)) {
+        return (object)['success'=>false,'uncertain'=>true,'msg'=>'marzban_auth_unavailable'];
     }
-    
-    $postFields = array(
-        "inbounds" => $configInfo->inbounds,
-        "proxies" => $configInfo->proxies,
-        "expire" => $expireTime,
-        "data_limit" => $volume,
-        "username" => urlencode($remark),
-        "note" => $configInfo->note,
-        "data_limit_reset_strategy"=> $configInfo->data_limit_reset_strategy,
-        "status" => "active"
-    );
-    
-    $panel_url .=  '/api/user/'. $remark;
-    $curl = curl_init();
-    curl_setopt($curl, CURLOPT_URL, $panel_url);
-    curl_setopt($curl, CURLOPT_RETURNTRANSFER, 1);
-    curl_setopt($curl, CURLOPT_CUSTOMREQUEST, 'PUT');
-    curl_setopt($curl, CURLOPT_POSTFIELDS, json_encode($postFields));
-    curl_setopt($curl, CURLOPT_HTTPHEADER, array(
+
+    $remark=(string)($info['remark'] ?? '');
+    if ($remark==='') return (object)['success'=>false,'uncertain'=>false,'msg'=>'missing_account'];
+    $current=getMarzbanUser($server_id,$remark,$token);
+    if (!is_object($current) || (string)($current->username ?? '')!==$remark ||
+        !isset($current->expire,$current->data_limit) ||
+        !is_numeric($current->expire) || !is_numeric($current->data_limit) ||
+        !isset($current->inbounds,$current->proxies)) {
+        return (object)['success'=>false,'uncertain'=>true,'msg'=>'marzban_account_unverified'];
+    }
+
+    $expire=(int)$current->expire;
+    $volume=(int)$current->data_limit;
+    if (isset($info['plus_day'])) {
+        $days=(int)$info['plus_day'];
+        if ($days<=0 || $days>36500) return (object)['success'=>false,'uncertain'=>false,'msg'=>'invalid_days'];
+        $expire=max($expire,time())+86400*$days;
+    } elseif (isset($info['days'])) {
+        $days=(int)$info['days'];
+        if ($days<=0 || $days>36500) return (object)['success'=>false,'uncertain'=>false,'msg'=>'invalid_days'];
+        $expire=time()+86400*$days;
+    }
+
+    if (isset($info['plus_volume'])) {
+        $extra=(int)$info['plus_volume'];
+        if ($extra<=0 || $extra>intdiv(PHP_INT_MAX,1073741824) ||
+            $volume>PHP_INT_MAX-$extra*1073741824) {
+            return (object)['success'=>false,'uncertain'=>false,'msg'=>'invalid_volume'];
+        }
+        $volume+=$extra*1073741824;
+    } elseif (isset($info['volume'])) {
+        $gigabytes=(int)$info['volume'];
+        if ($gigabytes<0 || $gigabytes>intdiv(PHP_INT_MAX,1073741824)) {
+            return (object)['success'=>false,'uncertain'=>false,'msg'=>'invalid_volume'];
+        }
+        $volume=$gigabytes*1073741824;
+        $reset=resetMarzbanTraffic($server_id,$remark,$token);
+        if (!is_object($reset) || empty($reset->success)) {
+            return (object)['success'=>false,'uncertain'=>true,'msg'=>'marzban_reset_unverified'];
+        }
+    }
+
+    $postFields=[
+        'inbounds'=>$current->inbounds,
+        'proxies'=>$current->proxies,
+        'expire'=>$expire,
+        'data_limit'=>$volume,
+        'username'=>urlencode($remark),
+        'note'=>$current->note ?? null,
+        'data_limit_reset_strategy'=>$current->data_limit_reset_strategy ?? 'no_reset',
+        'status'=>'active'
+    ];
+    $json=json_encode($postFields);
+    if ($json===false) return (object)['success'=>false,'uncertain'=>true,'msg'=>'marzban_encode_failure'];
+    $curl=curl_init();
+    curl_setopt($curl,CURLOPT_URL,rtrim((string)$serverInfo['panel_url'],'/').'/api/user/'.rawurlencode($remark));
+    curl_setopt($curl,CURLOPT_RETURNTRANSFER,true);
+    curl_setopt($curl,CURLOPT_CUSTOMREQUEST,'PUT');
+    curl_setopt($curl,CURLOPT_CONNECTTIMEOUT,5);
+    curl_setopt($curl,CURLOPT_TIMEOUT,20);
+    curl_setopt($curl,CURLOPT_SSL_VERIFYPEER,true);
+    curl_setopt($curl,CURLOPT_SSL_VERIFYHOST,2);
+    curl_setopt($curl,CURLOPT_POSTFIELDS,$json);
+    curl_setopt($curl,CURLOPT_HTTPHEADER,[
         'Accept: application/json',
-        'Authorization: Bearer ' .  $token->access_token,
+        'Authorization: Bearer '.$token->access_token,
         'Content-Type: application/json'
-        ));
-    
-    $response = curl_exec($curl);
+    ]);
+    $raw=curl_exec($curl);
+    $error=curl_error($curl);
+    $http=(int)curl_getinfo($curl,CURLINFO_HTTP_CODE);
     curl_close($curl);
-    if(isset($response->detail)){
-		$detail = $response->detail;
-        return (object) ['success'=>false, 'msg' => is_object($detail)?implode("-", (array) $detail):$detail];
+    // A lost response does not prove the PUT did not reach Marzban.
+    if ($raw===false || $error!=='' || $http<200 || $http>=300) {
+        return (object)['success'=>false,'uncertain'=>true,'msg'=>'marzban_put_unconfirmed'];
     }
-    return (object) ['success'=>true];
+    $reply=json_decode($raw);
+    // Marzban PUT responds with a UserResponse. HTTP 2xx or an empty body
+    // alone is not proof of the applied expiry/volume modification.
+    if (!is_object($reply) || isset($reply->detail) ||
+        (string)($reply->username ?? '')!==$remark ||
+        !isset($reply->expire,$reply->data_limit) ||
+        !is_numeric($reply->expire) || !is_numeric($reply->data_limit) ||
+        (int)$reply->expire!==$expire || (int)$reply->data_limit!==$volume) {
+        return (object)['success'=>false,'uncertain'=>true,'msg'=>'marzban_put_response_unverified'];
+    }
+    return (object)['success'=>true];
 }
 
 function resetMarzbanTraffic($server_id, $remark, $token){
     global $connection;
-    
-    $stmt = $connection->prepare("SELECT * FROM server_config WHERE id=?");
-    $stmt->bind_param("i", $server_id);
+    $stmt=$connection->prepare("SELECT * FROM server_config WHERE id=?");
+    $stmt->bind_param('i',$server_id);
     $stmt->execute();
-    $server_info = $stmt->get_result()->fetch_assoc();
+    $server=$stmt->get_result()->fetch_assoc();
     $stmt->close();
-
-    $panel_url = $server_info['panel_url'];
-    $serverName = $server_info['username'];
-    $serverPass = $server_info['password'];
-
-    if($token == null) $token = getMarzbanToken($server_id);
-    if(isset($token->detail)){return (object) ['success'=>false, 'msg'=>$token->detail];}
-
-    $panel_url .=  '/api/user/' . $remark .'/reset';
-
-    $curl = curl_init();
-    curl_setopt($curl, CURLOPT_URL, $panel_url);
-    curl_setopt($curl, CURLOPT_POST , true);
-    curl_setopt($curl, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($curl, CURLOPT_HTTPHEADER, array(
-        'Accept: application/json',
-        'Authorization: Bearer ' .  $token->access_token
-    ));
-
-    $response = curl_exec($curl);
-    curl_close($curl);
-    if(isset($response->detail)){
-		$detail = $response->detail;
-        return (object) ['success'=>false, 'msg' => is_object($detail)?implode("-", (array) $detail):$detail];
+    if (!$server || ($server['type']??'')!=='marzban') {
+        return (object)['success'=>false,'uncertain'=>false,'msg'=>'unsupported_panel'];
     }
-    return (object) ['success'=>true];
+    if ($token===null) $token=getMarzbanToken($server_id);
+    if (!is_object($token) || empty($token->access_token)) {
+        return (object)['success'=>false,'uncertain'=>true,'msg'=>'marzban_auth_unavailable'];
+    }
+    $curl=curl_init();
+    curl_setopt($curl,CURLOPT_URL,rtrim((string)$server['panel_url'],'/').
+                               '/api/user/'.rawurlencode($remark).'/reset');
+    curl_setopt($curl,CURLOPT_POST,true);
+    curl_setopt($curl,CURLOPT_RETURNTRANSFER,true);
+    curl_setopt($curl,CURLOPT_CONNECTTIMEOUT,5);
+    curl_setopt($curl,CURLOPT_TIMEOUT,20);
+    curl_setopt($curl,CURLOPT_SSL_VERIFYPEER,true);
+    curl_setopt($curl,CURLOPT_SSL_VERIFYHOST,2);
+    curl_setopt($curl,CURLOPT_HTTPHEADER,[
+        'Accept: application/json',
+        'Authorization: Bearer '.$token->access_token
+    ]);
+    $raw=curl_exec($curl);
+    $error=curl_error($curl);
+    $http=(int)curl_getinfo($curl,CURLINFO_HTTP_CODE);
+    curl_close($curl);
+    if ($raw===false || $error!=='' || $http!==200) {
+        return (object)['success'=>false,'uncertain'=>true,'msg'=>'marzban_reset_unconfirmed'];
+    }
+    $reply=json_decode($raw);
+    if (!is_object($reply) || (string)($reply->username??'')!==(string)$remark ||
+        isset($reply->detail)) {
+        return (object)['success'=>false,'uncertain'=>true,'msg'=>'marzban_reset_response_unverified'];
+    }
+    return (object)['success'=>true];
 }
 
 function renewMarzbanUUID($server_id,$remark){

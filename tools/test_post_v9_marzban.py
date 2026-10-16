@@ -190,7 +190,25 @@ def main():
                 panel.trace.clear()
                 result=native.run(work,env,stage,db,{"function":fn,"args":arguments})
                 results.append(result);traces.append(list(panel.trace))
-            if results[0]!=results[1] or traces[0]!=traces[1]:
+            # The historical loopback PUT fixture returns only
+            # {"status":"ok"}, not Marzban's UserResponse containing applied
+            # expiry/traffic. Legacy incorrectly interpreted it as success.
+            # Current source MUST reject this response while preserving the
+            # exact outbound method/path/payload and the historical evidence.
+            # Separate R8 financial native tests prove genuine UserResponse.
+            intentional_fail_closed=(name=='marzban.update' and
+                results[0].get('result')=={'success':True} and
+                results[1].get('result',{}).get('success') is False and
+                results[1].get('result',{}).get('uncertain') is True and
+                results[1].get('result',{}).get('msg')==
+                    'marzban_put_response_unverified' and
+                results[0].get('exception') is None and
+                results[1].get('exception') is None and
+                not results[0].get('warnings') and
+                not results[1].get('warnings') and
+                results[0].get('stdout')==results[1].get('stdout')=='')
+            if traces[0]!=traces[1] or (
+                results[0]!=results[1] and not intentional_fail_closed):
                 raise RuntimeError("Marzban differential mismatch: "+name+
                                    "\n"+json.dumps({"historical":results[0],
                                                     "candidate":results[1],
