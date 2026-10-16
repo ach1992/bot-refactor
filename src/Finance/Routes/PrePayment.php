@@ -29,7 +29,22 @@ if (preg_match('/^prePayCheck_([a-zA-Z0-9]+)_([a-zA-Z0-9]+)_([a-zA-Z0-9]+)/', $d
         return;
     }
     $now = time();
-    if ($now - $payInfo['request_date'] > 10800) {
+    // An existing NOWPayments invoice can finish without any browser return,
+    // including after the old three-hour bot-menu checkout window. Never
+    // expire such an invoice solely because its chat button was clicked late.
+    $hasNpInvoice = false;
+    if ($payMethod === 'nowpayment' && !empty($payInfo['payid'])) {
+        $npTable=$connection->query("SHOW TABLES LIKE 'achbot_nowpayments_attempts'");
+        if ($npTable && $npTable->num_rows===1) {
+            $npStmt=$connection->prepare("SELECT id FROM achbot_nowpayments_attempts
+                WHERE pay_row_id=? AND invoice_id=? LIMIT 1");
+            $npStmt->bind_param('is',$payInfo['id'],$payInfo['payid']);
+            $npStmt->execute();
+            $hasNpInvoice=$npStmt->get_result()->num_rows===1;
+            $npStmt->close();
+        }
+    }
+    if ($now - $payInfo['request_date'] > 10800 && !$hasNpInvoice) {
 		if ($payInfo['state'] === 'pending') {
 			$stmt = $connection->prepare("UPDATE pays SET state = 'expired' WHERE id = ?");
 			$stmt->bind_param("i", $payInfo['id']);
@@ -76,11 +91,18 @@ if (preg_match('/^prePayCheck_([a-zA-Z0-9]+)_([a-zA-Z0-9]+)_([a-zA-Z0-9]+)/', $d
 		];
 
 		answerCallbackQuery($callbackId, "در حال آماده‌سازی لینک پرداخت...");
-		sendMessage("⚠️ دقت کنید هنگام پرداخت کارمزد را در نظر بگیرید که از مقدار پرداختی شما کسر نشود.
+        if ($payMethod === 'nowpayment') {
+            sendMessage("💳 برای ادامه پرداخت روی دکمه زیر بزنید.
+✅ بعد از تایید نهایی توسط درگاه، نتیجه خودکار در ربات ثبت می‌شود؛ نیازی به زدن دکمه بازگشت نیست.
+🔗 فاکتور صادرشده قابل بازیابی است و در گفت‌وگو لینک مستقیم آن هم برای شما ارسال می‌شود.
+⏳ زمان نهایی‌شدن به شبکه و پردازش پذیرنده بستگی دارد.", json_encode($button), "html", $from_id);
+        } else {
+            sendMessage("⚠️ دقت کنید هنگام پرداخت کارمزد را در نظر بگیرید که از مقدار پرداختی شما کسر نشود.
 ✅ بعد پرداخت باید صفحه را باز نگه دارید تا تایید نهایی شود و بعد به ربات منتقل شوید.
 🔰 حتما PaymentID یا شناسه پرداخت خودتان در صفحه باز شده را یادداشت کنید.
 💳 برای ادامه پرداخت روی دکمه زیر بزنید.
 ⏳ اعتبار این لینک 30 دقیقه می باشد.", json_encode($button), "html", $from_id);
+        }
 		exit;
 	}
 

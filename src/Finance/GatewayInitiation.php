@@ -6,7 +6,7 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
 }
 
 //====================//  Get  //==============================
-$hash_id = $_GET['hash_id'];
+$hash_id = (string)($_GET['hash_id'] ?? '');
 if(!isset($_GET['zarinpal']) && !isset($_GET['nowpayment']) && !isset($_GET['nextpay'])){
     showForm("درگاه پرداخت شناسایی نشد!");
     exit();
@@ -19,7 +19,22 @@ $payInfo = $stmt->get_result();
 $stmt->close();
 
 if(mysqli_num_rows($payInfo)==0){
-    showForm("کد پرداخت یافت نشد.");
+    if (isset($_GET['nowpayment']) && $hash_id !== '') {
+        $stmt = $connection->prepare("SELECT state FROM pays WHERE hash_id=? LIMIT 1");
+        $stmt->bind_param('s',$hash_id);
+        $stmt->execute();
+        $existing=$stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        if (($existing['state'] ?? '')==='paid') {
+            showForm("این سفارش قبلاً پرداخت شده؛ لینک یا تاییدیه در ربات ارسال می‌شود.");
+        } elseif ($existing) {
+            showForm("این سفارش در حال پردازش یا نیازمند پیگیری است؛ فاکتور جدید صادر نشد.");
+        } else {
+            showForm("کد پرداخت یافت نشد.");
+        }
+    } else {
+        showForm("کد پرداخت یافت نشد.");
+    }
 }else{
     $payParam = $payInfo->fetch_assoc();
     if (!achbotSupportsPaymentSubject($connection, $payParam)) {
@@ -111,6 +126,38 @@ if(mysqli_num_rows($payInfo)==0){
     $stmt->close();
 	
     if(isset($_GET['nowpayment'])){
+        // The additive attempt table is required for safe invoice continuity.
+        // Old payments with an invoice ID but no attempt are not reissued
+        // automatically: creating a second provider invoice may double charge.
+        $exists = $connection->query("SHOW TABLES LIKE 'achbot_nowpayments_attempts'");
+        if (!$exists || $exists->num_rows !== 1) {
+            showForm("پیکربندی پیگیری امن پرداخت هنوز تکمیل نشده است.");
+            exit;
+        }
+        $stmt = $connection->prepare("SELECT * FROM achbot_nowpayments_attempts WHERE pay_row_id=? LIMIT 2");
+        $stmt->bind_param('i', $orderId);
+        $stmt->execute();
+        $stored = $stmt->get_result();
+        $stmt->close();
+        if ($stored->num_rows === 1) {
+            $attempt = $stored->fetch_assoc();
+            if ($attempt['order_hash'] === $hash_id &&
+                $attempt['invoice_id'] === (string)$payParam['payid'] &&
+                achbotNpValidInvoiceUrl($attempt['invoice_url'])) {
+                header('Location: '.$attempt['invoice_url'], true, 302);
+                exit;
+            }
+            showForm("لینک فاکتور نیاز به بررسی پشتیبانی دارد.");
+            exit;
+        }
+        if ($stored->num_rows > 1 || !empty($payParam['payid'])) {
+            showForm("برای این سفارش قبلاً فاکتور صادر شده است؛ از ایجاد فاکتور تکراری جلوگیری شد.");
+            exit;
+        }
+        if (empty($nowpaymentsIpnSecret)) {
+            showForm("کلید امن اعلان NOWPayments هنوز توسط مدیر ثبت نشده است.");
+            exit;
+        }
         $userId = (int)($payParam['user_id'] ?? 0);
         $isAgent = 0;
 
@@ -149,11 +196,17 @@ if(mysqli_num_rows($payInfo)==0){
 
         $base_url = 'https://api.nowpayments.io/v1/invoice';
 
+        $quoteUsd = number_format(round($amount / $dollarPrice, 2), 2, '.', '');
+        if ((float)$quoteUsd <= 0) {
+            showForm("مبلغ دلاری فاکتور معتبر نیست.");
+            exit;
+        }
         $payload = [
-            'price_amount' => round($amount / $dollarPrice, 2),
+            'price_amount' => (float)$quoteUsd,
             'price_currency' => 'usd',
             'order_id' => $hash_id,
             'order_description' => $type,
+            'ipn_callback_url' => $botUrl . 'pay/back.php?nowpayment_ipn=1',
             'success_url' => $botUrl . 'pay/back.php?nowpayment&hash_id=' . urlencode($hash_id),
             'is_fee_paid_by_user' => false
         ];
@@ -194,14 +247,62 @@ if(mysqli_num_rows($payInfo)==0){
             exit();
         }
 
-        $payid = $res['id'];
+        $payid = (string)$res['id'];
+        $invoiceUrl = (string)$res['invoice_url'];
+        if (!preg_match('/^[A-Za-z0-9_-]{1,128}$/D', $payid) ||
+            !achbotNpValidInvoiceUrl($invoiceUrl)) {
+            showForm("لینک فاکتور ارسالی درگاه معتبر نیست.");
+            exit;
+        }
+        try {
+            $connection->begin_transaction();
+            // One local purchase can have one active invoice. A concurrent
+            // browser click cannot replace another session's persisted link.
+            $stmt = $connection->prepare("SELECT payid,state FROM pays WHERE id=? FOR UPDATE");
+            $stmt->bind_param('i', $orderId);
+            $stmt->execute();
+            $locked = $stmt->get_result()->fetch_assoc();
+            $stmt->close();
+            if (!$locked || $locked['state'] !== 'pending' || !empty($locked['payid'])) {
+                $connection->rollback();
+                showForm("فاکتور این سفارش تغییر کرده است؛ دوباره از ربات بررسی کنید.");
+                exit;
+            }
+            $stmt = $connection->prepare("INSERT INTO achbot_nowpayments_attempts
+                (pay_row_id,order_hash,invoice_id,invoice_url,quote_usd)
+                VALUES (?,?,?,?,?)");
+            $stmt->bind_param('issss', $orderId, $hash_id, $payid, $invoiceUrl, $quoteUsd);
+            $stmt->execute();
+            $stmt->close();
+            $stmt = $connection->prepare("UPDATE pays SET payid=? WHERE id=? AND state='pending' AND payid IS NULL");
+            $stmt->bind_param('si', $payid, $orderId);
+            $stmt->execute();
+            $changed = $stmt->affected_rows;
+            $stmt->close();
+            if ($changed !== 1) {
+                throw new RuntimeException('concurrent_checkout_state_change');
+            }
+            $connection->commit();
+        } catch (Throwable $error) {
+            $connection->rollback();
+            showForm("فاکتور صادر شد اما ذخیره ایمن آن انجام نشد؛ با پشتیبانی تماس بگیرید.");
+            exit;
+        }
 
-        $stmt = $connection->prepare("UPDATE `pays` SET `payid` = ? WHERE `hash_id` = ?");
-        $stmt->bind_param("ss", $payid, $hash_id);
-        $stmt->execute();
-        $stmt->close();
-
-        header('Location: ' . $res['invoice_url']);
+        // The merchant can recover this exact provider invoice on every
+        // subsequent click; also preserve a direct button in Telegram.
+        if ($userId > 0) {
+            $keyboard = json_encode(['inline_keyboard'=>[[
+                ['text'=>'🔗 ادامه همین پرداخت', 'url'=>$invoiceUrl]
+            ]]], JSON_UNESCAPED_UNICODE);
+            try {
+                sendMessage("💳 لینک پرداخت سفارش $hash_id ثبت شد.\nپرداخت پس از تایید درگاه به صورت خودکار در ربات بررسی می‌شود؛ نیازی به زدن دکمه بازگشت نیست.",
+                    $keyboard, null, $userId);
+            } catch (Throwable $ignored) {
+                // Durable invoice persists even if a Telegram send fails.
+            }
+        }
+        header('Location: ' . $invoiceUrl, true, 302);
         exit();
     }
     

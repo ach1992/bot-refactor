@@ -153,6 +153,17 @@ def main():
         finance=json.loads(finance_path.read_text())
         mandatory_finance = {
             "nowpayments_browser_only_return_not_proof",
+            "nowpayments_checkout_url_reused_without_new_invoice",
+            "nowpayments_invalid_signature_no_effect",
+            "nowpayments_new_attempt_browser_bypass_closed",
+            "nowpayments_browser_only_readonly_paid_status",
+            "nowpayments_real_loopback_http_ipn_minimal_bootstrap",
+            "nowpayments_authenticated_order_binding",
+            "nowpayments_signed_ipn_durable_without_browser",
+            "nowpayments_signed_confirmed_background_nonfinal",
+            "nowpayments_no_browser_return_final_telegram_credit",
+            "nowpayments_finished_webhook_replay_no_double_credit",
+            "nowpayments_underpayment_quarantined",
             "nowpayments_confirmed_not_final",
             "nowpayments_sending_not_final",
             "nowpayments_partially_paid_not_final",
@@ -166,9 +177,11 @@ def main():
         }
         cases_finance = {case.get("case") for case in finance.get("scenarios",[])
                          if case.get("pass_")}
-        if not (finance.get("complete") and finance.get("cases")>=53 and
+        if not (finance.get("complete") and finance.get("cases")>=64 and
                 mandatory_finance.issubset(cases_finance) and
                 finance.get("schema_tables")==23 and
+                finance.get("current_schema_tables")==24 and
+                finance.get("additive_nowpayments_attempts_tested") and
                 finance.get("original_mariadb_socket_only") and
                 finance.get("synthetic_payment_spy") and
                 finance.get("real_provider_requests")==0):

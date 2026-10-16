@@ -8,6 +8,8 @@ Current acceptance and safe future-recovery details: [Marzban-only notes](post-v
 
 **Next active development increment:** Owner-authorized staged [finance consolidation and NOWPayments finality](post-v9/FINANCIAL-CONSOLIDATION.md) under [Issue #26](https://github.com/ach1992/bot-refactor/issues/26): separate provider verification from a common durable payment/effect claim and Marzban fulfillment; no blanket schema rewrite. No real database migration, merge or rollout is implied by this source-only candidate.
 
+**Owner latest priority — NOWPayments recovery:** replace browser-return-only confirmation with HMAC-validated IPN plus background verified `finished` settlement. Preserve the identical hosted checkout URL and Telegram order identity; no user click required for normal provider-delivered webhook flow, with a documented all-IPN-lost gap and an additive attempt table held behind Owner migration approval. See [NOWPayments migration guide](post-v9/NOWPAYMENTS-MIGRATION.md) and [Draft PR #42](https://github.com/ach1992/bot-refactor/pull/42).
+
 **Roadmap:** [#29](https://github.com/ach1992/bot-refactor/issues/29) (operator acceptance, financial/role defects, Marzban-only source simplification, audited optional DB trimming) and [#26](https://github.com/ach1992/bot-refactor/issues/26) (TRON, gateways, **privileged negative wallet debt** and user non-overdraft). Full database modernization, new panel integrations and comprehensive optimization are **later phases**, not part of the immediate Marzban-only retirement.
 
 ## Archived V0–V9 stages (historical planned goals, not live status)

@@ -49,6 +49,10 @@ $GLOBALS['fake_nowpayment_raw'] = $spec['nowpayment_raw'] ?? null;
 $GLOBALS['fake_nowpayment_transport_failure'] = $spec['nowpayment_transport_failure'] ?? false;
 $GLOBALS['fake_nowpayment_payment_id'] = $spec['nowpayment_payment_id'] ?? null;
 $GLOBALS['fake_nowpayment_order_id'] = $spec['nowpayment_order_id'] ?? null;
+$GLOBALS['fake_nowpayment_price'] = $spec['nowpayment_price'] ?? 1;
+$GLOBALS['fake_nowpayment_actual'] = $spec['nowpayment_actual'] ?? 1;
+$GLOBALS['fake_nowpayment_pay_amount'] = $spec['nowpayment_pay_amount'] ?? 1;
+$GLOBALS['fake_nowpayment_force_id'] = $spec['nowpayment_force_id'] ?? null;
 $GLOBALS['fake_nowpayment_flip_hash'] = $spec['nowpayment_flip_hash'] ?? null;
 $GLOBALS['fake_nextpay_code'] = $spec['nextpay_code'] ?? -2;
 $GLOBALS['fake_nextpay_http'] = $spec['nextpay_http'] ?? 200;
@@ -63,6 +67,7 @@ $botState = [];
 $botUrl = 'http://127.0.0.1:9/owned-fixture/';
 $USDTPrice = 100000;
 $USDTPriceagent = 100000;
+$nowpaymentsIpnSecret = 'LOCAL-IPN-SECRET';
 $paymentKeys = ['nowpayment'=>'SYNTHETIC-LOCAL-ONLY', 'nextpay'=>'SYNTHETIC-LOCAL-ONLY'];
 $admin = 9001;
 function sendMessage(...$args) {
@@ -99,7 +104,7 @@ function curl_exec($handle) {
     }
     if (str_contains($handle->url, '/v1/invoice')) {
         return json_encode(['id'=>'owned-new-invoice',
-                             'invoice_url'=>'http://127.0.0.1:9/owned-no-navigation']);
+                             'invoice_url'=>'https://nowpayments.io/payment?iid=owned-new-invoice']);
     }
     if (str_contains($handle->url, '/v1/payment/')) {
         if ($GLOBALS['fake_nowpayment_flip_hash'] !== null) {
@@ -121,6 +126,13 @@ function curl_exec($handle) {
         if ($GLOBALS['fake_nowpayment_order_id'] !== null) {
             $record['order_id'] = $GLOBALS['fake_nowpayment_order_id'];
         }
+        $record['payment_id'] = $GLOBALS['fake_nowpayment_force_id'] ??
+            $GLOBALS['fake_nowpayment_payment_id'] ?? $record['payment_id'] ?? null;
+        $record['price_currency']='usd';
+        $record['price_amount']=$GLOBALS['fake_nowpayment_price'];
+        $record['pay_amount']=$GLOBALS['fake_nowpayment_pay_amount'];
+        $record['actually_paid']=$GLOBALS['fake_nowpayment_actual'];
+        $record['pay_currency']='usdttrc20';
         return json_encode($record);
     }
     return json_encode(['invoice_id'=>$GLOBALS['mock_invoice'],
@@ -154,7 +166,25 @@ try {
     // Use the ACTUAL current wallet-credit helper; only outbound Telegram is
     // captured by the transport spy. No fake settlement implementation.
     require $root . '/src/Finance/ReceiptHelpers.php';
-    if ($spec['route'] === 'return') {
+    require $root . '/src/Finance/GatewayClient.php';
+    if ($spec['route'] === 'ipn' || $spec['route'] === 'reconcile') {
+        define('ACHBOT_NP_RECONCILE_ONLY',true);
+        $_GET=[];
+        require $root . '/src/Finance/GatewayReturn.php';
+        if ($spec['route'] === 'ipn') {
+            $raw = $spec['ipn_raw'] ?? '{}';
+            $key = $spec['ipn_secret'] ?? 'LOCAL-IPN-SECRET';
+            $signed = json_decode($raw,true);
+            $canonical = json_encode(achbotNpSortedPayload($signed),
+                JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            $signature = $spec['ipn_wrong_signature'] ?? hash_hmac('sha512',$canonical,$key);
+            $GLOBALS['events'][]=['name'=>'ipn_result','code'=>achbotNpIngestIpn(
+                $connection,$key,$raw,$signature)];
+        } else {
+            $GLOBALS['events'][]=['name'=>'reconcile_result','result'=>achbotNpReconcileBatch(
+                $connection,$paymentKeys,1)];
+        }
+    } elseif ($spec['route'] === 'return') {
         require $root . '/src/Finance/GatewayReturn.php';
     } elseif ($spec['route'] === 'initiate') {
         require $root . '/src/Finance/GatewayInitiation.php';
@@ -216,7 +246,13 @@ def main():
         purchase.init(work,env,'http://127.0.0.1:9')
         if len(sql(work,env,'SHOW TABLES').splitlines()) != 23:
             raise RuntimeError('Original schema missing')
-        sql(work,env,"INSERT INTO setting (type,value) VALUES ('PAYMENT_KEYS','{\"nowpayment\":\"SYNTHETIC-LOCAL-ONLY\"}')")
+        keys=json.dumps({'nowpayment':'SYNTHETIC-LOCAL-ONLY','nowpayment_ipn_secret':'LOCAL-IPN-SECRET'})
+        sql(work,env,"INSERT INTO setting (type,value) VALUES ('PAYMENT_KEYS','" + keys + "')")
+        # Original 23 tables remain frozen; the new isolated proposed table
+        # is layered on top ONLY after documenting the original table count.
+        native.sql(work,env,(ROOT/'migrations/post-v9/002_nowpayments_checkout_attempts.sql').read_text(),DB)
+        assert len(sql(work,env,'SHOW TABLES').splitlines()) == 24
+
         seed_payment(work,env,'unsupported-now','RETIRED_PANEL',7,2)
         seed_payment(work,env,'marzban-now','BUY_SUB',7,2,'owned-verified-invoice')
         seed_payment(work,env,'wallet-now','INCREASE_WALLET',0,0,'wallet-verified-invoice')
@@ -280,7 +316,7 @@ def main():
         no_provider_id=run_php(work,env,stage,dict(route='return',
             get={'nowpayment':'','hash_id':'wallet-now'}))
         verify_unchanged(work,env,before,'nowpay-browser-only-return')
-        if no_provider_id['network_calls'] or 'هنوز' not in no_provider_id['form']:
+        if no_provider_id['network_calls'] or 'در حال بررسی' not in no_provider_id['form']:
             raise RuntimeError('NOWPayments browser-only redirect falsely declared failure')
         records.append(dict(case='nowpayments_browser_only_return_not_proof',pass_=True,
                             external_requests=0,financial_mutations=0))
@@ -406,14 +442,151 @@ def main():
             raise RuntimeError('NOWPayments duplicate final callback recontacted provider')
         records.append(dict(case='nowpayments_sequential_replay_no_duplicate_credit',pass_=True,
                             external_requests=0))
+        sql(work,env,"UPDATE pays SET price=100000,payid=NULL WHERE hash_id='wallet-init'")
         before=snapshot(work,env)
         res=run_php(work,env,stage,dict(route='initiate',
                     get={'nowpayment':'','hash_id':'wallet-init'}))
         if len(res['network_calls'])!=1 or '/v1/invoice' not in res['network_calls'][0]:
-            raise RuntimeError('Independent wallet top-up did not initiate mock invoice')
+            raise RuntimeError('Independent wallet top-up did not initiate mock invoice: '+repr(res)[:1000])
         if sql(work,env,"SELECT payid FROM pays WHERE hash_id='wallet-init'").strip()!='owned-new-invoice':
             raise RuntimeError('Wallet top-up invoice ID was not stored')
         records.append(dict(case='positive_wallet_gateway_initiation',pass_=True,synthetic_invoice=True,external_requests=1))
+
+        # The exact hosted checkout URL must be durable and resumable: a second
+        # click cannot create or replace another external provider invoice.
+        before=snapshot(work,env)
+        second=run_php(work,env,stage,dict(route='initiate',
+            get={'nowpayment':'','hash_id':'wallet-init'}))
+        verify_unchanged(work,env,before,'nowpay-existing-checkout-resume')
+        if second['network_calls']:
+            raise RuntimeError('Opening existing checkout spawned another invoice')
+        persisted=sql(work,env,"SELECT invoice_id,quote_usd,invoice_url FROM achbot_nowpayments_attempts WHERE order_hash='wallet-init'").strip()
+        if 'owned-new-invoice' not in persisted or 'nowpayments.io' not in persisted:
+            raise RuntimeError('Checkout URL or quote not durable')
+        records.append(dict(case='nowpayments_checkout_url_reused_without_new_invoice',
+                            pass_=True,real_provider_requests=0))
+        # Direct browser query with forged NP_id must NOT bypass the new
+        # quote/attempt validation even when the fake provider returns finished.
+        before=snapshot(work,env)
+        forged_browser=run_php(work,env,stage,dict(route='return',
+            get={'nowpayment':'','NP_id':'forged-provider-id','hash_id':'wallet-init'},
+            mock_invoice='owned-new-invoice',nowpayment_status='finished'))
+        verify_unchanged(work,env,before,'nowpay-new-attempt-browser-bypass')
+        if forged_browser['network_calls']:
+            raise RuntimeError('Browser bypassed IPN worker and called provider')
+        records.append(dict(case='nowpayments_new_attempt_browser_bypass_closed',
+                            pass_=True,external_requests=0))
+        import hmac,hashlib
+        def signed_ipn(spec, *, wrong=False):
+            raw=json.dumps(spec,ensure_ascii=False,sort_keys=True,separators=(',',':'))
+            signature=hmac.new(b'LOCAL-IPN-SECRET',raw.encode('utf-8'),hashlib.sha512).hexdigest()
+            if wrong:signature='a'*128
+            return dict(route='ipn',get={},ipn_raw=raw,
+                        ipn_wrong_signature=signature)
+        ipn={
+          'payment_id':'np-pmt-wallet-init','invoice_id':'owned-new-invoice',
+          'order_id':'wallet-init','payment_status':'confirmed',
+          'price_amount':1,'price_currency':'usd',
+          'pay_amount':1,'actually_paid':1,'pay_currency':'usdttrc20',
+          'fee':{'withdrawalFee':'0.010','depositFee':'0.001'}
+        }
+        before=snapshot(work,env)
+        spoof=run_php(work,env,stage,signed_ipn(ipn,wrong=True))
+        verify_unchanged(work,env,before,'nowpay-ipn-invalid-signature')
+        if spoof['events'][-1].get('code')!=401 or spoof['network_calls']:
+            raise RuntimeError('Unsigned NOWPayments IPN was accepted')
+        records.append(dict(case='nowpayments_invalid_signature_no_effect',
+                            pass_=True,external_requests=0))
+        forged=dict(ipn,order_id='not-wallet-init')
+        before=snapshot(work,env)
+        mismatch=run_php(work,env,stage,signed_ipn(forged))
+        verify_unchanged(work,env,before,'nowpay-ipn-mismatched-order')
+        if mismatch['events'][-1].get('code')!=409 or mismatch['network_calls']:
+            raise RuntimeError('Signed IPN for unrelated order admitted')
+        records.append(dict(case='nowpayments_authenticated_order_binding',
+                            pass_=True,external_requests=0))
+        before=snapshot(work,env)
+        before_wallet=int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())
+        accepted=run_php(work,env,stage,signed_ipn(ipn))
+        if accepted['events'][-1].get('code')!=200 or accepted['network_calls']:
+            raise RuntimeError('Correct signed IPN not stored cheaply: '+repr(accepted)[:400])
+        got=sql(work,env,"SELECT payment_id,provider_status,stage FROM achbot_nowpayments_attempts WHERE order_hash='wallet-init'").strip()
+        if 'np-pmt-wallet-init' not in got or 'confirmed' not in got:
+            raise RuntimeError('IPN provider ID/status was not durable')
+        if int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())!=before_wallet:
+            raise RuntimeError('IPN handler mutated a balance')
+        records.append(dict(case='nowpayments_signed_ipn_durable_without_browser',
+                            pass_=True,external_requests=0))
+        again=run_php(work,env,stage,signed_ipn(ipn))
+        if again['events'][-1].get('code')!=200:
+            raise RuntimeError('Replay of same signed IPN not idempotent')
+        wallet_start=int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())
+        intermediate=run_php(work,env,stage,dict(route='reconcile',get={},
+            mock_invoice='owned-new-invoice',
+            nowpayment_payment_id='np-pmt-wallet-init',
+            nowpayment_order_id='wallet-init',
+            nowpayment_status='confirmed',
+            nowpayment_price=1,nowpayment_pay_amount=1,nowpayment_actual=1))
+        if int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())!=wallet_start:
+            raise RuntimeError('Confirmed provider status prematurely credited wallet')
+        if intermediate['events'][-1]['result']['pending']!=1:
+            raise RuntimeError('Background confirmation not retained as pending: '+repr(intermediate)[-500:])
+        records.append(dict(case='nowpayments_signed_confirmed_background_nonfinal',
+                            pass_=True,external_requests=1))
+        sql(work,env,"UPDATE achbot_nowpayments_attempts SET last_checked_at=NOW()-INTERVAL 120 SECOND WHERE order_hash='wallet-init'")
+        final=run_php(work,env,stage,dict(route='reconcile',get={},
+            mock_invoice='owned-new-invoice',
+            nowpayment_payment_id='np-pmt-wallet-init',
+            nowpayment_order_id='wallet-init',
+            nowpayment_status='finished',
+            nowpayment_price=1,nowpayment_pay_amount=1,nowpayment_actual=1))
+        if int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())!=wallet_start+100000:
+            raise RuntimeError('Finished IPN+Cron did not autonomously credit existing wallet path')
+        if sql(work,env,"SELECT state FROM pays WHERE hash_id='wallet-init'").strip()!='paid':
+            raise RuntimeError('Finished Cron did not mark exact order paid')
+        confirmed_in_browser=run_php(work,env,stage,dict(route='return',
+            get={'nowpayment':'','hash_id':'wallet-init'}))
+        if confirmed_in_browser['network_calls'] or 'ثبت شده' not in confirmed_in_browser['form']:
+            raise RuntimeError('Post-settlement browser return did not show read-only success')
+        records.append(dict(case='nowpayments_browser_only_readonly_paid_status',
+                            pass_=True,external_requests=0))
+        if sql(work,env,"SELECT stage FROM achbot_nowpayments_attempts WHERE order_hash='wallet-init'").strip()!='done':
+            raise RuntimeError('Cron did not persist completed gateway attempt')
+        if not any(x['name']=='sendMessage' and len(x['args'])>3 and x['args'][3]==1001
+                   for x in final['events']):
+            raise RuntimeError('Finished gateway was not delivered to Telegram recipient')
+        records.append(dict(case='nowpayments_no_browser_return_final_telegram_credit',
+                            pass_=True,real_provider_requests=0))
+        after=snapshot(work,env)
+        run_php(work,env,stage,signed_ipn(dict(ipn,payment_status='finished')))
+        duplicate=run_php(work,env,stage,dict(route='reconcile',get={},
+            mock_invoice='owned-new-invoice',
+            nowpayment_payment_id='np-pmt-wallet-init',
+            nowpayment_order_id='wallet-init',
+            nowpayment_status='finished'))
+        verify_unchanged(work,env,after,'nowpay-finished-ipn-replay')
+        if duplicate['network_calls']:
+            raise RuntimeError('Finished replay attempted another API verification')
+        records.append(dict(case='nowpayments_finished_webhook_replay_no_double_credit',
+                            pass_=True,external_requests=0))
+        # A finished provider payment whose deposit is smaller than the
+        # promised quote is quarantined, never auto-reconciled as successful.
+        seed_payment(work,env,'np-underpaid','INCREASE_WALLET',0,0,'np-underpaid-invoice')
+        sql(work,env,"INSERT INTO achbot_nowpayments_attempts (pay_row_id,order_hash,invoice_id,payment_id,invoice_url,quote_usd) "
+            "SELECT id,hash_id,'np-underpaid-invoice','np-underpaid-pmt','https://nowpayments.io/pay/np-underpaid',1 FROM pays WHERE hash_id='np-underpaid'")
+        wallet_prior=int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())
+        review=run_php(work,env,stage,dict(route='reconcile',get={},
+            mock_invoice='np-underpaid-invoice',
+            nowpayment_payment_id='np-underpaid-pmt',
+            nowpayment_order_id='np-underpaid',
+            nowpayment_status='finished',
+            nowpayment_price=1,nowpayment_pay_amount=1,nowpayment_actual=0.5))
+        if int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())!=wallet_prior:
+            raise RuntimeError('Underpaid crypto gateway credited wallet')
+        if sql(work,env,"SELECT stage FROM achbot_nowpayments_attempts WHERE order_hash='np-underpaid'").strip()!='review':
+            raise RuntimeError('Underpaid gateway did not enter reconciliation queue')
+        records.append(dict(case='nowpayments_underpayment_quarantined',
+                            pass_=True,external_requests=1))
         # RED regression: historical NextPay cancellation used hash_id=trans_id
         # even though the callback resolves the invoice through pays.payid.
         res=run_php(work,env,stage,dict(route='return',
@@ -646,7 +819,77 @@ def main():
                                 original_schema_payment_insert=True,external_requests=0))
         finally:
             purchase.block=old
-    report={'complete':True,'cases':len(records),'schema_tables':23,
+
+        # Exercise the real public pay/back.php IPN HTTP entrypoint on an
+        # owned loopback PHP server; production baseInfo and webhooks are not
+        # loaded, and the only DB is the disposable Unix-socket MariaDB.
+        import socket, time, urllib.request, urllib.error
+        seed_payment(work,env,'np-http-signed','INCREASE_WALLET',0,0,'np-http-invoice')
+        sql(work,env,"INSERT INTO achbot_nowpayments_attempts "
+            "(pay_row_id,order_hash,invoice_id,invoice_url,quote_usd) "
+            "SELECT id,hash_id,'np-http-invoice','https://nowpayments.io/pay/np-http',1 "
+            "FROM pays WHERE hash_id='np-http-signed'")
+        (stage/'baseInfo.php').write_text(
+            "<?php\n$dbUserName='root';\n$dbPassword='';\n"
+            "$dbName='"+DB+"';\n$nowpaymentsIpnSecret='LOCAL-IPN-SECRET';\n")
+        with socket.socket() as port_socket:
+            port_socket.bind(('127.0.0.1',0))
+            port=port_socket.getsockname()[1]
+        cmd=['php','-n','-d','extension=mysqlnd','-d','extension=mysqli',
+             '-d','extension=curl','-d','mysqli.default_socket='+str(work/'mysql.sock'),
+             '-d','allow_url_fopen=0','-S','127.0.0.1:'+str(port),'-t',str(stage)]
+        srv=subprocess.Popen(cmd,env=env,cwd=stage,
+                             stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,
+                             stderr=subprocess.DEVNULL)
+        try:
+            url=f'http://127.0.0.1:{port}/pay/back.php?nowpayment_ipn=1'
+            for attempt in range(25):
+                try:
+                    urllib.request.urlopen(url,timeout=1)
+                except urllib.error.HTTPError as ready:
+                    if ready.code==405:break
+                except (OSError,TimeoutError):
+                    pass
+                time.sleep(0.10)
+            else:
+                raise RuntimeError('Owned PHP IPN loopback server not ready')
+            posted={
+                'payment_id':'np-http-payment','invoice_id':'np-http-invoice',
+                'order_id':'np-http-signed','payment_status':'confirmed',
+                'price_amount':1,'price_currency':'usd',
+                'pay_amount':1,'actually_paid':1,'pay_currency':'usdttrc20'
+            }
+            body=json.dumps(posted,sort_keys=True,separators=(',',':')).encode('utf-8')
+            mac=hmac.new(b'LOCAL-IPN-SECRET',body,hashlib.sha512).hexdigest()
+            def post(sig):
+                request=urllib.request.Request(url,data=body,method='POST',
+                    headers={'Content-Type':'application/json','x-nowpayments-sig':sig})
+                try:
+                    with urllib.request.urlopen(request,timeout=4) as response:
+                        return response.status,response.read()
+                except urllib.error.HTTPError as error:
+                    return error.code,error.read()
+            refused,_=post('0'*128)
+            if refused!=401:
+                raise RuntimeError('Real HTTP entrypoint accepted wrong IPN HMAC: '+str(refused))
+            if sql(work,env,"SELECT payment_id FROM achbot_nowpayments_attempts "
+                   "WHERE order_hash='np-http-signed'").strip() not in ('NULL',''):
+                raise RuntimeError('Forged HTTP IPN modified invoice')
+            accepted,reply=post(mac)
+            if accepted!=200 or json.loads(reply).get('accepted') is not True:
+                raise RuntimeError('Real signed IPN HTTP rejected: '+repr((accepted,reply[:150])))
+            got=sql(work,env,"SELECT payment_id FROM achbot_nowpayments_attempts "
+                   "WHERE order_hash='np-http-signed'").strip()
+            if got!='np-http-payment':
+                raise RuntimeError('Real IPN HTTP path did not persist exact payment ID')
+            records.append(dict(case='nowpayments_real_loopback_http_ipn_minimal_bootstrap',
+                                pass_=True,real_provider_requests=0,external_requests=0))
+        finally:
+            srv.terminate()
+            try:srv.wait(timeout=5)
+            except subprocess.TimeoutExpired:srv.kill();srv.wait(timeout=3)
+    report={'complete':True,'cases':len(records),'schema_tables':23, 'current_schema_tables':24,
+       'additive_nowpayments_attempts_tested':True,
        'original_mariadb_socket_only':True,'real_provider_requests':0,
        'synthetic_payment_spy':True,'operator_finance_acceptance':False,
        'scenarios':records}
