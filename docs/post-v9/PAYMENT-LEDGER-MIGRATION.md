@@ -9,6 +9,8 @@
 
 NOWPayments signed-IPN/finished-only safeguards remain. NextPay and Zarinpal now create and bind records through the SAME shared table before/after external checkout issuance. Provider verification remains provider-specific. The original pays table remains the business-state authority. A new FK protects each provider-claimed pays row from deletion, and the existing seven quote-cleanup SQL paths now delete **only unclaimed** pending rows (empty/null payid), preserving already issued invoices when a customer starts another purchase. New provider IDs are stored case-sensitively so legitimate IDs differing only by case never collapse; creating shared tables fails rather than silently accepting mismatched preexisting table definitions. The schema is **not** a durable general exactly-once business-effect/outbox ledger, nor are manual/card/TRON, privileged debt or remote Marzban reconciliation completed by this change. Legacy pays.payid callback ambiguities remain fail-closed.
 
+Checkout initiation now probes BOTH shared tables before issuing any external checkout. An interrupted 003 creation thus fails closed rather than issuing a payable invoice with no child-evidence store. Table availability does not replace staged exact-DDL, index, backup, restore and private merchant acceptance.
+
 The original 23 tables, existing panel-group 001 migration, and historical V0–V9 contract remain unchanged. Fresh additive SQL is migrations/post-v9/003_payment_attempts.sql; no SQL is included in or executed by a runtime ZIP.
 
 ## Preflight: read-only schema checks

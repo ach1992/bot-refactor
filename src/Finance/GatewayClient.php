@@ -14,6 +14,25 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
  * durable payment/effect claims and external fulfillment need a later gate.
  */
 /**
+ * A partial 003 schema must not permit checkout issuance: a NOWPayments
+ * invoice without child-evidence persistence would strand paid customers.
+ * This is a basic availability probe, NOT approval of actual DDL/install.
+ */
+function achbotSharedPaymentTablesReady(mysqli $db): bool {
+    try {
+        foreach (['payment_attempts','payment_transactions'] as $table) {
+            // Names are selected from a fixed internal allowlist only.
+            $probe=$db->query('SELECT id FROM '.$table.' LIMIT 0');
+            if (!($probe instanceof mysqli_result)) return false;
+            $probe->free();
+        }
+        return true;
+    } catch (Throwable $ignored) {
+        return false;
+    }
+}
+
+/**
  * Legacy pays.payid has no provider dimension or uniqueness constraint.
  * New provider-scoped attempts MAY reuse an ID held by a different NEW
  * provider, but must fail closed if an older unscoped row has that ID.

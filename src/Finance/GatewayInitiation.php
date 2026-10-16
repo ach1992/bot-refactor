@@ -12,7 +12,8 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
  * only an operator with independent provider evidence may release it.
  */
 function achbotReserveCheckoutProvider(mysqli $db, int $orderId, string $provider): ?string {
-    if (!in_array($provider, ['nextpay','zarinpal'], true) || $orderId <= 0) return null;
+    if (!in_array($provider, ['nextpay','zarinpal'], true) || $orderId <= 0 ||
+        !achbotSharedPaymentTablesReady($db)) return null;
     $marker = 'achbot_' . $provider . '_creating_' . $orderId;
     try {
         $db->begin_transaction();
@@ -242,8 +243,7 @@ if(mysqli_num_rows($payInfo)==0){
         // The additive attempt table is required for safe invoice continuity.
         // Old payments with an invoice ID but no attempt are not reissued
         // automatically: creating a second provider invoice may double charge.
-        $exists = $connection->query("SHOW TABLES LIKE 'payment_attempts'");
-        if (!$exists || $exists->num_rows !== 1) {
+        if (!achbotSharedPaymentTablesReady($connection)) {
             showForm("پیکربندی پیگیری امن پرداخت هنوز تکمیل نشده است.");
             exit;
         }
@@ -495,7 +495,9 @@ if(mysqli_num_rows($payInfo)==0){
     elseif(isset($_GET['zarinpal'])){
         $marker=achbotReserveCheckoutProvider($connection,(int)$orderId,'zarinpal');
         if ($marker === null) {
-            showForm("یک درخواست پرداخت برای این سفارش قبلاً صادر شده است؛ تغییر درگاه نیازمند بررسی است.");
+            showForm(achbotSharedPaymentTablesReady($connection)
+                ? "یک درخواست پرداخت برای این سفارش قبلاً صادر شده است؛ تغییر درگاه نیازمند بررسی است."
+                : "پیکربندی پیگیری امن پرداخت هنوز تکمیل نشده است.");
             exit;
         }
         $CallbackURL = $botUrl . "pay/back.php?zarinpal&hash_id=" . urlencode($hash_id);
@@ -532,7 +534,9 @@ if(mysqli_num_rows($payInfo)==0){
     elseif(isset($_GET['nextpay'])){
         $marker=achbotReserveCheckoutProvider($connection,(int)$orderId,'nextpay');
         if ($marker === null) {
-            showForm("یک درخواست پرداخت برای این سفارش قبلاً صادر شده است؛ تغییر درگاه نیازمند بررسی است.");
+            showForm(achbotSharedPaymentTablesReady($connection)
+                ? "یک درخواست پرداخت برای این سفارش قبلاً صادر شده است؛ تغییر درگاه نیازمند بررسی است."
+                : "پیکربندی پیگیری امن پرداخت هنوز تکمیل نشده است.");
             exit;
         }
         $Description = $type;

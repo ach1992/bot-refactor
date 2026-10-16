@@ -2083,6 +2083,31 @@ def main():
             raise RuntimeError('Claimed pays row deleted despite attempt FK')
         records.append(dict(case='database_fk_prevents_claim_orphan',
                             pass_=True,external_requests=0))
+
+        # An interrupted/mismatched 003 migration can leave payment_attempts
+        # present while payment_transactions is absent. NEVER issue a new
+        # checkout that could receive funds but could not persist IPN evidence.
+        # This destructive DDL is limited to our disposable fixture database.
+        sql(work,env,'DROP TABLE payment_transactions')
+        for provider in ('nowpayment','nextpay','zarinpal'):
+            name='partial-schema-'+provider
+            seed_payment(work,env,name,'INCREASE_WALLET',0,0,'unused')
+            sql(work,env,f"UPDATE pays SET payid=NULL,price=100000 "
+                         f"WHERE hash_id='{name}'")
+            before=snapshot(work,env)
+            blocked=run_php(work,env,stage,dict(route='initiate',
+                get={provider:'','hash_id':name}))
+            verify_unchanged(work,env,before,'partial_schema_'+provider)
+            attempt_count=sql(work,env,f"SELECT COUNT(*) FROM payment_attempts "
+                f"WHERE order_hash='{name}'").strip()
+            token=sql(work,env,f"SELECT IFNULL(payid,'') FROM pays "
+                f"WHERE hash_id='{name}'").strip()
+            if blocked['network_calls'] or not blocked['form'] or attempt_count!='0' or token:
+                raise RuntimeError('Incomplete shared schema issued '+provider+
+                    ' invoice or reserved without evidence table: '+
+                    repr((attempt_count,token,blocked['network_calls'])))
+            records.append(dict(case=provider+'_incomplete_shared_schema_fails_before_issue',
+                                pass_=True,external_requests=0))
     report={'complete':True,'cases':len(records),'schema_tables':23, 'current_schema_tables':25,
        'shared_payment_attempt_ledger_tested':True,
        'original_mariadb_socket_only':True,'real_provider_requests':0,
