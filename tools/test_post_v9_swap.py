@@ -12,6 +12,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 import v9_contract
+import package_post_v9 as package
 
 ROOT=Path(__file__).resolve().parents[1]
 BASE='7eb077fd8e6d0a303421626d1500f69e295a6664'
@@ -34,14 +35,18 @@ def main():
     tree=subprocess.check_output(['git','-C',str(ROOT),'rev-parse',BASE+'^{tree}'],text=True).strip()
     if tree!=BASE_TREE:
         raise RuntimeError('Historic V9 rollback reference drift')
-    names=v9_contract.members()
-    if len(names)!=92 or len(names)!=len(set(names)):
-        raise RuntimeError('Original V9 runtime source inventory drift')
+    historical_names=v9_contract.members()
+    names=package.members()
+    if (len(historical_names)!=92 or len(names)!=93
+            or names[:92]!=historical_names
+            or names[92:]!=["settings/cronRunner.php"]
+            or len(names)!=len(set(names))):
+        raise RuntimeError('V9 or current post-V9 runtime source inventory drift')
     if (ROOT/'baseInfo.php').exists():
         raise RuntimeError('Do not use a checkout containing private deployment state')
-    original={name:historical(name) for name in names}
+    original={name:historical(name) for name in historical_names}
     candidate={name:(ROOT/name).read_bytes() for name in names}
-    if all(candidate[n]==original[n] for n in names):
+    if len(candidate)==len(original) and all(candidate[n]==original[n] for n in original):
         raise RuntimeError('This new post-V9 candidate unexpectedly has no source delta')
     schema=(ROOT/'database/legacy-schema.sql').read_bytes()
     if schema!=historical('database/legacy-schema.sql'):
@@ -58,11 +63,17 @@ def main():
             'baseInfo.php','private-state.json','database/legacy-schema.sql')}
         for label,source in [('historical-v9',original),('post-v9',candidate),
                              ('rollback-v9',original),('reinstall-post-v9',candidate)]:
-            for name in names:
+            # A current-only file must not survive a true historical rollback.
+            # These are OWNED DISPOSABLE paths, never a production file deletion.
+            for extra in set(names)-set(source):
+                path=app/extra
+                if path.exists():
+                    path.unlink()
+            for name in source:
                 path=app/name
                 path.parent.mkdir(parents=True,exist_ok=True)
                 path.write_bytes(source[name])
-            for name in names:
+            for name in source:
                 if (app/name).read_bytes()!=source[name]:
                     raise RuntimeError('Source overlay member wrong: '+label+':'+name)
             for name,expected in private.items():
@@ -71,17 +82,18 @@ def main():
             scanned=[
                 p.relative_to(app).as_posix() for p in app.rglob('*') if p.is_file()
             ]
-            if sorted(scanned)!=sorted(names+list(private)):
+            if sorted(scanned)!=sorted(list(source)+list(private)):
                 raise RuntimeError('Source swap injected/deleted unrelated files')
             phases.append({'phase':label,'members':len(source),
-                'source_merkle_sha256':digest(''.join(digest(source[n]) for n in names).encode()),
+                'source_merkle_sha256':digest(''.join(digest(source[n]) for n in source).encode()),
                 'private_state_unchanged':True})
     if phases[0]['source_merkle_sha256']!=phases[2]['source_merkle_sha256']:
         raise RuntimeError('V9 rollback byte identity not preserved')
     if phases[1]['source_merkle_sha256']!=phases[3]['source_merkle_sha256']:
         raise RuntimeError('Post-V9 reinstall byte identity not preserved')
     report={'complete':True,'pinned_v9':BASE,'phase_count':len(phases),
-            'runtime_members':92,'source_roll_forward_and_back_byte_identical':True,
+            'runtime_members':len(candidate),'historical_runtime_members':len(original),
+            'source_roll_forward_and_back_byte_identical':True,
             'unchanged_original_sql_ddl':True,'synthetic_private_files_untouched':True,
             'real_sql_migration_or_db_restore_tested':False,'real_provider_or_bot_touched':False,
             'phases':phases}

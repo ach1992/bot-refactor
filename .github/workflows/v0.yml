@@ -108,7 +108,7 @@ jobs:
           printf '## AChBot post-V9 Marzban-only acceptance\n\n' >> "$GITHUB_STEP_SUMMARY"
           printf 'New candidate HEAD: `%s`\n\n' "$(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
           printf 'New candidate tree: `%s`\n\n' "$(git rev-parse HEAD^{tree})" >> "$GITHUB_STEP_SUMMARY"
-          printf 'Current 92-member source uses the 23 original tables PLUS a previously gated nullable server_info.panel_group_id column AND two new provider-shared attempt/evidence tables. CI verifies the fresh shared 003 and historical RC4 import only on disposable MariaDB. Frozen historical V9 source/schema exercised independently at pinned commit 7eb077fd. Source ZIP does NOT apply SQL; separately shipped migrations require independent backup, Owner approval and operator proof. No financial/production deployment approval.\n\n' >> "$GITHUB_STEP_SUMMARY"
+          printf 'Current 93-member source (including optional CLI Cron runner) uses the 23 original tables PLUS a previously gated nullable server_info.panel_group_id column AND two new provider-shared attempt/evidence tables. CI verifies the fresh shared 003 and historical RC4 import only on disposable MariaDB. Frozen historical V9 source/schema exercised independently at pinned commit 7eb077fd. Source ZIP does NOT apply SQL; separately shipped migrations require independent backup, Owner approval and operator proof. No financial/production deployment approval.\n\n' >> "$GITHUB_STEP_SUMMARY"
           printf '```json\n' >> "$GITHUB_STEP_SUMMARY"
           cat "$RUNNER_TEMP/post-v9-php84.json" >> "$GITHUB_STEP_SUMMARY"
           printf '\n```\n' >> "$GITHUB_STEP_SUMMARY"

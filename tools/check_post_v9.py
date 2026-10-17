@@ -13,6 +13,7 @@ import tempfile
 from pathlib import Path
 
 import v9_contract as historical
+import package_post_v9 as package
 import test_post_v9_customer_errors as customer_errors
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -37,8 +38,8 @@ def source_checks():
     for field in ("database/legacy-schema.sql", "baseInfo.example.php"):
         if (ROOT / field).read_bytes() != cmd("show", V9+":"+field):
             raise RuntimeError("Changed historical schema/private-template: " + field)
-    files=historical.members()
-    if len(files)!=92 or len(set(files))!=len(files):
+    files=package.members()
+    if len(files)!=93 or len(set(files))!=len(files):
         raise RuntimeError("Source-only runtime file inventory changed")
     if (ROOT / "baseInfo.php").exists() or "baseInfo.php" in files:
         raise RuntimeError("Private runtime config surfaced in candidate")
@@ -105,6 +106,17 @@ def main():
     result=source_checks()
     audience=customer_errors.verify(ROOT)
     with tempfile.TemporaryDirectory(prefix="achbot-post-v9-acceptance-") as tmp:
+        cron_path=Path(tmp)/"post-v9-cron-runner.json"
+        subprocess.run(["python3",str(ROOT/"tools/test_post_v9_cron_runner.py"),
+                        "--report",str(cron_path)],
+                       cwd=ROOT,check=True,timeout=65,capture_output=True)
+        cron=json.loads(cron_path.read_text())
+        if not (cron.get("complete") and cron.get("cases")>=12
+                and cron.get("actual_current_runner_executed")
+                and cron.get("isolated_child_php_processes")
+                and cron.get("actual_cron_or_bot_job_executed") is False
+                and cron.get("production_database_or_service_modified") is False):
+            raise RuntimeError("Optional CLI Cron coordinator native execution assurance incomplete")
         native=Path(tmp)/"marzban-native.json"
         subprocess.run(["python3",str(ROOT/"tools/test_post_v9_marzban.py"),
                         "--run-disposable","--report",str(native)],
@@ -368,7 +380,8 @@ def main():
                        cwd=ROOT,check=True,timeout=60,capture_output=True)
         swap=json.loads(overlay_report.read_text())
         if not (swap.get("complete") and swap.get("phase_count")==4
-                and swap.get("runtime_members")==92
+                and swap.get("runtime_members")==93
+                and swap.get("historical_runtime_members")==92
                 and swap.get("source_roll_forward_and_back_byte_identical")
                 and swap.get("unchanged_original_sql_ddl")
                 and swap.get("synthetic_private_files_untouched")):
@@ -385,6 +398,7 @@ def main():
                     "financial_native_route_guards":finance,
                     "shared_payment_ledger_rc4_import":migration,
                      "agency_state_regression":agency,
+                     "optional_cron_runner":cron,
                     "marzban_logical_transfer":logical,
                     "historical_suite_executed_by_this_script":False,
                     "historical_suite_requires_separate_pinned_ci_execution":True,
@@ -408,6 +422,7 @@ def main():
                       "financial_native_route_cases":finance["cases"],
                       "historical_rc4_payment_import_verified":migration["preserved_rc4_rows_and_ids"],
                        "agency_state_cases":agency["cases"],
+                       "optional_cron_runner_cases":cron["cases"],
                       "marzban_logical_transfer_cases":logical["cases"],
                       "current_php_version":subprocess.check_output(["php","-r","echo PHP_VERSION_ID;"]).decode()}))
 

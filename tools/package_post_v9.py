@@ -58,10 +58,15 @@ def committed_zip_timestamp(head: str) -> tuple[int, int, int, int, int, int]:
     return zip_timestamp_utc(epoch)
 
 
+NEW_RUNTIME_MEMBERS = ("settings/cronRunner.php",)
+
 def members() -> list[str]:
-    paths = historical.members()
-    if len(paths)!=92 or len(set(paths))!=92:
+    original = historical.members()
+    if len(original)!=92 or len(set(original))!=92:
         raise RuntimeError("Historical source file-membership drift")
+    paths = [*original, *NEW_RUNTIME_MEMBERS]
+    if len(paths)!=93 or len(set(paths))!=93:
+        raise RuntimeError("Post-V9 source inventory drift")
     for path in paths:
         if path=="baseInfo.php" or not (ROOT/path).is_file() or (ROOT/path).is_symlink():
             raise RuntimeError("Illegal/missing runtime member: "+path)

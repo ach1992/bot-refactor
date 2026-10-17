@@ -30,6 +30,14 @@ Use the [post-V9 operator acceptance checklist](docs/post-v9/MARZBAN-OPERATOR-AC
 **Finance source and migration status:** the immutable published **v0.10.0-rc.4** included the historical NOWPayments-only migration 002. [Merged PR #44](https://github.com/ach1992/bot-refactor/pull/44) supersedes that design in the current source with unprefixed shared `payment_attempts` and `payment_transactions` tables for NOWPayments, NextPay and Zarinpal. Consult [GitHub Releases](https://github.com/ach1992/bot-refactor/releases) for the exact source-only package: merging or publishing does **not** migrate any database. The new migration is [003](migrations/post-v9/003_payment_attempts.sql) and requires independent backup/restore proof, isolated rehearsal and separate Owner authorization for the real target. **Never run RC4 migration 002 merely to prepare 003.** If RC4 tables were already applied, follow the separately controlled [non-destructive import route](docs/post-v9/PAYMENT-LEDGER-MIGRATION.md); do not delete old rows. Private NOWPayments IPN signing/payout policy, actual Cron reachability, operator acceptance and live installation remain separate gates.
 
 
+## Optional single-entry Cron runner (not activated on installed bots)
+
+The source provides **`settings/cronRunner.php`** as a CLI-only coordinator for the existing five scheduled scripts, executed sequentially in their current order and **as separate PHP processes**. It does not change their individual filenames, logic, SQL, Telegram or payment effects. It preserves the inherited working directory and continues to the remaining jobs if one fails, returning a failed exit status for the operator log.
+
+**Do not add it alongside the five existing aaPanel commands** or they will execute twice. Switching later requires a separately authorized operator change that **replaces** those five commands with a *single* `php /absolute/bot/path/settings/cronRunner.php` command, preserving the current once-per-minute schedule, PHP interpreter, aaPanel flock and external Cron logging. Release source or CI tests do **not** activate the runner or certify live Cron/payment side effects. No DB/schema migration is associated with this optional source addition.
+
+Run its harmless native synthetic regression independently using `python3 tools/test_post_v9_cron_runner.py`; it runs disposable fake child PHP workers and an owned loopback HTTP denial test, never the real five scripts.
+
 ## Development and tests
 
 The current Marzban-only suite uses disposable MariaDB instances and loopback fake providers, not live customer/payment services:
