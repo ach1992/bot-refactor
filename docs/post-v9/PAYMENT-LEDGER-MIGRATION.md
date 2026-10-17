@@ -1,6 +1,6 @@
 # Shared payment ledger — design, migration and safety gates
 
-**Owner decision (2026-10-17):** Do not create separate tables for every gateway; use unprefixed, clear domain names. This candidate belongs in AChBot under Issue #26. It supersedes the NOWPayments-only SQL shipped in the **immutable v0.10.0-rc.4**, but has not yet been merged, released, migrated, installed or production-certified.
+**Owner decision (2026-10-17):** Do not create separate tables for every gateway; use unprefixed, clear domain names. [PR #44](https://github.com/ach1992/bot-refactor/pull/44) integrated the shared-ledger source into `main` under independent approval and it supersedes the NOWPayments-only SQL shipped in the **immutable v0.10.0-rc.4**. Refer to the specific [GitHub release](https://github.com/ach1992/bot-refactor/releases) for artifact identity. This source change has **not** been applied to or verified on a real database, installed bot or merchant account; source publication is never authorization for production migration or live settlement.
 
 ## Shared storage
 
