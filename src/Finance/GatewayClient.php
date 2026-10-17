@@ -154,31 +154,43 @@ function achbotNpMinimumPayout(string $quoteUsd, string $rate): ?string {
 }
 
 /**
- * Server-verified fixed-price funds are insufficient on status alone.
- * An operator-approved payout policy is captured at invoice issuance, and
- * the ACTUAL net merchant outcome must cover that immutable threshold in
- * exactly the same crypto asset/network; otherwise the case stays in review.
+ * 'finished' alone is not fixed-price payment proof. Always check the
+ * immutable invoice quote, complete incoming deposit, and positive actual
+ * merchant payout. Default invoices accept normal provider payout fees;
+ * invoices issued with an explicit NET floor retain that stricter policy.
  */
 function achbotNpValidFinalAmount(array $attempt, array $response): bool {
-    $expectedCurrency=strtolower((string)($attempt['settlement_currency']??''));
-    if ($expectedCurrency==='' ||
-        (string)($attempt['provider']??'')!=='nowpayments' ||
+    $expectedCurrency=$attempt['settlement_currency']??null;
+    $minimumOutcome=$attempt['minimum_settlement_amount']??null;
+    $outcomeCurrency=strtolower((string)($response['outcome_currency']??''));
+    $payCurrency=strtolower((string)($response['pay_currency']??''));
+    if ((string)($attempt['provider']??'')!=='nowpayments' ||
         (string)($attempt['quote_currency']??'')!=='usd' ||
         strtolower((string)($response['price_currency']??''))!=='usd' ||
-        strtolower((string)($response['outcome_currency']??''))!==$expectedCurrency ||
-        !preg_match('/^[a-z0-9]{2,32}$/D', $expectedCurrency) ||
         !isset($response['price_amount'],$response['pay_amount'],
                $response['actually_paid'],$response['pay_currency'],
-               $response['outcome_amount']) ||
-        !preg_match('/^[a-z0-9]{2,32}$/Di',(string)$response['pay_currency']))
-        return false;
-    if (!achbotNpDecimalAtLeast($attempt['minimum_settlement_amount']??null,'0.000001') ||
-        !achbotNpDecimalAtLeast($response['outcome_amount'],$attempt['minimum_settlement_amount']) ||
+               $response['outcome_amount'],$response['outcome_currency']) ||
+        !preg_match('/^[a-z0-9]{2,32}$/D',$outcomeCurrency) ||
+        !preg_match('/^[a-z0-9]{2,32}$/D',$payCurrency) ||
+        !achbotNpDecimalAtLeast($response['outcome_amount'],'0.000000000000000001') ||
         !achbotNpDecimalAtLeast($response['actually_paid'],$response['pay_amount']) ||
         !achbotNpDecimalAtLeast($response['pay_amount'],'0.000000000000000001'))
         return false;
+    if ($expectedCurrency === null) {
+        // A zero floor is ONLY valid for a deliberately policy-free invoice.
+        // Incomplete or nonzero-floor policy snapshots may not downgrade.
+        if ($minimumOutcome === null ||
+            !achbotNpDecimalAtLeast('0',$minimumOutcome)) return false;
+    } else {
+        $strictCurrency=strtolower((string)$expectedCurrency);
+        if (!preg_match('/^[a-z0-9]{2,32}$/D',$strictCurrency) ||
+            $strictCurrency!==$outcomeCurrency ||
+            !achbotNpDecimalAtLeast($minimumOutcome,'0.000001') ||
+            !achbotNpDecimalAtLeast($response['outcome_amount'],$minimumOutcome))
+            return false;
+    }
     $quote = (string)($attempt['quote_amount']??'');
-    if (!preg_match('/^\\d{1,12}\\.\\d{2}(?:0{0,6})?$/D',$quote) ||
+    if (!preg_match('/^\d{1,12}\.\d{2}(?:0{0,6})?$/D',$quote) ||
         !achbotNpDecimalAtLeast($response['price_amount'],$quote) ||
         !achbotNpDecimalAtLeast($quote,$response['price_amount']))
         return false;

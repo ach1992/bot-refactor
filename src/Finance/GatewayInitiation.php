@@ -318,19 +318,24 @@ if(mysqli_num_rows($payInfo)==0){
             showForm("مبلغ فاکتور معتبر نیست.");
             exit;
         }
-        // Payout currency and minimum NET merchant amount are an explicit
-        // merchant risk/pricing decision. Without a configured asset-specific
-        // policy, do NOT accept a payment that cannot be safely fulfilled.
+        // Default merchant behavior accepts the provider's ordinary payout
+        // conversion/network fees, as the original hosted checkout did.
+        // An explicitly configured stricter NET payout floor is still honored
+        // and snapshotted per invoice; malformed explicit policy fails closed.
         $settlementPolicy = $nowpaymentsSettlementPolicy ?? null;
-        $payoutCurrency = is_array($settlementPolicy)
-            ? strtolower((string)($settlementPolicy['outcome_currency'] ?? '')) : '';
-        $payoutRate = is_array($settlementPolicy)
-            ? (string)($settlementPolicy['minimum_outcome_per_usd'] ?? '') : '';
-        $minimumOutcome = preg_match('/^[a-z0-9]{2,32}$/D',$payoutCurrency)
-            ? achbotNpMinimumPayout($quoteUsd,$payoutRate) : null;
-        if ($minimumOutcome === null) {
-            showForm("سیاست امن ارز و حداقل مبلغ تسویه پذیرنده هنوز تنظیم نشده است؛ فاکتور صادر نشد.");
-            exit;
+        $payoutCurrency = null;
+        $minimumOutcome = '0';
+        if ($settlementPolicy !== null) {
+            $payoutCurrency = is_array($settlementPolicy)
+                ? strtolower((string)($settlementPolicy['outcome_currency'] ?? '')) : '';
+            $payoutRate = is_array($settlementPolicy)
+                ? (string)($settlementPolicy['minimum_outcome_per_usd'] ?? '') : '';
+            $minimumOutcome = preg_match('/^[a-z0-9]{2,32}$/D',$payoutCurrency)
+                ? achbotNpMinimumPayout($quoteUsd,$payoutRate) : null;
+            if ($minimumOutcome === null) {
+                showForm("این روش پرداخت فعلاً در دسترس نیست؛ لطفاً روش دیگری را انتخاب کنید.");
+                exit;
+            }
         }
         $payload = [
             'price_amount' => (float)$quoteUsd,
