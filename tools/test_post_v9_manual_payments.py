@@ -679,6 +679,22 @@ def check():
         assert base('giftfixture','read','gift_card',keys={'giftCardUrl':'https://new.example.net'})['keys']==gift['keys']
         cases.append('gift_seller_must_be_explicit_https_and_stays_pinned')
 
+        # The shared editor/checkout guard admits <=350-byte HTTPS seller URLs
+        # while rejecting length overflow and embedded URL credentials.
+        prefix='https://example.org/'
+        valid_url=prefix+'x'*(350-len(prefix))
+        assert len(valid_url)==350
+        for name,url,eligible in (
+            ('giftlimit350',valid_url,True),
+            ('giftlimit351',valid_url+'x',False),
+            ('giftcredentials','https://username:password@example.org/gift',False),
+            ('giftempty','',False),
+        ):
+            seed(work,env,name)
+            value=base(name,'claim','gift_card',keys={'giftCardUrl':url})
+            assert bool(value) is eligible, (name,value)
+            cases.append(name+'_seller_validation')
+
         # F2: a direct cached wallet callback must honor an earlier manual claim.
         query(work,env,'UPDATE users SET wallet=1000000 WHERE userid=1001')
         for method in ('bank_transfer','gift_card','manual_usdt'):
