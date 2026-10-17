@@ -322,10 +322,15 @@ if(mysqli_num_rows($payInfo)==0){
         // conversion/network fees, as the original hosted checkout did.
         // An explicitly configured stricter NET payout floor is still honored
         // and snapshotted per invoice; malformed explicit policy fails closed.
-        $settlementPolicy = $nowpaymentsSettlementPolicy ?? null;
+        // A missing policy enables normal provider fees; an explicitly
+        // defined NULL is malformed and must NOT downgrade a strict choice.
+        $hasSettlementPolicy = array_key_exists(
+            'nowpaymentsSettlementPolicy', get_defined_vars());
+        $settlementPolicy = $hasSettlementPolicy
+            ? $nowpaymentsSettlementPolicy : null;
         $payoutCurrency = null;
         $minimumOutcome = '0';
-        if ($settlementPolicy !== null) {
+        if ($hasSettlementPolicy) {
             $payoutCurrency = is_array($settlementPolicy)
                 ? strtolower((string)($settlementPolicy['outcome_currency'] ?? '')) : '';
             $payoutRate = is_array($settlementPolicy)

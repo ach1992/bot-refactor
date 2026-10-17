@@ -275,6 +275,7 @@ def main():
             "nowpayments_no_payout_policy_issues_hosted_invoice",
             "nowpayments_explicit_floor_remains_enforced",
             "nowpayments_malformed_optional_floor_rejected_and_private",
+            "nowpayments_explicit_null_policy_fails_before_reservation",
             "nowpayments_default_zero_payout_needs_review",
             "nowpayments_default_bad_asset_needs_review",
             "nowpayments_default_underpaid_needs_review",

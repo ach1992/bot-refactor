@@ -1301,6 +1301,26 @@ def main():
             raise RuntimeError('Operator-only payout settings leaked into customer checkout error')
         records.append(dict(case='nowpayments_malformed_optional_floor_rejected_and_private',
                             pass_=True))
+        # Presence is not the same as non-null: explicitly configured NULL
+        # must fail BEFORE any durable invoice reservation or provider call.
+        seed_payment(work,env,'np-null-policy','INCREASE_WALLET',0,0,'null-policy')
+        sql(work,env,"UPDATE pays SET price=100000,payid=NULL WHERE hash_id='np-null-policy'")
+        before=snapshot(work,env)
+        invalid_null=run_php(work,env,stage,dict(route='initiate',
+            get={'nowpayment':'','hash_id':'np-null-policy'},
+            settlement_policy=None))
+        verify_unchanged(work,env,before,'explicit-null-policy')
+        if invalid_null['network_calls'] or sql(work,env,
+            "SELECT COUNT(*) FROM payment_attempts WHERE order_hash='np-null-policy'").strip()!='0' or sql(work,env,
+            "SELECT IFNULL(payid,'') FROM pays WHERE hash_id='np-null-policy'").strip():
+            raise RuntimeError('Explicit NULL policy created an invoice or checkout reservation')
+        if (not invalid_null['form'] or
+            'این روش پرداخت فعلاً در دسترس نیست' not in invalid_null['form'] or
+            'NOWPayments' in invalid_null['form'] or
+            'تسویه پذیرنده' in invalid_null['form']):
+            raise RuntimeError('Explicit NULL policy exposed configuration details')
+        records.append(dict(case='nowpayments_explicit_null_policy_fails_before_reservation',
+                            pass_=True,external_requests=0))
         # RED regression: historical NextPay cancellation used hash_id=trans_id
         # even though the callback resolves the invoice through pays.payid.
         res=run_php(work,env,stage,dict(route='return',
