@@ -111,7 +111,22 @@ def main():
                         "--report",str(cron_path)],
                        cwd=ROOT,check=True,timeout=65,capture_output=True)
         cron=json.loads(cron_path.read_text())
-        if not (cron.get("complete") and cron.get("cases")>=12
+        required_cron_cases = {
+            "per_installation_private_lock_created",
+            "overlapping_tick_skips_without_extra_jobs",
+            "different_installation_runs_while_first_locked",
+            "first_tick_finishes_full_batch_after_overlap",
+            "orphaned_worker_retains_lock_after_parent_kill",
+            "new_run_recovers_after_orphan_worker_exit",
+            "stale_lock_file_does_not_block_next_tick",
+            "unavailable_lock_directory_fails_closed",
+            "lock_directory_inside_webroot_fails_closed",
+            "symlink_lock_path_fails_closed",
+            "permissive_lock_file_fails_closed",
+            "unavailable_php_flock_fails_closed",
+        }
+        if not (cron.get("complete") and cron.get("cases")>=24
+                and required_cron_cases.issubset(cron.get("scenarios", []))
                 and cron.get("actual_current_runner_executed")
                 and cron.get("isolated_child_php_processes")
                 and cron.get("actual_cron_or_bot_job_executed") is False
