@@ -32,6 +32,14 @@ def stage_source(stage:Path,current:bool)->dict:
             ['git','-C',str(ROOT),'show',HISTORY+':'+rel])
         dest.write_bytes(raw)
     fixture=(ROOT/'tests/v7/native-purchase.php').read_text()
+    # Stage the same explicitly configured, synthetic bank destination for
+    # immutable V9 and current source. Real manual checkout now requires it;
+    # do not modify the pinned historical fixture or waive event parity.
+    bank_anchor="$botUrl='http://localhost.invalid/';$botUsername='';$paymentKeys=[];"
+    assert fixture.count(bank_anchor)==1
+    fixture=fixture.replace(bank_anchor, "$botUrl='http://localhost.invalid/';"
+        "$botUsername='';$paymentKeys=['bankAccount'=>'fixture-bank-account',"
+        "'holderName'=>'fixture-bank-holder'];")
     needle='function getConnectionLink(...$args)'
     assert fixture.count(needle)==1
     fixture=fixture.replace(needle,"function achbotSupportsPanel($type) { return $type === 'marzban'; }\n"+needle)

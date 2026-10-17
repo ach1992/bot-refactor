@@ -128,11 +128,15 @@ def seed(work, env, case):
         pay_type = f"INCREASE_DAY_{order_id}_1"
     else:
         pay_type = "RENEW_ACCOUNT"
+    # Wallet checkout must be genuinely unclaimed; a foreign invoice or
+    # already-submitted manual receipt is now intentionally rejected before
+    # any provider call. Manual operator approvals exercise have_sent instead.
+    pay_state = 'pending' if case['audience'] == 'wallet' else 'have_sent'
     sql(work, env, f"""INSERT INTO pays
         (hash_id,payid,user_id,type,plan_id,server_id,order_id,
          volume,day,price,request_date,state)
-        VALUES ('privacyhash','private-invoice',1001,'{pay_type}',7,2,
-                {order_id},0,0,100,1700000000,'have_sent')""")
+        VALUES ('privacyhash','',1001,'{pay_type}',7,2,
+                {order_id},0,0,100,1700000000,'{pay_state}')""")
     return order_id
 
 

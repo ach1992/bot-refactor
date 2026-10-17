@@ -25,6 +25,12 @@ if(preg_match('/payWithTronWallet(.*)/',$data,$match)) {
     }
 
 
+    if ((int)$payInfo['user_id'] !== (int)$from_id ||
+        (string)$payInfo['state'] !== 'pending') {
+        alert("⛔️ این سفارش قابل پرداخت با روش جدید نیست؛ وضعیت آن را بررسی کنید.", true);
+        return;
+    }
+
     $fid = $payInfo['plan_id'];
     $type = $payInfo['type'];
     
@@ -80,15 +86,22 @@ if(preg_match('/payWithTronWallet(.*)/',$data,$match)) {
     
     delMessage();
     
-    $price = $payInfo['price'];
-    $priceInTrx = round($price / $botState['TRXRate'],2);
-    
-    $stmt = $connection->prepare("UPDATE `pays` SET `tron_price` = ? WHERE `hash_id` = ?");
-    $stmt->bind_param("ds", $priceInTrx, $match[1]);
-    $stmt->execute();
-    $stmt->close();
-    
-    sendMessage(str_replace(["AMOUNT", "TRON-WALLET"], [$priceInTrx, $paymentKeys['tronwallet']], $mainValues['pay_with_tron_wallet']), $cancelKey, "html");
+    $price = (int)$payInfo['price'];
+    $rate = (float)($botState['TRXRate'] ?? 0);
+    if ($rate <= 0 || !is_finite($rate) || $price <= 0) {
+        alert("⛔️ این روش پرداخت فعلاً قابل استفاده نیست؛ با پشتیبانی تماس بگیرید.", true);
+        return;
+    }
+    $priceInTrx = round($price / $rate, 2);
+    $claim = achbotTronClaim($connection, $payInfo, (int)$from_id,
+                            $priceInTrx, (string)($paymentKeys['tronwallet'] ?? ''));
+    if ($claim === null) {
+        alert("⛔️ این سفارش قبلاً با روش دیگری آغاز شده است؛ پرداخت مجدد انجام ندهید.", true);
+        return;
+    }
+    sendMessage(str_replace(["AMOUNT", "TRON-WALLET"], [$claim['quote'], $claim['wallet']],
+        $mainValues['pay_with_tron_wallet']), $cancelKey, "html");
+
     setUser($data);
 }
 if(preg_match('/^payWithTronWallet(.*)/',$userInfo['step'], $match) && $text != $buttonValues['cancel']){
@@ -102,25 +115,22 @@ if(preg_match('/^payWithTronWallet(.*)/',$userInfo['step'], $match) && $text != 
         $checkExist = $stmt->get_result();
         $stmt->close();
         
-        if($checkExist->num_rows == 0){
-            $stmt = $connection->prepare("SELECT * FROM pays WHERE hash_id = ? LIMIT 1");
-            $stmt->bind_param("s", $match[1]);
-            $stmt->execute();
-            $currentPayment = $stmt->get_result()->fetch_assoc();
-            $stmt->close();
-            if (!achbotSupportsPaymentSubject($connection, $currentPayment)) {
-                alert("⛔️ ارسال تراکنش برای این سرویس پشتیبانی نمی‌شود.", true);
+        if ($checkExist->num_rows == 0) {
+            $currentPayment = dbFetchPayByHash($connection, (string)$match[1]);
+            if (!$currentPayment || (int)$currentPayment['user_id'] !== (int)$from_id ||
+                !achbotSupportsPaymentSubject($connection, $currentPayment)) {
+                alert("⛔️ ثبت تراکنش این سفارش امکان‌پذیر نیست؛ برای بررسی با پشتیبانی تماس بگیرید.", true);
                 return;
             }
-
-            $stmt = $connection->prepare("UPDATE `pays` SET `payid` = ?, `state` = '0' WHERE `hash_id` = ?");
-            $stmt->bind_param("ss", $text, $match[1]);
-            $stmt->execute();
-            $stmt->close();
-            
+            if (!achbotTronSubmitHash($connection, (string)$match[1], (int)$from_id, $text)) {
+                sendMessage("⛔️ این سفارش با روش دیگری در جریان است یا شناسهٔ تراکنش قبلاً ثبت شده؛ برای بررسی با پشتیبانی تماس بگیرید.");
+                setUser();
+                return;
+            }
             sendMessage($mainValues['in_review_tax_id'], $removeKeyboard);
             setUser();
-            sendMessage($mainValues['reached_main_menu'],getMainKeys());
+            sendMessage($mainValues['reached_main_menu'], getMainKeys());
+
         }else sendMessage($mainValues['used_tax_id']);
     }
 

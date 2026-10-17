@@ -6,7 +6,7 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
 }
 
 if(($data == "agentOneBuy" || $data=='buySubscription' || $data == "agentMuchBuy") && ($botState['sellState']=="on" || ($from_id == $admin || $userInfo['isAdmin'] == true))){
-    if(($botState['cartToCartState'] ?? 'off') == "off" && ($botState['giftCardState'] ?? 'off') == "off" && ($botState['manualUsdtState'] ?? 'off') == "off" && ($botState['walletState'] ?? 'off') == "off"){
+    if(!achbotManualEnabled('bank_transfer') && !achbotManualEnabled('gift_card') && !achbotManualEnabled('manual_usdt') && ($botState['walletState'] ?? 'off') == "off"){
         alert($mainValues['selling_is_off']);
         exit();
     }

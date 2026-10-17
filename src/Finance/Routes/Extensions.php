@@ -10,7 +10,7 @@ if(preg_match('/increaseADay(.*)/', $data, $match)){
     $stmt->execute();
     $res = $stmt->get_result();
     $stmt->close();
-    
+
     $stmt = $connection->prepare("SELECT * FROM `orders_list` WHERE `id` = ?");
     $stmt->bind_param("i", $match[1]);
     $stmt->execute();
@@ -57,7 +57,7 @@ if(preg_match('/selectPlanDayIncrease(?<orderId>.+)_(?<dayId>.+)/',$data,$match)
     $res = $stmt->get_result()->fetch_assoc();
     $stmt->close();
     $planprice = $res['price'];
-    
+
     $stmt = $connection->prepare("SELECT * FROM `orders_list` WHERE `id` = ?");
     $stmt->bind_param("i", $match['orderId']);
     $stmt->execute();
@@ -69,7 +69,7 @@ if(preg_match('/selectPlanDayIncrease(?<orderId>.+)_(?<dayId>.+)/',$data,$match)
     }
 
     $agentBought = $orderInfo['agent_bought'];
-    
+
     if($agentBought == true){
         $discounts = json_decode($userInfo['discount_percent'],true);
         if($botState['agencyPlanDiscount']=="on") $discount = $discounts['plans'][$orderInfo['fileid']]?? $discounts['normal'];
@@ -77,7 +77,7 @@ if(preg_match('/selectPlanDayIncrease(?<orderId>.+)_(?<dayId>.+)/',$data,$match)
 
         $planprice -= floor($planprice * $discount / 100);
     }
-    
+
     
     $hash_id = RandomString();
     achbotRemoveUnclaimedPendingPayments($connection,$from_id,'INCREASE_DAY');
@@ -94,10 +94,10 @@ if(preg_match('/selectPlanDayIncrease(?<orderId>.+)_(?<dayId>.+)/',$data,$match)
     $stmt->execute();
     $stmt->close();
 
-    
+
     $keyboard = array();
-    if($botState['cartToCartState'] == "on") $keyboard[] = [['text' => $buttonValues['cart_to_cart'],  'callback_data' => "payIncreaseDayWithCartToCart$hash_id"]];
-    if(($botState['giftCardState'] ?? 'off') === 'on') $keyboard[] = [['text' => $buttonValues['gift_card'], 'callback_data' => "payIncreaseDayWithGiftCard$hash_id"]];
+    if(achbotManualEnabled('bank_transfer')) $keyboard[] = [['text' => $buttonValues['cart_to_cart'],  'callback_data' => "payIncreaseDayWithCartToCart$hash_id"]];
+    if(achbotManualEnabled('gift_card')) $keyboard[] = [['text' => $buttonValues['gift_card'], 'callback_data' => "payIncreaseDayWithGiftCard$hash_id"]];
     if (achbotManualEnabled('manual_usdt')) $keyboard[] = [['text' => $buttonValues['manual_usdt'], 'callback_data' => "payIncreaseDayWithManualUsdt$hash_id"]];
     if($botState['nowPaymentOther'] == "on") $keyboard[] = [['text' => $buttonValues['now_payment_gateway'],  'url' => $botUrl . "pay/?nowpayment&hash_id=" . $hash_id]];
     if($botState['zarinpal'] == "on") $keyboard[] = [['text' => $buttonValues['zarinpal_gateway'],  'url' => $botUrl . "pay/?zarinpal&hash_id=" . $hash_id]];
@@ -185,9 +185,9 @@ if (preg_match('/wait(?:IncreaseDay|IncreaseDayGift|IncreaseDayUsdt)Receipt(.*)/
         exit;
     }
 
-    if (!achbotManualBeginEvidence($connection, $receiptPay, $method, (int)$from_id)) {
-        setUser();
-        alert("⚠️ رسید این سفارش قبلاً ثبت شده یا در حال بررسی است.", true);
+    $deliveryToken = achbotManualBeginEvidence($connection, $receiptPay, $method, (int)$from_id, $fileid);
+    if ($deliveryToken === null) {
+        alert("⚠️ ثبت یا ارسال رسید در جریان است. همان تصویر را دوباره ارسال کنید؛ در صورت تداوم مشکل با پشتیبانی تماس بگیرید.", true);
         return;
     }
 
@@ -226,7 +226,7 @@ if (preg_match('/wait(?:IncreaseDay|IncreaseDayGift|IncreaseDayUsdt)Receipt(.*)/
     $price  = $payInfoRes['price'];
     $volume = $res['volume'];
 
-    sendWithStartButton(achbotManualAcknowledgement($receiptPay, $method), $buttonValues['start_bot'], $botUsername, 'mainMenu', 'HTML', (string)$receiptPay['hash_id']);
+
 
     $msg = str_replace(
         ['INCREASE', 'TYPE', "USER-ID", "USERNAME", "NAME", "PRICE", "REMARK"],
@@ -243,8 +243,14 @@ if (preg_match('/wait(?:IncreaseDay|IncreaseDayGift|IncreaseDayUsdt)Receipt(.*)/
         (int)$payInfoRes['user_id']
     );
 
-    sendReceiptToAdminsAndUpdatePay($connection, $fileid, achbotManualCaption($connection, $receiptPay, $msg), $adminKeyboard, $admin, $match[1]);
-    setUser();
+    if (sendReceiptToAdminsAndUpdatePay($connection, $fileid,
+        achbotManualCaption($connection, $receiptPay, $msg), $adminKeyboard, $admin, $match[1],
+        $deliveryToken)) {
+        setUser();
+        sendWithStartButton(achbotManualAcknowledgement($receiptPay, $method), $buttonValues['start_bot'], $botUsername, 'mainMenu', 'HTML', (string)$receiptPay['hash_id']);
+    } else {
+        sendMessage("📥 تصویر برای پیگیری ثبت شده اما تأیید ارسال به مدیر دریافت نشده است. لطفاً همان تصویر را دوباره بفرستید یا با پشتیبانی تماس بگیرید. پرداخت مجدد انجام ندهید.");
+    }
     exit;
 }
 
@@ -426,6 +432,14 @@ if(preg_match('/payIncreaseDayWithWallet(.*)/', $data, $match)){
         }
 
         $payParam = $payRes->fetch_assoc();
+        // Same guarded claim policy as purchase wallet callbacks, while
+        // this exact pays row is already locked in the current transaction.
+        if (!achbotWalletDirectAllowedLocked($connection, $payParam, (int)$from_id)) {
+            $connection->rollback();
+            alert("⛔️ این سفارش متعلق به شما نیست یا روش پرداخت دیگری برای آن ثبت شده است؛ دوباره پرداخت نکنید.", true);
+            return;
+        }
+
         if (!achbotSupportsPaymentSubject($connection, $payParam)) {
             $connection->rollback();
             alert("⛔️ افزایش اشتراک در حال حاضر امکان‌پذیر نیست. اگر پرداختی انجام داده‌اید، وضعیت آن را با پشتیبانی بررسی کنید.", true);
@@ -718,7 +732,7 @@ if (preg_match('/^increaseAVolume(.*)/', $data, $match)) {
         return;
     }
 
-    
+
     $expireDate = (int) $orderInfo['expire_date']; // تبدیل به عدد صحیح
     $currentDate = time();
 
@@ -733,12 +747,12 @@ if (preg_match('/^increaseAVolume(.*)/', $data, $match)) {
         alert("📆 اشتراک شما منقضی شده است. لطفاً آن را تمدید کنید تا بتوانید افزایش حجم دهید.");
         exit;
     }
-    
+
     $stmt = $connection->prepare("SELECT * FROM `increase_plan`");
     $stmt->execute();
     $res = $stmt->get_result();
     $stmt->close();
-    
+
     if ($res->num_rows == 0) {
         alert("در حال حاضر هیچ پلن حجمی وجود ندارد.");
         exit;
@@ -779,7 +793,7 @@ if(preg_match('/increaseVolumePlan(?<orderId>.+)_(?<volumeId>.+)/',$data,$match)
     $stmt->close();
     $planprice = $res['price'];
     $plangb = $res['volume'];
-    
+
     $stmt = $connection->prepare("SELECT * FROM `orders_list` WHERE `id` = ?");
     $stmt->bind_param("i", $match['orderId']);
     $stmt->execute();
@@ -802,7 +816,7 @@ if(preg_match('/increaseVolumePlan(?<orderId>.+)_(?<volumeId>.+)/',$data,$match)
 
     $hash_id = RandomString();
     achbotRemoveUnclaimedPendingPayments($connection,$from_id,'INCREASE_VOLUME');
-    
+
     $time = time();
     $plan_id = $orderInfo['fileid'];
 	$server_id = $orderInfo['server_id'];
@@ -814,15 +828,15 @@ if(preg_match('/increaseVolumePlan(?<orderId>.+)_(?<volumeId>.+)/',$data,$match)
 	$stmt->bind_param("sisiiiii", $hash_id, $from_id, $type, $plan_id, $server_id, $order_id, $planprice, $time);
 	$stmt->execute();
 	$stmt->close();
-    
+
     $keyboard = array();
-    
+
     if($planprice == 0) $planprice = ' رایگان';
     else $planprice = " " . number_format($planprice) . " تومان";
+
     
-    
-    if($botState['cartToCartState'] == "on") $keyboard[] = [['text' => $buttonValues['cart_to_cart'] . $planprice,  'callback_data' => "payIncreaseWithCartToCart$hash_id"]];
-    if(($botState['giftCardState'] ?? 'off') === 'on') $keyboard[] = [['text' => $buttonValues['gift_card'], 'callback_data' => "payIncreaseWithGiftCard$hash_id"]];
+    if(achbotManualEnabled('bank_transfer')) $keyboard[] = [['text' => $buttonValues['cart_to_cart'] . $planprice,  'callback_data' => "payIncreaseWithCartToCart$hash_id"]];
+    if(achbotManualEnabled('gift_card')) $keyboard[] = [['text' => $buttonValues['gift_card'], 'callback_data' => "payIncreaseWithGiftCard$hash_id"]];
     if (achbotManualEnabled('manual_usdt')) $keyboard[] = [['text' => $buttonValues['manual_usdt'], 'callback_data' => "payIncreaseWithManualUsdt$hash_id"]];
     if($botState['nowPaymentOther'] == "on") $keyboard[] = [['text' => $buttonValues['now_payment_gateway'],  'url' => $botUrl . "pay/?nowpayment&hash_id=" . $hash_id]];
     if($botState['zarinpal'] == "on") $keyboard[] = [['text' => $buttonValues['zarinpal_gateway'],  'url' => $botUrl . "pay/?zarinpal&hash_id=" . $hash_id]];
@@ -910,9 +924,9 @@ if (preg_match('/wait(?:IncreaseVolume|IncreaseVolumeGift|IncreaseVolumeUsdt)Rec
         exit;
     }
 
-    if (!achbotManualBeginEvidence($connection, $receiptPay, $method, (int)$from_id)) {
-        setUser();
-        alert("⚠️ رسید این سفارش قبلاً ثبت شده یا در حال بررسی است.", true);
+    $deliveryToken = achbotManualBeginEvidence($connection, $receiptPay, $method, (int)$from_id, $fileid);
+    if ($deliveryToken === null) {
+        alert("⚠️ ثبت یا ارسال رسید در جریان است. همان تصویر را دوباره ارسال کنید؛ در صورت تداوم مشکل با پشتیبانی تماس بگیرید.", true);
         return;
     }
 
@@ -951,7 +965,7 @@ if (preg_match('/wait(?:IncreaseVolume|IncreaseVolumeGift|IncreaseVolumeUsdt)Rec
     $price  = $payParam['price'];
     $volume = $res['volume'];
 
-    sendWithStartButton(achbotManualAcknowledgement($receiptPay, $method), $buttonValues['start_bot'], $botUsername, 'mainMenu', 'HTML', (string)$receiptPay['hash_id']);
+
 
     $msg = str_replace(
         ['INCREASE', 'TYPE', "USER-ID", "USERNAME", "NAME", "PRICE", "REMARK"],
@@ -968,8 +982,14 @@ if (preg_match('/wait(?:IncreaseVolume|IncreaseVolumeGift|IncreaseVolumeUsdt)Rec
         (int)$payParam['user_id']
     );
 
-    sendReceiptToAdminsAndUpdatePay($connection, $fileid, achbotManualCaption($connection, $receiptPay, $msg), $adminKeyboard, $admin, $match[1]);
-    setUser();
+    if (sendReceiptToAdminsAndUpdatePay($connection, $fileid,
+        achbotManualCaption($connection, $receiptPay, $msg), $adminKeyboard, $admin, $match[1],
+        $deliveryToken)) {
+        setUser();
+        sendWithStartButton(achbotManualAcknowledgement($receiptPay, $method), $buttonValues['start_bot'], $botUsername, 'mainMenu', 'HTML', (string)$receiptPay['hash_id']);
+    } else {
+        sendMessage("📥 تصویر برای پیگیری ثبت شده اما تأیید ارسال به مدیر دریافت نشده است. لطفاً همان تصویر را دوباره بفرستید یا با پشتیبانی تماس بگیرید. پرداخت مجدد انجام ندهید.");
+    }
     exit;
 }
 
@@ -1150,6 +1170,14 @@ if(preg_match('/payIncreaseWithWallet(.*)/', $data, $match)){
         }
 
         $payParam = $payRes->fetch_assoc();
+        // Same guarded claim policy as purchase wallet callbacks, while
+        // this exact pays row is already locked in the current transaction.
+        if (!achbotWalletDirectAllowedLocked($connection, $payParam, (int)$from_id)) {
+            $connection->rollback();
+            alert("⛔️ این سفارش متعلق به شما نیست یا روش پرداخت دیگری برای آن ثبت شده است؛ دوباره پرداخت نکنید.", true);
+            return;
+        }
+
         if (!achbotSupportsPaymentSubject($connection, $payParam)) {
             $connection->rollback();
             alert("⛔️ افزایش اشتراک در حال حاضر امکان‌پذیر نیست. اگر پرداختی انجام داده‌اید، وضعیت آن را با پشتیبانی بررسی کنید.", true);

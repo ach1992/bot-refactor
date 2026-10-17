@@ -33,6 +33,10 @@ $paymentKeys=$spec['keys']??[
 ];
 $USDTPrice='100000';$USDTPriceagent='110000';
 require_once $root.'/src/Finance/ReceiptHelpers.php';
+function achbotSupportsPaymentSubject(...$args) {return true;}
+function sendMessage(...$args) {return (object)['ok'=>true];}
+function editKeys(...$args) {}
+
 require $root.'/settings/values.php';
 $stmt=$connection->prepare('SELECT * FROM pays WHERE hash_id=? LIMIT 1');
 $stmt->bind_param('s',$hash);$stmt->execute();
@@ -42,9 +46,21 @@ $method=$spec['method']??'bank_transfer';$user=(int)($spec['user']??1001);
 $op=$spec['op']??'claim';
 if ($op==='claim') $value=achbotManualClaim($connection,$payInfo,$method,$user);
 elseif ($op==='allow') $value=achbotManualReceiptAllowed($connection,$payInfo,$method,$user);
-elseif ($op==='begin') $value=achbotManualBeginEvidence($connection,$payInfo,$method,$user);
+elseif ($op==='begin') $value=achbotManualBeginEvidence($connection,$payInfo,$method,$user,
+    (string)($spec['photo_id']??'fixture-photo-id'));
 elseif ($op==='approve') $value=achbotApproveManualWalletTopup(
     $connection,$hash,(int)($spec['actor']??9001));
+elseif ($op==='bank_auto_claim') $value=achbotAutoBankClaim($connection,$payInfo);
+elseif ($op==='tron_claim') $value=achbotTronClaim($connection,$payInfo,$user,
+    13.25, 'fixture-tron-wallet');
+elseif ($op==='tron_submit') $value=achbotTronSubmitHash($connection,$hash,$user,
+    (string)($spec['tx_id']??str_repeat('a',64)));
+elseif ($op==='wallet') {
+    $from_id=$user;$admin=9001;
+    function alert(...$args) {}
+    require_once $root.'/src/Finance/WalletSettlement.php';
+    $value=processWalletPayment($connection,$hash,static function(){return true;});
+}
 elseif ($op==='read') {
     $selected=achbotManualSelectedMethod($connection,$payInfo);
     $message=buildCartToCartInfoMessage($paymentKeys,$mainValues,
@@ -102,6 +118,7 @@ $paymentKeys=[
 ];
 require $root.'/settings/values.php';
 require $root.'/src/Finance/ReceiptHelpers.php';
+function achbotSupportsPaymentSubject(...$args){return true;}
 $GLOBALS['events']=[];
 register_shutdown_function(static function(){
     echo json_encode(['events'=>$GLOBALS['events'],'fatal'=>error_get_last()], JSON_THROW_ON_ERROR |
@@ -113,22 +130,39 @@ function setUser($value='none',$field='step'){$GLOBALS['events'][]=[
 function getMainKeys(){return '{}';}
 function alert(...$args){$GLOBALS['events'][]=['name'=>'alert','args'=>$args];}
 function sendMessage(...$args){$GLOBALS['events'][]=['name'=>'sendMessage','args'=>$args];return (object)['ok'=>true];}
-function sendPhoto(...$args){$GLOBALS['events'][]=['name'=>'sendPhoto','args'=>$args];
-    return (object)['ok'=>true,'result'=>(object)['message_id'=>222]];}
+function sendPhoto(...$args){
+    global $spec,$connection;
+    $GLOBALS['events'][]=['name'=>'sendPhoto','args'=>$args];
+    $mode=$spec['photo_mode']??'success';
+    if($mode==='throw')throw new RuntimeException('fixture_tel_transport_down');
+    if($mode==='terminal_change'){
+        $hash=preg_replace('/^wait.*Receipt/', '', (string)($spec['step']??''));
+        $stmt=$connection->prepare("UPDATE pays SET state='declined' WHERE hash_id=? AND state='pending'");
+        $stmt->bind_param('s',$hash);$stmt->execute();$stmt->close();
+    }
+    if($mode==='no_id' || $mode==='response_lost')
+        return (object)['ok'=>true,'result'=>(object)[]];
+    return (object)['ok'=>true,'result'=>(object)['message_id'=>222]];
+}
 function sendToAllAdmins(...$args){$GLOBALS['events'][]=['name'=>'sendToAllAdmins'];}
 function editKeys(...$args){$GLOBALS['events'][]=['name'=>'editKeys'];}
 if (($spec['route']??'wallet') === 'manual_admin') {
     require $root.'/src/Finance/Routes/ManualReceipts.php';
+} elseif (($spec['route']??'wallet') === 'extension') {
+    require $root.'/src/Finance/Routes/Extensions.php';
+} elseif (($spec['route']??'wallet') === 'renewal') {
+    require $root.'/src/Finance/Routes/RenewalCheckout.php';
 } else {
     require $root.'/src/Finance/Routes/WalletRecharge.php';
 }
 """
-def run_route(work,env,driver,data='',step='none',actor=1001,update=None,route='wallet'):
-    spec={'data':data,'step':step,'actor':actor,'route':route}
+def run_route(work,env,driver,data='',step='none',actor=1001,update=None,route='wallet',
+              photo_mode='success'):
+    spec={'data':data,'step':step,'actor':actor,'route':route,'photo_mode':photo_mode}
     if update is not None: spec['update']=update
     cmd=['php','-n','-d','extension=mysqlnd','-d','extension=mysqli',
-         '-d','allow_url_fopen=0','-d','display_errors=0',
-         '-d','log_errors=0','-d','open_basedir='+str(ROOT)+':'+str(work),
+         '-d','allow_url_fopen=0','-d','display_errors=1',
+         '-d','log_errors=1','-d','error_log=/dev/stderr','-d','open_basedir='+str(ROOT)+':'+str(work),
          '-d','disable_functions=exec,shell_exec,system,passthru,popen,proc_open,mail,dl',
          str(driver),str(ROOT),str(work/'mysql.sock'),DB,
          json.dumps(spec,ensure_ascii=False)]
@@ -144,15 +178,20 @@ def query(work,env,sql:str)->str:
     return native.sql(work,env,sql,DB).strip()
 
 def run_php(work,env,driver,hash_id,op,method='bank_transfer',user=1001,**more):
+    expect_deferred=bool(more.pop('expect_deferred',False))
     spec=dict(op=op,method=method,user=user,**more)
     cmd=['php','-n','-d','extension=mysqlnd','-d','extension=mysqli',
-         '-d','allow_url_fopen=0','-d','display_errors=0',
-         '-d','log_errors=0','-d','open_basedir='+str(ROOT)+':'+str(work),
+         '-d','allow_url_fopen=0','-d','display_errors=1',
+         '-d','log_errors=1','-d','error_log=/dev/stderr','-d','open_basedir='+str(ROOT)+':'+str(work),
          '-d','disable_functions=exec,shell_exec,system,passthru,popen,proc_open,mail,dl',
          str(driver),str(ROOT),str(work/'mysql.sock'),hash_id,
          json.dumps(spec,ensure_ascii=False),DB]
     p=subprocess.run(cmd,cwd=work,env=env,capture_output=True,text=True,timeout=20)
-    if p.returncode or p.stderr:
+    safe_deferred=(expect_deferred and p.stderr and all(
+        'achbot_bank_auto_' in line and 'pay_row_id=' in line and
+        'fixture' not in line and 'SQL' not in line
+        for line in p.stderr.splitlines()))
+    if p.returncode or (p.stderr and not safe_deferred):
         raise RuntimeError('isolated PHP method test failed: '+repr((p.returncode,p.stderr,p.stdout))[:1200])
     try: return json.loads(p.stdout)['result']
     except Exception as exc:raise RuntimeError('invalid manual driver: '+repr(p.stdout)) from exc
@@ -243,9 +282,9 @@ def check():
         assert query(work,env,"SELECT COUNT(*) FROM payment_attempts WHERE order_hash='crossfixture'")=='1'
         cases.append('one_attempt_no_cross_method_claim')
 
-        assert base('usdtfixture','begin','manual_usdt') is True
-        assert base('usdtfixture','begin','manual_usdt') is False
-        assert base('usdtfixture','allow','manual_usdt') is False
+        assert isinstance(base('usdtfixture','begin','manual_usdt'),str)
+        assert base('usdtfixture','begin','manual_usdt') is None
+        assert base('usdtfixture','allow','manual_usdt') is True
         assert query(work,env,"SELECT stage FROM payment_attempts WHERE order_hash='usdtfixture'")=='receiving'
         cases.append('single_receipt_claim_no_duplicate_photo_submission')
         before=query(work,env,'SELECT userid,wallet FROM users ORDER BY userid')
@@ -370,6 +409,311 @@ def check():
         assert base('walletapprovalbadtype','approve',actor=9001) is None
         assert int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'))==balance
         cases.append('manual_wallet_not_for_other_payment_subjects')
+
+
+        # F5: original bank destination is immutable despite administrator changes.
+        seed(work,env,'bankpinold')
+        assert base('bankpinold','claim','bank_transfer')
+        old=base('bankpinold','read')
+        assert '6037999999999999' in old['body'] and 'Fixture' in old['body']
+        new_keys={'bankAccount':'5892100000000001','holderName':'Updated Recipient'}
+        pinned=base('bankpinold','read','bank_transfer',keys=new_keys)
+        assert pinned['body']==old['body']
+        assert '5892100000000001' not in pinned['body']
+        cases.append('bank_destination_and_quote_original_immutable_after_settings_change')
+        seed(work,env,'bankpinnew')
+        assert base('bankpinnew','claim','bank_transfer',keys=new_keys)
+        newer=base('bankpinnew','read','bank_transfer',keys=new_keys)
+        assert '5892100000000001' in newer['body'] and 'Updated Recipient' in newer['body']
+        cases.append('new_bank_invoice_gets_new_destination')
+        seed(work,env,'bankmissing')
+        assert base('bankmissing','claim',keys={'bankAccount':'','holderName':''}) is False
+        cases.append('incomplete_bank_destination_not_advertised')
+
+        # F6: no implicit third-party gift-card shop is ever silently selected.
+        seed(work,env,'giftbadurl')
+        assert base('giftbadurl','claim','gift_card',
+            keys={'giftCardUrl':'http://example.org/buy'}) is False
+        assert base('giftfixture','read','gift_card',keys={'giftCardUrl':'https://new.example.net'})['keys']==gift['keys']
+        cases.append('gift_seller_must_be_explicit_https_and_stays_pinned')
+
+        # F2: a direct cached wallet callback must honor an earlier manual claim.
+        query(work,env,'UPDATE users SET wallet=1000000 WHERE userid=1001')
+        for method in ('bank_transfer','gift_card','manual_usdt'):
+            key='walletblock'+method.replace('_','')
+            seed(work,env,key)
+            query(work,env,f"UPDATE pays SET type='BUY_SUB' WHERE hash_id='{key}'")
+            assert base(key,'claim',method)
+            balance=int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'))
+            assert base(key,'wallet')['status']=='claimed_provider'
+            assert int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'))==balance
+            assert query(work,env,f"SELECT state FROM pays WHERE hash_id='{key}'")=='pending'
+            assert base(key,'wallet',user=9002)['status']=='invalid_owner'
+            assert base(key,'claim',user=9002) is False
+            cases.append('cached_wallet_button_blocked_after_'+method)
+
+        # Reverse order: a successful wallet charge excludes later manual/Tron claims.
+        seed(work,env,'walletfirst')
+        query(work,env,"UPDATE pays SET type='BUY_SUB' WHERE hash_id='walletfirst'")
+        debitBefore=int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'))
+        assert base('walletfirst','wallet')['status']=='ok'
+        assert int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'))==debitBefore-100000
+        assert base('walletfirst','claim','bank_transfer') is False
+        assert base('walletfirst','claim','manual_usdt') is False
+        assert base('walletfirst','tron_claim') is None
+        cases.append('wallet_first_prevents_external_method_replacement')
+
+        # F2: stale TRON Telegram paths reserve and respect the same ledger.
+        seed(work,env,'tronfirst')
+        trx=base('tronfirst','tron_claim')
+        assert trx and trx['quote']=='13.25'
+        assert base('tronfirst','claim','bank_transfer') is False
+        assert base('tronfirst','wallet')['status']=='claimed_provider'
+        assert base('tronfirst','tron_submit',user=9002) is False
+        assert base('tronfirst','tron_submit') is True
+        assert base('tronfirst','tron_submit') is False
+        assert query(work,env,"SELECT state FROM pays WHERE hash_id='tronfirst'")=='0'
+        assert query(work,env,"SELECT provider,stage FROM payment_attempts WHERE order_hash='tronfirst'")=='tron_wallet\treview'
+        cases.append('tron_stale_callback_claim_owner_and_terminal_nonreplay')
+        seed(work,env,'manualfirsttron')
+        assert base('manualfirsttron','claim','gift_card')
+        assert base('manualfirsttron','tron_claim') is None
+        assert base('manualfirsttron','tron_submit') is False
+        cases.append('tron_cannot_replace_existing_manual_receipt_claim')
+
+        # A hosted provider claim excludes cached local wallet actions.
+        seed(work,env,'hostedclaimed')
+        query(work,env,"INSERT INTO payment_attempts (pay_row_id,provider,order_hash,quote_amount,quote_currency,local_amount_toman,stage) "
+             "SELECT id,'nowpayments',hash_id,100000,'toman',price,'creating' FROM pays WHERE hash_id='hostedclaimed'")
+        assert base('hostedclaimed','wallet')['status']=='claimed_provider'
+        assert base('hostedclaimed','claim','manual_usdt') is False
+        assert base('hostedclaimed','tron_claim') is None
+        assert query(work,env,"SELECT state FROM pays WHERE hash_id='hostedclaimed'")=='pending'
+        cases.append('hosted_provider_claim_blocks_direct_wallet_tron_manual_replay')
+
+
+        # The three legacy direct wallet routes (renewal/day/volume) bypass
+        # processWalletPayment(), so test their real PHP early claim guard.
+        for key,route,data_prefix,pay_type in [
+            ('oldrenewwallet','renewal','payRenewWithWallet','RENEW_ACCOUNT'),
+            ('olddaywallet','extension','payIncreaseDayWithWallet','INCREASE_DAY_1_2'),
+            ('oldvolwallet','extension','payIncreaseWithWallet','INCREASE_VOLUME_1_2')
+        ]:
+            seed(work,env,key)
+            query(work,env,f"UPDATE pays SET type='{pay_type}' WHERE hash_id='{key}'")
+            assert base(key,'claim','manual_usdt')
+            before=int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'))
+            refused=run_route(work,env,route_driver,
+                data=data_prefix+key,route=route)
+            assert any(e['name']=='alert' for e in refused),repr((key,refused))
+            assert query(work,env,f"SELECT state FROM pays WHERE hash_id='{key}'")=='pending'
+            assert int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'))==before
+            cases.append('direct_'+route+'_'+data_prefix+'_blocked_by_manual_claim')
+            second=run_route(work,env,route_driver,
+                data=data_prefix+key,actor=9002,route=route)
+            assert any(e['name']=='alert' for e in second),repr((key,second))
+            assert int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'))==before
+            cases.append('wrong_owner_direct_'+route+'_'+data_prefix+'_denied')
+
+        # F1: native MariaDB wallet credit is in the same bank auto-claim
+        # transaction; admin and timer may win in either order, never both.
+        seed(work,env,'autoadminfirst')
+        assert base('autoadminfirst','claim')
+        query(work,env,"UPDATE pays SET state='have_sent' WHERE hash_id='autoadminfirst'")
+        before=int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'))
+        assert base('autoadminfirst','approve') is not None
+        assert base('autoadminfirst','bank_auto_claim') is False
+        assert int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'))==before+100000
+        assert query(work,env,"SELECT state FROM pays WHERE hash_id='autoadminfirst'")=='approved'
+        cases.append('admin_before_scheduled_bank_accept_exactly_one_credit')
+
+        seed(work,env,'autoautofirst')
+        assert base('autoautofirst','claim')
+        query(work,env,"UPDATE pays SET state='have_sent' WHERE hash_id='autoautofirst'")
+        before=int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'))
+        assert base('autoautofirst','bank_auto_claim') is True
+        assert base('autoautofirst','approve') is None
+        assert base('autoautofirst','bank_auto_claim') is False
+        assert int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'))==before+100000
+        assert query(work,env,"SELECT state FROM pays WHERE hash_id='autoautofirst'")=='auto_cart_approved'
+        cases.append('scheduled_before_admin_bank_approval_exactly_one_credit')
+
+        from concurrent.futures import ThreadPoolExecutor
+        for n in range(6):
+            key=f'autocontest{n}'
+            seed(work,env,key)
+            assert base(key,'claim')
+            query(work,env,f"UPDATE pays SET state='have_sent' WHERE hash_id='{key}'")
+            before=int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'))
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                fauto=executor.submit(lambda:base(key,'bank_auto_claim'))
+                fadmin=executor.submit(lambda:base(key,'approve'))
+                auto_won=fauto.result();admin_won=fadmin.result() is not None
+            assert int(auto_won)+int(admin_won)==1,(key,auto_won,admin_won)
+            assert int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'))==before+100000
+            assert query(work,env,f"SELECT state FROM pays WHERE hash_id='{key}'") in ('approved','auto_cart_approved')
+            assert base(key,'bank_auto_claim') is False
+        cases.append('six_native_bank_timer_admin_concurrency_races_exactly_once')
+
+        # The exclusive service claim can be granted only once even when
+        # two distinct process workers race. No external Marzban side effect.
+        seed(work,env,'autoservice')
+        query(work,env,"UPDATE pays SET type='BUY_SUB' WHERE hash_id='autoservice'")
+        assert base('autoservice','claim')
+        query(work,env,"UPDATE pays SET state='have_sent' WHERE hash_id='autoservice'")
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            claims=list(executor.map(lambda _:base('autoservice','bank_auto_claim'),range(2)))
+        assert claims.count(True)==1 and claims.count(False)==1
+        assert base('autoservice','bank_auto_claim') is False
+        cases.append('scheduled_service_effect_claimed_only_once')
+
+        # A card receipt predating the shared ledger stays eligible for the
+        # inherited timer; an arbitrary unknown provider never does.
+        seed(work,env,'autolegacybank')
+        query(work,env,"UPDATE pays SET state='have_sent' WHERE hash_id='autolegacybank'")
+        assert base('autolegacybank','bank_auto_claim') is True
+        assert base('autolegacybank','bank_auto_claim') is False
+        cases.append('verified_legacy_card_receipt_eligible_and_single_credit')
+        seed(work,env,'autounknown')
+        query(work,env,"UPDATE pays SET state='have_sent' WHERE hash_id='autounknown'")
+        query(work,env,"INSERT INTO payment_attempts (pay_row_id,provider,order_hash,quote_amount,quote_currency,local_amount_toman) "
+             "SELECT id,'unknown_method',hash_id,100000,'toman',price FROM pays WHERE hash_id='autounknown'")
+        assert base('autounknown','bank_auto_claim') is False
+        cases.append('unknown_attempt_provider_never_bank_auto_approves')
+
+
+
+        # Execute the actual scheduler include (not only its claim helper)
+        # with an isolated eligible bank receipt, twice, checking money and state.
+        query(work,env,"UPDATE pays SET request_date=UNIX_TIMESTAMP() WHERE state='have_sent'")
+        seed(work,env,'schedulerrealbank')
+        assert base('schedulerrealbank','claim')
+        query(work,env,"UPDATE pays SET state='have_sent' WHERE hash_id='schedulerrealbank'")
+        before=int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'))
+        assert base('schedulerrealbank','auto')=='tested'
+        assert query(work,env,"SELECT state FROM pays WHERE hash_id='schedulerrealbank'")=='auto_cart_approved'
+        assert int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'))==before+100000
+        assert base('schedulerrealbank','auto')=='tested'
+        assert int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'))==before+100000
+        cases.append('real_auto_scheduler_bank_credit_once_across_repeated_runs')
+
+        # F3: injected method lookup outage while the rest of the database
+        # remains healthy must NOT authorize a legacy bank settlement.
+        seed(work,env,'lookupfailure')
+        query(work,env,"UPDATE pays SET state='have_sent' WHERE hash_id='lookupfailure'")
+        before=int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'))
+        seed(work,env,'partialwallet')
+        query(work,env,'RENAME TABLE payment_attempts TO payment_attempts_unavailable')
+        try:
+            assert base('lookupfailure','bank_auto_claim',expect_deferred=True) is False
+            assert base('lookupfailure','auto',expect_deferred=True)=='tested'
+            assert query(work,env,"SELECT state FROM pays WHERE hash_id='lookupfailure'")=='have_sent'
+            assert int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'))==before
+            # 003 has two tables; one missing is corruption, not legacy V9.
+            assert base('partialwallet','wallet')['status']=='claimed_provider'
+            assert query(work,env,"SELECT state FROM pays WHERE hash_id='partialwallet'")=='pending'
+            assert int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'))==before
+        finally:
+            query(work,env,'RENAME TABLE payment_attempts_unavailable TO payment_attempts')
+        cases.append('method_lookup_error_never_approves_legacy_card_or_mutates_money')
+        cases.append('partially_missing_003_ledger_blocks_cached_wallet_debit')
+
+        # F4: failed, uncertain, and exception Telegram responses preserve
+        # the exact file ID and can be retried without claiming a new method.
+        for key,method,wait,mode in [
+            ('photofailbank','bank_transfer','waitIncreaseWalletReceipt','throw'),
+            ('photofailgift','gift_card','waitIncreaseWalletGiftReceipt','no_id'),
+            ('photofailusdt','manual_usdt','waitIncreaseWalletUsdtReceipt','response_lost')
+        ]:
+            seed(work,env,key)
+            assert base(key,'claim',method)
+            balance=int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'))
+            failed=run_route(work,env,route_driver,step=wait+key,photo_mode=mode)
+            assert any(e['name']=='sendPhoto' for e in failed),repr((mode,failed))
+            assert any(e['name']=='sendMessage' and 'دوباره بفرستید' in str(e.get('args'))
+                       for e in failed),repr((mode,failed))
+            assert not any(e['name']=='sendMessage' and 'در انتظار بررسی مدیر است' in str(e.get('args'))
+                           for e in failed)
+            assert not any(e['name']=='setUser' for e in failed)
+            assert query(work,env,f"SELECT state FROM pays WHERE hash_id='{key}'")=='pending'
+            assert query(work,env,f"SELECT stage FROM payment_attempts WHERE order_hash='{key}'")=='receiving'
+            intent=json.loads(query(work,env,
+                f"SELECT checkout_url FROM payment_attempts WHERE order_hash='{key}'"))
+            assert intent['receipt_file_id']=='fixture-photo-id'
+            assert int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'))==balance
+            cases.append('durable_photo_and_retry_guidance_on_'+mode)
+
+            # New photos are not allowed to replace potentially delivered evidence.
+            other={'message':{'photo':[{'file_id':'other-photo-id'}]}}
+            changed=run_route(work,env,route_driver,step=wait+key,update=other)
+            assert not any(e['name']=='sendPhoto' for e in changed)
+            assert query(work,env,f"SELECT state FROM pays WHERE hash_id='{key}'")=='pending'
+            cases.append('uncertain_delivery_different_photo_denied_'+method)
+
+            retried=run_route(work,env,route_driver,step=wait+key)
+            assert any(e['name']=='sendPhoto' for e in retried)
+            assert any(e['name']=='sendMessage' and 'در انتظار بررسی مدیر است' in str(e.get('args'))
+                       for e in retried)
+            assert query(work,env,f"SELECT state FROM pays WHERE hash_id='{key}'")=='have_sent'
+            assert query(work,env,f"SELECT stage FROM payment_attempts WHERE order_hash='{key}'")=='review'
+            assert int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'))==balance
+            cases.append('same_photo_recovery_after_uncertain_delivery_'+method)
+
+            approved=run_route(work,env,route_driver,data='approvePayment'+key,
+                               actor=9001,route='manual_admin')
+            assert any(e['name']=='sendMessage' and 'تایید' in str(e.get('args'))
+                       for e in approved)
+            repeat=run_route(work,env,route_driver,data='approvePayment'+key,
+                             actor=9001,route='manual_admin')
+            assert any(e['name']=='alert' for e in repeat)
+            assert int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'))==balance+100000
+            cases.append('uncertain_telegram_delivery_never_double_credits_'+method)
+
+        # Database transition failure must preserve the committed receipt
+        # evidence and allow the SAME photo to be retried.
+        seed(work,env,'photodbfail')
+        assert base('photodbfail','claim','bank_transfer')
+        query(work,env,"CREATE TRIGGER test_receipt_db_failure BEFORE UPDATE ON pays "
+             "FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='fixture_failure'")
+        try:
+            failed=run_route(work,env,route_driver,step='waitIncreaseWalletReceiptphotodbfail')
+            assert any(e['name']=='sendPhoto' for e in failed)
+            assert query(work,env,"SELECT state FROM pays WHERE hash_id='photodbfail'")=='pending'
+            assert query(work,env,"SELECT stage FROM payment_attempts WHERE order_hash='photodbfail'")=='receiving'
+        finally:
+            query(work,env,'DROP TRIGGER test_receipt_db_failure')
+        recovered=run_route(work,env,route_driver,step='waitIncreaseWalletReceiptphotodbfail')
+        assert any(e['name']=='sendMessage' and 'در انتظار بررسی مدیر است' in str(e.get('args'))
+                   for e in recovered)
+        assert query(work,env,"SELECT state FROM pays WHERE hash_id='photodbfail'")=='have_sent'
+        cases.append('database_transition_failure_retries_same_durable_photo')
+
+        # A concurrently declined/terminal payment cannot be resurrected
+        # by an outdated Telegram send completion.
+        seed(work,env,'phototerminal')
+        assert base('phototerminal','claim','manual_usdt')
+        failed=run_route(work,env,route_driver,
+                         step='waitIncreaseWalletUsdtReceiptphototerminal',photo_mode='terminal_change')
+        assert any(e['name']=='sendPhoto' for e in failed)
+        assert query(work,env,"SELECT state FROM pays WHERE hash_id='phototerminal'")=='declined'
+        assert query(work,env,"SELECT stage FROM payment_attempts WHERE order_hash='phototerminal'")=='receiving'
+        assert base('phototerminal','approve') is None
+        assert base('phototerminal','bank_auto_claim') is False
+        cases.append('late_telegram_response_cannot_revert_terminal_payment')
+
+        # Unexpected worker loss: a bounded lease expires, allowing the
+        # identical durable file ID to be delivered by a new worker.
+        seed(work,env,'leaseexpiry')
+        assert base('leaseexpiry','claim','gift_card')
+        assert isinstance(base('leaseexpiry','begin','gift_card'),str)
+        blocked=run_route(work,env,route_driver,step='waitIncreaseWalletGiftReceiptleaseexpiry')
+        assert not any(e['name']=='sendPhoto' for e in blocked)
+        query(work,env,"UPDATE payment_attempts SET review_notice_claimed_at="
+              "DATE_SUB(NOW(),INTERVAL 3 MINUTE) WHERE order_hash='leaseexpiry'")
+        recovered=run_route(work,env,route_driver,step='waitIncreaseWalletGiftReceiptleaseexpiry')
+        assert any(e['name']=='sendPhoto' for e in recovered)
+        assert query(work,env,"SELECT state FROM pays WHERE hash_id='leaseexpiry'")=='have_sent'
+        cases.append('lost_worker_recovered_after_lease_without_new_photo')
 
     return {'complete':True,'cases':len(cases),'scenarios':cases,
             'php_runtime':'native','database':'owned_socket_only',

@@ -16,7 +16,7 @@ if(preg_match('/sConfigRenewPlan(\d+)_(\d+)/',$data, $match) && ($botState['sell
 
 
     if(empty($userInfo['temp'])){delMessage(); exit();}
-    
+
     $configInfo = json_decode($userInfo['temp'], true);
     // A stale plan callback can point at a different Marzban host. Bind
     // the external account to the verified origin rather than trusting the
@@ -38,20 +38,20 @@ if(preg_match('/sConfigRenewPlan(\d+)_(\d+)/',$data, $match) && ($botState['sell
     $stmt->execute();
     $respd = $stmt->get_result()->fetch_assoc();
     $stmt->close();
-    
+
     $stmt = $connection->prepare("SELECT * FROM `server_categories` WHERE `id`=?");
     $stmt->bind_param("i", $respd['catid']);
     $stmt->execute();
     $catname = $stmt->get_result()->fetch_assoc()['title'];
     $stmt->close();
-    
+
     $name = $catname." ".$respd['title'];
     $desc = $respd['descr'];
 	$sid = $respd['server_id'];
 	$keyboard = array();
     $price =  $respd['price'];
     $token = base64_encode("{$from_id}.{$id}");
-    
+
     $hash_id = RandomString();
     achbotRemoveUnclaimedPendingPayments($connection,$from_id,'RENEW_SCONFIG');
 
@@ -66,9 +66,9 @@ if(preg_match('/sConfigRenewPlan(\d+)_(\d+)/',$data, $match) && ($botState['sell
     $rowId = $stmt->insert_id;
     $stmt->close();
 
-    
-    if($botState['cartToCartState'] == "on") $keyboard[] = [['text' => $buttonValues['cart_to_cart'],  'callback_data' => "payBuyWithCartToCart$hash_id"]];
-    if(($botState['giftCardState'] ?? 'off') === 'on') $keyboard[] = [['text' => $buttonValues['gift_card'], 'callback_data' => "payBuyWithGiftCard$hash_id"]];
+
+    if(achbotManualEnabled('bank_transfer')) $keyboard[] = [['text' => $buttonValues['cart_to_cart'],  'callback_data' => "payBuyWithCartToCart$hash_id"]];
+    if(achbotManualEnabled('gift_card')) $keyboard[] = [['text' => $buttonValues['gift_card'], 'callback_data' => "payBuyWithGiftCard$hash_id"]];
     if (achbotManualEnabled('manual_usdt')) $keyboard[] = [['text' => $buttonValues['manual_usdt'], 'callback_data' => "payBuyWithManualUsdt$hash_id"]];
     if($botState['nowPaymentOther'] == "on") $keyboard[] = [['text' => $buttonValues['now_payment_gateway'],  'url' => $botUrl . "pay/?nowpayment&hash_id=" . $hash_id]];
     if($botState['zarinpal'] == "on") $keyboard[] = [['text' => $buttonValues['zarinpal_gateway'],  'url' => $botUrl . "pay/?zarinpal&hash_id=" . $hash_id]];

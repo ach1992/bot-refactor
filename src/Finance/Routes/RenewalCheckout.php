@@ -30,22 +30,22 @@ if (
     ) &&
     $text != $buttonValues['cancel']
 ) {
-    
+
     // اضافه کردن بررسی برای ستون fileid
     $oid = $match[1];
-    
+
     $stmt = $connection->prepare("SELECT * FROM `orders_list` WHERE `id` = ?");
     $stmt->bind_param("i", $oid);
     $stmt->execute();
     $order = $stmt->get_result();
     $stmt->close();
-    
+
     if($order->num_rows == 0){
         delMessage();
         sendMessage($mainValues['config_not_found'], getMainKeys());
         exit();
     }
-    
+
     $order = $order->fetch_assoc();
     $fid = $order['fileid'];
     if (!achbotSupportsMarzbanOrder($connection, (int)$oid, (int)$fid, (int)$order['userid'])) {
@@ -116,8 +116,8 @@ if (
 	
 	$keyboard = [];
 	$actionType = "Renew";
-	if ($botState['cartToCartState'] == "on") $keyboard[] = [['text' => "💳 کارت به کارت مبلغ $price", 'callback_data' => "prePayCheck_{$actionType}_CartToCart_{$hash_id}"]];
-	if (($botState['giftCardState'] ?? 'off') === 'on') $keyboard[] = [['text' => "🎁 گیفت‌کارت مبلغ $price", 'callback_data' => "prePayCheck_{$actionType}_GiftCard_{$hash_id}"]];
+	if (achbotManualEnabled('bank_transfer')) $keyboard[] = [['text' => "💳 کارت به کارت مبلغ $price", 'callback_data' => "prePayCheck_{$actionType}_CartToCart_{$hash_id}"]];
+	if (achbotManualEnabled('gift_card')) $keyboard[] = [['text' => "🎁 گیفت‌کارت مبلغ $price", 'callback_data' => "prePayCheck_{$actionType}_GiftCard_{$hash_id}"]];
 	if (achbotManualEnabled('manual_usdt')) $keyboard[] = [['text' => "💎 تتر دستی مبلغ $price", 'callback_data' => "prePayCheck_{$actionType}_ManualUsdt_{$hash_id}"]];
 	if ($botState['nowPaymentOther'] == "on") $keyboard[] = [['text' => $buttonValues['now_payment_gateway'], 'callback_data' => "prePayCheck_{$actionType}_nowpayment_{$hash_id}"]];
 	if ($botState['zarinpal'] == "on") $keyboard[] = [['text' => $buttonValues['zarinpal_gateway'], 'callback_data' => "prePayCheck_{$actionType}_zarinpal_{$hash_id}"]];
@@ -221,9 +221,9 @@ if (preg_match('/wait(?:RenewCart|RenewGift|RenewUsdt)Receipt(.*)/', $userInfo['
         exit;
     }
 
-    if (!achbotManualBeginEvidence($connection, $receiptPay, $method, (int)$from_id)) {
-        setUser();
-        alert("⚠️ رسید این سفارش قبلاً ثبت شده یا در حال بررسی است.", true);
+    $deliveryToken = achbotManualBeginEvidence($connection, $receiptPay, $method, (int)$from_id, $fileid);
+    if ($deliveryToken === null) {
+        alert("⚠️ ثبت یا ارسال رسید در جریان است. همان تصویر را دوباره ارسال کنید؛ در صورت تداوم مشکل با پشتیبانی تماس بگیرید.", true);
         return;
     }
 
@@ -241,7 +241,7 @@ if (preg_match('/wait(?:RenewCart|RenewGift|RenewUsdt)Receipt(.*)/', $userInfo['
     if ($now - $requestTime > 10800) {
         delMessage();
         sendMessage("⏳ مهلت این خرید به پایان رسیده است.\n♻️ لطفاً مجدداً روی دکمه تمدید اشتراک کلیک کرده و خرید جدیدی ثبت کنید.");
-        setUser();
+
         sendMessage($mainValues['reached_main_menu'], getMainKeys());
         exit;
     }
@@ -268,7 +268,7 @@ if (preg_match('/wait(?:RenewCart|RenewGift|RenewUsdt)Receipt(.*)/', $userInfo['
     if ($fid != $savedFid) {
         delMessage();
         sendMessage("❗️پلن شما از زمان شروع پرداخت تا ارسال رسید تغییر کرده است.\n♻️ لطفاً دوباره روی دکمه تمدید اشتراک کلیک کرده و پرداخت جدید انجام دهید.");
-        setUser();
+
         sendMessage($mainValues['reached_main_menu'], getMainKeys());
         exit;
     }
@@ -285,7 +285,7 @@ if (preg_match('/wait(?:RenewCart|RenewGift|RenewUsdt)Receipt(.*)/', $userInfo['
     $volume = $respd['volume'];
     $days   = $respd['days'];
 
-    sendWithStartButton(achbotManualAcknowledgement($receiptPay, $method), $buttonValues['start_bot'], $botUsername, 'mainMenu', 'HTML', (string)$receiptPay['hash_id']);
+
 
     $msg = str_replace(
         ['TYPE', "USER-ID", "USERNAME", "NAME", "PRICE", "REMARK", "VOLUME", "DAYS"],
@@ -302,23 +302,13 @@ if (preg_match('/wait(?:RenewCart|RenewGift|RenewUsdt)Receipt(.*)/', $userInfo['
         (int)$payInfo['user_id']
     );
 
-    $resPhoto = sendPhoto($fileid, achbotManualCaption($connection, $receiptPay, $msg), $adminKeyboard, "HTML", $admin);
-    sendToAllAdmins('sendPhoto', [
-        'photo' => $fileid,
-        'caption' => achbotManualCaption($connection, $receiptPay, $msg),
-        'reply_markup' => $adminKeyboard,
-        'parse_mode' => "HTML"
-    ], $match[1]);
-
-    $msgId = $resPhoto->result->message_id ?? null;
-    setUser();
-
-    if ($msgId) {
-        $stmt = $connection->prepare("UPDATE `pays` SET `state` = 'have_sent', `message_id` = ?, `chat_id` = ? WHERE `hash_id` = ?");
-        $stmt->bind_param("iis", $msgId, $admin, $match[1]);
-        $stmt->execute();
-        $stmt->close();
-        achbotManualMarkEvidence($connection, $match[1]);
+    if (sendReceiptToAdminsAndUpdatePay($connection, $fileid,
+        achbotManualCaption($connection, $receiptPay, $msg), $adminKeyboard, $admin, $match[1],
+        $deliveryToken)) {
+        setUser();
+        sendWithStartButton(achbotManualAcknowledgement($receiptPay, $method), $buttonValues['start_bot'], $botUsername, 'mainMenu', 'HTML', (string)$receiptPay['hash_id']);
+    } else {
+        sendMessage("📥 تصویر برای پیگیری ثبت شده اما تأیید ارسال به مدیر دریافت نشده است. لطفاً همان تصویر را دوباره بفرستید یا با پشتیبانی تماس بگیرید. پرداخت مجدد انجام ندهید.");
     }
 
     exit;
@@ -501,6 +491,14 @@ if(preg_match('/payRenewWithWallet(.*)/', $data, $match)){
         }
 
         $payInfo = $payRes->fetch_assoc();
+        // Same guarded claim policy as purchase wallet callbacks, while
+        // this exact pays row is already locked in the current transaction.
+        if (!achbotWalletDirectAllowedLocked($connection, $payInfo, (int)$from_id)) {
+            $connection->rollback();
+            alert("⛔️ این سفارش متعلق به شما نیست یا روش پرداخت دیگری برای آن ثبت شده است؛ دوباره پرداخت نکنید.", true);
+            return;
+        }
+
         if (!achbotSupportsPaymentSubject($connection, $payInfo)) {
             $connection->rollback();
             alert("⚠️ وضعیت این تمدید نیاز به بررسی دارد. لطفاً وضعیت اشتراک و پرداخت را با پشتیبانی بررسی کنید.", true);

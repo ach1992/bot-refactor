@@ -18,11 +18,12 @@ function inlineKeyboard(array $rows): string {
 function receiptAndCancel(string $sendPrefix, string $cancelPrefix, string $hashId,
                           $messageType = 'bank_transfer', ?string $giftCardUrl = null): string {
     if ($messageType === 'gift_card') {
-        $giftCardUrl = $giftCardUrl ?: 'https://blinko.ir/gift-card/#giftcard-products';
         $firstRow = [
             ['text' => '📤 ارسال تصویر گیفت‌کارت', 'callback_data' => $sendPrefix . $hashId],
-            ['text' => '🎁 خرید گیفت‌کارت', 'url' => $giftCardUrl],
         ];
+        if ($giftCardUrl !== null) {
+            $firstRow[] = ['text' => '🎁 خرید گیفت‌کارت', 'url' => $giftCardUrl];
+        }
     } elseif ($messageType === 'manual_usdt') {
         $firstRow = [
             ['text' => '💎 ارسال رسید تتر', 'callback_data' => $sendPrefix . $hashId],

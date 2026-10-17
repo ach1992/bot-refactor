@@ -23,9 +23,9 @@ function startWalletPayment($connection, $botState, $buttonValues, $botUrl, $fro
 
     $keyboard = [];
 
-    if($botState['cartToCartState'] == "on") 
+    if(achbotManualEnabled('bank_transfer'))
         $keyboard[] = [['text' => $buttonValues['cart_to_cart'], 'callback_data' => "payIncreaseWalletWithCartToCart$hash_id"]];
-    if(($botState['giftCardState'] ?? 'off') === 'on')
+    if(achbotManualEnabled('gift_card'))
         $keyboard[] = [['text' => $buttonValues['gift_card'], 'callback_data' => "payIncreaseWalletWithGiftCard$hash_id"]];
     if (achbotManualEnabled('manual_usdt'))
         $keyboard[] = [['text' => $buttonValues['manual_usdt'], 'callback_data' => "payIncreaseWalletWithManualUsdt$hash_id"]];

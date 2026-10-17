@@ -173,13 +173,13 @@ if (preg_match('/wait(?:IncreaseWallet|IncreaseWalletGift|IncreaseWalletUsdt)Rec
         exit;
     }
 
-    if (!achbotManualBeginEvidence($connection, $receiptPay, $method, (int)$from_id)) {
-        setUser();
-        alert("⚠️ رسید این سفارش قبلاً ثبت شده یا در حال بررسی است.", true);
+    $deliveryToken = achbotManualBeginEvidence($connection, $receiptPay, $method, (int)$from_id, $fileid);
+    if ($deliveryToken === null) {
+        alert("⚠️ ثبت یا ارسال رسید در جریان است. همان تصویر را دوباره ارسال کنید؛ در صورت تداوم مشکل با پشتیبانی تماس بگیرید.", true);
         return;
     }
 
-    setUser();
+
     $uid = $userInfo['userid'];
     $name = $userInfo['name'];
     $username = $userInfo['username'];
@@ -195,7 +195,7 @@ if (preg_match('/wait(?:IncreaseWallet|IncreaseWalletGift|IncreaseWalletUsdt)Rec
 	$rawPrice = (int)$payInfo['price'];
 	$price = number_format($rawPrice);
 
-    sendWithStartButton(achbotManualAcknowledgement($receiptPay, $method), $buttonValues['start_bot'], $botUsername, 'mainMenu', 'HTML', (string)$receiptPay['hash_id']);
+
 
     $msg = str_replace(
         ['PRICE', 'USERNAME', 'NAME', 'USER-ID'],
@@ -212,7 +212,14 @@ if (preg_match('/wait(?:IncreaseWallet|IncreaseWalletGift|IncreaseWalletUsdt)Rec
         (int)$payInfo['user_id']
     );
 
-    sendReceiptToAdminsAndUpdatePay($connection, $fileid, achbotManualCaption($connection, $receiptPay, $msg), $adminKeyboard, $admin, $match[1]);
+    if (sendReceiptToAdminsAndUpdatePay($connection, $fileid,
+        achbotManualCaption($connection, $receiptPay, $msg), $adminKeyboard, $admin, $match[1],
+        $deliveryToken)) {
+        setUser();
+        sendWithStartButton(achbotManualAcknowledgement($receiptPay, $method), $buttonValues['start_bot'], $botUsername, 'mainMenu', 'HTML', (string)$receiptPay['hash_id']);
+    } else {
+        sendMessage("📥 تصویر برای پیگیری ثبت شده اما تأیید ارسال به مدیر دریافت نشده است. لطفاً همان تصویر را دوباره بفرستید یا با پشتیبانی تماس بگیرید. پرداخت مجدد انجام ندهید.");
+    }
     exit;
 }
 
