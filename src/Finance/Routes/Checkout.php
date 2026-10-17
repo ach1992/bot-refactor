@@ -426,9 +426,12 @@ if (preg_match('/wait(?:CustomCart|CustomGift|CustomUsdt)Receipt(.*)/', $userInf
     exit;
 }
 
-if (preg_match('/accCustom(.*)/', $data, $match) && $text != $buttonValues['cancel']) {
+if (preg_match('/^accCustom(.+)$/D', $data, $match) && $text != $buttonValues['cancel']) {
+    if ((int)$from_id <= 0 || ((int)$from_id !== (int)$admin && empty($userInfo['isAdmin']))) {
+        alert('⛔️ تأیید پرداخت فقط توسط مدیر مجاز است.', true);
+        return;
+    }
 
-    setUser();
     $hash_id = trim($match[1]);
 
     $connection->begin_transaction();
@@ -440,20 +443,19 @@ if (preg_match('/accCustom(.*)/', $data, $match) && $text != $buttonValues['canc
         $payInfo = $stmt->get_result()->fetch_assoc();
         $stmt->close();
 
-        if (!$payInfo || $payInfo['state'] === 'expired_have_sent') {
-            alert(!$payInfo ? "⛔️ اطلاعات پرداخت پیدا نشد." : "⛔️ این درخواست منقضی شده است.");
-            throw new Exception("invalid_or_expired");
+        if (!achbotManualServiceApprovalAllowedLocked($connection, $payInfo, 'custom') ||
+            !achbotSupportsPaymentSubject($connection, $payInfo)) {
+            alert('⛔️ این خرید رسید دستی معتبر و در انتظار تأیید ندارد.', true);
+            throw new Exception('custom_manual_receipt_not_reviewable');
         }
 
-        if ($payInfo['state'] === 'approved' || $payInfo['state'] === 'declined') {
-            alert("⛔️ این درخواست قبلاً بررسی شده است.");
-            throw new Exception("already_processed");
-        }
-
-        $stmt = $connection->prepare("UPDATE `pays` SET `state` = 'approved', `approved_by` = ? WHERE `hash_id` = ?");
-        $stmt->bind_param("is", $from_id, $hash_id);
+        $payRowId = (int)$payInfo['id'];
+        $stmt = $connection->prepare("UPDATE `pays` SET `state` = 'approved', `approved_by` = ? WHERE `id` = ? AND `state` = 'have_sent'");
+        $stmt->bind_param('ii', $from_id, $payRowId);
         $stmt->execute();
+        $changed = $stmt->affected_rows;
         $stmt->close();
+        if ($changed !== 1) throw new Exception('custom_receipt_claim_failed');
 
         $fid    = (int)$payInfo['plan_id'];
         $uid    = (int)$payInfo['user_id'];
@@ -561,13 +563,19 @@ if (preg_match('/accCustom(.*)/', $data, $match) && $text != $buttonValues['canc
 
         decreaseServerCapacity($connection, $server_id, $inbound_id, $fid, 1);
 
-        $connection->commit();
+        if (!$connection->commit()) throw new Exception('custom_receipt_commit_failed');
 
-    } catch (Exception $e) {
-        $connection->rollback();
+    } catch (Throwable $e) {
+        try { $connection->rollback(); } catch (Throwable $ignored) {}
+        // A remote operation could have succeeded before the local rollback.
+        // Never retry it blindly; an operator must reconcile the real service.
+        sendMessage('⚠️ تأیید خرید دستی نیازمند بررسی سرویس و پرداخت است. از اجرای دوباره خودکار خودداری کنید.' . "\n🆔 " . $hash_id,
+            null, null, $admin);
+        alert('⚠️ نتیجه تأیید نیاز به بررسی دستی دارد؛ وضعیت سرویس را پیش از اقدام مجدد کنترل کنید.', true);
         return;
     }
 
+    setUser();
     sendMessage('✅ اشتراک برای کاربر ارسال شد.', getMainKeys());
 
     $keys = json_encode([

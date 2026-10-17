@@ -328,16 +328,10 @@ if(preg_match('/approveRenewAcc(.*)/',$data,$match) && ($from_id == $admin || $u
         }
         $stmt->close(); 
 
-        if (!$payInfo || ($payInfo['state'] === 'expired_have_sent')) { 
+        if (!achbotManualServiceApprovalAllowedLocked($connection, $payInfo, 'renewal')) {
             $connection->rollback();
-            alert(!$payInfo ? "⛔️ اطلاعات پرداخت پیدا نشد." : "⛔️ این درخواست منقضی شده است."); 
-            return; 
-        } 
-
-        if ($payInfo['state'] === 'approved' || $payInfo['state'] === 'declined') { 
-            $connection->rollback();
-            alert("⛔️ این درخواست قبلاً بررسی شده است."); 
-            return; 
+            alert('⛔️ این تمدید رسید دستی معتبر و در انتظار تأیید ندارد.', true);
+            return;
         } 
 
         $hash_id = $payInfo['hash_id']; 
@@ -433,10 +427,12 @@ if(preg_match('/approveRenewAcc(.*)/',$data,$match) && ($from_id == $admin || $u
         $stmt->close(); 
 
         // پرداخت را نهایتاً approved کن (فقط پس از موفقیت همه مراحل)
-        $stmt = $connection->prepare("UPDATE `pays` SET `state` = 'approved', `approved_by` = ? WHERE `hash_id` = ?"); 
-        $stmt->bind_param("is", $from_id, $hash_id); 
-        $stmt->execute(); 
-        $stmt->close(); 
+        $stmt = $connection->prepare("UPDATE `pays` SET `state` = 'approved', `approved_by` = ? WHERE `hash_id` = ? AND `state` = 'have_sent'");
+        $stmt->bind_param('is', $from_id, $hash_id);
+        $stmt->execute();
+        $changed = $stmt->affected_rows;
+        $stmt->close();
+        if ($changed !== 1) throw new Exception('renewal_receipt_claim_failed');
 
         // COMMIT
         $connection->commit();

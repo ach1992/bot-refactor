@@ -411,6 +411,28 @@ def main():
             "manual_wallet_two_admin_concurrent_single_credit",
             "manual_wallet_privileged_debt_offset_preserved",
             "manual_wallet_not_for_other_payment_subjects",
+            # PR #52 independent F1/F2 findings: mandatory real callback runs.
+            "real_custom_nonadmin_cannot_approve_submitted_gift_receipt",
+            "real_custom_authorized_review_state_approves_only_once",
+            "real_custom_replayed_operator_callback_no_remote_effect",
+            "real_custom_pending_without_photo_cannot_approve",
+            "real_custom_wallet_paid_invoice_cannot_approve_again",
+            "real_custom_wrong_subject_cannot_approve",
+            "real_custom_callback_cannot_approve_standard_plan_subject",
+            "real_custom_two_concurrent_admins_single_remote_create",
+            "real_custom_hosted_provider_conflict_cannot_approve",
+            "real_custom_unreviewed_attempt_cannot_approve",
+            "real_custom_missing_admin_delivery_evidence_denied",
+            "real_custom_stale_after_bank_auto_claim_denied",
+            "real_renewal_stale_auto_bank_claim_cannot_refulfill",
+            "real_day_stale_auto_bank_claim_cannot_refulfill",
+            "real_volume_stale_auto_bank_claim_cannot_refulfill",
+            "real_renewal_operator_before_bank_cron_one_remote_effect",
+            "real_day_operator_before_bank_cron_one_remote_effect",
+            "real_volume_operator_before_bank_cron_one_remote_effect",
+            "real_custom_operator_and_bank_scheduler_race_single_service_claim",
+            "legacy_operator_receipt_requires_persisted_delivery_evidence",
+            "uncertain_custom_external_effect_operator_reconciliation_no_retry",
         }
         if not (manual.get("complete") and manual.get("cases")>=len(required_manual)
                 and required_manual.issubset(manual.get("scenarios",[]))

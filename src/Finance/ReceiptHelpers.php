@@ -502,6 +502,55 @@ function achbotTronSubmitHash(mysqli $connection, string $hashId,
     }
 }
 
+/**
+ * Reviewable manual service receipt, checked under the exact pays FOR UPDATE
+ * lock before any remote fulfillment. A callback never proves settlement.
+ * Pre-ledger receipts require a persisted operator delivery; new manual
+ * methods require their exclusive ledger attempt and saved original photo.
+ * Ledger failures fail closed rather than impersonating historical receipts.
+ */
+function achbotManualServiceApprovalAllowedLocked(mysqli $connection, ?array $pay, string $subject): bool {
+    if (!$pay || (int)($pay['id'] ?? 0) <= 0 ||
+        (int)($pay['user_id'] ?? 0) <= 0 ||
+        (string)($pay['state'] ?? '') !== 'have_sent' ||
+        (string)($pay['payid'] ?? '') !== '' ||
+        (int)($pay['message_id'] ?? 0) <= 0 ||
+        (int)($pay['chat_id'] ?? 0) === 0) return false;
+    $type = (string)($pay['type'] ?? '');
+    $subjectMatches = match ($subject) {
+        // The standard plan BUY_SUB uses both fields=0; only Catalogue's
+        // custom term/volume selection is approved by accCustom.
+        'custom' => $type === 'BUY_SUB' &&
+            ((int)($pay['day'] ?? 0) > 0 || (int)($pay['volume'] ?? 0) > 0),
+        'renewal' => $type === 'RENEW_ACCOUNT',
+        'day' => preg_match('/^INCREASE_DAY_[0-9]+_[0-9]+$/D', $type) === 1,
+        'volume' => preg_match('/^INCREASE_VOLUME_[0-9]+_[0-9]+$/D', $type) === 1,
+        default => false,
+    };
+    if (!$subjectMatches) return false;
+    try {
+        $id = (int)$pay['id'];
+        $stmt = $connection->prepare('SELECT provider,stage,checkout_url
+            FROM payment_attempts WHERE pay_row_id=? LIMIT 1 FOR UPDATE');
+        $stmt->bind_param('i', $id);
+        $stmt->execute();
+        $attempt = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        if ($attempt === null) {
+            // Legacy, operator-delivered manual receipt only. Human verification
+            // remains required; missing evidence does not become verified funds.
+            return true;
+        }
+        $method = (string)$attempt['provider'];
+        if (!in_array($method, ['bank_transfer','gift_card','manual_usdt'], true) ||
+            (string)$attempt['stage'] !== 'review') return false;
+        $intent = achbotManualIntentDecode((string)($attempt['checkout_url'] ?? ''), $method);
+        return is_array($intent) && !empty($intent['receipt_file_id']);
+    } catch (Throwable $error) {
+        return false;
+    }
+}
+
 function achbotManualClaim(mysqli $connection, array $payInfo, string $method, int $userId): bool {
     if (!in_array($method, ['bank_transfer', 'gift_card', 'manual_usdt'], true) ||
         (int)$payInfo['user_id'] !== $userId) return false;

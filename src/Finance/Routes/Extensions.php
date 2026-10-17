@@ -271,15 +271,9 @@ if (preg_match('/approveIncreaseDay(.*)/', $data, $match) && ($from_id == $admin
 
         $stmt->close();
 
-        if (!$payParam || ($payParam['state'] === 'expired_have_sent')) {
+        if (!achbotManualServiceApprovalAllowedLocked($connection, $payParam, 'day')) {
             $connection->rollback();
-            alert(!$payParam ? "⛔️ اطلاعات پرداخت پیدا نشد." : "⛔️ این درخواست منقضی شده است.");
-            return;
-        }
-
-        if ($payParam['state'] === 'approved' || $payParam['state'] === 'declined') {
-            $connection->rollback();
-            alert("⛔️ این درخواست قبلاً بررسی شده است.");
+            alert('⛔️ این افزایش زمان رسید دستی معتبر و در انتظار تأیید ندارد.', true);
             return;
         }
 
@@ -369,10 +363,12 @@ if (preg_match('/approveIncreaseDay(.*)/', $data, $match) && ($from_id == $admin
         $stmt->execute();
         $stmt->close();
 
-        $stmt = $connection->prepare("UPDATE `pays` SET `state` = 'approved', `approved_by` = ? WHERE `hash_id` = ?");
-        $stmt->bind_param("is", $from_id, $hash_id);
+        $stmt = $connection->prepare("UPDATE `pays` SET `state` = 'approved', `approved_by` = ? WHERE `hash_id` = ? AND `state` = 'have_sent'");
+        $stmt->bind_param('is', $from_id, $hash_id);
         $stmt->execute();
+        $changed = $stmt->affected_rows;
         $stmt->close();
+        if ($changed !== 1) throw new Exception('extension_receipt_claim_failed');
 
         $connection->commit();
 
@@ -1009,15 +1005,9 @@ if (preg_match('/approveIncreaseVolume(.*)/', $data, $match) && ($from_id == $ad
 
         $stmt->close();
 
-        if (!$payParam || ($payParam['state'] === 'expired_have_sent')) {
+        if (!achbotManualServiceApprovalAllowedLocked($connection, $payParam, 'volume')) {
             $connection->rollback();
-            alert(!$payParam ? "⛔️ اطلاعات پرداخت پیدا نشد." : "⛔️ این درخواست منقضی شده است.");
-            return;
-        }
-
-        if ($payParam['state'] === 'approved' || $payParam['state'] === 'declined') {
-            $connection->rollback();
-            alert("⛔️ این درخواست قبلاً بررسی شده است.");
+            alert('⛔️ این افزایش حجم رسید دستی معتبر و در انتظار تأیید ندارد.', true);
             return;
         }
 
@@ -1104,10 +1094,12 @@ if (preg_match('/approveIncreaseVolume(.*)/', $data, $match) && ($from_id == $ad
         $stmt->execute();
         $stmt->close();
 
-        $stmt = $connection->prepare("UPDATE `pays` SET `state` = 'approved', `approved_by` = ? WHERE `hash_id` = ?");
-        $stmt->bind_param("is", $from_id, $hash_id);
+        $stmt = $connection->prepare("UPDATE `pays` SET `state` = 'approved', `approved_by` = ? WHERE `hash_id` = ? AND `state` = 'have_sent'");
+        $stmt->bind_param('is', $from_id, $hash_id);
         $stmt->execute();
+        $changed = $stmt->affected_rows;
         $stmt->close();
+        if ($changed !== 1) throw new Exception('extension_receipt_claim_failed');
 
         $connection->commit();
 
