@@ -13,7 +13,17 @@ if($botState['cartToCartAutoAcceptState']=="on"){
     $info = $stmt->get_result();
     $stmt->close();
 
-    while($payInfo = $info->fetch_assoc()){
+    // A ledger/schema outage can also invalidate a live mysqli result while
+    // fetching the next pays row (observed on PHP 8.1/mysqlnd). Stop this
+    // auto-approval sweep without approving any unchecked receipt.
+    while (true) {
+        try {
+            $payInfo = $info->fetch_assoc();
+        } catch (Throwable $error) {
+            error_log('achbot_bank_auto_scan_deferred');
+            break;
+        }
+        if ($payInfo === null || $payInfo === false) break;
         if (!achbotAutoBankEligible($connection, $payInfo)) continue;
         if (!achbotSupportsPaymentSubject($connection, $payInfo)) {
             continue;

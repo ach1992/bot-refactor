@@ -188,7 +188,8 @@ def run_php(work,env,driver,hash_id,op,method='bank_transfer',user=1001,**more):
          json.dumps(spec,ensure_ascii=False),DB]
     p=subprocess.run(cmd,cwd=work,env=env,capture_output=True,text=True,timeout=20)
     safe_deferred=(expect_deferred and p.stderr and all(
-        'achbot_bank_auto_' in line and 'pay_row_id=' in line and
+        'achbot_bank_auto_' in line and
+        ('pay_row_id=' in line or 'achbot_bank_auto_scan_deferred' in line) and
         'fixture' not in line and 'SQL' not in line
         for line in p.stderr.splitlines()))
     if p.returncode or (p.stderr and not safe_deferred):
