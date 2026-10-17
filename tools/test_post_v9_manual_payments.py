@@ -679,6 +679,88 @@ def check():
         assert base('giftfixture','read','gift_card',keys={'giftCardUrl':'https://new.example.net'})['keys']==gift['keys']
         cases.append('gift_seller_must_be_explicit_https_and_stays_pinned')
 
+        # The shared editor/checkout guard admits <=350-byte HTTPS seller URLs
+        # while rejecting length overflow and embedded URL credentials.
+        prefix='https://example.org/'
+        valid_url=prefix+'x'*(350-len(prefix))
+        assert len(valid_url)==350
+        for name,url,eligible in (
+            ('giftlimit350',valid_url,True),
+            ('giftlimit351',valid_url+'x',False),
+            ('giftcredentials','https://username:password@example.org/gift',False),
+            ('giftempty','',False),
+        ):
+            seed(work,env,name)
+            value=base(name,'claim','gift_card',keys={'giftCardUrl':url})
+            assert bool(value) is eligible, (name,value)
+            cases.append(name+'_seller_validation')
+
+        # F1: legacy pending gift orders may contain a pinned seller URL which
+        # predates the stricter editor check. Read/reopen the real saved attempt,
+        # suppress only unsafe outbound URL actions and preserve financial data.
+        wallet_before=query(work,env,'SELECT userid,wallet FROM users ORDER BY userid')
+        transactions_before=query(work,env,'SELECT COUNT(*) FROM payment_transactions')
+        oversized='https://example.org/'+'x'*(351-len('https://example.org/'))
+        assert len(oversized)==351
+        for name,modified_url in (
+            ('giftlegacycredentials','https://fixture:password@example.org/gift-card'),
+            ('giftlegacyoversize',oversized),
+            ('giftlegacymissing',None),
+        ):
+            seed(work,env,name)
+            assert base(name,'claim','gift_card') is True
+            if modified_url is None:
+                query(work,env,"UPDATE payment_attempts SET checkout_url="
+                    "JSON_REMOVE(checkout_url,'$.seller_url') "
+                    f"WHERE order_hash='{name}'")
+            else:
+                query(work,env,"UPDATE payment_attempts SET checkout_url="
+                    f"REPLACE(checkout_url,'https://example.org/gift-card','{modified_url}') "
+                    f"WHERE order_hash='{name}'")
+            pinned_before=query(work,env,
+                f"SELECT checkout_url FROM payment_attempts WHERE order_hash='{name}'")
+            assert base(name,'claim','gift_card',keys={
+                'giftCardUrl':'https://new.example.org/gift'}) is True
+            reread=base(name,'read','gift_card',keys={
+                'giftCardUrl':'https://new.example.org/gift'})
+            rows=reread['keys']['inline_keyboard']
+            assert rows[0]==[{'text':'📤 ارسال تصویر گیفت‌کارت',
+                              'callback_data':'sendBuyGiftReceipt'+name}],(name,rows)
+            assert rows[1]==[{'text':'🔄 بررسی وضعیت','callback_data':'ps_'+name}]
+            assert rows[2]==[{'text':'❌ لغو عملیات',
+                              'callback_data':'cancelBuyCartReceipt'+name}]
+            assert all('url' not in button for row in rows for button in row)
+            assert query(work,env,
+                f"SELECT checkout_url FROM payment_attempts WHERE order_hash='{name}'"
+            )==pinned_before
+            assert query(work,env,
+                f"SELECT state FROM pays WHERE hash_id='{name}'")=='pending'
+            assert query(work,env,
+                f"SELECT stage FROM payment_attempts WHERE order_hash='{name}'")=='pending'
+            assert query(work,env,
+                f"SELECT COUNT(*) FROM payment_attempts WHERE order_hash='{name}'")=='1'
+            assert query(work,env,'SELECT userid,wallet FROM users ORDER BY userid')==wallet_before
+            assert query(work,env,'SELECT COUNT(*) FROM payment_transactions')==transactions_before
+            cases.append(name+'_pinned_url_hidden_without_mutation')
+
+        seed(work,env,'giftlegacyvalid')
+        assert base('giftlegacyvalid','claim','gift_card') is True
+        original_intent=query(work,env,
+            "SELECT checkout_url FROM payment_attempts WHERE order_hash='giftlegacyvalid'")
+        assert base('giftlegacyvalid','claim','gift_card',keys={
+            'giftCardUrl':'https://new.example.org/gift'}) is True
+        valid_rows=base('giftlegacyvalid','read','gift_card',keys={
+            'giftCardUrl':'https://new.example.org/gift'})['keys']['inline_keyboard']
+        assert valid_rows[0][1]=={'text':'🎁 خرید گیفت‌کارت',
+            'url':'https://example.org/gift-card'}
+        assert query(work,env,
+            "SELECT checkout_url FROM payment_attempts WHERE order_hash='giftlegacyvalid'")==original_intent
+        assert query(work,env,
+            "SELECT state FROM pays WHERE hash_id='giftlegacyvalid'")=='pending'
+        assert query(work,env,'SELECT userid,wallet FROM users ORDER BY userid')==wallet_before
+        assert query(work,env,'SELECT COUNT(*) FROM payment_transactions')==transactions_before
+        cases.append('giftlegacyvalid_pinned_url_retained_despite_settings_change')
+
         # F2: a direct cached wallet callback must honor an earlier manual claim.
         query(work,env,'UPDATE users SET wallet=1000000 WHERE userid=1001')
         for method in ('bank_transfer','gift_card','manual_usdt'):

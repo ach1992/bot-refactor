@@ -889,6 +889,10 @@ function getGateWaysKeys(){
     if(!is_null($paymentKeys)) $paymentKeys = json_decode($paymentKeys,true);
     else $paymentKeys = array();
     $stmt->close();
+    require_once __DIR__ . '/src/Finance/ReceiptHelpers.php';
+    $giftSellerUrl = trim((string)($paymentKeys['giftCardUrl'] ?? ''));
+    $giftSellerStatus = $giftSellerUrl === '' ? "⚠️ تنظیم‌نشده" :
+        (achbotManualGiftSellerUrlValid($giftSellerUrl) ? "✅ تنظیم‌شده" : "⚠️ نامعتبر");
     return json_encode(['inline_keyboard'=>[
         [
             ['text'=>(!empty($paymentKeys['bankAccount'])?$paymentKeys['bankAccount']:" "),'callback_data'=>"changePaymentKeysbankAccount"],
@@ -899,7 +903,7 @@ function getGateWaysKeys(){
             ['text'=>"دارنده حساب",'callback_data'=>"wizwizch"]
         ],
         [
-            ['text'=>(!empty($paymentKeys['giftCardUrl']) ? "🔗 تنظیم‌شده" : "پیش‌فرض"),'callback_data'=>"changePaymentKeysgiftCardUrl"],
+            ['text'=>$giftSellerStatus,'callback_data'=>"changePaymentKeysgiftCardUrl"],
             ['text'=>"لینک خرید گیفت‌کارت",'callback_data'=>"wizwizch"]
         ],
         [

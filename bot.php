@@ -456,7 +456,7 @@ if(preg_match('/^changePaymentKeys(\w+)/',$data,$match) && ($from_id == $admin |
             $gate = "اسم دارنده حساب";
             break;
         case "giftCardUrl":
-            $gate = "لینک HTTPS معتبر خرید گیفت‌کارت";
+            $gate = "لینک HTTPS معتبر خرید گیفت‌کارت (حداکثر ۳۵۰ بایت)";
             break;
         case "manualUsdtWallet":
             $gate = "آدرس عمومی دریافت USDT (متناسب با شبکه تتر دستی)";
@@ -483,11 +483,8 @@ if(preg_match('/^changePaymentKeys(\w+)/',$userInfo['step'],$match) && $text != 
     $paymentKeys = json_decode($paymentInfo->fetch_assoc()['value'],true)??array();
     if ($match[1] === 'giftCardUrl') {
         $url = trim((string)$text);
-        $parts = parse_url($url);
-        if (strlen($url) > 2048 || !$parts || strtolower($parts['scheme'] ?? '') !== 'https' ||
-            empty($parts['host']) || isset($parts['user']) || isset($parts['pass']) ||
-            filter_var($url, FILTER_VALIDATE_URL) === false) {
-            sendMessage("⚠️ لینک معتبر HTTPS بدون اطلاعات ورود ارسال کنید.", $cancelKey);
+        if (!achbotManualGiftSellerUrlValid($url)) {
+            sendMessage("⚠️ لینک HTTPS معتبر بدون اطلاعات ورود و با حداکثر ۳۵۰ بایت ارسال کنید.", $cancelKey);
             return;
         }
         $text = $url;

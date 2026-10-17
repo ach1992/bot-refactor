@@ -190,14 +190,21 @@ function achbotManualBankIdentity(): ?array {
     return ['account' => $account, 'holder' => $holder];
 }
 
+/** One validation rule for the editor, administrator label and checkout. */
+function achbotManualGiftSellerUrlValid(string $rawUrl): bool {
+    $url = trim($rawUrl);
+    if ($url === '' || strlen($url) > 350 ||
+        filter_var($url, FILTER_VALIDATE_URL) === false) return false;
+    $parts = parse_url($url);
+    return is_array($parts) &&
+        strtolower((string)($parts['scheme'] ?? '')) === 'https' &&
+        !empty($parts['host']) &&
+        !isset($parts['user']) && !isset($parts['pass']);
+}
 function achbotManualSellerUrl(): ?string {
     global $paymentKeys;
     $url = trim((string)($paymentKeys['giftCardUrl'] ?? ''));
-    if ($url === '' || strlen($url) > 350 ||
-        filter_var($url, FILTER_VALIDATE_URL) === false ||
-        strtolower((string)parse_url($url, PHP_URL_SCHEME)) !== 'https' ||
-        (string)parse_url($url, PHP_URL_HOST) === '') return null;
-    return $url;
+    return achbotManualGiftSellerUrlValid($url) ? $url : null;
 }
 
 /** This JSON is a manual-only immutable destination intent, not a gateway URL. */
@@ -922,8 +929,9 @@ function kbSendReceiptAndCancel(string $sendPrefix, string $cancelPrefix, string
             $stmt->close();
             $intent = $attempt ? achbotManualIntentDecode((string)$attempt['checkout_url'], $method) : null;
             $url = $intent['seller_url'] ?? null;
-            if (!is_string($url) || filter_var($url, FILTER_VALIDATE_URL) === false ||
-                strtolower((string)parse_url($url, PHP_URL_SCHEME)) !== 'https') $url = null;
+            // Historical pinned destinations remain immutable; suppress only
+            // the unsafe outward link when it violates current URL rules.
+            if (!is_string($url) || !achbotManualGiftSellerUrlValid($url)) $url = null;
         } catch (Throwable $ignored) { $url = null; }
     }
     return \AchBot\Telegram\Markup\receiptAndCancel($sendPrefix, $cancelPrefix, $hashId, $method, $url);
