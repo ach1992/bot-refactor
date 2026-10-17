@@ -33,7 +33,9 @@ JOBS = (
 )
 
 # This is deliberately the ACTUAL coordinator source, not a copy of its logic.
-# Any future source change is exercised by the same PHP native tests.
+# Force only the standard PHP POSIX extension with -n; the production runner
+# needs an effective-UID check before trusting a writable lock directory.
+PHP_CLI_OPTS = ("-n", "-d", "extension=posix")
 CHILD_PHP = r"""<?php
 $name = basename(__FILE__);
 $line = $name . "|" . getcwd() . "|" . PHP_BINARY . "\n";
@@ -60,7 +62,7 @@ echo "owned fixture success\n";
 def cmd(php: str, entrypoint: Path, cwd: Path, env: dict[str, str],
         *args: str, disable_proc: bool = False,
         disable_flock: bool = False) -> subprocess.CompletedProcess:
-    command = [php, "-n"]
+    command = [php, *PHP_CLI_OPTS]
     if disable_proc:
         command.extend(["-d", "disable_functions=proc_open"])
     if disable_flock:
@@ -166,6 +168,54 @@ def main() -> None:
               and clean.stderr == "")
         check("per_installation_private_lock_created",
               lock_file.exists() and lock_file.stat().st_mode & 0o777 == 0o600)
+        check("first_create_then_reuse_same_inode",
+              clean.returncode == 0 and lock_file.is_file()
+              and lock_file.stat().st_nlink == 1)
+        initial_inode = lock_file.stat().st_ino
+        reuse = cmd(php, entrypoint, work, env)
+        check("later_run_reuses_stable_lock_inode",
+              reuse.returncode == 0 and lock_file.stat().st_ino == initial_inode
+              and len(trace.read_text().splitlines()) == 10)
+        trace.unlink()
+
+        # Test concurrent first-time creation from a missing lock file. Only
+        # the fixture removes an idle lock inode; the runner NEVER removes it.
+        lock_file.unlink()
+        release_race = root / "release-create-race"
+        race_env = {**env, "ACHBOT_TEST_ONLY_PAUSE": JOBS[0],
+                    "ACHBOT_TEST_ONLY_RELEASE": str(release_race)}
+        contenders = [
+            subprocess.Popen(
+                [php, *PHP_CLI_OPTS, str(entrypoint)],
+                cwd=work, env=race_env, stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE, text=True,
+            )
+            for _ in range(5)
+        ]
+        try:
+            for _ in range(200):
+                if trace.exists() and len(trace.read_text().splitlines()) >= 1:
+                    break
+                time.sleep(.02)
+            else:
+                raise RuntimeError("No first-time Cron contender acquired lock")
+            time.sleep(.20)
+            check("atomic_first_creation_does_not_start_second_batch",
+                  len(trace.read_text().splitlines()) == 1)
+            release_race.touch()
+            results = [proc.communicate(timeout=12) for proc in contenders]
+            check("five_simultaneous_first_invocations_finish_one_batch",
+                  all(proc.returncode == 0 for proc in contenders)
+                  and sum("owned fixture success" in out for out, err in results) == 1
+                  and sum("previous invocation active; skipping" in err
+                          for out, err in results) == 4
+                  and len(trace.read_text().splitlines()) == 5)
+        finally:
+            release_race.touch()
+            for proc in contenders:
+                if proc.poll() is None:
+                    proc.terminate()
+                proc.communicate(timeout=5)
         trace.unlink()
 
         # Two independent scheduler ticks may start from the SAME aaPanel job.
@@ -174,7 +224,7 @@ def main() -> None:
         held_env = {**env, "ACHBOT_TEST_ONLY_PAUSE": JOBS[0],
                     "ACHBOT_TEST_ONLY_RELEASE": str(release_signal)}
         held = subprocess.Popen(
-            [php, "-n", str(entrypoint)],
+            [php, *PHP_CLI_OPTS, str(entrypoint)],
             cwd=work, env=held_env, stdout=subprocess.PIPE,
             stderr=subprocess.PIPE, text=True,
         )
@@ -225,7 +275,7 @@ def main() -> None:
         crash_env = {**env, "ACHBOT_TEST_ONLY_PAUSE": JOBS[0],
                      "ACHBOT_TEST_ONLY_RELEASE": str(crash_release)}
         crashed = subprocess.Popen(
-            [php, "-n", str(entrypoint)],
+            [php, *PHP_CLI_OPTS, str(entrypoint)],
             cwd=work, env=crash_env, stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
@@ -277,6 +327,14 @@ def main() -> None:
         check("lock_directory_inside_webroot_fails_closed",
               web_denied.returncode == 78 and "no tasks started" in web_denied.stderr
               and not trace.exists())
+        alias = Path(tmp) / "untrusted-directory-alias"
+        alias.symlink_to(lock_dir, target_is_directory=True)
+        alias_env = {**env, "ACHBOT_CRON_LOCK_DIR": str(alias)}
+        alias_denied = cmd(php, entrypoint, work, alias_env)
+        check("symlinked_lock_directory_alias_denied",
+              alias_denied.returncode == 78
+              and "no tasks started" in alias_denied.stderr
+              and not trace.exists())
         bad_env = {**env, "ACHBOT_CRON_LOCK_DIR": str(root / "absent-lock-dir")}
         invalid = cmd(php, entrypoint, work, bad_env)
         check("unavailable_lock_directory_fails_closed",
@@ -286,10 +344,33 @@ def main() -> None:
         attack_target = root / "outside-owned-fixture"
         attack_target.write_text("untouched", encoding="utf-8")
         lock_file.symlink_to(attack_target)
+        start = time.monotonic()
         invalid_link = cmd(php, entrypoint, work, env)
         check("symlink_lock_path_fails_closed",
               invalid_link.returncode == 78 and "no tasks started" in invalid_link.stderr
+              and time.monotonic() - start < 2
               and not trace.exists() and attack_target.read_text() == "untouched")
+        lock_file.unlink()
+
+        dangling = Path(tmp) / "target-must-never-be-created"
+        lock_file.symlink_to(dangling)
+        start = time.monotonic()
+        dangling_result = cmd(php, entrypoint, work, env)
+        check("dangling_symlink_rejected_without_target_creation",
+              dangling_result.returncode == 78
+              and "no tasks started" in dangling_result.stderr
+              and time.monotonic() - start < 2
+              and not trace.exists() and not dangling.exists())
+        lock_file.unlink()
+
+        os.mkfifo(lock_file, mode=0o600)
+        start = time.monotonic()
+        fifo_result = cmd(php, entrypoint, work, env)
+        check("fifo_preexisting_lock_rejected_without_block",
+              fifo_result.returncode == 78
+              and "no tasks started" in fifo_result.stderr
+              and time.monotonic() - start < 2
+              and not trace.exists())
         lock_file.unlink()
         lock_file.write_text("", encoding="utf-8")
         lock_file.chmod(0o666)
@@ -308,6 +389,45 @@ def main() -> None:
               unsafe_group.returncode == 78
               and "no tasks started" in unsafe_group.stderr
               and not trace.exists())
+
+        shared = Path(tmp) / "shared-sticky"
+        shared.mkdir()
+        shared.chmod(0o1777)
+        squatted_lock = shared / lock_file.name
+        squatted_lock.write_text("untrusted file remains untouched")
+        shared_env = {**env, "ACHBOT_CRON_LOCK_DIR": str(shared)}
+        start = time.monotonic()
+        squatted = cmd(php, entrypoint, work, shared_env)
+        check("shared_sticky_lock_directory_and_preempted_name_denied",
+              squatted.returncode == 78
+              and "no tasks started" in squatted.stderr
+              and time.monotonic() - start < 2
+              and squatted_lock.read_text() == "untrusted file remains untouched"
+              and not trace.exists())
+
+        untrusted_parent = Path(tmp) / "untrusted-parent"
+        untrusted_parent.mkdir()
+        untrusted_parent.chmod(0o777)
+        protected_child = untrusted_parent / "apparently-private"
+        protected_child.mkdir(mode=0o700)
+        parent_env = {**env, "ACHBOT_CRON_LOCK_DIR": str(protected_child)}
+        rejected_parent = cmd(php, entrypoint, work, parent_env)
+        check("writable_nonsticky_ancestor_denied",
+              rejected_parent.returncode == 78
+              and "no tasks started" in rejected_parent.stderr
+              and not (protected_child / lock_file.name).exists()
+              and not trace.exists())
+
+        disabled_posix = subprocess.run(
+            [php, "-n", "-d", "extension=posix",
+             "-d", "disable_functions=posix_geteuid", str(entrypoint)],
+            cwd=work, env=env, capture_output=True, text=True, timeout=4,
+        )
+        check("missing_posix_effective_uid_denied",
+              disabled_posix.returncode == 78
+              and "no tasks started" in disabled_posix.stderr
+              and not trace.exists())
+
         disabled_flock = cmd(php, entrypoint, work, env, disable_flock=True)
         check("unavailable_php_flock_fails_closed",
               disabled_flock.returncode == 78

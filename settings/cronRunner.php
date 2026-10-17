@@ -33,48 +33,100 @@ if (!function_exists('proc_open') || !is_file(PHP_BINARY) || !is_executable(PHP_
     exit(78);
 }
 
-// A per-installation kernel flock covers the ENTIRE five-worker batch.
-// The lock remains held while any child is running; it is released by the OS
-// when the coordinator terminates. Never unlink it: unlink/recreate would let
-// two processes hold different inodes for the same named lock.
+// A per-installation flock covers the ENTIRE five-worker batch. Never unlink
+// the lock: replacing its inode would let overlapping invocations run at once.
 //
-// The default /run/lock is outside the served app tree. Operators running
-// Cron as a non-root account may set ACHBOT_CRON_LOCK_DIR to an EXISTING,
-// writable, protected directory outside the webroot. It is never auto-created.
-// Using the canonical install directory avoids cross-tenant lock collisions.
+// Pre-provision this private directory OUTSIDE the served site (mode 0700,
+// owned by the account executing Cron). It is not created at runtime. The
+// stock /run/lock is shared/writable, so it cannot safely hold this lock.
 $installDirectory = realpath(dirname(__DIR__));
-$requestedLockDirectory = getenv('ACHBOT_CRON_LOCK_DIR') ?: '/run/lock';
+$requestedLockDirectory = getenv('ACHBOT_CRON_LOCK_DIR') ?: '/var/lib/achbot/cron-locks';
 $lockDirectory = realpath($requestedLockDirectory);
-$directoryStat = ($lockDirectory !== false) ? @stat($lockDirectory) : false;
-if (
-    $installDirectory === false
-    || $lockDirectory === false
-    // Reject a lock directory inside the installed (web-served) application.
-    || $lockDirectory === $installDirectory
-    || str_starts_with($lockDirectory, $installDirectory . DIRECTORY_SEPARATOR)
-    || !is_dir($lockDirectory)
-    || !is_writable($lockDirectory)
-    || $directoryStat === false
-    // Other writers must not be able to unlink/replace a held lock inode.
-    || (($directoryStat['mode'] & 0022) !== 0
-        && ($directoryStat['mode'] & 01000) === 0)
-) {
+$effectiveUid = function_exists('posix_geteuid') ? posix_geteuid() : false;
+$directoryStat = ($lockDirectory !== false) ? @lstat($lockDirectory) : false;
+$trusted = (
+    $installDirectory !== false
+    && $lockDirectory !== false
+    // Use an absolute canonical configured path: do not follow a preempted
+    // directory alias in a shared ancestor into an unintended lock location.
+    && rtrim($requestedLockDirectory, DIRECTORY_SEPARATOR) === $lockDirectory
+    && $effectiveUid !== false
+    && $directoryStat !== false
+    && is_dir($lockDirectory)
+    && is_writable($lockDirectory)
+    && $lockDirectory !== $installDirectory
+    && !str_starts_with($lockDirectory, $installDirectory . DIRECTORY_SEPARATOR)
+    && $directoryStat['uid'] === $effectiveUid
+    && ($directoryStat['mode'] & 0170000) === 0040000
+    && ($directoryStat['mode'] & 0700) === 0700
+    && ($directoryStat['mode'] & 0077) === 0
+);
+
+// Verify every canonical ancestor: only root or the Cron user may own it.
+// An ancestor writable by others is trusted only if it is root-owned and
+// sticky (e.g. /tmp used by isolated tests). The final lock directory is
+// ALWAYS private, even when its parent is root-owned and sticky.
+if ($trusted) {
+    $parent = $lockDirectory;
+    while (true) {
+        $entry = @lstat($parent);
+        if (
+            $entry === false
+            || ($entry['mode'] & 0170000) !== 0040000
+            || ($entry['uid'] !== 0 && $entry['uid'] !== $effectiveUid)
+            || (
+                ($entry['mode'] & 0022) !== 0
+                && !($entry['uid'] === 0 && ($entry['mode'] & 01000) !== 0)
+            )
+        ) {
+            $trusted = false;
+            break;
+        }
+        if ($parent === DIRECTORY_SEPARATOR) {
+            break;
+        }
+        $parent = dirname($parent);
+    }
+}
+if (!$trusted || !function_exists('flock')) {
     fwrite(STDERR, "AChBot Cron: secure lock directory unavailable; no tasks started\n");
     exit(78);
 }
 $lockFile = $lockDirectory . DIRECTORY_SEPARATOR . 'achbot-cron-'
     . substr(hash('sha256', $installDirectory), 0, 24) . '.lock';
 
-// Do not truncate the lock file or relax its permissions. A lock file in a
-// sticky directory must belong to this execution account to avoid symlink
-// replacement, cross-user lock contention and accidental public exposure.
-$oldUmask = umask(0077);
-$lockHandle = @fopen($lockFile, 'c');
-umask($oldUmask);
+// Never open an unvalidated special inode. A first open with "xn" creates
+// atomically (O_CREAT | O_EXCL: existing/dangling symlinks are NOT followed).
+// Reuse opens only an already validated regular file in the private directory,
+// with "rn": read-only, no creation, and O_NONBLOCK even if the inode changes.
+// A bounded exclusive-create race falls through to the existing-file path.
+$lockHandle = false;
+$existing = @lstat($lockFile);
+if ($existing === false) {
+    $oldUmask = umask(0077);
+    $lockHandle = @fopen($lockFile, 'xn');
+    umask($oldUmask);
+}
+if ($lockHandle === false) {
+    clearstatcache(true, $lockFile);
+    $existing = @lstat($lockFile);
+    if (
+        $existing === false
+        || ($existing['mode'] & 0170000) !== 0100000
+        || $existing['uid'] !== $effectiveUid
+        || ($existing['mode'] & 0077) !== 0
+        || $existing['nlink'] !== 1
+    ) {
+        fwrite(STDERR, "AChBot Cron: unsafe lock file; no tasks started\n");
+        exit(78);
+    }
+    $lockHandle = @fopen($lockFile, 'rn');
+}
 if ($lockHandle === false) {
     fwrite(STDERR, "AChBot Cron: lock file could not be opened; no tasks started\n");
     exit(78);
 }
+clearstatcache(true, $lockFile);
 $fileStat = @fstat($lockHandle);
 $pathStat = @lstat($lockFile);
 if (
@@ -82,17 +134,14 @@ if (
     || $pathStat === false
     || $fileStat['dev'] !== $pathStat['dev']
     || $fileStat['ino'] !== $pathStat['ino']
+    || ($fileStat['mode'] & 0170000) !== 0100000
     || ($pathStat['mode'] & 0170000) !== 0100000
     || $fileStat['nlink'] !== 1
     || ($fileStat['mode'] & 0077) !== 0
-    // The lock inode must be owned by the protected lock directory's owner.
-    // This is also verifiable under PHP -n (without the optional POSIX module).
-    || $fileStat['uid'] !== $directoryStat['uid']
-    || (function_exists('posix_geteuid') && $fileStat['uid'] !== posix_geteuid())
-    || !function_exists('flock')
+    || $fileStat['uid'] !== $effectiveUid
 ) {
     fclose($lockHandle);
-    fwrite(STDERR, "AChBot Cron: unsafe or unsupported lock file; no tasks started\n");
+    fwrite(STDERR, "AChBot Cron: unsafe or changed lock file; no tasks started\n");
     exit(78);
 }
 $wouldBlock = 0;

@@ -113,6 +113,10 @@ def main():
         cron=json.loads(cron_path.read_text())
         required_cron_cases = {
             "per_installation_private_lock_created",
+            "first_create_then_reuse_same_inode",
+            "later_run_reuses_stable_lock_inode",
+            "atomic_first_creation_does_not_start_second_batch",
+            "five_simultaneous_first_invocations_finish_one_batch",
             "overlapping_tick_skips_without_extra_jobs",
             "different_installation_runs_while_first_locked",
             "first_tick_finishes_full_batch_after_overlap",
@@ -121,12 +125,18 @@ def main():
             "stale_lock_file_does_not_block_next_tick",
             "unavailable_lock_directory_fails_closed",
             "lock_directory_inside_webroot_fails_closed",
+            "symlinked_lock_directory_alias_denied",
             "group_writable_unprotected_lock_directory_denied",
             "symlink_lock_path_fails_closed",
+            "dangling_symlink_rejected_without_target_creation",
+            "fifo_preexisting_lock_rejected_without_block",
+            "shared_sticky_lock_directory_and_preempted_name_denied",
+            "writable_nonsticky_ancestor_denied",
+            "missing_posix_effective_uid_denied",
             "permissive_lock_file_fails_closed",
             "unavailable_php_flock_fails_closed",
         }
-        if not (cron.get("complete") and cron.get("cases")>=25
+        if not (cron.get("complete") and cron.get("cases")>=35
                 and required_cron_cases.issubset(cron.get("scenarios", []))
                 and cron.get("actual_current_runner_executed")
                 and cron.get("isolated_child_php_processes")
