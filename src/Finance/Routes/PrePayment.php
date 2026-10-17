@@ -40,20 +40,20 @@ if (preg_match('/^prePayCheck_([a-zA-Z0-9]+)_([a-zA-Z0-9]+)_([a-zA-Z0-9]+)/', $d
         return;
     }
     $now = time();
-    // Protect an issued NOWPayments invoice AND an uncertain pre-POST
-    // reservation regardless of which OLD gateway button the buyer clicked.
-    $npAttempt=null;
-    $npTable=$connection->query("SHOW TABLES LIKE 'achbot_nowpayments_attempts'");
-    if ($npTable && $npTable->num_rows===1) {
-        $npStmt=$connection->prepare("SELECT stage,invoice_id,invoice_url
-            FROM achbot_nowpayments_attempts WHERE pay_row_id=? LIMIT 1");
-        $npStmt->bind_param('i',$payInfo['id']);
-        $npStmt->execute();
-        $npAttempt=$npStmt->get_result()->fetch_assoc() ?: null;
-        $npStmt->close();
+    // A provider-scoped attempt blocks competing checkout and renewal
+    // invalidation, even while the upstream create request is uncertain.
+    $paymentAttempt=null;
+    $attemptTable=$connection->query("SHOW TABLES LIKE 'payment_attempts'");
+    if ($attemptTable && $attemptTable->num_rows===1) {
+        $attemptStmt=$connection->prepare("SELECT provider,stage,provider_reference,checkout_url
+            FROM payment_attempts WHERE pay_row_id=? LIMIT 1");
+        $attemptStmt->bind_param('i',$payInfo['id']);
+        $attemptStmt->execute();
+        $paymentAttempt=$attemptStmt->get_result()->fetch_assoc() ?: null;
+        $attemptStmt->close();
     }
-    $activeNpClaim=$npAttempt!==null &&
-        in_array($npAttempt['stage'],['creating','pending','checking','fulfilling','review'],true);
+    $activeGatewayClaim=$paymentAttempt!==null &&
+        in_array($paymentAttempt['stage'],['creating','pending','checking','fulfilling','review'],true);
 
     // RENEW_ACCOUNT may be rejected by the generic subject preflight when
     // its saved plan differs from the CURRENT account plan. Handle that
@@ -80,7 +80,7 @@ if (preg_match('/^prePayCheck_([a-zA-Z0-9]+)_([a-zA-Z0-9]+)_([a-zA-Z0-9]+)/', $d
 
             // Even a pending row can already have a provider-issued token.
             // Never invalidate that evidence or issue a competing checkout.
-            $claimedInvoice=$npAttempt!==null ||
+            $claimedInvoice=$paymentAttempt!==null ||
                 (string)($payInfo['payid']??'')!=='' ||
                 (string)$payInfo['state']!=='pending';
             if ($claimedInvoice) {
@@ -103,9 +103,9 @@ if (preg_match('/^prePayCheck_([a-zA-Z0-9]+)_([a-zA-Z0-9]+)_([a-zA-Z0-9]+)/', $d
                   AND order_id=? AND plan_id=? AND user_id=?
                   AND EXISTS (SELECT 1 FROM orders_list o
                       WHERE o.id=? AND o.userid=? AND o.fileid<>?)";
-            if ($npTable && $npTable->num_rows===1) {
+            if ($attemptTable && $attemptTable->num_rows===1) {
                 $mismatchSql.=" AND NOT EXISTS (
-                    SELECT 1 FROM achbot_nowpayments_attempts a
+                    SELECT 1 FROM payment_attempts a
                     WHERE a.pay_row_id=pays.id)";
             }
             $stmt=$connection->prepare($mismatchSql);
@@ -126,12 +126,13 @@ if (preg_match('/^prePayCheck_([a-zA-Z0-9]+)_([a-zA-Z0-9]+)_([a-zA-Z0-9]+)/', $d
         }
     }
 
-    // Never turn a late NextPay/Zarinpal selection into a cancellation or
-    // second checkout for an already reserved NOWPayments order.
-    if ($activeNpClaim && $payMethod!=='nowpayment') {
-        answerCallbackQuery($callbackId,"این سفارش قبلاً در درگاه رمزارزی ثبت شده است.");
-        $invoiceUrl=(string)($npAttempt['invoice_url']??'');
-        if ($invoiceUrl!=='' && function_exists('achbotNpValidInvoiceUrl') &&
+    // The same order cannot be reissued with a different payment provider.
+    $selectedProvider=$payMethod==='nowpayment' ? 'nowpayments' : $payMethod;
+    if ($activeGatewayClaim && $selectedProvider!==(string)$paymentAttempt['provider']) {
+        answerCallbackQuery($callbackId,"این سفارش قبلاً در یک درگاه پرداخت ثبت شده است.");
+        $invoiceUrl=(string)($paymentAttempt['checkout_url']??'');
+        if ($paymentAttempt['provider']==='nowpayments' && $invoiceUrl!=='' &&
+            function_exists('achbotNpValidInvoiceUrl') &&
             achbotNpValidInvoiceUrl($invoiceUrl)) {
             $keyboard=json_encode(['inline_keyboard'=>[[
                 ['text'=>'🔗 ادامه همان فاکتور','url'=>$invoiceUrl]
@@ -145,7 +146,7 @@ if (preg_match('/^prePayCheck_([a-zA-Z0-9]+)_([a-zA-Z0-9]+)_([a-zA-Z0-9]+)/', $d
         return;
     }
 
-    if ($now - (int)$payInfo['request_date'] > 10800 && !$activeNpClaim) {
+    if ($now - (int)$payInfo['request_date'] > 10800 && !$activeGatewayClaim) {
         if ($payInfo['state']==='pending') {
             // A provider may have claimed payid after the SELECT above.
             // Expire only the same still-unclaimed row; never orphan an

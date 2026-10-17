@@ -100,10 +100,7 @@ if (
     }
     if(!preg_match('/^discountRenew/', $userInfo['step'])){
         $hash_id = RandomString();
-        $stmt = $connection->prepare("DELETE FROM `pays` WHERE `user_id` = ? AND `type` = 'RENEW_ACCOUNT' AND `state` = 'pending'");
-        $stmt->bind_param("i", $from_id);
-        $stmt->execute();
-        $stmt->close();
+        achbotRemoveUnclaimedPendingPayments($connection,$from_id,'RENEW_ACCOUNT');
         
         $time = time();
 		$stmt = $connection->prepare("INSERT INTO `pays` (`hash_id`, `user_id`, `type`, `plan_id`, `server_id`, `volume`, `day`, `price`, `request_date`, `state`, `order_id`)

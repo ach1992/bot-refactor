@@ -13,6 +13,52 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
  * This small adapter decision is shared by the present callback routes;
  * durable payment/effect claims and external fulfillment need a later gate.
  */
+/**
+ * A partial 003 schema must not permit checkout issuance: a NOWPayments
+ * invoice without child-evidence persistence would strand paid customers.
+ * This is a basic availability probe, NOT approval of actual DDL/install.
+ */
+function achbotSharedPaymentTablesReady(mysqli $db): bool {
+    try {
+        foreach (['payment_attempts','payment_transactions'] as $table) {
+            // Names are selected from a fixed internal allowlist only.
+            $probe=$db->query('SELECT id FROM '.$table.' LIMIT 0');
+            if (!($probe instanceof mysqli_result)) return false;
+            $probe->free();
+        }
+        return true;
+    } catch (Throwable $ignored) {
+        return false;
+    }
+}
+
+/**
+ * Legacy pays.payid has no provider dimension or uniqueness constraint.
+ * New provider-scoped attempts MAY reuse an ID held by a different NEW
+ * provider, but must fail closed if an older unscoped row has that ID.
+ * A database error is unknown identity, not permission to settle or redirect.
+ * Called only when the new payment_attempts table is available.
+ */
+function achbotHasUnscopedPaymentReferenceCollision(mysqli $db,
+                                                     string $reference,
+                                                     int $ownerRowId): bool {
+    if ($reference==='' || $ownerRowId<=0) return true;
+    try {
+        $stmt=$db->prepare("SELECT p.id FROM pays p
+            WHERE p.payid=? AND p.id<>?
+              AND NOT EXISTS (SELECT 1 FROM payment_attempts a
+                              WHERE a.pay_row_id=p.id)
+            LIMIT 1");
+        $stmt->bind_param('si',$reference,$ownerRowId);
+        $stmt->execute();
+        $collision=$stmt->get_result()->num_rows>0;
+        $stmt->close();
+        return $collision;
+    } catch (Throwable $error) {
+        return true;
+    }
+}
+
 function achbotVerifiedGatewayOutcome(string $provider, $status): string {
     if ($provider === 'nowpayment') {
         if (!is_string($status)) return 'review';
@@ -114,8 +160,10 @@ function achbotNpMinimumPayout(string $quoteUsd, string $rate): ?string {
  * exactly the same crypto asset/network; otherwise the case stays in review.
  */
 function achbotNpValidFinalAmount(array $attempt, array $response): bool {
-    $expectedCurrency=strtolower((string)($attempt['expected_outcome_currency']??''));
+    $expectedCurrency=strtolower((string)($attempt['settlement_currency']??''));
     if ($expectedCurrency==='' ||
+        (string)($attempt['provider']??'')!=='nowpayments' ||
+        (string)($attempt['quote_currency']??'')!=='usd' ||
         strtolower((string)($response['price_currency']??''))!=='usd' ||
         strtolower((string)($response['outcome_currency']??''))!==$expectedCurrency ||
         !preg_match('/^[a-z0-9]{2,32}$/D', $expectedCurrency) ||
@@ -124,13 +172,13 @@ function achbotNpValidFinalAmount(array $attempt, array $response): bool {
                $response['outcome_amount']) ||
         !preg_match('/^[a-z0-9]{2,32}$/Di',(string)$response['pay_currency']))
         return false;
-    if (!achbotNpDecimalAtLeast($attempt['minimum_outcome_amount']??null,'0.000001') ||
-        !achbotNpDecimalAtLeast($response['outcome_amount'],$attempt['minimum_outcome_amount']) ||
+    if (!achbotNpDecimalAtLeast($attempt['minimum_settlement_amount']??null,'0.000001') ||
+        !achbotNpDecimalAtLeast($response['outcome_amount'],$attempt['minimum_settlement_amount']) ||
         !achbotNpDecimalAtLeast($response['actually_paid'],$response['pay_amount']) ||
         !achbotNpDecimalAtLeast($response['pay_amount'],'0.000000000000000001'))
         return false;
-    $quote = (string)($attempt['quote_usd']??'');
-    if (!preg_match('/^\\d{1,12}\\.\\d{2}$/D',$quote) ||
+    $quote = (string)($attempt['quote_amount']??'');
+    if (!preg_match('/^\\d{1,12}\\.\\d{2}(?:0{0,6})?$/D',$quote) ||
         !achbotNpDecimalAtLeast($response['price_amount'],$quote) ||
         !achbotNpDecimalAtLeast($quote,$response['price_amount']))
         return false;

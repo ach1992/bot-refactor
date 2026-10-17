@@ -12,19 +12,32 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
  * only an operator with independent provider evidence may release it.
  */
 function achbotReserveCheckoutProvider(mysqli $db, int $orderId, string $provider): ?string {
-    if (!in_array($provider, ['nextpay','zarinpal'], true) || $orderId <= 0) return null;
+    if (!in_array($provider, ['nextpay','zarinpal'], true) || $orderId <= 0 ||
+        !achbotSharedPaymentTablesReady($db)) return null;
     $marker = 'achbot_' . $provider . '_creating_' . $orderId;
     try {
         $db->begin_transaction();
-        $stmt = $db->prepare("SELECT payid,state FROM pays WHERE id=? FOR UPDATE");
+        $stmt = $db->prepare("SELECT payid,state,hash_id,price FROM pays WHERE id=? FOR UPDATE");
         $stmt->bind_param('i',$orderId);
         $stmt->execute();
         $row = $stmt->get_result()->fetch_assoc();
         $stmt->close();
-        if (!$row || $row['state'] !== 'pending' || !empty($row['payid'])) {
+        if (!$row || $row['state'] !== 'pending' || !empty($row['payid']) ||
+            (int)$row['price'] <= 0 || empty($row['hash_id'])) {
             $db->rollback();
             return null;
         }
+        // Every gateway reserves the SAME durable, provider-scoped attempt
+        // before non-idempotent remote issuance. No provider-specific tables.
+        $amount=(int)$row['price'];
+        $quoted=(string)$amount;
+        $stmt=$db->prepare("INSERT INTO payment_attempts
+            (pay_row_id,provider,order_hash,quote_amount,quote_currency,
+             local_amount_toman,stage)
+            VALUES (?,?,?,?,'toman',?,'creating')");
+        $stmt->bind_param('isssi',$orderId,$provider,$row['hash_id'],$quoted,$amount);
+        $stmt->execute();
+        $stmt->close();
         $stmt = $db->prepare("UPDATE pays SET payid=? WHERE id=? AND state='pending'
             AND (payid IS NULL OR payid='')");
         $stmt->bind_param('si',$marker,$orderId);
@@ -36,6 +49,73 @@ function achbotReserveCheckoutProvider(mysqli $db, int $orderId, string $provide
     } catch (Throwable $error) {
         $db->rollback();
         return null;
+    }
+}
+
+/**
+ * Persist the provider reference and the historical pays.payid IN THE SAME
+ * transaction. If either write fails, preserve the creating reservation:
+ * network success may have happened and blindly retrying could charge twice.
+ */
+function achbotRecordCheckoutReference(mysqli $db, int $orderId, string $provider,
+                                       string $marker, string $reference,
+                                       string $checkoutUrl): bool {
+    if (!in_array($provider,['nextpay','zarinpal'],true) ||
+        !preg_match('/^[A-Za-z0-9_-]{1,128}$/D',$reference) ||
+        $checkoutUrl==='' || $orderId<=0) return false;
+    try {
+        $db->begin_transaction();
+        $stmt=$db->prepare("SELECT payid,state FROM pays WHERE id=? FOR UPDATE");
+        $stmt->bind_param('i',$orderId);
+        $stmt->execute();
+        $order=$stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        if (!$order || $order['state']!=='pending' ||
+            (string)$order['payid']!==$marker) {
+            throw new RuntimeException('checkout_order_changed');
+        }
+        // Provider-scoped uniqueness cannot certify an older payid whose
+        // gateway was never recorded. Never expose a colliding checkout URL.
+        if (achbotHasUnscopedPaymentReferenceCollision($db,$reference,$orderId)) {
+            throw new RuntimeException('legacy_checkout_reference_ambiguous');
+        }
+        $stmt=$db->prepare("UPDATE payment_attempts
+            SET provider_reference=?,checkout_url=?,stage='pending'
+            WHERE pay_row_id=? AND provider=? AND stage='creating'
+              AND provider_reference IS NULL");
+        $stmt->bind_param('ssis',$reference,$checkoutUrl,$orderId,$provider);
+        $stmt->execute();
+        $saved=$stmt->affected_rows;
+        $stmt->close();
+        if ($saved!==1) throw new RuntimeException('checkout_reference_collision');
+        $stmt=$db->prepare("UPDATE pays SET payid=?
+            WHERE id=? AND state='pending' AND payid=?");
+        $stmt->bind_param('sis',$reference,$orderId,$marker);
+        $stmt->execute();
+        $changed=$stmt->affected_rows;
+        $stmt->close();
+        if ($changed!==1 || !$db->commit()) {
+            throw new RuntimeException('checkout_binding_failed');
+        }
+        return true;
+    } catch (Throwable $error) {
+        $db->rollback();
+        return false;
+    }
+}
+
+/** A potentially issued provider checkout must stay reserved for review. */
+function achbotMarkCheckoutUncertain(mysqli $db, int $orderId, string $provider): void {
+    if (!in_array($provider,['nextpay','zarinpal'],true)) return;
+    try {
+        $stmt=$db->prepare("UPDATE payment_attempts
+            SET stage='review',provider_status='invoice_creation_uncertain'
+            WHERE pay_row_id=? AND provider=? AND stage='creating'");
+        $stmt->bind_param('is',$orderId,$provider);
+        $stmt->execute();
+        $stmt->close();
+    } catch (Throwable $ignored) {
+        // The durable creating reservation and pays.payid claim remain.
     }
 }
 
@@ -163,12 +243,11 @@ if(mysqli_num_rows($payInfo)==0){
         // The additive attempt table is required for safe invoice continuity.
         // Old payments with an invoice ID but no attempt are not reissued
         // automatically: creating a second provider invoice may double charge.
-        $exists = $connection->query("SHOW TABLES LIKE 'achbot_nowpayments_attempts'");
-        if (!$exists || $exists->num_rows !== 1) {
+        if (!achbotSharedPaymentTablesReady($connection)) {
             showForm("پیکربندی پیگیری امن پرداخت هنوز تکمیل نشده است.");
             exit;
         }
-        $stmt = $connection->prepare("SELECT * FROM achbot_nowpayments_attempts WHERE pay_row_id=? LIMIT 2");
+        $stmt = $connection->prepare("SELECT * FROM payment_attempts WHERE pay_row_id=? AND provider='nowpayments' LIMIT 2");
         $stmt->bind_param('i', $orderId);
         $stmt->execute();
         $stored = $stmt->get_result();
@@ -180,9 +259,9 @@ if(mysqli_num_rows($payInfo)==0){
                 exit;
             }
             if ($attempt['order_hash'] === $hash_id &&
-                $attempt['invoice_id'] === (string)$payParam['payid'] &&
-                achbotNpValidInvoiceUrl($attempt['invoice_url'])) {
-                header('Location: '.$attempt['invoice_url'], true, 302);
+                $attempt['provider_reference'] === (string)$payParam['payid'] &&
+                achbotNpValidInvoiceUrl($attempt['checkout_url'])) {
+                header('Location: '.$attempt['checkout_url'], true, 302);
                 exit;
             }
             showForm("لینک فاکتور نیاز به بررسی پشتیبانی دارد.");
@@ -279,10 +358,10 @@ if(mysqli_num_rows($payInfo)==0){
             if (!$locked || $locked['state'] !== 'pending' || !empty($locked['payid'])) {
                 throw new RuntimeException('checkout_already_reserved');
             }
-            $stmt = $connection->prepare("INSERT INTO achbot_nowpayments_attempts
-                (pay_row_id,order_hash,invoice_id,invoice_url,quote_usd,
-                 local_amount_toman,expected_outcome_currency,minimum_outcome_amount,stage)
-                VALUES (?,?,NULL,NULL,?,?,?,?,'creating')");
+            $stmt = $connection->prepare("INSERT INTO payment_attempts
+                (pay_row_id,provider,order_hash,provider_reference,checkout_url,quote_amount,quote_currency,
+                 local_amount_toman,settlement_currency,minimum_settlement_amount,stage)
+                VALUES (?,'nowpayments',?,NULL,NULL,?,'usd',?,?,?,'creating')");
             $stmt->bind_param('ississ', $orderId, $hash_id, $quoteUsd,
                 $amount, $payoutCurrency, $minimumOutcome);
             $stmt->execute();
@@ -304,9 +383,9 @@ if(mysqli_num_rows($payInfo)==0){
 
         $markCheckoutUncertain = static function () use ($connection, $orderId): void {
             try {
-                $stmt = $connection->prepare("UPDATE achbot_nowpayments_attempts
+                $stmt = $connection->prepare("UPDATE payment_attempts
                     SET stage='review',provider_status='invoice_creation_uncertain'
-                    WHERE pay_row_id=? AND stage='creating'");
+                    WHERE pay_row_id=? AND provider='nowpayments' AND stage='creating'");
                 $stmt->bind_param('i',$orderId);
                 $stmt->execute();
                 $stmt->close();
@@ -373,10 +452,18 @@ if(mysqli_num_rows($payInfo)==0){
                 (string)$locked['payid'] !== $checkoutMarker) {
                 throw new RuntimeException('checkout_order_changed');
             }
-            $stmt = $connection->prepare("UPDATE achbot_nowpayments_attempts
-                SET invoice_id=?,invoice_url=?,stage='pending'
-                WHERE pay_row_id=? AND order_hash=? AND stage='creating'
-                  AND invoice_id IS NULL AND quote_usd=?");
+            // OLD pays.payid rows have no provider identity. An invoice may
+            // already be live remotely: keep our durable reservation for
+            // operator review but NEVER publish a conflicting hosted URL.
+            // Fully provider-scoped attempts remain independently valid.
+            if (achbotHasUnscopedPaymentReferenceCollision(
+                $connection, $payid, (int)$orderId)) {
+                throw new RuntimeException('legacy_invoice_reference_ambiguous');
+            }
+            $stmt = $connection->prepare("UPDATE payment_attempts
+                SET provider_reference=?,checkout_url=?,stage='pending'
+                WHERE pay_row_id=? AND provider='nowpayments' AND order_hash=? AND stage='creating'
+                  AND provider_reference IS NULL AND quote_amount=?");
             $stmt->bind_param('ssiss', $payid, $invoiceUrl, $orderId, $hash_id, $quoteUsd);
             $stmt->execute();
             $saved = $stmt->affected_rows;
@@ -416,7 +503,9 @@ if(mysqli_num_rows($payInfo)==0){
     elseif(isset($_GET['zarinpal'])){
         $marker=achbotReserveCheckoutProvider($connection,(int)$orderId,'zarinpal');
         if ($marker === null) {
-            showForm("یک درخواست پرداخت برای این سفارش قبلاً صادر شده است؛ تغییر درگاه نیازمند بررسی است.");
+            showForm(achbotSharedPaymentTablesReady($connection)
+                ? "یک درخواست پرداخت برای این سفارش قبلاً صادر شده است؛ تغییر درگاه نیازمند بررسی است."
+                : "پیکربندی پیگیری امن پرداخت هنوز تکمیل نشده است.");
             exit;
         }
         $CallbackURL = $botUrl . "pay/back.php?zarinpal&hash_id=" . urlencode($hash_id);
@@ -435,16 +524,16 @@ if(mysqli_num_rows($payInfo)==0){
                 !in_array((int)($result->Status ?? -1),[100,0],true)) {
                 throw new RuntimeException('zarinpal_checkout_unconfirmed');
             }
-            $stmt=$connection->prepare("UPDATE pays SET payid=? WHERE id=? AND payid=? AND state='pending'");
-            $stmt->bind_param('sis',$authority,$orderId,$marker);
-            $stmt->execute();
-            $saved=$stmt->affected_rows;
-            $stmt->close();
-            if ($saved !== 1) throw new RuntimeException('zarinpal_checkout_write_conflict');
-            header('Location: https://www.zarinpal.com/pg/StartPay/' . rawurlencode($authority) . '/ZarinGate');
+            $checkoutUrl='https://www.zarinpal.com/pg/StartPay/' . rawurlencode($authority) . '/ZarinGate';
+            if (!achbotRecordCheckoutReference($connection,(int)$orderId,'zarinpal',
+                                               $marker,$authority,$checkoutUrl)) {
+                throw new RuntimeException('zarinpal_checkout_write_conflict');
+            }
+            header('Location: '.$checkoutUrl);
             exit;
         } catch (Throwable $error) {
             // Do not reissue when provider may already have accepted a request.
+            achbotMarkCheckoutUncertain($connection,(int)$orderId,'zarinpal');
             showForm("وضعیت صدور فاکتور نامشخص است؛ برای جلوگیری از پرداخت تکراری نیاز به بررسی دارد.");
             exit;
         }
@@ -453,7 +542,9 @@ if(mysqli_num_rows($payInfo)==0){
     elseif(isset($_GET['nextpay'])){
         $marker=achbotReserveCheckoutProvider($connection,(int)$orderId,'nextpay');
         if ($marker === null) {
-            showForm("یک درخواست پرداخت برای این سفارش قبلاً صادر شده است؛ تغییر درگاه نیازمند بررسی است.");
+            showForm(achbotSharedPaymentTablesReady($connection)
+                ? "یک درخواست پرداخت برای این سفارش قبلاً صادر شده است؛ تغییر درگاه نیازمند بررسی است."
+                : "پیکربندی پیگیری امن پرداخت هنوز تکمیل نشده است.");
             exit;
         }
         $Description = $type;
@@ -480,16 +571,14 @@ if(mysqli_num_rows($payInfo)==0){
         $transId=(string)($response->trans_id ?? '');
         if ((string)($response->code ?? '') === '-1' &&
             preg_match('/^[A-Za-z0-9_-]{1,128}$/D',$transId)) {
-            $stmt = $connection->prepare("UPDATE pays SET payid=? WHERE id=? AND payid=? AND state='pending'");
-            $stmt->bind_param('sis',$transId,$orderId,$marker);
-            $stmt->execute();
-            $saved=$stmt->affected_rows;
-            $stmt->close();
-            if ($saved === 1) {
-                header('Location: https://nextpay.org/nx/gateway/payment/' . rawurlencode($transId));
+            $checkoutUrl='https://nextpay.org/nx/gateway/payment/' . rawurlencode($transId);
+            if (achbotRecordCheckoutReference($connection,(int)$orderId,'nextpay',
+                                              $marker,$transId,$checkoutUrl)) {
+                header('Location: '.$checkoutUrl);
                 exit;
             }
         }
+        achbotMarkCheckoutUncertain($connection,(int)$orderId,'nextpay');
         showForm("وضعیت ایجاد تراکنش نامشخص است؛ درخواست پرداخت جدید خودکار صادر نمی‌شود.");
     }
 }

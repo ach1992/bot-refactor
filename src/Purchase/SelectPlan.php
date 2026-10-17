@@ -117,10 +117,7 @@ if((preg_match('/^discountSelectPlan(\d+)_(\d+)_(\d+)/',$userInfo['step'],$match
          
         if(!preg_match('/^discountSelectPlan/', $userInfo['step'])){ 
             $hash_id = RandomString(); 
-            $stmt = $connection->prepare("DELETE FROM `pays` WHERE `user_id` = ? AND `type` = 'BUY_SUB' AND `state` = 'pending'"); 
-            $stmt->bind_param("i", $from_id); 
-            $stmt->execute(); 
-            $stmt->close(); 
+            achbotRemoveUnclaimedPendingPayments($connection,$from_id,'BUY_SUB');
              
             $time = time(); 
             if(isset($accountCount)){ 

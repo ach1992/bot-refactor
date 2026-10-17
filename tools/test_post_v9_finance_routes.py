@@ -57,6 +57,7 @@ $GLOBALS['fake_nowpayment_outcome_currency'] = $spec['nowpayment_outcome_currenc
 $GLOBALS['fake_nowpayment_pay_currency'] = $spec['nowpayment_pay_currency'] ?? 'usdttrc20';
 $GLOBALS['fake_nowpayment_pay_amount'] = $spec['nowpayment_pay_amount'] ?? 1;
 $GLOBALS['fake_nowpayment_force_id'] = $spec['nowpayment_force_id'] ?? null;
+$GLOBALS['fake_invoice_id'] = $spec['fake_invoice_id'] ?? 'owned-new-invoice';
 $GLOBALS['fake_nowpayment_flip_hash'] = $spec['nowpayment_flip_hash'] ?? null;
 $GLOBALS['fake_nextpay_code'] = $spec['nextpay_code'] ?? -2;
 $GLOBALS['fake_nextpay_http'] = $spec['nextpay_http'] ?? 200;
@@ -150,6 +151,7 @@ function delMessage() {
         $GLOBALS['fake_prepayment_flip_hash']=null;
     }
 }
+function RandomString($count=9, $type='all') { return 'new-wallet-safe-hash'; }
 function getMainKeys() { return '{}'; }
 function alert(...$args) { $GLOBALS['events'][]=['name'=>'alert','args'=>$args]; }
 function answerCallbackQuery(...$args) { $GLOBALS['events'][]=['name'=>'callback','args'=>$args]; }
@@ -253,7 +255,7 @@ function curl_exec($handle) {
         // Confirm a durable local claim exists BEFORE the provider receives
         // the non-idempotent invoice creation request.
         $stmt=$GLOBALS['connection']->prepare(
-            "SELECT stage FROM achbot_nowpayments_attempts WHERE order_hash=? LIMIT 1");
+            "SELECT stage FROM payment_attempts WHERE order_hash=? LIMIT 1");
         $key=(string)($_GET['hash_id'] ?? '');
         $stmt->bind_param('s',$key);
         $stmt->execute();
@@ -261,8 +263,9 @@ function curl_exec($handle) {
         $stmt->close();
         $GLOBALS['invoice_reservation_seen']=$reservation['stage'] ?? null;
         if ($GLOBALS['fake_invoice_transport_failure'] ?? false) return false;
-        return json_encode(['id'=>'owned-new-invoice',
-                             'invoice_url'=>'https://nowpayments.io/payment?iid=owned-new-invoice']);
+        $invoice=(string)$GLOBALS['fake_invoice_id'];
+        return json_encode(['id'=>$invoice,
+             'invoice_url'=>'https://nowpayments.io/payment?iid='.$invoice]);
     }
     if (str_contains($handle->url, '/v1/payment/')) {
         if ($GLOBALS['fake_nowpayment_flip_hash'] !== null) {
@@ -356,6 +359,19 @@ try {
             $GLOBALS['events'][]=['name'=>'alert_result','result'=>achbotNpAlertOperator(
                 $connection,$spec['alert_admin'] ?? $admin,5)];
         }
+    } elseif ($spec['route'] === 'cron') {
+        $botState=['sellState'=>'off','searchState'=>'off','rewaredTime'=>0,
+                   'rewardChannel'=>null,'cartToCartAutoAcceptState'=>'off'];
+        $paymentKeys=['nowpayment'=>'SYNTHETIC-LOCAL-ONLY'];
+        $admin=9001;
+        require $root . '/settings/rewardReport.php';
+    } elseif ($spec['route'] === 'wallet_start') {
+        require $root . '/src/Finance/WalletStart.php';
+        $state=array_fill_keys(
+            ['cartToCartState','nowPaymentWallet','zarinpal',
+             'nextpay','weSwapState','tronWallet'], 'off');
+        startWalletPayment($connection,$state,['cancel'=>'لغو'],
+                           $botUrl,1001,null,100);
     } elseif ($spec['route'] === 'wallet_refund') {
         $result=refundToWalletAndNotify($connection,
             (int)($spec['refund_user']??1001),(int)($spec['refund_amount']??100),
@@ -428,11 +444,11 @@ def seed_payment(work,env,name,type_name,plan=0,server=0,payid=None):
 def seed_np_attempt(work,env,name,invoice,payment_id):
     seed_payment(work,env,name,'INCREASE_WALLET',0,0,invoice)
     sql(work,env,
-        "INSERT INTO achbot_nowpayments_attempts "
-        "(pay_row_id,order_hash,invoice_id,payment_id,invoice_url,quote_usd,"
-        "local_amount_toman,expected_outcome_currency,minimum_outcome_amount) "
-        f"SELECT id,hash_id,'{invoice}','{payment_id}',"
-        f"'https://nowpayments.io/pay/{invoice}',1,price,'usdttrc20',1 "
+        "INSERT INTO payment_attempts "
+        "(pay_row_id,provider,order_hash,provider_reference,payment_id,checkout_url,quote_amount,quote_currency,"
+        "local_amount_toman,settlement_currency,minimum_settlement_amount) "
+        f"SELECT id,'nowpayments',hash_id,'{invoice}','{payment_id}',"
+        f"'https://nowpayments.io/pay/{invoice}',1,'usd',price,'usdttrc20',1 "
         f"FROM pays WHERE hash_id='{name}'")
 
 def snapshot(work,env):
@@ -458,7 +474,7 @@ def main():
         sql(work,env,"INSERT INTO setting (type,value) VALUES ('PAYMENT_KEYS','" + keys + "')")
         # Original 23 tables remain frozen; the new proposed attempt table
         # is layered on top ONLY after documenting the original table count.
-        native.sql(work,env,(ROOT/'migrations/post-v9/002_nowpayments_checkout_attempts.sql').read_text(),DB)
+        native.sql(work,env,(ROOT/'migrations/post-v9/003_payment_attempts.sql').read_text(),DB)
         assert len(sql(work,env,'SHOW TABLES').splitlines()) == 25
 
         seed_payment(work,env,'unsupported-now','RETIRED_PANEL',7,2)
@@ -568,7 +584,7 @@ def main():
         verify_unchanged(work,env,before,'nowpay-existing-checkout-resume')
         if second['network_calls']:
             raise RuntimeError('Opening existing checkout spawned another invoice')
-        persisted=sql(work,env,"SELECT invoice_id,quote_usd,invoice_url FROM achbot_nowpayments_attempts WHERE order_hash='wallet-init'").strip()
+        persisted=sql(work,env,"SELECT provider_reference,quote_amount,checkout_url FROM payment_attempts WHERE order_hash='wallet-init'").strip()
         if 'owned-new-invoice' not in persisted or 'nowpayments.io' not in persisted:
             raise RuntimeError('Checkout URL or quote not durable')
         records.append(dict(case='nowpayments_checkout_url_reused_without_new_invoice',
@@ -596,6 +612,13 @@ def main():
             external=sql(work,env,f"SELECT payid FROM pays WHERE hash_id='{name}'").strip()
             if not external.startswith('next-' if p=='nextpay' else 'zarin-'):
                 raise RuntimeError('Original '+p+' identity was not preserved')
+            attempt=sql(work,env,f"SELECT provider,stage,provider_reference,quote_currency,"
+                f"quote_amount,local_amount_toman FROM payment_attempts WHERE order_hash='{name}'").strip()
+            expected=f"{p}\tpending\t{external}\ttoman\t100000.00000000\t100000"
+            if attempt!=expected:
+                raise RuntimeError('Common ledger did not durably record '+p+': '+repr(attempt))
+            records.append(dict(case='gateway_'+p+'_shared_ledger_identity_and_quote',
+                                pass_=True,external_requests=1))
             before=snapshot(work,env)
             refused=run_php(work,env,stage,dict(route='initiate',
                 get={'nowpayment':'','hash_id':name}))
@@ -604,6 +627,166 @@ def main():
                f"SELECT payid FROM pays WHERE hash_id='{name}'").strip()!=external:
                 raise RuntimeError('Competing NOWPayments invoice after '+p)
             records.append(dict(case='gateway_'+p+'_to_now_blocked',pass_=True))
+        # Shared persistence is provider-scoped: the SAME external reference
+        # and SAME child payment ID may be legitimately reused by two
+        # different processors. They must never collide or cross-link.
+        for provider in ('nextpay','zarinpal'):
+            name='ledger-scope-'+provider
+            seed_payment(work,env,name,'INCREASE_WALLET',0,0,'shared-external-identity')
+            sql(work,env,f"INSERT INTO payment_attempts "
+                f"(pay_row_id,provider,order_hash,provider_reference,payment_id,"
+                f"quote_amount,quote_currency,local_amount_toman,stage) "
+                f"SELECT id,'{provider}',hash_id,'shared-external-identity',"
+                f"'shared-payment-identity',100,'toman',100,'pending' FROM pays "
+                f"WHERE hash_id='{name}'")
+            attempt_id=int(sql(work,env,f"SELECT id FROM payment_attempts "
+                f"WHERE order_hash='{name}'").strip())
+            sql(work,env,f"INSERT INTO payment_transactions "
+                f"(attempt_id,provider,payment_id,observed_status) "
+                f"VALUES ({attempt_id},'{provider}','shared-child-payment','pending')")
+        if sql(work,env,"SELECT COUNT(*) FROM payment_attempts "
+               "WHERE provider_reference='shared-external-identity'").strip()!='2':
+            raise RuntimeError('Provider-scoped checkout identities collided')
+        if sql(work,env,"SELECT COUNT(*) FROM payment_transactions "
+               "WHERE payment_id='shared-child-payment'").strip()!='2':
+            raise RuntimeError('Provider-scoped child payment IDs collided')
+        n_id=int(sql(work,env,"SELECT id FROM payment_attempts "
+            "WHERE order_hash='ledger-scope-nextpay'").strip())
+        try:
+            sql(work,env,f"INSERT INTO payment_transactions "
+                f"(attempt_id,provider,payment_id,observed_status) "
+                f"VALUES ({n_id},'zarinpal','mismatched-provider-child','pending')")
+        except Exception:
+            pass  # Composite FK must prevent a cross-provider attachment.
+        else:
+            raise RuntimeError('Wrong provider attached transaction to attempt')
+        if sql(work,env,"SELECT COUNT(*) FROM payment_transactions "
+               "WHERE payment_id='mismatched-provider-child'").strip()!='0':
+            raise RuntimeError('Provider mismatch was persisted')
+        records.append(dict(case='shared_ledger_composite_provider_uniqueness_and_fk',
+                            pass_=True,real_provider_requests=0))
+        # Run REAL handler logic against two different providers sharing the
+        # same external reference. Old pays.payid is ambiguous, so only the
+        # provider-scoped, verified ledger row may be resolved. No real HTTP.
+        scoped_wallet_start=int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())
+        negative=run_php(work,env,stage,dict(route='return',
+            get={'nextpay':'','trans_id':'shared-external-identity'},
+            nextpay_code=-2))
+        if (len(negative['network_calls'])!=1 or
+            sql(work,env,"SELECT state FROM pays WHERE hash_id='ledger-scope-nextpay'").strip()!='canceled' or
+            sql(work,env,"SELECT state FROM pays WHERE hash_id='ledger-scope-zarinpal'").strip()!='pending' or
+            int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())!=scoped_wallet_start):
+            raise RuntimeError('Provider-scoped NextPay callback selected the wrong order')
+        records.append(dict(case='nextpay_callback_provider_scoped_colliding_external_reference',
+                            pass_=True,external_requests=1))
+        positive=run_php(work,env,stage,dict(route='return',
+            get={'zarinpal':'','hash_id':'ledger-scope-zarinpal',
+                 'Authority':'shared-external-identity','Status':'OK'},
+            zarin_status=100))
+        if (sql(work,env,"SELECT state FROM pays WHERE hash_id='ledger-scope-zarinpal'").strip()!='paid' or
+            sql(work,env,"SELECT state FROM pays WHERE hash_id='ledger-scope-nextpay'").strip()!='canceled' or
+            int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())!=scoped_wallet_start+100):
+            raise RuntimeError('Provider-scoped Zarinpal callback selected the wrong order')
+        records.append(dict(case='zarinpal_callback_provider_scoped_colliding_external_reference',
+                            pass_=True,external_requests=1))
+        # A gateway-neutral ledger cannot retroactively identify older
+        # pays.payid rows. A scoped provider match with an unscoped historical
+        # duplicate must remain in review, never silently settle that ID.
+        for provider in ('nextpay','zarinpal'):
+            reference='mixed-generation-ref-'+provider
+            seed_payment(work,env,'legacy-ref-'+provider,
+                         'INCREASE_WALLET',0,0,reference)
+            name='scoped-ref-'+provider
+            seed_payment(work,env,name,'INCREASE_WALLET',0,0,reference)
+            sql(work,env,"INSERT INTO payment_attempts "
+                "(pay_row_id,provider,order_hash,provider_reference,"
+                "quote_amount,quote_currency,local_amount_toman,stage) "
+                f"SELECT id,'{provider}',hash_id,'{reference}',"
+                "100,'toman',100,'pending' FROM pays "
+                f"WHERE hash_id='{name}'")
+            before=snapshot(work,env)
+            spec=(dict(route='return',get={'nextpay':'','trans_id':reference},
+                       nextpay_code=0) if provider=='nextpay'
+                  else dict(route='return',get={'zarinpal':'',
+                       'hash_id':name,'Authority':reference,'Status':'OK'},
+                       zarin_status=100))
+            refused=run_php(work,env,stage,spec)
+            verify_unchanged(work,env,before,'ambiguous_legacy_scoped_'+provider)
+            if refused['network_calls'] or not refused['form']:
+                raise RuntimeError('Mixed-generation '+provider+
+                                   ' reference reached provider verification')
+            records.append(dict(case=provider+'_legacy_scoped_id_collision_refused',
+                                pass_=True,external_requests=0))
+        # A legacy callback must not reclassify a duplicate ID belonging to
+        # a different gateway with a new provider-scoped attempt.
+        ref='legacy-nextpay-vs-scoped-zarin'
+        seed_payment(work,env,'legacy-np-vs-zp','INCREASE_WALLET',0,0,ref)
+        seed_payment(work,env,'scoped-zp-vs-np','INCREASE_WALLET',0,0,ref)
+        sql(work,env,"INSERT INTO payment_attempts "
+            "(pay_row_id,provider,order_hash,provider_reference,"
+            "quote_amount,quote_currency,local_amount_toman,stage) "
+            f"SELECT id,'zarinpal',hash_id,'{ref}',"
+            "100,'toman',100,'pending' FROM pays "
+            "WHERE hash_id='scoped-zp-vs-np'")
+        before=snapshot(work,env)
+        refused=run_php(work,env,stage,dict(route='return',
+            get={'nextpay':'','trans_id':ref},nextpay_code=0))
+        verify_unchanged(work,env,before,'legacy_nextpay_vs_new_zarinpal')
+        if refused['network_calls'] or not refused['form']:
+            raise RuntimeError('Ambiguous historical NextPay ID was accepted')
+        records.append(dict(case='legacy_nextpay_vs_new_zarinpal_collision_refused',
+                            pass_=True,external_requests=0))
+        # Provider references and child IDs are opaque case-sensitive IDs.
+        # The SAME gateway must be able to represent case-distinct identities.
+        for name in ('upper','lower'):
+            ref='CaseSensitiveABC' if name=='upper' else 'CaseSensitiveabc'
+            child='ChildCaseABC' if name=='upper' else 'ChildCaseabc'
+            seed_payment(work,env,'case-sensitive-'+name,
+                         'INCREASE_WALLET',0,0,ref)
+            sql(work,env,"INSERT INTO payment_attempts "
+                "(pay_row_id,provider,order_hash,provider_reference,"
+                "payment_id,quote_amount,quote_currency,local_amount_toman,stage) "
+                f"SELECT id,'nextpay',hash_id,'{ref}','{child}',"
+                "100,'toman',100,'pending' FROM pays "
+                f"WHERE hash_id='case-sensitive-{name}'")
+            aid=int(sql(work,env,"SELECT id FROM payment_attempts "
+                f"WHERE order_hash='case-sensitive-{name}'").strip())
+            sql(work,env,"INSERT INTO payment_transactions "
+                f"(attempt_id,provider,payment_id) VALUES ({aid},'nextpay','{child}')")
+        if sql(work,env,"SELECT COUNT(*) FROM payment_attempts "
+               "WHERE provider='nextpay' AND provider_reference LIKE 'CaseSensitive%'").strip()!='2':
+            raise RuntimeError('Case-distinct external provider references merged')
+        if sql(work,env,"SELECT COUNT(*) FROM payment_transactions "
+               "WHERE provider='nextpay' AND payment_id LIKE 'ChildCase%'").strip()!='2':
+            raise RuntimeError('Case-distinct child payment IDs merged')
+        records.append(dict(case='provider_identifiers_exact_case_persistence',
+                            pass_=True,external_requests=0))
+        # Even BEFORE exposing a newly issued provider URL, reject a token
+        # already present in legacy unscoped pays rows and retain the durable
+        # creating reservation for operator-led reconciliation.
+        for provider in ('nextpay','zarinpal'):
+            target='issuer-duplicate-'+provider
+            ref=('next-' if provider=='nextpay' else 'zarin-')+target
+            seed_payment(work,env,'legacy-issuer-'+provider,
+                         'INCREASE_WALLET',0,0,ref)
+            seed_payment(work,env,target,'INCREASE_WALLET',0,0,'unset')
+            sql(work,env,f"UPDATE pays SET payid=NULL,price=100000 "
+                         f"WHERE hash_id='{target}'")
+            issued=run_php(work,env,stage,dict(route='initiate',
+                            get={provider:'','hash_id':target}))
+            attempt=sql(work,env,"SELECT provider,stage,"
+                "COALESCE(provider_reference,'NULL') FROM payment_attempts "
+                f"WHERE order_hash='{target}'").strip()
+            bound=sql(work,env,f"SELECT payid FROM pays "
+                f"WHERE hash_id='{target}'").strip()
+            if (len(issued['network_calls'])!=1 or
+                attempt!=provider+'\treview\tNULL' or
+                bound==ref or not issued['form']):
+                raise RuntimeError('New '+provider+
+                                   ' checkout published a legacy-colliding ID: '+
+                                   repr((attempt,bound,issued['network_calls'])))
+            records.append(dict(case=provider+'_issuance_legacy_reference_collision_held',
+                                pass_=True,external_requests=1))
         seed_payment(work,env,'switch-pending','INCREASE_WALLET',0,0,'old')
         sql(work,env,"UPDATE pays SET payid='achbot_nextpay_creating_999' WHERE hash_id='switch-pending'")
         before=snapshot(work,env)
@@ -618,9 +801,9 @@ def main():
         # POST. Only the initial request may own the durable 'creating' row.
         seed_payment(work,env,'np-creating','INCREASE_WALLET',0,0,'unused-id')
         sql(work,env,"UPDATE pays SET price=100000,payid=NULL WHERE hash_id='np-creating'")
-        sql(work,env,"INSERT INTO achbot_nowpayments_attempts "
-            "(pay_row_id,order_hash,quote_usd,stage) "
-            "SELECT id,hash_id,1,'creating' FROM pays WHERE hash_id='np-creating'")
+        sql(work,env,"INSERT INTO payment_attempts "
+            "(pay_row_id,provider,order_hash,quote_amount,quote_currency,stage) "
+            "SELECT id,'nowpayments',hash_id,1,'usd','creating' FROM pays WHERE hash_id='np-creating'")
         before=snapshot(work,env)
         in_progress=run_php(work,env,stage,dict(route='initiate',
             get={'nowpayment':'','hash_id':'np-creating'}))
@@ -639,7 +822,7 @@ def main():
             invoice_transport_failure=True))
         if len(timed_out['network_calls'])!=1 or timed_out['invoice_reservation_seen']!='creating':
             raise RuntimeError('Timeout test did not reserve before ambiguous provider POST')
-        if sql(work,env,"SELECT stage FROM achbot_nowpayments_attempts "
+        if sql(work,env,"SELECT stage FROM payment_attempts "
                "WHERE order_hash='np-create-timeout'").strip()!='review':
             raise RuntimeError('Ambiguous invoice creation was not quarantined')
         before=snapshot(work,env)
@@ -653,14 +836,14 @@ def main():
                             pass_=True,external_requests=1,real_provider_requests=0))
         # Operator backlog must be visible without money/replay effects:
         # ambiguous invoice and a genuinely stalled creating reservation.
-        sql(work,env,"UPDATE achbot_nowpayments_attempts SET "
+        sql(work,env,"UPDATE payment_attempts SET "
             "created_at=NOW()-INTERVAL 25 MINUTE "
             "WHERE order_hash='np-creating'")
         failure=run_php(work,env,stage,dict(route='alert',get={},
             alert_send_failure=True))
         if failure['events'][-1]['result']['failed']!=2:
             raise RuntimeError('Failed Telegram alert was not left retryable')
-        if sql(work,env,"SELECT COUNT(*) FROM achbot_nowpayments_attempts "
+        if sql(work,env,"SELECT COUNT(*) FROM payment_attempts "
                "WHERE review_notified_at IS NOT NULL").strip()!='0':
             raise RuntimeError('Failed Telegram send incorrectly acknowledged backlog')
         notices=run_php(work,env,stage,dict(route='alert',get={}))
@@ -675,7 +858,7 @@ def main():
         if again['events'][-1]['result']['notified'] or any(
             e['name']=='sendMessage' for e in again['events']):
             raise RuntimeError('Recent operator alert spammed Cron')
-        if sql(work,env,"SELECT COUNT(*) FROM achbot_nowpayments_attempts "
+        if sql(work,env,"SELECT COUNT(*) FROM payment_attempts "
                "WHERE review_notified_at IS NOT NULL").strip()!='2':
             raise RuntimeError('Operator notice acknowledgements not durable')
         records.append(dict(case='nowpayments_review_alert_retry_and_throttle',
@@ -725,7 +908,7 @@ def main():
         accepted=run_php(work,env,stage,signed_ipn(ipn))
         if accepted['events'][-1].get('code')!=200 or accepted['network_calls']:
             raise RuntimeError('Correct signed IPN not stored cheaply: '+repr(accepted)[:400])
-        got=sql(work,env,"SELECT payment_id,provider_status,stage FROM achbot_nowpayments_attempts WHERE order_hash='wallet-init'").strip()
+        got=sql(work,env,"SELECT payment_id,provider_status,stage FROM payment_attempts WHERE order_hash='wallet-init'").strip()
         if 'np-pmt-wallet-init' not in got or 'confirmed' not in got:
             raise RuntimeError('IPN provider ID/status was not durable')
         if int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())!=before_wallet:
@@ -748,7 +931,7 @@ def main():
             raise RuntimeError('Background confirmation not retained as pending: '+repr(intermediate)[-500:])
         records.append(dict(case='nowpayments_signed_confirmed_background_nonfinal',
                             pass_=True,external_requests=1))
-        sql(work,env,"UPDATE achbot_nowpayments_attempts SET last_checked_at=NOW()-INTERVAL 120 SECOND WHERE order_hash='wallet-init'")
+        sql(work,env,"UPDATE payment_attempts SET last_checked_at=NOW()-INTERVAL 120 SECOND WHERE order_hash='wallet-init'")
         final=run_php(work,env,stage,dict(route='reconcile',get={},
             mock_invoice='owned-new-invoice',
             nowpayment_payment_id='np-pmt-wallet-init',
@@ -765,7 +948,7 @@ def main():
             raise RuntimeError('Post-settlement browser return did not show read-only success')
         records.append(dict(case='nowpayments_browser_only_readonly_paid_status',
                             pass_=True,external_requests=0))
-        if sql(work,env,"SELECT stage FROM achbot_nowpayments_attempts WHERE order_hash='wallet-init'").strip()!='done':
+        if sql(work,env,"SELECT stage FROM payment_attempts WHERE order_hash='wallet-init'").strip()!='done':
             raise RuntimeError('Cron did not persist completed gateway attempt')
         if not any(x['name']=='sendMessage' and len(x['args'])>3 and x['args'][3]==1001
                    for x in final['events']):
@@ -793,12 +976,12 @@ def main():
                 payment_id=name,payment_status='finished')))
             if extra['events'][-1].get('code')!=200:
                 raise RuntimeError('Valid extra child lacked durable acceptance: '+name)
-        children=sql(work,env,"SELECT e.payment_id FROM achbot_nowpayments_child_payments e "
-            "JOIN achbot_nowpayments_attempts a ON a.id=e.attempt_id "
+        children=sql(work,env,"SELECT e.payment_id FROM payment_transactions e "
+            "JOIN payment_attempts a ON a.id=e.attempt_id "
             "WHERE a.order_hash='wallet-init' AND e.payment_id<>a.payment_id ORDER BY e.payment_id").strip().splitlines()
         if children!=['np-extra-deposit','np-fourth-child','np-third-child']:
             raise RuntimeError('Distinct signed child identifiers were lost: '+repr(children))
-        if sql(work,env,"SELECT stage,provider_status FROM achbot_nowpayments_attempts "
+        if sql(work,env,"SELECT stage,provider_status FROM payment_attempts "
                "WHERE order_hash='wallet-init'").strip()!='review\tadditional_payment':
             raise RuntimeError('Additional deposit not surfaced for operator review')
         if int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())!=paid_wallet:
@@ -808,7 +991,7 @@ def main():
         # A stored extra-child replay must neither duplicate credit nor
         # re-arm an operator alert that was already delivered. A genuinely
         # NEW later child may re-arm the alert to surface new financial data.
-        sql(work,env,"UPDATE achbot_nowpayments_attempts SET "
+        sql(work,env,"UPDATE payment_attempts SET "
                      "review_notified_at='2026-10-16 01:00:00' "
                      "WHERE order_hash='wallet-init'")
         for replay_id in ('np-pmt-wallet-init','np-extra-deposit','np-third-child'):
@@ -817,7 +1000,7 @@ def main():
             if again['events'][-1].get('code')!=200:
                 raise RuntimeError('Replay of persisted child rejected: '+replay_id)
         if sql(work,env,"SELECT IFNULL(DATE_FORMAT(review_notified_at,'%Y-%m-%d %H:%i:%s'),'') "
-           "FROM achbot_nowpayments_attempts WHERE order_hash='wallet-init'").strip()!='2026-10-16 01:00:00':
+           "FROM payment_attempts WHERE order_hash='wallet-init'").strip()!='2026-10-16 01:00:00':
             raise RuntimeError('Extra-child replay cleared already-sent operator notification')
         if int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())!=paid_wallet:
             raise RuntimeError('Replay after extra deposits changed balance')
@@ -826,11 +1009,11 @@ def main():
         new_child=run_php(work,env,stage,signed_ipn(dict(ipn,
             payment_id='np-fifth-child',payment_status='finished')))
         if new_child['events'][-1].get('code')!=200 or sql(work,env,
-           "SELECT COUNT(*) FROM achbot_nowpayments_child_payments e "
-           "JOIN achbot_nowpayments_attempts a ON a.id=e.attempt_id "
+           "SELECT COUNT(*) FROM payment_transactions e "
+           "JOIN payment_attempts a ON a.id=e.attempt_id "
            "WHERE a.order_hash='wallet-init'").strip()!='5':
             raise RuntimeError('New signed child was not durably retained')
-        if sql(work,env,"SELECT review_notified_at IS NULL FROM achbot_nowpayments_attempts "
+        if sql(work,env,"SELECT review_notified_at IS NULL FROM payment_attempts "
            "WHERE order_hash='wallet-init'").strip()!='1':
             raise RuntimeError('New child receipt did not re-arm operator alert')
         records.append(dict(case='nowpayments_new_child_rearms_operator_notice',
@@ -839,7 +1022,7 @@ def main():
         # worker has read N children but BEFORE it acknowledges Telegram.
         # Also simulate overlapping Cron: the nested worker must not send
         # the same leased snapshot.
-        sql(work,env,"UPDATE achbot_nowpayments_attempts SET "
+        sql(work,env,"UPDATE payment_attempts SET "
             "review_notified_at=NULL,review_notice_claim_token=NULL,"
             "review_notice_claimed_at=NULL WHERE order_hash='wallet-init'")
         overlapping=run_php(work,env,stage,dict(route='alert',get={},
@@ -855,7 +1038,7 @@ def main():
             raise RuntimeError('Concurrent alert/child interleaving was not guarded: '+
                                repr(overlapping['events'])[:800])
         if sql(work,env,"SELECT review_notified_at IS NULL, "
-           "review_notice_claim_token IS NULL FROM achbot_nowpayments_attempts "
+           "review_notice_claim_token IS NULL FROM payment_attempts "
            "WHERE order_hash='wallet-init'").strip()!='1\t1':
             raise RuntimeError('Old alert hid a new signed child')
         latest=run_php(work,env,stage,dict(route='alert',get={}))
@@ -874,8 +1057,8 @@ def main():
         # A finished provider payment whose deposit is smaller than the
         # promised quote is quarantined, never auto-reconciled as successful.
         seed_payment(work,env,'np-underpaid','INCREASE_WALLET',0,0,'np-underpaid-invoice')
-        sql(work,env,"INSERT INTO achbot_nowpayments_attempts (pay_row_id,order_hash,invoice_id,payment_id,invoice_url,quote_usd,local_amount_toman,expected_outcome_currency,minimum_outcome_amount) "
-            "SELECT id,hash_id,'np-underpaid-invoice','np-underpaid-pmt','https://nowpayments.io/pay/np-underpaid',1,price,'usdttrc20',1 FROM pays WHERE hash_id='np-underpaid'")
+        sql(work,env,"INSERT INTO payment_attempts (pay_row_id,provider,order_hash,provider_reference,payment_id,checkout_url,quote_amount,quote_currency,local_amount_toman,settlement_currency,minimum_settlement_amount) "
+            "SELECT id,'nowpayments',hash_id,'np-underpaid-invoice','np-underpaid-pmt','https://nowpayments.io/pay/np-underpaid',1,'usd',price,'usdttrc20',1 FROM pays WHERE hash_id='np-underpaid'")
         wallet_prior=int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())
         review=run_php(work,env,stage,dict(route='reconcile',get={},
             mock_invoice='np-underpaid-invoice',
@@ -885,7 +1068,7 @@ def main():
             nowpayment_price=1,nowpayment_pay_amount=1,nowpayment_actual=0.5))
         if int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())!=wallet_prior:
             raise RuntimeError('Underpaid crypto gateway credited wallet')
-        if sql(work,env,"SELECT stage FROM achbot_nowpayments_attempts WHERE order_hash='np-underpaid'").strip()!='review':
+        if sql(work,env,"SELECT stage FROM payment_attempts WHERE order_hash='np-underpaid'").strip()!='review':
             raise RuntimeError('Underpaid gateway did not enter reconciliation queue')
         records.append(dict(case='nowpayments_underpayment_quarantined',
                             pass_=True,external_requests=1))
@@ -893,10 +1076,10 @@ def main():
         # payment. Do not credit or poll it indefinitely as pending.
         seed_payment(work,env,'np-partial-final','INCREASE_WALLET',0,0,
                      'np-partial-final-invoice')
-        sql(work,env,"INSERT INTO achbot_nowpayments_attempts "
-            "(pay_row_id,order_hash,invoice_id,payment_id,invoice_url,quote_usd,local_amount_toman,expected_outcome_currency,minimum_outcome_amount) "
-            "SELECT id,hash_id,'np-partial-final-invoice','np-partial-child',"
-            "'https://nowpayments.io/pay/np-partial-final',1,price,'usdttrc20',1 FROM pays "
+        sql(work,env,"INSERT INTO payment_attempts "
+            "(pay_row_id,provider,order_hash,provider_reference,payment_id,checkout_url,quote_amount,quote_currency,local_amount_toman,settlement_currency,minimum_settlement_amount) "
+            "SELECT id,'nowpayments',hash_id,'np-partial-final-invoice','np-partial-child',"
+            "'https://nowpayments.io/pay/np-partial-final',1,'usd',price,'usdttrc20',1 FROM pays "
             "WHERE hash_id='np-partial-final'")
         before_balance=int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())
         partial=run_php(work,env,stage,dict(route='reconcile',get={},
@@ -906,7 +1089,7 @@ def main():
             nowpayment_status='partially_paid',
             nowpayment_price=1,nowpayment_pay_amount=1,nowpayment_actual=0.5))
         if len(partial['network_calls'])!=1 or sql(work,env,
-           "SELECT stage FROM achbot_nowpayments_attempts WHERE order_hash='np-partial-final'").strip()!='review':
+           "SELECT stage FROM payment_attempts WHERE order_hash='np-partial-final'").strip()!='review':
             raise RuntimeError('Terminal partially_paid child payment was not quarantined')
         if int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())!=before_balance:
             raise RuntimeError('Partial child incorrectly changed wallet')
@@ -917,10 +1100,10 @@ def main():
         # may have succeeded despite an ambiguous transport response.
         seed_payment(work,env,'np-remote-uncertain','BUY_SUB',7,2,
                      'np-remote-uncertain-invoice')
-        sql(work,env,"INSERT INTO achbot_nowpayments_attempts "
-            "(pay_row_id,order_hash,invoice_id,payment_id,invoice_url,quote_usd,local_amount_toman,expected_outcome_currency,minimum_outcome_amount) "
-            "SELECT id,hash_id,'np-remote-uncertain-invoice','np-remote-uncertain-payment',"
-            "'https://nowpayments.io/payment/np-remote-uncertain',1,price,'usdttrc20',1 FROM pays "
+        sql(work,env,"INSERT INTO payment_attempts "
+            "(pay_row_id,provider,order_hash,provider_reference,payment_id,checkout_url,quote_amount,quote_currency,local_amount_toman,settlement_currency,minimum_settlement_amount) "
+            "SELECT id,'nowpayments',hash_id,'np-remote-uncertain-invoice','np-remote-uncertain-payment',"
+            "'https://nowpayments.io/payment/np-remote-uncertain',1,'usd',price,'usdttrc20',1 FROM pays "
             "WHERE hash_id='np-remote-uncertain'")
         wallet_before=int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())
         remote_uncertain=run_php(work,env,stage,dict(route='reconcile',get={},
@@ -930,8 +1113,8 @@ def main():
             nowpayment_status='finished',nowpayment_price=1,
             nowpayment_pay_amount=1,nowpayment_actual=1))
         if not any(e['name']=='marzban_unknown_result' for e in remote_uncertain['events']):
-            raise RuntimeError('Uncertain provider fixture did not reach Marzban create seam: '+repr(remote_uncertain)[:700]+' DB '+repr(sql(work,env,"SELECT a.stage,a.provider_status,p.state FROM achbot_nowpayments_attempts a JOIN pays p ON p.id=a.pay_row_id WHERE a.order_hash='np-remote-uncertain'")))
-        if sql(work,env,"SELECT stage FROM achbot_nowpayments_attempts "
+            raise RuntimeError('Uncertain provider fixture did not reach Marzban create seam: '+repr(remote_uncertain)[:700]+' DB '+repr(sql(work,env,"SELECT a.stage,a.provider_status,p.state FROM payment_attempts a JOIN pays p ON p.id=a.pay_row_id WHERE a.order_hash='np-remote-uncertain'")))
+        if sql(work,env,"SELECT stage FROM payment_attempts "
                "WHERE order_hash='np-remote-uncertain'").strip()!='review':
             raise RuntimeError('Uncertain remote create was not held for operator review')
         if int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())!=wallet_before:
@@ -946,10 +1129,10 @@ def main():
         # a genuine finished payment before making any provider status request.
         seed_payment(work,env,'np-late-invoice','INCREASE_WALLET',0,0,
                      'np-late-invoice-id')
-        sql(work,env,"INSERT INTO achbot_nowpayments_attempts "
-            "(pay_row_id,order_hash,invoice_id,payment_id,invoice_url,quote_usd,local_amount_toman,expected_outcome_currency,minimum_outcome_amount,created_at) "
-            "SELECT id,hash_id,'np-late-invoice-id','np-late-child-payment',"
-            "'https://nowpayments.io/pay/np-late',1,price,'usdttrc20',1,"
+        sql(work,env,"INSERT INTO payment_attempts "
+            "(pay_row_id,provider,order_hash,provider_reference,payment_id,checkout_url,quote_amount,quote_currency,local_amount_toman,settlement_currency,minimum_settlement_amount,created_at) "
+            "SELECT id,'nowpayments',hash_id,'np-late-invoice-id','np-late-child-payment',"
+            "'https://nowpayments.io/pay/np-late',1,'usd',price,'usdttrc20',1,"
             "DATE_SUB(NOW(), INTERVAL 12 DAY) FROM pays WHERE hash_id='np-late-invoice'")
         balance_before=int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())
         late=run_php(work,env,stage,dict(route='reconcile',get={},
@@ -958,7 +1141,7 @@ def main():
             nowpayment_order_id='np-late-invoice',
             nowpayment_status='finished'))
         if len(late['network_calls'])!=1 or sql(work,env,
-           "SELECT stage FROM achbot_nowpayments_attempts WHERE order_hash='np-late-invoice'").strip()!='done':
+           "SELECT stage FROM payment_attempts WHERE order_hash='np-late-invoice'").strip()!='done':
             raise RuntimeError('Valid payment on older timeless invoice was stranded')
         if int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())!=balance_before+100:
             raise RuntimeError('Late-invoice finished payment failed to credit wallet')
@@ -987,7 +1170,7 @@ def main():
                 nowpayment_status='finished',**overrides))
             if len(obs['network_calls'])!=1:
                 raise RuntimeError('Provider outcome fixture not exercised: '+name)
-            if sql(work,env,f"SELECT stage,provider_status FROM achbot_nowpayments_attempts WHERE order_hash='{h}'").strip()!='review\t'+reason:
+            if sql(work,env,f"SELECT stage,provider_status FROM payment_attempts WHERE order_hash='{h}'").strip()!='review\t'+reason:
                 raise RuntimeError('Unsafe net merchant outcome was accepted: '+name)
             if sql(work,env,f"SELECT state FROM pays WHERE hash_id='{h}'").strip()!='pending' or int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())!=start_wallet:
                 raise RuntimeError('Unsafe finished outcome mutated funds: '+name)
@@ -1003,7 +1186,7 @@ def main():
         drift=run_php(work,env,stage,dict(route='reconcile',get={},
             mock_invoice=inv,nowpayment_payment_id=pid,
             nowpayment_order_id=name,nowpayment_status='finished'))
-        if sql(work,env,f"SELECT stage,provider_status FROM achbot_nowpayments_attempts WHERE order_hash='{name}'").strip()!='review\tlocal_amount_changed':
+        if sql(work,env,f"SELECT stage,provider_status FROM payment_attempts WHERE order_hash='{name}'").strip()!='review\tlocal_amount_changed':
             raise RuntimeError('Mutated local amount was not quarantined')
         if sql(work,env,f"SELECT state FROM pays WHERE hash_id='{name}'").strip()!='pending' or int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())!=before_wallet:
             raise RuntimeError('Tampered local price was settled')
@@ -1453,11 +1636,11 @@ def main():
             sql(work,env,f"UPDATE pays SET order_id={oid} WHERE hash_id='{name}'")
             if provider=='nowpayment':
                 sql(work,env,
-                  "INSERT INTO achbot_nowpayments_attempts "
-                  "(pay_row_id,order_hash,invoice_id,payment_id,invoice_url,quote_usd,"
-                  "local_amount_toman,expected_outcome_currency,minimum_outcome_amount,stage) "
-                  f"SELECT id,hash_id,'{name}-invoice','{name}-payment',"
-                  f"'https://nowpayments.io/pay/{name}',1,price,'usdttrc20',1,'fulfilling' "
+                  "INSERT INTO payment_attempts "
+                  "(pay_row_id,provider,order_hash,provider_reference,payment_id,checkout_url,quote_amount,quote_currency,"
+                  "local_amount_toman,settlement_currency,minimum_settlement_amount,stage) "
+                  f"SELECT id,'nowpayments',hash_id,'{name}-invoice','{name}-payment',"
+                  f"'https://nowpayments.io/pay/{name}',1,'usd',price,'usdttrc20',1,'fulfilling' "
                   f"FROM pays WHERE hash_id='{name}'")
             before_wallet=int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())
             pay_id=int(sql(work,env,f"SELECT id FROM pays WHERE hash_id='{name}'").strip())
@@ -1476,7 +1659,7 @@ def main():
             if provider=='nowpayment':
                 # The direct doAction unit route skips the enclosing worker;
                 # reflect the review handoff a real worker would perform.
-                sql(work,env,f"UPDATE achbot_nowpayments_attempts "
+                sql(work,env,f"UPDATE payment_attempts "
                              f"SET stage='review',provider_status='fulfillment_unconfirmed' "
                              f"WHERE order_hash='{name}' AND stage='fulfilling'")
             records.append(dict(case='renewal_'+provider+'_explicit_failure_is_ambiguous',
@@ -1496,7 +1679,7 @@ def main():
                 sql(work,env,f"UPDATE pays SET user_id=99999991 WHERE hash_id='{name}'")
             # Existing unrelated pending test invoices must not consume
             # this deliberately bounded one-attempt reconciliation tick.
-            sql(work,env,"UPDATE achbot_nowpayments_attempts SET last_checked_at=NOW() "
+            sql(work,env,"UPDATE payment_attempts SET last_checked_at=NOW() "
                          f"WHERE order_hash<>'{name}' AND stage IN ('pending','checking')")
             before_wallet=int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())
             run=run_php(work,env,stage,dict(route='reconcile',get={},
@@ -1504,7 +1687,7 @@ def main():
                 nowpayment_payment_id=name+'-payment',
                 nowpayment_status='finished'))
             stage_status=sql(work,env,
-                "SELECT a.stage,a.provider_status FROM achbot_nowpayments_attempts a "
+                "SELECT a.stage,a.provider_status FROM payment_attempts a "
                 f"WHERE a.order_hash='{name}'").strip()
             if want_done:
                 if stage_status!='done\tcompensated':
@@ -1548,9 +1731,9 @@ def main():
         seed_payment(work,env,'stalecreating','INCREASE_WALLET',0,0,'unused')
         sql(work,env,"UPDATE pays SET payid='achbot_nowpayment_creating_100' "
                      "WHERE hash_id='stalecreating'")
-        sql(work,env,"INSERT INTO achbot_nowpayments_attempts "
-            "(pay_row_id,order_hash,quote_usd,stage) "
-            "SELECT id,hash_id,1,'creating' FROM pays WHERE hash_id='stalecreating'")
+        sql(work,env,"INSERT INTO payment_attempts "
+            "(pay_row_id,provider,order_hash,quote_amount,quote_currency,stage) "
+            "SELECT id,'nowpayments',hash_id,1,'usd','creating' FROM pays WHERE hash_id='stalecreating'")
         before=snapshot(work,env)
         pending=run_php(work,env,stage,dict(route='prepayment',get={},
             callback_data='prePayCheck_BUYSUB_nextpay_stalecreating'))
@@ -1639,15 +1822,15 @@ def main():
         sql(work,env,"UPDATE pays SET type='RENEW_ACCOUNT',plan_id=7,"
             f"server_id=2,order_id={mismatch_oid},request_date=UNIX_TIMESTAMP() "
             "WHERE hash_id='rnnpclaimed'")
-        np_identity=sql(work,env,"SELECT invoice_id,payment_id,stage "
-            "FROM achbot_nowpayments_attempts WHERE order_hash='rnnpclaimed'").strip()
+        np_identity=sql(work,env,"SELECT provider_reference,payment_id,stage "
+            "FROM payment_attempts WHERE order_hash='rnnpclaimed'").strip()
         for gateway in ('nowpayment','zarinpal'):
             before=snapshot(work,env)
             retained=run_php(work,env,stage,dict(route='prepayment',get={},
                 callback_data='prePayCheck_RENEWACCOUNT_'+gateway+'_rnnpclaimed'))
             verify_unchanged(work,env,before,'renewal_np_invoice_'+gateway)
-            if sql(work,env,"SELECT invoice_id,payment_id,stage "
-                "FROM achbot_nowpayments_attempts WHERE order_hash='rnnpclaimed'").strip()!=np_identity:
+            if sql(work,env,"SELECT provider_reference,payment_id,stage "
+                "FROM payment_attempts WHERE order_hash='rnnpclaimed'").strip()!=np_identity:
                 raise RuntimeError('Existing NOWPayments invoice/child evidence modified')
             if retained['network_calls'] or any(
                'pay/?' in str(e) or 'https://nowpayments.io/pay/' in str(e)
@@ -1778,9 +1961,9 @@ def main():
         # loaded, and the only DB is the disposable Unix-socket MariaDB.
         import socket, time, urllib.request, urllib.error
         seed_payment(work,env,'np-http-signed','INCREASE_WALLET',0,0,'np-http-invoice')
-        sql(work,env,"INSERT INTO achbot_nowpayments_attempts "
-            "(pay_row_id,order_hash,invoice_id,invoice_url,quote_usd) "
-            "SELECT id,hash_id,'np-http-invoice','https://nowpayments.io/pay/np-http',1 "
+        sql(work,env,"INSERT INTO payment_attempts "
+            "(pay_row_id,provider,order_hash,provider_reference,checkout_url,quote_amount,quote_currency) "
+            "SELECT id,'nowpayments',hash_id,'np-http-invoice','https://nowpayments.io/pay/np-http',1,'usd' "
             "FROM pays WHERE hash_id='np-http-signed'")
         (stage/'baseInfo.php').write_text(
             "<?php\n$dbUserName='root';\n$dbPassword='';\n"
@@ -1825,13 +2008,13 @@ def main():
             refused,_=post('0'*128)
             if refused!=401:
                 raise RuntimeError('Real HTTP entrypoint accepted wrong IPN HMAC: '+str(refused))
-            if sql(work,env,"SELECT payment_id FROM achbot_nowpayments_attempts "
+            if sql(work,env,"SELECT payment_id FROM payment_attempts "
                    "WHERE order_hash='np-http-signed'").strip() not in ('NULL',''):
                 raise RuntimeError('Forged HTTP IPN modified invoice')
             accepted,reply=post(mac)
             if accepted!=200 or json.loads(reply).get('accepted') is not True:
                 raise RuntimeError('Real signed IPN HTTP rejected: '+repr((accepted,reply[:150])))
-            got=sql(work,env,"SELECT payment_id FROM achbot_nowpayments_attempts "
+            got=sql(work,env,"SELECT payment_id FROM payment_attempts "
                    "WHERE order_hash='np-http-signed'").strip()
             if got!='np-http-payment':
                 raise RuntimeError('Real IPN HTTP path did not persist exact payment ID')
@@ -1841,8 +2024,209 @@ def main():
             srv.terminate()
             try:srv.wait(timeout=5)
             except subprocess.TimeoutExpired:srv.kill();srv.wait(timeout=3)
+
+        # All seven original pending-order cleanup sites must protect a
+        # provider-issued reference; do not silently remove signed callbacks
+        # or Marzban deliveries after a customer requests another quote.
+        cleanup_paths=[
+            'src/Purchase/SelectPlan.php','src/Purchase/Catalogue.php',
+            'src/Finance/Routes/RenewalPlan.php',
+            'src/Finance/Routes/Extensions.php',
+            'src/Finance/Routes/RenewalCheckout.php',
+            'src/Finance/WalletStart.php'
+        ]
+        checked=0
+        for source_path in cleanup_paths:
+            code=(ROOT/source_path).read_text()
+            checked+=code.count('achbotRemoveUnclaimedPendingPayments($connection,$from_id,')
+        helper=(ROOT/'src/Purchase/Core.php').read_text()
+        if (checked!=7 or
+            "AND NOT EXISTS (" not in helper or
+            "a.pay_row_id=pays.id" not in helper or
+            "(payid IS NULL OR payid='')" not in helper):
+            raise RuntimeError('Pending checkout cleanup can orphan issued claims: '+
+                               str(checked))
+        records.append(dict(case='all_pending_quote_cleanup_routes_preserve_issued_ids',
+                            pass_=True,routes=checked))
+
+        # Execute ACTUAL current WalletStart PHP against the owned database,
+        # proving a fresh quote no longer deletes an already-issued checkout.
+        seed_payment(work,env,'wallet-previous-issued',
+                     'INCREASE_WALLET',0,0,'old-issued-ref')
+        sql(work,env,"INSERT INTO payment_attempts "
+            "(pay_row_id,provider,order_hash,provider_reference,quote_amount,"
+            "quote_currency,local_amount_toman,stage) "
+            "SELECT id,'nextpay',hash_id,payid,100,'toman',100,'pending' "
+            "FROM pays WHERE hash_id='wallet-previous-issued'")
+        seed_payment(work,env,'wallet-unused-draft',
+                     'INCREASE_WALLET',0,0,'unused')
+        sql(work,env,"UPDATE pays SET payid=NULL "
+                     "WHERE hash_id='wallet-unused-draft'")
+        wallet_route=run_php(work,env,stage,dict(route='wallet_start',get={}))
+        if wallet_route['network_calls']:
+            raise RuntimeError('WalletStart reached external provider')
+        active=sql(work,env,"SELECT COUNT(*) FROM pays "
+            "WHERE hash_id='wallet-previous-issued'").strip()
+        draft=sql(work,env,"SELECT COUNT(*) FROM pays "
+            "WHERE hash_id='wallet-unused-draft'").strip()
+        fresh=sql(work,env,"SELECT COUNT(*) FROM pays "
+            "WHERE hash_id='new-wallet-safe-hash'").strip()
+        linked=sql(work,env,"SELECT COUNT(*) FROM payment_attempts a "
+            "JOIN pays p ON p.id=a.pay_row_id "
+            "WHERE p.hash_id='wallet-previous-issued'").strip()
+        if (active,draft,fresh,linked)!=('1','0','1','1'):
+            raise RuntimeError('Creating a new wallet quote erased issued payment history: '+
+                               repr((active,draft,fresh,linked)))
+        records.append(dict(case='wallet_requote_preserves_existing_issued_payment',
+                            pass_=True,real_php=True))
+        # The schema itself also enforces the lifetime of the parent pays row.
+        try:
+            sql(work,env,"DELETE FROM pays WHERE hash_id='wallet-previous-issued'")
+        except Exception:
+            pass
+        else:
+            raise RuntimeError('Database permitted deletion of a claimed payment')
+        if sql(work,env,"SELECT COUNT(*) FROM pays "
+               "WHERE hash_id='wallet-previous-issued'").strip()!='1':
+            raise RuntimeError('Claimed pays row deleted despite attempt FK')
+        records.append(dict(case='database_fk_prevents_claim_orphan',
+                            pass_=True,external_requests=0))
+
+        # A new NOWPayments invoice may collide with an old unscoped payid.
+        # The source cannot infer whether that historical ID was issued by
+        # NextPay or Zarinpal. Keep the new invoice reservation for review,
+        # but do not publish the colliding hosted URL or disturb old orders.
+        for gateway in ('nextpay','zarinpal'):
+            ref='np-colliding-legacy-'+gateway
+            name='np-probe-collision-'+gateway
+            older='legacy-unscoped-'+gateway
+            seed_payment(work,env,older,'INCREASE_WALLET',0,0,ref)
+            seed_payment(work,env,name,'INCREASE_WALLET',0,0,'unused')
+            sql(work,env,"UPDATE pays SET payid=NULL,price=100000 "
+                         f"WHERE hash_id='{name}'")
+            refused=run_php(work,env,stage,dict(route='initiate',
+                get={'nowpayment':'','hash_id':name},fake_invoice_id=ref))
+            check=sql(work,env,"SELECT a.stage,IFNULL(a.provider_reference,'NULL'),"
+                "IFNULL(a.checkout_url,'NULL'),p.payid FROM payment_attempts a "
+                "JOIN pays p ON p.id=a.pay_row_id "
+                f"WHERE a.order_hash='{name}'").strip()
+            legacy=sql(work,env,f"SELECT payid,state FROM pays WHERE hash_id='{older}'").strip()
+            marker='achbot_nowpayment_creating_'+sql(work,env,
+                f"SELECT id FROM pays WHERE hash_id='{name}'").strip()
+            if (len(refused['network_calls'])!=1 or '/v1/invoice' not in refused['network_calls'][0] or
+                check!=f'review\tNULL\tNULL\t{marker}' or
+                legacy!=f'{ref}\tpending' or
+                any('nowpayments.io' in str(event) for event in refused['events']) or
+                'nowpayments.io' in refused['form'] or
+                'بررسی' not in refused['form']):
+                raise RuntimeError('Legacy '+gateway+' invoice collision was published or lost: '+
+                                   repr((check,legacy,refused)))
+            records.append(dict(case='nowpayments_legacy_'+gateway+
+                                '_invoice_collision_preserves_reservation',
+                                pass_=True,external_requests=1))
+        # A reference reused across two FULLY scoped providers is valid.
+        # Do not turn provider-scoped identity into global uniqueness.
+        for provider in ('nextpay','zarinpal'):
+            ref='np-shared-with-'+provider
+            previous='np-other-scoped-'+provider
+            name='np-positive-'+provider
+            seed_payment(work,env,previous,'INCREASE_WALLET',0,0,ref)
+            sql(work,env,"INSERT INTO payment_attempts "
+                "(pay_row_id,provider,order_hash,provider_reference,"
+                "quote_amount,quote_currency,local_amount_toman,stage) "
+                f"SELECT id,'{provider}',hash_id,payid,"
+                "100,'toman',100,'pending' FROM pays "
+                f"WHERE hash_id='{previous}'")
+            seed_payment(work,env,name,'INCREASE_WALLET',0,0,'unused')
+            sql(work,env,"UPDATE pays SET payid=NULL,price=100000 "
+                         f"WHERE hash_id='{name}'")
+            issued=run_php(work,env,stage,dict(route='initiate',
+                get={'nowpayment':'','hash_id':name},fake_invoice_id=ref))
+            now=sql(work,env,"SELECT a.stage,a.provider_reference,p.payid "
+                "FROM payment_attempts a JOIN pays p ON p.id=a.pay_row_id "
+                f"WHERE a.order_hash='{name}'").strip()
+            prior=sql(work,env,"SELECT a.provider,a.provider_reference,p.payid "
+                "FROM payment_attempts a JOIN pays p ON p.id=a.pay_row_id "
+                f"WHERE a.order_hash='{previous}'").strip()
+            if (len(issued['network_calls'])!=1 or
+                now!=f'pending\t{ref}\t{ref}' or
+                prior!=f'{provider}\t{ref}\t{ref}' or
+                not any(ref in str(event) for event in issued['events'])):
+                raise RuntimeError('Provider-scoped NOWPayments reference was rejected: '+
+                                   repr((now,prior,issued)))
+            records.append(dict(case='nowpayments_cross_scoped_'+provider+
+                                '_same_reference_allowed',
+                                pass_=True,external_requests=1))
+
+        # Run the ACTUAL unmodified Cron entrypoint on the same disposable
+        # MariaDB fixture, with only test-private bootstrap and outbound
+        # backup/Telegram boundaries stubbed. The real GatewayReturn and
+        # AutomaticReceipts modules are loaded, the latter instrumented
+        # after execution to prove unrelated Cron work was reached.
+        (stage/'config.php').write_text('<?php // owned test Cron bootstrap\n')
+        (stage/'buy_helpers.php').write_text('<?php // no remote work needed\n')
+        (stage/'src/Backup/Database.php').write_text(
+            "<?php namespace AchBot\\Backup\\Database; "
+            "function schedule($conn,$channel,$callback,$root) { "
+            "$GLOBALS['events'][]=['name'=>'backup_reached'];return true;}\n")
+        receipts=stage/'src/Finance/AutomaticReceipts.php'
+        receipts.write_text(receipts.read_text()+
+            "\n$GLOBALS['events'][]=['name'=>'automatic_receipts_reached'];\n")
+        seed_payment(work,env,'cron-due-operator-alert',
+                     'INCREASE_WALLET',0,0,'np-cron-probe')
+        sql(work,env,"INSERT INTO payment_attempts "
+            "(pay_row_id,provider,order_hash,provider_reference,quote_amount,"
+            "quote_currency,local_amount_toman,stage) "
+            "SELECT id,'nowpayments',hash_id,payid,100,'usd',100,'review' "
+            "FROM pays WHERE hash_id='cron-due-operator-alert'")
+        healthy=run_php(work,env,stage,dict(route='cron',get={}))
+        names=[v['name'] for v in healthy['events']]
+        if (healthy['error'] or healthy['fatal'] or
+            'backup_reached' not in names or
+            'automatic_receipts_reached' not in names or
+            'sendMessage' not in names):
+            raise RuntimeError('Owned healthy Cron did not finish local workers: '+repr(healthy))
+        records.append(dict(case='cron_complete_003_schema_alert_and_receipts_run',
+                            pass_=True,real_php=True))
+
+        # An interrupted/mismatched 003 migration can leave payment_attempts
+        # present while payment_transactions is absent. NEVER issue a new
+        # checkout that could receive funds but could not persist IPN evidence.
+        # This destructive DDL is limited to our disposable fixture database.
+        sql(work,env,'DROP TABLE payment_transactions')
+        before=snapshot(work,env)
+        stopped=run_php(work,env,stage,dict(route='cron',get={}))
+        after=snapshot(work,env)
+        names=[v['name'] for v in stopped['events']]
+        if (stopped['error'] or stopped['fatal'] or stopped['network_calls'] or
+            'backup_reached' not in names or
+            'automatic_receipts_reached' not in names or
+            'sendMessage' in names or before!=after):
+            raise RuntimeError('Incomplete 003 Cron halted receipts or ran unsafe reconciliation: '+
+                               repr(stopped))
+        records.append(dict(case='cron_partial_003_schema_skips_np_and_runs_receipts',
+                            pass_=True,real_php=True,external_requests=0))
+        for provider in ('nowpayment','nextpay','zarinpal'):
+            name='partial-schema-'+provider
+            seed_payment(work,env,name,'INCREASE_WALLET',0,0,'unused')
+            sql(work,env,f"UPDATE pays SET payid=NULL,price=100000 "
+                         f"WHERE hash_id='{name}'")
+            before=snapshot(work,env)
+            blocked=run_php(work,env,stage,dict(route='initiate',
+                get={provider:'','hash_id':name}))
+            verify_unchanged(work,env,before,'partial_schema_'+provider)
+            attempt_count=sql(work,env,f"SELECT COUNT(*) FROM payment_attempts "
+                f"WHERE order_hash='{name}'").strip()
+            token=sql(work,env,f"SELECT IFNULL(payid,'') FROM pays "
+                f"WHERE hash_id='{name}'").strip()
+            if blocked['network_calls'] or not blocked['form'] or attempt_count!='0' or token:
+                raise RuntimeError('Incomplete shared schema issued '+provider+
+                    ' invoice or reserved without evidence table: '+
+                    repr((attempt_count,token,blocked['network_calls'])))
+            records.append(dict(case=provider+'_incomplete_shared_schema_fails_before_issue',
+                                pass_=True,external_requests=0))
     report={'complete':True,'cases':len(records),'schema_tables':23, 'current_schema_tables':25,
-       'additive_nowpayments_attempts_tested':True,
+       'shared_payment_attempt_ledger_tested':True,
        'original_mariadb_socket_only':True,'real_provider_requests':0,
        'synthetic_payment_spy':True,'operator_finance_acceptance':False,
        'scenarios':records}

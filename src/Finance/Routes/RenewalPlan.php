@@ -53,10 +53,7 @@ if(preg_match('/sConfigRenewPlan(\d+)_(\d+)/',$data, $match) && ($botState['sell
     $token = base64_encode("{$from_id}.{$id}");
     
     $hash_id = RandomString();
-    $stmt = $connection->prepare("DELETE FROM `pays` WHERE `user_id` = ? AND `type` = 'RENEW_SCONFIG' AND `state` = 'pending'");
-    $stmt->bind_param("i", $from_id);
-    $stmt->execute();
-    $stmt->close();
+    achbotRemoveUnclaimedPendingPayments($connection,$from_id,'RENEW_SCONFIG');
 
     setUser('', 'temp');
     $description = json_encode(["uuid"=>$uuid, "remark"=>$remark,

@@ -1,6 +1,20 @@
 # AChBot financial lifecycle — current contract and controlled consolidation
 
-**Owner acceptance:** 2026-10-16, roadmap [#29](https://github.com/ach1992/bot-refactor/issues/29), controlling finance [#26](https://github.com/ach1992/bot-refactor/issues/26).  Current source baseline: source-only [PR #42](https://github.com/ach1992/bot-refactor/pull/42) merged to `main@3958ece78d79fafd6ae0f851fe11946ad2061904`, tree `0eaa5a5911f3dcc44f4c1ab43919821ca2d8a6eb`. Last published/Owner-reported installed release remains `v0.10.0-rc.3`; no financial migration or operational acceptance is implied. This file is the specialized *implementation/assurance* contract; `docs/PROJECT-SPEC.md` remains canonical product intent and GitHub Issues/PRs own current work/evidence.
+**Owner acceptance:** 2026-10-16, roadmap #29, finance owner #26. Current authoritative public SOURCE baseline is v0.10.0-rc.4 at main 58d98e05839b4aa5b28e985bcd1473173f590eda, including PR #42 and PR #43. The shared provider ledger is a later UNMERGED candidate. The last Owner-reported INSTALLED version is RC3. Publication, source merge and real schema/financial acceptance are different gates. This file is the specialized implementation contract; docs/PROJECT-SPEC.md defines canonical product intent.
+
+## Updated owner decision — provider-neutral payment persistence (2026-10-17)
+
+After the published source-only v0.10.0-rc.4, the Owner rejected an
+expanding series of gateway-named database tables and requested clear,
+unprefixed shared storage. The next **not-yet-merged** source candidate
+uses payment_attempts and payment_transactions across NOWPayments,
+NextPay and Zarinpal, preserving provider-scoped checkout/child identity
+and immutable payout/quote evidence. This is a provider-neutral attempt
+boundary, **not** a completed unified financial business-effect ledger.
+Do not replace historical released RC4 bytes or silently migrate any
+live/historical RC4 attempts. For fresh/current/legacy RC4 schema gates,
+read PAYMENT-LEDGER-MIGRATION.md; exact deployment/migration still needs
+separate Owner approval and independently proven restore.
 
 ## Accepted objective, boundaries and non-goals
 
@@ -72,7 +86,7 @@ Verified primary guidance: [NOWPayments status definitions](https://nowpayments.
 
 The Owner observed missed hosted-website Return-to-Merchant clicks in production and explicitly prioritized automatically completing real provider-verified orders. NOWPayments `confirmed` is a blockchain signal; for fixed-price VPN goods it **cannot by itself** certify merchant payout. To remove the human browser dependency without relaxing status rules, merged source-only PR #42 introduced (not yet operationally activated):
 
-- a **separately shipped and migration-gated additive** attempt ledger `migrations/post-v9/002_nowpayments_checkout_attempts.sql` (23 frozen original tables + 2 proposed narrow tables in disposable tests). It stores trusted order↔invoice↔child-payment correlation, original USD quote, same provider HTTPS invoice URL, recovery progress. No private secret or customer dump in SQL history;
+- the HISTORICAL RC4 separately shipped and migration-gated NOWPayments-specific attempt ledger `migrations/post-v9/002_nowpayments_checkout_attempts.sql` (23 frozen original tables + 2 proposed narrow tables in disposable tests); a new shared design is proposed separately in migrations/post-v9/003_payment_attempts.sql. It stores trusted order↔invoice↔child-payment correlation, original USD quote, same provider HTTPS invoice URL, recovery progress. No private secret or customer dump in SQL history;
 - hosted new-invoice `ipn_callback_url`, direct Telegram invoice link, and safe reuse on subsequent checkout clicks; even after the older bot message's three-hour window, an already-issued pending invoice is not silently expired. A durable `creating` reservation is committed before the provider POST; a timeout/unknown result is held for review rather than issuing a second invoice;
 - NOWPayments HMAC-SHA512 IPN on existing `pay/back.php?nowpayment_ipn=1` with a **small dedicated bootstrap** (no Telegram update parsing), storing only provider evidence. Secret is configured via private `baseInfo.php`, not posted to bot chats, committed source or another public endpoint;
 - bounded, quote-checked provider status lookup from **already configured** `settings/rewardReport.php` Cron. `confirmed` or `sending` show as pending; `finished` with exact IDs, expected quote and paid-in-full constraints triggers existing Telegram/Marzban/business delivery independent of browser. The buyer returning to `success_url` only sees read-only local state; forged `NP_id` cannot bypass the managed attempt and trigger direct credit;
