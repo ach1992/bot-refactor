@@ -117,10 +117,11 @@ if (
 	$keyboard = [];
 	$actionType = "Renew";
 	if ($botState['cartToCartState'] == "on") $keyboard[] = [['text' => "💳 کارت به کارت مبلغ $price", 'callback_data' => "prePayCheck_{$actionType}_CartToCart_{$hash_id}"]];
+	if (($botState['giftCardState'] ?? 'off') === 'on') $keyboard[] = [['text' => "🎁 گیفت‌کارت مبلغ $price", 'callback_data' => "prePayCheck_{$actionType}_GiftCard_{$hash_id}"]];
+	if (achbotManualEnabled('manual_usdt')) $keyboard[] = [['text' => "💎 تتر دستی مبلغ $price", 'callback_data' => "prePayCheck_{$actionType}_ManualUsdt_{$hash_id}"]];
 	if ($botState['nowPaymentOther'] == "on") $keyboard[] = [['text' => $buttonValues['now_payment_gateway'], 'callback_data' => "prePayCheck_{$actionType}_nowpayment_{$hash_id}"]];
 	if ($botState['zarinpal'] == "on") $keyboard[] = [['text' => $buttonValues['zarinpal_gateway'], 'callback_data' => "prePayCheck_{$actionType}_zarinpal_{$hash_id}"]];
 	if ($botState['nextpay'] == "on") $keyboard[] = [['text' => $buttonValues['nextpay_gateway'], 'callback_data' => "prePayCheck_{$actionType}_nextpay_{$hash_id}"]];
-	if ($botState['weSwapState'] == "on") $keyboard[] = [['text' => $buttonValues['weswap_gateway'], 'callback_data' => "prePayCheck_{$actionType}_WeSwap_{$hash_id}"]];
 	if ($botState['walletState'] == "on") $keyboard[] = [['text' => "💰پرداخت با موجودی مبلغ $price", 'callback_data' => "prePayCheck_{$actionType}_Wallet_{$hash_id}"]];
 	if ($botState['tronWallet'] == "on") $keyboard[] = [['text' => $buttonValues['tron_gateway'], 'callback_data' => "prePayCheck_{$actionType}_TronWallet_{$hash_id}"]];
 	if (!preg_match('/^discountRenew/', $userInfo['step'])) $keyboard[] = [['text' => " 🎟 افزودن کد تخفیف ", 'callback_data' => "haveDiscountRenew_{$match[1]}_{$rowId}"]];
@@ -130,7 +131,7 @@ if (
 	sendMessage("🔰 لطفا یکی از روش های زیر را انتخاب کنید و روی آن بزنید:", json_encode(['inline_keyboard' => $keyboard]));
 }
 
-if (preg_match('/payRenewWithCartToCart(.*)/', $data, $match)) {
+if (preg_match('/payRenewWith(?:CartToCart|GiftCard|ManualUsdt)(.*)/', $data, $match)) {
 
     $payInfo = dbFetchPayByHash($connection, $match[1]);
     if (!$payInfo) {
@@ -154,17 +155,26 @@ if (preg_match('/payRenewWithCartToCart(.*)/', $data, $match)) {
     }
 
     delMessage();
-    setUser("payRenewWithCartToCart{$match[1]}");
+    $method = strpos($data, 'WithManualUsdt') !== false ? 'manual_usdt' :
+        (strpos($data, 'WithGiftCard') !== false ? 'gift_card' : 'bank_transfer');
+    if (!achbotManualClaim($connection, $payInfo, $method, (int)$from_id)) {
+        alert("⚠️ پرداخت این سفارش با این روش مجاز نیست یا قبلاً به روش دیگری آغاز شده است.", true);
+        return;
+    }
+    setUser("payRenewWith" . ($method === 'manual_usdt' ? 'ManualUsdt' : ($method === 'gift_card' ? 'GiftCard' : 'CartToCart')) . $match[1]);
 
-	// $msg = buildCartToCartInfoMessage($paymentKeys, $mainValues, (int)$payInfo['price']);
-	$msg = buildCartToCartInfoMessage($paymentKeys, $mainValues, (int)$payInfo['price'], (int)$payInfo['user_id']);
-    $keyboard = kbSendReceiptAndCancel("sendRenewCartReceipt", "cancelRenewCartReceipt", $match[1]);
+	$msg = buildCartToCartInfoMessage($paymentKeys, $mainValues, (int)$payInfo['price'], (int)$payInfo['user_id'], $method, (string)$payInfo['hash_id']);
+    if ($msg === "") {
+        alert("⚠️ اطلاعات این پرداخت قابل بازیابی نیست؛ با پشتیبانی تماس بگیرید.", true);
+        return;
+    }
+    $keyboard = kbSendReceiptAndCancel($method === 'manual_usdt' ? "sendRenewUsdtReceipt" : ($method === 'gift_card' ? "sendRenewGiftReceipt" : "sendRenewCartReceipt"), "cancelRenewCartReceipt", $match[1], $method);
 
     sendMessage($msg, $keyboard, "HTML");
     exit;
 }
 
-if (preg_match('/sendRenewCartReceipt(?<hashId>.*)/', $data, $match)) {
+if (preg_match('/send(?:RenewCart|RenewGift|RenewUsdt)Receipt(?<hashId>.*)/', $data, $match)) {
 
     $payInfo = dbFetchPayByHash($connection, $match['hashId']);
     if (!$payInfo) {
@@ -173,14 +183,20 @@ if (preg_match('/sendRenewCartReceipt(?<hashId>.*)/', $data, $match)) {
         return '__ACHBOT_V8_GOTO_START__';
     }
 
+    $method = strpos($data, 'UsdtReceipt') !== false ? 'manual_usdt' :
+        (strpos($data, 'GiftReceipt') !== false ? 'gift_card' : 'bank_transfer');
+    if (!achbotManualReceiptAllowed($connection, $payInfo, $method, (int)$from_id)) {
+        alert("⚠️ این رسید با روش پرداخت انتخاب‌شده مطابقت ندارد یا سفارش در انتظار پرداخت نیست.", true);
+        return;
+    }
     $guardMsg = duplicateReceiptGuard($connection, $payInfo, time());
     if ($guardMsg) { alert($guardMsg, true); exit; }
 
     delMessage();
-    setUser("waitRenewCartReceipt{$match['hashId']}");
+    setUser(($method === 'manual_usdt' ? "waitRenewUsdtReceipt" : ($method === 'gift_card' ? "waitRenewGiftReceipt" : "waitRenewCartReceipt")) . $match['hashId']);
 
     $keyboard = kbOnlyCancel("cancelRenewCartReceipt", $match['hashId']);
-    sendMessage($mainValues['please_send_receipt_image'], $keyboard, "HTML");
+    sendMessage(achbotManualReceiptPrompt($mainValues, $method), $keyboard, "HTML");
     exit;
 }
 
@@ -188,13 +204,27 @@ if (preg_match('/cancelRenewCartReceipt(?<hashId>.*)/', $data, $match)) {
     handleCancelFlow($mainValues, $removeKeyboard);
 }
 
-if (preg_match('/waitRenewCartReceipt(.*)/', $userInfo['step'], $match)) {
+if (preg_match('/wait(?:RenewCart|RenewGift|RenewUsdt)Receipt(.*)/', $userInfo['step'], $match)) {
 
+    $method = strpos($userInfo['step'], 'UsdtReceipt') !== false ? 'manual_usdt' :
+        (strpos($userInfo['step'], 'GiftReceipt') !== false ? 'gift_card' : 'bank_transfer');
+    $receiptPay = dbFetchPayByHash($connection, $match[1]);
+    if (!$receiptPay || !achbotManualReceiptAllowed($connection, $receiptPay, $method, (int)$from_id)) {
+        setUser();
+        alert("⚠️ این سفارش قابل ثبت رسید نیست؛ برای بررسی با پشتیبانی تماس بگیرید.", true);
+        return;
+    }
     $fileid = extractPhotoFileId($update);
     if (!$fileid) {
         $keyboard = kbOnlyCancel("cancelRenewCartReceipt", $match[1]);
         sendMessage($mainValues['please_send_only_image'], $keyboard, "HTML");
         exit;
+    }
+
+    if (!achbotManualBeginEvidence($connection, $receiptPay, $method, (int)$from_id)) {
+        setUser();
+        alert("⚠️ رسید این سفارش قبلاً ثبت شده یا در حال بررسی است.", true);
+        return;
     }
 
     $payInfo = dbFetchPayByHash($connection, $match[1]);
@@ -255,11 +285,11 @@ if (preg_match('/waitRenewCartReceipt(.*)/', $userInfo['step'], $match)) {
     $volume = $respd['volume'];
     $days   = $respd['days'];
 
-    sendWithStartButton($mainValues['order_submitted'], $buttonValues['start_bot'], $botUsername, 'mainMenu', 'HTML');
+    sendWithStartButton(achbotManualAcknowledgement($receiptPay, $method), $buttonValues['start_bot'], $botUsername, 'mainMenu', 'HTML', (string)$receiptPay['hash_id']);
 
     $msg = str_replace(
         ['TYPE', "USER-ID", "USERNAME", "NAME", "PRICE", "REMARK", "VOLUME", "DAYS"],
-        ['کارت به کارت', $from_id, $username, $first_name, $price, $remark, $volume, $days],
+        [achbotManualLabel($method), $from_id, $username, $first_name, $price, $remark, $volume, $days],
         $mainValues['renew_account_request_message']
     );
 
@@ -272,10 +302,10 @@ if (preg_match('/waitRenewCartReceipt(.*)/', $userInfo['step'], $match)) {
         (int)$payInfo['user_id']
     );
 
-    $resPhoto = sendPhoto($fileid, $msg, $adminKeyboard, "HTML", $admin);
+    $resPhoto = sendPhoto($fileid, achbotManualCaption($connection, $receiptPay, $msg), $adminKeyboard, "HTML", $admin);
     sendToAllAdmins('sendPhoto', [
         'photo' => $fileid,
-        'caption' => $msg,
+        'caption' => achbotManualCaption($connection, $receiptPay, $msg),
         'reply_markup' => $adminKeyboard,
         'parse_mode' => "HTML"
     ], $match[1]);
@@ -288,6 +318,7 @@ if (preg_match('/waitRenewCartReceipt(.*)/', $userInfo['step'], $match)) {
         $stmt->bind_param("iis", $msgId, $admin, $match[1]);
         $stmt->execute();
         $stmt->close();
+        achbotManualMarkEvidence($connection, $match[1]);
     }
 
     exit;

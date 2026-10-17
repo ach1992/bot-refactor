@@ -871,7 +871,8 @@ function getGateWaysKeys(){
     $cartToCartState = $botState['cartToCartState']=="on"?$buttonValues['on']:$buttonValues['off'];
     $walletState = $botState['walletState']=="on"?$buttonValues['on']:$buttonValues['off'];
     $sellState = $botState['sellState']=="on"?$buttonValues['on']:$buttonValues['off'];
-    $weSwapState = $botState['weSwapState']=="on"?$buttonValues['on']:$buttonValues['off'];
+    $giftCardState = ($botState['giftCardState'] ?? 'off')==='on'?$buttonValues['on']:$buttonValues['off'];
+    $manualUsdtState = ($botState['manualUsdtState'] ?? 'off')==='on'?$buttonValues['on']:$buttonValues['off'];
     $robotState = $botState['botState']=="on"?$buttonValues['on']:$buttonValues['off'];
     $nowPaymentWallet = $botState['nowPaymentWallet']=="on"?$buttonValues['on']:$buttonValues['off'];
     $nowPaymentOther = $botState['nowPaymentOther']=="on"?$buttonValues['on']:$buttonValues['off'];
@@ -898,6 +899,10 @@ function getGateWaysKeys(){
             ['text'=>"دارنده حساب",'callback_data'=>"wizwizch"]
         ],
         [
+            ['text'=>(!empty($paymentKeys['giftCardUrl']) ? "🔗 تنظیم‌شده" : "پیش‌فرض"),'callback_data'=>"changePaymentKeysgiftCardUrl"],
+            ['text'=>"لینک خرید گیفت‌کارت",'callback_data'=>"wizwizch"]
+        ],
+        [
             ['text'=>(!empty($paymentKeys['nowpayment'])?$paymentKeys['nowpayment']:" "),'callback_data'=>"changePaymentKeysnowpayment"],
             ['text'=>"کد درگاه nowPayment",'callback_data'=>"wizwizch"]
         ],
@@ -914,8 +919,24 @@ function getGateWaysKeys(){
             ['text'=>"آدرس والت ترون",'callback_data'=>"wizwizch"]
         ],
         [
-            ['text'=>$weSwapState,'callback_data'=>"changeGateWaysweSwapState"],
-            ['text'=>"درگاه وی سواپ",'callback_data'=>"wizwizch"]
+            ['text'=>(!empty($paymentKeys['manualUsdtWallet']) ? $paymentKeys['manualUsdtWallet'] : "تنظیم‌نشده"),'callback_data'=>"changePaymentKeysmanualUsdtWallet"],
+            ['text'=>"آدرس دریافت تتر دستی",'callback_data'=>"wizwizch"]
+        ],
+        [
+            ['text'=>($paymentKeys['manualUsdtNetwork'] ?? 'BEP20'),'callback_data'=>"changePaymentKeysmanualUsdtNetwork"],
+            ['text'=>"شبکه تتر دستی",'callback_data'=>"wizwizch"]
+        ],
+        [
+            ['text'=>(!empty($paymentKeys['manualUsdtRateToman']) ? number_format((int)$paymentKeys['manualUsdtRateToman']).' تومان' : "نرخ پایه"),'callback_data'=>"changePaymentKeysmanualUsdtRateToman"],
+            ['text'=>"نرخ تتر دستی (هر USDT)",'callback_data'=>"wizwizch"]
+        ],
+        [
+            ['text'=>$giftCardState,'callback_data'=>"changeGateWaysgiftCardState"],
+            ['text'=>"🎁 پرداخت با گیفت‌کارت",'callback_data'=>"wizwizch"]
+        ],
+        [
+            ['text'=>$manualUsdtState,'callback_data'=>"changeGateWaysmanualUsdtState"],
+            ['text'=>"💎 تتر دستی (ارسال رسید)",'callback_data'=>"wizwizch"]
         ],
         [
             ['text'=>$cartToCartState,'callback_data'=>"changeGateWayscartToCartState"],
@@ -2275,7 +2296,7 @@ function getCallbackFromCommand($command) {
                 exit();
             }
 
-            if (($botState['cartToCartState'] ?? 'off') == "off" && ($botState['walletState'] ?? 'off') == "off") {
+            if (($botState['cartToCartState'] ?? 'off') == "off" && ($botState['giftCardState'] ?? 'off') == "off" && ($botState['manualUsdtState'] ?? 'off') == "off" && ($botState['walletState'] ?? 'off') == "off") {
                 sendMessage("⛔️ سیستم فروش غیرفعال است.", null, "MarkDown", $chat_id);
                 exit();
             }
@@ -2347,7 +2368,7 @@ if (isset($update->message->text)) {
                 exit;
             }
 
-            if (($botState['cartToCartState'] ?? 'off') == "off" && ($botState['walletState'] ?? 'off') == "off") {
+            if (($botState['cartToCartState'] ?? 'off') == "off" && ($botState['giftCardState'] ?? 'off') == "off" && ($botState['manualUsdtState'] ?? 'off') == "off" && ($botState['walletState'] ?? 'off') == "off") {
                 sendMessage("⛔️ سیستم فروش غیرفعال است.", null, "MarkDown", $chat_id);
                 exit;
             }

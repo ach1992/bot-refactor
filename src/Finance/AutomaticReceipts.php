@@ -14,6 +14,11 @@ if($botState['cartToCartAutoAcceptState']=="on"){
     $stmt->close();
 
     while($payInfo = $info->fetch_assoc()){
+        // Gift-card images require an operator; bank automatic approval
+        // must never silently turn gift-card evidence into wallet credit.
+        if (in_array(achbotManualSelectedMethod($connection, $payInfo), ['gift_card','manual_usdt'], true)) {
+            continue;
+        }
         if (!achbotSupportsPaymentSubject($connection, $payInfo)) {
             continue;
         }

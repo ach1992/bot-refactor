@@ -127,106 +127,326 @@ function generateHigherRandomizedAmount(int $amountToman): array {
     ];
 }
 
-function fetchCartToCartUserEligibility(mysqli $connection, int $userId, int $cutoffTs): array {
-    $default = [
-        'exists' => false,
-        'join_date' => 0,
-        'is_agent' => 0,
-        'approved_total' => 0,
-        'approved_before_cutoff' => 0,
-    ];
-
-    if ($userId <= 0) {
-        return $default;
-    }
-
-    $stmt = $connection->prepare("SELECT `date`, `is_agent` FROM `users` WHERE `userid` = ? LIMIT 1");
-    if (!$stmt) {
-        return $default;
-    }
-
-    $stmt->bind_param("i", $userId);
-    $stmt->execute();
-    $userRow = $stmt->get_result()->fetch_assoc();
-    $stmt->close();
-
-    if (!$userRow) {
-        return $default;
-    }
-
-    $stats = [
-        'exists' => true,
-        'join_date' => (int)($userRow['date'] ?? 0),
-        'is_agent' => (int)($userRow['is_agent'] ?? 0),
-        'approved_total' => 0,
-        'approved_before_cutoff' => 0,
-    ];
-
-    $stmt = $connection->prepare(
-        "SELECT
-            COUNT(*) AS approved_total,
-            COALESCE(SUM(CASE WHEN `request_date` < ? THEN 1 ELSE 0 END), 0) AS approved_before_cutoff
-         FROM `pays`
-         WHERE `user_id` = ?
-           AND `type` IN ('BUY_SUB', 'RENEW_ACCOUNT')
-           AND `state` = 'approved'"
-    );
-
-    if (!$stmt) {
-        return $stats;
-    }
-
-    $stmt->bind_param("ii", $cutoffTs, $userId);
-    $stmt->execute();
-    $payStats = $stmt->get_result()->fetch_assoc();
-    $stmt->close();
-
-    $stats['approved_total'] = (int)($payStats['approved_total'] ?? 0);
-    $stats['approved_before_cutoff'] = (int)($payStats['approved_before_cutoff'] ?? 0);
-
-    return $stats;
+/**
+ * Manual payment choice is durable and mutually exclusive with hosted
+ * gateway claims in the existing shared ledger. No schema or pays.payid reuse.
+ */
+function achbotManualMethod(string $choice): ?string {
+    return match ($choice) {
+        'CartToCart', 'bank_transfer' => 'bank_transfer',
+        'GiftCard', 'gift_card' => 'gift_card',
+        'ManualUsdt', 'manual_usdt' => 'manual_usdt',
+        default => null
+    };
 }
 
-function resolveCartToCartMessageType(int $priceToman, int $userId = 0): string {
-    global $connection;
+function achbotManualLabel(string $method): string {
+    return match ($method) {
+        'gift_card' => 'گیفت‌کارت',
+        'manual_usdt' => 'تتر دستی (USDT)',
+        default => 'کارت‌به‌کارت بانکی'
+    };
+}
 
-    $detailMinPrice = 50000;
-    $usdtMinPrice = 12000000;
-    $cutoffTs = strtotime('2026-03-01 00:00:00');
-    if ($cutoffTs === false) {
-        $cutoffTs = 1772323200;
+function achbotManualUsdtWalletValid(string $wallet, string $network): bool {
+    if (!in_array($network, ['BEP20','ERC20','TRC20'], true)) return false;
+    if ($network === 'TRC20') return preg_match('/^T[1-9A-HJ-NP-Za-km-z]{33}$/D', $wallet) === 1;
+    return preg_match('/^0x[0-9a-fA-F]{40}$/D', $wallet) === 1;
+}
+
+/**
+ * A manual transfer is a third-party on-chain transfer: the bot does not
+ * verify its screenshot or infer final settlement from Telegram evidence.
+ */
+function achbotManualUsdtConfiguration(): ?array {
+    global $paymentKeys, $USDTPrice, $USDTPriceagent, $connection;
+    $keys = is_array($paymentKeys ?? null) ? $paymentKeys : [];
+    $network = (string)($keys['manualUsdtNetwork'] ?? 'BEP20');
+    $wallet = trim((string)($keys['manualUsdtWallet'] ?? ''));
+    if (!achbotManualUsdtWalletValid($wallet, $network)) return null;
+    $manualRate = $keys['manualUsdtRateToman'] ?? null;
+    $rate = $manualRate !== null && is_numeric($manualRate) && (float)$manualRate > 0
+        ? (float)$manualRate : 0.0;
+    if ($rate <= 0) {
+        $rate = isset($USDTPrice) && is_numeric($USDTPrice) ? (float)$USDTPrice : 0.0;
     }
+    if (!is_finite($rate) || $rate < 100 || $rate > 1000000000) return null;
+    $agentRate = isset($USDTPriceagent) && is_numeric($USDTPriceagent)
+        ? (float)$USDTPriceagent : 0.0;
+    if (!is_finite($agentRate) || $agentRate <= 0) $agentRate = $rate;
+    // A configured manual-rate override applies to all customers, including agents.
+    if ($manualRate !== null && $rate > 0) $agentRate = $rate;
+    return ['network'=>$network, 'wallet'=>$wallet, 'rate'=>$rate, 'agent_rate'=>$agentRate];
+}
 
-    if ($priceToman >= $usdtMinPrice) {
-        return 'usdt';
+function achbotManualEnabled(string $method): bool {
+    global $botState;
+    if ($method === 'gift_card') return ($botState['giftCardState'] ?? 'off') === 'on';
+    if ($method === 'manual_usdt') {
+        return ($botState['manualUsdtState'] ?? 'off') === 'on' &&
+            achbotManualUsdtConfiguration() !== null;
     }
+    return $method === 'bank_transfer' && ($botState['cartToCartState'] ?? 'off') === 'on';
+}
 
-    if ($priceToman < $detailMinPrice || $userId <= 0 || !($connection instanceof mysqli)) {
-        return 'gift';
+function achbotManualSelectedMethod(mysqli $connection, array $payInfo): ?string {
+    try {
+        $stmt = $connection->prepare('SELECT provider FROM payment_attempts WHERE pay_row_id=? LIMIT 1');
+        $id = (int)$payInfo['id'];
+        $stmt->bind_param('i', $id);
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        $method = (string)($row['provider'] ?? '');
+        return in_array($method, ['bank_transfer', 'gift_card', 'manual_usdt'], true) ? $method : null;
+    } catch (Throwable $error) {
+        return null;
     }
+}
 
-    $stats = fetchCartToCartUserEligibility($connection, $userId, (int)$cutoffTs);
-    $joinDate = (int)$stats['join_date'];
-    $joinedBeforeCutoff = ($joinDate > 0 && $joinDate < (int)$cutoffTs);
-    $joinedAtLeastTenDaysAgo = ($joinDate > 0 && $joinDate <= (time() - (10 * 86400)));
-
-    if ((int)$stats['is_agent'] === 1) {
-        return 'detail';
+/**
+ * Atomic operator-approved wallet top-up. Photo upload and Telegram callback
+ * alone are NEVER payment proof. A privileged operator must have independently
+ * verified the receipt before invoking this transition.
+ *
+ * The local pays row lock serializes competing administrators; the wallet and
+ * approved state commit together. Existing signed administrator debt is kept.
+ */
+function achbotApproveManualWalletTopup(mysqli $connection, string $hashId, int $adminId): ?array {
+    if ($adminId <= 0 || !preg_match('/^[A-Za-z0-9_-]{1,50}$/D', $hashId)) return null;
+    try {
+        $connection->begin_transaction();
+        $stmt = $connection->prepare('SELECT id,user_id,type,price,state FROM pays
+            WHERE hash_id=? LIMIT 1 FOR UPDATE');
+        $stmt->bind_param('s', $hashId);
+        $stmt->execute();
+        $pay = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        if (!$pay || $pay['type'] !== 'INCREASE_WALLET' ||
+            $pay['state'] !== 'have_sent' || (int)$pay['price'] <= 0 ||
+            (int)$pay['user_id'] <= 0) {
+            $connection->rollback();
+            return null;
+        }
+        $userId = (int)$pay['user_id'];
+        $price = (int)$pay['price'];
+        $stmt = $connection->prepare('SELECT wallet FROM users WHERE userid=? LIMIT 1 FOR UPDATE');
+        $stmt->bind_param('i', $userId);
+        $stmt->execute();
+        $user = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        if (!$user) {
+            $connection->rollback();
+            return null;
+        }
+        $before = (int)$user['wallet'];
+        if (!addToWallet($connection, $userId, $price)) {
+            $connection->rollback();
+            return null;
+        }
+        $payId = (int)$pay['id'];
+        $stmt = $connection->prepare("UPDATE pays SET state='approved',approved_by=?
+            WHERE id=? AND state='have_sent'");
+        $stmt->bind_param('ii', $adminId, $payId);
+        $stmt->execute();
+        $changed = $stmt->affected_rows;
+        $stmt->close();
+        if ($changed !== 1 || !$connection->commit()) {
+            throw new RuntimeException('manual_wallet_commit_failed');
+        }
+        return ['user_id'=>$userId, 'price'=>$price,
+                'wallet_before'=>$before, 'wallet_after'=>$before+$price];
+    } catch (Throwable $error) {
+        try { $connection->rollback(); } catch (Throwable $ignored) {}
+        return null;
     }
+}
 
-    if ($joinedBeforeCutoff && (int)$stats['approved_before_cutoff'] >= 1) {
-        return 'detail';
+/** Claim an invoice exactly once, so bank, gift, and hosted methods cannot race. */
+function achbotManualClaim(mysqli $connection, array $payInfo, string $method, int $userId): bool {
+    if (!in_array($method, ['bank_transfer', 'gift_card', 'manual_usdt'], true) ||
+        (int)$payInfo['user_id'] !== $userId) return false;
+    try {
+        $connection->begin_transaction();
+        $id = (int)$payInfo['id'];
+        $stmt = $connection->prepare('SELECT id,user_id,hash_id,price,state,payid FROM pays WHERE id=? FOR UPDATE');
+        $stmt->bind_param('i', $id);
+        $stmt->execute();
+        $current = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        if (!$current || (int)$current['user_id'] !== $userId ||
+            (string)$current['state'] !== 'pending' ||
+            (string)($current['payid'] ?? '') !== '') {
+            $connection->rollback();
+            return false;
+        }
+        $stmt = $connection->prepare('SELECT provider,stage FROM payment_attempts WHERE pay_row_id=? LIMIT 1 FOR UPDATE');
+        $stmt->bind_param('i', $id);
+        $stmt->execute();
+        $existing = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        if ($existing !== null) {
+            $connection->commit();
+            return hash_equals($method, (string)$existing['provider']) && $existing['stage'] === 'pending';
+        }
+        if (!achbotManualEnabled($method)) {
+            $connection->rollback();
+            return false;
+        }
+        $hash = (string)$current['hash_id'];
+        $price = (int)$current['price'];
+        if ($price <= 0) {
+            $connection->rollback();
+            return false;
+        }
+        $quote = (string)$price;
+        $currency = 'toman';
+        $settlementNetwork = null;
+        $destination = null;
+        if ($method === 'bank_transfer') {
+            // Match the exact non-round amount to the durable invoice claim.
+            $quote = (string)generateHigherRandomizedAmount($price)['toman'];
+        } elseif ($method === 'manual_usdt') {
+            $config = achbotManualUsdtConfiguration();
+            if ($config === null) {
+                $connection->rollback();
+                return false;
+            }
+            $rate = $config['rate'];
+            $agentStmt = $connection->prepare('SELECT is_agent FROM users WHERE userid=? LIMIT 1');
+            $agentStmt->bind_param('i', $userId);
+            $agentStmt->execute();
+            $agent = $agentStmt->get_result()->fetch_assoc();
+            $agentStmt->close();
+            if ((int)($agent['is_agent'] ?? 0) === 1) $rate = $config['agent_rate'];
+            if (!is_finite($rate) || $rate <= 0) {
+                $connection->rollback();
+                return false;
+            }
+            $quote = number_format(ceil(($price / $rate) * 100) / 100, 2, '.', '');
+            // Immutable destination intent URI, not a customer-facing hosted checkout URL.
+            // Only manual_usdt code may read this snapshot.
+            $settlementNetwork = $config['network'];
+            $destination = 'usdt:' . $settlementNetwork . ':' . $config['wallet'];
+            $currency = 'USDT';
+        }
+        $stmt = $connection->prepare("INSERT INTO payment_attempts
+            (pay_row_id,provider,order_hash,quote_amount,quote_currency,local_amount_toman,
+             settlement_currency,checkout_url,stage)
+            VALUES (?,?,?,?,?,?,?,?,'pending')");
+        $stmt->bind_param('issssiss', $id, $method, $hash, $quote, $currency, $price,
+            $settlementNetwork, $destination);
+        $stmt->execute();
+        $stmt->close();
+        $connection->commit();
+        return true;
+    } catch (Throwable $error) {
+        try { $connection->rollback(); } catch (Throwable $ignored) {}
+        return false; // Idempotency conflict, missing shared ledger or DB failure.
     }
+}
 
-    if ($joinedBeforeCutoff && (int)$stats['approved_total'] >= 2) {
-        return 'detail';
+/** A receipt callback cannot change methods or revive a completed payment. */
+function achbotManualReceiptAllowed(mysqli $connection, array $payInfo, string $method, int $userId): bool {
+    if ((int)$payInfo['user_id'] !== $userId ||
+        (string)$payInfo['state'] !== 'pending' ||
+        (string)($payInfo['payid'] ?? '') !== '' ||
+        !in_array($method, ['bank_transfer','gift_card','manual_usdt'], true)) return false;
+    try {
+        $stmt = $connection->prepare('SELECT provider,stage FROM payment_attempts WHERE pay_row_id=? LIMIT 1');
+        $id = (int)$payInfo['id'];
+        $stmt->bind_param('i', $id);
+        $stmt->execute();
+        $attempt = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        return $attempt !== null &&
+            (string)$attempt['provider'] === $method && (string)$attempt['stage'] === 'pending';
+    } catch (Throwable $error) {
+        return false;
     }
+}
 
-    if ($joinedAtLeastTenDaysAgo && (int)$stats['approved_total'] >= 3) {
-        return 'detail';
+/** Claim a Telegram photo once before any admin delivery or monetary effect. */
+function achbotManualBeginEvidence(mysqli $connection, array $payInfo, string $method, int $userId): bool {
+    if (!achbotManualReceiptAllowed($connection, $payInfo, $method, $userId)) return false;
+    try {
+        $stmt = $connection->prepare("UPDATE payment_attempts a
+            JOIN pays p ON p.id=a.pay_row_id
+            SET a.stage='receiving'
+            WHERE p.id=? AND p.user_id=? AND p.state='pending'
+              AND a.provider=? AND a.stage='pending'");
+        $id = (int)$payInfo['id'];
+        $stmt->bind_param('iis', $id, $userId, $method);
+        $stmt->execute();
+        $ok = $stmt->affected_rows === 1;
+        $stmt->close();
+        return $ok;
+    } catch (Throwable $error) {
+        return false;
     }
+}
 
-    return 'gift';
+function achbotManualMarkEvidence(mysqli $connection, string $hashId): void {
+    $stmt = $connection->prepare("UPDATE payment_attempts a
+        JOIN pays p ON p.id=a.pay_row_id
+        SET a.stage='review'
+        WHERE p.hash_id=? AND p.state='have_sent'
+          AND a.provider IN ('bank_transfer','gift_card','manual_usdt') AND a.stage='receiving'");
+    $stmt->bind_param('s', $hashId);
+    $stmt->execute();
+    $stmt->close();
+}
+
+function achbotManualCaption(mysqli $connection, array $payInfo, string $caption): string {
+    $method = achbotManualSelectedMethod($connection, $payInfo);
+    $label = achbotManualLabel($method ?? 'bank_transfer');
+    $header = '🧾 روش پرداخت: <b>' . $label . "</b>\n";
+    if ($method === 'manual_usdt' || $method === 'bank_transfer') {
+        try {
+            $stmt = $connection->prepare('SELECT quote_amount,quote_currency,settlement_currency,
+                checkout_url FROM payment_attempts WHERE pay_row_id=? LIMIT 1');
+            $id = (int)$payInfo['id'];
+            $stmt->bind_param('i',$id);
+            $stmt->execute();
+            $details = $stmt->get_result()->fetch_assoc();
+            $stmt->close();
+            if ($details && $method === 'manual_usdt') {
+                $network = (string)$details['settlement_currency'];
+                $prefix = 'usdt:' . $network . ':';
+                $value = (string)$details['checkout_url'];
+                $address = str_starts_with($value,$prefix) ? substr($value,strlen($prefix)) : '';
+                if ($details['quote_currency'] === 'USDT' &&
+                    achbotManualUsdtWalletValid($address,$network)) {
+                    $header .= '💎 مبلغ تتر: <code>' .
+                        htmlspecialchars((string)$details['quote_amount'],ENT_QUOTES,'UTF-8') .
+                        ' USDT</code> | شبکه: <b>' . htmlspecialchars($network,ENT_QUOTES,'UTF-8') .
+                        "</b>\nآدرس: <code>" . htmlspecialchars($address,ENT_QUOTES,'UTF-8') .
+                        "</code>\n";
+                }
+            } elseif ($details && $details['quote_currency'] === 'toman') {
+                $header .= '💳 مبلغ دقیق حواله: <code>' .
+                    number_format((int)$details['quote_amount']) . " تومان</code>\n";
+            }
+        } catch (Throwable $error) {
+            // Keep the operator receipt and its method identity visible.
+        }
+    }
+    return $header . $caption;
+}
+
+function achbotManualReceiptPrompt(array $mainValues, string $method): string {
+    $key = match ($method) {
+        'gift_card' => 'please_send_gift_card_image',
+        'manual_usdt' => 'please_send_usdt_image',
+        default => 'please_send_receipt_image'
+    };
+    return $mainValues[$key];
+}
+
+function achbotManualAcknowledgement(array $payInfo, string $method): string {
+    return "📥 تصویر " . achbotManualLabel($method) . " دریافت شد.\n" .
+        "🧾 سفارش: <code>" . htmlspecialchars((string)$payInfo['hash_id'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') . "</code>\n" .
+        "⏳ رسید در انتظار بررسی مدیر است؛ ارسال تصویر به معنی تأیید پرداخت یا تحویل سرویس نیست.";
 }
 
 function getCartToCartMessageKey(string $messageType): string {
@@ -234,57 +454,63 @@ function getCartToCartMessageKey(string $messageType): string {
     return \AchBot\Presentation\Labels\cardToCardMessageKey($messageType);
 }
 
-function buildCartToCartInfoMessage(array $paymentKeys, array $mainValues, int $priceToman, int $userId = 0): string {
-    global $connection, $USDTPrice, $USDTPriceagent;
+/** Render the chosen and persisted fiat or crypto quote and destination. */
+function buildCartToCartInfoMessage(array $paymentKeys, array $mainValues, int $priceToman,
+                                    int $userId = 0, string $method = 'bank_transfer',
+                                    string $hashId = ''): string {
+    global $connection;
+    if (!in_array($method, ['bank_transfer','gift_card','manual_usdt'], true) ||
+        $hashId === '' || !($connection instanceof mysqli)) return '';
 
-    $messageType = resolveCartToCartMessageType($priceToman, $userId);
-    $GLOBALS['lastCartToCartMessageType'] = $messageType;
+    $stmt = $connection->prepare("SELECT provider,quote_amount,quote_currency,
+        local_amount_toman,settlement_currency,checkout_url
+        FROM payment_attempts WHERE order_hash=? AND provider=? LIMIT 1");
+    if (!$stmt) return '';
+    $stmt->bind_param('ss', $hashId, $method);
+    $stmt->execute();
+    $attempt = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+    if (!$attempt || (int)$attempt['local_amount_toman'] !== $priceToman) return '';
 
-    $randomPrice = generateHigherRandomizedAmount($priceToman);
-    $finalTomanAmount = (float)$randomPrice['toman'];
-
-    $isAgent = 0;
-    if ($userId > 0 && ($connection instanceof mysqli)) {
-        $stmt = $connection->prepare("SELECT `is_agent` FROM `users` WHERE `userid` = ? LIMIT 1");
-        if ($stmt) {
-            $stmt->bind_param("i", $userId);
-            $stmt->execute();
-            $userRow = $stmt->get_result()->fetch_assoc();
-            $stmt->close();
-
-            $isAgent = (int)($userRow['is_agent'] ?? 0);
+    if ($method === 'manual_usdt') {
+        $network = (string)$attempt['settlement_currency'];
+        $walletIntent = (string)$attempt['checkout_url'];
+        $prefix = 'usdt:' . $network . ':';
+        $wallet = str_starts_with($walletIntent, $prefix) ? substr($walletIntent,strlen($prefix)) : '';
+        if ((string)$attempt['quote_currency'] !== 'USDT' ||
+            !achbotManualUsdtWalletValid($wallet, $network) ||
+            !preg_match('/^[0-9]{1,15}\.[0-9]{2,8}$/D', (string)$attempt['quote_amount'])) {
+            return '';
         }
+        return strtr((string)($mainValues['brw_cart_to_cart_usdt'] ?? ''), [
+            'PRICE-TOMAN-ROUND' => number_format($priceToman),
+            'PRICE-USDT' => number_format((float)$attempt['quote_amount'], 2, '.', ''),
+            'USDT-NETWORK' => htmlspecialchars($network, ENT_QUOTES, 'UTF-8'),
+            'USDT-WALLET' => htmlspecialchars($wallet, ENT_QUOTES, 'UTF-8'),
+        ]);
     }
 
-    if ($isAgent === 1 && isset($USDTPriceagent) && trim($USDTPriceagent) !== '' && is_numeric($USDTPriceagent)) {
-        $usdtPrice = (float)$USDTPriceagent;
-    } elseif (isset($USDTPrice) && trim($USDTPrice) !== '' && is_numeric($USDTPrice)) {
-        $usdtPrice = (float)$USDTPrice;
-    } else {
-        $usdtPrice = 0;
-    }
-
-    $usdtAmount = $usdtPrice > 0 ? round($finalTomanAmount / $usdtPrice, 2) : 0;
-    $messageKey = getCartToCartMessageKey($messageType);
-    $messageTemplate = $mainValues[$messageKey] ?? '';
-    if ($messageTemplate === '' && $messageType === 'detail') {
-        $messageTemplate = $mainValues['brw_cart_to_cart_detail'] ?? '';
-    }
-
-    return strtr($messageTemplate, [
-        "PRICE-TOMAN-ROUND" => number_format($priceToman),
-        "ACCOUNT-NUMBER" => $paymentKeys['bankAccount'] ?? '---',
-        "HOLDER-NAME" => $paymentKeys['holderName'] ?? '---',
-        "PRICE-TOMAN" => number_format($randomPrice['toman']),
-        "PRICE-RIAL" => number_format($randomPrice['rial']),
-        "PRICE-USDT" => number_format($usdtAmount, 2, '.', ''),
-        "USDT-WALLET" => $paymentKeys['tronwallet'] ?? '---',
+    if ((string)$attempt['quote_currency'] !== 'toman') return '';
+    $bankAmount = (int)$attempt['quote_amount'];
+    if ($bankAmount <= 0) return '';
+    $key = $method === 'gift_card' ? 'brw_cart_to_cart_gift' : 'brw_cart_to_cart_detail';
+    $template = (string)($mainValues[$key] ?? '');
+    return strtr($template, [
+        'PRICE-TOMAN-ROUND' => number_format($priceToman),
+        'PRICE-TOMAN' => number_format($bankAmount),
+        'PRICE-RIAL' => number_format($bankAmount * 10),
+        'ACCOUNT-NUMBER' => htmlspecialchars((string)($paymentKeys['bankAccount'] ?? '---'), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'),
+        'HOLDER-NAME' => htmlspecialchars((string)($paymentKeys['holderName'] ?? '---'), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'),
     ]);
 }
 
-function kbSendReceiptAndCancel(string $sendPrefix, string $cancelPrefix, string $hashId): string {
+function kbSendReceiptAndCancel(string $sendPrefix, string $cancelPrefix, string $hashId, string $method = 'bank_transfer'): string {
+    global $paymentKeys;
     require_once dirname(__DIR__, 2) . '/src/Telegram/Markup.php';
-    return \AchBot\Telegram\Markup\receiptAndCancel($sendPrefix, $cancelPrefix, $hashId, $GLOBALS['lastCartToCartMessageType'] ?? 'detail');
+    $url = $paymentKeys['giftCardUrl'] ?? '';
+    if (!is_string($url) || filter_var($url, FILTER_VALIDATE_URL) === false ||
+        strtolower((string)(parse_url($url, PHP_URL_SCHEME) ?: '')) !== 'https') $url = null;
+    return \AchBot\Telegram\Markup\receiptAndCancel($sendPrefix, $cancelPrefix, $hashId, $method, $url);
 }
 
 function kbOnlyCancel(string $cancelPrefix, string $hashId): string {
@@ -504,19 +730,21 @@ function sendReceiptToAdminsAndUpdatePay(
         $stmt->bind_param("iis", $msgId, $adminChatId, $hashId);
         $stmt->execute();
         $stmt->close();
+        achbotManualMarkEvidence($connection, $hashId);
     }
 }
 
-function sendWithStartButton($text, $buttonText, $botUsername, $startPayload = 'mainMenu', $parseMode = 'HTML')
+function sendWithStartButton($text, $buttonText, $botUsername, $startPayload = 'mainMenu', $parseMode = 'HTML', string $paymentHash = '')
 {
-    $keyboard = json_encode([
-        'inline_keyboard' => [
-            [[
-                'text' => $buttonText,
-                'url'  => "https://t.me/{$botUsername}?start={$startPayload}"
-            ]]
-        ]
-    ], JSON_UNESCAPED_UNICODE);
+    $buttons = [];
+    if ($paymentHash !== '' && preg_match('/^[A-Za-z0-9_-]{1,50}$/D', $paymentHash)) {
+        $buttons[] = [['text'=>'🔄 بررسی وضعیت', 'callback_data'=>'ps_'.$paymentHash]];
+    }
+    $buttons[] = [[
+        'text' => $buttonText,
+        'url'  => "https://t.me/{$botUsername}?start={$startPayload}"
+    ]];
+    $keyboard = json_encode(['inline_keyboard'=>$buttons], JSON_UNESCAPED_UNICODE);
 
     return sendMessage($text, $keyboard, $parseMode);
 }

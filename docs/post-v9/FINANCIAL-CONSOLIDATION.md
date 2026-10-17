@@ -15,6 +15,22 @@ live/historical RC4 attempts. For fresh/current/legacy RC4 schema gates,
 read PAYMENT-LEDGER-MIGRATION.md; exact deployment/migration still needs
 separate Owner approval and independently proven restore.
 
+## Three distinct manual payment options (2026-10-17, Issue #51)
+
+AChBot intentionally exposes three independently switched/manual-reviewed methods, rather than implicitly routing a bank-transfer order to gift cards or USDT based on customer/date/amount:
+
+| Choice | Admin toggle | Dedicated config and expected evidence |
+|---|---|---|
+| Bank card transfer (`bank_transfer`) | `cartToCartState` | `bankAccount`, `holderName`, persisted exact non-round Toman quote; bank receipt photo |
+| Purchased gift card (`gift_card`) | `giftCardState`, off unless explicitly enabled | `giftCardUrl` (HTTPS seller); gift-card photo; third-party seller is **not** an authenticated gateway |
+| Manual USDT (`manual_usdt`) | `manualUsdtState`, off unless explicitly enabled | `manualUsdtWallet`, `manualUsdtNetwork` (BEP20, TRC20, ERC20), optional `manualUsdtRateToman` (else existing private rate settings); screenshot with transaction hash; **operator must independently verify on-chain transfer** |
+
+The shared `payment_attempts` ledger pins `provider`, original `pays.id`, quoted amount/currency and order hash. Bank exact Toman quote is generated once on claim; manual-USDT rate conversion rounds **up** to two decimal USDT places and the resulting amount, network and destination are pinned at claim. For this method only, `settlement_currency` records the network and `checkout_url` stores an internal `usdt:<network>:<address>` *instruction-intent URI*; it is not an HTTP checkout URL and may **never** be passed to external redirect or treated as settlement proof. No provider signing/IPN is involved for these manual methods. The accepted hosted NOWPayments and TRON hash flows are independent and unchanged in identity. Existing current schema and private installed customer records remain untouched by the source change.
+
+The user-owned wallet top-up receipt approval (`approvePayment...`) now atomically locks `pays` and the wallet owner, verifies `INCREASE_WALLET` with `have_sent`, performs a checked signed-wallet increment, and compare-and-sets `pays.state='approved'` in one MariaDB transaction. Second or competing administrator approval must not credit a second time; late declines cannot overwrite an approved receipt. Existing legacy receipts are not silently erased. Operator verification of independent settlement remains a required human step; no screenshot alone proves money arrived.
+
+All purchase, renewal, extension and wallet top-up menus must use separate callbacks, prompts, photo-upload steps and admin review labels. A mismatched method, stale callback or competing active payment attempt fails closed. `payment_attempts.stage` distinguishes awaiting evidence, upload in progress and review; `pays.state` still governs the legacy admin effect. Missing evidence cannot trigger financial finality. The existing card auto-accept scheduler must skip both purchased gift cards and manual USDT, while no new automatic settlement path is introduced. Any residual inherited administrator approval concurrency risk remains controlled separately under #26 and must not be misrepresented as an accepted exactly-once system. No merge, live migration, real payment, provider call, Chili deployment or production data modification is authorized by this source-only package.
+
 ## Accepted objective, boundaries and non-goals
 
 Make **all existing and future payment methods** use the same *verified payment and durable fulfillment* policy, while keeping each provider's request/authentication/proof/status semantics in an isolated adapter. Manual receipts, wallet payment/transfer, administrative debt and scheduled approval are **not bank gateways**, but must share the relevant transaction/idempotency/effect rules. A common router does **not** mean forcing distinct financial semantics into one PHP function.

@@ -15,24 +15,27 @@ function inlineKeyboard(array $rows): string {
     return json_encode(['inline_keyboard' => $rows], JSON_UNESCAPED_UNICODE);
 }
 
-function receiptAndCancel(string $sendPrefix, string $cancelPrefix, string $hashId, $messageType = 'detail'): string {
-
-
-    if ($messageType === 'gift') {
-        return inlineKeyboard([
-            [
-                //['text' => '📤 ارسال رسید', 'callback_data' => $sendPrefix . $hashId],
-				['text' => '📤 ارسال گیفت کارت', 'callback_data' => $sendPrefix . $hashId],
-                ['text' => '🎁 خرید گیفت کارت', 'url' => 'https://blinko.ir/gift-card/#giftcard-products'],
-            ]
-        ]);
+function receiptAndCancel(string $sendPrefix, string $cancelPrefix, string $hashId,
+                          $messageType = 'bank_transfer', ?string $giftCardUrl = null): string {
+    if ($messageType === 'gift_card') {
+        $giftCardUrl = $giftCardUrl ?: 'https://blinko.ir/gift-card/#giftcard-products';
+        $firstRow = [
+            ['text' => '📤 ارسال تصویر گیفت‌کارت', 'callback_data' => $sendPrefix . $hashId],
+            ['text' => '🎁 خرید گیفت‌کارت', 'url' => $giftCardUrl],
+        ];
+    } elseif ($messageType === 'manual_usdt') {
+        $firstRow = [
+            ['text' => '💎 ارسال رسید تتر', 'callback_data' => $sendPrefix . $hashId],
+        ];
+    } else {
+        $firstRow = [
+            ['text' => '📤 ارسال رسید بانکی', 'callback_data' => $sendPrefix . $hashId],
+        ];
     }
-
     return inlineKeyboard([
-        [
-            ['text' => '📤 ارسال رسید', 'callback_data' => $sendPrefix . $hashId],
-            ['text' => '❌ لغو عملیات', 'callback_data' => $cancelPrefix . $hashId],
-        ]
+        $firstRow,
+        [['text' => '🔄 بررسی وضعیت', 'callback_data' => 'ps_' . $hashId]],
+        [['text' => '❌ لغو عملیات', 'callback_data' => $cancelPrefix . $hashId]]
     ]);
 }
 

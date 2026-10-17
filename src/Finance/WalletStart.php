@@ -25,14 +25,16 @@ function startWalletPayment($connection, $botState, $buttonValues, $botUrl, $fro
 
     if($botState['cartToCartState'] == "on") 
         $keyboard[] = [['text' => $buttonValues['cart_to_cart'], 'callback_data' => "payIncreaseWalletWithCartToCart$hash_id"]];
+    if(($botState['giftCardState'] ?? 'off') === 'on')
+        $keyboard[] = [['text' => $buttonValues['gift_card'], 'callback_data' => "payIncreaseWalletWithGiftCard$hash_id"]];
+    if (achbotManualEnabled('manual_usdt'))
+        $keyboard[] = [['text' => $buttonValues['manual_usdt'], 'callback_data' => "payIncreaseWalletWithManualUsdt$hash_id"]];
     if($botState['nowPaymentWallet'] == "on") 
         $keyboard[] = [['text' => $buttonValues['now_payment_gateway'], 'url' => $botUrl . "pay/?nowpayment&hash_id=" . $hash_id]];
     if($botState['zarinpal'] == "on") 
         $keyboard[] = [['text' => $buttonValues['zarinpal_gateway'], 'url' => $botUrl . "pay/?zarinpal&hash_id=" . $hash_id]];
     if($botState['nextpay'] == "on") 
         $keyboard[] = [['text' => $buttonValues['nextpay_gateway'], 'url' => $botUrl . "pay/?nextpay&hash_id=" . $hash_id]];
-    if($botState['weSwapState'] == "on") 
-        $keyboard[] = [['text' => $buttonValues['weswap_gateway'], 'callback_data' => "payWithWeSwap$hash_id"]];
     if($botState['tronWallet'] == "on") 
         $keyboard[] = [['text' => $buttonValues['tron_gateway'], 'callback_data' => "payWithTronWallet$hash_id"]];
 

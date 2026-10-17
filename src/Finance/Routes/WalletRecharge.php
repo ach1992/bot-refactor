@@ -97,7 +97,7 @@ if($userInfo['step'] == "increaseMyWallet" && $text != $buttonValues['cancel']){
     setUser();
 }
 
-if (preg_match('/payIncreaseWalletWithCartToCart(?<hashId>.*)/', $data, $match)) {
+if (preg_match('/payIncreaseWalletWith(?:CartToCart|GiftCard|ManualUsdt)(?<hashId>.*)/', $data, $match)) {
 
     $payInfo = dbFetchPayByHash($connection, $match['hashId']);
     if (!$payInfo) {
@@ -107,17 +107,26 @@ if (preg_match('/payIncreaseWalletWithCartToCart(?<hashId>.*)/', $data, $match))
     }
 
     delMessage();
-    setUser("payIncreaseWalletWithCartToCart{$match['hashId']}");
+    $method = strpos($data, 'WithManualUsdt') !== false ? 'manual_usdt' :
+        (strpos($data, 'WithGiftCard') !== false ? 'gift_card' : 'bank_transfer');
+    if (!achbotManualClaim($connection, $payInfo, $method, (int)$from_id)) {
+        alert("⚠️ پرداخت این سفارش با این روش مجاز نیست یا قبلاً به روش دیگری آغاز شده است.", true);
+        return;
+    }
+    setUser("payIncreaseWalletWith" . ($method === 'manual_usdt' ? 'ManualUsdt' : ($method === 'gift_card' ? 'GiftCard' : 'CartToCart')) . $match['hashId']);
 
-	// $msg = buildCartToCartInfoMessage($paymentKeys, $mainValues, (int)$payInfo['price']);
-	$msg = buildCartToCartInfoMessage($paymentKeys, $mainValues, (int)$payInfo['price'], (int)$payInfo['user_id']);
-    $keyboard = kbSendReceiptAndCancel("sendIncreaseWalletReceipt", "cancelIncreaseWalletReceipt", $match['hashId']);
+	$msg = buildCartToCartInfoMessage($paymentKeys, $mainValues, (int)$payInfo['price'], (int)$payInfo['user_id'], $method, (string)$payInfo['hash_id']);
+    if ($msg === "") {
+        alert("⚠️ اطلاعات این پرداخت قابل بازیابی نیست؛ با پشتیبانی تماس بگیرید.", true);
+        return;
+    }
+    $keyboard = kbSendReceiptAndCancel($method === 'manual_usdt' ? "sendIncreaseWalletUsdtReceipt" : ($method === 'gift_card' ? "sendIncreaseWalletGiftReceipt" : "sendIncreaseWalletReceipt"), "cancelIncreaseWalletReceipt", $match['hashId'], $method);
 
     sendMessage($msg, $keyboard, "HTML");
     exit;
 }
 
-if (preg_match('/sendIncreaseWalletReceipt(?<hashId>.*)/', $data, $match)) {
+if (preg_match('/send(?:IncreaseWallet|IncreaseWalletGift|IncreaseWalletUsdt)Receipt(?<hashId>.*)/', $data, $match)) {
 
     $payInfo = dbFetchPayByHash($connection, $match['hashId']);
     if (!$payInfo) {
@@ -126,14 +135,20 @@ if (preg_match('/sendIncreaseWalletReceipt(?<hashId>.*)/', $data, $match)) {
         return '__ACHBOT_V8_GOTO_START__';
     }
 
+    $method = strpos($data, 'UsdtReceipt') !== false ? 'manual_usdt' :
+        (strpos($data, 'GiftReceipt') !== false ? 'gift_card' : 'bank_transfer');
+    if (!achbotManualReceiptAllowed($connection, $payInfo, $method, (int)$from_id)) {
+        alert("⚠️ این رسید با روش پرداخت انتخاب‌شده مطابقت ندارد یا سفارش در انتظار پرداخت نیست.", true);
+        return;
+    }
     $guardMsg = duplicateReceiptGuard($connection, $payInfo, time());
     if ($guardMsg) { alert($guardMsg, true); exit; }
 
     delMessage();
-    setUser("waitIncreaseWalletReceipt{$match['hashId']}");
+    setUser(($method === 'manual_usdt' ? "waitIncreaseWalletUsdtReceipt" : ($method === 'gift_card' ? "waitIncreaseWalletGiftReceipt" : "waitIncreaseWalletReceipt")) . $match['hashId']);
 
     $keyboard = kbOnlyCancel("cancelIncreaseWalletReceipt", $match['hashId']);
-    sendMessage($mainValues['please_send_receipt_image'], $keyboard, "HTML");
+    sendMessage(achbotManualReceiptPrompt($mainValues, $method), $keyboard, "HTML");
     exit;
 }
 
@@ -141,13 +156,27 @@ if (preg_match('/cancelIncreaseWalletReceipt(?<hashId>.*)/', $data, $match)) {
     handleCancelFlow($mainValues, $removeKeyboard);
 }
 
-if (preg_match('/waitIncreaseWalletReceipt(.*)/', $userInfo['step'], $match)) {
+if (preg_match('/wait(?:IncreaseWallet|IncreaseWalletGift|IncreaseWalletUsdt)Receipt(.*)/', $userInfo['step'], $match)) {
 
+    $method = strpos($userInfo['step'], 'UsdtReceipt') !== false ? 'manual_usdt' :
+        (strpos($userInfo['step'], 'GiftReceipt') !== false ? 'gift_card' : 'bank_transfer');
+    $receiptPay = dbFetchPayByHash($connection, $match[1]);
+    if (!$receiptPay || !achbotManualReceiptAllowed($connection, $receiptPay, $method, (int)$from_id)) {
+        setUser();
+        alert("⚠️ این سفارش قابل ثبت رسید نیست؛ برای بررسی با پشتیبانی تماس بگیرید.", true);
+        return;
+    }
     $fileid = extractPhotoFileId($update);
     if (!$fileid) {
         $keyboard = kbOnlyCancel("cancelIncreaseWalletReceipt", $match[1]);
         sendMessage($mainValues['please_send_only_image'], $keyboard, "HTML");
         exit;
+    }
+
+    if (!achbotManualBeginEvidence($connection, $receiptPay, $method, (int)$from_id)) {
+        setUser();
+        alert("⚠️ رسید این سفارش قبلاً ثبت شده یا در حال بررسی است.", true);
+        return;
     }
 
     setUser();
@@ -166,7 +195,7 @@ if (preg_match('/waitIncreaseWalletReceipt(.*)/', $userInfo['step'], $match)) {
 	$rawPrice = (int)$payInfo['price'];
 	$price = number_format($rawPrice);
 
-    sendWithStartButton($mainValues['order_submitted'], $buttonValues['start_bot'], $botUsername, 'mainMenu', 'HTML');
+    sendWithStartButton(achbotManualAcknowledgement($receiptPay, $method), $buttonValues['start_bot'], $botUsername, 'mainMenu', 'HTML', (string)$receiptPay['hash_id']);
 
     $msg = str_replace(
         ['PRICE', 'USERNAME', 'NAME', 'USER-ID'],
@@ -183,7 +212,7 @@ if (preg_match('/waitIncreaseWalletReceipt(.*)/', $userInfo['step'], $match)) {
         (int)$payInfo['user_id']
     );
 
-    sendReceiptToAdminsAndUpdatePay($connection, $fileid, $msg, $adminKeyboard, $admin, $match[1]);
+    sendReceiptToAdminsAndUpdatePay($connection, $fileid, achbotManualCaption($connection, $receiptPay, $msg), $adminKeyboard, $admin, $match[1]);
     exit;
 }
 
