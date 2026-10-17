@@ -1,6 +1,6 @@
 # NOWPayments invoice continuity/IPN/reconciliation: source-only deployment gate
 
-**Controlling work:** Issue #26, merged finance PR #42 and the shared-ledger source-only change under development. The **public v0.10.0-rc.4** release exists, but operator installation and migration 002 have NOT been verified. That immutable RC4 bundle contains the historical NOWPayments-specific 002 SQL. The NEW source candidate replaces it with provider-shared payment_attempts / payment_transactions tables. See PAYMENT-LEDGER-MIGRATION.md before applying **any** SQL to a database. Neither design has been authorized for live migration/settlement by publication alone.
+**Controlling work:** [Issue #26](https://github.com/ach1992/bot-refactor/issues/26), merged finance [PR #42](https://github.com/ach1992/bot-refactor/pull/42) and shared-ledger [PR #44](https://github.com/ach1992/bot-refactor/pull/44). The immutable **public v0.10.0-rc.4** release shipped NOWPayments-only 002 SQL, but real installation/application of 002 is NOT verified. The merged current source instead uses provider-shared `payment_attempts` / `payment_transactions` via **003**, with an optional separate, non-destructive import only for exact historical RC4 schemas. Review [PAYMENT-LEDGER-MIGRATION.md](PAYMENT-LEDGER-MIGRATION.md) and the exact [GitHub release](https://github.com/ach1992/bot-refactor/releases) before applying **any** SQL. Source merge or source-only publication does NOT authorize live migration, Cron/IPN activation or real settlement.
 
 ## User result and payment meaning
 
@@ -42,8 +42,10 @@ ledger. Original 23 historical tables and migration 001 are unchanged.
 
 **Live schema changes require separate explicit Owner authorization,
 a restorable backup, original data audit and staging rehearsal.** A source
-ZIP neither includes nor executes SQL. CREATE TABLE IF NOT EXISTS does
-not repair draft/incompatible table definitions, even with the same name.
+ZIP neither includes nor executes SQL. Shared migration 003 uses CREATE TABLE
+without IF NOT EXISTS: pre-existing same-named tables must be audited, not
+silently accepted as compatible. A partial DDL failure requires stopping
+and inspecting the schema before any independently approved retry.
 
 ## Single private IPN secret (never send into Telegram chats)
 
@@ -107,7 +109,7 @@ For each case: verify invoice/payment identity in the official provider dashboar
 - Verify direct Marzban PUT/reset transport, HTTP and user-response validation (including genuine success, rejected status, timeout, malformed body), Zarinpal browser NOK with provider 100/101 and transport uncertainty, three-provider renewal `success=false`, stale alternative-gateway callback after original invoice creation, nested operator-alert/new-child race, and missing-user/overflow/successful wallet compensation on actual native PHP/SQL.
 - Test atomic cross-gateway claim (both directions), pre-POST `creating` reservation, timeout/no reissue, saved URL reopening, signed/invalid/duplicated multi-child IPNs, immutable Toman amount, output asset/net payout amount and fee shortfall, no-policy issuance refusal, old legacy browser read-only route, real loopback HTTP bootstrap, `confirmed`/`sending` pending, authoritative `finished`, Telegram delivery without browser return, safe operator alerts, Marzban uncertainty with no auto-refund, replay/worker crash, provider API timeout, stale Cron and every IPN blocked.
 - Actual browser return path should display locally **pending** or **paid** only, not issue a second provider payment nor automatically credit based on query arguments.
-- PR #42 source merge already passed exact-head PHP8.1/8.4 CI and independent author-separated review with separate Owner authorization. **Do not deploy, apply SQL 002, activate provider/Cron/IPN or claim finance readiness** without separate Owner approval, actual backup plus isolated restore proof, merchant payout policy and controlled operator acceptance. Preserve installed RC3 source for rollback, private credentials and existing customer/account data.
+- PR #42 source merge already passed exact-head PHP8.1/8.4 CI and independent author-separated review with separate Owner authorization. **Do not deploy, apply shared SQL 003 or any RC4 import, activate provider/Cron/IPN or claim finance readiness** without separate Owner approval, actual backup plus isolated restore proof, merchant payout policy and controlled operator acceptance. Preserve the actual installed source for rollback, private credentials and existing customer/account data. After 003 has accepted new payment attempts, rolling source back to RC4 alone cannot restore payment ledger compatibility.
 - Any live provider test must use a separately approved controlled minimal-value transaction; isolated synthetic CI is **not** proof of merchant settlement or real VPN provisioning. A provider `finished` with ambiguous quote/partial/repeated/late deposits must be escalated, not automatically credited.
 
 Sources: [NOWPayments status handling for fixed-price goods](https://nowpayments.io/blog/best-integration-practices-at-nowpayments), [NOWPayments official IPN setup/signature](https://nowpayments.zendesk.com/hc/en-us/articles/21395546303389-IPN-and-how-to-setup), [NOWPayments API endpoints/JWT/invoiceid](https://nowpayments.zendesk.com/hc/en-us/articles/21345824322717-API-and-endpoint-description), [NOWPayments invoice/payment lifetime and repeated deposits](https://nowpayments.zendesk.com/hc/en-us/articles/18393446018461-Invoices-and-payments).

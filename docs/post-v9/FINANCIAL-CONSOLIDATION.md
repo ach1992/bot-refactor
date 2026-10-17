@@ -1,14 +1,13 @@
 # AChBot financial lifecycle — current contract and controlled consolidation
 
-**Owner acceptance:** 2026-10-16, roadmap #29, finance owner #26. Current authoritative public SOURCE baseline is v0.10.0-rc.4 at main 58d98e05839b4aa5b28e985bcd1473173f590eda, including PR #42 and PR #43. The shared provider ledger is a later UNMERGED candidate. The last Owner-reported INSTALLED version is RC3. Publication, source merge and real schema/financial acceptance are different gates. This file is the specialized implementation contract; docs/PROJECT-SPEC.md defines canonical product intent.
+**Owner acceptance:** 2026-10-16, roadmap #29, finance owner #26. The immutable public `v0.10.0-rc.4` baseline includes merged PRs #42 and #43; [PR #44](https://github.com/ach1992/bot-refactor/pull/44) has since integrated the provider-shared ledger into `main` under independently approved source-only gates. Consult [GitHub Releases](https://github.com/ach1992/bot-refactor/releases) for the exact published artifact. The last Owner-reported installed version is RC3; the actual installation and schema remain unverified. Publication, source merge, real database migration and financial acceptance are distinct gates. This file is the specialized implementation contract; `docs/PROJECT-SPEC.md` defines canonical product intent.
 
 ## Updated owner decision — provider-neutral payment persistence (2026-10-17)
 
 After the published source-only v0.10.0-rc.4, the Owner rejected an
 expanding series of gateway-named database tables and requested clear,
-unprefixed shared storage. The next **not-yet-merged** source candidate
-uses payment_attempts and payment_transactions across NOWPayments,
-NextPay and Zarinpal, preserving provider-scoped checkout/child identity
+unprefixed shared storage. The merged current source uses `payment_attempts` and `payment_transactions`
+across NOWPayments, NextPay and Zarinpal, preserving provider-scoped checkout/child identity
 and immutable payout/quote evidence. This is a provider-neutral attempt
 boundary, **not** a completed unified financial business-effect ledger.
 Do not replace historical released RC4 bytes or silently migrate any
@@ -21,7 +20,7 @@ separate Owner approval and independently proven restore.
 Make **all existing and future payment methods** use the same *verified payment and durable fulfillment* policy, while keeping each provider's request/authentication/proof/status semantics in an isolated adapter. Manual receipts, wallet payment/transfer, administrative debt and scheduled approval are **not bank gateways**, but must share the relevant transaction/idempotency/effect rules. A common router does **not** mean forcing distinct financial semantics into one PHP function.
 
 - Stay in this repository, PHP 8.1+/MariaDB, current bot, its already supported providers and Marzban-only service operations. No cross-project Foundation, new service, worker framework, duplicate orchestration, speculative future gateway implementation or wholesale database redesign.
-- Keep the original 23-table historical V9 DDL/goldens immutable. The *current* installed runtime additionally requires the separately accepted nullable `server_info.panel_group_id` column. No real DB migration is authorized by this refactor discussion. Favor current schema for initial characterization; permit **only justified additive, backwards-compatible persistence changes** after a separately reviewed design, original-data audit, explicit Owner schema/deployment approval and independently restorable backup.
+- Keep the original 23-table historical V9 DDL/goldens immutable. The *current source* expects the separately accepted nullable `server_info.panel_group_id` column plus the provider-shared 003 tables. Actual installed migration state remains unverified; no real DB migration is authorized by this source integration. Favor current schema for initial characterization; permit **only justified additive, backwards-compatible persistence changes** after a separately reviewed design, original-data audit, explicit Owner schema/deployment approval and independently restorable backup.
 - Preserve installed `baseInfo.php`, existing URLs (`pay/index.php`, `pay/back.php`), Telegram callback identifiers, Cron entrypoint paths, price/currency expectations, supported `pays.type` business outcomes and existing Marzban account identity/capacity rules. Do not silently reinterpret historical orders, mark unsupported panels as Marzban, or convert refunds into automatic wallet credit.
 - A privileged admin may deliberately create a negative wallet **debt** with reason/actor/audit; user-controlled spend/transfer/purchase/renewal must not create or deepen debt. This policy is **not yet fully implemented/accepted**. Do not blanket clamp `users.wallet`.
 
