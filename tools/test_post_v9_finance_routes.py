@@ -93,8 +93,11 @@ $botUrl = 'http://127.0.0.1:9/owned-fixture/';
 $USDTPrice = 100000;
 $USDTPriceagent = 100000;
 $nowpaymentsIpnSecret = 'LOCAL-IPN-SECRET';
-$nowpaymentsSettlementPolicy = $spec['settlement_policy'] ??
-    ['outcome_currency'=>'usdttrc20','minimum_outcome_per_usd'=>'1.000000'];
+// No merchant payout floor is the normal hosted-checkout configuration.
+// Set this optional variable only for legacy stricter-policy fixtures.
+if (array_key_exists('settlement_policy', $spec)) {
+    $nowpaymentsSettlementPolicy = $spec['settlement_policy'];
+}
 $paymentKeys = ['nowpayment'=>'SYNTHETIC-LOCAL-ONLY', 'nextpay'=>'SYNTHETIC-LOCAL-ONLY', 'zarinpal'=>'SYNTHETIC-LOCAL-ONLY'];
 $admin = 9001;
 function sendMessage(...$args) {
@@ -441,14 +444,16 @@ def seed_payment(work,env,name,type_name,plan=0,server=0,payid=None):
     sql(work,env,query)
     return invoice
 
-def seed_np_attempt(work,env,name,invoice,payment_id):
+def seed_np_attempt(work,env,name,invoice,payment_id,*,default_fees=False):
     seed_payment(work,env,name,'INCREASE_WALLET',0,0,invoice)
+    currency = 'NULL' if default_fees else "'usdttrc20'"
+    floor = '0' if default_fees else '1'
     sql(work,env,
         "INSERT INTO payment_attempts "
         "(pay_row_id,provider,order_hash,provider_reference,payment_id,checkout_url,quote_amount,quote_currency,"
         "local_amount_toman,settlement_currency,minimum_settlement_amount) "
         f"SELECT id,'nowpayments',hash_id,'{invoice}','{payment_id}',"
-        f"'https://nowpayments.io/pay/{invoice}',1,'usd',price,'usdttrc20',1 "
+        f"'https://nowpayments.io/pay/{invoice}',1,'usd',price,{currency},{floor} "
         f"FROM pays WHERE hash_id='{name}'")
 
 def snapshot(work,env):
@@ -574,6 +579,13 @@ def main():
             raise RuntimeError('External invoice was created before a durable local reservation')
         if sql(work,env,"SELECT payid FROM pays WHERE hash_id='wallet-init'").strip()!='owned-new-invoice':
             raise RuntimeError('Wallet top-up invoice ID was not stored')
+        snapshot_policy=sql(work,env,
+            "SELECT settlement_currency IS NULL,minimum_settlement_amount=0 "
+            "FROM payment_attempts WHERE order_hash='wallet-init'").strip()
+        if snapshot_policy!='1	1':
+            raise RuntimeError('Default hosted invoice was not recorded without an optional payout floor')
+        records.append(dict(case='nowpayments_default_fees_invoice_without_private_policy',
+                            pass_=True,synthetic_invoice=True,external_requests=1))
         records.append(dict(case='positive_wallet_gateway_initiation',pass_=True,synthetic_invoice=True,external_requests=1))
 
         # The exact hosted checkout URL must be durable and resumable: a second
@@ -937,7 +949,8 @@ def main():
             nowpayment_payment_id='np-pmt-wallet-init',
             nowpayment_order_id='wallet-init',
             nowpayment_status='finished',
-            nowpayment_price=1,nowpayment_pay_amount=1,nowpayment_actual=1))
+            nowpayment_price=1,nowpayment_pay_amount=1,nowpayment_actual=1,
+            nowpayment_outcome=0.98))
         if int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())!=wallet_start+100000:
             raise RuntimeError('Finished IPN+Cron did not autonomously credit existing wallet path')
         if sql(work,env,"SELECT state FROM pays WHERE hash_id='wallet-init'").strip()!='paid':
@@ -955,6 +968,8 @@ def main():
             raise RuntimeError('Finished gateway was not delivered to Telegram recipient')
         records.append(dict(case='nowpayments_no_browser_return_final_telegram_credit',
                             pass_=True,real_provider_requests=0))
+        records.append(dict(case='nowpayments_default_provider_fees_finished_without_return',
+                            pass_=True,ordinary_fee_deducted=0.02))
         after=snapshot(work,env)
         run_php(work,env,stage,signed_ipn(dict(ipn,payment_status='finished')))
         duplicate=run_php(work,env,stage,dict(route='reconcile',get={},
@@ -1175,6 +1190,57 @@ def main():
             if sql(work,env,f"SELECT state FROM pays WHERE hash_id='{h}'").strip()!='pending' or int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())!=start_wallet:
                 raise RuntimeError('Unsafe finished outcome mutated funds: '+name)
             records.append(dict(case='nowpayments_'+name+'_needs_review',pass_=True))
+        # Default-fees invoices must still refuse zero/missing payouts,
+        # incomplete deposits and altered immutable original quotes.
+        for name,overrides in [
+            ('default_zero_payout',dict(nowpayment_outcome=0)),
+            ('default_bad_asset',dict(nowpayment_outcome_currency='!bad')),
+            ('default_underpaid',dict(nowpayment_actual=0.5)),
+            ('default_pay_amount_zero',dict(nowpayment_pay_amount=0)),
+            ('default_wrong_quote',dict(nowpayment_price=2)),
+            ('default_missing_payout',dict(nowpayment_raw=json.dumps({
+                'payment_id':'_REPLACE_', 'invoice_id':'_INVOICE_',
+                'order_id':'_ORDER_', 'payment_status':'finished',
+                'price_amount':1, 'price_currency':'usd',
+                'pay_amount':1, 'actually_paid':1,
+                'pay_currency':'usdttrc20', 'outcome_currency':'usdttrc20'
+            }))),
+        ]:
+            h='np-default-'+name
+            invoice=h+'-invoice'
+            payid=h+'-payment'
+            seed_np_attempt(work,env,h,invoice,payid,default_fees=True)
+            if 'nowpayment_raw' in overrides:
+                overrides['nowpayment_raw']=overrides['nowpayment_raw'].replace(
+                    '_REPLACE_',payid).replace('_INVOICE_',invoice).replace('_ORDER_',h)
+            wallet_before=int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())
+            seen=run_php(work,env,stage,dict(route='reconcile',get={},
+                mock_invoice=invoice,nowpayment_payment_id=payid,
+                nowpayment_order_id=h,nowpayment_status='finished',**overrides))
+            if len(seen['network_calls'])!=1 or sql(work,env,
+                f"SELECT stage,provider_status FROM payment_attempts "
+                f"WHERE order_hash='{h}'").strip()!='review\tamount_mismatch':
+                raise RuntimeError('Default-fees underpayment/invalid final data accepted: '+name)
+            if int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())!=wallet_before:
+                raise RuntimeError('Invalid default-fees payment moved wallet: '+name)
+            if sql(work,env,f"SELECT state FROM pays WHERE hash_id='{h}'").strip()!='pending':
+                raise RuntimeError('Invalid default-fees payment finalized order: '+name)
+            records.append(dict(case='nowpayments_'+name+'_needs_review',
+                                pass_=True))
+        # A previously strict invoice cannot be made lax by deleting only
+        # its currency while retaining the positive immutable minimum.
+        h='np-default-tampered-floor'
+        seed_np_attempt(work,env,h,h+'-invoice',h+'-payment',default_fees=True)
+        sql(work,env,"UPDATE payment_attempts SET minimum_settlement_amount=1 "
+            "WHERE order_hash='np-default-tampered-floor'")
+        seen=run_php(work,env,stage,dict(route='reconcile',get={},
+            mock_invoice=h+'-invoice',nowpayment_payment_id=h+'-payment',
+            nowpayment_order_id=h,nowpayment_status='finished'))
+        if sql(work,env,"SELECT stage,provider_status FROM payment_attempts "
+           "WHERE order_hash='np-default-tampered-floor'").strip()!='review\tamount_mismatch':
+            raise RuntimeError('Incomplete nonzero-floor snapshot downgraded to default fees')
+        records.append(dict(case='nowpayments_default_tampered_floor_does_not_downgrade',
+                            pass_=True))
         # Changing pays.price after invoice issuance must never let a
         # previously valid USD quote settle a larger local Toman obligation.
         name='np-safety-local-price-change'
@@ -1191,16 +1257,70 @@ def main():
         if sql(work,env,f"SELECT state FROM pays WHERE hash_id='{name}'").strip()!='pending' or int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())!=before_wallet:
             raise RuntimeError('Tampered local price was settled')
         records.append(dict(case='nowpayments_locked_local_toman_price',pass_=True))
-        # No private policy: checkout must reject BEFORE external creation.
+        # Operator can use legacy-style hosted checkout without a manually
+        # maintained NET payout floor. It must still persist an immutable
+        # quote, merchant invoice and default-fees snapshot.
         seed_payment(work,env,'np-no-policy','INCREASE_WALLET',0,0,'no-policy')
         sql(work,env,"UPDATE pays SET price=100000,payid=NULL WHERE hash_id='np-no-policy'")
         no_policy=run_php(work,env,stage,dict(route='initiate',
-            get={'nowpayment':'','hash_id':'np-no-policy'},settlement_policy={}))
-        if no_policy['network_calls'] or sql(work,env,
-           "SELECT IFNULL(payid,'') FROM pays WHERE hash_id='np-no-policy'").strip():
-            raise RuntimeError('Payment accepted without approved payout policy')
-        records.append(dict(case='nowpayments_missing_payout_policy_fails_before_invoice',
+            get={'nowpayment':'','hash_id':'np-no-policy'},
+            fake_invoice_id='np-no-policy-invoice'))
+        if len(no_policy['network_calls'])!=1 or '/v1/invoice' not in no_policy['network_calls'][0]:
+            raise RuntimeError('Legacy-style default payout fees blocked invoice issuance')
+        got=sql(work,env,"SELECT p.payid,a.quote_currency,"
+            "a.settlement_currency IS NULL,a.minimum_settlement_amount=0 "
+            "FROM pays p JOIN payment_attempts a ON a.pay_row_id=p.id "
+            "WHERE p.hash_id='np-no-policy'").strip()
+        if got!='np-no-policy-invoice\tusd\t1\t1':
+            raise RuntimeError('Missing-policy default invoice has incorrect safety snapshot '+got)
+        records.append(dict(case='nowpayments_no_payout_policy_issues_hosted_invoice',
+                            pass_=True,synthetic_invoice=True))
+        # Explicitly opted-in stricter policy remains usable and immutable;
+        # malformed operator config must not downgrade to a zero-floor mode.
+        seed_payment(work,env,'np-strict-policy','INCREASE_WALLET',0,0,'strict-policy')
+        sql(work,env,"UPDATE pays SET price=100000,payid=NULL WHERE hash_id='np-strict-policy'")
+        strict=run_php(work,env,stage,dict(route='initiate',
+            get={'nowpayment':'','hash_id':'np-strict-policy'},
+            fake_invoice_id='np-strict-policy-invoice',
+            settlement_policy={'outcome_currency':'usdttrc20',
+                               'minimum_outcome_per_usd':'1.000000'}))
+        if len(strict['network_calls'])!=1 or sql(work,env,
+           "SELECT settlement_currency,minimum_settlement_amount FROM payment_attempts "
+           "WHERE order_hash='np-strict-policy'").strip()!='usdttrc20\t1.00000000':
+            raise RuntimeError('Existing explicit payout-floor policy changed unexpectedly')
+        records.append(dict(case='nowpayments_explicit_floor_remains_enforced',
                             pass_=True))
+        seed_payment(work,env,'np-invalid-policy','INCREASE_WALLET',0,0,'invalid-policy')
+        sql(work,env,"UPDATE pays SET price=100000,payid=NULL WHERE hash_id='np-invalid-policy'")
+        invalid=run_php(work,env,stage,dict(route='initiate',
+            get={'nowpayment':'','hash_id':'np-invalid-policy'},settlement_policy={}))
+        if invalid['network_calls'] or sql(work,env,
+            "SELECT IFNULL(payid,'') FROM pays WHERE hash_id='np-invalid-policy'").strip():
+            raise RuntimeError('Malformed explicit operator payout policy became a default invoice')
+        if not invalid['form'] or 'NOWPayments' in invalid['form'] or 'تسویه پذیرنده' in invalid['form']:
+            raise RuntimeError('Operator-only payout settings leaked into customer checkout error')
+        records.append(dict(case='nowpayments_malformed_optional_floor_rejected_and_private',
+                            pass_=True))
+        # Presence is not the same as non-null: explicitly configured NULL
+        # must fail BEFORE any durable invoice reservation or provider call.
+        seed_payment(work,env,'np-null-policy','INCREASE_WALLET',0,0,'null-policy')
+        sql(work,env,"UPDATE pays SET price=100000,payid=NULL WHERE hash_id='np-null-policy'")
+        before=snapshot(work,env)
+        invalid_null=run_php(work,env,stage,dict(route='initiate',
+            get={'nowpayment':'','hash_id':'np-null-policy'},
+            settlement_policy=None))
+        verify_unchanged(work,env,before,'explicit-null-policy')
+        if invalid_null['network_calls'] or sql(work,env,
+            "SELECT COUNT(*) FROM payment_attempts WHERE order_hash='np-null-policy'").strip()!='0' or sql(work,env,
+            "SELECT IFNULL(payid,'') FROM pays WHERE hash_id='np-null-policy'").strip():
+            raise RuntimeError('Explicit NULL policy created an invoice or checkout reservation')
+        if (not invalid_null['form'] or
+            'این روش پرداخت فعلاً در دسترس نیست' not in invalid_null['form'] or
+            'NOWPayments' in invalid_null['form'] or
+            'تسویه پذیرنده' in invalid_null['form']):
+            raise RuntimeError('Explicit NULL policy exposed configuration details')
+        records.append(dict(case='nowpayments_explicit_null_policy_fails_before_reservation',
+                            pass_=True,external_requests=0))
         # RED regression: historical NextPay cancellation used hash_id=trans_id
         # even though the callback resolves the invoice through pays.payid.
         res=run_php(work,env,stage,dict(route='return',
