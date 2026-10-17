@@ -452,6 +452,14 @@ if(mysqli_num_rows($payInfo)==0){
                 (string)$locked['payid'] !== $checkoutMarker) {
                 throw new RuntimeException('checkout_order_changed');
             }
+            // OLD pays.payid rows have no provider identity. An invoice may
+            // already be live remotely: keep our durable reservation for
+            // operator review but NEVER publish a conflicting hosted URL.
+            // Fully provider-scoped attempts remain independently valid.
+            if (achbotHasUnscopedPaymentReferenceCollision(
+                $connection, $payid, (int)$orderId)) {
+                throw new RuntimeException('legacy_invoice_reference_ambiguous');
+            }
             $stmt = $connection->prepare("UPDATE payment_attempts
                 SET provider_reference=?,checkout_url=?,stage='pending'
                 WHERE pay_row_id=? AND provider='nowpayments' AND order_hash=? AND stage='creating'

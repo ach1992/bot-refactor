@@ -57,6 +57,7 @@ $GLOBALS['fake_nowpayment_outcome_currency'] = $spec['nowpayment_outcome_currenc
 $GLOBALS['fake_nowpayment_pay_currency'] = $spec['nowpayment_pay_currency'] ?? 'usdttrc20';
 $GLOBALS['fake_nowpayment_pay_amount'] = $spec['nowpayment_pay_amount'] ?? 1;
 $GLOBALS['fake_nowpayment_force_id'] = $spec['nowpayment_force_id'] ?? null;
+$GLOBALS['fake_invoice_id'] = $spec['fake_invoice_id'] ?? 'owned-new-invoice';
 $GLOBALS['fake_nowpayment_flip_hash'] = $spec['nowpayment_flip_hash'] ?? null;
 $GLOBALS['fake_nextpay_code'] = $spec['nextpay_code'] ?? -2;
 $GLOBALS['fake_nextpay_http'] = $spec['nextpay_http'] ?? 200;
@@ -262,8 +263,9 @@ function curl_exec($handle) {
         $stmt->close();
         $GLOBALS['invoice_reservation_seen']=$reservation['stage'] ?? null;
         if ($GLOBALS['fake_invoice_transport_failure'] ?? false) return false;
-        return json_encode(['id'=>'owned-new-invoice',
-                             'invoice_url'=>'https://nowpayments.io/payment?iid=owned-new-invoice']);
+        $invoice=(string)$GLOBALS['fake_invoice_id'];
+        return json_encode(['id'=>$invoice,
+             'invoice_url'=>'https://nowpayments.io/payment?iid='.$invoice]);
     }
     if (str_contains($handle->url, '/v1/payment/')) {
         if ($GLOBALS['fake_nowpayment_flip_hash'] !== null) {
@@ -357,6 +359,12 @@ try {
             $GLOBALS['events'][]=['name'=>'alert_result','result'=>achbotNpAlertOperator(
                 $connection,$spec['alert_admin'] ?? $admin,5)];
         }
+    } elseif ($spec['route'] === 'cron') {
+        $botState=['sellState'=>'off','searchState'=>'off','rewaredTime'=>0,
+                   'rewardChannel'=>null,'cartToCartAutoAcceptState'=>'off'];
+        $paymentKeys=['nowpayment'=>'SYNTHETIC-LOCAL-ONLY'];
+        $admin=9001;
+        require $root . '/settings/rewardReport.php';
     } elseif ($spec['route'] === 'wallet_start') {
         require $root . '/src/Finance/WalletStart.php';
         $state=array_fill_keys(
@@ -2084,11 +2092,120 @@ def main():
         records.append(dict(case='database_fk_prevents_claim_orphan',
                             pass_=True,external_requests=0))
 
+        # A new NOWPayments invoice may collide with an old unscoped payid.
+        # The source cannot infer whether that historical ID was issued by
+        # NextPay or Zarinpal. Keep the new invoice reservation for review,
+        # but do not publish the colliding hosted URL or disturb old orders.
+        for gateway in ('nextpay','zarinpal'):
+            ref='np-colliding-legacy-'+gateway
+            name='np-probe-collision-'+gateway
+            older='legacy-unscoped-'+gateway
+            seed_payment(work,env,older,'INCREASE_WALLET',0,0,ref)
+            seed_payment(work,env,name,'INCREASE_WALLET',0,0,'unused')
+            sql(work,env,"UPDATE pays SET payid=NULL,price=100000 "
+                         f"WHERE hash_id='{name}'")
+            refused=run_php(work,env,stage,dict(route='initiate',
+                get={'nowpayment':'','hash_id':name},fake_invoice_id=ref))
+            check=sql(work,env,"SELECT a.stage,IFNULL(a.provider_reference,'NULL'),"
+                "IFNULL(a.checkout_url,'NULL'),p.payid FROM payment_attempts a "
+                "JOIN pays p ON p.id=a.pay_row_id "
+                f"WHERE a.order_hash='{name}'").strip()
+            legacy=sql(work,env,f"SELECT payid,state FROM pays WHERE hash_id='{older}'").strip()
+            marker='achbot_nowpayment_creating_'+sql(work,env,
+                f"SELECT id FROM pays WHERE hash_id='{name}'").strip()
+            if (len(refused['network_calls'])!=1 or '/v1/invoice' not in refused['network_calls'][0] or
+                check!=f'review\tNULL\tNULL\t{marker}' or
+                legacy!=f'{ref}\tpending' or
+                any('nowpayments.io' in str(event) for event in refused['events']) or
+                'nowpayments.io' in refused['form'] or
+                'بررسی' not in refused['form']):
+                raise RuntimeError('Legacy '+gateway+' invoice collision was published or lost: '+
+                                   repr((check,legacy,refused)))
+            records.append(dict(case='nowpayments_legacy_'+gateway+
+                                '_invoice_collision_preserves_reservation',
+                                pass_=True,external_requests=1))
+        # A reference reused across two FULLY scoped providers is valid.
+        # Do not turn provider-scoped identity into global uniqueness.
+        for provider in ('nextpay','zarinpal'):
+            ref='np-shared-with-'+provider
+            previous='np-other-scoped-'+provider
+            name='np-positive-'+provider
+            seed_payment(work,env,previous,'INCREASE_WALLET',0,0,ref)
+            sql(work,env,"INSERT INTO payment_attempts "
+                "(pay_row_id,provider,order_hash,provider_reference,"
+                "quote_amount,quote_currency,local_amount_toman,stage) "
+                f"SELECT id,'{provider}',hash_id,payid,"
+                "100,'toman',100,'pending' FROM pays "
+                f"WHERE hash_id='{previous}'")
+            seed_payment(work,env,name,'INCREASE_WALLET',0,0,'unused')
+            sql(work,env,"UPDATE pays SET payid=NULL,price=100000 "
+                         f"WHERE hash_id='{name}'")
+            issued=run_php(work,env,stage,dict(route='initiate',
+                get={'nowpayment':'','hash_id':name},fake_invoice_id=ref))
+            now=sql(work,env,"SELECT a.stage,a.provider_reference,p.payid "
+                "FROM payment_attempts a JOIN pays p ON p.id=a.pay_row_id "
+                f"WHERE a.order_hash='{name}'").strip()
+            prior=sql(work,env,"SELECT a.provider,a.provider_reference,p.payid "
+                "FROM payment_attempts a JOIN pays p ON p.id=a.pay_row_id "
+                f"WHERE a.order_hash='{previous}'").strip()
+            if (len(issued['network_calls'])!=1 or
+                now!=f'pending\t{ref}\t{ref}' or
+                prior!=f'{provider}\t{ref}\t{ref}' or
+                not any(ref in str(event) for event in issued['events'])):
+                raise RuntimeError('Provider-scoped NOWPayments reference was rejected: '+
+                                   repr((now,prior,issued)))
+            records.append(dict(case='nowpayments_cross_scoped_'+provider+
+                                '_same_reference_allowed',
+                                pass_=True,external_requests=1))
+
+        # Run the ACTUAL unmodified Cron entrypoint on the same disposable
+        # MariaDB fixture, with only test-private bootstrap and outbound
+        # backup/Telegram boundaries stubbed. The real GatewayReturn and
+        # AutomaticReceipts modules are loaded, the latter instrumented
+        # after execution to prove unrelated Cron work was reached.
+        (stage/'config.php').write_text('<?php // owned test Cron bootstrap\n')
+        (stage/'buy_helpers.php').write_text('<?php // no remote work needed\n')
+        (stage/'src/Backup/Database.php').write_text(
+            "<?php namespace AchBot\\Backup\\Database; "
+            "function schedule($conn,$channel,$callback,$root) { "
+            "$GLOBALS['events'][]=['name'=>'backup_reached'];return true;}\n")
+        receipts=stage/'src/Finance/AutomaticReceipts.php'
+        receipts.write_text(receipts.read_text()+
+            "\n$GLOBALS['events'][]=['name'=>'automatic_receipts_reached'];\n")
+        seed_payment(work,env,'cron-due-operator-alert',
+                     'INCREASE_WALLET',0,0,'np-cron-probe')
+        sql(work,env,"INSERT INTO payment_attempts "
+            "(pay_row_id,provider,order_hash,provider_reference,quote_amount,"
+            "quote_currency,local_amount_toman,stage) "
+            "SELECT id,'nowpayments',hash_id,payid,100,'usd',100,'review' "
+            "FROM pays WHERE hash_id='cron-due-operator-alert'")
+        healthy=run_php(work,env,stage,dict(route='cron',get={}))
+        names=[v['name'] for v in healthy['events']]
+        if (healthy['error'] or healthy['fatal'] or
+            'backup_reached' not in names or
+            'automatic_receipts_reached' not in names or
+            'sendMessage' not in names):
+            raise RuntimeError('Owned healthy Cron did not finish local workers: '+repr(healthy))
+        records.append(dict(case='cron_complete_003_schema_alert_and_receipts_run',
+                            pass_=True,real_php=True))
+
         # An interrupted/mismatched 003 migration can leave payment_attempts
         # present while payment_transactions is absent. NEVER issue a new
         # checkout that could receive funds but could not persist IPN evidence.
         # This destructive DDL is limited to our disposable fixture database.
         sql(work,env,'DROP TABLE payment_transactions')
+        before=snapshot(work,env)
+        stopped=run_php(work,env,stage,dict(route='cron',get={}))
+        after=snapshot(work,env)
+        names=[v['name'] for v in stopped['events']]
+        if (stopped['error'] or stopped['fatal'] or stopped['network_calls'] or
+            'backup_reached' not in names or
+            'automatic_receipts_reached' not in names or
+            'sendMessage' in names or before!=after):
+            raise RuntimeError('Incomplete 003 Cron halted receipts or ran unsafe reconciliation: '+
+                               repr(stopped))
+        records.append(dict(case='cron_partial_003_schema_skips_np_and_runs_receipts',
+                            pass_=True,real_php=True,external_requests=0))
         for provider in ('nowpayment','nextpay','zarinpal'):
             name='partial-schema-'+provider
             seed_payment(work,env,name,'INCREASE_WALLET',0,0,'unused')

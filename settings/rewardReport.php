@@ -62,8 +62,10 @@ if (!defined('ACHBOT_NP_RECONCILE_ONLY')) define('ACHBOT_NP_RECONCILE_ONLY',true
 // must load the same source before processing BUY_SUB or RENEW_ACCOUNT.
 require_once __DIR__ . '/../buy_helpers.php';
 require_once __DIR__ . '/../src/Finance/GatewayReturn.php';
-$npTable=$connection->query("SHOW TABLES LIKE 'payment_attempts'");
-if ($npTable && $npTable->num_rows === 1) {
+// A partially applied 003 migration may leave attempts without the child
+// transaction ledger. Skip ONLY NOWPayments work until both are available;
+// automatic receipts below must still run during schema repair.
+if (achbotSharedPaymentTablesReady($connection)) {
     achbotNpReconcileBatch($connection, is_array($paymentKeys ?? null)?$paymentKeys:[], 3);
     // Send bounded operator notices for unresolved payments or stalled
     // invoice creation. No money/provisioning effects are retried here.
