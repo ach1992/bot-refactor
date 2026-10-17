@@ -363,6 +363,83 @@ def main():
                 finance.get("synthetic_payment_spy") and
                 finance.get("real_provider_requests")==0):
             raise RuntimeError("Original-schema finance and NOWPayments finality assurance incomplete")
+        manual_path=Path(tmp)/"manual-payment-methods.json"
+        try:
+            subprocess.run(["python3",str(ROOT/"tools/test_post_v9_manual_payments.py"),
+                            "--run-disposable","--report",str(manual_path)],
+                           cwd=ROOT,check=True,timeout=180,capture_output=True)
+        except subprocess.CalledProcessError as exc:
+            # This child contains only disposable fixtures. Without its
+            # bounded traceback, cross-PHP-version failures are opaque.
+            error=(exc.stderr or b'').decode(errors='replace')[-5500:]
+            raise RuntimeError("Isolated three-method manual payment regression failed:\n"
+                               + error) from exc
+        manual=json.loads(manual_path.read_text())
+        required_manual={
+            "bank_claim_idempotent",
+            "bank_random_exact_amount_persisted_and_rendered",
+            "gift_distinct_quote_link_and_photo_action",
+            "usdt_quote_network_wallet_photo_admin_distinct",
+            "usdt_amount_network_destination_immutable_on_revisit",
+            "no_manual_method_switch_replay_or_cross_receipt",
+            "wrong_user_denied",
+            "manual_usdt_disabled_or_bad_configuration_fails_closed",
+            "agent_existing_price_and_trc20_validated",
+            "one_attempt_no_cross_method_claim",
+            "single_receipt_claim_no_duplicate_photo_submission",
+            "manual_usdt_no_automatic_wallet_credit",
+            "gift_usdt_screenshots_never_auto_approved",
+            "no_fulfillment_financial_provider_effect",
+            "real_wallet_route_start_bank_transfer",
+            "real_wallet_route_start_gift_card",
+            "real_wallet_route_start_manual_usdt",
+            "real_wallet_route_operator_review_bank_transfer",
+            "real_wallet_route_operator_review_gift_card",
+            "real_wallet_route_operator_review_manual_usdt",
+            "real_wallet_route_photo_replay_denied_bank_transfer",
+            "real_wallet_route_photo_replay_denied_gift_card",
+            "real_wallet_route_photo_replay_denied_manual_usdt",
+            "manual_wallet_nonadmin_callback_denied_bank_transfer",
+            "manual_wallet_nonadmin_callback_denied_gift_card",
+            "manual_wallet_nonadmin_callback_denied_manual_usdt",
+            "manual_wallet_exactly_one_credit_bank_transfer",
+            "manual_wallet_exactly_one_credit_gift_card",
+            "manual_wallet_exactly_one_credit_manual_usdt",
+            "manual_wallet_approval_replay_denied_bank_transfer",
+            "manual_wallet_approval_replay_denied_gift_card",
+            "manual_wallet_approval_replay_denied_manual_usdt",
+            "manual_wallet_two_admin_concurrent_single_credit",
+            "manual_wallet_privileged_debt_offset_preserved",
+            "manual_wallet_not_for_other_payment_subjects",
+            # PR #52 independent F1/F2 findings: mandatory real callback runs.
+            "real_custom_nonadmin_cannot_approve_submitted_gift_receipt",
+            "real_custom_authorized_review_state_approves_only_once",
+            "real_custom_replayed_operator_callback_no_remote_effect",
+            "real_custom_pending_without_photo_cannot_approve",
+            "real_custom_wallet_paid_invoice_cannot_approve_again",
+            "real_custom_wrong_subject_cannot_approve",
+            "real_custom_callback_cannot_approve_standard_plan_subject",
+            "real_custom_two_concurrent_admins_single_remote_create",
+            "real_custom_hosted_provider_conflict_cannot_approve",
+            "real_custom_unreviewed_attempt_cannot_approve",
+            "real_custom_missing_admin_delivery_evidence_denied",
+            "real_custom_stale_after_bank_auto_claim_denied",
+            "real_renewal_stale_auto_bank_claim_cannot_refulfill",
+            "real_day_stale_auto_bank_claim_cannot_refulfill",
+            "real_volume_stale_auto_bank_claim_cannot_refulfill",
+            "real_renewal_operator_before_bank_cron_one_remote_effect",
+            "real_day_operator_before_bank_cron_one_remote_effect",
+            "real_volume_operator_before_bank_cron_one_remote_effect",
+            "real_custom_operator_and_bank_scheduler_race_single_service_claim",
+            "legacy_operator_receipt_requires_persisted_delivery_evidence",
+            "uncertain_custom_external_effect_operator_reconciliation_no_retry",
+        }
+        if not (manual.get("complete") and manual.get("cases")>=len(required_manual)
+                and required_manual.issubset(manual.get("scenarios",[]))
+                and manual.get("database")=="owned_socket_only"
+                and manual.get("live_provider_calls")==0
+                and manual.get("production_data_modified") is False):
+            raise RuntimeError("Three-method manual payment isolation incomplete")
         migration_path=Path(tmp)/"shared-payment-ledger-rc4-import.json"
         subprocess.run(["python3",str(ROOT/"tools/test_post_v9_payment_migration.py"),
                         "--run-disposable","--report",str(migration_path)],
@@ -434,6 +511,7 @@ def main():
                     "financial_subject_preflight":subject,
                     "catalogue_and_subscription_qr":catalogue,
                     "financial_native_route_guards":finance,
+                    "manual_payment_method_isolation":manual,
                     "shared_payment_ledger_rc4_import":migration,
                      "agency_state_regression":agency,
                      "optional_cron_runner":cron,
@@ -458,6 +536,7 @@ def main():
                       "payment_subject_cases":subject["cases"],
                       "catalogue_qr_cases":catalogue["cases"],
                       "financial_native_route_cases":finance["cases"],
+                      "manual_payment_isolation_cases":manual["cases"],
                       "historical_rc4_payment_import_verified":migration["preserved_rc4_rows_and_ids"],
                        "agency_state_cases":agency["cases"],
                        "optional_cron_runner_cases":cron["cases"],

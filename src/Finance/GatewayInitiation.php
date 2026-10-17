@@ -258,7 +258,15 @@ if(mysqli_num_rows($payInfo)==0){
                 showForm("فاکتور این سفارش در حال صدور است؛ از ایجاد درخواست تکراری جلوگیری شد.");
                 exit;
             }
+            // A previously observed provider payment must not be reopened
+            // as a checkout from an old "continue payment" link.
             if ($attempt['order_hash'] === $hash_id &&
+                (string)($attempt['payment_id'] ?? '') !== '') {
+                showForm("پرداخت برای این فاکتور شناسایی شده است و در حال بررسی است. برای مشاهده وضعیت به ربات مراجعه کنید.");
+                exit;
+            }
+            if ($attempt['order_hash'] === $hash_id &&
+                $attempt['stage'] === 'pending' &&
                 $attempt['provider_reference'] === (string)$payParam['payid'] &&
                 achbotNpValidInvoiceUrl($attempt['checkout_url'])) {
                 header('Location: '.$attempt['checkout_url'], true, 302);
@@ -496,9 +504,11 @@ if(mysqli_num_rows($payInfo)==0){
         // The merchant can recover this exact provider invoice on every
         // subsequent click; also preserve a direct button in Telegram.
         if ($userId > 0) {
-            $keyboard = json_encode(['inline_keyboard'=>[[
-                ['text'=>'🔗 ادامه همین پرداخت', 'url'=>$invoiceUrl]
-            ]]], JSON_UNESCAPED_UNICODE);
+            $keyboard = json_encode(['inline_keyboard'=>[
+                [['text'=>'🔄 باز کردن فاکتور یا پیگیری',
+                  'url'=>$botUrl.'pay/?nowpayment&hash_id='.urlencode($hash_id)]],
+                [['text'=>'🧾 بررسی وضعیت سفارش','callback_data'=>'ps_'.$hash_id]]
+            ]], JSON_UNESCAPED_UNICODE);
             try {
                 sendMessage("💳 لینک پرداخت سفارش $hash_id ثبت شد.\nپرداخت پس از تایید درگاه به صورت خودکار در ربات بررسی می‌شود؛ نیازی به زدن دکمه بازگشت نیست.",
                     $keyboard, null, $userId);

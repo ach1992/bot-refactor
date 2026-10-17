@@ -405,7 +405,7 @@ require __DIR__ . '/src/Admin/Roles.php';
 if(($data=="botSettings" or preg_match("/^changeBot(\w+)/",$data,$match)) && ($from_id == $admin || $userInfo['isAdmin'] == true)){
     if($data!="botSettings"){
         if($match[1] == "cartToCartAutoAcceptType") $newValue = $botState[$match[1]] == "0"?"1":($botState[$match[1]] == "1"?"2":0);
-        else $newValue = $botState[$match[1]]=="on"?"off":"on";
+        else $newValue = ($botState[$match[1]] ?? 'off')==="on"?"off":"on";
         setSettings($match[1], $newValue);
     }
     editText($message_id,$mainValues['change_bot_settings_message'],getBotSettingKeys());
@@ -417,7 +417,7 @@ if($data=="changeUpdateConfigLinkState" && ($from_id == $admin || $userInfo['isA
 }
 if(($data=="gateWays_Channels" or preg_match("/^changeGateWays(\w+)/",$data,$match)) && ($from_id == $admin || $userInfo['isAdmin'] == true)){
     if($data!="gateWays_Channels"){
-        $newValue = $botState[$match[1]]=="on"?"off":"on";
+        $newValue = ($botState[$match[1]] ?? 'off')==="on"?"off":"on";
         setSettings($match[1], $newValue);
     }
     editText($message_id,$mainValues['change_bot_settings_message'],getGateWaysKeys());
@@ -455,6 +455,18 @@ if(preg_match('/^changePaymentKeys(\w+)/',$data,$match) && ($from_id == $admin |
         case "holderName":
             $gate = "اسم دارنده حساب";
             break;
+        case "giftCardUrl":
+            $gate = "لینک HTTPS معتبر خرید گیفت‌کارت";
+            break;
+        case "manualUsdtWallet":
+            $gate = "آدرس عمومی دریافت USDT (متناسب با شبکه تتر دستی)";
+            break;
+        case "manualUsdtNetwork":
+            $gate = "نام شبکه دریافت USDT: BEP20 یا TRC20 یا ERC20";
+            break;
+        case "manualUsdtRateToman":
+            $gate = "نرخ هر واحد USDT بر حسب تومان (عدد صحیح مثبت)";
+            break;
         case "tronwallet":
             $gate = "آدرس والت ترون";
             break;
@@ -469,6 +481,48 @@ if(preg_match('/^changePaymentKeys(\w+)/',$userInfo['step'],$match) && $text != 
     $paymentInfo = $stmt->get_result();
     $stmt->close();
     $paymentKeys = json_decode($paymentInfo->fetch_assoc()['value'],true)??array();
+    if ($match[1] === 'giftCardUrl') {
+        $url = trim((string)$text);
+        $parts = parse_url($url);
+        if (strlen($url) > 2048 || !$parts || strtolower($parts['scheme'] ?? '') !== 'https' ||
+            empty($parts['host']) || isset($parts['user']) || isset($parts['pass']) ||
+            filter_var($url, FILTER_VALIDATE_URL) === false) {
+            sendMessage("⚠️ لینک معتبر HTTPS بدون اطلاعات ورود ارسال کنید.", $cancelKey);
+            return;
+        }
+        $text = $url;
+    }
+    if ($match[1] === 'manualUsdtNetwork') {
+        $text = strtoupper(trim((string)$text));
+        if (!in_array($text, ['BEP20', 'TRC20', 'ERC20'], true)) {
+            sendMessage("⚠️ شبکه معتبر: BEP20 یا TRC20 یا ERC20.", $cancelKey);
+            return;
+        }
+    }
+    if ($match[1] === 'manualUsdtWallet') {
+        $text = trim((string)$text);
+        $network = $paymentKeys['manualUsdtNetwork'] ?? 'BEP20';
+        if (!function_exists('achbotManualUsdtWalletValid') || !achbotManualUsdtWalletValid($text, $network)) {
+            sendMessage("⚠️ آدرس مقصد با شبکهٔ تنظیم‌شده سازگار نیست. ابتدا شبکه را بررسی کنید.", $cancelKey);
+            return;
+        }
+    }
+    if ($match[1] === 'manualUsdtRateToman') {
+        $text = trim((string)$text);
+        if (!preg_match('/^[1-9][0-9]{2,8}$/D', $text)) {
+            sendMessage("⚠️ نرخ معتبر تتر به تومان را به صورت عدد صحیح مثبت وارد کنید.", $cancelKey);
+            return;
+        }
+    }
+    if ($match[1] === 'manualUsdtNetwork' &&
+        !empty($paymentKeys['manualUsdtWallet']) &&
+        !achbotManualUsdtWalletValid((string)$paymentKeys['manualUsdtWallet'], $text)) {
+        // Never carry an incompatible TRON/EVM destination onto a new chain.
+        // Clearing only the obsolete public destination lets the operator
+        // configure the new network without a deadlocked two-field editor.
+        $paymentKeys['manualUsdtWallet'] = '';
+        sendMessage("⚠️ شبکه جدید انتخاب شد؛ آدرس شبکه قبلی پاک شد. پیش از استفاده، آدرس مقصد جدید را تنظیم کنید.");
+    }
     $paymentKeys[$match[1]] = $text;
     $paymentKeys = json_encode($paymentKeys);
 
@@ -884,7 +938,7 @@ function processCallbackQuery($data, $chat_id, $from_id) {
 
         if ($botState['sellState'] == "on" || $isRealAdmin) {
 
-            if ($botState['cartToCartState'] == "off" && $botState['walletState'] == "off") {
+            if (($botState['cartToCartState'] ?? 'off') == "off" && ($botState['giftCardState'] ?? 'off') == "off" && ($botState['manualUsdtState'] ?? 'off') == "off" && ($botState['walletState'] ?? 'off') == "off") {
                 sendMessage("⛔️ سیستم فروش غیرفعال است.", null, "MarkDown", $chat_id);
                 exit();
             }

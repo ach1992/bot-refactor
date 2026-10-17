@@ -1836,9 +1836,23 @@ def main():
             if selected['network_calls'] or sql(work,env,
                "SELECT state,payid FROM pays WHERE hash_id='staleinvoice'").strip()!='pending\tstale-invoice':
                 raise RuntimeError('Old gateway button expired or clobbered active invoice')
-            if not any(e['name']=='sendMessage' and 'stale-invoice' in
-                       str(e['args']) for e in selected['events']):
-                raise RuntimeError('Stale gateway did not retain hosted invoice URL')
+            # Updated #51 UX: never return a raw provider URL to a stale
+            # competing gateway callback. The guarded bot-owned route can
+            # explain already-identified payment without another charge.
+            guard_urls=[]
+            for e in selected['events']:
+                if e['name']!='sendMessage' or len(e['args'])<2:
+                    continue
+                try:
+                    keyboard=json.loads(e['args'][1])
+                except (TypeError,ValueError):
+                    continue
+                guard_urls.extend(btn['url'] for row in keyboard.get('inline_keyboard',[])
+                                  for btn in row if 'url' in btn)
+            if not any(url.endswith('/pay/?nowpayment&hash_id=staleinvoice')
+                       for url in guard_urls) or any(
+                       'nowpayments.io/pay/' in url for url in guard_urls):
+                raise RuntimeError('Stale gateway did not retain guarded invoice/status route')
             records.append(dict(case='prepayment_stale_'+gateway+'_preserves_np_invoice',
                                 pass_=True,external_requests=0))
         signed=signed_ipn(dict(payment_id='stale-payment',
@@ -2271,7 +2285,8 @@ def main():
             if (len(issued['network_calls'])!=1 or
                 now!=f'pending\t{ref}\t{ref}' or
                 prior!=f'{provider}\t{ref}\t{ref}' or
-                not any(ref in str(event) for event in issued['events'])):
+                not any(name in str(event) for event in issued['events']) or
+                any('nowpayments.io/pay/' in str(event) for event in issued['events'])):
                 raise RuntimeError('Provider-scoped NOWPayments reference was rejected: '+
                                    repr((now,prior,issued)))
             records.append(dict(case='nowpayments_cross_scoped_'+provider+

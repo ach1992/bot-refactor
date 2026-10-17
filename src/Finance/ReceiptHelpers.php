@@ -127,106 +127,727 @@ function generateHigherRandomizedAmount(int $amountToman): array {
     ];
 }
 
-function fetchCartToCartUserEligibility(mysqli $connection, int $userId, int $cutoffTs): array {
-    $default = [
-        'exists' => false,
-        'join_date' => 0,
-        'is_agent' => 0,
-        'approved_total' => 0,
-        'approved_before_cutoff' => 0,
-    ];
-
-    if ($userId <= 0) {
-        return $default;
-    }
-
-    $stmt = $connection->prepare("SELECT `date`, `is_agent` FROM `users` WHERE `userid` = ? LIMIT 1");
-    if (!$stmt) {
-        return $default;
-    }
-
-    $stmt->bind_param("i", $userId);
-    $stmt->execute();
-    $userRow = $stmt->get_result()->fetch_assoc();
-    $stmt->close();
-
-    if (!$userRow) {
-        return $default;
-    }
-
-    $stats = [
-        'exists' => true,
-        'join_date' => (int)($userRow['date'] ?? 0),
-        'is_agent' => (int)($userRow['is_agent'] ?? 0),
-        'approved_total' => 0,
-        'approved_before_cutoff' => 0,
-    ];
-
-    $stmt = $connection->prepare(
-        "SELECT
-            COUNT(*) AS approved_total,
-            COALESCE(SUM(CASE WHEN `request_date` < ? THEN 1 ELSE 0 END), 0) AS approved_before_cutoff
-         FROM `pays`
-         WHERE `user_id` = ?
-           AND `type` IN ('BUY_SUB', 'RENEW_ACCOUNT')
-           AND `state` = 'approved'"
-    );
-
-    if (!$stmt) {
-        return $stats;
-    }
-
-    $stmt->bind_param("ii", $cutoffTs, $userId);
-    $stmt->execute();
-    $payStats = $stmt->get_result()->fetch_assoc();
-    $stmt->close();
-
-    $stats['approved_total'] = (int)($payStats['approved_total'] ?? 0);
-    $stats['approved_before_cutoff'] = (int)($payStats['approved_before_cutoff'] ?? 0);
-
-    return $stats;
+/**
+ * Manual payment choice is durable and mutually exclusive with hosted
+ * gateway claims in the existing shared ledger. No schema or pays.payid reuse.
+ */
+function achbotManualMethod(string $choice): ?string {
+    return match ($choice) {
+        'CartToCart', 'bank_transfer' => 'bank_transfer',
+        'GiftCard', 'gift_card' => 'gift_card',
+        'ManualUsdt', 'manual_usdt' => 'manual_usdt',
+        default => null
+    };
 }
 
-function resolveCartToCartMessageType(int $priceToman, int $userId = 0): string {
-    global $connection;
+function achbotManualLabel(string $method): string {
+    return match ($method) {
+        'gift_card' => 'گیفت‌کارت',
+        'manual_usdt' => 'تتر دستی (USDT)',
+        default => 'کارت‌به‌کارت بانکی'
+    };
+}
 
-    $detailMinPrice = 50000;
-    $usdtMinPrice = 12000000;
-    $cutoffTs = strtotime('2026-03-01 00:00:00');
-    if ($cutoffTs === false) {
-        $cutoffTs = 1772323200;
+function achbotManualUsdtWalletValid(string $wallet, string $network): bool {
+    if (!in_array($network, ['BEP20','ERC20','TRC20'], true)) return false;
+    if ($network === 'TRC20') return preg_match('/^T[1-9A-HJ-NP-Za-km-z]{33}$/D', $wallet) === 1;
+    return preg_match('/^0x[0-9a-fA-F]{40}$/D', $wallet) === 1;
+}
+
+/**
+ * A manual transfer is a third-party on-chain transfer: the bot does not
+ * verify its screenshot or infer final settlement from Telegram evidence.
+ */
+function achbotManualUsdtConfiguration(): ?array {
+    global $paymentKeys, $USDTPrice, $USDTPriceagent, $connection;
+    $keys = is_array($paymentKeys ?? null) ? $paymentKeys : [];
+    $network = (string)($keys['manualUsdtNetwork'] ?? 'BEP20');
+    $wallet = trim((string)($keys['manualUsdtWallet'] ?? ''));
+    if (!achbotManualUsdtWalletValid($wallet, $network)) return null;
+    $manualRate = $keys['manualUsdtRateToman'] ?? null;
+    $rate = $manualRate !== null && is_numeric($manualRate) && (float)$manualRate > 0
+        ? (float)$manualRate : 0.0;
+    if ($rate <= 0) {
+        $rate = isset($USDTPrice) && is_numeric($USDTPrice) ? (float)$USDTPrice : 0.0;
     }
+    if (!is_finite($rate) || $rate < 100 || $rate > 1000000000) return null;
+    $agentRate = isset($USDTPriceagent) && is_numeric($USDTPriceagent)
+        ? (float)$USDTPriceagent : 0.0;
+    if (!is_finite($agentRate) || $agentRate <= 0) $agentRate = $rate;
+    // A configured manual-rate override applies to all customers, including agents.
+    if ($manualRate !== null && $rate > 0) $agentRate = $rate;
+    return ['network'=>$network, 'wallet'=>$wallet, 'rate'=>$rate, 'agent_rate'=>$agentRate];
+}
 
-    if ($priceToman >= $usdtMinPrice) {
-        return 'usdt';
+
+/** No implicit recipient or gift seller: invalid settings disable initiation. */
+function achbotManualBankIdentity(): ?array {
+    global $paymentKeys;
+    $keys = is_array($paymentKeys ?? null) ? $paymentKeys : [];
+    $account = trim((string)($keys['bankAccount'] ?? ''));
+    $holder = trim((string)($keys['holderName'] ?? ''));
+    if ($account === '' || $holder === '' || strlen($account) > 150 || strlen($holder) > 150) return null;
+    return ['account' => $account, 'holder' => $holder];
+}
+
+function achbotManualSellerUrl(): ?string {
+    global $paymentKeys;
+    $url = trim((string)($paymentKeys['giftCardUrl'] ?? ''));
+    if ($url === '' || strlen($url) > 350 ||
+        filter_var($url, FILTER_VALIDATE_URL) === false ||
+        strtolower((string)parse_url($url, PHP_URL_SCHEME)) !== 'https' ||
+        (string)parse_url($url, PHP_URL_HOST) === '') return null;
+    return $url;
+}
+
+/** This JSON is a manual-only immutable destination intent, not a gateway URL. */
+function achbotManualIntentEncode(array $intent): ?string {
+    $encoded = json_encode(['v' => 1] + $intent, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    return is_string($encoded) && strlen($encoded) <= 2048 ? $encoded : null;
+}
+function achbotManualIntentDecode(string $saved, string $method): ?array {
+    $intent = json_decode($saved, true);
+    if (is_array($intent) && ($intent['v'] ?? null) === 1 &&
+        ($intent['method'] ?? null) === $method) return $intent;
+    // A previous PR candidate saved only an on-chain intent URI.
+    if ($method === 'manual_usdt' &&
+        preg_match('/^usdt:(BEP20|ERC20|TRC20):(.+)$/D', $saved, $m) &&
+        achbotManualUsdtWalletValid($m[2], $m[1])) {
+        return ['v'=>1, 'method'=>'manual_usdt','network'=>$m[1],'wallet'=>$m[2]];
     }
+    return null;
+}
+function achbotManualEnabled(string $method): bool {
+    global $botState;
+    if ($method === 'gift_card') return ($botState['giftCardState'] ?? 'off') === 'on' &&
+        achbotManualSellerUrl() !== null;
+    if ($method === 'manual_usdt') return ($botState['manualUsdtState'] ?? 'off') === 'on' &&
+        achbotManualUsdtConfiguration() !== null;
+    return $method === 'bank_transfer' && ($botState['cartToCartState'] ?? 'off') === 'on' &&
+        achbotManualBankIdentity() !== null;
+}
 
-    if ($priceToman < $detailMinPrice || $userId <= 0 || !($connection instanceof mysqli)) {
-        return 'gift';
+/** Method inquiry for customer/status only; never use null as bank auto-eligibility. */
+function achbotManualSelectedMethod(mysqli $connection, array $payInfo): ?string {
+    try {
+        $stmt = $connection->prepare('SELECT provider FROM payment_attempts WHERE pay_row_id=? LIMIT 1');
+        $id = (int)$payInfo['id'];
+        $stmt->bind_param('i', $id);
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        $method = (string)($row['provider'] ?? '');
+        return in_array($method, ['bank_transfer', 'gift_card', 'manual_usdt'], true) ? $method : null;
+    } catch (Throwable $error) {
+        return null;
     }
+}
 
-    $stats = fetchCartToCartUserEligibility($connection, $userId, (int)$cutoffTs);
-    $joinDate = (int)$stats['join_date'];
-    $joinedBeforeCutoff = ($joinDate > 0 && $joinDate < (int)$cutoffTs);
-    $joinedAtLeastTenDaysAgo = ($joinDate > 0 && $joinDate <= (time() - (10 * 86400)));
 
-    if ((int)$stats['is_agent'] === 1) {
-        return 'detail';
+/** Cheap classification; uncertainty never means "legacy bank". Rechecked under lock. */
+function achbotAutoBankEligible(mysqli $connection, array $seen): bool {
+    try {
+        $id = (int)$seen['id'];
+        $stmt = $connection->prepare('SELECT provider FROM payment_attempts WHERE pay_row_id=? LIMIT 1');
+        $stmt->bind_param('i', $id);
+        $stmt->execute();
+        $attempt = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        return $attempt === null || (string)$attempt['provider'] === 'bank_transfer';
+    } catch (Throwable $error) {
+        error_log('achbot_bank_auto_method_lookup_deferred pay_row_id=' . (int)($seen['id'] ?? 0));
+        return false;
     }
+}
 
-    if ($joinedBeforeCutoff && (int)$stats['approved_before_cutoff'] >= 1) {
-        return 'detail';
+/**
+ * Exclusive bank-only settlement claim. Legacy receipts have no ledger attempt;
+ * any explicit non-bank/unknown provider or failed lookup blocks auto-approval.
+ * Wallet credit and the guarded receipt transition share one transaction.
+ * For services, commit the exclusive claim before starting side effects.
+ */
+function achbotAutoBankClaim(mysqli $connection, array $seen): bool {
+    $id = (int)($seen['id'] ?? 0);
+    if ($id <= 0) return false;
+    try {
+        $connection->begin_transaction();
+        $stmt = $connection->prepare('SELECT id,user_id,type,price,state,payid FROM pays WHERE id=? FOR UPDATE');
+        $stmt->bind_param('i', $id);
+        $stmt->execute();
+        $pay = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        if (!$pay || $pay['state'] !== 'have_sent' ||
+            (string)($pay['payid'] ?? '') !== '' ||
+            (int)$pay['user_id'] <= 0 || (int)$pay['price'] <= 0) {
+            $connection->rollback();
+            return false;
+        }
+        // Do not classify a failed ledger lookup as a legacy card receipt.
+        $stmt = $connection->prepare('SELECT provider FROM payment_attempts WHERE pay_row_id=? LIMIT 1 FOR UPDATE');
+        $stmt->bind_param('i', $id);
+        $stmt->execute();
+        $attempt = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        if ($attempt && (string)$attempt['provider'] !== 'bank_transfer') {
+            $connection->rollback();
+            return false;
+        }
+        if ($pay['type'] === 'INCREASE_WALLET') {
+            $userId = (int)$pay['user_id'];
+            $stmt = $connection->prepare('SELECT wallet FROM users WHERE userid=? FOR UPDATE');
+            $stmt->bind_param('i', $userId);
+            $stmt->execute();
+            $wallet = $stmt->get_result()->fetch_assoc();
+            $stmt->close();
+            if (!$wallet || !addToWallet($connection, $userId, (int)$pay['price'])) {
+                $connection->rollback();
+                return false;
+            }
+        }
+        $stmt = $connection->prepare("UPDATE pays SET state='auto_cart_approved'
+            WHERE id=? AND state='have_sent'");
+        $stmt->bind_param('i',$id);
+        $stmt->execute();
+        $changed = $stmt->affected_rows;
+        $stmt->close();
+        if ($changed !== 1 || !$connection->commit()) throw new RuntimeException('bank_auto_claim_failed');
+        return true;
+    } catch (Throwable $error) {
+        try { $connection->rollback(); } catch (Throwable $ignored) {}
+        // Only an opaque local row id, never photo, account, user or SQL text.
+        error_log('achbot_bank_auto_claim_deferred pay_row_id=' . $id);
+        return false;
     }
+}
 
-    if ($joinedBeforeCutoff && (int)$stats['approved_total'] >= 2) {
-        return 'detail';
+/**
+ * Atomic operator-approved wallet top-up. Photo upload and Telegram callback
+ * alone are NEVER payment proof. A privileged operator must have independently
+ * verified the receipt before invoking this transition.
+ *
+ * The local pays row lock serializes competing administrators; the wallet and
+ * approved state commit together. Existing signed administrator debt is kept.
+ */
+function achbotApproveManualWalletTopup(mysqli $connection, string $hashId, int $adminId): ?array {
+    if ($adminId <= 0 || !preg_match('/^[A-Za-z0-9_-]{1,50}$/D', $hashId)) return null;
+    try {
+        $connection->begin_transaction();
+        $stmt = $connection->prepare('SELECT id,user_id,type,price,state FROM pays
+            WHERE hash_id=? LIMIT 1 FOR UPDATE');
+        $stmt->bind_param('s', $hashId);
+        $stmt->execute();
+        $pay = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        if (!$pay || $pay['type'] !== 'INCREASE_WALLET' ||
+            $pay['state'] !== 'have_sent' || (int)$pay['price'] <= 0 ||
+            (int)$pay['user_id'] <= 0) {
+            $connection->rollback();
+            return null;
+        }
+        $userId = (int)$pay['user_id'];
+        $price = (int)$pay['price'];
+        $stmt = $connection->prepare('SELECT wallet FROM users WHERE userid=? LIMIT 1 FOR UPDATE');
+        $stmt->bind_param('i', $userId);
+        $stmt->execute();
+        $user = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        if (!$user) {
+            $connection->rollback();
+            return null;
+        }
+        $before = (int)$user['wallet'];
+        if (!addToWallet($connection, $userId, $price)) {
+            $connection->rollback();
+            return null;
+        }
+        $payId = (int)$pay['id'];
+        $stmt = $connection->prepare("UPDATE pays SET state='approved',approved_by=?
+            WHERE id=? AND state='have_sent'");
+        $stmt->bind_param('ii', $adminId, $payId);
+        $stmt->execute();
+        $changed = $stmt->affected_rows;
+        $stmt->close();
+        if ($changed !== 1 || !$connection->commit()) {
+            throw new RuntimeException('manual_wallet_commit_failed');
+        }
+        return ['user_id'=>$userId, 'price'=>$price,
+                'wallet_before'=>$before, 'wallet_after'=>$before+$price];
+    } catch (Throwable $error) {
+        try { $connection->rollback(); } catch (Throwable $ignored) {}
+        return null;
     }
+}
 
-    if ($joinedAtLeastTenDaysAgo && (int)$stats['approved_total'] >= 3) {
-        return 'detail';
+/**
+ * Customer-wallet route, called with the pays row already FOR UPDATE.
+ * A present shared ledger must be inspected; any attempt blocks wallet use.
+ * Historical 23-table installs have no ledger and no new checkout issuance,
+ * so they retain their pre-003 wallet behavior. SQL/permission failures are
+ * never interpreted as an absent claim.
+ */
+function achbotWalletDirectAllowedLocked(mysqli $connection, array $pay,
+                                         int $actor): bool {
+    if ($actor <= 0 || (int)($pay['user_id'] ?? 0) !== $actor ||
+        !in_array((string)($pay['state'] ?? ''), ['pending','send','low_wallet'], true) ||
+        (string)($pay['payid'] ?? '') !== '') return false;
+    $id = (int)($pay['id'] ?? 0);
+    if ($id <= 0) return false;
+    try {
+        $stmt = $connection->prepare('SELECT id FROM payment_attempts WHERE pay_row_id=? LIMIT 1 FOR UPDATE');
+        $stmt->bind_param('i',$id);
+        $stmt->execute();
+        $found = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        return $found === null;
+    } catch (Throwable $error) {
+        if (!($error instanceof mysqli_sql_exception) || (int)$error->getCode() !== 1146) {
+            return false;
+        }
+        // Only a positively verified absence of the table, not an arbitrary
+        // connection or SQL failure, permits historical wallet payment.
+        try {
+            $attemptTable = $connection->query("SHOW TABLES LIKE 'payment_attempts'");
+            $transactionTable = $connection->query("SHOW TABLES LIKE 'payment_transactions'");
+            // A partially missing 003 ledger is not the historical schema:
+            // it may contain active claims and must never be bypassed.
+            return $attemptTable instanceof mysqli_result && $attemptTable->num_rows === 0 &&
+                   $transactionTable instanceof mysqli_result && $transactionTable->num_rows === 0;
+        } catch (Throwable $ignored) {
+            return false;
+        }
     }
+}
 
-    return 'gift';
+/** Legacy TRON buttons share the same exclusive invoice claim as other methods. */
+function achbotTronClaim(mysqli $connection, array $seen, int $userId,
+                         float $trxAmount, string $wallet): ?array {
+    if ($userId <= 0 || !is_finite($trxAmount) || $trxAmount <= 0 || $wallet === '') return null;
+    try {
+        $connection->begin_transaction();
+        $id = (int)$seen['id'];
+        $stmt = $connection->prepare('SELECT id,hash_id,user_id,price,state,payid FROM pays WHERE id=? FOR UPDATE');
+        $stmt->bind_param('i',$id);$stmt->execute();
+        $pay = $stmt->get_result()->fetch_assoc();$stmt->close();
+        if (!$pay || (int)$pay['user_id'] !== $userId ||
+            $pay['state'] !== 'pending' || (string)($pay['payid'] ?? '') !== '') {
+            $connection->rollback(); return null;
+        }
+        $stmt=$connection->prepare('SELECT provider,stage,quote_amount,checkout_url
+            FROM payment_attempts WHERE pay_row_id=? LIMIT 1 FOR UPDATE');
+        $stmt->bind_param('i',$id);$stmt->execute();
+        $attempt=$stmt->get_result()->fetch_assoc();$stmt->close();
+        if ($attempt !== null) {
+            $connection->commit();
+            if ($attempt['provider'] !== 'tron_wallet' || $attempt['stage'] !== 'pending' ||
+                !str_starts_with((string)$attempt['checkout_url'], 'tron:')) return null;
+            return ['quote'=>(string)$attempt['quote_amount'],
+                    'wallet'=>substr((string)$attempt['checkout_url'],5)];
+        }
+        $quote=number_format($trxAmount,2,'.','');
+        $address='tron:'.$wallet;
+        $price=(int)$pay['price'];$hash=(string)$pay['hash_id'];
+        $stmt=$connection->prepare("INSERT INTO payment_attempts
+            (pay_row_id,provider,order_hash,quote_amount,quote_currency,local_amount_toman,
+             settlement_currency,checkout_url,stage)
+            VALUES (?,'tron_wallet',?,?,'TRX',?,'TRX',?,'pending')");
+        $stmt->bind_param('issis',$id,$hash,$quote,$price,$address);
+        $stmt->execute();$stmt->close();
+        // The frozen 23-table pays schema has no tron_price column.
+        // Quote and receiving address are pinned in the shared ledger only.
+        if (!$connection->commit()) throw new RuntimeException('tron_claim_commit_failed');
+        return ['quote'=>$quote,'wallet'=>$wallet];
+    } catch(Throwable $error) {
+        try{$connection->rollback();}catch(Throwable $ignored){}
+        return null;
+    }
+}
+function achbotTronSubmitHash(mysqli $connection, string $hashId,
+                              int $userId, string $txId): bool {
+    if ($userId<=0 || !preg_match('/^[0-9a-f]{64}$/iD',$txId)) return false;
+    try {
+        $connection->begin_transaction();
+        $stmt=$connection->prepare('SELECT id,user_id,state,payid FROM pays WHERE hash_id=? FOR UPDATE');
+        $stmt->bind_param('s',$hashId);$stmt->execute();
+        $pay=$stmt->get_result()->fetch_assoc();$stmt->close();
+        if (!$pay || (int)$pay['user_id'] !== $userId ||
+            $pay['state'] !== 'pending' || (string)($pay['payid'] ?? '') !== '') {
+            $connection->rollback();return false;
+        }
+        $id=(int)$pay['id'];
+        $stmt=$connection->prepare('SELECT id,provider,stage FROM payment_attempts
+            WHERE pay_row_id=? LIMIT 1 FOR UPDATE');
+        $stmt->bind_param('i',$id);$stmt->execute();
+        $attempt=$stmt->get_result()->fetch_assoc();$stmt->close();
+        if (!$attempt || $attempt['provider']!=='tron_wallet' ||
+            $attempt['stage']!=='pending'){$connection->rollback();return false;}
+        $stmt=$connection->prepare('SELECT id FROM pays WHERE payid=? LIMIT 1');
+        $stmt->bind_param('s',$txId);$stmt->execute();
+        $duplicate=$stmt->get_result()->fetch_assoc();$stmt->close();
+        if($duplicate){$connection->rollback();return false;}
+        $stmt=$connection->prepare("UPDATE pays SET payid=?,state='0'
+            WHERE id=? AND state='pending' AND (payid IS NULL OR payid='')");
+        $stmt->bind_param('si',$txId,$id);$stmt->execute();
+        $changed=$stmt->affected_rows;$stmt->close();
+        if($changed!==1){$connection->rollback();return false;}
+        $attemptId=(int)$attempt['id'];
+        $stmt=$connection->prepare("UPDATE payment_attempts
+            SET provider_reference=?,stage='review' WHERE id=? AND provider='tron_wallet' AND stage='pending'");
+        $stmt->bind_param('si',$txId,$attemptId);$stmt->execute();
+        $changed=$stmt->affected_rows;$stmt->close();
+        if($changed!==1 || !$connection->commit())throw new RuntimeException('tron_submit_commit_failed');
+        return true;
+    }catch(Throwable $error){
+        try{$connection->rollback();}catch(Throwable $ignored){}
+        return false;
+    }
+}
+
+/**
+ * Reviewable manual service receipt, checked under the exact pays FOR UPDATE
+ * lock before any remote fulfillment. A callback never proves settlement.
+ * Pre-ledger receipts require a persisted operator delivery; new manual
+ * methods require their exclusive ledger attempt and saved original photo.
+ * Ledger failures fail closed rather than impersonating historical receipts.
+ */
+function achbotManualServiceApprovalAllowedLocked(mysqli $connection, ?array $pay, string $subject): bool {
+    if (!$pay || (int)($pay['id'] ?? 0) <= 0 ||
+        (int)($pay['user_id'] ?? 0) <= 0 ||
+        (string)($pay['state'] ?? '') !== 'have_sent' ||
+        (string)($pay['payid'] ?? '') !== '' ||
+        (int)($pay['message_id'] ?? 0) <= 0 ||
+        (int)($pay['chat_id'] ?? 0) === 0) return false;
+    $type = (string)($pay['type'] ?? '');
+    $subjectMatches = match ($subject) {
+        // The standard plan BUY_SUB uses both fields=0; only Catalogue's
+        // custom term/volume selection is approved by accCustom.
+        'custom' => $type === 'BUY_SUB' &&
+            ((int)($pay['day'] ?? 0) > 0 || (int)($pay['volume'] ?? 0) > 0),
+        'renewal' => $type === 'RENEW_ACCOUNT',
+        'day' => preg_match('/^INCREASE_DAY_[0-9]+_[0-9]+$/D', $type) === 1,
+        'volume' => preg_match('/^INCREASE_VOLUME_[0-9]+_[0-9]+$/D', $type) === 1,
+        default => false,
+    };
+    if (!$subjectMatches) return false;
+    try {
+        $id = (int)$pay['id'];
+        $stmt = $connection->prepare('SELECT provider,stage,checkout_url
+            FROM payment_attempts WHERE pay_row_id=? LIMIT 1 FOR UPDATE');
+        $stmt->bind_param('i', $id);
+        $stmt->execute();
+        $attempt = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        if ($attempt === null) {
+            // Legacy, operator-delivered manual receipt only. Human verification
+            // remains required; missing evidence does not become verified funds.
+            return true;
+        }
+        $method = (string)$attempt['provider'];
+        if (!in_array($method, ['bank_transfer','gift_card','manual_usdt'], true) ||
+            (string)$attempt['stage'] !== 'review') return false;
+        $intent = achbotManualIntentDecode((string)($attempt['checkout_url'] ?? ''), $method);
+        return is_array($intent) && !empty($intent['receipt_file_id']);
+    } catch (Throwable $error) {
+        return false;
+    }
+}
+
+function achbotManualClaim(mysqli $connection, array $payInfo, string $method, int $userId): bool {
+    if (!in_array($method, ['bank_transfer', 'gift_card', 'manual_usdt'], true) ||
+        (int)$payInfo['user_id'] !== $userId) return false;
+    try {
+        $connection->begin_transaction();
+        $id = (int)$payInfo['id'];
+        $stmt = $connection->prepare('SELECT id,user_id,hash_id,price,state,payid FROM pays WHERE id=? FOR UPDATE');
+        $stmt->bind_param('i', $id);
+        $stmt->execute();
+        $current = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        if (!$current || (int)$current['user_id'] !== $userId ||
+            (string)$current['state'] !== 'pending' ||
+            (string)($current['payid'] ?? '') !== '') {
+            $connection->rollback();
+            return false;
+        }
+        $stmt = $connection->prepare('SELECT provider,stage FROM payment_attempts WHERE pay_row_id=? LIMIT 1 FOR UPDATE');
+        $stmt->bind_param('i', $id);
+        $stmt->execute();
+        $existing = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        if ($existing !== null) {
+            $connection->commit();
+            return hash_equals($method, (string)$existing['provider']) && $existing['stage'] === 'pending';
+        }
+        if (!achbotManualEnabled($method)) {
+            $connection->rollback();
+            return false;
+        }
+        $hash = (string)$current['hash_id'];
+        $price = (int)$current['price'];
+        if ($price <= 0) {
+            $connection->rollback();
+            return false;
+        }
+        $quote = (string)$price;
+        $currency = 'toman';
+        $settlementNetwork = null;
+        $intent = ['method'=>$method];
+        if ($method === 'bank_transfer') {
+            $bank = achbotManualBankIdentity();
+            if ($bank === null) { $connection->rollback(); return false; }
+            $intent += $bank;
+            $quote = (string)generateHigherRandomizedAmount($price)['toman'];
+        } elseif ($method === 'gift_card') {
+            $url = achbotManualSellerUrl();
+            if ($url === null) { $connection->rollback(); return false; }
+            $intent['seller_url'] = $url;
+        } elseif ($method === 'manual_usdt') {
+            $config = achbotManualUsdtConfiguration();
+            if ($config === null) {
+                $connection->rollback();
+                return false;
+            }
+            $rate = $config['rate'];
+            $agentStmt = $connection->prepare('SELECT is_agent FROM users WHERE userid=? LIMIT 1');
+            $agentStmt->bind_param('i', $userId);
+            $agentStmt->execute();
+            $agent = $agentStmt->get_result()->fetch_assoc();
+            $agentStmt->close();
+            if ((int)($agent['is_agent'] ?? 0) === 1) $rate = $config['agent_rate'];
+            if (!is_finite($rate) || $rate <= 0) {
+                $connection->rollback();
+                return false;
+            }
+            $quote = number_format(ceil(($price / $rate) * 100) / 100, 2, '.', '');
+            $settlementNetwork = $config['network'];
+            $intent['network'] = $config['network'];
+            $intent['wallet'] = $config['wallet'];
+            $currency = 'USDT';
+        }
+        $destination = achbotManualIntentEncode($intent);
+        if ($destination === null) { $connection->rollback(); return false; }
+        $stmt = $connection->prepare("INSERT INTO payment_attempts
+            (pay_row_id,provider,order_hash,quote_amount,quote_currency,local_amount_toman,
+             settlement_currency,checkout_url,stage)
+            VALUES (?,?,?,?,?,?,?,?,'pending')");
+        $stmt->bind_param('issssiss', $id, $method, $hash, $quote, $currency, $price,
+            $settlementNetwork, $destination);
+        $stmt->execute();
+        $stmt->close();
+        $connection->commit();
+        return true;
+    } catch (Throwable $error) {
+        try { $connection->rollback(); } catch (Throwable $ignored) {}
+        return false;
+    }
+}
+
+
+/** Receipt attempts are owner-bound; receiving is recoverable, not claimable by another method. */
+function achbotManualReceiptAllowed(mysqli $connection, array $payInfo, string $method, int $userId): bool {
+    if ((int)$payInfo['user_id'] !== $userId ||
+        (string)$payInfo['state'] !== 'pending' ||
+        (string)($payInfo['payid'] ?? '') !== '' ||
+        !in_array($method, ['bank_transfer','gift_card','manual_usdt'], true)) return false;
+    try {
+        $stmt = $connection->prepare('SELECT provider,stage FROM payment_attempts WHERE pay_row_id=? LIMIT 1');
+        $id = (int)$payInfo['id'];
+        $stmt->bind_param('i', $id);
+        $stmt->execute();
+        $attempt = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        return $attempt !== null &&
+            (string)$attempt['provider'] === $method &&
+            in_array((string)$attempt['stage'], ['pending','receiving'], true);
+    } catch (Throwable $error) {
+        return false;
+    }
+}
+
+/**
+ * Save Telegram's reusable file identifier before delivery. A 2-minute
+ * delivery lease prevents simultaneous retries; stale leases can be reclaimed
+ * using the SAME evidence, not replaced by a different image.
+ */
+function achbotManualBeginEvidence(mysqli $connection, array $payInfo, string $method,
+                                   int $userId, string $fileId): ?string {
+    if ($userId <= 0 || $fileId === '' || strlen($fileId) > 1200 ||
+        !in_array($method, ['bank_transfer','gift_card','manual_usdt'], true)) return null;
+    try {
+        $claimToken = bin2hex(random_bytes(16));
+        $connection->begin_transaction();
+        $id = (int)$payInfo['id'];
+        $stmt = $connection->prepare('SELECT user_id,state,payid FROM pays WHERE id=? FOR UPDATE');
+        $stmt->bind_param('i', $id);
+        $stmt->execute();
+        $pay = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        if (!$pay || (int)$pay['user_id'] !== $userId || $pay['state'] !== 'pending' ||
+            (string)($pay['payid'] ?? '') !== '') { $connection->rollback(); return null; }
+        $stmt = $connection->prepare('SELECT id,provider,stage,checkout_url FROM payment_attempts
+            WHERE pay_row_id=? LIMIT 1 FOR UPDATE');
+        $stmt->bind_param('i', $id);
+        $stmt->execute();
+        $attempt = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        if (!$attempt || (string)$attempt['provider'] !== $method ||
+            !in_array((string)$attempt['stage'], ['pending','receiving'], true)) {
+            $connection->rollback(); return null;
+        }
+        $intent = achbotManualIntentDecode((string)$attempt['checkout_url'], $method);
+        if ($intent === null) { $connection->rollback(); return null; }
+        if ($attempt['stage'] === 'receiving') {
+            if (($intent['receipt_file_id'] ?? null) !== $fileId) {
+                $connection->rollback(); return null;
+            }
+        } else {
+            if (isset($intent['receipt_file_id'])) { $connection->rollback(); return null; }
+            $intent['receipt_file_id'] = $fileId;
+        }
+        $encoded = achbotManualIntentEncode($intent);
+        if ($encoded === null) { $connection->rollback(); return null; }
+        $attemptId = (int)$attempt['id'];
+        $stmt = $connection->prepare("UPDATE payment_attempts
+            SET stage='receiving', checkout_url=?, review_notice_claim_token=?,
+                review_notice_claimed_at=NOW()
+            WHERE id=? AND stage IN ('pending','receiving') AND
+                (review_notice_claim_token IS NULL OR review_notice_claimed_at IS NULL OR
+                 review_notice_claimed_at < DATE_SUB(NOW(), INTERVAL 2 MINUTE))");
+        $stmt->bind_param('ssi', $encoded, $claimToken, $attemptId);
+        $stmt->execute();
+        $changed = $stmt->affected_rows;
+        $stmt->close();
+        if ($changed !== 1) { $connection->rollback(); return null; }
+        if (!$connection->commit()) throw new RuntimeException('manual_evidence_reserve_failed');
+        return $claimToken;
+    } catch (Throwable $error) {
+        try { $connection->rollback(); } catch (Throwable $ignored) {}
+        return null;
+    }
+}
+
+function achbotManualReleaseEvidenceLease(mysqli $connection, string $hashId, string $token): void {
+    try {
+        $stmt = $connection->prepare("UPDATE payment_attempts a
+            JOIN pays p ON p.id=a.pay_row_id
+            SET a.review_notice_claim_token=NULL, a.review_notice_claimed_at=NULL
+            WHERE p.hash_id=? AND p.state='pending'
+              AND a.stage='receiving' AND a.review_notice_claim_token=?");
+        $stmt->bind_param('ss', $hashId, $token);
+        $stmt->execute();
+        $stmt->close();
+    } catch (Throwable $ignored) {
+        // Lease expiry permits a later retry even if connection was lost.
+    }
+}
+
+/** Transactional expected-state transition after Telegram returned a message ID. */
+function achbotManualFinishEvidence(mysqli $connection, string $hashId, string $fileId,
+                                    string $token, int $messageId, int $adminChatId): bool {
+    if ($messageId <= 0 || $adminChatId <= 0 || $token === '') return false;
+    try {
+        $connection->begin_transaction();
+        $stmt = $connection->prepare('SELECT id,state,payid FROM pays WHERE hash_id=? FOR UPDATE');
+        $stmt->bind_param('s', $hashId);
+        $stmt->execute();
+        $pay = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        if (!$pay || $pay['state'] !== 'pending' || (string)($pay['payid'] ?? '') !== '') {
+            $connection->rollback(); return false;
+        }
+        $id = (int)$pay['id'];
+        $stmt = $connection->prepare('SELECT id,provider,stage,checkout_url,review_notice_claim_token
+            FROM payment_attempts WHERE pay_row_id=? LIMIT 1 FOR UPDATE');
+        $stmt->bind_param('i', $id);
+        $stmt->execute();
+        $attempt = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        if (!$attempt || !in_array((string)$attempt['provider'],
+            ['bank_transfer','gift_card','manual_usdt'], true) ||
+            $attempt['stage'] !== 'receiving' ||
+            (string)$attempt['review_notice_claim_token'] !== $token) {
+            $connection->rollback(); return false;
+        }
+        $intent = achbotManualIntentDecode((string)$attempt['checkout_url'], (string)$attempt['provider']);
+        if (!$intent || ($intent['receipt_file_id'] ?? null) !== $fileId) {
+            $connection->rollback(); return false;
+        }
+        $stmt = $connection->prepare("UPDATE pays SET state='have_sent',message_id=?,chat_id=?
+            WHERE id=? AND state='pending' AND (payid IS NULL OR payid='')");
+        $stmt->bind_param('iii', $messageId, $adminChatId, $id);
+        $stmt->execute();
+        $changed = $stmt->affected_rows;
+        $stmt->close();
+        if ($changed !== 1) { $connection->rollback(); return false; }
+        $attemptId = (int)$attempt['id'];
+        $stmt = $connection->prepare("UPDATE payment_attempts
+            SET stage='review',review_notice_claim_token=NULL,review_notice_claimed_at=NULL
+            WHERE id=? AND stage='receiving' AND review_notice_claim_token=?");
+        $stmt->bind_param('is', $attemptId, $token);
+        $stmt->execute();
+        $changed = $stmt->affected_rows;
+        $stmt->close();
+        if ($changed !== 1 || !$connection->commit()) throw new RuntimeException('manual_evidence_commit_failed');
+        return true;
+    } catch (Throwable $error) {
+        try { $connection->rollback(); } catch (Throwable $ignored) {}
+        return false;
+    }
+}
+
+
+function achbotManualCaption(mysqli $connection, array $payInfo, string $caption): string {
+    $method = achbotManualSelectedMethod($connection, $payInfo);
+    $label = $method === null ? 'نیازمند بررسی' : achbotManualLabel($method);
+    $header = '🧾 روش پرداخت: <b>' . $label . "</b>\n";
+    if ($method === 'manual_usdt' || $method === 'bank_transfer') {
+        try {
+            $stmt = $connection->prepare('SELECT provider,quote_amount,quote_currency,
+                checkout_url FROM payment_attempts WHERE pay_row_id=? LIMIT 1');
+            $id = (int)$payInfo['id'];
+            $stmt->bind_param('i', $id);
+            $stmt->execute();
+            $details = $stmt->get_result()->fetch_assoc();
+            $stmt->close();
+            $intent = $details ? achbotManualIntentDecode((string)$details['checkout_url'], $method) : null;
+            if ($intent && $method === 'manual_usdt') {
+                $network = (string)($intent['network'] ?? '');
+                $address = (string)($intent['wallet'] ?? '');
+                if ($details['quote_currency'] === 'USDT' &&
+                    achbotManualUsdtWalletValid($address, $network)) {
+                    $header .= '💎 مبلغ تتر: <code>' .
+                        htmlspecialchars((string)$details['quote_amount'], ENT_QUOTES, 'UTF-8') .
+                        ' USDT</code> | شبکه: <b>' . htmlspecialchars($network, ENT_QUOTES, 'UTF-8') .
+                        "</b>\nآدرس: <code>" . htmlspecialchars($address, ENT_QUOTES, 'UTF-8') .
+                        "</code>\n";
+                }
+            } elseif ($intent && $method === 'bank_transfer' &&
+                      $details['quote_currency'] === 'toman') {
+                $header .= '💳 مبلغ دقیق حواله: <code>' .
+                    number_format((int)$details['quote_amount']) . " تومان</code>\n";
+                $header .= '💳 مقصد: <code>' .
+                    htmlspecialchars((string)($intent['account'] ?? ''), ENT_QUOTES, 'UTF-8') .
+                    '</code> | ' . htmlspecialchars((string)($intent['holder'] ?? ''), ENT_QUOTES, 'UTF-8') . "\n";
+            }
+        } catch (Throwable $error) {
+            // A failed lookup must not produce a fabricated bank destination.
+        }
+    }
+    return $header . $caption;
+}
+
+function achbotManualReceiptPrompt(array $mainValues, string $method): string {
+    $key = match ($method) {
+        'gift_card' => 'please_send_gift_card_image',
+        'manual_usdt' => 'please_send_usdt_image',
+        default => 'please_send_receipt_image'
+    };
+    return $mainValues[$key];
+}
+
+function achbotManualAcknowledgement(array $payInfo, string $method): string {
+    return "📥 تصویر " . achbotManualLabel($method) . " دریافت شد.\n" .
+        "🧾 سفارش: <code>" . htmlspecialchars((string)$payInfo['hash_id'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') . "</code>\n" .
+        "⏳ رسید در انتظار بررسی مدیر است؛ ارسال تصویر به معنی تأیید پرداخت یا تحویل سرویس نیست.";
 }
 
 function getCartToCartMessageKey(string $messageType): string {
@@ -234,57 +855,78 @@ function getCartToCartMessageKey(string $messageType): string {
     return \AchBot\Presentation\Labels\cardToCardMessageKey($messageType);
 }
 
-function buildCartToCartInfoMessage(array $paymentKeys, array $mainValues, int $priceToman, int $userId = 0): string {
-    global $connection, $USDTPrice, $USDTPriceagent;
 
-    $messageType = resolveCartToCartMessageType($priceToman, $userId);
-    $GLOBALS['lastCartToCartMessageType'] = $messageType;
-
-    $randomPrice = generateHigherRandomizedAmount($priceToman);
-    $finalTomanAmount = (float)$randomPrice['toman'];
-
-    $isAgent = 0;
-    if ($userId > 0 && ($connection instanceof mysqli)) {
-        $stmt = $connection->prepare("SELECT `is_agent` FROM `users` WHERE `userid` = ? LIMIT 1");
-        if ($stmt) {
-            $stmt->bind_param("i", $userId);
-            $stmt->execute();
-            $userRow = $stmt->get_result()->fetch_assoc();
-            $stmt->close();
-
-            $isAgent = (int)($userRow['is_agent'] ?? 0);
+/** Read only the original pinned manual quote and destination, never changed settings. */
+function buildCartToCartInfoMessage(array $paymentKeys, array $mainValues, int $priceToman,
+                                    int $userId = 0, string $method = 'bank_transfer',
+                                    string $hashId = ''): string {
+    global $connection;
+    if (!in_array($method, ['bank_transfer','gift_card','manual_usdt'], true) ||
+        $hashId === '' || !($connection instanceof mysqli)) return '';
+    try {
+        $stmt = $connection->prepare("SELECT provider,quote_amount,quote_currency,
+            local_amount_toman,settlement_currency,checkout_url
+            FROM payment_attempts WHERE order_hash=? AND provider=? LIMIT 1");
+        $stmt->bind_param('ss', $hashId, $method);
+        $stmt->execute();
+        $attempt = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        if (!$attempt || (int)$attempt['local_amount_toman'] !== $priceToman) return '';
+        $intent = achbotManualIntentDecode((string)$attempt['checkout_url'], $method);
+        if (!$intent) return '';
+        if ($method === 'manual_usdt') {
+            $network = (string)($intent['network'] ?? '');
+            $wallet = (string)($intent['wallet'] ?? '');
+            if ((string)$attempt['quote_currency'] !== 'USDT' ||
+                !achbotManualUsdtWalletValid($wallet, $network) ||
+                !preg_match('/^[0-9]{1,15}\.[0-9]{2,8}$/D', (string)$attempt['quote_amount'])) return '';
+            return strtr((string)($mainValues['brw_cart_to_cart_usdt'] ?? ''), [
+                'PRICE-TOMAN-ROUND' => number_format($priceToman),
+                'PRICE-USDT' => number_format((float)$attempt['quote_amount'], 2, '.', ''),
+                'USDT-NETWORK' => htmlspecialchars($network, ENT_QUOTES, 'UTF-8'),
+                'USDT-WALLET' => htmlspecialchars($wallet, ENT_QUOTES, 'UTF-8'),
+            ]);
         }
+        if ((string)$attempt['quote_currency'] !== 'toman') return '';
+        $amount = (int)$attempt['quote_amount'];
+        if ($amount <= 0) return '';
+        if ($method === 'bank_transfer' &&
+            (trim((string)($intent['account'] ?? '')) === '' ||
+             trim((string)($intent['holder'] ?? '')) === '')) return '';
+        $template = (string)($mainValues[$method === 'gift_card' ?
+            'brw_cart_to_cart_gift' : 'brw_cart_to_cart_detail'] ?? '');
+        return strtr($template, [
+            'PRICE-TOMAN-ROUND' => number_format($priceToman),
+            'PRICE-TOMAN' => number_format($amount),
+            'PRICE-RIAL' => number_format($amount * 10),
+            'ACCOUNT-NUMBER' => htmlspecialchars((string)($intent['account'] ?? ''), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'),
+            'HOLDER-NAME' => htmlspecialchars((string)($intent['holder'] ?? ''), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'),
+        ]);
+    } catch (Throwable $error) {
+        return '';
     }
-
-    if ($isAgent === 1 && isset($USDTPriceagent) && trim($USDTPriceagent) !== '' && is_numeric($USDTPriceagent)) {
-        $usdtPrice = (float)$USDTPriceagent;
-    } elseif (isset($USDTPrice) && trim($USDTPrice) !== '' && is_numeric($USDTPrice)) {
-        $usdtPrice = (float)$USDTPrice;
-    } else {
-        $usdtPrice = 0;
-    }
-
-    $usdtAmount = $usdtPrice > 0 ? round($finalTomanAmount / $usdtPrice, 2) : 0;
-    $messageKey = getCartToCartMessageKey($messageType);
-    $messageTemplate = $mainValues[$messageKey] ?? '';
-    if ($messageTemplate === '' && $messageType === 'detail') {
-        $messageTemplate = $mainValues['brw_cart_to_cart_detail'] ?? '';
-    }
-
-    return strtr($messageTemplate, [
-        "PRICE-TOMAN-ROUND" => number_format($priceToman),
-        "ACCOUNT-NUMBER" => $paymentKeys['bankAccount'] ?? '---',
-        "HOLDER-NAME" => $paymentKeys['holderName'] ?? '---',
-        "PRICE-TOMAN" => number_format($randomPrice['toman']),
-        "PRICE-RIAL" => number_format($randomPrice['rial']),
-        "PRICE-USDT" => number_format($usdtAmount, 2, '.', ''),
-        "USDT-WALLET" => $paymentKeys['tronwallet'] ?? '---',
-    ]);
 }
 
-function kbSendReceiptAndCancel(string $sendPrefix, string $cancelPrefix, string $hashId): string {
+
+function kbSendReceiptAndCancel(string $sendPrefix, string $cancelPrefix, string $hashId, string $method = 'bank_transfer'): string {
+    global $connection;
     require_once dirname(__DIR__, 2) . '/src/Telegram/Markup.php';
-    return \AchBot\Telegram\Markup\receiptAndCancel($sendPrefix, $cancelPrefix, $hashId, $GLOBALS['lastCartToCartMessageType'] ?? 'detail');
+    $url = null;
+    if ($method === 'gift_card' && $connection instanceof mysqli) {
+        try {
+            $stmt = $connection->prepare('SELECT checkout_url FROM payment_attempts
+                WHERE order_hash=? AND provider=? LIMIT 1');
+            $stmt->bind_param('ss', $hashId, $method);
+            $stmt->execute();
+            $attempt = $stmt->get_result()->fetch_assoc();
+            $stmt->close();
+            $intent = $attempt ? achbotManualIntentDecode((string)$attempt['checkout_url'], $method) : null;
+            $url = $intent['seller_url'] ?? null;
+            if (!is_string($url) || filter_var($url, FILTER_VALIDATE_URL) === false ||
+                strtolower((string)parse_url($url, PHP_URL_SCHEME)) !== 'https') $url = null;
+        } catch (Throwable $ignored) { $url = null; }
+    }
+    return \AchBot\Telegram\Markup\receiptAndCancel($sendPrefix, $cancelPrefix, $hashId, $method, $url);
 }
 
 function kbOnlyCancel(string $cancelPrefix, string $hashId): string {
@@ -481,42 +1123,58 @@ function buildAdminKeyboardWithStats(
     ]);
 }
 
+
+/**
+ * Delivery failure never turns a pending invoice into an approved payment.
+ * Only the original leased photo may be retried; the source file ID is
+ * already durable in the attempt before any outbound Telegram request.
+ */
 function sendReceiptToAdminsAndUpdatePay(
     mysqli $connection,
     string $fileid,
     string $caption,
     string $adminKeyboard,
     int $adminChatId,
-    string $hashId
-): void {
-    $res = sendPhoto($fileid, $caption, $adminKeyboard, "HTML", $adminChatId);
-
-    sendToAllAdmins('sendPhoto', [
-        'photo' => $fileid,
-        'caption' => $caption,
-        'reply_markup' => $adminKeyboard,
-        'parse_mode' => "HTML"
-    ], $hashId);
-
-    $msgId = $res->result->message_id ?? null;
-    if ($msgId) {
-        $stmt = $connection->prepare("UPDATE `pays` SET `state`='have_sent', `message_id`=?, `chat_id`=? WHERE `hash_id`=?");
-        $stmt->bind_param("iis", $msgId, $adminChatId, $hashId);
-        $stmt->execute();
-        $stmt->close();
+    string $hashId,
+    string $claimToken
+): bool {
+    try {
+        $response = sendPhoto($fileid, $caption, $adminKeyboard, 'HTML', $adminChatId);
+        $msgId = (int)($response->result->message_id ?? 0);
+        if ($msgId <= 0 ||
+            !achbotManualFinishEvidence($connection, $hashId, $fileid, $claimToken,
+                                        $msgId, $adminChatId)) {
+            achbotManualReleaseEvidenceLease($connection, $hashId, $claimToken);
+            return false;
+        }
+    } catch (Throwable $error) {
+        achbotManualReleaseEvidenceLease($connection, $hashId, $claimToken);
+        return false;
     }
+    try {
+        sendToAllAdmins('sendPhoto', [
+            'photo' => $fileid,
+            'caption' => $caption,
+            'reply_markup' => $adminKeyboard,
+            'parse_mode' => 'HTML'
+        ], $hashId);
+    } catch (Throwable $ignored) {
+        // The primary operator message and protected DB transition succeeded.
+    }
+    return true;
 }
 
-function sendWithStartButton($text, $buttonText, $botUsername, $startPayload = 'mainMenu', $parseMode = 'HTML')
+function sendWithStartButton($text, $buttonText, $botUsername, $startPayload = 'mainMenu', $parseMode = 'HTML', string $paymentHash = '')
 {
-    $keyboard = json_encode([
-        'inline_keyboard' => [
-            [[
-                'text' => $buttonText,
-                'url'  => "https://t.me/{$botUsername}?start={$startPayload}"
-            ]]
-        ]
-    ], JSON_UNESCAPED_UNICODE);
+    $buttons = [];
+    if ($paymentHash !== '' && preg_match('/^[A-Za-z0-9_-]{1,50}$/D', $paymentHash)) {
+        $buttons[] = [['text'=>'🔄 بررسی وضعیت', 'callback_data'=>'ps_'.$paymentHash]];
+    }
+    $buttons[] = [[
+        'text' => $buttonText,
+        'url'  => "https://t.me/{$botUsername}?start={$startPayload}"
+    ]];
+    $keyboard = json_encode(['inline_keyboard'=>$buttons], JSON_UNESCAPED_UNICODE);
 
     return sendMessage($text, $keyboard, $parseMode);
 }

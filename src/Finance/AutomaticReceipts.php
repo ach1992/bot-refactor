@@ -13,7 +13,18 @@ if($botState['cartToCartAutoAcceptState']=="on"){
     $info = $stmt->get_result();
     $stmt->close();
 
-    while($payInfo = $info->fetch_assoc()){
+    // A ledger/schema outage can also invalidate a live mysqli result while
+    // fetching the next pays row (observed on PHP 8.1/mysqlnd). Stop this
+    // auto-approval sweep without approving any unchecked receipt.
+    while (true) {
+        try {
+            $payInfo = $info->fetch_assoc();
+        } catch (Throwable $error) {
+            error_log('achbot_bank_auto_scan_deferred');
+            break;
+        }
+        if ($payInfo === null || $payInfo === false) break;
+        if (!achbotAutoBankEligible($connection, $payInfo)) continue;
         if (!achbotSupportsPaymentSubject($connection, $payInfo)) {
             continue;
         }
@@ -23,7 +34,7 @@ if($botState['cartToCartAutoAcceptState']=="on"){
         $price = $payInfo['price'];
         $user_id = $payInfo['user_id'];
         $payType = $payInfo['type'];
-        $deviceId = $payInfo['device_id'];
+        $deviceId = $payInfo['device_id'] ?? null;
         
         $stmt = $connection->prepare("SELECT * FROM `users` WHERE `userid` = ?");
         $stmt->bind_param("i", $user_id);
@@ -37,18 +48,13 @@ if($botState['cartToCartAutoAcceptState']=="on"){
         
         $agentBought = $payInfo['agent_bought'];
         
-        $stmt = $connection->prepare("UPDATE `pays` SET `state` = 'auto_cart_approved' WHERE `id` =?");
-        $stmt->bind_param("i", $rowId);
-        $stmt->execute();
-        $stmt->close();
+        // Re-lock the original pays row: stale scans cannot override a
+        // concurrent administrator decision or repeat service effects.
+        if (!achbotAutoBankClaim($connection, $payInfo)) continue;
         
         
         if($payType == "INCREASE_WALLET"){
-            $stmt = $connection->prepare("UPDATE `users` SET `wallet` = `wallet` + ? WHERE `userid` = ?");
-            $stmt->bind_param("ii", $price, $user_id);
-            $stmt->execute();
-            $stmt->close();
-            
+            // Wallet credit and the terminal claim already committed atomically.
             sendMessage("افزایش حساب شما با موفقیت تایید شد.\n✅ مبلغ " . number_format($price). " تومان به حساب شما اضافه شد.", null, null, $user_id);
         }
         elseif($payType == "BUY_SUB"){

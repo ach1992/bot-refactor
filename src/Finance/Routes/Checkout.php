@@ -249,7 +249,7 @@ if (preg_match('/^showQr(Sub|Config)(\d+)/', $data, $match)) {
     }
 }
 
-if (preg_match('/payCustomWithCartToCart(.*)/', $data, $match)) {
+if (preg_match('/payCustomWith(?:CartToCart|GiftCard|ManualUsdt)(.*)/', $data, $match)) {
 
     $payInfo = dbFetchPayByHash($connection, $match[1]);
     if (!$payInfo) {
@@ -294,17 +294,26 @@ if (preg_match('/payCustomWithCartToCart(.*)/', $data, $match)) {
     }
 
     delMessage();
-    setUser("payCustomWithCartToCart{$match[1]}");
+    $method = strpos($data, 'WithManualUsdt') !== false ? 'manual_usdt' :
+        (strpos($data, 'WithGiftCard') !== false ? 'gift_card' : 'bank_transfer');
+    if (!achbotManualClaim($connection, $payInfo, $method, (int)$from_id)) {
+        alert("⚠️ پرداخت این سفارش با این روش مجاز نیست یا قبلاً به روش دیگری آغاز شده است.", true);
+        return;
+    }
+    setUser("payCustomWith" . ($method === 'manual_usdt' ? 'ManualUsdt' : ($method === 'gift_card' ? 'GiftCard' : 'CartToCart')) . $match[1]);
 
-	// $msg = buildCartToCartInfoMessage($paymentKeys, $mainValues, (int)$payInfo['price']);
-	$msg = buildCartToCartInfoMessage($paymentKeys, $mainValues, (int)$payInfo['price'], (int)$payInfo['user_id']);
-    $keyboard = kbSendReceiptAndCancel("sendCustomCartReceipt", "cancelCustomCartReceipt", $match[1]);
+	$msg = buildCartToCartInfoMessage($paymentKeys, $mainValues, (int)$payInfo['price'], (int)$payInfo['user_id'], $method, (string)$payInfo['hash_id']);
+    if ($msg === "") {
+        alert("⚠️ اطلاعات این پرداخت قابل بازیابی نیست؛ با پشتیبانی تماس بگیرید.", true);
+        return;
+    }
+    $keyboard = kbSendReceiptAndCancel($method === 'manual_usdt' ? "sendCustomUsdtReceipt" : ($method === 'gift_card' ? "sendCustomGiftReceipt" : "sendCustomCartReceipt"), "cancelCustomCartReceipt", $match[1], $method);
 
     sendMessage($msg, $keyboard, "HTML");
     exit;
 }
 
-if (preg_match('/sendCustomCartReceipt(?<hashId>.*)/', $data, $match)) {
+if (preg_match('/send(?:CustomCart|CustomGift|CustomUsdt)Receipt(?<hashId>.*)/', $data, $match)) {
 
     $payInfo = dbFetchPayByHash($connection, $match['hashId']);
     if (!$payInfo) {
@@ -313,14 +322,20 @@ if (preg_match('/sendCustomCartReceipt(?<hashId>.*)/', $data, $match)) {
         return '__ACHBOT_V8_GOTO_START__';
     }
 
+    $method = strpos($data, 'UsdtReceipt') !== false ? 'manual_usdt' :
+        (strpos($data, 'GiftReceipt') !== false ? 'gift_card' : 'bank_transfer');
+    if (!achbotManualReceiptAllowed($connection, $payInfo, $method, (int)$from_id)) {
+        alert("⚠️ این رسید با روش پرداخت انتخاب‌شده مطابقت ندارد یا سفارش در انتظار پرداخت نیست.", true);
+        return;
+    }
     $guardMsg = duplicateReceiptGuard($connection, $payInfo, time());
     if ($guardMsg) { alert($guardMsg, true); exit; }
 
     delMessage();
-    setUser("waitCustomCartReceipt{$match['hashId']}");
+    setUser(($method === 'manual_usdt' ? "waitCustomUsdtReceipt" : ($method === 'gift_card' ? "waitCustomGiftReceipt" : "waitCustomCartReceipt")) . $match['hashId']);
 
     $keyboard = kbOnlyCancel("cancelCustomCartReceipt", $match['hashId']);
-    sendMessage($mainValues['please_send_receipt_image'], $keyboard, "HTML");
+    sendMessage(achbotManualReceiptPrompt($mainValues, $method), $keyboard, "HTML");
     exit;
 }
 
@@ -328,13 +343,27 @@ if (preg_match('/cancelCustomCartReceipt(?<hashId>.*)/', $data, $match)) {
     handleCancelFlow($mainValues, $removeKeyboard);
 }
 
-if (preg_match('/waitCustomCartReceipt(.*)/', $userInfo['step'], $match)) {
+if (preg_match('/wait(?:CustomCart|CustomGift|CustomUsdt)Receipt(.*)/', $userInfo['step'], $match)) {
 
+    $method = strpos($userInfo['step'], 'UsdtReceipt') !== false ? 'manual_usdt' :
+        (strpos($userInfo['step'], 'GiftReceipt') !== false ? 'gift_card' : 'bank_transfer');
+    $receiptPay = dbFetchPayByHash($connection, $match[1]);
+    if (!$receiptPay || !achbotManualReceiptAllowed($connection, $receiptPay, $method, (int)$from_id)) {
+        setUser();
+        alert("⚠️ این سفارش قابل ثبت رسید نیست؛ برای بررسی با پشتیبانی تماس بگیرید.", true);
+        return;
+    }
     $fileid = extractPhotoFileId($update);
     if (!$fileid) {
         $keyboard = kbOnlyCancel("cancelCustomCartReceipt", $match[1]);
         sendMessage($mainValues['please_send_only_image'], $keyboard, "HTML");
         exit;
+    }
+
+    $deliveryToken = achbotManualBeginEvidence($connection, $receiptPay, $method, (int)$from_id, $fileid);
+    if ($deliveryToken === null) {
+        alert("⚠️ ثبت یا ارسال رسید در جریان است. همان تصویر را دوباره ارسال کنید؛ در صورت تداوم مشکل با پشتیبانی تماس بگیرید.", true);
+        return;
     }
 
     $payInfo = dbFetchPayByHash($connection, $match[1]);
@@ -348,7 +377,7 @@ if (preg_match('/waitCustomCartReceipt(.*)/', $userInfo['step'], $match)) {
     $volume = $payInfo['volume'];
     $days   = $payInfo['day'];
 
-    setUser();
+
     $uid = $userInfo['userid'];
     $name = $userInfo['name'];
     $username = $userInfo['username'];
@@ -369,7 +398,7 @@ if (preg_match('/waitCustomCartReceipt(.*)/', $userInfo['step'], $match)) {
     $fileprice = $payInfo['price'];
     $remark = $payInfo['description'];
 
-    sendWithStartButton($mainValues['order_submitted'], $buttonValues['start_bot'], $botUsername, 'mainMenu', 'HTML');
+
 
     $msg = str_replace(
         ['TYPE', 'USER-ID', 'USERNAME', 'NAME', 'PRICE', 'REMARK', 'VOLUME', 'DAYS'],
@@ -386,13 +415,23 @@ if (preg_match('/waitCustomCartReceipt(.*)/', $userInfo['step'], $match)) {
         (int)$payInfo['user_id']
     );
 
-    sendReceiptToAdminsAndUpdatePay($connection, $fileid, $msg, $adminKeyboard, $admin, $match[1]);
+    if (sendReceiptToAdminsAndUpdatePay($connection, $fileid,
+        achbotManualCaption($connection, $receiptPay, $msg), $adminKeyboard, $admin, $match[1],
+        $deliveryToken)) {
+        setUser();
+        sendWithStartButton(achbotManualAcknowledgement($receiptPay, $method), $buttonValues['start_bot'], $botUsername, 'mainMenu', 'HTML', (string)$receiptPay['hash_id']);
+    } else {
+        sendMessage("📥 تصویر برای پیگیری ثبت شده اما تأیید ارسال به مدیر دریافت نشده است. لطفاً همان تصویر را دوباره بفرستید یا با پشتیبانی تماس بگیرید. پرداخت مجدد انجام ندهید.");
+    }
     exit;
 }
 
-if (preg_match('/accCustom(.*)/', $data, $match) && $text != $buttonValues['cancel']) {
+if (preg_match('/^accCustom(.+)$/D', $data, $match) && $text != $buttonValues['cancel']) {
+    if ((int)$from_id <= 0 || ((int)$from_id !== (int)$admin && empty($userInfo['isAdmin']))) {
+        alert('⛔️ تأیید پرداخت فقط توسط مدیر مجاز است.', true);
+        return;
+    }
 
-    setUser();
     $hash_id = trim($match[1]);
 
     $connection->begin_transaction();
@@ -404,20 +443,19 @@ if (preg_match('/accCustom(.*)/', $data, $match) && $text != $buttonValues['canc
         $payInfo = $stmt->get_result()->fetch_assoc();
         $stmt->close();
 
-        if (!$payInfo || $payInfo['state'] === 'expired_have_sent') {
-            alert(!$payInfo ? "⛔️ اطلاعات پرداخت پیدا نشد." : "⛔️ این درخواست منقضی شده است.");
-            throw new Exception("invalid_or_expired");
+        if (!achbotManualServiceApprovalAllowedLocked($connection, $payInfo, 'custom') ||
+            !achbotSupportsPaymentSubject($connection, $payInfo)) {
+            alert('⛔️ این خرید رسید دستی معتبر و در انتظار تأیید ندارد.', true);
+            throw new Exception('custom_manual_receipt_not_reviewable');
         }
 
-        if ($payInfo['state'] === 'approved' || $payInfo['state'] === 'declined') {
-            alert("⛔️ این درخواست قبلاً بررسی شده است.");
-            throw new Exception("already_processed");
-        }
-
-        $stmt = $connection->prepare("UPDATE `pays` SET `state` = 'approved', `approved_by` = ? WHERE `hash_id` = ?");
-        $stmt->bind_param("is", $from_id, $hash_id);
+        $payRowId = (int)$payInfo['id'];
+        $stmt = $connection->prepare("UPDATE `pays` SET `state` = 'approved', `approved_by` = ? WHERE `id` = ? AND `state` = 'have_sent'");
+        $stmt->bind_param('ii', $from_id, $payRowId);
         $stmt->execute();
+        $changed = $stmt->affected_rows;
         $stmt->close();
+        if ($changed !== 1) throw new Exception('custom_receipt_claim_failed');
 
         $fid    = (int)$payInfo['plan_id'];
         $uid    = (int)$payInfo['user_id'];
@@ -525,13 +563,19 @@ if (preg_match('/accCustom(.*)/', $data, $match) && $text != $buttonValues['canc
 
         decreaseServerCapacity($connection, $server_id, $inbound_id, $fid, 1);
 
-        $connection->commit();
+        if (!$connection->commit()) throw new Exception('custom_receipt_commit_failed');
 
-    } catch (Exception $e) {
-        $connection->rollback();
+    } catch (Throwable $e) {
+        try { $connection->rollback(); } catch (Throwable $ignored) {}
+        // A remote operation could have succeeded before the local rollback.
+        // Never retry it blindly; an operator must reconcile the real service.
+        sendMessage('⚠️ تأیید خرید دستی نیازمند بررسی سرویس و پرداخت است. از اجرای دوباره خودکار خودداری کنید.' . "\n🆔 " . $hash_id,
+            null, null, $admin);
+        alert('⚠️ نتیجه تأیید نیاز به بررسی دستی دارد؛ وضعیت سرویس را پیش از اقدام مجدد کنترل کنید.', true);
         return;
     }
 
+    setUser();
     sendMessage('✅ اشتراک برای کاربر ارسال شد.', getMainKeys());
 
     $keys = json_encode([
@@ -944,7 +988,7 @@ if (preg_match('/payBuyWithWallet(.*)/', $data, $match)) {
     }
 }
 
-if (preg_match('/payBuyWithCartToCart(.*)/', $data, $match)) {
+if (preg_match('/payBuyWith(?:CartToCart|GiftCard|ManualUsdt)(.*)/', $data, $match)) {
 
     $payInfo = dbFetchPayByHash($connection, $match[1]);
     if (!$payInfo) {
@@ -992,17 +1036,26 @@ if (preg_match('/payBuyWithCartToCart(.*)/', $data, $match)) {
     }
 
     delMessage();
-    setUser("payBuyWithCartToCart{$match[1]}");
+    $method = strpos($data, 'WithManualUsdt') !== false ? 'manual_usdt' :
+        (strpos($data, 'WithGiftCard') !== false ? 'gift_card' : 'bank_transfer');
+    if (!achbotManualClaim($connection, $payInfo, $method, (int)$from_id)) {
+        alert("⚠️ پرداخت این سفارش با این روش مجاز نیست یا قبلاً به روش دیگری آغاز شده است.", true);
+        return;
+    }
+    setUser("payBuyWith" . ($method === 'manual_usdt' ? 'ManualUsdt' : ($method === 'gift_card' ? 'GiftCard' : 'CartToCart')) . $match[1]);
 
-	// $msg = buildCartToCartInfoMessage($paymentKeys, $mainValues, (int)$payInfo['price']);
-	$msg = buildCartToCartInfoMessage($paymentKeys, $mainValues, (int)$payInfo['price'], (int)$payInfo['user_id']);
-    $keyboard = kbSendReceiptAndCancel("sendBuyCartReceipt", "cancelBuyCartReceipt", $match[1]);
+	$msg = buildCartToCartInfoMessage($paymentKeys, $mainValues, (int)$payInfo['price'], (int)$payInfo['user_id'], $method, (string)$payInfo['hash_id']);
+    if ($msg === "") {
+        alert("⚠️ اطلاعات این پرداخت قابل بازیابی نیست؛ با پشتیبانی تماس بگیرید.", true);
+        return;
+    }
+    $keyboard = kbSendReceiptAndCancel($method === 'manual_usdt' ? "sendBuyUsdtReceipt" : ($method === 'gift_card' ? "sendBuyGiftReceipt" : "sendBuyCartReceipt"), "cancelBuyCartReceipt", $match[1], $method);
 
     sendMessage($msg, $keyboard, "HTML");
     exit;
 }
 
-if (preg_match('/sendBuyCartReceipt(?<hashId>.*)/', $data, $match)) {
+if (preg_match('/send(?:BuyCart|BuyGift|BuyUsdt)Receipt(?<hashId>.*)/', $data, $match)) {
 
     $payInfo = dbFetchPayByHash($connection, $match['hashId']);
     if (!$payInfo) {
@@ -1011,14 +1064,20 @@ if (preg_match('/sendBuyCartReceipt(?<hashId>.*)/', $data, $match)) {
         return '__ACHBOT_V8_GOTO_START__';
     }
 
+    $method = strpos($data, 'UsdtReceipt') !== false ? 'manual_usdt' :
+        (strpos($data, 'GiftReceipt') !== false ? 'gift_card' : 'bank_transfer');
+    if (!achbotManualReceiptAllowed($connection, $payInfo, $method, (int)$from_id)) {
+        alert("⚠️ این رسید با روش پرداخت انتخاب‌شده مطابقت ندارد یا سفارش در انتظار پرداخت نیست.", true);
+        return;
+    }
     $guardMsg = duplicateReceiptGuard($connection, $payInfo, time());
     if ($guardMsg) { alert($guardMsg, true); exit; }
 
     delMessage();
-    setUser("waitBuyCartReceipt{$match['hashId']}");
+    setUser(($method === 'manual_usdt' ? "waitBuyUsdtReceipt" : ($method === 'gift_card' ? "waitBuyGiftReceipt" : "waitBuyCartReceipt")) . $match['hashId']);
 
     $keyboard = kbOnlyCancel("cancelBuyCartReceipt", $match['hashId']);
-    sendMessage($mainValues['please_send_receipt_image'], $keyboard, "HTML");
+    sendMessage(achbotManualReceiptPrompt($mainValues, $method), $keyboard, "HTML");
     exit;
 }
 
@@ -1026,13 +1085,27 @@ if (preg_match('/cancelBuyCartReceipt(?<hashId>.*)/', $data, $match)) {
     handleCancelFlow($mainValues, $removeKeyboard);
 }
 
-if (preg_match('/waitBuyCartReceipt(.*)/', $userInfo['step'], $match)) {
+if (preg_match('/wait(?:BuyCart|BuyGift|BuyUsdt)Receipt(.*)/', $userInfo['step'], $match)) {
 
+    $method = strpos($userInfo['step'], 'UsdtReceipt') !== false ? 'manual_usdt' :
+        (strpos($userInfo['step'], 'GiftReceipt') !== false ? 'gift_card' : 'bank_transfer');
+    $receiptPay = dbFetchPayByHash($connection, $match[1]);
+    if (!$receiptPay || !achbotManualReceiptAllowed($connection, $receiptPay, $method, (int)$from_id)) {
+        setUser();
+        alert("⚠️ این سفارش قابل ثبت رسید نیست؛ برای بررسی با پشتیبانی تماس بگیرید.", true);
+        return;
+    }
     $fileid = extractPhotoFileId($update);
     if (!$fileid) {
         $keyboard = kbOnlyCancel("cancelBuyCartReceipt", $match[1]);
         sendMessage($mainValues['please_send_only_image'], $keyboard, "HTML");
         exit;
+    }
+
+    $deliveryToken = achbotManualBeginEvidence($connection, $receiptPay, $method, (int)$from_id, $fileid);
+    if ($deliveryToken === null) {
+        alert("⚠️ ثبت یا ارسال رسید در جریان است. همان تصویر را دوباره ارسال کنید؛ در صورت تداوم مشکل با پشتیبانی تماس بگیرید.", true);
+        return;
     }
 
     $payInfo = dbFetchPayByHash($connection, $match[1]);
@@ -1044,7 +1117,7 @@ if (preg_match('/waitBuyCartReceipt(.*)/', $userInfo['step'], $match)) {
 
     $fid = (int)$payInfo['plan_id'];
 
-    setUser();
+
     $uid = $userInfo['userid'];
     $name = $userInfo['name'];
     $username = $userInfo['username'];
@@ -1080,18 +1153,18 @@ if (preg_match('/waitBuyCartReceipt(.*)/', $userInfo['step'], $match)) {
 
     $fileprice = $payInfo['price'];
 
-    sendWithStartButton($mainValues['order_submitted'], $buttonValues['start_bot'], $botUsername, 'mainMenu', 'HTML');
+
 
     if ((int)$payInfo['agent_count'] != 0) {
         $msg = str_replace(
             ['ACCOUNT-COUNT', 'TYPE', 'USER-ID', "USERNAME", "NAME", "PRICE", "REMARK"],
-            [$payInfo['agent_count'], 'کارت به کارت', $from_id, $username, $name, $fileprice, $filename],
+            [$payInfo['agent_count'], achbotManualLabel($method), $from_id, $username, $name, $fileprice, $filename],
             $mainValues['buy_new_much_account_request']
         );
     } else {
         $msg = str_replace(
             ['SERVERNAME', 'TYPE', 'USER-ID', "USERNAME", "NAME", "PRICE", "REMARK", "VOLUME", "DAYS"],
-            [$serverTitle, 'کارت به کارت', $from_id, $username, $name, $fileprice, $filename, $volume, $days],
+            [$serverTitle, achbotManualLabel($method), $from_id, $username, $name, $fileprice, $filename, $volume, $days],
             $mainValues['buy_new_account_request']
         );
     }
@@ -1105,9 +1178,14 @@ if (preg_match('/waitBuyCartReceipt(.*)/', $userInfo['step'], $match)) {
         (int)$payInfo['user_id']
     );
 
-    setUser('', 'temp');
-
-    sendReceiptToAdminsAndUpdatePay($connection, $fileid, $msg, $adminKeyboard, $admin, $match[1]);
+if (sendReceiptToAdminsAndUpdatePay($connection, $fileid,
+        achbotManualCaption($connection, $receiptPay, $msg), $adminKeyboard, $admin, $match[1],
+        $deliveryToken)) {
+        setUser();
+        sendWithStartButton(achbotManualAcknowledgement($receiptPay, $method), $buttonValues['start_bot'], $botUsername, 'mainMenu', 'HTML', (string)$receiptPay['hash_id']);
+    } else {
+        sendMessage("📥 تصویر برای پیگیری ثبت شده اما تأیید ارسال به مدیر دریافت نشده است. لطفاً همان تصویر را دوباره بفرستید یا با پشتیبانی تماس بگیرید. پرداخت مجدد انجام ندهید.");
+    }
     exit;
 }
 

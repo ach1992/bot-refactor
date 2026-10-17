@@ -5,6 +5,78 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     exit;
 }
 
+// Historical WeSwap choices may still exist in old Telegram keyboards.
+if (preg_match('/^prePayCheck_[A-Za-z0-9]+_WeSwap_[A-Za-z0-9]+$/iD', $data)) {
+    answerCallbackQuery($callbackId, "این روش پرداخت دیگر پشتیبانی نمی‌شود.");
+    sendMessage("⛔️ این روش پرداخت حذف شده است؛ سفارش قبلی را با پشتیبانی پیگیری کنید.", getMainKeys(), "HTML", $from_id);
+    return;
+}
+
+// Read-only status inspection: never contacts a provider or changes money.
+if (preg_match('/^ps_([A-Za-z0-9_-]{1,50})$/D', $data, $statusMatch)) {
+    $hashId = $statusMatch[1];
+    $stmt = $connection->prepare("SELECT id,hash_id,user_id,type,price,state,payid FROM pays
+        WHERE hash_id=? LIMIT 1");
+    $stmt->bind_param('s', $hashId);
+    $stmt->execute();
+    $pay = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+    if (!$pay || (int)$pay['user_id'] !== (int)$from_id) {
+        answerCallbackQuery($callbackId, "این سفارش برای شما قابل مشاهده نیست.");
+        return;
+    }
+    $provider = null;
+    $stage = null;
+    try {
+        $stmt = $connection->prepare('SELECT provider,stage FROM payment_attempts WHERE pay_row_id=? LIMIT 1');
+        $id = (int)$pay['id'];
+        $stmt->bind_param('i',$id);
+        $stmt->execute();
+        $attempt = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        $provider = $attempt['provider'] ?? null;
+        $stage = $attempt['stage'] ?? null;
+    } catch (Throwable $ignored) {
+        // No attempt evidence: do not manufacture a verified status.
+    }
+    $manual = in_array($provider, ['bank_transfer','gift_card','manual_usdt'], true);
+    $methodName = $provider === 'manual_usdt' ? 'تتر دستی' : ($provider === 'gift_card' ? 'گیفت‌کارت' :
+        ($provider === 'bank_transfer' ? 'کارت‌به‌کارت بانکی' :
+        ($provider === 'nowpayments' ? 'پرداخت رمزارزی' :
+        ($provider === 'nextpay' ? 'NextPay' :
+        ($provider === 'zarinpal' ? 'Zarinpal' : 'نامشخص')))));
+    $state = (string)$pay['state'];
+    if ($state === 'have_sent') {
+        $description = $manual ? '📥 رسید دریافت شده و در انتظار بررسی مدیر است.' :
+            '⏳ اطلاعات پرداخت دریافت شده و در حال بررسی است.';
+    } elseif (in_array($state, ['paid','approved','auto_cart_approved'], true)) {
+        $description = '✅ تأیید پرداخت در سوابق سفارش ثبت شده است. تکمیل تحویل سرویس یا اعتبار کیف پول را جداگانه بررسی کنید.';
+    } elseif ($state === 'declined') {
+        $description = '❌ رسید این سفارش توسط مدیر رد شده است. برای جزئیات به پیام بررسی مراجعه کنید.';
+    } elseif ($stage === 'receiving') {
+        $description = '⏳ تصویر پرداخت در حال ثبت برای بررسی است؛ اگر نتیجه دریافت نکردید با پشتیبانی تماس بگیرید.';
+    } elseif ($stage === 'review' || $stage === 'checking' || $stage === 'fulfilling' ||
+              !empty($pay['payid'])) {
+        $description = '⚠️ وضعیت پرداخت یا تحویل در حال بررسی است؛ پرداخت مجدد انجام ندهید.';
+    } elseif ($state === 'pending' || $state === 'send') {
+        $description = '🧾 سفارش هنوز در انتظار ثبت یا تأیید پرداخت است.';
+    } else {
+        $description = '⚠️ وضعیت سفارش به بررسی نیاز دارد. برای ادامه با پشتیبانی تماس بگیرید.';
+    }
+    $orderRef = htmlspecialchars($hashId, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+    $subject = htmlspecialchars(payTypeToDescription((string)$pay['type']), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+    $body = "🧾 <b>وضعیت سفارش</b>\n" .
+        "شناسه: <code>{$orderRef}</code>\n" .
+        "موضوع: {$subject}\n" .
+        "مبلغ سفارش: <b>" . number_format((int)$pay['price']) . " تومان</b>\n" .
+        "روش: {$methodName}\n\n" . $description;
+    $keyboard = inlineKeyboard([[['text'=>'🔄 بررسی دوباره وضعیت',
+        'callback_data'=>'ps_'.$hashId]], [['text'=>'🏠 منوی اصلی','callback_data'=>'mainMenu']]]);
+    answerCallbackQuery($callbackId, "وضعیت سفارش از اطلاعات ثبت‌شده خوانده شد.");
+    sendMessage($body, $keyboard, 'HTML', $from_id);
+    return;
+}
+
 // Pre Pay Check By ACh
 
 if (preg_match('/^prePayCheck_([a-zA-Z0-9]+)_([a-zA-Z0-9]+)_([a-zA-Z0-9]+)/', $data, $match)) {
@@ -135,9 +207,9 @@ if (preg_match('/^prePayCheck_([a-zA-Z0-9]+)_([a-zA-Z0-9]+)_([a-zA-Z0-9]+)/', $d
             function_exists('achbotNpValidInvoiceUrl') &&
             achbotNpValidInvoiceUrl($invoiceUrl)) {
             $keyboard=json_encode(['inline_keyboard'=>[[
-                ['text'=>'🔗 ادامه همان فاکتور','url'=>$invoiceUrl]
+                ['text'=>'🔄 مشاهده وضعیت فاکتور','url'=>$botUrl.'pay/?nowpayment&hash_id='.urlencode($hash_id)]
             ]]],JSON_UNESCAPED_UNICODE);
-            sendMessage("💳 فاکتور اصلی این سفارش هنوز معتبر است؛ از همان لینک پرداخت استفاده کنید.",
+            sendMessage("💳 فاکتور این سفارش محفوظ است؛ با لینک زیر وضعیت آن را بررسی کنید. اگر پرداختی انجام داده‌اید دوباره پرداخت نکنید.",
                         $keyboard,"html",$from_id);
         } else {
             sendMessage("وضعیت صدور فاکتور این سفارش در حال بررسی است. برای جلوگیری از درخواست تکراری با پشتیبانی تماس بگیرید.",
@@ -202,8 +274,9 @@ if (preg_match('/^prePayCheck_([a-zA-Z0-9]+)_([a-zA-Z0-9]+)_([a-zA-Z0-9]+)/', $d
     $map = [
         "wallet"      => "pay{$actionType}WithWallet$hash_id",
         "carttocart"  => "pay{$actionType}WithCartToCart$hash_id",
-        "tronwallet"  => "payWithTronWallet$hash_id",
-        "weswap"      => "payWithWeSwap$hash_id"
+        "giftcard"    => "pay{$actionType}WithGiftCard$hash_id",
+        "manualusdt"  => "pay{$actionType}WithManualUsdt$hash_id",
+        "tronwallet"  => "payWithTronWallet$hash_id"
     ];
 
     if (!isset($map[$payMethod])) {

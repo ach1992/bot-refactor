@@ -7,45 +7,31 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
 
 if (preg_match('/^approvePayment(.*)/', $data, $match) && ($from_id == $admin || $userInfo['isAdmin'] == true)) {
     $hash_id = $match[1];
-    // دریافت اطلاعات پرداخت
-    $stmt = $connection->prepare("SELECT * FROM `pays` WHERE `hash_id` = ?");
-    $stmt->bind_param("s", $match[1]);
+    // Keep the existing receipt display identifiers for post-commit updates.
+    $stmt = $connection->prepare('SELECT * FROM pays WHERE hash_id=? LIMIT 1');
+    $stmt->bind_param('s', $hash_id);
     $stmt->execute();
     $payInfo = $stmt->get_result()->fetch_assoc();
     $stmt->close();
-    $price = $payInfo['price'];
-    $userId = $payInfo['user_id'];
-
-    if (!$payInfo || ($payInfo['state'] === 'expired_have_sent')) {
-        alert(!$payInfo ? "⛔️ اطلاعات پرداخت پیدا نشد." : "⛔️ این درخواست منقضی شده است.");
+    if (!$payInfo) {
+        alert("⛔️ اطلاعات پرداخت پیدا نشد.");
         return;
     }
-    if ($payInfo['state'] === 'approved' || $payInfo['state'] === 'declined') {
-        alert("⛔️ این درخواست قبلاً بررسی شده است.");
+    $approved = achbotApproveManualWalletTopup($connection, $hash_id, (int)$from_id);
+    if ($approved === null) {
+        alert("⛔️ این رسید قبلاً بررسی شده، قابل تأیید نیست یا به بررسی پشتیبانی نیاز دارد.");
         return;
     }
 
-    // دریافت موجودی فعلی کیف پول
-    $stmt = $connection->prepare("SELECT `wallet` FROM `users` WHERE `userid` = ?");
-    $stmt->bind_param("i", $userId);
-    $stmt->execute();
-    $currentWallet = $stmt->get_result()->fetch_assoc()['wallet'] ?? 0;
-    $stmt->close();
-
-    // ثبت وضعیت تایید و ادمین تاییدکننده
-    $stmt = $connection->prepare("UPDATE `pays` SET `state` = 'approved', `approved_by` = ? WHERE `hash_id` = ?");
-    $stmt->bind_param("is", $from_id, $match[1]);
-    $stmt->execute();
-    $stmt->close();
-
-    // افزایش موجودی کیف پول
-    $stmt = $connection->prepare("UPDATE `users` SET `wallet` = `wallet` + ? WHERE `userid` = ?");
-    $stmt->bind_param("ii", $price, $userId);
-    $stmt->execute();
-    $stmt->close();
-
-    // محاسبه موجودی جدید
-    $newWallet = $currentWallet + $price;
+    // These values are read from the committed transaction, not from stale
+    // Telegram buttons or a pre-commit estimate.
+    $price = $approved['price'];
+    $userId = $approved['user_id'];
+    $currentWallet = $approved['wallet_before'];
+    $newWallet = $approved['wallet_after'];
+    $methodName = achbotManualLabel(
+        achbotManualSelectedMethod($connection, $payInfo) ?? 'bank_transfer'
+    );
 
     $keys = json_encode([
         'inline_keyboard' => [
@@ -55,7 +41,11 @@ if (preg_match('/^approvePayment(.*)/', $data, $match) && ($from_id == $admin ||
     ], 488);
 
     // ویرایش پیام ادمین اصلی
-    editKeys($keys, $payInfo['message_id'], $payInfo['chat_id']);
+    try {
+        editKeys($keys, $payInfo['message_id'], $payInfo['chat_id']);
+    } catch (Throwable $ignored) {
+        // Keep the buyer notification attempt even if editing Telegram fails.
+    }
 
     // ویرایش پیام سایر ادمین‌ها
     $adminMessages = json_decode($payInfo['admins_messages'], true);
@@ -65,13 +55,17 @@ if (preg_match('/^approvePayment(.*)/', $data, $match) && ($from_id == $admin ||
                 isset($msgInfo['chat_id'], $msgInfo['message_id']) &&
                 $msgInfo['chat_id'] != $payInfo['chat_id']
             ) {
-                editKeys($keys, $msgInfo['message_id'], $msgInfo['chat_id']);
+                try {
+                    editKeys($keys, $msgInfo['message_id'], $msgInfo['chat_id']);
+                } catch (Throwable $ignored) {
+                    // One stale administrator message must not block the buyer.
+                }
             }
         }
     }
 
     // ارسال پیام به ادمین‌ها
-    $adminMessages = "💳 افزایش موجودی کاربر $userId با موفقیت انجام شد.
+    $adminMessages = "✅ تأیید دستی {$methodName} و افزایش موجودی کاربر $userId انجام شد.
 
 💰 موجودی قدیم: " . number_format($currentWallet) . " تومان
 💵 موجودی جدید: " . number_format($newWallet) . " تومان
@@ -125,7 +119,9 @@ if (preg_match('/^declineAction_(.+)$/', $data, $match) && ($from_id == $admin |
     sendMessage("📝 لطفاً دلیل رد این درخواست را با جزئیات بنویسید تا به کاربر اطلاع داده شود:", $cancelKey);
 }
 
-if (preg_match('/^declineActionReason_(.+)_(\d+)$/', $userInfo['step'], $match) && $text != $buttonValues['cancel']) {
+if (preg_match('/^declineActionReason_(.+)_(\d+)$/', $userInfo['step'], $match) &&
+    $text != $buttonValues['cancel'] &&
+    ($from_id == $admin || !empty($userInfo['isAdmin']))) {
     setUser();
     $hash_id = $match[1];
     $message_id = $match[2];
@@ -167,10 +163,16 @@ if (preg_match('/^declineActionReason_(.+)_(\d+)$/', $userInfo['step'], $match) 
 	}
 
     // ثبت در دیتابیس
-    $stmt = $connection->prepare("UPDATE `pays` SET `state` = 'declined', `approved_by` = ? WHERE `hash_id` = ?");
+    $stmt = $connection->prepare("UPDATE `pays` SET `state` = 'declined', `approved_by` = ?
+        WHERE `hash_id` = ? AND `state` = 'have_sent'");
     $stmt->bind_param("is", $from_id, $hash_id);
     $stmt->execute();
+    $declined = $stmt->affected_rows === 1;
     $stmt->close();
+    if (!$declined) {
+        alert("⛔️ وضعیت درخواست هنگام بررسی تغییر کرده است؛ برای جلوگیری از تداخل با پشتیبانی بررسی کنید.");
+        return;
+    }
 	
     $keys = json_encode(['inline_keyboard' => [
         [['text' => "❌ رد شد توسط $from_id", 'callback_data' => "wizwizch"]],

@@ -128,11 +128,18 @@ def seed(work, env, case):
         pay_type = f"INCREASE_DAY_{order_id}_1"
     else:
         pay_type = "RENEW_ACCOUNT"
+    # Wallet checkout must be unclaimed. Manual operator checks simulate an
+    # inherited (pre-ledger) receipt already delivered to the administrator;
+    # a missing Telegram delivery ID cannot authorize remote effects.
+    pay_state = 'pending' if case['audience'] == 'wallet' else 'have_sent'
+    message_id = 0 if case['audience'] == 'wallet' else 42
+    chat_id = 0 if case['audience'] == 'wallet' else 9001
     sql(work, env, f"""INSERT INTO pays
         (hash_id,payid,user_id,type,plan_id,server_id,order_id,
-         volume,day,price,request_date,state)
-        VALUES ('privacyhash','private-invoice',1001,'{pay_type}',7,2,
-                {order_id},0,0,100,1700000000,'have_sent')""")
+         volume,day,price,request_date,state,message_id,chat_id)
+        VALUES ('privacyhash','',1001,'{pay_type}',7,2,
+                {order_id},0,0,100,1700000000,'{pay_state}',
+                {message_id},{chat_id})""")
     return order_id
 
 
@@ -220,6 +227,11 @@ def main():
     with owned.owned_database() as (work, env):
         current = work / "privacy-current"
         stages.stage_source(current, True)
+        # The production-era manual approval gate now performs a fail-closed
+        # shared-ledger lookup even for genuine pre-ledger review records.
+        # Install only the additive isolated schema; no real DB touched.
+        purchase.init(work, env, "http://127.0.0.1:9")
+        sql(work, env, (ROOT/"migrations/post-v9/003_payment_attempts.sql").read_text())
         for case in route_cases():
             for mode in ("after_provider_success_sql_failure", "provider_reject",
                          "provider_exception"):

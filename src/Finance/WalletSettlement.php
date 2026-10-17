@@ -33,6 +33,14 @@ if (!function_exists('processWalletPayment')) {
 
             $payInfo = $payRes->fetch_assoc();
 
+            // This is a customer callback, not an administrator settlement.
+            if ((int)$payInfo['user_id'] <= 0 || (int)$payInfo['user_id'] !== (int)$from_id) {
+                $connection->rollback();
+                alert("⛔️ این سفارش متعلق به شما نیست.", true);
+                return ['status'=>'invalid_owner','payInfo'=>null];
+            }
+
+
             if ($payInfo['state'] === 'paid_with_wallet') {
                 $connection->rollback();
                 return [
@@ -58,6 +66,14 @@ if (!function_exists('processWalletPayment')) {
                 ];
             }
 
+            // Old Telegram wallet buttons bypass the pre-payment menu.
+            // Serializing on pays, reject every durable competing provider.
+            if (!in_array((string)$payInfo['state'], ['pending','send','low_wallet'], true) ||
+                (string)($payInfo['payid'] ?? '') !== '') {
+                $connection->rollback();
+                alert("⛔️ روش پرداخت این سفارش قبلاً تعیین شده یا در حال بررسی است.", true);
+                return ['status'=>'invalid_state','payInfo'=>$payInfo];
+            }
             $blockedStates = ['approved', 'declined', 'expired_have_sent'];
 			if (in_array($payInfo['state'], $blockedStates, true)) {
 				$connection->rollback();
@@ -88,6 +104,14 @@ if (!function_exists('processWalletPayment')) {
                     'uid' => null,
                     'price' => null,
                 ];
+            }
+
+            // Keep unsupported-plan preflight unchanged; only viable
+            // customer orders need the shared-ledger exclusivity lookup.
+            if (!achbotWalletDirectAllowedLocked($connection, $payInfo, (int)$from_id)) {
+                $connection->rollback();
+                alert("⛔️ این سفارش قبلاً با روش دیگری آغاز شده است؛ پرداخت دوباره انجام ندهید.", true);
+                return ['status'=>'claimed_provider','payInfo'=>$payInfo];
             }
 
             $uid   = (int)($payInfo['user_id'] ?: $from_id);
