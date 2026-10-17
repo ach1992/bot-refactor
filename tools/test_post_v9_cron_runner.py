@@ -299,6 +299,15 @@ def main() -> None:
               and not trace.exists())
         lock_file.unlink()
 
+        group_writable = Path(tmp) / "group-writable-locks"
+        group_writable.mkdir(mode=0o770)
+        group_writable.chmod(0o770)
+        group_env = {**env, "ACHBOT_CRON_LOCK_DIR": str(group_writable)}
+        unsafe_group = cmd(php, entrypoint, work, group_env)
+        check("group_writable_unprotected_lock_directory_denied",
+              unsafe_group.returncode == 78
+              and "no tasks started" in unsafe_group.stderr
+              and not trace.exists())
         disabled_flock = cmd(php, entrypoint, work, env, disable_flock=True)
         check("unavailable_php_flock_fails_closed",
               disabled_flock.returncode == 78

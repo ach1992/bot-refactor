@@ -121,11 +121,12 @@ def main():
             "stale_lock_file_does_not_block_next_tick",
             "unavailable_lock_directory_fails_closed",
             "lock_directory_inside_webroot_fails_closed",
+            "group_writable_unprotected_lock_directory_denied",
             "symlink_lock_path_fails_closed",
             "permissive_lock_file_fails_closed",
             "unavailable_php_flock_fails_closed",
         }
-        if not (cron.get("complete") and cron.get("cases")>=24
+        if not (cron.get("complete") and cron.get("cases")>=25
                 and required_cron_cases.issubset(cron.get("scenarios", []))
                 and cron.get("actual_current_runner_executed")
                 and cron.get("isolated_child_php_processes")

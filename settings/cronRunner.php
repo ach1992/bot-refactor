@@ -55,8 +55,8 @@ if (
     || !is_dir($lockDirectory)
     || !is_writable($lockDirectory)
     || $directoryStat === false
-    // A globally writable directory must use sticky-bit semantics.
-    || (($directoryStat['mode'] & 0002) !== 0
+    // Other writers must not be able to unlink/replace a held lock inode.
+    || (($directoryStat['mode'] & 0022) !== 0
         && ($directoryStat['mode'] & 01000) === 0)
 ) {
     fwrite(STDERR, "AChBot Cron: secure lock directory unavailable; no tasks started\n");
@@ -85,6 +85,9 @@ if (
     || ($pathStat['mode'] & 0170000) !== 0100000
     || $fileStat['nlink'] !== 1
     || ($fileStat['mode'] & 0077) !== 0
+    // The lock inode must be owned by the protected lock directory's owner.
+    // This is also verifiable under PHP -n (without the optional POSIX module).
+    || $fileStat['uid'] !== $directoryStat['uid']
     || (function_exists('posix_geteuid') && $fileStat['uid'] !== posix_geteuid())
     || !function_exists('flock')
 ) {
