@@ -364,9 +364,16 @@ def main():
                 finance.get("real_provider_requests")==0):
             raise RuntimeError("Original-schema finance and NOWPayments finality assurance incomplete")
         manual_path=Path(tmp)/"manual-payment-methods.json"
-        subprocess.run(["python3",str(ROOT/"tools/test_post_v9_manual_payments.py"),
-                        "--run-disposable","--report",str(manual_path)],
-                       cwd=ROOT,check=True,timeout=180,capture_output=True)
+        try:
+            subprocess.run(["python3",str(ROOT/"tools/test_post_v9_manual_payments.py"),
+                            "--run-disposable","--report",str(manual_path)],
+                           cwd=ROOT,check=True,timeout=180,capture_output=True)
+        except subprocess.CalledProcessError as exc:
+            # This child contains only disposable fixtures. Without its
+            # bounded traceback, cross-PHP-version failures are opaque.
+            error=(exc.stderr or b'').decode(errors='replace')[-5500:]
+            raise RuntimeError("Isolated three-method manual payment regression failed:\n"
+                               + error) from exc
         manual=json.loads(manual_path.read_text())
         required_manual={
             "bank_claim_idempotent",
