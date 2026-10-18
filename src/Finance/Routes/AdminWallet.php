@@ -154,11 +154,42 @@ if (!function_exists('achbotAdminWalletLedgerReady')) {
     }
 }
 
+if (!function_exists('achbotAdminWalletPrivateCallback')) {
+    /** Enter the privileged wallet flow only via the operator's own bot DM. */
+    function achbotAdminWalletPrivateCallback(
+        $update, $actorId, $chatId, $messageId, $boundData
+    ): bool {
+        if (!is_object($update) || !isset($update->callback_query) ||
+            !is_object($update->callback_query) ||
+            isset($update->message) ||
+            !is_int($update->update_id ?? null) || $update->update_id <= 0) {
+            return false;
+        }
+        $callback = $update->callback_query;
+        $sender = $callback->from ?? null;
+        $message = $callback->message ?? null;
+        $chat = is_object($message) ? ($message->chat ?? null) : null;
+        return is_object($sender) && is_object($chat) &&
+            is_int($sender->id ?? null) && $sender->id > 0 &&
+            ($sender->is_bot ?? false) !== true &&
+            is_int($chat->id ?? null) &&
+            ($chat->type ?? null) === 'private' &&
+            $chat->id === $sender->id &&
+            $chat->id === (int)$actorId &&
+            $chat->id === (int)$chatId &&
+            is_int($message->message_id ?? null) &&
+            $message->message_id === (int)$messageId &&
+            is_string($callback->data ?? null) &&
+            $callback->data === $boundData;
+    }
+}
+
 if (!function_exists('achbotAdminWalletFreshReason')) {
     /**
      * Require the actual NEW Telegram text-message envelope, not the shared
      * $text binding: callbacks bind it to the referenced BOT message text.
-     * Read-only validation only; unrelated callbacks leave the pending step.
+     * Read-only validation; callbacks cannot consume steps in this module.
+     * The later real managePanel handler intentionally cancels on navigation.
      */
     function achbotAdminWalletFreshReason(
         $update, $actorId, $chatId, $messageId, $boundText
@@ -178,7 +209,9 @@ if (!function_exists('achbotAdminWalletFreshReason')) {
             !is_object($message->from) || !is_object($message->chat) ||
             !is_int($message->from->id ?? null) || $message->from->id <= 0 ||
             ($message->from->is_bot ?? false) === true ||
-            !is_int($message->chat->id ?? null) || $message->chat->id === 0 ||
+            !is_int($message->chat->id ?? null) ||
+            ($message->chat->type ?? null) !== 'private' ||
+            $message->chat->id !== $message->from->id ||
             !is_int($message->message_id ?? null) || $message->message_id <= 0 ||
             !is_string($message->text ?? null) ||
             !is_string($boundText)) {
@@ -326,7 +359,14 @@ $achbotWalletModes = [
 $achbotWalletStep = (string)($userInfo['step'] ?? 'none');
 $achbotWalletInput = trim((string)($text ?? ''));
 $achbotWalletCancel = (string)($buttonValues['cancel'] ?? '');
-if ($achbotWalletCanAdmin && isset($achbotWalletModes[$data])) {
+// All stages of a privileged adjustment are private DM-only. The binding
+// helper also rejects a genuine message from an unrelated group chat.
+$achbotWalletFreshText = achbotAdminWalletFreshReason(
+    $update ?? null, $from_id ?? null, $chat_id ?? null,
+    $message_id ?? null, $text ?? null);
+if ($achbotWalletCanAdmin && isset($achbotWalletModes[$data]) &&
+    achbotAdminWalletPrivateCallback($update ?? null, $from_id ?? null,
+        $chat_id ?? null, $message_id ?? null, $data)) {
     if (!achbotAdminWalletLedgerReady($connection)) {
         sendMessage('⚠️ ثبت تغییر موجودی فعلاً آماده نیست؛ مدیر سیستم باید دفتر ثبت مالی را بررسی کند.');
     } else {
@@ -337,6 +377,7 @@ if ($achbotWalletCanAdmin && isset($achbotWalletModes[$data])) {
 }
 
 if ($achbotWalletCanAdmin && isset($achbotWalletModes[$achbotWalletStep]) &&
+    $achbotWalletFreshText !== null &&
     $achbotWalletInput !== $achbotWalletCancel && $achbotWalletInput !== '') {
     if (!preg_match('/^[1-9][0-9]{0,18}$/D', $achbotWalletInput) ||
         filter_var($achbotWalletInput, FILTER_VALIDATE_INT) === false) {
@@ -362,7 +403,8 @@ if ($achbotWalletCanAdmin && isset($achbotWalletModes[$achbotWalletStep]) &&
     }
 }
 
-if ($achbotWalletCanAdmin && $achbotWalletInput !== $achbotWalletCancel &&
+if ($achbotWalletCanAdmin && $achbotWalletFreshText !== null &&
+    $achbotWalletInput !== $achbotWalletCancel &&
     preg_match('/^(increaseWalletUser|decreaseWalletUser|debtWalletUser)([1-9][0-9]{0,18})$/D',
         $achbotWalletStep, $match)) {
     $kind = ['increaseWalletUser'=>'credit', 'decreaseWalletUser'=>'debit',
@@ -373,20 +415,23 @@ if ($achbotWalletCanAdmin && $achbotWalletInput !== $achbotWalletCancel &&
     } else {
         $target = (int)$match[2];
         $amount = (int)$achbotWalletInput;
-        setUser('achbotWalletReason:' . $kind . ':' . $target . ':' . $amount);
+        // Bind the final message to the actual amount-submission update.
+        // Older/out-of-order private messages cannot provide its reason.
+        setUser('achbotWalletReason:' . $kind . ':' . $target . ':' . $amount
+            . ':' . $update->message->message_id . ':' . $update->update_id);
         sendMessage('📝 دلیل این تغییر موجودی را در یک پیام جداگانه وارد کنید. '
             . 'تغییر فقط پس از ثبت دلیل اعمال می‌شود.'
             . ($kind === 'debt' ? ' این کسر مجاز است موجودی را منفی کند.' : ''));
     }
 }
 
-if ($achbotWalletCanAdmin && $achbotWalletInput !== $achbotWalletCancel &&
-    preg_match('/^achbotWalletReason:(credit|debit|debt):([1-9][0-9]{0,18}):([1-9][0-9]{0,9})$/D',
+if ($achbotWalletCanAdmin && $achbotWalletFreshText !== null &&
+    $achbotWalletInput !== $achbotWalletCancel &&
+    preg_match('/^achbotWalletReason:(credit|debit|debt):([1-9][0-9]{0,18}):([1-9][0-9]{0,9}):([1-9][0-9]{0,18}):([1-9][0-9]{0,18})$/D',
         $achbotWalletStep, $match) &&
-    ($achbotFreshReason = achbotAdminWalletFreshReason(
-        $update ?? null, $from_id ?? null, $chat_id ?? null,
-        $message_id ?? null, $text ?? null)) !== null) {
-    $reason = $achbotFreshReason;
+    $update->message->message_id > (int)$match[4] &&
+    $update->update_id > (int)$match[5]) {
+    $reason = $achbotWalletFreshText;
     if ($reason === '' || strlen($reason) > 500) {
         sendMessage('⚠️ دلیل باید غیرخالی و حداکثر ۵۰۰ بایت باشد. لطفاً دوباره وارد کنید.');
     } else {

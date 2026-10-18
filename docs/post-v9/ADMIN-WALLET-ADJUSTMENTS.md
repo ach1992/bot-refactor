@@ -12,15 +12,30 @@ shared payment migration 003 and automatic renewal migration 004.
   decrease**, or separately labeled **decrease with permission to create debt**.
   Routine decrease cannot create/deepen negative debt. A deliberate privileged
   negative balance remains supported, not clamped to zero.
-- Select an existing user, enter a strict positive integer Toman amount, then
-  submit an explicit reason in a fresh Telegram message. Nothing is adjusted
-  until the reason is accepted and the authenticated Telegram update identity
-  is present. The final reason must come from a real incoming Telegram
-  message with text, not a callback referencing an earlier bot message.
-  The actual update type, sender, chat/message IDs and update ID are
-  checked against UpdateBindings.php context; edited/service/channel
-  updates and unrelated callbacks cannot approve an adjustment or consume
-  its pending step.
+- **Private operator conversation only**: start credit/debit/debt from an
+  authenticated inline callback in the administrator's own Telegram private
+  chat (`chat.type=private`, `chat.id=operator_userid`). The user selection,
+  positive integer Toman amount and explicit reason must be **real fresh text
+  messages in that same private conversation**. Group/supergroup messages,
+  other users' private chats and group callbacks cannot advance or complete
+  any of these stages. The source does not treat a match against the current
+  update's own chat bindings alone as proof of conversation ownership.
+- Nothing is adjusted until an explicit reason arrives as a new genuine
+  Telegram message, never callback-associated old bot text. Sender,
+  source chat, message ID, message type/text and update ID are matched to
+  actual `UpdateBindings.php` values. The amount-stage `users.step` also
+  carries the originating **amount message ID and update ID**: the reason
+  must have **both IDs strictly greater**. Delayed/out-of-order older
+  private-chat messages cannot authorize a pending financial adjustment.
+  Steps without this freshness marker fail closed and must be restarted.
+- **Navigation contract**: the finance module never interprets a callback
+  as an operator reason, and does not itself cancel a pending reason merely
+  because an unrelated callback arrives. In the actual `bot.php` route,
+  selecting `managePanel` intentionally **cancels** any unfinished credit,
+  debit or debt step via `setUser()` and explicitly tells the operator that
+  the unfinished adjustment was canceled without moving funds. Thus it is
+  incorrect to claim all callbacks preserve `users.step`. The real
+  `managePanel` branch is exercised from its actual source in isolated tests.
 - One transaction locks administrator and target user rows, rechecks privileged
   identity and the expected flow step, inserts the immutable audit row,
   changes the signed users.wallet balance, and atomically consumes the step.
@@ -89,10 +104,14 @@ MariaDB and synthetic Telegram. Cases cover absent/malformed 005,
 strict numeric input, full UI, debt policy, unique update identity,
 two competing PHP workers, nonthrowing mysqli duplicate-key behavior,
 balance overflow, SQL rollback, duplicated account identities and
-notification ambiguity. The independent F1/F2 remediation also exercises
-actual UpdateBindings.php semantics for callbacks, new text messages and
-identity mismatch; and disposable MyISAM users, incompatible wallet and
-operator-column fixtures while 005 remains InnoDB.
+notification ambiguity. The F1/F2/R1/R2 regressions execute the actual
+`UpdateBindings.php` semantics and actual `AdminWallet.php` against disposable
+MariaDB, including cross-chat group messages at each financial stage, late
+private updates, and schema-drift fixtures while 005 remains InnoDB.
+The focused navigation case **executes the exact `managePanel` handler extracted
+from `bot.php`** in its original order after binding and financial routing;
+this is a controlled source-only route characterization, NOT full production
+bot bootstrap or live Telegram acceptance.
 It invokes no real bot, provider, bank account, payments or production SQL.
 
 There is **no installed/live-money acceptance** in this source-only PR.

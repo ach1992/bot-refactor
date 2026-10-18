@@ -242,7 +242,7 @@ def main():
             "duplicate_operator_rejected_before_financial_change",
             "operator_and_target_same_identity_atomic",
             "f1_old_inline_bot_text_cannot_submit_reason",
-            "f1_managepanel_navigation_cannot_submit_reason",
+            "f1_managepanel_finance_module_never_commits",
             "f1_mixed_callback_message_envelope_refused",
             "f1_edited_service_channel_updates_refused",
             "f1_privileged_debt_needs_new_message_reason",
@@ -253,8 +253,20 @@ def main():
             "f2_users_operator_step_contract_required",
             "f2_users_admin_identity_contract_required",
             "delegated_admin_revoked_before_commit_refused",
+            "r1_group_callback_cannot_begin_admin_adjustment",
+            "r1_group_user_selection_cannot_advance_adjustment",
+            "r1_group_amount_cannot_advance_adjustment",
+            "r1_genuine_admin_group_reason_no_financial_effect",
+            "r1_private_chat_identity_must_equal_operator",
+            "r1_group_reentry_cannot_override_pending_debt",
+            "r1_genuine_private_reason_after_group_commits_once",
+            "r1_delayed_or_out_of_order_reason_update_refused",
+            "r1_monotonic_new_private_reason_can_commit",
+            "r2_actual_bot_managepanel_cancels_and_announces_no_funds",
+            "r2_actual_managepanel_cancels_every_financial_stage",
+            "r2_unrelated_callback_not_financial_authorization",
         }
-        if not (admin_wallet.get("complete") and admin_wallet.get("cases")==38
+        if not (admin_wallet.get("complete") and admin_wallet.get("cases")==50
                 and required_admin_wallet.issubset(admin_wallet.get("scenarios",[]))
                 and admin_wallet.get("real_php_workers")==2
                 and admin_wallet.get("disposable_db") is True

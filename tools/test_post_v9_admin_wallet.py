@@ -37,12 +37,13 @@ $wireType=(string)($spec['update_kind']??(
     !empty($spec['data'])?'callback':'message'));
 $wireActor=(int)($spec['wire_actor']??$actor);
 $wireChat=(int)($spec['wire_chat']??$actor);
+$wireChatType=(string)($spec['wire_chat_type']??'private');
 $wireMessageId=(int)($spec['wire_message_id']??($spec['message_id']??91));
 $wireUpdateId=(int)($spec['wire_update_id']??($spec['update_id']??701));
 $wireText=(string)($spec['wire_text']??($spec['text']??''));
 $sender=(object)['id'=>$wireActor,'is_bot'=>false,
     'username'=>'fixture_admin','first_name'=>'Fixture'];
-$chat=(object)['id'=>$wireChat,'type'=>'private'];
+$chat=(object)['id'=>$wireChat,'type'=>$wireChatType];
 $message=(object)['from'=>$sender,'chat'=>$chat,
     'message_id'=>$wireMessageId];
 $update=(object)['update_id'=>$wireUpdateId];
@@ -118,6 +119,11 @@ function sendMessage(...$args) {
 }
 function delMessage(...$args) {$GLOBALS['events'][]=['kind'=>'delMessage'];}
 function getMainKeys() {return 'main-keys';}
+function getAdminKeys() {return 'admin-keys';}
+function editText(...$args) {
+    $GLOBALS['events'][]=['kind'=>'editText','args'=>$args];
+    return (object)['ok'=>true];
+}
 function setUser($step='none') {
     $stmt=$GLOBALS['connection']->prepare('UPDATE users SET step=? WHERE userid=?');
     $stmt->bind_param('si',$step,$GLOBALS['from_id']);
@@ -134,6 +140,27 @@ if (!empty($spec['barrier'])) {
     }
 }
 require $root.'/src/Finance/Routes/AdminWallet.php';
+// Execute the EXACT existing managePanel handler extracted from the real
+// bot.php source. The binding + finance module run before this handler,
+// matching their actual order in bot.php. Do not recreate a test-only
+// approximation of the cancellation behavior.
+if (!empty($spec['run_real_manage_panel_route'])) {
+    $botSource=file_get_contents($root.'/bot.php');
+    $marker='if($data == "managePanel"';
+    $following="if(\$data == 'reciveApplications')";
+    if (substr_count($botSource,$marker)!==1 ||
+        substr_count($botSource,$following)!==1 ||
+        strpos($botSource,"src/Finance/Routes/AdminWallet.php") >=
+            strpos($botSource,$marker)) {
+        throw new RuntimeException('Real managePanel handler shape changed');
+    }
+    $begin=strpos($botSource,$marker);
+    $end=strpos($botSource,$following,$begin);
+    if ($end===false || $end<=$begin) {
+        throw new RuntimeException('Real managePanel route missing');
+    }
+    eval(substr($botSource,$begin,$end-$begin));
+}
 echo json_encode(['events'=>$events],JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE);
 """
 
@@ -177,8 +204,11 @@ def execute(work,env,**spec):
 def messages(result):
     return [str(e['args'][0]) for e in result['events'] if e['kind']=='sendMessage']
 
-def move_to_reason(work,env,kind,amount,actor=9001,target=1001):
-    setstep(work,env,actor,f'achbotWalletReason:{kind}:{target}:{amount}')
+def move_to_reason(work,env,kind,amount,actor=9001,target=1001,
+                   amount_message_id=90,amount_update_id=1):
+    setstep(work,env,actor,
+        f'achbotWalletReason:{kind}:{target}:{amount}:'
+        f'{amount_message_id}:{amount_update_id}')
 
 def assert_state(work,env,expected_wallet,expected_rows):
     assert balance(work,env)==expected_wallet,(balance(work,env),expected_wallet)
@@ -225,7 +255,7 @@ def main():
         assert_state(work,env,50000,0)
         assert step(work,env)==pending
         assert not any('✅' in m for m in messages(manage_panel))
-        cases.append('f1_managepanel_navigation_cannot_submit_reason')
+        cases.append('f1_managepanel_finance_module_never_commits')
 
         mixed=execute(work,env,update_kind='mixed',data='managePanel',
             wire_text='Bot message not operator intent',update_id=683)
@@ -242,17 +272,18 @@ def main():
             assert not any('✅' in m for m in messages(old)),kind
         cases.append('f1_edited_service_channel_updates_refused')
 
-        # Restore the three-stage UI without losing any pending money;
-        # the normal genuine text-message test below must still succeed.
+        # This module-only callback proof does not execute the main bot
+        # menu handler. The ACTUAL managePanel cancellation is tested below;
+        # the normal genuine text-message test must still succeed.
         # Native three-stage Telegram flow and durable final transaction.
         setstep(work,env,9001,'none')
-        start=execute(work,env,data='increaseUserWallet')
+        start=execute(work,env,data='increaseUserWallet',update_id=695,message_id=88)
         assert step(work,env)=='increaseUserWallet' and 'send-user' in messages(start)
-        choose=execute(work,env,text='1001')
+        choose=execute(work,env,text='1001',update_id=696,message_id=89)
         assert step(work,env)=='increaseWalletUser1001'
         assert 'enter-increase' in messages(choose)
-        amount=execute(work,env,text='350')
-        assert step(work,env)=='achbotWalletReason:credit:1001:350'
+        amount=execute(work,env,text='350',update_id=697,message_id=90)
+        assert step(work,env)=='achbotWalletReason:credit:1001:350:90:697'
         assert any('دلیل' in m for m in messages(amount))
         final=execute(work,env,text='synthetic operator reason',update_id=701)
         assert_state(work,env,50350,1)
@@ -301,7 +332,7 @@ def main():
         debt_callback=execute(work,env,update_kind='callback',data='managePanel',
             wire_text='Old admin debt confirmation',update_id=704)
         assert_state(work,env,50300,2)
-        assert step(work,env)=='achbotWalletReason:debt:1001:50400'
+        assert step(work,env)=='achbotWalletReason:debt:1001:50400:90:1'
         assert not any('✅' in m for m in messages(debt_callback))
         cases.append('f1_privileged_debt_needs_new_message_reason')
         execute(work,env,text='contractually approved debt',update_id=704)
@@ -501,7 +532,7 @@ def main():
             move_to_reason(work,env,'credit',17)
             attempt=execute(work,env,text='real body',update_id=770,**sp)
             assert_state(work,env,1105,7)
-            assert step(work,env)=='achbotWalletReason:credit:1001:17',name
+            assert step(work,env)=='achbotWalletReason:credit:1001:17:90:1',name
             assert not any('✅' in m for m in messages(attempt)),name
         cases.append('f1_bound_actor_chat_message_text_and_update_identity')
 
@@ -575,10 +606,162 @@ def main():
         revoked=execute(work,env,actor=9002,text='previously authorized',
             cached_admin_override=True,update_id=784)
         assert_state(work,env,1122,8)
-        assert step(work,env,9002)=='achbotWalletReason:credit:1001:9'
+        assert step(work,env,9002)=='achbotWalletReason:credit:1001:9:90:1'
         assert not any('✅' in m for m in messages(revoked))
         sql(work,env,'UPDATE users SET isAdmin=1 WHERE userid=9002')
         cases.append('delegated_admin_revoked_before_commit_refused')
+
+        # R1: authentic administrator updates must be restricted to the
+        # operator's OWN Telegram DM for every financial input stage.
+        base_wallet=balance(work,env)
+        base_rows=nledger(work,env)
+        group_chat=-1001234005678
+        setstep(work,env,9001,'none')
+        group_entry=execute(work,env,update_kind='callback',
+            data='increaseUserWallet',update_id=810,
+            wire_chat=group_chat,wire_chat_type='supergroup')
+        assert step(work,env)=='none'
+        assert_state(work,env,base_wallet,base_rows)
+        assert 'send-user' not in messages(group_entry)
+        cases.append('r1_group_callback_cannot_begin_admin_adjustment')
+
+        setstep(work,env,9001,'increaseUserWallet')
+        group_target=execute(work,env,text='1001',update_id=811,
+            wire_chat=group_chat,wire_chat_type='supergroup')
+        assert step(work,env)=='increaseUserWallet'
+        assert_state(work,env,base_wallet,base_rows)
+        assert 'enter-increase' not in messages(group_target)
+        cases.append('r1_group_user_selection_cannot_advance_adjustment')
+
+        setstep(work,env,9001,'increaseWalletUser1001')
+        group_amount=execute(work,env,text='10',update_id=812,
+            wire_chat=group_chat,wire_chat_type='supergroup')
+        assert step(work,env)=='increaseWalletUser1001'
+        assert_state(work,env,base_wallet,base_rows)
+        assert not any('دلیل' in m for m in messages(group_amount))
+        cases.append('r1_group_amount_cannot_advance_adjustment')
+
+        move_to_reason(work,env,'debt',10)
+        pending=step(work,env)
+        group_reason=execute(work,env,text='unrelated genuine group message',
+            update_id=813,wire_chat=group_chat,wire_chat_type='supergroup')
+        assert step(work,env)==pending
+        assert_state(work,env,base_wallet,base_rows)
+        assert not any('✅' in m for m in messages(group_reason))
+        cases.append('r1_genuine_admin_group_reason_no_financial_effect')
+
+        # A consistent sender/chat binding is NOT enough: Telegram private
+        # chat ID must equal the authentic operator's Telegram identity.
+        other_private=execute(work,env,text='wrong DM session',
+            update_id=814,wire_chat=9003,wire_chat_type='private')
+        assert step(work,env)==pending
+        assert_state(work,env,base_wallet,base_rows)
+        assert not any('✅' in m for m in messages(other_private))
+        cases.append('r1_private_chat_identity_must_equal_operator')
+
+        # An unrelated callback must not restart/corrupt a pending debt,
+        # even though it carries a real callback and a valid update ID.
+        group_reentry=execute(work,env,update_kind='callback',
+            data='createUserWalletDebt',update_id=815,
+            wire_chat=group_chat,wire_chat_type='supergroup')
+        assert step(work,env)==pending
+        assert_state(work,env,base_wallet,base_rows)
+        assert not any('✅' in m for m in messages(group_reentry))
+        cases.append('r1_group_reentry_cannot_override_pending_debt')
+
+        # The same genuine administrator in the correct DM can still
+        # intentionally commit negative debt with a NEW, explicit reason.
+        real_private=execute(work,env,text='Explicit fresh debt reason',
+            update_id=816,message_id=91)
+        assert step(work,env)=='none'
+        assert_state(work,env,base_wallet-10,base_rows+1)
+        assert journal(work,env,816)==(
+            f'9001:1001:debt:10:{base_wallet}:{base_wallet-10}')
+        assert any('✅' in m for m in messages(real_private))
+        repeat=execute(work,env,text='Explicit fresh debt reason',
+            update_id=816,message_id=91)
+        assert_state(work,env,base_wallet-10,base_rows+1)
+        assert not any('✅' in m for m in messages(repeat))
+        cases.append('r1_genuine_private_reason_after_group_commits_once')
+
+        # Freshness characterization: after the amount message, BOTH the
+        # DM-local Telegram message ID and global update ID must increase.
+        # Delayed older private messages must not authorize a new transfer.
+        current_wallet=balance(work,env)
+        current_rows=nledger(work,env)
+        move_to_reason(work,env,'credit',13,
+            amount_message_id=120,amount_update_id=900)
+        pending=step(work,env)
+        for invalid in [
+            dict(text='older message ID',message_id=119,update_id=901),
+            dict(text='older update ID',message_id=121,update_id=899),
+            dict(text='equal update/message',message_id=120,update_id=900),
+        ]:
+            ignored=execute(work,env,**invalid)
+            assert_state(work,env,current_wallet,current_rows)
+            assert step(work,env)==pending
+            assert not any('✅' in m for m in messages(ignored)),invalid
+        cases.append('r1_delayed_or_out_of_order_reason_update_refused')
+        fresh=execute(work,env,text='New later operator reason',
+            message_id=121,update_id=902)
+        assert_state(work,env,current_wallet+13,current_rows+1)
+        assert step(work,env)=='none'
+        assert any('✅' in m for m in messages(fresh))
+        cases.append('r1_monotonic_new_private_reason_can_commit')
+
+        # R2: run the ACTUAL managePanel handler extracted from bot.php,
+        # in the correct order AFTER real bindings and AdminWallet.php.
+        current_wallet=balance(work,env)
+        current_rows=nledger(work,env)
+        move_to_reason(work,env,'credit',20)
+        canceled=execute(work,env,update_kind='callback',
+            data='managePanel',update_id=820,
+            wire_text='Old bot admin menu',run_real_manage_panel_route=True)
+        assert_state(work,env,current_wallet,current_rows)
+        assert step(work,env)=='none'
+        edited=[e['args'][1] for e in canceled['events'] if e['kind']=='editText']
+        assert len(edited)==1 and 'لغو شد' in edited[0],edited
+        assert not any('✅' in m for m in messages(canceled))
+        stale_reason=execute(work,env,text='Should be canceled',
+            update_id=821,message_id=91)
+        assert_state(work,env,current_wallet,current_rows)
+        assert step(work,env)=='none'
+        assert not any('✅' in m for m in messages(stale_reason))
+        cases.append('r2_actual_bot_managepanel_cancels_and_announces_no_funds')
+
+        # The full main-route cancellation contract applies at all stages
+        # and does NOT require activating any historical direct wallet write.
+        for idx,pending_step in enumerate([
+            'increaseUserWallet',
+            'decreaseUserWallet',
+            'createUserWalletDebt',
+            'increaseWalletUser1001',
+            'decreaseWalletUser1001',
+            'debtWalletUser1001',
+            'achbotWalletReason:debt:1001:99:90:1'
+        ]):
+            setstep(work,env,9001,pending_step)
+            out=execute(work,env,update_kind='callback',
+                data='managePanel',update_id=830+idx,
+                run_real_manage_panel_route=True)
+            assert_state(work,env,current_wallet,current_rows)
+            assert step(work,env)=='none'
+            edits=[e['args'][1] for e in out['events'] if e['kind']=='editText']
+            assert len(edits)==1 and 'لغو شد' in edits[0],pending_step
+            assert not any('✅' in m for m in messages(out))
+        cases.append('r2_actual_managepanel_cancels_every_financial_stage')
+
+        # An old unrelated callback is NOT managePanel; when only the
+        # finance route is executed it does not consume its pending step.
+        move_to_reason(work,env,'credit',20)
+        pending=step(work,env)
+        inert=execute(work,env,update_kind='callback',
+            data='wizwizch',update_id=840,
+            wire_text='Old inline menu')
+        assert_state(work,env,current_wallet,current_rows)
+        assert step(work,env)==pending
+        assert not any('✅' in m for m in messages(inert))
+        cases.append('r2_unrelated_callback_not_financial_authorization')
 
     report=dict(complete=True,cases=len(cases),scenarios=cases,
                 real_php_workers=2,disposable_db=True,

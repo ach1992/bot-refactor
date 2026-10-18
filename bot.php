@@ -2155,12 +2155,23 @@ if(preg_match('/^editServer(\D+)(\d+)/',$userInfo['step'],$match) && $text != $b
 if (($achbotV8Result = require __DIR__ . '/src/Finance/Routes/DiscountAdministration.php') === null) return;
 if($data == "managePanel" and (($from_id == $admin || $userInfo['isAdmin'] == true))){
 
+    // Explicit navigation to the admin panel intentionally cancels any
+    // unfinished wallet-adjustment flow; other callbacks are not reasons.
+    $walletStepBeforePanel = (string)($userInfo['step'] ?? '');
+    $walletPanelCancellation = in_array($walletStepBeforePanel,
+        ['increaseUserWallet', 'decreaseUserWallet', 'createUserWalletDebt'], true)
+        || preg_match('/^(increaseWalletUser|decreaseWalletUser|debtWalletUser)[1-9][0-9]{0,18}$/D',
+            $walletStepBeforePanel)
+        || str_starts_with($walletStepBeforePanel, 'achbotWalletReason:');
     setUser();
     $msg = "
 👤 به بخش مدیریت خوش اومدی $first_name
 
 🚪 /start
 ";
+    if ($walletPanelCancellation) {
+        $msg .= "\n⚠️ درخواست تغییر موجودی نیمه‌تمام لغو شد؛ مبلغی از این درخواست اعمال نشد.\n";
+    }
     editText($message_id, $msg, getAdminKeys());
 }
 if($data == 'reciveApplications') {
