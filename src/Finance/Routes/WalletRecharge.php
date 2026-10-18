@@ -96,17 +96,49 @@ if (is_string($data ?? null) &&
     return;
 }
 
-if($data == "increaseMyWallet") { 
-    delMessage(); 
+/** Retire an old inline prompt best-effort, never after-the-fact roll back SQL. */
+if (!function_exists('achbotWalletTopupRetirePrompt')) {
+    function achbotWalletTopupRetirePrompt(): void {
+        try {
+            delMessage();
+        } catch (Throwable $ignored) {
+            error_log('achbot_wallet_topup_old_prompt_cleanup_deferred');
+        }
+    }
+}
 
-    $textMsg = 
-"✅ با شارژ کیف پول می‌توانید هنگام خرید از <b>دکمه پرداخت با موجودی</b> استفاده کنید و منتظر تأیید ادمین <b>نمانید</b>.
+/** Use the confirmed sent message ID as the actual reply/selection boundary. */
+if (!function_exists('achbotWalletTopupSentMessageId')) {
+    function achbotWalletTopupSentMessageId($reply): ?int {
+        $id = is_object($reply) ? ($reply->result->message_id ?? null) : null;
+        return is_object($reply) && ($reply->ok ?? false) === true &&
+            is_int($id) && $id > 0 ? $id : null;
+    }
+}
 
-❇️ لطفاً مبلغ شارژ کیف پول را انتخاب کنید:";
+if (!function_exists('achbotWalletTopupAmountProblem')) {
+    function achbotWalletTopupAmountProblem($amount): ?string {
+        if ($amount === null) return '⚠️ مبلغ شارژ معتبر نیست. لطفاً فقط عدد صحیح با ارقام انگلیسی وارد کنید.';
+        if ($amount < 100000) return '⚠️ لطفا مقداری بیشتر یا مساوی 100,000 تومان وارد کنید.';
+        if ($amount > 10000000) return '⚠️ حداکثر مبلغ قابل شارژ کیف پول 10,000,000 تومان می‌باشد.';
+        if ($amount % 50000 !== 0) return '⚠️ مبلغ واردشده باید مضربی از 50,000 تومان باشد.';
+        return null;
+    }
+}
 
+// A fresh, private menu callback reserves a unique update identity BEFORE
+// sending choices. Only the sent bot prompt's message_id authorizes buttons.
+if ($data === 'increaseMyWallet') {
+    $updateId = $update->update_id;
+    $opening = achbotWalletTopupStage('opening', $updateId, $message_id);
+    $result = achbotWalletTopupAdvance($connection, (int)$from_id, null,
+                                      $opening, $updateId);
+    if ($result !== 'applied') return;
+
+    $textMsg = "✅ با شارژ کیف پول می‌توانید هنگام خرید از <b>دکمه پرداخت با موجودی</b> استفاده کنید و منتظر تأیید ادمین <b>نمانید</b>.\n\n❇️ لطفاً مبلغ شارژ کیف پول را انتخاب کنید:";
     $keyboard = [
         [
-            ['text' => '100,000 تومان',  'callback_data' => 'increaseWallet_100000'],
+            ['text' => '100,000 تومان', 'callback_data' => 'increaseWallet_100000'],
             ['text' => '200,000 تومان', 'callback_data' => 'increaseWallet_200000'],
         ],
         [
@@ -114,11 +146,11 @@ if($data == "increaseMyWallet") {
             ['text' => '500,000 تومان', 'callback_data' => 'increaseWallet_500000'],
         ],
         [
-            ['text' => '1,000,000 تومان',  'callback_data' => 'increaseWallet_1000000'],
-            ['text' => '2,000,000 تومان',  'callback_data' => 'increaseWallet_2000000'],
+            ['text' => '1,000,000 تومان', 'callback_data' => 'increaseWallet_1000000'],
+            ['text' => '2,000,000 تومان', 'callback_data' => 'increaseWallet_2000000'],
         ],
         [
-            ['text' => '5,000,000 تومان',  'callback_data' => 'increaseWallet_5000000'],
+            ['text' => '5,000,000 تومان', 'callback_data' => 'increaseWallet_5000000'],
         ],
         [
             ['text' => '✏️ مبلغ دلخواه', 'callback_data' => 'increaseWalletCustom'],
@@ -127,78 +159,116 @@ if($data == "increaseMyWallet") {
             ['text' => $buttonValues['cancel'], 'callback_data' => 'mainMenu'],
         ],
     ];
-
     $keys = json_encode(['inline_keyboard' => $keyboard], JSON_UNESCAPED_UNICODE);
-
-    sendMessage($textMsg, $keys, 'HTML');
+    try {
+        $reply = sendMessage($textMsg, $keys, 'HTML');
+    } catch (Throwable $failure) {
+        $reply = null;
+    }
+    $sentId = achbotWalletTopupSentMessageId($reply);
+    if ($sentId === null) {
+        error_log('achbot_wallet_topup_menu_delivery_unconfirmed');
+        return; // A fresh menu invocation is the safe recovery action.
+    }
+    $ready = achbotWalletTopupStage('choose', $updateId, $sentId);
+    if (achbotWalletTopupAdvance($connection, (int)$from_id, $opening,
+                                $ready, $updateId) !== 'applied') {
+        error_log('achbot_wallet_topup_menu_stage_unconfirmed');
+        return;
+    }
+    achbotWalletTopupRetirePrompt();
+    return;
 }
 
-if(strpos($data, "increaseWallet_") === 0){
-    $amount = achbotParseWalletTopupRawInteger(substr($data, strlen("increaseWallet_")));
-    if ($amount === null) {
-        sendMessage("⚠️ مبلغ شارژ معتبر نیست. لطفاً فقط عدد صحیح با ارقام انگلیسی وارد کنید.");
-        exit();
-    }
-    if ($amount < 100000) {
-        sendMessage("⚠️ لطفا مقداری بیشتر یا مساوی 100,000 تومان وارد کنید.");
-        exit();
-    }
-    if ($amount > 10000000) {
-        sendMessage("⚠️ حداکثر مبلغ قابل شارژ کیف پول 10,000,000 تومان می‌باشد.");
-        exit();
-    }
-    if ($amount % 50000 !== 0) {
-        sendMessage("⚠️ مبلغ واردشده باید مضربی از 50,000 تومان باشد.");
-        exit();
-    }
+// Both fixed and custom selection must come from the CURRENT bot prompt,
+// not a historic private inline button with the same callback_data.
+$selectStep = (string)($userInfo['step'] ?? 'none');
+$canSelect = preg_match('/\AachbotWalletTopup:choose:([1-9][0-9]*):([1-9][0-9]*):([1-9][0-9]*)\z/D',
+                        $selectStep, $choice) === 1 &&
+    $message_id === (int)$choice[2];
 
-    delMessage();
-    startWalletPayment($connection, $botState, $buttonValues, $botUrl, $from_id, $removeKeyboard, $amount);
-    setUser();
+if (strpos($data, 'increaseWallet_') === 0) {
+    $amount = achbotParseWalletTopupRawInteger(substr($data, strlen('increaseWallet_')));
+    $problem = achbotWalletTopupAmountProblem($amount);
+    if ($problem !== null) {
+        sendMessage($problem);
+        return;
+    }
+    if (!$canSelect) {
+        sendMessage('⚠️ این گزینه مربوط به درخواست فعلی نیست. شارژ کیف پول را دوباره از منو آغاز کنید.');
+        return;
+    }
+    $result = startWalletPayment($connection, $botState, $buttonValues, $botUrl,
+        $from_id, $removeKeyboard, $amount, $selectStep,
+        $update->update_id, $message_id);
+    if ($result === 'created') {
+        achbotWalletTopupRetirePrompt();
+    } elseif ($result === 'review') {
+        sendMessage('⚠️ وضعیت درخواست شارژ نیازمند بررسی است؛ قبل از تلاش مجدد، وضعیت را بررسی کنید.');
+    } else {
+        sendMessage('⚠️ این درخواست قبلاً پردازش یا جایگزین شده است. شارژ کیف پول را دوباره از منو آغاز کنید.');
+    }
+    return;
 }
 
-if($data == "increaseWalletCustom"){ 
-    delMessage();
-
-    sendMessage("💰 لطفاً مبلغ شارژ را وارد کنید.
-✅ حداقل مبلغ قابل شارژ <b>100,000 تومان</b> می باشد.
-✅ حداکثر مبلغ قابل شارژ <b>10,000,000 تومان</b> می باشد.
-✅ مبلغ باید فقط مضربی از <b>50,000 تومان</b> باشد.
-🔢 لطفاً فقط اعداد انگلیسی وارد کنید.", $cancelKey, 'HTML');
-
-    setUser("increaseMyWallet");
+if ($data === 'increaseWalletCustom') {
+    if (!$canSelect) {
+        sendMessage('⚠️ این گزینه مربوط به درخواست فعلی نیست. شارژ کیف پول را دوباره از منو آغاز کنید.');
+        return;
+    }
+    $updateId = $update->update_id;
+    $prompting = achbotWalletTopupStage('prompting', $updateId, $message_id);
+    if (achbotWalletTopupAdvance($connection, (int)$from_id, $selectStep,
+                                $prompting, $updateId) !== 'applied') {
+        return;
+    }
+    try {
+        $reply = sendMessage("💰 لطفاً مبلغ شارژ را وارد کنید.\n✅ حداقل مبلغ قابل شارژ <b>100,000 تومان</b> می باشد.\n✅ حداکثر مبلغ قابل شارژ <b>10,000,000 تومان</b> می باشد.\n✅ مبلغ باید فقط مضربی از <b>50,000 تومان</b> باشد.\n🔢 لطفاً فقط اعداد انگلیسی وارد کنید.", $cancelKey, 'HTML');
+    } catch (Throwable $failure) {
+        $reply = null;
+    }
+    $sentId = achbotWalletTopupSentMessageId($reply);
+    if ($sentId === null) {
+        error_log('achbot_wallet_topup_amount_prompt_unconfirmed');
+        return; // No unverified prompt may authorize a future amount message.
+    }
+    $await = achbotWalletTopupStage('amount', $updateId, $sentId);
+    if (achbotWalletTopupAdvance($connection, (int)$from_id, $prompting,
+                                $await, $updateId) !== 'applied') {
+        error_log('achbot_wallet_topup_amount_stage_unconfirmed');
+        return;
+    }
+    achbotWalletTopupRetirePrompt();
+    return;
 }
 
-if (($userInfo['step'] ?? null) === 'increaseMyWallet' &&
-    $text != $buttonValues['cancel'] &&
+$amountStep = (string)($userInfo['step'] ?? 'none');
+if ($text != ($buttonValues['cancel'] ?? null) &&
+    preg_match('/\AachbotWalletTopup:amount:([1-9][0-9]*):([1-9][0-9]*):([1-9][0-9]*)\z/D',
+               $amountStep, $pending) === 1 &&
     achbotWalletTopupPrivateText($update ?? null, $from_id ?? null,
-                                 $chat_id ?? null, $message_id ?? null,
-                                 $text, $userInfo['userid'] ?? null)) {
-    
+        $chat_id ?? null, $message_id ?? null,
+        $text, $userInfo['userid'] ?? null)) {
+    // The message must postdate BOTH the custom callback and the delivered
+    // bot prompt, even if Telegram hands webhook updates out of order.
+    if ($message_id <= (int)$pending[2]) {
+        return;
+    }
     $amount = achbotParseWalletTopupRawInteger($text);
-    if ($amount === null) {
-        sendMessage("⚠️ مبلغ شارژ معتبر نیست. لطفاً فقط عدد صحیح با ارقام انگلیسی وارد کنید.");
-        exit();
+    $problem = achbotWalletTopupAmountProblem($amount);
+    if ($problem !== null) {
+        sendMessage($problem);
+        return;
     }
-
-    if($amount < 100000){ 
-        sendMessage("⚠️ لطفا مقداری بیشتر یا مساوی 100,000 تومان وارد کنید."); 
-        exit(); 
+    $result = startWalletPayment($connection, $botState, $buttonValues, $botUrl,
+        $from_id, $removeKeyboard, $amount, $amountStep,
+        $update->update_id, $message_id);
+    if ($result === 'review') {
+        sendMessage('⚠️ وضعیت درخواست شارژ نیازمند بررسی است؛ قبل از تلاش مجدد، وضعیت را بررسی کنید.');
+    } elseif ($result !== 'created') {
+        sendMessage('⚠️ این درخواست قبلاً پردازش یا جایگزین شده است. شارژ کیف پول را دوباره از منو آغاز کنید.');
     }
-
-    if($amount > 10000000){
-        sendMessage("⚠️ حداکثر مبلغ قابل شارژ کیف پول 10,000,000 تومان می‌باشد.");
-        exit();
-    }
-
-    if($amount % 50000 != 0){
-        sendMessage("⚠️ مبلغ واردشده باید مضربی از 50,000 تومان باشد.");
-        exit();
-    }
-
-    startWalletPayment($connection, $botState, $buttonValues, $botUrl, $from_id, $removeKeyboard, $amount);
-
-    setUser();
+    return;
 }
 
 if (preg_match('/payIncreaseWalletWith(?:CartToCart|GiftCard|ManualUsdt)(?<hashId>.*)/', $data, $match)) {

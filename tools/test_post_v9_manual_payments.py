@@ -104,6 +104,7 @@ $root=$argv[1];
 $spec=json_decode($argv[4],true,512,JSON_THROW_ON_ERROR);
 $connection=new mysqli('localhost','root','',$argv[3],0,$argv[2]);
 $connection->set_charset('utf8mb4');
+if (($spec['mysqli_report_off']??false)===true) mysqli_report(MYSQLI_REPORT_OFF);
 $from_id=(int)($spec['actor']??1001);
 $chat_id=$from_id;
 $admin=9001;$botUsername='FixtureBot';$message_id=111;
@@ -152,9 +153,22 @@ function setUser($value='none',$field='step'){
 }
 function getMainKeys(){return '{}';}
 function alert(...$args){$GLOBALS['events'][]=['name'=>'alert','args'=>$args];}
-function sendMessage(...$args){$GLOBALS['events'][]=['name'=>'sendMessage','args'=>$args];return (object)['ok'=>true];}
+function sendMessage(...$args){
+    global $spec;
+    $GLOBALS['events'][]=['name'=>'sendMessage','args'=>$args];
+    if (($spec['message_transport']??'')==='throw')
+        throw new RuntimeException('fixture_telegram_transport_down');
+    if (($spec['message_transport']??'')==='no_id')
+        return (object)['ok'=>true,'result'=>(object)[]];
+    return (object)['ok'=>true,'result'=>(object)[
+        'message_id'=>(int)($spec['bot_reply_message_id']??500)]];
+}
 // Isolated fixture ID; the production reference generator is tested separately.
-function RandomString(){return bin2hex(random_bytes(10));}
+function RandomString(){
+    if (($GLOBALS['spec']['pause_before_insert_ms']??0)>0)
+        usleep(min(2500,(int)$GLOBALS['spec']['pause_before_insert_ms'])*1000);
+    return bin2hex(random_bytes(10));
+}
 function sendPhoto(...$args){
     global $spec,$connection;
     $GLOBALS['events'][]=['name'=>'sendPhoto','args'=>$args];
@@ -219,7 +233,16 @@ if (($spec['route']??'wallet') === 'manual_admin') {
     if (($spec['route']??'wallet')==='topup') {
         // Real Telegram bindings: callbacks bind old bot-message text, while
         // genuine customer messages bind a newly authored text payload.
+        // In this path, do not trust independently fabricated $data/$text.
+        // The actual update bindings must be their only authority.
+        $data='';$text=null;
         require $root.'/src/Telegram/UpdateBindings.php';
+        // Read the persisted user state as config.php actually does; no
+        // fabricated $userInfo may authorize a financial stage.
+        $stmt=$connection->prepare('SELECT * FROM users WHERE userid=?');
+        $stmt->bind_param('i',$from_id);$stmt->execute();
+        $userInfo=$stmt->get_result()->fetch_assoc() ?: ['step'=>'none','userid'=>$from_id];
+        $stmt->close();
         // Exercise actual payment insertion and draft cleanup.
         require $root.'/src/Purchase/Core.php';
         require $root.'/src/Finance/WalletStart.php';
@@ -228,9 +251,19 @@ if (($spec['route']??'wallet') === 'manual_admin') {
 }
 """
 def run_route(work,env,driver,data='',step='none',actor=1001,update=None,route='wallet',
-              photo_mode='success',remote_mode='success',text=''):
+              photo_mode='success',remote_mode='success',text='',
+              bot_reply_message_id=None,message_transport='',
+              pause_before_insert_ms=0,expected_review=False,expected_warning=None,
+              mysqli_report_off=False):
     spec={'data':data,'step':step,'actor':actor,'route':route,
-          'photo_mode':photo_mode,'remote_mode':remote_mode,'text':text}
+          'photo_mode':photo_mode,'remote_mode':remote_mode,'text':text,
+          'message_transport':message_transport,
+          'pause_before_insert_ms':pause_before_insert_ms,
+          'mysqli_report_off':mysqli_report_off}
+    if bot_reply_message_id is not None:
+        spec['bot_reply_message_id']=bot_reply_message_id
+    elif route=='topup':
+        spec['bot_reply_message_id']=510 if data=='increaseWalletCustom' else 500
     if route == 'topup' and update is None:
         # Generate a real Telegram update envelope rather than fabricating
         # independent $data/$text variables that bypass UpdateBindings.php.
@@ -238,14 +271,15 @@ def run_route(work,env,driver,data='',step='none',actor=1001,update=None,route='
                 'first_name':'Fixture'}
         chat={'id':actor,'type':'private'}
         if data:
-            update={'update_id':990001,'callback_query':{
+            selected=data!='increaseMyWallet'
+            update={'update_id':990002 if selected else 990001,'callback_query':{
                 'id':'fixture-callback','from':sender,'data':data,
-                'message':{'message_id':111,'chat':chat,
+                'message':{'message_id':500 if selected else 111,'chat':chat,
                            'text':'Previous bot instructions',
                            'reply_markup':{'inline_keyboard':[]}}}}
         else:
-            update={'update_id':990002,'message':{
-                'message_id':111,'from':sender,'chat':chat,'text':text}}
+            update={'update_id':990003,'message':{
+                'message_id':520,'from':sender,'chat':chat,'text':text}}
     if update is not None: spec['update']=update
     cmd=['php','-n','-d','extension=mysqlnd','-d','extension=mysqli',
          '-d','allow_url_fopen=0','-d','display_errors=1',
@@ -254,7 +288,16 @@ def run_route(work,env,driver,data='',step='none',actor=1001,update=None,route='
          str(driver),str(ROOT),str(work/'mysql.sock'),DB,
          json.dumps(spec,ensure_ascii=False)]
     p=subprocess.run(cmd,cwd=work,env=env,capture_output=True,text=True,timeout=20)
-    if p.returncode or p.stderr:
+    accepted_log_codes=[]
+    if expected_review:
+        accepted_log_codes.append('achbot_wallet_topup_creation_review')
+    if expected_warning:
+        accepted_log_codes.append(expected_warning)
+    safe_review=(accepted_log_codes and p.stderr and all(
+        any(code in line for code in accepted_log_codes) and
+        'fixture_' not in line and 'SQL' not in line
+        for line in p.stderr.splitlines()))
+    if p.returncode or (p.stderr and not safe_review):
         raise RuntimeError('isolated wallet payment route failed: '+
                            repr((p.returncode,p.stderr,p.stdout))[:1400])
     try:
@@ -1090,9 +1133,8 @@ def check():
         assert query(work,env,"SELECT state FROM pays WHERE hash_id='leaseexpiry'")=='have_sent'
         cases.append('lost_worker_recovered_after_lease_without_new_photo')
 
-        # P1: exercise raw Telegram values through the real UpdateBindings.php,
-        # WalletRecharge.php and WalletStart.php with disposable MariaDB.
-        query(work,env,"UPDATE users SET step='increaseMyWallet' WHERE userid=1001")
+        # P1 + R1-01: test real Telegram UpdateBindings, persisted users.step,
+        # actual top-up route, and atomic pays INSERT against socket-only MariaDB.
         seed(work,env,'topupissuedold',price=200000)
         assert base('topupissuedold','claim','bank_transfer') is True
         query(work,env,"UPDATE pays SET payid='synthetic-issued-invoice' "
@@ -1108,8 +1150,50 @@ def check():
                 query(work,env,"SELECT * FROM pays ORDER BY id"),
                 query(work,env,"SELECT * FROM payment_attempts ORDER BY id"),
                 query(work,env,"SELECT * FROM payment_transactions ORDER BY id"),
-                query(work,env,"SELECT userid,wallet,step FROM users ORDER BY userid"),
+                query(work,env,"SELECT userid,wallet,step FROM users ORDER BY id"),
             )
+        def get_topup_step():
+            return query(work,env,'SELECT step FROM users WHERE userid=1001')
+        def put_topup_step(value):
+            assert value.isascii() and "'" not in value
+            query(work,env,"UPDATE users SET step='"+value+"' WHERE userid=1001")
+        def choose_ready():
+            put_topup_step('achbotWalletTopup:choose:990001:500:1700000000')
+        def amount_ready():
+            put_topup_step('achbotWalletTopup:amount:990002:510:1700000000')
+        def customer(user=1001):
+            return {'id':user,'is_bot':False,'username':'fixture_customer',
+                    'first_name':'Fixture'}
+        def message_update(text,chat_type='private',chat_id=1001,user=1001,
+                           update_id=990003,message_id=520):
+            return {'update_id':update_id,'message':{
+                'message_id':message_id,'from':customer(user),
+                'chat':{'id':chat_id,'type':chat_type},'text':text}}
+        def callback_update(text,data,chat_type='private',chat_id=1001,user=1001,
+                            update_id=990002,message_id=500):
+            return {'update_id':update_id,'callback_query':{
+                'id':'fixture-callback','from':customer(user),'data':data,
+                'message':{'message_id':message_id,
+                           'chat':{'id':chat_id,'type':chat_type},
+                           'text':text,'reply_markup':{'inline_keyboard':[]}}}}
+        def open_menu(update_id=990001):
+            put_topup_step('none')
+            wire=callback_update('Original bot main menu','increaseMyWallet',
+                                 update_id=update_id,message_id=111)
+            events=run_route(work,env,route_driver,route='topup',
+                             data='increaseMyWallet',update=wire,
+                             bot_reply_message_id=500)
+            assert get_topup_step().startswith(f'achbotWalletTopup:choose:{update_id}:500:'),events
+            assert any(e['name']=='sendMessage' for e in events)
+            return events
+        def open_custom():
+            opened=run_route(work,env,route_driver,route='topup',
+                             data='increaseWalletCustom',
+                             update=callback_update('Pick custom','increaseWalletCustom'),
+                             bot_reply_message_id=510)
+            assert get_topup_step().startswith('achbotWalletTopup:amount:990002:510:'),opened
+            return opened
+
         malformed_callbacks=[
             'increaseWallet_100000junk','increaseWallet_100000.5',
             'increaseWallet_1e5','increaseWallet_100000_200000',
@@ -1129,16 +1213,16 @@ def check():
             [('text',x) for x in malformed_texts]
         ):
             seed(work,env,'topupdraft'+str(i),price=150000)
+            choose_ready() if kind=='callback' else amount_ready()
             before=topup_snapshot()
-            options=({'data':raw,'step':'none'} if kind=='callback'
-                     else {'data':'','step':'increaseMyWallet','text':raw})
+            options=({'data':raw} if kind=='callback' else {'text':raw})
             events=run_route(work,env,route_driver,route='topup',**options)
             assert topup_snapshot()==before,(kind,raw,'payment state mutated')
             assert any(e['name']=='sendMessage' for e in events),(kind,raw,events)
             assert not any(e['name'] in ('remote_create','remote_edit','sendPhoto','setUser')
                            for e in events),(kind,raw,events)
             assert not any(e['name']=='sendMessage' and
-                           'لطفا صبور' in str(e['args']) for e in events)
+                           'اطلاعات شارژ' in str(e['args']) for e in events)
             cases.append('real_topup_raw_'+kind+'_rejected_'+str(i))
         assert query(work,env,
             "SELECT id,hash_id,payid,state,price FROM pays "
@@ -1147,76 +1231,52 @@ def check():
             "SELECT id,pay_row_id,provider,order_hash,stage FROM payment_attempts "
             "WHERE order_hash='topupissuedold'")==attempt_before
 
-        # R1: run the actual UpdateBindings.php -> WalletRecharge.php ->
-        # WalletStart.php path. A private pending step must NEVER be consumed
-        # by group text, older bot callback text, or a foreign chat/actor.
-        # Snapshot all rows in both shared-ledger tables and the wallet.
-        def customer(user=1001):
-            return {'id':user,'is_bot':False,'username':'fixture_customer',
-                    'first_name':'Fixture'}
-        def message_update(text,chat_type='private',chat_id=1001,user=1001):
-            return {'update_id':991001,'message':{
-                'message_id':221,'from':customer(user),
-                'chat':{'id':chat_id,'type':chat_type},'text':text}}
-        def callback_update(text,data,chat_type='private',chat_id=1001,user=1001):
-            return {'update_id':991002,'callback_query':{
-                'id':'fixture-old-button','from':customer(user),'data':data,
-                'message':{'message_id':220,
-                           'chat':{'id':chat_id,'type':chat_type},
-                           'text':text,
-                           'reply_markup':{'inline_keyboard':[]}}}}
         denied_origin_cases=[
-            ('group_message_denied', '', message_update('100000','group',-4100)),
-            ('supergroup_message_denied', '', message_update('100000','supergroup',-1004100)),
-            ('old_callback_text_denied', 'unrelatedCallback',
+            ('group_message_denied','',message_update('100000','group',-4100)),
+            ('supergroup_message_denied','',message_update('100000','supergroup',-1004100)),
+            ('old_callback_text_denied','unrelatedCallback',
              callback_update('100000','unrelatedCallback')),
-            ('foreign_chat_callback_denied', 'unrelatedCallback',
+            ('foreign_chat_callback_denied','unrelatedCallback',
              callback_update('100000','unrelatedCallback','supergroup',-1004100)),
-            ('group_custom_start_denied', 'increaseWalletCustom',
+            ('group_custom_start_denied','increaseWalletCustom',
              callback_update('Old prompt','increaseWalletCustom','group',-4100)),
-            ('group_fixed_amount_denied', 'increaseWallet_100000',
+            ('group_fixed_amount_denied','increaseWallet_100000',
              callback_update('Old prompt','increaseWallet_100000','group',-4100)),
-            ('other_actor_message_denied', '',message_update('100000',user=1002)),
-            ('bot_authored_message_denied', '',{
-                'update_id':991003,'message':{
-                    'message_id':221,
+            ('other_actor_message_denied','',message_update('100000',user=1002)),
+            ('bot_authored_message_denied','',{
+                'update_id':990003,'message':{'message_id':520,
                     'from':{'id':1001,'is_bot':True,'first_name':'FixtureBot'},
                     'chat':{'id':1001,'type':'private'},'text':'100000'}}),
-            ('mixed_callback_message_denied', 'unrelatedCallback',{
+            ('mixed_callback_message_denied','unrelatedCallback',{
                 **message_update('100000'),
                 'callback_query':callback_update('100000','unrelatedCallback')['callback_query']}),
         ]
         for i,(name,raw_data,wire_update) in enumerate(denied_origin_cases):
             seed(work,env,'topuporigin'+str(i),price=150000)
+            choose_ready() if ('_start' in name or 'fixed_amount' in name) else amount_ready()
             before=topup_snapshot()
             events=run_route(work,env,route_driver,route='topup',
-                             data=raw_data,step='increaseMyWallet',
-                             text='100000',update=wire_update)
+                             data=raw_data,text='100000',update=wire_update)
             assert topup_snapshot()==before,(name,'payment state mutated')
             assert not any(e['name'] in ('delMessage','setUser',
                        'remote_create','remote_edit','sendPhoto')
                        for e in events),(name,events)
             assert not any(e['name']=='sendMessage' and
-                           ('اطلاعات شارژ' in str(e['args']) or
-                            'لطفا صبور' in str(e['args'])) for e in events), (name,events)
+                           'اطلاعات شارژ' in str(e['args']) for e in events),(name,events)
             cases.append('real_topup_origin_'+name)
-        # Enter custom top-up through the genuine private callback, then
-        # complete it via a newly authored private message in that same DM.
-        query(work,env,"UPDATE users SET step='none' WHERE userid=1001")
-        opened=run_route(work,env,route_driver,route='topup',
-                         data='increaseWalletCustom',step='none')
-        assert any(e['name']=='setUser' and e['step']=='increaseMyWallet'
-                   for e in opened),opened
-        assert query(work,env,"SELECT step FROM users WHERE userid=1001")=='increaseMyWallet'
+
+        # Full genuine private flow, including verified *outgoing* message IDs.
+        open_menu()
+        cases.append('real_topup_origin_private_menu_start_accepted')
+        open_custom()
         cases.append('real_topup_origin_private_custom_start_accepted')
-        events=run_route(work,env,route_driver,route='topup',
-                         step='increaseMyWallet',update=message_update('150000'))
+        result=run_route(work,env,route_driver,route='topup',text='150000')
         assert any(e['name']=='sendMessage' and 'اطلاعات شارژ' in str(e['args'])
-                   for e in events),events
+                   for e in result),result
+        assert get_topup_step().startswith('achbotWalletTopup:done:990003:520:')
         assert query(work,env,"SELECT price FROM pays WHERE type='INCREASE_WALLET' "
                      "AND state='pending' AND user_id=1001 AND payid IS NULL "
                      "ORDER BY id DESC LIMIT 1")=='150000'
-        assert query(work,env,"SELECT step FROM users WHERE userid=1001")=='none'
         assert query(work,env,
             "SELECT id,hash_id,payid,state,price FROM pays "
             "WHERE hash_id='topupissuedold'")==issued_before
@@ -1224,19 +1284,97 @@ def check():
             "SELECT id,pay_row_id,provider,order_hash,stage FROM payment_attempts "
             "WHERE order_hash='topupissuedold'")==attempt_before
         cases.append('real_topup_origin_private_customer_text_accepted')
+        after=topup_snapshot()
+        retry=run_route(work,env,route_driver,route='topup',text='150000')
+        assert topup_snapshot()==after and not any(
+            e['name']=='sendMessage' and 'اطلاعات شارژ' in str(e['args']) for e in retry)
+        cases.append('real_topup_replayed_private_amount_no_second_invoice')
 
-        # Valid minimum/maximum amounts still create precisely priced drafts
-        # and do not erase previously provider-issued payment evidence.
+        # An old text update received AFTER the new callback must fail closed.
+        amount_ready()
+        for name,wire in [
+            ('out_of_order_older_update',message_update('150000',update_id=990001,message_id=509)),
+            ('old_private_message_before_prompt',message_update('150000',update_id=990003,message_id=509)),
+            ('exact_prompt_message_id_not_new',message_update('150000',update_id=990003,message_id=510)),
+        ]:
+            before=topup_snapshot()
+            events=run_route(work,env,route_driver,route='topup',update=wire)
+            assert topup_snapshot()==before,(name,'mutated state')
+            assert not any(e['name']=='sendMessage' and 'اطلاعات شارژ' in str(e['args'])
+                           for e in events)
+            cases.append('real_topup_'+name+'_no_financial_effect')
+
+        # The Bot API may assign a lower random update_id after >=7 days of
+        # inactivity. A genuinely newer private message remains acceptable
+        # because its per-chat message_id postdates the SENT bot prompt.
+        put_topup_step('achbotWalletTopup:amount:990002:510:1700000000')
+        reset_input=message_update('350000',update_id=7,message_id=520)
+        result=run_route(work,env,route_driver,route='topup',update=reset_input)
+        assert any(e['name']=='sendMessage' and 'اطلاعات شارژ' in str(e['args'])
+                   for e in result),result
+        assert get_topup_step().startswith('achbotWalletTopup:done:7:520:')
+        assert query(work,env,"SELECT price FROM pays WHERE type='INCREASE_WALLET' "
+                     "AND state='pending' AND user_id=1001 AND payid IS NULL "
+                     "ORDER BY id DESC LIMIT 1")=='350000'
+        cases.append('real_topup_week_idle_update_id_reset_fresh_private_amount')
+        put_topup_step('achbotWalletTopup:done:990003:520:1700000000')
+        restart=run_route(work,env,route_driver,route='topup',data='increaseMyWallet',
+                          update=callback_update('Old home menu','increaseMyWallet',
+                                                 update_id=7,message_id=111))
+        assert get_topup_step().startswith('achbotWalletTopup:choose:7:500:')
+        assert any(e['name']=='sendMessage' for e in restart)
+        cases.append('real_topup_week_idle_random_reset_allows_new_menu')
+
+        # A replacement/abandoned workflow invalidates the old claimed step.
+        put_topup_step('anotherUserWorkflow')
+        before=topup_snapshot()
+        run_route(work,env,route_driver,route='topup',text='150000')
+        assert topup_snapshot()==before
+        cases.append('real_topup_replaced_step_rejects_stale_input')
+
+        # Repeated menu event cannot replace a newer one; an old button
+        # cannot authorize payment through a newer menu's message identity.
+        open_menu()
+        before=topup_snapshot()
+        retry=run_route(work,env,route_driver,route='topup',data='increaseMyWallet')
+        assert topup_snapshot()==before and not any(e['name']=='sendMessage' for e in retry)
+        cases.append('real_topup_menu_update_replay_no_reissue')
+        stale_button=callback_update('Old choices','increaseWallet_100000',
+                                      update_id=990005,message_id=499)
+        denied=run_route(work,env,route_driver,route='topup',
+                         data='increaseWallet_100000',update=stale_button)
+        assert topup_snapshot()==before
+        assert not any(e['name']=='sendMessage' and 'اطلاعات شارژ' in str(e['args'])
+                       for e in denied)
+        cases.append('real_topup_old_fixed_button_wrong_prompt_denied')
+
+        older_menu=callback_update('Old home menu','increaseMyWallet',
+                                   update_id=990000,message_id=111)
+        before=topup_snapshot()
+        events=run_route(work,env,route_driver,route='topup',
+                         data='increaseMyWallet',update=older_menu)
+        assert topup_snapshot()==before and not any(e['name']=='sendMessage' for e in events)
+        cases.append('real_topup_out_of_order_old_menu_cannot_replace_new_stage')
+
+        # Fixed-amount choice must still work through the actual new menu.
+        fixed=run_route(work,env,route_driver,route='topup',data='increaseWallet_100000')
+        assert any(e['name']=='sendMessage' and 'اطلاعات شارژ' in str(e['args'])
+                   for e in fixed),fixed
+        after=topup_snapshot()
+        retry=run_route(work,env,route_driver,route='topup',data='increaseWallet_100000')
+        assert topup_snapshot()==after and not any(
+            e['name']=='sendMessage' and 'اطلاعات شارژ' in str(e['args']) for e in retry)
+        cases.append('real_topup_fixed_callback_consumed_once')
+
+        # All previously accepted boundary amounts remain allowed.
         for i,(kind,raw,expected) in enumerate([
             ('callback','increaseWallet_100000',100000),
             ('text','10000000',10000000),
             ('text','000100000',100000),
             ('callback','increaseWallet_10000000',10000000),
         ]):
-            if kind=='text':
-                query(work,env,"UPDATE users SET step='increaseMyWallet' WHERE userid=1001")
-            options=({'data':raw,'step':'none'} if kind=='callback'
-                     else {'data':'','step':'increaseMyWallet','text':raw})
+            choose_ready() if kind=='callback' else amount_ready()
+            options=({'data':raw} if kind=='callback' else {'text':raw})
             events=run_route(work,env,route_driver,route='topup',**options)
             assert any(e['name']=='sendMessage' and 'اطلاعات شارژ' in str(e['args'])
                        for e in events),(kind,raw,events)
@@ -1253,6 +1391,104 @@ def check():
                 "AND state='pending' AND user_id=1001 AND payid IS NULL "
                 "ORDER BY id DESC LIMIT 1")==str(expected),(kind,raw)
             cases.append('real_topup_raw_'+kind+'_accepted_'+str(i))
+
+        # No unconfirmed sendMessage may create an active selectable stage.
+        put_topup_step('none')
+        before=topup_snapshot()
+        run_route(work,env,route_driver,route='topup',data='increaseMyWallet',
+                  message_transport='no_id',
+                  expected_warning='achbot_wallet_topup_menu_delivery_unconfirmed')
+        assert get_topup_step().startswith('achbotWalletTopup:opening:990001:111:')
+        assert topup_snapshot()[:3]==before[:3]
+        assert not any(e['name']=='sendMessage' and 'اطلاعات شارژ' in str(e['args'])
+                       for e in run_route(work,env,route_driver,route='topup',
+                                           data='increaseWallet_100000'))
+        cases.append('real_topup_unconfirmed_bot_menu_fails_closed')
+
+        # Duplicate historical userid rows fail closed rather than choosing
+        # a random row; no wallet, ledger, pending invoice, or step mutation.
+        choose_ready()
+        query(work,env,"INSERT INTO users (userid,name,username,refcode,wallet,date,step) "
+              "VALUES (1001,'Fixture duplicate','duplicate','0',0,'1700000000','none')")
+        before=topup_snapshot()
+        denied=run_route(work,env,route_driver,route='topup',data='increaseWallet_100000')
+        assert topup_snapshot()==before and not any(
+            e['name']=='sendMessage' and 'اطلاعات شارژ' in str(e['args']) for e in denied)
+        query(work,env,"DELETE FROM users WHERE name='Fixture duplicate' AND userid=1001")
+        cases.append('real_topup_ambiguous_customer_identity_fails_closed')
+
+        # Transactional insertion failure MUST restore BOTH the original
+        # unclaimed draft and the exact pending step, including under mysqli
+        # nonthrowing mode. Provider-claimed rows always remain unchanged.
+        seed(work,env,'topupatomicold',price=150000)
+        amount_ready()
+        before=topup_snapshot()
+        query(work,env,"CREATE TRIGGER test_topup_fail_insert BEFORE INSERT ON pays "
+              "FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='synthetic_failure'")
+        try:
+            events=run_route(work,env,route_driver,route='topup',text='200000',
+                             expected_review=True)
+            assert topup_snapshot()==before,('insert_rollback','partial financial mutation')
+            assert any('نیازمند بررسی' in str(e.get('args')) for e in events)
+            cases.append('real_topup_insert_failure_rolls_back_claim_and_cleanup')
+        finally:
+            query(work,env,'DROP TRIGGER test_topup_fail_insert')
+
+        # Legacy mysqli non-throw mode must also roll back on DELETE errors.
+        # The shared cleaner must not silently return success after a failed
+        # DELETE, then let the new payment INSERT commit.
+        amount_ready()
+        before=topup_snapshot()
+        query(work,env,"CREATE TRIGGER test_topup_fail_delete BEFORE DELETE ON pays "
+              "FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='synthetic_delete_failure'")
+        try:
+            events=run_route(work,env,route_driver,route='topup',text='200000',
+                             expected_review=True,mysqli_report_off=True)
+            assert topup_snapshot()==before,('delete_rollback','partial financial mutation')
+            assert any('نیازمند بررسی' in str(e.get('args')) for e in events)
+            cases.append('real_topup_mysqli_report_off_delete_failure_rolls_back')
+        finally:
+            query(work,env,'DROP TRIGGER test_topup_fail_delete')
+
+        # A lost Telegram acknowledgment after COMMIT does not repeat SQL.
+        amount_ready()
+        emitted=run_route(work,env,route_driver,route='topup',text='300000',
+                          message_transport='throw',
+                          expected_warning='achbot_wallet_topup_delivery_deferred')
+        assert get_topup_step().startswith('achbotWalletTopup:done:990003:520:')
+        assert query(work,env,"SELECT price FROM pays WHERE type='INCREASE_WALLET' "
+                     "AND user_id=1001 AND state='pending' AND payid IS NULL "
+                     "ORDER BY id DESC LIMIT 1")=='300000'
+        after=topup_snapshot()
+        run_route(work,env,route_driver,route='topup',text='300000')
+        assert topup_snapshot()==after
+        cases.append('real_topup_postcommit_telegram_failure_never_repeats_invoice')
+
+        # Two real PHP + MariaDB sessions race for the SAME pending step. Only
+        # one can claim, delete the previous draft and INSERT a new invoice.
+        amount_ready()
+        seed(work,env,'topupconcurrentold',price=150000)
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            futures=[executor.submit(run_route,work,env,route_driver,route='topup',
+                                     text='250000',pause_before_insert_ms=250)
+                     for _ in range(2)]
+            results=[f.result() for f in futures]
+        successes=sum(any(e['name']=='sendMessage' and 'اطلاعات شارژ' in str(e['args'])
+                          for e in events) for events in results)
+        assert successes==1,(successes,results)
+        assert get_topup_step().startswith('achbotWalletTopup:done:990003:520:')
+        assert int(query(work,env,"SELECT COUNT(*) FROM pays p WHERE p.type='INCREASE_WALLET' "
+            "AND p.user_id=1001 AND p.state='pending' AND (p.payid IS NULL OR p.payid='') "
+            "AND NOT EXISTS (SELECT 1 FROM payment_attempts a WHERE a.pay_row_id=p.id)"))==1
+        assert query(work,env,"SELECT price FROM pays WHERE type='INCREASE_WALLET' "
+            "AND user_id=1001 AND state='pending' AND payid IS NULL ORDER BY id DESC LIMIT 1")=='250000'
+        assert query(work,env,"SELECT COUNT(*) FROM pays WHERE hash_id='topupconcurrentold'")=='0'
+        assert query(work,env,
+            "SELECT id,hash_id,payid,state,price FROM pays WHERE hash_id='topupissuedold'")==issued_before
+        assert query(work,env,
+            "SELECT id,pay_row_id,provider,order_hash,stage FROM payment_attempts "
+            "WHERE order_hash='topupissuedold'")==attempt_before
+        cases.append('real_topup_concurrent_step_claim_single_atomic_invoice')
 
     return {'complete':True,'cases':len(cases),'scenarios':cases,
             'php_runtime':'native','database':'owned_socket_only',

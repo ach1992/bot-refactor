@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import subprocess
 from pathlib import Path
 
@@ -373,8 +374,22 @@ try {
         $state=array_fill_keys(
             ['cartToCartState','nowPaymentWallet','zarinpal',
              'nextpay','weSwapState','tronWallet'], 'off');
-        startWalletPayment($connection,$state,['cancel'=>'لغو'],
-                           $botUrl,1001,null,(int)($spec['topup_amount']??100000));
+        // This low-level finance fixture explicitly stages a synthetic
+        // pre-authorized request. The separate manual-payment suite executes
+        // real UpdateBindings.php, Telegram prompts and callback provenance.
+        $expected='achbotWalletTopup:choose:990001:500:1700000000';
+        if (($spec['wallet_authorized'] ?? false) === true) {
+            $stmt=$connection->prepare('UPDATE users SET step=? WHERE userid=?');
+            $actor=1001;
+            $stmt->bind_param('si',$expected,$actor);
+            if (!$stmt->execute() || $stmt->affected_rows!==1)
+                throw new RuntimeException('fixture_user_stage_not_unique');
+            $stmt->close();
+        }
+        $status=startWalletPayment($connection,$state,['cancel'=>'لغو'],
+            $botUrl,1001,null,(int)($spec['topup_amount']??100000),
+            $expected,990002,500);
+        $GLOBALS['events'][]=['name'=>'wallet_start_result','status'=>$status];
     } elseif ($spec['route'] === 'wallet_refund') {
         $result=refundToWalletAndNotify($connection,
             (int)($spec['refund_user']??1001),(int)($spec['refund_amount']??100),
@@ -1847,9 +1862,10 @@ def main():
                                             topup_amount=invalid))
             verify_unchanged(work,env,old,'bad_topup_'+str(invalid))
             if out['network_calls'] or not any(
-                    e['name']=='sendMessage' and 'مبلغ' in str(e['args'])
-                    for e in out['events']):
-                raise RuntimeError('Forged topup callback not rejected')
+                    e['name']=='wallet_start_result' and e['status']=='invalid'
+                    for e in out['events']) or any(
+                    e['name']=='sendMessage' for e in out['events']):
+                raise RuntimeError('Forged topup callback not rejected at persistence boundary')
         records.append(dict(case='topup_invalid_amount_denied_before_sql',
                             pass_=True,external_requests=0))
 
@@ -2200,7 +2216,11 @@ def main():
         checked=0
         for source_path in cleanup_paths:
             code=(ROOT/source_path).read_text()
-            checked+=code.count('achbotRemoveUnclaimedPendingPayments($connection,$from_id,')
+            # WalletStart now locks the authenticated user row as $actor in
+            # one transaction; do not depend on legacy variable spacing/name.
+            checked+=len(re.findall(
+                r'achbotRemoveUnclaimedPendingPayments\(\s*\$connection\s*,\s*'
+                r'(?:\$from_id|\$actor)\s*,', code))
         helper=(ROOT/'src/Purchase/Core.php').read_text()
         if (checked!=7 or
             "AND NOT EXISTS (" not in helper or
@@ -2224,9 +2244,12 @@ def main():
                      'INCREASE_WALLET',0,0,'unused')
         sql(work,env,"UPDATE pays SET payid=NULL "
                      "WHERE hash_id='wallet-unused-draft'")
-        wallet_route=run_php(work,env,stage,dict(route='wallet_start',get={}))
-        if wallet_route['network_calls']:
-            raise RuntimeError('WalletStart reached external provider')
+        wallet_route=run_php(work,env,stage,dict(
+            route='wallet_start',get={},wallet_authorized=True))
+        if wallet_route['network_calls'] or not any(
+                e['name']=='wallet_start_result' and e['status']=='created'
+                for e in wallet_route['events']):
+            raise RuntimeError('WalletStart failed owned authorized quote creation')
         active=sql(work,env,"SELECT COUNT(*) FROM pays "
             "WHERE hash_id='wallet-previous-issued'").strip()
         draft=sql(work,env,"SELECT COUNT(*) FROM pays "

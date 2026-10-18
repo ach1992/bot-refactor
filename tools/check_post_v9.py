@@ -515,6 +515,27 @@ def main():
             "real_custom_operator_and_bank_scheduler_race_single_service_claim",
             "legacy_operator_receipt_requires_persisted_delivery_evidence",
             "uncertain_custom_external_effect_operator_reconciliation_no_retry",
+            # PR #55 R2: mandatory authenticated end-to-end top-up lifecycle:
+            # freshness against the SENT bot prompt, one-use user row claim,
+            # exactly one pending draft after concurrency and SQL rollback.
+            "real_topup_origin_private_menu_start_accepted",
+            "real_topup_replayed_private_amount_no_second_invoice",
+            "real_topup_out_of_order_older_update_no_financial_effect",
+            "real_topup_old_private_message_before_prompt_no_financial_effect",
+            "real_topup_exact_prompt_message_id_not_new_no_financial_effect",
+            "real_topup_week_idle_update_id_reset_fresh_private_amount",
+            "real_topup_week_idle_random_reset_allows_new_menu",
+            "real_topup_replaced_step_rejects_stale_input",
+            "real_topup_menu_update_replay_no_reissue",
+            "real_topup_old_fixed_button_wrong_prompt_denied",
+            "real_topup_out_of_order_old_menu_cannot_replace_new_stage",
+            "real_topup_fixed_callback_consumed_once",
+            "real_topup_unconfirmed_bot_menu_fails_closed",
+            "real_topup_ambiguous_customer_identity_fails_closed",
+            "real_topup_insert_failure_rolls_back_claim_and_cleanup",
+            "real_topup_mysqli_report_off_delete_failure_rolls_back",
+            "real_topup_postcommit_telegram_failure_never_repeats_invoice",
+            "real_topup_concurrent_step_claim_single_atomic_invoice",
             # PR #55 R1: real Telegram UpdateBindings and private-chat source
             # authorization, with durable SQL/step preservation for denials.
             "real_topup_origin_group_message_denied",
