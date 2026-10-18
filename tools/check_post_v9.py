@@ -209,6 +209,45 @@ def main():
                 and wallet_transfer.get("original_mariadb_socket_only")
                 and wallet_transfer.get("external_requests")==0):
             raise RuntimeError("Current wallet transfer safety/diagnostic acceptance incomplete")
+        admin_wallet_path=Path(tmp)/"admin-wallet-adjustment-current.json"
+        subprocess.run(["python3",str(ROOT/"tools/test_post_v9_admin_wallet.py"),
+                        "--run-disposable","--report",str(admin_wallet_path)],
+                       cwd=ROOT,check=True,timeout=180,capture_output=True)
+        admin_wallet=json.loads(admin_wallet_path.read_text())
+        required_admin_wallet={
+            "missing_005_fails_closed_at_ui",
+            "missing_005_fails_closed_at_commit",
+            "credit_full_ui_and_single_atomic_audit",
+            "replayed_update_no_second_credit",
+            "cross_operation_id_reuse_refused",
+            "nonthrowing_mysqli_duplicate_key_cannot_credit",
+            "routine_debit_cannot_create_debt",
+            "routine_debit_guarded_and_audited",
+            "explicit_privileged_negative_debt",
+            "routine_debit_cannot_deepen_debt",
+            "credit_offsets_signed_debt",
+            "nonadmin_step_forgery_no_effect",
+            "strict_amount_input_no_decimal_exponent_or_overflow",
+            "int32_signed_bounds_preserved",
+            "concurrent_admin_updates_exactly_once",
+            "wallet_sql_failure_rolls_back_audit",
+            "postcommit_telegram_failure_preserves_effect",
+            "schema_without_unique_identity_fails_closed",
+            "schema_wrong_binary_identity_collation_fails_closed",
+            "schema_incompatible_reason_contract_fails_closed",
+            "schema_nontransactional_engine_fails_closed",
+            "duplicate_target_refused_at_selection",
+            "duplicate_target_rejected_before_financial_change",
+            "duplicate_operator_rejected_before_financial_change",
+            "operator_and_target_same_identity_atomic",
+        }
+        if not (admin_wallet.get("complete") and admin_wallet.get("cases")==25
+                and required_admin_wallet.issubset(admin_wallet.get("scenarios",[]))
+                and admin_wallet.get("real_php_workers")==2
+                and admin_wallet.get("disposable_db") is True
+                and admin_wallet.get("production_mutations")==0
+                and admin_wallet.get("external_provider_calls")==0):
+            raise RuntimeError("Administrator wallet journal and debt proof incomplete")
         subject_path=Path(tmp)/"payment-subjects.json"
         subprocess.run(["python3",str(ROOT/"tools/test_post_v9_subjects.py"),
                         "--run-disposable","--report",str(subject_path)],
@@ -505,6 +544,7 @@ def main():
                     "source":result,"marzban":marzban,"purchases":purchases,
                      "unsupported_wallet_preflight":wallet_guard,
                      "wallet_transfer_safety":wallet_transfer,
+                     "admin_wallet_adjustment_safety":admin_wallet,
                      "customer_error_privacy":audience,
                      "telegram_transport_log_privacy":transport_privacy,
                     "source_only_overlays":swap,
@@ -529,6 +569,7 @@ def main():
                        "unsupported_wallet_negatives":wallet_guard["cases"],
                        "unsupported_manual_negatives":wallet_guard["manual_cases"],
                        "wallet_transfer_scenarios":wallet_transfer["cases"],
+                       "admin_wallet_adjustment_scenarios":admin_wallet["cases"],
                        "customer_literal_first_argument_messages_inspected":audience["literal_first_argument_calls_inspected"],
                        "finance_error_audience_execution_cases":finance_privacy["cases"],
                        "telegram_transport_privacy_cases":transport_privacy["cases"],
