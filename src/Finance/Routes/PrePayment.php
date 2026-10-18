@@ -5,6 +5,13 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     exit;
 }
 
+// Retired automatic TRON buttons must never reach the old TXID claim path.
+if (preg_match('/^prePayCheck_[A-Za-z0-9]+_TronWallet_[A-Za-z0-9_-]+$/iD', (string)$data)) {
+    answerCallbackQuery($callbackId,
+        'درگاه قدیمی ترون غیرفعال است. برای پرداخت جدید از منوی روش‌ها استفاده کنید.', true);
+    return;
+}
+
 // Historical WeSwap choices may still exist in old Telegram keyboards.
 if (preg_match('/^prePayCheck_[A-Za-z0-9]+_WeSwap_[A-Za-z0-9]+$/iD', $data)) {
     answerCallbackQuery($callbackId, "این روش پرداخت دیگر پشتیبانی نمی‌شود.");
@@ -15,7 +22,7 @@ if (preg_match('/^prePayCheck_[A-Za-z0-9]+_WeSwap_[A-Za-z0-9]+$/iD', $data)) {
 // Read-only status inspection: never contacts a provider or changes money.
 if (preg_match('/^ps_([A-Za-z0-9_-]{1,50})$/D', $data, $statusMatch)) {
     $hashId = $statusMatch[1];
-    $stmt = $connection->prepare("SELECT id,hash_id,user_id,type,price,state,payid FROM pays
+    $stmt = $connection->prepare("SELECT id,hash_id,user_id,type,price,state,payid,updated_at FROM pays
         WHERE hash_id=? LIMIT 1");
     $stmt->bind_param('s', $hashId);
     $stmt->execute();
@@ -39,12 +46,13 @@ if (preg_match('/^ps_([A-Za-z0-9_-]{1,50})$/D', $data, $statusMatch)) {
     } catch (Throwable $ignored) {
         // No attempt evidence: do not manufacture a verified status.
     }
-    $manual = in_array($provider, ['bank_transfer','gift_card','manual_usdt'], true);
-    $methodName = $provider === 'manual_usdt' ? 'تتر دستی' : ($provider === 'gift_card' ? 'گیفت‌کارت' :
+    $manual = in_array($provider, ['bank_transfer','gift_card','manual_usdt','manual_trx'], true);
+    $methodName = $provider === 'manual_trx' ? 'ترون دستی (TRX)' :
+        ($provider === 'manual_usdt' ? 'تتر دستی' : ($provider === 'gift_card' ? 'گیفت‌کارت' :
         ($provider === 'bank_transfer' ? 'کارت‌به‌کارت بانکی' :
         ($provider === 'nowpayments' ? 'پرداخت رمزارزی' :
         ($provider === 'nextpay' ? 'NextPay' :
-        ($provider === 'zarinpal' ? 'Zarinpal' : 'نامشخص')))));
+        ($provider === 'zarinpal' ? 'Zarinpal' : 'نامشخص'))))));
     $state = (string)$pay['state'];
     if ($state === 'have_sent') {
         $description = $manual ? '📥 رسید دریافت شده و در انتظار بررسی مدیر است.' :
@@ -70,10 +78,24 @@ if (preg_match('/^ps_([A-Za-z0-9_-]{1,50})$/D', $data, $statusMatch)) {
         "موضوع: {$subject}\n" .
         "مبلغ سفارش: <b>" . number_format((int)$pay['price']) . " تومان</b>\n" .
         "روش: {$methodName}\n\n" . $description;
-    $keyboard = inlineKeyboard([[['text'=>'🔄 بررسی دوباره وضعیت',
-        'callback_data'=>'ps_'.$hashId]], [['text'=>'🏠 منوی اصلی','callback_data'=>'mainMenu']]]);
+    $terminal = in_array($state, ['paid','approved','auto_cart_approved','declined',
+                                   'expired','expired_have_sent','mismatched_plan'], true);
+    if (in_array($state, ['approved','auto_cart_approved'], true) &&
+        preg_match('/^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}$/D',
+                   (string)($pay['updated_at'] ?? ''))) {
+        $body .= "\n📅 تاریخ تأیید: <code>" .
+            htmlspecialchars((string)$pay['updated_at'], ENT_QUOTES, 'UTF-8') . "</code>";
+    }
+    $actions = [];
+    if (!$terminal && !($manual && in_array($state, ['pending','send'], true))) {
+        $actions[] = [['text'=>'🔄 بررسی دوباره وضعیت','callback_data'=>'ps_'.$hashId]];
+    }
+    $actions[] = [['text'=>'🏠 منوی اصلی','callback_data'=>'mainMenu']];
+    $keyboard = inlineKeyboard($actions);
     answerCallbackQuery($callbackId, "وضعیت سفارش از اطلاعات ثبت‌شده خوانده شد.");
-    sendMessage($body, $keyboard, 'HTML', $from_id);
+    // The clicked Telegram message is our canonical status card; never
+    // manufacture a second status message on every refresh.
+    editText($message_id, $body, $keyboard, 'HTML', $from_id);
     return;
 }
 
@@ -275,8 +297,7 @@ if (preg_match('/^prePayCheck_([a-zA-Z0-9]+)_([a-zA-Z0-9]+)_([a-zA-Z0-9]+)/', $d
         "wallet"      => "pay{$actionType}WithWallet$hash_id",
         "carttocart"  => "pay{$actionType}WithCartToCart$hash_id",
         "giftcard"    => "pay{$actionType}WithGiftCard$hash_id",
-        "manualusdt"  => "pay{$actionType}WithManualUsdt$hash_id",
-        "tronwallet"  => "payWithTronWallet$hash_id"
+        "manualusdt"  => "mcm_$hash_id"
     ];
 
     if (!isset($map[$payMethod])) {

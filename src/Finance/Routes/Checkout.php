@@ -293,23 +293,30 @@ if (preg_match('/payCustomWith(?:CartToCart|GiftCard|ManualUsdt)(.*)/', $data, $
         }
     }
 
-    delMessage();
-    $method = strpos($data, 'WithManualUsdt') !== false ? 'manual_usdt' :
+    $method = strpos($data, 'WithManualUsdt') !== false ? (($GLOBALS['achbotManualCryptoChoice'] ?? '') === 'TRON' ? 'manual_trx' : 'manual_usdt') :
         (strpos($data, 'WithGiftCard') !== false ? 'gift_card' : 'bank_transfer');
-    if (!achbotManualClaim($connection, $payInfo, $method, (int)$from_id)) {
+    if (!achbotManualClaim($connection, $payInfo, $method, (int)$from_id,
+                           $GLOBALS['achbotManualCryptoChoice'] ?? null)) {
         alert("⚠️ پرداخت این سفارش با این روش مجاز نیست یا قبلاً به روش دیگری آغاز شده است.", true);
         return;
     }
-    setUser("payCustomWith" . ($method === 'manual_usdt' ? 'ManualUsdt' : ($method === 'gift_card' ? 'GiftCard' : 'CartToCart')) . $match[1]);
 
 	$msg = buildCartToCartInfoMessage($paymentKeys, $mainValues, (int)$payInfo['price'], (int)$payInfo['user_id'], $method, (string)$payInfo['hash_id']);
     if ($msg === "") {
         alert("⚠️ اطلاعات این پرداخت قابل بازیابی نیست؛ با پشتیبانی تماس بگیرید.", true);
         return;
     }
-    $keyboard = kbSendReceiptAndCancel($method === 'manual_usdt' ? "sendCustomUsdtReceipt" : ($method === 'gift_card' ? "sendCustomGiftReceipt" : "sendCustomCartReceipt"), "cancelCustomCartReceipt", $match[1], $method);
+    $keyboard = kbSendReceiptAndCancel(in_array($method, ['manual_usdt','manual_trx'], true) ? "sendCustomUsdtReceipt" : ($method === 'gift_card' ? "sendCustomGiftReceipt" : "sendCustomCartReceipt"), "cancelCustomCartReceipt", $match[1], $method);
 
-    sendMessage($msg, $keyboard, "HTML");
+    $delivered = sendMessage($msg, $keyboard, "HTML");
+    if (is_object($delivered) && !empty($delivered->ok)) {
+    setUser("payCustomWith" . (in_array($method, ['manual_usdt','manual_trx'], true) ? 'ManualUsdt' : ($method === 'gift_card' ? 'GiftCard' : 'CartToCart')) . $match[1]);
+        delMessage();
+    } else {
+        // The pinned attempt may be reopened. Never erase the selection menu
+        // if Telegram failed to deliver the replacement instructions.
+        alert("⚠️ نمایش اطلاعات پرداخت تأیید نشد. از همان دکمه دوباره تلاش کنید و وجهی ارسال نکنید.", true);
+    }
     exit;
 }
 
@@ -322,7 +329,7 @@ if (preg_match('/send(?:CustomCart|CustomGift|CustomUsdt)Receipt(?<hashId>.*)/',
         return '__ACHBOT_V8_GOTO_START__';
     }
 
-    $method = strpos($data, 'UsdtReceipt') !== false ? 'manual_usdt' :
+    $method = strpos($data, 'UsdtReceipt') !== false ? achbotManualCryptoReceiptProviderByHash($connection, (string)$match['hashId']) :
         (strpos($data, 'GiftReceipt') !== false ? 'gift_card' : 'bank_transfer');
     if (!achbotManualReceiptAllowed($connection, $payInfo, $method, (int)$from_id)) {
         alert("⚠️ این رسید با روش پرداخت انتخاب‌شده مطابقت ندارد یا سفارش در انتظار پرداخت نیست.", true);
@@ -332,7 +339,7 @@ if (preg_match('/send(?:CustomCart|CustomGift|CustomUsdt)Receipt(?<hashId>.*)/',
     if ($guardMsg) { alert($guardMsg, true); exit; }
 
     delMessage();
-    setUser(($method === 'manual_usdt' ? "waitCustomUsdtReceipt" : ($method === 'gift_card' ? "waitCustomGiftReceipt" : "waitCustomCartReceipt")) . $match['hashId']);
+    setUser((in_array($method, ['manual_usdt','manual_trx'], true) ? "waitCustomUsdtReceipt" : ($method === 'gift_card' ? "waitCustomGiftReceipt" : "waitCustomCartReceipt")) . $match['hashId']);
 
     $keyboard = kbOnlyCancel("cancelCustomCartReceipt", $match['hashId']);
     sendMessage(achbotManualReceiptPrompt($mainValues, $method), $keyboard, "HTML");
@@ -345,7 +352,7 @@ if (preg_match('/cancelCustomCartReceipt(?<hashId>.*)/', $data, $match)) {
 
 if (preg_match('/wait(?:CustomCart|CustomGift|CustomUsdt)Receipt(.*)/', $userInfo['step'], $match)) {
 
-    $method = strpos($userInfo['step'], 'UsdtReceipt') !== false ? 'manual_usdt' :
+    $method = strpos($userInfo['step'], 'UsdtReceipt') !== false ? achbotManualCryptoReceiptProviderByHash($connection, (string)$match[1]) :
         (strpos($userInfo['step'], 'GiftReceipt') !== false ? 'gift_card' : 'bank_transfer');
     $receiptPay = dbFetchPayByHash($connection, $match[1]);
     if (!$receiptPay || !achbotManualReceiptAllowed($connection, $receiptPay, $method, (int)$from_id)) {
@@ -1035,23 +1042,30 @@ if (preg_match('/payBuyWith(?:CartToCart|GiftCard|ManualUsdt)(.*)/', $data, $mat
         }
     }
 
-    delMessage();
-    $method = strpos($data, 'WithManualUsdt') !== false ? 'manual_usdt' :
+    $method = strpos($data, 'WithManualUsdt') !== false ? (($GLOBALS['achbotManualCryptoChoice'] ?? '') === 'TRON' ? 'manual_trx' : 'manual_usdt') :
         (strpos($data, 'WithGiftCard') !== false ? 'gift_card' : 'bank_transfer');
-    if (!achbotManualClaim($connection, $payInfo, $method, (int)$from_id)) {
+    if (!achbotManualClaim($connection, $payInfo, $method, (int)$from_id,
+                           $GLOBALS['achbotManualCryptoChoice'] ?? null)) {
         alert("⚠️ پرداخت این سفارش با این روش مجاز نیست یا قبلاً به روش دیگری آغاز شده است.", true);
         return;
     }
-    setUser("payBuyWith" . ($method === 'manual_usdt' ? 'ManualUsdt' : ($method === 'gift_card' ? 'GiftCard' : 'CartToCart')) . $match[1]);
 
 	$msg = buildCartToCartInfoMessage($paymentKeys, $mainValues, (int)$payInfo['price'], (int)$payInfo['user_id'], $method, (string)$payInfo['hash_id']);
     if ($msg === "") {
         alert("⚠️ اطلاعات این پرداخت قابل بازیابی نیست؛ با پشتیبانی تماس بگیرید.", true);
         return;
     }
-    $keyboard = kbSendReceiptAndCancel($method === 'manual_usdt' ? "sendBuyUsdtReceipt" : ($method === 'gift_card' ? "sendBuyGiftReceipt" : "sendBuyCartReceipt"), "cancelBuyCartReceipt", $match[1], $method);
+    $keyboard = kbSendReceiptAndCancel(in_array($method, ['manual_usdt','manual_trx'], true) ? "sendBuyUsdtReceipt" : ($method === 'gift_card' ? "sendBuyGiftReceipt" : "sendBuyCartReceipt"), "cancelBuyCartReceipt", $match[1], $method);
 
-    sendMessage($msg, $keyboard, "HTML");
+    $delivered = sendMessage($msg, $keyboard, "HTML");
+    if (is_object($delivered) && !empty($delivered->ok)) {
+    setUser("payBuyWith" . (in_array($method, ['manual_usdt','manual_trx'], true) ? 'ManualUsdt' : ($method === 'gift_card' ? 'GiftCard' : 'CartToCart')) . $match[1]);
+        delMessage();
+    } else {
+        // The pinned attempt may be reopened. Never erase the selection menu
+        // if Telegram failed to deliver the replacement instructions.
+        alert("⚠️ نمایش اطلاعات پرداخت تأیید نشد. از همان دکمه دوباره تلاش کنید و وجهی ارسال نکنید.", true);
+    }
     exit;
 }
 
@@ -1064,7 +1078,7 @@ if (preg_match('/send(?:BuyCart|BuyGift|BuyUsdt)Receipt(?<hashId>.*)/', $data, $
         return '__ACHBOT_V8_GOTO_START__';
     }
 
-    $method = strpos($data, 'UsdtReceipt') !== false ? 'manual_usdt' :
+    $method = strpos($data, 'UsdtReceipt') !== false ? achbotManualCryptoReceiptProviderByHash($connection, (string)$match['hashId']) :
         (strpos($data, 'GiftReceipt') !== false ? 'gift_card' : 'bank_transfer');
     if (!achbotManualReceiptAllowed($connection, $payInfo, $method, (int)$from_id)) {
         alert("⚠️ این رسید با روش پرداخت انتخاب‌شده مطابقت ندارد یا سفارش در انتظار پرداخت نیست.", true);
@@ -1074,7 +1088,7 @@ if (preg_match('/send(?:BuyCart|BuyGift|BuyUsdt)Receipt(?<hashId>.*)/', $data, $
     if ($guardMsg) { alert($guardMsg, true); exit; }
 
     delMessage();
-    setUser(($method === 'manual_usdt' ? "waitBuyUsdtReceipt" : ($method === 'gift_card' ? "waitBuyGiftReceipt" : "waitBuyCartReceipt")) . $match['hashId']);
+    setUser((in_array($method, ['manual_usdt','manual_trx'], true) ? "waitBuyUsdtReceipt" : ($method === 'gift_card' ? "waitBuyGiftReceipt" : "waitBuyCartReceipt")) . $match['hashId']);
 
     $keyboard = kbOnlyCancel("cancelBuyCartReceipt", $match['hashId']);
     sendMessage(achbotManualReceiptPrompt($mainValues, $method), $keyboard, "HTML");
@@ -1087,7 +1101,7 @@ if (preg_match('/cancelBuyCartReceipt(?<hashId>.*)/', $data, $match)) {
 
 if (preg_match('/wait(?:BuyCart|BuyGift|BuyUsdt)Receipt(.*)/', $userInfo['step'], $match)) {
 
-    $method = strpos($userInfo['step'], 'UsdtReceipt') !== false ? 'manual_usdt' :
+    $method = strpos($userInfo['step'], 'UsdtReceipt') !== false ? achbotManualCryptoReceiptProviderByHash($connection, (string)$match[1]) :
         (strpos($userInfo['step'], 'GiftReceipt') !== false ? 'gift_card' : 'bank_transfer');
     $receiptPay = dbFetchPayByHash($connection, $match[1]);
     if (!$receiptPay || !achbotManualReceiptAllowed($connection, $receiptPay, $method, (int)$from_id)) {

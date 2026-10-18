@@ -39,7 +39,7 @@ def source_checks():
         if (ROOT / field).read_bytes() != cmd("show", V9+":"+field):
             raise RuntimeError("Changed historical schema/private-template: " + field)
     files=package.members()
-    if len(files)!=93 or len(set(files))!=len(files):
+    if len(files)!=95 or len(set(files))!=len(files):
         raise RuntimeError("Source-only runtime file inventory changed")
     if (ROOT / "baseInfo.php").exists() or "baseInfo.php" in files:
         raise RuntimeError("Private runtime config surfaced in candidate")
@@ -439,7 +439,7 @@ def main():
                 and manual.get("database")=="owned_socket_only"
                 and manual.get("live_provider_calls")==0
                 and manual.get("production_data_modified") is False):
-            raise RuntimeError("Three-method manual payment isolation incomplete")
+            raise RuntimeError("Four-network manual crypto payment isolation incomplete")
         migration_path=Path(tmp)/"shared-payment-ledger-rc4-import.json"
         subprocess.run(["python3",str(ROOT/"tools/test_post_v9_payment_migration.py"),
                         "--run-disposable","--report",str(migration_path)],
@@ -495,7 +495,7 @@ def main():
                        cwd=ROOT,check=True,timeout=60,capture_output=True)
         swap=json.loads(overlay_report.read_text())
         if not (swap.get("complete") and swap.get("phase_count")==4
-                and swap.get("runtime_members")==93
+                and swap.get("runtime_members")==95
                 and swap.get("historical_runtime_members")==92
                 and swap.get("source_roll_forward_and_back_byte_identical")
                 and swap.get("unchanged_original_sql_ddl")

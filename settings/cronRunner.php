@@ -2,7 +2,7 @@
 /**
  * AChBot CLI Cron coordinator.
  *
- * Optional post-V9 replacement for the FIVE EXISTING aaPanel command lines.
+ * Optional post-V9 replacement for the remaining four aaPanel scheduled jobs.
  * Do not enable this while those commands are still scheduled: that would run
  * every worker twice. Keep the aaPanel one-minute cadence. This entrypoint
  * owns its per-installation nonblocking flock (aaPanel's saved flock flag
@@ -12,7 +12,7 @@
  * exit, mutable global state and PHP interpreter isolation. The inherited CWD
  * matches an ordinary shell invocation from the same Cron execution context.
  * No database connection or external scheduler is created here. A private
- * system lock file holds the single-flight lease for the full five-job run.
+ * system lock file holds the single-flight lease for the full four-job run.
  */
 if (PHP_SAPI !== 'cli') {
     http_response_code(404);
@@ -33,7 +33,7 @@ if (!function_exists('proc_open') || !is_file(PHP_BINARY) || !is_executable(PHP_
     exit(78);
 }
 
-// A per-installation flock covers the ENTIRE five-worker batch. Never unlink
+// A per-installation flock covers the ENTIRE four-worker batch. Never unlink
 // the lock: replacing its inode would let overlapping invocations run at once.
 //
 // Pre-provision this private directory OUTSIDE the served site (mode 0700,
@@ -158,7 +158,6 @@ if (!@flock($lockHandle, LOCK_EX | LOCK_NB, $wouldBlock)) {
 // Exact observed one-minute aaPanel Chili order, 2026-10-17.
 // Names/paths remain stable for independently callable legacy entrypoints.
 $jobs = [
-    'tronChecker.php',
     'gift2all.php',
     'messagewizwiz.php',
     'rewardReport.php',
