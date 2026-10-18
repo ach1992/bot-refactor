@@ -84,6 +84,7 @@ These tests and archives do **not** certify live payment settlement, full databa
 
 - [Post-V9 Marzban behavior and validation](docs/post-v9/MARZBAN-ONLY.md)
 - [Financial consolidation, NOWPayments finality and migration gates](docs/post-v9/FINANCIAL-CONSOLIDATION.md)
+- [Automatic renewal: source-only durable 004 journal, deferred operator activation and reconciliation](docs/post-v9/AUTOMATIC-RENEWAL-SAFETY.md)
 - [Shared payment ledger: migration, old RC4 data and recovery](docs/post-v9/PAYMENT-LEDGER-MIGRATION.md)
 - [NOWPayments unattended IPN, checkout recovery and additive migration](docs/post-v9/NOWPAYMENTS-MIGRATION.md)
 - [Schema migration and rollback precautions](docs/post-v9/PANEL-GROUPS-MIGRATION.md)

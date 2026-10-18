@@ -228,6 +228,37 @@ def main():
                 and catalogue.get("original_schema_tables")==23
                 and catalogue.get("financial_mutations")==0):
             raise RuntimeError("Marzban-only catalogue, forged callback or QR proof incomplete")
+        auto_renew_path=Path(tmp)/"automatic-renewal-ledger.json"
+        subprocess.run(["python3",str(ROOT/"tools/test_post_v9_automatic_renewal.py"),
+                        "--run-disposable","--report",str(auto_renew_path)],
+                       cwd=ROOT,check=True,timeout=180,capture_output=True)
+        auto_renew=json.loads(auto_renew_path.read_text())
+        required_auto={
+            "missing_schema_fails_closed",
+            "disabled_flag_no_effect",
+            "verified_remote_success_all_local_effects_atomic",
+            "replayed_and_foreign_requests_no_extra_charge",
+            "insufficient_funds_disables_auto_only",
+            "signed_admin_debt_preserved_no_user_debit",
+            "nonpositive_plan_fails_closed",
+            "ambiguous_remote_result_never_replayed_or_refunded",
+            "remote_success_database_drift_held_for_review",
+            "crashed_worker_remote_marker_blocks_retry",
+            "private_operator_notice_retry_and_once_per_day_ack",
+            "two_real_php_mysql_clients_exactly_one_debit_and_remote",
+            "nonunique_legacy_identity_cannot_fund_renewal",
+            "real_cron_sweep_one_eligible_marzban_order",
+            "telegram_failure_after_commit_does_not_revert_payment",
+        }
+        if not (auto_renew.get("complete") and
+                required_auto.issubset(auto_renew.get("scenarios",[])) and
+                auto_renew.get("cases")>=len(required_auto) and
+                auto_renew.get("source_only_004") and
+                auto_renew.get("original_schema_file_unchanged") and
+                auto_renew.get("provider_requests")==0 and
+                auto_renew.get("production_mutations")==0 and
+                auto_renew.get("native_php_workers")==2):
+            raise RuntimeError("Automatic-renewal durable idempotency proof incomplete")
         finance_path=Path(tmp)/"finance-native-routes.json"
         subprocess.run(["python3",str(ROOT/"tools/test_post_v9_finance_routes.py"),
                         "--run-disposable","--report",str(finance_path)],
@@ -511,6 +542,7 @@ def main():
                     "financial_subject_preflight":subject,
                     "catalogue_and_subscription_qr":catalogue,
                     "financial_native_route_guards":finance,
+                    "automatic_renewal_ledger":auto_renew,
                     "manual_payment_method_isolation":manual,
                     "shared_payment_ledger_rc4_import":migration,
                      "agency_state_regression":agency,
@@ -536,6 +568,7 @@ def main():
                       "payment_subject_cases":subject["cases"],
                       "catalogue_qr_cases":catalogue["cases"],
                       "financial_native_route_cases":finance["cases"],
+                      "automatic_renewal_cases":auto_renew["cases"],
                       "manual_payment_isolation_cases":manual["cases"],
                       "historical_rc4_payment_import_verified":migration["preserved_rc4_rows_and_ids"],
                        "agency_state_cases":agency["cases"],
