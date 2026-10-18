@@ -1,6 +1,6 @@
 # Administrator wallet adjustment journal — Issue #26
 
-**Source-only candidate; not merged, released, deployed or migrated.**
+**Source-only code merged via [PR #58](https://github.com/ach1992/bot-refactor/pull/58) on 2026-10-18. That merge did not publish a release, install any tenant, or apply migration 005.**
 The original historical V0–V9 schema and its tests remain unchanged.
 The only new persistence is the additive
 **migrations/post-v9/005_admin_wallet_adjustments.sql** table, independent of
