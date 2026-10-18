@@ -4,6 +4,7 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     http_response_code(404);
     exit;
 }
+require_once __DIR__ . '/../Finance/ReceiptHelpers.php';
 
 if(preg_match('/^deleteMyConfig(\d+)/', $data, $match)){
     $oid = $match[1];
@@ -40,6 +41,10 @@ elseif(preg_match('/^yesDeleteConfig(\d+)/',$data,$match)){
     $stmt->execute();
     $order = $stmt->get_result()->fetch_assoc();
     $stmt->close();
+    if (!$order || (int)$order['userid']!==(int)$from_id) {
+        alert("⛔️ این اشتراک متعلق به حساب شما نیست.", true);
+        exit;
+    }
     $inbound_id = $order['inbound_id'];
     $server_id = $order['server_id'];
     $remark = $order['remark'];
@@ -65,29 +70,36 @@ elseif(preg_match('/^yesDeleteConfig(\d+)/',$data,$match)){
     if (!achbotSupportsPanel($serverType) || (int)$inbound_id !== 0) {
         alert("⛔️ حذف این اشتراک در حال حاضر امکان‌پذیر نیست.", true);
         exit;
-    } else {
-	    $configInfo = getMarzbanUser($server_id, $remark);
-	    deleteMarzban($server_id, $remark);
-	    $leftMb = sumerize($configInfo->data_limit - $configInfo->used_traffic);
-	    $expiryDay = $configInfo->expire != 0?
-	        floor(($configInfo->expire - time())/ 86400):"نامحدود";
-	}
+    }
+    // Fence the original order before the remote, non-idempotent DELETE.
+    if (!achbotAutoRenewPrepareDeletion($connection,(int)$oid)) {
+        alert("⚠️ این اشتراک در حال بررسی است؛ حذف نیازمند پیگیری پشتیبانی است.", true);
+        exit;
+    }
+    try {
+        $configInfo = getMarzbanUser($server_id, $remark);
+        $deleted = deleteMarzban($server_id, $remark);
+        if (!is_object($deleted) || ($deleted->success??false)!==true)
+            throw new RuntimeException('delete_remote_unconfirmed');
+        $leftMb = sumerize($configInfo->data_limit - $configInfo->used_traffic);
+        $expiryDay = $configInfo->expire != 0?
+            floor(($configInfo->expire - time()) / 86400):"نامحدود";
+    } catch (Throwable $error) {
+        error_log('achbot_account_delete_remote_deferred');
+        alert("⚠️ نتیجه حذف اشتراک مشخص نیست؛ لطفاً با پشتیبانی تماس بگیرید.", true);
+        exit;
+    }
 
     
     if(is_numeric($expiryDay)){
         if($expiryDay<0) $expiryDay = 0;
     }
 
-    $stmt = $connection->prepare("UPDATE `server_info` SET `ucount` = `ucount` + 1 WHERE `id` = ?");
-    $stmt->bind_param("i", $server_id);
-    $stmt->execute();
-    $stmt->close();
-
-    $vray_link = json_encode($vray_link);
-    $stmt = $connection->prepare("DELETE FROM `orders_list` WHERE `id` = ?");
-    $stmt->bind_param("i", $oid);
-    $stmt->execute();
-    $stmt->close();
+    if (!achbotAutoRenewFinalizeDeletion($connection,(int)$oid,(int)$server_id,true)) {
+        error_log('achbot_account_delete_local_deferred');
+        alert("⚠️ حذف اشتراک نیازمند بررسی است؛ لطفاً با پشتیبانی تماس بگیرید.", true);
+        exit;
+    }
 
     editText($message_id, "اشتراک $remark با موفقیت حذف شد.",json_encode([
             'inline_keyboard' => [
@@ -139,6 +151,7 @@ elseif(preg_match('/^yesDeleteUserConfig(\d+)/',$data,$match) && ($from_id == $a
     $stmt->execute();
     $order = $stmt->get_result()->fetch_assoc();
     $stmt->close();
+    if (!$order) { alert("⛔️ سفارش یافت نشد.", true); exit; }
     $userId = $order['userid'];
     $inbound_id = $order['inbound_id'];
     $server_id = $order['server_id'];
@@ -156,21 +169,27 @@ elseif(preg_match('/^yesDeleteUserConfig(\d+)/',$data,$match) && ($from_id == $a
     if (!achbotSupportsPanel($serverType) || (int)$inbound_id !== 0) {
         alert("⛔️ حذف این اشتراک در حال حاضر امکان‌پذیر نیست.", true);
         exit;
-    } else {
-	    $res = deleteMarzban($server_id, $remark);
-	}
+    }
+    if (!achbotAutoRenewPrepareDeletion($connection,(int)$oid)) {
+        alert("⚠️ این اشتراک در حال بررسی است؛ حذف نیازمند پیگیری است.", true);
+        exit;
+    }
+    try {
+        $res = deleteMarzban($server_id, $remark);
+        if (!is_object($res) || ($res->success??false)!==true)
+            throw new RuntimeException('admin_delete_remote_unconfirmed');
+    } catch (Throwable $error) {
+        error_log('achbot_admin_delete_remote_deferred');
+        alert("⚠️ نتیجه حذف اشتراک مشخص نیست؛ لطفاً بررسی دستی انجام دهید.", true);
+        exit;
+    }
     
 
-    $stmt = $connection->prepare("UPDATE `server_info` SET `ucount` = `ucount` + 1 WHERE `id` = ?");
-    $stmt->bind_param("i", $server_id);
-    $stmt->execute();
-    $stmt->close();
-
-    $vray_link = json_encode($vray_link);
-    $stmt = $connection->prepare("DELETE FROM `orders_list` WHERE `id` = ?");
-    $stmt->bind_param("i", $oid);
-    $stmt->execute();
-    $stmt->close();
+    if (!achbotAutoRenewFinalizeDeletion($connection,(int)$oid,(int)$server_id,true)) {
+        error_log('achbot_account_delete_local_deferred');
+        alert("⚠️ حذف اشتراک نیازمند بررسی است؛ لطفاً با پشتیبانی تماس بگیرید.", true);
+        exit;
+    }
 
     editText($message_id, "اشتراک $remark با موفقیت حذف شد.",json_encode([
             'inline_keyboard' => [

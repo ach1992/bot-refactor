@@ -4,6 +4,7 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     http_response_code(404);
     exit;
 }
+require_once __DIR__ . '/../Finance/ReceiptHelpers.php';
 
 // هندل دکمه نمایش اشتراک های کاربر
 if (preg_match('/^showUserSubscriptions(\d+)/', $data, $match)) {
@@ -198,6 +199,12 @@ if (preg_match('/^returnToPanel_(\\d+)/', $data, $match)) {
 }
 
 if (preg_match('/^deleteOrder_(\\d+)/', $data, $match)) {
+    // Telegram callback_data is arbitrary user input, not proof of role.
+    if ((int)$from_id!==(int)$admin &&
+        ($userInfo['isAdmin']??false)!==true) {
+        alert("⛔️ دسترسی به حذف سفارش ندارید.", true);
+        return;
+    }
     $id = intval($match[1]);
 
     // دریافت اطلاعات قبل از حذف
@@ -216,11 +223,22 @@ if (preg_match('/^deleteOrder_(\\d+)/', $data, $match)) {
     $userid = $row['userid'];
     $remark = $row['remark'];
 
-    // حذف رکورد
-    $stmt = $connection->prepare("DELETE FROM `orders_list` WHERE `id` = ?");
-    $stmt->bind_param("i", $id);
+    // A local-only operator deletion still needs the same durable fence.
+    // A historical renewal journal MUST remain intact after order deletion.
+    if (!achbotAutoRenewPrepareDeletion($connection,(int)$id)) {
+        alert("⚠️ این سفارش در حال بررسی است؛ حذف فعلاً مجاز نیست.", true);
+        return;
+    }
+    $stmt = $connection->prepare("SELECT server_id FROM orders_list WHERE id=?");
+    $stmt->bind_param('i',$id);
     $stmt->execute();
+    $server=(int)($stmt->get_result()->fetch_assoc()['server_id']??0);
     $stmt->close();
+    if (!achbotAutoRenewFinalizeDeletion($connection,(int)$id,$server,false)) {
+        error_log('achbot_operator_local_order_delete_deferred');
+        alert("⚠️ حذف سفارش نیازمند بررسی است.", true);
+        return;
+    }
 
     // پیام برای کاربر
     alert("✅ سفارش با موفقیت حذف شد.");

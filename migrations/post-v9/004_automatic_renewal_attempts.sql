@@ -29,8 +29,9 @@ CREATE TABLE automatic_renewal_attempts (
   UNIQUE KEY uq_renewal_payment (pay_row_id),
   KEY idx_renewal_inflight (order_id,stage),
   KEY idx_renewal_review (stage,updated_at,review_notified_at),
-  CONSTRAINT fk_renewal_order FOREIGN KEY (order_id)
-    REFERENCES orders_list(id) ON UPDATE RESTRICT ON DELETE RESTRICT,
+  -- Preserve original order_id as permanent audit evidence even after local
+  -- orders_list deletion. Deletion is fenced by an application-side DB guard.
+  -- Never cascade/delete completed or unresolved payment evidence.
   CONSTRAINT fk_renewal_pay FOREIGN KEY (pay_row_id)
     REFERENCES pays(id) ON UPDATE RESTRICT ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

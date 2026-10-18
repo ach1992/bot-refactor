@@ -422,41 +422,53 @@ function renewMarzbanUUID($server_id,$remark){
 
 function deleteMarzban($server_id,$remark){
     global $connection;
-    
-    $stmt = $connection->prepare("SELECT * FROM server_config WHERE id=?");
-    $stmt->bind_param("i", $server_id);
+    // Never treat an empty/failed cURL response or an HTTP 4xx/5xx as
+    // proof that a destructive remote DELETE was completed.
+    $stmt=$connection->prepare("SELECT panel_url,type FROM server_config WHERE id=?");
+    $stmt->bind_param('i',$server_id);
     $stmt->execute();
-    $server_info = $stmt->get_result()->fetch_assoc();
+    $server=$stmt->get_result()->fetch_assoc();
     $stmt->close();
-
-    $panel_url = $server_info['panel_url'];
-    $serverName = $server_info['username'];
-    $serverPass = $server_info['password'];
-    $serverType = $server_info['type'];
-    
-    $token = getMarzbanToken($server_id);
-    if(isset($token->detail)){return (object) ['success'=>false, 'msg'=>$token->detail];}
-    $panel_url .=  '/api/user/'. urlencode($remark);
-
-    $curl = curl_init();
-    curl_setopt($curl, CURLOPT_URL, $panel_url);
-    curl_setopt($curl, CURLOPT_CUSTOMREQUEST, 'DELETE');
-    curl_setopt($curl, CURLOPT_HTTPGET, true);
-    curl_setopt($curl, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($curl, CURLOPT_HTTPHEADER, array(
-        'Accept: application/json',
-        'Authorization: Bearer ' .  $token->access_token
-    ));
-
-    $response = json_decode(curl_exec($curl));
-    curl_close($curl);
-    
-    if(isset($response->detail)){
-		$detail = $response->detail;
-        return (object) ['success'=>false, 'msg' => is_object($detail)?implode("-", (array) $detail):$detail];
+    if (!$server || ($server['type']??'')!=='marzban' ||
+        !is_string($remark) || $remark==='') {
+        return (object)['success'=>false,'uncertain'=>false,
+                        'msg'=>'unsupported_remote_delete'];
     }
-    
-    return (object) ['success'=>true];
+    $token=getMarzbanToken($server_id);
+    if (!is_object($token) || empty($token->access_token)) {
+        return (object)['success'=>false,'uncertain'=>true,
+                        'msg'=>'remote_delete_auth_unconfirmed'];
+    }
+    $curl=curl_init();
+    curl_setopt($curl,CURLOPT_URL,rtrim((string)$server['panel_url'],'/').
+                '/api/user/'.rawurlencode($remark));
+    curl_setopt($curl,CURLOPT_CUSTOMREQUEST,'DELETE');
+    curl_setopt($curl,CURLOPT_RETURNTRANSFER,true);
+    curl_setopt($curl,CURLOPT_CONNECTTIMEOUT,5);
+    curl_setopt($curl,CURLOPT_TIMEOUT,20);
+    curl_setopt($curl,CURLOPT_SSL_VERIFYPEER,true);
+    curl_setopt($curl,CURLOPT_SSL_VERIFYHOST,2);
+    curl_setopt($curl,CURLOPT_HTTPHEADER,[
+        'Accept: application/json',
+        'Authorization: Bearer '.$token->access_token
+    ]);
+    $raw=curl_exec($curl);
+    $error=curl_error($curl);
+    $http=(int)curl_getinfo($curl,CURLINFO_HTTP_CODE);
+    curl_close($curl);
+    if ($raw===false || $error!=='' || $http<200 || $http>=300) {
+        return (object)['success'=>false,'uncertain'=>true,
+                        'msg'=>'remote_delete_response_unconfirmed'];
+    }
+    // A 204 response may legitimately have no body. For any other status,
+    // require a recognizable JSON success response, never arbitrary HTML.
+    if ($http===204 && $raw==='') return (object)['success'=>true];
+    $response=json_decode((string)$raw);
+    if (!is_object($response) || isset($response->detail)) {
+        return (object)['success'=>false,'uncertain'=>true,
+                        'msg'=>'remote_delete_body_unconfirmed'];
+    }
+    return (object)['success'=>true];
 }
 
 function changeMarzbanState($server_id,$remark){

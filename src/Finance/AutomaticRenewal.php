@@ -4,6 +4,7 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     http_response_code(404);
     exit;
 }
+require_once __DIR__ . '/ReceiptHelpers.php';
 
 /**
  * Atomic local reservation BEFORE the first non-idempotent Marzban operation.
@@ -18,6 +19,9 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
 function achbotAutoRenewReserve(mysqli $db, int $orderId, int $userId): array {
     $outcome=['status'=>'review'];
     if ($orderId<=0 || $userId<=0) return $outcome;
+    // The direct helper is also callable outside the Cron entrypoint.
+    // No debit or provider effect is legal before the full 004 proof.
+    if (achbotAutoRenewSchemaState($db)!=='ready') return $outcome;
     try {
         if ($db->begin_transaction()!==true) return $outcome;
         $stmt=$db->prepare("SELECT id,userid,fileid,server_id,inbound_id,remark,
@@ -32,6 +36,12 @@ function achbotAutoRenewReserve(mysqli $db, int $orderId, int $userId): array {
             (string)$order['autoRenew']!=='on' ||
             !achbotSupportsMarzbanOrder($db,$orderId,(int)$order['fileid'],$userId)) {
             $db->rollback(); return ['status'=>'ineligible'];
+        }
+        // Distinct orders can alias the SAME physical Marzban account.
+        // Lock matching active orders and fail closed before reserving money.
+        if (!achbotAutoRenewAccountExclusiveLocked($db,$orderId,
+            (int)$order['server_id'],(string)$order['remark'])) {
+            $db->rollback(); return ['status'=>'ambiguous_account'];
         }
 
         // Mandatory durable schema: never bypass a missing or damaged journal.
@@ -284,7 +294,8 @@ function handleAutoRenewCallback($data): void {
 /** Alert authorized operator about durable reservation/reconciliation holds. */
 function achbotAutoRenewAlertReview(mysqli $db, $adminChatId): void {
     if (!is_scalar($adminChatId) ||
-        !preg_match('/^[1-9][0-9]*$/D',(string)$adminChatId)) return;
+        !preg_match('/^[1-9][0-9]*$/D',(string)$adminChatId) ||
+        achbotAutoRenewSchemaState($db)!=='ready') return;
     try {
         $rows=$db->query("SELECT id,order_id,stage,reason_code
             FROM automatic_renewal_attempts
@@ -345,7 +356,8 @@ function achbotAutoRenewAlertReview(mysqli $db, $adminChatId): void {
  * it for *every* examined row, including unavailable/retired accounts.
  */
 function achbotAutoRenewSweep(mysqli $db, array $botState): void {
-    if (($botState['renewAutoState']??'off')!=='on') return;
+    if (($botState['renewAutoState']??'off')!=='on' ||
+        achbotAutoRenewSchemaState($db)!=='ready') return;
     $stmt=$db->prepare("SELECT value FROM setting WHERE type='AutoRenewCheck' LIMIT 1");
     $stmt->execute();
     $row=$stmt->get_result()->fetch_assoc();
@@ -393,13 +405,16 @@ function achbotAutoRenewSweep(mysqli $db, array $botState): void {
 try {
     // Do not activate on an unmigrated instance; in particular, the existing
     // disabled auto-renewal default must remain inert and non-noisy.
-    $schema=$connection->query("SHOW TABLES LIKE 'automatic_renewal_attempts'");
-    $ready=$schema instanceof mysqli_result && $schema->num_rows===1;
-    if ($ready) {
+    $state=achbotAutoRenewSchemaState($connection);
+    if ($state==='ready') {
         // Alert even with renewal OFF: an earlier reserved effect still needs
         // reconciliation after an incident shutdown.
         achbotAutoRenewAlertReview($connection,$admin??null);
         achbotAutoRenewSweep($connection,$botState??[]);
+    } elseif ($state==='incompatible') {
+        // Pending holds still need a protected diagnostic even when an
+        // operator turned the automatic-renewal toggle OFF.
+        error_log('achbot_auto_renew_schema_incompatible_operator_review');
     } elseif (($botState['renewAutoState']??'off')==='on') {
         error_log('achbot_auto_renew_migration_required');
     }

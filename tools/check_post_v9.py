@@ -249,6 +249,36 @@ def main():
             "nonunique_legacy_identity_cannot_fund_renewal",
             "real_cron_sweep_one_eligible_marzban_order",
             "telegram_failure_after_commit_does_not_revert_payment",
+            # Independent reviewer F1: permanent audit, safe remote deletion.
+            "f1_completed_renewal_order_deletable_history_permanently_retained",
+            "f1_unresolved_renewal_remote_deletion_preflight_denied",
+            "f1_sql_failure_after_remote_retains_inactive_record_then_recovers",
+            "f1_remote_deletion_unknown_single_durable_local_fence",
+            "f1_real_user_route_pending_renewal_prevents_remote_delete",
+            "f1_real_customer_delete_after_done_journal_retained",
+            "f1_real_admin_remote_delete_after_done_journal_retained",
+            "f1_real_operator_local_only_delete_retains_paid_history",
+            "f1_forged_nonadmin_operator_delete_callback_refused",
+            "f1_real_user_remote_failure_fenced_without_false_success",
+            "f1_real_expiry_cron_cleanup_blocks_unresolved_journal",
+            "f1_real_expired_cron_cleanup_single_verified_delete",
+            "f1_real_cron_remote_failure_does_not_repeat_destructive_effect",
+            "f1_real_cron_entrypoint_warning_exception_cannot_skip_renewal_alert",
+            "f1_real_marzban_delete_http_failure_not_falsely_successful",
+            # Independent reviewer F2: same remote user with two local IDs.
+            "f2_distinct_active_orders_same_account_two_workers_no_debit",
+            "f2_explicit_same_panel_server_alias_duplicate_refused",
+            "f2_two_alias_workers_no_double_debit_even_under_race",
+            "f2_distinct_remote_accounts_remain_renewable",
+            # Independent reviewer F3: exact transactional schema preflight.
+            "incompatible_004_missing_alert_field_blocks_debit_and_delete",
+            "incompatible_004_missing_unique_cycle_blocks_debit_and_delete",
+            "incompatible_004_missing_payment_fk_blocks_debit_and_delete",
+            "incompatible_004_nontransactional_engine_blocks_debit_and_delete",
+            "incompatible_004_wrong_stage_definition_blocks_debit_and_delete",
+            "incompatible_004_old_restrictive_order_fk_is_rejected",
+            "restored_full_004_contract_ready",
+            "f3_shared_003_and_004_compatible_without_history_loss",
         }
         if not (auto_renew.get("complete") and
                 required_auto.issubset(auto_renew.get("scenarios",[])) and
@@ -257,7 +287,8 @@ def main():
                 auto_renew.get("original_schema_file_unchanged") and
                 auto_renew.get("provider_requests")==0 and
                 auto_renew.get("production_mutations")==0 and
-                auto_renew.get("native_php_workers")==2):
+                auto_renew.get("native_php_workers")==2 and
+                auto_renew.get("synthetic_local_http_delete_cases")==5):
             raise RuntimeError("Automatic-renewal durable idempotency proof incomplete")
         finance_path=Path(tmp)/"finance-native-routes.json"
         subprocess.run(["python3",str(ROOT/"tools/test_post_v9_finance_routes.py"),

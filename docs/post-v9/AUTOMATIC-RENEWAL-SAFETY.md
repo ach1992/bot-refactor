@@ -56,6 +56,126 @@ renewal and externally paid fulfillment routes do not all take this
 journal's lock; complete cross-path coordination is a separate Issue #26
 acceptance gate. Do not claim this alone proves global exactly-once Marzban.
 
+## PR #56 independent-review remediation: F1, F2, F3
+
+The initial independently reviewed commit 18dd6a2 passed CI but was
+**CHANGES_REQUIRED** for three serious omissions. The following design
+addresses them in a NEW source-only candidate. Earlier CI and reviewer
+verdict **do not** authorize its integration; rerun full exact-head CI
+and request author-separated re-review of the new delta.
+
+### F1 — Safe deletion while keeping every financial record
+
+The 004 journal intentionally retains the immutable original order_id and
+has a restrictive foreign key to the original pays row, but it **does not**
+reference orders_list with ON DELETE RESTRICT or CASCADE. A completed
+subscription can therefore be removed from orders_list without deleting its
+historical payment or journal. Never backfill, rewrite, detach, or delete
+the original payment evidence just to make a deletion succeed.
+
+Actual user, administrator, local-only operator and expiry-Cron deletion
+paths must call the same source-level safety functions:
+
+1. Verify the entire 004 schema (or its genuinely absent historical state).
+   Lock the exact local order and account-related active order identities.
+   Refuse deletion if any unfinished journal or competing active Marzban
+   account has uncertain ownership. A malformed existing 004 table is a
+   HARD STOP, not a missing-table fallback.
+2. Commit a durable local **status=0 / autoRenew=off deletion fence**
+   before the non-idempotent external Marzban DELETE. After a lost remote
+   response, the original order remains inactive for operator reconciliation:
+   unattended Cron or a stale user callback cannot repeat the DELETE or
+   charge for another renewal.
+3. Require a successful remote response, then atomically remove the local
+   order and restore logical server capacity when the original operation
+   requires it. Failure of either local write leaves the status=0 order
+   and financial journal for manual reconciliation instead of falsely
+   reporting that deletion completed. The same shared cleanup helper is
+   used for local-only operator removal (without remote calls or capacity
+   restoration).
+4. An unrelated account-cleanup error must not prevent due financial
+   reconciliation alerts from running in the same scheduled worker. The
+   warning Cron wrapper isolates cleanup exceptions with a finally block.
+5. Remote DELETE transport itself now checks actual HTTP 2xx, response
+   validity, token, and cURL failures. An ambiguous 200 body, failed HTTP
+   response or lost transport reply cannot masquerade as a confirmed delete.
+   A remote 204 with empty response is an expected success form; any
+   uncertain result remains a manual reconciliation case.
+
+This is a conservative state transition: remote deletion failure can leave a
+legitimate original account inactive in local UI until operator recovery.
+Never auto-reactivate, silently delete local evidence, auto-refund or call
+the remote delete again to hide that partial failure. Operators must inspect
+the actual Marzban account, remote action history, local status, capacity and
+financial journal first.
+
+**IMPORTANT rollback rule:** migration 004 has its own separate Owner-gated
+installation and cannot be reverted by merely switching PHP source back.
+An older unguarded AccountDeletion/Warnings/OrderManagement PHP version MUST
+NOT be run against installed 004 with unresolved or status=0 deletion
+fences. Freeze automatic renewal AND all destructive account-cleanup Cron,
+reconcile holds, maintain an approved 004-compatible guard or provide a
+separately tested forward-repair plan. Do not DROP 004 or delete its history
+to make old code work. Historic clients without any 004 table may continue
+legacy deletions, but with the new guarded source.
+
+### F2 — Exclusive logical remote account identity
+
+The old unique (order_id,cycle_expire) key only stops two automatic
+workers renewing the same local order. Two eligible local orders might
+point to one actual Marzban account. Inside the reservation transaction,
+the new source locks all active orders with the same Marzban remark,
+then rejects the attempt if another active order uses either the exact
+same server ID or a separately administrator-assigned **valid Marzban
+panel_group_id**. URL, username and unauthenticated claims are not used
+to infer panel identity. A deadlock is safely rolled back before any money
+or remote effect. The frozen original orders_list
+idx_remark_userid index supports the matching-row lookup.
+
+Distinct valid Marzban accounts still renew normally. The authority for
+grouping is the existing source-only 001 migration; a missing/invalid alias
+group cannot be guessed into equivalence. Changes to panel group
+assignments during an actual payment remain an administrative operation
+requiring its own coordination; this feature does not certify every
+manual/hosted renewal route against cross-path overlap.
+
+### F3 — Validate whole installed 004 contract before spending
+
+Before initiating any renewal or sending financial-review alerts,
+the source verifies the 004 table using INFORMATION_SCHEMA: **InnoDB**,
+the exact required nullable/nonnullable column/type/length contract,
+binary stage and notification token collations, the stage default,
+all expected ordered unique/nonunique keys and the restrictive **pays**
+foreign key, while rejecting an obsolete orders_list FK.
+
+An existing table with missing alert columns, missing cycle uniqueness,
+missing payment FK, wrong transactional engine, incompatible stage type,
+or old restrictive order FK is NOT ready. No local pays reservation, wallet
+debit, auto-renewal external edit or destructive deletion is allowed while
+an incompatible table exists. The operator sees a protected reason-code log;
+customer-facing messages remain safe and generic. Only the exact 004
+contract can activate the worker.
+
+A table that looks similar is not sufficient proof of compatibility.
+Separate operator-approved migration/restore and durable reconciliation
+are still required; NEVER silently ALTER a real tenant's journal table
+or infer a partial migration is harmless.
+
+### Reproducible regression evidence
+
+The source-only native harness tests full temporary original-schema
+MariaDB plus isolated 004 and 001/003 interoperability. F1 tests the
+actual user/admin/local order deletion PHP routes, the actual warning
+cleanup and finally-isolated Cron wrapper, remote HTTP 204/200/500 and
+invalid/empty bodies against an owned 127.0.0.1 test provider, SQL
+failure after mock remote deletion, operator recovery, and preservation
+of historical pays/journal evidence. F2 tests two simultaneous PHP
+workers targeting different local order IDs for one account, including
+grouped same-panel aliases with different URLs/admin usernames. F3
+runs deliberately incompatible temporary schema mutants; every unsafe
+configuration must perform zero debit/remote effect until fully restored.
+No real production/financial data or providers are touched.
+
 ## Safe operator reconciliation
 
 For any unresolved attempt, independently inspect journal ID, original pays,

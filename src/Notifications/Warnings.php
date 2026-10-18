@@ -182,9 +182,19 @@ if ($orders) {
 
             if ($send) {
                 if (!achbotSupportsPanel($serverType)) continue;
-                $res = deleteMarzban($server_id, $remark);
-
-                if (!is_null($res)) {
+                // Deletion reservation atomically blocks new renewal and
+                // rejects unresolved payment effects BEFORE any remote call.
+                if (!achbotAutoRenewPrepareDeletion($connection,(int)$order['id']))
+                    continue;
+                try {
+                    $res = deleteMarzban($server_id, $remark);
+                } catch (Throwable $error) {
+                    error_log('achbot_warning_remote_delete_deferred');
+                    continue;
+                }
+                if (is_object($res) && ($res->success??false)===true &&
+                    achbotAutoRenewFinalizeDeletion(
+                        $connection,(int)$order['id'],(int)$server_id,false)) {
                     $msg = "💡 کاربر گرامی، اشتراک  <code>$remark</code>  تمام شده بود و از لیست اشتراک ها حذف گردید. لطفا اشتراک جدید خریداری کنید.";
                     $keyboard = [
                         [['text' => $buttonValues['back_to_main'], 'callback_data' => 'mainMenu']]
@@ -207,12 +217,12 @@ if ($orders) {
 						sendMessage($channelMessage, null, "html", $rewardChannel);
 					}
 
-                    $stmt = $connection->prepare("DELETE FROM `orders_list` WHERE `uuid`=?");
-                    $stmt->bind_param("s", $uuid);
-                    $stmt->execute();
-                    $stmt->close();
                     continue;
                 }
+                error_log('achbot_warning_local_delete_deferred');
+                // status=0 retains an operator-recoverable local record:
+                // a later Cron tick never blindly repeats the remote DELETE.
+                continue;
             } else {
                 $stmt = $connection->prepare("UPDATE `orders_list` SET `notif`= 0 WHERE `uuid`=?");
                 $stmt->bind_param("s", $uuid);
