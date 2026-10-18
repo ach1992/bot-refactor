@@ -583,9 +583,24 @@ def main():
                 and migration.get("live_database_touched") is False):
             raise RuntimeError("Lossless RC4 payment ledger migration rehearsal incomplete")
         agency_path=Path(tmp)/"agency-state-regression.json"
-        subprocess.run(["python3",str(ROOT/"tools/test_post_v9_agency.py"),
-                        "--run-disposable","--report",str(agency_path)],
-                       cwd=ROOT,check=True,timeout=180,capture_output=True)
+        agency_command=["python3",str(ROOT/"tools/test_post_v9_agency.py"),
+                        "--run-disposable","--report",str(agency_path)]
+        try:
+            subprocess.run(agency_command, cwd=ROOT, check=True,
+                           timeout=180, capture_output=True)
+        except subprocess.CalledProcessError as exc:
+            # This fixture uses only generated identities and owned socket-only
+            # MariaDB. Keep its bounded error output visible in CI: hiding it
+            # makes intermittent child failures impossible to classify.
+            error=(exc.stderr or b'').decode(errors='replace')[-6000:]
+            if not error:
+                error=(exc.stdout or b'').decode(errors='replace')[-2000:]
+            raise RuntimeError('Isolated agency regression failed '
+                               f'(exit={exc.returncode}):\n{error}') from exc
+        except subprocess.TimeoutExpired as exc:
+            error=(exc.stderr or b'').decode(errors='replace')[-3000:]
+            raise RuntimeError('Isolated agency regression timed out '
+                               f'(180 s):\n{error}') from exc
         agency=json.loads(agency_path.read_text())
         if not (agency.get("complete") and agency.get("cases")>=20
                 and agency.get("schema_tables")==23
