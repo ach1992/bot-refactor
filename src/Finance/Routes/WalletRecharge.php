@@ -26,6 +26,76 @@ if (!function_exists('achbotParseWalletTopupRawInteger')) {
     }
 }
 
+// All wallet top-up buttons must originate in the customer's own bot DM;
+// a callback is not newly authored customer text. In UpdateBindings.php,
+// callbacks bind $text to the earlier bot message referenced by the button.
+if (!function_exists('achbotWalletTopupPrivateCallback')) {
+    function achbotWalletTopupPrivateCallback(
+        $update, $actorId, $chatId, $messageId, $boundData
+    ): bool {
+        if (!is_object($update) || !isset($update->callback_query) ||
+            !is_object($update->callback_query) || isset($update->message) ||
+            !is_int($update->update_id ?? null) || $update->update_id <= 0) {
+            return false;
+        }
+        $callback = $update->callback_query;
+        $sender = $callback->from ?? null;
+        $message = $callback->message ?? null;
+        $chat = is_object($message) ? ($message->chat ?? null) : null;
+        return is_object($sender) && is_object($chat) &&
+            is_int($sender->id ?? null) && $sender->id > 0 &&
+            ($sender->is_bot ?? false) !== true &&
+            is_int($chat->id ?? null) && ($chat->type ?? null) === 'private' &&
+            $chat->id === $sender->id &&
+            $chat->id === (int)$actorId && $chat->id === (int)$chatId &&
+            is_int($message->message_id ?? null) && $message->message_id > 0 &&
+            $message->message_id === (int)$messageId &&
+            is_string($callback->data ?? null) && $callback->data === $boundData;
+    }
+}
+
+// A custom amount can only be submitted as a fresh customer-authored
+// Telegram message, never from an unrelated group or callback bot text.
+if (!function_exists('achbotWalletTopupPrivateText')) {
+    function achbotWalletTopupPrivateText(
+        $update, $actorId, $chatId, $messageId, $boundText, $storedUserId
+    ): bool {
+        if (!is_object($update)) {
+            return false;
+        }
+        $keys = array_keys(get_object_vars($update));
+        sort($keys);
+        if ($keys !== ['message', 'update_id'] ||
+            !is_object($update->message) ||
+            !is_int($update->update_id) || $update->update_id <= 0) {
+            return false;
+        }
+        $message = $update->message;
+        $sender = $message->from ?? null;
+        $chat = $message->chat ?? null;
+        return is_object($sender) && is_object($chat) &&
+            is_int($sender->id ?? null) && $sender->id > 0 &&
+            ($sender->is_bot ?? false) !== true &&
+            is_int($chat->id ?? null) && ($chat->type ?? null) === 'private' &&
+            $chat->id === $sender->id &&
+            $chat->id === (int)$actorId && $chat->id === (int)$chatId &&
+            (string)$storedUserId === (string)$sender->id &&
+            is_int($message->message_id ?? null) && $message->message_id > 0 &&
+            $message->message_id === (int)$messageId &&
+            is_string($message->text ?? null) &&
+            is_string($boundText) && $boundText === $message->text;
+    }
+}
+
+if (is_string($data ?? null) &&
+    ($data === 'increaseMyWallet' || $data === 'increaseWalletCustom' ||
+     strpos($data, 'increaseWallet_') === 0) &&
+    !achbotWalletTopupPrivateCallback($update ?? null, $from_id ?? null,
+                                     $chat_id ?? null, $message_id ?? null, $data)) {
+    // Fail closed without editing a different conversation or consuming a step.
+    return;
+}
+
 if($data == "increaseMyWallet") { 
     delMessage(); 
 
@@ -99,7 +169,11 @@ if($data == "increaseWalletCustom"){
     setUser("increaseMyWallet");
 }
 
-if($userInfo['step'] == "increaseMyWallet" && $text != $buttonValues['cancel']){ 
+if (($userInfo['step'] ?? null) === 'increaseMyWallet' &&
+    $text != $buttonValues['cancel'] &&
+    achbotWalletTopupPrivateText($update ?? null, $from_id ?? null,
+                                 $chat_id ?? null, $message_id ?? null,
+                                 $text, $userInfo['userid'] ?? null)) {
     
     $amount = achbotParseWalletTopupRawInteger($text);
     if ($amount === null) {

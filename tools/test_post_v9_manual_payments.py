@@ -138,8 +138,18 @@ register_shutdown_function(static function(){
                      JSON_UNESCAPED_UNICODE);
 });
 function delMessage(){ $GLOBALS['events'][]=['name'=>'delMessage'];}
-function setUser($value='none',$field='step'){$GLOBALS['events'][]=[
-    'name'=>'setUser','step'=>$value,'field'=>$field];}
+function setUser($value='none',$field='step'){
+    global $connection,$from_id,$spec;
+    $GLOBALS['events'][]=['name'=>'setUser','step'=>$value,'field'=>$field];
+    // Model the real database step transition for this test's top-up route;
+    // rejected updates must preserve even a pre-existing private step.
+    if (($spec['route']??'')==='topup') {
+        if ($field!=='step') throw new RuntimeException('unexpected step field');
+        $stmt=$connection->prepare('UPDATE users SET step=? WHERE userid=?');
+        $stmt->bind_param('si',$value,$from_id);
+        $stmt->execute();$stmt->close();
+    }
+}
 function getMainKeys(){return '{}';}
 function alert(...$args){$GLOBALS['events'][]=['name'=>'alert','args'=>$args];}
 function sendMessage(...$args){$GLOBALS['events'][]=['name'=>'sendMessage','args'=>$args];return (object)['ok'=>true];}
@@ -207,6 +217,9 @@ if (($spec['route']??'wallet') === 'manual_admin') {
     require $root.'/src/Finance/Routes/RenewalCheckout.php';
 } else {
     if (($spec['route']??'wallet')==='topup') {
+        // Real Telegram bindings: callbacks bind old bot-message text, while
+        // genuine customer messages bind a newly authored text payload.
+        require $root.'/src/Telegram/UpdateBindings.php';
         // Exercise actual payment insertion and draft cleanup.
         require $root.'/src/Purchase/Core.php';
         require $root.'/src/Finance/WalletStart.php';
@@ -218,6 +231,21 @@ def run_route(work,env,driver,data='',step='none',actor=1001,update=None,route='
               photo_mode='success',remote_mode='success',text=''):
     spec={'data':data,'step':step,'actor':actor,'route':route,
           'photo_mode':photo_mode,'remote_mode':remote_mode,'text':text}
+    if route == 'topup' and update is None:
+        # Generate a real Telegram update envelope rather than fabricating
+        # independent $data/$text variables that bypass UpdateBindings.php.
+        sender={'id':actor,'is_bot':False,'username':'fixture_customer',
+                'first_name':'Fixture'}
+        chat={'id':actor,'type':'private'}
+        if data:
+            update={'update_id':990001,'callback_query':{
+                'id':'fixture-callback','from':sender,'data':data,
+                'message':{'message_id':111,'chat':chat,
+                           'text':'Previous bot instructions',
+                           'reply_markup':{'inline_keyboard':[]}}}}
+        else:
+            update={'update_id':990002,'message':{
+                'message_id':111,'from':sender,'chat':chat,'text':text}}
     if update is not None: spec['update']=update
     cmd=['php','-n','-d','extension=mysqlnd','-d','extension=mysqli',
          '-d','allow_url_fopen=0','-d','display_errors=1',
@@ -1062,8 +1090,9 @@ def check():
         assert query(work,env,"SELECT state FROM pays WHERE hash_id='leaseexpiry'")=='have_sent'
         cases.append('lost_worker_recovered_after_lease_without_new_photo')
 
-        # P1: exercise raw Telegram values through the real WalletRecharge.php
-        # and WalletStart.php with original-schema + shared-ledger MariaDB.
+        # P1: exercise raw Telegram values through the real UpdateBindings.php,
+        # WalletRecharge.php and WalletStart.php with disposable MariaDB.
+        query(work,env,"UPDATE users SET step='increaseMyWallet' WHERE userid=1001")
         seed(work,env,'topupissuedold',price=200000)
         assert base('topupissuedold','claim','bank_transfer') is True
         query(work,env,"UPDATE pays SET payid='synthetic-issued-invoice' "
@@ -1079,7 +1108,7 @@ def check():
                 query(work,env,"SELECT * FROM pays ORDER BY id"),
                 query(work,env,"SELECT * FROM payment_attempts ORDER BY id"),
                 query(work,env,"SELECT * FROM payment_transactions ORDER BY id"),
-                query(work,env,"SELECT userid,wallet FROM users ORDER BY userid"),
+                query(work,env,"SELECT userid,wallet,step FROM users ORDER BY userid"),
             )
         malformed_callbacks=[
             'increaseWallet_100000junk','increaseWallet_100000.5',
@@ -1118,6 +1147,84 @@ def check():
             "SELECT id,pay_row_id,provider,order_hash,stage FROM payment_attempts "
             "WHERE order_hash='topupissuedold'")==attempt_before
 
+        # R1: run the actual UpdateBindings.php -> WalletRecharge.php ->
+        # WalletStart.php path. A private pending step must NEVER be consumed
+        # by group text, older bot callback text, or a foreign chat/actor.
+        # Snapshot all rows in both shared-ledger tables and the wallet.
+        def customer(user=1001):
+            return {'id':user,'is_bot':False,'username':'fixture_customer',
+                    'first_name':'Fixture'}
+        def message_update(text,chat_type='private',chat_id=1001,user=1001):
+            return {'update_id':991001,'message':{
+                'message_id':221,'from':customer(user),
+                'chat':{'id':chat_id,'type':chat_type},'text':text}}
+        def callback_update(text,data,chat_type='private',chat_id=1001,user=1001):
+            return {'update_id':991002,'callback_query':{
+                'id':'fixture-old-button','from':customer(user),'data':data,
+                'message':{'message_id':220,
+                           'chat':{'id':chat_id,'type':chat_type},
+                           'text':text,
+                           'reply_markup':{'inline_keyboard':[]}}}}
+        denied_origin_cases=[
+            ('group_message_denied', '', message_update('100000','group',-4100)),
+            ('supergroup_message_denied', '', message_update('100000','supergroup',-1004100)),
+            ('old_callback_text_denied', 'unrelatedCallback',
+             callback_update('100000','unrelatedCallback')),
+            ('foreign_chat_callback_denied', 'unrelatedCallback',
+             callback_update('100000','unrelatedCallback','supergroup',-1004100)),
+            ('group_custom_start_denied', 'increaseWalletCustom',
+             callback_update('Old prompt','increaseWalletCustom','group',-4100)),
+            ('group_fixed_amount_denied', 'increaseWallet_100000',
+             callback_update('Old prompt','increaseWallet_100000','group',-4100)),
+            ('other_actor_message_denied', '',message_update('100000',user=1002)),
+            ('bot_authored_message_denied', '',{
+                'update_id':991003,'message':{
+                    'message_id':221,
+                    'from':{'id':1001,'is_bot':True,'first_name':'FixtureBot'},
+                    'chat':{'id':1001,'type':'private'},'text':'100000'}}),
+            ('mixed_callback_message_denied', 'unrelatedCallback',{
+                **message_update('100000'),
+                'callback_query':callback_update('100000','unrelatedCallback')['callback_query']}),
+        ]
+        for i,(name,raw_data,wire_update) in enumerate(denied_origin_cases):
+            seed(work,env,'topuporigin'+str(i),price=150000)
+            before=topup_snapshot()
+            events=run_route(work,env,route_driver,route='topup',
+                             data=raw_data,step='increaseMyWallet',
+                             text='100000',update=wire_update)
+            assert topup_snapshot()==before,(name,'payment state mutated')
+            assert not any(e['name'] in ('delMessage','setUser',
+                       'remote_create','remote_edit','sendPhoto')
+                       for e in events),(name,events)
+            assert not any(e['name']=='sendMessage' and
+                           ('اطلاعات شارژ' in str(e['args']) or
+                            'لطفا صبور' in str(e['args'])) for e in events), (name,events)
+            cases.append('real_topup_origin_'+name)
+        # Enter custom top-up through the genuine private callback, then
+        # complete it via a newly authored private message in that same DM.
+        query(work,env,"UPDATE users SET step='none' WHERE userid=1001")
+        opened=run_route(work,env,route_driver,route='topup',
+                         data='increaseWalletCustom',step='none')
+        assert any(e['name']=='setUser' and e['step']=='increaseMyWallet'
+                   for e in opened),opened
+        assert query(work,env,"SELECT step FROM users WHERE userid=1001")=='increaseMyWallet'
+        cases.append('real_topup_origin_private_custom_start_accepted')
+        events=run_route(work,env,route_driver,route='topup',
+                         step='increaseMyWallet',update=message_update('150000'))
+        assert any(e['name']=='sendMessage' and 'اطلاعات شارژ' in str(e['args'])
+                   for e in events),events
+        assert query(work,env,"SELECT price FROM pays WHERE type='INCREASE_WALLET' "
+                     "AND state='pending' AND user_id=1001 AND payid IS NULL "
+                     "ORDER BY id DESC LIMIT 1")=='150000'
+        assert query(work,env,"SELECT step FROM users WHERE userid=1001")=='none'
+        assert query(work,env,
+            "SELECT id,hash_id,payid,state,price FROM pays "
+            "WHERE hash_id='topupissuedold'")==issued_before
+        assert query(work,env,
+            "SELECT id,pay_row_id,provider,order_hash,stage FROM payment_attempts "
+            "WHERE order_hash='topupissuedold'")==attempt_before
+        cases.append('real_topup_origin_private_customer_text_accepted')
+
         # Valid minimum/maximum amounts still create precisely priced drafts
         # and do not erase previously provider-issued payment evidence.
         for i,(kind,raw,expected) in enumerate([
@@ -1126,6 +1233,8 @@ def check():
             ('text','000100000',100000),
             ('callback','increaseWallet_10000000',10000000),
         ]):
+            if kind=='text':
+                query(work,env,"UPDATE users SET step='increaseMyWallet' WHERE userid=1001")
             options=({'data':raw,'step':'none'} if kind=='callback'
                      else {'data':'','step':'increaseMyWallet','text':raw})
             events=run_route(work,env,route_driver,route='topup',**options)

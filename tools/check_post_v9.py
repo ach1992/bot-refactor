@@ -515,6 +515,19 @@ def main():
             "real_custom_operator_and_bank_scheduler_race_single_service_claim",
             "legacy_operator_receipt_requires_persisted_delivery_evidence",
             "uncertain_custom_external_effect_operator_reconciliation_no_retry",
+            # PR #55 R1: real Telegram UpdateBindings and private-chat source
+            # authorization, with durable SQL/step preservation for denials.
+            "real_topup_origin_group_message_denied",
+            "real_topup_origin_supergroup_message_denied",
+            "real_topup_origin_old_callback_text_denied",
+            "real_topup_origin_foreign_chat_callback_denied",
+            "real_topup_origin_group_custom_start_denied",
+            "real_topup_origin_group_fixed_amount_denied",
+            "real_topup_origin_other_actor_message_denied",
+            "real_topup_origin_bot_authored_message_denied",
+            "real_topup_origin_mixed_callback_message_denied",
+            "real_topup_origin_private_custom_start_accepted",
+            "real_topup_origin_private_customer_text_accepted",
             # PR #55 P1: actual raw Telegram parsing, SQL immutability,
             # and accepted top-up boundaries are required acceptance cases.
             "real_topup_raw_callback_rejected_0",   # numeric prefix + suffix
