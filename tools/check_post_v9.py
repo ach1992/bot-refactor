@@ -265,6 +265,11 @@ def main():
             "f1_real_cron_remote_failure_does_not_repeat_destructive_effect",
             "f1_real_cron_entrypoint_warning_exception_cannot_skip_renewal_alert",
             "f1_real_marzban_delete_http_failure_not_falsely_successful",
+            "f1_official_http_200_guarded_customer_once_full_evidence",
+            "f1_official_http_200_guarded_admin_once_full_evidence",
+            "f1_official_http_200_guarded_cron_once_full_evidence",
+            "f1_real_guarded_customer_error_and_unexpected_200_fenced",
+            "o1_user_delete_preview_ownership_and_privacy",
             # Independent reviewer F2: same remote user with two local IDs.
             "f2_distinct_active_orders_same_account_two_workers_no_debit",
             "f2_explicit_same_panel_server_alias_duplicate_refused",
@@ -288,7 +293,7 @@ def main():
                 auto_renew.get("provider_requests")==0 and
                 auto_renew.get("production_mutations")==0 and
                 auto_renew.get("native_php_workers")==2 and
-                auto_renew.get("synthetic_local_http_delete_cases")==5):
+                auto_renew.get("synthetic_local_http_delete_cases")==11):
             raise RuntimeError("Automatic-renewal durable idempotency proof incomplete")
         finance_path=Path(tmp)/"finance-native-routes.json"
         subprocess.run(["python3",str(ROOT/"tools/test_post_v9_finance_routes.py"),

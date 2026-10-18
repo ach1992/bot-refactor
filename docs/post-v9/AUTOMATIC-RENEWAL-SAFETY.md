@@ -96,11 +96,20 @@ paths must call the same source-level safety functions:
 4. An unrelated account-cleanup error must not prevent due financial
    reconciliation alerts from running in the same scheduled worker. The
    warning Cron wrapper isolates cleanup exceptions with a finally block.
-5. Remote DELETE transport itself now checks actual HTTP 2xx, response
-   validity, token, and cURL failures. An ambiguous 200 body, failed HTTP
-   response or lost transport reply cannot masquerade as a confirmed delete.
-   A remote 204 with empty response is an expected success form; any
-   uncertain result remains a manual reconciliation case.
+5. Remote DELETE transport checks the authoritative upstream provider
+   response contract: the pinned Gozargah/Marzban revision
+   `7f396db3e703d71a28060bc9ce4a532ec64cb1f4`, file
+   `app/routers/user.py` (DELETE `/api/user/{username}`), returns
+   HTTP 200 with the exact JSON object
+   `{"detail":"User successfully deleted"}` after successful removal.
+   Other response bodies, even HTTP 200 with unrelated JSON or arbitrary
+   detail text, never certify deletion. The pinned upstream route does
+   not document a 204 empty-body response: classify 204 as unconfirmed
+   unless a separately verified supported provider version establishes
+   that contract. HTTP 4xx/5xx, timeout, malformed JSON and lost
+   transport responses remain review holds. Actual installed Marzban
+   version/behavior is a separate operator-acceptance preflight.
+   Source: https://github.com/Gozargah/Marzban/blob/7f396db3e703d71a28060bc9ce4a532ec64cb1f4/app/routers/user.py#L140-L156
 
 This is a conservative state transition: remote deletion failure can leave a
 legitimate original account inactive in local UI until operator recovery.
@@ -166,10 +175,13 @@ or infer a partial migration is harmless.
 The source-only native harness tests full temporary original-schema
 MariaDB plus isolated 004 and 001/003 interoperability. F1 tests the
 actual user/admin/local order deletion PHP routes, the actual warning
-cleanup and finally-isolated Cron wrapper, remote HTTP 204/200/500 and
-invalid/empty bodies against an owned 127.0.0.1 test provider, SQL
-failure after mock remote deletion, operator recovery, and preservation
-of historical pays/journal evidence. F2 tests two simultaneous PHP
+cleanup and finally-isolated Cron wrapper, official HTTP 200 success
+detail plus fail-closed 204/4xx/5xx/unexpected-detail/invalid/lost body
+cases against an owned 127.0.0.1 test provider, and actual guarded
+customer/admin/Cron deletion handlers using the real Marzban transport,
+SQL failure after mock remote deletion, operator recovery, and
+preservation of historical pays/journal evidence. Customer preview
+authorization and safe order-ID-only operator diagnostics are included. F2 tests two simultaneous PHP
 workers targeting different local order IDs for one account, including
 grouped same-panel aliases with different URLs/admin usernames. F3
 runs deliberately incompatible temporary schema mutants; every unsafe

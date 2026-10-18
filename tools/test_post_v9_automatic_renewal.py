@@ -5,6 +5,7 @@ No live payment, Telegram, Marzban, production database or external network.
 """
 import argparse
 import json
+import re
 import subprocess
 import time
 from pathlib import Path
@@ -19,6 +20,7 @@ error_reporting(E_ALL & ~E_DEPRECATED);
 set_error_handler(function($sev,$msg){throw new ErrorException($msg,0,$sev);});
 $_SERVER['SCRIPT_FILENAME']='owned-renew-php.php';
 $root=$argv[1];
+$GLOBALS['root']=$root;
 $spec=json_decode($argv[4],true,512,JSON_THROW_ON_ERROR);
 $GLOBALS['spec']=$spec;
 $connection=new mysqli('localhost','root','',$argv[3],0,$argv[2]);
@@ -58,6 +60,10 @@ function sendMessage($message,$keys=null,$parse=null,$id=null) {
 }
 function deleteMarzban($serverId,$remark) {
     $GLOBALS['events'][]=['type'=>'remote_delete','server'=>$serverId];
+    if (!empty($GLOBALS['spec']['official_http_provider'])) {
+        require_once $GLOBALS['root'].'/src/Panel/Accounts.php';
+        return \AchBot\Panel\Accounts\deleteMarzban($serverId,$remark);
+    }
     return (object)['success'=>$GLOBALS['spec']['remote_delete_ok']??true];
 }
 function achbotSupportsPanel($type) {return $type==='marzban';}
@@ -88,17 +94,19 @@ if ($action==='real_warning_cleanup') {
     $events[]=['type'=>'warnings_finished'];
 } elseif (in_array($action,
     ['real_user_delete','real_admin_delete','real_order_delete',
-     'real_order_delete_nonadmin'],true)) {
+     'real_order_delete_nonadmin','real_user_preview_nonadmin'],true)) {
     // These actual bot routes may call exit(); the shutdown hook keeps
     // structured synthetic test evidence without modifying production code.
     register_shutdown_function(function() use (&$events) {
         echo json_encode($events,JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE);
     });
-    $from_id=in_array($action,['real_user_delete',
-        'real_order_delete_nonadmin'],true)?1001:9001;
+    $from_id=$action==='real_user_preview_nonadmin'?9002:
+        (in_array($action,['real_user_delete',
+         'real_order_delete_nonadmin'],true)?1001:9001);
     $userInfo=['isAdmin'=>$from_id===9001,'step'=>'none'];
     $data=($action==='real_user_delete'?'yesDeleteConfig':
-          ($action==='real_admin_delete'?'yesDeleteUserConfig':'deleteOrder_')).$oid;
+          ($action==='real_user_preview_nonadmin'?'deleteMyConfig':
+          ($action==='real_admin_delete'?'yesDeleteUserConfig':'deleteOrder_'))).$oid;
     $text='';
     $message_id=53;
     $first_name='Owned synthetic';
@@ -162,7 +170,7 @@ def cmd(w,e,s):
     file=w/'owned-renew-php.php'
     if not file.exists():file.write_text(PHP)
     return ['php','-n','-d','extension=mysqlnd','-d','extension=mysqli',
-            '-d','allow_url_fopen=0',
+            '-d','extension=curl','-d','allow_url_fopen=0',
             '-d','disable_functions=exec,shell_exec,system,passthru,popen,proc_open,mail',
             str(file),str(ROOT),str(w/'mysql.sock'),DB,json.dumps(s)]
 def run(w,e,s):
@@ -182,7 +190,13 @@ def run(w,e,s):
               b'achbot_warning_remote_delete_deferred',
               b'achbot_warning_local_delete_deferred',
               b'achbot_operator_local_order_delete_deferred'}
-    unexpected=[line for line in p.stderr.splitlines() if line not in expected]
+    # Correlation-safe order IDs are intentionally included in operator logs.
+    diagnostic=re.compile(rb'^achbot_(?:account_delete_remote|admin_delete_remote|'
+                          rb'account_delete_local|warning_remote_delete|'
+                          rb'warning_local_delete|operator_local_order_delete)'
+                          rb'_deferred order_id=[1-9][0-9]*$')
+    unexpected=[line for line in p.stderr.splitlines()
+                if line not in expected and not diagnostic.fullmatch(line)]
     if p.returncode or unexpected:
         raise RuntimeError(repr((p.returncode,unexpected[-8:],p.stdout[-400:])))
     return json.loads(p.stdout)
@@ -646,18 +660,37 @@ def main():
                 self.respond(200,b'{"access_token":"synthetic-local-only"}')
             def do_DELETE(self):
                 tail=self.path.rsplit('/',1)[-1]
+                official=b'{"detail":"User successfully deleted"}'
                 options={
-                  'valid-204':(204,b''),
-                  'valid-200':(200,b'{}'),
-                  'bad-500':(500,b'<html>failed</html>'),
+                  # Official Gozargah/Marzban pinned upstream success contract.
+                  'official-200':(200,official),
+                  # No evidence of 204 in the pinned Marzban contract.
+                  'unconfirmed-204':(204,b''),
+                  'unrelated-200':(200,b'{}'),
+                  'unexpected-detail':(200,b'{"detail":"Different status"}'),
+                  'forged-extra-field':(200,b'{"detail":"User successfully deleted","extra":1}'),
+                  'bad-500':(500,b'{"detail":"Server error"}'),
+                  'bad-400':(400,b'{"detail":"Request failed"}'),
+                  'not-found-404':(404,b'{"detail":"User not found"}'),
                   'bad-200':(200,b'<html>not-json</html>'),
                   'empty-200':(200,b''),
+                  'lost-response':(0,b''),
+                  'integrated-customer-200':(200,official),
+                  'integrated-admin-200':(200,official),
+                  'integrated-cron-200':(200,official),
+                  'integrated-customer-bad-500':(500,b'{"detail":"Failed"}'),
+                  'integrated-customer-unexpected-200':(200,b'{"detail":"Not deleted"}'),
                 }
                 code,body=options.get(tail,(404,b''))
-                self.respond(code,body)
+                self.server.delete_calls.append((tail,code))
+                if code==0:
+                    self.connection.close()
+                else:
+                    self.respond(code,body)
             def do_GET(self):
                 self.respond(405,b'')
         server=ThreadingHTTPServer(('127.0.0.1',0),FakeMarzban)
+        server.delete_calls=[]
         thread=Thread(target=server.serve_forever,daemon=True)
         thread.start()
         try:
@@ -674,7 +707,12 @@ echo json_encode(['success'=>$out->success??false,
                   'uncertain'=>$out->uncertain??false],
                  JSON_THROW_ON_ERROR);
 ''')
-            for case in ('valid-204','valid-200','bad-500','bad-200','empty-200'):
+            transportCases=(
+                'official-200','unconfirmed-204','unrelated-200',
+                'unexpected-detail','forged-extra-field','bad-500','bad-400',
+                'not-found-404','bad-200','empty-200','lost-response',
+            )
+            for case in transportCases:
                 argv=['php','-n','-d','extension=mysqlnd',
                       '-d','extension=mysqli','-d','extension=curl',
                       str(deleteScript),str(ROOT),str(w/'mysql.sock'),DB,case]
@@ -682,10 +720,114 @@ echo json_encode(['success'=>$out->success??false,
                                     timeout=15)
                 assert proc.returncode==0 and not proc.stderr,(case,proc.stderr)
                 result=json.loads(proc.stdout)
-                expectSuccess=case.startswith('valid-')
-                assert result['success'] is expectSuccess,(case,result)
-                if not expectSuccess:assert result['uncertain'] is True,(case,result)
+                expectedSuccess=case=='official-200'
+                assert result['success'] is expectedSuccess,(case,result)
+                if not expectedSuccess:assert result['uncertain'] is True,(case,result)
+            assert [x[0] for x in server.delete_calls]==list(transportCases),server.delete_calls
             cases.append('f1_real_marzban_delete_http_failure_not_falsely_successful')
+
+            # The exact REAL guarded customer/admin/Cron PHP routes must
+            # consume the actual native Panel/Accounts.php transport result,
+            # not a stub pretending a provider response succeeded.
+            sql(w,e,"UPDATE orders_list SET status=0 WHERE status=1")
+            customer=seed(w,e,'integrated-customer-200',wallet=500000)
+            assert sum(x['type']=='remote' for x in run(w,e,{
+                'order_id':customer,'enabled':'on'}))==1
+            before_wallet=wallet(w,e)
+            before_capacity=int(sql(w,e,"SELECT ucount FROM server_info WHERE id=2"))
+            old_paid=count(w,e,'pays',
+                           f"order_id={customer} AND state='paid_with_wallet'")
+            old_journal=count(w,e,'automatic_renewal_attempts',
+                              f'order_id={customer} AND stage="done"')
+            first=len(server.delete_calls)
+            res=run(w,e,{'order_id':customer,'action':'real_user_delete',
+                         'official_http_provider':True})
+            assert sum(x['type']=='remote_delete' for x in res)==1,res
+            assert sum(x['type']=='editText' for x in res)==1,res
+            assert server.delete_calls[first:]==[('integrated-customer-200',200)]
+            assert count(w,e,'orders_list',f'id={customer}')==0
+            assert count(w,e,'pays',
+                         f"order_id={customer} AND state='paid_with_wallet'")==old_paid==1
+            assert count(w,e,'automatic_renewal_attempts',
+                         f'order_id={customer} AND stage="done"')==old_journal==1
+            assert wallet(w,e)==before_wallet
+            assert int(sql(w,e,'SELECT ucount FROM server_info WHERE id=2'))==before_capacity+1
+            again=run(w,e,{'order_id':customer,'action':'real_user_delete',
+                           'official_http_provider':True})
+            assert not any(x['type']=='remote_delete' for x in again),again
+            assert len(server.delete_calls)==first+1
+            cases.append('f1_official_http_200_guarded_customer_once_full_evidence')
+
+            admin=seed(w,e,'integrated-admin-200',wallet=500000)
+            run(w,e,{'order_id':admin,'enabled':'on'})
+            before_wallet=wallet(w,e)
+            before_capacity=int(sql(w,e,'SELECT ucount FROM server_info WHERE id=2'))
+            first=len(server.delete_calls)
+            res=run(w,e,{'order_id':admin,'action':'real_admin_delete',
+                         'official_http_provider':True})
+            assert sum(x['type']=='remote_delete' for x in res)==1,res
+            assert server.delete_calls[first:]==[('integrated-admin-200',200)]
+            assert count(w,e,'orders_list',f'id={admin}')==0
+            assert count(w,e,'pays',f'order_id={admin}')==1
+            assert count(w,e,'automatic_renewal_attempts',f'order_id={admin}')==1
+            assert wallet(w,e)==before_wallet
+            assert int(sql(w,e,'SELECT ucount FROM server_info WHERE id=2'))==before_capacity+1
+            cases.append('f1_official_http_200_guarded_admin_once_full_evidence')
+
+            cron_id=seed(w,e,'integrated-cron-200',wallet=500000)
+            run(w,e,{'order_id':cron_id,'enabled':'on'})
+            # Notif=0 after paid renewal: simulate the independently due
+            # expired-order warning without changing financial history.
+            sql(w,e,f"UPDATE orders_list SET notif=1 WHERE id={cron_id}")
+            before_wallet=wallet(w,e)
+            first=len(server.delete_calls)
+            res=run(w,e,{'order_id':cron_id,'action':'real_warning_cleanup',
+                         'official_http_provider':True,'expire_delta':-100})
+            assert sum(x['type']=='remote_delete' for x in res)==1,res
+            assert server.delete_calls[first:]==[('integrated-cron-200',200)]
+            assert count(w,e,'orders_list',f'id={cron_id}')==0
+            assert count(w,e,'pays',f'order_id={cron_id}')==1
+            assert count(w,e,'automatic_renewal_attempts',f'order_id={cron_id}')==1
+            assert wallet(w,e)==before_wallet
+            again=run(w,e,{'order_id':cron_id,'action':'real_warning_cleanup',
+                           'official_http_provider':True,'expire_delta':-100})
+            assert not any(x['type']=='remote_delete' for x in again),again
+            cases.append('f1_official_http_200_guarded_cron_once_full_evidence')
+
+            for failureRemark in ('integrated-customer-bad-500',
+                                  'integrated-customer-unexpected-200'):
+                fallback=seed(w,e,failureRemark,wallet=500000)
+                run(w,e,{'order_id':fallback,'enabled':'on'})
+                before_wallet=wallet(w,e)
+                before_capacity=int(sql(w,e,'SELECT ucount FROM server_info WHERE id=2'))
+                first=len(server.delete_calls)
+                res=run(w,e,{'order_id':fallback,'action':'real_user_delete',
+                             'official_http_provider':True})
+                assert sum(x['type']=='remote_delete' for x in res)==1,res
+                assert not any(x['type']=='editText' for x in res),res
+                assert len(server.delete_calls)==first+1
+                assert count(w,e,'orders_list',f'id={fallback} AND status=0')==1
+                assert count(w,e,'automatic_renewal_attempts',
+                             f'order_id={fallback} AND stage="done"')==1
+                assert count(w,e,'pays',
+                             f"order_id={fallback} AND state='paid_with_wallet'")==1
+                assert wallet(w,e)==before_wallet
+                assert int(sql(w,e,'SELECT ucount FROM server_info WHERE id=2'))==before_capacity
+                retried=run(w,e,{'order_id':fallback,'action':'real_user_delete',
+                                 'official_http_provider':True})
+                assert not any(x['type']=='remote_delete' for x in retried),retried
+                assert len(server.delete_calls)==first+1
+            cases.append('f1_real_guarded_customer_error_and_unexpected_200_fenced')
+
+            preview=seed(w,e,'preview-private-owned')
+            res=run(w,e,{'order_id':preview,
+                         'action':'real_user_preview_nonadmin'})
+            assert any(x['type']=='alert' for x in res),res
+            assert not any(x['type']=='editText' for x in res),res
+            assert not any(x['type']=='remote_delete' for x in res),res
+            assert count(w,e,'orders_list',
+                         f'id={preview} AND status=1')==1
+            cases.append('o1_user_delete_preview_ownership_and_privacy')
         finally:
             server.shutdown()
             thread.join(timeout=5)
@@ -693,7 +835,7 @@ echo json_encode(['success'=>$out->success??false,
     report=dict(complete=True,cases=len(cases),scenarios=cases,source_only_004=True,
                 original_schema_file_unchanged=True,provider_requests=0,
                 production_mutations=0,native_php_workers=2,
-                synthetic_local_http_delete_cases=5)
+                synthetic_local_http_delete_cases=11)
     if a.report:a.report.write_text(json.dumps(report,indent=2)+'\n')
     print(json.dumps({k:v for k,v in report.items() if k!='scenarios'}))
 if __name__=='__main__': main()

@@ -235,7 +235,7 @@ if (preg_match('/^deleteOrder_(\\d+)/', $data, $match)) {
     $server=(int)($stmt->get_result()->fetch_assoc()['server_id']??0);
     $stmt->close();
     if (!achbotAutoRenewFinalizeDeletion($connection,(int)$id,$server,false)) {
-        error_log('achbot_operator_local_order_delete_deferred');
+        error_log('achbot_operator_local_order_delete_deferred order_id='.(int)$id);
         alert("⚠️ حذف سفارش نیازمند بررسی است.", true);
         return;
     }

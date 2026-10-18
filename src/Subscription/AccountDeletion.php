@@ -13,6 +13,11 @@ if(preg_match('/^deleteMyConfig(\d+)/', $data, $match)){
     $stmt->execute();
     $order = $stmt->get_result()->fetch_assoc();
     $stmt->close();
+    // The preview callback is user-controlled: do not expose another account.
+    if (!$order || (int)$order['userid']!==(int)$from_id) {
+        alert("⛔️ این اشتراک متعلق به حساب شما نیست.", true);
+        exit;
+    }
     $remark = $order['remark'];
 
     editText($message_id,
@@ -85,7 +90,7 @@ elseif(preg_match('/^yesDeleteConfig(\d+)/',$data,$match)){
         $expiryDay = $configInfo->expire != 0?
             floor(($configInfo->expire - time()) / 86400):"نامحدود";
     } catch (Throwable $error) {
-        error_log('achbot_account_delete_remote_deferred');
+        error_log('achbot_account_delete_remote_deferred order_id='.(int)$oid);
         alert("⚠️ نتیجه حذف اشتراک مشخص نیست؛ لطفاً با پشتیبانی تماس بگیرید.", true);
         exit;
     }
@@ -96,7 +101,7 @@ elseif(preg_match('/^yesDeleteConfig(\d+)/',$data,$match)){
     }
 
     if (!achbotAutoRenewFinalizeDeletion($connection,(int)$oid,(int)$server_id,true)) {
-        error_log('achbot_account_delete_local_deferred');
+        error_log('achbot_account_delete_local_deferred order_id='.(int)$oid);
         alert("⚠️ حذف اشتراک نیازمند بررسی است؛ لطفاً با پشتیبانی تماس بگیرید.", true);
         exit;
     }
@@ -179,14 +184,14 @@ elseif(preg_match('/^yesDeleteUserConfig(\d+)/',$data,$match) && ($from_id == $a
         if (!is_object($res) || ($res->success??false)!==true)
             throw new RuntimeException('admin_delete_remote_unconfirmed');
     } catch (Throwable $error) {
-        error_log('achbot_admin_delete_remote_deferred');
+        error_log('achbot_admin_delete_remote_deferred order_id='.(int)$oid);
         alert("⚠️ نتیجه حذف اشتراک مشخص نیست؛ لطفاً بررسی دستی انجام دهید.", true);
         exit;
     }
     
 
     if (!achbotAutoRenewFinalizeDeletion($connection,(int)$oid,(int)$server_id,true)) {
-        error_log('achbot_account_delete_local_deferred');
+        error_log('achbot_account_delete_local_deferred order_id='.(int)$oid);
         alert("⚠️ حذف اشتراک نیازمند بررسی است؛ لطفاً با پشتیبانی تماس بگیرید.", true);
         exit;
     }

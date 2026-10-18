@@ -207,8 +207,25 @@ def main():
                 not results[0].get('warnings') and
                 not results[1].get('warnings') and
                 results[0].get('stdout')==results[1].get('stdout')=='')
+            # Historical loopback DELETE fixture replies with a user object
+            # instead of the official documented DELETE response
+            # {"detail":"User successfully deleted"}. V9 blindly treated
+            # that unrelated HTTP 200 body as successful. The corrected
+            # source must reject it while issuing the EXACT same wire call.
+            # The separate 004/native HTTP suite proves the official success.
+            intentional_delete_fail_closed=(name=='marzban.delete' and
+                results[0].get('result')=={'success':True} and
+                results[1].get('result')=={
+                    'success':False,'uncertain':True,
+                    'msg':'remote_delete_body_unconfirmed'} and
+                results[0].get('exception') is None and
+                results[1].get('exception') is None and
+                not results[0].get('warnings') and
+                not results[1].get('warnings') and
+                results[0].get('stdout')==results[1].get('stdout')=='')
             if traces[0]!=traces[1] or (
-                results[0]!=results[1] and not intentional_fail_closed):
+                results[0]!=results[1] and not
+                (intentional_fail_closed or intentional_delete_fail_closed)):
                 raise RuntimeError("Marzban differential mismatch: "+name+
                                    "\n"+json.dumps({"historical":results[0],
                                                     "candidate":results[1],

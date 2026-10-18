@@ -460,15 +460,18 @@ function deleteMarzban($server_id,$remark){
         return (object)['success'=>false,'uncertain'=>true,
                         'msg'=>'remote_delete_response_unconfirmed'];
     }
-    // A 204 response may legitimately have no body. For any other status,
-    // require a recognizable JSON success response, never arbitrary HTML.
-    if ($http===204 && $raw==='') return (object)['success'=>true];
+    // Pinned Gozargah/Marzban DELETE /api/user/{username} returns HTTP 200
+    // {"detail":"User successfully deleted"} after deleting the user.
+    // Ref: app/routers/user.py @ 7f396db3e703d71a28060bc9ce4a532ec64cb1f4.
+    // A generic JSON object, different detail, or undocumented empty 204
+    // response is NOT proof of removal on the supported provider contract.
     $response=json_decode((string)$raw);
-    if (!is_object($response) || isset($response->detail)) {
-        return (object)['success'=>false,'uncertain'=>true,
-                        'msg'=>'remote_delete_body_unconfirmed'];
+    if ($http===200 && is_object($response) &&
+        get_object_vars($response)===['detail'=>'User successfully deleted']) {
+        return (object)['success'=>true];
     }
-    return (object)['success'=>true];
+    return (object)['success'=>false,'uncertain'=>true,
+                    'msg'=>'remote_delete_body_unconfirmed'];
 }
 
 function changeMarzbanState($server_id,$remark){

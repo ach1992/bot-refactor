@@ -189,7 +189,7 @@ if ($orders) {
                 try {
                     $res = deleteMarzban($server_id, $remark);
                 } catch (Throwable $error) {
-                    error_log('achbot_warning_remote_delete_deferred');
+                    error_log('achbot_warning_remote_delete_deferred order_id='.(int)$order['id']);
                     continue;
                 }
                 if (is_object($res) && ($res->success??false)===true &&
@@ -219,7 +219,7 @@ if ($orders) {
 
                     continue;
                 }
-                error_log('achbot_warning_local_delete_deferred');
+                error_log('achbot_warning_local_delete_deferred order_id='.(int)$order['id']);
                 // status=0 retains an operator-recoverable local record:
                 // a later Cron tick never blindly repeats the remote DELETE.
                 continue;
