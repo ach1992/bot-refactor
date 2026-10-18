@@ -106,6 +106,14 @@ if (!function_exists('processWalletPayment')) {
                 ];
             }
 
+            $price = (int)($payInfo['price'] ?? 0);
+            // Invalid/negative prices never become credits or free fulfillment.
+            if ($price <= 0) {
+                $connection->rollback();
+                alert("مبلغ این سفارش معتبر نیست؛ موجودی کیف پول تغییر نکرد.", true);
+                return ['status'=>'invalid_amount','payInfo'=>$payInfo];
+            }
+
             // Keep unsupported-plan preflight unchanged; only viable
             // customer orders need the shared-ledger exclusivity lookup.
             if (!achbotWalletDirectAllowedLocked($connection, $payInfo, (int)$from_id)) {

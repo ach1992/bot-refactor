@@ -2179,12 +2179,31 @@ if(preg_match('/^editServer(\D+)(\d+)/',$userInfo['step'],$match) && $text != $b
 if (($achbotV8Result = require __DIR__ . '/src/Finance/Routes/DiscountAdministration.php') === null) return;
 if($data == "managePanel" and (($from_id == $admin || $userInfo['isAdmin'] == true))){
 
-    setUser();
+    // Cached $userInfo may predate a concurrent financial commit. For any
+    // pending adjustment, cancellation must acquire the SAME operator lock
+    // and claim the exact step before saying funds were not moved.
+    $walletStepBeforePanel = (string)($userInfo['step'] ?? '');
+    $walletPanelCancellation = achbotAdminWalletIsPendingStep($walletStepBeforePanel);
+    $walletPanelOutcome = null;
+    if ($walletPanelCancellation) {
+        $walletPanelOutcome = achbotCancelAdminWalletPendingStep(
+            $connection, (int)$from_id, $walletStepBeforePanel, (int)$admin
+        );
+    } else {
+        // Preserve the existing nonfinancial panel-navigation behavior.
+        setUser();
+    }
     $msg = "
 👤 به بخش مدیریت خوش اومدی $first_name
 
 🚪 /start
 ";
+    if ($walletPanelOutcome === 'canceled') {
+        $msg .= "\n⚠️ درخواست تغییر موجودی نیمه‌تمام لغو شد؛ مبلغی از این درخواست اعمال نشد.\n";
+    } elseif ($walletPanelCancellation) {
+        // Stale/ambiguous database state is NOT proof of cancellation.
+        $msg .= "\n⚠️ وضعیت درخواست تغییر موجودی در حال بررسی است؛ ممکن است قبلاً پردازش شده باشد. قبل از اقدام مجدد، موجودی و سوابق تغییرات را بررسی کنید.\n";
+    }
     editText($message_id, $msg, getAdminKeys());
 }
 if($data == 'reciveApplications') {
