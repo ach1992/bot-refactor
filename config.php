@@ -2661,16 +2661,23 @@ if (preg_match('/^(toggleAutoRenew|adminToggleAutoRenew)(\d+)$/', $data, $match)
 }
 // END create user and admin get order detail
 
-function RandomString($count = 9, $type = "all") {
+function RandomString($count = 20, $type = "all") {
+    // Payment hashes are bearer-capability references in hosted URLs and
+    // Telegram callbacks. Never derive them from predictable rand()/mt_rand().
+    // Twenty alphabet characters provide over 110 bits of online guessing
+    // resistance, while fitting the longest supported callback_data (<64 B).
     if($type == "all") $characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz123456789';
     elseif($type == "small") $characters = 'abcdef123456789';
     elseif($type == "domain") $characters = 'abcdefghijklmnopqrstuvwxyz';
-    
-    $randstring = null;
+    else throw new InvalidArgumentException('invalid_random_string_type');
+    if (!is_int($count) || $count < 1 || $count > 64) {
+        throw new InvalidArgumentException('invalid_random_string_length');
+    }
+
+    $randstring = '';
+    $lastIndex = strlen($characters) - 1;
     for ($i = 0; $i < $count; $i++) {
-        $randstring .= $characters[
-            rand(0, strlen($characters)-1)
-        ];
+        $randstring .= $characters[random_int(0, $lastIndex)];
     }
     return $randstring;
 }

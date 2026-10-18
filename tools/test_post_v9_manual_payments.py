@@ -266,6 +266,16 @@ def check():
 
         base=lambda hash_id,op,method='bank_transfer',**kw:run_php(work,env,driver,hash_id,op,method,**kw)
 
+        # Nonpositive local prices must never credit wallet through subtraction.
+        for key,value in [('walletnegative',-100000),('walletzero',0)]:
+            seed(work,env,key,price=value)
+            before=query(work,env,'SELECT userid,wallet FROM users ORDER BY userid')
+            got=base(key,'wallet')
+            assert got['status']=='invalid_amount', (key,got)
+            assert query(work,env,'SELECT userid,wallet FROM users ORDER BY userid')==before
+            assert query(work,env,f"SELECT state FROM pays WHERE hash_id='{key}'")=='pending'
+            cases.append('wallet_spend_invalid_'+key+'_no_financial_effect')
+
         assert base('bankfixture','claim') is True
         assert base('bankfixture','claim') is True
         cases.append('bank_claim_idempotent')

@@ -6,6 +6,12 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
 }
 
 function startWalletPayment($connection, $botState, $buttonValues, $botUrl, $from_id, $removeKeyboard, $amount){
+    // A forged Telegram callback may bypass UI-side amount validation.
+    if (!is_int($amount) || $amount < 100000 || $amount > 10000000 ||
+        $amount % 50000 !== 0 || (int)$from_id <= 0) {
+        sendMessage("مبلغ شارژ کیف پول معتبر نیست.", $removeKeyboard);
+        return;
+    }
     sendMessage("🪄 لطفا صبور باشید ...", $removeKeyboard);
 
     $hash_id = RandomString();

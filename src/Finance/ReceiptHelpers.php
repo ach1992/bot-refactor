@@ -395,6 +395,7 @@ function achbotApproveManualWalletTopup(mysqli $connection, string $hashId, int 
 function achbotWalletDirectAllowedLocked(mysqli $connection, array $pay,
                                          int $actor): bool {
     if ($actor <= 0 || (int)($pay['user_id'] ?? 0) !== $actor ||
+        (int)($pay['price'] ?? 0) <= 0 ||
         !in_array((string)($pay['state'] ?? ''), ['pending','send','low_wallet'], true) ||
         (string)($pay['payid'] ?? '') !== '') return false;
     $id = (int)($pay['id'] ?? 0);

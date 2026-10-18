@@ -104,6 +104,18 @@ def main():
     parser.add_argument("--report",type=Path)
     a=parser.parse_args()
     result=source_checks()
+    # Merchant payment references are untrusted URL/Telegram capabilities.
+    # Verify current CSPRNG source and callback-data bounds, not test stubs.
+    payment_identity_output=subprocess.run(
+        ["python3",str(ROOT/"tools/test_post_v9_payment_identity.py")],
+        cwd=ROOT,check=True,timeout=20,capture_output=True,text=True)
+    payment_identity=json.loads(payment_identity_output.stdout)
+    if not (payment_identity.get("complete") is True and
+            payment_identity.get("crypto_source")=="random_int" and
+            payment_identity.get("default_length")==20 and
+            payment_identity.get("unique_generated")==500 and
+            payment_identity.get("longest_callback_bytes",999)<=64):
+        raise RuntimeError("Payment capability randomness/bounds incomplete")
     audience=customer_errors.verify(ROOT)
     with tempfile.TemporaryDirectory(prefix="achbot-post-v9-acceptance-") as tmp:
         cron_path=Path(tmp)/"post-v9-cron-runner.json"
@@ -512,6 +524,7 @@ def main():
                     "catalogue_and_subscription_qr":catalogue,
                     "financial_native_route_guards":finance,
                     "manual_payment_method_isolation":manual,
+                    "payment_reference_assurance":payment_identity,
                     "shared_payment_ledger_rc4_import":migration,
                      "agency_state_regression":agency,
                      "optional_cron_runner":cron,
@@ -537,6 +550,7 @@ def main():
                       "catalogue_qr_cases":catalogue["cases"],
                       "financial_native_route_cases":finance["cases"],
                       "manual_payment_isolation_cases":manual["cases"],
+                      "payment_reference_length":payment_identity["default_length"],
                       "historical_rc4_payment_import_verified":migration["preserved_rc4_rows_and_ids"],
                        "agency_state_cases":agency["cases"],
                        "optional_cron_runner_cases":cron["cases"],

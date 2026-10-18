@@ -96,6 +96,14 @@ if (preg_match('/^prePayCheck_([a-zA-Z0-9]+)_([a-zA-Z0-9]+)_([a-zA-Z0-9]+)/', $d
         exit;
     }
 
+    // A stale Telegram payment button must not allow another user to
+    // expire, re-route or reveal the original buyer's payment information.
+    if ((int)($payInfo['user_id'] ?? 0) <= 0 ||
+        (int)$payInfo['user_id'] !== (int)$from_id) {
+        answerCallbackQuery($callbackId, "این درخواست پرداخت متعلق به حساب شما نیست.", true);
+        return;
+    }
+
     // A callback button can survive a provider settlement indefinitely.
     // Reject ALL terminal states before checking plans, expiry or gateways.
     // Never let a stale Telegram callback rewrite a paid/terminal receipt.

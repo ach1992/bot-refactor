@@ -374,7 +374,7 @@ try {
             ['cartToCartState','nowPaymentWallet','zarinpal',
              'nextpay','weSwapState','tronWallet'], 'off');
         startWalletPayment($connection,$state,['cancel'=>'لغو'],
-                           $botUrl,1001,null,100);
+                           $botUrl,1001,null,(int)($spec['topup_amount']??100000));
     } elseif ($spec['route'] === 'wallet_refund') {
         $result=refundToWalletAndNotify($connection,
             (int)($spec['refund_user']??1001),(int)($spec['refund_amount']??100),
@@ -383,7 +383,7 @@ try {
     } elseif ($spec['route'] === 'prepayment') {
         $data=(string)($spec['callback_data']??'');
         $callbackId='test-callback';
-        $from_id=1001;
+        $from_id=(int)($spec['actor']??1001);
         require $root . '/src/Finance/Routes/PrePayment.php';
     } elseif ($spec['route'] === 'marzban_edit') {
         require $root . '/src/Panel/Accounts.php';
@@ -1824,6 +1824,34 @@ def main():
                 ('missing_user_never_done' if missing_user else 'verified_refund_done'),
                 pass_=True,external_requests=1))
         sql(work,env,"UPDATE server_info SET ucount=10 WHERE id=2")
+
+        # Someone with a leaked order hash cannot expire, redirect or
+        # inspect a foreign customer's pending invoice.
+        seed_payment(work,env,'foreignunclaimed','INCREASE_WALLET',0,0,'')
+        original=snapshot(work,env)
+        foreign=run_php(work,env,stage,dict(route='prepayment',get={},actor=9002,
+            callback_data='prePayCheck_BUYSUB_zarinpal_foreignunclaimed'))
+        verify_unchanged(work,env,original,'foreign_prepayment')
+        if foreign['network_calls'] or not any(
+                e['name']=='callback' for e in foreign['events']) or any(
+                e['name']=='sendMessage' for e in foreign['events']):
+            raise RuntimeError('Foreign actor obtained payment navigation')
+        records.append(dict(case='prepayment_foreign_owner_denied',
+                            pass_=True,external_requests=0))
+
+        # A forged callback must not create a free/negative/oversized topup
+        # nor silently erase the customer's prior unclaimed quote.
+        for invalid in (-100000,0,50000,100001,10000001):
+            old=snapshot(work,env)
+            out=run_php(work,env,stage,dict(route='wallet_start',get={},
+                                            topup_amount=invalid))
+            verify_unchanged(work,env,old,'bad_topup_'+str(invalid))
+            if out['network_calls'] or not any(
+                    e['name']=='sendMessage' and 'مبلغ' in str(e['args'])
+                    for e in out['events']):
+                raise RuntimeError('Forged topup callback not rejected')
+        records.append(dict(case='topup_invalid_amount_denied_before_sql',
+                            pass_=True,external_requests=0))
 
         # Stale buttons from OTHER gateways must not expire an issued
         # NOWPayments invoice or a still-unresolved creating reservation.
