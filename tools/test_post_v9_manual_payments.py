@@ -109,7 +109,7 @@ $chat_id=$from_id;
 $admin=9001;$botUsername='FixtureBot';$message_id=111;
 $callbackId='fixture-callback';
 $data=(string)($spec['data']??'');
-$text='';
+$text=$spec['text']??'';
 $userInfo=[
     'step'=>$spec['step']??'none',
     'userid'=>$from_id,'name'=>'Customer',
@@ -120,7 +120,9 @@ $update=json_decode(json_encode($spec['update']??['message'=>[
 ]]),false);
 $removeKeyboard=null;$cancelKey='{}';$botUrl='http://127.0.0.1:9/fixture/';$supportID='fixture_support';
 $USDTPrice='100000';$USDTPriceagent='110000';
-$botState=['cartToCartState'=>'on','giftCardState'=>'on','manualUsdtState'=>'on'];
+$botState=['cartToCartState'=>'on','giftCardState'=>'on','manualUsdtState'=>'on',
+           'nowPaymentWallet'=>'off','zarinpal'=>'off','nextpay'=>'off',
+           'tronWallet'=>'off'];
 $paymentKeys=[
     'bankAccount'=>'6037999999999999','holderName'=>'Fixture',
     'giftCardUrl'=>'https://example.org/gift-card',
@@ -141,6 +143,8 @@ function setUser($value='none',$field='step'){$GLOBALS['events'][]=[
 function getMainKeys(){return '{}';}
 function alert(...$args){$GLOBALS['events'][]=['name'=>'alert','args'=>$args];}
 function sendMessage(...$args){$GLOBALS['events'][]=['name'=>'sendMessage','args'=>$args];return (object)['ok'=>true];}
+// Isolated fixture ID; the production reference generator is tested separately.
+function RandomString(){return bin2hex(random_bytes(10));}
 function sendPhoto(...$args){
     global $spec,$connection;
     $GLOBALS['events'][]=['name'=>'sendPhoto','args'=>$args];
@@ -202,13 +206,18 @@ if (($spec['route']??'wallet') === 'manual_admin') {
 } elseif (($spec['route']??'wallet') === 'renewal') {
     require $root.'/src/Finance/Routes/RenewalCheckout.php';
 } else {
+    if (($spec['route']??'wallet')==='topup') {
+        // Exercise actual payment insertion and draft cleanup.
+        require $root.'/src/Purchase/Core.php';
+        require $root.'/src/Finance/WalletStart.php';
+    }
     require $root.'/src/Finance/Routes/WalletRecharge.php';
 }
 """
 def run_route(work,env,driver,data='',step='none',actor=1001,update=None,route='wallet',
-              photo_mode='success',remote_mode='success'):
+              photo_mode='success',remote_mode='success',text=''):
     spec={'data':data,'step':step,'actor':actor,'route':route,
-          'photo_mode':photo_mode,'remote_mode':remote_mode}
+          'photo_mode':photo_mode,'remote_mode':remote_mode,'text':text}
     if update is not None: spec['update']=update
     cmd=['php','-n','-d','extension=mysqlnd','-d','extension=mysqli',
          '-d','allow_url_fopen=0','-d','display_errors=1',
@@ -220,7 +229,11 @@ def run_route(work,env,driver,data='',step='none',actor=1001,update=None,route='
     if p.returncode or p.stderr:
         raise RuntimeError('isolated wallet payment route failed: '+
                            repr((p.returncode,p.stderr,p.stdout))[:1400])
-    try: return json.loads(p.stdout)['events']
+    try:
+        report=json.loads(p.stdout)
+        if report.get('fatal'):
+            raise RuntimeError('wallet payment route fatal: '+repr(report['fatal'])[:400])
+        return report['events']
     except (json.JSONDecodeError,KeyError) as exc:
         raise RuntimeError('invalid wallet payment route output: '+repr(p.stdout)) from exc
 
@@ -1048,6 +1061,89 @@ def check():
         assert any(e['name']=='sendPhoto' for e in recovered)
         assert query(work,env,"SELECT state FROM pays WHERE hash_id='leaseexpiry'")=='have_sent'
         cases.append('lost_worker_recovered_after_lease_without_new_photo')
+
+        # P1: exercise raw Telegram values through the real WalletRecharge.php
+        # and WalletStart.php with original-schema + shared-ledger MariaDB.
+        seed(work,env,'topupissuedold',price=200000)
+        assert base('topupissuedold','claim','bank_transfer') is True
+        query(work,env,"UPDATE pays SET payid='synthetic-issued-invoice' "
+              "WHERE hash_id='topupissuedold'")
+        issued_before=query(work,env,
+            "SELECT id,hash_id,payid,state,price FROM pays "
+            "WHERE hash_id='topupissuedold'")
+        attempt_before=query(work,env,
+            "SELECT id,pay_row_id,provider,order_hash,stage FROM payment_attempts "
+            "WHERE order_hash='topupissuedold'")
+        def topup_snapshot():
+            return (
+                query(work,env,"SELECT * FROM pays ORDER BY id"),
+                query(work,env,"SELECT * FROM payment_attempts ORDER BY id"),
+                query(work,env,"SELECT * FROM payment_transactions ORDER BY id"),
+                query(work,env,"SELECT userid,wallet FROM users ORDER BY userid"),
+            )
+        malformed_callbacks=[
+            'increaseWallet_100000junk','increaseWallet_100000.5',
+            'increaseWallet_1e5','increaseWallet_100000_200000',
+            'increaseWallet_','increaseWallet_-100000',
+            'increaseWallet_0','increaseWallet_50000','increaseWallet_100001',
+            'increaseWallet_10000001','increaseWallet_99999999999999999999999',
+            'increaseWallet_ 100000','increaseWallet_+100000',
+        ]
+        malformed_texts=[
+            '100000.5','100000.0','1e5','100000junk','+100000',
+            '-100000',' 100000','100000 ','100,000',
+            '۰۱۰۰۰۰۰','', '0','50000','100001','10000001',
+            '99999999999999999999999',
+        ]
+        for i,(kind,raw) in enumerate(
+            [('callback',x) for x in malformed_callbacks] +
+            [('text',x) for x in malformed_texts]
+        ):
+            seed(work,env,'topupdraft'+str(i),price=150000)
+            before=topup_snapshot()
+            options=({'data':raw,'step':'none'} if kind=='callback'
+                     else {'data':'','step':'increaseMyWallet','text':raw})
+            events=run_route(work,env,route_driver,route='topup',**options)
+            assert topup_snapshot()==before,(kind,raw,'payment state mutated')
+            assert any(e['name']=='sendMessage' for e in events),(kind,raw,events)
+            assert not any(e['name'] in ('remote_create','remote_edit','sendPhoto','setUser')
+                           for e in events),(kind,raw,events)
+            assert not any(e['name']=='sendMessage' and
+                           'لطفا صبور' in str(e['args']) for e in events)
+            cases.append('real_topup_raw_'+kind+'_rejected_'+str(i))
+        assert query(work,env,
+            "SELECT id,hash_id,payid,state,price FROM pays "
+            "WHERE hash_id='topupissuedold'")==issued_before
+        assert query(work,env,
+            "SELECT id,pay_row_id,provider,order_hash,stage FROM payment_attempts "
+            "WHERE order_hash='topupissuedold'")==attempt_before
+
+        # Valid minimum/maximum amounts still create precisely priced drafts
+        # and do not erase previously provider-issued payment evidence.
+        for i,(kind,raw,expected) in enumerate([
+            ('callback','increaseWallet_100000',100000),
+            ('text','10000000',10000000),
+            ('text','000100000',100000),
+            ('callback','increaseWallet_10000000',10000000),
+        ]):
+            options=({'data':raw,'step':'none'} if kind=='callback'
+                     else {'data':'','step':'increaseMyWallet','text':raw})
+            events=run_route(work,env,route_driver,route='topup',**options)
+            assert any(e['name']=='sendMessage' and 'اطلاعات شارژ' in str(e['args'])
+                       for e in events),(kind,raw,events)
+            assert not any(e['name'] in ('remote_create','remote_edit','sendPhoto')
+                           for e in events)
+            assert query(work,env,
+                "SELECT id,hash_id,payid,state,price FROM pays "
+                "WHERE hash_id='topupissuedold'")==issued_before
+            assert query(work,env,
+                "SELECT id,pay_row_id,provider,order_hash,stage FROM payment_attempts "
+                "WHERE order_hash='topupissuedold'")==attempt_before
+            assert query(work,env,
+                "SELECT price FROM pays WHERE type='INCREASE_WALLET' "
+                "AND state='pending' AND user_id=1001 AND payid IS NULL "
+                "ORDER BY id DESC LIMIT 1")==str(expected),(kind,raw)
+            cases.append('real_topup_raw_'+kind+'_accepted_'+str(i))
 
     return {'complete':True,'cases':len(cases),'scenarios':cases,
             'php_runtime':'native','database':'owned_socket_only',

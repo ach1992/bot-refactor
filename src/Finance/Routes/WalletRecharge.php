@@ -5,6 +5,27 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     exit;
 }
 
+// Parse the complete Telegram amount before integer conversion. PHP's (int)
+// and is_numeric() can silently accept prefixes, fractions and exponents.
+// Never truncate a malformed input into an amount that can replace old drafts.
+if (!function_exists('achbotParseWalletTopupRawInteger')) {
+    function achbotParseWalletTopupRawInteger($raw): ?int {
+        if (!is_string($raw) || preg_match('/\\A[0-9]+\\z/', $raw) !== 1) {
+            return null;
+        }
+        $digits = ltrim($raw, '0');
+        if ($digits === '') {
+            return 0;
+        }
+        $max = (string) PHP_INT_MAX;
+        if (strlen($digits) > strlen($max) ||
+            (strlen($digits) === strlen($max) && strcmp($digits, $max) > 0)) {
+            return null;
+        }
+        return (int) $digits;
+    }
+}
+
 if($data == "increaseMyWallet") { 
     delMessage(); 
 
@@ -42,16 +63,26 @@ if($data == "increaseMyWallet") {
     sendMessage($textMsg, $keys, 'HTML');
 }
 
-if(strpos($data, "increaseWallet_") === 0){ 
-    delMessage();
-
-    $amount = (int)str_replace("increaseWallet_", "", $data);
-
-    if($amount > 10000000){
+if(strpos($data, "increaseWallet_") === 0){
+    $amount = achbotParseWalletTopupRawInteger(substr($data, strlen("increaseWallet_")));
+    if ($amount === null) {
+        sendMessage("⚠️ مبلغ شارژ معتبر نیست. لطفاً فقط عدد صحیح با ارقام انگلیسی وارد کنید.");
+        exit();
+    }
+    if ($amount < 100000) {
+        sendMessage("⚠️ لطفا مقداری بیشتر یا مساوی 100,000 تومان وارد کنید.");
+        exit();
+    }
+    if ($amount > 10000000) {
         sendMessage("⚠️ حداکثر مبلغ قابل شارژ کیف پول 10,000,000 تومان می‌باشد.");
         exit();
     }
+    if ($amount % 50000 !== 0) {
+        sendMessage("⚠️ مبلغ واردشده باید مضربی از 50,000 تومان باشد.");
+        exit();
+    }
 
+    delMessage();
     startWalletPayment($connection, $botState, $buttonValues, $botUrl, $from_id, $removeKeyboard, $amount);
     setUser();
 }
@@ -70,12 +101,11 @@ if($data == "increaseWalletCustom"){
 
 if($userInfo['step'] == "increaseMyWallet" && $text != $buttonValues['cancel']){ 
     
-    if(!is_numeric($text)){ 
-        sendMessage($mainValues['send_only_number']); 
-        exit(); 
+    $amount = achbotParseWalletTopupRawInteger($text);
+    if ($amount === null) {
+        sendMessage("⚠️ مبلغ شارژ معتبر نیست. لطفاً فقط عدد صحیح با ارقام انگلیسی وارد کنید.");
+        exit();
     }
-
-    $amount = (int)$text;
 
     if($amount < 100000){ 
         sendMessage("⚠️ لطفا مقداری بیشتر یا مساوی 100,000 تومان وارد کنید."); 

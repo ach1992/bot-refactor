@@ -515,6 +515,18 @@ def main():
             "real_custom_operator_and_bank_scheduler_race_single_service_claim",
             "legacy_operator_receipt_requires_persisted_delivery_evidence",
             "uncertain_custom_external_effect_operator_reconciliation_no_retry",
+            # PR #55 P1: actual raw Telegram parsing, SQL immutability,
+            # and accepted top-up boundaries are required acceptance cases.
+            "real_topup_raw_callback_rejected_0",   # numeric prefix + suffix
+            "real_topup_raw_callback_rejected_2",   # exponent callback
+            "real_topup_raw_callback_rejected_10",  # overflow callback
+            "real_topup_raw_text_rejected_13",       # fractional text
+            "real_topup_raw_text_rejected_15",       # exponent text
+            "real_topup_raw_text_rejected_28",       # overflow text
+            "real_topup_raw_callback_accepted_0",  # minimum callback
+            "real_topup_raw_text_accepted_1",      # maximum custom text
+            "real_topup_raw_text_accepted_2",      # ASCII leading zeros
+            "real_topup_raw_callback_accepted_3",  # maximum callback
         }
         if not (manual.get("complete") and manual.get("cases")>=len(required_manual)
                 and required_manual.issubset(manual.get("scenarios",[]))
