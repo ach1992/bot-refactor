@@ -201,6 +201,39 @@ def execute(work,env,**spec):
     obj['stderr']=p.stderr.decode(errors='replace')
     return obj
 
+
+def start_worker_with_cached_step(work, env, name, **spec):
+    """Pause a real PHP process AFTER loading stale userInfo from MariaDB."""
+    barrier = work / name
+    spec['barrier'] = str(barrier)
+    uid = int(spec.get('wire_update_id', spec.get('update_id', 701)))
+    process = subprocess.Popen(cmd(work, spec), env=env, cwd=work,
+                               stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    ready = Path(str(barrier) + '.' + str(uid))
+    until = time.monotonic() + 8
+    while not ready.exists():
+        if process.poll() is not None:
+            out, err = process.communicate(timeout=2)
+            raise RuntimeError(
+                f'Paused PHP worker exited: {process.returncode}, '
+                f'{out[-400:]!r}, {err[-400:]!r}')
+        if time.monotonic() > until:
+            process.kill()
+            process.wait(timeout=3)
+            raise RuntimeError('Paused PHP worker timed out awaiting cached snapshot')
+        time.sleep(.015)
+    return process, barrier
+
+
+def finish_paused_worker(process, barrier):
+    Path(str(barrier) + '.go').write_text('go')
+    out, err = process.communicate(timeout=15)
+    assert process.returncode == 0, (process.returncode, out[-600:], err[-600:])
+    result = json.loads(out)
+    result['stderr'] = err.decode(errors='replace')
+    return result
+
+
 def messages(result):
     return [str(e['args'][0]) for e in result['events'] if e['kind']=='sendMessage']
 
@@ -762,6 +795,167 @@ def main():
         assert step(work,env)==pending
         assert not any('✅' in m for m in messages(inert))
         cases.append('r2_unrelated_callback_not_financial_authorization')
+
+        # R3 — two genuinely independent PHP workers load the same pending
+        # step and then contend on the same real InnoDB operator row.
+        # FINANCE FIRST: navigation had already cached an obsolete step,
+        # but must NOT send a false "nothing applied" cancellation notice.
+        move_to_reason(work,env,'credit',23)
+        before_balance=balance(work,env)
+        before_rows=nledger(work,env)
+        nav,nav_barrier=start_worker_with_cached_step(
+            work,env,'r3-finance-first-navigation',
+            update_kind='callback',data='managePanel',update_id=851,
+            run_real_manage_panel_route=True)
+        try:
+            financial=execute(work,env,text='Explicit reason wins',update_id=850)
+            assert_state(work,env,before_balance+23,before_rows+1)
+            assert journal(work,env,850)==(
+                f'9001:1001:credit:23:{before_balance}:{before_balance+23}')
+            assert any('✅' in m for m in messages(financial))
+            nav_after=finish_paused_worker(nav,nav_barrier)
+            assert step(work,env)=='none'
+            edited=[e['args'][1] for e in nav_after['events']
+                    if e['kind']=='editText']
+            assert len(edited)==1 and 'در حال بررسی' in edited[0],edited
+            assert 'مبلغی از این درخواست اعمال نشد' not in edited[0],edited
+            assert not any('✅' in m for m in messages(nav_after))
+            assert_state(work,env,before_balance+23,before_rows+1)
+        finally:
+            if nav.poll() is None:
+                nav.kill()
+                nav.wait(timeout=4)
+        cases.append('r3_finance_commit_wins_stale_managepanel_no_false_cancel')
+
+        # NAVIGATION FIRST: finance reason worker has cached the pending
+        # flow, then conditional cancellation wins the lock/step claim.
+        move_to_reason(work,env,'debt',19)
+        before_balance=balance(work,env)
+        before_rows=nledger(work,env)
+        finance,finance_barrier=start_worker_with_cached_step(
+            work,env,'r3-navigation-first-finance',
+            text='Late debt reason',update_id=853)
+        try:
+            navigation=execute(work,env,update_kind='callback',
+                data='managePanel',update_id=852,
+                run_real_manage_panel_route=True)
+            assert_state(work,env,before_balance,before_rows)
+            assert step(work,env)=='none'
+            edited=[e['args'][1] for e in navigation['events']
+                    if e['kind']=='editText']
+            assert len(edited)==1 and 'لغو شد' in edited[0],edited
+            assert 'مبلغی از این درخواست اعمال نشد' in edited[0],edited
+            late_financial=finish_paused_worker(finance,finance_barrier)
+            assert_state(work,env,before_balance,before_rows)
+            assert step(work,env)=='none'
+            assert not any('✅' in m for m in messages(late_financial))
+        finally:
+            if finance.poll() is None:
+                finance.kill()
+                finance.wait(timeout=4)
+        cases.append('r3_navigation_wins_loaded_financial_reason_no_money')
+
+        # A completely separate navigation event racing the same cached
+        # pending step can never produce TWO confirmed cancellations.
+        move_to_reason(work,env,'credit',7)
+        before_balance=balance(work,env)
+        before_rows=nledger(work,env)
+        nav2,second_barrier=start_worker_with_cached_step(
+            work,env,'r3-second-navigation',
+            update_kind='callback',data='managePanel',update_id=855,
+            run_real_manage_panel_route=True)
+        try:
+            first_navigation=execute(work,env,update_kind='callback',
+                data='managePanel',update_id=854,
+                run_real_manage_panel_route=True)
+            second_navigation=finish_paused_worker(nav2,second_barrier)
+            first_edit=[e['args'][1] for e in first_navigation['events']
+                        if e['kind']=='editText']
+            second_edit=[e['args'][1] for e in second_navigation['events']
+                         if e['kind']=='editText']
+            assert len(first_edit)==1 and 'لغو شد' in first_edit[0]
+            assert len(second_edit)==1 and 'در حال بررسی' in second_edit[0]
+            assert 'مبلغی از این درخواست اعمال نشد' not in second_edit[0]
+            assert_state(work,env,before_balance,before_rows)
+            assert step(work,env)=='none'
+        finally:
+            if nav2.poll() is None:
+                nav2.kill()
+                nav2.wait(timeout=4)
+        cases.append('r3_duplicate_navigation_only_one_confirmed_cancellation')
+
+        # A failed UPDATE under mysqli_REPORT_OFF must not be mistaken for
+        # an affected-row or transaction success; preserve the exact step.
+        move_to_reason(work,env,'credit',17)
+        before_balance=balance(work,env)
+        before_rows=nledger(work,env)
+        pending=step(work,env)
+        sql(work,env,
+            "CREATE TRIGGER achbot_cancel_owned_failure "
+            "BEFORE UPDATE ON users FOR EACH ROW "
+            "SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='owned-cancel-failure'")
+        try:
+            failed=execute(work,env,update_kind='callback',
+                data='managePanel',update_id=856,
+                run_real_manage_panel_route=True,mysqli_report_off=True)
+            assert_state(work,env,before_balance,before_rows)
+            assert step(work,env)==pending
+            edited=[e['args'][1] for e in failed['events']
+                    if e['kind']=='editText']
+            assert len(edited)==1 and 'در حال بررسی' in edited[0],edited
+            assert 'مبلغی از این درخواست اعمال نشد' not in edited[0]
+            assert 'achbot_admin_wallet_cancellation_review' in failed['stderr']
+        finally:
+            sql(work,env,'DROP TRIGGER achbot_cancel_owned_failure')
+        cases.append('r3_nonthrowing_sql_error_preserves_step_and_neutral_notice')
+
+        # A stale initial snapshot cannot clear a NEW financial step that
+        # replaced the original one before navigation obtained its lock.
+        move_to_reason(work,env,'credit',11)
+        before_balance=balance(work,env)
+        before_rows=nledger(work,env)
+        nav3,newstep_barrier=start_worker_with_cached_step(
+            work,env,'r3-new-step-wins',
+            update_kind='callback',data='managePanel',update_id=858,
+            run_real_manage_panel_route=True)
+        try:
+            new_step='achbotWalletReason:debit:1001:12:90:1'
+            setstep(work,env,9001,new_step)
+            stale_nav=finish_paused_worker(nav3,newstep_barrier)
+            assert_state(work,env,before_balance,before_rows)
+            assert step(work,env)==new_step
+            edited=[e['args'][1] for e in stale_nav['events']
+                    if e['kind']=='editText']
+            assert len(edited)==1 and 'در حال بررسی' in edited[0]
+            assert 'مبلغی از این درخواست اعمال نشد' not in edited[0]
+        finally:
+            if nav3.poll() is None:
+                nav3.kill()
+                nav3.wait(timeout=4)
+        cases.append('r3_stale_navigation_does_not_clobber_new_operator_step')
+
+        # A revoked delegated administrator may have a stale in-memory
+        # isAdmin=1, but fresh row authorization must still reject cancel.
+        move_to_reason(work,env,'credit',13,actor=9002)
+        pending=step(work,env,9002)
+        before_balance=balance(work,env)
+        before_rows=nledger(work,env)
+        sql(work,env,'UPDATE users SET isAdmin=0 WHERE userid=9002')
+        try:
+            revoked_cancel=execute(work,env,actor=9002,
+                update_kind='callback',data='managePanel',
+                update_id=859,run_real_manage_panel_route=True,
+                cached_admin_override=True)
+            assert_state(work,env,before_balance,before_rows)
+            assert step(work,env,9002)==pending
+            edited=[e['args'][1] for e in revoked_cancel['events']
+                    if e['kind']=='editText']
+            assert len(edited)==1 and 'در حال بررسی' in edited[0]
+            assert 'مبلغی از این درخواست اعمال نشد' not in edited[0]
+        finally:
+            sql(work,env,'UPDATE users SET isAdmin=1 WHERE userid=9002')
+        cases.append('r3_delegated_admin_revocation_guarded_cancellation')
+
 
     report=dict(complete=True,cases=len(cases),scenarios=cases,
                 real_php_workers=2,disposable_db=True,

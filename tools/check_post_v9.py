@@ -265,8 +265,14 @@ def main():
             "r2_actual_bot_managepanel_cancels_and_announces_no_funds",
             "r2_actual_managepanel_cancels_every_financial_stage",
             "r2_unrelated_callback_not_financial_authorization",
+            "r3_finance_commit_wins_stale_managepanel_no_false_cancel",
+            "r3_navigation_wins_loaded_financial_reason_no_money",
+            "r3_duplicate_navigation_only_one_confirmed_cancellation",
+            "r3_nonthrowing_sql_error_preserves_step_and_neutral_notice",
+            "r3_stale_navigation_does_not_clobber_new_operator_step",
+            "r3_delegated_admin_revocation_guarded_cancellation",
         }
-        if not (admin_wallet.get("complete") and admin_wallet.get("cases")==50
+        if not (admin_wallet.get("complete") and admin_wallet.get("cases")==56
                 and required_admin_wallet.issubset(admin_wallet.get("scenarios",[]))
                 and admin_wallet.get("real_php_workers")==2
                 and admin_wallet.get("disposable_db") is True

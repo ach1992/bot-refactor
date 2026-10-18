@@ -28,14 +28,22 @@ shared payment migration 003 and automatic renewal migration 004.
   must have **both IDs strictly greater**. Delayed/out-of-order older
   private-chat messages cannot authorize a pending financial adjustment.
   Steps without this freshness marker fail closed and must be restarted.
-- **Navigation contract**: the finance module never interprets a callback
-  as an operator reason, and does not itself cancel a pending reason merely
-  because an unrelated callback arrives. In the actual `bot.php` route,
-  selecting `managePanel` intentionally **cancels** any unfinished credit,
-  debit or debt step via `setUser()` and explicitly tells the operator that
-  the unfinished adjustment was canceled without moving funds. Thus it is
-  incorrect to claim all callbacks preserve `users.step`. The real
-  `managePanel` branch is exercised from its actual source in isolated tests.
+- **Navigation and concurrency contract**: the finance module never
+  interprets a callback as a reason. In the actual `bot.php` route, an
+  authorized `managePanel` navigation attempts to cancel the exact cached
+  pending credit, debit or debt step **under the same InnoDB operator-row
+  lock** used by financial commitment. A conditional `users.step` update,
+  single matching operator identity, fresh role check and confirmed commit
+  must all succeed before the operator sees **"canceled; no funds from this
+  request were applied"**. If a concurrent financial worker has consumed
+  the step, or a SQL/COMMIT result is uncertain, the navigation **must not
+  declare cancellation or non-execution**: it instead displays an operator
+  status/review message, asks for wallet/journal reconciliation and does
+  not automatically retry, refund or change the newer operator step.
+  Non-financial panel navigation retains its former `setUser()` behavior.
+  A callback within the finance module alone does not cancel a pending
+  reason; the later real `managePanel` branch owns navigation outcomes.
+  This is verified against source-extracted real route code in isolated tests.
 - One transaction locks administrator and target user rows, rechecks privileged
   identity and the expected flow step, inserts the immutable audit row,
   changes the signed users.wallet balance, and atomically consumes the step.
@@ -104,13 +112,17 @@ MariaDB and synthetic Telegram. Cases cover absent/malformed 005,
 strict numeric input, full UI, debt policy, unique update identity,
 two competing PHP workers, nonthrowing mysqli duplicate-key behavior,
 balance overflow, SQL rollback, duplicated account identities and
-notification ambiguity. The F1/F2/R1/R2 regressions execute the actual
+notification ambiguity. The F1/F2/R1/R2/R3 regressions execute the actual
 `UpdateBindings.php` semantics and actual `AdminWallet.php` against disposable
 MariaDB, including cross-chat group messages at each financial stage, late
-private updates, and schema-drift fixtures while 005 remains InnoDB.
-The focused navigation case **executes the exact `managePanel` handler extracted
-from `bot.php`** in its original order after binding and financial routing;
-this is a controlled source-only route characterization, NOT full production
+private updates, schema drift and nonthrowing SQL errors.
+The focused navigation cases **execute the exact `managePanel` handler
+extracted from `bot.php`** in its original order after binding and financial
+routing. Real independent PHP processes pause after loading the operator
+snapshot to deterministically prove both race orders (finance commit first,
+navigation cancellation first), duplicate navigation, stale next-step
+preservation, delegated-role revocation and a forced SQL failure.
+This is controlled source-only route characterization, NOT a full production
 bot bootstrap or live Telegram acceptance.
 It invokes no real bot, provider, bank account, payments or production SQL.
 

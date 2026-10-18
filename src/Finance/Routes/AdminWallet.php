@@ -350,6 +350,104 @@ if (!function_exists('achbotApplyAdminWalletAdjustment')) {
     }
 }
 
+
+if (!function_exists('achbotAdminWalletIsPendingStep')) {
+    /** Identify only the administrative wallet UI steps, not generic bot steps. */
+    function achbotAdminWalletIsPendingStep(string $step): bool
+    {
+        return in_array($step, [
+            'increaseUserWallet', 'decreaseUserWallet', 'createUserWalletDebt'
+        ], true) ||
+            preg_match('/^(increaseWalletUser|decreaseWalletUser|debtWalletUser)[1-9][0-9]{0,18}$/D', $step) === 1 ||
+            str_starts_with($step, 'achbotWalletReason:');
+    }
+}
+
+if (!function_exists('achbotCancelAdminWalletPendingStep')) {
+    /**
+     * A verified cancellation must win the SAME users.step transition as the
+     * financial journal transaction. A cached $userInfo step is not proof.
+     *
+     * canceled: this transaction atomically consumed the exact pending step.
+     * stale: another worker changed the step before cancellation acquired it.
+     * review: DB/identity/authorization/commit outcome cannot be confirmed.
+     *
+     * All non-canceled outcomes require a neutral operator status message.
+     */
+    function achbotCancelAdminWalletPendingStep(
+        mysqli $db, int $operatorId, string $expectedStep, int $primaryAdmin
+    ): string {
+        if ($operatorId <= 0 ||
+            !achbotAdminWalletIsPendingStep($expectedStep) ||
+            !achbotAdminWalletLedgerReady($db)) {
+            return 'review';
+        }
+
+        $transactionStarted = false;
+        try {
+            if (!$db->begin_transaction()) {
+                throw new RuntimeException('admin_wallet_cancel_begin_unconfirmed');
+            }
+            $transactionStarted = true;
+            // Finance reasons lock the same operator row FOR UPDATE before
+            // journal/balance/step commit; whichever worker locks first wins.
+            $stmt = $db->prepare(
+                'SELECT userid, step, isAdmin FROM users WHERE userid=? FOR UPDATE'
+            );
+            if (!$stmt) {
+                throw new RuntimeException('admin_wallet_cancel_select_unavailable');
+            }
+            $stmt->bind_param('i', $operatorId);
+            if (!$stmt->execute()) {
+                throw new RuntimeException('admin_wallet_cancel_select_failed');
+            }
+            $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+            $stmt->close();
+
+            // Legacy users.userid is indexed but not UNIQUE. Never claim
+            // successful cancellation for an ambiguous operator identity.
+            if (count($rows) !== 1 ||
+                (int)$rows[0]['userid'] !== $operatorId ||
+                ($operatorId !== $primaryAdmin &&
+                 (int)$rows[0]['isAdmin'] !== 1)) {
+                throw new RuntimeException('admin_wallet_cancel_identity_unconfirmed');
+            }
+            if ((string)$rows[0]['step'] !== $expectedStep) {
+                $db->rollback();
+                return 'stale';
+            }
+
+            $stmt = $db->prepare(
+                "UPDATE users SET step='none' WHERE userid=? AND step=?"
+            );
+            if (!$stmt) {
+                throw new RuntimeException('admin_wallet_cancel_update_unavailable');
+            }
+            $stmt->bind_param('is', $operatorId, $expectedStep);
+            if (!$stmt->execute()) {
+                throw new RuntimeException('admin_wallet_cancel_update_failed');
+            }
+            $affected = $stmt->affected_rows;
+            $stmt->close();
+            if ($affected !== 1) {
+                throw new RuntimeException('admin_wallet_cancel_claim_unconfirmed');
+            }
+            if (!$db->commit()) {
+                throw new RuntimeException('admin_wallet_cancel_commit_unconfirmed');
+            }
+            return 'canceled';
+        } catch (Throwable $error) {
+            if ($transactionStarted) {
+                try { $db->rollback(); } catch (Throwable $ignored) {}
+            }
+            // A lost COMMIT acknowledgment may mean cancellation succeeded.
+            // Never claim either success or no financial effect in that case.
+            error_log('achbot_admin_wallet_cancellation_review');
+            return 'review';
+        }
+    }
+}
+
 $achbotWalletCanAdmin = ($from_id == $admin || ($userInfo['isAdmin'] ?? false) == true);
 $achbotWalletModes = [
     'increaseUserWallet' => ['credit', 'increaseWalletUser', 'enter_increase_amount'],
