@@ -104,6 +104,18 @@ def main():
     parser.add_argument("--report",type=Path)
     a=parser.parse_args()
     result=source_checks()
+    # Merchant payment references are untrusted URL/Telegram capabilities.
+    # Verify current CSPRNG source and callback-data bounds, not test stubs.
+    payment_identity_output=subprocess.run(
+        ["python3",str(ROOT/"tools/test_post_v9_payment_identity.py")],
+        cwd=ROOT,check=True,timeout=20,capture_output=True,text=True)
+    payment_identity=json.loads(payment_identity_output.stdout)
+    if not (payment_identity.get("complete") is True and
+            payment_identity.get("crypto_source")=="random_int" and
+            payment_identity.get("default_length")==20 and
+            payment_identity.get("unique_generated")==500 and
+            payment_identity.get("longest_callback_bytes",999)<=64):
+        raise RuntimeError("Payment capability randomness/bounds incomplete")
     audience=customer_errors.verify(ROOT)
     with tempfile.TemporaryDirectory(prefix="achbot-post-v9-acceptance-") as tmp:
         cron_path=Path(tmp)/"post-v9-cron-runner.json"
@@ -503,6 +515,52 @@ def main():
             "real_custom_operator_and_bank_scheduler_race_single_service_claim",
             "legacy_operator_receipt_requires_persisted_delivery_evidence",
             "uncertain_custom_external_effect_operator_reconciliation_no_retry",
+            # PR #55 R2: mandatory authenticated end-to-end top-up lifecycle:
+            # freshness against the SENT bot prompt, one-use user row claim,
+            # exactly one pending draft after concurrency and SQL rollback.
+            "real_topup_origin_private_menu_start_accepted",
+            "real_topup_replayed_private_amount_no_second_invoice",
+            "real_topup_out_of_order_older_update_no_financial_effect",
+            "real_topup_old_private_message_before_prompt_no_financial_effect",
+            "real_topup_exact_prompt_message_id_not_new_no_financial_effect",
+            "real_topup_week_idle_update_id_reset_fresh_private_amount",
+            "real_topup_week_idle_random_reset_allows_new_menu",
+            "real_topup_replaced_step_rejects_stale_input",
+            "real_topup_menu_update_replay_no_reissue",
+            "real_topup_old_fixed_button_wrong_prompt_denied",
+            "real_topup_out_of_order_old_menu_cannot_replace_new_stage",
+            "real_topup_fixed_callback_consumed_once",
+            "real_topup_unconfirmed_bot_menu_fails_closed",
+            "real_topup_ambiguous_customer_identity_fails_closed",
+            "real_topup_insert_failure_rolls_back_claim_and_cleanup",
+            "real_topup_mysqli_report_off_delete_failure_rolls_back",
+            "real_topup_postcommit_telegram_failure_never_repeats_invoice",
+            "real_topup_concurrent_step_claim_single_atomic_invoice",
+            # PR #55 R1: real Telegram UpdateBindings and private-chat source
+            # authorization, with durable SQL/step preservation for denials.
+            "real_topup_origin_group_message_denied",
+            "real_topup_origin_supergroup_message_denied",
+            "real_topup_origin_old_callback_text_denied",
+            "real_topup_origin_foreign_chat_callback_denied",
+            "real_topup_origin_group_custom_start_denied",
+            "real_topup_origin_group_fixed_amount_denied",
+            "real_topup_origin_other_actor_message_denied",
+            "real_topup_origin_bot_authored_message_denied",
+            "real_topup_origin_mixed_callback_message_denied",
+            "real_topup_origin_private_custom_start_accepted",
+            "real_topup_origin_private_customer_text_accepted",
+            # PR #55 P1: actual raw Telegram parsing, SQL immutability,
+            # and accepted top-up boundaries are required acceptance cases.
+            "real_topup_raw_callback_rejected_0",   # numeric prefix + suffix
+            "real_topup_raw_callback_rejected_2",   # exponent callback
+            "real_topup_raw_callback_rejected_10",  # overflow callback
+            "real_topup_raw_text_rejected_13",       # fractional text
+            "real_topup_raw_text_rejected_15",       # exponent text
+            "real_topup_raw_text_rejected_28",       # overflow text
+            "real_topup_raw_callback_accepted_0",  # minimum callback
+            "real_topup_raw_text_accepted_1",      # maximum custom text
+            "real_topup_raw_text_accepted_2",      # ASCII leading zeros
+            "real_topup_raw_callback_accepted_3",  # maximum callback
         }
         if not (manual.get("complete") and manual.get("cases")>=len(required_manual)
                 and required_manual.issubset(manual.get("scenarios",[]))
@@ -583,6 +641,7 @@ def main():
                     "catalogue_and_subscription_qr":catalogue,
                     "financial_native_route_guards":finance,
                     "manual_payment_method_isolation":manual,
+                    "payment_reference_assurance":payment_identity,
                     "shared_payment_ledger_rc4_import":migration,
                      "agency_state_regression":agency,
                      "optional_cron_runner":cron,
@@ -609,6 +668,7 @@ def main():
                       "catalogue_qr_cases":catalogue["cases"],
                       "financial_native_route_cases":finance["cases"],
                       "manual_payment_isolation_cases":manual["cases"],
+                      "payment_reference_length":payment_identity["default_length"],
                       "historical_rc4_payment_import_verified":migration["preserved_rc4_rows_and_ids"],
                        "agency_state_cases":agency["cases"],
                        "optional_cron_runner_cases":cron["cases"],
