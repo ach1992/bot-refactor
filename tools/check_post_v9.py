@@ -231,6 +231,7 @@ def main():
             "int32_signed_bounds_preserved",
             "concurrent_admin_updates_exactly_once",
             "wallet_sql_failure_rolls_back_audit",
+            "silent_wallet_update_error_rolls_back_journal",
             "postcommit_telegram_failure_preserves_effect",
             "schema_without_unique_identity_fails_closed",
             "schema_wrong_binary_identity_collation_fails_closed",
@@ -240,8 +241,20 @@ def main():
             "duplicate_target_rejected_before_financial_change",
             "duplicate_operator_rejected_before_financial_change",
             "operator_and_target_same_identity_atomic",
+            "f1_old_inline_bot_text_cannot_submit_reason",
+            "f1_managepanel_navigation_cannot_submit_reason",
+            "f1_mixed_callback_message_envelope_refused",
+            "f1_edited_service_channel_updates_refused",
+            "f1_privileged_debt_needs_new_message_reason",
+            "f1_bound_actor_chat_message_text_and_update_identity",
+            "f1_real_new_text_commits_exactly_once_after_callbacks",
+            "f2_users_myisam_with_innodb_005_refused",
+            "f2_users_wallet_int32_contract_required",
+            "f2_users_operator_step_contract_required",
+            "f2_users_admin_identity_contract_required",
+            "delegated_admin_revoked_before_commit_refused",
         }
-        if not (admin_wallet.get("complete") and admin_wallet.get("cases")==25
+        if not (admin_wallet.get("complete") and admin_wallet.get("cases")==38
                 and required_admin_wallet.issubset(admin_wallet.get("scenarios",[]))
                 and admin_wallet.get("real_php_workers")==2
                 and admin_wallet.get("disposable_db") is True

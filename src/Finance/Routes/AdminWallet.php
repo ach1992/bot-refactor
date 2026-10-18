@@ -101,11 +101,96 @@ if (!function_exists('achbotAdminWalletLedgerReady')) {
             $stmt->execute();
             $foreignKeys = (int)($stmt->get_result()->fetch_assoc()['n'] ?? -1);
             $stmt->close();
-            return $foreignKeys === 0;
+            if ($foreignKeys !== 0) {
+                return false;
+            }
+            // Financial balance and step must roll back WITH the 005 ledger.
+            // The historical users table is InnoDB, but an installed tenant
+            // may drift independently. Never assume the frozen dump is live.
+            $stmt = $db->prepare("SELECT ENGINE FROM information_schema.TABLES
+                WHERE TABLE_SCHEMA=? AND TABLE_NAME='users'");
+            $stmt->bind_param('s', $schema);
+            $stmt->execute();
+            $usersEngine = $stmt->get_result()->fetch_assoc()['ENGINE'] ?? null;
+            $stmt->close();
+            if (strtoupper((string)$usersEngine) !== 'INNODB') {
+                return false;
+            }
+
+            $stmt = $db->prepare("SELECT COLUMN_NAME, DATA_TYPE, COLUMN_TYPE,
+                IS_NULLABLE, CHARACTER_MAXIMUM_LENGTH
+                FROM information_schema.COLUMNS
+                WHERE TABLE_SCHEMA=? AND TABLE_NAME='users'
+                  AND COLUMN_NAME IN ('userid','wallet','step','isAdmin')");
+            $stmt->bind_param('s', $schema);
+            $stmt->execute();
+            $userColumns = [];
+            foreach ($stmt->get_result()->fetch_all(MYSQLI_ASSOC) as $column) {
+                $userColumns[$column['COLUMN_NAME']] = $column;
+            }
+            $stmt->close();
+            $userTypes = ['userid'=>'bigint', 'wallet'=>'int',
+                          'step'=>'varchar', 'isAdmin'=>'tinyint'];
+            if (count($userColumns) !== count($userTypes)) {
+                return false;
+            }
+            foreach ($userTypes as $column => $type) {
+                if (!isset($userColumns[$column]) ||
+                    strtolower((string)$userColumns[$column]['DATA_TYPE']) !== $type ||
+                    $userColumns[$column]['IS_NULLABLE'] !== 'NO' ||
+                    str_contains(strtolower((string)$userColumns[$column]['COLUMN_TYPE']),
+                        'unsigned')) {
+                    return false;
+                }
+            }
+            if ((int)$userColumns['step']['CHARACTER_MAXIMUM_LENGTH'] !== 1000) {
+                return false;
+            }
+            return true;
         } catch (Throwable $error) {
             error_log('achbot_admin_wallet_ledger_preflight_unavailable');
             return false;
         }
+    }
+}
+
+if (!function_exists('achbotAdminWalletFreshReason')) {
+    /**
+     * Require the actual NEW Telegram text-message envelope, not the shared
+     * $text binding: callbacks bind it to the referenced BOT message text.
+     * Read-only validation only; unrelated callbacks leave the pending step.
+     */
+    function achbotAdminWalletFreshReason(
+        $update, $actorId, $chatId, $messageId, $boundText
+    ): ?string {
+        if (!is_object($update)) {
+            return null;
+        }
+        $keys = array_keys(get_object_vars($update));
+        sort($keys);
+        if ($keys !== ['message', 'update_id'] ||
+            !is_object($update->message) ||
+            !is_int($update->update_id) || $update->update_id <= 0) {
+            return null;
+        }
+        $message = $update->message;
+        if (!isset($message->from, $message->chat) ||
+            !is_object($message->from) || !is_object($message->chat) ||
+            !is_int($message->from->id ?? null) || $message->from->id <= 0 ||
+            ($message->from->is_bot ?? false) === true ||
+            !is_int($message->chat->id ?? null) || $message->chat->id === 0 ||
+            !is_int($message->message_id ?? null) || $message->message_id <= 0 ||
+            !is_string($message->text ?? null) ||
+            !is_string($boundText)) {
+            return null;
+        }
+        if ($message->from->id !== (int)$actorId ||
+            $message->chat->id !== (int)$chatId ||
+            $message->message_id !== (int)$messageId ||
+            $boundText !== $message->text) {
+            return null;
+        }
+        return trim($message->text);
     }
 }
 
@@ -297,8 +382,11 @@ if ($achbotWalletCanAdmin && $achbotWalletInput !== $achbotWalletCancel &&
 
 if ($achbotWalletCanAdmin && $achbotWalletInput !== $achbotWalletCancel &&
     preg_match('/^achbotWalletReason:(credit|debit|debt):([1-9][0-9]{0,18}):([1-9][0-9]{0,9})$/D',
-        $achbotWalletStep, $match)) {
-    $reason = trim($achbotWalletInput);
+        $achbotWalletStep, $match) &&
+    ($achbotFreshReason = achbotAdminWalletFreshReason(
+        $update ?? null, $from_id ?? null, $chat_id ?? null,
+        $message_id ?? null, $text ?? null)) !== null) {
+    $reason = $achbotFreshReason;
     if ($reason === '' || strlen($reason) > 500) {
         sendMessage('⚠️ دلیل باید غیرخالی و حداکثر ۵۰۰ بایت باشد. لطفاً دوباره وارد کنید.');
     } else {

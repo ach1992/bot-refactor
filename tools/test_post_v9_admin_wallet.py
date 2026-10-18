@@ -32,18 +32,77 @@ if (!empty($spec['mysqli_report_off'])) {
     set_error_handler(function($n,$m){return true;});
 }
 $admin=9001;
-$from_id=(int)($spec['actor']??9001);
-$chat_id=$from_id;
-$message_id=(int)($spec['message_id']??91);
-$update=(object)['update_id'=>(int)($spec['update_id']??701)];
-$data=$spec['data']??'';
-$text=$spec['text']??'';
+$actor=(int)($spec['actor']??9001);
+$wireType=(string)($spec['update_kind']??(
+    !empty($spec['data'])?'callback':'message'));
+$wireActor=(int)($spec['wire_actor']??$actor);
+$wireChat=(int)($spec['wire_chat']??$actor);
+$wireMessageId=(int)($spec['wire_message_id']??($spec['message_id']??91));
+$wireUpdateId=(int)($spec['wire_update_id']??($spec['update_id']??701));
+$wireText=(string)($spec['wire_text']??($spec['text']??''));
+$sender=(object)['id'=>$wireActor,'is_bot'=>false,
+    'username'=>'fixture_admin','first_name'=>'Fixture'];
+$chat=(object)['id'=>$wireChat,'type'=>'private'];
+$message=(object)['from'=>$sender,'chat'=>$chat,
+    'message_id'=>$wireMessageId];
+$update=(object)['update_id'=>$wireUpdateId];
+if ($wireType==='message') {
+    $message->text=$wireText;
+    $update->message=$message;
+} elseif ($wireType==='service') {
+    $message->new_chat_members=[$sender];
+    $update->message=$message;
+} elseif ($wireType==='callback' || $wireType==='mixed') {
+    $message->text=$wireText!==''?$wireText:'Old synthetic bot menu';
+    $message->reply_markup=(object)['inline_keyboard'=>[]];
+    $update->callback_query=(object)[
+        'id'=>'fixture-callback-id',
+        'data'=>(string)($spec['data']??'managePanel'),
+        'from'=>$sender,
+        'message'=>$message
+    ];
+    if ($wireType==='mixed') {
+        $update->message=(object)['from'=>$sender,'chat'=>$chat,
+            'message_id'=>$wireMessageId,'text'=>'unexpected second message'];
+    }
+} elseif ($wireType==='edited_message') {
+    $message->text=$wireText;
+    $update->edited_message=$message;
+} elseif ($wireType==='channel_post') {
+    $message->text=$wireText;
+    $update->channel_post=$message;
+} else {
+    throw new RuntimeException('Unknown test update type');
+}
+// Use the REAL binding implementation; callback binds $text to the OLD
+// bot message, which must never satisfy a new financial reason.
+$from_id=$actor;
+$chat_id=$actor;
+$message_id=$wireMessageId;
+$data='';
+$text=null;
+require $root.'/src/Telegram/UpdateBindings.php';
+if (array_key_exists('bound_actor_override',$spec)) {
+    $from_id=(int)$spec['bound_actor_override'];
+}
+if (array_key_exists('bound_chat_override',$spec)) {
+    $chat_id=(int)$spec['bound_chat_override'];
+}
+if (array_key_exists('bound_message_override',$spec)) {
+    $message_id=(int)$spec['bound_message_override'];
+}
+if (array_key_exists('bound_text_override',$spec)) {
+    $text=$spec['bound_text_override'];
+}
 $events=[];
 $stmt=$connection->prepare('SELECT userid,step,isAdmin,wallet FROM users WHERE userid=?');
 $stmt->bind_param('i',$from_id);
 $stmt->execute();
 $userInfo=$stmt->get_result()->fetch_assoc() ?: ['step'=>'none','isAdmin'=>0];
 $stmt->close();
+if (!empty($spec['cached_admin_override'])) {
+    $userInfo['isAdmin']=1;
+}
 $mainValues=[
  'send_user_id'=>'send-user', 'send_only_number'=>'send-number',
  'user_not_found'=>'user-not-found', 'reached_main_menu'=>'main',
@@ -148,6 +207,43 @@ def main():
 
         sql(work,env,MIGRATION.read_text())
         assert nledger(work,env)==0
+
+        # F1 regression uses real UpdateBindings.php, NOT a fabricated
+        # $text independent of the Telegram update. Old inline bot text
+        # must never be mistaken for a newly submitted financial reason.
+        move_to_reason(work,env,'credit',350)
+        pending=step(work,env)
+        old_inline=execute(work,env,update_kind='callback',data='wizwizch',
+            wire_text='Old bot message text',update_id=681)
+        assert_state(work,env,50000,0)
+        assert step(work,env)==pending
+        assert not any('✅' in m for m in messages(old_inline))
+        cases.append('f1_old_inline_bot_text_cannot_submit_reason')
+
+        manage_panel=execute(work,env,update_kind='callback',data='managePanel',
+            wire_text='Previous administration menu',update_id=682)
+        assert_state(work,env,50000,0)
+        assert step(work,env)==pending
+        assert not any('✅' in m for m in messages(manage_panel))
+        cases.append('f1_managepanel_navigation_cannot_submit_reason')
+
+        mixed=execute(work,env,update_kind='mixed',data='managePanel',
+            wire_text='Bot message not operator intent',update_id=683)
+        assert_state(work,env,50000,0)
+        assert step(work,env)==pending
+        assert not any('✅' in m for m in messages(mixed))
+        cases.append('f1_mixed_callback_message_envelope_refused')
+
+        for kind in ('edited_message','channel_post','service'):
+            old=execute(work,env,update_kind=kind,
+                wire_text='preexisting text',update_id=684)
+            assert_state(work,env,50000,0)
+            assert step(work,env)==pending
+            assert not any('✅' in m for m in messages(old)),kind
+        cases.append('f1_edited_service_channel_updates_refused')
+
+        # Restore the three-stage UI without losing any pending money;
+        # the normal genuine text-message test below must still succeed.
         # Native three-stage Telegram flow and durable final transaction.
         setstep(work,env,9001,'none')
         start=execute(work,env,data='increaseUserWallet')
@@ -202,6 +298,12 @@ def main():
 
         # Explicit privileged debt mode may cross below zero.
         move_to_reason(work,env,'debt',50400)
+        debt_callback=execute(work,env,update_kind='callback',data='managePanel',
+            wire_text='Old admin debt confirmation',update_id=704)
+        assert_state(work,env,50300,2)
+        assert step(work,env)=='achbotWalletReason:debt:1001:50400'
+        assert not any('✅' in m for m in messages(debt_callback))
+        cases.append('f1_privileged_debt_needs_new_message_reason')
         execute(work,env,text='contractually approved debt',update_id=704)
         assert_state(work,env,-100,3)
         assert journal(work,env,704)=='9001:1001:debt:50400:50300:-100'
@@ -289,6 +391,24 @@ def main():
             sql(work,env,"DROP TRIGGER achbot_admin_wallet_owned_failure")
         cases.append('wallet_sql_failure_rolls_back_audit')
 
+        # No mysqli exception mode: the same failed balance UPDATE must
+        # still roll back the previously inserted InnoDB journal.
+        sql(work,env, "CREATE TRIGGER achbot_admin_wallet_owned_failure "
+            "BEFORE UPDATE ON users FOR EACH ROW "
+            "SET NEW.wallet=IF(NEW.userid=1001 AND NEW.wallet>OLD.wallet,"
+            "999999999999999,NEW.wallet)")
+        try:
+            move_to_reason(work,env,'credit',5)
+            pending=step(work,env)
+            silent=execute(work,env,text='silent failure fixture',update_id=742,
+                           mysqli_report_off=True)
+            assert_state(work,env,1100,5)
+            assert step(work,env)==pending
+            assert not any('✅' in m for m in messages(silent))
+        finally:
+            sql(work,env,"DROP TRIGGER achbot_admin_wallet_owned_failure")
+        cases.append('silent_wallet_update_error_rolls_back_journal')
+
         # Different owned messages remain separately auditable.
         move_to_reason(work,env,'credit',5)
         notice=execute(work,env,text='later independent credit',update_id=741,
@@ -368,6 +488,97 @@ def main():
         assert balance(work,env,9001)==10 and nledger(work,env)==7
         assert step(work,env,9001)=='none'
         cases.append('operator_and_target_same_identity_atomic')
+
+        # F1: strict binding identity — no arbitrarily rebound fields or
+        # stale callback text, even if the stored operator step is valid.
+        for name,sp in [
+            ('actor',dict(wire_actor=9002,bound_actor_override=9001)),
+            ('chat',dict(wire_chat=9002,bound_chat_override=9001)),
+            ('message_id',dict(wire_message_id=190,bound_message_override=91)),
+            ('text',dict(wire_text='real body',bound_text_override='forged body')),
+            ('update_id',dict(wire_update_id=0)),
+        ]:
+            move_to_reason(work,env,'credit',17)
+            attempt=execute(work,env,text='real body',update_id=770,**sp)
+            assert_state(work,env,1105,7)
+            assert step(work,env)=='achbotWalletReason:credit:1001:17',name
+            assert not any('✅' in m for m in messages(attempt)),name
+        cases.append('f1_bound_actor_chat_message_text_and_update_identity')
+
+        # F1: an actual NEW user-originated Telegram message after unrelated
+        # callbacks applies once; the same update cannot apply twice.
+        confirmed=execute(work,env,text='explicit new operator explanation',
+                          update_id=775)
+        assert_state(work,env,1122,8)
+        assert step(work,env)=='none'
+        assert journal(work,env,775)=='9001:1001:credit:17:1105:1122'
+        audit=sql(work,env,
+            'SELECT CONCAT(source_chat_id,":",source_message_id,":",reason) '
+            'FROM admin_wallet_adjustments WHERE telegram_update_id=775')
+        assert audit=='9001:91:explicit new operator explanation',audit
+        replay=execute(work,env,text='explicit new operator explanation',update_id=775)
+        assert_state(work,env,1122,8)
+        assert not any('✅' in m for m in messages(replay))
+        cases.append('f1_real_new_text_commits_exactly_once_after_callbacks')
+
+        # F2: source-only negative drift fixtures for original users table.
+        # Journal 005 remains InnoDB; unsupported users storage must not
+        # consume step or modify wallet, even with transaction APIs called.
+        sql(work,env,'ALTER TABLE users ENGINE=MyISAM')
+        move_to_reason(work,env,'credit',9)
+        pending=step(work,env)
+        invalid_engine=execute(work,env,text='cannot transact MyISAM',update_id=780)
+        assert_state(work,env,1122,8)
+        assert step(work,env)==pending
+        assert not any('✅' in m for m in messages(invalid_engine))
+        sql(work,env,'ALTER TABLE users ENGINE=InnoDB')
+        cases.append('f2_users_myisam_with_innodb_005_refused')
+
+        # A wrong signed-wallet type can invalidate source arithmetic
+        # while the 005 table looks perfectly compatible.
+        sql(work,env,'ALTER TABLE users MODIFY wallet BIGINT NOT NULL DEFAULT 0')
+        move_to_reason(work,env,'credit',9)
+        pending=step(work,env)
+        invalid_wallet=execute(work,env,text='wrong wallet width',update_id=781)
+        assert_state(work,env,1122,8)
+        assert step(work,env)==pending
+        assert not any('✅' in m for m in messages(invalid_wallet))
+        sql(work,env,'ALTER TABLE users MODIFY wallet INT NOT NULL DEFAULT 0')
+        cases.append('f2_users_wallet_int32_contract_required')
+
+        sql(work,env,
+            "ALTER TABLE users MODIFY step VARCHAR(128) NOT NULL DEFAULT 'none'")
+        move_to_reason(work,env,'credit',9)
+        pending=step(work,env)
+        invalid_step=execute(work,env,text='wrong step contract',update_id=782)
+        assert_state(work,env,1122,8)
+        assert step(work,env)==pending
+        sql(work,env,
+            "ALTER TABLE users MODIFY step VARCHAR(1000) NOT NULL DEFAULT 'none'")
+        cases.append('f2_users_operator_step_contract_required')
+
+        sql(work,env,
+            'ALTER TABLE users MODIFY isAdmin TINYINT UNSIGNED NOT NULL DEFAULT 0')
+        move_to_reason(work,env,'credit',9)
+        pending=step(work,env)
+        invalid_admin=execute(work,env,text='unsigned delegated role',update_id=783)
+        assert_state(work,env,1122,8)
+        assert step(work,env)==pending
+        sql(work,env,
+            'ALTER TABLE users MODIFY isAdmin TINYINT NOT NULL DEFAULT 0')
+        cases.append('f2_users_admin_identity_contract_required')
+
+        # Explicit revocation while old in-memory UI eligibility remains
+        # true must fail at the locked transaction authorization boundary.
+        move_to_reason(work,env,'credit',9,actor=9002)
+        sql(work,env,'UPDATE users SET isAdmin=0 WHERE userid=9002')
+        revoked=execute(work,env,actor=9002,text='previously authorized',
+            cached_admin_override=True,update_id=784)
+        assert_state(work,env,1122,8)
+        assert step(work,env,9002)=='achbotWalletReason:credit:1001:9'
+        assert not any('✅' in m for m in messages(revoked))
+        sql(work,env,'UPDATE users SET isAdmin=1 WHERE userid=9002')
+        cases.append('delegated_admin_revoked_before_commit_refused')
 
     report=dict(complete=True,cases=len(cases),scenarios=cases,
                 real_php_workers=2,disposable_db=True,

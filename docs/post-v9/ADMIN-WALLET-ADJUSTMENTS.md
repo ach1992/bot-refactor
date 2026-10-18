@@ -15,7 +15,12 @@ shared payment migration 003 and automatic renewal migration 004.
 - Select an existing user, enter a strict positive integer Toman amount, then
   submit an explicit reason in a fresh Telegram message. Nothing is adjusted
   until the reason is accepted and the authenticated Telegram update identity
-  is present.
+  is present. The final reason must come from a real incoming Telegram
+  message with text, not a callback referencing an earlier bot message.
+  The actual update type, sender, chat/message IDs and update ID are
+  checked against UpdateBindings.php context; edited/service/channel
+  updates and unrelated callbacks cannot approve an adjustment or consume
+  its pending step.
 - One transaction locks administrator and target user rows, rechecks privileged
   identity and the expected flow step, inserts the immutable audit row,
   changes the signed users.wallet balance, and atomically consumes the step.
@@ -39,6 +44,10 @@ shared payment migration 003 and automatic renewal migration 004.
 The source checks InnoDB, exact essential 005 columns/nullable/type/length
 contracts, binary adjustment kind, auto-increment primary ID, generated
 created-at default, unique Telegram-update index and absence of foreign keys.
+It additionally checks that the installed original users table is InnoDB
+with the signed INT wallet and expected operator userid, isAdmin and step
+column contract. The historical V9 schema file is unchanged: the installed
+runtime is checked independently rather than assumed compatible.
 An incompatible table is a hard stop, not a missing-table fallback.
 
 **Do not install source 005 route and assume wallet adjustments will work
@@ -80,7 +89,10 @@ MariaDB and synthetic Telegram. Cases cover absent/malformed 005,
 strict numeric input, full UI, debt policy, unique update identity,
 two competing PHP workers, nonthrowing mysqli duplicate-key behavior,
 balance overflow, SQL rollback, duplicated account identities and
-notification ambiguity.
+notification ambiguity. The independent F1/F2 remediation also exercises
+actual UpdateBindings.php semantics for callbacks, new text messages and
+identity mismatch; and disposable MyISAM users, incompatible wallet and
+operator-column fixtures while 005 remains InnoDB.
 It invokes no real bot, provider, bank account, payments or production SQL.
 
 There is **no installed/live-money acceptance** in this source-only PR.
