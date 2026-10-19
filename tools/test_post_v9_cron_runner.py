@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Source-only Cron wrapper execution tests; never execute real bot workers.
 
-All five child script paths are replaced with disposable local stand-ins.
+All four child script paths are replaced with disposable local stand-ins.
 Includes CLI PHP execution, failure continuation, CWD, lock contention,
 failed-lock denial, argument denial and anonymous HTTP rejection. No database,
 Telegram, real Cron or public services.
@@ -25,7 +25,6 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 RUNNER = ROOT / "settings" / "cronRunner.php"
 JOBS = (
-    "tronChecker.php",
     "gift2all.php",
     "messagewizwiz.php",
     "rewardReport.php",
@@ -157,14 +156,14 @@ def main() -> None:
                "no_proxy": "127.0.0.1,localhost"}
         clean = cmd(php, entrypoint, work, env)
         lines = trace.read_text().splitlines()
-        check("five_jobs_sequential_exact_order",
-              clean.returncode == 0 and len(lines) == 5
+        check("four_jobs_sequential_exact_order",
+              clean.returncode == 0 and len(lines) == len(JOBS)
               and [line.split("|")[0] for line in lines] == list(JOBS))
         check("individual_cli_processes_inherit_cron_cwd",
               all(line.split("|")[1] == str(work) for line in lines)
               and len({line.split("|")[2] for line in lines}) == 1)
         check("successful_workers_preserve_outputs",
-              clean.stdout.count("owned fixture success") == 5
+              clean.stdout.count("owned fixture success") == len(JOBS)
               and clean.stderr == "")
         check("per_installation_private_lock_created",
               lock_file.exists() and lock_file.stat().st_mode & 0o777 == 0o600)
@@ -175,7 +174,7 @@ def main() -> None:
         reuse = cmd(php, entrypoint, work, env)
         check("later_run_reuses_stable_lock_inode",
               reuse.returncode == 0 and lock_file.stat().st_ino == initial_inode
-              and len(trace.read_text().splitlines()) == 10)
+              and len(trace.read_text().splitlines()) == 2 * len(JOBS))
         trace.unlink()
 
         # Test concurrent first-time creation from a missing lock file. Only
@@ -209,7 +208,7 @@ def main() -> None:
                   and sum("owned fixture success" in out for out, err in results) == 1
                   and sum("previous invocation active; skipping" in err
                           for out, err in results) == 4
-                  and len(trace.read_text().splitlines()) == 5)
+                  and len(trace.read_text().splitlines()) == len(JOBS))
         finally:
             release_race.touch()
             for proc in contenders:
@@ -250,14 +249,14 @@ def main() -> None:
             second = cmd(php, second_entry, second_cwd, second_env)
             check("different_installation_runs_while_first_locked",
                   second.returncode == 0
-                  and len((root / "second.log").read_text().splitlines()) == 5)
+                  and len((root / "second.log").read_text().splitlines()) == len(JOBS))
             release_signal.touch()
             held_stdout, held_stderr = held.communicate(timeout=14)
             check("first_tick_finishes_full_batch_after_overlap",
                   held.returncode == 0
-                  and held_stdout.count("owned fixture success") == 5
+                  and held_stdout.count("owned fixture success") == len(JOBS)
                   and held_stderr == ""
-                  and len(trace.read_text().splitlines()) == 5)
+                  and len(trace.read_text().splitlines()) == len(JOBS))
         finally:
             release_signal.touch()
             if held.poll() is None:
@@ -266,7 +265,7 @@ def main() -> None:
         trace.unlink()
         after = cmd(php, entrypoint, work, env)
         check("stale_lock_file_does_not_block_next_tick",
-              after.returncode == 0 and len(trace.read_text().splitlines()) == 5)
+              after.returncode == 0 and len(trace.read_text().splitlines()) == len(JOBS))
         trace.unlink()
 
         # Simulate a hard coordinator crash DURING a financial worker. The
@@ -312,7 +311,7 @@ def main() -> None:
             recovered = cmd(php, entrypoint, work, env)
             check("new_run_recovers_after_orphan_worker_exit",
                   recovered.returncode == 0
-                  and len(trace.read_text().splitlines()) == 5)
+                  and len(trace.read_text().splitlines()) == len(JOBS))
         finally:
             crash_release.touch()
             if crashed.poll() is None:
@@ -437,9 +436,9 @@ def main() -> None:
         failing = cmd(php, entrypoint, work, env)
         lines = trace.read_text().splitlines()
         check("failed_child_does_not_skip_remaining_workers",
-              failing.returncode == 1 and len(lines) == 5
+              failing.returncode == 1 and len(lines) == len(JOBS)
               and [line.split("|")[0] for line in lines] == list(JOBS)
-              and "gift2all.php exited with status 23" in failing.stderr)
+              and (JOBS[1] + " exited with status 23") in failing.stderr)
         check("no_child_exception_details_emitted_by_runner",
               "Throwable" not in failing.stderr and "Traceback" not in failing.stderr)
         trace.unlink()
@@ -449,10 +448,10 @@ def main() -> None:
         missing = cmd(php, entrypoint, work, env)
         lines = trace.read_text().splitlines()
         check("missing_worker_fails_but_others_continue",
-              missing.returncode == 1 and len(lines) == 4
+              missing.returncode == 1 and len(lines) == len(JOBS)-1
               and [line.split("|")[0] for line in lines] ==
               [job for job in JOBS if job != JOBS[2]]
-              and "missing or invalid worker: messagewizwiz.php" in missing.stderr)
+              and ("missing or invalid worker: " + JOBS[2]) in missing.stderr)
         trace.unlink()
         (entrypoint.parent / JOBS[2]).write_text(CHILD_PHP, encoding="utf-8")
 
@@ -479,9 +478,9 @@ def main() -> None:
               all(text.count("'" + x + "'") == 1 for x in JOBS)
               and text.index("'" + JOBS[0] + "'") <
                   text.index("'" + JOBS[1] + "'") <
-                  text.index("'" + JOBS[2] + "'") <
-                  text.index("'" + JOBS[3] + "'") <
-                  text.index("'" + JOBS[4] + "'"))
+                  text.index("'" + JOBS[2] + "'")
+                  and len(JOBS) == 4
+                  and "tronChecker.php" not in text)
         check("source_has_no_database_or_provider_bootstrap",
               not re.search(r"\b(?:mysqli|PDO|curl_init|file_get_contents)\s*\(", text)
               and "baseInfo.php" not in text

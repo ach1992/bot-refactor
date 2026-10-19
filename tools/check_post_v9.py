@@ -39,7 +39,7 @@ def source_checks():
         if (ROOT / field).read_bytes() != cmd("show", V9+":"+field):
             raise RuntimeError("Changed historical schema/private-template: " + field)
     files=package.members()
-    if len(files)!=93 or len(set(files))!=len(files):
+    if len(files)!=95 or len(set(files))!=len(files):
         raise RuntimeError("Source-only runtime file inventory changed")
     if (ROOT / "baseInfo.php").exists() or "baseInfo.php" in files:
         raise RuntimeError("Private runtime config surfaced in candidate")
@@ -466,6 +466,12 @@ def main():
             "no_manual_method_switch_replay_or_cross_receipt",
             "wrong_user_denied",
             "manual_usdt_disabled_or_bad_configuration_fails_closed",
+            "tron_checksum_invalid_destination_denied_before_claim_c",
+            "tron_checksum_invalid_destination_denied_before_claim_t",
+            "historical_invalid_tron_destination_requires_review_c",
+            "historical_invalid_tron_destination_requires_review_t",
+            "existing_valid_tron_intent_survives_bad_new_config_c",
+            "existing_valid_tron_intent_survives_bad_new_config_t",
             "agent_existing_price_and_trc20_validated",
             "one_attempt_no_cross_method_claim",
             "single_receipt_claim_no_duplicate_photo_submission",
@@ -567,7 +573,64 @@ def main():
                 and manual.get("database")=="owned_socket_only"
                 and manual.get("live_provider_calls")==0
                 and manual.get("production_data_modified") is False):
-            raise RuntimeError("Three-method manual payment isolation incomplete")
+            raise RuntimeError("Four-network manual crypto payment isolation incomplete")
+        # Independent, exact-source R1/R2 contract: offline TRON Base58Check
+        # and real bot.php/config.php administrator-setting writes. Keep the
+        # positive network cases and invalid historical-intent refusals in the
+        # finance-native manual test above as separate DB evidence.
+        crypto_guard_path=Path(tmp)/"manual-crypto-source-guards.json"
+        try:
+            subprocess.run(["python3",str(ROOT/"tools/test_post_v9_manual_crypto_guards.py"),
+                            "--run-disposable","--report",str(crypto_guard_path)],
+                           cwd=ROOT,check=True,timeout=150,capture_output=True)
+        except subprocess.CalledProcessError as exc:
+            error=(exc.stderr or b'').decode(errors='replace')[-6500:]
+            raise RuntimeError("Offline TRON checksum or real admin callback "
+                               "contract failed:\n"+error) from exc
+        crypto_guard=json.loads(crypto_guard_path.read_text())
+        required_crypto_guard={
+            'offline_canonical_tron_documented_trc20',
+            'offline_canonical_tron_documented_native_trx',
+            'offline_canonical_tron_invalid_checksum_single_character',
+            'offline_canonical_tron_invalid_network_prefix_checksummed',
+            'offline_canonical_tron_invalid_decoded_length_checksummed',
+            'offline_canonical_tron_invalid_base58_character_zero',
+            'offline_canonical_tron_noncanonical_leading_zero',
+            'offline_canonical_tron_diverse_valid_checksum_0',
+            'offline_canonical_tron_diverse_valid_checksum_31',
+            'offline_canonical_tron_diverse_corrupted_checksum_0',
+            'offline_canonical_tron_diverse_corrupted_checksum_31',
+            'stale_admin_callback_denied_changeGateWaysweSwapState',
+            'stale_admin_callback_denied_changeGateWaystronWallet',
+            'stale_admin_callback_denied_changeBotweSwapState',
+            'stale_admin_callback_denied_changeBottronWallet',
+            'non_admin_cannot_change_current_payment_or_bot_flags',
+            'delegated_admin_current_gateway_toggle_still_works',
+            'actual_editor_rejects_checksum_corruption_manualUsdtWalletTRC20',
+            'actual_editor_rejects_checksum_corruption_manualTrxWallet',
+            'actual_editor_accepts_checksums_manualUsdtWalletTRC20',
+            'actual_editor_accepts_checksums_manualTrxWallet',
+            'no_financial_effects_from_admin_settings_or_editors',
+            'final_persistence_denies_retired_key_weSwapState',
+            'final_persistence_denies_retired_key_tronWallet',
+        }
+        if not (crypto_guard.get('complete')
+                and crypto_guard.get('cases')>=136
+                and required_crypto_guard.issubset(crypto_guard.get('scenarios',[]))
+                and crypto_guard.get('official_tron_test_vectors_verified')
+                and crypto_guard.get('independent_base58check_oracle')
+                and crypto_guard.get('real_bot_admin_callbacks_executed')
+                and crypto_guard.get('real_config_setting_writers_extracted')
+                and crypto_guard.get('actual_payment_editor_executed')
+                and crypto_guard.get('retired_flags_preserved_not_mutated')
+                and crypto_guard.get('retired_keys_denied_at_persistence_boundary')
+                and crypto_guard.get('all_advertised_current_admin_toggles_work')
+                and crypto_guard.get('schema_tables')==23
+                and crypto_guard.get('isolated_socket_only')
+                and crypto_guard.get('live_provider_or_chain_calls')==0
+                and crypto_guard.get('production_data_modified') is False):
+            raise RuntimeError("Canonical TRON recipient and retired callback "
+                               "acceptance evidence incomplete")
         migration_path=Path(tmp)/"shared-payment-ledger-rc4-import.json"
         subprocess.run(["python3",str(ROOT/"tools/test_post_v9_payment_migration.py"),
                         "--run-disposable","--report",str(migration_path)],
@@ -583,9 +646,24 @@ def main():
                 and migration.get("live_database_touched") is False):
             raise RuntimeError("Lossless RC4 payment ledger migration rehearsal incomplete")
         agency_path=Path(tmp)/"agency-state-regression.json"
-        subprocess.run(["python3",str(ROOT/"tools/test_post_v9_agency.py"),
-                        "--run-disposable","--report",str(agency_path)],
-                       cwd=ROOT,check=True,timeout=180,capture_output=True)
+        agency_command=["python3",str(ROOT/"tools/test_post_v9_agency.py"),
+                        "--run-disposable","--report",str(agency_path)]
+        try:
+            subprocess.run(agency_command, cwd=ROOT, check=True,
+                           timeout=180, capture_output=True)
+        except subprocess.CalledProcessError as exc:
+            # This fixture uses only generated identities and owned socket-only
+            # MariaDB. Keep its bounded error output visible in CI: hiding it
+            # makes intermittent child failures impossible to classify.
+            error=(exc.stderr or b'').decode(errors='replace')[-6000:]
+            if not error:
+                error=(exc.stdout or b'').decode(errors='replace')[-2000:]
+            raise RuntimeError('Isolated agency regression failed '
+                               f'(exit={exc.returncode}):\n{error}') from exc
+        except subprocess.TimeoutExpired as exc:
+            error=(exc.stderr or b'').decode(errors='replace')[-3000:]
+            raise RuntimeError('Isolated agency regression timed out '
+                               f'(180 s):\n{error}') from exc
         agency=json.loads(agency_path.read_text())
         if not (agency.get("complete") and agency.get("cases")>=20
                 and agency.get("schema_tables")==23
@@ -623,7 +701,7 @@ def main():
                        cwd=ROOT,check=True,timeout=60,capture_output=True)
         swap=json.loads(overlay_report.read_text())
         if not (swap.get("complete") and swap.get("phase_count")==4
-                and swap.get("runtime_members")==93
+                and swap.get("runtime_members")==95
                 and swap.get("historical_runtime_members")==92
                 and swap.get("source_roll_forward_and_back_byte_identical")
                 and swap.get("unchanged_original_sql_ddl")
@@ -641,6 +719,7 @@ def main():
                     "catalogue_and_subscription_qr":catalogue,
                     "financial_native_route_guards":finance,
                     "manual_payment_method_isolation":manual,
+                    "manual_crypto_destination_and_admin_guards":crypto_guard,
                     "payment_reference_assurance":payment_identity,
                     "shared_payment_ledger_rc4_import":migration,
                      "agency_state_regression":agency,
@@ -668,6 +747,7 @@ def main():
                       "catalogue_qr_cases":catalogue["cases"],
                       "financial_native_route_cases":finance["cases"],
                       "manual_payment_isolation_cases":manual["cases"],
+                      "manual_crypto_guard_cases":crypto_guard["cases"],
                       "payment_reference_length":payment_identity["default_length"],
                       "historical_rc4_payment_import_verified":migration["preserved_rc4_rows_and_ids"],
                        "agency_state_cases":agency["cases"],

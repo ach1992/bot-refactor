@@ -12,6 +12,7 @@ import test_access_state as owned
 import test_v6_native as native
 import test_v8_native as purchase
 import v9_contract as v9
+import package_post_v9 as current_runtime
 
 ROOT=Path(__file__).resolve().parents[1]
 HISTORY='7eb077fd8e6d0a303421626d1500f69e295a6664'
@@ -25,7 +26,8 @@ CASES=['customer_paid_wallet','agent_one_wallet','agent_many_wallet',
 
 def stage_source(stage:Path,current:bool)->dict:
     stage.mkdir(parents=True,exist_ok=False)
-    for rel in v9.members():
+    members = current_runtime.members() if current else v9.members()
+    for rel in members:
         dest=stage/rel
         dest.parent.mkdir(parents=True,exist_ok=True)
         raw=(ROOT/rel).read_bytes() if current else subprocess.check_output(

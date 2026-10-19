@@ -144,16 +144,14 @@ function startWalletPayment(mysqli $connection, $botState, $buttonValues, $botUr
         $keyboard[] = [['text' => $buttonValues['cart_to_cart'], 'callback_data' => "payIncreaseWalletWithCartToCart$hash_id"]];
     if (achbotManualEnabled('gift_card'))
         $keyboard[] = [['text' => $buttonValues['gift_card'], 'callback_data' => "payIncreaseWalletWithGiftCard$hash_id"]];
-    if (achbotManualEnabled('manual_usdt'))
-        $keyboard[] = [['text' => $buttonValues['manual_usdt'], 'callback_data' => "payIncreaseWalletWithManualUsdt$hash_id"]];
+    if (achbotManualCryptoEnabled())
+        $keyboard[] = [['text' => '💎 پرداخت رمزارزی دستی', 'callback_data' => "mcm_$hash_id"]];
     if ($botState['nowPaymentWallet'] == 'on')
         $keyboard[] = [['text' => $buttonValues['now_payment_gateway'], 'url' => $botUrl . 'pay/?nowpayment&hash_id=' . $hash_id]];
     if ($botState['zarinpal'] == 'on')
         $keyboard[] = [['text' => $buttonValues['zarinpal_gateway'], 'url' => $botUrl . 'pay/?zarinpal&hash_id=' . $hash_id]];
     if ($botState['nextpay'] == 'on')
         $keyboard[] = [['text' => $buttonValues['nextpay_gateway'], 'url' => $botUrl . 'pay/?nextpay&hash_id=' . $hash_id]];
-    if ($botState['tronWallet'] == 'on')
-        $keyboard[] = [['text' => $buttonValues['tron_gateway'], 'callback_data' => "payWithTronWallet$hash_id"]];
     $keyboard[] = [['text' => $buttonValues['cancel'], 'callback_data' => 'mainMenu']];
     $keys = json_encode(['inline_keyboard' => $keyboard], JSON_UNESCAPED_UNICODE);
     try {

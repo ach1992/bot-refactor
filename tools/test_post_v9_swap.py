@@ -37,9 +37,9 @@ def main():
         raise RuntimeError('Historic V9 rollback reference drift')
     historical_names=v9_contract.members()
     names=package.members()
-    if (len(historical_names)!=92 or len(names)!=93
+    if (len(historical_names)!=92 or len(names)!=95
             or names[:92]!=historical_names
-            or names[92:]!=["settings/cronRunner.php"]
+            or names[92:]!=list(package.NEW_RUNTIME_MEMBERS)
             or len(names)!=len(set(names))):
         raise RuntimeError('V9 or current post-V9 runtime source inventory drift')
     if (ROOT/'baseInfo.php').exists():

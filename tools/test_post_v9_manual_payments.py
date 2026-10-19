@@ -44,13 +44,15 @@ $payInfo=$stmt->get_result()->fetch_assoc();$stmt->close();
 if (!$payInfo) throw new RuntimeException('synthetic payment missing');
 $method=$spec['method']??'bank_transfer';$user=(int)($spec['user']??1001);
 $op=$spec['op']??'claim';
-if ($op==='claim') $value=achbotManualClaim($connection,$payInfo,$method,$user);
+if ($op==='claim') $value=achbotManualClaim($connection,$payInfo,$method,$user,
+    $spec['network']??null);
 elseif ($op==='allow') $value=achbotManualReceiptAllowed($connection,$payInfo,$method,$user);
 elseif ($op==='begin') $value=achbotManualBeginEvidence($connection,$payInfo,$method,$user,
     (string)($spec['photo_id']??'fixture-photo-id'));
 elseif ($op==='approve') $value=achbotApproveManualWalletTopup(
     $connection,$hash,(int)($spec['actor']??9001));
 elseif ($op==='bank_auto_claim') $value=achbotAutoBankClaim($connection,$payInfo);
+elseif ($op==='bank_auto_eligible') $value=achbotAutoBankEligible($connection,$payInfo);
 elseif ($op==='finish') $value=achbotManualFinishEvidence($connection,$hash,
     (string)($spec['photo_id']??'fixture-photo-id'),(string)($spec['token']??''),222,9001);
 elseif ($op==='service_guard') {
@@ -62,10 +64,8 @@ elseif ($op==='service_guard') {
         (string)($spec['subject']??'custom'));
     $connection->rollback();
 }
-elseif ($op==='tron_claim') $value=achbotTronClaim($connection,$payInfo,$user,
-    13.25, 'fixture-tron-wallet');
-elseif ($op==='tron_submit') $value=achbotTronSubmitHash($connection,$hash,$user,
-    (string)($spec['tx_id']??str_repeat('a',64)));
+elseif ($op==='crypto_options') $value=achbotManualCryptoOptions();
+elseif ($op==='crypto_enabled') $value=achbotManualCryptoEnabled();
 elseif ($op==='wallet') {
     $from_id=$user;$admin=9001;
     function alert(...$args) {}
@@ -121,10 +121,15 @@ $update=json_decode(json_encode($spec['update']??['message'=>[
 ]]),false);
 $removeKeyboard=null;$cancelKey='{}';$botUrl='http://127.0.0.1:9/fixture/';$supportID='fixture_support';
 $USDTPrice='100000';$USDTPriceagent='110000';
-$botState=['cartToCartState'=>'on','giftCardState'=>'on','manualUsdtState'=>'on',
-           'nowPaymentWallet'=>'off','zarinpal'=>'off','nextpay'=>'off',
-           'tronWallet'=>'off'];
-$paymentKeys=[
+$botState=array_replace([
+    'cartToCartState'=>'on','giftCardState'=>'on','manualUsdtState'=>'on',
+    'nowPaymentWallet'=>'off','zarinpal'=>'off','nextpay'=>'off',
+    'tronWallet'=>'off'], $spec['states']??[]);
+$paymentKeys=$spec['keys']??[
+    'manualUsdtWalletTRC20'=>'TNPeeaaFB7K9cmo4uQpcU32zGK8G1NYqeL',
+    'manualUsdtWalletERC20'=>'0x'.str_repeat('2',40),
+    'manualTrxWallet'=>'TJRabPrwbZy45sbavfcjinPJC18kjpRTv8',
+    'manualTrxRateToman'=>'15000',
     'bankAccount'=>'6037999999999999','holderName'=>'Fixture',
     'giftCardUrl'=>'https://example.org/gift-card',
     'manualUsdtWallet'=>'0x1111111111111111111111111111111111111111',
@@ -185,6 +190,8 @@ function sendPhoto(...$args){
 }
 function sendToAllAdmins(...$args){$GLOBALS['events'][]=['name'=>'sendToAllAdmins'];}
 function editKeys(...$args){$GLOBALS['events'][]=['name'=>'editKeys'];}
+function editText(...$args){$GLOBALS['events'][]=['name'=>'editText','args'=>$args];return (object)['ok'=>true];}
+function answerCallbackQuery(...$args){$GLOBALS['events'][]=['name'=>'answerCallbackQuery'];}
 // Native payment-authorization tests never contact real fulfillment servers.
 // Record every attempted external effect, including mistaken authorization.
 $linkIndices=[];$hideConfigIfMany=false;$markup=[];
@@ -221,7 +228,22 @@ function editMarzbanConfig(...$args){
     return (object)['success'=>true];
 }
 $GLOBALS['spec']=$spec;
-if (($spec['route']??'wallet') === 'manual_admin') {
+if (($spec['route']??'wallet') === 'manual_crypto') {
+    require $root.'/src/Finance/Routes/ManualCrypto.php';
+    if (str_starts_with($data,'payIncreaseWalletWith')) {
+        require $root.'/src/Finance/Routes/WalletRecharge.php';
+    } elseif (str_starts_with($data,'payBuyWith') ||
+              str_starts_with($data,'payCustomWith')) {
+        require $root.'/src/Finance/Routes/Checkout.php';
+    } elseif (str_starts_with($data,'payRenewWith')) {
+        require $root.'/src/Finance/Routes/RenewalCheckout.php';
+    } elseif (str_starts_with($data,'payIncreaseWith') ||
+              str_starts_with($data,'payIncreaseDayWith')) {
+        require $root.'/src/Finance/Routes/Extensions.php';
+    }
+} elseif (($spec['route']??'wallet') === 'crypto_retired') {
+    require $root.'/src/Finance/Routes/CryptoAndExchange.php';
+} elseif (($spec['route']??'wallet') === 'manual_admin') {
     require $root.'/src/Finance/Routes/ManualReceipts.php';
 } elseif (($spec['route']??'wallet') === 'checkout') {
     require $root.'/src/Finance/Routes/Checkout.php';
@@ -252,7 +274,7 @@ if (($spec['route']??'wallet') === 'manual_admin') {
 """
 def run_route(work,env,driver,data='',step='none',actor=1001,update=None,route='wallet',
               photo_mode='success',remote_mode='success',text='',
-              bot_reply_message_id=None,message_transport='',
+              keys=None,states=None,bot_reply_message_id=None,message_transport='',
               pause_before_insert_ms=0,expected_review=False,expected_warning=None,
               mysqli_report_off=False):
     spec={'data':data,'step':step,'actor':actor,'route':route,
@@ -281,6 +303,8 @@ def run_route(work,env,driver,data='',step='none',actor=1001,update=None,route='
             update={'update_id':990003,'message':{
                 'message_id':520,'from':sender,'chat':chat,'text':text}}
     if update is not None: spec['update']=update
+    if keys is not None: spec['keys']=keys
+    if states is not None: spec['states']=states
     cmd=['php','-n','-d','extension=mysqlnd','-d','extension=mysqli',
          '-d','allow_url_fopen=0','-d','display_errors=1',
          '-d','log_errors=1','-d','error_log=/dev/stderr','-d','open_basedir='+str(ROOT)+':'+str(work),
@@ -414,7 +438,7 @@ def check():
         cases.append('manual_usdt_disabled_or_bad_configuration_fails_closed')
 
         assert base('agentusdt','claim','manual_usdt',user=9002,keys={
-            'manualUsdtWallet':'T'+'A'*33,'manualUsdtNetwork':'TRC20'}) is True
+            'manualUsdtWallet':'TNPeeaaFB7K9cmo4uQpcU32zGK8G1NYqeL','manualUsdtNetwork':'TRC20'}) is True
         agent=base('agentusdt','read','manual_usdt',user=9002)
         assert 'TRC20' in agent['body'] and '0.91 USDT' in agent['body']
         cases.append('agent_existing_price_and_trc20_validated')
@@ -820,8 +844,7 @@ def check():
             rows=reread['keys']['inline_keyboard']
             assert rows[0]==[{'text':'📤 ارسال تصویر گیفت‌کارت',
                               'callback_data':'sendBuyGiftReceipt'+name}],(name,rows)
-            assert rows[1]==[{'text':'🔄 بررسی وضعیت','callback_data':'ps_'+name}]
-            assert rows[2]==[{'text':'❌ لغو عملیات',
+            assert rows[1]==[{'text':'❌ لغو عملیات',
                               'callback_data':'cancelBuyCartReceipt'+name}]
             assert all('url' not in button for row in rows for button in row)
             assert query(work,env,
@@ -855,6 +878,161 @@ def check():
         assert query(work,env,'SELECT COUNT(*) FROM payment_transactions')==transactions_before
         cases.append('giftlegacyvalid_pinned_url_retained_despite_settings_change')
 
+        # The unified manual-crypto menu offers ONLY valid configured networks.
+        crypto_keys={
+            'manualUsdtWalletBEP20':'0x'+'1'*40,
+            'manualUsdtWalletTRC20':'TNPeeaaFB7K9cmo4uQpcU32zGK8G1NYqeL',
+            'manualUsdtWalletERC20':'0x'+'2'*40,
+            'manualUsdtRateToman':'100000',
+            'manualTrxWallet':'TJRabPrwbZy45sbavfcjinPJC18kjpRTv8',
+            'manualTrxRateToman':'15000'
+        }
+        seed(work,env,'cryptosettings')
+        options=base('cryptosettings','crypto_options',keys=crypto_keys)
+        assert list(options)==['b','c','e','t'] and {
+            x['provider'] for x in options.values()
+        }=={'manual_usdt','manual_trx'}
+        assert all(options[t]['network']==n for t,n in [
+            ('b','BEP20'),('c','TRC20'),('e','ERC20'),('t','TRON')])
+        cases.append('four_valid_crypto_destinations_independent_in_shared_menu')
+        for key,removed,expected in [
+            ('cryptonotrxwallet','manualTrxWallet',['b','c','e']),
+            ('cryptonotrxrate','manualTrxRateToman',['b','c','e']),
+            ('cryptonotrc20','manualUsdtWalletTRC20',['b','e','t']),
+            ('cryptonoerc20','manualUsdtWalletERC20',['b','c','t']),
+            ('cryptonobep20','manualUsdtWalletBEP20',['c','e','t'])
+        ]:
+            seed(work,env,key)
+            partial=dict(crypto_keys)
+            partial.pop(removed)
+            # No fallback to a synthetic legacy default for an unset new key.
+            result=base(key,'crypto_options',keys=partial)
+            assert list(result)==expected, (key,result)
+            cases.append(key+'_unconfigured_option_not_displayed')
+        seed(work,env,'cryptodisabled')
+        assert base('cryptodisabled','crypto_options',keys=crypto_keys,
+            states={'manualUsdtState':'off'})==[]
+        assert base('cryptodisabled','crypto_enabled',keys=crypto_keys,
+            states={'manualUsdtState':'off'}) is False
+        cases.append('manual_crypto_master_toggle_disables_all_four')
+        for key,bad in [
+            ('trxwrongaddress',{'manualTrxWallet':'0x'+'1'*40}),
+            ('trxzerorate',{'manualTrxRateToman':'0'}),
+            ('trxinvalidrate',{'manualTrxRateToman':'not_a_number'})
+        ]:
+            seed(work,env,key)
+            bad_keys=dict(crypto_keys,**bad)
+            assert 't' not in base(key,'crypto_options',keys=bad_keys)
+            cases.append(key+'_no_trx_issuance')
+        seed(work,env,'legacytronkey')
+        assert 't' not in base('legacytronkey','crypto_options',
+            keys={'tronwallet':'TJRabPrwbZy45sbavfcjinPJC18kjpRTv8', 'manualTrxRateToman':'15000'})
+        cases.append('legacy_tronwallet_is_never_implicitly_activated')
+
+        # R1: a plausible T-prefixed address is not sufficient payment
+        # configuration. Neither a bad-checksum USDT/TRC20 nor TRX address
+        # may appear as a selectable method or create an invoice claim.
+        for tag, field, method, network in [
+            ('c','manualUsdtWalletTRC20','manual_usdt','TRC20'),
+            ('t','manualTrxWallet','manual_trx','TRON')
+        ]:
+            key='checksumreject'+tag
+            seed(work,env,key)
+            original=crypto_keys[field]
+            broken=original[:-1]+('1' if original[-1]!='1' else '2')
+            bad_keys=dict(crypto_keys)
+            bad_keys[field]=broken
+            assert tag not in base(key,'crypto_options',keys=bad_keys)
+            assert base(key,'claim',method,network=network,keys=bad_keys) is False
+            assert query(work,env,
+                f"SELECT COUNT(*) FROM payment_attempts WHERE order_hash='{key}'")=='0'
+            assert query(work,env,
+                f"SELECT state FROM pays WHERE hash_id='{key}'")=='pending'
+            assert broken not in str(base(key,'read',method,keys=bad_keys)['body'])
+            cases.append('tron_checksum_invalid_destination_denied_before_claim_'+tag)
+
+        # Immutable per-order quoted asset/network/recipient/rate; no second
+        # claim from same or competing provider, even after settings rotation.
+        for tag,asset,network,currency in [
+            ('b','manual_usdt','BEP20','USDT'),('c','manual_usdt','TRC20','USDT'),
+            ('e','manual_usdt','ERC20','USDT'),('t','manual_trx','TRON','TRX')
+        ]:
+            hash_id='cryptochoice'+tag
+            seed(work,env,hash_id)
+            assert base(hash_id,'claim',asset,keys=crypto_keys,network=network)
+            old_intent=query(work,env,
+                f"SELECT checkout_url FROM payment_attempts WHERE order_hash='{hash_id}'")
+            quote=query(work,env,
+                f"SELECT quote_amount,quote_currency,settlement_currency FROM payment_attempts "
+                f"WHERE order_hash='{hash_id}'").splitlines()[0].split('\t')
+            assert quote[1:]==[currency,network],(tag,quote)
+            assert base(hash_id,'claim',asset,keys=crypto_keys,network=network)
+            other='TRON' if network!='TRON' else 'TRC20'
+            assert base(hash_id,'claim',asset,keys=crypto_keys,network=other) is False
+            rotated={k:('0x'+'3'*40 if v.startswith('0x') else
+                         'TXT7aiRQCLiMgsMZgFceLYbQu3MynssYUK' if v.startswith('T') else v)
+                     for k,v in crypto_keys.items()}
+            rotated['manualUsdtRateToman']='200000'
+            rotated['manualTrxRateToman']='30000'
+            assert base(hash_id,'claim',asset,keys=rotated,network=network)
+            assert query(work,env,
+                f"SELECT checkout_url FROM payment_attempts WHERE order_hash='{hash_id}'")==old_intent
+            assert query(work,env,
+                f"SELECT COUNT(*) FROM payment_attempts WHERE order_hash='{hash_id}'")=='1'
+            assert query(work,env,
+                f"SELECT state FROM pays WHERE hash_id='{hash_id}'")=='pending'
+            cases.append('manual_crypto_'+tag+'_immutable_network_quote_and_replay')
+
+        # R1: retained historical payment evidence is never destroyed or
+        # silently rewritten merely because its pinned destination is invalid.
+        # No new customer instructions/receipt/claims for such a pending row.
+        for tag, method, network, original in [
+            ('c','manual_usdt','TRC20',crypto_keys['manualUsdtWalletTRC20']),
+            ('t','manual_trx','TRON',crypto_keys['manualTrxWallet'])
+        ]:
+            key='historicalinvalid'+tag
+            seed(work,env,key)
+            assert base(key,'claim',method,network=network,keys=crypto_keys)
+            pinned=json.loads(query(work,env,
+                f"SELECT checkout_url FROM payment_attempts WHERE order_hash='{key}'"))
+            assert pinned['wallet']==original
+            broken=original[:-1]+('1' if original[-1]!='1' else '2')
+            pinned['wallet']=broken
+            tampered=json.dumps(pinned,separators=(',',':'))
+            query(work,env,"UPDATE payment_attempts SET checkout_url='"+
+                  tampered+f"' WHERE order_hash='{key}'")
+            before_pay=query(work,env,
+                f"SELECT state,price,payid FROM pays WHERE hash_id='{key}'")
+            before_attempt=query(work,env,
+                f"SELECT provider,stage,checkout_url FROM payment_attempts WHERE order_hash='{key}'")
+            before_wallet=query(work,env,'SELECT userid,wallet FROM users ORDER BY userid')
+            assert base(key,'claim',method,keys=crypto_keys,network=network) is False
+            assert base(key,'claim',method,keys=crypto_keys) is False
+            assert base(key,'allow',method) is False
+            assert base(key,'begin',method) is None
+            view=base(key,'read',method)
+            assert view['body']=='' and broken not in view['caption']
+            assert query(work,env,
+                f"SELECT state,price,payid FROM pays WHERE hash_id='{key}'")==before_pay
+            assert query(work,env,
+                f"SELECT provider,stage,checkout_url FROM payment_attempts WHERE order_hash='{key}'")==before_attempt
+            assert query(work,env,'SELECT userid,wallet FROM users ORDER BY userid')==before_wallet
+            cases.append('historical_invalid_tron_destination_requires_review_'+tag)
+
+        # Existing *valid* immutable evidence must remain usable after a bad
+        # new administrator setting; never substitute or rewrite the recipient.
+        for tag,method,network,field in [
+            ('c','manual_usdt','TRC20','manualUsdtWalletTRC20'),
+            ('t','manual_trx','TRON','manualTrxWallet')
+        ]:
+            key='cryptochoice'+tag
+            initial=base(key,'read',method,keys=crypto_keys)['body']
+            changed=dict(crypto_keys)
+            changed[field]='T'+'A'*33 # invalid shape-only historical fixture
+            assert base(key,'claim',method,network=network,keys=changed)
+            assert base(key,'read',method,keys=changed)['body']==initial
+            cases.append('existing_valid_tron_intent_survives_bad_new_config_'+tag)
+
         # F2: a direct cached wallet callback must honor an earlier manual claim.
         query(work,env,'UPDATE users SET wallet=1000000 WHERE userid=1001')
         for method in ('bank_transfer','gift_card','manual_usdt'):
@@ -878,26 +1056,57 @@ def check():
         assert int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'))==debitBefore-100000
         assert base('walletfirst','claim','bank_transfer') is False
         assert base('walletfirst','claim','manual_usdt') is False
-        assert base('walletfirst','tron_claim') is None
+        assert base('walletfirst','claim','manual_trx',network='TRON',keys={
+            'manualTrxWallet':'TJRabPrwbZy45sbavfcjinPJC18kjpRTv8','manualTrxRateToman':'15000'}) is False
         cases.append('wallet_first_prevents_external_method_replacement')
 
-        # F2: stale TRON Telegram paths reserve and respect the same ledger.
-        seed(work,env,'tronfirst')
-        trx=base('tronfirst','tron_claim')
-        assert trx and trx['quote']=='13.25'
-        assert base('tronfirst','claim','bank_transfer') is False
-        assert base('tronfirst','wallet')['status']=='claimed_provider'
-        assert base('tronfirst','tron_submit',user=9002) is False
-        assert base('tronfirst','tron_submit') is True
-        assert base('tronfirst','tron_submit') is False
-        assert query(work,env,"SELECT state FROM pays WHERE hash_id='tronfirst'")=='0'
-        assert query(work,env,"SELECT provider,stage FROM payment_attempts WHERE order_hash='tronfirst'")=='tron_wallet\treview'
-        cases.append('tron_stale_callback_claim_owner_and_terminal_nonreplay')
+        # Manual TRX shares the original guarded photo/approval flow.
+        seed(work,env,'trxfirst')
+        trxKeys={'manualTrxWallet':'TJRabPrwbZy45sbavfcjinPJC18kjpRTv8','manualTrxRateToman':'15000'}
+        assert base('trxfirst','claim','manual_trx',network='TRON',keys=trxKeys)
+        trx=base('trxfirst','read','manual_trx')
+        assert trx['method']=='manual_trx' and 'TRX' in trx['body']
+        assert 'TJRabPrwbZy45sbavfcjinPJC18kjpRTv8' in trx['body']
+        assert 'ارسال رسید TRX' in str(trx['keys'])
+        assert query(work,env,"SELECT quote_currency,settlement_currency FROM payment_attempts WHERE order_hash='trxfirst'")=='TRX\tTRON'
+        assert base('trxfirst','claim','bank_transfer') is False
+        assert base('trxfirst','wallet')['status']=='claimed_provider'
+        assert base('trxfirst','claim','manual_trx',network='BEP20',keys=trxKeys) is False
+        assert base('trxfirst','claim','manual_usdt') is False
+        assert base('trxfirst','begin','manual_trx') is not None
+        assert base('trxfirst','begin','manual_trx') is None
+        assert query(work,env,"SELECT state FROM pays WHERE hash_id='trxfirst'")=='pending'
+        cases.append('manual_trx_unique_quote_receipt_and_no_auto_settlement')
+
+        # TRX receipts must remain manual-review-only, never bank auto-accepted.
+        seed(work,env,'trxautoguard')
+        assert base('trxautoguard','claim','manual_trx',network='TRON',keys=trxKeys)
+        token=base('trxautoguard','begin','manual_trx')
+        assert isinstance(token,str) and len(token)==32
+        assert base('trxautoguard','finish','manual_trx',token=token)
+        assert query(work,env,"SELECT state FROM pays WHERE hash_id='trxautoguard'")=='have_sent'
+        before_automated=query(work,env,'SELECT userid,wallet FROM users ORDER BY userid')
+        assert base('trxautoguard','bank_auto_eligible','manual_trx') is False
+        assert base('trxautoguard','bank_auto_claim','manual_trx') is False
+        assert query(work,env,"SELECT state FROM pays WHERE hash_id='trxautoguard'")=='have_sent'
+        assert query(work,env,'SELECT userid,wallet FROM users ORDER BY userid')==before_automated
+        cases.append('manual_trx_photo_never_enters_automatic_bank_approval')
+
+        # The service operator path accepts the same reviewed, persisted
+        # TRX image evidence, not an unreviewed URL/callback or old TXID.
+        seed(work,env,'trxserviceguard')
+        assert base('trxserviceguard','claim','manual_trx',network='TRON',keys=trxKeys)
+        token=base('trxserviceguard','begin','manual_trx')
+        assert base('trxserviceguard','finish','manual_trx',token=token)
+        query(work,env,"UPDATE pays SET type='BUY_SUB',day=30 WHERE hash_id='trxserviceguard'")
+        assert base('trxserviceguard','service_guard','manual_trx',subject='custom') is True
+        assert base('trxserviceguard','service_guard','manual_trx',subject='renewal') is False
+        cases.append('manual_trx_service_requires_reviewed_photo_and_correct_subject')
+
         seed(work,env,'manualfirsttron')
         assert base('manualfirsttron','claim','gift_card')
-        assert base('manualfirsttron','tron_claim') is None
-        assert base('manualfirsttron','tron_submit') is False
-        cases.append('tron_cannot_replace_existing_manual_receipt_claim')
+        assert base('manualfirsttron','claim','manual_trx',network='TRON',keys=trxKeys) is False
+        cases.append('manual_trx_cannot_replace_existing_manual_receipt_claim')
 
         # A hosted provider claim excludes cached local wallet actions.
         seed(work,env,'hostedclaimed')
@@ -905,7 +1114,8 @@ def check():
              "SELECT id,'nowpayments',hash_id,100000,'toman',price,'creating' FROM pays WHERE hash_id='hostedclaimed'")
         assert base('hostedclaimed','wallet')['status']=='claimed_provider'
         assert base('hostedclaimed','claim','manual_usdt') is False
-        assert base('hostedclaimed','tron_claim') is None
+        assert base('hostedclaimed','claim','manual_trx',network='TRON',keys={
+            'manualTrxWallet':'TJRabPrwbZy45sbavfcjinPJC18kjpRTv8','manualTrxRateToman':'15000'}) is False
         assert query(work,env,"SELECT state FROM pays WHERE hash_id='hostedclaimed'")=='pending'
         cases.append('hosted_provider_claim_blocks_direct_wallet_tron_manual_replay')
 
@@ -1086,6 +1296,80 @@ def check():
             assert any(e['name']=='alert' for e in repeat)
             assert int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'))==balance+100000
             cases.append('uncertain_telegram_delivery_never_double_credits_'+method)
+
+        # Exercise the real network-selection router, not a copied key mapper.
+        seed(work,env,'menureal',price=345678)
+        menu=run_route(work,env,route_driver,data='mcm_menureal',
+            route='manual_crypto',keys=crypto_keys)
+        text_changes=[x for x in menu if x['name']=='editText']
+        assert text_changes,repr(menu)
+        menu_keyboard=json.loads(text_changes[-1]['args'][2])
+        assert [r[0]['callback_data'] for r in menu_keyboard['inline_keyboard'][:4]]==[
+            'mc_b_menureal','mc_c_menureal','mc_e_menureal','mc_t_menureal']
+        assert query(work,env,"SELECT COUNT(*) FROM payment_attempts WHERE order_hash='menureal'")=='0'
+        cases.append('real_telegram_manual_crypto_menu_four_choices_no_claim')
+        # Execute each USDT network as an actual Telegram callback instead
+        # of trusting the menu labels or a copied network/asset map.
+        for tag,network,value in [('b','BEP20',212001),
+                                  ('c','TRC20',212002),
+                                  ('e','ERC20',212003)]:
+            hash_id='usdtbutton'+tag
+            seed(work,env,hash_id,price=value)
+            selected=run_route(work,env,route_driver,
+                data='mc_'+tag+'_'+hash_id,route='manual_crypto',keys=crypto_keys)
+            assert any(e['name']=='sendMessage' and network in str(e['args'])
+                       for e in selected),repr((tag,selected))
+            assert query(work,env,
+                "SELECT provider,quote_currency,settlement_currency,stage "
+                f"FROM payment_attempts WHERE order_hash='{hash_id}'"
+            )=='manual_usdt\tUSDT\t'+network+'\tpending'
+            assert query(work,env,f"SELECT state FROM pays WHERE hash_id='{hash_id}'")=='pending'
+            cases.append('real_telegram_manual_usdt_'+tag+'_network_pinned')
+
+        seed(work,env,'cryptoforged',price=313333)
+        disabled=dict(crypto_keys)
+        disabled.pop('manualUsdtWalletTRC20')
+        blocked_missing=run_route(work,env,route_driver,
+            data='mc_c_cryptoforged',route='manual_crypto',keys=disabled)
+        assert any(e['name']=='answerCallbackQuery' for e in blocked_missing)
+        assert query(work,env,
+            "SELECT COUNT(*) FROM payment_attempts WHERE order_hash='cryptoforged'")=='0'
+        cases.append('forged_unconfigured_network_never_claimed')
+
+        blocked=run_route(work,env,route_driver,data='mc_t_menureal',
+            route='manual_crypto',actor=9002,keys=crypto_keys)
+        assert any(x['name']=='answerCallbackQuery' for x in blocked)
+        assert query(work,env,"SELECT COUNT(*) FROM payment_attempts WHERE order_hash='menureal'")=='0'
+        cases.append('real_telegram_crypto_pick_unauthorized_owner_denied')
+        selected=run_route(work,env,route_driver,data='mc_t_menureal',
+            route='manual_crypto',keys=crypto_keys)
+        assert any(x['name']=='sendMessage' and 'TRX' in str(x['args']) for x in selected)
+        assert query(work,env,"SELECT provider,quote_currency,stage FROM payment_attempts "
+            "WHERE order_hash='menureal'")=='manual_trx\tTRX\tpending'
+        assert query(work,env,"SELECT state FROM pays WHERE hash_id='menureal'")=='pending'
+        cases.append('real_telegram_manual_trx_choice_routes_to_wallet_topup_receipt')
+        receipt=run_route(work,env,route_driver,
+            data='sendIncreaseWalletUsdtReceiptmenureal',route='wallet')
+        assert any(x['name']=='sendMessage' and 'TRX' in str(x['args'])
+                   for x in receipt),repr(receipt)
+        uploaded=run_route(work,env,route_driver,step='waitIncreaseWalletUsdtReceiptmenureal')
+        assert any(x['name']=='sendPhoto' for x in uploaded),repr(uploaded)
+        assert query(work,env,"SELECT state FROM pays WHERE hash_id='menureal'")=='have_sent'
+        before=int(query(work,env,"SELECT wallet FROM users WHERE userid=1001"))
+        approved=run_route(work,env,route_driver,
+            data='approvePaymentmenureal',actor=9001,route='manual_admin')
+        assert any(x['name']=='sendMessage' for x in approved)
+        assert int(query(work,env,"SELECT wallet FROM users WHERE userid=1001"))==before+345678
+        repeated=run_route(work,env,route_driver,
+            data='approvePaymentmenureal',actor=9001,route='manual_admin')
+        assert any(x['name']=='alert' for x in repeated)
+        assert int(query(work,env,"SELECT wallet FROM users WHERE userid=1001"))==before+345678
+        cases.append('real_telegram_trx_manual_review_credits_wallet_once_only')
+        older=run_route(work,env,route_driver,
+            data='payWithTronWalletmenureal',route='crypto_retired')
+        assert any(x['name']=='answerCallbackQuery' for x in older)
+        assert not any(x['name']=='sendPhoto' or x['name']=='sendMessage' for x in older)
+        cases.append('stale_tron_auto_callback_retired_fail_closed')
 
         # Database transition failure must preserve the committed receipt
         # evidence and allow the SAME photo to be retried.

@@ -530,6 +530,10 @@ function getAdminKeys(){
 
 function setSettings($field, $value){
     global $connection, $botState;
+    // Final persistence boundary: retired payment flags must never be
+    // recreated or mutated, including by a future stale caller. Historical
+    // BOT_STATES JSON is retained untouched for audit/compatibility.
+    if (in_array($field, ['weSwapState','tronWallet'], true)) return;
     $botState[$field]= $value;
     
     $stmt = $connection->prepare("SELECT * FROM `setting` WHERE `type` = 'BOT_STATES'");
@@ -877,7 +881,6 @@ function getGateWaysKeys(){
     $robotState = $botState['botState']=="on"?$buttonValues['on']:$buttonValues['off'];
     $nowPaymentWallet = $botState['nowPaymentWallet']=="on"?$buttonValues['on']:$buttonValues['off'];
     $nowPaymentOther = $botState['nowPaymentOther']=="on"?$buttonValues['on']:$buttonValues['off'];
-    $tronWallet = $botState['tronWallet']=="on"?$buttonValues['on']:$buttonValues['off'];
     $zarinpal = $botState['zarinpal']=="on"?$buttonValues['on']:$buttonValues['off'];
     $nextpay = $botState['nextpay']=="on"?$buttonValues['on']:$buttonValues['off'];
     $rewaredChannel = $botState['rewardChannel']??" ";
@@ -894,6 +897,37 @@ function getGateWaysKeys(){
     $giftSellerUrl = trim((string)($paymentKeys['giftCardUrl'] ?? ''));
     $giftSellerStatus = $giftSellerUrl === '' ? "⚠️ تنظیم‌نشده" :
         (achbotManualGiftSellerUrlValid($giftSellerUrl) ? "✅ تنظیم‌شده" : "⚠️ نامعتبر");
+    $cryptoRows=[];
+    foreach (['BEP20','TRC20','ERC20'] as $network) {
+        $field='manualUsdtWallet'.$network;
+        $value=array_key_exists($field,$paymentKeys)
+            ? trim((string)$paymentKeys[$field])
+            : (((string)($paymentKeys['manualUsdtNetwork'] ?? 'BEP20'))===$network
+                ? trim((string)($paymentKeys['manualUsdtWallet'] ?? '')) : '');
+        $label=achbotManualUsdtWalletValid($value,$network) ? $value : '⚠️ تنظیم‌نشده';
+        $cryptoRows[]=[
+            ['text'=>$label,'callback_data'=>'changePaymentKeys'.$field],
+            ['text'=>'آدرس USDT '.$network,'callback_data'=>'wizwizch']
+        ];
+    }
+    $trxWallet=trim((string)($paymentKeys['manualTrxWallet']??''));
+    $cryptoRows[]=[
+        ['text'=>achbotManualTronAddressValid($trxWallet) ? $trxWallet : '⚠️ تنظیم‌نشده',
+         'callback_data'=>'changePaymentKeysmanualTrxWallet'],
+        ['text'=>'آدرس TRX — TRON','callback_data'=>'wizwizch']
+    ];
+    $cryptoRows[]=[
+        ['text'=>(!empty($paymentKeys['manualUsdtRateToman']) ?
+            number_format((int)$paymentKeys['manualUsdtRateToman']).' تومان' : 'نرخ پایه USDT'),
+         'callback_data'=>'changePaymentKeysmanualUsdtRateToman'],
+        ['text'=>'قیمت هر USDT','callback_data'=>'wizwizch']
+    ];
+    $cryptoRows[]=[
+        ['text'=>(!empty($paymentKeys['manualTrxRateToman']) ?
+            number_format((int)$paymentKeys['manualTrxRateToman']).' تومان' : '⚠️ تنظیم‌نشده'),
+         'callback_data'=>'changePaymentKeysmanualTrxRateToman'],
+        ['text'=>'قیمت هر TRX','callback_data'=>'wizwizch']
+    ];
     return json_encode(['inline_keyboard'=>[
         [
             ['text'=>(!empty($paymentKeys['bankAccount'])?$paymentKeys['bankAccount']:" "),'callback_data'=>"changePaymentKeysbankAccount"],
@@ -919,29 +953,14 @@ function getGateWaysKeys(){
             ['text'=>(!empty($paymentKeys['nextpay'])?$paymentKeys['nextpay']:" "),'callback_data'=>"changePaymentKeysnextpay"],
             ['text'=>"کد درگاه نکست پی",'callback_data'=>"wizwizch"]
         ],
-        [
-            ['text'=>(!empty($paymentKeys['tronwallet'])?$paymentKeys['tronwallet']:" "),'callback_data'=>"changePaymentKeystronwallet"],
-            ['text'=>"آدرس والت ترون",'callback_data'=>"wizwizch"]
-        ],
-        [
-            ['text'=>(!empty($paymentKeys['manualUsdtWallet']) ? $paymentKeys['manualUsdtWallet'] : "تنظیم‌نشده"),'callback_data'=>"changePaymentKeysmanualUsdtWallet"],
-            ['text'=>"آدرس دریافت تتر دستی",'callback_data'=>"wizwizch"]
-        ],
-        [
-            ['text'=>($paymentKeys['manualUsdtNetwork'] ?? 'BEP20'),'callback_data'=>"changePaymentKeysmanualUsdtNetwork"],
-            ['text'=>"شبکه تتر دستی",'callback_data'=>"wizwizch"]
-        ],
-        [
-            ['text'=>(!empty($paymentKeys['manualUsdtRateToman']) ? number_format((int)$paymentKeys['manualUsdtRateToman']).' تومان' : "نرخ پایه"),'callback_data'=>"changePaymentKeysmanualUsdtRateToman"],
-            ['text'=>"نرخ تتر دستی (هر USDT)",'callback_data'=>"wizwizch"]
-        ],
+        ...$cryptoRows,
         [
             ['text'=>$giftCardState,'callback_data'=>"changeGateWaysgiftCardState"],
             ['text'=>"🎁 پرداخت با گیفت‌کارت",'callback_data'=>"wizwizch"]
         ],
         [
             ['text'=>$manualUsdtState,'callback_data'=>"changeGateWaysmanualUsdtState"],
-            ['text'=>"💎 تتر دستی (ارسال رسید)",'callback_data'=>"wizwizch"]
+            ['text'=>"💎 پرداخت رمزارزی دستی (USDT/TRX)",'callback_data'=>"wizwizch"]
         ],
         [
             ['text'=>$cartToCartState,'callback_data'=>"changeGateWayscartToCartState"],
@@ -962,10 +981,6 @@ function getGateWaysKeys(){
         [
             ['text'=>$nowPaymentOther,'callback_data'=>"changeGateWaysnowPaymentOther"],
             ['text'=>"درگاه NowPayment سایر",'callback_data'=>"wizwizch"]
-        ],
-        [
-            ['text'=>$tronWallet,'callback_data'=>"changeGateWaystronWallet"],
-            ['text'=>"درگاه ترون",'callback_data'=>"wizwizch"]
         ],
         [
             ['text'=>$walletState,'callback_data'=>"changeGateWayswalletState"],

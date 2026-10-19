@@ -34,6 +34,7 @@ if(is_numeric($checkSpam)){
 }
 
 if (($achbotV8Result = require __DIR__ . '/src/Finance/Routes/PrePayment.php') === null) return;
+if (($achbotManualCryptoResult = require __DIR__ . '/src/Finance/Routes/ManualCrypto.php') === null) return;
 // END Pre Pay Check By ACh
 
 if (preg_match("/^haveJoined(.*)/", $data, $match)) {
@@ -402,8 +403,24 @@ if (in_array($data, $statOptions) && ($from_id == $admin || $userInfo['isAdmin']
 }
 
 require __DIR__ . '/src/Admin/Roles.php';
-if(($data=="botSettings" or preg_match("/^changeBot(\w+)/",$data,$match)) && ($from_id == $admin || $userInfo['isAdmin'] == true)){
+if(($data=="botSettings" or preg_match('/^changeBot([A-Za-z0-9_]+)$/D',$data,$match)) && ($from_id == $admin || $userInfo['isAdmin'] == true)){
     if($data!="botSettings"){
+        // Never persist callback-provided arbitrary BOT_STATES keys.
+        // Keep this explicit list in sync with getBotSettingKeys().
+        $editableBotToggles=[
+            'agencyState','agencyPlanDiscount','individualExistence',
+            'sharedExistence','testAccount','changeProtocolState',
+            'renewAccountState','renewAutoState','plandelkhahState',
+            'switchLocationState','increaseTimeState','increaseVolumeState',
+            'requirePhone','requireIranPhone','sellState','botState',
+            'subLinkState','configLinkState','searchState',
+            'renewConfigLinkState','updateConfigLinkState','qrConfigState',
+            'qrSubState','cartToCartAutoAcceptState','cartToCartAutoAcceptType'
+        ];
+        if (!in_array($match[1],$editableBotToggles,true)) {
+            answerCallbackQuery($callbackId,'این تنظیم قدیمی یا ناشناخته قابل تغییر نیست.',true);
+            return;
+        }
         if($match[1] == "cartToCartAutoAcceptType") $newValue = $botState[$match[1]] == "0"?"1":($botState[$match[1]] == "1"?"2":0);
         else $newValue = ($botState[$match[1]] ?? 'off')==="on"?"off":"on";
         setSettings($match[1], $newValue);
@@ -415,8 +432,20 @@ if($data=="changeUpdateConfigLinkState" && ($from_id == $admin || $userInfo['isA
     setSettings('updateConnectionState', $newValue);
     editText($message_id,$mainValues['change_bot_settings_message'],getBotSettingKeys());
 }
-if(($data=="gateWays_Channels" or preg_match("/^changeGateWays(\w+)/",$data,$match)) && ($from_id == $admin || $userInfo['isAdmin'] == true)){
+if(($data=="gateWays_Channels" or preg_match('/^changeGateWays([A-Za-z0-9_]+)$/D',$data,$match)) && ($from_id == $admin || $userInfo['isAdmin'] == true)){
     if($data!="gateWays_Channels"){
+        // Only currently displayed, supported gateway flags are editable.
+        // Neither deprecated TRON/WeSwap nor arbitrary callback identifiers
+        // can recreate retired BOT_STATES through this or changeBot.
+        $editableGatewayToggles=[
+            'giftCardState','manualUsdtState','cartToCartState',
+            'nextpay','zarinpal','nowPaymentWallet','nowPaymentOther',
+            'walletState'
+        ];
+        if (!in_array($match[1],$editableGatewayToggles,true)) {
+            answerCallbackQuery($callbackId,'این درگاه قدیمی یا ناشناخته قابل تغییر نیست.',true);
+            return;
+        }
         $newValue = ($botState[$match[1]] ?? 'off')==="on"?"off":"on";
         setSettings($match[1], $newValue);
     }
@@ -438,6 +467,10 @@ if($data=="changeConfigRemarkType"){
     editText($message_id,$mainValues['change_bot_settings_message'],getBotSettingKeys());
 }
 if(preg_match('/^changePaymentKeys(\w+)/',$data,$match) && ($from_id == $admin || $userInfo['isAdmin'] == true)){
+    if (in_array($match[1], ['tronwallet','manualUsdtWallet','manualUsdtNetwork'], true)) {
+        answerCallbackQuery($callbackId, 'تنظیم قدیمی کنار گذاشته شد؛ از آدرس‌های مستقل هر شبکه استفاده کنید.', true);
+        return;
+    }
     delMessage();
     switch($match[1]){
         case "nextpay":
@@ -458,24 +491,39 @@ if(preg_match('/^changePaymentKeys(\w+)/',$data,$match) && ($from_id == $admin |
         case "giftCardUrl":
             $gate = "لینک HTTPS معتبر خرید گیفت‌کارت (حداکثر ۳۵۰ بایت)";
             break;
-        case "manualUsdtWallet":
-            $gate = "آدرس عمومی دریافت USDT (متناسب با شبکه تتر دستی)";
+        case "manualUsdtWalletBEP20":
+        case "manualUsdtWalletTRC20":
+        case "manualUsdtWalletERC20":
+            $network = substr($match[1], strlen('manualUsdtWallet'));
+            $gate = "آدرس عمومی USDT برای شبکهٔ $network (برای حذف /clear بفرستید)";
             break;
-        case "manualUsdtNetwork":
-            $gate = "نام شبکه دریافت USDT: BEP20 یا TRC20 یا ERC20";
+        case "manualTrxWallet":
+            $gate = "آدرس عمومی TRX در شبکهٔ TRON (برای حذف /clear بفرستید)";
             break;
         case "manualUsdtRateToman":
-            $gate = "نرخ هر واحد USDT بر حسب تومان (عدد صحیح مثبت)";
+            $gate = "قیمت هر USDT به تومان، عدد صحیح مثبت (برای حذف /clear بفرستید)";
             break;
-        case "tronwallet":
-            $gate = "آدرس والت ترون";
+        case "manualTrxRateToman":
+            $gate = "قیمت مستقل هر TRX به تومان، عدد صحیح مثبت (برای حذف /clear بفرستید)";
             break;
+        default:
+            answerCallbackQuery($callbackId, 'این تنظیم شناخته‌شده نیست.', true);
+            return;
     }
     sendMessage("🔘 لطفا $gate را وارد کنید", $cancelKey);
     setUser($data);
 }
 if(preg_match('/^changePaymentKeys(\w+)/',$userInfo['step'],$match) && $text != $buttonValues['cancel'] && ($from_id == $admin || $userInfo['isAdmin'] == true)){
-
+    $permittedPaymentKeys=[
+        'nowpayment','nextpay','zarinpal','bankAccount','holderName','giftCardUrl',
+        'manualUsdtWalletBEP20','manualUsdtWalletTRC20','manualUsdtWalletERC20',
+        'manualTrxWallet','manualUsdtRateToman','manualTrxRateToman'
+    ];
+    if (!in_array($match[1],$permittedPaymentKeys,true)) {
+        sendMessage('⛔️ این تنظیم قابل تغییر نیست.');
+        setUser();
+        return;
+    }
     $stmt = $connection->prepare("SELECT * FROM `setting` WHERE `type` = 'PAYMENT_KEYS'");
     $stmt->execute();
     $paymentInfo = $stmt->get_result();
@@ -489,36 +537,36 @@ if(preg_match('/^changePaymentKeys(\w+)/',$userInfo['step'],$match) && $text != 
         }
         $text = $url;
     }
-    if ($match[1] === 'manualUsdtNetwork') {
-        $text = strtoupper(trim((string)$text));
-        if (!in_array($text, ['BEP20', 'TRC20', 'ERC20'], true)) {
-            sendMessage("⚠️ شبکه معتبر: BEP20 یا TRC20 یا ERC20.", $cancelKey);
-            return;
+    $cryptoAddresses = ['manualUsdtWalletBEP20'=>'BEP20',
+                        'manualUsdtWalletTRC20'=>'TRC20',
+                        'manualUsdtWalletERC20'=>'ERC20',
+                        'manualTrxWallet'=>'TRON'];
+    $cryptoRates=['manualUsdtRateToman','manualTrxRateToman'];
+    if (array_key_exists($match[1], $cryptoAddresses) || in_array($match[1], $cryptoRates, true)) {
+        $text=trim((string)$text);
+        if ($text === '/clear') {
+            $text='';
+        } elseif (array_key_exists($match[1], $cryptoAddresses)) {
+            $network=$cryptoAddresses[$match[1]];
+            $valid = $network==='TRON'
+                ? achbotManualTronAddressValid($text)
+                : achbotManualUsdtWalletValid($text,$network);
+            if (!$valid) {
+                sendMessage('⚠️ آدرس مقصد با شبکهٔ انتخاب‌شده سازگار نیست. برای غیرفعال‌کردن این شبکه /clear بفرستید.', $cancelKey);
+                return;
+            }
+        } else {
+            $pattern=$match[1]==='manualTrxRateToman'
+                ? '/^[1-9][0-9]{0,8}$/D' : '/^[1-9][0-9]{2,8}$/D';
+            if (!preg_match($pattern,$text)) {
+                sendMessage('⚠️ نرخ معتبر به تومان وارد کنید یا /clear بفرستید.', $cancelKey);
+                return;
+            }
         }
-    }
-    if ($match[1] === 'manualUsdtWallet') {
-        $text = trim((string)$text);
-        $network = $paymentKeys['manualUsdtNetwork'] ?? 'BEP20';
-        if (!function_exists('achbotManualUsdtWalletValid') || !achbotManualUsdtWalletValid($text, $network)) {
-            sendMessage("⚠️ آدرس مقصد با شبکهٔ تنظیم‌شده سازگار نیست. ابتدا شبکه را بررسی کنید.", $cancelKey);
-            return;
-        }
-    }
-    if ($match[1] === 'manualUsdtRateToman') {
-        $text = trim((string)$text);
-        if (!preg_match('/^[1-9][0-9]{2,8}$/D', $text)) {
-            sendMessage("⚠️ نرخ معتبر تتر به تومان را به صورت عدد صحیح مثبت وارد کنید.", $cancelKey);
-            return;
-        }
-    }
-    if ($match[1] === 'manualUsdtNetwork' &&
-        !empty($paymentKeys['manualUsdtWallet']) &&
-        !achbotManualUsdtWalletValid((string)$paymentKeys['manualUsdtWallet'], $text)) {
-        // Never carry an incompatible TRON/EVM destination onto a new chain.
-        // Clearing only the obsolete public destination lets the operator
-        // configure the new network without a deadlocked two-field editor.
-        $paymentKeys['manualUsdtWallet'] = '';
-        sendMessage("⚠️ شبکه جدید انتخاب شد؛ آدرس شبکه قبلی پاک شد. پیش از استفاده، آدرس مقصد جدید را تنظیم کنید.");
+    } elseif (in_array($match[1], ['tronwallet','manualUsdtWallet','manualUsdtNetwork'], true)) {
+        sendMessage('⛔️ تنظیم قدیمی قابل ویرایش نیست؛ مقصد هر شبکه را جداگانه تنظیم کنید.');
+        setUser();
+        return;
     }
     $paymentKeys[$match[1]] = $text;
     $paymentKeys = json_encode($paymentKeys);
