@@ -310,6 +310,80 @@ def main():
                 and catalogue.get("original_schema_tables")==23
                 and catalogue.get("financial_mutations")==0):
             raise RuntimeError("Marzban-only catalogue, forged callback or QR proof incomplete")
+        auto_renew_path=Path(tmp)/"automatic-renewal-ledger.json"
+        subprocess.run(["python3",str(ROOT/"tools/test_post_v9_automatic_renewal.py"),
+                        "--run-disposable","--report",str(auto_renew_path)],
+                       cwd=ROOT,check=True,timeout=180,capture_output=True)
+        auto_renew=json.loads(auto_renew_path.read_text())
+        required_auto={
+            "missing_schema_fails_closed",
+            "disabled_flag_no_effect",
+            "verified_remote_success_all_local_effects_atomic",
+            "replayed_and_foreign_requests_no_extra_charge",
+            # Independent reviewer F4: failed nonthrowing accounting INSERT
+            # cannot finalize payment, order or journal or replay provider.
+            "f4_nonthrowing_accounting_insert_failure_rolls_back_local_finalization_without_replay",
+            "insufficient_funds_disables_auto_only",
+            "signed_admin_debt_preserved_no_user_debit",
+            "nonpositive_plan_fails_closed",
+            "ambiguous_remote_result_never_replayed_or_refunded",
+            "remote_success_database_drift_held_for_review",
+            "crashed_worker_remote_marker_blocks_retry",
+            "private_operator_notice_retry_and_once_per_day_ack",
+            "two_real_php_mysql_clients_exactly_one_debit_and_remote",
+            "nonunique_legacy_identity_cannot_fund_renewal",
+            "real_cron_sweep_one_eligible_marzban_order",
+            "telegram_failure_after_commit_does_not_revert_payment",
+            # Independent reviewer F1: permanent audit, safe remote deletion.
+            "f1_completed_renewal_order_deletable_history_permanently_retained",
+            "f1_unresolved_renewal_remote_deletion_preflight_denied",
+            "f1_sql_failure_after_remote_retains_inactive_record_then_recovers",
+            "f1_remote_deletion_unknown_single_durable_local_fence",
+            "f1_real_user_route_pending_renewal_prevents_remote_delete",
+            "f1_real_customer_delete_after_done_journal_retained",
+            "f1_real_admin_remote_delete_after_done_journal_retained",
+            "f1_real_operator_local_only_delete_retains_paid_history",
+            "f1_forged_nonadmin_operator_delete_callback_refused",
+            # Independent reviewer F5: actual DB-backed delegated role.
+            "f5_db_backed_delegated_admin_can_delete_local_order_once_preserving_financial_history",
+            "f5_delegated_delete_failure_persists_inactive_fence_without_remote_replay",
+            "f5_missing_actor_role_cannot_forge_local_delete_callback",
+            "f1_real_user_remote_failure_fenced_without_false_success",
+            "f1_real_expiry_cron_cleanup_blocks_unresolved_journal",
+            "f1_real_expired_cron_cleanup_single_verified_delete",
+            "f1_real_cron_remote_failure_does_not_repeat_destructive_effect",
+            "f1_real_cron_entrypoint_warning_exception_cannot_skip_renewal_alert",
+            "f1_real_marzban_delete_http_failure_not_falsely_successful",
+            "f1_official_http_200_guarded_customer_once_full_evidence",
+            "f1_official_http_200_guarded_admin_once_full_evidence",
+            "f1_official_http_200_guarded_cron_once_full_evidence",
+            "f1_real_guarded_customer_error_and_unexpected_200_fenced",
+            "o1_user_delete_preview_ownership_and_privacy",
+            # Independent reviewer F2: same remote user with two local IDs.
+            "f2_distinct_active_orders_same_account_two_workers_no_debit",
+            "f2_explicit_same_panel_server_alias_duplicate_refused",
+            "f2_two_alias_workers_no_double_debit_even_under_race",
+            "f2_distinct_remote_accounts_remain_renewable",
+            # Independent reviewer F3: exact transactional schema preflight.
+            "incompatible_004_missing_alert_field_blocks_debit_and_delete",
+            "incompatible_004_missing_unique_cycle_blocks_debit_and_delete",
+            "incompatible_004_missing_payment_fk_blocks_debit_and_delete",
+            "incompatible_004_nontransactional_engine_blocks_debit_and_delete",
+            "incompatible_004_wrong_stage_definition_blocks_debit_and_delete",
+            "incompatible_004_old_restrictive_order_fk_is_rejected",
+            "restored_full_004_contract_ready",
+            "f3_shared_003_and_004_compatible_without_history_loss",
+        }
+        if not (auto_renew.get("complete") and
+                required_auto.issubset(auto_renew.get("scenarios",[])) and
+                auto_renew.get("cases")>=len(required_auto) and
+                auto_renew.get("source_only_004") and
+                auto_renew.get("original_schema_file_unchanged") and
+                auto_renew.get("provider_requests")==0 and
+                auto_renew.get("production_mutations")==0 and
+                auto_renew.get("native_php_workers")==2 and
+                auto_renew.get("synthetic_local_http_delete_cases")==11):
+            raise RuntimeError("Automatic-renewal durable idempotency proof incomplete")
         finance_path=Path(tmp)/"finance-native-routes.json"
         subprocess.run(["python3",str(ROOT/"tools/test_post_v9_finance_routes.py"),
                         "--run-disposable","--report",str(finance_path)],
@@ -718,6 +792,7 @@ def main():
                     "financial_subject_preflight":subject,
                     "catalogue_and_subscription_qr":catalogue,
                     "financial_native_route_guards":finance,
+                    "automatic_renewal_ledger":auto_renew,
                     "manual_payment_method_isolation":manual,
                     "manual_crypto_destination_and_admin_guards":crypto_guard,
                     "payment_reference_assurance":payment_identity,
@@ -746,6 +821,7 @@ def main():
                       "payment_subject_cases":subject["cases"],
                       "catalogue_qr_cases":catalogue["cases"],
                       "financial_native_route_cases":finance["cases"],
+                      "automatic_renewal_cases":auto_renew["cases"],
                       "manual_payment_isolation_cases":manual["cases"],
                       "manual_crypto_guard_cases":crypto_guard["cases"],
                       "payment_reference_length":payment_identity["default_length"],

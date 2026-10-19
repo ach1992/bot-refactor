@@ -422,41 +422,56 @@ function renewMarzbanUUID($server_id,$remark){
 
 function deleteMarzban($server_id,$remark){
     global $connection;
-    
-    $stmt = $connection->prepare("SELECT * FROM server_config WHERE id=?");
-    $stmt->bind_param("i", $server_id);
+    // Never treat an empty/failed cURL response or an HTTP 4xx/5xx as
+    // proof that a destructive remote DELETE was completed.
+    $stmt=$connection->prepare("SELECT panel_url,type FROM server_config WHERE id=?");
+    $stmt->bind_param('i',$server_id);
     $stmt->execute();
-    $server_info = $stmt->get_result()->fetch_assoc();
+    $server=$stmt->get_result()->fetch_assoc();
     $stmt->close();
-
-    $panel_url = $server_info['panel_url'];
-    $serverName = $server_info['username'];
-    $serverPass = $server_info['password'];
-    $serverType = $server_info['type'];
-    
-    $token = getMarzbanToken($server_id);
-    if(isset($token->detail)){return (object) ['success'=>false, 'msg'=>$token->detail];}
-    $panel_url .=  '/api/user/'. urlencode($remark);
-
-    $curl = curl_init();
-    curl_setopt($curl, CURLOPT_URL, $panel_url);
-    curl_setopt($curl, CURLOPT_CUSTOMREQUEST, 'DELETE');
-    curl_setopt($curl, CURLOPT_HTTPGET, true);
-    curl_setopt($curl, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($curl, CURLOPT_HTTPHEADER, array(
-        'Accept: application/json',
-        'Authorization: Bearer ' .  $token->access_token
-    ));
-
-    $response = json_decode(curl_exec($curl));
-    curl_close($curl);
-    
-    if(isset($response->detail)){
-		$detail = $response->detail;
-        return (object) ['success'=>false, 'msg' => is_object($detail)?implode("-", (array) $detail):$detail];
+    if (!$server || ($server['type']??'')!=='marzban' ||
+        !is_string($remark) || $remark==='') {
+        return (object)['success'=>false,'uncertain'=>false,
+                        'msg'=>'unsupported_remote_delete'];
     }
-    
-    return (object) ['success'=>true];
+    $token=getMarzbanToken($server_id);
+    if (!is_object($token) || empty($token->access_token)) {
+        return (object)['success'=>false,'uncertain'=>true,
+                        'msg'=>'remote_delete_auth_unconfirmed'];
+    }
+    $curl=curl_init();
+    curl_setopt($curl,CURLOPT_URL,rtrim((string)$server['panel_url'],'/').
+                '/api/user/'.rawurlencode($remark));
+    curl_setopt($curl,CURLOPT_CUSTOMREQUEST,'DELETE');
+    curl_setopt($curl,CURLOPT_RETURNTRANSFER,true);
+    curl_setopt($curl,CURLOPT_CONNECTTIMEOUT,5);
+    curl_setopt($curl,CURLOPT_TIMEOUT,20);
+    curl_setopt($curl,CURLOPT_SSL_VERIFYPEER,true);
+    curl_setopt($curl,CURLOPT_SSL_VERIFYHOST,2);
+    curl_setopt($curl,CURLOPT_HTTPHEADER,[
+        'Accept: application/json',
+        'Authorization: Bearer '.$token->access_token
+    ]);
+    $raw=curl_exec($curl);
+    $error=curl_error($curl);
+    $http=(int)curl_getinfo($curl,CURLINFO_HTTP_CODE);
+    curl_close($curl);
+    if ($raw===false || $error!=='' || $http<200 || $http>=300) {
+        return (object)['success'=>false,'uncertain'=>true,
+                        'msg'=>'remote_delete_response_unconfirmed'];
+    }
+    // Pinned Gozargah/Marzban DELETE /api/user/{username} returns HTTP 200
+    // {"detail":"User successfully deleted"} after deleting the user.
+    // Ref: app/routers/user.py @ 7f396db3e703d71a28060bc9ce4a532ec64cb1f4.
+    // A generic JSON object, different detail, or undocumented empty 204
+    // response is NOT proof of removal on the supported provider contract.
+    $response=json_decode((string)$raw);
+    if ($http===200 && is_object($response) &&
+        get_object_vars($response)===['detail'=>'User successfully deleted']) {
+        return (object)['success'=>true];
+    }
+    return (object)['success'=>false,'uncertain'=>true,
+                    'msg'=>'remote_delete_body_unconfirmed'];
 }
 
 function changeMarzbanState($server_id,$remark){
