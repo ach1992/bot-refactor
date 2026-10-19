@@ -39,7 +39,9 @@ if (preg_match('/^ps_([A-Za-z0-9_-]{1,50})$/D', $data, $statusMatch)) {
     $stage = null;
     $attempt = null;
     try {
-        $stmt = $connection->prepare('SELECT provider,stage,payment_id,provider_status FROM payment_attempts WHERE pay_row_id=? LIMIT 1');
+        $stmt = $connection->prepare('SELECT provider,stage,payment_id,provider_status,
+            TIMESTAMPDIFF(SECOND,created_at,NOW()) AS age_seconds
+            FROM payment_attempts WHERE pay_row_id=? LIMIT 1');
         $id = (int)$pay['id'];
         $stmt->bind_param('i',$id);
         $stmt->execute();
@@ -118,6 +120,18 @@ if (preg_match('/^prePayCheck_([a-zA-Z0-9]+)_([a-zA-Z0-9]+)_([a-zA-Z0-9]+)/', $d
         return;
     }
 
+    // Even an old forged callback must honor the current audience policy.
+    $policyMethod=match ($payMethod) {
+        'nowpayment'=>'nowpayments','zarinpal'=>'zarinpal','nextpay'=>'nextpay',
+        'wallet'=>'wallet','carttocart'=>'bank_transfer','giftcard'=>'gift_card',
+        'manualusdt'=>'manual_usdt','manualtrx'=>'manual_trx',
+        default=>null
+    };
+    if ($policyMethod!==null &&
+        !achbotPayUxAudienceAllowed($connection,$policyMethod,(int)$from_id)) {
+        answerCallbackQuery($callbackId,'این روش پرداخت برای گروه کاربری شما فعال نیست.',true);
+        return;
+    }
     if (achbotPayUxExpireDraft($connection,(int)$payInfo['id'])) {
         answerCallbackQuery($callbackId,'مهلت این درخواست پایان یافته است.',true);
         editText($message_id,
@@ -148,6 +162,22 @@ if (preg_match('/^prePayCheck_([a-zA-Z0-9]+)_([a-zA-Z0-9]+)_([a-zA-Z0-9]+)/', $d
     }
     $activeGatewayClaim=$paymentAttempt!==null &&
         in_array($paymentAttempt['stage'],['creating','pending','checking','fulfilling','review'],true);
+    if ($activeGatewayClaim) {
+        try {
+            if (achbotPayUxHostedAttentionElapsed($connection,(int)$payInfo['id'])) {
+                answerCallbackQuery($callbackId,'مهلت لینک آنلاین پایان یافته است؛ وضعیت را پیگیری کنید.',true);
+                editText($message_id,
+                    '⏳ مهلت لینک فاکتور گذشته است؛ پرداخت یا تحویل هنوز باید بررسی شود. اگر وجهی ارسال کرده‌اید مجدداً پرداخت نکنید.',
+                    achbotPayUxStatusKeyboard((string)$payInfo['hash_id']),
+                    'HTML',$from_id);
+                achbotPayUxTrackClicked($connection,(int)$payInfo['id'],(int)$from_id,(int)$message_id);
+                return;
+            }
+        } catch (Throwable $ignored) {
+            answerCallbackQuery($callbackId,'وضعیت فاکتور درگاه نامشخص است؛ از پرداخت تکراری پرهیز کنید.',true);
+            return;
+        }
+    }
 
     // RENEW_ACCOUNT may be rejected by the generic subject preflight when
     // its saved plan differs from the CURRENT account plan. Handle that

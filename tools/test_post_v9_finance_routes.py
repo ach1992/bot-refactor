@@ -90,7 +90,8 @@ $GLOBALS['fake_alert_send_failure'] = $spec['alert_send_failure'] ?? false;
 $GLOBALS['invoice_reservation_seen'] = null;
 $GLOBALS['events'] = [];
 $GLOBALS['known_inherited_warnings'] = [];
-$botState = [];
+$botState = array_replace(['nowPaymentWallet'=>'on','nowPaymentOther'=>'on',
+    'zarinpal'=>'on','nextpay'=>'on'], $spec['states']??[]);
 $botUrl = 'http://127.0.0.1:9/owned-fixture/';
 $USDTPrice = 100000;
 $USDTPriceagent = 100000;

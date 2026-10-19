@@ -21,9 +21,35 @@ function achbotPayUxTable(mysqli $db, string $name): bool {
     }
 }
 
-/** This is a UX *draft* deadline, not a live provider-invoice expiry or refund. */
+/**
+ * BOT_STATES stores bounded, per-instance policy in minutes/hours.
+ * Invalid/missing values retain the last safe defaults. Never use zero to
+ * disable a financial safety control or interpret a provider claim as paid.
+ */
+function achbotPayUxPolicyNumber(string $field, int $default, int $min, int $max): int {
+    $states=$GLOBALS['botState'] ?? [];
+    if (!is_array($states)) return $default;
+    $raw=$states[$field] ?? null;
+    if (!(is_int($raw) || is_string($raw)) ||
+        !preg_match('/^[0-9]{1,5}$/D',(string)$raw)) return $default;
+    $value=(int)$raw;
+    return ($value >= $min && $value <= $max) ? $value : $default;
+}
 function achbotPayUxDraftDeadlineSeconds(): int {
-    return 1800; // 30 minutes; no hard expiry for issued/uncertain/receipt claims.
+    return 60*achbotPayUxPolicyNumber('paymentDraftMinutes',30,5,180);
+}
+function achbotPayUxManualDeadlineSeconds(): int {
+    return 3600*achbotPayUxPolicyNumber('paymentManualHours',6,1,72);
+}
+function achbotPayUxHostedAttentionSeconds(): int {
+    // This is a UI/link review deadline, NOT evidence that upstream is unpaid.
+    return 3600*achbotPayUxPolicyNumber('paymentHostedHours',6,1,72);
+}
+function achbotPayUxManualProvider(string $provider): bool {
+    return in_array($provider,['bank_transfer','gift_card','manual_usdt','manual_trx'],true);
+}
+function achbotPayUxHostedProvider(string $provider): bool {
+    return in_array($provider,['nowpayments','zarinpal','nextpay'],true);
 }
 
 /**
@@ -157,6 +183,202 @@ function achbotPayUxUnclaimedDraftUsable(mysqli $db, array $pay): bool {
     }
 }
 
+/**
+ * Under pays FOR UPDATE followed by the exact 003 attempt FOR UPDATE, mark a
+ * never-started manual quote expired only after its configured idle window.
+ * The pinned destination remains untouched; real out-of-band funds, if any,
+ * require human review and must never be presumed absent/refunded.
+ */
+function achbotPayUxExpireUnstartedManual(mysqli $db, int $payId): bool {
+    if ($payId<=0 || !achbotPayUxTable($db,'payment_attempts') ||
+        !achbotPayUxTable($db,'payment_transactions')) return false;
+    $started=false;
+    try {
+        if (!$db->begin_transaction()) return false;
+        $started=true;
+        $stmt=$db->prepare('SELECT id,user_id,state,payid,message_id FROM pays WHERE id=? FOR UPDATE');
+        $stmt->bind_param('i',$payId);
+        if (!$stmt->execute()) throw new RuntimeException('manual_expiry_pay_lock');
+        $pay=$stmt->get_result()->fetch_assoc();$stmt->close();
+        if (!$pay || $pay['state']!=='pending' || (int)$pay['user_id']<=0 ||
+            (string)($pay['payid']??'')!=='' || (int)($pay['message_id']??0)>0) {
+            $db->rollback();return false;
+        }
+        $stmt=$db->prepare('SELECT id,provider,stage,provider_status,checkout_url,
+            payment_id,review_notice_claim_token,
+            TIMESTAMPDIFF(SECOND,created_at,NOW()) AS age_seconds
+            FROM payment_attempts WHERE pay_row_id=? LIMIT 1 FOR UPDATE');
+        $stmt->bind_param('i',$payId);
+        if (!$stmt->execute()) throw new RuntimeException('manual_expiry_attempt_lock');
+        $a=$stmt->get_result()->fetch_assoc();$stmt->close();
+        if (!$a || !achbotPayUxManualProvider((string)$a['provider']) ||
+            $a['stage']!=='pending' || (string)($a['provider_status']??'')!=='' ||
+            (string)($a['payment_id']??'')!=='' ||
+            (string)($a['review_notice_claim_token']??'')!=='' ||
+            (int)$a['age_seconds']<achbotPayUxManualDeadlineSeconds()) {
+            $db->rollback();return false;
+        }
+        $intent=achbotManualIntentDecode((string)$a['checkout_url'],(string)$a['provider']);
+        if (!is_array($intent) || !empty($intent['receipt_file_id'])) {
+            $db->rollback();return false;
+        }
+        $attemptId=(int)$a['id'];
+        $stmt=$db->prepare('SELECT id FROM payment_transactions WHERE attempt_id=? LIMIT 1 FOR UPDATE');
+        $stmt->bind_param('i',$attemptId);
+        if (!$stmt->execute()) throw new RuntimeException('manual_expiry_child_lookup');
+        $child=$stmt->get_result()->fetch_assoc();$stmt->close();
+        if ($child) {$db->rollback();return false;}
+        $stmt=$db->prepare("UPDATE payment_attempts SET stage='expired'
+            WHERE id=? AND stage='pending' AND (provider_status IS NULL OR provider_status='')
+              AND payment_id IS NULL AND review_notice_claim_token IS NULL
+              AND NOT EXISTS (SELECT 1 FROM payment_transactions t WHERE t.attempt_id=payment_attempts.id)");
+        $stmt->bind_param('i',$attemptId);
+        if (!$stmt->execute()) throw new RuntimeException('manual_expiry_attempt_write');
+        $changed=$stmt->affected_rows;$stmt->close();
+        if ($changed!==1) throw new RuntimeException('manual_expiry_attempt_race');
+        $stmt=$db->prepare("UPDATE pays SET state='expired',updated_at=NOW()
+            WHERE id=? AND state='pending' AND (payid IS NULL OR payid='')
+              AND (message_id IS NULL OR message_id=0)");
+        $stmt->bind_param('i',$payId);
+        if (!$stmt->execute()) throw new RuntimeException('manual_expiry_pay_write');
+        $changed=$stmt->affected_rows;$stmt->close();
+        if ($changed!==1 || !$db->commit())
+            throw new RuntimeException('manual_expiry_commit_uncertain');
+        return true;
+    } catch (Throwable $error) {
+        if ($started) {try{$db->rollback();}catch(Throwable $ignored){}}
+        error_log('achbot_manual_quote_expiry_deferred pay_id='.$payId);
+        return false;
+    }
+}
+
+/**
+ * A receipt button is a durable intent, not financial settlement. This is
+ * the point where the six-hour idle timer is stopped. The photo's receipt
+ * lease/review steps remain separately guarded and require real evidence.
+ */
+function achbotPayUxStartManualReceipt(mysqli $db, int $payId,
+                                       string $method, int $actor): bool {
+    if ($payId<=0 || $actor<=0 || !achbotPayUxManualProvider($method) ||
+        !achbotPayUxTable($db,'payment_attempts') ||
+        !achbotPayUxTable($db,'payment_transactions')) return false;
+    $started=false;
+    try {
+        if (!$db->begin_transaction()) return false;
+        $started=true;
+        $stmt=$db->prepare('SELECT user_id,state,payid FROM pays WHERE id=? FOR UPDATE');
+        $stmt->bind_param('i',$payId);
+        if (!$stmt->execute()) throw new RuntimeException('manual_click_pay_lock');
+        $pay=$stmt->get_result()->fetch_assoc();$stmt->close();
+        if (!$pay || (int)$pay['user_id']!==$actor ||
+            $pay['state']!=='pending' || (string)($pay['payid']??'')!=='') {
+            $db->rollback();return false;
+        }
+        $stmt=$db->prepare('SELECT id,provider,stage,provider_status,checkout_url,
+            TIMESTAMPDIFF(SECOND,created_at,NOW()) AS age_seconds
+            FROM payment_attempts WHERE pay_row_id=? LIMIT 1 FOR UPDATE');
+        $stmt->bind_param('i',$payId);
+        if (!$stmt->execute()) throw new RuntimeException('manual_click_attempt_lock');
+        $a=$stmt->get_result()->fetch_assoc();$stmt->close();
+        if (!$a || (string)$a['provider']!==$method || $a['stage']!=='pending' ||
+            !is_array(achbotManualIntentDecode((string)$a['checkout_url'],$method))) {
+            $db->rollback();return false;
+        }
+        if ((string)($a['provider_status']??'')==='receipt_started') {
+            $db->commit();return true;
+        }
+        if ((string)($a['provider_status']??'')!=='' ||
+            (int)$a['age_seconds']>=achbotPayUxManualDeadlineSeconds()) {
+            $db->rollback();return false;
+        }
+        $aid=(int)$a['id'];
+        $stmt=$db->prepare("UPDATE payment_attempts SET provider_status='receipt_started'
+            WHERE id=? AND stage='pending' AND provider_status IS NULL");
+        $stmt->bind_param('i',$aid);
+        if (!$stmt->execute()) throw new RuntimeException('manual_click_write');
+        $changed=$stmt->affected_rows;$stmt->close();
+        if ($changed!==1 || !$db->commit())
+            throw new RuntimeException('manual_click_commit_uncertain');
+        return true;
+    } catch (Throwable $error) {
+        if ($started) {try{$db->rollback();}catch(Throwable $ignored){}}
+        error_log('achbot_manual_receipt_click_deferred pay_id='.$payId);
+        return false;
+    }
+}
+
+/** Exact provider-claim age from the database clock (not PHP timezone). */
+function achbotPayUxHostedAttentionElapsed(mysqli $db, int $payId): bool {
+    if ($payId<=0 || !achbotPayUxTable($db,'payment_attempts')) return false;
+    $stmt=$db->prepare("SELECT provider,stage,
+        TIMESTAMPDIFF(SECOND,created_at,NOW()) AS age_seconds
+        FROM payment_attempts WHERE pay_row_id=? LIMIT 1");
+    $stmt->bind_param('i',$payId);
+    if (!$stmt->execute()) throw new RuntimeException('hosted_attention_read_failed');
+    $a=$stmt->get_result()->fetch_assoc();$stmt->close();
+    return $a && achbotPayUxHostedProvider((string)$a['provider'])
+        && (int)$a['age_seconds'] >= achbotPayUxHostedAttentionSeconds();
+}
+
+/**
+ * Payment audience policy is an *additional* owner restriction, never a
+ * replacement for payment state, global on/off flags, authorization or proof.
+ * A missing policy means legacy 'all'; invalid explicit policy FAILS CLOSED.
+ */
+function achbotPayUxAudienceModes(): array {
+    return ['all'=>'همه','agents'=>'همکاران','non_agents'=>'کاربران عادی',
+            'buyers'=>'خریداران','non_buyers'=>'بدون خرید',
+            'has_active_order'=>'دارای سرویس فعال',
+            'no_active_order'=>'بدون سرویس فعال','off'=>'هیچ‌کس'];
+}
+function achbotPayUxAudienceMethods(): array {
+    return [
+        'nowpayments'=>'NOWPayments','zarinpal'=>'زرین‌پال','nextpay'=>'نکست‌پی',
+        'bank_transfer'=>'کارت‌به‌کارت','gift_card'=>'گیفت‌کارت',
+        'manual_usdt'=>'USDT دستی','manual_trx'=>'TRX دستی','wallet'=>'کیف پول'
+    ];
+}
+function achbotPayUxAudienceAllowed(mysqli $db, string $method, int $userId): bool {
+    if ($userId<=0 || !array_key_exists($method,achbotPayUxAudienceMethods()))
+        return false;
+    $states=$GLOBALS['botState']??[];
+    $configured=is_array($states)?($states['gatewayAudience']??[]):[];
+    if (!is_array($configured)) return false;
+    $mode=$configured[$method]??'all';
+    if (!is_string($mode) || !array_key_exists($mode,achbotPayUxAudienceModes()))
+        return false;
+    if ($mode==='off') return false;
+    if ($mode==='all') return true; // exact legacy behavior if unset
+    try {
+        $stmt=$db->prepare('SELECT is_agent FROM users WHERE userid=? LIMIT 1');
+        $stmt->bind_param('i',$userId);
+        if (!$stmt->execute()) throw new RuntimeException('audience_user_lookup');
+        $person=$stmt->get_result()->fetch_assoc();$stmt->close();
+        if (!$person) return false;
+        if ($mode==='agents') return (int)$person['is_agent']===1;
+        if ($mode==='non_agents') return (int)$person['is_agent']!==1;
+        if ($mode==='buyers' || $mode==='non_buyers') {
+            $stmt=$db->prepare("SELECT id FROM pays WHERE user_id=?
+                AND type='BUY_SUB'
+                AND state IN ('paid','approved','auto_cart_approved','paid_with_wallet')
+                LIMIT 1");
+            $stmt->bind_param('i',$userId);
+            if (!$stmt->execute()) throw new RuntimeException('audience_buyer_lookup');
+            $bought=$stmt->get_result()->fetch_assoc()!==null;$stmt->close();
+            return $mode==='buyers' ? $bought : !$bought;
+        }
+        $now=time();
+        $stmt=$db->prepare("SELECT id FROM orders_list WHERE userid=?
+            AND status=1 AND expire_date>? LIMIT 1");
+        $stmt->bind_param('ii',$userId,$now);
+        if (!$stmt->execute()) throw new RuntimeException('audience_orders_lookup');
+        $hasOrder=$stmt->get_result()->fetch_assoc()!==null;$stmt->close();
+        return $mode==='has_active_order' ? $hasOrder : !$hasOrder;
+    } catch (Throwable $error) {
+        error_log('achbot_gateway_audience_guard_deferred method='.$method);
+        return false;
+    }
+}
 /** Register only messages successfully sent by the bot to the actual pay owner. */
 function achbotPayUxTrackMessage(mysqli $db, int $payId, int $chatId,
                                  $telegramResult, string $kind = 'text'): bool {
@@ -235,6 +457,21 @@ function achbotPayUxState(array $pay, ?array $attempt): string {
     if ($state === 'have_sent' || $stage === 'receiving') return 'receipt_review';
     if ($stage === 'review' || $stage === 'checking' || $stage === 'fulfilling' ||
         $stage === 'creating') return 'needs_review';
+    // Issued/manual quotes have a DB-created timestamp independent of the
+    // original unissued draft; read their age from the SQL server clock.
+    $provider=(string)($attempt['provider']??'');
+    $age=isset($attempt['age_seconds']) ? (int)$attempt['age_seconds'] : -1;
+    if (achbotPayUxManualProvider($provider) && $stage==='pending') {
+        if ((string)($attempt['provider_status']??'')==='receipt_started')
+            return 'awaiting_receipt';
+        if ($age>=achbotPayUxManualDeadlineSeconds())
+            return 'needs_review'; // Never claim cancellation before COMMIT.
+    }
+    if (achbotPayUxHostedProvider($provider) &&
+        $stage==='pending' && $age>=achbotPayUxHostedAttentionSeconds())
+        return 'needs_review'; // Provider remains financially unsettled.
+    if (achbotPayUxManualProvider($provider) && $stage==='expired')
+        return 'expired';
     if (!in_array($state,['pending','send'],true)) return 'needs_review';
     if (!empty($pay['superseded'])) {
         // A claimed provider/manual invoice is NOT financially cancelled by
@@ -259,6 +496,7 @@ function achbotPayUxStatusText(array $pay, ?array $attempt): string {
         'superseded' => '🧾 درخواست جدیدتری جایگزین این پیش‌نویس شده است',
         'declined' => '❌ درخواست پرداخت تأیید نشد',
         'receipt_review' => '📥 رسید دریافت شده و در انتظار بررسی مدیر است',
+        'awaiting_receipt' => '📤 در انتظار تصویر رسید یا گیفت‌کارت شما',
         'needs_review' => '⚠️ پرداخت یا تحویل نیازمند بررسی است',
         'payment_recorded' => '✅ وضعیت پرداخت ثبت شده است',
         default => '🧾 فاکتور در انتظار پرداخت است',
@@ -267,7 +505,10 @@ function achbotPayUxStatusText(array $pay, ?array $attempt): string {
     $hash = $safe($pay['hash_id'] ?? '');
     $amount = number_format((int)($pay['price'] ?? 0));
     $next = match ($state) {
-        'expired' => 'برای پرداخت جدید از منوی ربات اقدام کنید. پرداخت یا رسید قدیمی را دوباره ارسال نکنید.',
+        'expired' => achbotPayUxManualProvider((string)($attempt['provider']??''))
+            ? 'مهلت ارسال رسید از طریق این فاکتور پایان یافته است. اگر وجهی انتقال داده‌اید، شواهد را فقط از طریق پشتیبانی ارائه کنید؛ انقضا به معنی برگشت وجه نیست.'
+            : 'مهلت این درخواست پایان یافته است. برای پرداخت جدید از منوی ربات اقدام کنید.',
+        'awaiting_receipt' => 'درخواست ارسال رسید ثبت شد. تصویر معتبر را در گفت‌وگوی ربات بفرستید؛ صرف این دکمه به معنی پرداخت یا شروع بررسی مدیر نیست.',
         'superseded' => 'از فاکتور جدید استفاده کنید. لینک قبلی دیگر برای پرداخت قابل استفاده نیست؛ اگر وجهی فرستاده‌اید با پشتیبانی هماهنگ کنید.',
         'declined' => 'جزئیات بررسی را از پشتیبانی پیگیری کنید.',
         'receipt_review' => 'ارسال رسید به معنی تأیید مالی نیست. وجه یا رسید را دوباره ارسال نکنید.',
@@ -305,8 +546,9 @@ function achbotPayUxSyncMessages(mysqli $db, int $payId): int {
         if (!$pay) return 0;
         $attempt=null;
         if (achbotPayUxTable($db,'payment_attempts')) {
-            $stmt=$db->prepare('SELECT provider,stage,payment_id,provider_status
-                                FROM payment_attempts WHERE pay_row_id=? LIMIT 1');
+            $stmt=$db->prepare('SELECT provider,stage,payment_id,provider_status,
+                TIMESTAMPDIFF(SECOND,created_at,NOW()) AS age_seconds
+                FROM payment_attempts WHERE pay_row_id=? LIMIT 1');
             $stmt->bind_param('i',$payId);$stmt->execute();
             $attempt=$stmt->get_result()->fetch_assoc()?:null;$stmt->close();
         }
@@ -436,6 +678,37 @@ function achbotPayUxMaintain(mysqli $db, int $maxRows=45): array {
             }
         } catch (Throwable $ignored) {
             error_log('achbot_payment_expiry_batch_deferred');
+        }
+    }
+    // Invoice-specific idle expiry is separate from unissued draft expiry.
+    // Provider-issued online claims remain immutable; only no-click manual
+    // receipts can transition, with pinned evidence retained.
+    if (achbotPayUxTable($db,'payment_attempts') &&
+        achbotPayUxTable($db,'payment_transactions')) {
+        try {
+            $seconds=achbotPayUxManualDeadlineSeconds();
+            $stmt=$db->prepare("SELECT p.id FROM pays p
+                INNER JOIN payment_attempts a ON a.pay_row_id=p.id
+                WHERE p.state='pending' AND (p.payid IS NULL OR p.payid='')
+                  AND (p.message_id IS NULL OR p.message_id=0)
+                  AND a.provider IN ('bank_transfer','gift_card','manual_usdt','manual_trx')
+                  AND a.stage='pending'
+                  AND (a.provider_status IS NULL OR a.provider_status='')
+                  AND a.payment_id IS NULL
+                  AND a.review_notice_claim_token IS NULL
+                  AND TIMESTAMPDIFF(SECOND,a.created_at,NOW())>=?
+                  AND NOT EXISTS (SELECT 1 FROM payment_transactions t
+                                  WHERE t.attempt_id=a.id)
+                ORDER BY a.created_at ASC LIMIT {$maxRows}");
+            $stmt->bind_param('i',$seconds);
+            if (!$stmt->execute()) throw new RuntimeException('manual_idle_scan');
+            $rows=$stmt->get_result()->fetch_all(MYSQLI_ASSOC);$stmt->close();
+            foreach ($rows as $row) {
+                if (achbotPayUxExpireUnstartedManual($db,(int)$row['id']))
+                    ++$expired;
+            }
+        } catch (Throwable $ignored) {
+            error_log('achbot_manual_idle_batch_deferred');
         }
     }
     if (achbotPayUxTable($db,'payment_message_refs')) {

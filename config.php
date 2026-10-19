@@ -10,6 +10,7 @@ if($connection->connect_error){
 }
 $connection->set_charset("utf8mb4");
 require_once __DIR__ . '/src/Purchase/Core.php';
+require_once __DIR__ . '/src/Finance/PaymentLifecycle.php';
 
 function tgRetryAfter($res){
     require_once __DIR__ . '/src/Telegram/Response.php';
@@ -863,6 +864,48 @@ function getCategoriesKeys($offset = 0){
     $keys[] = [['text' => $buttonValues['back_button'], 'callback_data' => "managePanel"]];
     return json_encode(['inline_keyboard'=>$keys]);
 }
+/** Strictly bounded per-instance financial UX policy editor. */
+function achbotPaymentPolicyFields(): array {
+    return [
+        'paymentDraftMinutes'=>['label'=>'مهلت پیش‌نویس (دقیقه)','default'=>30,'min'=>5,'max'=>180],
+        'paymentManualHours'=>['label'=>'فاکتور دستی بدون شروع رسید (ساعت)','default'=>6,'min'=>1,'max'=>72],
+        'paymentHostedHours'=>['label'=>'مهلت لینک آنلاین پیش از بررسی (ساعت)','default'=>6,'min'=>1,'max'=>72],
+        'receiptApprovedMinutes'=>['label'=>'تکرار خرید/شارژ تأییدشده (دقیقه)','default'=>10,'min'=>1,'max'=>1440],
+        'receiptApprovedOtherMinutes'=>['label'=>'تکرار سایر پرداخت‌های تأییدشده (دقیقه)','default'=>60,'min'=>1,'max'=>1440],
+        'receiptReviewMinutes'=>['label'=>'رسید مشابه در حال بررسی (دقیقه)','default'=>360,'min'=>1,'max'=>1440],
+        'receiptDeclinedMinutes'=>['label'=>'تکرار رسید ردشده (دقیقه)','default'=>3,'min'=>1,'max'=>1440],
+    ];
+}
+function achbotPaymentPolicyKeyboard(): string {
+    global $botState;
+    $rows=[];
+    $states=is_array($botState??null)?$botState:[];
+    foreach (achbotPaymentPolicyFields() as $key=>$field) {
+        $value=$states[$key]??$field['default'];
+        if (!is_scalar($value) || !preg_match('/^[0-9]{1,5}$/D',(string)$value) ||
+            (int)$value<$field['min'] || (int)$value>$field['max'])
+            $value=$field['default'];
+        $rows[]=[['text'=>$field['label'].': '.$value,
+                 'callback_data'=>'editPaymentPolicy_'.$key]];
+    }
+    $rows[]=[['text'=>'🔙 بازگشت به درگاه‌ها','callback_data'=>'gateWays_Channels']];
+    return json_encode(['inline_keyboard'=>$rows],JSON_UNESCAPED_UNICODE);
+}
+/** Admin-only audience selectors; stored under BOT_STATES.gatewayAudience. */
+function achbotGatewayAudienceKeyboard(): string {
+    global $botState;
+    $policy=is_array($botState['gatewayAudience']??null)?$botState['gatewayAudience']:[];
+    $labels=achbotPayUxAudienceModes();
+    $rows=[];
+    foreach (achbotPayUxAudienceMethods() as $name=>$methodLabel) {
+        $selected=$policy[$name]??'all';
+        $group=$labels[$selected]??'⚠️ سیاست نامعتبر (مسدود)';
+        $rows[]=[['text'=>$methodLabel.' — '.$group,
+                  'callback_data'=>'cycleGatewayAudience_'.$name]];
+    }
+    $rows[]=[['text'=>'🔙 بازگشت به درگاه‌ها','callback_data'=>'gateWays_Channels']];
+    return json_encode(['inline_keyboard'=>$rows],JSON_UNESCAPED_UNICODE);
+}
 function getGateWaysKeys(){
     global $connection, $mainValues, $buttonValues;
     
@@ -1001,6 +1044,10 @@ function getGateWaysKeys(){
 		[
 			['text'=>"معاف کاربر از عضویت در کانال",'callback_data'=>"addExemptUser"]
 		],
+        [['text'=>'⏱ مهلت فاکتورها و محدودیت رسید تکراری',
+          'callback_data'=>'paymentPolicySettings']],
+        [['text'=>'👥 دسترسی درگاه‌ها بر اساس گروه کاربران',
+          'callback_data'=>'gatewayAudienceSettings']],
 			[['text'=>$buttonValues['back_button'],'callback_data'=>"managePanel"]]
         ]]);
 }

@@ -533,6 +533,7 @@ function achbotWalletDirectAllowedLocked(mysqli $connection, array $pay,
     if ($id <= 0) return false;
     require_once __DIR__ . '/PaymentLifecycle.php';
     if (!achbotPayUxUnclaimedDraftUsable($connection,$pay)) return false;
+    if (!achbotPayUxAudienceAllowed($connection,'wallet',$actor)) return false;
     try {
         $stmt = $connection->prepare('SELECT id FROM payment_attempts WHERE pay_row_id=? LIMIT 1 FOR UPDATE');
         $stmt->bind_param('i',$id);
@@ -626,12 +627,19 @@ function achbotManualClaim(mysqli $connection, array $payInfo, string $method, i
             $connection->rollback();
             return false;
         }
-        $stmt = $connection->prepare('SELECT provider,stage,checkout_url FROM payment_attempts WHERE pay_row_id=? LIMIT 1 FOR UPDATE');
+        $stmt = $connection->prepare('SELECT provider,stage,checkout_url,provider_status,
+            TIMESTAMPDIFF(SECOND,created_at,NOW()) AS age_seconds
+            FROM payment_attempts WHERE pay_row_id=? LIMIT 1 FOR UPDATE');
         $stmt->bind_param('i', $id);
         $stmt->execute();
         $existing = $stmt->get_result()->fetch_assoc();
         $stmt->close();
         if ($existing !== null) {
+            require_once __DIR__ . '/PaymentLifecycle.php';
+            if ((string)$existing['provider_status']==='' &&
+                (int)$existing['age_seconds']>=achbotPayUxManualDeadlineSeconds()) {
+                $connection->rollback(); return false;
+            }
             $connection->commit();
             if (!hash_equals($method, (string)$existing['provider']) || $existing['stage'] !== 'pending')
                 return false;
@@ -652,7 +660,8 @@ function achbotManualClaim(mysqli $connection, array $payInfo, string $method, i
             $connection->rollback();
             return false;
         }
-        if (!achbotManualEnabled($method)) {
+        if (!achbotManualEnabled($method) ||
+            !achbotPayUxAudienceAllowed($connection,$method,$userId)) {
             $connection->rollback();
             return false;
         }
@@ -732,13 +741,22 @@ function achbotManualReceiptAllowed(mysqli $connection, array $payInfo, string $
         (string)($payInfo['payid'] ?? '') !== '' ||
         !in_array($method, ['bank_transfer','gift_card','manual_usdt','manual_trx'], true)) return false;
     try {
-        $stmt = $connection->prepare('SELECT provider,stage,checkout_url FROM payment_attempts WHERE pay_row_id=? LIMIT 1');
+        require_once __DIR__ . '/PaymentLifecycle.php';
+        $stmt = $connection->prepare('SELECT provider,stage,checkout_url,provider_status,
+            TIMESTAMPDIFF(SECOND,created_at,NOW()) AS age_seconds
+            FROM payment_attempts WHERE pay_row_id=? LIMIT 1');
         $id = (int)$payInfo['id'];
         $stmt->bind_param('i', $id);
         $stmt->execute();
         $attempt = $stmt->get_result()->fetch_assoc();
         $stmt->close();
-        return $attempt !== null &&
+        $validWindow=$attempt && (
+            $attempt['stage']==='receiving' ||
+            (string)($attempt['provider_status']??'')==='receipt_started' ||
+            ((string)($attempt['provider_status']??'')==='' &&
+             (int)$attempt['age_seconds']<achbotPayUxManualDeadlineSeconds())
+        );
+        return $validWindow &&
             (string)$attempt['provider'] === $method &&
             in_array((string)$attempt['stage'], ['pending','receiving'], true) &&
             (!in_array($method, ['manual_usdt','manual_trx'], true) ||
@@ -768,14 +786,21 @@ function achbotManualBeginEvidence(mysqli $connection, array $payInfo, string $m
         $stmt->close();
         if (!$pay || (int)$pay['user_id'] !== $userId || $pay['state'] !== 'pending' ||
             (string)($pay['payid'] ?? '') !== '') { $connection->rollback(); return null; }
-        $stmt = $connection->prepare('SELECT id,provider,stage,checkout_url FROM payment_attempts
-            WHERE pay_row_id=? LIMIT 1 FOR UPDATE');
+        $stmt = $connection->prepare('SELECT id,provider,stage,checkout_url,provider_status,
+            TIMESTAMPDIFF(SECOND,created_at,NOW()) AS age_seconds
+            FROM payment_attempts WHERE pay_row_id=? LIMIT 1 FOR UPDATE');
         $stmt->bind_param('i', $id);
         $stmt->execute();
         $attempt = $stmt->get_result()->fetch_assoc();
         $stmt->close();
         if (!$attempt || (string)$attempt['provider'] !== $method ||
             !in_array((string)$attempt['stage'], ['pending','receiving'], true)) {
+            $connection->rollback(); return null;
+        }
+        require_once __DIR__ . '/PaymentLifecycle.php';
+        if ($attempt['stage']==='pending' &&
+            (string)($attempt['provider_status']??'')!== 'receipt_started' &&
+            (int)$attempt['age_seconds']>=achbotPayUxManualDeadlineSeconds()) {
             $connection->rollback(); return null;
         }
         $intent = achbotManualIntentDecode((string)$attempt['checkout_url'], $method);
@@ -1060,11 +1085,16 @@ function duplicateReceiptGuard(mysqli $connection, array $payInfo, int $nowTs): 
         return "⛔️ شما درخواست مشابه‌ای قبلا ثبت کرده‌اید.\n⚠️ لطفاً منتظر بررسی پشتیبانی بمانید.";
     }
 
+    // BOT_STATES bounds prevent malformed settings from weakening legacy
+    // duplicate/payment/review safeguards. Financial idempotency is separate.
+    require_once __DIR__ . '/PaymentLifecycle.php';
     $isSpecial = ($type === 'BUY_SUB' || $type === 'INCREASE_WALLET');
-
-    $windowApproved = $isSpecial ? 600  : 3600;
-    $windowHaveSent = $isSpecial ? 21600 : 21600;
-    $windowDeclined = 180;
+    $approvedMinutes=$isSpecial
+        ? achbotPayUxPolicyNumber('receiptApprovedMinutes',10,1,1440)
+        : achbotPayUxPolicyNumber('receiptApprovedOtherMinutes',60,1,1440);
+    $windowApproved = 60*$approvedMinutes;
+    $windowHaveSent = 60*achbotPayUxPolicyNumber('receiptReviewMinutes',360,1,1440);
+    $windowDeclined = 60*achbotPayUxPolicyNumber('receiptDeclinedMinutes',3,1,1440);
 
     $lookback = max($windowApproved, $windowHaveSent, $windowDeclined);
     $minTs = $nowTs - $lookback;

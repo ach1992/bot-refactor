@@ -22,6 +22,7 @@ DRIVER=r'''<?php
 $_SERVER['SCRIPT_FILENAME']='owned-payment-ux.php';
 error_reporting(E_ALL & ~E_DEPRECATED);
 $spec=json_decode($argv[4],true,512,JSON_THROW_ON_ERROR);
+$botState=$spec['states']??[];
 $connection=new mysqli('localhost','root','',$argv[3],0,$argv[2]);
 $connection->set_charset('utf8mb4');
 $GLOBALS['events']=[];
@@ -35,6 +36,7 @@ function bot($method,$data=[]) {
     return (object)['ok'=>!$fail];
 }
 function payTypeToDescription($type){return $type==='INCREASE_WALLET'?'شارژ کیف پول':'خرید اشتراک';}
+require_once $argv[1].'/src/Finance/ReceiptHelpers.php';
 require_once $argv[1].'/src/Finance/PaymentLifecycle.php';
 $id=(int)($spec['id']??0);
 $action=(string)$spec['action'];
@@ -48,6 +50,27 @@ if ($action==='expire') {
     $pay=$stmt->get_result()->fetch_assoc();$stmt->close();
     $before=$pay && achbotPayUxUnclaimedDraftUsable($connection,$pay);
     $connection->rollback();
+} elseif ($action==='manual_expire') {
+    $before=achbotPayUxExpireUnstartedManual($connection,$id);
+} elseif ($action==='manual_start') {
+    $before=achbotPayUxStartManualReceipt($connection,$id,
+        (string)($spec['provider']??'bank_transfer'),(int)($spec['actor']??1001));
+} elseif ($action==='hosted_attention') {
+    $before=achbotPayUxHostedAttentionElapsed($connection,$id);
+} elseif ($action==='audience') {
+    $before=achbotPayUxAudienceAllowed($connection,
+        (string)($spec['provider']??'bank_transfer'),(int)($spec['actor']??1001));
+} elseif ($action==='duplicate_guard') {
+    $stmt=$connection->prepare('SELECT * FROM pays WHERE id=? LIMIT 1');
+    $stmt->bind_param('i',$id);$stmt->execute();
+    $pay=$stmt->get_result()->fetch_assoc();$stmt->close();
+    $before=duplicateReceiptGuard($connection,$pay,(int)($spec['clock']??time()));
+} elseif ($action==='manual_allowed') {
+    $stmt=$connection->prepare('SELECT * FROM pays WHERE id=? LIMIT 1');
+    $stmt->bind_param('i',$id);$stmt->execute();
+    $pay=$stmt->get_result()->fetch_assoc();$stmt->close();
+    $before=achbotManualReceiptAllowed($connection,$pay,
+        (string)($spec['provider']??'bank_transfer'),(int)($spec['actor']??1001));
 } elseif ($action==='track') {
     $msgId=(int)($spec['message_id']??55);
     $reply=(object)['ok'=>true,'result'=>(object)['message_id'=>$msgId]];
@@ -66,7 +89,9 @@ if ($action==='expire') {
     $pay=$stmt->get_result()->fetch_assoc();$stmt->close();
     $attempt=null;
     if (achbotPayUxTable($connection,'payment_attempts')) {
-        $stmt=$connection->prepare('SELECT * FROM payment_attempts WHERE pay_row_id=?');
+        $stmt=$connection->prepare('SELECT *,
+        TIMESTAMPDIFF(SECOND,created_at,NOW()) AS age_seconds
+        FROM payment_attempts WHERE pay_row_id=?');
         $stmt->bind_param('i',$id);$stmt->execute();
         $attempt=$stmt->get_result()->fetch_assoc()?:null;$stmt->close();
     }
@@ -287,6 +312,153 @@ def main():
         cases.append('two_concurrent_expiry_workers_exactly_one_mutation')
         assert count(w,e,'pays',f"id={old}") == 1
         assert count(w,e,'payment_message_refs',f"pay_row_id={msg}") == 4
+        # Owner-accepted six-hour manual idle policy, with exact current DB clock.
+        import json as jsonlib
+        valid_intents={
+            'bank_transfer':{'v':1,'method':'bank_transfer','account':'6037999999999999','holder':'Fixture'},
+            'gift_card':{'v':1,'method':'gift_card','seller_url':'https://example.org/gift-card'},
+            'manual_usdt':{'v':1,'method':'manual_usdt','network':'BEP20','wallet':'0x'+'1'*40},
+            'manual_trx':{'v':1,'method':'manual_trx','network':'TRON','wallet':'TJRabPrwbZy45sbavfcjinPJC18kjpRTv8'},
+        }
+        def manual_quote(key, provider, who=1001):
+            pay_id=add(w,e,key,who=who,kind='INCREASE_WALLET',old=int(time.time()))
+            intent=jsonlib.dumps(valid_intents[provider],separators=(',',':'))
+            literal="'"+intent.replace("'","''")+"'"
+            sql(w,e,f"INSERT INTO payment_attempts "
+                f"(pay_row_id,provider,order_hash,quote_amount,quote_currency,checkout_url,stage) "
+                f"VALUES ({pay_id},'{provider}','{key}',100,'toman',{literal},'pending')")
+            return pay_id
+        for method in valid_intents:
+            late=manual_quote('idle-'+method,method,who=9431)
+            sql(w,e,f"UPDATE payment_attempts SET created_at=DATE_SUB(NOW(),INTERVAL 21600 SECOND) "
+                f"WHERE pay_row_id={late}")
+            assert run(w,e,dict(action='manual_start',id=late,provider=method,actor=9431))['result'] is False
+            assert run(w,e,dict(action='track',id=late,chat_id=9431,
+                                message_id=2000+len(cases)))['result'] is True
+            assert run(w,e,dict(action='manual_expire',id=late))['result'] is True
+            changed=run(w,e,dict(action='sync',id=late))
+            assert changed['result']==1,changed
+            assert all('مهلت' in event['text'] and 'پرداخت فاکتور' not in event['keyboard']
+                       for event in changed['events'] if event['method']=='editMessageText')
+            assert state(w,e,'idle-'+method)=='expired'
+            assert sql(w,e,f"SELECT stage FROM payment_attempts WHERE pay_row_id={late}").strip()=='expired'
+            assert run(w,e,dict(action='manual_expire',id=late))['result'] is False
+            cases.append('idle_six_hour_'+method+'_terminal_without_forgetting_claim')
+            timely=manual_quote('click-'+method,method,who=9432)
+            sql(w,e,f"UPDATE payment_attempts SET created_at=DATE_SUB(NOW(),INTERVAL 21598 SECOND) "
+                f"WHERE pay_row_id={timely}")
+            assert run(w,e,dict(action='manual_start',id=timely,provider=method,actor=9431))['result'] is False
+            assert run(w,e,dict(action='manual_start',id=timely,provider=method,actor=9432))['result'] is True
+            assert run(w,e,dict(action='manual_allowed',id=timely,provider=method,actor=9432))['result'] is True
+            sql(w,e,f"UPDATE payment_attempts SET created_at=DATE_SUB(NOW(),INTERVAL 24000 SECOND) "
+                f"WHERE pay_row_id={timely}")
+            assert run(w,e,dict(action='manual_expire',id=timely))['result'] is False
+            assert run(w,e,dict(action='manual_start',id=timely,provider=method,actor=9432))['result'] is True
+            assert run(w,e,dict(action='state',id=timely))['result']['state']=='awaiting_receipt'
+            cases.append('clicked_'+method+'_persists_upload_intent_not_paid')
+        manual_review=manual_quote('manual-evidence-protection','bank_transfer',who=9444)
+        sql(w,e,f"UPDATE payment_attempts SET stage='receiving',created_at=DATE_SUB(NOW(),INTERVAL 25000 SECOND) "
+            f"WHERE pay_row_id={manual_review}")
+        assert run(w,e,dict(action='manual_expire',id=manual_review))['result'] is False
+        assert state(w,e,'manual-evidence-protection')=='pending'
+        cases.append('manual_evidence_lease_not_expired')
+        custom=manual_quote('custom-idle-window','bank_transfer',who=9455)
+        sql(w,e,f"UPDATE payment_attempts SET created_at=DATE_SUB(NOW(),INTERVAL 7200 SECOND) "
+            f"WHERE pay_row_id={custom}")
+        assert run(w,e,dict(action='manual_expire',id=custom))['result'] is False
+        assert run(w,e,dict(action='manual_expire',id=custom,states={'paymentManualHours':1}))['result'] is True
+        cases.append('bounded_manual_window_policy_changes_effective_deadline')
+        hosted=add(w,e,'hosted-claim',who=9466,kind='INCREASE_WALLET',old=int(time.time()))
+        sql(w,e,f"INSERT INTO payment_attempts "
+            f"(pay_row_id,provider,order_hash,quote_amount,quote_currency,stage,created_at) "
+            f"VALUES ({hosted},'nowpayments','hosted-claim',100,'toman','pending',DATE_SUB(NOW(),INTERVAL 21600 SECOND))")
+        assert run(w,e,dict(action='hosted_attention',id=hosted))['result'] is True
+        assert run(w,e,dict(action='track',id=hosted,chat_id=9466,
+                            message_id=3466))['result'] is True
+        hosted_sync=run(w,e,dict(action='sync',id=hosted))
+        assert hosted_sync['result']==1
+        assert 'نیازمند بررسی' in hosted_sync['events'][0]['text']
+        assert run(w,e,dict(action='state',id=hosted))['result']['state']=='needs_review'
+        assert run(w,e,dict(action='manual_expire',id=hosted))['result'] is False
+        assert state(w,e,'hosted-claim')=='pending'
+        assert sql(w,e,f"SELECT stage FROM payment_attempts WHERE pay_row_id={hosted}").strip()=='pending'
+        cases.append('hosted_link_attention_not_provider_claim_cancellation')
+        fresh_host=add(w,e,'fresh-hosted-claim',who=9467,old=int(time.time()))
+        sql(w,e,f"INSERT INTO payment_attempts "
+            f"(pay_row_id,provider,order_hash,quote_amount,quote_currency,stage) "
+            f"VALUES ({fresh_host},'nextpay','fresh-hosted-claim',100,'toman','pending')")
+        assert run(w,e,dict(action='hosted_attention',id=fresh_host))['result'] is False
+        assert run(w,e,dict(action='hosted_attention',id=hosted,states={'paymentHostedHours':72}))['result'] is False
+        cases.append('hosted_attention_window_is_bounded_and_configurable')
+        # Contending expiry worker and receipt click must not both succeed.
+        race=manual_quote('manual-expiry-race','bank_transfer',who=9499)
+        sql(w,e,f"UPDATE payment_attempts SET created_at=DATE_SUB(NOW(),INTERVAL 21600 SECOND) "
+            f"WHERE pay_row_id={race}")
+        spec1=dict(action='manual_expire',id=race)
+        spec2=dict(action='manual_start',id=race,actor=9499,provider='bank_transfer')
+        ps=[subprocess.Popen(cmd(w,e,ROOT,spec),env=e,cwd=w,stdout=subprocess.PIPE,
+                             stderr=subprocess.PIPE) for spec in (spec1,spec2)]
+        results=[]
+        for pr in ps:
+            stdout,stderr=pr.communicate(timeout=25)
+            assert pr.returncode==0 and not stderr,(pr.returncode,stderr)
+            results.append(json.loads(stdout)['result'])
+        assert results==[True,False] or results==[False,False],results
+        assert (state(w,e,'manual-expiry-race')=='expired')
+        cases.append('manual_click_cannot_revive_overdue_quote_under_concurrency')
+        sql(w,e,"INSERT INTO users (userid,name,username,refcode,date,is_agent) "
+            "VALUES (9501,'Agent fixture','synthetic_agent','0','1700000000',1),"
+            "(9502,'Buyer fixture','synthetic_buyer','0','1700000000',0),"
+            "(9503,'Ordinary fixture','synthetic_ordinary','0','1700000000',0)")
+        sql(w,e,"INSERT INTO pays "
+            "(hash_id,user_id,type,plan_id,server_id,volume,day,price,request_date,state) "
+            "VALUES ('synthetic-paid-buyer',9502,'BUY_SUB',7,2,0,0,100,1700000000,'paid')")
+        audience=lambda actor,mode,provider='bank_transfer': run(w,e,dict(
+            action='audience',actor=actor,provider=provider,
+            states={'gatewayAudience':{provider:mode}}))['result']
+        assert audience(9501,'agents') is True
+        assert audience(9502,'agents') is False
+        assert audience(9503,'non_agents') is True
+        assert audience(9501,'non_agents') is False
+        assert audience(9502,'buyers') is True
+        assert audience(9503,'buyers') is False
+        assert audience(9503,'non_buyers') is True
+        assert audience(9501,'non_buyers') is True
+        assert audience(9501,'off') is False
+        assert audience(9501,'garbage') is False
+        assert audience(9501,'all') is True
+        assert run(w,e,dict(action='audience',actor=9501,provider='weSwap',
+                            states={'gatewayAudience':{}}))['result'] is False
+        cases.append('per_method_audience_all_agent_buyer_none_fail_closed')
+        # The duplicate-guard windows are presentation/policy cooldowns,
+        # not a replacement for exactly-once payment/receipt settlement.
+        current=int(time.time())
+        olderInvoice=add(w,e,'same-buyer-approved',who=9670,
+                         kind='BUY_SUB',old=current-500)
+        sql(w,e,f"UPDATE pays SET state='approved' WHERE id={olderInvoice}")
+        freshInvoice=add(w,e,'same-buyer-request',who=9670,
+                         kind='BUY_SUB',old=current)
+        default=run(w,e,dict(action='duplicate_guard',id=freshInvoice,
+                              clock=current))['result']
+        assert isinstance(default,str) and 'تایید' in default
+        shorter=run(w,e,dict(action='duplicate_guard',id=freshInvoice,
+            clock=current,states={'receiptApprovedMinutes':5}))['result']
+        assert shorter is None,(default,shorter)
+        invalid=run(w,e,dict(action='duplicate_guard',id=freshInvoice,
+            clock=current,states={'receiptApprovedMinutes':0}))['result']
+        assert isinstance(invalid,str)
+        cases.append('configurable_duplicate_approved_cooldown_keeps_safe_default')
+        pendingReceipt=add(w,e,'same-buyer-review',who=9671,
+                           kind='BUY_SUB',old=current-500)
+        sql(w,e,f"UPDATE pays SET state='have_sent' WHERE id={pendingReceipt}")
+        pendingNew=add(w,e,'same-buyer-pending',who=9671,kind='BUY_SUB',old=current)
+        default=run(w,e,dict(action='duplicate_guard',id=pendingNew,
+                             clock=current))['result']
+        assert isinstance(default,str) and 'بررسی' in default
+        shorter=run(w,e,dict(action='duplicate_guard',id=pendingNew,
+              clock=current,states={'receiptReviewMinutes':5}))['result']
+        assert shorter is None
+        cases.append('duplicate_receipt_review_window_configurable_only_inside_bounds')
         # Incomplete provider ledger cannot prove a draft never had an invoice.
         sql(w,e,'DROP TABLE payment_transactions')
         incomplete=add(w,e,'partial-ledger-do-not-expire',kind='INCREASE_WALLET')

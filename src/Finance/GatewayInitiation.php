@@ -168,6 +168,31 @@ if(mysqli_num_rows($payInfo)==0){
         showForm("وضعیت درخواست پرداخت قابل اطمینان نیست؛ برای جلوگیری از پرداخت تکراری با پشتیبانی تماس بگیرید.");
         exit;
     }
+    // Payment-audience restrictions apply at the exact first-party HTTP
+    // checkout route, not merely in Telegram menus. A previously issued
+    // provider claim remains available only for status/reconciliation.
+    $checkoutMethod=isset($_GET['nowpayment']) ? 'nowpayments' :
+        (isset($_GET['zarinpal']) ? 'zarinpal' : 'nextpay');
+    $stateFlag=$checkoutMethod==='nowpayments'
+        ? (((string)$payParam['type']==='INCREASE_WALLET') ? 'nowPaymentWallet' : 'nowPaymentOther')
+        : $checkoutMethod;
+    if (($botState[$stateFlag]??'off')!=='on' ||
+        !achbotPayUxAudienceAllowed($connection,$checkoutMethod,(int)$payParam['user_id'])) {
+        showForm('این روش پرداخت برای حساب شما فعال نیست؛ اگر فاکتور قبلی صادر شده با پشتیبانی وضعیت آن را پیگیری کنید.');
+        exit;
+    }
+    // A hosted invoice can remain payable upstream after a stale bot link
+    // is removed. Stop showing/redirecting to it at the attention deadline,
+    // but preserve the exact provider claim for asynchronous reconciliation.
+    try {
+        if (achbotPayUxHostedAttentionElapsed($connection,(int)$payParam['id'])) {
+            showForm('مهلت استفاده از لینک این فاکتور پایان یافته است. وضعیت پرداخت در حال پیگیری است؛ وجه را دوباره ارسال نکنید.');
+            exit;
+        }
+    } catch (Throwable $ignored) {
+        showForm('وضعیت فاکتور آنلاین نیازمند بررسی است؛ پرداخت مجدد انجام ندهید.');
+        exit;
+    }
     if (!achbotSupportsPaymentSubject($connection, $payParam)) {
         showForm("این سرویس در پنل مرزبان قابل پرداخت نیست.");
         exit();

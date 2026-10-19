@@ -340,6 +340,23 @@ def main():
             "two_concurrent_expiry_workers_exactly_one_mutation",
             "media_caption_and_buttons_updated_after_receipt_review",
             "incomplete_003_schema_blocks_expiry",
+            # Owner-accepted issued/unacted invoice lifecycle across methods.
+            "idle_six_hour_bank_transfer_terminal_without_forgetting_claim",
+            "clicked_bank_transfer_persists_upload_intent_not_paid",
+            "idle_six_hour_gift_card_terminal_without_forgetting_claim",
+            "clicked_gift_card_persists_upload_intent_not_paid",
+            "idle_six_hour_manual_usdt_terminal_without_forgetting_claim",
+            "clicked_manual_usdt_persists_upload_intent_not_paid",
+            "idle_six_hour_manual_trx_terminal_without_forgetting_claim",
+            "clicked_manual_trx_persists_upload_intent_not_paid",
+            "manual_evidence_lease_not_expired",
+            "bounded_manual_window_policy_changes_effective_deadline",
+            "hosted_link_attention_not_provider_claim_cancellation",
+            "hosted_attention_window_is_bounded_and_configurable",
+            "manual_click_cannot_revive_overdue_quote_under_concurrency",
+            "per_method_audience_all_agent_buyer_none_fail_closed",
+            "configurable_duplicate_approved_cooldown_keeps_safe_default",
+            "duplicate_receipt_review_window_configurable_only_inside_bounds",
         }
         if not (payment_ux.get("complete")
                 and required_payment_ux.issubset(payment_ux.get("scenarios",[]))
