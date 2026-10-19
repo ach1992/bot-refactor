@@ -11,8 +11,9 @@ if (!function_exists('processWalletPayment')) {
         global $from_id, $admin;
 
         try {
-            if (!$connection->begin_transaction())
-                throw new RuntimeException('wallet_begin_failed');
+            // The preview is an autocommit read OUTSIDE the financial
+            // transaction. Otherwise REPEATABLE READ pins a stale snapshot
+            // before the owner lock, including for audience/plan checks.
             // An unsupported/retired panel can be REJECTED by a safe
             // snapshot preflight without acquiring a financial lock.
             // This preview NEVER authorizes payment: every accepted path
@@ -26,7 +27,6 @@ if (!function_exists('processWalletPayment')) {
             $preview->close();
             if ($previewPay && (int)($previewPay['user_id']??0)===(int)$from_id &&
                 !achbotSupportsPaymentSubject($connection,$previewPay)) {
-                $connection->rollback();
                 alert("⛔️ پرداخت این اشتراک در حال حاضر امکان‌پذیر نیست؛ مبلغی از کیف پول کسر نشد.", true);
                 return [
                     'status'=>'unsupported_panel',
@@ -37,6 +37,10 @@ if (!function_exists('processWalletPayment')) {
                     'price'=>null,
                 ];
             }
+            // Begin a NEW financial transaction only AFTER the reject-only
+            // preview has completed. No pre-lock read view survives.
+            if (!$connection->begin_transaction())
+                throw new RuntimeException('wallet_begin_failed');
             // Serialize the FINAL new wallet method selection against the
             // customer draft writers and hosted/manual claims. The shared
             // invariant is owner -> pays -> provider attempt, NEVER pays ->

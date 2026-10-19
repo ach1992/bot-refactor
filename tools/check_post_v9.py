@@ -463,6 +463,41 @@ def main():
                 and method_race.get("production_mutations")==0):
             raise RuntimeError("Reviewer R2 manual/wallet side-effect serialization proof incomplete")
 
+        # Independent R3 financial authorization: the reject-only panel
+        # preview must complete OUTSIDE the wallet transaction. Under
+        # REPEATABLE READ its first nonlocking SELECT otherwise pins stale
+        # audience/plan data before the owner lock. Validate actual source
+        # with independent PHP/MySQLi sessions and a timed preview barrier.
+        r3_path=Path(tmp)/"wallet-authorization-freshness.json"
+        subprocess.run(["python3",str(ROOT/"tools/test_post_v9_wallet_authorization_freshness.py"),
+                        "--run-disposable","--report",str(r3_path)],
+                       cwd=ROOT,check=True,timeout=125,capture_output=True)
+        wallet_freshness=json.loads(r3_path.read_text())
+        required_r3={
+            "r3_repeatable_read_change_agents_authorization_fresh",
+            "r3_repeatable_read_change_non_agents_authorization_fresh",
+            "r3_repeatable_read_change_buyer_authorization_fresh",
+            "r3_repeatable_read_change_non_buyer_authorization_fresh",
+            "r3_repeatable_read_change_plan_authorization_fresh",
+            "r3_repeatable_read_unchanged_agents_authorization_fresh",
+            "r3_repeatable_read_unchanged_buyer_authorization_fresh",
+            "r3_repeatable_read_unchanged_non_buyer_authorization_fresh",
+            "r3_repeatable_read_unchanged_plan_authorization_fresh",
+            "r3_read_committed_change_agents_authorization_fresh",
+            "r3_read_committed_change_plan_authorization_fresh",
+            "r3_read_committed_unchanged_plan_authorization_fresh",
+        }
+        if not (wallet_freshness.get("complete") is True
+                and wallet_freshness.get("cases")==len(required_r3)
+                and required_r3.issubset(wallet_freshness.get("scenarios",[]))
+                and wallet_freshness.get("source_real_php") is True
+                and wallet_freshness.get("owned_mariadb_only") is True
+                and wallet_freshness.get("default_repeatable_read_verified") is True
+                and wallet_freshness.get("other_isolation_read_committed_verified") is True
+                and wallet_freshness.get("remote_provider_calls")==0
+                and wallet_freshness.get("production_mutations")==0):
+            raise RuntimeError("Independent R3 wallet final audience/panel freshness proof incomplete")
+
         auto_renew_path=Path(tmp)/"automatic-renewal-ledger.json"
         subprocess.run(["python3",str(ROOT/"tools/test_post_v9_automatic_renewal.py"),
                         "--run-disposable","--report",str(auto_renew_path)],
@@ -896,7 +931,15 @@ def main():
             raise RuntimeError('Isolated agency regression timed out '
                                f'(180 s):\n{error}') from exc
         agency=json.loads(agency_path.read_text())
-        if not (agency.get("complete") and agency.get("cases")>=20
+        required_agency_v1={
+            "concurrent_admin_approval_exactly_one",
+            "v1_single_database_deadlock_victim_retries_exact_once_before_effect",
+            "v1_repeated_database_deadlock_victim_fails_closed_no_role_or_notice",
+            "v1_database_lock_wait_timeout_no_role_or_notice",
+            "v1_synthetic_schema_restored_no_trigger_or_table_leak",
+        }
+        if not (agency.get("complete") and agency.get("cases")>=24
+                and required_agency_v1.issubset(agency.get("details",[]))
                 and agency.get("schema_tables")==23
                 and agency.get("original_setUser_extracted")
                 and agency.get("actual_current_handler_executed")
@@ -953,6 +996,7 @@ def main():
                     "payment_ux_lifecycle":payment_ux,
                     "checkout_serialization":checkout_race,
                     "customer_method_serialization":method_race,
+                    "wallet_authorization_freshness":wallet_freshness,
                     "manual_payment_method_isolation":manual,
                     "manual_crypto_destination_and_admin_guards":crypto_guard,
                     "payment_reference_assurance":payment_identity,
@@ -985,6 +1029,7 @@ def main():
                       "payment_ux_cases":payment_ux["cases"],
                       "checkout_serialization_cases":checkout_race["cases"],
                       "customer_method_serialization_cases":method_race["cases"],
+                      "wallet_authorization_freshness_cases":wallet_freshness["cases"],
                       "manual_payment_isolation_cases":manual["cases"],
                       "manual_crypto_guard_cases":crypto_guard["cases"],
                       "payment_reference_length":payment_identity["default_length"],

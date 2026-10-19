@@ -53,11 +53,12 @@ final class FixtureStatement {
 final class FixtureDatabase {
     public $case;
     public $rollbacks = 0;
+    public $begins = 0;
     public $commits = 0;
     public $reads = 0;
     public function __construct($case) { $this->case = $case; }
     // Mirror mysqli::begin_transaction() success, not a nullable stub.
-    public function begin_transaction() {return true;}
+    public function begin_transaction() {$this->begins++;return true;}
     public function prepare($sql) {
         if (!preg_match('/^SELECT\\s/i', ltrim($sql))) {
             throw new RuntimeException('Financial mutation attempted during rejected preflight');
@@ -88,7 +89,8 @@ foreach ($cases as $case) {
     $result = processWalletPayment($db, 'synthetic-only',
         function () use (&$invoked) { $invoked = true; return true; });
     if ($result['status'] !== 'unsupported_panel' ||
-        $invoked || $db->rollbacks !== 1 || $db->commits !== 0 ||
+        $invoked || $db->begins !== 0 ||
+        $db->rollbacks !== 0 || $db->commits !== 0 ||
         $db->reads !== $expectedReads) {
         throw new RuntimeException('Unrecognized panel failed pre-commit guard');
     }
