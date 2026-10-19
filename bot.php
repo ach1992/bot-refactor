@@ -403,8 +403,24 @@ if (in_array($data, $statOptions) && ($from_id == $admin || $userInfo['isAdmin']
 }
 
 require __DIR__ . '/src/Admin/Roles.php';
-if(($data=="botSettings" or preg_match("/^changeBot(\w+)/",$data,$match)) && ($from_id == $admin || $userInfo['isAdmin'] == true)){
+if(($data=="botSettings" or preg_match('/^changeBot([A-Za-z0-9_]+)$/D',$data,$match)) && ($from_id == $admin || $userInfo['isAdmin'] == true)){
     if($data!="botSettings"){
+        // Never persist callback-provided arbitrary BOT_STATES keys.
+        // Keep this explicit list in sync with getBotSettingKeys().
+        $editableBotToggles=[
+            'agencyState','agencyPlanDiscount','individualExistence',
+            'sharedExistence','testAccount','changeProtocolState',
+            'renewAccountState','renewAutoState','plandelkhahState',
+            'switchLocationState','increaseTimeState','increaseVolumeState',
+            'requirePhone','requireIranPhone','sellState','botState',
+            'subLinkState','configLinkState','searchState',
+            'renewConfigLinkState','updateConfigLinkState','qrConfigState',
+            'qrSubState','cartToCartAutoAcceptState','cartToCartAutoAcceptType'
+        ];
+        if (!in_array($match[1],$editableBotToggles,true)) {
+            answerCallbackQuery($callbackId,'این تنظیم قدیمی یا ناشناخته قابل تغییر نیست.',true);
+            return;
+        }
         if($match[1] == "cartToCartAutoAcceptType") $newValue = $botState[$match[1]] == "0"?"1":($botState[$match[1]] == "1"?"2":0);
         else $newValue = ($botState[$match[1]] ?? 'off')==="on"?"off":"on";
         setSettings($match[1], $newValue);
@@ -416,10 +432,18 @@ if($data=="changeUpdateConfigLinkState" && ($from_id == $admin || $userInfo['isA
     setSettings('updateConnectionState', $newValue);
     editText($message_id,$mainValues['change_bot_settings_message'],getBotSettingKeys());
 }
-if(($data=="gateWays_Channels" or preg_match("/^changeGateWays(\w+)/",$data,$match)) && ($from_id == $admin || $userInfo['isAdmin'] == true)){
+if(($data=="gateWays_Channels" or preg_match('/^changeGateWays([A-Za-z0-9_]+)$/D',$data,$match)) && ($from_id == $admin || $userInfo['isAdmin'] == true)){
     if($data!="gateWays_Channels"){
-        if ($match[1] === 'tronWallet') {
-            answerCallbackQuery($callbackId, 'درگاه خودکار قدیمی TRON بازنشسته شده است.', true);
+        // Only currently displayed, supported gateway flags are editable.
+        // Neither deprecated TRON/WeSwap nor arbitrary callback identifiers
+        // can recreate retired BOT_STATES through this or changeBot.
+        $editableGatewayToggles=[
+            'giftCardState','manualUsdtState','cartToCartState',
+            'nextpay','zarinpal','nowPaymentWallet','nowPaymentOther',
+            'walletState'
+        ];
+        if (!in_array($match[1],$editableGatewayToggles,true)) {
+            answerCallbackQuery($callbackId,'این درگاه قدیمی یا ناشناخته قابل تغییر نیست.',true);
             return;
         }
         $newValue = ($botState[$match[1]] ?? 'off')==="on"?"off":"on";

@@ -530,6 +530,10 @@ function getAdminKeys(){
 
 function setSettings($field, $value){
     global $connection, $botState;
+    // Final persistence boundary: retired payment flags must never be
+    // recreated or mutated, including by a future stale caller. Historical
+    // BOT_STATES JSON is retained untouched for audit/compatibility.
+    if (in_array($field, ['weSwapState','tronWallet'], true)) return;
     $botState[$field]= $value;
     
     $stmt = $connection->prepare("SELECT * FROM `setting` WHERE `type` = 'BOT_STATES'");

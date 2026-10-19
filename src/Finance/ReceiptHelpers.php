@@ -152,16 +152,55 @@ function achbotManualLabel(string $method): string {
 
 function achbotManualUsdtWalletValid(string $wallet, string $network): bool {
     if (!in_array($network, ['BEP20','ERC20','TRC20'], true)) return false;
-    if ($network === 'TRC20') return preg_match('/^T[1-9A-HJ-NP-Za-km-z]{33}$/D', $wallet) === 1;
+    if ($network === 'TRC20') return achbotManualTronAddressValid($wallet);
     return preg_match('/^0x[0-9a-fA-F]{40}$/D', $wallet) === 1;
 }
 
 /**
- * A manual transfer is a third-party on-chain transfer: the bot does not
- * verify its screenshot or infer final settlement from Telegram evidence.
+ * Offline, dependency-free TRON Base58Check validation shared by TRC20 USDT
+ * and native TRX. A T-shaped string is not necessarily a usable destination.
+ * Decode with fixed-width base-256 arithmetic (no GMP/BCMath dependency),
+ * verify the 0x41 + 20-byte payload and double-SHA256 checksum, then require
+ * canonical Base58 round-trip. No chain lookup or ownership claim is made.
  */
 function achbotManualTronAddressValid(string $wallet): bool {
-    return preg_match('/^T[1-9A-HJ-NP-Za-km-z]{33}$/D', $wallet) === 1;
+    if (strlen($wallet) !== 34 || $wallet[0] !== 'T') return false;
+    $alphabet = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+    $decoded = array_fill(0, 25, 0);
+    for ($i = 0; $i < 34; $i++) {
+        $digit = strpos($alphabet, $wallet[$i]);
+        if ($digit === false) return false;
+        $carry = $digit;
+        for ($j = 24; $j >= 0; $j--) {
+            $carry += $decoded[$j] * 58;
+            $decoded[$j] = $carry & 0xff;
+            $carry = intdiv($carry, 256);
+        }
+        // More than 25 decoded bytes is never a TRON Base58Check address.
+        if ($carry !== 0) return false;
+    }
+    if ($decoded[0] !== 0x41) return false;
+    $binary = pack('C*', ...$decoded);
+    $payload = substr($binary, 0, 21);
+    $checksum = substr(hash('sha256', hash('sha256', $payload, true), true), 0, 4);
+    if (!hash_equals($checksum, substr($binary, 21, 4))) return false;
+
+    // Only one canonical Base58 spelling of these exact 25 bytes is allowed.
+    // The verified nonzero 0x41 prefix means no leading '1' zero-byte padding.
+    $roundTrip = $decoded;
+    $canonical = '';
+    do {
+        $remainder = 0;
+        $nonzero = false;
+        foreach ($roundTrip as $index => $byte) {
+            $dividend = $remainder * 256 + $byte;
+            $roundTrip[$index] = intdiv($dividend, 58);
+            $remainder = $dividend % 58;
+            if ($roundTrip[$index] !== 0) $nonzero = true;
+        }
+        $canonical = $alphabet[$remainder] . $canonical;
+    } while ($nonzero);
+    return hash_equals($wallet, $canonical);
 }
 
 /**
@@ -279,9 +318,15 @@ function achbotManualIntentDecode(string $saved, string $method): ?array {
     $intent = json_decode($saved, true);
     if (is_array($intent) && ($intent['v'] ?? null) === 1 &&
         ($intent['method'] ?? null) === $method) {
-        if ($method === 'manual_trx' &&
-            (($intent['network'] ?? null) !== 'TRON' ||
-             !achbotManualTronAddressValid((string)($intent['wallet'] ?? '')))) return null;
+        if (in_array($method, ['manual_usdt','manual_trx'], true)) {
+            if (!is_string($intent['network'] ?? null) ||
+                !is_string($intent['wallet'] ?? null)) return null;
+            if ($method === 'manual_trx' &&
+                ($intent['network'] !== 'TRON' ||
+                 !achbotManualTronAddressValid($intent['wallet']))) return null;
+            if ($method === 'manual_usdt' &&
+                !achbotManualUsdtWalletValid($intent['wallet'], $intent['network'])) return null;
+        }
         return $intent;
     }
     // A previous PR candidate saved only an on-chain intent URI.
@@ -588,9 +633,12 @@ function achbotManualClaim(mysqli $connection, array $payInfo, string $method, i
             $connection->commit();
             if (!hash_equals($method, (string)$existing['provider']) || $existing['stage'] !== 'pending')
                 return false;
-            if (in_array($method, ['manual_usdt','manual_trx'], true) && $chosenNetwork !== null) {
+            if (in_array($method, ['manual_usdt','manual_trx'], true)) {
                 $pinned=achbotManualIntentDecode((string)$existing['checkout_url'], $method);
-                return $pinned !== null && ($pinned['network'] ?? '') === $chosenNetwork;
+                // An invalid historical address must not be reopened, even
+                // without a network argument. Retain the row for review.
+                return $pinned !== null && ($chosenNetwork === null ||
+                    $pinned['network'] === $chosenNetwork);
             }
             return true;
         }
@@ -674,7 +722,7 @@ function achbotManualReceiptAllowed(mysqli $connection, array $payInfo, string $
         (string)($payInfo['payid'] ?? '') !== '' ||
         !in_array($method, ['bank_transfer','gift_card','manual_usdt','manual_trx'], true)) return false;
     try {
-        $stmt = $connection->prepare('SELECT provider,stage FROM payment_attempts WHERE pay_row_id=? LIMIT 1');
+        $stmt = $connection->prepare('SELECT provider,stage,checkout_url FROM payment_attempts WHERE pay_row_id=? LIMIT 1');
         $id = (int)$payInfo['id'];
         $stmt->bind_param('i', $id);
         $stmt->execute();
@@ -682,7 +730,9 @@ function achbotManualReceiptAllowed(mysqli $connection, array $payInfo, string $
         $stmt->close();
         return $attempt !== null &&
             (string)$attempt['provider'] === $method &&
-            in_array((string)$attempt['stage'], ['pending','receiving'], true);
+            in_array((string)$attempt['stage'], ['pending','receiving'], true) &&
+            (!in_array($method, ['manual_usdt','manual_trx'], true) ||
+             achbotManualIntentDecode((string)$attempt['checkout_url'], $method) !== null);
     } catch (Throwable $error) {
         return false;
     }
