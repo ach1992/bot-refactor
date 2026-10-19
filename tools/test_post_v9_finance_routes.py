@@ -522,7 +522,6 @@ def main():
         seed_payment(work,env,'unsupported-init','RETIRED_PANEL',7,2)
         seed_payment(work,env,'unsupported-zarin','RETIRED_PANEL',7,2)
         seed_payment(work,env,'unsupported-next','RETIRED_PANEL',7,2)
-        seed_payment(work,env,'wallet-init','INCREASE_WALLET',0,0)
         seed_payment(work,env,'nohash-now','RETIRED_PANEL',7,2,'retired-fallback-id')
         seed_payment(work,env,'inbound-now','BUY_SUB',7,2,'inbound-invoice')
         seed_payment(work,env,'supported-nextpay','INCREASE_WALLET',0,0,'owned-nextpay-decline')
@@ -603,12 +602,13 @@ def main():
             raise RuntimeError('Untrusted browser-only return declared settlement')
         records.append(dict(case='legacy_nowpayment_browser_only_read_only',
                             pass_=True,financial_mutations=0,external_requests=0))
-        # This positive initiation is a fresh payment journey. Other seeded
-        # invoices intentionally coexist as independent historical test cases;
-        # their fixture insert order must not masquerade as a later customer
-        # top-up superseding this exact checkout.
-        sql(work,env,"UPDATE pays SET price=100000,payid=NULL,request_date="
-            +str(int(clock.time())+3600)+" WHERE hash_id='wallet-init'")
+        # This is a fresh positive payment journey: allocate the pays ID NOW,
+        # after unrelated legacy invoice fixtures. Advancing request_date on
+        # a lower ID cannot make it newest: customer-draft order is the ID
+        # allocated under the owner lock, not the pre-lock PHP timestamp.
+        # Keep the historical mocked invoices for return/reconciliation tests.
+        seed_payment(work,env,'wallet-init','INCREASE_WALLET',0,0,'')
+        sql(work,env,"UPDATE pays SET price=100000 WHERE hash_id='wallet-init'")
         before=snapshot(work,env)
         res=run_php(work,env,stage,dict(route='initiate',
                     get={'nowpayment':'','hash_id':'wallet-init'}))
