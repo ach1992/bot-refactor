@@ -200,8 +200,10 @@ if (preg_match('/^returnToPanel_(\\d+)/', $data, $match)) {
 
 if (preg_match('/^deleteOrder_(\\d+)/', $data, $match)) {
     // Telegram callback_data is arbitrary user input, not proof of role.
+    // users.isAdmin is a MariaDB TINYINT, returned as 1/"1", not true.
+    // Reject any value other than the explicit delegated-admin flag.
     if ((int)$from_id!==(int)$admin &&
-        ($userInfo['isAdmin']??false)!==true) {
+        (int)($userInfo['isAdmin']??0)!==1) {
         alert("⛔️ دسترسی به حذف سفارش ندارید.", true);
         return;
     }

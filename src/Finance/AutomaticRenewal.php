@@ -221,8 +221,16 @@ function achbotAutoRenewFinalize(mysqli $db, array $claim): bool {
         $now=time();
         $stmt->bind_param('iiisii',$claim['user_id'],$claim['server_id'],
             $zero,$claim['remark'],$claim['amount'],$now);
-        $stmt->execute();
+        $inserted=$stmt->execute();
+        $insertedRows=$stmt->affected_rows;
         $stmt->close();
+        // mysqli may return false without throwing (MYSQLI_REPORT_OFF).
+        // Every accounting row must be durable in the SAME transaction
+        // before the payment, order and journal can be committed as done.
+        if ($inserted!==true || $insertedRows!==1) {
+            $db->rollback();
+            return false;
+        }
         $stmt=$db->prepare("UPDATE orders_list SET expire_date=?,notif=0
             WHERE id=? AND expire_date=? AND userid=?");
         $stmt->bind_param('iiii',$claim['new_expire'],$orderId,

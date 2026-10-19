@@ -320,6 +320,9 @@ def main():
             "disabled_flag_no_effect",
             "verified_remote_success_all_local_effects_atomic",
             "replayed_and_foreign_requests_no_extra_charge",
+            # Independent reviewer F4: failed nonthrowing accounting INSERT
+            # cannot finalize payment, order or journal or replay provider.
+            "f4_nonthrowing_accounting_insert_failure_rolls_back_local_finalization_without_replay",
             "insufficient_funds_disables_auto_only",
             "signed_admin_debt_preserved_no_user_debit",
             "nonpositive_plan_fails_closed",
@@ -341,6 +344,10 @@ def main():
             "f1_real_admin_remote_delete_after_done_journal_retained",
             "f1_real_operator_local_only_delete_retains_paid_history",
             "f1_forged_nonadmin_operator_delete_callback_refused",
+            # Independent reviewer F5: actual DB-backed delegated role.
+            "f5_db_backed_delegated_admin_can_delete_local_order_once_preserving_financial_history",
+            "f5_delegated_delete_failure_persists_inactive_fence_without_remote_replay",
+            "f5_missing_actor_role_cannot_forge_local_delete_callback",
             "f1_real_user_remote_failure_fenced_without_false_success",
             "f1_real_expiry_cron_cleanup_blocks_unresolved_journal",
             "f1_real_expired_cron_cleanup_single_verified_delete",

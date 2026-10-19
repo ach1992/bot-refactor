@@ -23,6 +23,8 @@ $root=$argv[1];
 $GLOBALS['root']=$root;
 $spec=json_decode($argv[4],true,512,JSON_THROW_ON_ERROR);
 $GLOBALS['spec']=$spec;
+// Exercise error-return handling rather than relying on mysqli exceptions.
+if (!empty($spec['nonthrowing_sql'])) mysqli_report(MYSQLI_REPORT_OFF);
 $connection=new mysqli('localhost','root','',$argv[3],0,$argv[2]);
 $connection->set_charset('utf8mb4');
 // Loading function definitions must not run the shared Cron sweep when the
@@ -94,16 +96,28 @@ if ($action==='real_warning_cleanup') {
     $events[]=['type'=>'warnings_finished'];
 } elseif (in_array($action,
     ['real_user_delete','real_admin_delete','real_order_delete',
-     'real_order_delete_nonadmin','real_user_preview_nonadmin'],true)) {
+     'real_order_delete_delegate','real_order_delete_nonadmin',
+     'real_order_delete_missing_user','real_user_preview_nonadmin'],true)) {
     // These actual bot routes may call exit(); the shutdown hook keeps
     // structured synthetic test evidence without modifying production code.
     register_shutdown_function(function() use (&$events) {
         echo json_encode($events,JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE);
     });
-    $from_id=$action==='real_user_preview_nonadmin'?9002:
-        (in_array($action,['real_user_delete',
-         'real_order_delete_nonadmin'],true)?1001:9001);
-    $userInfo=['isAdmin'=>$from_id===9001,'step'=>'none'];
+    $from_id=match ($action) {
+        'real_user_preview_nonadmin','real_order_delete_delegate'=>9002,
+        'real_user_delete','real_order_delete_nonadmin'=>1001,
+        'real_order_delete_missing_user'=>9003,
+        default=>9001,
+    };
+    // Mirror config.php's actual prepared-statement SELECT of the actor.
+    // A tinyint(1) is returned as a numeric/string value, NOT PHP true.
+    $actor=$connection->prepare("SELECT * FROM users WHERE userid=?");
+    $actor->bind_param('i',$from_id);
+    $actor->execute();
+    $userInfo=$actor->get_result()->fetch_assoc() ?: ['step'=>'none'];
+    $actor->close();
+    $events[]=['type'=>'db_actor_role','actor'=>$from_id,
+               'flag'=>$userInfo['isAdmin']??null];
     $data=($action==='real_user_delete'?'yesDeleteConfig':
           ($action==='real_user_preview_nonadmin'?'deleteMyConfig':
           ($action==='real_admin_delete'?'yesDeleteUserConfig':'deleteOrder_'))).$oid;
@@ -114,7 +128,9 @@ if ($action==='real_warning_cleanup') {
     $buttonValues=['back_to_main'=>'mainMenu','cancel'=>'cancel'];
     $botState['rewardChannel']='';
     if (in_array($action,['real_order_delete',
-                          'real_order_delete_nonadmin'],true))
+                          'real_order_delete_delegate',
+                          'real_order_delete_nonadmin',
+                          'real_order_delete_missing_user'],true))
         require $root.'/src/Subscription/OrderManagement.php';
     else
         require $root.'/src/Subscription/AccountDeletion.php';
@@ -292,6 +308,32 @@ def main():
         assert_no_remote(run(w,e,{'order_id':oid,'enabled':'on','user_id':9002}))
         assert wallet(w,e)==400000
         cases.append('replayed_and_foreign_requests_no_extra_charge')
+
+        # F4: the actual PHP callback must not finalize a successful remote
+        # renewal when a nonthrowing mysqli INSERT into increase_order fails.
+        # The reserved debit/journal must remain reviewable, with no replay.
+        accounting=seed(w,e,'accounting-fail',wallet=500000)
+        accounting_expiry=sql(w,e,f"SELECT expire_date FROM orders_list WHERE id={accounting}")
+        sql(w,e,"CREATE TRIGGER achbot_owned_accounting_fail BEFORE INSERT "
+                "ON increase_order FOR EACH ROW SIGNAL SQLSTATE '45000' "
+                "SET MESSAGE_TEXT='synthetic accounting insert failure'")
+        try:
+            failed_accounting=run(w,e,{'order_id':accounting,'enabled':'on',
+                                      'nonthrowing_sql':True})
+        finally:
+            sql(w,e,"DROP TRIGGER achbot_owned_accounting_fail")
+        assert sum(x['type']=='remote' for x in failed_accounting)==1,failed_accounting
+        assert not any(x['type']=='send' for x in failed_accounting),failed_accounting
+        assert wallet(w,e)==400000, wallet(w,e)
+        assert state(w,e,accounting)=='review',state(w,e,accounting)
+        assert sql(w,e,f"SELECT state FROM pays WHERE order_id={accounting}").strip()=='processing_wallet'
+        assert sql(w,e,f"SELECT expire_date FROM orders_list WHERE id={accounting}")==accounting_expiry
+        assert count(w,e,'increase_order',"remark='accounting-fail'")==0
+        assert count(w,e,'automatic_renewal_attempts',f'order_id={accounting}')==1
+        assert_no_remote(run(w,e,{'order_id':accounting,'enabled':'on'}))
+        assert wallet(w,e)==400000
+        cases.append('f4_nonthrowing_accounting_insert_failure_rolls_back_local_finalization_without_replay')
+
         low=seed(w,e,'low',wallet=10)
         assert_no_remote(run(w,e,{'order_id':low,'enabled':'on'}))
         assert wallet(w,e)==10 and sql(w,e,f"SELECT autoRenew FROM orders_list WHERE id={low}").strip()=='off'
@@ -345,7 +387,17 @@ def main():
             assert p.returncode==0 and all(
                 e in expected_stderr for e in err.splitlines()),(p.returncode,err,out)
             results.append(json.loads(out))
-        assert sum(x['type']=='remote' for es in results for x in es)==1,results
+        remote_count=sum(x['type']=='remote' for es in results for x in es)
+        if remote_count!=1:
+            # Distinguish a transient competing transaction from financial
+            # guard rejection or a lost claim, without inventing a retry.
+            raise AssertionError({
+                'worker_events':results,'journal_stage':state(w,e,racing),
+                'order_state':sql(w,e,f"SELECT status,autoRenew,notif,expire_date FROM orders_list WHERE id={racing}"),
+                'payment_state':sql(w,e,f"SELECT state FROM pays WHERE order_id={racing}"),
+                'wallet':wallet(w,e),
+                'account_rows':sql(w,e,f"SELECT id,remark,status,server_id FROM orders_list WHERE remark='race'"),
+            })
         assert wallet(w,e)==400000 and state(w,e,racing)=='done'
         assert count(w,e,'increase_order',"remark='race'")==1
         cases.append('two_real_php_mysql_clients_exactly_one_debit_and_remote')
@@ -560,6 +612,61 @@ def main():
         assert count(w,e,'automatic_renewal_attempts',
                      f'order_id={localOnly}')==1
         cases.append('f1_real_operator_local_only_delete_retains_paid_history')
+
+        # F5: source-real operator callback with actual MariaDB isAdmin
+        # values, rather than a fixture-invented PHP boolean.
+        # The historical fixture seeds 9002 as a delegate; explicitly toggle
+        # it here to prove the 0 -> 1 role transition comes from MariaDB.
+        sql(w,e,"UPDATE users SET isAdmin=0 WHERE userid=9002")
+        assert sql(w,e,"SELECT isAdmin FROM users WHERE userid=9002").strip()=='0'
+        sql(w,e,"UPDATE users SET isAdmin=1 WHERE userid=9002")
+        delegated=seed(w,e,'delegated-local-delete',wallet=500000)
+        assert sum(x['type']=='remote' for x in run(w,e,{
+            'order_id':delegated,'enabled':'on'}))==1
+        delegated_wallet=wallet(w,e)
+        delegated_pays=count(w,e,'pays',f'order_id={delegated}')
+        delegated_journal=count(w,e,'automatic_renewal_attempts',f'order_id={delegated}')
+        delegated_delete=run(w,e,{'order_id':delegated,
+                                  'action':'real_order_delete_delegate'})
+        assert any(x['type']=='db_actor_role' and x['actor']==9002 and
+                   str(x['flag'])=='1' for x in delegated_delete),delegated_delete
+        assert any(x['type']=='alert' and not x['modal'] for x in delegated_delete),delegated_delete
+        assert not any(x['type']=='remote_delete' for x in delegated_delete),delegated_delete
+        assert count(w,e,'orders_list',f'id={delegated}')==0
+        assert count(w,e,'pays',f'order_id={delegated}')==delegated_pays==1
+        assert count(w,e,'automatic_renewal_attempts',
+                     f'order_id={delegated}')==delegated_journal==1
+        assert wallet(w,e)==delegated_wallet
+        assert_no_remote(run(w,e,{'order_id':delegated,'enabled':'on'}))
+        cases.append('f5_db_backed_delegated_admin_can_delete_local_order_once_preserving_financial_history')
+
+        # If the delegated operator's local DELETE fails, the already-committed
+        # inactive fence MUST survive; no second route invocation may retry it.
+        held=seed(w,e,'delegated-delete-held',wallet=500000)
+        assert sum(x['type']=='remote' for x in run(w,e,{
+            'order_id':held,'enabled':'on'}))==1
+        held_wallet=wallet(w,e)
+        sql(w,e,"CREATE TRIGGER achbot_owned_delegate_delete_fail "
+                "BEFORE DELETE ON orders_list FOR EACH ROW "
+                "SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='synthetic delegated local delete failure'")
+        try:
+            held_result=run(w,e,{'order_id':held,
+                                 'action':'real_order_delete_delegate'})
+        finally:
+            sql(w,e,"DROP TRIGGER achbot_owned_delegate_delete_fail")
+        assert not any(x['type']=='remote_delete' for x in held_result),held_result
+        assert any(x['type']=='alert' and x['modal']
+                   for x in held_result),held_result
+        assert count(w,e,'orders_list',f"id={held} AND status=0 AND autoRenew='off'")==1
+        assert count(w,e,'pays',
+                     f"order_id={held} AND state='paid_with_wallet'")==1
+        assert state(w,e,held)=='done' and wallet(w,e)==held_wallet
+        replay=run(w,e,{'order_id':held,'action':'real_order_delete_delegate'})
+        assert not any(x['type']=='remote_delete' for x in replay),replay
+        assert count(w,e,'orders_list',f'id={held} AND status=0')==1
+        cases.append('f5_delegated_delete_failure_persists_inactive_fence_without_remote_replay')
+
+        sql(w,e,"UPDATE users SET isAdmin=0 WHERE userid=9002")
         forbidden=seed(w,e,'operator-foreign-role')
         outcome=run(w,e,{'order_id':forbidden,
                          'action':'real_order_delete_nonadmin'})
@@ -567,6 +674,19 @@ def main():
         assert count(w,e,'orders_list',f'id={forbidden} AND status=1')==1
         assert not any(x['type']=='remote_delete' for x in outcome),outcome
         cases.append('f1_forged_nonadmin_operator_delete_callback_refused')
+        assert any(x['type']=='db_actor_role' and x['actor']==1001 and
+                   str(x['flag'])=='0' for x in outcome),outcome
+        missing=seed(w,e,'operator-missing-role')
+        missing_result=run(w,e,{'order_id':missing,
+                                'action':'real_order_delete_missing_user'})
+        assert any(x['type']=='db_actor_role' and x['flag'] is None
+                   for x in missing_result),missing_result
+        assert any(x['type']=='alert' and x['modal']
+                   for x in missing_result),missing_result
+        assert count(w,e,'orders_list',f'id={missing} AND status=1')==1
+        assert not any(x['type']=='remote_delete'
+                       for x in missing_result),missing_result
+        cases.append('f5_missing_actor_role_cannot_forge_local_delete_callback')
 
         remoteUncertain=seed(w,e,'customer-delete-timeout')
         result=run(w,e,{'order_id':remoteUncertain,'action':'real_user_delete',
