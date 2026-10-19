@@ -466,20 +466,10 @@ if (($from_id == $admin || (int)($userInfo['isAdmin']??0)===1) &&
         answerCallbackQuery($callbackId,'روش پرداخت ناشناخته است.',true);
         return;
     }
-    $modeNames=array_keys(achbotPayUxAudienceModes());
-    $states=is_array($botState??null)?$botState:[];
-    $current=array_key_exists('gatewayAudience',$states)
-        ? $states['gatewayAudience'] : [];
-    if (!is_array($current)) {
-        answerCallbackQuery($callbackId,'تنظیم فعلی نامعتبر است؛ ابتدا ساختار ذخیره‌شده را اصلاح کنید.',true);
+    if (!achbotCycleGatewayAudience($method)) {
+        answerCallbackQuery($callbackId,'تنظیم ذخیره نشد؛ لطفاً وضعیت فعلی را بررسی کنید.',true);
         return;
     }
-    $mode=array_key_exists($method,$current) ? $current[$method] : 'all';
-    $position=is_string($mode) ? array_search($mode,$modeNames,true) : false;
-    // A malformed explicit policy is NOT silently reset to open-for-all.
-    $current[$method]=$position===false ? 'off'
-        : $modeNames[($position+1)%count($modeNames)];
-    setSettings('gatewayAudience',$current);
     editText($message_id,'👥 دسترسی درگاه‌ها برای گروه‌های مختلف کاربران',
              achbotGatewayAudienceKeyboard());
     return;
@@ -511,7 +501,10 @@ if (($from_id == $admin || (int)($userInfo['isAdmin']??0)===1) &&
         sendMessage('⛔️ مقدار واردشده نامعتبر است؛ در بازهٔ نمایش‌داده‌شده وارد کنید.', $cancelKey);
         return;
     }
-    setSettings($key,(int)$text);
+    if (!setSettings($key,(int)$text)) {
+        sendMessage('⛔️ تنظیم ذخیره نشد؛ لطفاً دوباره وضعیت را بررسی کنید.', $cancelKey);
+        return;
+    }
     setUser();
     sendMessage('✅ تنظیم ذخیره شد.',achbotPaymentPolicyKeyboard());
     return;

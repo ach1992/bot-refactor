@@ -79,6 +79,14 @@ def main():
             raise RuntimeError('Initial DDL mismatch')
         for label in CASES:
             purchase.init(work,env,url)
+            # Both original and current fixture DBs represent a configured
+            # installation. Real current issuance validates the persisted
+            # BOT_STATES row, never the PHP-only $botState snapshot.
+            # Preserve both immutable source trees and 23-table DDL.
+            for db in purchase.SIDE:
+                native.sql(work,env,
+                    "DELETE FROM setting WHERE type='BOT_STATES'; "
+                    "INSERT INTO setting (type,value) VALUES ('BOT_STATES','{}')",db)
             provider.mode={'provider_reject_free':'marzban-invalid',
                            'provider_unavailable_free':'marzban-503'}.get(label,'ok')
             steps=purchase.series()[label]

@@ -347,7 +347,7 @@ if(preg_match('/approveRenewAcc(.*)/',$data,$match) && ($from_id == $admin || $u
         $stmt->bind_param("s", $match[1]); 
         $stmt->execute(); 
         $payInfo = $stmt->get_result()->fetch_assoc();
-        if (!achbotSupportsPaymentSubject($connection, $payInfo)) {
+        if (!achbotSupportsPaymentSubject($connection, $payInfo, true)) {
             $connection->rollback();
             alert("⛔️ تأیید پرداخت این سرویس در مرزبان مجاز نیست.", true);
             return;
@@ -498,6 +498,9 @@ if(preg_match('/approveRenewAcc(.*)/',$data,$match) && ($from_id == $admin || $u
 if(preg_match('/payRenewWithWallet(.*)/', $data, $match)){
     $connection->begin_transaction();
     try {
+        // Customer-wallet issuance shares the same owner-first lock as drafts
+        // and manual/hosted claims. Never lock pays before users.userid.
+        achbotPayUxLockDraftOwner($connection,(int)$from_id);
         $stmt = $connection->prepare("SELECT * FROM `pays` WHERE `hash_id` = ? FOR UPDATE");
         $stmt->bind_param("s", $match[1]);
         $stmt->execute();
@@ -521,7 +524,7 @@ if(preg_match('/payRenewWithWallet(.*)/', $data, $match)){
             return;
         }
 
-        if (!achbotSupportsPaymentSubject($connection, $payInfo)) {
+        if (!achbotSupportsPaymentSubject($connection, $payInfo, true)) {
             $connection->rollback();
             alert("⚠️ وضعیت این تمدید نیاز به بررسی دارد. لطفاً وضعیت اشتراک و پرداخت را با پشتیبانی بررسی کنید.", true);
             return;

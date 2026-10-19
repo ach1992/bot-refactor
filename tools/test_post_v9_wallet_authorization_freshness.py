@@ -110,6 +110,8 @@ def scenario(w,e,stage,driver,kind,iso,n,reviewed=False):
         audience='non_agents';is_agent=0
     if kind in ('change_buyer','unchanged_buyer'):audience='buyers'
     if kind in ('change_non_buyer','unchanged_non_buyer'):audience='non_buyers'
+    policy=json.dumps({'gatewayAudience':{'wallet':audience}})
+    sql(w,e,"UPDATE setting SET value='"+policy+"' WHERE type='BOT_STATES'")
     sql(w,e,f"UPDATE users SET wallet=700000,is_agent={is_agent} WHERE userid={actor}")
     h='r3-wallet-'+str(n)
     typ='BUY_SUB' if kind in ('change_plan','unchanged_plan') else 'INCREASE_WALLET'
@@ -192,6 +194,7 @@ def main():
     with owned.owned_database() as (w,e):
         stage,driver=stage_source(w,args.r3_reviewed_head)
         purchase.init(w,e,'http://127.0.0.1:9')
+        sql(w,e,"INSERT INTO setting (type,value) VALUES ('BOT_STATES','{}')")
         sql(w,e,(ROOT/'migrations/post-v9/003_payment_attempts.sql').read_text())
         sql(w,e,(ROOT/'migrations/post-v9/006_payment_message_refs.sql').read_text())
         assert len(sql(w,e,'SHOW TABLES').splitlines())==26

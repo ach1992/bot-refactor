@@ -34,7 +34,9 @@ function achbotReserveCheckoutProvider(mysqli $db, int $orderId, string $provide
             (int)$row['price']!==(int)$original['price'] ||
             (int)$row['request_date']!==(int)$original['request_date'] ||
             (int)($row['order_id']??0)!==(int)($original['order_id']??0) ||
-            !achbotPayUxLockedCheckoutUsable($db,$row) ||
+            (!achbotPayUxLockedCheckoutUsable($db,$row)) ||
+            !achbotPayUxAudienceAllowed($db,$provider,$ownerId,true) ||
+            !achbotSupportsPaymentSubject($db,$row,true) ||
             (int)$row['price'] <= 0 || empty($row['hash_id'])) {
             $db->rollback();
             return null;
@@ -440,7 +442,10 @@ if(mysqli_num_rows($payInfo)==0){
                 (int)($locked['order_id']??0)!==(int)($payParam['order_id']??0) ||
                 (int)$locked['request_date']!==(int)$payParam['request_date'] ||
                 (int)$locked['price']!==(int)$amount ||
-                !achbotPayUxLockedCheckoutUsable($connection,$locked)) {
+                !achbotPayUxLockedCheckoutUsable($connection,$locked) ||
+                !achbotPayUxAudienceAllowed($connection,'nowpayments',
+                    (int)$locked['user_id'],true) ||
+                !achbotSupportsPaymentSubject($connection,$locked,true)) {
                 throw new RuntimeException('checkout_draft_no_longer_eligible');
             }
             $stmt = $connection->prepare("INSERT INTO payment_attempts

@@ -113,6 +113,10 @@ def sql(work, env, statement):
 
 def seed(work, env, case):
     purchase.init(work, env, "http://127.0.0.1:9")
+    # Source-real final wallet authorization reads the persisted BOT_STATES
+    # document; the old fixture had only a PHP request-global snapshot.
+    sql(work, env, "DELETE FROM setting WHERE type='BOT_STATES'; "
+        "INSERT INTO setting (type,value) VALUES ('BOT_STATES','{}')")
     sql(work, env, "DELETE FROM increase_day; DELETE FROM increase_plan")
     sql(work, env, """INSERT INTO increase_day (id,volume,price) VALUES (1,7,100);
        INSERT INTO increase_plan (id,volume,price) VALUES (1,7,100);

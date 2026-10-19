@@ -123,24 +123,6 @@ if (!function_exists('processWalletPayment')) {
 				];
 			}
 
-            // Reject retired or unknown panel plans before marking a pending
-            // wallet payment processing or debiting the customer. The outbound
-            // provider call is not the first acceptable guard: by then wallet
-            // mutations may already have occurred within this transaction.
-            // Uses the original schema; no migrations or new payment policy.
-            if (!achbotSupportsPaymentSubject($connection, $payInfo)) {
-                $connection->rollback();
-                alert("⛔️ پرداخت این اشتراک در حال حاضر امکان‌پذیر نیست؛ مبلغی از کیف پول کسر نشد.", true);
-                return [
-                    'status' => 'unsupported_panel',
-                    'payInfo' => $payInfo,
-                    'userRow' => null,
-                    'userReferrer' => null,
-                    'uid' => null,
-                    'price' => null,
-                ];
-            }
-
             $price = (int)($payInfo['price'] ?? 0);
             // Invalid/negative prices never become credits or free fulfillment.
             if ($price <= 0) {
@@ -155,6 +137,24 @@ if (!function_exists('processWalletPayment')) {
                 $connection->rollback();
                 alert("⛔️ این سفارش قبلاً با روش دیگری آغاز شده است؛ پرداخت دوباره انجام ندهید.", true);
                 return ['status'=>'claimed_provider','payInfo'=>$payInfo];
+            }
+
+            // Reject retired or unknown panel plans before marking a pending
+            // wallet payment processing or debiting the customer. The outbound
+            // provider call is not the first acceptable guard: by then wallet
+            // mutations may already have occurred within this transaction.
+            // Uses the original schema; no migrations or new payment policy.
+            if (!achbotSupportsPaymentSubject($connection, $payInfo, true)) {
+                $connection->rollback();
+                alert("⛔️ پرداخت این اشتراک در حال حاضر امکان‌پذیر نیست؛ مبلغی از کیف پول کسر نشد.", true);
+                return [
+                    'status' => 'unsupported_panel',
+                    'payInfo' => $payInfo,
+                    'userRow' => null,
+                    'userReferrer' => null,
+                    'uid' => null,
+                    'price' => null,
+                ];
             }
 
             $uid   = (int)($payInfo['user_id'] ?: $from_id);

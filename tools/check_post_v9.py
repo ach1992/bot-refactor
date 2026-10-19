@@ -498,10 +498,103 @@ def main():
                 and wallet_freshness.get("production_mutations")==0):
             raise RuntimeError("Independent R3 wallet final audience/panel freshness proof incomplete")
 
+        # PR #60 latest independent review F1-F4 (separate from earlier
+        # historical F1-F4): five source-real RED/GREEN suites for every
+        # legacy wallet route, new claim policy, concurrent admin settings,
+        # and late panel/plan revocation. Both InnoDB isolation modes and
+        # both wallet/draft commit orders are mandatory.
+        required_legacy_wallet=set()
+        for route in ('renewal','day','volume'):
+            required_legacy_wallet.add('f1_'+route+'_read_committed_old_red')
+            for iso in ('read_committed','repeatable_read'):
+                required_legacy_wallet.update({
+                    'f1_'+route+'_'+iso+'_new_green',
+                    'f1_'+route+'_'+iso+'_wallet_first_draft_waits',
+                })
+        required_hosted_audience=set()
+        for provider in ('nowpayment','zarinpal','nextpay'):
+            for mode in ('policy','cohort'):
+                prefix='f2_hosted_'+provider+'_'+mode
+                required_hosted_audience.update({
+                    prefix+'_old_red_read_committed',
+                    prefix+'_new_green_read_committed',
+                    prefix+'_new_green_repeatable_read',
+                })
+        required_manual_audience={
+            'f2_manual_'+method+suffix
+            for method in ('bank_transfer','gift_card','manual_usdt','manual_trx')
+            for suffix in ('_old_red','_new_green')
+        }
+        required_policy_panel={
+            'f2_wallet_old_red_read_committed',
+            'f2_wallet_new_green_read_committed',
+            'f2_wallet_new_green_repeatable_read',
+        }
+        for dependency in ('type','active'):
+            required_policy_panel.add(
+                'f4_'+dependency+'_old_red_revocation_precedes_effect_read_committed')
+            for iso in ('read_committed','repeatable_read'):
+                required_policy_panel.add(
+                    'f4_'+dependency+'_new_green_revocation_serialized_'+iso)
+        required_settings={
+            'f3_red_cached_settings_lost_revocation',
+            'f3_audience_timeout_atomic_distinct_admin_writes',
+            'f3_timeout_audience_atomic_distinct_admin_writes',
+            'f3_audience_reward_atomic_distinct_writes',
+        }
+        f1_f4_suites=(
+            ('legacy_wallet_races','test_post_v9_legacy_wallet_races.py',
+             required_legacy_wallet,('reviewed_source_red','current_source_green',
+                                     'real_php_mysqli','owned_mariadb_only')),
+            ('hosted_audience_races','test_post_v9_hosted_audience_races.py',
+             required_hosted_audience,('old_source_red','current_source_green',
+                                       'real_mysqli')),
+            ('manual_audience_races','test_post_v9_manual_audience_races.py',
+             required_manual_audience,('old_source_red','current_source_green',
+                                       'real_php_mysqli','owned_mariadb_only')),
+            ('wallet_policy_panel_races','test_post_v9_policy_panel_races.py',
+             required_policy_panel,('old_source_red','current_source_green',
+                                    'mysqli_sessions','owned_mariadb_only')),
+            ('settings_concurrency','test_post_v9_settings_concurrency.py',
+             required_settings,('old_source_discriminated','source_real_php',
+                                'owned_mariadb_only')),
+            ('cross_method_lock_order','test_post_v9_cross_method_lock_order.py',
+             {
+                 'f4_mutant_plan_then_policy_inverse_lock_conflict_detected',
+                 'f4_current_policy_before_plan_serializes_distinct_customer_methods',
+             },('intermediate_mutant_detected','current_source_serialization',
+                'real_php_mysqli','owned_mariadb_only','synthetic_provider_only')),
+        )
+        reviewer_f1_f4={}
+        for key,script,required,truth_flags in f1_f4_suites:
+            report_path=Path(tmp)/(key+'.json')
+            subprocess.run(['python3',str(ROOT/'tools'/script),'--run-disposable',
+                            '--report',str(report_path)],
+                           cwd=ROOT,check=True,timeout=180,capture_output=True)
+            evidence=json.loads(report_path.read_text())
+            if not (evidence.get('complete') is True
+                    and evidence.get('cases')==len(required)
+                    and set(evidence.get('scenarios',()))==required
+                    and all(evidence.get(field) is True for field in truth_flags)
+                    and evidence.get('production_mutations',0)==0):
+                raise RuntimeError('PR60 required independent F1-F4 evidence incomplete: '+key)
+            reviewer_f1_f4[key]=evidence
+
         auto_renew_path=Path(tmp)/"automatic-renewal-ledger.json"
-        subprocess.run(["python3",str(ROOT/"tools/test_post_v9_automatic_renewal.py"),
-                        "--run-disposable","--report",str(auto_renew_path)],
-                       cwd=ROOT,check=True,timeout=180,capture_output=True)
+        try:
+            subprocess.run(["python3",str(ROOT/"tools/test_post_v9_automatic_renewal.py"),
+                            "--run-disposable","--report",str(auto_renew_path)],
+                           cwd=ROOT,check=True,timeout=180,capture_output=True)
+        except subprocess.CalledProcessError as exc:
+            # Keep the exact synthetic fixture failure visible for root-cause
+            # diagnosis; an isolated successful rerun alone cannot classify it.
+            detail=(exc.stderr or exc.stdout or b'').decode(errors='replace')[-6000:]
+            raise RuntimeError("Automatic renewal native acceptance failed "
+                               f"(exit={exc.returncode}):\n"+detail) from exc
+        except subprocess.TimeoutExpired as exc:
+            detail=(exc.stderr or exc.stdout or b'').decode(errors='replace')[-3000:]
+            raise RuntimeError("Automatic renewal native acceptance timed out "
+                               "(180 s):\n"+detail) from exc
         auto_renew=json.loads(auto_renew_path.read_text())
         required_auto={
             "missing_schema_fails_closed",
@@ -997,6 +1090,7 @@ def main():
                     "checkout_serialization":checkout_race,
                     "customer_method_serialization":method_race,
                     "wallet_authorization_freshness":wallet_freshness,
+                    "latest_review_f1_f4":reviewer_f1_f4,
                     "manual_payment_method_isolation":manual,
                     "manual_crypto_destination_and_admin_guards":crypto_guard,
                     "payment_reference_assurance":payment_identity,

@@ -535,7 +535,7 @@ function achbotWalletDirectAllowedLocked(mysqli $connection, array $pay,
     if ($id <= 0) return false;
     require_once __DIR__ . '/PaymentLifecycle.php';
     if (!achbotPayUxUnclaimedDraftUsable($connection,$pay,true)) return false;
-    if (!achbotPayUxAudienceAllowed($connection,'wallet',$actor)) return false;
+    if (!achbotPayUxAudienceAllowed($connection,'wallet',$actor,true)) return false;
     try {
         $stmt = $connection->prepare('SELECT id FROM payment_attempts WHERE pay_row_id=? LIMIT 1 FOR UPDATE');
         $stmt->bind_param('i',$id);
@@ -668,7 +668,8 @@ function achbotManualClaim(mysqli $connection, array $payInfo, string $method, i
             return false;
         }
         if (!achbotManualEnabled($method) ||
-            !achbotPayUxAudienceAllowed($connection,$method,$userId)) {
+            !achbotPayUxAudienceAllowed($connection,$method,$userId,true) ||
+            !achbotSupportsPaymentSubject($connection,$current,true)) {
             $connection->rollback();
             return false;
         }

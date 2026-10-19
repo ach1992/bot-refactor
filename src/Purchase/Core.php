@@ -90,14 +90,14 @@ if (!function_exists('ensureServerCapacity')) {
 // Shared read-only preflight for current purchase/manual approval/wallet.
 // Type + inbound are validated as one provider contract before settlement.
 if (!function_exists('achbotSupportsMarzbanPlan')) {
-    function achbotSupportsMarzbanPlan($connection, $planId, $requestedInboundId = 0, $requiredServerId = null)
+    function achbotSupportsMarzbanPlan($connection, $planId, $requestedInboundId = 0, $requiredServerId = null, bool $lock = false)
     {
         $planId = (int)$planId;
         $stmt = $connection->prepare(
             "SELECT p.`inbound_id`, p.`server_id`, c.`type`
              FROM `server_plans` p
              INNER JOIN `server_config` c ON c.`id` = p.`server_id`
-             WHERE p.`id` = ? LIMIT 1"
+             WHERE p.`id` = ?".($lock ? ' AND p.active=1' : '')." LIMIT 1".($lock ? ' FOR UPDATE' : '')
         );
         $stmt->bind_param("i", $planId);
         $stmt->execute();
@@ -286,7 +286,7 @@ if (!function_exists('achbotDeleteMarzbanPanelGroup')) {
     }
 }
 if (!function_exists('achbotSameMarzbanPanel')) {
-    function achbotSameMarzbanPanel($connection, $sourceId, $targetId) {
+    function achbotSameMarzbanPanel($connection, $sourceId, $targetId, bool $lock = false) {
         $sourceId = (int)$sourceId;
         $targetId = (int)$targetId;
         if ($sourceId <= 0 || $targetId <= 0 || $sourceId === $targetId) return false;
@@ -300,7 +300,7 @@ if (!function_exists('achbotSameMarzbanPanel')) {
              INNER JOIN setting g ON g.id = a.panel_group_id
                   AND g.type = 'ACHBOT_MARZBAN_PANEL_GROUP'
              WHERE a.id = ? AND a.panel_group_id IS NOT NULL
-                   AND a.panel_group_id = b.panel_group_id LIMIT 1"
+                   AND a.panel_group_id = b.panel_group_id LIMIT 1".($lock ? ' FOR UPDATE' : '')
         );
         $stmt->bind_param('ii', $targetId, $sourceId);
         $stmt->execute();
@@ -417,7 +417,7 @@ if (!function_exists('achbotReassignMarzbanLogicalServer')) {
 }
 
 if (!function_exists('achbotSupportsMarzbanOrder')) {
-    function achbotSupportsMarzbanOrder($connection, $orderId, $requiredPlanId = null, $requiredUser = null)
+    function achbotSupportsMarzbanOrder($connection, $orderId, $requiredPlanId = null, $requiredUser = null, bool $lock = false)
     {
         if ((int)$orderId <= 0) return false;
         $stmt = $connection->prepare(
@@ -427,7 +427,7 @@ if (!function_exists('achbotSupportsMarzbanOrder')) {
              FROM `orders_list` o
              LEFT JOIN `server_config` c ON c.`id` = o.`server_id`
              LEFT JOIN `server_plans` p ON p.`id` = o.`fileid`
-             WHERE o.`id` = ? LIMIT 1"
+             WHERE o.`id` = ? LIMIT 1".($lock ? ' FOR UPDATE' : '')
         );
         $orderId = (int)$orderId;
         $stmt->bind_param('i', $orderId);
@@ -446,12 +446,12 @@ if (!function_exists('achbotSupportsMarzbanOrder')) {
             (int)$order['plan_inbound'] === 0 &&
             ((int)$order['plan_server'] === (int)$order['server_id'] ||
              achbotSameMarzbanPanel($connection,
-                 (int)$order['plan_server'], (int)$order['server_id']));
+                 (int)$order['plan_server'], (int)$order['server_id'], $lock));
     }
 }
 
 if (!function_exists('achbotSupportsPaymentSubject')) {
-    function achbotSupportsPaymentSubject($connection, $pay)
+    function achbotSupportsPaymentSubject($connection, $pay, bool $lock = false)
     {
         if (!is_array($pay)) return false;
         $type = (string)($pay['type'] ?? '');
@@ -461,7 +461,7 @@ if (!function_exists('achbotSupportsPaymentSubject')) {
         $uid = (int)($pay['user_id'] ?? 0);
         if ($type === 'BUY_SUB') {
             return $pid > 0 && achbotSupportsMarzbanPlan(
-                $connection, $pid, 0, $pay['server_id'] ?? null
+                $connection, $pid, 0, $pay['server_id'] ?? null, $lock
             );
         }
         if ($type === 'RENEW_SCONFIG') {
@@ -476,22 +476,22 @@ if (!function_exists('achbotSupportsPaymentSubject')) {
                 is_array($source) && ($source['marzban'] ?? null) === true &&
                 !empty($source['remark']) &&
                 (int)($source['server_id'] ?? 0) === $sid &&
-                achbotSupportsMarzbanPlan($connection, $pid, 0, $sid);
+                achbotSupportsMarzbanPlan($connection, $pid, 0, $sid, $lock);
         }
         if ($type === 'RENEW_ACCOUNT') {
             return $pid > 0 && achbotSupportsMarzbanOrder(
-                $connection, (int)($pay['order_id'] ?? 0), $pid, $uid > 0 ? $uid : null
+                $connection, (int)($pay['order_id'] ?? 0), $pid, $uid > 0 ? $uid : null, $lock
             );
         }
         if (preg_match('/^INCREASE_(DAY|VOLUME)_(\d+)_(\d+)$/', $type, $match)) {
             $oid = (int)$match[2];
             $addon = (int)$match[3];
             if ($addon <= 0 || !achbotSupportsMarzbanOrder(
-                $connection, $oid, $pid > 0 ? $pid : null, $uid > 0 ? $uid : null
+                $connection, $oid, $pid > 0 ? $pid : null, $uid > 0 ? $uid : null, $lock
             )) return false;
             if (!empty($pay['order_id']) && (int)$pay['order_id'] !== $oid) return false;
             $table = $match[1] === 'DAY' ? 'increase_day' : 'increase_plan';
-            $stmt = $connection->prepare("SELECT `id` FROM `$table` WHERE `id` = ? LIMIT 1");
+            $stmt = $connection->prepare("SELECT `id` FROM `$table` WHERE `id` = ? LIMIT 1".($lock?' FOR UPDATE':''));
             $stmt->bind_param('i', $addon);
             $stmt->execute();
             $exists = (bool)$stmt->get_result()->fetch_assoc();

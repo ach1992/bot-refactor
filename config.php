@@ -529,27 +529,90 @@ function getAdminKeys(){
     return json_encode(['inline_keyboard'=>$keyboard]);
 }
 
-function setSettings($field, $value){
+/**
+ * Legacy BOT_STATES.type is not unique. Serialize all application writes,
+ * read the persisted document FOR UPDATE, and change only the intended field.
+ * Financially significant audience changes cannot be lost to stale requests.
+ */
+function achbotMutateBotStates(callable $mutate): bool {
     global $connection, $botState;
-    // Final persistence boundary: retired payment flags must never be
-    // recreated or mutated, including by a future stale caller. Historical
-    // BOT_STATES JSON is retained untouched for audit/compatibility.
-    if (in_array($field, ['weSwapState','tronWallet'], true)) return;
-    $botState[$field]= $value;
-    
-    $stmt = $connection->prepare("SELECT * FROM `setting` WHERE `type` = 'BOT_STATES'");
-    $stmt->execute();
-    $isExists = $stmt->get_result();
-    $stmt->close();
-    if($isExists->num_rows>0) $query = "UPDATE `setting` SET `value` = ? WHERE `type` = 'BOT_STATES'";
-    else $query = "INSERT INTO `setting` (`type`, `value`) VALUES ('BOT_STATES', ?)";
-    $newData = json_encode($botState);
-    
-    $stmt = $connection->prepare($query);
-    $stmt->bind_param("s", $newData);
-    $stmt->execute();
-    $stmt->close();
+    $lockName='achbot_bot_states_write';
+    $ownsLock=false;$started=false;
+    try {
+        $stmt=$connection->prepare('SELECT GET_LOCK(?, 10) AS acquired');
+        if (!$stmt) throw new RuntimeException('settings_lock_prepare');
+        $stmt->bind_param('s',$lockName);
+        if (!$stmt->execute()) throw new RuntimeException('settings_lock_execute');
+        $ownsLock=(int)($stmt->get_result()->fetch_assoc()['acquired']??0)===1;
+        $stmt->close();
+        if (!$ownsLock) throw new RuntimeException('settings_lock_unavailable');
+        if (!$connection->begin_transaction()) throw new RuntimeException('settings_begin_failed');
+        $started=true;
+        $stmt=$connection->prepare("SELECT id,value FROM setting WHERE type='BOT_STATES' ORDER BY id FOR UPDATE");
+        if (!$stmt || !$stmt->execute()) throw new RuntimeException('settings_read_failed');
+        $rows=$stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+        $stmt->close();
+        if (count($rows)>1) throw new RuntimeException('settings_ambiguous');
+        $fresh=$rows===[] ? [] : json_decode((string)$rows[0]['value'],true);
+        if (!is_array($fresh)) throw new RuntimeException('settings_malformed');
+        $next=$mutate($fresh);
+        if (!is_array($next)) throw new RuntimeException('settings_invalid_update');
+        $json=json_encode($next,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
+        if ($rows) {
+            $stmt=$connection->prepare("UPDATE setting SET value=? WHERE id=? AND type='BOT_STATES'");
+            if (!$stmt) throw new RuntimeException('settings_write_prepare');
+            $rowId=(int)$rows[0]['id'];
+            $stmt->bind_param('si',$json,$rowId);
+        } else {
+            $stmt=$connection->prepare("INSERT INTO setting (type,value) VALUES ('BOT_STATES',?)");
+            if (!$stmt) throw new RuntimeException('settings_insert_prepare');
+            $stmt->bind_param('s',$json);
+        }
+        if (!$stmt->execute()) throw new RuntimeException('settings_write_failed');
+        $stmt->close();
+        if (!$connection->commit()) throw new RuntimeException('settings_commit_uncertain');
+        $started=false;
+        $botState=$next;
+        return true;
+    } catch (Throwable $error) {
+        if ($started) {try {$connection->rollback();} catch(Throwable $ignored) {}}
+        error_log('achbot_bot_states_update_deferred code='.(int)$error->getCode());
+        return false;
+    } finally {
+        if ($ownsLock) {
+            try {
+                $stmt=$connection->prepare('SELECT RELEASE_LOCK(?)');
+                $stmt->bind_param('s',$lockName);
+                $stmt->execute();$stmt->close();
+            } catch (Throwable $ignored) {}
+        }
+    }
 }
+function setSettings($field, $value): bool {
+    if (in_array($field,['weSwapState','tronWallet'],true)) return false;
+    return achbotMutateBotStates(static function(array $state) use($field,$value): array {
+        $state[$field]=$value;
+        return $state;
+    });
+}
+/** Cycle a single audience method using the freshly persisted policy map. */
+function achbotCycleGatewayAudience(string $method): bool {
+    if (!array_key_exists($method,achbotPayUxAudienceMethods())) return false;
+    return achbotMutateBotStates(static function(array $state) use($method): array {
+        $map=array_key_exists('gatewayAudience',$state)
+            ? $state['gatewayAudience'] : [];
+        if (!is_array($map)) throw new RuntimeException('settings_invalid_audience_map');
+        $modes=array_keys(achbotPayUxAudienceModes());
+        $mode=array_key_exists($method,$map) ? $map[$method] : 'all';
+        $position=is_string($mode) ? array_search($mode,$modes,true) : false;
+        // Malformed explicit method stays blocked rather than resetting to all.
+        $map[$method]=$position===false ? 'off'
+            : $modes[($position+1)%count($modes)];
+        $state['gatewayAudience']=$map;
+        return $state;
+    });
+}
+
 function getRejectedAgentList(){
     global $connection, $mainValues, $buttonValues;
     

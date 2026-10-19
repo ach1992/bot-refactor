@@ -291,7 +291,7 @@ if (preg_match('/approveIncreaseDay(.*)/', $data, $match) && ($from_id == $admin
         $stmt->bind_param("s", $hash_id);
         $stmt->execute();
         $payParam = $stmt->get_result()->fetch_assoc();
-        if (!achbotSupportsPaymentSubject($connection, $payParam)) {
+        if (!achbotSupportsPaymentSubject($connection, $payParam, true)) {
             $connection->rollback();
             alert("⛔️ تایید دستی افزایشی برای این پنل مجاز نیست.", true);
             return;
@@ -441,6 +441,9 @@ if (preg_match('/approveIncreaseDay(.*)/', $data, $match) && ($from_id == $admin
 if(preg_match('/payIncreaseDayWithWallet(.*)/', $data, $match)){
     $connection->begin_transaction();
     try {
+        // Customer-wallet issuance shares the same owner-first lock as drafts
+        // and manual/hosted claims. Never lock pays before users.userid.
+        achbotPayUxLockDraftOwner($connection,(int)$from_id);
         $stmt = $connection->prepare("SELECT * FROM `pays` WHERE `hash_id` = ? FOR UPDATE");
         $stmt->bind_param("s", $match[1]);
         $stmt->execute();
@@ -464,7 +467,7 @@ if(preg_match('/payIncreaseDayWithWallet(.*)/', $data, $match)){
             return;
         }
 
-        if (!achbotSupportsPaymentSubject($connection, $payParam)) {
+        if (!achbotSupportsPaymentSubject($connection, $payParam, true)) {
             $connection->rollback();
             alert("⛔️ افزایش اشتراک در حال حاضر امکان‌پذیر نیست. اگر پرداختی انجام داده‌اید، وضعیت آن را با پشتیبانی بررسی کنید.", true);
             return;
@@ -1051,7 +1054,7 @@ if (preg_match('/approveIncreaseVolume(.*)/', $data, $match) && ($from_id == $ad
         $stmt->bind_param("s", $hash_id);
         $stmt->execute();
         $payParam = $stmt->get_result()->fetch_assoc();
-        if (!achbotSupportsPaymentSubject($connection, $payParam)) {
+        if (!achbotSupportsPaymentSubject($connection, $payParam, true)) {
             $connection->rollback();
             alert("⛔️ تایید دستی افزایشی برای این پنل مجاز نیست.", true);
             return;
@@ -1201,6 +1204,9 @@ if (preg_match('/approveIncreaseVolume(.*)/', $data, $match) && ($from_id == $ad
 if(preg_match('/payIncreaseWithWallet(.*)/', $data, $match)){
     $connection->begin_transaction();
     try {
+        // Customer-wallet issuance shares the same owner-first lock as drafts
+        // and manual/hosted claims. Never lock pays before users.userid.
+        achbotPayUxLockDraftOwner($connection,(int)$from_id);
         $stmt = $connection->prepare("SELECT * FROM `pays` WHERE `hash_id` = ? FOR UPDATE");
         $stmt->bind_param("s", $match[1]);
         $stmt->execute();
@@ -1224,7 +1230,7 @@ if(preg_match('/payIncreaseWithWallet(.*)/', $data, $match)){
             return;
         }
 
-        if (!achbotSupportsPaymentSubject($connection, $payParam)) {
+        if (!achbotSupportsPaymentSubject($connection, $payParam, true)) {
             $connection->rollback();
             alert("⛔️ افزایش اشتراک در حال حاضر امکان‌پذیر نیست. اگر پرداختی انجام داده‌اید، وضعیت آن را با پشتیبانی بررسی کنید.", true);
             return;

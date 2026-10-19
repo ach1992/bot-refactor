@@ -401,34 +401,54 @@ function achbotPayUxAudienceMethods(): array {
         'manual_usdt'=>'USDT دستی','manual_trx'=>'TRX دستی','wallet'=>'کیف پول'
     ];
 }
-function achbotPayUxAudienceAllowed(mysqli $db, string $method, int $userId): bool {
+/**
+ * $final is permitted only inside an already-open owner-locked financial
+ * transaction. It uses CURRENT locking reads of BOT_STATES and the cohort.
+ * Request-global $botState is deliberately only a menu/preview snapshot.
+ * A missing/duplicate/malformed persisted policy fails closed at issuance.
+ */
+function achbotPayUxAudienceAllowed(mysqli $db, string $method, int $userId,
+                                     bool $final = false): bool {
     if ($userId<=0 || !array_key_exists($method,achbotPayUxAudienceMethods()))
         return false;
-    $states=$GLOBALS['botState']??[];
-    if (!is_array($states)) return false;
-    // Distinguish genuinely absent legacy keys from explicitly malformed
-    // restrictions, including explicit NULL at either map or method level.
-    $configured=array_key_exists('gatewayAudience',$states)
-        ? $states['gatewayAudience'] : [];
-    if (!is_array($configured)) return false;
-    $mode=array_key_exists($method,$configured) ? $configured[$method] : 'all';
-    if (!is_string($mode) || !array_key_exists($mode,achbotPayUxAudienceModes()))
-        return false;
-    if ($mode==='off') return false;
-    if ($mode==='all') return true; // exact legacy behavior if unset
     try {
-        $stmt=$db->prepare('SELECT is_agent FROM users WHERE userid=? LIMIT 1');
+        if ($final) {
+            $stmt=$db->prepare("SELECT id,value FROM setting
+                WHERE type='BOT_STATES' ORDER BY id FOR UPDATE");
+            if (!$stmt || !$stmt->execute())
+                throw new RuntimeException('audience_settings_read_failed');
+            $rows=$stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+            $stmt->close();
+            // Historical setting.type is not UNIQUE. Reject ambiguity.
+            if (count($rows)!==1) return false;
+            $states=json_decode((string)$rows[0]['value'],true);
+        } else {
+            $states=$GLOBALS['botState']??[];
+        }
+        if (!is_array($states)) return false;
+        $configured=array_key_exists('gatewayAudience',$states)
+            ? $states['gatewayAudience'] : [];
+        if (!is_array($configured)) return false;
+        $mode=array_key_exists($method,$configured) ? $configured[$method] : 'all';
+        if (!is_string($mode) || !array_key_exists($mode,achbotPayUxAudienceModes()))
+            return false;
+        if ($mode==='off') return false;
+        if ($mode==='all') return true;
+        $stmt=$db->prepare('SELECT id,is_agent FROM users WHERE userid=? LIMIT 2'.
+                          ($final?' FOR UPDATE':''));
+        if (!$stmt) throw new RuntimeException('audience_user_prepare_failed');
         $stmt->bind_param('i',$userId);
         if (!$stmt->execute()) throw new RuntimeException('audience_user_lookup');
-        $person=$stmt->get_result()->fetch_assoc();$stmt->close();
-        if (!$person) return false;
-        if ($mode==='agents') return (int)$person['is_agent']===1;
-        if ($mode==='non_agents') return (int)$person['is_agent']!==1;
+        $people=$stmt->get_result()->fetch_all(MYSQLI_ASSOC);$stmt->close();
+        if (count($people)!==1) return false;
+        if ($mode==='agents') return (int)$people[0]['is_agent']===1;
+        if ($mode==='non_agents') return (int)$people[0]['is_agent']!==1;
         if ($mode==='buyers' || $mode==='non_buyers') {
             $stmt=$db->prepare("SELECT id FROM pays WHERE user_id=?
                 AND type='BUY_SUB'
                 AND state IN ('paid','approved','auto_cart_approved','paid_with_wallet')
-                LIMIT 1");
+                LIMIT 1".($final?' FOR UPDATE':''));
+            if (!$stmt) throw new RuntimeException('audience_buyer_prepare_failed');
             $stmt->bind_param('i',$userId);
             if (!$stmt->execute()) throw new RuntimeException('audience_buyer_lookup');
             $bought=$stmt->get_result()->fetch_assoc()!==null;$stmt->close();
@@ -436,7 +456,8 @@ function achbotPayUxAudienceAllowed(mysqli $db, string $method, int $userId): bo
         }
         $now=time();
         $stmt=$db->prepare("SELECT id FROM orders_list WHERE userid=?
-            AND status=1 AND expire_date>? LIMIT 1");
+            AND status=1 AND expire_date>? LIMIT 1".($final?' FOR UPDATE':''));
+        if (!$stmt) throw new RuntimeException('audience_orders_prepare_failed');
         $stmt->bind_param('ii',$userId,$now);
         if (!$stmt->execute()) throw new RuntimeException('audience_orders_lookup');
         $hasOrder=$stmt->get_result()->fetch_assoc()!==null;$stmt->close();
@@ -446,6 +467,7 @@ function achbotPayUxAudienceAllowed(mysqli $db, string $method, int $userId): bo
         return false;
     }
 }
+
 /** Register only messages successfully sent by the bot to the actual pay owner. */
 function achbotPayUxTrackMessage(mysqli $db, int $payId, int $chatId,
                                  $telegramResult, string $kind = 'text'): bool {
