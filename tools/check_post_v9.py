@@ -357,6 +357,7 @@ def main():
             "per_method_audience_all_agent_buyer_none_fail_closed",
             "configurable_duplicate_approved_cooldown_keeps_safe_default",
             "duplicate_receipt_review_window_configurable_only_inside_bounds",
+            "f4_explicit_null_malformed_audience_denied_absent_legacy_compatible",
         }
         if not (payment_ux.get("complete")
                 and required_payment_ux.issubset(payment_ux.get("scenarios",[]))
@@ -365,6 +366,45 @@ def main():
                 and payment_ux.get("production_mutations")==0
                 and payment_ux.get("external_provider_requests")==0):
             raise RuntimeError("Guarded payment-message lifecycle proof incomplete")
+
+        # Review F1/F2/F3: three provider issuance races, SQL rollback,
+        # source-real renewal picker and full order-target status callback.
+        checkout_race_path=Path(tmp)/"checkout-serialization.json"
+        subprocess.run(["python3",str(ROOT/"tools/test_post_v9_checkout_serialization.py"),
+                        "--run-disposable","--report",str(checkout_race_path)],
+                       cwd=ROOT,check=True,timeout=130,capture_output=True)
+        checkout_race=json.loads(checkout_race_path.read_text())
+        required_checkout_race={
+            "f1_raced_old_nowpayment_cannot_issue_after_committed_successor",
+            "f1_raced_old_nextpay_cannot_issue_after_committed_successor",
+            "f1_raced_old_zarinpal_cannot_issue_after_committed_successor",
+            "f1_failed_reservation_rolls_back_before_nonidempotent_provider",
+            "f1_interrupted_successor_locking_read_rolls_back_without_provider",
+            "f4_real_gateway_rejects_explicit_invalid_audience_0",
+            "f4_real_gateway_rejects_explicit_invalid_audience_1",
+            "f4_real_gateway_rejects_explicit_invalid_audience_2",
+            "f4_real_gateway_rejects_explicit_invalid_audience_3",
+            "f4_real_gateway_rejects_explicit_invalid_audience_4",
+            "f4_real_gateway_rejects_explicit_invalid_audience_5",
+            "f2_real_renewal_shared_crypto_selector_trx_only",
+            "f2_real_renewal_shared_crypto_selector_usdt_only",
+            "f2_real_renewal_shared_crypto_selector_both",
+            "f2_real_renewal_shared_crypto_selector_neither",
+            "f2_forged_crypto_selector_cannot_start_other_users_claim",
+            "f3_same_target_RENEW_ACCOUNT",
+            "f3_same_target_INCREASE_DAY_11_4",
+            "f3_same_target_INCREASE_VOLUME_11_4",
+            "f3_unrelated_subscription_not_superseded",
+            "f3_old_provider_claim_never_cancelled",
+        }
+        if not (checkout_race.get("complete")
+                and required_checkout_race.issubset(checkout_race.get("scenarios",[]))
+                and checkout_race.get("cases")>=len(required_checkout_race)
+                and checkout_race.get("source_real_php") is True
+                and checkout_race.get("owned_mariadb_only") is True
+                and checkout_race.get("real_provider_requests")==0
+                and checkout_race.get("production_mutations")==0):
+            raise RuntimeError("Reviewer F1/F2/F3 checkout and callback proof incomplete")
 
         auto_renew_path=Path(tmp)/"automatic-renewal-ledger.json"
         subprocess.run(["python3",str(ROOT/"tools/test_post_v9_automatic_renewal.py"),
@@ -850,6 +890,7 @@ def main():
                     "financial_native_route_guards":finance,
                     "automatic_renewal_ledger":auto_renew,
                     "payment_ux_lifecycle":payment_ux,
+                    "checkout_serialization":checkout_race,
                     "manual_payment_method_isolation":manual,
                     "manual_crypto_destination_and_admin_guards":crypto_guard,
                     "payment_reference_assurance":payment_identity,
@@ -880,6 +921,7 @@ def main():
                       "financial_native_route_cases":finance["cases"],
                       "automatic_renewal_cases":auto_renew["cases"],
                       "payment_ux_cases":payment_ux["cases"],
+                      "checkout_serialization_cases":checkout_race["cases"],
                       "manual_payment_isolation_cases":manual["cases"],
                       "manual_crypto_guard_cases":crypto_guard["cases"],
                       "payment_reference_length":payment_identity["default_length"],

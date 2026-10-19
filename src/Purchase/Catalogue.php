@@ -283,9 +283,12 @@ if((preg_match('/^discountCustomPlanDay(\d+)/',$userInfo['step'], $match) || pre
         $stmt = $connection->prepare("INSERT INTO `pays` (`hash_id`, `description`, `user_id`, `type`, `plan_id`, `server_id`, `volume`, `day`, `price`, `request_date`, `state`, `agent_bought`) 
 									VALUES (?, ?, ?, 'BUY_SUB', ?, ?, ?, ?, ?, ?, 'pending', ?)"); 
 		$stmt->bind_param("ssiiiiiiii", $hash_id, $text, $from_id, $id, $sid, $volume, $days, $price, $time, $agentBought); 
-        $stmt->execute(); 
-        $rowId = $stmt->insert_id; 
-        $stmt->close(); 
+        $rowId=achbotPayUxInsertDraft($connection,(int)$from_id,$stmt);
+        $stmt->close();
+        if ($rowId<=0) {
+            alert('⚠️ صدور پیش‌نویس به‌طور قطعی تأیید نشد؛ برای پیگیری از پشتیبانی کمک بگیرید.',true);
+            return;
+        }
     } 
      
      

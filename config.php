@@ -894,12 +894,16 @@ function achbotPaymentPolicyKeyboard(): string {
 /** Admin-only audience selectors; stored under BOT_STATES.gatewayAudience. */
 function achbotGatewayAudienceKeyboard(): string {
     global $botState;
-    $policy=is_array($botState['gatewayAudience']??null)?$botState['gatewayAudience']:[];
+    $states=is_array($botState??null)?$botState:[];
+    $policy=array_key_exists('gatewayAudience',$states)
+        ? $states['gatewayAudience'] : [];
     $labels=achbotPayUxAudienceModes();
     $rows=[];
     foreach (achbotPayUxAudienceMethods() as $name=>$methodLabel) {
-        $selected=$policy[$name]??'all';
-        $group=$labels[$selected]??'⚠️ سیاست نامعتبر (مسدود)';
+        $selected=is_array($policy)
+            ? (array_key_exists($name,$policy) ? $policy[$name] : 'all') : null;
+        $group=is_string($selected) && array_key_exists($selected,$labels)
+            ? $labels[$selected] : '⚠️ سیاست نامعتبر (مسدود)';
         $rows[]=[['text'=>$methodLabel.' — '.$group,
                   'callback_data'=>'cycleGatewayAudience_'.$name]];
     }

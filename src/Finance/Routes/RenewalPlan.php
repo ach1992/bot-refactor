@@ -64,9 +64,12 @@ if(preg_match('/sConfigRenewPlan(\d+)_(\d+)/',$data, $match) && ($botState['sell
     $stmt = $connection->prepare("INSERT INTO `pays` (`hash_id`, `description`, `user_id`, `type`, `plan_id`, `server_id`, `volume`, `day`, `price`, `request_date`, `state`)
                                 VALUES (?, ?, ?, 'RENEW_SCONFIG', ?, ?, ?, '0', ?, ?, 'pending')");
     $stmt->bind_param("ssiiiiii", $hash_id, $description, $from_id, $id, $accountServer, $inbound_id, $price, $time);
-    $stmt->execute();
-    $rowId = $stmt->insert_id;
+    $rowId=achbotPayUxInsertDraft($connection,(int)$from_id,$stmt);
     $stmt->close();
+    if ($rowId<=0) {
+        alert('⚠️ صدور پیش‌نویس به‌طور قطعی تأیید نشد؛ برای پیگیری از پشتیبانی کمک بگیرید.',true);
+        return;
+    }
 
 
     if(achbotManualEnabled('bank_transfer') && achbotPayUxAudienceAllowed($connection,'bank_transfer',(int)$from_id)) $keyboard[] = [['text' => $buttonValues['cart_to_cart'],  'callback_data' => "payBuyWithCartToCart$hash_id"]];

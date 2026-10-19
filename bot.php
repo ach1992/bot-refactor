@@ -467,9 +467,15 @@ if (($from_id == $admin || (int)($userInfo['isAdmin']??0)===1) &&
         return;
     }
     $modeNames=array_keys(achbotPayUxAudienceModes());
-    $current=is_array($botState['gatewayAudience']??null)?$botState['gatewayAudience']:[];
-    $mode=(string)($current[$method]??'all');
-    $position=array_search($mode,$modeNames,true);
+    $states=is_array($botState??null)?$botState:[];
+    $current=array_key_exists('gatewayAudience',$states)
+        ? $states['gatewayAudience'] : [];
+    if (!is_array($current)) {
+        answerCallbackQuery($callbackId,'تنظیم فعلی نامعتبر است؛ ابتدا ساختار ذخیره‌شده را اصلاح کنید.',true);
+        return;
+    }
+    $mode=array_key_exists($method,$current) ? $current[$method] : 'all';
+    $position=is_string($mode) ? array_search($mode,$modeNames,true) : false;
     // A malformed explicit policy is NOT silently reset to open-for-all.
     $current[$method]=$position===false ? 'off'
         : $modeNames[($position+1)%count($modeNames)];

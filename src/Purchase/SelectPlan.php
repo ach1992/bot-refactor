@@ -131,9 +131,12 @@ if((preg_match('/^discountSelectPlan(\d+)_(\d+)_(\d+)/',$userInfo['step'],$match
 											VALUES (?, ?, ?, 'BUY_SUB', ?, ?, '0', '0', ?, ?, 'pending', ?)"); 
 				$stmt->bind_param("ssiiiiii", $hash_id, $remark, $from_id, $id, $sid, $price, $time, $agentBought); 
             } 
-            $stmt->execute(); 
-            $rowId = $stmt->insert_id; 
-            $stmt->close(); 
+            $rowId=achbotPayUxInsertDraft($connection,(int)$from_id,$stmt);
+            $stmt->close();
+            if ($rowId<=0) {
+                alert('⚠️ صدور پیش‌نویس به‌طور قطعی تأیید نشد؛ برای پیگیری از پشتیبانی کمک بگیرید.',true);
+                return;
+            }
         }else{ 
             $price = $afterDiscount; 
         } 

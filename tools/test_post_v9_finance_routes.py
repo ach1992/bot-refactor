@@ -101,7 +101,13 @@ $nowpaymentsIpnSecret = 'LOCAL-IPN-SECRET';
 if (array_key_exists('settlement_policy', $spec)) {
     $nowpaymentsSettlementPolicy = $spec['settlement_policy'];
 }
-$paymentKeys = ['nowpayment'=>'SYNTHETIC-LOCAL-ONLY', 'nextpay'=>'SYNTHETIC-LOCAL-ONLY', 'zarinpal'=>'SYNTHETIC-LOCAL-ONLY'];
+$paymentKeys = [
+    'nowpayment'=>'SYNTHETIC-LOCAL-ONLY','nextpay'=>'SYNTHETIC-LOCAL-ONLY',
+    'zarinpal'=>'SYNTHETIC-LOCAL-ONLY',
+    'manualUsdtWalletTRC20'=>'TNPeeaaFB7K9cmo4uQpcU32zGK8G1NYqeL',
+    'manualUsdtRateToman'=>'100000','manualTrxRateToman'=>'15000',
+    'manualTrxWallet'=>'TJRabPrwbZy45sbavfcjinPJC18kjpRTv8'
+];
 $admin = 9001;
 function sendMessage(...$args) {
     $GLOBALS['events'][] = ['name'=>'sendMessage', 'args'=>$args];
@@ -159,6 +165,11 @@ function delMessage() {
 }
 function RandomString($count=9, $type='all') { return 'new-wallet-safe-hash'; }
 function getMainKeys() { return '{}'; }
+function editText(...$args) {
+    $GLOBALS['events'][]=['name'=>'editText','args'=>$args];
+    return (object)['ok'=>true];
+}
+
 function alert(...$args) { $GLOBALS['events'][]=['name'=>'alert','args'=>$args]; }
 function answerCallbackQuery(...$args) { $GLOBALS['events'][]=['name'=>'callback','args'=>$args]; }
 function createServerAccount(...$args) {
@@ -340,6 +351,8 @@ register_shutdown_function(function () {
 try {
     $connection = new mysqli('localhost', 'root', '', $dbname, 0, $socket);
     $connection->set_charset('utf8mb4');
+    if (($spec['mysqli_report_off']??false)===true)
+        mysqli_report(MYSQLI_REPORT_OFF);
     require $root . '/src/Purchase/Core.php';
     // Use the ACTUAL current wallet-credit helper; only outbound Telegram is
     // captured by the transport spy. No fake settlement implementation.
@@ -400,8 +413,12 @@ try {
     } elseif ($spec['route'] === 'prepayment') {
         $data=(string)($spec['callback_data']??'');
         $callbackId='test-callback';
+        $message_id=702;
         $from_id=(int)($spec['actor']??1001);
         require $root . '/src/Finance/Routes/PrePayment.php';
+        require $root . '/src/Finance/Routes/ManualCrypto.php';
+        $GLOBALS['events'][]=['name'=>'selected_data','data'=>$data,
+            'network'=>$GLOBALS['achbotManualCryptoChoice']??null];
     } elseif ($spec['route'] === 'marzban_edit') {
         require $root . '/src/Panel/Accounts.php';
         $change=$spec['marzban_change']??

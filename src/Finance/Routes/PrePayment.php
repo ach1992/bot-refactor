@@ -24,8 +24,9 @@ if (preg_match('/^prePayCheck_[A-Za-z0-9]+_WeSwap_[A-Za-z0-9]+$/iD', $data)) {
 // Read-only status inspection: never contacts a provider or changes money.
 if (preg_match('/^ps_([A-Za-z0-9_-]{1,50})$/D', $data, $statusMatch)) {
     $hashId = $statusMatch[1];
-    $stmt = $connection->prepare("SELECT id,hash_id,user_id,type,price,state,payid,updated_at FROM pays
-        WHERE hash_id=? LIMIT 1");
+    // Full local identity is required for same-family/same-order supersession.
+    // A reduced projection silently treats nonzero order_id as zero.
+    $stmt = $connection->prepare("SELECT * FROM pays WHERE hash_id=? LIMIT 1");
     $stmt->bind_param('s', $hashId);
     $stmt->execute();
     $pay = $stmt->get_result()->fetch_assoc();
@@ -127,8 +128,15 @@ if (preg_match('/^prePayCheck_([a-zA-Z0-9]+)_([a-zA-Z0-9]+)_([a-zA-Z0-9]+)/', $d
         'manualusdt'=>'manual_usdt','manualtrx'=>'manual_trx',
         default=>null
     };
-    if ($policyMethod!==null &&
-        !achbotPayUxAudienceAllowed($connection,$policyMethod,(int)$from_id)) {
+    // ManualUsdt is a historical SHARED crypto-selector callback. A TRX-only
+    // account must reach the menu; per-network authorization is enforced by
+    // ManualCrypto.php and again at the transactional manual-claim boundary.
+    $methodAllowed=$payMethod==='manualusdt'
+        ? (achbotPayUxAudienceAllowed($connection,'manual_usdt',(int)$from_id) ||
+           achbotPayUxAudienceAllowed($connection,'manual_trx',(int)$from_id))
+        : ($policyMethod===null ||
+           achbotPayUxAudienceAllowed($connection,$policyMethod,(int)$from_id));
+    if (!$methodAllowed) {
         answerCallbackQuery($callbackId,'این روش پرداخت برای گروه کاربری شما فعال نیست.',true);
         return;
     }

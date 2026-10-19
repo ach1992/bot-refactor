@@ -427,6 +427,18 @@ def main():
         assert audience(9501,'off') is False
         assert audience(9501,'garbage') is False
         assert audience(9501,'all') is True
+        # Reviewer F4: absent permits legacy all; explicit malformed NULL is
+        # a real configured restriction and MUST deny, including nested modes.
+        assert run(w,e,dict(action='audience',actor=9501,
+            provider='bank_transfer',states={}))['result'] is True
+        assert run(w,e,dict(action='audience',actor=9501,
+            provider='bank_transfer',states={'gatewayAudience':{}}))['result'] is True
+        for invalid in (None,7,'all',{'bank_transfer':None},
+                        {'bank_transfer':[]},{'bank_transfer':{}},
+                        {'bank_transfer':True},{'bank_transfer':'INVALID'}):
+            assert run(w,e,dict(action='audience',actor=9501,
+                provider='bank_transfer',states={'gatewayAudience':invalid}))['result'] is False, invalid
+        cases.append('f4_explicit_null_malformed_audience_denied_absent_legacy_compatible')
         assert run(w,e,dict(action='audience',actor=9501,provider='weSwap',
                             states={'gatewayAudience':{}}))['result'] is False
         cases.append('per_method_audience_all_agent_buyer_none_fail_closed')

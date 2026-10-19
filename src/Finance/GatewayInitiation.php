@@ -11,18 +11,30 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
  * by another gateway. The marker remains on an ambiguous provider response;
  * only an operator with independent provider evidence may release it.
  */
-function achbotReserveCheckoutProvider(mysqli $db, int $orderId, string $provider): ?string {
+function achbotReserveCheckoutProvider(mysqli $db, int $orderId, string $provider,
+                                        array $original): ?string {
+    $ownerId=(int)($original['user_id']??0);
     if (!in_array($provider, ['nextpay','zarinpal'], true) || $orderId <= 0 ||
+        $ownerId<=0 ||
         !achbotSharedPaymentTablesReady($db)) return null;
     $marker = 'achbot_' . $provider . '_creating_' . $orderId;
     try {
-        $db->begin_transaction();
-        $stmt = $db->prepare("SELECT payid,state,hash_id,price FROM pays WHERE id=? FOR UPDATE");
+        if (!$db->begin_transaction()) return null;
+        // Same lock order as all customer-draft INSERTs. A replacement
+        // committed after an initial GET must be visible by this boundary.
+        achbotPayUxLockDraftOwner($db,$ownerId);
+        $stmt = $db->prepare("SELECT * FROM pays WHERE id=? FOR UPDATE");
         $stmt->bind_param('i',$orderId);
-        $stmt->execute();
+        if (!$stmt->execute()) throw new RuntimeException('checkout_pay_lock_failed');
         $row = $stmt->get_result()->fetch_assoc();
         $stmt->close();
-        if (!$row || $row['state'] !== 'pending' || !empty($row['payid']) ||
+        if (!$row || (int)$row['user_id']!==$ownerId ||
+            (string)$row['hash_id']!==(string)$original['hash_id'] ||
+            (string)$row['type']!==(string)$original['type'] ||
+            (int)$row['price']!==(int)$original['price'] ||
+            (int)$row['request_date']!==(int)$original['request_date'] ||
+            (int)($row['order_id']??0)!==(int)($original['order_id']??0) ||
+            !achbotPayUxLockedCheckoutUsable($db,$row) ||
             (int)$row['price'] <= 0 || empty($row['hash_id'])) {
             $db->rollback();
             return null;
@@ -36,8 +48,13 @@ function achbotReserveCheckoutProvider(mysqli $db, int $orderId, string $provide
              local_amount_toman,stage)
             VALUES (?,?,?,?,'toman',?,'creating')");
         $stmt->bind_param('isssi',$orderId,$provider,$row['hash_id'],$quoted,$amount);
-        $stmt->execute();
+        $inserted=$stmt->execute();
+        $insertCount=$stmt->affected_rows;
         $stmt->close();
+        // mysqli_report(MYSQLI_REPORT_OFF) must never permit a payid marker
+        // to commit without its required 003 provider-attempt record.
+        if ($inserted!==true || $insertCount!==1)
+            throw new RuntimeException('checkout_ledger_insert_failed');
         $stmt = $db->prepare("UPDATE pays SET payid=? WHERE id=? AND state='pending'
             AND (payid IS NULL OR payid='')");
         $stmt->bind_param('si',$marker,$orderId);
@@ -408,15 +425,23 @@ if(mysqli_num_rows($payInfo)==0){
         // remains visibly reserved until safe operator reconciliation.
         $checkoutMarker = 'achbot_nowpayment_creating_' . (int)$orderId;
         try {
-            $connection->begin_transaction();
+            if (!$connection->begin_transaction())
+                throw new RuntimeException('checkout_reservation_begin_failed');
+            achbotPayUxLockDraftOwner($connection,(int)$payParam['user_id']);
             $stmt = $connection->prepare(
-                "SELECT payid,state FROM pays WHERE id=? FOR UPDATE");
+                "SELECT * FROM pays WHERE id=? FOR UPDATE");
             $stmt->bind_param('i', $orderId);
-            $stmt->execute();
+            if (!$stmt->execute()) throw new RuntimeException('checkout_pay_lock_failed');
             $locked = $stmt->get_result()->fetch_assoc();
             $stmt->close();
-            if (!$locked || $locked['state'] !== 'pending' || !empty($locked['payid'])) {
-                throw new RuntimeException('checkout_already_reserved');
+            if (!$locked || (int)$locked['user_id']!==(int)$payParam['user_id'] ||
+                (string)$locked['hash_id']!==$hash_id ||
+                (string)$locked['type']!==(string)$payParam['type'] ||
+                (int)($locked['order_id']??0)!==(int)($payParam['order_id']??0) ||
+                (int)$locked['request_date']!==(int)$payParam['request_date'] ||
+                (int)$locked['price']!==(int)$amount ||
+                !achbotPayUxLockedCheckoutUsable($connection,$locked)) {
+                throw new RuntimeException('checkout_draft_no_longer_eligible');
             }
             $stmt = $connection->prepare("INSERT INTO payment_attempts
                 (pay_row_id,provider,order_hash,provider_reference,checkout_url,quote_amount,quote_currency,
@@ -424,8 +449,11 @@ if(mysqli_num_rows($payInfo)==0){
                 VALUES (?,'nowpayments',?,NULL,NULL,?,'usd',?,?,?,'creating')");
             $stmt->bind_param('ississ', $orderId, $hash_id, $quoteUsd,
                 $amount, $payoutCurrency, $minimumOutcome);
-            $stmt->execute();
+            $inserted=$stmt->execute();
+            $insertCount=$stmt->affected_rows;
             $stmt->close();
+            if ($inserted!==true || $insertCount!==1)
+                throw new RuntimeException('checkout_ledger_insert_failed');
             $stmt = $connection->prepare("UPDATE pays SET payid=? WHERE id=? AND state='pending'
                 AND (payid IS NULL OR payid='')");
             $stmt->bind_param('si',$checkoutMarker,$orderId);
@@ -566,7 +594,7 @@ if(mysqli_num_rows($payInfo)==0){
     }
     
     elseif(isset($_GET['zarinpal'])){
-        $marker=achbotReserveCheckoutProvider($connection,(int)$orderId,'zarinpal');
+        $marker=achbotReserveCheckoutProvider($connection,(int)$orderId,'zarinpal',$payParam);
         if ($marker === null) {
             showForm(achbotSharedPaymentTablesReady($connection)
                 ? "یک درخواست پرداخت برای این سفارش قبلاً صادر شده است؛ تغییر درگاه نیازمند بررسی است."
@@ -605,7 +633,7 @@ if(mysqli_num_rows($payInfo)==0){
     }
 
     elseif(isset($_GET['nextpay'])){
-        $marker=achbotReserveCheckoutProvider($connection,(int)$orderId,'nextpay');
+        $marker=achbotReserveCheckoutProvider($connection,(int)$orderId,'nextpay',$payParam);
         if ($marker === null) {
             showForm(achbotSharedPaymentTablesReady($connection)
                 ? "یک درخواست پرداخت برای این سفارش قبلاً صادر شده است؛ تغییر درگاه نیازمند بررسی است."

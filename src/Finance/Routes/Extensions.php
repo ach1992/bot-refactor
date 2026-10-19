@@ -93,8 +93,12 @@ if(preg_match('/selectPlanDayIncrease(?<orderId>.+)_(?<dayId>.+)/',$data,$match)
 								VALUES (?, ?, ?, ?, ?, ?, '0', '0', ?, ?, 'pending')");
     $type = "INCREASE_DAY_$data";
 	$stmt->bind_param("sisiiiii", $hash_id, $from_id, $type, $plan_id, $server_id, $order_id, $planprice, $time);
-    $stmt->execute();
+    $newDraftId=achbotPayUxInsertDraft($connection,(int)$from_id,$stmt);
     $stmt->close();
+    if ($newDraftId<=0) {
+        alert('⚠️ ثبت پیش‌نویس به‌طور قطعی تأیید نشد؛ از ایجاد پرداخت مجدد پرهیز کنید.',true);
+        return;
+    }
 
 
     $keyboard = array();
@@ -846,8 +850,12 @@ if(preg_match('/increaseVolumePlan(?<orderId>.+)_(?<volumeId>.+)/',$data,$match)
 								VALUES (?, ?, ?, ?, ?, ?, '0', '0', ?, ?, 'pending')");
 	$type = "INCREASE_VOLUME_$data";
 	$stmt->bind_param("sisiiiii", $hash_id, $from_id, $type, $plan_id, $server_id, $order_id, $planprice, $time);
-	$stmt->execute();
+	$newDraftId=achbotPayUxInsertDraft($connection,(int)$from_id,$stmt);
 	$stmt->close();
+	if ($newDraftId<=0) {
+	    alert('⚠️ ثبت پیش‌نویس به‌طور قطعی تأیید نشد؛ از ایجاد پرداخت مجدد پرهیز کنید.',true);
+	    return;
+	}
 
     $keyboard = array();
 

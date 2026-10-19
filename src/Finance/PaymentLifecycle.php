@@ -132,6 +132,48 @@ function achbotPayUxExpireDraft(mysqli $db, int $payId, ?int $clock = null): boo
     }
 }
 
+/**
+ * Lock the owning user before any unclaimed-draft INSERT or hosted-provider
+ * reservation. users.userid is historically indexed but NOT unique: refuse
+ * missing/ambiguous identity. Never perform a remote operation under this lock.
+ *
+ * Lock order: users(userid) -> pays(id) -> payment_attempts(pay_row_id).
+ * Replacement INSERTs hold the SAME owner lock until COMMIT, preventing
+ * phantom successor drafts between a reservation's recheck and COMMIT.
+ */
+function achbotPayUxLockDraftOwner(mysqli $db, int $userId): void {
+    if ($userId <= 0) throw new RuntimeException('draft_owner_invalid');
+    $stmt=$db->prepare('SELECT id FROM users WHERE userid=? FOR UPDATE');
+    if (!$stmt) throw new RuntimeException('draft_owner_lock_unavailable');
+    $stmt->bind_param('i',$userId);
+    if (!$stmt->execute()) throw new RuntimeException('draft_owner_lock_failed');
+    $rows=$stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+    $stmt->close();
+    if (count($rows)!==1) throw new RuntimeException('draft_owner_missing_or_ambiguous');
+}
+
+/** Execute a NEW customer draft under the same lock held by all issuers. */
+function achbotPayUxInsertDraft(mysqli $db, int $actor, mysqli_stmt $insert): int {
+    $started=false;
+    try {
+        if (!$db->begin_transaction()) throw new RuntimeException('draft_begin_failed');
+        $started=true;
+        achbotPayUxLockDraftOwner($db,$actor);
+        if (!$insert->execute() || $insert->affected_rows!==1)
+            throw new RuntimeException('draft_insert_failed');
+        $draftId=(int)$insert->insert_id;
+        if ($draftId<=0 || !$db->commit())
+            throw new RuntimeException('draft_commit_unknown');
+        return $draftId;
+    } catch (Throwable $error) {
+        if ($started) {try{$db->rollback();}catch(Throwable $ignored){}}
+        error_log('achbot_customer_draft_creation_deferred');
+        // A lost COMMIT ack is ambiguous. The caller must not retry this
+        // potentially committed invoice or advertise an unverified hash.
+        return 0;
+    }
+}
+
 /** A payment family groups only related recurring price/quantity variants. */
 function achbotPayUxPaymentFamily(string $type): string {
     return implode('_',array_slice(explode('_',$type),0,2));
@@ -140,7 +182,7 @@ function achbotPayUxPaymentFamily(string $type): string {
 /** A later persisted payment draft makes an older *UI link* stale.
  * Issued provider invoices remain financial claims and are NEVER auto-cancelled.
  */
-function achbotPayUxHasNewer(mysqli $db, array $pay): bool {
+function achbotPayUxHasNewer(mysqli $db, array $pay, bool $lockingRead=false): bool {
     $payId=(int)($pay['id']??0);$userId=(int)($pay['user_id']??0);
     if ($payId<=0 || $userId<=0) return false;
     try {
@@ -151,7 +193,7 @@ function achbotPayUxHasNewer(mysqli $db, array $pay): bool {
             "SELECT id FROM pays WHERE user_id=? AND SUBSTRING_INDEX(type,'_',2)=? AND id>?
                AND request_date>=? AND COALESCE(order_id,0)=?
                AND state NOT IN ('expired','expired_have_sent','mismatched_plan','declined')
-             LIMIT 1"
+             LIMIT 1".($lockingRead ? ' FOR UPDATE' : '')
         );
         $stmt->bind_param('isiii',$userId,$family,$payId,$then,$orderId);
         if (!$stmt->execute()) throw new RuntimeException('successor_read_failed');
@@ -161,6 +203,22 @@ function achbotPayUxHasNewer(mysqli $db, array $pay): bool {
         // The checkout URL must fail closed if newer status is unreadable.
         throw new RuntimeException('payment_successor_check_unavailable');
     }
+}
+
+/**
+ * Check age and committed successors AGAIN inside the exact reservation
+ * transaction after the parent-user and target-pay locks. A regular SELECT
+ * can see an earlier REPEATABLE READ snapshot; the successor query must be
+ * a CURRENT locking read. A failed read rejects issuance without side effects.
+ */
+function achbotPayUxLockedCheckoutUsable(mysqli $db, array $pay): bool {
+    if ((int)($pay['id']??0)<=0 || (int)($pay['user_id']??0)<=0 ||
+        (string)($pay['state']??'')!=='pending' ||
+        (string)($pay['payid']??'')!=='' ||
+        (int)($pay['request_date']??0)<=0 ||
+        time()-(int)$pay['request_date']>=achbotPayUxDraftDeadlineSeconds())
+        return false;
+    return !achbotPayUxHasNewer($db,$pay,true);
 }
 
 /**
@@ -342,9 +400,13 @@ function achbotPayUxAudienceAllowed(mysqli $db, string $method, int $userId): bo
     if ($userId<=0 || !array_key_exists($method,achbotPayUxAudienceMethods()))
         return false;
     $states=$GLOBALS['botState']??[];
-    $configured=is_array($states)?($states['gatewayAudience']??[]):[];
+    if (!is_array($states)) return false;
+    // Distinguish genuinely absent legacy keys from explicitly malformed
+    // restrictions, including explicit NULL at either map or method level.
+    $configured=array_key_exists('gatewayAudience',$states)
+        ? $states['gatewayAudience'] : [];
     if (!is_array($configured)) return false;
-    $mode=$configured[$method]??'all';
+    $mode=array_key_exists($method,$configured) ? $configured[$method] : 'all';
     if (!is_string($mode) || !array_key_exists($mode,achbotPayUxAudienceModes()))
         return false;
     if ($mode==='off') return false;
