@@ -13,6 +13,30 @@ if (!function_exists('processWalletPayment')) {
         try {
             if (!$connection->begin_transaction())
                 throw new RuntimeException('wallet_begin_failed');
+            // An unsupported/retired panel can be REJECTED by a safe
+            // snapshot preflight without acquiring a financial lock.
+            // This preview NEVER authorizes payment: every accepted path
+            // reacquires owner -> pays -> attempt locks and rechecks the
+            // current order/plan before wallet debit or fulfillment.
+            $preview=$connection->prepare("SELECT * FROM `pays` WHERE `hash_id`=? LIMIT 1");
+            $preview->bind_param('s',$hashId);
+            if (!$preview->execute())
+                throw new RuntimeException('wallet_preview_read_failed');
+            $previewPay=$preview->get_result()->fetch_assoc();
+            $preview->close();
+            if ($previewPay && (int)($previewPay['user_id']??0)===(int)$from_id &&
+                !achbotSupportsPaymentSubject($connection,$previewPay)) {
+                $connection->rollback();
+                alert("⛔️ پرداخت این اشتراک در حال حاضر امکان‌پذیر نیست؛ مبلغی از کیف پول کسر نشد.", true);
+                return [
+                    'status'=>'unsupported_panel',
+                    'payInfo'=>$previewPay,
+                    'userRow'=>null,
+                    'userReferrer'=>null,
+                    'uid'=>null,
+                    'price'=>null,
+                ];
+            }
             // Serialize the FINAL new wallet method selection against the
             // customer draft writers and hosted/manual claims. The shared
             // invariant is owner -> pays -> provider attempt, NEVER pays ->

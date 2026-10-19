@@ -29,7 +29,8 @@ final class FixtureStatement {
         $this->sql = $sql;
     }
     public function bind_param(...$args) {}
-    public function execute() {}
+    // Model mysqli_stmt::execute() on a successful read-only preflight.
+    public function execute() {return true;}
     public function get_result() {
         if (strpos($this->sql, 'FROM `pays`') !== false) {
             return new FixtureRows([
@@ -55,7 +56,8 @@ final class FixtureDatabase {
     public $commits = 0;
     public $reads = 0;
     public function __construct($case) { $this->case = $case; }
-    public function begin_transaction() {}
+    // Mirror mysqli::begin_transaction() success, not a nullable stub.
+    public function begin_transaction() {return true;}
     public function prepare($sql) {
         if (!preg_match('/^SELECT\\s/i', ltrim($sql))) {
             throw new RuntimeException('Financial mutation attempted during rejected preflight');
