@@ -5,6 +5,8 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     exit;
 }
 
+require_once __DIR__ . '/../PaymentLifecycle.php';
+
 // Retired automatic TRON buttons must never reach the old TXID claim path.
 if (preg_match('/^prePayCheck_[A-Za-z0-9]+_TronWallet_[A-Za-z0-9_-]+$/iD', (string)$data)) {
     answerCallbackQuery($callbackId,
@@ -32,10 +34,12 @@ if (preg_match('/^ps_([A-Za-z0-9_-]{1,50})$/D', $data, $statusMatch)) {
         answerCallbackQuery($callbackId, "این سفارش برای شما قابل مشاهده نیست.");
         return;
     }
+    achbotPayUxTrackClicked($connection,(int)$pay['id'],(int)$from_id,(int)$message_id);
     $provider = null;
     $stage = null;
+    $attempt = null;
     try {
-        $stmt = $connection->prepare('SELECT provider,stage FROM payment_attempts WHERE pay_row_id=? LIMIT 1');
+        $stmt = $connection->prepare('SELECT provider,stage,payment_id,provider_status FROM payment_attempts WHERE pay_row_id=? LIMIT 1');
         $id = (int)$pay['id'];
         $stmt->bind_param('i',$id);
         $stmt->execute();
@@ -53,45 +57,25 @@ if (preg_match('/^ps_([A-Za-z0-9_-]{1,50})$/D', $data, $statusMatch)) {
         ($provider === 'nowpayments' ? 'پرداخت رمزارزی' :
         ($provider === 'nextpay' ? 'NextPay' :
         ($provider === 'zarinpal' ? 'Zarinpal' : 'نامشخص'))))));
-    $state = (string)$pay['state'];
-    if ($state === 'have_sent') {
-        $description = $manual ? '📥 رسید دریافت شده و در انتظار بررسی مدیر است.' :
-            '⏳ اطلاعات پرداخت دریافت شده و در حال بررسی است.';
-    } elseif (in_array($state, ['paid','approved','auto_cart_approved'], true)) {
-        $description = '✅ تأیید پرداخت در سوابق سفارش ثبت شده است. تکمیل تحویل سرویس یا اعتبار کیف پول را جداگانه بررسی کنید.';
-    } elseif ($state === 'declined') {
-        $description = '❌ رسید این سفارش توسط مدیر رد شده است. برای جزئیات به پیام بررسی مراجعه کنید.';
-    } elseif ($stage === 'receiving') {
-        $description = '⏳ تصویر پرداخت در حال ثبت برای بررسی است؛ اگر نتیجه دریافت نکردید با پشتیبانی تماس بگیرید.';
-    } elseif ($stage === 'review' || $stage === 'checking' || $stage === 'fulfilling' ||
-              !empty($pay['payid'])) {
-        $description = '⚠️ وضعیت پرداخت یا تحویل در حال بررسی است؛ پرداخت مجدد انجام ندهید.';
-    } elseif ($state === 'pending' || $state === 'send') {
-        $description = '🧾 سفارش هنوز در انتظار ثبت یا تأیید پرداخت است.';
-    } else {
-        $description = '⚠️ وضعیت سفارش به بررسی نیاز دارد. برای ادامه با پشتیبانی تماس بگیرید.';
-    }
-    $orderRef = htmlspecialchars($hashId, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
-    $subject = htmlspecialchars(payTypeToDescription((string)$pay['type']), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
-    $body = "🧾 <b>وضعیت سفارش</b>\n" .
-        "شناسه: <code>{$orderRef}</code>\n" .
-        "موضوع: {$subject}\n" .
-        "مبلغ سفارش: <b>" . number_format((int)$pay['price']) . " تومان</b>\n" .
-        "روش: {$methodName}\n\n" . $description;
-    $terminal = in_array($state, ['paid','approved','auto_cart_approved','declined',
-                                   'expired','expired_have_sent','mismatched_plan'], true);
-    if (in_array($state, ['approved','auto_cart_approved'], true) &&
+    // A newer order invalidates the old call-to-action even before the next
+    // one-minute maintenance tick. Keep any issued provider claim intact.
+    try { $pay['superseded']=achbotPayUxHasNewer($connection,$pay); }
+    catch (Throwable $ignored) { $pay['superseded']=true; }
+    $body = achbotPayUxStatusText($pay,$attempt) .
+        "\nروش: " . htmlspecialchars($methodName,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8');
+    $uiState = achbotPayUxState($pay,$attempt);
+    if (in_array((string)$pay['state'],['approved','auto_cart_approved'],true) &&
         preg_match('/^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}$/D',
                    (string)($pay['updated_at'] ?? ''))) {
         $body .= "\n📅 تاریخ تأیید: <code>" .
-            htmlspecialchars((string)$pay['updated_at'], ENT_QUOTES, 'UTF-8') . "</code>";
+            htmlspecialchars((string)$pay['updated_at'],ENT_QUOTES,'UTF-8') . "</code>";
     }
-    $actions = [];
-    if (!$terminal && !($manual && in_array($state, ['pending','send'], true))) {
-        $actions[] = [['text'=>'🔄 بررسی دوباره وضعیت','callback_data'=>'ps_'.$hashId]];
+    $actions=[];
+    if (!in_array($uiState,['expired','declined','payment_recorded'],true)) {
+        $actions[]=[['text'=>'🔄 بررسی دوباره وضعیت','callback_data'=>'ps_'.$hashId]];
     }
-    $actions[] = [['text'=>'🏠 منوی اصلی','callback_data'=>'mainMenu']];
-    $keyboard = inlineKeyboard($actions);
+    $actions[]=[['text'=>'🏠 منوی اصلی','callback_data'=>'mainMenu']];
+    $keyboard=inlineKeyboard($actions);
     answerCallbackQuery($callbackId, "وضعیت سفارش از اطلاعات ثبت‌شده خوانده شد.");
     // The clicked Telegram message is our canonical status card; never
     // manufacture a second status message on every refresh.
@@ -134,6 +118,14 @@ if (preg_match('/^prePayCheck_([a-zA-Z0-9]+)_([a-zA-Z0-9]+)_([a-zA-Z0-9]+)/', $d
         return;
     }
 
+    if (achbotPayUxExpireDraft($connection,(int)$payInfo['id'])) {
+        answerCallbackQuery($callbackId,'مهلت این درخواست پایان یافته است.',true);
+        editText($message_id,
+            '⌛️ این درخواست پرداخت منقضی شده است. از منوی ربات درخواست جدید بسازید.',
+            achbotPayUxStatusKeyboard((string)$payInfo['hash_id']), 'HTML',$from_id);
+        achbotPayUxTrackClicked($connection,(int)$payInfo['id'],(int)$from_id,(int)$message_id);
+        return;
+    }
     $subjectSupported=achbotSupportsPaymentSubject($connection,$payInfo);
     // A changed RENEW_ACCOUNT plan is deliberately handled below with its
     // own owner/provider preflight; other unsupported subjects fail here.
@@ -248,29 +240,13 @@ if (preg_match('/^prePayCheck_([a-zA-Z0-9]+)_([a-zA-Z0-9]+)_([a-zA-Z0-9]+)/', $d
         return;
     }
 
-    if ($now - (int)$payInfo['request_date'] > 10800 && !$activeGatewayClaim) {
-        if ($payInfo['state']==='pending') {
-            // A provider may have claimed payid after the SELECT above.
-            // Expire only the same still-unclaimed row; never orphan an
-            // external invoice through an old menu button.
-            $stmt=$connection->prepare("UPDATE pays SET state='expired'
-                WHERE id=? AND state='pending' AND (payid IS NULL OR payid='')");
-            $stmt->bind_param('i',$payInfo['id']);
-            $stmt->execute();
-            $expired=$stmt->affected_rows===1;
-            $stmt->close();
-            if (!$expired) {
-                answerCallbackQuery($callbackId,"پرداخت این سفارش در حال بررسی است.");
-                return;
-            }
-        } elseif ($payInfo['state']!=='expired') {
-            answerCallbackQuery($callbackId,"وضعیت این سفارش تغییر کرده است.");
-            return;
-        }
-
-        delMessage();
-        sendMessage("⏳ مهلت پرداخت این سفارش به پایان رسیده است.\n🔄 لطفاً دوباره اقدام کنید.",getMainKeys());
-        exit;
+    if ($now-(int)$payInfo['request_date'] >= achbotPayUxDraftDeadlineSeconds()
+        && !$activeGatewayClaim) {
+        // The guarded expiry may have failed because the original payment
+        // was claimed concurrently. Never bypass that financial guard.
+        answerCallbackQuery($callbackId,
+            'مهلت پیش‌نویس پایان یافته یا وضعیت آن نیازمند بررسی است.',true);
+        return;
     }
 
     // اگر روش پرداخت ریدایرکتی بود
@@ -278,25 +254,22 @@ if (preg_match('/^prePayCheck_([a-zA-Z0-9]+)_([a-zA-Z0-9]+)_([a-zA-Z0-9]+)/', $d
 		$redirectUrl = $botUrl . "pay/?$payMethod&hash_id=$hash_id";
 
 		// دکمه با لینک مستقیم به درگاه
-		$button = [
-			'inline_keyboard' => [
-				[['text' => "🔗 رفتن به درگاه پرداخت", 'url' => $redirectUrl]]
-			]
-		];
-
-		answerCallbackQuery($callbackId, "در حال آماده‌سازی لینک پرداخت...");
-        if ($payMethod === 'nowpayment') {
-            sendMessage("💳 برای ادامه پرداخت روی دکمه زیر بزنید.
-✅ بعد از تایید نهایی توسط درگاه، نتیجه خودکار در ربات ثبت می‌شود؛ نیازی به زدن دکمه بازگشت نیست.
-🔗 فاکتور صادرشده قابل بازیابی است و در گفت‌وگو لینک مستقیم آن هم برای شما ارسال می‌شود.
-⏳ زمان نهایی‌شدن به شبکه و پردازش پذیرنده بستگی دارد.", json_encode($button), "html", $from_id);
-        } else {
-            sendMessage("⚠️ دقت کنید هنگام پرداخت کارمزد را در نظر بگیرید که از مقدار پرداختی شما کسر نشود.
-✅ بعد پرداخت باید صفحه را باز نگه دارید تا تایید نهایی شود و بعد به ربات منتقل شوید.
-🔰 حتما PaymentID یا شناسه پرداخت خودتان در صفحه باز شده را یادداشت کنید.
-💳 برای ادامه پرداخت روی دکمه زیر بزنید.
-⏳ اعتبار این لینک 30 دقیقه می باشد.", json_encode($button), "html", $from_id);
-        }
+        $button = [
+            'inline_keyboard'=>[
+                [['text'=>'💳 پرداخت فاکتور','url'=>$redirectUrl]],
+                [['text'=>'🔄 بررسی وضعیت سفارش','callback_data'=>'ps_'.$hash_id]]
+            ]
+        ];
+        answerCallbackQuery($callbackId,'فاکتور آمادهٔ پرداخت است.');
+        $extra = $payMethod==='nowpayment'
+            ? '⏳ پردازش رمزارزی ممکن است بیش از چند دقیقه طول بکشد.'
+            : '⚠️ بازگشت از درگاه، به‌تنهایی تأیید مالی نیست.';
+        $sent = sendMessage(
+            "🧾 <b>فاکتور آماده است</b>\n🆔 شناسه: <code>".$hash_id.
+            "</code>\n".$extra."\nپس از پرداخت، وضعیت سفارش را در ربات بررسی کنید.",
+            json_encode($button,JSON_UNESCAPED_UNICODE),'HTML',$from_id
+        );
+        achbotPayUxTrackMessage($connection,(int)$payInfo['id'],(int)$from_id,$sent);
 		exit;
 	}
 

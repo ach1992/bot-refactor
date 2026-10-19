@@ -8,6 +8,7 @@ from __future__ import annotations
 import argparse
 import json
 import subprocess
+import time
 from pathlib import Path
 
 import test_access_state as owned
@@ -355,11 +356,19 @@ def run_php(work,env,driver,hash_id,op,method='bank_transfer',user=1001,**more):
     try: return json.loads(p.stdout)['result']
     except Exception as exc:raise RuntimeError('invalid manual driver: '+repr(p.stdout)) from exc
 
+_fixture_seq=0
 def seed(work,env,hash_id,price=100000,owner=1001):
+    # Each independently seeded scenario represents an unrelated synthetic
+    # quote, not a newer committed user journey. Decreasing, still-fresh
+    # request times preserve those cases while the separate lifecycle tests
+    # prove that a genuinely newer same-user quote supersedes an old one.
+    global _fixture_seq
+    _fixture_seq+=1
+    created=int(time.time())-_fixture_seq
     safe="'"+hash_id+"'"
     if not hash_id.isascii() or not hash_id.isalnum():raise ValueError(hash_id)
     query(work,env,"INSERT INTO pays (hash_id,user_id,type,price,request_date,state) "
-          f"VALUES ({safe},{int(owner)},'INCREASE_WALLET',{int(price)},1700000000,'pending')")
+          f"VALUES ({safe},{int(owner)},'INCREASE_WALLET',{int(price)},{created},'pending')")
 
 def check():
     cases=[]
@@ -518,6 +527,12 @@ def check():
             assert not any(e['name']=='sendPhoto' for e in repeated)
             assert query(work,env,'SELECT userid,wallet FROM users ORDER BY userid')==wallet_before
             cases.append('real_wallet_route_photo_replay_denied_'+wanted)
+            # Independent fixture case: once the submitted receipt has been
+            # asserted, backdate that completed synthetic case so the NEXT
+            # unrelated method scenario cannot trip the real 6-hour duplicate
+            # receipt review guard. The source guard itself is unchanged.
+            query(work,env,f"UPDATE pays SET request_date=1700000000 "
+                 f"WHERE hash_id='{key}' AND state='have_sent'")
 
         assert query(work,env,'SELECT COUNT(*) FROM payment_transactions')=='0'
         assert query(work,env,"SELECT COUNT(*) FROM pays WHERE state IN ('approved','paid','auto_cart_approved')")=='0'
@@ -1718,19 +1733,28 @@ def check():
         finally:
             query(work,env,'DROP TRIGGER test_topup_fail_insert')
 
-        # Legacy mysqli non-throw mode must also roll back on DELETE errors.
-        # The shared cleaner must not silently return success after a failed
-        # DELETE, then let the new payment INSERT commit.
+        # New source never DELETEs an old pays quote: test that even a
+        # database-level DELETE prohibition cannot affect one safe new draft
+        # under mysqli nonthrowing mode. The previous quote survives intact.
         amount_ready()
-        before=topup_snapshot()
+        previous=query(work,env,"SELECT id,hash_id,state,payid FROM pays "
+                              "WHERE hash_id='topupatomicold'")
+        before_attempts=query(work,env,"SELECT * FROM payment_attempts ORDER BY id")
+        before_balance=query(work,env,"SELECT userid,wallet FROM users ORDER BY id")
         query(work,env,"CREATE TRIGGER test_topup_fail_delete BEFORE DELETE ON pays "
               "FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='synthetic_delete_failure'")
         try:
             events=run_route(work,env,route_driver,route='topup',text='200000',
-                             expected_review=True,mysqli_report_off=True)
-            assert topup_snapshot()==before,('delete_rollback','partial financial mutation')
-            assert any('نیازمند بررسی' in str(e.get('args')) for e in events)
-            cases.append('real_topup_mysqli_report_off_delete_failure_rolls_back')
+                             mysqli_report_off=True)
+            assert any(e['name']=='sendMessage' and
+                       'اطلاعات شارژ' in str(e.get('args')) for e in events)
+            assert query(work,env,"SELECT id,hash_id,state,payid FROM pays "
+                            "WHERE hash_id='topupatomicold'")==previous
+            assert query(work,env,"SELECT * FROM payment_attempts ORDER BY id")==before_attempts
+            assert query(work,env,"SELECT userid,wallet FROM users ORDER BY id")==before_balance
+            assert query(work,env,"SELECT price FROM pays WHERE user_id=1001 "
+                       "AND state='pending' ORDER BY id DESC LIMIT 1")=='200000'
+            cases.append('real_topup_never_deletes_historical_draft_under_nonthrowing_sql')
         finally:
             query(work,env,'DROP TRIGGER test_topup_fail_delete')
 
@@ -1748,10 +1772,11 @@ def check():
         assert topup_snapshot()==after
         cases.append('real_topup_postcommit_telegram_failure_never_repeats_invoice')
 
-        # Two real PHP + MariaDB sessions race for the SAME pending step. Only
-        # one can claim, delete the previous draft and INSERT a new invoice.
+        # Two real PHP + MariaDB sessions race for the SAME pending step:
+        # one new invoice is committed, while every old draft is retained.
         amount_ready()
         seed(work,env,'topupconcurrentold',price=150000)
+        count_before=int(query(work,env,'SELECT COUNT(*) FROM pays'))
         with ThreadPoolExecutor(max_workers=2) as executor:
             futures=[executor.submit(run_route,work,env,route_driver,route='topup',
                                      text='250000',pause_before_insert_ms=250)
@@ -1761,12 +1786,10 @@ def check():
                           for e in events) for events in results)
         assert successes==1,(successes,results)
         assert get_topup_step().startswith('achbotWalletTopup:done:990003:520:')
-        assert int(query(work,env,"SELECT COUNT(*) FROM pays p WHERE p.type='INCREASE_WALLET' "
-            "AND p.user_id=1001 AND p.state='pending' AND (p.payid IS NULL OR p.payid='') "
-            "AND NOT EXISTS (SELECT 1 FROM payment_attempts a WHERE a.pay_row_id=p.id)"))==1
+        assert int(query(work,env,'SELECT COUNT(*) FROM pays'))==count_before+1
         assert query(work,env,"SELECT price FROM pays WHERE type='INCREASE_WALLET' "
             "AND user_id=1001 AND state='pending' AND payid IS NULL ORDER BY id DESC LIMIT 1")=='250000'
-        assert query(work,env,"SELECT COUNT(*) FROM pays WHERE hash_id='topupconcurrentold'")=='0'
+        assert query(work,env,"SELECT COUNT(*) FROM pays WHERE hash_id='topupconcurrentold'")=='1'
         assert query(work,env,
             "SELECT id,hash_id,payid,state,price FROM pays WHERE hash_id='topupissuedold'")==issued_before
         assert query(work,env,

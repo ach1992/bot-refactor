@@ -531,6 +531,8 @@ function achbotWalletDirectAllowedLocked(mysqli $connection, array $pay,
         (string)($pay['payid'] ?? '') !== '') return false;
     $id = (int)($pay['id'] ?? 0);
     if ($id <= 0) return false;
+    require_once __DIR__ . '/PaymentLifecycle.php';
+    if (!achbotPayUxUnclaimedDraftUsable($connection,$pay)) return false;
     try {
         $stmt = $connection->prepare('SELECT id FROM payment_attempts WHERE pay_row_id=? LIMIT 1 FOR UPDATE');
         $stmt->bind_param('i',$id);
@@ -613,7 +615,7 @@ function achbotManualClaim(mysqli $connection, array $payInfo, string $method, i
     try {
         $connection->begin_transaction();
         $id = (int)$payInfo['id'];
-        $stmt = $connection->prepare('SELECT id,user_id,hash_id,price,state,payid FROM pays WHERE id=? FOR UPDATE');
+        $stmt = $connection->prepare('SELECT id,user_id,hash_id,price,state,payid,type,order_id,request_date FROM pays WHERE id=? FOR UPDATE');
         $stmt->bind_param('i', $id);
         $stmt->execute();
         $current = $stmt->get_result()->fetch_assoc();
@@ -641,6 +643,14 @@ function achbotManualClaim(mysqli $connection, array $payInfo, string $method, i
                     $pinned['network'] === $chosenNetwork);
             }
             return true;
+        }
+        // No provider/manual claim exists: this is a NEW method selection.
+        // The persisted pays lock is already held; never start a nested
+        // expiry transaction or silently resurrect a superseded old quote.
+        require_once __DIR__ . '/PaymentLifecycle.php';
+        if (!achbotPayUxUnclaimedDraftUsable($connection,$current)) {
+            $connection->rollback();
+            return false;
         }
         if (!achbotManualEnabled($method)) {
             $connection->rollback();
@@ -1266,7 +1276,15 @@ function sendWithStartButton($text, $buttonText, $botUsername, $startPayload = '
     ]];
     $keyboard = json_encode(['inline_keyboard'=>$buttons], JSON_UNESCAPED_UNICODE);
 
-    return sendMessage($text, $keyboard, $parseMode);
+    $sent=sendMessage($text, $keyboard, $parseMode);
+    if ($paymentHash!=='' && isset($GLOBALS['connection']) &&
+        $GLOBALS['connection'] instanceof mysqli &&
+        isset($GLOBALS['from_id']) && (int)$GLOBALS['from_id']>0) {
+        require_once __DIR__ . '/PaymentLifecycle.php';
+        achbotPayUxTrackByHash($GLOBALS['connection'],$paymentHash,
+            (int)$GLOBALS['from_id'],$sent);
+    }
+    return $sent;
 }
 
 

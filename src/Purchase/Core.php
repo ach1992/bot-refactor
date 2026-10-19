@@ -6,10 +6,10 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
 }
 
 /**
- * Remove only abandoned, unissued quote drafts. A user can choose a new plan,
- * renewal or wallet recharge while an earlier invoice is awaiting payment:
- * that prior provider attempt and its durable evidence MUST remain intact.
- * On an original unmigrated database, keep the historical unclaimed cleanup.
+ * Compatibility hook called before new payment-draft INSERTs. It MUST remain
+ * non-destructive: the successor INSERT/COMMIT can still fail and some callers
+ * already hold a MariaDB transaction. Shared PaymentLifecycle expiry later
+ * transitions only unclaimed old drafts and preserves the original pays ID.
  */
 if (!function_exists('achbotRemoveUnclaimedPendingPayments')) {
     function achbotRemoveUnclaimedPendingPayments(mysqli $db, int $userId,
@@ -18,23 +18,13 @@ if (!function_exists('achbotRemoveUnclaimedPendingPayments')) {
             'BUY_SUB','RENEW_SCONFIG','RENEW_ACCOUNT',
             'INCREASE_DAY','INCREASE_VOLUME','INCREASE_WALLET'
         ],true)) throw new InvalidArgumentException('unsupported_payment_draft_cleanup');
-        $like=in_array($type,['INCREASE_DAY','INCREASE_VOLUME'],true);
-        $typeParam=$like ? '%'.$type.'%' : $type;
-        $sql="DELETE FROM pays WHERE user_id=? AND type ".($like?'LIKE':'=')."
-              ? AND state='pending' AND (payid IS NULL OR payid='')";
-        // An ambiguous checkout can have a creating ledger entry even while
-        // its legacy pays.payid is temporarily empty; never orphan that row.
-        $table=$db->query("SHOW TABLES LIKE 'payment_attempts'");
-        if ($table === false) throw new RuntimeException('payment_ledger_visibility_unavailable');
-        if ($table->num_rows===1) {
-            $sql.=" AND NOT EXISTS (
-                SELECT 1 FROM payment_attempts a WHERE a.pay_row_id=pays.id)";
-        }
-        $stmt=$db->prepare($sql);
-        if (!$stmt) throw new RuntimeException('payment_draft_cleanup_unavailable');
-        $stmt->bind_param('is',$userId,$typeParam);
-        if (!$stmt->execute()) throw new RuntimeException('payment_draft_cleanup_failed');
-        $stmt->close();
+        // Called BEFORE creating the replacement. Do not delete, expire or
+        // touch the old draft yet: an insert or COMMIT can still fail, and a
+        // wallet top-up caller already owns an InnoDB transaction here.
+        // The one-minute lifecycle worker + guarded URL/callback checks expire
+        // only a genuinely old unclaimed draft once a successor commits.
+        // Existing signature remains for backward-compatible callsites.
+        return;
     }
 }
 

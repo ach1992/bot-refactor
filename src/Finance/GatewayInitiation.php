@@ -119,6 +119,8 @@ function achbotMarkCheckoutUncertain(mysqli $db, int $orderId, string $provider)
     }
 }
 
+require_once __DIR__ . '/PaymentLifecycle.php';
+
 //====================//  Get  //==============================
 $hash_id = (string)($_GET['hash_id'] ?? '');
 if(!isset($_GET['zarinpal']) && !isset($_GET['nowpayment']) && !isset($_GET['nextpay'])){
@@ -151,6 +153,21 @@ if(mysqli_num_rows($payInfo)==0){
     }
 }else{
     $payParam = $payInfo->fetch_assoc();
+    // The URL is only a guarded *request*, never an irrevocable provider link.
+    // Refuse stale drafts and older invoices before any checkout side effect.
+    if (achbotPayUxExpireDraft($connection,(int)$payParam['id'])) {
+        showForm("مهلت این فاکتور پایان یافته است؛ از ربات درخواست جدید ثبت کنید.");
+        exit;
+    }
+    try {
+        if (achbotPayUxHasNewer($connection,$payParam)) {
+            showForm("فاکتور جدیدتری ثبت شده است. لینک قبلی دیگر برای پرداخت نمایش داده نمی‌شود؛ اگر وجهی فرستاده‌اید برای بررسی با پشتیبانی تماس بگیرید.");
+            exit;
+        }
+    } catch (Throwable $ignored) {
+        showForm("وضعیت درخواست پرداخت قابل اطمینان نیست؛ برای جلوگیری از پرداخت تکراری با پشتیبانی تماس بگیرید.");
+        exit;
+    }
     if (!achbotSupportsPaymentSubject($connection, $payParam)) {
         showForm("این سرویس در پنل مرزبان قابل پرداخت نیست.");
         exit();
@@ -505,13 +522,16 @@ if(mysqli_num_rows($payInfo)==0){
         // subsequent click; also preserve a direct button in Telegram.
         if ($userId > 0) {
             $keyboard = json_encode(['inline_keyboard'=>[
-                [['text'=>'🔄 باز کردن فاکتور یا پیگیری',
+                [['text'=>'💳 پرداخت فاکتور',
                   'url'=>$botUrl.'pay/?nowpayment&hash_id='.urlencode($hash_id)]],
                 [['text'=>'🧾 بررسی وضعیت سفارش','callback_data'=>'ps_'.$hash_id]]
             ]], JSON_UNESCAPED_UNICODE);
             try {
-                sendMessage("💳 لینک پرداخت سفارش $hash_id ثبت شد.\nپرداخت پس از تایید درگاه به صورت خودکار در ربات بررسی می‌شود؛ نیازی به زدن دکمه بازگشت نیست.",
-                    $keyboard, null, $userId);
+                $notice=sendMessage("🧾 فاکتور سفارش <code>$hash_id</code> ثبت شد.\n"
+                    ."پرداخت فقط پس از تأیید درگاه و ثبت نتیجه در ربات نهایی است؛ "
+                    ."پردازش ممکن است بیش از چند دقیقه طول بکشد.",
+                    $keyboard, 'HTML', $userId);
+                achbotPayUxTrackMessage($connection,(int)$orderId,(int)$userId,$notice);
             } catch (Throwable $ignored) {
                 // Durable invoice persists even if a Telegram send fails.
             }

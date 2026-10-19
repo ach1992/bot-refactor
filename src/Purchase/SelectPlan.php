@@ -154,6 +154,8 @@ if((preg_match('/^discountSelectPlan(\d+)_(\d+)_(\d+)/',$userInfo['step'],$match
         $msg = str_replace(['ACCOUNT-COUNT', 'TOTAL-PRICE', 'PLAN-NAME', 'PRICE', 'DESCRIPTION'], [$accountCount, $priceC, $name, $eachPrice, $desc], $mainValues['buy_much_subscription_detail']); 
     } 
     else $msg = str_replace(['PLAN-NAME', 'PRICE', 'DESCRIPTION'], [$name, $priceC, $desc], $mainValues['buy_subscription_detail']); 
-    sendMessage($msg, json_encode(['inline_keyboard'=>$keyboard]), "HTML"); 
+    $sent=sendMessage($msg, json_encode(['inline_keyboard'=>$keyboard]), "HTML");
+    require_once __DIR__ . '/../Finance/PaymentLifecycle.php';
+    achbotPayUxTrackByHash($connection,(string)$hash_id,(int)$from_id,$sent);
 }
 

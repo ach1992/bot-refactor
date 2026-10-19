@@ -157,6 +157,8 @@ function startWalletPayment(mysqli $connection, $botState, $buttonValues, $botUr
     try {
         $reply = sendMessage("اطلاعات شارژ:\nمبلغ " . number_format($amount) .
             " تومان\n\nلطفا روش پرداخت را انتخاب کنید:", $keys);
+        require_once __DIR__ . '/PaymentLifecycle.php';
+        achbotPayUxTrackByHash($connection,$hash_id,$actor,$reply);
         if (!is_object($reply) || ($reply->ok ?? false) !== true) {
             error_log('achbot_wallet_topup_delivery_deferred update_id=' . $updateId);
         }

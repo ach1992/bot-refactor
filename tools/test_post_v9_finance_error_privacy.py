@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import json
 import subprocess
+import time
 from pathlib import Path
 
 import test_access_state as owned
@@ -134,11 +135,15 @@ def seed(work, env, case):
     pay_state = 'pending' if case['audience'] == 'wallet' else 'have_sent'
     message_id = 0 if case['audience'] == 'wallet' else 42
     chat_id = 0 if case['audience'] == 'wallet' else 9001
+    # A wallet checkout undergoing remote failure must be a fresh, valid
+    # synthetic payment draft. Old 2023 fixture timestamps are intentionally
+    # rejected by the current payment-UX validity guard.
+    request_date = int(time.time()) if case['audience']=='wallet' else 1700000000
     sql(work, env, f"""INSERT INTO pays
         (hash_id,payid,user_id,type,plan_id,server_id,order_id,
          volume,day,price,request_date,state,message_id,chat_id)
         VALUES ('privacyhash','',1001,'{pay_type}',7,2,
-                {order_id},0,0,100,1700000000,'{pay_state}',
+                {order_id},0,0,100,{request_date},'{pay_state}',
                 {message_id},{chat_id})""")
     return order_id
 

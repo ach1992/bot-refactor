@@ -740,6 +740,7 @@ def main():
         (wrapper/'config.php').write_text('<?php /* synthetic no DB */')
         (wrapper/'src/Notifications/Warnings.php').write_text(
             '<?php throw new RuntimeException("synthetic warning failure");')
+        (wrapper/'src/Finance/PaymentLifecycle.php').write_text('<?php /* synthetic owned */')
         (wrapper/'src/Finance/AutomaticRenewal.php').write_text(
             '<?php echo "RECONCILIATION_EXECUTED";')
         proc=subprocess.run(['php','-n',str(wrapper/'settings/warnusers.php')],

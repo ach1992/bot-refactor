@@ -37,7 +37,7 @@ def main():
         raise RuntimeError('Historic V9 rollback reference drift')
     historical_names=v9_contract.members()
     names=package.members()
-    if (len(historical_names)!=92 or len(names)!=95
+    if (len(historical_names)!=92 or len(names)!=96
             or names[:92]!=historical_names
             or names[92:]!=list(package.NEW_RUNTIME_MEMBERS)
             or len(names)!=len(set(names))):

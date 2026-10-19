@@ -39,7 +39,7 @@ def source_checks():
         if (ROOT / field).read_bytes() != cmd("show", V9+":"+field):
             raise RuntimeError("Changed historical schema/private-template: " + field)
     files=package.members()
-    if len(files)!=95 or len(set(files))!=len(files):
+    if len(files)!=96 or len(set(files))!=len(files):
         raise RuntimeError("Source-only runtime file inventory changed")
     if (ROOT / "baseInfo.php").exists() or "baseInfo.php" in files:
         raise RuntimeError("Private runtime config surfaced in candidate")
@@ -310,6 +310,45 @@ def main():
                 and catalogue.get("original_schema_tables")==23
                 and catalogue.get("financial_mutations")==0):
             raise RuntimeError("Marzban-only catalogue, forged callback or QR proof incomplete")
+        # Issue #51: source-real bot message/guarded-link lifecycle on
+        # disposable original-schema MariaDB plus optional 003/006 overlays.
+        payment_ux_path=Path(tmp)/"payment-ux-lifecycle.json"
+        subprocess.run(["python3",str(ROOT/"tools/test_post_v9_payment_ux_lifecycle.py"),
+                        "--run-disposable","--report",str(payment_ux_path)],
+                       cwd=ROOT,check=True,timeout=140,capture_output=True)
+        payment_ux=json.loads(payment_ux_path.read_text())
+        required_payment_ux={
+            "missing_003_fails_closed_and_preserves_draft",
+            "uninstalled_006_cannot_overwrite_manual_receipt_id",
+            "committed_newer_draft_expires_old_without_deleting_pays",
+            "another_customer_draft_does_not_collide",
+            "exact_thirty_minute_unclaimed_deadline",
+            "provider_payid_never_cancelled",
+            "provider_ledger_review_never_expired_or_deleted",
+            "manual_receipt_not_expired",
+            "fresh_and_superseded_payment_method_guard",
+            "different_extension_variants_same_account_supersede",
+            "different_extension_accounts_do_not_supersede",
+            "newer_provider_claim_held_for_review_not_cancelled",
+            "aged_unclaimed_payment_method_blocked",
+            "zero_timestamp_unclaimed_quote_can_be_expired_safely",
+            "paid_three_old_keyboards_removed_retry_after_edit_failure",
+            "over_ten_messages_markup_failure_rotates_without_starvation",
+            "markup_only_removes_links_but_does_not_claim_text_synced",
+            "provider_review_removes_buttons_without_fake_settlement",
+            "owner_qualified_clicked_message_tracked",
+            "two_concurrent_expiry_workers_exactly_one_mutation",
+            "media_caption_and_buttons_updated_after_receipt_review",
+            "incomplete_003_schema_blocks_expiry",
+        }
+        if not (payment_ux.get("complete")
+                and required_payment_ux.issubset(payment_ux.get("scenarios",[]))
+                and payment_ux.get("source_real_php")
+                and payment_ux.get("original_schema_unchanged")
+                and payment_ux.get("production_mutations")==0
+                and payment_ux.get("external_provider_requests")==0):
+            raise RuntimeError("Guarded payment-message lifecycle proof incomplete")
+
         auto_renew_path=Path(tmp)/"automatic-renewal-ledger.json"
         subprocess.run(["python3",str(ROOT/"tools/test_post_v9_automatic_renewal.py"),
                         "--run-disposable","--report",str(auto_renew_path)],
@@ -597,7 +636,7 @@ def main():
             "uncertain_custom_external_effect_operator_reconciliation_no_retry",
             # PR #55 R2: mandatory authenticated end-to-end top-up lifecycle:
             # freshness against the SENT bot prompt, one-use user row claim,
-            # exactly one pending draft after concurrency and SQL rollback.
+            # exactly one NEW draft after concurrency, with earlier rows preserved.
             "real_topup_origin_private_menu_start_accepted",
             "real_topup_replayed_private_amount_no_second_invoice",
             "real_topup_out_of_order_older_update_no_financial_effect",
@@ -613,7 +652,7 @@ def main():
             "real_topup_unconfirmed_bot_menu_fails_closed",
             "real_topup_ambiguous_customer_identity_fails_closed",
             "real_topup_insert_failure_rolls_back_claim_and_cleanup",
-            "real_topup_mysqli_report_off_delete_failure_rolls_back",
+            "real_topup_never_deletes_historical_draft_under_nonthrowing_sql",
             "real_topup_postcommit_telegram_failure_never_repeats_invoice",
             "real_topup_concurrent_step_claim_single_atomic_invoice",
             # PR #55 R1: real Telegram UpdateBindings and private-chat source
@@ -775,7 +814,7 @@ def main():
                        cwd=ROOT,check=True,timeout=60,capture_output=True)
         swap=json.loads(overlay_report.read_text())
         if not (swap.get("complete") and swap.get("phase_count")==4
-                and swap.get("runtime_members")==95
+                and swap.get("runtime_members")==96
                 and swap.get("historical_runtime_members")==92
                 and swap.get("source_roll_forward_and_back_byte_identical")
                 and swap.get("unchanged_original_sql_ddl")
@@ -793,6 +832,7 @@ def main():
                     "catalogue_and_subscription_qr":catalogue,
                     "financial_native_route_guards":finance,
                     "automatic_renewal_ledger":auto_renew,
+                    "payment_ux_lifecycle":payment_ux,
                     "manual_payment_method_isolation":manual,
                     "manual_crypto_destination_and_admin_guards":crypto_guard,
                     "payment_reference_assurance":payment_identity,
@@ -822,6 +862,7 @@ def main():
                       "catalogue_qr_cases":catalogue["cases"],
                       "financial_native_route_cases":finance["cases"],
                       "automatic_renewal_cases":auto_renew["cases"],
+                      "payment_ux_cases":payment_ux["cases"],
                       "manual_payment_isolation_cases":manual["cases"],
                       "manual_crypto_guard_cases":crypto_guard["cases"],
                       "payment_reference_length":payment_identity["default_length"],
