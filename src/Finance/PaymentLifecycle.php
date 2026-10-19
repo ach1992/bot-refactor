@@ -90,20 +90,22 @@ function achbotPayUxExpireDraft(mysqli $db, int $payId, ?int $clock = null): boo
 
         $overdue = $now - (int)$pay['request_date'] >= achbotPayUxDraftDeadlineSeconds();
 
-        // Same order for renewals/extensions; other purchase/wallet drafts
-        // replace the prior still-unclaimed customer quote of the same type.
+        // Source of truth for newer-draft ordering is pays.id, allocated
+        // inside the shared owner lock for every customer-draft INSERT.
+        // request_date was computed BEFORE that lock and is only an idle TTL;
+        // combining the two can leave TWO payable drafts after serial commits.
+        // Every committed same-scope replacement is permanent: a later
+        // expired/declined/mismatched quote must NOT revive an older link.
         $userId = (int)$pay['user_id'];
         $family = achbotPayUxPaymentFamily((string)$pay['type']);
         $orderId = (int)($pay['order_id'] ?? 0);
         $stmt = $db->prepare(
             "SELECT id FROM pays
-             WHERE user_id=? AND SUBSTRING_INDEX(type,'_',2)=? AND id>? AND request_date>=?
+             WHERE user_id=? AND SUBSTRING_INDEX(type,'_',2)=? AND id>?
                AND COALESCE(order_id,0)=?
-               AND state NOT IN ('expired','expired_have_sent','mismatched_plan','declined')
              ORDER BY id DESC LIMIT 1"
         );
-        $then = (int)$pay['request_date'];
-        $stmt->bind_param('isiii', $userId, $family, $payId, $then, $orderId);
+        $stmt->bind_param('isii', $userId, $family, $payId, $orderId);
         if (!$stmt->execute()) throw new RuntimeException('draft_successor_unavailable');
         $newer = $stmt->get_result()->fetch_assoc();
         $stmt->close();
@@ -179,8 +181,12 @@ function achbotPayUxPaymentFamily(string $type): string {
     return implode('_',array_slice(explode('_',$type),0,2));
 }
 
-/** A later persisted payment draft makes an older *UI link* stale.
- * Issued provider invoices remain financial claims and are NEVER auto-cancelled.
+/** A later COMMITTED payment draft makes an older *UI link* stale.
+ * ID order is authoritative only because same-owner draft INSERTs acquire
+ * the users row lock before allocating an ID and hold it through COMMIT.
+ * request_date is NOT an ordering tie-breaker; it is an independent TTL.
+ * The successor row's later terminal state never reactivates old links.
+ * Issued provider invoices remain claims and are NEVER auto-cancelled.
  */
 function achbotPayUxHasNewer(mysqli $db, array $pay, bool $lockingRead=false): bool {
     $payId=(int)($pay['id']??0);$userId=(int)($pay['user_id']??0);
@@ -188,14 +194,12 @@ function achbotPayUxHasNewer(mysqli $db, array $pay, bool $lockingRead=false): b
     try {
         $family=achbotPayUxPaymentFamily((string)($pay['type']??''));
         $orderId=(int)($pay['order_id']??0);
-        $then=(int)($pay['request_date']??0);
         $stmt=$db->prepare(
             "SELECT id FROM pays WHERE user_id=? AND SUBSTRING_INDEX(type,'_',2)=? AND id>?
-               AND request_date>=? AND COALESCE(order_id,0)=?
-               AND state NOT IN ('expired','expired_have_sent','mismatched_plan','declined')
+               AND COALESCE(order_id,0)=?
              LIMIT 1".($lockingRead ? ' FOR UPDATE' : '')
         );
-        $stmt->bind_param('isiii',$userId,$family,$payId,$then,$orderId);
+        $stmt->bind_param('isii',$userId,$family,$payId,$orderId);
         if (!$stmt->execute()) throw new RuntimeException('successor_read_failed');
         $row=$stmt->get_result()->fetch_assoc();$stmt->close();
         return (bool)$row;
@@ -726,10 +730,7 @@ function achbotPayUxMaintain(mysqli $db, int $maxRows=45): array {
                        SELECT 1 FROM pays n WHERE n.user_id=p.user_id
                          AND SUBSTRING_INDEX(n.type,'_',2)=SUBSTRING_INDEX(p.type,'_',2)
                          AND n.id>p.id
-                         AND n.request_date>=p.request_date
                          AND COALESCE(n.order_id,0)=COALESCE(p.order_id,0)
-                         AND n.state NOT IN
-                             ('expired','expired_have_sent','mismatched_plan','declined')
                    ))
                  ORDER BY p.request_date ASC LIMIT {$maxRows}"
             );

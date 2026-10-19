@@ -367,8 +367,9 @@ def main():
                 and payment_ux.get("external_provider_requests")==0):
             raise RuntimeError("Guarded payment-message lifecycle proof incomplete")
 
-        # Review F1/F2/F3: three provider issuance races, SQL rollback,
-        # source-real renewal picker and full order-target status callback.
+        # Review F1/F2/F3/F4/R1: three provider issuance races, reverse
+        # pre-lock timestamps, permanent supersession, SQL rollback, actual
+        # renewal picker and full order-target status callback.
         checkout_race_path=Path(tmp)/"checkout-serialization.json"
         subprocess.run(["python3",str(ROOT/"tools/test_post_v9_checkout_serialization.py"),
                         "--run-disposable","--report",str(checkout_race_path)],
@@ -396,6 +397,26 @@ def main():
             "f3_same_target_INCREASE_VOLUME_11_4",
             "f3_unrelated_subscription_not_superseded",
             "f3_old_provider_claim_never_cancelled",
+            # Reviewer R1: two real source-serialized PHP draft workers
+            # commit in reverse request_date order; pays.id is authoritative.
+            "r1_reverse_prelock_clock_old_nowpayment_refused_after_later_id_commit",
+            "r1_reverse_prelock_clock_only_latest_nowpayment_reserves",
+            "r1_bot_owned_link_expires_superseded_old_id_nowpayment",
+            "r1_direct_expiry_uses_authoritative_id_not_earlier_timestamp_nowpayment",
+            "r1_reverse_prelock_clock_old_nextpay_refused_after_later_id_commit",
+            "r1_reverse_prelock_clock_only_latest_nextpay_reserves",
+            "r1_bot_owned_link_expires_superseded_old_id_nextpay",
+            "r1_direct_expiry_uses_authoritative_id_not_earlier_timestamp_nextpay",
+            "r1_reverse_prelock_clock_old_zarinpal_refused_after_later_id_commit",
+            "r1_reverse_prelock_clock_only_latest_zarinpal_reserves",
+            "r1_bot_owned_link_expires_superseded_old_id_zarinpal",
+            "r1_direct_expiry_uses_authoritative_id_not_earlier_timestamp_zarinpal",
+            "r1_maintenance_expires_older_id_when_latest_timestamp_is_earlier",
+            # Permanent supersession: later terminal-state changes cannot
+            # re-enable payment links or duplicate provider invoices.
+            "r1_terminal_expired_cannot_reactivate_older_quote",
+            "r1_terminal_declined_cannot_reactivate_older_quote",
+            "r1_terminal_mismatched_plan_cannot_reactivate_older_quote",
         }
         if not (checkout_race.get("complete")
                 and required_checkout_race.issubset(checkout_race.get("scenarios",[]))
@@ -404,7 +425,7 @@ def main():
                 and checkout_race.get("owned_mariadb_only") is True
                 and checkout_race.get("real_provider_requests")==0
                 and checkout_race.get("production_mutations")==0):
-            raise RuntimeError("Reviewer F1/F2/F3 checkout and callback proof incomplete")
+            raise RuntimeError("Reviewer F1/F2/F3/F4/R1 checkout and callback proof incomplete")
 
         auto_renew_path=Path(tmp)/"automatic-renewal-ledger.json"
         subprocess.run(["python3",str(ROOT/"tools/test_post_v9_automatic_renewal.py"),

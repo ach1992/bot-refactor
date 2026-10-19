@@ -78,6 +78,32 @@ $db->rollback();
 echo 'ROLLED_BACK';
 """
 
+# Source-real INSERT entrypoint with request_date computed BEFORE the owner
+# lock. Two independent workers can commit in the opposite timestamp order.
+# Keep both timestamps fresh: request_date is independently the idle deadline.
+PRELOCK_DRAFT_WORKER = r"""<?php
+error_reporting(E_ALL);
+$root=$argv[1];$name=$argv[2];$socket=$argv[3];
+$actor=(int)$argv[4];$hash=(string)$argv[5];$offset=(int)$argv[6];
+$ready=$argv[7];$release=$argv[8];
+$db=new mysqli('localhost','root','',$name,0,$socket);
+$db->set_charset('utf8mb4');
+require_once $root.'/src/Finance/PaymentLifecycle.php';
+$stamp=time()-$offset;
+$stmt=$db->prepare("INSERT INTO pays
+    (hash_id,user_id,type,plan_id,server_id,volume,day,price,request_date,state)
+    VALUES (?,?,'INCREASE_WALLET',0,0,0,0,100000,?,'pending')");
+$stmt->bind_param('sii',$hash,$actor,$stamp);
+file_put_contents($ready,(string)$stamp);
+$limit=microtime(true)+14;
+while (!is_file($release) && microtime(true)<$limit) usleep(11000);
+if (!is_file($release)) throw new RuntimeException('draft_release_timeout');
+$id=achbotPayUxInsertDraft($db,$actor,$stmt);
+$stmt->close();
+if ($id<=0) throw new RuntimeException('draft_not_committed');
+echo json_encode(['id'=>$id,'request_date'=>$stamp],JSON_THROW_ON_ERROR);
+"""
+
 def sql(w,e,query):
     return finance.sql(w,e,query).strip()
 
@@ -180,6 +206,154 @@ def exercise_raced_issuer(w,e,stage,method,n,*,old_stage=False):
         if held.poll() is None:
             (marker_dir/'release').write_text('go')
             held.kill();held.communicate(timeout=5)
+
+def exercise_r1_inverted_commit_dates(w,e,stage):
+    # The authoritative order is the pays AUTO_INCREMENT ID allocated while
+    # the actor's user-row transaction lock is held. A's earlier PHP clock
+    # is intentionally committed AFTER B's later PHP clock.
+    verified=[]
+    for n,method in enumerate(('nowpayment','nextpay','zarinpal')):
+        actor=9840+n
+        fresh_actor(w,e,actor)
+        claim='R1-issued-'+method
+        claim_id=seed_pay(w,e,claim,actor,
+            payid='r1-prior-provider-'+method)
+        sql(w,e,"INSERT INTO payment_attempts "
+            "(pay_row_id,provider,order_hash,provider_reference,quote_amount,quote_currency,stage) "
+            f"VALUES ({claim_id},'nowpayments','{claim}',"
+            f"'r1-prior-provider-{method}',1,'usd','pending')")
+        preexisting=sql(w,e,"SELECT p.state,p.payid,a.provider_reference,a.stage "
+            "FROM pays p JOIN payment_attempts a ON a.pay_row_id=p.id "
+            f"WHERE p.id={claim_id}")
+        folder=w/('r1-opposite-'+method)
+        folder.mkdir()
+        script=w/'owned-prelock-draft-writer.php'
+        script.write_text(PRELOCK_DRAFT_WORKER)
+        older_date_hash='R1-id-older-'+method
+        newer_id_hash='R1-id-newer-'+method
+        a_ready=folder/'a-prepared'
+        a_release=folder/'a-release'
+        b_ready=folder/'b-prepared'
+        b_release=folder/'b-release'
+        b_release.write_text('now')
+        def worker(h,offset,ready,release):
+            return ['php','-n','-d','extension=mysqlnd','-d','extension=mysqli',
+                    str(script),str(stage),DB,str(w/'mysql.sock'),str(actor),
+                    h,str(offset),str(ready),str(release)]
+        delayed=subprocess.Popen(worker(newer_id_hash,13,a_ready,a_release),
+            cwd=w,env=e,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+        try:
+            deadline=time.monotonic()+5
+            while not a_ready.exists() and time.monotonic()<deadline:
+                if delayed.poll() is not None:raise AssertionError('early-prepared worker exited')
+                time.sleep(.012)
+            assert a_ready.exists(),'PHP A did not precompute timestamp before owner lock'
+            first=subprocess.run(worker(older_date_hash,2,b_ready,b_release),
+                cwd=w,env=e,capture_output=True,timeout=12)
+            assert first.returncode==0,(first.stdout,first.stderr)
+            assert not first.stderr,first.stderr
+            first_id=json.loads(first.stdout)
+            assert b_ready.exists(),'PHP B did not prepare its later timestamp'
+            a_release.write_text('resume A, acquire user-row lock and INSERT')
+            stdout,stderr=delayed.communicate(timeout=12)
+            assert delayed.returncode==0,(stdout,stderr)
+            assert not stderr,stderr
+            second_id=json.loads(stdout)
+        finally:
+            if delayed.poll() is None:
+                a_release.write_text('go')
+                delayed.kill();delayed.communicate(timeout=4)
+        bid=int(first_id['id']); aid=int(second_id['id'])
+        assert bid<aid and first_id['request_date']>second_id['request_date'], (
+            'not the reviewer R1 interleaving',first_id,second_id)
+        assert int(sql(w,e,f"SELECT COUNT(*) FROM pays WHERE id IN ({bid},{aid})"))==2
+        assert sql(w,e,f"SELECT state FROM pays WHERE id={bid}")=='pending'
+        assert sql(w,e,f"SELECT state FROM pays WHERE id={aid}")=='pending'
+        # No provider may issue for B: the source-prepared A persisted AFTER
+        # B, despite its lower old PHP clock value.
+        refused=json_run(w,e,stage,dict(route='initiate',
+            get={method:'','hash_id':older_date_hash}))
+        assert not refused['network_calls'],(
+            'R1 checkout issued non-authoritative older-ID invoice',
+            method,first_id,second_id,refused['network_calls'])
+        assert sql(w,e,f"SELECT COUNT(*) FROM payment_attempts WHERE pay_row_id={bid}")=='0'
+        assert sql(w,e,f"SELECT COALESCE(payid,'NULL') FROM pays WHERE id={bid}")=='NULL'
+        verified.append('r1_reverse_prelock_clock_old_'+method+'_refused_after_later_id_commit')
+        # Positive: only the larger persisted ID can issue one provider claim.
+        issued=json_run(w,e,stage,dict(route='initiate',
+            get={method:'','hash_id':newer_id_hash}))
+        assert len(issued['network_calls'])==1,(
+            'latest persisted invoice was incorrectly blocked',
+            method,issued['network_calls'],issued['form'])
+        assert sql(w,e,f"SELECT COUNT(*) FROM payment_attempts WHERE pay_row_id={aid}")=='1'
+        assert sql(w,e,f"SELECT COALESCE(payid,'NULL') FROM pays WHERE id={aid}")!='NULL'
+        assert sql(w,e,"SELECT p.state,p.payid,a.provider_reference,a.stage "
+            "FROM pays p JOIN payment_attempts a ON a.pay_row_id=p.id "
+            f"WHERE p.id={claim_id}")==preexisting
+        verified.append('r1_reverse_prelock_clock_only_latest_'+method+'_reserves')
+        # Opening B's obsolete first-party link itself safely expires B,
+        # before the next scheduled Cron. A second expire is idempotent and
+        # must NOT return a new successful transition.
+        from test_post_v9_payment_ux_lifecycle import run as run_ux
+        assert sql(w,e,f"SELECT state FROM pays WHERE id={bid}")=='expired'
+        assert run_ux(w,e,{'action':'expire','id':bid})['result'] is False
+        assert sql(w,e,"SELECT p.state,p.payid,a.provider_reference,a.stage "
+            "FROM pays p JOIN payment_attempts a ON a.pay_row_id=p.id "
+            f"WHERE p.id={claim_id}")==preexisting
+        verified.append('r1_bot_owned_link_expires_superseded_old_id_'+method)
+        # Independently prove the DIRECT source-real expiry call, without
+        # first opening any checkout URL that would expire the target early.
+        direct_actor=9880+n
+        fresh_actor(w,e,direct_actor)
+        direct_old=seed_pay(w,e,'R1-direct-old-'+method,direct_actor)
+        direct_new=seed_pay(w,e,'R1-direct-new-'+method,direct_actor)
+        first_created=int(sql(w,e,
+            f"SELECT request_date FROM pays WHERE id={direct_old}"))
+        sql(w,e,f"UPDATE pays SET request_date={first_created-11} "
+            f"WHERE id={direct_new}")
+        assert direct_old<direct_new
+        assert run_ux(w,e,{'action':'expire','id':direct_old})['result'] is True
+        assert sql(w,e,f"SELECT state FROM pays WHERE id={direct_old}")=='expired'
+        assert sql(w,e,f"SELECT state FROM pays WHERE id={direct_new}")=='pending'
+        assert sql(w,e,"SELECT p.state,p.payid,a.provider_reference,a.stage "
+            "FROM pays p JOIN payment_attempts a ON a.pay_row_id=p.id "
+            f"WHERE p.id={claim_id}")==preexisting
+        verified.append('r1_direct_expiry_uses_authoritative_id_not_earlier_timestamp_'+method)
+    # The batch scanner must match the direct expiry and checkout rules.
+    actor=9877
+    fresh_actor(w,e,actor)
+    older=seed_pay(w,e,'R1-maintain-id-old',actor)
+    newer=seed_pay(w,e,'R1-maintain-id-new',actor)
+    old_date=int(sql(w,e,f'SELECT request_date FROM pays WHERE id={older}'))
+    sql(w,e,f'UPDATE pays SET request_date={old_date-12} WHERE id={newer}')
+    from test_post_v9_payment_ux_lifecycle import run as run_ux
+    assert sql(w,e,f"SELECT state FROM pays WHERE id={older}")=='pending'
+    assert run_ux(w,e,{'action':'maintain','limit':100})['result']['expired']>=1
+    assert sql(w,e,f"SELECT state FROM pays WHERE id={older}")=='expired'
+    assert sql(w,e,f"SELECT state FROM pays WHERE id={newer}")=='pending'
+    verified.append('r1_maintenance_expires_older_id_when_latest_timestamp_is_earlier')
+    # A committed replacement permanently invalidates its predecessor.
+    # Otherwise a newer short-lived or declined quote can *revive* an old
+    # payable hosted link before that old row itself reaches its idle TTL.
+    for n,terminal in enumerate(('expired','declined','mismatched_plan')):
+        actor=9890+n
+        fresh_actor(w,e,actor)
+        oldhash='R1-no-revival-old-'+terminal
+        newhash='R1-no-revival-new-'+terminal
+        old=seed_pay(w,e,oldhash,actor)
+        new=seed_pay(w,e,newhash,actor)
+        sql(w,e,f"UPDATE pays SET state='{terminal}' WHERE id={new}")
+        rejected=json_run(w,e,stage,dict(route='initiate',
+            get={'nowpayment':'','hash_id':oldhash}))
+        assert not rejected['network_calls'],(
+            'obsolete provider link reactivated after the newer committed '
+            'draft became terminal',terminal,rejected['network_calls'])
+        assert sql(w,e,f"SELECT state FROM pays WHERE id={old}")=='expired'
+        assert sql(w,e,f"SELECT state FROM pays WHERE id={new}")==terminal
+        assert sql(w,e,f"SELECT COUNT(*) FROM payment_attempts WHERE pay_row_id={old}")=='0'
+        verified.append('r1_terminal_'+terminal+'_cannot_reactivate_older_quote')
+    return verified
+
 
 def exercise_successor_lookup_interrupted(w,e,stage):
     actor=9691
@@ -369,7 +543,13 @@ def main():
     ap.add_argument('--report',type=Path)
     ap.add_argument('--red-baseline',action='store_true',
                     help='Demonstrate old candidate failure, never run in CI')
+    ap.add_argument('--r1-only',action='store_true',
+                    help='Isolate reviewer R1 source-real inverted timestamp regression')
+    ap.add_argument('--r1-reviewed-head',action='store_true',
+                    help='Stage original reviewed d698 HEAD lifecycle for isolated RED evidence')
     args=ap.parse_args()
+    if args.r1_reviewed_head and (not args.r1_only or args.red_baseline):
+        ap.error('--r1-reviewed-head requires --r1-only and not --red-baseline')
     cases=[]
     with owned.owned_database() as (w,e):
         stage=setup(w,e)
@@ -383,10 +563,18 @@ def main():
                 'bfd9da7d9198e866014519bcc01491e6dfd5fca4:src/Finance/PaymentLifecycle.php'],
                 cwd=ROOT)
             (stage/'src/Finance/PaymentLifecycle.php').write_bytes(old_life)
-        for n,provider in enumerate(('nowpayment','nextpay','zarinpal')):
-            assert exercise_raced_issuer(w,e,stage,provider,n)
-            cases.append('f1_raced_old_'+provider+'_cannot_issue_after_committed_successor')
+        if args.r1_reviewed_head:
+            old_life=subprocess.check_output(['git','show',
+                'd698dd8e099b80861982e2cf579e7f564f73c5ad:src/Finance/PaymentLifecycle.php'],
+                cwd=ROOT)
+            (stage/'src/Finance/PaymentLifecycle.php').write_bytes(old_life)
+        if not args.r1_only:
+            for n,provider in enumerate(('nowpayment','nextpay','zarinpal')):
+                assert exercise_raced_issuer(w,e,stage,provider,n)
+                cases.append('f1_raced_old_'+provider+'_cannot_issue_after_committed_successor')
         if not args.red_baseline:
+            cases.extend(exercise_r1_inverted_commit_dates(w,e,stage))
+        if not args.red_baseline and not args.r1_only:
             cases.append(exercise_reservation_failure(w,e,stage))
             cases.extend(exercise_f4_real_gateway_restrictions(w,e,stage))
             cases.append(exercise_successor_lookup_interrupted(w,e,stage))
