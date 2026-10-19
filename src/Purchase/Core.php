@@ -25,13 +25,15 @@ if (!function_exists('achbotRemoveUnclaimedPendingPayments')) {
         // An ambiguous checkout can have a creating ledger entry even while
         // its legacy pays.payid is temporarily empty; never orphan that row.
         $table=$db->query("SHOW TABLES LIKE 'payment_attempts'");
-        if ($table && $table->num_rows===1) {
+        if ($table === false) throw new RuntimeException('payment_ledger_visibility_unavailable');
+        if ($table->num_rows===1) {
             $sql.=" AND NOT EXISTS (
                 SELECT 1 FROM payment_attempts a WHERE a.pay_row_id=pays.id)";
         }
         $stmt=$db->prepare($sql);
+        if (!$stmt) throw new RuntimeException('payment_draft_cleanup_unavailable');
         $stmt->bind_param('is',$userId,$typeParam);
-        $stmt->execute();
+        if (!$stmt->execute()) throw new RuntimeException('payment_draft_cleanup_failed');
         $stmt->close();
     }
 }

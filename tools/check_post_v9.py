@@ -39,7 +39,7 @@ def source_checks():
         if (ROOT / field).read_bytes() != cmd("show", V9+":"+field):
             raise RuntimeError("Changed historical schema/private-template: " + field)
     files=package.members()
-    if len(files)!=93 or len(set(files))!=len(files):
+    if len(files)!=95 or len(set(files))!=len(files):
         raise RuntimeError("Source-only runtime file inventory changed")
     if (ROOT / "baseInfo.php").exists() or "baseInfo.php" in files:
         raise RuntimeError("Private runtime config surfaced in candidate")
@@ -104,6 +104,18 @@ def main():
     parser.add_argument("--report",type=Path)
     a=parser.parse_args()
     result=source_checks()
+    # Merchant payment references are untrusted URL/Telegram capabilities.
+    # Verify current CSPRNG source and callback-data bounds, not test stubs.
+    payment_identity_output=subprocess.run(
+        ["python3",str(ROOT/"tools/test_post_v9_payment_identity.py")],
+        cwd=ROOT,check=True,timeout=20,capture_output=True,text=True)
+    payment_identity=json.loads(payment_identity_output.stdout)
+    if not (payment_identity.get("complete") is True and
+            payment_identity.get("crypto_source")=="random_int" and
+            payment_identity.get("default_length")==20 and
+            payment_identity.get("unique_generated")==500 and
+            payment_identity.get("longest_callback_bytes",999)<=64):
+        raise RuntimeError("Payment capability randomness/bounds incomplete")
     audience=customer_errors.verify(ROOT)
     with tempfile.TemporaryDirectory(prefix="achbot-post-v9-acceptance-") as tmp:
         cron_path=Path(tmp)/"post-v9-cron-runner.json"
@@ -209,6 +221,76 @@ def main():
                 and wallet_transfer.get("original_mariadb_socket_only")
                 and wallet_transfer.get("external_requests")==0):
             raise RuntimeError("Current wallet transfer safety/diagnostic acceptance incomplete")
+        admin_wallet_path=Path(tmp)/"admin-wallet-adjustment-current.json"
+        subprocess.run(["python3",str(ROOT/"tools/test_post_v9_admin_wallet.py"),
+                        "--run-disposable","--report",str(admin_wallet_path)],
+                       cwd=ROOT,check=True,timeout=180,capture_output=True)
+        admin_wallet=json.loads(admin_wallet_path.read_text())
+        required_admin_wallet={
+            "missing_005_fails_closed_at_ui",
+            "missing_005_fails_closed_at_commit",
+            "credit_full_ui_and_single_atomic_audit",
+            "replayed_update_no_second_credit",
+            "cross_operation_id_reuse_refused",
+            "nonthrowing_mysqli_duplicate_key_cannot_credit",
+            "routine_debit_cannot_create_debt",
+            "routine_debit_guarded_and_audited",
+            "explicit_privileged_negative_debt",
+            "routine_debit_cannot_deepen_debt",
+            "credit_offsets_signed_debt",
+            "nonadmin_step_forgery_no_effect",
+            "strict_amount_input_no_decimal_exponent_or_overflow",
+            "int32_signed_bounds_preserved",
+            "concurrent_admin_updates_exactly_once",
+            "wallet_sql_failure_rolls_back_audit",
+            "silent_wallet_update_error_rolls_back_journal",
+            "postcommit_telegram_failure_preserves_effect",
+            "schema_without_unique_identity_fails_closed",
+            "schema_wrong_binary_identity_collation_fails_closed",
+            "schema_incompatible_reason_contract_fails_closed",
+            "schema_nontransactional_engine_fails_closed",
+            "duplicate_target_refused_at_selection",
+            "duplicate_target_rejected_before_financial_change",
+            "duplicate_operator_rejected_before_financial_change",
+            "operator_and_target_same_identity_atomic",
+            "f1_old_inline_bot_text_cannot_submit_reason",
+            "f1_managepanel_finance_module_never_commits",
+            "f1_mixed_callback_message_envelope_refused",
+            "f1_edited_service_channel_updates_refused",
+            "f1_privileged_debt_needs_new_message_reason",
+            "f1_bound_actor_chat_message_text_and_update_identity",
+            "f1_real_new_text_commits_exactly_once_after_callbacks",
+            "f2_users_myisam_with_innodb_005_refused",
+            "f2_users_wallet_int32_contract_required",
+            "f2_users_operator_step_contract_required",
+            "f2_users_admin_identity_contract_required",
+            "delegated_admin_revoked_before_commit_refused",
+            "r1_group_callback_cannot_begin_admin_adjustment",
+            "r1_group_user_selection_cannot_advance_adjustment",
+            "r1_group_amount_cannot_advance_adjustment",
+            "r1_genuine_admin_group_reason_no_financial_effect",
+            "r1_private_chat_identity_must_equal_operator",
+            "r1_group_reentry_cannot_override_pending_debt",
+            "r1_genuine_private_reason_after_group_commits_once",
+            "r1_delayed_or_out_of_order_reason_update_refused",
+            "r1_monotonic_new_private_reason_can_commit",
+            "r2_actual_bot_managepanel_cancels_and_announces_no_funds",
+            "r2_actual_managepanel_cancels_every_financial_stage",
+            "r2_unrelated_callback_not_financial_authorization",
+            "r3_finance_commit_wins_stale_managepanel_no_false_cancel",
+            "r3_navigation_wins_loaded_financial_reason_no_money",
+            "r3_duplicate_navigation_only_one_confirmed_cancellation",
+            "r3_nonthrowing_sql_error_preserves_step_and_neutral_notice",
+            "r3_stale_navigation_does_not_clobber_new_operator_step",
+            "r3_delegated_admin_revocation_guarded_cancellation",
+        }
+        if not (admin_wallet.get("complete") and admin_wallet.get("cases")==56
+                and required_admin_wallet.issubset(admin_wallet.get("scenarios",[]))
+                and admin_wallet.get("real_php_workers")==2
+                and admin_wallet.get("disposable_db") is True
+                and admin_wallet.get("production_mutations")==0
+                and admin_wallet.get("external_provider_calls")==0):
+            raise RuntimeError("Administrator wallet journal and debt proof incomplete")
         subject_path=Path(tmp)/"payment-subjects.json"
         subprocess.run(["python3",str(ROOT/"tools/test_post_v9_subjects.py"),
                         "--run-disposable","--report",str(subject_path)],
@@ -451,6 +533,12 @@ def main():
             "no_manual_method_switch_replay_or_cross_receipt",
             "wrong_user_denied",
             "manual_usdt_disabled_or_bad_configuration_fails_closed",
+            "tron_checksum_invalid_destination_denied_before_claim_c",
+            "tron_checksum_invalid_destination_denied_before_claim_t",
+            "historical_invalid_tron_destination_requires_review_c",
+            "historical_invalid_tron_destination_requires_review_t",
+            "existing_valid_tron_intent_survives_bad_new_config_c",
+            "existing_valid_tron_intent_survives_bad_new_config_t",
             "agent_existing_price_and_trc20_validated",
             "one_attempt_no_cross_method_claim",
             "single_receipt_claim_no_duplicate_photo_submission",
@@ -500,13 +588,116 @@ def main():
             "real_custom_operator_and_bank_scheduler_race_single_service_claim",
             "legacy_operator_receipt_requires_persisted_delivery_evidence",
             "uncertain_custom_external_effect_operator_reconciliation_no_retry",
+            # PR #55 R2: mandatory authenticated end-to-end top-up lifecycle:
+            # freshness against the SENT bot prompt, one-use user row claim,
+            # exactly one pending draft after concurrency and SQL rollback.
+            "real_topup_origin_private_menu_start_accepted",
+            "real_topup_replayed_private_amount_no_second_invoice",
+            "real_topup_out_of_order_older_update_no_financial_effect",
+            "real_topup_old_private_message_before_prompt_no_financial_effect",
+            "real_topup_exact_prompt_message_id_not_new_no_financial_effect",
+            "real_topup_week_idle_update_id_reset_fresh_private_amount",
+            "real_topup_week_idle_random_reset_allows_new_menu",
+            "real_topup_replaced_step_rejects_stale_input",
+            "real_topup_menu_update_replay_no_reissue",
+            "real_topup_old_fixed_button_wrong_prompt_denied",
+            "real_topup_out_of_order_old_menu_cannot_replace_new_stage",
+            "real_topup_fixed_callback_consumed_once",
+            "real_topup_unconfirmed_bot_menu_fails_closed",
+            "real_topup_ambiguous_customer_identity_fails_closed",
+            "real_topup_insert_failure_rolls_back_claim_and_cleanup",
+            "real_topup_mysqli_report_off_delete_failure_rolls_back",
+            "real_topup_postcommit_telegram_failure_never_repeats_invoice",
+            "real_topup_concurrent_step_claim_single_atomic_invoice",
+            # PR #55 R1: real Telegram UpdateBindings and private-chat source
+            # authorization, with durable SQL/step preservation for denials.
+            "real_topup_origin_group_message_denied",
+            "real_topup_origin_supergroup_message_denied",
+            "real_topup_origin_old_callback_text_denied",
+            "real_topup_origin_foreign_chat_callback_denied",
+            "real_topup_origin_group_custom_start_denied",
+            "real_topup_origin_group_fixed_amount_denied",
+            "real_topup_origin_other_actor_message_denied",
+            "real_topup_origin_bot_authored_message_denied",
+            "real_topup_origin_mixed_callback_message_denied",
+            "real_topup_origin_private_custom_start_accepted",
+            "real_topup_origin_private_customer_text_accepted",
+            # PR #55 P1: actual raw Telegram parsing, SQL immutability,
+            # and accepted top-up boundaries are required acceptance cases.
+            "real_topup_raw_callback_rejected_0",   # numeric prefix + suffix
+            "real_topup_raw_callback_rejected_2",   # exponent callback
+            "real_topup_raw_callback_rejected_10",  # overflow callback
+            "real_topup_raw_text_rejected_13",       # fractional text
+            "real_topup_raw_text_rejected_15",       # exponent text
+            "real_topup_raw_text_rejected_28",       # overflow text
+            "real_topup_raw_callback_accepted_0",  # minimum callback
+            "real_topup_raw_text_accepted_1",      # maximum custom text
+            "real_topup_raw_text_accepted_2",      # ASCII leading zeros
+            "real_topup_raw_callback_accepted_3",  # maximum callback
         }
         if not (manual.get("complete") and manual.get("cases")>=len(required_manual)
                 and required_manual.issubset(manual.get("scenarios",[]))
                 and manual.get("database")=="owned_socket_only"
                 and manual.get("live_provider_calls")==0
                 and manual.get("production_data_modified") is False):
-            raise RuntimeError("Three-method manual payment isolation incomplete")
+            raise RuntimeError("Four-network manual crypto payment isolation incomplete")
+        # Independent, exact-source R1/R2 contract: offline TRON Base58Check
+        # and real bot.php/config.php administrator-setting writes. Keep the
+        # positive network cases and invalid historical-intent refusals in the
+        # finance-native manual test above as separate DB evidence.
+        crypto_guard_path=Path(tmp)/"manual-crypto-source-guards.json"
+        try:
+            subprocess.run(["python3",str(ROOT/"tools/test_post_v9_manual_crypto_guards.py"),
+                            "--run-disposable","--report",str(crypto_guard_path)],
+                           cwd=ROOT,check=True,timeout=150,capture_output=True)
+        except subprocess.CalledProcessError as exc:
+            error=(exc.stderr or b'').decode(errors='replace')[-6500:]
+            raise RuntimeError("Offline TRON checksum or real admin callback "
+                               "contract failed:\n"+error) from exc
+        crypto_guard=json.loads(crypto_guard_path.read_text())
+        required_crypto_guard={
+            'offline_canonical_tron_documented_trc20',
+            'offline_canonical_tron_documented_native_trx',
+            'offline_canonical_tron_invalid_checksum_single_character',
+            'offline_canonical_tron_invalid_network_prefix_checksummed',
+            'offline_canonical_tron_invalid_decoded_length_checksummed',
+            'offline_canonical_tron_invalid_base58_character_zero',
+            'offline_canonical_tron_noncanonical_leading_zero',
+            'offline_canonical_tron_diverse_valid_checksum_0',
+            'offline_canonical_tron_diverse_valid_checksum_31',
+            'offline_canonical_tron_diverse_corrupted_checksum_0',
+            'offline_canonical_tron_diverse_corrupted_checksum_31',
+            'stale_admin_callback_denied_changeGateWaysweSwapState',
+            'stale_admin_callback_denied_changeGateWaystronWallet',
+            'stale_admin_callback_denied_changeBotweSwapState',
+            'stale_admin_callback_denied_changeBottronWallet',
+            'non_admin_cannot_change_current_payment_or_bot_flags',
+            'delegated_admin_current_gateway_toggle_still_works',
+            'actual_editor_rejects_checksum_corruption_manualUsdtWalletTRC20',
+            'actual_editor_rejects_checksum_corruption_manualTrxWallet',
+            'actual_editor_accepts_checksums_manualUsdtWalletTRC20',
+            'actual_editor_accepts_checksums_manualTrxWallet',
+            'no_financial_effects_from_admin_settings_or_editors',
+            'final_persistence_denies_retired_key_weSwapState',
+            'final_persistence_denies_retired_key_tronWallet',
+        }
+        if not (crypto_guard.get('complete')
+                and crypto_guard.get('cases')>=136
+                and required_crypto_guard.issubset(crypto_guard.get('scenarios',[]))
+                and crypto_guard.get('official_tron_test_vectors_verified')
+                and crypto_guard.get('independent_base58check_oracle')
+                and crypto_guard.get('real_bot_admin_callbacks_executed')
+                and crypto_guard.get('real_config_setting_writers_extracted')
+                and crypto_guard.get('actual_payment_editor_executed')
+                and crypto_guard.get('retired_flags_preserved_not_mutated')
+                and crypto_guard.get('retired_keys_denied_at_persistence_boundary')
+                and crypto_guard.get('all_advertised_current_admin_toggles_work')
+                and crypto_guard.get('schema_tables')==23
+                and crypto_guard.get('isolated_socket_only')
+                and crypto_guard.get('live_provider_or_chain_calls')==0
+                and crypto_guard.get('production_data_modified') is False):
+            raise RuntimeError("Canonical TRON recipient and retired callback "
+                               "acceptance evidence incomplete")
         migration_path=Path(tmp)/"shared-payment-ledger-rc4-import.json"
         subprocess.run(["python3",str(ROOT/"tools/test_post_v9_payment_migration.py"),
                         "--run-disposable","--report",str(migration_path)],
@@ -522,9 +713,24 @@ def main():
                 and migration.get("live_database_touched") is False):
             raise RuntimeError("Lossless RC4 payment ledger migration rehearsal incomplete")
         agency_path=Path(tmp)/"agency-state-regression.json"
-        subprocess.run(["python3",str(ROOT/"tools/test_post_v9_agency.py"),
-                        "--run-disposable","--report",str(agency_path)],
-                       cwd=ROOT,check=True,timeout=180,capture_output=True)
+        agency_command=["python3",str(ROOT/"tools/test_post_v9_agency.py"),
+                        "--run-disposable","--report",str(agency_path)]
+        try:
+            subprocess.run(agency_command, cwd=ROOT, check=True,
+                           timeout=180, capture_output=True)
+        except subprocess.CalledProcessError as exc:
+            # This fixture uses only generated identities and owned socket-only
+            # MariaDB. Keep its bounded error output visible in CI: hiding it
+            # makes intermittent child failures impossible to classify.
+            error=(exc.stderr or b'').decode(errors='replace')[-6000:]
+            if not error:
+                error=(exc.stdout or b'').decode(errors='replace')[-2000:]
+            raise RuntimeError('Isolated agency regression failed '
+                               f'(exit={exc.returncode}):\n{error}') from exc
+        except subprocess.TimeoutExpired as exc:
+            error=(exc.stderr or b'').decode(errors='replace')[-3000:]
+            raise RuntimeError('Isolated agency regression timed out '
+                               f'(180 s):\n{error}') from exc
         agency=json.loads(agency_path.read_text())
         if not (agency.get("complete") and agency.get("cases")>=20
                 and agency.get("schema_tables")==23
@@ -562,7 +768,7 @@ def main():
                        cwd=ROOT,check=True,timeout=60,capture_output=True)
         swap=json.loads(overlay_report.read_text())
         if not (swap.get("complete") and swap.get("phase_count")==4
-                and swap.get("runtime_members")==93
+                and swap.get("runtime_members")==95
                 and swap.get("historical_runtime_members")==92
                 and swap.get("source_roll_forward_and_back_byte_identical")
                 and swap.get("unchanged_original_sql_ddl")
@@ -572,6 +778,7 @@ def main():
                     "source":result,"marzban":marzban,"purchases":purchases,
                      "unsupported_wallet_preflight":wallet_guard,
                      "wallet_transfer_safety":wallet_transfer,
+                     "admin_wallet_adjustment_safety":admin_wallet,
                      "customer_error_privacy":audience,
                      "telegram_transport_log_privacy":transport_privacy,
                     "source_only_overlays":swap,
@@ -580,6 +787,8 @@ def main():
                     "financial_native_route_guards":finance,
                     "automatic_renewal_ledger":auto_renew,
                     "manual_payment_method_isolation":manual,
+                    "manual_crypto_destination_and_admin_guards":crypto_guard,
+                    "payment_reference_assurance":payment_identity,
                     "shared_payment_ledger_rc4_import":migration,
                      "agency_state_regression":agency,
                      "optional_cron_runner":cron,
@@ -597,6 +806,7 @@ def main():
                        "unsupported_wallet_negatives":wallet_guard["cases"],
                        "unsupported_manual_negatives":wallet_guard["manual_cases"],
                        "wallet_transfer_scenarios":wallet_transfer["cases"],
+                       "admin_wallet_adjustment_scenarios":admin_wallet["cases"],
                        "customer_literal_first_argument_messages_inspected":audience["literal_first_argument_calls_inspected"],
                        "finance_error_audience_execution_cases":finance_privacy["cases"],
                        "telegram_transport_privacy_cases":transport_privacy["cases"],
@@ -606,6 +816,8 @@ def main():
                       "financial_native_route_cases":finance["cases"],
                       "automatic_renewal_cases":auto_renew["cases"],
                       "manual_payment_isolation_cases":manual["cases"],
+                      "manual_crypto_guard_cases":crypto_guard["cases"],
+                      "payment_reference_length":payment_identity["default_length"],
                       "historical_rc4_payment_import_verified":migration["preserved_rc4_rows_and_ids"],
                        "agency_state_cases":agency["cases"],
                        "optional_cron_runner_cases":cron["cases"],

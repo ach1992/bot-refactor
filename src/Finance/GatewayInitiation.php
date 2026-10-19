@@ -605,44 +605,6 @@ if(mysqli_num_rows($payInfo)==0){
 
 
 function showForm($msg){
-    ?>
-    <html dir="rtl">
-        <head>
-            <script>
-          (function(w,d,s,l,i){w[l]=w[l]||[];
-            w[l].push({'gtm.start': new Date().getTime(),event:'gtm.js', });
-            var f=d.getElementsByTagName(s)[0],j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';
-            j.async=true;j.src='https://www.googletagmanager.com/gtm.js?id='+i+dl+'&gtm_auth=&gtm_preview=&gtm_cookies_win=x';
-            f.parentNode.insertBefore(j,f);
-          })(window,document,'script','dataLayer','GTM-MSN6P6G');</script>
-          <meta charset="utf-8"><meta name="viewport" content="width=device-width">
-            <title><?php echo $msg;?></title>
-            <meta name="next-head-count" content="4">
-            <link rel="stylesheet" href="../assets/20bb620751bbea45.css">
-            <noscript data-n-css=""></noscript>
-    
-        </head>
-        <body>
-            <div id="__next">
-                <section class="ant-layout ant-layout-rtl PayPing-layout background--primary justify-center" style="min-height:100vh">
-                    <header class="ant-layout-header PayPing-header-logo justify-center align-center"></header>
-                    <main class="ant-layout-content justify-center align-center flex-column">
-                        <div class="ant-row ant-row-center ant-row-rtl PayPing-row w-100">
-                            <div class="ant-col PayPing-col PayPing-error-card ant-col-xs-23 ant-col-rtl ant-col-sm-20 ant-col-md-16 ant-col-lg-12 ant-col-xl-8 ant-col-xxl-6">
-                                <div class="py-2 align-center color--danger flex-column">
-                                    <svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24" class="PayPing-icon" stroke-width="1" width="100">
-                                        <circle cx="12" cy="12" r="11"></circle>
-                                        <path d="M15.3 8.7l-6.6 6.6M8.7 8.7l6.6 6.6"></path>
-                                    </svg>
-                                    <div class="py-2"><?php echo $msg; ?></div>
-                                </div>
-                            </div>
-                        </div>
-                    </main>
-                </section>
-            </div>
-        </body>
-    </html>
-<?php
+    require_once __DIR__ . '/PaymentPage.php';
+    achbotRenderPaymentPage($msg);
 }
-?>

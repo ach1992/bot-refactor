@@ -136,6 +136,7 @@ function achbotManualMethod(string $choice): ?string {
         'CartToCart', 'bank_transfer' => 'bank_transfer',
         'GiftCard', 'gift_card' => 'gift_card',
         'ManualUsdt', 'manual_usdt' => 'manual_usdt',
+        'ManualTrx', 'manual_trx' => 'manual_trx',
         default => null
     };
 }
@@ -144,41 +145,142 @@ function achbotManualLabel(string $method): string {
     return match ($method) {
         'gift_card' => 'گیفت‌کارت',
         'manual_usdt' => 'تتر دستی (USDT)',
+        'manual_trx' => 'ترون دستی (TRX)',
         default => 'کارت‌به‌کارت بانکی'
     };
 }
 
 function achbotManualUsdtWalletValid(string $wallet, string $network): bool {
     if (!in_array($network, ['BEP20','ERC20','TRC20'], true)) return false;
-    if ($network === 'TRC20') return preg_match('/^T[1-9A-HJ-NP-Za-km-z]{33}$/D', $wallet) === 1;
+    if ($network === 'TRC20') return achbotManualTronAddressValid($wallet);
     return preg_match('/^0x[0-9a-fA-F]{40}$/D', $wallet) === 1;
 }
 
 /**
- * A manual transfer is a third-party on-chain transfer: the bot does not
- * verify its screenshot or infer final settlement from Telegram evidence.
+ * Offline, dependency-free TRON Base58Check validation shared by TRC20 USDT
+ * and native TRX. A T-shaped string is not necessarily a usable destination.
+ * Decode with fixed-width base-256 arithmetic (no GMP/BCMath dependency),
+ * verify the 0x41 + 20-byte payload and double-SHA256 checksum, then require
+ * canonical Base58 round-trip. No chain lookup or ownership claim is made.
  */
-function achbotManualUsdtConfiguration(): ?array {
-    global $paymentKeys, $USDTPrice, $USDTPriceagent, $connection;
-    $keys = is_array($paymentKeys ?? null) ? $paymentKeys : [];
-    $network = (string)($keys['manualUsdtNetwork'] ?? 'BEP20');
-    $wallet = trim((string)($keys['manualUsdtWallet'] ?? ''));
-    if (!achbotManualUsdtWalletValid($wallet, $network)) return null;
-    $manualRate = $keys['manualUsdtRateToman'] ?? null;
-    $rate = $manualRate !== null && is_numeric($manualRate) && (float)$manualRate > 0
-        ? (float)$manualRate : 0.0;
-    if ($rate <= 0) {
-        $rate = isset($USDTPrice) && is_numeric($USDTPrice) ? (float)$USDTPrice : 0.0;
+function achbotManualTronAddressValid(string $wallet): bool {
+    if (strlen($wallet) !== 34 || $wallet[0] !== 'T') return false;
+    $alphabet = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+    $decoded = array_fill(0, 25, 0);
+    for ($i = 0; $i < 34; $i++) {
+        $digit = strpos($alphabet, $wallet[$i]);
+        if ($digit === false) return false;
+        $carry = $digit;
+        for ($j = 24; $j >= 0; $j--) {
+            $carry += $decoded[$j] * 58;
+            $decoded[$j] = $carry & 0xff;
+            $carry = intdiv($carry, 256);
+        }
+        // More than 25 decoded bytes is never a TRON Base58Check address.
+        if ($carry !== 0) return false;
     }
-    if (!is_finite($rate) || $rate < 100 || $rate > 1000000000) return null;
-    $agentRate = isset($USDTPriceagent) && is_numeric($USDTPriceagent)
-        ? (float)$USDTPriceagent : 0.0;
-    if (!is_finite($agentRate) || $agentRate <= 0) $agentRate = $rate;
-    // A configured manual-rate override applies to all customers, including agents.
-    if ($manualRate !== null && $rate > 0) $agentRate = $rate;
-    return ['network'=>$network, 'wallet'=>$wallet, 'rate'=>$rate, 'agent_rate'=>$agentRate];
+    if ($decoded[0] !== 0x41) return false;
+    $binary = pack('C*', ...$decoded);
+    $payload = substr($binary, 0, 21);
+    $checksum = substr(hash('sha256', hash('sha256', $payload, true), true), 0, 4);
+    if (!hash_equals($checksum, substr($binary, 21, 4))) return false;
+
+    // Only one canonical Base58 spelling of these exact 25 bytes is allowed.
+    // The verified nonzero 0x41 prefix means no leading '1' zero-byte padding.
+    $roundTrip = $decoded;
+    $canonical = '';
+    do {
+        $remainder = 0;
+        $nonzero = false;
+        foreach ($roundTrip as $index => $byte) {
+            $dividend = $remainder * 256 + $byte;
+            $roundTrip[$index] = intdiv($dividend, 58);
+            $remainder = $dividend % 58;
+            if ($roundTrip[$index] !== 0) $nonzero = true;
+        }
+        $canonical = $alphabet[$remainder] . $canonical;
+    } while ($nonzero);
+    return hash_equals($wallet, $canonical);
 }
 
+/**
+ * All available manual-crypto destinations are independent. The existing
+ * manualUsdtNetwork/manualUsdtWallet pair remains a read-compatible fallback
+ * for already configured tenants; new per-network entries override it.
+ *
+ * A rate and destination are required before an option appears. Neither a
+ * screenshot nor an operator click is automatic blockchain settlement proof.
+ */
+function achbotManualUsdtConfiguration(?string $network = null): ?array {
+    global $paymentKeys, $USDTPrice, $USDTPriceagent;
+    $keys = is_array($paymentKeys ?? null) ? $paymentKeys : [];
+    if ($network === null) {
+        $network = (string)($keys['manualUsdtNetwork'] ?? 'BEP20');
+    }
+    if (!in_array($network, ['BEP20','TRC20','ERC20'], true)) return null;
+    $field = 'manualUsdtWallet' . $network;
+    $wallet = array_key_exists($field, $keys)
+        ? trim((string)$keys[$field])
+        : ((string)($keys['manualUsdtNetwork'] ?? 'BEP20') === $network
+            ? trim((string)($keys['manualUsdtWallet'] ?? '')) : '');
+    if (!achbotManualUsdtWalletValid($wallet, $network)) return null;
+    $rawRate = $keys['manualUsdtRateToman'] ?? null;
+    // Explicitly set but invalid rates must never fall back silently.
+    if ($rawRate !== null && $rawRate !== '' &&
+        (!is_numeric($rawRate) || !is_finite((float)$rawRate) ||
+         (float)$rawRate <= 0)) return null;
+    $override = $rawRate !== null && $rawRate !== '';
+    $rate = $override ? (float)$rawRate :
+        (isset($USDTPrice) && is_numeric($USDTPrice) ? (float)$USDTPrice : 0);
+    if (!is_finite($rate) || $rate < 100 || $rate > 1000000000) return null;
+    $agentRate = $override ? $rate :
+        (isset($USDTPriceagent) && is_numeric($USDTPriceagent)
+         ? (float)$USDTPriceagent : 0);
+    if (!is_finite($agentRate) || $agentRate <= 0) $agentRate = $rate;
+    return ['network'=>$network, 'wallet'=>$wallet,
+            'rate'=>$rate, 'agent_rate'=>$agentRate];
+}
+
+/** Independent, explicit TRX/Toman rate; never infer it from legacy checker. */
+function achbotManualTrxConfiguration(): ?array {
+    global $paymentKeys;
+    $keys = is_array($paymentKeys ?? null) ? $paymentKeys : [];
+    $wallet = trim((string)($keys['manualTrxWallet'] ?? ''));
+    $rawRate = $keys['manualTrxRateToman'] ?? null;
+    if (!achbotManualTronAddressValid($wallet) ||
+        !is_scalar($rawRate) ||
+        !preg_match('/^[1-9][0-9]{0,8}$/D', (string)$rawRate)) return null;
+    $rate = (float)$rawRate;
+    if (!is_finite($rate) || $rate <= 0) return null;
+    return ['network'=>'TRON', 'wallet'=>$wallet,
+            'rate'=>$rate, 'agent_rate'=>$rate];
+}
+
+/**
+ * Selection is per order, not per runtime-global wallet. All four options
+ * share the existing manual photo/approval pipeline. A claimed quote is
+ * permanent even when admin settings change later.
+ */
+function achbotManualCryptoOptions(): array {
+    global $botState;
+    if (($botState['manualUsdtState'] ?? 'off') !== 'on') return [];
+    $available = [];
+    foreach (['BEP20'=>'b','TRC20'=>'c','ERC20'=>'e'] as $network=>$tag) {
+        if (achbotManualUsdtConfiguration($network) !== null) {
+            $available[$tag] = ['provider'=>'manual_usdt','network'=>$network,
+                                'label'=>'💎 USDT — '.$network];
+        }
+    }
+    if (achbotManualTrxConfiguration() !== null) {
+        $available['t']=['provider'=>'manual_trx','network'=>'TRON',
+                          'label'=>'🔴 TRX — TRON'];
+    }
+    return $available;
+}
+
+function achbotManualCryptoEnabled(): bool {
+    return achbotManualCryptoOptions() !== [];
+}
 
 /** No implicit recipient or gift seller: invalid settings disable initiation. */
 function achbotManualBankIdentity(): ?array {
@@ -215,7 +317,18 @@ function achbotManualIntentEncode(array $intent): ?string {
 function achbotManualIntentDecode(string $saved, string $method): ?array {
     $intent = json_decode($saved, true);
     if (is_array($intent) && ($intent['v'] ?? null) === 1 &&
-        ($intent['method'] ?? null) === $method) return $intent;
+        ($intent['method'] ?? null) === $method) {
+        if (in_array($method, ['manual_usdt','manual_trx'], true)) {
+            if (!is_string($intent['network'] ?? null) ||
+                !is_string($intent['wallet'] ?? null)) return null;
+            if ($method === 'manual_trx' &&
+                ($intent['network'] !== 'TRON' ||
+                 !achbotManualTronAddressValid($intent['wallet']))) return null;
+            if ($method === 'manual_usdt' &&
+                !achbotManualUsdtWalletValid($intent['wallet'], $intent['network'])) return null;
+        }
+        return $intent;
+    }
     // A previous PR candidate saved only an on-chain intent URI.
     if ($method === 'manual_usdt' &&
         preg_match('/^usdt:(BEP20|ERC20|TRC20):(.+)$/D', $saved, $m) &&
@@ -228,8 +341,12 @@ function achbotManualEnabled(string $method): bool {
     global $botState;
     if ($method === 'gift_card') return ($botState['giftCardState'] ?? 'off') === 'on' &&
         achbotManualSellerUrl() !== null;
-    if ($method === 'manual_usdt') return ($botState['manualUsdtState'] ?? 'off') === 'on' &&
-        achbotManualUsdtConfiguration() !== null;
+    if ($method === 'manual_usdt' || $method === 'manual_trx') {
+        if (($botState['manualUsdtState'] ?? 'off') !== 'on') return false;
+        return $method === 'manual_trx'
+            ? achbotManualTrxConfiguration() !== null
+            : achbotManualCryptoEnabled();
+    }
     return $method === 'bank_transfer' && ($botState['cartToCartState'] ?? 'off') === 'on' &&
         achbotManualBankIdentity() !== null;
 }
@@ -244,12 +361,26 @@ function achbotManualSelectedMethod(mysqli $connection, array $payInfo): ?string
         $row = $stmt->get_result()->fetch_assoc();
         $stmt->close();
         $method = (string)($row['provider'] ?? '');
-        return in_array($method, ['bank_transfer', 'gift_card', 'manual_usdt'], true) ? $method : null;
+        return in_array($method, ['bank_transfer', 'gift_card', 'manual_usdt','manual_trx'], true) ? $method : null;
     } catch (Throwable $error) {
         return null;
     }
 }
 
+
+/** Read the provider from the immutable order-claim, not from a stale button. */
+function achbotManualCryptoReceiptProviderByHash(mysqli $db, string $hashId): string {
+    if (!preg_match('/^[A-Za-z0-9_-]{1,50}$/D', $hashId)) return '';
+    try {
+        $stmt=$db->prepare('SELECT provider FROM payment_attempts WHERE order_hash=? LIMIT 1');
+        $stmt->bind_param('s',$hashId);$stmt->execute();
+        $attempt=$stmt->get_result()->fetch_assoc();$stmt->close();
+        $method=(string)($attempt['provider']??'');
+        return in_array($method,['manual_usdt','manual_trx'],true) ? $method : '';
+    } catch (Throwable $ignored) {
+        return '';
+    }
+}
 
 /** Cheap classification; uncertainty never means "legacy bank". Rechecked under lock. */
 function achbotAutoBankEligible(mysqli $connection, array $seen): bool {
@@ -395,6 +526,7 @@ function achbotApproveManualWalletTopup(mysqli $connection, string $hashId, int 
 function achbotWalletDirectAllowedLocked(mysqli $connection, array $pay,
                                          int $actor): bool {
     if ($actor <= 0 || (int)($pay['user_id'] ?? 0) !== $actor ||
+        (int)($pay['price'] ?? 0) <= 0 ||
         !in_array((string)($pay['state'] ?? ''), ['pending','send','low_wallet'], true) ||
         (string)($pay['payid'] ?? '') !== '') return false;
     $id = (int)($pay['id'] ?? 0);
@@ -422,90 +554,6 @@ function achbotWalletDirectAllowedLocked(mysqli $connection, array $pay,
         } catch (Throwable $ignored) {
             return false;
         }
-    }
-}
-
-/** Legacy TRON buttons share the same exclusive invoice claim as other methods. */
-function achbotTronClaim(mysqli $connection, array $seen, int $userId,
-                         float $trxAmount, string $wallet): ?array {
-    if ($userId <= 0 || !is_finite($trxAmount) || $trxAmount <= 0 || $wallet === '') return null;
-    try {
-        $connection->begin_transaction();
-        $id = (int)$seen['id'];
-        $stmt = $connection->prepare('SELECT id,hash_id,user_id,price,state,payid FROM pays WHERE id=? FOR UPDATE');
-        $stmt->bind_param('i',$id);$stmt->execute();
-        $pay = $stmt->get_result()->fetch_assoc();$stmt->close();
-        if (!$pay || (int)$pay['user_id'] !== $userId ||
-            $pay['state'] !== 'pending' || (string)($pay['payid'] ?? '') !== '') {
-            $connection->rollback(); return null;
-        }
-        $stmt=$connection->prepare('SELECT provider,stage,quote_amount,checkout_url
-            FROM payment_attempts WHERE pay_row_id=? LIMIT 1 FOR UPDATE');
-        $stmt->bind_param('i',$id);$stmt->execute();
-        $attempt=$stmt->get_result()->fetch_assoc();$stmt->close();
-        if ($attempt !== null) {
-            $connection->commit();
-            if ($attempt['provider'] !== 'tron_wallet' || $attempt['stage'] !== 'pending' ||
-                !str_starts_with((string)$attempt['checkout_url'], 'tron:')) return null;
-            return ['quote'=>(string)$attempt['quote_amount'],
-                    'wallet'=>substr((string)$attempt['checkout_url'],5)];
-        }
-        $quote=number_format($trxAmount,2,'.','');
-        $address='tron:'.$wallet;
-        $price=(int)$pay['price'];$hash=(string)$pay['hash_id'];
-        $stmt=$connection->prepare("INSERT INTO payment_attempts
-            (pay_row_id,provider,order_hash,quote_amount,quote_currency,local_amount_toman,
-             settlement_currency,checkout_url,stage)
-            VALUES (?,'tron_wallet',?,?,'TRX',?,'TRX',?,'pending')");
-        $stmt->bind_param('issis',$id,$hash,$quote,$price,$address);
-        $stmt->execute();$stmt->close();
-        // The frozen 23-table pays schema has no tron_price column.
-        // Quote and receiving address are pinned in the shared ledger only.
-        if (!$connection->commit()) throw new RuntimeException('tron_claim_commit_failed');
-        return ['quote'=>$quote,'wallet'=>$wallet];
-    } catch(Throwable $error) {
-        try{$connection->rollback();}catch(Throwable $ignored){}
-        return null;
-    }
-}
-function achbotTronSubmitHash(mysqli $connection, string $hashId,
-                              int $userId, string $txId): bool {
-    if ($userId<=0 || !preg_match('/^[0-9a-f]{64}$/iD',$txId)) return false;
-    try {
-        $connection->begin_transaction();
-        $stmt=$connection->prepare('SELECT id,user_id,state,payid FROM pays WHERE hash_id=? FOR UPDATE');
-        $stmt->bind_param('s',$hashId);$stmt->execute();
-        $pay=$stmt->get_result()->fetch_assoc();$stmt->close();
-        if (!$pay || (int)$pay['user_id'] !== $userId ||
-            $pay['state'] !== 'pending' || (string)($pay['payid'] ?? '') !== '') {
-            $connection->rollback();return false;
-        }
-        $id=(int)$pay['id'];
-        $stmt=$connection->prepare('SELECT id,provider,stage FROM payment_attempts
-            WHERE pay_row_id=? LIMIT 1 FOR UPDATE');
-        $stmt->bind_param('i',$id);$stmt->execute();
-        $attempt=$stmt->get_result()->fetch_assoc();$stmt->close();
-        if (!$attempt || $attempt['provider']!=='tron_wallet' ||
-            $attempt['stage']!=='pending'){$connection->rollback();return false;}
-        $stmt=$connection->prepare('SELECT id FROM pays WHERE payid=? LIMIT 1');
-        $stmt->bind_param('s',$txId);$stmt->execute();
-        $duplicate=$stmt->get_result()->fetch_assoc();$stmt->close();
-        if($duplicate){$connection->rollback();return false;}
-        $stmt=$connection->prepare("UPDATE pays SET payid=?,state='0'
-            WHERE id=? AND state='pending' AND (payid IS NULL OR payid='')");
-        $stmt->bind_param('si',$txId,$id);$stmt->execute();
-        $changed=$stmt->affected_rows;$stmt->close();
-        if($changed!==1){$connection->rollback();return false;}
-        $attemptId=(int)$attempt['id'];
-        $stmt=$connection->prepare("UPDATE payment_attempts
-            SET provider_reference=?,stage='review' WHERE id=? AND provider='tron_wallet' AND stage='pending'");
-        $stmt->bind_param('si',$txId,$attemptId);$stmt->execute();
-        $changed=$stmt->affected_rows;$stmt->close();
-        if($changed!==1 || !$connection->commit())throw new RuntimeException('tron_submit_commit_failed');
-        return true;
-    }catch(Throwable $error){
-        try{$connection->rollback();}catch(Throwable $ignored){}
-        return false;
     }
 }
 
@@ -549,7 +597,7 @@ function achbotManualServiceApprovalAllowedLocked(mysqli $connection, ?array $pa
             return true;
         }
         $method = (string)$attempt['provider'];
-        if (!in_array($method, ['bank_transfer','gift_card','manual_usdt'], true) ||
+        if (!in_array($method, ['bank_transfer','gift_card','manual_usdt','manual_trx'], true) ||
             (string)$attempt['stage'] !== 'review') return false;
         $intent = achbotManualIntentDecode((string)($attempt['checkout_url'] ?? ''), $method);
         return is_array($intent) && !empty($intent['receipt_file_id']);
@@ -558,8 +606,9 @@ function achbotManualServiceApprovalAllowedLocked(mysqli $connection, ?array $pa
     }
 }
 
-function achbotManualClaim(mysqli $connection, array $payInfo, string $method, int $userId): bool {
-    if (!in_array($method, ['bank_transfer', 'gift_card', 'manual_usdt'], true) ||
+function achbotManualClaim(mysqli $connection, array $payInfo, string $method, int $userId,
+                           ?string $chosenNetwork = null): bool {
+    if (!in_array($method, ['bank_transfer', 'gift_card', 'manual_usdt','manual_trx'], true) ||
         (int)$payInfo['user_id'] !== $userId) return false;
     try {
         $connection->begin_transaction();
@@ -575,14 +624,23 @@ function achbotManualClaim(mysqli $connection, array $payInfo, string $method, i
             $connection->rollback();
             return false;
         }
-        $stmt = $connection->prepare('SELECT provider,stage FROM payment_attempts WHERE pay_row_id=? LIMIT 1 FOR UPDATE');
+        $stmt = $connection->prepare('SELECT provider,stage,checkout_url FROM payment_attempts WHERE pay_row_id=? LIMIT 1 FOR UPDATE');
         $stmt->bind_param('i', $id);
         $stmt->execute();
         $existing = $stmt->get_result()->fetch_assoc();
         $stmt->close();
         if ($existing !== null) {
             $connection->commit();
-            return hash_equals($method, (string)$existing['provider']) && $existing['stage'] === 'pending';
+            if (!hash_equals($method, (string)$existing['provider']) || $existing['stage'] !== 'pending')
+                return false;
+            if (in_array($method, ['manual_usdt','manual_trx'], true)) {
+                $pinned=achbotManualIntentDecode((string)$existing['checkout_url'], $method);
+                // An invalid historical address must not be reopened, even
+                // without a network argument. Retain the row for review.
+                return $pinned !== null && ($chosenNetwork === null ||
+                    $pinned['network'] === $chosenNetwork);
+            }
+            return true;
         }
         if (!achbotManualEnabled($method)) {
             $connection->rollback();
@@ -607,9 +665,11 @@ function achbotManualClaim(mysqli $connection, array $payInfo, string $method, i
             $url = achbotManualSellerUrl();
             if ($url === null) { $connection->rollback(); return false; }
             $intent['seller_url'] = $url;
-        } elseif ($method === 'manual_usdt') {
-            $config = achbotManualUsdtConfiguration();
-            if ($config === null) {
+        } elseif ($method === 'manual_usdt' || $method === 'manual_trx') {
+            $config = $method === 'manual_trx' ? achbotManualTrxConfiguration()
+                : achbotManualUsdtConfiguration($chosenNetwork);
+            if ($config === null || ($chosenNetwork !== null &&
+                $config['network'] !== $chosenNetwork)) {
                 $connection->rollback();
                 return false;
             }
@@ -620,15 +680,21 @@ function achbotManualClaim(mysqli $connection, array $payInfo, string $method, i
             $agent = $agentStmt->get_result()->fetch_assoc();
             $agentStmt->close();
             if ((int)($agent['is_agent'] ?? 0) === 1) $rate = $config['agent_rate'];
-            if (!is_finite($rate) || $rate <= 0) {
+            $precision = $method === 'manual_trx' ? 6 : 2;
+            $factor = $method === 'manual_trx' ? 1000000 : 100;
+            $rawQuote=$price/$rate;
+            if (!is_finite($rate) || $rate <= 0 || !is_finite($rawQuote) ||
+                $rawQuote <= 0 || $rawQuote > 1000000000000) {
                 $connection->rollback();
                 return false;
             }
-            $quote = number_format(ceil(($price / $rate) * 100) / 100, 2, '.', '');
+            $quote = number_format(ceil($rawQuote * $factor) / $factor,
+                                   $precision, '.', '');
             $settlementNetwork = $config['network'];
             $intent['network'] = $config['network'];
             $intent['wallet'] = $config['wallet'];
-            $currency = 'USDT';
+            $intent['rate_toman'] = (string)$rate;
+            $currency = $method === 'manual_trx' ? 'TRX' : 'USDT';
         }
         $destination = achbotManualIntentEncode($intent);
         if ($destination === null) { $connection->rollback(); return false; }
@@ -654,9 +720,9 @@ function achbotManualReceiptAllowed(mysqli $connection, array $payInfo, string $
     if ((int)$payInfo['user_id'] !== $userId ||
         (string)$payInfo['state'] !== 'pending' ||
         (string)($payInfo['payid'] ?? '') !== '' ||
-        !in_array($method, ['bank_transfer','gift_card','manual_usdt'], true)) return false;
+        !in_array($method, ['bank_transfer','gift_card','manual_usdt','manual_trx'], true)) return false;
     try {
-        $stmt = $connection->prepare('SELECT provider,stage FROM payment_attempts WHERE pay_row_id=? LIMIT 1');
+        $stmt = $connection->prepare('SELECT provider,stage,checkout_url FROM payment_attempts WHERE pay_row_id=? LIMIT 1');
         $id = (int)$payInfo['id'];
         $stmt->bind_param('i', $id);
         $stmt->execute();
@@ -664,7 +730,9 @@ function achbotManualReceiptAllowed(mysqli $connection, array $payInfo, string $
         $stmt->close();
         return $attempt !== null &&
             (string)$attempt['provider'] === $method &&
-            in_array((string)$attempt['stage'], ['pending','receiving'], true);
+            in_array((string)$attempt['stage'], ['pending','receiving'], true) &&
+            (!in_array($method, ['manual_usdt','manual_trx'], true) ||
+             achbotManualIntentDecode((string)$attempt['checkout_url'], $method) !== null);
     } catch (Throwable $error) {
         return false;
     }
@@ -678,7 +746,7 @@ function achbotManualReceiptAllowed(mysqli $connection, array $payInfo, string $
 function achbotManualBeginEvidence(mysqli $connection, array $payInfo, string $method,
                                    int $userId, string $fileId): ?string {
     if ($userId <= 0 || $fileId === '' || strlen($fileId) > 1200 ||
-        !in_array($method, ['bank_transfer','gift_card','manual_usdt'], true)) return null;
+        !in_array($method, ['bank_transfer','gift_card','manual_usdt','manual_trx'], true)) return null;
     try {
         $claimToken = bin2hex(random_bytes(16));
         $connection->begin_transaction();
@@ -769,7 +837,7 @@ function achbotManualFinishEvidence(mysqli $connection, string $hashId, string $
         $attempt = $stmt->get_result()->fetch_assoc();
         $stmt->close();
         if (!$attempt || !in_array((string)$attempt['provider'],
-            ['bank_transfer','gift_card','manual_usdt'], true) ||
+            ['bank_transfer','gift_card','manual_usdt','manual_trx'], true) ||
             $attempt['stage'] !== 'receiving' ||
             (string)$attempt['review_notice_claim_token'] !== $token) {
             $connection->rollback(); return false;
@@ -806,7 +874,7 @@ function achbotManualCaption(mysqli $connection, array $payInfo, string $caption
     $method = achbotManualSelectedMethod($connection, $payInfo);
     $label = $method === null ? 'نیازمند بررسی' : achbotManualLabel($method);
     $header = '🧾 روش پرداخت: <b>' . $label . "</b>\n";
-    if ($method === 'manual_usdt' || $method === 'bank_transfer') {
+    if (in_array($method, ['manual_usdt','manual_trx','bank_transfer'], true)) {
         try {
             $stmt = $connection->prepare('SELECT provider,quote_amount,quote_currency,
                 checkout_url FROM payment_attempts WHERE pay_row_id=? LIMIT 1');
@@ -816,14 +884,17 @@ function achbotManualCaption(mysqli $connection, array $payInfo, string $caption
             $details = $stmt->get_result()->fetch_assoc();
             $stmt->close();
             $intent = $details ? achbotManualIntentDecode((string)$details['checkout_url'], $method) : null;
-            if ($intent && $method === 'manual_usdt') {
+            if ($intent && in_array($method, ['manual_usdt','manual_trx'], true)) {
                 $network = (string)($intent['network'] ?? '');
                 $address = (string)($intent['wallet'] ?? '');
-                if ($details['quote_currency'] === 'USDT' &&
-                    achbotManualUsdtWalletValid($address, $network)) {
-                    $header .= '💎 مبلغ تتر: <code>' .
+                $asset = $method === 'manual_trx' ? 'TRX' : 'USDT';
+                $valid = $method === 'manual_trx'
+                    ? $network === 'TRON' && achbotManualTronAddressValid($address)
+                    : achbotManualUsdtWalletValid($address, $network);
+                if ($details['quote_currency'] === $asset && $valid) {
+                    $header .= '💎 مبلغ رمزارز: <code>' .
                         htmlspecialchars((string)$details['quote_amount'], ENT_QUOTES, 'UTF-8') .
-                        ' USDT</code> | شبکه: <b>' . htmlspecialchars($network, ENT_QUOTES, 'UTF-8') .
+                        ' ' . $asset . '</code> | شبکه: <b>' . htmlspecialchars($network, ENT_QUOTES, 'UTF-8') .
                         "</b>\nآدرس: <code>" . htmlspecialchars($address, ENT_QUOTES, 'UTF-8') .
                         "</code>\n";
                 }
@@ -846,6 +917,7 @@ function achbotManualReceiptPrompt(array $mainValues, string $method): string {
     $key = match ($method) {
         'gift_card' => 'please_send_gift_card_image',
         'manual_usdt' => 'please_send_usdt_image',
+        'manual_trx' => 'please_send_trx_image',
         default => 'please_send_receipt_image'
     };
     return $mainValues[$key];
@@ -868,7 +940,7 @@ function buildCartToCartInfoMessage(array $paymentKeys, array $mainValues, int $
                                     int $userId = 0, string $method = 'bank_transfer',
                                     string $hashId = ''): string {
     global $connection;
-    if (!in_array($method, ['bank_transfer','gift_card','manual_usdt'], true) ||
+    if (!in_array($method, ['bank_transfer','gift_card','manual_usdt','manual_trx'], true) ||
         $hashId === '' || !($connection instanceof mysqli)) return '';
     try {
         $stmt = $connection->prepare("SELECT provider,quote_amount,quote_currency,
@@ -881,17 +953,27 @@ function buildCartToCartInfoMessage(array $paymentKeys, array $mainValues, int $
         if (!$attempt || (int)$attempt['local_amount_toman'] !== $priceToman) return '';
         $intent = achbotManualIntentDecode((string)$attempt['checkout_url'], $method);
         if (!$intent) return '';
-        if ($method === 'manual_usdt') {
+        if (in_array($method, ['manual_usdt','manual_trx'], true)) {
             $network = (string)($intent['network'] ?? '');
             $wallet = (string)($intent['wallet'] ?? '');
-            if ((string)$attempt['quote_currency'] !== 'USDT' ||
-                !achbotManualUsdtWalletValid($wallet, $network) ||
-                !preg_match('/^[0-9]{1,15}\.[0-9]{2,8}$/D', (string)$attempt['quote_amount'])) return '';
-            return strtr((string)($mainValues['brw_cart_to_cart_usdt'] ?? ''), [
+            $asset = $method === 'manual_trx' ? 'TRX' : 'USDT';
+            $addressValid = $method === 'manual_trx'
+                ? $network === 'TRON' && achbotManualTronAddressValid($wallet)
+                : achbotManualUsdtWalletValid($wallet, $network);
+            if ((string)$attempt['quote_currency'] !== $asset ||
+                (string)$attempt['settlement_currency'] !== $network ||
+                !$addressValid ||
+                !preg_match('/^[0-9]{1,15}\.[0-9]{2,8}$/D', (string)$attempt['quote_amount']) ||
+                (float)$attempt['quote_amount'] <= 0) return '';
+            $template = (string)($mainValues[$method === 'manual_trx'
+                ? 'brw_cart_to_cart_trx' : 'brw_cart_to_cart_usdt'] ?? '');
+            return strtr($template, [
                 'PRICE-TOMAN-ROUND' => number_format($priceToman),
                 'PRICE-USDT' => number_format((float)$attempt['quote_amount'], 2, '.', ''),
                 'USDT-NETWORK' => htmlspecialchars($network, ENT_QUOTES, 'UTF-8'),
                 'USDT-WALLET' => htmlspecialchars($wallet, ENT_QUOTES, 'UTF-8'),
+                'PRICE-TRX' => number_format((float)$attempt['quote_amount'], 6, '.', ''),
+                'TRX-WALLET' => htmlspecialchars($wallet, ENT_QUOTES, 'UTF-8'),
             ]);
         }
         if ((string)$attempt['quote_currency'] !== 'toman') return '';

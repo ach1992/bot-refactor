@@ -24,9 +24,10 @@ function receiptAndCancel(string $sendPrefix, string $cancelPrefix, string $hash
         if ($giftCardUrl !== null) {
             $firstRow[] = ['text' => '🎁 خرید گیفت‌کارت', 'url' => $giftCardUrl];
         }
-    } elseif ($messageType === 'manual_usdt') {
+    } elseif ($messageType === 'manual_usdt' || $messageType === 'manual_trx') {
         $firstRow = [
-            ['text' => '💎 ارسال رسید تتر', 'callback_data' => $sendPrefix . $hashId],
+            ['text' => $messageType === 'manual_trx' ? '🔴 ارسال رسید TRX' : '💎 ارسال رسید تتر',
+             'callback_data' => $sendPrefix . $hashId],
         ];
     } else {
         $firstRow = [
@@ -35,7 +36,6 @@ function receiptAndCancel(string $sendPrefix, string $cancelPrefix, string $hash
     }
     return inlineKeyboard([
         $firstRow,
-        [['text' => '🔄 بررسی وضعیت', 'callback_data' => 'ps_' . $hashId]],
         [['text' => '❌ لغو عملیات', 'callback_data' => $cancelPrefix . $hashId]]
     ]);
 }
