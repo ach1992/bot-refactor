@@ -427,6 +427,42 @@ def main():
                 and checkout_race.get("production_mutations")==0):
             raise RuntimeError("Reviewer F1/F2/F3/F4/R1 checkout and callback proof incomplete")
 
+        # Independent review R2 BLOCKER: first-time manual destination
+        # issue and direct wallet debit MUST share owner-row serial order with
+        # replacement draft INSERTs. Test both commit orders, SQL/lock faults,
+        # interrupted owner FOR UPDATE and deliberate inverted-lock deadlocks.
+        method_race_path=Path(tmp)/"customer-method-serialization.json"
+        subprocess.run(["python3",
+                        str(ROOT/"tools/test_post_v9_method_selection_race.py"),
+                        "--run-disposable","--report",str(method_race_path)],
+                       cwd=ROOT,check=True,timeout=160,capture_output=True)
+        method_race=json.loads(method_race_path.read_text())
+        required_method_race=set()
+        for method in ("bank_transfer","gift_card","manual_usdt","manual_trx","wallet"):
+            required_method_race.update({
+                "r2_"+method+"_replacement_commits_first_no_old_ledger_or_debit",
+                "r2_"+method+"_old_commits_first_new_draft_waits_evidence_intact",
+                "r2_"+method+"_nonthrowing_mysqli_failure_no_claim_debit_or_handler",
+            })
+        for method in ("bank_transfer","gift_card"):
+            required_method_race.add(
+                "r2_"+method+"_stale_telegram_callback_does_not_show_destination")
+        for method in ("bank_transfer","wallet"):
+            required_method_race.update({
+                "r2_"+method+"_owner_lock_timeout_fails_closed_without_side_effect",
+                "r2_"+method+"_interrupted_owner_lock_no_financial_effect",
+                "r2_"+method+"_inverted_lock_deadlock_victim_safe_atomic_outcome",
+                "r2_"+method+"_lost_commit_ack_only_durable_claim_may_be_recovered",
+            })
+        if not (method_race.get("complete") is True
+                and required_method_race.issubset(method_race.get("scenarios",[]))
+                and method_race.get("cases")==len(required_method_race)
+                and method_race.get("source_real_php") is True
+                and method_race.get("owned_mariadb_only") is True
+                and method_race.get("external_effects")==0
+                and method_race.get("production_mutations")==0):
+            raise RuntimeError("Reviewer R2 manual/wallet side-effect serialization proof incomplete")
+
         auto_renew_path=Path(tmp)/"automatic-renewal-ledger.json"
         subprocess.run(["python3",str(ROOT/"tools/test_post_v9_automatic_renewal.py"),
                         "--run-disposable","--report",str(auto_renew_path)],
@@ -916,6 +952,7 @@ def main():
                     "automatic_renewal_ledger":auto_renew,
                     "payment_ux_lifecycle":payment_ux,
                     "checkout_serialization":checkout_race,
+                    "customer_method_serialization":method_race,
                     "manual_payment_method_isolation":manual,
                     "manual_crypto_destination_and_admin_guards":crypto_guard,
                     "payment_reference_assurance":payment_identity,
@@ -947,6 +984,7 @@ def main():
                       "automatic_renewal_cases":auto_renew["cases"],
                       "payment_ux_cases":payment_ux["cases"],
                       "checkout_serialization_cases":checkout_race["cases"],
+                      "customer_method_serialization_cases":method_race["cases"],
                       "manual_payment_isolation_cases":manual["cases"],
                       "manual_crypto_guard_cases":crypto_guard["cases"],
                       "payment_reference_length":payment_identity["default_length"],

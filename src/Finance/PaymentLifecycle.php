@@ -230,7 +230,8 @@ function achbotPayUxLockedCheckoutUsable(mysqli $db, array $pay): bool {
  * method or debiting a wallet. Existing manual/provider claims must use their
  * separate evidence/reconciliation path, never be invalidated by this check.
  */
-function achbotPayUxUnclaimedDraftUsable(mysqli $db, array $pay): bool {
+function achbotPayUxUnclaimedDraftUsable(mysqli $db, array $pay,
+                                          bool $lockingRead=false): bool {
     if ((int)($pay['id']??0)<=0 ||
         !in_array((string)($pay['state']??''),['pending','send','low_wallet'],true) ||
         (string)($pay['payid']??'')!=='' ||
@@ -239,7 +240,7 @@ function achbotPayUxUnclaimedDraftUsable(mysqli $db, array $pay): bool {
         return false;
     }
     try {
-        return !achbotPayUxHasNewer($db,$pay);
+        return !achbotPayUxHasNewer($db,$pay,$lockingRead);
     } catch (Throwable $ignored) {
         return false;
     }

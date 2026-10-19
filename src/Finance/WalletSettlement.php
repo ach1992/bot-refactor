@@ -10,12 +10,19 @@ if (!function_exists('processWalletPayment')) {
     {
         global $from_id, $admin;
 
-        $connection->begin_transaction();
-
         try {
+            if (!$connection->begin_transaction())
+                throw new RuntimeException('wallet_begin_failed');
+            // Serialize the FINAL new wallet method selection against the
+            // customer draft writers and hosted/manual claims. The shared
+            // invariant is owner -> pays -> provider attempt, NEVER pays ->
+            // owner. Preflight or an older Telegram button is not authority
+            // to debit money or invoke fulfillment.
+            require_once __DIR__ . '/PaymentLifecycle.php';
+            achbotPayUxLockDraftOwner($connection,(int)$from_id);
             $stmt = $connection->prepare("SELECT * FROM `pays` WHERE `hash_id` = ? FOR UPDATE");
             $stmt->bind_param("s", $hashId);
-            $stmt->execute();
+            if (!$stmt->execute()) throw new RuntimeException('wallet_pay_lock_failed');
             $payRes = $stmt->get_result();
             $stmt->close();
 
@@ -127,7 +134,7 @@ if (!function_exists('processWalletPayment')) {
 
             $stmt = $connection->prepare("SELECT `wallet`, `refered_by` FROM `users` WHERE `userid` = ? FOR UPDATE");
             $stmt->bind_param("i", $uid);
-            $stmt->execute();
+            if (!$stmt->execute()) throw new RuntimeException('wallet_balance_read_failed');
             $userRow = $stmt->get_result()->fetch_assoc();
             $stmt->close();
 
@@ -137,10 +144,9 @@ if (!function_exists('processWalletPayment')) {
             if ($userWallet < $price) {
                 $stmt = $connection->prepare("UPDATE `pays` SET `state` = 'low_wallet' WHERE `hash_id` = ? LIMIT 1");
                 $stmt->bind_param("s", $hashId);
-                $stmt->execute();
+                if (!$stmt->execute()) throw new RuntimeException('wallet_low_balance_status_failed');
                 $stmt->close();
-
-                $connection->commit();
+                if (!$connection->commit()) throw new RuntimeException('wallet_low_balance_commit_unknown');
 
                 alert(
                     "❌ موجودی کیف پول شما کافی نیست.\n" .
@@ -161,13 +167,19 @@ if (!function_exists('processWalletPayment')) {
 
             $stmt = $connection->prepare("UPDATE `pays` SET `state`='processing_wallet' WHERE `hash_id`=? LIMIT 1");
             $stmt->bind_param("s", $hashId);
-            $stmt->execute();
+            $marked=$stmt->execute();
+            $markedRows=$stmt->affected_rows;
             $stmt->close();
+            if ($marked!==true || $markedRows!==1)
+                throw new RuntimeException('wallet_processing_mark_failed');
 
             $stmt = $connection->prepare("UPDATE `users` SET `wallet` = `wallet` - ? WHERE `userid` = ? LIMIT 1");
             $stmt->bind_param("ii", $price, $uid);
-            $stmt->execute();
+            $debited=$stmt->execute();
+            $debitedRows=$stmt->affected_rows;
             $stmt->close();
+            if ($debited!==true || $debitedRows!==1)
+                throw new RuntimeException('wallet_debit_failed');
 
             $businessOk = call_user_func($handler, $payInfo, $userRow);
 
@@ -185,10 +197,12 @@ if (!function_exists('processWalletPayment')) {
 
             $stmt = $connection->prepare("UPDATE `pays` SET `state` = 'paid_with_wallet' WHERE `hash_id` = ? LIMIT 1");
             $stmt->bind_param("s", $hashId);
-            $stmt->execute();
+            $completed=$stmt->execute();
+            $completedRows=$stmt->affected_rows;
             $stmt->close();
-
-            $connection->commit();
+            if ($completed!==true || $completedRows!==1 ||
+                !$connection->commit())
+                throw new RuntimeException('wallet_commit_unverified');
 
             $payInfo['state'] = 'paid_with_wallet';
 
@@ -201,14 +215,21 @@ if (!function_exists('processWalletPayment')) {
                 'price'        => $price,
             ];
 
-        } catch (Exception $e) {
-            $connection->rollback();
+        } catch (Throwable $e) {
+            // The SQL commit or remote effect may be ambiguous. A missing
+            // connection can also make ROLLBACK fail: never report success.
+            try { $connection->rollback(); } catch (Throwable $ignored) {}
 
             $adminErr = "⚠️ خطا در پرداخت با کیف پول\n\n"
                 . "🆔 Hash ID: {$hashId}\n"
                 . "👤 User: {$from_id}\n"
-                . "⚠️ External effect: unverified; verify before retry or compensation\n📄 Reason (sanitized): " . achbotFinanceDiagnosticReason($e);
-            sendMessage($adminErr, null, null, $admin);
+                . "⚠️ External effect: unverified; verify before retry or compensation\n📄 Reason (sanitized): " . (function_exists('achbotFinanceDiagnosticReason')
+                ? achbotFinanceDiagnosticReason($e)
+                : 'wallet_transaction_guard_error_' . (int)$e->getCode());
+            try { sendMessage($adminErr, null, null, $admin); }
+            catch (Throwable $ignored) {
+                error_log('achbot_wallet_failure_operator_notice_deferred');
+            }
 
             alert("⚠️ وضعیت درخواست پرداخت نیاز به بررسی دارد. لطفاً وضعیت سفارش و پرداخت را بررسی کنید و پیش از تکرار با پشتیبانی هماهنگ شوید.", true);
 

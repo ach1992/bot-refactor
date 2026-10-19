@@ -517,8 +517,10 @@ function achbotApproveManualWalletTopup(mysqli $connection, string $hashId, int 
 }
 
 /**
- * Customer-wallet route, called with the pays row already FOR UPDATE.
- * A present shared ledger must be inspected; any attempt blocks wallet use.
+ * Customer-wallet route, called while holding the unique user row first,
+ * then the pays row FOR UPDATE. A present shared ledger must be inspected;
+ * any attempt blocks wallet use. New-claim successor checks are CURRENT
+ * locking reads under that same owner-row lock, not stale menu preflights.
  * Historical 23-table installs have no ledger and no new checkout issuance,
  * so they retain their pre-003 wallet behavior. SQL/permission failures are
  * never interpreted as an absent claim.
@@ -532,7 +534,7 @@ function achbotWalletDirectAllowedLocked(mysqli $connection, array $pay,
     $id = (int)($pay['id'] ?? 0);
     if ($id <= 0) return false;
     require_once __DIR__ . '/PaymentLifecycle.php';
-    if (!achbotPayUxUnclaimedDraftUsable($connection,$pay)) return false;
+    if (!achbotPayUxUnclaimedDraftUsable($connection,$pay,true)) return false;
     if (!achbotPayUxAudienceAllowed($connection,'wallet',$actor)) return false;
     try {
         $stmt = $connection->prepare('SELECT id FROM payment_attempts WHERE pay_row_id=? LIMIT 1 FOR UPDATE');
@@ -614,7 +616,13 @@ function achbotManualClaim(mysqli $connection, array $payInfo, string $method, i
     if (!in_array($method, ['bank_transfer', 'gift_card', 'manual_usdt','manual_trx'], true) ||
         (int)$payInfo['user_id'] !== $userId) return false;
     try {
-        $connection->begin_transaction();
+        if (!$connection->begin_transaction()) return false;
+        require_once __DIR__ . '/PaymentLifecycle.php';
+        // The same owner-row serialization protects draft insertion and
+        // hosted checkout. Acquire it BEFORE pays/attempt to avoid the
+        // wallet/provider inverse lock order. Existing pinned claims remain
+        // recoverable without applying a new supersession test to them.
+        achbotPayUxLockDraftOwner($connection,$userId);
         $id = (int)$payInfo['id'];
         $stmt = $connection->prepare('SELECT id,user_id,hash_id,price,state,payid,type,order_id,request_date FROM pays WHERE id=? FOR UPDATE');
         $stmt->bind_param('i', $id);
@@ -640,7 +648,7 @@ function achbotManualClaim(mysqli $connection, array $payInfo, string $method, i
                 (int)$existing['age_seconds']>=achbotPayUxManualDeadlineSeconds()) {
                 $connection->rollback(); return false;
             }
-            $connection->commit();
+            if (!$connection->commit()) return false;
             if (!hash_equals($method, (string)$existing['provider']) || $existing['stage'] !== 'pending')
                 return false;
             if (in_array($method, ['manual_usdt','manual_trx'], true)) {
@@ -652,11 +660,10 @@ function achbotManualClaim(mysqli $connection, array $payInfo, string $method, i
             }
             return true;
         }
-        // No provider/manual claim exists: this is a NEW method selection.
-        // The persisted pays lock is already held; never start a nested
-        // expiry transaction or silently resurrect a superseded old quote.
-        require_once __DIR__ . '/PaymentLifecycle.php';
-        if (!achbotPayUxUnclaimedDraftUsable($connection,$current)) {
+        // Only NEW method selection must pass supersession. The owning
+        // user row is locked, so a replacement cannot commit between this
+        // CURRENT successor read and the first 003 claim's COMMIT.
+        if (!achbotPayUxUnclaimedDraftUsable($connection,$current,true)) {
             $connection->rollback();
             return false;
         }
@@ -723,9 +730,11 @@ function achbotManualClaim(mysqli $connection, array $payInfo, string $method, i
             VALUES (?,?,?,?,?,?,?,?,'pending')");
         $stmt->bind_param('issssiss', $id, $method, $hash, $quote, $currency, $price,
             $settlementNetwork, $destination);
-        $stmt->execute();
+        $inserted=$stmt->execute();
+        $rows=$stmt->affected_rows;
         $stmt->close();
-        $connection->commit();
+        if ($inserted!==true || $rows!==1 || !$connection->commit())
+            throw new RuntimeException('manual_claim_commit_unverified');
         return true;
     } catch (Throwable $error) {
         try { $connection->rollback(); } catch (Throwable $ignored) {}
