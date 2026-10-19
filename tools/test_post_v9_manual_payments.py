@@ -356,15 +356,12 @@ def run_php(work,env,driver,hash_id,op,method='bank_transfer',user=1001,**more):
     try: return json.loads(p.stdout)['result']
     except Exception as exc:raise RuntimeError('invalid manual driver: '+repr(p.stdout)) from exc
 
-_fixture_seq=0
 def seed(work,env,hash_id,price=100000,owner=1001):
-    # Each independently seeded scenario represents an unrelated synthetic
-    # quote, not a newer committed user journey. Decreasing, still-fresh
-    # request times preserve those cases while the separate lifecycle tests
-    # prove that a genuinely newer same-user quote supersedes an old one.
-    global _fixture_seq
-    _fixture_seq+=1
-    created=int(time.time())-_fixture_seq
+    # New synthetic customer quote receives a NEW pays ID. request_date is
+    # strictly an idle TTL, never a way to reactivate an older invoice. Seed
+    # each independent scenario at its first exercise rather than inserting
+    # all scenarios up front with one owner and overlapping payment family.
+    created=int(time.time())
     safe="'"+hash_id+"'"
     if not hash_id.isascii() or not hash_id.isalnum():raise ValueError(hash_id)
     query(work,env,"INSERT INTO pays (hash_id,user_id,type,price,request_date,state) "
@@ -377,11 +374,23 @@ def check():
         assert len(query(work,env,'SHOW TABLES').splitlines())==23
         query(work,env,(ROOT/'migrations/post-v9/003_payment_attempts.sql').read_text())
         driver=work/'manual-payments.php';driver.write_text(PHP)
-        for name in ('bankfixture','giftfixture','usdtfixture','crossfixture',
-                     'wronguser','disabledusdt','badwallet','badnetwork','agentusdt'):
-            seed(work,env,name,100000,9002 if name=='agentusdt' else 1001)
-
-        base=lambda hash_id,op,method='bank_transfer',**kw:run_php(work,env,driver,hash_id,op,method,**kw)
+        initial_fixtures={
+            'bankfixture':1001,'giftfixture':1001,'usdtfixture':1001,
+            'crossfixture':1001,'wronguser':1001,'disabledusdt':1001,
+            'badwallet':1001,'badnetwork':1001,'agentusdt':9002,
+        }
+        seeded_initial=set()
+        def base(hash_id,op,method='bank_transfer',**kw):
+            # These represent independent historical/manual-payment tests.
+            # A fixture is allocated when its first journey begins, so a
+            # different unclaimed fixture never impersonates a later
+            # committed replacement and blocks another one's initial claim.
+            # The real overlap/replacement behavior is tested separately
+            # with same-owner/same-family real concurrent writers.
+            if hash_id in initial_fixtures and hash_id not in seeded_initial:
+                seed(work,env,hash_id,owner=initial_fixtures[hash_id])
+                seeded_initial.add(hash_id)
+            return run_php(work,env,driver,hash_id,op,method,**kw)
 
         # Nonpositive local prices must never credit wallet through subtraction.
         for key,value in [('walletnegative',-100000),('walletzero',0)]:
@@ -1231,7 +1240,11 @@ def check():
         query(work,env,"UPDATE pays SET request_date=UNIX_TIMESTAMP() WHERE state='have_sent'")
         seed(work,env,'schedulerrealbank')
         assert base('schedulerrealbank','claim')
-        query(work,env,"UPDATE pays SET state='have_sent' WHERE hash_id='schedulerrealbank'")
+        query(work,env,"UPDATE pays SET state='have_sent',"
+              "request_date=UNIX_TIMESTAMP()-120 WHERE hash_id='schedulerrealbank'")
+        # The real scheduler requires an elapsed 1-minute bank receipt
+        # review window; make THIS fixture explicitly due, not all future
+        # independently created quotes retroactively 120 seconds older.
         before=int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'))
         assert base('schedulerrealbank','auto')=='tested'
         assert query(work,env,"SELECT state FROM pays WHERE hash_id='schedulerrealbank'")=='auto_cart_approved'
@@ -1356,32 +1369,42 @@ def check():
         assert any(x['name']=='answerCallbackQuery' for x in blocked)
         assert query(work,env,"SELECT COUNT(*) FROM payment_attempts WHERE order_hash='menureal'")=='0'
         cases.append('real_telegram_crypto_pick_unauthorized_owner_denied')
-        selected=run_route(work,env,route_driver,data='mc_t_menureal',
+        # Original menu's hash is now superseded by later wallet quotes.
+        # Confirm its stale button cannot issue a competing TRX claim, then
+        # open a NEW customer quote for the positive TRX selection flow.
+        stale=run_route(work,env,route_driver,data='mc_t_menureal',
+            route='manual_crypto',keys=crypto_keys)
+        assert any(x['name']=='answerCallbackQuery' for x in stale),repr(stale)
+        assert query(work,env,"SELECT COUNT(*) FROM payment_attempts WHERE order_hash='menureal'")=='0'
+        cases.append('real_telegram_stale_crypto_menu_never_issues_after_newer_quote')
+        trx_key='menurealtrx'
+        seed(work,env,trx_key,price=345678)
+        selected=run_route(work,env,route_driver,data='mc_t_'+trx_key,
             route='manual_crypto',keys=crypto_keys)
         assert any(x['name']=='sendMessage' and 'TRX' in str(x['args']) for x in selected)
         assert query(work,env,"SELECT provider,quote_currency,stage FROM payment_attempts "
-            "WHERE order_hash='menureal'")=='manual_trx\tTRX\tpending'
-        assert query(work,env,"SELECT state FROM pays WHERE hash_id='menureal'")=='pending'
+            f"WHERE order_hash='{trx_key}'")=='manual_trx\tTRX\tpending'
+        assert query(work,env,f"SELECT state FROM pays WHERE hash_id='{trx_key}'")=='pending'
         cases.append('real_telegram_manual_trx_choice_routes_to_wallet_topup_receipt')
         receipt=run_route(work,env,route_driver,
-            data='sendIncreaseWalletUsdtReceiptmenureal',route='wallet')
+            data='sendIncreaseWalletUsdtReceipt'+trx_key,route='wallet')
         assert any(x['name']=='sendMessage' and 'TRX' in str(x['args'])
                    for x in receipt),repr(receipt)
-        uploaded=run_route(work,env,route_driver,step='waitIncreaseWalletUsdtReceiptmenureal')
+        uploaded=run_route(work,env,route_driver,step='waitIncreaseWalletUsdtReceipt'+trx_key)
         assert any(x['name']=='sendPhoto' for x in uploaded),repr(uploaded)
-        assert query(work,env,"SELECT state FROM pays WHERE hash_id='menureal'")=='have_sent'
+        assert query(work,env,f"SELECT state FROM pays WHERE hash_id='{trx_key}'")=='have_sent'
         before=int(query(work,env,"SELECT wallet FROM users WHERE userid=1001"))
         approved=run_route(work,env,route_driver,
-            data='approvePaymentmenureal',actor=9001,route='manual_admin')
+            data='approvePayment'+trx_key,actor=9001,route='manual_admin')
         assert any(x['name']=='sendMessage' for x in approved)
         assert int(query(work,env,"SELECT wallet FROM users WHERE userid=1001"))==before+345678
         repeated=run_route(work,env,route_driver,
-            data='approvePaymentmenureal',actor=9001,route='manual_admin')
+            data='approvePayment'+trx_key,actor=9001,route='manual_admin')
         assert any(x['name']=='alert' for x in repeated)
         assert int(query(work,env,"SELECT wallet FROM users WHERE userid=1001"))==before+345678
         cases.append('real_telegram_trx_manual_review_credits_wallet_once_only')
         older=run_route(work,env,route_driver,
-            data='payWithTronWalletmenureal',route='crypto_retired')
+            data='payWithTronWallet'+trx_key,route='crypto_retired')
         assert any(x['name']=='answerCallbackQuery' for x in older)
         assert not any(x['name']=='sendPhoto' or x['name']=='sendMessage' for x in older)
         cases.append('stale_tron_auto_callback_retired_fail_closed')

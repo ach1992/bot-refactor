@@ -655,6 +655,10 @@ def main():
             "usdt_quote_network_wallet_photo_admin_distinct",
             "usdt_amount_network_destination_immutable_on_revisit",
             "no_manual_method_switch_replay_or_cross_receipt",
+            # PR #60 R1: a formerly shown TRX menu becomes stale after a
+            # later same-owner wallet quote, while a fresh menu still works.
+            "real_telegram_stale_crypto_menu_never_issues_after_newer_quote",
+            "real_telegram_manual_trx_choice_routes_to_wallet_topup_receipt",
             "wrong_user_denied",
             "manual_usdt_disabled_or_bad_configuration_fails_closed",
             "tron_checksum_invalid_destination_denied_before_claim_c",
