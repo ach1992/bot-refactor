@@ -583,6 +583,7 @@ def main():
                                 'owned_mariadb_only')),
             ('cross_method_lock_order','test_post_v9_cross_method_lock_order.py',
              {
+                 'f4_successor_current_read_uses_owner_index',
                  'f4_mutant_plan_then_policy_inverse_lock_conflict_detected',
                  'f4_current_shared_policy_allows_parallel_readers_and_serializes_plan',
              },('intermediate_mutant_detected','current_source_serialization',

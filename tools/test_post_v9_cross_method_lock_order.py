@@ -48,6 +48,10 @@ def sql(w,e,q):return checkout.sql(w,e,q)
 def stage(w,mutant):
     folder=w/('cross-mutant' if mutant else 'cross-current')
     stages.stage_source(folder,True)
+    if not mutant:
+        # The SQL hint belongs to the source under test, never the driver.
+        assert 'FORCE INDEX (idx_pays_user_v1)' in (
+            folder/'src/Finance/PaymentLifecycle.php').read_text()
     if mutant:
         # Reproduce a deliberately inverted plan/policy order using the
         # e3a189b exclusive policy scanner, not the current shared PK read.
@@ -258,6 +262,16 @@ def main():
           "('PAYMENT_KEYS','{\"nextpay\":\"SYNTHETIC-LOCAL-ONLY\","
           "\"nowpayment\":\"SYNTHETIC-LOCAL-ONLY\","
           "\"zarinpal\":\"SYNTHETIC-LOCAL-ONLY\"}')")
+        # MariaDB 10.11 can choose a full-table scan for a tiny fixture
+        # even with the existing user_id index. Check the actual plan as
+        # well as the source hint: no unrelated payer may be X-locked
+        # during a current successor check.
+        plan=sql(w,e,"EXPLAIN SELECT id FROM pays FORCE INDEX (idx_pays_user_v1) "
+            "WHERE user_id=13502 AND SUBSTRING_INDEX(type,'_',2)='BUY_SUB' "
+            "AND id>1 AND COALESCE(order_id,0)=0 LIMIT 1 FOR UPDATE")
+        columns=plan.splitlines()[0].split('\t')
+        assert len(columns)>=6 and columns[5]=='idx_pays_user_v1',plan
+        evidence.append('f4_successor_current_read_uses_owner_index')
         evidence.append(run_case(w,e,mutant,wdriver,hdriver,True,0))
         evidence.append(run_case(w,e,corrected,wdriver,hdriver,False,1))
     report={'complete':True,'cases':len(evidence),'scenarios':evidence,

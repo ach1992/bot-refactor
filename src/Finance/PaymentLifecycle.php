@@ -194,8 +194,15 @@ function achbotPayUxHasNewer(mysqli $db, array $pay, bool $lockingRead=false): b
     try {
         $family=achbotPayUxPaymentFamily((string)($pay['type']??''));
         $orderId=(int)($pay['order_id']??0);
+        // On 10.11 the optimizer can choose an ALL scan for a small
+        // historical pays table. FOR UPDATE would then X-lock unrelated
+        // customers and invert concurrent wallet/hosted checkout ordering.
+        // Owner-row serialization already prevents same-owner phantom
+        // draft insertion; require the existing user_id secondary index for
+        // the CURRENT locking read so it never scans the whole pays table.
+        $indexHint=$lockingRead ? ' FORCE INDEX (idx_pays_user_v1)' : '';
         $stmt=$db->prepare(
-            "SELECT id FROM pays WHERE user_id=? AND SUBSTRING_INDEX(type,'_',2)=? AND id>?
+            "SELECT id FROM pays".$indexHint." WHERE user_id=? AND SUBSTRING_INDEX(type,'_',2)=? AND id>?
                AND COALESCE(order_id,0)=?
              LIMIT 1".($lockingRead ? ' FOR UPDATE' : '')
         );
