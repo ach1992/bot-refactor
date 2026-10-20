@@ -526,6 +526,14 @@ function getAdminKeys(){
         if (!empty($line)) $keyboard[] = $line;
     }
 
+    // The finance review inbox is strictly owner-only: privileged payment
+    // identities must never be revealed in ordinary staff/user menus.
+    if ((int)$from_id === (int)$admin) {
+        array_unshift($keyboard, [[
+            'text'=>'📋 بررسی پرداخت‌های نیازمند رسیدگی',
+            'callback_data'=>'npReviewInbox'
+        ]]);
+    }
     return json_encode(['inline_keyboard'=>$keyboard]);
 }
 
