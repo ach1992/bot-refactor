@@ -149,6 +149,142 @@ These corrections were driven by native source execution on disposable MariaDB w
 
 **Unresolved:** private key activation, actual aaPanel Cron frequency, IPN provider POST reachability, invoice payment ID discovery when *all* IPNs are lost (official `GET /v1/payment/?invoiceid=...` requires an API key plus a short-lived JWT; documented JWT issuance requires merchant account credentials), real final payout proof, and source-remote fulfillment atomicity. Do not store merchant login credentials on the bot or implement this higher-privilege flow without a reviewed least-privilege alternative and explicit Owner security decision. The current `doAction()` CAS stops many repeated callbacks but marking `paid` before outside-DB Marzban effects remains a review/manual-reconciliation concern. No production changes or finance-safety certification follow from synthetic tests. Read the authoritative [NOWPayments migration/operations checklist](NOWPAYMENTS-MIGRATION.md). Work later stages B/C/D are not closed by this bounded implementation.
 
+## Staged hosted-fulfillment hold — NextPay/Zarinpal (#26, source-only)
+
+For **new, provider-scoped** NextPay and Zarinpal service purchases,
+renewals and extensions, current-source `doAction()` now atomically claims the
+original `pays` row as `paid` and transitions its existing **003**
+`payment_attempts` row from `pending` to `review`, with
+`provider_status='fulfillment_started'`, **before** calling Marzban. This is
+a durable **operator-review hold**, not proof of remote provisioning, and
+**not** permission for an automatic retry, refund or remote DELETE. The
+hold intentionally survives an interrupted PHP worker, lost provider response
+or a local SQL write failure. A fully returned and locally confirmed
+`delivered` or `compensated` outcome transitions only its own hold to
+`done` with a corresponding status. A response that cannot be confirmed
+leaves the hold and original `pays`/invoice evidence intact. Wallet top-ups
+continue to use their established single-transaction wallet credit; the
+NOWPayments worker keeps its separately staged `fulfilling`/review contract.
+
+The original local `increase_order` INSERT, order expiry write, purchase
+`orders_list` INSERT and source capacity DML now check MySQLi results
+**also under `MYSQLI_REPORT_OFF`** rather than trusting non-throwing calls.
+Strict receipt verification on shared purchase/accounting helpers is **opt-in
+for this hosted payment boundary**; unrelated manual approval, trial and
+wallet routes keep their existing exception contracts pending their own
+dedicated reconciliation redesign. No existing caller is silently switched
+to a retryable error state after a potentially successful remote effect.
+An uncertain remote effect followed by rejected SQL is kept under review, not
+reported as a confirmed delivery. Invalid provider ownership, changed
+amount or a previously reviewed attempt fail closed with no new remote
+side-effect. The bounded validation uses the actual PHP functions, original
+synthetic 23-table MariaDB, separately applied existing 003 and injected
+crash/SQL failures; **no real provider, wallet, Telegram, Marzban, installed
+webhook or tenant database was touched**.
+
+Authorized operators on an **independently approved target**, after backing
+up and confirming the exact installed version and full 003 schema, can
+privately locate unresolved hosted operations using this **read-only**
+query (do not post customer identities or raw result rows in GitHub):
+
+```sql
+SELECT a.id AS attempt_id, a.pay_row_id, a.provider, a.order_hash,
+       a.stage, a.provider_status, a.updated_at,
+       p.state AS pay_state, p.type AS pay_type,
+       p.user_id, p.order_id
+FROM payment_attempts AS a
+JOIN pays AS p ON p.id = a.pay_row_id
+WHERE a.provider IN ('nextpay','zarinpal')
+  AND a.stage = 'review'
+  AND a.provider_status = 'fulfillment_started'
+ORDER BY a.updated_at, a.id;
+```
+
+### Verified hosted charge with an uncommitted claim (F1)
+
+A provider-verified NextPay/Zarinpal callback can reach the local claim and
+still fail a schema check, transaction start, conditional paid claim, 003
+attempt read/stage update or commit acknowledgment. The handler attempts
+**rollback** and **performs no remote service operation**. A lost commit
+acknowledgment is itself uncertain (rollback cannot disprove an earlier
+commit). The handler must NOT claim that
+`review/fulfillment_started` was saved. The customer sees a generic Persian
+message that the verified payment's order recording is incomplete, should
+**not pay again**, should keep the payment reference and contact support.
+No database/SQL, Marzban or raw exception text is shown to the customer.
+
+On a working **protected application error-log sink**, look for this bounded
+diagnostic format (the values below are placeholders, not credentials):
+
+```text
+achbot_hosted_claim_unconfirmed pay_id=<local-positive-integer> provider=<nextpay|zarinpal> code=<bounded_failure_code>
+```
+
+Codes are `invalid_input`, `schema_inspection_failed`,
+`transaction_begin_failed`, `paid_claim_failed`,
+`paid_claim_unavailable`, `attempt_read_failed`, `attempt_mismatch`,
+`ledger_stage_failed`, `ledger_stage_unconfirmed`,
+`commit_unconfirmed`, and `preclaim_local_error`. The latter specifically
+covers a failed initial local payment read or subject inspection **before**
+the hosted paid/review claim helper is entered. A different protected event,
+`achbot_hosted_service_effect_needs_review pay_id=<local-id> provider=<nextpay|zarinpal> code=postclaim_effect_exception`,
+distinguishes an exception **after** a successful paid claim, when remote
+service effects may already exist. Neither customer response claims a durable
+review record or instructs the customer to repeat payment.
+
+**The log is correlation evidence, not a durable payment/review claim**, and
+its delivery/retention depends on the actual private PHP error-log
+configuration. Neither the provider reference, token,
+raw SQL exception nor user message is placed in these diagnostics.
+
+After restoring a healthy read-only DB connection and verifying its exact
+003 table layout, the operator can locate one **logged** local payment ID:
+
+```sql
+SELECT p.id AS pay_id, p.hash_id, p.payid AS issued_reference,
+       p.state AS pay_state, p.type AS pay_type, p.price,
+       a.id AS attempt_id, a.provider, a.provider_reference,
+       a.stage, a.provider_status, a.updated_at
+FROM pays AS p
+LEFT JOIN payment_attempts AS a ON a.pay_row_id = p.id
+WHERE p.id = ?;
+```
+
+To find potential **unlogged** unresolved checkouts, inspect
+`payment_attempts` with `provider IN ('nextpay','zarinpal')`,
+`stage='pending'` and matching `pays.state IN ('pending','send')` in a
+bounded, access-controlled read-only query. **These rows are candidates,
+not proof of paid funds**: ordinarily unpaid invoices look the same.
+Correlate the local payment ID, original issued provider identity, quote,
+trusted provider dashboard/settlement evidence, any previous request logs,
+and actual local and remote order effects. For Zarinpal, an already-verified
+status `101` is not independently sufficient for automatic settlement;
+obtain trusted provider-side evidence before any manual decision. If the
+local schema or log is unavailable, collect and retain provider-side payment
+history for later authorized reconciliation rather than guessing a state.
+
+The operator must inspect for a later legitimate successful callback before
+any recovery action, to avoid duplicating effects. Never blindly repeat
+external provisioning, refund, mark an attempt paid/done, edit live SQL or
+expose payment identities in public Issues. There is no automatic outbox
+for a transaction which failed **before** the review marker committed; this
+limitation remains a separately authorized global financial recovery concern
+under #26.
+
+Reconcile each result against the verified provider charge, original local
+plan/order, independent Marzban account readback (including each line item),
+and customer-visible evidence **before** a separately authorized manual
+decision. A `paid` row, a `done` stage, or a local callback alone is not
+a transactional proof that every remote account operation completed. Existing
+pre-003 payments without a provider-scoped attempt remain on the guarded
+legacy `pays` behavior and are not automatically backfilled. This bounded
+hold does **not** provide global exactly-once business effects across
+wallet/manual/Cron pathways, an append-only per-account fulfillment journal,
+a trustworthy multi-account recovery mechanism, remote idempotency,
+automated state reconciliation, or permission for live SQL/release/deployment.
+Those remain under Issue #26, with operator E2E delegated to the Owner in
+#31/#51 only after an explicitly authorized installed release.
+
 ## Sequenced completion, with real decision gates
 
 **A. Safe result interpretation (first increment).** Finish provider classification + NOWPayments nonfinal/fail-closed change and characterization. Reviewer must independently check that `finished` is necessary but insufficient until identity/amount checks; characterize Zarinpal/NextPay response handling before broader unification. No schema edit.

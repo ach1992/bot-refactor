@@ -300,7 +300,8 @@ if (!function_exists('createIncreaseOrder')) {
         $amount,
         $date,
         $volume = null,
-        $day = null
+        $day = null,
+        $requireConfirmed = false
     ) {
         $stmt = $connection->prepare("
             INSERT INTO `increase_order`
@@ -318,8 +319,14 @@ if (!function_exists('createIncreaseOrder')) {
             $volume,
             $day
         );
-        $stmt->execute();
+        $saved=$stmt->execute();
+        $inserted=$stmt->affected_rows;
         $stmt->close();
+        if ($requireConfirmed && ($saved!==true || $inserted!==1)) {
+            // Only explicitly gated financial paths demand strict receipt;
+            // keep other historical callers' exception contract unchanged.
+            throw new RuntimeException('increase_order_insert_unconfirmed');
+        }
     }
 }
 
