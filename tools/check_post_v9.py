@@ -608,9 +608,20 @@ def main():
         reviewer_f1_f4={}
         for key,script,required,truth_flags in f1_f4_suites:
             report_path=Path(tmp)/(key+'.json')
-            subprocess.run(['python3',str(ROOT/'tools'/script),'--run-disposable',
-                            '--report',str(report_path)],
-                           cwd=ROOT,check=True,timeout=180,capture_output=True)
+            try:
+                subprocess.run(['python3',str(ROOT/'tools'/script),'--run-disposable',
+                                '--report',str(report_path)],
+                               cwd=ROOT,check=True,timeout=180,capture_output=True)
+            except subprocess.CalledProcessError as exc:
+                # Each suite uses only synthetic owned MariaDB/PHP. Do not
+                # suppress its actionable child traceback in exact-HEAD CI.
+                detail=(exc.stderr or exc.stdout or b'').decode(errors='replace')[-6000:]
+                raise RuntimeError('Required source-real regression failed: '+
+                                   key+' (exit='+str(exc.returncode)+'):\n'+detail) from exc
+            except subprocess.TimeoutExpired as exc:
+                detail=(exc.stderr or exc.stdout or b'').decode(errors='replace')[-3000:]
+                raise RuntimeError('Required source-real regression timed out: '+
+                                   key+' (180 seconds):\n'+detail) from exc
             evidence=json.loads(report_path.read_text())
             if not (evidence.get('complete') is True
                     and evidence.get('cases')==len(required)
