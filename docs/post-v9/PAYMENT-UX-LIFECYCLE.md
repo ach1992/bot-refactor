@@ -102,3 +102,38 @@ The historical `setting.type` is **not indexed or UNIQUE**. A `WHERE type='BOT_S
 The mandatory real PHP/MySQLi synthetic regressions verify the exact **e3a189b** primary-flag omission (RED) versus corrected source (GREEN) for wallet, all four manual methods, NOWPayments wallet/other, Zarinpal and NextPay, including older callbacks, pre-reservation disable races, positive enabled controls and pinned manual claims surviving later disablement. The original F1–F4 suite remains required. `tools/test_post_v9_setting_lock_scope.py` additionally exercises the original unindexed schema and the exact source `achbotSetMarzbanGroup()` administrator transaction against wallet/hosted/manual authorization under both RC and RR; validates unrelated setting rows do not share the payment lock; compares earlier exclusive-policy reader wait against concurrent shared readers with shared/unrelated plans; and proves that the real `setSettings()` writer waits until current authorized financial transactions finish before later requests are denied. All tests are socket-only disposable fixtures; neither the remote Marzban network nor live provider/Telegram/payment effects are exercised.
 
 No additive policy index or schema change is bundled with PR #60. If installed-setting table scale or concurrency demands an index, that is a separately reviewed and Owner-approved migration decision, never a silent modification to the frozen 23-table historical SQL. The inherited external-fulfillment and finance replay/uncertain-settlement limitations remain with Issue #26. Independent exact-HEAD approval and a separate Owner Merge decision are still mandatory.
+
+### Indexed final cohort current reads (R1 follow-up after N2)
+
+The original historical schema already includes customer-key indexes
+`idx_users_userid_v1`, `idx_pays_user_v1` and `idx_orders_userid_v1`. A plain
+`FOR UPDATE` with `WHERE userid=?` / `WHERE user_id=?` is **not** an adequate
+cross-customer lock-scope guarantee: the MariaDB optimizer may scan unrelated
+rows on small tables or choose a competing state-oriented index, causing
+unnecessary waiting or an inverse lock dependency during another customer's
+transaction. This is separate from the now-corrected successor query and
+`BOT_STATES` primary-key locking.
+
+**Final, transactional** audience membership reads for agents/non-agents,
+buyers/non-buyers and active/no-active orders therefore use `FORCE INDEX` on
+the corresponding existing *customer-key* index. The shared original
+`achbotPayUxLockDraftOwner()` owner-row `FOR UPDATE` also uses the indexed
+`users.userid` access path. Preview reads remain nonlocking and unchanged;
+customer eligibility still relies on CURRENT locking reads, the owner-first
+lock order, missing/duplicate-identity fail-closed handling, verified
+persisted gateway flags/cohorts, and exact money/attempt guards. There is
+**no new migration or historical DDL modification**. Existing N2 application
+writer coordination and external-writer/mixed-version limitations still apply.
+
+`tools/test_post_v9_cohort_lock_scope.py` is mandatory in the full
+Post-V9 gate. It checks all four affected `EXPLAIN` plans for the intended
+index and non-ALL access under small/populated distributions, then runs
+48 source-real independent customer pairs: all six cohorts, eligible and
+ineligible/absent matches, `READ COMMITTED` and `REPEATABLE READ`. Customer A
+holds its own user/pays/active-order records X-locked while B must obtain its
+own owner/pays locks and reach final policy authorization without waiting for
+A's unrelated records. The existing cross-method successor/plan dependency
+suite separately checks that *genuinely shared* business rows still serialize.
+This is synthetic evidence rather than installed throughput or live-payment
+certification. Exact-candidate GitHub CI on MariaDB 10.11, fresh independent
+review and explicit Owner Merge permission are still separate gates.

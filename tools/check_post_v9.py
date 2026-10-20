@@ -632,6 +632,53 @@ def main():
                 raise RuntimeError('PR60 required independent F1-F4 evidence incomplete: '+key)
             reviewer_f1_f4[key]=evidence
 
+        # Independent review R1 (after N2): every FINAL cohort current read
+        # must stay owner-indexed on MariaDB 10.11 rather than implicitly
+        # choosing a broad pays/orders/users locking scan. Hold customer A's
+        # user, paid pays and active order rows while customer B reaches
+        # eligibility across all six modes, both match outcomes, RC/RR and
+        # small/populated source-real distributions.
+        cohort_path=Path(tmp)/"r1-cohort-lock-scope.json"
+        try:
+            subprocess.run(['python3',
+                            str(ROOT/'tools/test_post_v9_cohort_lock_scope.py'),
+                            '--run-disposable','--report',str(cohort_path)],
+                           cwd=ROOT,check=True,timeout=180,capture_output=True)
+        except subprocess.CalledProcessError as exc:
+            detail=(exc.stderr or exc.stdout or b'').decode(errors='replace')[-6000:]
+            raise RuntimeError("Required R1 owner-indexed cohort regression failed:\n"+
+                               detail) from exc
+        except subprocess.TimeoutExpired as exc:
+            detail=(exc.stderr or exc.stdout or b'').decode(errors='replace')[-3000:]
+            raise RuntimeError("Required R1 cohort concurrency regression timed out:\n"+
+                               detail) from exc
+        cohort=json.loads(cohort_path.read_text())
+        required_cohort={
+            'r1_'+dist+'_plan_'+kind+'_indexed'
+            for dist in ('small','populated')
+            for kind in ('owner','cohort_user','buyer','order')
+        }
+        required_cohort.update({
+            'r1_'+dist+'_'+iso+'_'+mode+'_'+outcome+'_independent'
+            for dist in ('small','populated')
+            for iso in ('read_committed','repeatable_read')
+            for mode in ('agents','non_agents','buyers','non_buyers',
+                         'has_active_order','no_active_order')
+            for outcome in ('eligible','ineligible')
+        })
+        if not (cohort.get('complete') is True
+                and cohort.get('cases')==len(required_cohort)
+                and set(cohort.get('scenarios',()))==required_cohort
+                and all(cohort.get(flag) is True for flag in (
+                    'source_real_php','two_actual_mysqli_sessions',
+                    'current_lock_plan_checked','original_schema_only',
+                    'owned_mariadb_only','isolation_modes_verified',
+                    'absent_and_positive_matches','small_and_populated_plans'))
+                and cohort.get('production_mutations')==0
+                and cohort.get('remote_provider_calls')==0):
+            raise RuntimeError("Required R1 cohort indexed-scope evidence incomplete")
+        reviewer_f1_f4['cohort_lock_scope']=cohort
+
         auto_renew_path=Path(tmp)/"automatic-renewal-ledger.json"
         try:
             subprocess.run(["python3",str(ROOT/"tools/test_post_v9_automatic_renewal.py"),

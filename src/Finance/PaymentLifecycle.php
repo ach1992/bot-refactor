@@ -145,7 +145,10 @@ function achbotPayUxExpireDraft(mysqli $db, int $payId, ?int $clock = null): boo
  */
 function achbotPayUxLockDraftOwner(mysqli $db, int $userId): void {
     if ($userId <= 0) throw new RuntimeException('draft_owner_invalid');
-    $stmt=$db->prepare('SELECT id FROM users WHERE userid=? FOR UPDATE');
+    // The historical userid index is non-unique. Preserve the exact-owner
+    // identity check, but never let a small-table optimizer choose an ALL
+    // locking scan that X-locks other customers before checkout starts.
+    $stmt=$db->prepare('SELECT id FROM users FORCE INDEX (idx_users_userid_v1) WHERE userid=? FOR UPDATE');
     if (!$stmt) throw new RuntimeException('draft_owner_lock_unavailable');
     $stmt->bind_param('i',$userId);
     if (!$stmt->execute()) throw new RuntimeException('draft_owner_lock_failed');
@@ -480,7 +483,11 @@ function achbotPayUxAudienceAllowed(mysqli $db, string $method, int $userId,
             return false;
         if ($mode==='off') return false;
         if ($mode==='all') return true;
-        $stmt=$db->prepare('SELECT id,is_agent FROM users WHERE userid=? LIMIT 2'.
+        // Definitive current reads must remain indexed by customer, even on
+        // small MariaDB 10.11 tables where a FOR UPDATE ALL scan is legal.
+        // Keep preview queries unchanged; the owner was already locked.
+        $usersIndex=$final ? ' FORCE INDEX (idx_users_userid_v1)' : '';
+        $stmt=$db->prepare('SELECT id,is_agent FROM users'.$usersIndex.' WHERE userid=? LIMIT 2'.
                           ($final?' FOR UPDATE':''));
         if (!$stmt) throw new RuntimeException('audience_user_prepare_failed');
         $stmt->bind_param('i',$userId);
@@ -490,7 +497,8 @@ function achbotPayUxAudienceAllowed(mysqli $db, string $method, int $userId,
         if ($mode==='agents') return (int)$people[0]['is_agent']===1;
         if ($mode==='non_agents') return (int)$people[0]['is_agent']!==1;
         if ($mode==='buyers' || $mode==='non_buyers') {
-            $stmt=$db->prepare("SELECT id FROM pays WHERE user_id=?
+            $paysIndex=$final ? ' FORCE INDEX (idx_pays_user_v1)' : '';
+            $stmt=$db->prepare("SELECT id FROM pays".$paysIndex." WHERE user_id=?
                 AND type='BUY_SUB'
                 AND state IN ('paid','approved','auto_cart_approved','paid_with_wallet')
                 LIMIT 1".($final?' FOR UPDATE':''));
@@ -501,7 +509,8 @@ function achbotPayUxAudienceAllowed(mysqli $db, string $method, int $userId,
             return $mode==='buyers' ? $bought : !$bought;
         }
         $now=time();
-        $stmt=$db->prepare("SELECT id FROM orders_list WHERE userid=?
+        $ordersIndex=$final ? ' FORCE INDEX (idx_orders_userid_v1)' : '';
+        $stmt=$db->prepare("SELECT id FROM orders_list".$ordersIndex." WHERE userid=?
             AND status=1 AND expire_date>? LIMIT 1".($final?' FOR UPDATE':''));
         if (!$stmt) throw new RuntimeException('audience_orders_prepare_failed');
         $stmt->bind_param('ii',$userId,$now);

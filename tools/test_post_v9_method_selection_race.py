@@ -314,7 +314,7 @@ def a_first(w,e,stage,driver,method,index):
         blocked=False
         while time.monotonic()<until:
             rows=sql(w,e,"SELECT INFO FROM information_schema.PROCESSLIST "
-                f"WHERE DB='{DB}' AND INFO LIKE '%users WHERE userid%FOR UPDATE%'")
+                f"WHERE DB='{DB}' AND INFO LIKE '%FROM users%userid%FOR UPDATE%'")
             if 'users' in rows and 'FOR UPDATE' in rows:blocked=True;break
             if writer.poll() is not None:break
             time.sleep(.015)
@@ -440,7 +440,7 @@ def interrupted_owner_lock(w,e,stage,driver,method,index):
         deadline=time.monotonic()+6
         while time.monotonic()<deadline and action.poll() is None:
             rows=sql(w,e,"SELECT ID FROM information_schema.PROCESSLIST "
-                f"WHERE DB='{DB}' AND INFO LIKE '%users WHERE userid%FOR UPDATE%' "
+                f"WHERE DB='{DB}' AND INFO LIKE '%FROM users%userid%FOR UPDATE%' "
                 "AND INFO NOT LIKE '%PROCESSLIST%'")
             ids=[int(t.strip()) for t in rows.splitlines() if t.strip().isdigit()]
             if ids:waiting=ids[0];break
