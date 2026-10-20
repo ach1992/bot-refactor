@@ -796,7 +796,19 @@ def main():
             "gateway_nextpay_to_now_blocked",
             "gateway_zarinpal_to_now_blocked",
             "all_gateway_switches_blocked_on_inflight_claim",
-            "nowpayments_review_alert_retry_and_throttle",
+            # Owner #26/#51: preserve retry-on-send-failure but never
+            # equate an unpaid second child ID with received funds or
+            # send a daily unchanged-evidence finance warning.
+            "nowpayments_evidenced_review_persian_inbox_retry_once",
+            "nowpayments_review_without_24_hour_resends",
+            "nowpayments_second_unpaid_child_is_not_payment",
+            "nowpayments_unpaid_failed_child_no_operator_case",
+            "nowpayments_same_child_funds_reopen_once_no_downgrade",
+            "nowpayments_funded_secondary_one_actionable_alert",
+            "nowpayments_operator_inbox_details_private_auth",
+            "nowpayments_operator_provider_inquiry_readonly",
+            "nowpayments_operator_unauthorized_callbacks_refused",
+            "nowpayments_owner_inquiry_one_child_per_callback",
             "nowpayments_new_attempt_browser_bypass_closed",
             "nowpayments_invalid_signature_no_effect",
             "nowpayments_real_loopback_http_ipn_minimal_bootstrap",
