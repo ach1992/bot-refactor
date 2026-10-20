@@ -26,14 +26,7 @@ PHP_DRIVER = r"""<?php
 error_reporting(E_ALL & ~E_DEPRECATED);
 ini_set('display_errors', '0');
 set_error_handler(function($level,$message,$file){
-    // Existing doAction wallet branch references a missing local variable.
-    // PHP normally logs and continues; isolate this one inherited warning
-    // without suppressing new warnings/errors from the changed callback.
-    if ($level === E_WARNING && $message === 'Undefined variable $rewardChannel'
-        && str_ends_with($file, '/src/Finance/GatewayReturn.php')) {
-        $GLOBALS['known_inherited_warnings'][] = $message;
-        return true;
-    }
+    // Gateway callback warnings are financial test failures, not accepted debt.
     throw new ErrorException($message, 0, $level);
 });
 $_SERVER['SCRIPT_FILENAME'] = 'owned-finance-guard.php';
@@ -81,6 +74,9 @@ $GLOBALS['fake_marzban_transport_failure'] = $spec['marzban_transport_failure'] 
 $GLOBALS['fake_marzban_reset_http'] = $spec['marzban_reset_http'] ?? 200;
 $GLOBALS['fake_marzban_username'] = $spec['marzban_username'] ?? 'syntheticMarzban';
 $GLOBALS['fake_renew_success'] = $spec['renew_success'] ?? false;
+$GLOBALS['fake_remote_exit'] = $spec['remote_exit'] ?? false;
+$GLOBALS['inspect_hosted_pay_id'] = (int)($spec['pay_row_id'] ?? 0);
+
 $GLOBALS['fake_alert_inject_child'] = $spec['alert_inject_child'] ?? null;
 $GLOBALS['fake_alert_inject_order'] = $spec['alert_inject_order'] ?? 'wallet-init';
 $GLOBALS['fake_alert_inject_invoice'] = $spec['alert_inject_invoice'] ?? 'owned-new-invoice';
@@ -138,11 +134,37 @@ function sendMessage(...$args) {
     }
     return (object)['ok'=>!$GLOBALS['fake_alert_send_failure']];
 }
+function Bot($method, $args=[]) {
+    $GLOBALS['events'][]=['name'=>'Bot','method'=>$method];
+    return (object)['ok'=>true,'result'=>(object)[
+        'first_name'=>'Synthetic','username'=>'synthetic_user'
+    ]];
+}
 function generateRandomString($length, $protocol) {
     return str_repeat('a', $length);
 }
 function renewConfigOnServer(...$args) {
+    // Inspect the REAL persisted 003 state at the remote side-effect seam.
+    // This is a read-only SQL observation, never a production adapter change.
+    $id=$GLOBALS['inspect_hosted_pay_id'];
+    if ($id>0) {
+        $stmt=$GLOBALS['connection']->prepare("SELECT a.stage,a.provider_status
+            FROM payment_attempts a WHERE a.pay_row_id=? LIMIT 1");
+        $stmt->bind_param('i',$id);
+        $stmt->execute();
+        $record=$stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        $GLOBALS['events'][]=['name'=>'hosted_remote_entry',
+            'stage'=>$record['stage']??null,
+            'reason'=>$record['provider_status']??null];
+    }
     $GLOBALS['events'][]=['name'=>'renewConfigOnServer','result'=>$GLOBALS['fake_renew_success']];
+    if ($GLOBALS['fake_remote_exit']) {
+        // Simulate a PHP worker termination at the external-effect boundary.
+        // The shutdown serializer still reports in-memory spy events while
+        // the claimed DB transaction remains committed for the next worker.
+        exit(0);
+    }
     return (object)['success'=>$GLOBALS['fake_renew_success']];
 }
 function delMessage() {
@@ -357,6 +379,9 @@ try {
     // Use the ACTUAL current wallet-credit helper; only outbound Telegram is
     // captured by the transport spy. No fake settlement implementation.
     require $root . '/src/Finance/ReceiptHelpers.php';
+    // The hosted-renewal success path records a REAL increase_order row.
+    // Load the shipping compatibility facade instead of mocking this write.
+    require $root . '/buy_helpers.php';
     require $root . '/src/Finance/GatewayClient.php';
     if ($spec['route'] === 'ipn' || $spec['route'] === 'reconcile' || $spec['route'] === 'alert') {
         define('ACHBOT_NP_RECONCILE_ONLY',true);
@@ -419,6 +444,21 @@ try {
         require $root . '/src/Finance/Routes/ManualCrypto.php';
         $GLOBALS['events'][]=['name'=>'selected_data','data'=>$data,
             'network'=>$GLOBALS['achbotManualCryptoChoice']??null];
+    } elseif ($spec['route'] === 'local_purchase_write') {
+        try {
+            if ($spec['operation']==='order_insert') {
+                insertOrder($connection,1001,'owned-token',7,2,0,'owned-order-write',
+                    'owned-uuid','vless',2000000000,'[]',100,time(),'none',0,true);
+            } elseif ($spec['operation']==='capacity_update') {
+                decreaseServerCapacity($connection,2,0,7,1,true);
+            } else {
+                throw new RuntimeException('unsupported_synthetic_action');
+            }
+            $GLOBALS['events'][]=['name'=>'local_write_result','status'=>'confirmed'];
+        } catch (RuntimeException $error) {
+            $GLOBALS['events'][]=['name'=>'local_write_result','status'=>'rejected',
+                'reason'=>$error->getMessage()];
+        }
     } elseif ($spec['route'] === 'marzban_edit') {
         require $root . '/src/Panel/Accounts.php';
         $change=$spec['marzban_change']??
@@ -459,14 +499,20 @@ def run_php(work, env, stage, spec):
          '-d','disable_functions=curl_init,curl_setopt,curl_setopt_array,curl_exec,curl_close,curl_error,curl_getinfo,exec,shell_exec,system,passthru,popen,proc_open,mail',
          str(script),str(stage),DB,str(work/'mysql.sock'),json.dumps(spec)]
     p=subprocess.run(cmd,env=env,cwd=work,capture_output=True,timeout=20)
-    if p.returncode or p.stderr:
-        raise RuntimeError('native finance php error: '+repr((p.returncode,p.stdout[-500:],p.stderr[-600:])))
+    expected_log = (b'achbot_hosted_fulfillment_claim_needs_review\n'
+                    if spec.get('expect_hosted_claim_deferred') else
+                    (f"achbot_hosted_service_effect_needs_review pay_id={spec['pay_row_id']}\n"
+                     .encode() if spec.get('expect_local_error') else b''))
+    if p.returncode or p.stderr != expected_log:
+        raise RuntimeError('native finance php error: '+
+                           repr((p.returncode,p.stdout[-300:],p.stderr[-600:])))
     try:
         result=json.loads(p.stdout)
     except json.JSONDecodeError as error:
         raise RuntimeError('native finance output not JSON: '+repr(p.stdout[-500:])) from error
-    if result['error'] or result['fatal']:
-        raise RuntimeError('native finance php runtime failure: '+repr(result)[:600])
+    if (result['error'] or result['fatal']) and not spec.get('expect_local_error'):
+        raise RuntimeError('native finance php runtime failure: '+
+                           repr((result['error'],result['fatal']))[:850])
     return result
 
 def seed_payment(work,env,name,type_name,plan=0,server=0,payid=None):
@@ -1463,8 +1509,8 @@ def main():
             raise RuntimeError('Real NextPay wallet success did not emit a Telegram send spy')
         if 'موفقیت' not in positive['form']:
             raise RuntimeError('Real NextPay success did not generate success form')
-        if positive['known_inherited_warnings']!=['Undefined variable $rewardChannel']:
-            raise RuntimeError('Unexpected wallet success warning fingerprint: '+
+        if positive['known_inherited_warnings']:
+            raise RuntimeError('Gateway wallet success emitted PHP warning: '+
                                repr(positive['known_inherited_warnings']))
         records.append(dict(case='nextpay_http_200_code_zero_actual_wallet_fulfillment',
                             pass_=True,external_requests=1,real_provider_requests=0,
@@ -1824,6 +1870,202 @@ def main():
                              f"WHERE order_hash='{name}' AND stage='fulfilling'")
             records.append(dict(case='renewal_'+provider+'_explicit_failure_is_ambiguous',
                                 pass_=True,external_requests=0))
+
+        # Stage C: a verified hosted charge and the existing 003 attempt
+        # must atomically stage operator review BEFORE any uncertain Marzban
+        # renewal. Unlike NOWPayments, NextPay/Zarinpal have no background
+        # fulfillment worker; a pending attempt on an already-paid service
+        # hides a financial recovery obligation.
+        def seed_hosted_renewal(name,provider,stage_state='pending',
+                                amount_adjust=0):
+            seed_payment(work,env,name,'RENEW_ACCOUNT',7,2,name+'-invoice')
+            sql(work,env,f"UPDATE pays SET order_id={oid} WHERE hash_id='{name}'")
+            sql(work,env,
+                "INSERT INTO payment_attempts "
+                "(pay_row_id,provider,order_hash,provider_reference,checkout_url,"
+                "quote_amount,quote_currency,local_amount_toman,stage) "
+                f"SELECT id,'{provider}',hash_id,'{name}-invoice','https://fixture.invalid/{name}',"
+                f"price,'toman',price+({amount_adjust}),'{stage_state}' "
+                f"FROM pays WHERE hash_id='{name}'")
+            return int(sql(work,env,
+                f"SELECT id FROM pays WHERE hash_id='{name}'").strip())
+
+        for provider in ('nextpay','zarinpal'):
+            for outcome,remote_success,remote_exit,want_stage,want_reason in (
+                ('remote_uncertain',False,False,'review','fulfillment_started'),
+                ('worker_stopped_at_remote',True,True,'review','fulfillment_started'),
+                ('remote_and_local_success',True,False,'done','delivered'),
+            ):
+                name='hosted-'+provider+'-'+outcome
+                pay_id=seed_hosted_renewal(name,provider)
+                wallet_before=sql(work,env,
+                    'SELECT wallet FROM users WHERE userid=1001').strip()
+                first=run_php(work,env,stage,dict(route='do_action',get={},
+                    pay_row_id=pay_id,provider=provider,
+                    renew_success=remote_success,remote_exit=remote_exit))
+                stage_after=sql(work,env,f"SELECT stage,provider_status "
+                    f"FROM payment_attempts WHERE pay_row_id={pay_id}").strip()
+                pay_after=sql(work,env,
+                    f"SELECT state FROM pays WHERE id={pay_id}").strip()
+                observed=[e for e in first['events']
+                          if e['name']=='hosted_remote_entry']
+                if pay_after!='paid' or stage_after!=want_stage+'\t'+want_reason or (
+                    len(observed)!=1 or observed[0]['stage']!='review' or
+                    observed[0]['reason']!='fulfillment_started'):
+                    raise RuntimeError('Hosted remote boundary not durably staged: '+
+                                       repr((name,pay_after,stage_after,observed)))
+                if (remote_exit and any(e['name']=='do_action_result'
+                                       for e in first['events'])) or (
+                    not remote_exit and [e['result'] for e in first['events']
+                                        if e['name']=='do_action_result']!=
+                    [ 'delivered' if remote_success else 'ambiguous' ]):
+                    raise RuntimeError('Hosted gateway outcome not faithfully classified: '+name)
+                if sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip()!=wallet_before:
+                    raise RuntimeError('Hosted remote uncertainty changed local wallet')
+                second=run_php(work,env,stage,dict(route='do_action',get={},
+                    pay_row_id=pay_id,provider=provider,renew_success=True))
+                if any(e['name']=='renewConfigOnServer' for e in second['events']):
+                    raise RuntimeError('Previously claimed hosted service was remotely replayed')
+                if sql(work,env,f"SELECT stage,provider_status FROM payment_attempts "
+                    f"WHERE pay_row_id={pay_id}").strip()!=stage_after:
+                    raise RuntimeError('Hosted claim/replay rewrote finality evidence')
+                if remote_success and not remote_exit:
+                    sql(work,env,f"UPDATE orders_list SET expire_date={original_exp} "
+                        f"WHERE id={oid}")
+                elif sql(work,env,f"SELECT expire_date FROM orders_list "
+                             f"WHERE id={oid}").strip()!=original_exp:
+                    raise RuntimeError('Failed hosted remote renewal extended local order')
+                records.append(dict(case='hosted_'+provider+'_'+outcome+
+                                    '_staged_before_remote_and_not_replayed',
+                                    pass_=True,real_provider_requests=0))
+
+            # An existing, differently owned 003 attempt, a provider-status
+            # review, or a changed local quote cannot be interpreted as an
+            # authorized provider success merely from a direct callback.
+            for reason,attempt_provider,stage_state,amount_adjust in (
+                ('wrong_provider','nowpayments','pending',0),
+                ('preexisting_review',provider,'review',0),
+                ('changed_quote',provider,'pending',1),
+            ):
+                name='hosted-guard-'+provider+'-'+reason
+                seed_payment(work,env,name,'RENEW_ACCOUNT',7,2,name+'-invoice')
+                sql(work,env,f"UPDATE pays SET order_id={oid} WHERE hash_id='{name}'")
+                sql(work,env,
+                    "INSERT INTO payment_attempts "
+                    "(pay_row_id,provider,order_hash,provider_reference,quote_amount,"
+                    "quote_currency,local_amount_toman,stage) "
+                    f"SELECT id,'{attempt_provider}',hash_id,'{name}-invoice',"
+                    f"price,'toman',price+({amount_adjust}),'{stage_state}' "
+                    f"FROM pays WHERE hash_id='{name}'")
+                pay_id=int(sql(work,env,
+                    f"SELECT id FROM pays WHERE hash_id='{name}'").strip())
+                before=snapshot(work,env)
+                declined=run_php(work,env,stage,dict(route='do_action',get={},
+                    pay_row_id=pay_id,provider=provider,renew_success=True))
+                verify_unchanged(work,env,before,'hosted_guard_'+reason)
+                if any(e['name']=='renewConfigOnServer' for e in declined['events']):
+                    raise RuntimeError('Invalid hosted ledger claim reached remote effect')
+                records.append(dict(case='hosted_'+provider+'_'+reason+
+                                    '_paid_claim_rolls_back',pass_=True))
+
+        # A nonthrowing MySQLi UPDATE failure must roll back the paid CAS as
+        # well as the proposed attempt stage. No remote action may run.
+        failure_pay=seed_hosted_renewal('hosted-ledger-write-failure','nextpay')
+        sql(work,env,"CREATE TRIGGER owned_deny_hosted_stage "
+            "BEFORE UPDATE ON payment_attempts FOR EACH ROW "
+            "SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='owned_storage_denial'")
+        try:
+            before=snapshot(work,env)
+            suppressed=run_php(work,env,stage,dict(route='do_action',get={},
+                pay_row_id=failure_pay,provider='nextpay',
+                renew_success=True,mysqli_report_off=True,
+                expect_hosted_claim_deferred=True))
+            verify_unchanged(work,env,before,'hosted_nonthrowing_stage_write_failed')
+            if any(e['name']=='renewConfigOnServer' for e in suppressed['events']):
+                raise RuntimeError('False hosted claim reached remote after storage failure')
+            records.append(dict(case='hosted_003_stage_write_fails_paid_cas_atomic_rollback',
+                                pass_=True,real_provider_requests=0))
+        finally:
+            sql(work,env,'DROP TRIGGER IF EXISTS owned_deny_hosted_stage')
+
+        # If the remote renewal was accepted but the ORIGINAL local ledger
+        # INSERT fails under MYSQLI_REPORT_OFF, a success page or 'done'
+        # state is unsafe. Reproduce that post-remote boundary with one
+        # disposable MariaDB trigger, never with a real provider call.
+        write_fail_id=seed_hosted_renewal('hosted-increase-write-failure','nextpay')
+        before_recorded=sql(work,env,'SELECT COUNT(*) FROM increase_order').strip()
+        sql(work,env,"CREATE TRIGGER owned_deny_increase_insert "
+            "BEFORE INSERT ON increase_order FOR EACH ROW "
+            "SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='owned_local_write_denial'")
+        try:
+            failure=run_php(work,env,stage,dict(route='do_action',get={},
+                pay_row_id=write_fail_id,provider='nextpay',
+                renew_success=True,mysqli_report_off=True,
+                expect_local_error=True))
+            persisted=sql(work,env,f"SELECT stage,provider_status FROM "
+                f"payment_attempts WHERE pay_row_id={write_fail_id}").strip()
+            if persisted!='review\tfulfillment_started':
+                raise RuntimeError('Failed local hosted record falsely marked done: '+persisted)
+            if sql(work,env,'SELECT COUNT(*) FROM increase_order').strip()!=before_recorded:
+                raise RuntimeError('Local SQL failure unexpectedly inserted ledger record')
+            if 'موفقیت' in failure['form'] or not any(e['name']=='renewConfigOnServer'
+                for e in failure['events']):
+                raise RuntimeError('Post-remote SQL error falsely announced success')
+            records.append(dict(case='hosted_post_remote_local_insert_failure_requires_review',
+                                pass_=True,real_provider_requests=0))
+        finally:
+            sql(work,env,'DROP TRIGGER IF EXISTS owned_deny_increase_insert')
+
+        # The two original purchase helpers are shared with manual/wallet
+        # routes. Under MYSQLI_REPORT_OFF they must not silently succeed if
+        # the local order/capacity DML fails after a possible remote effect.
+        for name,operation,table,verb in (
+            ('insert_order','order_insert','orders_list','INSERT'),
+            ('decrease_capacity','capacity_update','server_info','UPDATE'),
+        ):
+            trigger='owned_deny_'+name
+            sql(work,env,f"CREATE TRIGGER {trigger} BEFORE {verb} ON {table} "
+                "FOR EACH ROW SIGNAL SQLSTATE '45000' "
+                "SET MESSAGE_TEXT='owned_local_write_denial'")
+            try:
+                before=snapshot(work,env)
+                reject=run_php(work,env,stage,dict(route='local_purchase_write',
+                    get={},operation=operation,mysqli_report_off=True))
+                verify_unchanged(work,env,before,'local_purchase_'+name)
+                results=[e for e in reject['events'] if e['name']=='local_write_result']
+                if results!=[{'name':'local_write_result','status':'rejected',
+                              'reason':('order_insert_unconfirmed' if operation=='order_insert'
+                                        else 'server_capacity_update_unconfirmed')}]:
+                    raise RuntimeError('Unconfirmed purchase write treated as success: '+
+                                       repr((name,results)))
+                records.append(dict(case='local_'+name+
+                    '_mysqlireportoff_requires_confirmed_sql',pass_=True))
+            finally:
+                sql(work,env,f'DROP TRIGGER IF EXISTS {trigger}')
+
+        # A remote renewal success cannot close the hosted attempt when the
+        # original order expiry failed to update, even if the accounting
+        # journal might otherwise accept an insertion.
+        expiry_fail_id=seed_hosted_renewal('hosted-expiry-write-failure','zarinpal')
+        sql(work,env,"CREATE TRIGGER owned_deny_expiry "
+            "BEFORE UPDATE ON orders_list FOR EACH ROW "
+            "SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='owned_expiry_denial'")
+        try:
+            before_count=sql(work,env,'SELECT COUNT(*) FROM increase_order').strip()
+            expiry=run_php(work,env,stage,dict(route='do_action',get={},
+                pay_row_id=expiry_fail_id,provider='zarinpal',
+                renew_success=True,mysqli_report_off=True,
+                expect_local_error=True))
+            status=sql(work,env,f"SELECT stage,provider_status FROM "
+                f"payment_attempts WHERE pay_row_id={expiry_fail_id}").strip()
+            if status!='review\tfulfillment_started' or (
+                sql(work,env,'SELECT COUNT(*) FROM increase_order').strip()!=before_count
+            ) or 'موفقیت' in expiry['form']:
+                raise RuntimeError('Remote success with failed local expiry falsely settled')
+            records.append(dict(case='hosted_expiry_update_failed_retains_review',
+                                pass_=True,real_provider_requests=0))
+        finally:
+            sql(work,env,'DROP TRIGGER IF EXISTS owned_deny_expiry')
 
         # NOWPayments finished + known pre-provision capacity failure must
         # not mark compensated/done until the wallet refund actually commits.

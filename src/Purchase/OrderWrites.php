@@ -21,7 +21,8 @@ if (!function_exists('insertOrder')) {
         $amount,
         $date,
         $rahgozar,
-        $agent_bought
+        $agent_bought,
+        $requireConfirmed = false
     ) {
         $stmt = $connection->prepare("INSERT INTO `orders_list`  
             (`userid`, `token`, `transid`, `fileid`, `server_id`, `inbound_id`, `remark`, `uuid`, `protocol`, `expire_date`, `link`, `amount`, `status`, `date`, `notif`, `rahgozar`, `agent_bought`) 
@@ -43,13 +44,17 @@ if (!function_exists('insertOrder')) {
             $rahgozar,
             $agent_bought
         );
-        $stmt->execute();
+        $saved=$stmt->execute();
+        $inserted=$stmt->affected_rows;
         $stmt->close();
+        if ($requireConfirmed && ($saved!==true || $inserted!==1)) {
+            throw new RuntimeException('order_insert_unconfirmed');
+        }
     }
 }
 
 if (!function_exists('decreaseServerCapacity')) {
-    function decreaseServerCapacity($connection, $server_id, $inbound_id, $plan_id, $count = 1)
+    function decreaseServerCapacity($connection, $server_id, $inbound_id, $plan_id, $count = 1, $requireConfirmed = false)
     {
         $count      = (int)$count;
         $server_id  = (int)$server_id;
@@ -65,15 +70,21 @@ if (!function_exists('decreaseServerCapacity')) {
                 "UPDATE `server_info` SET `ucount` = `ucount` - ? WHERE `id` = ?"
             );
             $stmt->bind_param("ii", $count, $server_id);
-            $stmt->execute();
+            $saved=$stmt->execute();
+            $changed=$stmt->affected_rows;
             $stmt->close();
+            if ($requireConfirmed && ($saved!==true || $changed!==1))
+                throw new RuntimeException('server_capacity_update_unconfirmed');
         } else {
             $stmt = $connection->prepare(
                 "UPDATE `server_plans` SET `acount` = `acount` - ? WHERE `id` = ?"
             );
             $stmt->bind_param("ii", $count, $plan_id);
-            $stmt->execute();
+            $saved=$stmt->execute();
+            $changed=$stmt->affected_rows;
             $stmt->close();
+            if ($requireConfirmed && ($saved!==true || $changed!==1))
+                throw new RuntimeException('plan_capacity_update_unconfirmed');
         }
     }
 }
