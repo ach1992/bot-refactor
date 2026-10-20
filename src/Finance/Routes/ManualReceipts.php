@@ -9,7 +9,7 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
 // read-only. Do not repurpose historical manual receipt approval handlers for
 // a hosted payment: a click is not settlement or refund authorization.
 if ($data==='npReviewInbox' ||
-    preg_match('/^npReview(?:Case|Refresh|Verify)_[1-9][0-9]{0,17}$/D',
+    preg_match('/^npReview(?:Case|Refresh|Verify)_[1-9][0-9]{0,17}(?:_(?:[0-9]|1[01]))?$/D',
                (string)$data)) {
     if ((int)$from_id !== (int)$admin ||
         (int)($chat_id??0) !== (int)$admin) {
@@ -47,10 +47,11 @@ if ($data==='npReviewInbox' ||
                 JSON_UNESCAPED_UNICODE),'HTML');
             return;
         }
-        preg_match('/^npReview(Case|Refresh|Verify)_([1-9][0-9]{0,17})$/D',
+        preg_match('/^npReview(Case|Refresh|Verify)_([1-9][0-9]{0,17})(?:_([0-9]|1[01]))?$/D',
                    (string)$data,$parts);
         $action=$parts[1];
         $attemptId=(int)$parts[2];
+        $childIndex=(int)($parts[3]??0);
         $stmt=$connection->prepare("SELECT a.*,p.type,p.price,p.user_id,
                     p.state AS pay_state,p.plan_id,
                     (SELECT u.name FROM users u WHERE u.userid=p.user_id
@@ -118,14 +119,15 @@ if ($data==='npReviewInbox' ||
         }
         if (!$children) $body.="هیچ شناسهٔ پرداختی ثبت نشده است.\n";
         if ($action==='Verify') {
-            // Explicit owner action only. Bound provider GET requests,
-            // validate identity, never persist funds/credit/service effects.
+            // Each callback makes AT MOST ONE provider GET (7s timeout),
+            // avoiding a 5x7s webhook stall and allowing sequential review
+            // of each child without storing broader merchant credentials.
             $apiKey=(string)($paymentKeys['nowpayment']??'');
             $body.="\n<b>استعلام فقط‌خواندنی از درگاه:</b>\n";
             if ($apiKey==='') {
                 $body.="کلید درگاه موجود نیست؛ وضعیت نامشخص است.\n";
             } else {
-                foreach (array_slice($children,0,5) as $child) {
+                foreach (array_slice($children,$childIndex,1) as $child) {
                     $remote=achbotNpGetVerifiedPayment(
                         (string)$child['payment_id'],$apiKey);
                     if (!$remote ||
@@ -169,9 +171,15 @@ if ($data==='npReviewInbox' ||
             "و هیچ اعتبار، تحویل یا بازپرداختی انجام نمی‌دهد.";
         $buttons=[
             [['text'=>'🔄 تازه‌سازی اطلاعات','callback_data'=>'npReviewRefresh_'.$attemptId]],
-            [['text'=>'🔍 استعلام امن از درگاه','callback_data'=>'npReviewVerify_'.$attemptId]],
-            [['text'=>'📋 بازگشت به فهرست','callback_data'=>'npReviewInbox']],
         ];
+        if ($children) {
+            $next=$action==='Verify'
+                ? ($childIndex+1)%count($children) : 0;
+            $buttons[]=[['text'=>'🔍 استعلام شناسهٔ '.($next+1).' از '.count($children),
+                         'callback_data'=>'npReviewVerify_'.$attemptId.'_'.$next]];
+        }
+        $buttons[]=[['text'=>'📋 بازگشت به فهرست',
+                     'callback_data'=>'npReviewInbox']];
         answerCallbackQuery($callbackId,'جزئیات محافظت‌شدهٔ پرونده بارگذاری شد.');
         editText($message_id,$body,json_encode(['inline_keyboard'=>$buttons],
             JSON_UNESCAPED_UNICODE),'HTML');

@@ -1051,7 +1051,7 @@ def main():
         if (len(cards)!=1 or
             'شناسه تلگرام' not in cards[0]['args'][1] or
             'مبلغ سفارش' not in cards[0]['args'][1] or
-            'npReviewVerify_'+str(admin_case) not in cards[0]['args'][2] or
+            'npReviewVerify_'+str(admin_case)+'_0' not in cards[0]['args'][2] or
             details['network_calls']):
             raise RuntimeError('Admin review detail leaked/ran provider action')
         for actor,chat,claim in [(1001,1001,True),(9001,1001,False)]:
@@ -1063,7 +1063,7 @@ def main():
                 not any(x['name']=='callback' for x in unauthorized['events'])):
                 raise RuntimeError('Unauthorized actor accessed finance case')
         verified=run_php(work,env,stage,dict(admin_identity,
-            callback_data='npReviewVerify_'+str(admin_case),
+            callback_data='npReviewVerify_'+str(admin_case)+'_0',
             mock_invoice='np-funded-review-invoice',
             nowpayment_payment_id='np-funded-review-primary',
             nowpayment_order_id='np-funded-review',
@@ -1077,7 +1077,7 @@ def main():
             'خالص گزارش‌شده' not in verify_events[0]['args'][1]):
             raise RuntimeError('Read-only provider inquiry was not grounded')
         mismatch=run_php(work,env,stage,dict(admin_identity,
-            callback_data='npReviewVerify_'+str(admin_case),
+            callback_data='npReviewVerify_'+str(admin_case)+'_0',
             mock_invoice='mismatched-provider-invoice',
             nowpayment_payment_id='np-funded-review-primary',
             nowpayment_order_id='np-funded-review',
@@ -1301,6 +1301,27 @@ def main():
             raise RuntimeError('Additional child payment duplicated credit')
         records.append(dict(case='nowpayments_multiple_children_durably_stored',
                             pass_=True,external_requests=0))
+        # Owner provider inquiry is ONE chosen child per callback; never
+        # block Telegram processing on 5 sequential 7-second API calls.
+        wallet_attempt=int(sql(work,env,"SELECT id FROM payment_attempts "
+            "WHERE order_hash='wallet-init'").strip())
+        before=snapshot(work,env)
+        one_inquiry=run_php(work,env,stage,dict(
+            route='admin_review',get={},actor=9001,chat_id=9001,
+            callback_data='npReviewVerify_'+str(wallet_attempt)+'_1',
+            mock_invoice='owned-new-invoice',
+            nowpayment_payment_id='np-extra-deposit',
+            nowpayment_order_id='wallet-init',nowpayment_status='finished'))
+        views=[x for x in one_inquiry['events'] if x['name']=='editText']
+        if (len(one_inquiry['network_calls'])!=1 or
+            '/v1/payment/np-extra-deposit' not in one_inquiry['network_calls'][0] or
+            len(views)!=1 or
+            'npReviewVerify_'+str(wallet_attempt)+'_2' not in views[0]['args'][2]):
+            raise RuntimeError('Operator inquiry did not bound provider calls per child')
+        verify_unchanged(work,env,before,'nowpayments_bounded_one_child_status_query')
+        records.append(dict(case='nowpayments_owner_inquiry_one_child_per_callback',
+                            pass_=True,real_provider_requests=0))
+
         # A stored extra-child replay must neither duplicate credit nor
         # re-arm an operator alert that was already delivered. A genuinely
         # NEW later child may re-arm the alert to surface new financial data.
