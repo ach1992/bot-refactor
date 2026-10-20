@@ -49,6 +49,45 @@ function achbotPendingAgencyApplicantId(mysqli $connection, int $applicantUserId
     return $row !== null && (int)$row['is_agent'] === 2 ? (int)$row['id'] : null;
 }
 
+/**
+ * Agency approval is a single-row compare-and-set (is_agent=2 -> 1).
+ * The existing users.is_agent secondary index can produce an InnoDB
+ * deadlock victim when two admins approve the same pending applicant.
+ * Retrying ONLY a rolled-back 1213 statement is safe before ANY Telegram
+ * or wizard side effect: the second CAS then observes zero affected rows.
+ * A lock timeout (1205) or repeated victim fails CLOSED, never notifies.
+ */
+function achbotAgencyApprovePendingRow(mysqli $connection, int $rowId,
+                                       string $discount, int $time): bool {
+    for ($attempt=0; $attempt<2; ++$attempt) {
+        $stmt=null;
+        try {
+            $stmt=$connection->prepare("UPDATE `users` SET `is_agent` = 1,
+                `discount_percent` = ?, `agent_date` = ?
+                WHERE `id` = ? AND `is_agent` = 2");
+            if (!$stmt) return false;
+            $stmt->bind_param('sii',$discount,$time,$rowId);
+            $ok=$stmt->execute();
+            return $ok===true && $stmt->affected_rows===1;
+        } catch (mysqli_sql_exception $error) {
+            // 1213 is an explicitly rolled-back InnoDB deadlock victim.
+            // Do not replay SQL on 1205 (transaction state uncertain).
+            if ((int)$error->getCode()===1213 && $attempt===0) {
+                usleep(3000);
+                continue;
+            }
+            if (in_array((int)$error->getCode(),[1213,1205],true))
+                return false;
+            throw $error;
+        } finally {
+            if ($stmt instanceof mysqli_stmt) {
+                try { $stmt->close(); } catch (Throwable $ignored) {}
+            }
+        }
+    }
+    return false;
+}
+
 if(preg_match('/^agencyDecline([1-9][0-9]*)$/D', (string)$data, $match) &&
     ($from_id == $admin || !empty($userInfo['isAdmin']))){
     $applicant = filter_var($match[1], FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
@@ -92,11 +131,7 @@ if(preg_match('/^agencyApprove([1-9][0-9]*)_([1-9][0-9]*)$/D', (string)($userInf
             ? achbotPendingAgencyApplicantId($connection, $applicant) : null;
         if ($rowId !== null) {
             $discount = json_encode(['normal'=>$text]);
-            $stmt = $connection->prepare("UPDATE `users` SET `is_agent` = 1, `discount_percent` = ?, `agent_date` = ? WHERE `id` = ? AND `is_agent` = 2");
-            $stmt->bind_param("sii", $discount, $time, $rowId);
-            $stmt->execute();
-            $changed = $stmt->affected_rows === 1;
-            $stmt->close();
+            $changed=achbotAgencyApprovePendingRow($connection,$rowId,$discount,$time);
             setUser(); // Only the acting administrator's wizard step is cleared.
             if ($changed) {
                 editKeys(json_encode(['inline_keyboard'=>[

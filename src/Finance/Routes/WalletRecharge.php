@@ -5,6 +5,8 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     exit;
 }
 
+require_once __DIR__ . '/../PaymentLifecycle.php';
+
 // Parse the complete Telegram amount before integer conversion. PHP's (int)
 // and is_numeric() can silently accept prefixes, fractions and exponents.
 // Never truncate a malformed input into an amount that can replace old drafts.
@@ -296,6 +298,8 @@ if (preg_match('/payIncreaseWalletWith(?:CartToCart|GiftCard|ManualUsdt)(?<hashI
     $keyboard = kbSendReceiptAndCancel(in_array($method, ['manual_usdt','manual_trx'], true) ? "sendIncreaseWalletUsdtReceipt" : ($method === 'gift_card' ? "sendIncreaseWalletGiftReceipt" : "sendIncreaseWalletReceipt"), "cancelIncreaseWalletReceipt", $match['hashId'], $method);
 
     $delivered = sendMessage($msg, $keyboard, "HTML");
+    require_once __DIR__ . '/../PaymentLifecycle.php';
+    achbotPayUxTrackByHash($connection,(string)$payInfo['hash_id'],(int)$from_id,$delivered);
     if (is_object($delivered) && !empty($delivered->ok)) {
     setUser("payIncreaseWalletWith" . (in_array($method, ['manual_usdt','manual_trx'], true) ? 'ManualUsdt' : ($method === 'gift_card' ? 'GiftCard' : 'CartToCart')) . $match['hashId']);
         delMessage();
@@ -325,11 +329,22 @@ if (preg_match('/send(?:IncreaseWallet|IncreaseWalletGift|IncreaseWalletUsdt)Rec
     $guardMsg = duplicateReceiptGuard($connection, $payInfo, time());
     if ($guardMsg) { alert($guardMsg, true); exit; }
 
+    // Explicit user intent to send a receipt, not a claim of paid funds.
+    // Serialize with the six-hour unstarted-invoice expiry sweep.
+    require_once __DIR__ . '/../PaymentLifecycle.php';
+    if (!achbotPayUxStartManualReceipt($connection,(int)$payInfo['id'],
+                                      $method,(int)$from_id)) {
+        alert('⌛️ مهلت شروع ارسال رسید پایان یافته یا فاکتور در حال بررسی است. اگر وجهی فرستاده‌اید با پشتیبانی تماس بگیرید.',true);
+        return;
+    }
+
     delMessage();
     setUser((in_array($method, ['manual_usdt','manual_trx'], true) ? "waitIncreaseWalletUsdtReceipt" : ($method === 'gift_card' ? "waitIncreaseWalletGiftReceipt" : "waitIncreaseWalletReceipt")) . $match['hashId']);
 
     $keyboard = kbOnlyCancel("cancelIncreaseWalletReceipt", $match['hashId']);
-    sendMessage(achbotManualReceiptPrompt($mainValues, $method), $keyboard, "HTML");
+    $sent=sendMessage(achbotManualReceiptPrompt($mainValues, $method), $keyboard, "HTML");
+    require_once __DIR__ . '/../PaymentLifecycle.php';
+    achbotPayUxTrackByHash($connection,(string)$match['hashId'],(int)$from_id,$sent);
     exit;
 }
 

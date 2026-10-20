@@ -11,6 +11,7 @@ import argparse
 import json
 import re
 import subprocess
+import time as clock
 from pathlib import Path
 
 import test_access_state as owned
@@ -89,7 +90,8 @@ $GLOBALS['fake_alert_send_failure'] = $spec['alert_send_failure'] ?? false;
 $GLOBALS['invoice_reservation_seen'] = null;
 $GLOBALS['events'] = [];
 $GLOBALS['known_inherited_warnings'] = [];
-$botState = [];
+$botState = array_replace(['nowPaymentWallet'=>'on','nowPaymentOther'=>'on',
+    'zarinpal'=>'on','nextpay'=>'on'], $spec['states']??[]);
 $botUrl = 'http://127.0.0.1:9/owned-fixture/';
 $USDTPrice = 100000;
 $USDTPriceagent = 100000;
@@ -99,7 +101,13 @@ $nowpaymentsIpnSecret = 'LOCAL-IPN-SECRET';
 if (array_key_exists('settlement_policy', $spec)) {
     $nowpaymentsSettlementPolicy = $spec['settlement_policy'];
 }
-$paymentKeys = ['nowpayment'=>'SYNTHETIC-LOCAL-ONLY', 'nextpay'=>'SYNTHETIC-LOCAL-ONLY', 'zarinpal'=>'SYNTHETIC-LOCAL-ONLY'];
+$paymentKeys = [
+    'nowpayment'=>'SYNTHETIC-LOCAL-ONLY','nextpay'=>'SYNTHETIC-LOCAL-ONLY',
+    'zarinpal'=>'SYNTHETIC-LOCAL-ONLY',
+    'manualUsdtWalletTRC20'=>'TNPeeaaFB7K9cmo4uQpcU32zGK8G1NYqeL',
+    'manualUsdtRateToman'=>'100000','manualTrxRateToman'=>'15000',
+    'manualTrxWallet'=>'TJRabPrwbZy45sbavfcjinPJC18kjpRTv8'
+];
 $admin = 9001;
 function sendMessage(...$args) {
     $GLOBALS['events'][] = ['name'=>'sendMessage', 'args'=>$args];
@@ -157,6 +165,11 @@ function delMessage() {
 }
 function RandomString($count=9, $type='all') { return 'new-wallet-safe-hash'; }
 function getMainKeys() { return '{}'; }
+function editText(...$args) {
+    $GLOBALS['events'][]=['name'=>'editText','args'=>$args];
+    return (object)['ok'=>true];
+}
+
 function alert(...$args) { $GLOBALS['events'][]=['name'=>'alert','args'=>$args]; }
 function answerCallbackQuery(...$args) { $GLOBALS['events'][]=['name'=>'callback','args'=>$args]; }
 function createServerAccount(...$args) {
@@ -338,6 +351,8 @@ register_shutdown_function(function () {
 try {
     $connection = new mysqli('localhost', 'root', '', $dbname, 0, $socket);
     $connection->set_charset('utf8mb4');
+    if (($spec['mysqli_report_off']??false)===true)
+        mysqli_report(MYSQLI_REPORT_OFF);
     require $root . '/src/Purchase/Core.php';
     // Use the ACTUAL current wallet-credit helper; only outbound Telegram is
     // captured by the transport spy. No fake settlement implementation.
@@ -398,8 +413,12 @@ try {
     } elseif ($spec['route'] === 'prepayment') {
         $data=(string)($spec['callback_data']??'');
         $callbackId='test-callback';
+        $message_id=702;
         $from_id=(int)($spec['actor']??1001);
         require $root . '/src/Finance/Routes/PrePayment.php';
+        require $root . '/src/Finance/Routes/ManualCrypto.php';
+        $GLOBALS['events'][]=['name'=>'selected_data','data'=>$data,
+            'network'=>$GLOBALS['achbotManualCryptoChoice']??null];
     } elseif ($spec['route'] === 'marzban_edit') {
         require $root . '/src/Panel/Accounts.php';
         $change=$spec['marzban_change']??
@@ -454,8 +473,8 @@ def seed_payment(work,env,name,type_name,plan=0,server=0,payid=None):
     invoice=payid if payid is not None else 'invoice-'+name
     query="""INSERT INTO pays
     (hash_id,payid,user_id,type,plan_id,server_id,volume,day,price,request_date,state)
-    VALUES ('{}','{}',1001,'{}',{},{},0,0,100,1700000000,'pending')""".format(
-       name,invoice,type_name,plan,server)
+    VALUES ('{}','{}',1001,'{}',{},{},0,0,100,{},'pending')""".format(
+       name,invoice,type_name,plan,server,int(clock.time()))
     sql(work,env,query)
     return invoice
 
@@ -488,6 +507,7 @@ def main():
         stage=work/'current-finance'
         stages.stage_source(stage,True)
         purchase.init(work,env,'http://127.0.0.1:9')
+        sql(work,env,"INSERT INTO setting (type,value) VALUES ('BOT_STATES','{\"walletState\":\"on\",\"cartToCartState\":\"on\",\"giftCardState\":\"on\",\"manualUsdtState\":\"on\",\"nowPaymentWallet\":\"on\",\"nowPaymentOther\":\"on\",\"zarinpal\":\"on\",\"nextpay\":\"on\"}')")
         if len(sql(work,env,'SHOW TABLES').splitlines()) != 23:
             raise RuntimeError('Original schema missing')
         keys=json.dumps({'nowpayment':'SYNTHETIC-LOCAL-ONLY','nextpay':'SYNTHETIC-LOCAL-ONLY','zarinpal':'SYNTHETIC-LOCAL-ONLY','nowpayment_ipn_secret':'LOCAL-IPN-SECRET'})
@@ -503,7 +523,6 @@ def main():
         seed_payment(work,env,'unsupported-init','RETIRED_PANEL',7,2)
         seed_payment(work,env,'unsupported-zarin','RETIRED_PANEL',7,2)
         seed_payment(work,env,'unsupported-next','RETIRED_PANEL',7,2)
-        seed_payment(work,env,'wallet-init','INCREASE_WALLET',0,0)
         seed_payment(work,env,'nohash-now','RETIRED_PANEL',7,2,'retired-fallback-id')
         seed_payment(work,env,'inbound-now','BUY_SUB',7,2,'inbound-invoice')
         seed_payment(work,env,'supported-nextpay','INCREASE_WALLET',0,0,'owned-nextpay-decline')
@@ -584,7 +603,13 @@ def main():
             raise RuntimeError('Untrusted browser-only return declared settlement')
         records.append(dict(case='legacy_nowpayment_browser_only_read_only',
                             pass_=True,financial_mutations=0,external_requests=0))
-        sql(work,env,"UPDATE pays SET price=100000,payid=NULL WHERE hash_id='wallet-init'")
+        # This is a fresh positive payment journey: allocate the pays ID NOW,
+        # after unrelated legacy invoice fixtures. Advancing request_date on
+        # a lower ID cannot make it newest: customer-draft order is the ID
+        # allocated under the owner lock, not the pre-lock PHP timestamp.
+        # Keep the historical mocked invoices for return/reconciliation tests.
+        seed_payment(work,env,'wallet-init','INCREASE_WALLET',0,0,'')
+        sql(work,env,"UPDATE pays SET price=100000 WHERE hash_id='wallet-init'")
         before=snapshot(work,env)
         res=run_php(work,env,stage,dict(route='initiate',
                     get={'nowpayment':'','hash_id':'wallet-init'}))
@@ -2222,10 +2247,12 @@ def main():
                 r'achbotRemoveUnclaimedPendingPayments\(\s*\$connection\s*,\s*'
                 r'(?:\$from_id|\$actor)\s*,', code))
         helper=(ROOT/'src/Purchase/Core.php').read_text()
+        lifecycle=(ROOT/'src/Finance/PaymentLifecycle.php').read_text()
         if (checked!=7 or
-            "AND NOT EXISTS (" not in helper or
-            "a.pay_row_id=pays.id" not in helper or
-            "(payid IS NULL OR payid='')" not in helper):
+            "DELETE FROM pays" in helper or
+            "function achbotPayUxExpireDraft" not in lifecycle or
+            "FOR UPDATE" not in lifecycle or
+            "NOT EXISTS (SELECT 1 FROM payment_attempts a" not in lifecycle):
             raise RuntimeError('Pending checkout cleanup can orphan issued claims: '+
                                str(checked))
         records.append(dict(case='all_pending_quote_cleanup_routes_preserve_issued_ids',
@@ -2259,8 +2286,11 @@ def main():
         linked=sql(work,env,"SELECT COUNT(*) FROM payment_attempts a "
             "JOIN pays p ON p.id=a.pay_row_id "
             "WHERE p.hash_id='wallet-previous-issued'").strip()
-        if (active,draft,fresh,linked)!=('1','0','1','1'):
-            raise RuntimeError('Creating a new wallet quote erased issued payment history: '+
+        # New safe source preserves the old unclaimed draft until the
+        # committed replacement is expired by the owned lifecycle worker;
+        # never DELETE an ID that can have a historical message reference.
+        if (active,draft,fresh,linked)!=('1','1','1','1'):
+            raise RuntimeError('Creating a new wallet quote erased payment history: '+
                                repr((active,draft,fresh,linked)))
         records.append(dict(case='wallet_requote_preserves_existing_issued_payment',
                             pass_=True,real_php=True))
@@ -2374,6 +2404,50 @@ def main():
             raise RuntimeError('Owned healthy Cron did not finish local workers: '+repr(healthy))
         records.append(dict(case='cron_complete_003_schema_alert_and_receipts_run',
                             pass_=True,real_php=True))
+
+        # Actual bot-owned URL, not a raw provider URL: a stale or
+        # superseded local request must stop BEFORE any provider HTTP issue.
+        current=int(clock.time())
+        seed_payment(work,env,'ux-old-expired','INCREASE_WALLET',0,0,'unused')
+        sql(work,env,f"UPDATE pays SET payid=NULL,request_date={current-3601} "
+                     "WHERE hash_id='ux-old-expired'")
+        before_wallet=sql(work,env,"SELECT wallet FROM users WHERE userid=1001")
+        expired=run_php(work,env,stage,dict(route='initiate',
+                    get={'nowpayment':'','hash_id':'ux-old-expired'}))
+        if (expired['network_calls'] or
+            sql(work,env,"SELECT state FROM pays WHERE hash_id='ux-old-expired'").strip()!='expired' or
+            'مهلت' not in expired['form']):
+            raise RuntimeError('Stale 30-minute bot-owned URL escaped expiry guard')
+        records.append(dict(case='ux_stale_bot_checkout_url_expires_unclaimed_draft_before_provider',
+                            pass_=True,external_requests=0))
+        seed_payment(work,env,'ux-old-replaced','INCREASE_WALLET',0,0,'unused')
+        sql(work,env,f"UPDATE pays SET payid=NULL,request_date={current} "
+                     "WHERE hash_id='ux-old-replaced'")
+        seed_payment(work,env,'ux-new-replacement','INCREASE_WALLET',0,0,'unused')
+        sql(work,env,f"UPDATE pays SET payid=NULL,request_date={current+1} "
+                     "WHERE hash_id='ux-new-replacement'")
+        replaced=run_php(work,env,stage,dict(route='initiate',
+                    get={'nextpay':'','hash_id':'ux-old-replaced'}))
+        if (replaced['network_calls'] or
+            sql(work,env,"SELECT state FROM pays WHERE hash_id='ux-old-replaced'").strip()!='expired'):
+            raise RuntimeError('Superseded bot-owned checkout URL created provider invoice')
+        if sql(work,env,"SELECT wallet FROM users WHERE userid=1001")!=before_wallet:
+            raise RuntimeError('Stale-checkout handling unexpectedly changed wallet balance')
+        records.append(dict(case='ux_superseded_local_url_no_provider_effect_or_wallet_change',
+                            pass_=True,external_requests=0))
+        seed_payment(work,env,'ux-claimed-older','INCREASE_WALLET',0,0,'claimed-remote-invoice')
+        # The claim itself persists, even when a newer draft is created.
+        seed_payment(work,env,'ux-new-after-claim','INCREASE_WALLET',0,0,'unused')
+        sql(work,env,"UPDATE pays SET payid=NULL WHERE hash_id='ux-new-after-claim'")
+        claimed=run_php(work,env,stage,dict(route='initiate',
+                    get={'zarinpal':'','hash_id':'ux-claimed-older'}))
+        if (claimed['network_calls'] or
+            sql(work,env,"SELECT payid,state FROM pays WHERE hash_id='ux-claimed-older'").strip()
+              !='claimed-remote-invoice\tpending' or
+            not claimed['form']):
+            raise RuntimeError('Stale provider-claimed original URL was silently reissued or cancelled')
+        records.append(dict(case='ux_old_claimed_provider_invoice_remains_financially_unmodified',
+                            pass_=True,external_requests=0))
 
         # An interrupted/mismatched 003 migration can leave payment_attempts
         # present while payment_transactions is absent. NEVER issue a new

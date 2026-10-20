@@ -59,14 +59,14 @@ def committed_zip_timestamp(head: str) -> tuple[int, int, int, int, int, int]:
 
 
 NEW_RUNTIME_MEMBERS = ("settings/cronRunner.php", "src/Finance/PaymentPage.php",
-                       "src/Finance/Routes/ManualCrypto.php")
+                       "src/Finance/Routes/ManualCrypto.php", "src/Finance/PaymentLifecycle.php")
 
 def members() -> list[str]:
     original = historical.members()
     if len(original)!=92 or len(set(original))!=92:
         raise RuntimeError("Historical source file-membership drift")
     paths = [*original, *NEW_RUNTIME_MEMBERS]
-    if len(paths)!=95 or len(set(paths))!=95:
+    if len(paths)!=96 or len(set(paths))!=96:
         raise RuntimeError("Post-V9 source inventory drift")
     for path in paths:
         if path=="baseInfo.php" or not (ROOT/path).is_file() or (ROOT/path).is_symlink():

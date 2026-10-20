@@ -10,5 +10,16 @@ try {
 } catch (Throwable $error) {
     error_log('achbot_warning_cleanup_deferred');
 } finally {
-    require __DIR__ . '/../src/Finance/AutomaticRenewal.php';
+    // Financial renewal/reconciliation has priority over optional Telegram
+    // edits. Preserve the existing four-worker, one-minute Cron schedule.
+    try {
+        require __DIR__ . '/../src/Finance/AutomaticRenewal.php';
+    } finally {
+        try {
+            require_once __DIR__ . '/../src/Finance/PaymentLifecycle.php';
+            achbotPayUxMaintain($connection);
+        } catch (Throwable $ignored) {
+            error_log('achbot_payment_lifecycle_deferred');
+        }
+    }
 }

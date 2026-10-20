@@ -217,6 +217,7 @@ def check() -> dict:
         (work/'admin-driver.php').write_text(PHP_ADMIN)
         (work/'address-driver.php').write_text(PHP_ADDRESS)
         extractor=('require $argv[1]; echo "<?php\\n",'
+                   'achbotExtractFunction($argv[2],"achbotMutateBotStates"),"\\n",'
                    'achbotExtractFunction($argv[2],"setSettings"),"\\n",'
                    'achbotExtractFunction($argv[2],"setUser"),"\\n";')
         extracted=subprocess.run(['php','-n','-d','extension=tokenizer','-r',

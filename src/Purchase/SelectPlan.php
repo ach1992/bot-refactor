@@ -5,6 +5,8 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     exit;
 }
 
+require_once __DIR__ . '/../Finance/PaymentLifecycle.php';
+
 if((preg_match('/^discountSelectPlan(\d+)_(\d+)_(\d+)/',$userInfo['step'],$match) ||  
     preg_match('/selectPlan(\d+)_(\d+)_(?<buyType>\w+)/',$userInfo['step'], $match) ||  
     preg_match('/enterAccountName(\d+)_(\d+)_(?<buyType>\w+)/',$userInfo['step'], $match) ||  
@@ -129,20 +131,23 @@ if((preg_match('/^discountSelectPlan(\d+)_(\d+)_(\d+)/',$userInfo['step'],$match
 											VALUES (?, ?, ?, 'BUY_SUB', ?, ?, '0', '0', ?, ?, 'pending', ?)"); 
 				$stmt->bind_param("ssiiiiii", $hash_id, $remark, $from_id, $id, $sid, $price, $time, $agentBought); 
             } 
-            $stmt->execute(); 
-            $rowId = $stmt->insert_id; 
-            $stmt->close(); 
+            $rowId=achbotPayUxInsertDraft($connection,(int)$from_id,$stmt);
+            $stmt->close();
+            if ($rowId<=0) {
+                alert('⚠️ صدور پیش‌نویس به‌طور قطعی تأیید نشد؛ برای پیگیری از پشتیبانی کمک بگیرید.',true);
+                return;
+            }
         }else{ 
             $price = $afterDiscount; 
         } 
          
-        if(achbotManualEnabled('bank_transfer')) $keyboard[] = [['text' => $buttonValues['cart_to_cart'],  'callback_data' => "payBuyWithCartToCart$hash_id"]];
-        if(achbotManualEnabled('gift_card')) $keyboard[] = [['text' => $buttonValues['gift_card'], 'callback_data' => "payBuyWithGiftCard$hash_id"]];
-    if (achbotManualCryptoEnabled()) $keyboard[] = [['text' => '💎 پرداخت رمزارزی دستی', 'callback_data' => "mcm_$hash_id"]];
-        if($botState['nowPaymentOther'] == "on") $keyboard[] = [['text' => $buttonValues['now_payment_gateway'],  'url' => $botUrl . "pay/?nowpayment&hash_id=" . $hash_id]]; 
-        if($botState['zarinpal'] == "on") $keyboard[] = [['text' => $buttonValues['zarinpal_gateway'],  'url' => $botUrl . "pay/?zarinpal&hash_id=" . $hash_id]]; 
-        if($botState['nextpay'] == "on") $keyboard[] = [['text' => $buttonValues['nextpay_gateway'],  'url' => $botUrl . "pay/?nextpay&hash_id=" . $hash_id]]; 
-        if($botState['walletState'] == "on") $keyboard[] = [['text' => $buttonValues['pay_with_wallet'],  'callback_data' => "payBuyWithWallet$hash_id"]]; 
+        if(achbotManualEnabled('bank_transfer') && achbotPayUxAudienceAllowed($connection,'bank_transfer',(int)$from_id)) $keyboard[] = [['text' => $buttonValues['cart_to_cart'],  'callback_data' => "payBuyWithCartToCart$hash_id"]];
+        if(achbotManualEnabled('gift_card') && achbotPayUxAudienceAllowed($connection,'gift_card',(int)$from_id)) $keyboard[] = [['text' => $buttonValues['gift_card'], 'callback_data' => "payBuyWithGiftCard$hash_id"]];
+    if ((achbotManualCryptoEnabled() && (achbotPayUxAudienceAllowed($connection,'manual_usdt',(int)$from_id) || achbotPayUxAudienceAllowed($connection,'manual_trx',(int)$from_id)))) $keyboard[] = [['text' => '💎 پرداخت رمزارزی دستی', 'callback_data' => "mcm_$hash_id"]];
+        if(($botState['nowPaymentOther'] == "on" && achbotPayUxAudienceAllowed($connection,'nowpayments',(int)$from_id))) $keyboard[] = [['text' => $buttonValues['now_payment_gateway'],  'url' => $botUrl . "pay/?nowpayment&hash_id=" . $hash_id]];
+        if(($botState['zarinpal'] == "on" && achbotPayUxAudienceAllowed($connection,'zarinpal',(int)$from_id))) $keyboard[] = [['text' => $buttonValues['zarinpal_gateway'],  'url' => $botUrl . "pay/?zarinpal&hash_id=" . $hash_id]];
+        if(($botState['nextpay'] == "on" && achbotPayUxAudienceAllowed($connection,'nextpay',(int)$from_id))) $keyboard[] = [['text' => $buttonValues['nextpay_gateway'],  'url' => $botUrl . "pay/?nextpay&hash_id=" . $hash_id]];
+        if(($botState['walletState'] == "on" && achbotPayUxAudienceAllowed($connection,'wallet',(int)$from_id))) $keyboard[] = [['text' => $buttonValues['pay_with_wallet'],  'callback_data' => "payBuyWithWallet$hash_id"]];
          
         if(!preg_match('/^discountSelectPlan/', $userInfo['step'])) $keyboard[] = [['text' => " 🎟 افزودن کد تخفیف ",  'callback_data' => "haveDiscountSelectPlan_" . $match[1] . "_" . $match[2] . "_" . $rowId]]; 
  
@@ -154,6 +159,8 @@ if((preg_match('/^discountSelectPlan(\d+)_(\d+)_(\d+)/',$userInfo['step'],$match
         $msg = str_replace(['ACCOUNT-COUNT', 'TOTAL-PRICE', 'PLAN-NAME', 'PRICE', 'DESCRIPTION'], [$accountCount, $priceC, $name, $eachPrice, $desc], $mainValues['buy_much_subscription_detail']); 
     } 
     else $msg = str_replace(['PLAN-NAME', 'PRICE', 'DESCRIPTION'], [$name, $priceC, $desc], $mainValues['buy_subscription_detail']); 
-    sendMessage($msg, json_encode(['inline_keyboard'=>$keyboard]), "HTML"); 
+    $sent=sendMessage($msg, json_encode(['inline_keyboard'=>$keyboard]), "HTML");
+    require_once __DIR__ . '/../Finance/PaymentLifecycle.php';
+    achbotPayUxTrackByHash($connection,(string)$hash_id,(int)$from_id,$sent);
 }
 

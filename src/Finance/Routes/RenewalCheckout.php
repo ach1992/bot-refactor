@@ -5,6 +5,8 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     exit;
 }
 
+require_once __DIR__ . '/../PaymentLifecycle.php';
+
 if (preg_match('/^renewAccountAsk(\d+)$/', $data, $match)) {
     $oid = (int)$match[1];
 
@@ -106,9 +108,12 @@ if (
 		$stmt = $connection->prepare("INSERT INTO `pays` (`hash_id`, `user_id`, `type`, `plan_id`, `server_id`, `volume`, `day`, `price`, `request_date`, `state`, `order_id`)
 									VALUES (?, ?, 'RENEW_ACCOUNT', ?, ?, '0', '0', ?, ?, 'pending', ?)");
 		$stmt->bind_param("siiiiii", $hash_id, $from_id, $fid, $serverId, $price, $time, $oid);
-        $stmt->execute();
-        $rowId = $stmt->insert_id;
+        $rowId=achbotPayUxInsertDraft($connection,(int)$from_id,$stmt);
         $stmt->close();
+        if ($rowId<=0) {
+            alert('⚠️ صدور پیش‌نویس به‌طور قطعی تأیید نشد؛ برای پیگیری از پشتیبانی کمک بگیرید.',true);
+            return;
+        }
     }else $price = $afterDiscount;
 
     if($price == 0) $price = "رایگان";
@@ -116,18 +121,20 @@ if (
 	
 	$keyboard = [];
 	$actionType = "Renew";
-	if (achbotManualEnabled('bank_transfer')) $keyboard[] = [['text' => "💳 کارت به کارت مبلغ $price", 'callback_data' => "prePayCheck_{$actionType}_CartToCart_{$hash_id}"]];
-	if (achbotManualEnabled('gift_card')) $keyboard[] = [['text' => "🎁 گیفت‌کارت مبلغ $price", 'callback_data' => "prePayCheck_{$actionType}_GiftCard_{$hash_id}"]];
-	if (achbotManualCryptoEnabled()) $keyboard[] = [['text' => "💎 پرداخت رمزارزی دستی مبلغ $price", 'callback_data' => "prePayCheck_{$actionType}_ManualUsdt_{$hash_id}"]];
-	if ($botState['nowPaymentOther'] == "on") $keyboard[] = [['text' => $buttonValues['now_payment_gateway'], 'callback_data' => "prePayCheck_{$actionType}_nowpayment_{$hash_id}"]];
-	if ($botState['zarinpal'] == "on") $keyboard[] = [['text' => $buttonValues['zarinpal_gateway'], 'callback_data' => "prePayCheck_{$actionType}_zarinpal_{$hash_id}"]];
-	if ($botState['nextpay'] == "on") $keyboard[] = [['text' => $buttonValues['nextpay_gateway'], 'callback_data' => "prePayCheck_{$actionType}_nextpay_{$hash_id}"]];
-	if ($botState['walletState'] == "on") $keyboard[] = [['text' => "💰پرداخت با موجودی مبلغ $price", 'callback_data' => "prePayCheck_{$actionType}_Wallet_{$hash_id}"]];
+	if (achbotManualEnabled('bank_transfer') && achbotPayUxAudienceAllowed($connection,'bank_transfer',(int)$from_id)) $keyboard[] = [['text' => "💳 کارت به کارت مبلغ $price", 'callback_data' => "prePayCheck_{$actionType}_CartToCart_{$hash_id}"]];
+	if (achbotManualEnabled('gift_card') && achbotPayUxAudienceAllowed($connection,'gift_card',(int)$from_id)) $keyboard[] = [['text' => "🎁 گیفت‌کارت مبلغ $price", 'callback_data' => "prePayCheck_{$actionType}_GiftCard_{$hash_id}"]];
+	if (achbotManualCryptoEnabled() && (achbotPayUxAudienceAllowed($connection,'manual_usdt',(int)$from_id) || achbotPayUxAudienceAllowed($connection,'manual_trx',(int)$from_id))) $keyboard[] = [['text' => "💎 پرداخت رمزارزی دستی مبلغ $price", 'callback_data' => "prePayCheck_{$actionType}_ManualUsdt_{$hash_id}"]];
+	if (($botState['nowPaymentOther'] == "on" && achbotPayUxAudienceAllowed($connection,'nowpayments',(int)$from_id))) $keyboard[] = [['text' => $buttonValues['now_payment_gateway'], 'callback_data' => "prePayCheck_{$actionType}_nowpayment_{$hash_id}"]];
+	if (($botState['zarinpal'] == "on" && achbotPayUxAudienceAllowed($connection,'zarinpal',(int)$from_id))) $keyboard[] = [['text' => $buttonValues['zarinpal_gateway'], 'callback_data' => "prePayCheck_{$actionType}_zarinpal_{$hash_id}"]];
+	if (($botState['nextpay'] == "on" && achbotPayUxAudienceAllowed($connection,'nextpay',(int)$from_id))) $keyboard[] = [['text' => $buttonValues['nextpay_gateway'], 'callback_data' => "prePayCheck_{$actionType}_nextpay_{$hash_id}"]];
+	if (($botState['walletState'] == "on" && achbotPayUxAudienceAllowed($connection,'wallet',(int)$from_id))) $keyboard[] = [['text' => "💰پرداخت با موجودی مبلغ $price", 'callback_data' => "prePayCheck_{$actionType}_Wallet_{$hash_id}"]];
 	if (!preg_match('/^discountRenew/', $userInfo['step'])) $keyboard[] = [['text' => " 🎟 افزودن کد تخفیف ", 'callback_data' => "haveDiscountRenew_{$match[1]}_{$rowId}"]];
 	
 	$keyboard[] = [['text' => $buttonValues['cancel'], 'callback_data' => "mainMenu"]];
 	
-	sendMessage("🔰 لطفا یکی از روش های زیر را انتخاب کنید و روی آن بزنید:", json_encode(['inline_keyboard' => $keyboard]));
+    $sent=sendMessage("🧾 روش پرداخت این تمدید را انتخاب کنید. فقط یک روش فعال را ادامه دهید.", json_encode(['inline_keyboard' => $keyboard]));
+    require_once __DIR__ . '/../PaymentLifecycle.php';
+    achbotPayUxTrackByHash($connection,(string)$hash_id,(int)$from_id,$sent);
 }
 
 if (preg_match('/payRenewWith(?:CartToCart|GiftCard|ManualUsdt)(.*)/', $data, $match)) {
@@ -169,6 +176,8 @@ if (preg_match('/payRenewWith(?:CartToCart|GiftCard|ManualUsdt)(.*)/', $data, $m
     $keyboard = kbSendReceiptAndCancel(in_array($method, ['manual_usdt','manual_trx'], true) ? "sendRenewUsdtReceipt" : ($method === 'gift_card' ? "sendRenewGiftReceipt" : "sendRenewCartReceipt"), "cancelRenewCartReceipt", $match[1], $method);
 
     $delivered = sendMessage($msg, $keyboard, "HTML");
+    require_once __DIR__ . '/../PaymentLifecycle.php';
+    achbotPayUxTrackByHash($connection,(string)$payInfo['hash_id'],(int)$from_id,$delivered);
     if (is_object($delivered) && !empty($delivered->ok)) {
     setUser("payRenewWith" . (in_array($method, ['manual_usdt','manual_trx'], true) ? 'ManualUsdt' : ($method === 'gift_card' ? 'GiftCard' : 'CartToCart')) . $match[1]);
         delMessage();
@@ -198,11 +207,22 @@ if (preg_match('/send(?:RenewCart|RenewGift|RenewUsdt)Receipt(?<hashId>.*)/', $d
     $guardMsg = duplicateReceiptGuard($connection, $payInfo, time());
     if ($guardMsg) { alert($guardMsg, true); exit; }
 
+    // Explicit user intent to send a receipt, not a claim of paid funds.
+    // Serialize with the six-hour unstarted-invoice expiry sweep.
+    require_once __DIR__ . '/../PaymentLifecycle.php';
+    if (!achbotPayUxStartManualReceipt($connection,(int)$payInfo['id'],
+                                      $method,(int)$from_id)) {
+        alert('⌛️ مهلت شروع ارسال رسید پایان یافته یا فاکتور در حال بررسی است. اگر وجهی فرستاده‌اید با پشتیبانی تماس بگیرید.',true);
+        return;
+    }
+
     delMessage();
     setUser((in_array($method, ['manual_usdt','manual_trx'], true) ? "waitRenewUsdtReceipt" : ($method === 'gift_card' ? "waitRenewGiftReceipt" : "waitRenewCartReceipt")) . $match['hashId']);
 
     $keyboard = kbOnlyCancel("cancelRenewCartReceipt", $match['hashId']);
-    sendMessage(achbotManualReceiptPrompt($mainValues, $method), $keyboard, "HTML");
+    $sent=sendMessage(achbotManualReceiptPrompt($mainValues, $method), $keyboard, "HTML");
+    require_once __DIR__ . '/../PaymentLifecycle.php';
+    achbotPayUxTrackByHash($connection,(string)$match['hashId'],(int)$from_id,$sent);
     exit;
 }
 
@@ -327,7 +347,7 @@ if(preg_match('/approveRenewAcc(.*)/',$data,$match) && ($from_id == $admin || $u
         $stmt->bind_param("s", $match[1]); 
         $stmt->execute(); 
         $payInfo = $stmt->get_result()->fetch_assoc();
-        if (!achbotSupportsPaymentSubject($connection, $payInfo)) {
+        if (!achbotSupportsPaymentSubject($connection, $payInfo, true)) {
             $connection->rollback();
             alert("⛔️ تأیید پرداخت این سرویس در مرزبان مجاز نیست.", true);
             return;
@@ -478,6 +498,9 @@ if(preg_match('/approveRenewAcc(.*)/',$data,$match) && ($from_id == $admin || $u
 if(preg_match('/payRenewWithWallet(.*)/', $data, $match)){
     $connection->begin_transaction();
     try {
+        // Customer-wallet issuance shares the same owner-first lock as drafts
+        // and manual/hosted claims. Never lock pays before users.userid.
+        achbotPayUxLockDraftOwner($connection,(int)$from_id);
         $stmt = $connection->prepare("SELECT * FROM `pays` WHERE `hash_id` = ? FOR UPDATE");
         $stmt->bind_param("s", $match[1]);
         $stmt->execute();
@@ -501,7 +524,7 @@ if(preg_match('/payRenewWithWallet(.*)/', $data, $match)){
             return;
         }
 
-        if (!achbotSupportsPaymentSubject($connection, $payInfo)) {
+        if (!achbotSupportsPaymentSubject($connection, $payInfo, true)) {
             $connection->rollback();
             alert("⚠️ وضعیت این تمدید نیاز به بررسی دارد. لطفاً وضعیت اشتراک و پرداخت را با پشتیبانی بررسی کنید.", true);
             return;

@@ -5,6 +5,8 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     exit;
 }
 
+require_once __DIR__ . '/../PaymentLifecycle.php';
+
 if (preg_match('/payCustomWithWallet(.*)/', $data, $match)) {
     setUser();
 
@@ -309,6 +311,8 @@ if (preg_match('/payCustomWith(?:CartToCart|GiftCard|ManualUsdt)(.*)/', $data, $
     $keyboard = kbSendReceiptAndCancel(in_array($method, ['manual_usdt','manual_trx'], true) ? "sendCustomUsdtReceipt" : ($method === 'gift_card' ? "sendCustomGiftReceipt" : "sendCustomCartReceipt"), "cancelCustomCartReceipt", $match[1], $method);
 
     $delivered = sendMessage($msg, $keyboard, "HTML");
+    require_once __DIR__ . '/../PaymentLifecycle.php';
+    achbotPayUxTrackByHash($connection,(string)$payInfo['hash_id'],(int)$from_id,$delivered);
     if (is_object($delivered) && !empty($delivered->ok)) {
     setUser("payCustomWith" . (in_array($method, ['manual_usdt','manual_trx'], true) ? 'ManualUsdt' : ($method === 'gift_card' ? 'GiftCard' : 'CartToCart')) . $match[1]);
         delMessage();
@@ -338,11 +342,22 @@ if (preg_match('/send(?:CustomCart|CustomGift|CustomUsdt)Receipt(?<hashId>.*)/',
     $guardMsg = duplicateReceiptGuard($connection, $payInfo, time());
     if ($guardMsg) { alert($guardMsg, true); exit; }
 
+    // Explicit user intent to send a receipt, not a claim of paid funds.
+    // Serialize with the six-hour unstarted-invoice expiry sweep.
+    require_once __DIR__ . '/../PaymentLifecycle.php';
+    if (!achbotPayUxStartManualReceipt($connection,(int)$payInfo['id'],
+                                      $method,(int)$from_id)) {
+        alert('⌛️ مهلت شروع ارسال رسید پایان یافته یا فاکتور در حال بررسی است. اگر وجهی فرستاده‌اید با پشتیبانی تماس بگیرید.',true);
+        return;
+    }
+
     delMessage();
     setUser((in_array($method, ['manual_usdt','manual_trx'], true) ? "waitCustomUsdtReceipt" : ($method === 'gift_card' ? "waitCustomGiftReceipt" : "waitCustomCartReceipt")) . $match['hashId']);
 
     $keyboard = kbOnlyCancel("cancelCustomCartReceipt", $match['hashId']);
-    sendMessage(achbotManualReceiptPrompt($mainValues, $method), $keyboard, "HTML");
+    $sent=sendMessage(achbotManualReceiptPrompt($mainValues, $method), $keyboard, "HTML");
+    require_once __DIR__ . '/../PaymentLifecycle.php';
+    achbotPayUxTrackByHash($connection,(string)$match['hashId'],(int)$from_id,$sent);
     exit;
 }
 
@@ -1058,6 +1073,8 @@ if (preg_match('/payBuyWith(?:CartToCart|GiftCard|ManualUsdt)(.*)/', $data, $mat
     $keyboard = kbSendReceiptAndCancel(in_array($method, ['manual_usdt','manual_trx'], true) ? "sendBuyUsdtReceipt" : ($method === 'gift_card' ? "sendBuyGiftReceipt" : "sendBuyCartReceipt"), "cancelBuyCartReceipt", $match[1], $method);
 
     $delivered = sendMessage($msg, $keyboard, "HTML");
+    require_once __DIR__ . '/../PaymentLifecycle.php';
+    achbotPayUxTrackByHash($connection,(string)$payInfo['hash_id'],(int)$from_id,$delivered);
     if (is_object($delivered) && !empty($delivered->ok)) {
     setUser("payBuyWith" . (in_array($method, ['manual_usdt','manual_trx'], true) ? 'ManualUsdt' : ($method === 'gift_card' ? 'GiftCard' : 'CartToCart')) . $match[1]);
         delMessage();
@@ -1087,11 +1104,22 @@ if (preg_match('/send(?:BuyCart|BuyGift|BuyUsdt)Receipt(?<hashId>.*)/', $data, $
     $guardMsg = duplicateReceiptGuard($connection, $payInfo, time());
     if ($guardMsg) { alert($guardMsg, true); exit; }
 
+    // Explicit user intent to send a receipt, not a claim of paid funds.
+    // Serialize with the six-hour unstarted-invoice expiry sweep.
+    require_once __DIR__ . '/../PaymentLifecycle.php';
+    if (!achbotPayUxStartManualReceipt($connection,(int)$payInfo['id'],
+                                      $method,(int)$from_id)) {
+        alert('⌛️ مهلت شروع ارسال رسید پایان یافته یا فاکتور در حال بررسی است. اگر وجهی فرستاده‌اید با پشتیبانی تماس بگیرید.',true);
+        return;
+    }
+
     delMessage();
     setUser((in_array($method, ['manual_usdt','manual_trx'], true) ? "waitBuyUsdtReceipt" : ($method === 'gift_card' ? "waitBuyGiftReceipt" : "waitBuyCartReceipt")) . $match['hashId']);
 
     $keyboard = kbOnlyCancel("cancelBuyCartReceipt", $match['hashId']);
-    sendMessage(achbotManualReceiptPrompt($mainValues, $method), $keyboard, "HTML");
+    $sent=sendMessage(achbotManualReceiptPrompt($mainValues, $method), $keyboard, "HTML");
+    require_once __DIR__ . '/../PaymentLifecycle.php';
+    achbotPayUxTrackByHash($connection,(string)$match['hashId'],(int)$from_id,$sent);
     exit;
 }
 

@@ -5,6 +5,8 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     exit;
 }
 
+require_once __DIR__ . '/PaymentLifecycle.php';
+
 /** All transient stages fit the existing users.step column; no migration. */
 function achbotWalletTopupStage(string $kind, int $updateId, int $messageId = 0): string {
     // Timestamp handles Telegram's random update_id reset after >=7 idle days.
@@ -140,23 +142,25 @@ function startWalletPayment(mysqli $connection, $botState, $buttonValues, $botUr
     }
 
     $keyboard = [];
-    if (achbotManualEnabled('bank_transfer'))
+    if (achbotManualEnabled('bank_transfer') && achbotPayUxAudienceAllowed($connection,'bank_transfer',(int)$actor))
         $keyboard[] = [['text' => $buttonValues['cart_to_cart'], 'callback_data' => "payIncreaseWalletWithCartToCart$hash_id"]];
-    if (achbotManualEnabled('gift_card'))
+    if (achbotManualEnabled('gift_card') && achbotPayUxAudienceAllowed($connection,'gift_card',(int)$actor))
         $keyboard[] = [['text' => $buttonValues['gift_card'], 'callback_data' => "payIncreaseWalletWithGiftCard$hash_id"]];
-    if (achbotManualCryptoEnabled())
+    if (achbotManualCryptoEnabled() && (achbotPayUxAudienceAllowed($connection,'manual_usdt',(int)$actor) || achbotPayUxAudienceAllowed($connection,'manual_trx',(int)$actor)))
         $keyboard[] = [['text' => '💎 پرداخت رمزارزی دستی', 'callback_data' => "mcm_$hash_id"]];
-    if ($botState['nowPaymentWallet'] == 'on')
+    if (($botState['nowPaymentWallet'] == 'on' && achbotPayUxAudienceAllowed($connection,'nowpayments',(int)$actor)))
         $keyboard[] = [['text' => $buttonValues['now_payment_gateway'], 'url' => $botUrl . 'pay/?nowpayment&hash_id=' . $hash_id]];
-    if ($botState['zarinpal'] == 'on')
+    if (($botState['zarinpal'] == 'on' && achbotPayUxAudienceAllowed($connection,'zarinpal',(int)$actor)))
         $keyboard[] = [['text' => $buttonValues['zarinpal_gateway'], 'url' => $botUrl . 'pay/?zarinpal&hash_id=' . $hash_id]];
-    if ($botState['nextpay'] == 'on')
+    if (($botState['nextpay'] == 'on' && achbotPayUxAudienceAllowed($connection,'nextpay',(int)$actor)))
         $keyboard[] = [['text' => $buttonValues['nextpay_gateway'], 'url' => $botUrl . 'pay/?nextpay&hash_id=' . $hash_id]];
     $keyboard[] = [['text' => $buttonValues['cancel'], 'callback_data' => 'mainMenu']];
     $keys = json_encode(['inline_keyboard' => $keyboard], JSON_UNESCAPED_UNICODE);
     try {
         $reply = sendMessage("اطلاعات شارژ:\nمبلغ " . number_format($amount) .
             " تومان\n\nلطفا روش پرداخت را انتخاب کنید:", $keys);
+        require_once __DIR__ . '/PaymentLifecycle.php';
+        achbotPayUxTrackByHash($connection,$hash_id,$actor,$reply);
         if (!is_object($reply) || ($reply->ok ?? false) !== true) {
             error_log('achbot_wallet_topup_delivery_deferred update_id=' . $updateId);
         }

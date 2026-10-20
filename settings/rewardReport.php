@@ -19,23 +19,12 @@ if($rewaredTime>0 && $rewaredChannel != null){
         $totalRewards = number_format($stmt->get_result()->fetch_assoc()['total']);
         $stmt->close();
         
-        $botState['lastRewardMessage']=time() + ($rewaredTime * 60 * 60);
-        
-        $stmt = $connection->prepare("SELECT * FROM `setting` WHERE `type` = 'BOT_STATES'");
-        $stmt->execute();
-        $isExists = $stmt->get_result();
-        $stmt->close();
-		
-        if($isExists->num_rows>0) $query = "UPDATE `setting` SET `value` = ? WHERE `type` = 'BOT_STATES'";
-        else $query = "INSERT INTO `setting` (`type`, `value`) VALUES ('BOT_STATES', ?)";
-        $newData = json_encode($botState);
-        
-        $stmt = $connection->prepare($query);
-        $stmt->bind_param("s", $newData);
-        $stmt->execute();
-        $stmt->close();
-
-        $txt = "
+        // BOT_STATES must be updated from its locked persisted document:
+        // this Cron request may have a stale in-memory $botState. Never
+        // overwrite a concurrent administrator's gateway restriction.
+        $nextRewardMessage = time() + ($rewaredTime * 60 * 60);
+        if (setSettings('lastRewardMessage', $nextRewardMessage)) {
+            $txt = "
 🔰 فروش من در $rewaredTime ساعت گذشته
 
 💰 مبلغ: $totalRewards تومان
@@ -43,7 +32,11 @@ if($rewaredTime>0 && $rewaredChannel != null){
 ☑️ $channelLock
 
 ";
-        sendMessage($txt, null, null, $rewaredChannel);
+            sendMessage($txt, null, null, $rewaredChannel);
+        } else {
+            // Avoid a misleading success/sent state when persistence failed.
+            error_log('achbot_reward_report_settings_update_deferred');
+        }
     }
 }
 

@@ -517,8 +517,10 @@ function achbotApproveManualWalletTopup(mysqli $connection, string $hashId, int 
 }
 
 /**
- * Customer-wallet route, called with the pays row already FOR UPDATE.
- * A present shared ledger must be inspected; any attempt blocks wallet use.
+ * Customer-wallet route, called while holding the unique user row first,
+ * then the pays row FOR UPDATE. A present shared ledger must be inspected;
+ * any attempt blocks wallet use. New-claim successor checks are CURRENT
+ * locking reads under that same owner-row lock, not stale menu preflights.
  * Historical 23-table installs have no ledger and no new checkout issuance,
  * so they retain their pre-003 wallet behavior. SQL/permission failures are
  * never interpreted as an absent claim.
@@ -531,6 +533,9 @@ function achbotWalletDirectAllowedLocked(mysqli $connection, array $pay,
         (string)($pay['payid'] ?? '') !== '') return false;
     $id = (int)($pay['id'] ?? 0);
     if ($id <= 0) return false;
+    require_once __DIR__ . '/PaymentLifecycle.php';
+    if (!achbotPayUxUnclaimedDraftUsable($connection,$pay,true)) return false;
+    if (!achbotPayUxAudienceAllowed($connection,'wallet',$actor,true)) return false;
     try {
         $stmt = $connection->prepare('SELECT id FROM payment_attempts WHERE pay_row_id=? LIMIT 1 FOR UPDATE');
         $stmt->bind_param('i',$id);
@@ -611,9 +616,15 @@ function achbotManualClaim(mysqli $connection, array $payInfo, string $method, i
     if (!in_array($method, ['bank_transfer', 'gift_card', 'manual_usdt','manual_trx'], true) ||
         (int)$payInfo['user_id'] !== $userId) return false;
     try {
-        $connection->begin_transaction();
+        if (!$connection->begin_transaction()) return false;
+        require_once __DIR__ . '/PaymentLifecycle.php';
+        // The same owner-row serialization protects draft insertion and
+        // hosted checkout. Acquire it BEFORE pays/attempt to avoid the
+        // wallet/provider inverse lock order. Existing pinned claims remain
+        // recoverable without applying a new supersession test to them.
+        achbotPayUxLockDraftOwner($connection,$userId);
         $id = (int)$payInfo['id'];
-        $stmt = $connection->prepare('SELECT id,user_id,hash_id,price,state,payid FROM pays WHERE id=? FOR UPDATE');
+        $stmt = $connection->prepare('SELECT id,user_id,hash_id,price,state,payid,type,order_id,request_date FROM pays WHERE id=? FOR UPDATE');
         $stmt->bind_param('i', $id);
         $stmt->execute();
         $current = $stmt->get_result()->fetch_assoc();
@@ -624,13 +635,20 @@ function achbotManualClaim(mysqli $connection, array $payInfo, string $method, i
             $connection->rollback();
             return false;
         }
-        $stmt = $connection->prepare('SELECT provider,stage,checkout_url FROM payment_attempts WHERE pay_row_id=? LIMIT 1 FOR UPDATE');
+        $stmt = $connection->prepare('SELECT provider,stage,checkout_url,provider_status,
+            TIMESTAMPDIFF(SECOND,created_at,NOW()) AS age_seconds
+            FROM payment_attempts WHERE pay_row_id=? LIMIT 1 FOR UPDATE');
         $stmt->bind_param('i', $id);
         $stmt->execute();
         $existing = $stmt->get_result()->fetch_assoc();
         $stmt->close();
         if ($existing !== null) {
-            $connection->commit();
+            require_once __DIR__ . '/PaymentLifecycle.php';
+            if ((string)$existing['provider_status']==='' &&
+                (int)$existing['age_seconds']>=achbotPayUxManualDeadlineSeconds()) {
+                $connection->rollback(); return false;
+            }
+            if (!$connection->commit()) return false;
             if (!hash_equals($method, (string)$existing['provider']) || $existing['stage'] !== 'pending')
                 return false;
             if (in_array($method, ['manual_usdt','manual_trx'], true)) {
@@ -642,7 +660,16 @@ function achbotManualClaim(mysqli $connection, array $payInfo, string $method, i
             }
             return true;
         }
-        if (!achbotManualEnabled($method)) {
+        // Only NEW method selection must pass supersession. The owning
+        // user row is locked, so a replacement cannot commit between this
+        // CURRENT successor read and the first 003 claim's COMMIT.
+        if (!achbotPayUxUnclaimedDraftUsable($connection,$current,true)) {
+            $connection->rollback();
+            return false;
+        }
+        if (!achbotManualEnabled($method) ||
+            !achbotPayUxAudienceAllowed($connection,$method,$userId,true) ||
+            !achbotSupportsPaymentSubject($connection,$current,true)) {
             $connection->rollback();
             return false;
         }
@@ -704,9 +731,11 @@ function achbotManualClaim(mysqli $connection, array $payInfo, string $method, i
             VALUES (?,?,?,?,?,?,?,?,'pending')");
         $stmt->bind_param('issssiss', $id, $method, $hash, $quote, $currency, $price,
             $settlementNetwork, $destination);
-        $stmt->execute();
+        $inserted=$stmt->execute();
+        $rows=$stmt->affected_rows;
         $stmt->close();
-        $connection->commit();
+        if ($inserted!==true || $rows!==1 || !$connection->commit())
+            throw new RuntimeException('manual_claim_commit_unverified');
         return true;
     } catch (Throwable $error) {
         try { $connection->rollback(); } catch (Throwable $ignored) {}
@@ -722,13 +751,22 @@ function achbotManualReceiptAllowed(mysqli $connection, array $payInfo, string $
         (string)($payInfo['payid'] ?? '') !== '' ||
         !in_array($method, ['bank_transfer','gift_card','manual_usdt','manual_trx'], true)) return false;
     try {
-        $stmt = $connection->prepare('SELECT provider,stage,checkout_url FROM payment_attempts WHERE pay_row_id=? LIMIT 1');
+        require_once __DIR__ . '/PaymentLifecycle.php';
+        $stmt = $connection->prepare('SELECT provider,stage,checkout_url,provider_status,
+            TIMESTAMPDIFF(SECOND,created_at,NOW()) AS age_seconds
+            FROM payment_attempts WHERE pay_row_id=? LIMIT 1');
         $id = (int)$payInfo['id'];
         $stmt->bind_param('i', $id);
         $stmt->execute();
         $attempt = $stmt->get_result()->fetch_assoc();
         $stmt->close();
-        return $attempt !== null &&
+        $validWindow=$attempt && (
+            $attempt['stage']==='receiving' ||
+            (string)($attempt['provider_status']??'')==='receipt_started' ||
+            ((string)($attempt['provider_status']??'')==='' &&
+             (int)$attempt['age_seconds']<achbotPayUxManualDeadlineSeconds())
+        );
+        return $validWindow &&
             (string)$attempt['provider'] === $method &&
             in_array((string)$attempt['stage'], ['pending','receiving'], true) &&
             (!in_array($method, ['manual_usdt','manual_trx'], true) ||
@@ -758,14 +796,21 @@ function achbotManualBeginEvidence(mysqli $connection, array $payInfo, string $m
         $stmt->close();
         if (!$pay || (int)$pay['user_id'] !== $userId || $pay['state'] !== 'pending' ||
             (string)($pay['payid'] ?? '') !== '') { $connection->rollback(); return null; }
-        $stmt = $connection->prepare('SELECT id,provider,stage,checkout_url FROM payment_attempts
-            WHERE pay_row_id=? LIMIT 1 FOR UPDATE');
+        $stmt = $connection->prepare('SELECT id,provider,stage,checkout_url,provider_status,
+            TIMESTAMPDIFF(SECOND,created_at,NOW()) AS age_seconds
+            FROM payment_attempts WHERE pay_row_id=? LIMIT 1 FOR UPDATE');
         $stmt->bind_param('i', $id);
         $stmt->execute();
         $attempt = $stmt->get_result()->fetch_assoc();
         $stmt->close();
         if (!$attempt || (string)$attempt['provider'] !== $method ||
             !in_array((string)$attempt['stage'], ['pending','receiving'], true)) {
+            $connection->rollback(); return null;
+        }
+        require_once __DIR__ . '/PaymentLifecycle.php';
+        if ($attempt['stage']==='pending' &&
+            (string)($attempt['provider_status']??'')!== 'receipt_started' &&
+            (int)$attempt['age_seconds']>=achbotPayUxManualDeadlineSeconds()) {
             $connection->rollback(); return null;
         }
         $intent = achbotManualIntentDecode((string)$attempt['checkout_url'], $method);
@@ -1050,11 +1095,16 @@ function duplicateReceiptGuard(mysqli $connection, array $payInfo, int $nowTs): 
         return "⛔️ شما درخواست مشابه‌ای قبلا ثبت کرده‌اید.\n⚠️ لطفاً منتظر بررسی پشتیبانی بمانید.";
     }
 
+    // BOT_STATES bounds prevent malformed settings from weakening legacy
+    // duplicate/payment/review safeguards. Financial idempotency is separate.
+    require_once __DIR__ . '/PaymentLifecycle.php';
     $isSpecial = ($type === 'BUY_SUB' || $type === 'INCREASE_WALLET');
-
-    $windowApproved = $isSpecial ? 600  : 3600;
-    $windowHaveSent = $isSpecial ? 21600 : 21600;
-    $windowDeclined = 180;
+    $approvedMinutes=$isSpecial
+        ? achbotPayUxPolicyNumber('receiptApprovedMinutes',10,1,1440)
+        : achbotPayUxPolicyNumber('receiptApprovedOtherMinutes',60,1,1440);
+    $windowApproved = 60*$approvedMinutes;
+    $windowHaveSent = 60*achbotPayUxPolicyNumber('receiptReviewMinutes',360,1,1440);
+    $windowDeclined = 60*achbotPayUxPolicyNumber('receiptDeclinedMinutes',3,1,1440);
 
     $lookback = max($windowApproved, $windowHaveSent, $windowDeclined);
     $minTs = $nowTs - $lookback;
@@ -1266,7 +1316,15 @@ function sendWithStartButton($text, $buttonText, $botUsername, $startPayload = '
     ]];
     $keyboard = json_encode(['inline_keyboard'=>$buttons], JSON_UNESCAPED_UNICODE);
 
-    return sendMessage($text, $keyboard, $parseMode);
+    $sent=sendMessage($text, $keyboard, $parseMode);
+    if ($paymentHash!=='' && isset($GLOBALS['connection']) &&
+        $GLOBALS['connection'] instanceof mysqli &&
+        isset($GLOBALS['from_id']) && (int)$GLOBALS['from_id']>0) {
+        require_once __DIR__ . '/PaymentLifecycle.php';
+        achbotPayUxTrackByHash($GLOBALS['connection'],$paymentHash,
+            (int)$GLOBALS['from_id'],$sent);
+    }
+    return $sent;
 }
 
 

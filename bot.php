@@ -451,6 +451,64 @@ if(($data=="gateWays_Channels" or preg_match('/^changeGateWays([A-Za-z0-9_]+)$/D
     }
     editText($message_id,$mainValues['change_bot_settings_message'],getGateWaysKeys());
 }
+// Per-gateway audience restrictions. Re-check the current setting on every
+// callback; a forwarded stale administrator button cannot pick arbitrary keys.
+if (($from_id == $admin || (int)($userInfo['isAdmin']??0)===1) &&
+    $data==='gatewayAudienceSettings') {
+    editText($message_id,'👥 دسترسی درگاه‌ها برای گروه‌های مختلف کاربران',
+             achbotGatewayAudienceKeyboard());
+    return;
+}
+if (($from_id == $admin || (int)($userInfo['isAdmin']??0)===1) &&
+    preg_match('/^cycleGatewayAudience_([a-z_]+)$/D',(string)$data,$policyMatch)) {
+    $method=$policyMatch[1];
+    if (!isset(achbotPayUxAudienceMethods()[$method])) {
+        answerCallbackQuery($callbackId,'روش پرداخت ناشناخته است.',true);
+        return;
+    }
+    if (!achbotCycleGatewayAudience($method)) {
+        answerCallbackQuery($callbackId,'تنظیم ذخیره نشد؛ لطفاً وضعیت فعلی را بررسی کنید.',true);
+        return;
+    }
+    editText($message_id,'👥 دسترسی درگاه‌ها برای گروه‌های مختلف کاربران',
+             achbotGatewayAudienceKeyboard());
+    return;
+}
+// Only actual administrators may change invoice and anti-duplicate windows.
+if (($from_id == $admin || (int)($userInfo['isAdmin']??0)===1) &&
+    $data==='paymentPolicySettings') {
+    editText($message_id,'⏱ <b>مهلت فاکتورها و محافظ‌های رسید تکراری</b>',
+        achbotPaymentPolicyKeyboard(),'HTML',$from_id);
+    return;
+}
+if (($from_id == $admin || (int)($userInfo['isAdmin']??0)===1) &&
+    preg_match('/^editPaymentPolicy_([A-Za-z]+)$/D',(string)$data,$policyMatch)) {
+    $fields=achbotPaymentPolicyFields();$key=$policyMatch[1];
+    if (!isset($fields[$key])) {
+        answerCallbackQuery($callbackId,'تنظیم ناشناخته است.',true);return;
+    }
+    $field=$fields[$key];
+    setUser('paymentPolicyValue_'.$key);
+    sendMessage($field['label']."\nیک عدد بین ".$field['min']." و ".$field['max']." وارد کنید.",$cancelKey);
+    return;
+}
+if (($from_id == $admin || (int)($userInfo['isAdmin']??0)===1) &&
+    preg_match('/^paymentPolicyValue_([A-Za-z]+)$/D',(string)($userInfo['step']??''),$policyMatch) &&
+    $text!==$buttonValues['cancel']) {
+    $fields=achbotPaymentPolicyFields();$key=$policyMatch[1];
+    if (!isset($fields[$key]) || !preg_match('/^[0-9]{1,5}$/D',(string)$text) ||
+        (int)$text<$fields[$key]['min'] || (int)$text>$fields[$key]['max']) {
+        sendMessage('⛔️ مقدار واردشده نامعتبر است؛ در بازهٔ نمایش‌داده‌شده وارد کنید.', $cancelKey);
+        return;
+    }
+    if (!setSettings($key,(int)$text)) {
+        sendMessage('⛔️ تنظیم ذخیره نشد؛ لطفاً دوباره وضعیت را بررسی کنید.', $cancelKey);
+        return;
+    }
+    setUser();
+    sendMessage('✅ تنظیم ذخیره شد.',achbotPaymentPolicyKeyboard());
+    return;
+}
 if($data=="changeConfigRemarkType"){
     switch($botState['remark']){
         case "digits":

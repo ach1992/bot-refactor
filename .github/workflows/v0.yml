@@ -98,6 +98,12 @@ jobs:
           # SQL assets remain separate from runtime.zip, never auto-applied.
           cp migrations/post-v9/003_payment_attempts.sql "$RUNNER_TEMP/achbot-marzban-only/payment-attempt-migration.sql"
           (cd "$RUNNER_TEMP/achbot-marzban-only" && sha256sum payment-attempt-migration.sql > payment-attempt-migration.sha256)
+          # Independent, separately approved source-only migrations.
+          # These assets never execute as part of CI/package installation.
+          for id in 004_automatic_renewal_attempts 005_admin_wallet_adjustments 006_payment_message_refs; do
+            cp "migrations/post-v9/${id}.sql" "$RUNNER_TEMP/achbot-marzban-only/${id}.sql"
+            (cd "$RUNNER_TEMP/achbot-marzban-only" && sha256sum "${id}.sql" > "${id}.sha256")
+          done
           cp migrations/post-v9/legacy_rc4_nowpayments_import.sql "$RUNNER_TEMP/achbot-marzban-only/legacy-rc4-import.sql"
           (cd "$RUNNER_TEMP/achbot-marzban-only" && sha256sum legacy-rc4-import.sql > legacy-rc4-import.sha256)
           cp "$RUNNER_TEMP/post-v9-php84.json" "$RUNNER_TEMP/achbot-marzban-only/post-v9-acceptance.json"
@@ -108,7 +114,7 @@ jobs:
           printf '## AChBot post-V9 Marzban-only acceptance\n\n' >> "$GITHUB_STEP_SUMMARY"
           printf 'New candidate HEAD: `%s`\n\n' "$(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
           printf 'New candidate tree: `%s`\n\n' "$(git rev-parse HEAD^{tree})" >> "$GITHUB_STEP_SUMMARY"
-          printf 'Current 95-member source (including optional CLI Cron runner) uses the 23 original tables PLUS a previously gated nullable server_info.panel_group_id column AND two new provider-shared attempt/evidence tables. CI verifies the fresh shared 003 and historical RC4 import only on disposable MariaDB. Frozen historical V9 source/schema exercised independently at pinned commit 7eb077fd. Source ZIP does NOT apply SQL; separately shipped migrations require independent backup, Owner approval and operator proof. No financial/production deployment approval.\n\n' >> "$GITHUB_STEP_SUMMARY"
+          printf 'Current 96-member source (including optional CLI Cron runner and payment lifecycle) preserves the 23 original tables. Optional migrations 001, 003, 004, 005, 006 are separately checksum-shipped, never automatically installed. CI verifies required migrations only on disposable MariaDB. Frozen historical V9 source/schema exercised independently at pinned commit 7eb077fd. Source ZIP does NOT apply SQL; separately shipped migrations require independent backup, Owner approval and operator proof. No financial/production deployment approval.\n\n' >> "$GITHUB_STEP_SUMMARY"
           printf '```json\n' >> "$GITHUB_STEP_SUMMARY"
           cat "$RUNNER_TEMP/post-v9-php84.json" >> "$GITHUB_STEP_SUMMARY"
           printf '\n```\n' >> "$GITHUB_STEP_SUMMARY"

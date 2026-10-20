@@ -12,6 +12,7 @@ import argparse
 import concurrent.futures
 import json
 import subprocess
+import threading
 from pathlib import Path
 
 import test_access_state as owned
@@ -79,6 +80,10 @@ try {
     require $root . '/src/Agent/Applications.php';
 } catch (Throwable $e) {
     $error = get_class($e) . ':' . $e->getMessage();
+    // Source-origin location is safe in this synthetic fixture and identifies
+    // which exact SQL site caused any future CI concurrency victim.
+    if ($e instanceof mysqli_sql_exception)
+        $error .= ' code='.(int)$e->getCode().' site='.basename($e->getFile()).':'.$e->getLine();
 }
 echo json_encode(['error' => $error, 'events' => $GLOBALS['events']],
                  JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
@@ -86,6 +91,18 @@ echo json_encode(['error' => $error, 'events' => $GLOBALS['events']],
 
 def sql(work: Path, env: dict, query: str) -> str:
     return native.sql(work, env, query, DB)
+
+def agency_test_ddl(work: Path, env: dict, ddl: str) -> None:
+    # mariadb -e splits semicolons inside BEGIN/END; pass this single bounded
+    # synthetic DDL statement through mysqli so the whole trigger is atomic.
+    php='$c=new mysqli("localhost","root","",$argv[1],0,$argv[2]);$c->query($argv[3]);'
+    result=subprocess.run(['php','-n','-d','extension=mysqlnd',
+                           '-d','extension=mysqli','-r',php,
+                           DB,str(work/'mysql.sock'),ddl],
+                          cwd=work,env=env,capture_output=True,timeout=10)
+    if result.returncode or result.stderr:
+        raise RuntimeError('Owned trigger fixture DDL failed: '+
+                           repr((result.returncode,result.stderr[-400:])))
 
 def field(work: Path, env: dict, userid: int, column: str) -> str:
     if column not in ('is_agent', 'isAdmin', 'step', 'discount_percent'):
@@ -228,14 +245,92 @@ def main() -> None:
 
         sql(work, env, """UPDATE users SET is_agent=2 WHERE userid=1001;
             UPDATE users SET step='agencyApprove1001_77' WHERE userid IN (9001,9002)""")
+        # Make callbacks genuinely enter at the same time rather than
+        # accidentally serializing process launch on a fast runner.
+        start_barrier=threading.Barrier(2)
+        def concurrent_save(actor):
+            start_barrier.wait(timeout=6)
+            return run(actor, '', '12')
         with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
-            futures = [pool.submit(run, actor, '', '12') for actor in (9001,9002)]
+            futures = [pool.submit(concurrent_save, actor) for actor in (9001,9002)]
             competing = [future.result() for future in futures]
         passed('concurrent_admin_approval_exactly_one',
                field(work, env, 1001, 'is_agent') == '1'
                and outgoing(competing, 1001) == 1
                and field(work, env, 9001, 'is_agent') == '0'
                and field(work, env, 9002, 'is_agent') == '0')
+
+        # V1 exact-head PHP8.4 CI saw mysql errno 1213 while two admins
+        # saved the same pending applicant. SQLSTATE from a REAL MariaDB
+        # BEFORE UPDATE trigger deterministically exercises both bounded
+        # retry success and persistent victim fail-closed. This models the
+        # database-reported error code (not a fabricated Python exception).
+        sql(work,env,"UPDATE users SET is_agent=2,discount_percent=NULL WHERE userid=1001;"
+                     "UPDATE users SET step='agencyApprove1001_77' WHERE userid=9001")
+        sql(work,env,"CREATE TABLE agency_fixture_deadlock_counter "
+                     "(n INT NOT NULL) ENGINE=MyISAM")
+        sql(work,env,"INSERT INTO agency_fixture_deadlock_counter (n) VALUES (0)")
+        trigger_name='agency_fixture_one_victim'
+        trigger_ddl=(
+            "CREATE TRIGGER "+trigger_name+" BEFORE UPDATE ON users FOR EACH ROW "
+            "BEGIN IF OLD.userid=1001 AND OLD.is_agent=2 AND NEW.is_agent=1 THEN "
+            "UPDATE agency_fixture_deadlock_counter SET n=n+1; "
+            "IF (SELECT n FROM agency_fixture_deadlock_counter LIMIT 1)=1 THEN "
+            "SIGNAL SQLSTATE '40001' SET MYSQL_ERRNO=1213, "
+            "MESSAGE_TEXT='synthetic_once_deadlock_victim'; END IF; "
+            "END IF; END"
+        )
+        try:
+            agency_test_ddl(work,env,trigger_ddl)
+            one_victim=run(9001,text='12')
+            passed('v1_single_database_deadlock_victim_retries_exact_once_before_effect',
+                field(work,env,1001,'is_agent')=='1' and
+                outgoing([one_victim],1001)==1 and
+                field(work,env,9001,'step')=='none' and
+                sql(work,env,'SELECT n FROM agency_fixture_deadlock_counter').strip()=='2')
+        finally:
+            sql(work,env,'DROP TRIGGER IF EXISTS '+trigger_name)
+            sql(work,env,'DROP TABLE IF EXISTS agency_fixture_deadlock_counter')
+
+        sql(work,env,"UPDATE users SET is_agent=2,discount_percent=NULL WHERE userid=1001;"
+                     "UPDATE users SET step='agencyApprove1001_77' WHERE userid=9001")
+        always_name='agency_fixture_persistent_victim'
+        always_ddl=(
+            "CREATE TRIGGER "+always_name+" BEFORE UPDATE ON users FOR EACH ROW "
+            "BEGIN IF OLD.userid=1001 AND OLD.is_agent=2 AND NEW.is_agent=1 THEN "
+            "SIGNAL SQLSTATE '40001' SET MYSQL_ERRNO=1213, "
+            "MESSAGE_TEXT='synthetic_persistent_deadlock_victim'; END IF; END"
+        )
+        try:
+            agency_test_ddl(work,env,always_ddl)
+            persistent=run(9001,text='12')
+            passed('v1_repeated_database_deadlock_victim_fails_closed_no_role_or_notice',
+                field(work,env,1001,'is_agent')=='2' and
+                outgoing([persistent],1001)==0 and
+                field(work,env,9001,'step')=='none')
+        finally:
+            sql(work,env,'DROP TRIGGER IF EXISTS '+always_name)
+        sql(work,env,"UPDATE users SET is_agent=2,discount_percent=NULL WHERE userid=1001;"
+                     "UPDATE users SET step='agencyApprove1001_77' WHERE userid=9001")
+        timeout_name='agency_fixture_lock_wait_timeout'
+        timeout_ddl=(
+            "CREATE TRIGGER "+timeout_name+" BEFORE UPDATE ON users FOR EACH ROW "
+            "BEGIN IF OLD.userid=1001 AND OLD.is_agent=2 AND NEW.is_agent=1 THEN "
+            "SIGNAL SQLSTATE 'HY000' SET MYSQL_ERRNO=1205, "
+            "MESSAGE_TEXT='synthetic_lock_wait_timeout'; END IF; END"
+        )
+        try:
+            agency_test_ddl(work,env,timeout_ddl)
+            timeout=run(9001,text='12')
+            passed('v1_database_lock_wait_timeout_no_role_or_notice',
+                field(work,env,1001,'is_agent')=='2' and
+                outgoing([timeout],1001)==0 and
+                field(work,env,9001,'step')=='none')
+        finally:
+            sql(work,env,'DROP TRIGGER IF EXISTS '+timeout_name)
+        passed('v1_synthetic_schema_restored_no_trigger_or_table_leak',
+            len(sql(work,env,'SHOW TABLES').splitlines())==23 and
+            not sql(work,env,'SHOW TRIGGERS').strip())
 
         sql(work, env, """
             UPDATE users SET is_agent=2 WHERE userid=1001;

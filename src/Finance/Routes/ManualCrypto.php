@@ -9,6 +9,8 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     exit;
 }
 
+require_once __DIR__ . '/../PaymentLifecycle.php';
+
 // A legacy USDT button is not a choice of chain; require explicit selection.
 if (preg_match('/^pay(?:Buy|Custom|Renew|IncreaseWallet|IncreaseDay|Increase)WithManualUsdt([A-Za-z0-9_-]{1,50})$/D',
                $data, $legacyCrypto)) {
@@ -41,6 +43,15 @@ if ($isMenu || $isPick) {
             return;
         }
         $options=achbotManualCryptoOptions();
+        // A current grant is needed to create a new claim. Existing pinned
+        // claims remain visible for receipt/support even if policy changes.
+        if (!$previous) {
+            foreach ($options as $networkKey=>$candidate) {
+                if (!achbotPayUxAudienceAllowed($connection,
+                    (string)$candidate['provider'],(int)$from_id))
+                    unset($options[$networkKey]);
+            }
+        }
         if ($previous) {
             $intent=achbotManualIntentDecode((string)$previous['checkout_url'],
                                              (string)$previous['provider']);
