@@ -9,7 +9,7 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
 // read-only. Do not repurpose historical manual receipt approval handlers for
 // a hosted payment: a click is not settlement or refund authorization.
 if ($data==='npReviewInbox' ||
-    preg_match('/^npReview(?:Case|Refresh|Verify)_[1-9][0-9]{0,17}(?:_(?:[0-9]|1[01]))?$/D',
+    preg_match('/^npReview(?:Case|Refresh|Verify)_[1-9][0-9]{0,17}(?:_(?:[0-9]|1[01]))?(?:_[1-9][0-9]{0,17})?$/D',
                (string)$data)) {
     if ((int)$from_id !== (int)$admin ||
         (int)($chat_id??0) !== (int)$admin) {
@@ -47,11 +47,12 @@ if ($data==='npReviewInbox' ||
                 JSON_UNESCAPED_UNICODE),'HTML');
             return;
         }
-        preg_match('/^npReview(Case|Refresh|Verify)_([1-9][0-9]{0,17})(?:_([0-9]|1[01]))?$/D',
+        preg_match('/^npReview(Case|Refresh|Verify)_([1-9][0-9]{0,17})(?:_([0-9]|1[01]))?(?:_([1-9][0-9]{0,17}))?$/D',
                    (string)$data,$parts);
         $action=$parts[1];
         $attemptId=(int)$parts[2];
         $childIndex=(int)($parts[3]??0);
+        $cursor=(int)($parts[4]??0);
         $stmt=$connection->prepare("SELECT a.*,p.type,p.price,p.user_id,
                     p.state AS pay_state,p.plan_id,
                     (SELECT u.name FROM users u WHERE u.userid=p.user_id
@@ -70,13 +71,20 @@ if ($data==='npReviewInbox' ||
             answerCallbackQuery($callbackId,'پرونده در دسترس نیست.',true);
             return;
         }
-        $stmt=$connection->prepare("SELECT payment_id,observed_status,received_at
-            FROM payment_transactions WHERE attempt_id=? AND provider='nowpayments'
-            ORDER BY id ASC LIMIT 12");
-        $stmt->bind_param('i',$attemptId);
-        $stmt->execute();
+        // Cursor is the first ledger row of this page. Fetch one extra row
+        // only to provide a bounded next-page link, never truncate history.
+        $stmt=$connection->prepare("SELECT id,payment_id,observed_status,received_at
+            FROM payment_transactions
+            WHERE attempt_id=? AND provider='nowpayments' AND id>=?
+            ORDER BY id ASC LIMIT 13");
+        $stmt->bind_param('ii',$attemptId,$cursor);
+        if (!$stmt->execute()) throw new RuntimeException('operator_children_read_failed');
         $children=$stmt->get_result()->fetch_all(MYSQLI_ASSOC);
         $stmt->close();
+        $nextCursor=count($children)>12?(int)$children[12]['id']:0;
+        $children=array_slice($children,0,12);
+        if ($action==='Verify' && !isset($children[$childIndex]))
+            throw new RuntimeException('operator_child_selection_invalid');
         $esc=static fn($value) => htmlspecialchars(
             substr((string)($value??''),0,128),ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8');
         $subject=match ((string)$case['type']) {
@@ -101,7 +109,8 @@ if ($data==='npReviewInbox' ||
               "📌 شناسه اصلی: <code>".$esc($case['payment_id']?:'ثبت نشده')."</code>\n".
               "🔍 وضعیت داخلی: <code>".$esc($case['stage'])."</code>\n".
               "🕓 آخرین تغییر: ".$esc($case['updated_at'])."\n\n".
-              "<b>گزارش شناسه‌های پرداخت:</b>\n";
+              "<b>گزارش شناسه‌های پرداخت:</b>\n".
+              ($cursor>0?"📄 ادامهٔ پرونده (شناسه‌های بعدی)\n":'');
         foreach ($children as $i=>$child) {
             $status=match ((string)$child['observed_status']) {
                 'waiting'=>'در انتظار واریز؛ وجهی احراز نشده',
@@ -169,14 +178,21 @@ if ($data==='npReviewInbox' ||
         }
         $body.="\n⚠️ مشاهده یا استعلام، پرداخت را تأیید/رد نمی‌کند ".
             "و هیچ اعتبار، تحویل یا بازپرداختی انجام نمی‌دهد.";
+        $pageSuffix=$cursor>0?'_0_'.$cursor:'';
         $buttons=[
-            [['text'=>'🔄 تازه‌سازی اطلاعات','callback_data'=>'npReviewRefresh_'.$attemptId]],
+            [['text'=>'🔄 تازه‌سازی اطلاعات',
+              'callback_data'=>'npReviewRefresh_'.$attemptId.$pageSuffix]],
         ];
         if ($children) {
             $next=$action==='Verify'
                 ? ($childIndex+1)%count($children) : 0;
             $buttons[]=[['text'=>'🔍 استعلام شناسهٔ '.($next+1).' از '.count($children),
-                         'callback_data'=>'npReviewVerify_'.$attemptId.'_'.$next]];
+                         'callback_data'=>'npReviewVerify_'.$attemptId.'_'.$next.
+                             ($cursor>0?'_'.$cursor:'')]];
+        }
+        if ($nextCursor>0) {
+            $buttons[]=[['text'=>'➡️ شناسه‌های بعدی',
+                'callback_data'=>'npReviewCase_'.$attemptId.'_0_'.$nextCursor]];
         }
         $buttons[]=[['text'=>'📋 بازگشت به فهرست',
                      'callback_data'=>'npReviewInbox']];

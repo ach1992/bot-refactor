@@ -1400,6 +1400,63 @@ def main():
         records.append(dict(case='nowpayments_operator_unauthorized_callbacks_refused',
                             pass_=True,real_provider_requests=0))
 
+        # F2: all children remain accessible through bounded cursor pages,
+        # including positive funding evidence after twelve unfunded children.
+        seed_np_attempt(work,env,'np-13-page','np-13-invoice','np-13-primary')
+        sql(work,env,"UPDATE pays SET state='paid' WHERE hash_id='np-13-page'")
+        sql(work,env,"UPDATE payment_attempts SET stage='review', "
+            "provider_status='additional_payment' WHERE order_hash='np-13-page'")
+        for n in range(1,14):
+            child='np-13-primary' if n==1 else f'np-13-child-{n:02d}'
+            status='finished' if n==13 else 'waiting'
+            sql(work,env,"INSERT INTO payment_transactions "
+                "(attempt_id,provider,payment_id,observed_status) "
+                "SELECT id,'nowpayments',"
+                f"'{child}','{status}' FROM payment_attempts "
+                "WHERE order_hash='np-13-page'")
+        page_id=int(sql(work,env,"SELECT id FROM payment_attempts "
+            "WHERE order_hash='np-13-page'").strip())
+        first=run_php(work,env,stage,dict(admin_identity,
+            callback_data='npReviewCase_'+str(page_id)))
+        first_cards=[e for e in first['events'] if e['name']=='editText']
+        if len(first_cards)!=1 or 'np-13-child-13' in first_cards[0]['args'][1]:
+            raise RuntimeError('Page 1 failed to bound child history')
+        import re as _re
+        page_link=_re.search(r'npReviewCase_'+str(page_id)+r'_0_([0-9]+)',
+            first_cards[0]['args'][2])
+        if not page_link:
+            raise RuntimeError('Next child page was inaccessible')
+        cursor=page_link.group(1)
+        second=run_php(work,env,stage,dict(admin_identity,
+            callback_data='npReviewCase_'+str(page_id)+'_0_'+cursor))
+        second_cards=[e for e in second['events'] if e['name']=='editText']
+        if len(second_cards)!=1 or 'np-13-child-13' not in second_cards[0]['args'][1]:
+            raise RuntimeError('Thirteenth funded child not inspectable')
+        if 'npReviewVerify_'+str(page_id)+'_0_'+cursor not in second_cards[0]['args'][2]:
+            raise RuntimeError('Thirteenth funded child cannot be inquired')
+        late=run_php(work,env,stage,dict(admin_identity,
+            callback_data='npReviewVerify_'+str(page_id)+'_0_'+cursor,
+            mock_invoice='np-13-invoice',nowpayment_payment_id='np-13-child-13',
+            nowpayment_order_id='np-13-page',nowpayment_status='finished'))
+        if len(late['network_calls'])!=1 or '/v1/payment/np-13-child-13' not in late['network_calls'][0]:
+            raise RuntimeError('Cursor provider inquiry selected wrong child')
+        wrong=run_php(work,env,stage,dict(admin_identity,
+            callback_data='npReviewVerify_'+str(page_id)+'_0_'+cursor,
+            mock_invoice='wrong-invoice',nowpayment_payment_id='np-13-child-13',
+            nowpayment_order_id='np-13-page',nowpayment_status='finished'))
+        if 'پاسخ معتبر و منطبق دریافت نشد' not in str(wrong['events']):
+            raise RuntimeError('Cursor provider identity mismatch was trusted')
+        denied=run_php(work,env,stage,dict(admin_identity,
+            actor=1001,chat_id=1001,
+            callback_data='npReviewCase_'+str(page_id)+'_0_'+cursor))
+        if denied['network_calls'] or any(x['name']=='editText' for x in denied['events']):
+            raise RuntimeError('Cursor page bypassed owner authentication')
+        sql(work,env,"UPDATE payment_attempts SET stage='done', "
+            "provider_status='finished',review_notified_at=NOW() "
+            "WHERE order_hash='np-13-page'")
+        records.append(dict(case='nowpayments_13th_funded_child_cursor_inquiry_safe',
+            pass_=True,real_provider_requests=0))
+
         # Direct browser query with forged NP_id must NOT bypass the new
         # quote/attempt validation even when the fake provider returns finished.
         before=snapshot(work,env)
@@ -1418,6 +1475,85 @@ def main():
             if wrong:signature='a'*128
             return dict(route='ipn',get={},ipn_raw=raw,
                         ipn_wrong_signature=signature)
+        # F1: genuine server-side InnoDB statement rejection, tested through
+        # actual signed IPN and the real mysqli connection in both modes.
+        # No test-only production code, no mocked PHP exception.
+        for report_off in (False,True):
+            mode='off' if report_off else 'throwing'
+            name=f'np-f1-{mode}'
+            seed_np_attempt(work,env,name,name+'-invoice',name+'-primary')
+            sql(work,env,f"UPDATE pays SET state='paid' WHERE hash_id='{name}'")
+            sql(work,env,f"UPDATE payment_attempts SET stage='done', "
+                f"provider_status='finished' WHERE order_hash='{name}'")
+            signed={
+                'payment_id':name+'-child','invoice_id':name+'-invoice',
+                'order_id':name,'payment_status':'finished',
+                'price_amount':1,'price_currency':'usd'}
+            before=snapshot(work,env)
+            sql(work,env,"CREATE TRIGGER owned_f1_child_reject BEFORE INSERT "
+                "ON payment_transactions FOR EACH ROW "
+                "SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='owned_child_rejected'")
+            failed=run_php(work,env,stage,dict(signed_ipn(signed),
+                mysqli_report_off=report_off))
+            sql(work,env,"DROP TRIGGER owned_f1_child_reject")
+            verify_unchanged(work,env,before,'owned_f1_insert_'+mode)
+            if failed['events'][-1].get('code')==200 or failed['network_calls']:
+                raise RuntimeError('Rejected child INSERT falsely acknowledged')
+            ok=run_php(work,env,stage,dict(signed_ipn(signed),
+                mysqli_report_off=report_off))
+            if ok['events'][-1].get('code')!=200 or sql(work,env,
+                f"SELECT COUNT(*) FROM payment_transactions WHERE payment_id='{name}-child'").strip()!='1':
+                raise RuntimeError('Signed retry did not durably record child')
+            records.append(dict(case='nowpayments_ipn_child_insert_fail_retry_'+mode,
+                pass_=True,real_provider_requests=0))
+            first_name=name+'-first'
+            seed_np_attempt(work,env,first_name,first_name+'-invoice',first_name+'-unused')
+            sql(work,env,f"UPDATE payment_attempts SET payment_id=NULL WHERE order_hash='{first_name}'")
+            first=dict(signed,payment_id=first_name+'-child',
+                invoice_id=first_name+'-invoice',order_id=first_name,
+                payment_status='waiting')
+            before=snapshot(work,env)
+            sql(work,env,"CREATE TRIGGER owned_f1_parent_reject BEFORE UPDATE "
+                "ON payment_attempts FOR EACH ROW "
+                "SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='owned_parent_rejected'")
+            failed=run_php(work,env,stage,dict(signed_ipn(first),
+                mysqli_report_off=report_off))
+            sql(work,env,"DROP TRIGGER owned_f1_parent_reject")
+            verify_unchanged(work,env,before,'owned_f1_parent_'+mode)
+            if failed['events'][-1].get('code')==200:
+                raise RuntimeError('Rejected primary parent UPDATE acknowledged')
+            retried=run_php(work,env,stage,dict(signed_ipn(first),
+                mysqli_report_off=report_off))
+            if retried['events'][-1].get('code')!=200 or sql(work,env,
+                f"SELECT payment_id FROM payment_attempts WHERE order_hash='{first_name}'").strip()!=first_name+'-child':
+                raise RuntimeError('Primary child retry did not persist')
+            # Retire this synthetic fixture from the separate one-item Cron
+            # acceptance run; it tests persistence, not settlement.
+            sql(work,env,f"UPDATE payment_attempts SET stage='done' "
+                f"WHERE order_hash='{first_name}'")
+            sql(work,env,f"UPDATE pays SET state='paid' "
+                f"WHERE hash_id='{first_name}'")
+            records.append(dict(case='nowpayments_ipn_primary_link_fail_retry_'+mode,
+                pass_=True,real_provider_requests=0))
+        # A competing invoice cannot claim an already stored child ID.
+        seed_np_attempt(work,env,'np-f1-other','np-f1-other-invoice','np-f1-other-unused')
+        sql(work,env,"UPDATE payment_attempts SET payment_id=NULL WHERE order_hash='np-f1-other'")
+        other=dict(signed,payment_id='np-f1-off-child',
+            invoice_id='np-f1-other-invoice',order_id='np-f1-other',
+            payment_status='finished')
+        before=snapshot(work,env)
+        rejected=run_php(work,env,stage,signed_ipn(other))
+        verify_unchanged(work,env,before,'owned_f1_competing_invoice')
+        if rejected['events'][-1].get('code')==200:
+            raise RuntimeError('Cross-invoice duplicate child falsely acknowledged')
+        records.append(dict(case='nowpayments_ipn_cross_invoice_child_not_acknowledged',
+            pass_=True,real_provider_requests=0))
+        # Keep the one-at-a-time baseline alert assertions independent of
+        # F1 injected signed-funded children; these cases tested IPN only.
+        sql(work,env,"UPDATE payment_attempts SET stage='done', "
+            "provider_status='finished',review_notified_at=NOW() "
+            "WHERE order_hash LIKE 'np-f1-%'")
+
         ipn={
           'payment_id':'np-pmt-wallet-init','invoice_id':'owned-new-invoice',
           'order_id':'wallet-init','payment_status':'confirmed',

@@ -74,7 +74,8 @@ function achbotNpIngestIpn(mysqli $connection, string $ipnSecret,
         // Lock the entire local invoice decision, then claim provider child
         // identity in ONE UNIQUE ledger shared by primary and extra deposits.
         // No HTTP 200 is returned before child evidence and state commit.
-        $connection->begin_transaction();
+        if (!$connection->begin_transaction())
+            throw new RuntimeException('ipn_begin_unconfirmed');
         $stmt=$connection->prepare("SELECT a.*,p.payid AS original_invoice
             FROM payment_attempts a JOIN pays p ON p.id=a.pay_row_id
             WHERE a.provider='nowpayments' AND a.order_hash=? AND a.provider_reference=? LIMIT 2 FOR UPDATE");
@@ -114,7 +115,8 @@ function achbotNpIngestIpn(mysqli $connection, string $ipnSecret,
             $stmt=$connection->prepare("INSERT INTO payment_transactions
                 (attempt_id,provider,payment_id,observed_status) VALUES (?,'nowpayments',?,?)");
             $stmt->bind_param('iss',$attempt['id'],$paymentId,$status);
-            $stmt->execute();
+            if (!$stmt->execute() || $stmt->affected_rows!==1)
+                throw new RuntimeException('ipn_child_insert_unconfirmed');
             $stmt->close();
         } elseif ($improved) {
             // An out-of-order waiting/expired IPN must not erase already
@@ -135,7 +137,8 @@ function achbotNpIngestIpn(mysqli $connection, string $ipnSecret,
                            WHEN stage='checking' THEN 'checking'
                            ELSE 'pending' END WHERE id=?");
             $stmt->bind_param('ssi',$paymentId,$status,$attempt['id']);
-            $stmt->execute();
+            if (!$stmt->execute() || $stmt->affected_rows!==1)
+                throw new RuntimeException('ipn_primary_link_unconfirmed');
             $stmt->close();
         } elseif ((string)$attempt['payment_id']!==$paymentId &&
                   $improved && achbotNpChildEvidenceRank($status)>0) {
