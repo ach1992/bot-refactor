@@ -891,7 +891,10 @@ function achbotNpDeferUncertainRemoteEffect($gateType, $payDescription): bool {
     return true;
 }
 
-function achbotPerformPaymentEffect($payRowId, $gateType) {
+function achbotPerformPaymentEffect($payRowId, $gateType, &$effectStage = null) {
+    // Report the effect boundary to doAction's exception handler. No local
+    // settlement/review row is assured before the paid claim succeeds.
+    $effectStage='preclaim';
     global $connection, $admin, $userInfo, $from_id, $botUrl, $botState;
     global $buttonValues, $linkIndices, $hideConfigIfMany;
 	
@@ -989,6 +992,10 @@ function achbotPerformPaymentEffect($payRowId, $gateType) {
         showForm("این پرداخت در حال پردازش یا قبلاً نهایی شده است.", "پیگیری پرداخت");
         return false;
     }
+
+    // From this point onward a hosted provider effect may be underway. A
+    // later exception must never reopen a fulfilled or uncertain payment.
+    $effectStage='postclaim';
 
     if ($payType == "BUY_SUB") {
 
@@ -1689,15 +1696,28 @@ function achbotPerformPaymentEffect($payRowId, $gateType) {
  * an attempt as delivered when the underlying effect throws or is uncertain.
  */
 function doAction($payRowId, $gateType) {
+    $effectStage='preclaim';
     try {
-        $outcome=achbotPerformPaymentEffect($payRowId,$gateType);
+        $outcome=achbotPerformPaymentEffect($payRowId,$gateType,$effectStage);
     } catch (Throwable $error) {
         if (!in_array($gateType,['nextpay','zarinpal'],true)) throw $error;
-        // The remote side effect may have completed; a failed local insert
-        // is NOT evidence for an automatic retry or compensating refund.
-        error_log('achbot_hosted_service_effect_needs_review pay_id='.(int)$payRowId);
-        showForm('نتیجه پرداخت و تحویل سرویس هنوز قطعی نیست؛ درخواست برای بررسی ثبت شده است. لطفاً پرداخت یا سفارش را تکرار نکنید.',
-                 'پیگیری پرداخت');
+        // Even an upstream-verified charge can fail on the *first* local
+        // SELECT, before a durable review record exists. A post-claim throw
+        // may instead follow a real remote side effect. Neither is safe to
+        // retry, refund, or describe as an already-recorded review request.
+        $afterClaim=$effectStage==='postclaim';
+        $event=$afterClaim
+            ? 'achbot_hosted_service_effect_needs_review'
+            : 'achbot_hosted_claim_unconfirmed';
+        $reason=$afterClaim
+            ? 'postclaim_effect_exception'
+            : 'preclaim_local_error';
+        error_log($event.' pay_id='.(int)$payRowId.
+                  ' provider='.$gateType.' code='.$reason);
+        $message=$afterClaim
+            ? 'پرداخت تأیید شده است اما نتیجهٔ تکمیل سفارش هنوز قطعی نیست. لطفاً دوباره پرداخت نکنید، مشخصات پرداخت را نگه دارید و با پشتیبانی تماس بگیرید.'
+            : 'پرداخت تأیید شده است اما ثبت نتیجهٔ سفارش هنوز قطعی نیست. لطفاً دوباره پرداخت نکنید، مشخصات پرداخت را نگه دارید و با پشتیبانی تماس بگیرید.';
+        showForm($message,'پیگیری پرداخت');
         return 'ambiguous';
     }
     if (in_array($gateType,['nextpay','zarinpal'],true) &&

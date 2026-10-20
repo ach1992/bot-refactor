@@ -223,10 +223,18 @@ achbot_hosted_claim_unconfirmed pay_id=<local-positive-integer> provider=<nextpa
 Codes are `invalid_input`, `schema_inspection_failed`,
 `transaction_begin_failed`, `paid_claim_failed`,
 `paid_claim_unavailable`, `attempt_read_failed`, `attempt_mismatch`,
-`ledger_stage_failed`, `ledger_stage_unconfirmed` and
-`commit_unconfirmed`. **The log is correlation evidence, not a durable
-payment/review claim**, and its delivery/retention depends on the actual
-private PHP error-log configuration. Neither the provider reference, token,
+`ledger_stage_failed`, `ledger_stage_unconfirmed`,
+`commit_unconfirmed`, and `preclaim_local_error`. The latter specifically
+covers a failed initial local payment read or subject inspection **before**
+the hosted paid/review claim helper is entered. A different protected event,
+`achbot_hosted_service_effect_needs_review pay_id=<local-id> provider=<nextpay|zarinpal> code=postclaim_effect_exception`,
+distinguishes an exception **after** a successful paid claim, when remote
+service effects may already exist. Neither customer response claims a durable
+review record or instructs the customer to repeat payment.
+
+**The log is correlation evidence, not a durable payment/review claim**, and
+its delivery/retention depends on the actual private PHP error-log
+configuration. Neither the provider reference, token,
 raw SQL exception nor user message is placed in these diagnostics.
 
 After restoring a healthy read-only DB connection and verifying its exact

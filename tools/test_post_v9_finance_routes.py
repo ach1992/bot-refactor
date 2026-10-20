@@ -390,10 +390,20 @@ class OwnedFinanceFaultMysqli extends mysqli {
             return false;
         return parent::begin_transaction($flags, $name);
     }
+    public function prepare(string $query): mysqli_stmt|false {
+        if (!empty($GLOBALS['spec']['fail_hosted_preclaim_pays_read']) &&
+            str_contains($query, "SELECT * FROM `pays` WHERE `id` = ?") &&
+            str_contains($query, "`state` = 'pending'") &&
+            array_filter(debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 9),
+                fn($frame) => ($frame['function'] ?? '') === 'achbotPerformPaymentEffect'))
+            return false; // Simulate non-throwing MYSQLI_REPORT_OFF prepare().
+        return parent::prepare($query);
+    }
 }
 try {
     $connection = (!empty($spec['fail_hosted_schema_query']) ||
-                   !empty($spec['fail_hosted_begin']))
+                   !empty($spec['fail_hosted_begin']) ||
+                   !empty($spec['fail_hosted_preclaim_pays_read']))
         ? new OwnedFinanceFaultMysqli('localhost','root','',$dbname,0,$socket)
         : new mysqli('localhost', 'root', '', $dbname, 0, $socket);
     $connection->set_charset('utf8mb4');
@@ -528,7 +538,8 @@ def run_php(work, env, stage, spec):
         f"achbot_hosted_claim_unconfirmed pay_id={spec['pay_row_id']} "
         f"provider={spec['provider']} code={claim_code}\n".encode()
         if claim_code else
-        (f"achbot_hosted_service_effect_needs_review pay_id={spec['pay_row_id']}\n"
+        (f"achbot_hosted_service_effect_needs_review pay_id={spec['pay_row_id']} "
+         f"provider={spec['provider']} code=postclaim_effect_exception\n"
          .encode() if spec.get('expect_local_error') else b''))
     if p.returncode or p.stderr != expected_log:
         raise RuntimeError('native finance php error: '+
@@ -2097,6 +2108,68 @@ def main():
                 f"WHERE id={oid}")
             records.append(dict(case='hosted_'+provider+
                 '_unstaged_recovery_claim_once_no_remote_replay',pass_=True))
+
+        # Independent F1-R1 re-review: provider verification can be
+        # successful BEFORE achbotPerformPaymentEffect reaches its initial
+        # pending pays lookup. A nonthrowing prepare() failure there must not
+        # masquerade as a durably recorded operator-review request.
+        for provider in ('nextpay','zarinpal'):
+            name='hp-'+('np' if provider=='nextpay' else 'zp')+'-read'
+            pay_id=seed_hosted_renewal(name,provider)
+            ref=name+'-invoice'
+            get=({'nextpay':'','trans_id':ref} if provider=='nextpay'
+                else {'zarinpal':'','hash_id':name,
+                      'Authority':ref,'Status':'OK'})
+            before=snapshot(work,env)
+            for attempt_number in (1,2):
+                interrupted=run_php(work,env,stage,dict(route='return',get=get,
+                    pay_row_id=pay_id,provider=provider,
+                    nextpay_code=0,zarin_status=100,mysqli_report_off=True,
+                    fail_hosted_preclaim_pays_read=True,
+                    expect_hosted_claim_code='preclaim_local_error'))
+                verify_unchanged(work,env,before,
+                    f"hosted_preclaim_read_{provider}_attempt_{attempt_number}")
+                if len(interrupted['network_calls'])!=1 or (
+                    provider=='nextpay' and
+                    '/nx/gateway/verify' not in interrupted['network_calls'][0]
+                ) or (provider=='zarinpal' and
+                      interrupted['network_calls'][0]!='zarinpal:verify'):
+                    raise RuntimeError('Positive provider verification absent for preclaim fault')
+                if any(e['name']=='renewConfigOnServer' for e in interrupted['events']):
+                    raise RuntimeError('Preclaim DB failure reached remote provisioning')
+                if (not all(word in interrupted['form'] for word in
+                     ('پرداخت','پشتیبانی','دوباره پرداخت نکنید')) or
+                    'درخواست برای بررسی ثبت شده است' in interrupted['form'] or
+                    'mysql' in interrupted['form'].lower() or
+                    'marzban' in interrupted['form'].lower() or
+                    'database' in interrupted['form'].lower() or
+                    'Call to a member function' in interrupted['form']):
+                    raise RuntimeError('Preclaim customer text falsely states durable review')
+                want=(f"achbot_hosted_claim_unconfirmed pay_id={pay_id} "
+                    f"provider={provider} code=preclaim_local_error\n")
+                if interrupted['protected_diagnostic'] != want:
+                    raise RuntimeError('Preclaim correlation/phase log incorrect')
+
+            # One legitimate later callback is allowed after transient
+            # preclaim failure, but the following replay cannot reprovision.
+            success=run_php(work,env,stage,dict(route='return',get=get,
+                pay_row_id=pay_id,provider=provider,
+                nextpay_code=0,zarin_status=100,renew_success=True))
+            if len([e for e in success['events']
+                    if e['name']=='renewConfigOnServer'])!=1 or (
+                sql(work,env,f"SELECT stage,provider_status FROM payment_attempts "
+                    f"WHERE pay_row_id={pay_id}").strip()!='done\tdelivered'):
+                raise RuntimeError('Recovered preclaim callback did not fulfill once')
+            replay=run_php(work,env,stage,dict(route='return',get=get,
+                pay_row_id=pay_id,provider=provider,
+                nextpay_code=0,zarin_status=100,renew_success=True))
+            if any(e['name']=='renewConfigOnServer' for e in replay['events']):
+                raise RuntimeError('Recovered preclaim callback caused duplicate effect')
+            sql(work,env,f"UPDATE orders_list SET expire_date={original_exp} "
+                f"WHERE id={oid}")
+            records.append(dict(case='hosted_'+provider+
+                '_verified_preclaim_pays_read_failure_customer_log_recovery_no_replay',
+                pass_=True,real_provider_requests=0))
 
         # If the remote renewal was accepted but the ORIGINAL local ledger
         # INSERT fails under MYSQLI_REPORT_OFF, a success page or 'done'
