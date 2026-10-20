@@ -271,6 +271,70 @@ for a transaction which failed **before** the review marker committed; this
 limitation remains a separately authorized global financial recovery concern
 under #26.
 
+### Final review closure and multi-account partial effects (Issue #26)
+
+For **new hosted NextPay/Zarinpal service payments**, a confirmed
+`delivered` or `compensated` outcome attempts the existing guarded
+`payment_attempts.review → done` transition. An SQL call returning success
+is **not** proof that the guarded UPDATE matched a row. The current source
+requires exactly one updated row and otherwise emits a protected diagnostic:
+
+```text
+achbot_hosted_fulfillment_finish_needs_review pay_id=<local-positive-integer> provider=<nextpay|zarinpal> code=<closure_unmatched|closure_sql_unconfirmed>
+```
+
+`closure_unmatched` means no exactly-one guarded stage transition was
+observed; `closure_sql_unconfirmed` includes failure/exception to perform
+the update. Neither case automatically retries an external account effect,
+marks the attempt delivered, or refunds a verified payment. The diagnostic
+contains no provider response, customer message or raw database exception.
+When the shared table exists but a legitimate pre-003 service invoice has
+no attempt row, or a hosted wallet top-up has no service-review closure to
+perform, the helper preserves the original no-op behavior without creating
+an artificial mismatch alert. On databases **without migration 003**, a
+failed guarded closure UPDATE is silent only after MariaDB reports error
+`1146` for a missing table **and** a read-only, single-table
+`SELECT 1 FROM payment_attempts LIMIT 0` probe independently confirms
+that `payment_attempts` itself is missing. Unlike `SHOW TABLES`, this
+probe does not confuse an existing but privilege-hidden table with absence.
+A `1142` access denial, a different SQL failure, or an uncertain probe
+retains the bounded `closure_sql_unconfirmed` diagnostic. The hosted
+claim also uses this privilege-aware check: an inaccessible existing 003
+ledger cannot silently permit a pays-only claim or remote fulfillment.
+Both throwing MySQLi and `MYSQLI_REPORT_OFF` are characterized on
+the disposable 003-absent/accessible/inaccessible fixture for both
+providers; the failing statement's original errno is captured before
+subsequent SQL can overwrite it. The normal, successful modern guarded
+closure performs **no extra schema query**.
+
+An existing **service** attempt with a nonmatching stage must instead be
+correlated through the bounded log. The diagnostic requires reconciliation,
+not an assumption of lost funds or a license to create or replay an effect.
+
+A disposable native two-account `BUY_SUB` characterization covers one
+successful Marzban account operation followed by an uncertain second
+operation for **both** hosted providers. In that case the existing local
+`pays` remains paid, the shared attempt stays
+`review/fulfillment_started`, the first local `orders_list` record may
+already exist, and no global capacity decrement has yet completed.
+A duplicate callback does not reissue either remote operation. The fixture
+also covers a successful two-account baseline (both local orders,
+corresponding capacity decrement and a guarded `done/delivered` stage).
+These are **observed source semantics under synthetic provider boundaries**,
+not an endorsement of their completeness. In particular, a partially
+created remote account can exist without matching per-account durable
+effect evidence, and local capacity may need independent reconciliation.
+
+The operator must verify the original provider settlement, enumerate
+every expected account individually on the correct underlying panel,
+compare actual remote UUIDs to local order rows and subscriptions, and
+review the plan's remaining capacity before any Owner-authorized
+correction. Never decide compensation from a single failed remote response
+or re-trigger the entire multi-account checkout. Durable per-account effect
+identity, an automated reconciliation algorithm and operator action
+approval are still **OPEN** in #26 and may require a separately accepted
+persistence/architecture decision.
+
 Reconcile each result against the verified provider charge, original local
 plan/order, independent Marzban account readback (including each line item),
 and customer-visible evidence **before** a separately authorized manual
