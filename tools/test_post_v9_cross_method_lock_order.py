@@ -75,7 +75,23 @@ def stage(w,mutant):
     data=b.read_bytes()
     anchor=b"            !achbotSupportsPaymentSubject($db,$row,true) ||"
     assert data.count(anchor)==1
-    b.write_bytes(data.replace(anchor,HOSTED_INJECT.encode()+anchor))
+    data=data.replace(anchor,HOSTED_INJECT.encode()+anchor)
+    # Stage-only probes allow diagnosing a CI database-version-specific
+    # block before the policy/plan boundary, without touching shipping PHP.
+    probes=(
+        (b"        achbotPayUxLockDraftOwner($db,$ownerId);",
+         b"        file_put_contents($GLOBALS['cross_dir'].'/pre-owner','ready');\n"),
+        (b'        $stmt = $db->prepare("SELECT * FROM pays WHERE id=? FOR UPDATE");',
+         b"        file_put_contents($GLOBALS['cross_dir'].'/post-owner','ready');\n"),
+        (b"            (!achbotPayUxLockedCheckoutUsable($db,$row)) ||",
+         b"            (file_put_contents($GLOBALS['cross_dir'].'/post-pay','ready') && false) ||\n"),
+        (b"            !achbotPayUxAudienceAllowed($db,$provider,$ownerId,true,(string)$row['type']) ||",
+         b"            (file_put_contents($GLOBALS['cross_dir'].'/post-successor','ready') && false) ||\n"),
+    )
+    for probe,marker in probes:
+        assert data.count(probe)==1,(probe,data.count(probe))
+        data=data.replace(probe,marker+probe)
+    b.write_bytes(data)
     return folder
 
 def drivers(w):
@@ -106,6 +122,7 @@ $connection->query('SET SESSION innodb_lock_wait_timeout=5');
     hosted=hosted.replace(a,a+"""
 $GLOBALS['cross_ready']=$spec['cross_ready']??'';
 $GLOBALS['cross_release']=$spec['cross_release']??'';
+$GLOBALS['cross_dir']=$spec['cross_dir']??'';
 """)
     a="$connection->set_charset('utf8mb4');"
     assert hosted.count(a)==1
@@ -121,6 +138,24 @@ def wait(path,proc,seconds=5):
         if proc.poll() is not None:raise AssertionError(('worker_exited',proc.communicate()))
         time.sleep(.01)
     assert path.exists(),str(path)
+
+def diagnostic(w,e,sub,worker):
+    observations=[]
+    for label,query in (
+        ('engine','SELECT VERSION()'),
+        ('transactions','SELECT trx_mysql_thread_id,trx_state,trx_query FROM information_schema.INNODB_TRX'),
+        ('waits','SELECT requesting_trx_id,blocking_trx_id FROM information_schema.INNODB_LOCK_WAITS'),
+        ('processlist','SHOW FULL PROCESSLIST'),
+    ):
+        try:
+            observations.append(label+'='+sql(w,e,query)[-2200:])
+        except Exception as error:
+            observations.append(label+'_unavailable='+repr(error)[-250:])
+    checkpoints=[p.name for p in sub.iterdir() if p.is_file()]
+    observations.append('markers='+repr(sorted(checkpoints)))
+    observations.append('worker_poll='+repr(worker.poll()))
+    return ' / '.join(observations)
+
 
 def run_case(w,e,folder,wdriver,hdriver,mutant,index):
     actor_a=13500+index*2; actor_b=actor_a+1
@@ -150,7 +185,8 @@ def run_case(w,e,folder,wdriver,hdriver,mutant,index):
         wait(sub/'wallet-ready',a)
         hosted_spec={'route':'initiate','get':{'nextpay':'','hash_id':b_hash},
                      'actor':actor_b,'cross_ready':str(sub/'hosted-ready'),
-                     'cross_release':str(sub/'hosted-release')}
+                     'cross_release':str(sub/'hosted-release'),
+                     'cross_dir':str(sub)}
         b=subprocess.Popen(['php','-n','-d','extension=mysqlnd','-d','extension=mysqli',
             '-d','extension=curl','-d','allow_url_fopen=0',
             '-d','disable_functions=curl_init,curl_setopt,curl_setopt_array,curl_exec,curl_close,curl_error,curl_getinfo,exec,shell_exec,system,passthru,popen,proc_open,mail',
@@ -178,7 +214,11 @@ def run_case(w,e,folder,wdriver,hdriver,mutant,index):
         # Both customers may hold compatible shared policy locks. The
         # second reaches the pre-plan marker while wallet is still active;
         # they serialize only on an actually shared plan dependency.
-        wait(sub/'hosted-ready',b)
+        try:
+            wait(sub/'hosted-ready',b)
+        except AssertionError as error:
+            raise AssertionError(('hosted_before_plan_probe_not_reached',
+                                  diagnostic(w,e,sub,b))) from error
         assert a.poll() is None,'wallet ended before independent policy reader'
         (sub/'hosted-release').write_text('try-shared-plan')
         time.sleep(.35)
