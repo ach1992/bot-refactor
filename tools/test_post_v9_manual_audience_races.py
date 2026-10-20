@@ -22,6 +22,10 @@ import test_post_v9_manual_payments as manual
 ROOT=Path(__file__).resolve().parents[1]
 DB=purchase.SIDE[1]
 HEAD='9774a93c1f98204ce8373f467c62f62a3660903b'
+N1_HEAD='e3a189b589b1df0651a25092f6ac7ef17218ad28'
+FLAGS={'bank_transfer':'cartToCartState','gift_card':'giftCardState',
+       'manual_usdt':'manualUsdtState','manual_trx':'manualUsdtState'}
+ACTIVE={'cartToCartState':'on','giftCardState':'on','manualUsdtState':'on'}
 METHODS=('bank_transfer','gift_card','manual_usdt','manual_trx')
 HOOK=r"""        if (($GLOBALS['f2_ready']??'')!=='') {
             file_put_contents((string)$GLOBALS['f2_ready'],'just-before-policy');
@@ -35,15 +39,16 @@ HOOK=r"""        if (($GLOBALS['f2_ready']??'')!=='') {
 
 def sql(w,e,q):return checkout.sql(w,e,q)
 
-def stage_source(w,old):
-    stage=w/('manual-audience-old' if old else 'manual-audience-new')
+def stage_source(w,old,baseline=HEAD):
+    stage=w/('manual-n1-old' if old and baseline!=HEAD else
+             ('manual-audience-old' if old else 'manual-audience-new'))
     stages.stage_source(stage,True)
     p=stage/'src/Finance/ReceiptHelpers.php'
-    s=(subprocess.check_output(['git','show',HEAD+':src/Finance/ReceiptHelpers.php'],
+    s=(subprocess.check_output(['git','show',baseline+':src/Finance/ReceiptHelpers.php'],
         cwd=ROOT) if old else p.read_bytes())
     if old:
         (stage/'src/Finance/PaymentLifecycle.php').write_bytes(
-            subprocess.check_output(['git','show',HEAD+':src/Finance/PaymentLifecycle.php'],
+            subprocess.check_output(['git','show',baseline+':src/Finance/PaymentLifecycle.php'],
             cwd=ROOT))
     anchor=b"        if (!achbotManualEnabled($method) ||"
     assert s.count(anchor)==1
@@ -59,13 +64,15 @@ $GLOBALS['f2_ready']=$spec['f2_ready']??'';
 $GLOBALS['f2_release']=$spec['f2_release']??'';
 """)
 
-def run_one(w,e,stage,driver_file,method,old,idx):
+def run_one(w,e,stage,driver_file,method,old,idx,variant='policy'):
     actor=13000+idx
     checkout.fresh_actor(w,e,actor)
     h='f2manual'+str(idx)
     pid=checkout.seed_pay(w,e,h,actor)
-    sql(w,e,"UPDATE setting SET value='{\"gatewayAudience\":{\""+
-        method+"\":\"all\"}}' WHERE type='BOT_STATES'")
+    state={**ACTIVE,'gatewayAudience':{method:'all'}}
+    if variant=='initially_off':state[FLAGS[method]]='off'
+    policy=json.dumps(state,separators=(',',':'))
+    sql(w,e,"UPDATE setting SET value='"+policy+"' WHERE type='BOT_STATES'")
     folder=w/('f2-manual-'+str(idx));folder.mkdir()
     cfg={
         'op':'claim','method':method,'user':actor,
@@ -90,16 +97,38 @@ def run_one(w,e,stage,driver_file,method,old,idx):
             if worker.poll() is not None:raise AssertionError(worker.communicate())
             time.sleep(.01)
         assert (folder/'ready').exists()
-        sql(w,e,"UPDATE setting SET value='{\"gatewayAudience\":{\""+
-            method+"\":\"off\"}}' WHERE type='BOT_STATES'")
+        if variant=='policy':
+            state['gatewayAudience'][method]='off'
+        elif variant=='primary':
+            state[FLAGS[method]]='off'
+        else:
+            assert variant in ('positive','initially_off')
+        policy=json.dumps(state,separators=(',',':'))
+        sql(w,e,"UPDATE setting SET value='"+policy+"' WHERE type='BOT_STATES'")
         (folder/'release').write_text('committed')
         out,err=worker.communicate(timeout=12)
         assert worker.returncode==0 and not err,(out,err)
         result=json.loads(out)['result']
-        assert result is (True if old else False),(method,old,result)
+        expected=old or variant=='positive'
+        assert result is expected,(method,old,variant,result)
         attempts=sql(w,e,f'SELECT COUNT(*) FROM payment_attempts WHERE pay_row_id={pid}')
-        assert attempts==('1' if old else '0'),(method,old,attempts)
+        assert attempts==('1' if expected else '0'),(method,old,variant,attempts)
         assert sql(w,e,f'SELECT state FROM pays WHERE id={pid}')=='pending'
+        if variant=='positive' and not old:
+            # Issued manual evidence is NOT retroactively revoked. Disabling
+            # the gateway forbids new claims but preserves the pinned quote.
+            original=sql(w,e,f'SELECT checkout_url FROM payment_attempts WHERE pay_row_id={pid}')
+            state[FLAGS[method]]='off'
+            policy=json.dumps(state,separators=(',',':'))
+            sql(w,e,"UPDATE setting SET value='"+policy+"' WHERE type='BOT_STATES'")
+            repeat=subprocess.run(cmd,cwd=w,env=e,capture_output=True,timeout=10)
+            assert repeat.returncode==0 and not repeat.stderr,(method,repeat.stderr)
+            assert json.loads(repeat.stdout)['result'] is True,(method,repeat.stdout)
+            assert sql(w,e,f'SELECT COUNT(*) FROM payment_attempts WHERE pay_row_id={pid}')=='1'
+            assert sql(w,e,f'SELECT checkout_url FROM payment_attempts WHERE pay_row_id={pid}')==original
+        if variant!='policy':
+            return ('n1_manual_'+method+'_'+variant+
+                ('_old_red' if old else '_new_green'))
         return 'f2_manual_'+method+('_old_red' if old else '_new_green')
     finally:
         (folder/'release').write_text('done')
@@ -113,14 +142,19 @@ def main():
     cases=[]
     with owned.owned_database() as (w,e):
         old=stage_source(w,True);new=stage_source(w,False)
+        n1_old=stage_source(w,True,N1_HEAD)
         purchase.init(w,e,'http://127.0.0.1:9')
         sql(w,e,(ROOT/'migrations/post-v9/003_payment_attempts.sql').read_text())
-        sql(w,e,"INSERT INTO setting(type,value) VALUES('BOT_STATES','{}')")
+        sql(w,e,"INSERT INTO setting(type,value) VALUES('BOT_STATES','{\"walletState\":\"on\",\"cartToCartState\":\"on\",\"giftCardState\":\"on\",\"manualUsdtState\":\"on\",\"nowPaymentWallet\":\"on\",\"nowPaymentOther\":\"on\",\"zarinpal\":\"on\",\"nextpay\":\"on\"}')")
         d=w/'f2-manual-driver.php';d.write_text(driver())
         n=0
         for method in METHODS:
             cases.append(run_one(w,e,old,d,method,True,n));n+=1
             cases.append(run_one(w,e,new,d,method,False,n));n+=1
+            for variant in ('primary','initially_off'):
+                cases.append(run_one(w,e,n1_old,d,method,True,n,variant));n+=1
+                cases.append(run_one(w,e,new,d,method,False,n,variant));n+=1
+            cases.append(run_one(w,e,new,d,method,False,n,'positive'));n+=1
     report={'complete':True,'cases':len(cases),'scenarios':cases,
         'old_source_red':True,'current_source_green':True,'owned_mariadb_only':True,
         'real_php_mysqli':True,'external_effects':0,'production_mutations':0}

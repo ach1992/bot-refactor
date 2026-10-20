@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """PR #60 lock-order proof: no BOT_STATES/plan inversion between two customers.
 
-The RED path is a deliberately staged intermediate lock-order mutant (NOT
-the previously independently reviewed SHA): Wallet locks plan before policy,
-while hosted checkout locks policy before plan. Real InnoDB observes both
-workers holding opposing resources. Correct current source serializes at
-BOT_STATES before either wallet/hosted plan validation. Only synthetic
-local MariaDB, mocked provider, isolated copied PHP and staging-only hooks.
+The RED path uses an explicit plan-before-policy wallet mutant together with
+the exact e3a189b exclusive BOT_STATES reader. This is NOT an unmodified
+previous HEAD. InnoDB detects their inverse plan/policy lock ordering.
+Corrected source uses compatible shared PK policy locks for different
+customers and serializes only on genuinely shared plan dependencies. All
+effects are isolated synthetic MariaDB, mocked provider and staged PHP.
 """
 from __future__ import annotations
 import argparse
@@ -48,6 +48,12 @@ def sql(w,e,q):return checkout.sql(w,e,q)
 def stage(w,mutant):
     folder=w/('cross-mutant' if mutant else 'cross-current')
     stages.stage_source(folder,True)
+    if mutant:
+        # Reproduce a deliberately inverted plan/policy order using the
+        # e3a189b exclusive policy scanner, not the current shared PK read.
+        (folder/'src/Finance/PaymentLifecycle.php').write_bytes(
+            subprocess.check_output(['git','show',
+                'e3a189b589b1df0651a25092f6ac7ef17218ad28:src/Finance/PaymentLifecycle.php'],cwd=ROOT))
     a=folder/'src/Finance/WalletSettlement.php'
     src=a.read_bytes()
     if mutant:
@@ -169,18 +175,19 @@ def run_case(w,e,folder,wdriver,hdriver,mutant,index):
             assert not (wallet_success and invoice_success),(
                 'mutant_inverse_lock_was_not_detected',ao,bo,aerr,berr)
             return 'f4_mutant_plan_then_policy_inverse_lock_conflict_detected'
-        # Good source already holds BOT_STATES in wallet prior to PLAN,
-        # so nextpay cannot acquire it and reach its post-policy marker.
-        time.sleep(.5)
-        assert not (sub/'hosted-ready').exists(), 'hosted overtook wallet policy lock'
-        assert b.poll() is None,'hosted finished before wallet released policy'
+        # Both customers may hold compatible shared policy locks. The
+        # second reaches the pre-plan marker while wallet is still active;
+        # they serialize only on an actually shared plan dependency.
+        wait(sub/'hosted-ready',b)
+        assert a.poll() is None,'wallet ended before independent policy reader'
+        (sub/'hosted-release').write_text('try-shared-plan')
+        time.sleep(.35)
+        assert b.poll() is None,'hosted skipped shared dependency lock'
         (sub/'wallet-release').write_text('commit')
         aout,aerr=a.communicate(timeout=12)
         assert a.returncode==0 and not aerr,(aout,aerr)
         ao=json.loads(aout)
         assert ao['status']=='ok' and ao['effects']==1,ao
-        wait(sub/'hosted-ready',b)
-        (sub/'hosted-release').write_text('continue')
         bout,berr=b.communicate(timeout=12)
         assert b.returncode==0 and not berr,(bout,berr)
         bo=json.loads(bout)
@@ -188,7 +195,7 @@ def run_case(w,e,folder,wdriver,hdriver,mutant,index):
         assert bo['network_calls'],bo
         assert sql(w,e,f"SELECT state FROM pays WHERE id={pid_a}")=='paid_with_wallet'
         assert int(sql(w,e,f"SELECT COUNT(*) FROM payment_attempts WHERE pay_row_id={pid_b}"))==1
-        return 'f4_current_policy_before_plan_serializes_distinct_customer_methods'
+        return 'f4_current_shared_policy_allows_parallel_readers_and_serializes_plan'
     finally:
         (sub/'wallet-release').write_text('done')
         (sub/'hosted-release').write_text('done')
@@ -206,7 +213,7 @@ def main():
         wdriver,hdriver=drivers(w)
         purchase.init(w,e,'http://127.0.0.1:9')
         sql(w,e,(ROOT/'migrations/post-v9/003_payment_attempts.sql').read_text())
-        sql(w,e,"INSERT INTO setting(type,value) VALUES('BOT_STATES','{}')")
+        sql(w,e,"INSERT INTO setting(type,value) VALUES('BOT_STATES','{\"walletState\":\"on\",\"cartToCartState\":\"on\",\"giftCardState\":\"on\",\"manualUsdtState\":\"on\",\"nowPaymentWallet\":\"on\",\"nowPaymentOther\":\"on\",\"zarinpal\":\"on\",\"nextpay\":\"on\"}')")
         sql(w,e,"INSERT INTO setting(type,value) VALUES"
           "('PAYMENT_KEYS','{\"nextpay\":\"SYNTHETIC-LOCAL-ONLY\","
           "\"nowpayment\":\"SYNTHETIC-LOCAL-ONLY\","

@@ -21,6 +21,7 @@ import test_post_v9_wallet_authorization_freshness as r3
 ROOT=Path(__file__).resolve().parents[1]
 DB=purchase.SIDE[1]
 PREVIOUS='9774a93c1f98204ce8373f467c62f62a3660903b'
+N1_HEAD='e3a189b589b1df0651a25092f6ac7ef17218ad28'
 
 BEFORE_OWNER=r"""            if (($GLOBALS['r3_ready']??'')!=='') {
                 file_put_contents((string)$GLOBALS['r3_ready'],'post-preview');
@@ -53,22 +54,24 @@ echo 'REVOKED';
 
 def sql(w,e,q):return checkout.sql(w,e,q)
 
-def staged(w,which,previous=False):
-    stage=w/('final-'+which+('-old' if previous else '-new'))
+def staged(w,which,previous=False,baseline=PREVIOUS):
+    stage=w/('final-'+which+(
+        '-n1-old' if previous and baseline!=PREVIOUS else
+        ('-old' if previous else '-new')))
     stages.stage_source(stage,True)
     wallet=stage/'src/Finance/WalletSettlement.php'
     if previous:
         source=subprocess.check_output(['git','show',
-               PREVIOUS+':src/Finance/WalletSettlement.php'],cwd=ROOT)
+               baseline+':src/Finance/WalletSettlement.php'],cwd=ROOT)
         (stage/'src/Finance/PaymentLifecycle.php').write_bytes(
                subprocess.check_output(['git','show',
-                   PREVIOUS+':src/Finance/PaymentLifecycle.php'],cwd=ROOT))
+                   baseline+':src/Finance/PaymentLifecycle.php'],cwd=ROOT))
         (stage/'src/Purchase/Core.php').write_bytes(
                subprocess.check_output(['git','show',
-                   PREVIOUS+':src/Purchase/Core.php'],cwd=ROOT))
+                   baseline+':src/Purchase/Core.php'],cwd=ROOT))
         (stage/'src/Finance/ReceiptHelpers.php').write_bytes(
                subprocess.check_output(['git','show',
-                   PREVIOUS+':src/Finance/ReceiptHelpers.php'],cwd=ROOT))
+                   baseline+':src/Finance/ReceiptHelpers.php'],cwd=ROOT))
     else:source=wallet.read_bytes()
     if which=='policy':
         anchor=b"            achbotPayUxLockDraftOwner($connection,(int)$from_id);"
@@ -109,23 +112,37 @@ def get_result(proc):
     assert proc.returncode==0 and not err,(out,err)
     return json.loads(out)
 
-def policy_race(w,e,stage,driver,index,previous,iso):
+def policy_race(w,e,stage,driver,index,previous,iso,variant='audience'):
     actor=12400+index
     hash_,pid=make_actor(w,e,actor,'policy','INCREASE_WALLET')
-    sql(w,e,"UPDATE setting SET value='{\"gatewayAudience\":{\"wallet\":\"all\"}}' WHERE type='BOT_STATES'")
+    current={'walletState':'off' if variant=='initially_off' else 'on',
+             'gatewayAudience':{'wallet':'all'}}
+    sql(w,e,"UPDATE setting SET value='"+json.dumps(current)+
+        "' WHERE type='BOT_STATES'")
     folder=w/('policy-'+str(index));folder.mkdir()
     p=run_customer(w,e,stage,driver,actor,hash_,folder,iso)
     try:
         wait(folder/'ready',p)
-        sql(w,e,"UPDATE setting SET value='{\"gatewayAudience\":{\"wallet\":\"off\"}}' WHERE type='BOT_STATES'")
+        if variant=='audience':
+            current['gatewayAudience']['wallet']='off'
+        elif variant=='primary':
+            current['walletState']='off'
+        else:
+            assert variant in ('positive','initially_off')
+        sql(w,e,"UPDATE setting SET value='"+json.dumps(current)+
+            "' WHERE type='BOT_STATES'")
         (folder/'release').write_text('after-revocation')
         observed=get_result(p)
-        status='ok' if previous else 'claimed_provider'
-        effects=1 if previous else 0
+        effects=1 if previous or variant=='positive' else 0
+        status='ok' if effects else 'claimed_provider'
         assert observed['status']==status and observed['effects']==effects,(previous,iso,observed)
         assert sql(w,e,f'SELECT wallet FROM users WHERE userid={actor}')==str(700000-effects*100000)
         assert sql(w,e,f'SELECT state FROM pays WHERE id={pid}')==(
-            'paid_with_wallet' if previous else 'pending')
+            'paid_with_wallet' if effects else 'pending')
+        if variant!='audience':
+            return ('n1_wallet_'+variant+
+                ('_old_red' if previous else '_new_green')+
+                '_'+iso.lower().replace('-','_'))
         return 'f2_wallet_'+('old_red' if previous else 'new_green')+'_'+iso.lower().replace('-','_')
     finally:
         (folder/'release').write_text('done')
@@ -134,7 +151,7 @@ def policy_race(w,e,stage,driver,index,previous,iso):
 def panel_race(w,e,stage,driver,index,previous,iso,field):
     sql(w,e,"UPDATE server_config SET type='marzban' WHERE id=2")
     sql(w,e,"UPDATE server_plans SET active=1 WHERE id=7")
-    sql(w,e,"UPDATE setting SET value='{}' WHERE type='BOT_STATES'")
+    sql(w,e,"UPDATE setting SET value='{\"walletState\":\"on\"}' WHERE type='BOT_STATES'")
     actor=12500+index
     hash_,pid=make_actor(w,e,actor,'panel','BUY_SUB')
     folder=w/('panel-'+str(index));folder.mkdir()
@@ -178,16 +195,25 @@ def main():
         # source-real RED/GREEN stages: one for policy, one for late revocation.
         src={(which,old):staged(w,which,old)
              for which in ('policy','panel') for old in (False,True)}
+        n1_old=staged(w,'policy',True,N1_HEAD)
         driver=w/'f24-wallet-driver.php';driver.write_text(r3.PHP)
         revoker=w/'final-revoker.php';revoker.write_text(REVOKER)
         purchase.init(w,e,'http://127.0.0.1:9')
         sql(w,e,(ROOT/'migrations/post-v9/003_payment_attempts.sql').read_text())
-        sql(w,e,"INSERT INTO setting (type,value) VALUES ('BOT_STATES','{}')")
+        sql(w,e,"INSERT INTO setting (type,value) VALUES ('BOT_STATES','{\"walletState\":\"on\",\"cartToCartState\":\"on\",\"giftCardState\":\"on\",\"manualUsdtState\":\"on\",\"nowPaymentWallet\":\"on\",\"nowPaymentOther\":\"on\",\"zarinpal\":\"on\",\"nextpay\":\"on\"}')")
         index=0
         for iso in ('READ-COMMITTED','REPEATABLE-READ'):
             if iso=='READ-COMMITTED':
                 scenarios.append(policy_race(w,e,src[('policy',True)],driver,index,True,iso));index+=1
             scenarios.append(policy_race(w,e,src[('policy',False)],driver,index,False,iso));index+=1
+        for variant in ('primary','initially_off'):
+            scenarios.append(policy_race(w,e,n1_old,driver,index,True,
+                                         'READ-COMMITTED',variant));index+=1
+            for iso in ('READ-COMMITTED','REPEATABLE-READ'):
+                scenarios.append(policy_race(w,e,src[('policy',False)],driver,
+                                             index,False,iso,variant));index+=1
+        scenarios.append(policy_race(w,e,src[('policy',False)],driver,index,
+                                     False,'READ-COMMITTED','positive'));index+=1
         for field in ('type','active'):
             for iso in ('READ-COMMITTED','REPEATABLE-READ'):
                 if iso=='READ-COMMITTED':

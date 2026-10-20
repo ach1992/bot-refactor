@@ -23,6 +23,13 @@ ROOT=Path(__file__).resolve().parents[1]
 DB=purchase.SIDE[1]
 HEAD='9774a93c1f98204ce8373f467c62f62a3660903b'
 PROVIDERS=(('nowpayment','nowpayments'),('zarinpal','zarinpal'),('nextpay','nextpay'))
+N1_HEAD='e3a189b589b1df0651a25092f6ac7ef17218ad28'
+ACTIVE_FLAGS={'nowPaymentWallet':'on','nowPaymentOther':'on',
+              'zarinpal':'on','nextpay':'on'}
+PRIMARY_CASES=(('nowpayment','nowpayments','INCREASE_WALLET','nowPaymentWallet'),
+               ('nowpayment','nowpayments','BUY_SUB','nowPaymentOther'),
+               ('zarinpal','zarinpal','INCREASE_WALLET','zarinpal'),
+               ('nextpay','nextpay','INCREASE_WALLET','nextpay'))
 
 HOOK=r"""        if (($GLOBALS['f2_ready']??'')!=='') {
             file_put_contents((string)$GLOBALS['f2_ready'],'about-to-reserve');
@@ -36,15 +43,16 @@ HOOK=r"""        if (($GLOBALS['f2_ready']??'')!=='') {
 
 def sql(w,e,q):return checkout.sql(w,e,q)
 
-def stages_for(w,old):
-    stage=w/('hosted-old' if old else 'hosted-current')
+def stages_for(w,old,baseline=HEAD):
+    stage=w/('hosted-n1-old' if old and baseline!=HEAD else
+             ('hosted-old' if old else 'hosted-current'))
     stages.stage_source(stage,True)
     p=stage/'src/Finance/GatewayInitiation.php'
-    source=(subprocess.check_output(['git','show',HEAD+':src/Finance/GatewayInitiation.php'],
+    source=(subprocess.check_output(['git','show',baseline+':src/Finance/GatewayInitiation.php'],
              cwd=ROOT) if old else p.read_bytes())
     if old:
         life=subprocess.check_output(['git','show',
-               HEAD+':src/Finance/PaymentLifecycle.php'],cwd=ROOT)
+               baseline+':src/Finance/PaymentLifecycle.php'],cwd=ROOT)
         (stage/'src/Finance/PaymentLifecycle.php').write_bytes(life)
     for anchor in (
         b"        achbotPayUxLockDraftOwner($db,$ownerId);",
@@ -78,15 +86,17 @@ def wait(path,proc):
         time.sleep(.012)
     assert path.exists(),str(path)
 
-def one(w,e,stage,driver,provider,mode,old,index,iso):
+def one(w,e,stage,driver,provider,mode,old,index,iso,typ='INCREASE_WALLET',flag=None):
     name,policy_method=provider
     actor=12800+index
     checkout.fresh_actor(w,e,actor)
     sql(w,e,f'UPDATE users SET is_agent=1 WHERE userid={actor}')
     hash_='f2host'+str(index)
-    pid=checkout.seed_pay(w,e,hash_,actor)
-    policy=json.dumps({'gatewayAudience':{policy_method:(
-        'all' if mode=='policy' else 'agents')}},separators=(',',':'))
+    pid=checkout.seed_pay(w,e,hash_,actor,typ=typ)
+    if typ=='BUY_SUB':
+        sql(w,e,f'UPDATE pays SET plan_id=7,server_id=2 WHERE id={pid}')
+    policy=json.dumps({'nowPaymentWallet':'on','nowPaymentOther':'on','zarinpal':'on','nextpay':'on','gatewayAudience':{policy_method:(
+        'agents' if mode=='cohort' else 'all')}},separators=(',',':'))
     sql(w,e,"UPDATE setting SET value='"+policy+"' WHERE type='BOT_STATES'")
     folder=w/('f2-hosted-'+str(index));folder.mkdir()
     spec={'route':'initiate','get':{name:'','hash_id':hash_},
@@ -100,10 +110,18 @@ def one(w,e,stage,driver,provider,mode,old,index,iso):
     try:
         wait(folder/'ready',proc)
         if mode=='policy':
-            new=json.dumps({'gatewayAudience':{policy_method:'off'}},separators=(',',':'))
+            new=json.dumps({'nowPaymentWallet':'on','nowPaymentOther':'on','zarinpal':'on','nextpay':'on','gatewayAudience':{policy_method:'off'}},separators=(',',':'))
             sql(w,e,"UPDATE setting SET value='"+new+"' WHERE type='BOT_STATES'")
-        else:
+        elif mode=='primary':
+            assert flag in ACTIVE_FLAGS
+            disabled={**ACTIVE_FLAGS,flag:'off',
+                      'gatewayAudience':{policy_method:'all'}}
+            new=json.dumps(disabled,separators=(',',':'))
+            sql(w,e,"UPDATE setting SET value='"+new+"' WHERE type='BOT_STATES'")
+        elif mode=='cohort':
             sql(w,e,f'UPDATE users SET is_agent=0 WHERE userid={actor}')
+        else:
+            assert mode=='positive'
         (folder/'release').write_text('after-revocation')
         out,err=proc.communicate(timeout=13)
         assert proc.returncode==0 and not err,(out[-1200:],err[-1200:])
@@ -111,8 +129,12 @@ def one(w,e,stage,driver,provider,mode,old,index,iso):
         assert report['fatal'] is None and not report['error'],report
         attempted=int(sql(w,e,f"SELECT COUNT(*) FROM payment_attempts WHERE pay_row_id={pid}"))
         calls=report['network_calls']
-        assert (attempted>0 and len(calls)>0) if old else (attempted==0 and len(calls)==0),(
+        expected_claim=old or mode=='positive'
+        assert (attempted>0 and len(calls)>0) if expected_claim else (attempted==0 and len(calls)==0),(
             name,mode,old,attempted,calls,report['form'][:200])
+        if mode in ('primary','positive'):
+            return ('n1_hosted_'+name+'_'+str(flag)+'_'+mode+
+                ('_old_red' if old else '_new_green')+'_'+iso.lower().replace('-','_'))
         return 'f2_hosted_'+name+'_'+mode+('_old_red' if old else '_new_green')+'_'+iso.lower().replace('-','_')
     finally:
         (folder/'release').write_text('done')
@@ -126,9 +148,10 @@ def main():
     cases=[]
     with owned.owned_database() as (w,e):
         old=stages_for(w,True);new=stages_for(w,False)
+        n1_old=stages_for(w,True,N1_HEAD)
         purchase.init(w,e,'http://127.0.0.1:9')
         sql(w,e,(ROOT/'migrations/post-v9/003_payment_attempts.sql').read_text())
-        sql(w,e,"INSERT INTO setting (type,value) VALUES ('BOT_STATES','{}')")
+        sql(w,e,"INSERT INTO setting (type,value) VALUES ('BOT_STATES','{\"walletState\":\"on\",\"cartToCartState\":\"on\",\"giftCardState\":\"on\",\"manualUsdtState\":\"on\",\"nowPaymentWallet\":\"on\",\"nowPaymentOther\":\"on\",\"zarinpal\":\"on\",\"nextpay\":\"on\"}')")
         keys=json.dumps({'nowpayment':'LOCAL','nextpay':'LOCAL','zarinpal':'LOCAL',
                          'nowpayment_ipn_secret':'LOCAL'})
         sql(w,e,"INSERT INTO setting(type,value) VALUES('PAYMENT_KEYS','"+
@@ -140,6 +163,15 @@ def main():
                 cases.append(one(w,e,old,driver,provider,mode,True,idx,'READ-COMMITTED'));idx+=1
                 for iso in ('READ-COMMITTED','REPEATABLE-READ'):
                     cases.append(one(w,e,new,driver,provider,mode,False,idx,iso));idx+=1
+        for name,policy_method,typ,flag in PRIMARY_CASES:
+            provider=(name,policy_method)
+            cases.append(one(w,e,n1_old,driver,provider,'primary',True,idx,
+                             'READ-COMMITTED',typ,flag));idx+=1
+            for iso in ('READ-COMMITTED','REPEATABLE-READ'):
+                cases.append(one(w,e,new,driver,provider,'primary',False,idx,iso,
+                                 typ,flag));idx+=1
+            cases.append(one(w,e,new,driver,provider,'positive',False,idx,
+                             'READ-COMMITTED',typ,flag));idx+=1
     output={'complete':True,'cases':len(cases),'scenarios':cases,
         'old_source_red':True,'current_source_green':True,
         'real_mysqli':True,'provider_requests_mock_only':True,

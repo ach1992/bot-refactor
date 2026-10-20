@@ -243,7 +243,7 @@ def main():
         old=stage_source(w,True)
         purchase.init(w,e,'http://127.0.0.1:9')
         sql(w,e,(ROOT/'migrations/post-v9/003_payment_attempts.sql').read_text())
-        sql(w,e,"INSERT INTO setting (type,value) VALUES ('BOT_STATES','{}')")
+        sql(w,e,"INSERT INTO setting (type,value) VALUES ('BOT_STATES','{\"walletState\":\"on\",\"cartToCartState\":\"on\",\"giftCardState\":\"on\",\"manualUsdtState\":\"on\",\"nowPaymentWallet\":\"on\",\"nowPaymentOther\":\"on\",\"zarinpal\":\"on\",\"nextpay\":\"on\"}')")
         sql(w,e,'INSERT INTO increase_day (id,volume,price) VALUES (901,7,100)')
         sql(w,e,'INSERT INTO increase_plan (id,volume,price) VALUES (902,8,100)')
         writer=w/'f1-draft-writer.php';writer.write_text(WRITER)

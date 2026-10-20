@@ -408,24 +408,63 @@ function achbotPayUxAudienceMethods(): array {
  * A missing/duplicate/malformed persisted policy fails closed at issuance.
  */
 function achbotPayUxAudienceAllowed(mysqli $db, string $method, int $userId,
-                                     bool $final = false): bool {
+                                     bool $final = false,
+                                     ?string $subjectType = null): bool {
     if ($userId<=0 || !array_key_exists($method,achbotPayUxAudienceMethods()))
         return false;
     try {
         if ($final) {
-            $stmt=$db->prepare("SELECT id,value FROM setting
-                WHERE type='BOT_STATES' ORDER BY id FOR UPDATE");
+            // The historical setting.type is not indexed. A locking scan
+            // would lock unrelated Marzban group rows and invert the admin
+            // server_config -> setting dependency order. Locate the unique
+            // identity WITHOUT row locks, then CURRENT-lock its PRIMARY key.
+            // All application BOT_STATES writers serialize by advisory lock
+            // and retain the existing row ID; missing/ambiguous rows deny.
+            $stmt=$db->prepare("SELECT id FROM setting
+                WHERE type='BOT_STATES' ORDER BY id LIMIT 2");
             if (!$stmt || !$stmt->execute())
-                throw new RuntimeException('audience_settings_read_failed');
-            $rows=$stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+                throw new RuntimeException('audience_settings_locate_failed');
+            $ids=$stmt->get_result()->fetch_all(MYSQLI_ASSOC);
             $stmt->close();
-            // Historical setting.type is not UNIQUE. Reject ambiguity.
-            if (count($rows)!==1) return false;
-            $states=json_decode((string)$rows[0]['value'],true);
+            if (count($ids)!==1) return false;
+            $id=(int)$ids[0]['id'];
+            $stmt=$db->prepare("SELECT type,value FROM setting
+                WHERE id=? LOCK IN SHARE MODE");
+            if (!$stmt) throw new RuntimeException('audience_settings_lock_prepare');
+            $stmt->bind_param('i',$id);
+            if (!$stmt->execute())
+                throw new RuntimeException('audience_settings_lock_failed');
+            $row=$stmt->get_result()->fetch_assoc();
+            $stmt->close();
+            if (!$row || $row['type']!=='BOT_STATES') return false;
+            $states=json_decode((string)$row['value'],true);
         } else {
             $states=$GLOBALS['botState']??[];
         }
         if (!is_array($states)) return false;
+        // Gateway availability is independent from the audience rule.
+        // Only a final financial authorization requires persisted flags;
+        // preview/menu checks remain presentation-only.
+        if ($final) {
+            $primaryFlags=[
+                'wallet'=>'walletState',
+                'bank_transfer'=>'cartToCartState',
+                'gift_card'=>'giftCardState',
+                'manual_usdt'=>'manualUsdtState',
+                'manual_trx'=>'manualUsdtState',
+                'zarinpal'=>'zarinpal',
+                'nextpay'=>'nextpay',
+            ];
+            if ($method==='nowpayments') {
+                if ($subjectType===null || $subjectType==='') return false;
+                $primaryFlag=$subjectType==='INCREASE_WALLET'
+                    ? 'nowPaymentWallet' : 'nowPaymentOther';
+            } else {
+                $primaryFlag=$primaryFlags[$method]??null;
+            }
+            if ($primaryFlag===null || ($states[$primaryFlag]??null)!=='on')
+                return false;
+        }
         $configured=array_key_exists('gatewayAudience',$states)
             ? $states['gatewayAudience'] : [];
         if (!is_array($configured)) return false;

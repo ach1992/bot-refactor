@@ -35,7 +35,7 @@ function achbotReserveCheckoutProvider(mysqli $db, int $orderId, string $provide
             (int)$row['request_date']!==(int)$original['request_date'] ||
             (int)($row['order_id']??0)!==(int)($original['order_id']??0) ||
             (!achbotPayUxLockedCheckoutUsable($db,$row)) ||
-            !achbotPayUxAudienceAllowed($db,$provider,$ownerId,true) ||
+            !achbotPayUxAudienceAllowed($db,$provider,$ownerId,true,(string)$row['type']) ||
             !achbotSupportsPaymentSubject($db,$row,true) ||
             (int)$row['price'] <= 0 || empty($row['hash_id'])) {
             $db->rollback();
@@ -444,7 +444,7 @@ if(mysqli_num_rows($payInfo)==0){
                 (int)$locked['price']!==(int)$amount ||
                 !achbotPayUxLockedCheckoutUsable($connection,$locked) ||
                 !achbotPayUxAudienceAllowed($connection,'nowpayments',
-                    (int)$locked['user_id'],true) ||
+                    (int)$locked['user_id'],true,(string)$locked['type']) ||
                 !achbotSupportsPaymentSubject($connection,$locked,true)) {
                 throw new RuntimeException('checkout_draft_no_longer_eligible');
             }

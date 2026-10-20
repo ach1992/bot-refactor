@@ -520,16 +520,39 @@ def main():
                     prefix+'_new_green_read_committed',
                     prefix+'_new_green_repeatable_read',
                 })
+        for provider,flag in (
+            ('nowpayment','nowPaymentWallet'),
+            ('nowpayment','nowPaymentOther'),
+            ('zarinpal','zarinpal'),('nextpay','nextpay')):
+            prefix='n1_hosted_'+provider+'_'+flag
+            required_hosted_audience.update({
+                prefix+'_primary_old_red_read_committed',
+                prefix+'_primary_new_green_read_committed',
+                prefix+'_primary_new_green_repeatable_read',
+                prefix+'_positive_new_green_read_committed',
+            })
         required_manual_audience={
             'f2_manual_'+method+suffix
             for method in ('bank_transfer','gift_card','manual_usdt','manual_trx')
             for suffix in ('_old_red','_new_green')
         }
+        for method in ('bank_transfer','gift_card','manual_usdt','manual_trx'):
+            for variant in ('primary','initially_off'):
+                required_manual_audience.update({
+                    'n1_manual_'+method+'_'+variant+'_old_red',
+                    'n1_manual_'+method+'_'+variant+'_new_green',
+                })
+            required_manual_audience.add('n1_manual_'+method+'_positive_new_green')
         required_policy_panel={
             'f2_wallet_old_red_read_committed',
             'f2_wallet_new_green_read_committed',
             'f2_wallet_new_green_repeatable_read',
         }
+        for variant in ('primary','initially_off'):
+            required_policy_panel.add('n1_wallet_'+variant+'_old_red_read_committed')
+            for iso in ('read_committed','repeatable_read'):
+                required_policy_panel.add('n1_wallet_'+variant+'_new_green_'+iso)
+        required_policy_panel.add('n1_wallet_positive_new_green_read_committed')
         for dependency in ('type','active'):
             required_policy_panel.add(
                 'f4_'+dependency+'_old_red_revocation_precedes_effect_read_committed')
@@ -561,9 +584,26 @@ def main():
             ('cross_method_lock_order','test_post_v9_cross_method_lock_order.py',
              {
                  'f4_mutant_plan_then_policy_inverse_lock_conflict_detected',
-                 'f4_current_policy_before_plan_serializes_distinct_customer_methods',
+                 'f4_current_shared_policy_allows_parallel_readers_and_serializes_plan',
              },('intermediate_mutant_detected','current_source_serialization',
                 'real_php_mysqli','owned_mariadb_only','synthetic_provider_only')),
+            ('setting_lock_scope','test_post_v9_setting_lock_scope.py',
+             {
+                 'n2_original_schema_primary_key_policy_plan_verified',
+                 'n2_prior_unindexed_group_inverse_lock_detected_wallet',
+                 'n2_prior_exclusive_policy_serializes_independent_customers',
+                 'n2_group_admin_serializes_without_inverse_wallet_read_committed',
+                 'n2_group_admin_serializes_without_inverse_wallet_repeatable_read',
+                 'n2_group_admin_serializes_without_inverse_nowpayments_read_committed',
+                 'n2_group_admin_serializes_without_inverse_nowpayments_repeatable_read',
+                 'n2_group_admin_serializes_without_inverse_bank_transfer_read_committed',
+                 'n2_group_admin_serializes_without_inverse_bank_transfer_repeatable_read',
+                 'n2_shared_policy_two_customers_shared_plan',
+                 'n2_shared_policy_two_customers_unrelated',
+                 'n2_settings_revocation_waits_for_financial_shared_lock_read_committed',
+                 'n2_settings_revocation_waits_for_financial_shared_lock_repeatable_read',
+             },('previous_unindexed_scan_detected','current_primary_key_shared_lock',
+                'real_php_mysqli','actual_panel_group_source','owned_mariadb_only')),
         )
         reviewer_f1_f4={}
         for key,script,required,truth_flags in f1_f4_suites:

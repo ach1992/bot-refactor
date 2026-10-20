@@ -86,7 +86,7 @@ def main():
             for db in purchase.SIDE:
                 native.sql(work,env,
                     "DELETE FROM setting WHERE type='BOT_STATES'; "
-                    "INSERT INTO setting (type,value) VALUES ('BOT_STATES','{}')",db)
+                    "INSERT INTO setting (type,value) VALUES ('BOT_STATES','{\"walletState\":\"on\",\"cartToCartState\":\"on\",\"giftCardState\":\"on\",\"manualUsdtState\":\"on\",\"nowPaymentWallet\":\"on\",\"nowPaymentOther\":\"on\",\"zarinpal\":\"on\",\"nextpay\":\"on\"}')",db)
             provider.mode={'provider_reject_free':'marzban-invalid',
                            'provider_unavailable_free':'marzban-503'}.get(label,'ok')
             steps=purchase.series()[label]

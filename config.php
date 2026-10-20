@@ -548,11 +548,28 @@ function achbotMutateBotStates(callable $mutate): bool {
         if (!$ownsLock) throw new RuntimeException('settings_lock_unavailable');
         if (!$connection->begin_transaction()) throw new RuntimeException('settings_begin_failed');
         $started=true;
-        $stmt=$connection->prepare("SELECT id,value FROM setting WHERE type='BOT_STATES' ORDER BY id FOR UPDATE");
-        if (!$stmt || !$stmt->execute()) throw new RuntimeException('settings_read_failed');
-        $rows=$stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+        // Historical type has no index. Do not FOR UPDATE a full-table
+        // scan: it can lock unrelated Marzban group records. The named
+        // writer lock serializes in-app inserts; existing documents retain
+        // their stable primary key, locked exclusively only by ID.
+        $stmt=$connection->prepare("SELECT id FROM setting WHERE type='BOT_STATES' ORDER BY id LIMIT 2");
+        if (!$stmt || !$stmt->execute()) throw new RuntimeException('settings_locate_failed');
+        $ids=$stmt->get_result()->fetch_all(MYSQLI_ASSOC);
         $stmt->close();
-        if (count($rows)>1) throw new RuntimeException('settings_ambiguous');
+        if (count($ids)>1) throw new RuntimeException('settings_ambiguous');
+        $rows=[];
+        if ($ids) {
+            $id=(int)$ids[0]['id'];
+            $stmt=$connection->prepare("SELECT id,type,value FROM setting WHERE id=? FOR UPDATE");
+            if (!$stmt) throw new RuntimeException('settings_lock_prepare');
+            $stmt->bind_param('i',$id);
+            if (!$stmt->execute()) throw new RuntimeException('settings_lock_failed');
+            $row=$stmt->get_result()->fetch_assoc();
+            $stmt->close();
+            if (!$row || $row['type']!=='BOT_STATES')
+                throw new RuntimeException('settings_row_changed');
+            $rows=[$row];
+        }
         $fresh=$rows===[] ? [] : json_decode((string)$rows[0]['value'],true);
         if (!is_array($fresh)) throw new RuntimeException('settings_malformed');
         $next=$mutate($fresh);

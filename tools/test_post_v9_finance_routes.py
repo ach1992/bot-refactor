@@ -507,7 +507,7 @@ def main():
         stage=work/'current-finance'
         stages.stage_source(stage,True)
         purchase.init(work,env,'http://127.0.0.1:9')
-        sql(work,env,"INSERT INTO setting (type,value) VALUES ('BOT_STATES','{}')")
+        sql(work,env,"INSERT INTO setting (type,value) VALUES ('BOT_STATES','{\"walletState\":\"on\",\"cartToCartState\":\"on\",\"giftCardState\":\"on\",\"manualUsdtState\":\"on\",\"nowPaymentWallet\":\"on\",\"nowPaymentOther\":\"on\",\"zarinpal\":\"on\",\"nextpay\":\"on\"}')")
         if len(sql(work,env,'SHOW TABLES').splitlines()) != 23:
             raise RuntimeError('Original schema missing')
         keys=json.dumps({'nowpayment':'SYNTHETIC-LOCAL-ONLY','nextpay':'SYNTHETIC-LOCAL-ONLY','zarinpal':'SYNTHETIC-LOCAL-ONLY','nowpayment_ipn_secret':'LOCAL-IPN-SECRET'})
