@@ -29,7 +29,7 @@ A genuinely untouched unclaimed draft expires after **30 minutes by default**, o
 
 Source-only additive migration: migrations/post-v9/006_payment_message_refs.sql. Columns: pay_row_id with RESTRICT FK to pays; chat_id/message_id unique; message kind, synchronized digest and timestamps. Do NOT reuse pays.message_id or pays.chat_id; they are manual receipt evidence. Migration 006 requires prior 003; absent 006 yields graceful behavior but no proactive editing of untracked history.
 
-Before installing, require a separate Owner decision, exact versioned/checksummed SQL asset, 003/004/005/006 schema and compatibility preflight, backup + restore rehearsal, installed Marzban/Telegram checks and historical pending-invoice inventory. Do not autoapply migrations or put SQL files in the runtime ZIP. New src/Finance/PaymentLifecycle.php must be included in the runtime ZIP. No change to four-worker Cron, retired TRON or WeSwap safety policy.
+Before installing, require a separate Owner decision, exact versioned/checksummed SQL asset, 003/004/005/006 schema and compatibility preflight, backup + restore rehearsal, installed Marzban/Telegram checks and historical pending-invoice inventory. Do not autoapply migrations or put SQL files in the runtime ZIP. New src/Finance/PaymentLifecycle.php must be included in the runtime ZIP. The four-worker Cron remains unchanged. Runtime packaging removes old automatic TRON/WeSwap modules; generic unknown callbacks are denied before financial reads. NextPay remains optional for new payments with no legacy import.
 
 ## Acceptance
 

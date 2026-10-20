@@ -441,6 +441,21 @@ def exercise_callback_identity(w,e,stage):
     assert sql(w,e,f"SELECT payid,state FROM pays WHERE id={eid}")=='f3-real-claim\tpending'
     assert sql(w,e,f"SELECT provider_reference FROM payment_attempts WHERE pay_row_id={eid}")=='f3-real-claim'
     cases.append('f3_old_provider_claim_never_cancelled')
+    # A removed payment method must not even READ an invoice, much less
+    # reserve a gateway or mutate its saved evidence. The actual PrePayment
+    # module (not a stub) executes on real synthetic PHP/MySQLi.
+    name='LegacyDeniedMethod'
+    pid=seed_pay(w,e,name,1001,'INCREASE_WALLET',state='pending')
+    before=sql(w,e,f'SELECT user_id,state,payid FROM pays WHERE id={pid}')
+    for method in ('WeSwap','TronWallet','UnsupportedGateway'):
+        rejected=json_run(w,e,stage,dict(route='prepayment',get={},
+            callback_data='prePayCheck_Buy_'+method+'_'+name,actor=1001))
+        assert first_event(rejected,'callback'),(method,rejected)
+        assert not rejected.get('network_calls'),(method,rejected)
+        assert not first_event(rejected,'sendMessage'),(method,rejected)
+        assert sql(w,e,f'SELECT user_id,state,payid FROM pays WHERE id={pid}')==before
+        assert sql(w,e,f'SELECT COUNT(*) FROM payment_attempts WHERE pay_row_id={pid}')=='0'
+        cases.append('generic_unsupported_payment_callback_no_effect_'+method)
     return cases
 
 def exercise_shared_crypto(w,e,stage):

@@ -7,20 +7,6 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
 
 require_once __DIR__ . '/../PaymentLifecycle.php';
 
-// Retired automatic TRON buttons must never reach the old TXID claim path.
-if (preg_match('/^prePayCheck_[A-Za-z0-9]+_TronWallet_[A-Za-z0-9_-]+$/iD', (string)$data)) {
-    answerCallbackQuery($callbackId,
-        'درگاه قدیمی ترون غیرفعال است. برای پرداخت جدید از منوی روش‌ها استفاده کنید.', true);
-    return;
-}
-
-// Historical WeSwap choices may still exist in old Telegram keyboards.
-if (preg_match('/^prePayCheck_[A-Za-z0-9]+_WeSwap_[A-Za-z0-9]+$/iD', $data)) {
-    answerCallbackQuery($callbackId, "این روش پرداخت دیگر پشتیبانی نمی‌شود.");
-    sendMessage("⛔️ این روش پرداخت حذف شده است؛ سفارش قبلی را با پشتیبانی پیگیری کنید.", getMainKeys(), "HTML", $from_id);
-    return;
-}
-
 // Read-only status inspection: never contacts a provider or changes money.
 if (preg_match('/^ps_([A-Za-z0-9_-]{1,50})$/D', $data, $statusMatch)) {
     $hashId = $statusMatch[1];
@@ -92,6 +78,16 @@ if (preg_match('/^prePayCheck_([a-zA-Z0-9]+)_([a-zA-Z0-9]+)_([a-zA-Z0-9]+)/', $d
     $actionType = $match[1];
     $payMethod  = strtolower($match[2]);
     $hash_id    = $match[3];
+
+    // Only recognized first-party methods may enter payment-state handling.
+    // Unknown/retired callbacks fail closed BEFORE reading or editing an order.
+    if (!in_array($payMethod, [
+        'zarinpal','nowpayment','nextpay','wallet',
+        'carttocart','giftcard','manualusdt'
+    ],true)) {
+        answerCallbackQuery($callbackId,'این روش پرداخت پشتیبانی نمی‌شود.',true);
+        return;
+    }
 
     $stmt = $connection->prepare("SELECT * FROM pays WHERE hash_id = ?");
     $stmt->bind_param("s", $hash_id);
