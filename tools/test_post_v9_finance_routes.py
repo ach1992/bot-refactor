@@ -1400,6 +1400,134 @@ def main():
         records.append(dict(case='nowpayments_operator_unauthorized_callbacks_refused',
                             pass_=True,real_provider_requests=0))
 
+        # Owner case inbox keyset: thirteen-plus genuinely evidenced reviews
+        # must remain reachable, even when several share updated_at seconds.
+        # The funded cases sort ahead of the pre-existing alert fixtures.
+        for n in range(15):
+            name=f'np-inbox-page-{n:02d}'
+            seed_np_attempt(work,env,name,name+'-invoice',name+'-primary')
+            sql(work,env,"UPDATE payment_attempts SET stage='review',"
+                "provider_status='fulfillment_unconfirmed',"
+                "updated_at=DATE_SUB(DATE_ADD(NOW(),INTERVAL 1 HOUR),"
+                f"INTERVAL {n//2} SECOND) WHERE order_hash='{name}'")
+            sql(work,env,"INSERT INTO payment_transactions "
+                "(attempt_id,provider,payment_id,observed_status) "
+                "SELECT id,'nowpayments',payment_id,'finished' "
+                f"FROM payment_attempts WHERE order_hash='{name}'")
+        # An unpaid extra child deliberately outranks every qualifying
+        # fixture by updated_at; worklist must still exclude it.
+        unfunded_name='np-inbox-page-unfunded'
+        seed_np_attempt(work,env,unfunded_name,unfunded_name+'-invoice',
+                        unfunded_name+'-primary')
+        sql(work,env,"UPDATE payment_attempts SET stage='review',"
+            "provider_status='additional_payment',"
+            "updated_at=DATE_ADD(NOW(),INTERVAL 2 HOUR) "
+            f"WHERE order_hash='{unfunded_name}'")
+        sql(work,env,"INSERT INTO payment_transactions "
+            "(attempt_id,provider,payment_id,observed_status) "
+            "SELECT id,'nowpayments','np-inbox-unpaid-secondary','waiting' "
+            f"FROM payment_attempts WHERE order_hash='{unfunded_name}'")
+        expected=[int(x) for x in sql(work,env,
+            "SELECT id FROM payment_attempts "
+            "WHERE order_hash LIKE 'np-inbox-page-%' "
+            "AND order_hash<>'np-inbox-page-unfunded' "
+            "ORDER BY updated_at DESC,id DESC").splitlines()]
+        unpaid_id=int(sql(work,env,
+            "SELECT id FROM payment_attempts "
+            "WHERE order_hash='np-inbox-page-unfunded'").strip())
+        if len(expected)!=15:
+            raise RuntimeError('Case-page fixture has unexpected cardinality')
+        before_case_pages=snapshot(work,env)
+        seen=[]
+        page_callback='npReviewInbox'
+        paged_call=None
+        page_two=None
+        for page_index in range(5):
+            result=run_php(work,env,stage,dict(admin_identity,
+                callback_data=page_callback))
+            if result['network_calls']:
+                raise RuntimeError('Read-only finance inbox contacted provider')
+            edits=[x for x in result['events'] if x['name']=='editText']
+            if len(edits)!=1:
+                raise RuntimeError('Finance inbox page did not display')
+            body,keyboard_json=edits[0]['args'][1:3]
+            if len(body.encode('utf-8'))>4096:
+                raise RuntimeError('Finance inbox page exceeded bounded message')
+            buttons=json.loads(keyboard_json)['inline_keyboard']
+            callback_values=[button['callback_data'] for row in buttons
+                for button in row]
+            if any(len(code.encode('utf-8'))>64 for code in callback_values):
+                raise RuntimeError('Finance inbox callback exceeds Telegram limit')
+            ids=[int(m.group(1)) for code in callback_values
+                if (m:=re.fullmatch(r'npReviewCase_([0-9]+)',code))]
+            if len(ids)>12 or len(ids)!=len(set(ids)) or unpaid_id in ids:
+                raise RuntimeError('Inbox page contains duplicate/unfunded cases')
+            if page_index==0 and len(ids)!=12:
+                raise RuntimeError('Inbox first page was not bounded to twelve')
+            if page_index==1:
+                page_two=(result,ids,callback_values)
+            if any(x in seen for x in ids):
+                raise RuntimeError('Stable cursor repeated a previous case')
+            seen+=ids
+            links=[code for code in callback_values
+                if re.fullmatch(r'npReviewInbox_[0-9]{14}_[1-9][0-9]{0,17}',code)]
+            if len(links)>1:
+                raise RuntimeError('Ambiguous case navigation callback')
+            if not links:
+                break
+            page_callback=links[0]
+            if page_index==0:
+                paged_call=page_callback
+        if seen[:15]!=expected or not paged_call or not page_two or (
+            expected[-1] not in page_two[1]):
+            raise RuntimeError('Older evidenced cases not reachable in stable order')
+        if 'npReviewInbox' not in page_two[2]:
+            raise RuntimeError('Cursor page cannot return to current inbox')
+        records.append(dict(case='nowpayments_owner_inbox_case_keyset_older_review_visible',
+            pass_=True,real_provider_requests=0))
+        # Reuse the last case visible through the older page without granting
+        # a provider inquiry, changing financial state or exposing identity
+        # to either an admin impersonator or owner from another chat.
+        selected=run_php(work,env,stage,dict(admin_identity,
+            callback_data='npReviewCase_'+str(expected[-1])))
+        if selected['network_calls'] or not any(
+            x['name']=='editText' and 'شناسه تلگرام' in x['args'][1]
+            for x in selected['events']):
+            raise RuntimeError('Older case did not open read-only details')
+        for actor,chat in ((1001,1001),(9001,1001)):
+            denied=run_php(work,env,stage,dict(admin_identity,
+                actor=actor,chat_id=chat,callback_data=paged_call))
+            if denied['network_calls'] or any(
+                x['name']=='editText' for x in denied['events']) or not any(
+                x['name']=='callback' for x in denied['events']):
+                raise RuntimeError('Owner-only inbox cursor authentication failed')
+        bad_date=run_php(work,env,stage,dict(admin_identity,
+            callback_data='npReviewInbox_20261301000000_1'))
+        if bad_date['network_calls'] or any(
+            x['name']=='editText' for x in bad_date['events']) or not any(
+            x['name']=='callback' for x in bad_date['events']):
+            raise RuntimeError('Invalid calendar cursor was accepted')
+        empty=run_php(work,env,stage,dict(admin_identity,
+            callback_data='npReviewInbox_20000101000000_1'))
+        empty_edits=[x for x in empty['events'] if x['name']=='editText']
+        if len(empty_edits)!=1 or 'پروندهٔ قدیمی‌تری' not in empty_edits[0]['args'][1] or (
+            'npReviewInbox' not in empty_edits[0]['args'][2]):
+            raise RuntimeError('Empty cursor page lacks safe recovery')
+        verify_unchanged(work,env,before_case_pages,'inbox_pages_readonly')
+        records.append(dict(case='nowpayments_owner_inbox_case_cursor_private_readonly',
+            pass_=True,real_provider_requests=0))
+        records.append(dict(case='nowpayments_owner_inbox_case_cursor_stable_ties',
+            pass_=True,real_provider_requests=0))
+        # Avoid disturbing later Cron/alert characterizations; all fixtures
+        # exist exclusively in this socket-local throwaway MariaDB instance.
+        sql(work,env,"DELETE FROM payment_transactions WHERE attempt_id IN "
+            "(SELECT id FROM payment_attempts "
+            "WHERE order_hash LIKE 'np-inbox-page-%')")
+        sql(work,env,"DELETE FROM payment_attempts "
+            "WHERE order_hash LIKE 'np-inbox-page-%'")
+        sql(work,env,"DELETE FROM pays "
+            "WHERE hash_id LIKE 'np-inbox-page-%'")
+
         # F2: all children remain accessible through bounded cursor pages,
         # including positive funding evidence after twelve unfunded children.
         seed_np_attempt(work,env,'np-13-page','np-13-invoice','np-13-primary')
