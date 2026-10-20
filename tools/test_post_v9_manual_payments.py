@@ -242,8 +242,6 @@ if (($spec['route']??'wallet') === 'manual_crypto') {
               str_starts_with($data,'payIncreaseDayWith')) {
         require $root.'/src/Finance/Routes/Extensions.php';
     }
-} elseif (($spec['route']??'wallet') === 'crypto_retired') {
-    require $root.'/src/Finance/Routes/CryptoAndExchange.php';
 } elseif (($spec['route']??'wallet') === 'manual_admin') {
     require $root.'/src/Finance/Routes/ManualReceipts.php';
 } elseif (($spec['route']??'wallet') === 'checkout') {
@@ -1404,12 +1402,6 @@ def check():
         assert any(x['name']=='alert' for x in repeated)
         assert int(query(work,env,"SELECT wallet FROM users WHERE userid=1001"))==before+345678
         cases.append('real_telegram_trx_manual_review_credits_wallet_once_only')
-        older=run_route(work,env,route_driver,
-            data='payWithTronWallet'+trx_key,route='crypto_retired')
-        assert any(x['name']=='answerCallbackQuery' for x in older)
-        assert not any(x['name']=='sendPhoto' or x['name']=='sendMessage' for x in older)
-        cases.append('stale_tron_auto_callback_retired_fail_closed')
-
         # Database transition failure must preserve the committed receipt
         # evidence and allow the SAME photo to be retried.
         seed(work,env,'photodbfail')

@@ -435,8 +435,7 @@ if($data=="changeUpdateConfigLinkState" && ($from_id == $admin || $userInfo['isA
 if(($data=="gateWays_Channels" or preg_match('/^changeGateWays([A-Za-z0-9_]+)$/D',$data,$match)) && ($from_id == $admin || $userInfo['isAdmin'] == true)){
     if($data!="gateWays_Channels"){
         // Only currently displayed, supported gateway flags are editable.
-        // Neither deprecated TRON/WeSwap nor arbitrary callback identifiers
-        // can recreate retired BOT_STATES through this or changeBot.
+        // Unknown or cross-surface callback identifiers cannot mutate BOT_STATES.
         $editableGatewayToggles=[
             'giftCardState','manualUsdtState','cartToCartState',
             'nextpay','zarinpal','nowPaymentWallet','nowPaymentOther',
@@ -525,7 +524,7 @@ if($data=="changeConfigRemarkType"){
     editText($message_id,$mainValues['change_bot_settings_message'],getBotSettingKeys());
 }
 if(preg_match('/^changePaymentKeys(\w+)/',$data,$match) && ($from_id == $admin || $userInfo['isAdmin'] == true)){
-    if (in_array($match[1], ['tronwallet','manualUsdtWallet','manualUsdtNetwork'], true)) {
+    if (in_array($match[1], ['manualUsdtWallet','manualUsdtNetwork'], true)) {
         answerCallbackQuery($callbackId, 'تنظیم قدیمی کنار گذاشته شد؛ از آدرس‌های مستقل هر شبکه استفاده کنید.', true);
         return;
     }
@@ -621,10 +620,6 @@ if(preg_match('/^changePaymentKeys(\w+)/',$userInfo['step'],$match) && $text != 
                 return;
             }
         }
-    } elseif (in_array($match[1], ['tronwallet','manualUsdtWallet','manualUsdtNetwork'], true)) {
-        sendMessage('⛔️ تنظیم قدیمی قابل ویرایش نیست؛ مقصد هر شبکه را جداگانه تنظیم کنید.');
-        setUser();
-        return;
     }
     $paymentKeys[$match[1]] = $text;
     $paymentKeys = json_encode($paymentKeys);
@@ -1185,8 +1180,6 @@ function processCallbackQuery($data, $chat_id, $from_id) {
 // End Command Created by ACh
 
 if ((require __DIR__ . '/src/Purchase/EntryAndBulk.php') === null) return;
-if (($achbotV8Result = require __DIR__ . '/src/Finance/Routes/CryptoAndExchange.php') === null) return;
-if ($achbotV8Result === '__ACHBOT_V8_GOTO_START__') goto GOTOSTART;
 if($data=="messageToSpeceficUser" && ($from_id == $admin || $userInfo['isAdmin'] == true)){
     delMessage();
     sendMessage($mainValues['send_user_id'], $cancelKey);

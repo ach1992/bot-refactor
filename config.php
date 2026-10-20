@@ -606,7 +606,28 @@ function achbotMutateBotStates(callable $mutate): bool {
     }
 }
 function setSettings($field, $value): bool {
-    if (in_array($field,['weSwapState','tronWallet'],true)) return false;
+    // The persistence boundary is explicit, not a denylist of retired methods.
+    // A future accidental writer cannot resurrect unsupported BOT_STATES flags.
+    static $editable = [
+        'agencyState','agencyPlanDiscount','individualExistence',
+        'sharedExistence','testAccount','changeProtocolState',
+        'renewAccountState','renewAutoState','plandelkhahState',
+        'switchLocationState','increaseTimeState','increaseVolumeState',
+        'requirePhone','requireIranPhone','sellState','botState',
+        'subLinkState','configLinkState','searchState',
+        'renewConfigLinkState','updateConfigLinkState','qrConfigState',
+        'qrSubState','cartToCartAutoAcceptState','cartToCartAutoAcceptType',
+        'giftCardState','manualUsdtState','cartToCartState',
+        'nextpay','zarinpal','nowPaymentWallet','nowPaymentOther',
+        'walletState','updateConnectionState','remark','rewaredTime',
+        'cartToCartAutoAcceptTime','gbPrice','dayPrice',
+        'rewardChannel','lockChannel','supportID','lastRewardMessage',
+        'gatewayAudience',
+        'paymentDraftMinutes','paymentManualHours','paymentHostedHours',
+        'receiptApprovedMinutes','receiptApprovedOtherMinutes',
+        'receiptReviewMinutes','receiptDeclinedMinutes'
+    ];
+    if (!is_string($field) || !in_array($field,$editable,true)) return false;
     return achbotMutateBotStates(static function(array $state) use($field,$value): array {
         $state[$field]=$value;
         return $state;

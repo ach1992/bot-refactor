@@ -388,7 +388,7 @@ try {
         require $root . '/src/Finance/WalletStart.php';
         $state=array_fill_keys(
             ['cartToCartState','nowPaymentWallet','zarinpal',
-             'nextpay','weSwapState','tronWallet'], 'off');
+             'nextpay'], 'off');
         // This low-level finance fixture explicitly stages a synthetic
         // pre-authorized request. The separate manual-payment suite executes
         // real UpdateBindings.php, Telegram prompts and callback provenance.

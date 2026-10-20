@@ -37,10 +37,12 @@ def main():
         raise RuntimeError('Historic V9 rollback reference drift')
     historical_names=v9_contract.members()
     names=package.members()
-    if (len(historical_names)!=92 or len(names)!=96
-            or names[:92]!=historical_names
-            or names[92:]!=list(package.NEW_RUNTIME_MEMBERS)
-            or len(names)!=len(set(names))):
+    expected=[p for p in historical_names
+              if p not in package.RETIRED_RUNTIME_MEMBERS]
+    expected.extend(package.NEW_RUNTIME_MEMBERS)
+    if (len(historical_names)!=92 or len(names)!=93
+            or names!=expected or len(names)!=len(set(names))
+            or set(historical_names)-set(names)!=package.RETIRED_RUNTIME_MEMBERS):
         raise RuntimeError('V9 or current post-V9 runtime source inventory drift')
     if (ROOT/'baseInfo.php').exists():
         raise RuntimeError('Do not use a checkout containing private deployment state')
@@ -63,9 +65,10 @@ def main():
             'baseInfo.php','private-state.json','database/legacy-schema.sql')}
         for label,source in [('historical-v9',original),('post-v9',candidate),
                              ('rollback-v9',original),('reinstall-post-v9',candidate)]:
-            # A current-only file must not survive a true historical rollback.
-            # These are OWNED DISPOSABLE paths, never a production file deletion.
-            for extra in set(names)-set(source):
+            # Each source-only switch reconciles obsolete files in BOTH
+            # directions; merely extracting a ZIP leaves retired old PHP on disk.
+            # This models ONLY the owned synthetic installer, never a live deletion.
+            for extra in (set(names)|set(historical_names))-set(source):
                 path=app/extra
                 if path.exists():
                     path.unlink()
@@ -85,6 +88,9 @@ def main():
             if sorted(scanned)!=sorted(list(source)+list(private)):
                 raise RuntimeError('Source swap injected/deleted unrelated files')
             phases.append({'phase':label,'members':len(source),
+                'retired_old_payment_files_absent':
+                    all(not (app/name).exists() for name in package.RETIRED_RUNTIME_MEMBERS)
+                    if source is candidate else True,
                 'source_merkle_sha256':digest(''.join(digest(source[n]) for n in source).encode()),
                 'private_state_unchanged':True})
     if phases[0]['source_merkle_sha256']!=phases[2]['source_merkle_sha256']:
@@ -94,6 +100,9 @@ def main():
     report={'complete':True,'pinned_v9':BASE,'phase_count':len(phases),
             'runtime_members':len(candidate),'historical_runtime_members':len(original),
             'source_roll_forward_and_back_byte_identical':True,
+            'retired_old_payment_files_absent_after_source_upgrade':
+                phases[1]['retired_old_payment_files_absent'] and
+                phases[3]['retired_old_payment_files_absent'],
             'unchanged_original_sql_ddl':True,'synthetic_private_files_untouched':True,
             'real_sql_migration_or_db_restore_tested':False,'real_provider_or_bot_touched':False,
             'phases':phases}

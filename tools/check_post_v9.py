@@ -39,8 +39,13 @@ def source_checks():
         if (ROOT / field).read_bytes() != cmd("show", V9+":"+field):
             raise RuntimeError("Changed historical schema/private-template: " + field)
     files=package.members()
-    if len(files)!=96 or len(set(files))!=len(files):
+    if len(files)!=93 or len(set(files))!=len(files):
         raise RuntimeError("Source-only runtime file inventory changed")
+    if any((ROOT/name).exists() or name in files
+           for name in package.RETIRED_RUNTIME_MEMBERS):
+        raise RuntimeError("Retired automatic TRON / WeSwap PHP runtime retained")
+    if 'CryptoAndExchange.php' in (ROOT/'bot.php').read_text():
+        raise RuntimeError("Removed legacy crypto route still wired to bot")
     if (ROOT / "baseInfo.php").exists() or "baseInfo.php" in files:
         raise RuntimeError("Private runtime config surfaced in candidate")
     for rel in files:
@@ -397,6 +402,11 @@ def main():
             "f3_same_target_INCREASE_VOLUME_11_4",
             "f3_unrelated_subscription_not_superseded",
             "f3_old_provider_claim_never_cancelled",
+            # Current old-payment removal must reject unknown methods in
+            # actual first-party callback dispatch before financial mutation.
+            "generic_unsupported_payment_callback_no_effect_WeSwap",
+            "generic_unsupported_payment_callback_no_effect_TronWallet",
+            "generic_unsupported_payment_callback_no_effect_UnsupportedGateway",
             # Reviewer R1: two real source-serialized PHP draft workers
             # commit in reverse request_date order; pays.id is authoritative.
             "r1_reverse_prelock_clock_old_nowpayment_refused_after_later_id_commit",
@@ -1167,8 +1177,9 @@ def main():
                        cwd=ROOT,check=True,timeout=60,capture_output=True)
         swap=json.loads(overlay_report.read_text())
         if not (swap.get("complete") and swap.get("phase_count")==4
-                and swap.get("runtime_members")==96
+                and swap.get("runtime_members")==93
                 and swap.get("historical_runtime_members")==92
+                and swap.get("retired_old_payment_files_absent_after_source_upgrade")
                 and swap.get("source_roll_forward_and_back_byte_identical")
                 and swap.get("unchanged_original_sql_ddl")
                 and swap.get("synthetic_private_files_untouched")):

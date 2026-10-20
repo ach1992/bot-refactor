@@ -58,6 +58,12 @@ def committed_zip_timestamp(head: str) -> tuple[int, int, int, int, int, int]:
     return zip_timestamp_utc(epoch)
 
 
+# This is a current-runtime-only retirement; historical V9 is never edited.
+RETIRED_RUNTIME_MEMBERS = frozenset({
+    "settings/tronChecker.php",
+    "src/Finance/CryptoChecker.php",
+    "src/Finance/Routes/CryptoAndExchange.php",
+})
 NEW_RUNTIME_MEMBERS = ("settings/cronRunner.php", "src/Finance/PaymentPage.php",
                        "src/Finance/Routes/ManualCrypto.php", "src/Finance/PaymentLifecycle.php")
 
@@ -65,9 +71,15 @@ def members() -> list[str]:
     original = historical.members()
     if len(original)!=92 or len(set(original))!=92:
         raise RuntimeError("Historical source file-membership drift")
-    paths = [*original, *NEW_RUNTIME_MEMBERS]
-    if len(paths)!=96 or len(set(paths))!=96:
+    if not RETIRED_RUNTIME_MEMBERS.issubset(original):
+        raise RuntimeError("Expected historical-only payment files missing")
+    paths = [p for p in original if p not in RETIRED_RUNTIME_MEMBERS]
+    paths.extend(NEW_RUNTIME_MEMBERS)
+    if len(paths)!=93 or len(set(paths))!=93:
         raise RuntimeError("Post-V9 source inventory drift")
+    for retired in RETIRED_RUNTIME_MEMBERS:
+        if (ROOT/retired).exists() or retired in paths:
+            raise RuntimeError("Retired old-payment source reintroduced: " + retired)
     for path in paths:
         if path=="baseInfo.php" or not (ROOT/path).is_file() or (ROOT/path).is_symlink():
             raise RuntimeError("Illegal/missing runtime member: "+path)
