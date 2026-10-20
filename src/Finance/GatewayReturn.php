@@ -769,6 +769,29 @@ function achbotClaimAndCreditWallet(mysqli $db, int $payId, int $userId,
 }
 
 /**
+ * A zero-row SHOW TABLES result does not prove absence: MariaDB hides tables
+ * from accounts with no privileges. Probe the specific ledger table instead.
+ * Only error 1146 (ER_NO_SUCH_TABLE) permits the pre-003 legacy fallback;
+ * privilege error 1142 and every uncertain SQL failure must fail closed.
+ */
+function achbotHostedPaymentAttemptsExists(mysqli $db): bool {
+    try {
+        $table=$db->query('SELECT 1 FROM payment_attempts LIMIT 0');
+        if ($table===false) {
+            // Under MYSQLI_REPORT_OFF, preserve errno before another query.
+            $code=(int)$db->errno;
+            if ($code===1146) return false;
+            throw new RuntimeException('hosted_ledger_probe_failed');
+        }
+        $table->free();
+        return true;
+    } catch (mysqli_sql_exception $error) {
+        if ((int)$error->getCode()===1146) return false;
+        throw $error;
+    }
+}
+
+/**
  * Preserve a recoverable service-fulfillment hold for *scoped* NextPay and
  * Zarinpal checkout attempts. The legacy pays row and its unique 003 attempt
  * move together in one local InnoDB transaction. A crash after commit but
@@ -794,11 +817,8 @@ function achbotClaimHostedServiceForReview(mysqli $db, int $payId, int $amount,
     }
     $failure='schema_inspection_failed';
     try {
-        // A failed schema check must not be mistaken for legacy absence.
-        $table=$db->query("SHOW TABLES LIKE 'payment_attempts'");
-        if ($table===false) throw new RuntimeException('schema_inspection_failed');
-        $hasLedger=$table->num_rows===1;
-        $table->free();
+        // A hidden but existing ledger must not select pays-only fulfillment.
+        $hasLedger=achbotHostedPaymentAttemptsExists($db);
 
         $failure='transaction_begin_failed';
         if (!$db->begin_transaction()) throw new RuntimeException('transaction_begin_failed');
@@ -862,14 +882,22 @@ function achbotFinishHostedServiceReview(mysqli $db, int $payId,
     if (!in_array($provider,['nextpay','zarinpal'],true) ||
         !in_array($outcome,['delivered','compensated'],true)) return;
     $reason='closure_sql_unconfirmed';
+    $sqlErrorCode=0;
     try {
         $status=$outcome==='compensated'?'compensated':'delivered';
         $stmt=$db->prepare("UPDATE payment_attempts a JOIN pays p ON p.id=a.pay_row_id
             SET a.stage='done',a.provider_status=?
             WHERE a.pay_row_id=? AND a.provider=? AND a.stage='review'
               AND a.provider_status='fulfillment_started' AND p.state='paid'");
+        if ($stmt===false) {
+            $sqlErrorCode=(int)$db->errno;
+            throw new RuntimeException('hosted_review_finish_prepare_failed');
+        }
         $stmt->bind_param('sis',$status,$payId,$provider);
-        if (!$stmt->execute()) throw new RuntimeException('hosted_review_finish_failed');
+        if (!$stmt->execute()) {
+            $sqlErrorCode=(int)$stmt->errno;
+            throw new RuntimeException('hosted_review_finish_failed');
+        }
         $changed=$stmt->affected_rows;
         $stmt->close();
         if ($changed===1) return;
@@ -881,8 +909,15 @@ function achbotFinishHostedServiceReview(mysqli $db, int $payId,
             $stmt=$db->prepare("SELECT p.type,a.id AS attempt_id FROM pays p
                 LEFT JOIN payment_attempts a ON a.pay_row_id=p.id
                 WHERE p.id=? LIMIT 1");
+            if ($stmt===false) {
+                $sqlErrorCode=(int)$db->errno;
+                throw new RuntimeException('hosted_finish_check_prepare_failed');
+            }
             $stmt->bind_param('i',$payId);
-            if (!$stmt->execute()) throw new RuntimeException('hosted_finish_check_failed');
+            if (!$stmt->execute()) {
+                $sqlErrorCode=(int)$stmt->errno;
+                throw new RuntimeException('hosted_finish_check_failed');
+            }
             $attempt=$stmt->get_result()->fetch_assoc();
             $stmt->close();
             if ($attempt && ($attempt['type']==='INCREASE_WALLET' ||
@@ -890,21 +925,19 @@ function achbotFinishHostedServiceReview(mysqli $db, int $payId,
         }
         $reason='closure_unmatched';
     } catch (Throwable $error) {
-        // If migration 003 was never applied, the historical pays-only
-        // claim has no review row to close. Suppress only AUTHORITATIVELY
-        // confirmed table absence. Any failed/uncertain inspection retains
-        // the bounded error signal, including MYSQLI_REPORT_OFF behavior.
-        try {
-            $table=$db->query("SHOW TABLES LIKE 'payment_attempts'");
-            if ($table!==false) {
-                $absent=$table->num_rows===0;
-                $table->free();
-                if ($absent) return;
+        // Preserve statement/database errno under MYSQLI_REPORT_OFF; throwing
+        // MySQLi supplies the structured error code. A missing *joined* table
+        // is not enough: probe payment_attempts itself before a silent no-op.
+        $code=$error instanceof mysqli_sql_exception
+            ? (int)$error->getCode() : $sqlErrorCode;
+        if ($code===1146) {
+            try {
+                if (!achbotHostedPaymentAttemptsExists($db)) return;
+            } catch (Throwable $ignored) {
+                // Inaccessible/uncertain ledger cannot prove legacy absence.
             }
-        } catch (Throwable $ignored) {
-            // Schema availability is unknown, not evidence for a silent no-op.
         }
-        // Remote/local effects may already be real; do not retry or refund.
+        // No automatic replay, credit or refund on any uncertain SQL failure.
     }
     // For an existing service attempt, failure to confirm exactly one
     // final-state update needs correlation, never automatic fulfillment.
