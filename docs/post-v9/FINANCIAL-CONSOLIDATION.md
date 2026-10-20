@@ -291,11 +291,18 @@ contains no provider response, customer message or raw database exception.
 When the shared table exists but a legitimate pre-003 service invoice has
 no attempt row, or a hosted wallet top-up has no service-review closure to
 perform, the helper preserves the original no-op behavior without creating
-an artificial mismatch alert. An existing **service** attempt with a
-nonmatching stage must instead be correlated through the bounded log.
-The diagnostic requires reconciliation, not an assumption of lost funds or
-a license to create or replay an effect. An unavailable shared table/SQL
-query is a distinct unconfirmed persistence condition, not proof of closure.
+an artificial mismatch alert. On databases **without migration 003**, a
+failed initial closure UPDATE triggers a *read-only* `SHOW TABLES` inspection:
+only **confirmed table absence** preserves the historical silent no-op;
+a failed schema inspection or any other uncertain SQL result keeps the
+bounded `closure_sql_unconfirmed` diagnostic. Under both throwing MySQLi
+and `MYSQLI_REPORT_OFF` the current native tests cover these paths for
+both providers and historical service/wallet subjects. The normal,
+successful modern guarded UPDATE performs **no extra schema query**.
+
+An existing **service** attempt with a nonmatching stage must instead be
+correlated through the bounded log. The diagnostic requires reconciliation,
+not an assumption of lost funds or a license to create or replay an effect.
 
 A disposable native two-account `BUY_SUB` characterization covers one
 successful Marzban account operation followed by an uncertain second

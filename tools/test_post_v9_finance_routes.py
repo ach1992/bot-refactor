@@ -157,15 +157,25 @@ function renewConfigOnServer(...$args) {
     // This is a read-only SQL observation, never a production adapter change.
     $id=$GLOBALS['inspect_hosted_pay_id'];
     if ($id>0) {
-        $stmt=$GLOBALS['connection']->prepare("SELECT a.stage,a.provider_status
-            FROM payment_attempts a WHERE a.pay_row_id=? LIMIT 1");
-        $stmt->bind_param('i',$id);
-        $stmt->execute();
-        $record=$stmt->get_result()->fetch_assoc();
-        $stmt->close();
-        $GLOBALS['events'][]=['name'=>'hosted_remote_entry',
-            'stage'=>$record['stage']??null,
-            'reason'=>$record['provider_status']??null];
+        // The fixture also exercises legitimate pre-003 historic payments.
+        // Observe the scoped hold only when that table genuinely exists.
+        // This is test transport instrumentation, never production fallback.
+        $table=$GLOBALS['connection']->query("SHOW TABLES LIKE 'payment_attempts'");
+        if ($table && $table->num_rows===1) {
+            $stmt=$GLOBALS['connection']->prepare("SELECT a.stage,a.provider_status
+                FROM payment_attempts a WHERE a.pay_row_id=? LIMIT 1");
+            $stmt->bind_param('i',$id);
+            $stmt->execute();
+            $record=$stmt->get_result()->fetch_assoc();
+            $stmt->close();
+            $GLOBALS['events'][]=['name'=>'hosted_remote_entry',
+                'stage'=>$record['stage']??null,
+                'reason'=>$record['provider_status']??null];
+        } else {
+            $GLOBALS['events'][]=['name'=>'hosted_remote_entry',
+                'stage'=>null,'reason'=>'pre003_legacy_fixture'];
+        }
+        if ($table instanceof mysqli_result) $table->free();
     }
     $GLOBALS['events'][]=['name'=>'renewConfigOnServer','result'=>$GLOBALS['fake_renew_success']];
     if ($GLOBALS['fake_remote_exit']) {
@@ -428,9 +438,13 @@ class OwnedFinanceFaultMysqli extends mysqli {
         return false;
     }
     public function query(string $sql, int $result_mode = MYSQLI_STORE_RESULT): mysqli_result|bool {
-        if (!empty($GLOBALS['spec']['fail_hosted_schema_query']) &&
-            $sql === "SHOW TABLES LIKE 'payment_attempts'" &&
-            $this->atHostedClaim()) return false;
+        if ($sql === "SHOW TABLES LIKE 'payment_attempts'" &&
+            ((!empty($GLOBALS['spec']['fail_hosted_schema_query']) &&
+              $this->atHostedClaim()) ||
+             (!empty($GLOBALS['spec']['fail_hosted_finish_schema_query']) &&
+              array_filter(debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 9),
+                fn($frame) => ($frame['function'] ?? '') === 'achbotFinishHostedServiceReview'))))
+            return false;
         return parent::query($sql, $result_mode);
     }
     public function begin_transaction(int $flags = 0, ?string $name = null): bool {
@@ -450,6 +464,7 @@ class OwnedFinanceFaultMysqli extends mysqli {
 }
 try {
     $connection = (!empty($spec['fail_hosted_schema_query']) ||
+                   !empty($spec['fail_hosted_finish_schema_query']) ||
                    !empty($spec['fail_hosted_begin']) ||
                    !empty($spec['fail_hosted_preclaim_pays_read']))
         ? new OwnedFinanceFaultMysqli('localhost','root','',$dbname,0,$socket)
@@ -580,14 +595,14 @@ try {
 def sql(work,env,query):
     return native.sql(work,env,query,DB)
 
-def run_php(work, env, stage, spec):
+def run_php(work, env, stage, spec, db=DB):
     script=work/'owned-finance-guard.php'
     if not script.exists():
         script.write_text(PHP_DRIVER)
     cmd=['php','-n','-d','extension=mysqlnd','-d','extension=mysqli',
          '-d','extension=curl','-d','allow_url_fopen=0',
          '-d','disable_functions=curl_init,curl_setopt,curl_setopt_array,curl_exec,curl_close,curl_error,curl_getinfo,exec,shell_exec,system,passthru,popen,proc_open,mail',
-         str(script),str(stage),DB,str(work/'mysql.sock'),json.dumps(spec)]
+         str(script),str(stage),db,str(work/'mysql.sock'),json.dumps(spec)]
     p=subprocess.run(cmd,env=env,cwd=work,capture_output=True,timeout=20)
     claim_code=spec.get('expect_hosted_claim_code')
     finish_code=spec.get('expect_hosted_finish_code')
@@ -662,6 +677,115 @@ def main():
             raise RuntimeError('Original schema missing')
         keys=json.dumps({'nowpayment':'SYNTHETIC-LOCAL-ONLY','nextpay':'SYNTHETIC-LOCAL-ONLY','zarinpal':'SYNTHETIC-LOCAL-ONLY','nowpayment_ipn_secret':'LOCAL-IPN-SECRET'})
         sql(work,env,"INSERT INTO setting (type,value) VALUES ('PAYMENT_KEYS','" + keys + "')")
+        # O1-R1 independent-review regression: execute the ACTUAL finish
+        # helper against the second original-schema, 003-ABSENT database.
+        # Do not remove/recreate tables from the existing 003-owned fixture.
+        # Tested in throwing and nonthrowing MySQLi modes for BOTH gateways,
+        # and for historical service payments AND wallet top-ups.
+        legacy_db=purchase.SIDE[0]
+        if 'payment_attempts' in native.sql(work,env,'SHOW TABLES',legacy_db).splitlines():
+            raise RuntimeError('O1 legacy fixture unexpectedly has migration 003')
+        for provider in ('nextpay','zarinpal'):
+            for pay_type in ('RENEW_ACCOUNT','INCREASE_WALLET'):
+                for report_off in (False,True):
+                    short='svc' if pay_type=='RENEW_ACCOUNT' else 'wallet'
+                    mode='silent' if report_off else 'throwing'
+                    name=f'o1-legacy-{provider}-{short}-{mode}'
+                    native.sql(work,env,
+                        "INSERT INTO pays "
+                        "(hash_id,payid,user_id,type,plan_id,server_id,volume,day,price,request_date,state) "
+                        f"VALUES ('{name}','{name}-ref',1001,'{pay_type}',7,2,0,0,100,"
+                        f"{int(clock.time())},'paid')",legacy_db)
+                    pay_id=int(native.sql(work,env,
+                        f"SELECT id FROM pays WHERE hash_id='{name}'",legacy_db).strip())
+                    before=purchase.snapshot(work,env,legacy_db)
+                    common=dict(route='finish_hosted_review',get={},
+                        provider=provider,pay_row_id=pay_id,
+                        mysqli_report_off=report_off)
+                    safe=run_php(work,env,stage,common,db=legacy_db)
+                    if (purchase.snapshot(work,env,legacy_db)!=before or
+                        safe['network_calls'] or
+                        safe['events']!=[{'name':'hosted_finish_called'}]):
+                        raise RuntimeError('O1 003-absent historical no-op changed effects')
+                    records.append(dict(case=f'hosted_{provider}_003_absent_{short}_'+
+                        mode+'_silent_closure',pass_=True,real_provider_requests=0))
+                    # A failed schema INSPECTION is not proof of absence.
+                    unsafe=run_php(work,env,stage,dict(common,
+                        fail_hosted_finish_schema_query=True,
+                        expect_hosted_finish_code='closure_sql_unconfirmed'),db=legacy_db)
+                    if (purchase.snapshot(work,env,legacy_db)!=before or
+                        unsafe['network_calls'] or
+                        unsafe['events']!=[{'name':'hosted_finish_called'}]):
+                        raise RuntimeError('O1 unavailable schema inspection hid effects')
+                    records.append(dict(case=f'hosted_{provider}_003_absent_{short}_'+
+                        mode+'_uncertain_schema_still_logs',pass_=True,
+                        real_provider_requests=0))
+
+        # Also exercise the actual legacy doAction() payment + local effect
+        # boundary, rather than inspecting the closure helper in isolation.
+        # No 003 table exists on this side; no real provider/Marzban requests.
+        native.sql(work,env,
+            "INSERT INTO orders_list "
+            "(userid,token,transid,fileid,server_id,inbound_id,remark,uuid,"
+            "protocol,expire_date,link,amount,status,date) VALUES "
+            "(1001,'pre003-renew-token','',7,2,0,'pre003-renew-fixture',"
+            "'pre003-uuid','vless',2000000000,'[]',100,1,'synthetic')",
+            legacy_db)
+        legacy_order=int(native.sql(work,env,
+            "SELECT id FROM orders_list WHERE remark='pre003-renew-fixture'",
+            legacy_db).strip())
+        for provider in ('nextpay','zarinpal'):
+            for report_off in (False,True):
+                for kind in ('RENEW_ACCOUNT','INCREASE_WALLET'):
+                    short='svc' if kind=='RENEW_ACCOUNT' else 'wallet'
+                    name='o1-legacy-effect-'+provider+'-'+short+(
+                        '-silent' if report_off else '-throwing')
+                    native.sql(work,env,
+                        "INSERT INTO pays (hash_id,payid,user_id,type,"
+                        "plan_id,server_id,volume,day,price,request_date,"
+                        "state,order_id) "
+                        f"VALUES ('{name}','{name}-ref',1001,'{kind}',7,2,"
+                        f"0,0,100,{int(clock.time())},'pending',{legacy_order})",
+                        legacy_db)
+                    pay_id=int(native.sql(work,env,
+                        f"SELECT id FROM pays WHERE hash_id='{name}'",legacy_db).strip())
+                    start_wallet=native.sql(work,env,
+                        "SELECT wallet FROM users WHERE userid=1001",
+                        legacy_db).strip()
+                    if kind=='RENEW_ACCOUNT':
+                        # Each independent renewal test must have an actual
+                        # expire-date delta; a second same-second renewal of
+                        # the identical fixture would correctly fail its CAS.
+                        native.sql(work,env,
+                            f"UPDATE orders_list SET expire_date=2000000000 "
+                            f"WHERE id={legacy_order}",legacy_db)
+                    outcome=run_php(work,env,stage,
+                        dict(route='do_action',get={},provider=provider,
+                            pay_row_id=pay_id,mysqli_report_off=report_off,
+                            renew_success=True),db=legacy_db)
+                    result=[e for e in outcome['events']
+                            if e['name']=='do_action_result']
+                    if (result!=[{'name':'do_action_result','result':'delivered'}] or
+                        native.sql(work,env,
+                            f"SELECT state FROM pays WHERE id={pay_id}",
+                            legacy_db).strip()!='paid'):
+                        raise RuntimeError('O1 full legacy payment not delivered: '+
+                                           repr((name,result,outcome['events']))[:1200])
+                    wallet_after=native.sql(work,env,
+                        "SELECT wallet FROM users WHERE userid=1001",
+                        legacy_db).strip()
+                    if (kind=='INCREASE_WALLET' and
+                        int(wallet_after)!=int(start_wallet)+100) or (
+                        kind=='RENEW_ACCOUNT' and wallet_after!=start_wallet):
+                        raise RuntimeError('O1 legacy financial effect incorrect: '+name)
+                    if kind=='RENEW_ACCOUNT' and not any(
+                        e['name']=='renewConfigOnServer' for e in outcome['events']):
+                        raise RuntimeError('O1 legacy service effect omitted: '+name)
+                    records.append(dict(case='hosted_'+provider+
+                        '_003_absent_'+short+'_actual_effect_'+
+                        ('silent' if report_off else 'throwing')+
+                        '_no_false_alert',pass_=True,real_provider_requests=0))
+
         # Original 23 tables remain frozen; the new proposed attempt table
         # is layered on top ONLY after documenting the original table count.
         native.sql(work,env,(ROOT/'migrations/post-v9/003_payment_attempts.sql').read_text(),DB)
@@ -2917,6 +3041,31 @@ def main():
                     pass_=True,real_provider_requests=0))
             finally:
                 sql(work,env,f'DROP TRIGGER IF EXISTS {trigger}')
+
+        # O1-R1 with 003 PRESENT: no-attempt historical service payments
+        # and top-ups are not review-stage failures, while a service row
+        # with a nonmatching existing attempt remains a bounded warning.
+        for provider in ('nextpay','zarinpal'):
+            for kind in ('RENEW_ACCOUNT','INCREASE_WALLET'):
+                name='o1-modern-legacy-'+provider+'-'+kind
+                seed_payment(work,env,name,kind,7,2,name+'-invoice')
+                pay_id=int(sql(work,env,
+                    f"SELECT id FROM pays WHERE hash_id='{name}'").strip())
+                sql(work,env,f"UPDATE pays SET state='paid' WHERE id={pay_id}")
+                before=snapshot(work,env)
+                for report_off in (False,True):
+                    result=run_php(work,env,stage,
+                        dict(route='finish_hosted_review',get={},
+                            provider=provider,pay_row_id=pay_id,
+                            mysqli_report_off=report_off))
+                    verify_unchanged(work,env,before,'o1_existing_003_'+name)
+                    if result['network_calls']:
+                        raise RuntimeError('O1 existing 003 fallback made provider calls')
+                    records.append(dict(case=f'hosted_{provider}_003_present_'+
+                        ('svc' if kind=='RENEW_ACCOUNT' else 'wallet')+
+                        ('_silent' if report_off else '_throwing')+
+                        '_historical_no_alert',pass_=True,
+                        real_provider_requests=0))
 
         # Issue #26 O2: 2-account hosted BUY_SUB runs the ACTUAL PHP service
         # loop and persistent insertOrder SQL. Only the outbound Marzban

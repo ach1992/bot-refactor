@@ -890,8 +890,21 @@ function achbotFinishHostedServiceReview(mysqli $db, int $payId,
         }
         $reason='closure_unmatched';
     } catch (Throwable $error) {
+        // If migration 003 was never applied, the historical pays-only
+        // claim has no review row to close. Suppress only AUTHORITATIVELY
+        // confirmed table absence. Any failed/uncertain inspection retains
+        // the bounded error signal, including MYSQLI_REPORT_OFF behavior.
+        try {
+            $table=$db->query("SHOW TABLES LIKE 'payment_attempts'");
+            if ($table!==false) {
+                $absent=$table->num_rows===0;
+                $table->free();
+                if ($absent) return;
+            }
+        } catch (Throwable $ignored) {
+            // Schema availability is unknown, not evidence for a silent no-op.
+        }
         // Remote/local effects may already be real; do not retry or refund.
-        // A nonthrowing SQL failure also needs a bounded operator signal.
     }
     // For an existing service attempt, failure to confirm exactly one
     // final-state update needs correlation, never automatic fulfillment.
