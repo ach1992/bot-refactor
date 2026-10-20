@@ -370,8 +370,32 @@ register_shutdown_function(function () {
       'fatal'=>($last && in_array($last['type'], [E_ERROR,E_PARSE,E_COMPILE_ERROR])) ? $last['message'] : null
     ], JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
 });
+// Database fault adapter exists ONLY in this disposable PHP test driver.
+// Production PHP is never given synthetic switches or mock mysqli classes.
+class OwnedFinanceFaultMysqli extends mysqli {
+    private function atHostedClaim(): bool {
+        foreach (debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 9) as $frame) {
+            if (($frame['function'] ?? '') === 'achbotClaimHostedServiceForReview') return true;
+        }
+        return false;
+    }
+    public function query(string $sql, int $result_mode = MYSQLI_STORE_RESULT): mysqli_result|bool {
+        if (!empty($GLOBALS['spec']['fail_hosted_schema_query']) &&
+            $sql === "SHOW TABLES LIKE 'payment_attempts'" &&
+            $this->atHostedClaim()) return false;
+        return parent::query($sql, $result_mode);
+    }
+    public function begin_transaction(int $flags = 0, ?string $name = null): bool {
+        if (!empty($GLOBALS['spec']['fail_hosted_begin']) && $this->atHostedClaim())
+            return false;
+        return parent::begin_transaction($flags, $name);
+    }
+}
 try {
-    $connection = new mysqli('localhost', 'root', '', $dbname, 0, $socket);
+    $connection = (!empty($spec['fail_hosted_schema_query']) ||
+                   !empty($spec['fail_hosted_begin']))
+        ? new OwnedFinanceFaultMysqli('localhost','root','',$dbname,0,$socket)
+        : new mysqli('localhost', 'root', '', $dbname, 0, $socket);
     $connection->set_charset('utf8mb4');
     if (($spec['mysqli_report_off']??false)===true)
         mysqli_report(MYSQLI_REPORT_OFF);
@@ -499,10 +523,13 @@ def run_php(work, env, stage, spec):
          '-d','disable_functions=curl_init,curl_setopt,curl_setopt_array,curl_exec,curl_close,curl_error,curl_getinfo,exec,shell_exec,system,passthru,popen,proc_open,mail',
          str(script),str(stage),DB,str(work/'mysql.sock'),json.dumps(spec)]
     p=subprocess.run(cmd,env=env,cwd=work,capture_output=True,timeout=20)
-    expected_log = (b'achbot_hosted_fulfillment_claim_needs_review\n'
-                    if spec.get('expect_hosted_claim_deferred') else
-                    (f"achbot_hosted_service_effect_needs_review pay_id={spec['pay_row_id']}\n"
-                     .encode() if spec.get('expect_local_error') else b''))
+    claim_code=spec.get('expect_hosted_claim_code')
+    expected_log = (
+        f"achbot_hosted_claim_unconfirmed pay_id={spec['pay_row_id']} "
+        f"provider={spec['provider']} code={claim_code}\n".encode()
+        if claim_code else
+        (f"achbot_hosted_service_effect_needs_review pay_id={spec['pay_row_id']}\n"
+         .encode() if spec.get('expect_local_error') else b''))
     if p.returncode or p.stderr != expected_log:
         raise RuntimeError('native finance php error: '+
                            repr((p.returncode,p.stdout[-300:],p.stderr[-600:])))
@@ -513,6 +540,8 @@ def run_php(work, env, stage, spec):
     if (result['error'] or result['fatal']) and not spec.get('expect_local_error'):
         raise RuntimeError('native finance php runtime failure: '+
                            repr((result['error'],result['fatal']))[:850])
+    if claim_code:
+        result['protected_diagnostic']=p.stderr.decode('utf-8')
     return result
 
 def seed_payment(work,env,name,type_name,plan=0,server=0,payid=None):
@@ -1961,32 +1990,113 @@ def main():
                     f"SELECT id FROM pays WHERE hash_id='{name}'").strip())
                 before=snapshot(work,env)
                 declined=run_php(work,env,stage,dict(route='do_action',get={},
-                    pay_row_id=pay_id,provider=provider,renew_success=True))
+                    pay_row_id=pay_id,provider=provider,renew_success=True,
+                    expect_hosted_claim_code='attempt_mismatch'))
                 verify_unchanged(work,env,before,'hosted_guard_'+reason)
                 if any(e['name']=='renewConfigOnServer' for e in declined['events']):
                     raise RuntimeError('Invalid hosted ledger claim reached remote effect')
                 records.append(dict(case='hosted_'+provider+'_'+reason+
                                     '_paid_claim_rolls_back',pass_=True))
 
-        # A nonthrowing MySQLi UPDATE failure must roll back the paid CAS as
-        # well as the proposed attempt stage. No remote action may run.
-        failure_pay=seed_hosted_renewal('hosted-ledger-write-failure','nextpay')
-        sql(work,env,"CREATE TRIGGER owned_deny_hosted_stage "
-            "BEFORE UPDATE ON payment_attempts FOR EACH ROW "
-            "SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='owned_storage_denial'")
-        try:
-            before=snapshot(work,env)
-            suppressed=run_php(work,env,stage,dict(route='do_action',get={},
-                pay_row_id=failure_pay,provider='nextpay',
-                renew_success=True,mysqli_report_off=True,
-                expect_hosted_claim_deferred=True))
-            verify_unchanged(work,env,before,'hosted_nonthrowing_stage_write_failed')
-            if any(e['name']=='renewConfigOnServer' for e in suppressed['events']):
-                raise RuntimeError('False hosted claim reached remote after storage failure')
-            records.append(dict(case='hosted_003_stage_write_fails_paid_cas_atomic_rollback',
-                                pass_=True,real_provider_requests=0))
-        finally:
-            sql(work,env,'DROP TRIGGER IF EXISTS owned_deny_hosted_stage')
+        # F1 (author-separated review): provider identity and success were
+        # verified before an atomic claim can fail. Both providers require
+        # accurate customer guidance, a protected correlation log and an
+        # unchanged SQL snapshot. Faults occur only in the native mock DB
+        # boundary; no production fault switches and no real HTTP are used.
+        for provider in ('nextpay','zarinpal'):
+            for failure,reason in (
+                ('stage_rejected','ledger_stage_failed'),
+                ('schema_query_failed','schema_inspection_failed'),
+                ('begin_rejected','transaction_begin_failed'),
+            ):
+                name='hv-'+('np' if provider=='nextpay' else 'zp')+'-'+{
+                    'stage_rejected':'stage',
+                    'schema_query_failed':'schema',
+                    'begin_rejected':'begin',
+                }[failure]
+                pay_id=seed_hosted_renewal(name,provider)
+                ref=name+'-invoice'
+                get=({'nextpay':'','trans_id':ref} if provider=='nextpay'
+                     else {'zarinpal':'','hash_id':name,
+                           'Authority':ref,'Status':'OK'})
+                trigger=f"owned_deny_hosted_stage_{provider}"
+                if failure=='stage_rejected':
+                    sql(work,env,f"CREATE TRIGGER {trigger} "
+                        "BEFORE UPDATE ON payment_attempts FOR EACH ROW "
+                        "SIGNAL SQLSTATE '45000' "
+                        "SET MESSAGE_TEXT='sensitive_sql_error_not_for_logs'")
+                try:
+                    before=snapshot(work,env)
+                    opts=dict(route='return',get=get,pay_row_id=pay_id,
+                        provider=provider,mysqli_report_off=True,
+                        nextpay_code=0,zarin_status=100,
+                        expect_hosted_claim_code=reason,
+                        fail_hosted_schema_query=(failure=='schema_query_failed'),
+                        fail_hosted_begin=(failure=='begin_rejected'))
+                    for attempt_number in (1,2):
+                        denied=run_php(work,env,stage,opts)
+                        verify_unchanged(work,env,before,
+                            f"hosted_verified_unstaged_{provider}_{failure}_{attempt_number}")
+                        if len(denied['network_calls'])!=1 or (
+                            provider=='nextpay' and
+                            '/nx/gateway/verify' not in denied['network_calls'][0]
+                        ) or (provider=='zarinpal' and
+                              denied['network_calls'][0]!='zarinpal:verify'):
+                            raise RuntimeError('Provider verification not reached before failed claim')
+                        if any(e['name'] in ('renewConfigOnServer','marzban_unknown_result')
+                               for e in denied['events']):
+                            raise RuntimeError('Failed hosted claim reached remote Marzban boundary')
+                        if (not all(word in denied['form'] for word in
+                              ('پرداخت','پشتیبانی','دوباره پرداخت نکنید')) or
+                            'ثبت شده است' in denied['form'] or
+                            'sensitive_sql_error_not_for_logs' in denied['form'] or
+                            'database' in denied['form'].lower()):
+                            raise RuntimeError('Verified unstaged hosted charge got wrong customer guidance')
+                        if denied['protected_diagnostic']!=(
+                            f"achbot_hosted_claim_unconfirmed pay_id={pay_id} "
+                            f"provider={provider} code={reason}\n"):
+                            raise RuntimeError('Hosted protected failure code lost correlation')
+                    records.append(dict(case='hosted_'+provider+'_'+failure+
+                        '_verified_charge_rollback_customer_log_and_replay',
+                        pass_=True,real_provider_requests=0,
+                        provider_verification_spied=True))
+                finally:
+                    if failure=='stage_rejected':
+                        sql(work,env,f'DROP TRIGGER IF EXISTS {trigger}')
+
+            # Once an earlier pre-remote claim failure has been repaired,
+            # ONE new callback can durably claim and fulfill, then replay
+            # must not run the remote effect a second time.
+            recovering='hosted-verified-recover-once-'+provider
+            pay_id=seed_hosted_renewal(recovering,provider)
+            ref=recovering+'-invoice'
+            get=({'nextpay':'','trans_id':ref} if provider=='nextpay'
+                else {'zarinpal':'','hash_id':recovering,
+                      'Authority':ref,'Status':'OK'})
+            failed=run_php(work,env,stage,dict(route='return',get=get,
+                pay_row_id=pay_id,provider=provider,mysqli_report_off=True,
+                nextpay_code=0,zarin_status=100,
+                fail_hosted_begin=True,
+                expect_hosted_claim_code='transaction_begin_failed'))
+            if any(e['name']=='renewConfigOnServer' for e in failed['events']):
+                raise RuntimeError('Transient claim failure started a remote effect')
+            succeeded=run_php(work,env,stage,dict(route='return',get=get,
+                pay_row_id=pay_id,provider=provider,
+                nextpay_code=0,zarin_status=100,renew_success=True))
+            if len([e for e in succeeded['events']
+                    if e['name']=='renewConfigOnServer'])!=1 or (
+                sql(work,env,f"SELECT stage,provider_status FROM payment_attempts "
+                    f"WHERE pay_row_id={pay_id}").strip()!='done\tdelivered'):
+                raise RuntimeError('Recovered callback not fulfilled exactly once')
+            replay=run_php(work,env,stage,dict(route='return',get=get,
+                pay_row_id=pay_id,provider=provider,
+                nextpay_code=0,zarin_status=100,renew_success=True))
+            if any(e['name']=='renewConfigOnServer' for e in replay['events']):
+                raise RuntimeError('Recovered hosted charge caused duplicate remote effect')
+            sql(work,env,f"UPDATE orders_list SET expire_date={original_exp} "
+                f"WHERE id={oid}")
+            records.append(dict(case='hosted_'+provider+
+                '_unstaged_recovery_claim_once_no_remote_replay',pass_=True))
 
         # If the remote renewal was accepted but the ORIGINAL local ledger
         # INSERT fails under MYSQLI_REPORT_OFF, a success page or 'done'

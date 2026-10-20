@@ -200,6 +200,69 @@ WHERE a.provider IN ('nextpay','zarinpal')
 ORDER BY a.updated_at, a.id;
 ```
 
+### Verified hosted charge with an uncommitted claim (F1)
+
+A provider-verified NextPay/Zarinpal callback can reach the local claim and
+still fail a schema check, transaction start, conditional paid claim, 003
+attempt read/stage update or commit acknowledgment. The handler attempts
+**rollback** and **performs no remote service operation**. A lost commit
+acknowledgment is itself uncertain (rollback cannot disprove an earlier
+commit). The handler must NOT claim that
+`review/fulfillment_started` was saved. The customer sees a generic Persian
+message that the verified payment's order recording is incomplete, should
+**not pay again**, should keep the payment reference and contact support.
+No database/SQL, Marzban or raw exception text is shown to the customer.
+
+On a working **protected application error-log sink**, look for this bounded
+diagnostic format (the values below are placeholders, not credentials):
+
+```text
+achbot_hosted_claim_unconfirmed pay_id=<local-positive-integer> provider=<nextpay|zarinpal> code=<bounded_failure_code>
+```
+
+Codes are `invalid_input`, `schema_inspection_failed`,
+`transaction_begin_failed`, `paid_claim_failed`,
+`paid_claim_unavailable`, `attempt_read_failed`, `attempt_mismatch`,
+`ledger_stage_failed`, `ledger_stage_unconfirmed` and
+`commit_unconfirmed`. **The log is correlation evidence, not a durable
+payment/review claim**, and its delivery/retention depends on the actual
+private PHP error-log configuration. Neither the provider reference, token,
+raw SQL exception nor user message is placed in these diagnostics.
+
+After restoring a healthy read-only DB connection and verifying its exact
+003 table layout, the operator can locate one **logged** local payment ID:
+
+```sql
+SELECT p.id AS pay_id, p.hash_id, p.payid AS issued_reference,
+       p.state AS pay_state, p.type AS pay_type, p.price,
+       a.id AS attempt_id, a.provider, a.provider_reference,
+       a.stage, a.provider_status, a.updated_at
+FROM pays AS p
+LEFT JOIN payment_attempts AS a ON a.pay_row_id = p.id
+WHERE p.id = ?;
+```
+
+To find potential **unlogged** unresolved checkouts, inspect
+`payment_attempts` with `provider IN ('nextpay','zarinpal')`,
+`stage='pending'` and matching `pays.state IN ('pending','send')` in a
+bounded, access-controlled read-only query. **These rows are candidates,
+not proof of paid funds**: ordinarily unpaid invoices look the same.
+Correlate the local payment ID, original issued provider identity, quote,
+trusted provider dashboard/settlement evidence, any previous request logs,
+and actual local and remote order effects. For Zarinpal, an already-verified
+status `101` is not independently sufficient for automatic settlement;
+obtain trusted provider-side evidence before any manual decision. If the
+local schema or log is unavailable, collect and retain provider-side payment
+history for later authorized reconciliation rather than guessing a state.
+
+The operator must inspect for a later legitimate successful callback before
+any recovery action, to avoid duplicating effects. Never blindly repeat
+external provisioning, refund, mark an attempt paid/done, edit live SQL or
+expose payment identities in public Issues. There is no automatic outbox
+for a transaction which failed **before** the review marker committed; this
+limitation remains a separately authorized global financial recovery concern
+under #26.
+
 Reconcile each result against the verified provider charge, original local
 plan/order, independent Marzban account readback (including each line item),
 and customer-visible evidence **before** a separately authorized manual

@@ -782,59 +782,76 @@ function achbotClaimAndCreditWallet(mysqli $db, int $payId, int $userId,
  */
 function achbotClaimHostedServiceForReview(mysqli $db, int $payId, int $amount,
                                           string $provider, string $hash): bool {
-    if (!in_array($provider,['nextpay','zarinpal'],true) ||
-        $payId<=0 || $amount<=0 || $hash==='') return false;
+    // Protected log correlation survives a rolled-back 003 transaction.
+    // The provider label and code are bounded literals, never raw SQL errors
+    // or untrusted payment credentials/callback payloads.
+    $safeProvider=in_array($provider,['nextpay','zarinpal'],true)
+        ? $provider : 'unknown';
+    if ($safeProvider==='unknown' || $payId<=0 || $amount<=0 || $hash==='') {
+        error_log('achbot_hosted_claim_unconfirmed pay_id='.(int)$payId.
+            ' provider='.$safeProvider.' code=invalid_input');
+        return false;
+    }
+    $failure='schema_inspection_failed';
     try {
-        // A failed 003 table check is unknown schema state, NOT legacy absence.
+        // A failed schema check must not be mistaken for legacy absence.
         $table=$db->query("SHOW TABLES LIKE 'payment_attempts'");
-        if ($table===false) return false;
+        if ($table===false) throw new RuntimeException('schema_inspection_failed');
         $hasLedger=$table->num_rows===1;
         $table->free();
 
-        if (!$db->begin_transaction()) return false;
+        $failure='transaction_begin_failed';
+        if (!$db->begin_transaction()) throw new RuntimeException('transaction_begin_failed');
+
+        $failure='paid_claim_failed';
         $stmt=$db->prepare("UPDATE pays SET state='paid'
             WHERE id=? AND price=? AND hash_id=? AND state IN ('pending','send')");
         $stmt->bind_param('iis',$payId,$amount,$hash);
-        if (!$stmt->execute()) throw new RuntimeException('hosted_paid_claim_failed');
+        if (!$stmt->execute()) throw new RuntimeException('paid_claim_failed');
         $claimed=$stmt->affected_rows;
         $stmt->close();
-        if ($claimed!==1) {
-            $db->rollback();
-            return false;
-        }
+        $failure='paid_claim_unavailable';
+        if ($claimed!==1) throw new RuntimeException('paid_claim_unavailable');
 
         if ($hasLedger) {
             // Lock pays before the attempt, matching checkout's lock order.
+            $failure='attempt_read_failed';
             $stmt=$db->prepare("SELECT id,provider,stage,order_hash,local_amount_toman
                 FROM payment_attempts WHERE pay_row_id=? FOR UPDATE");
             $stmt->bind_param('i',$payId);
-            if (!$stmt->execute()) throw new RuntimeException('hosted_attempt_read_failed');
+            if (!$stmt->execute()) throw new RuntimeException('attempt_read_failed');
             $attempt=$stmt->get_result()->fetch_assoc();
             $stmt->close();
             if ($attempt) {
+                $failure='attempt_mismatch';
                 if ((string)$attempt['provider']!==$provider ||
                     (string)$attempt['stage']!=='pending' ||
                     (string)$attempt['order_hash']!==$hash ||
                     (int)$attempt['local_amount_toman']!==$amount) {
-                    $db->rollback();
-                    return false;
+                    throw new RuntimeException('attempt_mismatch');
                 }
                 $id=(int)$attempt['id'];
+                $failure='ledger_stage_failed';
                 $stmt=$db->prepare("UPDATE payment_attempts
                     SET stage='review',provider_status='fulfillment_started'
                     WHERE id=? AND pay_row_id=? AND provider=? AND stage='pending'");
                 $stmt->bind_param('iis',$id,$payId,$provider);
-                if (!$stmt->execute()) throw new RuntimeException('hosted_review_save_failed');
+                if (!$stmt->execute()) throw new RuntimeException('ledger_stage_failed');
                 $changed=$stmt->affected_rows;
                 $stmt->close();
-                if ($changed!==1) throw new RuntimeException('hosted_review_claim_lost');
+                $failure='ledger_stage_unconfirmed';
+                if ($changed!==1) throw new RuntimeException('ledger_stage_unconfirmed');
             }
         }
-        if (!$db->commit()) throw new RuntimeException('hosted_review_commit_unknown');
+        $failure='commit_unconfirmed';
+        if (!$db->commit()) throw new RuntimeException('commit_unconfirmed');
         return true;
-    } catch (Throwable $error) {
-        try { $db->rollback(); } catch (Throwable $ignored) {}
-        error_log('achbot_hosted_fulfillment_claim_needs_review');
+    } catch (Throwable $ignored) {
+        try { $db->rollback(); } catch (Throwable $alsoIgnored) {}
+        // No durable review marker can be claimed on this error path.
+        // A verified upstream charge still needs operator/provider matching.
+        error_log('achbot_hosted_claim_unconfirmed pay_id='.$payId.
+            ' provider='.$safeProvider.' code='.$failure);
         return false;
     }
 }
@@ -961,6 +978,14 @@ function achbotPerformPaymentEffect($payRowId, $gateType) {
         $stmt->close();
     }
     if ($claimed !== 1) {
+        if ($payType!=='INCREASE_WALLET' &&
+            in_array($gateType,['nextpay','zarinpal'],true)) {
+            // Provider verification has succeeded, but neither a local paid
+            // claim nor an operator-review row is guaranteed to exist.
+            showForm('پرداخت تأیید شده است اما ثبت نتیجهٔ سفارش تکمیل نشده است. لطفاً دوباره پرداخت نکنید، مشخصات پرداخت را نگه دارید و با پشتیبانی تماس بگیرید.',
+                     'پیگیری پرداخت');
+            return 'ambiguous';
+        }
         showForm("این پرداخت در حال پردازش یا قبلاً نهایی شده است.", "پیگیری پرداخت");
         return false;
     }
