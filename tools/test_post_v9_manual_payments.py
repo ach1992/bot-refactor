@@ -162,7 +162,9 @@ function alert(...$args){$GLOBALS['events'][]=['name'=>'alert','args'=>$args];}
 function sendMessage(...$args){
     global $spec;
     $GLOBALS['events'][]=['name'=>'sendMessage','args'=>$args];
-    if (($spec['message_transport']??'')==='throw')
+    if (($spec['message_transport']??'')==='throw' ||
+        (($spec['message_transport']??'')==='throw_once' &&
+         ++$GLOBALS['message_send_count']===1))
         throw new RuntimeException('fixture_telegram_transport_down');
     if (($spec['message_transport']??'')==='no_id')
         return (object)['ok'=>true,'result'=>(object)[]];
@@ -190,7 +192,12 @@ function sendPhoto(...$args){
     return (object)['ok'=>true,'result'=>(object)['message_id'=>222]];
 }
 function sendToAllAdmins(...$args){$GLOBALS['events'][]=['name'=>'sendToAllAdmins'];}
-function editKeys(...$args){$GLOBALS['events'][]=['name'=>'editKeys'];}
+function editKeys(...$args){
+    $GLOBALS['events'][]=['name'=>'editKeys'];
+    if (($GLOBALS['spec']['message_edit_transport']??'')==='throw')
+        throw new RuntimeException('fixture_secret_should_not_be_forwarded');
+    return (object)['ok'=>true];
+}
 function editText(...$args){$GLOBALS['events'][]=['name'=>'editText','args'=>$args];return (object)['ok'=>true];}
 function answerCallbackQuery(...$args){$GLOBALS['events'][]=['name'=>'answerCallbackQuery'];}
 // Native payment-authorization tests never contact real fulfillment servers.
@@ -207,7 +214,12 @@ function getPlanDetails(...$args){return [
 ]];}
 function ensureServerCapacity(...$args){}
 function buildRemark(...$args){return 'fixture-remark';}
-function sendQrFromLink(...$args){$GLOBALS['events'][]=['name'=>'qr_send'];}
+function sendQrFromLink(...$args){
+    $GLOBALS['events'][]=['name'=>'qr_send'];
+    if (($GLOBALS['spec']['qr_transport']??'')==='throw')
+        throw new RuntimeException('fixture_postcommit_qr_delivery_lost');
+    return true;
+}
 function getServerInfoAndConfig(...$args){return [
     ['remark'=>'fixture-remark'],
     ['type'=>'marzban','port_type'=>'automatic']
@@ -221,9 +233,15 @@ function createServerAccount(...$args){
         (($GLOBALS['spec']['remote_mode']??'success')==='partial_second' &&
          $GLOBALS['create_count']===2))
         throw new RuntimeException('fixture_remote_result_unknown');
-    return [(object)['success'=>true],'fixture-remark',15001];
+    return [(object)['success'=>($GLOBALS['spec']['remote_mode']??'')!=='reported_failure'],
+            'fixture-remark',15001];
 }
-function ensureAccountCreationSucceeded(...$args){}
+function ensureAccountCreationSucceeded(...$args){
+    $GLOBALS['events'][]=['name'=>'remote_response_check'];
+    $response=$args[0]??null;
+    if (end($args)===true && (!is_object($response) || empty($response->success)))
+        throw new RuntimeException('fixture_remote_response_unconfirmed');
+}
 function buildLinksAndSendQr(...$args){
     $GLOBALS['events'][]=['name'=>'qr_delivery_mock'];
     return ['fixture-token','fixture-url','fixture-unique','fixture account','{}','fixture qr'];
@@ -248,7 +266,7 @@ function renewConfigOnServer(...$args){
     $GLOBALS['events'][]=['name'=>'remote_edit'];
     if (($GLOBALS['spec']['remote_mode']??'success')==='uncertain')
         throw new RuntimeException('fixture_remote_result_unknown');
-    return (object)['success'=>true];
+    return (object)['success'=>($GLOBALS['spec']['remote_mode']??'')!=='reported_failure'];
 }
 function decreaseServerCapacity(...$args){
     $GLOBALS['events'][]=['name'=>'capacity_decrement'];
@@ -307,13 +325,13 @@ if (($spec['route']??'wallet') === 'manual_crypto') {
 }
 """
 def run_route(work,env,driver,data='',step='none',actor=1001,update=None,route='wallet',
-              photo_mode='success',remote_mode='success',text='',
-              keys=None,states=None,bot_reply_message_id=None,message_transport='',
+              photo_mode='success',remote_mode='success',qr_transport='',text='',
+              keys=None,states=None,bot_reply_message_id=None,message_transport='',message_edit_transport='',
               pause_before_insert_ms=0,expected_review=False,expected_warning=None,
               mysqli_report_off=False):
     spec={'data':data,'step':step,'actor':actor,'route':route,
-          'photo_mode':photo_mode,'remote_mode':remote_mode,'text':text,
-          'message_transport':message_transport,
+          'photo_mode':photo_mode,'remote_mode':remote_mode,'qr_transport':qr_transport,'text':text,
+          'message_transport':message_transport,'message_edit_transport':message_edit_transport,
           'pause_before_insert_ms':pause_before_insert_ms,
           'mysqli_report_off':mysqli_report_off}
     if bot_reply_message_id is not None:
@@ -350,7 +368,10 @@ def run_route(work,env,driver,data='',step='none',actor=1001,update=None,route='
     if expected_review:
         accepted_log_codes.append('achbot_wallet_topup_creation_review')
     if expected_warning:
-        accepted_log_codes.append(expected_warning)
+        accepted_log_codes.extend(expected_warning if isinstance(expected_warning,list)
+                                  else [expected_warning])
+        if 'achbot_manual_standard_postcommit_followup_needs_review' in accepted_log_codes:
+            accepted_log_codes.append('achbot_manual_standard_postcommit_notice_failed')
     safe_review=(accepted_log_codes and p.stderr and all(
         any(code in line for code in accepted_log_codes) and
         'fixture_' not in line and 'SQL' not in line
@@ -656,6 +677,29 @@ def check():
         assert query(work,env,"SELECT state FROM pays WHERE hash_id='standarduncertain'")=='processing'
         cases.append('real_standard_uncertain_remote_effect_stays_reconciliation_and_no_replay')
 
+        standard_pay('standardreportedfailure',method='manual_usdt')
+        reported=run_route(work,env,route_driver,
+                           data='acceptstandardreportedfailure',actor=9001,
+                           route='standard_approval',remote_mode='reported_failure',
+                           expected_warning='achbot_manual_standard_effect_needs_review')
+        assert [e['name'] for e in reported].count('remote_response_check')==1,repr(reported)
+        assert not any(e['name']=='order_insert' for e in reported),repr(reported)
+        assert query(work,env,"SELECT state FROM pays WHERE hash_id='standardreportedfailure'")=='processing'
+        reject_service('standardreportedfailure','standard_approval','accept')
+        cases.append('real_standard_explicit_remote_failure_kept_for_review_without_local_order')
+
+        standard_pay('standardwarnchanneloutage',method='bank_transfer')
+        warn=run_route(work,env,route_driver,
+                       data='acceptstandardwarnchanneloutage',actor=9001,
+                       route='standard_approval',remote_mode='uncertain',
+                       message_transport='throw',
+                       expected_warning=['achbot_manual_standard_effect_needs_review',
+                                         'achbot_manual_standard_review_notice_failed'])
+        assert [e['name'] for e in warn].count('remote_create')==1,repr(warn)
+        assert query(work,env,"SELECT state FROM pays WHERE hash_id='standardwarnchanneloutage'")=='processing'
+        reject_service('standardwarnchanneloutage','standard_approval','accept')
+        cases.append('real_standard_ambiguous_remote_and_failed_admin_notice_no_fatal_no_replay')
+
         standard_pay('standardsuccess',method='gift_card')
         delivered=run_route(work,env,route_driver,data='acceptstandardsuccess',
                             actor=9001,route='standard_approval')
@@ -663,6 +707,37 @@ def check():
         assert query(work,env,"SELECT state FROM pays WHERE hash_id='standardsuccess'")=='approved'
         reject_service('standardsuccess','standard_approval','accept')
         cases.append('real_standard_verified_receipt_one_delivery_no_replay')
+        # A Telegram exception AFTER the approved local COMMIT is not evidence
+        # that Marzban or money failed. A follow-up is required, never a
+        # second fulfillment or a misleading 'service outcome unknown' alert.
+        standard_pay('standardpostcommitnotify',method='bank_transfer')
+        notice=run_route(work,env,route_driver,
+                         data='acceptstandardpostcommitnotify',actor=9001,
+                         route='standard_approval',qr_transport='throw',
+                         expected_warning='achbot_manual_standard_postcommit_followup_needs_review')
+        assert [e['name'] for e in notice].count('remote_create')==1,repr(notice)
+        assert [e['name'] for e in notice].count('qr_send')==1,repr(notice)
+        assert query(work,env,"SELECT state FROM pays WHERE hash_id='standardpostcommitnotify'")=='approved'
+        admin_notices=[str(e['args'][0]) for e in notice if e['name']=='sendMessage'
+                       and e['args'][-1]==9001]
+        assert any('سفارش ثبت شده' in m and 'اطلاع‌رسانی' in m for m in admin_notices),repr(notice)
+        assert not any('نتیجهٔ تکمیل سفارش هنوز قطعی نیست' in m for m in admin_notices)
+        reject_service('standardpostcommitnotify','standard_approval','accept')
+        cases.append('real_standard_postcommit_telegram_failure_approved_no_replay_truthful_review')
+        standard_pay('standardeditprivacy',method='gift_card')
+        edit_events=run_route(work,env,route_driver,
+                              data='acceptstandardeditprivacy',actor=9001,
+                              route='standard_approval',message_edit_transport='throw',
+                              expected_warning='achbot_manual_standard_buttons_update_failed')
+        assert [e['name'] for e in edit_events].count('remote_create')==1,repr(edit_events)
+        assert query(work,env,"SELECT state FROM pays WHERE hash_id='standardeditprivacy'")=='approved'
+        admin_text=' '.join(str(e['args'][0]) for e in edit_events
+                            if e['name']=='sendMessage' and e['args'][-1]==9001)
+        assert 'fixture_secret_should_not_be_forwarded' not in admin_text,admin_text
+        reject_service('standardeditprivacy','standard_approval','accept')
+        cases.append('real_standard_operator_buttons_failure_does_not_leak_raw_exception')
+
+
 
         standard_pay('standardmissingdelivery',method='bank_transfer')
         query(work,env,"UPDATE pays SET message_id=0 "
@@ -745,6 +820,27 @@ def check():
         assert query(work,env,"SELECT state FROM pays WHERE hash_id='standardrenewsuccess'")=='approved'
         reject_service('standardrenewsuccess','standard_approval','accept')
         cases.append('real_standard_renewal_receipt_one_remote_change_no_replay')
+        renewal_pay('standardrenewpostcommit',method='gift_card')
+        notice=run_route(work,env,route_driver,
+                         data='acceptstandardrenewpostcommit',actor=9001,
+                         route='standard_approval',message_transport='throw_once',
+                         expected_warning='achbot_manual_standard_postcommit_followup_needs_review')
+        assert [e['name'] for e in notice].count('remote_edit')==1,repr(notice)
+        assert query(work,env,"SELECT state FROM pays WHERE hash_id='standardrenewpostcommit'")=='approved'
+        reject_service('standardrenewpostcommit','standard_approval','accept')
+        cases.append('real_standard_renewal_postcommit_notification_outage_preserves_approved_no_replay')
+
+        renewal_pay('standardrenewnotifydown',method='bank_transfer')
+        down=run_route(work,env,route_driver,
+                       data='acceptstandardrenewnotifydown',actor=9001,
+                       route='standard_approval',message_transport='throw',
+                       expected_warning='achbot_manual_standard_postcommit_followup_needs_review')
+        assert [e['name'] for e in down].count('remote_edit')==1,repr(down)
+        assert query(work,env,"SELECT state FROM pays WHERE hash_id='standardrenewnotifydown'")=='approved'
+        reject_service('standardrenewnotifydown','standard_approval','accept')
+        cases.append('real_standard_renewal_both_telegram_messages_fail_without_fatal_or_replay')
+
+
 
         renewal_pay('standardrenewsilentinsert',method='gift_card')
         silent=run_route(work,env,route_driver,data='acceptstandardrenewsilentinsert',
@@ -764,6 +860,17 @@ def check():
         assert query(work,env,"SELECT state FROM pays WHERE hash_id='standardrenewuncertain'")=='processing'
         reject_service('standardrenewuncertain','standard_approval','accept')
         cases.append('real_standard_renewal_uncertain_remote_change_no_replay')
+
+        renewal_pay('standardrenewreportedfailure',method='gift_card')
+        reported=run_route(work,env,route_driver,
+                           data='acceptstandardrenewreportedfailure',actor=9001,
+                           route='standard_approval',remote_mode='reported_failure',
+                           expected_warning='achbot_manual_standard_effect_needs_review')
+        assert [e['name'] for e in reported].count('remote_response_check')==1,repr(reported)
+        assert not any(e['name']=='order_insert' for e in reported),repr(reported)
+        assert query(work,env,"SELECT state FROM pays WHERE hash_id='standardrenewreportedfailure'")=='processing'
+        reject_service('standardrenewreportedfailure','standard_approval','accept')
+        cases.append('real_standard_renewal_explicit_remote_failure_no_local_order_no_replay')
 
         renewal_pay('standardrenewlocalfail',method='bank_transfer')
         failed=run_route(work,env,route_driver,data='acceptstandardrenewlocalfail',

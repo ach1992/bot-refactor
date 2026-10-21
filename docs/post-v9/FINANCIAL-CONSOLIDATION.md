@@ -53,13 +53,17 @@ one guarded processing claim **before** any Marzban call. A second administrator
 or a replay cannot start a second effect. Successful local order finalization
 must demand checked order INSERT, capacity update, transaction BEGIN and
 conditional change of that same processing row, with confirmed COMMIT even
-when MYSQLI_REPORT_OFF is active. If
-remote creation/renewal, account N of a multi-account purchase, local order
-persistence, COMMIT acknowledgment or Telegram delivery is uncertain, never
-silently return the invoice to have_sent: leave it reviewable under the
-processing no-replay fence and report an operator reconciliation need. The
-receipt itself is not merchant settlement evidence and processing does not
-certify completed service. Existing externally created accounts still lack a
+when MYSQLI_REPORT_OFF is active. If remote creation/renewal, account N
+of a multi-account purchase, local order persistence or COMMIT acknowledgment
+is uncertain, never silently return the invoice to have_sent: retain the
+processing no-replay fence and signal operator reconciliation. By contrast,
+after a **confirmed** approved local COMMIT, a Telegram delivery/notification,
+operator-button edit or referral-reward failure cannot undo the completed
+service record; retain approved, signal a distinct post-commit follow-up with
+safe stage/correlation in protected logs, and never reissue an account or
+mislabel the financial result as uncertain. The receipt itself is not
+merchant settlement evidence, and processing does not certify completed
+service. Existing externally created accounts still lack a
 general durable per-account effect identity: safe operator reconciliation and
 the minimal additive schema decision remain open under #26. A source-only
 test/CI pass is NOT installed or real-money acceptance.

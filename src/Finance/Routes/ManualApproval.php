@@ -58,6 +58,8 @@ if (
         return;
     }
 
+    $serviceCommitted = false;
+    $followupStage = 'pre_commit';
     try {
         setUser();
         $uid     = (int)$payInfo['user_id'];
@@ -122,6 +124,8 @@ if (
                 $stmt->close();
                 if ($connection->commit() !== true)
                     throw new RuntimeException('manual_standard_finish_commit_unconfirmed');
+                $serviceCommitted = true;
+                $followupStage = 'renewal_customer_notice';
             } catch (Throwable $e) {
                 try { $connection->rollback(); } catch (Throwable $ignored) {}
                 error_log('achbot_manual_standard_remote_finish_review pay_id='.$payId.' subject=renewal exception='.get_class($e).' code='.(int)$e->getCode());
@@ -145,8 +149,13 @@ if (
                 ]
             ], 488);
 
-            try { editKeys($keys, $payInfo['message_id'], $payInfo['chat_id']); } catch (Exception $e) {
-                sendMessage("⚠️ editKeys failed\n🆔 $hash_id\nError: ".$e->getMessage(), null, null, $admin);
+            $followupStage = 'renewal_operator_buttons';
+            try {
+                editKeys($keys, $payInfo['message_id'], $payInfo['chat_id']);
+            } catch (Throwable $e) {
+                error_log('achbot_manual_standard_buttons_update_failed pay_id='.$payId.
+                    ' subject=renewal exception='.get_class($e).' code='.(int)$e->getCode());
+                sendMessage("✅ تمدید ثبت شده است، اما به‌روزرسانی دکمه‌های پیام مدیر تأیید نشد.\n🆔 $hash_id\nوضعیت پیام را بررسی کنید؛ تمدید را دوباره تأیید نکنید.", null, null, $admin);
             }
 
             $adminMessages = json_decode($payInfo['admins_messages'], true);
@@ -322,6 +331,8 @@ if (
             $stmt->close();
             if ($connection->commit() !== true)
                 throw new RuntimeException('manual_standard_finish_commit_unconfirmed');
+            $serviceCommitted = true;
+            $followupStage = 'purchase_account_delivery';
         } catch (Throwable $e) {
             try { $connection->rollback(); } catch (Throwable $ignored) {}
             // One or more remote accounts may exist without local orders.
@@ -343,6 +354,7 @@ if (
             );
         }
 
+        $followupStage = 'purchase_operator_notice';
         sendMessage(
             str_replace(
                 ["USERID", "REMARK", "VOLUME", "DAYS", "PRICE", "HASHID"],
@@ -360,8 +372,13 @@ if (
             ]
         ], 488);
 
-        try { editKeys($keys, $payInfo['message_id'], $payInfo['chat_id']); } catch (Exception $e) {
-            sendMessage("⚠️ editKeys failed\n🆔 $hash_id\nError: ".$e->getMessage(), null, null, $admin);
+        $followupStage = 'purchase_operator_buttons';
+        try {
+            editKeys($keys, $payInfo['message_id'], $payInfo['chat_id']);
+        } catch (Throwable $e) {
+            error_log('achbot_manual_standard_buttons_update_failed pay_id='.$payId.
+                ' subject=purchase exception='.get_class($e).' code='.(int)$e->getCode());
+            sendMessage("✅ سفارش ثبت شده است، اما به‌روزرسانی دکمه‌های پیام مدیر تأیید نشد.\n🆔 $hash_id\nوضعیت پیام را بررسی کنید؛ سفارش را دوباره تأیید نکنید.", null, null, $admin);
         }
 
         $adminMessages = json_decode($payInfo['admins_messages'], true);
@@ -382,6 +399,7 @@ if (
         if (!empty($user_detail['refered_by'])) {
             $inviterId = (int)$user_detail['refered_by'];
 
+            $followupStage = 'referral_reward';
             giveReferralReward($connection, $user_detail['userid'], $inviterId, $admin, $botState);
 
             if ($admin != $from_id) {
@@ -412,10 +430,30 @@ if (
         }
 
     } catch (Throwable $e) {
+        // An error in Telegram or post-commit referral work cannot undo a
+        // confirmed local order/renewal. Keep its error signal distinct from
+        // an uncertain remote effect or transaction commit.
+        if ($serviceCommitted) {
+            error_log('achbot_manual_standard_postcommit_followup_needs_review pay_id='.$payId.
+                ' stage='.$followupStage.' exception='.get_class($e).' code='.(int)$e->getCode());
+            try {
+                sendMessage("✅ سفارش ثبت شده و عملیات سرویس در سیستم تأیید شده است، اما اطلاع‌رسانی یا پاداش پس از ثبت ممکن است ناقص باشد.\n🆔 $hash_id\nوضعیت پیام مشتری و پاداش را بررسی کنید؛ سفارش را دوباره تأیید نکنید.",
+                            null, null, $admin);
+            } catch (Throwable $notifyError) {
+                error_log('achbot_manual_standard_postcommit_notice_failed pay_id='.$payId.
+                    ' exception='.get_class($notifyError).' code='.(int)$notifyError->getCode());
+            }
+            return;
+        }
         // Remote effects and SQL are not one transaction. Never re-arm a claim.
         error_log('achbot_manual_standard_effect_needs_review pay_id='.$payId.' exception='.get_class($e).' code='.(int)$e->getCode());
-        sendMessage("⚠️ نتیجهٔ تکمیل سفارش هنوز قطعی نیست.\n🆔 $hash_id\nابتدا پرداخت و اکانت‌های سرویس را بررسی کنید؛ تأیید را تکرار نکنید.",
-                    null, null, $admin);
+        try {
+            sendMessage("⚠️ نتیجهٔ تکمیل سفارش هنوز قطعی نیست.\n🆔 $hash_id\nابتدا پرداخت و اکانت‌های سرویس را بررسی کنید؛ تأیید را تکرار نکنید.",
+                        null, null, $admin);
+        } catch (Throwable $notifyError) {
+            error_log('achbot_manual_standard_review_notice_failed pay_id='.$payId.
+                ' exception='.get_class($notifyError).' code='.(int)$notifyError->getCode());
+        }
         return;
     }
 }
