@@ -74,7 +74,9 @@ function achbotRecoveryHttp(string $url, ?array $form, array $headers,
             // HTTP localhost login. Force the actual physical loopback peer.
             $options[CURLOPT_RESOLVE]=[$host.':'.$port.':127.0.0.1'];
         }
-        curl_setopt_array($ch,$options);
+        // CURLOPT_RESOLVE and all security/redirect options are mandatory.
+        // Never send login credentials after a partially applied cURL setup.
+        if (curl_setopt_array($ch,$options)!==true) return null;
         $ok=curl_exec($ch);
         $status=(int)curl_getinfo($ch,CURLINFO_HTTP_CODE);
         $address=(string)curl_getinfo($ch,CURLINFO_PRIMARY_IP);
