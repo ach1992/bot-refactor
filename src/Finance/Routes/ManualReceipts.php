@@ -8,7 +8,10 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
 // Owner-only, provider-evidence-gated finance inbox. These buttons are
 // read-only. Do not repurpose historical manual receipt approval handlers for
 // a hosted payment: a click is not settlement or refund authorization.
-if ($data==='npReviewInbox' ||
+$inboxParts=[];
+$isInbox=preg_match('/^npReviewInbox(?:_([0-9]{14})_([1-9][0-9]{0,17}))?$/D',
+                    (string)$data,$inboxParts)===1;
+if ($isInbox ||
     preg_match('/^npReview(?:Case|Refresh|Verify)_[1-9][0-9]{0,17}(?:_(?:[0-9]|1[01]))?(?:_[1-9][0-9]{0,17})?$/D',
                (string)$data)) {
     if ((int)$from_id !== (int)$admin ||
@@ -20,11 +23,37 @@ if ($data==='npReviewInbox' ||
     require_once __DIR__ . '/../GatewayReturn.php';
     try {
         $scope=achbotNpOperatorWorkSql();
-        if ($data==='npReviewInbox') {
-            $items=$connection->query("SELECT a.id,a.order_hash,p.price,p.user_id,
-                    a.provider_status
+        if ($isInbox) {
+            // Stable keyset order for the owner worklist: multiple cases may
+            // have the same second-resolution updated_at timestamp.
+            $cursorText=(string)($inboxParts[1]??'');
+            $cursorId=(int)($inboxParts[2]??0);
+            $hasCursor=$cursorText!=='';
+            if ($hasCursor) {
+                $cursorTime=DateTimeImmutable::createFromFormat('!YmdHis',$cursorText);
+                if (!$cursorTime || $cursorTime->format('YmdHis')!==$cursorText) {
+                    answerCallbackQuery($callbackId,'نشانی صفحه معتبر نیست.',true);
+                    return;
+                }
+                $cursorDate=$cursorTime->format('Y-m-d H:i:s');
+            }
+            $listSql="SELECT a.id,a.order_hash,p.price,p.user_id,
+                    a.provider_status,a.updated_at
                 FROM payment_attempts a JOIN pays p ON p.id=a.pay_row_id
-                WHERE $scope ORDER BY a.updated_at DESC LIMIT 12");
+                WHERE ($scope)";
+            if ($hasCursor)
+                $listSql.=" AND (a.updated_at < ? OR
+                                 (a.updated_at = ? AND a.id < ?))";
+            $listSql.=" ORDER BY a.updated_at DESC,a.id DESC LIMIT 13";
+            $stmt=$connection->prepare($listSql);
+            if ($hasCursor)
+                $stmt->bind_param('ssi',$cursorDate,$cursorDate,$cursorId);
+            if (!$stmt->execute())
+                throw new RuntimeException('operator_inbox_page_read_failed');
+            $items=$stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+            $stmt->close();
+            $hasOlder=count($items)>12;
+            $items=array_slice($items,0,12);
             $rows=[];
             foreach ($items as $item) {
                 $label='🧾 #'.(int)$item['id'].' | '.
@@ -33,14 +62,28 @@ if ($data==='npReviewInbox' ||
                 $rows[]=[['text'=>$label,
                     'callback_data'=>'npReviewCase_'.(int)$item['id']]];
             }
-            if (!$rows) {
-                $body="✅ <b>پروندهٔ دارای شواهد وجه و نیازمند رسیدگی پیدا نشد.</b>\n".
-                    "ساخت شناسه یا فاکتور پرداخت به‌تنهایی هشدار مالی نیست.";
+            if (!$items) {
+                $body=$hasCursor
+                    ? "📋 <b>پروندهٔ قدیمی‌تری در این صفحه پیدا نشد.</b>"
+                    : "✅ <b>پروندهٔ دارای شواهد وجه و نیازمند رسیدگی پیدا نشد.</b>\n".
+                      "ساخت شناسه یا فاکتور پرداخت به‌تنهایی هشدار مالی نیست.";
             } else {
                 $body="📋 <b>مرکز بررسی پرداخت‌ها</b>\n\n".
                     "فقط پرونده‌های دارای شواهد وجه یا نتیجهٔ مالی نامطمئن نمایش داده می‌شوند.\n".
-                    "حداکثر ۱۲ پروندهٔ اخیر نمایش داده می‌شود؛ برای دیدن جزئیات یکی را انتخاب کنید.";
+                    "هر صفحه حداکثر ۱۲ پرونده دارد؛ برای دیدن جزئیات یکی را انتخاب کنید.";
             }
+            if ($hasOlder) {
+                // Anchor after the last displayed row; next page excludes it.
+                $last=$items[count($items)-1];
+                $stamp=str_replace(['-',' ',':'],'',(string)$last['updated_at']);
+                if (!preg_match('/^[0-9]{14}$/D',$stamp))
+                    throw new RuntimeException('operator_inbox_cursor_unconfirmed');
+                $rows[]=[['text'=>'➡️ پرونده‌های قدیمی‌تر',
+                    'callback_data'=>'npReviewInbox_'.$stamp.'_'.(int)$last['id']]];
+            }
+            if ($hasCursor)
+                $rows[]=[['text'=>'🔝 بازگشت به فهرست جدیدتر',
+                    'callback_data'=>'npReviewInbox']];
             $rows[]=[['text'=>'🏠 مدیریت','callback_data'=>'managePanel']];
             answerCallbackQuery($callbackId,'فهرست بر اساس اطلاعات مالی ثبت‌شده است.');
             editText($message_id,$body,json_encode(['inline_keyboard'=>$rows],
