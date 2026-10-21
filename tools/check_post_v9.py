@@ -956,6 +956,7 @@ def main():
             "same_total_after_unrelated_delete_create_never_used_as_success_signal",
             "two_account_partial_remote_no_bulk_replay",
             "exact_local_order_fk_join_and_no_second_finalize",
+            "historical_effect_retained_after_local_subscription_deletion",
         }
         if not (effects.get("complete") and effects.get("cases")>=22
                 and required_effects.issubset(effects.get("scenarios",[]))

@@ -29,8 +29,9 @@ CREATE TABLE service_effects (
   UNIQUE KEY uq_effect_order (order_id),
   KEY idx_effect_panel_username (target_server_id,remote_username),
   KEY idx_effect_review (state,updated_at),
+  -- The paid-order ID remains an immutable historical audit reference.
+  -- Do NOT FK this to deletable subscription rows: user/admin/expiry cleanup
+  -- must be free to delete orders_list without destroying this paid effect.
   CONSTRAINT fk_effect_pay FOREIGN KEY (pay_row_id)
-    REFERENCES pays(id) ON DELETE RESTRICT ON UPDATE RESTRICT,
-  CONSTRAINT fk_effect_order FOREIGN KEY (order_id)
-    REFERENCES orders_list(id) ON DELETE RESTRICT ON UPDATE RESTRICT
+    REFERENCES pays(id) ON DELETE RESTRICT ON UPDATE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

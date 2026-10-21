@@ -445,6 +445,11 @@ commit each order INSERT and ledger link in one short SQL transaction,
 never while a remote POST is in flight; link failure rolls back that
 local order rather than leaving an unlinked row. If a later account
 fails, earlier independently committed accounts remain reviewable.
+The referenced historical `order_id` remains recorded after a permitted
+subscription/order deletion; its correctness is checked by joining to the
+live order **at link time**, but no permanent FK to deletable
+`orders_list` can block normal customer/admin/expiry cleanup.
+The ledger's immutable parent payment remains retained.
 
 An unavailable POST response, GET/permission failure, mismatched note, changed
 logical panel grouping or concrete endpoint, SQL failure or lost commit

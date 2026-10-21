@@ -242,6 +242,14 @@ def main():
                        order=order)['error']
         cases.append('exact_local_order_fk_join_and_no_second_finalize')
 
+        # The external effect is immutable financial history. A subsequent
+        # permitted subscription deletion must NOT be blocked by its audit
+        # record or silently erase the original order number.
+        query(work,env,f'DELETE FROM orders_list WHERE id={order}')
+        assert query(work,env,f'SELECT COUNT(*) FROM orders_list WHERE id={order}')=='0'
+        assert state(work,env,recorded).endswith('\t'+str(order))
+        cases.append('historical_effect_retained_after_local_subscription_deletion')
+
         # Unsupported subject/target and invalid ordinal cannot reserve,
         # even when a forged PHP caller reaches the function directly.
         for change in ({'plan':8},{'target':1},{'line':2},{'username':'bad name'}):

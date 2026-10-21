@@ -109,8 +109,9 @@ native PHP 8.1/8.4 and disposable MariaDB must prove unique
 calls producing at most one POST, exact remote `username/note/expiry/bytes`
 readback, unknown POST/GET and wrong-identity freezes, changing panel
 group/endpoint, cross-payment same-panel username collisions, two-account
-partial, hosted short-transaction order/link rollback, exact orders_list
-foreign-key linkage, and unrelated
+partial, hosted short-transaction order/link rollback, exact live
+orders_list identity checking at link time, permanent audit after
+permitted local order deletion, and unrelated
 create+delete despite an unchanged remote count. Required 007 absence **or
 wrong unique index** must block new POST without silently reverting to an
 unjournaled fallback. Loopback HTTP covers strict readback and authentication
