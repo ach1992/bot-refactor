@@ -940,6 +940,12 @@ def main():
             cwd=ROOT,check=True,timeout=125,capture_output=True)
         effects=json.loads(effect_path.read_text())
         required_effects={
+            "review_O1_missing_uq_effect_order_no_remote_post",
+            "review_O1_missing_uq_effect_operation_no_remote_post",
+            "review_R2_type_drift_blocks_both_manual_multi_link_and_hosted_link",
+            "review_R2_group_drift_blocks_both_manual_multi_link_and_hosted_link",
+            "review_R2_endpoint_drift_blocks_both_manual_multi_link_and_hosted_link",
+            "review_R1_plan_reassignment_original_paid_target_no_remote_effect",
             "missing_007_no_remote_post",
             "malformed_007_unique_index_no_remote_post",
             "one_reserved_unique_operation_verified_by_exact_note_username_quota_expiry",

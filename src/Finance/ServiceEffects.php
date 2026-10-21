@@ -24,7 +24,9 @@ function achbotEffectRequireAutocommit(mysqli $db): void {
 function achbotEffectRequireUniqueLine(mysqli $db): void {
     foreach ([
         'uq_effect_pay_line'=>['pay_row_id','effect_kind','ordinal'],
-        'uq_effect_target_username'=>['target_key','remote_username']
+        'uq_effect_target_username'=>['target_key','remote_username'],
+        'uq_effect_operation'=>['operation_id'],
+        'uq_effect_order'=>['order_id']
     ] as $name=>$expected) {
         $nameSql="'".$db->real_escape_string($name)."'";
         $index=$db->query("SHOW INDEX FROM service_effects WHERE Key_name=$nameSql");
@@ -67,7 +69,7 @@ function achbotCreatePaidAccount(mysqli $db, int $payId, int $ordinal, array $p)
     }
     try {
         // These values are owned by the committed payment claim, not callback text.
-        $stmt=$db->prepare("SELECT p.user_id,p.plan_id,p.type,p.state,
+        $stmt=$db->prepare("SELECT p.user_id,p.plan_id,p.server_id AS paid_server,p.type,p.state,
             CASE WHEN p.agent_count>0 THEN p.agent_count ELSE 1 END AS requested_count,
             s.server_id AS plan_server,s.inbound_id AS plan_inbound,
             c.type AS panel_type,i.panel_group_id,c.panel_url,
@@ -87,6 +89,10 @@ function achbotCreatePaidAccount(mysqli $db, int $payId, int $ordinal, array $p)
             !in_array($claim['state'],['processing','paid'],true) ||
             (int)$claim['user_id']!==(int)($p['user_id']??0) ||
             (int)$claim['plan_id']!==$planId ||
+            // The immutable paid-target anchor is independent of the mutable
+            // plan->server mapping, which may change after checkout preflight.
+            (int)$claim['paid_server']!==$serverId ||
+            (int)$claim['paid_server']!==(int)$claim['plan_server'] ||
             (int)$claim['plan_server']!==$serverId ||
             (int)$claim['plan_inbound']!==$inboundId ||
             $claim['panel_type']!=='marzban' ||
@@ -207,11 +213,20 @@ function achbotLinkPaidAccountEffect(mysqli $db, int $effectId, int $orderId): v
     $stmt=$db->prepare("UPDATE service_effects e
       INNER JOIN pays p ON p.id=e.pay_row_id
       INNER JOIN orders_list o ON o.id=?
+      INNER JOIN server_info i ON i.id=e.target_server_id
+      INNER JOIN server_config c ON c.id=i.id
+      LEFT JOIN setting g ON g.id=i.panel_group_id
+        AND g.type='ACHBOT_MARZBAN_PANEL_GROUP'
       SET e.order_id=o.id,e.state='local_recorded'
       WHERE e.id=? AND e.state='verified' AND e.order_id IS NULL
         AND o.userid=p.user_id AND o.fileid=e.plan_id
+        AND p.server_id=e.target_server_id
         AND o.server_id=e.target_server_id AND o.inbound_id=0
-        AND o.remark=e.remote_username");
+        AND o.remark=e.remote_username
+        AND c.type='marzban'
+        AND i.panel_group_id <=> e.target_group_id
+        AND (i.panel_group_id IS NULL OR g.id IS NOT NULL)
+        AND SHA2(TRIM(TRAILING '/' FROM c.panel_url),256)=e.endpoint_sha256");
     if (!$stmt) throw new RuntimeException('effect_link_prepare_failed');
     $stmt->bind_param('ii',$orderId,$effectId);
     if (!$stmt->execute() || $stmt->affected_rows!==1)

@@ -117,6 +117,17 @@ wrong unique index** must block new POST without silently reverting to an
 unjournaled fallback. Loopback HTTP covers strict readback and authentication
 failures without contacting any installed panel.
 The aggregate `tools/check_post_v9.py` includes these cases as mandatory.
+Independent review of PR #67 exact older candidate `97bcdbd` found two REQUIRED timing holes:
+original `pays.server_id` was not compared during payment-row-locked reservation,
+and final order linkage did not revalidate the pinned physical Marzban endpoint/group.
+The remedied helper now validates both within their own short transactions,
+including a guarded exact-target link UPDATE. Native actual MariaDB regression
+covers plan reassignment after checkout preflight, POST-free rejection,
+multiple already-verified accounts with subsequent endpoint/group/type drift,
+atomic rollback of each newly inserted local order on stale target, and
+successful unchanged-target linking. Its malformed-DDL guard also inspects
+all four required unique constraints. Review verdict for `97bcdbd`
+remains `CHANGES_REQUIRED`; **fresh independent re-review of the new exact HEAD is required**.
 
 Real standard manual approval and hosted payment suites also assert their
 actual per-line ledger states (`verified` without order for partial

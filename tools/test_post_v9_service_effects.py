@@ -89,6 +89,22 @@ try {
         $order=(int)($spec['order']??0);
         achbotLinkPaidAccountEffect($connection,$id,$order);
         $value=['linked'=>$id,'order'=>$order];
+    } elseif (($spec['operation']??'create')==='link_transactional') {
+        $id=(int)($spec['effect']??0);
+        if (!$connection->begin_transaction()) throw new RuntimeException('fixture_link_begin_failed');
+        $ok=$connection->query("INSERT INTO orders_list
+            (userid,token,transid,fileid,server_id,inbound_id,remark,uuid,protocol,
+             expire_date,link,amount,status,date,notif,rahgozar,agent_bought)
+             SELECT p.user_id,'token','',e.plan_id,e.target_server_id,0,
+                    e.remote_username,'fixture-uuid','vless',2000000000,'[]',
+                    100,1,'fixture',0,0,0
+             FROM service_effects e JOIN pays p ON p.id=e.pay_row_id
+             WHERE e.id=".$id);
+        $newOrder=(int)$connection->insert_id;
+        if (!$ok || $newOrder<=0) throw new RuntimeException('fixture_link_order_failed');
+        achbotLinkPaidAccountEffect($connection,$id,$newOrder);
+        if (!$connection->commit()) throw new RuntimeException('fixture_link_commit_failed');
+        $value=['linked'=>$id,'order'=>$newOrder];
     } else {
         $result=achbotCreatePaidAccount($connection,$pay,$line,$p);
         $value=['success'=>$result[0]->success,'username'=>$result[1],
@@ -96,6 +112,9 @@ try {
     }
     $error=null;
 } catch(Throwable $e) {
+    if (($spec['operation']??'')==='link_transactional') {
+        try {$connection->rollback();} catch(Throwable $ignored) {}
+    }
     $value=null;
     $error=$e->getMessage();
     // Exception class is diagnostic metadata; never forward raw provider data.
@@ -158,6 +177,16 @@ def main():
         invalid=run_php(work,env,driver,pay=malformed,db=legacy)
         assert invalid['error']=='effect_unique_index_invalid' and invalid['events']==[]
         cases.append('malformed_007_unique_index_no_remote_post')
+        # Optional O1: every uniquely identifying index participates in the
+        # same pre-remote schema gate; removing just a different key fails shut.
+        for idx,columns in [('uq_effect_operation','operation_id'),
+                             ('uq_effect_order','order_id')]:
+            query(work,env,f'DROP INDEX {idx} ON service_effects',legacy)
+            wrong=pay(work,env,'missing_'+idx,db=legacy)
+            denied=run_php(work,env,driver,pay=wrong,db=legacy)
+            assert denied['error']=='effect_unique_index_invalid' and denied['events']==[],denied
+            query(work,env,f'ALTER TABLE service_effects ADD UNIQUE KEY {idx} ({columns})',legacy)
+            cases.append('review_O1_missing_'+idx+'_no_remote_post')
 
         first=pay(work,env,'effectfirst')
         result=run_php(work,env,driver,pay=first)
@@ -250,6 +279,41 @@ def main():
         assert state(work,env,recorded).endswith('\t'+str(order))
         cases.append('historical_effect_retained_after_local_subscription_deletion')
 
+        # R2: final linkage must revalidate the same physical target even
+        # AFTER a successful remote readback. New order INSERT must roll back.
+        for drift,update,undo in (
+            ('endpoint',"UPDATE server_config SET panel_url='http://127.0.0.1:9/drift' WHERE id=2",
+                        "UPDATE server_config SET panel_url='http://127.0.0.1:9' WHERE id=2"),
+            ('group',"UPDATE server_info SET panel_group_id=1234 WHERE id=2",
+                     "UPDATE server_info SET panel_group_id=NULL WHERE id=2"),
+            ('type',"UPDATE server_config SET type='other' WHERE id=2",
+                    "UPDATE server_config SET type='marzban' WHERE id=2"),
+        ):
+            name='link_drift_'+drift
+            pid=pay(work,env,name,count=2)
+            result=run_php(work,env,driver,pay=pid,username='link_'+drift+'_first')
+            second=run_php(work,env,driver,pay=pid,line=2,username='link_'+drift+'_second')
+            assert result['error'] is None and second['error'] is None
+            effects=[int(v) for v in query(work,env,
+                f'SELECT id FROM service_effects WHERE pay_row_id={pid} ORDER BY ordinal').splitlines()]
+            assert len(effects)==2
+            query(work,env,update)
+            for effect in effects:
+                linked=run_php(work,env,driver,operation='link_transactional',effect=effect)
+                assert linked['error'] and linked['events']==[],linked
+            assert query(work,env,
+                f'SELECT COUNT(*) FROM orders_list WHERE remark IN '
+                f"('link_{drift}_first','link_{drift}_second')")=='0'
+            assert all(row.split('\t')[1]=='verified' and row.endswith('\t0')
+                       for row in state(work,env,pid).splitlines())
+            query(work,env,undo)
+            # Healthy configuration remains linkable exactly once.
+            good=run_php(work,env,driver,operation='link_transactional',effect=effects[0])
+            assert good['error'] is None,good
+            assert state(work,env,pid).splitlines()[0].split('\t')[1]=='local_recorded'
+            cases.append('review_R2_'+drift+'_drift_blocks_both_manual_multi_link_and_hosted_link')
+        # Follow-on tests also preserve the successful unchanged plan flow.
+
         # Unsupported subject/target and invalid ordinal cannot reserve,
         # even when a forged PHP caller reaches the function directly.
         for change in ({'plan':8},{'target':1},{'line':2},{'username':'bad name'}):
@@ -290,6 +354,22 @@ def main():
                        username='same_physical_user')
         assert denied['error'] and denied['events']==[] and state(work,env,group_second)=='',denied
         cases.append('explicit_physical_group_alias_username_collision_before_post')
+
+        # R1: the paid server is immutable even if the mutable plan mapping
+        # and the callback's currently requested destination agree elsewhere.
+        old=pay(work,env,'review_original_paid_target')
+        query(work,env,'UPDATE server_plans SET server_id=33 WHERE id=7')
+        denied=run_php(work,env,driver,pay=old,plan=7,target=33,
+                       username='changed_plan_target_account')
+        assert denied['error'] and denied['events']==[] and state(work,env,old)=='',denied
+        assert query(work,env,
+            f"SELECT state FROM pays WHERE id={old}")=='processing'
+        query(work,env,'UPDATE server_plans SET server_id=2 WHERE id=7')
+        unchanged=pay(work,env,'review_unchanged_paid_target')
+        valid=run_php(work,env,driver,pay=unchanged,
+                      username='unchanged_plan_success')
+        assert valid['error'] is None and any(x['event']=='POST' for x in valid['events'])
+        cases.append('review_R1_plan_reassignment_original_paid_target_no_remote_effect')
 
     report={'complete':True,'cases':len(cases),'scenarios':cases,
             'source_real_php':True,'owned_mariadb_only':True,
