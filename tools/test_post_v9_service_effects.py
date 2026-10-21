@@ -64,7 +64,9 @@ function getMarzbanUser($serverId,$remark,$token=null,$strict=false) {
     if (!$account) return null;
     if ($mode==='other_note') $account['note']='someone_else';
     if ($mode==='wrong_expiry') $account['expire']+=1800;
+    if ($mode==='wrong_expiry_fraction') $account['expire']+=0.5;
     if ($mode==='wrong_quota') $account['data_limit']+=1073741824;
+    if ($mode==='wrong_quota_fraction') $account['data_limit']+=0.5;
     if ($mode==='wrong_username') $account['username']='stranger';
     // Model simultaneous unrelated create/delete with unchanged total count.
     if ($mode==='unrelated_churn') $GLOBALS['events'][]=[
@@ -218,7 +220,8 @@ def main():
 
         for mode in ('create_failure','post_lost','crash_before_ack',
                      'get_missing','get_unavailable','other_note',
-                     'wrong_expiry','wrong_quota','wrong_username','target_change','endpoint_change'):
+                     'wrong_expiry','wrong_quota','wrong_expiry_fraction','wrong_quota_fraction',
+                     'wrong_username','target_change','endpoint_change'):
             id=pay(work,env,'effect'+mode)
             before=run_php(work,env,driver,pay=id,mode=mode)
             expected_posts=1

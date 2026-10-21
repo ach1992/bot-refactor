@@ -55,6 +55,8 @@ def main():
             ('edit-lost-repair',{'plus_volume':1},'repaired',2,0),
             ('edit-badbody-repair',{'plus_volume':1},'repaired',2,0),
             ('edit-noop',{'plus_volume':1},'unverified',2,0),
+            ('edit-bad-number-baseline',{'plus_volume':1},'unverified',0,0),
+            ('edit-bad-number-readback',{'plus_volume':1},'unverified',1,0),
             ('edit-foreign',{'plus_volume':1},'unverified',1,0),
             ('edit-reset-verified',{'days':30,'volume':3},'verified',1,1),
             ('edit-reset-lie',{'days':30,'volume':3},'reset_unverified',0,1),

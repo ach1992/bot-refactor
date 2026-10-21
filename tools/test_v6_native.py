@@ -98,7 +98,8 @@ class Handler(BaseHTTPRequestHandler):
                 self.server.edit_put_count=getattr(self.server,'edit_put_count',0)+1
                 n=self.server.edit_put_count
                 requested=json.loads(body)
-                if mode in ('edit-verified','edit-lost-applied','edit-reset-verified') or (
+                if mode in ('edit-verified','edit-lost-applied','edit-reset-verified',
+                            'edit-bad-number-readback') or (
                     mode in ('edit-repair','edit-lost-repair','edit-badbody-repair') and n==2):
                     current.update({
                         'expire':requested['expire'],
@@ -118,6 +119,14 @@ class Handler(BaseHTTPRequestHandler):
                     payload={'detail':'synthetic_untrusted_acknowledgement'}
             else:
                 payload=current.copy()
+                # A remote JSON fractional value must not be accepted via
+                # PHP integer truncation as an exact identity/limit readback.
+                if mode=='edit-bad-number-baseline':
+                    payload['expire']=current['expire']+0.5
+                    payload['data_limit']=current['data_limit']+0.5
+                if mode=='edit-bad-number-readback' and getattr(self.server,'edit_put_count',0)>0:
+                    payload['expire']=current['expire']+0.5
+                    payload['data_limit']=current['data_limit']+0.5
             headers={}
         elif '/api/user/' in self.path:
             payload={'username':'fixture-user','status':'active','data_limit':2147483648,

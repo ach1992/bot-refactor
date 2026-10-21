@@ -365,10 +365,22 @@ function editMarzbanConfig($server_id,$info){
         if (!$isPinned())
             return (object)['success'=>false,'uncertain'=>true,'msg'=>'marzban_target_changed'];
 
+        // A fractional/scientific/overflowed remote JSON number must not
+        // silently truncate to the expected integer quota or expiry.
+        // Marzban's service limits are integral bytes and Unix seconds.
+        $remoteInteger=static function($value): ?int {
+            if (!is_int($value) &&
+                (!is_string($value) ||
+                 preg_match('/^(0|[1-9][0-9]*)$/D',$value)!==1)) return null;
+            $parsed=filter_var($value,FILTER_VALIDATE_INT,
+                               ['options'=>['min_range'=>0]]);
+            return $parsed===false?null:$parsed;
+        };
         $current=getMarzbanUser($server_id,$remark,$token,true);
         if (!is_object($current) || (string)($current->username??'')!==$remark ||
             !isset($current->expire,$current->data_limit) ||
-            !is_numeric($current->expire) || !is_numeric($current->data_limit) ||
+            $remoteInteger($current->expire)===null ||
+            $remoteInteger($current->data_limit)===null ||
             !isset($current->inbounds,$current->proxies)) {
             return (object)['success'=>false,'uncertain'=>true,'msg'=>'marzban_account_unverified'];
         }
@@ -385,8 +397,8 @@ function editMarzbanConfig($server_id,$info){
                 $number>$max || $number<($allowZero?0:1)) return null;
             return (int)$number;
         };
-        $oldExpire=(int)$current->expire;
-        $oldVolume=(int)$current->data_limit;
+        $oldExpire=$remoteInteger($current->expire);
+        $oldVolume=$remoteInteger($current->data_limit);
         $expire=$oldExpire;
         $volume=$oldVolume;
         if (isset($info['plus_day'])) {
@@ -445,7 +457,7 @@ function editMarzbanConfig($server_id,$info){
         if ($json===false)
             return (object)['success'=>false,'uncertain'=>true,'msg'=>'marzban_encode_failure'];
 
-        $put=function() use ($panelUrl,$remark,$token,$json,$expire,$volume): array {
+        $put=function() use ($panelUrl,$remark,$token,$json,$expire,$volume,$remoteInteger): array {
             $curl=curl_init();
             curl_setopt($curl,CURLOPT_URL,$panelUrl.'/api/user/'.rawurlencode($remark));
             curl_setopt($curl,CURLOPT_RETURNTRANSFER,true);
@@ -474,27 +486,29 @@ function editMarzbanConfig($server_id,$info){
             $valid=is_object($reply) && !isset($reply->detail) &&
                 (string)($reply->username??'')===$remark &&
                 isset($reply->expire,$reply->data_limit) &&
-                is_numeric($reply->expire) && is_numeric($reply->data_limit) &&
-                (int)$reply->expire===$expire && (int)$reply->data_limit===$volume;
+                $remoteInteger($reply->expire)===$expire &&
+                $remoteInteger($reply->data_limit)===$volume;
             // A malformed 2xx body is not proof of remote failure or success.
             // If exact GET still shows the original state, one identical
             // absolute PUT is safe; never replay a relative increment.
             return ['valid'=>$valid,'retryable'=>!$valid];
         };
-        $read=function() use ($server_id,$remark,$token,$isPinned): ?object {
+        $read=function() use ($server_id,$remark,$token,$isPinned,$remoteInteger): ?object {
             if (!$isPinned()) return null;
             $observed=getMarzbanUser($server_id,$remark,$token,true);
             if (!$isPinned() || !is_object($observed) ||
                 (string)($observed->username??'')!==$remark ||
                 !isset($observed->expire,$observed->data_limit) ||
-                !is_numeric($observed->expire) || !is_numeric($observed->data_limit))
+                $remoteInteger($observed->expire)===null ||
+                $remoteInteger($observed->data_limit)===null)
                 return null;
             return $observed;
         };
-        $matches=function(?object $observed,int $wantExpire,int $wantVolume) use ($current): bool {
+        $matches=function(?object $observed,int $wantExpire,int $wantVolume)
+            use ($current,$remoteInteger): bool {
             return $observed!==null &&
-                (int)$observed->expire===$wantExpire &&
-                (int)$observed->data_limit===$wantVolume &&
+                $remoteInteger($observed->expire)===$wantExpire &&
+                $remoteInteger($observed->data_limit)===$wantVolume &&
                 ($observed->note??null)===($current->note??null);
         };
 

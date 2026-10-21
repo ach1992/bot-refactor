@@ -438,7 +438,10 @@ a one-operation `note=achbot:v1:<operation_id>`, fixed expiry and the original
 username. Its answer and a subsequent **timeout-bounded, status-checked
 authenticated GET** of that exact username must match username, note, bytes
 and expiry before a transition
-`dispatching -> verified`. A successful matching `orders_list` INSERT
+`dispatching -> verified`. The byte quota and expiration must be exact
+nonnegative integer JSON values (or canonical decimal integer strings);
+fractional, exponent-encoded or overflowing provider values are not accepted
+by PHP integer truncation as proof of paid delivery. A successful matching `orders_list` INSERT
 atomically joins its exact new `id` to the effect and marks
 `local_recorded` in the caller's local transaction. Hosted purchases
 commit each order INSERT and ledger link in one short SQL transaction,
@@ -505,6 +508,8 @@ applied_expire in seconds and applied_bytes, all independently read from the
 expected physical panel and account. Plain HTTP 2xx or a Telegram callback is
 not a delivery certificate. The Marzban adapter checks username, original note,
 expiry, bytes and active status using authenticated, timeout-bounded GET.
+Remote fractional, scientific or overflowing numeric data is refused rather
+than converted to an apparently matching integer quota/expiry.
 A lost PUT reply followed by matching readback is already complete and is
 not repeated. If strict GET still confirms the exact original state, at most
 one corrective PUT with the SAME absolute values is allowed; no second relative
