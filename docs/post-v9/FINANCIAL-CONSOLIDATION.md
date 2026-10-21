@@ -514,6 +514,86 @@ Use only disposable test accounts and authorized test financial instruments.
 Capture bounded operation/order/effect identifiers without exposing tokens
 or real customer data. No tenant SQL/production installation performed here.
 
+### Owner-private read-only post-crash BUY_SUB inspection (source candidate)
+
+The recovery workbench is reached from the existing **owner-private**
+NOWPayments finance inbox via **«سفارش‌های سرویس ناتمام»**. It is not an
+additional payment gateway or a settlement service. It displays bounded
+newest-first, 12-at-a-time BUY_SUB cases in nonterminal processing/paid
+state and exact per-account service-effect ordinals, preserving historical
+order references even when normal subscription cleanup deletes a local row.
+The associated payment_attempts provider value and saved order amount
+are *context only*, not authenticated proof of collected funds. A payment
+with no effect row is visible as unresolved, never treated as proof that
+Marzban was not called.
+
+The workbench's strict transport pins the exact prevalidated physical URL,
+configured credentials and initial resolved IP for login and its one
+account GET. It never rereads a mutable server ID between calls, follows no
+redirects, and requires authenticated HTTP 200 and bounded valid responses;
+HTTPS uses normal peer and hostname verification. Plain HTTP is accepted
+only for a loopback endpoint (e.g. an isolated local test service).
+An `http://localhost` login is explicitly resolved to `127.0.0.1`
+BEFORE credentials are sent, so a poisoned local DNS/hosts record
+cannot retarget the initial request. Other unprotected HTTP destinations
+fail closed without sending credentials.
+Changing provider configuration during this process invalidates subsequent
+local comparison. This may make an existing HTTP panel ineligible for
+readback until a separately approved secure endpoint is configured;
+the tool offers no weaker fallback.
+
+The owner may request a single, authenticated, HTTP-checked **GET of one
+exact stored username**. Before any remote request, the inspector checks
+the required migration 007 unique indexes, original payment/plan/logical
+server/group identity, the administrator-assigned group catalog, concrete
+endpoint fingerprint and the persisted request SHA256. It refuses a GET
+on mismatch. Afterwards it rereads the original local identity and accepts
+only **point-in-time corroboration** of exact active username, immutable
+operation marker, nonnegative integer expiry and bytes. Remote 404, 409,
+timeouts, fractional values, stale/changed targets, absent indexes or
+missing schema never turn into authorization to CREATE, refund or mark paid.
+The operation marker is remote-editable; even a matching GET is NOT
+cryptographic proof of a provider's prior action.
+
+The inspector additionally checks the payment's CURRENT requested account
+count, ordinal range, Marzban inbound=0 and a strictly positive whole-GiB
+quota before any remote GET. It displays the exact per-line operation/effect/
+historical order IDs, recorded-vs-requested journal count, and any incomplete
+or inconsistent numbering in Persian. The payment's historical account
+count and plan inbound are **not immutable in the existing schema**:
+matching current rows cannot prove their original creation-time values.
+Such uncertainty must be handled by human reconciliation, not silently
+represented as historical identity assurance.
+
+The callback requires the configured owner identity **and the same private
+chat**. It acknowledges each callback no more than once before the potentially
+slow strict GET, then renders escaped Persian operator information; SQL,
+stale-payment and Telegram edit failures give an owner-private uncertainty
+message (with a send fallback when an edit is not confirmed). Every list/page action is bounded;
+both payments and up to 15+ per-account lines remain navigable. This
+inspector does **not** write pays, service_effects, wallet, orders,
+notification claims or provider state. It adds no migrations, automatic
+worker, scheduler, durable outbox, resend button or financial decision
+contract. Full unattended post-crash reconciliation, partial multi-account
+refund/fulfillment policy, lost notification delivery and live installed
+operator acceptance remain separately Owner-gated.
+
+Source tests run the actual PHP module + Telegram route against private,
+disposable socket-only MariaDB with simulated account GET, concurrent
+endpoint drift, authorization rejection, malformed ledger indexes,
+MYSQLI_REPORT_OFF, partial account line paging and zero payment mutations.
+An additional isolated authenticated loopback HTTP server exercises the
+ACTUAL production curl login and account GET, including target drift during
+authentication, both redirect stages, malformed/oversized responses and
+credential/non-owner confinement. Run
+python3 tools/test_post_v9_recovery_inspection.py --run-disposable,
+python3 tools/test_post_v9_recovery_transport.py --run-disposable
+and the aggregate tools/check_post_v9.py at exact candidate HEAD.
+The current source-only package contains **97** members including
+RecoveryInspection.php and RecoveryTransport.php; historical V9 remains
+frozen at **92**. This does not itself
+authorize the installation of schema 007 on a tenant database.
+
 ### Provider-neutral service modifications: verified result and bounded self-repair
 
 The source-only remediation for Issue #26 addresses historical false success
