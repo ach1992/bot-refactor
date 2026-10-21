@@ -94,6 +94,26 @@ def main():
                     raise RuntimeError('Remote quota did not really change: '+mode)
             cases.append(mode+'_source_native_'+want)
 
+        # The legacy quote schema accepts FLOAT, while the old audit stores
+        # integer units. Reject unsupported fractions rather than claiming
+        # an incomplete 1.5 GB / 0.5 day paid service as fulfilled.
+        for label,change in (
+            ('volume_delta',{'plus_volume':1.5}),
+            ('day_delta',{'plus_day':0.5}),
+            ('plan_quota',{'days':30,'volume':1.5})
+        ):
+            panel.mode='edit-verified'
+            panel.trace.clear()
+            panel.edit_account=INITIAL.copy()
+            rejected=native.run(work,env,source,native.DBS[1],{
+                'function':'editMarzbanConfig',
+                'args':[2,{'remark':'fixture-user',**change}]})
+            assert rejected['exception'] is None and rejected['result']['success'] is False,rejected
+            assert rejected['result']['msg'] in ('invalid_volume','invalid_days'),rejected
+            assert not any(x['method'] in ('PUT','DELETE') or '/reset' in x['path']
+                           for x in panel.trace),panel.trace
+            cases.append('fractional_'+label+'_never_truncated_or_approved')
+
         # Genuine Marzban performs exact GET+PUT+GET using the shared
         # provider-neutral dispatcher. A plausible future panel type remains
         # explicitly UNSUPPORTED until its adapter/verified-readback exists.

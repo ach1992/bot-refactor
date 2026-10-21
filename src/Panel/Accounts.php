@@ -373,31 +373,43 @@ function editMarzbanConfig($server_id,$info){
             return (object)['success'=>false,'uncertain'=>true,'msg'=>'marzban_account_unverified'];
         }
 
+        // Paid quote tables may contain floating-point days/GB. Never
+        // truncate them to fewer units and falsely announce full service.
+        // A precision-safe fractional accounting contract needs a separate
+        // accepted migration; unsupported fractions stop before PUT/reset.
+        $wholeUnits=static function($raw,int $max,bool $allowZero=false): ?int {
+            if (!(is_int($raw)||is_float($raw)||is_string($raw)) ||
+                !is_numeric($raw)) return null;
+            $number=(float)$raw;
+            if (!is_finite($number) || $number!==floor($number) ||
+                $number>$max || $number<($allowZero?0:1)) return null;
+            return (int)$number;
+        };
         $oldExpire=(int)$current->expire;
         $oldVolume=(int)$current->data_limit;
         $expire=$oldExpire;
         $volume=$oldVolume;
         if (isset($info['plus_day'])) {
-            $days=(int)$info['plus_day'];
-            if ($days<=0 || $days>36500 || $days>intdiv(PHP_INT_MAX,86400) ||
+            $days=$wholeUnits($info['plus_day'],36500);
+            if ($days===null || $days<=0 || $days>36500 || $days>intdiv(PHP_INT_MAX,86400) ||
                 max($expire,time())>PHP_INT_MAX-$days*86400)
                 return (object)['success'=>false,'uncertain'=>false,'msg'=>'invalid_days'];
             $expire=max($expire,time())+86400*$days;
         } elseif (isset($info['days'])) {
-            $days=(int)$info['days'];
-            if ($days<=0 || $days>36500 || time()>PHP_INT_MAX-$days*86400)
+            $days=$wholeUnits($info['days'],36500);
+            if ($days===null || $days<=0 || $days>36500 || time()>PHP_INT_MAX-$days*86400)
                 return (object)['success'=>false,'uncertain'=>false,'msg'=>'invalid_days'];
             $expire=time()+86400*$days;
         }
         if (isset($info['plus_volume'])) {
-            $extra=(int)$info['plus_volume'];
-            if ($extra<=0 || $extra>intdiv(PHP_INT_MAX,1073741824) ||
+            $extra=$wholeUnits($info['plus_volume'],intdiv(PHP_INT_MAX,1073741824));
+            if ($extra===null || $extra<=0 || $extra>intdiv(PHP_INT_MAX,1073741824) ||
                 $volume>PHP_INT_MAX-$extra*1073741824)
                 return (object)['success'=>false,'uncertain'=>false,'msg'=>'invalid_volume'];
             $volume+=$extra*1073741824;
         } elseif (isset($info['volume'])) {
-            $gigabytes=(int)$info['volume'];
-            if ($gigabytes<0 || $gigabytes>intdiv(PHP_INT_MAX,1073741824))
+            $gigabytes=$wholeUnits($info['volume'],intdiv(PHP_INT_MAX,1073741824),true);
+            if ($gigabytes===null || $gigabytes<0 || $gigabytes>intdiv(PHP_INT_MAX,1073741824))
                 return (object)['success'=>false,'uncertain'=>false,'msg'=>'invalid_volume'];
             $volume=$gigabytes*1073741824;
             $reset=resetMarzbanTraffic($server_id,$remark,$token);

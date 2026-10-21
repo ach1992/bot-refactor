@@ -187,6 +187,9 @@ def main():
             'two_concurrent_distinct_edits_serialized_no_lost_increment',
             'physical_panel_alias_different_urls_group_lock_no_lost_increment',
             'missing_physical_panel_group_rejects_before_remote_dispatch',
+            'fractional_volume_delta_never_truncated_or_approved',
+            'fractional_day_delta_never_truncated_or_approved',
+            'fractional_plan_quota_never_truncated_or_approved',
         }
         if not (edits.get('complete') and edits.get('cases')==len(required_edits)
                 and required_edits.issubset(edits.get('scenarios',[]))

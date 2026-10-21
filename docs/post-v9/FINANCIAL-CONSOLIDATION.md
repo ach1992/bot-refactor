@@ -519,6 +519,12 @@ to serialize edits by unrelated systems, multiple databases or incorrectly
 grouped panels. Traffic reset is separately read back and never blindly
 repeated.
 
+The existing extension quote schema can store fractional values while its
+historical service audit stores integer days/GB. A fractional paid quote must
+NOT be silently rounded down and marked delivered. Until separately accepted
+precision-safe units/accounting exist, these requests are refused before
+any remote PUT or reset, leaving the financial claim reviewable.
+
 The scheduled bank-acceptance path for service edits now reserves a
 nonterminal payment state first. Only a verified account effect plus original
 paid-target/order identity and one atomic local order/audit/payment COMMIT may
