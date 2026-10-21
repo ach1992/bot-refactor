@@ -62,14 +62,17 @@ if (!function_exists('decreaseServerCapacity')) {
         $plan_id    = (int)$plan_id;
 
         if ($count <= 0) {
+            if ($requireConfirmed) throw new RuntimeException('capacity_invalid_count');
             return;
         }
 
         if ($inbound_id === 0) {
             $stmt = $connection->prepare(
-                "UPDATE `server_info` SET `ucount` = `ucount` - ? WHERE `id` = ?"
+                "UPDATE `server_info` SET `ucount` = `ucount` - ?
+                 WHERE `id` = ? AND `ucount` >= ?"
             );
-            $stmt->bind_param("ii", $count, $server_id);
+            if (!$stmt) throw new RuntimeException('server_capacity_prepare_failed');
+            $stmt->bind_param("iii", $count, $server_id, $count);
             $saved=$stmt->execute();
             $changed=$stmt->affected_rows;
             $stmt->close();
@@ -77,9 +80,11 @@ if (!function_exists('decreaseServerCapacity')) {
                 throw new RuntimeException('server_capacity_update_unconfirmed');
         } else {
             $stmt = $connection->prepare(
-                "UPDATE `server_plans` SET `acount` = `acount` - ? WHERE `id` = ?"
+                "UPDATE `server_plans` SET `acount` = `acount` - ?
+                 WHERE `id` = ? AND `acount` >= ?"
             );
-            $stmt->bind_param("ii", $count, $plan_id);
+            if (!$stmt) throw new RuntimeException('plan_capacity_prepare_failed');
+            $stmt->bind_param("iii", $count, $plan_id, $count);
             $saved=$stmt->execute();
             $changed=$stmt->affected_rows;
             $stmt->close();

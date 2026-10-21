@@ -5,6 +5,17 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     exit;
 }
 
+// Telegram may return ok=false or null without throwing an exception.
+if (!function_exists('achbotManualStandardRequireTelegramResult')) {
+    function achbotManualStandardRequireTelegramResult($response, string $phase): void {
+        if ($response===true ||
+            (is_object($response) && ($response->ok??false)===true) ||
+            (is_array($response) && ($response['ok']??false)===true))
+            return;
+        throw new RuntimeException('manual_standard_telegram_'.$phase.'_unconfirmed');
+    }
+}
+
 if (
     preg_match('/^accept([A-Za-z0-9_-]{1,50})$/D', (string)$data, $match) &&
     $text != $buttonValues['cancel'] &&
@@ -13,6 +24,8 @@ if (
     $hash_id = $match[1];
     $payInfo = null;
     $claimOpen = false;
+    $reservedAccountCount=null;
+    $followupOrdinal=0;
 
     // Standard-plan approval requires reviewed receipt proof under a pay-row
     // lock. Commit the no-replay claim before any remote Marzban operation.
@@ -28,7 +41,7 @@ if (
         $stmt->close();
         $receiptSubject = ($payInfo['type'] ?? null) === 'RENEW_SCONFIG'
             ? 'standard_renewal' : 'standard';
-        if (!$payInfo || !achbotSupportsPaymentSubject($connection, $payInfo) ||
+        if (!$payInfo || !achbotSupportsPaymentSubject($connection, $payInfo, true) ||
             !achbotManualServiceApprovalAllowedLocked($connection, $payInfo, $receiptSubject)) {
             $connection->rollback();
             $claimOpen = false;
@@ -37,6 +50,12 @@ if (
         }
         $payId = (int)$payInfo['id'];
         $actor = (int)$from_id;
+        if (($payInfo['type']??null)==='BUY_SUB') {
+            // Capacity and the no-replay payment claim MUST commit together,
+            // before any remote CREATE, across competing buyer payments.
+            $reservedAccountCount=achbotManualStandardReserveCapacityLocked(
+                $connection,$payInfo);
+        }
         $stmt = $connection->prepare(
             "UPDATE pays SET state='processing',approved_by=?
              WHERE id=? AND state='have_sent' AND (payid IS NULL OR payid='')"
@@ -75,8 +94,15 @@ if (
             $days   = $planDetails['days'];
             $volume = $planDetails['volume'];
 
-            $server_id  = (int)$plan['server_id'];
-            $inbound_id = (int)$payInfo['volume'];
+            // Use only the original persisted payment destination. Never
+            // rebind an approved request from mutable current plan mapping.
+            $server_id=(int)$payInfo['server_id'];
+            $inbound_id=(int)$payInfo['volume'];
+            if ($server_id<=0 || $inbound_id!==0 ||
+                (int)$plan['server_id']!==$server_id ||
+                (int)$plan['inbound_id']!==0 ||
+                !achbotSupportsPaymentSubject($connection,$payInfo))
+                throw new RuntimeException('manual_standard_renewal_target_changed');
 
             $configInfo = json_decode($payInfo['description'], true) ?: [];
             $uuid       = $configInfo['uuid']   ?? '';
@@ -133,13 +159,13 @@ if (
                 return;
             }
 
-            sendMessage(
+            achbotManualStandardRequireTelegramResult(sendMessage(
                 str_replace(["REMARK","VOLUME","DAYS"], [$remark,$volume,$days], $mainValues['renewed_config_to_user']),
-                getMainKeys(),
-                null,
-                null
-            );
-            sendMessage("✅ اشتراک $remark با موفقیت تمدید شد.", null, null, $uid);
+                getMainKeys(),null,null
+            ),'renewal_customer');
+            achbotManualStandardRequireTelegramResult(
+                sendMessage("✅ اشتراک $remark با موفقیت تمدید شد.", null, null, $uid),
+                'renewal_user_notice');
 
             $keys = json_encode([
                 'inline_keyboard' => [
@@ -151,18 +177,24 @@ if (
 
             $followupStage = 'renewal_operator_buttons';
             try {
-                editKeys($keys, $payInfo['message_id'], $payInfo['chat_id']);
+                achbotManualStandardRequireTelegramResult(
+                    editKeys($keys, $payInfo['message_id'], $payInfo['chat_id']),
+                    'renewal_operator_buttons');
             } catch (Throwable $e) {
                 error_log('achbot_manual_standard_buttons_update_failed pay_id='.$payId.
                     ' subject=renewal exception='.get_class($e).' code='.(int)$e->getCode());
-                sendMessage("✅ تمدید ثبت شده است، اما به‌روزرسانی دکمه‌های پیام مدیر تأیید نشد.\n🆔 $hash_id\nوضعیت پیام را بررسی کنید؛ تمدید را دوباره تأیید نکنید.", null, null, $admin);
+                achbotManualStandardRequireTelegramResult(
+                    sendMessage("✅ تمدید ثبت شده است، اما به‌روزرسانی دکمه‌های پیام مدیر تأیید نشد.\n🆔 $hash_id\nوضعیت پیام را بررسی کنید؛ تمدید را دوباره تأیید نکنید.", null, null, $admin),
+                    'renewal_buttons_operator_alert');
             }
 
             $adminMessages = json_decode($payInfo['admins_messages'], true);
             if (is_array($adminMessages)) {
                 foreach ($adminMessages as $msgInfo) {
                     if (isset($msgInfo['chat_id'], $msgInfo['message_id']) && $msgInfo['chat_id'] != $payInfo['chat_id']) {
-                        try { editKeys($keys, $msgInfo['message_id'], $msgInfo['chat_id']); } catch (Exception $e) {}
+                        achbotManualStandardRequireTelegramResult(
+                            editKeys($keys, $msgInfo['message_id'], $msgInfo['chat_id']),
+                            'renewal_additional_operator_buttons');
                     }
                 }
             }
@@ -170,8 +202,9 @@ if (
             return;
         }
 
-        $accountCount = (int)($payInfo['agent_count'] ?? 1);
-        $accountCount = max(1, $accountCount);
+        $accountCount=$reservedAccountCount;
+        if (!is_int($accountCount) || $accountCount<=0)
+            throw new RuntimeException('manual_standard_capacity_claim_missing');
         $eachPrice    = ($accountCount > 0) ? ($price / $accountCount) : $price;
 
         $planDetails = getPlanDetails($connection, $fid);
@@ -184,7 +217,7 @@ if (
         $expire_date      = $planDetails['expire_date'];
 
         $protocol   = $plan['protocol'];
-        $server_id  = (int)$plan['server_id'];
+        $server_id  = (int)$payInfo['server_id'];
         $netType    = $plan['type'];
         $acount     = (int)$plan['acount'];
         $inbound_id = (int)$plan['inbound_id'];
@@ -194,7 +227,11 @@ if (
         $customPort = $plan['custom_port'];
         $customSni  = $plan['custom_sni'];
 
-        ensureServerCapacity($connection, $server_id, $inbound_id, $acount, $mainValues);
+        // The entire requested count was reserved atomically at payment claim.
+        // Refuse plan drift; never redirect work or charge capacity twice.
+        if ($server_id<=0 || (int)$plan['server_id']!==$server_id ||
+            $inbound_id!==0 || !achbotSupportsPaymentSubject($connection,$payInfo))
+            throw new RuntimeException('manual_standard_purchase_target_changed');
 
         [$serverInfo, $serverConfig] = getServerInfoAndConfig($connection, $server_id);
         $srv_remark  = $serverInfo['remark'];
@@ -319,7 +356,7 @@ if (
                 );
             }
 
-            decreaseServerCapacity($connection, $server_id, $inbound_id, $fid, $accountCount, true);
+            // Already reserved before CREATE. Do NOT decrement again.
 
             $stmt = $connection->prepare(
                 "UPDATE pays SET state='approved' WHERE id=? AND state='processing' AND approved_by=?"
@@ -342,27 +379,23 @@ if (
             return;
         }
 
-        foreach ($pendingUserQrs as $pq) {
-            sendQrFromLink(
-                $pq['qrLink'],
-                $pq['acc_text'],
-                $pq['keys'],
-                $botUrl,
-                (int)$pq['uid'],
-                '',
-                null
-            );
+        foreach ($pendingUserQrs as $index => $pq) {
+            $followupOrdinal=$index+1;
+            achbotManualStandardRequireTelegramResult(sendQrFromLink(
+                $pq['qrLink'],$pq['acc_text'],$pq['keys'],$botUrl,
+                (int)$pq['uid'],'',null
+            ),'purchase_account_qr');
         }
+        $followupOrdinal=0;
 
         $followupStage = 'purchase_operator_notice';
-        sendMessage(
+        achbotManualStandardRequireTelegramResult(sendMessage(
             str_replace(
                 ["USERID", "REMARK", "VOLUME", "DAYS", "PRICE", "HASHID"],
                 [$uid, $lastRemarkForAdminMsg, $volume, $days, $price, $hash_id],
                 $mainValues['sent_config_to_user']
-            ),
-            getMainKeys()
-        );
+            ),getMainKeys()
+        ),'purchase_operator_notice');
 
         $keys = json_encode([
             'inline_keyboard' => [
@@ -374,18 +407,24 @@ if (
 
         $followupStage = 'purchase_operator_buttons';
         try {
-            editKeys($keys, $payInfo['message_id'], $payInfo['chat_id']);
+            achbotManualStandardRequireTelegramResult(
+                editKeys($keys, $payInfo['message_id'], $payInfo['chat_id']),
+                'purchase_operator_buttons');
         } catch (Throwable $e) {
             error_log('achbot_manual_standard_buttons_update_failed pay_id='.$payId.
                 ' subject=purchase exception='.get_class($e).' code='.(int)$e->getCode());
-            sendMessage("✅ سفارش ثبت شده است، اما به‌روزرسانی دکمه‌های پیام مدیر تأیید نشد.\n🆔 $hash_id\nوضعیت پیام را بررسی کنید؛ سفارش را دوباره تأیید نکنید.", null, null, $admin);
+            achbotManualStandardRequireTelegramResult(
+                sendMessage("✅ سفارش ثبت شده است، اما به‌روزرسانی دکمه‌های پیام مدیر تأیید نشد.\n🆔 $hash_id\nوضعیت پیام را بررسی کنید؛ سفارش را دوباره تأیید نکنید.", null, null, $admin),
+                'purchase_buttons_operator_alert');
         }
 
         $adminMessages = json_decode($payInfo['admins_messages'], true);
         if (is_array($adminMessages)) {
             foreach ($adminMessages as $msgInfo) {
                 if (isset($msgInfo['chat_id'], $msgInfo['message_id']) && $msgInfo['chat_id'] != $payInfo['chat_id']) {
-                    try { editKeys($keys, $msgInfo['message_id'], $msgInfo['chat_id']); } catch (Exception $e) {}
+                    achbotManualStandardRequireTelegramResult(
+                        editKeys($keys, $msgInfo['message_id'], $msgInfo['chat_id']),
+                        'purchase_additional_operator_buttons');
                 }
             }
         }
@@ -400,7 +439,9 @@ if (
             $inviterId = (int)$user_detail['refered_by'];
 
             $followupStage = 'referral_reward';
-            giveReferralReward($connection, $user_detail['userid'], $inviterId, $admin, $botState);
+            if (giveReferralReward($connection, $user_detail['userid'],
+                                   $inviterId, $admin, $botState)!==true)
+                throw new RuntimeException('manual_standard_referral_unconfirmed');
 
             if ($admin != $from_id) {
                 $uname     = $user_detail['name'];
@@ -420,11 +461,15 @@ if (
                     $mainValues['invite_buy_new_account']
                 );
 
-                sendMessage($msg, $keys2, "html", $admin);
+                achbotManualStandardRequireTelegramResult(
+                    sendMessage($msg,$keys2,"html",$admin),
+                    'referral_admin_message');
 
                 $rewardChannel = $botState['rewardChannel'] ?? null;
                 if (!empty($rewardChannel)) {
-                    sendMessage($msg, $keys2, "html", $rewardChannel);
+                    achbotManualStandardRequireTelegramResult(
+                        sendMessage($msg,$keys2,"html",$rewardChannel),
+                        'referral_channel_message');
                 }
             }
         }
@@ -437,8 +482,26 @@ if (
             error_log('achbot_manual_standard_postcommit_followup_needs_review pay_id='.$payId.
                 ' stage='.$followupStage.' exception='.get_class($e).' code='.(int)$e->getCode());
             try {
-                sendMessage("✅ سفارش ثبت شده و عملیات سرویس در سیستم تأیید شده است، اما اطلاع‌رسانی یا پاداش پس از ثبت ممکن است ناقص باشد.\n🆔 $hash_id\nوضعیت پیام مشتری و پاداش را بررسی کنید؛ سفارش را دوباره تأیید نکنید.",
-                            null, null, $admin);
+                $accountContext=$followupOrdinal>0
+                    ?"\n🔢 شماره حساب: ".$followupOrdinal:'';
+                $rewardContext=($followupStage==='referral_reward' && isset($inviterId))
+                    ?"\n🎁 شناسه معرف: ".(int)$inviterId:'';
+                $phaseText=match($followupStage) {
+                    'renewal_customer_notice'=>'پیام تمدید مشتری',
+                    'renewal_operator_buttons'=>'دکمه‌های تأیید مدیر',
+                    'purchase_account_delivery'=>'ارسال اطلاعات سرویس مشتری',
+                    'purchase_operator_notice'=>'پیام مدیر',
+                    'purchase_operator_buttons'=>'دکمه‌های مدیر',
+                    'referral_reward'=>'اعتبار یا پیام پاداش معرف',
+                    default=>'اطلاع‌رسانی تکمیلی',
+                };
+                achbotManualStandardRequireTelegramResult(
+                    sendMessage("✅ سفارش ثبت شده و عملیات سرویس در سیستم تأیید شده است، اما اطلاع‌رسانی یا پاداش در مرحلهٔ "
+                        .$phaseText." ناقص/نامطمئن است.\n🆔 $hash_id"
+                        .$accountContext.$rewardContext.
+                        "\nارسال پیام یا اعتبار معرف را دستی تطبیق دهید؛ سرویس و اعتبار را دوباره اعمال نکنید.",
+                        null,null,$admin),
+                    'postcommit_operator_alert');
             } catch (Throwable $notifyError) {
                 error_log('achbot_manual_standard_postcommit_notice_failed pay_id='.$payId.
                     ' exception='.get_class($notifyError).' code='.(int)$notifyError->getCode());

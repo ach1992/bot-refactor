@@ -995,7 +995,7 @@ def main():
             "real_standard_explicit_remote_failure_kept_for_review_without_local_order",
             "real_standard_hosted_provider_conflict_denied",
             "real_standard_missing_operator_delivery_denied",
-            "real_standard_mysqlireportoff_unconfirmed_capacity_never_approved",
+            "real_standard_mysqlireportoff_capacity_reservation_failure_prevents_create",
             "real_standard_mysqlireportoff_unconfirmed_order_never_approved",
             "real_standard_nonadmin_callback_no_financial_effect",
             "real_standard_operator_buttons_failure_does_not_leak_raw_exception",
@@ -1088,6 +1088,57 @@ def main():
                 and manual.get("live_provider_calls")==0
                 and manual.get("production_data_modified") is False):
             raise RuntimeError("Four-network manual crypto payment isolation incomplete")
+        # PR #66 independent reviewer R1–R6: actual financial/purchase PHP
+        # helpers and original MariaDB, not author-only approval route doubles.
+        integrity_path=Path(tmp)/"manual-standard-real-helpers.json"
+        trial=subprocess.run(
+            ["python3",str(ROOT/"tools/test_post_v9_standard_integrity.py"),
+             "--run-disposable","--report",str(integrity_path)],
+            cwd=ROOT,timeout=180,capture_output=True,text=True)
+        if trial.returncode!=0:
+            raise RuntimeError("Manual standard R1-R6 real-helper acceptance failed:\n"+
+                               (trial.stderr or trial.stdout)[-6500:])
+        integrity=json.loads(integrity_path.read_text())
+        required_integrity={
+            'r1_insufficient_total_count_prevents_any_remote_create',
+            'r1_exact_two_units_reserved_once_and_replay_fenced',
+            'r1_remote_unknown_keeps_pre_reserved_capacity_no_replay',
+            'r1_after_two_remote_creates_SQL_failure_keeps_reserved_capacity_review_only',
+            'r1_mysqlireportoff_conditional_reservation_SQL_failure_no_create',
+            'r1_real_conditional_capacity_helper_cannot_go_negative',
+            'r1_two_real_php_buyers_one_capacity_unit_only_one_external_create',
+            'r2_plan_reassigned_to_other_remote_with_same_remark_zero_wrong_edit',
+            'r2_persisted_payment_server_pinned_on_successful_renewal',
+            'r3_nonthrowing_renewal_customer_notice_renew_user_false_already_approved',
+            'r3_nonthrowing_renewal_customer_notice_renew_user_null_already_approved',
+            'r3_nonthrowing_or_thrown_telegram_qr_false_approved_no_replay',
+            'r3_nonthrowing_or_thrown_telegram_qr_null_approved_no_replay',
+            'r3_nonthrowing_or_thrown_telegram_qr_throw_approved_no_replay',
+            'r3_nonthrowing_or_thrown_telegram_operator_false_approved_no_replay',
+            'r3_nonthrowing_or_thrown_telegram_edit_false_approved_no_replay',
+            'r3_nonthrowing_or_thrown_telegram_edit_null_approved_no_replay',
+            'r3_real_telegram_editKeys_propagates_false_response',
+            'r4_referral_confirmed_one_wallet_update_no_callback_recredit',
+            'r4_mysqlireportoff_reward_write_failure_no_false_credit_notice',
+            'r4_wallet_overflow_fails_without_false_ack',
+            'r4_postcredit_telegram_failure_never_recredits',
+            'r4_missing_inviter_no_false_credit_notice',
+            'r5_historical_23_table_operator_delivered_receipt_remains_approvable',
+            'r5_absent_original_operator_evidence_is_rejected',
+            'r5_partially_installed_003_denied_under_mysqlireportoff',
+            'r5_incompatible_ledger_column_SQL_failure_not_legacy_receipt',
+            'r5_complete_003_empty_attempts_historical_receipt_allowed',
+        }
+        if not (integrity.get('complete') is True and
+                integrity.get('cases')==len(required_integrity) and
+                set(integrity.get('scenarios',[]))==required_integrity and
+                integrity.get('actual_php_core_helpers') is True and
+                integrity.get('actual_mariadb_capacity') is True and
+                integrity.get('actual_mysqlireportoff_failure') is True and
+                integrity.get('isolated_marzban_telegram_spies') is True and
+                integrity.get('production_mutations')==0 and
+                integrity.get('installed_acceptance') is False):
+            raise RuntimeError("Mandatory real-helper manual standard evidence incomplete")
         # Independent, exact-source R1/R2 contract: offline TRON Base58Check
         # and real bot.php/config.php administrator-setting writes. Keep the
         # positive network cases and invalid historical-intent refusals in the
@@ -1248,6 +1299,7 @@ def main():
                     "wallet_authorization_freshness":wallet_freshness,
                     "latest_review_f1_f4":reviewer_f1_f4,
                     "manual_payment_method_isolation":manual,
+                    "manual_standard_real_helper_review_remediation":integrity,
                     "manual_crypto_destination_and_admin_guards":crypto_guard,
                     "payment_reference_assurance":payment_identity,
                     "shared_payment_ledger_rc4_import":migration,
@@ -1281,6 +1333,7 @@ def main():
                       "customer_method_serialization_cases":method_race["cases"],
                       "wallet_authorization_freshness_cases":wallet_freshness["cases"],
                       "manual_payment_isolation_cases":manual["cases"],
+                      "manual_standard_real_helper_cases":integrity["cases"],
                       "manual_crypto_guard_cases":crypto_guard["cases"],
                       "payment_reference_length":payment_identity["default_length"],
                       "historical_rc4_payment_import_verified":migration["preserved_rc4_rows_and_ids"],

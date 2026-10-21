@@ -563,6 +563,73 @@ function achbotWalletDirectAllowedLocked(mysqli $connection, array $pay,
 }
 
 /**
+ * Standard BUY_SUB capacity is reserved with its payment processing claim,
+ * BEFORE any non-idempotent remote CREATE. A capacity reservation becomes
+ * operator-owned if a later remote response or COMMIT is uncertain: never
+ * automatically restore and allow a duplicate CREATE against that payment.
+ *
+ * Caller owns the pays FOR UPDATE transaction. InnoDB serializes the
+ * conditional capacity UPDATE across distinct buyers on the same server.
+ */
+function achbotManualStandardReserveCapacityLocked(mysqli $db, array $pay): int {
+    if (($pay['type'] ?? null)!=='BUY_SUB' ||
+        (int)($pay['day'] ?? -1)!==0 ||
+        (int)($pay['volume'] ?? -1)!==0)
+        throw new RuntimeException('manual_standard_capacity_wrong_subject');
+    $raw=$pay['agent_count'] ?? null;
+    if ($raw===null || (string)$raw==='0' || (string)$raw==='') {
+        $count=1; // Historical single-account rows have no explicit quantity.
+    } elseif (!preg_match('/^[1-9][0-9]*$/D',(string)$raw) ||
+              filter_var($raw,FILTER_VALIDATE_INT)===false) {
+        throw new RuntimeException('manual_standard_capacity_invalid_count');
+    } else {
+        $count=(int)$raw;
+    }
+    $sid=(int)($pay['server_id'] ?? 0);
+    $planId=(int)($pay['plan_id'] ?? 0);
+    if ($sid<=0 || $planId<=0) throw new RuntimeException('manual_standard_capacity_invalid_target');
+
+    $stmt=$db->prepare("SELECT server_id,inbound_id FROM server_plans
+        WHERE id=? AND active=1 LIMIT 1 FOR UPDATE");
+    if (!$stmt) throw new RuntimeException('manual_standard_capacity_plan_prepare_failed');
+    $stmt->bind_param('i',$planId);
+    if (!$stmt->execute()) throw new RuntimeException('manual_standard_capacity_plan_read_failed');
+    $plan=$stmt->get_result()->fetch_assoc();
+    $stmt->close();
+    if (!$plan || (int)$plan['server_id']!==$sid ||
+        (int)$plan['inbound_id']!==0)
+        throw new RuntimeException('manual_standard_capacity_plan_changed');
+
+    $stmt=$db->prepare('UPDATE server_info SET ucount=ucount-?
+        WHERE id=? AND ucount>=?');
+    if (!$stmt) throw new RuntimeException('manual_standard_capacity_prepare_failed');
+    $stmt->bind_param('iii',$count,$sid,$count);
+    $ok=$stmt->execute();
+    $affected=$stmt->affected_rows;
+    $stmt->close();
+    if ($ok!==true || $affected!==1)
+        throw new RuntimeException('manual_standard_capacity_insufficient_or_unconfirmed');
+    return $count;
+}
+
+/**
+ * A pre-003 receipt may be reviewed against its original pays/operator
+ * message only if both 003 ledger tables are PROVEN absent. Missing privileges,
+ * SQL failures or an incomplete/partial migration are never treated as legacy.
+ */
+function achbotManualLegacyLedgerAbsent(mysqli $db): bool {
+    try {
+        $attempts=$db->query("SHOW TABLES LIKE 'payment_attempts'");
+        $transactions=$db->query("SHOW TABLES LIKE 'payment_transactions'");
+        return $attempts instanceof mysqli_result &&
+            $transactions instanceof mysqli_result &&
+            $attempts->num_rows===0 && $transactions->num_rows===0;
+    } catch (Throwable $ignored) {
+        return false;
+    }
+}
+
+/**
  * Reviewable manual service receipt, checked under the exact pays FOR UPDATE
  * lock before any remote fulfillment. A callback never proves settlement.
  * Pre-ledger receipts require a persisted operator delivery; new manual
@@ -595,8 +662,17 @@ function achbotManualServiceApprovalAllowedLocked(mysqli $connection, ?array $pa
         $id = (int)$pay['id'];
         $stmt = $connection->prepare('SELECT provider,stage,checkout_url
             FROM payment_attempts WHERE pay_row_id=? LIMIT 1 FOR UPDATE');
+        if (!$stmt) {
+            if ((int)$connection->errno===1146)
+                return achbotManualLegacyLedgerAbsent($connection);
+            return false;
+        }
         $stmt->bind_param('i', $id);
-        $stmt->execute();
+        if (!$stmt->execute()) {
+            $errno=(int)$stmt->errno;
+            $stmt->close();
+            return $errno===1146 && achbotManualLegacyLedgerAbsent($connection);
+        }
         $attempt = $stmt->get_result()->fetch_assoc();
         $stmt->close();
         if ($attempt === null) {
@@ -610,7 +686,13 @@ function achbotManualServiceApprovalAllowedLocked(mysqli $connection, ?array $pa
         $intent = achbotManualIntentDecode((string)($attempt['checkout_url'] ?? ''), $method);
         return is_array($intent) && !empty($intent['receipt_file_id']);
     } catch (Throwable $error) {
-        return false;
+        // A genuinely historical 23-table database is not a partially
+        // installed ledger. Distinguish SQL errno=1146 from permission,
+        // disconnect, incorrect schema and other errors. Under
+        // MYSQLI_REPORT_OFF prepare() can fail without an exception.
+        $code=(int)$error->getCode();
+        if ($code!==1146) return false;
+        return achbotManualLegacyLedgerAbsent($connection);
     }
 }
 

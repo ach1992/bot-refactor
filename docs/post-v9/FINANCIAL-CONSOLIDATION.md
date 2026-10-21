@@ -409,3 +409,28 @@ owned-MariaDB audience tests; static counts alone do not certify dynamic or
 mixed-audience safety. No global exactly-once effect ledger, active-schema
 migration, installed-log rotation, real provider/financial effect or production
 acceptance is part of this PR. Issue #26 remains OPEN.
+
+
+#### Standard operator approval safety after PR #66 independent review
+
+For a manually reviewed standard BUY_SUB, the durable reservation of the
+entire `agent_count` is coupled to its payment `processing` claim. The
+conditional capacity update happens **once before CREATE**, not afterward.
+Failures before claim COMMIT roll back both claim and reservation; after an
+unknown remote outcome, the claim and reserved capacity stay held for
+operator reconciliation. A missing or replaced plan/server never permits
+retargeting to another Marzban host, including RENEW_SCONFIG edits.
+
+Verified external effects and local order/accounting completion remain
+separate from Telegram QR, message or markup success; positive API outcomes
+are required, and any failed notification after successful local COMMIT is
+a delivery-only issue. A referral credit must also be independently
+confirmed before telling the inviter it succeeded. Never retry a referral
+credit or account CREATE merely because a post-COMMIT Telegram call failed.
+
+A genuinely historical 23-table operator-delivered receipt remains
+eligible for human financial review when **both** 003 tables are proven
+absent. Permission failure, incomplete migration and missing operator
+delivery evidence cannot be treated as a valid historical exception.
+Native source-only R1–R6 regression evidence lives in
+`tools/test_post_v9_standard_integrity.py`; no migration is auto-applied.

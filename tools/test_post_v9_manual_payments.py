@@ -208,8 +208,8 @@ function getPlanDetails(...$args){return [
     'days'=>30,'volume'=>10,'date'=>'synthetic',
     'expire_microdate'=>2000000000,'expire_date'=>2000000000,
     'plan'=>[
-    'type'=>'vless','protocol'=>'vless','server_id'=>1,'acount'=>9,
-    'inbound_id'=>1,'limitip'=>1,'rahgozar'=>0,'custom_path'=>'',
+    'type'=>'normal','protocol'=>'vless','server_id'=>2,'acount'=>9,
+    'inbound_id'=>0,'limitip'=>1,'rahgozar'=>0,'custom_path'=>'',
     'custom_port'=>null,'custom_sni'=>''
 ]];}
 function ensureServerCapacity(...$args){}
@@ -425,6 +425,9 @@ def check():
     cases=[]
     with owned.owned_database() as (work,env):
         purchase.init(work,env,"http://127.0.0.1:9")
+        # This fixture exercises many independent approvals in one database.
+        # Dedicated native capacity tests use truly scarce server_info rows.
+        query(work,env,"UPDATE server_info SET ucount=10000 WHERE id=2")
         query(work,env,"INSERT INTO setting (type,value) VALUES ('BOT_STATES','{\"walletState\":\"on\",\"cartToCartState\":\"on\",\"giftCardState\":\"on\",\"manualUsdtState\":\"on\",\"nowPaymentWallet\":\"on\",\"nowPaymentOther\":\"on\",\"zarinpal\":\"on\",\"nextpay\":\"on\"}')")
         assert len(query(work,env,'SHOW TABLES').splitlines())==23
         query(work,env,(ROOT/'migrations/post-v9/003_payment_attempts.sql').read_text())
@@ -606,8 +609,8 @@ def check():
         # merely helper functions. Every remote action is a local spy.
         def service_pay(key,subject='BUY_SUB',method='bank_transfer',received=True):
             seed(work,env,key)
-            query(work,env,"UPDATE pays SET type='"+subject+"',plan_id=1,"
-                  "server_id=1,day=30,volume=10,description='fixture' "
+            query(work,env,"UPDATE pays SET type='"+subject+"',plan_id=7,"
+                  "server_id=2,day=30,volume=10,description='fixture' "
                   "WHERE hash_id='"+key+"'")
             assert base(key,'claim',method)
             if received:
@@ -795,20 +798,35 @@ def check():
         reject_service('standardsilentinsert','standard_approval','accept')
         cases.append('real_standard_mysqlireportoff_unconfirmed_order_never_approved')
 
+        # Capacity is now reserved BEFORE remote CREATE, in the same
+        # transaction as pays.processing. Force an actual failing SQL UPDATE
+        # under MYSQLI_REPORT_OFF, not a mocked late finisher.
         standard_pay('standardsilentcapacity',method='bank_transfer')
-        silent=run_route(work,env,route_driver,data='acceptstandardsilentcapacity',
-                         actor=9001,route='standard_approval',remote_mode='silent_sql_capacity_failure',
-                         mysqli_report_off=True,
-                         expected_warning='achbot_manual_standard_remote_finish_review')
-        assert [e['name'] for e in silent].count('remote_create')==1,repr(silent)
-        assert query(work,env,"SELECT state FROM pays WHERE hash_id='standardsilentcapacity'")=='processing'
+        query(work,env,"CREATE TRIGGER achbot_test_capacity_fail BEFORE UPDATE "
+              "ON server_info FOR EACH ROW SIGNAL SQLSTATE '45000' "
+              "SET MESSAGE_TEXT='fixture fail prior to remote'")
+        try:
+            silent=run_route(work,env,route_driver,data='acceptstandardsilentcapacity',
+                             actor=9001,route='standard_approval',
+                             mysqli_report_off=True,
+                             expected_warning='achbot_manual_standard_claim_needs_review')
+        finally:
+            query(work,env,"DROP TRIGGER achbot_test_capacity_fail")
+        assert not any(e['name']=='remote_create' for e in silent),repr(silent)
+        assert query(work,env,"SELECT state FROM pays WHERE hash_id='standardsilentcapacity'")=='have_sent'
+        # Reattempt is safe ONLY because reservation rolled back BEFORE any
+        # remote call. The next verified claim produces exactly one CREATE.
+        after=run_route(work,env,route_driver,data='acceptstandardsilentcapacity',
+                        actor=9001,route='standard_approval')
+        assert [e['name'] for e in after].count('remote_create')==1,repr(after)
+        assert query(work,env,"SELECT state FROM pays WHERE hash_id='standardsilentcapacity'")=='approved'
         reject_service('standardsilentcapacity','standard_approval','accept')
-        cases.append('real_standard_mysqlireportoff_unconfirmed_capacity_never_approved')
+        cases.append('real_standard_mysqlireportoff_capacity_reservation_failure_prevents_create')
 
         def renewal_pay(key,method='gift_card'):
             service_pay(key,subject='RENEW_SCONFIG',method=method)
             query(work,env,"UPDATE pays SET day=0,volume=0,"
-                  """description='{"uuid":"fixture-uuid","remark":"fixture-remark","marzban":true}'"""
+                  """description='{"uuid":"fixture-uuid","remark":"fixture-remark","server_id":2,"marzban":true}'"""
                   " WHERE hash_id='"+key+"'")
             return key
 

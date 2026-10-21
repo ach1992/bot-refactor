@@ -51,7 +51,7 @@ to a real payment processor is authorized by this matrix.
 | M06 Standard BUY_SUB accept{hash} | Admin, exact have_sent, correct subject, delivered original receipt in reviewed manual attempt | Atomically claim processing before remote work; approved only after checked local commit | Unreviewed/foreign-provider/stale buttons show refusal | One remote create max across concurrent approvals; failed Marzban/SQL stays processing for review | manual: real_standard_operator_unreviewed_receipt_denied, real_standard_concurrent_admins_one_remote_create, real_standard_verified_receipt_one_delivery_no_replay — PASS(S) |
 | M07 Standard RENEW_SCONFIG accept{hash} | Admin, original renewal order, manual reviewed photo and message | Same exclusive processing fence and guarded completion | Do not announce delivery on remote ambiguity | Remote PUT/response loss and local insert failure cannot re-trigger renewal | manual: real_standard_renewal_receipt_one_remote_change_no_replay, real_standard_renewal_uncertain_remote_change_no_replay, real_standard_renewal_mysqlireportoff_unconfirmed_order_never_approved — PASS(S) |
 | M08 Standard multi-account partial | Authorized multi-account standard purchase, account N errors | Keep processing with no automatic re-approval | Operator gets reconciliation notice | Partial remote effects may survive local rollback; no replay | manual: real_standard_partial_second_account_stays_reconcile_no_replay — PASS(S) |
-| M09 Standard post-remote local failure | Remote completed, order INSERT/capacity fails, MYSQLI_REPORT_OFF variant | Never re-arm have_sent; local transaction rolls back where possible | Operator message without raw private SQL text | No second remote call on callback replay | manual: real_standard_remote_success_local_write_failed_no_automatic_replay, real_standard_mysqlireportoff_unconfirmed_order_never_approved, real_standard_mysqlireportoff_unconfirmed_capacity_never_approved — PASS(S) |
+| M09 Standard post-remote local failure | Remote completed, order INSERT/capacity fails, MYSQLI_REPORT_OFF variant | Never re-arm have_sent; local transaction rolls back where possible | Operator message without raw private SQL text | No second remote call on callback replay | manual: real_standard_remote_success_local_write_failed_no_automatic_replay, real_standard_mysqlireportoff_unconfirmed_order_never_approved, real_standard_mysqlireportoff_capacity_reservation_failure_prevents_create — PASS(S) |
 | M12 Standard post-COMMIT Telegram outage | Verified manual standard purchase/renewal; remote and exact SQL COMMIT already succeeded | Remain **approved**; payment/service record cannot be undone by messaging | Distinct Persian operator follow-up; no misleading remote/financial uncertainty even if operator alert also fails | No second remote action on repeated callback; stage and pay ID logged | manual: real_standard_postcommit_telegram_failure_approved_no_replay_truthful_review, real_standard_renewal_postcommit_notification_outage_preserves_approved_no_replay, real_standard_renewal_both_telegram_messages_fail_without_fatal_or_replay — PASS(S) |
 | M13 Admin message edit and failed remote outcome | Approved standard order with failing Telegram keyboard edit, or explicit failed remote response/warning channel outage | Preserve approved when button edit fails; preserve processing for remote ambiguity | No raw exception to admin; bounded pay ID, stage and exception class/code in protected logs | No false local order/credit on rejected remote result, no repeated provisioning | manual: real_standard_operator_buttons_failure_does_not_leak_raw_exception, real_standard_explicit_remote_failure_kept_for_review_without_local_order, real_standard_ambiguous_remote_and_failed_admin_notice_no_fatal_no_replay, real_standard_renewal_explicit_remote_failure_no_local_order_no_replay — PASS(S) |
 | M10 Custom BUY_SUB accCustom | Admin, chosen custom day/volume, manually reviewed photo | One service claim and approved state only after effect | Standard plan or non-admin callback rejected | Remote uncertainty/replays stay reviewable | manual: real_custom_authorized_review_state_approves_only_once, uncertain_custom_external_effect_operator_reconciliation_no_retry — PASS(S) |
@@ -92,3 +92,54 @@ Update each issue with candidate HEAD/TREE, CI SHA, exact outcome and
 remaining authorization gates; keep #51 and #26 open until required installed
 and financial/operator acceptance is genuinely obtained or Owner explicitly
 resolves the gate.
+
+
+### PR #66 independent R1–R6 remediation — source-only acceptance (2026-10-22)
+
+The author-separated reviewer of PR #66 exact HEAD `2fc4f57` returned
+**COMPLETE / CHANGES_REQUIRED** with six REQUIRED findings. Until a fresh
+author-separated verdict on the revised SHA and a separate Owner Merge grant,
+this candidate remains **not approved to integrate**.
+
+- **R1 capacity:** a standard BUY_SUB reserves its FULL verified account count
+  with `pays.processing` before remote CREATE in the same short InnoDB
+  transaction. A conditional `server_info.ucount>=count` UPDATE and actual
+  affected-row check prevent oversubscription for concurrent different
+  buyers. Existing `decreaseServerCapacity` strict writes also require
+  remaining capacity. An unknown/partial external CREATE leaves original
+  processing and capacity reservation in place **for human reconciliation**;
+  capacity is not automatically released or charged a second time.
+- **R2 renewal target:** `RENEW_SCONFIG` carries original persisted payment
+  `server_id` across the committed claim, requires exact plan/server/inbound/
+  payment identity just before outbound edit, and uses the original server
+  for the external call. A reassigned plan with the same account remark
+  never causes an edit on the new server.
+- **R3 Telegram:** downstream `sendQrFromLink`, `sendMessage` and
+  `editKeys` returns must positively confirm success; failure, `ok=false`
+  or NULL are operator-notified post-COMMIT uncertainty, never financial
+  rollback or service re-CREATE. `editKeys` propagates actual transport
+  result; QR account ordinal and failed follow-up stage are visible privately.
+- **R4 inviter reward:** require one exact existing inviter, bounded
+  positive reward and confirmed conditional wallet UPDATE/affected row
+  before claiming a credit. Missing/overflow/SQL failure do not generate
+  false credited notices. After a confirmed credit, Telegram failure
+  cannot cause re-credit; original payment and inviter identity are
+  provided for independent human reconciliation, not replay.
+- **R5 legacy receipt:** only when both 003 attempt/transaction tables
+  are positively proven absent may the already-authenticated original
+  operator-delivered 23-table receipt proceed. Partial 003, unknown
+  schema, broken SQL, missing operator evidence remain denied. No
+  backfill or migration occurs.
+- **R6 real-helper assurance:** `tools/test_post_v9_standard_integrity.py`
+  executes real Purchase/Core, Purchase/OrderWrites, ReceiptHelpers,
+  RenewalHelper and ReferralReward PHP against private socket-only
+  MariaDB. Network Marzban/Telegram are isolated spies only. The separate
+  28-case gate tests total/multi-account/concurrent capacity, provider
+  uncertainty, nonthrowing SQL, target reassignment, nonthrowing Telegram,
+  reward failure and full original/partial/complete ledger conditions.
+  The pre-existing 239 synthetic-route cases remain required separately.
+
+These are **source-only** assertions. No real merchant receipt was settled,
+no genuine Telegram/Marzban account was modified, no 003/007 was installed,
+and true end-to-end crash recovery/installer/operator acceptance is NOT
+established. Issues #26/#51 remain open.
