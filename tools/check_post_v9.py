@@ -954,6 +954,8 @@ def main():
             "unknown_post_lost_frozen_no_replay",
             "unknown_get_missing_frozen_no_replay",
             "unknown_get_unavailable_frozen_no_replay",
+            "unknown_wrong_expiry_fraction_frozen_no_replay",
+            "unknown_wrong_quota_fraction_frozen_no_replay",
             "unknown_other_note_frozen_no_replay",
             "unknown_target_change_frozen_no_replay",
             "unknown_endpoint_change_frozen_no_replay",

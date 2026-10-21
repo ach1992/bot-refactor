@@ -176,13 +176,24 @@ function achbotCreatePaidAccount(mysqli $db, int $payId, int $ordinal, array $p)
             throw new RuntimeException('effect_remote_create_unconfirmed');
         }
         $remote=getMarzbanUser($serverId,$remark,null,true);
+        // Marzban must prove exact integer seconds and bytes. PHP's (int)
+        // conversion truncates fractional JSON numbers and is not evidence
+        // that a paid account actually has the promised limit.
+        $exactNonnegative=static function($value): ?int {
+            if (!is_int($value) &&
+                (!is_string($value) ||
+                 preg_match('/^(0|[1-9][0-9]*)$/D',$value)!==1)) return null;
+            $parsed=filter_var($value,FILTER_VALIDATE_INT,
+                               ['options'=>['min_range'=>0]]);
+            return $parsed===false?null:$parsed;
+        };
         $note='achbot:v1:'.$operation;
         if (!is_object($remote) ||
             (string)($remote->username??'')!==$remark ||
             (string)($remote->note??'')!==$note ||
             !isset($remote->expire,$remote->data_limit) ||
-            !is_numeric($remote->expire) || !is_numeric($remote->data_limit) ||
-            (int)$remote->expire!==$expiry || (int)$remote->data_limit!==$bytes) {
+            $exactNonnegative($remote->expire)!==$expiry ||
+            $exactNonnegative($remote->data_limit)!==$bytes) {
             throw new RuntimeException('effect_remote_readback_unverified');
         }
         // The target might have been reconfigured during the remote call.
