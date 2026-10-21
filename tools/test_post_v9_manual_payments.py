@@ -1068,8 +1068,9 @@ def check():
         assert base('legacyreviewservice','service_guard',subject='custom') is False
         cases.append('legacy_operator_receipt_requires_persisted_delivery_evidence')
 
-        # Admin callback and scheduler claim contend for one pays row. Their
-        # ordering must never lead to a second remote service creation.
+        # Admin callback and scheduler claim contend for one pays row. If
+        # bank Cron wins BUY_SUB remains processing until verified fulfillment;
+        # neither contender can send a second remote CREATE.
         from concurrent.futures import ThreadPoolExecutor
         for i in range(4):
             key='servicecallbackrace'+str(i)
@@ -1083,7 +1084,7 @@ def check():
             state=query(work,env,"SELECT state FROM pays WHERE hash_id='"+key+"'")
             creates=sum(event['name']=='remote_create' for event in admin_events)
             assert (state,creates,auto_won) in (
-                ('approved',1,False),('auto_cart_approved',0,True)),repr((key,state,creates,auto_won,admin_events))
+                ('approved',1,False),('processing',0,True)),repr((key,state,creates,auto_won,admin_events))
             reject_service(key,'checkout','accCustom')
         cases.append('real_custom_operator_and_bank_scheduler_race_single_service_claim')
 
