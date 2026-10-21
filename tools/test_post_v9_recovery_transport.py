@@ -197,6 +197,13 @@ def check():
         scenarios.append('pinned_same_exact_endpoint_authenticated_login_and_account_get')
         server.trace.clear()
 
+        local_host_url=server.url.replace('127.0.0.1','localhost')
+        local=call(work,env,driver,op='direct',url=local_host_url,
+                   username=server.username)
+        expect_two(local,matching=True)
+        server.trace.clear()
+        scenarios.append('http_localhost_credential_login_resolves_pinned_loopback_only')
+
         for mode,expected_get in (
             ('login_redirect',False),('login_wrong_status',False),
             ('login_empty_token',False),('login_bad_type',False),

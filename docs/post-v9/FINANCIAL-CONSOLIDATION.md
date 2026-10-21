@@ -532,8 +532,11 @@ configured credentials and initial resolved IP for login and its one
 account GET. It never rereads a mutable server ID between calls, follows no
 redirects, and requires authenticated HTTP 200 and bounded valid responses;
 HTTPS uses normal peer and hostname verification. Plain HTTP is accepted
-only for a loopback endpoint (e.g. an isolated local test service); other
-unprotected HTTP destinations fail closed without sending credentials.
+only for a loopback endpoint (e.g. an isolated local test service).
+An `http://localhost` login is explicitly resolved to `127.0.0.1`
+BEFORE credentials are sent, so a poisoned local DNS/hosts record
+cannot retarget the initial request. Other unprotected HTTP destinations
+fail closed without sending credentials.
 Changing provider configuration during this process invalidates subsequent
 local comparison. This may make an existing HTTP panel ineligible for
 readback until a separately approved secure endpoint is configured;

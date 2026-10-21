@@ -68,6 +68,11 @@ function achbotRecoveryHttp(string $url, ?array $form, array $headers,
             if (filter_var($pinnedIp,FILTER_VALIDATE_IP)===false) return null;
             $resolvedIp=str_contains($pinnedIp,':')?'['.$pinnedIp.']':$pinnedIp;
             $options[CURLOPT_RESOLVE]=[$host.':'.$port.':'.$resolvedIp];
+        } elseif (strtolower($parts['scheme'])==='http' &&
+                  strtolower($host)==='localhost') {
+            // Never trust hosts-file/DNS resolution for a credential-bearing
+            // HTTP localhost login. Force the actual physical loopback peer.
+            $options[CURLOPT_RESOLVE]=[$host.':'.$port.':127.0.0.1'];
         }
         curl_setopt_array($ch,$options);
         $ok=curl_exec($ch);

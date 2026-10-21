@@ -1109,7 +1109,7 @@ def main():
                                +transport_run.stderr[-6000:])
         transport=json.loads(transport_path.read_text())
         if not (transport.get("complete") is True and
-                transport.get("cases")>=26 and
+                transport.get("cases")>=27 and
                 transport.get("real_curl_login_and_get") is True and
                 transport.get("loopback_only") is True and
                 transport.get("max_account_get_per_inspection")==1 and
