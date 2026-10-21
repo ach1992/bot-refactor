@@ -409,3 +409,72 @@ owned-MariaDB audience tests; static counts alone do not certify dynamic or
 mixed-audience safety. No global exactly-once effect ledger, active-schema
 migration, installed-log rotation, real provider/financial effect or production
 acceptance is part of this PR. Issue #26 remains OPEN.
+
+### Minimal per-account Marzban effects (Issue #26, proposed Migration 007)
+
+This is the **new source-only incremental implementation**, NOT an installed
+migration or a settlement/completion certificate. Migration
+`migrations/post-v9/007_service_effects.sql` adds **one** indexed InnoDB
+`service_effects` table without changing the frozen original 23-table schema,
+payment identity migrations 003, or current customer records. Install 001/003
+where applicable first. 007 must be explicitly approved, preflighted,
+backed-up and installed on the chosen database **before deploying a runtime
+that uses it for paid account creation**; deploying only the PHP ZIP would
+otherwise stop new paid service fulfillment for safe manual review.
+
+Every line of a `BUY_SUB` payment carries a unique local
+`(pay_row_id,effect_kind='create',ordinal)` reservation with a random immutable
+`operation_id`, pinned Marzban logical server/group **and concrete
+endpoint fingerprint**, exact username, plan, bytes, expiry and request
+fingerprint. A unique `(target_key,remote_username)` constraint prevents
+accidental reuse of one Marzban account name across separate payments on
+the same explicitly grouped physical panel; otherwise `target_key` is
+scoped to its individual logical server. The **ordinal is the line-item
+identity within that one paid order, NOT a count of server accounts**.
+The reservation commits before the external POST, while a short local
+payment-row lock protects validation and the unique line reservation.
+A malformed/missing unique index blocks dispatch. The Marzban CREATE includes
+a one-operation `note=achbot:v1:<operation_id>`, fixed expiry and the original
+username. Its answer and a subsequent **timeout-bounded, status-checked
+authenticated GET** of that exact username must match username, note, bytes
+and expiry before a transition
+`dispatching -> verified`. A successful matching `orders_list` INSERT
+atomically joins its exact new `id` to the effect and marks
+`local_recorded` in the caller's local transaction. Hosted purchases
+commit each order INSERT and ledger link in one short SQL transaction,
+never while a remote POST is in flight; link failure rolls back that
+local order rather than leaving an unlinked row. If a later account
+fails, earlier independently committed accounts remain reviewable.
+
+An unavailable POST response, GET/permission failure, mismatched note, changed
+logical panel grouping or concrete endpoint, SQL failure or lost commit
+acknowledgement **does not
+authorize a second remote CREATE, a newly randomized name, an automatic refund
+or a false delivered status**. The row remains available for privileged
+operator reconciliation. Remote account counts, plan capacity, or a current
+404 are never proof of success or non-execution; an unrelated account can be
+created/deleted at any time. The remote `note` is mutable: readback is
+corroboration, not a cryptographic remote idempotency guarantee, and absence
+after a possible deletion requires investigation. There is **no automated
+claim that exactly-once delivery or end-to-end recovery is solved**.
+
+The first consumers are standard manually approved `BUY_SUB` and hosted
+NOWPayments/NextPay/Zarinpal `BUY_SUB`. Existing original wallet/customer
+checkout, custom/manual variants, old scheduled receipt processing, renewal,
+deletion, free trial and independent admin account creation are **not yet
+migrated to this effect journal**; their existing fences remain unchanged.
+Those source paths cannot claim the new journal's assurance. Move them
+incrementally only after their payment/transaction boundaries and actual
+operator proof are reconciled. No new Cron, reconciliation actor, account
+backfill, repair button or external replay is introduced by 007.
+
+**Owner-performed test gate** after independent source review and a separate
+authorized disposable installation: confirm installed Marzban fork's
+`POST /api/user` 200 response, 409 no-rename behavior, persistent `note`
+on readback and unchanged username/data/expiry, provider login/GET timeout,
+two-account partial creation and readback, multiple logical entries sharing
+a physical panel via explicit `panel_group_id`, concurrent unrelated
+create/delete, Telegram operator/customer status and real payment proof.
+Use only disposable test accounts and authorized test financial instruments.
+Capture bounded operation/order/effect identifiers without exposing tokens
+or real customer data. No tenant SQL/production installation performed here.

@@ -100,7 +100,7 @@ jobs:
           (cd "$RUNNER_TEMP/achbot-marzban-only" && sha256sum payment-attempt-migration.sql > payment-attempt-migration.sha256)
           # Independent, separately approved source-only migrations.
           # These assets never execute as part of CI/package installation.
-          for id in 004_automatic_renewal_attempts 005_admin_wallet_adjustments 006_payment_message_refs; do
+          for id in 004_automatic_renewal_attempts 005_admin_wallet_adjustments 006_payment_message_refs 007_service_effects; do
             cp "migrations/post-v9/${id}.sql" "$RUNNER_TEMP/achbot-marzban-only/${id}.sql"
             (cd "$RUNNER_TEMP/achbot-marzban-only" && sha256sum "${id}.sql" > "${id}.sha256")
           done
@@ -114,7 +114,7 @@ jobs:
           printf '## AChBot post-V9 Marzban-only acceptance\n\n' >> "$GITHUB_STEP_SUMMARY"
           printf 'New candidate HEAD: `%s`\n\n' "$(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
           printf 'New candidate tree: `%s`\n\n' "$(git rev-parse HEAD^{tree})" >> "$GITHUB_STEP_SUMMARY"
-          printf 'Current 93-member source (including optional CLI Cron runner and payment lifecycle) preserves the 23 original tables. Optional migrations 001, 003, 004, 005, 006 are separately checksum-shipped, never automatically installed. CI verifies required migrations only on disposable MariaDB. Frozen historical V9 source/schema exercised independently at pinned commit 7eb077fd. Source ZIP does NOT apply SQL; separately shipped migrations require independent backup, Owner approval and operator proof. No financial/production deployment approval.\n\n' >> "$GITHUB_STEP_SUMMARY"
+          printf 'Current 94-member source (including optional CLI Cron runner and payment lifecycle) preserves the 23 original tables. Optional migrations 001, 003, 004, 005, 006, 007 are separately checksum-shipped, never automatically installed. CI verifies required migrations only on disposable MariaDB. Frozen historical V9 source/schema exercised independently at pinned commit 7eb077fd. Source ZIP does NOT apply SQL; separately shipped migrations require independent backup, Owner approval and operator proof. No financial/production deployment approval.\n\n' >> "$GITHUB_STEP_SUMMARY"
           printf '```json\n' >> "$GITHUB_STEP_SUMMARY"
           cat "$RUNNER_TEMP/post-v9-php84.json" >> "$GITHUB_STEP_SUMMARY"
           printf '\n```\n' >> "$GITHUB_STEP_SUMMARY"

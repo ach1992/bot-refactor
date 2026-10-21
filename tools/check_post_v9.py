@@ -39,7 +39,7 @@ def source_checks():
         if (ROOT / field).read_bytes() != cmd("show", V9+":"+field):
             raise RuntimeError("Changed historical schema/private-template: " + field)
     files=package.members()
-    if len(files)!=93 or len(set(files))!=len(files):
+    if len(files)!=94 or len(set(files))!=len(files):
         raise RuntimeError("Source-only runtime file inventory changed")
     if any((ROOT/name).exists() or name in files
            for name in package.RETIRED_RUNTIME_MEMBERS):
@@ -919,17 +919,53 @@ def main():
             "nextpay_callback_provider_scoped_colliding_external_reference",
             "zarinpal_callback_provider_scoped_colliding_external_reference",
         }
+        mandatory_finance.add('hosted_order_and_effect_link_atomic_rollback')
         cases_finance = {case.get("case") for case in finance.get("scenarios",[])
                          if case.get("pass_")}
         if not (finance.get("complete") and finance.get("cases")>=153 and
                 mandatory_finance.issubset(cases_finance) and
                 finance.get("schema_tables")==23 and
-                finance.get("current_schema_tables")==25 and
+                finance.get("current_schema_tables")==26 and
                 finance.get("shared_payment_attempt_ledger_tested") and
                 finance.get("original_mariadb_socket_only") and
                 finance.get("synthetic_payment_spy") and
                 finance.get("real_provider_requests")==0):
             raise RuntimeError("Original-schema finance and NOWPayments finality assurance incomplete")
+        # #26 distinct account identity: verified by source-native PHP and
+        # independent socket-only MariaDB, not by changes in account totals.
+        effect_path=Path(tmp)/"account-service-effects.json"
+        subprocess.run(
+            ["python3",str(ROOT/"tools/test_post_v9_service_effects.py"),
+             "--run-disposable","--report",str(effect_path)],
+            cwd=ROOT,check=True,timeout=125,capture_output=True)
+        effects=json.loads(effect_path.read_text())
+        required_effects={
+            "missing_007_no_remote_post",
+            "malformed_007_unique_index_no_remote_post",
+            "one_reserved_unique_operation_verified_by_exact_note_username_quota_expiry",
+            "same_pay_line_replay_stopped_before_post",
+            "two_concurrent_requests_one_remote_post",
+            "unknown_post_lost_frozen_no_replay",
+            "unknown_get_missing_frozen_no_replay",
+            "unknown_get_unavailable_frozen_no_replay",
+            "unknown_other_note_frozen_no_replay",
+            "unknown_target_change_frozen_no_replay",
+            "unknown_endpoint_change_frozen_no_replay",
+            "cross_payment_same_target_username_rejected_before_post",
+            "explicit_physical_group_alias_username_collision_before_post",
+            "same_total_after_unrelated_delete_create_never_used_as_success_signal",
+            "two_account_partial_remote_no_bulk_replay",
+            "exact_local_order_fk_join_and_no_second_finalize",
+        }
+        if not (effects.get("complete") and effects.get("cases")>=22
+                and required_effects.issubset(effects.get("scenarios",[]))
+                and effects.get("source_real_php") is True
+                and effects.get("owned_mariadb_only") is True
+                and effects.get("real_provider_requests")==0
+                and effects.get("real_financial_effects")==0
+                and effects.get("external_account_count_not_used") is True
+                and effects.get("installed_operator_tested") is False):
+            raise RuntimeError("Per-account service operation ledger contract incomplete")
         manual_path=Path(tmp)/"manual-payment-methods.json"
         try:
             subprocess.run(["python3",str(ROOT/"tools/test_post_v9_manual_payments.py"),
@@ -1223,7 +1259,7 @@ def main():
                        cwd=ROOT,check=True,timeout=60,capture_output=True)
         swap=json.loads(overlay_report.read_text())
         if not (swap.get("complete") and swap.get("phase_count")==4
-                and swap.get("runtime_members")==93
+                and swap.get("runtime_members")==94
                 and swap.get("historical_runtime_members")==92
                 and swap.get("retired_old_payment_files_absent_after_source_upgrade")
                 and swap.get("source_roll_forward_and_back_byte_identical")
@@ -1247,6 +1283,7 @@ def main():
                     "customer_method_serialization":method_race,
                     "wallet_authorization_freshness":wallet_freshness,
                     "latest_review_f1_f4":reviewer_f1_f4,
+                    "service_effects":effects,
                     "manual_payment_method_isolation":manual,
                     "manual_crypto_destination_and_admin_guards":crypto_guard,
                     "payment_reference_assurance":payment_identity,
@@ -1280,6 +1317,7 @@ def main():
                       "checkout_serialization_cases":checkout_race["cases"],
                       "customer_method_serialization_cases":method_race["cases"],
                       "wallet_authorization_freshness_cases":wallet_freshness["cases"],
+                      "service_effect_cases":effects["cases"],
                       "manual_payment_isolation_cases":manual["cases"],
                       "manual_crypto_guard_cases":crypto_guard["cases"],
                       "payment_reference_length":payment_identity["default_length"],

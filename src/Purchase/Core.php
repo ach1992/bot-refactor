@@ -591,7 +591,9 @@ if (!function_exists('createServerAccount')) {
         $expire_microdate,
         $netType,
         $rahgozar,
-        $limitip
+        $limitip,
+        ?string $effectOperationId = null,
+        ?int $effectExpire = null
     ) {
         // This provider seam is explicit: do not reinterpret unknown/retired
         // X-UI or inbound-based plan records as Marzban. Never send an API
@@ -600,8 +602,10 @@ if (!function_exists('createServerAccount')) {
             return [(object)['success' => false, 'msg' => 'unsupported_panel'], $remark, $port];
         }
 
-        $response = addMarzbanUser($server_id, $remark, $volume, $days, $fid);
-        if (is_object($response) && !$response->success
+        $note = $effectOperationId === null ? null : 'achbot:v1:'.$effectOperationId;
+        $response = addMarzbanUser($server_id, $remark, $volume, $days, $fid, $note, $effectExpire);
+        // A durable effect can NEVER change its remote username and retry.
+        if ($effectOperationId === null && is_object($response) && !$response->success
             && isset($response->msg) && $response->msg === 'User already exists') {
             $remark .= rand(1111, 99999);
             $response = addMarzbanUser($server_id, $remark, $volume, $days, $fid);

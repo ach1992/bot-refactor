@@ -10,6 +10,7 @@ if (
     $text != $buttonValues['cancel'] &&
     ($from_id == $admin || ($userInfo['isAdmin'] ?? false) == true)
 ) {
+    require_once __DIR__ . '/../ServiceEffects.php';
     $hash_id = $match[1];
     $payInfo = null;
     $claimOpen = false;
@@ -215,23 +216,20 @@ if (
             [$port] = getNextPortAndIncrease('settings/temp.txt', $portType);
 
             $remark = buildRemark($botState, $srv_remark, $payInfo['description'], $uid);
+            if ($accountCount>1 && (($botState['remark']??'')==='manual')) {
+                $remark .= '_'.$i;
+            }
             $lastRemarkForAdminMsg = $remark;
 
-            [$response, $remark, $port] = createServerAccount(
-                $serverType,
-                $server_id,
-                $inbound_id,
-                $fid,
-                $remark,
-                $volume,
-                $days,
-                $uniqid,
-                $protocol,
-                $port,
-                $expire_microdate,
-                $netType,
-                $rahgozar,
-                $limitip
+            [$response, $remark, $port, $effectId] = achbotCreatePaidAccount(
+                $connection, $payId, $i, [
+                    'user_id'=>$uid,'server_type'=>$serverType,'server_id'=>$server_id,
+                    'inbound_id'=>$inbound_id,'plan_id'=>$fid,
+                    'remark'=>$remark,'volume'=>$volume,'days'=>$days,
+                    'uniqid'=>$uniqid,'protocol'=>$protocol,'port'=>$port,
+                    'expire_microdate'=>$expire_microdate,'net_type'=>$netType,
+                    'rahgozar'=>$rahgozar,'limitip'=>$limitip
+                ]
             );
 
             ensureAccountCreationSucceeded($response, $serverInfo, $inbound_id, $admin, true);
@@ -265,6 +263,7 @@ if (
             );
 
             $toInsertOrders[] = [
+                'effect_id'    => $effectId,
                 'uid'          => $uid,
                 'token'        => $token,
                 'fid'          => $fid,
@@ -299,7 +298,7 @@ if (
             throw new RuntimeException('manual_standard_finish_begin_failed');
         try {
             foreach ($toInsertOrders as $o) {
-                insertOrder(
+                $orderId = insertOrder(
                     $connection,
                     $o['uid'],
                     $o['token'],
@@ -317,6 +316,7 @@ if (
                     $o['agent_bought'],
                     true
                 );
+                achbotLinkPaidAccountEffect($connection,(int)$o['effect_id'],(int)$orderId);
             }
 
             decreaseServerCapacity($connection, $server_id, $inbound_id, $fid, $accountCount, true);

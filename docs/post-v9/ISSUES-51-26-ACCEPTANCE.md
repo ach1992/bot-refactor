@@ -92,3 +92,35 @@ Update each issue with candidate HEAD/TREE, CI SHA, exact outcome and
 remaining authorization gates; keep #51 and #26 open until required installed
 and financial/operator acceptance is genuinely obtained or Owner explicitly
 resolves the gate.
+
+## Issue #26 per-account identity: staged source-only acceptance
+
+The new additive `007_service_effects.sql` and
+`src/Finance/ServiceEffects.php` provide the first **BUY_SUB-only**
+postpayment remote-effect journal. They are not a generic service/wallet
+transaction framework and are not a reconciliation autopilot. No account
+count, deltas in counts, or absence in a remote users listing is admissible
+as delivery proof. A current 404 after a possible prior creation/deletion
+also cannot authorize reissue.
+
+Execute `python3 tools/test_post_v9_service_effects.py --run-disposable`:
+native PHP 8.1/8.4 and disposable MariaDB must prove unique
+`(pays,kind,ordinal)`, pre-POST durable dispatch, real concurrent racing
+calls producing at most one POST, exact remote `username/note/expiry/bytes`
+readback, unknown POST/GET and wrong-identity freezes, changing panel
+group/endpoint, cross-payment same-panel username collisions, two-account
+partial, hosted short-transaction order/link rollback, exact orders_list
+foreign-key linkage, and unrelated
+create+delete despite an unchanged remote count. Required 007 absence **or
+wrong unique index** must block new POST without silently reverting to an
+unjournaled fallback. Loopback HTTP covers strict readback and authentication
+failures without contacting any installed panel.
+The aggregate `tools/check_post_v9.py` includes these cases as mandatory.
+
+Real standard manual approval and hosted payment suites also assert their
+actual per-line ledger states (`verified` without order for partial
+manuals; `local_recorded` only for checked order persistence). Source
+success does not certify installed Marzban behavior, live provider
+settlement or Telegram delivery. See FINANCIAL-CONSOLIDATION.md for the
+precise unprotected legacy/non-BUY_SUB routes and Owner test gate. Keep
+Issues #26 and #51 open through separate installed acceptance.

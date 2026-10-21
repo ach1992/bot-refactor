@@ -116,7 +116,7 @@ function getMarzbanUserInfo($server_id, $remark){
     return (object) $configInfo;
 }
 
-function getMarzbanUser($server_id, $remark, $token = null){
+function getMarzbanUser($server_id, $remark, $token = null, bool $strict = false){
     global $connection;
     
     $stmt = $connection->prepare("SELECT * FROM server_config WHERE id=?");
@@ -141,9 +141,22 @@ function getMarzbanUser($server_id, $remark, $token = null){
         'Authorization: Bearer ' . $token->access_token
     ));
 
-    $response = json_decode(curl_exec($curl));
-    
+    if ($strict) {
+        curl_setopt($curl,CURLOPT_CONNECTTIMEOUT,5);
+        curl_setopt($curl,CURLOPT_TIMEOUT,20);
+        curl_setopt($curl,CURLOPT_SSL_VERIFYPEER,true);
+        curl_setopt($curl,CURLOPT_SSL_VERIFYHOST,2);
+    }
+    $raw=curl_exec($curl);
+    $http=(int)curl_getinfo($curl,CURLINFO_HTTP_CODE);
     curl_close($curl);
+    // In an effect readback, HTTP 404, transport failure and invalid JSON
+    // are UNKNOWN evidence, not proof that CREATE was never applied.
+    if ($strict && ($raw===false || $http!==200))
+        return (object)['success'=>false,'uncertain'=>true,'msg'=>'effect_get_unconfirmed'];
+    $response=json_decode((string)$raw);
+    if ($strict && (!is_object($response) || isset($response->detail)))
+        return (object)['success'=>false,'uncertain'=>true,'msg'=>'effect_get_invalid'];
     return $response;
 }
 
@@ -178,7 +191,7 @@ function getMarzbanHosts($server_id){
     return $response;
 }
 
-function addMarzbanUser($server_id, $remark, $volume, $days, $plan_id){
+function addMarzbanUser($server_id, $remark, $volume, $days, $plan_id, ?string $operationNote = null, ?int $fixedExpire = null){
     global $connection;
     
     $stmt = $connection->prepare("SELECT * FROM server_config WHERE id=?");
@@ -210,10 +223,18 @@ function addMarzbanUser($server_id, $remark, $volume, $days, $plan_id){
     $postFields = array(
         "inbounds" => $planInfo['inbounds'],
         "proxies" =>  $dataproxy,
-        "expire" => time() + (86400 * $days),
+        "expire" => $fixedExpire ?? (time() + (86400 * $days)),
         "data_limit" => $volume * 1073741824,
         "username" => urlencode($remark)
     );
+    if ($operationNote !== null) {
+        // The original operation key is pinned before the POST. Marzban's
+        // readback must return this marker, not merely a matching username.
+        if (!preg_match('/^achbot:v1:[a-f0-9]{32}$/D', $operationNote)) {
+            return (object)['success'=>false, 'msg'=>'invalid_effect_note'];
+        }
+        $postFields['note']=$operationNote;
+    }
 
     $curl = curl_init();
     curl_setopt($curl, CURLOPT_URL, $panel_url . "/api/user");
@@ -225,12 +246,24 @@ function addMarzbanUser($server_id, $remark, $volume, $days, $plan_id){
         'Content-Type: application/json'
     ));
     curl_setopt($curl, CURLOPT_POSTFIELDS, json_encode($postFields));
-
-    $response = json_decode(curl_exec($curl));
+    if ($operationNote !== null) {
+        curl_setopt($curl,CURLOPT_CONNECTTIMEOUT,5);
+        curl_setopt($curl,CURLOPT_TIMEOUT,20);
+        curl_setopt($curl,CURLOPT_SSL_VERIFYPEER,true);
+        curl_setopt($curl,CURLOPT_SSL_VERIFYHOST,2);
+    }
+    $raw=curl_exec($curl);
+    $http=(int)curl_getinfo($curl,CURLINFO_HTTP_CODE);
     curl_close($curl);
-    if(isset($response->detail) || !isset($response->links)){
-		$detail = $response->detail;
-        return (object) ['success'=>false, 'msg' => is_object($detail)?implode("-", (array) $detail):$detail];
+    $response=json_decode((string)$raw);
+    if ($operationNote !== null && ($raw===false || $http!==200 || !is_object($response) ||
+                                     isset($response->detail) || !isset($response->links))) {
+        // Never claim non-success/409 means the POST had no remote effect.
+        return (object)['success'=>false,'msg'=>'effect_create_response_unconfirmed'];
+    }
+    if (!is_object($response) || isset($response->detail) || !isset($response->links)) {
+        $detail=is_object($response)?($response->detail??''):'';
+        return (object)['success'=>false,'msg'=>is_object($detail)?implode("-", (array)$detail):$detail];
     }
     $userInfo = getMarzbanUserInfo($server_id, $remark);
 

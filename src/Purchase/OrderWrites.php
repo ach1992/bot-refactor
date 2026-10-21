@@ -46,10 +46,12 @@ if (!function_exists('insertOrder')) {
         );
         $saved=$stmt->execute();
         $inserted=$stmt->affected_rows;
+        $orderId=($saved===true && $inserted===1) ? (int)$stmt->insert_id : 0;
         $stmt->close();
-        if ($requireConfirmed && ($saved!==true || $inserted!==1)) {
+        if ($requireConfirmed && ($saved!==true || $inserted!==1 || $orderId<=0)) {
             throw new RuntimeException('order_insert_unconfirmed');
         }
+        return $orderId;
     }
 }
 

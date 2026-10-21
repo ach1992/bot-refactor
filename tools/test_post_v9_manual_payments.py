@@ -209,11 +209,20 @@ function getPlanDetails(...$args){return [
     'expire_microdate'=>2000000000,'expire_date'=>2000000000,
     'plan'=>[
     'type'=>'vless','protocol'=>'vless','server_id'=>1,'acount'=>9,
-    'inbound_id'=>1,'limitip'=>1,'rahgozar'=>0,'custom_path'=>'',
+    'inbound_id'=>0,'limitip'=>1,'rahgozar'=>0,'custom_path'=>'',
     'custom_port'=>null,'custom_sni'=>''
 ]];}
 function ensureServerCapacity(...$args){}
-function buildRemark(...$args){return 'fixture-remark';}
+function buildRemark(...$args){
+    $i=($GLOBALS['remark_counter']??0)+1;
+    $GLOBALS['remark_counter']=$i;
+    // Independent manual purchase hashes must not reuse a remote username.
+    // The durable journal rejects the same username across different orders.
+    if (($GLOBALS['spec']['route']??'')==='standard_approval') {
+        return 'fx_'.substr(hash('sha256',(string)($GLOBALS['spec']['data']??'')),0,12).'_'.$i;
+    }
+    return $i===1 ? 'fixture-remark' : 'fixture-remark-'.$i;
+}
 function sendQrFromLink(...$args){
     $GLOBALS['events'][]=['name'=>'qr_send'];
     if (($GLOBALS['spec']['qr_transport']??'')==='throw')
@@ -229,12 +238,28 @@ function getNextPortAndIncrease(...$args){return [15001,1];}
 function createServerAccount(...$args){
     $GLOBALS['events'][]=['name'=>'remote_create'];
     $GLOBALS['create_count']=($GLOBALS['create_count']??0)+1;
+    $remark=(string)$args[4];
+    $operation=$args[14]??null;
+    $expiry=$args[15]??null;
+    if ($operation!==null && !preg_match('/^[a-f0-9]{32}$/D',$operation))
+        throw new RuntimeException('invalid_effect_id');
+    if (($GLOBALS['spec']['remote_mode']??'success')!=='reported_failure') {
+        $GLOBALS['remote_accounts'][$remark]=[
+            'username'=>$remark,'note'=>'achbot:v1:'.$operation,
+            'expire'=>$expiry,'data_limit'=>(int)$args[5]*1073741824
+        ];
+    }
     if (($GLOBALS['spec']['remote_mode']??'success')==='uncertain' ||
         (($GLOBALS['spec']['remote_mode']??'success')==='partial_second' &&
          $GLOBALS['create_count']===2))
         throw new RuntimeException('fixture_remote_result_unknown');
     return [(object)['success'=>($GLOBALS['spec']['remote_mode']??'')!=='reported_failure'],
-            'fixture-remark',15001];
+            $remark,15001];
+}
+function getMarzbanUser($serverId,$remark){
+    $GLOBALS['events'][]=['name'=>'remote_get','username'=>$remark];
+    $found=$GLOBALS['remote_accounts'][$remark]??null;
+    return $found ? (object)$found : null;
 }
 function ensureAccountCreationSucceeded(...$args){
     $GLOBALS['events'][]=['name'=>'remote_response_check'];
@@ -252,8 +277,23 @@ function insertOrder(...$args){
     if ($mode==='local_insert_failure') throw new RuntimeException('fixture_local_order_insert_failed');
     if ($mode==='silent_sql_order_failure' && end($args)===true)
         throw new RuntimeException('fixture_unconfirmed_order_insert');
-    // Under mysqli_report_off, a legacy helper silently returned void
-    // when the caller did NOT demand confirmed SQL.
+    // Real source route uses the real persistence contract: the stub saves a
+    // disposable row for the standard path only, so the exact order-id FK and
+    // effect matching are tested in the caller's transaction.
+    if (($GLOBALS['spec']['route']??'')==='standard_approval') {
+        global $connection;
+        $uid=(int)$args[1];$fid=(int)$args[3];$srv=(int)$args[4];$inbound=(int)$args[5];
+        $remark=$connection->real_escape_string((string)$args[6]);
+        $uuid=$connection->real_escape_string((string)$args[7]);
+        $connection->query("INSERT INTO orders_list
+            (userid,token,transid,fileid,server_id,inbound_id,remark,uuid,
+             protocol,expire_date,link,amount,status,date,notif,rahgozar,agent_bought)
+            VALUES ($uid,'fixture-token','',$fid,$srv,$inbound,'$remark','$uuid',
+                    'vless',1800000000,'fixture-url',100000,1,'synthetic',0,0,0)");
+        return (int)$connection->insert_id;
+    }
+    // Under mysqli_report_off a legacy call without strict confirmation did
+    // not return a row id; that behavior stays isolated from service effects.
 }
 function createIncreaseOrder(...$args){
     $GLOBALS['events'][]=['name'=>'order_insert'];
@@ -370,6 +410,8 @@ def run_route(work,env,driver,data='',step='none',actor=1001,update=None,route='
     if expected_warning:
         accepted_log_codes.extend(expected_warning if isinstance(expected_warning,list)
                                   else [expected_warning])
+        if 'achbot_manual_standard_effect_needs_review' in accepted_log_codes:
+            accepted_log_codes.append('achbot_effect_needs_review')
         if 'achbot_manual_standard_postcommit_followup_needs_review' in accepted_log_codes:
             accepted_log_codes.append('achbot_manual_standard_postcommit_notice_failed')
     safe_review=(accepted_log_codes and p.stderr and all(
@@ -427,7 +469,18 @@ def check():
         purchase.init(work,env,"http://127.0.0.1:9")
         query(work,env,"INSERT INTO setting (type,value) VALUES ('BOT_STATES','{\"walletState\":\"on\",\"cartToCartState\":\"on\",\"giftCardState\":\"on\",\"manualUsdtState\":\"on\",\"nowPaymentWallet\":\"on\",\"nowPaymentOther\":\"on\",\"zarinpal\":\"on\",\"nextpay\":\"on\"}')")
         assert len(query(work,env,'SHOW TABLES').splitlines())==23
+        # The paid-service helper verifies actual plan/panel identity (no fixture shortcut).
+        query(work,env,(ROOT/'migrations/post-v9/001_marzban_panel_group_id.sql').read_text())
+        query(work,env,"INSERT INTO server_info (id,title,ucount,remark,flag,active,state) "
+              "VALUES (1,'Fixture service target',9,'fixture','',1,1)")
+        query(work,env,"INSERT INTO server_plans "
+              "(id,fileid,catid,server_id,inbound_id,acount,title,protocol,days,volume,type,price,descr,pic,active,step,date,custom_sni) "
+              "VALUES (1,'1',1,1,0,9,'Fixture paid service','vless',30,10,'normal',100,'fixture','',1,0,'fixture','{}')")
+        query(work,env,"INSERT INTO server_config "
+              "(id,panel_url,ip,sni,header_type,request_header,response_header,security,tlsSettings,type,username,password,sub_links) "
+              "VALUES (1,'http://127.0.0.1:9','127.0.0.1','','none','','','none','{}','marzban','fixture-admin','fixture-password','')")
         query(work,env,(ROOT/'migrations/post-v9/003_payment_attempts.sql').read_text())
+        query(work,env,(ROOT/'migrations/post-v9/007_service_effects.sql').read_text())
         driver=work/'manual-payments.php';driver.write_text(PHP)
         initial_fixtures={
             'bankfixture':1001,'giftfixture':1001,'usdtfixture':1001,
@@ -682,7 +735,8 @@ def check():
                            data='acceptstandardreportedfailure',actor=9001,
                            route='standard_approval',remote_mode='reported_failure',
                            expected_warning='achbot_manual_standard_effect_needs_review')
-        assert [e['name'] for e in reported].count('remote_response_check')==1,repr(reported)
+        assert [e['name'] for e in reported].count('remote_create')==1,repr(reported)
+        assert not any(e['name']=='remote_get' for e in reported),repr(reported)
         assert not any(e['name']=='order_insert' for e in reported),repr(reported)
         assert query(work,env,"SELECT state FROM pays WHERE hash_id='standardreportedfailure'")=='processing'
         reject_service('standardreportedfailure','standard_approval','accept')
@@ -705,6 +759,10 @@ def check():
                             actor=9001,route='standard_approval')
         assert [e['name'] for e in delivered].count('remote_create')==1,repr(delivered)
         assert query(work,env,"SELECT state FROM pays WHERE hash_id='standardsuccess'")=='approved'
+        assert query(work,env,
+            "SELECT e.state,IFNULL(e.order_id,0) FROM service_effects e "
+            "JOIN pays p ON p.id=e.pay_row_id WHERE p.hash_id='standardsuccess'"
+            ).startswith('local_recorded\t'), 'successful effect must link to order'
         reject_service('standardsuccess','standard_approval','accept')
         cases.append('real_standard_verified_receipt_one_delivery_no_replay')
         # A Telegram exception AFTER the approved local COMMIT is not evidence
@@ -756,6 +814,9 @@ def check():
                           expected_warning='achbot_manual_standard_effect_needs_review')
         assert [e['name'] for e in partial].count('remote_create')==2,repr(partial)
         assert query(work,env,"SELECT state FROM pays WHERE hash_id='standardpartial'")=='processing'
+        assert query(work,env,"SELECT ordinal,state,IFNULL(order_id,0) FROM service_effects "
+                     "WHERE pay_row_id=(SELECT id FROM pays WHERE hash_id='standardpartial') "
+                     "ORDER BY ordinal") == '1\tverified\t0\n2\tdispatching\t0'
         reject_service('standardpartial','standard_approval','accept')
         cases.append('real_standard_partial_second_account_stays_reconcile_no_replay')
 

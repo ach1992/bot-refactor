@@ -6,6 +6,7 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
 }
 
 require_once __DIR__ . '/GatewayClient.php';
+require_once __DIR__ . '/ServiceEffects.php';
 
 
 /**
@@ -1278,26 +1279,25 @@ function achbotPerformPaymentEffect($payRowId, $gateType, &$effectStage = null) 
 
             $forcedRemark = (!empty($description)) ? $description : null;
             $remark = buildRemark($botState, $srv_remark, $description, $user_id, $forcedRemark);
+            // An explicit repeated name across a multi-account order would
+            // previously trigger random renames on 409. Pin each line first.
+            if ($accountCount > 1 && $forcedRemark !== null) {
+                $remark .= '_'.$i;
+            }
 
             // First-use expiry staging was exclusive to never-deployed
             // Sanaei/Alireza inbound plans. Marzban keeps normal expiry.
             $expire_microdate_local = $expire_microdate;
 
-            [$response, $remark, $port] = createServerAccount(
-                $serverType,
-                $server_id,
-                $inbound_id,
-                $fid,
-                $remark,
-                $volume,
-                $days,
-                $uniqid,
-                $protocol,
-                $port,
-                $expire_microdate_local,
-                $netType,
-                $rahgozar,
-                $limitip
+            [$response, $remark, $port, $effectId] = achbotCreatePaidAccount(
+                $connection, $rowId, $i, [
+                    'user_id'=>$user_id,'server_type'=>$serverType,'server_id'=>$server_id,
+                    'inbound_id'=>$inbound_id,'plan_id'=>$fid,
+                    'remark'=>$remark,'volume'=>$volume,'days'=>$days,
+                    'uniqid'=>$uniqid,'protocol'=>$protocol,'port'=>$port,
+                    'expire_microdate'=>$expire_microdate_local,'net_type'=>$netType,
+                    'rahgozar'=>$rahgozar,'limitip'=>$limitip
+                ]
             );
 
             if (is_null($response)) {
@@ -1403,24 +1403,39 @@ function achbotPerformPaymentEffect($payRowId, $gateType, &$effectStage = null) 
                 dirname(__DIR__, 2) . '/pay'
             );
 
-            insertOrder(
-                $connection,
-                $user_id,
-                $token,
-                $fid,
-                $server_id,
-                $inbound_id,
-                $remark,
-                $uniqid,
-                $protocol,
-                $expire_date,
-                $vray_link,
-                $eachPrice,
-                time(),
-                $rahgozar,
-                $agentBought,
-                true
-            );
+            // Reserve remote identity before POST, but bind the resulting
+            // order and its effect together in one SHORT local SQL commit.
+            // Never leave an unlinked successful order after a link error.
+            if ($connection->begin_transaction() !== true)
+                throw new RuntimeException('hosted_effect_order_begin_unconfirmed');
+            try {
+                $orderId = insertOrder(
+                    $connection,
+                    $user_id,
+                    $token,
+                    $fid,
+                    $server_id,
+                    $inbound_id,
+                    $remark,
+                    $uniqid,
+                    $protocol,
+                    $expire_date,
+                    $vray_link,
+                    $eachPrice,
+                    time(),
+                    $rahgozar,
+                    $agentBought,
+                    true
+                );
+                achbotLinkPaidAccountEffect($connection,$effectId,$orderId);
+                if ($connection->commit() !== true)
+                    throw new RuntimeException('hosted_effect_order_commit_unconfirmed');
+            } catch (Throwable $error) {
+                try { $connection->rollback(); } catch (Throwable $ignored) {}
+                // Local COMMIT acknowledgement might be lost: remote CREATE
+                // is never retried, and the payment keeps its review fence.
+                throw $error;
+            }
         }
 
         decreaseServerCapacity($connection, $server_id, $inbound_id, $fid, $accountCount, true);
