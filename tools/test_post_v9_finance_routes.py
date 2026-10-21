@@ -1409,7 +1409,7 @@ def main():
             sql(work,env,"UPDATE payment_attempts SET stage='review',"
                 "provider_status='fulfillment_unconfirmed',"
                 "updated_at=DATE_SUB(DATE_ADD(NOW(),INTERVAL 1 HOUR),"
-                f"INTERVAL {n//2} SECOND) WHERE order_hash='{name}'")
+                f"INTERVAL {n//5} SECOND) WHERE order_hash='{name}'")
             sql(work,env,"INSERT INTO payment_transactions "
                 "(attempt_id,provider,payment_id,observed_status) "
                 "SELECT id,'nowpayments',payment_id,'finished' "
@@ -1437,6 +1437,13 @@ def main():
             "WHERE order_hash='np-inbox-page-unfunded'").strip())
         if len(expected)!=15:
             raise RuntimeError('Case-page fixture has unexpected cardinality')
+        # The real page boundary must split one SAME-SECOND updated_at
+        # group (the 12th and 13th cases), not just two independent groups.
+        boundary_seconds=sql(work,env,
+            f"SELECT updated_at FROM payment_attempts "
+            f"WHERE id IN ({expected[11]},{expected[12]}) ORDER BY id").splitlines()
+        if len(boundary_seconds)!=2 or boundary_seconds[0]!=boundary_seconds[1]:
+            raise RuntimeError('Case page boundary does not exercise identical seconds')
         before_case_pages=snapshot(work,env)
         seen=[]
         page_callback='npReviewInbox'

@@ -43,6 +43,25 @@ The user-owned wallet top-up receipt approval (`approvePayment...`) now atomical
 
 **Service operator approval boundary (PR #52 review remediation):** The custom-purchase `accCustom` callback requires the actual administrator role; all custom-purchase, renewal, day-extension and volume-extension approval handlers lock the exact `pays` row, require its exact `have_sent` state, correct business subject (custom `BUY_SUB` requires nonzero chosen day/volume, unlike standard plan invoices), persisted administrator message delivery, no competing `payid`, and a manual-provider `payment_attempts` at `stage=review` with the original photo ID for post-ledger orders. The guarded transition to `approved` must change exactly one `have_sent` row. A pre-ledger receipt without an attempt is eligible only when a real operator-delivery record survives; this is **compatibility, not verified settlement**, and a human must verify funds. Missing ledger/schema, conflicting provider, pending or terminal states fail closed. Stale admin callbacks cannot act after `auto_cart_approved`; bank Cron and operator compete on the same row lock. Remote Marzban success followed by a local rollback may remain ambiguous and requires operator reconciliation, never blind retrial.
 
+**Standard-plan and RENEW_SCONFIG operator claim (Issues #51/#26, source-only remediation):**
+The actual Checkout-issued accept{hash} administrator callback now shares the
+manual service receipt guard already used by custom/extension flows. Under the
+exact pays FOR UPDATE lock it verifies correct purchase or renewal subject,
+persisted operator-message delivery, unmatched provider claim, and the
+provider-scoped attempt at review with the original receipt photo. It commits
+one guarded processing claim **before** any Marzban call. A second administrator
+or a replay cannot start a second effect. Successful local order finalization
+must conditionally change that same processing row and confirm COMMIT. If
+remote creation/renewal, account N of a multi-account purchase, local order
+persistence, COMMIT acknowledgment or Telegram delivery is uncertain, never
+silently return the invoice to have_sent: leave it reviewable under the
+processing no-replay fence and report an operator reconciliation need. The
+receipt itself is not merchant settlement evidence and processing does not
+certify completed service. Existing externally created accounts still lack a
+general durable per-account effect identity: safe operator reconciliation and
+the minimal additive schema decision remain open under #26. A source-only
+test/CI pass is NOT installed or real-money acceptance.
+
 All purchase, renewal, extension and wallet top-up menus use the shared manual-crypto selector and retain protected subject-specific receipt and admin effect callbacks. A mismatched method, stale callback or competing active payment attempt fails closed. `payment_attempts.stage` distinguishes awaiting evidence, upload in progress and review; `pays.state` still governs the legacy admin effect. Missing evidence cannot trigger financial finality. The existing bank auto-accept scheduler must skip gift cards, manual USDT and manual TRX, while no new automatic settlement path is introduced. Any residual inherited administrator approval concurrency risk remains controlled separately under #26 and must not be misrepresented as an accepted exactly-once system. No merge, live migration, real payment, provider call, Chili deployment or production data modification is authorized by this source-only package.
 
 ## Accepted objective, boundaries and non-goals

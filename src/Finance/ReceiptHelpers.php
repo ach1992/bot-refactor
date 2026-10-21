@@ -582,6 +582,9 @@ function achbotManualServiceApprovalAllowedLocked(mysqli $connection, ?array $pa
         // custom term/volume selection is approved by accCustom.
         'custom' => $type === 'BUY_SUB' &&
             ((int)($pay['day'] ?? 0) > 0 || (int)($pay['volume'] ?? 0) > 0),
+        'standard' => $type === 'BUY_SUB' &&
+            (int)($pay['day'] ?? 0) === 0 && (int)($pay['volume'] ?? 0) === 0,
+        'standard_renewal' => $type === 'RENEW_SCONFIG',
         'renewal' => $type === 'RENEW_ACCOUNT',
         'day' => preg_match('/^INCREASE_DAY_[0-9]+_[0-9]+$/D', $type) === 1,
         'volume' => preg_match('/^INCREASE_VOLUME_[0-9]+_[0-9]+$/D', $type) === 1,

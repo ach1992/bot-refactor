@@ -108,7 +108,7 @@ $connection->set_charset('utf8mb4');
 if (($spec['mysqli_report_off']??false)===true) mysqli_report(MYSQLI_REPORT_OFF);
 $from_id=(int)($spec['actor']??1001);
 $chat_id=$from_id;
-$admin=9001;$botUsername='FixtureBot';$message_id=111;
+$admin=9001;$botUsername='FixtureBot';$message_id=111;$time=1800000000;
 $callbackId='fixture-callback';
 $data=(string)($spec['data']??'');
 $text=$spec['text']??'';
@@ -197,12 +197,17 @@ function answerCallbackQuery(...$args){$GLOBALS['events'][]=['name'=>'answerCall
 // Record every attempted external effect, including mistaken authorization.
 $linkIndices=[];$hideConfigIfMany=false;$markup=[];
 function achbotSupportsMarzbanOrder(...$args){return true;}
-function getPlanDetails(...$args){return ['plan'=>[
+function getPlanDetails(...$args){return [
+    'days'=>30,'volume'=>10,'date'=>'synthetic',
+    'expire_microdate'=>2000000000,'expire_date'=>2000000000,
+    'plan'=>[
     'type'=>'vless','protocol'=>'vless','server_id'=>1,'acount'=>9,
     'inbound_id'=>1,'limitip'=>1,'rahgozar'=>0,'custom_path'=>'',
     'custom_port'=>null,'custom_sni'=>''
 ]];}
 function ensureServerCapacity(...$args){}
+function buildRemark(...$args){return 'fixture-remark';}
+function sendQrFromLink(...$args){$GLOBALS['events'][]=['name'=>'qr_send'];}
 function getServerInfoAndConfig(...$args){return [
     ['remark'=>'fixture-remark'],
     ['type'=>'marzban','port_type'=>'automatic']
@@ -211,16 +216,34 @@ function generateRandomString(...$args){return 'fixture-random-unique';}
 function getNextPortAndIncrease(...$args){return [15001,1];}
 function createServerAccount(...$args){
     $GLOBALS['events'][]=['name'=>'remote_create'];
-    if (($GLOBALS['spec']['remote_mode']??'success')==='uncertain')
+    $GLOBALS['create_count']=($GLOBALS['create_count']??0)+1;
+    if (($GLOBALS['spec']['remote_mode']??'success')==='uncertain' ||
+        (($GLOBALS['spec']['remote_mode']??'success')==='partial_second' &&
+         $GLOBALS['create_count']===2))
         throw new RuntimeException('fixture_remote_result_unknown');
     return [(object)['success'=>true],'fixture-remark',15001];
 }
 function ensureAccountCreationSucceeded(...$args){}
 function buildLinksAndSendQr(...$args){
     $GLOBALS['events'][]=['name'=>'qr_delivery_mock'];
-    return ['fixture-token','fixture-url','fixture-unique'];
+    return ['fixture-token','fixture-url','fixture-unique','fixture account','{}','fixture qr'];
 }
-function insertOrder(...$args){$GLOBALS['events'][]=['name'=>'order_insert'];}
+function insertOrder(...$args){
+    $GLOBALS['events'][]=['name'=>'order_insert'];
+    if (($GLOBALS['spec']['remote_mode']??'success')==='local_insert_failure')
+        throw new RuntimeException('fixture_local_order_insert_failed');
+}
+function createIncreaseOrder(...$args){
+    $GLOBALS['events'][]=['name'=>'order_insert'];
+    if (($GLOBALS['spec']['remote_mode']??'success')==='local_insert_failure')
+        throw new RuntimeException('fixture_local_order_insert_failed');
+}
+function renewConfigOnServer(...$args){
+    $GLOBALS['events'][]=['name'=>'remote_edit'];
+    if (($GLOBALS['spec']['remote_mode']??'success')==='uncertain')
+        throw new RuntimeException('fixture_remote_result_unknown');
+    return (object)['success'=>true];
+}
 function decreaseServerCapacity(...$args){$GLOBALS['events'][]=['name'=>'capacity_decrement'];}
 function editMarzbanConfig(...$args){
     $GLOBALS['events'][]=['name'=>'remote_edit'];
@@ -242,6 +265,8 @@ if (($spec['route']??'wallet') === 'manual_crypto') {
               str_starts_with($data,'payIncreaseDayWith')) {
         require $root.'/src/Finance/Routes/Extensions.php';
     }
+} elseif (($spec['route']??'wallet') === 'standard_approval') {
+    require $root.'/src/Finance/Routes/ManualApproval.php';
 } elseif (($spec['route']??'wallet') === 'manual_admin') {
     require $root.'/src/Finance/Routes/ManualReceipts.php';
 } elseif (($spec['route']??'wallet') === 'checkout') {
@@ -579,6 +604,133 @@ def check():
                            for event in events),repr((key,events))
             assert service_snapshot(key)==before,(key,before,service_snapshot(key))
             return events
+
+
+        # The actual standard-plan "accept{hash}" handler is a separate
+        # reachable finance boundary from the custom/renewal approval routes.
+        # Receipt evidence, subject and durable remote uncertainty must be
+        # tested against that real current source.
+        def standard_pay(key,method='bank_transfer',received=True):
+            service_pay(key,subject='BUY_SUB',method=method,received=received)
+            query(work,env,"UPDATE pays SET day=0,volume=0 WHERE hash_id='"+key+"'")
+            return key
+
+        standard_pay('standardwrongstage',method='gift_card')
+        query(work,env,"UPDATE payment_attempts SET stage='pending' "
+              "WHERE order_hash='standardwrongstage'")
+        reject_service('standardwrongstage','standard_approval','accept')
+        cases.append('real_standard_operator_unreviewed_receipt_denied')
+
+        standard_pay('standardwrongprovider',method='manual_usdt')
+        query(work,env,"UPDATE payment_attempts SET provider='nowpayments' "
+              "WHERE order_hash='standardwrongprovider'")
+        reject_service('standardwrongprovider','standard_approval','accept')
+        cases.append('real_standard_hosted_provider_conflict_denied')
+
+        standard_pay('standardwrongsubject',method='bank_transfer')
+        query(work,env,"UPDATE pays SET type='INCREASE_WALLET' "
+              "WHERE hash_id='standardwrongsubject'")
+        reject_service('standardwrongsubject','standard_approval','accept')
+        cases.append('real_standard_wrong_subject_denied')
+
+        standard_pay('standarduncertain',method='gift_card')
+        before=service_snapshot('standarduncertain')
+        events=run_route(work,env,route_driver,data='acceptstandarduncertain',
+                         actor=9001,route='standard_approval',remote_mode='uncertain',
+                         expected_warning='achbot_manual_standard_effect_needs_review')
+        assert [e['name'] for e in events].count('remote_create')==1,repr(events)
+        assert query(work,env,"SELECT state FROM pays WHERE hash_id='standarduncertain'")=='processing',repr(events)
+        retry=run_route(work,env,route_driver,data='acceptstandarduncertain',
+                        actor=9001,route='standard_approval',remote_mode='success')
+        assert not any(e['name']=='remote_create' for e in retry),repr(retry)
+        assert query(work,env,"SELECT state FROM pays WHERE hash_id='standarduncertain'")=='processing'
+        cases.append('real_standard_uncertain_remote_effect_stays_reconciliation_and_no_replay')
+
+        standard_pay('standardsuccess',method='gift_card')
+        delivered=run_route(work,env,route_driver,data='acceptstandardsuccess',
+                            actor=9001,route='standard_approval')
+        assert [e['name'] for e in delivered].count('remote_create')==1,repr(delivered)
+        assert query(work,env,"SELECT state FROM pays WHERE hash_id='standardsuccess'")=='approved'
+        reject_service('standardsuccess','standard_approval','accept')
+        cases.append('real_standard_verified_receipt_one_delivery_no_replay')
+
+        standard_pay('standardmissingdelivery',method='bank_transfer')
+        query(work,env,"UPDATE pays SET message_id=0 "
+              "WHERE hash_id='standardmissingdelivery'")
+        reject_service('standardmissingdelivery','standard_approval','accept')
+        cases.append('real_standard_missing_operator_delivery_denied')
+
+        standard_pay('standardunauthorized',method='gift_card')
+        reject_service('standardunauthorized','standard_approval','accept',actor=1001)
+        cases.append('real_standard_nonadmin_callback_no_financial_effect')
+
+        standard_pay('standardpartial',method='manual_usdt')
+        query(work,env,"UPDATE pays SET agent_count=2 WHERE hash_id='standardpartial'")
+        partial=run_route(work,env,route_driver,data='acceptstandardpartial',
+                          actor=9001,route='standard_approval',remote_mode='partial_second',
+                          expected_warning='achbot_manual_standard_effect_needs_review')
+        assert [e['name'] for e in partial].count('remote_create')==2,repr(partial)
+        assert query(work,env,"SELECT state FROM pays WHERE hash_id='standardpartial'")=='processing'
+        reject_service('standardpartial','standard_approval','accept')
+        cases.append('real_standard_partial_second_account_stays_reconcile_no_replay')
+
+        standard_pay('standardlocalfail',method='bank_transfer')
+        localfail=run_route(work,env,route_driver,data='acceptstandardlocalfail',
+                            actor=9001,route='standard_approval',
+                            remote_mode='local_insert_failure',mysqli_report_off=True,
+                            expected_warning='achbot_manual_standard_remote_finish_review')
+        assert [e['name'] for e in localfail].count('remote_create')==1,repr(localfail)
+        assert [e['name'] for e in localfail].count('order_insert')==1,repr(localfail)
+        assert query(work,env,"SELECT state FROM pays WHERE hash_id='standardlocalfail'")=='processing'
+        reject_service('standardlocalfail','standard_approval','accept')
+        cases.append('real_standard_remote_success_local_write_failed_no_automatic_replay')
+
+        standard_pay('standardrace',method='gift_card')
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            decisions=list(executor.map(lambda _:run_route(
+                work,env,route_driver,data='acceptstandardrace',
+                actor=9001,route='standard_approval'),range(2)))
+        assert sum(sum(e['name']=='remote_create' for e in result)
+                   for result in decisions)==1,repr(decisions)
+        assert query(work,env,"SELECT state FROM pays WHERE hash_id='standardrace'")=='approved'
+        reject_service('standardrace','standard_approval','accept')
+        cases.append('real_standard_concurrent_admins_one_remote_create')
+
+        def renewal_pay(key,method='gift_card'):
+            service_pay(key,subject='RENEW_SCONFIG',method=method)
+            query(work,env,"UPDATE pays SET day=0,volume=0,"
+                  """description='{"uuid":"fixture-uuid","remark":"fixture-remark","marzban":true}'"""
+                  " WHERE hash_id='"+key+"'")
+            return key
+
+        renewal_pay('standardrenewsuccess',method='gift_card')
+        renewed=run_route(work,env,route_driver,data='acceptstandardrenewsuccess',
+                          actor=9001,route='standard_approval')
+        assert [e['name'] for e in renewed].count('remote_edit')==1,repr(renewed)
+        assert [e['name'] for e in renewed].count('order_insert')==1,repr(renewed)
+        assert query(work,env,"SELECT state FROM pays WHERE hash_id='standardrenewsuccess'")=='approved'
+        reject_service('standardrenewsuccess','standard_approval','accept')
+        cases.append('real_standard_renewal_receipt_one_remote_change_no_replay')
+
+        renewal_pay('standardrenewuncertain',method='manual_usdt')
+        ambiguous=run_route(work,env,route_driver,data='acceptstandardrenewuncertain',
+                            actor=9001,route='standard_approval',remote_mode='uncertain',
+                            expected_warning='achbot_manual_standard_effect_needs_review')
+        assert [e['name'] for e in ambiguous].count('remote_edit')==1,repr(ambiguous)
+        assert query(work,env,"SELECT state FROM pays WHERE hash_id='standardrenewuncertain'")=='processing'
+        reject_service('standardrenewuncertain','standard_approval','accept')
+        cases.append('real_standard_renewal_uncertain_remote_change_no_replay')
+
+        renewal_pay('standardrenewlocalfail',method='bank_transfer')
+        failed=run_route(work,env,route_driver,data='acceptstandardrenewlocalfail',
+                         actor=9001,route='standard_approval',
+                         remote_mode='local_insert_failure',
+                         expected_warning='achbot_manual_standard_remote_finish_review')
+        assert [e['name'] for e in failed].count('remote_edit')==1,repr(failed)
+        assert query(work,env,"SELECT state FROM pays WHERE hash_id='standardrenewlocalfail'")=='processing'
+        reject_service('standardrenewlocalfail','standard_approval','accept')
+        cases.append('real_standard_renewal_remote_success_local_failure_needs_review')
 
         service_pay('customvalid',method='gift_card')
         assert base('customvalid','service_guard',subject='custom') is True

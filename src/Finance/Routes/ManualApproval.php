@@ -6,63 +6,60 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
 }
 
 if (
-    preg_match('/accept(.*)/', $data, $match) &&
+    preg_match('/^accept([A-Za-z0-9_-]{1,50})$/D', (string)$data, $match) &&
     $text != $buttonValues['cancel'] &&
     ($from_id == $admin || ($userInfo['isAdmin'] ?? false) == true)
 ) {
-    setUser();
-    $hash_id = trim($match[1]);
+    $hash_id = $match[1];
+    $payInfo = null;
+    $claimOpen = false;
 
-    $stmt = $connection->prepare("SELECT * FROM `pays` WHERE `hash_id` = ? LIMIT 1");
-    $stmt->bind_param("s", $hash_id);
-    $stmt->execute();
-    $payInfo = $stmt->get_result()->fetch_assoc();
-    $stmt->close();
-
-    if (!$payInfo) {
-        alert("⛔️ اطلاعات پرداخت پیدا نشد.");
-        return;
-    }
-
-    if ($payInfo['state'] === 'expired_have_sent') {
-        alert("⛔️ این درخواست منقضی شده است.");
-        return;
-    }
-    if ($payInfo['state'] === 'approved' || $payInfo['state'] === 'declined') {
-        alert("⛔️ این درخواست قبلاً بررسی شده است.");
-        return;
-    }
-
-    if ($payInfo['state'] !== 'have_sent') {
-        alert("⛔️ این درخواست در وضعیت قابل تایید نیست: " . $payInfo['state']);
-        return;
-    }
-
-    // A previously sent manual receipt could reference a retired panel.
-    // Reject before the claim-to-processing write; leave it reviewable and
-    // do not call any obsolete provider or mutate an order.
-    if (!achbotSupportsPaymentSubject($connection, $payInfo)) {
-        alert("⛔️ پنل این پلن دیگر پشتیبانی نمی‌شود؛ درخواست تأیید نشد.", true);
-        return;
-    }
-
-    $stmt = $connection->prepare("
-        UPDATE `pays`
-        SET `state`='processing', `approved_by`=?
-        WHERE `hash_id`=? AND `state`='have_sent'
-        LIMIT 1
-    ");
-    $stmt->bind_param("is", $from_id, $hash_id);
-    $stmt->execute();
-
-    if ($stmt->affected_rows !== 1) {
+    // Standard-plan approval requires reviewed receipt proof under a pay-row
+    // lock. Commit the no-replay claim before any remote Marzban operation.
+    try {
+        if ($connection->begin_transaction() !== true)
+            throw new RuntimeException('manual_standard_claim_begin_failed');
+        $claimOpen = true;
+        $stmt = $connection->prepare('SELECT * FROM pays WHERE hash_id=? LIMIT 1 FOR UPDATE');
+        if (!$stmt) throw new RuntimeException('manual_standard_claim_prepare_failed');
+        $stmt->bind_param('s', $hash_id);
+        if (!$stmt->execute()) throw new RuntimeException('manual_standard_claim_select_failed');
+        $payInfo = $stmt->get_result()->fetch_assoc();
         $stmt->close();
-        alert("⛔️ این درخواست هم‌اکنون در حال پردازش است.");
+        $receiptSubject = ($payInfo['type'] ?? null) === 'RENEW_SCONFIG'
+            ? 'standard_renewal' : 'standard';
+        if (!$payInfo || !achbotSupportsPaymentSubject($connection, $payInfo) ||
+            !achbotManualServiceApprovalAllowedLocked($connection, $payInfo, $receiptSubject)) {
+            $connection->rollback();
+            $claimOpen = false;
+            alert('⛔️ این درخواست قابل تأیید نیست؛ وضعیت رسید، روش پرداخت یا نوع سفارش را بررسی کنید.');
+            return;
+        }
+        $payId = (int)$payInfo['id'];
+        $actor = (int)$from_id;
+        $stmt = $connection->prepare(
+            "UPDATE pays SET state='processing',approved_by=?
+             WHERE id=? AND state='have_sent' AND (payid IS NULL OR payid='')"
+        );
+        if (!$stmt) throw new RuntimeException('manual_standard_claim_update_prepare_failed');
+        $stmt->bind_param('ii', $actor, $payId);
+        if (!$stmt->execute()) throw new RuntimeException('manual_standard_claim_update_failed');
+        $claimed = $stmt->affected_rows;
+        $stmt->close();
+        if ($claimed !== 1 || $connection->commit() !== true)
+            throw new RuntimeException('manual_standard_claim_commit_unconfirmed');
+        $claimOpen = false;
+    } catch (Throwable $error) {
+        if ($claimOpen) {
+            try { $connection->rollback(); } catch (Throwable $ignored) {}
+        }
+        error_log('achbot_manual_standard_claim_needs_review pay_id='.(int)($payInfo['id']??0). ' exception='.get_class($error).' code='.(int)$error->getCode());
+        alert('⚠️ نتیجهٔ ثبت تأیید قطعی نیست. ابتدا وضعیت سفارش را بررسی کنید؛ تأیید را تکرار نکنید.');
         return;
     }
-    $stmt->close();
 
     try {
+        setUser();
         $uid     = (int)$payInfo['user_id'];
         $fid     = (int)$payInfo['plan_id'];
         $price   = (int)$payInfo['price'];
@@ -113,21 +110,20 @@ if (
                     null
                 );
 
-                $stmt = $connection->prepare("UPDATE `pays` SET `state`='approved', `approved_by`=? WHERE `hash_id`=? LIMIT 1");
-                $stmt->bind_param("is", $from_id, $hash_id);
-                $stmt->execute();
+                $stmt = $connection->prepare(
+                    "UPDATE pays SET state='approved' WHERE id=? AND state='processing' AND approved_by=?"
+                );
+                if (!$stmt) throw new RuntimeException('manual_standard_finish_prepare_failed');
+                $stmt->bind_param('ii', $payId, $actor);
+                if (!$stmt->execute() || $stmt->affected_rows !== 1)
+                    throw new RuntimeException('manual_standard_finish_failed');
                 $stmt->close();
-
-                $connection->commit();
-            } catch (Exception $e) {
-                $connection->rollback();
-
-                $stmt = $connection->prepare("UPDATE `pays` SET `state`='have_sent' WHERE `hash_id`=? LIMIT 1");
-                $stmt->bind_param("s", $hash_id);
-                $stmt->execute();
-                $stmt->close();
-
-                sendMessage("⚠️ تمدید انجام شد اما ثبت دیتابیس خطا خورد.\n🆔 $hash_id\nError: ".$e->getMessage(), null, null, $admin);
+                if ($connection->commit() !== true)
+                    throw new RuntimeException('manual_standard_finish_commit_unconfirmed');
+            } catch (Throwable $e) {
+                try { $connection->rollback(); } catch (Throwable $ignored) {}
+                error_log('achbot_manual_standard_remote_finish_review pay_id='.$payId.' subject=renewal exception='.get_class($e).' code='.(int)$e->getCode());
+                sendMessage("⚠️ نتیجهٔ ثبت تمدید قطعی نیست و نیازمند بررسی است.\n🆔 $hash_id\nقبل از هر تأیید دوباره، سرویس و پرداخت را تطبیق دهید.", null, null, $admin);
                 return;
             }
 
@@ -283,12 +279,8 @@ if (
         }
 
         if (count($toInsertOrders) === 0) {
-            $stmt = $connection->prepare("UPDATE `pays` SET `state`='have_sent' WHERE `hash_id`=? LIMIT 1");
-            $stmt->bind_param("s", $hash_id);
-            $stmt->execute();
-            $stmt->close();
-
-            sendMessage("⚠️ هیچ اکانتی ساخته نشد؛ پرداخت به حالت have_sent برگشت.\n🆔 $hash_id", null, null, $admin);
+            error_log('achbot_manual_standard_empty_remote_result pay_id='.$payId);
+            sendMessage("⚠️ نتیجهٔ ساخت اکانت‌ها قطعی نیست و نیازمند بررسی است.\n🆔 $hash_id\nپرداخت را دوباره تأیید نکنید.", null, null, $admin);
             return;
         }
 
@@ -316,26 +308,22 @@ if (
 
             decreaseServerCapacity($connection, $server_id, $inbound_id, $fid, $accountCount);
 
-            $stmt = $connection->prepare("UPDATE `pays` SET `state`='approved', `approved_by`=? WHERE `hash_id`=? LIMIT 1");
-            $stmt->bind_param("is", $from_id, $hash_id);
-            $stmt->execute();
-            $stmt->close();
-
-            $connection->commit();
-        } catch (Exception $e) {
-            $connection->rollback();
-
-            $stmt = $connection->prepare("UPDATE `pays` SET `state`='have_sent' WHERE `hash_id`=? LIMIT 1");
-            $stmt->bind_param("s", $hash_id);
-            $stmt->execute();
-            $stmt->close();
-
-            sendMessage(
-                "⚠️ خطا در ثبت سفارش/کاهش ظرفیت؛ پرداخت به حالت have_sent برگشت تا دوباره تایید شود.\n🆔 $hash_id\nError: " . $e->getMessage(),
-                null,
-                null,
-                $admin
+            $stmt = $connection->prepare(
+                "UPDATE pays SET state='approved' WHERE id=? AND state='processing' AND approved_by=?"
             );
+            if (!$stmt) throw new RuntimeException('manual_standard_finish_prepare_failed');
+            $stmt->bind_param('ii', $payId, $actor);
+            if (!$stmt->execute() || $stmt->affected_rows !== 1)
+                throw new RuntimeException('manual_standard_finish_failed');
+            $stmt->close();
+            if ($connection->commit() !== true)
+                throw new RuntimeException('manual_standard_finish_commit_unconfirmed');
+        } catch (Throwable $e) {
+            try { $connection->rollback(); } catch (Throwable $ignored) {}
+            // One or more remote accounts may exist without local orders.
+            error_log('achbot_manual_standard_remote_finish_review pay_id='.$payId.' subject=purchase exception='.get_class($e).' code='.(int)$e->getCode());
+            sendMessage("⚠️ نتیجهٔ ثبت سفارش پس از عملیات سرویس قطعی نیست.\n🆔 $hash_id\nبرای تطبیق اکانت‌ها و پرداخت بررسی دستی لازم است؛ دوباره تأیید نکنید.",
+                        null, null, $admin);
             return;
         }
 
@@ -419,15 +407,11 @@ if (
             }
         }
 
-    } catch (Exception $e) {
-        try {
-            $stmt = $connection->prepare("UPDATE `pays` SET `state`='have_sent' WHERE `hash_id`=? AND `state`='processing' LIMIT 1");
-            $stmt->bind_param("s", $hash_id);
-            $stmt->execute();
-            $stmt->close();
-        } catch (Exception $ignored) {}
-
-        sendMessage("⚠️ خطا در تایید\n🆔 $hash_id\nError: ".$e->getMessage(), null, null, $admin);
+    } catch (Throwable $e) {
+        // Remote effects and SQL are not one transaction. Never re-arm a claim.
+        error_log('achbot_manual_standard_effect_needs_review pay_id='.$payId.' exception='.get_class($e).' code='.(int)$e->getCode());
+        sendMessage("⚠️ نتیجهٔ تکمیل سفارش هنوز قطعی نیست.\n🆔 $hash_id\nابتدا پرداخت و اکانت‌های سرویس را بررسی کنید؛ تأیید را تکرار نکنید.",
+                    null, null, $admin);
         return;
     }
 }
