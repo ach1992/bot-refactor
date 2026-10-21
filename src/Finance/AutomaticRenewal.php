@@ -277,7 +277,7 @@ function handleAutoRenewCallback($data): void {
         return;
     }
     try {
-        $reply=editMarzbanConfig($claim['server_id'],[
+        $reply=achbotApplyServiceEdit($connection,$claim['server_id'],[
             'remark'=>$claim['remark'],'days'=>$claim['days'],
             'volume'=>$claim['volume']
         ]);

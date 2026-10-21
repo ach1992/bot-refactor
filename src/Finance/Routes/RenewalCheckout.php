@@ -420,8 +420,8 @@ if(preg_match('/approveRenewAcc(.*)/',$data,$match) && ($from_id == $admin || $u
             'admins_messages' => $payInfo['admins_messages']
         ];
 
-        if ($serverType == "marzban") { 
-            $response = editMarzbanConfig($server_id, ['remark'=>$remark, 'days'=>$days, 'volume' => $volume]); 
+        if (achbotSupportsPanel($serverType)) {
+            $response = achbotApplyServiceEdit($connection,$server_id, ['remark'=>$remark, 'days'=>$days, 'volume' => $volume]);
         } else {
             throw new \UnexpectedValueException('unsupported_panel');
         } 
@@ -607,8 +607,8 @@ if(preg_match('/payRenewWithWallet(.*)/', $data, $match)){
 
         $serverType = $server_info['type'];
 
-        if($serverType == "marzban"){
-            $response = editMarzbanConfig($server_id, ['remark'=>$remark, 'days'=>$days, 'volume' => $volume]);
+        if (achbotSupportsPanel($serverType)){
+            $response = achbotApplyServiceEdit($connection,$server_id, ['remark'=>$remark, 'days'=>$days, 'volume' => $volume]);
         } else {
             throw new \UnexpectedValueException('unsupported_panel');
         }

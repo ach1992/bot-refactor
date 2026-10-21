@@ -201,7 +201,7 @@ def main():
                 results[1].get('result',{}).get('success') is False and
                 results[1].get('result',{}).get('uncertain') is True and
                 results[1].get('result',{}).get('msg')==
-                    'marzban_put_response_unverified' and
+                    'marzban_edit_unverified' and
                 results[0].get('exception') is None and
                 results[1].get('exception') is None and
                 not results[0].get('warnings') and
@@ -223,7 +223,20 @@ def main():
                 not results[0].get('warnings') and
                 not results[1].get('warnings') and
                 results[0].get('stdout')==results[1].get('stdout')=='')
-            if traces[0]!=traces[1] or (
+            # The modern edit MUST make an independent authenticated GET
+            # after PUT. Historical V9 only trusted the write response.
+            # For historical loopback {"status":"ok"}, the current source
+            # proves the first PUT did NOT change bytes by GET, tries only ONE
+            # identical absolute PUT, then fails closed on another stale GET.
+            # This is deliberately different wire behavior, not test drift.
+            extra_edit_readback=(intentional_fail_closed and
+                len(traces[1])==len(traces[0])+3 and
+                traces[1][:len(traces[0])]==traces[0] and
+                [v['method'] for v in traces[1][-3:]]==['GET','PUT','GET'] and
+                traces[1][-3]['path']=='/api/user/fixture-user' and
+                traces[1][-2]==traces[0][-1] and
+                traces[1][-1]['path']=='/api/user/fixture-user')
+            if (traces[0]!=traces[1] and not extra_edit_readback) or (
                 results[0]!=results[1] and not
                 (intentional_fail_closed or intentional_delete_fail_closed)):
                 raise RuntimeError("Marzban differential mismatch: "+name+

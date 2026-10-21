@@ -69,6 +69,7 @@ function editKeys(...$args) {
     $GLOBALS['events'][] = ['name' => 'editKeys', 'args' => $args];
 }
 function getMainKeys() { return '{}'; }
+function achbotSupportsPanel($type) { return $type==='marzban'; }
 function editMarzbanConfig($server_id, $info) {
     $GLOBALS['remote_calls']++;
     if ($GLOBALS['case']['provider'] === 'reject') {
@@ -78,7 +79,8 @@ function editMarzbanConfig($server_id, $info) {
     if ($GLOBALS['case']['provider'] === 'throw') {
         throw new RuntimeException('SECRET_PROVIDER_TOKEN_LOCAL_87a3 runtime');
     }
-    return (object)['success' => true];
+    return (object)['success' => true,'verified'=>true,
+        'applied_expire'=>2000000000,'applied_bytes'=>10737418240];
 }
 try {
     require $root . '/buy_helpers.php';

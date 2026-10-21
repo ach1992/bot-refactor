@@ -483,3 +483,55 @@ create/delete, Telegram operator/customer status and real payment proof.
 Use only disposable test accounts and authorized test financial instruments.
 Capture bounded operation/order/effect identifiers without exposing tokens
 or real customer data. No tenant SQL/production installation performed here.
+
+### Provider-neutral service modifications: verified result and bounded self-repair
+
+The source-only remediation for Issue #26 addresses historical false success
+when a bot-reported renewal, day or traffic increase was not actually changed.
+The public application boundary is **achbotApplyServiceEdit(connection, serverId,
+change)** in src/Purchase/Core.php. Financial claims and provider transport are
+separate. The wallet, manually reviewed receipt, automatic bank receipt,
+hosted gateway and automatic-renew paths now use the shared boundary.
+
+Only Marzban is currently supported. A future panel, such as Pasarguard,
+requires explicit opt-in support, its own authenticated edit and exact account
+readback implementation, and source and installed tests. Unknown panel types
+return an unsupported result with **no provider request**. A new payment gateway
+likewise requires trusted settlement evidence, but not a separate account-edit
+algorithm.
+
+A normalized successful result requires success=true, verified=true,
+applied_expire in seconds and applied_bytes, all independently read from the
+expected physical panel and account. Plain HTTP 2xx or a Telegram callback is
+not a delivery certificate. The Marzban adapter checks username, original note,
+expiry, bytes and active status using authenticated, timeout-bounded GET.
+A lost PUT reply followed by matching readback is already complete and is
+not repeated. If strict GET still confirms the exact original state, at most
+one corrective PUT with the SAME absolute values is allowed; no second relative
+increment or traffic reset. Foreign or unknown states, changing target or
+failed authentication remain uncertain, with no blind retry.
+
+The current adapter uses a bounded connection-level lock on the configured
+physical-panel-group + username, falling back to exact endpoint + username
+when no group is assigned. Thus even multiple bot entries with distinct URLs
+but one explicitly shared physical panel are serialized. It does not claim
+to serialize edits by unrelated systems, multiple databases or incorrectly
+grouped panels. Traffic reset is separately read back and never blindly
+repeated.
+
+The scheduled bank-acceptance path for service edits now reserves a
+nonterminal payment state first. Only a verified account effect plus original
+paid-target/order identity and one atomic local order/audit/payment COMMIT may
+be reported as approved. Telegram failures after COMMIT cannot undo service.
+If the remote outcome or SQL commit is unknown, preserve the financial claim
+for review; never automatically refund or repeat a possibly applied change.
+
+**Limits:** automatic self-repair is bounded to the current active request,
+while the original and requested absolute values are still in hand. After
+worker crash, external panel mutation or lost SQL acknowledgement there is
+not yet an end-to-end persisted before/after intent and unattended reconciler
+for every wallet, manual, hosted and renewal flow. The BUY_SUB creation journal
+does not imply such protection for edits. Durable post-crash reconciliation
+remains a separately gated Issue #26 requirement. Never infer success from
+remote account counts. No installed database or real provider operation was
+performed for this source-only change.

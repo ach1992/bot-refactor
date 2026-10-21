@@ -73,6 +73,8 @@ $GLOBALS['fake_marzban_raw'] = $spec['marzban_raw'] ?? null;
 $GLOBALS['fake_marzban_transport_failure'] = $spec['marzban_transport_failure'] ?? false;
 $GLOBALS['fake_marzban_reset_http'] = $spec['marzban_reset_http'] ?? 200;
 $GLOBALS['fake_marzban_username'] = $spec['marzban_username'] ?? 'syntheticMarzban';
+$GLOBALS['fake_marzban_applied'] = null;
+$GLOBALS['fake_marzban_used'] = 1073741824;
 $GLOBALS['fake_renew_success'] = $spec['renew_success'] ?? false;
 $GLOBALS['fake_remote_exit'] = $spec['remote_exit'] ?? false;
 $GLOBALS['inspect_hosted_pay_id'] = (int)($spec['pay_row_id'] ?? 0);
@@ -323,12 +325,15 @@ function curl_exec($handle) {
     if (str_contains($handle->url, '/api/user/') &&
         str_ends_with($handle->url, '/reset')) {
         if ($GLOBALS['fake_marzban_reset_http'] !== 200) return '{"detail":"reset rejected"}';
+        $GLOBALS['fake_marzban_used']=0;
         return json_encode(['username'=>$GLOBALS['fake_marzban_username']]);
     }
     if (str_contains($handle->url, '/api/user/') && $handle->method==='PUT') {
         if ($GLOBALS['fake_marzban_transport_failure']) return false;
         if ($GLOBALS['fake_marzban_raw'] !== null) return $GLOBALS['fake_marzban_raw'];
         $post=json_decode($handle->fields ?? '{}',true);
+        if ($GLOBALS['fake_marzban_http']===200)
+            $GLOBALS['fake_marzban_applied']=$post;
         return json_encode([
             'username'=>$GLOBALS['fake_marzban_username'],
             'expire'=>$post['expire'] ?? 0,
@@ -337,10 +342,12 @@ function curl_exec($handle) {
         ]);
     }
     if (str_contains($handle->url, '/api/user/')) {
+        $applied=$GLOBALS['fake_marzban_applied'];
         return json_encode([
             'username'=>$GLOBALS['fake_marzban_username'],
-            'expire'=>time()+86400,
-            'data_limit'=>1073741824,
+            'expire'=>$applied['expire']??(time()+86400),
+            'data_limit'=>$applied['data_limit']??1073741824,
+            'used_traffic'=>$GLOBALS['fake_marzban_used'],
             'inbounds'=>['vless'=>['fake-inbound']],
             'proxies'=>['vless'=>new stdClass()],
             'note'=>'fixture',

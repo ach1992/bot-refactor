@@ -1631,8 +1631,8 @@ function achbotPerformPaymentEffect($payRowId, $gateType, &$effectStage = null) 
         [$srvInfo, $srvConfig] = getServerInfoAndConfig($connection, $server_id);
         $serverType = $srvConfig['type'] ?? '';
 
-        if ($serverType == "marzban") {
-            $response = editMarzbanConfig($server_id, ['remark' => $remark, 'plus_day' => $plusDays]);
+        if (achbotSupportsPanel($serverType)) {
+            $response = achbotApplyServiceEdit($connection,$server_id, ['remark' => $remark, 'plus_day' => $plusDays]);
         } else {
             throw new \UnexpectedValueException('unsupported_panel');
         }
@@ -1729,8 +1729,8 @@ function achbotPerformPaymentEffect($payRowId, $gateType, &$effectStage = null) 
         [$srvInfo, $srvConfig] = getServerInfoAndConfig($connection, $server_id);
         $serverType = $srvConfig['type'] ?? '';
 
-        if ($serverType == "marzban") {
-            $response = editMarzbanConfig($server_id, ['remark' => $remark, 'plus_volume' => $plusVolume]);
+        if (achbotSupportsPanel($serverType)) {
+            $response = achbotApplyServiceEdit($connection,$server_id, ['remark' => $remark, 'plus_volume' => $plusVolume]);
         } else {
             throw new \UnexpectedValueException('unsupported_panel');
         }

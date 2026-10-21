@@ -75,6 +75,50 @@ class Handler(BaseHTTPRequestHandler):
                 status=503;payload={'detail':'Unavailable'}
             else:payload={'access_token':'fixture-access'}
             headers={}
+        elif '/api/user/' in self.path and mode.startswith('edit-'):
+            # Stateful opt-in test panel for post-PUT readback and bounded
+            # self-healing. Historical V9 and every ordinary mode remain
+            # entirely unchanged. Synthetic localhost only, no real service.
+            initial={
+                'username':'fixture-user','status':'active',
+                'data_limit':2147483648,'used_traffic':1073741824,
+                'expire':1800000100,'inbounds':{},'proxies':{},
+                'note':'fixture','data_limit_reset_strategy':'no_reset',
+                'subscription_url':'/sub/fixture'
+            }
+            if not hasattr(self.server,'edit_account'):
+                self.server.edit_account=initial.copy()
+            current=self.server.edit_account
+            if self.command=='POST' and self.path.endswith('/reset'):
+                self.server.edit_reset_count=getattr(self.server,'edit_reset_count',0)+1
+                if mode!='edit-reset-lie':
+                    current['used_traffic']=0
+                payload=current.copy()
+            elif self.command=='PUT':
+                self.server.edit_put_count=getattr(self.server,'edit_put_count',0)+1
+                n=self.server.edit_put_count
+                requested=json.loads(body)
+                if mode in ('edit-verified','edit-lost-applied','edit-reset-verified') or (
+                    mode in ('edit-repair','edit-lost-repair','edit-badbody-repair') and n==2):
+                    current.update({
+                        'expire':requested['expire'],
+                        'data_limit':requested['data_limit'],
+                        'status':'active'
+                    })
+                if mode=='edit-foreign':
+                    current['data_limit']=requested['data_limit']+1073741824
+                payload={**current,'expire':requested['expire'],
+                         'data_limit':requested['data_limit'],
+                         'username':current['username']}
+                if mode in ('edit-lost-applied','edit-lost-repair') and n==1:
+                    status=503
+                    payload={'detail':'synthetic_response_lost'}
+                if mode=='edit-badbody-repair' and n==1:
+                    status=200
+                    payload={'detail':'synthetic_untrusted_acknowledgement'}
+            else:
+                payload=current.copy()
+            headers={}
         elif '/api/user/' in self.path:
             payload={'username':'fixture-user','status':'active','data_limit':2147483648,
               'used_traffic':1073741824,'expire':1800000100,'inbounds':{},'proxies':{},

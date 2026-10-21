@@ -361,8 +361,8 @@ if (preg_match('/approveIncreaseDay(.*)/', $data, $match) && ($from_id == $admin
 
         unset($markup[count($markup)-1]);
 
-        if ($serverType == "marzban") {
-            $response = editMarzbanConfig($server_id, ['remark' => $remark, 'plus_day' => $volume]);
+        if (achbotSupportsPanel($serverType)) {
+            $response = achbotApplyServiceEdit($connection,$server_id, ['remark' => $remark, 'plus_day' => $volume]);
         } else {
             throw new \UnexpectedValueException('unsupported_panel');
         }
@@ -552,8 +552,8 @@ if(preg_match('/payIncreaseDayWithWallet(.*)/', $data, $match)){
             return;
         }
 
-        if($serverType == "marzban"){
-            $response = editMarzbanConfig($server_id, ['remark'=>$remark, 'plus_day'=>$volume]);
+        if (achbotSupportsPanel($serverType)){
+            $response = achbotApplyServiceEdit($connection,$server_id, ['remark'=>$remark, 'plus_day'=>$volume]);
         } else {
             throw new \UnexpectedValueException('unsupported_panel');
         }
@@ -1122,8 +1122,8 @@ if (preg_match('/approveIncreaseVolume(.*)/', $data, $match) && ($from_id == $ad
 
         $serverType = $server_info['type'];
 
-        if ($serverType == "marzban") {
-            $response = editMarzbanConfig($server_id, ['remark' => $remark, 'plus_volume' => $volume]);
+        if (achbotSupportsPanel($serverType)) {
+            $response = achbotApplyServiceEdit($connection,$server_id, ['remark' => $remark, 'plus_volume' => $volume]);
         } else {
             throw new \UnexpectedValueException('unsupported_panel');
         }
@@ -1317,8 +1317,8 @@ if(preg_match('/payIncreaseWithWallet(.*)/', $data, $match)){
 
         $serverType = $server_info['type'];
 
-        if($serverType == "marzban"){
-            $response = editMarzbanConfig($server_id, ['remark'=>$remark, 'plus_volume'=>$volume]);
+        if (achbotSupportsPanel($serverType)){
+            $response = achbotApplyServiceEdit($connection,$server_id, ['remark'=>$remark, 'plus_volume'=>$volume]);
         } else {
             throw new \UnexpectedValueException('unsupported_panel');
         }

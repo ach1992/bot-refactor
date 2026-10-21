@@ -33,10 +33,21 @@ $paymentKeys=$spec['keys']??[
     'manualUsdtNetwork'=>'BEP20','manualUsdtRateToman'=>'100000',
 ];
 $USDTPrice='100000';$USDTPriceagent='110000';
+$admin=9001;
 require_once $root.'/src/Finance/ReceiptHelpers.php';
 function achbotSupportsPaymentSubject(...$args) {return true;}
+function achbotSupportsPanel($type) {return $type==='marzban';}
+function getMainKeys() {return '{}';}
 function sendMessage(...$args) {return (object)['ok'=>true];}
 function editKeys(...$args) {}
+function achbotApplyServiceEdit($db,$server,$change) {
+    $GLOBALS['auto_service_remote_calls']=($GLOBALS['auto_service_remote_calls']??0)+1;
+    if (($GLOBALS['spec']['auto_remote']??'verified')!=='verified')
+        return (object)['success'=>false,'uncertain'=>true,'msg'=>'fixture_remote_unconfirmed'];
+    return (object)['success'=>true,'verified'=>true,
+                    'applied_expire'=>1802000000,
+                    'applied_bytes'=>3221225472];
+}
 
 require $root.'/settings/values.php';
 $stmt=$connection->prepare('SELECT * FROM pays WHERE hash_id=? LIMIT 1');
@@ -54,6 +65,25 @@ elseif ($op==='approve') $value=achbotApproveManualWalletTopup(
     $connection,$hash,(int)($spec['actor']??9001));
 elseif ($op==='bank_auto_claim') $value=achbotAutoBankClaim($connection,$payInfo);
 elseif ($op==='bank_auto_eligible') $value=achbotAutoBankEligible($connection,$payInfo);
+elseif ($op==='preflight_bank_service_edit') {
+    $value=achbotAutoBankEditPreflight($connection,$payInfo,
+        (string)($spec['edit_kind']??'day'),(int)($spec['server_id']??2),
+        (int)($spec['order_id']??0),(string)($spec['remark']??'auto-check'),
+        (int)($spec['units']??3));
+}
+elseif ($op==='finish_bank_service_edit') {
+    $reply=(object)[
+        'success'=>(bool)($spec['remote_success']??true),
+        'verified'=>(bool)($spec['remote_verified']??true),
+        'applied_expire'=>(int)($spec['applied_expire']??1802000000),
+        'applied_bytes'=>(int)($spec['applied_bytes']??3221225472),
+    ];
+    $value=achbotAutoBankFinishEdit($connection,$payInfo,$reply,
+        (string)($spec['edit_kind']??'volume'),
+        (int)($spec['server_id']??2),(int)($spec['order_id']??0),
+        (string)($spec['remark']??'auto-check'),(int)$payInfo['price'],
+        (int)($spec['units']??1));
+}
 elseif ($op==='finish') $value=achbotManualFinishEvidence($connection,$hash,
     (string)($spec['photo_id']??'fixture-photo-id'),(string)($spec['token']??''),222,9001);
 elseif ($op==='service_guard') {
@@ -204,6 +234,7 @@ function answerCallbackQuery(...$args){$GLOBALS['events'][]=['name'=>'answerCall
 // Record every attempted external effect, including mistaken authorization.
 $linkIndices=[];$hideConfigIfMany=false;$markup=[];
 function achbotSupportsMarzbanOrder(...$args){return true;}
+function achbotSupportsPanel($type){return $type==='marzban';}
 function getPlanDetails(...$args){return [
     'days'=>30,'volume'=>10,'date'=>'synthetic',
     'expire_microdate'=>2000000000,'expire_date'=>2000000000,
@@ -317,8 +348,10 @@ function editMarzbanConfig(...$args){
     $GLOBALS['events'][]=['name'=>'remote_edit'];
     if (($GLOBALS['spec']['remote_mode']??'success')==='uncertain')
         throw new RuntimeException('fixture_remote_result_unknown');
-    return (object)['success'=>true];
+    return (object)['success'=>true,'verified'=>true,
+        'applied_expire'=>1800000100,'applied_bytes'=>3*1073741824];
 }
+require_once $root.'/src/Purchase/Core.php';
 $GLOBALS['spec']=$spec;
 if (($spec['route']??'wallet') === 'manual_crypto') {
     require $root.'/src/Finance/Routes/ManualCrypto.php';
@@ -447,7 +480,12 @@ def run_php(work,env,driver,hash_id,op,method='bank_transfer',user=1001,**more):
         ('pay_row_id=' in line or 'achbot_bank_auto_scan_deferred' in line) and
         'fixture' not in line and 'SQL' not in line
         for line in p.stderr.splitlines()))
-    if p.returncode or (p.stderr and not safe_deferred):
+    safe_service_deferred=(expect_deferred and p.stderr and all(
+        'achbot_auto_service_edit_needs_review pay_id=' in line and
+        ' kind=standard exception=mysqli_sql_exception' in line and
+        'fixture' not in line and 'SQL' not in line
+        for line in p.stderr.splitlines()))
+    if p.returncode or (p.stderr and not (safe_deferred or safe_service_deferred)):
         raise RuntimeError('isolated PHP method test failed: '+repr((p.returncode,p.stderr,p.stdout))[:1200])
     try: return json.loads(p.stdout)['result']
     except Exception as exc:raise RuntimeError('invalid manual driver: '+repr(p.stdout)) from exc
@@ -1569,6 +1607,39 @@ def check():
             assert base(key,'bank_auto_claim') is False
         cases.append('six_native_bank_timer_admin_concurrency_races_exactly_once')
 
+        # Execute the ACTUAL inherited automatic bank receipt handler, not
+        # merely the isolated bank-finisher. The normalized service adapter
+        # boundary is substituted with a deterministic test-only verified
+        # result, while all PHP payment/order/accounting SQL remains real.
+        for outcome in ('verified','unconfirmed'):
+            key='realschedulerday'+outcome
+            seed(work,env,key)
+            remark='scheduler_day_'+outcome
+            query(work,env,"INSERT INTO orders_list "
+                "(userid,token,transid,fileid,server_id,inbound_id,remark,uuid,protocol,"
+                "expire_date,link,amount,status,date,notif,rahgozar,agent_bought) "
+                f"VALUES (1001,'token','',1,1,0,'{remark}','fx-account','vless',"
+                "1800000100,'[]',100,1,'fixture',1,0,0)")
+            oid=int(query(work,env,
+                f"SELECT id FROM orders_list WHERE remark='{remark}' ORDER BY id DESC LIMIT 1"))
+            query(work,env,"INSERT INTO increase_day (id,volume,price) "
+                "VALUES (981,5,100) ON DUPLICATE KEY UPDATE volume=5,price=100")
+            query(work,env,f"UPDATE pays SET type='INCREASE_DAY_{oid}_981',"
+                "server_id=1,plan_id=1,order_id="+str(oid)+","
+                "message_id=550,chat_id=9001,state='have_sent',"
+                "request_date=UNIX_TIMESTAMP()-120 WHERE hash_id='"+key+"'")
+            prior=query(work,env,'SELECT COUNT(*) FROM increase_order')
+            assert base(key,'auto',auto_remote=outcome)=='tested'
+            expected='auto_cart_approved' if outcome=='verified' else 'processing'
+            assert query(work,env,f"SELECT state FROM pays WHERE hash_id='{key}'")==expected
+            assert query(work,env,'SELECT COUNT(*) FROM increase_order')==(
+                str(int(prior)+1) if outcome=='verified' else prior)
+            assert base(key,'auto',auto_remote='verified')=='tested'
+            assert query(work,env,'SELECT COUNT(*) FROM increase_order')==(
+                str(int(prior)+1) if outcome=='verified' else prior)
+            cases.append('native_real_bank_scheduler_day_'+outcome+
+                         '_verified_remote_required_no_duplicate')
+
         # The exclusive service claim can be granted only once even when
         # two distinct process workers race. No external Marzban side effect.
         seed(work,env,'autoservice')
@@ -1580,6 +1651,83 @@ def check():
         assert claims.count(True)==1 and claims.count(False)==1
         assert base('autoservice','bank_auto_claim') is False
         cases.append('scheduled_service_effect_claimed_only_once')
+
+        # A scheduled bank receipt is *not* proof a remote renewal/extension
+        # happened. Real SQL source transitions from have_sent->processing,
+        # and only authenticated applied-expire/bytes evidence + all local
+        # accounting rows can turn processing->auto_cart_approved.
+        for kind in ('day','volume','renew','standard'):
+            key='autobankedit'+kind
+            seed(work,env,key)
+            remark='auto_'+kind+'_fixture'
+            query(work,env,"INSERT INTO orders_list "
+                "(userid,token,transid,fileid,server_id,inbound_id,remark,uuid,protocol,"
+                "expire_date,link,amount,status,date,notif,rahgozar,agent_bought) "
+                f"VALUES (1001,'token','',7,2,0,'{remark}','fixture-uuid','vless',"
+                "1800000100,'[]',100,1,'fixture',1,0,0)")
+            oid=int(query(work,env,
+                f"SELECT id FROM orders_list WHERE remark='{remark}' ORDER BY id DESC LIMIT 1"))
+            if kind=='day':
+                query(work,env,"INSERT INTO increase_day (id,volume,price) VALUES "
+                              "(9901,3,100) ON DUPLICATE KEY UPDATE volume=3,price=100")
+            if kind=='volume':
+                query(work,env,"INSERT INTO increase_plan (id,volume,price) VALUES "
+                              "(9902,3,100) ON DUPLICATE KEY UPDATE volume=3,price=100")
+            typ={'day':f'INCREASE_DAY_{oid}_9901',
+                 'volume':f'INCREASE_VOLUME_{oid}_9902',
+                 'renew':'RENEW_ACCOUNT','standard':'RENEW_SCONFIG'}[kind]
+            description=(
+                f"'{json.dumps({'remark':remark,'uuid':'fixture-uuid'},separators=(',',':'))}'"
+                if kind=='standard' else "description")
+            query(work,env,f"UPDATE pays SET type='{typ}',state='have_sent',"
+                f"order_id={oid},server_id=2,plan_id=7,description={description} "
+                f"WHERE hash_id='{key}'")
+            assert base(key,'bank_auto_claim') is True
+            assert query(work,env,f"SELECT state FROM pays WHERE hash_id='{key}'")=='processing'
+            details={'edit_kind':kind,'server_id':2,'order_id':oid,
+                'remark':remark,'units':3}
+            before_order=query(work,env,
+                f"SELECT expire_date,notif FROM orders_list WHERE id={oid}")
+            before_audit=query(work,env,'SELECT COUNT(*) FROM increase_order')
+            assert base(key,'preflight_bank_service_edit',**details) is True
+            assert base(key,'preflight_bank_service_edit',server_id=3,
+                        **{k:v for k,v in details.items() if k!='server_id'}) is False
+            assert base(key,'preflight_bank_service_edit',remark='wrong-owner',
+                        **{k:v for k,v in details.items() if k!='remark'}) is False
+            assert base(key,'finish_bank_service_edit',remote_verified=False,**details) is False
+            assert query(work,env,f"SELECT state FROM pays WHERE hash_id='{key}'")=='processing'
+            assert query(work,env,
+                f"SELECT expire_date,notif FROM orders_list WHERE id={oid}")==before_order
+            assert query(work,env,'SELECT COUNT(*) FROM increase_order')==before_audit
+            assert base(key,'finish_bank_service_edit',remote_verified=True,**details) is True
+            assert query(work,env,f"SELECT state FROM pays WHERE hash_id='{key}'")=='auto_cart_approved'
+            assert query(work,env,'SELECT COUNT(*) FROM increase_order')==str(int(before_audit)+1)
+            if kind in ('day','renew'):
+                assert query(work,env,f"SELECT expire_date FROM orders_list WHERE id={oid}")=='1802000000'
+            assert base(key,'finish_bank_service_edit',remote_verified=True,**details) is False
+            assert query(work,env,'SELECT COUNT(*) FROM increase_order')==str(int(before_audit)+1)
+            cases.append('auto_bank_'+kind+'_preflight_pins_original_payment_order_target_and_account')
+            cases.append('auto_bank_'+kind+'_service_only_after_verified_remote_and_atomic_local_effect')
+
+        # A paid provider outcome followed by a local accounting INSERT error
+        # cannot mark completion or silently drop the original payment claim.
+        key='autobankeditlocalfail'
+        seed(work,env,key)
+        query(work,env,"UPDATE pays SET type='RENEW_SCONFIG',state='have_sent',"
+            "description='{\"remark\":\"fixture-standard\",\"uuid\":\"fixture-uuid\"}',"
+            "server_id=2,plan_id=7 WHERE hash_id='autobankeditlocalfail'")
+        assert base(key,'bank_auto_claim') is True
+        query(work,env,"CREATE TRIGGER fixture_auto_bank_audit_failure "
+            "BEFORE INSERT ON increase_order FOR EACH ROW "
+            "SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='fixture_sql_failure'")
+        try:
+            assert base(key,'finish_bank_service_edit',edit_kind='standard',
+                        server_id=2,remark='fixture-standard',
+                        order_id=0,expect_deferred=True) is False
+            assert query(work,env,"SELECT state FROM pays WHERE hash_id='autobankeditlocalfail'")=='processing'
+        finally:
+            query(work,env,'DROP TRIGGER IF EXISTS fixture_auto_bank_audit_failure')
+        cases.append('auto_bank_local_sql_failure_does_not_claim_service_delivered')
 
         # A card receipt predating the shared ledger stays eligible for the
         # inherited timer; an arbitrary unknown provider never does.

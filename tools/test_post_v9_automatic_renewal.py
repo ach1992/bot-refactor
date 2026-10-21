@@ -54,7 +54,10 @@ function editMarzbanConfig($id,$info) {
         $stmt->bind_param('i',$oid);$stmt->execute();$stmt->close();
     }
     if(!empty($GLOBALS['spec']['throw']))throw new RuntimeException('mock ambiguous timeout');
-    return (object)['success'=>$GLOBALS['spec']['remote_success']??true];
+    return (object)['success'=>$GLOBALS['spec']['remote_success']??true,
+                    'verified'=>$GLOBALS['spec']['remote_success']??true,
+                    'applied_expire'=>time()+30*86400,
+                    'applied_bytes'=>10*1073741824];
 }
 function sendMessage($message,$keys=null,$parse=null,$id=null) {
     $GLOBALS['events'][]=['type'=>'send','to'=>$id];
@@ -82,6 +85,7 @@ function sendToAllAdmins($type,$data) {
 function setUser($step='none') {
     $GLOBALS['events'][]=['type'=>'setUser','step'=>$step];
 }
+require_once $root.'/src/Purchase/Core.php';
 require_once $root.'/src/Finance/AutomaticRenewal.php';
 $botState['renewAutoState']=$spec['enabled']??'off';
 $admin=9001;

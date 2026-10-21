@@ -55,7 +55,7 @@ if($giftList->num_rows>0){
             $state = $config->status == "active"?true:false;
 
             if($total > 0 && $expiry_time > 0 && $state){
-                $editReponse = editMarzbanConfig($server_id, ['remark'=>$remark, 'plus_volume'=>$volume/1024, 'plus_day'=> $day]);
+                $editReponse = achbotApplyServiceEdit($connection,$server_id, ['remark'=>$remark, 'plus_volume'=>$volume/1024, 'plus_day'=> $day]);
             }
 
             if(!is_null($editReponse)){

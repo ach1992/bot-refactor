@@ -277,105 +277,252 @@ function addMarzbanUser($server_id, $remark, $volume, $days, $plan_id, ?string $
 function editMarzbanConfig($server_id,$info){
     global $connection;
 
-    $stmt=$connection->prepare("SELECT * FROM server_config WHERE id=?");
+    $stmt=$connection->prepare("SELECT type,panel_url FROM server_config WHERE id=?");
     $stmt->bind_param("i",$server_id);
     $stmt->execute();
     $serverInfo=$stmt->get_result()->fetch_assoc();
     $stmt->close();
-    if (!$serverInfo || ($serverInfo['type'] ?? '') !== 'marzban') {
+    if (!$serverInfo || ($serverInfo['type']??'')!=='marzban') {
         return (object)['success'=>false,'uncertain'=>false,'msg'=>'unsupported_panel'];
     }
-    $token=getMarzbanToken($server_id);
-    if (!is_object($token) || empty($token->access_token)) {
-        return (object)['success'=>false,'uncertain'=>true,'msg'=>'marzban_auth_unavailable'];
-    }
-
-    $remark=(string)($info['remark'] ?? '');
+    $remark=(string)($info['remark']??'');
     if ($remark==='') return (object)['success'=>false,'uncertain'=>false,'msg'=>'missing_account'];
-    $current=getMarzbanUser($server_id,$remark,$token);
-    if (!is_object($current) || (string)($current->username ?? '')!==$remark ||
-        !isset($current->expire,$current->data_limit) ||
-        !is_numeric($current->expire) || !is_numeric($current->data_limit) ||
-        !isset($current->inbounds,$current->proxies)) {
-        return (object)['success'=>false,'uncertain'=>true,'msg'=>'marzban_account_unverified'];
+    $panelUrl=rtrim((string)$serverInfo['panel_url'],'/');
+    if ($panelUrl==='') return (object)['success'=>false,'uncertain'=>true,'msg'=>'marzban_target_unknown'];
+
+    // Post-V9 physical panel grouping can map different URLs to the SAME
+    // account store. Prefer the configured shared group to the endpoint
+    // for bot-originated account-level serialization, but preserve legacy
+    // read compatibility when the optional 001 column has not been installed.
+    $hasGroupColumn=false;
+    $groupId=null;
+    try {
+        $columns=$connection->query("SHOW COLUMNS FROM server_info LIKE 'panel_group_id'");
+        if (!$columns) throw new \RuntimeException('group_schema_query_failed');
+        $hasGroupColumn=$columns->num_rows===1;
+        $columns->free();
+        if ($hasGroupColumn) {
+            $groupStmt=$connection->prepare("SELECT panel_group_id FROM server_info WHERE id=?");
+            if (!$groupStmt) throw new \RuntimeException('group_target_query_failed');
+            $groupStmt->bind_param('i',$server_id);
+            $ok=$groupStmt->execute();
+            $groupRow=$ok?$groupStmt->get_result()->fetch_assoc():null;
+            $groupStmt->close();
+            if (!$groupRow) throw new \RuntimeException('group_target_unavailable');
+            if ($groupRow['panel_group_id']!==null) {
+                $groupId=(int)$groupRow['panel_group_id'];
+                if ($groupId<=0) throw new \RuntimeException('group_target_invalid');
+                $groupStmt=$connection->prepare("SELECT id FROM setting
+                    WHERE id=? AND type='ACHBOT_MARZBAN_PANEL_GROUP'");
+                if (!$groupStmt) throw new \RuntimeException('group_identity_query_failed');
+                $groupStmt->bind_param('i',$groupId);
+                $ok=$groupStmt->execute();
+                $valid=$ok?$groupStmt->get_result()->fetch_assoc():null;
+                $groupStmt->close();
+                if (!$valid) throw new \RuntimeException('group_identity_unverified');
+            }
+        }
+    } catch (\Throwable $error) {
+        return (object)['success'=>false,'uncertain'=>true,
+                        'msg'=>'marzban_group_identity_unverified'];
+    }
+    $scope=$groupId===null?'endpoint:'.$panelUrl:'group:'.$groupId;
+    // A bounded advisory lock is released even if Marzban times out.
+    $lockName='achbot-edit-'.substr(hash('sha256',$scope."\n".$remark),0,40);
+    $lock=$connection->prepare("SELECT GET_LOCK(?,3) AS acquired");
+    if (!$lock) return (object)['success'=>false,'uncertain'=>true,'msg'=>'marzban_edit_lock_unavailable'];
+    $lock->bind_param('s',$lockName);
+    $acquired=$lock->execute() ? $lock->get_result()->fetch_assoc() : null;
+    $lock->close();
+    if (!$acquired || (int)$acquired['acquired']!==1) {
+        return (object)['success'=>false,'uncertain'=>true,'msg'=>'marzban_edit_busy'];
     }
 
-    $expire=(int)$current->expire;
-    $volume=(int)$current->data_limit;
-    if (isset($info['plus_day'])) {
-        $days=(int)$info['plus_day'];
-        if ($days<=0 || $days>36500) return (object)['success'=>false,'uncertain'=>false,'msg'=>'invalid_days'];
-        $expire=max($expire,time())+86400*$days;
-    } elseif (isset($info['days'])) {
-        $days=(int)$info['days'];
-        if ($days<=0 || $days>36500) return (object)['success'=>false,'uncertain'=>false,'msg'=>'invalid_days'];
-        $expire=time()+86400*$days;
-    }
+    try {
+        $token=getMarzbanToken($server_id);
+        if (!is_object($token) || empty($token->access_token))
+            return (object)['success'=>false,'uncertain'=>true,'msg'=>'marzban_auth_unavailable'];
 
-    if (isset($info['plus_volume'])) {
-        $extra=(int)$info['plus_volume'];
-        if ($extra<=0 || $extra>intdiv(PHP_INT_MAX,1073741824) ||
-            $volume>PHP_INT_MAX-$extra*1073741824) {
-            return (object)['success'=>false,'uncertain'=>false,'msg'=>'invalid_volume'];
-        }
-        $volume+=$extra*1073741824;
-    } elseif (isset($info['volume'])) {
-        $gigabytes=(int)$info['volume'];
-        if ($gigabytes<0 || $gigabytes>intdiv(PHP_INT_MAX,1073741824)) {
-            return (object)['success'=>false,'uncertain'=>false,'msg'=>'invalid_volume'];
-        }
-        $volume=$gigabytes*1073741824;
-        $reset=resetMarzbanTraffic($server_id,$remark,$token);
-        if (!is_object($reset) || empty($reset->success)) {
-            return (object)['success'=>false,'uncertain'=>true,'msg'=>'marzban_reset_unverified'];
-        }
-    }
+        $isPinned=function() use ($connection,$server_id,$panelUrl,$groupId,$hasGroupColumn): bool {
+            $check=$connection->prepare("SELECT type,panel_url FROM server_config WHERE id=?");
+            if (!$check) return false;
+            $check->bind_param('i',$server_id);
+            $ok=$check->execute();
+            $record=$ok?$check->get_result()->fetch_assoc():null;
+            $check->close();
+            if (!$record || ($record['type']??'')!=='marzban' ||
+                rtrim((string)$record['panel_url'],'/')!==$panelUrl) return false;
+            if (!$hasGroupColumn) return true;
+            $stmt=$connection->prepare("SELECT panel_group_id FROM server_info WHERE id=?");
+            if (!$stmt) return false;
+            $stmt->bind_param('i',$server_id);
+            $ok=$stmt->execute();
+            $group=$ok?$stmt->get_result()->fetch_assoc():null;
+            $stmt->close();
+            return (bool)$group &&
+                ($group['panel_group_id']===null?null:(int)$group['panel_group_id'])===$groupId;
+        };
+        if (!$isPinned())
+            return (object)['success'=>false,'uncertain'=>true,'msg'=>'marzban_target_changed'];
 
-    $postFields=[
-        'inbounds'=>$current->inbounds,
-        'proxies'=>$current->proxies,
-        'expire'=>$expire,
-        'data_limit'=>$volume,
-        'username'=>urlencode($remark),
-        'note'=>$current->note ?? null,
-        'data_limit_reset_strategy'=>$current->data_limit_reset_strategy ?? 'no_reset',
-        'status'=>'active'
-    ];
-    $json=json_encode($postFields);
-    if ($json===false) return (object)['success'=>false,'uncertain'=>true,'msg'=>'marzban_encode_failure'];
-    $curl=curl_init();
-    curl_setopt($curl,CURLOPT_URL,rtrim((string)$serverInfo['panel_url'],'/').'/api/user/'.rawurlencode($remark));
-    curl_setopt($curl,CURLOPT_RETURNTRANSFER,true);
-    curl_setopt($curl,CURLOPT_CUSTOMREQUEST,'PUT');
-    curl_setopt($curl,CURLOPT_CONNECTTIMEOUT,5);
-    curl_setopt($curl,CURLOPT_TIMEOUT,20);
-    curl_setopt($curl,CURLOPT_SSL_VERIFYPEER,true);
-    curl_setopt($curl,CURLOPT_SSL_VERIFYHOST,2);
-    curl_setopt($curl,CURLOPT_POSTFIELDS,$json);
-    curl_setopt($curl,CURLOPT_HTTPHEADER,[
-        'Accept: application/json',
-        'Authorization: Bearer '.$token->access_token,
-        'Content-Type: application/json'
-    ]);
-    $raw=curl_exec($curl);
-    $error=curl_error($curl);
-    $http=(int)curl_getinfo($curl,CURLINFO_HTTP_CODE);
-    curl_close($curl);
-    // A lost response does not prove the PUT did not reach Marzban.
-    if ($raw===false || $error!=='' || $http<200 || $http>=300) {
-        return (object)['success'=>false,'uncertain'=>true,'msg'=>'marzban_put_unconfirmed'];
+        $current=getMarzbanUser($server_id,$remark,$token,true);
+        if (!is_object($current) || (string)($current->username??'')!==$remark ||
+            !isset($current->expire,$current->data_limit) ||
+            !is_numeric($current->expire) || !is_numeric($current->data_limit) ||
+            !isset($current->inbounds,$current->proxies)) {
+            return (object)['success'=>false,'uncertain'=>true,'msg'=>'marzban_account_unverified'];
+        }
+
+        $oldExpire=(int)$current->expire;
+        $oldVolume=(int)$current->data_limit;
+        $expire=$oldExpire;
+        $volume=$oldVolume;
+        if (isset($info['plus_day'])) {
+            $days=(int)$info['plus_day'];
+            if ($days<=0 || $days>36500 || $days>intdiv(PHP_INT_MAX,86400) ||
+                max($expire,time())>PHP_INT_MAX-$days*86400)
+                return (object)['success'=>false,'uncertain'=>false,'msg'=>'invalid_days'];
+            $expire=max($expire,time())+86400*$days;
+        } elseif (isset($info['days'])) {
+            $days=(int)$info['days'];
+            if ($days<=0 || $days>36500 || time()>PHP_INT_MAX-$days*86400)
+                return (object)['success'=>false,'uncertain'=>false,'msg'=>'invalid_days'];
+            $expire=time()+86400*$days;
+        }
+        if (isset($info['plus_volume'])) {
+            $extra=(int)$info['plus_volume'];
+            if ($extra<=0 || $extra>intdiv(PHP_INT_MAX,1073741824) ||
+                $volume>PHP_INT_MAX-$extra*1073741824)
+                return (object)['success'=>false,'uncertain'=>false,'msg'=>'invalid_volume'];
+            $volume+=$extra*1073741824;
+        } elseif (isset($info['volume'])) {
+            $gigabytes=(int)$info['volume'];
+            if ($gigabytes<0 || $gigabytes>intdiv(PHP_INT_MAX,1073741824))
+                return (object)['success'=>false,'uncertain'=>false,'msg'=>'invalid_volume'];
+            $volume=$gigabytes*1073741824;
+            $reset=resetMarzbanTraffic($server_id,$remark,$token);
+            if (!is_object($reset) || empty($reset->success))
+                return (object)['success'=>false,'uncertain'=>true,'msg'=>'marzban_reset_unverified'];
+            // A reset has already been attempted and must never be blindly
+            // repeated. Require an authenticated observation before PUT.
+            $afterReset=getMarzbanUser($server_id,$remark,$token,true);
+            if (!is_object($afterReset) || ($afterReset->username??'')!==$remark ||
+                !isset($afterReset->used_traffic) ||
+                !is_numeric($afterReset->used_traffic) ||
+                (isset($current->used_traffic) &&
+                 is_numeric($current->used_traffic) &&
+                 (int)$current->used_traffic>0 &&
+                 (int)$afterReset->used_traffic>=(int)$current->used_traffic)) {
+                return (object)['success'=>false,'uncertain'=>true,'msg'=>'marzban_reset_readback_unverified'];
+            }
+        }
+        if (!$isPinned())
+            return (object)['success'=>false,'uncertain'=>true,'msg'=>'marzban_target_changed'];
+
+        $postFields=[
+            'inbounds'=>$current->inbounds,
+            'proxies'=>$current->proxies,
+            'expire'=>$expire,
+            'data_limit'=>$volume,
+            'username'=>urlencode($remark),
+            'note'=>$current->note??null,
+            'data_limit_reset_strategy'=>$current->data_limit_reset_strategy??'no_reset',
+            'status'=>'active'
+        ];
+        $json=json_encode($postFields);
+        if ($json===false)
+            return (object)['success'=>false,'uncertain'=>true,'msg'=>'marzban_encode_failure'];
+
+        $put=function() use ($panelUrl,$remark,$token,$json,$expire,$volume): array {
+            $curl=curl_init();
+            curl_setopt($curl,CURLOPT_URL,$panelUrl.'/api/user/'.rawurlencode($remark));
+            curl_setopt($curl,CURLOPT_RETURNTRANSFER,true);
+            curl_setopt($curl,CURLOPT_CUSTOMREQUEST,'PUT');
+            curl_setopt($curl,CURLOPT_CONNECTTIMEOUT,5);
+            curl_setopt($curl,CURLOPT_TIMEOUT,20);
+            curl_setopt($curl,CURLOPT_SSL_VERIFYPEER,true);
+            curl_setopt($curl,CURLOPT_SSL_VERIFYHOST,2);
+            curl_setopt($curl,CURLOPT_POSTFIELDS,$json);
+            curl_setopt($curl,CURLOPT_HTTPHEADER,[
+                'Accept: application/json',
+                'Authorization: Bearer '.$token->access_token,
+                'Content-Type: application/json'
+            ]);
+            $raw=curl_exec($curl);
+            $error=curl_error($curl);
+            $http=(int)curl_getinfo($curl,CURLINFO_HTTP_CODE);
+            curl_close($curl);
+            // The provider's reply is useful evidence, but never enough to
+            // mark a paid renewal/extension as delivered on its own.
+            $retryable=($raw===false || $error!=='' ||
+                        in_array($http,[408,500,502,503,504],true));
+            if ($raw===false || $error!=='' || $http<200 || $http>=300)
+                return ['valid'=>false,'retryable'=>$retryable];
+            $reply=json_decode((string)$raw);
+            $valid=is_object($reply) && !isset($reply->detail) &&
+                (string)($reply->username??'')===$remark &&
+                isset($reply->expire,$reply->data_limit) &&
+                is_numeric($reply->expire) && is_numeric($reply->data_limit) &&
+                (int)$reply->expire===$expire && (int)$reply->data_limit===$volume;
+            // A malformed 2xx body is not proof of remote failure or success.
+            // If exact GET still shows the original state, one identical
+            // absolute PUT is safe; never replay a relative increment.
+            return ['valid'=>$valid,'retryable'=>!$valid];
+        };
+        $read=function() use ($server_id,$remark,$token,$isPinned): ?object {
+            if (!$isPinned()) return null;
+            $observed=getMarzbanUser($server_id,$remark,$token,true);
+            if (!$isPinned() || !is_object($observed) ||
+                (string)($observed->username??'')!==$remark ||
+                !isset($observed->expire,$observed->data_limit) ||
+                !is_numeric($observed->expire) || !is_numeric($observed->data_limit))
+                return null;
+            return $observed;
+        };
+        $matches=function(?object $observed,int $wantExpire,int $wantVolume) use ($current): bool {
+            return $observed!==null &&
+                (int)$observed->expire===$wantExpire &&
+                (int)$observed->data_limit===$wantVolume &&
+                ($observed->note??null)===($current->note??null);
+        };
+
+        $firstReply=$put();
+        $observed=$read();
+        if ($matches($observed,$expire,$volume) &&
+            (string)($observed->status??'')==='active') {
+            return (object)['success'=>true,'verified'=>true,
+                'applied_expire'=>$expire,'applied_bytes'=>$volume,
+                'reconciled'=>!$firstReply['valid'],'repaired'=>false];
+        }
+        // A fully observed ORIGINAL state permits one corrective absolute
+        // PUT with exactly the same target values. No second relative delta,
+        // no second traffic reset, and no retry on unknown/foreign state.
+        if ($matches($observed,$oldExpire,$oldVolume) &&
+            ($firstReply['valid'] || $firstReply['retryable'])) {
+            $put();
+            $verified=$read();
+            if ($matches($verified,$expire,$volume) &&
+                (string)($verified->status??'')==='active') {
+                return (object)['success'=>true,'verified'=>true,
+                    'applied_expire'=>$expire,'applied_bytes'=>$volume,
+                    'reconciled'=>true,'repaired'=>true];
+            }
+        }
+        return (object)['success'=>false,'uncertain'=>true,
+            'msg'=>$observed===null?'marzban_readback_unavailable':'marzban_edit_unverified'];
+    } finally {
+        try {
+            $unlock=$connection->prepare('SELECT RELEASE_LOCK(?) AS released');
+            if ($unlock) {
+                $unlock->bind_param('s',$lockName);
+                $unlock->execute();
+                $unlock->close();
+            }
+        } catch (\Throwable $ignored) {
+            // Locks are connection-bound; failed unlock cannot turn a
+            // remote success into failure or authorize a second update.
+        }
     }
-    $reply=json_decode($raw);
-    // Marzban PUT responds with a UserResponse. HTTP 2xx or an empty body
-    // alone is not proof of the applied expiry/volume modification.
-    if (!is_object($reply) || isset($reply->detail) ||
-        (string)($reply->username ?? '')!==$remark ||
-        !isset($reply->expire,$reply->data_limit) ||
-        !is_numeric($reply->expire) || !is_numeric($reply->data_limit) ||
-        (int)$reply->expire!==$expire || (int)$reply->data_limit!==$volume) {
-        return (object)['success'=>false,'uncertain'=>true,'msg'=>'marzban_put_response_unverified'];
-    }
-    return (object)['success'=>true];
 }
 
 function resetMarzbanTraffic($server_id, $remark, $token){

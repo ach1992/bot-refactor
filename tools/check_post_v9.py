@@ -167,6 +167,33 @@ def main():
         marzban=json.loads(native.read_text())
         if not marzban.get("complete") or not marzban.get("marzban_http_wire_sql_parity"):
             raise RuntimeError("Current candidate Marzban native source proof incomplete")
+        edit_path=Path(tmp)/"service-edit-native.json"
+        subprocess.run(["python3",str(ROOT/"tools/test_post_v9_marzban_edits.py"),
+                        "--run-disposable","--report",str(edit_path)],
+                       cwd=ROOT,check=True,timeout=240,capture_output=True)
+        edits=json.loads(edit_path.read_text())
+        required_edits={
+            'edit-verified_source_native_verified',
+            'edit-lost-applied_source_native_reconciled',
+            'edit-repair_source_native_repaired',
+            'edit-lost-repair_source_native_repaired',
+            'edit-badbody-repair_source_native_repaired',
+            'edit-noop_source_native_unverified',
+            'edit-foreign_source_native_unverified',
+            'edit-reset-verified_source_native_verified',
+            'edit-reset-lie_source_native_reset_unverified',
+            'panel_neutral_dispatch_to_current_verified_marzban_adapter',
+            'unimplemented_future_panel_denied_without_remote_dispatch',
+            'two_concurrent_distinct_edits_serialized_no_lost_increment',
+            'physical_panel_alias_different_urls_group_lock_no_lost_increment',
+            'missing_physical_panel_group_rejects_before_remote_dispatch',
+        }
+        if not (edits.get('complete') and edits.get('cases')==len(required_edits)
+                and required_edits.issubset(edits.get('scenarios',[]))
+                and edits.get('actual_php_mysqli_curl')
+                and edits.get('real_provider_requests')==0
+                and edits.get('absolute_correction_not_relative_replay')):
+            raise RuntimeError('Provider-neutral service edit native assurance incomplete')
         purchase_path=Path(tmp)/"marzban-purchase.json"
         subprocess.run(["python3",str(ROOT/"tools/test_post_v9_purchases.py"),
                         "--run-disposable","--report",str(purchase_path)],
@@ -1125,6 +1152,15 @@ def main():
             "real_topup_raw_text_accepted_2",      # ASCII leading zeros
             "real_topup_raw_callback_accepted_3",  # maximum callback
         }
+        required_manual.update({
+            'auto_bank_day_service_only_after_verified_remote_and_atomic_local_effect',
+            'auto_bank_volume_service_only_after_verified_remote_and_atomic_local_effect',
+            'auto_bank_renew_service_only_after_verified_remote_and_atomic_local_effect',
+            'auto_bank_standard_service_only_after_verified_remote_and_atomic_local_effect',
+            'auto_bank_local_sql_failure_does_not_claim_service_delivered',
+            'native_real_bank_scheduler_day_verified_verified_remote_required_no_duplicate',
+            'native_real_bank_scheduler_day_unconfirmed_verified_remote_required_no_duplicate',
+        })
         if not (manual.get("complete") and manual.get("cases")>=len(required_manual)
                 and required_manual.issubset(manual.get("scenarios",[]))
                 and manual.get("database")=="owned_socket_only"
@@ -1297,6 +1333,7 @@ def main():
                     "shared_payment_ledger_rc4_import":migration,
                      "agency_state_regression":agency,
                      "optional_cron_runner":cron,
+                    "marzban_service_modifications":edits,
                     "marzban_logical_transfer":logical,
                     "historical_suite_executed_by_this_script":False,
                     "historical_suite_requires_separate_pinned_ci_execution":True,
@@ -1331,6 +1368,7 @@ def main():
                       "historical_rc4_payment_import_verified":migration["preserved_rc4_rows_and_ids"],
                        "agency_state_cases":agency["cases"],
                        "optional_cron_runner_cases":cron["cases"],
+                      "marzban_service_modification_cases":edits["cases"],
                       "marzban_logical_transfer_cases":logical["cases"],
                       "current_php_version":subprocess.check_output(["php","-r","echo PHP_VERSION_ID;"]).decode()}))
 
