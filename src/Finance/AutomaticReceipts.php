@@ -53,6 +53,13 @@ if($botState['cartToCartAutoAcceptState']=="on"){
         if (!achbotAutoBankClaim($connection, $payInfo)) continue;
         // One iteration must not inherit another customer's completion state.
         $autoServiceCompleted=null;
+        // Operator-only context for a claimed but not yet fulfilled bank BUY_SUB.
+        // Price is the stored order amount, never proof of bank settlement.
+        $bankReviewContext=$payType==='BUY_SUB'
+            ? "\n👤 شناسه کاربر: ".(int)$user_id
+                ."\n💵 مبلغ سفارش: ".number_format((int)$price)." تومان"
+                ."\n📦 تعداد اشتراک: ".max(1,(int)($payInfo['agent_count']??1))
+            : '';
         try {
         
         if($payType == "INCREASE_WALLET"){
@@ -74,11 +81,33 @@ if($botState['cartToCartAutoAcceptState']=="on"){
             if ($autoServiceCompleted) {
                 // Telegram/QR is post-COMMIT only; failures never recreate
                 // accounts, debit/credit wallets or change financial finality.
-                foreach ($delivery['deliveries'] as $packet) {
-                    $sent=sendQrFromLink($packet['qr'],$packet['caption'],
-                        $packet['keys'],(string)$botUrl,(int)$packet['uid']);
-                    if (!$sent)
-                        error_log('achbot_bank_buy_qr_delivery_unconfirmed pay_id='.(int)$rowId);
+                $unconfirmedDeliveries=[];
+                foreach ($delivery['deliveries'] as $index=>$packet) {
+                    try {
+                        $sent=sendQrFromLink($packet['qr'],$packet['caption'],
+                            $packet['keys'],(string)$botUrl,(int)$packet['uid']);
+                        if (!$sent) {
+                            $unconfirmedDeliveries[]=$index+1;
+                            error_log('achbot_bank_buy_delivery_unconfirmed pay_id='.(int)$rowId.' line='.($index+1));
+                        }
+                    } catch (Throwable $deliveryError) {
+                        $unconfirmedDeliveries[]=$index+1;
+                        error_log('achbot_bank_buy_delivery_error pay_id='.(int)$rowId.
+                            ' line='.($index+1).' class='.get_class($deliveryError));
+                    }
+                }
+                if ($unconfirmedDeliveries!==[]) {
+                    // Fulfillment is already committed. Never retry CREATE just
+                    // because a Telegram acknowledgment was lost.
+                    try {
+                        sendMessage("⚠️ سفارش ثبت و سرویس ساخته شده، ولی تحویل مشخصات به کاربر قطعی نیست.\n"
+                            ."شناسه پرداخت: ".(int)$rowId.$bankReviewContext
+                            ."\nردیف‌های نیازمند بررسی: ".implode(', ',$unconfirmedDeliveries)
+                            ."\nفقط تحویل اشتراک ثبت‌شده را بررسی کنید؛ سرویس جدید نسازید و بازپرداخت خودکار نکنید.",
+                            null,null,$admin);
+                    } catch (Throwable $noticeError) {
+                        error_log('achbot_bank_buy_delivery_notice_failed pay_id='.(int)$rowId);
+                    }
                 }
                 // Preserve the legacy referral journey only after finality.
                 // Any uncertain bonus outcome stays an operator matter; no
@@ -319,7 +348,7 @@ if($botState['cartToCartAutoAcceptState']=="on"){
             : '⚠️ در انتظار تطبیق سرویس';
         if (($autoServiceCompleted??true)===false) {
             sendMessage("⚠️ تأیید رسید ثبت شده، اما تغییر واقعی سرویس یا ثبت نهایی سفارش قطعی نیست.\n"
-                ."شناسه پرداخت: ".(int)$rowId."\nبدون تطبیق سرویس، تمدید یا بازپرداخت را تکرار نکنید.",
+                ."شناسه پرداخت: ".(int)$rowId.$bankReviewContext."\nبدون تطبیق سرویس، تمدید یا بازپرداخت را تکرار نکنید.",
                 null,null,$admin);
         }
         // دکمه مدیر نباید قبل از اعمال سرویس، موفقیت را اعلام کند.
@@ -354,7 +383,7 @@ if($botState['cartToCartAutoAcceptState']=="on"){
             if ($payType==='BUY_SUB' && $autoServiceCompleted!==true) {
                 try {
                     sendMessage('⚠️ پرداخت شما محفوظ است، اما نتیجهٔ ساخت اشتراک قطعی نیست. برای بررسی با پشتیبانی تماس بگیرید؛ پرداخت را تکرار نکنید.',null,null,$user_id);
-                    sendMessage('⚠️ ساخت اشتراک پرداخت بانکی نیاز به تطبیق دارد. شناسه پرداخت: '.(int)$rowId.'؛ از تأیید مجدد یا بازپرداخت خودکار خودداری کنید.',null,null,$admin);
+                    sendMessage("⚠️ ساخت اشتراک با رسید بانکی نیازمند تطبیق است.\nشناسه پرداخت: ".(int)$rowId.$bankReviewContext."\nاز ساخت مجدد یا بازپرداخت خودکار تا بررسی شواهد خودداری کنید.",null,null,$admin);
                 } catch (Throwable $noticeError) {
                     error_log('achbot_bank_buy_review_notice_failed pay_id='.(int)$rowId);
                 }

@@ -111,7 +111,9 @@ prove nonterminal receipt claim, exact per-line remote readback, atomic local
 order/effect/capacity/payment finality, no pre-COMMIT Telegram, no blind
 retries or speculative wallet refunds. Test cases include competing workers,
 partial multi-account, lost POST, 409, invalid readback, local SQL failure,
-nonbank receipts and post-COMMIT Telegram failure. The proposed current
+nonbank receipts, the admin-only payment/user/amount/count review context
+for unknown effects or SQL failure, and post-COMMIT Telegram failure or
+uncertain delivery with operator notice but no account recreation. The proposed current
 runtime now has 95 PHP members; historical V9 92-member source stays frozen.
 Independent review and separately approved installed acceptance remain GATED.
 

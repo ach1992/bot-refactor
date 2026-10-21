@@ -484,7 +484,12 @@ and transition the original payment from processing to auto_cart_approved.
 Integer total order amount including the remainder is allocated among lines.
 No remote API or Telegram call occurs inside this transaction. Customer
 messages are post-COMMIT only. Pending outcomes remain for evidenced
-operator reconciliation. This is **not** fully unattended crash recovery or
+operator reconciliation. Failed local recording and unknown remote results
+send a Persian administrator-only review notice with exact payment ID,
+customer ID, stored order amount and requested account count. A failed or
+unconfirmed post-COMMIT Telegram subscription delivery raises a distinct
+administrator-only notice listing affected lines; it never recreates a
+subscription or changes settled payment state. This is **not** fully unattended crash recovery or
 a universal exactly-once guarantee. Migration 007 is not installed by source
 delivery, and real provider/Telegram acceptance is separately gated.
 

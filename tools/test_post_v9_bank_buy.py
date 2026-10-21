@@ -77,11 +77,12 @@ function sendQrFromLink(...$args) {
     $GLOBALS['events'][]=['event'=>'DELIVER','state'=>fixtureState()];
     if (($GLOBALS['spec']['mode']??'')==='telegram_failure')
         throw new RuntimeException('synthetic_telegram_failure');
+    if (($GLOBALS['spec']['mode']??'')==='telegram_unconfirmed') return false;
     return true;
 }
 function sendMessage($text=null,$keys=null,$mode=null,$to=null) {
     $GLOBALS['events'][]=['event'=>'MESSAGE','state'=>fixtureState(),
-        'success'=>strpos((string)$text,'موفق')!==false,'to'=>$to];
+        'success'=>strpos((string)$text,'موفق')!==false,'to'=>$to,'text'=>(string)$text];
     return (object)['ok'=>true];
 }
 function editKeys(...$args) {
@@ -197,6 +198,8 @@ def check():
             assert not any(e['event']=='DELIVER' or
                 (e['event']=='MESSAGE' and e['success']) for e in result['events'])
             assert not any(e['event']=='POST' for e in run(work,env,driver,pay=pid)['events'])
+            admin=[e for e in result['events'] if e['event']=='MESSAGE' and e['to']==9001]
+            assert len(admin)==1 and 'شناسه پرداخت' in admin[0]['text'] and str(pid) in admin[0]['text'] and '1001' in admin[0]['text'] and '101' in admin[0]['text'],(mode,admin)
             cases.append('unknown_'+mode+'_no_refund_success_or_replay')
 
         multi=seed(work,env,'bankbuymulti',count=2)
@@ -225,13 +228,19 @@ def check():
         assert total(work,env,'orders_list',sqlfail)==0
         assert not any(e['event']=='DELIVER' for e in failed['events'])
         cases.append('sql_failure_after_remote_verified_fails_closed')
+        notices=[e for e in failed['events'] if e['event']=='MESSAGE' and e['to']==9001]
+        assert len(notices)==1 and 'شناسه پرداخت' in notices[0]['text'] and str(sqlfail) in notices[0]['text'] and '1001' in notices[0]['text'] and '101' in notices[0]['text'],notices
+        cases.append('failed_local_commit_operator_receives_payment_identity')
 
-        notice=seed(work,env,'bankbuytelegram')
-        result=run(work,env,driver,pay=notice,mode='telegram_failure')
-        assert state(work,env,notice)=='auto_cart_approved',result
-        assert total(work,env,'orders_list',notice)==1
-        assert not any(e['event']=='POST' for e in run(work,env,driver,pay=notice)['events'])
-        cases.append('telegram_postcommit_exception_never_recreates')
+        for mode in ('telegram_failure','telegram_unconfirmed'):
+            notice=seed(work,env,'bankbuy'+mode)
+            result=run(work,env,driver,pay=notice,mode=mode)
+            assert state(work,env,notice)=='auto_cart_approved',result
+            assert total(work,env,'orders_list',notice)==1
+            assert not any(e['event']=='POST' for e in run(work,env,driver,pay=notice)['events'])
+            alerts=[e for e in result['events'] if e['event']=='MESSAGE' and e['to']==9001]
+            assert len(alerts)==1 and 'تحویل' in alerts[0]['text'] and str(notice) in alerts[0]['text'] and '1001' in alerts[0]['text'],(mode,alerts)
+            cases.append('postcommit_'+mode+'_alerts_operator_without_recreate')
 
         wrong=seed(work,env,'bankbuyotherprovider',method='nowpayments')
         blocked=run(work,env,driver,pay=wrong)

@@ -1027,11 +1027,13 @@ def main():
             "multi_line_atomic_orders_and_integer_amount_allocation",
             "multi_line_partial_unknown_requires_review_not_refund",
             "sql_failure_after_remote_verified_fails_closed",
-            "telegram_postcommit_exception_never_recreates",
+            "failed_local_commit_operator_receives_payment_identity",
+            "postcommit_telegram_failure_alerts_operator_without_recreate",
+            "postcommit_telegram_unconfirmed_alerts_operator_without_recreate",
             "nonbank_attempt_never_auto_provisions",
             "two_simultaneous_bank_workers_one_remote_create",
         }
-        if not (bank_buy.get("complete") and bank_buy.get("cases")>=12
+        if not (bank_buy.get("complete") and bank_buy.get("cases")>=14
                 and required_bank.issubset(bank_buy.get("scenarios",[]))
                 and bank_buy.get("source_real_php")
                 and bank_buy.get("owned_mariadb_only")
