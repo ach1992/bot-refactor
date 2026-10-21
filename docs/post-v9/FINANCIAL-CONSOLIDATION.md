@@ -514,6 +514,53 @@ Use only disposable test accounts and authorized test financial instruments.
 Capture bounded operation/order/effect identifiers without exposing tokens
 or real customer data. No tenant SQL/production installation performed here.
 
+### Owner-private read-only post-crash BUY_SUB inspection (source candidate)
+
+The recovery workbench is reached from the existing **owner-private**
+NOWPayments finance inbox via **«سفارش‌های سرویس ناتمام»**. It is not an
+additional payment gateway or a settlement service. It displays bounded
+newest-first, 12-at-a-time BUY_SUB cases in nonterminal processing/paid
+state and exact per-account service-effect ordinals, preserving historical
+order references even when normal subscription cleanup deletes a local row.
+The associated payment_attempts provider value and saved order amount
+are *context only*, not authenticated proof of collected funds. A payment
+with no effect row is visible as unresolved, never treated as proof that
+Marzban was not called.
+
+The owner may request a single, authenticated, HTTP-checked **GET of one
+exact stored username**. Before any remote request, the inspector checks
+the required migration 007 unique indexes, original payment/plan/logical
+server/group identity, the administrator-assigned group catalog, concrete
+endpoint fingerprint and the persisted request SHA256. It refuses a GET
+on mismatch. Afterwards it rereads the original local identity and accepts
+only **point-in-time corroboration** of exact active username, immutable
+operation marker, nonnegative integer expiry and bytes. Remote 404, 409,
+timeouts, fractional values, stale/changed targets, absent indexes or
+missing schema never turn into authorization to CREATE, refund or mark paid.
+The operation marker is remote-editable; even a matching GET is NOT
+cryptographic proof of a provider's prior action.
+
+The callback requires the configured owner identity **and the same private
+chat**. It acknowledges before the potentially slow strict GET and renders
+escaped Persian operator information. Every list/page action is bounded;
+both payments and up to 15+ per-account lines remain navigable. This
+inspector does **not** write pays, service_effects, wallet, orders,
+notification claims or provider state. It adds no migrations, automatic
+worker, scheduler, durable outbox, resend button or financial decision
+contract. Full unattended post-crash reconciliation, partial multi-account
+refund/fulfillment policy, lost notification delivery and live installed
+operator acceptance remain separately Owner-gated.
+
+Source tests run the actual PHP module + Telegram route against private,
+disposable socket-only MariaDB with simulated account GET, concurrent
+endpoint drift, authorization rejection, malformed ledger indexes,
+MYSQLI_REPORT_OFF, partial account line paging and zero payment mutations.
+Run python3 tools/test_post_v9_recovery_inspection.py --run-disposable and
+the aggregate tools/check_post_v9.py at exact candidate HEAD. The current
+source-only package adds src/Finance/RecoveryInspection.php as its **96th**
+runtime file; historical V9 remains frozen at **92**. This does not itself
+authorize the installation of schema 007 on a tenant database.
+
 ### Provider-neutral service modifications: verified result and bounded self-repair
 
 The source-only remediation for Issue #26 addresses historical false success

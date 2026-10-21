@@ -39,7 +39,7 @@ def source_checks():
         if (ROOT / field).read_bytes() != cmd("show", V9+":"+field):
             raise RuntimeError("Changed historical schema/private-template: " + field)
     files=package.members()
-    if len(files)!=95 or len(set(files))!=len(files):
+    if len(files)!=96 or len(set(files))!=len(files):
         raise RuntimeError("Source-only runtime file inventory changed")
     if any((ROOT/name).exists() or name in files
            for name in package.RETIRED_RUNTIME_MEMBERS):
@@ -1041,6 +1041,53 @@ def main():
                 and bank_buy.get("real_financial_effects")==0
                 and bank_buy.get("installed_operator_tested") is False):
             raise RuntimeError("Bank BUY_SUB finality/remote-effects contract incomplete")
+        # Owner-private BUY_SUB crash inspection is read-only even with
+        # an inconclusive authenticated provider GET. Exercise actual
+        # Telegram route, exact ledger/endpoint and SQL on owned MariaDB.
+        recovery_path=Path(tmp)/"recovery-inspection.json"
+        recovery_run=subprocess.run(
+            ["python3",str(ROOT/"tools/test_post_v9_recovery_inspection.py"),
+             "--run-disposable","--report",str(recovery_path)],
+            cwd=ROOT,timeout=140,capture_output=True,text=True)
+        if recovery_run.returncode!=0:
+            raise RuntimeError("BUY_SUB recovery workbench acceptance failed:\n"
+                               +recovery_run.stderr[-6000:])
+        recovery=json.loads(recovery_path.read_text())
+        required_recovery={
+            "unresolved_bank_case_reads_exact_local_identity_without_sql_writes",
+            "strict_one_account_get_only_matching_observation_no_replay",
+            "no_financial_write_remote_missing",
+            "no_financial_write_remote_timeout",
+            "no_financial_write_remote_wrong_note",
+            "no_financial_write_remote_float_bytes",
+            "no_financial_write_remote_float_expiry",
+            "missing_ordinal_never_infers_remote_absence_or_gets",
+            "nonowner_or_nonprivate_inspection_denied_9002_9001",
+            "nonowner_or_nonprivate_inspection_denied_9001_7777",
+            "owner_private_readback_button_real_callback_no_sql_mutations",
+            "endpoint_drift_fences_remote_get_without_guessing",
+            "concurrent_endpoint_change_disqualifies_readback_evidence",
+            "15_line_keyset_pagination_and_exact_late_account_get",
+            "bank_payment_without_effect_visible_and_13th_case_reachable",
+            "terminal_payment_not_reattributed_to_pending_case",
+            "missing_ledger_schema_fails_closed_without_get_or_mutation",
+            "corrupted_operation_fingerprint_blocks_remote_get",
+            "logical_group_drift_blocks_remote_get",
+            "deleted_historical_order_preserved_without_inferred_refund",
+            "hosted_paid_state_not_assumed_settled_or_mutated",
+            "owner_private_full_inbox_page_and_case_ui_navigation",
+            "missing_unique_effect_index_blocks_remote_selection",
+        }
+        if not (recovery.get("complete")
+                and recovery.get("cases")>=27
+                and required_recovery.issubset(recovery.get("scenarios",[]))
+                and recovery.get("actual_php_admin_route") is True
+                and recovery.get("owned_socket_mariadb") is True
+                and recovery.get("max_account_get_per_callback")==1
+                and recovery.get("remote_writes")==0
+                and recovery.get("money_mutations")==0
+                and recovery.get("installed_operator_tested") is False):
+            raise RuntimeError("Owner-only read-only recovery contract incomplete")
         manual_path=Path(tmp)/"manual-payment-methods.json"
         try:
             subprocess.run(["python3",str(ROOT/"tools/test_post_v9_manual_payments.py"),
@@ -1343,7 +1390,7 @@ def main():
                        cwd=ROOT,check=True,timeout=60,capture_output=True)
         swap=json.loads(overlay_report.read_text())
         if not (swap.get("complete") and swap.get("phase_count")==4
-                and swap.get("runtime_members")==95
+                and swap.get("runtime_members")==96
                 and swap.get("historical_runtime_members")==92
                 and swap.get("retired_old_payment_files_absent_after_source_upgrade")
                 and swap.get("source_roll_forward_and_back_byte_identical")
@@ -1369,6 +1416,7 @@ def main():
                     "latest_review_f1_f4":reviewer_f1_f4,
                     "service_effects":effects,
                     "bank_auto_buy_sub":bank_buy,
+                    "bank_recovery_inspection":recovery,
                     "manual_payment_method_isolation":manual,
                     "manual_crypto_destination_and_admin_guards":crypto_guard,
                     "payment_reference_assurance":payment_identity,
@@ -1405,6 +1453,7 @@ def main():
                       "wallet_authorization_freshness_cases":wallet_freshness["cases"],
                       "service_effect_cases":effects["cases"],
                       "bank_auto_buy_sub_cases":bank_buy["cases"],
+                      "bank_recovery_inspection_cases":recovery["cases"],
                       "manual_payment_isolation_cases":manual["cases"],
                       "manual_crypto_guard_cases":crypto_guard["cases"],
                       "payment_reference_length":payment_identity["default_length"],

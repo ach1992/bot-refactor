@@ -117,6 +117,22 @@ uncertain delivery with operator notice but no account recreation. The proposed 
 runtime now has 95 PHP members; historical V9 92-member source stays frozen.
 Independent review and separately approved installed acceptance remain GATED.
 
+The independent **owner-private read-only recovery workbench** is verified
+by python3 tools/test_post_v9_recovery_inspection.py --run-disposable
+and is mandatory in the full post-V9 gate. Inspect the actual
+src/Finance/Routes/ManualReceipts.php callback while connected to an
+owned MariaDB fixture, including owner **and** chat authentication,
+12-row payment and ordinal paging, exact immutable ledger/target/note
+identity before one strictly authenticated Marzban GET, and invalid or
+changed target/post-GET data. No other Telegram user may see the report;
+failed queries expose no private payment or customer data. No code may
+convert a 404, absent ledger, missing unique index, order deletion,
+partial multiple accounts or matching readback into an automatic service
+CREATE, paid/refunded transition or customer success. Remote 404 is NOT
+proof of remote non-execution. The source package now has 96 current
+members including RecoveryInspection.php, but no schema is installed
+automatically. **Actual installed owner-operator review remains NOT TESTED.**
+
 Execute `python3 tools/test_post_v9_service_effects.py --run-disposable`:
 native PHP 8.1/8.4 and disposable MariaDB must prove unique
 `(pays,kind,ordinal)`, pre-POST durable dispatch, real concurrent racing

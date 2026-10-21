@@ -5,6 +5,136 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     exit;
 }
 
+// Owner-only post-crash paid-account inspection. This has no financial or
+// remote write actions and cannot be reached from a customer/group chat.
+$bankInboxMatch=[];
+$bankCaseMatch=[];
+$bankReadMatch=[];
+$bankInbox=preg_match('/^bankReviewInbox(?:_([1-9][0-9]{0,17}))?$/D',
+                      (string)$data,$bankInboxMatch)===1;
+$bankCase=preg_match('/^bankReviewCase_([1-9][0-9]{0,17})(?:_([0-9]{1,10}))?$/D',
+                     (string)$data,$bankCaseMatch)===1;
+$bankRead=preg_match('/^bankReviewRead_([1-9][0-9]{0,17})_([1-9][0-9]{0,9})_([0-9]{1,10})$/D',
+                     (string)$data,$bankReadMatch)===1;
+if ($bankInbox || $bankCase || $bankRead) {
+    if ((int)$admin<=0 || (int)$from_id!==(int)$admin ||
+        (int)($chat_id??0)!==(int)$admin) {
+        answerCallbackQuery($callbackId,'این بخش فقط در گفتگوی خصوصی مدیر در دسترس است.',true);
+        return;
+    }
+    require_once __DIR__.'/../RecoveryInspection.php';
+    $escRecovery=static fn($value) => htmlspecialchars(
+        substr((string)($value??''),0,100),ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8');
+    $bankAcked=false;
+    try {
+        if ($bankInbox) {
+            $before=(int)($bankInboxMatch[1]??0);
+            $items=achbotRecoveryPendingCases($connection,$before);
+            $more=count($items)>12;
+            $items=array_slice($items,0,12);
+            $buttons=[];
+            foreach ($items as $item) {
+                $buttons[]=[['text'=>'🧾 #'.(int)$item['id'].' | کاربر '.
+                    (int)$item['user_id'].' | '.number_format((int)$item['price']).' تومان',
+                    'callback_data'=>'bankReviewCase_'.(int)$item['id']]];
+            }
+            if ($more && $items) {
+                $last=end($items);
+                $buttons[]=[['text'=>'➡️ پرونده‌های قدیمی‌تر',
+                    'callback_data'=>'bankReviewInbox_'.(int)$last['id']]];
+            }
+            if ($before>0)
+                $buttons[]=[['text'=>'🔝 فهرست جدیدتر','callback_data'=>'bankReviewInbox']];
+            $buttons[]=[['text'=>'📋 مرکز بررسی پرداخت‌ها','callback_data'=>'npReviewInbox']];
+            $buttons[]=[['text'=>'🏠 مدیریت','callback_data'=>'managePanel']];
+            $body="<b>🧩 سفارش‌های سرویس نیازمند تطبیق</b>\n\n".
+                "فقط سفارش‌های BUY_SUB در وضعیت پردازش/پرداخت ثبت‌شده نمایش داده می‌شوند. ".
+                "این وضعیت‌ها و رسید بانکی به‌تنهایی اثبات وصول وجه یا تحویل سرویس نیستند.\n".
+                "هیچ اقدامی برای ساخت، تمدید، تأیید، برگشت وجه یا تغییر وضعیت انجام نمی‌شود.";
+            if (!$items)
+                $body.="\n\nدر این صفحه پرونده‌ای پیدا نشد.";
+            answerCallbackQuery($callbackId,'فهرست فقط‌خواندنی است.');
+            editText($message_id,$body,json_encode(['inline_keyboard'=>$buttons],
+                JSON_UNESCAPED_UNICODE),'HTML');
+            return;
+        }
+        $payId=(int)($bankCase?$bankCaseMatch[1]:$bankReadMatch[1]);
+        $cursor=(int)($bankCase?($bankCaseMatch[2]??0):$bankReadMatch[3]);
+        $observation=null;
+        if ($bankRead) {
+            // Ack before a possibly 20-second strict provider GET.
+            answerCallbackQuery($callbackId,'استعلام فقط‌خواندنی آغاز شد.');
+            $bankAcked=true;
+            $ordinal=(int)$bankReadMatch[2];
+            // Exactly one strictly authenticated account GET, invoked only
+            // after read-only payment/operation/endpoint/group preflight.
+            $observation=achbotRecoveryInspectLine(
+                $connection,$payId,$ordinal,
+                static fn(int $server,string $username) =>
+                    getMarzbanUser($server,$username,null,true));
+        }
+        $case=achbotRecoveryCase($connection,$payId,$cursor);
+        if (!$case) {
+            answerCallbackQuery($callbackId,'این پرونده دیگر نیازمند بررسی نیست.',true);
+            return;
+        }
+        $body="<b>🧩 پروندهٔ سرویس #".(int)$case['pay_id']."</b>\n\n".
+            "👤 شناسه کاربر: ".(int)$case['user_id']."\n".
+            "💵 مبلغ ثبت‌شده سفارش: ".number_format((int)$case['amount'])." تومان\n".
+            "📦 تعداد درخواستی: ".(int)$case['requested_accounts']."\n".
+            "💳 روش ثبت‌شده: <code>".$escRecovery($case['method'])."</code>\n".
+            "📍 وضعیت داخلی: <code>".$escRecovery($case['payment_state'])."</code>\n\n".
+            "<b>ردیف‌های دارای شناسهٔ عملیات:</b>\n";
+        $buttons=[];
+        foreach ($case['lines'] as $line) {
+            $body.="• ردیف ".(int)$line['ordinal']." | ".
+                $escRecovery($line['username'])." | ".
+                $escRecovery($line['state'])." | ".
+                $escRecovery($line['local_evidence'])."\n";
+            $buttons[]=[['text'=>'🔍 استعلام فقط‌خواندنی ردیف '.(int)$line['ordinal'],
+                'callback_data'=>'bankReviewRead_'.(int)$case['pay_id'].'_'.
+                     (int)$line['ordinal'].'_'.$cursor]];
+        }
+        if (!$case['lines'])
+            $body.="هیچ عملیات CREATE ثبت نشده؛ از نبود ردیف، نبود عملیات دوردست را نتیجه نگیرید.\n";
+        if ($observation!==null) {
+            $explain=match($observation['status']) {
+                'matching_observation'=>'شواهد لحظه‌ای حساب با شناسه، نشانگر عملیات، سهمیه و انقضا تطبیق دارد؛ اثبات وصول وجه یا مجوز تأیید نیست.',
+                'remote_mismatch'=>'مغایرت شواهد دوردست؛ بدون ساخت یا بازپرداخت مجدد، نیازمند بررسی است.',
+                'remote_unavailable'=>'استعلام قابل اتکا دریافت نشد؛ 404 یا Timeout نشانهٔ اجرا نشدن CREATE نیست.',
+                'changed_during_inspection'=>'اطلاعات هدف/سفارش هنگام استعلام تغییر کرد؛ نتیجه غیرقطعی است.',
+                default=>'شناسهٔ پرداخت یا مقصد اصلی قابل احراز نیست؛ هیچ درخواست دوردست انجام نشد.',
+            };
+            $body.="\n<b>استعلام ردیف ".(int)$observation['ordinal'].":</b>\n".
+                   $explain."\n";
+        }
+        $body.="\n⚠️ هیچ ردیفی با شمارش کل حساب‌ها تأیید نمی‌شود. ".
+            "تا بررسی انسانی و مستند، ساخت مجدد، پرداخت/بازپرداخت و تغییر وضعیت ممنوع است.";
+        if ((int)$case['next_ordinal']>0)
+            $buttons[]=[['text'=>'➡️ ردیف‌های بعدی',
+                'callback_data'=>'bankReviewCase_'.(int)$case['pay_id'].'_'.
+                    (int)$case['next_ordinal']]];
+        if ($cursor>0)
+            $buttons[]=[['text'=>'🔝 نخستین ردیف‌ها',
+                'callback_data'=>'bankReviewCase_'.(int)$case['pay_id']]];
+        $buttons[]=[['text'=>'📋 فهرست پرونده‌های سرویس',
+            'callback_data'=>'bankReviewInbox']];
+        if (!$bankRead)
+            answerCallbackQuery($callbackId,'این استعلام فقط شواهد را نمایش می‌دهد.');
+        editText($message_id,$body,json_encode(['inline_keyboard'=>$buttons],
+            JSON_UNESCAPED_UNICODE),'HTML');
+    } catch (Throwable $error) {
+        // Protected logs keep only the operator case and exception CLASS,
+        // never provider response bodies, credentials or customer messages.
+        error_log('achbot_service_recovery_inspection_unavailable pay_id='.
+            (int)($payId??0).' class='.get_class($error));
+        if (!$bankAcked)
+            answerCallbackQuery($callbackId,
+                'بازیابی شواهد ممکن نشد؛ هیچ عملیات مالی یا سرویسی انجام نشد.',true);
+    }
+    return;
+}
+
 // Owner-only, provider-evidence-gated finance inbox. These buttons are
 // read-only. Do not repurpose historical manual receipt approval handlers for
 // a hosted payment: a click is not settlement or refund authorization.
@@ -84,6 +214,8 @@ if ($isInbox ||
             if ($hasCursor)
                 $rows[]=[['text'=>'🔝 بازگشت به فهرست جدیدتر',
                     'callback_data'=>'npReviewInbox']];
+            $rows[]=[['text'=>'🧩 سفارش‌های سرویس ناتمام',
+                       'callback_data'=>'bankReviewInbox']];
             $rows[]=[['text'=>'🏠 مدیریت','callback_data'=>'managePanel']];
             answerCallbackQuery($callbackId,'فهرست بر اساس اطلاعات مالی ثبت‌شده است.');
             editText($message_id,$body,json_encode(['inline_keyboard'=>$rows],
