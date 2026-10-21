@@ -51,7 +51,9 @@ persisted operator-message delivery, unmatched provider claim, and the
 provider-scoped attempt at review with the original receipt photo. It commits
 one guarded processing claim **before** any Marzban call. A second administrator
 or a replay cannot start a second effect. Successful local order finalization
-must conditionally change that same processing row and confirm COMMIT. If
+must demand checked order INSERT, capacity update, transaction BEGIN and
+conditional change of that same processing row, with confirmed COMMIT even
+when MYSQLI_REPORT_OFF is active. If
 remote creation/renewal, account N of a multi-account purchase, local order
 persistence, COMMIT acknowledgment or Telegram delivery is uncertain, never
 silently return the invoice to have_sent: leave it reviewable under the

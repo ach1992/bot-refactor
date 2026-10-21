@@ -94,9 +94,10 @@ if (
                 $isMarzban
             );
 
-            ensureAccountCreationSucceeded($response, $serverInfo, $inbound_id, $admin);
+            ensureAccountCreationSucceeded($response, $serverInfo, $inbound_id, $admin, true);
 
-            $connection->begin_transaction();
+            if ($connection->begin_transaction() !== true)
+                throw new RuntimeException('manual_standard_finish_begin_failed');
             try {
                 createIncreaseOrder(
                     $connection,
@@ -107,7 +108,8 @@ if (
                     $price,
                     $time,
                     null,
-                    null
+                    null,
+                    true
                 );
 
                 $stmt = $connection->prepare(
@@ -223,7 +225,7 @@ if (
                 $limitip
             );
 
-            ensureAccountCreationSucceeded($response, $serverInfo, $inbound_id, $admin);
+            ensureAccountCreationSucceeded($response, $serverInfo, $inbound_id, $admin, true);
 
             [$token, $vray_link, $uniqid2, $acc_text, $userKeys, $qrLink] = buildLinksAndSendQr(
                 $serverType,
@@ -284,7 +286,8 @@ if (
             return;
         }
 
-        $connection->begin_transaction();
+        if ($connection->begin_transaction() !== true)
+            throw new RuntimeException('manual_standard_finish_begin_failed');
         try {
             foreach ($toInsertOrders as $o) {
                 insertOrder(
@@ -302,11 +305,12 @@ if (
                     $o['amount'],
                     $o['date'],
                     $o['rahgozar'],
-                    $o['agent_bought']
+                    $o['agent_bought'],
+                    true
                 );
             }
 
-            decreaseServerCapacity($connection, $server_id, $inbound_id, $fid, $accountCount);
+            decreaseServerCapacity($connection, $server_id, $inbound_id, $fid, $accountCount, true);
 
             $stmt = $connection->prepare(
                 "UPDATE pays SET state='approved' WHERE id=? AND state='processing' AND approved_by=?"

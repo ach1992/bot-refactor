@@ -230,13 +230,19 @@ function buildLinksAndSendQr(...$args){
 }
 function insertOrder(...$args){
     $GLOBALS['events'][]=['name'=>'order_insert'];
-    if (($GLOBALS['spec']['remote_mode']??'success')==='local_insert_failure')
-        throw new RuntimeException('fixture_local_order_insert_failed');
+    $mode=$GLOBALS['spec']['remote_mode']??'success';
+    if ($mode==='local_insert_failure') throw new RuntimeException('fixture_local_order_insert_failed');
+    if ($mode==='silent_sql_order_failure' && end($args)===true)
+        throw new RuntimeException('fixture_unconfirmed_order_insert');
+    // Under mysqli_report_off, a legacy helper silently returned void
+    // when the caller did NOT demand confirmed SQL.
 }
 function createIncreaseOrder(...$args){
     $GLOBALS['events'][]=['name'=>'order_insert'];
-    if (($GLOBALS['spec']['remote_mode']??'success')==='local_insert_failure')
-        throw new RuntimeException('fixture_local_order_insert_failed');
+    $mode=$GLOBALS['spec']['remote_mode']??'success';
+    if ($mode==='local_insert_failure') throw new RuntimeException('fixture_local_order_insert_failed');
+    if ($mode==='silent_sql_order_failure' && end($args)===true)
+        throw new RuntimeException('fixture_unconfirmed_increase_order');
 }
 function renewConfigOnServer(...$args){
     $GLOBALS['events'][]=['name'=>'remote_edit'];
@@ -244,7 +250,11 @@ function renewConfigOnServer(...$args){
         throw new RuntimeException('fixture_remote_result_unknown');
     return (object)['success'=>true];
 }
-function decreaseServerCapacity(...$args){$GLOBALS['events'][]=['name'=>'capacity_decrement'];}
+function decreaseServerCapacity(...$args){
+    $GLOBALS['events'][]=['name'=>'capacity_decrement'];
+    if (($GLOBALS['spec']['remote_mode']??'success')==='silent_sql_capacity_failure' &&
+        end($args)===true) throw new RuntimeException('fixture_unconfirmed_capacity_change');
+}
 function editMarzbanConfig(...$args){
     $GLOBALS['events'][]=['name'=>'remote_edit'];
     if (($GLOBALS['spec']['remote_mode']??'success')==='uncertain')
@@ -697,6 +707,29 @@ def check():
         reject_service('standardrace','standard_approval','accept')
         cases.append('real_standard_concurrent_admins_one_remote_create')
 
+        # SQL silent-failure modes reproduce mysqli_report_off behavior
+        # at the real operator handler boundary. The helper's requireConfirmed
+        # boolean is the only difference between an unsafe success and REVIEW.
+        standard_pay('standardsilentinsert',method='gift_card')
+        silent=run_route(work,env,route_driver,data='acceptstandardsilentinsert',
+                         actor=9001,route='standard_approval',remote_mode='silent_sql_order_failure',
+                         mysqli_report_off=True,
+                         expected_warning='achbot_manual_standard_remote_finish_review')
+        assert [e['name'] for e in silent].count('remote_create')==1,repr(silent)
+        assert query(work,env,"SELECT state FROM pays WHERE hash_id='standardsilentinsert'")=='processing'
+        reject_service('standardsilentinsert','standard_approval','accept')
+        cases.append('real_standard_mysqlireportoff_unconfirmed_order_never_approved')
+
+        standard_pay('standardsilentcapacity',method='bank_transfer')
+        silent=run_route(work,env,route_driver,data='acceptstandardsilentcapacity',
+                         actor=9001,route='standard_approval',remote_mode='silent_sql_capacity_failure',
+                         mysqli_report_off=True,
+                         expected_warning='achbot_manual_standard_remote_finish_review')
+        assert [e['name'] for e in silent].count('remote_create')==1,repr(silent)
+        assert query(work,env,"SELECT state FROM pays WHERE hash_id='standardsilentcapacity'")=='processing'
+        reject_service('standardsilentcapacity','standard_approval','accept')
+        cases.append('real_standard_mysqlireportoff_unconfirmed_capacity_never_approved')
+
         def renewal_pay(key,method='gift_card'):
             service_pay(key,subject='RENEW_SCONFIG',method=method)
             query(work,env,"UPDATE pays SET day=0,volume=0,"
@@ -712,6 +745,16 @@ def check():
         assert query(work,env,"SELECT state FROM pays WHERE hash_id='standardrenewsuccess'")=='approved'
         reject_service('standardrenewsuccess','standard_approval','accept')
         cases.append('real_standard_renewal_receipt_one_remote_change_no_replay')
+
+        renewal_pay('standardrenewsilentinsert',method='gift_card')
+        silent=run_route(work,env,route_driver,data='acceptstandardrenewsilentinsert',
+                         actor=9001,route='standard_approval',remote_mode='silent_sql_order_failure',
+                         mysqli_report_off=True,
+                         expected_warning='achbot_manual_standard_remote_finish_review')
+        assert [e['name'] for e in silent].count('remote_edit')==1,repr(silent)
+        assert query(work,env,"SELECT state FROM pays WHERE hash_id='standardrenewsilentinsert'")=='processing'
+        reject_service('standardrenewsilentinsert','standard_approval','accept')
+        cases.append('real_standard_renewal_mysqlireportoff_unconfirmed_order_never_approved')
 
         renewal_pay('standardrenewuncertain',method='manual_usdt')
         ambiguous=run_route(work,env,route_driver,data='acceptstandardrenewuncertain',
