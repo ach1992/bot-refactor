@@ -466,6 +466,28 @@ corroboration, not a cryptographic remote idempotency guarantee, and absence
 after a possible deletion requires investigation. There is **no automated
 claim that exactly-once delivery or end-to-end recovery is solved**.
 
+### Bank-Cron BUY_SUB source-only hardening (proposed, not installed)
+
+The automatic card-receipt BUY_SUB handler now competes with administrator
+approval for the same exclusive original pays row and leaves the successful
+claim in nonterminal processing until fulfillment can be proved. The new
+src/Finance/BankPurchase.php uses the **same** additive 007 per-account CREATE
+journal and strict Marzban readback rather than a second provider engine.
+Each ordinal, username, operation marker, target, exact expiry and byte
+limit is reserved before POST. A remote 409, lost response, target drift or
+partial multi-account result never authorizes random-name retry, speculative
+wallet refund, QR delivery or payment finality.
+
+Only a short local transaction over all verified ordinal effects may insert
+every subscription order and journal link, conditionally decrement capacity
+and transition the original payment from processing to auto_cart_approved.
+Integer total order amount including the remainder is allocated among lines.
+No remote API or Telegram call occurs inside this transaction. Customer
+messages are post-COMMIT only. Pending outcomes remain for evidenced
+operator reconciliation. This is **not** fully unattended crash recovery or
+a universal exactly-once guarantee. Migration 007 is not installed by source
+delivery, and real provider/Telegram acceptance is separately gated.
+
 The first consumers are standard manually approved `BUY_SUB` and hosted
 NOWPayments/NextPay/Zarinpal `BUY_SUB`. Existing original wallet/customer
 checkout, custom/manual variants, old scheduled receipt processing, renewal,

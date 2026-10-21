@@ -104,6 +104,17 @@ count, deltas in counts, or absence in a remote users listing is admissible
 as delivery proof. A current 404 after a possible prior creation/deletion
 also cannot authorize reissue.
 
+For the separate bank-Cron BUY_SUB path, run
+python3 tools/test_post_v9_bank_buy.py --run-disposable and the full
+tools/check_post_v9.py. The real Cron PHP route on disposable MariaDB must
+prove nonterminal receipt claim, exact per-line remote readback, atomic local
+order/effect/capacity/payment finality, no pre-COMMIT Telegram, no blind
+retries or speculative wallet refunds. Test cases include competing workers,
+partial multi-account, lost POST, 409, invalid readback, local SQL failure,
+nonbank receipts and post-COMMIT Telegram failure. The proposed current
+runtime now has 95 PHP members; historical V9 92-member source stays frozen.
+Independent review and separately approved installed acceptance remain GATED.
+
 Execute `python3 tools/test_post_v9_service_effects.py --run-disposable`:
 native PHP 8.1/8.4 and disposable MariaDB must prove unique
 `(pays,kind,ordinal)`, pre-POST durable dispatch, real concurrent racing

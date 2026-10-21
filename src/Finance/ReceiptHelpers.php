@@ -444,12 +444,12 @@ function achbotAutoBankClaim(mysqli $connection, array $seen): bool {
         }
         // For remote service edits the bank receipt claim is NOT service
         // fulfillment. Keep it nonterminal until verified GET + local effects.
-        // INCREASE_WALLET already credited atomically; historical BUY_SUB
-        // remains governed by its separate creation/fulfillment migration.
+        // Wallet top-ups are atomic. BUY_SUB, like edits, is nonterminal
+        // until remote effects and all local accounting have been proved.
         $kind=(string)$pay['type'];
         $isEdit=$kind==='RENEW_ACCOUNT' || $kind==='RENEW_SCONFIG' ||
             preg_match('/^INCREASE_(?:DAY|VOLUME)_[1-9][0-9]*_[1-9][0-9]*$/D',$kind)===1;
-        $next=$isEdit?'processing':'auto_cart_approved';
+        $next=($isEdit || $kind==='BUY_SUB')?'processing':'auto_cart_approved';
         $stmt = $connection->prepare("UPDATE pays SET state=?
             WHERE id=? AND state='have_sent'");
         $stmt->bind_param('si',$next,$id);

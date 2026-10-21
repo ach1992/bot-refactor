@@ -39,7 +39,7 @@ def source_checks():
         if (ROOT / field).read_bytes() != cmd("show", V9+":"+field):
             raise RuntimeError("Changed historical schema/private-template: " + field)
     files=package.members()
-    if len(files)!=94 or len(set(files))!=len(files):
+    if len(files)!=95 or len(set(files))!=len(files):
         raise RuntimeError("Source-only runtime file inventory changed")
     if any((ROOT/name).exists() or name in files
            for name in package.RETIRED_RUNTIME_MEMBERS):
@@ -1007,6 +1007,38 @@ def main():
                 and effects.get("external_account_count_not_used") is True
                 and effects.get("installed_operator_tested") is False):
             raise RuntimeError("Per-account service operation ledger contract incomplete")
+        # Issue #26: native real bank-Cron PHP on disposable MariaDB.
+        bank_path=Path(tmp)/"bank-buy-effects.json"
+        bank_run=subprocess.run(
+            ["python3",str(ROOT/"tools/test_post_v9_bank_buy.py"),
+             "--run-disposable","--report",str(bank_path)],
+            cwd=ROOT,timeout=140,capture_output=True,text=True)
+        if bank_run.returncode!=0:
+            raise RuntimeError("Bank BUY_SUB source-native acceptance failed:\n"
+                               +bank_run.stderr[-5500:])
+        bank_buy=json.loads(bank_path.read_text())
+        required_bank={
+            "buy_sub_nonterminal_exclusive_claim",
+            "one_verified_account_atomic_order_before_telegram_no_replay",
+            "unknown_lost_no_refund_success_or_replay",
+            "unknown_exists_no_refund_success_or_replay",
+            "unknown_wrong_note_no_refund_success_or_replay",
+            "unknown_fraction_no_refund_success_or_replay",
+            "multi_line_atomic_orders_and_integer_amount_allocation",
+            "multi_line_partial_unknown_requires_review_not_refund",
+            "sql_failure_after_remote_verified_fails_closed",
+            "telegram_postcommit_exception_never_recreates",
+            "nonbank_attempt_never_auto_provisions",
+            "two_simultaneous_bank_workers_one_remote_create",
+        }
+        if not (bank_buy.get("complete") and bank_buy.get("cases")>=12
+                and required_bank.issubset(bank_buy.get("scenarios",[]))
+                and bank_buy.get("source_real_php")
+                and bank_buy.get("owned_mariadb_only")
+                and bank_buy.get("real_provider_requests")==0
+                and bank_buy.get("real_financial_effects")==0
+                and bank_buy.get("installed_operator_tested") is False):
+            raise RuntimeError("Bank BUY_SUB finality/remote-effects contract incomplete")
         manual_path=Path(tmp)/"manual-payment-methods.json"
         try:
             subprocess.run(["python3",str(ROOT/"tools/test_post_v9_manual_payments.py"),
@@ -1309,7 +1341,7 @@ def main():
                        cwd=ROOT,check=True,timeout=60,capture_output=True)
         swap=json.loads(overlay_report.read_text())
         if not (swap.get("complete") and swap.get("phase_count")==4
-                and swap.get("runtime_members")==94
+                and swap.get("runtime_members")==95
                 and swap.get("historical_runtime_members")==92
                 and swap.get("retired_old_payment_files_absent_after_source_upgrade")
                 and swap.get("source_roll_forward_and_back_byte_identical")
@@ -1334,6 +1366,7 @@ def main():
                     "wallet_authorization_freshness":wallet_freshness,
                     "latest_review_f1_f4":reviewer_f1_f4,
                     "service_effects":effects,
+                    "bank_auto_buy_sub":bank_buy,
                     "manual_payment_method_isolation":manual,
                     "manual_crypto_destination_and_admin_guards":crypto_guard,
                     "payment_reference_assurance":payment_identity,
@@ -1369,6 +1402,7 @@ def main():
                       "customer_method_serialization_cases":method_race["cases"],
                       "wallet_authorization_freshness_cases":wallet_freshness["cases"],
                       "service_effect_cases":effects["cases"],
+                      "bank_auto_buy_sub_cases":bank_buy["cases"],
                       "manual_payment_isolation_cases":manual["cases"],
                       "manual_crypto_guard_cases":crypto_guard["cases"],
                       "payment_reference_length":payment_identity["default_length"],
