@@ -56,6 +56,22 @@ function achbotRecoveryCase(mysqli $db, int $payId, int $afterOrdinal=0): ?array
     $method=$stmt->get_result()->fetch_assoc();
     $stmt->close();
 
+    // Count the whole local journal, not just the displayed page. Unique
+    // ordinal keys plus [1..expected] bounds are needed for completeness.
+    $stmt=$db->prepare("SELECT COUNT(*) AS recorded,MIN(ordinal) AS first_ordinal,
+            MAX(ordinal) AS last_ordinal FROM service_effects
+        WHERE pay_row_id=? AND effect_kind='create'");
+    if (!$stmt) throw new RuntimeException('recovery_journal_prepare_failed');
+    $stmt->bind_param('i',$payId);
+    if (!$stmt->execute()) throw new RuntimeException('recovery_journal_read_failed');
+    $journal=$stmt->get_result()->fetch_assoc();
+    $stmt->close();
+    $requested=(int)$pay['agent_count']>0?(int)$pay['agent_count']:1;
+    $recorded=(int)$journal['recorded'];
+    $complete=$recorded===$requested &&
+        (int)$journal['first_ordinal']===1 &&
+        (int)$journal['last_ordinal']===$requested;
+
     $stmt=$db->prepare("SELECT e.id,e.ordinal,e.state,e.order_id,e.target_server_id,
             e.remote_username,e.operation_id,e.requested_expire,e.requested_bytes,
             e.plan_id,o.id AS live_order_id,o.userid AS order_user,
@@ -87,12 +103,17 @@ function achbotRecoveryCase(mysqli $db, int $payId, int $afterOrdinal=0): ?array
             'effect_id'=>(int)$line['id'],'order_id'=>$line['order_id']===null
                 ?null:(int)$line['order_id'],
             'local_evidence'=>$local,
+            'operation_id'=>(string)$line['operation_id'],
+            'requested_expire'=>(string)$line['requested_expire'],
+            'requested_bytes'=>(string)$line['requested_bytes'],
             'username'=>(string)$line['remote_username'],
         ];
     }
     return [
         'pay_id'=>(int)$pay['id'],'user_id'=>(int)$pay['user_id'],
-        'amount'=>(int)$pay['price'],'requested_accounts'=>max(1,(int)$pay['agent_count']),
+        'amount'=>(int)$pay['price'],'requested_accounts'=>$requested,
+        'recorded_accounts'=>$recorded,'journal_complete'=>$complete,
+        'journal_assurance'=>'current_mutable_payment_count_only',
         'payment_state'=>(string)$pay['state'],
         'method'=>$method ? (string)$method['provider'] : 'unproven',
         'method_stage'=>$method ? (string)$method['stage'] : 'unproven',
@@ -107,8 +128,11 @@ function achbotRecoveryCase(mysqli $db, int $payId, int $afterOrdinal=0): ?array
 function achbotRecoveryTarget(mysqli $db, int $payId, int $ordinal): ?array {
     $stmt=$db->prepare("SELECT e.*,p.state AS pay_state,p.type AS pay_type,
             p.user_id,p.plan_id AS paid_plan,p.server_id AS paid_server,
-            p.price,sp.server_id AS plan_server,s.panel_group_id,
-            c.type AS panel_type,c.panel_url,g.id AS valid_group
+            p.price,p.agent_count,sp.server_id AS plan_server,
+            sp.inbound_id AS plan_inbound,s.panel_group_id,
+            c.type AS panel_type,c.panel_url,
+            c.username AS panel_auth_user,c.password AS panel_auth_password,
+            g.id AS valid_group
         FROM service_effects e
         JOIN pays p ON p.id=e.pay_row_id
         LEFT JOIN server_plans sp ON sp.id=p.plan_id
@@ -133,18 +157,28 @@ function achbotRecoveryTargetValid(?array $e, int $payId, int $ordinal): bool {
         $e['pay_type']!=='BUY_SUB' ||
         !in_array($e['pay_state'],['processing','paid'],true) ||
         !in_array($e['state'],['dispatching','verified','local_recorded'],true) ||
+        (int)$e['user_id']<=0 ||
+        (int)$e['paid_plan']<=0 ||
+        (int)$e['price']<0 ||
+        (int)$e['agent_count']<0 ||
+        $ordinal>max(1,(int)$e['agent_count']) ||
+        $e['plan_inbound']===null || (int)$e['plan_inbound']!==0 ||
         (int)$e['target_server_id']<=0 ||
         (int)$e['target_server_id']!==(int)$e['paid_server'] ||
         (int)$e['target_server_id']!==(int)$e['plan_server'] ||
         (int)$e['plan_id']!==(int)$e['paid_plan'] ||
         $e['panel_type']!=='marzban' ||
         !is_string($e['panel_url']) || $e['panel_url']==='' ||
+        !is_string($e['panel_auth_user']) || $e['panel_auth_user']==='' ||
+        !is_string($e['panel_auth_password']) || $e['panel_auth_password']==='' ||
         !is_string($e['remote_username']) ||
         preg_match('/^[a-zA-Z0-9_-]{1,100}$/D',$e['remote_username'])!==1 ||
         !is_string($e['operation_id']) ||
         preg_match('/^[a-f0-9]{32}$/D',$e['operation_id'])!==1 ||
         (int)$e['requested_expire']<=0 ||
-        achbotRecoveryExactInt($e['requested_bytes'])===null)
+        achbotRecoveryExactInt($e['requested_bytes'])===null ||
+        achbotRecoveryExactInt($e['requested_bytes'])===0 ||
+        achbotRecoveryExactInt($e['requested_bytes'])%1073741824!==0)
         return false;
     $group=$e['target_group_id']===null?null:(int)$e['target_group_id'];
     $actualGroup=$e['panel_group_id']===null?null:(int)$e['panel_group_id'];
@@ -191,14 +225,18 @@ function achbotRecoveryInspectLine(mysqli $db, int $payId, int $ordinal,
     $result['username']=(string)$first['remote_username'];
     try {
         $result['remote_gets']=1;
-        $remote=$getExactAccount((int)$first['target_server_id'],
+        // Pass the same immutable in-memory target/credentials to BOTH
+        // authentication and account GET. No server-ID lookup in transport.
+        $remote=$getExactAccount((string)$first['panel_url'],
+                                 (string)$first['panel_auth_user'],
+                                 (string)$first['panel_auth_password'],
                                  (string)$first['remote_username']);
     } catch (Throwable $ignored) {
         $result['status']='remote_unavailable';
         return $result;
     }
     // An HTTP 404, transport failure or missing account is never permission to
-    // repeat CREATE. The adapter must itself authenticate GET and check HTTP 200.
+    // repeat CREATE. The pinned adapter authenticates and requires HTTP 200.
     if (!is_object($remote) || (isset($remote->success) && $remote->success===false)) {
         $result['status']='remote_unavailable';
         return $result;

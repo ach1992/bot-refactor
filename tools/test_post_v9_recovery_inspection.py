@@ -35,6 +35,7 @@ if (!empty($spec['nonthrowing'])) mysqli_report(MYSQLI_REPORT_OFF);
 $GLOBALS['events']=[];$GLOBALS['spec']=$spec;
 $admin=9001;$from_id=(int)($spec['actor']??9001);
 $chat_id=(int)($spec['chat']??9001);
+$GLOBALS['chat_id']=$chat_id;
 $callbackId='fixture-callback';$message_id=456;
 $data=(string)($spec['callback']??'bankReviewInbox');
 $userInfo=['isAdmin'=>false];$paymentKeys=[];
@@ -44,14 +45,27 @@ function answerCallbackQuery(...$args) {
 function editText(...$args) {
     $GLOBALS['events'][]=['event'=>'EDIT','text'=>(string)($args[1]??''),
         'buttons'=>json_decode((string)($args[2]??''),true)];
+    return (object)['ok'=>($GLOBALS['spec']['edit_failure']??false)!==true];
 }
-function sendMessage(...$args) {throw new RuntimeException('forbidden_telegram_send');}
+function sendMessage(...$args) {
+    if (($args[3]??null)!==9001 || $GLOBALS['chat_id']!==9001)
+        throw new RuntimeException('forbidden_nonowner_send');
+    $GLOBALS['events'][]=['event'=>'SEND','text'=>(string)($args[0]??''),
+        'buttons'=>json_decode((string)($args[1]??''),true)];
+    return (object)['ok'=>true];
+}
 function createServerAccount(...$args) {throw new RuntimeException('forbidden_remote_post');}
 function editMarzbanConfig(...$args) {throw new RuntimeException('forbidden_remote_put');}
 function addMarzbanUser(...$args) {throw new RuntimeException('forbidden_remote_post');}
-function getMarzbanUser($server,$name,$token=null,$strict=false) {
-    if ($strict!==true) throw new RuntimeException('unbounded_remote_get');
-    $GLOBALS['events'][]=['event'=>'GET','server'=>$server,'username'=>$name];
+// A source-only callback spy. Separate transport tests use the actual curl
+// adapter against an isolated authenticated loopback HTTP fixture.
+function achbotRecoveryStrictAccountGet($endpoint,$authUser,$authPass,$name) {
+    if (!str_starts_with($endpoint,'http://127.0.0.1:') ||
+        $authUser!== 'fixture-admin' || $authPass!== 'fixture-password')
+        throw new RuntimeException('unpinned_remote_identity');
+    $server=2;
+    $GLOBALS['events'][]=['event'=>'GET','server'=>$server,
+        'username'=>$name,'pinned_endpoint'=>$endpoint];
     $mode=$GLOBALS['spec']['remote_mode']??'match';
     if ($mode==='timeout') throw new RuntimeException('fixture_remote_timeout');
     if ($mode==='missing') return null;
@@ -66,6 +80,13 @@ function getMarzbanUser($server,$name,$token=null,$strict=false) {
     if ($mode==='drift_during_get') {
         $connection->query("UPDATE server_config SET panel_url='https://changed.invalid'
             WHERE id=".(int)$server);
+    }
+    if ($mode==='terminal_during_get') {
+        $connection->query("UPDATE pays SET state='auto_cart_approved'
+            WHERE id=".(int)$effect['pay_row_id']);
+    }
+    if ($mode==='drop_effects_during_get') {
+        $connection->query('DROP TABLE service_effects');
     }
     $bytes=(int)$effect['requested_bytes'];
     $expiry=(int)$effect['requested_expire'];
@@ -92,7 +113,8 @@ if ($op==='route') {
         'list'=>achbotRecoveryPendingCases($connection,(int)($spec['cursor']??0)),
         'case'=>achbotRecoveryCase($connection,$id,(int)($spec['cursor']??0)),
         'inspect'=>achbotRecoveryInspectLine($connection,$id,$n,
-            static fn(int $s,string $u) => getMarzbanUser($s,$u,null,true)),
+            static fn(string $url,string $u,string $p,string $name) =>
+                achbotRecoveryStrictAccountGet($url,$u,$p,$name)),
         default=>throw new RuntimeException('unknown_fixture_mode')
     };
 }
@@ -236,6 +258,34 @@ def check():
         sql(work,env,f"UPDATE service_effects SET request_sha256='{saved_sha}' WHERE pay_row_id={pay}")
         cases.append('corrupted_operation_fingerprint_blocks_remote_get')
 
+        # F2: the original payment reservation constraints must be checked
+        # before even contacting the selected remote account.
+        sql(work,env,"UPDATE server_plans SET inbound_id=9 WHERE id=7")
+        incompatible=call(work,env,driver,op='inspect',pay=pay)
+        assert incompatible['value']['status']=='target_or_identity_changed'
+        assert not events(incompatible,'GET')
+        sql(work,env,"UPDATE server_plans SET inbound_id=0 WHERE id=7")
+        cases.append('changed_plan_inbound_rejected_before_any_remote_get')
+
+        sql(work,env,f"UPDATE pays SET agent_count=-1 WHERE id={pay}")
+        bad_count=call(work,env,driver,op='inspect',pay=pay)
+        assert not events(bad_count,'GET')
+        sql(work,env,f"UPDATE pays SET agent_count=1 WHERE id={pay}")
+        cases.append('invalid_payment_account_count_fails_closed')
+
+        original_bytes=sql(work,env,f"SELECT requested_bytes FROM service_effects WHERE pay_row_id={pay}")
+        original_fp=sql(work,env,f"SELECT request_sha256 FROM service_effects WHERE pay_row_id={pay}")
+        expiry=int(sql(work,env,f"SELECT requested_expire FROM service_effects WHERE pay_row_id={pay}"))
+        zero_bytes_fp=hashlib.sha256(json.dumps(
+            [pay,1,7,2,None,'server:2',original_sha if 'original_sha' in locals()
+             else hashlib.sha256('http://127.0.0.1:9'.encode()).hexdigest(),
+             f'fx_{pay}_1',expiry,0],separators=(',',':')).encode()).hexdigest()
+        sql(work,env,f"UPDATE service_effects SET requested_bytes=0,request_sha256='{zero_bytes_fp}' WHERE pay_row_id={pay}")
+        zero=call(work,env,driver,op='inspect',pay=pay)
+        assert zero['value']['status']=='target_or_identity_changed' and not events(zero,'GET')
+        sql(work,env,f"UPDATE service_effects SET requested_bytes={original_bytes},request_sha256='{original_fp}' WHERE pay_row_id={pay}")
+        cases.append('zero_quota_with_matching_fingerprint_never_gets')
+
         # Explicit group identity cannot be derived from the URL.
         sql(work,env,"UPDATE server_info SET panel_group_id=602 WHERE id=2")
         changed_group=call(work,env,driver,op='inspect',pay=pay)
@@ -269,12 +319,41 @@ def check():
         big=create_case(work,env,'revbig',count=15,number_of_effects=15)
         first=call(work,env,driver,op='case',pay=big)
         assert len(first['value']['lines'])==12 and first['value']['next_ordinal']==12
+        full_page=call(work,env,driver,op='route',callback=f'bankReviewCase_{big}')
+        displayed=events(full_page,'EDIT')[0]['text']
+        assert len(displayed.encode('utf-16-le'))//2<=4096
+        assert all(len(str(b.get('callback_data','')).encode())<=64 for b in buttons(full_page))
+        assert len([b for b in buttons(full_page)
+                    if str(b.get('callback_data','')).startswith('bankReviewRead_')])==12
+        cases.append('twelve_account_page_telegram_length_and_button_bounds')
         second=call(work,env,driver,op='case',pay=big,cursor=12)
         assert [x['ordinal'] for x in second['value']['lines']]==[13,14,15]
         assert second['value']['next_ordinal']==0
         deep=call(work,env,driver,op='route',callback=f'bankReviewRead_{big}_14_12')
         assert len(events(deep,'GET'))==1 and events(deep,'GET')[0]['username'].endswith('_14')
         cases.append('15_line_keyset_pagination_and_exact_late_account_get')
+
+        # F2/F4: reduced account count, sparse journal, and exact operator IDs.
+        sql(work,env,f"UPDATE pays SET agent_count=12 WHERE id={big}")
+        outside=call(work,env,driver,op='inspect',pay=big,ordinal=14)
+        assert outside['value']['status']=='target_or_identity_changed'
+        assert not events(outside,'GET')
+        sql(work,env,f"UPDATE pays SET agent_count=15 WHERE id={big}")
+        cases.append('ordinal_exceeding_mutated_payment_account_count_no_remote_get')
+
+        sparse=create_case(work,env,'sparsejournal',count=15,number_of_effects=2)
+        missing=call(work,env,driver,op='case',pay=sparse)
+        assert missing['value']['requested_accounts']==15
+        assert missing['value']['recorded_accounts']==2
+        assert missing['value']['journal_complete'] is False
+        shown=call(work,env,driver,op='route',callback=f'bankReviewCase_{sparse}')
+        assert 'دفتر عملیات ناقص' in events(shown,'EDIT')[0]['text']
+        op=sql(work,env,f"SELECT operation_id FROM service_effects WHERE pay_row_id={sparse} AND ordinal=2")
+        assert op in events(shown,'EDIT')[0]['text']
+        assert 'شناسه اثر:' in events(shown,'EDIT')[0]['text']
+        assert not events(call(work,env,driver,op='route',callback=f'bankReviewCase_{sparse}',
+                               actor=9002),'EDIT')
+        cases.append('fifteen_requested_two_recorded_clear_owner_private_operation_ids')
 
         # Distinguish different pending payments without tallying Marzban accounts.
         newest=[create_case(work,env,f'newrecover{i}',number_of_effects=0) for i in range(15)]
@@ -324,18 +403,50 @@ def check():
         assert call(work,env,driver,op='case',pay=pay)['value'] is None
         cases.append('terminal_payment_not_reattributed_to_pending_case')
 
+        # F3: acknowledge exactly once, even when the case goes terminal
+        # between GET and the subsequent owner message render.
+        transition=call(work,env,driver,op='route',
+            callback=f'bankReviewRead_{hosted}_1_0',remote_mode='terminal_during_get')
+        assert len(events(transition,'ACK'))==1 and len(events(transition,'GET'))==1
+        assert len(events(transition,'EDIT'))==1
+        assert 'در دسترس نیست' in events(transition,'EDIT')[0]['text']
+        sql(work,env,f"UPDATE pays SET state='paid' WHERE id={hosted}")
+        cases.append('terminal_after_get_owner_sees_uncertainty_once_ack')
+
+        fallback=call(work,env,driver,op='route',
+            callback=f'bankReviewRead_{hosted}_1_0',
+            remote_mode='timeout',edit_failure=True)
+        assert len(events(fallback,'ACK'))==1
+        assert len(events(fallback,'GET'))==1
+        assert len(events(fallback,'SEND'))==1
+        assert 'اثبات وصول وجه' in events(fallback,'SEND')[0]['text'] or (
+            'استعلام قابل اتکا' in events(fallback,'SEND')[0]['text'])
+        cases.append('telegram_edit_failure_falls_back_to_owner_private_send')
+
         # Schema uniqueness is part of exact per-line remote selection.
         sql(work,env,"ALTER TABLE service_effects DROP INDEX uq_effect_operation")
         malformed=call(work,env,driver,op='route',callback=f'bankReviewRead_{hosted}_1_0',
                        nonthrowing=True)
-        assert not events(malformed,'GET') and not events(malformed,'EDIT')
+        assert not events(malformed,'GET') and len(events(malformed,'EDIT'))==1
         assert events(malformed,'ACK')
         cases.append('missing_unique_effect_index_blocks_remote_selection')
 
+        # Restore only the synthetic uniqueness index to reach a genuine
+        # post-GET failure under MYSQLI_REPORT_OFF.
+        sql(work,env,"ALTER TABLE service_effects ADD UNIQUE KEY uq_effect_operation (operation_id)")
+        postget=call(work,env,driver,op='route',
+            callback=f'bankReviewRead_{hosted}_1_0',
+            remote_mode='drop_effects_during_get',nonthrowing=True)
+        assert len(events(postget,'GET'))==1
+        assert len(events(postget,'ACK'))==1
+        assert len(events(postget,'EDIT'))==1
+        assert 'نتیجهٔ استعلام قابل احراز نیست' in events(postget,'EDIT')[0]['text']
+        cases.append('mysqlireport_off_sql_failure_after_get_ends_owner_visible_uncertain')
+
         # Missing 007 or 003 is a visible operator failure, not empty SUCCESS.
-        sql(work,env,'DROP TABLE service_effects')
+        # The previous post-GET failure intentionally dropped this disposable table.
         missing=call(work,env,driver,op='route',callback=f'bankReviewCase_{big}')
-        assert not events(missing,'EDIT') and events(missing,'ACK')
+        assert events(missing,'EDIT') and len(events(missing,'ACK'))==1
         assert not events(missing,'GET')
         cases.append('missing_ledger_schema_fails_closed_without_get_or_mutation')
 

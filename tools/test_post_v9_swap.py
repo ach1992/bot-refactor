@@ -40,7 +40,7 @@ def main():
     expected=[p for p in historical_names
               if p not in package.RETIRED_RUNTIME_MEMBERS]
     expected.extend(package.NEW_RUNTIME_MEMBERS)
-    if (len(historical_names)!=92 or len(names)!=96
+    if (len(historical_names)!=92 or len(names)!=97
             or names!=expected or len(names)!=len(set(names))
             or set(historical_names)-set(names)!=package.RETIRED_RUNTIME_MEMBERS):
         raise RuntimeError('V9 or current post-V9 runtime source inventory drift')

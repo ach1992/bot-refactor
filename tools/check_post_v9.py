@@ -39,7 +39,7 @@ def source_checks():
         if (ROOT / field).read_bytes() != cmd("show", V9+":"+field):
             raise RuntimeError("Changed historical schema/private-template: " + field)
     files=package.members()
-    if len(files)!=96 or len(set(files))!=len(files):
+    if len(files)!=97 or len(set(files))!=len(files):
         raise RuntimeError("Source-only runtime file inventory changed")
     if any((ROOT/name).exists() or name in files
            for name in package.RETIRED_RUNTIME_MEMBERS):
@@ -1068,6 +1068,7 @@ def main():
             "endpoint_drift_fences_remote_get_without_guessing",
             "concurrent_endpoint_change_disqualifies_readback_evidence",
             "15_line_keyset_pagination_and_exact_late_account_get",
+            "twelve_account_page_telegram_length_and_button_bounds",
             "bank_payment_without_effect_visible_and_13th_case_reachable",
             "terminal_payment_not_reattributed_to_pending_case",
             "missing_ledger_schema_fails_closed_without_get_or_mutation",
@@ -1077,9 +1078,17 @@ def main():
             "hosted_paid_state_not_assumed_settled_or_mutated",
             "owner_private_full_inbox_page_and_case_ui_navigation",
             "missing_unique_effect_index_blocks_remote_selection",
+            "changed_plan_inbound_rejected_before_any_remote_get",
+            "invalid_payment_account_count_fails_closed",
+            "zero_quota_with_matching_fingerprint_never_gets",
+            "ordinal_exceeding_mutated_payment_account_count_no_remote_get",
+            "fifteen_requested_two_recorded_clear_owner_private_operation_ids",
+            "terminal_after_get_owner_sees_uncertainty_once_ack",
+            "telegram_edit_failure_falls_back_to_owner_private_send",
+            "mysqlireport_off_sql_failure_after_get_ends_owner_visible_uncertain",
         }
         if not (recovery.get("complete")
-                and recovery.get("cases")>=27
+                and recovery.get("cases")>=36
                 and required_recovery.issubset(recovery.get("scenarios",[]))
                 and recovery.get("actual_php_admin_route") is True
                 and recovery.get("owned_socket_mariadb") is True
@@ -1088,6 +1097,28 @@ def main():
                 and recovery.get("money_mutations")==0
                 and recovery.get("installed_operator_tested") is False):
             raise RuntimeError("Owner-only read-only recovery contract incomplete")
+        # The actual production curl adapter (rather than a getMarzbanUser
+        # mock) must authenticate and GET on one pinned endpoint and IP.
+        transport_path=Path(tmp)/"recovery-transport.json"
+        transport_run=subprocess.run(
+            ["python3",str(ROOT/"tools/test_post_v9_recovery_transport.py"),
+             "--run-disposable","--report",str(transport_path)],
+            cwd=ROOT,timeout=140,capture_output=True,text=True)
+        if transport_run.returncode!=0:
+            raise RuntimeError("Pinned HTTP recovery acceptance failed:\n"
+                               +transport_run.stderr[-6000:])
+        transport=json.loads(transport_path.read_text())
+        if not (transport.get("complete") is True and
+                transport.get("cases")>=26 and
+                transport.get("real_curl_login_and_get") is True and
+                transport.get("loopback_only") is True and
+                transport.get("max_account_get_per_inspection")==1 and
+                transport.get("redirects_followed")==0 and
+                transport.get("credential_leak_to_redirect") is False and
+                transport.get("remote_writes")==0 and
+                transport.get("money_mutations")==0 and
+                transport.get("installed_operator_tested") is False):
+            raise RuntimeError("Actual pinned login/GET assurance incomplete")
         manual_path=Path(tmp)/"manual-payment-methods.json"
         try:
             subprocess.run(["python3",str(ROOT/"tools/test_post_v9_manual_payments.py"),
@@ -1390,7 +1421,7 @@ def main():
                        cwd=ROOT,check=True,timeout=60,capture_output=True)
         swap=json.loads(overlay_report.read_text())
         if not (swap.get("complete") and swap.get("phase_count")==4
-                and swap.get("runtime_members")==96
+                and swap.get("runtime_members")==97
                 and swap.get("historical_runtime_members")==92
                 and swap.get("retired_old_payment_files_absent_after_source_upgrade")
                 and swap.get("source_roll_forward_and_back_byte_identical")
@@ -1417,6 +1448,7 @@ def main():
                     "service_effects":effects,
                     "bank_auto_buy_sub":bank_buy,
                     "bank_recovery_inspection":recovery,
+                    "bank_recovery_transport":transport,
                     "manual_payment_method_isolation":manual,
                     "manual_crypto_destination_and_admin_guards":crypto_guard,
                     "payment_reference_assurance":payment_identity,
@@ -1453,7 +1485,8 @@ def main():
                       "wallet_authorization_freshness_cases":wallet_freshness["cases"],
                       "service_effect_cases":effects["cases"],
                       "bank_auto_buy_sub_cases":bank_buy["cases"],
-                      "bank_recovery_inspection_cases":recovery["cases"],
+                       "bank_recovery_inspection_cases":recovery["cases"],
+                      "bank_recovery_transport_cases":transport["cases"],
                       "manual_payment_isolation_cases":manual["cases"],
                       "manual_crypto_guard_cases":crypto_guard["cases"],
                       "payment_reference_length":payment_identity["default_length"],
