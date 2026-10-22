@@ -1142,6 +1142,11 @@ def main():
                 +native_checkout.stderr[-4500:])
         wallet_checkout=json.loads(wallet_checkout_path.read_text())
         required_wallet_checkout={
+            # R4 independent-required reporting: no editable plan/template
+            # may replace the locked entitlement in an admin/channel report.
+            "r4_unchanged_standard_wallet_report_matches_fulfillment",
+            "r4_locked_plan_report_admin_and_channel_exact_entitlement_no_replay",
+            "r4_custom_operator_report_retains_persisted_dimensions",
             # R3 source-real post-COMMIT capacity ownership and locked paid
             # plan snapshot, including independent MariaDB session edits.
             "r3_exact_owned_last_slots_r3_final_standard",

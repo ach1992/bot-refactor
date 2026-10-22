@@ -70,11 +70,11 @@ $admin=9001;$from_id=(int)($spec['user']??1001);$chat_id=$from_id;$message_id=51
 $data=(($spec['custom']??false)?'payCustomWithWallet':'payBuyWithWallet').
     ($spec['hash']??'native_standard');
 $text='';$username='fixture';$first_name='Customer';$match=[];
-$botUrl='https://fixture.invalid/';$botState=['remark'=>(string)($spec['remark_mode']??'digits'),'rewardChannel'=>null];
+$botUrl='https://fixture.invalid/';$botState=['remark'=>(string)($spec['remark_mode']??'digits'),'rewardChannel'=>($spec['reward_channel']??null)];
 $buttonValues=['back_to_main'=>'back','cancel'=>'cancel'];
 $mainValues=['sending_config_to_user'=>'Sending...',
- 'buy_custom_account_request'=>'TYPE USER-ID USERNAME NAME PRICE REMARK VOLUME DAYS',
- 'buy_new_account_request'=>'TYPE USER-ID USERNAME NAME PRICE REMARK VOLUME DAYS',
+ 'buy_custom_account_request'=>'TYPE USER-ID USERNAME NAME PRICE REMARK volume=VOLUME days=DAYS',
+ 'buy_new_account_request'=>'TYPE USER-ID USERNAME NAME PRICE REMARK volume=VOLUME days=DAYS',
  'renew_account_request_message'=>'REMARK PRICE VOLUME DAYS',
  'invite_buy_new_account'=>'REMARK PRICE'];
 $linkIndices=[];$hideConfigIfMany=false;$GLOBALS['events']=[];
@@ -322,8 +322,13 @@ def check():
             assert paid(standard)=='paid_with_wallet' and wallet()==49900
             assert cap()==10-count
             assert not calls(route(work,env,driver,hash=name,custom=True),'POST')
+            reports=[m for m in calls(done,'MESSAGE') if 'volume=' in m['synthetic_note']]
+            assert len(reports)==1 and reports[0]['to']==9001,reports
+            assert 'volume=2 days=30' in reports[0]['synthetic_note'],reports
+            assert 'volume=1 days=15' not in reports[0]['synthetic_note'],reports
             assert not calls(route(work,env,driver,hash=name),'POST')
         cases.append('r2_standard_single_multi_plan_dimensions_no_replay')
+        cases.append('r4_unchanged_standard_wallet_report_matches_fulfillment')
 
         from concurrent.futures import ThreadPoolExecutor
         from threading import Barrier
@@ -437,7 +442,7 @@ def check():
         frozen=newpay('r3_quoted_before_edit',1)
         try:
             drift=route(work,env,driver,hash='r3_quoted_before_edit',
-                        after_wallet_commit='change_plan')
+                        after_wallet_commit='change_plan',reward_channel=9003)
             changed=sql(work,env,'SELECT days,volume FROM server_plans WHERE id=7')
         finally:
             sql(work,env,'UPDATE server_plans SET days=30,volume=2 WHERE id=7')
@@ -448,8 +453,15 @@ def check():
         assert paid(frozen)=='paid_with_wallet' and wallet()==49900 and cap()==9
         assert detail(frozen)==('wallet_hold\t0\t1\tconsumed\n'
                                 'create\t1\t1\tlocal_recorded')
-        assert not calls(route(work,env,driver,hash='r3_quoted_before_edit'),'POST')
+        reports=[m for m in calls(drift,'MESSAGE') if 'volume=' in m['synthetic_note']]
+        assert sorted(m['to'] for m in reports)==[9001,9003],reports
+        assert all('volume=2 days=30' in m['synthetic_note'] and
+                   'volume=1 days=15' not in m['synthetic_note'] for m in reports),reports
+        replay=route(work,env,driver,hash='r3_quoted_before_edit',reward_channel=9003)
+        assert not calls(replay,'POST') and not calls(replay,'MESSAGE'),replay
+        assert paid(frozen)=='paid_with_wallet' and wallet()==49900 and cap()==9
         cases.append('r3_locked_plan_dimensions_survive_postcommit_admin_edit')
+        cases.append('r4_locked_plan_report_admin_and_channel_exact_entitlement_no_replay')
 
         # Custom retains the persisted positive quote, even when a separate
         # session changes the template after COMMIT.
@@ -462,8 +474,13 @@ def check():
             sql(work,env,'UPDATE server_plans SET days=30,volume=2 WHERE id=7')
         assert [(ev['days'],ev['volume_gb']) for ev in calls(custom_drift,'POST')]==[(37,7)]
         assert paid(custom_frozen)=='paid_with_wallet'
+        reports=[m for m in calls(custom_drift,'MESSAGE') if 'volume=' in m['synthetic_note']]
+        assert len(reports)==1 and reports[0]['to']==9001,reports
+        assert 'volume=7 days=37' in reports[0]['synthetic_note'],reports
+        assert 'volume=1 days=15' not in reports[0]['synthetic_note'],reports
         assert not calls(route(work,env,driver,hash='r3_custom_after_edit',custom=True),'POST')
         cases.append('r3_persisted_custom_dimensions_survive_postcommit_plan_edit')
+        cases.append('r4_custom_operator_report_retains_persisted_dimensions')
 
         # Exact supported `buyType=much` draft route must reject usernames
         # that a later provider would reject, without inserting any invoice.

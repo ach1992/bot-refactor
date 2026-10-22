@@ -1055,9 +1055,36 @@ if (preg_match('/payBuyWithWallet(.*)/', $data, $match)) {
 		giveReferralReward($connection, (int)$deferredReferral[0], (int)$deferredReferral[1], $admin, $botState, 'wallet');
     }
 
-    $planDetails = getPlanDetails($connection, $fid);
-    $days        = $planDetails['days'];
-    $volume      = $planDetails['volume'];
+    if ($payType === 'BUY_SUB') {
+        // Report the SAME paid entitlement authorized under the wallet/plan
+        // lock and used for CREATE/readback, never a mutable plan template
+        // reread after settlement. This snapshot is mandatory for paid BUY_SUB
+        // and intentionally not required by the legacy renewal flow.
+        $paidPlan=$payInfo['_achbot_wallet_locked_plan']??null;
+        if (!is_array($paidPlan) ||
+            (int)($paidPlan['id']??0)!==$fid ||
+            (int)($paidPlan['server_id']??0)!==(int)$payInfo['server_id']) {
+            error_log('achbot_wallet_paid_report_quote_unavailable pay_id='.
+                (int)$payInfo['id']);
+            try {
+                sendMessage('⚠️ پرداخت و سرویس ثبت شده‌اند، اما گزارش مشخصات خرید نیازمند بررسی است.'.
+                    "\n🆔 Pay ID: ".(int)$payInfo['id'].
+                    "\nسفارش را با سرویس صادرشده تطبیق دهید؛ آن را دوباره ایجاد نکنید.",
+                    null,null,$admin);
+            } catch (Throwable $ignored) {
+                error_log('achbot_wallet_paid_report_owner_notice_failed pay_id='.
+                    (int)$payInfo['id']);
+            }
+            return;
+        }
+        $days=(int)$paidPlan['days'];
+        $volume=(int)$paidPlan['volume'];
+    } else {
+        // Non-BUY_SUB renewal retains its existing plan/notice contract.
+        $planDetails=getPlanDetails($connection,$fid);
+        $days=$planDetails['days'];
+        $volume=$planDetails['volume'];
+    }
 
     $keys = json_encode([
         'inline_keyboard' => [
