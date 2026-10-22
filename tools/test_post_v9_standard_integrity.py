@@ -250,6 +250,10 @@ def check():
         assert len(named(ev,'CREATE'))==2 and orders()==2 and capacity()==0, (ev,state(key),orders(),capacity())
         assert state(key)=='approved'
         assert not named(call(key),'CREATE') and capacity()==0
+        ledger=sql(work,env,"SELECT effect_kind,ordinal,reserved_count,state "
+            "FROM service_effects WHERE pay_row_id=(SELECT id FROM pays WHERE hash_id='capacity_exact') "
+            "ORDER BY ordinal,effect_kind")
+        assert ledger=='manual_hold\t0\t2\tconsumed\ncreate\t1\t0\tlocal_recorded\ncreate\t2\t0\tlocal_recorded',ledger
         cases.append('r1_exact_two_units_reserved_once_and_replay_fenced')
 
         key=seed(work,env,'lost_remote',capacity=2,count=2)
@@ -257,6 +261,10 @@ def check():
         assert len(named(ev,'CREATE'))==1 and state(key)=='processing'
         assert capacity()==0 and orders()==0
         assert not named(call(key),'CREATE') and capacity()==0
+        marker=sql(work,env,"SELECT reserved_count,state FROM service_effects "
+            "WHERE effect_kind='manual_hold' AND pay_row_id="
+            "(SELECT id FROM pays WHERE hash_id='lost_remote')")
+        assert marker=='2\tconsumed',marker
         cases.append('r1_remote_unknown_keeps_pre_reserved_capacity_no_replay')
 
         key=seed(work,env,'postcreate_sql',capacity=2,count=2)
@@ -275,6 +283,19 @@ def check():
         finally:sql(work,env,'DROP TRIGGER owned_manual_capacity_fail')
         assert state(key)=='have_sent' and capacity()==3 and not named(ev,'CREATE')
         cases.append('r1_mysqlireportoff_conditional_reservation_SQL_failure_no_create')
+
+        # Manual capacity UPDATE and its durable payment-owned 007 hold INSERT
+        # are in ONE claim transaction. Failed insert must roll everything
+        # back, not leave invisible stolen inventory and a processing receipt.
+        key=seed(work,env,'manual_hold_insert_failure',capacity=2)
+        sql(work,env,"CREATE TRIGGER owned_manual_hold_fail BEFORE INSERT ON service_effects "
+            "FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='owned_hold_denial'")
+        try: ev=call(key,nonthrowing=True)
+        finally:sql(work,env,'DROP TRIGGER owned_manual_hold_fail')
+        assert state(key)=='have_sent' and capacity()==2 and orders()==0,ev
+        assert not named(ev,'CREATE')
+        assert sql(work,env,"SELECT COUNT(*) FROM service_effects")=='0'
+        cases.append('r1_manual_hold_insert_failure_rollback_claim_and_capacity')
 
         seed(work,env,'capacity_helper',capacity=1)
         ev=call('capacity_helper',op='capacity_helper',count=2,nonthrowing=True)

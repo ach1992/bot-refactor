@@ -1,11 +1,20 @@
 -- Issue #26: durable, per-order, per-account service-effect identity.
 -- ADDITIVE ONLY; NOT automatically installed. Apply only after 001 and the
 -- relevant payment migrations, on an approved, backed-up test installation.
+-- This revised CREATE is only valid on a target WITHOUT service_effects.
+-- If an earlier 007 was installed, STOP: audit existing rows/indexes and
+-- design a separately reviewed, data-preserving forward ALTER with backup,
+-- restore rehearsal and Owner approval. NEVER rerun this CREATE over data.
 -- No backfill is inferred from counts, orders or absent remote accounts.
 CREATE TABLE service_effects (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   pay_row_id INT NOT NULL,
   ordinal INT UNSIGNED NOT NULL,
+  -- Hosted CREATE: ordinal 1 owns ALL payment slots, later lines zero.
+  -- Manually reviewed BUY_SUB: manual_hold ordinal 0 owns ALL slots in the
+  -- original review/processing claim transaction; CREATE lines carry zero.
+  -- These are alternative ownership paths, never two capacity deductions.
+  reserved_count INT UNSIGNED NOT NULL DEFAULT 0,
   operation_id CHAR(32) COLLATE utf8mb4_bin NOT NULL,
   effect_kind VARCHAR(16) COLLATE utf8mb4_bin NOT NULL DEFAULT 'create',
   target_server_id INT NOT NULL,

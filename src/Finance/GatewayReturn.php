@@ -1219,8 +1219,12 @@ function achbotPerformPaymentEffect($payRowId, $gateType, &$effectStage = null) 
         $customPort = $file_detail['custom_port'];
         $customSni  = $file_detail['custom_sni'];
 
-        $accountCount = ($payParam['agent_count'] ?? 0) != 0 ? (int)$payParam['agent_count'] : 1;
-        $eachPrice = ($accountCount > 0) ? ($amount / $accountCount) : $amount;
+        if ((int)($payParam['agent_count']??0)<0)
+            throw new RuntimeException('hosted_invalid_account_quantity');
+        $accountCount = (int)($payParam['agent_count']??0)>0
+            ? (int)$payParam['agent_count'] : 1;
+        if ($accountCount<=0) throw new RuntimeException('hosted_invalid_account_quantity');
+        $eachPrice = $amount / $accountCount;
 
         if ($acount == 0 && $inbound_id != 0) {
 
@@ -1242,32 +1246,12 @@ function achbotPerformPaymentEffect($payRowId, $gateType, &$effectStage = null) 
             return 'compensated';
         }
 
-        if ($inbound_id == 0) {
-            $stmt = $connection->prepare("SELECT * FROM `server_info` WHERE `id`=?");
-            $stmt->bind_param("i", $server_id);
-            $stmt->execute();
-            $server_info = $stmt->get_result()->fetch_assoc();
-            $stmt->close();
-
-            if (empty($server_info) || (int)$server_info['ucount'] <= 0) {
-
-
-                if (!refundToWalletAndNotify(
-                    $connection,
-                    $user_id,
-                    $amount,
-                    $gateType,
-                    $admin,
-                    "میخواست اشتراک بخره، ظرفیت پر بود."
-                )) {
-                    showForm('⚠️ پرداخت ثبت شده ولی بازگشت اعتبار کیف پول تأیید نشد؛ پشتیبانی باید بررسی کند.', $payDescription, false, 'review');
-                    return 'ambiguous';
-                }
-                showForm('پرداخت شما انجام شد ولی ظرفیت این سرور پر شده است، مبلغ ' . number_format($amount) . " تومان به کیف پول شما اضافه شد.", $payDescription, false, 'review');
-
-                return 'compensated';
-            }
-        }
+        // Never infer full-count inventory from a preflight ucount>0 read.
+        // The first 007 CREATE marker atomically reserves ALL accountCount
+        // slots on server_info inside its own committed payment-owned
+        // transaction, shared with manually reviewed buyer reservations.
+        // Insufficient/uncertain capacity after verified provider payment
+        // must remain operator-reviewable, without a speculative refund.
 
         [$serverInfo, $serverConfig] = getServerInfoAndConfig($connection, $server_id);
         $srv_remark = $serverInfo['remark'] ?? '';
@@ -1441,10 +1425,10 @@ function achbotPerformPaymentEffect($payRowId, $gateType, &$effectStage = null) 
             }
         }
 
-        decreaseServerCapacity($connection, $server_id, $inbound_id, $fid, $accountCount, true);
+        // Full server capacity was already reserved and recorded on ordinal 1
+        // before CREATE. NEVER deduct it a second time here.
 
-        // A failed local capacity write after remote creation is an
-        // unresolved business effect, not a completed delivery notice.
+        // A remote/local uncertainty is not a completed delivery notice.
         // A verified provider payment and a local order do not prove that
         // the Telegram subscription link was acknowledged by the buyer.
         showForm('✅ پرداخت تأیید شد؛ وضعیت تحویل سرویس را در ربات بررسی کنید.',

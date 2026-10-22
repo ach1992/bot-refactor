@@ -110,6 +110,11 @@ if (
             // before any remote CREATE, across competing buyer payments.
             $reservedAccountCount=achbotManualStandardReserveCapacityLocked(
                 $connection,$payInfo);
+            // The same transaction must persist WHO owns those full-count
+            // slots. Paid CREATE consumes this 007 marker, never decrements
+            // server_info a second time for an already claimed receipt.
+            achbotEffectRecordManualCapacityLocked(
+                $connection,$payInfo,$reservedAccountCount);
         }
         $stmt = $connection->prepare(
             "UPDATE pays SET state='processing',approved_by=?
