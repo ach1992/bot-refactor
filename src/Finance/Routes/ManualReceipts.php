@@ -106,6 +106,15 @@ if ($bankInbox || $bankCase || $bankRead) {
             "💳 روش: <code>".$escRecovery($case['method'])."</code>\n".
             "📍 وضعیت پرداخت: <code>".$escRecovery($case['payment_state'])."</code> ".
             "(وصول وجه احراز نشده)\n";
+        if ($case['payment_state']==='processing_wallet') {
+            $body.="
+💳 برداشت و رزرو کیف پول: <code>".
+                $escRecovery($case['wallet_hold_state'])."</code>".
+                "
+🧱 ظرفیت رزروشده: <code>".
+                (int)$case['wallet_capacity_reserved']."</code>
+";
+        }
         if (!$case['journal_complete'])
             $body.="⚠️ دفتر عملیات ناقص یا نامنطبق است؛ ردیف‌های ثبت‌نشده وضعیت نامعلوم دارند.\n";
         else

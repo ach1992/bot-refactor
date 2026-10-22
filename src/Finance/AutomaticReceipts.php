@@ -114,7 +114,7 @@ if($botState['cartToCartAutoAcceptState']=="on"){
                 // automatic replay of the paid service will be permitted.
                 if (!empty($userinfo['refered_by'])) {
                     giveReferralReward($connection,(int)$user_id,
-                        (int)$userinfo['refered_by'],$admin,$botState);
+                        (int)$userinfo['refered_by'],$admin,$botState,null,$rowId);
                 }
             } else {
                 sendMessage("⚠️ پرداخت ثبت شده است، اما تکمیل ساخت اشتراک هنوز قطعی نیست. "

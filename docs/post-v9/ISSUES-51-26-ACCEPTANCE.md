@@ -97,9 +97,12 @@ resolves the gate.
 ## Issue #26 per-account identity: staged source-only acceptance
 
 The new additive `007_service_effects.sql` and
-`src/Finance/ServiceEffects.php` provide the first **BUY_SUB-only**
-postpayment remote-effect journal. They are not a generic service/wallet
-transaction framework and are not a reconciliation autopilot. No account
+`src/Finance/ServiceEffects.php` provide the first **BUY_SUB CREATE** journal. The unmerged Option A
+R1/R4 source candidate extends that same 007 ledger to wallet-funded
+BUY_SUB and authenticated unpaid free-trial/admin bulk CREATE, and
+stages a separate 008 referral award table. It does **not** provide
+generic service-edit transactions, distributed exactly-once execution,
+automatic compensation, or unattended recovery. No account
 count, deltas in counts, or absence in a remote users listing is admissible
 as delivery proof. A current 404 after a possible prior creation/deletion
 also cannot authorize reissue.
@@ -154,6 +157,41 @@ wrong unique index** must block new POST without silently reverting to an
 unjournaled fallback. Loopback HTTP covers strict readback and authentication
 failures without contacting any installed panel.
 The aggregate `tools/check_post_v9.py` includes these cases as mandatory.
+
+The R1/R4 Option A **source-only** acceptance additionally requires:
+- Full-count guarded capacity reservation before any paid or unpaid CREATE;
+  two competing payments with only one slot, absent/insufficient capacity,
+  unknown POST/GET, second-line failures and SQL rollback must never
+  cause oversubscription, double-decrement or a blind retry.
+- The real Checkout.php custom and multi-account Wallet BUY_SUB routes,
+  each original order linked exactly once, with post-COMMIT QR and
+  owner-visible uncertain notification recovery; no silent reissue.
+- The **actual WalletSettlement** handler with a single committed
+  wallet-debit + `processing_wallet` + `wallet_hold` +
+  capacity barrier, including concurrent callbacks, stale authorization,
+  remote uncertainty, local failure, missing 007 and negative controls
+  before any debit; not a synthetic money callback.
+- Actual private Telegram free-trial and admin bulk handlers: immutable
+  source update, actor/role checking, one normal-user trial, unique batch
+  ordinal and local linked orders, last-slot concurrency, partial failure
+  and no duplicate customer delivery after uncertainty.
+- R4 exactly one referral credit per terminal **non-wallet** fully linked
+  BUY_SUB, signed debt-offset arithmetic, disabled-policy snapshot,
+  SQL failure/unknown confirmation, identity and provider-readback
+  checks and no re-credit after a lost Telegram notification.
+- Owner-private recovery of pending wallet debit/slot holds even before
+  CREATE ordinal 1, without GET on an unissued remote username and
+  without writing payment, account or financial state.
+
+**Mandatory operational gates remain open:** neither 007 nor 008 was
+installed on a real tenant by this work; a previous installed 007 is
+**not** eligible for silent replacement by the revised 007 CREATE SQL.
+Review exact DDL and data before designing any forward-only migration.
+Perform independently authorized backup+restore, synthetic operator
+acceptance and disposable remote/provider validation. Neither CI nor
+source tests certify actual merchant funds, customer delivery or
+distributed exactly-once processing. See FINANCIAL-CONSOLIDATION.md
+for the contract, retained unknown states and rollback limitations.
 Independent review of PR #67 exact older candidate `97bcdbd` found two REQUIRED timing holes:
 original `pays.server_id` was not compared during payment-row-locked reservation,
 and final order linkage did not revalidate the pinned physical Marzban endpoint/group.
@@ -170,6 +208,6 @@ Real standard manual approval and hosted payment suites also assert their
 actual per-line ledger states (`verified` without order for partial
 manuals; `local_recorded` only for checked order persistence). Source
 success does not certify installed Marzban behavior, live provider
-settlement or Telegram delivery. See FINANCIAL-CONSOLIDATION.md for the
-precise unprotected legacy/non-BUY_SUB routes and Owner test gate. Keep
+settlement or Telegram delivery. See FINANCIAL-CONSOLIDATION.md for non-CREATE effect limitations,
+installed operation boundaries, and the separate Owner test gate. Keep
 Issues #26 and #51 open through separate installed acceptance.

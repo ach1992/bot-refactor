@@ -3752,7 +3752,13 @@ def main():
                     for n,row in enumerate(effect_rows)
                 ):
                     raise RuntimeError('O2 durable distinct effect rows mismatch: '+repr(effect_rows))
-                expected_capacity=initial_capacity-(2 if label=='complete' else 0)
+                # Full quantity is held BEFORE first remote POST even when
+                # account N fails. No capacity rearm from an unknown effect.
+                expected_capacity=initial_capacity-2
+                held=sql(work,env,f"SELECT COALESCE(SUM(reserved_count),0) FROM "
+                    f"service_effects WHERE pay_row_id={pay_id}").strip()
+                if held!='2':
+                    raise RuntimeError('O2 predispatch reservation not durable: '+str(held))
                 if (len(local_orders)!=expected_order_count or
                     len(set(local_orders))!=expected_order_count or
                     state!=want_stage or

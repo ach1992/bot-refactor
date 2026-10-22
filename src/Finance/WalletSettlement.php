@@ -9,6 +9,8 @@ if (!function_exists('processWalletPayment')) {
     function processWalletPayment($connection, $hashId, $handler)
     {
         global $from_id, $admin;
+        // A confirmed commit cannot be undone after calling Marzban.
+        $heldDebit=false;
 
         try {
             // The preview is an autocommit read OUTSIDE the financial
@@ -193,6 +195,32 @@ if (!function_exists('processWalletPayment')) {
                 ];
             }
 
+            $paidCreate=(($payInfo['type']??'')==='BUY_SUB');
+            if ($paidCreate) {
+                require_once __DIR__.'/ServiceEffects.php';
+                // Missing/malformed 007 must never debit before validation.
+                achbotEffectRequireUniqueLine($connection);
+                if (!($connection->query('SELECT reserved_count FROM service_effects LIMIT 0')
+                      instanceof mysqli_result))
+                    throw new RuntimeException('wallet_create_journal_missing');
+                $quantity=max(1,(int)($payInfo['agent_count']??0));
+                $planId=(int)($payInfo['plan_id']??0);
+                $serverId=(int)($payInfo['server_id']??0);
+                $planCheck=$connection->prepare("SELECT s.server_id,s.inbound_id,i.ucount
+                    FROM server_plans s JOIN server_info i ON i.id=s.server_id
+                    WHERE s.id=? AND s.active=1 LIMIT 1 FOR UPDATE");
+                if (!$planCheck) throw new RuntimeException('wallet_create_capacity_prepare');
+                $planCheck->bind_param('i',$planId);
+                if (!$planCheck->execute()) throw new RuntimeException('wallet_create_capacity_read');
+                $plan=$planCheck->get_result()->fetch_assoc();$planCheck->close();
+                if (!$plan || (int)$plan['server_id']!==$serverId ||
+                    (int)$plan['inbound_id']!==0 || (int)$plan['ucount']<$quantity) {
+                    $connection->rollback();
+                    alert('⛔️ ظرفیت این سفارش کافی نیست؛ مبلغی از کیف پول کسر نشد.',true);
+                    return ['status'=>'insufficient_capacity','payInfo'=>$payInfo];
+                }
+            }
+
             $stmt = $connection->prepare("UPDATE `pays` SET `state`='processing_wallet' WHERE `hash_id`=? LIMIT 1");
             $stmt->bind_param("s", $hashId);
             $marked=$stmt->execute();
@@ -209,30 +237,56 @@ if (!function_exists('processWalletPayment')) {
             if ($debited!==true || $debitedRows!==1)
                 throw new RuntimeException('wallet_debit_failed');
 
-            $businessOk = call_user_func($handler, $payInfo, $userRow);
-
-            if (!$businessOk) {
-                $connection->rollback();
-                return [
-                    'status'       => 'business_failed',
-                    'payInfo'      => $payInfo,
-                    'userRow'      => $userRow,
-                    'userReferrer' => $userReferrer,
-                    'uid'          => $uid,
-                    'price'        => $price,
-                ];
+            if ($paidCreate) {
+                // This one wallet transaction commits debit, processing
+                // state and ALL capacity together before external HTTP.
+                achbotEffectReserveWalletCapacityLocked($connection,$payInfo);
             }
 
-            $stmt = $connection->prepare("UPDATE `pays` SET `state` = 'paid_with_wallet' WHERE `hash_id` = ? LIMIT 1");
-            $stmt->bind_param("s", $hashId);
-            $completed=$stmt->execute();
-            $completedRows=$stmt->affected_rows;
-            $stmt->close();
-            if ($completed!==true || $completedRows!==1 ||
-                !$connection->commit())
-                throw new RuntimeException('wallet_commit_unverified');
-
-            $payInfo['state'] = 'paid_with_wallet';
+            if ($paidCreate) {
+                // Durable payment state and debit COMMIT before HTTP.
+                // The effect helper commits full-count capacity + operation
+                // identity separately before it sends the first POST.
+                if ($connection->commit()!==true)
+                    throw new RuntimeException('wallet_hold_commit_unknown');
+                $heldDebit=true;
+                $payInfo['state']='processing_wallet';
+                if (!call_user_func($handler,$payInfo,$userRow))
+                    throw new RuntimeException('wallet_paid_create_unconfirmed');
+                if ($connection->begin_transaction()!==true)
+                    throw new RuntimeException('wallet_finish_begin');
+                $finish=$connection->prepare("UPDATE pays SET state='paid_with_wallet'
+                    WHERE id=? AND user_id=? AND type='BUY_SUB'
+                      AND state='processing_wallet'");
+                if (!$finish) throw new RuntimeException('wallet_finish_prepare');
+                $payId=(int)$payInfo['id'];
+                $finish->bind_param('ii',$payId,$uid);
+                if (!$finish->execute() || $finish->affected_rows!==1)
+                    throw new RuntimeException('wallet_finish_state_unconfirmed');
+                $finish->close();
+                if ($connection->commit()!==true)
+                    throw new RuntimeException('wallet_finish_commit_unknown');
+            } else {
+                // Existing non-CREATE financial workflow remains unchanged.
+                if (!call_user_func($handler,$payInfo,$userRow)) {
+                    $connection->rollback();
+                    return [
+                        'status'=>'business_failed','payInfo'=>$payInfo,
+                        'userRow'=>$userRow,'userReferrer'=>$userReferrer,
+                        'uid'=>$uid,'price'=>$price
+                    ];
+                }
+                $stmt=$connection->prepare("UPDATE pays SET state='paid_with_wallet'
+                    WHERE hash_id=? AND state='processing_wallet'");
+                if (!$stmt) throw new RuntimeException('wallet_finish_prepare');
+                $stmt->bind_param('s',$hashId);
+                if (!$stmt->execute() || $stmt->affected_rows!==1)
+                    throw new RuntimeException('wallet_commit_unverified');
+                $stmt->close();
+                if ($connection->commit()!==true)
+                    throw new RuntimeException('wallet_commit_unverified');
+            }
+            $payInfo['state']='paid_with_wallet';
 
             return [
                 'status'       => 'ok',
@@ -248,6 +302,9 @@ if (!function_exists('processWalletPayment')) {
             // connection can also make ROLLBACK fail: never report success.
             try { $connection->rollback(); } catch (Throwable $ignored) {}
 
+            if ($heldDebit)
+                error_log('achbot_wallet_held_debit_review hash='.
+                    preg_replace('/[^A-Za-z0-9_-]/','',(string)$hashId));
             $adminErr = "⚠️ خطا در پرداخت با کیف پول\n\n"
                 . "🆔 Hash ID: {$hashId}\n"
                 . "👤 User: {$from_id}\n"

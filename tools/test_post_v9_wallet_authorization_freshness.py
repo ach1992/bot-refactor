@@ -41,19 +41,71 @@ $botState=['gatewayAudience'=>['wallet'=>$spec['audience']]];
 $GLOBALS['r3_ready']=$spec['ready']??'';
 $GLOBALS['r3_release']=$spec['release']??'';
 $GLOBALS['r3_effects']=0;
+$GLOBALS['r3_remote_posts']=0;
+$GLOBALS['r3_spec']=$spec;
 $GLOBALS['r3_notice']='';
 function alert(...$args){}
 function sendMessage(...$args) {$GLOBALS['r3_notice']=(string)($args[0]??'');return (object)['ok'=>true];}
 require $root.'/src/Purchase/Core.php';
 require $root.'/src/Finance/ReceiptHelpers.php';
 require $root.'/src/Finance/WalletSettlement.php';
+require_once $root.'/src/Finance/ServiceEffects.php';
+require_once $root.'/src/Purchase/OrderWrites.php';
+function createServerAccount(...$args) {
+    ++$GLOBALS['r3_remote_posts'];
+    $GLOBALS['r3_remote']=[
+        'username'=>(string)$args[4],
+        'note'=>'achbot:v1:'.(string)$args[14],
+        'expire'=>(int)$args[15],
+        'data_limit'=>(int)$args[5]*1073741824];
+    return [(object)['success'=>true],(string)$args[4],12345];
+}
+function getMarzbanUser($serverId,$remark,$token=null,$strict=false) {
+    if ($strict!==true) throw new RuntimeException('r3_strict_read_required');
+    return isset($GLOBALS['r3_remote'])?(object)$GLOBALS['r3_remote']:null;
+}
 $payment=processWalletPayment($connection,(string)$spec['hash'],
-    static function() {++$GLOBALS['r3_effects'];return true;});
+    static function($pay,$owner) use ($connection) {
+        ++$GLOBALS['r3_effects'];
+        // Only the separately staged frozen historical source takes the
+        // original unjournaled positive-fulfillment spy. Current source
+        // must use its REAL 007-backed path or the suite fails.
+        if (($GLOBALS['r3_spec']['legacy_model']??false)===true)
+            return true;
+        if (($pay['type']??'')==='BUY_SUB') {
+            $pid=(int)$pay['id'];$user=(int)$pay['user_id'];
+            $name='r3paid_'.$pid;
+            [$response,$actual,$port,$effectId]=achbotCreatePaidAccount(
+                $connection,$pid,1,[
+                    'user_id'=>$user,'server_type'=>'marzban',
+                    'server_id'=>2,'inbound_id'=>0,'plan_id'=>7,
+                    'remark'=>$name,'volume'=>2,'days'=>30,
+                    'uniqid'=>'r3synthetic','protocol'=>'vless','port'=>12345,
+                    'expire_microdate'=>0,'net_type'=>'normal',
+                    'rahgozar'=>0,'limitip'=>0
+                ]);
+            if ($connection->begin_transaction()!==true)
+                throw new RuntimeException('r3_order_begin');
+            try {
+                $orderId=insertOrder($connection,$user,'r3token',7,2,0,
+                    $actual,'r3uuid','vless',time()+30*86400,
+                    'r3synthetic',100000,time(),0,0,true);
+                achbotLinkPaidAccountEffect($connection,$effectId,$orderId);
+                if ($connection->commit()!==true)
+                    throw new RuntimeException('r3_order_commit_unknown');
+            } catch (Throwable $error) {
+                try {$connection->rollback();} catch (Throwable $ignored) {}
+                throw $error;
+            }
+        }
+        return true;
+    });
 $match=[];
 preg_match('/wallet_transaction_guard_error_(\d+)/',
            $GLOBALS['r3_notice'],$match);
 echo json_encode(['status'=>$payment['status']??null,
                   'effects'=>$GLOBALS['r3_effects'],
+                  'remote_posts'=>$GLOBALS['r3_remote_posts'],
                   'error_code'=>isset($match[1])?(int)$match[1]:null,
                   'isolation'=>$actualIsolation],
                  JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE);
@@ -197,7 +249,9 @@ def main():
         sql(w,e,"INSERT INTO setting (type,value) VALUES ('BOT_STATES','{\"walletState\":\"on\",\"cartToCartState\":\"on\",\"giftCardState\":\"on\",\"manualUsdtState\":\"on\",\"nowPaymentWallet\":\"on\",\"nowPaymentOther\":\"on\",\"zarinpal\":\"on\",\"nextpay\":\"on\"}')")
         sql(w,e,(ROOT/'migrations/post-v9/003_payment_attempts.sql').read_text())
         sql(w,e,(ROOT/'migrations/post-v9/006_payment_message_refs.sql').read_text())
-        assert len(sql(w,e,'SHOW TABLES').splitlines())==26
+        sql(w,e,(ROOT/'migrations/post-v9/001_marzban_panel_group_id.sql').read_text())
+        sql(w,e,(ROOT/'migrations/post-v9/007_service_effects.sql').read_text())
+        assert len(sql(w,e,'SHOW TABLES').splitlines())==27
         for index,(kind,iso) in enumerate(
                 (('change_agents','REPEATABLE-READ'),
                  ('change_non_agents','REPEATABLE-READ'),

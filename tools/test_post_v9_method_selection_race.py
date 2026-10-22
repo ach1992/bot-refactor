@@ -114,11 +114,16 @@ def stage_and_driver(work,previous=False):
             throw new RuntimeException('r2_lost_manual_commit_ack');
         return true;""")
         else:
-            anchor2="            $payInfo['state'] = 'paid_with_wallet';"
-            assert s.count(anchor2)==1
-            s=s.replace(anchor2,"""            if ($GLOBALS['r2_ambiguous_commit']??false)
+            anchors=[
+                "            $payInfo['state'] = 'paid_with_wallet';",
+                "            $payInfo['state']='paid_with_wallet';"
+            ]
+            candidates=[a for a in anchors if s.count(a)==1]
+            assert len(candidates)==1,('wallet_commit_hook',candidates)
+            anchor2=candidates[0]
+            s=s.replace(anchor2,'''            if ($GLOBALS['r2_ambiguous_commit']??false)
                 throw new RuntimeException('r2_lost_wallet_commit_ack');
-"""+anchor2)
+'''+anchor2)
         p.write_bytes(s.encode())
     php=manual.PHP
     needle="$spec=json_decode($argv[4],true,512,JSON_THROW_ON_ERROR);"

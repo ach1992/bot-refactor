@@ -319,7 +319,8 @@ if (
                 achbotLinkPaidAccountEffect($connection,(int)$o['effect_id'],(int)$orderId);
             }
 
-            decreaseServerCapacity($connection, $server_id, $inbound_id, $fid, $accountCount, true);
+            // Full capacity is already held by the first 007 effect journal
+            // reservation before Marzban CREATE. Never deduct it twice.
 
             $stmt = $connection->prepare(
                 "UPDATE pays SET state='approved' WHERE id=? AND state='processing' AND approved_by=?"
@@ -400,7 +401,7 @@ if (
             $inviterId = (int)$user_detail['refered_by'];
 
             $followupStage = 'referral_reward';
-            giveReferralReward($connection, $user_detail['userid'], $inviterId, $admin, $botState);
+            giveReferralReward($connection, $user_detail['userid'], $inviterId, $admin, $botState, null, $payId);
 
             if ($admin != $from_id) {
                 $uname     = $user_detail['name'];

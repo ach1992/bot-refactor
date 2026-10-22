@@ -94,8 +94,10 @@ def make_actor(w,e,actor,tag,typ):
         sql(w,e,f'UPDATE pays SET plan_id=7,server_id=2 WHERE id={payid}')
     return hash_,payid
 
-def run_customer(w,e,stage,driver,actor,hash_,folder,iso='REPEATABLE-READ'):
+def run_customer(w,e,stage,driver,actor,hash_,folder,iso='REPEATABLE-READ',
+                 legacy_model=False):
     spec={'actor':actor,'hash':hash_,'audience':'all','isolation':iso,
+          'legacy_model':legacy_model,
           'ready':str(folder/'ready'),'release':str(folder/'release')}
     return subprocess.Popen(r3.action_cmd(w,stage,driver,spec),cwd=w,env=e,
                             stdout=subprocess.PIPE,stderr=subprocess.PIPE)
@@ -109,7 +111,10 @@ def wait(path,proc):
 
 def get_result(proc):
     out,err=proc.communicate(timeout=14)
-    assert proc.returncode==0 and not err,(out,err)
+    expected_review_log=b'achbot_wallet_held_debit_review hash=f24panel'
+    safe_lines=[line for line in err.splitlines() if line]
+    assert proc.returncode==0 and all(
+        line.startswith(expected_review_log) for line in safe_lines),(out,err)
     return json.loads(out)
 
 def policy_race(w,e,stage,driver,index,previous,iso,variant='audience'):
@@ -155,7 +160,8 @@ def panel_race(w,e,stage,driver,index,previous,iso,field):
     actor=12500+index
     hash_,pid=make_actor(w,e,actor,'panel','BUY_SUB')
     folder=w/('panel-'+str(index));folder.mkdir()
-    p=run_customer(w,e,stage,driver,actor,hash_,folder,iso)
+    p=run_customer(w,e,stage,driver,actor,hash_,folder,iso,
+                   legacy_model=previous)
     update=None
     try:
         wait(folder/'ready',p)
@@ -175,9 +181,36 @@ def panel_race(w,e,stage,driver,index,previous,iso,field):
         observed=get_result(p)
         out,err=update.communicate(timeout=8)
         assert update.returncode==0 and out==b'REVOKED' and not err,(out,err)
-        assert observed['status']=='ok' and observed['effects']==1,(field,previous,observed)
+        assert observed['effects']==1,(field,previous,observed)
         assert sql(w,e,f'SELECT wallet FROM users WHERE userid={actor}')=='600000'
-        assert sql(w,e,f'SELECT state FROM pays WHERE id={pid}')=='paid_with_wallet'
+        current_state=sql(w,e,f'SELECT state FROM pays WHERE id={pid}')
+        if previous:
+            # Historical unjournaled callback wrongly declared success
+            # even though plan/provider revocation had already committed.
+            assert observed['status']=='ok' and current_state=='paid_with_wallet'
+        else:
+            # The new debit+capacity hold serializes authorization but no
+            # transaction can (or should) stay open over HTTP. A revoker
+            # may commit after the hold and before the remote CREATE.
+            # Both outcomes are valid only with durable proof: an exact
+            # locally linked order on success, or a held review state
+            # without a second dispatch/refund on uncertainty.
+            hold=sql(w,e,"SELECT state,reserved_count FROM service_effects "
+                f"WHERE pay_row_id={pid} AND effect_kind='wallet_hold'")
+            assert hold in ('reserved	1','consumed	1'),(field,iso,hold)
+            assert sql(w,e,'SELECT ucount FROM server_info WHERE id=2')!='10'
+            if observed['status']=='ok':
+                assert observed['remote_posts']==1 and current_state=='paid_with_wallet'
+                assert sql(w,e,"SELECT state FROM service_effects "
+                    f"WHERE pay_row_id={pid} AND effect_kind='create'")=='local_recorded'
+            else:
+                assert observed['status']=='error' and current_state=='processing_wallet'
+                assert observed['remote_posts'] in (0,1)
+                assert sql(w,e,"SELECT COUNT(*) FROM service_effects "
+                    f"WHERE pay_row_id={pid} AND effect_kind='create'") in ('0','1')
+                # The original payment is fenced and cannot start another
+                # new paid CREATE, regardless of changing panel settings.
+                assert sql(w,e,f'SELECT state FROM pays WHERE id={pid}')=='processing_wallet'
         return 'f4_'+field+'_'+('old_red_revocation_precedes_effect' if previous
             else 'new_green_revocation_serialized')+'_'+iso.lower().replace('-','_')
     finally:
@@ -200,6 +233,8 @@ def main():
         revoker=w/'final-revoker.php';revoker.write_text(REVOKER)
         purchase.init(w,e,'http://127.0.0.1:9')
         sql(w,e,(ROOT/'migrations/post-v9/003_payment_attempts.sql').read_text())
+        sql(w,e,(ROOT/'migrations/post-v9/001_marzban_panel_group_id.sql').read_text())
+        sql(w,e,(ROOT/'migrations/post-v9/007_service_effects.sql').read_text())
         sql(w,e,"INSERT INTO setting (type,value) VALUES ('BOT_STATES','{\"walletState\":\"on\",\"cartToCartState\":\"on\",\"giftCardState\":\"on\",\"manualUsdtState\":\"on\",\"nowPaymentWallet\":\"on\",\"nowPaymentOther\":\"on\",\"zarinpal\":\"on\",\"nextpay\":\"on\"}')")
         index=0
         for iso in ('READ-COMMITTED','REPEATABLE-READ'):

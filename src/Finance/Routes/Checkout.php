@@ -11,6 +11,7 @@ if (preg_match('/payCustomWithWallet(.*)/', $data, $match)) {
     setUser();
 
     $hashId = trim($match[1] ?? '');
+    $pendingCustomDelivery=null;
 
     $result = processWalletPayment($connection, $hashId, function($payInfo, $userRow) use (
         $connection,
@@ -24,7 +25,8 @@ if (preg_match('/payCustomWithWallet(.*)/', $data, $match)) {
         $userInfo,
         $username,
         $first_name,
-        $from_id
+        $from_id,
+        &$pendingCustomDelivery
     ) {
         $uid    = (int)($payInfo['user_id'] ?: $from_id);
         $fid    = (int)$payInfo['plan_id'];
@@ -73,28 +75,22 @@ if (preg_match('/payCustomWithWallet(.*)/', $data, $match)) {
 
         [$port, $last_num] = getNextPortAndIncrease('settings/temp.txt', $portType);
 
-        [$response, $remark, $port] = createServerAccount(
-            $serverType,
-            $server_id,
-            $inbound_id,
-            $fid,
-            $remark,
-            $volume,
-            $days,
-            $uniqid,
-            $protocol,
-            $port,
-            $expire_microdate,
-            $netType,
-            $rahgozar,
-            $limitip
+        [$response, $remark, $port, $effectId] = achbotCreatePaidAccount(
+            $connection,(int)$payInfo['id'],1,[
+                'user_id'=>$uid,'server_type'=>$serverType,
+                'server_id'=>$server_id,'inbound_id'=>$inbound_id,
+                'plan_id'=>$fid,'remark'=>$remark,'volume'=>$volume,
+                'days'=>$days,'uniqid'=>$uniqid,'protocol'=>$protocol,
+                'port'=>$port,'expire_microdate'=>$expire_microdate,
+                'net_type'=>$netType,'rahgozar'=>$rahgozar,'limitip'=>$limitip
+            ]
         );
 
         ensureAccountCreationSucceeded($response, $serverInfo, $inbound_id, $admin);
 
         alert($mainValues['sending_config_to_user']);
 
-        [$token, $vray_link, $uniqid] = buildLinksAndSendQr(
+        [$token, $vray_link, $uniqid, $accText, $userKeys, $qrLink] = buildLinksAndSendQr(
             $serverType,
             $serverConfig,
             $botState,
@@ -116,7 +112,10 @@ if (preg_match('/payCustomWithWallet(.*)/', $data, $match)) {
             $days,
             $buttonValues,
             $linkIndices,
-            $hideConfigIfMany
+            $hideConfigIfMany,
+            '',
+            null,
+            false
         );
 
         $inviterId = $userRow['refered_by'] ?? null;
@@ -126,25 +125,23 @@ if (preg_match('/payCustomWithWallet(.*)/', $data, $match)) {
 
         $agentBought = (int)($payInfo['agent_bought'] ?? 0);
 
-        insertOrder(
-            $connection,
-            $uid,
-            $token,
-            $fid,
-            $server_id,
-            $inbound_id,
-            $remark,
-            $uniqid,
-            $protocol,
-            $expire_date,
-            $vray_link,
-            $price,
-            $date,
-            $rahgozar,
-            $agentBought
-        );
-
-        decreaseServerCapacity($connection, $server_id, $inbound_id, $fid, 1);
+        if ($connection->begin_transaction()!==true)
+            throw new RuntimeException('custom_wallet_order_begin');
+        try {
+            $orderId=insertOrder(
+                $connection,$uid,$token,$fid,$server_id,$inbound_id,
+                $remark,$uniqid,$protocol,$expire_date,$vray_link,
+                $price,$date,$rahgozar,$agentBought,true);
+            achbotLinkPaidAccountEffect($connection,$effectId,$orderId);
+            if ($connection->commit()!==true)
+                throw new RuntimeException('custom_wallet_order_commit_unknown');
+        } catch (Throwable $error) {
+            try {$connection->rollback();} catch (Throwable $ignored) {}
+            throw $error;
+        }
+        $pendingCustomDelivery=[
+            'uid'=>$uid,'qr'=>$qrLink,'caption'=>$accText,'keys'=>$userKeys
+        ];
 
         $keys = json_encode([
             'inline_keyboard' => [
@@ -163,9 +160,8 @@ if (preg_match('/payCustomWithWallet(.*)/', $data, $match)) {
             $mainValues['buy_custom_account_request']
         );
 
-        sendMessage($msg, $keys, "html", $admin);
-        sendToAllAdmins('sendMessage', ['text' => $msg, 'reply_markup' => $keys, 'parse_mode' => "html"]);
-
+        $pendingCustomDelivery['admin_msg']=$msg;
+        $pendingCustomDelivery['admin_keys']=$keys;
         return true;
     });
 
@@ -178,6 +174,33 @@ if (preg_match('/payCustomWithWallet(.*)/', $data, $match)) {
 
     if ($result['status'] === 'already_paid') {
         return;
+    }
+    if ($result['status']==='ok' && is_array($pendingCustomDelivery)) {
+        try {
+            $sent=sendQrFromLink(
+                $pendingCustomDelivery['qr'],$pendingCustomDelivery['caption'],
+                $pendingCustomDelivery['keys'],$botUrl,
+                (int)$pendingCustomDelivery['uid'],'',null);
+            if (!$sent) throw new RuntimeException('custom_wallet_qr_unconfirmed');
+        } catch (Throwable $error) {
+            $reviewPay=(int)($result['payInfo']['id']??0);
+            error_log('achbot_custom_wallet_delivery_review pay_id='.
+                $reviewPay.' class='.get_class($error));
+            try {
+                sendMessage('⚠️ تحویل خرید سفارشی کیف پول نیازمند بررسی است. '.
+                    'پرداخت و سرویس ثبت شده‌اند؛ ساخت مجدد خودکار ممنوع است.'.
+                    "\n🆔 Pay ID: ".$reviewPay,null,null,$admin);
+            } catch (Throwable $ignored) {
+                error_log('achbot_custom_wallet_owner_notice_failed pay_id='.$reviewPay);
+            }
+        }
+        try {
+            sendMessage($pendingCustomDelivery['admin_msg'],
+                $pendingCustomDelivery['admin_keys'],"html",$admin);
+        } catch (Throwable $error) {
+            error_log('achbot_custom_wallet_admin_notice_failed pay_id='.
+                (int)($result['payInfo']['id']??0));
+        }
     }
     return;
 }
@@ -456,9 +479,13 @@ if (preg_match('/^accCustom(.+)$/D', $data, $match) && $text != $buttonValues['c
 
     $hash_id = trim($match[1]);
 
-    $connection->begin_transaction();
-
+    require_once __DIR__.'/../ServiceEffects.php';
+    $claimed=false;
+    $claimOpen=false;
     try {
+        if ($connection->begin_transaction()!==true)
+            throw new RuntimeException('custom_receipt_claim_begin');
+        $claimOpen=true;
         $stmt = $connection->prepare("SELECT * FROM `pays` WHERE `hash_id` = ? FOR UPDATE");
         $stmt->bind_param("s", $hash_id);
         $stmt->execute();
@@ -467,17 +494,24 @@ if (preg_match('/^accCustom(.+)$/D', $data, $match) && $text != $buttonValues['c
 
         if (!achbotManualServiceApprovalAllowedLocked($connection, $payInfo, 'custom') ||
             !achbotSupportsPaymentSubject($connection, $payInfo)) {
+            $connection->rollback();
+            $claimOpen=false;
             alert('⛔️ این خرید رسید دستی معتبر و در انتظار تأیید ندارد.', true);
-            throw new Exception('custom_manual_receipt_not_reviewable');
+            return;
         }
 
         $payRowId = (int)$payInfo['id'];
-        $stmt = $connection->prepare("UPDATE `pays` SET `state` = 'approved', `approved_by` = ? WHERE `id` = ? AND `state` = 'have_sent'");
+        $stmt = $connection->prepare("UPDATE `pays` SET `state` = 'processing', `approved_by` = ? WHERE `id` = ? AND `state` = 'have_sent'");
         $stmt->bind_param('ii', $from_id, $payRowId);
         $stmt->execute();
         $changed = $stmt->affected_rows;
         $stmt->close();
         if ($changed !== 1) throw new Exception('custom_receipt_claim_failed');
+        // Preserve the original reviewed receipt before any remote action.
+        if ($connection->commit()!==true)
+            throw new RuntimeException('custom_receipt_claim_commit_unknown');
+        $claimOpen=false;
+        $claimed=true;
 
         $fid    = (int)$payInfo['plan_id'];
         $uid    = (int)$payInfo['user_id'];
@@ -518,28 +552,22 @@ if (preg_match('/^accCustom(.+)$/D', $data, $match) && $text != $buttonValues['c
         // اگر خواستی fallback برای remark داشته باشی:
         // $remark = buildRemark($botState, $srv_remark, $payInfo['description'], $uid, $payInfo['description']);
 
-        [$response, $remark, $port] = createServerAccount(
-            $serverType,
-            $server_id,
-            $inbound_id,
-            $fid,
-            $remark,
-            $volume,
-            $days,
-            $uniqid,
-            $protocol,
-            $port,
-            $expire_microdate,
-            $netType,
-            $rahgozar,
-            $limitip
+        [$response, $remark, $port, $effectId] = achbotCreatePaidAccount(
+            $connection,$payRowId,1,[
+                'user_id'=>$uid,'server_type'=>$serverType,
+                'server_id'=>$server_id,'inbound_id'=>$inbound_id,
+                'plan_id'=>$fid,'remark'=>$remark,'volume'=>$volume,'days'=>$days,
+                'uniqid'=>$uniqid,'protocol'=>$protocol,'port'=>$port,
+                'expire_microdate'=>$expire_microdate,'net_type'=>$netType,
+                'rahgozar'=>$rahgozar,'limitip'=>$limitip
+            ]
         );
 
         ensureAccountCreationSucceeded($response, $serverInfo, $inbound_id, $admin, true);
 
         alert($mainValues['sending_config_to_user']);
 
-        [$token, $vray_link, $uniqid] = buildLinksAndSendQr(
+        [$token, $vray_link, $uniqid, $caption, $keys, $qrLink] = buildLinksAndSendQr(
             $serverType,
             $serverConfig,
             $botState,
@@ -561,34 +589,41 @@ if (preg_match('/^accCustom(.+)$/D', $data, $match) && $text != $buttonValues['c
             $days,
             $buttonValues,
             $linkIndices,
-            $hideConfigIfMany
+            $hideConfigIfMany,
+            '',
+            null,
+            false
         );
 
         $agentBought = (int)($payInfo['agent_bought'] ?? 0);
-        insertOrder(
-            $connection,
-            $uid,
-            $token,
-            $fid,
-            $server_id,
-            $inbound_id,
-            $remark,
-            $uniqid,
-            $protocol,
-            $expire_date,
-            $vray_link,
-            $price,
-            $date,
-            $rahgozar,
-            $agentBought
-        );
-
-        decreaseServerCapacity($connection, $server_id, $inbound_id, $fid, 1);
-
-        if (!$connection->commit()) throw new Exception('custom_receipt_commit_failed');
+        if ($connection->begin_transaction()!==true)
+            throw new RuntimeException('custom_receipt_finish_begin');
+        try {
+            $orderId=insertOrder(
+                $connection,$uid,$token,$fid,$server_id,$inbound_id,
+                $remark,$uniqid,$protocol,$expire_date,$vray_link,
+                $price,$date,$rahgozar,$agentBought,true);
+            achbotLinkPaidAccountEffect($connection,$effectId,$orderId);
+            $fin=$connection->prepare("UPDATE pays SET state='approved'
+                WHERE id=? AND type='BUY_SUB' AND state='processing' AND approved_by=?");
+            if (!$fin) throw new RuntimeException('custom_receipt_finish_prepare');
+            $fin->bind_param('ii',$payRowId,$from_id);
+            if (!$fin->execute() || $fin->affected_rows!==1)
+                throw new RuntimeException('custom_receipt_finish_unconfirmed');
+            $fin->close();
+            if ($connection->commit()!==true)
+                throw new RuntimeException('custom_receipt_finish_commit_unknown');
+        } catch (Throwable $error) {
+            try {$connection->rollback();} catch (Throwable $ignored) {}
+            throw $error;
+        }
 
     } catch (Throwable $e) {
-        try { $connection->rollback(); } catch (Throwable $ignored) {}
+        if ($claimOpen) {
+            try { $connection->rollback(); } catch (Throwable $ignored) {}
+        }
+        error_log('achbot_custom_receipt_review pay_id='.(int)($payRowId??0).
+            ' class='.get_class($e));
         // A remote operation could have succeeded before the local rollback.
         // Never retry it blindly; an operator must reconcile the real service.
         sendMessage('⚠️ تأیید خرید دستی نیازمند بررسی سرویس و پرداخت است. از اجرای دوباره خودکار خودداری کنید.' . "\n🆔 " . $hash_id,
@@ -598,7 +633,23 @@ if (preg_match('/^accCustom(.+)$/D', $data, $match) && $text != $buttonValues['c
     }
 
     setUser();
-    sendMessage('✅ اشتراک برای کاربر ارسال شد.', getMainKeys());
+    // Both payment and local order now have verified COMMITs.
+    // Delivery failure does not undo a paid service or rearm CREATE.
+    try {
+        $sent=sendQrFromLink($qrLink,$caption,$keys,$botUrl,$uid,'',null);
+        if (!$sent) throw new RuntimeException('custom_receipt_qr_unconfirmed');
+    } catch (Throwable $error) {
+        error_log('achbot_custom_receipt_delivery_review pay_id='.$payRowId.
+            ' class='.get_class($error));
+        try {
+            sendMessage('⚠️ تحویل خرید دستی بعد از ثبت سفارش نیاز به بررسی دارد.'.
+                "\n🆔 Pay ID: ".$payRowId.
+                "\nسرویس را بدون تطبیق مجدد ایجاد نکنید.",null,null,$admin);
+        } catch (Throwable $ignored) {
+            error_log('achbot_custom_receipt_owner_notice_failed pay_id='.$payRowId);
+        }
+    }
+    sendMessage('✅ اشتراک ثبت شده است.', getMainKeys());
 
     $keys = json_encode([
         'inline_keyboard' => [
@@ -631,7 +682,7 @@ if (preg_match('/^accCustom(.+)$/D', $data, $match) && $text != $buttonValues['c
     if (!empty($user_detail['refered_by'])) {
         $inviterId = (int)$user_detail['refered_by'];
 
-        giveReferralReward($connection, $user_detail['userid'], $inviterId, $admin, $botState);
+        giveReferralReward($connection, $user_detail['userid'], $inviterId, $admin, $botState, null, $payRowId);
 
         if ($admin != $from_id) {
             $uname     = $user_detail['name'];
@@ -821,21 +872,19 @@ if (preg_match('/payBuyWithWallet(.*)/', $data, $match)) {
                     $uid
                 );
 
-                [$response, $remark, $port] = createServerAccount(
-                    $serverType,
-                    $server_id,
-                    $inbound_id,
-                    $fid,
-                    $remark,
-                    $volume,
-                    $days,
-                    $uniqid,
-                    $protocol,
-                    $port,
-                    $expire_microdate,
-                    $netType,
-                    $rahgozar,
-                    $limitip
+                // Each line owns a durable 007 operation identity.
+                // The first line atomically reserves the FULL quantity.
+                [$response, $remark, $port, $effectId] = achbotCreatePaidAccount(
+                    $connection,(int)$payInfo['id'],$i,[
+                        'user_id'=>$uid,'server_type'=>$serverType,
+                        'server_id'=>$server_id,'inbound_id'=>$inbound_id,
+                        'plan_id'=>$fid,'remark'=>$remark,
+                        'volume'=>$volume,'days'=>$days,'uniqid'=>$uniqid,
+                        'protocol'=>$protocol,'port'=>$port,
+                        'expire_microdate'=>$expire_microdate,
+                        'net_type'=>$netType,'rahgozar'=>$rahgozar,
+                        'limitip'=>$limitip
+                    ]
                 );
 
                 ensureAccountCreationSucceeded($response, $serverInfo, $inbound_id, $admin, true);
@@ -870,23 +919,22 @@ if (preg_match('/payBuyWithWallet(.*)/', $data, $match)) {
                     false
                 );
 
-                insertOrder(
-                    $connection,
-                    $uid,
-                    $token,
-                    $fid,
-                    $server_id,
-                    $inbound_id,
-                    $remark,
-                    $uniqid2 ?: $uniqid,
-                    $protocol,
-                    $expire_date,
-                    $vray_link,
-                    $eachPrice,
-                    $date,
-                    $rahgozar,
-                    $agent_bought
-                );
+                // Never keep a local transaction open during HTTP. A
+                // partial multi-account order remains linked for recovery.
+                if ($connection->begin_transaction()!==true)
+                    throw new RuntimeException('wallet_buy_order_begin');
+                try {
+                    $orderId=insertOrder(
+                        $connection,$uid,$token,$fid,$server_id,$inbound_id,
+                        $remark,$uniqid2?:$uniqid,$protocol,$expire_date,
+                        $vray_link,$eachPrice,$date,$rahgozar,$agent_bought,true);
+                    achbotLinkPaidAccountEffect($connection,$effectId,$orderId);
+                    if ($connection->commit()!==true)
+                        throw new RuntimeException('wallet_buy_order_commit_unknown');
+                } catch (Throwable $error) {
+                    try {$connection->rollback();} catch (Throwable $ignored) {}
+                    throw $error;
+                }
 
                 $pendingUserQrs[] = [
                     'uid'      => $uid,
@@ -896,8 +944,8 @@ if (preg_match('/payBuyWithWallet(.*)/', $data, $match)) {
                 ];
             }
 
-            decreaseServerCapacity($connection, $server_id, $inbound_id, $fid, $accountCount);
-
+            // No second capacity deduction: the initial 007 dispatch
+            // reservation committed all slots before its remote call.
             if (!empty($userReferrer)) {
                 $deferredReferral = [$uid, (int)$userReferrer];
             }
@@ -955,16 +1003,32 @@ if (preg_match('/payBuyWithWallet(.*)/', $data, $match)) {
     }
 
     if (!empty($pendingUserQrs)) {
-        foreach ($pendingUserQrs as $pq) {
-            sendQrFromLink(
-                $pq['qrLink'],
-                $pq['acc_text'],
-                $pq['keys'],
-                $botUrl,
-                (int)$pq['uid'],
-                '',
-                null
-            );
+        $deliveryReview=[];
+        foreach ($pendingUserQrs as $index=>$pq) {
+            try {
+                $sent=sendQrFromLink(
+                    $pq['qrLink'],$pq['acc_text'],$pq['keys'],
+                    $botUrl,(int)$pq['uid'],'',null);
+                if ($sent!==true)
+                    throw new RuntimeException('wallet_checkout_qr_unconfirmed');
+            } catch (Throwable $error) {
+                $deliveryReview[]=$index+1;
+                error_log('achbot_wallet_checkout_delivery_review pay_id='.
+                    (int)$payInfo['id'].' ordinal='.($index+1).
+                    ' class='.get_class($error));
+            }
+        }
+        if ($deliveryReview) {
+            try {
+                sendMessage('⚠️ تحویل اشتراک کیف پول نیاز به بررسی دارد.'.
+                    "\n🆔 Pay ID: ".(int)$payInfo['id'].
+                    "\n🔢 موارد: ".implode(',',$deliveryReview).
+                    "\nپرداخت و سرویس ثبت شده‌اند؛ ساخت مجدد انجام نشود.",
+                    null,null,$admin);
+            } catch (Throwable $error) {
+                error_log('achbot_wallet_checkout_owner_notice_failed pay_id='.
+                    (int)$payInfo['id'].' class='.get_class($error));
+            }
         }
     }
 

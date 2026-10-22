@@ -208,6 +208,34 @@ def check():
         assert unchanged(work,env,pay)==baseline
         cases.append('unresolved_bank_case_reads_exact_local_identity_without_sql_writes')
 
+        held=create_case(work,env,'wallet-held-inbox',state='processing_wallet',
+                         number_of_effects=0,method=None)
+        sql(work,env,"INSERT INTO service_effects "
+            "(pay_row_id,ordinal,operation_id,effect_kind,target_server_id,"
+            "target_key,endpoint_sha256,plan_id,remote_username,"
+            "requested_expire,requested_bytes,request_sha256,reserved_count,state) "
+            f"VALUES ({held},0,REPEAT('c',32),'wallet_hold',2,'server:2',"
+            "REPEAT('a',64),7,'#wallet_hold_fixture',0,0,REPEAT('b',64),1,'reserved')")
+        held_before=unchanged(work,env,held)
+        list_now=call(work,env,driver,op='list')
+        assert any(int(x['id'])==held for x in list_now['value'])
+        wallet_case=call(work,env,driver,op='case',pay=held)
+        assert wallet_case['value']['payment_state']=='processing_wallet'
+        assert wallet_case['value']['method']=='wallet_held'
+        assert wallet_case['value']['wallet_hold_state']=='reserved'
+        assert wallet_case['value']['wallet_capacity_reserved']==1
+        assert wallet_case['value']['recorded_accounts']==0
+        assert wallet_case['value']['journal_complete'] is False
+        assert not events(wallet_case,'GET')
+        wallet_not_created=call(work,env,driver,op='inspect',pay=held,ordinal=1)
+        assert wallet_not_created['value']['status']=='target_or_identity_changed'
+        assert not events(wallet_not_created,'GET')
+        wallet_panel=call(work,env,driver,op='route',callback=f'bankReviewCase_{held}')
+        assert not events(wallet_panel,'GET')
+        assert 'ظرفیت رزروشده' in str(wallet_panel['events'])
+        assert unchanged(work,env,held)==held_before
+        cases.append('owner_private_wallet_debit_capacity_hold_visible_no_unissued_get')
+
         matched=call(work,env,driver,op='inspect',pay=pay)
         assert matched['value']['status']=='matching_observation',matched
         assert matched['value']['remote_gets']==1 and len(events(matched,'GET'))==1

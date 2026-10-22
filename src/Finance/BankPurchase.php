@@ -60,7 +60,7 @@ function achbotAutoBankFinishBuySub(mysqli $db, array $pay, array $lines): bool 
             throw new RuntimeException('bank_buy_plan_changed');
 
         $stmt=$db->prepare("SELECT id,ordinal,state,order_id,plan_id,target_server_id,
-            remote_username,requested_expire,requested_bytes
+            remote_username,requested_expire,requested_bytes,reserved_count
             FROM service_effects WHERE pay_row_id=? AND effect_kind='create'
             ORDER BY ordinal FOR UPDATE");
         if (!$stmt) throw new RuntimeException('bank_buy_effect_prepare');
@@ -71,6 +71,8 @@ function achbotAutoBankFinishBuySub(mysqli $db, array $pay, array $lines): bool 
         $stmt->close();
         if (count($effects)!==$count)
             throw new RuntimeException('bank_buy_effects_incomplete');
+        if (!isset($effects[1]) || (int)$effects[1]['reserved_count']!==$count)
+            throw new RuntimeException('bank_buy_capacity_unreserved');
         foreach ($lines as $index=>$line) {
             $n=$index+1; $e=$effects[$n]??null;
             if (!$e || (int)$e['id']!==(int)($line['effect_id']??0) ||
@@ -84,14 +86,6 @@ function achbotAutoBankFinishBuySub(mysqli $db, array $pay, array $lines): bool 
                 throw new RuntimeException('bank_buy_effect_changed');
         }
 
-        $stmt=$db->prepare('SELECT ucount FROM server_info WHERE id=? FOR UPDATE');
-        if (!$stmt) throw new RuntimeException('bank_buy_capacity_prepare');
-        $stmt->bind_param('i',$server);
-        if (!$stmt->execute()) throw new RuntimeException('bank_buy_capacity_read');
-        $capacity=$stmt->get_result()->fetch_assoc(); $stmt->close();
-        if (!$capacity || (int)$capacity['ucount']<$count)
-            throw new RuntimeException('bank_buy_capacity_unavailable');
-
         $each=intdiv($price,$count); $extra=$price%$count;
         foreach ($lines as $index=>$line) {
             $n=$index+1; $e=$effects[$n];
@@ -104,12 +98,8 @@ function achbotAutoBankFinishBuySub(mysqli $db, array $pay, array $lines): bool 
             achbotLinkPaidAccountEffect($db,(int)$e['id'],(int)$orderId);
         }
 
-        $stmt=$db->prepare('UPDATE server_info SET ucount=ucount-? WHERE id=? AND ucount>=?');
-        if (!$stmt) throw new RuntimeException('bank_buy_capacity_write_prepare');
-        $stmt->bind_param('iii',$count,$server,$count);
-        if (!$stmt->execute() || $stmt->affected_rows!==1)
-            throw new RuntimeException('bank_buy_capacity_write');
-        $stmt->close();
+        // The committed first service_effects line already reserved all
+        // slots before HTTP; finalizing orders must not decrement twice.
         $stmt=$db->prepare("UPDATE pays SET state='auto_cart_approved'
             WHERE id=? AND user_id=? AND type='BUY_SUB' AND state='processing'");
         if (!$stmt) throw new RuntimeException('bank_buy_finish_prepare');

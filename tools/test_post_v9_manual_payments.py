@@ -311,7 +311,9 @@ function insertOrder(...$args){
     // Real source route uses the real persistence contract: the stub saves a
     // disposable row for the standard path only, so the exact order-id FK and
     // effect matching are tested in the caller's transaction.
-    if (($GLOBALS['spec']['route']??'')==='standard_approval') {
+    if (($GLOBALS['spec']['route']??'')==='standard_approval' ||
+        (($GLOBALS['spec']['route']??'')==='checkout' &&
+         str_starts_with((string)($GLOBALS['spec']['data']??''),'accCustom'))) {
         global $connection;
         $uid=(int)$args[1];$fid=(int)$args[3];$srv=(int)$args[4];$inbound=(int)$args[5];
         $remark=$connection->real_escape_string((string)$args[6]);
@@ -519,6 +521,10 @@ def check():
               "VALUES (1,'http://127.0.0.1:9','127.0.0.1','','none','','','none','{}','marzban','fixture-admin','fixture-password','')")
         query(work,env,(ROOT/'migrations/post-v9/003_payment_attempts.sql').read_text())
         query(work,env,(ROOT/'migrations/post-v9/007_service_effects.sql').read_text())
+        # Each isolated standard receipt now holds capacity before POST.
+        # Supply independent test headroom; focused exhaustion is checked
+        # in actual ServiceEffects concurrency and reservation regressions.
+        query(work,env,'UPDATE server_info SET ucount=1000 WHERE id=1')
         driver=work/'manual-payments.php';driver.write_text(PHP)
         initial_fixtures={
             'bankfixture':1001,'giftfixture':1001,'usdtfixture':1001,
@@ -697,8 +703,13 @@ def check():
         # merely helper functions. Every remote action is a local spy.
         def service_pay(key,subject='BUY_SUB',method='bank_transfer',received=True):
             seed(work,env,key)
+            # A physical Marzban username cannot be reused for two paid
+            # identities on the same provider. Synthetic custom descriptions
+            # must therefore differ per payment; real mismatches fail closed.
+            description='fx_'+key if (key.startswith('custom') or
+                key.startswith('servicecallbackrace')) else 'fixture'
             query(work,env,"UPDATE pays SET type='"+subject+"',plan_id=1,"
-                  "server_id=1,day=30,volume=10,description='fixture' "
+                  "server_id=1,day=30,volume=10,description='"+description+"' "
                   "WHERE hash_id='"+key+"'")
             assert base(key,'claim',method)
             if received:
@@ -895,11 +906,18 @@ def check():
         cases.append('real_standard_mysqlireportoff_unconfirmed_order_never_approved')
 
         standard_pay('standardsilentcapacity',method='bank_transfer')
-        silent=run_route(work,env,route_driver,data='acceptstandardsilentcapacity',
-                         actor=9001,route='standard_approval',remote_mode='silent_sql_capacity_failure',
+        query(work,env,"CREATE TRIGGER fixture_capacity_reserve_failure "
+            "BEFORE UPDATE ON server_info FOR EACH ROW "
+            "SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='fixture_reserve_failed'")
+        try:
+            silent=run_route(work,env,route_driver,
+                         data='acceptstandardsilentcapacity',
+                         actor=9001,route='standard_approval',
                          mysqli_report_off=True,
-                         expected_warning='achbot_manual_standard_remote_finish_review')
-        assert [e['name'] for e in silent].count('remote_create')==1,repr(silent)
+                         expected_warning='achbot_manual_standard_effect_needs_review')
+        finally:
+            query(work,env,'DROP TRIGGER fixture_capacity_reserve_failure')
+        assert not any(e['name']=='remote_create' for e in silent),repr(silent)
         assert query(work,env,"SELECT state FROM pays WHERE hash_id='standardsilentcapacity'")=='processing'
         reject_service('standardsilentcapacity','standard_approval','accept')
         cases.append('real_standard_mysqlireportoff_unconfirmed_capacity_never_approved')
@@ -1131,12 +1149,21 @@ def check():
         # reconcile remote state before acting on the still-reviewable invoice.
         service_pay('customremoteunknown',method='manual_usdt')
         prior=service_snapshot('customremoteunknown')
+        old_capacity=int(query(work,env,'SELECT ucount FROM server_info WHERE id=1'))
         uncertain=run_route(work,env,route_driver,data='accCustomcustomremoteunknown',
-            actor=9001,route='checkout',remote_mode='uncertain')
+            actor=9001,route='checkout',remote_mode='uncertain',
+            expected_warning='achbot_custom_receipt_review')
         assert any(event['name']=='remote_create' for event in uncertain),repr(uncertain)
         assert any(event['name']=='sendMessage' and 'بررسی سرویس و پرداخت' in str(event['args'])
                    for event in uncertain),repr(uncertain)
-        assert service_snapshot('customremoteunknown')==prior
+        assert query(work,env,"SELECT state FROM pays WHERE hash_id='customremoteunknown'")=='processing'
+        assert int(query(work,env,'SELECT ucount FROM server_info WHERE id=1'))==old_capacity-1
+        assert query(work,env,"SELECT state,reserved_count FROM service_effects "
+            "WHERE pay_row_id=(SELECT id FROM pays WHERE hash_id='customremoteunknown')")==(
+            'dispatching\t1')
+        assert not any(event['name']=='remote_create' for event in run_route(
+            work,env,route_driver,data='accCustomcustomremoteunknown',
+            actor=9001,route='checkout'))
         cases.append('uncertain_custom_external_effect_operator_reconciliation_no_retry')
 
         for key,provider in [('routebank','bank_transfer'),('routegift','gift_card'),
@@ -1473,17 +1500,20 @@ def check():
             assert base(key,'claim',user=9002) is False
             cases.append('cached_wallet_button_blocked_after_'+method)
 
-        # Reverse order: a successful wallet charge excludes later manual/Tron claims.
+        # A dummy wallet callback that has NOT implemented a durable
+        # per-account 007 CREATE must never be allowed to debit or claim a
+        # payment. Real positive wallet BUY_SUB/debit/no-replay is separately
+        # exercised in test_post_v9_wallet_creation.py and is a mandatory
+        # full-aggregate gate; this manual fixture remains a reject-control.
         seed(work,env,'walletfirst')
         query(work,env,"UPDATE pays SET type='BUY_SUB' WHERE hash_id='walletfirst'")
         debitBefore=int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'))
-        assert base('walletfirst','wallet')['status']=='ok'
-        assert int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'))==debitBefore-100000
-        assert base('walletfirst','claim','bank_transfer') is False
+        assert base('walletfirst','wallet')['status']=='insufficient_capacity'
+        assert int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'))==debitBefore
+        assert query(work,env,"SELECT state FROM pays WHERE hash_id='walletfirst'")=='pending'
+        assert base('walletfirst','claim','bank_transfer') is True
         assert base('walletfirst','claim','manual_usdt') is False
-        assert base('walletfirst','claim','manual_trx',network='TRON',keys={
-            'manualTrxWallet':'TJRabPrwbZy45sbavfcjinPJC18kjpRTv8','manualTrxRateToman':'15000'}) is False
-        cases.append('wallet_first_prevents_external_method_replacement')
+        cases.append('wallet_unjournaled_dummy_never_debits_or_reserves_payment')
 
         # Manual TRX shares the original guarded photo/approval flow.
         seed(work,env,'trxfirst')
