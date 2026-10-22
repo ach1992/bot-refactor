@@ -372,6 +372,47 @@ def main():
                 and payment_ux.get("external_provider_requests")==0):
             raise RuntimeError("Guarded payment-message lifecycle proof incomplete")
 
+        # Issue #51: real HTTP output of the shared Persian browser page,
+        # independent of return/callback settlement. No provider or DB calls.
+        browser_path=Path(tmp)/"payment-browser-feedback.json"
+        browser_check=subprocess.run(
+            ["python3",str(ROOT/"tools/test_post_v9_browser_feedback.py"),
+             "--run-disposable","--report",str(browser_path)],
+            cwd=ROOT,capture_output=True,text=True,timeout=35)
+        if browser_check.returncode!=0:
+            raise RuntimeError("Real browser payment feedback test failed:\n"+
+                (browser_check.stderr or browser_check.stdout)[-4000:])
+        browser_feedback=json.loads(browser_path.read_text())
+        browser_required={
+            "verified_flag_positive_copy_clear_result_without_unearned_delivery",
+            "warning_precedence_over_success_flag_for_partial_delivery",
+            "definitive_failed_payment_not_neutral",
+            "invalid_payment_and_error_heading_not_positive",
+            "processing_reconciler_state_visible_without_fake_completion",
+            "registered_payment_evidence_not_fulfillment",
+            "failed_extension_after_payment_no_false_green_status",
+            "legacy_true_without_completion_evidence_cannot_assert_finality",
+            "uncertain_or_multiple_charge_no_repay_call_to_action",
+            "wallet_effect_uncertain_not_paid_and_delivered",
+            "injected_heading_and_message_escaped",
+            "persian_mixed_latin_and_numeric_reference_preserved",
+            "valid_username_generates_only_verified_telegram_bot_link",
+            "invalid_or_missing_bot_username_has_safe_no_dead_link",
+            "page_get_has_no_checkout_or_side_effect_action",
+            "long_mixed_direction_messages_wrap_and_preserve_content",
+            "real_http_private_page_noindex_no_referrer_no_cache_no_frame",
+            "responsive_keyboard_and_forced_contrast_support",
+        }
+        if not (browser_feedback.get("complete") is True
+                and set(browser_feedback.get("scenarios",[]))==browser_required
+                and browser_feedback.get("cases")==len(browser_required)
+                and browser_feedback.get("source_real_php_http") is True
+                and browser_feedback.get("loopback_only") is True
+                and browser_feedback.get("database_or_financial_calls")==0
+                and browser_feedback.get("external_provider_calls")==0
+                and browser_feedback.get("production_mutations")==0):
+            raise RuntimeError("Issue #51 shared payment browser feedback acceptance incomplete")
+
         # Review F1/F2/F3/F4/R1: three provider issuance races, reverse
         # pre-lock timestamps, permanent supersession, SQL rollback, actual
         # renewal picker and full order-target status callback.
@@ -1218,6 +1259,7 @@ def main():
                     "financial_native_route_guards":finance,
                     "automatic_renewal_ledger":auto_renew,
                     "payment_ux_lifecycle":payment_ux,
+                    "payment_browser_feedback":browser_feedback,
                     "checkout_serialization":checkout_race,
                     "customer_method_serialization":method_race,
                     "wallet_authorization_freshness":wallet_freshness,
@@ -1252,6 +1294,7 @@ def main():
                       "financial_native_route_cases":finance["cases"],
                       "automatic_renewal_cases":auto_renew["cases"],
                       "payment_ux_cases":payment_ux["cases"],
+                      "payment_browser_feedback_cases":browser_feedback["cases"],
                       "checkout_serialization_cases":checkout_race["cases"],
                       "customer_method_serialization_cases":method_race["cases"],
                       "wallet_authorization_freshness_cases":wallet_freshness["cases"],
