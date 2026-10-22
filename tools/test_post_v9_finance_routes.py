@@ -287,6 +287,8 @@ if (!class_exists('SoapClient')) {
         function __construct(...$args) {}
         function PaymentRequest($params) {
             $GLOBALS['network_calls'][]='zarinpal:request';
+            // Same synthetic transport failure contract as PaymentVerification.
+            if ($GLOBALS['fake_zarin_throw']) throw new RuntimeException('simulated_provider_transport');
             return (object)['Status'=>100,'Authority'=>'zarin-'.($_GET['hash_id']??'unknown')];
         }
         function PaymentVerification($params) {
@@ -356,6 +358,9 @@ function curl_exec($handle) {
         ]);
     }
     if (str_contains($handle->url, '/nx/gateway/token')) {
+        // Token issuance is also non-idempotent: a lost response is unknown.
+        if ($GLOBALS['fake_nextpay_transport_failure']) return false;
+        if ($GLOBALS['fake_nextpay_raw'] !== null) return $GLOBALS['fake_nextpay_raw'];
         return json_encode(['code'=>-1,'trans_id'=>'next-'.($_GET['hash_id']??'unknown')]);
     }
     if (str_contains($handle->url, '/nx/gateway/verify')) {
@@ -1040,8 +1045,21 @@ def main():
         browser=run_php(work,env,stage,dict(route='return',
             get={'nowpayment':'','hash_id':'wallet-now'}))
         verify_unchanged(work,env,before,'legacy_browser_return')
-        if browser['network_calls'] or 'در حال بررسی' not in browser['form']:
-            raise RuntimeError('Untrusted browser-only return declared settlement')
+        if (browser['network_calls'] or
+            'class="panel pending"' not in browser['form']):
+            raise RuntimeError('Untrusted browser-only NOWPayments return was not pending')
+        # A locally paid BUY_SUB is not a verified customer Telegram ACK.
+        # Its browser return may not advertise completed fulfillment.
+        seed_payment(work,env,'np-browser-paid-no-delivery','BUY_SUB',7,2)
+        sql(work,env,"UPDATE pays SET state='paid' WHERE hash_id='np-browser-paid-no-delivery'")
+        before_paid=snapshot(work,env)
+        paid_page=run_php(work,env,stage,dict(route='return',
+            get={'nowpayment':'','hash_id':'np-browser-paid-no-delivery'}))
+        verify_unchanged(work,env,before_paid,'np_browser_paid_without_delivery')
+        if (paid_page['network_calls'] or
+            'class="panel review"' not in paid_page['form'] or
+            'class="panel completed"' in paid_page['form']):
+            raise RuntimeError('NOWPayments paid browser return claimed unverified delivery')
         records.append(dict(case='legacy_nowpayment_browser_only_read_only',
                             pass_=True,financial_mutations=0,external_requests=0))
         # This is a fresh positive payment journey: allocate the pays ID NOW,
@@ -2341,6 +2359,9 @@ def main():
             if want=='pending': verify_unchanged(work,env,before,name)
             if len(outcome['network_calls'])!=1 or not outcome['form']:
                 raise RuntimeError('NextPay mocked verification not exercised: '+name)
+            expected_panel='failed' if want=='canceled' else 'review'
+            if f'class="panel {expected_panel}"' not in outcome['form']:
+                raise RuntimeError('NextPay trusted verification disposition mispresented: '+name)
             records.append(dict(case='nextpay_'+name,pass_=True,
                                 external_requests=1,real_provider_requests=0))
         # Positive NextPay success: execute the real current GatewayReturn
@@ -2362,8 +2383,9 @@ def main():
         if not any(event['name']=='sendMessage' and len(event['args'])>=4
                    and event['args'][3]==1001 for event in positive['events']):
             raise RuntimeError('Real NextPay wallet success did not emit a Telegram send spy')
-        if 'موفقیت' not in positive['form']:
-            raise RuntimeError('Real NextPay success did not generate success form')
+        if ('موفقیت' not in positive['form'] or
+            'class="panel completed"' not in positive['form']):
+            raise RuntimeError('Real NextPay completed wallet credit was not explicitly presented')
         if positive['known_inherited_warnings']:
             raise RuntimeError('Gateway wallet success emitted PHP warning: '+
                                repr(positive['known_inherited_warnings']))
@@ -2490,6 +2512,8 @@ def main():
             raise RuntimeError('Unproven provider code 52 canceled an existing payment')
         if negative['network_calls']!=['zarinpal:verify']:
             raise RuntimeError('Zarinpal fake negative verification did not run')
+        if 'class="panel review"' not in negative['form']:
+            raise RuntimeError('Uncertain Zarinpal payment mislabeled as definitive failure')
         records.append(dict(case='zarinpal_unproven_52_retains_pending',pass_=True))
         seed_payment(work,env,'zarin-race','INCREASE_WALLET',0,0,'zarin-race-auth')
         race_wallet=int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())
@@ -2511,6 +2535,8 @@ def main():
                  'Status':'OK'},zarin_status=100))
         if sql(work,env,"SELECT state FROM pays WHERE hash_id='zarin-success'").strip()!='paid':
             raise RuntimeError('Zarinpal legitimate success not settled')
+        if 'class="panel completed"' not in positive['form']:
+            raise RuntimeError('Zarinpal verified wallet credit missing completed view')
         if int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())!=before_wallet+100:
             raise RuntimeError('Zarinpal wallet top-up did not credit atomically')
         records.append(dict(case='zarinpal_authenticated_positive_wallet_credit',pass_=True))
@@ -2535,8 +2561,9 @@ def main():
                 get={'zarinpal':'','hash_id':name,'Authority':name+'-auth',
                      'Status':browser},zarin_status=provider_status))
             verify_unchanged(work,env,before,'zarin_unconfirmed_'+name)
-            if disputed['network_calls']!=['zarinpal:verify'] or not disputed['form']:
-                raise RuntimeError('Zarinpal provider ambiguity was not surfaced')
+            if (disputed['network_calls']!=['zarinpal:verify'] or
+                'class="panel review"' not in disputed['form']):
+                raise RuntimeError('Zarinpal provider ambiguity lacked review presentation')
             records.append(dict(case='zarinpal_'+browser.lower()+'_provider_'+str(provider_status)+'_review',
                                 pass_=True))
         for scenario,overrides in [
@@ -3831,6 +3858,163 @@ def main():
         records.append(dict(case='hosted_order_and_effect_link_atomic_rollback',
                             pass_=True,real_provider_requests=0))
 
+# Issue #51 R2: controllers must forward trusted, evidence-backed
+        # dispositions into the REAL renderer. Page-only tests cannot prove
+        # these branches are wired, or that payment/provider effects are
+        # unchanged. All provider calls below are intercepted by PHP spies.
+        def assert_browser_state(case, route, get, expected, *, before=None,
+                                 outbound=0, **opts):
+            baseline = snapshot(work,env) if before is None else before
+            result = run_php(work,env,stage,dict(route=route,get=get,**opts))
+            if before is None:
+                verify_unchanged(work,env,baseline,case)
+            if (f'class="panel {expected}"' not in result['form'] or
+                len(result['network_calls']) != outbound or
+                result['events']):
+                raise RuntimeError('R2 trusted browser disposition/side effects: '+
+                                   repr((case,expected,result))[:1100])
+            records.append(dict(case='r2_'+case,pass_=True,
+                                external_requests=outbound,
+                                real_provider_requests=0))
+            return result
+
+        # Existing NOWPayments 003 attempt is queued, not generically neutral.
+        seed_payment(work,env,'r2-np-processing','INCREASE_WALLET',0,0,
+                     'r2-np-processing-invoice')
+        sql(work,env,"INSERT INTO payment_attempts "
+            "(pay_row_id,provider,order_hash,provider_reference,quote_amount,"
+            "quote_currency,local_amount_toman,stage) SELECT id,'nowpayments',"
+            "hash_id,payid,1,'usd',price,'pending' FROM pays "
+            "WHERE hash_id='r2-np-processing'")
+        assert_browser_state('nowpayments_existing_attempt_pending','return',
+            {'nowpayment':'','hash_id':'r2-np-processing',
+             'NP_id':'r2-np-registered-child'},'pending')
+        sql(work,env,"UPDATE payment_attempts SET stage='review' "
+            "WHERE order_hash='r2-np-processing'")
+        assert_browser_state('nowpayments_quarantined_attempt_review','return',
+            {'nowpayment':'','hash_id':'r2-np-processing',
+             'NP_id':'r2-np-registered-child'},'review')
+
+        seed_payment(work,env,'r2-np-historical','INCREASE_WALLET',0,0,
+                     'r2-np-legacy-invoice')
+        assert_browser_state('nowpayments_historical_quote_review','return',
+            {'nowpayment':'','hash_id':'r2-np-historical',
+             'NP_id':'r2-np-historical-child'},'review')
+
+        # Provider identity, quote, and historical-reference collisions
+        # must refuse verification and emit a review badge with zero effects.
+        seed_payment(work,env,'r2-zp-quote','INCREASE_WALLET',0,0,'r2-zp-ref')
+        sql(work,env,"INSERT INTO payment_attempts "
+            "(pay_row_id,provider,order_hash,provider_reference,quote_amount,"
+            "quote_currency,local_amount_toman,stage) SELECT id,'zarinpal',"
+            "hash_id,payid,100,'toman',999,'pending' FROM pays "
+            "WHERE hash_id='r2-zp-quote'")
+        assert_browser_state('zarinpal_scoped_amount_mismatch_review','return',
+            {'zarinpal':'','hash_id':'r2-zp-quote',
+             'Authority':'r2-zp-ref','Status':'OK'},'review')
+
+        for n in ('a','b'):
+            seed_payment(work,env,'r2-zp-ambiguous-'+n,
+                         'INCREASE_WALLET',0,0,'r2-zp-shared-ref')
+        assert_browser_state('zarinpal_ambiguous_historical_authority_review',
+            'return',{'zarinpal':'','hash_id':'r2-zp-ambiguous-a',
+                      'Authority':'r2-zp-shared-ref','Status':'OK'},'review')
+
+        seed_payment(work,env,'r2-nx-quote','INCREASE_WALLET',0,0,
+                     'r2-nx-quote-ref')
+        sql(work,env,"INSERT INTO payment_attempts "
+            "(pay_row_id,provider,order_hash,provider_reference,quote_amount,"
+            "quote_currency,local_amount_toman,stage) SELECT id,'nextpay',"
+            "hash_id,payid,100,'toman',999,'pending' FROM pays "
+            "WHERE hash_id='r2-nx-quote'")
+        assert_browser_state('nextpay_scoped_amount_mismatch_review','return',
+            {'nextpay':'','trans_id':'r2-nx-quote-ref'},'review')
+
+        seed_payment(work,env,'r2-nx-old-collision','INCREASE_WALLET',
+                     0,0,'r2-nx-colliding-ref')
+        seed_payment(work,env,'r2-nx-new-collision','INCREASE_WALLET',
+                     0,0,'r2-nx-colliding-ref')
+        sql(work,env,"INSERT INTO payment_attempts "
+            "(pay_row_id,provider,order_hash,provider_reference,quote_amount,"
+            "quote_currency,local_amount_toman,stage) SELECT id,'nextpay',"
+            "hash_id,payid,100,'toman',price,'pending' FROM pays "
+            "WHERE hash_id='r2-nx-new-collision'")
+        assert_browser_state('nextpay_external_reference_collision_review',
+            'return',{'nextpay':'','trans_id':'r2-nx-colliding-ref'},'review')
+
+        # The issuance wrapper previously dropped all caller statuses.
+        # Existing reservations must be inspected, not re-issued.
+        seed_payment(work,env,'r2-np-creating','INCREASE_WALLET',0,0,'')
+        sql(work,env,"UPDATE pays SET payid=NULL,price=100000 "
+            "WHERE hash_id='r2-np-creating'")
+        sql(work,env,"INSERT INTO payment_attempts "
+            "(pay_row_id,provider,order_hash,quote_amount,quote_currency,stage) "
+            "SELECT id,'nowpayments',hash_id,1,'usd','creating' FROM pays "
+            "WHERE hash_id='r2-np-creating'")
+        assert_browser_state('nowpayments_issuance_already_creating_pending',
+            'initiate',{'nowpayment':'','hash_id':'r2-np-creating'},'pending')
+
+        seed_payment(work,env,'r2-np-seen','INCREASE_WALLET',0,0,
+                     'r2-np-seen-invoice')
+        sql(work,env,"INSERT INTO payment_attempts "
+            "(pay_row_id,provider,order_hash,provider_reference,payment_id,"
+            "quote_amount,quote_currency,local_amount_toman,stage) SELECT "
+            "id,'nowpayments',hash_id,payid,'r2-np-seen-child',1,'usd',"
+            "price,'review' FROM pays WHERE hash_id='r2-np-seen'")
+        assert_browser_state('nowpayments_seen_child_under_review','initiate',
+            {'nowpayment':'','hash_id':'r2-np-seen'},'review')
+
+        seed_payment(work,env,'r2-np-already-paid','INCREASE_WALLET',0,0,
+                     'r2-np-already-paid-invoice')
+        sql(work,env,"UPDATE pays SET state='paid' "
+            "WHERE hash_id='r2-np-already-paid'")
+        assert_browser_state('nowpayments_paid_but_delivery_unproven_review',
+            'initiate',{'nowpayment':'','hash_id':'r2-np-already-paid'},
+            'review')
+
+        # An uncertain POST reserves once. It does not create a second invoice,
+        # re-credit a wallet, or claim terminal financial failure.
+        for provider,flag,options in (
+            ('nowpayments','nowpayment',{'invoice_transport_failure':True}),
+            ('nextpay','nextpay',{'nextpay_transport_failure':True}),
+            ('zarinpal','zarinpal',{'zarin_throw':True}),
+        ):
+            name='r2-uncertain-create-'+provider
+            seed_payment(work,env,name,'INCREASE_WALLET',0,0,'')
+            sql(work,env,"UPDATE pays SET payid=NULL,price=100000 "
+                f"WHERE hash_id='{name}'")
+            wallet_before=sql(work,env,
+                "SELECT wallet FROM users WHERE userid=1001").strip()
+            response=run_php(work,env,stage,dict(
+                route='initiate',get={flag:'','hash_id':name},**options))
+            stage_after=sql(work,env,
+                f"SELECT stage FROM payment_attempts WHERE order_hash='{name}'").strip()
+            pay_state=sql(work,env,
+                f"SELECT state FROM pays WHERE hash_id='{name}'").strip()
+            wallet_after=sql(work,env,
+                "SELECT wallet FROM users WHERE userid=1001").strip()
+            if (f'class="panel review"' not in response['form'] or
+                len(response['network_calls'])!=1 or
+                response['events'] or
+                stage_after!='review' or pay_state!='pending' or
+                wallet_after!=wallet_before):
+                raise RuntimeError('R2 uncertain provider issuance broke fence: '+
+                                   repr((provider,stage_after,pay_state,
+                                         response['network_calls'],
+                                         response['form'][:250]))[:900])
+            records.append(dict(case='r2_'+provider+
+                                '_uncertain_invoice_creation_review',
+                                pass_=True,external_requests=1,
+                                real_provider_requests=0))
+
+        # Truly unknown or unsupported routes retain neutral; never infer
+        # a definitive provider rejection from missing or invalid identifiers.
+        assert_browser_state('missing_initiation_provider_neutral','initiate',
+                             {},'neutral')
+        assert_browser_state('missing_return_provider_neutral','return',
+                             {},'neutral')
+        assert_browser_state('unknown_zarinpal_order_neutral','return',
+            {'zarinpal':'','hash_id':'r2-nonexistent'},'neutral')
         # Run the ACTUAL unmodified Cron entrypoint on the same disposable
         # MariaDB fixture, with only test-private bootstrap and outbound
         # backup/Telegram boundaries stubbed. The real GatewayReturn and

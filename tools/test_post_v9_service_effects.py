@@ -67,6 +67,21 @@ function getMarzbanUser($serverId,$remark,$token=null,$strict=false) {
     if ($mode==='wrong_expiry_fraction') $account['expire']+=0.5;
     if ($mode==='wrong_quota') $account['data_limit']+=1073741824;
     if ($mode==='wrong_quota_fraction') $account['data_limit']+=0.5;
+    // Marzban may return exact decimal integer *strings*; keep those valid.
+    // The following are not exact canonical integer readback evidence,
+    // including numerically equal float, exponent and padded encodings.
+    if ($mode==='canonical_integer_strings') {
+        $account['expire']=(string)$account['expire'];
+        $account['data_limit']=(string)$account['data_limit'];
+    }
+    if ($mode==='wrong_expiry_float_integral') $account['expire']=(float)$account['expire'];
+    if ($mode==='wrong_quota_float_integral') $account['data_limit']=(float)$account['data_limit'];
+    if ($mode==='wrong_expiry_exponent')
+        $account['expire']=(string)$account['expire'].'e0';
+    if ($mode==='wrong_quota_padded')
+        $account['data_limit']='0'.(string)$account['data_limit'];
+    if ($mode==='wrong_expiry_overflow')
+        $account['expire']='9223372036854775808';
     if ($mode==='wrong_username') $account['username']='stranger';
     // Model simultaneous unrelated create/delete with unchanged total count.
     if ($mode==='unrelated_churn') $GLOBALS['events'][]=[
@@ -219,6 +234,13 @@ def main():
         assert repeat['error'] and repeat['events']==[] and state(work,env,first)==row,repeat
         cases.append('same_pay_line_replay_stopped_before_post')
 
+        string_readback=pay(work,env,'effectcanonicaldigits')
+        allowed=run_php(work,env,driver,pay=string_readback,mode='canonical_integer_strings')
+        assert allowed['error'] is None and [e['event'] for e in allowed['events']]==['POST','GET'],allowed
+        assert state(work,env,string_readback).split('\t')[1]=='verified'
+        assert run_php(work,env,driver,pay=string_readback)['events']==[]
+        cases.append('canonical_unsigned_decimal_string_limits_verified_once')
+
         # The same remote username is not safe under a different paid order
         # on the same physical target. Reject in SQL BEFORE any second POST.
         collision=pay(work,env,'effectcrosspaycollision')
@@ -238,6 +260,8 @@ def main():
         for mode in ('create_failure','post_lost','crash_before_ack',
                      'get_missing','get_unavailable','other_note',
                      'wrong_expiry','wrong_quota','wrong_expiry_fraction','wrong_quota_fraction',
+                     'wrong_expiry_float_integral','wrong_quota_float_integral',
+                     'wrong_expiry_exponent','wrong_quota_padded','wrong_expiry_overflow',
                      'wrong_username','target_change','endpoint_change'):
             id=pay(work,env,'effect'+mode)
             before=run_php(work,env,driver,pay=id,mode=mode)

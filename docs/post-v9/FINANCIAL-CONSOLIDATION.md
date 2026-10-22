@@ -414,6 +414,60 @@ mixed-audience safety. No global exactly-once effect ledger, active-schema
 migration, installed-log rotation, real provider/financial effect or production
 acceptance is part of this PR. Issue #26 remains OPEN.
 
+
+#### Standard operator approval safety after PR #66 independent review
+
+For a manually reviewed standard BUY_SUB, the durable reservation of the
+entire `agent_count` is coupled to its payment `processing` claim. The
+conditional capacity update happens **once before CREATE**, not afterward.
+Failures before claim COMMIT roll back both claim and reservation; after an
+unknown remote outcome, the claim and reserved capacity stay held for
+operator reconciliation. A missing or replaced plan/server never permits
+retargeting to another Marzban host, including RENEW_SCONFIG edits.
+
+Verified external effects and local order/accounting completion remain
+separate from Telegram QR, message or markup success; positive API outcomes
+are required, and any failed notification after successful local COMMIT is
+a delivery-only issue. A referral credit must also be independently
+confirmed before telling the inviter it succeeded. Never retry a referral
+credit or account CREATE merely because a post-COMMIT Telegram call failed.
+
+A genuinely historical 23-table operator-delivered receipt remains
+eligible for human financial review when **both** 003 tables are proven
+absent. Permission failure, incomplete migration and missing operator
+delivery evidence cannot be treated as a valid historical exception.
+Native source-only R1–R6 regression evidence lives in
+`tools/test_post_v9_standard_integrity.py`; no migration is auto-applied.
+
+
+#### Shared capacity and per-payment referral recovery decisions pending
+
+The independent re-review of PR #66 (`b06ca4e`) identified that
+standard BUY_SUB's guarded full-count reservation alone does **not**
+make the shared `decreaseServerCapacity` default safe: several
+legacy wallet/custom/bulk/trial callers still may ignore a zero-row
+conditional UPDATE. Failing after a non-idempotent external CREATE must
+not leave a rearmable payment with no durable effect checkpoint.
+Resolve the entire interacting reservation/fence contract rather than
+mistaking a late exception for distributed exactly-once behavior.
+
+A successful service COMMIT and independent reward decision must not
+depend on customer Telegram delivery. At the existing helper boundary,
+a confirmed wallet UPDATE now returns true independently of later failed
+Telegram notifications; each inviter/admin/channel notice is attempted
+separately with protected target-role diagnostics. A rejected or unconfirmed
+wallet UPDATE still returns false, with zero credited notices. Real-helper
+MariaDB regression covers both branches, including `MYSQLI_REPORT_OFF`,
+false/null Telegram responses and thrown Telegram exceptions. This is a
+source-only correction to *meaning of the boolean*, **not** proof that
+the same payment cannot invoke the credit again. A referral credit which is
+not attempted, confirmed, uncertain or notice-failed still needs payment-scoped
+auditable evidence; an `error_log` line does not establish it. Any new
+additive journal schema or migration contract requires separate Owner
+acceptance before installed operation. Source-only improvements are not
+permission for tenant SQL migration, real refunds, retries or
+manual replacement of balance.
+
 ### Minimal per-account Marzban effects (Issue #26, proposed Migration 007)
 
 This is the **new source-only incremental implementation**, NOT an installed
@@ -425,6 +479,20 @@ where applicable first. 007 must be explicitly approved, preflighted,
 backed-up and installed on the chosen database **before deploying a runtime
 that uses it for paid account creation**; deploying only the PHP ZIP would
 otherwise stop new paid service fulfillment for safe manual review.
+
+**Combined PR #66 + PR #67 manual-standard boundary:** A historically
+operator-delivered receipt may still be evaluated against its original
+pays and message evidence when both 003 tables are proven absent, but
+receipt eligibility is NOT permission to issue an unjournaled account.
+The current standard BUY_SUB approval verifies the mandatory 007 unique
+identity constraints under the locked payment row **before** it reserves
+capacity or commits processing. Missing/partial 007 fails closed and
+leaves the original receipt and server free-capacity unchanged for human
+review. With properly installed 001/007, the old receipt can be fulfilled
+once under 007 identity/readback rules even when original 003 evidence is
+genuinely absent. Renewals do not create accounts and retain their
+separate eligibility and no-replay contract. The real native regression
+tests exercise both schema states, not a mocked success or real tenant DDL.
 
 Every line of a `BUY_SUB` payment carries a unique local
 `(pay_row_id,effect_kind='create',ordinal)` reservation with a random immutable
