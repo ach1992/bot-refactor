@@ -124,9 +124,12 @@ def check():
         assert out['result']['status']=='ok',out
         assert len([e for e in out['events'] if e['event']=='POST'])==1
         assert status(a)=='paid_with_wallet' and wallet()==49900 and capacity()==9
-        assert effect(a)=='local_recorded\t1'
+        assert effect(a)=='local_recorded\t0'
         assert sql(work,env,f"SELECT state,reserved_count FROM service_effects "
             f"WHERE pay_row_id={a} AND effect_kind='wallet_hold'")==('consumed\t1')
+        assert sql(work,env,f"SELECT COALESCE(SUM(reserved_count),0) "
+            f"FROM service_effects WHERE pay_row_id={a}")=='1', (
+            'wallet debit owns exactly one slot, not a duplicate CREATE hold')
         assert run(work,env,driver)['result']['status']=='already_paid'
         assert wallet()==49900
         cases.append('wallet_confirmed_debit_and_capacity_once_before_post')
@@ -135,7 +138,7 @@ def check():
         result=run(work,env,driver,hash='walletunknown',remote='lost')
         assert result['result']['status']=='error'
         assert wallet()==49900 and capacity()==9 and status(b)=='processing_wallet'
-        assert effect(b)=='dispatching\t1'
+        assert effect(b)=='dispatching\t0'
         assert sql(work,env,f"SELECT state FROM service_effects "
             f"WHERE pay_row_id={b} AND effect_kind='wallet_hold'")=='consumed'
         replay=run(work,env,driver,hash='walletunknown')
@@ -148,7 +151,7 @@ def check():
         failed=run(work,env,driver,hash='walletbadorder',order_failure=True)
         assert failed['result']['status']=='error' and wallet()==49900
         assert capacity()==9 and status(c)=='processing_wallet'
-        assert effect(c)=='verified\t1'
+        assert effect(c)=='verified\t0'
         assert not any(e['event']=='POST' for e in run(work,env,driver,hash='walletbadorder')['events'])
         cases.append('wallet_remote_success_local_order_failure_no_recredit_or_create')
 
