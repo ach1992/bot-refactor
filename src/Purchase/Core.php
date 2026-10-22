@@ -97,7 +97,7 @@ if (!function_exists('achbotSupportsMarzbanPlan')) {
             "SELECT p.`inbound_id`, p.`server_id`, c.`type`
              FROM `server_plans` p
              INNER JOIN `server_config` c ON c.`id` = p.`server_id`
-             WHERE p.`id` = ?".($lock ? ' AND p.active=1' : '')." LIMIT 1".($lock ? ' FOR UPDATE' : '')
+             WHERE p.`id` = ? AND p.active=1 LIMIT 1".($lock ? ' FOR UPDATE' : '')
         );
         $stmt->bind_param("i", $planId);
         $stmt->execute();
