@@ -242,8 +242,9 @@ if (!function_exists('sendQrFromLink')) {
             'phpqrcode/qrlib.php',
             '../phpqrcode/qrlib.php',
         ];
-        $qrlibIncluded = false;
+        $qrlibIncluded = class_exists('QRcode');
         foreach ($qrlibCandidates as $p) {
+            if ($qrlibIncluded) break;
             if (file_exists($p)) {
                 include_once $p;
                 $qrlibIncluded = true;
@@ -253,33 +254,37 @@ if (!function_exists('sendQrFromLink')) {
         if (!$qrlibIncluded && !class_exists('QRcode')) {
             @include_once 'phpqrcode/qrlib.php';
         }
-        if (!class_exists('QRcode')) {
-            sendMessage($acc_text, $keys, "HTML", $uid);
-            return false;
+        $photoConfirmed = false;
+        // Photo and account details are TWO independent Telegram effects.
+        // A successful photo cannot certify delivery of the account text.
+        if (class_exists('QRcode')) {
+            if (empty($qrFsDir)) $qrFsDir = getcwd();
+            $qrFsDir = rtrim($qrFsDir, "/\\");
+            $file = RandomString() . ".png";
+            $fsPath = $qrFsDir . DIRECTORY_SEPARATOR . $file;
+            try {
+                QRcode::png($qrLink, $fsPath, 'L', 11, 4);
+                $photo = class_exists('CURLFile')
+                    ? new CURLFile($fsPath, 'image/png', $file)
+                    : $fsPath;
+                $resPhoto = sendPhoto($photo, null, null, null, $uid);
+                $photoConfirmed = is_object($resPhoto) && ($resPhoto->ok ?? false) === true;
+            } catch (Throwable $error) {
+                // A network error says nothing about whether Telegram
+                // accepted the image; do not repeat automatically.
+                error_log('achbot_qr_photo_unconfirmed class='.get_class($error));
+            } finally {
+                @unlink($fsPath);
+            }
         }
-
-        if (empty($qrFsDir)) $qrFsDir = getcwd();
-        $qrFsDir = rtrim($qrFsDir, "/\\");
-        $file = RandomString() . ".png";
-        $fsPath = $qrFsDir . DIRECTORY_SEPARATOR . $file;
-
-        $ecc        = 'L';
-        $pixel_Size = 11;
-        $frame_Size = 4;
-
-        QRcode::png($qrLink, $fsPath, $ecc, $pixel_Size, $frame_Size);
-
-        $photo = class_exists('CURLFile')
-            ? new CURLFile($fsPath, 'image/png', $file)
-            : $fsPath;
-
-        $resPhoto = sendPhoto($photo, null, null, null, $uid);
-
-        $ok = ($resPhoto && isset($resPhoto->ok) && $resPhoto->ok === true);
-        @unlink($fsPath);
-        sendMessage($acc_text, $keys, "HTML", $uid);
-
-        return $ok;
+        $textConfirmed = false;
+        try {
+            $resText = sendMessage($acc_text, $keys, "HTML", $uid);
+            $textConfirmed = is_object($resText) && ($resText->ok ?? false) === true;
+        } catch (Throwable $error) {
+            error_log('achbot_account_text_unconfirmed class='.get_class($error));
+        }
+        return $photoConfirmed && $textConfirmed;
     }
 }
 
