@@ -1081,6 +1081,7 @@ def main():
             "r1_hosted_two_requested_one_slot_zero_create",
             "r1_hosted_negative_quantity_rejected_before_post",
             "r1_hosted_two_exact_slots_held_before_post_once",
+            "r1_independent_post_reader_excludes_uncommitted_capacity_and_hold",
             "r1_hosted_distinct_payments_one_slot_single_create",
             "r1_hosted_vs_real_manual_capacity_helper_no_overbooking",
             "r1_two_account_partial_unknown_keeps_full_capacity_hold",

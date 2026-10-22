@@ -34,18 +34,29 @@ $GLOBALS['events']=[];
 function createServerAccount(...$args) {
     $mode=$GLOBALS['spec']['mode']??'ok';
     $remark=(string)$args[4];
-    // The 007 INSERT and full-count server_info decrement must both have
-    // committed before synthetic provider POST; verify actual SQL readback.
-    global $connection;
+    // This MUST be a separate MariaDB session. The dispatching connection
+    // can read its own uncommitted hold and capacity change; a separate
+    // autocommit session can only see them once the real helper COMMITs.
+    global $socket,$database;
     $paidId=(int)($GLOBALS['spec']['pay']??0);
-    $capacity=(int)($connection->query('SELECT ucount FROM server_info WHERE id=2')->fetch_row()[0]??-1);
-    $held=0;
-    if ($paidId>0) {
-        $stmt=$connection->prepare("SELECT COALESCE(SUM(reserved_count),0)
-            FROM service_effects WHERE pay_row_id=?");
-        $stmt->bind_param('i',$paidId);
-        if ($stmt->execute()) $held=(int)$stmt->get_result()->fetch_row()[0];
-        $stmt->close();
+    $observer=new mysqli('localhost','root','',$database,0,$socket);
+    try {
+        $observer->set_charset('utf8mb4');
+        if (!$observer->autocommit(true))
+            throw new RuntimeException('fixture_observer_autocommit_unavailable');
+        $capacity=(int)($observer->query('SELECT ucount FROM server_info WHERE id=2')->fetch_row()[0]??-1);
+        $held=0;
+        if ($paidId>0) {
+            $stmt=$observer->prepare("SELECT COALESCE(SUM(reserved_count),0)
+                FROM service_effects WHERE pay_row_id=?");
+            $stmt->bind_param('i',$paidId);
+            if (!$stmt->execute())
+                throw new RuntimeException('fixture_observer_hold_unavailable');
+            $held=(int)$stmt->get_result()->fetch_row()[0];
+            $stmt->close();
+        }
+    } finally {
+        $observer->close();
     }
     $GLOBALS['events'][]=['event'=>'POST','username'=>$remark,
         'capacity_at_post'=>$capacity,'payment_held_at_post'=>$held];
@@ -116,7 +127,37 @@ $p=[
     'net_type'=>'normal','rahgozar'=>0,'limitip'=>0
 ];
 try {
-    if (($spec['operation']??'create')==='manual_capacity') {
+    if (($spec['operation']??'')==='probe_uncommitted') {
+        // Deliberately leave speculative writes open while invoking only the
+        // synthetic POST spy. It must NOT see these through its second session.
+        if (!$connection->begin_transaction())
+            throw new RuntimeException('fixture_probe_begin_failed');
+        try {
+            if (!$connection->query('UPDATE server_info SET ucount=ucount-1 WHERE id=2'))
+                throw new RuntimeException('fixture_probe_capacity_update_failed');
+            $stmt=$connection->prepare("UPDATE service_effects
+                SET reserved_count=reserved_count+1
+                WHERE pay_row_id=? AND effect_kind='create' AND ordinal=1");
+            $stmt->bind_param('i',$pay);
+            if (!$stmt->execute() || $stmt->affected_rows!==1)
+                throw new RuntimeException('fixture_probe_effect_update_failed');
+            $stmt->close();
+            $writerCapacity=(int)($connection->query(
+                'SELECT ucount FROM server_info WHERE id=2')->fetch_row()[0]??-1);
+            $writerHold=(int)($connection->query(
+                'SELECT reserved_count FROM service_effects WHERE pay_row_id='.$pay.
+                " AND effect_kind='create' AND ordinal=1")->fetch_row()[0]??-1);
+            $args=array_fill(0,16,0);
+            $args[4]='commit_visibility_probe';
+            $args[5]=1;
+            $args[14]='fixture_probe';
+            $args[15]=2000000000;
+            createServerAccount(...$args);
+            $value=['writer_capacity'=>$writerCapacity,'writer_hold'=>$writerHold];
+        } finally {
+            $connection->rollback();
+        }
+    } elseif (($spec['operation']??'create')==='manual_capacity') {
         // Exact real manual-standard capacity helper on an independent PHP
         // session, not a duplicate SQL expression inside the test.
         if (!$connection->begin_transaction())
@@ -268,6 +309,25 @@ def main():
         cases.append('one_reserved_unique_operation_verified_by_exact_note_username_quota_expiry')
         proof=query(work,env,f'SELECT operation_id FROM service_effects WHERE pay_row_id={first}')
         assert len(proof)==32 and set(proof)<=set('0123456789abcdef')
+        # Regression guard for the observer itself: a writer can see its own
+        # speculative capacity/hold updates, but the fake external POST must
+        # only see the prior committed values through another DB session.
+        committed_capacity=int(query(work,env,'SELECT ucount FROM server_info WHERE id=2'))
+        committed_hold=int(query(work,env,
+            f'SELECT reserved_count FROM service_effects WHERE pay_row_id={first}'))
+        probe=run_php(work,env,driver,pay=first,operation='probe_uncommitted')
+        assert probe['error'] is None and probe['result']=={
+            'writer_capacity':committed_capacity-1,
+            'writer_hold':committed_hold+1,
+        },probe
+        assert len(probe['events'])==1 and probe['events'][0]['event']=='POST',probe
+        assert probe['events'][0]['capacity_at_post']==committed_capacity,probe
+        assert probe['events'][0]['payment_held_at_post']==committed_hold,probe
+        assert query(work,env,'SELECT ucount FROM server_info WHERE id=2')==str(committed_capacity)
+        assert query(work,env,
+            f'SELECT reserved_count FROM service_effects WHERE pay_row_id={first}')==str(committed_hold)
+        assert state(work,env,first)==row
+        cases.append('r1_independent_post_reader_excludes_uncommitted_capacity_and_hold')
         repeat=run_php(work,env,driver,pay=first)
         assert repeat['error'] and repeat['events']==[] and state(work,env,first)==row,repeat
         cases.append('same_pay_line_replay_stopped_before_post')
