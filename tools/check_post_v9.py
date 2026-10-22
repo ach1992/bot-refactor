@@ -1142,6 +1142,14 @@ def main():
                 +native_checkout.stderr[-4500:])
         wallet_checkout=json.loads(wallet_checkout_path.read_text())
         required_wallet_checkout={
+            # R2 source-real controller/handler mode binding, including two
+            # simultaneous PHP workers racing the same locked payment.
+            "r2_custom_quote_standard_callback_predebit_denied",
+            "r2_standard_quote_custom_callback_predebit_denied",
+            "r2_partial_custom_quote_predebit_denied",
+            "r2_zero_template_exact_custom_dimensions_one_effect",
+            "r2_standard_single_multi_plan_dimensions_no_replay",
+            "r2_concurrent_wrong_right_mode_exactly_one_effect",
             "actual_catalogue_much_draft_rejects_invalid_remote_usernames",
             "real_custom_wallet_persisted_bad_name_rejected_before_debit_hold_and_create",
             "real_catalogue_much_valid_draft_to_wallet_one_effect_order",

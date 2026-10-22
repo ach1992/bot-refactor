@@ -89,7 +89,8 @@ function buildLinksAndSendQr(...$args){
 }
 function createServerAccount(...$args) {
     $count=($GLOBALS['posts']??0)+1;$GLOBALS['posts']=$count;
-    $GLOBALS['events'][]=['event'=>'POST','ordinal'=>$count,'name'=>$args[4]];
+    $GLOBALS['events'][]=['event'=>'POST','ordinal'=>$count,'name'=>$args[4],
+        'volume_gb'=>(int)$args[5],'days'=>(int)$args[6]];
     $GLOBALS['remote'][(string)$args[4]]=[
         'username'=>(string)$args[4],
         'note'=>'achbot:v1:'.(string)$args[14],
@@ -215,6 +216,87 @@ def check():
             return int(sql(work,env,'SELECT ucount FROM server_info WHERE id=2'))
         def calls(events,key):
             return [e for e in events if e['event']==key]
+
+        # R2 blocker: wrong customer callback cannot select a different
+        # BUY_SUB fulfillment handler after a locked owner/payment claim.
+        def assert_mode_denied(name,pid,*,custom):
+            before_wallet=wallet()
+            before_capacity=cap()
+            before_hold=detail(pid)
+            events=route(work,env,driver,hash=name,custom=custom)
+            assert not calls(events,'POST') and not calls(events,'QR'),events
+            assert paid(pid)=='pending' and wallet()==before_wallet,events
+            assert cap()==before_capacity and detail(pid)==before_hold=='',events
+            assert sql(work,env,f"SELECT COUNT(*) FROM orders_list o "
+                f"JOIN service_effects e ON e.order_id=o.id "
+                f"WHERE e.pay_row_id={pid}")=='0'
+            assert any(e['event']=='ALERT' for e in events),events
+            return events
+
+        custom_quote=newpay('r2_custom_standard',1,custom=True)
+        sql(work,env,f'UPDATE pays SET day=37,volume=7 WHERE id={custom_quote}')
+        assert_mode_denied('r2_custom_standard',custom_quote,custom=False)
+        cases.append('r2_custom_quote_standard_callback_predebit_denied')
+
+        standard_quote=newpay('r2_standard_custom',1)
+        assert_mode_denied('r2_standard_custom',standard_quote,custom=True)
+        cases.append('r2_standard_quote_custom_callback_predebit_denied')
+
+        for day,volume in ((0,7),(37,0)):
+            name=f'r2_partial_{day}_{volume}'
+            partial=newpay(name,1,custom=True)
+            sql(work,env,f'UPDATE pays SET day={day},volume={volume} WHERE id={partial}')
+            assert_mode_denied(name,partial,custom=True)
+        cases.append('r2_partial_custom_quote_predebit_denied')
+
+        positive=newpay('r2_quote_zero_template',1,custom=True)
+        sql(work,env,f'UPDATE pays SET day=37,volume=7 WHERE id={positive}')
+        sql(work,env,'UPDATE server_plans SET days=0,volume=0 WHERE id=7')
+        try:
+            allowed=route(work,env,driver,hash='r2_quote_zero_template',custom=True)
+        finally:
+            sql(work,env,'UPDATE server_plans SET days=30,volume=2 WHERE id=7')
+        assert [(x['days'],x['volume_gb']) for x in calls(allowed,'POST')]==[(37,7)],allowed
+        assert paid(positive)=='paid_with_wallet' and wallet()==49900 and cap()==9
+        assert detail(positive)==('wallet_hold\t0\t1\tconsumed\n'
+                                 'create\t1\t1\tlocal_recorded')
+        assert not calls(route(work,env,driver,hash='r2_quote_zero_template',
+                               custom=True),'POST')
+        cases.append('r2_zero_template_exact_custom_dimensions_one_effect')
+
+        for count in (1,3):
+            name=f'r2_standard_count_{count}'
+            standard=newpay(name,count)
+            done=route(work,env,driver,hash=name)
+            assert len(calls(done,'POST'))==count,done
+            assert all((x['days'],x['volume_gb'])==(30,2) for x in calls(done,'POST')),done
+            assert paid(standard)=='paid_with_wallet' and wallet()==49900
+            assert cap()==10-count
+            assert not calls(route(work,env,driver,hash=name,custom=True),'POST')
+            assert not calls(route(work,env,driver,hash=name),'POST')
+        cases.append('r2_standard_single_multi_plan_dimensions_no_replay')
+
+        from concurrent.futures import ThreadPoolExecutor
+        from threading import Barrier
+        contested=newpay('r2_concurrent_custom',1,custom=True)
+        sql(work,env,f'UPDATE pays SET day=37,volume=7 WHERE id={contested}')
+        barrier=Barrier(2)
+        def compete(as_custom):
+            barrier.wait(timeout=10)
+            return route(work,env,driver,hash='r2_concurrent_custom',
+                         custom=as_custom)
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            bad=pool.submit(compete,False)
+            good=pool.submit(compete,True)
+            outcomes=[bad.result(timeout=45),good.result(timeout=45)]
+        posts=[x for outcome in outcomes for x in calls(outcome,'POST')]
+        assert len(posts)==1 and (posts[0]['days'],posts[0]['volume_gb'])==(37,7),outcomes
+        assert paid(contested)=='paid_with_wallet' and wallet()==49900 and cap()==9
+        assert detail(contested)==('wallet_hold\t0\t1\tconsumed\n'
+                                  'create\t1\t1\tlocal_recorded')
+        assert not calls(route(work,env,driver,hash='r2_concurrent_custom',
+                               custom=False),'POST')
+        cases.append('r2_concurrent_wrong_right_mode_exactly_one_effect')
 
         # Exact supported `buyType=much` draft route must reject usernames
         # that a later provider would reject, without inserting any invoice.

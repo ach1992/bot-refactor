@@ -6,7 +6,7 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
 }
 
 if (!function_exists('processWalletPayment')) {
-    function processWalletPayment($connection, $hashId, $handler)
+    function processWalletPayment($connection, $hashId, $handler, ?string $expectedBuyMode = null)
     {
         global $from_id, $admin, $botState;
         // A confirmed commit cannot be undone after calling Marzban.
@@ -159,6 +159,27 @@ if (!function_exists('processWalletPayment')) {
                 ];
             }
 
+            // The controller selects a concrete handler, but the LOCKED
+            // payment row authorizes which BUY_SUB mode may fulfill it.
+            // Standard rows are the 0/0 plan-template shape; custom quotes
+            // require BOTH saved dimensions to be positive. Neither callback
+            // can claim the other mode, even when the provider request would
+            // otherwise pass its own generic dimensions validation.
+            $paidCreate=(($payInfo['type']??'')==='BUY_SUB');
+            $quotedDay=(int)($payInfo['day']??0);
+            $quotedVolume=(int)($payInfo['volume']??0);
+            $modeMatchesLockedRequest=$paidCreate
+                ? (($expectedBuyMode==='standard' &&
+                    $quotedDay===0 && $quotedVolume===0) ||
+                   ($expectedBuyMode==='custom' &&
+                    $quotedDay>0 && $quotedVolume>0))
+                : ($expectedBuyMode===null || $expectedBuyMode==='standard');
+            if (!$modeMatchesLockedRequest) {
+                $connection->rollback();
+                alert('⛔️ روش خرید با مشخصات این سفارش مطابقت ندارد؛ مبلغی از کیف پول کسر نشد.',true);
+                return ['status'=>'invalid_request','payInfo'=>$payInfo];
+            }
+
             $uid   = (int)($payInfo['user_id'] ?: $from_id);
             $price = (int)$payInfo['price'];
 
@@ -195,7 +216,6 @@ if (!function_exists('processWalletPayment')) {
                 ];
             }
 
-            $paidCreate=(($payInfo['type']??'')==='BUY_SUB');
             if ($paidCreate) {
                 require_once __DIR__.'/ServiceEffects.php';
                 // Missing/malformed 007 must never debit before validation.
@@ -206,7 +226,7 @@ if (!function_exists('processWalletPayment')) {
                 $quantity=max(1,(int)($payInfo['agent_count']??0));
                 $customDay=(int)($payInfo['day']??0);
                 $customVolume=(int)($payInfo['volume']??0);
-                $isCustom=($customDay!==0 || $customVolume!==0);
+                $isCustom=($expectedBuyMode==='custom');
                 $manualRemark=(($botState['remark']??'')==='manual');
                 $persistedRemark=(string)($payInfo['description']??'');
                 // Reject deterministic request errors while still in the

@@ -163,7 +163,7 @@ if (preg_match('/payCustomWithWallet(.*)/', $data, $match)) {
         $pendingCustomDelivery['admin_msg']=$msg;
         $pendingCustomDelivery['admin_keys']=$keys;
         return true;
-    });
+    }, 'custom');
 
     if ($result['status'] === 'not_found') {
         $text = "/start";
@@ -963,7 +963,8 @@ if (preg_match('/payBuyWithWallet(.*)/', $data, $match)) {
             }
 
             return true;
-        }
+        },
+        'standard'
     );
 
     if ($result['status'] === 'not_found') {
