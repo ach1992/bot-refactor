@@ -372,6 +372,8 @@ def run_route(work,env,driver,data='',step='none',actor=1001,update=None,route='
                                   else [expected_warning])
         if 'achbot_manual_standard_postcommit_followup_needs_review' in accepted_log_codes:
             accepted_log_codes.append('achbot_manual_standard_postcommit_notice_failed')
+        if 'achbot_manual_standard_delivery_needs_review' in accepted_log_codes:
+            accepted_log_codes.append('achbot_manual_standard_delivery_summary_failed')
     safe_review=(accepted_log_codes and p.stderr and all(
         any(code in line for code in accepted_log_codes) and
         'fixture_' not in line and 'SQL' not in line
@@ -717,13 +719,13 @@ def check():
         notice=run_route(work,env,route_driver,
                          data='acceptstandardpostcommitnotify',actor=9001,
                          route='standard_approval',qr_transport='throw',
-                         expected_warning='achbot_manual_standard_postcommit_followup_needs_review')
+                         expected_warning='achbot_manual_standard_delivery_needs_review')
         assert [e['name'] for e in notice].count('remote_create')==1,repr(notice)
         assert [e['name'] for e in notice].count('qr_send')==1,repr(notice)
         assert query(work,env,"SELECT state FROM pays WHERE hash_id='standardpostcommitnotify'")=='approved'
         admin_notices=[str(e['args'][0]) for e in notice if e['name']=='sendMessage'
                        and e['args'][-1]==9001]
-        assert any('سفارش ثبت شده' in m and 'اطلاع‌رسانی' in m for m in admin_notices),repr(notice)
+        assert any(('سفارش ثبت شده' in m or 'سفارش/سرویس ثبت شده' in m) and 'اطلاع‌رسانی' in m for m in admin_notices),repr(notice)
         assert not any('نتیجهٔ تکمیل سفارش هنوز قطعی نیست' in m for m in admin_notices)
         reject_service('standardpostcommitnotify','standard_approval','accept')
         cases.append('real_standard_postcommit_telegram_failure_approved_no_replay_truthful_review')
@@ -842,7 +844,7 @@ def check():
         notice=run_route(work,env,route_driver,
                          data='acceptstandardrenewpostcommit',actor=9001,
                          route='standard_approval',message_transport='throw_once',
-                         expected_warning='achbot_manual_standard_postcommit_followup_needs_review')
+                         expected_warning='achbot_manual_standard_delivery_needs_review')
         assert [e['name'] for e in notice].count('remote_edit')==1,repr(notice)
         assert query(work,env,"SELECT state FROM pays WHERE hash_id='standardrenewpostcommit'")=='approved'
         reject_service('standardrenewpostcommit','standard_approval','accept')
@@ -852,7 +854,7 @@ def check():
         down=run_route(work,env,route_driver,
                        data='acceptstandardrenewnotifydown',actor=9001,
                        route='standard_approval',message_transport='throw',
-                       expected_warning='achbot_manual_standard_postcommit_followup_needs_review')
+                       expected_warning='achbot_manual_standard_delivery_needs_review')
         assert [e['name'] for e in down].count('remote_edit')==1,repr(down)
         assert query(work,env,"SELECT state FROM pays WHERE hash_id='standardrenewnotifydown'")=='approved'
         reject_service('standardrenewnotifydown','standard_approval','accept')

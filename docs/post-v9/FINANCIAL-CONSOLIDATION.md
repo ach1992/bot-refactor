@@ -434,3 +434,24 @@ absent. Permission failure, incomplete migration and missing operator
 delivery evidence cannot be treated as a valid historical exception.
 Native source-only R1–R6 regression evidence lives in
 `tools/test_post_v9_standard_integrity.py`; no migration is auto-applied.
+
+
+#### Shared capacity and per-payment referral recovery decisions pending
+
+The independent re-review of PR #66 (`b06ca4e`) identified that
+standard BUY_SUB's guarded full-count reservation alone does **not**
+make the shared `decreaseServerCapacity` default safe: several
+legacy wallet/custom/bulk/trial callers still may ignore a zero-row
+conditional UPDATE. Failing after a non-idempotent external CREATE must
+not leave a rearmable payment with no durable effect checkpoint.
+Resolve the entire interacting reservation/fence contract rather than
+mistaking a late exception for distributed exactly-once behavior.
+
+A successful service COMMIT and independent reward decision must not
+depend on customer Telegram delivery. A referral credit which is
+missing, confirmed, uncertain or notice-failed needs payment-scoped
+auditable evidence; an `error_log` line does not establish it. Any new
+additive journal schema or migration contract requires separate Owner
+acceptance before installed operation. Source-only improvements are not
+permission for tenant SQL migration, real refunds, retries or
+manual replacement of balance.

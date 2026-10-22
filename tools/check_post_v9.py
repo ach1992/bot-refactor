@@ -1128,6 +1128,17 @@ def main():
             'r5_partially_installed_003_denied_under_mysqlireportoff',
             'r5_incompatible_ledger_column_SQL_failure_not_legacy_receipt',
             'r5_complete_003_empty_attempts_historical_receipt_allowed',
+            'r2_after_claim_renewal_plan_inactive_no_remote_edit',
+            'r2_after_claim_renewal_plan_deleted_no_remote_edit',
+            'r2_after_claim_purchase_plan_inactive_no_remote_create',
+            'r3_real_qr_helper_photo_ok_account_text_qr_text_false_reported',
+            'r3_real_qr_helper_photo_ok_account_text_qr_text_null_reported',
+            'r3_real_qr_helper_photo_ok_account_text_qr_text_throw_reported',
+            'r3_three_accounts_second_text_failed_third_still_attempted_and_reward_credited',
+            'r3_multiple_admin_refs_one_edit_fails_later_edit_still_attempted',
+            'r4_referral_decision_not_skipped_when_QR_photo_fails',
+            'r5_valid_attempts_only_no_child_table_denied',
+            'r5_valid_attempts_only_with_reviewed_attempt_denied',
         }
         if not (integrity.get('complete') is True and
                 integrity.get('cases')==len(required_integrity) and

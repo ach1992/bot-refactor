@@ -143,3 +143,59 @@ These are **source-only** assertions. No real merchant receipt was settled,
 no genuine Telegram/Marzban account was modified, no 003/007 was installed,
 and true end-to-end crash recovery/installer/operator acceptance is NOT
 established. Issues #26/#51 remain open.
+
+### PR #66 second independent review / follow-up work — 2026-10-22
+
+The fresh reviewer independently verified commit `b06ca4e` / tree
+`6a91d5c` and reported **COMPLETE / CHANGES_REQUIRED**:
+**BLOCKER 0; REQUIRED 5 (R1–R5); OPTIONAL 0; R6 RESOLVED**.
+The original successful PHP 8.1/8.4 CI and 28 native tests did **not**
+justify an APPROVE.
+
+Follow-up work started on **the same existing PR #66 branch**, with NO
+merge, release or schema installation. The source changes provide:
+- **R2 partial improvement:** current-plan `active=1` semantics now hold
+  for post-claim readback as well as locked preflight; inactive/deleted/
+  moved plan stays no-replay `processing` with no outbound call.
+  Logical `server_id` is NOT a pin to immutable physical endpoint config.
+- **R3 improvement:** real `sendQrFromLink` inspects both QR photo and
+  account text results, attempts the text even after a photo failure,
+  cleans temporary PNGs, and reports an aggregate unconfirmed result.
+  Post-COMMIT recipient loops attempt later accounts/administrators
+  independently, collect bounded per-target issues, and never reprovision
+  remotely on a failed notification.
+- **R4 partial improvement:** referral credit is attempted independently
+  before unrelated customer/operator Telegram notifications; other
+  source callers of `giveReferralReward` now surface false outcomes to
+  an operator with a payment/buyer/inviter correlation, never blindly
+  credit again. **A durable, independently auditable per-payment referral
+  journal/reconciliation policy still needs an accepted Owner/schema
+  decision; general logs are insufficient for exactly-once evidence.**
+- **R5 improvement:** both additive 003 tables must be jointly present
+  with required columns/unique indexes, or jointly absent for the
+  explicitly allowed original 23-table legacy receipt. Valid
+  `payment_attempts`-only installation is no longer treated as
+  usable. The original human-reviewed receipt and original delivery
+  evidence remain mandatory.
+
+**CRITICAL STILL OPEN:** R1 affects `decreaseServerCapacity` default
+non-strict call sites (Checkout wallet and custom, bulk and trial) and
+mixed-method concurrent capacity accounting. A post-remote throw alone
+can roll back a wallet transaction and rearm a payment despite uncertain
+remote CREATE. A coherent persistent no-replay reservation/effect design
+must be reviewed and implemented; **do not make all callers strict
+without proving the remote-uncertainty state and competing-method behavior**.
+R4 durable referral evidence and unknown-result decisions likewise
+remain open. Reviewer verdict is NOT superseded by partial changes.
+
+The native real-helper suite now has **39** cases including the 11 new
+R2/R3/R4/R5 cases, while retaining all 28 earlier actual helper
+scenarios and the separate 239 manual method tests. A future Master
+must verify **current actual SHA + CI** before relying on these numbers.
+No installed or merchant/provider/operator acceptance has occurred.
+
+The final review gate is: coherent R1/R4 decisions and implementation,
+all named actual-helper regression cases and broad PHP 8.1/8.4 source
+acceptance, one new author-separated independent reviewer on the exact
+candidate, followed only then by an explicit Owner Merge grant.
+Issues #26 and #51 remain OPEN.

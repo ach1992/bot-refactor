@@ -1430,7 +1430,23 @@ function achbotPerformPaymentEffect($payRowId, $gateType, &$effectStage = null) 
         showForm('✅ پرداخت شما با موفقیت انجام شد.', $payDescription, true);
 
         if (!empty($userinfo['refered_by'])) {
-            giveReferralReward($connection, $user_id, (int)$userinfo['refered_by'], $admin, $botState);
+            $inviterId=(int)$userinfo['refered_by'];
+            if (giveReferralReward($connection,$user_id,$inviterId,$admin,$botState)!==true) {
+                // This result is not proof of either debit or credit. A later
+                // callback must not apply a blind second referral reward.
+                error_log('achbot_gateway_referral_needs_review pay_hash='.
+                    preg_replace('/[^A-Za-z0-9_-]/','',(string)$hash_id).
+                    ' buyer='.(int)$user_id.' inviter='.$inviterId);
+                try {
+                    sendMessage("⚠️ وضعیت پاداش معرفی پرداخت نامطمئن است.\n🆔 $hash_id".
+                        "\nشناسه خریدار: ".(int)$user_id.
+                        "\nشناسه معرف: ".$inviterId.
+                        "\nابتدا وضعیت کیف پول را بررسی کنید؛ واریز دوباره خودکار ممنوع است.",
+                        null,null,$admin);
+                } catch (Throwable $ignored) {
+                    error_log('achbot_gateway_referral_operator_notice_failed');
+                }
+            }
         }
 
         $user_info = Bot('getChat', ['chat_id' => $user_id])->result;

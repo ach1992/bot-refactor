@@ -617,16 +617,69 @@ function achbotManualStandardReserveCapacityLocked(mysqli $db, array $pay): int 
  * message only if both 003 ledger tables are PROVEN absent. Missing privileges,
  * SQL failures or an incomplete/partial migration are never treated as legacy.
  */
-function achbotManualLegacyLedgerAbsent(mysqli $db): bool {
+/**
+ * Current additive-003 schema must be all present and structurally usable.
+ * A malformed/one-sided installation is NEVER interpreted as legacy.
+ * The original 23-table schema is supported only when both tables are absent.
+ * Read-only fail-closed schema preflight under the original pays row lock.
+ */
+function achbotManualLedgerMode(mysqli $db): string {
     try {
-        $attempts=$db->query("SHOW TABLES LIKE 'payment_attempts'");
-        $transactions=$db->query("SHOW TABLES LIKE 'payment_transactions'");
-        return $attempts instanceof mysqli_result &&
-            $transactions instanceof mysqli_result &&
-            $attempts->num_rows===0 && $transactions->num_rows===0;
+        $result=$db->query('SHOW TABLES');
+        if (!($result instanceof mysqli_result)) return 'invalid';
+        $tables=[];
+        while ($row=$result->fetch_row()) $tables[(string)$row[0]]=true;
+        $result->free();
+        $hasAttempt=isset($tables['payment_attempts']);
+        $hasTransaction=isset($tables['payment_transactions']);
+        if (!$hasAttempt && !$hasTransaction) return 'legacy';
+        if (!$hasAttempt || !$hasTransaction) return 'invalid';
+
+        $columns=[
+            'payment_attempts'=>'id,pay_row_id,provider,stage,checkout_url,order_hash,provider_reference,payment_id',
+            'payment_transactions'=>'id,attempt_id,provider,payment_id',
+        ];
+        foreach ($columns as $table=>$fields) {
+            $probe=$db->query("SELECT $fields FROM `$table` LIMIT 0");
+            if (!($probe instanceof mysqli_result)) return 'invalid';
+            $probe->free();
+        }
+        $requiredIndexes=[
+            'payment_attempts'=>[
+                'PRIMARY'=>['id'],
+                'uq_payment_attempt_pay_row'=>['pay_row_id'],
+                'uq_payment_attempt_order_hash'=>['order_hash'],
+                'uq_payment_attempt_ref'=>['provider','provider_reference'],
+                'uq_payment_attempt_payment'=>['provider','payment_id'],
+            ],
+            'payment_transactions'=>[
+                'PRIMARY'=>['id'],
+                'uq_payment_transaction_reference'=>['provider','payment_id'],
+            ],
+        ];
+        foreach ($requiredIndexes as $table=>$required) {
+            $indexes=$db->query("SHOW INDEX FROM `$table`");
+            if (!($indexes instanceof mysqli_result)) return 'invalid';
+            $actual=[];
+            while ($idx=$indexes->fetch_assoc()) {
+                if ((int)$idx['Non_unique']!==0) continue;
+                $actual[(string)$idx['Key_name']][(int)$idx['Seq_in_index']]=(string)$idx['Column_name'];
+            }
+            $indexes->free();
+            foreach ($required as $name=>$columns) {
+                if (!isset($actual[$name])) return 'invalid';
+                ksort($actual[$name]);
+                if (array_values($actual[$name])!==$columns) return 'invalid';
+            }
+        }
+        return 'current';
     } catch (Throwable $ignored) {
-        return false;
+        return 'invalid';
     }
+}
+
+function achbotManualLegacyLedgerAbsent(mysqli $db): bool {
+    return achbotManualLedgerMode($db)==='legacy';
 }
 
 /**
@@ -658,20 +711,22 @@ function achbotManualServiceApprovalAllowedLocked(mysqli $connection, ?array $pa
         default => false,
     };
     if (!$subjectMatches) return false;
+    // Validate BOTH ledger tables before reading the attempt; otherwise
+    // payment_attempts-only migration can impersonate legacy receipts.
+    $mode=achbotManualLedgerMode($connection);
+    if ($mode==='invalid') return false;
+    if ($mode==='legacy') return true;
     try {
         $id = (int)$pay['id'];
         $stmt = $connection->prepare('SELECT provider,stage,checkout_url
             FROM payment_attempts WHERE pay_row_id=? LIMIT 1 FOR UPDATE');
         if (!$stmt) {
-            if ((int)$connection->errno===1146)
-                return achbotManualLegacyLedgerAbsent($connection);
             return false;
         }
         $stmt->bind_param('i', $id);
         if (!$stmt->execute()) {
-            $errno=(int)$stmt->errno;
             $stmt->close();
-            return $errno===1146 && achbotManualLegacyLedgerAbsent($connection);
+            return false;
         }
         $attempt = $stmt->get_result()->fetch_assoc();
         $stmt->close();
@@ -686,13 +741,9 @@ function achbotManualServiceApprovalAllowedLocked(mysqli $connection, ?array $pa
         $intent = achbotManualIntentDecode((string)($attempt['checkout_url'] ?? ''), $method);
         return is_array($intent) && !empty($intent['receipt_file_id']);
     } catch (Throwable $error) {
-        // A genuinely historical 23-table database is not a partially
-        // installed ledger. Distinguish SQL errno=1146 from permission,
-        // disconnect, incorrect schema and other errors. Under
-        // MYSQLI_REPORT_OFF prepare() can fail without an exception.
-        $code=(int)$error->getCode();
-        if ($code!==1146) return false;
-        return achbotManualLegacyLedgerAbsent($connection);
+        // Invalid SQL or lost permissions after topology inspection
+        // can never reactivate a historical manual receipt.
+        return false;
     }
 }
 

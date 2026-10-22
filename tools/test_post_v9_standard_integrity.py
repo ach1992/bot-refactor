@@ -48,9 +48,12 @@ function alert(...$a){$GLOBALS['events'][]=['name'=>'alert','text'=>(string)($a[
 function setUser(...$a){
     global $connection;
     $GLOBALS['events'][]=['name'=>'setUser'];
-    if (!empty($GLOBALS['spec']['drift_plan_after_claim'])) {
+    if (!empty($GLOBALS['spec']['drift_plan_after_claim']))
         $connection->query('UPDATE server_plans SET server_id=3 WHERE id=7');
-    }
+    if (!empty($GLOBALS['spec']['drift_plan_inactive']))
+        $connection->query('UPDATE server_plans SET active=0 WHERE id=7');
+    if (!empty($GLOBALS['spec']['drift_plan_deleted']))
+        $connection->query('DELETE FROM server_plans WHERE id=7');
 }
 function getMainKeys(){return '{}';}
 function sendMessage($body=null,$keys=null,$parse=null,$to=null) {
@@ -62,6 +65,14 @@ function sendMessage($body=null,$keys=null,$parse=null,$to=null) {
         return $mode==='false'?(object)['ok'=>false]:null;
     if ($mode==='renew_user_false' && $to===1001) return (object)['ok'=>false];
     if ($mode==='renew_user_null' && $to===1001) return null;
+    if ($mode==='qr_text_false' && $to===1001) return (object)['ok'=>false];
+    if ($mode==='qr_text_null' && $to===1001) return null;
+    if ($mode==='qr_text_throw' && $to===1001) throw new RuntimeException('fixture_text_failed');
+    if ($mode==='qr_text_second_false' && $to===1001 &&
+        str_contains((string)$body,'fixture account')) {
+        $GLOBALS['qr_text_attempts']=($GLOBALS['qr_text_attempts']??0)+1;
+        if ($GLOBALS['qr_text_attempts']===2) return (object)['ok'=>false];
+    }
     if ($mode==='operator_false' && ($to===9001 || $to===null))
         return (object)['ok'=>false];
     return (object)['ok'=>true];
@@ -70,15 +81,26 @@ function editKeys(...$args) {
     $GLOBALS['events'][]=['name'=>'EDIT','to'=>$args[2]??null];
     if (($GLOBALS['spec']['telegram']??'')==='edit_false') return (object)['ok'=>false];
     if (($GLOBALS['spec']['telegram']??'')==='edit_null') return null;
+    if (($GLOBALS['spec']['telegram']??'')==='edit_second_false') {
+        $GLOBALS['edit_attempts']=($GLOBALS['edit_attempts']??0)+1;
+        if ($GLOBALS['edit_attempts']===2) return (object)['ok'=>false];
+    }
     return (object)['ok'=>true];
 }
-function sendQrFromLink(...$args) {
-    $GLOBALS['events'][]=['name'=>'QR','to'=>$args[4]??null];
+// Actual sendQrFromLink from buy_helpers.php, synthetic transport only.
+class QRcode {
+    public static function png($data,$path,$ecc,$pixels,$frame) {
+        file_put_contents($path,'private-fixture-qr');
+    }
+}
+function RandomString(){return bin2hex(random_bytes(9));}
+function sendPhoto(...$args) {
+    $GLOBALS['events'][]=['name'=>'PHOTO','to'=>$args[4]??null];
     $mode=$GLOBALS['spec']['telegram']??'';
-    if ($mode==='qr_throw') throw new RuntimeException('synthetic_qr_error');
-    if ($mode==='qr_false') return false;
+    if ($mode==='qr_throw') throw new RuntimeException('fixture_photo_unknown');
+    if ($mode==='qr_false') return (object)['ok'=>false];
     if ($mode==='qr_null') return null;
-    return true;
+    return (object)['ok'=>true];
 }
 function createServerAccount(...$args) {
     $GLOBALS['events'][]=['name'=>'CREATE','server'=>$args[1], 'remark'=>$args[4]];
@@ -229,6 +251,19 @@ def check():
         assert sql(work,env,'SELECT server_id FROM server_plans WHERE id=7')=='3'
         assert not named(call(key),'EDIT_REMOTE')
         cases.append('r2_plan_reassigned_to_other_remote_with_same_remark_zero_wrong_edit')
+        for change,scenario in [('drift_plan_inactive','inactive'),
+                                ('drift_plan_deleted','deleted')]:
+            key=seed(work,env,'renew_'+scenario,renew=True)
+            ev=call(key,**{change:True})
+            assert not named(ev,'EDIT_REMOTE') and state(key)=='processing',(scenario,ev)
+            assert not named(call(key),'EDIT_REMOTE')
+            cases.append('r2_after_claim_renewal_plan_'+scenario+'_no_remote_edit')
+
+        key=seed(work,env,'buy_inactive')
+        ev=call(key,drift_plan_inactive=True)
+        assert not named(ev,'CREATE') and state(key)=='processing'
+        assert not named(call(key),'CREATE')
+        cases.append('r2_after_claim_purchase_plan_inactive_no_remote_create')
 
         key=seed(work,env,'renew_stable',renew=True)
         ev=call(key)
@@ -250,13 +285,57 @@ def check():
             assert state(key)=='approved' and orders()==1 and capacity()==9
             assert len(named(ev,'CREATE'))==1
             alert=' '.join(str(x['text']) for x in named(ev,'MESSAGE') if x['to']==9001)
-            assert ('ناقص' in alert or 'تأیید نشد' in alert),(mode,ev)
+            assert ('ناقص' in alert or 'تأیید نشد' in alert or 'نامطمئن' in alert),(mode,ev)
             assert not named(call(key),'CREATE')
             cases.append('r3_nonthrowing_or_thrown_telegram_'+mode+'_approved_no_replay')
 
         ev=call('no_payment',op='telegram_edit_boundary')
         assert named(ev,'TELEGRAM_BOUNDARY')[0]['denied'] is True
         cases.append('r3_real_telegram_editKeys_propagates_false_response')
+
+        key=seed(work,env,'three_accounts',capacity=3,count=3,inviter=True)
+        ev=call(key,telegram='qr_text_second_false')
+        assert state(key)=='approved' and len(named(ev,'CREATE'))==3
+        assert len(named(ev,'PHOTO'))==3
+        assert len([x for x in named(ev,'MESSAGE') if x['to']==1001
+                    and 'fixture account' in x['text']])==3
+        assert any('purchase_account_qr #2' in x['text']
+                   for x in named(ev,'MESSAGE') if x['to']==9001)
+        assert sql(work,env,'SELECT wallet FROM users WHERE userid=9002')=='51000'
+        assert not named(call(key),'CREATE')
+        cases.append('r3_three_accounts_second_text_failed_third_still_attempted_and_reward_credited')
+
+        key=seed(work,env,'multiple_admin_edits',inviter=True)
+        sql(work,env,"UPDATE pays SET admins_messages='"
+            '[{\"chat_id\":9002,\"message_id\":222},'
+            '{\"chat_id\":9003,\"message_id\":333}]'
+            "' WHERE hash_id='multiple_admin_edits'")
+        ev=call(key,telegram='edit_second_false')
+        assert state(key)=='approved'
+        assert len(named(ev,'EDIT'))==3,(ev)
+        assert any('purchase_additional_operator_buttons' in x['text']
+                   for x in named(ev,'MESSAGE') if x['to']==9001)
+        assert sql(work,env,'SELECT wallet FROM users WHERE userid=9002')=='51000'
+        assert not named(call(key),'CREATE')
+        cases.append('r3_multiple_admin_refs_one_edit_fails_later_edit_still_attempted')
+
+        key=seed(work,env,'reward_on_qr_failure',inviter=True)
+        ev=call(key,telegram='qr_false')
+        assert state(key)=='approved' and sql(work,env,'SELECT wallet FROM users WHERE userid=9002')=='51000'
+        assert any('purchase_account_qr' in x['text'] for x in named(ev,'MESSAGE') if x['to']==9001)
+        assert not named(call(key),'CREATE')
+        cases.append('r4_referral_decision_not_skipped_when_QR_photo_fails')
+
+
+        for mode in ['qr_text_false','qr_text_null','qr_text_throw']:
+            key=seed(work,env,'real_'+mode)
+            ev=call(key,telegram=mode)
+            assert state(key)=='approved' and len(named(ev,'CREATE'))==1
+            assert len(named(ev,'PHOTO'))==1
+            assert any('purchase_account_qr #1' in x['text']
+                       for x in named(ev,'MESSAGE') if x['to']==9001),(mode,ev)
+            assert not named(call(key),'CREATE')
+            cases.append('r3_real_qr_helper_photo_ok_account_text_'+mode+'_reported')
 
         key=seed(work,env,'reward_ok',inviter=True)
         ev=call(key)
@@ -316,6 +395,27 @@ def check():
         finally:
             sql(work,env,'DROP TABLE payment_transactions')
         cases.append('r5_partially_installed_003_denied_under_mysqlireportoff')
+
+        # Mirror partial 003: a structurally valid payment_attempts table
+        # exists while payment_transactions has not yet been created.
+        key=seed(work,env,'partial_attempts_only')
+        source=(ROOT/'migrations/post-v9/003_payment_attempts.sql').read_text()
+        attempts_ddl=source.split('-- One invoice can have several',1)[0]
+        sql(work,env,attempts_ddl)
+        try:
+            ev=call(key,nonthrowing=True)
+            assert state(key)=='have_sent' and not named(ev,'CREATE')
+            cases.append('r5_valid_attempts_only_no_child_table_denied')
+            pid=sql(work,env,"SELECT id FROM pays WHERE hash_id='partial_attempts_only'")
+            sql(work,env,"INSERT INTO payment_attempts "
+                "(pay_row_id,provider,order_hash,quote_amount,quote_currency,"
+                "stage,checkout_url) VALUES "
+                f"({pid},'bank_transfer','partial_attempts_only',100,'IRR','review','fixture')")
+            ev=call(key,nonthrowing=True)
+            assert state(key)=='have_sent' and not named(ev,'CREATE')
+            cases.append('r5_valid_attempts_only_with_reviewed_attempt_denied')
+        finally:
+            sql(work,env,'DROP TABLE payment_attempts')
 
         key=seed(work,env,'invalid_003_schema')
         sql(work,env,'CREATE TABLE payment_attempts (id INT PRIMARY KEY) ENGINE=InnoDB')
