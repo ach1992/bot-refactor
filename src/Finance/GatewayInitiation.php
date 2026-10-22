@@ -161,9 +161,12 @@ if(mysqli_num_rows($payInfo)==0){
         $existing=$stmt->get_result()->fetch_assoc();
         $stmt->close();
         if (($existing['state'] ?? '')==='paid') {
-            showForm("این سفارش قبلاً پرداخت شده؛ لینک یا تاییدیه در ربات ارسال می‌شود.");
+            // A paid local row does not prove customer Telegram delivery.
+            showForm("این سفارش قبلاً پرداخت شده؛ لینک یا تاییدیه در ربات ارسال می‌شود.", 'review');
         } elseif ($existing) {
-            showForm("این سفارش در حال پردازش یا نیازمند پیگیری است؛ فاکتور جدید صادر نشد.");
+            // 'send' is in progress; other nonpending states require review.
+            showForm("این سفارش در حال پردازش یا نیازمند پیگیری است؛ فاکتور جدید صادر نشد.",
+                ($existing['state'] ?? '') === 'send' ? 'pending' : 'review');
         } else {
             showForm("کد پرداخت یافت نشد.");
         }
@@ -180,11 +183,11 @@ if(mysqli_num_rows($payInfo)==0){
     }
     try {
         if (achbotPayUxHasNewer($connection,$payParam)) {
-            showForm("فاکتور جدیدتری ثبت شده است. لینک قبلی دیگر برای پرداخت نمایش داده نمی‌شود؛ اگر وجهی فرستاده‌اید برای بررسی با پشتیبانی تماس بگیرید.");
+            showForm("فاکتور جدیدتری ثبت شده است. لینک قبلی دیگر برای پرداخت نمایش داده نمی‌شود؛ اگر وجهی فرستاده‌اید برای بررسی با پشتیبانی تماس بگیرید.", 'review');
             exit;
         }
     } catch (Throwable $ignored) {
-        showForm("وضعیت درخواست پرداخت قابل اطمینان نیست؛ برای جلوگیری از پرداخت تکراری با پشتیبانی تماس بگیرید.");
+        showForm("وضعیت درخواست پرداخت قابل اطمینان نیست؛ برای جلوگیری از پرداخت تکراری با پشتیبانی تماس بگیرید.", 'review');
         exit;
     }
     // Payment-audience restrictions apply at the exact first-party HTTP
@@ -205,11 +208,11 @@ if(mysqli_num_rows($payInfo)==0){
     // but preserve the exact provider claim for asynchronous reconciliation.
     try {
         if (achbotPayUxHostedAttentionElapsed($connection,(int)$payParam['id'])) {
-            showForm('مهلت استفاده از لینک این فاکتور پایان یافته است. وضعیت پرداخت در حال پیگیری است؛ وجه را دوباره ارسال نکنید.');
+            showForm('مهلت استفاده از لینک این فاکتور پایان یافته است. وضعیت پرداخت در حال پیگیری است؛ وجه را دوباره ارسال نکنید.', 'review');
             exit;
         }
     } catch (Throwable $ignored) {
-        showForm('وضعیت فاکتور آنلاین نیازمند بررسی است؛ پرداخت مجدد انجام ندهید.');
+        showForm('وضعیت فاکتور آنلاین نیازمند بررسی است؛ پرداخت مجدد انجام ندهید.', 'review');
         exit;
     }
     if (!achbotSupportsPaymentSubject($connection, $payParam)) {
@@ -316,14 +319,17 @@ if(mysqli_num_rows($payInfo)==0){
         if ($stored->num_rows === 1) {
             $attempt = $stored->fetch_assoc();
             if ($attempt['stage'] === 'creating' && $attempt['order_hash'] === $hash_id) {
-                showForm("فاکتور این سفارش در حال صدور است؛ از ایجاد درخواست تکراری جلوگیری شد.");
+                showForm("فاکتور این سفارش در حال صدور است؛ از ایجاد درخواست تکراری جلوگیری شد.", 'pending');
                 exit;
             }
             // A previously observed provider payment must not be reopened
             // as a checkout from an old "continue payment" link.
             if ($attempt['order_hash'] === $hash_id &&
                 (string)($attempt['payment_id'] ?? '') !== '') {
-                showForm("پرداخت برای این فاکتور شناسایی شده است و در حال بررسی است. برای مشاهده وضعیت به ربات مراجعه کنید.");
+                // An observed child payment is not necessarily in an active
+                // state: an already-quarantined attempt requires review.
+                showForm("پرداخت برای این فاکتور شناسایی شده است و در حال بررسی است. برای مشاهده وضعیت به ربات مراجعه کنید.",
+                    $attempt['stage'] === 'pending' ? 'pending' : 'review');
                 exit;
             }
             if ($attempt['order_hash'] === $hash_id &&
@@ -333,11 +339,11 @@ if(mysqli_num_rows($payInfo)==0){
                 header('Location: '.$attempt['checkout_url'], true, 302);
                 exit;
             }
-            showForm("لینک فاکتور نیاز به بررسی پشتیبانی دارد.");
+            showForm("لینک فاکتور نیاز به بررسی پشتیبانی دارد.", 'review');
             exit;
         }
         if ($stored->num_rows > 1 || !empty($payParam['payid'])) {
-            showForm("برای این سفارش قبلاً فاکتور صادر شده است؛ از ایجاد فاکتور تکراری جلوگیری شد.");
+            showForm("برای این سفارش قبلاً فاکتور صادر شده است؛ از ایجاد فاکتور تکراری جلوگیری شد.", 'review');
             exit;
         }
         if (empty($nowpaymentsIpnSecret)) {
@@ -470,7 +476,7 @@ if(mysqli_num_rows($payInfo)==0){
             }
         } catch (Throwable $error) {
             $connection->rollback();
-            showForm("فاکتور این سفارش در حال صدور یا نیازمند بررسی است؛ درخواست تکراری ایجاد نشد.");
+            showForm("فاکتور این سفارش در حال صدور یا نیازمند بررسی است؛ درخواست تکراری ایجاد نشد.", 'review');
             exit;
         }
 
@@ -508,7 +514,7 @@ if(mysqli_num_rows($payInfo)==0){
 
         if($responseBody === false || !empty($curlError)){
             $markCheckoutUncertain();
-            showForm("وضعیت صدور فاکتور درگاه نامشخص است؛ درخواست جدید صادر نمی‌شود و به بررسی نیاز دارد.");
+            showForm("وضعیت صدور فاکتور درگاه نامشخص است؛ درخواست جدید صادر نمی‌شود و به بررسی نیاز دارد.", 'review');
             exit();
         }
 
@@ -516,13 +522,13 @@ if(mysqli_num_rows($payInfo)==0){
 
         if($httpCode < 200 || $httpCode >= 300){
             $markCheckoutUncertain();
-            showForm("صدور فاکتور درگاه تأیید نشد؛ برای جلوگیری از فاکتور تکراری بررسی لازم است.");
+            showForm("صدور فاکتور درگاه تأیید نشد؛ برای جلوگیری از فاکتور تکراری بررسی لازم است.", 'review');
             exit();
         }
 
         if(empty($res['id']) || empty($res['invoice_url'])){
             $markCheckoutUncertain();
-            showForm("پاسخ صدور فاکتور ناقص بود؛ درخواست جدید خودکار صادر نمی‌شود.");
+            showForm("پاسخ صدور فاکتور ناقص بود؛ درخواست جدید خودکار صادر نمی‌شود.", 'review');
             exit();
         }
 
@@ -531,7 +537,7 @@ if(mysqli_num_rows($payInfo)==0){
         if (!preg_match('/^[A-Za-z0-9_-]{1,128}$/D', $payid) ||
             !achbotNpValidInvoiceUrl($invoiceUrl)) {
             $markCheckoutUncertain();
-            showForm("هویت یا لینک فاکتور درگاه نامعتبر است و به بررسی نیاز دارد.");
+            showForm("هویت یا لینک فاکتور درگاه نامعتبر است و به بررسی نیاز دارد.", 'review');
             exit;
         }
         try {
@@ -572,7 +578,7 @@ if(mysqli_num_rows($payInfo)==0){
         } catch (Throwable $error) {
             $connection->rollback();
             $markCheckoutUncertain();
-            showForm("فاکتور صادر شد اما اتصال ایمن آن به سفارش نیازمند بررسی است؛ درخواست جدید صادر نمی‌شود.");
+            showForm("فاکتور صادر شد اما اتصال ایمن آن به سفارش نیازمند بررسی است؛ درخواست جدید صادر نمی‌شود.", 'review');
             exit;
         }
 
@@ -601,9 +607,11 @@ if(mysqli_num_rows($payInfo)==0){
     elseif(isset($_GET['zarinpal'])){
         $marker=achbotReserveCheckoutProvider($connection,(int)$orderId,'zarinpal',$payParam);
         if ($marker === null) {
-            showForm(achbotSharedPaymentTablesReady($connection)
+            $sharedTablesReady = achbotSharedPaymentTablesReady($connection);
+            showForm($sharedTablesReady
                 ? "یک درخواست پرداخت برای این سفارش قبلاً صادر شده است؛ تغییر درگاه نیازمند بررسی است."
-                : "پیکربندی پیگیری امن پرداخت هنوز تکمیل نشده است.");
+                : "پیکربندی پیگیری امن پرداخت هنوز تکمیل نشده است.",
+                $sharedTablesReady ? 'review' : null);
             exit;
         }
         $CallbackURL = $botUrl . "pay/back.php?zarinpal&hash_id=" . urlencode($hash_id);
@@ -632,7 +640,7 @@ if(mysqli_num_rows($payInfo)==0){
         } catch (Throwable $error) {
             // Do not reissue when provider may already have accepted a request.
             achbotMarkCheckoutUncertain($connection,(int)$orderId,'zarinpal');
-            showForm("وضعیت صدور فاکتور نامشخص است؛ برای جلوگیری از پرداخت تکراری نیاز به بررسی دارد.");
+            showForm("وضعیت صدور فاکتور نامشخص است؛ برای جلوگیری از پرداخت تکراری نیاز به بررسی دارد.", 'review');
             exit;
         }
     }
@@ -640,9 +648,11 @@ if(mysqli_num_rows($payInfo)==0){
     elseif(isset($_GET['nextpay'])){
         $marker=achbotReserveCheckoutProvider($connection,(int)$orderId,'nextpay',$payParam);
         if ($marker === null) {
-            showForm(achbotSharedPaymentTablesReady($connection)
+            $sharedTablesReady = achbotSharedPaymentTablesReady($connection);
+            showForm($sharedTablesReady
                 ? "یک درخواست پرداخت برای این سفارش قبلاً صادر شده است؛ تغییر درگاه نیازمند بررسی است."
-                : "پیکربندی پیگیری امن پرداخت هنوز تکمیل نشده است.");
+                : "پیکربندی پیگیری امن پرداخت هنوز تکمیل نشده است.",
+                $sharedTablesReady ? 'review' : null);
             exit;
         }
         $Description = $type;
@@ -677,12 +687,14 @@ if(mysqli_num_rows($payInfo)==0){
             }
         }
         achbotMarkCheckoutUncertain($connection,(int)$orderId,'nextpay');
-        showForm("وضعیت ایجاد تراکنش نامشخص است؛ درخواست پرداخت جدید خودکار صادر نمی‌شود.");
+        showForm("وضعیت ایجاد تراکنش نامشخص است؛ درخواست پرداخت جدید خودکار صادر نمی‌شود.", 'review');
     }
 }
 
 
-function showForm($msg){
+// The controller alone can supply the payment disposition. Free-form
+// customer text and failed checkout attempts cannot prove failed settlement.
+function showForm($msg, $presentation = null){
     require_once __DIR__ . '/PaymentPage.php';
-    achbotRenderPaymentPage($msg);
+    achbotRenderPaymentPage($msg, '', false, $presentation);
 }

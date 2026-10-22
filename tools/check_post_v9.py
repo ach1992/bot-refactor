@@ -372,6 +372,55 @@ def main():
                 and payment_ux.get("external_provider_requests")==0):
             raise RuntimeError("Guarded payment-message lifecycle proof incomplete")
 
+        # Issue #51: real HTTP output of the shared Persian browser page,
+        # independent of return/callback settlement. No provider or DB calls.
+        browser_path=Path(tmp)/"payment-browser-feedback.json"
+        browser_check=subprocess.run(
+            ["python3",str(ROOT/"tools/test_post_v9_browser_feedback.py"),
+             "--run-disposable","--report",str(browser_path)],
+            cwd=ROOT,capture_output=True,text=True,timeout=35)
+        if browser_check.returncode!=0:
+            raise RuntimeError("Real browser payment feedback test failed:\n"+
+                (browser_check.stderr or browser_check.stdout)[-4000:])
+        browser_feedback=json.loads(browser_path.read_text())
+        browser_required={
+            "caller_confirmed_fulfillment_has_positive_presentation",
+            "payment_positive_legacy_true_unconfirmed_delivery_never_green",
+            "verified_provider_payment_unconfirmed_delivery_needs_review",
+            "nextpay_authoritative_rejected_is_distinct_definitive_failure",
+            "nextpay_uncertain_verification_review_not_failure",
+            "zarinpal_uncertain_verification_review_not_failure",
+            "zarinpal_transport_uncertainty_no_false_decline",
+            "nowpayments_pending_return_requires_future_confirmation",
+            "nowpayments_paid_browser_without_delivery_proof_needs_review",
+            "verified_committed_wallet_credit_can_present_completion",
+            "verified_service_renewal_can_present_completion",
+            "paid_but_unresolved_service_effect_stays_review",
+            "unknown_payment_code_is_not_authoritative_terminal_failure",
+            "untyped_invoice_information_not_inferred_as_paid_or_pending",
+            "uncertain_reconciliation_retains_no_repayment_guidance",
+            "wallet_effect_uncertain_never_presents_completion",
+            "unknown_presentation_enum_fails_closed",
+            "injected_heading_and_message_escaped",
+            "persian_mixed_latin_and_numeric_reference_preserved",
+            "valid_username_generates_only_verified_telegram_bot_link",
+            "documented_and_known_unconfigured_bot_placeholders_blocked",
+            "invalid_or_missing_bot_username_has_safe_no_dead_link",
+            "page_get_has_no_checkout_or_side_effect_action",
+            "long_mixed_direction_messages_wrap_and_preserve_content",
+            "real_http_private_page_noindex_no_referrer_no_cache_no_frame",
+            "responsive_accessible_states_keyboard_and_forced_contrast",
+        }
+        if not (browser_feedback.get("complete") is True
+                and set(browser_feedback.get("scenarios",[]))==browser_required
+                and browser_feedback.get("cases")==len(browser_required)
+                and browser_feedback.get("source_real_php_http") is True
+                and browser_feedback.get("loopback_only") is True
+                and browser_feedback.get("database_or_financial_calls")==0
+                and browser_feedback.get("external_provider_calls")==0
+                and browser_feedback.get("production_mutations")==0):
+            raise RuntimeError("Issue #51 shared payment browser feedback acceptance incomplete")
+
         # Review F1/F2/F3/F4/R1: three provider issuance races, reverse
         # pre-lock timestamps, permanent supersession, SQL rollback, actual
         # renewal picker and full order-target status callback.
@@ -782,6 +831,24 @@ def main():
         # Current R10 financial contract: preserve authenticated settlement,
         # durable compensation proof and concurrency-safe operator recovery.
         mandatory_finance = {
+            # Reviewer R2: required real Controller->Renderer dispositions,
+            # not text-classifier assertions or isolated page-only mocks.
+            "r2_nowpayments_existing_attempt_pending",
+            "r2_nowpayments_quarantined_attempt_review",
+            "r2_nowpayments_historical_quote_review",
+            "r2_zarinpal_scoped_amount_mismatch_review",
+            "r2_zarinpal_ambiguous_historical_authority_review",
+            "r2_nextpay_scoped_amount_mismatch_review",
+            "r2_nextpay_external_reference_collision_review",
+            "r2_nowpayments_issuance_already_creating_pending",
+            "r2_nowpayments_seen_child_under_review",
+            "r2_nowpayments_paid_but_delivery_unproven_review",
+            "r2_nowpayments_uncertain_invoice_creation_review",
+            "r2_nextpay_uncertain_invoice_creation_review",
+            "r2_zarinpal_uncertain_invoice_creation_review",
+            "r2_missing_initiation_provider_neutral",
+            "r2_missing_return_provider_neutral",
+            "r2_unknown_zarinpal_order_neutral",
             "legacy_nowpayment_browser_only_read_only",
             "legacy_nowpayment_finished_read_only",
             "legacy_nowpayment_confirmed_read_only",
@@ -1310,6 +1377,7 @@ def main():
                     "financial_native_route_guards":finance,
                     "automatic_renewal_ledger":auto_renew,
                     "payment_ux_lifecycle":payment_ux,
+                    "payment_browser_feedback":browser_feedback,
                     "checkout_serialization":checkout_race,
                     "customer_method_serialization":method_race,
                     "wallet_authorization_freshness":wallet_freshness,
@@ -1345,6 +1413,7 @@ def main():
                       "financial_native_route_cases":finance["cases"],
                       "automatic_renewal_cases":auto_renew["cases"],
                       "payment_ux_cases":payment_ux["cases"],
+                      "payment_browser_feedback_cases":browser_feedback["cases"],
                       "checkout_serialization_cases":checkout_race["cases"],
                       "customer_method_serialization_cases":method_race["cases"],
                       "wallet_authorization_freshness_cases":wallet_freshness["cases"],
