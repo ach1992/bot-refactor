@@ -68,26 +68,30 @@ if (!function_exists('giveReferralReward')) {
             " یک خرید انجام داد.\n\n".
             "💰 موجودی قدیم: ".number_format($old)." تومان\n".
             "💵 موجودی جدید: ".number_format($now)." تومان";
-        // Telegram outcomes can fail without exceptions. The wallet mutation
-        // is already confirmed; notification failure must NEVER recredit it.
-        try {
-            foreach ([[$customer,$inviterId,null],[$notice,$admin,'html']] as $message) {
-                if (!$message[1]) continue;
-                $result=sendMessage($message[0],null,$message[2],$message[1]);
-                if (!is_object($result) || ($result->ok??false)!==true)
-                    throw new RuntimeException('referral_notification_unconfirmed');
-            }
-            $rewardChannel=$botState['rewardChannel']??null;
-            if (!empty($rewardChannel)) {
-                $response=sendMessage($notice,null,'html',$rewardChannel);
-                if (!is_object($response) || ($response->ok??false)!==true)
-                    throw new RuntimeException('referral_channel_unconfirmed');
-            }
-            return true;
-        } catch (Throwable $error) {
-            error_log('achbot_referral_notification_needs_review buyer='.(int)$buyerUserId.
-                ' inviter='.$inviterId.' code='.get_class($error));
-            return false;
+        // Financial confirmation is independent from Telegram delivery. Never
+        // turn a confirmed wallet credit into an "unknown credit" merely
+        // because a notice failed. Continue attempting each independent
+        // recipient; none may trigger a second credit.
+        $targets=[
+            ['inviter',$customer,$inviterId,null],
+            ['admin',$notice,$admin,'html']
+        ];
+        $rewardChannel=$botState['rewardChannel']??null;
+        if (!empty($rewardChannel)) {
+            $targets[]=['channel',$notice,$rewardChannel,'html'];
         }
+        foreach ($targets as [$role,$body,$destination,$format]) {
+            if (!$destination) continue;
+            try {
+                $response=sendMessage($body,null,$format,$destination);
+                if (!is_object($response) || ($response->ok??false)!==true)
+                    throw new RuntimeException('referral_notification_unconfirmed');
+            } catch (Throwable $error) {
+                error_log('achbot_referral_notification_failed buyer='.(int)$buyerUserId.
+                    ' inviter='.$inviterId.' target='.$role.
+                    ' code='.get_class($error));
+            }
+        }
+        return true;
     }
 }

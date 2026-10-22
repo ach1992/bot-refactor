@@ -448,8 +448,16 @@ Resolve the entire interacting reservation/fence contract rather than
 mistaking a late exception for distributed exactly-once behavior.
 
 A successful service COMMIT and independent reward decision must not
-depend on customer Telegram delivery. A referral credit which is
-missing, confirmed, uncertain or notice-failed needs payment-scoped
+depend on customer Telegram delivery. At the existing helper boundary,
+a confirmed wallet UPDATE now returns true independently of later failed
+Telegram notifications; each inviter/admin/channel notice is attempted
+separately with protected target-role diagnostics. A rejected or unconfirmed
+wallet UPDATE still returns false, with zero credited notices. Real-helper
+MariaDB regression covers both branches, including `MYSQLI_REPORT_OFF`,
+false/null Telegram responses and thrown Telegram exceptions. This is a
+source-only correction to *meaning of the boolean*, **not** proof that
+the same payment cannot invoke the credit again. A referral credit which is
+not attempted, confirmed, uncertain or notice-failed still needs payment-scoped
 auditable evidence; an `error_log` line does not establish it. Any new
 additive journal schema or migration contract requires separate Owner
 acceptance before installed operation. Source-only improvements are not

@@ -68,6 +68,11 @@ function sendMessage($body=null,$keys=null,$parse=null,$to=null) {
     if ($mode==='qr_text_false' && $to===1001) return (object)['ok'=>false];
     if ($mode==='qr_text_null' && $to===1001) return null;
     if ($mode==='qr_text_throw' && $to===1001) throw new RuntimeException('fixture_text_failed');
+    if ($mode==='referral_notice_throw' && $to===9002)
+        throw new RuntimeException('fixture_referral_telegram_failed');
+    if ($mode==='referral_notice_false' && $to===9002) return (object)['ok'=>false];
+    if ($mode==='referral_admin_false' && $to===9001) return (object)['ok'=>false];
+    if ($mode==='referral_channel_null' && $to===9003) return null;
     if ($mode==='qr_text_second_false' && $to===1001 &&
         str_contains((string)$body,'fixture account')) {
         $GLOBALS['qr_text_attempts']=($GLOBALS['qr_text_attempts']??0)+1;
@@ -131,6 +136,10 @@ if (($spec['op']??'route')==='capacity_helper') {
     } catch(Throwable $x) {
         $GLOBALS['events'][]=['name'=>'HELPER_RESULT','value'=>'denied'];
     }
+} elseif (($spec['op']??'route')==='referral_helper') {
+    $state=['rewardChannel'=>9003];
+    $result=giveReferralReward($connection,1001,9002,9001,$state);
+    $GLOBALS['events'][]=['name'=>'REFERRAL_RESULT','confirmed'=>$result];
 } elseif (($spec['op']??'route')==='telegram_edit_boundary') {
     require_once $root.'/src/Telegram/Messages.php';
     $reply=\AchBot\Telegram\Messages\editKeys(
@@ -368,6 +377,28 @@ def check():
         assert not named(call(key),'CREATE')
         assert sql(work,env,'SELECT wallet FROM users WHERE userid=9002')=='51000'
         cases.append('r4_postcredit_telegram_failure_never_recredits')
+
+        for mode in ['referral_notice_throw','referral_notice_false',
+                     'referral_admin_false','referral_channel_null']:
+            seed(work,env,'reward_helper_'+mode,inviter=True)
+            ev=call('unused',op='referral_helper',telegram=mode)
+            assert named(ev,'REFERRAL_RESULT')==[{'name':'REFERRAL_RESULT','confirmed':True}],ev
+            assert sql(work,env,'SELECT wallet FROM users WHERE userid=9002')=='51000',mode
+            receivers=[x['to'] for x in named(ev,'MESSAGE')]
+            assert receivers==[9002,9001,9003],(mode,receivers)
+            cases.append('r4_confirmed_credit_independent_of_'+mode)
+
+        seed(work,env,'reward_helper_sql_false',inviter=True)
+        sql(work,env,"CREATE TRIGGER owned_reward_direct_fail BEFORE UPDATE ON users "
+            "FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='fixture_reward_direct_fail'")
+        try:
+            ev=call('unused',op='referral_helper',nonthrowing=True)
+        finally:
+            sql(work,env,'DROP TRIGGER owned_reward_direct_fail')
+        assert named(ev,'REFERRAL_RESULT')==[{'name':'REFERRAL_RESULT','confirmed':False}],ev
+        assert sql(work,env,'SELECT wallet FROM users WHERE userid=9002')=='50000'
+        assert not named(ev,'MESSAGE')
+        cases.append('r4_unconfirmed_sql_credit_returns_false_without_notice')
 
         key=seed(work,env,'reward_missing',inviter=True)
         sql(work,env,'DELETE FROM users WHERE userid=9002')
