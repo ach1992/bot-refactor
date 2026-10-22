@@ -542,8 +542,11 @@ if (defined('ACHBOT_NP_RECONCILE_ONLY')) {
             $existing = $guard->get_result()->fetch_assoc();
             $guard->close();
             if ($existing) {
+                // Stage is local evidence; never infer final settlement here.
+                $presentation = in_array((string)$existing['stage'], ['pending','creating'], true)
+                    ? 'pending' : 'review';
                 showForm("درخواست پرداخت ثبت شده و بدون نیاز به این صفحه، خودکار بررسی می‌شود.",
-                         "پیگیری پرداخت");
+                         "پیگیری پرداخت", false, $presentation);
                 return;
             }
         }
@@ -553,7 +556,7 @@ if (defined('ACHBOT_NP_RECONCILE_ONLY')) {
         // that this particular order's agreed fiat amount was settled.
         // Never auto-credit or auto-cancel from a legacy browser callback.
         showForm("این فاکتور قدیمی نیازمند بررسی تایید مبلغ توسط پشتیبانی است؛ وضعیت آن بدون تغییر محفوظ ماند.",
-                 "پیگیری پرداخت");
+                 "پیگیری پرداخت", false, 'review');
         return;
     } else {
         // The success_url carries only the merchant order hash, not a trusted
@@ -633,14 +636,14 @@ if (defined('ACHBOT_NP_RECONCILE_ONLY')) {
                 (int)$attempt['local_amount_toman']!==$amount ||
                 !achbotNpDecimalAtLeast($attempt['quote_amount'],(string)$amount) ||
                 !achbotNpDecimalAtLeast((string)$amount,$attempt['quote_amount'])))) {
-                showForm("این پرداخت نیازمند تطبیق امن با سفارش است.", "پیگیری پرداخت");
+                showForm("این پرداخت نیازمند تطبیق امن با سفارش است.", "پیگیری پرداخت", false, 'review');
                 return;
             }
             $scoped=$attempt!==null;
             if ($scoped &&
                 achbotHasUnscopedPaymentReferenceCollision($connection,$Authority,$rowId)) {
                 showForm("شناسه پرداخت نیازمند بررسی پشتیبانی است؛ سفارش محفوظ ماند.",
-                         "پیگیری پرداخت");
+                         "پیگیری پرداخت", false, 'review');
                 return;
             }
         }
@@ -654,7 +657,7 @@ if (defined('ACHBOT_NP_RECONCILE_ONLY')) {
             $stmt->close();
             if ($authorities->num_rows!==1 ||
                 (int)$authorities->fetch_assoc()['id']!==$rowId) {
-                showForm("شناسه تراکنش یکتا نیست؛ تسویه برای بررسی متوقف شد.", "پیگیری پرداخت");
+                showForm("شناسه تراکنش یکتا نیست؛ تسویه برای بررسی متوقف شد.", "پیگیری پرداخت", false, 'review');
                 return;
             }
         }
@@ -722,13 +725,13 @@ if (defined('ACHBOT_NP_RECONCILE_ONLY')) {
                 (int)$payParam['attempt_local_amount']!==(int)$payParam['price'] ||
                 !achbotNpDecimalAtLeast($payParam['quote_amount'],(string)$payParam['price']) ||
                 !achbotNpDecimalAtLeast((string)$payParam['price'],$payParam['quote_amount'])))) {
-                showForm("هویت یا مبلغ این پرداخت نیازمند بررسی است.", "پیگیری پرداخت");
+                showForm("هویت یا مبلغ این پرداخت نیازمند بررسی است.", "پیگیری پرداخت", false, 'review');
                 return;
             }
             if ($payParam && achbotHasUnscopedPaymentReferenceCollision(
                 $connection,$hash_id,(int)$payParam['id'])) {
                 showForm("شناسه تراکنش نیازمند تطبیق پشتیبانی است؛ سفارش محفوظ ماند.",
-                         "پیگیری پرداخت");
+                         "پیگیری پرداخت", false, 'review');
                 return;
             }
             if (!$payParam) {
