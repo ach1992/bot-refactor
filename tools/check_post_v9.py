@@ -1142,6 +1142,16 @@ def main():
                 +native_checkout.stderr[-4500:])
         wallet_checkout=json.loads(wallet_checkout_path.read_text())
         required_wallet_checkout={
+            # R3 source-real post-COMMIT capacity ownership and locked paid
+            # plan snapshot, including independent MariaDB session edits.
+            "r3_exact_owned_last_slots_r3_final_standard",
+            "r3_exact_owned_last_slots_r3_final_custom",
+            "r3_exact_owned_last_slots_r3_final_multi",
+            "r3_excess_quantity_denied_before_wallet_hold",
+            "r3_independent_buyers_one_slot_no_double_debit",
+            "r3_owned_wallet_hold_survives_postcommit_rival",
+            "r3_locked_plan_dimensions_survive_postcommit_admin_edit",
+            "r3_persisted_custom_dimensions_survive_postcommit_plan_edit",
             # R2 source-real controller/handler mode binding, including two
             # simultaneous PHP workers racing the same locked payment.
             "r2_custom_quote_standard_callback_predebit_denied",

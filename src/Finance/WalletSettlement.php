@@ -245,8 +245,8 @@ if (!function_exists('processWalletPayment')) {
                 }
                 $planId=(int)($payInfo['plan_id']??0);
                 $serverId=(int)($payInfo['server_id']??0);
-                $planCheck=$connection->prepare("SELECT s.server_id,s.inbound_id,
-                    s.days,s.volume,i.ucount,i.remark AS server_remark,
+                $planCheck=$connection->prepare("SELECT s.*,
+                    i.ucount,i.remark AS server_remark,
                     i.active AS server_active,i.state AS server_state,
                     c.type AS panel_type
                     FROM server_plans s JOIN server_info i ON i.id=s.server_id
@@ -285,6 +285,10 @@ if (!function_exists('processWalletPayment')) {
                     alert('⛔️ ظرفیت این سفارش کافی نیست؛ مبلغی از کیف پول کسر نشد.',true);
                     return ['status'=>'insufficient_capacity','payInfo'=>$payInfo];
                 }
+                // The full plan row was locked and validated before debit.
+                // Pass the immutable request snapshot across COMMIT instead
+                // of trusting a later, unlocked plan reread.
+                $payInfo['_achbot_wallet_locked_plan']=$plan;
             }
 
             $stmt = $connection->prepare("UPDATE `pays` SET `state`='processing_wallet' WHERE `hash_id`=? LIMIT 1");

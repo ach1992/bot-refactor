@@ -36,16 +36,12 @@ if (preg_match('/payCustomWithWallet(.*)/', $data, $match)) {
         $price  = (int)$payInfo['price'];
         $hashIdLocal = $payInfo['hash_id'];
 
-        $stmt = $connection->prepare("SELECT * FROM `server_plans` WHERE `id`=?");
-        $stmt->bind_param("i", $fid);
-        $stmt->execute();
-        $plan = $stmt->get_result()->fetch_assoc();
-        $stmt->close();
-
-        if (!$plan) {
-            alert('❌ پلن مرتبط با این پرداخت یافت نشد.');
-            return false;
-        }
+        // The locked pre-debit plan is this wallet order's authorization.
+        // Do not reread mutable plan settings after its held debit COMMIT.
+        $plan=$payInfo['_achbot_wallet_locked_plan']??null;
+        if (!is_array($plan) || (int)($plan['id']??0)!==$fid ||
+            (int)($plan['server_id']??0)!==(int)$payInfo['server_id'])
+            throw new RuntimeException('wallet_custom_locked_plan_missing');
 
         $date             = time();
         $expire_microdate = floor(microtime(true) * 1000) + (864000 * $days * 100);
@@ -63,8 +59,8 @@ if (preg_match('/payCustomWithWallet(.*)/', $data, $match)) {
         $customPort = $plan['custom_port'];
         $customSni  = $plan['custom_sni'];
 
-        ensureServerCapacity($connection, $server_id, $inbound_id, $acount, $mainValues);
-
+        // Full-count capacity was already committed in this payment's
+        // durable 007 wallet_hold, before the first external CREATE.
         $uniqid = generateRandomString(42, $protocol);
 
         // اطلاعات سرور + تنظیمات پنل
@@ -838,14 +834,18 @@ if (preg_match('/payBuyWithWallet(.*)/', $data, $match)) {
                         ? ($price / $accountCount)
                         : $price;
 
-            $planDetails = getPlanDetails($connection, $fid);
-            $plan        = $planDetails['plan'];
-
-            $days             = $planDetails['days'];
-            $volume           = $planDetails['volume'];
-            $date             = $planDetails['date'];
-            $expire_microdate = $planDetails['expire_microdate'];
-            $expire_date      = $planDetails['expire_date'];
+            // The locked plan snapshot pins exactly the dimensions that
+            // authorized wallet debit. A post-COMMIT plan edit cannot
+            // silently reduce (or change) the customer's paid entitlement.
+            $plan=$payInfo['_achbot_wallet_locked_plan']??null;
+            if (!is_array($plan) || (int)($plan['id']??0)!==$fid ||
+                (int)($plan['server_id']??0)!==(int)$payInfo['server_id'])
+                throw new RuntimeException('wallet_standard_locked_plan_missing');
+            $days=(int)$plan['days'];
+            $volume=(int)$plan['volume'];
+            $date=time();
+            $expire_microdate=floor(microtime(true)*1000)+(864000*$days*100);
+            $expire_date=$date+(86400*$days);
 
             $server_id  = (int)$plan['server_id'];
             $acount     = (int)$plan['acount'];
@@ -858,8 +858,9 @@ if (preg_match('/payBuyWithWallet(.*)/', $data, $match)) {
             $customPort = $plan['custom_port'];
             $customSni  = $plan['custom_sni'];
 
-            ensureServerCapacity($connection, $server_id, $inbound_id, $acount, $mainValues);
-
+            // This order owns the durable reservation already. The server's
+            // currently UNreserved capacity must not be tested again.
+            // The effect dispatcher verifies the exact owned 007 hold.
             [$serverInfo, $serverConfig] = getServerInfoAndConfig($connection, $server_id);
             $serverTitle = $serverInfo['title'] ?? '-';
             $srv_remark  = $serverInfo['remark'];

@@ -22,9 +22,51 @@ error_reporting(E_ALL & ~E_DEPRECATED);
 set_error_handler(static function($n,$message){throw new ErrorException($message,0,$n);});
 $_SERVER['SCRIPT_FILENAME']=__FILE__;
 $root=$argv[1];$spec=json_decode($argv[4],true,512,JSON_THROW_ON_ERROR);
-$connection=new mysqli('localhost','root','',$argv[3],0,$argv[2]);
+$GLOBALS['owned_socket']=$argv[2];$GLOBALS['owned_db']=$argv[3];
+$GLOBALS['spec']=$spec;
+// The test-only mysqli subclass delegates to REAL MariaDB COMMIT. Only
+// after the wallet hold is committed does it perform a second-session
+// plan mutation or pause to admit a competing PHP buyer.
+class OwnedCheckoutMysqli extends mysqli {
+    public function commit(int $flags=0, ?string $name=null): bool {
+        $ok=parent::commit($flags,$name);
+        $hook=(string)($GLOBALS['spec']['after_wallet_commit']??'');
+        if (!$ok || $hook==='' || ($GLOBALS['hook_fired']??false)) return $ok;
+        $hash=(string)($GLOBALS['spec']['hash']??'');
+        $stmt=$this->prepare('SELECT state FROM pays WHERE hash_id=? LIMIT 1');
+        $stmt->bind_param('s',$hash);$stmt->execute();
+        $state=$stmt->get_result()->fetch_assoc()['state']??null;$stmt->close();
+        if ($state!=='processing_wallet') return $ok;
+        $GLOBALS['hook_fired']=true;
+        if ($hook==='change_plan') {
+            $other=new mysqli('localhost','root','',
+                $GLOBALS['owned_db'],0,$GLOBALS['owned_socket']);
+            if (!$other->query('UPDATE server_plans SET days=15,volume=1 WHERE id=7'))
+                throw new RuntimeException('fixture_second_session_plan_update');
+            $other->close();
+            $GLOBALS['events'][]=['event'=>'SECOND_SESSION_PLAN_CHANGED'];
+        } elseif ($hook==='pause_for_rival') {
+            if (!$this->query('UPDATE wallet_fixture_barrier SET arrived=1 WHERE id=1'))
+                throw new RuntimeException('fixture_signal_failed');
+            $released=false;
+            for ($i=0;$i<280;$i++) {
+                $rows=$this->query('SELECT released FROM wallet_fixture_barrier WHERE id=1');
+                if ($rows && (int)($rows->fetch_assoc()['released']??0)===1) {
+                    $released=true;break;
+                }
+                usleep(50000);
+            }
+            if (!$released) throw new RuntimeException('fixture_barrier_timeout');
+            $GLOBALS['events'][]=['event'=>'POST_COMMIT_RIVAL_FINISHED'];
+        } else {
+            throw new RuntimeException('unknown_fixture_hook');
+        }
+        return $ok;
+    }
+}
+$connection=new OwnedCheckoutMysqli('localhost','root','',$argv[3],0,$argv[2]);
 $connection->set_charset('utf8mb4');
-$admin=9001;$from_id=1001;$chat_id=1001;$message_id=51;$time=time();
+$admin=9001;$from_id=(int)($spec['user']??1001);$chat_id=$from_id;$message_id=51;$time=time();
 $data=(($spec['custom']??false)?'payCustomWithWallet':'payBuyWithWallet').
     ($spec['hash']??'native_standard');
 $text='';$username='fixture';$first_name='Customer';$match=[];
@@ -191,17 +233,24 @@ def check():
             sql(work,env,(ROOT/'migrations/post-v9'/file).read_text())
         driver=work/'checkout-wallet-source.php'
         driver.write_text(PHP)
+        sql(work,env,"CREATE TABLE wallet_fixture_barrier "
+            "(id INT PRIMARY KEY,arrived TINYINT NOT NULL,released TINYINT NOT NULL); "
+            "INSERT INTO wallet_fixture_barrier VALUES (1,0,0)")
+        sql(work,env,"INSERT INTO users "
+            "(userid,name,username,refcode,wallet,date,isAdmin,first_start) "
+            "VALUES (1002,'Buyer 2','buyer2','0',50000,'1700000000',0,'sent')")
         sql(work,env,"DELETE FROM setting WHERE type='BOT_STATES'; "
             "INSERT INTO setting(type,value) VALUES "
             "('BOT_STATES','{\"walletState\":\"on\",\"gatewayAudience\":{\"wallet\":\"all\"}}')")
-        def newpay(name,count,custom=False):
-            sql(work,env,"UPDATE users SET wallet=50000 WHERE userid=1001")
-            sql(work,env,'UPDATE server_info SET ucount=10 WHERE id=2')
+        def newpay(name,count,custom=False,user=1001,reset_capacity=True):
+            sql(work,env,f"UPDATE users SET wallet=50000 WHERE userid={user}")
+            if reset_capacity:
+                sql(work,env,'UPDATE server_info SET ucount=10 WHERE id=2')
             day,vol=(30,2) if custom else (0,0)
             sql(work,env,"INSERT INTO pays "
                 "(hash_id,user_id,type,plan_id,server_id,agent_count,"
                 "day,volume,price,description,request_date,state) VALUES "
-                f"('{name}',1001,'BUY_SUB',7,2,{count},{day},{vol},100,"
+                f"('{name}',{user},'BUY_SUB',7,2,{count},{day},{vol},100,"
                 f"'{name}',UNIX_TIMESTAMP(),'pending')")
             return int(sql(work,env,f"SELECT id FROM pays WHERE hash_id='{name}'"))
         def detail(pid):
@@ -210,8 +259,8 @@ def check():
                 f"ORDER BY FIELD(effect_kind,'wallet_hold','create'),ordinal")
         def paid(pid):
             return sql(work,env,f"SELECT state FROM pays WHERE id={pid}")
-        def wallet():
-            return int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001'))
+        def wallet(user=1001):
+            return int(sql(work,env,f'SELECT wallet FROM users WHERE userid={user}'))
         def cap():
             return int(sql(work,env,'SELECT ucount FROM server_info WHERE id=2'))
         def calls(events,key):
@@ -297,6 +346,124 @@ def check():
         assert not calls(route(work,env,driver,hash='r2_concurrent_custom',
                                custom=False),'POST')
         cases.append('r2_concurrent_wrong_right_mode_exactly_one_effect')
+
+        # R3: capacity belongs to the order that already bought and held it.
+        # The old post-COMMIT ensureServerCapacity would PHP-exit when the
+        # remaining unreserved capacity reached zero.
+        for name,quantity,is_custom in (
+            ('r3_final_standard',1,False),
+            ('r3_final_custom',1,True),
+            ('r3_final_multi',3,False),
+        ):
+            pid=newpay(name,quantity,custom=is_custom)
+            sql(work,env,f'UPDATE server_info SET ucount={quantity} WHERE id=2')
+            completed=route(work,env,driver,hash=name,custom=is_custom)
+            posts=calls(completed,'POST')
+            assert len(posts)==len(calls(completed,'GET'))==quantity,completed
+            assert all((x['days'],x['volume_gb'])==(30,2) for x in posts),completed
+            assert paid(pid)=='paid_with_wallet' and wallet()==49900 and cap()==0
+            holds=detail(pid).splitlines()
+            assert holds[0]==f'wallet_hold\t0\t{quantity}\tconsumed',holds
+            assert len(holds)==quantity+1 and all(
+                row.endswith('local_recorded') for row in holds[1:]),holds
+            assert sql(work,env,'SELECT COUNT(*) FROM orders_list o '
+                f'JOIN service_effects e ON o.id=e.order_id WHERE e.pay_row_id={pid} '
+                "AND e.effect_kind='create'")==str(quantity)
+            assert not calls(route(work,env,driver,hash=name,custom=is_custom),'POST')
+            cases.append('r3_exact_owned_last_slots_'+name)
+
+        insufficient=newpay('r3_over_requested',2)
+        sql(work,env,'UPDATE server_info SET ucount=1 WHERE id=2')
+        assert_mode_denied('r3_over_requested',insufficient,custom=False)
+        cases.append('r3_excess_quantity_denied_before_wallet_hold')
+
+        # Two independent real wallet buyers race one physical slot. The
+        # server row decides; loser keeps their unclaimed payment and funds.
+        left=newpay('r3_race_one',1,user=1001)
+        right=newpay('r3_race_two',1,user=1002,reset_capacity=False)
+        sql(work,env,'UPDATE server_info SET ucount=1 WHERE id=2')
+        start_both=Barrier(2)
+        def buyer(name,user):
+            start_both.wait(timeout=12)
+            return route(work,env,driver,hash=name,user=user)
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            f1=pool.submit(buyer,'r3_race_one',1001)
+            f2=pool.submit(buyer,'r3_race_two',1002)
+            both=[f1.result(timeout=60),f2.result(timeout=60)]
+        assert sum(len(calls(result,'POST')) for result in both)==1,both
+        assert cap()==0 and sorted([wallet(1001),wallet(1002)])==[49900,50000]
+        winner=[p for p in (left,right) if paid(p)=='paid_with_wallet']
+        loser=[p for p in (left,right) if paid(p)=='pending']
+        assert len(winner)==len(loser)==1,(winner,loser,[(pid,paid(pid),detail(pid)) for pid in (left,right)],both)
+        assert detail(winner[0]).splitlines()[0]=='wallet_hold\t0\t1\tconsumed'
+        assert detail(loser[0])==''
+        assert not calls(route(work,env,driver,hash='r3_race_one',user=1001),'POST')
+        assert not calls(route(work,env,driver,hash='r3_race_two',user=1002),'POST')
+        cases.append('r3_independent_buyers_one_slot_no_double_debit')
+
+        # First buyer commits a hold for slot 1 of 2. Pause the actual
+        # PHP call just after COMMIT, let another wallet buyer take slot 2,
+        # then resume the first real Checkout handler: both must complete.
+        holder=newpay('r3_held_before_rival',1,user=1001)
+        rival=newpay('r3_rival_after_hold',1,user=1002,reset_capacity=False)
+        sql(work,env,'UPDATE server_info SET ucount=2 WHERE id=2')
+        sql(work,env,'UPDATE wallet_fixture_barrier SET arrived=0,released=0 WHERE id=1')
+        from time import monotonic,sleep
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            future=pool.submit(route,work,env,driver,hash='r3_held_before_rival',
+                               user=1001,after_wallet_commit='pause_for_rival')
+            deadline=monotonic()+12
+            while monotonic()<deadline:
+                if sql(work,env,'SELECT arrived FROM wallet_fixture_barrier WHERE id=1')=='1':
+                    break
+                sleep(.05)
+            else:
+                raise RuntimeError('postcommit fixture barrier never reached')
+            assert cap()==1 and wallet(1001)==49900
+            rival_events=route(work,env,driver,hash='r3_rival_after_hold',user=1002)
+            assert len(calls(rival_events,'POST'))==1 and cap()==0,rival_events
+            sql(work,env,'UPDATE wallet_fixture_barrier SET released=1 WHERE id=1')
+            held_events=future.result(timeout=45)
+        assert len(calls(held_events,'POST'))==1 and len(calls(held_events,'QR'))==1,held_events
+        assert paid(holder)==paid(rival)=='paid_with_wallet'
+        assert cap()==0 and wallet(1001)==wallet(1002)==49900
+        assert detail(holder).splitlines()[0]=='wallet_hold\t0\t1\tconsumed'
+        assert detail(rival).splitlines()[0]=='wallet_hold\t0\t1\tconsumed'
+        cases.append('r3_owned_wallet_hold_survives_postcommit_rival')
+
+        # A separate MariaDB session changes plan dimensions AFTER wallet
+        # COMMIT but BEFORE the actual standard handler runs. Dispatch must
+        # keep the locked paid 30/2 quote, never the later 15/1 edit.
+        frozen=newpay('r3_quoted_before_edit',1)
+        try:
+            drift=route(work,env,driver,hash='r3_quoted_before_edit',
+                        after_wallet_commit='change_plan')
+            changed=sql(work,env,'SELECT days,volume FROM server_plans WHERE id=7')
+        finally:
+            sql(work,env,'UPDATE server_plans SET days=30,volume=2 WHERE id=7')
+        assert changed=='15\t1' and any(
+            ev['event']=='SECOND_SESSION_PLAN_CHANGED' for ev in drift),drift
+        assert [(ev['days'],ev['volume_gb']) for ev in calls(drift,'POST')]==[(30,2)],drift
+        assert len(calls(drift,'GET'))==len(calls(drift,'QR'))==1,drift
+        assert paid(frozen)=='paid_with_wallet' and wallet()==49900 and cap()==9
+        assert detail(frozen)==('wallet_hold\t0\t1\tconsumed\n'
+                                'create\t1\t1\tlocal_recorded')
+        assert not calls(route(work,env,driver,hash='r3_quoted_before_edit'),'POST')
+        cases.append('r3_locked_plan_dimensions_survive_postcommit_admin_edit')
+
+        # Custom retains the persisted positive quote, even when a separate
+        # session changes the template after COMMIT.
+        custom_frozen=newpay('r3_custom_after_edit',1,custom=True)
+        sql(work,env,f'UPDATE pays SET day=37,volume=7 WHERE id={custom_frozen}')
+        try:
+            custom_drift=route(work,env,driver,hash='r3_custom_after_edit',
+                              custom=True,after_wallet_commit='change_plan')
+        finally:
+            sql(work,env,'UPDATE server_plans SET days=30,volume=2 WHERE id=7')
+        assert [(ev['days'],ev['volume_gb']) for ev in calls(custom_drift,'POST')]==[(37,7)]
+        assert paid(custom_frozen)=='paid_with_wallet'
+        assert not calls(route(work,env,driver,hash='r3_custom_after_edit',custom=True),'POST')
+        cases.append('r3_persisted_custom_dimensions_survive_postcommit_plan_edit')
 
         # Exact supported `buyType=much` draft route must reject usernames
         # that a later provider would reject, without inserting any invoice.
