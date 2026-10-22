@@ -128,6 +128,18 @@ function getMarzbanUser($serverId,$remark,...$args){
     $GLOBALS['events'][]=['name'=>'READBACK','server'=>$serverId,
                           'username'=>$remark];
     $account=$GLOBALS['remote_accounts'][(string)$remark]??null;
+    // Synthetic, opt-in provenance when diagnosing a contested real PHP
+    // approval: exact response shape, never any customer/provider secret.
+    if (!empty($GLOBALS['spec']['readback_diagnostics']) && $account) {
+        $GLOBALS['events'][]=[
+            'name'=>'READBACK_SHAPE',
+            'expire_type'=>get_debug_type($account['expire']),
+            'expire'=>$account['expire'],
+            'quota_type'=>get_debug_type($account['data_limit']),
+            'quota'=>$account['data_limit'],
+            'note_type'=>get_debug_type($account['note'])
+        ];
+    }
     return $account ? (object)$account : null;
 }
 function achbotSupportsPanel($type){return $type==='marzban';}
@@ -275,9 +287,9 @@ def check():
             "VALUES ('claim_b',1001,'BUY_SUB',7,2,1,0,0,100,1700000000,"
             "'have_sent',212,9001,'other-account')")
         with ThreadPoolExecutor(max_workers=2) as pool:
-            ea,eb=list(pool.map(lambda k:call(k),['claim_a','claim_b']))
+            ea,eb=list(pool.map(lambda k:call(k,readback_diagnostics=True),['claim_a','claim_b']))
         creates=len(named(ea,'CREATE'))+len(named(eb,'CREATE'))
-        assert creates==1 and capacity()==0 and orders()==1, (ea,eb,creates,capacity(),orders(),state('claim_a'),state('claim_b'),sql(work,env,'SELECT state,ordinal,remote_username,IFNULL(order_id,0) FROM service_effects ORDER BY id'))
+        assert creates==1 and capacity()==0 and orders()==1, (ea,eb,creates,capacity(),orders(),state('claim_a'),state('claim_b'),sql(work,env,'SELECT state,ordinal,remote_username,requested_expire,requested_bytes,IFNULL(order_id,0) FROM service_effects ORDER BY id'))
         assert sorted([state('claim_a'),state('claim_b')])==['approved','have_sent']
         cases.append('r1_two_real_php_buyers_one_capacity_unit_only_one_external_create')
 
