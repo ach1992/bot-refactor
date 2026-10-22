@@ -354,6 +354,10 @@ function editMarzbanConfig(...$args){
         'applied_expire'=>1800000100,'applied_bytes'=>3*1073741824];
 }
 require_once $root.'/src/Purchase/Core.php';
+// Production buy_helpers.php loads this module before route dispatch.
+// Earlier fixtures did not need it until referral registration moved
+// ahead of Telegram delivery; exercise the real payment-scoped module.
+require_once $root.'/src/Finance/ReferralReward.php';
 $GLOBALS['spec']=$spec;
 if (($spec['route']??'wallet') === 'manual_crypto') {
     require $root.'/src/Finance/Routes/ManualCrypto.php';
@@ -521,6 +525,7 @@ def check():
               "VALUES (1,'http://127.0.0.1:9','127.0.0.1','','none','','','none','{}','marzban','fixture-admin','fixture-password','')")
         query(work,env,(ROOT/'migrations/post-v9/003_payment_attempts.sql').read_text())
         query(work,env,(ROOT/'migrations/post-v9/007_service_effects.sql').read_text())
+        query(work,env,(ROOT/'migrations/post-v9/008_referral_awards.sql').read_text())
         # Each isolated standard receipt now holds capacity before POST.
         # Supply independent test headroom; focused exhaustion is checked
         # in actual ServiceEffects concurrency and reservation regressions.
@@ -1508,7 +1513,10 @@ def check():
         seed(work,env,'walletfirst')
         query(work,env,"UPDATE pays SET type='BUY_SUB' WHERE hash_id='walletfirst'")
         debitBefore=int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'))
-        assert base('walletfirst','wallet')['status']=='insufficient_capacity'
+        # A BUY_SUB with no plan/server is now rejected by the locked
+        # deterministic predebit request guard, BEFORE any capacity lookup.
+        # The old no-capacity classification was weaker than the source truth.
+        assert base('walletfirst','wallet')['status']=='invalid_request'
         assert int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'))==debitBefore
         assert query(work,env,"SELECT state FROM pays WHERE hash_id='walletfirst'")=='pending'
         assert base('walletfirst','claim','bank_transfer') is True

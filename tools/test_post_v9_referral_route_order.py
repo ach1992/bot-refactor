@@ -34,11 +34,7 @@ NEW_SEND="""function sendMessage(...$args){
     }"""
 assert OLD_SEND in manual.PHP_ROUTE
 PHP_ROUTE=manual.PHP_ROUTE.replace(OLD_SEND,NEW_SEND,1)
-assert "require_once $root.'/src/Purchase/Core.php';" in PHP_ROUTE
-PHP_ROUTE=PHP_ROUTE.replace(
-    "require_once $root.'/src/Purchase/Core.php';",
-    "require_once $root.'/src/Purchase/Core.php';\n"
-    "require_once $root.'/src/Finance/ReferralReward.php';",1)
+assert "require_once $root.'/src/Finance/ReferralReward.php';" in PHP_ROUTE
 
 
 def query(work,env,sql):
