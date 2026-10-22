@@ -64,6 +64,8 @@ function getMarzbanUser($serverId,$remark,$token=null,$strict=false) {
     if ($strict!==true) throw new RuntimeException('r3_strict_read_required');
     return isset($GLOBALS['r3_remote'])?(object)$GLOBALS['r3_remote']:null;
 }
+// Model the real payBuyWithWallet route: the processor must receive the
+// handler's concrete, trusted mode even when testing stale owner/policy locks.
 $payment=processWalletPayment($connection,(string)$spec['hash'],
     static function($pay,$owner) use ($connection) {
         ++$GLOBALS['r3_effects'];
@@ -99,7 +101,7 @@ $payment=processWalletPayment($connection,(string)$spec['hash'],
             }
         }
         return true;
-    });
+    }, 'standard');
 $match=[];
 preg_match('/wallet_transaction_guard_error_(\d+)/',
            $GLOBALS['r3_notice'],$match);
