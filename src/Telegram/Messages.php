@@ -64,7 +64,7 @@ function editKeys(callable $request, $from_id, $message_id, $keys = null, $msgId
     $ci = $ci??$from_id;
     $msgId = $msgId??$message_id;
 
-    $request('editMessageReplyMarkup',[
+    return $request('editMessageReplyMarkup',[
 		'chat_id' => $ci,
 		'message_id' => $msgId,
 		'reply_markup' => $keys

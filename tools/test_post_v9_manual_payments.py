@@ -239,7 +239,11 @@ function getPlanDetails(...$args){return [
     'days'=>30,'volume'=>10,'date'=>'synthetic',
     'expire_microdate'=>2000000000,'expire_date'=>2000000000,
     'plan'=>[
-    'type'=>'vless','protocol'=>'vless','server_id'=>1,'acount'=>9,
+    // Plan #1 is the fixture's actual standard paid target (server #1).
+    // Plan #7 is the separate seeded renewal/extension target (server #2).
+    // Resolve this from the requested plan, not from the callback route.
+    'type'=>'normal','protocol'=>'vless',
+    'server_id'=>((int)($args[1]??0)===1 ? 1 : 2),'acount'=>9,
     'inbound_id'=>0,'limitip'=>1,'rahgozar'=>0,'custom_path'=>'',
     'custom_port'=>null,'custom_sni'=>''
 ]];}
@@ -447,6 +451,8 @@ def run_route(work,env,driver,data='',step='none',actor=1001,update=None,route='
             accepted_log_codes.append('achbot_effect_needs_review')
         if 'achbot_manual_standard_postcommit_followup_needs_review' in accepted_log_codes:
             accepted_log_codes.append('achbot_manual_standard_postcommit_notice_failed')
+        if 'achbot_manual_standard_delivery_needs_review' in accepted_log_codes:
+            accepted_log_codes.append('achbot_manual_standard_delivery_summary_failed')
     safe_review=(accepted_log_codes and p.stderr and all(
         any(code in line for code in accepted_log_codes) and
         'fixture_' not in line and 'SQL' not in line
@@ -505,6 +511,9 @@ def check():
     cases=[]
     with owned.owned_database() as (work,env):
         purchase.init(work,env,"http://127.0.0.1:9")
+        # This fixture exercises many independent approvals in one database.
+        # Dedicated native capacity tests use truly scarce server_info rows.
+        query(work,env,"UPDATE server_info SET ucount=10000 WHERE id=2")
         query(work,env,"INSERT INTO setting (type,value) VALUES ('BOT_STATES','{\"walletState\":\"on\",\"cartToCartState\":\"on\",\"giftCardState\":\"on\",\"manualUsdtState\":\"on\",\"nowPaymentWallet\":\"on\",\"nowPaymentOther\":\"on\",\"zarinpal\":\"on\",\"nextpay\":\"on\"}')")
         assert len(query(work,env,'SHOW TABLES').splitlines())==23
         # The paid-service helper verifies actual plan/panel identity (no fixture shortcut).
@@ -697,8 +706,8 @@ def check():
         # merely helper functions. Every remote action is a local spy.
         def service_pay(key,subject='BUY_SUB',method='bank_transfer',received=True):
             seed(work,env,key)
-            query(work,env,"UPDATE pays SET type='"+subject+"',plan_id=1,"
-                  "server_id=1,day=30,volume=10,description='fixture' "
+            query(work,env,"UPDATE pays SET type='"+subject+"',plan_id=7,"
+                  "server_id=2,day=30,volume=10,description='fixture' "
                   "WHERE hash_id='"+key+"'")
             assert base(key,'claim',method)
             if received:
@@ -810,13 +819,13 @@ def check():
         notice=run_route(work,env,route_driver,
                          data='acceptstandardpostcommitnotify',actor=9001,
                          route='standard_approval',qr_transport='throw',
-                         expected_warning='achbot_manual_standard_postcommit_followup_needs_review')
+                         expected_warning='achbot_manual_standard_delivery_needs_review')
         assert [e['name'] for e in notice].count('remote_create')==1,repr(notice)
         assert [e['name'] for e in notice].count('qr_send')==1,repr(notice)
         assert query(work,env,"SELECT state FROM pays WHERE hash_id='standardpostcommitnotify'")=='approved'
         admin_notices=[str(e['args'][0]) for e in notice if e['name']=='sendMessage'
                        and e['args'][-1]==9001]
-        assert any('سفارش ثبت شده' in m and 'اطلاع‌رسانی' in m for m in admin_notices),repr(notice)
+        assert any(('سفارش ثبت شده' in m or 'سفارش/سرویس ثبت شده' in m) and 'اطلاع‌رسانی' in m for m in admin_notices),repr(notice)
         assert not any('نتیجهٔ تکمیل سفارش هنوز قطعی نیست' in m for m in admin_notices)
         reject_service('standardpostcommitnotify','standard_approval','accept')
         cases.append('real_standard_postcommit_telegram_failure_approved_no_replay_truthful_review')
@@ -894,20 +903,35 @@ def check():
         reject_service('standardsilentinsert','standard_approval','accept')
         cases.append('real_standard_mysqlireportoff_unconfirmed_order_never_approved')
 
+        # Capacity is now reserved BEFORE remote CREATE, in the same
+        # transaction as pays.processing. Force an actual failing SQL UPDATE
+        # under MYSQLI_REPORT_OFF, not a mocked late finisher.
         standard_pay('standardsilentcapacity',method='bank_transfer')
-        silent=run_route(work,env,route_driver,data='acceptstandardsilentcapacity',
-                         actor=9001,route='standard_approval',remote_mode='silent_sql_capacity_failure',
-                         mysqli_report_off=True,
-                         expected_warning='achbot_manual_standard_remote_finish_review')
-        assert [e['name'] for e in silent].count('remote_create')==1,repr(silent)
-        assert query(work,env,"SELECT state FROM pays WHERE hash_id='standardsilentcapacity'")=='processing'
+        query(work,env,"CREATE TRIGGER achbot_test_capacity_fail BEFORE UPDATE "
+              "ON server_info FOR EACH ROW SIGNAL SQLSTATE '45000' "
+              "SET MESSAGE_TEXT='fixture fail prior to remote'")
+        try:
+            silent=run_route(work,env,route_driver,data='acceptstandardsilentcapacity',
+                             actor=9001,route='standard_approval',
+                             mysqli_report_off=True,
+                             expected_warning='achbot_manual_standard_claim_needs_review')
+        finally:
+            query(work,env,"DROP TRIGGER achbot_test_capacity_fail")
+        assert not any(e['name']=='remote_create' for e in silent),repr(silent)
+        assert query(work,env,"SELECT state FROM pays WHERE hash_id='standardsilentcapacity'")=='have_sent'
+        # Reattempt is safe ONLY because reservation rolled back BEFORE any
+        # remote call. The next verified claim produces exactly one CREATE.
+        after=run_route(work,env,route_driver,data='acceptstandardsilentcapacity',
+                        actor=9001,route='standard_approval')
+        assert [e['name'] for e in after].count('remote_create')==1,repr(after)
+        assert query(work,env,"SELECT state FROM pays WHERE hash_id='standardsilentcapacity'")=='approved'
         reject_service('standardsilentcapacity','standard_approval','accept')
-        cases.append('real_standard_mysqlireportoff_unconfirmed_capacity_never_approved')
+        cases.append('real_standard_mysqlireportoff_capacity_reservation_failure_prevents_create')
 
         def renewal_pay(key,method='gift_card'):
             service_pay(key,subject='RENEW_SCONFIG',method=method)
             query(work,env,"UPDATE pays SET day=0,volume=0,"
-                  """description='{"uuid":"fixture-uuid","remark":"fixture-remark","marzban":true}'"""
+                  """description='{"uuid":"fixture-uuid","remark":"fixture-remark","server_id":2,"marzban":true}'"""
                   " WHERE hash_id='"+key+"'")
             return key
 
@@ -923,7 +947,7 @@ def check():
         notice=run_route(work,env,route_driver,
                          data='acceptstandardrenewpostcommit',actor=9001,
                          route='standard_approval',message_transport='throw_once',
-                         expected_warning='achbot_manual_standard_postcommit_followup_needs_review')
+                         expected_warning='achbot_manual_standard_delivery_needs_review')
         assert [e['name'] for e in notice].count('remote_edit')==1,repr(notice)
         assert query(work,env,"SELECT state FROM pays WHERE hash_id='standardrenewpostcommit'")=='approved'
         reject_service('standardrenewpostcommit','standard_approval','accept')
@@ -933,7 +957,7 @@ def check():
         down=run_route(work,env,route_driver,
                        data='acceptstandardrenewnotifydown',actor=9001,
                        route='standard_approval',message_transport='throw',
-                       expected_warning='achbot_manual_standard_postcommit_followup_needs_review')
+                       expected_warning='achbot_manual_standard_delivery_needs_review')
         assert [e['name'] for e in down].count('remote_edit')==1,repr(down)
         assert query(work,env,"SELECT state FROM pays WHERE hash_id='standardrenewnotifydown'")=='approved'
         reject_service('standardrenewnotifydown','standard_approval','accept')

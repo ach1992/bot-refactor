@@ -404,6 +404,55 @@ def main():
                 and payment_ux.get("external_provider_requests")==0):
             raise RuntimeError("Guarded payment-message lifecycle proof incomplete")
 
+        # Issue #51: real HTTP output of the shared Persian browser page,
+        # independent of return/callback settlement. No provider or DB calls.
+        browser_path=Path(tmp)/"payment-browser-feedback.json"
+        browser_check=subprocess.run(
+            ["python3",str(ROOT/"tools/test_post_v9_browser_feedback.py"),
+             "--run-disposable","--report",str(browser_path)],
+            cwd=ROOT,capture_output=True,text=True,timeout=35)
+        if browser_check.returncode!=0:
+            raise RuntimeError("Real browser payment feedback test failed:\n"+
+                (browser_check.stderr or browser_check.stdout)[-4000:])
+        browser_feedback=json.loads(browser_path.read_text())
+        browser_required={
+            "caller_confirmed_fulfillment_has_positive_presentation",
+            "payment_positive_legacy_true_unconfirmed_delivery_never_green",
+            "verified_provider_payment_unconfirmed_delivery_needs_review",
+            "nextpay_authoritative_rejected_is_distinct_definitive_failure",
+            "nextpay_uncertain_verification_review_not_failure",
+            "zarinpal_uncertain_verification_review_not_failure",
+            "zarinpal_transport_uncertainty_no_false_decline",
+            "nowpayments_pending_return_requires_future_confirmation",
+            "nowpayments_paid_browser_without_delivery_proof_needs_review",
+            "verified_committed_wallet_credit_can_present_completion",
+            "verified_service_renewal_can_present_completion",
+            "paid_but_unresolved_service_effect_stays_review",
+            "unknown_payment_code_is_not_authoritative_terminal_failure",
+            "untyped_invoice_information_not_inferred_as_paid_or_pending",
+            "uncertain_reconciliation_retains_no_repayment_guidance",
+            "wallet_effect_uncertain_never_presents_completion",
+            "unknown_presentation_enum_fails_closed",
+            "injected_heading_and_message_escaped",
+            "persian_mixed_latin_and_numeric_reference_preserved",
+            "valid_username_generates_only_verified_telegram_bot_link",
+            "documented_and_known_unconfigured_bot_placeholders_blocked",
+            "invalid_or_missing_bot_username_has_safe_no_dead_link",
+            "page_get_has_no_checkout_or_side_effect_action",
+            "long_mixed_direction_messages_wrap_and_preserve_content",
+            "real_http_private_page_noindex_no_referrer_no_cache_no_frame",
+            "responsive_accessible_states_keyboard_and_forced_contrast",
+        }
+        if not (browser_feedback.get("complete") is True
+                and set(browser_feedback.get("scenarios",[]))==browser_required
+                and browser_feedback.get("cases")==len(browser_required)
+                and browser_feedback.get("source_real_php_http") is True
+                and browser_feedback.get("loopback_only") is True
+                and browser_feedback.get("database_or_financial_calls")==0
+                and browser_feedback.get("external_provider_calls")==0
+                and browser_feedback.get("production_mutations")==0):
+            raise RuntimeError("Issue #51 shared payment browser feedback acceptance incomplete")
+
         # Review F1/F2/F3/F4/R1: three provider issuance races, reverse
         # pre-lock timestamps, permanent supersession, SQL rollback, actual
         # renewal picker and full order-target status callback.
@@ -814,6 +863,24 @@ def main():
         # Current R10 financial contract: preserve authenticated settlement,
         # durable compensation proof and concurrency-safe operator recovery.
         mandatory_finance = {
+            # Reviewer R2: required real Controller->Renderer dispositions,
+            # not text-classifier assertions or isolated page-only mocks.
+            "r2_nowpayments_existing_attempt_pending",
+            "r2_nowpayments_quarantined_attempt_review",
+            "r2_nowpayments_historical_quote_review",
+            "r2_zarinpal_scoped_amount_mismatch_review",
+            "r2_zarinpal_ambiguous_historical_authority_review",
+            "r2_nextpay_scoped_amount_mismatch_review",
+            "r2_nextpay_external_reference_collision_review",
+            "r2_nowpayments_issuance_already_creating_pending",
+            "r2_nowpayments_seen_child_under_review",
+            "r2_nowpayments_paid_but_delivery_unproven_review",
+            "r2_nowpayments_uncertain_invoice_creation_review",
+            "r2_nextpay_uncertain_invoice_creation_review",
+            "r2_zarinpal_uncertain_invoice_creation_review",
+            "r2_missing_initiation_provider_neutral",
+            "r2_missing_return_provider_neutral",
+            "r2_unknown_zarinpal_order_neutral",
             "legacy_nowpayment_browser_only_read_only",
             "legacy_nowpayment_finished_read_only",
             "legacy_nowpayment_confirmed_read_only",
@@ -988,6 +1055,12 @@ def main():
             "unknown_get_unavailable_frozen_no_replay",
             "unknown_wrong_expiry_fraction_frozen_no_replay",
             "unknown_wrong_quota_fraction_frozen_no_replay",
+            "unknown_wrong_expiry_float_integral_frozen_no_replay",
+            "unknown_wrong_quota_float_integral_frozen_no_replay",
+            "unknown_wrong_expiry_exponent_frozen_no_replay",
+            "unknown_wrong_quota_padded_frozen_no_replay",
+            "unknown_wrong_expiry_overflow_frozen_no_replay",
+            "canonical_unsigned_decimal_string_limits_verified_once",
             "unknown_other_note_frozen_no_replay",
             "unknown_target_change_frozen_no_replay",
             "unknown_endpoint_change_frozen_no_replay",
@@ -1072,7 +1145,7 @@ def main():
             "real_standard_explicit_remote_failure_kept_for_review_without_local_order",
             "real_standard_hosted_provider_conflict_denied",
             "real_standard_missing_operator_delivery_denied",
-            "real_standard_mysqlireportoff_unconfirmed_capacity_never_approved",
+            "real_standard_mysqlireportoff_capacity_reservation_failure_prevents_create",
             "real_standard_mysqlireportoff_unconfirmed_order_never_approved",
             "real_standard_nonadmin_callback_no_financial_effect",
             "real_standard_operator_buttons_failure_does_not_leak_raw_exception",
@@ -1174,6 +1247,76 @@ def main():
                 and manual.get("live_provider_calls")==0
                 and manual.get("production_data_modified") is False):
             raise RuntimeError("Four-network manual crypto payment isolation incomplete")
+        # PR #66 independent reviewer R1–R6: actual financial/purchase PHP
+        # helpers and original MariaDB, not author-only approval route doubles.
+        integrity_path=Path(tmp)/"manual-standard-real-helpers.json"
+        trial=subprocess.run(
+            ["python3",str(ROOT/"tools/test_post_v9_standard_integrity.py"),
+             "--run-disposable","--report",str(integrity_path)],
+            cwd=ROOT,timeout=180,capture_output=True,text=True)
+        if trial.returncode!=0:
+            raise RuntimeError("Manual standard R1-R6 real-helper acceptance failed:\n"+
+                               (trial.stderr or trial.stdout)[-6500:])
+        integrity=json.loads(integrity_path.read_text())
+        required_integrity={
+            'r1_insufficient_total_count_prevents_any_remote_create',
+            'r1_exact_two_units_reserved_once_and_replay_fenced',
+            'r1_remote_unknown_keeps_pre_reserved_capacity_no_replay',
+            'r1_after_two_remote_creates_SQL_failure_keeps_reserved_capacity_review_only',
+            'r1_mysqlireportoff_conditional_reservation_SQL_failure_no_create',
+            'r1_real_conditional_capacity_helper_cannot_go_negative',
+            'r1_two_real_php_buyers_one_capacity_unit_only_one_external_create',
+            'r2_plan_reassigned_to_other_remote_with_same_remark_zero_wrong_edit',
+            'r2_persisted_payment_server_pinned_on_successful_renewal',
+            'r2_renewal_adapter_unverified_success_never_records_payment',
+            'r3_nonthrowing_renewal_customer_notice_renew_user_false_already_approved',
+            'r3_nonthrowing_renewal_customer_notice_renew_user_null_already_approved',
+            'r3_nonthrowing_or_thrown_telegram_qr_false_approved_no_replay',
+            'r3_nonthrowing_or_thrown_telegram_qr_null_approved_no_replay',
+            'r3_nonthrowing_or_thrown_telegram_qr_throw_approved_no_replay',
+            'r3_nonthrowing_or_thrown_telegram_operator_false_approved_no_replay',
+            'r3_nonthrowing_or_thrown_telegram_edit_false_approved_no_replay',
+            'r3_nonthrowing_or_thrown_telegram_edit_null_approved_no_replay',
+            'r3_real_telegram_editKeys_propagates_false_response',
+            'r4_referral_confirmed_one_wallet_update_no_callback_recredit',
+            'r4_mysqlireportoff_reward_write_failure_no_false_credit_notice',
+            'r4_wallet_overflow_fails_without_false_ack',
+            'r4_postcredit_telegram_failure_never_recredits',
+            'r4_confirmed_credit_independent_of_referral_notice_throw',
+            'r4_confirmed_credit_independent_of_referral_notice_false',
+            'r4_confirmed_credit_independent_of_referral_admin_false',
+            'r4_confirmed_credit_independent_of_referral_channel_null',
+            'r4_unconfirmed_sql_credit_returns_false_without_notice',
+            'r4_missing_inviter_no_false_credit_notice',
+            'r5_original_receipt_without_003_with_007_can_fulfill_once',
+            'r5_missing_007_operation_unique_index_refuses_preclaim_reservation',
+            'r5_original_23_tables_missing_007_keeps_receipt_and_capacity_unclaimed',
+            'r5_absent_original_operator_evidence_is_rejected',
+            'r5_partially_installed_003_denied_under_mysqlireportoff',
+            'r5_incompatible_ledger_column_SQL_failure_not_legacy_receipt',
+            'r5_complete_003_empty_attempts_historical_receipt_allowed',
+            'r2_after_claim_renewal_plan_inactive_no_remote_edit',
+            'r2_after_claim_renewal_plan_deleted_no_remote_edit',
+            'r2_after_claim_purchase_plan_inactive_no_remote_create',
+            'r3_real_qr_helper_photo_ok_account_text_qr_text_false_reported',
+            'r3_real_qr_helper_photo_ok_account_text_qr_text_null_reported',
+            'r3_real_qr_helper_photo_ok_account_text_qr_text_throw_reported',
+            'r3_three_accounts_second_text_failed_third_still_attempted_and_reward_credited',
+            'r3_multiple_admin_refs_one_edit_fails_later_edit_still_attempted',
+            'r4_referral_decision_not_skipped_when_QR_photo_fails',
+            'r5_valid_attempts_only_no_child_table_denied',
+            'r5_valid_attempts_only_with_reviewed_attempt_denied',
+        }
+        if not (integrity.get('complete') is True and
+                integrity.get('cases')==len(required_integrity) and
+                set(integrity.get('scenarios',[]))==required_integrity and
+                integrity.get('actual_php_core_helpers') is True and
+                integrity.get('actual_mariadb_capacity') is True and
+                integrity.get('actual_mysqlireportoff_failure') is True and
+                integrity.get('isolated_marzban_telegram_spies') is True and
+                integrity.get('production_mutations')==0 and
+                integrity.get('installed_acceptance') is False):
+            raise RuntimeError("Mandatory real-helper manual standard evidence incomplete")
         # Independent, exact-source R1/R2 contract: offline TRON Base58Check
         # and real bot.php/config.php administrator-setting writes. Keep the
         # positive network cases and invalid historical-intent refusals in the
@@ -1329,12 +1472,14 @@ def main():
                     "financial_native_route_guards":finance,
                     "automatic_renewal_ledger":auto_renew,
                     "payment_ux_lifecycle":payment_ux,
+                    "payment_browser_feedback":browser_feedback,
                     "checkout_serialization":checkout_race,
                     "customer_method_serialization":method_race,
                     "wallet_authorization_freshness":wallet_freshness,
                     "latest_review_f1_f4":reviewer_f1_f4,
                     "service_effects":effects,
                     "manual_payment_method_isolation":manual,
+                    "manual_standard_real_helper_review_remediation":integrity,
                     "manual_crypto_destination_and_admin_guards":crypto_guard,
                     "payment_reference_assurance":payment_identity,
                     "shared_payment_ledger_rc4_import":migration,
@@ -1365,11 +1510,13 @@ def main():
                       "financial_native_route_cases":finance["cases"],
                       "automatic_renewal_cases":auto_renew["cases"],
                       "payment_ux_cases":payment_ux["cases"],
+                      "payment_browser_feedback_cases":browser_feedback["cases"],
                       "checkout_serialization_cases":checkout_race["cases"],
                       "customer_method_serialization_cases":method_race["cases"],
                       "wallet_authorization_freshness_cases":wallet_freshness["cases"],
                       "service_effect_cases":effects["cases"],
                       "manual_payment_isolation_cases":manual["cases"],
+                      "manual_standard_real_helper_cases":integrity["cases"],
                       "manual_crypto_guard_cases":crypto_guard["cases"],
                       "payment_reference_length":payment_identity["default_length"],
                       "historical_rc4_payment_import_verified":migration["preserved_rc4_rows_and_ids"],

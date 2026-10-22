@@ -631,7 +631,22 @@ if (preg_match('/^accCustom(.+)$/D', $data, $match) && $text != $buttonValues['c
     if (!empty($user_detail['refered_by'])) {
         $inviterId = (int)$user_detail['refered_by'];
 
-        giveReferralReward($connection, $user_detail['userid'], $inviterId, $admin, $botState);
+        if (giveReferralReward($connection, $user_detail['userid'],
+                               $inviterId, $admin, $botState)!==true) {
+            // Credit may have succeeded even if an independent notice failed.
+            // Never repeat this financial action from the callback.
+            error_log('achbot_checkout_referral_needs_review pay_hash='.
+                preg_replace('/[^A-Za-z0-9_-]/','',(string)$hash_id).
+                ' buyer='.$uid.' inviter='.$inviterId);
+            try {
+                sendMessage("⚠️ وضعیت پاداش معرفی نامطمئن است.\n🆔 $hash_id".
+                    "\nشناسه خریدار: ".$uid."\nشناسه معرف: ".$inviterId.
+                    "\nتراکنش کیف پول را بررسی کنید؛ اعتبار را دوباره خودکار واریز نکنید.",
+                    null,null,$admin);
+            } catch (Throwable $ignored) {
+                error_log('achbot_checkout_referral_operator_notice_failed');
+            }
+        }
 
         if ($admin != $from_id) {
             $uname     = $user_detail['name'];
