@@ -1002,8 +1002,21 @@ def main():
         browser=run_php(work,env,stage,dict(route='return',
             get={'nowpayment':'','hash_id':'wallet-now'}))
         verify_unchanged(work,env,before,'legacy_browser_return')
-        if browser['network_calls'] or 'در حال بررسی' not in browser['form']:
-            raise RuntimeError('Untrusted browser-only return declared settlement')
+        if (browser['network_calls'] or
+            'class="panel pending"' not in browser['form']):
+            raise RuntimeError('Untrusted browser-only NOWPayments return was not pending')
+        # A locally paid BUY_SUB is not a verified customer Telegram ACK.
+        # Its browser return may not advertise completed fulfillment.
+        seed_payment(work,env,'np-browser-paid-no-delivery','BUY_SUB',7,2)
+        sql(work,env,"UPDATE pays SET state='paid' WHERE hash_id='np-browser-paid-no-delivery'")
+        before_paid=snapshot(work,env)
+        paid_page=run_php(work,env,stage,dict(route='return',
+            get={'nowpayment':'','hash_id':'np-browser-paid-no-delivery'}))
+        verify_unchanged(work,env,before_paid,'np_browser_paid_without_delivery')
+        if (paid_page['network_calls'] or
+            'class="panel review"' not in paid_page['form'] or
+            'class="panel completed"' in paid_page['form']):
+            raise RuntimeError('NOWPayments paid browser return claimed unverified delivery')
         records.append(dict(case='legacy_nowpayment_browser_only_read_only',
                             pass_=True,financial_mutations=0,external_requests=0))
         # This is a fresh positive payment journey: allocate the pays ID NOW,
@@ -2288,6 +2301,9 @@ def main():
             if want=='pending': verify_unchanged(work,env,before,name)
             if len(outcome['network_calls'])!=1 or not outcome['form']:
                 raise RuntimeError('NextPay mocked verification not exercised: '+name)
+            expected_panel='failed' if want=='canceled' else 'review'
+            if f'class="panel {expected_panel}"' not in outcome['form']:
+                raise RuntimeError('NextPay trusted verification disposition mispresented: '+name)
             records.append(dict(case='nextpay_'+name,pass_=True,
                                 external_requests=1,real_provider_requests=0))
         # Positive NextPay success: execute the real current GatewayReturn
@@ -2309,8 +2325,9 @@ def main():
         if not any(event['name']=='sendMessage' and len(event['args'])>=4
                    and event['args'][3]==1001 for event in positive['events']):
             raise RuntimeError('Real NextPay wallet success did not emit a Telegram send spy')
-        if 'موفقیت' not in positive['form']:
-            raise RuntimeError('Real NextPay success did not generate success form')
+        if ('موفقیت' not in positive['form'] or
+            'class="panel completed"' not in positive['form']):
+            raise RuntimeError('Real NextPay completed wallet credit was not explicitly presented')
         if positive['known_inherited_warnings']:
             raise RuntimeError('Gateway wallet success emitted PHP warning: '+
                                repr(positive['known_inherited_warnings']))
@@ -2437,6 +2454,8 @@ def main():
             raise RuntimeError('Unproven provider code 52 canceled an existing payment')
         if negative['network_calls']!=['zarinpal:verify']:
             raise RuntimeError('Zarinpal fake negative verification did not run')
+        if 'class="panel review"' not in negative['form']:
+            raise RuntimeError('Uncertain Zarinpal payment mislabeled as definitive failure')
         records.append(dict(case='zarinpal_unproven_52_retains_pending',pass_=True))
         seed_payment(work,env,'zarin-race','INCREASE_WALLET',0,0,'zarin-race-auth')
         race_wallet=int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())
@@ -2458,6 +2477,8 @@ def main():
                  'Status':'OK'},zarin_status=100))
         if sql(work,env,"SELECT state FROM pays WHERE hash_id='zarin-success'").strip()!='paid':
             raise RuntimeError('Zarinpal legitimate success not settled')
+        if 'class="panel completed"' not in positive['form']:
+            raise RuntimeError('Zarinpal verified wallet credit missing completed view')
         if int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())!=before_wallet+100:
             raise RuntimeError('Zarinpal wallet top-up did not credit atomically')
         records.append(dict(case='zarinpal_authenticated_positive_wallet_credit',pass_=True))
@@ -2482,8 +2503,9 @@ def main():
                 get={'zarinpal':'','hash_id':name,'Authority':name+'-auth',
                      'Status':browser},zarin_status=provider_status))
             verify_unchanged(work,env,before,'zarin_unconfirmed_'+name)
-            if disputed['network_calls']!=['zarinpal:verify'] or not disputed['form']:
-                raise RuntimeError('Zarinpal provider ambiguity was not surfaced')
+            if (disputed['network_calls']!=['zarinpal:verify'] or
+                'class="panel review"' not in disputed['form']):
+                raise RuntimeError('Zarinpal provider ambiguity lacked review presentation')
             records.append(dict(case='zarinpal_'+browser.lower()+'_provider_'+str(provider_status)+'_review',
                                 pass_=True))
         for scenario,overrides in [

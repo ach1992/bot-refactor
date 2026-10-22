@@ -3,70 +3,57 @@
  * Issue #51: single, read-only Persian/RTL browser view for supported payments.
  *
  * This boundary never reads or advances payment/provider/customer state.
- * Legacy callers pass a presentational boolean, NOT verified proof of a
- * merchant payment or a delivered service. Conflicting message text takes
- * precedence over any old true flag to avoid falsely displaying success.
+ * Legacy callers pass a boolean, NOT verified proof of merchant payment,
+ * fulfillment or Telegram delivery. The caller must explicitly supply an
+ * evidence-backed presentation disposition; page text is never classified.
  */
 if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     http_response_code(404);
     exit;
 }
 
-function achbotPaymentPageViewState(string $message, string $heading, $legacyState): string {
-    $visible = $heading . "\n" . $message;
-
-    // Warning terms are grounded in the currently supported result messages
-    // from all three hosted gateways, including paid-but-not-fulfilled cases.
-    // Never infer financial success from a positive phrase if a second clause
-    // describes a failed or uncertain fulfillment/credit.
-    if (preg_match(
-        '/⚠️|❌|خطا|نامشخص|نامعتبر|یافت نشد|پایان یافته|منقضی|متوقف|' .
-        'تأیید نشد|تایید نشد|تأیید نبود|تایید نبود|قابل تأیید نبود|' .
-        'قابل تایید نبود|انجام نشد|تکمیل نشد|تکمیل نشده|قطعی نیست|' .
-        'نیازمند بررسی|نیاز به بررسی|نیازمند پیگیری|مغایرت|مشکل|' .
-        'شناسایی نشد|در دسترس نیست|لغو شد|مجاز نیست|نمی‌شود|' .
-        'بازگشت اعتبار|(?<!\\p{L})(?:ولی|اما)(?!\\p{L})|' .
-        'پرداخت مجدد انجام ندهید/u',
-        $visible
-    ) === 1) {
-        return 'caution';
-    }
-
-    // Showing an invoice / getting a browser return / recording an early
-    // provider event never means that subscription delivery has completed.
-    if (preg_match(
-        '/در حال |منتظر |ثبت شده|دریافت شد|ثبت شد|صادر شد|' .
-        'پیگیری می‌شود|بررسی می‌شود|در انتظار |تا اعلام نتیجه/u',
-        $message
-    ) === 1) {
-        return 'pending';
-    }
-
-    // The old boolean has visual meaning only. Positive copy without an
-    // unambiguous completion statement stays neutral, even if true.
-    if ($legacyState === true &&
-        preg_match('/با موفقیت|تکمیل شد|تمدید شد|اضافه شد|افزوده شد/u', $message) === 1) {
-        return 'success';
-    }
-    return 'neutral';
+/**
+ * Only an explicit presentation disposition from the *trusted caller*
+ * can choose a payment badge. Neither the free-form message nor the
+ * inherited $state boolean prove provider verification, fulfillment or
+ * Telegram delivery. Unknown/missing statuses remain neutral.
+ *
+ * completed = verified persisted wallet/service operation (not a Telegram ACK)
+ * failed    = provider-authoritative terminal rejection
+ * pending   = guarded pending/queued settlement
+ * review    = ambiguous payment, or verified payment with unconfirmed delivery
+ * neutral   = no admissible status evidence
+ */
+function achbotPaymentPageViewState($trustedOutcome = null): string {
+    return is_string($trustedOutcome) &&
+        in_array($trustedOutcome,['completed','failed','pending','review'],true)
+        ? $trustedOutcome : 'neutral';
 }
 
-function achbotRenderPaymentPage($msg, $type = "", $state = false) {
+function achbotRenderPaymentPage($msg, $type = "", $state = false, $outcome = null) {
     global $botUsername;
     $heading = trim((string)$type) ?: 'وضعیت پرداخت';
     $message = (string)$msg;
-    $variant = achbotPaymentPageViewState($message, $heading, $state);
+    // $state is intentionally accepted for public showForm compatibility,
+    // but cannot authorize a positive customer-facing disposition.
+    $variant = achbotPaymentPageViewState($outcome);
     $status = [
-        'success' => 'نتیجه ثبت شد',
+        'completed' => 'عملیات ثبت و تکمیل شد',
+        'failed' => 'پرداخت انجام نشد',
         'pending' => 'در انتظار نتیجه',
-        'caution' => 'نیازمند پیگیری',
+        'review' => 'نیازمند بررسی',
         'neutral' => 'وضعیت سفارش',
     ][$variant];
     $title = htmlspecialchars($heading, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
     $content = htmlspecialchars($message, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
 
     $rawUser = isset($botUsername) ? ltrim(trim((string)$botUsername), '@') : '';
-    $botLink = preg_match('/^[A-Za-z0-9_]{5,32}$/D', $rawUser)
+    $unconfigured = [
+        'REPLACE_WITH_BOT_USERNAME','YOUR_BOT_USERNAME','BOT_USERNAME',
+        'YOUR_BOT_NAME','YOUR_BOT','CHANGE_ME',
+    ];
+    $botLink = preg_match('/^[A-Za-z0-9_]{5,32}$/D', $rawUser) === 1 &&
+        !in_array(strtoupper($rawUser),$unconfigured,true)
         ? 'https://t.me/' . rawurlencode($rawUser) : null;
 
     // Result pages can contain a payment/customer reference. Do not index,
@@ -101,8 +88,8 @@ function achbotRenderPaymentPage($msg, $type = "", $state = false) {
         .status{display:inline-flex;align-items:center;gap:9px;border:1px solid var(--border);
                 background:#282541;border-radius:99px;padding:5px 14px;font-size:.83rem;color:#f0edff}
         .dot{width:9px;height:9px;border-radius:50%;background:#b7adff;flex-shrink:0}
-        .success .dot{background:#51d1a2}.pending .dot{background:#8bb8ff}
-        .caution .dot{background:#f5bf6b}
+        .completed .dot{background:#51d1a2}.pending .dot{background:#8bb8ff}
+        .review .dot{background:#f5bf6b}.failed .dot{background:#ff8d9e}
         .message{margin:22px 0 24px;font-size:1.02rem;white-space:pre-wrap;overflow-wrap:anywhere;
                  unicode-bidi:plaintext;color:var(--fg)}
         .hint{margin:0 0 22px;padding:14px 16px;border-inline-start:3px solid #8980d3;

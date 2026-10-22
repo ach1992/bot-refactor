@@ -570,13 +570,13 @@ if (defined('ACHBOT_NP_RECONCILE_ONLY')) {
         }
         if ($state === 'paid') {
             showForm("پرداخت شما ثبت شده است؛ نتیجه و لینک سرویس در ربات ارسال می‌شود.",
-                     "پرداخت ثبت‌شده", true);
+                     "پرداخت ثبت‌شده", true, 'review');
         } elseif ($state === 'pending' || $state === 'send') {
             showForm("پرداخت در حال بررسی خودکار است؛ برای دریافت سرویس نیازی به زدن دکمه بازگشت نیست.",
-                     "در حال بررسی", true);
+                     "در حال بررسی", true, 'pending');
         } else {
             showForm("نتیجه پرداخت در این صفحه قابل تایید نیست؛ وضعیت سفارش را در ربات پیگیری کنید.",
-                     "پیگیری پرداخت");
+                     "پیگیری پرداخت", false, 'review');
         }
     }
 
@@ -607,7 +607,7 @@ if (defined('ACHBOT_NP_RECONCILE_ONLY')) {
         // this exact order. Old orders without stored Authority need manual
         // review: there is no safe auto-settlement identity binding.
         if ($Authority === '' || (string)($payParam['payid'] ?? '') !== $Authority) {
-            showForm("شناسه پرداخت زرین پال با سفارش مطابقت ندارد؛ نیازمند بررسی است.", "درگاه زرین پال");
+            showForm("شناسه پرداخت زرین پال با سفارش مطابقت ندارد؛ نیازمند بررسی است.", "درگاه زرین پال", false, 'review');
             return;
         }
         // New attempts use a provider-scoped unique external identity. Old
@@ -671,7 +671,7 @@ if (defined('ACHBOT_NP_RECONCILE_ONLY')) {
             ]);
         } catch (\Throwable $error) {
             showForm("وضعیت تراکنش از پذیرنده قابل تایید نبود؛ سفارش محفوظ است.",
-                     "پیگیری زرین پال");
+                     "پیگیری زرین پال", false, 'review');
             return;
         }
         // SOAP Status is an exact protocol code, not a numeric amount:
@@ -689,7 +689,7 @@ if (defined('ACHBOT_NP_RECONCILE_ONLY')) {
             // cancel an order without independently established, exact
             // provider-specific terminal-negative proof.
             showForm("نتیجه تراکنش نیازمند تطبیق با پذیرنده است؛ سفارش لغو نشد.",
-                     "پیگیری زرین پال");
+                     "پیگیری زرین پال", false, 'review');
         }
     }
 
@@ -823,14 +823,14 @@ if (defined('ACHBOT_NP_RECONCILE_ONLY')) {
             $changed = $stmt->affected_rows === 1;
             $stmt->close();
             if (!$changed) {
-                showForm("وضعیت پرداخت تغییر کرده است؛ با پشتیبانی تماس بگیرید.", "خطا!");
+                showForm("وضعیت پرداخت تغییر کرده است؛ با پشتیبانی تماس بگیرید.", "خطا!", false, 'review');
                 return;
             }
-            showForm("پرداخت شما انجام نشد!", "درگاه نکست پی");
+            showForm("پرداخت شما انجام نشد!", "درگاه نکست پی", false, 'failed');
         } else {
             // Preserve the current payment for a later trusted verification.
             // Do not debit, credit or settle an unknown payment outcome.
-            showForm("وضعیت پرداخت هنوز قطعی نیست یا استعلام در دسترس نیست؛ لطفاً بعداً دوباره بررسی کنید.", "درگاه نکست پی");
+            showForm("وضعیت پرداخت هنوز قطعی نیست یا استعلام در دسترس نیست؛ لطفاً بعداً دوباره بررسی کنید.", "درگاه نکست پی", false, 'review');
         }
     }
 
@@ -1072,7 +1072,7 @@ function achbotNpDeferUncertainRemoteEffect($gateType, $payDescription): bool {
     // Provider settlement cannot prove remote Marzban success. A timeout
     // after remote success is NOT evidence that a refund is safe.
     if (!in_array($gateType,['nowpayment','nextpay','zarinpal'],true)) return false;
-    showForm('پرداخت تایید شده است اما نتیجه عملیات سرویس هنوز قطعی نیست. وضعیت برای بررسی امن ثبت می‌شود و بازپرداخت خودکار انجام نمی‌شود.', $payDescription);
+    showForm('پرداخت تایید شده است اما نتیجه عملیات سرویس هنوز قطعی نیست. وضعیت برای بررسی امن ثبت می‌شود و بازپرداخت خودکار انجام نمی‌شود.', $payDescription, false, 'review');
     return true;
 }
 
@@ -1139,7 +1139,7 @@ function achbotPerformPaymentEffect($payRowId, $gateType, &$effectStage = null) 
         $stmt->close();
         if (!$expected || (int)$expected['local_amount_toman'] <= 0 ||
             (int)$expected['local_amount_toman'] !== $amount) {
-            showForm("مبلغ سفارش پس از صدور فاکتور تغییر کرده است؛ تحویل متوقف شد.", "پیگیری پرداخت");
+            showForm("مبلغ سفارش پس از صدور فاکتور تغییر کرده است؛ تحویل متوقف شد.", "پیگیری پرداخت", false, 'review');
             return false;
         }
     }
@@ -1171,10 +1171,10 @@ function achbotPerformPaymentEffect($payRowId, $gateType, &$effectStage = null) 
             // Provider verification has succeeded, but neither a local paid
             // claim nor an operator-review row is guaranteed to exist.
             showForm('پرداخت تأیید شده است اما ثبت نتیجهٔ سفارش تکمیل نشده است. لطفاً دوباره پرداخت نکنید، مشخصات پرداخت را نگه دارید و با پشتیبانی تماس بگیرید.',
-                     'پیگیری پرداخت');
+                     'پیگیری پرداخت', false, 'review');
             return 'ambiguous';
         }
-        showForm("این پرداخت در حال پردازش یا قبلاً نهایی شده است.", "پیگیری پرداخت");
+        showForm("این پرداخت در حال پردازش یا قبلاً نهایی شده است.", "پیگیری پرداخت", false, 'review');
         return false;
     }
 
@@ -1230,10 +1230,10 @@ function achbotPerformPaymentEffect($payRowId, $gateType, &$effectStage = null) 
                 "میخواست اشتراک بخره، ظرفیت پر بود.",
 				$rewardChannel
             )) {
-                showForm('⚠️ پرداخت ثبت شده ولی بازگشت اعتبار کیف پول تأیید نشد؛ پشتیبانی باید بررسی کند.', $payDescription);
+                showForm('⚠️ پرداخت ثبت شده ولی بازگشت اعتبار کیف پول تأیید نشد؛ پشتیبانی باید بررسی کند.', $payDescription, false, 'review');
                 return 'ambiguous';
             }
-            showForm('پرداخت شما انجام شد ولی ظرفیت این کانکشن پر شده است، مبلغ ' . number_format($amount) . " تومان به کیف پول شما اضافه شد.", $payDescription, false);
+            showForm('پرداخت شما انجام شد ولی ظرفیت این کانکشن پر شده است، مبلغ ' . number_format($amount) . " تومان به کیف پول شما اضافه شد.", $payDescription, false, 'review');
 
             return 'compensated';
         }
@@ -1256,10 +1256,10 @@ function achbotPerformPaymentEffect($payRowId, $gateType, &$effectStage = null) 
                     $admin,
                     "میخواست اشتراک بخره، ظرفیت پر بود."
                 )) {
-                    showForm('⚠️ پرداخت ثبت شده ولی بازگشت اعتبار کیف پول تأیید نشد؛ پشتیبانی باید بررسی کند.', $payDescription);
+                    showForm('⚠️ پرداخت ثبت شده ولی بازگشت اعتبار کیف پول تأیید نشد؛ پشتیبانی باید بررسی کند.', $payDescription, false, 'review');
                     return 'ambiguous';
                 }
-                showForm('پرداخت شما انجام شد ولی ظرفیت این سرور پر شده است، مبلغ ' . number_format($amount) . " تومان به کیف پول شما اضافه شد.", $payDescription, false);
+                showForm('پرداخت شما انجام شد ولی ظرفیت این سرور پر شده است، مبلغ ' . number_format($amount) . " تومان به کیف پول شما اضافه شد.", $payDescription, false, 'review');
 
                 return 'compensated';
             }
@@ -1313,10 +1313,10 @@ function achbotPerformPaymentEffect($payRowId, $gateType, &$effectStage = null) 
                     "میخواست اشتراک بخره، اتصال به سرور برقرار نبود",
 					$rewardChannel
                 )) {
-                    showForm('⚠️ پرداخت ثبت شده ولی بازگشت اعتبار کیف پول تأیید نشد؛ پشتیبانی باید بررسی کند.', $payDescription);
+                    showForm('⚠️ پرداخت ثبت شده ولی بازگشت اعتبار کیف پول تأیید نشد؛ پشتیبانی باید بررسی کند.', $payDescription, false, 'review');
                     return 'ambiguous';
                 }
-                showForm('⚠️ پرداخت شما با موفقیت انجام شد. ولی اتصال به سرور برقرار نیست لطفا مدیر رو در جریان بزار ... مبلغ ' . number_format($amount) . " به کیف پولت اضافه شد.", $payDescription);
+                showForm('⚠️ پرداخت شما با موفقیت انجام شد. ولی اتصال به سرور برقرار نیست لطفا مدیر رو در جریان بزار ... مبلغ ' . number_format($amount) . " به کیف پولت اضافه شد.", $payDescription, false, 'review');
 
                 return 'compensated';
             }
@@ -1334,10 +1334,10 @@ function achbotPerformPaymentEffect($payRowId, $gateType, &$effectStage = null) 
                     "میخواست اشتراک بخره، ولی اینباند پیدا نشد.",
 					$rewardChannel
                 )) {
-                    showForm('⚠️ پرداخت ثبت شده ولی بازگشت اعتبار کیف پول تأیید نشد؛ پشتیبانی باید بررسی کند.', $payDescription);
+                    showForm('⚠️ پرداخت ثبت شده ولی بازگشت اعتبار کیف پول تأیید نشد؛ پشتیبانی باید بررسی کند.', $payDescription, false, 'review');
                     return 'ambiguous';
                 }
-                showForm("پرداخت شما با موفقیت انجام شد. ولی ❌ | 🥺 سطر (inbound) با آیدی $inbound_id تو این سرور وجود نداره، مدیر رو در جریان بزار ... مبلغ " . number_format($amount) . " به کیف پول شما اضافه شد.", $payDescription);
+                showForm("پرداخت شما با موفقیت انجام شد. ولی ❌ | 🥺 سطر (inbound) با آیدی $inbound_id تو این سرور وجود نداره، مدیر رو در جریان بزار ... مبلغ " . number_format($amount) . " به کیف پول شما اضافه شد.", $payDescription, false, 'review');
 
                 return 'compensated';
             }
@@ -1368,10 +1368,10 @@ function achbotPerformPaymentEffect($payRowId, $gateType, &$effectStage = null) 
                     "میخواست اشتراک بخره، ولی خطا داد.",
 					$rewardChannel
                 )) {
-                    showForm('⚠️ پرداخت ثبت شده ولی بازگشت اعتبار کیف پول تأیید نشد؛ پشتیبانی باید بررسی کند.', $payDescription);
+                    showForm('⚠️ پرداخت ثبت شده ولی بازگشت اعتبار کیف پول تأیید نشد؛ پشتیبانی باید بررسی کند.', $payDescription, false, 'review');
                     return 'ambiguous';
                 }
-                showForm('⚠️ پرداخت شما با موفقیت انجام شد. ولی خطا داد لطفا به مدیر اطلاع دهید ... مبلغ ' . number_format($amount) . " تومان به کیف پولت اضافه شد.", $payDescription);
+                showForm('⚠️ پرداخت شما با موفقیت انجام شد. ولی خطا داد لطفا به مدیر اطلاع دهید ... مبلغ ' . number_format($amount) . " تومان به کیف پولت اضافه شد.", $payDescription, false, 'review');
 
                 return 'compensated';
             }
@@ -1427,7 +1427,10 @@ function achbotPerformPaymentEffect($payRowId, $gateType, &$effectStage = null) 
 
         // A failed local capacity write after remote creation is an
         // unresolved business effect, not a completed delivery notice.
-        showForm('✅ پرداخت شما با موفقیت انجام شد.', $payDescription, true);
+        // A verified provider payment and a local order do not prove that
+        // the Telegram subscription link was acknowledged by the buyer.
+        showForm('✅ پرداخت تأیید شد؛ وضعیت تحویل سرویس را در ربات بررسی کنید.',
+                 $payDescription, true, 'review');
 
         if (!empty($userinfo['refered_by'])) {
             giveReferralReward($connection, $user_id, (int)$userinfo['refered_by'], $admin, $botState);
@@ -1464,7 +1467,7 @@ function achbotPerformPaymentEffect($payRowId, $gateType, &$effectStage = null) 
 
         // Credit was already committed atomically with pays.state='paid'.
         // Repeating it here would double-credit on the same verified event.
-        showForm("✅ پرداخت شما با موفقیت انجام شد، مبلغ " . number_format($amount) . " تومان به کیف پول شما اضافه شد.", $payDescription, true);
+        showForm("✅ پرداخت شما با موفقیت انجام شد، مبلغ " . number_format($amount) . " تومان به کیف پول شما اضافه شد.", $payDescription, true, 'completed');
 
         sendMessage("✅ مبلغ " . number_format($amount) . " تومان به حساب شما اضافه شد.\n\n<blockquote>
 ⚠️ لطفا دقت کنید شما فقط کیف پول خودتان را شارژ کرده‌اید، برای خرید یا تمدید باید از دکمه های زیر استفاده کنید:
@@ -1530,10 +1533,10 @@ function achbotPerformPaymentEffect($payRowId, $gateType, &$effectStage = null) 
                 "میخواست اشتراکش رو تمدید کنه، ولی اتصال به سرور برقرار نبود.",
 				$rewardChannel
             )) {
-                showForm('⚠️ پرداخت ثبت شده ولی بازگشت اعتبار کیف پول تأیید نشد؛ پشتیبانی باید بررسی کند.', $payDescription);
+                showForm('⚠️ پرداخت ثبت شده ولی بازگشت اعتبار کیف پول تأیید نشد؛ پشتیبانی باید بررسی کند.', $payDescription, false, 'review');
                 return 'ambiguous';
             }
-            showForm('⚠️ پرداخت شما با موفقیت انجام شد ولی مشکل فنی در اتصال به سرور، لطفا به مدیریت اطلاع بدید، مبلغ ' . number_format($amount) . " تومان به کیف پول شما اضافه شد.", $payDescription);
+            showForm('⚠️ پرداخت شما با موفقیت انجام شد ولی مشکل فنی در اتصال به سرور، لطفا به مدیریت اطلاع بدید، مبلغ ' . number_format($amount) . " تومان به کیف پول شما اضافه شد.", $payDescription, false, 'review');
 
             return 'compensated';
         }
@@ -1557,7 +1560,7 @@ function achbotPerformPaymentEffect($payRowId, $gateType, &$effectStage = null) 
 
         createIncreaseOrder($connection, $user_id, $server_id, $inbound_id, $remark, $amount, $time, null, null, true);
 
-        showForm("✅ پرداخت شما با موفقیت انجام شد. اشتراک $remark با موفقیت تمدید شد.", $payDescription, true);
+        showForm("✅ پرداخت شما با موفقیت انجام شد. اشتراک $remark با موفقیت تمدید شد.", $payDescription, true, 'completed');
         sendMessage("✅ پرداخت شما با موفقیت انجام شد. اشتراک $remark با موفقیت تمدید شد.", json_encode(['inline_keyboard' => [[['text' => "↪️ بازگشت به منوی اصلی", 'callback_data' => "mainMenu"]]]]), null, $user_id);
 
         $keys = json_encode(['inline_keyboard' => [
@@ -1636,7 +1639,7 @@ function achbotPerformPaymentEffect($payRowId, $gateType, &$effectStage = null) 
             $time2 = time();
             createIncreaseOrder($connection, $user_id, $server_id, $inbound_id, $remark, $amount, $time2, null, $plusDays, true);
 
-            showForm("✅ پرداخت شما با موفقیت انجام شد. $plusDays روز به مدت زمان اشتراک شما اضافه شد.", $payDescription, true);
+            showForm("✅ پرداخت شما با موفقیت انجام شد. $plusDays روز به مدت زمان اشتراک شما اضافه شد.", $payDescription, true, 'completed');
             sendMessage("✅ پرداخت شما با موفقیت انجام شد. $plusDays روز به مدت زمان اشتراک شما اضافه شد.", json_encode(['inline_keyboard' => [[['text' => "↪️ بازگشت به منوی اصلی", 'callback_data' => "mainMenu"]]]]), null, $user_id);
 
             $keys = json_encode(['inline_keyboard' => [
@@ -1678,10 +1681,10 @@ function achbotPerformPaymentEffect($payRowId, $gateType, &$effectStage = null) 
                 "میخواست زمان اشتراکشو افزایش بده",
 				$rewardChannel
             )) {
-                showForm('⚠️ پرداخت ثبت شده ولی بازگشت اعتبار کیف پول تأیید نشد؛ پشتیبانی باید بررسی کند.', $payDescription);
+                showForm('⚠️ پرداخت ثبت شده ولی بازگشت اعتبار کیف پول تأیید نشد؛ پشتیبانی باید بررسی کند.', $payDescription, false, 'review');
                 return 'ambiguous';
             }
-            showForm("⚠️ پرداخت شما با موفقیت انجام شد ولی به دلیل مشکل فنی امکان افزایش حجم نیست. لطفا به مدیریت اطلاع بدید یا 5 دقیقه دیگر دوباره تست کنید مبلغ " . number_format($amount) . " تومان به کیف پول شما اضافه شد.", $payDescription, true);
+            showForm("⚠️ پرداخت شما با موفقیت انجام شد ولی به دلیل مشکل فنی امکان افزایش حجم نیست. لطفا به مدیریت اطلاع بدید یا 5 دقیقه دیگر دوباره تست کنید مبلغ " . number_format($amount) . " تومان به کیف پول شما اضافه شد.", $payDescription, false, 'review');
 
             return 'compensated';
         }
@@ -1732,7 +1735,7 @@ function achbotPerformPaymentEffect($payRowId, $gateType, &$effectStage = null) 
             $time2 = time();
             createIncreaseOrder($connection, $user_id, $server_id, $inbound_id, $remark, $amount, $time2, $plusVolume, null, true);
 
-            showForm("✅ پرداخت شما با موفقیت انجام شد. $plusVolume گیگ به حجم اشتراک شما اضافه شد.", $payDescription, true);
+            showForm("✅ پرداخت شما با موفقیت انجام شد. $plusVolume گیگ به حجم اشتراک شما اضافه شد.", $payDescription, true, 'completed');
             sendMessage("✅ پرداخت شما با موفقیت انجام شد. $plusVolume گیگ به حجم اشتراک شما اضافه شد.", json_encode(['inline_keyboard' => [[['text' => "↪️ بازگشت به منوی اصلی", 'callback_data' => "mainMenu"]]]]), null, $user_id);
 
             $keys = json_encode(['inline_keyboard' => [
@@ -1774,10 +1777,10 @@ function achbotPerformPaymentEffect($payRowId, $gateType, &$effectStage = null) 
                 "میخواست حجم اشتراکشو افزایش بده",
 				$rewardChannel
             )) {
-                showForm('⚠️ پرداخت ثبت شده ولی بازگشت اعتبار کیف پول تأیید نشد؛ پشتیبانی باید بررسی کند.', $payDescription);
+                showForm('⚠️ پرداخت ثبت شده ولی بازگشت اعتبار کیف پول تأیید نشد؛ پشتیبانی باید بررسی کند.', $payDescription, false, 'review');
                 return 'ambiguous';
             }
-            showForm("⚠️ پرداخت شما با موفقیت انجام شد ولی مشکل فنی در ارتباط با سرور، لطفا سلامت سرور را بررسی کنید مبلغ " . number_format($amount) . " تومان به کیف پول شما اضافه شد.", $payDescription, true);
+            showForm("⚠️ پرداخت شما با موفقیت انجام شد ولی مشکل فنی در ارتباط با سرور، لطفا سلامت سرور را بررسی کنید مبلغ " . number_format($amount) . " تومان به کیف پول شما اضافه شد.", $payDescription, false, 'review');
 
             return 'compensated';
         }
@@ -1832,7 +1835,7 @@ function achbotPerformPaymentEffect($payRowId, $gateType, &$effectStage = null) 
 				true
 			);
 
-			showForm("✅ پرداخت شما با موفقیت انجام شد. اشتراک $remark با موفقیت تمدید شد.", $payDescription, true);
+			showForm("✅ پرداخت شما با موفقیت انجام شد. اشتراک $remark با موفقیت تمدید شد.", $payDescription, true, 'completed');
 			sendMessage("✅ پرداخت شما با موفقیت انجام شد. اشتراک $remark با موفقیت تمدید شد.",
 				json_encode(['inline_keyboard' => [[['text' => "صفحه اصلی 🏘", 'callback_data' => "mainMenu"]]]]),
 				null,
@@ -1862,10 +1865,10 @@ function achbotPerformPaymentEffect($payRowId, $gateType, &$effectStage = null) 
 
 
 			if (!refundToWalletAndNotify($connection, $user_id, $amount, $gateType, $reason, $admin, $rewardChannel)) {
-			    showForm('⚠️ پرداخت ثبت شده ولی بازگشت اعتبار کیف پول تأیید نشد؛ پشتیبانی باید بررسی کند.', $payDescription);
+			    showForm('⚠️ پرداخت ثبت شده ولی بازگشت اعتبار کیف پول تأیید نشد؛ پشتیبانی باید بررسی کند.', $payDescription, false, 'review');
 			    return 'ambiguous';
 			}
-			showForm("پرداخت شما با موفقیت انجام شد ولی مشکل فنی در تمدید.\nمبلغ " . number_format($amount) . " تومان به کیف پول شما اضافه شد.", $payDescription, true);
+			showForm("پرداخت شما با موفقیت انجام شد ولی مشکل فنی در تمدید.\nمبلغ " . number_format($amount) . " تومان به کیف پول شما اضافه شد.", $payDescription, false, 'review');
 
 
 			return 'compensated';
@@ -1902,7 +1905,7 @@ function doAction($payRowId, $gateType) {
         $message=$afterClaim
             ? 'پرداخت تأیید شده است اما نتیجهٔ تکمیل سفارش هنوز قطعی نیست. لطفاً دوباره پرداخت نکنید، مشخصات پرداخت را نگه دارید و با پشتیبانی تماس بگیرید.'
             : 'پرداخت تأیید شده است اما ثبت نتیجهٔ سفارش هنوز قطعی نیست. لطفاً دوباره پرداخت نکنید، مشخصات پرداخت را نگه دارید و با پشتیبانی تماس بگیرید.';
-        showForm($message,'پیگیری پرداخت');
+        showForm($message,'پیگیری پرداخت',false,'review');
         return 'ambiguous';
     }
     if (in_array($gateType,['nextpay','zarinpal'],true) &&
@@ -1917,7 +1920,9 @@ function doAction($payRowId, $gateType) {
  * Shared browser feedback surface for every supported redirect gateway.
  * Rendering a return page is never itself merchant settlement evidence.
  */
-function showForm($msg, $type = "", $state = false) {
+function showForm($msg, $type = "", $state = false, $presentation = null) {
     require_once __DIR__ . '/PaymentPage.php';
-    achbotRenderPaymentPage($msg, $type, $state);
+    // $presentation is derived from the caller's already-trusted outcome.
+    // The legacy $state and browser-facing message are not proof of delivery.
+    achbotRenderPaymentPage($msg, $type, $state, $presentation);
 }

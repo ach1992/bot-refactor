@@ -34,7 +34,8 @@ def owned_server():
             "require " + repr(str(PAGE)).replace('\\\\', '/') + ";\n"
             "achbotRenderPaymentPage((string)($_GET['msg']??''),"
             "(string)($_GET['heading']??''),"
-            "($_GET['state']??'0')==='1');\n",
+            "($_GET['state']??'0')==='1',"
+            "(string)($_GET['outcome']??''));\n",
             encoding="utf-8",
         )
         with socket.socket() as sock:
@@ -71,120 +72,179 @@ def owned_server():
 
 
 def exercise():
-    names = []
+    cases = []
     with owned_server() as url:
         def page(msg: str, heading: str = "", state: bool = False,
-                 bot: str = "AChBotTest"):
+                 bot: str = "AChBotTest", outcome: str = ""):
             query = urlencode({"msg": msg, "heading": heading,
-                               "state": "1" if state else "0", "bot": bot})
+                               "state": "1" if state else "0",
+                               "bot": bot, "outcome": outcome})
             with urlopen(url + "?" + query, timeout=4) as response:
-                content = response.read().decode("utf-8")
-                return response, content
+                return response, response.read().decode("utf-8")
 
-        response, result = page("✅ سفارش با موفقیت تکمیل شد.", "درگاه نمونه", True)
+        response, content = page("✅ سفارش با موفقیت تکمیل شد.",
+                                 "درگاه نمونه", True, outcome="completed")
         assert response.status == 200
-        assert 'lang="fa" dir="rtl"' in result
-        assert 'class="panel success"' in result
-        assert "نتیجه ثبت شد" in result
-        assert "تکمیل" in result
-        names.append("verified_flag_positive_copy_clear_result_without_unearned_delivery")
+        assert 'lang="fa" dir="rtl"' in content
+        assert 'class="panel completed"' in content
+        assert "عملیات ثبت و تکمیل شد" in content
+        cases.append("caller_confirmed_fulfillment_has_positive_presentation")
 
-        response, result = page(
-            "⚠️ پرداخت تأیید شده است اما تحویل سرویس هنوز قطعی نیست.",
-            "درگاه نمونه", True)
-        assert 'class="panel caution"' in result
-        assert "نیازمند پیگیری" in result
-        assert "نتیجه ثبت شد" not in result
-        names.append("warning_precedence_over_success_flag_for_partial_delivery")
+        _, content = page("✅ پرداخت شما با موفقیت انجام شد.",
+                          "پرداخت جدید", True)
+        assert 'class="panel neutral"' in content
+        assert "عملیات ثبت و تکمیل شد" not in content
+        cases.append("payment_positive_legacy_true_unconfirmed_delivery_never_green")
 
-        _, result = page("پرداخت شما انجام نشد!", "درگاه نکست پی")
-        assert 'class="panel caution"' in result
-        names.append("definitive_failed_payment_not_neutral")
+        _, content = page("✅ پرداخت شما با موفقیت انجام شد.",
+                          "درگاه نمونه", True, outcome="review")
+        assert 'class="panel review"' in content
+        assert "نیازمند بررسی" in content
+        assert "عملیات ثبت و تکمیل شد" not in content
+        cases.append("verified_provider_payment_unconfirmed_delivery_needs_review")
 
-        _, result = page("کد پرداخت یافت نشد.", "خطا!")
-        assert 'class="panel caution"' in result
-        names.append("invalid_payment_and_error_heading_not_positive")
+        _, content = page("پرداخت شما انجام نشد!", "درگاه نکست پی", outcome="failed")
+        assert 'class="panel failed"' in content
+        assert 'پرداخت انجام نشد' in content
+        assert "نیازمند بررسی" not in content
+        cases.append("nextpay_authoritative_rejected_is_distinct_definitive_failure")
 
-        _, result = page("پرداخت در حال بررسی خودکار است؛ نیازی به بازگشت نیست.",
-                         "وضعیت پرداخت")
-        assert 'class="panel pending"' in result
-        assert "در انتظار نتیجه" in result
-        names.append("processing_reconciler_state_visible_without_fake_completion")
+        _, content = page(
+            "وضعیت پرداخت هنوز قطعی نیست یا استعلام در دسترس نیست؛ لطفاً بعداً دوباره بررسی کنید.",
+            "درگاه نکست پی", outcome="review")
+        assert 'class="panel review"' in content
+        assert "پرداخت انجام نشد" not in content
+        cases.append("nextpay_uncertain_verification_review_not_failure")
 
-        _, result = page("درخواست شما ثبت شده است؛ نتیجه در ربات اعلام می‌شود.")
-        assert 'class="panel pending"' in result
-        names.append("registered_payment_evidence_not_fulfillment")
+        _, content = page(
+            "نتیجه تراکنش نیازمند تطبیق با پذیرنده است؛ سفارش لغو نشد.",
+            "پیگیری زرین پال", outcome="review")
+        assert 'class="panel review"' in content
+        assert "پرداخت انجام نشد" not in content
+        cases.append("zarinpal_uncertain_verification_review_not_failure")
 
-        _, result = page("پرداخت شما با موفقیت انجام شد ولی تمدید سرویس با مشکل مواجه شد.",
-                         "درگاه", True)
-        assert 'class="panel caution"' in result
-        names.append("failed_extension_after_payment_no_false_green_status")
+        _, content = page("وضعیت تراکنش از پذیرنده قابل تایید نبود؛ سفارش محفوظ است.",
+                          "پیگیری زرین پال", outcome="review")
+        assert 'class="panel review"' in content
+        cases.append("zarinpal_transport_uncertainty_no_false_decline")
 
-        _, result = page("اطلاعات اولیه نمایش داده شد.", "نتیجه پرداخت", True)
-        assert 'class="panel neutral"' in result
-        names.append("legacy_true_without_completion_evidence_cannot_assert_finality")
+        _, content = page(
+            "پرداخت در حال بررسی خودکار است؛ برای دریافت سرویس نیازی به زدن دکمه بازگشت نیست.",
+            "در حال بررسی", True, outcome="pending")
+        assert 'class="panel pending"' in content
+        assert "در انتظار نتیجه" in content
+        cases.append("nowpayments_pending_return_requires_future_confirmation")
 
-        _, result = page("تأیید پرداخت قطعی نیست؛ پرداخت مجدد انجام ندهید.",
-                         "پیگیری پرداخت")
-        assert 'class="panel caution"' in result
-        names.append("uncertain_or_multiple_charge_no_repay_call_to_action")
+        _, content = page(
+            "پرداخت شما ثبت شده است؛ نتیجه و لینک سرویس در ربات ارسال می‌شود.",
+            "پرداخت ثبت‌شده", True, outcome="review")
+        assert 'class="panel review"' in content
+        cases.append("nowpayments_paid_browser_without_delivery_proof_needs_review")
 
-        _, result = page("پرداخت تأیید شده است اما عملیات کیف پول هنوز تکمیل نشده.",
-                         "افزایش کیف پول", True)
-        assert 'class="panel caution"' in result
-        names.append("wallet_effect_uncertain_not_paid_and_delivered")
+        _, content = page(
+            "✅ پرداخت شما با موفقیت انجام شد، مبلغ ۱۰۰۰ تومان به کیف پول شما اضافه شد.",
+            "شارژ کیف پول", True, outcome="completed")
+        assert 'class="panel completed"' in content
+        assert "عملیات ثبت و تکمیل شد" in content
+        cases.append("verified_committed_wallet_credit_can_present_completion")
+
+        _, content = page("✅ پرداخت شما با موفقیت انجام شد. اشتراک نمونه با موفقیت تمدید شد.",
+                          "تمدید اشتراک", True, outcome="completed")
+        assert 'class="panel completed"' in content
+        cases.append("verified_service_renewal_can_present_completion")
+
+        _, content = page(
+            "پرداخت شما با موفقیت انجام شد ولی تمدید سرویس با مشکل مواجه شد.",
+            "درگاه نمونه", True, outcome="review")
+        assert 'class="panel review"' in content
+        assert "عملیات ثبت و تکمیل شد" not in content
+        cases.append("paid_but_unresolved_service_effect_stays_review")
+
+        _, content = page("کد پرداخت یافت نشد.", "خطا!")
+        assert 'class="panel neutral"' in content
+        assert "پرداخت انجام نشد" not in content
+        cases.append("unknown_payment_code_is_not_authoritative_terminal_failure")
+
+        _, content = page("درخواست شما ثبت شده است؛ نتیجه در ربات اعلام می‌شود.")
+        assert 'class="panel neutral"' in content
+        cases.append("untyped_invoice_information_not_inferred_as_paid_or_pending")
+
+        _, content = page("تأیید پرداخت قطعی نیست؛ پرداخت مجدد انجام ندهید.",
+                          "پیگیری پرداخت", outcome="review")
+        assert 'class="panel review"' in content
+        assert "پرداخت مجدد" in content
+        cases.append("uncertain_reconciliation_retains_no_repayment_guidance")
+
+        _, content = page("پرداخت تأیید شده است اما عملیات کیف پول هنوز تکمیل نشده.",
+                          "افزایش کیف پول", True, outcome="review")
+        assert 'class="panel review"' in content
+        cases.append("wallet_effect_uncertain_never_presents_completion")
+
+        _, content = page("✅ سفارش با موفقیت تکمیل شد.",
+                          "نمونه", True, outcome="unexpected_success")
+        assert 'class="panel neutral"' in content
+        cases.append("unknown_presentation_enum_fails_closed")
 
         attack = '<img src=x onerror="alert(1)"> & "quote" <script>alert(1)</script>'
-        _, result = page(attack, '<svg/onload=alert(1)>')
-        assert html.escape(attack, quote=True) in result
-        assert "&lt;svg/onload=alert(1)&gt;" in result
-        assert "<script>" not in result and "<img src=x" not in result
-        names.append("injected_heading_and_message_escaped")
+        _, content = page(attack, '<svg/onload=alert(1)>')
+        assert html.escape(attack, quote=True) in content
+        assert "&lt;svg/onload=alert(1)&gt;" in content
+        assert "<script>" not in content and "<img src=x" not in content
+        cases.append("injected_heading_and_message_escaped")
 
-        _, result = page("رسید ارسال شد. Order: AB-123/XY (مبلغ 100,000 تومان).")
-        assert "AB-123/XY" in result and 'dir="rtl"' in result
-        names.append("persian_mixed_latin_and_numeric_reference_preserved")
+        _, content = page("رسید ارسال شد. Order: AB-123/XY (مبلغ 100,000 تومان).")
+        assert "AB-123/XY" in content and 'dir="rtl"' in content
+        cases.append("persian_mixed_latin_and_numeric_reference_preserved")
 
-        _, result = page("پشتیبانی را در ربات دنبال کنید.", bot="@AChBot_Test")
-        assert 'href="https://t.me/AChBot_Test"' in result
-        assert 'rel="noopener noreferrer"' in result
-        names.append("valid_username_generates_only_verified_telegram_bot_link")
+        _, content = page("پشتیبانی را در ربات دنبال کنید.", bot="@AChBot_Test")
+        assert 'href="https://t.me/AChBot_Test"' in content
+        assert 'rel="noopener noreferrer"' in content
+        cases.append("valid_username_generates_only_verified_telegram_bot_link")
+
+        for placeholder in ("REPLACE_WITH_BOT_USERNAME",
+                            "@REPLACE_WITH_BOT_USERNAME",
+                            "your_bot_username", "BOT_USERNAME",
+                            "YOUR_BOT_NAME", "CHANGE_ME"):
+            _, content = page("پیگیری سفارش", bot=placeholder)
+            assert 'href=' not in content, placeholder
+            assert "از داخل ربات" in content, placeholder
+        cases.append("documented_and_known_unconfigured_bot_placeholders_blocked")
 
         for invalid in ("x", "ACh!bot", "ab/evil", "aaa?redirect=x", ""):
-            _, result = page("منتظر نتیجه بمانید.", bot=invalid)
-            assert 'href=' not in result, invalid
-            assert "از داخل ربات" in result
-        names.append("invalid_or_missing_bot_username_has_safe_no_dead_link")
+            _, content = page("منتظر نتیجه بمانید.", bot=invalid)
+            assert 'href=' not in content, invalid
+            assert "از داخل ربات" in content
+        cases.append("invalid_or_missing_bot_username_has_safe_no_dead_link")
 
-        _, result = page("در حال پردازش؛ لطفاً منتظر بمانید.")
-        assert result.count("<a ") == 1
-        assert 'href="https://t.me/AChBotTest"' in result
-        assert "<form" not in result and "<script" not in result
-        assert 'src="http' not in result
-        assert "پرداخت مجدد" not in result
-        names.append("page_get_has_no_checkout_or_side_effect_action")
+        _, content = page("در حال پردازش؛ لطفاً منتظر بمانید.")
+        assert content.count("<a ") == 1
+        assert 'href="https://t.me/AChBotTest"' in content
+        assert "<form" not in content and "<script" not in content
+        assert 'src="http' not in content
+        cases.append("page_get_has_no_checkout_or_side_effect_action")
 
-        _, result = page("آزمون " + ("طولانی test123 (۴۵۶) " * 200))
-        assert result.count("test123") == 200
-        assert "overflow-wrap:anywhere" in result
-        names.append("long_mixed_direction_messages_wrap_and_preserve_content")
+        _, content = page("آزمون " + ("طولانی test123 (۴۵۶) " * 200))
+        assert content.count("test123") == 200
+        assert "overflow-wrap:anywhere" in content
+        cases.append("long_mixed_direction_messages_wrap_and_preserve_content")
 
-        response, result = page("مورد نیاز به پیگیری.")
-        header = response.headers
-        assert "no-store" in header.get("Cache-Control", "")
-        assert header.get("Referrer-Policy") == "no-referrer"
-        assert header.get("X-Content-Type-Options") == "nosniff"
-        assert "frame-ancestors 'none'" in header.get("Content-Security-Policy", "")
-        assert '<meta name="robots" content="noindex,nofollow,noarchive">' in result
-        names.append("real_http_private_page_noindex_no_referrer_no_cache_no_frame")
+        response, content = page("مورد نیاز به پیگیری.", outcome="review")
+        headers = response.headers
+        assert "no-store" in headers.get("Cache-Control", "")
+        assert headers.get("Referrer-Policy") == "no-referrer"
+        assert headers.get("X-Content-Type-Options") == "nosniff"
+        assert "frame-ancestors 'none'" in headers.get("Content-Security-Policy", "")
+        assert '<meta name="robots" content="noindex,nofollow,noarchive">' in content
+        cases.append("real_http_private_page_noindex_no_referrer_no_cache_no_frame")
 
-        assert "@media (max-width:420px)" in result
-        assert "@media (forced-colors:active)" in result
-        assert "focus-visible" in result
-        names.append("responsive_keyboard_and_forced_contrast_support")
+        assert "@media (max-width:420px)" in content
+        assert "@media (forced-colors:active)" in content
+        assert "focus-visible" in content
+        assert ".failed .dot" in content
+        cases.append("responsive_accessible_states_keyboard_and_forced_contrast")
 
     return {
-        "complete": True, "cases": len(names), "scenarios": names,
+        "complete": True, "cases": len(cases), "scenarios": cases,
         "source_real_php_http": True, "loopback_only": True,
         "database_or_financial_calls": 0, "external_provider_calls": 0,
         "production_mutations": 0,
