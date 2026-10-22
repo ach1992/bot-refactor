@@ -72,6 +72,24 @@ to a real payment processor is authorized by this matrix.
 | O03 Durable per-account effect recovery | Accepted schema and operator reconciliation contract for uncertain account N | Per-account external effect identity, durable checkpoint and safe recovery | Correlated operator decision, no false service success | Process death / unknown external response never causes blind provisioning | NOT COMPLETE — schema/architecture/owner decision required under #26 |
 | O04 Release and operator acceptance | Independently reviewed exact candidate and separate Owner grants | No tenant migration or money changes before authorization | Source merge != installed UX acceptance | Verify installed rollback/recovery before closing Issues | GATED — independent review, Owner Merge/release/deploy grant, real operator acceptance |
 
+## PR #67 hosted-capacity safety acceptance (BLOCKER-PR67-1)
+
+For hosted NextPay, Zarinpal and NOWPayments BUY_SUB, the first paid 007
+effect must atomically own ALL purchased server capacity **before remote
+CREATE**. Assert insufficient 2-request/1-slot produces zero CREATE and
+no local orders/refund claim; exact 2/2 creates only twice with exactly
+two held units; separate buyers, hosted/manual shared-InnoDB contention
+cannot overbook; manual BUY_SUB's payment-scoped ordinal-0 manual_hold
+is committed in its original reservation/claim transaction, then consumed
+by first CREATE with no second decrement; missing hold fails before POST.
+Lost second CREATE keeps all units and operation identities for operator
+review; failed first hosted effect INSERT or manual hold INSERT rolls capacity
+back; callback replay and local order-link failure never create or debit again. Missing or
+earlier 007 reserved_count schema fails closed. The unchanged old 007
+schema must not be silently upgraded or treated as having a hold. Current
+tests are disposable source-real PHP/MariaDB with synthetic providers,
+NOT operator-installed migration/merchant acceptance.
+
 ## Acceptance and interpretation
 
 The PHP tests run actual current source with **owned, disposable** MariaDB,
