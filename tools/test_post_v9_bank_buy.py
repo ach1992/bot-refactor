@@ -47,7 +47,8 @@ function createServerAccount(...$args) {
     $n=($GLOBALS['posts']??0)+1;$GLOBALS['posts']=$n;
     $name=(string)$args[4];$operation=(string)$args[14];
     $GLOBALS['events'][]=['event'=>'POST','line'=>$n,
-        'username'=>$name,'state'=>fixtureState()];
+        'username'=>$name,'state'=>fixtureState(),
+        'days'=>(int)$args[6],'volume_gb'=>(int)$args[5]];
     $GLOBALS['remote']=['username'=>$name,'note'=>'achbot:v1:'.$operation,
         'expire'=>(int)$args[15],'data_limit'=>(int)$args[5]*1073741824];
     if ($mode==='lost' || ($mode==='partial' && $n===2))
@@ -68,6 +69,24 @@ function getMarzbanUser($sid,$name,$token=null,$strict=false) {
     return (object)$remote;
 }
 function buildLinksAndSendQr(...$args) {
+    // Inject a REAL independent MariaDB plan edit only after the remote
+    // CREATE/strict GET has been durably journaled, before local finality.
+    // This hook exists only in this disposable synthetic PHP fixture.
+    $mode=(string)($GLOBALS['spec']['mode']??'');
+    if (in_array($mode,['plan_dimensions_drift','plan_target_drift'],true) &&
+        !($GLOBALS['fixture_plan_edited']??false)) {
+        global $socket,$dbName;
+        $second=new mysqli('localhost','root','',$dbName,0,$socket);
+        $sql=$mode==='plan_dimensions_drift'
+            ? 'UPDATE server_plans SET days=15,volume=1 WHERE id=7'
+            : 'UPDATE server_plans SET inbound_id=1 WHERE id=7';
+        if (!$second->query($sql) || $second->affected_rows!==1)
+            throw new RuntimeException('fixture_external_plan_edit_failed');
+        $second->close();
+        $GLOBALS['fixture_plan_edited']=true;
+        $GLOBALS['events'][]=['event'=>'POST_VERIFIED_PLAN_CHANGED',
+            'change'=>$mode];
+    }
     if (end($args)!==false) throw new RuntimeException('premature_qr_delivery');
     $GLOBALS['events'][]=['event'=>'RENDER','state'=>fixtureState()];
     return ['fixture-token','["vless://fixture.invalid"]','fixture-uuid',
@@ -212,6 +231,59 @@ def check():
         assert total(work,env,'orders_list',multi)==2 and amount(work,env,multi)==101
         assert len([e for e in success['events'] if e['event']=='DELIVER'])==2
         cases.append('multi_line_atomic_orders_and_integer_amount_allocation')
+
+        # After an exact provider CREATE + readback and its durable 007
+        # verified effect, an unrelated administrator can edit the plan.
+        # That must not invalidate the already-owned paid entitlement and
+        # leave an otherwise complete service stranded in processing.
+        for name,is_custom in (('bankplanlate_standard',False),
+                               ('bankplanlate_custom',True)):
+            frozen=seed(work,env,name)
+            if is_custom:
+                query(work,env,f'UPDATE pays SET day=37,volume=7 WHERE id={frozen}')
+            capacity_before=int(query(work,env,'SELECT ucount FROM server_info WHERE id=2'))
+            try:
+                plan_before=query(work,env,'SELECT days,volume FROM server_plans WHERE id=7')
+                observed=run(work,env,driver,pay=frozen,mode='plan_dimensions_drift')
+                changed=query(work,env,'SELECT days,volume FROM server_plans WHERE id=7')
+            finally:
+                query(work,env,'UPDATE server_plans SET days=30,volume=2 WHERE id=7')
+            assert plan_before=='30\t2' and changed=='15\t1'
+            assert any(x['event']=='POST_VERIFIED_PLAN_CHANGED'
+                       for x in observed['events']),observed
+            expected=(37,7) if is_custom else (30,2)
+            posted=[x for x in observed['events'] if x['event']=='POST']
+            assert len(posted)==1 and (posted[0]['days'],posted[0]['volume_gb'])==expected,observed
+            assert sum(x['event']=='GET' for x in observed['events'])==1,observed
+            assert state(work,env,frozen)=='auto_cart_approved',observed
+            assert effects(work,env,frozen)=='local_recorded'
+            assert total(work,env,'orders_list',frozen)==1
+            assert amount(work,env,frozen)==101
+            assert int(query(work,env,'SELECT ucount FROM server_info WHERE id=2'))==capacity_before-1
+            assert len([x for x in observed['events'] if x['event']=='DELIVER'
+                        and x['state']=='auto_cart_approved'])==1,observed
+            assert not any(x['event']=='POST' for x in run(work,env,driver,pay=frozen)['events'])
+            assert int(query(work,env,'SELECT ucount FROM server_info WHERE id=2'))==capacity_before-1
+            cases.append('postverified_plan_dimensions_edit_keeps_'+
+                         ('custom_quote' if is_custom else 'standard_quote')+'_and_order')
+
+        # Plan identity and physical inbound are NOT mutable entitlements:
+        # a target edit after a verified effect must still fail closed.
+        changed_target=seed(work,env,'bankplanlate_target')
+        before_target_capacity=int(query(work,env,'SELECT ucount FROM server_info WHERE id=2'))
+        try:
+            target_events=run(work,env,driver,pay=changed_target,mode='plan_target_drift')
+            assert query(work,env,'SELECT inbound_id FROM server_plans WHERE id=7')=='1'
+        finally:
+            query(work,env,'UPDATE server_plans SET inbound_id=0 WHERE id=7')
+        assert state(work,env,changed_target)=='processing',target_events
+        assert effects(work,env,changed_target)=='verified'
+        assert total(work,env,'orders_list',changed_target)==0
+        assert int(query(work,env,'SELECT ucount FROM server_info WHERE id=2'))==before_target_capacity-1
+        assert not any(x['event']=='DELIVER' for x in target_events['events']),target_events
+        assert not any(x['event']=='POST' for x in run(work,env,driver,pay=changed_target)['events'])
+        assert int(query(work,env,'SELECT ucount FROM server_info WHERE id=2'))==before_target_capacity-1
+        cases.append('postverified_plan_physical_target_edit_stays_under_review')
 
         partial=seed(work,env,'bankbuypartial',count=2)
         mixed=run(work,env,driver,pay=partial,mode='partial')

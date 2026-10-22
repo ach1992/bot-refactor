@@ -43,7 +43,10 @@ function achbotAutoBankFinishBuySub(mysqli $db, array $pay, array $lines): bool 
         if ($attempt && $attempt['provider']!=='bank_transfer')
             throw new RuntimeException('bank_buy_method_changed');
 
-        $stmt=$db->prepare('SELECT p.server_id,p.inbound_id,p.volume,p.days,c.type AS panel_type
+        // Mutable plan identity still requires a fresh physical-target guard.
+        // The *entitlement* itself is pinned by the paid, verified per-line
+        // CREATE journal, not by a template administrators may edit after GET.
+        $stmt=$db->prepare('SELECT p.server_id,p.inbound_id,c.type AS panel_type
             FROM server_plans p JOIN server_config c ON c.id=p.server_id
             WHERE p.id=? LIMIT 1 FOR UPDATE');
         if (!$stmt) throw new RuntimeException('bank_buy_plan_prepare');
@@ -52,11 +55,18 @@ function achbotAutoBankFinishBuySub(mysqli $db, array $pay, array $lines): bool 
         $plan=$stmt->get_result()->fetch_assoc(); $stmt->close();
         $volume=(int)$locked['volume']; $days=(int)$locked['day'];
         if ($volume===0 && $days===0) {
-            $volume=(int)($plan['volume']??0); $days=(int)($plan['days']??0);
+            // This is the original standard quote used in this invocation to
+            // dispatch CREATE. The per-payment 007 journal below proves its
+            // exact requested bytes and remote-verified expiry. A late edit of
+            // server_plans.days/volume is NOT a reason to strand a completed
+            // remote effect or fabricate a different entitlement.
+            $volume=(int)($lines[0]['volume']??0);
+            $days=(int)($lines[0]['days']??0);
         }
         if (!$plan || (int)$plan['server_id']!==$server ||
             (int)$plan['inbound_id']!==0 || $plan['panel_type']!=='marzban' ||
-            $volume<=0 || $days<=0 || $volume>intdiv(PHP_INT_MAX,1073741824))
+            $volume<=0 || $days<=0 || $days>36500 ||
+            $volume>intdiv(PHP_INT_MAX,1073741824))
             throw new RuntimeException('bank_buy_plan_changed');
 
         $stmt=$db->prepare("SELECT id,ordinal,state,order_id,plan_id,target_server_id,

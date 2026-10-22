@@ -122,7 +122,14 @@ order/effect/capacity/payment finality, no pre-COMMIT Telegram, no blind
 retries or speculative wallet refunds. Test cases include competing workers,
 partial multi-account, lost POST, 409, invalid readback, local SQL failure,
 nonbank receipts, the admin-only payment/user/amount/count review context
-for unknown effects or SQL failure, and post-COMMIT Telegram failure or
+for unknown effects or SQL failure, a separate MariaDB plan-template edit
+**after verified CREATE but before local finalization** (standard and custom
+quoted days/GB remain exactly delivered and the order still commits), and a
+physical-target edit in the same interval (still fails closed with no order
+or second CREATE). The first completed 007 line pins the original service
+limits; the finalizer may not reauthorize them from mutable plan days/volume.
+The original payment plan/server/provider/inbound identity remains enforced
+under lock. Tests also cover post-COMMIT Telegram failure or
 uncertain delivery with operator notice but no account recreation. The earlier bank-Cron-only candidate used 95 source members; the current
 recovery-enhanced package uses 97, while historical V9 92-member source stays frozen.
 Independent review and separately approved installed acceptance remain GATED.

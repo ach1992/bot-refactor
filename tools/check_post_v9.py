@@ -1213,8 +1213,11 @@ def main():
             "postcommit_telegram_unconfirmed_alerts_operator_without_recreate",
             "nonbank_attempt_never_auto_provisions",
             "two_simultaneous_bank_workers_one_remote_create",
+            "postverified_plan_dimensions_edit_keeps_standard_quote_and_order",
+            "postverified_plan_dimensions_edit_keeps_custom_quote_and_order",
+            "postverified_plan_physical_target_edit_stays_under_review",
         }
-        if not (bank_buy.get("complete") and bank_buy.get("cases")>=14
+        if not (bank_buy.get("complete") and bank_buy.get("cases")>=17
                 and required_bank.issubset(bank_buy.get("scenarios",[]))
                 and bank_buy.get("source_real_php")
                 and bank_buy.get("owned_mariadb_only")
