@@ -2965,9 +2965,9 @@ function getMarzbanUserInfo($server_id, $remark) {
     require_once __DIR__ . '/src/Panel/Accounts.php';
     return \AchBot\Panel\Accounts\getMarzbanUserInfo($server_id, $remark);
 }
-function getMarzbanUser($server_id, $remark, $token = null) {
+function getMarzbanUser($server_id, $remark, $token = null, bool $strict = false) {
     require_once __DIR__ . '/src/Panel/Accounts.php';
-    return \AchBot\Panel\Accounts\getMarzbanUser($server_id, $remark, $token);
+    return \AchBot\Panel\Accounts\getMarzbanUser($server_id, $remark, $token, $strict);
 }
 function getMarzbanHosts($server_id) {
     require_once __DIR__ . '/src/Panel/Accounts.php';

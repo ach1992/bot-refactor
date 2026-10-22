@@ -69,6 +69,7 @@ if (
     $text != $buttonValues['cancel'] &&
     ($from_id == $admin || ($userInfo['isAdmin'] ?? false) == true)
 ) {
+    require_once __DIR__ . '/../ServiceEffects.php';
     $hash_id = $match[1];
     $payInfo = null;
     $claimOpen = false;
@@ -99,10 +100,21 @@ if (
         $payId = (int)$payInfo['id'];
         $actor = (int)$from_id;
         if (($payInfo['type']??null)==='BUY_SUB') {
+            // The 007 journal is mandatory for current paid CREATE. Probe
+            // its exact unique identity constraints while the pay row is
+            // locked, BEFORE reserving capacity or committing processing.
+            // A missing/partial migration must leave the original receipt
+            // reviewable without creating an unfulfillable held claim.
+            achbotEffectRequireUniqueLine($connection);
             // Capacity and the no-replay payment claim MUST commit together,
             // before any remote CREATE, across competing buyer payments.
             $reservedAccountCount=achbotManualStandardReserveCapacityLocked(
                 $connection,$payInfo);
+            // The same transaction must persist WHO owns those full-count
+            // slots. Paid CREATE consumes this 007 marker, never decrements
+            // server_info a second time for an already claimed receipt.
+            achbotEffectRecordManualCapacityLocked(
+                $connection,$payInfo,$reservedAccountCount);
         }
         $stmt = $connection->prepare(
             "UPDATE pays SET state='processing',approved_by=?
@@ -306,23 +318,20 @@ if (
             [$port] = getNextPortAndIncrease('settings/temp.txt', $portType);
 
             $remark = buildRemark($botState, $srv_remark, $payInfo['description'], $uid);
+            if ($accountCount>1 && (($botState['remark']??'')==='manual')) {
+                $remark .= '_'.$i;
+            }
             $lastRemarkForAdminMsg = $remark;
 
-            [$response, $remark, $port] = createServerAccount(
-                $serverType,
-                $server_id,
-                $inbound_id,
-                $fid,
-                $remark,
-                $volume,
-                $days,
-                $uniqid,
-                $protocol,
-                $port,
-                $expire_microdate,
-                $netType,
-                $rahgozar,
-                $limitip
+            [$response, $remark, $port, $effectId] = achbotCreatePaidAccount(
+                $connection, $payId, $i, [
+                    'user_id'=>$uid,'server_type'=>$serverType,'server_id'=>$server_id,
+                    'inbound_id'=>$inbound_id,'plan_id'=>$fid,
+                    'remark'=>$remark,'volume'=>$volume,'days'=>$days,
+                    'uniqid'=>$uniqid,'protocol'=>$protocol,'port'=>$port,
+                    'expire_microdate'=>$expire_microdate,'net_type'=>$netType,
+                    'rahgozar'=>$rahgozar,'limitip'=>$limitip
+                ]
             );
 
             ensureAccountCreationSucceeded($response, $serverInfo, $inbound_id, $admin, true);
@@ -356,6 +365,7 @@ if (
             );
 
             $toInsertOrders[] = [
+                'effect_id'    => $effectId,
                 'uid'          => $uid,
                 'token'        => $token,
                 'fid'          => $fid,
@@ -390,7 +400,7 @@ if (
             throw new RuntimeException('manual_standard_finish_begin_failed');
         try {
             foreach ($toInsertOrders as $o) {
-                insertOrder(
+                $orderId = insertOrder(
                     $connection,
                     $o['uid'],
                     $o['token'],
@@ -408,6 +418,7 @@ if (
                     $o['agent_bought'],
                     true
                 );
+                achbotLinkPaidAccountEffect($connection,(int)$o['effect_id'],(int)$orderId);
             }
 
             // Already reserved before CREATE. Do NOT decrement again.

@@ -6,6 +6,7 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
 }
 
 require_once __DIR__ . '/GatewayClient.php';
+require_once __DIR__ . '/ServiceEffects.php';
 
 
 /**
@@ -1218,8 +1219,12 @@ function achbotPerformPaymentEffect($payRowId, $gateType, &$effectStage = null) 
         $customPort = $file_detail['custom_port'];
         $customSni  = $file_detail['custom_sni'];
 
-        $accountCount = ($payParam['agent_count'] ?? 0) != 0 ? (int)$payParam['agent_count'] : 1;
-        $eachPrice = ($accountCount > 0) ? ($amount / $accountCount) : $amount;
+        if ((int)($payParam['agent_count']??0)<0)
+            throw new RuntimeException('hosted_invalid_account_quantity');
+        $accountCount = (int)($payParam['agent_count']??0)>0
+            ? (int)$payParam['agent_count'] : 1;
+        if ($accountCount<=0) throw new RuntimeException('hosted_invalid_account_quantity');
+        $eachPrice = $amount / $accountCount;
 
         if ($acount == 0 && $inbound_id != 0) {
 
@@ -1241,32 +1246,12 @@ function achbotPerformPaymentEffect($payRowId, $gateType, &$effectStage = null) 
             return 'compensated';
         }
 
-        if ($inbound_id == 0) {
-            $stmt = $connection->prepare("SELECT * FROM `server_info` WHERE `id`=?");
-            $stmt->bind_param("i", $server_id);
-            $stmt->execute();
-            $server_info = $stmt->get_result()->fetch_assoc();
-            $stmt->close();
-
-            if (empty($server_info) || (int)$server_info['ucount'] <= 0) {
-
-
-                if (!refundToWalletAndNotify(
-                    $connection,
-                    $user_id,
-                    $amount,
-                    $gateType,
-                    $admin,
-                    "میخواست اشتراک بخره، ظرفیت پر بود."
-                )) {
-                    showForm('⚠️ پرداخت ثبت شده ولی بازگشت اعتبار کیف پول تأیید نشد؛ پشتیبانی باید بررسی کند.', $payDescription, false, 'review');
-                    return 'ambiguous';
-                }
-                showForm('پرداخت شما انجام شد ولی ظرفیت این سرور پر شده است، مبلغ ' . number_format($amount) . " تومان به کیف پول شما اضافه شد.", $payDescription, false, 'review');
-
-                return 'compensated';
-            }
-        }
+        // Never infer full-count inventory from a preflight ucount>0 read.
+        // The first 007 CREATE marker atomically reserves ALL accountCount
+        // slots on server_info inside its own committed payment-owned
+        // transaction, shared with manually reviewed buyer reservations.
+        // Insufficient/uncertain capacity after verified provider payment
+        // must remain operator-reviewable, without a speculative refund.
 
         [$serverInfo, $serverConfig] = getServerInfoAndConfig($connection, $server_id);
         $srv_remark = $serverInfo['remark'] ?? '';
@@ -1281,26 +1266,25 @@ function achbotPerformPaymentEffect($payRowId, $gateType, &$effectStage = null) 
 
             $forcedRemark = (!empty($description)) ? $description : null;
             $remark = buildRemark($botState, $srv_remark, $description, $user_id, $forcedRemark);
+            // An explicit repeated name across a multi-account order would
+            // previously trigger random renames on 409. Pin each line first.
+            if ($accountCount > 1 && $forcedRemark !== null) {
+                $remark .= '_'.$i;
+            }
 
             // First-use expiry staging was exclusive to never-deployed
             // Sanaei/Alireza inbound plans. Marzban keeps normal expiry.
             $expire_microdate_local = $expire_microdate;
 
-            [$response, $remark, $port] = createServerAccount(
-                $serverType,
-                $server_id,
-                $inbound_id,
-                $fid,
-                $remark,
-                $volume,
-                $days,
-                $uniqid,
-                $protocol,
-                $port,
-                $expire_microdate_local,
-                $netType,
-                $rahgozar,
-                $limitip
+            [$response, $remark, $port, $effectId] = achbotCreatePaidAccount(
+                $connection, $rowId, $i, [
+                    'user_id'=>$user_id,'server_type'=>$serverType,'server_id'=>$server_id,
+                    'inbound_id'=>$inbound_id,'plan_id'=>$fid,
+                    'remark'=>$remark,'volume'=>$volume,'days'=>$days,
+                    'uniqid'=>$uniqid,'protocol'=>$protocol,'port'=>$port,
+                    'expire_microdate'=>$expire_microdate_local,'net_type'=>$netType,
+                    'rahgozar'=>$rahgozar,'limitip'=>$limitip
+                ]
             );
 
             if (is_null($response)) {
@@ -1406,30 +1390,45 @@ function achbotPerformPaymentEffect($payRowId, $gateType, &$effectStage = null) 
                 dirname(__DIR__, 2) . '/pay'
             );
 
-            insertOrder(
-                $connection,
-                $user_id,
-                $token,
-                $fid,
-                $server_id,
-                $inbound_id,
-                $remark,
-                $uniqid,
-                $protocol,
-                $expire_date,
-                $vray_link,
-                $eachPrice,
-                time(),
-                $rahgozar,
-                $agentBought,
-                true
-            );
+            // Reserve remote identity before POST, but bind the resulting
+            // order and its effect together in one SHORT local SQL commit.
+            // Never leave an unlinked successful order after a link error.
+            if ($connection->begin_transaction() !== true)
+                throw new RuntimeException('hosted_effect_order_begin_unconfirmed');
+            try {
+                $orderId = insertOrder(
+                    $connection,
+                    $user_id,
+                    $token,
+                    $fid,
+                    $server_id,
+                    $inbound_id,
+                    $remark,
+                    $uniqid,
+                    $protocol,
+                    $expire_date,
+                    $vray_link,
+                    $eachPrice,
+                    time(),
+                    $rahgozar,
+                    $agentBought,
+                    true
+                );
+                achbotLinkPaidAccountEffect($connection,$effectId,$orderId);
+                if ($connection->commit() !== true)
+                    throw new RuntimeException('hosted_effect_order_commit_unconfirmed');
+            } catch (Throwable $error) {
+                try { $connection->rollback(); } catch (Throwable $ignored) {}
+                // Local COMMIT acknowledgement might be lost: remote CREATE
+                // is never retried, and the payment keeps its review fence.
+                throw $error;
+            }
         }
 
-        decreaseServerCapacity($connection, $server_id, $inbound_id, $fid, $accountCount, true);
+        // Full server capacity was already reserved and recorded on ordinal 1
+        // before CREATE. NEVER deduct it a second time here.
 
-        // A failed local capacity write after remote creation is an
-        // unresolved business effect, not a completed delivery notice.
+        // A remote/local uncertainty is not a completed delivery notice.
         // A verified provider payment and a local order do not prove that
         // the Telegram subscription link was acknowledged by the buyer.
         showForm('✅ پرداخت تأیید شد؛ وضعیت تحویل سرویس را در ربات بررسی کنید.',

@@ -65,7 +65,8 @@ RETIRED_RUNTIME_MEMBERS = frozenset({
     "src/Finance/Routes/CryptoAndExchange.php",
 })
 NEW_RUNTIME_MEMBERS = ("settings/cronRunner.php", "src/Finance/PaymentPage.php",
-                       "src/Finance/Routes/ManualCrypto.php", "src/Finance/PaymentLifecycle.php")
+                       "src/Finance/Routes/ManualCrypto.php", "src/Finance/PaymentLifecycle.php",
+                       "src/Finance/ServiceEffects.php")
 
 def members() -> list[str]:
     original = historical.members()
@@ -75,7 +76,7 @@ def members() -> list[str]:
         raise RuntimeError("Expected historical-only payment files missing")
     paths = [p for p in original if p not in RETIRED_RUNTIME_MEMBERS]
     paths.extend(NEW_RUNTIME_MEMBERS)
-    if len(paths)!=93 or len(set(paths))!=93:
+    if len(paths)!=94 or len(set(paths))!=94:
         raise RuntimeError("Post-V9 source inventory drift")
     for retired in RETIRED_RUNTIME_MEMBERS:
         if (ROOT/retired).exists() or retired in paths:

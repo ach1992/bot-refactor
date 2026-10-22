@@ -39,7 +39,7 @@ def source_checks():
         if (ROOT / field).read_bytes() != cmd("show", V9+":"+field):
             raise RuntimeError("Changed historical schema/private-template: " + field)
     files=package.members()
-    if len(files)!=93 or len(set(files))!=len(files):
+    if len(files)!=94 or len(set(files))!=len(files):
         raise RuntimeError("Source-only runtime file inventory changed")
     if any((ROOT/name).exists() or name in files
            for name in package.RETIRED_RUNTIME_MEMBERS):
@@ -942,8 +942,10 @@ def main():
             "wallet_compensation_user_missing_no_claim",
             "wallet_compensation_overflow_no_claim",
             "wallet_compensation_verified_credit_and_debt_offset",
-            "nowpayments_capacity_missing_user_never_done",
-            "nowpayments_capacity_verified_refund_done",
+            "nowpayments_finished_insufficient_capacity_missing_user_review_no_refund",
+            "nowpayments_finished_insufficient_capacity_verified_user_review_no_refund",
+            "hosted_nextpay_two_accounts_one_slot_no_create_review_no_refund",
+            "hosted_zarinpal_two_accounts_one_slot_no_create_review_no_refund",
             "renewal_nowpayment_explicit_failure_is_ambiguous",
             "renewal_nextpay_explicit_failure_is_ambiguous",
             "renewal_zarinpal_explicit_failure_is_ambiguous",
@@ -986,17 +988,76 @@ def main():
             "nextpay_callback_provider_scoped_colliding_external_reference",
             "zarinpal_callback_provider_scoped_colliding_external_reference",
         }
+        mandatory_finance.add('hosted_order_and_effect_link_atomic_rollback')
         cases_finance = {case.get("case") for case in finance.get("scenarios",[])
                          if case.get("pass_")}
         if not (finance.get("complete") and finance.get("cases")>=153 and
                 mandatory_finance.issubset(cases_finance) and
                 finance.get("schema_tables")==23 and
-                finance.get("current_schema_tables")==25 and
+                finance.get("current_schema_tables")==26 and
                 finance.get("shared_payment_attempt_ledger_tested") and
                 finance.get("original_mariadb_socket_only") and
                 finance.get("synthetic_payment_spy") and
                 finance.get("real_provider_requests")==0):
             raise RuntimeError("Original-schema finance and NOWPayments finality assurance incomplete")
+        # #26 distinct account identity: verified by source-native PHP and
+        # independent socket-only MariaDB, not by changes in account totals.
+        effect_path=Path(tmp)/"account-service-effects.json"
+        subprocess.run(
+            ["python3",str(ROOT/"tools/test_post_v9_service_effects.py"),
+             "--run-disposable","--report",str(effect_path)],
+            cwd=ROOT,check=True,timeout=125,capture_output=True)
+        effects=json.loads(effect_path.read_text())
+        required_effects={
+            "review_O1_missing_uq_effect_order_no_remote_post",
+            "review_O1_missing_uq_effect_operation_no_remote_post",
+            "review_R2_type_drift_blocks_both_manual_multi_link_and_hosted_link",
+            "review_R2_group_drift_blocks_both_manual_multi_link_and_hosted_link",
+            "review_R2_endpoint_drift_blocks_both_manual_multi_link_and_hosted_link",
+            "review_R1_plan_reassignment_original_paid_target_no_remote_effect",
+            "missing_007_no_remote_post",
+            "malformed_007_unique_index_no_remote_post",
+            "one_reserved_unique_operation_verified_by_exact_note_username_quota_expiry",
+            "same_pay_line_replay_stopped_before_post",
+            "two_concurrent_requests_one_remote_post",
+            "unknown_post_lost_frozen_no_replay",
+            "unknown_get_missing_frozen_no_replay",
+            "unknown_get_unavailable_frozen_no_replay",
+            "unknown_wrong_expiry_fraction_frozen_no_replay",
+            "unknown_wrong_quota_fraction_frozen_no_replay",
+            "unknown_wrong_expiry_float_integral_frozen_no_replay",
+            "unknown_wrong_quota_float_integral_frozen_no_replay",
+            "unknown_wrong_expiry_exponent_frozen_no_replay",
+            "unknown_wrong_quota_padded_frozen_no_replay",
+            "unknown_wrong_expiry_overflow_frozen_no_replay",
+            "canonical_unsigned_decimal_string_limits_verified_once",
+            "unknown_other_note_frozen_no_replay",
+            "unknown_target_change_frozen_no_replay",
+            "unknown_endpoint_change_frozen_no_replay",
+            "cross_payment_same_target_username_rejected_before_post",
+            "explicit_physical_group_alias_username_collision_before_post",
+            "same_total_after_unrelated_delete_create_never_used_as_success_signal",
+            "two_account_partial_remote_no_bulk_replay",
+            "r1_old_007_missing_capacity_owner_schema_blocks_post",
+            "r1_hosted_two_requested_one_slot_zero_create",
+            "r1_hosted_negative_quantity_rejected_before_post",
+            "r1_hosted_two_exact_slots_held_before_post_once",
+            "r1_hosted_distinct_payments_one_slot_single_create",
+            "r1_hosted_vs_real_manual_capacity_helper_no_overbooking",
+            "r1_two_account_partial_unknown_keeps_full_capacity_hold",
+            "r1_reservation_insert_sql_failure_rolls_back_all_slots",
+            "exact_local_order_fk_join_and_no_second_finalize",
+            "historical_effect_retained_after_local_subscription_deletion",
+        }
+        if not (effects.get("complete") and effects.get("cases")>=22
+                and required_effects.issubset(effects.get("scenarios",[]))
+                and effects.get("source_real_php") is True
+                and effects.get("owned_mariadb_only") is True
+                and effects.get("real_provider_requests")==0
+                and effects.get("real_financial_effects")==0
+                and effects.get("external_account_count_not_used") is True
+                and effects.get("installed_operator_tested") is False):
+            raise RuntimeError("Per-account service operation ledger contract incomplete")
         manual_path=Path(tmp)/"manual-payment-methods.json"
         try:
             subprocess.run(["python3",str(ROOT/"tools/test_post_v9_manual_payments.py"),
@@ -1172,6 +1233,7 @@ def main():
             'r1_remote_unknown_keeps_pre_reserved_capacity_no_replay',
             'r1_after_two_remote_creates_SQL_failure_keeps_reserved_capacity_review_only',
             'r1_mysqlireportoff_conditional_reservation_SQL_failure_no_create',
+            'r1_manual_hold_insert_failure_rollback_claim_and_capacity',
             'r1_real_conditional_capacity_helper_cannot_go_negative',
             'r1_two_real_php_buyers_one_capacity_unit_only_one_external_create',
             'r2_plan_reassigned_to_other_remote_with_same_remark_zero_wrong_edit',
@@ -1195,7 +1257,9 @@ def main():
             'r4_confirmed_credit_independent_of_referral_channel_null',
             'r4_unconfirmed_sql_credit_returns_false_without_notice',
             'r4_missing_inviter_no_false_credit_notice',
-            'r5_historical_23_table_operator_delivered_receipt_remains_approvable',
+            'r5_original_receipt_without_003_with_007_can_fulfill_once',
+            'r5_missing_007_operation_unique_index_refuses_preclaim_reservation',
+            'r5_original_23_tables_missing_007_keeps_receipt_and_capacity_unclaimed',
             'r5_absent_original_operator_evidence_is_rejected',
             'r5_partially_installed_003_denied_under_mysqlireportoff',
             'r5_incompatible_ledger_column_SQL_failure_not_legacy_receipt',
@@ -1357,7 +1421,7 @@ def main():
                        cwd=ROOT,check=True,timeout=60,capture_output=True)
         swap=json.loads(overlay_report.read_text())
         if not (swap.get("complete") and swap.get("phase_count")==4
-                and swap.get("runtime_members")==93
+                and swap.get("runtime_members")==94
                 and swap.get("historical_runtime_members")==92
                 and swap.get("retired_old_payment_files_absent_after_source_upgrade")
                 and swap.get("source_roll_forward_and_back_byte_identical")
@@ -1382,6 +1446,7 @@ def main():
                     "customer_method_serialization":method_race,
                     "wallet_authorization_freshness":wallet_freshness,
                     "latest_review_f1_f4":reviewer_f1_f4,
+                    "service_effects":effects,
                     "manual_payment_method_isolation":manual,
                     "manual_standard_real_helper_review_remediation":integrity,
                     "manual_crypto_destination_and_admin_guards":crypto_guard,
@@ -1417,6 +1482,7 @@ def main():
                       "checkout_serialization_cases":checkout_race["cases"],
                       "customer_method_serialization_cases":method_race["cases"],
                       "wallet_authorization_freshness_cases":wallet_freshness["cases"],
+                      "service_effect_cases":effects["cases"],
                       "manual_payment_isolation_cases":manual["cases"],
                       "manual_standard_real_helper_cases":integrity["cases"],
                       "manual_crypto_guard_cases":crypto_guard["cases"],

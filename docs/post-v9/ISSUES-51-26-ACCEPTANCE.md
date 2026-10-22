@@ -71,6 +71,24 @@ to a real payment processor is authorized by this matrix.
 | O03 Durable per-account effect recovery | Accepted schema and operator reconciliation contract for uncertain account N | Per-account external effect identity, durable checkpoint and safe recovery | Correlated operator decision, no false service success | Process death / unknown external response never causes blind provisioning | NOT COMPLETE — schema/architecture/owner decision required under #26 |
 | O04 Release and operator acceptance | Independently reviewed exact candidate and separate Owner grants | No tenant migration or money changes before authorization | Source merge != installed UX acceptance | Verify installed rollback/recovery before closing Issues | GATED — independent review, Owner Merge/release/deploy grant, real operator acceptance |
 
+## PR #67 hosted-capacity safety acceptance (BLOCKER-PR67-1)
+
+For hosted NextPay, Zarinpal and NOWPayments BUY_SUB, the first paid 007
+effect must atomically own ALL purchased server capacity **before remote
+CREATE**. Assert insufficient 2-request/1-slot produces zero CREATE and
+no local orders/refund claim; exact 2/2 creates only twice with exactly
+two held units; separate buyers, hosted/manual shared-InnoDB contention
+cannot overbook; manual BUY_SUB's payment-scoped ordinal-0 manual_hold
+is committed in its original reservation/claim transaction, then consumed
+by first CREATE with no second decrement; missing hold fails before POST.
+Lost second CREATE keeps all units and operation identities for operator
+review; failed first hosted effect INSERT or manual hold INSERT rolls capacity
+back; callback replay and local order-link failure never create or debit again. Missing or
+earlier 007 reserved_count schema fails closed. The unchanged old 007
+schema must not be silently upgraded or treated as having a hold. Current
+tests are disposable source-real PHP/MariaDB with synthetic providers,
+NOT operator-installed migration/merchant acceptance.
+
 ## Acceptance and interpretation
 
 The PHP tests run actual current source with **owned, disposable** MariaDB,
@@ -199,3 +217,59 @@ all named actual-helper regression cases and broad PHP 8.1/8.4 source
 acceptance, one new author-separated independent reviewer on the exact
 candidate, followed only then by an explicit Owner Merge grant.
 Issues #26 and #51 remain OPEN.
+
+## Issue #26 per-account identity: staged source-only acceptance
+
+The new additive `007_service_effects.sql` and
+`src/Finance/ServiceEffects.php` provide the first **BUY_SUB-only**
+postpayment remote-effect journal. They are not a generic service/wallet
+transaction framework and are not a reconciliation autopilot. No account
+count, deltas in counts, or absence in a remote users listing is admissible
+as delivery proof. A current 404 after a possible prior creation/deletion
+also cannot authorize reissue.
+
+Execute `python3 tools/test_post_v9_service_effects.py --run-disposable`:
+native PHP 8.1/8.4 and disposable MariaDB must prove unique
+`(pays,kind,ordinal)`, pre-POST durable dispatch, real concurrent racing
+calls producing at most one POST, exact remote `username/note/expiry/bytes`
+readback, unknown POST/GET and wrong-identity freezes, changing panel
+group/endpoint, cross-payment same-panel username collisions, two-account
+partial, hosted short-transaction order/link rollback, exact live
+orders_list identity checking at link time, permanent audit after
+permitted local order deletion, and unrelated
+create+delete despite an unchanged remote count. Required 007 absence **or
+wrong unique index** must block new POST without silently reverting to an
+unjournaled fallback. Loopback HTTP covers strict readback and authentication
+failures without contacting any installed panel.
+The aggregate `tools/check_post_v9.py` includes these cases as mandatory.
+Independent review of PR #67 exact older candidate `97bcdbd` found two REQUIRED timing holes:
+original `pays.server_id` was not compared during payment-row-locked reservation,
+and final order linkage did not revalidate the pinned physical Marzban endpoint/group.
+The remedied helper now validates both within their own short transactions,
+including a guarded exact-target link UPDATE. Native actual MariaDB regression
+covers plan reassignment after checkout preflight, POST-free rejection,
+multiple already-verified accounts with subsequent endpoint/group/type drift,
+atomic rollback of each newly inserted local order on stale target, and
+successful unchanged-target linking. Its malformed-DDL guard also inspects
+all four required unique constraints. Review verdict for `97bcdbd`
+remains `CHANGES_REQUIRED`; **fresh independent re-review of the new exact HEAD is required**.
+
+The combined PR #66/#67 R1-R5 real-helper regression uses an installed
+**disposable** 001+007 journal and synthetic exact-operation Marzban
+note/readback for all positive current-runtime BUY_SUB cases, while
+preserving legacy original receipt checks when both 003 tables are absent.
+A separate restored original 23-table fixture with **no** 007 must leave
+an eligible manual receipt at have_sent, its capacity unchanged, and
+zero CREATE or order rows. The actual manual accept route now validates
+the required 007 constraints before its financial/capacity claim. Missing
+007 is a safe operator stop, never authority to send an unjournaled POST.
+The standard-integrity native suite and aggregate gate require both cases;
+CI is source-only, not permission to install 007 on a tenant.
+
+Real standard manual approval and hosted payment suites also assert their
+actual per-line ledger states (`verified` without order for partial
+manuals; `local_recorded` only for checked order persistence). Source
+success does not certify installed Marzban behavior, live provider
+settlement or Telegram delivery. See FINANCIAL-CONSOLIDATION.md for the
+precise unprotected legacy/non-BUY_SUB routes and Owner test gate. Keep
+Issues #26 and #51 open through separate installed acceptance.

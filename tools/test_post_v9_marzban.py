@@ -234,6 +234,31 @@ def main():
             if results[0]["exception"] or not traces[0]:
                 raise RuntimeError("Marzban case not executed successfully: " + name)
             records.append({"case":name,"owned_http_requests":len(traces[0]),"result":"PASS"})
+        # Issue #26: the post-V9 strict readback must use a bounded, genuine
+        # authenticated HTTP GET. It is intentionally NOT compared to V9.
+        panel.mode='ok'
+        panel.trace.clear()
+        strict=native.run(work,env,current,native.DBS[1],{
+            'function':'getMarzbanUser','args':[2,'fixture-user',None,True]})
+        if (strict['exception'] or strict['warnings'] or strict['stdout'] or
+            strict['result'].get('username')!='fixture-user' or
+            strict['result'].get('note')!='fixture' or
+            not any(t['method']=='GET' and '/api/user/fixture-user' in t['path']
+                    for t in panel.trace)):
+            raise RuntimeError('Strict Marzban effect readback did not authenticate and GET')
+        records.append({'case':'effect.strict_readback_http_200',
+                        'owned_http_requests':len(panel.trace),'result':'PASS'})
+        panel.mode='marzban-invalid'
+        panel.trace.clear()
+        denied=native.run(work,env,current,native.DBS[1],{
+            'function':'getMarzbanUser','args':[2,'fixture-user',None,True]})
+        if (denied['exception'] or denied['warnings'] or denied['stdout'] or
+            isinstance(denied['result'],dict) and denied['result'].get('username')=='fixture-user' or
+            any('/api/user/fixture-user' in t['path'] for t in panel.trace)):
+            raise RuntimeError('Strict Marzban effect readback ignored authentication error')
+        records.append({'case':'effect.strict_readback_auth_failure',
+                        'owned_http_requests':len(panel.trace),'result':'PASS'})
+        panel.mode='ok'
         prior_state = native.snapshot(work,env,native.DBS[1])
         for id,typ in ((3,"sanaei"),(4,"alireza")):
             result=no_provider_for_retired(work,env,current,panel,native.DBS[1],

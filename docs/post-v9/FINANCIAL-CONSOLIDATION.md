@@ -336,9 +336,11 @@ An existing **service** attempt with a nonmatching stage must instead be
 correlated through the bounded log. The diagnostic requires reconciliation,
 not an assumption of lost funds or a license to create or replay an effect.
 
-A disposable native two-account `BUY_SUB` characterization covers one
-successful Marzban account operation followed by an uncertain second
-operation for **both** hosted providers. In that case the existing local
+**Historical pre-007 hosted checkpoint (superseded by the current
+payment-owned capacity contract below):** A disposable native two-account
+BUY_SUB characterization previously covered one successful Marzban
+account operation followed by an uncertain second operation for **both**
+hosted providers. In that older flow the existing local
 `pays` remains paid, the shared attempt stays
 `review/fulfillment_started`, the first local `orders_list` record may
 already exist, and no global capacity decrement has yet completed.
@@ -463,3 +465,126 @@ additive journal schema or migration contract requires separate Owner
 acceptance before installed operation. Source-only improvements are not
 permission for tenant SQL migration, real refunds, retries or
 manual replacement of balance.
+
+### Minimal per-account Marzban effects (Issue #26, proposed Migration 007)
+
+This is the **new source-only incremental implementation**, NOT an installed
+migration or a settlement/completion certificate. Migration
+`migrations/post-v9/007_service_effects.sql` adds **one** indexed InnoDB
+`service_effects` table without changing the frozen original 23-table schema,
+payment identity migrations 003, or current customer records. Install 001/003
+where applicable first. 007 must be explicitly approved, preflighted,
+backed-up and installed on the chosen database **before deploying a runtime
+that uses it for paid account creation**; deploying only the PHP ZIP would
+otherwise stop new paid service fulfillment for safe manual review.
+
+**Current PR #67 hosted-capacity remediation (independent review
+BLOCKER-PR67-1):** This revised proposed 007 CREATE includes an explicit
+reserved_count on each effect row. **Hosted payment** ordinal 1 stores the
+entire payment's quantity; every subsequent ordinal stores zero and must
+validate that first-row hold and the previous verified account.
+The **manually approved standard** path already debits capacity inside its
+original receipt-processing claim. In that SAME claim transaction it stores
+a payment-scoped manual_hold marker (ordinal 0) with the full count.
+The first manual CREATE atomically consumes that marker, with no second
+capacity UPDATE; all manual CREATE rows store zero. A missing, unexpected,
+mismatched or previously consumed manual hold fails closed before POST.
+A short InnoDB transaction locks the exact pays row, verifies paid
+user/plan/server/provider and requested count, performs a guarded full-count
+server_info.ucount UPDATE and inserts ordinal 1 of the paid effect with
+reserved_count=accountCount; it COMMITs **before the first Marzban POST**.
+This same server counter is updated by manually reviewed standard BUY_SUB
+capacity claims, so independent purchases serialize under InnoDB.
+Insufficient quantity, SQL failure, missing/old schema, or rejected COMMIT
+produce no new remote request. Partial/missing GET, second-account uncertainty,
+post-COMMIT delivery failure and callback replay **never** release the held
+count automatically or issue another CREATE. Neither manual nor hosted
+success handlers may decrement capacity a second time. The paid charge remains operator-reviewable;
+an insufficient full-count reservation is not permission for a speculative
+wallet refund or a false completed/delivered page.
+
+This is **a revised CREATE-only proposal**, not an implicit in-place upgrade.
+An installation that already has *any* earlier 007 table must STOP and
+inventory its current columns, constraints, row states, capacity and remote
+accounts. A separately independently reviewed, data-preserving forward
+migration, tested restore and explicit Owner authorization are required
+before switching that installed database to this contract. Never rerun
+007_service_effects.sql, drop its existing rows, infer previously held
+capacity from account counts, or install any migration as part of the
+source-only release ZIP.
+
+**Combined PR #66 + PR #67 manual-standard boundary:** A historically
+operator-delivered receipt may still be evaluated against its original
+pays and message evidence when both 003 tables are proven absent, but
+receipt eligibility is NOT permission to issue an unjournaled account.
+The current standard BUY_SUB approval verifies the mandatory 007 unique
+identity constraints under the locked payment row **before** it reserves
+capacity or commits processing. Missing/partial 007 fails closed and
+leaves the original receipt and server free-capacity unchanged for human
+review. With properly installed 001/007, the old receipt can be fulfilled
+once under 007 identity/readback rules even when original 003 evidence is
+genuinely absent. Renewals do not create accounts and retain their
+separate eligibility and no-replay contract. The real native regression
+tests exercise both schema states, not a mocked success or real tenant DDL.
+
+Every line of a `BUY_SUB` payment carries a unique local
+`(pay_row_id,effect_kind='create',ordinal)` reservation with a random immutable
+`operation_id`, pinned Marzban logical server/group **and concrete
+endpoint fingerprint**, exact username, plan, bytes, expiry and request
+fingerprint. A unique `(target_key,remote_username)` constraint prevents
+accidental reuse of one Marzban account name across separate payments on
+the same explicitly grouped physical panel; otherwise `target_key` is
+scoped to its individual logical server. The **ordinal is the line-item
+identity within that one paid order, NOT a count of server accounts**.
+The reservation commits before the external POST, while a short local
+payment-row lock protects validation and the unique line reservation.
+A malformed/missing unique index blocks dispatch. The Marzban CREATE includes
+a one-operation `note=achbot:v1:<operation_id>`, fixed expiry and the original
+username. Its answer and a subsequent **timeout-bounded, status-checked
+authenticated GET** of that exact username must match username, note, bytes
+and expiry before a transition
+`dispatching -> verified`. A successful matching `orders_list` INSERT
+atomically joins its exact new `id` to the effect and marks
+`local_recorded` in the caller's local transaction. Hosted purchases
+commit each order INSERT and ledger link in one short SQL transaction,
+never while a remote POST is in flight; link failure rolls back that
+local order rather than leaving an unlinked row. If a later account
+fails, earlier independently committed accounts remain reviewable.
+The referenced historical `order_id` remains recorded after a permitted
+subscription/order deletion; its correctness is checked by joining to the
+live order **at link time**, but no permanent FK to deletable
+`orders_list` can block normal customer/admin/expiry cleanup.
+The ledger's immutable parent payment remains retained.
+
+An unavailable POST response, GET/permission failure, mismatched note, changed
+logical panel grouping or concrete endpoint, SQL failure or lost commit
+acknowledgement **does not
+authorize a second remote CREATE, a newly randomized name, an automatic refund
+or a false delivered status**. The row remains available for privileged
+operator reconciliation. Remote account counts, plan capacity, or a current
+404 are never proof of success or non-execution; an unrelated account can be
+created/deleted at any time. The remote `note` is mutable: readback is
+corroboration, not a cryptographic remote idempotency guarantee, and absence
+after a possible deletion requires investigation. There is **no automated
+claim that exactly-once delivery or end-to-end recovery is solved**.
+
+The first consumers are standard manually approved `BUY_SUB` and hosted
+NOWPayments/NextPay/Zarinpal `BUY_SUB`. Existing original wallet/customer
+checkout, custom/manual variants, old scheduled receipt processing, renewal,
+deletion, free trial and independent admin account creation are **not yet
+migrated to this effect journal**; their existing fences remain unchanged.
+Those source paths cannot claim the new journal's assurance. Move them
+incrementally only after their payment/transaction boundaries and actual
+operator proof are reconciled. No new Cron, reconciliation actor, account
+backfill, repair button or external replay is introduced by 007.
+
+**Owner-performed test gate** after independent source review and a separate
+authorized disposable installation: confirm installed Marzban fork's
+`POST /api/user` 200 response, 409 no-rename behavior, persistent `note`
+on readback and unchanged username/data/expiry, provider login/GET timeout,
+two-account partial creation and readback, multiple logical entries sharing
+a physical panel via explicit `panel_group_id`, concurrent unrelated
+create/delete, Telegram operator/customer status and real payment proof.
+Use only disposable test accounts and authorized test financial instruments.
+Capture bounded operation/order/effect identifiers without exposing tokens
+or real customer data. No tenant SQL/production installation performed here.

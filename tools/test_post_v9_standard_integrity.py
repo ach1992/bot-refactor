@@ -108,9 +108,39 @@ function sendPhoto(...$args) {
     return (object)['ok'=>true];
 }
 function createServerAccount(...$args) {
-    $GLOBALS['events'][]=['name'=>'CREATE','server'=>$args[1], 'remark'=>$args[4]];
-    if (($GLOBALS['spec']['remote']??'ok')==='unknown') throw new RuntimeException('lost_create_ack');
-    return [(object)['success'=>true],'fixture-account',15001];
+    $remark=(string)$args[4];
+    $GLOBALS['events'][]=['name'=>'CREATE','server'=>$args[1], 'remark'=>$remark];
+    $operation=(string)($args[14]??'');
+    $expiry=(int)($args[15]??0);
+    // Actual 007 dispatch requires the exact operation note and paid limits
+    // on independent authenticated GET; the HTTP boundary remains synthetic.
+    if ($operation!=='' && $expiry>0) {
+        $GLOBALS['remote_accounts'][$remark]=[
+            'username'=>$remark,'note'=>'achbot:v1:'.$operation,
+            'expire'=>$expiry,'data_limit'=>(int)$args[5]*1073741824
+        ];
+    }
+    if (($GLOBALS['spec']['remote']??'ok')==='unknown')
+        throw new RuntimeException('lost_create_ack');
+    return [(object)['success'=>true],$remark,15001];
+}
+function getMarzbanUser($serverId,$remark,...$args){
+    $GLOBALS['events'][]=['name'=>'READBACK','server'=>$serverId,
+                          'username'=>$remark];
+    $account=$GLOBALS['remote_accounts'][(string)$remark]??null;
+    // Synthetic, opt-in provenance when diagnosing a contested real PHP
+    // approval: exact response shape, never any customer/provider secret.
+    if (!empty($GLOBALS['spec']['readback_diagnostics']) && $account) {
+        $GLOBALS['events'][]=[
+            'name'=>'READBACK_SHAPE',
+            'expire_type'=>get_debug_type($account['expire']),
+            'expire'=>$account['expire'],
+            'quota_type'=>get_debug_type($account['data_limit']),
+            'quota'=>$account['data_limit'],
+            'note_type'=>get_debug_type($account['note'])
+        ];
+    }
+    return $account ? (object)$account : null;
 }
 function achbotSupportsPanel($type){return $type==='marzban';}
 function editMarzbanConfig($server,$opts) {
@@ -173,6 +203,10 @@ def named(events,name):
     return [ev for ev in events if ev.get('name')==name]
 
 def seed(work,env,name,*,capacity=10,count=1,renew=False,inviter=False):
+    # Each isolated scenario resets pays, but the new 007 audit FK retains
+    # its old payment references until this disposable test-only teardown.
+    if 'service_effects' in sql(work,env,'SHOW TABLES').splitlines():
+        sql(work,env,'DELETE FROM service_effects')
     purchase.init(work,env,'http://127.0.0.1:9')
     sql(work,env,"DELETE FROM setting WHERE type='INVITE_BANNER_AMOUNT'")
     if inviter:
@@ -195,6 +229,11 @@ def check():
     with owned.owned_database() as (work,env):
         driver=work/'native-manual-standard-integrity.php'
         driver.write_text(PHP)
+        # The new paid-service runtime requires 001 physical group schema
+        # and 007 exact-effect journal before ANY Marzban CREATE. The
+        # historical 23-table checks run separately below with it absent.
+        sql(work,env,(ROOT/'migrations/post-v9/001_marzban_panel_group_id.sql').read_text())
+        sql(work,env,(ROOT/'migrations/post-v9/007_service_effects.sql').read_text())
 
         def call(key,**spec):return php_call(work,env,driver,hash=key,**spec)
         def state(key):return sql(work,env,f"SELECT state FROM pays WHERE hash_id='{key}'")
@@ -208,9 +247,13 @@ def check():
 
         key=seed(work,env,'capacity_exact',capacity=2,count=2)
         ev=call(key)
-        assert len(named(ev,'CREATE'))==2 and orders()==2 and capacity()==0
+        assert len(named(ev,'CREATE'))==2 and orders()==2 and capacity()==0, (ev,state(key),orders(),capacity())
         assert state(key)=='approved'
         assert not named(call(key),'CREATE') and capacity()==0
+        ledger=sql(work,env,"SELECT effect_kind,ordinal,reserved_count,state "
+            "FROM service_effects WHERE pay_row_id=(SELECT id FROM pays WHERE hash_id='capacity_exact') "
+            "ORDER BY ordinal,effect_kind")
+        assert ledger=='manual_hold\t0\t2\tconsumed\ncreate\t1\t0\tlocal_recorded\ncreate\t2\t0\tlocal_recorded',ledger
         cases.append('r1_exact_two_units_reserved_once_and_replay_fenced')
 
         key=seed(work,env,'lost_remote',capacity=2,count=2)
@@ -218,6 +261,10 @@ def check():
         assert len(named(ev,'CREATE'))==1 and state(key)=='processing'
         assert capacity()==0 and orders()==0
         assert not named(call(key),'CREATE') and capacity()==0
+        marker=sql(work,env,"SELECT reserved_count,state FROM service_effects "
+            "WHERE effect_kind='manual_hold' AND pay_row_id="
+            "(SELECT id FROM pays WHERE hash_id='lost_remote')")
+        assert marker=='2\tconsumed',marker
         cases.append('r1_remote_unknown_keeps_pre_reserved_capacity_no_replay')
 
         key=seed(work,env,'postcreate_sql',capacity=2,count=2)
@@ -237,6 +284,19 @@ def check():
         assert state(key)=='have_sent' and capacity()==3 and not named(ev,'CREATE')
         cases.append('r1_mysqlireportoff_conditional_reservation_SQL_failure_no_create')
 
+        # Manual capacity UPDATE and its durable payment-owned 007 hold INSERT
+        # are in ONE claim transaction. Failed insert must roll everything
+        # back, not leave invisible stolen inventory and a processing receipt.
+        key=seed(work,env,'manual_hold_insert_failure',capacity=2)
+        sql(work,env,"CREATE TRIGGER owned_manual_hold_fail BEFORE INSERT ON service_effects "
+            "FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='owned_hold_denial'")
+        try: ev=call(key,nonthrowing=True)
+        finally:sql(work,env,'DROP TRIGGER owned_manual_hold_fail')
+        assert state(key)=='have_sent' and capacity()==2 and orders()==0,ev
+        assert not named(ev,'CREATE')
+        assert sql(work,env,"SELECT COUNT(*) FROM service_effects")=='0'
+        cases.append('r1_manual_hold_insert_failure_rollback_claim_and_capacity')
+
         seed(work,env,'capacity_helper',capacity=1)
         ev=call('capacity_helper',op='capacity_helper',count=2,nonthrowing=True)
         assert named(ev,'HELPER_RESULT')[0]['value']=='denied' and capacity()==1
@@ -248,9 +308,9 @@ def check():
             "VALUES ('claim_b',1001,'BUY_SUB',7,2,1,0,0,100,1700000000,"
             "'have_sent',212,9001,'other-account')")
         with ThreadPoolExecutor(max_workers=2) as pool:
-            ea,eb=list(pool.map(lambda k:call(k),['claim_a','claim_b']))
+            ea,eb=list(pool.map(lambda k:call(k,readback_diagnostics=True),['claim_a','claim_b']))
         creates=len(named(ea,'CREATE'))+len(named(eb,'CREATE'))
-        assert creates==1 and capacity()==0 and orders()==1
+        assert creates==1 and capacity()==0 and orders()==1, (ea,eb,creates,capacity(),orders(),state('claim_a'),state('claim_b'),sql(work,env,'SELECT state,ordinal,remote_username,requested_expire,requested_bytes,IFNULL(order_id,0) FROM service_effects ORDER BY id'))
         assert sorted([state('claim_a'),state('claim_b')])==['approved','have_sent']
         cases.append('r1_two_real_php_buyers_one_capacity_unit_only_one_external_create')
 
@@ -406,11 +466,19 @@ def check():
         assert state(key)=='approved' and not any('جایزه دریافت کردید' in x['text'] for x in named(ev,'MESSAGE'))
         cases.append('r4_missing_inviter_no_false_credit_notice')
 
-        key=seed(work,env,'old_23_schema')
-        assert len(sql(work,env,'SHOW TABLES').splitlines())==23
+        # A historically delivered receipt may still use the original
+        # pays/operator evidence when BOTH 003 tables are absent, but new
+        # paid CREATE now independently REQUIRES an installed, valid 007.
+        key=seed(work,env,'legacy_receipt_with_007')
+        tables=set(sql(work,env,'SHOW TABLES').splitlines())
+        assert len(tables)==24 and 'service_effects' in tables
+        assert 'payment_attempts' not in tables and 'payment_transactions' not in tables
         ev=call(key)
-        assert state(key)=='approved' and len(named(ev,'CREATE'))==1
-        cases.append('r5_historical_23_table_operator_delivered_receipt_remains_approvable')
+        assert state(key)=='approved' and len(named(ev,'CREATE'))==1,(ev,state(key))
+        assert sql(work,env,"SELECT service_effects.state,IFNULL(service_effects.order_id,0) FROM service_effects "
+               "JOIN pays ON pays.id=service_effects.pay_row_id "
+               "WHERE pays.hash_id='legacy_receipt_with_007'").startswith('local_recorded\t')
+        cases.append('r5_original_receipt_without_003_with_007_can_fulfill_once')
 
         key=seed(work,env,'old_missing_evidence')
         sql(work,env,"UPDATE pays SET message_id=0 WHERE hash_id='old_missing_evidence'")
@@ -462,6 +530,37 @@ def check():
         ev=call(key)
         assert state(key)=='approved' and len(named(ev,'CREATE'))==1
         cases.append('r5_complete_003_empty_attempts_historical_receipt_allowed')
+
+        # A 007 table is not sufficient if its critical pay/line uniqueness
+        # is missing. This real DDL mutation is scoped to the owned fixture;
+        # the current route must refuse the claim before touching capacity.
+        key=seed(work,env,'bad_007_unique')
+        sql(work,env,'ALTER TABLE service_effects DROP INDEX uq_effect_operation')
+        try:
+            held_capacity=capacity()
+            ev=call(key,nonthrowing=True)
+            assert state(key)=='have_sent' and capacity()==held_capacity,ev
+            assert not named(ev,'CREATE') and orders()==0,ev
+            assert named(ev,'alert'),ev
+        finally:
+            sql(work,env,"ALTER TABLE service_effects ADD UNIQUE KEY "
+                "uq_effect_operation (operation_id)")
+        cases.append('r5_missing_007_operation_unique_index_refuses_preclaim_reservation')
+
+        # A missing or malformed 007 must reject the LIVE manual approval
+        # BEFORE reserving capacity/marking processing, even if the original
+        # 003 receipt-evidence policy would otherwise permit review.
+        key=seed(work,env,'no_007_original_receipt')
+        sql(work,env,'DROP TABLE service_effects')
+        sql(work,env,'DROP TABLE payment_transactions; DROP TABLE payment_attempts')
+        sql(work,env,'ALTER TABLE server_info DROP COLUMN panel_group_id')
+        assert len(sql(work,env,'SHOW TABLES').splitlines())==23
+        before_capacity=capacity()
+        ev=call(key,nonthrowing=True)
+        assert state(key)=='have_sent' and capacity()==before_capacity
+        assert not named(ev,'CREATE') and orders()==0,ev
+        assert named(ev,'alert'),ev
+        cases.append('r5_original_23_tables_missing_007_keeps_receipt_and_capacity_unclaimed')
 
         return {'complete':True,'cases':len(cases),'scenarios':cases,
             'actual_php_core_helpers':True,'actual_mariadb_capacity':True,
