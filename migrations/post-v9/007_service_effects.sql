@@ -9,6 +9,8 @@
 -- fake payment records. NULL pay_row_id is valid only for authenticated
 -- non-payment source entries; payment entries require pay_row_id and NULL
 -- source_kind/ref. No backfill is inferred from counts or remote accounts.
+-- If an earlier 007 exists, audit exact rows/constraints and apply only a
+-- separately reviewed data-preserving forward ALTER; NEVER replay CREATE.
 CREATE TABLE service_effects (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   pay_row_id INT DEFAULT NULL,
@@ -16,6 +18,10 @@ CREATE TABLE service_effects (
   source_ref VARCHAR(100) COLLATE utf8mb4_bin DEFAULT NULL,
   actor_userid BIGINT DEFAULT NULL,
   ordinal INT UNSIGNED NOT NULL,
+  -- Payment inventory has ONE durable owner per purchase:
+  -- hosted CREATE ordinal 1, or manual_hold/wallet_hold ordinal 0.
+  -- CREATE rows for pre-reserved manual/wallet purchases carry zero.
+  -- Nonpaid trials/bulk use source_kind/source_ref and their own owner.
   reserved_count INT UNSIGNED NOT NULL DEFAULT 0,
   operation_id CHAR(32) COLLATE utf8mb4_bin NOT NULL,
   effect_kind VARCHAR(16) COLLATE utf8mb4_bin NOT NULL DEFAULT 'create',

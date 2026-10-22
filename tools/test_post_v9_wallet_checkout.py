@@ -308,7 +308,7 @@ def check():
         assert [(x['days'],x['volume_gb']) for x in calls(allowed,'POST')]==[(37,7)],allowed
         assert paid(positive)=='paid_with_wallet' and wallet()==49900 and cap()==9
         assert detail(positive)==('wallet_hold\t0\t1\tconsumed\n'
-                                 'create\t1\t1\tlocal_recorded')
+                                 'create\t1\t0\tlocal_recorded')
         assert not calls(route(work,env,driver,hash='r2_quote_zero_template',
                                custom=True),'POST')
         cases.append('r2_zero_template_exact_custom_dimensions_one_effect')
@@ -347,7 +347,7 @@ def check():
         assert len(posts)==1 and (posts[0]['days'],posts[0]['volume_gb'])==(37,7),outcomes
         assert paid(contested)=='paid_with_wallet' and wallet()==49900 and cap()==9
         assert detail(contested)==('wallet_hold\t0\t1\tconsumed\n'
-                                  'create\t1\t1\tlocal_recorded')
+                                  'create\t1\t0\tlocal_recorded')
         assert not calls(route(work,env,driver,hash='r2_concurrent_custom',
                                custom=False),'POST')
         cases.append('r2_concurrent_wrong_right_mode_exactly_one_effect')
@@ -452,7 +452,7 @@ def check():
         assert len(calls(drift,'GET'))==len(calls(drift,'QR'))==1,drift
         assert paid(frozen)=='paid_with_wallet' and wallet()==49900 and cap()==9
         assert detail(frozen)==('wallet_hold\t0\t1\tconsumed\n'
-                                'create\t1\t1\tlocal_recorded')
+                                'create\t1\t0\tlocal_recorded')
         reports=[m for m in calls(drift,'MESSAGE') if 'volume=' in m['synthetic_note']]
         assert sorted(m['to'] for m in reports)==[9001,9003],reports
         assert all('volume=2 days=30' in m['synthetic_note'] and
@@ -579,8 +579,11 @@ def check():
         assert len(calls(done,'QR'))==2
         assert paid(multi)=='paid_with_wallet' and wallet()==49900 and cap()==8
         assert detail(multi)==('wallet_hold\t0\t2\tconsumed\n'
-                              'create\t1\t2\tlocal_recorded\n'
+                              'create\t1\t0\tlocal_recorded\n'
                               'create\t2\t0\tlocal_recorded'),detail(multi)
+        assert sql(work,env,f'SELECT COALESCE(SUM(reserved_count),0) '
+            f'FROM service_effects WHERE pay_row_id={multi}')=='2', (
+            'Single wallet hold owns BOTH slots; CREATE lines must not duplicate inventory')
         assert sql(work,env,f'SELECT COUNT(*) FROM orders_list o '
             f'JOIN service_effects e ON o.id=e.order_id '
             f"WHERE e.pay_row_id={multi} AND e.effect_kind='create'")=='2'
@@ -594,7 +597,7 @@ def check():
         assert len(calls(failed,'POST'))==2 and not calls(failed,'QR'),failed
         assert paid(unknown)=='processing_wallet' and wallet()==49900 and cap()==8
         assert detail(unknown)==('wallet_hold\t0\t2\tconsumed\n'
-                                 'create\t1\t2\tlocal_recorded\n'
+                                 'create\t1\t0\tlocal_recorded\n'
                                  'create\t2\t0\tdispatching'),detail(unknown)
         assert not calls(route(work,env,driver,hash='native_partial'),'POST')
         cases.append('real_multi_wallet_second_line_ambiguous_stays_paid_hold_no_replay')
@@ -605,7 +608,7 @@ def check():
         assert calls(user,'QR')[0]['state']=='paid_with_wallet'
         assert paid(custom)=='paid_with_wallet' and wallet()==49900 and cap()==9
         assert detail(custom)==('wallet_hold\t0\t1\tconsumed\n'
-                                'create\t1\t1\tlocal_recorded'),detail(custom)
+                                'create\t1\t0\tlocal_recorded'),detail(custom)
         assert not calls(route(work,env,driver,hash='native_custom',custom=True),'POST')
         cases.append('real_custom_wallet_checkout_single_effect_after_commit')
 
@@ -639,7 +642,7 @@ def check():
         assert len(calls(failed,'POST'))==1 and not calls(failed,'QR')
         assert paid(sqlfail)=='processing_wallet' and wallet()==49900 and cap()==9
         assert detail(sqlfail)==('wallet_hold\t0\t1\tconsumed\n'
-                                 'create\t1\t1\tverified'),detail(sqlfail)
+                                 'create\t1\t0\tverified'),detail(sqlfail)
         assert not calls(route(work,env,driver,hash='native_sqlfail',custom=True),'POST')
         cases.append('real_custom_wallet_verified_remote_failed_order_retained_review')
 

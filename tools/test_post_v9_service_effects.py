@@ -34,7 +34,21 @@ $GLOBALS['events']=[];
 function createServerAccount(...$args) {
     $mode=$GLOBALS['spec']['mode']??'ok';
     $remark=(string)$args[4];
-    $GLOBALS['events'][]=['event'=>'POST','username'=>$remark];
+    // The 007 INSERT and full-count server_info decrement must both have
+    // committed before synthetic provider POST; verify actual SQL readback.
+    global $connection;
+    $paidId=(int)($GLOBALS['spec']['pay']??0);
+    $capacity=(int)($connection->query('SELECT ucount FROM server_info WHERE id=2')->fetch_row()[0]??-1);
+    $held=0;
+    if ($paidId>0) {
+        $stmt=$connection->prepare("SELECT COALESCE(SUM(reserved_count),0)
+            FROM service_effects WHERE pay_row_id=?");
+        $stmt->bind_param('i',$paidId);
+        if ($stmt->execute()) $held=(int)$stmt->get_result()->fetch_row()[0];
+        $stmt->close();
+    }
+    $GLOBALS['events'][]=['event'=>'POST','username'=>$remark,
+        'capacity_at_post'=>$capacity,'payment_held_at_post'=>$held];
     $GLOBALS['remote']=[
         'username'=>$remark,
         'note'=>'achbot:v1:'.(string)$args[14],
@@ -89,6 +103,7 @@ function getMarzbanUser($serverId,$remark,$token=null,$strict=false) {
     return (object)$account;
 }
 require $root.'/src/Finance/ServiceEffects.php';
+require_once $root.'/src/Finance/ReceiptHelpers.php';
 $GLOBALS['spec']=$spec;
 $pay=(int)($spec['pay']??0);$line=(int)($spec['line']??1);
 $name=(string)($spec['username']??('source_fixture_'.$pay.'_'.$line));
@@ -101,7 +116,27 @@ $p=[
     'net_type'=>'normal','rahgozar'=>0,'limitip'=>0
 ];
 try {
-    if (($spec['operation']??'')==='nonpaid_create') {
+    if (($spec['operation']??'create')==='manual_capacity') {
+        // Exact real manual-standard capacity helper on an independent PHP
+        // session, not a duplicate SQL expression inside the test.
+        if (!$connection->begin_transaction())
+            throw new RuntimeException('fixture_manual_capacity_begin_failed');
+        $stmt=$connection->prepare('SELECT * FROM pays WHERE id=? FOR UPDATE');
+        $stmt->bind_param('i',$pay);
+        if (!$stmt->execute()) throw new RuntimeException('fixture_manual_capacity_claim_failed');
+        $payment=$stmt->get_result()->fetch_assoc();$stmt->close();
+        if (!$payment) throw new RuntimeException('fixture_manual_capacity_payment_missing');
+        $count=achbotManualStandardReserveCapacityLocked($connection,$payment);
+        achbotEffectRecordManualCapacityLocked($connection,$payment,$count);
+        $stmt=$connection->prepare("UPDATE pays SET state='processing',approved_by=9001
+             WHERE id=? AND state='have_sent'");
+        $stmt->bind_param('i',$pay);
+        if (!$stmt->execute() || $stmt->affected_rows!==1)
+            throw new RuntimeException('fixture_manual_capacity_claim_failed');
+        $stmt->close();
+        if (!$connection->commit()) throw new RuntimeException('fixture_manual_capacity_commit_unknown');
+        $value=['reserved'=>$count];
+    } elseif (($spec['operation']??'')==='nonpaid_create') {
         $kind=(string)($spec['kind']??'free_trial');
         $source=(string)($spec['source']??'trial:1001');
         $actor=(int)($spec['actor']??1001);
@@ -142,7 +177,7 @@ try {
     }
     $error=null;
 } catch(Throwable $e) {
-    if (($spec['operation']??'')==='link_transactional') {
+    if (in_array(($spec['operation']??''),['link_transactional','manual_capacity'],true)) {
         try {$connection->rollback();} catch(Throwable $ignored) {}
     }
     $value=null;
@@ -194,6 +229,9 @@ def main():
             query(work,env,(ROOT/'migrations/post-v9/001_marzban_panel_group_id.sql').read_text(),db)
         query(work,env,(ROOT/'migrations/post-v9/007_service_effects.sql').read_text())
         assert len(query(work,env,'SHOW TABLES').splitlines())==24
+        # Existing identity/readback tests are not a capacity stress test.
+        # Keep ample stock until the explicit bounded scenarios below.
+        query(work,env,'UPDATE server_info SET ucount=1000 WHERE id=2')
         driver=work/'effect-run.php';driver.write_text(PHP)
 
         # Original 23-table installation plus 001 alone cannot accidentally
@@ -470,12 +508,12 @@ def main():
         # unjournaled CREATE when 007 is first introduced on older paid data.
         query(work,env,'UPDATE server_info SET ucount=10 WHERE id=2')
         for terminal in ('approved','auto_cart_approved','paid_with_wallet'):
-            legacy=pay(work,env,'already_paid_terminal_'+terminal)
-            query(work,env,f"UPDATE pays SET state='{terminal}' WHERE id={legacy}")
-            denied=run_php(work,env,driver,pay=legacy,
+            legacy_pay=pay(work,env,'already_paid_terminal_'+terminal)
+            query(work,env,f"UPDATE pays SET state='{terminal}' WHERE id={legacy_pay}")
+            denied=run_php(work,env,driver,pay=legacy_pay,
                 username='terminal_forbidden_'+terminal)
             assert denied['error']=='effect_payment_identity_mismatch',denied
-            assert denied['events']==[] and state(work,env,legacy)==''
+            assert denied['events']==[] and state(work,env,legacy_pay)==''
             assert query(work,env,'SELECT ucount FROM server_info WHERE id=2')=='10'
         cases.append('r1_terminal_legacy_paid_states_cannot_authorize_new_post')
 
@@ -524,6 +562,140 @@ def main():
                        effect=effect,order=order)['error']
         assert query(work,env,f"SELECT state FROM service_effects WHERE id={effect}")=='local_recorded'
         cases.append('nonpaid_trial_exact_order_link_once_only')
+
+        # Older 007 schema shape must not be mistaken for durable inventory
+        # ownership. No POST or auto-migration is ever acceptable.
+        # Earlier malformed-index fixture intentionally removed pay_line.
+        # Restore it so this check isolates the missing capacity column.
+        query(work,env,'ALTER TABLE service_effects ADD UNIQUE KEY uq_effect_pay_line (pay_row_id,effect_kind,ordinal)',legacy)
+        query(work,env,'ALTER TABLE service_effects DROP COLUMN reserved_count',legacy)
+        no_hold=pay(work,env,'missing_reserved_count',db=legacy)
+        denied=run_php(work,env,driver,pay=no_hold,db=legacy)
+        assert denied['error']=='effect_capacity_schema_missing' and denied['events']==[],denied
+        cases.append('r1_old_007_missing_capacity_owner_schema_blocks_post')
+
+        # CRITICAL hosted multi-account shortfall: ucount > 0 is not proof
+        # that a two-account payment owns TWO server slots.
+        query(work,env,'UPDATE server_info SET ucount=1 WHERE id=2')
+        low=pay(work,env,'r1_hosted_full_count_insufficient',count=2)
+        denied=run_php(work,env,driver,pay=low)
+        assert denied['error']=='effect_capacity_insufficient_or_unconfirmed'
+        assert denied['events']==[] and state(work,env,low)==''
+        assert query(work,env,'SELECT ucount FROM server_info WHERE id=2')=='1'
+        cases.append('r1_hosted_two_requested_one_slot_zero_create')
+
+        # Malformed explicit negative count is not historical one-account
+        # shorthand: reject before any remote operation or capacity change.
+        negative=pay(work,env,'r1_hosted_negative_count',count=-2)
+        bad=run_php(work,env,driver,pay=negative)
+        assert bad['error']=='effect_payment_identity_mismatch'
+        assert bad['events']==[] and state(work,env,negative)==''
+        assert query(work,env,'SELECT ucount FROM server_info WHERE id=2')=='1'
+        cases.append('r1_hosted_negative_quantity_rejected_before_post')
+
+        # Exact full-count hold is committed along with ordinal 1, before
+        # first POST. Second ordinal proves the hold rather than deducting 2x.
+        query(work,env,'UPDATE server_info SET ucount=2 WHERE id=2')
+        two=pay(work,env,'r1_hosted_exact_two',count=2)
+        first=run_php(work,env,driver,pay=two,line=1,username='hosted_exact_1')
+        second=run_php(work,env,driver,pay=two,line=2,username='hosted_exact_2')
+        assert first['error'] is None and second['error'] is None,(first,second)
+        assert first['events'][0]['payment_held_at_post']==2 and first['events'][0]['capacity_at_post']==0,first
+        assert second['events'][0]['payment_held_at_post']==2 and second['events'][0]['capacity_at_post']==0,second
+        assert query(work,env,f'SELECT ordinal,reserved_count,state FROM service_effects WHERE pay_row_id={two} ORDER BY ordinal')=='1\t2\tverified\n2\t0\tverified'
+        assert query(work,env,'SELECT ucount FROM server_info WHERE id=2')=='0'
+        assert run_php(work,env,driver,pay=two,line=2)['events']==[]
+        cases.append('r1_hosted_two_exact_slots_held_before_post_once')
+
+        # Different payments contend for the SAME physical counter. Only one
+        # can win its guarded UPDATE under actual InnoDB row serialization.
+        query(work,env,'UPDATE server_info SET ucount=1 WHERE id=2')
+        a=pay(work,env,'r1_hosted_buyer_a');b=pay(work,env,'r1_hosted_buyer_b')
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            race=list(pool.map(lambda k:run_php(work,env,driver,pay=k),[a,b]))
+        assert sum(sum(e['event']=='POST' for e in x['events']) for x in race)==1,race
+        assert query(work,env,'SELECT ucount FROM server_info WHERE id=2')=='0'
+        assert sum(int(query(work,env,
+            f'SELECT COALESCE(SUM(reserved_count),0) FROM service_effects WHERE pay_row_id={k}'))
+            for k in (a,b))==1
+        cases.append('r1_hosted_distinct_payments_one_slot_single_create')
+
+        # Real hosted claim races the ACTUAL manual-standard capacity helper;
+        # the winning PHP session exclusively owns the only free unit.
+        query(work,env,'UPDATE server_info SET ucount=1 WHERE id=2')
+        hosted=pay(work,env,'r1_compete_hosted')
+        manual=pay(work,env,'r1_compete_manual')
+        query(work,env,f"UPDATE pays SET state='have_sent' WHERE id={manual}")
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            hosted_case,manual_case=list(pool.map(lambda action:run_php(work,env,driver,**action),[
+                {'pay':hosted,'username':'hosted_competitor'},
+                {'pay':manual,'operation':'manual_capacity'}]))
+        winner_count=(hosted_case['error'] is None)+(manual_case['error'] is None)
+        assert winner_count==1,(hosted_case,manual_case)
+        assert query(work,env,'SELECT ucount FROM server_info WHERE id=2')=='0'
+        assert (sum(e['event']=='POST' for e in hosted_case['events']) ==
+                int(hosted_case['error'] is None)),(hosted_case,manual_case)
+        assert int(query(work,env,
+            f'SELECT COALESCE(SUM(reserved_count),0) FROM service_effects WHERE pay_row_id={hosted}'))==int(hosted_case['error'] is None)
+        assert int(query(work,env,
+            f'SELECT COALESCE(SUM(reserved_count),0) FROM service_effects WHERE pay_row_id={manual}'))==int(manual_case['error'] is None)
+        cases.append('r1_hosted_vs_real_manual_capacity_helper_no_overbooking')
+
+        # A manual claim has already reserved full count. Its CREATE must
+        # consume that durable hold, not decrement the server again.
+        query(work,env,'UPDATE server_info SET ucount=2 WHERE id=2')
+        manual_owned=pay(work,env,'r1_manual_original_capacity_hold',count=2)
+        query(work,env,f"UPDATE pays SET state='have_sent' WHERE id={manual_owned}")
+        held=run_php(work,env,driver,pay=manual_owned,operation='manual_capacity')
+        assert held['error'] is None and held['result']['reserved']==2,held
+        assert query(work,env,'SELECT ucount FROM server_info WHERE id=2')=='0'
+        m1=run_php(work,env,driver,pay=manual_owned,line=1,username='manual_owned_1')
+        m2=run_php(work,env,driver,pay=manual_owned,line=2,username='manual_owned_2')
+        assert m1['error'] is None and m2['error'] is None,(m1,m2)
+        assert m1['events'][0]['capacity_at_post']==0 and m2['events'][0]['capacity_at_post']==0
+        assert query(work,env,'SELECT ucount FROM server_info WHERE id=2')=='0'
+        assert query(work,env,
+            f"SELECT effect_kind,ordinal,state,reserved_count FROM service_effects "
+            f"WHERE pay_row_id={manual_owned} ORDER BY ordinal,effect_kind")==(
+                'manual_hold\t0\tconsumed\t2\ncreate\t1\tverified\t0\ncreate\t2\tverified\t0')
+        assert run_php(work,env,driver,pay=manual_owned,line=1,username='manual_owned_1')['events']==[]
+        cases.append('r1_manual_claim_capacity_hold_consumed_no_second_decrement')
+
+        # A claimed manual receipt without the matching durable hold MUST
+        # fail before any CREATE; never silently subtract more capacity.
+        missing=pay(work,env,'r1_manual_missing_hold')
+        query(work,env,f"UPDATE pays SET approved_by=9001 WHERE id={missing}")
+        before=query(work,env,'SELECT ucount FROM server_info WHERE id=2')
+        denied=run_php(work,env,driver,pay=missing)
+        assert denied['error']=='effect_manual_hold_missing_or_unexpected'
+        assert denied['events']==[] and state(work,env,missing)==''
+        assert query(work,env,'SELECT ucount FROM server_info WHERE id=2')==before
+        cases.append('r1_manual_claim_missing_capacity_hold_fails_closed')
+
+        # Unknown second CREATE leaves the entire full-count hold durable,
+        # preserving account 1 and freezing account 2 against replay.
+        query(work,env,'UPDATE server_info SET ucount=2 WHERE id=2')
+        partial=pay(work,env,'r1_two_partial_hold',count=2)
+        first=run_php(work,env,driver,pay=partial,line=1,username='partial_first')
+        uncertain=run_php(work,env,driver,pay=partial,line=2,
+                          username='partial_second',mode='post_lost')
+        assert first['error'] is None and uncertain['error'],(first,uncertain)
+        assert query(work,env,'SELECT ucount FROM server_info WHERE id=2')=='0'
+        assert query(work,env,
+            f'SELECT reserved_count,state FROM service_effects WHERE pay_row_id={partial} ORDER BY ordinal')=='2\tverified\n0\tdispatching'
+        assert run_php(work,env,driver,pay=partial,line=2,username='partial_second')['events']==[]
+        cases.append('r1_two_account_partial_unknown_keeps_full_capacity_hold')
+
+        # A local insert failure rolls back the preceding InnoDB decrement.
+        query(work,env,'UPDATE server_info SET ucount=1 WHERE id=2')
+        rollback=pay(work,env,'r1_rollback_before_post')
+        query(work,env,"CREATE TRIGGER owned_effect_insert_deny BEFORE INSERT ON service_effects "
+            "FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='owned_rollback_test'")
+        try: failed=run_php(work,env,driver,pay=rollback)
+        finally:query(work,env,'DROP TRIGGER owned_effect_insert_deny')
+        assert failed['error'] and failed['events']==[] and state(work,env,rollback)=='',failed
+        assert query(work,env,'SELECT ucount FROM server_info WHERE id=2')=='1'
+        cases.append('r1_reservation_insert_sql_failure_rolls_back_all_slots')
 
     report={'complete':True,'cases':len(cases),'scenarios':cases,
             'source_real_php':True,'owned_mariadb_only':True,

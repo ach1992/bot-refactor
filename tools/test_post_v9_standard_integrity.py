@@ -31,7 +31,9 @@ $userInfo=['isAdmin'=>false,'userid'=>$from_id];
 $time=1800000000;
 $text='';$data='accept'.(string)($spec['hash']??'');
 $buttonValues=['cancel'=>'cancel'];
-$botState=['remark'=>'manual','rewardChannel'=>null];
+$botState=['remark'=>'manual',
+    'rewardChannel'=>str_starts_with((string)($spec['telegram']??''),'referral_')
+        ?9003:null];
 $mainValues=[
     'renewed_config_to_user'=>'REMARK VOLUME DAYS',
     'sending_config_to_user'=>'Working',
@@ -215,7 +217,12 @@ def named(events,name):
 def seed(work,env,name,*,capacity=10,count=1,renew=False,inviter=False):
     # Each isolated scenario resets pays, but the new 007 audit FK retains
     # its old payment references until this disposable test-only teardown.
-    if 'service_effects' in sql(work,env,'SHOW TABLES').splitlines():
+    # Disposable fixture teardown must respect the real 008 -> pays foreign
+    # key. Never disable FK checks or mutate installed operator data.
+    tables=sql(work,env,'SHOW TABLES').splitlines()
+    if 'referral_awards' in tables:
+        sql(work,env,'DELETE FROM referral_awards')
+    if 'service_effects' in tables:
         sql(work,env,'DELETE FROM service_effects')
     purchase.init(work,env,'http://127.0.0.1:9')
     sql(work,env,"DELETE FROM setting WHERE type='INVITE_BANNER_AMOUNT'")
@@ -244,6 +251,9 @@ def check():
         # historical 23-table checks run separately below with it absent.
         sql(work,env,(ROOT/'migrations/post-v9/001_marzban_panel_group_id.sql').read_text())
         sql(work,env,(ROOT/'migrations/post-v9/007_service_effects.sql').read_text())
+        # Source now requires both source-only financial journals. The 008
+        # schema is disposable here, never operator-installed or backfilled.
+        sql(work,env,(ROOT/'migrations/post-v9/008_referral_awards.sql').read_text())
 
         def call(key,**spec):return php_call(work,env,driver,hash=key,**spec)
         def state(key):return sql(work,env,f"SELECT state FROM pays WHERE hash_id='{key}'")
@@ -260,6 +270,10 @@ def check():
         assert len(named(ev,'CREATE'))==2 and orders()==2 and capacity()==0, (ev,state(key),orders(),capacity())
         assert state(key)=='approved'
         assert not named(call(key),'CREATE') and capacity()==0
+        ledger=sql(work,env,"SELECT effect_kind,ordinal,reserved_count,state "
+            "FROM service_effects WHERE pay_row_id=(SELECT id FROM pays WHERE hash_id='capacity_exact') "
+            "ORDER BY ordinal,effect_kind")
+        assert ledger=='manual_hold\t0\t2\tconsumed\ncreate\t1\t0\tlocal_recorded\ncreate\t2\t0\tlocal_recorded',ledger
         cases.append('r1_exact_two_units_reserved_once_and_replay_fenced')
 
         key=seed(work,env,'lost_remote',capacity=2,count=2)
@@ -267,6 +281,10 @@ def check():
         assert len(named(ev,'CREATE'))==1 and state(key)=='processing'
         assert capacity()==0 and orders()==0
         assert not named(call(key),'CREATE') and capacity()==0
+        marker=sql(work,env,"SELECT reserved_count,state FROM service_effects "
+            "WHERE effect_kind='manual_hold' AND pay_row_id="
+            "(SELECT id FROM pays WHERE hash_id='lost_remote')")
+        assert marker=='2\tconsumed',marker
         cases.append('r1_remote_unknown_keeps_pre_reserved_capacity_no_replay')
 
         key=seed(work,env,'postcreate_sql',capacity=2,count=2)
@@ -285,6 +303,19 @@ def check():
         finally:sql(work,env,'DROP TRIGGER owned_manual_capacity_fail')
         assert state(key)=='have_sent' and capacity()==3 and not named(ev,'CREATE')
         cases.append('r1_mysqlireportoff_conditional_reservation_SQL_failure_no_create')
+
+        # Manual capacity UPDATE and its durable payment-owned 007 hold INSERT
+        # are in ONE claim transaction. Failed insert must roll everything
+        # back, not leave invisible stolen inventory and a processing receipt.
+        key=seed(work,env,'manual_hold_insert_failure',capacity=2)
+        sql(work,env,"CREATE TRIGGER owned_manual_hold_fail BEFORE INSERT ON service_effects "
+            "FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='owned_hold_denial'")
+        try: ev=call(key,nonthrowing=True)
+        finally:sql(work,env,'DROP TRIGGER owned_manual_hold_fail')
+        assert state(key)=='have_sent' and capacity()==2 and orders()==0,ev
+        assert not named(ev,'CREATE')
+        assert sql(work,env,"SELECT COUNT(*) FROM service_effects")=='0'
+        cases.append('r1_manual_hold_insert_failure_rollback_claim_and_capacity')
 
         seed(work,env,'capacity_helper',capacity=1)
         ev=call('capacity_helper',op='capacity_helper',count=2,nonthrowing=True)
@@ -369,6 +400,9 @@ def check():
         assert any('purchase_account_qr #2' in x['text']
                    for x in named(ev,'MESSAGE') if x['to']==9001)
         assert sql(work,env,'SELECT wallet FROM users WHERE userid=9002')=='51000'
+        assert sql(work,env,"SELECT state,amount_toman FROM referral_awards "
+                   "WHERE pay_row_id=(SELECT id FROM pays WHERE hash_id='three_accounts')")==(
+                   'CONFIRMED\t1000')
         assert not named(call(key),'CREATE')
         cases.append('r3_three_accounts_second_text_failed_third_still_attempted_and_reward_credited')
 
@@ -407,7 +441,10 @@ def check():
         key=seed(work,env,'reward_ok',inviter=True)
         ev=call(key)
         assert state(key)=='approved' and sql(work,env,'SELECT wallet FROM users WHERE userid=9002')=='51000',(ev,state(key),sql(work,env,'SELECT wallet FROM users WHERE userid=9002'))
-        assert any('جایزه' in x['text'] for x in named(ev,'MESSAGE') if x['to']==9002)
+        assert any('پاداش معرفی' in x['text'] for x in named(ev,'MESSAGE') if x['to']==9002)
+        assert sql(work,env,"SELECT state,amount_toman FROM referral_awards "
+                   "WHERE pay_row_id=(SELECT id FROM pays WHERE hash_id='reward_ok')")==(
+                   'CONFIRMED\t1000')
         assert not named(call(key),'CREATE')
         assert sql(work,env,'SELECT wallet FROM users WHERE userid=9002')=='51000'
         cases.append('r4_referral_confirmed_one_wallet_update_no_callback_recredit')
@@ -436,26 +473,40 @@ def check():
         assert sql(work,env,'SELECT wallet FROM users WHERE userid=9002')=='51000'
         cases.append('r4_postcredit_telegram_failure_never_recredits')
 
+        # Exercise the actual approved payment + durable 008 credit path, not
+        # an obsolete direct referral helper without a payment ID. Confirmed
+        # money remains confirmed despite independently failing Telegram
+        # targets; replay never increments wallet or issues a second CREATE.
         for mode in ['referral_notice_throw','referral_notice_false',
                      'referral_admin_false','referral_channel_null']:
-            seed(work,env,'reward_helper_'+mode,inviter=True)
-            ev=call('unused',op='referral_helper',telegram=mode)
-            assert named(ev,'REFERRAL_RESULT')==[{'name':'REFERRAL_RESULT','confirmed':True}],ev
+            key=seed(work,env,'reward_helper_'+mode,inviter=True)
+            ev=call(key,telegram=mode)
+            assert state(key)=='approved' and len(named(ev,'CREATE'))==1,ev
             assert sql(work,env,'SELECT wallet FROM users WHERE userid=9002')=='51000',mode
-            receivers=[x['to'] for x in named(ev,'MESSAGE')]
+            assert sql(work,env,"SELECT state,amount_toman FROM referral_awards "
+                f"WHERE pay_row_id=(SELECT id FROM pays WHERE hash_id='{key}')")==(
+                'CONFIRMED\t1000')
+            awards=[x for x in named(ev,'MESSAGE') if 'پاداش معرفی' in x['text']]
+            receivers=[x['to'] for x in awards]
             assert receivers==[9002,9001,9003],(mode,receivers)
+            assert not named(call(key,telegram=mode),'CREATE')
+            assert sql(work,env,'SELECT wallet FROM users WHERE userid=9002')=='51000',mode
             cases.append('r4_confirmed_credit_independent_of_'+mode)
 
-        seed(work,env,'reward_helper_sql_false',inviter=True)
+        key=seed(work,env,'reward_helper_sql_false',inviter=True)
         sql(work,env,"CREATE TRIGGER owned_reward_direct_fail BEFORE UPDATE ON users "
             "FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='fixture_reward_direct_fail'")
         try:
-            ev=call('unused',op='referral_helper',nonthrowing=True)
+            ev=call(key,nonthrowing=True)
         finally:
             sql(work,env,'DROP TRIGGER owned_reward_direct_fail')
-        assert named(ev,'REFERRAL_RESULT')==[{'name':'REFERRAL_RESULT','confirmed':False}],ev
+        assert state(key)=='approved' and len(named(ev,'CREATE'))==1,ev
         assert sql(work,env,'SELECT wallet FROM users WHERE userid=9002')=='50000'
-        assert not named(ev,'MESSAGE')
+        assert sql(work,env,"SELECT state FROM referral_awards "
+            f"WHERE pay_row_id=(SELECT id FROM pays WHERE hash_id='{key}')")==(
+            'NEEDS_REVIEW')
+        assert not any('پاداش معرفی شما' in x['text'] for x in named(ev,'MESSAGE'))
+        assert not named(call(key),'CREATE')
         cases.append('r4_unconfirmed_sql_credit_returns_false_without_notice')
 
         key=seed(work,env,'reward_missing',inviter=True)
@@ -469,7 +520,7 @@ def check():
         # paid CREATE now independently REQUIRES an installed, valid 007.
         key=seed(work,env,'legacy_receipt_with_007')
         tables=set(sql(work,env,'SHOW TABLES').splitlines())
-        assert len(tables)==24 and 'service_effects' in tables
+        assert len(tables)==25 and 'service_effects' in tables and 'referral_awards' in tables
         assert 'payment_attempts' not in tables and 'payment_transactions' not in tables
         ev=call(key)
         assert state(key)=='approved' and len(named(ev,'CREATE'))==1,(ev,state(key))
@@ -549,6 +600,9 @@ def check():
         # BEFORE reserving capacity/marking processing, even if the original
         # 003 receipt-evidence policy would otherwise permit review.
         key=seed(work,env,'no_007_original_receipt')
+        # Explicit disposable rollback of NEW 008/007 tables before asserting
+        # ORIGINAL frozen 23-table compatibility (never operator-installed).
+        sql(work,env,'DROP TABLE referral_awards')
         sql(work,env,'DROP TABLE service_effects')
         sql(work,env,'DROP TABLE payment_transactions; DROP TABLE payment_attempts')
         sql(work,env,'ALTER TABLE server_info DROP COLUMN panel_group_id')

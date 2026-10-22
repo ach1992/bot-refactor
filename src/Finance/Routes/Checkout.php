@@ -497,6 +497,14 @@ if (preg_match('/^accCustom(.+)$/D', $data, $match) && $text != $buttonValues['c
         }
 
         $payRowId = (int)$payInfo['id'];
+        // A custom manual BUY_SUB is an operator-approved CREATE as well.
+        // Reserve its complete quantity and own it in 007 in this SAME
+        // original receipt transaction, before any external operation.
+        achbotEffectRequireUniqueLine($connection);
+        $reservedCount=achbotManualCustomReserveCapacityLocked(
+            $connection,$payInfo);
+        achbotEffectRecordManualCapacityLocked(
+            $connection,$payInfo,$reservedCount);
         $stmt = $connection->prepare("UPDATE `pays` SET `state` = 'processing', `approved_by` = ? WHERE `id` = ? AND `state` = 'have_sent'");
         $stmt->bind_param('ii', $from_id, $payRowId);
         $stmt->execute();

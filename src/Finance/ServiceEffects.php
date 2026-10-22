@@ -42,6 +42,74 @@ function achbotEffectRequireUniqueLine(mysqli $db): void {
         if (array_values($columns)!==$expected)
             throw new RuntimeException('effect_unique_index_invalid');
     }
+    // Installing the old 007 without a durable full-quantity ownership field
+    // is not equivalent to the current CREATE contract. Abort before POST;
+    // never infer an existing payment's held capacity from its remote effects.
+    $fields=$db->query("SHOW COLUMNS FROM service_effects LIKE 'reserved_count'");
+    if (!$fields || $fields->num_rows!==1)
+        throw new RuntimeException('effect_capacity_schema_missing');
+    $shape=$fields->fetch_assoc();$fields->free();
+    if (!preg_match('/^int(?:\(\d+\))? unsigned$/i',(string)($shape['Type']??'')) ||
+        ($shape['Null']??'')!=='NO')
+        throw new RuntimeException('effect_capacity_schema_invalid');
+}
+
+/**
+ * Manual-standard already atomically deducted full capacity under its locked
+ * have_sent -> processing payment claim. Journal THAT exact hold in the SAME
+ * transaction, rather than deducting it a second time in ordinal 1.
+ * An uncertain COMMIT never authorizes a remote CREATE or hold restoration.
+ */
+function achbotEffectRecordManualCapacityLocked(mysqli $db,array $pay,int $count): void {
+    achbotEffectRequireUniqueLine($db);
+    $tx=$db->query('SELECT @@in_transaction AS tx');
+    if (!$tx || (int)($tx->fetch_assoc()['tx']??0)!==1)
+        throw new RuntimeException('manual_hold_requires_payment_transaction');
+    $payId=(int)($pay['id']??0);
+    $planId=(int)($pay['plan_id']??0);
+    $serverId=(int)($pay['server_id']??0);
+    $expectedCount=(int)($pay['agent_count']??0);
+    if ($expectedCount===0) $expectedCount=1;
+    if ($payId<=0 || $planId<=0 || $serverId<=0 || $count<=0 ||
+        $expectedCount!==$count || ($pay['type']??'')!=='BUY_SUB' ||
+        ($pay['state']??'')!=='have_sent')
+        throw new RuntimeException('manual_hold_payment_mismatch');
+    $stmt=$db->prepare("SELECT i.panel_group_id,c.panel_url,c.type,
+         s.server_id,s.inbound_id,g.id AS valid_group
+         FROM server_plans s
+         JOIN server_info i ON i.id=s.server_id
+         JOIN server_config c ON c.id=i.id
+         LEFT JOIN setting g ON g.id=i.panel_group_id
+             AND g.type='ACHBOT_MARZBAN_PANEL_GROUP'
+         WHERE s.id=? AND s.active=1 LIMIT 1");
+    if (!$stmt) throw new RuntimeException('manual_hold_target_prepare_failed');
+    $stmt->bind_param('i',$planId);
+    if (!$stmt->execute()) throw new RuntimeException('manual_hold_target_read_failed');
+    $target=$stmt->get_result()->fetch_assoc();$stmt->close();
+    if (!$target || (int)$target['server_id']!==$serverId ||
+        (int)$target['inbound_id']!==0 || $target['type']!=='marzban' ||
+        ($target['panel_group_id']!==null && $target['valid_group']===null) ||
+        !is_string($target['panel_url']) || $target['panel_url']==='')
+        throw new RuntimeException('manual_hold_target_invalid');
+    $group=$target['panel_group_id']===null?null:(int)$target['panel_group_id'];
+    $endpoint=hash('sha256',rtrim($target['panel_url'],'/'));
+    $markerKey='manual_hold:'.$payId;
+    $markerRemark='manual_hold_'.$payId;
+    $operation=bin2hex(random_bytes(16));
+    $fingerprint=hash('sha256',json_encode([
+        'manual_hold',$payId,$planId,$serverId,$group,$endpoint,$count
+    ],JSON_THROW_ON_ERROR));
+    $stmt=$db->prepare("INSERT INTO service_effects
+        (pay_row_id,ordinal,operation_id,effect_kind,target_server_id,target_group_id,
+         target_key,endpoint_sha256,plan_id,remote_username,requested_expire,
+         requested_bytes,request_sha256,reserved_count,state)
+        VALUES (?,0,?,'manual_hold',?,?,?,?,?,?,0,0,?,?,'reserved')");
+    if (!$stmt) throw new RuntimeException('manual_hold_insert_prepare_failed');
+    $stmt->bind_param('isiississi',$payId,$operation,$serverId,$group,
+        $markerKey,$endpoint,$planId,$markerRemark,$fingerprint,$count);
+    if (!$stmt->execute() || $stmt->affected_rows!==1)
+        throw new RuntimeException('manual_hold_insert_unconfirmed');
+    $stmt->close();
 }
 
 /**
@@ -80,7 +148,8 @@ function achbotCreatePaidAccount(mysqli $db, int $payId, int $ordinal, array $p)
     }
     try {
         // These values are owned by the committed payment claim, not callback text.
-        $stmt=$db->prepare("SELECT p.user_id,p.plan_id,p.server_id AS paid_server,p.type,p.state,
+        $stmt=$db->prepare("SELECT p.user_id,p.plan_id,p.server_id AS paid_server,p.type,p.state,p.approved_by,
+            p.agent_count AS raw_count,
             CASE WHEN p.agent_count>0 THEN p.agent_count ELSE 1 END AS requested_count,
             s.server_id AS plan_server,s.inbound_id AS plan_inbound,
             c.type AS panel_type,i.panel_group_id,c.panel_url,
@@ -109,6 +178,9 @@ function achbotCreatePaidAccount(mysqli $db, int $payId, int $ordinal, array $p)
             $claim['panel_type']!=='marzban' ||
             ($claim['panel_group_id']!==null && $claim['valid_group']===null) ||
             !is_string($claim['panel_url']) || $claim['panel_url']==='' ||
+            // 0/null is the documented historical one-account default.
+            // A negative persisted count is NOT an authorized single account.
+            (int)($claim['raw_count']??0)<0 ||
             $ordinal>(int)$claim['requested_count']) {
             throw new RuntimeException('effect_payment_identity_mismatch');
         }
@@ -127,86 +199,108 @@ function achbotCreatePaidAccount(mysqli $db, int $payId, int $ordinal, array $p)
         // The UNIQUE pay/line key is the database backstop. Serializing the
         // short reservation on pays additionally rejects an existing effect even
         // on an operator-misconfigured database missing that unique index.
-        // The FIRST line reserves the ENTIRE paid quantity in the same
-        // transaction as its durable no-replay marker. Distinct payments
-        // compete on one InnoDB server row, never on a snapshot capacity
-        // check. Following lines must prove this reservation; they cannot
-        // consume capacity again. An uncertain CREATE keeps all slots held
-        // until authenticated operator reconciliation.
+        // Exactly ONE payment-scoped source of owned server inventory:
+        // (a) wallet debit claim with a wallet_hold row,
+        // (b) manual receipt claim with a manual_hold row, or
+        // (c) hosted settlement with full guarded UPDATE on CREATE ordinal 1.
+        // All share the same InnoDB server_info counter; never subtract
+        // again for a pre-reserved payment, or release after an unknown POST.
         $requestedCount=(int)$claim['requested_count'];
-        if ($requestedCount<=0) throw new RuntimeException('effect_invalid_reserved_count');
-        $reservation=$db->prepare("SELECT ordinal,reserved_count
-            FROM service_effects WHERE pay_row_id=? AND effect_kind='create'
+        if ($requestedCount<=0)
+            throw new RuntimeException('effect_invalid_reserved_count');
+        $first=$db->prepare("SELECT ordinal,reserved_count FROM service_effects
+            WHERE pay_row_id=? AND effect_kind='create'
             ORDER BY ordinal LIMIT 1 FOR UPDATE");
-        if (!$reservation) throw new RuntimeException('effect_capacity_claim_prepare');
-        $reservation->bind_param('i',$payId);
-        if (!$reservation->execute()) throw new RuntimeException('effect_capacity_claim_read');
-        $prior=$reservation->get_result()->fetch_assoc();$reservation->close();
-        $reserveSlots=0;
-        $walletHold=null;
-        if ($claim['state']==='processing_wallet') {
-            $hold=$db->prepare("SELECT id,state,reserved_count,
-                target_server_id,target_group_id,target_key,endpoint_sha256,plan_id
-                FROM service_effects WHERE pay_row_id=?
-                  AND effect_kind='wallet_hold' AND ordinal=0
-                FOR UPDATE");
-            if (!$hold) throw new RuntimeException('effect_wallet_hold_prepare');
-            $hold->bind_param('i',$payId);
-            if (!$hold->execute()) throw new RuntimeException('effect_wallet_hold_read');
-            $rows=$hold->get_result()->fetch_all(MYSQLI_ASSOC);$hold->close();
-            if (count($rows)!==1)
-                throw new RuntimeException('effect_wallet_hold_missing');
-            $walletHold=$rows[0];
-            if ((int)$walletHold['reserved_count']!==$requestedCount ||
-                (int)$walletHold['target_server_id']!==$serverId ||
-                ($walletHold['target_group_id']===null?null:(int)$walletHold['target_group_id'])!==$group ||
-                $walletHold['target_key']!==$targetKey ||
-                $walletHold['endpoint_sha256']!==$endpoint ||
-                (int)$walletHold['plan_id']!==$planId)
-                throw new RuntimeException('effect_wallet_hold_target_changed');
+        if (!$first) throw new RuntimeException('effect_capacity_owner_prepare_failed');
+        $first->bind_param('i',$payId);
+        if (!$first->execute()) throw new RuntimeException('effect_capacity_owner_read_failed');
+        $prior=$first->get_result()->fetch_assoc();$first->close();
+
+        $wallet=$claim['state']==='processing_wallet';
+        $manual=$claim['state']==='processing' &&
+            (int)($claim['approved_by']??0)>0;
+        if ($wallet && $manual)
+            throw new RuntimeException('effect_capacity_ownership_ambiguous');
+        $requiredKind=$wallet?'wallet_hold':($manual?'manual_hold':null);
+        $holdStmt=$db->prepare("SELECT id,effect_kind,state,reserved_count,
+            target_server_id,target_group_id,target_key,endpoint_sha256,plan_id
+            FROM service_effects WHERE pay_row_id=? AND ordinal=0
+            AND effect_kind IN ('wallet_hold','manual_hold') FOR UPDATE");
+        if (!$holdStmt) throw new RuntimeException('effect_capacity_hold_prepare_failed');
+        $holdStmt->bind_param('i',$payId);
+        if (!$holdStmt->execute()) throw new RuntimeException('effect_capacity_hold_read_failed');
+        $holds=$holdStmt->get_result()->fetch_all(MYSQLI_ASSOC);
+        $holdStmt->close();
+        if ($requiredKind==='wallet_hold' &&
+            (count($holds)!==1 || $holds[0]['effect_kind']!==$requiredKind))
+            throw new RuntimeException('effect_wallet_hold_missing');
+        if ($requiredKind==='manual_hold' &&
+            (count($holds)!==1 || $holds[0]['effect_kind']!==$requiredKind))
+            throw new RuntimeException('effect_manual_hold_missing_or_unexpected');
+        if ($requiredKind===null && count($holds)!==0)
+            throw new RuntimeException('effect_capacity_hold_unexpected');
+        $hold=$holds[0]??null;
+        if ($hold) {
+            $valid=(int)$hold['reserved_count']===$requestedCount &&
+                (int)$hold['target_server_id']===$serverId &&
+                ($hold['target_group_id']===null?null:(int)$hold['target_group_id'])===$group &&
+                $hold['endpoint_sha256']===$endpoint &&
+                (int)$hold['plan_id']===$planId;
+            if ($wallet && $hold['target_key']!==$targetKey) $valid=false;
+            if (!$valid) {
+                throw new RuntimeException($wallet?
+                    'effect_wallet_hold_target_changed':
+                    'effect_manual_capacity_ownership_mismatch');
+            }
         }
+        $reserveSlots=0;
         if ($ordinal===1) {
             if ($prior!==null) throw new RuntimeException('effect_capacity_already_reserved');
-            if ($walletHold!==null) {
-                if ($walletHold['state']!=='reserved')
-                    throw new RuntimeException('effect_wallet_hold_already_used');
+            if ($hold!==null) {
+                if ($hold['state']!=='reserved')
+                    throw new RuntimeException($wallet?
+                        'effect_wallet_hold_already_used':
+                        'effect_manual_hold_already_consumed');
                 $consume=$db->prepare("UPDATE service_effects
                     SET state='consumed' WHERE id=? AND state='reserved'");
-                if (!$consume) throw new RuntimeException('effect_wallet_consume_prepare');
-                $id=(int)$walletHold['id'];
-                $consume->bind_param('i',$id);
+                if (!$consume) throw new RuntimeException('effect_capacity_hold_consume_prepare');
+                $holdId=(int)$hold['id'];
+                $consume->bind_param('i',$holdId);
                 if (!$consume->execute() || $consume->affected_rows!==1)
-                    throw new RuntimeException('effect_wallet_consume_unconfirmed');
+                    throw new RuntimeException('effect_capacity_hold_consume_unconfirmed');
                 $consume->close();
+                // Full count is already owned by ordinal-0 hold row.
             } else {
-                $stmt=$db->prepare("UPDATE server_info SET ucount=ucount-?
+                $capacity=$db->prepare("UPDATE server_info SET ucount=ucount-?
                     WHERE id=? AND active=1 AND state=1 AND ucount>=?");
-                if (!$stmt) throw new RuntimeException('effect_capacity_prepare');
-                $stmt->bind_param('iii',$requestedCount,$serverId,$requestedCount);
-                if (!$stmt->execute() || $stmt->affected_rows!==1)
+                if (!$capacity) throw new RuntimeException('effect_capacity_prepare_failed');
+                $capacity->bind_param('iii',$requestedCount,$serverId,$requestedCount);
+                if (!$capacity->execute() || $capacity->affected_rows!==1)
                     throw new RuntimeException('effect_capacity_insufficient_or_unconfirmed');
-                $stmt->close();
+                $capacity->close();
+                $reserveSlots=$requestedCount;
             }
-            $reserveSlots=$requestedCount;
         } else {
-            if ($walletHold!==null && $walletHold['state']!=='consumed')
-                throw new RuntimeException('effect_wallet_hold_not_consumed');
+            if ($hold!==null && $hold['state']!=='consumed')
+                throw new RuntimeException('effect_capacity_hold_not_consumed');
+            $expectedCreateHold=$hold===null?$requestedCount:0;
             if (!$prior || (int)$prior['ordinal']!==1 ||
-                (int)$prior['reserved_count']!==$requestedCount)
+                (int)$prior['reserved_count']!==$expectedCreateHold)
                 throw new RuntimeException('effect_capacity_origin_unverified');
             $previousOrdinal=$ordinal-1;
             $previous=$db->prepare("SELECT state FROM service_effects
                 WHERE pay_row_id=? AND effect_kind='create' AND ordinal=?
-                FOR UPDATE");
-            if (!$previous) throw new RuntimeException('effect_previous_prepare');
+                LIMIT 1 FOR UPDATE");
+            if (!$previous) throw new RuntimeException('effect_previous_prepare_failed');
             $previous->bind_param('ii',$payId,$previousOrdinal);
-            if (!$previous->execute()) throw new RuntimeException('effect_previous_read');
-            $previousRows=$previous->get_result()->fetch_all(MYSQLI_ASSOC);
+            if (!$previous->execute()) throw new RuntimeException('effect_previous_read_failed');
+            $rows=$previous->get_result()->fetch_all(MYSQLI_ASSOC);
             $previous->close();
-            if (count($previousRows)!==1 ||
-                !in_array($previousRows[0]['state'],['verified','local_recorded'],true))
+            if (count($rows)!==1 ||
+                !in_array($rows[0]['state'],['verified','local_recorded'],true))
                 throw new RuntimeException('effect_previous_line_unconfirmed');
         }
+
         $existing=$db->prepare("SELECT id FROM service_effects
             WHERE pay_row_id=? AND effect_kind='create' AND ordinal=?
             LIMIT 1 FOR UPDATE");

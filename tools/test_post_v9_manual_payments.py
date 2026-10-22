@@ -824,8 +824,14 @@ def check():
         assert query(work,env,"SELECT state FROM pays WHERE hash_id='standardsuccess'")=='approved'
         assert query(work,env,
             "SELECT e.state,IFNULL(e.order_id,0) FROM service_effects e "
-            "JOIN pays p ON p.id=e.pay_row_id WHERE p.hash_id='standardsuccess'"
+            "JOIN pays p ON p.id=e.pay_row_id WHERE p.hash_id='standardsuccess' "
+            "AND e.effect_kind='create' AND e.ordinal=1"
             ).startswith('local_recorded\t'), 'successful effect must link to order'
+        assert query(work,env,
+            "SELECT e.reserved_count,e.state FROM service_effects e "
+            "JOIN pays p ON p.id=e.pay_row_id WHERE p.hash_id='standardsuccess' "
+            "AND e.effect_kind='manual_hold' AND e.ordinal=0")=='1\tconsumed', (
+                'successful manually reviewed CREATE must consume exactly one owned capacity hold')
         reject_service('standardsuccess','standard_approval','accept')
         cases.append('real_standard_verified_receipt_one_delivery_no_replay')
         # A Telegram exception AFTER the approved local COMMIT is not evidence
@@ -879,7 +885,11 @@ def check():
         assert query(work,env,"SELECT state FROM pays WHERE hash_id='standardpartial'")=='processing'
         assert query(work,env,"SELECT ordinal,state,IFNULL(order_id,0) FROM service_effects "
                      "WHERE pay_row_id=(SELECT id FROM pays WHERE hash_id='standardpartial') "
-                     "ORDER BY ordinal") == '1\tverified\t0\n2\tdispatching\t0'
+                     "AND effect_kind='create' ORDER BY ordinal") == '1\tverified\t0\n2\tdispatching\t0'
+        assert query(work,env,"SELECT reserved_count,state FROM service_effects "
+                     "WHERE pay_row_id=(SELECT id FROM pays WHERE hash_id='standardpartial') "
+                     "AND effect_kind='manual_hold' AND ordinal=0") == '2\tconsumed', (
+                         'partial manual purchase must retain all paid slots and no-replay owner')
         reject_service('standardpartial','standard_approval','accept')
         cases.append('real_standard_partial_second_account_stays_reconcile_no_replay')
 
@@ -1031,9 +1041,45 @@ def check():
         assert [event['name'] for event in positive].count('remote_create')==1,repr(positive)
         assert [event['name'] for event in positive].count('order_insert')==1
         assert query(work,env,"SELECT state FROM pays WHERE hash_id='customvalid'")=='approved'
+        assert query(work,env,"SELECT effect_kind,ordinal,state,reserved_count FROM service_effects "
+            "WHERE pay_row_id=(SELECT id FROM pays WHERE hash_id='customvalid') "
+            "ORDER BY ordinal,effect_kind")==(
+            'manual_hold\t0\tconsumed\t1\ncreate\t1\tlocal_recorded\t0')
         cases.append('real_custom_authorized_review_state_approves_only_once')
         reject_service('customvalid','checkout','accCustom')
         cases.append('real_custom_replayed_operator_callback_no_remote_effect')
+
+        # A custom manual receipt must reserve capacity and register its
+        # payment-owned 007 hold in the SAME transaction as its processing
+        # claim. Simulate SQL failure under actual MySQL InnoDB; a verified
+        # failed pre-CREATE claim remains retryable without a phantom debit.
+        service_pay('customholdsqlfail',method='gift_card')
+        custom_before_capacity=int(query(work,env,
+            'SELECT ucount FROM server_info WHERE id=1'))
+        query(work,env,"CREATE TRIGGER owned_custom_capacity_fail BEFORE UPDATE "
+            "ON server_info FOR EACH ROW SIGNAL SQLSTATE '45000' "
+            "SET MESSAGE_TEXT='synthetic_claim_write_denied'")
+        try:
+            blocked=run_route(work,env,route_driver,
+                data='accCustomcustomholdsqlfail',actor=9001,
+                route='checkout',expected_warning='achbot_custom_receipt_review')
+        finally:
+            query(work,env,'DROP TRIGGER owned_custom_capacity_fail')
+        assert not any(x['name']=='remote_create' for x in blocked),blocked
+        assert query(work,env,"SELECT state FROM pays WHERE hash_id='customholdsqlfail'")==(
+            'have_sent')
+        assert int(query(work,env,
+            'SELECT ucount FROM server_info WHERE id=1'))==custom_before_capacity
+        assert query(work,env,"SELECT COUNT(*) FROM service_effects WHERE pay_row_id="
+            "(SELECT id FROM pays WHERE hash_id='customholdsqlfail')")=='0'
+        retried=run_route(work,env,route_driver,
+            data='accCustomcustomholdsqlfail',actor=9001,route='checkout')
+        assert [x['name'] for x in retried].count('remote_create')==1,retried
+        assert query(work,env,"SELECT state FROM pays WHERE hash_id='customholdsqlfail'")==(
+            'approved')
+        assert int(query(work,env,
+            'SELECT ucount FROM server_info WHERE id=1'))==custom_before_capacity-1
+        cases.append('real_custom_manual_007_hold_SQL_failure_atomic_then_safe_retry')
 
         service_pay('custompending',received=False)
         reject_service('custompending','checkout','accCustom')
@@ -1180,9 +1226,10 @@ def check():
                    for event in uncertain),repr(uncertain)
         assert query(work,env,"SELECT state FROM pays WHERE hash_id='customremoteunknown'")=='processing'
         assert int(query(work,env,'SELECT ucount FROM server_info WHERE id=1'))==old_capacity-1
-        assert query(work,env,"SELECT state,reserved_count FROM service_effects "
-            "WHERE pay_row_id=(SELECT id FROM pays WHERE hash_id='customremoteunknown')")==(
-            'dispatching\t1')
+        assert query(work,env,"SELECT effect_kind,ordinal,state,reserved_count FROM service_effects "
+            "WHERE pay_row_id=(SELECT id FROM pays WHERE hash_id='customremoteunknown') "
+            "ORDER BY ordinal,effect_kind")==(
+            'manual_hold\t0\tconsumed\t1\ncreate\t1\tdispatching\t0')
         assert not any(event['name']=='remote_create' for event in run_route(
             work,env,route_driver,data='accCustomcustomremoteunknown',
             actor=9001,route='checkout'))

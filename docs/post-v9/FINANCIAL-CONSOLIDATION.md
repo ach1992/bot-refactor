@@ -480,6 +480,50 @@ backed-up and installed on the chosen database **before deploying a runtime
 that uses it for paid account creation**; deploying only the PHP ZIP would
 otherwise stop new paid service fulfillment for safe manual review.
 
+**Current PR #67 hosted-capacity remediation (independent review
+BLOCKER-PR67-1):** This revised proposed 007 CREATE includes an explicit
+reserved_count on each effect row. **Hosted payment** ordinal 1 stores the
+entire payment's quantity; every subsequent ordinal stores zero and must
+validate that first-row hold and the previous verified account.
+The **manually approved standard and custom** BUY_SUB paths both debit
+capacity inside the original receipt-processing claim. In that SAME claim
+transaction they store a payment-scoped manual_hold marker (ordinal 0)
+with the full count. The first manual CREATE atomically consumes that
+marker, with no second capacity UPDATE; all manual CREATE rows store zero.
+An approved custom receipt with a failed pre-CREATE hold INSERT or capacity
+UPDATE rolls back its entire claim, stays reviewable as have_sent and
+may be retried only because zero external CREATE has occurred. A missing, unexpected,
+mismatched or previously consumed manual hold fails closed before POST.
+A short InnoDB transaction locks the exact pays row, verifies paid
+user/plan/server/provider and requested count, performs a guarded full-count
+server_info.ucount UPDATE and inserts ordinal 1 of the paid effect with
+reserved_count=accountCount; it COMMITs **before the first Marzban POST**.
+The **same InnoDB server counter** is owned by these three exclusive
+methods: hosted initial CREATE row, manual (standard/custom) ordinal-0
+manual_hold row, or a wallet debit plus ordinal-0 wallet_hold row.
+Where a hold already owns N slots, all CREATE rows hold ZERO, so
+SUM(reserved_count) across a payment equals N, not 2N. The initial
+hosted CREATE row owns N instead; later lines hold ZERO. Every method
+serializes the same guarded server capacity UPDATE across independent
+buyers and cannot silently double-debit or bypass other holders.
+Insufficient quantity, SQL failure, missing/old schema, or rejected COMMIT
+produce no new remote request. Partial/missing GET, second-account uncertainty,
+post-COMMIT delivery failure and callback replay **never** release the held
+count automatically or issue another CREATE. Neither manual nor hosted
+success handlers may decrement capacity a second time. The paid charge remains operator-reviewable;
+an insufficient full-count reservation is not permission for a speculative
+wallet refund or a false completed/delivered page.
+
+This is **a revised CREATE-only proposal**, not an implicit in-place upgrade.
+An installation that already has *any* earlier 007 table must STOP and
+inventory its current columns, constraints, row states, capacity and remote
+accounts. A separately independently reviewed, data-preserving forward
+migration, tested restore and explicit Owner authorization are required
+before switching that installed database to this contract. Never rerun
+007_service_effects.sql, drop its existing rows, infer previously held
+capacity from account counts, or install any migration as part of the
+source-only release ZIP.
+
 **Combined PR #66 + PR #67 manual-standard boundary:** A historically
 operator-delivered receipt may still be evaluated against its original
 pays and message evidence when both 003 tables are proven absent, but

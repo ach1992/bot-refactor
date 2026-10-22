@@ -807,10 +807,23 @@ function achbotWalletDirectAllowedLocked(mysqli $connection, array $pay,
  * conditional capacity UPDATE across distinct buyers on the same server.
  */
 function achbotManualStandardReserveCapacityLocked(mysqli $db, array $pay): int {
-    if (($pay['type'] ?? null)!=='BUY_SUB' ||
-        (int)($pay['day'] ?? -1)!==0 ||
-        (int)($pay['volume'] ?? -1)!==0)
-        throw new RuntimeException('manual_standard_capacity_wrong_subject');
+    return achbotManualBuyReserveCapacityLocked($db,$pay,false);
+}
+
+/** Custom positive day/volume manual receipts require the SAME pre-CREATE
+ * payment-owned capacity hold as standard receipts, not an unsafe late debit.
+ */
+function achbotManualCustomReserveCapacityLocked(mysqli $db, array $pay): int {
+    return achbotManualBuyReserveCapacityLocked($db,$pay,true);
+}
+
+/** Shared under-pay-lock validation and guarded InnoDB full-count decrement. */
+function achbotManualBuyReserveCapacityLocked(mysqli $db,array $pay,bool $custom): int {
+    $day=(int)($pay['day']??-1);
+    $volume=(int)($pay['volume']??-1);
+    if (($pay['type']??null)!=='BUY_SUB' ||
+        ($custom ? ($day<=0 || $volume<=0) : ($day!==0 || $volume!==0)))
+        throw new RuntimeException('manual_capacity_wrong_subject');
     $raw=$pay['agent_count'] ?? null;
     if ($raw===null || (string)$raw==='0' || (string)$raw==='') {
         $count=1; // Historical single-account rows have no explicit quantity.
@@ -1559,14 +1572,14 @@ function duplicateReceiptGuard(mysqli $connection, array $payInfo, int $nowTs): 
         return "⛔️ یک درخواست مشابه شما در حال بررسی است.\n⚠️ لطفاً حدود {$mins} دقیقه دیگر دوباره تلاش کنید.";
     }
 
-			   
+
     if ($latestApprovedDiff !== null && $latestApprovedDiff < $windowApproved) {
         $remain = $windowApproved - $latestApprovedDiff;
         $mins = (int)ceil($remain / 60);
         return "⛔️ شما اخیراً یک درخواست مشابه با وضعیت تایید شده داشته‌اید.\n⚠️ لطفاً حدود {$mins} دقیقه دیگر دوباره تلاش کنید.";
     }
 
-			   
+
     if ($latestDeclinedDiff !== null && $latestDeclinedDiff < $windowDeclined) {
         $remain = $windowDeclined - $latestDeclinedDiff;
         return "⛔️ درخواست مشابه قبلی شما اخیراً رد شده است.\n⚠️ لطفاً {$remain} ثانیه دیگر دوباره تلاش کنید.";
@@ -1586,8 +1599,8 @@ function countUserPaysByState(mysqli $connection, int $userId, string $state): i
 
 function sumUserPaysByState(mysqli $connection, int $userId, string $state): int {
     $stmt = $connection->prepare(
-        "SELECT COALESCE(SUM(`price`), 0) AS total 
-         FROM `pays` 
+        "SELECT COALESCE(SUM(`price`), 0) AS total
+         FROM `pays`
          WHERE `user_id`=? AND `state`=?"
     );
     $stmt->bind_param("is", $userId, $state);

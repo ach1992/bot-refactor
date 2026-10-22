@@ -235,8 +235,22 @@ function createServerAccount(...$args) {
             $stage=$at['stage']??null;
             $state=$at['state']??null;
         }
+        // Post-claim source real evidence: CREATE is never even attempted
+        // until ALL payment-owned slots and ordinal-1 journal are committed.
+        $held=null;$capacity=null;
+        if ($id>0) {
+            $stmt=$GLOBALS['connection']->prepare(
+                "SELECT COALESCE(SUM(reserved_count),0) FROM service_effects
+                 WHERE pay_row_id=?");
+            $stmt->bind_param('i',$id);
+            if ($stmt->execute()) $held=(int)$stmt->get_result()->fetch_row()[0];
+            $stmt->close();
+            $capacity=(int)$GLOBALS['connection']->query(
+                'SELECT ucount FROM server_info WHERE id=2')->fetch_row()[0];
+        }
         $GLOBALS['events'][]=['name'=>'marzban_create_attempt',
-            'number'=>$index,'mode'=>$mode,'stage'=>$stage,'pay_state'=>$state];
+            'number'=>$index,'mode'=>$mode,'stage'=>$stage,'pay_state'=>$state,
+            'held_at_post'=>$held,'capacity_at_post'=>$capacity];
         if ($mode==='success') {
             $remark=(string)($args[4]??'');
             $GLOBALS['remote_accounts'][$remark]=[
@@ -3092,15 +3106,16 @@ def main():
         finally:
             sql(work,env,'DROP TRIGGER IF EXISTS owned_deny_expiry')
 
-        # NOWPayments finished + known pre-provision capacity failure must
-        # not mark compensated/done until the wallet refund actually commits.
-        sql(work,env,"UPDATE server_info SET ucount=0 WHERE id=2")
-        for name,missing_user,want_done in [
-            ('np-compensation-missing-user',True,False),
-            ('np-compensation-verified',False,True)
+        # NOWPayments finished is irreversible provider proof, NOT
+        # permission to fabricate a refund if full-count reservation fails.
+        # A 2-account payment seeing only 1 slot may not POST either account.
+        sql(work,env,"UPDATE server_info SET ucount=1 WHERE id=2")
+        for name,missing_user in [
+            ('np-capacity-review-missing-user',True),
+            ('np-capacity-review-verified-user',False)
         ]:
             seed_np_attempt(work,env,name,name+'-invoice',name+'-payment')
-            sql(work,env,f"UPDATE pays SET type='BUY_SUB',plan_id=7,server_id=2 "
+            sql(work,env,f"UPDATE pays SET type='BUY_SUB',plan_id=7,server_id=2,agent_count=2 "
                          f"WHERE hash_id='{name}'")
             if missing_user:
                 sql(work,env,f"UPDATE pays SET user_id=99999991 WHERE hash_id='{name}'")
@@ -3116,19 +3131,25 @@ def main():
             stage_status=sql(work,env,
                 "SELECT a.stage,a.provider_status FROM payment_attempts a "
                 f"WHERE a.order_hash='{name}'").strip()
-            if want_done:
-                if stage_status!='done\tcompensated':
-                    raise RuntimeError('Verified wallet compensation was not marked done')
-                if int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())!=before_wallet+100:
-                    raise RuntimeError('Verified capacity refund was not credited exactly once')
-            else:
-                if not stage_status.startswith('review\t') or int(sql(work,env,
-                   'SELECT wallet FROM users WHERE userid=1001').strip())!=before_wallet:
-                    raise RuntimeError('Missing-user refund falsely completed: '+stage_status)
-                if any(e['name']=='sendMessage' and 'اضافه شد' in str(e['args']) for e in run['events']):
-                    raise RuntimeError('Missing-user refund was falsely announced')
-            records.append(dict(case='nowpayments_capacity_'+
-                ('missing_user_never_done' if missing_user else 'verified_refund_done'),
+            owned_id=int(sql(work,env,f"SELECT id FROM pays WHERE hash_id='{name}'"))
+            cap=sql(work,env,'SELECT ucount FROM server_info WHERE id=2').strip()
+            wallet=int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001'))
+            orders=sql(work,env,
+                f"SELECT COUNT(*) FROM orders_list WHERE remark LIKE '{name}%'").strip()
+            journal=sql(work,env,
+                f'SELECT COUNT(*) FROM service_effects WHERE pay_row_id={owned_id}').strip()
+            if (not stage_status.startswith('review\t') or wallet!=before_wallet or
+                cap!='1' or orders!='0' or journal!='0'):
+                raise RuntimeError('Finished charge with no full capacity was falsely fulfilled or refunded: '+
+                                   repr(dict(name=name,stage=stage_status,capacity=cap,
+                                             wallet=wallet,before_wallet=before_wallet,
+                                             orders=orders,journal=journal,events=run['events']))[:1500])
+            if any(e['name']=='marzban_create_attempt' for e in run['events']) or (
+                any(e['name']=='sendMessage' and 'اضافه شد' in str(e['args'])
+                    for e in run['events'])):
+                raise RuntimeError('No-capacity finished charge attempted CREATE or fabricated refund')
+            records.append(dict(case='nowpayments_finished_insufficient_capacity_'+
+                ('missing_user_review_no_refund' if missing_user else 'verified_user_review_no_refund'),
                 pass_=True,external_requests=1))
         sql(work,env,"UPDATE server_info SET ucount=10 WHERE id=2")
 
@@ -3729,6 +3750,37 @@ def main():
         sql(work,env,"UPDATE server_plans SET inbound_id=0 WHERE id=7")
         sql(work,env,"UPDATE server_info SET ucount=20 WHERE id=2")
         for provider in ('nextpay','zarinpal'):
+            # Exact hosted charge with insufficient total stock MUST retain
+            # review and the original paid identity. No POST or refund.
+            shortage='o2-'+provider+'-insufficient-fullcount'
+            seed_payment(work,env,shortage,'BUY_SUB',7,2,shortage+'-invoice')
+            sql(work,env,f"UPDATE pays SET agent_count=2,description='shortage_{provider}' "
+                         f"WHERE hash_id='{shortage}'")
+            sql(work,env,"INSERT INTO payment_attempts "
+                "(pay_row_id,provider,order_hash,provider_reference,"
+                "quote_amount,quote_currency,local_amount_toman,stage) "
+                f"SELECT id,'{provider}',hash_id,'{shortage}-invoice',"
+                f"price,'toman',price,'pending' FROM pays WHERE hash_id='{shortage}'")
+            shortage_id=int(sql(work,env,f"SELECT id FROM pays WHERE hash_id='{shortage}'"))
+            sql(work,env,"UPDATE server_info SET ucount=1 WHERE id=2")
+            before_wallet=sql(work,env,"SELECT wallet FROM users WHERE userid=1001")
+            shortage_result=run_php(work,env,stage,dict(
+                route='do_action',get={},provider=provider,pay_row_id=shortage_id,
+                scripted_marzban_creates=['success','success'],expect_local_error=True))
+            if (any(e['name']=='marzban_create_attempt' for e in shortage_result['events']) or
+                sql(work,env,'SELECT ucount FROM server_info WHERE id=2').strip()!='1' or
+                sql(work,env,f'SELECT COUNT(*) FROM service_effects WHERE pay_row_id={shortage_id}').strip()!='0' or
+                sql(work,env,"SELECT wallet FROM users WHERE userid=1001")!=before_wallet or
+                not sql(work,env,f'SELECT stage FROM payment_attempts WHERE pay_row_id={shortage_id}').startswith('review')):
+                raise RuntimeError('Hosted insufficient full-count was falsely fulfilled/refunded: '+
+                                   repr((provider,shortage_result))[:1100])
+            replay=run_php(work,env,stage,dict(route='do_action',get={},
+                provider=provider,pay_row_id=shortage_id,
+                scripted_marzban_creates=['success','success']))
+            if any(e['name']=='marzban_create_attempt' for e in replay['events']):
+                raise RuntimeError('Hosted insufficiency replay reached remote effect')
+            records.append(dict(case='hosted_'+provider+
+                '_two_accounts_one_slot_no_create_review_no_refund',pass_=True))
             for label,effects,expected_order_count,want_stage in (
                 ('partial',['success','uncertain'],1,'review\tfulfillment_started'),
                 ('complete',['success','success'],2,'done\tdelivered'),
@@ -3748,6 +3800,7 @@ def main():
                     f"SELECT id FROM pays WHERE hash_id='{name}'").strip())
                 initial_wallet=sql(work,env,
                     "SELECT wallet FROM users WHERE userid=1001").strip()
+                sql(work,env,"UPDATE server_info SET ucount=2 WHERE id=2")
                 initial_capacity=int(sql(work,env,
                     "SELECT ucount FROM server_info WHERE id=2").strip())
                 outcome=run_php(work,env,stage,dict(route='do_action',get={},
@@ -3765,9 +3818,10 @@ def main():
                     result!=[{'name':'do_action_result','result':expected_result}]):
                     raise RuntimeError('O2 actual multi-account loop did not honor remote outcomes: '+
                                        repr((name,created,delivered,result))[:1300])
-                if any(e['stage']!='review' or e['pay_state']!='paid'
+                if any(e['stage']!='review' or e['pay_state']!='paid' or
+                       e['held_at_post']!=2 or e['capacity_at_post']!=0
                        for e in created):
-                    raise RuntimeError('O2 Marzban effect began before paid/review claim')
+                    raise RuntimeError('O2 Marzban POST before full-count committed capacity ownership')
                 local_orders=sql(work,env,
                     "SELECT uuid FROM orders_list "
                     f"WHERE userid=1001 AND remark IN ('{remark}_1','{remark}_2') ORDER BY id").splitlines()
@@ -3819,7 +3873,9 @@ def main():
                     '_two_account_'+label+'_effects_operator_recovery_no_replay',
                     pass_=True,real_provider_requests=0,
                     local_orders=expected_order_count,
+                    full_count_held_before_create=True,
                     requires_operator_review=label=='partial'))
+                sql(work,env,"UPDATE server_info SET ucount=20 WHERE id=2")
 
         # A post-create identity mismatch must roll back the local order and
         # effect link in ONE transaction. The remote uncertainty is not
