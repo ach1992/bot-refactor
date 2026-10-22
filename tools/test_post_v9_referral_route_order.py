@@ -119,14 +119,14 @@ def main():
 
         for route in ('standard','custom'):
             if route=='standard':
-                warning='achbot_manual_standard_postcommit_followup_needs_review'
+                warning='achbot_manual_standard_delivery_needs_review'
             else:
                 warning='achbot_custom_receipt_delivery_review'
             events=check(route,'ref'+route+'qr',{'qr_transport':'throw'},warning)
             assert [e['name'] for e in events].count('qr_send')==1,events
             cases.append('real_'+route+'_receipt_qr_throw_award_confirmed_no_replay')
 
-            warning=('achbot_manual_standard_postcommit_followup_needs_review'
+            warning=('achbot_manual_standard_delivery_needs_review'
                      if route=='standard' else
                      'achbot_custom_receipt_postcommit_notice_review')
             check(route,'ref'+route+'message',{'message_transport':'postreferral'},warning)
