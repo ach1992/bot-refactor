@@ -770,8 +770,14 @@ def check():
         assert query(work,env,"SELECT state FROM pays WHERE hash_id='standardsuccess'")=='approved'
         assert query(work,env,
             "SELECT e.state,IFNULL(e.order_id,0) FROM service_effects e "
-            "JOIN pays p ON p.id=e.pay_row_id WHERE p.hash_id='standardsuccess'"
+            "JOIN pays p ON p.id=e.pay_row_id WHERE p.hash_id='standardsuccess' "
+            "AND e.effect_kind='create' AND e.ordinal=1"
             ).startswith('local_recorded\t'), 'successful effect must link to order'
+        assert query(work,env,
+            "SELECT e.reserved_count,e.state FROM service_effects e "
+            "JOIN pays p ON p.id=e.pay_row_id WHERE p.hash_id='standardsuccess' "
+            "AND e.effect_kind='manual_hold' AND e.ordinal=0")=='1\tconsumed', (
+                'successful manually reviewed CREATE must consume exactly one owned capacity hold')
         reject_service('standardsuccess','standard_approval','accept')
         cases.append('real_standard_verified_receipt_one_delivery_no_replay')
         # A Telegram exception AFTER the approved local COMMIT is not evidence
@@ -825,7 +831,11 @@ def check():
         assert query(work,env,"SELECT state FROM pays WHERE hash_id='standardpartial'")=='processing'
         assert query(work,env,"SELECT ordinal,state,IFNULL(order_id,0) FROM service_effects "
                      "WHERE pay_row_id=(SELECT id FROM pays WHERE hash_id='standardpartial') "
-                     "ORDER BY ordinal") == '1\tverified\t0\n2\tdispatching\t0'
+                     "AND effect_kind='create' ORDER BY ordinal") == '1\tverified\t0\n2\tdispatching\t0'
+        assert query(work,env,"SELECT reserved_count,state FROM service_effects "
+                     "WHERE pay_row_id=(SELECT id FROM pays WHERE hash_id='standardpartial') "
+                     "AND effect_kind='manual_hold' AND ordinal=0") == '2\tconsumed', (
+                         'partial manual purchase must retain all paid slots and no-replay owner')
         reject_service('standardpartial','standard_approval','accept')
         cases.append('real_standard_partial_second_account_stays_reconcile_no_replay')
 
