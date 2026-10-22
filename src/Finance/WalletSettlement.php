@@ -252,9 +252,9 @@ if (!function_exists('processWalletPayment')) {
                     (int)$plan['server_active']!==1 ||
                     (int)$plan['server_state']!==1 ||
                     ($plan['panel_type']??'')!=='marzban' ||
-                    $planDays<=0 || $planDays>36500 ||
-                    $planVolume<=0 ||
-                    $planVolume>intdiv(PHP_INT_MAX,1073741824) ||
+                    (!$isCustom && ($planDays<=0 || $planDays>36500 ||
+                     $planVolume<=0 ||
+                     $planVolume>intdiv(PHP_INT_MAX,1073741824))) ||
                     ($isCustom && $quantity!==1) || !$generatedValid) {
                     $connection->rollback();
                     alert('⛔️ مشخصات این سفارش معتبر نیست؛ مبلغی از کیف پول کسر نشد.',true);

@@ -542,8 +542,10 @@ or refund. Terminal historical paid states cannot authorize new CREATE.
 precede any debit. The custom-plan `buyType=much` draft and the locked
 pays-row authorization both use the same strict ASCII/100-byte provider
 username validator, including previously persisted invalid requests.
-Plan days/volume, manual names and generated server prefix are checked
-before debit; rejected deterministic input leaves payment, wallet, 007
+For standard purchases, plan days/volume, manual names and generated
+server prefix are checked before debit; custom purchases instead validate
+their persisted requested days/volume and allow a zero-day/zero-volume
+plan template. Rejected deterministic input leaves payment, wallet, 007
 and capacity untouched. One local financial transaction commits
 `processing_wallet`, the exact wallet debit, all capacity and
 an independent `wallet_hold` journal row at ordinal zero before

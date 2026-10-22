@@ -254,6 +254,21 @@ def check():
 
         # Persistent request tampering and locally-invalid plan/username
         # inputs must fail before a cent or capacity slot can be committed.
+        # Custom plans can deliberately have zero default template days/GB:
+        # the customer's persisted custom quote is authoritative instead.
+        zero_template=newpay('native_custom_zero_template',1,custom=True)
+        sql(work,env,'UPDATE server_plans SET days=0,volume=0 WHERE id=7')
+        try:
+            accepted=route(work,env,driver,hash='native_custom_zero_template',
+                           custom=True)
+        finally:
+            sql(work,env,'UPDATE server_plans SET days=30,volume=2 WHERE id=7')
+        assert len(calls(accepted,'POST'))==1 and paid(zero_template)=='paid_with_wallet'
+        assert len(calls(accepted,'QR'))==1 and wallet()==49900 and cap()==9
+        assert not calls(route(work,env,driver,hash='native_custom_zero_template',
+                               custom=True),'POST')
+        cases.append('real_custom_zero_template_dimensions_use_persisted_quote')
+
         bad_count=newpay('native_invalid_count',2,custom=True)
         held=route(work,env,driver,hash='native_invalid_count',custom=True)
         assert not calls(held,'POST') and wallet()==50000 and cap()==10

@@ -1145,6 +1145,7 @@ def main():
             "actual_catalogue_much_draft_rejects_invalid_remote_usernames",
             "real_custom_wallet_persisted_bad_name_rejected_before_debit_hold_and_create",
             "real_catalogue_much_valid_draft_to_wallet_one_effect_order",
+            "real_custom_zero_template_dimensions_use_persisted_quote",
             "real_custom_persisted_multicount_rejected_predebit",
             "real_standard_manual_remark_invalid_rejected_predebit",
             "real_standard_invalid_plan_day_predebit_no_hold",
