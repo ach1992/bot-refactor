@@ -86,7 +86,20 @@ $p=[
     'net_type'=>'normal','rahgozar'=>0,'limitip'=>0
 ];
 try {
-    if (($spec['operation']??'create')==='link') {
+    if (($spec['operation']??'')==='nonpaid_create') {
+        $kind=(string)($spec['kind']??'free_trial');
+        $source=(string)($spec['source']??'trial:1001');
+        $actor=(int)($spec['actor']??1001);
+        $p['is_primary_admin']=!empty($spec['primary_admin']);
+        $result=achbotCreateNonPaymentAccount($connection,$kind,$source,
+            $actor,$line,(int)($spec['count']??1),$p);
+        $value=['success'=>$result[0]->success,'username'=>$result[1],
+            'port'=>$result[2],'effect_id'=>$result[3]];
+    } elseif (($spec['operation']??'')==='nonpaid_link') {
+        achbotLinkNonPaymentAccountEffect($connection,
+            (int)($spec['effect']??0),(int)($spec['order']??0));
+        $value=['linked'=>(int)$spec['effect'],'order'=>(int)$spec['order']];
+    } elseif (($spec['operation']??'create')==='link') {
         $id=(int)($spec['effect']??0);
         $order=(int)($spec['order']??0);
         achbotLinkPaidAccountEffect($connection,$id,$order);
@@ -157,6 +170,10 @@ def main():
     cases=[]
     with owned.owned_database() as (work,env):
         purchase.init(work,env,'http://127.0.0.1:9')
+        # Shared reserved capacity now decreases before every paid CREATE.
+        # This large fixture budget isolates identity/replay cases; dedicated
+        # low-capacity races below exercise actual contention.
+        query(work,env,'UPDATE server_info SET ucount=1000 WHERE id=2')
         assert len(query(work,env,'SHOW TABLES').splitlines())==23
         for db in (DB,purchase.SIDE[0]):
             query(work,env,(ROOT/'migrations/post-v9/001_marzban_panel_group_id.sql').read_text(),db)
@@ -373,6 +390,116 @@ def main():
                       username='unchanged_plan_success')
         assert valid['error'] is None and any(x['event']=='POST' for x in valid['events'])
         cases.append('review_R1_plan_reassignment_original_paid_target_no_remote_effect')
+
+        # Mixed paid methods share ONE real InnoDB capacity counter. An
+        # existing pending/uncertain effect consumes the reserved slots until
+        # a human reconciles it, not just until remote POST returns.
+        query(work,env,'UPDATE server_info SET ucount=1 WHERE id=2')
+        low=pay(work,env,'capacity_fullcount',count=2)
+        refusal=run_php(work,env,driver,pay=low,username='unavailable_capacity')
+        assert refusal['error']=='effect_capacity_insufficient_or_unconfirmed'
+        assert refusal['events']==[] and state(work,env,low)==''
+        assert query(work,env,'SELECT ucount FROM server_info WHERE id=2')=='1'
+        cases.append('r1_full_requested_count_rejected_before_remote_post')
+
+        a=pay(work,env,'capacity_concurrent_a')
+        b=pay(work,env,'capacity_concurrent_b')
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            pair=list(pool.map(
+                lambda k:run_php(work,env,driver,pay=k,username='held_'+str(k)),
+                (a,b)))
+        assert sum(sum(v['event']=='POST' for v in x['events']) for x in pair)==1,pair
+        assert query(work,env,'SELECT ucount FROM server_info WHERE id=2')=='0'
+        assert sum(query(work,env,
+            f'SELECT COALESCE(SUM(reserved_count),0) FROM service_effects WHERE pay_row_id={k}')=='1'
+            for k in (a,b))==1
+        cases.append('r1_two_distinct_buyers_compete_for_one_slot')
+
+        # The POST can have happened but its response vanished. The entire
+        # reservation is retained and cannot be automatically released.
+        query(work,env,'UPDATE server_info SET ucount=2 WHERE id=2')
+        ambiguous=pay(work,env,'capacity_unknown_two',count=2)
+        uncertain=run_php(work,env,driver,pay=ambiguous,mode='post_lost')
+        assert uncertain['error'] and len(uncertain['events'])==1
+        assert query(work,env,'SELECT ucount FROM server_info WHERE id=2')=='0'
+        assert query(work,env,f'SELECT reserved_count FROM service_effects WHERE pay_row_id={ambiguous}')=='2'
+        assert run_php(work,env,driver,pay=ambiguous)['events']==[]
+        cases.append('r1_unknown_remote_retains_full_reserved_count')
+
+        # A failed SQL INSERT must roll back its preceding capacity UPDATE:
+        # no external CREATE, phantom quota consumption, or replay marker.
+        query(work,env,'UPDATE server_info SET ucount=1 WHERE id=2')
+        faulty=pay(work,env,'capacity_sql_rollback')
+        query(work,env,"CREATE TRIGGER owned_effect_insert_denied "
+            "BEFORE INSERT ON service_effects FOR EACH ROW "
+            "SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='owned_sql_failure'")
+        try:
+            result=run_php(work,env,driver,pay=faulty)
+        finally:
+            query(work,env,'DROP TRIGGER owned_effect_insert_denied')
+        assert result['error'] and result['events']==[]
+        assert state(work,env,faulty)==''
+        assert query(work,env,'SELECT ucount FROM server_info WHERE id=2')=='1'
+        cases.append('r1_prepost_insert_sql_failure_rolls_back_capacity')
+
+        # Terminal review/payment states cannot authorize a brand-new
+        # unjournaled CREATE when 007 is first introduced on older paid data.
+        query(work,env,'UPDATE server_info SET ucount=10 WHERE id=2')
+        for terminal in ('approved','auto_cart_approved','paid_with_wallet'):
+            legacy=pay(work,env,'already_paid_terminal_'+terminal)
+            query(work,env,f"UPDATE pays SET state='{terminal}' WHERE id={legacy}")
+            denied=run_php(work,env,driver,pay=legacy,
+                username='terminal_forbidden_'+terminal)
+            assert denied['error']=='effect_payment_identity_mismatch',denied
+            assert denied['events']==[] and state(work,env,legacy)==''
+            assert query(work,env,'SELECT ucount FROM server_info WHERE id=2')=='10'
+        cases.append('r1_terminal_legacy_paid_states_cannot_authorize_new_post')
+
+        query(work,env,'UPDATE server_info SET ucount=10 WHERE id=2')
+        query(work,env,"UPDATE users SET freetrial=NULL WHERE userid=1001")
+        trial=run_php(work,env,driver,operation='nonpaid_create',
+                      kind='free_trial',source='trial:1001',actor=1001,
+                      username='free_trial_source')
+        assert trial['error'] is None and [e['event'] for e in trial['events']]==['POST','GET'],trial
+        assert query(work,env,'SELECT freetrial FROM users WHERE userid=1001')=='reserved'
+        assert query(work,env,"SELECT source_kind,source_ref,reserved_count,state "
+            "FROM service_effects WHERE remote_username='free_trial_source'")==(
+            'free_trial\ttrial:1001\t1\tverified')
+        replay=run_php(work,env,driver,operation='nonpaid_create',
+                       kind='free_trial',source='trial:1001',actor=1001,
+                       username='free_trial_source')
+        assert replay['error'] and replay['events']==[]
+        cases.append('nonpaid_trial_user_unique_reserved_before_post')
+
+        query(work,env,'UPDATE server_info SET ucount=10 WHERE id=2')
+        for i in (1,2):
+            b=run_php(work,env,driver,operation='nonpaid_create',
+                kind='admin_bulk',source='bulk:9002:456123',actor=9002,
+                primary_admin=True,count=2,line=i,username='bulk_account_'+str(i))
+            assert b['error'] is None and len(b['events'])==2,b
+        verify=query(work,env,"SELECT ordinal,reserved_count,state FROM service_effects "
+            "WHERE source_kind='admin_bulk' ORDER BY ordinal")
+        assert verify=='1\t2\tverified\n2\t0\tverified',verify
+        repeated=run_php(work,env,driver,operation='nonpaid_create',
+            kind='admin_bulk',source='bulk:9002:456123',actor=9002,
+            primary_admin=True,count=2,line=1,username='bulk_account_1')
+        assert repeated['error'] and repeated['events']==[]
+        cases.append('nonpaid_bulk_exact_update_and_full_capacity_reservation')
+
+        effect=int(query(work,env,"SELECT id FROM service_effects "
+            "WHERE source_kind='free_trial' AND source_ref='trial:1001'"))
+        query(work,env,"INSERT INTO orders_list "
+            "(userid,token,transid,fileid,server_id,inbound_id,remark,uuid,protocol,"
+            "expire_date,link,amount,status,date,notif,rahgozar,agent_bought) "
+            "VALUES (1001,'token','',7,2,0,'free_trial_source','uuid','vless',"
+            "2000000000,'[]',0,1,'fixture',0,0,0)")
+        order=int(query(work,env,"SELECT id FROM orders_list WHERE remark='free_trial_source'"))
+        assert run_php(work,env,driver,operation='nonpaid_link',
+                       effect=effect,order=order)['error'] is None
+        assert run_php(work,env,driver,operation='nonpaid_link',
+                       effect=effect,order=order)['error']
+        assert query(work,env,f"SELECT state FROM service_effects WHERE id={effect}")=='local_recorded'
+        cases.append('nonpaid_trial_exact_order_link_once_only')
 
     report={'complete':True,'cases':len(cases),'scenarios':cases,
             'source_real_php':True,'owned_mariadb_only':True,

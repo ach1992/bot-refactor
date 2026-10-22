@@ -336,17 +336,21 @@ An existing **service** attempt with a nonmatching stage must instead be
 correlated through the bounded log. The diagnostic requires reconciliation,
 not an assumption of lost funds or a license to create or replay an effect.
 
-A disposable native two-account `BUY_SUB` characterization covers one
-successful Marzban account operation followed by an uncertain second
-operation for **both** hosted providers. In that case the existing local
+**Historical pre-007 characterization (superseded for NEW source CREATE):**
+A disposable native two-account `BUY_SUB` characterization of the
+earlier hosted behavior covered one successful Marzban account operation
+followed by an uncertain second operation for **both** hosted providers. In that case the existing local
 `pays` remains paid, the shared attempt stays
 `review/fulfillment_started`, the first local `orders_list` record may
 already exist, and no global capacity decrement has yet completed.
 A duplicate callback does not reissue either remote operation. The fixture
 also covers a successful two-account baseline (both local orders,
 corresponding capacity decrement and a guarded `done/delivered` stage).
-These are **observed source semantics under synthetic provider boundaries**,
-not an endorsement of their completeness. In particular, a partially
+These were **observed historical source semantics under synthetic
+provider boundaries**, not the contract for the proposed Option A
+source. New CREATE pre-reserves full capacity with 007; see its
+separate source-only contract below, without extrapolating to installed
+tenants or already-running partial orders. In particular, a partially
 created remote account can exist without matching per-account durable
 effect evidence, and local capacity may need independent reconciliation.
 
@@ -479,8 +483,9 @@ partial multi-account result never authorizes random-name retry, speculative
 wallet refund, QR delivery or payment finality.
 
 Only a short local transaction over all verified ordinal effects may insert
-every subscription order and journal link, conditionally decrement capacity
-and transition the original payment from processing to auto_cart_approved.
+every subscription order and journal link and transition the original
+payment from processing to auto_cart_approved. Capacity is already
+atomically reserved before the first CREATE; no second final deduction.
 Integer total order amount including the remainder is allocated among lines.
 No remote API or Telegram call occurs inside this transaction. Customer
 messages are post-COMMIT only. Pending outcomes remain for evidenced
@@ -493,15 +498,12 @@ subscription or changes settled payment state. This is **not** fully unattended 
 a universal exactly-once guarantee. Migration 007 is not installed by source
 delivery, and real provider/Telegram acceptance is separately gated.
 
-The first consumers are standard manually approved `BUY_SUB` and hosted
-NOWPayments/NextPay/Zarinpal `BUY_SUB`. Existing original wallet/customer
-checkout, custom/manual variants, old scheduled receipt processing, renewal,
-deletion, free trial and independent admin account creation are **not yet
-migrated to this effect journal**; their existing fences remain unchanged.
-Those source paths cannot claim the new journal's assurance. Move them
-incrementally only after their payment/transaction boundaries and actual
-operator proof are reconciled. No new Cron, reconciliation actor, account
-backfill, repair button or external replay is introduced by 007.
+The first consumers were standard manually approved and hosted
+`BUY_SUB`. The subsequent source-only Option A R1/R4 increment extends
+**the same CREATE journal** to custom/manual, bank-Cron, wallet,
+free-trial and authorized administrator bulk account creation. It does
+not cover generic remote edits, service deletion or unattended repair.
+No new Cron, replay actor or automatic account backfill is introduced.
 
 **Owner-performed test gate** after independent source review and a separate
 authorized disposable installation: confirm installed Marzban fork's
@@ -514,14 +516,117 @@ Use only disposable test accounts and authorized test financial instruments.
 Capture bounded operation/order/effect identifiers without exposing tokens
 or real customer data. No tenant SQL/production installation performed here.
 
+### Option A R1/R4 — capacity, wallet, nonpayment and referral contracts
+
+This is unmerged **source-only work under Issue #26**, not installed
+finance/provider/operator acceptance or a change to previous independent
+review verdicts. The revised `007_service_effects.sql` is a proposed
+`CREATE TABLE` for targets **without an existing 007**. It adds nullable
+`pay_row_id` for nonpayment CREATE, `source_kind/source_ref/
+actor_userid`, `reserved_count` and a unique
+`(source_kind,source_ref,ordinal)` key. An already installed
+older 007 requires separate read-only DDL/data inspection and a reviewed
+forward-only additive migration; never drop, replace or truncate it.
+
+**Capacity (R1).** The first paid CREATE ordinal atomically reserves
+the **whole** purchased account count using a guarded InnoDB
+`server_info.ucount` UPDATE in the same short transaction as its
+operation marker. Subsequent lines prove the original full reservation,
+and never decrement twice. Competing payments, free trials and admin bulk
+batches contend on the same server row. Unknown POST/GET, local SQL
+errors or partial multi-account fulfillment retain the capacity for
+authorized operator reconciliation; never automatically release, retry
+or refund. Terminal historical paid states cannot authorize new CREATE.
+
+**Wallet debit barrier.** Fresh authorization and plan/capacity checks
+precede any debit. The custom-plan `buyType=much` draft and the locked
+pays-row authorization both use the same strict ASCII/100-byte provider
+username validator, including previously persisted invalid requests.
+For standard purchases, plan days/volume, manual names and generated
+server prefix are checked before debit; custom purchases instead validate
+their persisted requested days/volume and allow a zero-day/zero-volume
+plan template. Rejected deterministic input leaves payment, wallet, 007
+and capacity untouched. One local financial transaction commits
+`processing_wallet`, the exact wallet debit, all capacity and
+an independent `wallet_hold` journal row at ordinal zero before
+any provider call. The first actual CREATE consumes that hold instead of
+decrementing capacity; each verified line links its original order in
+a separate local transaction. Only complete fulfillment makes
+`paid_with_wallet`. Ambiguous provider/SQL outcomes retain
+their original hold and debit for owner-private review, without blind
+reissue/refund. Wallet BUY_SUB referral bonuses stay disabled under the
+existing payment policy.
+
+**Nonpaid operations.** Free trials and explicit administrator bulk
+requests reuse the same 007 CREATE journal without inventing a
+`pays` row. The real private Telegram update and actor
+establish an immutable source identity, with one operation per ordinal;
+ordinary free trial uses a single per-user reservation in
+`users.freetrial`. A new authenticated administrator update
+can request a new bulk batch, whereas replay of the same update cannot
+create a second batch. Real `buildRemark()` manual-mode naming now adds a
+stable, valid batch-update-bound digest and ordinal, preserving the plan
+description prefix when valid; identical plan descriptions across distinct
+updates no longer collide on the same physical target. Unsupported manual
+names are rejected before remote dispatch. Every batch reserves all its
+slots up front.
+A verified remote CREATE must link the exact new `orders_list` row
+before Telegram delivery. Partial and uncertain states remain review-only.
+
+**Referral awards (R4).** A separately staged
+`008_referral_awards.sql` creates one FK-backed
+`referral_awards` row per original payment. Non-wallet,
+terminal `BUY_SUB` awards require the actual buyer/referrer
+relationship and every exact `local_recorded` CREATE order.
+A durable `NOT_ATTEMPTED` claim precedes the inviter wallet
+credit, and the confirmed credit + before/after signed balance
+journal share a second atomic transaction. Actual standard and custom
+receipt handlers invoke this payment-scoped claim immediately after verified
+payment/order COMMIT, before customer QR, customer messages, administrator
+button edits and other fallible presentation work. Referral uncertainty
+has a separate owner-private review signal and never reopens the original
+financial/remote effect. No duplicate callback,
+concurrent claim or failed Telegram notification repeats credit.
+Disabled reward policy is durably recorded as `DISABLED` and
+does not retroactively change after the setting changes. Unknown
+transactions become human-owned review cases (with a bounded private
+administrator warning on failed credit), not automatic retries.
+
+**Migration/recovery gate.** 007 and 008 are independent, checksummed
+CI **sidecars**, never auto-run or put inside the PHP ZIP. 001 and
+applicable 003 remain prerequisites; having 003 already installed on
+one test tenant authorizes nothing further. A separately approved
+exact-target installation must quiesce affected processes, prove
+backup **and restore**, inventory actual DDL/index/FK and existing
+payment/remote states, rehearse both migrations on a disposable copy,
+then verify operator review, capacity reconciliation and a forward
+recovery plan. A runtime rollback does not undo provider CREATE,
+wallet credits or reservations and cannot safely discard the ledgers.
+
+**Source-only mandatory regression gates:** actual PHP/MariaDB
+`test_post_v9_service_effects.py`,
+`test_post_v9_wallet_creation.py`,
+`test_post_v9_wallet_checkout.py` (actual single/multi-wallet
+handlers and post-COMMIT QR behavior),
+`test_post_v9_nonpaid_routes.py`,
+`test_post_v9_referral_awards.py`,
+`test_post_v9_referral_route_order.py` (real standard/custom postcommit
+QR, message and admin-button failures),
+`test_post_v9_recovery_inspection.py` and the existing
+bank/manual/hosted payment suites run within
+`tools/check_post_v9.py`. Synthetic providers and Telegram
+cannot prove live bank settlement or installed Marzban behavior.
+
 ### Owner-private read-only post-crash BUY_SUB inspection (source candidate)
 
 The recovery workbench is reached from the existing **owner-private**
 NOWPayments finance inbox via **«سفارش‌های سرویس ناتمام»**. It is not an
 additional payment gateway or a settlement service. It displays bounded
 newest-first, 12-at-a-time BUY_SUB cases in nonterminal processing/paid
-state and exact per-account service-effect ordinals, preserving historical
-order references even when normal subscription cleanup deletes a local row.
+state (including `processing_wallet`) and exact CREATE ordinals,
+preserving historical order references after subscription cleanup.
+A wallet hold displays its status and reserved capacity even when no
+remote CREATE line exists; it cannot trigger automatic refund or replay.
 The associated payment_attempts provider value and saved order amount
 are *context only*, not authenticated proof of collected funds. A payment
 with no effect row is visible as unresolved, never treated as proof that

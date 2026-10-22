@@ -319,7 +319,8 @@ if (
                 achbotLinkPaidAccountEffect($connection,(int)$o['effect_id'],(int)$orderId);
             }
 
-            decreaseServerCapacity($connection, $server_id, $inbound_id, $fid, $accountCount, true);
+            // Full capacity is already held by the first 007 effect journal
+            // reservation before Marzban CREATE. Never deduct it twice.
 
             $stmt = $connection->prepare(
                 "UPDATE pays SET state='approved' WHERE id=? AND state='processing' AND approved_by=?"
@@ -341,6 +342,13 @@ if (
                         null, null, $admin);
             return;
         }
+
+        // A completed, linked purchase must enter the 008 referral ledger
+        // before any fallible user/admin Telegram delivery or button edits.
+        // Referral uncertainty is owner-reviewed, not a second CREATE claim.
+        $followupStage = 'purchase_referral_journal';
+        $user_detail=achbotReferralAfterCompletedPurchase(
+            $connection,(int)$uid,$payId,(int)$admin,$botState);
 
         foreach ($pendingUserQrs as $pq) {
             sendQrFromLink(
@@ -390,18 +398,9 @@ if (
             }
         }
 
-        $stmt = $connection->prepare("SELECT * FROM `users` WHERE `userid`=?");
-        $stmt->bind_param("i", $uid);
-        $stmt->execute();
-        $user_detail = $stmt->get_result()->fetch_assoc();
-        $stmt->close();
-
+        // Notification only: financial referral registration/credit above
+        // already completed or left an explicit owner review signal.
         if (!empty($user_detail['refered_by'])) {
-            $inviterId = (int)$user_detail['refered_by'];
-
-            $followupStage = 'referral_reward';
-            giveReferralReward($connection, $user_detail['userid'], $inviterId, $admin, $botState);
-
             if ($admin != $from_id) {
                 $uname     = $user_detail['name'];
                 $user_name = $user_detail['username'];

@@ -1438,14 +1438,12 @@ function achbotPerformPaymentEffect($payRowId, $gateType, &$effectStage = null) 
             }
         }
 
-        decreaseServerCapacity($connection, $server_id, $inbound_id, $fid, $accountCount, true);
-
-        // A failed local capacity write after remote creation is an
-        // unresolved business effect, not a completed delivery notice.
+        // Full capacity was reserved with the first durable 007 CREATE
+        // marker, before any provider call. No late second deduction.
         showForm('✅ پرداخت شما با موفقیت انجام شد.', $payDescription, true);
 
         if (!empty($userinfo['refered_by'])) {
-            giveReferralReward($connection, $user_id, (int)$userinfo['refered_by'], $admin, $botState);
+            giveReferralReward($connection, $user_id, (int)$userinfo['refered_by'], $admin, $botState, null, $rowId);
         }
 
         $user_info = Bot('getChat', ['chat_id' => $user_id])->result;

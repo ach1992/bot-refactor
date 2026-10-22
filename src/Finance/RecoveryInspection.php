@@ -17,7 +17,7 @@ require_once __DIR__.'/ServiceEffects.php';
 function achbotRecoveryPendingCases(mysqli $db, int $before=0): array {
     if ($before<0) throw new InvalidArgumentException('recovery_invalid_cursor');
     $stmt=$db->prepare("SELECT id,user_id,price,agent_count,state
-        FROM pays WHERE type='BUY_SUB' AND state IN ('processing','paid')
+        FROM pays WHERE type='BUY_SUB' AND state IN ('processing','paid','processing_wallet')
           AND (?=0 OR id<?)
         ORDER BY id DESC LIMIT 13");
     if (!$stmt) throw new RuntimeException('recovery_list_prepare_failed');
@@ -38,7 +38,7 @@ function achbotRecoveryCase(mysqli $db, int $payId, int $afterOrdinal=0): ?array
     achbotEffectRequireUniqueLine($db);
     $stmt=$db->prepare("SELECT id,user_id,price,agent_count,state,server_id,
             plan_id FROM pays
-        WHERE id=? AND type='BUY_SUB' AND state IN ('processing','paid')
+        WHERE id=? AND type='BUY_SUB' AND state IN ('processing','paid','processing_wallet')
         LIMIT 1");
     if (!$stmt) throw new RuntimeException('recovery_pay_prepare_failed');
     $stmt->bind_param('i',$payId);
@@ -56,6 +56,19 @@ function achbotRecoveryCase(mysqli $db, int $payId, int $afterOrdinal=0): ?array
     $method=$stmt->get_result()->fetch_assoc();
     $stmt->close();
 
+    // A BUY_SUB wallet debit and all server slots may be durably held
+    // before ordinal 1 exists. Show that escrow for owner-only diagnosis
+    // rather than mistaking zero CREATE rows for an unpaid order.
+    $walletHold=null;
+    if ($pay['state']==='processing_wallet') {
+        $hold=$db->prepare("SELECT state,reserved_count FROM service_effects
+            WHERE pay_row_id=? AND effect_kind='wallet_hold' AND ordinal=0
+            LIMIT 1");
+        if (!$hold) throw new RuntimeException('recovery_wallet_hold_prepare');
+        $hold->bind_param('i',$payId);
+        if (!$hold->execute()) throw new RuntimeException('recovery_wallet_hold_read');
+        $walletHold=$hold->get_result()->fetch_assoc();$hold->close();
+    }
     // Count the whole local journal, not just the displayed page. Unique
     // ordinal keys plus [1..expected] bounds are needed for completeness.
     $stmt=$db->prepare("SELECT COUNT(*) AS recorded,MIN(ordinal) AS first_ordinal,
@@ -115,8 +128,12 @@ function achbotRecoveryCase(mysqli $db, int $payId, int $afterOrdinal=0): ?array
         'recorded_accounts'=>$recorded,'journal_complete'=>$complete,
         'journal_assurance'=>'current_mutable_payment_count_only',
         'payment_state'=>(string)$pay['state'],
-        'method'=>$method ? (string)$method['provider'] : 'unproven',
-        'method_stage'=>$method ? (string)$method['stage'] : 'unproven',
+        'method'=>$method ? (string)$method['provider'] :
+            ($walletHold!==null?'wallet_held':'unproven'),
+        'method_stage'=>$method ? (string)$method['stage'] :
+            ($walletHold!==null?'operator_reconciliation':'unproven'),
+        'wallet_hold_state'=>$walletHold===null?'not_recorded':(string)$walletHold['state'],
+        'wallet_capacity_reserved'=>$walletHold===null?0:(int)$walletHold['reserved_count'],
         'lines'=>array_slice($items,0,12),
         'next_ordinal'=>count($items)>12 ? (int)$items[11]['ordinal'] : 0,
         'after_ordinal'=>$afterOrdinal,
@@ -155,7 +172,7 @@ function achbotRecoveryTargetValid(?array $e, int $payId, int $ordinal): bool {
     if (!$e || (int)$e['pay_row_id']!==$payId ||
         (int)$e['ordinal']!==$ordinal ||
         $e['pay_type']!=='BUY_SUB' ||
-        !in_array($e['pay_state'],['processing','paid'],true) ||
+        !in_array($e['pay_state'],['processing','paid','processing_wallet'],true) ||
         !in_array($e['state'],['dispatching','verified','local_recorded'],true) ||
         (int)$e['user_id']<=0 ||
         (int)$e['paid_plan']<=0 ||

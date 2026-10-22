@@ -165,6 +165,9 @@ def check():
     cases=[]
     with owned.owned_database() as (work,env):
         purchase.init(work,env,'http://127.0.0.1:9')
+        # Persistent pre-POST reservations survive uncertain provider calls.
+        # Keep the broad isolation matrix independent of exhaustion.
+        query(work,env,'UPDATE server_info SET ucount=100 WHERE id=2')
         assert len(query(work,env,'SHOW TABLES').splitlines())==23
         for f in ('001_marzban_panel_group_id.sql',
                   '003_payment_attempts.sql','007_service_effects.sql'):

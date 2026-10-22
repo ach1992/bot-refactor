@@ -1440,13 +1440,21 @@ def main():
 
         # Owner case inbox keyset: thirteen-plus genuinely evidenced reviews
         # must remain reachable, even when several share updated_at seconds.
-        # The funded cases sort ahead of the pre-existing alert fixtures.
+        # Pin ONE DB timestamp for all writes. Multiple NOW() queries can
+        # cross a second boundary on slow CI runners, accidentally splitting
+        # the intended same-second pagination group without a product bug.
+        anchor=sql(work,env,
+            "SELECT DATE_FORMAT(DATE_ADD(NOW(),INTERVAL 1 HOUR),"
+            "'%Y-%m-%d %H:%i:%s')").strip()
+        if not re.fullmatch(r'[0-9]{4}-[0-9]{2}-[0-9]{2} '
+                            r'[0-9]{2}:[0-9]{2}:[0-9]{2}',anchor):
+            raise RuntimeError('Case page DB timestamp fixture invalid')
         for n in range(15):
             name=f'np-inbox-page-{n:02d}'
             seed_np_attempt(work,env,name,name+'-invoice',name+'-primary')
             sql(work,env,"UPDATE payment_attempts SET stage='review',"
                 "provider_status='fulfillment_unconfirmed',"
-                "updated_at=DATE_SUB(DATE_ADD(NOW(),INTERVAL 1 HOUR),"
+                f"updated_at=DATE_SUB('{anchor}',"
                 f"INTERVAL {n//5} SECOND) WHERE order_hash='{name}'")
             sql(work,env,"INSERT INTO payment_transactions "
                 "(attempt_id,provider,payment_id,observed_status) "
@@ -3752,7 +3760,13 @@ def main():
                     for n,row in enumerate(effect_rows)
                 ):
                     raise RuntimeError('O2 durable distinct effect rows mismatch: '+repr(effect_rows))
-                expected_capacity=initial_capacity-(2 if label=='complete' else 0)
+                # Full quantity is held BEFORE first remote POST even when
+                # account N fails. No capacity rearm from an unknown effect.
+                expected_capacity=initial_capacity-2
+                held=sql(work,env,f"SELECT COALESCE(SUM(reserved_count),0) FROM "
+                    f"service_effects WHERE pay_row_id={pay_id}").strip()
+                if held!='2':
+                    raise RuntimeError('O2 predispatch reservation not durable: '+str(held))
                 if (len(local_orders)!=expected_order_count or
                     len(set(local_orders))!=expected_order_count or
                     state!=want_stage or
