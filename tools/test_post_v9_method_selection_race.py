@@ -145,10 +145,10 @@ if (isset($spec['r2_lock_timeout'])) {
     $connection->query('SET innodb_lock_wait_timeout='.$timeout);
 }
 """)
-    needle="$value=processWalletPayment($connection,$hash,static function(){return true;});"
+    needle="$value=processWalletPayment($connection,$hash,static function(){return true;},'standard');"
     assert php.count(needle)==1
     php=php.replace(needle,"""$value=processWalletPayment($connection,$hash,
-        static function() {++$GLOBALS['r2_effects'];return true;});""")
+        static function() {++$GLOBALS['r2_effects'];return true;},'standard');""")
     needle="echo json_encode(['result'=>$value],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);"
     assert php.count(needle)==1
     php=php.replace(needle,"""echo json_encode(['result'=>$value,'effects'=>$GLOBALS['r2_effects']],

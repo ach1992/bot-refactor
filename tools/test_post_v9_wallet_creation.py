@@ -47,6 +47,7 @@ require_once $root.'/src/Finance/ReceiptHelpers.php';
 require_once $root.'/src/Finance/ServiceEffects.php';
 require_once $root.'/src/Finance/WalletSettlement.php';
 $hash=(string)($spec['hash']??'walletcreate');
+// Actual standard BUY_SUB fulfillment is explicitly bound to its 0/0 quote.
 $result=processWalletPayment($db,$hash,static function($pay,$owner) use($db,$spec) {
     $uid=(int)$pay['user_id'];
     $pid=(int)$pay['id'];
@@ -72,7 +73,7 @@ $result=processWalletPayment($db,$hash,static function($pay,$owner) use($db,$spe
         throw $e;
     }
     return true;
-});
+}, 'standard');
 echo json_encode(['result'=>$result,'events'=>$GLOBALS['events']],
     JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE);
 '''

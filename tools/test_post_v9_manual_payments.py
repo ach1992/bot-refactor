@@ -101,7 +101,7 @@ elseif ($op==='wallet') {
     $from_id=$user;$admin=9001;
     function alert(...$args) {}
     require_once $root.'/src/Finance/WalletSettlement.php';
-    $value=processWalletPayment($connection,$hash,static function(){return true;});
+    $value=processWalletPayment($connection,$hash,static function(){return true;},'standard');
 }
 elseif ($op==='read') {
     $selected=achbotManualSelectedMethod($connection,$payInfo);
