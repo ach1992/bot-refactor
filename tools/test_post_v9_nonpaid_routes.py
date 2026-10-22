@@ -39,7 +39,7 @@ if (($spec['route']??'trial')==='trial') {
     $message->text=$text;
     $update->message=$message;
 }
-$botState=['remark'=>'digits','rewardChannel'=>null];
+$botState=['remark'=>(string)($spec['remark_mode']??'digits'),'rewardChannel'=>null];
 $buttonValues=['cancel'=>'cancel','start_bot'=>'start','back_to_main'=>'back'];
 $mainValues=['sending_config_to_user'=>'Working',
  'send_only_number'=>'Enter integer','can_create_specific_account'=>'Limit AMOUNT',
@@ -88,11 +88,6 @@ function getServerInfoAndConfig($connection,$sid) {
     $stmt->bind_param('i',$sid);$stmt->execute();
     $row=$stmt->get_result()->fetch_assoc();$stmt->close();
     return [['remark'=>$row['remark'],'title'=>'Test server'], $row];
-}
-function buildRemark(...$args){
-    return 'source_'.(int)$args[3].'_'.substr(hash('sha256',
-        ($GLOBALS['spec']['route']??'trial').'_'.
-        (int)($GLOBALS['spec']['update_id']??987650)),0,12);
 }
 function generateRandomString(){return 'fixtureuuid';}
 function getNextPortAndIncrease(){return [12345,0];}
@@ -213,6 +208,42 @@ def check():
         assert sum(sum(e['name']=='POST' for e in x) for x in pair)==1,pair
         assert capacity()==0
         cases.append('two_real_admin_batches_race_one_available_server_slot')
+
+        reset()
+        sql(work,env,"UPDATE server_plans SET descr='batch_custom' WHERE id=7")
+        manual_names=[]
+        for n in (1,2):
+            firstnames=[]
+            for update_id in (987701+n*10,987702+n*10):
+                sql(work,env,"UPDATE users SET step='createAccAmount7_30_2' WHERE userid=9001")
+                created=php(work,env,driver,route='bulk',actor=9001,
+                    text=str(n),remark_mode='manual',update_id=update_id)
+                new_names=[e['remark'] for e in created if e['name']=='POST']
+                assert len(new_names)==n,(n,update_id,created)
+                assert all(name.startswith('batch_custom_b') and
+                           name.rsplit('_',1)[-1]==str(i+1)
+                           for i,name in enumerate(new_names)),new_names
+                assert not set(new_names).intersection(manual_names)
+                assert not set(new_names).intersection(firstnames)
+                firstnames.extend(new_names)
+                manual_names.extend(new_names)
+                replay=php(work,env,driver,route='bulk',actor=9001,
+                    text=str(n),remark_mode='manual',update_id=update_id,
+                    force_cached_step=True)
+                assert not [e for e in replay if e['name']=='POST'],replay
+        assert capacity()==4 and len(manual_names)==6
+        assert sql(work,env,"SELECT COUNT(DISTINCT remote_username) FROM "
+                "service_effects WHERE source_kind='admin_bulk'")=='6'
+        cases.append('real_manual_remark_two_independent_single_and_multi_batches_unique_names_no_replay')
+
+        reset()
+        sql(work,env,"UPDATE server_plans SET descr='name with spaces' WHERE id=7")
+        sql(work,env,"UPDATE users SET step='createAccAmount7_30_2' WHERE userid=9001")
+        bad_manual=php(work,env,driver,route='bulk',actor=9001,
+            text='1',remark_mode='manual',update_id=987799)
+        assert not [e for e in bad_manual if e['name']=='POST'],bad_manual
+        assert capacity()==10 and effects('admin_bulk')==''
+        cases.append('invalid_manual_remark_rejected_without_remote_or_capacity_effect')
 
         reset()
         sql(work,env,"UPDATE users SET step='createAccAmount7_30_2' WHERE userid=9001")

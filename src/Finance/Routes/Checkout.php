@@ -632,6 +632,12 @@ if (preg_match('/^accCustom(.+)$/D', $data, $match) && $text != $buttonValues['c
         return;
     }
 
+    // Register the payment-keyed referral award before any possible
+    // Telegram/UI throw. Never make inviter credit contingent on QR or
+    // administrator message delivery succeeding.
+    $user_detail=achbotReferralAfterCompletedPurchase(
+        $connection,(int)$uid,(int)$payRowId,(int)$admin,$botState);
+
     setUser();
     // Both payment and local order now have verified COMMITs.
     // Delivery failure does not undo a paid service or rearm CREATE.
@@ -649,6 +655,9 @@ if (preg_match('/^accCustom(.+)$/D', $data, $match) && $text != $buttonValues['c
             error_log('achbot_custom_receipt_owner_notice_failed pay_id='.$payRowId);
         }
     }
+    // Presentation failures after committed financial/referral outcomes must
+    // remain separate owner-visible delivery problems, never reopen CREATE.
+    try {
     sendMessage('✅ اشتراک ثبت شده است.', getMainKeys());
 
     $keys = json_encode([
@@ -673,17 +682,8 @@ if (preg_match('/^accCustom(.+)$/D', $data, $match) && $text != $buttonValues['c
         }
     }
 
-    $stmt = $connection->prepare("SELECT * FROM `users` WHERE `userid`=?");
-    $stmt->bind_param("i", $uid);
-    $stmt->execute();
-    $user_detail = $stmt->get_result()->fetch_assoc();
-    $stmt->close();
-
     if (!empty($user_detail['refered_by'])) {
-        $inviterId = (int)$user_detail['refered_by'];
-
-        giveReferralReward($connection, $user_detail['userid'], $inviterId, $admin, $botState, null, $payRowId);
-
+        // Invitee fanout is presentation-only; 008 award is already decided.
         if ($admin != $from_id) {
             $uname     = $user_detail['name'];
             $user_name = $user_detail['username'];
@@ -708,6 +708,18 @@ if (preg_match('/^accCustom(.+)$/D', $data, $match) && $text != $buttonValues['c
             if (!empty($rewardChannel)) {
                 sendMessage($msg, $keys2, "html", $rewardChannel);
             }
+        }
+    }
+    } catch (Throwable $error) {
+        error_log('achbot_custom_receipt_postcommit_notice_review pay_id='.$payRowId.
+            ' class='.get_class($error));
+        try {
+            sendMessage('⚠️ پرداخت و سفارش ثبت شده‌اند، اما اطلاع‌رسانی نیازمند بررسی است.'.
+                "\n🆔 Pay ID: ".$payRowId.
+                "\nسرویس یا پاداش را بدون تطبیق دوباره صادر نکنید.",
+                null,null,$admin);
+        } catch (Throwable $ignored) {
+            error_log('achbot_custom_receipt_postcommit_owner_notice_failed pay_id='.$payRowId);
         }
     }
 }

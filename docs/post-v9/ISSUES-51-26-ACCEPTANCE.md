@@ -15,6 +15,13 @@ real Marzban provisioning, refund or real-money correctness.
   its scenario list includes direct execution of ManualApproval.php, Checkout.php,
   RenewalCheckout.php, Extensions.php and payment receipt handlers.
 - UX lifecycle, stale message and payment status: ../../tools/test_post_v9_payment_ux_lifecycle.py.
+- PR #72 review remediation: ../../tools/test_post_v9_wallet_checkout.py
+  runs the real `buyType=much` Catalogue draft and locked wallet debit;
+  ../../tools/test_post_v9_nonpaid_routes.py uses real `buildRemark`
+  for independently authenticated manual-mode admin batches; and
+  ../../tools/test_post_v9_referral_route_order.py executes real standard
+  and custom receipt handlers with failed post-COMMIT QR, customer message
+  and operator markup transports, proving one 008 award and no CREATE replay.
 - Full source, package and original/additive-schema acceptance:
   ../../tools/check_post_v9.py. GitHub Compatibility workflow runs the exact
   candidate on PHP 8.1 and 8.4 and executes frozen historical V9 separately.

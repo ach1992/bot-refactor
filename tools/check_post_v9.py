@@ -1047,6 +1047,32 @@ def main():
                 referral.get("socket_only") is True and
                 referral.get("production_mutations")==0):
             raise RuntimeError("Referral award source evidence incomplete")
+        # Independent review PR #72 REQUIRED-1: award registration must
+        # survive failures of earlier post-COMMIT QR/Telegram/markup calls.
+        route_award_path=Path(tmp)/"referral-postcommit-routes.json"
+        route_award_proc=subprocess.run(
+            ["python3",str(ROOT/"tools/test_post_v9_referral_route_order.py"),
+             "--run-disposable","--report",str(route_award_path)],
+            cwd=ROOT,capture_output=True,text=True,timeout=120)
+        if route_award_proc.returncode!=0:
+            raise RuntimeError("Referral postcommit source routes failed:\n"+
+                (route_award_proc.stderr or route_award_proc.stdout)[-4500:])
+        route_award=json.loads(route_award_path.read_text())
+        required_route_award={
+            "real_standard_receipt_qr_throw_award_confirmed_no_replay",
+            "real_standard_receipt_customer_message_throw_award_confirmed_no_replay",
+            "real_standard_receipt_admin_markup_throw_award_confirmed_no_replay",
+            "real_custom_receipt_qr_throw_award_confirmed_no_replay",
+            "real_custom_receipt_customer_message_throw_award_confirmed_no_replay",
+            "real_custom_receipt_admin_markup_throw_award_confirmed_no_replay",
+        }
+        if not (route_award.get('complete') is True and
+                set(route_award.get('scenarios',[]))==required_route_award and
+                route_award.get('native_php_mariadb') is True and
+                route_award.get('financial_effects_production')==0 and
+                route_award.get('real_telegram_or_provider_calls')==0):
+            raise RuntimeError('Referral postcommit route identity incomplete')
+
         # The formerly byte-parity-bound paid wallet and unpaid trial/bulk
         # CREATE routes intentionally changed financial safety semantics. Run
         # real current handlers and durable reservation against owned MariaDB.
@@ -1090,6 +1116,8 @@ def main():
             "actual_admin_bulk_two_accounts_full_reservation_one_batch",
             "actual_admin_bulk_partial_retains_capacity_and_audit",
             "two_real_admin_batches_race_one_available_server_slot",
+            "real_manual_remark_two_independent_single_and_multi_batches_unique_names_no_replay",
+            "invalid_manual_remark_rejected_without_remote_or_capacity_effect",
             "nonpaid_source_db_insert_failure_before_post_no_capacity_loss",
             "trial_postcommit_telegram_failure_no_recreate"
         }
@@ -1114,6 +1142,13 @@ def main():
                 +native_checkout.stderr[-4500:])
         wallet_checkout=json.loads(wallet_checkout_path.read_text())
         required_wallet_checkout={
+            "actual_catalogue_much_draft_rejects_invalid_remote_usernames",
+            "real_custom_wallet_persisted_bad_name_rejected_before_debit_hold_and_create",
+            "real_catalogue_much_valid_draft_to_wallet_one_effect_order",
+            "real_custom_persisted_multicount_rejected_predebit",
+            "real_standard_manual_remark_invalid_rejected_predebit",
+            "real_standard_invalid_plan_day_predebit_no_hold",
+            "real_standard_invalid_generated_prefix_predebit_no_hold",
             "real_multi_wallet_checkout_full_hold_order_delivery_after_finality",
             "real_multi_wallet_second_line_ambiguous_stays_paid_hold_no_replay",
             "real_custom_wallet_checkout_single_effect_after_commit",
@@ -1573,6 +1608,7 @@ def main():
                     "wallet_checkout_routes":wallet_checkout,
                     "nonpaid_trial_bulk":nonpaid,
                     "referral_awards":referral,
+                    "referral_postcommit_routes":route_award,
                     "bank_auto_buy_sub":bank_buy,
                     "bank_recovery_inspection":recovery,
                     "bank_recovery_transport":transport,
@@ -1615,6 +1651,7 @@ def main():
                       "wallet_checkout_cases":wallet_checkout["cases"],
                       "nonpaid_trial_bulk_cases":nonpaid["cases"],
                       "referral_award_cases":referral["cases"],
+                      "referral_postcommit_route_cases":route_award["cases"],
                       "bank_auto_buy_sub_cases":bank_buy["cases"],
                        "bank_recovery_inspection_cases":recovery["cases"],
                       "bank_recovery_transport_cases":transport["cases"],

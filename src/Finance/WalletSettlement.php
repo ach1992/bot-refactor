@@ -8,7 +8,7 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
 if (!function_exists('processWalletPayment')) {
     function processWalletPayment($connection, $hashId, $handler)
     {
-        global $from_id, $admin;
+        global $from_id, $admin, $botState;
         // A confirmed commit cannot be undone after calling Marzban.
         $heldDebit=false;
 
@@ -204,17 +204,63 @@ if (!function_exists('processWalletPayment')) {
                       instanceof mysqli_result))
                     throw new RuntimeException('wallet_create_journal_missing');
                 $quantity=max(1,(int)($payInfo['agent_count']??0));
+                $customDay=(int)($payInfo['day']??0);
+                $customVolume=(int)($payInfo['volume']??0);
+                $isCustom=($customDay!==0 || $customVolume!==0);
+                $manualRemark=(($botState['remark']??'')==='manual');
+                $persistedRemark=(string)($payInfo['description']??'');
+                // Reject deterministic request errors while still in the
+                // owner/pay/user lock transaction and BEFORE financial debit.
+                // Even an old or tampered pays row cannot skip this guard.
+                if (($isCustom &&
+                     ($customDay<=0 || $customDay>36500 ||
+                      $customVolume<=0 ||
+                      $customVolume>intdiv(PHP_INT_MAX,1073741824) ||
+                      !achbotEffectValidUsername($persistedRemark))) ||
+                    (!$isCustom && $manualRemark &&
+                     !achbotEffectValidUsername($persistedRemark))) {
+                    $connection->rollback();
+                    alert('⛔️ نام یا مشخصات این سفارش معتبر نیست؛ مبلغی از کیف پول کسر نشد.',true);
+                    return ['status'=>'invalid_request','payInfo'=>$payInfo];
+                }
                 $planId=(int)($payInfo['plan_id']??0);
                 $serverId=(int)($payInfo['server_id']??0);
-                $planCheck=$connection->prepare("SELECT s.server_id,s.inbound_id,i.ucount
+                $planCheck=$connection->prepare("SELECT s.server_id,s.inbound_id,
+                    s.days,s.volume,i.ucount,i.remark AS server_remark,
+                    i.active AS server_active,i.state AS server_state,
+                    c.type AS panel_type
                     FROM server_plans s JOIN server_info i ON i.id=s.server_id
+                    JOIN server_config c ON c.id=i.id
                     WHERE s.id=? AND s.active=1 LIMIT 1 FOR UPDATE");
                 if (!$planCheck) throw new RuntimeException('wallet_create_capacity_prepare');
                 $planCheck->bind_param('i',$planId);
                 if (!$planCheck->execute()) throw new RuntimeException('wallet_create_capacity_read');
                 $plan=$planCheck->get_result()->fetch_assoc();$planCheck->close();
+                // The final dispatcher validates deterministic local fields.
+                // Perform the same admissibility checks here while the
+                // payment and plan are locked, before the wallet hold/debit.
+                $planDays=(int)($plan['days']??0);
+                $planVolume=(int)($plan['volume']??0);
+                $serverRemark=(string)($plan['server_remark']??'');
+                $remarkMode=(string)($botState['remark']??'');
+                $prefixSuffix=$remarkMode==='digits' ? '-99999' :
+                    '-'.$uid.'-99999';
+                $generatedValid=$isCustom || $manualRemark ||
+                    achbotEffectValidUsername($serverRemark.$prefixSuffix);
                 if (!$plan || (int)$plan['server_id']!==$serverId ||
-                    (int)$plan['inbound_id']!==0 || (int)$plan['ucount']<$quantity) {
+                    (int)$plan['inbound_id']!==0 ||
+                    (int)$plan['server_active']!==1 ||
+                    (int)$plan['server_state']!==1 ||
+                    ($plan['panel_type']??'')!=='marzban' ||
+                    $planDays<=0 || $planDays>36500 ||
+                    $planVolume<=0 ||
+                    $planVolume>intdiv(PHP_INT_MAX,1073741824) ||
+                    ($isCustom && $quantity!==1) || !$generatedValid) {
+                    $connection->rollback();
+                    alert('⛔️ مشخصات این سفارش معتبر نیست؛ مبلغی از کیف پول کسر نشد.',true);
+                    return ['status'=>'invalid_request','payInfo'=>$payInfo];
+                }
+                if ((int)$plan['ucount']<$quantity) {
                     $connection->rollback();
                     alert('⛔️ ظرفیت این سفارش کافی نیست؛ مبلغی از کیف پول کسر نشد.',true);
                     return ['status'=>'insufficient_capacity','payInfo'=>$payInfo];

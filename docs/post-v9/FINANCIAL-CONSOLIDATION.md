@@ -539,7 +539,12 @@ authorized operator reconciliation; never automatically release, retry
 or refund. Terminal historical paid states cannot authorize new CREATE.
 
 **Wallet debit barrier.** Fresh authorization and plan/capacity checks
-precede any debit. One local financial transaction commits
+precede any debit. The custom-plan `buyType=much` draft and the locked
+pays-row authorization both use the same strict ASCII/100-byte provider
+username validator, including previously persisted invalid requests.
+Plan days/volume, manual names and generated server prefix are checked
+before debit; rejected deterministic input leaves payment, wallet, 007
+and capacity untouched. One local financial transaction commits
 `processing_wallet`, the exact wallet debit, all capacity and
 an independent `wallet_hold` journal row at ordinal zero before
 any provider call. The first actual CREATE consumes that hold instead of
@@ -557,7 +562,12 @@ establish an immutable source identity, with one operation per ordinal;
 ordinary free trial uses a single per-user reservation in
 `users.freetrial`. A new authenticated administrator update
 can request a new bulk batch, whereas replay of the same update cannot
-create a second batch. Every batch reserves all its slots up front.
+create a second batch. Real `buildRemark()` manual-mode naming now adds a
+stable, valid batch-update-bound digest and ordinal, preserving the plan
+description prefix when valid; identical plan descriptions across distinct
+updates no longer collide on the same physical target. Unsupported manual
+names are rejected before remote dispatch. Every batch reserves all its
+slots up front.
 A verified remote CREATE must link the exact new `orders_list` row
 before Telegram delivery. Partial and uncertain states remain review-only.
 
@@ -568,7 +578,12 @@ terminal `BUY_SUB` awards require the actual buyer/referrer
 relationship and every exact `local_recorded` CREATE order.
 A durable `NOT_ATTEMPTED` claim precedes the inviter wallet
 credit, and the confirmed credit + before/after signed balance
-journal share a second atomic transaction. No duplicate callback,
+journal share a second atomic transaction. Actual standard and custom
+receipt handlers invoke this payment-scoped claim immediately after verified
+payment/order COMMIT, before customer QR, customer messages, administrator
+button edits and other fallible presentation work. Referral uncertainty
+has a separate owner-private review signal and never reopens the original
+financial/remote effect. No duplicate callback,
 concurrent claim or failed Telegram notification repeats credit.
 Disabled reward policy is durably recorded as `DISABLED` and
 does not retroactively change after the setting changes. Unknown
@@ -593,6 +608,8 @@ wallet credits or reservations and cannot safely discard the ledgers.
 handlers and post-COMMIT QR behavior),
 `test_post_v9_nonpaid_routes.py`,
 `test_post_v9_referral_awards.py`,
+`test_post_v9_referral_route_order.py` (real standard/custom postcommit
+QR, message and admin-button failures),
 `test_post_v9_recovery_inspection.py` and the existing
 bank/manual/hosted payment suites run within
 `tools/check_post_v9.py`. Synthetic providers and Telegram

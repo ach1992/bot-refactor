@@ -237,12 +237,15 @@ if (
         $remark = buildRemark(
             $botState,
             $srv_remark,
-            $plan['description'] ?? '',
+            $plan['descr'] ?? '',
             $uid,
             null
         );
 
-        if ($count>1) $remark.='_'.$i;
+        // Bind uniqueness to the verified Telegram update, not to the
+        // manually configured (possibly identical) plan description.
+        $remark=achbotAdminBulkAccountRemark(
+            (string)$remark,$bulkSource,$i);
         [$response, $remark, $port, $effectId] = achbotCreateNonPaymentAccount(
             $connection,'admin_bulk',$bulkSource,$uid,$i,$count,[
                 'is_primary_admin'=>($uid===(int)$admin),

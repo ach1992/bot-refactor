@@ -85,6 +85,45 @@ if (!function_exists('achbotReferralWarnOperator')) {
     }
 }
 
+/**
+ * Run immediately after the payment + complete service-order COMMIT,
+ * BEFORE any fallible QR, user/admin message, edit or presentation operation.
+ * This function can never reopen the settlement or repeat remote CREATE.
+ *
+ * The 008 payment-keyed claim is durable inside giveReferralReward. If the
+ * claim/credit cannot be proven, preserve an owner-visible review signal.
+ */
+if (!function_exists('achbotReferralAfterCompletedPurchase')) {
+    function achbotReferralAfterCompletedPurchase(
+        mysqli $db, int $buyer, int $payId, int $admin, array $botState
+    ): array {
+        try {
+            $stmt=$db->prepare('SELECT * FROM users WHERE userid=? LIMIT 1');
+            if (!$stmt) throw new RuntimeException('referral_followup_buyer_prepare');
+            $stmt->bind_param('i',$buyer);
+            if (!$stmt->execute())
+                throw new RuntimeException('referral_followup_buyer_read');
+            $rows=$stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+            $stmt->close();
+            if (count($rows)!==1)
+                throw new RuntimeException('referral_followup_buyer_missing');
+            $user=$rows[0];
+            $inviter=(int)($user['refered_by']??0);
+            if ($inviter>0 &&
+                !giveReferralReward($db,$buyer,$inviter,$admin,$botState,null,$payId)) {
+                error_log('achbot_referral_completed_purchase_review pay_id='.$payId);
+                achbotReferralWarnOperator($admin,$payId);
+            }
+            return $user;
+        } catch (Throwable $error) {
+            error_log('achbot_referral_completed_purchase_review pay_id='.$payId.
+                ' class='.get_class($error));
+            achbotReferralWarnOperator($admin,$payId);
+            return [];
+        }
+    }
+}
+
 if (!function_exists('giveReferralReward')) {
     /**
      * True means a newly confirmed credit or an explicitly disabled policy.

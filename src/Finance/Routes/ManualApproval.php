@@ -343,6 +343,13 @@ if (
             return;
         }
 
+        // A completed, linked purchase must enter the 008 referral ledger
+        // before any fallible user/admin Telegram delivery or button edits.
+        // Referral uncertainty is owner-reviewed, not a second CREATE claim.
+        $followupStage = 'purchase_referral_journal';
+        $user_detail=achbotReferralAfterCompletedPurchase(
+            $connection,(int)$uid,$payId,(int)$admin,$botState);
+
         foreach ($pendingUserQrs as $pq) {
             sendQrFromLink(
                 $pq['qrLink'],
@@ -391,18 +398,9 @@ if (
             }
         }
 
-        $stmt = $connection->prepare("SELECT * FROM `users` WHERE `userid`=?");
-        $stmt->bind_param("i", $uid);
-        $stmt->execute();
-        $user_detail = $stmt->get_result()->fetch_assoc();
-        $stmt->close();
-
+        // Notification only: financial referral registration/credit above
+        // already completed or left an explicit owner review signal.
         if (!empty($user_detail['refered_by'])) {
-            $inviterId = (int)$user_detail['refered_by'];
-
-            $followupStage = 'referral_reward';
-            giveReferralReward($connection, $user_detail['userid'], $inviterId, $admin, $botState, null, $payId);
-
             if ($admin != $from_id) {
                 $uname     = $user_detail['name'];
                 $user_name = $user_detail['username'];

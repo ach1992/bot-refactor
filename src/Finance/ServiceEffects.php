@@ -44,6 +44,16 @@ function achbotEffectRequireUniqueLine(mysqli $db): void {
     }
 }
 
+/**
+ * One provider-bound username contract for customer draft admission,
+ * pre-debit verification and the final paid/nonpaid effect dispatcher.
+ * Byte-length is intentional: Marzban usernames are ASCII identifiers.
+ */
+function achbotEffectValidUsername(string $username): bool {
+    return strlen($username)>=1 && strlen($username)<=100 &&
+        preg_match('/^[a-zA-Z0-9_-]+$/D',$username)===1;
+}
+
 /** Reserve ONCE before outbound POST; never derive outcome from account counts. */
 function achbotCreatePaidAccount(mysqli $db, int $payId, int $ordinal, array $p): array {
     achbotEffectRequireAutocommit($db);
@@ -58,7 +68,7 @@ function achbotCreatePaidAccount(mysqli $db, int $payId, int $ordinal, array $p)
         $planId<=0 || $inboundId!==0 || ($p['server_type']??'')!=='marzban' ||
         $volume<=0 || $days<=0 || $days>36500 ||
         $volume>intdiv(PHP_INT_MAX,1073741824) ||
-        $remark==='' || strlen($remark)>100 || !preg_match('/^[a-zA-Z0-9_-]+$/D',$remark)) {
+        !achbotEffectValidUsername($remark)) {
         throw new RuntimeException('effect_invalid_account_request');
     }
 
@@ -393,7 +403,7 @@ function achbotCreateNonPaymentAccount(
         (int)($p['inbound_id']??-1)!==0 ||
         $volume<=0 || $days<=0 || $days>36500 ||
         $volume>intdiv(PHP_INT_MAX,1073741824) ||
-        !preg_match('/^[a-zA-Z0-9_-]{1,100}$/D',$remark)) {
+        !achbotEffectValidUsername($remark)) {
         throw new RuntimeException('nonpaid_effect_invalid_request');
     }
     if (($kind==='free_trial' && !str_starts_with($sourceRef,'trial:') &&

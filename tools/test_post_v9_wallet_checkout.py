@@ -28,7 +28,7 @@ $admin=9001;$from_id=1001;$chat_id=1001;$message_id=51;$time=time();
 $data=(($spec['custom']??false)?'payCustomWithWallet':'payBuyWithWallet').
     ($spec['hash']??'native_standard');
 $text='';$username='fixture';$first_name='Customer';$match=[];
-$botUrl='https://fixture.invalid/';$botState=['remark'=>'digits','rewardChannel'=>null];
+$botUrl='https://fixture.invalid/';$botState=['remark'=>(string)($spec['remark_mode']??'digits'),'rewardChannel'=>null];
 $buttonValues=['back_to_main'=>'back','cancel'=>'cancel'];
 $mainValues=['sending_config_to_user'=>'Sending...',
  'buy_custom_account_request'=>'TYPE USER-ID USERNAME NAME PRICE REMARK VOLUME DAYS',
@@ -115,6 +115,44 @@ require $root.'/src/Finance/Routes/Checkout.php';
 echo json_encode(['events'=>$GLOBALS['events']],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
 '''
 
+# Real customer/agent `buyType=much` draft route (not a mock draft
+# constructor); the same draft is then consumed by real WalletSettlement.
+PHP_CATALOGUE=r'''<?php
+error_reporting(E_ALL & ~E_DEPRECATED);
+set_error_handler(static function($n,$m){throw new ErrorException($m,0,$n);});
+$_SERVER['SCRIPT_FILENAME']=__FILE__;
+$root=$argv[1];$spec=json_decode($argv[4],true,512,JSON_THROW_ON_ERROR);
+$connection=new mysqli('localhost','root','',$argv[3],0,$argv[2]);
+$connection->set_charset('utf8mb4');
+$admin=9001;$from_id=1001;$chat_id=1001;$message_id=101;
+$data='';$text=(string)($spec['username']??'');$match=[];
+$botState=['sellState'=>'on','remark'=>'manual','gbPrice'=>100,'dayPrice'=>10,
+ 'walletState'=>'on','nowPaymentOther'=>'off','zarinpal'=>'off','nextpay'=>'off'];
+$mainValues=['incorrect_config_name'=>'Invalid account username',
+ 'buy_subscription_detail'=>'Account PRICE VOLUME DAYS PLAN-NAME DESCRIPTION'];
+$buttonValues=['cancel'=>'cancel','pay_with_wallet'=>'Wallet'];
+$userInfo=['step'=>'enterCustomPlanName7_1_1_30_much','is_agent'=>false,
+ 'isAdmin'=>false,'userid'=>1001];
+$botUrl='https://fixture.invalid/';$username='fixture';$first_name='Synthetic';
+$GLOBALS['events']=[];$GLOBALS['spec']=$spec;
+register_shutdown_function(static function(){
+    echo json_encode(['events'=>$GLOBALS['events'],'fatal'=>error_get_last()],
+        JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE);
+});
+function alert(...$args){$GLOBALS['events'][]=['name'=>'ALERT'];}
+function sendMessage(...$args) {
+ $GLOBALS['events'][]=['name'=>'MESSAGE','text'=>(string)($args[0]??'')];
+ return (object)['ok'=>true,'result'=>(object)['message_id'=>101]];
+}
+function RandomString(){return (string)$GLOBALS['spec']['hash'];}
+function setUser(...$args){$GLOBALS['events'][]=['name'=>'STEP'];}
+function achbotSupportsMarzbanPlan($db,$id){return (int)$id===7;}
+function achbotManualEnabled(...$args){return false;}
+function achbotManualCryptoEnabled(...$args){return false;}
+require_once $root.'/src/Purchase/Core.php';
+require $root.'/src/Purchase/Catalogue.php';
+'''
+
 def sql(work,env,query):
     return native.sql(work,env,query,DB).strip()
 
@@ -129,6 +167,19 @@ def route(work,env,driver,**spec):
     try:return json.loads(p.stdout)['events']
     except Exception as exc:
         raise RuntimeError('native checkout JSON '+p.stdout[-800:]+p.stderr[-500:]) from exc
+
+def catalogue(work,env,driver,**spec):
+    p=subprocess.run(['php','-n','-d','extension=mysqlnd','-d','extension=mysqli',
+        '-d','disable_functions=curl_init,curl_exec,exec,shell_exec,system,passthru,popen,proc_open,mail',
+        str(driver),str(ROOT),str(work/'mysql.sock'),DB,json.dumps(spec)],
+        cwd=work,env=env,capture_output=True,text=True,timeout=25)
+    if p.returncode:
+        raise RuntimeError('catalogue PHP failure '+repr((p.stderr[-1000:],p.stdout[-900:])))
+    result=json.loads(p.stdout)
+    if result.get('fatal') and result['fatal'].get('type') in (1,4,16,64,256):
+        raise RuntimeError('catalogue fatal '+str(result['fatal'])[:700])
+    return result['events']
+
 
 def check():
     cases=[]
@@ -164,6 +215,80 @@ def check():
             return int(sql(work,env,'SELECT ucount FROM server_info WHERE id=2'))
         def calls(events,key):
             return [e for e in events if e['event']==key]
+
+        # Exact supported `buyType=much` draft route must reject usernames
+        # that a later provider would reject, without inserting any invoice.
+        catalogue_driver=work/'catalogue-much-wallet.php'
+        catalogue_driver.write_text(PHP_CATALOGUE)
+        for i,bad_name in enumerate(('foo bar','bad/name','برنامه','x'*101),start=1):
+            events=catalogue(work,env,catalogue_driver,
+                username=bad_name,hash='badmuchdraft'+str(i))
+            assert any(e['name']=='MESSAGE' and
+                       'Invalid account username' in e['text'] for e in events),events
+            assert sql(work,env,f"SELECT COUNT(*) FROM pays WHERE hash_id='badmuchdraft{i}'")=='0'
+        cases.append('actual_catalogue_much_draft_rejects_invalid_remote_usernames')
+
+        # An older persisted BUY_SUB may have bypassed the new UI validator.
+        # It must still fail at the authoritative locked pre-debit boundary.
+        invalid=newpay('native_bad_persisted',1,custom=True)
+        sql(work,env,f"UPDATE pays SET description='foo bar' WHERE id={invalid}")
+        denied=route(work,env,driver,hash='native_bad_persisted',custom=True)
+        assert not calls(denied,'POST') and not calls(denied,'QR'),denied
+        assert paid(invalid)=='pending' and wallet()==50000 and cap()==10
+        assert detail(invalid)=='' and sql(work,env,
+            f'SELECT COUNT(*) FROM orders_list o JOIN service_effects e ON e.order_id=o.id WHERE e.pay_row_id={invalid}')=='0'
+        assert not calls(route(work,env,driver,hash='native_bad_persisted',custom=True),'POST')
+        cases.append('real_custom_wallet_persisted_bad_name_rejected_before_debit_hold_and_create')
+
+        events=catalogue(work,env,catalogue_driver,
+            username='valid_custom_17',hash='validmuchdraft')
+        assert any(e['name']=='MESSAGE' and 'Invalid account username' not in e['text']
+                   for e in events),events
+        real_draft=int(sql(work,env,"SELECT id FROM pays WHERE hash_id='validmuchdraft' AND description='valid_custom_17'"))
+        assert real_draft>0
+        allowed=route(work,env,driver,hash='validmuchdraft',custom=True)
+        assert len(calls(allowed,'POST'))==1 and paid(real_draft)=='paid_with_wallet'
+        assert len(calls(allowed,'QR'))==1 and cap()==9
+        assert not calls(route(work,env,driver,hash='validmuchdraft',custom=True),'POST')
+        cases.append('real_catalogue_much_valid_draft_to_wallet_one_effect_order')
+
+        # Persistent request tampering and locally-invalid plan/username
+        # inputs must fail before a cent or capacity slot can be committed.
+        bad_count=newpay('native_invalid_count',2,custom=True)
+        held=route(work,env,driver,hash='native_invalid_count',custom=True)
+        assert not calls(held,'POST') and wallet()==50000 and cap()==10
+        assert paid(bad_count)=='pending' and detail(bad_count)==''
+        cases.append('real_custom_persisted_multicount_rejected_predebit')
+
+        bad_manual=newpay('native_manual_bad',1)
+        sql(work,env,f"UPDATE pays SET description='bad name' WHERE id={bad_manual}")
+        held=route(work,env,driver,hash='native_manual_bad',remark_mode='manual')
+        assert not calls(held,'POST') and wallet()==50000 and cap()==10
+        assert paid(bad_manual)=='pending' and detail(bad_manual)==''
+        cases.append('real_standard_manual_remark_invalid_rejected_predebit')
+
+        bad_plan=newpay('native_plan_bad',1)
+        plan_days=sql(work,env,'SELECT days FROM server_plans WHERE id=7')
+        sql(work,env,'UPDATE server_plans SET days=0 WHERE id=7')
+        try:
+            held=route(work,env,driver,hash='native_plan_bad')
+        finally:
+            sql(work,env,f'UPDATE server_plans SET days={plan_days} WHERE id=7')
+        assert not calls(held,'POST') and wallet()==50000 and cap()==10
+        assert paid(bad_plan)=='pending' and detail(bad_plan)==''
+        cases.append('real_standard_invalid_plan_day_predebit_no_hold')
+
+        bad_prefix=newpay('native_prefix_bad',1)
+        original_prefix=sql(work,env,'SELECT remark FROM server_info WHERE id=2')
+        sql(work,env,"UPDATE server_info SET remark='bad name' WHERE id=2")
+        try:
+            held=route(work,env,driver,hash='native_prefix_bad')
+        finally:
+            sql(work,env,"UPDATE server_info SET remark='"+
+                original_prefix.replace("'","''")+"' WHERE id=2")
+        assert not calls(held,'POST') and wallet()==50000 and cap()==10
+        assert paid(bad_prefix)=='pending' and detail(bad_prefix)==''
+        cases.append('real_standard_invalid_generated_prefix_predebit_no_hold')
 
         multi=newpay('native_multi',2)
         done=route(work,env,driver,hash='native_multi')

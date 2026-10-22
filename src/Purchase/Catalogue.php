@@ -225,12 +225,16 @@ if((preg_match('/^discountCustomPlanDay(\d+)/',$userInfo['step'], $match) || pre
     	$call_id = $match[2]; 
     	$volume = $match[3]; 
         $days = $match[4]; 
-        if($match['buyType'] != "much"){ 
-            if(preg_match('/^[a-z]+[0-9]+$/',$text)){} else{ 
-                sendMessage($mainValues['incorrect_config_name']); 
-                exit(); 
-            } 
-        } 
+        // Both regular and agent "much" custom names become durable
+        // remote usernames. Reject invalid names before draft creation;
+        // the wallet debit boundary independently rechecks persisted data.
+        require_once __DIR__.'/../Finance/ServiceEffects.php';
+        if (!achbotEffectValidUsername((string)$text) ||
+            ($match['buyType'] !== 'much' &&
+             preg_match('/^[a-z]+[0-9]+$/D',(string)$text)!==1)) {
+            sendMessage($mainValues['incorrect_config_name']);
+            exit();
+        }
     } 
     $stmt = $connection->prepare("SELECT * FROM `server_plans` WHERE `id`=? and `active`=1"); 
     $stmt->bind_param("i", $id); 
