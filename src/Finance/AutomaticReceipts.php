@@ -51,7 +51,9 @@ if($botState['cartToCartAutoAcceptState']=="on"){
         // Re-lock the original pays row: stale scans cannot override a
         // concurrent administrator decision or repeat service effects.
         if (!achbotAutoBankClaim($connection, $payInfo)) continue;
-        
+        // One iteration must not inherit another customer's completion state.
+        $autoServiceCompleted=null;
+        try {
         
         if($payType == "INCREASE_WALLET"){
             // Wallet credit and the terminal claim already committed atomically.
@@ -346,35 +348,33 @@ if($botState['cartToCartAutoAcceptState']=="on"){
             $stmt->close();
             $serverType = $server_info['type'];
         
-            if($serverType == "marzban"){
-                $response = editMarzbanConfig($server_id, ['remark'=>$remark, 'days'=>$days, 'volume' => $volume]);
+            if (!achbotAutoBankEditPreflight($connection,$payInfo,'renew',
+                    (int)$server_id,(int)$oid,(string)$remark))
+                throw new RuntimeException('auto_service_subject_drift');
+            if(achbotSupportsPanel($serverType)){
+                try {
+                    $response = achbotApplyServiceEdit($connection,$server_id, ['remark'=>$remark, 'days'=>$days, 'volume' => $volume]);
+                } catch (Throwable $error) {
+                    // A provider/SQL exception after dispatch is UNKNOWN,
+                    // never authorization to claim completed or refund.
+                    error_log('achbot_auto_service_dispatch_deferred pay_id='.(int)$rowId);
+                    $response = (object)['success'=>false,'uncertain'=>true];
+                }
             }else{
             throw new \UnexpectedValueException('unsupported_panel');
         }
             
-            if(is_null($response)){
-        		sendMessage('پرداخت شما با موفقیت انجام شد ولی مشکل فنی در اتصال به سرور وجود داشت. لطفا به مدیریت اطلاع بدید، مبلغ ' . number_format($price) . "تومان به کیف پول شما اضافه شد.",null,null,$user_id);
-        		
-                $stmt = $connection->prepare("UPDATE `users` SET `wallet` = `wallet` + ? WHERE `userid` = ?");
-                $stmt->bind_param("ii", $price, $user_id);
-                $stmt->execute();
-                $stmt->close();
-
-                sendMessage("✅ مبلغ " . number_format($price) . "تومان به کیف پول کاربر $user_id اضافه شد، میخواست اشتراکش رو تمدید کنه، ولی اتصال به سرور برقرار نبود.",null,null,$admin);
-                sendToAllAdmins('sendMessage', ['text' => "✅ مبلغ " . number_format($price) . "تومان به کیف پول کاربر $user_id اضافه شد، میخواست اشتراکش رو تمدید کنه، ولی اتصال به سرور برقرار نبود.", 'reply_markup' => null, 'parse_mode' => null]);
-            	exit;
+            $verified=(is_object($response) && $response->success===true);
+            $autoServiceCompleted=$verified && achbotAutoBankFinishEdit(
+                $connection,$payInfo,$response,'renew',(int)$server_id,
+                (int)$oid,(string)$remark,(int)$price,0,(int)$order['expire_date']);
+            if ($autoServiceCompleted) {
+                sendMessage("✅ اشتراک $remark با موفقیت تمدید شد.",getMainKeys(),null,$user_id);
+            } else {
+                // Bank receipt and possible remote effect stay durably claimed.
+                // No false success, second remote write or blind wallet refund.
+                sendMessage("⚠️ نتیجهٔ تمدید هنوز قطعی نیست. پرداخت ثبت شده و سرویس نیازمند تطبیق است؛ پرداخت یا تمدید را تکرار نکنید.",null,null,$user_id);
             }
-            $stmt = $connection->prepare("UPDATE `orders_list` SET `expire_date` = ?, `notif` = 0 WHERE `id` = ?");
-            $newExpire = $time + $days * 86400;
-            $stmt->bind_param("ii", $newExpire, $oid);
-            $stmt->execute();
-            $stmt->close();
-            $stmt = $connection->prepare("INSERT INTO `increase_order` VALUES (NULL, ?, ?, ?, ?, ?, ?);");
-            $stmt->bind_param("iiisii", $user_id, $server_id, $inbound_id, $remark, $price, $time);
-            $stmt->execute();
-            $stmt->close();
-        
-            sendMessage("✅ اشتراک $remark با موفقیت تمدید شد.",getMainKeys(), null, $user_id);
         }
         elseif(preg_match('/^INCREASE_DAY_(\d+)_(\d+)/',$payType, $increaseInfo)){
             $orderId = $increaseInfo[1];
@@ -409,35 +409,31 @@ if($botState['cartToCartAutoAcceptState']=="on"){
             $stmt->close();
             $serverType = $server_info['type'];
         
-            if($serverType == "marzban"){
-                $response = editMarzbanConfig($server_id, ['remark'=>$remark, 'plus_day'=>$volume]);
+            if (!achbotAutoBankEditPreflight($connection,$payInfo,'day',
+                    (int)$server_id,(int)$orderId,(string)$remark,(int)$volume))
+                throw new RuntimeException('auto_service_subject_drift');
+            if(achbotSupportsPanel($serverType)){
+                try {
+                    $response = achbotApplyServiceEdit($connection,$server_id, ['remark'=>$remark, 'plus_day'=>$volume]);
+                } catch (Throwable $error) {
+                    // A provider/SQL exception after dispatch is UNKNOWN,
+                    // never authorization to claim completed or refund.
+                    error_log('achbot_auto_service_dispatch_deferred pay_id='.(int)$rowId);
+                    $response = (object)['success'=>false,'uncertain'=>true];
+                }
             }else{
             throw new \UnexpectedValueException('unsupported_panel');
         }
             
-            if($response->success){
-                $stmt = $connection->prepare("UPDATE `orders_list` SET `expire_date` = `expire_date` + ?, `notif` = 0 WHERE `uuid` = ?");
-                $newVolume = $volume * 86400;
-                $stmt->bind_param("is", $newVolume, $uuid);
-                $stmt->execute();
-                $stmt->close();
-                
-                $stmt = $connection->prepare("INSERT INTO `increase_order` VALUES (NULL, ?, ?, ?, ?, ?, ?);");
-                $newVolume = $volume * 86400;
-                $stmt->bind_param("iiisii", $user_id, $server_id, $inbound_id, $remark, $price, $time);
-                $stmt->execute();
-                $stmt->close();
-                
-                sendMessage("✅ $volume روز به مدت زمان اشتراک شما اضافه شد.",getMainKeys(), null, $user_id);
-            }else {
-                sendMessage("پرداخت شما با موفقیت انجام شد ولی به دلیل مشکل فنی امکان افزایش حجم نیست. لطفا به مدیریت اطلاع بدید یا 5 دقیقه دیگر دوباره تست کنید. مبلغ " . number_format($price) . " تومان به کیف پول شما اضافه شد.", $user_id);
-                $stmt = $connection->prepare("UPDATE `users` SET `wallet` = `wallet` + ? WHERE `userid` = ?");
-                $stmt->bind_param("ii", $price, $user_id);
-                $stmt->execute();
-                $stmt->close();
-    
-                sendMessage("✅ مبلغ " . number_format($price) . " تومان به کیف پول کاربر $user_id اضافه شد، میخواست زمان اشتراکشو افزایش بده",null,null,$admin);
-                sendToAllAdmins('sendMessage', ['text' => "✅ مبلغ " . number_format($price) . " تومان به کیف پول کاربر $user_id اضافه شد، میخواست زمان اشتراکشو افزایش بده", 'reply_markup' => null, 'parse_mode' => null]);
+            $verified=(is_object($response) && $response->success===true);
+            $autoServiceCompleted=$verified && achbotAutoBankFinishEdit(
+                $connection,$payInfo,$response,'day',(int)$server_id,
+                (int)$orderId,(string)$remark,(int)$price,(int)$volume,
+                (int)$orderInfo['expire_date']);
+            if ($autoServiceCompleted) {
+                sendMessage("✅ $volume روز به مدت اشتراک شما اضافه شد.",getMainKeys(),null,$user_id);
+            } else {
+                sendMessage("⚠️ نتیجهٔ افزایش روز هنوز قطعی نیست. پرداخت محفوظ است؛ درخواست را تکرار نکنید.",null,null,$user_id);
             }
         }
         elseif(preg_match('/^INCREASE_VOLUME_(\d+)_(\d+)/',$payType, $increaseInfo)){
@@ -471,28 +467,31 @@ if($botState['cartToCartAutoAcceptState']=="on"){
                 $stmt->close();
                 $serverType = $server_info['type'];
             
-                if($serverType == "marzban"){
-                    $response = editMarzbanConfig($server_id, ['remark'=>$remark, 'plus_volume'=>$volume]);
+                if (!achbotAutoBankEditPreflight($connection,$payInfo,'volume',
+                    (int)$server_id,(int)$orderId,(string)$remark,(int)$volume))
+                throw new RuntimeException('auto_service_subject_drift');
+            if(achbotSupportsPanel($serverType)){
+                    try {
+                    $response = achbotApplyServiceEdit($connection,$server_id, ['remark'=>$remark, 'plus_volume'=>$volume]);
+                } catch (Throwable $error) {
+                    // A provider/SQL exception after dispatch is UNKNOWN,
+                    // never authorization to claim completed or refund.
+                    error_log('achbot_auto_service_dispatch_deferred pay_id='.(int)$rowId);
+                    $response = (object)['success'=>false,'uncertain'=>true];
+                }
                 }else{
             throw new \UnexpectedValueException('unsupported_panel');
         }
                 
-            if($response->success){
-                $stmt = $connection->prepare("UPDATE `orders_list` SET `notif` = 0 WHERE `uuid` = ?");
-                $stmt->bind_param("s", $uuid);
-                $stmt->execute();
-                $stmt->close();
-                sendMessage( "✅ $volume گیگ به حجم اشتراک شما اضافه شد.",getMainKeys(), null, $user_id);
-            }else {
-                sendMessage("پرداخت شما با موفقیت انجام شد ولی مشکل فنی در اتصال به سرور وجود داشت. لطفا به مدیریت اطلاع دهید. مبلغ " . number_format($price) . " تومان به کیف پول شما اضافه شد.",null,null,$user_id);
-                
-                $stmt = $connection->prepare("UPDATE `users` SET `wallet` = `wallet` + ? WHERE `userid` = ?");
-                $stmt->bind_param("ii", $price, $user_id);
-                $stmt->execute();
-                $stmt->close();
-
-                sendMessage("✅ مبلغ " . number_format($price) . " تومان به کیف پول کاربر $user_id اضافه شد، میخواست حجم اشتراکشو افزایش بده",null,null,$admin);                
-                sendToAllAdmins('sendMessage', ['text' => "✅ مبلغ " . number_format($price) . " تومان به کیف پول کاربر $user_id اضافه شد، میخواست حجم اشتراکشو افزایش بده", 'reply_markup' => null, 'parse_mode' => null]);
+            $verified=(is_object($response) && $response->success===true);
+            $autoServiceCompleted=$verified && achbotAutoBankFinishEdit(
+                $connection,$payInfo,$response,'volume',(int)$server_id,
+                (int)$orderId,(string)$remark,(int)$price,(int)$volume,
+                (int)$orderInfo['expire_date']);
+            if ($autoServiceCompleted) {
+                sendMessage("✅ $volume گیگ به حجم اشتراک شما اضافه شد.",getMainKeys(),null,$user_id);
+            } else {
+                sendMessage("⚠️ نتیجهٔ افزایش حجم هنوز قطعی نیست. پرداخت محفوظ است؛ درخواست را تکرار نکنید.",null,null,$user_id);
             }
         }
         elseif($payType == "RENEW_SCONFIG"){
@@ -510,34 +509,46 @@ if($botState['cartToCartAutoAcceptState']=="on"){
             
             $price = $payInfo['price'];   
             $server_id = $file_detail['server_id'];
-            $configInfo = json_decode($payInfo['description'],true);
-            $remark = $configInfo['remark'];
-            $uuid = $configInfo['uuid'];
-            $isMarzban = $configInfo['marzban'];
+            $configInfo = json_decode((string)$payInfo['description'],true);
+            $remark = (string)(is_array($configInfo)?($configInfo['remark']??''):'');
+            if ($remark==='') throw new RuntimeException('auto_service_missing_account');
             
-            $remark = $payInfo['description'];
-            $inbound_id = $payInfo['volume']; 
-            
-            if($isMarzban){
-                $response = editMarzbanConfig($server_id, ['remark'=>$remark, 'days'=>$days, 'volume' => $volume]);
-            }else{
-            throw new \UnexpectedValueException('unsupported_panel');
+            // Payment account identity stays pinned. Panel dispatch is
+            // delegated; a new panel must provide verified readback first.
+            if (!achbotAutoBankEditPreflight($connection,$payInfo,'standard',
+                    (int)$server_id,0,(string)$remark))
+                throw new RuntimeException('auto_service_subject_drift');
+
+            try {
+                $response = achbotApplyServiceEdit($connection,$server_id,
+                    ['remark'=>$remark, 'days'=>$days, 'volume'=>$volume]);
+            } catch (Throwable $error) {
+                error_log('achbot_auto_service_dispatch_deferred pay_id='.(int)$rowId.
+                    ' class='.get_class($error).' code='.(int)$error->getCode());
+                $response = (object)['success'=>false,'uncertain'=>true];
         }
             
-        	if(is_null($response)){
-        		sendMessage('🔻مشکل فنی در اتصال به سرور، لطفا به مدیریت اطلاع دهید.',null,null,$user_Id);
-        		exit;
+            $verified=(is_object($response) && $response->success===true);
+            $autoServiceCompleted=$verified && achbotAutoBankFinishEdit(
+                $connection,$payInfo,$response,'standard',(int)$server_id,
+                0,(string)$remark,(int)$price);
+            if ($autoServiceCompleted) {
+                sendMessage("✅ اشتراک $remark با موفقیت تمدید شد.",null,null,$user_id);
+            } else {
+                sendMessage("⚠️ نتیجهٔ تمدید هنوز قطعی نیست. وضعیت پرداخت محفوظ است؛ درخواست را تکرار نکنید.",null,null,$user_id);
         	}
-        	$stmt = $connection->prepare("INSERT INTO `increase_order` VALUES (NULL, ?, ?, ?, ?, ?, ?);");
-        	$stmt->bind_param("iiisii", $user_id, $server_id, $inbound_id, $remark, $price, $time);
-        	$stmt->execute();
-        	$stmt->close();
-
-            sendMessage("✅ اشتراک $remark با موفقیت تمدید شد.",null,null,$user_id);
         }
         
-		// ✅ ویرایش پیام ادمین اصلی
-		editKeys(json_encode(['inline_keyboard' => [[['text' => "خودکار تایید شد", 'callback_data' => "wizwizch"]]]]), $payInfo['message_id'], $payInfo['chat_id']);
+        $autoServiceLabel=($autoServiceCompleted??true)
+            ? '✅ خودکار تأیید و اعمال شد'
+            : '⚠️ در انتظار تطبیق سرویس';
+        if (($autoServiceCompleted??true)===false) {
+            sendMessage("⚠️ تأیید رسید ثبت شده، اما تغییر واقعی سرویس یا ثبت نهایی سفارش قطعی نیست.\n"
+                ."شناسه پرداخت: ".(int)$rowId."\nبدون تطبیق سرویس، تمدید یا بازپرداخت را تکرار نکنید.",
+                null,null,$admin);
+        }
+        // دکمه مدیر نباید قبل از اعمال سرویس، موفقیت را اعلام کند.
+        editKeys(json_encode(['inline_keyboard' => [[['text' => $autoServiceLabel, 'callback_data' => "wizwizch"]]]]), $payInfo['message_id'], $payInfo['chat_id']);
 
 		// ✅ ویرایش پیام سایر ادمین ها (در صورت وجود)
 		if (!empty($payInfo['admins_messages'])) {
@@ -549,7 +560,7 @@ if($botState['cartToCartAutoAcceptState']=="on"){
 					isset($msgInfo['chat_id'], $msgInfo['message_id']) &&
 					$msgInfo['chat_id'] != $payInfo['chat_id'] // جلوگیری از تکرار برای ادمین اصلی
 				) 	{
-					editKeys(json_encode(['inline_keyboard' => [[['text' => "خودکار تایید شد", 'callback_data' => "wizwizch"]]]]),
+					editKeys(json_encode(['inline_keyboard' => [[['text' => $autoServiceLabel, 'callback_data' => "wizwizch"]]]]),
                     $msgInfo['message_id'],
                     $msgInfo['chat_id']);
 					}
@@ -557,5 +568,14 @@ if($botState['cartToCartAutoAcceptState']=="on"){
 			}
 		}
 
+        } catch (Throwable $error) {
+            $event=($autoServiceCompleted===true)
+                ? 'achbot_auto_receipt_notice_failed'
+                : 'achbot_auto_receipt_effect_review';
+            error_log($event.' pay_id='.(int)$rowId.
+                ' class='.get_class($error).' code='.(int)$error->getCode());
+            // Post-COMMIT Telegram failure never repeats provisioning.
+            // Any unknown remote or local outcome remains durably claimed.
     }
+}
 }

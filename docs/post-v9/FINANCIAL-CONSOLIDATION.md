@@ -543,7 +543,10 @@ a one-operation `note=achbot:v1:<operation_id>`, fixed expiry and the original
 username. Its answer and a subsequent **timeout-bounded, status-checked
 authenticated GET** of that exact username must match username, note, bytes
 and expiry before a transition
-`dispatching -> verified`. A successful matching `orders_list` INSERT
+`dispatching -> verified`. The byte quota and expiration must be exact
+nonnegative integer JSON values (or canonical decimal integer strings);
+fractional, exponent-encoded or overflowing provider values are not accepted
+by PHP integer truncation as proof of paid delivery. A successful matching `orders_list` INSERT
 atomically joins its exact new `id` to the effect and marks
 `local_recorded` in the caller's local transaction. Hosted purchases
 commit each order INSERT and ledger link in one short SQL transaction,
@@ -588,3 +591,173 @@ create/delete, Telegram operator/customer status and real payment proof.
 Use only disposable test accounts and authorized test financial instruments.
 Capture bounded operation/order/effect identifiers without exposing tokens
 or real customer data. No tenant SQL/production installation performed here.
+
+### Provider-neutral service modifications: verified result and bounded self-repair
+
+The source-only remediation for Issue #26 addresses historical false success
+when a bot-reported renewal, day or traffic increase was not actually changed.
+The public application boundary is **achbotApplyServiceEdit(connection, serverId,
+change)** in src/Purchase/Core.php. Financial claims and provider transport are
+separate. The wallet, manually reviewed receipt, automatic bank receipt,
+hosted gateway and automatic-renew paths now use the shared boundary.
+
+Only Marzban is currently supported. A future panel, such as Pasarguard,
+requires explicit opt-in support, its own authenticated edit and exact account
+readback implementation, and source and installed tests. Unknown panel types
+return an unsupported result with **no provider request**. A new payment gateway
+likewise requires trusted settlement evidence, but not a separate account-edit
+algorithm.
+
+A normalized successful result requires success=true, verified=true,
+applied_expire in seconds and applied_bytes, all independently read from the
+expected physical panel and account. Plain HTTP 2xx or a Telegram callback is
+not a delivery certificate. The Marzban adapter checks username, original note,
+expiry, bytes and active status using authenticated, timeout-bounded GET.
+Remote fractional, scientific or overflowing numeric data is refused rather
+than converted to an apparently matching integer quota/expiry.
+A lost PUT reply followed by matching readback is already complete and is
+not repeated. If strict GET still confirms the exact original state, at most
+one corrective PUT with the SAME absolute values is allowed; no second relative
+increment or traffic reset. Foreign or unknown states, changing target or
+failed authentication remain uncertain, with no blind retry.
+
+The current adapter uses a bounded connection-level lock on the configured
+physical-panel-group + username, falling back to exact endpoint + username
+when no group is assigned. Thus even multiple bot entries with distinct URLs
+but one explicitly shared physical panel are serialized. It does not claim
+to serialize edits by unrelated systems, multiple databases or incorrectly
+grouped panels. Traffic reset is separately read back and never blindly
+repeated.
+
+PR #68 high-assurance remediation preserves the initial authenticated
+physical endpoint across token acquisition, account readback and traffic
+RESET. A mutable server record cannot silently select a different target
+for RESET or forward the original bearer token there. Both the initial and bounded corrective Marzban UserModify PUT now send
+only the specifically purchased absolute expiry and/or quota; a quota-only
+edit omits expiry and a duration-only edit omits quota. Status, inbounds,
+proxies, note and reset strategy are never sent. Marzban's optional fields preserve concurrent
+operator configuration rather than overwrite it. Before any bounded
+corrective PUT, the same authenticated account must still have its original
+status, inbounds, proxies, traffic reset strategy, note and exact
+integer expiry/quota; foreign modifications leave the payment under review.
+An administrator-disabled/on-hold account is never reactivated by a routine edit. A naturally expired account may be activated by a paid duration extension/renewal; a quota-limited account may be activated by a paid quota extension/renewal. The original status still remains part of the verified baseline, and foreign status drift blocks corrective PUT.
+A traffic RESET is verified only when the exact account reports canonical
+integer `used_traffic=0`; partial, malformed or unavailable readbacks
+must not authorize the follow-on PUT or another reset.
+
+The existing `orders_list.expire_date` is signed INT with a maximum Unix
+timestamp of `2147483647`; new service edits reject any resulting expiry
+outside that existing contract *before* outbound mutation. Bank-finisher
+SQL also refuses out-of-range verified timestamps under either strict or
+permissive MariaDB mode and re-reads persisted expiry before completion.
+For previously existing orders, the scheduled bank finisher compares the
+original `orders_list.expire_date` recorded before remote dispatch with
+the locked live row, and conditionally updates only an unchanged row.
+A newer manual, scheduled or other financial finalization therefore
+prevents an older verified edit from overwriting that newer local expiry.
+The older claimed payment stays nonterminal for operator reconciliation;
+no extra remote edit, wallet refund or payment claim is authorized.
+This optimistic SQL boundary is not a global lock on independent
+Marzban administrator actions, which remain subject to review/operational
+coordination.
+
+**Marzban unlimited quota and authoritative service expiry (PR #68 review R6/R7).**
+Marzban's authenticated account quota may be explicit JSON `null` for
+unlimited data or the canonical numeric `0`; the bounded Marzban adapter
+normalizes either *present* representation to `applied_bytes=0` for strict
+same-account readback. Missing quota fields and noncanonical finite values
+remain invalid. Paid renewals can keep unlimited quota, and an absolute
+change may explicitly switch between limited and unlimited; an additive
+GB extension on an already unlimited account is refused **before** remote
+effects because it would accidentally lower the customer's existing service.
+The scheduled renewal sweep recognizes explicit null as unlimited and does
+not treat it as a depleted finite quota.
+
+For day extensions and full subscription renewals, the authenticated
+provider's `verified.applied_expire` is the authoritative local expiration:
+the provider may start duration from the *later* of remote expiry and now.
+Local `expire_date + days` and separate clock-based estimates are not
+proof of the delivered term. Hosted payments, reviewed manual receipts,
+direct wallet flows and the automatic-renewal journal now use exact remote
+absolute expiry, a signed-INT bound, an original **pre-remote** order snapshot,
+a locking identity/previous-expiry compare-and-set and readback of the
+persisted SQL value. The order, audit and final payment transition commit
+as one local transaction. Manual/wallet claims (and wallet debit reservation)
+are durably nonterminal **before** any external edit, rather than holding
+an InnoDB transaction across HTTP. Hosted and automatic-bank/renewal
+paths retain their own previously established nonterminal claims: their
+claim lifecycles are not interchangeable. After an uncertain HTTP, stale
+local order, SQL fault, crash or ambiguous commit, claims remain reviewable;
+no callback may replay the remote edit or debit, customer-facing Persian
+notices may not falsely announce completion, and automatic refunds are
+forbidden without operator reconciliation. No source test authorizes an
+installed tenant SQL/Marzban/financial operation.
+
+**Automatic bank edits for grouped Marzban aliases (PR #68 review R8).**
+A paid order may legitimately keep a plan from its *original* logical
+server after the customer moves its label to a different server on the
+same explicitly configured physical Marzban panel. For automatic-bank
+`RENEW_ACCOUNT`, `INCREASE_DAY` and `INCREASE_VOLUME` receipts, the
+payment must still match the order's user, original plan, current logical
+server, exact account remark and quote. The bank preflight uses Core.php's
+existing order/group authorization instead of incorrectly requiring the
+plan's old logical server to equal the current order server; an unrelated
+panel is rejected *before* any remote request. After a verified remote edit,
+the finisher re-checks Core authorization under the existing payment-then-
+order SQL locks: revoked group membership, payment/order identity drift,
+stale expiry and failed SQL leave the durable bank claim `processing` for
+operator review, with no false approval, retry or speculative refund.
+The original claimed payment's type, plan, quote/amount, optional order ID
+and description remain pinned across both checkpoints: a coordinated
+payment-and-order rewrite or equally sized quote substitution cannot
+retroactively approve an edit dispatched for a different paid subject.
+Standalone `RENEW_SCONFIG` retains its original exact plan/server rule.
+Mandatory disposable tests execute the real PHP bank scheduler, Core.php
+and MariaDB transaction/lock/CAS path with a counted provider spy for all
+three authorized and denied alias routes, group revocation, stale identity,
+replay, coherent invoice/plan and quote drift, remote uncertainty and SQL
+failure. These are source-level tests,
+not installed/financial/remote-provider acceptance.
+
+**Queued Marzban next-plan preservation (source-only precaution).**
+At upstream Marzban master `7f396db3e703d71a28060bc9ce4a532ec64cb1f4`
+the account `UserModify` implementation deletes an existing `next_plan`
+when a normal PUT omits that field; the traffic RESET implementation also
+deletes a queued `next_plan`. This differs from the route's generic
+omitted-fields-preserved documentation. Therefore account edits with a
+non-null observed `next_plan` now fail closed BEFORE any PUT or RESET,
+leaving the paid claim for operator reconciliation. The service coordinator
+additionally re-reads the pinned authenticated account, original limits,
+status/config and `next_plan` immediately before RESET and before the
+initial PUT; a newly observed next plan or foreign change blocks dispatch.
+Four source-native regressions cover initial and interleaved queued plans
+for quota-only and combined renewals. Marzban does **not** offer an atomic
+version/If-Match precondition for this API; a concurrent external actor
+could still change a plan after the final GET but before the request.
+The installed Marzban server's version/behavior and these interleavings
+must be validated on a separately approved isolated operator account;
+source-only tests cannot prove that guarantee. Do not auto-refund or replay
+uncertain provider effects.
+
+The existing extension quote schema can store fractional values while its
+historical service audit stores integer days/GB. A fractional paid quote must
+NOT be silently rounded down and marked delivered. Until separately accepted
+precision-safe units/accounting exist, these requests are refused before
+any remote PUT or reset, leaving the financial claim reviewable.
+
+The scheduled bank-acceptance path for service edits now reserves a
+nonterminal payment state first. Only a verified account effect plus original
+paid-target/order identity and one atomic local order/audit/payment COMMIT may
+be reported as approved. Telegram failures after COMMIT cannot undo service.
+If the remote outcome or SQL commit is unknown, preserve the financial claim
+for review; never automatically refund or repeat a possibly applied change.
+
+**Limits:** automatic self-repair is bounded to the current active request,
+while the original and requested absolute values are still in hand. After
+worker crash, external panel mutation or lost SQL acknowledgement there is
+not yet an end-to-end persisted before/after intent and unattended reconciler
+for every wallet, manual, hosted and renewal flow. The BUY_SUB creation journal
+does not imply such protection for edits. Durable post-crash reconciliation
+remains a separately gated Issue #26 requirement. Never infer success from
+remote account counts. No installed database or real provider operation was
+performed for this source-only change.

@@ -502,6 +502,64 @@ if (!function_exists('achbotSupportsPaymentSubject')) {
     }
 }
 
+/**
+ * Provider-independent paid service modification boundary.
+ *
+ * Payments (wallet, automatic bank receipt, hosted gateways and operator
+ * evidence) must call THIS function rather than Marzban's transport directly.
+ * Each provider adapter must prove its own effect and return a normalized
+ * verified absolute result; a plain HTTP acknowledgement is NOT success.
+ *
+ * Adding a panel (for example Pasarguard) extends only the adapter dispatch
+ * and its verified account semantics. It does not grant that panel support
+ * until its readback/effect tests pass.
+ */
+if (!function_exists('achbotApplyServiceEdit')) {
+    function achbotApplyServiceEdit($db, $serverId, array $change): object {
+        $serverId=(int)$serverId;
+        if (!($db instanceof mysqli) || $serverId<=0 ||
+            !isset($change['remark']) ||
+            !is_string($change['remark']) || $change['remark']==='')
+            return (object)['success'=>false,'uncertain'=>false,
+                'msg'=>'service_edit_invalid_request'];
+
+        $stmt=$db->prepare('SELECT type FROM server_config WHERE id=?');
+        if (!$stmt) return (object)['success'=>false,'uncertain'=>true,
+                                   'msg'=>'service_adapter_lookup_unavailable'];
+        $stmt->bind_param('i',$serverId);
+        if (!$stmt->execute()) {
+            $stmt->close();
+            return (object)['success'=>false,'uncertain'=>true,
+                            'msg'=>'service_adapter_lookup_unavailable'];
+        }
+        $panel=$stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        $type=(string)($panel['type']??'');
+        // The transport-specific code only exists inside its own adapter.
+        // No speculative fallback or implicit behavior for future panels.
+        $outcome=match($type) {
+            'marzban'=>editMarzbanConfig($serverId,$change),
+            default=>(object)['success'=>false,'uncertain'=>false,
+                              'msg'=>'unsupported_service_adapter'],
+        };
+        if (!is_object($outcome) && !is_array($outcome))
+            return (object)['success'=>false,'uncertain'=>true,
+                            'msg'=>'service_edit_invalid_outcome'];
+        $outcome=is_array($outcome)?(object)$outcome:$outcome;
+        if (($outcome->success??false)!==true) return $outcome;
+        // Every adapter must expose a verified, absolute remote readback.
+        if (($outcome->verified??false)!==true ||
+            !isset($outcome->applied_expire,$outcome->applied_bytes) ||
+            !is_numeric($outcome->applied_expire) ||
+            !is_numeric($outcome->applied_bytes) ||
+            (int)$outcome->applied_expire<=0 ||
+            (int)$outcome->applied_bytes<0)
+            return (object)['success'=>false,'uncertain'=>true,
+                            'msg'=>'service_edit_unverified_outcome'];
+        return $outcome;
+    }
+}
+
 if (!function_exists('getServerInfoAndConfig')) {
     function getServerInfoAndConfig($connection, $server_id)
     {

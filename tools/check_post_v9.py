@@ -165,8 +165,91 @@ def main():
                         "--run-disposable","--report",str(native)],
                        cwd=ROOT,check=True,timeout=300,capture_output=True)
         marzban=json.loads(native.read_text())
-        if not marzban.get("complete") or not marzban.get("marzban_http_wire_sql_parity"):
+        if not (marzban.get("complete") and
+                marzban.get("marzban_http_wire_sql_parity") and
+                marzban.get("minimal_service_edit_payload_verified")):
             raise RuntimeError("Current candidate Marzban native source proof incomplete")
+        edit_path=Path(tmp)/"service-edit-native.json"
+        subprocess.run(["python3",str(ROOT/"tools/test_post_v9_marzban_edits.py"),
+                        "--run-disposable","--report",str(edit_path)],
+                       cwd=ROOT,check=True,timeout=240,capture_output=True)
+        edits=json.loads(edit_path.read_text())
+        required_edits={
+            'edit-verified_source_native_verified',
+            'edit-lost-applied_source_native_reconciled',
+            'edit-repair_source_native_repaired',
+            'edit-lost-repair_source_native_repaired',
+            'edit-badbody-repair_source_native_repaired',
+            'edit-noop_source_native_unverified',
+            'edit-bad-number-baseline_source_native_unverified',
+            'edit-bad-number-readback_source_native_unverified',
+            'edit-foreign_source_native_unverified',
+            'edit-reset-verified_source_native_verified',
+            'edit-reset-lie_source_native_reset_unverified',
+            'review_b1_foreign_disabled_no_corrective_put',
+            'review_b1_foreign_expired_no_corrective_put',
+            'review_b1_foreign_inbounds_no_corrective_put',
+            'review_b1_foreign_proxies_no_corrective_put',
+            'review_b1_foreign_reset_strategy_no_corrective_put',
+            'review_b1_foreign_note_no_corrective_put',
+            'review_b1_disabled_original_not_reactivated',
+            'review_upstream_next_plan_quota_preserved_before_remote',
+            'review_upstream_next_plan_combined_renew_preserved_before_remote',
+            'review_upstream_next_plan_quota_detected_before_first_effect',
+            'review_upstream_next_plan_combined_renew_detected_before_first_effect',
+            'review_b1_quota_edit_preserves_foreign_expiry',
+            'review_b1_day_edit_preserves_foreign_quota',
+            'review_b1_foreign_before_initial_put_disabled_not_overwritten',
+            'review_b1_foreign_before_initial_put_inbounds_not_overwritten',
+            'review_b1_foreign_before_initial_put_proxies_not_overwritten',
+            'review_b1_foreign_before_initial_put_reset_strategy_not_overwritten',
+            'review_b1_foreign_before_initial_put_note_not_overwritten',
+            'review_b1_authorized_expired_days_reactivation',
+            'review_b1_authorized_expired_full_renew_reactivation',
+            'review_b1_authorized_limited_quota_reactivation',
+            'review_b1_disabled_duration_does_not_override_operator',
+            'review_b2_endpoint_drift_before_reset_no_foreign_request',
+            'review_b2_endpoint_drift_after_reset_no_foreign_request',
+            'review_r3_reset_partial_must_stay_under_review',
+            'review_r3_reset_zero_to_nonzero_must_stay_under_review',
+            'review_r3_reset_fractional_must_stay_under_review',
+            'review_r3_reset_exponent_must_stay_under_review',
+            'review_r3_reset_overflow_must_stay_under_review',
+            'review_r3_reset_missing_must_stay_under_review',
+            'review_b1_after_reset_foreign_status_no_put',
+            'review_b1_after_reset_foreign_inbounds_no_put',
+            'review_r4_signed_expiry_max',
+            'review_r4_signed_expiry_beyond',
+            'review_r4_signed_expiry_long_renew',
+            'panel_neutral_dispatch_to_current_verified_marzban_adapter',
+            'unimplemented_future_panel_denied_without_remote_dispatch',
+            'two_concurrent_distinct_edits_serialized_no_lost_increment',
+            'physical_panel_alias_different_urls_group_lock_no_lost_increment',
+            'missing_physical_panel_group_rejects_before_remote_dispatch',
+            'fractional_volume_delta_never_truncated_or_approved',
+            'fractional_day_delta_never_truncated_or_approved',
+            'fractional_plan_quota_never_truncated_or_approved',
+            # R6 canonical provider unlimited vs missing/invalid quota.
+            'review_r6_unlimited_existing_null_days_exact_verified_readback',
+            'review_r6_unlimited_existing_zero_days_exact_verified_readback',
+            'review_r6_unlimited_unlimited_renewal_exact_verified_readback',
+            'review_r6_unlimited_unlimited_to_finite_exact_verified_readback',
+            'review_r6_unlimited_finite_to_unlimited_exact_verified_readback',
+            'review_r6_unlimited_increment_refused_without_downgrade_null',
+            'review_r6_unlimited_increment_refused_without_downgrade_zero',
+            'review_r6_invalid_missing_no_remote_effect',
+            'review_r6_invalid_fractional_no_remote_effect',
+            'review_r6_invalid_negative_no_remote_effect',
+            'review_r6_invalid_exponent_no_remote_effect',
+            'review_r6_invalid_malformed_no_remote_effect',
+            'review_r6_invalid_overflow_no_remote_effect',
+        }
+        if not (edits.get('complete') and edits.get('cases')==len(required_edits)
+                and required_edits.issubset(edits.get('scenarios',[]))
+                and edits.get('actual_php_mysqli_curl')
+                and edits.get('real_provider_requests')==0
+                and edits.get('absolute_correction_not_relative_replay')):
+            raise RuntimeError('Provider-neutral service edit native assurance incomplete')
         purchase_path=Path(tmp)/"marzban-purchase.json"
         subprocess.run(["python3",str(ROOT/"tools/test_post_v9_purchases.py"),
                         "--run-disposable","--report",str(purchase_path)],
@@ -812,6 +895,8 @@ def main():
             "incompatible_004_old_restrictive_order_fk_is_rejected",
             "restored_full_004_contract_ready",
             "f3_shared_003_and_004_compatible_without_history_loss",
+            "remote_absolute_expiry_persisted_not_preclaimed_estimate",
+            "remote_expiry_outside_signed_int_review_no_double_debit",
         }
         if not (auto_renew.get("complete") and
                 required_auto.issubset(auto_renew.get("scenarios",[])) and
@@ -989,6 +1074,13 @@ def main():
             "zarinpal_callback_provider_scoped_colliding_external_reference",
         }
         mandatory_finance.add('hosted_order_and_effect_link_atomic_rollback')
+        # R7 real hosted claim, Marzban adapter, order CAS and local SQL faults.
+        mandatory_finance.update({
+            'r7_hosted_day_verified_atomic_remote_absolute_no_replay',
+            'r7_hosted_day_sql_throwing_atomic_remote_absolute_no_replay',
+            'r7_hosted_day_sql_permissive_atomic_remote_absolute_no_replay',
+            'r7_hosted_day_concurrent_order_drift_atomic_remote_absolute_no_replay',
+        })
         cases_finance = {case.get("case") for case in finance.get("scenarios",[])
                          if case.get("pass_")}
         if not (finance.get("complete") and finance.get("cases")>=153 and
@@ -1210,6 +1302,60 @@ def main():
             "real_topup_raw_text_accepted_2",      # ASCII leading zeros
             "real_topup_raw_callback_accepted_3",  # maximum callback
         }
+        required_manual.update({
+            'auto_bank_day_service_only_after_verified_remote_and_atomic_local_effect',
+            'auto_bank_volume_service_only_after_verified_remote_and_atomic_local_effect',
+            'auto_bank_renew_service_only_after_verified_remote_and_atomic_local_effect',
+            'auto_bank_standard_service_only_after_verified_remote_and_atomic_local_effect',
+            'auto_bank_local_sql_failure_does_not_claim_service_delivered',
+            'review_r4_bank_lastint_sql_strict',
+            'review_r4_bank_overflow_sql_strict',
+            'review_r4_bank_lastint_sql_permissive',
+            'review_r4_bank_overflow_sql_permissive',
+            'review_r5_remote_a_then_b_local_b_then_a_fenced',
+            'review_r5_stale_bank_after_auto_renew_no_completion',
+            'review_r5_stale_bank_after_manual_edit_no_completion',
+            'review_r5_stale_bank_after_volume_after_renew_no_completion',
+            'native_real_bank_scheduler_day_verified_verified_remote_required_no_duplicate',
+            'native_real_bank_scheduler_day_unconfirmed_verified_remote_required_no_duplicate',
+            # R7 manually approved, direct wallet day and wallet full-renewal flows.
+            'review_r7_wallet_walletdayfuture_verified_or_review_no_replay',
+            'review_r7_wallet_walletdayexpired_verified_or_review_no_replay',
+            'review_r7_wallet_walletdayunchanged_verified_or_review_no_replay',
+            'review_r7_wallet_walletdayunknown_verified_or_review_no_replay',
+            'review_r7_wallet_walletdaystale_verified_or_review_no_replay',
+            'review_r7_wallet_walletdayoverflow_verified_or_review_no_replay',
+            'review_r7_wallet_renew_walletrenewfuture_remote_absolute_or_review_no_replay',
+            'review_r7_wallet_renew_walletrenewexpired_remote_absolute_or_review_no_replay',
+            'review_r7_wallet_renew_walletrenewunknown_remote_absolute_or_review_no_replay',
+            'review_r7_wallet_renew_walletrenewstale_remote_absolute_or_review_no_replay',
+            'review_r7_wallet_renew_walletrenewoverflow_remote_absolute_or_review_no_replay',
+            'review_r7_wallet_renew_grouped_physical_panel_alias_authorized_once',
+            'review_r7_wallet_renew_cross_panel_alias_denied_predebit',
+            # PR #68 R8: actual bank scheduler + real Core group authority,
+            # post-remote locked authorization, identity CAS and no replay.
+            'review_r8_bank_grouped_renew_scheduler_verified_once',
+            'review_r8_bank_grouped_day_scheduler_verified_once',
+            'review_r8_bank_grouped_volume_scheduler_verified_once',
+            'review_r8_bank_foreign_renew_blocked_before_remote',
+            'review_r8_bank_foreign_day_blocked_before_remote',
+            'review_r8_bank_foreign_volume_blocked_before_remote',
+            'review_r8_bank_group_revoked_after_preflight_nonterminal',
+            'review_r8_bank_renew_identity_drift_nonterminal',
+            'review_r8_bank_day_identity_drift_nonterminal',
+            'review_r8_bank_volume_identity_drift_nonterminal',
+            'review_r8_bank_original_paid_plan_pinned_after_coherent_drift',
+            'review_r8_bank_original_paid_quote_pinned_after_type_drift',
+            'review_r8_bank_grouped_uncertain_review_no_retry_refund',
+            'review_r8_bank_grouped_sql_failure_review_no_retry_refund',
+            'review_r7_manual_manualdayremoteahead_atomic_expiry_and_no_replay',
+            'review_r7_manual_manualdayexpired_atomic_expiry_and_no_replay',
+            'review_r7_manual_manualdayunknown_atomic_expiry_and_no_replay',
+            'review_r7_manual_manualdaystale_atomic_expiry_and_no_replay',
+            'review_r7_manual_manualdayoverflow_atomic_expiry_and_no_replay',
+            'review_r7_manual_manualdaysqlstrict_atomic_expiry_and_no_replay',
+            'review_r7_manual_manualdaysqlpermissive_atomic_expiry_and_no_replay',
+        })
         if not (manual.get("complete") and manual.get("cases")>=len(required_manual)
                 and required_manual.issubset(manual.get("scenarios",[]))
                 and manual.get("database")=="owned_socket_only"
@@ -1238,6 +1384,7 @@ def main():
             'r1_two_real_php_buyers_one_capacity_unit_only_one_external_create',
             'r2_plan_reassigned_to_other_remote_with_same_remark_zero_wrong_edit',
             'r2_persisted_payment_server_pinned_on_successful_renewal',
+            'r2_renewal_adapter_unverified_success_never_records_payment',
             'r3_nonthrowing_renewal_customer_notice_renew_user_false_already_approved',
             'r3_nonthrowing_renewal_customer_notice_renew_user_null_already_approved',
             'r3_nonthrowing_or_thrown_telegram_qr_false_approved_no_replay',
@@ -1454,6 +1601,7 @@ def main():
                     "shared_payment_ledger_rc4_import":migration,
                      "agency_state_regression":agency,
                      "optional_cron_runner":cron,
+                    "marzban_service_modifications":edits,
                     "marzban_logical_transfer":logical,
                     "historical_suite_executed_by_this_script":False,
                     "historical_suite_requires_separate_pinned_ci_execution":True,
@@ -1490,6 +1638,7 @@ def main():
                       "historical_rc4_payment_import_verified":migration["preserved_rc4_rows_and_ids"],
                        "agency_state_cases":agency["cases"],
                        "optional_cron_runner_cases":cron["cases"],
+                      "marzban_service_modification_cases":edits["cases"],
                       "marzban_logical_transfer_cases":logical["cases"],
                       "current_php_version":subprocess.check_output(["php","-r","echo PHP_VERSION_ID;"]).decode()}))
 

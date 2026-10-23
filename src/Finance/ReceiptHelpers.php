@@ -442,9 +442,17 @@ function achbotAutoBankClaim(mysqli $connection, array $seen): bool {
                 return false;
             }
         }
-        $stmt = $connection->prepare("UPDATE pays SET state='auto_cart_approved'
+        // For remote service edits the bank receipt claim is NOT service
+        // fulfillment. Keep it nonterminal until verified GET + local effects.
+        // INCREASE_WALLET already credited atomically; historical BUY_SUB
+        // remains governed by its separate creation/fulfillment migration.
+        $kind=(string)$pay['type'];
+        $isEdit=$kind==='RENEW_ACCOUNT' || $kind==='RENEW_SCONFIG' ||
+            preg_match('/^INCREASE_(?:DAY|VOLUME)_[1-9][0-9]*_[1-9][0-9]*$/D',$kind)===1;
+        $next=$isEdit?'processing':'auto_cart_approved';
+        $stmt = $connection->prepare("UPDATE pays SET state=?
             WHERE id=? AND state='have_sent'");
-        $stmt->bind_param('i',$id);
+        $stmt->bind_param('si',$next,$id);
         $stmt->execute();
         $changed = $stmt->affected_rows;
         $stmt->close();
@@ -454,6 +462,376 @@ function achbotAutoBankClaim(mysqli $connection, array $seen): bool {
         try { $connection->rollback(); } catch (Throwable $ignored) {}
         // Only an opaque local row id, never photo, account, user or SQL text.
         error_log('achbot_bank_auto_claim_deferred pay_row_id=' . $id);
+        return false;
+    }
+}
+
+/**
+ * Check the PAID target and original service subject before any outbound
+ * account edit. Do not derive a remote destination from a mutable plan or
+ * Telegram callback alone. The subsequent finisher RECHECKS under the
+ * original payment/order row locks after remote verification.
+ *
+ * One autocommit preflight read is intentional: NEVER hold SQL locks while
+ * performing remote HTTP. Unsupported/changed/ambiguous claims stay under
+ * the existing processing no-replay fence.
+ */
+function achbotAutoBankEditPreflight(mysqli $db, array $pay, string $kind,
+                                    int $serverId, int $orderId,
+                                    string $remark, int $units=0): bool {
+    $payId=(int)($pay['id']??0);
+    $owner=(int)($pay['user_id']??0);
+    if ($payId<=0 || $owner<=0 || $serverId<=0 || $remark==='' ||
+        !in_array($kind,['renew','standard','day','volume'],true))
+        return false;
+    try {
+        $stmt=$db->prepare("SELECT p.user_id,p.server_id,p.plan_id,p.price,
+            p.order_id,p.state,p.type,p.description,
+            sp.server_id AS plan_server
+            FROM pays p LEFT JOIN server_plans sp ON sp.id=p.plan_id
+            WHERE p.id=?");
+        if (!$stmt) return false;
+        $stmt->bind_param('i',$payId);
+        $ok=$stmt->execute();
+        $paid=$ok?$stmt->get_result()->fetch_assoc():null;
+        $stmt->close();
+        if (!$paid || (int)$paid['user_id']!==$owner ||
+            $paid['state']!=='processing' ||
+            (int)$paid['server_id']!==$serverId ||
+            // The scheduler's original invoice subject is immutable across
+            // receipt claim, preflight, provider HTTP and finalization.
+            (int)$paid['plan_id']!==(int)($pay['plan_id']??0) ||
+            (int)$paid['price']!==(int)($pay['price']??0) ||
+            (int)($paid['order_id']??0)!==(int)($pay['order_id']??0) ||
+            (string)$paid['type']!==(string)($pay['type']??'') ||
+            (string)($paid['description']??'')!==(string)($pay['description']??'') ||
+            // External standard accounts have no order/group alias. For an
+            // order-backed edit, Core authorizes an explicitly shared panel.
+            ($kind==='standard' && (int)($paid['plan_server']??0)!==$serverId))
+            return false;
+
+        if ($kind==='standard') {
+            if ($paid['type']!=='RENEW_SCONFIG') return false;
+            $subject=json_decode((string)$paid['description'],true);
+            return is_array($subject) &&
+                (string)($subject['remark']??'')===$remark &&
+                !empty($subject['uuid']) && is_string($subject['uuid']);
+        }
+        if ($kind==='renew') {
+            if ($paid['type']!=='RENEW_ACCOUNT' ||
+                (int)$paid['order_id']!==$orderId) return false;
+        } else {
+            $pattern=$kind==='day'
+                ? '/^INCREASE_DAY_([1-9][0-9]*)_([1-9][0-9]*)$/D'
+                : '/^INCREASE_VOLUME_([1-9][0-9]*)_([1-9][0-9]*)$/D';
+            if ($units<=0 || preg_match($pattern,(string)$paid['type'],$m)!==1 ||
+                (int)$m[1]!==$orderId ||
+                // Old extension receipts may omit order_id, but a pinned
+                // nonzero ID must never contradict the encoded subject.
+                ((int)($paid['order_id']??0)!==0 &&
+                 (int)$paid['order_id']!==$orderId)) return false;
+            // The existing quote is the only permitted source of units.
+            $table=$kind==='day'?'increase_day':'increase_plan';
+            $quoteId=(int)$m[2];
+            $quote=$db->prepare("SELECT volume FROM ".$table." WHERE id=?");
+            if (!$quote) return false;
+            $quote->bind_param('i',$quoteId);
+            $exists=$quote->execute();
+            $value=$exists?$quote->get_result()->fetch_assoc():null;
+            $quote->close();
+            if (!$value || !is_numeric($value['volume']) ||
+                (float)$value['volume']!==(float)$units) return false;
+        }
+        if ($orderId<=0) return false;
+        $orderStmt=$db->prepare("SELECT userid,fileid,server_id,inbound_id,
+            remark,status FROM orders_list WHERE id=?");
+        if (!$orderStmt) return false;
+        $orderStmt->bind_param('i',$orderId);
+        $ok=$orderStmt->execute();
+        $record=$ok?$orderStmt->get_result()->fetch_assoc():null;
+        $orderStmt->close();
+        return (bool)$record && (int)$record['userid']===$owner &&
+            (int)$record['fileid']===(int)$paid['plan_id'] &&
+            (int)$record['server_id']===$serverId &&
+            (int)$record['inbound_id']===0 &&
+            (int)$record['status']===1 &&
+            (string)$record['remark']===$remark &&
+            // Real Core authorization, not a shortcut from the plan's old
+            // logical server ID. Cross-panel aliases fail before HTTP.
+            achbotSupportsMarzbanOrder($db,$orderId,
+                (int)$paid['plan_id'],$owner);
+    } catch (Throwable $error) {
+        error_log('achbot_auto_service_preflight_deferred pay_id='.$payId.
+            ' class='.get_class($error).' code='.(int)$error->getCode());
+        return false;
+    }
+}
+
+/**
+ * The provider's authenticated absolute applied_expire is the only expiry
+ * that can be locally recorded after an edit. Call inside the SAME caller-
+ * owned SQL transaction as its payment/audit transition. A lost SQL reply,
+ * stale order identity, concurrent renewal, truncated INT, or missing
+ * readback is not fulfillment: leave the previously committed payment claim
+ * operator-reviewable and never replay the remote effect.
+ *
+ * Source is the original pre-remote order snapshot (NOT a fresh one obtained
+ * after dispatch). Lock the exact primary key and compare the entire payment
+ * subject, including its prior local expiry and nullable UUID.
+ */
+function achbotStoreVerifiedServiceExpiryLocked(mysqli $db, array $original,
+                                           object $verified): void {
+    if (($verified->success??false)!==true ||
+        ($verified->verified??false)!==true ||
+        !isset($verified->applied_expire,$verified->applied_bytes) ||
+        !is_int($verified->applied_expire) ||
+        $verified->applied_expire<=0 || $verified->applied_expire>2147483647 ||
+        !is_int($verified->applied_bytes) || $verified->applied_bytes<0)
+        throw new RuntimeException('day_extension_remote_readback_invalid');
+    foreach (['id','userid','server_id','inbound_id','fileid',
+              'remark','status','expire_date'] as $key) {
+        if (!array_key_exists($key,$original))
+            throw new RuntimeException('day_extension_original_order_missing');
+    }
+    $orderId=(int)$original['id'];
+    $owner=(int)$original['userid'];
+    $server=(int)$original['server_id'];
+    $inbound=(int)$original['inbound_id'];
+    $fileId=(int)$original['fileid'];
+    $remark=(string)$original['remark'];
+    $uuid=$original['uuid']??null;
+    $old=(int)$original['expire_date'];
+    if ($orderId<=0 || $owner<=0 || $server<=0 || $fileId<=0 ||
+        $inbound!==0 || $remark==='' || (int)$original['status']!==1 ||
+        $old<0 || $old>2147483647)
+        throw new RuntimeException('day_extension_original_order_invalid');
+
+    $stmt=$db->prepare('SELECT userid,server_id,inbound_id,fileid,remark,uuid,
+            status,expire_date,notif FROM orders_list WHERE id=? FOR UPDATE');
+    if (!$stmt) throw new RuntimeException('day_extension_order_lock_unavailable');
+    $stmt->bind_param('i',$orderId);
+    if (!$stmt->execute()) throw new RuntimeException('day_extension_order_lock_failed');
+    $current=$stmt->get_result()->fetch_assoc();
+    $stmt->close();
+    if (!$current ||
+        (int)$current['userid']!==$owner ||
+        (int)$current['server_id']!==$server ||
+        (int)$current['inbound_id']!==$inbound ||
+        (int)$current['fileid']!==$fileId ||
+        (int)$current['status']!==1 ||
+        (string)$current['remark']!==$remark ||
+        $current['uuid']!==$uuid ||
+        (int)$current['expire_date']!==$old)
+        throw new RuntimeException('day_extension_order_stale');
+    $expiry=$verified->applied_expire;
+    $stmt=$db->prepare('UPDATE orders_list SET expire_date=?,notif=0
+        WHERE id=? AND userid=? AND server_id=? AND inbound_id=?
+          AND fileid=? AND remark=? AND uuid <=> ? AND status=1
+          AND expire_date=?');
+    if (!$stmt) throw new RuntimeException('day_extension_update_prepare_failed');
+    $stmt->bind_param('iiiiiissi',$expiry,$orderId,$owner,$server,
+                      $inbound,$fileId,$remark,$uuid,$old);
+    $saved=$stmt->execute();
+    $changed=$stmt->affected_rows;
+    $stmt->close();
+    // A legitimately unchanged absolute expiry can still be a verified
+    // successful edit (e.g. a provider was already ahead). MySQL reports
+    // affected_rows=0 when both persisted fields were already equal.
+    // Locking identity/previous-expiry CAS and exact post-write readback
+    // remain mandatory; zero does not waive them.
+    if ($saved!==true || ($changed!==1 &&
+        !($changed===0 && $old===$expiry && (int)$current['notif']===0)))
+        throw new RuntimeException('service_expiry_update_unconfirmed');
+    $stmt=$db->prepare('SELECT expire_date,notif FROM orders_list WHERE id=? FOR UPDATE');
+    if (!$stmt) throw new RuntimeException('day_extension_readback_prepare_failed');
+    $stmt->bind_param('i',$orderId);
+    $read=$stmt->execute();
+    $stored=$read?$stmt->get_result()->fetch_assoc():null;
+    $stmt->close();
+    if (!$stored || (int)$stored['expire_date']!==$expiry ||
+        (int)$stored['notif']!==0)
+        throw new RuntimeException('day_extension_readback_mismatch');
+}
+
+/**
+ * A scheduled bank receipt is only a PAYMENT claim. For service edits,
+ * success requires a verified remote absolute outcome followed by ONE
+ * all-or-nothing local order/accounting/payment commit.
+ *
+ * No remote POST, wallet refund or retry takes place here. Uncertain remote
+ * or SQL outcomes remain 'processing' for reconciliation; never claim
+ * approved until both remote and local results are confirmed.
+ */
+function achbotAutoBankFinishEdit(mysqli $db, array $pay,
+                                  object $verified, string $kind,
+                                  int $serverId, int $orderId,
+                                  string $remark, int $amount,
+                                  int $units=0, ?int $expectedOrderExpiry=null): bool {
+    $id=(int)($pay['id']??0);
+    $userId=(int)($pay['user_id']??0);
+    if ($id<=0 || $userId<=0 || $amount<=0 || $serverId<=0 ||
+        $remark==='' || !in_array($kind,['renew','standard','day','volume'],true) ||
+        ($verified->success??false)!==true ||
+        ($verified->verified??false)!==true ||
+        !isset($verified->applied_expire,$verified->applied_bytes) ||
+        // No 64-bit provider timestamp may be silently clamped by the
+        // existing signed-INT orders_list.expire_date schema, including
+        // non-strict MariaDB sql_mode.
+        !is_int($verified->applied_expire) ||
+        $verified->applied_expire<=0 ||
+        $verified->applied_expire>2147483647 ||
+        !is_int($verified->applied_bytes) ||
+        $verified->applied_bytes<0 ||
+        ($kind!=='standard' && ($expectedOrderExpiry===null ||
+            $expectedOrderExpiry<0 || $expectedOrderExpiry>2147483647)))
+        return false;
+    $expectedType=match($kind) {
+        'renew'=>'RENEW_ACCOUNT','standard'=>'RENEW_SCONFIG',
+        'day'=>'INCREASE_DAY','volume'=>'INCREASE_VOLUME'
+    };
+    try {
+        if ($db->begin_transaction()!==true) return false;
+        $stmt=$db->prepare("SELECT p.id,p.type,p.state,p.user_id,p.order_id,
+                p.price,p.server_id,p.plan_id,p.description,
+                sp.server_id AS current_plan_server
+            FROM pays p LEFT JOIN server_plans sp ON sp.id=p.plan_id
+            WHERE p.id=? FOR UPDATE");
+        if (!$stmt) throw new RuntimeException('auto_service_pay_lock_missing');
+        $stmt->bind_param('i',$id);
+        if (!$stmt->execute()) throw new RuntimeException('auto_service_pay_lock_failed');
+        $locked=$stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        if (!$locked || $locked['state']!=='processing' ||
+            (int)$locked['user_id']!==$userId ||
+            (int)$locked['price']!==$amount ||
+            (int)$locked['server_id']!==$serverId ||
+            // A coherent payment/order rewrite after preflight must not
+            // authorize an effect dispatched for the ORIGINAL paid subject.
+            (int)$locked['plan_id']!==(int)($pay['plan_id']??0) ||
+            (int)($locked['order_id']??0)!==(int)($pay['order_id']??0) ||
+            (string)$locked['type']!==(string)($pay['type']??'') ||
+            (string)($locked['description']??'')!==(string)($pay['description']??'') ||
+            ($kind==='standard' &&
+                (int)($locked['current_plan_server']??0)!==$serverId) ||
+            ($kind==='day' &&
+                preg_match('/^INCREASE_DAY_([1-9][0-9]*)_([1-9][0-9]*)$/D',
+                    (string)$locked['type'],$m)!==1) ||
+            ($kind==='volume' &&
+                preg_match('/^INCREASE_VOLUME_([1-9][0-9]*)_([1-9][0-9]*)$/D',
+                    (string)$locked['type'],$m)!==1) ||
+            (in_array($kind,['standard','renew'],true) &&
+                $locked['type']!==$expectedType)) {
+            $db->rollback();return false;
+        }
+        if ($kind==='day' || $kind==='volume') {
+            if ((int)$m[1]!==$orderId || $units<=0 ||
+                ((int)($locked['order_id']??0)!==0 &&
+                 (int)$locked['order_id']!==$orderId)) {
+                $db->rollback();return false;
+            }
+            $quote=$db->prepare("SELECT volume FROM ".
+                ($kind==='day'?'increase_day':'increase_plan')." WHERE id=?");
+            if (!$quote) throw new RuntimeException('auto_service_quote_prepare_failed');
+            $quoteId=(int)$m[2];
+            $quote->bind_param('i',$quoteId);
+            $ok=$quote->execute();
+            $row=$ok?$quote->get_result()->fetch_assoc():null;
+            $quote->close();
+            if (!$row || !is_numeric($row['volume']) ||
+                (float)$row['volume']!==(float)$units) {
+                $db->rollback();return false;
+            }
+        }
+        if ($kind==='standard') {
+            $subject=json_decode((string)$locked['description'],true);
+            if (!is_array($subject) || (string)($subject['remark']??'')!==$remark ||
+                !isset($subject['uuid']) || !is_string($subject['uuid']) ||
+                $subject['uuid']==='') {
+                $db->rollback();return false;
+            }
+        }
+        if ($kind==='renew' && (int)$locked['order_id']!==$orderId) {
+            $db->rollback();return false;
+        }
+        if ($kind!=='standard') {
+            if ($orderId<=0) { $db->rollback();return false; }
+            $stmt=$db->prepare("SELECT userid,fileid,server_id,inbound_id,
+                remark,status,expire_date FROM orders_list WHERE id=? FOR UPDATE");
+            $stmt->bind_param('i',$orderId);
+            if (!$stmt->execute()) throw new RuntimeException('auto_service_order_read_failed');
+            $order=$stmt->get_result()->fetch_assoc();
+            $stmt->close();
+            if (!$order || (int)$order['userid']!==$userId ||
+                (int)$order['server_id']!==$serverId ||
+                (int)$order['fileid']!==(int)$locked['plan_id'] ||
+                (int)$order['inbound_id']!==0 ||
+                (int)$order['status']!==1 ||
+                (string)$order['remark']!==$remark ||
+                // Refresh physical group membership under SQL locks after
+                // remote verification. A revoked alias cannot finalize a
+                // previously valid preflight; do not trust its old snapshot.
+                !achbotSupportsMarzbanOrder($db,$orderId,
+                    (int)$locked['plan_id'],$userId,true) ||
+                // B may have finalized a newer edit after this payment's
+                // original pre-remote snapshot. Never let A restore old
+                // absolute expiry just because its own payment row is locked.
+                (int)$order['expire_date']!==$expectedOrderExpiry) {
+                $db->rollback();return false;
+            }
+            if ($kind!=='volume') {
+                $expiry=$verified->applied_expire;
+                $stmt=$db->prepare("UPDATE orders_list SET expire_date=?,notif=0
+                    WHERE id=? AND userid=? AND remark=? AND server_id=?
+                      AND expire_date=?");
+                $stmt->bind_param('iiisii',$expiry,$orderId,$userId,$remark,
+                                  $serverId,$expectedOrderExpiry);
+            } else {
+                $stmt=$db->prepare("UPDATE orders_list SET notif=0
+                    WHERE id=? AND userid=? AND remark=? AND server_id=?
+                      AND expire_date=?");
+                $stmt->bind_param('iisii',$orderId,$userId,$remark,$serverId,
+                                  $expectedOrderExpiry);
+            }
+            if (!$stmt || !$stmt->execute())
+                throw new RuntimeException('auto_service_order_write_failed');
+            $stmt->close();
+            // Under permissive SQL mode, execute()==true is not proof that
+            // the verified 64-bit remote expiry fits persisted INT storage.
+            // Read back under the same transaction BEFORE acknowledging pay.
+            $stmt=$db->prepare('SELECT expire_date FROM orders_list WHERE id=? FOR UPDATE');
+            if (!$stmt) throw new RuntimeException('auto_service_expiry_readback_prepare');
+            $stmt->bind_param('i',$orderId);
+            $ok=$stmt->execute();
+            $persisted=$ok?$stmt->get_result()->fetch_assoc():null;
+            $stmt->close();
+            if (!$persisted || (int)$persisted['expire_date']!==(
+                $kind==='volume'?$expectedOrderExpiry:$verified->applied_expire))
+                throw new RuntimeException('auto_service_expiry_readback_mismatch');
+        }
+        $day=$kind==='day'?$units:null;
+        $volume=$kind==='volume'?$units:null;
+        $now=time();
+        $inbound=0;
+        $stmt=$db->prepare("INSERT INTO increase_order
+            (userid,server_id,inbound_id,remark,amount,date,volume,day)
+            VALUES (?,?,?,?,?,?,?,?)");
+        $stmt->bind_param('iiisiiii',$userId,$serverId,$inbound,$remark,
+                          $amount,$now,$volume,$day);
+        if (!$stmt->execute() || $stmt->affected_rows!==1)
+            throw new RuntimeException('auto_service_audit_insert_failed');
+        $stmt->close();
+        $stmt=$db->prepare("UPDATE pays SET state='auto_cart_approved'
+            WHERE id=? AND user_id=? AND state='processing'");
+        $stmt->bind_param('ii',$id,$userId);
+        if (!$stmt->execute() || $stmt->affected_rows!==1)
+            throw new RuntimeException('auto_service_finish_state_failed');
+        $stmt->close();
+        if ($db->commit()!==true) throw new RuntimeException('auto_service_commit_unconfirmed');
+        return true;
+    } catch (Throwable $error) {
+        try {$db->rollback();} catch (Throwable $ignored) {}
+        error_log('achbot_auto_service_edit_needs_review pay_id='.$id.' kind='.$kind.
+                  ' exception='.get_class($error));
         return false;
     }
 }

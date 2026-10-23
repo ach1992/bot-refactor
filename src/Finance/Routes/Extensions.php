@@ -284,6 +284,7 @@ if (preg_match('/wait(?:IncreaseDay|IncreaseDayGift|IncreaseDayUsdt)Receipt(.*)/
 
 if (preg_match('/approveIncreaseDay(.*)/', $data, $match) && ($from_id == $admin || $userInfo['isAdmin'] == true)) {
     $connection->begin_transaction();
+    $localCommitted=false;
     try {
         $hash_id = $match[1];
 
@@ -320,8 +321,7 @@ if (preg_match('/approveIncreaseDay(.*)/', $data, $match) && ($from_id == $admin
         $orderInfo = $stmt->get_result()->fetch_assoc();
     $stmt->close();
     if (!$orderInfo || !achbotSupportsMarzbanOrder($connection, (int)$orderInfo['id'])) {
-        alert("⛔️ افزایش حجم یا مدت برای این اشتراک در حال حاضر امکان‌پذیر نیست.", true);
-        return;
+        throw new RuntimeException('day_extension_order_ineligible');
     }
 
 
@@ -359,10 +359,31 @@ if (preg_match('/approveIncreaseDay(.*)/', $data, $match) && ($from_id == $admin
 
         $serverType = $server_info['type'];
 
+        if (!achbotSupportsPanel($serverType))
+            throw new UnexpectedValueException('unsupported_panel');
+        // Operator receipt approval is financial ownership, not a remote
+        // effect claim. Commit a unique nonterminal claim BEFORE the PUT.
+        // An ambiguous crash/SQL reply can leave review pending, never a
+        // second automatic remote request on this same receipt.
+        if ((int)$payParam['price']!==$price ||
+            (int)$payParam['user_id']!==$uid ||
+            (string)$payParam['type']!=="INCREASE_DAY_{$orderId}_{$planid}")
+            throw new RuntimeException('day_extension_claim_subject_changed');
+        $payId=(int)$payParam['id'];
+        $payType=(string)$payParam['type'];
+        $stmt=$connection->prepare("UPDATE pays SET state='processing'
+            WHERE id=? AND user_id=? AND hash_id=? AND type=?
+              AND price=? AND state='have_sent'");
+        $stmt->bind_param('iissi',$payId,$uid,$hash_id,$payType,$price);
+        $claimed=$stmt->execute() && $stmt->affected_rows===1;
+        $stmt->close();
+        if (!$claimed || $connection->commit()!==true)
+            throw new RuntimeException('day_extension_claim_unconfirmed');
+
         unset($markup[count($markup)-1]);
 
-        if ($serverType == "marzban") {
-            $response = editMarzbanConfig($server_id, ['remark' => $remark, 'plus_day' => $volume]);
+        if (achbotSupportsPanel($serverType)) {
+            $response = achbotApplyServiceEdit($connection,$server_id, ['remark' => $remark, 'plus_day' => $volume]);
         } else {
             throw new \UnexpectedValueException('unsupported_panel');
         }
@@ -379,26 +400,40 @@ if (preg_match('/approveIncreaseDay(.*)/', $data, $match) && ($from_id == $admin
             throw new Exception("provider_rejected");
         }
 
-        $addSeconds = $volume * 86400;
-        $stmt = $connection->prepare("UPDATE `orders_list` SET `expire_date` = `expire_date` + ?, `notif` = 0 WHERE `uuid` = ?");
-        $stmt->bind_param("is", $addSeconds, $uuid);
-        $stmt->execute();
+        if (!is_object($response) || ($response->verified??false)!==true)
+            throw new RuntimeException('day_extension_provider_result_unverified');
+        if ($connection->begin_transaction()!==true)
+            throw new RuntimeException('day_extension_finalization_begin_failed');
+        $stmt=$connection->prepare("SELECT id,state,user_id,hash_id,type,price
+            FROM pays WHERE id=? FOR UPDATE");
+        $stmt->bind_param('i',$payId);
+        $ok=$stmt->execute();
+        $locked=$ok?$stmt->get_result()->fetch_assoc():null;
         $stmt->close();
-
-        $timeNow = time();
-        $stmt = $connection->prepare("INSERT INTO `increase_order` (`userid`, `server_id`, `inbound_id`, `remark`, `amount`, `date`, `day`) VALUES (?, ?, ?, ?, ?, ?, ?)");
-        $stmt->bind_param("iiisiii", $uid, $server_id, $inbound_id, $remark, $price, $timeNow, $volume);
-        $stmt->execute();
+        if (!$locked || $locked['state']!=='processing' ||
+            (int)$locked['user_id']!==$uid ||
+            (int)$locked['price']!==$price ||
+            (string)$locked['hash_id']!==$hash_id ||
+            (string)$locked['type']!==$payType)
+            throw new RuntimeException('day_extension_claim_stale');
+        achbotStoreVerifiedServiceExpiryLocked($connection,$orderInfo,$response);
+        $timeNow=time();
+        $stmt=$connection->prepare("INSERT INTO increase_order
+            (userid,server_id,inbound_id,remark,amount,date,day)
+            VALUES (?,?,?,?,?,?,?)");
+        $stmt->bind_param('iiisiii',$uid,$server_id,$inbound_id,
+                          $remark,$price,$timeNow,$volume);
+        $saved=$stmt->execute() && $stmt->affected_rows===1;
         $stmt->close();
-
-        $stmt = $connection->prepare("UPDATE `pays` SET `state` = 'approved', `approved_by` = ? WHERE `hash_id` = ? AND `state` = 'have_sent'");
-        $stmt->bind_param('is', $from_id, $hash_id);
-        $stmt->execute();
-        $changed = $stmt->affected_rows;
+        if (!$saved) throw new RuntimeException('day_extension_audit_unconfirmed');
+        $stmt=$connection->prepare("UPDATE pays SET state='approved',approved_by=?
+            WHERE id=? AND user_id=? AND hash_id=? AND state='processing'");
+        $stmt->bind_param('iiis',$from_id,$payId,$uid,$hash_id);
+        $saved=$stmt->execute() && $stmt->affected_rows===1;
         $stmt->close();
-        if ($changed !== 1) throw new Exception('extension_receipt_claim_failed');
-
-        $connection->commit();
+        if (!$saved || $connection->commit()!==true)
+            throw new RuntimeException('day_extension_finish_unconfirmed');
+        $localCommitted=true;
 
         $keys = json_encode([
             'inline_keyboard' => [
@@ -423,8 +458,12 @@ if (preg_match('/approveIncreaseDay(.*)/', $data, $match) && ($from_id == $admin
         sendMessage("✅ <b>$volume</b> روز به مدت زمان اشتراک <code>$remark</code> اضافه شد.", null, "HTML", $uid);
         return;
 
-    } catch (Exception $e) {
-        $connection->rollback();
+    } catch (Throwable $e) {
+        if ($localCommitted) {
+            error_log('achbot_manual_day_notice_unconfirmed pay_id='.(int)($payId??0));
+            return;
+        }
+        try {$connection->rollback();} catch (Throwable $ignored) {}
 
         // پیام فنی برای ادمین اقدام‌کننده
         $err = "⚠️ خطا در تایید افزایش زمان (کارت‌به‌کارت)\n\n"
@@ -440,6 +479,7 @@ if (preg_match('/approveIncreaseDay(.*)/', $data, $match) && ($from_id == $admin
 
 if(preg_match('/payIncreaseDayWithWallet(.*)/', $data, $match)){
     $connection->begin_transaction();
+    $localCommitted=false;
     try {
         // Customer-wallet issuance shares the same owner-first lock as drafts
         // and manual/hosted claims. Never lock pays before users.userid.
@@ -494,8 +534,7 @@ if(preg_match('/payIncreaseDayWithWallet(.*)/', $data, $match)){
         $orderInfo = $stmt->get_result()->fetch_assoc();
     $stmt->close();
     if (!$orderInfo || !achbotSupportsMarzbanOrder($connection, (int)$orderInfo['id'])) {
-        alert("⛔️ افزایش حجم یا مدت برای این اشتراک در حال حاضر امکان‌پذیر نیست.", true);
-        return;
+        throw new RuntimeException('wallet_day_order_ineligible');
     }
 
 
@@ -531,13 +570,16 @@ if(preg_match('/payIncreaseDayWithWallet(.*)/', $data, $match)){
         $price  = intval($payParam['price']);
         $volume = intval($res['volume']);
 
-        $stmt = $connection->prepare("SELECT `wallet` FROM `users` WHERE `userid` = ? FOR UPDATE");
-        $stmt->bind_param("i", $uid);
-        $stmt->execute();
-        $uRow = $stmt->get_result()->fetch_assoc();
+        $stmt = $connection->prepare("SELECT id,wallet FROM users
+            WHERE userid=? FOR UPDATE");
+        $stmt->bind_param('i',$uid);
+        if (!$stmt->execute()) throw new RuntimeException('wallet_day_owner_read_failed');
+        $owners=$stmt->get_result()->fetch_all(MYSQLI_ASSOC);
         $stmt->close();
-
-        $userwallet = intval($uRow['wallet'] ?? 0);
+        if (count($owners)!==1)
+            throw new RuntimeException('wallet_day_owner_ambiguous');
+        $uRow=$owners[0];
+        $userwallet=(int)$uRow['wallet'];
         if($userwallet < $price) {
             $needamount = $price - $userwallet;
 
@@ -552,8 +594,37 @@ if(preg_match('/payIncreaseDayWithWallet(.*)/', $data, $match)){
             return;
         }
 
-        if($serverType == "marzban"){
-            $response = editMarzbanConfig($server_id, ['remark'=>$remark, 'plus_day'=>$volume]);
+        if (!achbotSupportsPanel($serverType))
+            throw new UnexpectedValueException('unsupported_panel');
+        // Reserve the debit and unique payment ownership together BEFORE
+        // dispatch. An unknown remote/local result remains processing_wallet
+        // for operator review; callback replay cannot debit or dispatch again.
+        $payId=(int)$payParam['id'];
+        $payType=(string)$payParam['type'];
+        if ((int)$payParam['price']!==$price ||
+            (int)$payParam['user_id']!==$uid ||
+            $payType!=="INCREASE_DAY_{$orderId}_{$planid}")
+            throw new RuntimeException('wallet_day_claim_subject_changed');
+        $ownerPk=(int)$uRow['id'];
+        $stmt=$connection->prepare("UPDATE users SET wallet=wallet-?
+            WHERE id=? AND userid=? AND wallet>=?");
+        $stmt->bind_param('iiii',$price,$ownerPk,$uid,$price);
+        $reserved=$stmt->execute() && $stmt->affected_rows===1;
+        $stmt->close();
+        if (!$reserved) throw new RuntimeException('wallet_day_reservation_unconfirmed');
+        $payState=(string)$payParam['state'];
+        $stmt=$connection->prepare("UPDATE pays SET state='processing_wallet'
+            WHERE id=? AND user_id=? AND hash_id=? AND type=? AND price=?
+              AND state=?");
+        $stmt->bind_param('iissis',$payId,$uid,$hash_id,$payType,
+                          $price,$payState);
+        $claimed=$stmt->execute() && $stmt->affected_rows===1;
+        $stmt->close();
+        if (!$claimed || $connection->commit()!==true)
+            throw new RuntimeException('wallet_day_claim_unconfirmed');
+
+        if (achbotSupportsPanel($serverType)){
+            $response = achbotApplyServiceEdit($connection,$server_id, ['remark'=>$remark, 'plus_day'=>$volume]);
         } else {
             throw new \UnexpectedValueException('unsupported_panel');
         }
@@ -570,29 +641,40 @@ if(preg_match('/payIncreaseDayWithWallet(.*)/', $data, $match)){
             throw new Exception("provider_rejected");
         }
 
-        $addSeconds = $volume * 86400;
-        $stmt = $connection->prepare("UPDATE `orders_list` SET `expire_date` = `expire_date` + ?, `notif` = 0 WHERE `uuid` = ?");
-        $stmt->bind_param("is", $addSeconds, $uuid);
-        $stmt->execute();
+        if (!is_object($response) || ($response->verified??false)!==true)
+            throw new RuntimeException('wallet_day_provider_result_unverified');
+        if ($connection->begin_transaction()!==true)
+            throw new RuntimeException('wallet_day_finish_begin_failed');
+        $stmt=$connection->prepare("SELECT id,state,user_id,hash_id,type,price
+            FROM pays WHERE id=? FOR UPDATE");
+        $stmt->bind_param('i',$payId);
+        $ok=$stmt->execute();
+        $locked=$ok?$stmt->get_result()->fetch_assoc():null;
         $stmt->close();
-
-        $timeNow = time();
-        $stmt = $connection->prepare("INSERT INTO `increase_order` (`userid`, `server_id`, `inbound_id`, `remark`, `amount`, `date`, `day`) VALUES (?, ?, ?, ?, ?, ?, ?)");
-        $stmt->bind_param("iiisiii", $uid, $server_id, $inbound_id, $remark, $price, $timeNow, $volume);
-        $stmt->execute();
+        if (!$locked || $locked['state']!=='processing_wallet' ||
+            (int)$locked['user_id']!==$uid ||
+            (int)$locked['price']!==$price ||
+            (string)$locked['hash_id']!==$hash_id ||
+            (string)$locked['type']!==$payType)
+            throw new RuntimeException('wallet_day_claim_stale');
+        achbotStoreVerifiedServiceExpiryLocked($connection,$orderInfo,$response);
+        $timeNow=time();
+        $stmt=$connection->prepare("INSERT INTO increase_order
+            (userid,server_id,inbound_id,remark,amount,date,day)
+            VALUES (?,?,?,?,?,?,?)");
+        $stmt->bind_param('iiisiii',$uid,$server_id,$inbound_id,
+                          $remark,$price,$timeNow,$volume);
+        $saved=$stmt->execute() && $stmt->affected_rows===1;
         $stmt->close();
-
-        $stmt = $connection->prepare("UPDATE `users` SET `wallet` = `wallet` - ? WHERE `userid` = ?");
-        $stmt->bind_param("ii", $price, $uid);
-        $stmt->execute();
+        if (!$saved) throw new RuntimeException('wallet_day_audit_unconfirmed');
+        $stmt=$connection->prepare("UPDATE pays SET state='paid_with_wallet'
+            WHERE id=? AND user_id=? AND hash_id=? AND state='processing_wallet'");
+        $stmt->bind_param('iis',$payId,$uid,$hash_id);
+        $saved=$stmt->execute() && $stmt->affected_rows===1;
         $stmt->close();
-
-        $stmt = $connection->prepare("UPDATE `pays` SET `state` = 'paid_with_wallet' WHERE `hash_id` = ?");
-        $stmt->bind_param("s", $hash_id);
-        $stmt->execute();
-        $stmt->close();
-
-        $connection->commit();
+        if (!$saved || $connection->commit()!==true)
+            throw new RuntimeException('wallet_day_finish_unconfirmed');
+        $localCommitted=true;
 
         editText($message_id, "✅ $volume روز به مدت زمان اشتراک شما اضافه شد.", getMainKeys());
 
@@ -626,8 +708,12 @@ if(preg_match('/payIncreaseDayWithWallet(.*)/', $data, $match)){
 
         return;
 
-    } catch (Exception $e) {
-        $connection->rollback();
+    } catch (Throwable $e) {
+        if ($localCommitted) {
+            error_log('achbot_wallet_day_notice_unconfirmed pay_id='.(int)($payId??0));
+            return;
+        }
+        try {$connection->rollback();} catch (Throwable $ignored) {}
 
         // پیام فنی برای ادمین
         $adminErr = "⚠️ خطا در افزایش زمان با کیف پول\n\n"
@@ -1122,8 +1208,8 @@ if (preg_match('/approveIncreaseVolume(.*)/', $data, $match) && ($from_id == $ad
 
         $serverType = $server_info['type'];
 
-        if ($serverType == "marzban") {
-            $response = editMarzbanConfig($server_id, ['remark' => $remark, 'plus_volume' => $volume]);
+        if (achbotSupportsPanel($serverType)) {
+            $response = achbotApplyServiceEdit($connection,$server_id, ['remark' => $remark, 'plus_volume' => $volume]);
         } else {
             throw new \UnexpectedValueException('unsupported_panel');
         }
@@ -1317,8 +1403,8 @@ if(preg_match('/payIncreaseWithWallet(.*)/', $data, $match)){
 
         $serverType = $server_info['type'];
 
-        if($serverType == "marzban"){
-            $response = editMarzbanConfig($server_id, ['remark'=>$remark, 'plus_volume'=>$volume]);
+        if (achbotSupportsPanel($serverType)){
+            $response = achbotApplyServiceEdit($connection,$server_id, ['remark'=>$remark, 'plus_volume'=>$volume]);
         } else {
             throw new \UnexpectedValueException('unsupported_panel');
         }

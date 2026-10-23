@@ -42,3 +42,24 @@ If preconditions, restore, schema, webhook, authorization or state assertions fa
 ## Reporting and completion
 
 Record environment identification (without secrets), exact source/package SHA, verified backup/isolated restore, schema identity, staged scenario matrix, failures/recovery outcome and approvals in [Issue #31](https://github.com/ach1992/bot-refactor/issues/31). **Only after those real installation tests pass** should the owner decide on broader rollout, separate finance remediation and issue closure. Read the [detailed migration runbook](PANEL-GROUPS-MIGRATION.md) for ordering and boundaries.
+
+### Source-only service edit reliability acceptance (separately authorized)
+
+On an explicitly approved isolated bot and disposable service account,
+capture the username, quota bytes, expiry seconds, used traffic, note and
+physical panel URL by an authenticated GET before each operation. Exercise
+renewal, extra days and extra traffic through at least two existing payment
+methods using only approved test funds. Compare the exact after-GET against
+the originally requested changes and the local payment/order/audit records.
+The bot must not show success before confirmed service and SQL completion.
+
+Exercise a Telegram failure after a confirmed remote edit: payment remains
+completed and replay does not edit the account again. Exercise a provider
+outage: the claim remains reviewable without duplicate debit, service change
+or speculative wallet refund. Verify a real reset is visible before renewal;
+an uncertain reset must never be repeated blindly. Record the exact branch,
+SHA, migration state and results in Issues #26/#51. Do not use active users,
+real money, production Cron or any unapproved migration.
+
+A new panel such as Pasarguard requires an independently validated adapter
+and readback contract; this checklist does not activate such an adapter.

@@ -144,8 +144,18 @@ function getMarzbanUser($serverId,$remark,...$args){
 }
 function achbotSupportsPanel($type){return $type==='marzban';}
 function editMarzbanConfig($server,$opts) {
+    // This spy represents a verified absolute Marzban adapter result.
+    // Native HTTP/readback correctness is tested separately by
+    // test_post_v9_marzban_edits.py. A plain HTTP success with no
+    // verified applied limits is intentionally NOT financial success.
     $GLOBALS['events'][]=['name'=>'EDIT_REMOTE','server'=>$server,'remark'=>$opts['remark']??''];
-    return (object)['success'=>true];
+    if (($GLOBALS['spec']['edit_outcome']??'')==='unverified')
+        return (object)['success'=>true];
+    return (object)[
+        'success'=>true,'verified'=>true,
+        'applied_expire'=>1800000000,
+        'applied_bytes'=>2147483648
+    ];
 }
 function generateRandomString(...$args){return 'fixture-alphanumeric-uuid';}
 function getNextPortAndIncrease(...$args){return [15001,0];}
@@ -333,6 +343,15 @@ def check():
         assert not named(ev,'CREATE') and state(key)=='processing'
         assert not named(call(key),'CREATE')
         cases.append('r2_after_claim_purchase_plan_inactive_no_remote_create')
+
+        # A 2xx synthetic PUT without a corroborated adapter readback must
+        # never turn a manually reviewed renewal into an approved payment.
+        key=seed(work,env,'renew_unverified_adapter',renew=True)
+        ev=call(key,edit_outcome='unverified')
+        assert len(named(ev,'EDIT_REMOTE'))==1 and state(key)=='processing',ev
+        assert int(sql(work,env,'SELECT COUNT(*) FROM increase_order'))==0
+        assert not named(call(key),'EDIT_REMOTE')
+        cases.append('r2_renewal_adapter_unverified_success_never_records_payment')
 
         key=seed(work,env,'renew_stable',renew=True)
         ev=call(key)
