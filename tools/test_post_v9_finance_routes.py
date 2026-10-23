@@ -3446,6 +3446,31 @@ def main():
         records.append(dict(case='prepayment_renewal_unchanged_plan_checkout_compatible',
                             pass_=True,external_requests=0))
 
+        # The Telegram callback framing must match the WHOLE byte string.
+        # A crafted suffix or overlong callback must not be interpreted as
+        # the earlier valid invoice and offer a payable hosted checkout.
+        # This exercises the actual guarded PrePayment route + owned DB,
+        # not just a detached regular-expression approximation.
+        malformed_prepay_callbacks=(
+            'prePayCheck_RENEWACCOUNT_zarinpal_rnstillvalid_extra',
+            'prePayCheck_RENEWACCOUNT_zarinpal_rnstillvalid/extra',
+            'prePayCheck_RENEWACCOUNT_zarinpal_rnstillvalid'+'x'*65,
+        )
+        for candidate in malformed_prepay_callbacks:
+            before=snapshot(work,env)
+            attempted=run_php(work,env,stage,dict(route='prepayment',get={},
+                callback_data=candidate))
+            verify_unchanged(work,env,before,'malformed_prepay_callback')
+            # In particular, no payment CTA may be sent for an invalid
+            # callback. No new invoice, wallet or remote provider effects.
+            if attempted['network_calls'] or any(
+                e['name'] in ('sendMessage','delMessage','callback')
+                for e in attempted['events']):
+                raise RuntimeError('Malformed prepay callback executed route: '+
+                                   repr((candidate,attempted['events']))[:1300])
+        records.append(dict(case='prepayment_malformed_suffix_and_overlength_denied',
+                            pass_=True,external_requests=0))
+
         # Actual admin route, including old cached/forged callbacks, cannot
         # perform the inherited database-only server rewrite.
         native.sql(work,env,'''
