@@ -20,7 +20,7 @@ if (preg_match('/freeTrial(\d+)_(?<buyType>\w+)/', $data, $match)) {
     $normalDiscount = isset($discountsData['normal']) ? (string)$discountsData['normal'] : null;
 
     if (
-        ($userInfo['freetrial'] ?? '') === 'used' &&
+        in_array(($userInfo['freetrial'] ?? ''), ['used','reserved'], true) &&
         $from_id != $admin &&
         $normalDiscount !== "100"
     ) {
@@ -28,6 +28,15 @@ if (preg_match('/freeTrial(\d+)_(?<buyType>\w+)/', $data, $match)) {
         exit;
     }
 
+    require_once __DIR__.'/../Finance/ServiceEffects.php';
+    try {
+        $trialSource=achbotNonPaymentSourceRef(
+            $update,(int)$from_id,'free_trial',(string)$data,
+            (int)$from_id===(int)$admin);
+    } catch (Throwable $error) {
+        alert('⛔️ درخواست معتبر نیست؛ از منوی اشتراک دوباره اقدام کنید.',true);
+        return;
+    }
     delMessage();
 
     $planDetails = getPlanDetails($connection, $planId);
@@ -83,29 +92,24 @@ if (preg_match('/freeTrial(\d+)_(?<buyType>\w+)/', $data, $match)) {
     // گرفتن پورت (auto / random) از temp.txt
     [$port, $last_num] = getNextPortAndIncrease('settings/temp.txt', $portType);
 
-    [$response, $remark, $port] = createServerAccount(
-        $serverType,
-        $server_id,
-        $inbound_id,
-        $planId,
-        $remark,
-        $volume,
-        $days,
-        $uniqid,
-        $protocol,
-        $port,
-        $expire_microdate,
-        $netType,
-        $rahgozar,
-        $limitip
-    );
+    try {
+        [$response, $remark, $port, $effectId] = achbotCreateNonPaymentAccount(
+            $connection,'free_trial',$trialSource,(int)$from_id,1,1,[
+                'is_primary_admin'=>((int)$from_id===(int)$admin),
+                'user_id'=>(int)$from_id,'server_type'=>$serverType,
+                'server_id'=>$server_id,'inbound_id'=>$inbound_id,
+                'plan_id'=>$planId,'remark'=>$remark,'volume'=>$volume,
+                'days'=>$days,'uniqid'=>$uniqid,'protocol'=>$protocol,
+                'port'=>$port,'expire_microdate'=>$expire_microdate,
+                'net_type'=>$netType,'rahgozar'=>$rahgozar,'limitip'=>$limitip
+            ]);
 
     // چک موفقیت ساخت اکانت
     ensureAccountCreationSucceeded($response, $serverInfo, $inbound_id, $admin);
 
     alert($mainValues['sending_config_to_user']);
 
-    [$token, $vray_link, $uniqid] = buildLinksAndSendQr(
+    [$token, $vray_link, $uniqid, $caption, $keys, $qrLink] = buildLinksAndSendQr(
         $serverType,
         $serverConfig,
         $botState,
@@ -127,28 +131,46 @@ if (preg_match('/freeTrial(\d+)_(?<buyType>\w+)/', $data, $match)) {
         $days,
         $buttonValues,
         $linkIndices,
-        $hideConfigIfMany
+        $hideConfigIfMany,
+        '',
+        null,
+        false
     );
 
-    insertOrder(
-        $connection,
-        $from_id,     // userid
-        $token,
-        $planId,
-        $server_id,
-        $inbound_id,
-        $remark,
-        $uniqid,
-        $protocol,
-        $expire_date,
-        $vray_link,
-        $price,
-        $date,
-        $rahgozar,
-        $agentBought ? 1 : 0
-    );
+    if ($connection->begin_transaction()!==true)
+        throw new RuntimeException('trial_order_begin');
+    try {
+        $orderId=insertOrder(
+            $connection,$from_id,$token,$planId,$server_id,$inbound_id,
+            $remark,$uniqid,$protocol,$expire_date,$vray_link,
+            $price,$date,$rahgozar,$agentBought?1:0,true);
+        achbotLinkNonPaymentAccountEffect($connection,$effectId,$orderId);
+        if ($connection->commit()!==true)
+            throw new RuntimeException('trial_order_commit_unknown');
+    } catch (Throwable $error) {
+        try {$connection->rollback();} catch (Throwable $ignored) {}
+        throw $error;
+    }
+    } catch (Throwable $error) {
+        error_log('achbot_trial_effect_needs_review source='.
+            preg_replace('/[^A-Za-z0-9_:]/','',$trialSource).
+            ' class='.get_class($error));
+        try {
+            sendMessage('⚠️ وضعیت ساخت Trial نیاز به بررسی دارد. '.
+                'پیش از اقدام مجدد، حساب و ظرفیت را تطبیق دهید.',
+                null,null,$admin);
+        } catch (Throwable $ignored) {}
+        alert('⚠️ نتیجهٔ درخواست هنوز قطعی نیست؛ برای بررسی با پشتیبانی تماس بگیرید.',true);
+        return;
+    }
 
-    decreaseServerCapacity($connection, $server_id, $inbound_id, $planId, 1);
+    try {
+        if (!sendQrFromLink($qrLink,$caption,$keys,$botUrl,(int)$from_id,'',null))
+            throw new RuntimeException('trial_delivery_unconfirmed');
+    } catch (Throwable $error) {
+        error_log('achbot_trial_delivery_review effect_id='.$effectId.
+            ' class='.get_class($error));
+    }
 
     $userId   = $userInfo['userid'] ?? $from_id;
     $fullName = $userInfo['name'] ?? '---';

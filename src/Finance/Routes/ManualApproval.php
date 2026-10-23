@@ -271,7 +271,6 @@ if (
         $accountCount=$reservedAccountCount;
         if (!is_int($accountCount) || $accountCount<=0)
             throw new RuntimeException('manual_standard_capacity_claim_missing');
-        $eachPrice    = ($accountCount > 0) ? ($price / $accountCount) : $price;
 
         $planDetails = getPlanDetails($connection, $fid);
         $plan        = $planDetails['plan'];
@@ -376,7 +375,7 @@ if (
                 'protocol'     => $protocol,
                 'expire_date'  => $expire_date,
                 'vray_link'    => $vray_link,
-                'amount'       => $eachPrice,
+                'amount'       => achbotAllocateOrderAmount((int)$price,$accountCount,$i),
                 'date'         => $date,
                 'rahgozar'     => $rahgozar,
                 'agent_bought' => $agent_bought,
@@ -421,7 +420,8 @@ if (
                 achbotLinkPaidAccountEffect($connection,(int)$o['effect_id'],(int)$orderId);
             }
 
-            // Already reserved before CREATE. Do NOT decrement again.
+            // The verified per-payment 007 journal owns the full capacity
+            // before CREATE; neither manual nor hosted finisher deducts it again.
 
             $stmt = $connection->prepare(
                 "UPDATE pays SET state='approved' WHERE id=? AND state='processing' AND approved_by=?"
@@ -444,60 +444,11 @@ if (
             return;
         }
 
-        // Financially owed reward is independent from QR and message delivery.
-        // Attempt it first; a later Telegram outage cannot skip the credit.
-        try {
-            $stmt = $connection->prepare("SELECT * FROM `users` WHERE `userid`=?");
-            $stmt->bind_param("i", $uid);
-            $stmt->execute();
-            $user_detail = $stmt->get_result()->fetch_assoc();
-            $stmt->close();
-
-            if (!empty($user_detail['refered_by'])) {
-                $inviterId = (int)$user_detail['refered_by'];
-
-                $followupStage = 'referral_reward';
-                if (giveReferralReward($connection, $user_detail['userid'],
-                                       $inviterId, $admin, $botState)!==true)
-                    throw new RuntimeException('manual_standard_referral_unconfirmed');
-
-                if ($admin != $from_id) {
-                    $uname     = $user_detail['name'];
-                    $user_name = $user_detail['username'];
-
-                    $keys2 = json_encode([
-                        'inline_keyboard' => [
-                            [
-                                ['text' => "🛍 خرید اشتراک جدید", 'callback_data' => "wizwizch"]
-                            ],
-                        ]
-                    ]);
-
-                    $msg = str_replace(
-                        ['USER-ID', 'USERNAME', 'NAME', 'PRICE', 'REMARK', 'HASHID'],
-                        [$uid, $user_name, $uname, $price, $lastRemarkForAdminMsg, $hash_id],
-                        $mainValues['invite_buy_new_account']
-                    );
-
-                    achbotManualStandardNotice(
-                        static fn()=>sendMessage($msg,$keys2,"html",$admin),
-                        'referral_admin_message',$payId,$deliveryIssues,0,$admin);
-
-                    $rewardChannel = $botState['rewardChannel'] ?? null;
-                    if (!empty($rewardChannel)) {
-                        achbotManualStandardNotice(
-                            static fn()=>sendMessage($msg,$keys2,"html",$rewardChannel),
-                            'referral_channel_message',$payId,$deliveryIssues,0,(int)$rewardChannel);
-                    }
-                }
-            }
-        } catch (Throwable $error) {
-            $deliveryIssues[]=['stage'=>'referral_reward',
-                'ordinal'=>0,'target'=>(int)($inviterId??0)];
-            error_log('achbot_manual_standard_referral_needs_review pay_id='.$payId.
-                ' buyer='.$uid.' inviter='.(int)($inviterId??0).
-                ' exception='.get_class($error));
-        }
+        // Register the payment-keyed 008 award after the local committed
+        // order and before any fallible Telegram/QR presentation.
+        $followupStage='purchase_referral_journal';
+        $user_detail=achbotReferralAfterCompletedPurchase(
+            $connection,(int)$uid,$payId,(int)$admin,$botState);
 
         foreach ($pendingUserQrs as $index => $pq) {
             $followupOrdinal=$index+1;
@@ -552,7 +503,32 @@ if (
             }
         }
 
-        achbotManualStandardReportDelivery($payId,$hash_id,$deliveryIssues,(int)$admin);
+        // Invitee announcement is presentation only; do not repeat any
+        // financial reward. Keep every independent target failure visible.
+        if (!empty($user_detail['refered_by']) && $admin!=$from_id) {
+            $uname=$user_detail['name'];
+            $user_name=$user_detail['username'];
+            $keys2=json_encode(['inline_keyboard'=>[[
+                ['text'=>"🛍 خرید اشتراک جدید",'callback_data'=>"wizwizch"]
+            ]]]);
+            $msg=str_replace(
+                ['USER-ID','USERNAME','NAME','PRICE','REMARK','HASHID'],
+                [$uid,$user_name,$uname,$price,$lastRemarkForAdminMsg,$hash_id],
+                $mainValues['invite_buy_new_account']
+            );
+            achbotManualStandardNotice(
+                static fn()=>sendMessage($msg,$keys2,'html',$admin),
+                'referral_purchase_operator_notice',$payId,$deliveryIssues,0,(int)$admin);
+            $rewardChannel=$botState['rewardChannel']??null;
+            if ($rewardChannel) {
+                achbotManualStandardNotice(
+                    static fn()=>sendMessage($msg,$keys2,'html',$rewardChannel),
+                    'referral_purchase_channel_notice',$payId,$deliveryIssues,0,
+                    (int)$rewardChannel);
+            }
+        }
+        achbotManualStandardReportDelivery(
+            $payId,$hash_id,$deliveryIssues,(int)$admin);
 
     } catch (Throwable $e) {
         // An error in Telegram or post-commit referral work cannot undo a

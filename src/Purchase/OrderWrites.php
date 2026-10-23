@@ -5,6 +5,18 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     exit;
 }
 
+/**
+ * Split integer paid amounts across ordered accounts without losing a unit.
+ * The first (total % count) rows receive one extra unit (1-based ordinal).
+ */
+if (!function_exists('achbotAllocateOrderAmount')) {
+    function achbotAllocateOrderAmount(int $total, int $count, int $ordinal): int {
+        if ($total<0 || $count<=0 || $ordinal<=0 || $ordinal>$count)
+            throw new InvalidArgumentException('invalid_order_amount_allocation');
+        return intdiv($total,$count)+($ordinal<=($total%$count)?1:0);
+    }
+}
+
 if (!function_exists('insertOrder')) {
     function insertOrder(
         $connection,

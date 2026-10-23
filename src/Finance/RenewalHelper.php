@@ -14,7 +14,7 @@ if (!function_exists('renewConfigOnServer')) {
         if (!achbotSupportsPanel($serverType) || (int)$inbound_id !== 0) {
             throw new \UnexpectedValueException('unsupported_panel');
         }
-        $response = editMarzbanConfig($server_id, [
+        $response = achbotApplyServiceEdit($connection,$server_id, [
             'remark' => $remark,
             'days' => $days,
             'volume' => $volume,

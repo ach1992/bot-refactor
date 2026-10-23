@@ -15,6 +15,13 @@ real Marzban provisioning, refund or real-money correctness.
   its scenario list includes direct execution of ManualApproval.php, Checkout.php,
   RenewalCheckout.php, Extensions.php and payment receipt handlers.
 - UX lifecycle, stale message and payment status: ../../tools/test_post_v9_payment_ux_lifecycle.py.
+- PR #72 review remediation: ../../tools/test_post_v9_wallet_checkout.py
+  runs the real `buyType=much` Catalogue draft and locked wallet debit;
+  ../../tools/test_post_v9_nonpaid_routes.py uses real `buildRemark`
+  for independently authenticated manual-mode admin batches; and
+  ../../tools/test_post_v9_referral_route_order.py executes real standard
+  and custom receipt handlers with failed post-COMMIT QR, customer message
+  and operator markup transports, proving one 008 award and no CREATE replay.
 - Full source, package and original/additive-schema acceptance:
   ../../tools/check_post_v9.py. GitHub Compatibility workflow runs the exact
   candidate on PHP 8.1 and 8.4 and executes frozen historical V9 separately.
@@ -56,6 +63,7 @@ to a real payment processor is authorized by this matrix.
 | M13 Admin message edit and failed remote outcome | Approved standard order with failing Telegram keyboard edit, or explicit failed remote response/warning channel outage | Preserve approved when button edit fails; preserve processing for remote ambiguity | No raw exception to admin; bounded pay ID, stage and exception class/code in protected logs | No false local order/credit on rejected remote result, no repeated provisioning | manual: real_standard_operator_buttons_failure_does_not_leak_raw_exception, real_standard_explicit_remote_failure_kept_for_review_without_local_order, real_standard_ambiguous_remote_and_failed_admin_notice_no_fatal_no_replay, real_standard_renewal_explicit_remote_failure_no_local_order_no_replay — PASS(S) |
 | M10 Custom BUY_SUB accCustom | Admin, chosen custom day/volume, manually reviewed photo | One service claim and approved state only after effect | Standard plan or non-admin callback rejected | Remote uncertainty/replays stay reviewable | manual: real_custom_authorized_review_state_approves_only_once, uncertain_custom_external_effect_operator_reconciliation_no_retry — PASS(S) |
 | M11 Renewal/day/volume extensions | Exact order/subject, operator, manual reviewed evidence | One guarded extension record after remote verified completion | Late/foreign provider callback rejected | Bank scheduler/admin race cannot double apply | manual: real_renewal_operator_before_bank_cron_one_remote_effect and day/volume equivalents — PASS(S) |
+| M14 Provider-neutral service edits | Paid renewal, days/volume via gateway, wallet, reviewed receipt or bank Cron | Authenticated account readback with absolute applied expiry and quota before confirmed local accounting/terminal payment state | Future panel denied until an adapter proves its effect; bounded one absolute correction after strict original-state readback | No duplicate relative edit/reset, no false success on reply loss, no-op 2xx, changed target, competing edits, incomplete local SQL or stale Cron | Native actual HTTP/SQL service edits (12+ scenarios) and native actual bank scheduler + finisher (7+ scenarios) — PASS(S); installed post-crash unattended reconciliation still GATED |
 | W01 Customer wallet spending | Unique customer, positive amount, no active external attempt | Guarded debit, never create or worsen customer debt | Only post-claim status confirms payment | Nonpositive/insufficient/cached action denied | manual: wallet_spend_invalid_walletnegative_no_financial_effect, cached_wallet_button_blocked_after_bank_transfer — PASS(S) |
 | W02 Customer-to-customer transfer | Two distinct unique user identities and genuine one-use transfer step | Both wallet effects and step consumption commit atomically; signed debt protected | Persian transfer result or safe deferred notice | SQL/lost COMMIT/no recipient/overflow: no blind retry | post-V9 wallet_transfer_scenarios — PASS(S) |
 | W03 Administrator debit/debt | Authorized administrator, reason, separately gated 005 audit | Durable actor/reason adjustment, negative debt allowed; customer cannot deepen | Correct admin audit and status without source secrets | Repeated action, lost response and rollback must not duplicate debt | post-V9 admin_wallet_adjustment_scenarios — PASS(S); installed 005 activation GATED |
@@ -78,9 +86,15 @@ effect must atomically own ALL purchased server capacity **before remote
 CREATE**. Assert insufficient 2-request/1-slot produces zero CREATE and
 no local orders/refund claim; exact 2/2 creates only twice with exactly
 two held units; separate buyers, hosted/manual shared-InnoDB contention
-cannot overbook; manual BUY_SUB's payment-scoped ordinal-0 manual_hold
-is committed in its original reservation/claim transaction, then consumed
-by first CREATE with no second decrement; missing hold fails before POST.
+cannot overbook; standard and custom manual BUY_SUB payment-scoped
+ordinal-0 manual_hold are committed in the original reservation/claim
+transaction, consumed by first CREATE without a second decrement.
+A missing hold fails before POST. Wallet-funded BUY_SUB instead commits
+one ordinal-0 wallet_hold inside the wallet debit claim. In both held
+methods CREATE rows reserve ZERO extra; SUM(payment reserved_count) equals
+exactly the paid quantity rather than double-counting. Custom manual SQL
+hold failure rolls back the claim/slots without remote CREATE and permits
+safe reapproval ONLY if original state remains have_sent.
 Lost second CREATE keeps all units and operation identities for operator
 review; failed first hosted effect INSERT or manual hold INSERT rolls capacity
 back; callback replay and local order-link failure never create or debit again. Missing or
@@ -221,12 +235,58 @@ Issues #26 and #51 remain OPEN.
 ## Issue #26 per-account identity: staged source-only acceptance
 
 The new additive `007_service_effects.sql` and
-`src/Finance/ServiceEffects.php` provide the first **BUY_SUB-only**
-postpayment remote-effect journal. They are not a generic service/wallet
-transaction framework and are not a reconciliation autopilot. No account
+`src/Finance/ServiceEffects.php` provide the first **BUY_SUB CREATE** journal. The unmerged Option A
+R1/R4 source candidate extends that same 007 ledger to wallet-funded
+BUY_SUB and authenticated unpaid free-trial/admin bulk CREATE, and
+stages a separate 008 referral award table. It does **not** provide
+generic service-edit transactions, distributed exactly-once execution,
+automatic compensation, or unattended recovery. No account
 count, deltas in counts, or absence in a remote users listing is admissible
 as delivery proof. A current 404 after a possible prior creation/deletion
 also cannot authorize reissue.
+
+For the separate bank-Cron BUY_SUB path, run
+python3 tools/test_post_v9_bank_buy.py --run-disposable and the full
+tools/check_post_v9.py. The real Cron PHP route on disposable MariaDB must
+prove nonterminal receipt claim, exact per-line remote readback, atomic local
+order/effect/capacity/payment finality, no pre-COMMIT Telegram, no blind
+retries or speculative wallet refunds. Test cases include competing workers,
+partial multi-account, lost POST, 409, invalid readback, local SQL failure,
+nonbank receipts, the admin-only payment/user/amount/count review context
+for unknown effects or SQL failure, a separate MariaDB plan-template edit
+**after verified CREATE but before local finalization** (standard and custom
+quoted days/GB remain exactly delivered and the order still commits), and a
+physical-target edit in the same interval (still fails closed with no order
+or second CREATE). The first completed 007 line pins the original service
+limits; the finalizer may not reauthorize them from mutable plan days/volume.
+The original payment plan/server/provider/inbound identity remains enforced
+under lock. Tests also cover post-COMMIT Telegram failure or
+uncertain delivery with operator notice but no account recreation. The earlier bank-Cron-only candidate used 95 source members; the current
+recovery-enhanced package uses 97, while historical V9 92-member source stays frozen.
+Independent review and separately approved installed acceptance remain GATED.
+
+The independent **owner-private read-only recovery workbench** is verified
+by python3 tools/test_post_v9_recovery_inspection.py --run-disposable
+and is mandatory in the full post-V9 gate. Inspect the actual
+src/Finance/Routes/ManualReceipts.php callback while connected to an
+owned MariaDB fixture, including owner **and** chat authentication,
+12-row payment and ordinal paging, exact immutable ledger/target/note
+identity before one strictly authenticated Marzban GET, and invalid or
+changed target/post-GET data. No other Telegram user may see the report;
+failed queries expose no private payment or customer data. No code may
+convert a 404, absent ledger, missing unique index, order deletion,
+partial multiple accounts or matching readback into an automatic service
+CREATE, paid/refunded transition or customer success. Remote 404 is NOT
+proof of remote non-execution. The source package now has 97 current members including
+RecoveryInspection.php and RecoveryTransport.php, but no schema is installed
+automatically. The strict read adapter pins physical URL, credentials and
+observed authentication IP across login and GET, rejects redirects, and
+fails closed for non-loopback HTTP. It is additionally covered by the
+loopback-only real-curl acceptance tool
+tools/test_post_v9_recovery_transport.py. The workbench shows precise
+per-ordinal operation/effect/order IDs, missing journal entries and
+current-only account-count assurance; each callback receives at most one
+ACK and an owner-private uncertainty outcome after any post-GET failure. **Actual installed owner-operator review remains NOT TESTED.**
 
 Execute `python3 tools/test_post_v9_service_effects.py --run-disposable`:
 native PHP 8.1/8.4 and disposable MariaDB must prove unique
@@ -242,6 +302,41 @@ wrong unique index** must block new POST without silently reverting to an
 unjournaled fallback. Loopback HTTP covers strict readback and authentication
 failures without contacting any installed panel.
 The aggregate `tools/check_post_v9.py` includes these cases as mandatory.
+
+The R1/R4 Option A **source-only** acceptance additionally requires:
+- Full-count guarded capacity reservation before any paid or unpaid CREATE;
+  two competing payments with only one slot, absent/insufficient capacity,
+  unknown POST/GET, second-line failures and SQL rollback must never
+  cause oversubscription, double-decrement or a blind retry.
+- The real Checkout.php custom and multi-account Wallet BUY_SUB routes,
+  each original order linked exactly once, with post-COMMIT QR and
+  owner-visible uncertain notification recovery; no silent reissue.
+- The **actual WalletSettlement** handler with a single committed
+  wallet-debit + `processing_wallet` + `wallet_hold` +
+  capacity barrier, including concurrent callbacks, stale authorization,
+  remote uncertainty, local failure, missing 007 and negative controls
+  before any debit; not a synthetic money callback.
+- Actual private Telegram free-trial and admin bulk handlers: immutable
+  source update, actor/role checking, one normal-user trial, unique batch
+  ordinal and local linked orders, last-slot concurrency, partial failure
+  and no duplicate customer delivery after uncertainty.
+- R4 exactly one referral credit per terminal **non-wallet** fully linked
+  BUY_SUB, signed debt-offset arithmetic, disabled-policy snapshot,
+  SQL failure/unknown confirmation, identity and provider-readback
+  checks and no re-credit after a lost Telegram notification.
+- Owner-private recovery of pending wallet debit/slot holds even before
+  CREATE ordinal 1, without GET on an unissued remote username and
+  without writing payment, account or financial state.
+
+**Mandatory operational gates remain open:** neither 007 nor 008 was
+installed on a real tenant by this work; a previous installed 007 is
+**not** eligible for silent replacement by the revised 007 CREATE SQL.
+Review exact DDL and data before designing any forward-only migration.
+Perform independently authorized backup+restore, synthetic operator
+acceptance and disposable remote/provider validation. Neither CI nor
+source tests certify actual merchant funds, customer delivery or
+distributed exactly-once processing. See FINANCIAL-CONSOLIDATION.md
+for the contract, retained unknown states and rollback limitations.
 Independent review of PR #67 exact older candidate `97bcdbd` found two REQUIRED timing holes:
 original `pays.server_id` was not compared during payment-row-locked reservation,
 and final order linkage did not revalidate the pinned physical Marzban endpoint/group.
@@ -270,6 +365,6 @@ Real standard manual approval and hosted payment suites also assert their
 actual per-line ledger states (`verified` without order for partial
 manuals; `local_recorded` only for checked order persistence). Source
 success does not certify installed Marzban behavior, live provider
-settlement or Telegram delivery. See FINANCIAL-CONSOLIDATION.md for the
-precise unprotected legacy/non-BUY_SUB routes and Owner test gate. Keep
+settlement or Telegram delivery. See FINANCIAL-CONSOLIDATION.md for non-CREATE effect limitations,
+installed operation boundaries, and the separate Owner test gate. Keep
 Issues #26 and #51 open through separate installed acceptance.

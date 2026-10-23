@@ -5,6 +5,12 @@
 ## State and payment identity
 
 Every order keeps its original pays ID, hash, owner, amount and type. The existing payment_attempts table (migration 003) is the authoritative claim/evidence for hosted invoices and manual transfer receipts. A Telegram button is presentation only: removing it can never settle, refund, delete or cancel an external provider claim.
+For new bank-transfer BUY_SUB invoices, proposed and separately deployed 009
+additionally records the exact original purchase and 003 bank-attempt identity
+atomically at method selection, before displaying transfer instructions.
+Any existing 003-backed bank purchase without authentic issued 009 evidence
+requires operator reconciliation, not retroactive reconstruction by Cron.
+
 
 States are awaiting_payment, receipt_review, needs_review, payment_recorded, expired and declined. In particular, payment_recorded DOES NOT prove Marzban service delivery or an actual wallet credit. Keep separate financial evidence and conservative Persian customer copy. Existing Persian/RTL responsive PaymentPage.php handles browser returns.
 

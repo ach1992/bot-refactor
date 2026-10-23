@@ -73,7 +73,11 @@ $GLOBALS['fake_marzban_raw'] = $spec['marzban_raw'] ?? null;
 $GLOBALS['fake_marzban_transport_failure'] = $spec['marzban_transport_failure'] ?? false;
 $GLOBALS['fake_marzban_reset_http'] = $spec['marzban_reset_http'] ?? 200;
 $GLOBALS['fake_marzban_username'] = $spec['marzban_username'] ?? 'syntheticMarzban';
+$GLOBALS['fake_marzban_applied'] = null;
+$GLOBALS['fake_marzban_used'] = 1073741824;
 $GLOBALS['fake_renew_success'] = $spec['renew_success'] ?? false;
+$GLOBALS['fake_renew_applied_expire']=$spec['renew_applied_expire']??null;
+$GLOBALS['marzban_edit_drift_order_id']=(int)($spec['marzban_edit_drift_order_id']??0);
 $GLOBALS['fake_remote_exit'] = $spec['remote_exit'] ?? false;
 $GLOBALS['inspect_hosted_pay_id'] = (int)($spec['pay_row_id'] ?? 0);
 // Script only the outbound Marzban create+QR boundaries for the 2-account
@@ -139,6 +143,16 @@ function sendMessage(...$args) {
     }
     return (object)['ok'=>!$GLOBALS['fake_alert_send_failure']];
 }
+// The installed bot normally defines this in config.php. This isolated
+// finance fixture deliberately does not load production configuration.
+function editMarzbanConfig($id,$change) {
+    // Production config.php exposes a global compatibility facade for the
+    // namespaced provider; keep the real namespaced adapter under test.
+    global $root;
+    require_once $root.'/src/Panel/Accounts.php';
+    return \AchBot\Panel\Accounts\editMarzbanConfig($id,$change);
+}
+function achbotSupportsPanel($type) { return $type==='marzban'; }
 function Bot($method, $args=[]) {
     $GLOBALS['events'][]=['name'=>'Bot','method'=>$method];
     return (object)['ok'=>true,'result'=>(object)[
@@ -184,7 +198,10 @@ function renewConfigOnServer(...$args) {
         // the claimed DB transaction remains committed for the next worker.
         exit(0);
     }
-    return (object)['success'=>$GLOBALS['fake_renew_success']];
+    return (object)['success'=>$GLOBALS['fake_renew_success'],
+                    'verified'=>$GLOBALS['fake_renew_success'],
+                    'applied_expire'=>(int)($GLOBALS['fake_renew_applied_expire']??(time()+30*86400)),
+                    'applied_bytes'=>10*1073741824];
 }
 function delMessage() {
     $GLOBALS['events'][]=['name'=>'delMessage'];
@@ -339,12 +356,22 @@ function curl_exec($handle) {
     if (str_contains($handle->url, '/api/user/') &&
         str_ends_with($handle->url, '/reset')) {
         if ($GLOBALS['fake_marzban_reset_http'] !== 200) return '{"detail":"reset rejected"}';
+        $GLOBALS['fake_marzban_used']=0;
         return json_encode(['username'=>$GLOBALS['fake_marzban_username']]);
     }
     if (str_contains($handle->url, '/api/user/') && $handle->method==='PUT') {
         if ($GLOBALS['fake_marzban_transport_failure']) return false;
         if ($GLOBALS['fake_marzban_raw'] !== null) return $GLOBALS['fake_marzban_raw'];
         $post=json_decode($handle->fields ?? '{}',true);
+        if ($GLOBALS['fake_marzban_http']===200)
+            $GLOBALS['fake_marzban_applied']=$post;
+        if ($GLOBALS['marzban_edit_drift_order_id']>0) {
+            $orderId=$GLOBALS['marzban_edit_drift_order_id'];
+            $GLOBALS['marzban_edit_drift_order_id']=0;
+            $stmt=$GLOBALS['connection']->prepare(
+                'UPDATE orders_list SET expire_date=expire_date+9 WHERE id=?');
+            $stmt->bind_param('i',$orderId);$stmt->execute();$stmt->close();
+        }
         return json_encode([
             'username'=>$GLOBALS['fake_marzban_username'],
             'expire'=>$post['expire'] ?? 0,
@@ -353,10 +380,12 @@ function curl_exec($handle) {
         ]);
     }
     if (str_contains($handle->url, '/api/user/')) {
+        $applied=$GLOBALS['fake_marzban_applied'];
         return json_encode([
             'username'=>$GLOBALS['fake_marzban_username'],
-            'expire'=>time()+86400,
-            'data_limit'=>1073741824,
+            'expire'=>$applied['expire']??(time()+86400),
+            'data_limit'=>$applied['data_limit']??1073741824,
+            'used_traffic'=>$GLOBALS['fake_marzban_used'],
             'inbounds'=>['vless'=>['fake-inbound']],
             'proxies'=>['vless'=>new stdClass()],
             'note'=>'fixture',
@@ -1465,19 +1494,21 @@ def main():
 
         # Owner case inbox keyset: thirteen-plus genuinely evidenced reviews
         # must remain reachable, even when several share updated_at seconds.
-        # The funded cases sort ahead of the pre-existing alert fixtures.
-        # Freeze ONE database time for every row: 15 separate NOW() calls can
-        # cross a real second boundary and make the "same-second" fixture
-        # intermittently false even when pagination is completely correct.
-        fixed_stamp=sql(work,env,
+        # Pin ONE DB timestamp for all writes. Multiple NOW() queries can
+        # cross a second boundary on slow CI runners, accidentally splitting
+        # the intended same-second pagination group without a product bug.
+        anchor=sql(work,env,
             "SELECT DATE_FORMAT(DATE_ADD(NOW(),INTERVAL 1 HOUR),"
-            "'%Y-%m-%d %H:%i:%s')")
+            "'%Y-%m-%d %H:%i:%s')").strip()
+        if not re.fullmatch(r'[0-9]{4}-[0-9]{2}-[0-9]{2} '
+                            r'[0-9]{2}:[0-9]{2}:[0-9]{2}',anchor):
+            raise RuntimeError('Case page DB timestamp fixture invalid')
         for n in range(15):
             name=f'np-inbox-page-{n:02d}'
             seed_np_attempt(work,env,name,name+'-invoice',name+'-primary')
             sql(work,env,"UPDATE payment_attempts SET stage='review',"
                 "provider_status='fulfillment_unconfirmed',"
-                f"updated_at=DATE_SUB('{fixed_stamp}',"
+                f"updated_at=DATE_SUB('{anchor}',"
                 f"INTERVAL {n//5} SECOND) WHERE order_hash='{name}'")
             sql(work,env,"INSERT INTO payment_transactions "
                 "(attempt_id,provider,payment_id,observed_status) "
@@ -2630,6 +2661,82 @@ def main():
                     raise RuntimeError('Malformed SOAP code lacked review state '+label)
             records.append(dict(case='zarinpal_strict_status_'+label,
                                 pass_=True,external_requests=1,real_provider_requests=0))
+
+        # R7 hosted day extension: real payment transition, real SQL helper,
+        # real Marzban adapter (mocked curl); exact order primary-key CAS
+        # from BEFORE the remote edit. A failed SQL finalization holds paid
+        # review, without replay, compensation or false customer completion.
+        sql(work,env,"INSERT INTO increase_day (id,volume,price) VALUES "
+                     "(9971,7,100) ON DUPLICATE KEY UPDATE volume=7,price=100")
+        for label,provider,mode,nonthrowing in (
+            ('verified','nextpay','success',False),
+            ('sql_throwing','nextpay','sql_fault',False),
+            ('sql_permissive','zarinpal','sql_fault',True),
+            ('concurrent_order_drift','zarinpal','stale',False),
+        ):
+            name='r7-hosted-day-'+label
+            sql(work,env,"INSERT INTO orders_list "
+                "(userid,token,transid,fileid,server_id,inbound_id,remark,uuid,"
+                "protocol,expire_date,link,amount,status,date) VALUES "
+                f"(1001,'r7-token','',7,2,0,'syntheticMarzban','r7-{label}',"
+                "'vless',2000000000,'[]',100,1,'fixture')")
+            order_id=int(sql(work,env,
+                f"SELECT id FROM orders_list WHERE uuid='r7-{label}' ORDER BY id DESC LIMIT 1"))
+            seed_payment(work,env,name,f'INCREASE_DAY_{order_id}_9971',
+                         7,2,name+'-invoice')
+            sql(work,env,f"UPDATE pays SET order_id={order_id} WHERE hash_id='{name}'")
+            sql(work,env,
+                "INSERT INTO payment_attempts "
+                "(pay_row_id,provider,order_hash,provider_reference,checkout_url,"
+                "quote_amount,quote_currency,local_amount_toman,stage) "
+                f"SELECT id,'{provider}',hash_id,payid,'https://fixture.invalid/{name}',"
+                f"price,'toman',price,'pending' FROM pays WHERE hash_id='{name}'")
+            payid=int(sql(work,env,
+                f"SELECT id FROM pays WHERE hash_id='{name}'").strip())
+            wallet_before=sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip()
+            audit_before=int(sql(work,env,'SELECT COUNT(*) FROM increase_order'))
+            if mode=='sql_fault':
+                sql(work,env,"CREATE TRIGGER achbot_r7_hosted_fail BEFORE UPDATE "
+                    "ON orders_list FOR EACH ROW SIGNAL SQLSTATE '45000' "
+                    "SET MESSAGE_TEXT='fixture postremote SQL failure'")
+            started=int(clock.time())
+            try:
+                result=run_php(work,env,stage,dict(route='do_action',get={},
+                    pay_row_id=payid,provider=provider,
+                    marzban_edit_drift_order_id=order_id if mode=='stale' else 0,
+                    mysqli_report_off=nonthrowing,
+                    expect_local_error=(mode!='success')))
+            finally:
+                if mode=='sql_fault':
+                    sql(work,env,'DROP TRIGGER achbot_r7_hosted_fail')
+            completed=int(clock.time())
+            outcome=[e['result'] for e in result['events'] if e['name']=='do_action_result']
+            expected_result='delivered' if mode=='success' else 'ambiguous'
+            assert outcome==[expected_result],(name,outcome,result['events'])
+            assert sql(work,env,f'SELECT state FROM pays WHERE id={payid}').strip()=='paid'
+            attempt=sql(work,env,
+                f"SELECT stage,provider_status FROM payment_attempts WHERE pay_row_id={payid}").strip()
+            assert attempt==(
+                'done	delivered' if mode=='success' else 'review	fulfillment_started'),(name,attempt)
+            assert sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip()==wallet_before
+            assert int(sql(work,env,'SELECT COUNT(*) FROM increase_order'))==audit_before+(mode=='success')
+            expire=int(sql(work,env,
+                f'SELECT expire_date FROM orders_list WHERE id={order_id}'))
+            if mode=='success':
+                # Marzban fake baseline: now+1 day; +7 days purchased.
+                assert started+8*86400<=expire<=completed+8*86400+2,(name,expire,started,completed)
+                assert expire!=2000000000+7*86400
+            elif mode=='stale':
+                assert expire==2000000009,(name,expire)
+            else:
+                assert expire==2000000000,(name,expire)
+            replay=run_php(work,env,stage,dict(route='do_action',get={},
+                pay_row_id=payid,provider=provider))
+            assert not any('/api/user/' in url and
+                '/reset' not in url for url in replay['network_calls']),name
+            assert int(sql(work,env,'SELECT COUNT(*) FROM increase_order'))==audit_before+(mode=='success')
+            records.append(dict(case='r7_hosted_day_'+label+'_atomic_remote_absolute_no_replay',
+                                pass_=True,real_provider_requests=0))
 
         # Execute the ACTUAL Marzban PHP PUT adapter, not a substitute
         # success flag: only a 2xx parsed UserResponse matching requested
@@ -3832,11 +3939,13 @@ def main():
                     for n,row in enumerate(effect_rows)
                 ):
                     raise RuntimeError('O2 durable distinct effect rows mismatch: '+repr(effect_rows))
+                # Full quantity is held BEFORE first remote POST even when
+                # account N fails. No capacity rearm from an unknown effect.
                 expected_capacity=initial_capacity-2
                 held=sql(work,env,f"SELECT COALESCE(SUM(reserved_count),0) FROM "
                     f"service_effects WHERE pay_row_id={pay_id}").strip()
                 if held!='2':
-                    raise RuntimeError('O2 paid quantity not recorded before first CREATE: '+str(held))
+                    raise RuntimeError('O2 predispatch reservation not durable: '+str(held))
                 if (len(local_orders)!=expected_order_count or
                     len(set(local_orders))!=expected_order_count or
                     state!=want_stage or
@@ -3865,6 +3974,54 @@ def main():
                     full_count_held_before_create=True,
                     requires_operator_review=label=='partial'))
                 sql(work,env,"UPDATE server_info SET ucount=20 WHERE id=2")
+
+        # Review R2: run the ACTUAL hosted callback/CREATE and integer-bound
+        # insertOrder path for nondivisible paid prices, not only a helper.
+        for provider,price,count,expected in (
+            ('nextpay',100,3,'34,33,33'),
+            ('zarinpal',101,2,'51,50')
+        ):
+            name=f'r2-hosted-{provider}-{price}-{count}'
+            seed_payment(work,env,name,'BUY_SUB',7,2,name+'-invoice')
+            sql(work,env,f"UPDATE pays SET price={price},agent_count={count},"
+                f"description='r2alloc{price}{count}' WHERE hash_id='{name}'")
+            sql(work,env,"INSERT INTO payment_attempts "
+                "(pay_row_id,provider,order_hash,provider_reference,"
+                "quote_amount,quote_currency,local_amount_toman,stage) "
+                f"SELECT id,'{provider}',hash_id,'{name}-invoice',"
+                f"price,'toman',price,'pending' FROM pays WHERE hash_id='{name}'")
+            pay_id=int(sql(work,env,f"SELECT id FROM pays WHERE hash_id='{name}'"))
+            sql(work,env,f'UPDATE server_info SET ucount={count} WHERE id=2')
+            before_wallet=sql(work,env,"SELECT wallet FROM users WHERE userid=1001").strip()
+            outcome=run_php(work,env,stage,dict(route='do_action',get={},
+                provider=provider,pay_row_id=pay_id,
+                scripted_marzban_creates=['success']*count))
+            posted=[x for x in outcome['events'] if x['name']=='marzban_create_attempt']
+            assert len(posted)==count,(name,outcome)
+            assert all(e['held_at_post']==count for e in posted),posted
+            recorded=sql(work,env,
+                'SELECT GROUP_CONCAT(o.amount ORDER BY e.ordinal SEPARATOR ",") '
+                'FROM orders_list o JOIN service_effects e ON e.order_id=o.id '
+                f'WHERE e.pay_row_id={pay_id} AND e.effect_kind="create"').strip()
+            summed=sql(work,env,
+                'SELECT COALESCE(SUM(o.amount),0) FROM orders_list o '
+                'JOIN service_effects e ON e.order_id=o.id '
+                f'WHERE e.pay_row_id={pay_id} AND e.effect_kind="create"').strip()
+            assert recorded==expected and summed==str(price),(name,recorded,summed)
+            assert sql(work,env,
+                f"SELECT stage FROM payment_attempts WHERE pay_row_id={pay_id}").strip()=='done'
+            assert sql(work,env,
+                f"SELECT state FROM pays WHERE id={pay_id}").strip()=='paid'
+            assert sql(work,env,"SELECT wallet FROM users WHERE userid=1001").strip()==before_wallet
+            assert sql(work,env,'SELECT ucount FROM server_info WHERE id=2').strip()=='0'
+            replay=run_php(work,env,stage,dict(route='do_action',get={},
+                provider=provider,pay_row_id=pay_id,
+                scripted_marzban_creates=['success']*count))
+            assert not any(e['name']=='marzban_create_attempt' for e in replay['events']),replay
+            records.append(dict(case=f'r2_exact_hosted_{provider}_{price}_{count}_no_replay',
+                pass_=True,original_amount=price,order_total=int(summed),
+                real_provider_requests=0))
+            sql(work,env,'UPDATE server_info SET ucount=20 WHERE id=2')
 
         # A post-create identity mismatch must roll back the local order and
         # effect link in ONE transaction. The remote uncertainty is not
