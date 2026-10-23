@@ -388,11 +388,21 @@ function editMarzbanConfig($server_id,$info){
                                ['options'=>['min_range'=>0]]);
             return $parsed===false?null:$parsed;
         };
+        // Marzban stores unlimited quota as NULL and may return it as JSON
+        // null even when the requested absolute byte limit was zero.
+        // Only an explicitly present null is unlimited: missing fields and
+        // malformed finite values remain unverified.
+        $remoteQuota=static function(?object $account) use ($remoteInteger): ?int {
+            if ($account===null || !property_exists($account,'data_limit'))
+                return null;
+            return $account->data_limit===null
+                ? 0 : $remoteInteger($account->data_limit);
+        };
         $current=getMarzbanUser($server_id,$remark,$token,true,$panelUrl);
         if (!is_object($current) || (string)($current->username??'')!==$remark ||
-            !isset($current->expire,$current->data_limit) ||
+            !isset($current->expire) ||
             $remoteInteger($current->expire)===null ||
-            $remoteInteger($current->data_limit)===null ||
+            $remoteQuota($current)===null ||
             !isset($current->inbounds,$current->proxies,
                     $current->status,$current->data_limit_reset_strategy) ||
             !is_string($current->status) ||
@@ -456,7 +466,7 @@ function editMarzbanConfig($server_id,$info){
             return (int)$number;
         };
         $oldExpire=$remoteInteger($current->expire);
-        $oldVolume=$remoteInteger($current->data_limit);
+        $oldVolume=$remoteQuota($current);
         // The current orders_list.expire_date is a SIGNED INT (32-bit).
         // Even a valid remote 64-bit timestamp cannot be marked locally
         // complete if it exceeds the published original schema contract.
@@ -486,15 +496,15 @@ function editMarzbanConfig($server_id,$info){
         // operator race; Marzban offers no atomic If-Match/CAS for this API.
         $preEffect=function(bool $afterReset=false) use (
             $isPinned,$server_id,$remark,$token,$panelUrl,$remoteInteger,
-            $oldExpire,$oldVolume,$configuration,$baseline,
+            $oldExpire,$oldVolume,$remoteQuota,$configuration,$baseline,
             $targetConfiguration,$canReactivate): ?string {
             if (!$isPinned()) return 'marzban_target_changed';
             $fresh=getMarzbanUser($server_id,$remark,$token,true,$panelUrl);
             if (!$isPinned() || !is_object($fresh) ||
                 (string)($fresh->username??'')!==$remark ||
-                !isset($fresh->expire,$fresh->data_limit) ||
+                !isset($fresh->expire) ||
                 $remoteInteger($fresh->expire)!==$oldExpire ||
-                $remoteInteger($fresh->data_limit)!==$oldVolume)
+                $remoteQuota($fresh)!==$oldVolume)
                 return 'marzban_pre_effect_unverified';
             if (isset($fresh->next_plan))
                 return 'marzban_next_plan_requires_review';
@@ -511,6 +521,12 @@ function editMarzbanConfig($server_id,$info){
         };
 
         if (isset($info['plus_volume'])) {
+            // Adding quota to an already unlimited subscription would
+            // accidentally DOWNGRADE it to a finite quota. Do not silently
+            // fulfill a paid increment with less service than before.
+            if ($oldVolume===0)
+                return (object)['success'=>false,'uncertain'=>false,
+                                'msg'=>'marzban_unlimited_volume_extension'];
             $extra=$wholeUnits($info['plus_volume'],intdiv(PHP_INT_MAX,1073741824));
             if ($extra===null || $extra<=0 || $extra>intdiv(PHP_INT_MAX,1073741824) ||
                 $volume>PHP_INT_MAX-$extra*1073741824)
@@ -535,10 +551,10 @@ function editMarzbanConfig($server_id,$info){
             if (!$isPinned() || !is_object($afterReset) ||
                 ($afterReset->username??'')!==$remark ||
                 !property_exists($afterReset,'used_traffic') ||
-                !isset($afterReset->expire,$afterReset->data_limit) ||
+                !isset($afterReset->expire) ||
                 $remoteInteger($afterReset->used_traffic)!==0 ||
                 $remoteInteger($afterReset->expire)!==$oldExpire ||
-                $remoteInteger($afterReset->data_limit)!==$oldVolume ||
+                $remoteQuota($afterReset)!==$oldVolume ||
                 ($configuration($afterReset)!==$baseline &&
                  (!$canReactivate ||
                   $configuration($afterReset)!==$targetConfiguration))) {
@@ -569,7 +585,7 @@ function editMarzbanConfig($server_id,$info){
         if ($json===false)
             return (object)['success'=>false,'uncertain'=>true,'msg'=>'marzban_encode_failure'];
 
-        $put=function() use ($panelUrl,$remark,$token,$json,$expire,$volume,$remoteInteger): array {
+        $put=function() use ($panelUrl,$remark,$token,$json,$expire,$volume,$remoteInteger,$remoteQuota): array {
             $curl=curl_init();
             curl_setopt($curl,CURLOPT_URL,$panelUrl.'/api/user/'.rawurlencode($remark));
             curl_setopt($curl,CURLOPT_RETURNTRANSFER,true);
@@ -597,31 +613,31 @@ function editMarzbanConfig($server_id,$info){
             $reply=json_decode((string)$raw);
             $valid=is_object($reply) && !isset($reply->detail) &&
                 (string)($reply->username??'')===$remark &&
-                isset($reply->expire,$reply->data_limit) &&
+                isset($reply->expire) &&
                 $remoteInteger($reply->expire)===$expire &&
-                $remoteInteger($reply->data_limit)===$volume;
+                $remoteQuota($reply)===$volume;
             // A malformed 2xx body is not proof of remote failure or success.
             // If exact GET still shows the original state, one identical
             // absolute PUT is safe; never replay a relative increment.
             return ['valid'=>$valid,'retryable'=>!$valid];
         };
-        $read=function() use ($server_id,$remark,$token,$isPinned,$remoteInteger,$panelUrl): ?object {
+        $read=function() use ($server_id,$remark,$token,$isPinned,$remoteInteger,$remoteQuota,$panelUrl): ?object {
             if (!$isPinned()) return null;
             $observed=getMarzbanUser($server_id,$remark,$token,true,$panelUrl);
             if (!$isPinned() || !is_object($observed) ||
                 (string)($observed->username??'')!==$remark ||
-                !isset($observed->expire,$observed->data_limit) ||
+                !isset($observed->expire) ||
                 $remoteInteger($observed->expire)===null ||
-                $remoteInteger($observed->data_limit)===null)
+                $remoteQuota($observed)===null)
                 return null;
             return $observed;
         };
         $matches=function(?object $observed,int $wantExpire,int $wantVolume,
                           bool $requested=false)
-            use ($remoteInteger,$configuration,$baseline,$targetConfiguration): bool {
+            use ($remoteInteger,$remoteQuota,$configuration,$baseline,$targetConfiguration): bool {
             return $observed!==null &&
                 $remoteInteger($observed->expire)===$wantExpire &&
-                $remoteInteger($observed->data_limit)===$wantVolume &&
+                $remoteQuota($observed)===$wantVolume &&
                 $configuration($observed)===($requested?$targetConfiguration:$baseline);
         };
 

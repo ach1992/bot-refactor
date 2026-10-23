@@ -141,6 +141,7 @@ if (($spec['mysqli_report_off']??false)===true) mysqli_report(MYSQLI_REPORT_OFF)
 $from_id=(int)($spec['actor']??1001);
 $chat_id=$from_id;
 $admin=9001;$botUsername='FixtureBot';$message_id=111;$time=1800000000;
+$first_name='Fixture';$username='synthetic_user';
 $callbackId='fixture-callback';
 $data=(string)($spec['data']??'');
 $text=$spec['text']??'';
@@ -157,7 +158,7 @@ $USDTPrice='100000';$USDTPriceagent='110000';
 $botState=array_replace([
     'cartToCartState'=>'on','giftCardState'=>'on','manualUsdtState'=>'on',
     'nowPaymentWallet'=>'off','zarinpal'=>'off','nextpay'=>'off',
-    'tronWallet'=>'off'], $spec['states']??[]);
+    'tronWallet'=>'off','rewardChannel'=>''], $spec['states']??[]);
 $paymentKeys=$spec['keys']??[
     'manualUsdtWalletTRC20'=>'TNPeeaaFB7K9cmo4uQpcU32zGK8G1NYqeL',
     'manualUsdtWalletERC20'=>'0x'.str_repeat('2',40),
@@ -171,6 +172,7 @@ $paymentKeys=$spec['keys']??[
 require $root.'/settings/values.php';
 require $root.'/src/Finance/ReceiptHelpers.php';
 function achbotSupportsPaymentSubject(...$args){return true;}
+function achbotFinanceDiagnosticReason(Throwable $e){return get_class($e);}
 $GLOBALS['events']=[];
 register_shutdown_function(static function(){
     echo json_encode(['events'=>$GLOBALS['events'],'fatal'=>error_get_last()], JSON_THROW_ON_ERROR |
@@ -352,10 +354,20 @@ function decreaseServerCapacity(...$args){
 }
 function editMarzbanConfig(...$args){
     $GLOBALS['events'][]=['name'=>'remote_edit'];
-    if (($GLOBALS['spec']['remote_mode']??'success')==='uncertain')
+    $mode=$GLOBALS['spec']['remote_mode']??'success';
+    if ($mode==='uncertain')
         throw new RuntimeException('fixture_remote_result_unknown');
+    if ($mode==='reported_failure')
+        return (object)['success'=>false,'uncertain'=>true];
+    if ($mode==='stale_order') {
+        $id=(int)($GLOBALS['spec']['edit_order_id']??0);
+        $stmt=$GLOBALS['connection']->prepare(
+            'UPDATE orders_list SET expire_date=expire_date+13 WHERE id=?');
+        $stmt->bind_param('i',$id);$stmt->execute();$stmt->close();
+    }
     return (object)['success'=>true,'verified'=>true,
-        'applied_expire'=>1800000100,'applied_bytes'=>3*1073741824];
+        'applied_expire'=>(int)($GLOBALS['spec']['service_applied_expire']??1800000100),
+        'applied_bytes'=>3*1073741824];
 }
 require_once $root.'/src/Purchase/Core.php';
 $GLOBALS['spec']=$spec;
@@ -407,12 +419,14 @@ def run_route(work,env,driver,data='',step='none',actor=1001,update=None,route='
               photo_mode='success',remote_mode='success',qr_transport='',text='',
               keys=None,states=None,bot_reply_message_id=None,message_transport='',message_edit_transport='',
               pause_before_insert_ms=0,expected_review=False,expected_warning=None,
-              mysqli_report_off=False):
+              mysqli_report_off=False,service_applied_expire=None,edit_order_id=None):
     spec={'data':data,'step':step,'actor':actor,'route':route,
           'photo_mode':photo_mode,'remote_mode':remote_mode,'qr_transport':qr_transport,'text':text,
           'message_transport':message_transport,'message_edit_transport':message_edit_transport,
           'pause_before_insert_ms':pause_before_insert_ms,
           'mysqli_report_off':mysqli_report_off}
+    if service_applied_expire is not None: spec['service_applied_expire']=service_applied_expire
+    if edit_order_id is not None: spec['edit_order_id']=edit_order_id
     if bot_reply_message_id is not None:
         spec['bot_reply_message_id']=bot_reply_message_id
     elif route=='topup':
@@ -1151,6 +1165,9 @@ def check():
             ('extension','approveIncreaseVolume',f'INCREASE_VOLUME_{service_oid}_902','volume'),
         ]:
             key='adminfirst'+guard
+            # Independent synthetic remote cases cannot share a stale local
+            # expiry left by the preceding successful callback.
+            query(work,env,f'UPDATE orders_list SET expire_date=2000000000 WHERE id={service_oid}')
             service_pay(key,subject=subject,method='bank_transfer')
             query(work,env,"UPDATE pays SET plan_id=7,server_id=2,order_id="+str(service_oid)+
                   ",price=100 WHERE hash_id='"+key+"'")
@@ -1159,9 +1176,134 @@ def check():
             assert [event['name'] for event in result].count('remote_edit')==1,repr((key,result))
             assert query(work,env,"SELECT state FROM pays WHERE hash_id='"+key+"'")=='approved',repr((key,result))
             assert int(query(work,env,'SELECT COUNT(*) FROM increase_order'))==before+1
+            if guard=='day':
+                assert int(query(work,env,f'SELECT expire_date FROM orders_list WHERE id={service_oid}'))==1800000100, ('day_expiry_not_remote',key)
             assert base(key,'bank_auto_claim') is False
             reject_service(key,route,callback)
             cases.append('real_'+guard+'_operator_before_bank_cron_one_remote_effect')
+
+        # Source-real PHP/MariaDB wallet day callback: absolute remote expiry,
+        # successful claim, stale local race, ambiguous result and overflow.
+        def day_order(label,expiry=1800000100):
+            safe=label.replace('-','_')
+            query(work,env,"INSERT INTO orders_list "
+                  "(userid,token,transid,fileid,server_id,inbound_id,remark,uuid,"
+                  "protocol,expire_date,link,amount,status,date) VALUES "
+                  f"(1001,'fx-token','',7,2,0,'{safe}','fx-{safe}',"
+                  f"'vless',{expiry},'[]',100,1,'synthetic')")
+            return int(query(work,env,f"SELECT id FROM orders_list WHERE remark='{safe}' ORDER BY id DESC LIMIT 1"))
+
+        for label,mode,verified,expected in (
+            ('walletdayfuture','success',1850000077,'paid_with_wallet'),
+            ('walletdayexpired','success',1850000078,'paid_with_wallet'),
+            ('walletdayunchanged','success',2000000000,'paid_with_wallet'),
+            ('walletdayunknown','uncertain',1850000079,'processing_wallet'),
+            ('walletdaystale','stale_order',1850000080,'processing_wallet'),
+            ('walletdayoverflow','success',2147483648,'processing_wallet'),
+        ):
+            oid=day_order(label,expiry=1000000000 if label=='walletdayexpired' else 2000000000)
+            seed(work,env,label,price=100)
+            query(work,env,f"UPDATE pays SET type='INCREASE_DAY_{oid}_901',"
+                  f"plan_id=7,server_id=2,order_id={oid},price=100 WHERE hash_id='{label}'")
+            wallet_before=int(query(work,env,'SELECT wallet FROM users WHERE userid=1001 LIMIT 1'))
+            count_before=int(query(work,env,'SELECT COUNT(*) FROM increase_order'))
+            args=dict(data='payIncreaseDayWithWallet'+label,route='extension',
+                      remote_mode=mode,service_applied_expire=verified,
+                      edit_order_id=oid)
+            events=run_route(work,env,route_driver,**args)
+            assert sum(e['name']=='remote_edit' for e in events)==1,(label,events)
+            assert query(work,env,f"SELECT state FROM pays WHERE hash_id='{label}'")==expected,(label,events)
+            assert int(query(work,env,'SELECT wallet FROM users WHERE userid=1001 LIMIT 1'))==wallet_before-100
+            assert int(query(work,env,'SELECT COUNT(*) FROM increase_order'))==count_before+(expected=='paid_with_wallet')
+            if expected=='paid_with_wallet':
+                assert int(query(work,env,f'SELECT expire_date FROM orders_list WHERE id={oid}'))==verified
+                assert any(e['name']=='editText' for e in events),(label,events)
+            else:
+                assert not any(e['name']=='editText' for e in events),(label,events)
+                assert any(e['name']=='sendMessage' and 'وضعیت درخواست مشخص نیست' in str(e['args'])
+                           for e in events),(label,events)
+            again=run_route(work,env,route_driver,**args)
+            assert not any(e['name']=='remote_edit' for e in again),(label,again)
+            assert int(query(work,env,'SELECT wallet FROM users WHERE userid=1001 LIMIT 1'))==wallet_before-100
+            assert query(work,env,f"SELECT state FROM pays WHERE hash_id='{label}'")==expected
+            cases.append('review_r7_wallet_'+label+'_verified_or_review_no_replay')
+
+        # Full-renewal wallet callbacks compete with day extension on the
+        # same order. Never rebase from stale local arithmetic or repeat a
+        # remote edit after an interrupted/unknown result.
+        for label,mode,verified,expected in (
+            ('walletrenewfuture','success',1850000271,'paid_with_wallet'),
+            ('walletrenewexpired','success',1850000272,'paid_with_wallet'),
+            ('walletrenewunknown','uncertain',1850000273,'processing_wallet'),
+            ('walletrenewstale','stale_order',1850000274,'processing_wallet'),
+            ('walletrenewoverflow','success',2147483648,'processing_wallet'),
+        ):
+            oid=day_order(label,expiry=1000000000 if label=='walletrenewexpired' else 2000000000)
+            seed(work,env,label,price=100)
+            query(work,env,"UPDATE pays SET type='RENEW_ACCOUNT',plan_id=7,"
+                 f"server_id=2,order_id={oid},price=100 WHERE hash_id='{label}'")
+            wallet_before=int(query(work,env,'SELECT wallet FROM users WHERE userid=1001 LIMIT 1'))
+            audit_before=int(query(work,env,'SELECT COUNT(*) FROM increase_order'))
+            args=dict(data='payRenewWithWallet'+label,route='renewal',
+                      remote_mode=mode,service_applied_expire=verified,
+                      edit_order_id=oid)
+            events=run_route(work,env,route_driver,**args)
+            assert sum(e['name']=='remote_edit' for e in events)==1,(label,events)
+            assert query(work,env,f"SELECT state FROM pays WHERE hash_id='{label}'")==expected,(label,events)
+            assert int(query(work,env,'SELECT wallet FROM users WHERE userid=1001 LIMIT 1'))==wallet_before-100
+            assert int(query(work,env,'SELECT COUNT(*) FROM increase_order'))==audit_before+(expected=='paid_with_wallet')
+            if expected=='paid_with_wallet':
+                assert int(query(work,env,f'SELECT expire_date FROM orders_list WHERE id={oid}'))==verified
+                assert any(e['name']=='editText' for e in events),(label,events)
+            else:
+                assert not any(e['name']=='editText' for e in events),(label,events)
+            repeated=run_route(work,env,route_driver,**args)
+            assert not any(e['name']=='remote_edit' for e in repeated),(label,repeated)
+            assert int(query(work,env,'SELECT wallet FROM users WHERE userid=1001 LIMIT 1'))==wallet_before-100
+            cases.append('review_r7_wallet_renew_'+label+'_remote_absolute_or_review_no_replay')
+
+        # Operator-reviewed day receipts use their own processing claim:
+        # authenticated remote absolute expiry + local CAS + audit + approved
+        # MUST commit atomically. No callback replay after unknown/SQL failure.
+        for label,mode,verified,expected,sql_fault,report_off in (
+            ('manualdayremoteahead','success',2025000100,'approved',False,False),
+            ('manualdayexpired','success',1850000400,'approved',False,False),
+            ('manualdayunknown','uncertain',1850000401,'processing',False,False),
+            ('manualdaystale','stale_order',1850000402,'processing',False,False),
+            ('manualdayoverflow','success',2147483648,'processing',False,False),
+            ('manualdaysqlstrict','success',1850000403,'processing',True,False),
+            ('manualdaysqlpermissive','success',1850000404,'processing',True,True),
+        ):
+            oid=day_order(label,expiry=1000000000 if label=='manualdayexpired' else 2000000000)
+            service_pay(label,subject=f'INCREASE_DAY_{oid}_901')
+            query(work,env,f"UPDATE pays SET plan_id=7,server_id=2,order_id={oid},price=100 "
+                  f"WHERE hash_id='{label}'")
+            audit_before=int(query(work,env,'SELECT COUNT(*) FROM increase_order'))
+            if sql_fault:
+                query(work,env,"CREATE TRIGGER achbot_r7_order_write_block BEFORE UPDATE "
+                      "ON orders_list FOR EACH ROW SIGNAL SQLSTATE '45000' "
+                      "SET MESSAGE_TEXT='owned transaction fault'")
+            try:
+                args=dict(data='approveIncreaseDay'+label,route='extension',actor=9001,
+                          remote_mode=mode,service_applied_expire=verified,
+                          edit_order_id=oid,mysqli_report_off=report_off)
+                events=run_route(work,env,route_driver,**args)
+            finally:
+                if sql_fault:
+                    query(work,env,"DROP TRIGGER achbot_r7_order_write_block")
+            assert sum(e['name']=='remote_edit' for e in events)==1,(label,events)
+            assert query(work,env,f"SELECT state FROM pays WHERE hash_id='{label}'")==expected,(label,events)
+            assert int(query(work,env,'SELECT COUNT(*) FROM increase_order'))==audit_before+(expected=='approved')
+            if expected=='approved':
+                assert int(query(work,env,f'SELECT expire_date FROM orders_list WHERE id={oid}'))==verified
+                assert query(work,env,f"SELECT approved_by FROM pays WHERE hash_id='{label}'")=='9001'
+            else:
+                assert query(work,env,f"SELECT approved_by IS NULL FROM pays WHERE hash_id='{label}'")=='1'
+                assert any(e['name']=='alert' and 'بررسی' in str(e['args']) for e in events),(label,events)
+            second=run_route(work,env,route_driver,**args)
+            assert not any(e['name']=='remote_edit' for e in second),(label,second)
+            assert query(work,env,f"SELECT state FROM pays WHERE hash_id='{label}'")==expected
+            cases.append('review_r7_manual_'+label+'_atomic_expiry_and_no_replay')
 
         # Ambiguous provider outcomes are not retried; the operator must
         # reconcile remote state before acting on the still-reviewable invoice.

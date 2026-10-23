@@ -229,6 +229,20 @@ def main():
             'fractional_volume_delta_never_truncated_or_approved',
             'fractional_day_delta_never_truncated_or_approved',
             'fractional_plan_quota_never_truncated_or_approved',
+            # R6 canonical provider unlimited vs missing/invalid quota.
+            'review_r6_unlimited_existing_null_days_exact_verified_readback',
+            'review_r6_unlimited_existing_zero_days_exact_verified_readback',
+            'review_r6_unlimited_unlimited_renewal_exact_verified_readback',
+            'review_r6_unlimited_unlimited_to_finite_exact_verified_readback',
+            'review_r6_unlimited_finite_to_unlimited_exact_verified_readback',
+            'review_r6_unlimited_increment_refused_without_downgrade_null',
+            'review_r6_unlimited_increment_refused_without_downgrade_zero',
+            'review_r6_invalid_missing_no_remote_effect',
+            'review_r6_invalid_fractional_no_remote_effect',
+            'review_r6_invalid_negative_no_remote_effect',
+            'review_r6_invalid_exponent_no_remote_effect',
+            'review_r6_invalid_malformed_no_remote_effect',
+            'review_r6_invalid_overflow_no_remote_effect',
         }
         if not (edits.get('complete') and edits.get('cases')==len(required_edits)
                 and required_edits.issubset(edits.get('scenarios',[]))
@@ -881,6 +895,8 @@ def main():
             "incompatible_004_old_restrictive_order_fk_is_rejected",
             "restored_full_004_contract_ready",
             "f3_shared_003_and_004_compatible_without_history_loss",
+            "remote_absolute_expiry_persisted_not_preclaimed_estimate",
+            "remote_expiry_outside_signed_int_review_no_double_debit",
         }
         if not (auto_renew.get("complete") and
                 required_auto.issubset(auto_renew.get("scenarios",[])) and
@@ -1058,6 +1074,13 @@ def main():
             "zarinpal_callback_provider_scoped_colliding_external_reference",
         }
         mandatory_finance.add('hosted_order_and_effect_link_atomic_rollback')
+        # R7 real hosted claim, Marzban adapter, order CAS and local SQL faults.
+        mandatory_finance.update({
+            'r7_hosted_day_verified_atomic_remote_absolute_no_replay',
+            'r7_hosted_day_sql_throwing_atomic_remote_absolute_no_replay',
+            'r7_hosted_day_sql_permissive_atomic_remote_absolute_no_replay',
+            'r7_hosted_day_concurrent_order_drift_atomic_remote_absolute_no_replay',
+        })
         cases_finance = {case.get("case") for case in finance.get("scenarios",[])
                          if case.get("pass_")}
         if not (finance.get("complete") and finance.get("cases")>=153 and
@@ -1295,6 +1318,25 @@ def main():
             'review_r5_stale_bank_after_volume_after_renew_no_completion',
             'native_real_bank_scheduler_day_verified_verified_remote_required_no_duplicate',
             'native_real_bank_scheduler_day_unconfirmed_verified_remote_required_no_duplicate',
+            # R7 manually approved, direct wallet day and wallet full-renewal flows.
+            'review_r7_wallet_walletdayfuture_verified_or_review_no_replay',
+            'review_r7_wallet_walletdayexpired_verified_or_review_no_replay',
+            'review_r7_wallet_walletdayunchanged_verified_or_review_no_replay',
+            'review_r7_wallet_walletdayunknown_verified_or_review_no_replay',
+            'review_r7_wallet_walletdaystale_verified_or_review_no_replay',
+            'review_r7_wallet_walletdayoverflow_verified_or_review_no_replay',
+            'review_r7_wallet_renew_walletrenewfuture_remote_absolute_or_review_no_replay',
+            'review_r7_wallet_renew_walletrenewexpired_remote_absolute_or_review_no_replay',
+            'review_r7_wallet_renew_walletrenewunknown_remote_absolute_or_review_no_replay',
+            'review_r7_wallet_renew_walletrenewstale_remote_absolute_or_review_no_replay',
+            'review_r7_wallet_renew_walletrenewoverflow_remote_absolute_or_review_no_replay',
+            'review_r7_manual_manualdayremoteahead_atomic_expiry_and_no_replay',
+            'review_r7_manual_manualdayexpired_atomic_expiry_and_no_replay',
+            'review_r7_manual_manualdayunknown_atomic_expiry_and_no_replay',
+            'review_r7_manual_manualdaystale_atomic_expiry_and_no_replay',
+            'review_r7_manual_manualdayoverflow_atomic_expiry_and_no_replay',
+            'review_r7_manual_manualdaysqlstrict_atomic_expiry_and_no_replay',
+            'review_r7_manual_manualdaysqlpermissive_atomic_expiry_and_no_replay',
         })
         if not (manual.get("complete") and manual.get("cases")>=len(required_manual)
                 and required_manual.issubset(manual.get("scenarios",[]))

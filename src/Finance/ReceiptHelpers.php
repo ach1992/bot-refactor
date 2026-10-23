@@ -551,6 +551,92 @@ function achbotAutoBankEditPreflight(mysqli $db, array $pay, string $kind,
 }
 
 /**
+ * The provider's authenticated absolute applied_expire is the only expiry
+ * that can be locally recorded after an edit. Call inside the SAME caller-
+ * owned SQL transaction as its payment/audit transition. A lost SQL reply,
+ * stale order identity, concurrent renewal, truncated INT, or missing
+ * readback is not fulfillment: leave the previously committed payment claim
+ * operator-reviewable and never replay the remote effect.
+ *
+ * Source is the original pre-remote order snapshot (NOT a fresh one obtained
+ * after dispatch). Lock the exact primary key and compare the entire payment
+ * subject, including its prior local expiry and nullable UUID.
+ */
+function achbotStoreVerifiedServiceExpiryLocked(mysqli $db, array $original,
+                                           object $verified): void {
+    if (($verified->success??false)!==true ||
+        ($verified->verified??false)!==true ||
+        !isset($verified->applied_expire,$verified->applied_bytes) ||
+        !is_int($verified->applied_expire) ||
+        $verified->applied_expire<=0 || $verified->applied_expire>2147483647 ||
+        !is_int($verified->applied_bytes) || $verified->applied_bytes<0)
+        throw new RuntimeException('day_extension_remote_readback_invalid');
+    foreach (['id','userid','server_id','inbound_id','fileid',
+              'remark','status','expire_date'] as $key) {
+        if (!array_key_exists($key,$original))
+            throw new RuntimeException('day_extension_original_order_missing');
+    }
+    $orderId=(int)$original['id'];
+    $owner=(int)$original['userid'];
+    $server=(int)$original['server_id'];
+    $inbound=(int)$original['inbound_id'];
+    $fileId=(int)$original['fileid'];
+    $remark=(string)$original['remark'];
+    $uuid=$original['uuid']??null;
+    $old=(int)$original['expire_date'];
+    if ($orderId<=0 || $owner<=0 || $server<=0 || $fileId<=0 ||
+        $inbound!==0 || $remark==='' || (int)$original['status']!==1 ||
+        $old<0 || $old>2147483647)
+        throw new RuntimeException('day_extension_original_order_invalid');
+
+    $stmt=$db->prepare('SELECT userid,server_id,inbound_id,fileid,remark,uuid,
+            status,expire_date,notif FROM orders_list WHERE id=? FOR UPDATE');
+    if (!$stmt) throw new RuntimeException('day_extension_order_lock_unavailable');
+    $stmt->bind_param('i',$orderId);
+    if (!$stmt->execute()) throw new RuntimeException('day_extension_order_lock_failed');
+    $current=$stmt->get_result()->fetch_assoc();
+    $stmt->close();
+    if (!$current ||
+        (int)$current['userid']!==$owner ||
+        (int)$current['server_id']!==$server ||
+        (int)$current['inbound_id']!==$inbound ||
+        (int)$current['fileid']!==$fileId ||
+        (int)$current['status']!==1 ||
+        (string)$current['remark']!==$remark ||
+        $current['uuid']!==$uuid ||
+        (int)$current['expire_date']!==$old)
+        throw new RuntimeException('day_extension_order_stale');
+    $expiry=$verified->applied_expire;
+    $stmt=$db->prepare('UPDATE orders_list SET expire_date=?,notif=0
+        WHERE id=? AND userid=? AND server_id=? AND inbound_id=?
+          AND fileid=? AND remark=? AND uuid <=> ? AND status=1
+          AND expire_date=?');
+    if (!$stmt) throw new RuntimeException('day_extension_update_prepare_failed');
+    $stmt->bind_param('iiiiiissi',$expiry,$orderId,$owner,$server,
+                      $inbound,$fileId,$remark,$uuid,$old);
+    $saved=$stmt->execute();
+    $changed=$stmt->affected_rows;
+    $stmt->close();
+    // A legitimately unchanged absolute expiry can still be a verified
+    // successful edit (e.g. a provider was already ahead). MySQL reports
+    // affected_rows=0 when both persisted fields were already equal.
+    // Locking identity/previous-expiry CAS and exact post-write readback
+    // remain mandatory; zero does not waive them.
+    if ($saved!==true || ($changed!==1 &&
+        !($changed===0 && $old===$expiry && (int)$current['notif']===0)))
+        throw new RuntimeException('service_expiry_update_unconfirmed');
+    $stmt=$db->prepare('SELECT expire_date,notif FROM orders_list WHERE id=? FOR UPDATE');
+    if (!$stmt) throw new RuntimeException('day_extension_readback_prepare_failed');
+    $stmt->bind_param('i',$orderId);
+    $read=$stmt->execute();
+    $stored=$read?$stmt->get_result()->fetch_assoc():null;
+    $stmt->close();
+    if (!$stored || (int)$stored['expire_date']!==$expiry ||
+        (int)$stored['notif']!==0)
+        throw new RuntimeException('day_extension_readback_mismatch');
+}
+
+/**
  * A scheduled bank receipt is only a PAYMENT claim. For service edits,
  * success requires a verified remote absolute outcome followed by ONE
  * all-or-nothing local order/accounting/payment commit.

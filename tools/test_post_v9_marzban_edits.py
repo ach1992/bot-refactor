@@ -99,6 +99,11 @@ class EditProviderHandler(native.Handler):
             # Upstream reset_user_data_usage clears any queued next_plan.
             server.edit_account['next_plan']=None
         if editing and pre_put is not None:
+            # Pinned Marzban persists (data_limit or None), so the *GET*
+            # after a successful unlimited PUT returns explicit JSON null.
+            # The immediate PUT reply is not payment/fulfillment proof.
+            if wire_request.get('data_limit','not-supplied') == 0:
+                server.edit_account['data_limit']=None
             if getattr(server,'drop_next_plan_on_update',False):
                 # Upstream update_user clears next_plan when omitted.
                 server.edit_account['next_plan']=None
@@ -214,6 +219,68 @@ def main():
                 if panel.edit_account['data_limit']!=expected_volume:
                     raise RuntimeError('Remote quota did not really change: '+mode)
             cases.append(mode+'_source_native_'+want)
+
+        # Provider quota null/zero both mean unlimited; absence, bad numbers
+        # and malformed quoted fields must fail closed BEFORE remote effects.
+        for label,base,change,expected,reset in (
+            ('existing_null_days',None,{'plus_day':1},0,0),
+            ('existing_zero_days',0,{'plus_day':1},0,0),
+            ('unlimited_renewal',None,{'days':30,'volume':0},0,1),
+            ('unlimited_to_finite',None,{'volume':3},3*GIB,1),
+            ('finite_to_unlimited',2*GIB,{'volume':0},0,1),
+        ):
+            panel.mode='edit-verified'
+            panel.trace.clear()
+            panel.edit_account=copy.deepcopy(INITIAL)
+            panel.edit_account['data_limit']=base
+            panel.edit_put_count=0
+            panel.edit_reset_count=0
+            outcome=native.run(work,env,source,native.DBS[1],{
+                'function':'achbotOwnedEditRouter',
+                'args':[2,{'remark':'fixture-user',**change}]})
+            assert outcome['exception'] is None and not outcome['warnings'],(label,outcome)
+            result=outcome['result']
+            assert result['success'] is True and result['verified'] is True,(label,result)
+            assert result['applied_bytes']==expected,(label,result)
+            assert panel.edit_put_count==1 and panel.edit_reset_count==reset,(label,panel.trace)
+            remote_want=(None if expected==0 else expected) if 'volume' in change else base
+            assert panel.edit_account['data_limit']==remote_want,(label,panel.edit_account)
+            cases.append('review_r6_unlimited_'+label+'_exact_verified_readback')
+
+        for label,quota in (('null',None),('zero',0)):
+            panel.mode='edit-verified'
+            panel.trace.clear()
+            panel.edit_account=copy.deepcopy(INITIAL)
+            panel.edit_account['data_limit']=quota
+            panel.edit_put_count=0
+            panel.edit_reset_count=0
+            outcome=native.run(work,env,source,native.DBS[1],{
+                'function':'achbotOwnedEditRouter',
+                'args':[2,{'remark':'fixture-user','plus_volume':1}]})
+            assert outcome['exception'] is None,(label,outcome)
+            assert outcome['result']['success'] is False,(label,outcome)
+            assert outcome['result']['msg']=='marzban_unlimited_volume_extension',(label,outcome)
+            assert panel.edit_put_count==0 and panel.edit_reset_count==0,(label,panel.trace)
+            cases.append('review_r6_unlimited_increment_refused_without_downgrade_'+label)
+
+        for label,raw in (
+            ('missing','<ABSENT>'),('fractional',1.5),('negative',-1),
+            ('exponent','1e3'),('malformed','NaN'),('overflow','99999999999999999999999')
+        ):
+            panel.mode='edit-verified'
+            panel.trace.clear()
+            panel.edit_account=copy.deepcopy(INITIAL)
+            if raw=='<ABSENT>': del panel.edit_account['data_limit']
+            else: panel.edit_account['data_limit']=raw
+            panel.edit_put_count=0
+            panel.edit_reset_count=0
+            outcome=native.run(work,env,source,native.DBS[1],{
+                'function':'achbotOwnedEditRouter',
+                'args':[2,{'remark':'fixture-user','plus_day':1}]})
+            assert outcome['exception'] is None,(label,outcome)
+            assert outcome['result']['success'] is False,(label,outcome)
+            assert panel.edit_put_count==0 and panel.edit_reset_count==0,(label,panel.trace)
+            cases.append('review_r6_invalid_'+label+'_no_remote_effect')
 
         # Upstream Marzban deletes a queued next_plan on both RESET and
         # UserModify when the field is omitted. A paid-service edit must

@@ -56,7 +56,7 @@ function editMarzbanConfig($id,$info) {
     if(!empty($GLOBALS['spec']['throw']))throw new RuntimeException('mock ambiguous timeout');
     return (object)['success'=>$GLOBALS['spec']['remote_success']??true,
                     'verified'=>$GLOBALS['spec']['remote_success']??true,
-                    'applied_expire'=>time()+30*86400,
+                    'applied_expire'=>$GLOBALS['spec']['applied_expire']??(time()+30*86400),
                     'applied_bytes'=>10*1073741824];
 }
 function sendMessage($message,$keys=null,$parse=null,$id=null) {
@@ -308,6 +308,28 @@ def main():
         assert count(w,e,'increase_order',"remark='unmigrated'")==1
         assert count(w,e,'automatic_renewal_attempts',f'order_id={oid}')==1
         cases.append('verified_remote_success_all_local_effects_atomic')
+        remote_absolute=1800201111
+        exact=seed(w,e,'remote-absolute',wallet=500000)
+        ev=run(w,e,{'order_id':exact,'enabled':'on',
+                    'applied_expire':remote_absolute})
+        assert sum(x['type']=='remote' for x in ev)==1,ev
+        assert state(w,e,exact)=='done'
+        assert int(sql(w,e,f'SELECT expire_date FROM orders_list WHERE id={exact}'))==remote_absolute
+        assert int(sql(w,e,'SELECT new_expire FROM automatic_renewal_attempts '
+                             f'WHERE order_id={exact}'))!=remote_absolute
+        assert_no_remote(run(w,e,{'order_id':exact,'enabled':'on'}))
+        cases.append('remote_absolute_expiry_persisted_not_preclaimed_estimate')
+        over=seed(w,e,'remote-expiry-overflow',wallet=500000)
+        old_expiry=sql(w,e,f'SELECT expire_date FROM orders_list WHERE id={over}')
+        ev=run(w,e,{'order_id':over,'enabled':'on',
+                    'applied_expire':2147483648})
+        assert sum(x['type']=='remote' for x in ev)==1
+        assert state(w,e,over)=='review'
+        assert sql(w,e,f'SELECT expire_date FROM orders_list WHERE id={over}')==old_expiry
+        assert sql(w,e,f'SELECT state FROM pays WHERE order_id={over}').strip()=='processing_wallet'
+        assert count(w,e,'increase_order',"remark='remote-expiry-overflow'")==0
+        assert_no_remote(run(w,e,{'order_id':over,'enabled':'on'}))
+        cases.append('remote_expiry_outside_signed_int_review_no_double_debit')
         assert_no_remote(run(w,e,{'order_id':oid,'enabled':'on'}))
         assert_no_remote(run(w,e,{'order_id':oid,'enabled':'on','user_id':9002}))
         assert wallet(w,e)==400000

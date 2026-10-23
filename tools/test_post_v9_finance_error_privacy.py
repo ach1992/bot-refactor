@@ -284,11 +284,31 @@ def main():
                 assert_privacy(result, case["audience"], expected,
                                require_sql_secret=(provider == "success"
                                                    and case["name"] != "wallet_settlement"))
-                if (wallet_before != sql(work, env,
-                        "SELECT wallet FROM users WHERE userid=1001").strip()
-                    or pay_before != sql(work, env,
-                        "SELECT state FROM pays WHERE hash_id='privacyhash'").strip()):
-                    raise RuntimeError("Uncertain provider path changed local money/payment state")
+                # Day/full-renewal routes now commit nonterminal payment
+                # ownership (and wallet debit reservation) BEFORE their
+                # external PUT; a subsequent SQL/provider fault deliberately
+                # keeps that state for human reconciliation. Old volume/
+                # wallet-settlement routes retain their existing local
+                # transaction policy. No failure may duplicate debit or
+                # claim delivered; preserving a spent reservation is safer
+                # than rolling it back and authorizing a second remote PUT.
+                changes_owner = case["name"] in (
+                    "extension_day_wallet", "renewal_wallet",
+                    "extension_day_manual", "renewal_manual")
+                expected_state = (
+                    "processing_wallet" if changes_owner and case["audience"]=="wallet"
+                    else "processing" if changes_owner else pay_before)
+                expected_wallet = int(wallet_before) - (
+                    100 if changes_owner and case["audience"]=="wallet" else 0)
+                new_wallet=int(sql(work,env,
+                    "SELECT wallet FROM users WHERE userid=1001").strip())
+                new_state=sql(work,env,
+                    "SELECT state FROM pays WHERE hash_id='privacyhash'").strip()
+                if new_wallet!=expected_wallet or new_state!=expected_state:
+                    raise RuntimeError("Invalid reserved/review financial state: "+
+                                       repr((case["name"],provider,
+                                             new_state,new_wallet,
+                                             expected_state,expected_wallet)))
                 names.append(case["name"] + "_" + mode)
                 if provider == "success":
                     sql(work, env, "DROP TRIGGER achbot_privacy_sql_failure")

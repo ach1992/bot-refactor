@@ -661,6 +661,38 @@ This optimistic SQL boundary is not a global lock on independent
 Marzban administrator actions, which remain subject to review/operational
 coordination.
 
+**Marzban unlimited quota and authoritative service expiry (PR #68 review R6/R7).**
+Marzban's authenticated account quota may be explicit JSON `null` for
+unlimited data or the canonical numeric `0`; the bounded Marzban adapter
+normalizes either *present* representation to `applied_bytes=0` for strict
+same-account readback. Missing quota fields and noncanonical finite values
+remain invalid. Paid renewals can keep unlimited quota, and an absolute
+change may explicitly switch between limited and unlimited; an additive
+GB extension on an already unlimited account is refused **before** remote
+effects because it would accidentally lower the customer's existing service.
+The scheduled renewal sweep recognizes explicit null as unlimited and does
+not treat it as a depleted finite quota.
+
+For day extensions and full subscription renewals, the authenticated
+provider's `verified.applied_expire` is the authoritative local expiration:
+the provider may start duration from the *later* of remote expiry and now.
+Local `expire_date + days` and separate clock-based estimates are not
+proof of the delivered term. Hosted payments, reviewed manual receipts,
+direct wallet flows and the automatic-renewal journal now use exact remote
+absolute expiry, a signed-INT bound, an original **pre-remote** order snapshot,
+a locking identity/previous-expiry compare-and-set and readback of the
+persisted SQL value. The order, audit and final payment transition commit
+as one local transaction. Manual/wallet claims (and wallet debit reservation)
+are durably nonterminal **before** any external edit, rather than holding
+an InnoDB transaction across HTTP. Hosted and automatic-bank/renewal
+paths retain their own previously established nonterminal claims: their
+claim lifecycles are not interchangeable. After an uncertain HTTP, stale
+local order, SQL fault, crash or ambiguous commit, claims remain reviewable;
+no callback may replay the remote edit or debit, customer-facing Persian
+notices may not falsely announce completion, and automatic refunds are
+forbidden without operator reconciliation. No source test authorizes an
+installed tenant SQL/Marzban/financial operation.
+
 **Queued Marzban next-plan preservation (source-only precaution).**
 At upstream Marzban master `7f396db3e703d71a28060bc9ce4a532ec64cb1f4`
 the account `UserModify` implementation deletes an existing `next_plan`
