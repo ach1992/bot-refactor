@@ -644,7 +644,10 @@ if(preg_match('/payRenewWithWallet(.*)/', $data, $match)){
         if ((int)$order['userid']!==$uid || (int)$order['status']!==1 ||
             (int)$payInfo['plan_id']!==$fid ||
             (int)$payInfo['server_id']!==$server_id ||
-            (int)$plan['server_id']!==$server_id ||
+            // The real payment-subject guard above verifies this order's
+            // plan against the original server OR an explicitly authorized
+            // shared Marzban panel group. Do not narrow it here to equality:
+            // legitimate logical reassignment can retain the old plan ID.
             (int)$plan['inbound_id']!==0 || $inbound_id!==0 ||
             (string)$payInfo['type']!=='RENEW_ACCOUNT' || $price<=0)
             throw new RuntimeException('wallet_renew_subject_invalid');

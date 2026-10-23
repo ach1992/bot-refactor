@@ -1262,6 +1262,67 @@ def check():
             assert int(query(work,env,'SELECT wallet FROM users WHERE userid=1001 LIMIT 1'))==wallet_before-100
             cases.append('review_r7_wallet_renew_'+label+'_remote_absolute_or_review_no_replay')
 
+        # Only these physical-alias cases use source-real Core guards. Other
+        # route fixtures retain their deliberately narrow mocking boundary.
+        alias_php=PHP_ROUTE
+        assert alias_php.count("function achbotSupportsPaymentSubject(...$args){return true;}")==1
+        assert alias_php.count("function achbotSupportsMarzbanOrder(...$args){return true;}")==1
+        alias_php=alias_php.replace(
+            "function achbotSupportsPaymentSubject(...$args){return true;}",
+            "require_once $root.'/src/Purchase/Core.php';")
+        alias_php=alias_php.replace(
+            "function achbotSupportsMarzbanOrder(...$args){return true;}","")
+        alias_driver=work/'real-core-panel-alias-route.php'
+        alias_driver.write_text(alias_php)
+        # The source-real Core validator permits explicitly grouped physical
+        # Marzban aliases, even when an old plan ID still names the original
+        # logical server. The new wallet-renew finality guard must not replace
+        # that authorization with an overly strict plan-server equality.
+        query(work,env,"INSERT INTO setting(id,type,value) VALUES "
+              "(9909,'ACHBOT_MARZBAN_PANEL_GROUP','wallet-renew-alias')")
+        query(work,env,"UPDATE server_info SET panel_group_id=9909 WHERE id IN (1,2)")
+        label='walletgroupedalias'
+        oid=day_order(label,expiry=2000000000)
+        query(work,env,f"UPDATE orders_list SET fileid=1 WHERE id={oid}")
+        seed(work,env,label,price=100)
+        query(work,env,f"UPDATE pays SET type='RENEW_ACCOUNT',plan_id=1,"
+              f"server_id=2,order_id={oid},price=100 WHERE hash_id='{label}'")
+        wallet_before=int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'))
+        audit_before=int(query(work,env,'SELECT COUNT(*) FROM increase_order'))
+        args=dict(data='payRenewWithWallet'+label,route='renewal',
+                  remote_mode='success',service_applied_expire=2000012345,
+                  edit_order_id=oid)
+        first=run_route(work,env,alias_driver,**args)
+        assert sum(e['name']=='remote_edit' for e in first)==1,(label,first)
+        assert query(work,env,f"SELECT state FROM pays WHERE hash_id='{label}'")=='paid_with_wallet'
+        assert int(query(work,env,f'SELECT expire_date FROM orders_list WHERE id={oid}'))==2000012345
+        assert int(query(work,env,'SELECT COUNT(*) FROM increase_order'))==audit_before+1
+        assert int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'))==wallet_before-100
+        repeated=run_route(work,env,alias_driver,**args)
+        assert not any(e['name']=='remote_edit' for e in repeated),(label,repeated)
+        cases.append('review_r7_wallet_renew_grouped_physical_panel_alias_authorized_once')
+
+        # Without explicit shared group authorization, an identical-looking
+        # cross-panel alias must still be refused before debit or remote PUT.
+        query(work,env,'UPDATE server_info SET panel_group_id=NULL WHERE id=1')
+        label='walletforeignalias'
+        oid=day_order(label,expiry=2000000000)
+        query(work,env,f'UPDATE orders_list SET fileid=1 WHERE id={oid}')
+        seed(work,env,label,price=100)
+        query(work,env,f"UPDATE pays SET type='RENEW_ACCOUNT',plan_id=1,"
+              f"server_id=2,order_id={oid},price=100 WHERE hash_id='{label}'")
+        wallet_before=int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'))
+        refused=run_route(work,env,alias_driver,
+            data='payRenewWithWallet'+label,route='renewal',
+            remote_mode='success',service_applied_expire=2000012345,
+            edit_order_id=oid)
+        assert not any(e['name']=='remote_edit' for e in refused),(label,refused)
+        assert query(work,env,f"SELECT state FROM pays WHERE hash_id='{label}'")=='pending'
+        assert int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'))==wallet_before
+        assert int(query(work,env,f'SELECT expire_date FROM orders_list WHERE id={oid}'))==2000000000
+        cases.append('review_r7_wallet_renew_cross_panel_alias_denied_predebit')
+        query(work,env,'UPDATE server_info SET panel_group_id=NULL WHERE id=2')
+
         # Operator-reviewed day receipts use their own processing claim:
         # authenticated remote absolute expiry + local CAS + audit + approved
         # MUST commit atomically. No callback replay after unknown/SQL failure.

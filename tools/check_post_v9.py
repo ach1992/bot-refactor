@@ -1330,6 +1330,8 @@ def main():
             'review_r7_wallet_renew_walletrenewunknown_remote_absolute_or_review_no_replay',
             'review_r7_wallet_renew_walletrenewstale_remote_absolute_or_review_no_replay',
             'review_r7_wallet_renew_walletrenewoverflow_remote_absolute_or_review_no_replay',
+            'review_r7_wallet_renew_grouped_physical_panel_alias_authorized_once',
+            'review_r7_wallet_renew_cross_panel_alias_denied_predebit',
             'review_r7_manual_manualdayremoteahead_atomic_expiry_and_no_replay',
             'review_r7_manual_manualdayexpired_atomic_expiry_and_no_replay',
             'review_r7_manual_manualdayunknown_atomic_expiry_and_no_replay',
