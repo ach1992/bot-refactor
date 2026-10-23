@@ -60,7 +60,8 @@ def initial(work,env):
         "VALUES (1,'http://127.0.0.1:9','127.0.0.1','','none','','','none','{}',"
         "'marzban','fixture-admin','fixture-password','')")
     for migration in ('003_payment_attempts.sql','007_service_effects.sql',
-                      '008_referral_awards.sql'):
+                      '008_referral_awards.sql',
+                      '009_bank_buy_invoice_claims.sql'):
         query(work,env,(ROOT/'migrations/post-v9'/migration).read_text())
     query(work,env,"UPDATE users SET refered_by=9002 WHERE userid=1001")
 

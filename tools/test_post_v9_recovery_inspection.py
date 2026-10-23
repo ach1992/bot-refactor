@@ -150,14 +150,12 @@ def unchanged(work,env,payid):
 
 def create_case(work,env,key,*,state='processing',count=1,number_of_effects=1,
                 effect_state='dispatching',method='bank_transfer'):
-    pid=bank.seed(work,env,key,count=count)
+    # Use the same actual 003+009 issuance path as bank-Cron source tests.
+    # A synthetic wallet-hold has NO manual attempt; other provider fixtures
+    # keep their own 003 method but must not invent a bank transfer snapshot.
+    pid=bank.seed(work,env,key,count=count,
+                  method=method if method is not None else 'legacy')
     sql(work,env,f"UPDATE pays SET state='{state}' WHERE id={pid}")
-    if method:
-        # Ledger details themselves are not settlement evidence.
-        sql(work,env,
-            "INSERT INTO payment_attempts (pay_row_id,provider,order_hash,"
-            "quote_amount,quote_currency,local_amount_toman) VALUES "
-            f"({pid},'{method}','{key}',101,'toman',101)")
     panel=sql(work,env,"SELECT panel_url FROM server_config WHERE id=2")
     endpoint=hashlib.sha256(panel.rstrip('/').encode()).hexdigest()
     group=sql(work,env,"SELECT COALESCE(panel_group_id,'NULL') FROM server_info WHERE id=2")
@@ -194,8 +192,14 @@ def check():
     cases=[]
     with owned.owned_database() as (work,env):
         purchase.init(work,env,'http://127.0.0.1:9')
+        # Issuance consults the CURRENT BOT_STATES row under SQL lock.
+        # A read-only recovery fixture must still issue a valid prior bank
+        # intent before simulating a later incomplete CREATE.
+        sql(work,env,"INSERT INTO setting(type,value) VALUES "
+            "('BOT_STATES','{\"cartToCartState\":\"on\"}')")
         for name in ('001_marzban_panel_group_id.sql',
-                     '003_payment_attempts.sql','007_service_effects.sql'):
+                     '003_payment_attempts.sql','007_service_effects.sql',
+                     '009_bank_buy_invoice_claims.sql'):
             sql(work,env,(ROOT/'migrations/post-v9'/name).read_text())
         driver=work/'recovery-driver.php'
         driver.write_text(DRIVER)

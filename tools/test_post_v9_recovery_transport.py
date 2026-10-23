@@ -164,8 +164,13 @@ def check():
     with owned_server() as server, owned.owned_database() as (work,env):
         server.work=work;server.env=env
         purchase.init(work,env,server.url)
+        # The original bank method requires a CURRENT persisted, owner-
+        # locked audience policy. This fixture previously had none.
+        recovery.sql(work,env,"INSERT INTO setting(type,value) VALUES "
+            "('BOT_STATES','{\"cartToCartState\":\"on\"}')")
         for name in ('001_marzban_panel_group_id.sql',
-                     '003_payment_attempts.sql','007_service_effects.sql'):
+                     '003_payment_attempts.sql','007_service_effects.sql',
+                     '009_bank_buy_invoice_claims.sql'):
             recovery.sql(work,env,(ROOT/'migrations/post-v9'/name).read_text())
         pay=recovery.create_case(work,env,'loopbackrecover',count=1)
         server.username=f'fx_{pay}_1'

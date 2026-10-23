@@ -227,7 +227,14 @@ def run(work,env,driver,**spec):
     try: return json.loads(p.stdout)
     except ValueError as e: raise RuntimeError('unexpected PHP output '+p.stdout[-700:]) from e
 
-_issuer_driver=None
+def issuer_driver(work):
+    # Shared source-real disposable bank issuer for all bank/recovery fixtures.
+    # No process-global path from another owned MariaDB scenario may be reused.
+    driver=work/'bank-issue-actual-manual-claim.php'
+    if not driver.exists():
+        driver.write_text(manual.PHP)
+    return driver
+
 
 def seed(work,env,key,count=1,plan=7,method='bank_transfer',
          days=0,volume=0,description=''):
@@ -243,8 +250,7 @@ def seed(work,env,key,count=1,plan=7,method='bank_transfer',
         f"'pending',{count},550,9001,'{safe_description}')")
     pid=int(query(work,env,f"SELECT id FROM pays WHERE hash_id='{key}'"))
     if method=='bank_transfer':
-        assert _issuer_driver is not None
-        issued=manual.run_php(work,env,_issuer_driver,key,'claim','bank_transfer')
+        issued=manual.run_php(work,env,issuer_driver(work),key,'claim','bank_transfer')
         if issued is not True:
             raise AssertionError(('real_customer_bank_issuance_refused',key,pid,issued))
         assert query(work,env,
@@ -301,9 +307,7 @@ def check():
                   '009_bank_buy_invoice_claims.sql'):
             query(work,env,(ROOT/'migrations/post-v9'/f).read_text())
         driver=work/'bank-buy-driver.php';driver.write_text(PHP)
-        global _issuer_driver
-        _issuer_driver=work/'bank-issue-actual-manual-claim.php'
-        _issuer_driver.write_text(manual.PHP)
+        _issuer_driver=issuer_driver(work)
         query(work,env,"INSERT INTO setting(type,value) VALUES "
             "('BOT_STATES','{\"cartToCartState\":\"on\"}')")
         claim=seed(work,env,'bankbuynonterminal')
