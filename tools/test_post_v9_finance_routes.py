@@ -608,10 +608,25 @@ try {
         $callbackId='test-callback';
         $message_id=702;
         $from_id=(int)($spec['actor']??1001);
-        require $root . '/src/Finance/Routes/PrePayment.php';
-        require $root . '/src/Finance/Routes/ManualCrypto.php';
-        $GLOBALS['events'][]=['name'=>'selected_data','data'=>$data,
-            'network'=>$GLOBALS['achbotManualCryptoChoice']??null];
+        if ((require $root . '/src/Finance/Routes/PrePayment.php') === null) {
+            $GLOBALS['events'][]=['name'=>'prepayment_consumed'];
+        } else {
+            require $root . '/src/Finance/Routes/ManualCrypto.php';
+            $GLOBALS['events'][]=['name'=>'selected_data','data'=>$data,
+                'network'=>$GLOBALS['achbotManualCryptoChoice']??null];
+        }
+    } elseif ($spec['route'] === 'bot_callback') {
+        // Real bot.php entrypoint: the dispatcher, rather than an isolated
+        // PrePayment.php require, determines whether Checkout.php is reached.
+        $data=(string)($spec['callback_data']??'');
+        $callbackId='test-bot-dispatch';
+        $message_id=702;
+        $from_id=(int)($spec['actor']??1001);
+        $userInfo=['step'=>'none','isAdmin'=>false];
+        $joniedState='member';
+        $text='';
+        require $root . '/bot.php';
+        $GLOBALS['events'][]=['name'=>'bot_dispatch_returned'];
     } elseif ($spec['route'] === 'local_purchase_write') {
         try {
             if ($spec['operation']==='order_insert') {
@@ -3464,12 +3479,103 @@ def main():
             # In particular, no payment CTA may be sent for an invalid
             # callback. No new invoice, wallet or remote provider effects.
             if attempted['network_calls'] or any(
-                e['name'] in ('sendMessage','delMessage','callback')
+                e['name'] not in ('callback','prepayment_consumed')
+                for e in attempted['events']) or not any(
+                e['name']=='callback' and 'معتبر نیست' in str(e['args'])
                 for e in attempted['events']):
                 raise RuntimeError('Malformed prepay callback executed route: '+
                                    repr((candidate,attempted['events']))[:1300])
         records.append(dict(case='prepayment_malformed_suffix_and_overlength_denied',
                             pass_=True,external_requests=0))
+
+        # Full bot.php dispatch, not only the direct PrePayment route. An
+        # invalid prePayCheck_ frame can contain an otherwise recognizable
+        # substring for Checkout.php's legacy wallet handler. The embedded
+        # order is owned, pending and wallet-eligible in real isolated SQL.
+        wallet_hash='0123456789abcdefghij'
+        seed_payment(work,env,wallet_hash,'BUY_SUB',7,2,'')
+        sql(work,env,f"UPDATE pays SET payid=NULL,agent_count=1 "
+            f"WHERE hash_id='{wallet_hash}'")
+        owned_wallet=sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip()
+        sql(work,env,'UPDATE users SET wallet=50000 WHERE userid=1001')
+        embedded='prePayCheck_!payBuyWithWallet'+wallet_hash
+        if len(embedded.encode('utf-8'))>64:
+            raise RuntimeError('Dispatch regression must fit Telegram callback limit')
+        # Only the owned stage copy of config.php is stubbed, to keep bot.php
+        # as the REAL dispatcher without reading instance secrets or sending
+        # network traffic. Always restore the original stage bytes.
+        config_path=stage/'config.php'
+        saved_config=config_path.read_bytes()
+        config_path.write_text('<?php function check() {} '
+            'function checkSpam() { return false; }\n')
+        try:
+            before=snapshot(work,env)
+            actual=run_php(work,env,stage,dict(route='bot_callback',get={},
+                callback_data=embedded))
+            verify_unchanged(work,env,before,'bot_dispatch_embedded_wallet')
+            if actual['network_calls'] or not any(
+                e['name']=='bot_dispatch_returned' for e in actual['events']):
+                raise RuntimeError('Invalid prepay did not terminate real bot dispatcher: '+
+                                   repr(actual)[:1100])
+            if any(e['name'] not in ('callback','bot_dispatch_returned')
+                   for e in actual['events']):
+                raise RuntimeError('Invalid prepay emitted a financial action: '+
+                                   repr(actual['events'])[:1000])
+            if not any(e['name']=='callback' and 'معتبر نیست' in str(e['args'])
+                       for e in actual['events']):
+                raise RuntimeError('Malformed prepay did not explain the invalid action')
+            records.append(dict(case='bot_dispatch_invalid_prepay_embedded_owned_wallet_denied',
+                                pass_=True,real_php=True,external_requests=0))
+            # Hashes remain within the original 50-character field. Only
+            # overall Telegram callback byte count separates these frames.
+            boundary='prePayCheck_RENEWACCOUNT_zarinpal_'
+            assert len(boundary.encode())==34
+            valid_hash='a'*30
+            valid64=boundary+valid_hash
+            over65=boundary+'a'*31
+            assert len(valid64.encode())==64 and len(over65.encode())==65
+            seed_payment(work,env,valid_hash,'RENEW_ACCOUNT',8,2,'')
+            sql(work,env,f"UPDATE pays SET order_id={mismatch_oid},"
+                f"request_date=UNIX_TIMESTAMP() WHERE hash_id='{valid_hash}'")
+            before64=snapshot(work,env)
+            valid=run_php(work,env,stage,dict(route='prepayment',get={},
+                callback_data=valid64))
+            valid_markup=[
+                json.loads(e['args'][1]) for e in valid['events']
+                if e['name']=='sendMessage' and len(e['args'])>1
+                and isinstance(e['args'][1],str)]
+            if valid['network_calls'] or not any(
+                'pay/?zarinpal' in json.dumps(markup,ensure_ascii=False)
+                for markup in valid_markup):
+                raise RuntimeError('Valid 64-byte callback lost owned checkout action')
+            # The payable CTA is a synthetic URL; no provider has been called.
+            if sql(work,env,f"SELECT state FROM pays WHERE hash_id='{valid_hash}'").strip()!='pending':
+                raise RuntimeError('64-byte valid callback mutated payment state')
+            before=snapshot(work,env)
+            foreign=run_php(work,env,stage,dict(route='prepayment',get={},
+                callback_data=valid64,actor=1002))
+            verify_unchanged(work,env,before,'bot_dispatch_valid64_foreign_owner')
+            if foreign['network_calls'] or any(
+                e['name']=='sendMessage' for e in foreign['events']) or not any(
+                e['name']=='callback' and 'متعلق' in str(e['args'])
+                for e in foreign['events']):
+                raise RuntimeError('64-byte valid frame bypassed owner authorization')
+            for invalid in (over65,boundary+'a'*29+'é'):
+                before=snapshot(work,env)
+                denied=run_php(work,env,stage,dict(route='bot_callback',get={},
+                    callback_data=invalid))
+                verify_unchanged(work,env,before,'bot_dispatch_65_byte_or_unicode')
+                if denied['network_calls'] or not any(
+                    e['name']=='bot_dispatch_returned' for e in denied['events']) or any(
+                    e['name'] not in ('callback','bot_dispatch_returned')
+                    for e in denied['events']):
+                    raise RuntimeError('Overlong callback passed bot dispatcher: '+
+                                       repr(denied)[:900])
+            records.append(dict(case='bot_dispatch_exact_64_byte_accept_65_byte_denied',
+                                pass_=True,real_php=True,external_requests=0))
+        finally:
+            config_path.write_bytes(saved_config)
+            sql(work,env,f'UPDATE users SET wallet={owned_wallet} WHERE userid=1001')
 
         # Actual admin route, including old cached/forged callbacks, cannot
         # perform the inherited database-only server rewrite.

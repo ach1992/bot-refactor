@@ -74,12 +74,17 @@ if (preg_match('/^ps_([A-Za-z0-9_-]{1,50})$/D', $data, $statusMatch)) {
 
 // Pre Pay Check By ACh
 
-// Telegram callback_data is at most 64 bytes. Never interpret a valid
-// payment hash PREFIX as the target of a malformed or suffixed callback.
-// Preserve the exact legacy action/method/hash alphabet for valid buttons.
-if (is_string($data) && strlen($data)<=64 &&
-    preg_match('/^prePayCheck_([a-zA-Z0-9]+)_([a-zA-Z0-9]+)_([a-zA-Z0-9]{1,50})$/D',
-               $data, $match)) {
+// Only a complete, valid Telegram prepayment frame may be dispatched.
+// Consume malformed callbacks in this namespace before bot.php can pass
+// them to unrelated financial handlers with legacy substring matching.
+if (is_string($data) && str_starts_with($data, 'prePayCheck_')) {
+    if (strlen($data)>64 ||
+        !preg_match('/^prePayCheck_([a-zA-Z0-9]+)_([a-zA-Z0-9]+)_([a-zA-Z0-9]{1,50})$/D',
+                    $data, $match)) {
+        answerCallbackQuery($callbackId,
+            'این دکمهٔ پرداخت معتبر نیست؛ لطفاً از فاکتور جدید استفاده کنید.', true);
+        return;
+    }
     $actionType = $match[1];
     $payMethod  = strtolower($match[2]);
     $hash_id    = $match[3];
