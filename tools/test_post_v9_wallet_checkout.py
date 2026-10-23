@@ -592,6 +592,32 @@ def check():
         assert wallet()==49900 and cap()==8
         cases.append('real_multi_wallet_checkout_full_hold_order_delivery_after_finality')
 
+        # Review R2: exact local order totals must equal the REAL wallet
+        # debit even when the paid price is not divisible by account count.
+        for charge,quantity,expected in (
+            (100,3,'34,33,33'),(101,2,'51,50')
+        ):
+            name=f'r2_wallet_allocation_{charge}_{quantity}'
+            pay_id=newpay(name,quantity)
+            if charge!=100:
+                sql(work,env,f'UPDATE pays SET price={charge} WHERE id={pay_id}')
+            events=route(work,env,driver,hash=name)
+            assert len(calls(events,'POST'))==quantity,events
+            assert paid(pay_id)=='paid_with_wallet'
+            assert wallet()==50000-charge and cap()==10-quantity
+            amounts=sql(work,env,
+                'SELECT GROUP_CONCAT(o.amount ORDER BY e.ordinal SEPARATOR ",") '
+                'FROM orders_list o JOIN service_effects e ON e.order_id=o.id '
+                f'WHERE e.pay_row_id={pay_id} AND e.effect_kind="create"')
+            assert amounts==expected,(charge,quantity,amounts,events)
+            assert int(sql(work,env,
+                'SELECT COALESCE(SUM(o.amount),0) FROM orders_list o '
+                'JOIN service_effects e ON e.order_id=o.id '
+                f'WHERE e.pay_row_id={pay_id}'))==charge
+            assert not calls(route(work,env,driver,hash=name),'POST')
+            assert wallet()==50000-charge and cap()==10-quantity
+            cases.append(f'r2_exact_wallet_order_allocation_{charge}_{quantity}_no_replay')
+
         unknown=newpay('native_partial',2)
         failed=route(work,env,driver,hash='native_partial',remote='second_lost')
         assert len(calls(failed,'POST'))==2 and not calls(failed,'QR'),failed

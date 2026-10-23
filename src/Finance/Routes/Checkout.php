@@ -838,10 +838,6 @@ if (preg_match('/payBuyWithWallet(.*)/', $data, $match)) {
             $accountCount = (int)($payInfo['agent_count'] ?? 1);
             $accountCount = max(1, $accountCount);
 
-            $eachPrice = ($accountCount > 0)
-                        ? ($price / $accountCount)
-                        : $price;
-
             // The locked plan snapshot pins exactly the dimensions that
             // authorized wallet debit. A post-COMMIT plan edit cannot
             // silently reduce (or change) the customer's paid entitlement.
@@ -948,7 +944,9 @@ if (preg_match('/payBuyWithWallet(.*)/', $data, $match)) {
                     $orderId=insertOrder(
                         $connection,$uid,$token,$fid,$server_id,$inbound_id,
                         $remark,$uniqid2?:$uniqid,$protocol,$expire_date,
-                        $vray_link,$eachPrice,$date,$rahgozar,$agent_bought,true);
+                        $vray_link,
+                        achbotAllocateOrderAmount((int)$price,$accountCount,$i),
+                        $date,$rahgozar,$agent_bought,true);
                     achbotLinkPaidAccountEffect($connection,$effectId,$orderId);
                     if ($connection->commit()!==true)
                         throw new RuntimeException('wallet_buy_order_commit_unknown');

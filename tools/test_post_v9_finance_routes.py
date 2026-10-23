@@ -3975,6 +3975,54 @@ def main():
                     requires_operator_review=label=='partial'))
                 sql(work,env,"UPDATE server_info SET ucount=20 WHERE id=2")
 
+        # Review R2: run the ACTUAL hosted callback/CREATE and integer-bound
+        # insertOrder path for nondivisible paid prices, not only a helper.
+        for provider,price,count,expected in (
+            ('nextpay',100,3,'34,33,33'),
+            ('zarinpal',101,2,'51,50')
+        ):
+            name=f'r2-hosted-{provider}-{price}-{count}'
+            seed_payment(work,env,name,'BUY_SUB',7,2,name+'-invoice')
+            sql(work,env,f"UPDATE pays SET price={price},agent_count={count},"
+                f"description='r2alloc{price}{count}' WHERE hash_id='{name}'")
+            sql(work,env,"INSERT INTO payment_attempts "
+                "(pay_row_id,provider,order_hash,provider_reference,"
+                "quote_amount,quote_currency,local_amount_toman,stage) "
+                f"SELECT id,'{provider}',hash_id,'{name}-invoice',"
+                f"price,'toman',price,'pending' FROM pays WHERE hash_id='{name}'")
+            pay_id=int(sql(work,env,f"SELECT id FROM pays WHERE hash_id='{name}'"))
+            sql(work,env,f'UPDATE server_info SET ucount={count} WHERE id=2')
+            before_wallet=sql(work,env,"SELECT wallet FROM users WHERE userid=1001").strip()
+            outcome=run_php(work,env,stage,dict(route='do_action',get={},
+                provider=provider,pay_row_id=pay_id,
+                scripted_marzban_creates=['success']*count))
+            posted=[x for x in outcome['events'] if x['name']=='marzban_create_attempt']
+            assert len(posted)==count,(name,outcome)
+            assert all(e['held_at_post']==count for e in posted),posted
+            recorded=sql(work,env,
+                'SELECT GROUP_CONCAT(o.amount ORDER BY e.ordinal SEPARATOR ",") '
+                'FROM orders_list o JOIN service_effects e ON e.order_id=o.id '
+                f'WHERE e.pay_row_id={pay_id} AND e.effect_kind="create"').strip()
+            summed=sql(work,env,
+                'SELECT COALESCE(SUM(o.amount),0) FROM orders_list o '
+                'JOIN service_effects e ON e.order_id=o.id '
+                f'WHERE e.pay_row_id={pay_id} AND e.effect_kind="create"').strip()
+            assert recorded==expected and summed==str(price),(name,recorded,summed)
+            assert sql(work,env,
+                f"SELECT stage FROM payment_attempts WHERE pay_row_id={pay_id}").strip()=='done'
+            assert sql(work,env,
+                f"SELECT state FROM pays WHERE id={pay_id}").strip()=='paid'
+            assert sql(work,env,"SELECT wallet FROM users WHERE userid=1001").strip()==before_wallet
+            assert sql(work,env,'SELECT ucount FROM server_info WHERE id=2').strip()=='0'
+            replay=run_php(work,env,stage,dict(route='do_action',get={},
+                provider=provider,pay_row_id=pay_id,
+                scripted_marzban_creates=['success']*count))
+            assert not any(e['name']=='marzban_create_attempt' for e in replay['events']),replay
+            records.append(dict(case=f'r2_exact_hosted_{provider}_{price}_{count}_no_replay',
+                pass_=True,original_amount=price,order_total=int(summed),
+                real_provider_requests=0))
+            sql(work,env,'UPDATE server_info SET ucount=20 WHERE id=2')
+
         # A post-create identity mismatch must roll back the local order and
         # effect link in ONE transaction. The remote uncertainty is not
         # authorization to replay or a reason to refund money.

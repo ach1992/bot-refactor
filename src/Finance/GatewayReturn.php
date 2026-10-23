@@ -1224,7 +1224,6 @@ function achbotPerformPaymentEffect($payRowId, $gateType, &$effectStage = null) 
         $accountCount = (int)($payParam['agent_count']??0)>0
             ? (int)$payParam['agent_count'] : 1;
         if ($accountCount<=0) throw new RuntimeException('hosted_invalid_account_quantity');
-        $eachPrice = $amount / $accountCount;
 
         if ($acount == 0 && $inbound_id != 0) {
 
@@ -1408,7 +1407,7 @@ function achbotPerformPaymentEffect($payRowId, $gateType, &$effectStage = null) 
                     $protocol,
                     $expire_date,
                     $vray_link,
-                    $eachPrice,
+                    achbotAllocateOrderAmount((int)$amount,$accountCount,$i),
                     time(),
                     $rahgozar,
                     $agentBought,

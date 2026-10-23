@@ -271,7 +271,6 @@ if (
         $accountCount=$reservedAccountCount;
         if (!is_int($accountCount) || $accountCount<=0)
             throw new RuntimeException('manual_standard_capacity_claim_missing');
-        $eachPrice    = ($accountCount > 0) ? ($price / $accountCount) : $price;
 
         $planDetails = getPlanDetails($connection, $fid);
         $plan        = $planDetails['plan'];
@@ -376,7 +375,7 @@ if (
                 'protocol'     => $protocol,
                 'expire_date'  => $expire_date,
                 'vray_link'    => $vray_link,
-                'amount'       => $eachPrice,
+                'amount'       => achbotAllocateOrderAmount((int)$price,$accountCount,$i),
                 'date'         => $date,
                 'rahgozar'     => $rahgozar,
                 'agent_bought' => $agent_bought,

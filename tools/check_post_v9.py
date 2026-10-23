@@ -1079,6 +1079,10 @@ def main():
             "nextpay_callback_provider_scoped_colliding_external_reference",
             "zarinpal_callback_provider_scoped_colliding_external_reference",
         }
+        mandatory_finance.update({
+            'r2_exact_hosted_nextpay_100_3_no_replay',
+            'r2_exact_hosted_zarinpal_101_2_no_replay',
+        })
         mandatory_finance.add('hosted_order_and_effect_link_atomic_rollback')
         # R7 real hosted claim, Marzban adapter, order CAS and local SQL faults.
         mandatory_finance.update({
@@ -1317,6 +1321,8 @@ def main():
             "real_standard_manual_remark_invalid_rejected_predebit",
             "real_standard_invalid_plan_day_predebit_no_hold",
             "real_standard_invalid_generated_prefix_predebit_no_hold",
+            "r2_exact_wallet_order_allocation_100_3_no_replay",
+            "r2_exact_wallet_order_allocation_101_2_no_replay",
             "real_multi_wallet_checkout_full_hold_order_delivery_after_finality",
             "real_multi_wallet_second_line_ambiguous_stays_paid_hold_no_replay",
             "real_custom_wallet_checkout_single_effect_after_commit",
@@ -1360,8 +1366,18 @@ def main():
             "postverified_plan_dimensions_edit_keeps_standard_quote_and_order",
             "postverified_plan_dimensions_edit_keeps_custom_quote_and_order",
             "postverified_plan_physical_target_edit_stays_under_review",
+            "r1_postverified_invoice_amount_drift_keeps_original_invoice_nonterminal",
+            "r1_postverified_invoice_mode_drift_keeps_original_invoice_nonterminal",
+            "r1_postverified_invoice_custom_to_standard_keeps_original_invoice_nonterminal",
+            "r1_postverified_invoice_coordinated_drift_keeps_original_invoice_nonterminal",
+            "r1_postverified_bank_intent_amount_drift_keeps_original_invoice_nonterminal",
+            "r1_issued_bank_amount_differs_before_claim_no_new_original",
+            "r1_bank_method_drift_after_claim_no_remote_post",
+            "r1_bank_random_transfer_quote_keeps_original_nominal_price",
+            "r1_postclaim_preflight_mutation_never_posts",
+            "r1_missing_invoice_contract_before_claim_fails_closed",
         }
-        if not (bank_buy.get("complete") and bank_buy.get("cases")>=17
+        if not (bank_buy.get("complete") and bank_buy.get("cases")>=27
                 and required_bank.issubset(bank_buy.get("scenarios",[]))
                 and bank_buy.get("source_real_php")
                 and bank_buy.get("owned_mariadb_only")
@@ -1601,6 +1617,8 @@ def main():
             "real_topup_raw_callback_accepted_3",  # maximum callback
         }
         required_manual.update({
+            'r2_exact_manual_order_allocation_100_3_no_replay',
+            'r2_exact_manual_order_allocation_101_2_no_replay',
             'auto_bank_day_service_only_after_verified_remote_and_atomic_local_effect',
             'auto_bank_volume_service_only_after_verified_remote_and_atomic_local_effect',
             'auto_bank_renew_service_only_after_verified_remote_and_atomic_local_effect',
@@ -1674,6 +1692,8 @@ def main():
         required_integrity={
             'r1_insufficient_total_count_prevents_any_remote_create',
             'r1_exact_two_units_reserved_once_and_replay_fenced',
+            'r2_actual_manual_helper_integer_allocation_100_3_no_replay',
+            'r2_actual_manual_helper_integer_allocation_101_2_no_replay',
             'r1_remote_unknown_keeps_pre_reserved_capacity_no_replay',
             'r1_after_two_remote_creates_SQL_failure_keeps_reserved_capacity_review_only',
             'r1_mysqlireportoff_conditional_reservation_SQL_failure_no_create',

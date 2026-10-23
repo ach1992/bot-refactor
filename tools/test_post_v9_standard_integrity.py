@@ -276,6 +276,33 @@ def check():
         assert ledger=='manual_hold\t0\t2\tconsumed\ncreate\t1\t0\tlocal_recorded\ncreate\t2\t0\tlocal_recorded',ledger
         cases.append('r1_exact_two_units_reserved_once_and_replay_fenced')
 
+        # R2: execute unmodified ManualApproval.php + REAL OrderWrites.php
+        # INSERT into original integer orders_list.amount. No SQL spy here.
+        for price,quantity,expected in (
+            (100,3,'34,33,33'),(101,2,'51,50')
+        ):
+            key=f'r2_native_manual_{price}_{quantity}'
+            seed(work,env,key,capacity=quantity,count=quantity)
+            if price!=100:
+                sql(work,env,f"UPDATE pays SET price={price} WHERE hash_id='{key}'")
+            events=call(key)
+            assert len(named(events,'CREATE'))==quantity,(key,events)
+            assert state(key)=='approved' and capacity()==0 and orders()==quantity
+            amounts=sql(work,env,
+                'SELECT GROUP_CONCAT(o.amount ORDER BY e.ordinal SEPARATOR ",") '
+                'FROM orders_list o JOIN service_effects e ON e.order_id=o.id '
+                f"JOIN pays p ON p.id=e.pay_row_id WHERE p.hash_id='{key}' "
+                "AND e.effect_kind='create'")
+            total=sql(work,env,
+                'SELECT COALESCE(SUM(o.amount),0) FROM orders_list o '
+                'JOIN service_effects e ON e.order_id=o.id '
+                f"JOIN pays p ON p.id=e.pay_row_id WHERE p.hash_id='{key}' "
+                "AND e.effect_kind='create'")
+            assert amounts==expected and total==str(price),(key,amounts,total)
+            assert not named(call(key),'CREATE')
+            assert capacity()==0 and orders()==quantity
+            cases.append(f'r2_actual_manual_helper_integer_allocation_{price}_{quantity}_no_replay')
+
         key=seed(work,env,'lost_remote',capacity=2,count=2)
         ev=call(key,remote='unknown')
         assert len(named(ev,'CREATE'))==1 and state(key)=='processing'

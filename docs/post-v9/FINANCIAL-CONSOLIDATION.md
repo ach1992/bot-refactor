@@ -586,7 +586,39 @@ claim that exactly-once delivery or end-to-end recovery is solved**.
 
 The automatic card-receipt BUY_SUB handler now competes with administrator
 approval for the same exclusive original pays row and leaves the successful
-claim in nonterminal processing until fulfillment can be proved. The new
+claim in nonterminal processing until fulfillment can be proved.
+
+**R1 original bank invoice claim (proposed additive 009, NOT installed):**
+`migrations/post-v9/009_bank_buy_invoice_claims.sql` persists one immutable
+`bank_buy_invoice_claims` row per paid BUY_SUB receipt inside the SAME short
+InnoDB transaction as its exclusive `have_sent -> processing` claim.
+For post-003 receipts, the original `payment_attempts.local_amount_toman`
+and claimed payment method/order hash must match the customer-facing nominal
+invoice before bank-Cron may reserve the 009 claim; they are rechecked at
+preflight and finalization. The bank's separately randomized transfer
+`quote_amount` is not the service's nominal `pays.price`; never equate them.
+For explicitly legacy receipts without an attempt, a new 009 claim only pins
+the then-current original row, and operator evidence is still needed to
+confirm the historical paid quote. The original invoice fingerprint binds
+its pays ID/hash, customer, price, raw account count, standard/custom quote
+mode and explicit day/volume,
+plan/server, description, agent_bought, optional order ID, payment method
+and type. The persisted originally purchased entitlement includes the
+standard plan's actual day/volume snapshot AT CLAIM; later changes to that
+mutable plan template do not override the original purchased service.
+Preflight compares the current pays row AND original scheduler snapshot
+against this durable claim before remote CREATE. The locked finisher rechecks
+the same original identity, the original amount/quantity/mode/entitlement and
+all verified 007 account effects before any terminal payment/order COMMIT.
+A changed paid subject, unknown remote result, missing 009 or SQL ambiguity
+leaves the claim nonterminal and **cannot authorize a second provider POST,
+unearned order finality or automatic refund**. An existing processing receipt
+without a 009 claim is NOT retroactively inferred or silently rebuilt from
+mutable pays/plan values: it requires operator reconciliation.
+009 is CREATE-only for a pristine target; on any existing table or uncertain
+installation, stop for a separately reviewed, data-preserving forward schema
+plan. 009 is shipped as a checksummed SQL sidecar, not applied by the source
+ZIP or GitHub CI to any installed tenant. The new
 src/Finance/BankPurchase.php uses the **same** additive 007 per-account CREATE
 journal and strict Marzban readback rather than a second provider engine.
 Each ordinal, username, operation marker, target, exact expiry and byte
@@ -598,7 +630,13 @@ Only a short local transaction over all verified ordinal effects may insert
 every subscription order and journal link and transition the original
 payment from processing to auto_cart_approved. Capacity is already
 atomically reserved before the first CREATE; no second final deduction.
-Integer total order amount including the remainder is allocated among lines.
+All paid multi-account CREATE routes (bank-Cron, hosted, manually approved
+standard, wallet) call the same integer-only
+`achbotAllocateOrderAmount(total,count,1-based-ordinal)`: each order receives
+`intdiv(total,count)` plus one for the earliest `total % count` ordinals.
+The stored order amounts therefore sum exactly to the original settled/debited
+payment for nondivisible prices (100/3 -> 34+33+33; 101/2 -> 51+50).
+Do not use float division followed by integer SQL binding.
 No remote API or Telegram call occurs inside this transaction. Customer
 messages are post-COMMIT only. Pending outcomes remain for evidenced
 operator reconciliation. Failed local recording and unknown remote results

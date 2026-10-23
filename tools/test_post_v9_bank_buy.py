@@ -87,6 +87,33 @@ function buildLinksAndSendQr(...$args) {
         $GLOBALS['events'][]=['event'=>'POST_VERIFIED_PLAN_CHANGED',
             'change'=>$mode];
     }
+    if (in_array($mode,[
+        'invoice_amount_drift','invoice_mode_drift',
+        'invoice_custom_to_standard','invoice_coordinated_drift',
+        'bank_intent_amount_drift'
+    ],true) && !($GLOBALS['fixture_invoice_edited']??false)) {
+        // A DIFFERENT SQL connection changes the paid subject only after
+        // the real source verified the provider GET, before its local COMMIT.
+        global $socket,$dbName;
+        $second=new mysqli('localhost','root','',$dbName,0,$socket);
+        $payId=(int)($GLOBALS['spec']['pay']??0);
+        $set=match($mode) {
+            'bank_intent_amount_drift'=>"local_amount_toman=102",
+            'invoice_amount_drift'=>"price=102",
+            'invoice_mode_drift'=>"day=37,volume=7",
+            'invoice_custom_to_standard'=>"day=0,volume=0",
+            'invoice_coordinated_drift'=>"price=102,agent_count=2,day=37,volume=7,"
+                ."description='different_invoice',agent_bought=1",
+        };
+        $table=$mode==='bank_intent_amount_drift'?'payment_attempts':'pays';
+        $where=$mode==='bank_intent_amount_drift'?'pay_row_id':'id';
+        if (!$second->query("UPDATE ".$table." SET ".$set." WHERE ".$where."=".$payId) ||
+            $second->affected_rows!==1)
+            throw new RuntimeException('fixture_invoice_mutation_failed');
+        $second->close();
+        $GLOBALS['fixture_invoice_edited']=true;
+        $GLOBALS['events'][]=['event'=>'POST_VERIFIED_INVOICE_CHANGED','mode'=>$mode];
+    }
     if (end($args)!==false) throw new RuntimeException('premature_qr_delivery');
     $GLOBALS['events'][]=['event'=>'RENDER','state'=>fixtureState()];
     return ['fixture-token','["vless://fixture.invalid"]','fixture-uuid',
@@ -122,6 +149,16 @@ if ($op==='claim') {
     $id=(int)($spec['pay']??0);
     $pay=$connection->query('SELECT * FROM pays WHERE id='.$id)->fetch_assoc();
     $value=achbotAutoBankClaim($connection,$pay);
+} elseif ($op==='provision_claimed') {
+    require_once $root.'/src/Finance/BankPurchase.php';
+    $id=(int)($spec['pay']??0);
+    $pay=$connection->query('SELECT * FROM pays WHERE id='.$id)->fetch_assoc();
+    try {
+        $value=achbotAutoBankProvisionBuySub(
+            $connection,$pay,$botState,$buttonValues,[0],false,$botUrl);
+    } catch (Throwable $error) {
+        $value=['committed'=>false,'deferred'=>true];
+    }
 } else {
     require $root.'/src/Finance/AutomaticReceipts.php';
     $value=true;
@@ -189,7 +226,8 @@ def check():
         query(work,env,'UPDATE server_info SET ucount=100 WHERE id=2')
         assert len(query(work,env,'SHOW TABLES').splitlines())==23
         for f in ('001_marzban_panel_group_id.sql',
-                  '003_payment_attempts.sql','007_service_effects.sql'):
+                  '003_payment_attempts.sql','007_service_effects.sql',
+                  '009_bank_buy_invoice_claims.sql'):
             query(work,env,(ROOT/'migrations/post-v9'/f).read_text())
         driver=work/'bank-buy-driver.php';driver.write_text(PHP)
         claim=seed(work,env,'bankbuynonterminal')
@@ -266,6 +304,99 @@ def check():
             assert int(query(work,env,'SELECT ucount FROM server_info WHERE id=2'))==capacity_before-1
             cases.append('postverified_plan_dimensions_edit_keeps_'+
                          ('custom_quote' if is_custom else 'standard_quote')+'_and_order')
+
+        # R1: mutable pays fields are NOT immutable invoice evidence. Source
+        # has already posted and STRICTLY GET-verified the provider by this
+        # point; every changed original quote/amount must remain reviewable.
+        for mode in ('invoice_amount_drift','invoice_mode_drift',
+                     'invoice_custom_to_standard','invoice_coordinated_drift',
+                     'bank_intent_amount_drift'):
+            pid=seed(work,env,'bankr1_'+mode,
+                     method='bank_transfer' if mode=='bank_intent_amount_drift' else None)
+            if mode=='invoice_custom_to_standard':
+                query(work,env,f'UPDATE pays SET day=37,volume=7 WHERE id={pid}')
+            original_price=int(query(work,env,f'SELECT price FROM pays WHERE id={pid}'))
+            before_capacity=int(query(work,env,'SELECT ucount FROM server_info WHERE id=2'))
+            outcome=run(work,env,driver,pay=pid,mode=mode)
+            assert any(e['event']=='POST_VERIFIED_INVOICE_CHANGED'
+                for e in outcome['events']),outcome
+            assert sum(e['event']=='POST' for e in outcome['events'])==1,outcome
+            assert sum(e['event']=='GET' for e in outcome['events'])==1,outcome
+            assert state(work,env,pid)=='processing',outcome
+            assert effects(work,env,pid)=='verified'
+            assert total(work,env,'orders_list',pid)==0
+            assert amount(work,env,pid)==0
+            assert int(query(work,env,'SELECT ucount FROM server_info WHERE id=2'))==before_capacity-1
+            assert not any(e['event']=='DELIVER' or
+                (e['event']=='MESSAGE' and e['success']) for e in outcome['events']),outcome
+            assert not any(e['event']=='POST' for e in run(work,env,driver,pay=pid)['events'])
+            assert int(query(work,env,'SELECT ucount FROM server_info WHERE id=2'))==before_capacity-1
+            assert int(query(work,env,f'SELECT amount FROM bank_buy_invoice_claims WHERE pay_row_id={pid}'))==original_price
+            cases.append('r1_postverified_'+mode+'_keeps_original_invoice_nonterminal')
+
+        # Earlier 003 method selection preserved nominal price independently
+        # of the randomized payable transfer amount. A changed pays.price
+        # BEFORE 009 claim must not become a newly 'original' bank invoice.
+        intent_id=seed(work,env,'bankr1_preclaim_intent',method='bank_transfer')
+        query(work,env,f'UPDATE pays SET price=105 WHERE id={intent_id}')
+        blocked=run(work,env,driver,op='claim',pay=intent_id)
+        assert blocked['result'] is False,blocked
+        assert state(work,env,intent_id)=='have_sent'
+        assert total(work,env,'bank_buy_invoice_claims',intent_id)==0
+        assert not any(x['event']=='POST' for x in blocked['events'])
+        cases.append('r1_issued_bank_amount_differs_before_claim_no_new_original')
+
+        # A 003 bank attempt reassigned to a different method after exclusive
+        # claim must be refused BEFORE POST, even with unchanged pays fields.
+        method_id=seed(work,env,'bankr1_preflight_method',method='bank_transfer')
+        assert run(work,env,driver,op='claim',pay=method_id)['result'] is True
+        query(work,env,f"UPDATE payment_attempts SET provider='gift_card' "
+             f"WHERE pay_row_id={method_id}")
+        wrong_method=run(work,env,driver,op='provision_claimed',pay=method_id)
+        assert wrong_method['result']['committed'] is False,wrong_method
+        assert not any(e['event']=='POST' for e in wrong_method['events'])
+        assert state(work,env,method_id)=='processing'
+        assert total(work,env,'service_effects',method_id)==0
+        cases.append('r1_bank_method_drift_after_claim_no_remote_post')
+
+        # The randomized transfer quote need not equal nominal order amount.
+        # 003 local_amount_toman, rather than quote_amount, is the anchor.
+        odd_id=seed(work,env,'bankr1_random_quote',method='bank_transfer')
+        query(work,env,f'UPDATE payment_attempts SET quote_amount=98765 '
+             f'WHERE pay_row_id={odd_id}')
+        confirmed=run(work,env,driver,pay=odd_id)
+        assert confirmed['result'] is True,confirmed
+        assert state(work,env,odd_id)=='auto_cart_approved'
+        assert amount(work,env,odd_id)==101
+        assert not any(x['event']=='POST' for x in run(work,env,driver,pay=odd_id)['events'])
+        cases.append('r1_bank_random_transfer_quote_keeps_original_nominal_price')
+
+        # A paid subject edited AFTER exclusive claim but BEFORE preflight
+        # also must never reach POST or terminal local accounting.
+        preclaim=seed(work,env,'bankr1_preflight_changed')
+        assert run(work,env,driver,op='claim',pay=preclaim)['result'] is True
+        query(work,env,f'UPDATE pays SET price=104,day=31,volume=4 WHERE id={preclaim}')
+        before_pre=int(query(work,env,'SELECT ucount FROM server_info WHERE id=2'))
+        refused=run(work,env,driver,op='provision_claimed',pay=preclaim)
+        assert refused['result']['committed'] is False,refused
+        assert not any(e['event']=='POST' for e in refused['events'])
+        assert effects(work,env,preclaim) in ('','NULL') and state(work,env,preclaim)=='processing',(
+            effects(work,env,preclaim),state(work,env,preclaim),refused)
+        assert int(query(work,env,'SELECT ucount FROM server_info WHERE id=2'))==before_pre
+        cases.append('r1_postclaim_preflight_mutation_never_posts')
+
+        # The 009 durable invoice contract is MANDATORY, not a silently
+        # optional ledger. Missing schema keeps an untouched bank receipt.
+        query(work,env,'RENAME TABLE bank_buy_invoice_claims TO fixture_hidden_bank_claim')
+        try:
+            missing=seed(work,env,'bankr1_missing_009')
+            denied=run(work,env,driver,pay=missing)
+            assert state(work,env,missing)=='have_sent',denied
+            assert not any(e['event']=='POST' for e in denied['events'])
+            assert total(work,env,'service_effects',missing)==0
+        finally:
+            query(work,env,'RENAME TABLE fixture_hidden_bank_claim TO bank_buy_invoice_claims')
+        cases.append('r1_missing_invoice_contract_before_claim_fails_closed')
 
         # Plan identity and physical inbound are NOT mutable entitlements:
         # a target edit after a verified effect must still fail closed.

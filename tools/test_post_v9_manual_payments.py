@@ -335,13 +335,14 @@ function insertOrder(...$args){
          str_starts_with((string)($GLOBALS['spec']['data']??''),'accCustom'))) {
         global $connection;
         $uid=(int)$args[1];$fid=(int)$args[3];$srv=(int)$args[4];$inbound=(int)$args[5];
+        $amount=(int)$args[11];
         $remark=$connection->real_escape_string((string)$args[6]);
         $uuid=$connection->real_escape_string((string)$args[7]);
         $connection->query("INSERT INTO orders_list
             (userid,token,transid,fileid,server_id,inbound_id,remark,uuid,
              protocol,expire_date,link,amount,status,date,notif,rahgozar,agent_bought)
             VALUES ($uid,'fixture-token','',$fid,$srv,$inbound,'$remark','$uuid',
-                    'vless',1800000000,'fixture-url',100000,1,'synthetic',0,0,0)");
+                    'vless',1800000000,'fixture-url',$amount,1,'synthetic',0,0,0)");
         return (int)$connection->insert_id;
     }
     // Under mysqli_report_off a legacy call without strict confirmation did
@@ -383,6 +384,9 @@ function editMarzbanConfig(...$args){
         'applied_bytes'=>3*1073741824];
 }
 require_once $root.'/src/Purchase/Core.php';
+// Fixture insertOrder() is a deliberate transport/SQL spy; the shared
+// production integer amount allocator must still be loaded from real source.
+require_once $root.'/src/Purchase/OrderWrites.php';
 // Production buy_helpers.php loads this module before route dispatch.
 // Earlier fixtures did not need it until referral registration moved
 // ahead of Telegram delivery; exercise the real payment-scoped module.
@@ -563,6 +567,7 @@ def check():
         query(work,env,(ROOT/'migrations/post-v9/003_payment_attempts.sql').read_text())
         query(work,env,(ROOT/'migrations/post-v9/007_service_effects.sql').read_text())
         query(work,env,(ROOT/'migrations/post-v9/008_referral_awards.sql').read_text())
+        query(work,env,(ROOT/'migrations/post-v9/009_bank_buy_invoice_claims.sql').read_text())
         # Each isolated standard receipt now holds capacity before POST.
         # Supply independent test headroom; focused exhaustion is checked
         # in actual ServiceEffects concurrency and reservation regressions.
@@ -743,15 +748,17 @@ def check():
 
         # Review F1/F2: execute actual service operator callback handlers, not
         # merely helper functions. Every remote action is a local spy.
-        def service_pay(key,subject='BUY_SUB',method='bank_transfer',received=True):
-            seed(work,env,key)
+        def service_pay(key,subject='BUY_SUB',method='bank_transfer',received=True,
+                        amount=100000,quantity=0):
+            seed(work,env,key,price=amount)
             # A physical Marzban username cannot be reused for two paid
             # identities on the same provider. Synthetic custom descriptions
             # must therefore differ per payment; real mismatches fail closed.
             description='fx_'+key if (key.startswith('custom') or
                 key.startswith('servicecallbackrace')) else 'fixture'
             query(work,env,"UPDATE pays SET type='"+subject+"',plan_id=1,"
-                  "server_id=1,day=30,volume=10,description='"+description+"' "
+                  f"server_id=1,day=30,volume=10,agent_count={quantity},"
+                  "description='"+description+"' "
                   "WHERE hash_id='"+key+"'")
             assert base(key,'claim',method)
             if received:
@@ -785,8 +792,10 @@ def check():
         # reachable finance boundary from the custom/renewal approval routes.
         # Receipt evidence, subject and durable remote uncertainty must be
         # tested against that real current source.
-        def standard_pay(key,method='bank_transfer',received=True):
-            service_pay(key,subject='BUY_SUB',method=method,received=received)
+        def standard_pay(key,method='bank_transfer',received=True,
+                         amount=100000,quantity=0):
+            service_pay(key,subject='BUY_SUB',method=method,received=received,
+                        amount=amount,quantity=quantity)
             query(work,env,"UPDATE pays SET day=0,volume=0 WHERE hash_id='"+key+"'")
             return key
 
@@ -862,6 +871,28 @@ def check():
                 'successful manually reviewed CREATE must consume exactly one owned capacity hold')
         reject_service('standardsuccess','standard_approval','accept')
         cases.append('real_standard_verified_receipt_one_delivery_no_replay')
+        # Review R2: the real ManualApproval.php source must not truncate
+        # fractional shares when insertOrder() binds its integer amount.
+        for price,count,expected in ((100,3,'34,33,33'),(101,2,'51,50')):
+            key=f'r2manualallocation{price}x{count}'
+            standard_pay(key,method='gift_card',amount=price,quantity=count)
+            events=run_route(work,env,route_driver,data='accept'+key,actor=9001,
+                             route='standard_approval')
+            assert [e['name'] for e in events].count('remote_create')==count,events
+            assert query(work,env,f"SELECT state FROM pays WHERE hash_id='{key}'")=='approved',events
+            amounts=query(work,env,
+                'SELECT GROUP_CONCAT(o.amount ORDER BY e.ordinal SEPARATOR ",") '
+                'FROM orders_list o JOIN service_effects e ON e.order_id=o.id '
+                f"JOIN pays p ON p.id=e.pay_row_id WHERE p.hash_id='{key}' "
+                "AND e.effect_kind='create'")
+            assert amounts==expected,(price,count,amounts,events)
+            assert int(query(work,env,
+                'SELECT COALESCE(SUM(o.amount),0) '
+                'FROM orders_list o JOIN service_effects e ON e.order_id=o.id '
+                f"JOIN pays p ON p.id=e.pay_row_id WHERE p.hash_id='{key}'"))==price
+            reject_service(key,'standard_approval','accept')
+            cases.append(f'r2_exact_manual_order_allocation_{price}_{count}_no_replay')
+
         # A Telegram exception AFTER the approved local COMMIT is not evidence
         # that Marzban or money failed. A follow-up is required, never a
         # second fulfillment or a misleading 'service outcome unknown' alert.
@@ -1963,7 +1994,8 @@ def check():
         # The exclusive service claim can be granted only once even when
         # two distinct process workers race. No external Marzban side effect.
         seed(work,env,'autoservice')
-        query(work,env,"UPDATE pays SET type='BUY_SUB' WHERE hash_id='autoservice'")
+        query(work,env,"UPDATE pays SET type='BUY_SUB',plan_id=7,server_id=2,"
+              "day=0,volume=0,agent_count=1 WHERE hash_id='autoservice'")
         assert base('autoservice','claim')
         query(work,env,"UPDATE pays SET state='have_sent' WHERE hash_id='autoservice'")
         with ThreadPoolExecutor(max_workers=2) as executor:

@@ -25,23 +25,37 @@ function achbotAutoBankFinishBuySub(mysqli $db, array $pay, array $lines): bool 
         $stmt->bind_param('i',$id);
         if (!$stmt->execute()) throw new RuntimeException('bank_buy_pay_read');
         $locked=$stmt->get_result()->fetch_assoc(); $stmt->close();
-        $count=$locked?max(1,(int)$locked['agent_count']):0;
-        $price=(int)($locked['price']??0);
-        $server=(int)($locked['server_id']??0);
-        $planId=(int)($locked['plan_id']??0);
-        if (!$locked || (int)$locked['user_id']!==$owner ||
+        // The original invoice was captured in the SAME transaction as the
+        // bank receipt claim. Never use a later mutable price as historical
+        // financial evidence or an in-memory quote as a replacement.
+        $stmt=$db->prepare('SELECT * FROM bank_buy_invoice_claims
+            WHERE pay_row_id=? FOR UPDATE');
+        if (!$stmt) throw new RuntimeException('bank_buy_invoice_prepare');
+        $stmt->bind_param('i',$id);
+        if (!$stmt->execute()) throw new RuntimeException('bank_buy_invoice_read');
+        $claim=$stmt->get_result()->fetch_assoc();$stmt->close();
+        if (!$locked || !achbotBankBuyClaimMatches($locked,$claim) ||
+            !hash_equals((string)$claim['invoice_sha256'],
+                         achbotBankBuyInvoiceFingerprint($pay)))
+            throw new RuntimeException('bank_buy_invoice_changed');
+        $count=(int)$claim['account_count'];
+        $price=(int)$claim['amount'];
+        $server=(int)$claim['server_id'];
+        $planId=(int)$claim['plan_id'];
+        if ((int)$locked['user_id']!==$owner ||
             $locked['state']!=='processing' || $locked['type']!=='BUY_SUB' ||
             $server<=0 || $planId<=0 || $price<=0 || $count>$price ||
             count($lines)!==$count)
             throw new RuntimeException('bank_buy_payment_changed');
 
-        $stmt=$db->prepare('SELECT provider FROM payment_attempts WHERE pay_row_id=? LIMIT 1 FOR UPDATE');
+        $stmt=$db->prepare('SELECT provider,order_hash,local_amount_toman
+            FROM payment_attempts WHERE pay_row_id=? LIMIT 1 FOR UPDATE');
         if (!$stmt) throw new RuntimeException('bank_buy_method_prepare');
         $stmt->bind_param('i',$id);
         if (!$stmt->execute()) throw new RuntimeException('bank_buy_method_read');
         $attempt=$stmt->get_result()->fetch_assoc(); $stmt->close();
-        if ($attempt && $attempt['provider']!=='bank_transfer')
-            throw new RuntimeException('bank_buy_method_changed');
+        if (!achbotBankBuyAttemptMatches($locked,$attempt))
+            throw new RuntimeException('bank_buy_original_bank_intent_changed');
 
         // Mutable plan identity still requires a fresh physical-target guard.
         // The *entitlement* itself is pinned by the paid, verified per-line
@@ -53,16 +67,10 @@ function achbotAutoBankFinishBuySub(mysqli $db, array $pay, array $lines): bool 
         $stmt->bind_param('i',$planId);
         if (!$stmt->execute()) throw new RuntimeException('bank_buy_plan_read');
         $plan=$stmt->get_result()->fetch_assoc(); $stmt->close();
-        $volume=(int)$locked['volume']; $days=(int)$locked['day'];
-        if ($volume===0 && $days===0) {
-            // This is the original standard quote used in this invocation to
-            // dispatch CREATE. The per-payment 007 journal below proves its
-            // exact requested bytes and remote-verified expiry. A late edit of
-            // server_plans.days/volume is NOT a reason to strand a completed
-            // remote effect or fabricate a different entitlement.
-            $volume=(int)($lines[0]['volume']??0);
-            $days=(int)($lines[0]['days']??0);
-        }
+        // A late plan-template edit must not shrink an already purchased
+        // entitlement. Its dimensions were fixed at the durable bank claim.
+        $volume=(int)$claim['entitled_volume'];
+        $days=(int)$claim['entitled_days'];
         if (!$plan || (int)$plan['server_id']!==$server ||
             (int)$plan['inbound_id']!==0 || $plan['panel_type']!=='marzban' ||
             $volume<=0 || $days<=0 || $days>36500 ||
@@ -96,13 +104,13 @@ function achbotAutoBankFinishBuySub(mysqli $db, array $pay, array $lines): bool 
                 throw new RuntimeException('bank_buy_effect_changed');
         }
 
-        $each=intdiv($price,$count); $extra=$price%$count;
         foreach ($lines as $index=>$line) {
             $n=$index+1; $e=$effects[$n];
             $orderId=insertOrder($db,$owner,(string)$line['token'],$planId,
                 $server,0,(string)$line['remark'],(string)$line['uniqid'],
                 (string)$line['protocol'],(int)$e['requested_expire'],
-                (string)$line['vray_link'],$each+($n<=$extra?1:0),
+                (string)$line['vray_link'],
+                achbotAllocateOrderAmount($price,$count,$n),
                 (int)$line['date'],(int)$line['rahgozar'],
                 (int)$line['agent_bought'],true);
             achbotLinkPaidAccountEffect($db,(int)$e['id'],(int)$orderId);
@@ -145,10 +153,10 @@ function achbotAutoBankProvisionBuySub(
     if ($payId<=0 || $owner<=0 || $planId<=0 || $server<=0)
         throw new RuntimeException('bank_buy_invalid_subject');
 
-    $stmt=$db->prepare("SELECT p.type,p.state,p.user_id,p.plan_id,p.server_id,
+    $stmt=$db->prepare("SELECT p.id,p.hash_id,p.order_id,p.payid,
+        p.type,p.state,p.user_id,p.plan_id,p.server_id,
         p.volume,p.day,p.price,p.agent_count,p.agent_bought,p.description,
-        s.server_id AS plan_server,s.inbound_id,s.volume AS plan_volume,
-        s.days AS plan_days,s.protocol,s.type AS net_type,s.rahgozar,
+        s.server_id AS plan_server,s.inbound_id,s.protocol,s.type AS net_type,s.rahgozar,
         s.limitip,s.custom_path,s.custom_port,s.custom_sni,
         i.ucount,i.remark AS server_remark,c.type AS panel_type,
         c.port_type,c.panel_url,c.sub_links
@@ -160,9 +168,27 @@ function achbotAutoBankProvisionBuySub(
     $stmt->bind_param('i',$payId);
     if (!$stmt->execute()) throw new RuntimeException('bank_buy_preflight_read');
     $p=$stmt->get_result()->fetch_assoc(); $stmt->close();
-    $count=$p?max(1,(int)$p['agent_count']):0;
-    $price=(int)($p['price']??0);
-    if (!$p || $p['type']!=='BUY_SUB' || $p['state']!=='processing' ||
+    $stmt=$db->prepare('SELECT * FROM bank_buy_invoice_claims WHERE pay_row_id=?');
+    if (!$stmt) throw new RuntimeException('bank_buy_claim_preflight_prepare');
+    $stmt->bind_param('i',$payId);
+    if (!$stmt->execute()) throw new RuntimeException('bank_buy_claim_preflight_read');
+    $claim=$stmt->get_result()->fetch_assoc();$stmt->close();
+    if (!$p || !achbotBankBuyClaimMatches($p,$claim) ||
+        !hash_equals((string)$claim['invoice_sha256'],
+                     achbotBankBuyInvoiceFingerprint($pay)))
+        throw new RuntimeException('bank_buy_invoice_preflight_changed');
+    // Reject a method or original 003 nominal amount change BEFORE POST,
+    // even if the rest of the mutable pays row still matches claim 009.
+    $stmt=$db->prepare('SELECT provider,order_hash,local_amount_toman
+        FROM payment_attempts WHERE pay_row_id=? LIMIT 1');
+    if (!$stmt) throw new RuntimeException('bank_buy_preflight_attempt_prepare');
+    $stmt->bind_param('i',$payId);
+    if (!$stmt->execute()) throw new RuntimeException('bank_buy_preflight_attempt_read');
+    $attempt=$stmt->get_result()->fetch_assoc();$stmt->close();
+    if (!achbotBankBuyAttemptMatches($p,$attempt))
+        throw new RuntimeException('bank_buy_original_bank_intent_preflight_changed');
+    $count=(int)$claim['account_count'];$price=(int)$claim['amount'];
+    if ($p['type']!=='BUY_SUB' || $p['state']!=='processing' ||
         (int)$p['user_id']!==$owner || (int)$p['plan_id']!==$planId ||
         (int)$p['server_id']!==$server || (int)$p['plan_server']!==$server ||
         (int)$p['inbound_id']!==0 || $p['panel_type']!=='marzban' ||
@@ -171,12 +197,12 @@ function achbotAutoBankProvisionBuySub(
         $p['panel_url']==='')
         throw new RuntimeException('bank_buy_preflight_unavailable');
 
-    $volume=(int)$p['volume']; $days=(int)$p['day'];
-    if ($volume===0 && $days===0) {
-        $volume=(int)$p['plan_volume']; $days=(int)$p['plan_days'];
-    }
+    // Plan templates may change after payment. Fulfill the original
+    // entitlement recorded at the durable claim, never the new template.
+    $volume=(int)$claim['entitled_volume'];
+    $days=(int)$claim['entitled_days'];
     if ($volume<=0 || $days<=0)
-        throw new RuntimeException('bank_buy_invalid_plan_units');
+        throw new RuntimeException('bank_buy_invalid_claimed_units');
 
     $lines=[]; $deliveries=[];
     for ($i=1;$i<=$count;$i++) {

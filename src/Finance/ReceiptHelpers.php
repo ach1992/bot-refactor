@@ -399,6 +399,71 @@ function achbotAutoBankEligible(mysqli $connection, array $seen): bool {
 }
 
 /**
+ * Canonical original bank BUY_SUB invoice subject, without storing a second
+ * mutable invoice in memory or trusting the post-HTTP pays row as history.
+ * The exact description bytes are hashed, not copied into a new audit table.
+ */
+function achbotBankBuyInvoiceFingerprint(array $pay): string {
+    return hash('sha256',json_encode([
+        'achbot.bank.invoice.v1',
+        (int)($pay['id']??0),(string)($pay['hash_id']??''),
+        (int)($pay['user_id']??0),(string)($pay['type']??''),
+        (int)($pay['plan_id']??0),(int)($pay['server_id']??0),
+        (int)($pay['price']??0),(int)($pay['agent_count']??0),
+        (int)($pay['day']??0),(int)($pay['volume']??0),
+        (string)($pay['description']??''),(int)($pay['agent_bought']??0),
+        (int)($pay['order_id']??0),(string)($pay['payid']??'')
+    ],JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE));
+}
+
+/** Compare a current payment with the FIRST durable bank claim, not itself. */
+function achbotBankBuyClaimMatches(array $pay, ?array $claim): bool {
+    if (!$claim || (string)($pay['type']??'')!=='BUY_SUB' ||
+        !preg_match('/^[a-f0-9]{64}$/D',(string)($claim['invoice_sha256']??'')) ||
+        !hash_equals((string)$claim['invoice_sha256'],
+                     achbotBankBuyInvoiceFingerprint($pay)))
+        return false;
+    $count=(int)($pay['agent_count']??0);
+    if ($count<0) return false;
+    $count=max(1,$count);
+    $quotedDays=(int)($pay['day']??0);
+    $quotedVolume=(int)($pay['volume']??0);
+    $mode=($quotedDays===0 && $quotedVolume===0)?'standard':'custom';
+    return (int)($claim['pay_row_id']??0)===(int)($pay['id']??0) &&
+        (int)$claim['user_id']===(int)($pay['user_id']??0) &&
+        (int)$claim['plan_id']===(int)($pay['plan_id']??0) &&
+        (int)$claim['server_id']===(int)($pay['server_id']??0) &&
+        (int)$claim['amount']===(int)($pay['price']??0) &&
+        (int)$claim['account_count']===$count &&
+        (string)$claim['quote_mode']===$mode &&
+        (int)$claim['quoted_days']===$quotedDays &&
+        (int)$claim['quoted_volume']===$quotedVolume &&
+        ($mode==='standard' || ($quotedDays>0 && $quotedVolume>0)) &&
+        (int)$claim['entitled_days']>0 &&
+        (int)$claim['entitled_days']<=36500 &&
+        (int)$claim['entitled_volume']>0 &&
+        (int)$claim['entitled_volume']<=intdiv(PHP_INT_MAX,1073741824) &&
+        (int)$claim['amount']>0 &&
+        $count<=(int)$claim['amount'];
+}
+
+/**
+ * An existing 003 bank intent pins the original NOMINAL local amount before
+ * the customer sends a receipt. Its randomized bank-transfer quote can be
+ * higher than pays.price; NEVER compare quote_amount to the local order price.
+ * Historical receipts without any attempt can only be pinned at bank-Cron
+ * claim (009); they retain human payment-verification obligations.
+ */
+function achbotBankBuyAttemptMatches(array $pay, ?array $attempt): bool {
+    return $attempt===null ||
+        ((string)($attempt['provider']??'')==='bank_transfer' &&
+         hash_equals((string)($pay['hash_id']??''),
+                     (string)($attempt['order_hash']??'')) &&
+         (int)($attempt['local_amount_toman']??0)===(int)($pay['price']??0) &&
+         (int)($pay['price']??0)>0);
+}
+
+/**
  * Exclusive bank-only settlement claim. Legacy receipts have no ledger attempt;
  * any explicit non-bank/unknown provider or failed lookup blocks auto-approval.
  * Wallet credit and the guarded receipt transition share one transaction.
@@ -409,7 +474,7 @@ function achbotAutoBankClaim(mysqli $connection, array $seen): bool {
     if ($id <= 0) return false;
     try {
         $connection->begin_transaction();
-        $stmt = $connection->prepare('SELECT id,user_id,type,price,state,payid FROM pays WHERE id=? FOR UPDATE');
+        $stmt = $connection->prepare('SELECT * FROM pays WHERE id=? FOR UPDATE');
         $stmt->bind_param('i', $id);
         $stmt->execute();
         $pay = $stmt->get_result()->fetch_assoc();
@@ -421,7 +486,8 @@ function achbotAutoBankClaim(mysqli $connection, array $seen): bool {
             return false;
         }
         // Do not classify a failed ledger lookup as a legacy card receipt.
-        $stmt = $connection->prepare('SELECT provider FROM payment_attempts WHERE pay_row_id=? LIMIT 1 FOR UPDATE');
+        $stmt = $connection->prepare('SELECT provider,order_hash,local_amount_toman
+            FROM payment_attempts WHERE pay_row_id=? LIMIT 1 FOR UPDATE');
         $stmt->bind_param('i', $id);
         $stmt->execute();
         $attempt = $stmt->get_result()->fetch_assoc();
@@ -429,6 +495,58 @@ function achbotAutoBankClaim(mysqli $connection, array $seen): bool {
         if ($attempt && (string)$attempt['provider'] !== 'bank_transfer') {
             $connection->rollback();
             return false;
+        }
+        if ($pay['type']==='BUY_SUB') {
+            if (!achbotBankBuyAttemptMatches($pay,$attempt))
+                throw new RuntimeException('bank_buy_original_bank_intent_mismatch');
+            // Fail closed on a stale Cron scan before creating the FIRST
+            // durable claim. The claim is the amount/quote/subject anchor
+            // for preflight, every remote CREATE and final SQL accounting.
+            if (!hash_equals(achbotBankBuyInvoiceFingerprint($pay),
+                             achbotBankBuyInvoiceFingerprint($seen)) ||
+                (int)($pay['agent_count']??0)<0 ||
+                (int)($pay['plan_id']??0)<=0 ||
+                (int)($pay['server_id']??0)<=0 ||
+                (int)($pay['price']??0)<max(1,(int)($pay['agent_count']??0)))
+                throw new RuntimeException('bank_buy_invoice_claim_invalid');
+            $planId=(int)$pay['plan_id'];
+            $stmt=$connection->prepare("SELECT server_id,inbound_id,days,volume
+                FROM server_plans WHERE id=? LIMIT 1 FOR UPDATE");
+            if (!$stmt) throw new RuntimeException('bank_buy_claim_plan_prepare');
+            $stmt->bind_param('i',$planId);
+            if (!$stmt->execute()) throw new RuntimeException('bank_buy_claim_plan_read');
+            $plan=$stmt->get_result()->fetch_assoc();$stmt->close();
+            $day=(int)($pay['day']??0);$volume=(int)($pay['volume']??0);
+            $standard=$day===0 && $volume===0;
+            if ($standard) {
+                $entitledDays=(int)($plan['days']??0);
+                $entitledVolume=(int)($plan['volume']??0);
+            } else {
+                $entitledDays=$day;$entitledVolume=$volume;
+            }
+            if (!$plan || (int)$plan['server_id']!==(int)$pay['server_id'] ||
+                (int)$plan['inbound_id']!==0 ||
+                (!$standard && ($day<=0 || $volume<=0)) ||
+                $entitledDays<=0 || $entitledDays>36500 ||
+                $entitledVolume<=0 ||
+                $entitledVolume>intdiv(PHP_INT_MAX,1073741824))
+                throw new RuntimeException('bank_buy_claim_entitlement_invalid');
+            $hash=achbotBankBuyInvoiceFingerprint($pay);
+            $mode=$standard?'standard':'custom';
+            $count=max(1,(int)$pay['agent_count']);
+            $payId=(int)$pay['id'];$user=(int)$pay['user_id'];
+            $server=(int)$pay['server_id'];$price=(int)$pay['price'];
+            $stmt=$connection->prepare("INSERT INTO bank_buy_invoice_claims
+                (pay_row_id,invoice_sha256,user_id,plan_id,server_id,
+                 amount,account_count,quote_mode,quoted_days,quoted_volume,
+                 entitled_days,entitled_volume)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?)");
+            if (!$stmt) throw new RuntimeException('bank_buy_claim_schema_missing');
+            $stmt->bind_param('isiiiiisiiii',$payId,$hash,$user,$planId,
+                $server,$price,$count,$mode,$day,$volume,$entitledDays,$entitledVolume);
+            if (!$stmt->execute() || $stmt->affected_rows!==1)
+                throw new RuntimeException('bank_buy_invoice_claim_unconfirmed');
+            $stmt->close();
         }
         if ($pay['type'] === 'INCREASE_WALLET') {
             $userId = (int)$pay['user_id'];
