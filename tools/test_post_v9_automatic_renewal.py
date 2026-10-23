@@ -184,6 +184,18 @@ if($action==='call') {
 } else throw new RuntimeException('invalid test operation');
 echo json_encode($events,JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE);
 '''
+def owned_trigger(w,e,ddl):
+    # mariadb -e splits semicolons in compound trigger bodies. Only synthetic
+    # DDL on the disposable socket database may use this PHP mysqli client.
+    php='$db=new mysqli("localhost","root","",$argv[1],0,$argv[2]);$db->query($argv[3]);'
+    result=subprocess.run(
+        ['php','-n','-d','extension=mysqlnd','-d','extension=mysqli','-r',
+         php,DB,str(w/'mysql.sock'),ddl],
+        cwd=w,env=e,capture_output=True,timeout=10)
+    if result.returncode or result.stderr:
+        raise RuntimeError('Isolated renewal trigger setup failed: '+
+                           repr((result.returncode,result.stderr[-300:])))
+
 def sql(w,e,q):
     return native.sql(w,e,q,DB)
 def cmd(w,e,s):
@@ -427,6 +439,124 @@ def main():
         assert wallet(w,e)==400000 and state(w,e,racing)=='done'
         assert count(w,e,'increase_order',"remark='race'")==1
         cases.append('two_real_php_mysql_clients_exactly_one_debit_and_remote')
+        # Reproduce the formerly intermittent fail-closed reserved hold:
+        # a REAL MariaDB BEFORE UPDATE trigger returns a single deadlock or
+        # lock-wait error during the LOCAL pre-dispatch journal transition.
+        # MyISAM counter is a disposable test witness for statement attempts;
+        # no provider may run before durable remote_started is committed.
+        for mode,sqlstate,errno,nonthrow in (
+            ('deadlock_throwing','40001',1213,False),
+            ('timeout_throwing','HY000',1205,False),
+            ('deadlock_nonthrowing','40001',1213,True),
+            ('timeout_nonthrowing','HY000',1205,True),
+        ):
+            transient=seed(w,e,'mark-'+mode,wallet=500000)
+            sql(w,e,"CREATE TABLE achbot_owned_mark_counter "
+                    "(n INT NOT NULL) ENGINE=MyISAM")
+            sql(w,e,"INSERT INTO achbot_owned_mark_counter VALUES (0)")
+            trigger=(
+                "CREATE TRIGGER achbot_owned_mark_transient "
+                "BEFORE UPDATE ON automatic_renewal_attempts FOR EACH ROW "
+                "BEGIN IF OLD.order_id="+str(transient)+" "
+                "AND OLD.stage='reserved' AND NEW.stage='remote_started' THEN "
+                "UPDATE achbot_owned_mark_counter SET n=n+1; "
+                "IF (SELECT n FROM achbot_owned_mark_counter LIMIT 1)=1 THEN "
+                "SIGNAL SQLSTATE '"+sqlstate+"' SET MYSQL_ERRNO="+str(errno)+", "
+                "MESSAGE_TEXT='synthetic_pre_dispatch_marker_lock'; "
+                "END IF; END IF; END"
+            )
+            try:
+                owned_trigger(w,e,trigger)
+                race_spec={'order_id':transient,'enabled':'on',
+                           'delay_ms':120,'nonthrowing_sql':nonthrow}
+                children=[
+                    subprocess.Popen(cmd(w,e,race_spec),cwd=w,env=e,
+                                     stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+                    for _ in range(2)]
+                events=[]
+                for child in children:
+                    out,err=child.communicate(timeout=25)
+                    allowed={b'achbot_auto_renew_reservation_deferred'}
+                    assert child.returncode==0 and all(
+                        line in allowed for line in err.splitlines()),(
+                            mode,child.returncode,err,out)
+                    events.append(json.loads(out))
+                count_remote=sum(evt['type']=='remote'
+                                 for group in events for evt in group)
+                assert count_remote==1, {
+                    'mode':mode,'worker_events':events,
+                    'journal_stage':state(w,e,transient),
+                    'payment_state':sql(w,e,
+                        f"SELECT state FROM pays WHERE order_id={transient}"),
+                    'marker_attempts':sql(w,e,
+                        'SELECT n FROM achbot_owned_mark_counter')}
+                assert sql(w,e,'SELECT n FROM achbot_owned_mark_counter').strip()=='2'
+                assert state(w,e,transient)=='done'
+                assert wallet(w,e)==400000
+                assert count(w,e,'automatic_renewal_attempts',
+                             f'order_id={transient}')==1
+                assert count(w,e,'increase_order',
+                             "remark='mark-"+mode+"'")==1
+            finally:
+                sql(w,e,'DROP TRIGGER IF EXISTS achbot_owned_mark_transient')
+                sql(w,e,'DROP TABLE IF EXISTS achbot_owned_mark_counter')
+            assert_no_remote(run(w,e,{'order_id':transient,'enabled':'on'}))
+            cases.append('real_two_worker_once_'+mode+
+                         '_marker_retry_no_double_debit')
+
+        # A permanently failing marker or unrelated SQL error MUST NOT
+        # turn the bounded local retry into remote replay or silent refund.
+        for mode,sqlstate,errno,expected_attempts in (
+            ('persistent_deadlock','40001',1213,2),
+            ('nonretryable_marker_error','45000',1644,1),
+        ):
+            held=seed(w,e,'hold-'+mode,wallet=500000)
+            sql(w,e,"CREATE TABLE achbot_owned_mark_counter "
+                    "(n INT NOT NULL) ENGINE=MyISAM")
+            sql(w,e,"INSERT INTO achbot_owned_mark_counter VALUES (0)")
+            trigger=(
+                "CREATE TRIGGER achbot_owned_mark_persistent "
+                "BEFORE UPDATE ON automatic_renewal_attempts FOR EACH ROW "
+                "BEGIN IF OLD.order_id="+str(held)+" "
+                "AND OLD.stage='reserved' AND NEW.stage='remote_started' THEN "
+                "UPDATE achbot_owned_mark_counter SET n=n+1; "
+                "SIGNAL SQLSTATE '"+sqlstate+"' SET MYSQL_ERRNO="+str(errno)+", "
+                "MESSAGE_TEXT='synthetic_pre_dispatch_marker_failure'; "
+                "END IF; END"
+            )
+            try:
+                owned_trigger(w,e,trigger)
+                observed=run(w,e,{'action':'remote_mark',
+                                   'order_id':held,'enabled':'on'})
+                assert observed==[{'type':'reserve','status':'reserved'},
+                                  {'type':'mark','ok':False}],(mode,observed)
+                assert int(sql(w,e,'SELECT n FROM achbot_owned_mark_counter')
+                           )==expected_attempts,(mode,expected_attempts)
+                assert state(w,e,held)=='reserved'
+                assert wallet(w,e)==400000
+                assert sql(w,e,f"SELECT state FROM pays WHERE order_id={held}"
+                           ).strip()=='processing_wallet'
+                assert count(w,e,'automatic_renewal_attempts',
+                             f'order_id={held}')==1
+                assert count(w,e,'increase_order',
+                             "remark='hold-"+mode+"'")==0
+            finally:
+                sql(w,e,'DROP TRIGGER IF EXISTS achbot_owned_mark_persistent')
+                sql(w,e,'DROP TABLE IF EXISTS achbot_owned_mark_counter')
+            assert_no_remote(run(w,e,{'order_id':held,'enabled':'on'}))
+            assert wallet(w,e)==400000
+            sql(w,e,'UPDATE automatic_renewal_attempts '
+                    'SET created_at=NOW()-INTERVAL 10 MINUTE '
+                    f'WHERE order_id={held}')
+            alert=run(w,e,{'action':'alert','order_id':held})
+            assert any(evt['type']=='send' and evt['to']==9001
+                       for evt in alert),alert
+            assert sql(w,e,'SELECT review_notified_at IS NOT NULL '
+                           'FROM automatic_renewal_attempts '
+                           f'WHERE order_id={held}').strip()=='1'
+            assert_no_remote(run(w,e,{'order_id':held,'enabled':'on'}))
+            cases.append(mode+'_keeps_one_hold_operator_alert_no_replay')
+
         # A duplicate legacy userid cannot be the source of a spend.
         duplicate=seed(w,e,'duplicateuser')
         sql(w,e,"INSERT INTO users (userid,name,username,refcode,date,step,wallet) "
