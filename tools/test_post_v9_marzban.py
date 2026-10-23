@@ -224,28 +224,31 @@ def main():
                 not results[0].get('warnings') and
                 not results[1].get('warnings') and
                 results[0].get('stdout')==results[1].get('stdout')=='')
-            # The modern edit MUST perform a verified authenticated GET.
-            # Historical V9 sent a stale full remote account snapshot and
-            # trusted an unrelated {"status":"ok"} body. The current edit
-            # deliberately sends ONLY the purchased data_limit field for
-            # this exact +volume case; the PUT differs from the frozen V9
-            # request by design. The same minimal absolute PUT may be
-            # repeated once only after exact unchanged readback.
+            # Current source re-reads the original physical account just
+            # before the FIRST PUT: upstream Marzban can delete a queued
+            # next_plan during an unrelated UserModify update. Historical V9
+            # sent a full stale account snapshot and trusted an unrelated
+            # {"status":"ok"} body. Current volume-only PUT contains ONLY
+            # purchased data_limit, and one identical corrective PUT follows
+            # strict original-state readback. Pinned V9 stays byte-frozen.
             edit_wire=False
-            if (intentional_fail_closed and len(traces[1])==len(traces[0])+3):
+            if (intentional_fail_closed and len(traces[1])==len(traces[0])+4):
                 original_put=traces[0][-1]
-                first_put=traces[1][len(traces[0])-1]
+                preflight_get=traces[1][len(traces[0])-1]
+                first_put=traces[1][len(traces[0])]
                 strip_body=lambda item:{k:v for k,v in item.items() if k!='body'}
                 edit_wire=(
                     traces[1][:len(traces[0])-1]==traces[0][:-1] and
+                    preflight_get==traces[0][-2] and
                     strip_body(first_put)==strip_body(original_put) and
                     json.loads(first_put['body'])=={
                         'data_limit':json.loads(original_put['body'])['data_limit']
                     } and
-                    [v['method'] for v in traces[1][-3:]]==['GET','PUT','GET'] and
-                    traces[1][-3]['path']=='/api/user/fixture-user' and
+                    [v['method'] for v in traces[1][-5:]]==
+                        ['GET','PUT','GET','PUT','GET'] and
+                    traces[1][-3]==preflight_get and
                     traces[1][-2]==first_put and
-                    traces[1][-1]['path']=='/api/user/fixture-user')
+                    traces[1][-1]==preflight_get)
             extra_edit_readback=edit_wire
             if name=='marzban.update':
                 minimal_edit_wire_verified=edit_wire

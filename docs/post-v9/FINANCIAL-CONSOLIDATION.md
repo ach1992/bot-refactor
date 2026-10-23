@@ -661,6 +661,26 @@ This optimistic SQL boundary is not a global lock on independent
 Marzban administrator actions, which remain subject to review/operational
 coordination.
 
+**Queued Marzban next-plan preservation (source-only precaution).**
+At upstream Marzban master `7f396db3e703d71a28060bc9ce4a532ec64cb1f4`
+the account `UserModify` implementation deletes an existing `next_plan`
+when a normal PUT omits that field; the traffic RESET implementation also
+deletes a queued `next_plan`. This differs from the route's generic
+omitted-fields-preserved documentation. Therefore account edits with a
+non-null observed `next_plan` now fail closed BEFORE any PUT or RESET,
+leaving the paid claim for operator reconciliation. The service coordinator
+additionally re-reads the pinned authenticated account, original limits,
+status/config and `next_plan` immediately before RESET and before the
+initial PUT; a newly observed next plan or foreign change blocks dispatch.
+Four source-native regressions cover initial and interleaved queued plans
+for quota-only and combined renewals. Marzban does **not** offer an atomic
+version/If-Match precondition for this API; a concurrent external actor
+could still change a plan after the final GET but before the request.
+The installed Marzban server's version/behavior and these interleavings
+must be validated on a separately approved isolated operator account;
+source-only tests cannot prove that guarantee. Do not auto-refund or replay
+uncertain provider effects.
+
 The existing extension quote schema can store fractional values while its
 historical service audit stores integer days/GB. A fractional paid quote must
 NOT be silently rounded down and marked delivered. Until separately accepted

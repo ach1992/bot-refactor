@@ -400,6 +400,13 @@ function editMarzbanConfig($server_id,$info){
             $current->data_limit_reset_strategy==='') {
             return (object)['success'=>false,'uncertain'=>true,'msg'=>'marzban_account_unverified'];
         }
+        // Some supported Marzban versions discard a queued next_plan on
+        // ANY UserModify PUT, and on traffic RESET. Until provider-specific
+        // atomic preservation is established, do not touch a service with
+        // an independently scheduled future plan. Payment remains reviewable.
+        if (isset($current->next_plan))
+            return (object)['success'=>false,'uncertain'=>true,
+                            'msg'=>'marzban_next_plan_requires_review'];
         // Preserve the intended renewal of a naturally expired or
         // quota-limited subscription. Never lift an administrator's disabled
         // or on_hold restriction as a side-effect of service edits.
@@ -412,9 +419,9 @@ function editMarzbanConfig($server_id,$info){
                             'msg'=>'marzban_account_status_restricted'];
 
         // A retryable HTTP response does not grant permission to overwrite a
-        // foreign status/configuration change. Snapshot EVERY field sent in
-        // the full replacement PUT and compare it on readback. JSON encoding
-        // is deliberately conservative: changed array order also fails shut.
+        // foreign status/configuration change. Even though the actual PUT
+        // sends only paid limits, compare the full observed status/config
+        // baseline before any corrective PUT. Changed array order fails shut.
         $configuration=static function(?object $account): ?array {
             if ($account===null || !isset($account->status,
                 $account->inbounds,$account->proxies,
@@ -472,6 +479,37 @@ function editMarzbanConfig($server_id,$info){
         }
         if ($expire>$maxLocalExpire)
             return (object)['success'=>false,'uncertain'=>false,'msg'=>'invalid_local_expiry'];
+
+        // Recheck the same physical account immediately before each first
+        // side effect: Marzban's modify/reset endpoints can clear next_plan
+        // even when the request omits that field. This narrows the external
+        // operator race; Marzban offers no atomic If-Match/CAS for this API.
+        $preEffect=function(bool $afterReset=false) use (
+            $isPinned,$server_id,$remark,$token,$panelUrl,$remoteInteger,
+            $oldExpire,$oldVolume,$configuration,$baseline,
+            $targetConfiguration,$canReactivate): ?string {
+            if (!$isPinned()) return 'marzban_target_changed';
+            $fresh=getMarzbanUser($server_id,$remark,$token,true,$panelUrl);
+            if (!$isPinned() || !is_object($fresh) ||
+                (string)($fresh->username??'')!==$remark ||
+                !isset($fresh->expire,$fresh->data_limit) ||
+                $remoteInteger($fresh->expire)!==$oldExpire ||
+                $remoteInteger($fresh->data_limit)!==$oldVolume)
+                return 'marzban_pre_effect_unverified';
+            if (isset($fresh->next_plan))
+                return 'marzban_next_plan_requires_review';
+            $metadata=$configuration($fresh);
+            if ($metadata!==$baseline &&
+                (!$afterReset || !$canReactivate ||
+                 $metadata!==$targetConfiguration))
+                return 'marzban_pre_effect_subject_changed';
+            if ($afterReset &&
+                (!property_exists($fresh,'used_traffic') ||
+                 $remoteInteger($fresh->used_traffic)!==0))
+                return 'marzban_reset_readback_unverified';
+            return null;
+        };
+
         if (isset($info['plus_volume'])) {
             $extra=$wholeUnits($info['plus_volume'],intdiv(PHP_INT_MAX,1073741824));
             if ($extra===null || $extra<=0 || $extra>intdiv(PHP_INT_MAX,1073741824) ||
@@ -483,8 +521,9 @@ function editMarzbanConfig($server_id,$info){
             if ($gigabytes===null || $gigabytes<0 || $gigabytes>intdiv(PHP_INT_MAX,1073741824))
                 return (object)['success'=>false,'uncertain'=>false,'msg'=>'invalid_volume'];
             $volume=$gigabytes*1073741824;
-            if (!$isPinned())
-                return (object)['success'=>false,'uncertain'=>true,'msg'=>'marzban_target_changed'];
+            $beforeReset=$preEffect();
+            if ($beforeReset!==null)
+                return (object)['success'=>false,'uncertain'=>true,'msg'=>$beforeReset];
             $reset=resetMarzbanTraffic($server_id,$remark,$token,$panelUrl);
             if (!is_object($reset) || empty($reset->success))
                 return (object)['success'=>false,'uncertain'=>true,'msg'=>'marzban_reset_unverified'];
@@ -508,8 +547,9 @@ function editMarzbanConfig($server_id,$info){
                 return (object)['success'=>false,'uncertain'=>true,'msg'=>'marzban_reset_readback_unverified'];
             }
         }
-        if (!$isPinned())
-            return (object)['success'=>false,'uncertain'=>true,'msg'=>'marzban_target_changed'];
+        $beforePut=$preEffect(isset($info['volume']));
+        if ($beforePut!==null)
+            return (object)['success'=>false,'uncertain'=>true,'msg'=>$beforePut];
 
         // Marzban's UserModify endpoint preserves omitted fields. The
         // request must contain ONLY the absolute service limits purchased

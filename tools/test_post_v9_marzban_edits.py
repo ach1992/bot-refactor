@@ -38,6 +38,12 @@ class EditProviderHandler(native.Handler):
                 server.foreign_before_put=None
             pre_put=copy.deepcopy(server.edit_account)
         if '/api/user/' in self.path:
+            if self.command=='GET' and getattr(server,'next_plan_on_get_n',None) is not None:
+                n=getattr(server,'edit_get_count',0)+1
+                server.edit_get_count=n
+                if n==server.next_plan_on_get_n:
+                    server.edit_account['next_plan']=copy.deepcopy(server.next_plan_on_get_value)
+                    server.next_plan_on_get_n=None
             if (self.command=='GET' and
                 getattr(server,'foreign_after_put',None) is not None and
                 getattr(server,'edit_put_count',0)==1):
@@ -87,7 +93,15 @@ class EditProviderHandler(native.Handler):
             if prior_stream is not None:
                 self.rfile=prior_stream
                 self.headers.replace_header('Content-Length',old_header)
+        if (self.command=='POST' and self.path.endswith('/reset') and
+            getattr(server,'drop_next_plan_on_update',False) and
+            getattr(server,'edit_account',None) is not None):
+            # Upstream reset_user_data_usage clears any queued next_plan.
+            server.edit_account['next_plan']=None
         if editing and pre_put is not None:
+            if getattr(server,'drop_next_plan_on_update',False):
+                # Upstream update_user clears next_plan when omitted.
+                server.edit_account['next_plan']=None
             server.trace[-1]['body']=original_bytes.decode('utf-8')
             # The historical synthetic provider always writes 'active' on a
             # successful PUT; this post-V9 overlay models Marzban's actual
@@ -200,6 +214,68 @@ def main():
                 if panel.edit_account['data_limit']!=expected_volume:
                     raise RuntimeError('Remote quota did not really change: '+mode)
             cases.append(mode+'_source_native_'+want)
+
+        # Upstream Marzban deletes a queued next_plan on both RESET and
+        # UserModify when the field is omitted. A paid-service edit must
+        # not silently discard an independently scheduled future plan.
+        for label,change in (
+            ('quota',{'plus_volume':1}),
+            ('combined_renew',{'days':30,'volume':3}),
+        ):
+            panel.mode='edit-reset-verified' if 'volume' in change else 'edit-verified'
+            panel.trace.clear()
+            panel.edit_account=copy.deepcopy(INITIAL)
+            expected={'data_limit':4*GIB,'expire':1840000100,
+                      'add_remaining_traffic':False,'fire_on_either':True}
+            panel.edit_account['next_plan']=copy.deepcopy(expected)
+            panel.drop_next_plan_on_update=True
+            panel.edit_put_count=0
+            panel.edit_reset_count=0
+            try:
+                result=native.run(work,env,source,native.DBS[1],{
+                    'function':'editMarzbanConfig',
+                    'args':[2,{'remark':'fixture-user',**change}]})
+                assert result['exception'] is None,(label,result)
+                assert result['result']['success'] is False,(label,result)
+                assert result['result']['uncertain'] is True,(label,result)
+                assert result['result']['msg']=='marzban_next_plan_requires_review',(label,result)
+                assert panel.edit_put_count==0 and panel.edit_reset_count==0,(label,panel.trace)
+                assert panel.edit_account['next_plan']==expected,(label,panel.edit_account)
+                cases.append('review_upstream_next_plan_'+label+'_preserved_before_remote')
+            finally:
+                panel.drop_next_plan_on_update=False
+
+        # An external scheduler may add a future plan after our first
+        # authenticated GET but before the first remote side effect. Recheck
+        # directly before RESET/PUT; never erase that newly queued plan.
+        for label,change in (
+            ('quota',{'plus_volume':1}),
+            ('combined_renew',{'days':30,'volume':3}),
+        ):
+            panel.mode='edit-reset-verified' if 'volume' in change else 'edit-verified'
+            panel.trace.clear()
+            panel.edit_account=copy.deepcopy(INITIAL)
+            future={'data_limit':5*GIB,'expire':1890000100,
+                    'add_remaining_traffic':True,'fire_on_either':True}
+            panel.edit_get_count=0
+            panel.next_plan_on_get_n=2
+            panel.next_plan_on_get_value=copy.deepcopy(future)
+            panel.drop_next_plan_on_update=True
+            panel.edit_put_count=0
+            panel.edit_reset_count=0
+            try:
+                got=native.run(work,env,source,native.DBS[1],{
+                    'function':'editMarzbanConfig',
+                    'args':[2,{'remark':'fixture-user',**change}]})
+                assert got['exception'] is None,(label,got)
+                assert got['result']['success'] is False,(label,got)
+                assert got['result']['uncertain'] is True,(label,got)
+                assert panel.edit_put_count==0 and panel.edit_reset_count==0,(label,panel.trace)
+                assert panel.edit_account['next_plan']==future,(label,panel.edit_account)
+                cases.append('review_upstream_next_plan_'+label+'_detected_before_first_effect')
+            finally:
+                panel.next_plan_on_get_n=None
+                panel.drop_next_plan_on_update=False
 
         # Reviewer B1: no corrective absolute PUT can overwrite a foreign
         # status/configuration change even if expiry, quota and note are still
