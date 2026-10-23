@@ -33,6 +33,20 @@ if(is_numeric($checkSpam)){
     exit();
 }
 
+// Reject malformed direct-wallet callback frames before any other payment
+// route can interpret a substring as an unrelated financial action.
+if (is_string($data) && preg_match(
+    '/\A(?:payBuyWithWallet|payCustomWithWallet|payRenewWithWallet|payIncreaseDayWithWallet|payIncreaseWithWallet)/',
+    $data, $walletAction)) {
+    if (strlen($data) > 64 || !preg_match(
+        '/\A' . preg_quote($walletAction[0], '/') . '[A-Za-z0-9_-]{1,50}\z/D',
+        $data)) {
+        answerCallbackQuery($callbackId,
+            'این دکمهٔ پرداخت معتبر نیست؛ لطفاً از فاکتور جدید استفاده کنید.', true);
+        return;
+    }
+}
+
 if (($achbotV8Result = require __DIR__ . '/src/Finance/Routes/PrePayment.php') === null) return;
 if (($achbotManualCryptoResult = require __DIR__ . '/src/Finance/Routes/ManualCrypto.php') === null) return;
 // END Pre Pay Check By ACh

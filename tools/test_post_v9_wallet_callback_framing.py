@@ -12,6 +12,8 @@ from pathlib import Path
 
 import test_post_v9_wallet_checkout as checkout
 import test_post_v9_manual_payments as manual
+import test_post_v9_finance_routes as finance
+import test_post_v9_purchases as stages
 
 ROOT = Path(__file__).resolve().parents[1]
 ROUTES = (
@@ -152,6 +154,93 @@ def check() -> dict:
             else:
                 assert events == [] and observe(actor, name) == before, events
                 scenarios.append('wallet_65_byte_callback_without_side_effects')
+
+        # Run actual bot.php dispatch. A malformed wallet-prefixed callback
+        # must not fall through to a different recognized financial handler.
+        bot_stage = work / 'wallet-framing-full-bot'
+        stages.stage_source(bot_stage, True)
+        config_path = bot_stage / 'config.php'
+        original_config = config_path.read_bytes()
+        bot_driver = finance.PHP_DRIVER
+        if "$spec['route'] === 'bot_callback'" not in bot_driver:
+            marker = "    } elseif ($spec['route'] === 'local_purchase_write') {"
+            replacement = (
+                "    } elseif ($spec['route'] === 'bot_callback') {\n"
+                "        $data=(string)($spec['callback_data']??'');\n"
+                "        $callbackId='owned-wallet-frame';\n"
+                "        $message_id=702;\n"
+                "        $from_id=(int)($spec['actor']??1001);\n"
+                "        $userInfo=['step'=>'none','isAdmin'=>false];\n"
+                "        $joniedState='member';\n"
+                "        $text='';\n"
+                "        require $root . '/bot.php';\n"
+                "        $GLOBALS['events'][]=['name'=>'bot_dispatch_returned'];\n"
+                "    } elseif ($spec['route'] === 'local_purchase_write') {")
+            assert bot_driver.count(marker) == 1
+            bot_driver = bot_driver.replace(marker, replacement, 1)
+        (work / 'owned-finance-guard.php').write_text(bot_driver)
+        config_path.write_text('<?php function check() {} '
+                               'function checkSpam() { return false; }\n')
+        try:
+            actor = 12101
+            name = 'FrameBot12345'
+            sql('INSERT INTO users '
+                '(userid,name,username,refcode,wallet,date,isAdmin,first_start) '
+                f"VALUES ({actor},'Fixture','fixture','0',50000,'1700000000',0,'sent')")
+            sql('INSERT INTO pays '
+                '(hash_id,user_id,type,plan_id,server_id,agent_count,day,volume,'
+                'price,description,request_date,state) VALUES '
+                f"('{name}',{actor},'BUY_SUB',7,2,1,0,0,100,"
+                "'callback-framing',UNIX_TIMESTAMP(),'pending')")
+            for subject, _, prefix in ROUTES:
+                invalid = prefix + '!payBuyWithCartToCart' + name
+                assert len(invalid.encode('utf-8')) <= 64
+                before = observe(actor, name)
+                result = finance.run_php(work, env, bot_stage, {
+                    'route': 'bot_callback', 'get': {},
+                    'callback_data': invalid, 'actor': actor})
+                assert result['network_calls'] == [], (subject, result)
+                assert result['events'][-1] == {'name': 'bot_dispatch_returned'}
+                assert not any(e['name'] not in ('callback', 'bot_dispatch_returned')
+                               for e in result['events']), (subject, result)
+                assert any(e['name'] == 'callback' and 'معتبر نیست' in str(e['args'])
+                           for e in result['events']), (subject, result)
+                assert observe(actor, name) == before, (subject, 'bot dispatch SQL drift')
+                scenarios.append(f'{subject}_full_bot_invalid_wallet_namespace_consumed')
+
+            # For valid callbacks, the early bot guard must NOT consume the
+            # action. Replace only the staged PrePayment module with a
+            # sentinel that terminates before other payment routes; direct
+            # actual wallet handler tests above prove financial validity.
+            prepayment = bot_stage / 'src/Finance/Routes/PrePayment.php'
+            saved_prepayment = prepayment.read_bytes()
+            prepayment.write_text("<?php $GLOBALS['events'][]="
+                                  "['name'=>'wallet_frame_passed']; return null;\n")
+            try:
+                for subject, _, prefix in ROUTES:
+                    before = observe(actor, name)
+                    result = finance.run_php(work, env, bot_stage, {
+                        'route': 'bot_callback', 'get': {},
+                        'callback_data': prefix + name, 'actor': actor})
+                    assert result['events'] == [
+                        {'name': 'wallet_frame_passed'},
+                        {'name': 'bot_dispatch_returned'}], (subject, result)
+                    assert not result['network_calls']
+                    assert observe(actor, name) == before
+                    scenarios.append(f'{subject}_valid_frame_reaches_dispatch')
+                before = observe(actor, name)
+                unrelated = finance.run_php(work, env, bot_stage, {
+                    'route': 'bot_callback', 'get': {},
+                    'callback_data': 'unrelatedCallback', 'actor': actor})
+                assert unrelated['events'] == [
+                    {'name': 'wallet_frame_passed'},
+                    {'name': 'bot_dispatch_returned'}], unrelated
+                assert observe(actor, name) == before
+                scenarios.append('unrelated_callback_not_blocked_by_wallet_guard')
+            finally:
+                prepayment.write_bytes(saved_prepayment)
+        finally:
+            config_path.write_bytes(original_config)
 
     return {'complete': True, 'cases': len(scenarios), 'scenarios': scenarios,
             'real_php_mariadb': True, 'original_payment_schema_preserved': True,

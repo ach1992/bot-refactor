@@ -1358,9 +1358,15 @@ def main():
             for subject in ('buy','custom','renew','day','volume')
             for kind in ('valid_owned_callback_still_pays_once','paid_callback_no_replay')
         } | {'wallet_exact_64_byte_callback_accepted',
-             'wallet_65_byte_callback_without_side_effects'}
+             'wallet_65_byte_callback_without_side_effects',
+             'unrelated_callback_not_blocked_by_wallet_guard'} | {
+            f'{subject}_{kind}'
+            for subject in ('buy','custom','renew','day','volume')
+            for kind in ('full_bot_invalid_wallet_namespace_consumed',
+                         'valid_frame_reaches_dispatch')
+        }
         if not (wallet_frame.get('complete') is True
-                and wallet_frame.get('cases')==27
+                and wallet_frame.get('cases')==38
                 and set(wallet_frame.get('scenarios',[]))==expected_framing
                 and wallet_frame.get('real_php_mariadb') is True
                 and wallet_frame.get('original_payment_schema_preserved') is True
