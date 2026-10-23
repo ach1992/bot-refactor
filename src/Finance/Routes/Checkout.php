@@ -270,7 +270,7 @@ if (preg_match('/^showQr(Sub|Config)(\d+)/', $data, $match)) {
     }
 }
 
-if (preg_match('/payCustomWith(?:CartToCart|GiftCard|ManualUsdt)(.*)/', $data, $match)) {
+if (is_string($data) && (strlen($data) <= 64 || ($GLOBALS['achbotManualCryptoVerifiedDispatch'] ?? null) === $data) && preg_match('/\ApayCustomWith(?:CartToCart|GiftCard|ManualUsdt)([A-Za-z0-9_-]{1,50})\z/D', $data, $match)) {
 
     $payInfo = dbFetchPayByHash($connection, $match[1]);
     if (!$payInfo) {
@@ -314,8 +314,8 @@ if (preg_match('/payCustomWith(?:CartToCart|GiftCard|ManualUsdt)(.*)/', $data, $
         }
     }
 
-    $method = strpos($data, 'WithManualUsdt') !== false ? (($GLOBALS['achbotManualCryptoChoice'] ?? '') === 'TRON' ? 'manual_trx' : 'manual_usdt') :
-        (strpos($data, 'WithGiftCard') !== false ? 'gift_card' : 'bank_transfer');
+    $method = str_starts_with($data, 'payCustomWithManualUsdt') ? (($GLOBALS['achbotManualCryptoChoice'] ?? '') === 'TRON' ? 'manual_trx' : 'manual_usdt') :
+        (str_starts_with($data, 'payCustomWithGiftCard') ? 'gift_card' : 'bank_transfer');
     if (!achbotManualClaim($connection, $payInfo, $method, (int)$from_id,
                            $GLOBALS['achbotManualCryptoChoice'] ?? null)) {
         alert("⚠️ پرداخت این سفارش با این روش مجاز نیست یا قبلاً به روش دیگری آغاز شده است.", true);
@@ -1121,7 +1121,7 @@ if (is_string($data) && strlen($data) <= 64 && preg_match('/\ApayBuyWithWallet([
     }
 }
 
-if (preg_match('/payBuyWith(?:CartToCart|GiftCard|ManualUsdt)(.*)/', $data, $match)) {
+if (is_string($data) && (strlen($data) <= 64 || ($GLOBALS['achbotManualCryptoVerifiedDispatch'] ?? null) === $data) && preg_match('/\ApayBuyWith(?:CartToCart|GiftCard|ManualUsdt)([A-Za-z0-9_-]{1,50})\z/D', $data, $match)) {
 
     $payInfo = dbFetchPayByHash($connection, $match[1]);
     if (!$payInfo) {
@@ -1168,8 +1168,8 @@ if (preg_match('/payBuyWith(?:CartToCart|GiftCard|ManualUsdt)(.*)/', $data, $mat
         }
     }
 
-    $method = strpos($data, 'WithManualUsdt') !== false ? (($GLOBALS['achbotManualCryptoChoice'] ?? '') === 'TRON' ? 'manual_trx' : 'manual_usdt') :
-        (strpos($data, 'WithGiftCard') !== false ? 'gift_card' : 'bank_transfer');
+    $method = str_starts_with($data, 'payBuyWithManualUsdt') ? (($GLOBALS['achbotManualCryptoChoice'] ?? '') === 'TRON' ? 'manual_trx' : 'manual_usdt') :
+        (str_starts_with($data, 'payBuyWithGiftCard') ? 'gift_card' : 'bank_transfer');
     if (!achbotManualClaim($connection, $payInfo, $method, (int)$from_id,
                            $GLOBALS['achbotManualCryptoChoice'] ?? null)) {
         alert("⚠️ پرداخت این سفارش با این روش مجاز نیست یا قبلاً به روش دیگری آغاز شده است.", true);

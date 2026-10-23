@@ -121,6 +121,10 @@ if ($isMenu || $isPick) {
         }
         $GLOBALS['achbotManualCryptoChoice']=$option['network'];
         $data=$target.$hashId;
+        // A verified mc_[bcet]_<hash> Telegram callback (<=55 bytes) can
+        // expand into a longer internal route action. Never relax the 64-byte
+        // external callback limit without this exact trusted dispatch marker.
+        $GLOBALS['achbotManualCryptoVerifiedDispatch']=$data;
         answerCallbackQuery($callbackId);
         // The existing purchase/renewal/top-up route owns the one-attempt
         // transaction, quote, receipt and guarded human approval.
