@@ -1376,8 +1376,30 @@ def main():
             "r1_bank_random_transfer_quote_keeps_original_nominal_price",
             "r1_postclaim_preflight_mutation_never_posts",
             "r1_missing_invoice_contract_before_claim_fails_closed",
+            "r1a_real_photo_receipt_only_extends_003_evidence_original_009_approved_once",
+            "r1a_original_bank_destination_changed_before_cron_denied",
+            "r1a_real_manual_issue_snapshots_original_quantity_entitlement_and_attempt",
+            "r1a_original_standard_entitlement_survives_precron_template_edit_no_replay",
+            "r1a_precron_quantity_changed_denied_without_remote_post",
+            "r1a_precron_standard_to_custom_denied_without_remote_post",
+            "r1a_precron_description_changed_denied_without_remote_post",
+            "r1a_precron_custom_dimensions_changed_denied_without_remote_post",
+            "r1a_precron_custom_to_standard_denied_without_remote_post",
+            "r1a_precron_original_server_changed_denied_without_remote_post",
+            "r1a_original_random_transfer_quote_changed_before_cron_denied",
+            "r1b_009_fk_restrict_protects_original_003_attempt",
+            "r1a_legacy_no_attempt_no_issued_quote_operator_only",
+            "r1a_legacy_003_without_009_never_backfilled_by_cron",
+            "r1b_original_attempt_deleted_after_claim_blocks_preflight",
+            "r1b_original_attempt_replaced_after_claim_blocks_preflight",
+            "r1b_original_attempt_deleted_after_verified_get_nonterminal",
+            "r1b_original_attempt_replaced_after_verified_get_nonterminal",
+            "r1b_deleted_original_attempt_before_first_cron_claim_denied",
+            "r1a_existing_003_without_issued_009_not_reopened_or_backfilled",
+            "r1a_failed_009_issue_rolls_back_original_003_atomically",
+            "r1a_missing_009_refuses_new_bank_intent_without_half_commit",
         }
-        if not (bank_buy.get("complete") and bank_buy.get("cases")>=27
+        if not (bank_buy.get("complete") and bank_buy.get("cases")>=49
                 and required_bank.issubset(bank_buy.get("scenarios",[]))
                 and bank_buy.get("source_real_php")
                 and bank_buy.get("owned_mariadb_only")

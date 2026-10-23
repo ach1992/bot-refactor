@@ -1807,7 +1807,10 @@ def check():
         for method in ('bank_transfer','gift_card','manual_usdt'):
             key='walletblock'+method.replace('_','')
             seed(work,env,key)
-            query(work,env,f"UPDATE pays SET type='BUY_SUB' WHERE hash_id='{key}'")
+            # A real bank BUY_SUB method selection has a valid plan/target;
+            # fake no-plan BUY_SUB drafts are no longer payable invoices.
+            query(work,env,f"UPDATE pays SET type='BUY_SUB',plan_id=1,"
+                  f"server_id=1,day=30,volume=10 WHERE hash_id='{key}'")
             assert base(key,'claim',method)
             balance=int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'))
             assert base(key,'wallet')['status']=='claimed_provider'
@@ -1831,8 +1834,9 @@ def check():
         assert base('walletfirst','wallet')['status']=='invalid_request'
         assert int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'))==debitBefore
         assert query(work,env,"SELECT state FROM pays WHERE hash_id='walletfirst'")=='pending'
-        assert base('walletfirst','claim','bank_transfer') is True
-        assert base('walletfirst','claim','manual_usdt') is False
+        assert base('walletfirst','claim','bank_transfer') is False
+        assert query(work,env,"SELECT COUNT(*) FROM payment_attempts "
+                     "WHERE order_hash='walletfirst'")=='0'
         cases.append('wallet_unjournaled_dummy_never_debits_or_reserves_payment')
 
         # Manual TRX shares the original guarded photo/approval flow.

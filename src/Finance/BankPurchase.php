@@ -25,9 +25,8 @@ function achbotAutoBankFinishBuySub(mysqli $db, array $pay, array $lines): bool 
         $stmt->bind_param('i',$id);
         if (!$stmt->execute()) throw new RuntimeException('bank_buy_pay_read');
         $locked=$stmt->get_result()->fetch_assoc(); $stmt->close();
-        // The original invoice was captured in the SAME transaction as the
-        // bank receipt claim. Never use a later mutable price as historical
-        // financial evidence or an in-memory quote as a replacement.
+        // An immutable invoice was persisted with the ORIGINAL bank intent,
+        // BEFORE the customer's transfer and this receipt's eventual claim.
         $stmt=$db->prepare('SELECT * FROM bank_buy_invoice_claims
             WHERE pay_row_id=? FOR UPDATE');
         if (!$stmt) throw new RuntimeException('bank_buy_invoice_prepare');
@@ -48,13 +47,13 @@ function achbotAutoBankFinishBuySub(mysqli $db, array $pay, array $lines): bool 
             count($lines)!==$count)
             throw new RuntimeException('bank_buy_payment_changed');
 
-        $stmt=$db->prepare('SELECT provider,order_hash,local_amount_toman
-            FROM payment_attempts WHERE pay_row_id=? LIMIT 1 FOR UPDATE');
+        $stmt=$db->prepare('SELECT * FROM payment_attempts
+            WHERE pay_row_id=? LIMIT 1 FOR UPDATE');
         if (!$stmt) throw new RuntimeException('bank_buy_method_prepare');
         $stmt->bind_param('i',$id);
         if (!$stmt->execute()) throw new RuntimeException('bank_buy_method_read');
         $attempt=$stmt->get_result()->fetch_assoc(); $stmt->close();
-        if (!achbotBankBuyAttemptMatches($locked,$attempt))
+        if (!achbotBankBuyAttemptMatches($locked,$attempt,$claim))
             throw new RuntimeException('bank_buy_original_bank_intent_changed');
 
         // Mutable plan identity still requires a fresh physical-target guard.
@@ -179,13 +178,13 @@ function achbotAutoBankProvisionBuySub(
         throw new RuntimeException('bank_buy_invoice_preflight_changed');
     // Reject a method or original 003 nominal amount change BEFORE POST,
     // even if the rest of the mutable pays row still matches claim 009.
-    $stmt=$db->prepare('SELECT provider,order_hash,local_amount_toman
-        FROM payment_attempts WHERE pay_row_id=? LIMIT 1');
+    $stmt=$db->prepare('SELECT * FROM payment_attempts
+        WHERE pay_row_id=? LIMIT 1');
     if (!$stmt) throw new RuntimeException('bank_buy_preflight_attempt_prepare');
     $stmt->bind_param('i',$payId);
     if (!$stmt->execute()) throw new RuntimeException('bank_buy_preflight_attempt_read');
     $attempt=$stmt->get_result()->fetch_assoc();$stmt->close();
-    if (!achbotBankBuyAttemptMatches($p,$attempt))
+    if (!achbotBankBuyAttemptMatches($p,$attempt,$claim))
         throw new RuntimeException('bank_buy_original_bank_intent_preflight_changed');
     $count=(int)$claim['account_count'];$price=(int)$claim['amount'];
     if ($p['type']!=='BUY_SUB' || $p['state']!=='processing' ||

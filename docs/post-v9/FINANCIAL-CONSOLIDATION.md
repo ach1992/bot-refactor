@@ -588,37 +588,59 @@ The automatic card-receipt BUY_SUB handler now competes with administrator
 approval for the same exclusive original pays row and leaves the successful
 claim in nonterminal processing until fulfillment can be proved.
 
-**R1 original bank invoice claim (proposed additive 009, NOT installed):**
-`migrations/post-v9/009_bank_buy_invoice_claims.sql` persists one immutable
-`bank_buy_invoice_claims` row per paid BUY_SUB receipt inside the SAME short
-InnoDB transaction as its exclusive `have_sent -> processing` claim.
-For post-003 receipts, the original `payment_attempts.local_amount_toman`
-and claimed payment method/order hash must match the customer-facing nominal
-invoice before bank-Cron may reserve the 009 claim; they are rechecked at
-preflight and finalization. The bank's separately randomized transfer
-`quote_amount` is not the service's nominal `pays.price`; never equate them.
-For explicitly legacy receipts without an attempt, a new 009 claim only pins
-the then-current original row, and operator evidence is still needed to
-confirm the historical paid quote. The original invoice fingerprint binds
-its pays ID/hash, customer, price, raw account count, standard/custom quote
-mode and explicit day/volume,
-plan/server, description, agent_bought, optional order ID, payment method
-and type. The persisted originally purchased entitlement includes the
-standard plan's actual day/volume snapshot AT CLAIM; later changes to that
-mutable plan template do not override the original purchased service.
-Preflight compares the current pays row AND original scheduler snapshot
-against this durable claim before remote CREATE. The locked finisher rechecks
-the same original identity, the original amount/quantity/mode/entitlement and
-all verified 007 account effects before any terminal payment/order COMMIT.
-A changed paid subject, unknown remote result, missing 009 or SQL ambiguity
-leaves the claim nonterminal and **cannot authorize a second provider POST,
-unearned order finality or automatic refund**. An existing processing receipt
-without a 009 claim is NOT retroactively inferred or silently rebuilt from
-mutable pays/plan values: it requires operator reconciliation.
-009 is CREATE-only for a pristine target; on any existing table or uncertain
-installation, stop for a separately reviewed, data-preserving forward schema
-plan. 009 is shipped as a checksummed SQL sidecar, not applied by the source
-ZIP or GitHub CI to any installed tenant. The new
+**R1 ORIGINAL issued bank BUY_SUB invoice (proposed additive 009, NOT installed):**
+`migrations/post-v9/009_bank_buy_invoice_claims.sql` creates exactly one
+payment-scoped InnoDB `bank_buy_invoice_claims` row **at the time the customer
+selects bank transfer and the original 003 `payment_attempts` bank intent is
+inserted**, in the **same short transaction**. If either INSERT, mandatory
+schema, entitled-plan read, or COMMIT fails, BOTH inserts roll back, the
+purchase remains an unissued pending draft, and no new bank instructions
+are authorized.
+
+The issuance captures the customer, `pays` ID/hash, nominal `pays.price`,
+raw account quantity (0 means one), plan/physical server, standard/custom
+mode, explicit purchased days/volume, description and other source identity
+in a 009 SHA. A standard 0/0 quote snapshots the **actual plan days and
+volume at issuance** using a locked `server_plans` row; a later change to the
+template cannot shrink the original purchased entitlement. The original 003
+`payment_attempts.id` is stored with a NOT NULL FK (`ON DELETE RESTRICT`) and
+a separate SHA covering its original method, order hash, nominal amount,
+randomized transfer quote/currency and original bank destination. Receipt
+submission may append `receipt_file_id` and update stage/lease fields;
+those are legitimate evidence updates, **not** changes to the original
+issued bank transfer instructions. The receipt's random bank transfer amount
+is **distinct** from the nominal paid service amount; do not replace one
+with the other.
+
+On bank-Cron's later `have_sent -> processing` attempt, the originally
+issued 009 and exact original 003 must BOTH still exist and authenticate
+the current source payment. **Cron never creates or reconstructs a 009**.
+Preflight rejects a missing/replaced/altered 003 or changed account
+quantity, quote mode, days, volume, description, original amount, plan or
+customer BEFORE any CREATE. The locked finisher rechecks both original
+records, the original quoted entitlement and every verified 007 effect,
+then atomically links local orders and original payment finality.
+A disappeared 003 is **never** treated as a legacy NULL receipt; the FK
+normally prevents its deletion, and the source identity check fails closed
+even if a disposable corruption fixture bypasses that FK.
+
+A bank BUY_SUB receipt issued before this source+009 contract (with
+partial/missing 003, missing 009 or unprovable original dimensions) is
+**not eligible for automatic CREATE**. Keep it for evidenced operator
+reconciliation instead of inventing its original plan/quantity from the
+current mutable rows. This is deliberately narrower than historical
+non-BUY_SUB bank settlement; no wallet top-up/edit policy is expanded.
+Missing schema, mismatched purchase or method, SQL ambiguity and unknown
+provider results must not authorize a second POST, terminal approval,
+customer success or speculative refund.
+
+009 is **CREATE-only for a pristine, audited target**. If an earlier 009
+exists or 003/007 are incompatible, stop and design an independently
+reviewed data-preserving forward migration instead of blindly applying this
+CREATE statement. Shipping source code/CI checksums or a runtime ZIP does
+**not** install 009 or authorize a tenant migration, Cron activation, real
+payment action, release or installed acceptance.
+ The new
 src/Finance/BankPurchase.php uses the **same** additive 007 per-account CREATE
 journal and strict Marzban readback rather than a second provider engine.
 Each ordinal, username, operation marker, target, exact expiry and byte
