@@ -11,6 +11,8 @@ import shutil
 import json
 import copy
 import contextlib
+import io
+import time
 import threading
 from http.server import ThreadingHTTPServer
 from pathlib import Path
@@ -28,6 +30,13 @@ GIB=1073741824
 class EditProviderHandler(native.Handler):
     def handle_request(self):
         server=self.server
+        editing=(self.command=='PUT' and '/api/user/' in self.path)
+        pre_put=None
+        if editing and hasattr(server,'edit_account'):
+            if getattr(server,'foreign_before_put',None) is not None:
+                server.edit_account.update(copy.deepcopy(server.foreign_before_put))
+                server.foreign_before_put=None
+            pre_put=copy.deepcopy(server.edit_account)
         if '/api/user/' in self.path:
             if (self.command=='GET' and
                 getattr(server,'foreign_after_put',None) is not None and
@@ -55,7 +64,51 @@ class EditProviderHandler(native.Handler):
                 getattr(server,'move_after_reset',None) is not None):
                 server.move_after_reset()
                 server.move_after_reset=None
-        super().handle_request()
+        wire_request=None
+        prior_stream=None
+        old_header=None
+        if editing and pre_put is not None:
+            # Normalize omitted UserModify limit fields ONLY for the frozen
+            # legacy synthetic provider's internal parser. Restore the exact
+            # wire body to the recorded trace, so tests inspect true bytes.
+            count=int(self.headers.get('Content-Length','0'))
+            original_bytes=self.rfile.read(count)
+            wire_request=json.loads(original_bytes)
+            expanded={'expire':pre_put['expire'],
+                      'data_limit':pre_put['data_limit'],**wire_request}
+            expanded_bytes=json.dumps(expanded).encode('utf-8')
+            prior_stream=self.rfile
+            old_header=self.headers.get('Content-Length')
+            self.rfile=io.BytesIO(expanded_bytes)
+            self.headers.replace_header('Content-Length',str(len(expanded_bytes)))
+        try:
+            super().handle_request()
+        finally:
+            if prior_stream is not None:
+                self.rfile=prior_stream
+                self.headers.replace_header('Content-Length',old_header)
+        if editing and pre_put is not None:
+            server.trace[-1]['body']=original_bytes.decode('utf-8')
+            # The historical synthetic provider always writes 'active' on a
+            # successful PUT; this post-V9 overlay models Marzban's actual
+            # optional UserModify fields without altering the frozen fixture.
+            # Present keys are writable; omitted fields retain the concurrent
+            # administrator's state. Limits can naturally reactivate expired
+            # or quota-limited subscriptions, but not disabled accounts.
+            request=wire_request
+            account=server.edit_account
+            for field in ('status','inbounds','proxies','note',
+                          'data_limit_reset_strategy'):
+                account[field]=copy.deepcopy(request[field] if field in request
+                                             else pre_put[field])
+            if 'status' not in request:
+                if (pre_put['status']=='expired' and
+                    account['expire']>time.time()):
+                    account['status']='active'
+                elif (pre_put['status']=='limited' and
+                      (account['data_limit']==0 or
+                       account['data_limit']>account['used_traffic'])):
+                    account['status']='active'
 
 @contextlib.contextmanager
 def owned_edit_provider():
@@ -174,6 +227,59 @@ def main():
                 assert panel.edit_account[key]==expected,(label,panel.edit_account)
             cases.append('review_b1_foreign_'+label+'_no_corrective_put')
 
+        # Root-cause negative control: a foreign operator may modify STATUS
+        # or config after the original GET but before the FIRST PUT. That PUT
+        # must not itself carry unrelated fields which erase that new state.
+        for label,drift in (
+            ('disabled',{'status':'disabled'}),
+            ('inbounds',{'inbounds':{'vless':['foreign-inbound']}}),
+            ('proxies',{'proxies':{'vless':{'flow':'changed'}}}),
+            ('reset_strategy',{'data_limit_reset_strategy':'day'}),
+            ('note',{'note':'foreign-note'}),
+        ):
+            panel.mode='edit-verified'
+            panel.trace.clear()
+            panel.edit_account=copy.deepcopy(INITIAL)
+            panel.edit_put_count=0
+            panel.foreign_before_put=drift
+            outcome=native.run(work,env,source,native.DBS[1],
+                {'function':'editMarzbanConfig',
+                 'args':[2,{'remark':'fixture-user','plus_volume':1}]})
+            assert outcome['exception'] is None and outcome['result']['success'] is False,(label,outcome)
+            assert outcome['result']['uncertain'] is True,(label,outcome)
+            assert panel.edit_put_count==1,(label,panel.trace)
+            for field,expected in drift.items():
+                assert panel.edit_account[field]==expected,(label,panel.edit_account)
+            sent=[json.loads(e['body']) for e in panel.trace if e['method']=='PUT']
+            assert len(sent)==1 and set(sent[0])=={'data_limit'},(label,sent)
+            cases.append('review_b1_foreign_before_initial_put_'+label+'_not_overwritten')
+
+        # The untouched limit must also stay untouched when another actor
+        # adjusts it immediately before our FIRST PUT. A duration-only PUT
+        # cannot restore stale quota; quota-only cannot restore stale expiry.
+        for label,drift,edit,expected in (
+            ('quota_edit_preserves_foreign_expiry',
+             {'expire':1800500000},{'plus_volume':1},{'data_limit'}),
+            ('day_edit_preserves_foreign_quota',
+             {'data_limit':5*GIB},{'plus_day':1},{'expire'}),
+        ):
+            panel.mode='edit-verified'
+            panel.trace.clear()
+            panel.edit_account=copy.deepcopy(INITIAL)
+            panel.edit_put_count=0
+            panel.foreign_before_put=drift
+            outcome=native.run(work,env,source,native.DBS[1],
+                {'function':'editMarzbanConfig',
+                 'args':[2,{'remark':'fixture-user',**edit}]})
+            assert outcome['exception'] is None and outcome['result']['success'] is False,(label,outcome)
+            assert outcome['result']['uncertain'] is True,(label,outcome)
+            assert panel.edit_put_count==1,(label,panel.trace)
+            for field,value in drift.items():
+                assert panel.edit_account[field]==value,(label,panel.edit_account)
+            sent=[json.loads(e['body']) for e in panel.trace if e['method']=='PUT']
+            assert len(sent)==1 and set(sent[0])==expected,(label,sent)
+            cases.append('review_b1_'+label)
+
         # A disabled account at BASELINE is not an implicit authorization
         # for the very first edit to reactivate it.
         panel.mode='edit-verified'
@@ -207,7 +313,10 @@ def main():
             assert result['exception'] is None and result['result']['success'] is True,(label,result)
             assert panel.edit_account['status']=='active',result
             payloads=[json.loads(e['body']) for e in panel.trace if e['method']=='PUT']
-            assert len(payloads)==1 and payloads[0]['status']=='active',panel.trace
+            assert len(payloads)==1 and set(payloads[0])==(
+                {'expire','data_limit'} if 'volume' in change and 'days' in change
+                else {'expire'} if 'days' in change or 'plus_day' in change
+                else {'data_limit'}),panel.trace
             cases.append('review_b1_authorized_'+label+'_reactivation')
         panel.mode='edit-verified'
         panel.trace.clear()

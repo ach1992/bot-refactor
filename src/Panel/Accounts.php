@@ -511,16 +511,20 @@ function editMarzbanConfig($server_id,$info){
         if (!$isPinned())
             return (object)['success'=>false,'uncertain'=>true,'msg'=>'marzban_target_changed'];
 
-        $postFields=[
-            'inbounds'=>$current->inbounds,
-            'proxies'=>$current->proxies,
-            'expire'=>$expire,
-            'data_limit'=>$volume,
-            'username'=>urlencode($remark),
-            'note'=>$current->note??null,
-            'data_limit_reset_strategy'=>$current->data_limit_reset_strategy,
-            'status'=>'active'
-        ];
+        // Marzban's UserModify endpoint preserves omitted fields. The
+        // request must contain ONLY the absolute service limits purchased
+        // in this operation; a quota-only edit may not overwrite an
+        // independent expiry update (and vice versa). No stale full remote
+        // snapshot, status, credentials, proxies or notes is sent.
+        // Natural expired/limited reactivation is verified by strict GET.
+        $postFields=[];
+        if (isset($info['days']) || isset($info['plus_day']))
+            $postFields['expire']=$expire;
+        if (isset($info['volume']) || isset($info['plus_volume']))
+            $postFields['data_limit']=$volume;
+        if (!$postFields)
+            return (object)['success'=>false,'uncertain'=>false,
+                            'msg'=>'service_edit_missing_change'];
         $json=json_encode($postFields);
         if ($json===false)
             return (object)['success'=>false,'uncertain'=>true,'msg'=>'marzban_encode_failure'];

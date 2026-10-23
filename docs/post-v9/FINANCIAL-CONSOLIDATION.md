@@ -632,9 +632,13 @@ repeated.
 PR #68 high-assurance remediation preserves the initial authenticated
 physical endpoint across token acquisition, account readback and traffic
 RESET. A mutable server record cannot silently select a different target
-for RESET or forward the original bearer token there. Before any bounded
+for RESET or forward the original bearer token there. Both the initial and bounded corrective Marzban UserModify PUT now send
+only the specifically purchased absolute expiry and/or quota; a quota-only
+edit omits expiry and a duration-only edit omits quota. Status, inbounds,
+proxies, note and reset strategy are never sent. Marzban's optional fields preserve concurrent
+operator configuration rather than overwrite it. Before any bounded
 corrective PUT, the same authenticated account must still have its original
-active status, inbounds, proxies, traffic reset strategy, note and exact
+status, inbounds, proxies, traffic reset strategy, note and exact
 integer expiry/quota; foreign modifications leave the payment under review.
 An administrator-disabled/on-hold account is never reactivated by a routine edit. A naturally expired account may be activated by a paid duration extension/renewal; a quota-limited account may be activated by a paid quota extension/renewal. The original status still remains part of the verified baseline, and foreign status drift blocks corrective PUT.
 A traffic RESET is verified only when the exact account reports canonical
