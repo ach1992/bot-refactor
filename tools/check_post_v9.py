@@ -1338,6 +1338,90 @@ def main():
                 wallet_checkout.get("production_financial_mutations")==0):
             raise RuntimeError("Wallet full route acceptance incomplete")
 
+        # Exact callback identity across all five direct wallet-charge routes;
+        # execute actual PHP/MySQLi and fail if a malformed button can debit.
+        wallet_frame_path=Path(tmp)/"wallet-callback-framing.json"
+        framed=subprocess.run(
+            ["python3",str(ROOT/"tools/test_post_v9_wallet_callback_framing.py"),
+             "--run-disposable","--report",str(wallet_frame_path)],
+            cwd=ROOT,capture_output=True,text=True,timeout=90)
+        if framed.returncode!=0:
+            raise RuntimeError("Wallet callback framing source acceptance failed:\n"
+                +framed.stderr[-4500:])
+        wallet_frame=json.loads(wallet_frame_path.read_text())
+        expected_framing={
+            f'{subject}_{kind}_no_wallet_or_service_effect'
+            for subject in ('buy','custom','renew','day','volume')
+            for kind in ('embedded_action','trailing_separator','multibyte_suffix')
+        } | {
+            f'{subject}_{kind}'
+            for subject in ('buy','custom','renew','day','volume')
+            for kind in ('valid_owned_callback_still_pays_once','paid_callback_no_replay')
+        } | {'wallet_exact_64_byte_callback_accepted',
+             'wallet_65_byte_callback_without_side_effects',
+             'unrelated_callback_not_blocked_by_wallet_guard'} | {
+            f'{subject}_{kind}'
+            for subject in ('buy','custom','renew','day','volume')
+            for kind in ('full_bot_invalid_wallet_namespace_consumed',
+                         'valid_frame_reaches_dispatch')
+        }
+        if not (wallet_frame.get('complete') is True
+                and wallet_frame.get('cases')==38
+                and set(wallet_frame.get('scenarios',[]))==expected_framing
+                and wallet_frame.get('real_php_mariadb') is True
+                and wallet_frame.get('original_payment_schema_preserved') is True
+                and wallet_frame.get('provider_requests')==0
+                and wallet_frame.get('live_wallet_mutations')==0):
+            raise RuntimeError('Direct wallet callback framing matrix incomplete')
+
+        # Six current manual-method choices must have exact callback framing,
+        # explicit method binding and no fallthrough into a second action.
+        manual_frame_path=Path(tmp)/"manual-choice-callback-framing.json"
+        framed_manual=subprocess.run(
+            ["python3",str(ROOT/"tools/test_post_v9_manual_choice_framing.py"),
+             "--run-disposable","--report",str(manual_frame_path)],
+            cwd=ROOT,capture_output=True,text=True,timeout=120)
+        if framed_manual.returncode!=0:
+            raise RuntimeError("Manual choice callback framing source acceptance failed:\n"
+                +framed_manual.stderr[-4500:])
+        manual_frame=json.loads(manual_frame_path.read_text())
+        manual_subjects=('buy','custom','renew','day','volume','topup')
+        manual_methods=('CartToCart','GiftCard')
+        expected_manual_frame={
+            f'{subject}_{method}_{kind}_denied'
+            for subject in manual_subjects for method in manual_methods
+            for kind in ('prefixed','trailing','unicode')
+        } | {
+            f'{subject}_{method}_{kind}'
+            for subject in manual_subjects for method in manual_methods
+            for kind in ('valid_choice_pins_correct_provider',
+                         'reclick_keeps_one_claim',
+                         'hash_text_cannot_change_method')
+        } | {
+            f'{subject}_crypto_malformed_no_intent' for subject in manual_subjects
+        } | {
+            f'{subject}_{method}_{kind}'
+            for subject in manual_subjects
+            for method in (*manual_methods,'ManualUsdt')
+            for kind in ('full_bot_invalid_consumed','full_bot_valid_continues')
+        } | {
+            f'{subject}_{tag}_{kind}'
+            for subject in manual_subjects for tag in ('c','t')
+            for kind in ('long_hash_untrusted_external_denied',
+                         'long_hash_verified_network_choice_pinned')
+        } | {'topup_manual_choice_exact_64_bytes_valid',
+             'topup_manual_choice_65_bytes_denied',
+             'manual_choice_guard_unrelated_namespace_continues'}
+        if not (manual_frame.get('complete') is True
+                and manual_frame.get('cases')==141
+                and set(manual_frame.get('scenarios',[]))==expected_manual_frame
+                and manual_frame.get('real_php_mariadb') is True
+                and manual_frame.get('socket_only') is True
+                and manual_frame.get('source_payment_tables_unchanged') is True
+                and manual_frame.get('provider_calls')==0
+                and manual_frame.get('live_financial_mutations')==0):
+            raise RuntimeError('Manual payment choice callback framing matrix incomplete')
+
         # Issue #26: native real bank-Cron PHP on disposable MariaDB.
         bank_path=Path(tmp)/"bank-buy-effects.json"
         bank_run=subprocess.run(
@@ -1936,6 +2020,8 @@ def main():
                     "service_effects":effects,
                     "wallet_paid_create":wallet_create,
                     "wallet_checkout_routes":wallet_checkout,
+                    "wallet_callback_framing":wallet_frame,
+                    "manual_choice_callback_framing":manual_frame,
                     "nonpaid_trial_bulk":nonpaid,
                     "referral_awards":referral,
                     "referral_postcommit_routes":route_award,
@@ -1981,6 +2067,8 @@ def main():
                       "service_effect_cases":effects["cases"],
                       "wallet_paid_create_cases":wallet_create["cases"],
                       "wallet_checkout_cases":wallet_checkout["cases"],
+                      "wallet_callback_framing_cases":wallet_frame["cases"],
+                      "manual_choice_callback_framing_cases":manual_frame["cases"],
                       "nonpaid_trial_bulk_cases":nonpaid["cases"],
                       "referral_award_cases":referral["cases"],
                       "referral_postcommit_route_cases":route_award["cases"],

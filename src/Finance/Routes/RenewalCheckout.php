@@ -137,7 +137,7 @@ if (
     achbotPayUxTrackByHash($connection,(string)$hash_id,(int)$from_id,$sent);
 }
 
-if (preg_match('/payRenewWith(?:CartToCart|GiftCard|ManualUsdt)(.*)/', $data, $match)) {
+if (is_string($data) && (strlen($data) <= 64 || ($GLOBALS['achbotManualCryptoVerifiedDispatch'] ?? null) === $data) && preg_match('/\ApayRenewWith(?:CartToCart|GiftCard|ManualUsdt)([A-Za-z0-9_-]{1,50})\z/D', $data, $match)) {
 
     $payInfo = dbFetchPayByHash($connection, $match[1]);
     if (!$payInfo) {
@@ -160,8 +160,8 @@ if (preg_match('/payRenewWith(?:CartToCart|GiftCard|ManualUsdt)(.*)/', $data, $m
         exit;
     }
 
-    $method = strpos($data, 'WithManualUsdt') !== false ? (($GLOBALS['achbotManualCryptoChoice'] ?? '') === 'TRON' ? 'manual_trx' : 'manual_usdt') :
-        (strpos($data, 'WithGiftCard') !== false ? 'gift_card' : 'bank_transfer');
+    $method = str_starts_with($data, 'payRenewWithManualUsdt') ? (($GLOBALS['achbotManualCryptoChoice'] ?? '') === 'TRON' ? 'manual_trx' : 'manual_usdt') :
+        (str_starts_with($data, 'payRenewWithGiftCard') ? 'gift_card' : 'bank_transfer');
     if (!achbotManualClaim($connection, $payInfo, $method, (int)$from_id,
                            $GLOBALS['achbotManualCryptoChoice'] ?? null)) {
         alert("⚠️ پرداخت این سفارش با این روش مجاز نیست یا قبلاً به روش دیگری آغاز شده است.", true);
@@ -525,7 +525,7 @@ if(preg_match('/approveRenewAcc(.*)/',$data,$match) && ($from_id == $admin || $u
     }
 }
 
-if(preg_match('/payRenewWithWallet(.*)/', $data, $match)){
+if(is_string($data) && strlen($data) <= 64 && preg_match('/\ApayRenewWithWallet([A-Za-z0-9_-]{1,50})\z/D', $data, $match)){
     $connection->begin_transaction();
     $localCommitted=false;
     try {

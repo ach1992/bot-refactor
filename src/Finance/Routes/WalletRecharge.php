@@ -273,7 +273,7 @@ if ($text != ($buttonValues['cancel'] ?? null) &&
     return;
 }
 
-if (preg_match('/payIncreaseWalletWith(?:CartToCart|GiftCard|ManualUsdt)(?<hashId>.*)/', $data, $match)) {
+if (is_string($data) && (strlen($data) <= 64 || ($GLOBALS['achbotManualCryptoVerifiedDispatch'] ?? null) === $data) && preg_match('/\ApayIncreaseWalletWith(?:CartToCart|GiftCard|ManualUsdt)(?<hashId>[A-Za-z0-9_-]{1,50})\z/D', $data, $match)) {
 
     $payInfo = dbFetchPayByHash($connection, $match['hashId']);
     if (!$payInfo) {
@@ -282,8 +282,8 @@ if (preg_match('/payIncreaseWalletWith(?:CartToCart|GiftCard|ManualUsdt)(?<hashI
         return '__ACHBOT_V8_GOTO_START__';
     }
 
-    $method = strpos($data, 'WithManualUsdt') !== false ? (($GLOBALS['achbotManualCryptoChoice'] ?? '') === 'TRON' ? 'manual_trx' : 'manual_usdt') :
-        (strpos($data, 'WithGiftCard') !== false ? 'gift_card' : 'bank_transfer');
+    $method = str_starts_with($data, 'payIncreaseWalletWithManualUsdt') ? (($GLOBALS['achbotManualCryptoChoice'] ?? '') === 'TRON' ? 'manual_trx' : 'manual_usdt') :
+        (str_starts_with($data, 'payIncreaseWalletWithGiftCard') ? 'gift_card' : 'bank_transfer');
     if (!achbotManualClaim($connection, $payInfo, $method, (int)$from_id,
                            $GLOBALS['achbotManualCryptoChoice'] ?? null)) {
         alert("⚠️ پرداخت این سفارش با این روش مجاز نیست یا قبلاً به روش دیگری آغاز شده است.", true);
