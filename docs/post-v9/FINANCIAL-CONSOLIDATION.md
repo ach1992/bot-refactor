@@ -629,6 +629,34 @@ to serialize edits by unrelated systems, multiple databases or incorrectly
 grouped panels. Traffic reset is separately read back and never blindly
 repeated.
 
+PR #68 high-assurance remediation preserves the initial authenticated
+physical endpoint across token acquisition, account readback and traffic
+RESET. A mutable server record cannot silently select a different target
+for RESET or forward the original bearer token there. Before any bounded
+corrective PUT, the same authenticated account must still have its original
+active status, inbounds, proxies, traffic reset strategy, note and exact
+integer expiry/quota; foreign modifications leave the payment under review.
+An administrator-disabled/on-hold account is never reactivated by a routine edit. A naturally expired account may be activated by a paid duration extension/renewal; a quota-limited account may be activated by a paid quota extension/renewal. The original status still remains part of the verified baseline, and foreign status drift blocks corrective PUT.
+A traffic RESET is verified only when the exact account reports canonical
+integer `used_traffic=0`; partial, malformed or unavailable readbacks
+must not authorize the follow-on PUT or another reset.
+
+The existing `orders_list.expire_date` is signed INT with a maximum Unix
+timestamp of `2147483647`; new service edits reject any resulting expiry
+outside that existing contract *before* outbound mutation. Bank-finisher
+SQL also refuses out-of-range verified timestamps under either strict or
+permissive MariaDB mode and re-reads persisted expiry before completion.
+For previously existing orders, the scheduled bank finisher compares the
+original `orders_list.expire_date` recorded before remote dispatch with
+the locked live row, and conditionally updates only an unchanged row.
+A newer manual, scheduled or other financial finalization therefore
+prevents an older verified edit from overwriting that newer local expiry.
+The older claimed payment stays nonterminal for operator reconciliation;
+no extra remote edit, wallet refund or payment claim is authorized.
+This optimistic SQL boundary is not a global lock on independent
+Marzban administrator actions, which remain subject to review/operational
+coordination.
+
 The existing extension quote schema can store fractional values while its
 historical service audit stores integer days/GB. A fractional paid quote must
 NOT be silently rounded down and marked delivered. Until separately accepted

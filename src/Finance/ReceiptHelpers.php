@@ -563,7 +563,7 @@ function achbotAutoBankFinishEdit(mysqli $db, array $pay,
                                   object $verified, string $kind,
                                   int $serverId, int $orderId,
                                   string $remark, int $amount,
-                                  int $units=0): bool {
+                                  int $units=0, ?int $expectedOrderExpiry=null): bool {
     $id=(int)($pay['id']??0);
     $userId=(int)($pay['user_id']??0);
     if ($id<=0 || $userId<=0 || $amount<=0 || $serverId<=0 ||
@@ -571,10 +571,16 @@ function achbotAutoBankFinishEdit(mysqli $db, array $pay,
         ($verified->success??false)!==true ||
         ($verified->verified??false)!==true ||
         !isset($verified->applied_expire,$verified->applied_bytes) ||
-        !is_numeric($verified->applied_expire) ||
-        !is_numeric($verified->applied_bytes) ||
-        (int)$verified->applied_expire<=0 ||
-        (int)$verified->applied_bytes<0)
+        // No 64-bit provider timestamp may be silently clamped by the
+        // existing signed-INT orders_list.expire_date schema, including
+        // non-strict MariaDB sql_mode.
+        !is_int($verified->applied_expire) ||
+        $verified->applied_expire<=0 ||
+        $verified->applied_expire>2147483647 ||
+        !is_int($verified->applied_bytes) ||
+        $verified->applied_bytes<0 ||
+        ($kind!=='standard' && ($expectedOrderExpiry===null ||
+            $expectedOrderExpiry<0 || $expectedOrderExpiry>2147483647)))
         return false;
     $expectedType=match($kind) {
         'renew'=>'RENEW_ACCOUNT','standard'=>'RENEW_SCONFIG',
@@ -637,8 +643,8 @@ function achbotAutoBankFinishEdit(mysqli $db, array $pay,
         }
         if ($kind!=='standard') {
             if ($orderId<=0) { $db->rollback();return false; }
-            $stmt=$db->prepare("SELECT userid,fileid,server_id,inbound_id,remark,status
-                FROM orders_list WHERE id=? FOR UPDATE");
+            $stmt=$db->prepare("SELECT userid,fileid,server_id,inbound_id,
+                remark,status,expire_date FROM orders_list WHERE id=? FOR UPDATE");
             $stmt->bind_param('i',$orderId);
             if (!$stmt->execute()) throw new RuntimeException('auto_service_order_read_failed');
             $order=$stmt->get_result()->fetch_assoc();
@@ -648,22 +654,42 @@ function achbotAutoBankFinishEdit(mysqli $db, array $pay,
                 (int)$order['fileid']!==(int)$locked['plan_id'] ||
                 (int)$order['inbound_id']!==0 ||
                 (int)$order['status']!==1 ||
-                (string)$order['remark']!==$remark) {
+                (string)$order['remark']!==$remark ||
+                // B may have finalized a newer edit after this payment's
+                // original pre-remote snapshot. Never let A restore old
+                // absolute expiry just because its own payment row is locked.
+                (int)$order['expire_date']!==$expectedOrderExpiry) {
                 $db->rollback();return false;
             }
             if ($kind!=='volume') {
-                $expiry=(int)$verified->applied_expire;
+                $expiry=$verified->applied_expire;
                 $stmt=$db->prepare("UPDATE orders_list SET expire_date=?,notif=0
-                    WHERE id=? AND userid=? AND remark=? AND server_id=?");
-                $stmt->bind_param('iiisi',$expiry,$orderId,$userId,$remark,$serverId);
+                    WHERE id=? AND userid=? AND remark=? AND server_id=?
+                      AND expire_date=?");
+                $stmt->bind_param('iiisii',$expiry,$orderId,$userId,$remark,
+                                  $serverId,$expectedOrderExpiry);
             } else {
                 $stmt=$db->prepare("UPDATE orders_list SET notif=0
-                    WHERE id=? AND userid=? AND remark=? AND server_id=?");
-                $stmt->bind_param('iisi',$orderId,$userId,$remark,$serverId);
+                    WHERE id=? AND userid=? AND remark=? AND server_id=?
+                      AND expire_date=?");
+                $stmt->bind_param('iisii',$orderId,$userId,$remark,$serverId,
+                                  $expectedOrderExpiry);
             }
             if (!$stmt || !$stmt->execute())
                 throw new RuntimeException('auto_service_order_write_failed');
             $stmt->close();
+            // Under permissive SQL mode, execute()==true is not proof that
+            // the verified 64-bit remote expiry fits persisted INT storage.
+            // Read back under the same transaction BEFORE acknowledging pay.
+            $stmt=$db->prepare('SELECT expire_date FROM orders_list WHERE id=? FOR UPDATE');
+            if (!$stmt) throw new RuntimeException('auto_service_expiry_readback_prepare');
+            $stmt->bind_param('i',$orderId);
+            $ok=$stmt->execute();
+            $persisted=$ok?$stmt->get_result()->fetch_assoc():null;
+            $stmt->close();
+            if (!$persisted || (int)$persisted['expire_date']!==(
+                $kind==='volume'?$expectedOrderExpiry:$verified->applied_expire))
+                throw new RuntimeException('auto_service_expiry_readback_mismatch');
         }
         $day=$kind==='day'?$units:null;
         $volume=$kind==='volume'?$units:null;

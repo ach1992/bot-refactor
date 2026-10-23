@@ -82,7 +82,9 @@ elseif ($op==='finish_bank_service_edit') {
         (string)($spec['edit_kind']??'volume'),
         (int)($spec['server_id']??2),(int)($spec['order_id']??0),
         (string)($spec['remark']??'auto-check'),(int)$payInfo['price'],
-        (int)($spec['units']??1));
+        (int)($spec['units']??1),
+        isset($spec['expected_order_expire'])?
+            (int)$spec['expected_order_expire']:1800000100);
 }
 elseif ($op==='finish') $value=achbotManualFinishEvidence($connection,$hash,
     (string)($spec['photo_id']??'fixture-photo-id'),(string)($spec['token']??''),222,9001);
@@ -488,7 +490,8 @@ def run_php(work,env,driver,hash_id,op,method='bank_transfer',user=1001,**more):
         for line in p.stderr.splitlines()))
     safe_service_deferred=(expect_deferred and p.stderr and all(
         'achbot_auto_service_edit_needs_review pay_id=' in line and
-        ' kind=standard exception=mysqli_sql_exception' in line and
+        any(' kind='+kind+' exception=mysqli_sql_exception' in line
+            for kind in ('standard','day','renew','volume')) and
         'fixture' not in line and 'SQL' not in line
         for line in p.stderr.splitlines()))
     if p.returncode or (p.stderr and not (safe_deferred or safe_service_deferred)):
@@ -1742,6 +1745,106 @@ def check():
             assert query(work,env,'SELECT COUNT(*) FROM increase_order')==str(int(before_audit)+1)
             cases.append('auto_bank_'+kind+'_preflight_pins_original_payment_order_target_and_account')
             cases.append('auto_bank_'+kind+'_service_only_after_verified_remote_and_atomic_local_effect')
+
+        # Reviewer R4/R5: local expiry storage bounds and compare-and-swap.
+        # These run on actual original-schema MariaDB, including permissive
+        # sql_mode in which an oversized integer may otherwise be clamped.
+        for mode in ('STRICT_TRANS_TABLES',''):
+            query(work,env,"SET GLOBAL sql_mode='"+mode+"'")
+            for label,value in (('lastint',2147483647),
+                                ('overflow',2147483648)):
+                key='banklimit'+('strict' if mode else 'permissive')+label
+                seed(work,env,key)
+                remark='bank_limit_'+label
+                query(work,env,"INSERT INTO orders_list "
+                    "(userid,token,transid,fileid,server_id,inbound_id,remark,uuid,protocol,"
+                    "expire_date,link,amount,status,date,notif,rahgozar,agent_bought) "
+                    f"VALUES (1001,'token','',7,2,0,'{remark}','fixture-uuid','vless',"
+                    "1800000100,'[]',100,1,'fixture',1,0,0)")
+                oid=int(query(work,env,"SELECT id FROM orders_list WHERE remark='"+
+                              remark+"' ORDER BY id DESC LIMIT 1"))
+                query(work,env,"INSERT INTO increase_day (id,volume,price) VALUES "
+                    "(9903,1,100) ON DUPLICATE KEY UPDATE volume=1,price=100")
+                query(work,env,f"UPDATE pays SET type='INCREASE_DAY_{oid}_9903',"
+                    f"state='have_sent',server_id=2,plan_id=7,order_id={oid} WHERE hash_id='{key}'")
+                assert base(key,'bank_auto_claim') is True
+                result=base(key,'finish_bank_service_edit',edit_kind='day',
+                    order_id=oid,server_id=2,remark=remark,units=1,
+                    applied_expire=value,expect_deferred=value>2147483647)
+                assert result is (value==2147483647),(key,result)
+                assert query(work,env,f"SELECT expire_date FROM orders_list WHERE id={oid}")==(
+                    '2147483647' if result else '1800000100')
+                assert query(work,env,f"SELECT state FROM pays WHERE hash_id='{key}'")==(
+                    'auto_cart_approved' if result else 'processing')
+                cases.append('review_r4_bank_'+label+'_sql_'+
+                    ('strict' if mode else 'permissive'))
+        query(work,env,"SET GLOBAL sql_mode='STRICT_TRANS_TABLES'")
+
+        # Two separate paid bank edits use the SAME account but have different
+        # payment rows. If B finalizes its newer remote change first, the old
+        # finisher A must not overwrite B's newer local expiry or claim success.
+        for key in ('bankracea','bankraceb'):
+            seed(work,env,key)
+        remark='bank_race'
+        query(work,env,"INSERT INTO orders_list "
+            "(userid,token,transid,fileid,server_id,inbound_id,remark,uuid,protocol,"
+            "expire_date,link,amount,status,date,notif,rahgozar,agent_bought) "
+            f"VALUES (1001,'token','',7,2,0,'{remark}','fixture-uuid','vless',"
+            "1800000100,'[]',100,1,'fixture',1,0,0)")
+        oid=int(query(work,env,"SELECT id FROM orders_list WHERE remark='bank_race'"))
+        query(work,env,"INSERT INTO increase_day (id,volume,price) VALUES "
+            "(9904,1,100) ON DUPLICATE KEY UPDATE volume=1,price=100")
+        for key in ('bankracea','bankraceb'):
+            query(work,env,f"UPDATE pays SET type='INCREASE_DAY_{oid}_9904',"
+                  f"state='have_sent',server_id=2,plan_id=7,order_id={oid} WHERE hash_id='{key}'")
+            assert base(key,'bank_auto_claim') is True
+        prior=int(query(work,env,"SELECT COUNT(*) FROM increase_order"))
+        assert base('bankraceb','finish_bank_service_edit',edit_kind='day',
+                    order_id=oid,server_id=2,remark=remark,units=1,
+                    applied_expire=1802000100,expected_order_expire=1800000100) is True
+        assert base('bankracea','finish_bank_service_edit',edit_kind='day',
+                    order_id=oid,server_id=2,remark=remark,units=1,
+                    applied_expire=1801000100,expected_order_expire=1800000100) is False
+        assert query(work,env,f"SELECT expire_date FROM orders_list WHERE id={oid}")=='1802000100'
+        assert query(work,env,"SELECT state FROM pays WHERE hash_id='bankracea'")=='processing'
+        assert query(work,env,"SELECT state FROM pays WHERE hash_id='bankraceb'")=='auto_cart_approved'
+        assert int(query(work,env,"SELECT COUNT(*) FROM increase_order"))==prior+1
+        cases.append('review_r5_remote_a_then_b_local_b_then_a_fenced')
+
+        # Reviewer R5: other workflows can legitimately advance the same
+        # orders_list row after bank A's remote verification but before A's
+        # SQL finalization. Model THEIR committed write using real MariaDB,
+        # without pretending their external provider path is exercised here.
+        for other in ('auto_renew','manual_edit','volume_after_renew'):
+            key='bankstale'+other.replace('_','')
+            seed(work,env,key)
+            remark='bank_stale_'+other
+            query(work,env,"INSERT INTO orders_list "
+                "(userid,token,transid,fileid,server_id,inbound_id,remark,uuid,protocol,"
+                "expire_date,link,amount,status,date,notif,rahgozar,agent_bought) "
+                f"VALUES (1001,'token','',7,2,0,'{remark}','fixture-uuid','vless',"
+                "1800000100,'[]',100,1,'fixture',1,0,0)")
+            oid=int(query(work,env,"SELECT id FROM orders_list WHERE remark='"+
+                          remark+"'"))
+            if other=='volume_after_renew':
+                query(work,env,"INSERT INTO increase_plan (id,volume,price) VALUES "
+                    "(9905,1,100) ON DUPLICATE KEY UPDATE volume=1,price=100")
+                kind='volume';typ=f'INCREASE_VOLUME_{oid}_9905'
+            else:
+                kind='day';typ=f'INCREASE_DAY_{oid}_9904'
+            query(work,env,f"UPDATE pays SET type='{typ}',"
+                  f"state='have_sent',server_id=2,plan_id=7,order_id={oid} "
+                  f"WHERE hash_id='{key}'")
+            assert base(key,'bank_auto_claim') is True
+            before=int(query(work,env,'SELECT COUNT(*) FROM increase_order'))
+            query(work,env,f'UPDATE orders_list SET expire_date=1802200000 WHERE id={oid}')
+            assert base(key,'finish_bank_service_edit',edit_kind=kind,
+                order_id=oid,server_id=2,remark=remark,units=1,
+                applied_expire=1801200000,expected_order_expire=1800000100) is False
+            assert query(work,env,f"SELECT expire_date FROM orders_list WHERE id={oid}")=='1802200000'
+            assert query(work,env,f"SELECT state FROM pays WHERE hash_id='{key}'")=='processing'
+            assert int(query(work,env,'SELECT COUNT(*) FROM increase_order'))==before
+            cases.append('review_r5_stale_bank_after_'+other+'_no_completion')
 
         # A paid provider outcome followed by a local accounting INSERT error
         # cannot mark completion or silently drop the original payment claim.

@@ -9,6 +9,10 @@ or a second traffic reset. No installed panel, customer or payment.
 import argparse
 import shutil
 import json
+import copy
+import contextlib
+import threading
+from http.server import ThreadingHTTPServer
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 
@@ -18,6 +22,54 @@ import test_post_v9_marzban as marzban
 
 ROOT=Path(__file__).resolve().parents[1]
 GIB=1073741824
+
+# Post-V9-only provider fault injection. The immutable historical V6 native
+# fixture must not be changed to bless a new candidate.
+class EditProviderHandler(native.Handler):
+    def handle_request(self):
+        server=self.server
+        if '/api/user/' in self.path:
+            if (self.command=='GET' and
+                getattr(server,'foreign_after_put',None) is not None and
+                getattr(server,'edit_put_count',0)==1):
+                server.edit_account.update(server.foreign_after_put)
+                server.foreign_after_put=None
+            if (self.command=='GET' and
+                getattr(server,'move_after_first_get',None) is not None and
+                not getattr(server,'moved',False)):
+                server.moved=True
+                server.move_after_first_get()
+            if (self.command=='GET' and
+                getattr(server,'edit_reset_count',0)>0 and
+                getattr(server,'reset_readback_override_enabled',False)):
+                server.edit_account['used_traffic']=server.reset_readback_override
+                server.reset_readback_override_enabled=False
+            if (self.command=='GET' and
+                getattr(server,'edit_reset_count',0)>0 and
+                getattr(server,'reset_config_override',None) is not None):
+                server.edit_account.update(server.reset_config_override)
+                server.reset_config_override=None
+            # This is after the PINNED request reached endpoint A, but
+            # before PHP observes its response. It must not switch to B.
+            if (self.command=='POST' and self.path.endswith('/reset') and
+                getattr(server,'move_after_reset',None) is not None):
+                server.move_after_reset()
+                server.move_after_reset=None
+        super().handle_request()
+
+@contextlib.contextmanager
+def owned_edit_provider():
+    server=ThreadingHTTPServer(('127.0.0.1',0),EditProviderHandler)
+    server.trace=[]
+    worker=threading.Thread(target=server.serve_forever,daemon=True)
+    worker.start()
+    try:
+        yield server,'http://127.0.0.1:'+str(server.server_address[1])
+    finally:
+        server.shutdown()
+        worker.join(timeout=6)
+        server.server_close()
+
 INITIAL={
     'username':'fixture-user','status':'active',
     'data_limit':2*GIB,'used_traffic':GIB,
@@ -32,7 +84,7 @@ def main():
     parser.add_argument('--report',type=Path)
     args=parser.parse_args()
     cases=[]
-    with owned.owned_database() as (work,env),native.owned_provider() as (panel,url):
+    with owned.owned_database() as (work,env),owned_edit_provider() as (panel,url):
         native.seed(work,env,url)
         source=work/'candidate'
         marzban.prepare(work,source,True)
@@ -95,6 +147,192 @@ def main():
                 if panel.edit_account['data_limit']!=expected_volume:
                     raise RuntimeError('Remote quota did not really change: '+mode)
             cases.append(mode+'_source_native_'+want)
+
+        # Reviewer B1: no corrective absolute PUT can overwrite a foreign
+        # status/configuration change even if expiry, quota and note are still
+        # identical to the original observed baseline.
+        for label,drift in (
+            ('disabled',{'status':'disabled'}),
+            ('expired',{'status':'expired'}),
+            ('inbounds',{'inbounds':{'vless':['other-inbound']}}),
+            ('proxies',{'proxies':{'vless':{'flow':'other-flow'}}}),
+            ('reset_strategy',{'data_limit_reset_strategy':'day'}),
+            ('note',{'note':'operator-changed'}),
+        ):
+            panel.mode='edit-repair'
+            panel.trace.clear()
+            panel.edit_account=copy.deepcopy(INITIAL)
+            panel.edit_put_count=0
+            panel.foreign_after_put=drift
+            outcome=native.run(work,env,source,native.DBS[1],
+                {'function':'editMarzbanConfig',
+                 'args':[2,{'remark':'fixture-user','plus_volume':1}]})
+            assert outcome['exception'] is None and outcome['result']['success'] is False,(label,outcome)
+            assert outcome['result']['uncertain'] is True,(label,outcome)
+            assert panel.edit_put_count==1,(label,panel.trace)
+            for key,expected in drift.items():
+                assert panel.edit_account[key]==expected,(label,panel.edit_account)
+            cases.append('review_b1_foreign_'+label+'_no_corrective_put')
+
+        # A disabled account at BASELINE is not an implicit authorization
+        # for the very first edit to reactivate it.
+        panel.mode='edit-verified'
+        panel.trace.clear()
+        panel.edit_account=copy.deepcopy(INITIAL)
+        panel.edit_account['status']='disabled'
+        panel.edit_put_count=0
+        denied=native.run(work,env,source,native.DBS[1],
+            {'function':'editMarzbanConfig',
+             'args':[2,{'remark':'fixture-user','plus_volume':1}]})
+        assert denied['exception'] is None and denied['result']['success'] is False,denied
+        assert panel.edit_put_count==0 and panel.edit_account['status']=='disabled'
+        cases.append('review_b1_disabled_original_not_reactivated')
+
+        # Legitimate paid renewal of naturally expired/limited subscriptions
+        # remains possible, but administrator-disabled accounts stay disabled.
+        for label,status,change in (
+            ('expired_days','expired',{'plus_day':1}),
+            ('expired_full_renew','expired',{'days':30,'volume':3}),
+            ('limited_quota','limited',{'plus_volume':1}),
+        ):
+            panel.mode='edit-verified'
+            panel.trace.clear()
+            panel.edit_account=copy.deepcopy(INITIAL)
+            panel.edit_account['status']=status
+            panel.edit_put_count=0
+            panel.edit_reset_count=0
+            result=native.run(work,env,source,native.DBS[1],
+                {'function':'editMarzbanConfig',
+                 'args':[2,{'remark':'fixture-user',**change}]})
+            assert result['exception'] is None and result['result']['success'] is True,(label,result)
+            assert panel.edit_account['status']=='active',result
+            payloads=[json.loads(e['body']) for e in panel.trace if e['method']=='PUT']
+            assert len(payloads)==1 and payloads[0]['status']=='active',panel.trace
+            cases.append('review_b1_authorized_'+label+'_reactivation')
+        panel.mode='edit-verified'
+        panel.trace.clear()
+        panel.edit_account=copy.deepcopy(INITIAL)
+        panel.edit_account['status']='disabled'
+        declined=native.run(work,env,source,native.DBS[1],
+            {'function':'editMarzbanConfig',
+             'args':[2,{'remark':'fixture-user','plus_day':1}]})
+        assert declined['exception'] is None and declined['result']['success'] is False,declined
+        assert not any(e['method']=='PUT' for e in panel.trace)
+        cases.append('review_b1_disabled_duration_does_not_override_operator')
+
+        # Reviewer B2: config drift between the first authenticated GET and
+        # RESET must never redirect credentials or reset to another physical
+        # endpoint. No provider is real: both endpoints are loopback fixtures.
+        with owned_edit_provider() as (foreign,foreign_url):
+            foreign.mode='edit-reset-verified'
+            for when in ('before_reset','after_reset'):
+                panel.mode='edit-reset-verified'
+                panel.trace.clear()
+                foreign.trace.clear()
+                panel.edit_account=copy.deepcopy(INITIAL)
+                panel.edit_put_count=0
+                panel.edit_reset_count=0
+                panel.moved=False
+                panel.move_after_first_get=None
+                panel.move_after_reset=None
+                changed=lambda: native.sql(work,env,
+                    "UPDATE server_config SET panel_url='"+foreign_url+"' WHERE id=2",
+                    native.DBS[1])
+                if when=='before_reset':
+                    panel.move_after_first_get=changed
+                else:
+                    panel.move_after_reset=changed
+                try:
+                    denied=native.run(work,env,source,native.DBS[1],
+                        {'function':'editMarzbanConfig',
+                         'args':[2,{'remark':'fixture-user','days':30,'volume':3}]})
+                    assert denied['exception'] is None and denied['result']['success'] is False,(when,denied)
+                    assert denied['result']['uncertain'] is True,(when,denied)
+                    assert not foreign.trace,(when,foreign.trace)
+                    assert panel.edit_put_count==0,(when,panel.trace)
+                    if when=='before_reset':
+                        assert panel.edit_reset_count==0,panel.trace
+                    else:
+                        assert panel.edit_reset_count==1,panel.trace
+                    cases.append('review_b2_endpoint_drift_'+when+'_no_foreign_request')
+                finally:
+                    native.sql(work,env,
+                        "UPDATE server_config SET panel_url='"+url+"' WHERE id=2",
+                        native.DBS[1])
+                    panel.move_after_first_get=None
+                    panel.move_after_reset=None
+
+        # Reviewer R3: an acknowledged RESET is not complete unless the
+        # exact same account reports canonical integer zero usage.
+        for label,prior,observed in (
+            ('partial',GIB,GIB//2),
+            ('zero_to_nonzero',0,1024),
+            ('fractional',GIB,0.5),
+            ('exponent',GIB,'0e0'),
+            ('overflow',GIB,'9223372036854775808'),
+            ('missing',GIB,None),
+        ):
+            panel.mode='edit-reset-verified'
+            panel.trace.clear()
+            panel.edit_account=copy.deepcopy(INITIAL)
+            panel.edit_account['used_traffic']=prior
+            panel.edit_put_count=0
+            panel.edit_reset_count=0
+            panel.reset_readback_override=observed
+            panel.reset_readback_override_enabled=True
+            result=native.run(work,env,source,native.DBS[1],
+                {'function':'editMarzbanConfig',
+                 'args':[2,{'remark':'fixture-user','days':30,'volume':3}]})
+            assert result['exception'] is None and result['result']['success'] is False,(label,result)
+            assert result['result']['uncertain'] is True,(label,result)
+            assert result['result']['msg']=='marzban_reset_readback_unverified',(label,result)
+            assert panel.edit_reset_count==1 and panel.edit_put_count==0,(label,panel.trace)
+            cases.append('review_r3_reset_'+label+'_must_stay_under_review')
+        panel.reset_readback_override=None
+        panel.reset_readback_override_enabled=False
+
+        # Traffic reset can succeed while an independent operator changes
+        # account status/inbounds before the first corrective full-field PUT.
+        for label,config in (
+            ('status',{'status':'disabled'}),
+            ('inbounds',{'inbounds':{'vless':['foreign-inbound']}}),
+        ):
+            panel.mode='edit-reset-verified'
+            panel.trace.clear()
+            panel.edit_account=copy.deepcopy(INITIAL)
+            panel.edit_put_count=0
+            panel.edit_reset_count=0
+            panel.reset_config_override=config
+            result=native.run(work,env,source,native.DBS[1],
+                {'function':'editMarzbanConfig',
+                 'args':[2,{'remark':'fixture-user','days':30,'volume':3}]})
+            assert result['exception'] is None and result['result']['success'] is False,(label,result)
+            assert result['result']['uncertain'] is True,(label,result)
+            assert panel.edit_reset_count==1 and panel.edit_put_count==0,(label,panel.trace)
+            cases.append('review_b1_after_reset_foreign_'+label+'_no_put')
+
+        # Reviewer R4: local orders_list.expire_date is signed 32-bit INT.
+        # Remote edits outside that range must not be dispatched.
+        for label,original,change,allowed in (
+            ('max',2147483647-86400,{'plus_day':1},True),
+            ('beyond',2147483647-86400+1,{'plus_day':1},False),
+            ('long_renew',1800000100,{'days':36500,'volume':3},False),
+        ):
+            panel.mode='edit-verified'
+            panel.trace.clear()
+            panel.edit_account=copy.deepcopy(INITIAL)
+            panel.edit_account['expire']=original
+            panel.edit_put_count=0
+            outcome=native.run(work,env,source,native.DBS[1],
+                {'function':'editMarzbanConfig',
+                 'args':[2,{'remark':'fixture-user',**change}]})
+            assert outcome['exception'] is None,(label,outcome)
+            assert outcome['result']['success'] is allowed,(label,outcome)
+            assert panel.edit_put_count==int(allowed),(label,panel.trace)
+            if not allowed:
+                assert not any(e['method']=='POST' and e['path'].endswith('/reset')
+                    for e in panel.trace),panel.trace
+            cases.append('review_r4_signed_expiry_'+label)
 
         # The legacy quote schema accepts FLOAT, while the old audit stores
         # integer units. Reject unsupported fractions rather than claiming
