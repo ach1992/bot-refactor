@@ -146,17 +146,42 @@ function achbotAutoRenewReserve(mysqli $db, int $orderId, int $userId): array {
     }
 }
 
-/** Persist remote-effect intent BEFORE calling the external provider. */
+/**
+ * Persist remote-effect intent BEFORE the first external provider call.
+ * A bounded retry is safe ONLY here: no remote effect has been dispatched.
+ * SQL deadlock/lock-timeout victims may retry the LOCAL conditional marker
+ * once. Ambiguous successful writes, other SQL errors and persistent
+ * contention remain fail-closed for operator reconciliation.
+ */
 function achbotAutoRenewMarkRemoteStarted(mysqli $db, int $attemptId): bool {
-    try {
-        $stmt=$db->prepare("UPDATE automatic_renewal_attempts
-            SET stage='remote_started' WHERE id=? AND stage='reserved'");
-        $stmt->bind_param('i',$attemptId);
-        $stmt->execute();
-        $changed=$stmt->affected_rows;
-        $stmt->close();
-        return $changed===1;
-    } catch (Throwable $error) { return false; }
+    if ($attemptId<=0) return false;
+    for ($attempt=0; $attempt<2; $attempt++) {
+        $stmt=null;
+        $errno=0;
+        try {
+            $stmt=$db->prepare("UPDATE automatic_renewal_attempts
+                SET stage='remote_started' WHERE id=? AND stage='reserved'");
+            if (!$stmt || $stmt->bind_param('i',$attemptId)!==true) return false;
+            $executed=$stmt->execute();
+            if ($executed===true) return $stmt->affected_rows===1;
+            // With MYSQLI_REPORT_OFF, execute may return false, not throw.
+            $errno=(int)$stmt->errno;
+        } catch (Throwable $error) {
+            // Test and runtime error handlers can turn mysqli warnings into
+            // ErrorException with code=0. Read mysqli's own error first.
+            $errno=$stmt instanceof mysqli_stmt ? (int)$stmt->errno : 0;
+            if ($errno===0) $errno=(int)$error->getCode();
+        } finally {
+            if ($stmt instanceof mysqli_stmt) {
+                try {$stmt->close();} catch (Throwable $ignored) {}
+            }
+        }
+        if ($attempt!==0 || !in_array($errno,[1205,1213],true))
+            return false;
+        // Brief, bounded yield for the competing LOCAL transaction only.
+        usleep(25000);
+    }
+    return false;
 }
 
 /** Never release the user's reserved money on ambiguous external evidence. */
