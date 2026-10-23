@@ -177,7 +177,15 @@ function achbotAutoRenewNeedsReview(mysqli $db, int $attemptId): void {
  * Remote success is independently verified by editMarzbanConfig, but never
  * blindly replayable. Commit local order, payment and accounting all together.
  */
-function achbotAutoRenewFinalize(mysqli $db, array $claim): bool {
+function achbotAutoRenewFinalize(mysqli $db, array $claim,
+                                object $verified): bool {
+    if (($verified->success??false)!==true || ($verified->verified??false)!==true ||
+        !isset($verified->applied_expire,$verified->applied_bytes) ||
+        !is_int($verified->applied_expire) ||
+        $verified->applied_expire<=0 || $verified->applied_expire>2147483647 ||
+        !is_int($verified->applied_bytes) || $verified->applied_bytes<0)
+        return false;
+
     $orderId=(int)$claim['order_id'];
     $attemptId=(int)$claim['id'];
     try {
@@ -233,12 +241,21 @@ function achbotAutoRenewFinalize(mysqli $db, array $claim): bool {
         }
         $stmt=$db->prepare("UPDATE orders_list SET expire_date=?,notif=0
             WHERE id=? AND expire_date=? AND userid=?");
-        $stmt->bind_param('iiii',$claim['new_expire'],$orderId,
+        $applied=$verified->applied_expire;
+        $stmt->bind_param('iiii',$applied,$orderId,
             $claim['cycle_expire'],$claim['user_id']);
-        $stmt->execute();
+        $written=$stmt->execute();
         $saved=$stmt->affected_rows;
         $stmt->close();
-        if ($saved!==1) { $db->rollback(); return false; }
+        if ($written!==true || $saved!==1) { $db->rollback(); return false; }
+        $stmt=$db->prepare('SELECT expire_date FROM orders_list WHERE id=? FOR UPDATE');
+        $stmt->bind_param('i',$orderId);
+        $read=$stmt->execute();
+        $stored=$read?$stmt->get_result()->fetch_assoc():null;
+        $stmt->close();
+        if (!$stored || (int)$stored['expire_date']!==$applied) {
+            $db->rollback();return false;
+        }
         $stmt=$db->prepare("UPDATE automatic_renewal_attempts SET stage='done'
             WHERE id=? AND stage='remote_started'");
         $stmt->bind_param('i',$attemptId);
@@ -288,7 +305,7 @@ function handleAutoRenewCallback($data): void {
         achbotAutoRenewNeedsReview($connection,(int)$claim['id']);
         return;
     }
-    if (!achbotAutoRenewFinalize($connection,$claim)) {
+    if (!achbotAutoRenewFinalize($connection,$claim,$reply)) {
         achbotAutoRenewNeedsReview($connection,(int)$claim['id']);
         return;
     }
@@ -383,14 +400,18 @@ function achbotAutoRenewSweep(mysqli $db, array $botState): void {
         if (!achbotSupportsMarzbanOrder($db,$orderId)) continue;
         $remote=getMarzbanUser((int)$order['server_id'],(string)$order['remark']);
         if (!is_object($remote) || !isset($remote->username,$remote->expire,
-            $remote->data_limit,$remote->used_traffic) ||
+            $remote->used_traffic) || !property_exists($remote,'data_limit') ||
             (string)$remote->username!==(string)$order['remark'] ||
-            !is_numeric($remote->expire) || !is_numeric($remote->data_limit) ||
-            !is_numeric($remote->used_traffic)) continue;
+            !is_numeric($remote->expire) || !is_numeric($remote->used_traffic)) continue;
+        // Null is the provider's documented unlimited quota. Reject other
+        // malformed or negative values rather than treating them as zero.
+        $quota=$remote->data_limit===null ? 0 : filter_var(
+            $remote->data_limit,FILTER_VALIDATE_INT,['options'=>['min_range'=>0]]);
+        if ($quota===false) continue;
         $expires=(int)$remote->expire;
-        $remaining=(float)$remote->data_limit-(float)$remote->used_traffic;
+        $remaining=(float)$quota-(float)$remote->used_traffic;
         if ($expires>0 && ($expires<time()+7200 ||
-            ((float)$remote->data_limit>0 && $remaining<0.2*1073741824))) {
+            ($quota>0 && $remaining<0.2*1073741824))) {
             handleAutoRenewCallback('renewAuto_with_wallet|'.$order['userid'].'|'.$orderId);
         }
     }

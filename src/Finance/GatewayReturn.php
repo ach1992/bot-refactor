@@ -1503,6 +1503,10 @@ function achbotPerformPaymentEffect($payRowId, $gateType, &$effectStage = null) 
         $order = $stmt->get_result()->fetch_assoc();
         $stmt->close();
 
+        if (!$order || (int)$order['userid']!==$user_id ||
+            (int)$order['status']!==1 ||
+            !achbotSupportsMarzbanOrder($connection,$oid))
+            throw new RuntimeException('hosted_renew_order_ineligible');
         $fid = (int)$order['fileid'];
         $remark = $order['remark'];
         $uuid = $order['uuid'] ?? "0";
@@ -1526,24 +1530,9 @@ function achbotPerformPaymentEffect($payRowId, $gateType, &$effectStage = null) 
         $response = renewConfigOnServer($connection, $server_id, $inbound_id, $uuid, $remark, $days, $volume, $isMarzban);
 
         if (is_null($response)) {
-            if (achbotNpDeferUncertainRemoteEffect($gateType, $payDescription)) return 'ambiguous';
-
-
-            if (!refundToWalletAndNotify(
-                $connection,
-                $user_id,
-                $amount,
-                $gateType,
-                $admin,
-                "میخواست اشتراکش رو تمدید کنه، ولی اتصال به سرور برقرار نبود.",
-				$rewardChannel
-            )) {
-                showForm('⚠️ پرداخت ثبت شده ولی بازگشت اعتبار کیف پول تأیید نشد؛ پشتیبانی باید بررسی کند.', $payDescription, false, 'review');
-                return 'ambiguous';
-            }
-            showForm('⚠️ پرداخت شما با موفقیت انجام شد ولی مشکل فنی در اتصال به سرور، لطفا به مدیریت اطلاع بدید، مبلغ ' . number_format($amount) . " تومان به کیف پول شما اضافه شد.", $payDescription, false, 'review');
-
-            return 'compensated';
+            // A lost provider response does not prove that renewal failed.
+            achbotNpDeferUncertainRemoteEffect($gateType,$payDescription);
+            return 'ambiguous';
         }
 
         // Every supported provider requires a positively verified remote
@@ -1554,16 +1543,32 @@ function achbotPerformPaymentEffect($payRowId, $gateType, &$effectStage = null) 
             return 'ambiguous';
         }
 
-        $newExpire = $time + $days * 86400;
-        $stmt = $connection->prepare("UPDATE `orders_list` SET `expire_date` = ?, `notif` = 0 WHERE `id` = ?");
-        $stmt->bind_param("ii", $newExpire, $oid);
-        $saved=$stmt->execute();
-        $changed=$stmt->affected_rows;
-        $stmt->close();
-        if ($saved!==true || $changed!==1)
-            throw new RuntimeException('renewal_order_update_unconfirmed');
-
-        createIncreaseOrder($connection, $user_id, $server_id, $inbound_id, $remark, $amount, $time, null, null, true);
+        if (($response->verified??false)!==true)
+            throw new RuntimeException('hosted_renew_provider_unverified');
+        if ($connection->begin_transaction()!==true)
+            throw new RuntimeException('hosted_renew_finish_begin_failed');
+        try {
+            $stmt=$connection->prepare("SELECT id,state,user_id,type,hash_id,price
+                FROM pays WHERE id=? FOR UPDATE");
+            $stmt->bind_param('i',$rowId);
+            $ok=$stmt->execute();
+            $locked=$ok?$stmt->get_result()->fetch_assoc():null;
+            $stmt->close();
+            if (!$locked || $locked['state']!=='paid' ||
+                (int)$locked['user_id']!==$user_id ||
+                (int)$locked['price']!==$amount ||
+                (string)$locked['type']!==$payType ||
+                (string)$locked['hash_id']!==$hash_id)
+                throw new RuntimeException('hosted_renew_paid_claim_stale');
+            achbotStoreVerifiedServiceExpiryLocked($connection,$order,$response);
+            createIncreaseOrder($connection,$user_id,$server_id,$inbound_id,
+                                $remark,$amount,$time,null,null,true);
+            if ($connection->commit()!==true)
+                throw new RuntimeException('hosted_renew_commit_unconfirmed');
+        } catch (Throwable $error) {
+            try {$connection->rollback();} catch (Throwable $ignored) {}
+            throw $error;
+        }
 
         showForm("✅ پرداخت شما با موفقیت انجام شد. اشتراک $remark با موفقیت تمدید شد.", $payDescription, true, 'completed');
         sendMessage("✅ پرداخت شما با موفقیت انجام شد. اشتراک $remark با موفقیت تمدید شد.", json_encode(['inline_keyboard' => [[['text' => "↪️ بازگشت به منوی اصلی", 'callback_data' => "mainMenu"]]]]), null, $user_id);
@@ -1607,6 +1612,14 @@ function achbotPerformPaymentEffect($payRowId, $gateType, &$effectStage = null) 
         $orderInfo = $stmt->get_result()->fetch_assoc();
         $stmt->close();
 
+        // The pays claim was durably staged before entering this branch.
+        // Preserve the exact pre-remote local identity for later CAS, not a
+        // fresh order snapshot taken after the external effect.
+        if (!$orderInfo || (int)$orderInfo['id']!==$orderId ||
+            (int)$orderInfo['userid']!==$user_id ||
+            (int)$orderInfo['status']!==1 ||
+            !achbotSupportsMarzbanOrder($connection,$orderId))
+            throw new RuntimeException('hosted_day_order_ineligible');
         $server_id  = (int)$orderInfo['server_id'];
         $inbound_id = (int)$orderInfo['inbound_id'];
         $remark     = $orderInfo['remark'];
@@ -1631,18 +1644,35 @@ function achbotPerformPaymentEffect($payRowId, $gateType, &$effectStage = null) 
         }
 
         if (!empty($response->success)) {
-
-            $stmt = $connection->prepare("UPDATE `orders_list` SET `expire_date` = `expire_date` + ?, `notif` = 0 WHERE `uuid` = ?");
-            $delta = $plusDays * 86400;
-            $stmt->bind_param("is", $delta, $uuid);
-            $saved=$stmt->execute();
-            $changed=$stmt->affected_rows;
-            $stmt->close();
-            if ($saved!==true || $changed<1)
-                throw new RuntimeException('day_extension_update_unconfirmed');
-
-            $time2 = time();
-            createIncreaseOrder($connection, $user_id, $server_id, $inbound_id, $remark, $amount, $time2, null, $plusDays, true);
+            if (!is_object($response) || ($response->verified??false)!==true)
+                throw new RuntimeException('hosted_day_provider_unverified');
+            // Finalize order + audit in one transaction, before returning an
+            // eligible 'delivered' outcome to the hosted settlement manager.
+            if ($connection->begin_transaction()!==true)
+                throw new RuntimeException('hosted_day_finish_begin_failed');
+            try {
+                $stmt=$connection->prepare("SELECT id,state,user_id,type,hash_id,price
+                    FROM pays WHERE id=? FOR UPDATE");
+                $stmt->bind_param('i',$rowId);
+                $ok=$stmt->execute();
+                $locked=$ok?$stmt->get_result()->fetch_assoc():null;
+                $stmt->close();
+                if (!$locked || $locked['state']!=='paid' ||
+                    (int)$locked['user_id']!==$user_id ||
+                    (int)$locked['price']!==$amount ||
+                    (string)$locked['type']!==$payType ||
+                    (string)$locked['hash_id']!==$hash_id)
+                    throw new RuntimeException('hosted_day_paid_claim_stale');
+                achbotStoreVerifiedServiceExpiryLocked($connection,$orderInfo,$response);
+                $time2=time();
+                createIncreaseOrder($connection,$user_id,$server_id,
+                    $inbound_id,$remark,$amount,$time2,null,$plusDays,true);
+                if ($connection->commit()!==true)
+                    throw new RuntimeException('hosted_day_finish_commit_unconfirmed');
+            } catch (Throwable $error) {
+                try {$connection->rollback();} catch (Throwable $ignored) {}
+                throw $error; // previously staged paid/review claim persists
+            }
 
             showForm("✅ پرداخت شما با موفقیت انجام شد. $plusDays روز به مدت زمان اشتراک شما اضافه شد.", $payDescription, true, 'completed');
             sendMessage("✅ پرداخت شما با موفقیت انجام شد. $plusDays روز به مدت زمان اشتراک شما اضافه شد.", json_encode(['inline_keyboard' => [[['text' => "↪️ بازگشت به منوی اصلی", 'callback_data' => "mainMenu"]]]]), null, $user_id);

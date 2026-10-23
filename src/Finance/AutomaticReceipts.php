@@ -173,7 +173,7 @@ if($botState['cartToCartAutoAcceptState']=="on"){
             $verified=(is_object($response) && $response->success===true);
             $autoServiceCompleted=$verified && achbotAutoBankFinishEdit(
                 $connection,$payInfo,$response,'renew',(int)$server_id,
-                (int)$oid,(string)$remark,(int)$price);
+                (int)$oid,(string)$remark,(int)$price,0,(int)$order['expire_date']);
             if ($autoServiceCompleted) {
                 sendMessage("✅ اشتراک $remark با موفقیت تمدید شد.",getMainKeys(),null,$user_id);
             } else {
@@ -234,7 +234,8 @@ if($botState['cartToCartAutoAcceptState']=="on"){
             $verified=(is_object($response) && $response->success===true);
             $autoServiceCompleted=$verified && achbotAutoBankFinishEdit(
                 $connection,$payInfo,$response,'day',(int)$server_id,
-                (int)$orderId,(string)$remark,(int)$price,(int)$volume);
+                (int)$orderId,(string)$remark,(int)$price,(int)$volume,
+                (int)$orderInfo['expire_date']);
             if ($autoServiceCompleted) {
                 sendMessage("✅ $volume روز به مدت اشتراک شما اضافه شد.",getMainKeys(),null,$user_id);
             } else {
@@ -291,7 +292,8 @@ if($botState['cartToCartAutoAcceptState']=="on"){
             $verified=(is_object($response) && $response->success===true);
             $autoServiceCompleted=$verified && achbotAutoBankFinishEdit(
                 $connection,$payInfo,$response,'volume',(int)$server_id,
-                (int)$orderId,(string)$remark,(int)$price,(int)$volume);
+                (int)$orderId,(string)$remark,(int)$price,(int)$volume,
+                (int)$orderInfo['expire_date']);
             if ($autoServiceCompleted) {
                 sendMessage("✅ $volume گیگ به حجم اشتراک شما اضافه شد.",getMainKeys(),null,$user_id);
             } else {
