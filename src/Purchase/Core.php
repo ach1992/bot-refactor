@@ -605,6 +605,30 @@ if (!function_exists('buildRemark')) {
     }
 }
 
+/**
+ * Independent authenticated admin updates must map to distinct, stable
+ * Marzban account identities even when manual remark is unchanged.
+ *
+ * The readable administrator/plan prefix survives; a source-bound suffix
+ * makes the actual remote username repeatable for a specific update + line.
+ * Never derive a fresh name when reconciling an uncertain journal dispatch.
+ */
+if (!function_exists('achbotAdminBulkAccountRemark')) {
+    function achbotAdminBulkAccountRemark(
+        string $base, string $sourceRef, int $ordinal
+    ): string {
+        if ($ordinal<1 ||
+            preg_match('/^bulk:[1-9][0-9]*:[1-9][0-9]*$/D',$sourceRef)!==1 ||
+            preg_match('/^[a-zA-Z0-9_-]+$/D',$base)!==1)
+            throw new InvalidArgumentException('bulk_account_remark_invalid');
+        $suffix='_b'.substr(hash('sha256',$sourceRef),0,20).'_'.$ordinal;
+        $prefix=substr($base,0,100-strlen($suffix));
+        if ($prefix==='' || !preg_match('/^[a-zA-Z0-9_-]+$/D',$prefix))
+            throw new InvalidArgumentException('bulk_account_remark_invalid');
+        return $prefix.$suffix;
+    }
+}
+
 if (!function_exists('getNextPortAndIncrease')) {
     function getNextPortAndIncrease($tempFilePath, $portType)
     {

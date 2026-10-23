@@ -1224,7 +1224,6 @@ function achbotPerformPaymentEffect($payRowId, $gateType, &$effectStage = null) 
         $accountCount = (int)($payParam['agent_count']??0)>0
             ? (int)$payParam['agent_count'] : 1;
         if ($accountCount<=0) throw new RuntimeException('hosted_invalid_account_quantity');
-        $eachPrice = $amount / $accountCount;
 
         if ($acount == 0 && $inbound_id != 0) {
 
@@ -1408,7 +1407,7 @@ function achbotPerformPaymentEffect($payRowId, $gateType, &$effectStage = null) 
                     $protocol,
                     $expire_date,
                     $vray_link,
-                    $eachPrice,
+                    achbotAllocateOrderAmount((int)$amount,$accountCount,$i),
                     time(),
                     $rahgozar,
                     $agentBought,
@@ -1425,34 +1424,21 @@ function achbotPerformPaymentEffect($payRowId, $gateType, &$effectStage = null) 
             }
         }
 
-        // Full server capacity was already reserved and recorded on ordinal 1
-        // before CREATE. NEVER deduct it a second time here.
-
-        // A remote/local uncertainty is not a completed delivery notice.
-        // A verified provider payment and a local order do not prove that
-        // the Telegram subscription link was acknowledged by the buyer.
-        showForm('✅ پرداخت تأیید شد؛ وضعیت تحویل سرویس را در ربات بررسی کنید.',
-                 $payDescription, true, 'review');
-
+        // The whole count was reserved in a payment-scoped 007 transaction
+        // BEFORE remote CREATE; never deduct the same capacity again.
+        // The completed paid/remote operation is not proof that Telegram
+        // subscription details reached the customer.
         if (!empty($userinfo['refered_by'])) {
             $inviterId=(int)$userinfo['refered_by'];
-            if (giveReferralReward($connection,$user_id,$inviterId,$admin,$botState)!==true) {
-                // This result is not proof of either debit or credit. A later
-                // callback must not apply a blind second referral reward.
-                error_log('achbot_gateway_referral_needs_review pay_hash='.
-                    preg_replace('/[^A-Za-z0-9_-]/','',(string)$hash_id).
-                    ' buyer='.(int)$user_id.' inviter='.$inviterId);
-                try {
-                    sendMessage("⚠️ وضعیت پاداش معرفی پرداخت نامطمئن است.\n🆔 $hash_id".
-                        "\nشناسه خریدار: ".(int)$user_id.
-                        "\nشناسه معرف: ".$inviterId.
-                        "\nابتدا وضعیت کیف پول را بررسی کنید؛ واریز دوباره خودکار ممنوع است.",
-                        null,null,$admin);
-                } catch (Throwable $ignored) {
-                    error_log('achbot_gateway_referral_operator_notice_failed');
-                }
+            if (giveReferralReward($connection,$user_id,$inviterId,
+                    $admin,$botState,null,$rowId)!==true) {
+                error_log('achbot_gateway_referral_needs_review pay_id='.$rowId);
+                achbotReferralWarnOperator((int)$admin,(int)$rowId);
             }
         }
+
+        showForm('✅ پرداخت تأیید شد؛ وضعیت تحویل سرویس را در ربات بررسی کنید.',
+                 $payDescription, true, 'review');
 
         $user_info = Bot('getChat', ['chat_id' => $user_id])->result;
         $first_name = $user_info->first_name ?? '-';

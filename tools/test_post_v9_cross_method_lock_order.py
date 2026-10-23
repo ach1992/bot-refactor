@@ -257,6 +257,12 @@ def main():
         wdriver,hdriver=drivers(w)
         purchase.init(w,e,'http://127.0.0.1:9')
         sql(w,e,(ROOT/'migrations/post-v9/003_payment_attempts.sql').read_text())
+        # Current BUY_SUB wallet source now requires a durable 007 hold
+        # co-committed with debit; the lock-order test must exercise it.
+        # The historical inverse-lock mutant remains an isolated source
+        # mutation, not an excuse to omit the new schema.
+        sql(w,e,(ROOT/'migrations/post-v9/001_marzban_panel_group_id.sql').read_text())
+        sql(w,e,(ROOT/'migrations/post-v9/007_service_effects.sql').read_text())
         sql(w,e,"INSERT INTO setting(type,value) VALUES('BOT_STATES','{\"walletState\":\"on\",\"cartToCartState\":\"on\",\"giftCardState\":\"on\",\"manualUsdtState\":\"on\",\"nowPaymentWallet\":\"on\",\"nowPaymentOther\":\"on\",\"zarinpal\":\"on\",\"nextpay\":\"on\"}')")
         sql(w,e,"INSERT INTO setting(type,value) VALUES"
           "('PAYMENT_KEYS','{\"nextpay\":\"SYNTHETIC-LOCAL-ONLY\","

@@ -39,7 +39,7 @@ def source_checks():
         if (ROOT / field).read_bytes() != cmd("show", V9+":"+field):
             raise RuntimeError("Changed historical schema/private-template: " + field)
     files=package.members()
-    if len(files)!=94 or len(set(files))!=len(files):
+    if len(files)!=97 or len(set(files))!=len(files):
         raise RuntimeError("Source-only runtime file inventory changed")
     if any((ROOT/name).exists() or name in files
            for name in package.RETIRED_RUNTIME_MEMBERS):
@@ -255,9 +255,11 @@ def main():
                         "--run-disposable","--report",str(purchase_path)],
                        cwd=ROOT,check=True,timeout=300,capture_output=True)
         purchases=json.loads(purchase_path.read_text())
-        if not (purchases.get("complete") and purchases.get("scenarios")==17 and
-                purchases.get("php_sql_telegram_fake_provider_parity")):
-            raise RuntimeError("Actual post-V9 purchase/renewal/agent SQL/Telegram parity incomplete")
+        if not (purchases.get("complete") and purchases.get("scenarios")==8 and
+                purchases.get("php_sql_telegram_fake_provider_parity") and
+                len(purchases.get("changed_paid_nonpaid_source_contracts",[]))==9 and
+                purchases.get("new_source_contracts_mandatory_in_full_aggregate")):
+            raise RuntimeError("Unchanged V9 purchasing/UI parity incomplete")
         transport_cli=subprocess.run(
             ["php","-n",str(ROOT/"tools/test_post_v9_telegram_log_privacy.php")],
             cwd=ROOT,check=True,timeout=20,capture_output=True,text=True)
@@ -909,9 +911,13 @@ def main():
                 auto_renew.get("synthetic_local_http_delete_cases")==11):
             raise RuntimeError("Automatic-renewal durable idempotency proof incomplete")
         finance_path=Path(tmp)/"finance-native-routes.json"
-        subprocess.run(["python3",str(ROOT/"tools/test_post_v9_finance_routes.py"),
-                        "--run-disposable","--report",str(finance_path)],
-                       cwd=ROOT,check=True,timeout=180,capture_output=True)
+        finance_run=subprocess.run(
+            ["python3",str(ROOT/"tools/test_post_v9_finance_routes.py"),
+             "--run-disposable","--report",str(finance_path)],
+            cwd=ROOT,timeout=180,capture_output=True,text=True)
+        if finance_run.returncode!=0:
+            raise RuntimeError("Financial native source regression failed:\n"+
+                (finance_run.stderr or finance_run.stdout)[-5000:])
         finance=json.loads(finance_path.read_text())
         # Current R10 financial contract: preserve authenticated settlement,
         # durable compensation proof and concurrency-safe operator recovery.
@@ -1073,6 +1079,10 @@ def main():
             "nextpay_callback_provider_scoped_colliding_external_reference",
             "zarinpal_callback_provider_scoped_colliding_external_reference",
         }
+        mandatory_finance.update({
+            'r2_exact_hosted_nextpay_100_3_no_replay',
+            'r2_exact_hosted_zarinpal_101_2_no_replay',
+        })
         mandatory_finance.add('hosted_order_and_effect_link_atomic_rollback')
         # R7 real hosted claim, Marzban adapter, order CAS and local SQL faults.
         mandatory_finance.update({
@@ -1107,6 +1117,7 @@ def main():
             "review_R2_group_drift_blocks_both_manual_multi_link_and_hosted_link",
             "review_R2_endpoint_drift_blocks_both_manual_multi_link_and_hosted_link",
             "review_R1_plan_reassignment_original_paid_target_no_remote_effect",
+            "r1_terminal_legacy_paid_states_cannot_authorize_new_post",
             "missing_007_no_remote_post",
             "malformed_007_unique_index_no_remote_post",
             "one_reserved_unique_operation_verified_by_exact_note_username_quota_expiry",
@@ -1134,6 +1145,7 @@ def main():
             "r1_hosted_two_requested_one_slot_zero_create",
             "r1_hosted_negative_quantity_rejected_before_post",
             "r1_hosted_two_exact_slots_held_before_post_once",
+            "r1_independent_post_reader_excludes_uncommitted_capacity_and_hold",
             "r1_hosted_distinct_payments_one_slot_single_create",
             "r1_hosted_vs_real_manual_capacity_helper_no_overbooking",
             "r1_two_account_partial_unknown_keeps_full_capacity_hold",
@@ -1150,6 +1162,330 @@ def main():
                 and effects.get("external_account_count_not_used") is True
                 and effects.get("installed_operator_tested") is False):
             raise RuntimeError("Per-account service operation ledger contract incomplete")
+        # Source-real one-payment/one-award journal with atomic SQL credit and
+        # no automatic retry after ambiguity. Migration 008 is test-only here.
+        referral_path=Path(tmp)/"referral-award-journal.json"
+        proc=subprocess.run(
+            ["python3",str(ROOT/"tools/test_post_v9_referral_awards.py"),
+             "--run-disposable","--report",str(referral_path)],
+            cwd=ROOT,capture_output=True,text=True,timeout=120)
+        if proc.returncode!=0:
+            raise RuntimeError("Referral journal acceptance failed:\n"+proc.stderr[-4500:])
+        referral=json.loads(referral_path.read_text())
+        required_referral={
+            "missing_008_no_wallet_mutation",
+            "disabled_award_snapshot_never_retroactively_recredits",
+            "one_pay_exactly_one_confirmed_credit_no_repeat_notice",
+            "two_line_paid_order_one_award_not_per_line",
+            "concurrent_duplicate_callbacks_one_credit",
+            "postcredit_false_does_not_reissue_credit",
+            "postcredit_throw_does_not_reissue_credit",
+            "postcredit_null_does_not_reissue_credit",
+            "paid_state_without_verified_delivery_cannot_credit",
+            "nonterminal_payment_cannot_credit",
+            "buyer_relationship_verified_not_callback",
+            "mysqlireportoff_sql_failure_retained_review_no_blind_retry",
+            "credit_and_confirmation_atomic_rollback",
+            "signed_debt_credit_arithmetic_preserved",
+            "missing_unique_pay_index_fails_closed",
+        }
+        if not (referral.get("complete") is True and
+                set(referral.get("scenarios",[]))==required_referral and
+                referral.get("native_php_mariadb") is True and
+                referral.get("socket_only") is True and
+                referral.get("production_mutations")==0):
+            raise RuntimeError("Referral award source evidence incomplete")
+        # Independent review PR #72 REQUIRED-1: award registration must
+        # survive failures of earlier post-COMMIT QR/Telegram/markup calls.
+        route_award_path=Path(tmp)/"referral-postcommit-routes.json"
+        route_award_proc=subprocess.run(
+            ["python3",str(ROOT/"tools/test_post_v9_referral_route_order.py"),
+             "--run-disposable","--report",str(route_award_path)],
+            cwd=ROOT,capture_output=True,text=True,timeout=120)
+        if route_award_proc.returncode!=0:
+            raise RuntimeError("Referral postcommit source routes failed:\n"+
+                (route_award_proc.stderr or route_award_proc.stdout)[-4500:])
+        route_award=json.loads(route_award_path.read_text())
+        required_route_award={
+            "real_standard_receipt_qr_throw_award_confirmed_no_replay",
+            "real_standard_receipt_customer_message_throw_award_confirmed_no_replay",
+            "real_standard_receipt_admin_markup_throw_award_confirmed_no_replay",
+            "real_custom_receipt_qr_throw_award_confirmed_no_replay",
+            "real_custom_receipt_customer_message_throw_award_confirmed_no_replay",
+            "real_custom_receipt_admin_markup_throw_award_confirmed_no_replay",
+        }
+        if not (route_award.get('complete') is True and
+                set(route_award.get('scenarios',[]))==required_route_award and
+                route_award.get('native_php_mariadb') is True and
+                route_award.get('financial_effects_production')==0 and
+                route_award.get('real_telegram_or_provider_calls')==0):
+            raise RuntimeError('Referral postcommit route identity incomplete')
+
+        # The formerly byte-parity-bound paid wallet and unpaid trial/bulk
+        # CREATE routes intentionally changed financial safety semantics. Run
+        # real current handlers and durable reservation against owned MariaDB.
+        wallet_path=Path(tmp)/"wallet-create-source.json"
+        native_wallet=subprocess.run(
+            ["python3",str(ROOT/"tools/test_post_v9_wallet_creation.py"),
+             "--run-disposable","--report",str(wallet_path)],
+            cwd=ROOT,capture_output=True,text=True,timeout=120)
+        if native_wallet.returncode!=0:
+            raise RuntimeError("Wallet pre-POST journal acceptance failed:\n"
+                +native_wallet.stderr[-4500:])
+        wallet_create=json.loads(wallet_path.read_text())
+        required_wallet={
+            "wallet_confirmed_debit_and_capacity_once_before_post",
+            "wallet_unknown_post_keeps_paid_hold_and_no_replay",
+            "wallet_remote_success_local_order_failure_no_recredit_or_create",
+            "wallet_capacity_rejected_before_debit",
+            "wallet_missing_007_declines_without_financial_mutation",
+            "wallet_sql_debit_failure_rolls_back_before_post",
+            "wallet_two_concurrent_callbacks_single_debit_and_post"
+        }
+        if not (wallet_create.get('complete') is True and
+                set(wallet_create.get('scenarios',[]))==required_wallet and
+                wallet_create.get('php_mysqli') is True and
+                wallet_create.get('provider_real_requests')==0 and
+                wallet_create.get('production_mutations')==0):
+            raise RuntimeError('Wallet creation replay/debit safety incomplete')
+        nonpaid_path=Path(tmp)/"trial-bulk-native.json"
+        native_nonpaid=subprocess.run(
+            ["python3",str(ROOT/"tools/test_post_v9_nonpaid_routes.py"),
+             "--run-disposable","--report",str(nonpaid_path)],
+            cwd=ROOT,capture_output=True,text=True,timeout=120)
+        if native_nonpaid.returncode!=0:
+            raise RuntimeError("Nonpaid source journal acceptance failed:\n"
+                +native_nonpaid.stderr[-4500:])
+        nonpaid=json.loads(nonpaid_path.read_text())
+        required_nonpaid={
+            "actual_trial_route_reserved_once_with_real_order_and_delivery",
+            "actual_trial_unknown_remote_retained_fence_and_capacity",
+            "forged_trial_update_no_dispatch",
+            "actual_admin_bulk_two_accounts_full_reservation_one_batch",
+            "actual_admin_bulk_partial_retains_capacity_and_audit",
+            "two_real_admin_batches_race_one_available_server_slot",
+            "real_manual_remark_two_independent_single_and_multi_batches_unique_names_no_replay",
+            "invalid_manual_remark_rejected_without_remote_or_capacity_effect",
+            "nonpaid_source_db_insert_failure_before_post_no_capacity_loss",
+            "trial_postcommit_telegram_failure_no_recreate"
+        }
+        if not (nonpaid.get('complete') is True and
+                set(nonpaid.get('scenarios',[]))==required_nonpaid and
+                nonpaid.get('source_real_php') is True and
+                nonpaid.get('socket_only') is True and
+                nonpaid.get('production_mutations')==0 and
+                nonpaid.get('provider_requests')==0):
+            raise RuntimeError("Trial/bulk exact handler safety incomplete")
+
+        # Actual customer-facing checkout handlers (not just the wallet
+        # settlement callback) must prove multi-account and custom BUY_SUB
+        # finality, source identity, and postcommit delivery ordering.
+        wallet_checkout_path=Path(tmp)/"wallet-checkout-source.json"
+        native_checkout=subprocess.run(
+            ["python3",str(ROOT/"tools/test_post_v9_wallet_checkout.py"),
+             "--run-disposable","--report",str(wallet_checkout_path)],
+            cwd=ROOT,capture_output=True,text=True,timeout=120)
+        if native_checkout.returncode!=0:
+            raise RuntimeError("Wallet Checkout actual source failed:\n"
+                +native_checkout.stderr[-4500:])
+        wallet_checkout=json.loads(wallet_checkout_path.read_text())
+        required_wallet_checkout={
+            # R4 independent-required reporting: no editable plan/template
+            # may replace the locked entitlement in an admin/channel report.
+            "r4_unchanged_standard_wallet_report_matches_fulfillment",
+            "r4_locked_plan_report_admin_and_channel_exact_entitlement_no_replay",
+            "r4_custom_operator_report_retains_persisted_dimensions",
+            # R3 source-real post-COMMIT capacity ownership and locked paid
+            # plan snapshot, including independent MariaDB session edits.
+            "r3_exact_owned_last_slots_r3_final_standard",
+            "r3_exact_owned_last_slots_r3_final_custom",
+            "r3_exact_owned_last_slots_r3_final_multi",
+            "r3_excess_quantity_denied_before_wallet_hold",
+            "r3_independent_buyers_one_slot_no_double_debit",
+            "r3_owned_wallet_hold_survives_postcommit_rival",
+            "r3_locked_plan_dimensions_survive_postcommit_admin_edit",
+            "r3_persisted_custom_dimensions_survive_postcommit_plan_edit",
+            # R2 source-real controller/handler mode binding, including two
+            # simultaneous PHP workers racing the same locked payment.
+            "r2_custom_quote_standard_callback_predebit_denied",
+            "r2_standard_quote_custom_callback_predebit_denied",
+            "r2_partial_custom_quote_predebit_denied",
+            "r2_zero_template_exact_custom_dimensions_one_effect",
+            "r2_standard_single_multi_plan_dimensions_no_replay",
+            "r2_concurrent_wrong_right_mode_exactly_one_effect",
+            "actual_catalogue_much_draft_rejects_invalid_remote_usernames",
+            "real_custom_wallet_persisted_bad_name_rejected_before_debit_hold_and_create",
+            "real_catalogue_much_valid_draft_to_wallet_one_effect_order",
+            "real_custom_zero_template_dimensions_use_persisted_quote",
+            "real_custom_persisted_multicount_rejected_predebit",
+            "real_standard_manual_remark_invalid_rejected_predebit",
+            "real_standard_invalid_plan_day_predebit_no_hold",
+            "real_standard_invalid_generated_prefix_predebit_no_hold",
+            "r2_exact_wallet_order_allocation_100_3_no_replay",
+            "r2_exact_wallet_order_allocation_101_2_no_replay",
+            "real_multi_wallet_checkout_full_hold_order_delivery_after_finality",
+            "real_multi_wallet_second_line_ambiguous_stays_paid_hold_no_replay",
+            "real_custom_wallet_checkout_single_effect_after_commit",
+            "real_custom_wallet_postcommit_telegram_unconfirmed_never_reissues",
+            "real_multi_wallet_postcommit_delivery_throw_owner_review_no_replay",
+            "real_custom_wallet_verified_remote_failed_order_retained_review"
+        }
+        if not (wallet_checkout.get("complete") is True and
+                set(wallet_checkout.get("scenarios",[]))==required_wallet_checkout and
+                wallet_checkout.get("actual_checkout_php") is True and
+                wallet_checkout.get("isolated_mariadb") is True and
+                wallet_checkout.get("remote_calls")==0 and
+                wallet_checkout.get("production_financial_mutations")==0):
+            raise RuntimeError("Wallet full route acceptance incomplete")
+
+        # Issue #26: native real bank-Cron PHP on disposable MariaDB.
+        bank_path=Path(tmp)/"bank-buy-effects.json"
+        bank_run=subprocess.run(
+            ["python3",str(ROOT/"tools/test_post_v9_bank_buy.py"),
+             "--run-disposable","--report",str(bank_path)],
+            cwd=ROOT,timeout=140,capture_output=True,text=True)
+        if bank_run.returncode!=0:
+            raise RuntimeError("Bank BUY_SUB source-native acceptance failed:\n"
+                               +bank_run.stderr[-5500:])
+        bank_buy=json.loads(bank_path.read_text())
+        required_bank={
+            "buy_sub_nonterminal_exclusive_claim",
+            "one_verified_account_atomic_order_before_telegram_no_replay",
+            "unknown_lost_no_refund_success_or_replay",
+            "unknown_exists_no_refund_success_or_replay",
+            "unknown_wrong_note_no_refund_success_or_replay",
+            "unknown_fraction_no_refund_success_or_replay",
+            "multi_line_atomic_orders_and_integer_amount_allocation",
+            "multi_line_partial_unknown_requires_review_not_refund",
+            "sql_failure_after_remote_verified_fails_closed",
+            "failed_local_commit_operator_receives_payment_identity",
+            "postcommit_telegram_failure_alerts_operator_without_recreate",
+            "postcommit_telegram_unconfirmed_alerts_operator_without_recreate",
+            "nonbank_attempt_never_auto_provisions",
+            "two_simultaneous_bank_workers_one_remote_create",
+            "postverified_plan_dimensions_edit_keeps_standard_quote_and_order",
+            "postverified_plan_dimensions_edit_keeps_custom_quote_and_order",
+            "postverified_plan_physical_target_edit_stays_under_review",
+            "r1_postverified_invoice_amount_drift_keeps_original_invoice_nonterminal",
+            "r1_postverified_invoice_mode_drift_keeps_original_invoice_nonterminal",
+            "r1_postverified_invoice_custom_to_standard_keeps_original_invoice_nonterminal",
+            "r1_postverified_invoice_coordinated_drift_keeps_original_invoice_nonterminal",
+            "r1_postverified_bank_intent_amount_drift_keeps_original_invoice_nonterminal",
+            "r1_issued_bank_amount_differs_before_claim_no_new_original",
+            "r1_bank_method_drift_after_claim_no_remote_post",
+            "r1_bank_random_transfer_quote_keeps_original_nominal_price",
+            "r1_postclaim_preflight_mutation_never_posts",
+            "r1_missing_invoice_contract_before_claim_fails_closed",
+            "r1a_real_photo_receipt_only_extends_003_evidence_original_009_approved_once",
+            "r1a_original_bank_destination_changed_before_cron_denied",
+            "r1a_real_manual_issue_snapshots_original_quantity_entitlement_and_attempt",
+            "r1a_original_standard_entitlement_survives_precron_template_edit_no_replay",
+            "r1a_precron_quantity_changed_denied_without_remote_post",
+            "r1a_precron_standard_to_custom_denied_without_remote_post",
+            "r1a_precron_description_changed_denied_without_remote_post",
+            "r1a_precron_custom_dimensions_changed_denied_without_remote_post",
+            "r1a_precron_custom_to_standard_denied_without_remote_post",
+            "r1a_precron_original_server_changed_denied_without_remote_post",
+            "r1a_original_random_transfer_quote_changed_before_cron_denied",
+            "r1b_009_fk_restrict_protects_original_003_attempt",
+            "r1a_legacy_no_attempt_no_issued_quote_operator_only",
+            "r1a_legacy_003_without_009_never_backfilled_by_cron",
+            "r1b_original_attempt_deleted_after_claim_blocks_preflight",
+            "r1b_original_attempt_replaced_after_claim_blocks_preflight",
+            "r1b_original_attempt_deleted_after_verified_get_nonterminal",
+            "r1b_original_attempt_replaced_after_verified_get_nonterminal",
+            "r1b_deleted_original_attempt_before_first_cron_claim_denied",
+            "r1a_existing_003_without_issued_009_not_reopened_or_backfilled",
+            "r1a_failed_009_issue_rolls_back_original_003_atomically",
+            "r1a_missing_009_refuses_new_bank_intent_without_half_commit",
+        }
+        if not (bank_buy.get("complete") and bank_buy.get("cases")>=49
+                and required_bank.issubset(bank_buy.get("scenarios",[]))
+                and bank_buy.get("source_real_php")
+                and bank_buy.get("owned_mariadb_only")
+                and bank_buy.get("real_provider_requests")==0
+                and bank_buy.get("real_financial_effects")==0
+                and bank_buy.get("installed_operator_tested") is False):
+            raise RuntimeError("Bank BUY_SUB finality/remote-effects contract incomplete")
+        # Owner-private BUY_SUB crash inspection is read-only even with
+        # an inconclusive authenticated provider GET. Exercise actual
+        # Telegram route, exact ledger/endpoint and SQL on owned MariaDB.
+        recovery_path=Path(tmp)/"recovery-inspection.json"
+        recovery_run=subprocess.run(
+            ["python3",str(ROOT/"tools/test_post_v9_recovery_inspection.py"),
+             "--run-disposable","--report",str(recovery_path)],
+            cwd=ROOT,timeout=140,capture_output=True,text=True)
+        if recovery_run.returncode!=0:
+            raise RuntimeError("BUY_SUB recovery workbench acceptance failed:\n"
+                               +recovery_run.stderr[-6000:])
+        recovery=json.loads(recovery_path.read_text())
+        required_recovery={
+            "unresolved_bank_case_reads_exact_local_identity_without_sql_writes",
+            "owner_private_wallet_debit_capacity_hold_visible_no_unissued_get",
+            "strict_one_account_get_only_matching_observation_no_replay",
+            "no_financial_write_remote_missing",
+            "no_financial_write_remote_timeout",
+            "no_financial_write_remote_wrong_note",
+            "no_financial_write_remote_float_bytes",
+            "no_financial_write_remote_float_expiry",
+            "missing_ordinal_never_infers_remote_absence_or_gets",
+            "nonowner_or_nonprivate_inspection_denied_9002_9001",
+            "nonowner_or_nonprivate_inspection_denied_9001_7777",
+            "owner_private_readback_button_real_callback_no_sql_mutations",
+            "endpoint_drift_fences_remote_get_without_guessing",
+            "concurrent_endpoint_change_disqualifies_readback_evidence",
+            "15_line_keyset_pagination_and_exact_late_account_get",
+            "twelve_account_page_telegram_length_and_button_bounds",
+            "bank_payment_without_effect_visible_and_13th_case_reachable",
+            "terminal_payment_not_reattributed_to_pending_case",
+            "missing_ledger_schema_fails_closed_without_get_or_mutation",
+            "corrupted_operation_fingerprint_blocks_remote_get",
+            "logical_group_drift_blocks_remote_get",
+            "deleted_historical_order_preserved_without_inferred_refund",
+            "hosted_paid_state_not_assumed_settled_or_mutated",
+            "owner_private_full_inbox_page_and_case_ui_navigation",
+            "missing_unique_effect_index_blocks_remote_selection",
+            "changed_plan_inbound_rejected_before_any_remote_get",
+            "invalid_payment_account_count_fails_closed",
+            "zero_quota_with_matching_fingerprint_never_gets",
+            "ordinal_exceeding_mutated_payment_account_count_no_remote_get",
+            "fifteen_requested_two_recorded_clear_owner_private_operation_ids",
+            "terminal_after_get_owner_sees_uncertainty_once_ack",
+            "telegram_edit_failure_falls_back_to_owner_private_send",
+            "mysqlireport_off_sql_failure_after_get_ends_owner_visible_uncertain",
+        }
+        if not (recovery.get("complete")
+                and recovery.get("cases")>=36
+                and required_recovery.issubset(recovery.get("scenarios",[]))
+                and recovery.get("actual_php_admin_route") is True
+                and recovery.get("owned_socket_mariadb") is True
+                and recovery.get("max_account_get_per_callback")==1
+                and recovery.get("remote_writes")==0
+                and recovery.get("money_mutations")==0
+                and recovery.get("installed_operator_tested") is False):
+            raise RuntimeError("Owner-only read-only recovery contract incomplete")
+        # The actual production curl adapter (rather than a getMarzbanUser
+        # mock) must authenticate and GET on one pinned endpoint and IP.
+        transport_path=Path(tmp)/"recovery-transport.json"
+        transport_run=subprocess.run(
+            ["python3",str(ROOT/"tools/test_post_v9_recovery_transport.py"),
+             "--run-disposable","--report",str(transport_path)],
+            cwd=ROOT,timeout=140,capture_output=True,text=True)
+        if transport_run.returncode!=0:
+            raise RuntimeError("Pinned HTTP recovery acceptance failed:\n"
+                               +transport_run.stderr[-6000:])
+        transport=json.loads(transport_path.read_text())
+        if not (transport.get("complete") is True and
+                transport.get("cases")>=27 and
+                transport.get("real_curl_login_and_get") is True and
+                transport.get("loopback_only") is True and
+                transport.get("max_account_get_per_inspection")==1 and
+                transport.get("redirects_followed")==0 and
+                transport.get("credential_leak_to_redirect") is False and
+                transport.get("remote_writes")==0 and
+                transport.get("money_mutations")==0 and
+                transport.get("installed_operator_tested") is False):
+            raise RuntimeError("Actual pinned login/GET assurance incomplete")
         manual_path=Path(tmp)/"manual-payment-methods.json"
         try:
             subprocess.run(["python3",str(ROOT/"tools/test_post_v9_manual_payments.py"),
@@ -1303,6 +1639,8 @@ def main():
             "real_topup_raw_callback_accepted_3",  # maximum callback
         }
         required_manual.update({
+            'r2_exact_manual_order_allocation_100_3_no_replay',
+            'r2_exact_manual_order_allocation_101_2_no_replay',
             'auto_bank_day_service_only_after_verified_remote_and_atomic_local_effect',
             'auto_bank_volume_service_only_after_verified_remote_and_atomic_local_effect',
             'auto_bank_renew_service_only_after_verified_remote_and_atomic_local_effect',
@@ -1376,6 +1714,8 @@ def main():
         required_integrity={
             'r1_insufficient_total_count_prevents_any_remote_create',
             'r1_exact_two_units_reserved_once_and_replay_fenced',
+            'r2_actual_manual_helper_integer_allocation_100_3_no_replay',
+            'r2_actual_manual_helper_integer_allocation_101_2_no_replay',
             'r1_remote_unknown_keeps_pre_reserved_capacity_no_replay',
             'r1_after_two_remote_creates_SQL_failure_keeps_reserved_capacity_review_only',
             'r1_mysqlireportoff_conditional_reservation_SQL_failure_no_create',
@@ -1568,7 +1908,7 @@ def main():
                        cwd=ROOT,check=True,timeout=60,capture_output=True)
         swap=json.loads(overlay_report.read_text())
         if not (swap.get("complete") and swap.get("phase_count")==4
-                and swap.get("runtime_members")==94
+                and swap.get("runtime_members")==97
                 and swap.get("historical_runtime_members")==92
                 and swap.get("retired_old_payment_files_absent_after_source_upgrade")
                 and swap.get("source_roll_forward_and_back_byte_identical")
@@ -1594,6 +1934,14 @@ def main():
                     "wallet_authorization_freshness":wallet_freshness,
                     "latest_review_f1_f4":reviewer_f1_f4,
                     "service_effects":effects,
+                    "wallet_paid_create":wallet_create,
+                    "wallet_checkout_routes":wallet_checkout,
+                    "nonpaid_trial_bulk":nonpaid,
+                    "referral_awards":referral,
+                    "referral_postcommit_routes":route_award,
+                    "bank_auto_buy_sub":bank_buy,
+                    "bank_recovery_inspection":recovery,
+                    "bank_recovery_transport":transport,
                     "manual_payment_method_isolation":manual,
                     "manual_standard_real_helper_review_remediation":integrity,
                     "manual_crypto_destination_and_admin_guards":crypto_guard,
@@ -1631,6 +1979,14 @@ def main():
                       "customer_method_serialization_cases":method_race["cases"],
                       "wallet_authorization_freshness_cases":wallet_freshness["cases"],
                       "service_effect_cases":effects["cases"],
+                      "wallet_paid_create_cases":wallet_create["cases"],
+                      "wallet_checkout_cases":wallet_checkout["cases"],
+                      "nonpaid_trial_bulk_cases":nonpaid["cases"],
+                      "referral_award_cases":referral["cases"],
+                      "referral_postcommit_route_cases":route_award["cases"],
+                      "bank_auto_buy_sub_cases":bank_buy["cases"],
+                       "bank_recovery_inspection_cases":recovery["cases"],
+                      "bank_recovery_transport_cases":transport["cases"],
                       "manual_payment_isolation_cases":manual["cases"],
                       "manual_standard_real_helper_cases":integrity["cases"],
                       "manual_crypto_guard_cases":crypto_guard["cases"],
