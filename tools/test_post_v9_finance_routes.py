@@ -153,17 +153,6 @@ function editMarzbanConfig($id,$change) {
     return \AchBot\Panel\Accounts\editMarzbanConfig($id,$change);
 }
 function achbotSupportsPanel($type) { return $type==='marzban'; }
-function achbotSupportsMarzbanOrder($db,$oid) {
-    $stmt=$db->prepare("SELECT o.id FROM orders_list o
-        JOIN server_config c ON c.id=o.server_id AND c.type='marzban'
-        JOIN server_plans p ON p.id=o.fileid AND p.server_id=o.server_id
-        WHERE o.id=? AND o.status=1 AND o.inbound_id=0 AND p.inbound_id=0");
-    $stmt->bind_param('i',$oid);
-    $ok=$stmt->execute();
-    $found=$ok?$stmt->get_result()->fetch_assoc():null;
-    $stmt->close();
-    return (bool)$found;
-}
 function Bot($method, $args=[]) {
     $GLOBALS['events'][]=['name'=>'Bot','method'=>$method];
     return (object)['ok'=>true,'result'=>(object)[
