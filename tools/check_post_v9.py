@@ -165,7 +165,9 @@ def main():
                         "--run-disposable","--report",str(native)],
                        cwd=ROOT,check=True,timeout=300,capture_output=True)
         marzban=json.loads(native.read_text())
-        if not marzban.get("complete") or not marzban.get("marzban_http_wire_sql_parity"):
+        if not (marzban.get("complete") and
+                marzban.get("marzban_http_wire_sql_parity") and
+                marzban.get("minimal_service_edit_payload_verified")):
             raise RuntimeError("Current candidate Marzban native source proof incomplete")
         edit_path=Path(tmp)/"service-edit-native.json"
         subprocess.run(["python3",str(ROOT/"tools/test_post_v9_marzban_edits.py"),

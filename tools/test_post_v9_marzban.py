@@ -167,6 +167,7 @@ def main():
     # This contains positive and negative Marzban authentication, user
     # creation/deletion, usage, renewals and state transition API exercises.
     records = []
+    minimal_edit_wire_verified=False
     with owned.owned_database() as (work, env), native.owned_provider() as (panel, url):
         native.seed(work, env, url)
         old = work / "historic-v9"
@@ -223,19 +224,31 @@ def main():
                 not results[0].get('warnings') and
                 not results[1].get('warnings') and
                 results[0].get('stdout')==results[1].get('stdout')=='')
-            # The modern edit MUST make an independent authenticated GET
-            # after PUT. Historical V9 only trusted the write response.
-            # For historical loopback {"status":"ok"}, the current source
-            # proves the first PUT did NOT change bytes by GET, tries only ONE
-            # identical absolute PUT, then fails closed on another stale GET.
-            # This is deliberately different wire behavior, not test drift.
-            extra_edit_readback=(intentional_fail_closed and
-                len(traces[1])==len(traces[0])+3 and
-                traces[1][:len(traces[0])]==traces[0] and
-                [v['method'] for v in traces[1][-3:]]==['GET','PUT','GET'] and
-                traces[1][-3]['path']=='/api/user/fixture-user' and
-                traces[1][-2]==traces[0][-1] and
-                traces[1][-1]['path']=='/api/user/fixture-user')
+            # The modern edit MUST perform a verified authenticated GET.
+            # Historical V9 sent a stale full remote account snapshot and
+            # trusted an unrelated {"status":"ok"} body. The current edit
+            # deliberately sends ONLY the purchased data_limit field for
+            # this exact +volume case; the PUT differs from the frozen V9
+            # request by design. The same minimal absolute PUT may be
+            # repeated once only after exact unchanged readback.
+            edit_wire=False
+            if (intentional_fail_closed and len(traces[1])==len(traces[0])+3):
+                original_put=traces[0][-1]
+                first_put=traces[1][len(traces[0])-1]
+                strip_body=lambda item:{k:v for k,v in item.items() if k!='body'}
+                edit_wire=(
+                    traces[1][:len(traces[0])-1]==traces[0][:-1] and
+                    strip_body(first_put)==strip_body(original_put) and
+                    json.loads(first_put['body'])=={
+                        'data_limit':json.loads(original_put['body'])['data_limit']
+                    } and
+                    [v['method'] for v in traces[1][-3:]]==['GET','PUT','GET'] and
+                    traces[1][-3]['path']=='/api/user/fixture-user' and
+                    traces[1][-2]==first_put and
+                    traces[1][-1]['path']=='/api/user/fixture-user')
+            extra_edit_readback=edit_wire
+            if name=='marzban.update':
+                minimal_edit_wire_verified=edit_wire
             if (traces[0]!=traces[1] and not extra_edit_readback) or (
                 results[0]!=results[1] and not
                 (intentional_fail_closed or intentional_delete_fail_closed)):
@@ -247,6 +260,8 @@ def main():
             if results[0]["exception"] or not traces[0]:
                 raise RuntimeError("Marzban case not executed successfully: " + name)
             records.append({"case":name,"owned_http_requests":len(traces[0]),"result":"PASS"})
+        if not minimal_edit_wire_verified:
+            raise RuntimeError('Post-V9 service edit minimal PUT wire contract was not exercised')
         # Issue #26: the post-V9 strict readback must use a bounded, genuine
         # authenticated HTTP GET. It is intentionally NOT compared to V9.
         panel.mode='ok'
@@ -295,6 +310,7 @@ def main():
          "marzban_positive_cases":len(current_cases),
          "retired_provider_negative_cases":4,
          "marzban_http_wire_sql_parity":True,
+         "minimal_service_edit_payload_verified":minimal_edit_wire_verified,
          "private_state_preserved":True,
          "retired_subscription":sub,
          "unsupported_purchase_guard":core,
