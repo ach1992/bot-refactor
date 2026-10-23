@@ -67,8 +67,9 @@ class OwnedCheckoutMysqli extends mysqli {
 $connection=new OwnedCheckoutMysqli('localhost','root','',$argv[3],0,$argv[2]);
 $connection->set_charset('utf8mb4');
 $admin=9001;$from_id=(int)($spec['user']??1001);$chat_id=$from_id;$message_id=51;$time=time();
-$data=(($spec['custom']??false)?'payCustomWithWallet':'payBuyWithWallet').
-    ($spec['hash']??'native_standard');
+$data=(string)($spec['callback_data']??
+    ((($spec['custom']??false)?'payCustomWithWallet':'payBuyWithWallet').
+    ($spec['hash']??'native_standard')));
 $text='';$username='fixture';$first_name='Customer';$match=[];
 $botUrl='https://fixture.invalid/';$botState=['remark'=>(string)($spec['remark_mode']??'digits'),'rewardChannel'=>($spec['reward_channel']??null)];
 $buttonValues=['back_to_main'=>'back','cancel'=>'cancel'];

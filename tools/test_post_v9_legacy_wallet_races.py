@@ -70,7 +70,10 @@ def stage_source(w,previous):
         marker=HOOK.encode()
         for _,callback,_,where in ROUTES:
             if where!=path:continue
-            begin=b"if(preg_match('/"+callback.encode()+b"(.*)/', $data, $match)){"
+            begin=(b"if(preg_match('/"+callback.encode()+b"(.*)/', $data, $match)){"
+                   if previous else
+                   b"if(is_string($data) && strlen($data) <= 64 && preg_match('/\\A"+
+                   callback.encode()+b"([A-Za-z0-9_-]{1,50})\\z/D', $data, $match)){")
             assert source.count(begin)==1,(where,callback,source.count(begin))
             start=source.index(begin)
             anchor=(b"        if (!achbotSupportsPaymentSubject($connection, "+

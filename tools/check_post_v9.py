@@ -1338,6 +1338,36 @@ def main():
                 wallet_checkout.get("production_financial_mutations")==0):
             raise RuntimeError("Wallet full route acceptance incomplete")
 
+        # Exact callback identity across all five direct wallet-charge routes;
+        # execute actual PHP/MySQLi and fail if a malformed button can debit.
+        wallet_frame_path=Path(tmp)/"wallet-callback-framing.json"
+        framed=subprocess.run(
+            ["python3",str(ROOT/"tools/test_post_v9_wallet_callback_framing.py"),
+             "--run-disposable","--report",str(wallet_frame_path)],
+            cwd=ROOT,capture_output=True,text=True,timeout=90)
+        if framed.returncode!=0:
+            raise RuntimeError("Wallet callback framing source acceptance failed:\n"
+                +framed.stderr[-4500:])
+        wallet_frame=json.loads(wallet_frame_path.read_text())
+        expected_framing={
+            f'{subject}_{kind}_no_wallet_or_service_effect'
+            for subject in ('buy','custom','renew','day','volume')
+            for kind in ('embedded_action','trailing_separator','multibyte_suffix')
+        } | {
+            f'{subject}_{kind}'
+            for subject in ('buy','custom','renew','day','volume')
+            for kind in ('valid_owned_callback_still_pays_once','paid_callback_no_replay')
+        } | {'wallet_exact_64_byte_callback_accepted',
+             'wallet_65_byte_callback_without_side_effects'}
+        if not (wallet_frame.get('complete') is True
+                and wallet_frame.get('cases')==27
+                and set(wallet_frame.get('scenarios',[]))==expected_framing
+                and wallet_frame.get('real_php_mariadb') is True
+                and wallet_frame.get('original_payment_schema_preserved') is True
+                and wallet_frame.get('provider_requests')==0
+                and wallet_frame.get('live_wallet_mutations')==0):
+            raise RuntimeError('Direct wallet callback framing matrix incomplete')
+
         # Issue #26: native real bank-Cron PHP on disposable MariaDB.
         bank_path=Path(tmp)/"bank-buy-effects.json"
         bank_run=subprocess.run(
@@ -1936,6 +1966,7 @@ def main():
                     "service_effects":effects,
                     "wallet_paid_create":wallet_create,
                     "wallet_checkout_routes":wallet_checkout,
+                    "wallet_callback_framing":wallet_frame,
                     "nonpaid_trial_bulk":nonpaid,
                     "referral_awards":referral,
                     "referral_postcommit_routes":route_award,
@@ -1981,6 +2012,7 @@ def main():
                       "service_effect_cases":effects["cases"],
                       "wallet_paid_create_cases":wallet_create["cases"],
                       "wallet_checkout_cases":wallet_checkout["cases"],
+                      "wallet_callback_framing_cases":wallet_frame["cases"],
                       "nonpaid_trial_bulk_cases":nonpaid["cases"],
                       "referral_award_cases":referral["cases"],
                       "referral_postcommit_route_cases":route_award["cases"],

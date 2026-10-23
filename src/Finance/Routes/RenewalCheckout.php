@@ -525,7 +525,7 @@ if(preg_match('/approveRenewAcc(.*)/',$data,$match) && ($from_id == $admin || $u
     }
 }
 
-if(preg_match('/payRenewWithWallet(.*)/', $data, $match)){
+if(is_string($data) && strlen($data) <= 64 && preg_match('/\ApayRenewWithWallet([A-Za-z0-9_-]{1,50})\z/D', $data, $match)){
     $connection->begin_transaction();
     $localCommitted=false;
     try {

@@ -477,7 +477,7 @@ if (preg_match('/approveIncreaseDay(.*)/', $data, $match) && ($from_id == $admin
     }
 }
 
-if(preg_match('/payIncreaseDayWithWallet(.*)/', $data, $match)){
+if(is_string($data) && strlen($data) <= 64 && preg_match('/\ApayIncreaseDayWithWallet([A-Za-z0-9_-]{1,50})\z/D', $data, $match)){
     $connection->begin_transaction();
     $localCommitted=false;
     try {
@@ -1287,7 +1287,7 @@ if (preg_match('/approveIncreaseVolume(.*)/', $data, $match) && ($from_id == $ad
     }
 }
 
-if(preg_match('/payIncreaseWithWallet(.*)/', $data, $match)){
+if(is_string($data) && strlen($data) <= 64 && preg_match('/\ApayIncreaseWithWallet([A-Za-z0-9_-]{1,50})\z/D', $data, $match)){
     $connection->begin_transaction();
     try {
         // Customer-wallet issuance shares the same owner-first lock as drafts

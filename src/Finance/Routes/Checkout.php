@@ -7,7 +7,7 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
 
 require_once __DIR__ . '/../PaymentLifecycle.php';
 
-if (preg_match('/payCustomWithWallet(.*)/', $data, $match)) {
+if (is_string($data) && strlen($data) <= 64 && preg_match('/\ApayCustomWithWallet([A-Za-z0-9_-]{1,50})\z/D', $data, $match)) {
     setUser();
 
     $hashId = trim($match[1] ?? '');
@@ -728,7 +728,7 @@ if (preg_match('/^accCustom(.+)$/D', $data, $match) && $text != $buttonValues['c
     }
 }
 
-if (preg_match('/payBuyWithWallet(.*)/', $data, $match)) {
+if (is_string($data) && strlen($data) <= 64 && preg_match('/\ApayBuyWithWallet([A-Za-z0-9_-]{1,50})\z/D', $data, $match)) {
 
     setUser();
 
