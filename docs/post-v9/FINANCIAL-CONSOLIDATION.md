@@ -693,6 +693,32 @@ notices may not falsely announce completion, and automatic refunds are
 forbidden without operator reconciliation. No source test authorizes an
 installed tenant SQL/Marzban/financial operation.
 
+**Automatic bank edits for grouped Marzban aliases (PR #68 review R8).**
+A paid order may legitimately keep a plan from its *original* logical
+server after the customer moves its label to a different server on the
+same explicitly configured physical Marzban panel. For automatic-bank
+`RENEW_ACCOUNT`, `INCREASE_DAY` and `INCREASE_VOLUME` receipts, the
+payment must still match the order's user, original plan, current logical
+server, exact account remark and quote. The bank preflight uses Core.php's
+existing order/group authorization instead of incorrectly requiring the
+plan's old logical server to equal the current order server; an unrelated
+panel is rejected *before* any remote request. After a verified remote edit,
+the finisher re-checks Core authorization under the existing payment-then-
+order SQL locks: revoked group membership, payment/order identity drift,
+stale expiry and failed SQL leave the durable bank claim `processing` for
+operator review, with no false approval, retry or speculative refund.
+The original claimed payment's type, plan, quote/amount, optional order ID
+and description remain pinned across both checkpoints: a coordinated
+payment-and-order rewrite or equally sized quote substitution cannot
+retroactively approve an edit dispatched for a different paid subject.
+Standalone `RENEW_SCONFIG` retains its original exact plan/server rule.
+Mandatory disposable tests execute the real PHP bank scheduler, Core.php
+and MariaDB transaction/lock/CAS path with a counted provider spy for all
+three authorized and denied alias routes, group revocation, stale identity,
+replay, coherent invoice/plan and quote drift, remote uncertainty and SQL
+failure. These are source-level tests,
+not installed/financial/remote-provider acceptance.
+
 **Queued Marzban next-plan preservation (source-only precaution).**
 At upstream Marzban master `7f396db3e703d71a28060bc9ce4a532ec64cb1f4`
 the account `UserModify` implementation deletes an existing `next_plan`

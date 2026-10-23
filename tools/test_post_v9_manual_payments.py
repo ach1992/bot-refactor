@@ -36,6 +36,9 @@ $USDTPrice='100000';$USDTPriceagent='110000';
 $admin=9001;
 require_once $root.'/src/Finance/ReceiptHelpers.php';
 function achbotSupportsPaymentSubject(...$args) {return true;}
+// Legacy fixture isolates bank-row semantics; R8 cases below delete both
+// fakes and load the actual Core.php permissions + SQL paths.
+function achbotSupportsMarzbanOrder(...$args) {return true;}
 function achbotSupportsPanel($type) {return $type==='marzban';}
 function getMainKeys() {return '{}';}
 function sendMessage(...$args) {return (object)['ok'=>true];}
@@ -54,6 +57,10 @@ $stmt=$connection->prepare('SELECT * FROM pays WHERE hash_id=? LIMIT 1');
 $stmt->bind_param('s',$hash);$stmt->execute();
 $payInfo=$stmt->get_result()->fetch_assoc();$stmt->close();
 if (!$payInfo) throw new RuntimeException('synthetic payment missing');
+// Only explicitly requested stale-snapshot regressions replace fields in
+// the ORIGINAL scheduler view; every SQL read/lock remains source-real.
+if (isset($spec['seen_pay']) && is_array($spec['seen_pay']))
+    $payInfo=array_replace($payInfo,$spec['seen_pay']);
 $method=$spec['method']??'bank_transfer';$user=(int)($spec['user']??1001);
 $op=$spec['op']??'claim';
 if ($op==='claim') $value=achbotManualClaim($connection,$payInfo,$method,$user,
@@ -115,11 +122,15 @@ elseif ($op==='read') {
     $value=['method'=>$selected,'body'=>$message,'keys'=>$keys,
       'caption'=>achbotManualCaption($connection,$payInfo,'Fixture purchase')];
 }
-elseif ($op==='auto') {
+elseif ($op==='auto' || $op==='auto_probe') {
     $botState['cartToCartAutoAcceptState']='on';
     $botState['cartToCartAutoAcceptTime']=1;
     require $root.'/src/Finance/AutomaticReceipts.php';
-    $value='tested';
+    // Probe the actual scheduler's isolated provider dispatch. Its spy
+    // still never sends traffic or changes an installed Marzban account.
+    $value=$op==='auto_probe'
+        ? ['remote_calls'=>(int)($GLOBALS['auto_service_remote_calls']??0)]
+        : 'tested';
 }
 else throw new RuntimeException('unknown synthetic op');
 echo json_encode(['result'=>$value],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
@@ -1948,6 +1959,190 @@ def check():
             assert query(work,env,'SELECT COUNT(*) FROM increase_order')==str(int(before_audit)+1)
             cases.append('auto_bank_'+kind+'_preflight_pins_original_payment_order_target_and_account')
             cases.append('auto_bank_'+kind+'_service_only_after_verified_remote_and_atomic_local_effect')
+
+        # R8: run the actual bank scheduler with Core.php's real order/group
+        # authorization, signed payment claim, SQL transaction and CAS.
+        # Only achbotApplyServiceEdit is an isolated, counted provider spy.
+        real_bank_php=PHP.replace(
+            "function achbotSupportsPaymentSubject(...$args) {return true;}",
+            "require_once $root.'/src/Purchase/Core.php';")
+        real_bank_php=real_bank_php.replace(
+            'function achbotSupportsMarzbanOrder(...$args) {return true;}', '')
+        assert real_bank_php!=PHP
+        assert 'function achbotSupportsMarzbanOrder(...$args) {return true;}' not in real_bank_php
+        real_bank_driver=work/'real-core-bank-alias.php'
+        real_bank_driver.write_text(real_bank_php)
+        query(work,env,"INSERT INTO setting(id,type,value) VALUES "
+              "(9910,'ACHBOT_MARZBAN_PANEL_GROUP','automatic-bank-alias')")
+        query(work,env,'UPDATE server_info SET panel_group_id=9910 WHERE id IN (1,2)')
+        query(work,env,"INSERT INTO increase_day(id,volume,price) VALUES "
+              "(9921,5,100) ON DUPLICATE KEY UPDATE volume=5,price=100")
+        query(work,env,"INSERT INTO increase_plan(id,volume,price) VALUES "
+              "(9922,4,100) ON DUPLICATE KEY UPDATE volume=4,price=100")
+        query(work,env,"UPDATE pays SET request_date=UNIX_TIMESTAMP() "
+              "WHERE state='have_sent'")
+
+        def alias_bank_case(key,kind):
+            oid=day_order(key,expiry=1800000100)
+            query(work,env,f"UPDATE orders_list SET fileid=1,notif=1 WHERE id={oid}")
+            seed(work,env,key,price=100)
+            typ={'renew':'RENEW_ACCOUNT',
+                 'day':f'INCREASE_DAY_{oid}_9921',
+                 'volume':f'INCREASE_VOLUME_{oid}_9922'}[kind]
+            query(work,env,f"UPDATE pays SET type='{typ}',state='have_sent',"
+                  f"server_id=2,plan_id=1,order_id={oid},price=100,"
+                  "request_date=UNIX_TIMESTAMP()-120,message_id=550,chat_id=9001 "
+                  f"WHERE hash_id='{key}'")
+            units={'renew':0,'day':5,'volume':4}[kind]
+            return oid,{'edit_kind':kind,'server_id':2,'order_id':oid,
+                        'remark':key,'units':units}
+
+        def real_bank(key,op,**kw):
+            return run_php(work,env,real_bank_driver,key,op,**kw)
+
+        # Three positive flows exercise the scheduler (not only a standalone
+        # helper). Valid aliases use the order's CURRENT target server while
+        # its original plan still names another server in the same group.
+        for kind in ('renew','day','volume'):
+            key='bankaliasok'+kind
+            oid,args=alias_bank_case(key,kind)
+            before_audit=int(query(work,env,'SELECT COUNT(*) FROM increase_order'))
+            before_wallet=int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'))
+            outcome=real_bank(key,'auto_probe')
+            assert outcome=={'remote_calls':1},(key,outcome)
+            assert query(work,env,f"SELECT state FROM pays WHERE hash_id='{key}'")=='auto_cart_approved'
+            assert int(query(work,env,'SELECT COUNT(*) FROM increase_order'))==before_audit+1
+            assert query(work,env,"SELECT server_id FROM increase_order "
+                f"WHERE remark='{key}' ORDER BY id DESC LIMIT 1")=='2'
+            assert query(work,env,f'SELECT notif FROM orders_list WHERE id={oid}')=='0'
+            assert int(query(work,env,f'SELECT expire_date FROM orders_list WHERE id={oid}'))==(
+                1800000100 if kind=='volume' else 1802000000)
+            assert int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'))==before_wallet
+            assert real_bank(key,'auto_probe')=={'remote_calls':0}
+            assert int(query(work,env,'SELECT COUNT(*) FROM increase_order'))==before_audit+1
+            cases.append('review_r8_bank_grouped_'+kind+'_scheduler_verified_once')
+
+        # Cross-panel aliases cannot reach any remote operation, even when
+        # the logical target and username appear otherwise legitimate.
+        query(work,env,'UPDATE server_info SET panel_group_id=NULL WHERE id=1')
+        for kind in ('renew','day','volume'):
+            key='bankaliasforeign'+kind
+            oid,args=alias_bank_case(key,kind)
+            before_audit=int(query(work,env,'SELECT COUNT(*) FROM increase_order'))
+            assert real_bank(key,'auto_probe')=={'remote_calls':0}
+            assert query(work,env,f"SELECT state FROM pays WHERE hash_id='{key}'")=='have_sent'
+            # Simulate a preexisting durable claim so even direct helper
+            # dispatch is blocked by real Core before any provider request.
+            assert real_bank(key,'bank_auto_claim') is True
+            assert real_bank(key,'preflight_bank_service_edit',**args) is False
+            assert query(work,env,f"SELECT state FROM pays WHERE hash_id='{key}'")=='processing'
+            assert real_bank(key,'auto_probe')=={'remote_calls':0}
+            assert int(query(work,env,'SELECT COUNT(*) FROM increase_order'))==before_audit
+            assert query(work,env,f'SELECT expire_date FROM orders_list WHERE id={oid}')=='1800000100'
+            cases.append('review_r8_bank_foreign_'+kind+'_blocked_before_remote')
+        query(work,env,'UPDATE server_info SET panel_group_id=9910 WHERE id=1')
+
+        # A valid preflight is NOT a lasting permission: the finisher must
+        # recheck the group after the verified provider effect and reject a
+        # revoked group without payment/audit/expiry terminalization.
+        key='bankaliasrevoked'
+        oid,args=alias_bank_case(key,'day')
+        assert real_bank(key,'bank_auto_claim') is True
+        assert real_bank(key,'preflight_bank_service_edit',**args) is True
+        audit_before=int(query(work,env,'SELECT COUNT(*) FROM increase_order'))
+        query(work,env,'UPDATE server_info SET panel_group_id=NULL WHERE id=1')
+        assert real_bank(key,'finish_bank_service_edit',**args) is False
+        assert query(work,env,f"SELECT state FROM pays WHERE hash_id='{key}'")=='processing'
+        assert query(work,env,f'SELECT expire_date FROM orders_list WHERE id={oid}')=='1800000100'
+        assert int(query(work,env,'SELECT COUNT(*) FROM increase_order'))==audit_before
+        query(work,env,'UPDATE server_info SET panel_group_id=9910 WHERE id=1')
+        cases.append('review_r8_bank_group_revoked_after_preflight_nonterminal')
+
+        # Payment and order identities are re-read, not trusted from the
+        # pre-dispatch snapshot. In particular, nonzero historical extension
+        # order_id must agree with the exact order encoded in pay.type.
+        for kind,mutation in (
+            ('renew',"UPDATE pays SET server_id=1 WHERE hash_id='bankaliasdriftrenew'"),
+            ('day',None),
+            ('volume',None),
+        ):
+            key='bankaliasdrift'+kind
+            oid,args=alias_bank_case(key,kind)
+            assert real_bank(key,'bank_auto_claim') is True
+            assert real_bank(key,'preflight_bank_service_edit',**args) is True
+            audit_before=int(query(work,env,'SELECT COUNT(*) FROM increase_order'))
+            if kind=='day':
+                mutation=f"UPDATE pays SET order_id={oid+1} WHERE hash_id='{key}'"
+            if kind=='volume':
+                mutation=f"UPDATE orders_list SET remark='changed_subject' WHERE id={oid}"
+            query(work,env,mutation)
+            assert real_bank(key,'finish_bank_service_edit',**args) is False
+            assert query(work,env,f"SELECT state FROM pays WHERE hash_id='{key}'")=='processing'
+            assert int(query(work,env,'SELECT COUNT(*) FROM increase_order'))==audit_before
+            assert query(work,env,f'SELECT expire_date FROM orders_list WHERE id={oid}')=='1800000100'
+            cases.append('review_r8_bank_'+kind+'_identity_drift_nonterminal')
+
+        # A coordinated edit of BOTH the payment's plan and the order's
+        # fileid would still pass a freshly read Core group check. The
+        # finisher must also pin its original pre-provider paid plan.
+        key='bankaliascoherentplan'
+        oid,args=alias_bank_case(key,'renew')
+        assert real_bank(key,'bank_auto_claim') is True
+        assert real_bank(key,'preflight_bank_service_edit',**args) is True
+        before_audit=int(query(work,env,'SELECT COUNT(*) FROM increase_order'))
+        query(work,env,f"UPDATE pays SET plan_id=7 WHERE hash_id='{key}'")
+        query(work,env,f'UPDATE orders_list SET fileid=7 WHERE id={oid}')
+        assert real_bank(key,'finish_bank_service_edit',seen_pay={'plan_id':1},**args) is False
+        assert query(work,env,f"SELECT state FROM pays WHERE hash_id='{key}'")=='processing'
+        assert query(work,env,f'SELECT expire_date FROM orders_list WHERE id={oid}')=='1800000100'
+        assert int(query(work,env,'SELECT COUNT(*) FROM increase_order'))==before_audit
+        cases.append('review_r8_bank_original_paid_plan_pinned_after_coherent_drift')
+
+        # Repricing or swapping an equally-sized extension quote mid-flight
+        # cannot terminalize the original paid subject merely because its
+        # new quote resolves to the same units and current order identity.
+        key='bankaliasquotechange'
+        oid,args=alias_bank_case(key,'day')
+        assert real_bank(key,'bank_auto_claim') is True
+        assert real_bank(key,'preflight_bank_service_edit',**args) is True
+        query(work,env,"INSERT INTO increase_day(id,volume,price) VALUES "
+              "(9923,5,100) ON DUPLICATE KEY UPDATE volume=5,price=100")
+        old_type=f'INCREASE_DAY_{oid}_9921'
+        query(work,env,f"UPDATE pays SET type='INCREASE_DAY_{oid}_9923' "
+              f"WHERE hash_id='{key}'")
+        before_audit=int(query(work,env,'SELECT COUNT(*) FROM increase_order'))
+        assert real_bank(key,'finish_bank_service_edit',seen_pay={'type':old_type},**args) is False
+        assert query(work,env,f"SELECT state FROM pays WHERE hash_id='{key}'")=='processing'
+        assert int(query(work,env,'SELECT COUNT(*) FROM increase_order'))==before_audit
+        cases.append('review_r8_bank_original_paid_quote_pinned_after_type_drift')
+
+        # Unknown remote outcome is never an automatic refund, and a local
+        # SQL audit error after verified GET cannot produce a terminal
+        # approval. Scheduler replays must not send another remote edit.
+        for mode in ('uncertain','sql_failure'):
+            key='bankalias'+mode.replace('_','')
+            oid,args=alias_bank_case(key,'day')
+            before_wallet=int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'))
+            before_audit=int(query(work,env,'SELECT COUNT(*) FROM increase_order'))
+            if mode=='sql_failure':
+                query(work,env,"CREATE TRIGGER fixture_r8_bank_audit_failure "
+                      "BEFORE INSERT ON increase_order FOR EACH ROW "
+                      "SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='fixture_r8_sql_failure'")
+            try:
+                outcome=real_bank(key,'auto_probe',auto_remote=(
+                    'uncertain' if mode=='uncertain' else 'verified'),
+                    expect_deferred=(mode=='sql_failure'))
+            finally:
+                if mode=='sql_failure':
+                    query(work,env,'DROP TRIGGER IF EXISTS fixture_r8_bank_audit_failure')
+            assert outcome=={'remote_calls':1},(key,outcome)
+            assert query(work,env,f"SELECT state FROM pays WHERE hash_id='{key}'")=='processing'
+            assert query(work,env,f'SELECT expire_date FROM orders_list WHERE id={oid}')=='1800000100'
+            assert int(query(work,env,'SELECT COUNT(*) FROM increase_order'))==before_audit
+            assert int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'))==before_wallet
+            assert real_bank(key,'auto_probe')=={'remote_calls':0}
+            cases.append('review_r8_bank_grouped_'+mode+'_review_no_retry_refund')
+        query(work,env,'UPDATE server_info SET panel_group_id=NULL WHERE id IN (1,2)')
 
         # Reviewer R4/R5: local expiry storage bounds and compare-and-swap.
         # These run on actual original-schema MariaDB, including permissive

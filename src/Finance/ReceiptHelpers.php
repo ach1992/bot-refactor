@@ -485,7 +485,7 @@ function achbotAutoBankEditPreflight(mysqli $db, array $pay, string $kind,
         !in_array($kind,['renew','standard','day','volume'],true))
         return false;
     try {
-        $stmt=$db->prepare("SELECT p.user_id,p.server_id,p.plan_id,
+        $stmt=$db->prepare("SELECT p.user_id,p.server_id,p.plan_id,p.price,
             p.order_id,p.state,p.type,p.description,
             sp.server_id AS plan_server
             FROM pays p LEFT JOIN server_plans sp ON sp.id=p.plan_id
@@ -498,7 +498,16 @@ function achbotAutoBankEditPreflight(mysqli $db, array $pay, string $kind,
         if (!$paid || (int)$paid['user_id']!==$owner ||
             $paid['state']!=='processing' ||
             (int)$paid['server_id']!==$serverId ||
-            (int)($paid['plan_server']??0)!==$serverId)
+            // The scheduler's original invoice subject is immutable across
+            // receipt claim, preflight, provider HTTP and finalization.
+            (int)$paid['plan_id']!==(int)($pay['plan_id']??0) ||
+            (int)$paid['price']!==(int)($pay['price']??0) ||
+            (int)($paid['order_id']??0)!==(int)($pay['order_id']??0) ||
+            (string)$paid['type']!==(string)($pay['type']??'') ||
+            (string)($paid['description']??'')!==(string)($pay['description']??'') ||
+            // External standard accounts have no order/group alias. For an
+            // order-backed edit, Core authorizes an explicitly shared panel.
+            ($kind==='standard' && (int)($paid['plan_server']??0)!==$serverId))
             return false;
 
         if ($kind==='standard') {
@@ -516,7 +525,11 @@ function achbotAutoBankEditPreflight(mysqli $db, array $pay, string $kind,
                 ? '/^INCREASE_DAY_([1-9][0-9]*)_([1-9][0-9]*)$/D'
                 : '/^INCREASE_VOLUME_([1-9][0-9]*)_([1-9][0-9]*)$/D';
             if ($units<=0 || preg_match($pattern,(string)$paid['type'],$m)!==1 ||
-                (int)$m[1]!==$orderId) return false;
+                (int)$m[1]!==$orderId ||
+                // Old extension receipts may omit order_id, but a pinned
+                // nonzero ID must never contradict the encoded subject.
+                ((int)($paid['order_id']??0)!==0 &&
+                 (int)$paid['order_id']!==$orderId)) return false;
             // The existing quote is the only permitted source of units.
             $table=$kind==='day'?'increase_day':'increase_plan';
             $quoteId=(int)$m[2];
@@ -542,7 +555,11 @@ function achbotAutoBankEditPreflight(mysqli $db, array $pay, string $kind,
             (int)$record['server_id']===$serverId &&
             (int)$record['inbound_id']===0 &&
             (int)$record['status']===1 &&
-            (string)$record['remark']===$remark;
+            (string)$record['remark']===$remark &&
+            // Real Core authorization, not a shortcut from the plan's old
+            // logical server ID. Cross-panel aliases fail before HTTP.
+            achbotSupportsMarzbanOrder($db,$orderId,
+                (int)$paid['plan_id'],$owner);
     } catch (Throwable $error) {
         error_log('achbot_auto_service_preflight_deferred pay_id='.$payId.
             ' class='.get_class($error).' code='.(int)$error->getCode());
@@ -688,7 +705,14 @@ function achbotAutoBankFinishEdit(mysqli $db, array $pay,
             (int)$locked['user_id']!==$userId ||
             (int)$locked['price']!==$amount ||
             (int)$locked['server_id']!==$serverId ||
-            (int)($locked['current_plan_server']??0)!==$serverId ||
+            // A coherent payment/order rewrite after preflight must not
+            // authorize an effect dispatched for the ORIGINAL paid subject.
+            (int)$locked['plan_id']!==(int)($pay['plan_id']??0) ||
+            (int)($locked['order_id']??0)!==(int)($pay['order_id']??0) ||
+            (string)$locked['type']!==(string)($pay['type']??'') ||
+            (string)($locked['description']??'')!==(string)($pay['description']??'') ||
+            ($kind==='standard' &&
+                (int)($locked['current_plan_server']??0)!==$serverId) ||
             ($kind==='day' &&
                 preg_match('/^INCREASE_DAY_([1-9][0-9]*)_([1-9][0-9]*)$/D',
                     (string)$locked['type'],$m)!==1) ||
@@ -700,7 +724,9 @@ function achbotAutoBankFinishEdit(mysqli $db, array $pay,
             $db->rollback();return false;
         }
         if ($kind==='day' || $kind==='volume') {
-            if ((int)$m[1]!==$orderId || $units<=0) {
+            if ((int)$m[1]!==$orderId || $units<=0 ||
+                ((int)($locked['order_id']??0)!==0 &&
+                 (int)$locked['order_id']!==$orderId)) {
                 $db->rollback();return false;
             }
             $quote=$db->prepare("SELECT volume FROM ".
@@ -741,6 +767,11 @@ function achbotAutoBankFinishEdit(mysqli $db, array $pay,
                 (int)$order['inbound_id']!==0 ||
                 (int)$order['status']!==1 ||
                 (string)$order['remark']!==$remark ||
+                // Refresh physical group membership under SQL locks after
+                // remote verification. A revoked alias cannot finalize a
+                // previously valid preflight; do not trust its old snapshot.
+                !achbotSupportsMarzbanOrder($db,$orderId,
+                    (int)$locked['plan_id'],$userId,true) ||
                 // B may have finalized a newer edit after this payment's
                 // original pre-remote snapshot. Never let A restore old
                 // absolute expiry just because its own payment row is locked.
