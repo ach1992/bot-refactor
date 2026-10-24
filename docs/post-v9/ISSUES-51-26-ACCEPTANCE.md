@@ -410,6 +410,52 @@ restart require a separate operator authorization/procedure, not this code.
 Missing/mutated recipient identity also stops, it does not continue to a
 different user.
 
+**R1-A durable membership and progress:** Batch *membership* is frozen on
+the first successfully verified Marzban users fetch during Cron activation,
+rather than the earlier admin enqueue. Users added later are OUT of that
+batch, regardless of sort position. The exact original usernames are frozen
+and each pending recipient is resolved by name, never the fresh list index.
+Eligibility (active, positive quota/expiry) is evaluated at attempt time;
+disabled original recipients are skipped without edit. Deleted/unavailable
+original recipients cause a durable negative operator hold, never silent
+substitution or omission. When the provider reports total, the response
+must include that exact number of users.
+
+The original setting.value TEXT capacity is respected through bounded
+ACHBOT_GIFT_ROSTER_PART_<gift_id> chunk rows and a verified manifest row
+ACHBOT_GIFT_ROSTER_<gift_id> containing original units/server, chunk
+identifiers and hashes, a frozen member count and independent monotonic
+cursor. Creation is atomic under the unique gift_list.id row lock; no
+setting.type uniqueness/index is assumed. The independent roster cursor,
+legacy gift_list.offset, optional guarded local order update and removal
+of the pre-effect hold advance in the SAME transaction. An offset reset
+cannot authorize editing a previously completed username. Final job,
+manifest and chunk deletion is atomic on the next Cron invocation. The
+three affected tables must remain InnoDB, or no provider edit is allowed.
+
+**Upgrade/legacy boundary:** A positive-offset batch with no existing
+roster at first invocation after source upgrade cannot safely reconstruct
+its previously gifted recipients. It is placed on negative operator hold
+without an external request. Never re-create membership from a newer
+provider list, blindly reset gift_list.offset, delete the snapshot/hold or
+replay uncertain effects. Operator reconciliation requires a separately
+authorized, evidence-based procedure. No tenant SQL migration or real
+Marzban/Telegram operation is implied by this source-only change.
+**Deployment/rollback caution:** an older offset-only Cron worker does not
+understand these roster rows and can repeat a completed gift if the list
+changes. Before any separately authorized downgrade, pause/reconcile active
+gift batches and operator holds; never replace the worker while an active
+snapshot-dependent batch is running or rearm the numeric cursor as a
+rollback shortcut. Snapshot rows are operational evidence, not expendable
+cache files.
+
+The source-backed disposable PHP/MariaDB suite explicitly checks
+reordering, prepend/insertion, late additions, deletion, post-COMMIT
+interruption, concurrent Cron, legacy midflight upgrade, cursor mismatch,
+manifest tampering, large chunked rosters, incomplete provider lists,
+nontransactional schemas and local-order disappearance after volume-only
+remote verification. Installed/provider acceptance remains separately gated.
+
 **Durable CREATE / R2:** paid BUY_SUB and source-authenticated free-trial/
 admin-bulk 007 reservations capture the actual Marzban `panel_url`,
 `username`, `password` and panel-group identity in their source reservation

@@ -1218,6 +1218,23 @@ def main():
             "gift_verified_volume_1536_days_2",
             "gift_verified_volume_0_days_0",
             "inactive_recipient_never_inherits_previous_success_or_edit",
+            "r1a_interrupt_after_first_commit_durable_username_cursor",
+            "r1a_insert_prepend_only_original_pending_username_edited",
+            "r1a_late_added_user_explicitly_excluded",
+            "r1a_reordered_final_cleanup_no_replay_and_no_orphans",
+            "r1a_reorder_without_insertion_exactly_once_per_username",
+            "r1a_deleted_pending_member_holds_without_substitution",
+            "r1a_deleted_member_return_requires_operator_reconciliation",
+            "r1a_legacy_cursor_reset_detected_by_independent_roster_progress",
+            "r1a_legacy_inflight_without_snapshot_fails_closed",
+            "r1a_ambiguous_provider_usernames_never_edited",
+            "r1a_corrupt_roster_chunk_digest_no_external_replay",
+            "r1a_large_roster_bounded_chunks_preserve_all_original_members",
+            "r1a_parallel_cron_workers_one_remote_increment",
+            "r1a_parallel_completion_lifecycle_consistent",
+            "r1a_incomplete_provider_list_never_frozen",
+            "r1a_nontransactional_installed_table_fails_closed",
+            "r1a_volume_only_local_identity_lost_after_provider_held",
         }
         if not (gift.get("complete") is True and
                 set(gift.get("scenarios",[]))==required_gift and

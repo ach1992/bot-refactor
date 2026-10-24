@@ -31,6 +31,13 @@ function giftLog(string $kind,array $values=[]): void {
 function achbotSupportsPanel($type){ return $type==='marzban'; }
 function getMarzbanJson($sid) {
     giftLog('LIST',['server'=>$sid]);
+    $file=getenv('ACHBOT_GIFT_ROSTER_FILE');
+    if ($file && is_file($file)) {
+        $users=json_decode(file_get_contents($file));
+        if (!is_array($users)) throw new RuntimeException('bad_test_roster');
+        return (object)['users'=>$users,
+            'total'=>count($users)+(getenv('ACHBOT_GIFT_MODE')==='partial_page'?1:0)];
+    }
     return (object)['users'=>[
         (object)['username'=>'fixture-user','data_limit'=>2147483648,
             'expire'=>1800000100,'status'=>getenv('ACHBOT_FIRST_STATUS')?:'active'],
@@ -41,6 +48,9 @@ function getMarzbanJson($sid) {
 function achbotApplyServiceEdit($db,$serverId,array $change) {
     giftLog('EDIT',['server'=>$serverId,'change'=>$change]);
     $mode=getenv('ACHBOT_GIFT_MODE');
+    if ($mode==='parallel') usleep(200000);
+    if ($mode==='order_vanish_after_provider')
+        $db->query('DELETE FROM orders_list WHERE id=91');
     if ($mode==='throw') throw new RuntimeException('synthetic_response_lost');
     if ($mode==='refused') return (object)['success'=>false,'uncertain'=>false];
     if ($mode==='uncertain') return (object)['success'=>false,'uncertain'=>true];
@@ -54,6 +64,11 @@ function sendMessage(...$args){ giftLog('MESSAGE',['text'=>(string)$args[0],
     if (getenv('ACHBOT_GIFT_MODE')==='notify_fail' &&
         ($args[3]??null)===1001)
         throw new RuntimeException('synthetic_telegram_delivery_failure');
+    // Exit from the actual worker's post-COMMIT notification boundary.
+    // This process terminates before next recipient/cleanup, with no code
+    // mutation of the source PHP worker.
+    if (getenv('ACHBOT_GIFT_MODE')==='interrupt_after_commit' &&
+        ($args[3]??null)===1001) exit(0);
     return (object)['ok'=>true]; }
 function sendToAllAdmins(...$args){giftLog('ADMINS');return true;}
 '''
@@ -72,24 +87,42 @@ def q(work,env,sql):
 def require(condition, message):
     if not condition: raise RuntimeError(message)
 
-def run_tick(work,env,stage,log,mode,status='active'):
+def _php_command(stage,work):
+    return [
+        'php','-n','-d','extension=mysqlnd','-d','extension=mysqli',
+        '-d','display_errors=1',
+        '-d','disable_functions=curl_init,curl_exec,exec,shell_exec,system,passthru,popen,proc_open,mail',
+        '-d','allow_url_fopen=0','-d','open_basedir='+str(stage)+':'+str(work),
+        str(stage/'run.php')
+    ]
+
+def _roster(stage, members):
+    path=stage/'current-roster.json'
+    if members is None:
+        path.unlink(missing_ok=True)
+    else:
+        path.write_text(json.dumps(members,ensure_ascii=False))
+    return path
+
+def _run_env(env,work,log,roster_path,mode,status):
+    return {**env,'ACHBOT_GIFT_DB':DB,'ACHBOT_GIFT_SOCKET':str(work/'mysql.sock'),
+            'ACHBOT_GIFT_LOG':str(log),'ACHBOT_GIFT_MODE':mode,
+            'ACHBOT_GIFT_FIRST_STATUS':status, 'ACHBOT_FIRST_STATUS':status,
+            'ACHBOT_GIFT_ROSTER_FILE':str(roster_path)}
+
+def run_tick(work,env,stage,log,mode,status='active',members=None):
     if log.exists():log.unlink()
+    roster=_roster(stage,members)
     process=subprocess.run(
-        ['php','-n','-d','extension=mysqlnd','-d','extension=mysqli',
-         '-d','display_errors=1',
-         '-d','disable_functions=curl_init,curl_exec,exec,shell_exec,system,passthru,popen,proc_open,mail',
-         '-d','allow_url_fopen=0','-d','open_basedir='+str(stage)+':'+str(work),
-         str(stage/'run.php')],cwd=stage,
-        env={**env,'ACHBOT_GIFT_DB':DB,'ACHBOT_GIFT_SOCKET':str(work/'mysql.sock'),
-             'ACHBOT_GIFT_LOG':str(log),'ACHBOT_GIFT_MODE':mode,
-             'ACHBOT_FIRST_STATUS':status},
+        _php_command(stage,work),cwd=stage,
+        env=_run_env(env,work,log,roster,mode,status),
         capture_output=True,text=True,timeout=45)
     require(process.returncode==0 and not process.stdout and not process.stderr,
             f"Worker PHP failed mode={mode}: {process.returncode} {process.stdout[-800:]} {process.stderr[-1600:]}")
     return [json.loads(line) for line in log.read_text().splitlines()] if log.exists() else []
 
 def setup_gift(work,env,volume,day):
-    q(work,env,"DELETE FROM setting WHERE type LIKE 'ACHBOT_GIFT_HOLD_%'")
+    q(work,env,"DELETE FROM setting WHERE type LIKE 'ACHBOT_GIFT_%'")
     q(work,env,"DELETE FROM gift_list")
     q(work,env,f"UPDATE orders_list SET server_id=2,inbound_id=0,remark='fixture-user',"
       f"expire_date={ORIGINAL_EXPIRY} WHERE id=91")
@@ -98,11 +131,174 @@ def setup_gift(work,env,volume,day):
 
 def state(work,env,gift_id):
     offset=q(work,env,f'SELECT `offset` FROM gift_list WHERE id={gift_id}')
-    expiry=int(q(work,env,'SELECT expire_date FROM orders_list WHERE id=91'))
+    expiry_raw=q(work,env,'SELECT expire_date FROM orders_list WHERE id=91')
+    expiry=int(expiry_raw) if expiry_raw else None
     holds=int(q(work,env,f"SELECT COUNT(*) FROM setting WHERE type='ACHBOT_GIFT_HOLD_{gift_id}'"))
     detail=q(work,env,f"SELECT value FROM setting WHERE type='ACHBOT_GIFT_HOLD_{gift_id}' LIMIT 1")
     return (None if offset=='' else int(offset),expiry,holds,
             json.loads(detail) if detail else None)
+
+def member(name,status='active'):
+    return {'username':name,'data_limit':2147483648,
+            'expire':ORIGINAL_EXPIRY,'status':status}
+
+def seed_second_order(work,env):
+    q(work,env,"DELETE FROM orders_list WHERE id=92")
+    q(work,env,"INSERT INTO orders_list "
+      "SELECT 92,1002,token,transid,fileid,server_id,inbound_id,'bob',"
+      "uuid,protocol,expire_date,link,amount,status,date,notif,rahgozar,"
+      "agent_bought,autoRenew FROM orders_list WHERE id=91")
+
+def manifest(work,env,gift_id):
+    raw=q(work,env,f"SELECT value FROM setting WHERE type='ACHBOT_GIFT_ROSTER_{gift_id}'")
+    return json.loads(raw) if raw else None
+
+def effect_names(events):
+    return [e['change']['remark'] for e in events if e['kind']=='EDIT']
+
+def parallel_ticks(work,env,stage,base_log,members):
+    roster=_roster(stage,members)
+    processes=[]
+    logs=[base_log.with_name(base_log.name+f'.parallel-{i}') for i in range(2)]
+    for log in logs:
+        log.unlink(missing_ok=True)
+        processes.append(subprocess.Popen(
+            _php_command(stage,work),cwd=stage,
+            env=_run_env(env,work,log,roster,'parallel','active'),
+            stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True))
+    events=[]
+    for process,log in zip(processes,logs):
+        stdout,stderr=process.communicate(timeout=45)
+        require(process.returncode==0 and not stdout and not stderr,
+                f'Parallel PHP failed: {process.returncode} {stdout[-400:]} {stderr[-800:]}')
+        if log.exists():events.extend(json.loads(line) for line in log.read_text().splitlines())
+    return events
+
+def exercise_roster_cases(work,env,stage,log,cases):
+    first=[member('fixture-user'),member('bob')]
+    added=[member('carol'),member('fixture-user'),member('bob')]
+    reordered=[member('bob'),member('fixture-user')]
+    # A real PHP exit from sendMessage happens immediately AFTER first
+    # verified provider edit + local/snapshot commit, but before next member.
+    gift=setup_gift(work,env,2048,2)
+    seed_second_order(work,env)
+    event=run_tick(work,env,stage,log,'interrupt_after_commit',members=first)
+    meta=manifest(work,env,gift)
+    require(effect_names(event)==['fixture-user'] and state(work,env,gift)[0]==1 and
+            meta is not None and meta['cursor']==1 and meta['count']==2,
+            'First completed user was not durably frozen before interruption')
+    cases.append('r1a_interrupt_after_first_commit_durable_username_cursor')
+
+    event=run_tick(work,env,stage,log,'verified',members=added)
+    require(effect_names(event)==['bob'] and state(work,env,gift)[0]==2 and
+            manifest(work,env,gift)['cursor']==2 and
+            int(q(work,env,'SELECT expire_date FROM orders_list WHERE id=92'))==VERIFIED_EXPIRY,
+            'Prepending a new user retargeted or repeated a completed account')
+    cases.append('r1a_insert_prepend_only_original_pending_username_edited')
+    require('carol' not in effect_names(event) and 'fixture-user' not in effect_names(event),
+            'New or completed username received an extra gift')
+    cases.append('r1a_late_added_user_explicitly_excluded')
+    event=run_tick(work,env,stage,log,'verified',
+                   members=[member('bob'),member('carol'),member('fixture-user')])
+    require(not effect_names(event) and state(work,env,gift)[0] is None and
+            manifest(work,env,gift) is None and
+            q(work,env,f"SELECT COUNT(*) FROM setting WHERE type='ACHBOT_GIFT_ROSTER_PART_{gift}'")=='0',
+            'Next-tick batch completion replayed an account or leaked roster chunks')
+    cases.append('r1a_reordered_final_cleanup_no_replay_and_no_orphans')
+
+    gift=setup_gift(work,env,2048,2)
+    seed_second_order(work,env)
+    event=run_tick(work,env,stage,log,'interrupt_after_commit',members=first)
+    require(effect_names(event)==['fixture-user'],'Interrupted first gift did not complete')
+    event=run_tick(work,env,stage,log,'verified',
+                   members=[member('bob'),member('fixture-user')])
+    require(effect_names(event)==['bob'] and state(work,env,gift)[0]==2,
+            'Pure reorder changed the recipient identity')
+    cases.append('r1a_reorder_without_insertion_exactly_once_per_username')
+
+    gift=setup_gift(work,env,2048,2)
+    seed_second_order(work,env)
+    run_tick(work,env,stage,log,'interrupt_after_commit',members=first)
+    event=run_tick(work,env,stage,log,'verified',members=[member('fixture-user'),
+                                                         member('carol')])
+    offset,expiry,hold,detail=state(work,env,gift)
+    require(not effect_names(event) and offset==-2 and hold==1 and
+            detail['recipient_index']==1 and detail['username']=='bob' and
+            manifest(work,env,gift)['cursor']==1,
+            'Deleted pending member did not preserve original identity in hold')
+    cases.append('r1a_deleted_pending_member_holds_without_substitution')
+    event=run_tick(work,env,stage,log,'verified',members=first)
+    require(not effect_names(event) and state(work,env,gift)[0]==-2,
+            'Restoring deleted username automatically replayed held effect')
+    cases.append('r1a_deleted_member_return_requires_operator_reconciliation')
+
+    gift=setup_gift(work,env,2048,2)
+    seed_second_order(work,env)
+    run_tick(work,env,stage,log,'interrupt_after_commit',members=first)
+    q(work,env,f'UPDATE gift_list SET `offset`=0 WHERE id={gift}')
+    event=run_tick(work,env,stage,log,'verified',members=first)
+    require(not effect_names(event) and state(work,env,gift)[0]==-1 and
+            manifest(work,env,gift)['cursor']==1,
+            'Manual reset of old numeric cursor replayed completed username')
+    cases.append('r1a_legacy_cursor_reset_detected_by_independent_roster_progress')
+
+    gift=setup_gift(work,env,2048,2)
+    seed_second_order(work,env)
+    q(work,env,f'UPDATE gift_list SET `offset`=1 WHERE id={gift}')
+    event=run_tick(work,env,stage,log,'verified',members=added)
+    offset,_,held,detail=state(work,env,gift)
+    require(not effect_names(event) and offset==-2 and held==1 and
+            detail['reason']=='roster_snapshot_requires_reconciliation',
+            'Existing pre-upgrade positive offset reconstructed unsafe membership')
+    cases.append('r1a_legacy_inflight_without_snapshot_fails_closed')
+
+    gift=setup_gift(work,env,2048,2)
+    event=run_tick(work,env,stage,log,'verified',
+                   members=[member('fixture-user'),member('fixture-user')])
+    require(not effect_names(event) and state(work,env,gift)[0]==-1 and
+            manifest(work,env,gift) is None,
+            'Provider with duplicate usernames was treated as a valid identity map')
+    cases.append('r1a_ambiguous_provider_usernames_never_edited')
+
+    gift=setup_gift(work,env,2048,2)
+    seed_second_order(work,env)
+    run_tick(work,env,stage,log,'interrupt_after_commit',members=first)
+    raw=q(work,env,f"SELECT value FROM setting WHERE type='ACHBOT_GIFT_ROSTER_{gift}'")
+    data=json.loads(raw);data['chunks'][0]['hash']='0'*64
+    damaged=json.dumps(data,ensure_ascii=False).replace("'","''")
+    q(work,env,f"UPDATE setting SET value='{damaged}' WHERE type='ACHBOT_GIFT_ROSTER_{gift}'")
+    event=run_tick(work,env,stage,log,'verified',members=first)
+    require(not effect_names(event) and state(work,env,gift)[0]==-2,
+            'Corrupt roster chunk digest did not fail closed')
+    cases.append('r1a_corrupt_roster_chunk_digest_no_external_replay')
+
+    gift=setup_gift(work,env,2048,2)
+    long_names=[member('u'+str(i).zfill(6)+'x'*70,'disabled') for i in range(650)]
+    event=run_tick(work,env,stage,log,'interrupt_after_commit',
+                   members=[member('fixture-user')]+long_names)
+    meta=manifest(work,env,gift)
+    require(effect_names(event)==['fixture-user'] and
+            meta is not None and len(meta['chunks'])>=2 and
+            meta['count']==651 and meta['cursor']==1 and
+            state(work,env,gift)[0]==1,
+            'Large provider membership was truncated instead of chunk-frozen')
+    parts=q(work,env,
+        f"SELECT COUNT(*) FROM setting WHERE type='ACHBOT_GIFT_ROSTER_PART_{gift}'")
+    require(int(parts)==len(meta['chunks']),
+            'Durable chunk inventory does not match manifest')
+    cases.append('r1a_large_roster_bounded_chunks_preserve_all_original_members')
+
+    gift=setup_gift(work,env,2048,2)
+    event=parallel_ticks(work,env,stage,log,[member('fixture-user'),
+                                            member('inactive-user','disabled')])
+    require(effect_names(event).count('fixture-user')==1 and len(effect_names(event))==1 and
+            state(work,env,gift)[0]==2 and manifest(work,env,gift)['cursor']==2,
+            'Two Cron processes dispatched a duplicate remote increment')
+    cases.append('r1a_parallel_cron_workers_one_remote_increment')
+    event=run_tick(work,env,stage,log,'verified',members=added)
+    require(not effect_names(event) and state(work,env,gift)[0] is None,
+            'Finalizing concurrent batch dispatched another increment')
+    cases.append('r1a_parallel_completion_lifecycle_consistent')
 
 def main():
     ap=argparse.ArgumentParser()
@@ -199,6 +395,36 @@ def main():
         require(not [x for x in events if x['kind']=='EDIT'],'Inactive user edited')
         require(state(work,env,gift_id)[0]==2,'Inactive user was not advanced without effect')
         cases.append('inactive_recipient_never_inherits_previous_success_or_edit')
+
+        exercise_roster_cases(work,env,stage,log,cases)
+
+        gift_id=setup_gift(work,env,2048,2)
+        events=run_tick(work,env,stage,log,'partial_page',
+                        members=[member('fixture-user')])
+        require(not effect_names(events) and state(work,env,gift_id)[0]==0 and
+                manifest(work,env,gift_id) is None,
+                'Provider total/list mismatch established an unsafe snapshot')
+        cases.append('r1a_incomplete_provider_list_never_frozen')
+
+        gift_id=setup_gift(work,env,2048,2)
+        q(work,env,'ALTER TABLE gift_list ENGINE=MyISAM')
+        try:
+            events=run_tick(work,env,stage,log,'verified')
+            require(not effect_names(events) and state(work,env,gift_id)[0]==0,
+                    'Nontransactional gift table permitted a provider call')
+        finally:
+            q(work,env,'ALTER TABLE gift_list ENGINE=InnoDB')
+        cases.append('r1a_nontransactional_installed_table_fails_closed')
+
+        gift_id=setup_gift(work,env,2048,0)
+        events=run_tick(work,env,stage,log,'order_vanish_after_provider')
+        offset,_,hold,detail=state(work,env,gift_id)
+        require(effect_names(events)==['fixture-user'] and offset==-1 and hold==1 and
+                not [x for x in events if x['kind']=='MESSAGE' and
+                     x['recipient']==1001] and
+                detail['username']=='fixture-user',
+                'Remote volume-only edit with deleted local order falsely completed')
+        cases.append('r1a_volume_only_local_identity_lost_after_provider_held')
     result={'complete':True,'cases':len(cases),'scenarios':cases,
         'actual_gift_worker':True,'owned_mariadb_only':True,
         'real_provider_requests':0,'customer_money_effects':0}

@@ -22,6 +22,11 @@ $volume=(int)$gift['volume'];
 $day=(int)$gift['day'];
 $offset=(int)$gift['offset'];
 $holdType='ACHBOT_GIFT_HOLD_'.$rowId;
+$rosterType='ACHBOT_GIFT_ROSTER_'.$rowId;
+$partType='ACHBOT_GIFT_ROSTER_PART_'.$rowId;
+$rosterId=0;
+$rosterMeta=null;
+$rosterNames=[];
 
 // Even if an operator manually resets the offset, an unresolved hold record
 // prevents a second external edit. Only a separately audited reconciliation
@@ -33,6 +38,28 @@ if (!$check->execute()) { $check->close(); return; }
 $unresolved=(bool)$check->get_result()->fetch_assoc();
 $check->close();
 if ($offset<0 || $unresolved) return;
+
+// Atomic gift/snapshot/hold transitions depend on InnoDB. Do not make
+// provider calls on an installed tenant whose original tables were converted
+// to a nontransactional engine.
+$engines=$connection->query(
+    "SELECT TABLE_NAME,ENGINE FROM information_schema.TABLES
+     WHERE TABLE_SCHEMA=DATABASE()
+       AND TABLE_NAME IN ('gift_list','setting','orders_list')"
+);
+if (!$engines || $engines->num_rows!==3) {
+    sendMessage('وضعیت تراکنشی پایگاه داده هدیه تأیید نشد؛ بررسی مدیر لازم است.',
+                null,null,$admin);
+    return;
+}
+foreach ($engines->fetch_all(MYSQLI_ASSOC) as $table) {
+    if (strtoupper((string)$table['ENGINE'])!=='INNODB') {
+        sendMessage('ساختار تراکنشی هدیه معتبر نیست؛ عملیات متوقف شد.',
+                    null,null,$admin);
+        return;
+    }
+}
+$engines->free();
 
 $notifyHold=static function(string $remark,int $index,string $reason) use (
     $admin,$rowId,$serverId,$holdType
@@ -48,8 +75,135 @@ $notifyHold=static function(string $remark,int $index,string $reason) use (
     );
 };
 
+
+/**
+ * R1-A: Freeze initial batch membership by Marzban username, not numeric
+ * position in a later /api/users response. Store a compact durable manifest
+ * plus bounded chunks in original setting rows (TEXT <= 65535 bytes).
+ *
+ * The original setting.type is NOT unique; gift_list.id is. Serialize initial
+ * creation, cursor updates and final deletion through its InnoDB row lock.
+ * A started legacy job without a roster cannot be safely reconstructed.
+ */
+$freezeRoster=static function(array $members) use (
+    $connection,$rowId,$serverId,$volume,$day,$rosterType,$partType,$offset
+): array {
+    if (!$connection->begin_transaction())
+        throw new RuntimeException('gift_roster_begin_failed');
+    try {
+        $job=$connection->prepare('SELECT server_id,volume,day,`offset` FROM gift_list WHERE id=? FOR UPDATE');
+        if (!$job) throw new RuntimeException('gift_roster_job_prepare');
+        $job->bind_param('i',$rowId);
+        $ok=$job->execute();$live=$ok?$job->get_result()->fetch_assoc():null;
+        $job->close();
+        if (!$live || (int)$live['server_id']!==$serverId ||
+            (int)$live['volume']!==$volume || (int)$live['day']!==$day ||
+            (int)$live['offset']!==$offset)
+            throw new RuntimeException('gift_roster_job_changed');
+
+        $stmt=$connection->prepare('SELECT id,value FROM setting WHERE type=? LIMIT 2');
+        if (!$stmt) throw new RuntimeException('gift_roster_lookup_prepare');
+        $stmt->bind_param('s',$rosterType);
+        $ok=$stmt->execute();$existing=$ok?$stmt->get_result()->fetch_all(MYSQLI_ASSOC):null;
+        $stmt->close();
+        if ($existing===null || count($existing)>1)
+            throw new RuntimeException('gift_roster_ambiguous');
+
+        if (!$existing) {
+            // Pre-upgrade continuation: the earlier completed usernames are
+            // unknowable. A new list MUST NOT be used for its old offset.
+            if ($offset!==0) throw new RuntimeException('gift_legacy_roster_missing');
+            $chunks=[];$block=[];$bytes=2;
+            $store=static function(array $names) use ($connection,$partType,&$chunks): void {
+                if (!$names) return;
+                $payload=json_encode($names,JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE);
+                if (strlen($payload)>32000)
+                    throw new RuntimeException('gift_roster_part_too_large');
+                $stmt=$connection->prepare('INSERT INTO setting (type,value) VALUES (?,?)');
+                if (!$stmt) throw new RuntimeException('gift_roster_part_prepare');
+                $stmt->bind_param('ss',$partType,$payload);
+                $ok=$stmt->execute();$id=(int)$stmt->insert_id;$stmt->close();
+                if (!$ok || $id<=0) throw new RuntimeException('gift_roster_part_write_failed');
+                $chunks[]=['id'=>$id,'count'=>count($names),'hash'=>hash('sha256',$payload)];
+            };
+            foreach ($members as $name) {
+                $length=strlen(json_encode($name,JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE))+1;
+                if ($length>32000) throw new RuntimeException('gift_roster_member_too_large');
+                if ($block && $bytes+$length>32000) {
+                    $store($block);$block=[];$bytes=2;
+                }
+                $block[]=$name;$bytes+=$length;
+            }
+            $store($block);
+            $meta=[
+                'version'=>1,'gift_id'=>$rowId,'server_id'=>$serverId,
+                'volume_mb'=>$volume,'days'=>$day,
+                'membership'=>'first_successful_cron_fetch','cursor'=>0,
+                'count'=>count($members),'chunks'=>$chunks,
+                'created_at'=>gmdate('c')
+            ];
+            $payload=json_encode($meta,JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE);
+            if (strlen($payload)>60000)
+                throw new RuntimeException('gift_roster_manifest_too_large');
+            $stmt=$connection->prepare('INSERT INTO setting (type,value) VALUES (?,?)');
+            if (!$stmt) throw new RuntimeException('gift_roster_manifest_prepare');
+            $stmt->bind_param('ss',$rosterType,$payload);
+            $ok=$stmt->execute();$id=(int)$stmt->insert_id;$stmt->close();
+            if (!$ok || $id<=0) throw new RuntimeException('gift_roster_manifest_failed');
+        } else {
+            $id=(int)$existing[0]['id'];
+            $meta=json_decode((string)$existing[0]['value'],true);
+        }
+        if (!is_array($meta) || ($meta['version']??null)!==1 ||
+            ($meta['gift_id']??null)!==$rowId ||
+            ($meta['server_id']??null)!==$serverId ||
+            ($meta['volume_mb']??null)!==$volume ||
+            ($meta['days']??null)!==$day ||
+            !is_int($meta['cursor']??null) || $meta['cursor']!==$offset ||
+            !is_int($meta['count']??null) || $meta['count']<0 ||
+            $meta['count']>=2147483647 ||
+            !is_array($meta['chunks']??null))
+            throw new RuntimeException('gift_roster_manifest_invalid');
+
+        $frozen=[];$seen=[];
+        foreach ($meta['chunks'] as $chunk) {
+            if (!is_array($chunk) || !is_int($chunk['id']??null) ||
+                $chunk['id']<=0 || !is_int($chunk['count']??null) ||
+                $chunk['count']<=0 || !is_string($chunk['hash']??null))
+                throw new RuntimeException('gift_roster_chunk_metadata_invalid');
+            $partId=$chunk['id'];
+            $stmt=$connection->prepare('SELECT type,value FROM setting WHERE id=?');
+            if (!$stmt) throw new RuntimeException('gift_roster_chunk_read_prepare');
+            $stmt->bind_param('i',$partId);
+            $ok=$stmt->execute();$part=$ok?$stmt->get_result()->fetch_assoc():null;
+            $stmt->close();
+            if (!$part || $part['type']!==$partType ||
+                !hash_equals($chunk['hash'],hash('sha256',(string)$part['value'])))
+                throw new RuntimeException('gift_roster_chunk_modified');
+            $names=json_decode((string)$part['value'],true);
+            if (!is_array($names) || !array_is_list($names) ||
+                count($names)!==$chunk['count'])
+                throw new RuntimeException('gift_roster_chunk_invalid');
+            foreach ($names as $name) {
+                if (!is_string($name) || $name==='' || strlen($name)>400 ||
+                    isset($seen[$name]))
+                    throw new RuntimeException('gift_roster_member_invalid');
+                $seen[$name]=true;$frozen[]=$name;
+            }
+        }
+        if (count($frozen)!==$meta['count'])
+            throw new RuntimeException('gift_roster_count_mismatch');
+        if ($connection->commit()!==true)
+            throw new RuntimeException('gift_roster_commit_unknown');
+        return [$id,$meta,$frozen];
+    } catch (Throwable $e) {
+        try { $connection->rollback(); } catch (Throwable $ignored) {}
+        throw $e;
+    }
+};
+
 $reserve=static function(int $index,string $remark,string $reason) use (
-    $connection,$rowId,$serverId,$volume,$day,$holdType
+    $connection,$rowId,$serverId,$volume,$day,$holdType,$rosterType,&$rosterId
 ): array {
     if ($index<0 || $index>=2147483647)
         throw new RuntimeException('gift_cursor_out_of_range');
@@ -63,7 +217,28 @@ $reserve=static function(int $index,string $remark,string $reason) use (
     if (!$connection->begin_transaction())
         throw new RuntimeException('gift_hold_begin_failed');
     try {
-        $check=$connection->prepare('SELECT id FROM setting WHERE type=? LIMIT 1 FOR UPDATE');
+        // The gift row (unique PK) serializes all Cron workers. This remains
+        // safe even though setting.type lacks a UNIQUE index.
+        $job=$connection->prepare('SELECT `offset` FROM gift_list WHERE id=? FOR UPDATE');
+        if (!$job) throw new RuntimeException('gift_reserve_job_prepare');
+        $job->bind_param('i',$rowId);
+        $ok=$job->execute();$live=$ok?$job->get_result()->fetch_assoc():null;
+        $job->close();
+        if (!$live || (int)$live['offset']!==$index)
+            throw new RuntimeException('gift_reserve_cursor_changed');
+        if ($reason==='pending_service_edit') {
+            if ($rosterId<=0)
+                throw new RuntimeException('gift_reserve_roster_missing');
+            $state=$connection->prepare('SELECT value FROM setting WHERE id=? AND type=? FOR UPDATE');
+            if (!$state) throw new RuntimeException('gift_reserve_roster_prepare');
+            $state->bind_param('is',$rosterId,$rosterType);
+            $ok=$state->execute();$entry=$ok?$state->get_result()->fetch_assoc():null;
+            $state->close();
+            $roster=$entry?json_decode((string)$entry['value'],true):null;
+            if (!is_array($roster) || ($roster['cursor']??null)!==$index)
+                throw new RuntimeException('gift_reserve_roster_changed');
+        }
+        $check=$connection->prepare('SELECT id FROM setting WHERE type=? LIMIT 1');
         if (!$check) throw new RuntimeException('gift_hold_check_prepare');
         $check->bind_param('s',$holdType);
         $ok=$check->execute();$existing=$ok?$check->get_result()->fetch_assoc():true;
@@ -93,11 +268,47 @@ $reserve=static function(int $index,string $remark,string $reason) use (
 };
 
 $finish=static function(
-    int $held,int $holdId,int $next,?array $order,?int $absoluteExpire
-) use ($connection,$rowId,$serverId,$holdType): void {
+    int $before,?int $holdId,int $next,?array $order,?int $absoluteExpire
+) use ($connection,$rowId,$serverId,$holdType,$rosterType,&$rosterId): void {
+    if ($rosterId<=0) throw new RuntimeException('gift_roster_missing_at_finish');
+    $index=$before<0 ? -$before-1 : $before;
+    if ($next!==$index+1) throw new RuntimeException('gift_finish_bad_progress');
     if (!$connection->begin_transaction())
         throw new RuntimeException('gift_finish_begin_failed');
     try {
+        $job=$connection->prepare('SELECT `offset` FROM gift_list WHERE id=? FOR UPDATE');
+        if (!$job) throw new RuntimeException('gift_finish_job_prepare');
+        $job->bind_param('i',$rowId);
+        $ok=$job->execute();$live=$ok?$job->get_result()->fetch_assoc():null;
+        $job->close();
+        if (!$live || (int)$live['offset']!==$before)
+            throw new RuntimeException('gift_finish_job_changed');
+        $state=$connection->prepare('SELECT value FROM setting WHERE id=? AND type=? FOR UPDATE');
+        if (!$state) throw new RuntimeException('gift_finish_roster_prepare');
+        $state->bind_param('is',$rosterId,$rosterType);
+        $ok=$state->execute();$entry=$ok?$state->get_result()->fetch_assoc():null;
+        $state->close();
+        $roster=$entry?json_decode((string)$entry['value'],true):null;
+        if (!is_array($roster) || ($roster['cursor']??null)!==$index ||
+            !is_int($roster['count']??null) || $next>$roster['count'])
+            throw new RuntimeException('gift_finish_roster_changed');
+
+        // Volume-only gifts have no expiry UPDATE, but their original local
+        // account/order identity must still exist at completion. Do not emit
+        // success for a deleted/reassigned order after the remote increment.
+        if ($order!==null && $absoluteExpire===null) {
+            $stmt=$connection->prepare(
+                'SELECT id FROM orders_list WHERE id=? AND userid=? AND server_id=? AND remark=? AND expire_date=? FOR UPDATE');
+            if (!$stmt) throw new RuntimeException('gift_volume_identity_prepare');
+            $oid=(int)$order['id'];$uid=(int)$order['userid'];
+            $originalExpire=(int)$order['expire_date'];
+            $remark=(string)$order['remark'];
+            $stmt->bind_param('iiisi',$oid,$uid,$serverId,$remark,$originalExpire);
+            $ok=$stmt->execute();$existing=$ok?$stmt->get_result()->fetch_all(MYSQLI_ASSOC):null;
+            $stmt->close();
+            if ($existing===null || count($existing)!==1)
+                throw new RuntimeException('gift_volume_local_identity_unconfirmed');
+        }
         if ($order!==null && $absoluteExpire!==null) {
             if ($absoluteExpire<=0 || $absoluteExpire>2147483647)
                 throw new RuntimeException('gift_expiry_unrepresentable');
@@ -109,30 +320,99 @@ $finish=static function(
             $beforeExpire=(int)$order['expire_date'];
             $stmt->bind_param('iiiisi',$absoluteExpire,$id,$uid,$serverId,$remark,$beforeExpire);
             $ok=$stmt->execute();$count=$stmt->affected_rows;$stmt->close();
-            // A missing or already changed row requires operator review,
-            // never a blind replay of the successfully applied external edit.
             if (!$ok || $count!==1)
                 throw new RuntimeException('gift_local_update_unconfirmed');
         }
 
         $stmt=$connection->prepare('UPDATE gift_list SET `offset`=? WHERE id=? AND `offset`=?');
         if (!$stmt) throw new RuntimeException('gift_finish_cursor_prepare');
-        $stmt->bind_param('iii',$next,$rowId,$held);
+        $stmt->bind_param('iii',$next,$rowId,$before);
         $ok=$stmt->execute();$count=$stmt->affected_rows;$stmt->close();
         if (!$ok || $count!==1)
             throw new RuntimeException('gift_finish_cursor_unconfirmed');
 
-        $stmt=$connection->prepare('DELETE FROM setting WHERE id=? AND type=?');
-        if (!$stmt) throw new RuntimeException('gift_finish_hold_prepare');
-        $stmt->bind_param('is',$holdId,$holdType);
+        // Durable cursor CAS is transactional with the local order and gift
+        // progress. Manual offset reset alone cannot repeat completed members.
+        $roster['cursor']=$next;
+        $encoded=json_encode($roster,JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE);
+        $stmt=$connection->prepare('UPDATE setting SET value=? WHERE id=? AND type=?');
+        if (!$stmt) throw new RuntimeException('gift_finish_roster_update_prepare');
+        $stmt->bind_param('sis',$encoded,$rosterId,$rosterType);
         $ok=$stmt->execute();$count=$stmt->affected_rows;$stmt->close();
         if (!$ok || $count!==1)
-            throw new RuntimeException('gift_finish_hold_unconfirmed');
+            throw new RuntimeException('gift_finish_roster_update_unconfirmed');
+
+        if ($holdId!==null) {
+            $stmt=$connection->prepare('DELETE FROM setting WHERE id=? AND type=?');
+            if (!$stmt) throw new RuntimeException('gift_finish_hold_prepare');
+            $stmt->bind_param('is',$holdId,$holdType);
+            $ok=$stmt->execute();$count=$stmt->affected_rows;$stmt->close();
+            if (!$ok || $count!==1)
+                throw new RuntimeException('gift_finish_hold_unconfirmed');
+        }
         if ($connection->commit()!==true)
             throw new RuntimeException('gift_finish_commit_unconfirmed');
     } catch (Throwable $e) {
         try { $connection->rollback(); } catch (Throwable $ignored) {}
         throw $e;
+    }
+};
+
+$closeRoster=static function(int $id,array $meta,int $count) use (
+    $connection,$rowId,$rosterType,$partType,$holdType
+): bool {
+    if (!$connection->begin_transaction()) return false;
+    try {
+        $job=$connection->prepare('SELECT `offset` FROM gift_list WHERE id=? FOR UPDATE');
+        if (!$job) throw new RuntimeException('gift_close_job_prepare');
+        $job->bind_param('i',$rowId);
+        $ok=$job->execute();$live=$ok?$job->get_result()->fetch_assoc():null;
+        $job->close();
+        if (!$live || (int)$live['offset']!==$count)
+            throw new RuntimeException('gift_close_cursor_changed');
+        $stmt=$connection->prepare('SELECT value FROM setting WHERE id=? AND type=? FOR UPDATE');
+        if (!$stmt) throw new RuntimeException('gift_close_roster_prepare');
+        $stmt->bind_param('is',$id,$rosterType);
+        $ok=$stmt->execute();$entry=$ok?$stmt->get_result()->fetch_assoc():null;
+        $stmt->close();
+        $record=$entry?json_decode((string)$entry['value'],true):null;
+        if (!is_array($record) || ($record['cursor']??null)!==$count ||
+            ($record['count']??null)!==$count ||
+            ($record['chunks']??null)!==$meta['chunks'])
+            throw new RuntimeException('gift_close_roster_changed');
+        $stmt=$connection->prepare('SELECT id FROM setting WHERE type=? LIMIT 1');
+        if (!$stmt) throw new RuntimeException('gift_close_hold_prepare');
+        $stmt->bind_param('s',$holdType);
+        $ok=$stmt->execute();$hold=$ok?$stmt->get_result()->fetch_assoc():true;
+        $stmt->close();
+        if ($hold) throw new RuntimeException('gift_close_active_hold');
+        foreach ($meta['chunks'] as $part) {
+            $stmt=$connection->prepare('DELETE FROM setting WHERE id=? AND type=?');
+            if (!$stmt) throw new RuntimeException('gift_close_part_prepare');
+            $partId=$part['id'];
+            $stmt->bind_param('is',$partId,$partType);
+            $ok=$stmt->execute();$affected=$stmt->affected_rows;$stmt->close();
+            if (!$ok || $affected!==1)
+                throw new RuntimeException('gift_close_part_unconfirmed');
+        }
+        $stmt=$connection->prepare('DELETE FROM setting WHERE id=? AND type=?');
+        if (!$stmt) throw new RuntimeException('gift_close_manifest_prepare');
+        $stmt->bind_param('is',$id,$rosterType);
+        $ok=$stmt->execute();$affected=$stmt->affected_rows;$stmt->close();
+        if (!$ok || $affected!==1)
+            throw new RuntimeException('gift_close_manifest_unconfirmed');
+        $stmt=$connection->prepare('DELETE FROM gift_list WHERE id=? AND `offset`=?');
+        if (!$stmt) throw new RuntimeException('gift_close_job_delete_prepare');
+        $stmt->bind_param('ii',$rowId,$count);
+        $ok=$stmt->execute();$affected=$stmt->affected_rows;$stmt->close();
+        if (!$ok || $affected!==1)
+            throw new RuntimeException('gift_close_job_unconfirmed');
+        if ($connection->commit()!==true)
+            throw new RuntimeException('gift_close_commit_unknown');
+        return true;
+    } catch (Throwable $e) {
+        try { $connection->rollback(); } catch (Throwable $ignored) {}
+        return false;
     }
 };
 
@@ -171,8 +451,44 @@ if ($volume>0) $change['plus_volume']=intdiv($volume,1024);
 if ($day>0) $change['plus_day']=$day;
 
 $listed=getMarzbanJson($serverId);
-if (!is_object($listed) || !is_array($listed->users??null)) {
+if (!is_object($listed) || !is_array($listed->users??null) ||
+    (property_exists($listed,'total') &&
+     (!is_int($listed->total) || $listed->total!==count($listed->users)))) {
     sendMessage('فهرست کاربران هدیه تأیید نشد؛ هیچ تغییری ثبت نشد.',null,null,$admin);
+    return;
+}
+// Check the entire fresh API result for duplicate/malformed identities.
+// A moved index is irrelevant; a missing snapshotted username is NOT.
+$liveMembers=[];$liveNames=[];$ambiguous=false;
+foreach ($listed->users as $user) {
+    $name=is_object($user)?($user->username??null):null;
+    if (!is_string($name) || $name==='' || strlen($name)>400 ||
+        array_key_exists($name,$liveMembers)) {
+        $ambiguous=true;break;
+    }
+    $liveMembers[$name]=$user;
+    $liveNames[]=$name;
+}
+if ($ambiguous) {
+    try {
+        $reserve($offset,'','provider_membership_ambiguous');
+        $notifyHold('',$offset,'provider_membership_ambiguous');
+    } catch (Throwable $e) {
+        sendMessage('فهرست گیرندگان هدیه مبهم است؛ بررسی مدیر لازم است.',null,null,$admin);
+    }
+    return;
+}
+try {
+    [$rosterId,$rosterMeta,$rosterNames]=$freezeRoster($liveNames);
+} catch (Throwable $e) {
+    // A pre-upgrade partially completed job cannot reconstruct its original
+    // membership. Hold it, rather than silently replay or skip a user.
+    try {
+        $reserve($offset,'','roster_snapshot_requires_reconciliation');
+        $notifyHold('',$offset,'roster_snapshot_requires_reconciliation');
+    } catch (Throwable $ignored) {
+        sendMessage('فهرست ثابت هدیه تأیید نشد؛ پردازش متوقف و بررسی مدیر لازم است.',null,null,$admin);
+    }
     return;
 }
 if ($offset===0) {
@@ -181,27 +497,35 @@ if ($offset===0) {
         'reply_markup'=>null,'parse_mode'=>null]);
 }
 
-$found=false;
-foreach ($listed->users as $index=>$user) {
-    if (!is_int($index) || $index<$offset) continue;
-    $found=true;
-    if ($index!==$offset) {
-        // Never silently skip a missing or reordered cursor position.
-        sendMessage('فهرست کاربران هدیه جابه‌جا شده؛ بررسی دستی لازم است.',null,null,$admin);
+// One exact frozen username per position, irrespective of fresh list order.
+// Late arrivals are OUT of the batch. Missing original recipients require
+// reconciliation, not auto-substitution or silently advancing a cursor.
+$processedThisTick=false;
+foreach ($rosterNames as $index=>$remark) {
+    if ($index<$offset) continue;
+    $processedThisTick=true;
+    if (!isset($liveMembers[$remark])) {
+        try {
+            $reserve($index,$remark,'snapshot_recipient_missing');
+            $notifyHold($remark,$index,'snapshot_recipient_missing');
+        } catch (Throwable $e) {
+            sendMessage('گیرندهٔ ثبت‌شدهٔ هدیه یافت نشد؛ بررسی مدیر لازم است.',null,null,$admin);
+        }
         return;
     }
-    $remark=(string)($user->username??'');
-    $eligible=$remark!=='' && is_numeric($user->data_limit??null) &&
+    $user=$liveMembers[$remark];
+    $eligible=is_numeric($user->data_limit??null) &&
         is_numeric($user->expire??null) &&
         (float)$user->data_limit>0 && (float)$user->expire>0 &&
         ($user->status??null)==='active';
     if (!$eligible) {
         $next=$index+1;
-        $skip=$connection->prepare('UPDATE gift_list SET `offset`=? WHERE id=? AND `offset`=?');
-        if (!$skip) return;
-        $skip->bind_param('iii',$next,$rowId,$index);
-        $ok=$skip->execute();$count=$skip->affected_rows;$skip->close();
-        if (!$ok || $count!==1) return;
+        try {
+            $finish($index,null,$next,null,null);
+        } catch (Throwable $e) {
+            sendMessage('ثبت عبور از گیرندهٔ غیرفعال تأیید نشد؛ بررسی مدیر لازم است.',null,null,$admin);
+            return;
+        }
         $offset=$next;
         continue;
     }
@@ -283,15 +607,14 @@ foreach ($listed->users as $index=>$user) {
         return;
     }
 }
-if (!$found) {
-    $stmt=$connection->prepare('DELETE FROM gift_list WHERE id=? AND `offset`=?');
-    if (!$stmt) return;
-    $stmt->bind_param('ii',$rowId,$offset);
-    $ok=$stmt->execute();$count=$stmt->affected_rows;$stmt->close();
-    if ($ok && $count===1) {
+if (!$processedThisTick && $offset===count($rosterNames)) {
+    if ($closeRoster($rosterId,$rosterMeta,count($rosterNames))) {
         sendMessage("عملیات هدیه حجم و زمان سرور $serverName به اتمام رسید.",
                     null,null,$admin);
         sendToAllAdmins('sendMessage',['text'=>"عملیات هدیه حجم و زمان سرور $serverName به اتمام رسید.",
             'reply_markup'=>null,'parse_mode'=>null]);
+    } else {
+        sendMessage('جمع‌بندی فهرست هدیه تأیید نشد؛ بررسی مدیر لازم است.',
+                    null,null,$admin);
     }
 }
