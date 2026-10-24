@@ -8,13 +8,25 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     exit;
 }
 
-function getMarzbanToken($server_id, ?string $expectedPanelUrl = null){
+function getMarzbanToken($server_id, ?string $expectedPanelUrl = null,
+                        ?array $effectTarget = null){
     global $connection;
     $stmt = $connection->prepare("SELECT * FROM server_config WHERE id = ?");
     $stmt->bind_param('i', $server_id);
     $stmt->execute();
     $server_info = $stmt->get_result()->fetch_assoc();
     $stmt->close();
+
+    // Strict effect auth is bound to the endpoint and credentials captured
+    // at reservation. A later config lookup cannot substitute another tenant.
+    if ($effectTarget!==null &&
+        ($expectedPanelUrl===null || !$server_info ||
+         ($server_info['type']??'')!=='marzban' ||
+         rtrim((string)($server_info['panel_url']??''),'/')!==$expectedPanelUrl ||
+         $expectedPanelUrl!==($effectTarget['panel_url']??null) ||
+         (string)($server_info['username']??'')!==($effectTarget['username']??null) ||
+         (string)($server_info['password']??'')!==($effectTarget['password']??null)))
+        return (object)['detail'=>'effect_credentials_target_changed'];
 
     // Fail closed: neither unexpected provider records nor missing servers
     // may be probed using Marzban credentials/API as a silent fallback.
@@ -39,23 +51,32 @@ function getMarzbanToken($server_id, ?string $expectedPanelUrl = null){
     
     $curl = curl_init();
     curl_setopt($curl, CURLOPT_URL, $loginUrl);
-    curl_setopt($curl, CURLOPT_FOLLOWLOCATION, $expectedPanelUrl===null ? 1 : 0);
+    curl_setopt($curl, CURLOPT_FOLLOWLOCATION, false); // Never redirect credential-bearing login.
     curl_setopt($curl, CURLOPT_RETURNTRANSFER, 1);
     curl_setopt($curl, CURLOPT_POST, 1);
     curl_setopt($curl, CURLOPT_CONNECTTIMEOUT, 3);
-    curl_setopt($curl, CURLOPT_TIMEOUT, 3); 
+    curl_setopt($curl, CURLOPT_TIMEOUT, 3);
+    curl_setopt($curl, CURLOPT_SSL_VERIFYPEER, true);
+    curl_setopt($curl, CURLOPT_SSL_VERIFYHOST, 2);
     curl_setopt($curl, CURLOPT_POSTFIELDS, http_build_query($postFields));
     curl_setopt($curl, CURLOPT_HTTPHEADER, array(
             'Content-Type: application/x-www-form-urlencoded',
             'accept: application/json'
         ));
     $response = curl_exec($curl);
-    if (curl_error($curl)) {
-        return (object) ['success'=>false, 'detail'=>curl_error($curl)];
-    }
+    $curlError=curl_error($curl);
+    $http=(int)curl_getinfo($curl,CURLINFO_HTTP_CODE);
     curl_close($curl);
-
-    return json_decode($response);
+    if ($curlError!=='' || $response===false)
+        return (object)['success'=>false,'detail'=>'marzban_auth_transport_unavailable'];
+    if ($effectTarget!==null && $http!==200)
+        return (object)['success'=>false,'detail'=>'effect_auth_unconfirmed'];
+    $token=json_decode((string)$response);
+    if ($effectTarget!==null &&
+        (!is_object($token) || !is_string($token->access_token??null) ||
+         $token->access_token===''))
+        return (object)['success'=>false,'detail'=>'effect_auth_invalid'];
+    return $token;
 }
 
 function getMarzbanJson($server_id, $token = null){
@@ -120,7 +141,8 @@ function getMarzbanUserInfo($server_id, $remark){
     return (object) $configInfo;
 }
 
-function getMarzbanUser($server_id, $remark, $token = null, bool $strict = false, ?string $expectedPanelUrl = null){
+function getMarzbanUser($server_id, $remark, $token = null, bool $strict = false,
+                        ?string $expectedPanelUrl = null, ?array $effectTarget = null){
     global $connection;
     
     $stmt = $connection->prepare("SELECT * FROM server_config WHERE id=?");
@@ -128,6 +150,16 @@ function getMarzbanUser($server_id, $remark, $token = null, bool $strict = false
     $stmt->execute();
     $server_info = $stmt->get_result()->fetch_assoc();
     $stmt->close();
+
+    if ($effectTarget!==null &&
+        ($expectedPanelUrl===null || !$server_info ||
+         ($server_info['type']??'')!=='marzban' ||
+         rtrim((string)($server_info['panel_url']??''),'/')!==$expectedPanelUrl ||
+         $expectedPanelUrl!==($effectTarget['panel_url']??null) ||
+         (string)($server_info['username']??'')!==($effectTarget['username']??null) ||
+         (string)($server_info['password']??'')!==($effectTarget['password']??null)))
+        return (object)['success'=>false,'uncertain'=>true,
+                        'msg'=>'effect_credentials_target_changed'];
 
     // Exact edit readbacks must never use a reconfigured physical target
     // with credentials issued for the initial endpoint.
@@ -139,7 +171,7 @@ function getMarzbanUser($server_id, $remark, $token = null, bool $strict = false
     $panel_url = $expectedPanelUrl===null?
         (string)$server_info['panel_url']:rtrim($expectedPanelUrl,'/');
 
-    if($token == null) $token = getMarzbanToken($server_id,$expectedPanelUrl);
+    if($token == null) $token = getMarzbanToken($server_id,$expectedPanelUrl,$effectTarget);
     if(isset($token->detail)){return (object) ['success'=>false, 'msg'=>$token->detail];}
     
     $panel_url .= '/api/user/' . urlencode($remark);
@@ -147,6 +179,7 @@ function getMarzbanUser($server_id, $remark, $token = null, bool $strict = false
     $curl = curl_init();
     curl_setopt($curl, CURLOPT_URL, $panel_url);
     curl_setopt($curl, CURLOPT_HTTPGET, true);
+    curl_setopt($curl, CURLOPT_FOLLOWLOCATION, false);
     curl_setopt($curl, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($curl, CURLOPT_HTTPHEADER, array(
         'Accept: application/json',
@@ -203,7 +236,9 @@ function getMarzbanHosts($server_id){
     return $response;
 }
 
-function addMarzbanUser($server_id, $remark, $volume, $days, $plan_id, ?string $operationNote = null, ?int $fixedExpire = null){
+function addMarzbanUser($server_id, $remark, $volume, $days, $plan_id,
+                        ?string $operationNote = null, ?int $fixedExpire = null,
+                        ?array $effectTarget = null){
     global $connection;
     
     $stmt = $connection->prepare("SELECT * FROM server_config WHERE id=?");
@@ -212,7 +247,19 @@ function addMarzbanUser($server_id, $remark, $volume, $days, $plan_id, ?string $
     $server_info = $stmt->get_result()->fetch_assoc();
     $stmt->close();
 
-    $panel_url = $server_info['panel_url'];
+    // A durable 007 CREATE must never silently fall back to logical-server
+    // routing or reselect credentials after the reserved endpoint was pinned.
+    if ($operationNote!==null && $effectTarget===null)
+        return (object)['success'=>false,'msg'=>'effect_target_snapshot_required'];
+    if ($effectTarget!==null &&
+        (!$server_info || ($server_info['type']??'')!=='marzban' ||
+         rtrim((string)($server_info['panel_url']??''),'/')!==($effectTarget['panel_url']??null) ||
+         (string)($server_info['username']??'')!==($effectTarget['username']??null) ||
+         (string)($server_info['password']??'')!==($effectTarget['password']??null)))
+        return (object)['success'=>false,'msg'=>'effect_credentials_target_changed'];
+
+    $panel_url=$effectTarget===null
+        ? (string)$server_info['panel_url'] : (string)$effectTarget['panel_url'];
     $serverName = $server_info['username'];
     $serverPass = $server_info['password'];
     $serverType = $server_info['type'];
@@ -224,7 +271,11 @@ function addMarzbanUser($server_id, $remark, $volume, $days, $plan_id, ?string $
     $planInfo = json_decode($stmt->get_result()->fetch_assoc()['custom_sni'],true);
     $stmt->close();
 
-    $token = getMarzbanToken($server_id);
+    $token = getMarzbanToken($server_id,$effectTarget['panel_url']??null,$effectTarget);
+    if ($effectTarget!==null &&
+        (!is_object($token) || !is_string($token->access_token??null) ||
+         $token->access_token===''))
+        return (object)['success'=>false,'msg'=>'effect_auth_unconfirmed'];
     if(isset($token->detail)){return (object) ['success'=>false, 'msg'=>$token->detail];}
 	$dataproxy = array(
 			"vmess" => new stdClass(),
@@ -248,8 +299,26 @@ function addMarzbanUser($server_id, $remark, $volume, $days, $plan_id, ?string $
         $postFields['note']=$operationNote;
     }
 
+    if ($effectTarget!==null) {
+        // Check alias, group and credentials at the last reversible boundary.
+        $check=$connection->prepare("SELECT c.type,c.panel_url,c.username,c.password,
+            i.panel_group_id FROM server_info i JOIN server_config c ON c.id=i.id
+            WHERE i.id=? LIMIT 1");
+        if (!$check) return (object)['success'=>false,'msg'=>'effect_target_check_unavailable'];
+        $check->bind_param('i',$server_id);
+        $ok=$check->execute();
+        $latest=$ok?$check->get_result()->fetch_assoc():null;$check->close();
+        if (!$latest || $latest['type']!=='marzban' ||
+            rtrim((string)$latest['panel_url'],'/')!==$effectTarget['panel_url'] ||
+            (string)$latest['username']!==$effectTarget['username'] ||
+            (string)$latest['password']!==$effectTarget['password'] ||
+            ($latest['panel_group_id']===null?null:(int)$latest['panel_group_id'])!==$effectTarget['panel_group_id'])
+            return (object)['success'=>false,'msg'=>'effect_target_changed_before_post'];
+    }
+
     $curl = curl_init();
     curl_setopt($curl, CURLOPT_URL, $panel_url . "/api/user");
+    curl_setopt($curl, CURLOPT_FOLLOWLOCATION, false);
     curl_setopt($curl, CURLOPT_POST, true);
     curl_setopt($curl, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($curl, CURLOPT_HTTPHEADER, array(
@@ -277,12 +346,27 @@ function addMarzbanUser($server_id, $remark, $volume, $days, $plan_id, ?string $
         $detail=is_object($response)?($response->detail??''):'';
         return (object)['success'=>false,'msg'=>is_object($detail)?implode("-", (array)$detail):$detail];
     }
-    $userInfo = getMarzbanUserInfo($server_id, $remark);
+    if ($effectTarget!==null) {
+        // Never call the legacy mutable-target subscription resolver after
+        // CREATE. Use the pinned authenticated readback instead.
+        $userInfo=getMarzbanUser($server_id,$remark,$token,true,
+            $effectTarget['panel_url'],$effectTarget);
+        $subscription=(string)($userInfo->subscription_url??'');
+        $subParts=explode('/sub/',$subscription,2);
+        if (!is_object($userInfo) ||
+            (string)($userInfo->username??'')!==$remark ||
+            count($subParts)!==2 || $subParts[1]==='')
+            return (object)['success'=>false,'msg'=>'effect_subscription_unverified'];
+        $relativeSub='/sub/'.$subParts[1];
+    } else {
+        $userInfo=getMarzbanUserInfo($server_id,$remark);
+        $relativeSub=$userInfo->subscription_url??'';
+    }
 
     return (object) [
         'success'=>true,
-        'sub_link'=> $userInfo->subscription_url,
-        'vray_links' => $response->links
+        'sub_link'=>$relativeSub,
+        'vray_links'=>$response->links
         ];
 }
 

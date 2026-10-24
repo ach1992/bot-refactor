@@ -153,6 +153,7 @@ function achbotCreatePaidAccount(mysqli $db, int $payId, int $ordinal, array $p)
             CASE WHEN p.agent_count>0 THEN p.agent_count ELSE 1 END AS requested_count,
             s.server_id AS plan_server,s.inbound_id AS plan_inbound,
             c.type AS panel_type,i.panel_group_id,c.panel_url,
+            c.username AS panel_username,c.password AS panel_password,
             g.id AS valid_group
             FROM pays p
             JOIN server_plans s ON s.id=p.plan_id
@@ -189,6 +190,11 @@ function achbotCreatePaidAccount(mysqli $db, int $payId, int $ordinal, array $p)
         // Pin a concrete provider endpoint in addition to the logical group.
         // A group alone does not prove which physical panel received POST.
         $endpoint=hash('sha256',rtrim($claim['panel_url'],'/'));
+        // Transient identity captured in the original reservation transaction.
+        // Never persist credentials in effect journals or diagnostic records.
+        $credentials=hash('sha256',json_encode([
+            (string)$claim['panel_username'],(string)$claim['panel_password']
+        ],JSON_THROW_ON_ERROR));
         $targetKey=$group===null?'server:'.$serverId:'group:'.$group;
         $expiry=time()+86400*$days;
         $bytes=$volume*1073741824;
@@ -334,20 +340,21 @@ function achbotCreatePaidAccount(mysqli $db, int $payId, int $ordinal, array $p)
 
     return achbotEffectDispatchReservedAccount(
         $db,$effectId,$serverId,$group,$endpoint,$remark,
-        $volume,$days,$planId,$operation,$expiry,$bytes,$p);
+        $volume,$days,$planId,$operation,$expiry,$bytes,$p,$credentials);
 }
 
 /** Shared remote dispatch/readback for paid and authenticated non-paid claims. */
 function achbotEffectDispatchReservedAccount(
     mysqli $db, int $effectId, int $serverId, ?int $group,
     string $endpoint, string $remark, int $volume, int $days,
-    int $planId, string $operation, int $expiry, int $bytes, array $p
+    int $planId, string $operation, int $expiry, int $bytes, array $p,
+    string $credentials
 ): array {
     // Anything after this point may have reached Marzban, even if the reply
     // is lost. No SQL rollback or failed GET may unlock another CREATE.
     try {
         // A route reconfigured since the reservation must not be used.
-        $check=$db->prepare("SELECT i.panel_group_id,c.type,c.panel_url
+        $check=$db->prepare("SELECT i.panel_group_id,c.type,c.panel_url,c.username,c.password
             FROM server_info i JOIN server_config c ON c.id=i.id
             WHERE i.id=? LIMIT 1");
         if (!$check) throw new RuntimeException('effect_target_check_prepare_failed');
@@ -356,22 +363,32 @@ function achbotEffectDispatchReservedAccount(
         $target=$check->get_result()->fetch_assoc();$check->close();
         if (!$target || $target['type']!=='marzban' ||
             ($target['panel_group_id']===null?null:(int)$target['panel_group_id'])!==$group ||
-            hash('sha256',rtrim((string)$target['panel_url'],'/'))!==$endpoint) {
+            hash('sha256',rtrim((string)$target['panel_url'],'/'))!==$endpoint ||
+            hash('sha256',json_encode([
+                (string)$target['username'],(string)$target['password']
+            ],JSON_THROW_ON_ERROR))!==$credentials) {
             throw new RuntimeException('effect_target_changed_pre_post');
         }
 
+        $pinnedTarget=[
+            'panel_url'=>rtrim((string)$target['panel_url'],'/'),
+            'username'=>(string)$target['username'],
+            'password'=>(string)$target['password'],
+            'panel_group_id'=>$group
+        ];
         [$response,$actualRemark,$port]=createServerAccount(
             'marzban',$serverId,0,$planId,$remark,$volume,$days,
             (string)($p['uniqid']??''),(string)($p['protocol']??''),
             (int)($p['port']??0),(int)($p['expire_microdate']??0),
             (string)($p['net_type']??''),(int)($p['rahgozar']??0),
-            (int)($p['limitip']??0),$operation,$expiry
+            (int)($p['limitip']??0),$operation,$expiry,$pinnedTarget
         );
         if (!is_object($response) || ($response->success??false)!==true ||
             $actualRemark!==$remark) {
             throw new RuntimeException('effect_remote_create_unconfirmed');
         }
-        $remote=getMarzbanUser($serverId,$remark,null,true);
+        $remote=getMarzbanUser($serverId,$remark,null,true,
+            $pinnedTarget['panel_url'],$pinnedTarget);
         // Marzban must prove exact integer seconds and bytes. PHP's (int)
         // conversion truncates fractional JSON numbers and is not evidence
         // that a paid account actually has the promised limit.
@@ -392,6 +409,21 @@ function achbotEffectDispatchReservedAccount(
             $exactNonnegative($remote->data_limit)!==$bytes) {
             throw new RuntimeException('effect_remote_readback_unverified');
         }
+        // A credential switch on the same URL is ALSO a destination identity
+        // change. The immutable snapshot is not replaced after the POST.
+        $credentialsAfter=$db->prepare('SELECT c.type,c.panel_url,c.username,c.password,
+            i.panel_group_id FROM server_info i JOIN server_config c ON c.id=i.id
+            WHERE i.id=? LIMIT 1');
+        if (!$credentialsAfter) throw new RuntimeException('effect_credentials_check_prepare');
+        $credentialsAfter->bind_param('i',$serverId);
+        if (!$credentialsAfter->execute()) throw new RuntimeException('effect_credentials_check_failed');
+        $current=$credentialsAfter->get_result()->fetch_assoc();$credentialsAfter->close();
+        if (!$current || $current['type']!=='marzban' ||
+            rtrim((string)$current['panel_url'],'/')!==$pinnedTarget['panel_url'] ||
+            (string)$current['username']!==$pinnedTarget['username'] ||
+            (string)$current['password']!==$pinnedTarget['password'] ||
+            ($current['panel_group_id']===null?null:(int)$current['panel_group_id'])!==$group)
+            throw new RuntimeException('effect_credentials_changed_post');
         // The target might have been reconfigured during the remote call.
         $stmt=$db->prepare("UPDATE service_effects e
            INNER JOIN server_info s ON s.id=e.target_server_id
@@ -525,7 +557,8 @@ function achbotCreateNonPaymentAccount(
             throw new RuntimeException('nonpaid_effect_trial_already_claimed');
 
         $plan=$db->prepare("SELECT s.server_id,s.inbound_id,c.type,i.panel_group_id,
-            c.panel_url,g.id AS valid_group
+            c.panel_url,c.username AS panel_username,
+            c.password AS panel_password,g.id AS valid_group
             FROM server_plans s
             JOIN server_info i ON i.id=s.server_id
             JOIN server_config c ON c.id=i.id
@@ -544,6 +577,9 @@ function achbotCreateNonPaymentAccount(
             throw new RuntimeException('nonpaid_effect_target_changed');
         $group=$locked['panel_group_id']===null?null:(int)$locked['panel_group_id'];
         $endpoint=hash('sha256',rtrim((string)$locked['panel_url'],'/'));
+        $credentials=hash('sha256',json_encode([
+            (string)$locked['panel_username'],(string)$locked['panel_password']
+        ],JSON_THROW_ON_ERROR));
         $targetKey=$group===null?'server:'.$serverId:'group:'.$group;
         $operation=bin2hex(random_bytes(16));
         $expiry=time()+86400*$days;
@@ -614,7 +650,7 @@ function achbotCreateNonPaymentAccount(
     }
     return achbotEffectDispatchReservedAccount(
         $db,$effectId,$serverId,$group,$endpoint,$remark,
-        $volume,$days,$planId,$operation,$expiry,$bytes,$p);
+        $volume,$days,$planId,$operation,$expiry,$bytes,$p,$credentials);
 }
 
 /** Bind the exact verified source/account to its local order in a short txn. */

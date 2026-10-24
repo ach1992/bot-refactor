@@ -368,3 +368,67 @@ success does not certify installed Marzban behavior, live provider
 settlement or Telegram delivery. See FINANCIAL-CONSOLIDATION.md for non-CREATE effect limitations,
 installed operation boundaries, and the separate Owner test gate. Keep
 Issues #26 and #51 open through separate installed acceptance.
+
+
+## PR #66 whole-main remediation — gift holds and physical CREATE target (2026-10-24)
+
+**Source-level only; no operator installation, tenant SQL changes or real Marzban/
+Telegram activity authorized.** The full 69-file main-effective independent review
+of PR #66 at HEAD `87844469` reported two REQUIRED interactions. This section
+describes the proposed revised behavior; only exact-HEAD CI and subsequent
+independent re-review establish its acceptance.
+
+**Bulk gifts / R1:** `settings/gift2all.php` now requires
+`success=true`, `verified=true`, `uncertain!=true` and exact absolute
+account quota/expiry readback before recording local entitlement or reporting
+success. Only integral GiB increments (`volume MB % 1024 == 0`) and positive
+day increments are permitted; zero means *omit that delta*, not send an invalid
+zero `plus_*` field. An all-zero or fractional-MB request has no provider
+request and enters operator review.
+
+The original `gift_list` schema is unchanged. Immediately **before** any
+potential external edit, the worker atomically inserts
+`setting.type=ACHBOT_GIFT_HOLD_<gift_list.id>` with exact job ID, server,
+recipient index/username and requested units, and changes the signed
+`gift_list.offset` to `-recipient_index-1`. Either a negative offset or
+an existing hold record **stops all unattended Cron continuation** for that
+job. Deterministic no-effect refusal can be completed without success notice;
+an uncertain remote outcome, SQL failure after verified remote effect, lost
+response, or validation failure leaves a durable hold. A verified edit and
+exact local expiry update are committed **together** with cursor advancement
+and journal deletion, before any customer success notice. Customer Telegram
+notification failure after COMMIT is an alert concern, **not** authority to
+repeat the remote edit.
+
+**Operator procedure:** inspect the held record in `setting`, the matching
+`gift_list.id` and negative offset; use an explicitly approved authenticated
+read-only Marzban GET and local order inspection to reconcile the **exact
+recipient** and applied units. Preserve the original account evidence and
+never blindly set offset back, delete the hold, retry the edit, or reconstruct
+entitlements from guessed count differences. A controlled reconciliation and
+restart require a separate operator authorization/procedure, not this code.
+Missing/mutated recipient identity also stops, it does not continue to a
+different user.
+
+**Durable CREATE / R2:** paid BUY_SUB and source-authenticated free-trial/
+admin-bulk 007 reservations capture the actual Marzban `panel_url`,
+`username`, `password` and panel-group identity in their source reservation
+transaction. The original SQL journal records the endpoint hash and operation
+key **without credentials**. The verified endpoint + matching original
+credential identity is carried transiently through
+`ServiceEffects -> Core -> config.php facades -> Accounts.php` for login,
+CREATE POST, authenticated GET and verification. A later mutable
+`server_config` lookup may **reject** a changed identity but must not choose
+a different physical panel or token. Credential login, strict CREATE and
+strict GET do not follow HTTP redirects; TLS verification remains enabled.
+Any unexpected config drift, lost/malformed response or failed readback
+leaves the durable effect in `dispatching` for human reconciliation.
+A shared logical panel group is **not** authority to switch to another URL.
+
+New isolated acceptance drivers:
+`tools/test_post_v9_gift_worker.py` (actual PHP Cron worker, original 23-table
+disposable MariaDB, fake notifications/provider) and
+`tools/test_post_v9_effect_transport_pin.py` (real PHP facade, 007
+journal, two distinct owned loopback HTTP Marzban panels and MariaDB).
+Both are mandatory in `tools/check_post_v9.py`. Existing installed/provider
+acceptance remains GATED in Issues #26/#51.

@@ -1162,6 +1162,71 @@ def main():
                 and effects.get("external_account_count_not_used") is True
                 and effects.get("installed_operator_tested") is False):
             raise RuntimeError("Per-account service operation ledger contract incomplete")
+        # Full PR #66 high-assurance R2: actual global PHP facades, original
+        # Core/007 dispatcher and pinned cURL transport on two local panels.
+        # This proves route+credential checks survive the real facade boundary.
+        pin_path=Path(tmp)/"effect-physical-target-pin.json"
+        pin_run=subprocess.run(
+            ["python3",str(ROOT/"tools/test_post_v9_effect_transport_pin.py"),
+             "--run-disposable","--report",str(pin_path)],
+            cwd=ROOT,check=True,timeout=180,capture_output=True)
+        pinned_effects=json.loads(pin_path.read_text())
+        required_pin={
+            "strict_effect_normal_auth_post_get_exact_same_panel_verified",
+            "journal_reservation_endpoint_changed_no_outbound_effect",
+            "journal_reservation_credentials_changed_no_outbound_effect",
+            "switch_at_login_no_wrong_panel_or_false_verified",
+            "switch_credentials_at_login_no_wrong_panel_or_false_verified",
+            "redirect_login_no_wrong_panel_or_false_verified",
+            "redirect_create_no_wrong_panel_or_false_verified",
+            "switch_after_post_no_wrong_panel_or_false_verified",
+            "switch_credentials_after_post_no_wrong_panel_or_false_verified",
+            "switch_at_get_no_wrong_panel_or_false_verified",
+            "switch_credentials_at_get_no_wrong_panel_or_false_verified",
+            "lost_create_no_wrong_panel_or_false_verified",
+            "same_group_different_endpoint_auth_post_get_remains_pinned",
+        }
+        if not (pinned_effects.get("complete") is True and
+                set(pinned_effects.get("scenarios",[]))==required_pin and
+                pinned_effects.get("cases")==len(required_pin) and
+                pinned_effects.get("actual_007_journal") is True and
+                pinned_effects.get("actual_php_curl") is True and
+                pinned_effects.get("physical_synthetic_panels")==2 and
+                pinned_effects.get("owned_mariadb_only") is True and
+                pinned_effects.get("external_network_requests")==0 and
+                pinned_effects.get("installed_changes")==0):
+            raise RuntimeError("Pinned physical CREATE source/HTTP assurance incomplete")
+        # Whole-main review R1: run actual owned gift worker on disposable
+        # original 23-table MariaDB, no live Telegram/Marzban service.
+        gift_path=Path(tmp)/"gift-worker-verified-state.json"
+        subprocess.run(
+            ["python3",str(ROOT/"tools/test_post_v9_gift_worker.py"),
+             "--run-disposable","--report",str(gift_path)],
+            cwd=ROOT,check=True,timeout=160,capture_output=True)
+        gift=json.loads(gift_path.read_text())
+        required_gift={
+            "gift_verified_volume_2048_days_2",
+            "gift_refused_volume_2048_days_2",
+            "gift_uncertain_volume_2048_days_2",
+            "gift_throw_volume_2048_days_2",
+            "gift_unverified_volume_2048_days_2",
+            "gift_bad_expire_volume_2048_days_2",
+            "gift_verified_volume_0_days_2",
+            "gift_verified_volume_2048_days_0",
+            "gift_notify_fail_volume_2048_days_2",
+            "verified_remote_local_sql_failure_stays_held_no_replay",
+            "gift_verified_volume_1536_days_2",
+            "gift_verified_volume_0_days_0",
+            "inactive_recipient_never_inherits_previous_success_or_edit",
+        }
+        if not (gift.get("complete") is True and
+                set(gift.get("scenarios",[]))==required_gift and
+                gift.get("cases")==len(required_gift) and
+                gift.get("actual_gift_worker") is True and
+                gift.get("owned_mariadb_only") is True and
+                gift.get("real_provider_requests")==0 and
+                gift.get("customer_money_effects")==0):
+            raise RuntimeError("Gift-worker verified outcome/hold assurance incomplete")
         # Source-real one-payment/one-award journal with atomic SQL credit and
         # no automatic retry after ambiguity. Migration 008 is test-only here.
         referral_path=Path(tmp)/"referral-award-journal.json"
@@ -2018,6 +2083,8 @@ def main():
                     "wallet_authorization_freshness":wallet_freshness,
                     "latest_review_f1_f4":reviewer_f1_f4,
                     "service_effects":effects,
+                    "strict_effect_transport_pin":pinned_effects,
+                    "gift_worker_safe_continuation":gift,
                     "wallet_paid_create":wallet_create,
                     "wallet_checkout_routes":wallet_checkout,
                     "wallet_callback_framing":wallet_frame,
@@ -2065,6 +2132,8 @@ def main():
                       "customer_method_serialization_cases":method_race["cases"],
                       "wallet_authorization_freshness_cases":wallet_freshness["cases"],
                       "service_effect_cases":effects["cases"],
+                      "strict_effect_transport_pin_cases":pinned_effects["cases"],
+                      "gift_worker_reconciliation_cases":gift["cases"],
                       "wallet_paid_create_cases":wallet_create["cases"],
                       "wallet_checkout_cases":wallet_checkout["cases"],
                       "wallet_callback_framing_cases":wallet_frame["cases"],
