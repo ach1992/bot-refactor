@@ -39,7 +39,7 @@ def source_checks():
         if (ROOT / field).read_bytes() != cmd("show", V9+":"+field):
             raise RuntimeError("Changed historical schema/private-template: " + field)
     files=package.members()
-    if len(files)!=97 or len(set(files))!=len(files):
+    if len(files)!=98 or len(set(files))!=len(files):
         raise RuntimeError("Source-only runtime file inventory changed")
     if any((ROOT/name).exists() or name in files
            for name in package.RETIRED_RUNTIME_MEMBERS):
@@ -1196,6 +1196,42 @@ def main():
                 pinned_effects.get("external_network_requests")==0 and
                 pinned_effects.get("installed_changes")==0):
             raise RuntimeError("Pinned physical CREATE source/HTTP assurance incomplete")
+        # High-assurance R1-A2: source PHP -> Core -> Accounts, real cURL
+        # over two isolated loopback Marzban account stores.
+        physical_gift_path=Path(tmp)/"gift-physical-target.json"
+        subprocess.run(
+            ["python3",str(ROOT/"tools/test_post_v9_gift_physical.py"),
+             "--run-disposable","--report",str(physical_gift_path)],
+            cwd=ROOT,check=True,timeout=180,capture_output=True)
+        physical_gift=json.loads(physical_gift_path.read_text())
+        required_gift_physical={
+            "original_panel_real_php_two_members_one_edit_each",
+            "same_username_on_two_panels_continuation_never_targets_b",
+            "original_panel_restored_held_effect_never_replayed",
+            "credential_identity_change_before_list_denied",
+            "panel_swap_after_login_no_wrong_panel_edit_hold",
+            "panel_swap_after_list_no_wrong_panel_edit_hold",
+            "panel_swap_after_user_get_no_wrong_panel_edit_hold",
+            "panel_swap_after_put_no_wrong_panel_edit_hold",
+            "credentials_changed_after_authenticated_user_get_no_put",
+            "ambiguous_original_panel_put_and_get_failure_no_replay",
+            "same_logical_group_does_not_authorize_physical_change",
+            "credential_drift_during_put_holds_original_effect",
+            "real_http_list_missing_total_no_snapshot_or_edit",
+            "real_http_list_wrong_total_no_snapshot_or_edit",
+            "real_http_list_redirect_to_other_panel_no_snapshot_or_edit",
+        }
+        if not (
+            physical_gift.get("complete") is True and
+            physical_gift.get("cases")==len(required_gift_physical) and
+            set(physical_gift.get("scenarios",[]))==required_gift_physical and
+            physical_gift.get("actual_php_list_edit_http") is True and
+            physical_gift.get("separate_loopback_panels")==2 and
+            physical_gift.get("owned_mariadb_only") is True and
+            physical_gift.get("real_provider_requests")==0
+        ):
+            raise RuntimeError("Bulk gift physical endpoint assurance incomplete")
+
         # Whole-main review R1: run actual owned gift worker on disposable
         # original 23-table MariaDB, no live Telegram/Marzban service.
         gift_path=Path(tmp)/"gift-worker-verified-state.json"
@@ -1235,6 +1271,22 @@ def main():
             "r1a_incomplete_provider_list_never_frozen",
             "r1a_nontransactional_installed_table_fails_closed",
             "r1a_volume_only_local_identity_lost_after_provider_held",
+            "r1a1_original_main_worker_exited_after_effect_zero_offset_no_replay",
+            "r1a1_unmarked_untouched_zero_offset_requires_operator",
+            "r1a1_new_format_enqueue_identity_allows_first_gift",
+            "r1a1_deleted_provenance_cannot_rearm",
+            "r1a1_provenance_sql_failure_atomically_rolls_back_enqueue",
+            "r1a1_corrupt_provenance_never_authorizes_provider_edit",
+            "r1a1_bot_admin_enqueue_uses_durable_provenance_path",
+            "r1a2_drift_before_initial_list_no_remote_effect",
+            "r1a2_restoring_panel_does_not_auto_rearm",
+            "r1a2_change_between_list_and_edit_fails_closed",
+            "r1a2_changed_credential_before_list_no_edit",
+            "r1a3_missing_total_no_roster_no_false_completion",
+            "r1a3_invalid_total_string_no_roster_no_false_completion",
+            "r1a3_invalid_total_negative_no_roster_no_false_completion",
+            "r1a3_invalid_total_float_no_roster_no_false_completion",
+            "r1a3_empty_bad_total_no_roster_no_false_completion",
         }
         if not (gift.get("complete") is True and
                 set(gift.get("scenarios",[]))==required_gift and
@@ -2074,7 +2126,7 @@ def main():
                        cwd=ROOT,check=True,timeout=60,capture_output=True)
         swap=json.loads(overlay_report.read_text())
         if not (swap.get("complete") and swap.get("phase_count")==4
-                and swap.get("runtime_members")==97
+                and swap.get("runtime_members")==98
                 and swap.get("historical_runtime_members")==92
                 and swap.get("retired_old_payment_files_absent_after_source_upgrade")
                 and swap.get("source_roll_forward_and_back_byte_identical")
@@ -2102,6 +2154,7 @@ def main():
                     "service_effects":effects,
                     "strict_effect_transport_pin":pinned_effects,
                     "gift_worker_safe_continuation":gift,
+                    "gift_physical_target_continuity":physical_gift,
                     "wallet_paid_create":wallet_create,
                     "wallet_checkout_routes":wallet_checkout,
                     "wallet_callback_framing":wallet_frame,
@@ -2151,6 +2204,7 @@ def main():
                       "service_effect_cases":effects["cases"],
                       "strict_effect_transport_pin_cases":pinned_effects["cases"],
                       "gift_worker_reconciliation_cases":gift["cases"],
+                      "gift_physical_target_cases":physical_gift["cases"],
                       "wallet_paid_create_cases":wallet_create["cases"],
                       "wallet_checkout_cases":wallet_checkout["cases"],
                       "wallet_callback_framing_cases":wallet_frame["cases"],

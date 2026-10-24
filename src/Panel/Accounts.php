@@ -79,33 +79,64 @@ function getMarzbanToken($server_id, ?string $expectedPanelUrl = null,
     return $token;
 }
 
-function getMarzbanJson($server_id, $token = null){
+function getMarzbanJson($server_id, $token = null, ?array $giftTarget = null){
     global $connection;
-    
-    $stmt = $connection->prepare("SELECT * FROM server_config WHERE id=?");
-    $stmt->bind_param("i", $server_id);
-    $stmt->execute();
-    $server_info = $stmt->get_result()->fetch_assoc();
+    $stmt=$connection->prepare("SELECT type,panel_url,username,password FROM server_config WHERE id=?");
+    if (!$stmt) return (object)['success'=>false,'msg'=>'marzban_list_config_unavailable'];
+    $stmt->bind_param('i',$server_id);
+    $ok=$stmt->execute();
+    $server=$ok?$stmt->get_result()->fetch_assoc():null;
     $stmt->close();
+    if (!$server || ($server['type']??'')!=='marzban')
+        return (object)['success'=>false,'msg'=>'unsupported_panel'];
+    $url=rtrim((string)$server['panel_url'],'/');
+    if ($giftTarget!==null) {
+        require_once __DIR__ . '/../Subscription/GiftBatch.php';
+        // The original *physical* target, not a newly resolved logical ID,
+        // governs both auth and list. Failure before/after the GET is unknown
+        // membership, never a successful empty/truncated list.
+        if (!achbotGiftTargetMatches($connection,(int)$server_id,$giftTarget) ||
+            $url!==($giftTarget['panel_url']??null) || $token!==null)
+            return (object)['success'=>false,'msg'=>'gift_list_target_changed'];
+        $token=getMarzbanToken($server_id,$url,$giftTarget);
+    } elseif ($token===null) {
+        $token=getMarzbanToken($server_id);
+    }
+    if (!is_object($token) || !is_string($token->access_token??null) ||
+        $token->access_token==='')
+        return (object)['success'=>false,'msg'=>'marzban_list_auth_unverified'];
 
-    $panel_url = $server_info['panel_url'];
-
-    if($token == null) $token = getMarzbanToken($server_id);
-    if(isset($token->detail)){return (object) ['success'=>false, 'msg'=>$token->detail];}
-    $panel_url .= '/api/users';
-    $curl = curl_init();
-    curl_setopt($curl, CURLOPT_URL, $panel_url);
-    curl_setopt($curl, CURLOPT_HTTPGET, true);
-    curl_setopt($curl, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($curl, CURLOPT_HTTPHEADER, array(
+    $curl=curl_init();
+    curl_setopt($curl,CURLOPT_URL,$url.'/api/users');
+    curl_setopt($curl,CURLOPT_HTTPGET,true);
+    curl_setopt($curl,CURLOPT_FOLLOWLOCATION,false);
+    curl_setopt($curl,CURLOPT_CONNECTTIMEOUT,5);
+    curl_setopt($curl,CURLOPT_TIMEOUT,20);
+    curl_setopt($curl,CURLOPT_SSL_VERIFYPEER,true);
+    curl_setopt($curl,CURLOPT_SSL_VERIFYHOST,2);
+    curl_setopt($curl,CURLOPT_RETURNTRANSFER,true);
+    curl_setopt($curl,CURLOPT_HTTPHEADER,[
         'Accept: application/json',
-        'Authorization: Bearer ' . $token->access_token
-    ));
-
-    $response = json_decode(curl_exec($curl));
+        'Authorization: Bearer '.$token->access_token
+    ]);
+    $raw=curl_exec($curl);
+    $error=curl_error($curl);
+    $http=(int)curl_getinfo($curl,CURLINFO_HTTP_CODE);
     curl_close($curl);
-
-    return $response;
+    // Historical list callers retain their original response surface.
+    // Only a gift with an explicit original physical-target contract
+    // requires strict complete-list and same-panel semantics.
+    if ($giftTarget===null) return json_decode((string)$raw);
+    if ($raw===false || $error!=='' || $http!==200 ||
+        !achbotGiftTargetMatches($connection,(int)$server_id,$giftTarget))
+        return (object)['success'=>false,'msg'=>'marzban_list_unverified'];
+    $listed=json_decode((string)$raw);
+    if (!is_object($listed) ||
+        !is_array($listed->users??null) || !array_is_list($listed->users) ||
+        !is_int($listed->total??null) || $listed->total<0 ||
+        $listed->total!==count($listed->users))
+        return (object)['success'=>false,'msg'=>'marzban_list_incomplete'];
+    return $listed;
 }
 
 function getMarzbanUserInfo($server_id, $remark){
@@ -370,7 +401,7 @@ function addMarzbanUser($server_id, $remark, $volume, $days, $plan_id,
         ];
 }
 
-function editMarzbanConfig($server_id,$info){
+function editMarzbanConfig($server_id,$info,?array $giftTarget=null){
     global $connection;
 
     $stmt=$connection->prepare("SELECT type,panel_url FROM server_config WHERE id=?");
@@ -385,6 +416,13 @@ function editMarzbanConfig($server_id,$info){
     if ($remark==='') return (object)['success'=>false,'uncertain'=>false,'msg'=>'missing_account'];
     $panelUrl=rtrim((string)$serverInfo['panel_url'],'/');
     if ($panelUrl==='') return (object)['success'=>false,'uncertain'=>true,'msg'=>'marzban_target_unknown'];
+    if ($giftTarget!==null) {
+        require_once __DIR__ . '/../Subscription/GiftBatch.php';
+        if (!achbotGiftTargetMatches($connection,(int)$server_id,$giftTarget) ||
+            $panelUrl!==($giftTarget['panel_url']??null))
+            return (object)['success'=>false,'uncertain'=>true,
+                            'msg'=>'gift_physical_target_changed'];
+    }
 
     // Post-V9 physical panel grouping can map different URLs to the SAME
     // account store. Prefer the configured shared group to the endpoint
@@ -422,6 +460,11 @@ function editMarzbanConfig($server_id,$info){
         return (object)['success'=>false,'uncertain'=>true,
                         'msg'=>'marzban_group_identity_unverified'];
     }
+    if ($giftTarget!==null &&
+        ($groupId!==($giftTarget['group_id']??null) ||
+         $hasGroupColumn!==($giftTarget['has_group_column']??null)))
+        return (object)['success'=>false,'uncertain'=>true,
+                        'msg'=>'gift_group_identity_changed'];
     $scope=$groupId===null?'endpoint:'.$panelUrl:'group:'.$groupId;
     // A bounded advisory lock is released even if Marzban times out.
     $lockName='achbot-edit-'.substr(hash('sha256',$scope."\n".$remark),0,40);
@@ -435,11 +478,11 @@ function editMarzbanConfig($server_id,$info){
     }
 
     try {
-        $token=getMarzbanToken($server_id,$panelUrl);
+        $token=getMarzbanToken($server_id,$panelUrl,$giftTarget);
         if (!is_object($token) || empty($token->access_token))
             return (object)['success'=>false,'uncertain'=>true,'msg'=>'marzban_auth_unavailable'];
 
-        $isPinned=function() use ($connection,$server_id,$panelUrl,$groupId,$hasGroupColumn): bool {
+        $isPinned=function() use ($connection,$server_id,$panelUrl,$groupId,$hasGroupColumn,$giftTarget): bool {
             $check=$connection->prepare("SELECT type,panel_url FROM server_config WHERE id=?");
             if (!$check) return false;
             $check->bind_param('i',$server_id);
@@ -447,7 +490,10 @@ function editMarzbanConfig($server_id,$info){
             $record=$ok?$check->get_result()->fetch_assoc():null;
             $check->close();
             if (!$record || ($record['type']??'')!=='marzban' ||
-                rtrim((string)$record['panel_url'],'/')!==$panelUrl) return false;
+                rtrim((string)$record['panel_url'],'/')!==$panelUrl ||
+                ($giftTarget!==null &&
+                 !achbotGiftTargetMatches($connection,(int)$server_id,$giftTarget)))
+                return false;
             if (!$hasGroupColumn) return true;
             $stmt=$connection->prepare("SELECT panel_group_id FROM server_info WHERE id=?");
             if (!$stmt) return false;
@@ -482,7 +528,7 @@ function editMarzbanConfig($server_id,$info){
             return $account->data_limit===null
                 ? 0 : $remoteInteger($account->data_limit);
         };
-        $current=getMarzbanUser($server_id,$remark,$token,true,$panelUrl);
+        $current=getMarzbanUser($server_id,$remark,$token,true,$panelUrl,$giftTarget);
         if (!is_object($current) || (string)($current->username??'')!==$remark ||
             !isset($current->expire) ||
             $remoteInteger($current->expire)===null ||
@@ -579,11 +625,11 @@ function editMarzbanConfig($server_id,$info){
         // even when the request omits that field. This narrows the external
         // operator race; Marzban offers no atomic If-Match/CAS for this API.
         $preEffect=function(bool $afterReset=false) use (
-            $isPinned,$server_id,$remark,$token,$panelUrl,$remoteInteger,
+            $isPinned,$server_id,$remark,$token,$panelUrl,$giftTarget,$remoteInteger,
             $oldExpire,$oldVolume,$remoteQuota,$configuration,$baseline,
             $targetConfiguration,$canReactivate): ?string {
             if (!$isPinned()) return 'marzban_target_changed';
-            $fresh=getMarzbanUser($server_id,$remark,$token,true,$panelUrl);
+            $fresh=getMarzbanUser($server_id,$remark,$token,true,$panelUrl,$giftTarget);
             if (!$isPinned() || !is_object($fresh) ||
                 (string)($fresh->username??'')!==$remark ||
                 !isset($fresh->expire) ||
@@ -631,7 +677,7 @@ function editMarzbanConfig($server_id,$info){
             // repeated. Require an authenticated observation before PUT.
             if (!$isPinned())
                 return (object)['success'=>false,'uncertain'=>true,'msg'=>'marzban_target_changed'];
-            $afterReset=getMarzbanUser($server_id,$remark,$token,true,$panelUrl);
+            $afterReset=getMarzbanUser($server_id,$remark,$token,true,$panelUrl,$giftTarget);
             if (!$isPinned() || !is_object($afterReset) ||
                 ($afterReset->username??'')!==$remark ||
                 !property_exists($afterReset,'used_traffic') ||
@@ -669,11 +715,13 @@ function editMarzbanConfig($server_id,$info){
         if ($json===false)
             return (object)['success'=>false,'uncertain'=>true,'msg'=>'marzban_encode_failure'];
 
-        $put=function() use ($panelUrl,$remark,$token,$json,$expire,$volume,$remoteInteger,$remoteQuota): array {
+        $put=function() use ($panelUrl,$remark,$token,$json,$expire,$volume,$remoteInteger,$remoteQuota,$isPinned): array {
+            if (!$isPinned()) return ['valid'=>false,'retryable'=>false];
             $curl=curl_init();
             curl_setopt($curl,CURLOPT_URL,$panelUrl.'/api/user/'.rawurlencode($remark));
             curl_setopt($curl,CURLOPT_RETURNTRANSFER,true);
             curl_setopt($curl,CURLOPT_CUSTOMREQUEST,'PUT');
+            curl_setopt($curl,CURLOPT_FOLLOWLOCATION,false);
             curl_setopt($curl,CURLOPT_CONNECTTIMEOUT,5);
             curl_setopt($curl,CURLOPT_TIMEOUT,20);
             curl_setopt($curl,CURLOPT_SSL_VERIFYPEER,true);
@@ -705,9 +753,9 @@ function editMarzbanConfig($server_id,$info){
             // absolute PUT is safe; never replay a relative increment.
             return ['valid'=>$valid,'retryable'=>!$valid];
         };
-        $read=function() use ($server_id,$remark,$token,$isPinned,$remoteInteger,$remoteQuota,$panelUrl): ?object {
+        $read=function() use ($server_id,$remark,$token,$isPinned,$remoteInteger,$remoteQuota,$panelUrl,$giftTarget): ?object {
             if (!$isPinned()) return null;
-            $observed=getMarzbanUser($server_id,$remark,$token,true,$panelUrl);
+            $observed=getMarzbanUser($server_id,$remark,$token,true,$panelUrl,$giftTarget);
             if (!$isPinned() || !is_object($observed) ||
                 (string)($observed->username??'')!==$remark ||
                 !isset($observed->expire) ||

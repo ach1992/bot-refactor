@@ -261,8 +261,9 @@ or second CREATE). The first completed 007 line pins the original service
 limits; the finalizer may not reauthorize them from mutable plan days/volume.
 The original payment plan/server/provider/inbound identity remains enforced
 under lock. Tests also cover post-COMMIT Telegram failure or
-uncertain delivery with operator notice but no account recreation. The earlier bank-Cron-only candidate used 95 source members; the current
-recovery-enhanced package uses 97, while historical V9 92-member source stays frozen.
+uncertain delivery with operator notice but no account recreation. The earlier bank-Cron-only candidate used 95 source members; the earlier recovery-enhanced package used 97; the current PR #66 R1-A1/A2
+runtime uses 98 including GiftBatch.php, while historical V9 92-member
+source stays frozen.
 Independent review and separately approved installed acceptance remain GATED.
 
 The independent **owner-private read-only recovery workbench** is verified
@@ -277,8 +278,8 @@ failed queries expose no private payment or customer data. No code may
 convert a 404, absent ledger, missing unique index, order deletion,
 partial multiple accounts or matching readback into an automatic service
 CREATE, paid/refunded transition or customer success. Remote 404 is NOT
-proof of remote non-execution. The source package now has 97 current members including
-RecoveryInspection.php and RecoveryTransport.php, but no schema is installed
+proof of remote non-execution. The later R1-A1/A2 source package has 98 current members including
+RecoveryInspection.php, RecoveryTransport.php and GiftBatch.php, but no schema is installed
 automatically. The strict read adapter pins physical URL, credentials and
 observed authentication IP across login and GET, rejects redirects, and
 fails closed for non-loopback HTTP. It is additionally covered by the
@@ -418,8 +419,11 @@ and each pending recipient is resolved by name, never the fresh list index.
 Eligibility (active, positive quota/expiry) is evaluated at attempt time;
 disabled original recipients are skipped without edit. Deleted/unavailable
 original recipients cause a durable negative operator hold, never silent
-substitution or omission. When the provider reports total, the response
-must include that exact number of users.
+substitution or omission. Every supported Marzban list response MUST contain an explicit
+nonnegative integer total exactly equal to the full returned users array
+length; missing/fractional/string/negative/mismatched totals and transport
+errors fail closed. Never construct or complete a batch from an unverified
+partial provider page.
 
 The original setting.value TEXT capacity is respected through bounded
 ACHBOT_GIFT_ROSTER_PART_<gift_id> chunk rows and a verified manifest row
@@ -433,15 +437,54 @@ cannot authorize editing a previously completed username. Final job,
 manifest and chunk deletion is atomic on the next Cron invocation. The
 three affected tables must remain InnoDB, or no provider edit is allowed.
 
-**Upgrade/legacy boundary:** A positive-offset batch with no existing
-roster at first invocation after source upgrade cannot safely reconstruct
-its previously gifted recipients. It is placed on negative operator hold
-without an external request. Never re-create membership from a newer
+**R1-A1 new-format provenance:** Only the current bot admin enqueue path
+may create gift jobs for unattended processing. It calls
+src/Subscription/GiftBatch.php to insert the original gift_list row and a
+versioned ACHBOT_GIFT_ENQUEUE_<id> setting receipt in the same InnoDB
+transaction, including original units and physical destination identity.
+A zero-offset job WITHOUT this durable provenance MUST NOT start: an old
+Cron could have applied the first non-idempotent Marzban gift, then died
+before advancing offset. Unmarked jobs, whether offset=0 or offset>0,
+are placed on negative operator hold WITHOUT a provider request.
+The new-format receipt cannot be inferred or retroactively forged from
+the latest list or signed cursor. An interrupted old worker was tested
+directly against the original main source and disposable MariaDB.
+Do not auto-enqueue replacements after an ambiguous SQL commit.
+
+**R1-A2 physical target continuity:** The enqueue receipt also holds the
+original canonical Marzban URL, SHA256 credential-identity fingerprint
+(never a password), and optional panel-group identity/schema presence.
+The roster manifest repeats the immutable physical identity; future Cron
+invocations verify both it and the original enqueue receipt.
+Transient credentials are reloaded only when they exactly match the
+original fingerprint. Login, provider user-list GET, pre-effect single
+account GET, PUT and authenticated absolute readback are bound to the
+same pinned physical URL and credentials through
+GiftBatch -> gift2all -> Core -> Accounts. Redirects and TLS verification
+are enforced on the sensitive requests. Endpoint/credential/panel-group
+drift before or during any operation fails closed; if a remote edit might
+already have happened, its durable hold remains for operator review.
+A shared logical panel_group_id is NEVER authorization to switch the
+physical destination, even when the new panel has the same username.
+The acceptance driver tools/test_post_v9_gift_physical.py executes real
+PHP Core/Accounts/cURL through two isolated loopback account stores.
+
+**Upgrade/legacy boundary:** A batch with missing or incompatible
+provenance cannot safely reconstruct its previously gifted recipients.
+It is placed on negative operator hold without an external request. Never re-create membership from a newer
 provider list, blindly reset gift_list.offset, delete the snapshot/hold or
 replay uncertain effects. Operator reconciliation requires a separately
 authorized, evidence-based procedure. No tenant SQL migration or real
 Marzban/Telegram operation is implied by this source-only change.
-**Deployment/rollback caution:** an older offset-only Cron worker does not
+
+**Deployment/rollback caution:** Stop old Cron and web workers BEFORE
+activating the new gift-enqueue format, or an in-flight legacy process
+might apply a job without understanding its new provenance/hold.
+Existing unmarked batches must be manually reviewed, including every
+zero-offset record. An active new batch requires stable physical target
+identity; endpoint/credential/group changes should be coordinated only
+after all source-only batch holds are reviewed.
+ an older offset-only Cron worker does not
 understand these roster rows and can repeat a completed gift if the list
 changes. Before any separately authorized downgrade, pause/reconcile active
 gift batches and operator holds; never replace the worker while an active
@@ -454,7 +497,15 @@ reordering, prepend/insertion, late additions, deletion, post-COMMIT
 interruption, concurrent Cron, legacy midflight upgrade, cursor mismatch,
 manifest tampering, large chunked rosters, incomplete provider lists,
 nontransactional schemas and local-order disappearance after volume-only
-remote verification. Installed/provider acceptance remains separately gated.
+remote verification. The 46-case PHP Worker/original-schema MariaDB suite
+and 15-case real PHP/two-loopback-panel suite are mandatory in Post-V9.
+The name-based membership policy binds an original Marzban username on
+the original physical account store. Deletion and recreation under the
+same username may change account incarnation; there is no proven
+provider-native immutable incarnation contract in the supported source.
+Operators must reconcile suspected same-name replacements manually,
+rather than treating username reuse as proof of original identity.
+Installed/provider acceptance remains separately gated.
 
 **Durable CREATE / R2:** paid BUY_SUB and source-authenticated free-trial/
 admin-bulk 007 reservations capture the actual Marzban `panel_url`,

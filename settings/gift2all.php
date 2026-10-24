@@ -10,6 +10,7 @@
  */
 include_once __DIR__ . '/../baseInfo.php';
 include_once __DIR__ . '/../config.php';
+require_once __DIR__ . '/../src/Subscription/GiftBatch.php';
 
 $stmt=$connection->prepare('SELECT * FROM gift_list ORDER BY id LIMIT 1');
 if (!$stmt || !$stmt->execute()) return;
@@ -27,6 +28,8 @@ $partType='ACHBOT_GIFT_ROSTER_PART_'.$rowId;
 $rosterId=0;
 $rosterMeta=null;
 $rosterNames=[];
+$receipt=achbotGiftReadProvenance($connection,$gift);
+$target=null; // Ephemeral credentials, never journaled.
 
 // Even if an operator manually resets the offset, an unresolved hold record
 // prevents a second external edit. Only a separately audited reconciliation
@@ -86,7 +89,7 @@ $notifyHold=static function(string $remark,int $index,string $reason) use (
  * A started legacy job without a roster cannot be safely reconstructed.
  */
 $freezeRoster=static function(array $members) use (
-    $connection,$rowId,$serverId,$volume,$day,$rosterType,$partType,$offset
+    $connection,$rowId,$serverId,$volume,$day,$rosterType,$partType,$offset,$receipt
 ): array {
     if (!$connection->begin_transaction())
         throw new RuntimeException('gift_roster_begin_failed');
@@ -112,7 +115,8 @@ $freezeRoster=static function(array $members) use (
         if (!$existing) {
             // Pre-upgrade continuation: the earlier completed usernames are
             // unknowable. A new list MUST NOT be used for its old offset.
-            if ($offset!==0) throw new RuntimeException('gift_legacy_roster_missing');
+            if ($receipt===null || $offset!==0)
+                throw new RuntimeException('gift_legacy_roster_missing');
             $chunks=[];$block=[];$bytes=2;
             $store=static function(array $names) use ($connection,$partType,&$chunks): void {
                 if (!$names) return;
@@ -140,7 +144,7 @@ $freezeRoster=static function(array $members) use (
                 'volume_mb'=>$volume,'days'=>$day,
                 'membership'=>'first_successful_cron_fetch','cursor'=>0,
                 'count'=>count($members),'chunks'=>$chunks,
-                'created_at'=>gmdate('c')
+                'target'=>$receipt['target'],'created_at'=>gmdate('c')
             ];
             $payload=json_encode($meta,JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE);
             if (strlen($payload)>60000)
@@ -154,7 +158,9 @@ $freezeRoster=static function(array $members) use (
             $id=(int)$existing[0]['id'];
             $meta=json_decode((string)$existing[0]['value'],true);
         }
-        if (!is_array($meta) || ($meta['version']??null)!==1 ||
+        if (!is_array($meta) || $receipt===null ||
+            ($meta['target']??null)!==$receipt['target'] ||
+            ($meta['version']??null)!==1 ||
             ($meta['gift_id']??null)!==$rowId ||
             ($meta['server_id']??null)!==$serverId ||
             ($meta['volume_mb']??null)!==$volume ||
@@ -203,7 +209,7 @@ $freezeRoster=static function(array $members) use (
 };
 
 $reserve=static function(int $index,string $remark,string $reason) use (
-    $connection,$rowId,$serverId,$volume,$day,$holdType,$rosterType,&$rosterId
+    $connection,$rowId,$serverId,$volume,$day,$holdType,$rosterType,&$rosterId,$receipt
 ): array {
     if ($index<0 || $index>=2147483647)
         throw new RuntimeException('gift_cursor_out_of_range');
@@ -227,6 +233,12 @@ $reserve=static function(int $index,string $remark,string $reason) use (
         if (!$live || (int)$live['offset']!==$index)
             throw new RuntimeException('gift_reserve_cursor_changed');
         if ($reason==='pending_service_edit') {
+            $latest=achbotGiftReadProvenance($connection,[
+                'id'=>$rowId,'server_id'=>$serverId,'volume'=>$volume,'day'=>$day
+            ]);
+            if ($receipt===null || $latest===null || $latest!==$receipt ||
+                !achbotGiftTargetMatches($connection,$serverId,$receipt['target']))
+                throw new RuntimeException('gift_reserve_target_or_provenance_changed');
             if ($rosterId<=0)
                 throw new RuntimeException('gift_reserve_roster_missing');
             $state=$connection->prepare('SELECT value FROM setting WHERE id=? AND type=? FOR UPDATE');
@@ -269,7 +281,7 @@ $reserve=static function(int $index,string $remark,string $reason) use (
 
 $finish=static function(
     int $before,?int $holdId,int $next,?array $order,?int $absoluteExpire
-) use ($connection,$rowId,$serverId,$holdType,$rosterType,&$rosterId): void {
+) use ($connection,$rowId,$serverId,$holdType,$rosterType,&$rosterId,$receipt): void {
     if ($rosterId<=0) throw new RuntimeException('gift_roster_missing_at_finish');
     $index=$before<0 ? -$before-1 : $before;
     if ($next!==$index+1) throw new RuntimeException('gift_finish_bad_progress');
@@ -289,7 +301,9 @@ $finish=static function(
         $ok=$state->execute();$entry=$ok?$state->get_result()->fetch_assoc():null;
         $state->close();
         $roster=$entry?json_decode((string)$entry['value'],true):null;
-        if (!is_array($roster) || ($roster['cursor']??null)!==$index ||
+        if (!is_array($roster) || $receipt===null ||
+            ($roster['target']??null)!==$receipt['target'] ||
+            ($roster['cursor']??null)!==$index ||
             !is_int($roster['count']??null) || $next>$roster['count'])
             throw new RuntimeException('gift_finish_roster_changed');
 
@@ -450,11 +464,47 @@ $change=['remark'=>''];
 if ($volume>0) $change['plus_volume']=intdiv($volume,1024);
 if ($day>0) $change['plus_day']=$day;
 
-$listed=getMarzbanJson($serverId);
+// Old workers could apply first gift before the signed offset changed.
+if ($receipt===null) {
+    try {
+        $reserve($offset,'','legacy_batch_missing_enqueued_provenance');
+        $notifyHold('',$offset,'legacy_batch_missing_enqueued_provenance');
+    } catch (Throwable $ignored) {
+        sendMessage('هویت صف هدیه از نسخهٔ جدید نیست؛ بررسی مدیر لازم است.',null,null,$admin);
+    }
+    return;
+}
+$target=achbotGiftResolveTarget($connection,$serverId,$receipt);
+if ($target===null) {
+    try {
+        $reserve($offset,'','gift_physical_target_changed');
+        $notifyHold('',$offset,'gift_physical_target_changed');
+    } catch (Throwable $ignored) {
+        sendMessage('هویت فیزیکی مقصد هدیه تغییر کرده؛ بررسی مدیر لازم است.',null,null,$admin);
+    }
+    return;
+}
+$listed=getMarzbanJson($serverId,null,$target);
 if (!is_object($listed) || !is_array($listed->users??null) ||
-    (property_exists($listed,'total') &&
-     (!is_int($listed->total) || $listed->total!==count($listed->users)))) {
-    sendMessage('فهرست کاربران هدیه تأیید نشد؛ هیچ تغییری ثبت نشد.',null,null,$admin);
+    !array_is_list($listed->users) ||
+    !property_exists($listed,'total') ||
+    !is_int($listed->total) || $listed->total<0 ||
+    $listed->total!==count($listed->users)) {
+    // A network/format fault alone is retryable before any edit, but an
+    // actual physical-identity drift during login or list GET must be held
+    // for explicit operator reconciliation, not silently retried.
+    if (!achbotGiftTargetMatches($connection,$serverId,$receipt['target'])) {
+        try {
+            $reserve($offset,'','gift_physical_target_changed_during_list');
+            $notifyHold('',$offset,'gift_physical_target_changed_during_list');
+        } catch (Throwable $ignored) {
+            sendMessage('هویت مقصد هنگام دریافت فهرست تغییر کرد؛ بررسی مدیر لازم است.',
+                        null,null,$admin);
+        }
+    } else {
+        sendMessage('فهرست کاربران هدیه تأیید نشد؛ هیچ تغییری ثبت نشد.',
+                    null,null,$admin);
+    }
     return;
 }
 // Check the entire fresh API result for duplicate/malformed identities.
@@ -475,6 +525,15 @@ if ($ambiguous) {
         $notifyHold('',$offset,'provider_membership_ambiguous');
     } catch (Throwable $e) {
         sendMessage('فهرست گیرندگان هدیه مبهم است؛ بررسی مدیر لازم است.',null,null,$admin);
+    }
+    return;
+}
+if (!achbotGiftTargetMatches($connection,$serverId,$receipt['target'])) {
+    try {
+        $reserve($offset,'','gift_physical_target_changed_after_list');
+        $notifyHold('',$offset,'gift_physical_target_changed_after_list');
+    } catch (Throwable $ignored) {
+        sendMessage('هویت مقصد پس از فهرست تغییر کرد؛ بررسی مدیر لازم است.',null,null,$admin);
     }
     return;
 }
@@ -553,7 +612,7 @@ foreach ($rosterNames as $index=>$remark) {
 
     try {
         $change['remark']=$remark;
-        $result=achbotApplyServiceEdit($connection,$serverId,$change);
+        $result=achbotApplyServiceEdit($connection,$serverId,$change,$target);
         $verified=is_object($result) &&
             ($result->success??false)===true &&
             ($result->verified??false)===true &&

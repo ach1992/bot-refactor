@@ -1581,15 +1581,31 @@ if(preg_match('/^giftServerDay(\d+)/',$userInfo['step'], $match) && ($from_id ==
 if(preg_match('/^giftServerVolume(\d+)_(\d+)/',$userInfo['step'],$match) && ($from_id == $admin || $userInfo['isAdmin'] == true) && $text != $buttonValues['cancel']){
     if(is_numeric($text)){
         if($text >= 0){
-            $stmt = $connection->prepare("INSERT INTO `gift_list` (`server_id`, `volume`, `day`) VALUES (?, ?, ?)");
-            $stmt->bind_param("iii", $match[1], $text, $match[2]);
-            $stmt->execute();
-            $stmt->close();
-
-            sendMessage($mainValues['saved_successfuly'],$removeKeyboard);
-            sendMessage($mainValues['reached_main_menu'],getMainKeys());
-
-            setUser();
+            // Bind the new-format job provenance atomically with its queue
+            // row. Old zero-offset jobs may already have remote effects.
+            $volume=filter_var((string)$text,FILTER_VALIDATE_INT,
+                ['options'=>['min_range'=>0,'max_range'=>2147483647]]);
+            $days=filter_var($match[2],FILTER_VALIDATE_INT,
+                ['options'=>['min_range'=>0,'max_range'=>2147483647]]);
+            $sid=filter_var($match[1],FILTER_VALIDATE_INT,
+                ['options'=>['min_range'=>1,'max_range'=>2147483647]]);
+            if (!preg_match('/^(0|[1-9][0-9]*)$/D',(string)$text) ||
+                $volume===false || $days===false || $sid===false ||
+                ($volume===0 && $days===0) ||
+                ($volume>0 && $volume%1024!==0)) {
+                sendMessage('حجم باید مضرب 1024 مگابایت و حداقل یکی از حجم یا روز مثبت باشد.');
+            } else {
+                try {
+                    require_once __DIR__ . '/src/Subscription/GiftBatch.php';
+                    achbotGiftNewBatch($connection,$sid,$volume,$days);
+                    sendMessage($mainValues['saved_successfuly'],$removeKeyboard);
+                    sendMessage($mainValues['reached_main_menu'],getMainKeys());
+                    setUser();
+                } catch (Throwable $giftEnqueueError) {
+                    // Ambiguous COMMIT: do not automatically enqueue again.
+                    sendMessage('ثبت امن هدیه تأیید نشد؛ وضعیت صف باید توسط مدیر بررسی شود.');
+                }
+            }
         }else sendMessage("عددی بزرگتر و یا مساوی 0 واردکنید.");
     }else sendMessage($mainValues['send_only_number']);
 }

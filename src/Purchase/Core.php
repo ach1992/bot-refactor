@@ -515,7 +515,8 @@ if (!function_exists('achbotSupportsPaymentSubject')) {
  * until its readback/effect tests pass.
  */
 if (!function_exists('achbotApplyServiceEdit')) {
-    function achbotApplyServiceEdit($db, $serverId, array $change): object {
+    function achbotApplyServiceEdit($db, $serverId, array $change,
+                                   ?array $giftTarget=null): object {
         $serverId=(int)$serverId;
         if (!($db instanceof mysqli) || $serverId<=0 ||
             !isset($change['remark']) ||
@@ -535,10 +536,17 @@ if (!function_exists('achbotApplyServiceEdit')) {
         $panel=$stmt->get_result()->fetch_assoc();
         $stmt->close();
         $type=(string)($panel['type']??'');
+        if ($giftTarget!==null) {
+            require_once __DIR__ . '/../Subscription/GiftBatch.php';
+            if ($type!=='marzban' ||
+                !achbotGiftTargetMatches($db,$serverId,$giftTarget))
+                return (object)['success'=>false,'uncertain'=>true,
+                                'msg'=>'gift_service_target_changed'];
+        }
         // The transport-specific code only exists inside its own adapter.
         // No speculative fallback or implicit behavior for future panels.
         $outcome=match($type) {
-            'marzban'=>editMarzbanConfig($serverId,$change),
+            'marzban'=>editMarzbanConfig($serverId,$change,$giftTarget),
             default=>(object)['success'=>false,'uncertain'=>false,
                               'msg'=>'unsupported_service_adapter'],
         };
