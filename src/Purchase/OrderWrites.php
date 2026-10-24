@@ -5,6 +5,18 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     exit;
 }
 
+/**
+ * Split integer paid amounts across ordered accounts without losing a unit.
+ * The first (total % count) rows receive one extra unit (1-based ordinal).
+ */
+if (!function_exists('achbotAllocateOrderAmount')) {
+    function achbotAllocateOrderAmount(int $total, int $count, int $ordinal): int {
+        if ($total<0 || $count<=0 || $ordinal<=0 || $ordinal>$count)
+            throw new InvalidArgumentException('invalid_order_amount_allocation');
+        return intdiv($total,$count)+($ordinal<=($total%$count)?1:0);
+    }
+}
+
 if (!function_exists('insertOrder')) {
     function insertOrder(
         $connection,
@@ -46,10 +58,12 @@ if (!function_exists('insertOrder')) {
         );
         $saved=$stmt->execute();
         $inserted=$stmt->affected_rows;
+        $orderId=($saved===true && $inserted===1) ? (int)$stmt->insert_id : 0;
         $stmt->close();
-        if ($requireConfirmed && ($saved!==true || $inserted!==1)) {
+        if ($requireConfirmed && ($saved!==true || $inserted!==1 || $orderId<=0)) {
             throw new RuntimeException('order_insert_unconfirmed');
         }
+        return $orderId;
     }
 }
 
@@ -62,14 +76,17 @@ if (!function_exists('decreaseServerCapacity')) {
         $plan_id    = (int)$plan_id;
 
         if ($count <= 0) {
+            if ($requireConfirmed) throw new RuntimeException('capacity_invalid_count');
             return;
         }
 
         if ($inbound_id === 0) {
             $stmt = $connection->prepare(
-                "UPDATE `server_info` SET `ucount` = `ucount` - ? WHERE `id` = ?"
+                "UPDATE `server_info` SET `ucount` = `ucount` - ?
+                 WHERE `id` = ? AND `ucount` >= ?"
             );
-            $stmt->bind_param("ii", $count, $server_id);
+            if (!$stmt) throw new RuntimeException('server_capacity_prepare_failed');
+            $stmt->bind_param("iii", $count, $server_id, $count);
             $saved=$stmt->execute();
             $changed=$stmt->affected_rows;
             $stmt->close();
@@ -77,9 +94,11 @@ if (!function_exists('decreaseServerCapacity')) {
                 throw new RuntimeException('server_capacity_update_unconfirmed');
         } else {
             $stmt = $connection->prepare(
-                "UPDATE `server_plans` SET `acount` = `acount` - ? WHERE `id` = ?"
+                "UPDATE `server_plans` SET `acount` = `acount` - ?
+                 WHERE `id` = ? AND `acount` >= ?"
             );
-            $stmt->bind_param("ii", $count, $plan_id);
+            if (!$stmt) throw new RuntimeException('plan_capacity_prepare_failed');
+            $stmt->bind_param("iii", $count, $plan_id, $count);
             $saved=$stmt->execute();
             $changed=$stmt->affected_rows;
             $stmt->close();

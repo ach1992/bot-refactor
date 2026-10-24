@@ -70,7 +70,10 @@ def stage_source(w,previous):
         marker=HOOK.encode()
         for _,callback,_,where in ROUTES:
             if where!=path:continue
-            begin=b"if(preg_match('/"+callback.encode()+b"(.*)/', $data, $match)){"
+            begin=(b"if(preg_match('/"+callback.encode()+b"(.*)/', $data, $match)){"
+                   if previous else
+                   b"if(is_string($data) && strlen($data) <= 64 && preg_match('/\\A"+
+                   callback.encode()+b"([A-Za-z0-9_-]{1,50})\\z/D', $data, $match)){")
             assert source.count(begin)==1,(where,callback,source.count(begin))
             start=source.index(begin)
             anchor=(b"        if (!achbotSupportsPaymentSubject($connection, "+
@@ -87,6 +90,10 @@ def stage_source(w,previous):
 
 def driver_source():
     driver=manual.PHP_ROUTE
+    # The shared manual fixture now exposes a safe diagnostic helper itself.
+    # Keep exactly that one definition; duplicating it in this derived race
+    # driver fatally errors before the source-real owner-lock interleaving.
+    assert driver.count("function achbotFinanceDiagnosticReason(")==1
     old="function achbotSupportsPaymentSubject(...$args){return true;}"
     assert driver.count(old)==1
     driver=driver.replace(old,"require_once $root.'/src/Purchase/Core.php';")
@@ -96,7 +103,6 @@ def driver_source():
     'synthetic TYPE USER-ID USERNAME NAME PRICE REMARK VOLUME DAYS',
     'config_not_found'=>'not_found'];
 $username='synthetic';$first_name='synthetic';$botState['rewardChannel']='';
-function achbotFinanceDiagnosticReason($error){return 'fixture_reason';}
 $GLOBALS['f1_pause']=$spec['f1_pause']??false;
 $GLOBALS['f1_ready']=$spec['f1_ready']??'';
 $GLOBALS['f1_release']=$spec['f1_release']??'';

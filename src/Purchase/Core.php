@@ -97,7 +97,7 @@ if (!function_exists('achbotSupportsMarzbanPlan')) {
             "SELECT p.`inbound_id`, p.`server_id`, c.`type`
              FROM `server_plans` p
              INNER JOIN `server_config` c ON c.`id` = p.`server_id`
-             WHERE p.`id` = ?".($lock ? ' AND p.active=1' : '')." LIMIT 1".($lock ? ' FOR UPDATE' : '')
+             WHERE p.`id` = ? AND p.active=1 LIMIT 1".($lock ? ' FOR UPDATE' : '')
         );
         $stmt->bind_param("i", $planId);
         $stmt->execute();
@@ -502,6 +502,72 @@ if (!function_exists('achbotSupportsPaymentSubject')) {
     }
 }
 
+/**
+ * Provider-independent paid service modification boundary.
+ *
+ * Payments (wallet, automatic bank receipt, hosted gateways and operator
+ * evidence) must call THIS function rather than Marzban's transport directly.
+ * Each provider adapter must prove its own effect and return a normalized
+ * verified absolute result; a plain HTTP acknowledgement is NOT success.
+ *
+ * Adding a panel (for example Pasarguard) extends only the adapter dispatch
+ * and its verified account semantics. It does not grant that panel support
+ * until its readback/effect tests pass.
+ */
+if (!function_exists('achbotApplyServiceEdit')) {
+    function achbotApplyServiceEdit($db, $serverId, array $change,
+                                   ?array $giftTarget=null): object {
+        $serverId=(int)$serverId;
+        if (!($db instanceof mysqli) || $serverId<=0 ||
+            !isset($change['remark']) ||
+            !is_string($change['remark']) || $change['remark']==='')
+            return (object)['success'=>false,'uncertain'=>false,
+                'msg'=>'service_edit_invalid_request'];
+
+        $stmt=$db->prepare('SELECT type FROM server_config WHERE id=?');
+        if (!$stmt) return (object)['success'=>false,'uncertain'=>true,
+                                   'msg'=>'service_adapter_lookup_unavailable'];
+        $stmt->bind_param('i',$serverId);
+        if (!$stmt->execute()) {
+            $stmt->close();
+            return (object)['success'=>false,'uncertain'=>true,
+                            'msg'=>'service_adapter_lookup_unavailable'];
+        }
+        $panel=$stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        $type=(string)($panel['type']??'');
+        if ($giftTarget!==null) {
+            require_once __DIR__ . '/../Subscription/GiftBatch.php';
+            if ($type!=='marzban' ||
+                !achbotGiftTargetMatches($db,$serverId,$giftTarget))
+                return (object)['success'=>false,'uncertain'=>true,
+                                'msg'=>'gift_service_target_changed'];
+        }
+        // The transport-specific code only exists inside its own adapter.
+        // No speculative fallback or implicit behavior for future panels.
+        $outcome=match($type) {
+            'marzban'=>editMarzbanConfig($serverId,$change,$giftTarget),
+            default=>(object)['success'=>false,'uncertain'=>false,
+                              'msg'=>'unsupported_service_adapter'],
+        };
+        if (!is_object($outcome) && !is_array($outcome))
+            return (object)['success'=>false,'uncertain'=>true,
+                            'msg'=>'service_edit_invalid_outcome'];
+        $outcome=is_array($outcome)?(object)$outcome:$outcome;
+        if (($outcome->success??false)!==true) return $outcome;
+        // Every adapter must expose a verified, absolute remote readback.
+        if (($outcome->verified??false)!==true ||
+            !isset($outcome->applied_expire,$outcome->applied_bytes) ||
+            !is_numeric($outcome->applied_expire) ||
+            !is_numeric($outcome->applied_bytes) ||
+            (int)$outcome->applied_expire<=0 ||
+            (int)$outcome->applied_bytes<0)
+            return (object)['success'=>false,'uncertain'=>true,
+                            'msg'=>'service_edit_unverified_outcome'];
+        return $outcome;
+    }
+}
+
 if (!function_exists('getServerInfoAndConfig')) {
     function getServerInfoAndConfig($connection, $server_id)
     {
@@ -544,6 +610,30 @@ if (!function_exists('buildRemark')) {
             $rnd = rand(1111, 99999);
             return "{$srv_remark}-{$userId}-{$rnd}";
         }
+    }
+}
+
+/**
+ * Independent authenticated admin updates must map to distinct, stable
+ * Marzban account identities even when manual remark is unchanged.
+ *
+ * The readable administrator/plan prefix survives; a source-bound suffix
+ * makes the actual remote username repeatable for a specific update + line.
+ * Never derive a fresh name when reconciling an uncertain journal dispatch.
+ */
+if (!function_exists('achbotAdminBulkAccountRemark')) {
+    function achbotAdminBulkAccountRemark(
+        string $base, string $sourceRef, int $ordinal
+    ): string {
+        if ($ordinal<1 ||
+            preg_match('/^bulk:[1-9][0-9]*:[1-9][0-9]*$/D',$sourceRef)!==1 ||
+            preg_match('/^[a-zA-Z0-9_-]+$/D',$base)!==1)
+            throw new InvalidArgumentException('bulk_account_remark_invalid');
+        $suffix='_b'.substr(hash('sha256',$sourceRef),0,20).'_'.$ordinal;
+        $prefix=substr($base,0,100-strlen($suffix));
+        if ($prefix==='' || !preg_match('/^[a-zA-Z0-9_-]+$/D',$prefix))
+            throw new InvalidArgumentException('bulk_account_remark_invalid');
+        return $prefix.$suffix;
     }
 }
 
@@ -591,7 +681,10 @@ if (!function_exists('createServerAccount')) {
         $expire_microdate,
         $netType,
         $rahgozar,
-        $limitip
+        $limitip,
+        ?string $effectOperationId = null,
+        ?int $effectExpire = null,
+        ?array $effectTarget = null
     ) {
         // This provider seam is explicit: do not reinterpret unknown/retired
         // X-UI or inbound-based plan records as Marzban. Never send an API
@@ -600,8 +693,10 @@ if (!function_exists('createServerAccount')) {
             return [(object)['success' => false, 'msg' => 'unsupported_panel'], $remark, $port];
         }
 
-        $response = addMarzbanUser($server_id, $remark, $volume, $days, $fid);
-        if (is_object($response) && !$response->success
+        $note = $effectOperationId === null ? null : 'achbot:v1:'.$effectOperationId;
+        $response = addMarzbanUser($server_id, $remark, $volume, $days, $fid, $note, $effectExpire, $effectTarget);
+        // A durable effect can NEVER change its remote username and retry.
+        if ($effectOperationId === null && is_object($response) && !$response->success
             && isset($response->msg) && $response->msg === 'User already exists') {
             $remark .= rand(1111, 99999);
             $response = addMarzbanUser($server_id, $remark, $volume, $days, $fid);

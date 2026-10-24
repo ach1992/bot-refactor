@@ -27,6 +27,16 @@ In **Server Management → Panel Groups**, an administrator can name a group and
 
 Use the [post-V9 operator acceptance checklist](docs/post-v9/MARZBAN-OPERATOR-ACCEPTANCE.md) before considering a test installation accepted.
 
+**Unreleased service-edit correctness work:** The developing source uses a
+provider-neutral account-edit boundary with strict panel readback, bounded
+correction and financial completion only after service + SQL verification.
+This is not support for a new panel or payment gateway: active support remains
+Marzban-only, with separate installed/release approval required. See the
+[financial consolidation document](docs/post-v9/FINANCIAL-CONSOLIDATION.md)
+and [operator checklist](docs/post-v9/MARZBAN-OPERATOR-ACCEPTANCE.md).
+Uncertain effects after worker termination may still need reconciliation;
+never repeat payment or remote edits blindly.
+
 **Finance source and migration status (2026-10-17):** the immutable published **v0.10.0-rc.4** included the historical NOWPayments-only migration 002. [Merged PR #44](https://github.com/ach1992/bot-refactor/pull/44) supersedes that design in the current source with unprefixed shared `payment_attempts` and `payment_transactions` tables for NOWPayments, NextPay and Zarinpal. Consult [GitHub Releases](https://github.com/ach1992/bot-refactor/releases) for the exact source-only package: merging or publishing does **not** migrate any database. The new migration is [003](migrations/post-v9/003_payment_attempts.sql); verify its exact schema state and obtain separate Owner authorization before applying it to ANY other target. On the Owner-authorized Chili test installation, 003 was explicitly applied only to `chilibot` (23 to 25 tables), while RC5 runtime was installed and the Owner reported basic bot operation. No live financial settlement or independent backup restoration was verified. See [Issue #26](https://github.com/ach1992/bot-refactor/issues/26#issuecomment-6225581330). **Never run RC4 migration 002 merely to prepare 003.** If RC4 tables were already applied, follow the separately controlled [non-destructive import route](docs/post-v9/PAYMENT-LEDGER-MIGRATION.md); do not delete old rows. Private NOWPayments IPN signing, optional stricter merchant payout floors, actual Cron reachability, operator acceptance and live installation remain separate gates; ordinary payout conversion/network fees follow the Owner-approved default without extra net-floor configuration.
 
 **Administrator wallet journal (source merged 2026-10-18):** [PR #58](https://github.com/ach1992/bot-refactor/pull/58) merged audited admin credit, routine debit, and explicit privileged debt into `main`. This source requires separately gated [migration 005](migrations/post-v9/005_admin_wallet_adjustments.sql), which the merge **did not apply** to any installed database. Check the [administrator wallet contract, preflight and restore requirements](docs/post-v9/ADMIN-WALLET-ADJUSTMENTS.md) before any separately authorized rollout. Neither merging nor a source ZIP activates or proves real-money behavior.
