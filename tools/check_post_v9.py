@@ -1232,6 +1232,64 @@ def main():
         ):
             raise RuntimeError("Bulk gift physical endpoint assurance incomplete")
 
+        # Fresh F1: REAL bot.php final Telegram text-step plus unmodified
+        # UpdateBindings and GiftBatch, original disposable MariaDB.
+        # No source update can authorize two non-idempotent batches.
+        gift_source_path=Path(tmp)/"gift-source-idempotency.json"
+        subprocess.run(
+            ["python3",str(ROOT/"tools/test_post_v9_gift_enqueue_source.py"),
+             "--run-disposable","--report",str(gift_source_path)],
+            cwd=ROOT,check=True,timeout=180,capture_output=True)
+        gift_source=json.loads(gift_source_path.read_text())
+        required_gift_source={
+            "f1_first_real_bot_message_one_job_claim_and_receipt",
+            "f1_replayed_identical_update_one_existing_batch",
+            "f1_two_actual_php_mysql_sessions_concurrent_one_source",
+            "f1_crash_after_commit_before_step_clear_no_replay",
+            "f1_source_claim_sql_failure_rolls_back_queue_and_receipt",
+            "f1_receipt_sql_failure_rolls_back_new_queue",
+            "f1_uncertain_commit_ack_recovered_by_source_claim",
+            "f1_source_claim_survives_completed_cron_and_blocks_reenqueue",
+            "f1_distinct_authorized_messages_create_distinct_batches",
+            "f1_different_actor_same_global_update_id_conflicts",
+            "f1_two_concurrent_actors_same_update_id_one_global_claim",
+            "f1_step_cleanup_cas_preserves_newer_admin_flow",
+            "f1_corrupted_existing_source_claim_fails_closed",
+            "f1_invalid_telegram_envelope_bound_actor",
+            "f1_invalid_telegram_envelope_bound_chat",
+            "f1_invalid_telegram_envelope_bound_message",
+            "f1_invalid_telegram_envelope_bound_text",
+            "f1_invalid_telegram_envelope_callback",
+            "f1_invalid_telegram_envelope_mixed",
+            "f1_invalid_telegram_envelope_edited",
+            "f1_invalid_telegram_envelope_channel_post",
+            "f1_invalid_telegram_envelope_missing_update",
+            "f1_invalid_telegram_envelope_string_update",
+            "f1_invalid_telegram_envelope_negative_update",
+            "f1_invalid_telegram_envelope_group_chat",
+            "f1_invalid_telegram_envelope_other_chat",
+            "f1_invalid_telegram_envelope_bot_sender",
+            "f1_invalid_telegram_envelope_zero_message_id",
+            "f1_nonadmin_source_denied",
+            "f1_delegated_admin_fresh_private_update_allowed",
+            "f1_fresh_actor_role_rechecked_under_lock",
+            "f1_fresh_actor_step_rechecked_under_lock",
+            "f1_duplicate_actor_userid_fails_closed",
+            "f1_duplicate_setting_claim_fails_closed",
+            "f1_telegram_notice_failure_preserves_committed_job",
+            "f1_same_update_id_changed_message_denied",
+        }
+        if not (gift_source.get("complete") is True and
+                gift_source.get("cases")==len(required_gift_source) and
+                set(gift_source.get("scenarios",[]))==required_gift_source and
+                gift_source.get("real_bot_php_route") is True and
+                gift_source.get("real_telegram_update_bindings") is True and
+                gift_source.get("real_gift_batch_helper") is True and
+                gift_source.get("owned_original_schema_mariadb") is True and
+                gift_source.get("parallel_php_sessions") is True and
+                gift_source.get("production_mutations")==0 and
+                gift_source.get("real_provider_requests")==0):
+            raise RuntimeError("Gift Telegram source idempotency contract incomplete")
         # Whole-main review R1: run actual owned gift worker on disposable
         # original 23-table MariaDB, no live Telegram/Marzban service.
         gift_path=Path(tmp)/"gift-worker-verified-state.json"
@@ -2153,6 +2211,7 @@ def main():
                     "latest_review_f1_f4":reviewer_f1_f4,
                     "service_effects":effects,
                     "strict_effect_transport_pin":pinned_effects,
+                    "gift_source_enqueue_idempotency":gift_source,
                     "gift_worker_safe_continuation":gift,
                     "gift_physical_target_continuity":physical_gift,
                     "wallet_paid_create":wallet_create,
@@ -2203,6 +2262,7 @@ def main():
                       "wallet_authorization_freshness_cases":wallet_freshness["cases"],
                       "service_effect_cases":effects["cases"],
                       "strict_effect_transport_pin_cases":pinned_effects["cases"],
+                      "gift_source_enqueue_cases":gift_source["cases"],
                       "gift_worker_reconciliation_cases":gift["cases"],
                       "gift_physical_target_cases":physical_gift["cases"],
                       "wallet_paid_create_cases":wallet_create["cases"],

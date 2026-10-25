@@ -451,6 +451,71 @@ the latest list or signed cursor. An interrupted old worker was tested
 directly against the original main source and disposable MariaDB.
 Do not auto-enqueue replacements after an ambiguous SQL commit.
 
+**Fresh independent F1 — Telegram source idempotency (source-only):**
+The final bulk-gift text step must be a real, original, authenticated
+administrator **private-chat message**. `UpdateBindings.php` can bind the
+older BOT message text to a callback; that is not a new operator message.
+`achbotGiftTelegramSource` therefore accepts only a single message/update
+envelope with positive integer `update_id` and `message_id`, matching
+message/from/chat/actor IDs and exact original text, no bot sender,
+unexpected callback, edited message, group, or mixed update. The database
+helper revalidates the primary owner and delegated-admin status under lock
+and verifies the operator's current final gift step for a NEW source.
+Cached admin privileges and old Telegram steps are not enqueue authority.
+This source contract validates the delivered Telegram JSON envelope and
+current database administrator authorization; it is NOT an independent
+network-origin attestation of the existing webhook endpoint. Webhook
+transport origin/secret configuration remains part of installed operator
+security acceptance, and no real incoming Telegram delivery was tested.
+
+`achbotGiftNewBatch` now commits **three records atomically** on the
+original InnoDB schema: the gift_list row, its versioned
+`ACHBOT_GIFT_ENQUEUE_<id>` provenance, and one persistent
+`ACHBOT_GIFT_SOURCE_<sha256>` source claim. The source identity is keyed by
+the Telegram update ID and the bulk-gift operation type; the claim record
+binds the exact original actor, private chat, message ID, text SHA256,
+target server, units, original administrator step and new gift ID.
+The global serialization owner is the primary administrator's original
+**users.id PRIMARY KEY record**, selected via the admin userid with
+`LIMIT 2 FOR UPDATE` and a strict exactly-one-row check. Delegated
+administrators' own records are also validated under lock. This covers
+concurrent PHP/MySQLi sessions and different actors, **without pretending
+users.userid or setting.type is UNIQUE**. The primary admin's unique
+user record must exist; a missing/ambiguous record fails closed. A
+duplicate source returns its same original gift ID without inserting any
+new batch; a conflicting or malformed source, unverifiable SQL or
+uncertain COMMIT cannot authorize a replacement. The source claim remains
+after Cron deletes a completed gift; removing a claim to replay an update
+is prohibited. No new tenant tables or SQL migrations are required.
+
+After a successful enqueue COMMIT, clearing the original operator step
+is a separate optimistic CAS on the actor's **unique users.id**, never
+a broad userid UPDATE. Newer steps are not overwritten. Telegram
+success/duplicate notices are presentation-only; a lost message or
+post-COMMIT process exit cannot undo the claim or turn the previous
+source into a second batch. An operator can intentionally submit a NEW
+authenticated update to request another independent bulk gift after
+re-entering the final step. Source claims are durable operation evidence,
+not expendable cache rows.
+
+`tools/test_post_v9_gift_enqueue_source.py` executes the current
+**real bot.php final text handler**, unmodified Telegram UpdateBindings,
+source helper and original disposable MariaDB: duplicate/replayed updates,
+parallel PHP processes, post-COMMIT interruption before UI state cleanup,
+lost COMMIT ACK, SQL receipt/claim insert rollback, actual Cron completion
+and late replay, different actors and fresh independent requests,
+malformed/forged/privilege-revoked sources, nonunique original actor rows,
+nonunique setting.type claim corruption, step-CAS safety, and notice
+failure. All 36 scenarios are mandatory in `tools/check_post_v9.py`.
+
+**Deployment compatibility:** This F1 source claim does not retroactively
+identify messages that were enqueued by *older* code without an update-ID
+claim. An installer must quiesce previous webhook/Cron workers, reconcile
+old in-flight gift batches and their administrator steps, and avoid
+replaying pending old updates when switching code. Do not synthesize
+Telegram source identities for legacy jobs. No installed provider/tenant
+migration or live side effect is authorized by source-only tests.
+
 **R1-A2 physical target continuity:** The enqueue receipt also holds the
 original canonical Marzban URL, SHA256 credential-identity fingerprint
 (never a password), and optional panel-group identity/schema presence.
@@ -484,7 +549,7 @@ Existing unmarked batches must be manually reviewed, including every
 zero-offset record. An active new batch requires stable physical target
 identity; endpoint/credential/group changes should be coordinated only
 after all source-only batch holds are reviewed.
- an older offset-only Cron worker does not
+An older offset-only Cron worker does not
 understand these roster rows and can repeat a completed gift if the list
 changes. Before any separately authorized downgrade, pause/reconcile active
 gift batches and operator holds; never replace the worker while an active

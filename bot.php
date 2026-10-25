@@ -1595,15 +1595,42 @@ if(preg_match('/^giftServerVolume(\d+)_(\d+)/',$userInfo['step'],$match) && ($fr
                 ($volume>0 && $volume%1024!==0)) {
                 sendMessage('حجم باید مضرب 1024 مگابایت و حداقل یکی از حجم یا روز مثبت باشد.');
             } else {
+                // Source authority comes from THIS received Telegram text
+                // update, not cached step text or a callback's old bot text.
+                // One source can own only one permanent batch identity.
+                $giftStep='giftServerVolume'.$sid.'_'.$days;
                 try {
                     require_once __DIR__ . '/src/Subscription/GiftBatch.php';
-                    achbotGiftNewBatch($connection,$sid,$volume,$days);
-                    sendMessage($mainValues['saved_successfuly'],$removeKeyboard);
-                    sendMessage($mainValues['reached_main_menu'],getMainKeys());
-                    setUser();
+                    $giftSource=achbotGiftTelegramSource(
+                        $update,$from_id,$chat_id,$message_id,$text);
+                    $giftEnqueue=achbotGiftNewBatch(
+                        $connection,$sid,$volume,$days,
+                        $giftSource,(int)$admin,$giftStep);
                 } catch (Throwable $giftEnqueueError) {
-                    // Ambiguous COMMIT: do not automatically enqueue again.
-                    sendMessage('ثبت امن هدیه تأیید نشد؛ وضعیت صف باید توسط مدیر بررسی شود.');
+                    // An unknown COMMIT acknowledgement can mean the batch
+                    // exists. Never submit a replacement job with a new
+                    // source identity or claim failed SQL is absent.
+                    sendMessage('وضعیت ثبت هدیه تأیید نشد؛ پیش از هر اقدام جدید صف هدایا را بررسی کنید.');
+                    return;
+                }
+                // Only presentation follows COMMIT. A Telegram failure or
+                // step-clear failure cannot convert a committed enqueue
+                // into a false failure or cause a new batch on replay.
+                try {
+                    achbotGiftDismissEnqueueStep($connection,$from_id,$giftStep);
+                } catch (Throwable $giftStepError) {
+                    error_log('gift_enqueue_step_cleanup_unconfirmed');
+                }
+                try {
+                    if ($giftEnqueue['created']) {
+                        sendMessage($mainValues['saved_successfuly'],$removeKeyboard);
+                    } else {
+                        sendMessage('این پیام قبلاً برای هدیه ثبت شده و درخواست تکراری ایجاد نشد.',
+                                    $removeKeyboard);
+                    }
+                    sendMessage($mainValues['reached_main_menu'],getMainKeys());
+                } catch (Throwable $giftNoticeError) {
+                    error_log('gift_enqueue_telegram_notice_unconfirmed');
                 }
             }
         }else sendMessage("عددی بزرگتر و یا مساوی 0 واردکنید.");

@@ -107,7 +107,21 @@ set_error_handler(static function($level,$text) {
 });
 require __DIR__.'/config.php';
 require __DIR__.'/src/Subscription/GiftBatch.php';
-echo achbotGiftNewBatch($connection,2,(int)$argv[1],(int)$argv[2]);
+$volume=(int)$argv[1];$days=(int)$argv[2];
+$step='giftServerVolume2_'.$days;
+$set=$connection->prepare('UPDATE users SET step=? WHERE userid=9001');
+$set->bind_param('s',$step);$set->execute();$set->close();
+$update=(object)[
+  'update_id'=>701,
+  'message'=>(object)[
+    'from'=>(object)['id'=>9001,'is_bot'=>false],
+    'chat'=>(object)['id'=>9001,'type'=>'private'],
+    'message_id'=>91,'text'=>(string)$volume
+  ]
+];
+$source=achbotGiftTelegramSource($update,9001,9001,91,(string)$volume);
+$created=achbotGiftNewBatch($connection,2,$volume,$days,$source,9001,$step);
+echo $created['id'];
 '''
 RUNNER=r'''<?php
 error_reporting(E_ALL);
@@ -566,7 +580,9 @@ def main():
         # The shared, real enqueue path is called by bot.php, not legacy
         # direct SQL. Keep this wiring under source-native acceptance.
         bot=(ROOT/'bot.php').read_text()
-        require('achbotGiftNewBatch($connection,$sid,$volume,$days)' in bot and
+        require('achbotGiftNewBatch(' in bot and
+                'achbotGiftTelegramSource(' in bot and
+                'achbotGiftDismissEnqueueStep(' in bot and
                 'INSERT INTO `gift_list`' not in bot,
                 'New-format Telegram batch enqueue bypasses its transaction')
         cases.append('r1a1_bot_admin_enqueue_uses_durable_provenance_path')
