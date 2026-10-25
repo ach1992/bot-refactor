@@ -2953,33 +2953,35 @@ function achbotSupportsPanel($type) {
     return $type === 'marzban';
 }
 
-function getMarzbanToken($server_id) {
+function getMarzbanToken($server_id, ?string $expectedPanelUrl = null, ?array $effectTarget = null) {
     require_once __DIR__ . '/src/Panel/Accounts.php';
-    return \AchBot\Panel\Accounts\getMarzbanToken($server_id);
+    return \AchBot\Panel\Accounts\getMarzbanToken($server_id, $expectedPanelUrl, $effectTarget);
 }
-function getMarzbanJson($server_id, $token = null) {
+function getMarzbanJson($server_id, $token = null, ?array $giftTarget=null) {
     require_once __DIR__ . '/src/Panel/Accounts.php';
-    return \AchBot\Panel\Accounts\getMarzbanJson($server_id, $token);
+    return \AchBot\Panel\Accounts\getMarzbanJson($server_id,$token,$giftTarget);
 }
 function getMarzbanUserInfo($server_id, $remark) {
     require_once __DIR__ . '/src/Panel/Accounts.php';
     return \AchBot\Panel\Accounts\getMarzbanUserInfo($server_id, $remark);
 }
-function getMarzbanUser($server_id, $remark, $token = null) {
+function getMarzbanUser($server_id, $remark, $token = null, bool $strict = false, ?string $expectedPanelUrl = null, ?array $effectTarget = null) {
     require_once __DIR__ . '/src/Panel/Accounts.php';
-    return \AchBot\Panel\Accounts\getMarzbanUser($server_id, $remark, $token);
+    return \AchBot\Panel\Accounts\getMarzbanUser(
+        $server_id, $remark, $token, $strict, $expectedPanelUrl, $effectTarget);
 }
 function getMarzbanHosts($server_id) {
     require_once __DIR__ . '/src/Panel/Accounts.php';
     return \AchBot\Panel\Accounts\getMarzbanHosts($server_id);
 }
-function addMarzbanUser($server_id, $remark, $volume, $days, $plan_id) {
+function addMarzbanUser($server_id, $remark, $volume, $days, $plan_id, ?string $operationNote = null, ?int $fixedExpire = null, ?array $effectTarget = null) {
     require_once __DIR__ . '/src/Panel/Accounts.php';
-    return \AchBot\Panel\Accounts\addMarzbanUser($server_id, $remark, $volume, $days, $plan_id);
+    return \AchBot\Panel\Accounts\addMarzbanUser(
+        $server_id,$remark,$volume,$days,$plan_id,$operationNote,$fixedExpire,$effectTarget);
 }
-function editMarzbanConfig($server_id,$info) {
+function editMarzbanConfig($server_id,$info,?array $giftTarget=null) {
     require_once __DIR__ . '/src/Panel/Accounts.php';
-    return \AchBot\Panel\Accounts\editMarzbanConfig($server_id, $info);
+    return \AchBot\Panel\Accounts\editMarzbanConfig($server_id,$info,$giftTarget);
 }
 function resetMarzbanTraffic($server_id, $remark, $token) {
     require_once __DIR__ . '/src/Panel/Accounts.php';

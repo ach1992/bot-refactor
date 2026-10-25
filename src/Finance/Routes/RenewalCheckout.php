@@ -137,7 +137,7 @@ if (
     achbotPayUxTrackByHash($connection,(string)$hash_id,(int)$from_id,$sent);
 }
 
-if (preg_match('/payRenewWith(?:CartToCart|GiftCard|ManualUsdt)(.*)/', $data, $match)) {
+if (is_string($data) && (strlen($data) <= 64 || ($GLOBALS['achbotManualCryptoVerifiedDispatch'] ?? null) === $data) && preg_match('/\ApayRenewWith(?:CartToCart|GiftCard|ManualUsdt)([A-Za-z0-9_-]{1,50})\z/D', $data, $match)) {
 
     $payInfo = dbFetchPayByHash($connection, $match[1]);
     if (!$payInfo) {
@@ -160,8 +160,8 @@ if (preg_match('/payRenewWith(?:CartToCart|GiftCard|ManualUsdt)(.*)/', $data, $m
         exit;
     }
 
-    $method = strpos($data, 'WithManualUsdt') !== false ? (($GLOBALS['achbotManualCryptoChoice'] ?? '') === 'TRON' ? 'manual_trx' : 'manual_usdt') :
-        (strpos($data, 'WithGiftCard') !== false ? 'gift_card' : 'bank_transfer');
+    $method = str_starts_with($data, 'payRenewWithManualUsdt') ? (($GLOBALS['achbotManualCryptoChoice'] ?? '') === 'TRON' ? 'manual_trx' : 'manual_usdt') :
+        (str_starts_with($data, 'payRenewWithGiftCard') ? 'gift_card' : 'bank_transfer');
     if (!achbotManualClaim($connection, $payInfo, $method, (int)$from_id,
                            $GLOBALS['achbotManualCryptoChoice'] ?? null)) {
         alert("⚠️ پرداخت این سفارش با این روش مجاز نیست یا قبلاً به روش دیگری آغاز شده است.", true);
@@ -342,6 +342,7 @@ if (preg_match('/wait(?:RenewCart|RenewGift|RenewUsdt)Receipt(.*)/', $userInfo['
 
 if(preg_match('/approveRenewAcc(.*)/',$data,$match) && ($from_id == $admin || $userInfo['isAdmin'] == true)){ 
     $connection->begin_transaction();
+    $localCommitted=false;
     try {
         $stmt = $connection->prepare("SELECT * FROM `pays` WHERE `hash_id` = ? FOR UPDATE"); 
         $stmt->bind_param("s", $match[1]); 
@@ -420,8 +421,25 @@ if(preg_match('/approveRenewAcc(.*)/',$data,$match) && ($from_id == $admin || $u
             'admins_messages' => $payInfo['admins_messages']
         ];
 
-        if ($serverType == "marzban") { 
-            $response = editMarzbanConfig($server_id, ['remark'=>$remark, 'days'=>$days, 'volume' => $volume]); 
+        if ($uid!==(int)$order['userid'] || (int)$order['status']!==1 ||
+            (int)$payInfo['plan_id']!==$fid ||
+            (int)$payInfo['server_id']!==$server_id ||
+            $price<=0 || (string)$payInfo['type']!=='RENEW_ACCOUNT')
+            throw new RuntimeException('manual_renew_subject_invalid');
+        if (!achbotSupportsPanel($serverType))
+            throw new UnexpectedValueException('unsupported_panel');
+        // Durable single-consumer receipt claim before remote mutation.
+        $payId=(int)$payInfo['id'];
+        $stmt=$connection->prepare("UPDATE pays SET state='processing'
+            WHERE id=? AND user_id=? AND hash_id=? AND type='RENEW_ACCOUNT'
+              AND price=? AND state='have_sent'");
+        $stmt->bind_param('iisi',$payId,$uid,$hash_id,$price);
+        $claimed=$stmt->execute() && $stmt->affected_rows===1;
+        $stmt->close();
+        if (!$claimed || $connection->commit()!==true)
+            throw new RuntimeException('manual_renew_claim_unconfirmed');
+        if (achbotSupportsPanel($serverType)) {
+            $response = achbotApplyServiceEdit($connection,$server_id, ['remark'=>$remark, 'days'=>$days, 'volume' => $volume]);
         } else {
             throw new \UnexpectedValueException('unsupported_panel');
         } 
@@ -438,30 +456,38 @@ if(preg_match('/approveRenewAcc(.*)/',$data,$match) && ($from_id == $admin || $u
             throw new Exception("provider_rejected");
         }
 
-        // آپدیت expire + notif
-        $newExpire = time() + $days * 86400; 
-        $stmt = $connection->prepare("UPDATE `orders_list` SET `expire_date` = ?, `notif` = 0 WHERE `id` = ?"); 
-        $stmt->bind_param("ii", $newExpire, $oid); 
-        $stmt->execute(); 
-        $stmt->close(); 
-
-        // ثبت در increase_order
-        $now = time();
-        $stmt = $connection->prepare("INSERT INTO `increase_order` (`userid`, `server_id`, `inbound_id`, `remark`, `amount`, `date`) VALUES (?, ?, ?, ?, ?, ?)"); 
-        $stmt->bind_param("iiisii", $uid, $server_id, $inbound_id, $remark, $price, $now); 
-        $stmt->execute(); 
-        $stmt->close(); 
-
-        // پرداخت را نهایتاً approved کن (فقط پس از موفقیت همه مراحل)
-        $stmt = $connection->prepare("UPDATE `pays` SET `state` = 'approved', `approved_by` = ? WHERE `hash_id` = ? AND `state` = 'have_sent'");
-        $stmt->bind_param('is', $from_id, $hash_id);
-        $stmt->execute();
-        $changed = $stmt->affected_rows;
+        if (!is_object($response) || ($response->verified??false)!==true)
+            throw new RuntimeException('manual_renew_provider_unverified');
+        if ($connection->begin_transaction()!==true)
+            throw new RuntimeException('manual_renew_finish_begin_failed');
+        $stmt=$connection->prepare("SELECT state,user_id,hash_id,type,price
+            FROM pays WHERE id=? FOR UPDATE");
+        $stmt->bind_param('i',$payId);
+        $ok=$stmt->execute();
+        $locked=$ok?$stmt->get_result()->fetch_assoc():null;
         $stmt->close();
-        if ($changed !== 1) throw new Exception('renewal_receipt_claim_failed');
-
-        // COMMIT
-        $connection->commit();
+        if (!$locked || $locked['state']!=='processing' ||
+            (int)$locked['user_id']!==$uid || (int)$locked['price']!==$price ||
+            (string)$locked['type']!=='RENEW_ACCOUNT' ||
+            (string)$locked['hash_id']!==$hash_id)
+            throw new RuntimeException('manual_renew_claim_stale');
+        achbotStoreVerifiedServiceExpiryLocked($connection,$order,$response);
+        $now=time();
+        $stmt=$connection->prepare("INSERT INTO increase_order
+            (userid,server_id,inbound_id,remark,amount,date)
+            VALUES (?,?,?,?,?,?)");
+        $stmt->bind_param('iiisii',$uid,$server_id,$inbound_id,$remark,$price,$now);
+        $audited=$stmt->execute() && $stmt->affected_rows===1;
+        $stmt->close();
+        if (!$audited) throw new RuntimeException('manual_renew_audit_unconfirmed');
+        $stmt=$connection->prepare("UPDATE pays SET state='approved',approved_by=?
+            WHERE id=? AND user_id=? AND hash_id=? AND state='processing'");
+        $stmt->bind_param('iiis',$from_id,$payId,$uid,$hash_id);
+        $finished=$stmt->execute() && $stmt->affected_rows===1;
+        $stmt->close();
+        if (!$finished || $connection->commit()!==true)
+            throw new RuntimeException('manual_renew_finish_unconfirmed');
+        $localCommitted=true;
 
         editKeys($deferredAdminKeys['keys'], $deferredAdminKeys['message_id'], $deferredAdminKeys['chat_id']); 
         // ویرایش پیام سایر ادمین‌ها
@@ -481,8 +507,12 @@ if(preg_match('/approveRenewAcc(.*)/',$data,$match) && ($from_id == $admin || $u
         sendMessage("✅ اشتراک <code>$remark</code> با موفقیت تمدید شد.", null, "HTML", $uid); 
         return;
 
-    } catch (Exception $e) {
-        $connection->rollback();
+    } catch (Throwable $e) {
+        if ($localCommitted) {
+            error_log('achbot_manual_renew_notice_unconfirmed pay_id='.(int)($payId??0));
+            return;
+        }
+        try {$connection->rollback();} catch (Throwable $ignored) {}
 
         $err = "⚠️ خطا در تایید تمدید کارت‌به‌کارت\n\n"
              . "🆔 Hash ID: {$match[1]}\n"
@@ -495,8 +525,9 @@ if(preg_match('/approveRenewAcc(.*)/',$data,$match) && ($from_id == $admin || $u
     }
 }
 
-if(preg_match('/payRenewWithWallet(.*)/', $data, $match)){
+if(is_string($data) && strlen($data) <= 64 && preg_match('/\ApayRenewWithWallet([A-Za-z0-9_-]{1,50})\z/D', $data, $match)){
     $connection->begin_transaction();
+    $localCommitted=false;
     try {
         // Customer-wallet issuance shares the same owner-first lock as drafts
         // and manual/hosted claims. Never lock pays before users.userid.
@@ -575,13 +606,16 @@ if(preg_match('/payRenewWithWallet(.*)/', $data, $match)){
         $days   = intval($plan['days']);
         $volume = intval($plan['volume']);
 
-        $stmt = $connection->prepare("SELECT `wallet` FROM `users` WHERE `userid` = ? FOR UPDATE");
-        $stmt->bind_param("i", $uid);
-        $stmt->execute();
-        $wRes = $stmt->get_result()->fetch_assoc();
+        $stmt=$connection->prepare("SELECT id,wallet FROM users
+            WHERE userid=? FOR UPDATE");
+        $stmt->bind_param('i',$uid);
+        if (!$stmt->execute()) throw new RuntimeException('wallet_renew_owner_read_failed');
+        $owners=$stmt->get_result()->fetch_all(MYSQLI_ASSOC);
         $stmt->close();
-
-        $userwallet = intval($wRes['wallet'] ?? 0);
+        if (count($owners)!==1)
+            throw new RuntimeException('wallet_renew_owner_ambiguous');
+        $wRes=$owners[0];
+        $userwallet=(int)$wRes['wallet'];
         if ($userwallet < $price) {
             $needamount = $price - $userwallet;
 
@@ -607,8 +641,39 @@ if(preg_match('/payRenewWithWallet(.*)/', $data, $match)){
 
         $serverType = $server_info['type'];
 
-        if($serverType == "marzban"){
-            $response = editMarzbanConfig($server_id, ['remark'=>$remark, 'days'=>$days, 'volume' => $volume]);
+        if ((int)$order['userid']!==$uid || (int)$order['status']!==1 ||
+            (int)$payInfo['plan_id']!==$fid ||
+            (int)$payInfo['server_id']!==$server_id ||
+            // The real payment-subject guard above verifies this order's
+            // plan against the original server OR an explicitly authorized
+            // shared Marzban panel group. Do not narrow it here to equality:
+            // legitimate logical reassignment can retain the old plan ID.
+            (int)$plan['inbound_id']!==0 || $inbound_id!==0 ||
+            (string)$payInfo['type']!=='RENEW_ACCOUNT' || $price<=0)
+            throw new RuntimeException('wallet_renew_subject_invalid');
+        if (!achbotSupportsPanel($serverType))
+            throw new UnexpectedValueException('unsupported_panel');
+        // Debit reservation + claim commit atomically BEFORE the external PUT.
+        $payId=(int)$payInfo['id'];
+        $ownerPk=(int)$wRes['id'];
+        $stmt=$connection->prepare("UPDATE users SET wallet=wallet-?
+            WHERE id=? AND userid=? AND wallet>=?");
+        $stmt->bind_param('iiii',$price,$ownerPk,$uid,$price);
+        $reserved=$stmt->execute() && $stmt->affected_rows===1;
+        $stmt->close();
+        if (!$reserved) throw new RuntimeException('wallet_renew_reservation_unconfirmed');
+        $payState=(string)$payInfo['state'];
+        $stmt=$connection->prepare("UPDATE pays SET state='processing_wallet'
+            WHERE id=? AND user_id=? AND hash_id=? AND type='RENEW_ACCOUNT'
+              AND price=? AND state=?");
+        $stmt->bind_param('iisis',$payId,$uid,$hash_id,$price,$payState);
+        $claimed=$stmt->execute() && $stmt->affected_rows===1;
+        $stmt->close();
+        if (!$claimed || $connection->commit()!==true)
+            throw new RuntimeException('wallet_renew_claim_unconfirmed');
+
+        if (achbotSupportsPanel($serverType)){
+            $response = achbotApplyServiceEdit($connection,$server_id, ['remark'=>$remark, 'days'=>$days, 'volume' => $volume]);
         } else {
             throw new \UnexpectedValueException('unsupported_panel');
         }
@@ -625,29 +690,40 @@ if(preg_match('/payRenewWithWallet(.*)/', $data, $match)){
             throw new Exception("provider_rejected");
         }
 
-        $timeNow  = time();
-        $newExpire = $timeNow + ($days * 86400);
-        $stmt = $connection->prepare("UPDATE `orders_list` SET `expire_date` = ?, `notif` = 0 WHERE `id` = ?");
-        $stmt->bind_param("ii", $newExpire, $oid);
-        $stmt->execute();
+        if (!is_object($response) || ($response->verified??false)!==true)
+            throw new RuntimeException('wallet_renew_provider_unverified');
+        if ($connection->begin_transaction()!==true)
+            throw new RuntimeException('wallet_renew_finish_begin_failed');
+        $stmt=$connection->prepare("SELECT state,user_id,hash_id,type,price
+            FROM pays WHERE id=? FOR UPDATE");
+        $stmt->bind_param('i',$payId);
+        $ok=$stmt->execute();
+        $locked=$ok?$stmt->get_result()->fetch_assoc():null;
         $stmt->close();
-
-        $stmt = $connection->prepare("INSERT INTO `increase_order` (`userid`, `server_id`, `inbound_id`, `remark`, `amount`, `date`) VALUES (?, ?, ?, ?, ?, ?)");
-        $stmt->bind_param("iiisii", $uid, $server_id, $inbound_id, $remark, $price, $timeNow);
-        $stmt->execute();
+        if (!$locked || $locked['state']!=='processing_wallet' ||
+            (int)$locked['user_id']!==$uid ||
+            (int)$locked['price']!==$price ||
+            (string)$locked['hash_id']!==$hash_id ||
+            (string)$locked['type']!=='RENEW_ACCOUNT')
+            throw new RuntimeException('wallet_renew_claim_stale');
+        achbotStoreVerifiedServiceExpiryLocked($connection,$order,$response);
+        $timeNow=time();
+        $stmt=$connection->prepare("INSERT INTO increase_order
+            (userid,server_id,inbound_id,remark,amount,date)
+            VALUES (?,?,?,?,?,?)");
+        $stmt->bind_param('iiisii',$uid,$server_id,$inbound_id,
+                          $remark,$price,$timeNow);
+        $audited=$stmt->execute() && $stmt->affected_rows===1;
         $stmt->close();
-
-        $stmt = $connection->prepare("UPDATE `users` SET `wallet` = `wallet` - ? WHERE `userid` = ?");
-        $stmt->bind_param("ii", $price, $uid);
-        $stmt->execute();
+        if (!$audited) throw new RuntimeException('wallet_renew_audit_unconfirmed');
+        $stmt=$connection->prepare("UPDATE pays SET state='paid_with_wallet'
+            WHERE id=? AND user_id=? AND hash_id=? AND state='processing_wallet'");
+        $stmt->bind_param('iis',$payId,$uid,$hash_id);
+        $finished=$stmt->execute() && $stmt->affected_rows===1;
         $stmt->close();
-
-        $stmt = $connection->prepare("UPDATE `pays` SET `state` = 'paid_with_wallet' WHERE `hash_id` = ?");
-        $stmt->bind_param("s", $hash_id);
-        $stmt->execute();
-        $stmt->close();
-
-        $connection->commit();
+        if (!$finished || $connection->commit()!==true)
+            throw new RuntimeException('wallet_renew_finish_unconfirmed');
+        $localCommitted=true;
         editText($message_id, "✅ اشتراک $remark با موفقیت تمدید شد.", getMainKeys());
 
         $keys = json_encode(['inline_keyboard'=>[
@@ -675,8 +751,12 @@ if(preg_match('/payRenewWithWallet(.*)/', $data, $match)){
 
         return;
 
-    } catch (Exception $e) {
-        $connection->rollback();
+    } catch (Throwable $e) {
+        if ($localCommitted) {
+            error_log('achbot_wallet_renew_notice_unconfirmed pay_id='.(int)($payId??0));
+            return;
+        }
+        try {$connection->rollback();} catch (Throwable $ignored) {}
 
         // پیام فنی به ادمین
         $adminErr = "⚠️ خطا در تمدید با کیف پول\n\n"

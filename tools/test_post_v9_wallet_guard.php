@@ -32,7 +32,8 @@ final class FixtureStatement {
     // Model mysqli_stmt::execute() on a successful read-only preflight.
     public function execute() {return true;}
     public function get_result() {
-        if (strpos($this->sql, 'FROM `pays`') !== false) {
+        if (strpos($this->sql, 'FROM `pays`') !== false ||
+            strpos($this->sql, 'FROM pays ') !== false) {
             return new FixtureRows([
                 'hash_id' => 'synthetic-only',
                 'state' => $this->connection->case['state'] ?? 'pending',
@@ -111,8 +112,12 @@ foreach ($cases as $case) {
     $data = 'acceptsynthetic-only';
     require dirname(__DIR__) . '/src/Finance/Routes/ManualApproval.php';
     $expectedReads = $case['paytype'] === 'RENEW_SCONFIG' ? 1 : 2;
-    if ($db->reads !== $expectedReads || $db->rollbacks !== 0 || $db->commits !== 0) {
-        throw new RuntimeException('Manual receipt was mutated before provider validation');
+    // New manual authorization holds one pays-row lock while checking
+    // whether the panel/subject is valid. Every unsupported case rolls
+    // back that preflight transaction before any mutation or remote call.
+    if ($db->reads !== $expectedReads || $db->begins !== 1 ||
+        $db->rollbacks !== 1 || $db->commits !== 0) {
+        throw new RuntimeException('Manual receipt preflight was not atomically rejected');
     }
     $manualCases++;
 }

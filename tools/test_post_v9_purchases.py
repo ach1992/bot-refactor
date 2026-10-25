@@ -16,12 +16,20 @@ import package_post_v9 as current_runtime
 
 ROOT=Path(__file__).resolve().parents[1]
 HISTORY='7eb077fd8e6d0a303421626d1500f69e295a6664'
-CASES=['customer_paid_wallet','agent_one_wallet','agent_many_wallet',
-       'custom_paid_wallet','free_trial','free_trial_replay_denied',
-       'admin_bulk_create','nonadmin_bulk_denied','invalid_category_no_purchase',
-       'provider_reject_free','provider_unavailable_free',
+# Unchanged UI/catalogue/negative authorization retains exact V9 parity.
+# CREATE routes now intentionally differ: debit and capacity must commit
+# before remote HTTP, and real effect ids + Telegram update evidence are
+# mandatory. Never weaken frozen V9 itself; it is executed separately at
+# the pinned historical checkout. The revised workflows are source-natively
+# tested by wallet_creation, service_effects and nonpaid_routes in the FULL
+# post-V9 aggregate, including actual PHP/MariaDB, no-replay and failure races.
+CASES=['nonadmin_bulk_denied','invalid_category_no_purchase',
        'admin_category_create','admin_category_edit','admin_plan_price_edit',
        'admin_plan_create_draft','admin_category_manage','interval_plan_manage']
+INTENTIONALLY_CHANGED=['customer_paid_wallet','agent_one_wallet',
+       'agent_many_wallet','custom_paid_wallet','free_trial',
+       'free_trial_replay_denied','admin_bulk_create',
+       'provider_reject_free','provider_unavailable_free']
 
 
 def stage_source(stage:Path,current:bool)->dict:
@@ -127,6 +135,9 @@ def main():
     report={'complete':True,'historical_v9':HISTORY,'scenarios':len(CASES),
             'steps':len(records),'schema_tables':23,'mysql_socket_only':True,
             'php_sql_telegram_fake_provider_parity':True,
+            'changed_paid_nonpaid_source_contracts':INTENTIONALLY_CHANGED,
+            'new_source_contracts_mandatory_in_full_aggregate':True,
+            'historical_original_v9_requires_separate_pinned_ci':True,
             'live_provider_or_real_money_tested':False,'details':records}
     if args.report:
         args.report.write_text(json.dumps(report,indent=2,ensure_ascii=False)+'\n')

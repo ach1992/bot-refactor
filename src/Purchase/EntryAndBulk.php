@@ -155,9 +155,20 @@ if (
     ($from_id == $admin || ($userInfo['isAdmin'] ?? false) == true)
 ) {
 
+    require_once __DIR__.'/../Finance/ServiceEffects.php';
+    try {
+        $bulkSource=achbotNonPaymentSourceRef(
+            $update,(int)$from_id,'admin_bulk',(string)$text,
+            (int)$from_id===(int)$admin);
+    } catch (Throwable $error) {
+        alert('⛔️ درخواست قدیمی یا نامعتبر است؛ از منوی ساخت گروهی دوباره اقدام کنید.',true);
+        return;
+    }
+
     setUser();
 
-    if (!is_numeric($text)) {
+    if (!is_string($text) || preg_match('/^[1-9][0-9]*$/D',$text)!==1 ||
+        filter_var($text,FILTER_VALIDATE_INT)===false) {
         sendMessage($mainValues['send_only_number']);
         exit();
     }
@@ -215,7 +226,8 @@ if (
     alert($mainValues['sending_config_to_user']);
 
     $lastRemark = '';
-
+    $pendingDeliveries=[];
+    try {
     for ($i = 1; $i <= $count; $i++) {
 
         $uniqid = generateRandomString(42, $protocol);
@@ -225,33 +237,33 @@ if (
         $remark = buildRemark(
             $botState,
             $srv_remark,
-            $plan['description'] ?? '',
+            $plan['descr'] ?? '',
             $uid,
             null
         );
 
-        [$response, $remark, $port] = createServerAccount(
-            $serverType,
-            $server_id,
-            $inbound_id,
-            $fidFromStep,
-            $remark,
-            $volume,
-            $days,
-            $uniqid,
-            $protocol,
-            $port,
-            $expire_microdate,
-            $netType,
-            $rahgozar,
-            $limitip
+        // Bind uniqueness to the verified Telegram update, not to the
+        // manually configured (possibly identical) plan description.
+        $remark=achbotAdminBulkAccountRemark(
+            (string)$remark,$bulkSource,$i);
+        [$response, $remark, $port, $effectId] = achbotCreateNonPaymentAccount(
+            $connection,'admin_bulk',$bulkSource,$uid,$i,$count,[
+                'is_primary_admin'=>($uid===(int)$admin),
+                'user_id'=>$uid,'server_type'=>$serverType,
+                'server_id'=>$server_id,'inbound_id'=>$inbound_id,
+                'plan_id'=>$fidFromStep,'remark'=>$remark,'volume'=>$volume,
+                'days'=>$days,'uniqid'=>$uniqid,'protocol'=>$protocol,
+                'port'=>$port,'expire_microdate'=>$expire_microdate,
+                'net_type'=>$netType,'rahgozar'=>$rahgozar,
+                'limitip'=>$limitip
+            ]
         );
 
         ensureAccountCreationSucceeded($response, $serverInfo, $inbound_id, $admin);
 
         $lastRemark = $remark;
 
-        [$token, $vray_link, $uniqidReturned] = buildLinksAndSendQr(
+        [$token, $vray_link, $uniqidReturned, $caption, $keys, $qrLink] = buildLinksAndSendQr(
             $serverType,
             $serverConfig,
             $botState,
@@ -273,32 +285,54 @@ if (
             $days,
             $buttonValues,
             $linkIndices,
-            $hideConfigIfMany
+            $hideConfigIfMany,
+            '',
+            null,
+            false
         );
 
-        // ثبت سفارش
-        insertOrder(
-            $connection,
-            $uid,
-            $token,
-            $fidFromStep,
-            $server_id,
-            $inbound_id,
-            $remark,
-            $uniqidReturned,
-            $protocol,
-            $expire_date,
-            $vray_link,
-            $price,
-            $date,
-            $rahgozar,
-            0
-        );
+        if ($connection->begin_transaction()!==true)
+            throw new RuntimeException('admin_bulk_order_begin');
+        try {
+            $orderId=insertOrder(
+                $connection,$uid,$token,$fidFromStep,$server_id,
+                $inbound_id,$remark,$uniqidReturned?:$uniqid,
+                $protocol,$expire_date,$vray_link,$price,
+                $date,$rahgozar,0,true);
+            achbotLinkNonPaymentAccountEffect($connection,$effectId,$orderId);
+            if ($connection->commit()!==true)
+                throw new RuntimeException('admin_bulk_order_commit_unknown');
+        } catch (Throwable $error) {
+            try {$connection->rollback();} catch (Throwable $ignored) {}
+            throw $error;
+        }
+        $pendingDeliveries[]=['qr'=>$qrLink,'caption'=>$caption,'keys'=>$keys];
     }
 
-    decreaseServerCapacity($connection, $server_id, $inbound_id, $fidFromStep, $count);
-
-    sendMessage("☑️|❤️ اکانت های جدید با موفقیت ساخته شد.", getMainKeys());
+    // Capacity was atomically held with first journal dispatch.
+    } catch (Throwable $error) {
+        error_log('achbot_admin_bulk_effect_needs_review source='.
+            preg_replace('/[^A-Za-z0-9_:]/','',$bulkSource).
+            ' class='.get_class($error));
+        try {
+            sendMessage('⚠️ ساخت گروهی نیازمند تطبیق اکانت‌های ثبت‌شده است. '.
+                'از اجرای دوبارهٔ خودکار خودداری کنید.',null,null,$admin);
+        } catch (Throwable $ignored) {}
+        alert('⚠️ ساخت گروهی هنوز قطعی نیست؛ وضعیت سرویس‌ها را بررسی کنید.',true);
+        return;
+    }
+    foreach ($pendingDeliveries as $packet) {
+        try {
+            if (!sendQrFromLink($packet['qr'],$packet['caption'],$packet['keys'],
+                    $botUrl,$uid,'',null))
+                throw new RuntimeException('bulk_telegram_unconfirmed');
+        } catch (Throwable $error) {
+            error_log('achbot_admin_bulk_delivery_review source='.
+                preg_replace('/[^A-Za-z0-9_:]/','',$bulkSource).
+                ' class='.get_class($error));
+        }
+    }
+    sendMessage("☑️ اکانت‌ها ثبت شدند؛ در صورت نقص ارسال، وضعیت را بررسی کنید.", getMainKeys());
     setUser();
 }
 

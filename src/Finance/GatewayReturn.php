@@ -6,6 +6,7 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
 }
 
 require_once __DIR__ . '/GatewayClient.php';
+require_once __DIR__ . '/ServiceEffects.php';
 
 
 /**
@@ -1218,8 +1219,11 @@ function achbotPerformPaymentEffect($payRowId, $gateType, &$effectStage = null) 
         $customPort = $file_detail['custom_port'];
         $customSni  = $file_detail['custom_sni'];
 
-        $accountCount = ($payParam['agent_count'] ?? 0) != 0 ? (int)$payParam['agent_count'] : 1;
-        $eachPrice = ($accountCount > 0) ? ($amount / $accountCount) : $amount;
+        if ((int)($payParam['agent_count']??0)<0)
+            throw new RuntimeException('hosted_invalid_account_quantity');
+        $accountCount = (int)($payParam['agent_count']??0)>0
+            ? (int)$payParam['agent_count'] : 1;
+        if ($accountCount<=0) throw new RuntimeException('hosted_invalid_account_quantity');
 
         if ($acount == 0 && $inbound_id != 0) {
 
@@ -1241,32 +1245,12 @@ function achbotPerformPaymentEffect($payRowId, $gateType, &$effectStage = null) 
             return 'compensated';
         }
 
-        if ($inbound_id == 0) {
-            $stmt = $connection->prepare("SELECT * FROM `server_info` WHERE `id`=?");
-            $stmt->bind_param("i", $server_id);
-            $stmt->execute();
-            $server_info = $stmt->get_result()->fetch_assoc();
-            $stmt->close();
-
-            if (empty($server_info) || (int)$server_info['ucount'] <= 0) {
-
-
-                if (!refundToWalletAndNotify(
-                    $connection,
-                    $user_id,
-                    $amount,
-                    $gateType,
-                    $admin,
-                    "میخواست اشتراک بخره، ظرفیت پر بود."
-                )) {
-                    showForm('⚠️ پرداخت ثبت شده ولی بازگشت اعتبار کیف پول تأیید نشد؛ پشتیبانی باید بررسی کند.', $payDescription, false, 'review');
-                    return 'ambiguous';
-                }
-                showForm('پرداخت شما انجام شد ولی ظرفیت این سرور پر شده است، مبلغ ' . number_format($amount) . " تومان به کیف پول شما اضافه شد.", $payDescription, false, 'review');
-
-                return 'compensated';
-            }
-        }
+        // Never infer full-count inventory from a preflight ucount>0 read.
+        // The first 007 CREATE marker atomically reserves ALL accountCount
+        // slots on server_info inside its own committed payment-owned
+        // transaction, shared with manually reviewed buyer reservations.
+        // Insufficient/uncertain capacity after verified provider payment
+        // must remain operator-reviewable, without a speculative refund.
 
         [$serverInfo, $serverConfig] = getServerInfoAndConfig($connection, $server_id);
         $srv_remark = $serverInfo['remark'] ?? '';
@@ -1281,26 +1265,25 @@ function achbotPerformPaymentEffect($payRowId, $gateType, &$effectStage = null) 
 
             $forcedRemark = (!empty($description)) ? $description : null;
             $remark = buildRemark($botState, $srv_remark, $description, $user_id, $forcedRemark);
+            // An explicit repeated name across a multi-account order would
+            // previously trigger random renames on 409. Pin each line first.
+            if ($accountCount > 1 && $forcedRemark !== null) {
+                $remark .= '_'.$i;
+            }
 
             // First-use expiry staging was exclusive to never-deployed
             // Sanaei/Alireza inbound plans. Marzban keeps normal expiry.
             $expire_microdate_local = $expire_microdate;
 
-            [$response, $remark, $port] = createServerAccount(
-                $serverType,
-                $server_id,
-                $inbound_id,
-                $fid,
-                $remark,
-                $volume,
-                $days,
-                $uniqid,
-                $protocol,
-                $port,
-                $expire_microdate_local,
-                $netType,
-                $rahgozar,
-                $limitip
+            [$response, $remark, $port, $effectId] = achbotCreatePaidAccount(
+                $connection, $rowId, $i, [
+                    'user_id'=>$user_id,'server_type'=>$serverType,'server_id'=>$server_id,
+                    'inbound_id'=>$inbound_id,'plan_id'=>$fid,
+                    'remark'=>$remark,'volume'=>$volume,'days'=>$days,
+                    'uniqid'=>$uniqid,'protocol'=>$protocol,'port'=>$port,
+                    'expire_microdate'=>$expire_microdate_local,'net_type'=>$netType,
+                    'rahgozar'=>$rahgozar,'limitip'=>$limitip
+                ]
             );
 
             if (is_null($response)) {
@@ -1406,38 +1389,56 @@ function achbotPerformPaymentEffect($payRowId, $gateType, &$effectStage = null) 
                 dirname(__DIR__, 2) . '/pay'
             );
 
-            insertOrder(
-                $connection,
-                $user_id,
-                $token,
-                $fid,
-                $server_id,
-                $inbound_id,
-                $remark,
-                $uniqid,
-                $protocol,
-                $expire_date,
-                $vray_link,
-                $eachPrice,
-                time(),
-                $rahgozar,
-                $agentBought,
-                true
-            );
+            // Reserve remote identity before POST, but bind the resulting
+            // order and its effect together in one SHORT local SQL commit.
+            // Never leave an unlinked successful order after a link error.
+            if ($connection->begin_transaction() !== true)
+                throw new RuntimeException('hosted_effect_order_begin_unconfirmed');
+            try {
+                $orderId = insertOrder(
+                    $connection,
+                    $user_id,
+                    $token,
+                    $fid,
+                    $server_id,
+                    $inbound_id,
+                    $remark,
+                    $uniqid,
+                    $protocol,
+                    $expire_date,
+                    $vray_link,
+                    achbotAllocateOrderAmount((int)$amount,$accountCount,$i),
+                    time(),
+                    $rahgozar,
+                    $agentBought,
+                    true
+                );
+                achbotLinkPaidAccountEffect($connection,$effectId,$orderId);
+                if ($connection->commit() !== true)
+                    throw new RuntimeException('hosted_effect_order_commit_unconfirmed');
+            } catch (Throwable $error) {
+                try { $connection->rollback(); } catch (Throwable $ignored) {}
+                // Local COMMIT acknowledgement might be lost: remote CREATE
+                // is never retried, and the payment keeps its review fence.
+                throw $error;
+            }
         }
 
-        decreaseServerCapacity($connection, $server_id, $inbound_id, $fid, $accountCount, true);
+        // The whole count was reserved in a payment-scoped 007 transaction
+        // BEFORE remote CREATE; never deduct the same capacity again.
+        // The completed paid/remote operation is not proof that Telegram
+        // subscription details reached the customer.
+        if (!empty($userinfo['refered_by'])) {
+            $inviterId=(int)$userinfo['refered_by'];
+            if (giveReferralReward($connection,$user_id,$inviterId,
+                    $admin,$botState,null,$rowId)!==true) {
+                error_log('achbot_gateway_referral_needs_review pay_id='.$rowId);
+                achbotReferralWarnOperator((int)$admin,(int)$rowId);
+            }
+        }
 
-        // A failed local capacity write after remote creation is an
-        // unresolved business effect, not a completed delivery notice.
-        // A verified provider payment and a local order do not prove that
-        // the Telegram subscription link was acknowledged by the buyer.
         showForm('✅ پرداخت تأیید شد؛ وضعیت تحویل سرویس را در ربات بررسی کنید.',
                  $payDescription, true, 'review');
-
-        if (!empty($userinfo['refered_by'])) {
-            giveReferralReward($connection, $user_id, (int)$userinfo['refered_by'], $admin, $botState);
-        }
 
         $user_info = Bot('getChat', ['chat_id' => $user_id])->result;
         $first_name = $user_info->first_name ?? '-';
@@ -1501,6 +1502,10 @@ function achbotPerformPaymentEffect($payRowId, $gateType, &$effectStage = null) 
         $order = $stmt->get_result()->fetch_assoc();
         $stmt->close();
 
+        if (!$order || (int)$order['userid']!==$user_id ||
+            (int)$order['status']!==1 ||
+            !achbotSupportsMarzbanOrder($connection,$oid))
+            throw new RuntimeException('hosted_renew_order_ineligible');
         $fid = (int)$order['fileid'];
         $remark = $order['remark'];
         $uuid = $order['uuid'] ?? "0";
@@ -1524,24 +1529,9 @@ function achbotPerformPaymentEffect($payRowId, $gateType, &$effectStage = null) 
         $response = renewConfigOnServer($connection, $server_id, $inbound_id, $uuid, $remark, $days, $volume, $isMarzban);
 
         if (is_null($response)) {
-            if (achbotNpDeferUncertainRemoteEffect($gateType, $payDescription)) return 'ambiguous';
-
-
-            if (!refundToWalletAndNotify(
-                $connection,
-                $user_id,
-                $amount,
-                $gateType,
-                $admin,
-                "میخواست اشتراکش رو تمدید کنه، ولی اتصال به سرور برقرار نبود.",
-				$rewardChannel
-            )) {
-                showForm('⚠️ پرداخت ثبت شده ولی بازگشت اعتبار کیف پول تأیید نشد؛ پشتیبانی باید بررسی کند.', $payDescription, false, 'review');
-                return 'ambiguous';
-            }
-            showForm('⚠️ پرداخت شما با موفقیت انجام شد ولی مشکل فنی در اتصال به سرور، لطفا به مدیریت اطلاع بدید، مبلغ ' . number_format($amount) . " تومان به کیف پول شما اضافه شد.", $payDescription, false, 'review');
-
-            return 'compensated';
+            // A lost provider response does not prove that renewal failed.
+            achbotNpDeferUncertainRemoteEffect($gateType,$payDescription);
+            return 'ambiguous';
         }
 
         // Every supported provider requires a positively verified remote
@@ -1552,16 +1542,32 @@ function achbotPerformPaymentEffect($payRowId, $gateType, &$effectStage = null) 
             return 'ambiguous';
         }
 
-        $newExpire = $time + $days * 86400;
-        $stmt = $connection->prepare("UPDATE `orders_list` SET `expire_date` = ?, `notif` = 0 WHERE `id` = ?");
-        $stmt->bind_param("ii", $newExpire, $oid);
-        $saved=$stmt->execute();
-        $changed=$stmt->affected_rows;
-        $stmt->close();
-        if ($saved!==true || $changed!==1)
-            throw new RuntimeException('renewal_order_update_unconfirmed');
-
-        createIncreaseOrder($connection, $user_id, $server_id, $inbound_id, $remark, $amount, $time, null, null, true);
+        if (($response->verified??false)!==true)
+            throw new RuntimeException('hosted_renew_provider_unverified');
+        if ($connection->begin_transaction()!==true)
+            throw new RuntimeException('hosted_renew_finish_begin_failed');
+        try {
+            $stmt=$connection->prepare("SELECT id,state,user_id,type,hash_id,price
+                FROM pays WHERE id=? FOR UPDATE");
+            $stmt->bind_param('i',$rowId);
+            $ok=$stmt->execute();
+            $locked=$ok?$stmt->get_result()->fetch_assoc():null;
+            $stmt->close();
+            if (!$locked || $locked['state']!=='paid' ||
+                (int)$locked['user_id']!==$user_id ||
+                (int)$locked['price']!==$amount ||
+                (string)$locked['type']!==$payType ||
+                (string)$locked['hash_id']!==$hash_id)
+                throw new RuntimeException('hosted_renew_paid_claim_stale');
+            achbotStoreVerifiedServiceExpiryLocked($connection,$order,$response);
+            createIncreaseOrder($connection,$user_id,$server_id,$inbound_id,
+                                $remark,$amount,$time,null,null,true);
+            if ($connection->commit()!==true)
+                throw new RuntimeException('hosted_renew_commit_unconfirmed');
+        } catch (Throwable $error) {
+            try {$connection->rollback();} catch (Throwable $ignored) {}
+            throw $error;
+        }
 
         showForm("✅ پرداخت شما با موفقیت انجام شد. اشتراک $remark با موفقیت تمدید شد.", $payDescription, true, 'completed');
         sendMessage("✅ پرداخت شما با موفقیت انجام شد. اشتراک $remark با موفقیت تمدید شد.", json_encode(['inline_keyboard' => [[['text' => "↪️ بازگشت به منوی اصلی", 'callback_data' => "mainMenu"]]]]), null, $user_id);
@@ -1605,6 +1611,14 @@ function achbotPerformPaymentEffect($payRowId, $gateType, &$effectStage = null) 
         $orderInfo = $stmt->get_result()->fetch_assoc();
         $stmt->close();
 
+        // The pays claim was durably staged before entering this branch.
+        // Preserve the exact pre-remote local identity for later CAS, not a
+        // fresh order snapshot taken after the external effect.
+        if (!$orderInfo || (int)$orderInfo['id']!==$orderId ||
+            (int)$orderInfo['userid']!==$user_id ||
+            (int)$orderInfo['status']!==1 ||
+            !achbotSupportsMarzbanOrder($connection,$orderId))
+            throw new RuntimeException('hosted_day_order_ineligible');
         $server_id  = (int)$orderInfo['server_id'];
         $inbound_id = (int)$orderInfo['inbound_id'];
         $remark     = $orderInfo['remark'];
@@ -1622,25 +1636,42 @@ function achbotPerformPaymentEffect($payRowId, $gateType, &$effectStage = null) 
         [$srvInfo, $srvConfig] = getServerInfoAndConfig($connection, $server_id);
         $serverType = $srvConfig['type'] ?? '';
 
-        if ($serverType == "marzban") {
-            $response = editMarzbanConfig($server_id, ['remark' => $remark, 'plus_day' => $plusDays]);
+        if (achbotSupportsPanel($serverType)) {
+            $response = achbotApplyServiceEdit($connection,$server_id, ['remark' => $remark, 'plus_day' => $plusDays]);
         } else {
             throw new \UnexpectedValueException('unsupported_panel');
         }
 
         if (!empty($response->success)) {
-
-            $stmt = $connection->prepare("UPDATE `orders_list` SET `expire_date` = `expire_date` + ?, `notif` = 0 WHERE `uuid` = ?");
-            $delta = $plusDays * 86400;
-            $stmt->bind_param("is", $delta, $uuid);
-            $saved=$stmt->execute();
-            $changed=$stmt->affected_rows;
-            $stmt->close();
-            if ($saved!==true || $changed<1)
-                throw new RuntimeException('day_extension_update_unconfirmed');
-
-            $time2 = time();
-            createIncreaseOrder($connection, $user_id, $server_id, $inbound_id, $remark, $amount, $time2, null, $plusDays, true);
+            if (!is_object($response) || ($response->verified??false)!==true)
+                throw new RuntimeException('hosted_day_provider_unverified');
+            // Finalize order + audit in one transaction, before returning an
+            // eligible 'delivered' outcome to the hosted settlement manager.
+            if ($connection->begin_transaction()!==true)
+                throw new RuntimeException('hosted_day_finish_begin_failed');
+            try {
+                $stmt=$connection->prepare("SELECT id,state,user_id,type,hash_id,price
+                    FROM pays WHERE id=? FOR UPDATE");
+                $stmt->bind_param('i',$rowId);
+                $ok=$stmt->execute();
+                $locked=$ok?$stmt->get_result()->fetch_assoc():null;
+                $stmt->close();
+                if (!$locked || $locked['state']!=='paid' ||
+                    (int)$locked['user_id']!==$user_id ||
+                    (int)$locked['price']!==$amount ||
+                    (string)$locked['type']!==$payType ||
+                    (string)$locked['hash_id']!==$hash_id)
+                    throw new RuntimeException('hosted_day_paid_claim_stale');
+                achbotStoreVerifiedServiceExpiryLocked($connection,$orderInfo,$response);
+                $time2=time();
+                createIncreaseOrder($connection,$user_id,$server_id,
+                    $inbound_id,$remark,$amount,$time2,null,$plusDays,true);
+                if ($connection->commit()!==true)
+                    throw new RuntimeException('hosted_day_finish_commit_unconfirmed');
+            } catch (Throwable $error) {
+                try {$connection->rollback();} catch (Throwable $ignored) {}
+                throw $error; // previously staged paid/review claim persists
+            }
 
             showForm("✅ پرداخت شما با موفقیت انجام شد. $plusDays روز به مدت زمان اشتراک شما اضافه شد.", $payDescription, true, 'completed');
             sendMessage("✅ پرداخت شما با موفقیت انجام شد. $plusDays روز به مدت زمان اشتراک شما اضافه شد.", json_encode(['inline_keyboard' => [[['text' => "↪️ بازگشت به منوی اصلی", 'callback_data' => "mainMenu"]]]]), null, $user_id);
@@ -1720,8 +1751,8 @@ function achbotPerformPaymentEffect($payRowId, $gateType, &$effectStage = null) 
         [$srvInfo, $srvConfig] = getServerInfoAndConfig($connection, $server_id);
         $serverType = $srvConfig['type'] ?? '';
 
-        if ($serverType == "marzban") {
-            $response = editMarzbanConfig($server_id, ['remark' => $remark, 'plus_volume' => $plusVolume]);
+        if (achbotSupportsPanel($serverType)) {
+            $response = achbotApplyServiceEdit($connection,$server_id, ['remark' => $remark, 'plus_volume' => $plusVolume]);
         } else {
             throw new \UnexpectedValueException('unsupported_panel');
         }

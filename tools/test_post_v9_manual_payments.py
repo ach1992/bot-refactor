@@ -33,16 +33,34 @@ $paymentKeys=$spec['keys']??[
     'manualUsdtNetwork'=>'BEP20','manualUsdtRateToman'=>'100000',
 ];
 $USDTPrice='100000';$USDTPriceagent='110000';
+$admin=9001;
 require_once $root.'/src/Finance/ReceiptHelpers.php';
 function achbotSupportsPaymentSubject(...$args) {return true;}
+// Legacy fixture isolates bank-row semantics; R8 cases below delete both
+// fakes and load the actual Core.php permissions + SQL paths.
+function achbotSupportsMarzbanOrder(...$args) {return true;}
+function achbotSupportsPanel($type) {return $type==='marzban';}
+function getMainKeys() {return '{}';}
 function sendMessage(...$args) {return (object)['ok'=>true];}
 function editKeys(...$args) {}
+function achbotApplyServiceEdit($db,$server,$change) {
+    $GLOBALS['auto_service_remote_calls']=($GLOBALS['auto_service_remote_calls']??0)+1;
+    if (($GLOBALS['spec']['auto_remote']??'verified')!=='verified')
+        return (object)['success'=>false,'uncertain'=>true,'msg'=>'fixture_remote_unconfirmed'];
+    return (object)['success'=>true,'verified'=>true,
+                    'applied_expire'=>1802000000,
+                    'applied_bytes'=>3221225472];
+}
 
 require $root.'/settings/values.php';
 $stmt=$connection->prepare('SELECT * FROM pays WHERE hash_id=? LIMIT 1');
 $stmt->bind_param('s',$hash);$stmt->execute();
 $payInfo=$stmt->get_result()->fetch_assoc();$stmt->close();
 if (!$payInfo) throw new RuntimeException('synthetic payment missing');
+// Only explicitly requested stale-snapshot regressions replace fields in
+// the ORIGINAL scheduler view; every SQL read/lock remains source-real.
+if (isset($spec['seen_pay']) && is_array($spec['seen_pay']))
+    $payInfo=array_replace($payInfo,$spec['seen_pay']);
 $method=$spec['method']??'bank_transfer';$user=(int)($spec['user']??1001);
 $op=$spec['op']??'claim';
 if ($op==='claim') $value=achbotManualClaim($connection,$payInfo,$method,$user,
@@ -54,6 +72,27 @@ elseif ($op==='approve') $value=achbotApproveManualWalletTopup(
     $connection,$hash,(int)($spec['actor']??9001));
 elseif ($op==='bank_auto_claim') $value=achbotAutoBankClaim($connection,$payInfo);
 elseif ($op==='bank_auto_eligible') $value=achbotAutoBankEligible($connection,$payInfo);
+elseif ($op==='preflight_bank_service_edit') {
+    $value=achbotAutoBankEditPreflight($connection,$payInfo,
+        (string)($spec['edit_kind']??'day'),(int)($spec['server_id']??2),
+        (int)($spec['order_id']??0),(string)($spec['remark']??'auto-check'),
+        (int)($spec['units']??3));
+}
+elseif ($op==='finish_bank_service_edit') {
+    $reply=(object)[
+        'success'=>(bool)($spec['remote_success']??true),
+        'verified'=>(bool)($spec['remote_verified']??true),
+        'applied_expire'=>(int)($spec['applied_expire']??1802000000),
+        'applied_bytes'=>(int)($spec['applied_bytes']??3221225472),
+    ];
+    $value=achbotAutoBankFinishEdit($connection,$payInfo,$reply,
+        (string)($spec['edit_kind']??'volume'),
+        (int)($spec['server_id']??2),(int)($spec['order_id']??0),
+        (string)($spec['remark']??'auto-check'),(int)$payInfo['price'],
+        (int)($spec['units']??1),
+        isset($spec['expected_order_expire'])?
+            (int)$spec['expected_order_expire']:1800000100);
+}
 elseif ($op==='finish') $value=achbotManualFinishEvidence($connection,$hash,
     (string)($spec['photo_id']??'fixture-photo-id'),(string)($spec['token']??''),222,9001);
 elseif ($op==='service_guard') {
@@ -71,7 +110,7 @@ elseif ($op==='wallet') {
     $from_id=$user;$admin=9001;
     function alert(...$args) {}
     require_once $root.'/src/Finance/WalletSettlement.php';
-    $value=processWalletPayment($connection,$hash,static function(){return true;});
+    $value=processWalletPayment($connection,$hash,static function(){return true;},'standard');
 }
 elseif ($op==='read') {
     $selected=achbotManualSelectedMethod($connection,$payInfo);
@@ -83,11 +122,15 @@ elseif ($op==='read') {
     $value=['method'=>$selected,'body'=>$message,'keys'=>$keys,
       'caption'=>achbotManualCaption($connection,$payInfo,'Fixture purchase')];
 }
-elseif ($op==='auto') {
+elseif ($op==='auto' || $op==='auto_probe') {
     $botState['cartToCartAutoAcceptState']='on';
     $botState['cartToCartAutoAcceptTime']=1;
     require $root.'/src/Finance/AutomaticReceipts.php';
-    $value='tested';
+    // Probe the actual scheduler's isolated provider dispatch. Its spy
+    // still never sends traffic or changes an installed Marzban account.
+    $value=$op==='auto_probe'
+        ? ['remote_calls'=>(int)($GLOBALS['auto_service_remote_calls']??0)]
+        : 'tested';
 }
 else throw new RuntimeException('unknown synthetic op');
 echo json_encode(['result'=>$value],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
@@ -108,7 +151,8 @@ $connection->set_charset('utf8mb4');
 if (($spec['mysqli_report_off']??false)===true) mysqli_report(MYSQLI_REPORT_OFF);
 $from_id=(int)($spec['actor']??1001);
 $chat_id=$from_id;
-$admin=9001;$botUsername='FixtureBot';$message_id=111;
+$admin=9001;$botUsername='FixtureBot';$message_id=111;$time=1800000000;
+$first_name='Fixture';$username='synthetic_user';
 $callbackId='fixture-callback';
 $data=(string)($spec['data']??'');
 $text=$spec['text']??'';
@@ -125,7 +169,7 @@ $USDTPrice='100000';$USDTPriceagent='110000';
 $botState=array_replace([
     'cartToCartState'=>'on','giftCardState'=>'on','manualUsdtState'=>'on',
     'nowPaymentWallet'=>'off','zarinpal'=>'off','nextpay'=>'off',
-    'tronWallet'=>'off'], $spec['states']??[]);
+    'tronWallet'=>'off','rewardChannel'=>''], $spec['states']??[]);
 $paymentKeys=$spec['keys']??[
     'manualUsdtWalletTRC20'=>'TNPeeaaFB7K9cmo4uQpcU32zGK8G1NYqeL',
     'manualUsdtWalletERC20'=>'0x'.str_repeat('2',40),
@@ -139,6 +183,7 @@ $paymentKeys=$spec['keys']??[
 require $root.'/settings/values.php';
 require $root.'/src/Finance/ReceiptHelpers.php';
 function achbotSupportsPaymentSubject(...$args){return true;}
+function achbotFinanceDiagnosticReason(Throwable $e){return get_class($e);}
 $GLOBALS['events']=[];
 register_shutdown_function(static function(){
     echo json_encode(['events'=>$GLOBALS['events'],'fatal'=>error_get_last()], JSON_THROW_ON_ERROR |
@@ -162,7 +207,9 @@ function alert(...$args){$GLOBALS['events'][]=['name'=>'alert','args'=>$args];}
 function sendMessage(...$args){
     global $spec;
     $GLOBALS['events'][]=['name'=>'sendMessage','args'=>$args];
-    if (($spec['message_transport']??'')==='throw')
+    if (($spec['message_transport']??'')==='throw' ||
+        (($spec['message_transport']??'')==='throw_once' &&
+         ++$GLOBALS['message_send_count']===1))
         throw new RuntimeException('fixture_telegram_transport_down');
     if (($spec['message_transport']??'')==='no_id')
         return (object)['ok'=>true,'result'=>(object)[]];
@@ -190,19 +237,48 @@ function sendPhoto(...$args){
     return (object)['ok'=>true,'result'=>(object)['message_id'=>222]];
 }
 function sendToAllAdmins(...$args){$GLOBALS['events'][]=['name'=>'sendToAllAdmins'];}
-function editKeys(...$args){$GLOBALS['events'][]=['name'=>'editKeys'];}
+function editKeys(...$args){
+    $GLOBALS['events'][]=['name'=>'editKeys'];
+    if (($GLOBALS['spec']['message_edit_transport']??'')==='throw')
+        throw new RuntimeException('fixture_secret_should_not_be_forwarded');
+    return (object)['ok'=>true];
+}
 function editText(...$args){$GLOBALS['events'][]=['name'=>'editText','args'=>$args];return (object)['ok'=>true];}
 function answerCallbackQuery(...$args){$GLOBALS['events'][]=['name'=>'answerCallbackQuery'];}
 // Native payment-authorization tests never contact real fulfillment servers.
 // Record every attempted external effect, including mistaken authorization.
 $linkIndices=[];$hideConfigIfMany=false;$markup=[];
 function achbotSupportsMarzbanOrder(...$args){return true;}
-function getPlanDetails(...$args){return ['plan'=>[
-    'type'=>'vless','protocol'=>'vless','server_id'=>1,'acount'=>9,
-    'inbound_id'=>1,'limitip'=>1,'rahgozar'=>0,'custom_path'=>'',
+function achbotSupportsPanel($type){return $type==='marzban';}
+function getPlanDetails(...$args){return [
+    'days'=>30,'volume'=>10,'date'=>'synthetic',
+    'expire_microdate'=>2000000000,'expire_date'=>2000000000,
+    'plan'=>[
+    // Plan #1 is the fixture's actual standard paid target (server #1).
+    // Plan #7 is the separate seeded renewal/extension target (server #2).
+    // Resolve this from the requested plan, not from the callback route.
+    'type'=>'normal','protocol'=>'vless',
+    'server_id'=>((int)($args[1]??0)===1 ? 1 : 2),'acount'=>9,
+    'inbound_id'=>0,'limitip'=>1,'rahgozar'=>0,'custom_path'=>'',
     'custom_port'=>null,'custom_sni'=>''
 ]];}
 function ensureServerCapacity(...$args){}
+function buildRemark(...$args){
+    $i=($GLOBALS['remark_counter']??0)+1;
+    $GLOBALS['remark_counter']=$i;
+    // Independent manual purchase hashes must not reuse a remote username.
+    // The durable journal rejects the same username across different orders.
+    if (($GLOBALS['spec']['route']??'')==='standard_approval') {
+        return 'fx_'.substr(hash('sha256',(string)($GLOBALS['spec']['data']??'')),0,12).'_'.$i;
+    }
+    return $i===1 ? 'fixture-remark' : 'fixture-remark-'.$i;
+}
+function sendQrFromLink(...$args){
+    $GLOBALS['events'][]=['name'=>'qr_send'];
+    if (($GLOBALS['spec']['qr_transport']??'')==='throw')
+        throw new RuntimeException('fixture_postcommit_qr_delivery_lost');
+    return true;
+}
 function getServerInfoAndConfig(...$args){return [
     ['remark'=>'fixture-remark'],
     ['type'=>'marzban','port_type'=>'automatic']
@@ -211,23 +287,110 @@ function generateRandomString(...$args){return 'fixture-random-unique';}
 function getNextPortAndIncrease(...$args){return [15001,1];}
 function createServerAccount(...$args){
     $GLOBALS['events'][]=['name'=>'remote_create'];
-    if (($GLOBALS['spec']['remote_mode']??'success')==='uncertain')
+    $GLOBALS['create_count']=($GLOBALS['create_count']??0)+1;
+    $remark=(string)$args[4];
+    $operation=$args[14]??null;
+    $expiry=$args[15]??null;
+    if ($operation!==null && !preg_match('/^[a-f0-9]{32}$/D',$operation))
+        throw new RuntimeException('invalid_effect_id');
+    if (($GLOBALS['spec']['remote_mode']??'success')!=='reported_failure') {
+        $GLOBALS['remote_accounts'][$remark]=[
+            'username'=>$remark,'note'=>'achbot:v1:'.$operation,
+            'expire'=>$expiry,'data_limit'=>(int)$args[5]*1073741824
+        ];
+    }
+    if (($GLOBALS['spec']['remote_mode']??'success')==='uncertain' ||
+        (($GLOBALS['spec']['remote_mode']??'success')==='partial_second' &&
+         $GLOBALS['create_count']===2))
         throw new RuntimeException('fixture_remote_result_unknown');
-    return [(object)['success'=>true],'fixture-remark',15001];
+    return [(object)['success'=>($GLOBALS['spec']['remote_mode']??'')!=='reported_failure'],
+            $remark,15001];
 }
-function ensureAccountCreationSucceeded(...$args){}
+function getMarzbanUser($serverId,$remark){
+    $GLOBALS['events'][]=['name'=>'remote_get','username'=>$remark];
+    $found=$GLOBALS['remote_accounts'][$remark]??null;
+    return $found ? (object)$found : null;
+}
+function ensureAccountCreationSucceeded(...$args){
+    $GLOBALS['events'][]=['name'=>'remote_response_check'];
+    $response=$args[0]??null;
+    if (end($args)===true && (!is_object($response) || empty($response->success)))
+        throw new RuntimeException('fixture_remote_response_unconfirmed');
+}
 function buildLinksAndSendQr(...$args){
     $GLOBALS['events'][]=['name'=>'qr_delivery_mock'];
-    return ['fixture-token','fixture-url','fixture-unique'];
+    return ['fixture-token','fixture-url','fixture-unique','fixture account','{}','fixture qr'];
 }
-function insertOrder(...$args){$GLOBALS['events'][]=['name'=>'order_insert'];}
-function decreaseServerCapacity(...$args){$GLOBALS['events'][]=['name'=>'capacity_decrement'];}
-function editMarzbanConfig(...$args){
+function insertOrder(...$args){
+    $GLOBALS['events'][]=['name'=>'order_insert'];
+    $mode=$GLOBALS['spec']['remote_mode']??'success';
+    if ($mode==='local_insert_failure') throw new RuntimeException('fixture_local_order_insert_failed');
+    if ($mode==='silent_sql_order_failure' && end($args)===true)
+        throw new RuntimeException('fixture_unconfirmed_order_insert');
+    // Real source route uses the real persistence contract: the stub saves a
+    // disposable row for the standard path only, so the exact order-id FK and
+    // effect matching are tested in the caller's transaction.
+    if (($GLOBALS['spec']['route']??'')==='standard_approval' ||
+        (($GLOBALS['spec']['route']??'')==='checkout' &&
+         str_starts_with((string)($GLOBALS['spec']['data']??''),'accCustom'))) {
+        global $connection;
+        $uid=(int)$args[1];$fid=(int)$args[3];$srv=(int)$args[4];$inbound=(int)$args[5];
+        $amount=(int)$args[11];
+        $remark=$connection->real_escape_string((string)$args[6]);
+        $uuid=$connection->real_escape_string((string)$args[7]);
+        $connection->query("INSERT INTO orders_list
+            (userid,token,transid,fileid,server_id,inbound_id,remark,uuid,
+             protocol,expire_date,link,amount,status,date,notif,rahgozar,agent_bought)
+            VALUES ($uid,'fixture-token','',$fid,$srv,$inbound,'$remark','$uuid',
+                    'vless',1800000000,'fixture-url',$amount,1,'synthetic',0,0,0)");
+        return (int)$connection->insert_id;
+    }
+    // Under mysqli_report_off a legacy call without strict confirmation did
+    // not return a row id; that behavior stays isolated from service effects.
+}
+function createIncreaseOrder(...$args){
+    $GLOBALS['events'][]=['name'=>'order_insert'];
+    $mode=$GLOBALS['spec']['remote_mode']??'success';
+    if ($mode==='local_insert_failure') throw new RuntimeException('fixture_local_order_insert_failed');
+    if ($mode==='silent_sql_order_failure' && end($args)===true)
+        throw new RuntimeException('fixture_unconfirmed_increase_order');
+}
+function renewConfigOnServer(...$args){
     $GLOBALS['events'][]=['name'=>'remote_edit'];
     if (($GLOBALS['spec']['remote_mode']??'success')==='uncertain')
         throw new RuntimeException('fixture_remote_result_unknown');
-    return (object)['success'=>true];
+    return (object)['success'=>($GLOBALS['spec']['remote_mode']??'')!=='reported_failure'];
 }
+function decreaseServerCapacity(...$args){
+    $GLOBALS['events'][]=['name'=>'capacity_decrement'];
+    if (($GLOBALS['spec']['remote_mode']??'success')==='silent_sql_capacity_failure' &&
+        end($args)===true) throw new RuntimeException('fixture_unconfirmed_capacity_change');
+}
+function editMarzbanConfig(...$args){
+    $GLOBALS['events'][]=['name'=>'remote_edit'];
+    $mode=$GLOBALS['spec']['remote_mode']??'success';
+    if ($mode==='uncertain')
+        throw new RuntimeException('fixture_remote_result_unknown');
+    if ($mode==='reported_failure')
+        return (object)['success'=>false,'uncertain'=>true];
+    if ($mode==='stale_order') {
+        $id=(int)($GLOBALS['spec']['edit_order_id']??0);
+        $stmt=$GLOBALS['connection']->prepare(
+            'UPDATE orders_list SET expire_date=expire_date+13 WHERE id=?');
+        $stmt->bind_param('i',$id);$stmt->execute();$stmt->close();
+    }
+    return (object)['success'=>true,'verified'=>true,
+        'applied_expire'=>(int)($GLOBALS['spec']['service_applied_expire']??1800000100),
+        'applied_bytes'=>3*1073741824];
+}
+require_once $root.'/src/Purchase/Core.php';
+// Fixture insertOrder() is a deliberate transport/SQL spy; the shared
+// production integer amount allocator must still be loaded from real source.
+require_once $root.'/src/Purchase/OrderWrites.php';
+// Production buy_helpers.php loads this module before route dispatch.
+// Earlier fixtures did not need it until referral registration moved
+// ahead of Telegram delivery; exercise the real payment-scoped module.
+require_once $root.'/src/Finance/ReferralReward.php';
 $GLOBALS['spec']=$spec;
 if (($spec['route']??'wallet') === 'manual_crypto') {
     require $root.'/src/Finance/Routes/ManualCrypto.php';
@@ -242,6 +405,8 @@ if (($spec['route']??'wallet') === 'manual_crypto') {
               str_starts_with($data,'payIncreaseDayWith')) {
         require $root.'/src/Finance/Routes/Extensions.php';
     }
+} elseif (($spec['route']??'wallet') === 'standard_approval') {
+    require $root.'/src/Finance/Routes/ManualApproval.php';
 } elseif (($spec['route']??'wallet') === 'manual_admin') {
     require $root.'/src/Finance/Routes/ManualReceipts.php';
 } elseif (($spec['route']??'wallet') === 'checkout') {
@@ -272,15 +437,17 @@ if (($spec['route']??'wallet') === 'manual_crypto') {
 }
 """
 def run_route(work,env,driver,data='',step='none',actor=1001,update=None,route='wallet',
-              photo_mode='success',remote_mode='success',text='',
-              keys=None,states=None,bot_reply_message_id=None,message_transport='',
+              photo_mode='success',remote_mode='success',qr_transport='',text='',
+              keys=None,states=None,bot_reply_message_id=None,message_transport='',message_edit_transport='',
               pause_before_insert_ms=0,expected_review=False,expected_warning=None,
-              mysqli_report_off=False):
+              mysqli_report_off=False,service_applied_expire=None,edit_order_id=None):
     spec={'data':data,'step':step,'actor':actor,'route':route,
-          'photo_mode':photo_mode,'remote_mode':remote_mode,'text':text,
-          'message_transport':message_transport,
+          'photo_mode':photo_mode,'remote_mode':remote_mode,'qr_transport':qr_transport,'text':text,
+          'message_transport':message_transport,'message_edit_transport':message_edit_transport,
           'pause_before_insert_ms':pause_before_insert_ms,
           'mysqli_report_off':mysqli_report_off}
+    if service_applied_expire is not None: spec['service_applied_expire']=service_applied_expire
+    if edit_order_id is not None: spec['edit_order_id']=edit_order_id
     if bot_reply_message_id is not None:
         spec['bot_reply_message_id']=bot_reply_message_id
     elif route=='topup':
@@ -315,7 +482,14 @@ def run_route(work,env,driver,data='',step='none',actor=1001,update=None,route='
     if expected_review:
         accepted_log_codes.append('achbot_wallet_topup_creation_review')
     if expected_warning:
-        accepted_log_codes.append(expected_warning)
+        accepted_log_codes.extend(expected_warning if isinstance(expected_warning,list)
+                                  else [expected_warning])
+        if 'achbot_manual_standard_effect_needs_review' in accepted_log_codes:
+            accepted_log_codes.append('achbot_effect_needs_review')
+        if 'achbot_manual_standard_postcommit_followup_needs_review' in accepted_log_codes:
+            accepted_log_codes.append('achbot_manual_standard_postcommit_notice_failed')
+        if 'achbot_manual_standard_delivery_needs_review' in accepted_log_codes:
+            accepted_log_codes.append('achbot_manual_standard_delivery_summary_failed')
     safe_review=(accepted_log_codes and p.stderr and all(
         any(code in line for code in accepted_log_codes) and
         'fixture_' not in line and 'SQL' not in line
@@ -349,7 +523,13 @@ def run_php(work,env,driver,hash_id,op,method='bank_transfer',user=1001,**more):
         ('pay_row_id=' in line or 'achbot_bank_auto_scan_deferred' in line) and
         'fixture' not in line and 'SQL' not in line
         for line in p.stderr.splitlines()))
-    if p.returncode or (p.stderr and not safe_deferred):
+    safe_service_deferred=(expect_deferred and p.stderr and all(
+        'achbot_auto_service_edit_needs_review pay_id=' in line and
+        any(' kind='+kind+' exception=mysqli_sql_exception' in line
+            for kind in ('standard','day','renew','volume')) and
+        'fixture' not in line and 'SQL' not in line
+        for line in p.stderr.splitlines()))
+    if p.returncode or (p.stderr and not (safe_deferred or safe_service_deferred)):
         raise RuntimeError('isolated PHP method test failed: '+repr((p.returncode,p.stderr,p.stdout))[:1200])
     try: return json.loads(p.stdout)['result']
     except Exception as exc:raise RuntimeError('invalid manual driver: '+repr(p.stdout)) from exc
@@ -369,9 +549,29 @@ def check():
     cases=[]
     with owned.owned_database() as (work,env):
         purchase.init(work,env,"http://127.0.0.1:9")
+        # This fixture exercises many independent approvals in one database.
+        # Dedicated native capacity tests use truly scarce server_info rows.
+        query(work,env,"UPDATE server_info SET ucount=10000 WHERE id=2")
         query(work,env,"INSERT INTO setting (type,value) VALUES ('BOT_STATES','{\"walletState\":\"on\",\"cartToCartState\":\"on\",\"giftCardState\":\"on\",\"manualUsdtState\":\"on\",\"nowPaymentWallet\":\"on\",\"nowPaymentOther\":\"on\",\"zarinpal\":\"on\",\"nextpay\":\"on\"}')")
         assert len(query(work,env,'SHOW TABLES').splitlines())==23
+        # The paid-service helper verifies actual plan/panel identity (no fixture shortcut).
+        query(work,env,(ROOT/'migrations/post-v9/001_marzban_panel_group_id.sql').read_text())
+        query(work,env,"INSERT INTO server_info (id,title,ucount,remark,flag,active,state) "
+              "VALUES (1,'Fixture service target',9,'fixture','',1,1)")
+        query(work,env,"INSERT INTO server_plans "
+              "(id,fileid,catid,server_id,inbound_id,acount,title,protocol,days,volume,type,price,descr,pic,active,step,date,custom_sni) "
+              "VALUES (1,'1',1,1,0,9,'Fixture paid service','vless',30,10,'normal',100,'fixture','',1,0,'fixture','{}')")
+        query(work,env,"INSERT INTO server_config "
+              "(id,panel_url,ip,sni,header_type,request_header,response_header,security,tlsSettings,type,username,password,sub_links) "
+              "VALUES (1,'http://127.0.0.1:9','127.0.0.1','','none','','','none','{}','marzban','fixture-admin','fixture-password','')")
         query(work,env,(ROOT/'migrations/post-v9/003_payment_attempts.sql').read_text())
+        query(work,env,(ROOT/'migrations/post-v9/007_service_effects.sql').read_text())
+        query(work,env,(ROOT/'migrations/post-v9/008_referral_awards.sql').read_text())
+        query(work,env,(ROOT/'migrations/post-v9/009_bank_buy_invoice_claims.sql').read_text())
+        # Each isolated standard receipt now holds capacity before POST.
+        # Supply independent test headroom; focused exhaustion is checked
+        # in actual ServiceEffects concurrency and reservation regressions.
+        query(work,env,'UPDATE server_info SET ucount=1000 WHERE id=1')
         driver=work/'manual-payments.php';driver.write_text(PHP)
         initial_fixtures={
             'bankfixture':1001,'giftfixture':1001,'usdtfixture':1001,
@@ -548,10 +748,17 @@ def check():
 
         # Review F1/F2: execute actual service operator callback handlers, not
         # merely helper functions. Every remote action is a local spy.
-        def service_pay(key,subject='BUY_SUB',method='bank_transfer',received=True):
-            seed(work,env,key)
+        def service_pay(key,subject='BUY_SUB',method='bank_transfer',received=True,
+                        amount=100000,quantity=0):
+            seed(work,env,key,price=amount)
+            # A physical Marzban username cannot be reused for two paid
+            # identities on the same provider. Synthetic custom descriptions
+            # must therefore differ per payment; real mismatches fail closed.
+            description='fx_'+key if (key.startswith('custom') or
+                key.startswith('servicecallbackrace')) else 'fixture'
             query(work,env,"UPDATE pays SET type='"+subject+"',plan_id=1,"
-                  "server_id=1,day=30,volume=10,description='fixture' "
+                  f"server_id=1,day=30,volume=10,agent_count={quantity},"
+                  "description='"+description+"' "
                   "WHERE hash_id='"+key+"'")
             assert base(key,'claim',method)
             if received:
@@ -580,6 +787,309 @@ def check():
             assert service_snapshot(key)==before,(key,before,service_snapshot(key))
             return events
 
+
+        # The actual standard-plan "accept{hash}" handler is a separate
+        # reachable finance boundary from the custom/renewal approval routes.
+        # Receipt evidence, subject and durable remote uncertainty must be
+        # tested against that real current source.
+        def standard_pay(key,method='bank_transfer',received=True,
+                         amount=100000,quantity=0):
+            service_pay(key,subject='BUY_SUB',method=method,received=received,
+                        amount=amount,quantity=quantity)
+            query(work,env,"UPDATE pays SET day=0,volume=0 WHERE hash_id='"+key+"'")
+            return key
+
+        standard_pay('standardwrongstage',method='gift_card')
+        query(work,env,"UPDATE payment_attempts SET stage='pending' "
+              "WHERE order_hash='standardwrongstage'")
+        reject_service('standardwrongstage','standard_approval','accept')
+        cases.append('real_standard_operator_unreviewed_receipt_denied')
+
+        standard_pay('standardwrongprovider',method='manual_usdt')
+        query(work,env,"UPDATE payment_attempts SET provider='nowpayments' "
+              "WHERE order_hash='standardwrongprovider'")
+        reject_service('standardwrongprovider','standard_approval','accept')
+        cases.append('real_standard_hosted_provider_conflict_denied')
+
+        standard_pay('standardwrongsubject',method='bank_transfer')
+        query(work,env,"UPDATE pays SET type='INCREASE_WALLET' "
+              "WHERE hash_id='standardwrongsubject'")
+        reject_service('standardwrongsubject','standard_approval','accept')
+        cases.append('real_standard_wrong_subject_denied')
+
+        standard_pay('standarduncertain',method='gift_card')
+        before=service_snapshot('standarduncertain')
+        events=run_route(work,env,route_driver,data='acceptstandarduncertain',
+                         actor=9001,route='standard_approval',remote_mode='uncertain',
+                         expected_warning='achbot_manual_standard_effect_needs_review')
+        assert [e['name'] for e in events].count('remote_create')==1,repr(events)
+        assert query(work,env,"SELECT state FROM pays WHERE hash_id='standarduncertain'")=='processing',repr(events)
+        retry=run_route(work,env,route_driver,data='acceptstandarduncertain',
+                        actor=9001,route='standard_approval',remote_mode='success')
+        assert not any(e['name']=='remote_create' for e in retry),repr(retry)
+        assert query(work,env,"SELECT state FROM pays WHERE hash_id='standarduncertain'")=='processing'
+        cases.append('real_standard_uncertain_remote_effect_stays_reconciliation_and_no_replay')
+
+        standard_pay('standardreportedfailure',method='manual_usdt')
+        reported=run_route(work,env,route_driver,
+                           data='acceptstandardreportedfailure',actor=9001,
+                           route='standard_approval',remote_mode='reported_failure',
+                           expected_warning='achbot_manual_standard_effect_needs_review')
+        assert [e['name'] for e in reported].count('remote_create')==1,repr(reported)
+        assert not any(e['name']=='remote_get' for e in reported),repr(reported)
+        assert not any(e['name']=='order_insert' for e in reported),repr(reported)
+        assert query(work,env,"SELECT state FROM pays WHERE hash_id='standardreportedfailure'")=='processing'
+        reject_service('standardreportedfailure','standard_approval','accept')
+        cases.append('real_standard_explicit_remote_failure_kept_for_review_without_local_order')
+
+        standard_pay('standardwarnchanneloutage',method='bank_transfer')
+        warn=run_route(work,env,route_driver,
+                       data='acceptstandardwarnchanneloutage',actor=9001,
+                       route='standard_approval',remote_mode='uncertain',
+                       message_transport='throw',
+                       expected_warning=['achbot_manual_standard_effect_needs_review',
+                                         'achbot_manual_standard_review_notice_failed'])
+        assert [e['name'] for e in warn].count('remote_create')==1,repr(warn)
+        assert query(work,env,"SELECT state FROM pays WHERE hash_id='standardwarnchanneloutage'")=='processing'
+        reject_service('standardwarnchanneloutage','standard_approval','accept')
+        cases.append('real_standard_ambiguous_remote_and_failed_admin_notice_no_fatal_no_replay')
+
+        standard_pay('standardsuccess',method='gift_card')
+        delivered=run_route(work,env,route_driver,data='acceptstandardsuccess',
+                            actor=9001,route='standard_approval')
+        assert [e['name'] for e in delivered].count('remote_create')==1,repr(delivered)
+        assert query(work,env,"SELECT state FROM pays WHERE hash_id='standardsuccess'")=='approved'
+        assert query(work,env,
+            "SELECT e.state,IFNULL(e.order_id,0) FROM service_effects e "
+            "JOIN pays p ON p.id=e.pay_row_id WHERE p.hash_id='standardsuccess' "
+            "AND e.effect_kind='create' AND e.ordinal=1"
+            ).startswith('local_recorded\t'), 'successful effect must link to order'
+        assert query(work,env,
+            "SELECT e.reserved_count,e.state FROM service_effects e "
+            "JOIN pays p ON p.id=e.pay_row_id WHERE p.hash_id='standardsuccess' "
+            "AND e.effect_kind='manual_hold' AND e.ordinal=0")=='1\tconsumed', (
+                'successful manually reviewed CREATE must consume exactly one owned capacity hold')
+        reject_service('standardsuccess','standard_approval','accept')
+        cases.append('real_standard_verified_receipt_one_delivery_no_replay')
+        # Review R2: the real ManualApproval.php source must not truncate
+        # fractional shares when insertOrder() binds its integer amount.
+        for price,count,expected in ((100,3,'34,33,33'),(101,2,'51,50')):
+            key=f'r2manualallocation{price}x{count}'
+            standard_pay(key,method='gift_card',amount=price,quantity=count)
+            events=run_route(work,env,route_driver,data='accept'+key,actor=9001,
+                             route='standard_approval')
+            assert [e['name'] for e in events].count('remote_create')==count,events
+            assert query(work,env,f"SELECT state FROM pays WHERE hash_id='{key}'")=='approved',events
+            amounts=query(work,env,
+                'SELECT GROUP_CONCAT(o.amount ORDER BY e.ordinal SEPARATOR ",") '
+                'FROM orders_list o JOIN service_effects e ON e.order_id=o.id '
+                f"JOIN pays p ON p.id=e.pay_row_id WHERE p.hash_id='{key}' "
+                "AND e.effect_kind='create'")
+            assert amounts==expected,(price,count,amounts,events)
+            assert int(query(work,env,
+                'SELECT COALESCE(SUM(o.amount),0) '
+                'FROM orders_list o JOIN service_effects e ON e.order_id=o.id '
+                f"JOIN pays p ON p.id=e.pay_row_id WHERE p.hash_id='{key}'"))==price
+            reject_service(key,'standard_approval','accept')
+            cases.append(f'r2_exact_manual_order_allocation_{price}_{count}_no_replay')
+
+        # A Telegram exception AFTER the approved local COMMIT is not evidence
+        # that Marzban or money failed. A follow-up is required, never a
+        # second fulfillment or a misleading 'service outcome unknown' alert.
+        standard_pay('standardpostcommitnotify',method='bank_transfer')
+        notice=run_route(work,env,route_driver,
+                         data='acceptstandardpostcommitnotify',actor=9001,
+                         route='standard_approval',qr_transport='throw',
+                         expected_warning='achbot_manual_standard_delivery_needs_review')
+        assert [e['name'] for e in notice].count('remote_create')==1,repr(notice)
+        assert [e['name'] for e in notice].count('qr_send')==1,repr(notice)
+        assert query(work,env,"SELECT state FROM pays WHERE hash_id='standardpostcommitnotify'")=='approved'
+        admin_notices=[str(e['args'][0]) for e in notice if e['name']=='sendMessage'
+                       and e['args'][-1]==9001]
+        assert any(('سفارش ثبت شده' in m or 'سفارش/سرویس ثبت شده' in m) and 'اطلاع‌رسانی' in m for m in admin_notices),repr(notice)
+        assert not any('نتیجهٔ تکمیل سفارش هنوز قطعی نیست' in m for m in admin_notices)
+        reject_service('standardpostcommitnotify','standard_approval','accept')
+        cases.append('real_standard_postcommit_telegram_failure_approved_no_replay_truthful_review')
+        standard_pay('standardeditprivacy',method='gift_card')
+        edit_events=run_route(work,env,route_driver,
+                              data='acceptstandardeditprivacy',actor=9001,
+                              route='standard_approval',message_edit_transport='throw',
+                              expected_warning='achbot_manual_standard_buttons_update_failed')
+        assert [e['name'] for e in edit_events].count('remote_create')==1,repr(edit_events)
+        assert query(work,env,"SELECT state FROM pays WHERE hash_id='standardeditprivacy'")=='approved'
+        admin_text=' '.join(str(e['args'][0]) for e in edit_events
+                            if e['name']=='sendMessage' and e['args'][-1]==9001)
+        assert 'fixture_secret_should_not_be_forwarded' not in admin_text,admin_text
+        reject_service('standardeditprivacy','standard_approval','accept')
+        cases.append('real_standard_operator_buttons_failure_does_not_leak_raw_exception')
+
+
+
+        standard_pay('standardmissingdelivery',method='bank_transfer')
+        query(work,env,"UPDATE pays SET message_id=0 "
+              "WHERE hash_id='standardmissingdelivery'")
+        reject_service('standardmissingdelivery','standard_approval','accept')
+        cases.append('real_standard_missing_operator_delivery_denied')
+
+        standard_pay('standardunauthorized',method='gift_card')
+        reject_service('standardunauthorized','standard_approval','accept',actor=1001)
+        cases.append('real_standard_nonadmin_callback_no_financial_effect')
+
+        standard_pay('standardpartial',method='manual_usdt')
+        query(work,env,"UPDATE pays SET agent_count=2 WHERE hash_id='standardpartial'")
+        partial=run_route(work,env,route_driver,data='acceptstandardpartial',
+                          actor=9001,route='standard_approval',remote_mode='partial_second',
+                          expected_warning='achbot_manual_standard_effect_needs_review')
+        assert [e['name'] for e in partial].count('remote_create')==2,repr(partial)
+        assert query(work,env,"SELECT state FROM pays WHERE hash_id='standardpartial'")=='processing'
+        assert query(work,env,"SELECT ordinal,state,IFNULL(order_id,0) FROM service_effects "
+                     "WHERE pay_row_id=(SELECT id FROM pays WHERE hash_id='standardpartial') "
+                     "AND effect_kind='create' ORDER BY ordinal") == '1\tverified\t0\n2\tdispatching\t0'
+        assert query(work,env,"SELECT reserved_count,state FROM service_effects "
+                     "WHERE pay_row_id=(SELECT id FROM pays WHERE hash_id='standardpartial') "
+                     "AND effect_kind='manual_hold' AND ordinal=0") == '2\tconsumed', (
+                         'partial manual purchase must retain all paid slots and no-replay owner')
+        reject_service('standardpartial','standard_approval','accept')
+        cases.append('real_standard_partial_second_account_stays_reconcile_no_replay')
+
+        standard_pay('standardlocalfail',method='bank_transfer')
+        localfail=run_route(work,env,route_driver,data='acceptstandardlocalfail',
+                            actor=9001,route='standard_approval',
+                            remote_mode='local_insert_failure',mysqli_report_off=True,
+                            expected_warning='achbot_manual_standard_remote_finish_review')
+        assert [e['name'] for e in localfail].count('remote_create')==1,repr(localfail)
+        assert [e['name'] for e in localfail].count('order_insert')==1,repr(localfail)
+        assert query(work,env,"SELECT state FROM pays WHERE hash_id='standardlocalfail'")=='processing'
+        reject_service('standardlocalfail','standard_approval','accept')
+        cases.append('real_standard_remote_success_local_write_failed_no_automatic_replay')
+
+        standard_pay('standardrace',method='gift_card')
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            decisions=list(executor.map(lambda _:run_route(
+                work,env,route_driver,data='acceptstandardrace',
+                actor=9001,route='standard_approval'),range(2)))
+        assert sum(sum(e['name']=='remote_create' for e in result)
+                   for result in decisions)==1,repr(decisions)
+        assert query(work,env,"SELECT state FROM pays WHERE hash_id='standardrace'")=='approved'
+        reject_service('standardrace','standard_approval','accept')
+        cases.append('real_standard_concurrent_admins_one_remote_create')
+
+        # SQL silent-failure modes reproduce mysqli_report_off behavior
+        # at the real operator handler boundary. The helper's requireConfirmed
+        # boolean is the only difference between an unsafe success and REVIEW.
+        standard_pay('standardsilentinsert',method='gift_card')
+        silent=run_route(work,env,route_driver,data='acceptstandardsilentinsert',
+                         actor=9001,route='standard_approval',remote_mode='silent_sql_order_failure',
+                         mysqli_report_off=True,
+                         expected_warning='achbot_manual_standard_remote_finish_review')
+        assert [e['name'] for e in silent].count('remote_create')==1,repr(silent)
+        assert query(work,env,"SELECT state FROM pays WHERE hash_id='standardsilentinsert'")=='processing'
+        reject_service('standardsilentinsert','standard_approval','accept')
+        cases.append('real_standard_mysqlireportoff_unconfirmed_order_never_approved')
+
+        # Capacity is now reserved BEFORE remote CREATE, in the same
+        # transaction as pays.processing. Force an actual failing SQL UPDATE
+        # under MYSQLI_REPORT_OFF, not a mocked late finisher.
+        standard_pay('standardsilentcapacity',method='bank_transfer')
+        query(work,env,"CREATE TRIGGER achbot_test_capacity_fail BEFORE UPDATE "
+              "ON server_info FOR EACH ROW SIGNAL SQLSTATE '45000' "
+              "SET MESSAGE_TEXT='fixture fail prior to remote'")
+        try:
+            silent=run_route(work,env,route_driver,data='acceptstandardsilentcapacity',
+                             actor=9001,route='standard_approval',
+                             mysqli_report_off=True,
+                             expected_warning='achbot_manual_standard_claim_needs_review')
+        finally:
+            query(work,env,"DROP TRIGGER achbot_test_capacity_fail")
+        assert not any(e['name']=='remote_create' for e in silent),repr(silent)
+        assert query(work,env,"SELECT state FROM pays WHERE hash_id='standardsilentcapacity'")=='have_sent'
+        # Reattempt is safe ONLY because reservation rolled back BEFORE any
+        # remote call. The next verified claim produces exactly one CREATE.
+        after=run_route(work,env,route_driver,data='acceptstandardsilentcapacity',
+                        actor=9001,route='standard_approval')
+        assert [e['name'] for e in after].count('remote_create')==1,repr(after)
+        assert query(work,env,"SELECT state FROM pays WHERE hash_id='standardsilentcapacity'")=='approved'
+        reject_service('standardsilentcapacity','standard_approval','accept')
+        cases.append('real_standard_mysqlireportoff_capacity_reservation_failure_prevents_create')
+
+        def renewal_pay(key,method='gift_card'):
+            service_pay(key,subject='RENEW_SCONFIG',method=method)
+            query(work,env,"UPDATE pays SET day=0,volume=0,"
+                  """description='{"uuid":"fixture-uuid","remark":"fixture-remark","server_id":2,"marzban":true}'"""
+                  " WHERE hash_id='"+key+"'")
+            return key
+
+        renewal_pay('standardrenewsuccess',method='gift_card')
+        renewed=run_route(work,env,route_driver,data='acceptstandardrenewsuccess',
+                          actor=9001,route='standard_approval')
+        assert [e['name'] for e in renewed].count('remote_edit')==1,repr(renewed)
+        assert [e['name'] for e in renewed].count('order_insert')==1,repr(renewed)
+        assert query(work,env,"SELECT state FROM pays WHERE hash_id='standardrenewsuccess'")=='approved'
+        reject_service('standardrenewsuccess','standard_approval','accept')
+        cases.append('real_standard_renewal_receipt_one_remote_change_no_replay')
+        renewal_pay('standardrenewpostcommit',method='gift_card')
+        notice=run_route(work,env,route_driver,
+                         data='acceptstandardrenewpostcommit',actor=9001,
+                         route='standard_approval',message_transport='throw_once',
+                         expected_warning='achbot_manual_standard_delivery_needs_review')
+        assert [e['name'] for e in notice].count('remote_edit')==1,repr(notice)
+        assert query(work,env,"SELECT state FROM pays WHERE hash_id='standardrenewpostcommit'")=='approved'
+        reject_service('standardrenewpostcommit','standard_approval','accept')
+        cases.append('real_standard_renewal_postcommit_notification_outage_preserves_approved_no_replay')
+
+        renewal_pay('standardrenewnotifydown',method='bank_transfer')
+        down=run_route(work,env,route_driver,
+                       data='acceptstandardrenewnotifydown',actor=9001,
+                       route='standard_approval',message_transport='throw',
+                       expected_warning='achbot_manual_standard_delivery_needs_review')
+        assert [e['name'] for e in down].count('remote_edit')==1,repr(down)
+        assert query(work,env,"SELECT state FROM pays WHERE hash_id='standardrenewnotifydown'")=='approved'
+        reject_service('standardrenewnotifydown','standard_approval','accept')
+        cases.append('real_standard_renewal_both_telegram_messages_fail_without_fatal_or_replay')
+
+
+
+        renewal_pay('standardrenewsilentinsert',method='gift_card')
+        silent=run_route(work,env,route_driver,data='acceptstandardrenewsilentinsert',
+                         actor=9001,route='standard_approval',remote_mode='silent_sql_order_failure',
+                         mysqli_report_off=True,
+                         expected_warning='achbot_manual_standard_remote_finish_review')
+        assert [e['name'] for e in silent].count('remote_edit')==1,repr(silent)
+        assert query(work,env,"SELECT state FROM pays WHERE hash_id='standardrenewsilentinsert'")=='processing'
+        reject_service('standardrenewsilentinsert','standard_approval','accept')
+        cases.append('real_standard_renewal_mysqlireportoff_unconfirmed_order_never_approved')
+
+        renewal_pay('standardrenewuncertain',method='manual_usdt')
+        ambiguous=run_route(work,env,route_driver,data='acceptstandardrenewuncertain',
+                            actor=9001,route='standard_approval',remote_mode='uncertain',
+                            expected_warning='achbot_manual_standard_effect_needs_review')
+        assert [e['name'] for e in ambiguous].count('remote_edit')==1,repr(ambiguous)
+        assert query(work,env,"SELECT state FROM pays WHERE hash_id='standardrenewuncertain'")=='processing'
+        reject_service('standardrenewuncertain','standard_approval','accept')
+        cases.append('real_standard_renewal_uncertain_remote_change_no_replay')
+
+        renewal_pay('standardrenewreportedfailure',method='gift_card')
+        reported=run_route(work,env,route_driver,
+                           data='acceptstandardrenewreportedfailure',actor=9001,
+                           route='standard_approval',remote_mode='reported_failure',
+                           expected_warning='achbot_manual_standard_effect_needs_review')
+        assert [e['name'] for e in reported].count('remote_response_check')==1,repr(reported)
+        assert not any(e['name']=='order_insert' for e in reported),repr(reported)
+        assert query(work,env,"SELECT state FROM pays WHERE hash_id='standardrenewreportedfailure'")=='processing'
+        reject_service('standardrenewreportedfailure','standard_approval','accept')
+        cases.append('real_standard_renewal_explicit_remote_failure_no_local_order_no_replay')
+
+        renewal_pay('standardrenewlocalfail',method='bank_transfer')
+        failed=run_route(work,env,route_driver,data='acceptstandardrenewlocalfail',
+                         actor=9001,route='standard_approval',
+                         remote_mode='local_insert_failure',
+                         expected_warning='achbot_manual_standard_remote_finish_review')
+        assert [e['name'] for e in failed].count('remote_edit')==1,repr(failed)
+        assert query(work,env,"SELECT state FROM pays WHERE hash_id='standardrenewlocalfail'")=='processing'
+        reject_service('standardrenewlocalfail','standard_approval','accept')
+        cases.append('real_standard_renewal_remote_success_local_failure_needs_review')
+
         service_pay('customvalid',method='gift_card')
         assert base('customvalid','service_guard',subject='custom') is True
         rejected=reject_service('customvalid','checkout','accCustom',actor=1001)
@@ -590,9 +1100,45 @@ def check():
         assert [event['name'] for event in positive].count('remote_create')==1,repr(positive)
         assert [event['name'] for event in positive].count('order_insert')==1
         assert query(work,env,"SELECT state FROM pays WHERE hash_id='customvalid'")=='approved'
+        assert query(work,env,"SELECT effect_kind,ordinal,state,reserved_count FROM service_effects "
+            "WHERE pay_row_id=(SELECT id FROM pays WHERE hash_id='customvalid') "
+            "ORDER BY ordinal,effect_kind")==(
+            'manual_hold\t0\tconsumed\t1\ncreate\t1\tlocal_recorded\t0')
         cases.append('real_custom_authorized_review_state_approves_only_once')
         reject_service('customvalid','checkout','accCustom')
         cases.append('real_custom_replayed_operator_callback_no_remote_effect')
+
+        # A custom manual receipt must reserve capacity and register its
+        # payment-owned 007 hold in the SAME transaction as its processing
+        # claim. Simulate SQL failure under actual MySQL InnoDB; a verified
+        # failed pre-CREATE claim remains retryable without a phantom debit.
+        service_pay('customholdsqlfail',method='gift_card')
+        custom_before_capacity=int(query(work,env,
+            'SELECT ucount FROM server_info WHERE id=1'))
+        query(work,env,"CREATE TRIGGER owned_custom_capacity_fail BEFORE UPDATE "
+            "ON server_info FOR EACH ROW SIGNAL SQLSTATE '45000' "
+            "SET MESSAGE_TEXT='synthetic_claim_write_denied'")
+        try:
+            blocked=run_route(work,env,route_driver,
+                data='accCustomcustomholdsqlfail',actor=9001,
+                route='checkout',expected_warning='achbot_custom_receipt_review')
+        finally:
+            query(work,env,'DROP TRIGGER owned_custom_capacity_fail')
+        assert not any(x['name']=='remote_create' for x in blocked),blocked
+        assert query(work,env,"SELECT state FROM pays WHERE hash_id='customholdsqlfail'")==(
+            'have_sent')
+        assert int(query(work,env,
+            'SELECT ucount FROM server_info WHERE id=1'))==custom_before_capacity
+        assert query(work,env,"SELECT COUNT(*) FROM service_effects WHERE pay_row_id="
+            "(SELECT id FROM pays WHERE hash_id='customholdsqlfail')")=='0'
+        retried=run_route(work,env,route_driver,
+            data='accCustomcustomholdsqlfail',actor=9001,route='checkout')
+        assert [x['name'] for x in retried].count('remote_create')==1,retried
+        assert query(work,env,"SELECT state FROM pays WHERE hash_id='customholdsqlfail'")==(
+            'approved')
+        assert int(query(work,env,
+            'SELECT ucount FROM server_info WHERE id=1'))==custom_before_capacity-1
+        cases.append('real_custom_manual_007_hold_SQL_failure_atomic_then_safe_retry')
 
         service_pay('custompending',received=False)
         reject_service('custompending','checkout','accCustom')
@@ -667,8 +1213,9 @@ def check():
         assert base('legacyreviewservice','service_guard',subject='custom') is False
         cases.append('legacy_operator_receipt_requires_persisted_delivery_evidence')
 
-        # Admin callback and scheduler claim contend for one pays row. Their
-        # ordering must never lead to a second remote service creation.
+        # Admin callback and scheduler claim contend for one pays row. If
+        # bank Cron wins BUY_SUB remains processing until verified fulfillment;
+        # neither contender can send a second remote CREATE.
         from concurrent.futures import ThreadPoolExecutor
         for i in range(4):
             key='servicecallbackrace'+str(i)
@@ -682,7 +1229,7 @@ def check():
             state=query(work,env,"SELECT state FROM pays WHERE hash_id='"+key+"'")
             creates=sum(event['name']=='remote_create' for event in admin_events)
             assert (state,creates,auto_won) in (
-                ('approved',1,False),('auto_cart_approved',0,True)),repr((key,state,creates,auto_won,admin_events))
+                ('approved',1,False),('processing',0,True)),repr((key,state,creates,auto_won,admin_events))
             reject_service(key,'checkout','accCustom')
         cases.append('real_custom_operator_and_bank_scheduler_race_single_service_claim')
 
@@ -713,6 +1260,9 @@ def check():
             ('extension','approveIncreaseVolume',f'INCREASE_VOLUME_{service_oid}_902','volume'),
         ]:
             key='adminfirst'+guard
+            # Independent synthetic remote cases cannot share a stale local
+            # expiry left by the preceding successful callback.
+            query(work,env,f'UPDATE orders_list SET expire_date=2000000000 WHERE id={service_oid}')
             service_pay(key,subject=subject,method='bank_transfer')
             query(work,env,"UPDATE pays SET plan_id=7,server_id=2,order_id="+str(service_oid)+
                   ",price=100 WHERE hash_id='"+key+"'")
@@ -721,20 +1271,216 @@ def check():
             assert [event['name'] for event in result].count('remote_edit')==1,repr((key,result))
             assert query(work,env,"SELECT state FROM pays WHERE hash_id='"+key+"'")=='approved',repr((key,result))
             assert int(query(work,env,'SELECT COUNT(*) FROM increase_order'))==before+1
+            if guard=='day':
+                assert int(query(work,env,f'SELECT expire_date FROM orders_list WHERE id={service_oid}'))==1800000100, ('day_expiry_not_remote',key)
             assert base(key,'bank_auto_claim') is False
             reject_service(key,route,callback)
             cases.append('real_'+guard+'_operator_before_bank_cron_one_remote_effect')
+
+        # Source-real PHP/MariaDB wallet day callback: absolute remote expiry,
+        # successful claim, stale local race, ambiguous result and overflow.
+        def day_order(label,expiry=1800000100):
+            safe=label.replace('-','_')
+            query(work,env,"INSERT INTO orders_list "
+                  "(userid,token,transid,fileid,server_id,inbound_id,remark,uuid,"
+                  "protocol,expire_date,link,amount,status,date) VALUES "
+                  f"(1001,'fx-token','',7,2,0,'{safe}','fx-{safe}',"
+                  f"'vless',{expiry},'[]',100,1,'synthetic')")
+            return int(query(work,env,f"SELECT id FROM orders_list WHERE remark='{safe}' ORDER BY id DESC LIMIT 1"))
+
+        for label,mode,verified,expected in (
+            ('walletdayfuture','success',1850000077,'paid_with_wallet'),
+            ('walletdayexpired','success',1850000078,'paid_with_wallet'),
+            ('walletdayunchanged','success',2000000000,'paid_with_wallet'),
+            ('walletdayunknown','uncertain',1850000079,'processing_wallet'),
+            ('walletdaystale','stale_order',1850000080,'processing_wallet'),
+            ('walletdayoverflow','success',2147483648,'processing_wallet'),
+        ):
+            oid=day_order(label,expiry=1000000000 if label=='walletdayexpired' else 2000000000)
+            seed(work,env,label,price=100)
+            query(work,env,f"UPDATE pays SET type='INCREASE_DAY_{oid}_901',"
+                  f"plan_id=7,server_id=2,order_id={oid},price=100 WHERE hash_id='{label}'")
+            wallet_before=int(query(work,env,'SELECT wallet FROM users WHERE userid=1001 LIMIT 1'))
+            count_before=int(query(work,env,'SELECT COUNT(*) FROM increase_order'))
+            args=dict(data='payIncreaseDayWithWallet'+label,route='extension',
+                      remote_mode=mode,service_applied_expire=verified,
+                      edit_order_id=oid)
+            events=run_route(work,env,route_driver,**args)
+            assert sum(e['name']=='remote_edit' for e in events)==1,(label,events)
+            assert query(work,env,f"SELECT state FROM pays WHERE hash_id='{label}'")==expected,(label,events)
+            assert int(query(work,env,'SELECT wallet FROM users WHERE userid=1001 LIMIT 1'))==wallet_before-100
+            assert int(query(work,env,'SELECT COUNT(*) FROM increase_order'))==count_before+(expected=='paid_with_wallet')
+            if expected=='paid_with_wallet':
+                assert int(query(work,env,f'SELECT expire_date FROM orders_list WHERE id={oid}'))==verified
+                assert any(e['name']=='editText' for e in events),(label,events)
+            else:
+                assert not any(e['name']=='editText' for e in events),(label,events)
+                assert any(e['name']=='sendMessage' and 'وضعیت درخواست مشخص نیست' in str(e['args'])
+                           for e in events),(label,events)
+            again=run_route(work,env,route_driver,**args)
+            assert not any(e['name']=='remote_edit' for e in again),(label,again)
+            assert int(query(work,env,'SELECT wallet FROM users WHERE userid=1001 LIMIT 1'))==wallet_before-100
+            assert query(work,env,f"SELECT state FROM pays WHERE hash_id='{label}'")==expected
+            cases.append('review_r7_wallet_'+label+'_verified_or_review_no_replay')
+
+        # Full-renewal wallet callbacks compete with day extension on the
+        # same order. Never rebase from stale local arithmetic or repeat a
+        # remote edit after an interrupted/unknown result.
+        for label,mode,verified,expected in (
+            ('walletrenewfuture','success',1850000271,'paid_with_wallet'),
+            ('walletrenewexpired','success',1850000272,'paid_with_wallet'),
+            ('walletrenewunknown','uncertain',1850000273,'processing_wallet'),
+            ('walletrenewstale','stale_order',1850000274,'processing_wallet'),
+            ('walletrenewoverflow','success',2147483648,'processing_wallet'),
+        ):
+            oid=day_order(label,expiry=1000000000 if label=='walletrenewexpired' else 2000000000)
+            seed(work,env,label,price=100)
+            query(work,env,"UPDATE pays SET type='RENEW_ACCOUNT',plan_id=7,"
+                 f"server_id=2,order_id={oid},price=100 WHERE hash_id='{label}'")
+            wallet_before=int(query(work,env,'SELECT wallet FROM users WHERE userid=1001 LIMIT 1'))
+            audit_before=int(query(work,env,'SELECT COUNT(*) FROM increase_order'))
+            args=dict(data='payRenewWithWallet'+label,route='renewal',
+                      remote_mode=mode,service_applied_expire=verified,
+                      edit_order_id=oid)
+            events=run_route(work,env,route_driver,**args)
+            assert sum(e['name']=='remote_edit' for e in events)==1,(label,events)
+            assert query(work,env,f"SELECT state FROM pays WHERE hash_id='{label}'")==expected,(label,events)
+            assert int(query(work,env,'SELECT wallet FROM users WHERE userid=1001 LIMIT 1'))==wallet_before-100
+            assert int(query(work,env,'SELECT COUNT(*) FROM increase_order'))==audit_before+(expected=='paid_with_wallet')
+            if expected=='paid_with_wallet':
+                assert int(query(work,env,f'SELECT expire_date FROM orders_list WHERE id={oid}'))==verified
+                assert any(e['name']=='editText' for e in events),(label,events)
+            else:
+                assert not any(e['name']=='editText' for e in events),(label,events)
+            repeated=run_route(work,env,route_driver,**args)
+            assert not any(e['name']=='remote_edit' for e in repeated),(label,repeated)
+            assert int(query(work,env,'SELECT wallet FROM users WHERE userid=1001 LIMIT 1'))==wallet_before-100
+            cases.append('review_r7_wallet_renew_'+label+'_remote_absolute_or_review_no_replay')
+
+        # Only these physical-alias cases use source-real Core guards. Other
+        # route fixtures retain their deliberately narrow mocking boundary.
+        alias_php=PHP_ROUTE
+        assert alias_php.count("function achbotSupportsPaymentSubject(...$args){return true;}")==1
+        assert alias_php.count("function achbotSupportsMarzbanOrder(...$args){return true;}")==1
+        alias_php=alias_php.replace(
+            "function achbotSupportsPaymentSubject(...$args){return true;}",
+            "require_once $root.'/src/Purchase/Core.php';")
+        alias_php=alias_php.replace(
+            "function achbotSupportsMarzbanOrder(...$args){return true;}","")
+        alias_driver=work/'real-core-panel-alias-route.php'
+        alias_driver.write_text(alias_php)
+        # The source-real Core validator permits explicitly grouped physical
+        # Marzban aliases, even when an old plan ID still names the original
+        # logical server. The new wallet-renew finality guard must not replace
+        # that authorization with an overly strict plan-server equality.
+        query(work,env,"INSERT INTO setting(id,type,value) VALUES "
+              "(9909,'ACHBOT_MARZBAN_PANEL_GROUP','wallet-renew-alias')")
+        query(work,env,"UPDATE server_info SET panel_group_id=9909 WHERE id IN (1,2)")
+        label='walletgroupedalias'
+        oid=day_order(label,expiry=2000000000)
+        query(work,env,f"UPDATE orders_list SET fileid=1 WHERE id={oid}")
+        seed(work,env,label,price=100)
+        query(work,env,f"UPDATE pays SET type='RENEW_ACCOUNT',plan_id=1,"
+              f"server_id=2,order_id={oid},price=100 WHERE hash_id='{label}'")
+        wallet_before=int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'))
+        audit_before=int(query(work,env,'SELECT COUNT(*) FROM increase_order'))
+        args=dict(data='payRenewWithWallet'+label,route='renewal',
+                  remote_mode='success',service_applied_expire=2000012345,
+                  edit_order_id=oid)
+        first=run_route(work,env,alias_driver,**args)
+        assert sum(e['name']=='remote_edit' for e in first)==1,(label,first)
+        assert query(work,env,f"SELECT state FROM pays WHERE hash_id='{label}'")=='paid_with_wallet'
+        assert int(query(work,env,f'SELECT expire_date FROM orders_list WHERE id={oid}'))==2000012345
+        assert int(query(work,env,'SELECT COUNT(*) FROM increase_order'))==audit_before+1
+        assert int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'))==wallet_before-100
+        repeated=run_route(work,env,alias_driver,**args)
+        assert not any(e['name']=='remote_edit' for e in repeated),(label,repeated)
+        cases.append('review_r7_wallet_renew_grouped_physical_panel_alias_authorized_once')
+
+        # Without explicit shared group authorization, an identical-looking
+        # cross-panel alias must still be refused before debit or remote PUT.
+        query(work,env,'UPDATE server_info SET panel_group_id=NULL WHERE id=1')
+        label='walletforeignalias'
+        oid=day_order(label,expiry=2000000000)
+        query(work,env,f'UPDATE orders_list SET fileid=1 WHERE id={oid}')
+        seed(work,env,label,price=100)
+        query(work,env,f"UPDATE pays SET type='RENEW_ACCOUNT',plan_id=1,"
+              f"server_id=2,order_id={oid},price=100 WHERE hash_id='{label}'")
+        wallet_before=int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'))
+        refused=run_route(work,env,alias_driver,
+            data='payRenewWithWallet'+label,route='renewal',
+            remote_mode='success',service_applied_expire=2000012345,
+            edit_order_id=oid)
+        assert not any(e['name']=='remote_edit' for e in refused),(label,refused)
+        assert query(work,env,f"SELECT state FROM pays WHERE hash_id='{label}'")=='pending'
+        assert int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'))==wallet_before
+        assert int(query(work,env,f'SELECT expire_date FROM orders_list WHERE id={oid}'))==2000000000
+        cases.append('review_r7_wallet_renew_cross_panel_alias_denied_predebit')
+        query(work,env,'UPDATE server_info SET panel_group_id=NULL WHERE id=2')
+
+        # Operator-reviewed day receipts use their own processing claim:
+        # authenticated remote absolute expiry + local CAS + audit + approved
+        # MUST commit atomically. No callback replay after unknown/SQL failure.
+        for label,mode,verified,expected,sql_fault,report_off in (
+            ('manualdayremoteahead','success',2025000100,'approved',False,False),
+            ('manualdayexpired','success',1850000400,'approved',False,False),
+            ('manualdayunknown','uncertain',1850000401,'processing',False,False),
+            ('manualdaystale','stale_order',1850000402,'processing',False,False),
+            ('manualdayoverflow','success',2147483648,'processing',False,False),
+            ('manualdaysqlstrict','success',1850000403,'processing',True,False),
+            ('manualdaysqlpermissive','success',1850000404,'processing',True,True),
+        ):
+            oid=day_order(label,expiry=1000000000 if label=='manualdayexpired' else 2000000000)
+            service_pay(label,subject=f'INCREASE_DAY_{oid}_901')
+            query(work,env,f"UPDATE pays SET plan_id=7,server_id=2,order_id={oid},price=100 "
+                  f"WHERE hash_id='{label}'")
+            audit_before=int(query(work,env,'SELECT COUNT(*) FROM increase_order'))
+            if sql_fault:
+                query(work,env,"CREATE TRIGGER achbot_r7_order_write_block BEFORE UPDATE "
+                      "ON orders_list FOR EACH ROW SIGNAL SQLSTATE '45000' "
+                      "SET MESSAGE_TEXT='owned transaction fault'")
+            try:
+                args=dict(data='approveIncreaseDay'+label,route='extension',actor=9001,
+                          remote_mode=mode,service_applied_expire=verified,
+                          edit_order_id=oid,mysqli_report_off=report_off)
+                events=run_route(work,env,route_driver,**args)
+            finally:
+                if sql_fault:
+                    query(work,env,"DROP TRIGGER achbot_r7_order_write_block")
+            assert sum(e['name']=='remote_edit' for e in events)==1,(label,events)
+            assert query(work,env,f"SELECT state FROM pays WHERE hash_id='{label}'")==expected,(label,events)
+            assert int(query(work,env,'SELECT COUNT(*) FROM increase_order'))==audit_before+(expected=='approved')
+            if expected=='approved':
+                assert int(query(work,env,f'SELECT expire_date FROM orders_list WHERE id={oid}'))==verified
+                assert query(work,env,f"SELECT approved_by FROM pays WHERE hash_id='{label}'")=='9001'
+            else:
+                assert query(work,env,f"SELECT approved_by IS NULL FROM pays WHERE hash_id='{label}'")=='1'
+                assert any(e['name']=='alert' and 'بررسی' in str(e['args']) for e in events),(label,events)
+            second=run_route(work,env,route_driver,**args)
+            assert not any(e['name']=='remote_edit' for e in second),(label,second)
+            assert query(work,env,f"SELECT state FROM pays WHERE hash_id='{label}'")==expected
+            cases.append('review_r7_manual_'+label+'_atomic_expiry_and_no_replay')
 
         # Ambiguous provider outcomes are not retried; the operator must
         # reconcile remote state before acting on the still-reviewable invoice.
         service_pay('customremoteunknown',method='manual_usdt')
         prior=service_snapshot('customremoteunknown')
+        old_capacity=int(query(work,env,'SELECT ucount FROM server_info WHERE id=1'))
         uncertain=run_route(work,env,route_driver,data='accCustomcustomremoteunknown',
-            actor=9001,route='checkout',remote_mode='uncertain')
+            actor=9001,route='checkout',remote_mode='uncertain',
+            expected_warning='achbot_custom_receipt_review')
         assert any(event['name']=='remote_create' for event in uncertain),repr(uncertain)
         assert any(event['name']=='sendMessage' and 'بررسی سرویس و پرداخت' in str(event['args'])
                    for event in uncertain),repr(uncertain)
-        assert service_snapshot('customremoteunknown')==prior
+        assert query(work,env,"SELECT state FROM pays WHERE hash_id='customremoteunknown'")=='processing'
+        assert int(query(work,env,'SELECT ucount FROM server_info WHERE id=1'))==old_capacity-1
+        assert query(work,env,"SELECT effect_kind,ordinal,state,reserved_count FROM service_effects "
+            "WHERE pay_row_id=(SELECT id FROM pays WHERE hash_id='customremoteunknown') "
+            "ORDER BY ordinal,effect_kind")==(
+            'manual_hold\t0\tconsumed\t1\ncreate\t1\tdispatching\t0')
+        assert not any(event['name']=='remote_create' for event in run_route(
+            work,env,route_driver,data='accCustomcustomremoteunknown',
+            actor=9001,route='checkout'))
         cases.append('uncertain_custom_external_effect_operator_reconciliation_no_retry')
 
         for key,provider in [('routebank','bank_transfer'),('routegift','gift_card'),
@@ -1061,7 +1807,10 @@ def check():
         for method in ('bank_transfer','gift_card','manual_usdt'):
             key='walletblock'+method.replace('_','')
             seed(work,env,key)
-            query(work,env,f"UPDATE pays SET type='BUY_SUB' WHERE hash_id='{key}'")
+            # A real bank BUY_SUB method selection has a valid plan/target;
+            # fake no-plan BUY_SUB drafts are no longer payable invoices.
+            query(work,env,f"UPDATE pays SET type='BUY_SUB',plan_id=1,"
+                  f"server_id=1,day=30,volume=10 WHERE hash_id='{key}'")
             assert base(key,'claim',method)
             balance=int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'))
             assert base(key,'wallet')['status']=='claimed_provider'
@@ -1071,17 +1820,24 @@ def check():
             assert base(key,'claim',user=9002) is False
             cases.append('cached_wallet_button_blocked_after_'+method)
 
-        # Reverse order: a successful wallet charge excludes later manual/Tron claims.
+        # A dummy wallet callback that has NOT implemented a durable
+        # per-account 007 CREATE must never be allowed to debit or claim a
+        # payment. Real positive wallet BUY_SUB/debit/no-replay is separately
+        # exercised in test_post_v9_wallet_creation.py and is a mandatory
+        # full-aggregate gate; this manual fixture remains a reject-control.
         seed(work,env,'walletfirst')
         query(work,env,"UPDATE pays SET type='BUY_SUB' WHERE hash_id='walletfirst'")
         debitBefore=int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'))
-        assert base('walletfirst','wallet')['status']=='ok'
-        assert int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'))==debitBefore-100000
+        # A BUY_SUB with no plan/server is now rejected by the locked
+        # deterministic predebit request guard, BEFORE any capacity lookup.
+        # The old no-capacity classification was weaker than the source truth.
+        assert base('walletfirst','wallet')['status']=='invalid_request'
+        assert int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'))==debitBefore
+        assert query(work,env,"SELECT state FROM pays WHERE hash_id='walletfirst'")=='pending'
         assert base('walletfirst','claim','bank_transfer') is False
-        assert base('walletfirst','claim','manual_usdt') is False
-        assert base('walletfirst','claim','manual_trx',network='TRON',keys={
-            'manualTrxWallet':'TJRabPrwbZy45sbavfcjinPJC18kjpRTv8','manualTrxRateToman':'15000'}) is False
-        cases.append('wallet_first_prevents_external_method_replacement')
+        assert query(work,env,"SELECT COUNT(*) FROM payment_attempts "
+                     "WHERE order_hash='walletfirst'")=='0'
+        cases.append('wallet_unjournaled_dummy_never_debits_or_reserves_payment')
 
         # Manual TRX shares the original guarded photo/approval flow.
         seed(work,env,'trxfirst')
@@ -1206,10 +1962,44 @@ def check():
             assert base(key,'bank_auto_claim') is False
         cases.append('six_native_bank_timer_admin_concurrency_races_exactly_once')
 
+        # Execute the ACTUAL inherited automatic bank receipt handler, not
+        # merely the isolated bank-finisher. The normalized service adapter
+        # boundary is substituted with a deterministic test-only verified
+        # result, while all PHP payment/order/accounting SQL remains real.
+        for outcome in ('verified','unconfirmed'):
+            key='realschedulerday'+outcome
+            seed(work,env,key)
+            remark='scheduler_day_'+outcome
+            query(work,env,"INSERT INTO orders_list "
+                "(userid,token,transid,fileid,server_id,inbound_id,remark,uuid,protocol,"
+                "expire_date,link,amount,status,date,notif,rahgozar,agent_bought) "
+                f"VALUES (1001,'token','',1,1,0,'{remark}','fx-account','vless',"
+                "1800000100,'[]',100,1,'fixture',1,0,0)")
+            oid=int(query(work,env,
+                f"SELECT id FROM orders_list WHERE remark='{remark}' ORDER BY id DESC LIMIT 1"))
+            query(work,env,"INSERT INTO increase_day (id,volume,price) "
+                "VALUES (981,5,100) ON DUPLICATE KEY UPDATE volume=5,price=100")
+            query(work,env,f"UPDATE pays SET type='INCREASE_DAY_{oid}_981',"
+                "server_id=1,plan_id=1,order_id="+str(oid)+","
+                "message_id=550,chat_id=9001,state='have_sent',"
+                "request_date=UNIX_TIMESTAMP()-120 WHERE hash_id='"+key+"'")
+            prior=query(work,env,'SELECT COUNT(*) FROM increase_order')
+            assert base(key,'auto',auto_remote=outcome)=='tested'
+            expected='auto_cart_approved' if outcome=='verified' else 'processing'
+            assert query(work,env,f"SELECT state FROM pays WHERE hash_id='{key}'")==expected
+            assert query(work,env,'SELECT COUNT(*) FROM increase_order')==(
+                str(int(prior)+1) if outcome=='verified' else prior)
+            assert base(key,'auto',auto_remote='verified')=='tested'
+            assert query(work,env,'SELECT COUNT(*) FROM increase_order')==(
+                str(int(prior)+1) if outcome=='verified' else prior)
+            cases.append('native_real_bank_scheduler_day_'+outcome+
+                         '_verified_remote_required_no_duplicate')
+
         # The exclusive service claim can be granted only once even when
         # two distinct process workers race. No external Marzban side effect.
         seed(work,env,'autoservice')
-        query(work,env,"UPDATE pays SET type='BUY_SUB' WHERE hash_id='autoservice'")
+        query(work,env,"UPDATE pays SET type='BUY_SUB',plan_id=7,server_id=2,"
+              "day=0,volume=0,agent_count=1 WHERE hash_id='autoservice'")
         assert base('autoservice','claim')
         query(work,env,"UPDATE pays SET state='have_sent' WHERE hash_id='autoservice'")
         with ThreadPoolExecutor(max_workers=2) as executor:
@@ -1217,6 +2007,367 @@ def check():
         assert claims.count(True)==1 and claims.count(False)==1
         assert base('autoservice','bank_auto_claim') is False
         cases.append('scheduled_service_effect_claimed_only_once')
+
+        # A scheduled bank receipt is *not* proof a remote renewal/extension
+        # happened. Real SQL source transitions from have_sent->processing,
+        # and only authenticated applied-expire/bytes evidence + all local
+        # accounting rows can turn processing->auto_cart_approved.
+        for kind in ('day','volume','renew','standard'):
+            key='autobankedit'+kind
+            seed(work,env,key)
+            remark='auto_'+kind+'_fixture'
+            query(work,env,"INSERT INTO orders_list "
+                "(userid,token,transid,fileid,server_id,inbound_id,remark,uuid,protocol,"
+                "expire_date,link,amount,status,date,notif,rahgozar,agent_bought) "
+                f"VALUES (1001,'token','',7,2,0,'{remark}','fixture-uuid','vless',"
+                "1800000100,'[]',100,1,'fixture',1,0,0)")
+            oid=int(query(work,env,
+                f"SELECT id FROM orders_list WHERE remark='{remark}' ORDER BY id DESC LIMIT 1"))
+            if kind=='day':
+                query(work,env,"INSERT INTO increase_day (id,volume,price) VALUES "
+                              "(9901,3,100) ON DUPLICATE KEY UPDATE volume=3,price=100")
+            if kind=='volume':
+                query(work,env,"INSERT INTO increase_plan (id,volume,price) VALUES "
+                              "(9902,3,100) ON DUPLICATE KEY UPDATE volume=3,price=100")
+            typ={'day':f'INCREASE_DAY_{oid}_9901',
+                 'volume':f'INCREASE_VOLUME_{oid}_9902',
+                 'renew':'RENEW_ACCOUNT','standard':'RENEW_SCONFIG'}[kind]
+            description=(
+                f"'{json.dumps({'remark':remark,'uuid':'fixture-uuid'},separators=(',',':'))}'"
+                if kind=='standard' else "description")
+            query(work,env,f"UPDATE pays SET type='{typ}',state='have_sent',"
+                f"order_id={oid},server_id=2,plan_id=7,description={description} "
+                f"WHERE hash_id='{key}'")
+            assert base(key,'bank_auto_claim') is True
+            assert query(work,env,f"SELECT state FROM pays WHERE hash_id='{key}'")=='processing'
+            details={'edit_kind':kind,'server_id':2,'order_id':oid,
+                'remark':remark,'units':3}
+            before_order=query(work,env,
+                f"SELECT expire_date,notif FROM orders_list WHERE id={oid}")
+            before_audit=query(work,env,'SELECT COUNT(*) FROM increase_order')
+            assert base(key,'preflight_bank_service_edit',**details) is True
+            assert base(key,'preflight_bank_service_edit',server_id=3,
+                        **{k:v for k,v in details.items() if k!='server_id'}) is False
+            assert base(key,'preflight_bank_service_edit',remark='wrong-owner',
+                        **{k:v for k,v in details.items() if k!='remark'}) is False
+            assert base(key,'finish_bank_service_edit',remote_verified=False,**details) is False
+            assert query(work,env,f"SELECT state FROM pays WHERE hash_id='{key}'")=='processing'
+            assert query(work,env,
+                f"SELECT expire_date,notif FROM orders_list WHERE id={oid}")==before_order
+            assert query(work,env,'SELECT COUNT(*) FROM increase_order')==before_audit
+            assert base(key,'finish_bank_service_edit',remote_verified=True,**details) is True
+            assert query(work,env,f"SELECT state FROM pays WHERE hash_id='{key}'")=='auto_cart_approved'
+            assert query(work,env,'SELECT COUNT(*) FROM increase_order')==str(int(before_audit)+1)
+            if kind in ('day','renew'):
+                assert query(work,env,f"SELECT expire_date FROM orders_list WHERE id={oid}")=='1802000000'
+            assert base(key,'finish_bank_service_edit',remote_verified=True,**details) is False
+            assert query(work,env,'SELECT COUNT(*) FROM increase_order')==str(int(before_audit)+1)
+            cases.append('auto_bank_'+kind+'_preflight_pins_original_payment_order_target_and_account')
+            cases.append('auto_bank_'+kind+'_service_only_after_verified_remote_and_atomic_local_effect')
+
+        # R8: run the actual bank scheduler with Core.php's real order/group
+        # authorization, signed payment claim, SQL transaction and CAS.
+        # Only achbotApplyServiceEdit is an isolated, counted provider spy.
+        real_bank_php=PHP.replace(
+            "function achbotSupportsPaymentSubject(...$args) {return true;}",
+            "require_once $root.'/src/Purchase/Core.php';")
+        real_bank_php=real_bank_php.replace(
+            'function achbotSupportsMarzbanOrder(...$args) {return true;}', '')
+        assert real_bank_php!=PHP
+        assert 'function achbotSupportsMarzbanOrder(...$args) {return true;}' not in real_bank_php
+        real_bank_driver=work/'real-core-bank-alias.php'
+        real_bank_driver.write_text(real_bank_php)
+        query(work,env,"INSERT INTO setting(id,type,value) VALUES "
+              "(9910,'ACHBOT_MARZBAN_PANEL_GROUP','automatic-bank-alias')")
+        query(work,env,'UPDATE server_info SET panel_group_id=9910 WHERE id IN (1,2)')
+        query(work,env,"INSERT INTO increase_day(id,volume,price) VALUES "
+              "(9921,5,100) ON DUPLICATE KEY UPDATE volume=5,price=100")
+        query(work,env,"INSERT INTO increase_plan(id,volume,price) VALUES "
+              "(9922,4,100) ON DUPLICATE KEY UPDATE volume=4,price=100")
+        query(work,env,"UPDATE pays SET request_date=UNIX_TIMESTAMP() "
+              "WHERE state='have_sent'")
+
+        def alias_bank_case(key,kind):
+            oid=day_order(key,expiry=1800000100)
+            query(work,env,f"UPDATE orders_list SET fileid=1,notif=1 WHERE id={oid}")
+            seed(work,env,key,price=100)
+            typ={'renew':'RENEW_ACCOUNT',
+                 'day':f'INCREASE_DAY_{oid}_9921',
+                 'volume':f'INCREASE_VOLUME_{oid}_9922'}[kind]
+            query(work,env,f"UPDATE pays SET type='{typ}',state='have_sent',"
+                  f"server_id=2,plan_id=1,order_id={oid},price=100,"
+                  "request_date=UNIX_TIMESTAMP()-120,message_id=550,chat_id=9001 "
+                  f"WHERE hash_id='{key}'")
+            units={'renew':0,'day':5,'volume':4}[kind]
+            return oid,{'edit_kind':kind,'server_id':2,'order_id':oid,
+                        'remark':key,'units':units}
+
+        def real_bank(key,op,**kw):
+            return run_php(work,env,real_bank_driver,key,op,**kw)
+
+        # Three positive flows exercise the scheduler (not only a standalone
+        # helper). Valid aliases use the order's CURRENT target server while
+        # its original plan still names another server in the same group.
+        for kind in ('renew','day','volume'):
+            key='bankaliasok'+kind
+            oid,args=alias_bank_case(key,kind)
+            before_audit=int(query(work,env,'SELECT COUNT(*) FROM increase_order'))
+            before_wallet=int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'))
+            outcome=real_bank(key,'auto_probe')
+            assert outcome=={'remote_calls':1},(key,outcome)
+            assert query(work,env,f"SELECT state FROM pays WHERE hash_id='{key}'")=='auto_cart_approved'
+            assert int(query(work,env,'SELECT COUNT(*) FROM increase_order'))==before_audit+1
+            assert query(work,env,"SELECT server_id FROM increase_order "
+                f"WHERE remark='{key}' ORDER BY id DESC LIMIT 1")=='2'
+            assert query(work,env,f'SELECT notif FROM orders_list WHERE id={oid}')=='0'
+            assert int(query(work,env,f'SELECT expire_date FROM orders_list WHERE id={oid}'))==(
+                1800000100 if kind=='volume' else 1802000000)
+            assert int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'))==before_wallet
+            assert real_bank(key,'auto_probe')=={'remote_calls':0}
+            assert int(query(work,env,'SELECT COUNT(*) FROM increase_order'))==before_audit+1
+            cases.append('review_r8_bank_grouped_'+kind+'_scheduler_verified_once')
+
+        # Cross-panel aliases cannot reach any remote operation, even when
+        # the logical target and username appear otherwise legitimate.
+        query(work,env,'UPDATE server_info SET panel_group_id=NULL WHERE id=1')
+        for kind in ('renew','day','volume'):
+            key='bankaliasforeign'+kind
+            oid,args=alias_bank_case(key,kind)
+            before_audit=int(query(work,env,'SELECT COUNT(*) FROM increase_order'))
+            assert real_bank(key,'auto_probe')=={'remote_calls':0}
+            assert query(work,env,f"SELECT state FROM pays WHERE hash_id='{key}'")=='have_sent'
+            # Simulate a preexisting durable claim so even direct helper
+            # dispatch is blocked by real Core before any provider request.
+            assert real_bank(key,'bank_auto_claim') is True
+            assert real_bank(key,'preflight_bank_service_edit',**args) is False
+            assert query(work,env,f"SELECT state FROM pays WHERE hash_id='{key}'")=='processing'
+            assert real_bank(key,'auto_probe')=={'remote_calls':0}
+            assert int(query(work,env,'SELECT COUNT(*) FROM increase_order'))==before_audit
+            assert query(work,env,f'SELECT expire_date FROM orders_list WHERE id={oid}')=='1800000100'
+            cases.append('review_r8_bank_foreign_'+kind+'_blocked_before_remote')
+        query(work,env,'UPDATE server_info SET panel_group_id=9910 WHERE id=1')
+
+        # A valid preflight is NOT a lasting permission: the finisher must
+        # recheck the group after the verified provider effect and reject a
+        # revoked group without payment/audit/expiry terminalization.
+        key='bankaliasrevoked'
+        oid,args=alias_bank_case(key,'day')
+        assert real_bank(key,'bank_auto_claim') is True
+        assert real_bank(key,'preflight_bank_service_edit',**args) is True
+        audit_before=int(query(work,env,'SELECT COUNT(*) FROM increase_order'))
+        query(work,env,'UPDATE server_info SET panel_group_id=NULL WHERE id=1')
+        assert real_bank(key,'finish_bank_service_edit',**args) is False
+        assert query(work,env,f"SELECT state FROM pays WHERE hash_id='{key}'")=='processing'
+        assert query(work,env,f'SELECT expire_date FROM orders_list WHERE id={oid}')=='1800000100'
+        assert int(query(work,env,'SELECT COUNT(*) FROM increase_order'))==audit_before
+        query(work,env,'UPDATE server_info SET panel_group_id=9910 WHERE id=1')
+        cases.append('review_r8_bank_group_revoked_after_preflight_nonterminal')
+
+        # Payment and order identities are re-read, not trusted from the
+        # pre-dispatch snapshot. In particular, nonzero historical extension
+        # order_id must agree with the exact order encoded in pay.type.
+        for kind,mutation in (
+            ('renew',"UPDATE pays SET server_id=1 WHERE hash_id='bankaliasdriftrenew'"),
+            ('day',None),
+            ('volume',None),
+        ):
+            key='bankaliasdrift'+kind
+            oid,args=alias_bank_case(key,kind)
+            assert real_bank(key,'bank_auto_claim') is True
+            assert real_bank(key,'preflight_bank_service_edit',**args) is True
+            audit_before=int(query(work,env,'SELECT COUNT(*) FROM increase_order'))
+            if kind=='day':
+                mutation=f"UPDATE pays SET order_id={oid+1} WHERE hash_id='{key}'"
+            if kind=='volume':
+                mutation=f"UPDATE orders_list SET remark='changed_subject' WHERE id={oid}"
+            query(work,env,mutation)
+            assert real_bank(key,'finish_bank_service_edit',**args) is False
+            assert query(work,env,f"SELECT state FROM pays WHERE hash_id='{key}'")=='processing'
+            assert int(query(work,env,'SELECT COUNT(*) FROM increase_order'))==audit_before
+            assert query(work,env,f'SELECT expire_date FROM orders_list WHERE id={oid}')=='1800000100'
+            cases.append('review_r8_bank_'+kind+'_identity_drift_nonterminal')
+
+        # A coordinated edit of BOTH the payment's plan and the order's
+        # fileid would still pass a freshly read Core group check. The
+        # finisher must also pin its original pre-provider paid plan.
+        key='bankaliascoherentplan'
+        oid,args=alias_bank_case(key,'renew')
+        assert real_bank(key,'bank_auto_claim') is True
+        assert real_bank(key,'preflight_bank_service_edit',**args) is True
+        before_audit=int(query(work,env,'SELECT COUNT(*) FROM increase_order'))
+        query(work,env,f"UPDATE pays SET plan_id=7 WHERE hash_id='{key}'")
+        query(work,env,f'UPDATE orders_list SET fileid=7 WHERE id={oid}')
+        assert real_bank(key,'finish_bank_service_edit',seen_pay={'plan_id':1},**args) is False
+        assert query(work,env,f"SELECT state FROM pays WHERE hash_id='{key}'")=='processing'
+        assert query(work,env,f'SELECT expire_date FROM orders_list WHERE id={oid}')=='1800000100'
+        assert int(query(work,env,'SELECT COUNT(*) FROM increase_order'))==before_audit
+        cases.append('review_r8_bank_original_paid_plan_pinned_after_coherent_drift')
+
+        # Repricing or swapping an equally-sized extension quote mid-flight
+        # cannot terminalize the original paid subject merely because its
+        # new quote resolves to the same units and current order identity.
+        key='bankaliasquotechange'
+        oid,args=alias_bank_case(key,'day')
+        assert real_bank(key,'bank_auto_claim') is True
+        assert real_bank(key,'preflight_bank_service_edit',**args) is True
+        query(work,env,"INSERT INTO increase_day(id,volume,price) VALUES "
+              "(9923,5,100) ON DUPLICATE KEY UPDATE volume=5,price=100")
+        old_type=f'INCREASE_DAY_{oid}_9921'
+        query(work,env,f"UPDATE pays SET type='INCREASE_DAY_{oid}_9923' "
+              f"WHERE hash_id='{key}'")
+        before_audit=int(query(work,env,'SELECT COUNT(*) FROM increase_order'))
+        assert real_bank(key,'finish_bank_service_edit',seen_pay={'type':old_type},**args) is False
+        assert query(work,env,f"SELECT state FROM pays WHERE hash_id='{key}'")=='processing'
+        assert int(query(work,env,'SELECT COUNT(*) FROM increase_order'))==before_audit
+        cases.append('review_r8_bank_original_paid_quote_pinned_after_type_drift')
+
+        # Unknown remote outcome is never an automatic refund, and a local
+        # SQL audit error after verified GET cannot produce a terminal
+        # approval. Scheduler replays must not send another remote edit.
+        for mode in ('uncertain','sql_failure'):
+            key='bankalias'+mode.replace('_','')
+            oid,args=alias_bank_case(key,'day')
+            before_wallet=int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'))
+            before_audit=int(query(work,env,'SELECT COUNT(*) FROM increase_order'))
+            if mode=='sql_failure':
+                query(work,env,"CREATE TRIGGER fixture_r8_bank_audit_failure "
+                      "BEFORE INSERT ON increase_order FOR EACH ROW "
+                      "SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='fixture_r8_sql_failure'")
+            try:
+                outcome=real_bank(key,'auto_probe',auto_remote=(
+                    'uncertain' if mode=='uncertain' else 'verified'),
+                    expect_deferred=(mode=='sql_failure'))
+            finally:
+                if mode=='sql_failure':
+                    query(work,env,'DROP TRIGGER IF EXISTS fixture_r8_bank_audit_failure')
+            assert outcome=={'remote_calls':1},(key,outcome)
+            assert query(work,env,f"SELECT state FROM pays WHERE hash_id='{key}'")=='processing'
+            assert query(work,env,f'SELECT expire_date FROM orders_list WHERE id={oid}')=='1800000100'
+            assert int(query(work,env,'SELECT COUNT(*) FROM increase_order'))==before_audit
+            assert int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'))==before_wallet
+            assert real_bank(key,'auto_probe')=={'remote_calls':0}
+            cases.append('review_r8_bank_grouped_'+mode+'_review_no_retry_refund')
+        query(work,env,'UPDATE server_info SET panel_group_id=NULL WHERE id IN (1,2)')
+
+        # Reviewer R4/R5: local expiry storage bounds and compare-and-swap.
+        # These run on actual original-schema MariaDB, including permissive
+        # sql_mode in which an oversized integer may otherwise be clamped.
+        for mode in ('STRICT_TRANS_TABLES',''):
+            query(work,env,"SET GLOBAL sql_mode='"+mode+"'")
+            for label,value in (('lastint',2147483647),
+                                ('overflow',2147483648)):
+                key='banklimit'+('strict' if mode else 'permissive')+label
+                seed(work,env,key)
+                remark='bank_limit_'+label
+                query(work,env,"INSERT INTO orders_list "
+                    "(userid,token,transid,fileid,server_id,inbound_id,remark,uuid,protocol,"
+                    "expire_date,link,amount,status,date,notif,rahgozar,agent_bought) "
+                    f"VALUES (1001,'token','',7,2,0,'{remark}','fixture-uuid','vless',"
+                    "1800000100,'[]',100,1,'fixture',1,0,0)")
+                oid=int(query(work,env,"SELECT id FROM orders_list WHERE remark='"+
+                              remark+"' ORDER BY id DESC LIMIT 1"))
+                query(work,env,"INSERT INTO increase_day (id,volume,price) VALUES "
+                    "(9903,1,100) ON DUPLICATE KEY UPDATE volume=1,price=100")
+                query(work,env,f"UPDATE pays SET type='INCREASE_DAY_{oid}_9903',"
+                    f"state='have_sent',server_id=2,plan_id=7,order_id={oid} WHERE hash_id='{key}'")
+                assert base(key,'bank_auto_claim') is True
+                result=base(key,'finish_bank_service_edit',edit_kind='day',
+                    order_id=oid,server_id=2,remark=remark,units=1,
+                    applied_expire=value,expect_deferred=value>2147483647)
+                assert result is (value==2147483647),(key,result)
+                assert query(work,env,f"SELECT expire_date FROM orders_list WHERE id={oid}")==(
+                    '2147483647' if result else '1800000100')
+                assert query(work,env,f"SELECT state FROM pays WHERE hash_id='{key}'")==(
+                    'auto_cart_approved' if result else 'processing')
+                cases.append('review_r4_bank_'+label+'_sql_'+
+                    ('strict' if mode else 'permissive'))
+        query(work,env,"SET GLOBAL sql_mode='STRICT_TRANS_TABLES'")
+
+        # Two separate paid bank edits use the SAME account but have different
+        # payment rows. If B finalizes its newer remote change first, the old
+        # finisher A must not overwrite B's newer local expiry or claim success.
+        for key in ('bankracea','bankraceb'):
+            seed(work,env,key)
+        remark='bank_race'
+        query(work,env,"INSERT INTO orders_list "
+            "(userid,token,transid,fileid,server_id,inbound_id,remark,uuid,protocol,"
+            "expire_date,link,amount,status,date,notif,rahgozar,agent_bought) "
+            f"VALUES (1001,'token','',7,2,0,'{remark}','fixture-uuid','vless',"
+            "1800000100,'[]',100,1,'fixture',1,0,0)")
+        oid=int(query(work,env,"SELECT id FROM orders_list WHERE remark='bank_race'"))
+        query(work,env,"INSERT INTO increase_day (id,volume,price) VALUES "
+            "(9904,1,100) ON DUPLICATE KEY UPDATE volume=1,price=100")
+        for key in ('bankracea','bankraceb'):
+            query(work,env,f"UPDATE pays SET type='INCREASE_DAY_{oid}_9904',"
+                  f"state='have_sent',server_id=2,plan_id=7,order_id={oid} WHERE hash_id='{key}'")
+            assert base(key,'bank_auto_claim') is True
+        prior=int(query(work,env,"SELECT COUNT(*) FROM increase_order"))
+        assert base('bankraceb','finish_bank_service_edit',edit_kind='day',
+                    order_id=oid,server_id=2,remark=remark,units=1,
+                    applied_expire=1802000100,expected_order_expire=1800000100) is True
+        assert base('bankracea','finish_bank_service_edit',edit_kind='day',
+                    order_id=oid,server_id=2,remark=remark,units=1,
+                    applied_expire=1801000100,expected_order_expire=1800000100) is False
+        assert query(work,env,f"SELECT expire_date FROM orders_list WHERE id={oid}")=='1802000100'
+        assert query(work,env,"SELECT state FROM pays WHERE hash_id='bankracea'")=='processing'
+        assert query(work,env,"SELECT state FROM pays WHERE hash_id='bankraceb'")=='auto_cart_approved'
+        assert int(query(work,env,"SELECT COUNT(*) FROM increase_order"))==prior+1
+        cases.append('review_r5_remote_a_then_b_local_b_then_a_fenced')
+
+        # Reviewer R5: other workflows can legitimately advance the same
+        # orders_list row after bank A's remote verification but before A's
+        # SQL finalization. Model THEIR committed write using real MariaDB,
+        # without pretending their external provider path is exercised here.
+        for other in ('auto_renew','manual_edit','volume_after_renew'):
+            key='bankstale'+other.replace('_','')
+            seed(work,env,key)
+            remark='bank_stale_'+other
+            query(work,env,"INSERT INTO orders_list "
+                "(userid,token,transid,fileid,server_id,inbound_id,remark,uuid,protocol,"
+                "expire_date,link,amount,status,date,notif,rahgozar,agent_bought) "
+                f"VALUES (1001,'token','',7,2,0,'{remark}','fixture-uuid','vless',"
+                "1800000100,'[]',100,1,'fixture',1,0,0)")
+            oid=int(query(work,env,"SELECT id FROM orders_list WHERE remark='"+
+                          remark+"'"))
+            if other=='volume_after_renew':
+                query(work,env,"INSERT INTO increase_plan (id,volume,price) VALUES "
+                    "(9905,1,100) ON DUPLICATE KEY UPDATE volume=1,price=100")
+                kind='volume';typ=f'INCREASE_VOLUME_{oid}_9905'
+            else:
+                kind='day';typ=f'INCREASE_DAY_{oid}_9904'
+            query(work,env,f"UPDATE pays SET type='{typ}',"
+                  f"state='have_sent',server_id=2,plan_id=7,order_id={oid} "
+                  f"WHERE hash_id='{key}'")
+            assert base(key,'bank_auto_claim') is True
+            before=int(query(work,env,'SELECT COUNT(*) FROM increase_order'))
+            query(work,env,f'UPDATE orders_list SET expire_date=1802200000 WHERE id={oid}')
+            assert base(key,'finish_bank_service_edit',edit_kind=kind,
+                order_id=oid,server_id=2,remark=remark,units=1,
+                applied_expire=1801200000,expected_order_expire=1800000100) is False
+            assert query(work,env,f"SELECT expire_date FROM orders_list WHERE id={oid}")=='1802200000'
+            assert query(work,env,f"SELECT state FROM pays WHERE hash_id='{key}'")=='processing'
+            assert int(query(work,env,'SELECT COUNT(*) FROM increase_order'))==before
+            cases.append('review_r5_stale_bank_after_'+other+'_no_completion')
+
+        # A paid provider outcome followed by a local accounting INSERT error
+        # cannot mark completion or silently drop the original payment claim.
+        key='autobankeditlocalfail'
+        seed(work,env,key)
+        query(work,env,"UPDATE pays SET type='RENEW_SCONFIG',state='have_sent',"
+            "description='{\"remark\":\"fixture-standard\",\"uuid\":\"fixture-uuid\"}',"
+            "server_id=2,plan_id=7 WHERE hash_id='autobankeditlocalfail'")
+        assert base(key,'bank_auto_claim') is True
+        query(work,env,"CREATE TRIGGER fixture_auto_bank_audit_failure "
+            "BEFORE INSERT ON increase_order FOR EACH ROW "
+            "SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='fixture_sql_failure'")
+        try:
+            assert base(key,'finish_bank_service_edit',edit_kind='standard',
+                        server_id=2,remark='fixture-standard',
+                        order_id=0,expect_deferred=True) is False
+            assert query(work,env,"SELECT state FROM pays WHERE hash_id='autobankeditlocalfail'")=='processing'
+        finally:
+            query(work,env,'DROP TRIGGER IF EXISTS fixture_auto_bank_audit_failure')
+        cases.append('auto_bank_local_sql_failure_does_not_claim_service_delivered')
 
         # A card receipt predating the shared ledger stays eligible for the
         # inherited timer; an arbitrary unknown provider never does.
