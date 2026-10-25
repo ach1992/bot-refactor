@@ -1604,13 +1604,18 @@ if (is_string($userInfo['step']??null) &&
     try {
         // A claim was committed before this potentially non-idempotent edit.
         // Neither a failed result nor a lost response authorizes a retry.
-        if (!achbotGiftTargetMatches($connection,
-            $directClaim['order']['server_id'],$directClaim['target']))
-            throw new RuntimeException('direct_gift_target_changed');
+        achbotDirectGiftPreEffect($connection,$directClaim,
+            (int)$directSource['actor_id'],(int)$admin);
         $directResult=achbotApplyServiceEdit($connection,
             $directClaim['order']['server_id'],$directChange,$directClaim['target']);
         if (!is_object($directResult))
             throw new RuntimeException('direct_gift_result_invalid');
+        // Preserve safe machine-readable provider codes for operator review
+        // without emitting raw HTTP, database or credential details.
+        $directProviderCode=$directResult->msg??null;
+        if (is_string($directProviderCode) &&
+            preg_match('/\A[a-z0-9_]{1,70}\z/D',$directProviderCode)===1)
+            $directFailure='provider_'.$directProviderCode;
         achbotDirectGiftComplete($connection,$directClaim,$directResult);
         try {
             sendMessage('✅ هدیهٔ اشتراک با نتیجهٔ قطعی ثبت شد (شناسه '.
@@ -1620,11 +1625,20 @@ if (is_string($userInfo['step']??null) &&
             error_log('direct_gift_success_notice_unconfirmed');
         }
     } catch (Throwable $e) {
-        $directFailure=in_array($e->getMessage(),[
-            'direct_gift_target_changed','direct_gift_result_invalid',
-            'direct_gift_result_unverified','direct_gift_expiry_did_not_increase',
+        if ($e->getMessage()==='direct_gift_result_unverified' &&
+            $directFailure!=='direct_gift_provider_unverified') {
+            // Retain the validated provider result code for reconciliation.
+        } elseif (in_array($e->getMessage(),[
+            'direct_gift_preflight_order_changed',
+            'direct_gift_preflight_target_changed',
+            'direct_gift_admin_revoked','direct_gift_order_changed',
+            'direct_gift_result_invalid','direct_gift_result_unverified',
+            'direct_gift_expiry_did_not_increase',
             'direct_gift_local_identity_changed'
-        ],true)?$e->getMessage():'direct_gift_effect_or_sql_unconfirmed';
+        ],true)) $directFailure=$e->getMessage();
+        else $directFailure='direct_gift_effect_or_sql_unconfirmed';
+        error_log('direct_gift_review source_id='.
+            (int)$directClaim['id'].' reason='.$directFailure);
         achbotDirectGiftReview($connection,$directClaim,$directFailure);
         try {
             sendMessage('نتیجهٔ هدیه قطعی نیست (شناسه '.

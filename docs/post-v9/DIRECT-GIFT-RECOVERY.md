@@ -12,7 +12,7 @@ history and the original 23-table database remain unchanged.
    random-nonced wizard for the currently authorized operator. Each step
    needs a fresh private text update whose update/message IDs advance,
    matching actor and fresh MariaDB administrator privilege. Revoked
-   delegated administrators and stale/forged callbacks fail closed.
+   delegated administrators and stale/out-of-order callbacks fail closed.
 2. Remark resolution requires exactly one active orders_list primary-key
    identity for the selected logical server. It pins order id, userid,
    server_id, inbound_id, fileid, remark, uuid, status and old expire_date.
@@ -81,7 +81,8 @@ There is deliberately no generic unlock or retry command. Preserve the
 journal and obtain a separate authorization for any manual provider/data
 correction, with explicit current-state evidence and conditional writes.
 Never automatically repeat a held relative increase. The unindexed
-setting.type means source claims can eventually become costly at scale;
+setting.type uses non-locking scans and PK-scoped locking, but source claims
+can eventually become costly at scale;
 a new unique ledger/index requires a demonstrated need and a separately
 accepted additive schema decision, not an unreviewed migration.
 

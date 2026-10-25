@@ -1327,13 +1327,16 @@ def main():
             'changed_order_identity_before_claim_denied',
             'callback_text_never_used_as_gift_input',
             'concurrent_workers_one_unique_durable_claim',
+            'old_callback_cannot_override_new_random_nonce',
+            'old_callback_cannot_interrupt_volume_stage',
+            'new_callback_restarts_distinct_nonce',
             'physical_account_alias_cross_order_cross_admin_held',
             'source_and_account_hold_rollback_when_step_consume_fails',
             'journal_sql_insert_failure_prevents_provider_dispatch',
             'original_23_table_schema_unmodified',
         }
         if not (direct_gift.get('complete') is True and
-                direct_gift.get('cases')>=46 and
+                direct_gift.get('cases')>=49 and
                 required_direct_gift.issubset(set(direct_gift.get('scenarios',[]))) and
                 direct_gift.get('real_bot_php_route') is True and
                 direct_gift.get('real_mysqli_original_schema') is True and

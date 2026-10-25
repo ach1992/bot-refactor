@@ -350,6 +350,38 @@ def main() -> None:
                'Replay after lost claim COMMIT attempted external edit')
         passed.append('unknown_claim_commit_holds_no_provider_dispatch')
 
+        reset(work,env);stage.joinpath('effects.jsonl').unlink(missing_ok=True)
+        begin(work,env,stage,update_id=600)
+        prior=q(work,env,'SELECT step FROM users WHERE userid=9001')
+        delayed=call(work,env,stage,kind='callback',actor=9001,
+            update_id=599,message_id=49,text='giftToUser2')
+        ensure(q(work,env,'SELECT step FROM users WHERE userid=9001')==prior and
+               len(rows(work,env,'START'))==1 and
+               not any('نام کاربری' in t for t in delayed['events']),
+               'An older callback overrode the current wizard')
+        passed.append('old_callback_cannot_override_new_random_nonce')
+
+        reset(work,env);stage.joinpath('effects.jsonl').unlink(missing_ok=True)
+        prepare_final(work,env,stage)
+        prior=q(work,env,'SELECT step FROM users WHERE userid=9001')
+        call(work,env,stage,kind='callback',actor=9001,
+            update_id=501,message_id=49,text='giftToUser2')
+        ensure(q(work,env,'SELECT step FROM users WHERE userid=9001')==prior and
+               len(rows(work,env,'START'))==1,
+               'An older callback interrupted the volume-stage wizard')
+        passed.append('old_callback_cannot_interrupt_volume_stage')
+
+        reset(work,env);stage.joinpath('effects.jsonl').unlink(missing_ok=True)
+        begin(work,env,stage,update_id=600)
+        prior=q(work,env,'SELECT step FROM users WHERE userid=9001')
+        replacement=call(work,env,stage,kind='callback',actor=9001,
+            update_id=601,message_id=51,text='giftToUser2')
+        ensure(q(work,env,'SELECT step FROM users WHERE userid=9001')!=prior and
+               len(rows(work,env,'START'))==2 and
+               any('نام کاربری' in t for t in replacement['events']),
+               'Fresh explicit callback could not restart the wizard')
+        passed.append('new_callback_restarts_distinct_nonce')
+
         for kind,spec in [
             ('missing_webhook_secret',{'missing_header':True}),
             ('wrong_webhook_secret',{'bad_header':True}),
