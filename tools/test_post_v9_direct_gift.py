@@ -1,0 +1,514 @@
+#!/usr/bin/env python3
+"""Post-V9 direct gift: actual bot.php route, PHP service seam, original MariaDB.
+
+All Telegram/Marzban traffic is synthetic, and all SQL runs on an owned,
+socket-only disposable instance. Original V0-V9 evidence stays immutable.
+"""
+from __future__ import annotations
+import argparse
+import concurrent.futures
+import json
+import os
+import subprocess
+from pathlib import Path
+
+import test_access_state as owned
+import test_v6_native as native
+
+ROOT = Path(__file__).resolve().parents[1]
+DB = native.DBS[1]
+OLD_EXPIRY = 1800000100
+NEW_EXPIRY = 1802000100
+SECRET = "fixture-direct-gift-token-NotReal_2026"
+
+PHP = r'''<?php
+if (PHP_SAPI !== 'cli') exit(3);
+error_reporting(E_ALL & ~E_DEPRECATED);
+set_error_handler(static function($n,$m) {throw new ErrorException($m,0,$n);});
+$spec=json_decode($argv[1],true,512,JSON_THROW_ON_ERROR);
+$GLOBALS['spec']=$spec;
+class DirectGiftMysqli extends mysqli {
+    public function commit(int $flags=0,?string $name=null): bool {
+        $done=parent::commit($flags,$name);
+        if ($done && ($GLOBALS['spec']['mode']??'')==='commit_unknown' &&
+            !($GLOBALS['did_unknown']??false)) {
+            $rows=$this->query("SELECT id FROM setting WHERE type LIKE 'ACHBOT_DIRECT_GIFT_SOURCE_%' LIMIT 1");
+            if ($rows && $rows->num_rows===1) {
+                $GLOBALS['did_unknown']=true;
+                throw new RuntimeException('synthetic_claim_commit_ack_lost');
+            }
+        }
+        return $done;
+    }
+}
+$connection=new DirectGiftMysqli('localhost','root','',
+    getenv('ACHBOT_DIRECT_DB'),0,getenv('ACHBOT_DIRECT_SOCKET'));
+$connection->set_charset('utf8mb4');
+$admin=9001;
+$kind=(string)($spec['kind']??'message');
+$actor=(int)($spec['actor']??9001);
+$wireActor=(int)($spec['wire_actor']??$actor);
+$wireChat=(int)($spec['wire_chat']??$wireActor);
+$messageId=(int)($spec['message_id']??52);
+$updateId=(int)($spec['update_id']??502);
+$input=(string)($spec['text']??'');
+$wireType=(string)($spec['chat_type']??'private');
+$sender=(object)['id'=>$wireActor,'is_bot'=>($spec['is_bot']??false),
+                 'first_name'=>'Synthetic','username'=>'fixture'];
+$chat=(object)['id'=>$wireChat,'type'=>$wireType];
+$msg=(object)['from'=>$sender,'chat'=>$chat,'message_id'=>$messageId,
+             'text'=>$kind==='callback'?'Synthetic old bot text':$input];
+$update=(object)['update_id'=>$updateId];
+if ($kind==='callback') {
+    $msg->reply_markup=(object)['inline_keyboard'=>[]];
+    $update->callback_query=(object)[
+        'id'=>'fixture','data'=>$input,'from'=>$sender,'message'=>$msg
+    ];
+} elseif ($kind==='message') $update->message=$msg;
+elseif ($kind==='mixed') {
+    $msg->reply_markup=(object)['inline_keyboard'=>[]];
+    $update->message=$msg;
+    $update->callback_query=(object)['id'=>'fixture','data'=>$input,
+                                     'from'=>$sender,'message'=>$msg];
+} else throw new RuntimeException('fixture_invalid_kind');
+$from_id=$actor;$chat_id=$wireChat;$message_id=$messageId;
+$data=null;$text=null;
+require __DIR__.'/src/Telegram/UpdateBindings.php';
+if (isset($spec['bound_actor'])) $from_id=(int)$spec['bound_actor'];
+if (isset($spec['bound_text'])) $text=$spec['bound_text'];
+if (!($spec['missing_header']??false)) {
+    $_SERVER['HTTP_X_TELEGRAM_BOT_API_SECRET_TOKEN']=
+        ($spec['bad_header']??false)?'bad-secret':getenv('ACHBOT_TELEGRAM_WEBHOOK_SECRET');
+}
+$stmt=$connection->prepare('SELECT id,userid,isAdmin,step FROM users WHERE userid=?');
+$stmt->bind_param('i',$from_id);$stmt->execute();
+$userInfo=$stmt->get_result()->fetch_assoc()?:['step'=>'none','isAdmin'=>0];
+$stmt->close();
+if (isset($spec['stale_step']))$userInfo['step']=$spec['stale_step'];
+if (isset($spec['cached_admin']))$userInfo['isAdmin']=$spec['cached_admin'];
+$buttonValues=['cancel'=>'CANCEL'];$mainValues=['reached_main_menu'=>'MAIN'];
+$removeKeyboard='REMOVE';$cancelKey='CANCEL';
+$GLOBALS['events']=[];
+function sendMessage($body=null,$key=null) {
+    $GLOBALS['events'][]=(string)$body;
+    if (($GLOBALS['spec']['mode']??'')==='notice_fail' &&
+        str_contains((string)$body,'✅'))
+        throw new RuntimeException('synthetic_notification_lost');
+    return (object)['ok'=>true];
+}
+function getMainKeys(){return 'MAIN_KEYS';}
+function editMarzbanConfig($sid,$change,?array $target=null): object {
+    $mode=(string)($GLOBALS['spec']['mode']??'verified');
+    file_put_contents(getenv('ACHBOT_DIRECT_LOG'),
+        json_encode(['sid'=>$sid,'change'=>$change,
+            'target'=>$target['panel_url']??null],JSON_THROW_ON_ERROR)."\n",
+        FILE_APPEND|LOCK_EX);
+    if ($mode==='slow_provider') usleep(350000);
+    if ($mode==='provider_throw') throw new RuntimeException('synthetic_lost_provider_ack');
+    if ($mode==='sql_drift') {
+        $GLOBALS['connection']->query('UPDATE orders_list SET expire_date=1800000101 WHERE id=91');
+    }
+    if ($mode==='config_drift') {
+        $GLOBALS['connection']->query("UPDATE server_config SET panel_url='http://127.0.0.1:10' WHERE id=2");
+    }
+    if ($mode==='provider_false')
+        return (object)['success'=>false,'uncertain'=>false,'msg'=>'synthetic_refused'];
+    if ($mode==='provider_unknown')
+        return (object)['success'=>false,'uncertain'=>true,'msg'=>'synthetic_unknown'];
+    if ($mode==='provider_unverified')
+        return (object)['success'=>true,'verified'=>false,'uncertain'=>true];
+    if ($mode==='provider_ambiguous_success')
+        return (object)['success'=>true,'verified'=>true,'uncertain'=>true,
+            'applied_expire'=>1802000100,'applied_bytes'=>4294967296];
+    if ($mode==='provider_bad_expiry')
+        return (object)['success'=>true,'verified'=>true,
+            'applied_expire'=>2147483648,'applied_bytes'=>4294967296];
+    if ($mode==='provider_bad_bytes')
+        return (object)['success'=>true,'verified'=>true,
+            'applied_expire'=>1802000100,'applied_bytes'=>-1];
+    $expire=isset($change['plus_day']) ? 1802000100 : 1800000100;
+    return (object)['success'=>true,'verified'=>true,'uncertain'=>false,
+        'applied_expire'=>$expire,'applied_bytes'=>4294967296];
+}
+require __DIR__.'/src/Purchase/Core.php';
+require __DIR__.'/gift-route.php';
+echo json_encode(['events'=>$GLOBALS['events']],JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE);
+'''
+
+def ensure(ok: bool, why: str) -> None:
+    if not ok:
+        raise RuntimeError(why)
+
+def q(work: Path, env: dict, query: str) -> str:
+    return native.sql(work, env, query, DB).strip()
+
+def setup(work: Path, env: dict) -> Path:
+    native.seed(work, env, 'http://127.0.0.1:9')
+    stage=work/'owned-direct-gift'
+    for rel in [
+        'src/Subscription/DirectGift.php',
+        'src/Subscription/GiftBatch.php',
+        'src/Purchase/Core.php',
+        'src/Telegram/UpdateBindings.php'
+    ]:
+        dst=stage/rel
+        dst.parent.mkdir(parents=True,exist_ok=True)
+        dst.write_bytes((ROOT/rel).read_bytes())
+    bot=(ROOT/'bot.php').read_text()
+    begin=bot.index('// ACHBOT_DIRECT_GIFT_ROUTE_BEGIN')
+    end=bot.index('// ACHBOT_DIRECT_GIFT_ROUTE_END',begin)+len('// ACHBOT_DIRECT_GIFT_ROUTE_END')
+    route=bot[begin:end]
+    ensure('achbotDirectGiftClaim(' in route and
+           'achbotApplyServiceEdit(' in route and
+           'editMarzbanConfig(' not in route and
+           'achbotDirectGiftComplete(' in route,
+           'Current bot.php no longer uses strictly guarded direct-gift source')
+    (stage/'gift-route.php').write_text('<?php\n'+route+'\n')
+    (stage/'driver.php').write_text(PHP)
+    return stage
+
+def reset(work: Path, env: dict) -> None:
+    q(work,env,"DELETE FROM setting WHERE type LIKE 'ACHBOT_DIRECT_GIFT_%'")
+    q(work,env,"DELETE FROM orders_list WHERE id=92")
+    q(work,env,"UPDATE users SET step='none',isAdmin=CASE WHEN userid=9002 THEN 1 ELSE 0 END "
+      "WHERE userid IN (9001,9002,1001)")
+    q(work,env,"UPDATE orders_list SET server_id=2,inbound_id=0,remark='fixture-user',"
+      "status=1,expire_date=1800000100 WHERE id=91")
+    q(work,env,"INSERT INTO server_info (id,title,ucount,remark,flag,active,state) "
+      "VALUES(2,'Fixture',5,'fixture','','1',1) "
+      "ON DUPLICATE KEY UPDATE title='Fixture',active=1,state=1")
+    q(work,env,"UPDATE server_config SET panel_url='http://127.0.0.1:9',"
+      "username='fixture-admin',password='fixture-password',type='marzban' WHERE id=2")
+
+def call(work: Path, env: dict, stage: Path, **spec) -> dict:
+    log=stage/'effects.jsonl'
+    proc=subprocess.run(
+        ['php','-n','-d','extension=mysqlnd','-d','extension=mysqli',
+         '-d','display_errors=1',
+         '-d','disable_functions=curl_exec,curl_init,exec,shell_exec,system,passthru,popen,proc_open,mail',
+         '-d','allow_url_fopen=0',
+         '-d','open_basedir='+str(stage)+':'+str(work),
+         str(stage/'driver.php'),json.dumps(spec)],
+        cwd=stage,env={**env,'ACHBOT_DIRECT_DB':DB,
+            'ACHBOT_DIRECT_SOCKET':str(work/'mysql.sock'),
+            'ACHBOT_DIRECT_LOG':str(log),
+            'ACHBOT_TELEGRAM_WEBHOOK_SECRET':SECRET},
+        capture_output=True,text=True,timeout=38)
+    ensure(proc.returncode==0,
+        f'Actual PHP source route exception: rc={proc.returncode} stdout={proc.stdout[-500:]} stderr={proc.stderr[-1200:]} mode={spec}')
+    # The PHP route deliberately emits narrowly scoped internal diagnostic
+    # strings on expected negative cases. It must not leak private values.
+    ensure('fixture-password' not in proc.stderr and SECRET not in proc.stderr,
+           'Source execution emitted private diagnostic material')
+    try:
+        return json.loads(proc.stdout)
+    except json.JSONDecodeError as e:
+        raise RuntimeError(f'Malformed actual PHP route response: {proc.stdout[-700:]} {proc.stderr[-700:]}') from e
+
+def effects(stage: Path) -> list[dict]:
+    p=stage/'effects.jsonl'
+    return [json.loads(l) for l in p.read_text().splitlines()] if p.exists() else []
+
+def rows(work: Path, env: dict, name: str) -> list[dict]:
+    raw=q(work,env,"SELECT value FROM setting WHERE type LIKE 'ACHBOT_DIRECT_GIFT_"+name+"_%' ORDER BY id")
+    return [json.loads(line) for line in raw.splitlines() if line]
+
+def row_state(work: Path, env: dict) -> tuple:
+    return (
+        q(work,env,"SELECT expire_date FROM orders_list WHERE id=91"),
+        q(work,env,"SELECT step FROM users WHERE userid=9001"),
+        len(rows(work,env,'SOURCE')),len(rows(work,env,'ACCOUNT')),
+    )
+
+def begin(work: Path, env: dict, stage: Path, *, actor: int=9001,
+          update_id: int=500) -> None:
+    r=call(work,env,stage,kind='callback',actor=actor,
+           update_id=update_id,message_id=50,text='giftToUser2')
+    ensure(any('نام کاربری' in m for m in r['events']),
+           'Fresh authenticated callback failed to arm direct gift')
+
+def remark(work: Path, env: dict, stage: Path, *, actor: int=9001,
+           update_id: int=501, value: str='fixture-user') -> dict:
+    return call(work,env,stage,kind='message',actor=actor,
+                update_id=update_id,message_id=51,text=value)
+
+def day(work: Path, env: dict, stage: Path, *, actor: int=9001,
+        update_id: int=502, value: str='2') -> dict:
+    return call(work,env,stage,kind='message',actor=actor,
+                update_id=update_id,message_id=52,text=value)
+
+def volume(work: Path, env: dict, stage: Path, *, actor: int=9001,
+           update_id: int=503, value: str='1024', mode: str='verified') -> dict:
+    return call(work,env,stage,kind='message',actor=actor,
+                update_id=update_id,message_id=53,text=value,mode=mode)
+
+def prepare_final(work: Path, env: dict, stage: Path,days: str='2',
+                  *, actor: int=9001) -> None:
+    begin(work,env,stage,actor=actor)
+    ensure(any('روز' in x for x in remark(work,env,stage,actor=actor)['events']),
+           'Direct gift remark did not progress to days')
+    ensure(any('حجم' in x for x in day(work,env,stage,actor=actor,value=days)['events']),
+           'Direct gift day did not progress to volume')
+
+def main() -> None:
+    ap=argparse.ArgumentParser()
+    ap.add_argument('--run-disposable',action='store_true',required=True)
+    ap.add_argument('--report',type=Path)
+    opts=ap.parse_args()
+    passed=[]
+    with owned.owned_database() as (work,env):
+        stage=setup(work,env)
+
+        reset(work,env);prepare_final(work,env,stage)
+        positive=volume(work,env,stage)
+        ensure(len(effects(stage))==1 and row_state(work,env)==(str(NEW_EXPIRY),'none',1,1)
+               and rows(work,env,'SOURCE')[0]['state']=='completed'
+               and rows(work,env,'ACCOUNT')[0]['state']=='completed'
+               and any('✅' in x for x in positive['events']),
+               'Verified result failed complete preclaim/remote/CAS journey')
+        ensure('password' not in json.dumps(rows(work,env,'SOURCE')),
+               'Journal leaked credentials')
+        ensure(effects(stage)[0]['change']=={
+            'remark':'fixture-user','plus_day':2,'plus_volume':1},
+            'Both positive gift fields not transferred as whole units')
+        passed.append('real_bot_route_verified_combined_gift_success')
+
+        for days,v,expected,fields in [
+            ('0','1024',OLD_EXPIRY,['plus_volume']),
+            ('2','0',NEW_EXPIRY,['plus_day'])
+        ]:
+            reset(work,env);stage.joinpath('effects.jsonl').unlink(missing_ok=True)
+            prepare_final(work,env,stage,days)
+            volume(work,env,stage,value=v)
+            ensure(row_state(work,env)==(str(expected),'none',1,1)
+                   and rows(work,env,'SOURCE')[0]['state']=='completed'
+                   and all(f in effects(stage)[0]['change'] for f in fields)
+                   and all(f not in effects(stage)[0]['change']
+                           for f in ['plus_volume','plus_day'] if f not in fields),
+                   'Nonzero-only gift payload/verified local state incorrect')
+            passed.append('real_bot_route_only_'+('days' if v=='0' else 'volume'))
+
+        for invalid_day in ['-1','1.0','1e2','+2',' 2','2147483648']:
+            reset(work,env);stage.joinpath('effects.jsonl').unlink(missing_ok=True)
+            begin(work,env,stage);remark(work,env,stage)
+            invalid=day(work,env,stage,value=invalid_day)
+            ensure('نامعتبر' in ' '.join(invalid['events']) and
+                   not effects(stage) and row_state(work,env)[2:]==(0,0),
+                   'Invalid day was accepted or applied: '+invalid_day)
+            passed.append('invalid_day_'+invalid_day)
+
+        for invalid_vol in ['0','5','1023','-1024','1.0','1e3','+1024',
+                            ' 1024','2147483648']:
+            reset(work,env);stage.joinpath('effects.jsonl').unlink(missing_ok=True)
+            prepare_final(work,env,stage,days='0')
+            invalid=volume(work,env,stage,value=invalid_vol)
+            ensure('نامعتبر' in ' '.join(invalid['events']) and
+                   not effects(stage) and row_state(work,env)[2:]==(0,0),
+                   'Invalid volume was accepted or applied: '+invalid_vol)
+            passed.append('invalid_volume_'+invalid_vol)
+
+        for mode in ['provider_false','provider_unknown','provider_throw',
+                     'provider_unverified','provider_ambiguous_success',
+                     'provider_bad_expiry','provider_bad_bytes','sql_drift',
+                     'config_drift']:
+            reset(work,env);stage.joinpath('effects.jsonl').unlink(missing_ok=True)
+            prepare_final(work,env,stage)
+            failed=volume(work,env,stage,mode=mode)
+            ensure(len(effects(stage))==1 and len(rows(work,env,'SOURCE'))==1
+                   and rows(work,env,'SOURCE')[0]['state'] in ['pending','review']
+                   and len(rows(work,env,'ACCOUNT'))==1
+                   and rows(work,env,'ACCOUNT')[0]['state'] in ['pending','review']
+                   and not any('✅' in m for m in failed['events']),
+                   'Unknown/failed provider returned success or lost durable hold: '+mode)
+            again=volume(work,env,stage,mode=mode)
+            ensure(len(effects(stage))==1 and
+                   not any('✅' in m for m in again['events']),
+                   'Unknown provider replayed effect: '+mode)
+            passed.append('provider_or_local_failure_hold_'+mode)
+
+        reset(work,env);stage.joinpath('effects.jsonl').unlink(missing_ok=True)
+        prepare_final(work,env,stage)
+        no_notice=volume(work,env,stage,mode='notice_fail')
+        ensure(len(effects(stage))==1 and
+               rows(work,env,'SOURCE')[0]['state']=='completed' and
+               row_state(work,env)[0]==str(NEW_EXPIRY),
+               'Notification outage reverted a completed provider/SQL commit')
+        volume(work,env,stage)
+        ensure(len(effects(stage))==1, 'Notification outage replayed provider')
+        passed.append('postcommit_notice_failure_no_remote_replay')
+
+        reset(work,env);stage.joinpath('effects.jsonl').unlink(missing_ok=True)
+        prepare_final(work,env,stage)
+        unknown=volume(work,env,stage,mode='commit_unknown')
+        ensure(len(effects(stage))==0 and
+               len(rows(work,env,'SOURCE'))==1 and
+               rows(work,env,'SOURCE')[0]['state']=='pending' and
+               row_state(work,env)[1]=='none',
+               'Lost pre-effect COMMIT acknowledgment attempted external edit')
+        volume(work,env,stage)
+        ensure(len(effects(stage))==0,
+               'Replay after lost claim COMMIT attempted external edit')
+        passed.append('unknown_claim_commit_holds_no_provider_dispatch')
+
+        for kind,spec in [
+            ('missing_webhook_secret',{'missing_header':True}),
+            ('wrong_webhook_secret',{'bad_header':True}),
+            ('group_chat',{'chat_type':'group'}),
+            ('wrong_sender',{'wire_actor':9002,'bound_actor':9001}),
+            ('bot_sender',{'is_bot':True}),
+            ('wrong_actor_binding',{'bound_actor':9002})
+        ]:
+            reset(work,env);stage.joinpath('effects.jsonl').unlink(missing_ok=True)
+            call(work,env,stage,kind='callback',actor=9001,update_id=500,
+                 message_id=50,text='giftToUser2',**spec)
+            ensure(row_state(work,env)[1]=='none' and not effects(stage) and
+                   len(rows(work,env,'START'))==0,
+                   'Unauthentic Telegram callback armed admin gift: '+kind)
+            passed.append('unauthentic_callback_'+kind)
+
+        reset(work,env);stage.joinpath('effects.jsonl').unlink(missing_ok=True)
+        call(work,env,stage,kind='callback',actor=1001,
+             update_id=500,message_id=50,text='giftToUser2')
+        ensure(row_state(work,env)[1]=='none' and not rows(work,env,'START'),
+               'Ordinary customer initiated privileged direct gift')
+        passed.append('customer_cannot_start_direct_gift')
+
+        reset(work,env);stage.joinpath('effects.jsonl').unlink(missing_ok=True)
+        begin(work,env,stage,actor=9002)
+        q(work,env,'UPDATE users SET isAdmin=0 WHERE userid=9002')
+        result=remark(work,env,stage,actor=9002)
+        ensure(not any('روز' in x for x in result['events']) and
+               not effects(stage) and
+               q(work,env,"SELECT step FROM users WHERE userid=9002")
+                    .startswith('achbotDirectGiftRemark:'),
+               'Revoked delegated admin advanced stale wizard')
+        passed.append('delegated_admin_revoked_before_step')
+
+        reset(work,env);stage.joinpath('effects.jsonl').unlink(missing_ok=True)
+        begin(work,env,stage,actor=9002)
+        remark(work,env,stage,actor=9002)
+        day(work,env,stage,actor=9002)
+        result=volume(work,env,stage,actor=9002)
+        ensure(len(effects(stage))==1 and
+               q(work,env,"SELECT step FROM users WHERE userid=9002")=='none'
+               and any('✅' in e for e in result['events']),
+               'Current privileged delegated administrator gift denied')
+        passed.append('fresh_delegated_admin_private_gift')
+
+        reset(work,env);stage.joinpath('effects.jsonl').unlink(missing_ok=True)
+        begin(work,env,stage)
+        q(work,env,"INSERT INTO orders_list (id,userid,token,transid,fileid,server_id,"
+          "inbound_id,remark,uuid,protocol,expire_date,link,amount,status,date) "
+          "VALUES(92,1001,REPEAT('a',30),'fixture',7,2,0,'fixture-user',"
+          "'second-uuid','vless',1800000100,'[]',100,1,'fixture')")
+        r=remark(work,env,stage)
+        ensure(not any('روز' in x for x in r['events']) and
+               not effects(stage) and row_state(work,env)[2:]==(0,0),
+               'Ambiguous order was chosen for direct gift')
+        passed.append('duplicate_remark_order_rejected')
+
+        reset(work,env);stage.joinpath('effects.jsonl').unlink(missing_ok=True)
+        prepare_final(work,env,stage)
+        q(work,env,"UPDATE orders_list SET userid=9002 WHERE id=91")
+        rejected=volume(work,env,stage)
+        ensure(not effects(stage) and not any('✅' in x for x in rejected['events']),
+               'Stale recipient identity reached provider')
+        passed.append('changed_order_identity_before_claim_denied')
+
+        reset(work,env);stage.joinpath('effects.jsonl').unlink(missing_ok=True)
+        prepare_final(work,env,stage)
+        # Callback text is NOT an authenticated freshly authored gift value.
+        call(work,env,stage,kind='callback',update_id=503,message_id=53,text='giftToUser2')
+        ensure(not effects(stage), 'Cached bot-text callback dispatched service edit')
+        passed.append('callback_text_never_used_as_gift_input')
+
+        reset(work,env);stage.joinpath('effects.jsonl').unlink(missing_ok=True)
+        prepare_final(work,env,stage)
+        same_update=lambda:volume(work,env,stage,mode='slow_provider')
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+            out=list(pool.map(lambda ignored:same_update(),range(2)))
+        ensure(len(effects(stage))==1 and
+               rows(work,env,'SOURCE')[0]['state']=='completed' and
+               len(rows(work,env,'SOURCE'))==1 and
+               len(rows(work,env,'ACCOUNT'))==1,
+               'Concurrent same-source PHP workers dispatched multiple edits')
+        passed.append('concurrent_workers_one_unique_durable_claim')
+
+        reset(work,env);stage.joinpath('effects.jsonl').unlink(missing_ok=True)
+        prepare_final(work,env,stage)
+        volume(work,env,stage,mode='provider_unknown')
+        ensure(rows(work,env,'ACCOUNT')[0]['state']=='review',
+               'First unknown gift did not retain account-wide hold')
+        q(work,env,"INSERT INTO server_info (id,title,ucount,remark,flag,active,state) "
+          "VALUES(4,'Alias',5,'fixture','','1',1)")
+        q(work,env,"UPDATE server_config SET type='marzban',"
+          "panel_url='http://127.0.0.1:9' WHERE id=4")
+        q(work,env,"INSERT INTO orders_list (id,userid,token,transid,fileid,server_id,"
+          "inbound_id,remark,uuid,protocol,expire_date,link,amount,status,date) "
+          "VALUES(92,1001,REPEAT('a',30),'fixture',7,4,0,'fixture-user',"
+          "'alias-uuid','vless',1800000100,'[]',100,1,'fixture')")
+        call(work,env,stage,kind='callback',actor=9002,
+             update_id=600,message_id=60,text='giftToUser4')
+        call(work,env,stage,kind='message',actor=9002,
+             update_id=601,message_id=61,text='fixture-user')
+        call(work,env,stage,kind='message',actor=9002,
+             update_id=602,message_id=62,text='2')
+        held=call(work,env,stage,kind='message',actor=9002,
+                  update_id=603,message_id=63,text='1024')
+        ensure(len(effects(stage))==1 and
+               len(rows(work,env,'ACCOUNT'))==1 and
+               len(rows(work,env,'SOURCE'))==1 and
+               q(work,env,'SELECT step FROM users WHERE userid=9002')=='none' and
+               any('انتظار' in x for x in held['events']),
+               'Same physical account through second logical server bypassed hold')
+        passed.append('physical_account_alias_cross_order_cross_admin_held')
+
+        reset(work,env);stage.joinpath('effects.jsonl').unlink(missing_ok=True)
+        prepare_final(work,env,stage)
+        q(work,env,"CREATE TRIGGER owned_direct_step_abort BEFORE UPDATE ON users "
+          "FOR EACH ROW SIGNAL SQLSTATE '45000' "
+          "SET MESSAGE_TEXT='owned_direct_step_abort'")
+        try:
+            refused=volume(work,env,stage)
+            ensure(len(effects(stage))==0 and not rows(work,env,'SOURCE') and
+                   not rows(work,env,'ACCOUNT') and
+                   q(work,env,'SELECT step FROM users WHERE userid=9001')
+                      .startswith('achbotDirectGiftVolume:'),
+                   'Failed atomic admin-step consumption still dispatched provider')
+        finally:
+            q(work,env,'DROP TRIGGER owned_direct_step_abort')
+        passed.append('source_and_account_hold_rollback_when_step_consume_fails')
+
+        reset(work,env);stage.joinpath('effects.jsonl').unlink(missing_ok=True)
+        prepare_final(work,env,stage)
+        q(work,env,"CREATE TRIGGER owned_direct_journal_abort BEFORE INSERT ON setting "
+          "FOR EACH ROW SIGNAL SQLSTATE '45000' "
+          "SET MESSAGE_TEXT='owned_direct_journal_abort'")
+        try:
+            volume(work,env,stage)
+            ensure(not effects(stage) and not rows(work,env,'SOURCE') and
+                   not rows(work,env,'ACCOUNT'),
+                   'Failed source INSERT dispatched remote or partial journal')
+        finally:
+            q(work,env,'DROP TRIGGER owned_direct_journal_abort')
+        passed.append('journal_sql_insert_failure_prevents_provider_dispatch')
+
+        # Original schema never changed; no tenant DDL was applied.
+        number=q(work,env,
+            "SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE()")
+        ensure(number=='23','Source-only gift fixture altered historical table count')
+        passed.append('original_23_table_schema_unmodified')
+    report={
+        'complete':True,'cases':len(passed),'scenarios':passed,
+        'real_bot_php_route':True,'real_mysqli_original_schema':True,
+        'shared_real_service_seam_with_synthetic_adapter':True,
+        'owned_mariadb_only':True,'real_telegram_or_marzban_calls':0,
+        'tenant_migrations':0,'production_operations':0,
+    }
+    if opts.report: opts.report.write_text(
+        json.dumps(report,indent=2,ensure_ascii=False)+'\n')
+    print(json.dumps({k:v for k,v in report.items() if k!='scenarios'},
+        sort_keys=True))
+
+if __name__=='__main__':
+    main()

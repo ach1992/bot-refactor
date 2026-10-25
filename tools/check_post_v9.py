@@ -39,7 +39,7 @@ def source_checks():
         if (ROOT / field).read_bytes() != cmd("show", V9+":"+field):
             raise RuntimeError("Changed historical schema/private-template: " + field)
     files=package.members()
-    if len(files)!=98 or len(set(files))!=len(files):
+    if len(files)!=99 or len(set(files))!=len(files):
         raise RuntimeError("Source-only runtime file inventory changed")
     if any((ROOT/name).exists() or name in files
            for name in package.RETIRED_RUNTIME_MEMBERS):
@@ -1303,6 +1303,46 @@ def main():
                 gift_source.get("production_mutations")==0 and
                 gift_source.get("real_provider_requests")==0):
             raise RuntimeError("Gift Telegram source idempotency contract incomplete")
+        # Issue #78: real single-admin gift bot.php source, fresh Telegram
+        # bindings, strict verified service-edit seam and disposable MariaDB.
+        direct_gift_path=Path(tmp)/"direct-gift-source.json"
+        subprocess.run(
+            ["python3",str(ROOT/"tools/test_post_v9_direct_gift.py"),
+             "--run-disposable","--report",str(direct_gift_path)],
+            cwd=ROOT,check=True,timeout=180,capture_output=True)
+        direct_gift=json.loads(direct_gift_path.read_text())
+        required_direct_gift={
+            'real_bot_route_verified_combined_gift_success',
+            'real_bot_route_only_days','real_bot_route_only_volume',
+            'unknown_claim_commit_holds_no_provider_dispatch',
+            'postcommit_notice_failure_no_remote_replay',
+            'provider_or_local_failure_hold_provider_false',
+            'provider_or_local_failure_hold_provider_unknown',
+            'provider_or_local_failure_hold_provider_ambiguous_success',
+            'provider_or_local_failure_hold_sql_drift',
+            'provider_or_local_failure_hold_config_drift',
+            'delegated_admin_revoked_before_step',
+            'fresh_delegated_admin_private_gift',
+            'duplicate_remark_order_rejected',
+            'changed_order_identity_before_claim_denied',
+            'callback_text_never_used_as_gift_input',
+            'concurrent_workers_one_unique_durable_claim',
+            'physical_account_alias_cross_order_cross_admin_held',
+            'source_and_account_hold_rollback_when_step_consume_fails',
+            'journal_sql_insert_failure_prevents_provider_dispatch',
+            'original_23_table_schema_unmodified',
+        }
+        if not (direct_gift.get('complete') is True and
+                direct_gift.get('cases')>=46 and
+                required_direct_gift.issubset(set(direct_gift.get('scenarios',[]))) and
+                direct_gift.get('real_bot_php_route') is True and
+                direct_gift.get('real_mysqli_original_schema') is True and
+                direct_gift.get('shared_real_service_seam_with_synthetic_adapter') is True and
+                direct_gift.get('owned_mariadb_only') is True and
+                direct_gift.get('real_telegram_or_marzban_calls')==0 and
+                direct_gift.get('tenant_migrations')==0 and
+                direct_gift.get('production_operations')==0):
+            raise RuntimeError('Issue #78 direct administrator gift safety assurance incomplete')
         # Whole-main review R1: run actual owned gift worker on disposable
         # original 23-table MariaDB, no live Telegram/Marzban service.
         gift_path=Path(tmp)/"gift-worker-verified-state.json"
@@ -2197,7 +2237,7 @@ def main():
                        cwd=ROOT,check=True,timeout=60,capture_output=True)
         swap=json.loads(overlay_report.read_text())
         if not (swap.get("complete") and swap.get("phase_count")==4
-                and swap.get("runtime_members")==98
+                and swap.get("runtime_members")==99
                 and swap.get("historical_runtime_members")==92
                 and swap.get("retired_old_payment_files_absent_after_source_upgrade")
                 and swap.get("source_roll_forward_and_back_byte_identical")
@@ -2225,6 +2265,7 @@ def main():
                     "service_effects":effects,
                     "strict_effect_transport_pin":pinned_effects,
                     "gift_source_enqueue_idempotency":gift_source,
+                    "direct_admin_gift_verified":direct_gift,
                     "gift_worker_safe_continuation":gift,
                     "gift_physical_target_continuity":physical_gift,
                     "wallet_paid_create":wallet_create,
@@ -2276,6 +2317,7 @@ def main():
                       "service_effect_cases":effects["cases"],
                       "strict_effect_transport_pin_cases":pinned_effects["cases"],
                       "gift_source_enqueue_cases":gift_source["cases"],
+                      "direct_admin_gift_cases":direct_gift["cases"],
                       "gift_worker_reconciliation_cases":gift["cases"],
                       "gift_physical_target_cases":physical_gift["cases"],
                       "wallet_paid_create_cases":wallet_create["cases"],

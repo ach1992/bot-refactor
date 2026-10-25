@@ -100,6 +100,7 @@ These tests and archives do **not** certify live payment settlement, full databa
 - [Shared payment ledger: migration, old RC4 data and recovery](docs/post-v9/PAYMENT-LEDGER-MIGRATION.md)
 - [NOWPayments unattended IPN, checkout recovery and additive migration](docs/post-v9/NOWPAYMENTS-MIGRATION.md)
 - [Schema migration and rollback precautions](docs/post-v9/PANEL-GROUPS-MIGRATION.md)
+- [Direct administrator gift: source claims, webhook authentication and reconciliation](docs/post-v9/DIRECT-GIFT-RECOVERY.md)
 - [Operator acceptance checklist](docs/post-v9/MARZBAN-OPERATOR-ACCEPTANCE.md)
 - [Project specification and historical V0–V9 contract](docs/PROJECT-SPEC.md)
 - [Historical V9 operator notes](docs/v9/OPERATIONS.md)
