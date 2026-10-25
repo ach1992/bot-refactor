@@ -29,6 +29,17 @@ class GiftSourceMysqli extends mysqli {
         $ok=parent::commit($flags,$name);
         $mode=$GLOBALS['spec']['mode']??'';
         if ($ok && !($GLOBALS['once']??false) &&
+            $mode==='pause_after_commit') {
+            $GLOBALS['once']=true;
+            $path=(string)$GLOBALS['spec']['commit_path'];
+            file_put_contents($path.'.committed','1');
+            $until=microtime(true)+16;
+            while (!is_file($path.'.release') && microtime(true)<$until)
+                usleep(10000);
+            if (!is_file($path.'.release'))
+                throw new RuntimeException('owned_commit_pause_timeout');
+        }
+        if ($ok && !($GLOBALS['once']??false) &&
             $mode==='newer_step_after_commit') {
             $GLOBALS['once']=true;
             if (!$this->query("UPDATE users SET step='giftServerDay2' WHERE userid=9001"))
@@ -128,7 +139,8 @@ def prepare(work,env):
     route=bot[start:end]
     require(route.count('achbotGiftNewBatch(')==1 and
             'achbotGiftTelegramSource(' in route and
-            'achbotGiftDismissEnqueueStep(' in route,'Source route not exact/complete')
+            'achbotGiftDismissEnqueueStep(' not in route,
+            'Source route has unsafe post-COMMIT dismissal or is incomplete')
     (stage/'gift-route.php').write_text('<?php\n'+route+'\n')
     (stage/'driver.php').write_text(PHP)
     worker=work/'owned-gift-worker'
@@ -249,12 +261,16 @@ def main():
         call(w,e,stage,mode='kill_after_commit')
         committed=ids(w,e)
         require(len(committed)==claims(w,e)==1 and
-                q(w,e,'SELECT step FROM users WHERE userid=9001')=='giftServerVolume2_0',
-                'Process crash did not occur immediately after committed enqueue')
+                q(w,e,'SELECT step FROM users WHERE userid=9001')=='none',
+                'Process crash left final step unconsumed after committed enqueue')
         call(w,e,stage)
         require(ids(w,e)==committed and claims(w,e)==1,
                 'Identical update after post-COMMIT crash duplicated job')
-        cases.append('f1_crash_after_commit_before_step_clear_no_replay')
+        cases.append('f1_crash_after_commit_before_telegram_notice_no_replay')
+        require(receipt(w,e,committed[0]) is not None and
+                q(w,e,'SELECT step FROM users WHERE userid=9001')=='none',
+                'Crash preserved job/claim without atomic consumed step')
+        cases.append('f2_postcommit_crash_preserves_job_claim_receipt_consumed_step')
 
         reset(w,e);ready(w,e)
         q(w,e,"ALTER TABLE setting ADD CONSTRAINT owned_claim_denied "
@@ -281,12 +297,17 @@ def main():
         reset(w,e);ready(w,e)
         unknown=call(w,e,stage,mode='uncertain_commit')
         committed=ids(w,e)
-        require(len(committed)==claims(w,e)==1 and 'SAVED' not in unknown['events'],
-                'Lost COMMIT ACK fixture failed to create ambiguous status')
+        require(len(committed)==claims(w,e)==1 and 'SAVED' not in unknown['events'] and
+                q(w,e,'SELECT step FROM users WHERE userid=9001')=='none',
+                'Unknown COMMIT ACK left source claim and step inconsistent')
         call(w,e,stage)
         require(ids(w,e)==committed and claims(w,e)==1,
                 'Ambiguous COMMIT then retry inserted a second batch')
         cases.append('f1_uncertain_commit_ack_recovered_by_source_claim')
+        require(receipt(w,e,committed[0]) is not None and
+                q(w,e,'SELECT step FROM users WHERE userid=9001')=='none',
+                'Uncertain COMMIT produced inconsistent actor step/provenance')
+        cases.append('f2_uncertain_commit_preserves_step_claim_consistency')
 
         reset(w,e);ready(w,e)
         call(w,e,stage)
@@ -304,6 +325,10 @@ def main():
                 any('تکراری' in x for x in replay['events']),
                 'Retry of completed source created second job')
         cases.append('f1_source_claim_survives_completed_cron_and_blocks_reenqueue')
+        require(q(w,e,'SELECT step FROM users WHERE userid=9001')==
+                    'giftServerVolume2_0',
+                'Late replay after completed Cron erased a new same-literal step')
+        cases.append('f2_completed_cron_late_duplicate_preserves_rearmed_step')
 
         reset(w,e);ready(w,e)
         call(w,e,stage,wire_update=710,wire_message=51)
@@ -348,7 +373,7 @@ def main():
                 q(w,e,'SELECT step FROM users WHERE userid=9001')==
                     'giftServerDay2',
                 'Postcommit presentation CAS erased a newer admin step')
-        cases.append('f1_step_cleanup_cas_preserves_newer_admin_flow')
+        cases.append('f1_postcommit_ui_does_not_erase_newer_admin_step')
 
         reset(w,e);ready(w,e)
         call(w,e,stage,wire_update=803,wire_message=58)
@@ -441,11 +466,170 @@ def main():
                 'Mutated message ID under same update ID created another batch')
         cases.append('f1_same_update_id_changed_message_denied')
 
+        # F2-T1: two genuinely different Telegram messages use one
+        # previously active wizard step in separate PHP/MySQLi sessions.
+        reset(w,e);ready(w,e)
+        tags=('f2-distinct-a','f2-distinct-b')
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+            futures=[pool.submit(call,w,e,stage,wire_update=update,
+                       wire_message=message,barrier=str(stage/tag))
+                     for update,message,tag in zip((1801,1802),(61,62),tags)]
+            deadline=time.monotonic()+15
+            while time.monotonic()<deadline:
+                if all((stage/(tag+'.ready')).exists() for tag in tags):break
+                time.sleep(.02)
+            require(all((stage/(tag+'.ready')).exists() for tag in tags),
+                    'Two distinct Telegram source processes did not overlap')
+            for tag in tags:(stage/(tag+'.release')).write_text('go')
+            events=[future.result(timeout=43)['events'] for future in futures]
+        require(len(ids(w,e))==claims(w,e)==1 and
+                sum('SAVED' in x for x in events)==1 and
+                q(w,e,'SELECT step FROM users WHERE userid=9001')=='none',
+                f'F2: two different updates consumed same active step: {events}')
+        cases.append('f2_parallel_distinct_updates_one_active_step_one_batch')
+
+        # F2-T2: schedule B's old pre-read step first. Pause A precisely
+        # AFTER durable COMMIT but BEFORE any post-COMMIT bot presentation.
+        # The buggy previous HEAD inserted B as a second batch in this gap.
+        reset(w,e);ready(w,e)
+        gate=stage/'f2-controlled-b';committed=stage/'f2-controlled-a'
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+            future_b=pool.submit(call,w,e,stage,wire_update=1812,
+                                 wire_message=64,barrier=str(gate))
+            deadline=time.monotonic()+15
+            while not (stage/'f2-controlled-b.ready').exists() and time.monotonic()<deadline:
+                time.sleep(.02)
+            require((stage/'f2-controlled-b.ready').exists(),
+                    'B did not pre-read original active final step')
+            future_a=pool.submit(call,w,e,stage,wire_update=1811,
+                 wire_message=63,mode='pause_after_commit',commit_path=str(committed))
+            deadline=time.monotonic()+15
+            while not (stage/'f2-controlled-a.committed').exists() and time.monotonic()<deadline:
+                time.sleep(.02)
+            require((stage/'f2-controlled-a.committed').exists(),
+                    'A did not reach real COMMIT before presentation')
+            try:
+                (stage/'f2-controlled-b.release').write_text('go')
+                result_b=future_b.result(timeout=27)
+                require(len(ids(w,e))==claims(w,e)==1 and
+                        'SAVED' not in result_b['events'] and
+                        q(w,e,'SELECT step FROM users WHERE userid=9001')=='none',
+                        'B committed same active step after A COMMIT before A UI')
+            finally:
+                (stage/'f2-controlled-a.release').write_text('go')
+                result_a=future_a.result(timeout=30)
+            require('SAVED' in result_a['events'] and len(ids(w,e))==1,
+                    'Controlled A completion lost the one durable original job')
+        cases.append('f2_second_distinct_update_after_first_commit_before_ui_denied')
+
+        # F2-T3: unlike a different literal step, a NEW generation of the
+        # identical giftServerVolume2_0 string must survive late replay A.
+        reset(w,e);ready(w,e)
+        call(w,e,stage,wire_update=1821,wire_message=65)
+        original=ids(w,e)
+        require(len(original)==1 and
+                q(w,e,'SELECT step FROM users WHERE userid=9001')=='none',
+                'First genuine intent did not consume its step')
+        ready(w,e)
+        duplicate=call(w,e,stage,wire_update=1821,wire_message=65)
+        require(ids(w,e)==original and claims(w,e)==1 and
+                any('تکراری' in msg for msg in duplicate['events']) and
+                q(w,e,'SELECT step FROM users WHERE userid=9001')==
+                    'giftServerVolume2_0',
+                'Late identical-source replay erased newly rearmed same-literal step')
+        cases.append('f2_old_update_replay_does_not_consume_new_same_literal_step')
+
+        # F2-T4: the operator's new, genuinely different message is still
+        # authorized by that preserved generation, exactly once.
+        new=call(w,e,stage,wire_update=1822,wire_message=66)
+        require(len(ids(w,e))==claims(w,e)==2 and
+                'SAVED' in new['events'] and
+                q(w,e,'SELECT step FROM users WHERE userid=9001')=='none',
+                'Late replay prevented new intentional gift after rearming')
+        cases.append('f2_new_update_after_late_replay_consumes_new_step_once')
+
+        # F2-T6: SQL failure of the final wizard-step consumption must
+        # roll back already-inserted gift, enqueue receipt and source claim.
+        reset(w,e);ready(w,e)
+        q(w,e,"CREATE TRIGGER owned_f2_step_update_denied "
+          "BEFORE UPDATE ON users FOR EACH ROW "
+          "SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='owned_step_transition_failed'")
+        try:
+            response=call(w,e,stage,wire_update=1831,wire_message=67)
+            require(not ids(w,e) and claims(w,e)==0 and
+                    q(w,e,"SELECT COUNT(*) FROM setting WHERE type LIKE 'ACHBOT_GIFT_ENQUEUE_%'")=='0' and
+                    q(w,e,'SELECT step FROM users WHERE userid=9001')==
+                        'giftServerVolume2_0' and
+                    'SAVED' not in response['events'],
+                    'Failed step UPDATE did not roll back ALL new enqueue state')
+        finally:
+            q(w,e,'DROP TRIGGER owned_f2_step_update_denied')
+        cases.append('f2_failed_step_sql_update_rolls_back_all_while_step_remains')
+
+        # Another SQL path: a trigger silently prevents the transition,
+        # producing 0 changed rows. Commit must still be refused.
+        reset(w,e);ready(w,e)
+        q(w,e,'CREATE TRIGGER owned_f2_step_unchanged '
+          'BEFORE UPDATE ON users FOR EACH ROW SET NEW.step=OLD.step')
+        try:
+            response=call(w,e,stage,wire_update=1832,wire_message=68)
+            require(not ids(w,e) and claims(w,e)==0 and
+                    q(w,e,"SELECT COUNT(*) FROM setting WHERE type LIKE 'ACHBOT_GIFT_ENQUEUE_%'")=='0' and
+                    q(w,e,'SELECT step FROM users WHERE userid=9001')==
+                        'giftServerVolume2_0' and
+                    'SAVED' not in response['events'],
+                    'Zero-row wizard step transition committed partial gift state')
+        finally:
+            q(w,e,'DROP TRIGGER owned_f2_step_unchanged')
+        cases.append('f2_zero_row_step_transition_rolls_back_all_records')
+
+        # F2-T8: a delegated operator's own final step is consumed,
+        # while another actor's independent wizard step remains intact.
+        reset(w,e);ready(w,e,9002)
+        q(w,e,"UPDATE users SET step='unrelated_active_step' WHERE userid=9001")
+        outcome=call(w,e,stage,actor=9002,wire_update=1841,wire_message=69)
+        require(len(ids(w,e))==claims(w,e)==1 and
+                'SAVED' in outcome['events'] and
+                q(w,e,'SELECT step FROM users WHERE userid=9002')=='none' and
+                q(w,e,'SELECT step FROM users WHERE userid=9001')==
+                    'unrelated_active_step',
+                'Delegated gift consumed wrong actor step or was not consumed')
+        cases.append('f2_delegated_admin_consumes_only_own_step')
+
+        # Two administrators may each intentionally complete their OWN
+        # separate active steps. The common global source lock serializes
+        # claims; neither actor is allowed to clear the other's step.
+        reset(w,e);ready(w,e);ready(w,e,9002)
+        q(w,e,"UPDATE users SET step='unrelated_active_step' WHERE userid=1001")
+        tags=('f2-actor-a','f2-actor-b')
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+            futures=[pool.submit(call,w,e,stage,actor=actor,
+                wire_update=update,wire_message=message,barrier=str(stage/tag))
+                for actor,update,message,tag in zip(
+                    (9001,9002),(1842,1843),(70,71),tags)]
+            deadline=time.monotonic()+15
+            while time.monotonic()<deadline:
+                if all((stage/(tag+'.ready')).exists() for tag in tags):break
+                time.sleep(.02)
+            require(all((stage/(tag+'.ready')).exists() for tag in tags),
+                    'Distinct-actor source processes not concurrently scheduled')
+            for tag in tags:(stage/(tag+'.release')).write_text('go')
+            results=[f.result(timeout=43)['events'] for f in futures]
+        require(len(ids(w,e))==claims(w,e)==2 and
+                all('SAVED' in result for result in results) and
+                q(w,e,'SELECT step FROM users WHERE userid=9001')=='none' and
+                q(w,e,'SELECT step FROM users WHERE userid=9002')=='none' and
+                q(w,e,'SELECT step FROM users WHERE userid=1001')==
+                    'unrelated_active_step',
+                f'Distinct authorized actors interfered with each other: {results}')
+        cases.append('f2_parallel_distinct_actors_consumed_only_respective_steps')
+
     report={'complete':True,'cases':len(cases),'scenarios':cases,
         'real_bot_php_route':True,'real_telegram_update_bindings':True,
         'real_gift_batch_helper':True,'owned_original_schema_mariadb':True,
-        'parallel_php_sessions':True,'production_mutations':0,
-        'real_provider_requests':0}
+        'parallel_php_sessions':True,
+        'atomic_admin_step_and_source_commit':True,
+        'production_mutations':0,'real_provider_requests':0}
     if args.report:args.report.write_text(json.dumps(report,indent=2)+'\n')
     print(json.dumps(report))
 

@@ -468,10 +468,11 @@ network-origin attestation of the existing webhook endpoint. Webhook
 transport origin/secret configuration remains part of installed operator
 security acceptance, and no real incoming Telegram delivery was tested.
 
-`achbotGiftNewBatch` now commits **three records atomically** on the
-original InnoDB schema: the gift_list row, its versioned
-`ACHBOT_GIFT_ENQUEUE_<id>` provenance, and one persistent
-`ACHBOT_GIFT_SOURCE_<sha256>` source claim. The source identity is keyed by
+`achbotGiftNewBatch` now commits **four related state transitions atomically**
+on the original InnoDB schema: a gift_list row, its versioned
+`ACHBOT_GIFT_ENQUEUE_<id>` provenance, one persistent
+`ACHBOT_GIFT_SOURCE_<sha256>` source claim and the administrator's
+consumed final wizard step (`users.step='none'`). The source identity is keyed by
 the Telegram update ID and the bulk-gift operation type; the claim record
 binds the exact original actor, private chat, message ID, text SHA256,
 target server, units, original administrator step and new gift ID.
@@ -488,25 +489,44 @@ uncertain COMMIT cannot authorize a replacement. The source claim remains
 after Cron deletes a completed gift; removing a claim to replay an update
 is prohibited. No new tenant tables or SQL migrations are required.
 
-After a successful enqueue COMMIT, clearing the original operator step
-is a separate optimistic CAS on the actor's **unique users.id**, never
-a broad userid UPDATE. Newer steps are not overwritten. Telegram
-success/duplicate notices are presentation-only; a lost message or
-post-COMMIT process exit cannot undo the claim or turn the previous
-source into a second batch. An operator can intentionally submit a NEW
-authenticated update to request another independent bulk gift after
-re-entering the final step. Source claims are durable operation evidence,
-not expendable cache rows.
+**F2 atomic wizard-step consumption:** A new source must validate the
+fresh final step on the already locked actor row, insert all three durable
+gift/source records, then consume the step using a single compare-and-swap
+`UPDATE users SET step='none' WHERE id=? AND userid=? AND step=?`
+guarded by the actor's **unique users.id** primary key. Exactly one changed
+row is required. Any SQL error, unchanged step or ambiguous transition
+rolls back the entire new enqueue. All four changes commit together.
+A replay of an already claimed source returns its original gift ID
+**without modifying any administrator step**. In particular, a late
+duplicate does not erase a genuinely new wizard generation with the
+same literal giftServerVolume value, and two distinct concurrent Telegram
+updates cannot consume one original wizard step twice.
+
+Only Telegram success/duplicate notifications are handled after COMMIT;
+there is **no post-COMMIT wizard-step mutation**. An interrupted process or
+lost message cannot undo the committed claim and step consumption or
+authorize another batch. An operator can intentionally submit a NEW
+authenticated update to request another independent bulk gift only
+after re-entering the final step. Source claims are durable operation
+evidence, not expendable cache rows.
 
 `tools/test_post_v9_gift_enqueue_source.py` executes the current
 **real bot.php final text handler**, unmodified Telegram UpdateBindings,
 source helper and original disposable MariaDB: duplicate/replayed updates,
-parallel PHP processes, post-COMMIT interruption before UI state cleanup,
-lost COMMIT ACK, SQL receipt/claim insert rollback, actual Cron completion
-and late replay, different actors and fresh independent requests,
-malformed/forged/privilege-revoked sources, nonunique original actor rows,
-nonunique setting.type claim corruption, step-CAS safety, and notice
-failure. All 36 scenarios are mandatory in `tools/check_post_v9.py`.
+parallel PHP processes, post-COMMIT interruption before Telegram notice,
+lost COMMIT ACK, SQL receipt/claim/step-update rollback, actual Cron
+completion and late replay, different actors and fresh independent
+requests, malformed/forged/privilege-revoked sources, nonunique original
+actor rows, nonunique setting.type claim corruption, and notice failure.
+The F2 regressions independently prove two **different** Telegram updates
+cannot consume the same initial step, including a deterministic pause
+immediately after A's COMMIT but before A's UI. A late identical-source
+replay cannot clear a rearmed **same-literal** step; new update B can
+still consume that step. A SQL trigger that fails or silently suppresses
+the step transition must roll back gift, claim and provenance. Distinct
+actors retain independent steps under global source serialization.
+All 47 source-real scenarios are mandatory in
+`tools/check_post_v9.py`.
 
 **Deployment compatibility:** This F1 source claim does not retroactively
 identify messages that were enqueued by *older* code without an update-ID

@@ -582,7 +582,7 @@ def main():
         bot=(ROOT/'bot.php').read_text()
         require('achbotGiftNewBatch(' in bot and
                 'achbotGiftTelegramSource(' in bot and
-                'achbotGiftDismissEnqueueStep(' in bot and
+                'achbotGiftDismissEnqueueStep(' not in bot and
                 'INSERT INTO `gift_list`' not in bot,
                 'New-format Telegram batch enqueue bypasses its transaction')
         cases.append('r1a1_bot_admin_enqueue_uses_durable_provenance_path')

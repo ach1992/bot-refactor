@@ -1232,9 +1232,10 @@ def main():
         ):
             raise RuntimeError("Bulk gift physical endpoint assurance incomplete")
 
-        # Fresh F1: REAL bot.php final Telegram text-step plus unmodified
-        # UpdateBindings and GiftBatch, original disposable MariaDB.
-        # No source update can authorize two non-idempotent batches.
+        # Fresh F1/F2: REAL bot.php final Telegram text-step, unmodified
+        # UpdateBindings and GiftBatch on disposable original MariaDB.
+        # Neither duplicate update IDs nor distinct concurrent messages
+        # may consume an original administrator wizard step twice.
         gift_source_path=Path(tmp)/"gift-source-idempotency.json"
         subprocess.run(
             ["python3",str(ROOT/"tools/test_post_v9_gift_enqueue_source.py"),
@@ -1245,15 +1246,18 @@ def main():
             "f1_first_real_bot_message_one_job_claim_and_receipt",
             "f1_replayed_identical_update_one_existing_batch",
             "f1_two_actual_php_mysql_sessions_concurrent_one_source",
-            "f1_crash_after_commit_before_step_clear_no_replay",
+            "f1_crash_after_commit_before_telegram_notice_no_replay",
+            "f2_postcommit_crash_preserves_job_claim_receipt_consumed_step",
             "f1_source_claim_sql_failure_rolls_back_queue_and_receipt",
             "f1_receipt_sql_failure_rolls_back_new_queue",
             "f1_uncertain_commit_ack_recovered_by_source_claim",
+            "f2_uncertain_commit_preserves_step_claim_consistency",
             "f1_source_claim_survives_completed_cron_and_blocks_reenqueue",
+            "f2_completed_cron_late_duplicate_preserves_rearmed_step",
             "f1_distinct_authorized_messages_create_distinct_batches",
             "f1_different_actor_same_global_update_id_conflicts",
             "f1_two_concurrent_actors_same_update_id_one_global_claim",
-            "f1_step_cleanup_cas_preserves_newer_admin_flow",
+            "f1_postcommit_ui_does_not_erase_newer_admin_step",
             "f1_corrupted_existing_source_claim_fails_closed",
             "f1_invalid_telegram_envelope_bound_actor",
             "f1_invalid_telegram_envelope_bound_chat",
@@ -1278,6 +1282,14 @@ def main():
             "f1_duplicate_setting_claim_fails_closed",
             "f1_telegram_notice_failure_preserves_committed_job",
             "f1_same_update_id_changed_message_denied",
+            "f2_parallel_distinct_updates_one_active_step_one_batch",
+            "f2_second_distinct_update_after_first_commit_before_ui_denied",
+            "f2_old_update_replay_does_not_consume_new_same_literal_step",
+            "f2_new_update_after_late_replay_consumes_new_step_once",
+            "f2_failed_step_sql_update_rolls_back_all_while_step_remains",
+            "f2_zero_row_step_transition_rolls_back_all_records",
+            "f2_delegated_admin_consumes_only_own_step",
+            "f2_parallel_distinct_actors_consumed_only_respective_steps",
         }
         if not (gift_source.get("complete") is True and
                 gift_source.get("cases")==len(required_gift_source) and
@@ -1287,6 +1299,7 @@ def main():
                 gift_source.get("real_gift_batch_helper") is True and
                 gift_source.get("owned_original_schema_mariadb") is True and
                 gift_source.get("parallel_php_sessions") is True and
+                gift_source.get("atomic_admin_step_and_source_commit") is True and
                 gift_source.get("production_mutations")==0 and
                 gift_source.get("real_provider_requests")==0):
             raise RuntimeError("Gift Telegram source idempotency contract incomplete")

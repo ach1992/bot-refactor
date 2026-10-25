@@ -1613,14 +1613,9 @@ if(preg_match('/^giftServerVolume(\d+)_(\d+)/',$userInfo['step'],$match) && ($fr
                     sendMessage('وضعیت ثبت هدیه تأیید نشد؛ پیش از هر اقدام جدید صف هدایا را بررسی کنید.');
                     return;
                 }
-                // Only presentation follows COMMIT. A Telegram failure or
-                // step-clear failure cannot convert a committed enqueue
-                // into a false failure or cause a new batch on replay.
-                try {
-                    achbotGiftDismissEnqueueStep($connection,$from_id,$giftStep);
-                } catch (Throwable $giftStepError) {
-                    error_log('gift_enqueue_step_cleanup_unconfirmed');
-                }
+                // The one-time wizard step was consumed atomically with
+                // a NEW job; replay of an existing source never modifies
+                // administrator state. Only notifications follow COMMIT.
                 try {
                     if ($giftEnqueue['created']) {
                         sendMessage($mainValues['saved_successfuly'],$removeKeyboard);

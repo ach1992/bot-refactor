@@ -182,7 +182,8 @@ if (!function_exists('achbotGiftPhysicalTarget')) {
      * Keep the source claim forever after batch completion. On repeated
      * webhook delivery, return the previous batch id (including when the
      * batch itself was already deleted by successful Cron completion).
-     * Enqueue provenance and source claim commit atomically with gift_list.
+     * Enqueue provenance, source claim and the consumed administrator step
+     * commit atomically with gift_list. A replay never touches newer steps.
      */
     function achbotGiftNewBatch(
         mysqli $db,int $serverId,int $volume,int $days,
@@ -309,6 +310,24 @@ if (!function_exists('achbotGiftPhysicalTarget')) {
             if (!$ok || $sourceId<=0)
                 throw new RuntimeException('gift_source_claim_insert_failed');
 
+            // This step authorized exactly ONE new enqueue. Consume it
+            // under the ALREADY-HELD actor row lock before COMMIT, not
+            // later in a Telegram/UI handler. Otherwise another valid
+            // update_id can reuse the same step, or a late replay could
+            // erase the next generation with identical step text.
+            // users.userid is indexed but NOT UNIQUE in the frozen schema;
+            // the actor's verified users.id PRIMARY KEY is authoritative.
+            $actorRowId=(int)$actors[0]['id'];
+            if ($actorRowId<=0)
+                throw new RuntimeException('gift_step_actor_id_invalid');
+            $stmt=$db->prepare(
+                "UPDATE users SET step='none' WHERE id=? AND userid=? AND step=?");
+            if (!$stmt) throw new RuntimeException('gift_step_consume_prepare');
+            $stmt->bind_param('iis',$actorRowId,$actor,$expectedStep);
+            $ok=$stmt->execute();$changed=$stmt->affected_rows;$stmt->close();
+            if (!$ok || $changed!==1)
+                throw new RuntimeException('gift_step_consume_unconfirmed');
+
             if ($db->commit()!==true)
                 throw new RuntimeException('gift_enqueue_commit_unconfirmed');
             return ['id'=>$id,'created'=>true];
@@ -316,34 +335,6 @@ if (!function_exists('achbotGiftPhysicalTarget')) {
             try { $db->rollback(); } catch (Throwable $ignored) {}
             throw $e;
         }
-    }
-
-    /** Presentation-only CAS: do not wipe a newer administrator step. */
-    function achbotGiftDismissEnqueueStep(
-        mysqli $db,int $actor,string $expectedStep
-    ): bool {
-        // This is UI-state presentation after the enqueue COMMIT; the
-        // original users.userid is not UNIQUE. Resolve exactly one genuine
-        // owner row and CAS only its UNIQUE id, never UPDATE by userid alone.
-        $query=$db->prepare('SELECT id FROM users WHERE userid=? LIMIT 2');
-        if (!$query) throw new RuntimeException('gift_step_owner_prepare');
-        $query->bind_param('i',$actor);
-        $ok=$query->execute();
-        $owners=$ok?$query->get_result()->fetch_all(MYSQLI_ASSOC):[];
-        $query->close();
-        if (count($owners)!==1)
-            throw new RuntimeException('gift_step_owner_ambiguous');
-        $rowId=(int)$owners[0]['id'];
-        $stmt=$db->prepare(
-            "UPDATE users SET step='none' WHERE id=? AND userid=? AND step=?");
-        if (!$stmt) throw new RuntimeException('gift_step_clear_prepare');
-        $stmt->bind_param('iis',$rowId,$actor,$expectedStep);
-        $ok=$stmt->execute();
-        $changed=$stmt->affected_rows;
-        $stmt->close();
-        if (!$ok || $changed>1)
-            throw new RuntimeException('gift_step_clear_unconfirmed');
-        return $changed===1;
     }
 
     function achbotGiftReadProvenance(mysqli $db,array $gift): ?array {
