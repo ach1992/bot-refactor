@@ -29,7 +29,20 @@ A protected one-attempt claim in `payment_attempts` persists original provider `
 
 **Future extension only (not implemented):** the provider-scoped attempt/transaction ledger and separated evidence/fulfillment boundary permit a *new* independently reviewed, authorized on-chain verifier (correct token contract, recipient, amount, chain, confirmations, settled finality, durable replay protection), without trusting screenshots or reviving old TRON code. Automated crypto settlement is **OFF**, not implicitly scheduled.
 
-**Conditional gateway visibility (Owner requested investigation):** future configurable eligibility policies may include customer type, membership age, purchase count/history and order attributes. They must be deterministic, auditable and fail closed on uncertainty; no silent old-style date thresholds are enabled in this manual-crypto slice. Track separately under #51 and #26.
+**Gateway eligibility — Issue #51 current development candidate (2026-10-26):**
+The existing per-method `gatewayAudience` remains the default when
+`BOT_STATES.gatewayRules` is unconfigured. Explicit versioned policies
+configure each payment method independently by customer category, elapsed
+registration age, and successful purchase/renewal/volume/time/top-up record
+count within optional older/recent request-time windows; AND inside rules,
+OR across enabled rules, global gateway OFF always denies. Values are freely
+set by administrators through a private Persian Telegram numeric wizard,
+with atomic signed updates and last-minute financial authorization. Explicit
+invalid/empty rules fail closed; original pays/attempt/effect evidence is
+never erased. This is source-only work with separately gated installed,
+live merchant, merge and rollout acceptance. Full implementable contract:
+[dynamic gateway eligibility rules](post-v9/GATEWAY-ELIGIBILITY-RULES.md)
+(Issues #51 and #26).
 **Shared financial persistence — Owner direction 2026-10-17:** avoid a
 new gateway-named table for every payment provider; persist common
 checkout attempts and external transaction evidence using provider-scoped

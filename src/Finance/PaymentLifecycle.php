@@ -398,8 +398,9 @@ function achbotPayUxHostedAttentionElapsed(mysqli $db, int $payId): bool {
  * replacement for payment state, global on/off flags, authorization or proof.
  * A missing policy means legacy 'all'; invalid explicit policy FAILS CLOSED.
  */
+require_once __DIR__.'/GatewayRules.php';
 function achbotPayUxAudienceModes(): array {
-    return ['all'=>'همه','agents'=>'همکاران','non_agents'=>'کاربران عادی',
+    return ['all'=>'همه','agents'=>'همکاران','non_agents'=>'غیرهمکاران',
             'buyers'=>'خریداران','non_buyers'=>'بدون خرید',
             'has_active_order'=>'دارای سرویس فعال',
             'no_active_order'=>'بدون سرویس فعال','off'=>'هیچ‌کس'];
@@ -475,6 +476,15 @@ function achbotPayUxAudienceAllowed(mysqli $db, string $method, int $userId,
             if ($primaryFlag===null || ($states[$primaryFlag]??null)!=='on')
                 return false;
         }
+        // New rule documents are versioned and strictly validated. A missing
+        // method retains its exact legacy audience policy.
+        if (array_key_exists('gatewayRules',$states)) {
+            $parsed=achbotGatewayRulesDecode($states['gatewayRules']);
+            if ($parsed===null) return false;
+            if (array_key_exists($method,$parsed['methods']))
+                return achbotGatewayRulesAllow($db,$userId,
+                    $parsed['methods'][$method],$final);
+        }
         $configured=array_key_exists('gatewayAudience',$states)
             ? $states['gatewayAudience'] : [];
         if (!is_array($configured)) return false;
@@ -518,7 +528,8 @@ function achbotPayUxAudienceAllowed(mysqli $db, string $method, int $userId,
         $hasOrder=$stmt->get_result()->fetch_assoc()!==null;$stmt->close();
         return $mode==='has_active_order' ? $hasOrder : !$hasOrder;
     } catch (Throwable $error) {
-        error_log('achbot_gateway_audience_guard_deferred method='.$method);
+        error_log('achbot_gateway_audience_guard_deferred method='.$method.
+            ' code='.(int)$error->getCode().' class='.get_class($error));
         return false;
     }
 }

@@ -28,6 +28,27 @@ A genuinely untouched unclaimed draft expires after **30 minutes by default**, o
 
 **Issued HOSTED invoice:** opening the bot-owned checkout URL is observable but **not payment evidence**. After **6 hours by default** (setting paymentHostedHours, 1..72 hours) the bot-owned URL and registered Telegram buttons are replaced with read-only status/support, but the real upstream invoice can still be payable. Financial pays/payid, 003 payment_attempts and any payment_transactions stay immutable and pending/review for reconciliation with the provider. There is no automatic upstream cancellation, refund, double-issue or inference of failure. Provider-specific finality and eventual settlement are managed only by authenticated provider evidence and Issue #26.
 
+**Administrator gateway-toggle and audience-source hardening (2026-10-26):** Changing an active payment method and cycling its customer cohort require a freshly authenticated private Telegram callback, current primary/delegated administrator role under an exact owner-PK lock, and a single global monotonic `update_id` gateway-source marker in original `setting`. The marker and updated `BOT_STATES` document commit atomically under the existing named settings writer lock. Both administrators and unrelated supported payment methods participate in the same chronology: an older delayed callback cannot overwrite a newer accepted policy; replay, revoked actor, duplicate user identity, invalid callback or uncertain SQL commit fails closed. Gateway flags toggle using the **fresh persisted state**, not the cached request snapshot. No new table/migration/real payment effects. The historical generic internal settings writer remains available for unrelated trusted code paths, and the separate administrator invoice-window wizard has not been certified by this focused gateway-toggle/cohort change. Native proof: `tools/test_post_v9_gateway_admin_source.py` extracts actual bot/config PHP, reproduces the revoked/stale prior source (RED), validates current source (GREEN) against disposable original-schema MariaDB, and enforces failure/rollback and provider-free behavior. Installed Telegram role/key provisioning is a separate operator gate.
+
+**Dynamic per-method/per-category eligibility (Issue #51, PR #82):**
+In addition to the legacy `gatewayAudience` fallback, the optional versioned
+`BOT_STATES.gatewayRules` document supplies independent user-category rules,
+registration age, and 5 historical success counters, each with administrator
+editable count/days/direction. All values are free integers; no hardcoded
+90-day/5-payment policy applies. The Telegram editor persists the intended
+field with current privilege/source checks, and final protected payment
+authorization re-reads current policy from the database. Missing policies
+keep legacy semantics; malformed/explicit deny policies never grant access.
+Historical `pays.request_date` is REQUEST time, not a settlement timestamp.
+**An all-history success count and buyers/non_buyers category must not discard
+a successful record for zero/future request_date; only positive-day windows
+apply timestamp validity.** Stale Telegram Clear, Toggle, Direction and numeric
+entry controls are bound to the displayed rule snapshot, with the latest
+persisted policy re-shown on conflict. Actual wallet/hosted checkout source
+is exercised across a policy change before final financial authorization.
+Full schemas, operator workflow and isolated acceptance matrix:
+[GATEWAY-ELIGIBILITY-RULES.md](GATEWAY-ELIGIBILITY-RULES.md).
+
 **Audience and anti-duplicate settings:** the administrator's gateway settings include paymentDraftMinutes, paymentManualHours, paymentHostedHours, receiptApprovedMinutes (10), receiptApprovedOtherMinutes (60), receiptReviewMinutes (360) and receiptDeclinedMinutes (3), with bounded validation. Missing/invalid keys retain legacy-safe defaults. An independent gatewayAudience map per method can target all, agents, non-agents, previous BUY_SUB buyers, non-buyers, active or inactive service owners, or off; unknown policy is denied. It is checked at the first-party gateway URL, Telegram callback, method selection, wallet debit and manual-claim boundary, not only hidden from keyboards. Existing issued provider claims and async settlement evidence are preserved when access changes. No setting disables monetary once-only, admin rights or provider reconciliation.
  Expiry is a conditional InnoDB transaction: lock exact pays row, confirm pending, no payid, and no payment_attempts row, then update pays.state to expired without deleting it. Do not expire or refund pending provider invoices, manual receipts, processing/checking/review, paid or uncertain claims. A newer draft does NOT cancel a live upstream invoice or its financial evidence. This prevents deleting an old pay record while a new purchase or wallet-top-up INSERT can fail, especially when already inside a transaction.
 

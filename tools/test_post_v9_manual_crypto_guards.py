@@ -91,12 +91,21 @@ set_error_handler(static function($level,$message){
     throw new ErrorException($message,0,$level);
 });
 $_SERVER['SCRIPT_FILENAME']=__FILE__;
+$_SERVER['REQUEST_METHOD']='POST';
+$_SERVER['HTTP_X_TELEGRAM_BOT_API_SECRET_TOKEN']='SafeSyntheticGatewayToken_2026';
+putenv('ACHBOT_TELEGRAM_WEBHOOK_SECRET=SafeSyntheticGatewayToken_2026');
 $root=$argv[1];
 $spec=json_decode($argv[4],true,512,JSON_THROW_ON_ERROR);
 $connection=new mysqli('localhost','root','',$argv[3],0,$argv[2]);
 $connection->set_charset('utf8mb4');
 $from_id=(int)($spec['actor']??9001);
-$admin=9001;
+$admin=9001;$chat_id=$from_id;
+$update=(object)['update_id'=>(int)($spec['update_id']??1),
+    'callback_query'=>(object)['id'=>'admin-test-callback',
+      'from'=>(object)['id'=>$from_id,'is_bot'=>false],
+      'message'=>(object)['message_id'=>600,
+        'chat'=>(object)['id'=>$from_id,'type'=>'private']],
+      'data'=>(string)($spec['data']??'')]];
 $callbackId='fixture-callback';
 $message_id=600;
 $data=(string)($spec['data']??'');
@@ -126,7 +135,10 @@ function delMessage(...$args) {$GLOBALS['events'][]=['delMessage',$args];}
 function sendMessage(...$args) {$GLOBALS['events'][]=['sendMessage',$args];}
 function getBotSettingKeys() {return '{}';}
 function getGateWaysKeys() {return '{}';}
-require $argv[5]; // Actual config.php setSettings() and setUser(), source-extracted.
+require $root.'/src/Finance/PaymentLifecycle.php';
+require $root.'/src/Subscription/DirectGift.php';
+require $argv[7]; // Actual bot.php ingress-auth function, source-extracted.
+require $argv[5]; // Actual config.php writers, source-extracted.
 if (isset($spec['writer_key'])) {
     // Explicitly exercise the final source persistence boundary too, not a
     // fake setSettings() stand-in or merely the two bot.php callback routes.
@@ -218,6 +230,7 @@ def check() -> dict:
         (work/'address-driver.php').write_text(PHP_ADDRESS)
         extractor=('require $argv[1]; echo "<?php\\n",'
                    'achbotExtractFunction($argv[2],"achbotMutateBotStates"),"\\n",'
+                   'achbotExtractFunction($argv[2],"achbotAdminGatewayChange"),"\\n",'
                    'achbotExtractFunction($argv[2],"achbotPaymentPolicyFields"),"\\n",'
                    'achbotExtractFunction($argv[2],"setSettings"),"\\n",'
                    'achbotExtractFunction($argv[2],"setUser"),"\\n";')
@@ -225,6 +238,11 @@ def check() -> dict:
              extractor,str(ROOT/'tools/source_scan.php'),str(ROOT/'config.php')],
              cwd=work,env=env,capture_output=True,text=True,timeout=15,check=True)
         (work/'actual-writers.php').write_text(extracted.stdout)
+        ingress=subprocess.run(['php','-n','-d','extension=tokenizer','-r',
+              'require $argv[1];echo "<?php\\n",achbotExtractFunction($argv[2],"achbotWebhookIngressAuthenticated");',
+              str(ROOT/'tools/source_scan.php'),str(ROOT/'bot.php')],
+              cwd=work,env=env,capture_output=True,text=True,timeout=15,check=True)
+        (work/'actual-ingress.php').write_text(ingress.stdout)
         values={key:address for key,(address,_) in tests.items()}
         actual=php(work,env,work/'address-driver.php',
                    [str(ROOT),json.dumps(values) ])
@@ -261,11 +279,15 @@ def check() -> dict:
             return (sql(work,env,'SELECT userid,wallet FROM users ORDER BY userid'),
                     sql(work,env,'SELECT id,user_id,state,price FROM pays ORDER BY id'),
                     sql(work,env,'SELECT * FROM orders_list ORDER BY id'))
+        sequence=[100]
         def run(actor:int=9001,data:str='',text:str='') -> list:
+            sequence[0]+=1
             return php(work,env,work/'admin-driver.php',[
                 str(ROOT),str(work/'mysql.sock'),DB,
-                json.dumps({'actor':actor,'data':data,'text':text}),
-                str(work/'actual-writers.php'),str(work/'admin-callbacks.php')
+                json.dumps({'actor':actor,'data':data,'text':text,
+                            'update_id':sequence[0]}),
+                str(work/'actual-writers.php'),str(work/'admin-callbacks.php'),
+                str(work/'actual-ingress.php')
             ])['events']
 
         baseline_finance=protected_snapshot()
@@ -274,7 +296,8 @@ def check() -> dict:
             php(work,env,work/'admin-driver.php',[
                 str(ROOT),str(work/'mysql.sock'),DB,
                 json.dumps({'actor':9001,'writer_key':retired_key}),
-                str(work/'actual-writers.php'),str(work/'admin-callbacks.php')
+                str(work/'actual-writers.php'),str(work/'admin-callbacks.php'),
+                str(work/'actual-ingress.php')
             ])
             assert state_raw()==old and protected_snapshot()==baseline_finance
             cases.append('final_persistence_denies_retired_key_'+retired_key)
