@@ -89,6 +89,42 @@ ban callback may supersede an active Direct Gift wizard. Older moderator
 callbacks and inherited legacy text/receipt bans cannot erase active gift
 state. Agent status toggling never changes the wizard's step.
 
+
+### Related administrator-state ownership (B1-R1/B1-R2)
+
+The legacy `addExemptUser` channel-membership exemption workflow is now
+invoked from `bot.php` **after** authenticated Telegram ingress and the
+existing Telegram-IP check, never as a `config.php` initialization side
+effect. Only a currently authorized primary/delegated administrator can
+start an exact private Telegram callback and finish with a newer, genuine
+private numeric message. The nonce-bearing `achbotExempt:` step and a
+per-actor durable source watermark in existing `setting` are atomically
+updated under the primary-administrator PK lock. Completing the wizard
+checks the current actor PK and role, exact step, update/message freshness,
+unique `EXEMPTED_USERS` policy record, and commits the policy, step and
+source marker together. Ambiguous, stale, revoked or unknown-COMMIT
+outcomes never produce a success message or authorize an automatic retry.
+The historical pre-upgrade `awaitingExemptUserID` step has no recorded
+source provenance and must be restarted with a **fresh** authorized admin
+callback; it cannot silently grant channel exceptions. No SQL migration.
+
+Legacy `setUser('none')` and the `mainMenu` handler are **not** authorized
+unban paths. Generic legacy step updates cannot consume the protected
+`banned`, `achbotDirectGift*`, or `achbotExempt:*` states; a cached old
+menu request also rechecks current status before showing its menu. An
+explicit, authorized unban still uses its dedicated PK/current-step CAS.
+Older text/receipt-ban and automated broadcast writers cannot erase either
+protected wizard generation; a *newer*, authenticated, authorized moderator
+callback can deliberately ban and supersede one. Other legacy non-banned
+navigation remains supported.
+
+`config.php` is not directly executable as a public HTTP handler. Its
+Telegram update binding is enabled only for the authenticated `bot.php`
+entrypoint (payment/cron includes cannot reinterpret arbitrary input bodies
+as bot callbacks). The IP allowlist is checked before initialization-time
+Telegram branches when included from `bot.php`; the route guard is retained
+as defense-in-depth.
+
 ## Manual reconciliation by an authorized operator
 
 On the message indicating an uncertain outcome or an already-held account,
@@ -149,7 +185,15 @@ accepted additive schema decision, not an unreviewed migration.
   The manual numeric route also rejects old callback bot-text/mixed frames;
   actual legacy ban, receipt-ban and broadcast blocked-status writes are
   tested on the original schema, including preserving ordinary broadcast
-  behavior. Source-real acceptance requires at least 101 cases.
+  behavior. Source-real acceptance additionally executes the actual
+  config.php channel-exemption handler, the actual bot.php mainMenu route,
+  their lost-commit, revoked-admin, stale-frame, synchronized stale-worker,
+  explicit-unban and nonce-preservation regressions. It requires at least
+  132 cases, including global-policy/actor-step atomic rollback when
+  an isolated SQL trigger rejects the state transition, preservation
+  of already-existing exempt users, and signed newer callbacks from older
+  bot-authored menu messages. Telegram update IDs order callback events;
+  the bot menu message ID is not incorrectly treated as monotonic.
   No installed schema is changed. PHP 8.1/8.4
   full source/history CI, artifact checks, independent review and operator
   acceptance remain gates.

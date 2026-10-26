@@ -1397,9 +1397,42 @@ def main():
             'legacy_receipt_ban_cannot_erase_active_gift',
             'broadcast_bot_blocked_preserves_active_gift',
             'broadcast_bot_blocked_ordinary_behavior_preserved',
+            # B1-R1/B1-R2: signed exemption + locked policy/step, stale
+            # mainMenu versus newer ban, explicit unban and nonce guards.
+            'exemption_authorized_current_start_and_atomic_completion',
+            'exemption_durable_source_replay_denied',
+            'exemption_ordinary_customer_start_denied',
+            'exemption_revoked_delegate_start_denied',
+            'exemption_revoked_delegate_completion_denied',
+            'exemption_start_rejects_unsigned',
+            'exemption_start_rejects_wrong_secret',
+            'exemption_start_rejects_group_callback',
+            'exemption_start_rejects_mixed_callback',
+            'exemption_start_rejects_bot_sender',
+            'exemption_start_rejects_wrong_actor',
+            'exemption_finish_rejects_callback_bot_text',
+            'exemption_finish_rejects_mixed_message',
+            'exemption_finish_rejects_stale_message_id',
+            'exemption_finish_rejects_stale_update_id',
+            'exemption_finish_rejects_wrong_chat',
+            'exemption_stale_cached_worker_preserves_new_gift_and_policy',
+            'exemption_unknown_commit_no_success_or_replay',
+            'exemption_nonunique_setting_fail_closed',
+            'legacy_main_menu_cannot_erase_newer_authorized_ban',
+            'legacy_stale_cancel_cannot_erase_newer_ban',
+            'legacy_explicit_authorized_unban_still_operates',
+            'legacy_nonbanned_main_menu_works',
+            'exemption_old_main_menu_cannot_erase_current_nonce',
+            'exemption_old_moderation_ban_cannot_erase_nonce',
+            'exemption_legacy_text_ban_cannot_erase_nonce',
+            'exemption_newer_authorized_moderation_ban_preempts_wizard',
+            'exemption_policy_and_step_atomic_rollback_on_sql_failure',
+            'exemption_existing_member_preserved_and_wizard_completed',
+            'exemption_new_update_from_old_bot_menu_still_works',
+            'moderation_new_update_from_old_bot_menu_still_works',
         }
         if not (direct_gift.get('complete') is True and
-                direct_gift.get('cases')>=101 and
+                direct_gift.get('cases')>=132 and
                 required_direct_gift.issubset(set(direct_gift.get('scenarios',[]))) and
                 direct_gift.get('real_bot_php_route') is True and
                 direct_gift.get('actual_global_cancel_fallback') is True and
@@ -1407,6 +1440,8 @@ def main():
                 direct_gift.get('actual_webhook_pre_config_auth') is True and
                 direct_gift.get('actual_config_moderation') is True and
                 direct_gift.get('actual_manual_account_handler') is True and
+                direct_gift.get('actual_channel_exemption_handler') is True and
+                direct_gift.get('actual_legacy_main_menu') is True and
                 direct_gift.get('real_mysqli_original_schema') is True and
                 direct_gift.get('shared_real_service_seam_with_synthetic_adapter') is True and
                 direct_gift.get('owned_mariadb_only') is True and

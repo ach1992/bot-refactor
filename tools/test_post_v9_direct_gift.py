@@ -59,7 +59,7 @@ class DirectGiftMysqli extends mysqli {
         if ($done && $pausing)
             $this->fixtureGate('post_commit_ready','release_effect');
         if ($done && in_array(($GLOBALS['spec']['mode']??''),
-            ['moderation_commit_unknown','manual_commit_unknown'],true))
+            ['moderation_commit_unknown','manual_commit_unknown','exempt_commit_unknown'],true))
             throw new RuntimeException('synthetic_lost_moderation_or_manual_ack');
         if ($done && ($GLOBALS['spec']['mode']??'')==='cancel_commit_unknown')
             throw new RuntimeException('synthetic_cancel_commit_ack_lost');
@@ -131,7 +131,8 @@ if (in_array(($spec['mode']??''),['pause_before_route','stale_legacy_set_user'],
         usleep(10000);
     }
 }
-$buttonValues=['cancel'=>'CANCEL','back_to_main'=>'BACK'];$mainValues=['reached_main_menu'=>'MAIN','waiting_message'=>'WAIT'];
+$buttonValues=['cancel'=>'CANCEL','back_to_main'=>'BACK'];$mainValues=['reached_main_menu'=>'MAIN','waiting_message'=>'WAIT','start_message'=>'WELCOME','banned'=>'BANNED'];
+$botState=['sellState'=>'on'];
 $removeKeyboard='REMOVE';$cancelKey='CANCEL';
 $GLOBALS['events']=[];
 $GLOBALS['fixture_printed']=false;
@@ -147,6 +148,10 @@ function getUserInfoKeys($id) { return 'FIXTURE_MODERATION_KEYS'; }
 function alert($msg=null,$show=false) { $GLOBALS['events'][]='ALERT:'.(string)$msg; }
 function editKeys(...$args) { $GLOBALS['events'][]='EDIT_KEYS'; }
 function getAdminKeys() { return 'ADMIN_KEYS'; }
+function editText($mid,$body,$keys=null) {
+    $GLOBALS['events'][]='EDIT_TEXT:'.(string)$body;
+    return (object)['ok'=>true];
+}
 function sendMessage($body=null,$key=null) {
     $GLOBALS['events'][]=(string)$body;
     if (($GLOBALS['spec']['mode']??'')==='notice_fail' &&
@@ -195,6 +200,15 @@ if (!achbotWebhookIngressAuthenticated()) {
 } elseif (($spec['route']??'gift')==='moderation') {
     require __DIR__.'/moderation-route.php';
     handleToggleCallbacks($data,$chat_id,$message_id);
+} elseif (($spec['route']??'gift')==='exemption') {
+    require __DIR__.'/exemption-route.php';
+    achbotHandleChannelExemption($data,$text,$userInfo);
+} elseif (($spec['route']??'gift')==='main_menu') {
+    require __DIR__.'/legacy-set-user.php';
+    require __DIR__.'/main-menu.php';
+} elseif (($spec['route']??'gift')==='legacy_unban') {
+    require __DIR__.'/legacy-set-user.php';
+    require __DIR__.'/legacy-unban.php';
 } elseif (($spec['route']??'gift')==='manual') {
     require __DIR__.'/src/Subscription/manual-route.php';
 } elseif (($spec['route']??'gift')==='legacy_ban') {
@@ -268,6 +282,18 @@ def setup(work: Path, env: dict) -> Path:
     moderation_end=config.index('\n//---',moderation_start)
     (stage/'moderation-route.php').write_text(
         '<?php\n'+config[moderation_start:moderation_end])
+    exemption_start=config.index('function achbotHandleChannelExemption(')
+    ensure(exemption_start<moderation_start and
+           'if ($data == "addExemptUser")' not in config[config.index('$joniedState='):config.index('// تابع مشترک ساخت درخواست پرداخت')] and
+           'if ($userInfo[\'step\'] == "awaitingExemptUserID")' not in config[config.index('$joniedState='):config.index('// تابع مشترک ساخت درخواست پرداخت')],
+           'Exemption still mutates during config.php bootstrap')
+    ensure(bot.index('check();')<bot.index('if (achbotHandleChannelExemption('),
+           'Exemption route precedes IP check')
+    (stage/'exemption-route.php').write_text(
+        '<?php\n'+config[exemption_start:moderation_start])
+    menu_start=bot.index("if (preg_match('/^\\/([Ss]tart)/'")
+    menu_end=bot.index("if(preg_match('/^sendMessageToUser",menu_start)
+    (stage/'main-menu.php').write_text('<?php\n'+bot[menu_start:menu_end])
     manual=(ROOT/'src/Subscription/ManualAccounts.php').read_text()
     manual_start=manual.index('function achbotManualAccountConsumeSelection(')
     manual_end=manual.index('function detectServerIdFromRemark(',manual_start)
@@ -276,6 +302,9 @@ def setup(work: Path, env: dict) -> Path:
     legacy_ban=(ROOT/'src/Admin/Bans.php').read_text()
     ban_start=legacy_ban.index('if($userInfo[\'step\'] == "banUser"')
     (stage/'legacy-ban.php').write_text('<?php\n'+legacy_ban[ban_start:])
+    unban=(ROOT/'src/Admin/Unban.php').read_text()
+    unban_start=unban.index('if($userInfo[\'step\'] == "unbanUser"')
+    (stage/'legacy-unban.php').write_text('<?php\n'+unban[unban_start:])
     receipt=(ROOT/'src/Finance/Routes/ManualReceipts.php').read_text()
     receipt_start=receipt.index("if (preg_match('/^banUserDirect_")
     receipt_end=receipt.index('// END Decline Cart To Cart by ACh',receipt_start)
@@ -294,6 +323,8 @@ def setup(work: Path, env: dict) -> Path:
 def reset(work: Path, env: dict) -> None:
     q(work,env,"DELETE FROM setting WHERE type LIKE 'ACHBOT_DIRECT_GIFT_%'")
     q(work,env,"DELETE FROM setting WHERE type LIKE 'ACHBOT_ADMIN_MOD_SOURCE_%'")
+    q(work,env,"DELETE FROM setting WHERE type LIKE 'ACHBOT_EXEMPT_SOURCE_%'")
+    q(work,env,"DELETE FROM setting WHERE type='EXEMPTED_USERS'")
     q(work,env,"DELETE FROM orders_list WHERE id=92")
     q(work,env,"UPDATE users SET is_agent=0,temp=NULL WHERE userid IN (9001,9002,1001)")
     q(work,env,"DELETE FROM server_plans WHERE id=987")
@@ -924,6 +955,325 @@ def verify_audited_step_writers(work: Path, env: dict, stage: Path,
     passed.append('broadcast_bot_blocked_ordinary_behavior_preserved')
 
 
+def verify_exemption_and_ban_freshness(work: Path, env: dict, stage: Path,
+                                      passed: list[str]) -> None:
+    # Execute the actual extracted config.php exemption implementation and
+    # actual bot.php mainMenu, on disposable 23-table socket-only MariaDB.
+    def policy() -> list[str]:
+        raw=q(work,env,"SELECT value FROM setting WHERE type='EXEMPTED_USERS' ORDER BY id")
+        return [] if not raw else json.loads(raw)
+
+    def exempt_marker(actor: int=9001) -> dict | None:
+        raw=q(work,env,"SELECT value FROM setting WHERE type LIKE 'ACHBOT_EXEMPT_SOURCE_%' ORDER BY id")
+        values=[json.loads(x) for x in raw.splitlines() if x]
+        return next((x for x in values if x['actor_id']==actor),None)
+
+    def arm(actor: int=9001,update_id: int=500) -> dict:
+        return call(work,env,stage,route='exemption',kind='callback',
+                    actor=actor,update_id=update_id,message_id=50,text='addExemptUser')
+
+    reset(work,env)
+    r=arm()
+    step=q(work,env,'SELECT step FROM users WHERE userid=9001')
+    ensure(step.startswith('achbotExempt:500:50:') and
+           any('شناسه عددی' in e for e in r['events']) and
+           exempt_marker() and exempt_marker()['last_update_id']==500 and
+           policy()==[] and not effects(stage),
+           'Fresh exemption callback failed to arm verified wizard')
+    done=call(work,env,stage,route='exemption',kind='message',
+        actor=9001,update_id=501,message_id=51,text='1001')
+    ensure(q(work,env,'SELECT step FROM users WHERE userid=9001')=='none' and
+           list(map(str,policy()))==['1001'] and
+           exempt_marker()['last_update_id']==501 and
+           any('✅' in e for e in done['events']) and not effects(stage),
+           'Authorized channel exemption did not commit atomically')
+    passed.append('exemption_authorized_current_start_and_atomic_completion')
+
+    # Replays of both the original callback and completed numeric message
+    # must not rearm or repeat a stale policy mutation.
+    replay=arm(update_id=500)
+    repeat=call(work,env,stage,route='exemption',kind='message',
+        actor=9001,update_id=501,message_id=51,text='1001',
+        stale_step=step)
+    ensure(q(work,env,'SELECT step FROM users WHERE userid=9001')=='none' and
+           policy()==['1001'] and
+           not any('✅' in e or 'شناسه عددی' in e
+                   for result in (replay,repeat) for e in result['events']),
+           'Replayed exemption source repeated a consumed wizard')
+    passed.append('exemption_durable_source_replay_denied')
+
+    # A newer Telegram callback may originate from an older bot-authored
+    # settings message. Only update_id, not callback message_id, orders
+    # successive callback events. A fresh numeric reply must still be newer.
+    freshOldMenu=arm(update_id=502)
+    ensure(q(work,env,'SELECT step FROM users WHERE userid=9001').startswith(
+               'achbotExempt:502:50:') and
+           any('شناسه عددی' in e for e in freshOldMenu['events']),
+           'Fresh exemption callback on older bot menu incorrectly rejected')
+    already=call(work,env,stage,route='exemption',kind='message',
+        actor=9001,update_id=503,message_id=52,text='1001')
+    ensure(policy()==['1001'] and
+           q(work,env,'SELECT step FROM users WHERE userid=9001')=='none' and
+           exempt_marker()['last_update_id']==503 and
+           any('قبلاً' in e for e in already['events']),
+           'Fresh older-menu callback produced an invalid exemption completion')
+    passed.append('exemption_new_update_from_old_bot_menu_still_works')
+
+    reset(work,env)
+    first=call(work,env,stage,route='moderation',kind='callback',
+        actor=9001,update_id=550,message_id=70,text='toggleAgent_1001')
+    second=call(work,env,stage,route='moderation',kind='callback',
+        actor=9001,update_id=551,message_id=35,text='toggleBan_1001')
+    ensure('MOD_NOTICE' in first['events'] and
+           'MOD_NOTICE' in second['events'] and
+           q(work,env,'SELECT step FROM users WHERE userid=1001')=='banned' and
+           len(moderation_rows(work,env))==1,
+           'New signed moderation callback from older menu was rejected')
+    passed.append('moderation_new_update_from_old_bot_menu_still_works')
+
+    reset(work,env)
+    ordinary=call(work,env,stage,route='exemption',kind='callback',
+        actor=1001,update_id=550,message_id=60,text='addExemptUser')
+    ensure(q(work,env,'SELECT step FROM users WHERE userid=1001')=='none' and
+           not exempt_marker() and policy()==[] and
+           not ordinary['events'],
+           'Ordinary customer started a privileged exemption wizard')
+    passed.append('exemption_ordinary_customer_start_denied')
+
+    reset(work,env)
+    q(work,env,'UPDATE users SET isAdmin=0 WHERE userid=9002')
+    revoked=call(work,env,stage,route='exemption',kind='callback',
+        actor=9002,update_id=550,message_id=60,text='addExemptUser')
+    ensure(q(work,env,'SELECT step FROM users WHERE userid=9002')=='none' and
+           not exempt_marker(9002) and policy()==[] and not revoked['events'],
+           'Revoked delegated administrator started an exemption wizard')
+    passed.append('exemption_revoked_delegate_start_denied')
+
+    reset(work,env)
+    arm(actor=9002)
+    q(work,env,'UPDATE users SET isAdmin=0 WHERE userid=9002')
+    step=q(work,env,'SELECT step FROM users WHERE userid=9002')
+    revoked=call(work,env,stage,route='exemption',kind='message',
+        actor=9002,update_id=501,message_id=51,text='1001')
+    ensure(q(work,env,'SELECT step FROM users WHERE userid=9002')==step and
+           policy()==[] and not any('✅' in e for e in revoked['events']) and
+           exempt_marker(9002)['last_update_id']==500,
+           'Revoked delegated administrator retained stale exemption authority')
+    passed.append('exemption_revoked_delegate_completion_denied')
+
+    for label,opts in [
+        ('unsigned',dict(kind='callback',text='addExemptUser',missing_header=True)),
+        ('wrong_secret',dict(kind='callback',text='addExemptUser',bad_header=True)),
+        ('group_callback',dict(kind='callback',text='addExemptUser',chat_type='group')),
+        ('mixed_callback',dict(kind='mixed',text='addExemptUser')),
+        ('bot_sender',dict(kind='callback',text='addExemptUser',is_bot=True)),
+        ('wrong_actor',dict(kind='callback',text='addExemptUser',wire_actor=1001)),
+    ]:
+        reset(work,env)
+        result=call(work,env,stage,route='exemption',actor=9001,
+                    update_id=550,message_id=60,**opts)
+        ensure(q(work,env,'SELECT step FROM users WHERE userid=9001')=='none' and
+               policy()==[] and not exempt_marker() and not result['events'],
+               'Invalid exemption ingress/callback source accepted: '+label)
+        passed.append('exemption_start_rejects_'+label)
+
+    for label,opts in [
+        ('callback_bot_text',dict(kind='callback',text='otherCallback',
+                                  callback_bot_text='1001')),
+        ('mixed_message',dict(kind='mixed',text='1001')),
+        ('stale_message_id',dict(kind='message',text='1001',message_id=50)),
+        ('stale_update_id',dict(kind='message',text='1001',update_id=500)),
+        ('wrong_chat',dict(kind='message',text='1001',wire_chat=1002)),
+    ]:
+        reset(work,env)
+        arm()
+        step=q(work,env,'SELECT step FROM users WHERE userid=9001')
+        opts=dict(opts)
+        opts.setdefault('update_id',501)
+        opts.setdefault('message_id',51)
+        result=call(work,env,stage,route='exemption',actor=9001,**opts)
+        ensure(q(work,env,'SELECT step FROM users WHERE userid=9001')==step and
+               policy()==[] and exempt_marker()['last_update_id']==500 and
+               not any('✅' in e for e in result['events']),
+               'Invalid exemption text source mutated global policy: '+label)
+        passed.append('exemption_finish_rejects_'+label)
+
+    # A caches an old exemption wizard, B starts a newer DirectGift in the
+    # same actor's row. A must not touch the global exemption policy.
+    reset(work,env)
+    arm()
+    ready=stage/'exempt-cache-ready';release=stage/'exempt-cache-release'
+    ready.unlink(missing_ok=True);release.unlink(missing_ok=True)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+        try:
+            old=pool.submit(call,work,env,stage,route='exemption',
+                actor=9001,kind='message',text='1001',update_id=599,
+                message_id=59,mode='pause_before_route',
+                cached_ready=str(ready),release_route=str(release))
+            wait_for(ready.exists,'Exemption worker did not cache old step')
+            begin(work,env,stage,update_id=600)
+            current=q(work,env,'SELECT step FROM users WHERE userid=9001')
+            release.write_text('go')
+            oldResult=old.result(timeout=38)
+        finally:
+            release.write_text('go')
+    ensure(current.startswith('achbotDirectGift') and
+           q(work,env,'SELECT step FROM users WHERE userid=9001')==current and
+           policy()==[] and exempt_marker()['last_update_id']==500 and
+           not any('✅' in e for e in oldResult['events']) and
+           not effects(stage),
+           'Obsolete exemption modified global policy after newer gift')
+    passed.append('exemption_stale_cached_worker_preserves_new_gift_and_policy')
+
+    reset(work,env);arm()
+    commitUnknown=call(work,env,stage,route='exemption',kind='message',
+        actor=9001,update_id=501,message_id=51,text='1001',
+        mode='exempt_commit_unknown')
+    ensure(policy()==['1001'] and
+           q(work,env,'SELECT step FROM users WHERE userid=9001')=='none' and
+           exempt_marker()['last_update_id']==501 and
+           not any('✅' in e for e in commitUnknown['events']),
+           'Uncertain exemption COMMIT advertised unverified success')
+    retry=call(work,env,stage,route='exemption',kind='message',
+        actor=9001,update_id=501,message_id=51,text='1001',
+        stale_step='achbotExempt:500:50:'+'a'*32)
+    ensure(policy()==['1001'] and
+           not any('✅' in e for e in retry['events']) and not effects(stage),
+           'Uncertain exemption result permitted a duplicate policy change')
+    passed.append('exemption_unknown_commit_no_success_or_replay')
+
+    reset(work,env);arm()
+    q(work,env,"INSERT INTO setting(type,value) VALUES('EXEMPTED_USERS','[]'),('EXEMPTED_USERS','[]')")
+    amb=call(work,env,stage,route='exemption',kind='message',
+        actor=9001,update_id=501,message_id=51,text='1001')
+    ensure(q(work,env,"SELECT COUNT(*) FROM setting WHERE type='EXEMPTED_USERS'")=='2' and
+           q(work,env,'SELECT step FROM users WHERE userid=9001').startswith('achbotExempt') and
+           not any('✅' in e for e in amb['events']),
+           'Ambiguous nonunique channel-exemption settings accepted')
+    passed.append('exemption_nonunique_setting_fail_closed')
+
+    # A caches an old mainMenu request. B commits an authorized newer ban
+    # against A. A resumes the ACTUAL bot.php mainMenu + config.php setUser.
+    reset(work,env)
+    ready=stage/'menu-cache-ready';release=stage/'menu-cache-release'
+    ready.unlink(missing_ok=True);release.unlink(missing_ok=True)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+        try:
+            old=pool.submit(call,work,env,stage,route='main_menu',
+                actor=9001,kind='callback',text='mainMenu',update_id=599,
+                message_id=59,mode='pause_before_route',
+                cached_ready=str(ready),release_route=str(release))
+            wait_for(ready.exists,'Legacy mainMenu worker did not cache old step')
+            moderator=call(work,env,stage,route='moderation',kind='callback',
+                actor=9002,update_id=600,message_id=60,text='toggleBan_9001')
+            ensure('MOD_NOTICE' in moderator['events'],
+                   'Newer authentic moderation ban did not commit')
+            release.write_text('go')
+            oldResult=old.result(timeout=38)
+        finally:
+            release.write_text('go')
+    ensure(q(work,env,'SELECT step FROM users WHERE userid=9001')=='banned' and
+           len(moderation_rows(work,env))==1 and
+           not any('WELCOME' in e or 'BANNED' in e
+                   for e in oldResult['events']) and not effects(stage),
+           'Stale mainMenu cleared or misreported newly authorized ban')
+    passed.append('legacy_main_menu_cannot_erase_newer_authorized_ban')
+
+    staleCancel=call(work,env,stage,kind='message',actor=9001,
+        update_id=599,message_id=59,text='CANCEL',stale_step='none')
+    ensure(q(work,env,'SELECT step FROM users WHERE userid=9001')=='banned' and
+           len(moderation_rows(work,env))==1 and not effects(stage) and
+           not any('WAIT' in e for e in staleCancel['events']),
+           'Older CANCEL erased a newer administrator ban')
+    passed.append('legacy_stale_cancel_cannot_erase_newer_ban')
+
+    # The dedicated authorized legacy unban still has its own exact PK/CAS
+    # against the current banned state; generic setUser is NEVER unban.
+    q(work,env,"UPDATE users SET step='unbanUser' WHERE userid=9002")
+    unbanned=call(work,env,stage,route='legacy_unban',kind='message',
+        actor=9002,update_id=601,message_id=61,text='9001')
+    ensure(q(work,env,'SELECT step FROM users WHERE userid=9001')=='none' and
+           any('✅' in e for e in unbanned['events']),
+           'Deliberate authorized unban was disabled by legacy step guard')
+    passed.append('legacy_explicit_authorized_unban_still_operates')
+
+    reset(work,env)
+    q(work,env,"UPDATE users SET step='oldLegacyStep' WHERE userid=9001")
+    ordinary=call(work,env,stage,route='main_menu',kind='callback',
+        actor=9001,update_id=600,message_id=60,text='mainMenu')
+    ensure(q(work,env,'SELECT step FROM users WHERE userid=9001')=='none' and
+           any('EDIT_TEXT:WELCOME' in e for e in ordinary['events']),
+           'Ordinary non-banned mainMenu stopped functioning')
+    passed.append('legacy_nonbanned_main_menu_works')
+
+    # Exemption is itself a nonce-protected administrator wizard. Obsolete
+    # mainMenu/text moderation and older signed bans must not consume it.
+    reset(work,env)
+    arm(update_id=600)
+    exemptStep=q(work,env,'SELECT step FROM users WHERE userid=9001')
+    oldMenu=call(work,env,stage,route='main_menu',kind='callback',
+        actor=9001,update_id=599,message_id=59,text='mainMenu')
+    ensure(q(work,env,'SELECT step FROM users WHERE userid=9001')==exemptStep and
+           not any('WELCOME' in e for e in oldMenu['events']),
+           'Older mainMenu erased an active exemption wizard')
+    passed.append('exemption_old_main_menu_cannot_erase_current_nonce')
+
+    oldBan=call(work,env,stage,route='moderation',kind='callback',
+        actor=9002,update_id=599,message_id=59,text='toggleBan_9001')
+    ensure(q(work,env,'SELECT step FROM users WHERE userid=9001')==exemptStep and
+           'MOD_NOTICE' not in oldBan['events'],
+           'Older signed moderator ban erased newer exemption wizard')
+    passed.append('exemption_old_moderation_ban_cannot_erase_nonce')
+
+    oldText=call(work,env,stage,route='legacy_ban',kind='message',
+        actor=9001,update_id=599,message_id=59,text='9001',
+        stale_step='banUser')
+    ensure(q(work,env,'SELECT step FROM users WHERE userid=9001')==exemptStep and
+           not any('مسدودش کردم' in e for e in oldText['events']),
+           'Older textual admin ban erased current exemption wizard')
+    passed.append('exemption_legacy_text_ban_cannot_erase_nonce')
+
+    newer=call(work,env,stage,route='moderation',kind='callback',
+        actor=9002,update_id=601,message_id=61,text='toggleBan_9001')
+    ensure(q(work,env,'SELECT step FROM users WHERE userid=9001')=='banned' and
+           'MOD_NOTICE' in newer['events'] and
+           exempt_marker()['last_update_id']==600 and policy()==[],
+           'Fresh deliberate admin ban cannot override exemption safely')
+    passed.append('exemption_newer_authorized_moderation_ban_preempts_wizard')
+
+    # A failing actor-step CAS must roll back a previously staged global
+    # policy write, not leave a channel exception behind.
+    reset(work,env);arm()
+    beforeStep=q(work,env,'SELECT step FROM users WHERE userid=9001')
+    q(work,env,"CREATE TRIGGER owned_exempt_step_abort BEFORE UPDATE ON users "
+      "FOR EACH ROW SIGNAL SQLSTATE '45000' "
+      "SET MESSAGE_TEXT='owned_exempt_step_abort'")
+    try:
+        rejected=call(work,env,stage,route='exemption',kind='message',
+            actor=9001,update_id=501,message_id=51,text='1001')
+        ensure(policy()==[] and
+               q(work,env,'SELECT step FROM users WHERE userid=9001')==beforeStep and
+               exempt_marker()['last_update_id']==500 and
+               not any('✅' in e for e in rejected['events']),
+               'Failed exemption CAS left a partial global policy modification')
+    finally:
+        q(work,env,'DROP TRIGGER owned_exempt_step_abort')
+    passed.append('exemption_policy_and_step_atomic_rollback_on_sql_failure')
+
+    reset(work,env)
+    q(work,env,'INSERT INTO setting(type,value) VALUES('
+      "'EXEMPTED_USERS','[\"1001\"]')")
+    arm()
+    prior=call(work,env,stage,route='exemption',kind='message',
+        actor=9001,update_id=501,message_id=51,text='1001')
+    ensure(policy()==['1001'] and
+           q(work,env,'SELECT step FROM users WHERE userid=9001')=='none' and
+           exempt_marker()['last_update_id']==501 and
+           any('قبلاً' in e for e in prior['events']),
+           'Existing channel exemption was duplicated or wizard left active')
+    passed.append('exemption_existing_member_preserved_and_wizard_completed')
+
+
 def main() -> None:
     ap=argparse.ArgumentParser()
     ap.add_argument('--run-disposable',action='store_true',required=True)
@@ -935,6 +1285,7 @@ def main() -> None:
         verify_global_cancel_stale_cache(work,env,stage,passed)
         verify_admin_ingress_and_legacy_manual(work,env,stage,passed)
         verify_audited_step_writers(work,env,stage,passed)
+        verify_exemption_and_ban_freshness(work,env,stage,passed)
 
         reset(work,env);prepare_final(work,env,stage)
         positive=volume(work,env,stage)
@@ -1394,6 +1745,8 @@ def main() -> None:
         'actual_webhook_pre_config_auth':True,
         'actual_config_moderation':True,
         'actual_manual_account_handler':True,
+        'actual_channel_exemption_handler':True,
+        'actual_legacy_main_menu':True,
         'shared_real_service_seam_with_synthetic_adapter':True,
         'owned_mariadb_only':True,'real_telegram_or_marzban_calls':0,
         'tenant_migrations':0,'production_operations':0,

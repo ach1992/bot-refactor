@@ -17,12 +17,19 @@ if (!achbotWebhookIngressAuthenticated()) {
     return;
 }
 // ACHBOT_WEBHOOK_INGRESS_END
+// Included configuration can run old request routes during initialization;
+// it must enforce the existing Telegram IP allowlist before those routes.
+define('ACHBOT_VERIFIED_WEBHOOK_ENTRYPOINT', true);
 
 require_once 'config.php';
 require_once 'buy_helpers.php';
 check();
 // Source-authenticated and IP-checked before any administrative moderation.
 if (handleToggleCallbacks($data??null,$chat_id??null,$message_id??null)) return;
+// Channel-exemption settings are admin-only and cannot execute before check().
+if (achbotHandleChannelExemption($data??null,$text??null,$userInfo??null)) return;
+// Privileged exemption changes are never allowed inside config bootstrap.
+if (achbotHandleChannelExemption($data??null,$text??null,$userInfo??null)) return;
 
 /*
 $log_data = "📩 New Update at " . date("Y-m-d H:i:s") . "\n";
@@ -249,6 +256,20 @@ if($userInfo['phone'] == null && $from_id != $admin && $userInfo['isAdmin'] != t
 }
 
 if (preg_match('/^\/([Ss]tart)/', $text) || $text == $buttonValues['back_to_main'] || $data == 'mainMenu') {
+
+    // Config has an early cached userInfo. A newer moderation ban or an
+    // active DirectGift wizard takes precedence over old menu callbacks.
+    $menuActor=(int)$from_id;
+    $menu=$connection->prepare('SELECT id,step FROM users WHERE userid=? LIMIT 2');
+    if (!$menu) return;
+    $menu->bind_param('i',$menuActor);
+    $menuOk=$menu->execute();
+    $menuRows=$menuOk?$menu->get_result()->fetch_all(MYSQLI_ASSOC):[];
+    $menu->close();
+    if (!$menuOk || count($menuRows)!==1 ||
+        (string)$menuRows[0]['step']==='banned' ||
+        str_starts_with((string)$menuRows[0]['step'],'achbotDirectGift') ||
+        str_starts_with((string)$menuRows[0]['step'],'achbotExempt:')) return;
 
     setUser();
     setUser("", "temp");

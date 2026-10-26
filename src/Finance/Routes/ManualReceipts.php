@@ -678,7 +678,7 @@ if (preg_match('/^banUserDirect_(\d+)$/', $data, $m) && ($from_id == $admin || $
             // moderation route is the only explicit newer-source override.
             $targetPk=(int)$u['id'];
             $currentStep=(string)$u['step'];
-            $stmt = $connection->prepare("UPDATE `users` SET `step`='banned' WHERE `id`=? AND `userid`=? AND `step`=? AND `step` NOT LIKE 'achbotDirectGift%'");
+            $stmt = $connection->prepare("UPDATE `users` SET `step`='banned' WHERE `id`=? AND `userid`=? AND `step`=? AND `step` NOT LIKE 'achbotDirectGift%' AND `step` NOT LIKE 'achbotExempt:%'");
             $stmt->bind_param("iis", $targetPk, $targetUserId, $currentStep);
             $ok=$stmt->execute();$updated=$stmt->affected_rows;$stmt->close();
             if (!$ok || $updated!==1) {

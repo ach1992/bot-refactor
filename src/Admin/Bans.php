@@ -35,7 +35,7 @@ if($userInfo['step'] == "banUser" && ($from_id == $admin || $userInfo['isAdmin']
                 $currentStep=(string)$userState['step'];
                 $targetPk=(int)$userState['id'];
                 $targetUserid=(int)$userState['userid'];
-                $stmt = $connection->prepare("UPDATE `users` SET `step`='banned' WHERE `id`=? AND `userid`=? AND `step`=? AND `step` NOT LIKE 'achbotDirectGift%'");
+                $stmt = $connection->prepare("UPDATE `users` SET `step`='banned' WHERE `id`=? AND `userid`=? AND `step`=? AND `step` NOT LIKE 'achbotDirectGift%' AND `step` NOT LIKE 'achbotExempt:%'");
                 $stmt->bind_param("iis",$targetPk,$targetUserid,$currentStep);
                 $ok=$stmt->execute();$updated=$stmt->affected_rows;$stmt->close();
                 if (!$ok || $updated!==1) {
