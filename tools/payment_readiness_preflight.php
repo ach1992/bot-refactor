@@ -197,16 +197,71 @@ function policyCheck(array $state): bool {
     return !array_key_exists('gatewayRules', $state) ||
         achbotGatewayRulesDecode($state['gatewayRules']) !== null;
 }
+/**
+ * Static policy opportunity only. Do not query any customer or infer their
+ * actual eligibility. Mirror PaymentLifecycle's new-document precedence:
+ * a method key (including []) overrides the legacy audience for that method.
+ */
+function achbotPreflightPolicyPotential(array $state, string $method): bool {
+    if (array_key_exists('gatewayRules', $state)) {
+        $document = achbotGatewayRulesDecode($state['gatewayRules']);
+        if ($document === null) return false;
+        if (array_key_exists($method, $document['methods'])) {
+            foreach ($document['methods'][$method] as $rule) {
+                if ($rule['enabled'] === true) return true;
+            }
+            return false;
+        }
+    }
+    $legacy = $state['gatewayAudience'] ?? [];
+    if (!is_array($legacy)) return false;
+    $mode = $legacy[$method] ?? 'all';
+    return is_string($mode) && array_key_exists($mode, achbotPayUxAudienceModes()) &&
+        $mode !== 'off';
+}
+
+/**
+ * Reuse production's manual-USDT address precedence and explicit rate rules.
+ * The *only* synthetic value is a known-valid legacy fallback rate (1000):
+ * baseInfo.php must never be loaded. This establishes potential availability,
+ * NOT that the real operator-private base rate is present or correct.
+ */
+function achbotPreflightUsdtConfiguration(array $keys): array {
+    $GLOBALS['paymentKeys'] = $keys;
+    $GLOBALS['USDTPrice'] = 1000;
+    $GLOBALS['USDTPriceagent'] = 1000;
+    $anySourceOption = static function(): bool {
+        foreach (['BEP20','TRC20','ERC20'] as $network) {
+            if (achbotManualUsdtConfiguration($network) !== null) return true;
+        }
+        return false;
+    };
+    $configured = $anySourceOption();
+    $rate = $keys['manualUsdtRateToman'] ?? null;
+    $explicitRate = $rate !== null && $rate !== '';
+    $invalidExplicitRate = false;
+    if (!$configured && $explicitRate) {
+        // A valid address whose explicitly persisted rate is invalid is a
+        // known config error, not a missing network. Do not let valid TRX
+        // make it silently disappear from the report.
+        $withoutRate = $keys;
+        unset($withoutRate['manualUsdtRateToman']);
+        $GLOBALS['paymentKeys'] = $withoutRate;
+        $invalidExplicitRate = $anySourceOption();
+        $GLOBALS['paymentKeys'] = $keys;
+    }
+    return [
+        'configured' => $configured,
+        'invalid_explicit_rate' => $invalidExplicitRate,
+        'legacy_private_rate_unverified' => $configured && !$explicitRate,
+    ];
+}
+
 function methodChecks(array $state, array $keys): void {
     global $report;
     require_once dirname(__DIR__) . '/src/Finance/ReceiptHelpers.php';
-    $usdtConfigured = false;
-    foreach (['BEP20','TRC20','ERC20'] as $network) {
-        $address = textValue($keys['manualUsdtWallet'.$network] ?? null);
-        if (!available($address) && ($keys['manualUsdtNetwork'] ?? null) === $network)
-            $address = textValue($keys['manualUsdtWallet'] ?? null);
-        if (achbotManualUsdtWalletValid($address, $network)) $usdtConfigured = true;
-    }
+    $usdt = achbotPreflightUsdtConfiguration($keys);
+    $usdtConfigured = $usdt['configured'];
     $trxRate = $keys['manualTrxRateToman'] ?? null;
     $trxConfigured = achbotManualTronAddressValid(
         textValue($keys['manualTrxWallet'] ?? null)) &&
@@ -227,6 +282,8 @@ function methodChecks(array $state, array $keys): void {
     foreach ($on as $method => $active) {
         $configured = null;
         $status = 'not_evaluated';
+        $offerability = 'disabled';
+        $policyPotential = $active && achbotPreflightPolicyPotential($state, $method);
         if ($active) {
             $configured = match ($method) {
                 'nowpayments' => available($keys['nowpayment'] ?? null),
@@ -242,21 +299,30 @@ function methodChecks(array $state, array $keys): void {
                 'wallet' => true,
             };
             if ($configured) {
-                $offerable++;
                 $status = 'present_not_verified';
-                finding('method_' . $method, 'PASS', 'locally_configured_not_provider_verified');
+                if ($policyPotential) {
+                    $offerable++;
+                    $offerability = 'potentially_offerable';
+                    finding('method_' . $method, 'PASS', 'locally_configured_not_provider_verified');
+                } else {
+                    $offerability = 'configured_but_policy_denied';
+                    finding('method_' . $method, 'WARN', 'configured_but_policy_denied');
+                }
             } else {
-                // TRX and USDT share the same global switch but have distinct
-                // address/rate availability. An intentionally unconfigured
-                // network is NOT offered; it must not block the other network.
                 $alternate = ($method === 'manual_usdt' && $trxConfigured) ||
                              ($method === 'manual_trx' && $usdtConfigured);
-                if ($manualOn && $alternate &&
+                if ($method === 'manual_usdt' && $usdt['invalid_explicit_rate']) {
+                    $status = 'missing_or_invalid';
+                    $offerability = 'invalid_explicit_rate';
+                    finding('method_' . $method, 'BLOCK', 'invalid_explicit_usdt_rate');
+                } elseif ($manualOn && $alternate &&
                     in_array($method, ['manual_usdt','manual_trx'], true)) {
                     $status = 'not_offered';
+                    $offerability = 'not_offered';
                     finding('method_' . $method, 'WARN', 'network_not_configured_not_offered');
                 } else {
                     $status = 'missing_or_invalid';
+                    $offerability = 'unavailable';
                     finding('method_' . $method, 'BLOCK', 'required_setting_missing_or_invalid');
                 }
             }
@@ -265,12 +331,18 @@ function methodChecks(array $state, array $keys): void {
             'switch' => $active ? ($manualOn && in_array($method,
                 ['manual_usdt','manual_trx'],true) ? 'shared_on' : 'on') : 'off',
             'local_configuration' => $status,
+            'policy_availability' => $active
+                ? ($policyPotential ? 'potentially_permitted' : 'unconditionally_denied')
+                : 'not_evaluated',
+            'offerability' => $offerability,
+            'actual_customer_eligibility' => 'not_tested',
         ];
     }
     finding('method_selection', $offerable > 0 ? 'PASS' : 'BLOCK',
-        $offerable > 0 ? 'one_or_more_methods_offerable' : 'no_offerable_method_for_operator_smoke');
-    if ($manualOn && $usdtConfigured) finding('manual_usdt_rate', 'WARN',
-        'private_base_rate_requires_operator_validation');
+        $offerable > 0 ? 'one_or_more_methods_potentially_offerable' :
+                         'no_potentially_offerable_method_for_operator_smoke');
+    if ($manualOn && $usdt['legacy_private_rate_unverified'])
+        finding('manual_usdt_rate', 'WARN', 'private_base_rate_requires_operator_validation');
 }
 
 $args = options($argv);

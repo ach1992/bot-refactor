@@ -972,6 +972,25 @@ def main():
             'trx_only_manual_network_is_not_blocked_by_missing_usdt',
             'shared_manual_switch_without_any_destination_blocks',
             'non_string_merchant_credential_not_treated_as_configured',
+            'usdt_explicit_clear_overrides_legacy',
+            'usdt_invalid_explicit_rate',
+            'usdt_explicit_rate_below_minimum',
+            'usdt_explicit_rate_above_maximum',
+            'usdt_explicit_infinite_rate',
+            'usdt_explicit_rate_valid',
+            'usdt_explicit_rate_upper_boundary',
+            'usdt_legacy_bep20_default',
+            'usdt_valid_trc20',
+            'usdt_valid_erc20',
+            'usdt_valid_legacy_private_rate_unverified',
+            'usdt_invalid_rate_remains_blocking_when_trx_is_valid',
+            'legacy_off_wallet_only',
+            'empty_explicit_new_rule_denies_wallet',
+            'all_disabled_rules_deny_wallet',
+            'enabled_new_rule_allows_wallet',
+            'new_enabled_rule_overrides_legacy_off',
+            'legacy_off_when_new_document_omits_wallet',
+            'denied_wallet_with_other_potentially_available_method',
             'gift_url_matches_source_checkout_validation',
             'bank_details_match_checkout_length_guard',
             'trx_rate_follows_source_nine_digit_limit',
@@ -989,6 +1008,8 @@ def main():
                 readiness.get('cases')==len(required_readiness) and
                 set(readiness.get('details',[]))==required_readiness and
                 readiness.get('readonly_sql_account_enforced') is True and
+                readiness.get('source_usdt_production_helper_compared') is True and
+                readiness.get('source_policy_production_helper_compared') is True and
                 readiness.get('source_members_verified')==102 and
                 readiness.get('all_eight_additive_shapes_exercised') is True and
                 readiness.get('no_real_provider_or_telegram_calls') is True and

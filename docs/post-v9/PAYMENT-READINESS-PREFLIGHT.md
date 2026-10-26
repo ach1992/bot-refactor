@@ -33,13 +33,29 @@ It checks:
   existing object is replaced. `002` is the retired historical RC4 path,
   not an instruction to install it. No sidecar SQL is executed.
 - Exactly one valid JSON-object `BOT_STATES` and `PAYMENT_KEYS` document,
-  existing dynamic `gatewayRules` decoded with the **current production PHP
-  parser**, legacy method audience values, and each method's current switch
-  and basic local configuration availability. The gift seller URL, bank
-  identity length and TRX rate checks follow the corresponding runtime
-  validators; USDT private base rate is reported as needing operator review.
-- Only `configured/missing`-style signals, never raw merchant secrets,
-  destinations, usernames, payment identifiers, DB credentials or user rows.
+  dynamic `gatewayRules` decoded with the **current production PHP parser**,
+  legacy method audience modes and each method's switch. A method is
+  *potentially offerable* only if its global switch is on, its local
+  configuration is usable, and its effective policy is not unconditionally
+  denied. An explicit method entry (including `[]` or all-disabled rules)
+  overrides `gatewayAudience`; missing entries retain legacy fallback,
+  including `off`. It does **not** evaluate a specific customer or payment
+  history, so an enabled rule is only a possibility, not guaranteed eligibility.
+- Gift seller URLs, bank identity length, and TRX rates follow existing
+  source validators. Manual USDT availability calls the exact production
+  `achbotManualUsdtConfiguration()` for each network, preserving explicit
+  empty-field precedence over legacy addresses, the default legacy BEP20
+  network, and explicit numeric/finite/range rate validation. The tool uses a
+  **synthetic valid legacy base rate in memory** solely when evaluating
+  potential USDT options without access to the private `$USDTPrice`. A usable
+  address without an explicit rate produces `manual_usdt_rate=WARN` and
+  **requires a separate private rate check**; a valid address with a known
+  invalid explicit rate is `BLOCK` even if TRX is also configured.
+- Report signals distinguish `potentially_offerable`,
+  `configured_but_policy_denied`, `not_offered`, and `unavailable`. Each
+  method explicitly states `actual_customer_eligibility=not_tested`. No
+  raw merchant secrets, addresses, rates, user rows or DB credentials are
+  emitted.
 
 **Important limitations:** A provided manifest is a comparison baseline, **not
 proof it came from official GitHub CI**. The operator must independently
@@ -47,8 +63,11 @@ verify its origin/commit/ZIP hash. Named tables, columns and indexes do **not**
 prove exact migration DDL, foreign-key integrity, real row compatibility or
 actual installed migration history; ambiguous/previously deployed sidecars
 require a separate schema-and-row audit. A configured merchant field does not
-prove the credential is valid, active, funded or authorized. USDT manual
-payments additionally need private USD rate review. PHP CLI file checks do
+prove the credential is valid, active, funded or authorized. Manual USDT
+using a legacy/private rate requires operator verification of the actual rate
+and its service applicability; this CLI does not load `baseInfo.php`.
+Customer-specific cohorts and real merchant/payment availability are not
+certified even when a method is marked `potentially_offerable`. PHP CLI file checks do
 not establish which code a webserver/OPcache is actually serving.
 
 ## Execute on a separately authorized target
@@ -90,7 +109,12 @@ isolated operator smoke can be *planned*, not that live payment is safe. Exit
 structured JSON `checks` for stable reason codes and stop before any
 migration/merchant action. Missing manifest or any expected sidecar shape is
 blocking for **full current-source readiness** even if an older installation
-continues to run a subset of features.
+continues to run a subset of features. `method_selection=PASS` means at least
+one globally enabled, locally configured method is **not provably denied for
+all customers**. It does not guarantee any actual customer will qualify.
+`configured_but_policy_denied` is an informational `WARN` for that method;
+if no other potentially offerable method exists, `method_selection` is `BLOCK`.
+A known invalid explicit USDT rate is a blocking configuration error.
 
 ## Follow-on gates — NOT performed by preflight
 
@@ -124,6 +148,10 @@ MariaDB, original schema plus all eight synthetic sidecars, a real SELECT-only
 account and a 102-file ZIP-shaped runtime. It deliberately injects missing
 settings/migrations, duplicate documents, malformed policies, absent hosted
 keys, source drift, retired members, broken unique indexes and failed DB auth.
+It also compares USDT address/rate behavior and static policy precedence
+against the actual source helpers using synthetic PHP globals/users, testing
+explicit clears, rate bounds, legacy defaults, denied/overridden methods and
+valid independent alternatives.
 It verifies the read-only user cannot issue UPDATE, retains synthetic wallet
 and private config sentinels, and makes zero real external calls. It is part
 of `tools/check_post_v9.py` for exact candidate CI on PHP 8.1 and 8.4.

@@ -154,7 +154,8 @@ real money or customer accounts.
 | Invalid/empty explicit rule | hidden | denied | fails closed |
 | Previously issued verified/manual evidence; rule then revoked | historic claim remains visible for review | **no new** issuance | no automatic refund/cancellation |
 
-Before installing, confirm the exact PR SHA and 101-file runtime ZIP, do an
+Before installing, verify the exact PR SHA and runtime ZIP member count and
+file hashes against the independently verified manifest, then perform an
 owned isolated test, verify secrets remain private, and obtain independent
 review, Owner merge approval and separately scoped operator/deployment approval.
 No SQL migration is part of this eligibility feature. See also

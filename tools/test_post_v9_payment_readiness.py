@@ -81,6 +81,52 @@ def has(data: dict, name: str, status: str, code: str | None = None) -> bool:
                (code is None or c['code'] == code) for c in data['checks'])
 
 
+
+# Compare preflight against source-real configuration/authorization functions.
+# Both helpers run with synthetic globals and a SELECT-only disposable DB;
+# neither loads private configuration nor produces a real customer effect.
+SOURCE_USDT_DRIVER = r"""
+$root=$argv[1];
+$GLOBALS['paymentKeys']=json_decode($argv[2],true,512,JSON_THROW_ON_ERROR);
+$GLOBALS['USDTPrice']=1000;
+$GLOBALS['USDTPriceagent']=1000;
+require $root.'/src/Finance/ReceiptHelpers.php';
+$available=[];
+foreach (['BEP20','TRC20','ERC20'] as $network)
+    $available[$network]=achbotManualUsdtConfiguration($network)!==null;
+echo json_encode($available,JSON_THROW_ON_ERROR);
+"""
+SOURCE_POLICY_DRIVER = r"""
+$root=$argv[1];$socket=$argv[2];$dbName=$argv[3];
+$GLOBALS['botState']=json_decode($argv[4],true,512,JSON_THROW_ON_ERROR);
+$db=new mysqli('localhost','achbot_preflight_ro',
+    getenv('ACHBOT_PREFLIGHT_DB_PASSWORD'),$dbName,0,$socket);
+require $root.'/src/Finance/PaymentLifecycle.php';
+echo json_encode(achbotPayUxAudienceAllowed($db,'wallet',9002,false),JSON_THROW_ON_ERROR);
+"""
+
+def source_usdt(keys: dict) -> bool:
+    p=subprocess.run(['php','-r',SOURCE_USDT_DRIVER,str(ROOT),
+                      json.dumps(keys,separators=(',',':'))],
+                     text=True,capture_output=True,timeout=8)
+    require(p.returncode==0 and not p.stderr,'production_usdt_driver')
+    return any(json.loads(p.stdout).values())
+
+
+def source_wallet_allowed(d: Path, state: dict) -> bool:
+    p=subprocess.run(['php','-r',SOURCE_POLICY_DRIVER,str(ROOT),
+                      str(d/'mysql.sock'),DB,json.dumps(state,separators=(',',':'))],
+                     text=True,capture_output=True,timeout=8,
+                     env=dict(os.environ,ACHBOT_PREFLIGHT_DB_PASSWORD=PASSWORD))
+    require(p.returncode==0 and not p.stderr,'production_wallet_policy_driver')
+    return json.loads(p.stdout)
+
+
+def rule(category: str = 'all', enabled: bool = True) -> dict:
+    return {'category':category,'enabled':enabled,'registration_age_days':0,
+            'metrics':{key:{'count':0,'days':0,'direction':'older'}
+                       for key in ('buy','renew','volume','time','topup')}}
+
 def main() -> dict:
     cases = []
     with fixture.owned_database() as (d, _env):
@@ -218,6 +264,121 @@ def main() -> dict:
                 'merchant_field_non_string')
         cases.append('non_string_merchant_credential_not_treated_as_configured')
 
+        # Review R1: source parity, including an explicitly cleared network,
+        # invalid or bounded rates, legacy fallback and other-network choice.
+        # This matrix contains no other enabled payment method, so false PASS
+        # directly changes overall ready/exit status.
+        addr='0x'+'a'*40
+        source_cases=(
+            ('usdt_explicit_clear_overrides_legacy',
+             {'manualUsdtNetwork':'BEP20','manualUsdtWallet':addr,
+              'manualUsdtWalletBEP20':'','manualUsdtRateToman':'1000'},False,False),
+            ('usdt_invalid_explicit_rate',
+             {'manualUsdtWalletBEP20':addr,'manualUsdtRateToman':'invalid'},False,False),
+            ('usdt_explicit_rate_below_minimum',
+             {'manualUsdtWalletBEP20':addr,'manualUsdtRateToman':'99'},False,False),
+            ('usdt_explicit_rate_above_maximum',
+             {'manualUsdtWalletBEP20':addr,'manualUsdtRateToman':'1000000001'},False,False),
+            ('usdt_explicit_infinite_rate',
+             {'manualUsdtWalletBEP20':addr,'manualUsdtRateToman':'1e400'},False,False),
+            ('usdt_explicit_rate_valid',
+             {'manualUsdtWalletBEP20':addr,'manualUsdtRateToman':'1000'},True,False),
+            ('usdt_explicit_rate_upper_boundary',
+             {'manualUsdtWalletBEP20':addr,'manualUsdtRateToman':'1000000000'},True,False),
+            ('usdt_legacy_bep20_default',
+             {'manualUsdtWallet':addr,'manualUsdtRateToman':'1000'},True,False),
+            ('usdt_valid_trc20',
+             {'manualUsdtWalletTRC20':'TNPeeaaFB7K9cmo4uQpcU32zGK8G1NYqeL',
+              'manualUsdtRateToman':'1000'},True,False),
+            ('usdt_valid_erc20',
+             {'manualUsdtWalletERC20':addr,'manualUsdtRateToman':'1000'},True,False),
+            ('usdt_valid_legacy_private_rate_unverified',
+             {'manualUsdtWalletBEP20':addr},True,True),
+        )
+        for label, money_keys, expected, private_rate in source_cases:
+            require(source_usdt(money_keys) is expected,'source_'+label)
+            seed(d,only_usdt,money_keys)
+            code,result,raw=report_run(d)
+            require((code==0)==expected,'exit_'+label)
+            require(has(result,'method_manual_usdt','PASS' if expected else 'BLOCK'),
+                    'method_'+label)
+            require(has(result,'method_selection','PASS' if expected else 'BLOCK'),
+                    'selection_'+label)
+            require(has(result,'manual_usdt_rate','WARN')==private_rate,
+                    'private_rate_review_'+label)
+            require(result['methods']['manual_usdt']['local_configuration']==
+                    ('present_not_verified' if expected else 'missing_or_invalid'),
+                    'status_'+label)
+            require(all(str(secret) not in raw for secret in (addr,SECRET,PASSWORD,
+                   'TNPeeaaFB7K9cmo4uQpcU32zGK8G1NYqeL')),
+                   'privacy_'+label)
+            cases.append(label)
+
+        # A known-bad explicit USDT rate must not be hidden behind a valid
+        # TRX fallback. The bad configuration remains a blocking diagnostic.
+        both_crypto=dict(state,walletState='off',manualUsdtState='on')
+        seed(d,both_crypto,{'manualUsdtWalletBEP20':addr,
+             'manualUsdtRateToman':'invalid',
+             'manualTrxWallet':'TJRabPrwbZy45sbavfcjinPJC18kjpRTv8',
+             'manualTrxRateToman':'1000'})
+        code,result,_=report_run(d)
+        require(code==2 and has(result,'method_manual_usdt','BLOCK') and
+                has(result,'method_manual_trx','PASS'),
+                'usdt_bad_explicit_rate_not_masked_by_trx')
+        cases.append('usdt_invalid_rate_remains_blocking_when_trx_is_valid')
+
+        # Review R2: policy precedence is source-real and independent of
+        # customer history. Here the enabled blank 'all' rule is genuinely
+        # satisfiable for synthetic userid 9002; no real customer is read.
+        policy_cases=(
+            ('legacy_off_wallet_only',
+             dict(state,gatewayAudience={'wallet':'off'}),False),
+            ('empty_explicit_new_rule_denies_wallet',
+             dict(state,gatewayRules={'version':1,'methods':{'wallet':[]}}),False),
+            ('all_disabled_rules_deny_wallet',
+             dict(state,gatewayRules={'version':1,'methods':{'wallet':[rule(enabled=False)]}}),False),
+            ('enabled_new_rule_allows_wallet',
+             dict(state,gatewayRules={'version':1,'methods':{'wallet':[rule()]}}),True),
+            ('new_enabled_rule_overrides_legacy_off',
+             dict(state,gatewayAudience={'wallet':'off'},
+                  gatewayRules={'version':1,'methods':{'wallet':[rule()]}}),True),
+            ('legacy_off_when_new_document_omits_wallet',
+             dict(state,gatewayAudience={'wallet':'off'},
+                  gatewayRules={'version':1,'methods':{}}),False),
+        )
+        for label,policy_state,allow in policy_cases:
+            require(source_wallet_allowed(d,policy_state) is allow,
+                    'source_policy_'+label)
+            seed(d,policy_state,keys)
+            code,result,_=report_run(d)
+            require((code==0)==allow,'policy_exit_'+label)
+            require(has(result,'method_wallet','PASS' if allow else 'WARN',
+                        None if allow else 'configured_but_policy_denied'),
+                    'method_policy_'+label)
+            require(has(result,'method_selection','PASS' if allow else 'BLOCK'),
+                    'selection_policy_'+label)
+            require(result['methods']['wallet']['offerability']==
+                    ('potentially_offerable' if allow else 'configured_but_policy_denied'),
+                    'offerability_'+label)
+            require(result['methods']['wallet']['actual_customer_eligibility']==
+                    'not_tested','not_customer_authorization_'+label)
+            cases.append(label)
+
+        # Denied wallet must not make a valid independent bank method fail.
+        bank_alternative=dict(state,cartToCartState='on',
+                              gatewayAudience={'wallet':'off'})
+        require(source_wallet_allowed(d,bank_alternative) is False,
+                'source_wallet_denied_bank_available')
+        seed(d,bank_alternative,{'bankAccount':'123-456','holderName':'Test'})
+        code,result,_=report_run(d)
+        require(code==0 and has(result,'method_wallet','WARN',
+                                'configured_but_policy_denied') and
+                has(result,'method_bank_transfer','PASS') and
+                has(result,'method_selection','PASS') and
+                result['methods']['bank_transfer']['offerability']=='potentially_offerable',
+                'denied_wallet_with_bank_fallback')
+        cases.append('denied_wallet_with_other_potentially_available_method')
+
         # Source-synchronized gift, bank, and TRX validation. A mere HTTPS
         # prefix, nonempty bank string, or positive huge rate is insufficient.
         gift_state = dict(state, walletState='off', giftCardState='on')
@@ -343,6 +504,8 @@ def main() -> dict:
     return {
         'complete':True, 'cases':len(cases), 'details':cases,
         'readonly_sql_account_enforced':True,
+        'source_usdt_production_helper_compared':True,
+        'source_policy_production_helper_compared':True,
         'source_members_verified':102,
         'original_23_table_schema_used':True,
         'all_eight_additive_shapes_exercised':True,
