@@ -3,6 +3,13 @@
 if (realpath($_SERVER['SCRIPT_FILENAME']??'')===__FILE__) {
     http_response_code(404);exit;
 }
+/** UI-state token: detects superseded administrator buttons on current data.
+ * 15 hex chars fit Telegram's 64-byte callback limit even for longest route.
+ * It is a CAS token, not an authentication capability (webhook/role are separate).
+ */
+function achbotGatewayRuleControlTag(array $rule): string {
+    return substr(hash('sha256',json_encode($rule,JSON_THROW_ON_ERROR)),0,15);
+}
 function achbotGatewayRuleCallback(string $data): ?array {
     if (strlen($data)>64) return null;
     $p=explode('|',$data);
@@ -13,22 +20,29 @@ function achbotGatewayRuleCallback(string $data): ?array {
             ? ['action'=>$action,'nonce'=>$p[2]] : null;
     }
     if (!in_array($action,['a','d','q','t','n','v','c'],true) ||
-        count($p)<4 || count($p)>6 ||
+        count($p)<4 || count($p)>7 ||
         !array_key_exists($p[2],achbotPayUxAudienceMethods()) ||
         !array_key_exists($p[3],achbotGatewayRuleCategories()))
         return null;
-    if (in_array($action,['a','q','t'],true) && count($p)!==4) return null;
+    if (in_array($action,['a','q'],true) && count($p)!==4) return null;
     if ($action==='d' && (count($p)!==5 ||
         preg_match('/\A[1-9][0-9]*\z/D',$p[4])!==1)) return null;
+    if ($action==='t' && count($p)!==5) return null;
     if (in_array($action,['v','c'],true) &&
-        (count($p)!==5 || !array_key_exists($p[4],achbotGatewayRuleMetrics())))
+        (count($p)!==6 || !array_key_exists($p[4],achbotGatewayRuleMetrics())))
         return null;
-    if ($action==='n' && (count($p)!==6 ||
+    if ($action==='n' && (count($p)!==7 ||
         !(($p[4]==='age' && $p[5]==='days') ||
           (array_key_exists($p[4],achbotGatewayRuleMetrics()) &&
            in_array($p[5],['count','days'],true))))) return null;
+    $tokenIndex=match ($action) {
+        't'=>4,'v','c'=>5,'n'=>6,default=>null
+    };
+    if ($tokenIndex!==null &&
+        preg_match('/\A[a-f0-9]{15}\z/D',$p[$tokenIndex])!==1) return null;
     return ['action'=>$action,'method'=>$p[2],'category'=>$p[3],
-            'metric'=>$p[4]??null,'field'=>$p[5]??null];
+            'metric'=>$p[4]??null,'field'=>$p[5]??null,
+            'expected_tag'=>$tokenIndex!==null?$p[$tokenIndex]:null];
 }
 function achbotGatewayRuleStep(string $source): ?array {
     $p=explode('|',$source);
@@ -124,6 +138,14 @@ function achbotGatewayRuleMutate(array $state,string $kind,string $key,
         $entries[]=achbotGatewayRuleBlank($category);
     } else {
         if ($index===null) throw new RuntimeException('gateway_rule_missing');
+        // A newer update_id proves only delivery order, not whether a button
+        // came from a stale screen. Compare against the rule the admin saw.
+        // This includes BOTH count and days for Clear and all rule fields for
+        // Toggle/Direction. Numeric Save retains its per-field CAS afterward.
+        if (in_array($act,['t','v','c','n'],true) &&
+            !hash_equals(achbotGatewayRuleControlTag($entries[$index]),
+                         (string)$parsed['expected_tag']))
+            throw new RuntimeException('gateway_rule_stale_operator_button');
         if ($act==='d' && !hash_equals($s['fingerprint'],
             hash('sha256',json_encode($entries[$index],JSON_THROW_ON_ERROR))))
             throw new RuntimeException('gateway_rule_delete_changed_since_preview');
@@ -274,16 +296,17 @@ function achbotGatewayAdminPage(string $data,?int $nonce=null): array {
     if ($p[1]==='f' && count($p)===5 &&
         array_key_exists($p[4],achbotGatewayRuleMetrics())) {
         $metric=$p[4];$v=$r['metrics'][$metric];
+        $tag=achbotGatewayRuleControlTag($r);
         $text="📊 $categoryLabel / ".achbotGatewayRuleMetrics()[$metric]."\n";
         $text.="حداقل تعداد: ".$v['count']."\nروز: ".$v['days'].
             "\nجهت زمان: ".($v['direction']==='older'?'قدیمی‌تر':'اخیر')."\n";
         $text.="۰/۰ = غیرفعال، تعداد ۰ و روز مثبت = حداقل یک تراکنش در بازه.\n";
         $text.="تاریخ، زمان ثبت درخواست پرداخت است، نه زمان قطعی تسویه.";
         return ['text'=>$text,'keyboard'=>achbotGatewayAdminMarkup([
-            [['text'=>'✏️ ویرایش تعداد','callback_data'=>'gr|n|'.$prefix.'|'.$metric.'|count']],
-            [['text'=>'✏️ ویرایش روز','callback_data'=>'gr|n|'.$prefix.'|'.$metric.'|days']],
-            [['text'=>'🔁 تغییر جهت (قدیمی‌تر / اخیر)','callback_data'=>'gr|v|'.$prefix.'|'.$metric]],
-            [['text'=>'⛔️ غیرفعال‌سازی شرط (۰/۰)','callback_data'=>'gr|c|'.$prefix.'|'.$metric]],
+            [['text'=>'✏️ ویرایش تعداد','callback_data'=>'gr|n|'.$prefix.'|'.$metric.'|count|'.$tag]],
+            [['text'=>'✏️ ویرایش روز','callback_data'=>'gr|n|'.$prefix.'|'.$metric.'|days|'.$tag]],
+            [['text'=>'🔁 تغییر جهت (قدیمی‌تر / اخیر)','callback_data'=>'gr|v|'.$prefix.'|'.$metric.'|'.$tag]],
+            [['text'=>'⛔️ غیرفعال‌سازی شرط (۰/۰)','callback_data'=>'gr|c|'.$prefix.'|'.$metric.'|'.$tag]],
             [['text'=>'🔙 قانون','callback_data'=>'gr|r|'.$prefix]]
         ])];
     }
@@ -296,11 +319,12 @@ function achbotGatewayAdminPage(string $data,?int $nonce=null): array {
         $value=$v['count'].' تراکنش، '.$v['days'].' روز';
         $text.=$label.': '.$value.' ('.($v['direction']==='older'?'قدیمی‌تر':'اخیر').")\n";
     }
-    $rows=[[['text'=>'✏️ سن عضویت (روز)','callback_data'=>'gr|n|'.$prefix.'|age|days']]];
+    $tag=achbotGatewayRuleControlTag($r);
+    $rows=[[['text'=>'✏️ سن عضویت (روز)','callback_data'=>'gr|n|'.$prefix.'|age|days|'.$tag]]];
     foreach (achbotGatewayRuleMetrics() as $metric=>$label)
         $rows[]=[['text'=>'📊 '.$label,'callback_data'=>'gr|f|'.$prefix.'|'.$metric]];
     $rows[]=[['text'=>$r['enabled']?'⏸ غیرفعال‌کردن قانون':'▶️ فعال‌کردن قانون',
-               'callback_data'=>'gr|t|'.$prefix]];
+               'callback_data'=>'gr|t|'.$prefix.'|'.$tag]];
     $rows[]=[['text'=>'🗑 حذف قانون','callback_data'=>'gr|q|'.$prefix]];
     return ['text'=>$text,'keyboard'=>achbotGatewayAdminMarkup(
         array_merge($rows,$ruleBack))];

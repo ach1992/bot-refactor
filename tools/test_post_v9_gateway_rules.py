@@ -151,6 +151,16 @@ def main():
             f"VALUES(1200,'Boundary','boundary','0',0,'{clock-150*86400}')")
         sql(w,e,f"INSERT INTO pays(hash_id,user_id,type,price,request_date,state)"
             f" VALUES('rules-exact-cutoff',1200,'BUY_SUB',100,{boundary},'paid')")
+        # B1 original historical classification must include terminal BUY_SUB
+        # with malformed/zero/future REQUEST dates when no window is asked for.
+        for user,date in [(1400,0),(1401,now+60*86400)]:
+            sql(w,e,f"INSERT INTO users(userid,name,username,refcode,wallet,date,is_agent) "
+                f"VALUES ({user},'Legacy buyer','legacy_buyer_{user}','0',1000000,'{now-200*86400}',0)")
+            sql(w,e,f"INSERT INTO pays(hash_id,user_id,type,price,request_date,state) "
+                f"VALUES ('legacy-zero-future-{user}',{user},'BUY_SUB',100,{date},'paid')")
+            # A properly dated pending record never qualifies as purchased.
+            sql(w,e,f"INSERT INTO pays(hash_id,user_id,type,price,request_date,state) "
+                f"VALUES ('legacy-pending-{user}',{user},'BUY_SUB',100,{now-3*86400},'pending')")
         baseSnap=sql(w,e,'SELECT id,user_id,type,state,request_date FROM pays ORDER BY id')
         def php(src,spec):
             command=['php','-n','-d','extension=mysqlnd','-d','extension=mysqli',
@@ -200,6 +210,23 @@ def main():
             return php(eva,{'snapshot':snapshot if snapshot is not None else s,
                 'method':method,'actor':who,'final':final,'subject':subject,
                 'isolation':isolation})['allowed']
+        # B1: all-history means local success, not request_date validity.
+        for iso in ('READ-COMMITTED','REPEATABLE-READ'):
+            for user,label in ((1400,'zero'),(1401,'future')):
+                assert allowed(policy('wallet',[blank('buyers')]),who=user,isolation=iso)
+                assert not allowed(policy('wallet',[blank('non_buyers')]),who=user,isolation=iso)
+                rule=blank('all')
+                rule['metrics']['buy']['count']=1
+                assert allowed(policy('wallet',[rule]),who=user,isolation=iso)
+                rule['metrics']['buy']['count']=2
+                assert not allowed(policy('wallet',[rule]),who=user,isolation=iso)
+                rule['metrics']['buy']['days']=10
+                rule['metrics']['buy']['count']=0
+                for direction in ('older','recent'):
+                    rule['metrics']['buy']['direction']=direction
+                    assert not allowed(policy('wallet',[rule]),who=user,isolation=iso)
+                cases.append('b1_'+iso.replace('-','_').lower()+'_'+label+
+                             '_success_unrestricted_buyer_not_nonbuyer_dated_denied')
         agent=blank('agents');regular=blank('non_agents')
         regular['registration_age_days']=90
         regular['metrics']['buy']['count']=2
@@ -229,7 +256,7 @@ def main():
         for metric in ['buy','renew','volume','time','topup']:
             rule=blank('all');rule['metrics'][metric]['count']=2
             assert allowed(policy('wallet',[rule])),metric
-            rule['metrics'][metric]['count']=5 if metric=='renew' else 3
+            rule['metrics'][metric]['count']=5 if metric=='renew' else (4 if metric=='buy' else 3)
             assert not allowed(policy('wallet',[rule])),metric
             rule['metrics'][metric]['count']=2
             rule['metrics'][metric]['days']=30
@@ -353,6 +380,44 @@ def main():
                   'update_id':seq,'snapshot':snapshot if snapshot is not None else state(),
                   'invalid':invalid}
             return php(admin,spec)['events'],seq
+        def button(prefix,who=9001):
+            # Read the exact server-rendered callback before the operation.
+            parts=prefix.split('|')
+            assert parts[0]=='gr' and parts[1] in ('t','v','c','n'),prefix
+            method,category=parts[2],parts[3]
+            metric=parts[4] if len(parts)>4 else 'age'
+            route=('gr|f|' + method+'|'+category+'|'+metric
+                   if parts[1] in ('v','c') or
+                      (parts[1]=='n' and metric!='age')
+                   else 'gr|r|'+method+'|'+category)
+            events,_=act(route,who=who)
+            for event in events:
+                if event[0]!='edit':continue
+                for row in json.loads(event[2])['inline_keyboard']:
+                    for item in row:
+                        cb=item.get('callback_data','')
+                        if cb.startswith(prefix+'|'):
+                            assert len(cb.encode())<=64,(prefix,cb)
+                            return cb
+            raise AssertionError(('actual_rule_button_missing',prefix,events))
+        # Telegram validates callback_data as <=64 UTF-8 bytes. Exercise
+        # the longest supported method/category/metric combinations from
+        # the ACTUAL Persian editor, not merely hand-built token strings.
+        methods=('nowpayments','zarinpal','nextpay','bank_transfer',
+                 'gift_card','manual_usdt','manual_trx','wallet')
+        expanded={method:[blank('has_active_order')] for method in methods}
+        store({**initial,'gatewayRules':{'version':1,'methods':expanded}})
+        for method in methods:
+            for screen in ('gr|r|'+method+'|has_active_order',
+                           'gr|f|'+method+'|has_active_order|volume'):
+                shown,_=act(screen)
+                assert len(shown)==1 and shown[0][0]=='edit',shown
+                for row in json.loads(shown[0][2])['inline_keyboard']:
+                    for item in row:
+                        cb=item.get('callback_data','')
+                        assert cb and len(cb.encode('utf8'))<=64,(screen,cb)
+        store(initial)
+        cases.append('operator_all_methods_longest_category_callbacks_under_64_bytes')
         events,_=act('gr|l')
         assert any(x[0]=='edit' and 'روش‌های پرداخت' in x[1] for x in events)
         events,_=act('gr|r|wallet|non_agents')
@@ -362,7 +427,7 @@ def main():
         events,_=act('gr|a|wallet|non_agents')
         assert state()['gatewayRules']['methods']['wallet'][0]['category']=='non_agents'
         cases.append('operator_explicit_add')
-        events,_=act('gr|n|wallet|non_agents|buy|count')
+        events,_=act(button('gr|n|wallet|non_agents|buy|count'))
         assert sql(w,e,'SELECT step FROM users WHERE userid=9001').startswith('gr|edit|')
         assert any(x[0]=='send' for x in events)
         events,nonce=act(text='13',message=True)
@@ -372,40 +437,42 @@ def main():
         assert state()['gatewayRules']['methods']['wallet'][0]['metrics']['buy']['count']==13
         assert sql(w,e,'SELECT step FROM users WHERE userid=9001')=='none'
         cases.append('operator_private_integer_confirm_commit')
-        events,_=act('gr|n|wallet|non_agents|renew|days')
+        events,_=act(button('gr|n|wallet|non_agents|renew|days'))
         events,_=act(text='bad',message=True)
         assert state()['gatewayRules']['methods']['wallet'][0]['metrics']['renew']['days']==0
         assert any(x[0]=='send' and 'معتبر' in x[1] for x in events)
         events,_=act(text='250',message=True)
         assert state()['gatewayRules']['methods']['wallet'][0]['metrics']['renew']['days']==0
-        token=int(sql(w,e,'SELECT step FROM users WHERE userid=9001').split('|')[-1])
+        token=int(sql(w,e,'SELECT step FROM users WHERE userid=9001').split('|')[-2])
         events,_=act('gr|x|'+str(token))
         assert state()['gatewayRules']['methods']['wallet'][0]['metrics']['renew']['days']==0
         cases.append('operator_invalid_and_cancel')
         events,_=act('gr|a|wallet|agents',who=9002)
         assert len(state()['gatewayRules']['methods']['wallet'])==2
-        events,_=act('gr|v|wallet|non_agents|buy',who=9001)
+        events,_=act(button('gr|v|wallet|non_agents|buy',who=9001),who=9001)
         assert state()['gatewayRules']['methods']['wallet'][0]['metrics']['buy']['direction']=='recent'
-        events,_=act('gr|t|wallet|agents',who=9002)
+        events,_=act(button('gr|t|wallet|agents',who=9002),who=9002)
         assert not state()['gatewayRules']['methods']['wallet'][1]['enabled']
         cases.append('two_admins_independent_fields')
         current=json.dumps(state(),sort_keys=True)
-        events,_=act('gr|c|wallet|non_agents|buy',invalid='token')
+        events,_=act(button('gr|c|wallet|non_agents|buy'),invalid='token')
         assert json.dumps(state(),sort_keys=True)==current
         events,_=act('gr|d|wallet|agents',who=9002,invalid='group')
         assert json.dumps(state(),sort_keys=True)==current
-        events,_=act('gr|t|wallet|agents',who=9002,invalid='sender')
+        events,_=act(button('gr|t|wallet|agents',who=9002),who=9002,invalid='sender')
         assert json.dumps(state(),sort_keys=True)==current
         cases.append('unauthenticated_group_sender_rejected')
         # Stale callback retries and revoked admins do not mutate.
-        events,_=act('gr|t|wallet|agents',who=9002,seq=sequence[0]-3)
+        old_callback=button('gr|t|wallet|agents',who=9002)
+        old_source=int(json.loads(sql(w,e,"SELECT value FROM setting WHERE type='ACHBOT_ADMIN_GATEWAY_SOURCE'"))['last_update_id'])
+        events,_=act(old_callback,who=9002,seq=old_source)
         assert json.dumps(state(),sort_keys=True)==current
         sql(w,e,"UPDATE users SET isAdmin=0 WHERE userid=9002")
         events,_=act('gr|d|wallet|agents',who=9002)
         assert json.dumps(state(),sort_keys=True)==current
         cases.append('stale_or_revoked_admin_rejected')
         # Numeric editor rejects arbitrary overflow and invalid negative.
-        events,_=act('gr|n|wallet|non_agents|time|days')
+        events,_=act(button('gr|n|wallet|non_agents|time|days'))
         events,_=act(text='9223372036854775808',message=True)
         assert sql(w,e,'SELECT step FROM users WHERE userid=9001').startswith('gr|edit|')
         assert any(x[0]=='send' and 'معتبر' in x[1] for x in events)
@@ -415,15 +482,15 @@ def main():
         events,_=act('gr|s|'+str(nonce))
         assert state()['gatewayRules']['methods']['wallet'][0]['metrics']['time']['days']==17
         cases.append('operator_arbitrary_17_and_overflow_rejected')
-        events,_=act('gr|n|wallet|non_agents|topup|count')
+        events,_=act(button('gr|n|wallet|non_agents|topup|count'))
         events,nonce=act(text='2147483648',message=True)
         events,_=act('gr|s|'+str(nonce))
         assert state()['gatewayRules']['methods']['wallet'][0]['metrics']['topup']['count']==2147483648
         cases.append('operator_64_bit_integer_not_32_bit_preset')
         sql(w,e,"UPDATE users SET isAdmin=1 WHERE userid=9002")
-        events,_=act('gr|n|wallet|non_agents|buy|count',who=9001)
+        events,_=act(button('gr|n|wallet|non_agents|buy|count',who=9001),who=9001)
         events,first_nonce=act(text='23',message=True,who=9001)
-        events,_=act('gr|n|wallet|non_agents|buy|count',who=9002)
+        events,_=act(button('gr|n|wallet|non_agents|buy|count',who=9002),who=9002)
         events,second_nonce=act(text='33',message=True,who=9002)
         events,_=act('gr|s|'+str(second_nonce),who=9002)
         assert state()['gatewayRules']['methods']['wallet'][0]['metrics']['buy']['count']==33
@@ -433,15 +500,77 @@ def main():
         events,_=act('gr|x|'+str(first_nonce),who=9001)
         assert sql(w,e,'SELECT step FROM users WHERE userid=9001')=='none'
         cases.append('two_admin_same_field_stale_editor_cas_rejected')
-        events,_=act('gr|n|wallet|non_agents|volume|count',who=9001)
+        events,_=act(button('gr|n|wallet|non_agents|volume|count',who=9001),who=9001)
         events,first_nonce=act(text='12',message=True,who=9001)
-        events,_=act('gr|n|wallet|non_agents|topup|days',who=9002)
+        events,_=act(button('gr|n|wallet|non_agents|topup|days',who=9002),who=9002)
         events,second_nonce=act(text='20',message=True,who=9002)
         events,_=act('gr|s|'+str(second_nonce),who=9002)
         events,_=act('gr|s|'+str(first_nonce),who=9001)
         metrics=state()['gatewayRules']['methods']['wallet'][0]['metrics']
         assert metrics['volume']['count']==12 and metrics['topup']['days']==20
         cases.append('two_admin_distinct_field_interleaving_both_persist')
+        # B2: use an actual previously rendered admin button, then have a
+        # second REAL signed administrator session save a change. The old
+        # button arrives afterward with a higher Telegram update_id.
+        def stale_refused(callback,old_state,who=9001):
+            source_before=json.loads(sql(w,e,
+                "SELECT value FROM setting WHERE type='ACHBOT_ADMIN_GATEWAY_SOURCE'"))
+            events,received=act(callback,who=who)
+            assert received==sequence[0] and received>source_before['last_update_id']
+            assert json.dumps(state(),sort_keys=True)==old_state,events
+            source_after=json.loads(sql(w,e,
+                "SELECT value FROM setting WHERE type='ACHBOT_ADMIN_GATEWAY_SOURCE'"))
+            assert source_before==source_after,'rejected stale edit advanced source marker'
+            assert any(x[0]=='deny' and 'نسخهٔ قبلی' in x[1] for x in events),events
+            refreshed=[x for x in events if x[0]=='edit']
+            assert refreshed and 'وضعیت فعلی' in refreshed[-1][1],events
+            assert refreshed[-1][2] and 'inline_keyboard' in refreshed[-1][2]
+        clear_old=button('gr|c|wallet|non_agents|buy',who=9001)
+        events,_=act(button('gr|n|wallet|non_agents|buy|count',who=9002),who=9002)
+        events,nonce=act(text='55',message=True,who=9002)
+        events,_=act('gr|s|'+str(nonce),who=9002)
+        assert state()['gatewayRules']['methods']['wallet'][0]['metrics']['buy']['count']==55
+        expected=json.dumps(state(),sort_keys=True)
+        stale_refused(clear_old,expected)
+        assert state()['gatewayRules']['methods']['wallet'][0]['metrics']['buy']['count']==55
+        cases.append('b2_old_clear_new_count_higher_update_id_denied')
+        clear_old=button('gr|c|wallet|non_agents|buy',who=9001)
+        events,_=act(button('gr|n|wallet|non_agents|buy|days',who=9002),who=9002)
+        events,nonce=act(text='31',message=True,who=9002)
+        events,_=act('gr|s|'+str(nonce),who=9002)
+        assert state()['gatewayRules']['methods']['wallet'][0]['metrics']['buy']['days']==31
+        expected=json.dumps(state(),sort_keys=True)
+        stale_refused(clear_old,expected)
+        assert state()['gatewayRules']['methods']['wallet'][0]['metrics']['buy']['days']==31
+        cases.append('b2_old_clear_new_days_higher_update_id_denied')
+        toggle_old=button('gr|t|wallet|agents',who=9001)
+        events,_=act(button('gr|t|wallet|agents',who=9002),who=9002)
+        current_enabled=state()['gatewayRules']['methods']['wallet'][1]['enabled']
+        expected=json.dumps(state(),sort_keys=True)
+        stale_refused(toggle_old,expected)
+        assert state()['gatewayRules']['methods']['wallet'][1]['enabled'] is current_enabled
+        cases.append('b2_old_toggle_new_toggle_higher_update_id_denied')
+        direction_old=button('gr|v|wallet|non_agents|time',who=9001)
+        events,_=act(button('gr|v|wallet|non_agents|time',who=9002),who=9002)
+        direction=state()['gatewayRules']['methods']['wallet'][0]['metrics']['time']['direction']
+        expected=json.dumps(state(),sort_keys=True)
+        stale_refused(direction_old,expected)
+        assert state()['gatewayRules']['methods']['wallet'][0]['metrics']['time']['direction']==direction
+        cases.append('b2_old_direction_new_direction_higher_update_id_denied')
+        edit_old=button('gr|n|wallet|non_agents|volume|count',who=9001)
+        events,_=act(button('gr|n|wallet|non_agents|volume|count',who=9002),who=9002)
+        events,nonce=act(text='77',message=True,who=9002)
+        events,_=act('gr|s|'+str(nonce),who=9002)
+        expected=json.dumps(state(),sort_keys=True)
+        stale_refused(edit_old,expected)
+        assert sql(w,e,'SELECT step FROM users WHERE userid=9001')=='none'
+        cases.append('b2_old_numeric_edit_after_new_commit_does_not_open_wizard')
+        # All legacy pre-token mutable buttons must fail closed, not silently
+        # toggle previously displayed controls in a newer implementation.
+        expected=json.dumps(state(),sort_keys=True)
+        events,_=act('gr|c|wallet|non_agents|buy')
+        assert json.dumps(state(),sort_keys=True)==expected
+        cases.append('b2_legacy_unversioned_clear_callback_denied')
         # Delete requires an authenticated nonce-bearing two-step confirmation.
         snapshot=json.dumps(state(),sort_keys=True)
         events,_=act('gr|d|wallet|agents|123')
@@ -455,13 +584,13 @@ def main():
         assert sql(w,e,'SELECT step FROM users WHERE userid=9001')=='none'
         cases.append('operator_delete_requires_confirmation_cancel_safe')
         events,nonce=act('gr|q|wallet|agents')
-        events,_=act('gr|t|wallet|agents',who=9002)
+        events,_=act(button('gr|t|wallet|agents',who=9002),who=9002)
         before_delete=json.dumps(state(),sort_keys=True)
         events,_=act('gr|d|wallet|agents|'+str(nonce))
         assert json.dumps(state(),sort_keys=True)==before_delete
         assert sql(w,e,'SELECT step FROM users WHERE userid=9001').startswith('gr|delete|')
         events,_=act('gr|x|'+str(nonce))
-        events,_=act('gr|t|wallet|agents',who=9002)
+        events,_=act(button('gr|t|wallet|agents',who=9002),who=9002)
         cases.append('delete_fingerprint_conflict_with_other_admin')
         events,nonce=act('gr|q|wallet|agents')
         events,_=act('gr|d|wallet|agents|'+str(nonce))

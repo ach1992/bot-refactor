@@ -82,22 +82,25 @@ function achbotGatewayRuleHistoryCount(mysqli $db,int $userId,string $metric,
         'topup'=>"type='INCREASE_WALLET'"
     ];
     if (!isset($predicates[$metric]) || $userId<=0) return null;
+    // An all-history count is a property of confirmed transactions, NOT
+    // their legacy request timestamps. Only a positive-day window depends
+    // on request_date. This also preserves buyers/non_buyers classification.
     $timeSql='';
     if ($days>0) {
         $boundary=$now-$days*86400;
-        // Both recent and old reject request timestamps in the future.
-        $timeSql=" AND request_date".($direction==='recent'?'>=?':'<=?');
+        $timeSql=' AND request_date>0 AND request_date<=? AND request_date'.
+            ($direction==='recent'?'>=?':'<=?');
     }
     $sql="SELECT COUNT(*) AS n FROM pays".
         ($final?" FORCE INDEX (idx_pays_user_v1)":"").
         " WHERE user_id=? AND state IN ('paid','approved',
         'auto_cart_approved','paid_with_wallet') AND ".$predicates[$metric].
-        ' AND request_date>0 AND request_date<=?'.$timeSql.($final?' FOR UPDATE':'');
+        $timeSql.($final?' FOR UPDATE':'');
     $stmt=$db->prepare($sql);
     if (!$stmt) throw new RuntimeException('rule_history_prepare');
     if ($days>0) {
         $stmt->bind_param('iii',$userId,$now,$boundary);
-    } else $stmt->bind_param('ii',$userId,$now);
+    } else $stmt->bind_param('i',$userId);
     if (!$stmt->execute()) throw new RuntimeException('rule_history_read');
     $record=$stmt->get_result()->fetch_assoc();$stmt->close();
     $value=$record['n']??null;

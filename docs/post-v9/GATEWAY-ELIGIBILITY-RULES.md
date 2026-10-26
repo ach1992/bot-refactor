@@ -52,9 +52,16 @@ subscriptions. The historical `pays.request_date` is the **request creation
 timestamp** and must not be called payment settlement or service delivery.
 Original `users.date` is Unix registration time as a string.
 
-Evaluation uses current rolling Unix seconds: `days*86400`. Future/nonpositive
-request times are excluded. `count>0,days=0` requires that number of all-time
-successes; `count>0,days>0` requires successes recorded on the selected
+Evaluation uses current rolling Unix seconds: `days*86400`. For a
+**positive-days window**, a request timestamp must be positive and no later
+than now; future/nonpositive timestamps are excluded. An **all-history**
+`days=0` count instead relies solely on successful state/type/user identity,
+including successful historical records with zero or future request timestamps.
+The `buyers` and `non_buyers` customer categories use exactly this all-history
+BUY_SUB success definition, preserving their original semantics; this matters
+for blocking a previous buyer from incorrectly entering the non-buyer cohort.
+`count>0,days=0` requires that number of all-time successes;
+`count>0,days>0` requires successes recorded on the selected
 **older-than or recent** side of the inclusive time cutoff; `count=0,days>0`
 requires at least one corresponding successful event in that window; both zero
 disable only that metric. Registration age zero disables the age criterion.
@@ -80,9 +87,18 @@ Wizard save compares the current field against the value seen when editing
 began (field-level compare-and-set): two admins editing **different** fields
 can both save, while a stale editor cannot overwrite a newer value in the
 **same** field. Rule deletion similarly checks the originally previewed
-rule fingerprint. The existing named settings writer lock plus current
-administrator row-PK lock
-prevent lost updates and cached-privilege bypass. The visible preview is only
+rule fingerprint. Every mutable Telegram control (toggle, time direction,
+condition clearing, number editor) carries an expected **rule-state token**
+from the UI that actually rendered it, checked against the most recent
+persisted rule under the existing writer lock. This means a later Telegram
+`update_id` alone cannot authorize an old Clear/Toggle/Direction action;
+both current count and days must match the preview before Clear can apply.
+On conflict, the administrator gets a Persian error and the current policy
+keyboard, without a write. Old unversioned controls fail closed.
+The token identifies a state snapshot, not a bearer-authentication secret:
+webhook validation, actor identity and current permissions still apply.
+The existing named settings writer lock plus current administrator row-PK
+lock prevent lost updates and cached-privilege bypass. The visible preview is only
 advisory; actual authorization re-reads the persisted `BOT_STATES` with an
 indexed customer/transaction current read under the existing owner/payment
 locks. A global gateway OFF flag remains OFF regardless of eligibility:
@@ -100,6 +116,7 @@ From a clean exact candidate run:
 
 ```sh
 python3 tools/test_post_v9_gateway_rules.py --run-disposable
+python3 tools/test_post_v9_gateway_rules_financial_routes.py --run-disposable
 python3 tools/test_post_v9_gateway_admin_source.py --run-disposable
 python3 tools/test_post_v9_manual_crypto_guards.py --run-disposable
 python3 tools/test_post_v9_cohort_lock_scope.py --run-disposable
@@ -111,8 +128,14 @@ and extracts the real bot callback and config writer code. It verifies all
 methods, categories, history counters, legacy fallback, time boundaries,
 overflow, private numeric confirmation, privileged callbacks, replay, and
 absence of provider/payment effects. The master post-V9 acceptance requires
-its exact named scenarios. Source regression is not proof of installed
-Telegram/merchant/provider operation.
+its exact named scenarios. The second test runs **actual wallet-debit and
+NextPay hosted-checkout source** under two independent PHP/MySQLi connections,
+pausing after a permitted preview while a separate session commits a changed
+rule. It proves no debit, provider-attempt creation or remote fulfillment after
+revocation, and once-only authorized effects/replay refusal when allowed, under
+both READ COMMITTED and REPEATABLE READ. All outbound providers are synthetic
+local spies and never receive a real request. Source regression is not proof
+of installed Telegram/merchant/provider operation.
 
 On an owner-approved **isolated installed test bot**, the operator should
 verify the matrix below separately for each *purchase, renewal, time extension,

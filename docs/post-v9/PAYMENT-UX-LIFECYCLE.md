@@ -40,6 +40,12 @@ field with current privilege/source checks, and final protected payment
 authorization re-reads current policy from the database. Missing policies
 keep legacy semantics; malformed/explicit deny policies never grant access.
 Historical `pays.request_date` is REQUEST time, not a settlement timestamp.
+**An all-history success count and buyers/non_buyers category must not discard
+a successful record for zero/future request_date; only positive-day windows
+apply timestamp validity.** Stale Telegram Clear, Toggle, Direction and numeric
+entry controls are bound to the displayed rule snapshot, with the latest
+persisted policy re-shown on conflict. Actual wallet/hosted checkout source
+is exercised across a policy change before final financial authorization.
 Full schemas, operator workflow and isolated acceptance matrix:
 [GATEWAY-ELIGIBILITY-RULES.md](GATEWAY-ELIGIBILITY-RULES.md).
 

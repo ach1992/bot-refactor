@@ -532,7 +532,21 @@ if (is_string($data??null) &&
         !achbotAdminGatewayChange($update,(int)$from_id,
            (int)$chat_id,(int)$message_id,(int)$admin,'rule',$data)) {
         answerCallbackQuery($callbackId,
-            'قانون تغییر نکرد؛ وضعیت فعلی، دسترسی یا اعتبار درخواست را بررسی کنید.',true);
+            'تغییر ذخیره نشد؛ ممکن است دکمه مربوط به نسخهٔ قبلی قوانین باشد.',true);
+        // A rejection must never leave a stale editor that invites more
+        // unsafe clicks. Re-validate authorization before showing fresh data.
+        if ($operation!==null &&
+            in_array($operation['action'],['t','v','c','n'],true) &&
+            achbotGatewayAdminCanView($update,(int)$from_id,
+                (int)$chat_id,(int)$message_id,(int)$admin,$data)) {
+            $refresh=in_array($operation['action'],['v','c'],true)
+                ? 'gr|f|'.$operation['method'].'|'.$operation['category'].'|'.$operation['metric']
+                : 'gr|r|'.$operation['method'].'|'.$operation['category'];
+            $page=achbotGatewayAdminPage($refresh);
+            editText($message_id,
+                "⚠️ تغییری ذخیره نشد. اطلاعات دکمه ممکن است قدیمی باشد؛ وضعیت فعلی:\n".
+                $page['text'],$page['keyboard']);
+        }
         return;
     }
     if ($operation['action']==='n') {

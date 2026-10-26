@@ -745,6 +745,10 @@ def main():
                  'legacy_category_no_active_order',
                  'legacy_category_off',
                  'legacy_category_all',
+                 'b1_read_committed_zero_success_unrestricted_buyer_not_nonbuyer_dated_denied',
+                 'b1_read_committed_future_success_unrestricted_buyer_not_nonbuyer_dated_denied',
+                 'b1_repeatable_read_zero_success_unrestricted_buyer_not_nonbuyer_dated_denied',
+                 'b1_repeatable_read_future_success_unrestricted_buyer_not_nonbuyer_dated_denied',
                  'or_and_categories_READ-COMMITTED',
                  'or_and_categories_REPEATABLE-READ',
                  'new_category_all',
@@ -790,6 +794,7 @@ def main():
                  'method_omission_retains_legacy_explicit_off',
                  'intentional_explicit_new_rule_overrides_legacy_off',
                  'nowpayments_topup_flag_independent',
+                 'operator_all_methods_longest_category_callbacks_under_64_bytes',
                  'operator_preview_does_not_persist',
                  'operator_explicit_add',
                  'operator_private_integer_confirm_commit',
@@ -801,11 +806,31 @@ def main():
                  'operator_64_bit_integer_not_32_bit_preset',
                  'two_admin_same_field_stale_editor_cas_rejected',
                  'two_admin_distinct_field_interleaving_both_persist',
+                 'b2_old_clear_new_count_higher_update_id_denied',
+                 'b2_old_clear_new_days_higher_update_id_denied',
+                 'b2_old_toggle_new_toggle_higher_update_id_denied',
+                 'b2_old_direction_new_direction_higher_update_id_denied',
+                 'b2_old_numeric_edit_after_new_commit_does_not_open_wizard',
+                 'b2_legacy_unversioned_clear_callback_denied',
                  'operator_delete_requires_confirmation_cancel_safe',
                  'delete_fingerprint_conflict_with_other_admin',
                  'operator_confirmed_delete_single_use',
                  'no_financial_side_effects',
              },('source_real','owned_original_mariadb','php_runtime')),
+            ('gateway_rules_financial_routes',
+             'test_post_v9_gateway_rules_financial_routes.py',
+             {
+                 'r1_wallet_repeatable_read_revoked_no_debit',
+                 'r1_hosted_repeatable_read_revoked_no_attempt',
+                 'r1_wallet_read_committed_revoked_no_debit',
+                 'r1_hosted_read_committed_revoked_no_attempt',
+                 'r1_wallet_repeatable_read_allowed_one_debit_no_replay',
+                 'r1_hosted_repeatable_read_eligible_one_invoice_no_replay',
+                 'r1_wallet_read_committed_allowed_one_debit_no_replay',
+                 'r1_hosted_read_committed_eligible_one_invoice_no_replay',
+             },('source_real_wallet_and_hosted_routes',
+                'two_independent_mysql_clients','original_23_table_fixture',
+                'synthetic_provider_issuer_only')),
             ('gateway_admin_source','test_post_v9_gateway_admin_source.py',
              {
                  'red_revoked_delegate_changes_gateway_enabled',
@@ -877,6 +902,10 @@ def main():
                     and all(evidence.get(field) is True for field in truth_flags)
                     and evidence.get('production_mutations',0)==0):
                 raise RuntimeError('PR60 required independent F1-F4 evidence incomplete: '+key)
+            if key=='gateway_rules_financial_routes' and not (
+                evidence.get('real_provider_calls')==0 and
+                evidence.get('customer_payment_or_deployment_effects')==0):
+                raise RuntimeError('Gateway rule financial route test used real side effects')
             reviewer_f1_f4[key]=evidence
 
         # Independent review R1 (after N2): every FINAL cohort current read
