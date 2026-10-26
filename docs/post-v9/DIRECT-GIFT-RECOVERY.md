@@ -15,7 +15,14 @@ history and the original 23-table database remain unchanged.
    a guarded transition: its update ID must exceed the accepted step update,
    and Day/Volume cancellation additionally requires a newer private-chat
    message ID. Revoked delegated administrators and stale/out-of-order
-   callbacks or cancellations fail closed.
+   callbacks or cancellations fail closed. The final global legacy CANCEL
+   fallback is also guarded: it locks the exact user primary key, compares
+   the fresh row to the originally cached non-direct step, and performs an
+   exact-step CAS. If a newer direct-gift nonce has appeared, it skips both
+   the old state reset and unrelated legacy cleanup/notifications. The
+   original config.php setUser() additionally refuses any legacy step write
+   while an active direct-gift step owns the row, protecting other stale
+   legacy handlers. Ordinary fresh non-direct CANCEL remains supported.
 2. Remark resolution requires exactly one active orders_list primary-key
    identity for the selected logical server. It pins order id, userid,
    server_id, inbound_id, fileid, remark, uuid, status and old expire_date.
@@ -107,7 +114,13 @@ accepted additive schema decision, not an unreviewed migration.
   MariaDB and synthetic Telegram/Marzban. The concurrency regression waits
   for a real InnoDB owner-PK lock wait before committing the first claim;
   it covers REPEATABLE READ and READ COMMITTED, and a disposable optional
-  panel-group alias check. No installed schema is changed. PHP 8.1/8.4
+  panel-group alias check. The F2-R1 regression also stages the actual final
+  bot.php global CANCEL fallback and original config.php setUser(), holds
+  a request after its cached userInfo read, commits a newer Remark/Day/Volume
+  gift on another PHP worker, and confirms the obsolete CANCEL cannot erase
+  it or perform legacy cleanup. Fresh legacy CANCEL, delegated revocation,
+  lost COMMIT acknowledgment and the central legacy step-write guard are
+  covered. No installed schema is changed. PHP 8.1/8.4
   full source/history CI, artifact checks, independent review and operator
   acceptance remain gates.
 - CI does NOT certify installed tenant schema, real Telegram webhook

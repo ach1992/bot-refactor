@@ -397,6 +397,74 @@ function achbotDirectGiftCancel(mysqli $db,array $source,int $primary,string $st
     }
 }
 
+/**
+ * The global legacy CANCEL handler runs AFTER the dedicated direct-gift
+ * router. Its config.php userInfo is only a cached routing hint.
+ *
+ * Serialize the fallback on the exact actor PK and consume only the exact
+ * non-direct step loaded at request start. A concurrent direct-gift start
+ * updates that same PK, so a stale legacy CANCEL cannot clear a newer nonce.
+ * No Telegram gift effect, legacy cleanup, or success notice is allowed when
+ * the cached state is obsolete. Do NOT use unguarded setUser() on this path.
+ */
+function achbotDirectGiftGuardLegacyCancel(mysqli $db,int $actorId,$cached): bool {
+    if ($actorId<=0 || !is_array($cached) ||
+        !is_string($cached['step']??null) ||
+        str_starts_with($cached['step'],'achbotDirectGift') ||
+        !isset($cached['id'],$cached['userid']))
+        return false;
+    $id=achbotDirectGiftInt((string)$cached['id'],1,2147483647);
+    $cachedActor=achbotDirectGiftInt((string)$cached['userid'],1,PHP_INT_MAX);
+    if ($id===null || $cachedActor!==$actorId) return false;
+    $expected=$cached['step'];
+    if (!$db->begin_transaction())
+        throw new RuntimeException('legacy_cancel_begin_failed');
+    try {
+        $stmt=$db->prepare('SELECT id,userid,step FROM users
+                            WHERE id=? AND userid=? FOR UPDATE');
+        if (!$stmt) throw new RuntimeException('legacy_cancel_lock_prepare');
+        $stmt->bind_param('ii',$id,$actorId);
+        $ok=$stmt->execute();
+        $current=$ok?$stmt->get_result()->fetch_assoc():null;
+        $stmt->close();
+        if (!$ok) throw new RuntimeException('legacy_cancel_lock_failed');
+        if (!$current || (int)$current['id']!==$id ||
+            (int)$current['userid']!==$actorId ||
+            !is_string($current['step']??null) ||
+            $current['step']!==$expected ||
+            str_starts_with($current['step'],'achbotDirectGift')) {
+            $db->rollback();
+            return false;
+        }
+        // userid has no unique index in the historical schema. Recheck it
+        // without locking an unindexed scan or touching financial settings.
+        $stmt=$db->prepare('SELECT id FROM users WHERE userid=? LIMIT 2');
+        if (!$stmt) throw new RuntimeException('legacy_cancel_identity_prepare');
+        $stmt->bind_param('i',$actorId);
+        $ok=$stmt->execute();
+        $found=$ok?$stmt->get_result()->fetch_all(MYSQLI_ASSOC):[];
+        $stmt->close();
+        if (!$ok || count($found)!==1 || (int)$found[0]['id']!==$id)
+            throw new RuntimeException('legacy_cancel_actor_ambiguous');
+        if ($expected!=='none') {
+            $next='none';
+            $stmt=$db->prepare('UPDATE users SET step=?
+                WHERE id=? AND userid=? AND step=?');
+            if (!$stmt) throw new RuntimeException('legacy_cancel_cas_prepare');
+            $stmt->bind_param('siis',$next,$id,$actorId,$expected);
+            $ok=$stmt->execute();$changed=$stmt->affected_rows;$stmt->close();
+            if (!$ok || $changed!==1)
+                throw new RuntimeException('legacy_cancel_cas_unconfirmed');
+        }
+        if (!$db->commit())
+            throw new RuntimeException('legacy_cancel_commit_unknown');
+        return true;
+    } catch (Throwable $e) {
+        try {$db->rollback();} catch (Throwable $ignored) {}
+        throw $e;
+    }
+}
+
 function achbotDirectGiftClaim(mysqli $db,array $source,int $primary,
                                 string $step,string $text): array {
     if (!preg_match('/\AachbotDirectGiftVolume:([A-Za-z0-9_-]+):([0-9]+)\z/D',$step,$m))

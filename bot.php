@@ -2453,7 +2453,19 @@ if($data == 'reciveApplications') {
 ", json_encode(['inline_keyboard'=>$keyboard]), "html");
 }
 if ($text == $buttonValues['cancel']) {
-    setUser();
+    // config.php loaded userInfo before any concurrent direct-gift callback.
+    // Never let a stale generic CANCEL erase a newer nonce-protected step.
+    try {
+        $legacyCancelAccepted=achbotDirectGiftGuardLegacyCancel(
+            $connection,(int)$from_id,$userInfo);
+    } catch (Throwable $e) {
+        error_log('legacy_cancel_commit_or_identity_unconfirmed');
+        return;
+    }
+    if (!$legacyCancelAccepted) {
+        error_log('legacy_cancel_stale_cached_step');
+        return;
+    }
     $stmt = $connection->prepare("DELETE FROM `server_plans` WHERE `active`=0");
     $stmt->execute();
     $stmt->close();

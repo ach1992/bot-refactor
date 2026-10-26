@@ -74,6 +74,7 @@ class DirectGiftMysqli extends mysqli {
 $connection=new DirectGiftMysqli('localhost','root','',
     getenv('ACHBOT_DIRECT_DB'),0,getenv('ACHBOT_DIRECT_SOCKET'));
 $connection->set_charset('utf8mb4');
+$username='fixture';$first_name='Fixture';
 $admin=9001;
 $kind=(string)($spec['kind']??'message');
 $actor=(int)($spec['actor']??9001);
@@ -116,7 +117,17 @@ $userInfo=$stmt->get_result()->fetch_assoc()?:['step'=>'none','isAdmin'=>0];
 $stmt->close();
 if (isset($spec['stale_step']))$userInfo['step']=$spec['stale_step'];
 if (isset($spec['cached_admin']))$userInfo['isAdmin']=$spec['cached_admin'];
-$buttonValues=['cancel'=>'CANCEL'];$mainValues=['reached_main_menu'=>'MAIN'];
+if (in_array(($spec['mode']??''),['pause_before_route','stale_legacy_set_user'],true)) {
+    // A has read the same cached userInfo that config.php populates.
+    file_put_contents($spec['cached_ready'],'ready');
+    $deadline=microtime(true)+25;
+    while (!file_exists($spec['release_route'])) {
+        if (microtime(true)>$deadline)
+            throw new RuntimeException('synthetic_cached_route_gate_timeout');
+        usleep(10000);
+    }
+}
+$buttonValues=['cancel'=>'CANCEL'];$mainValues=['reached_main_menu'=>'MAIN','waiting_message'=>'WAIT'];
 $removeKeyboard='REMOVE';$cancelKey='CANCEL';
 $GLOBALS['events']=[];
 function sendMessage($body=null,$key=null) {
@@ -161,6 +172,9 @@ function editMarzbanConfig($sid,$change,?array $target=null): object {
         'applied_expire'=>$expire,'applied_bytes'=>4294967296];
 }
 require __DIR__.'/src/Purchase/Core.php';
+require __DIR__.'/legacy-set-user.php';
+if (($spec['mode']??'')==='stale_legacy_set_user')
+    setUser('obsoleteLegacyStep');
 require __DIR__.'/gift-route.php';
 echo json_encode(['events'=>$GLOBALS['events']],JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE);
 '''
@@ -193,13 +207,28 @@ def setup(work: Path, env: dict) -> Path:
            'editMarzbanConfig(' not in route and
            'achbotDirectGiftComplete(' in route,
            'Current bot.php no longer uses strictly guarded direct-gift source')
-    (stage/'gift-route.php').write_text('<?php\n'+route+'\n')
+    # Execute the *actual* final global CANCEL fallback after the protected
+    # route; otherwise an obsolete config.php userInfo snapshot can bypass it.
+    legacy_start=bot.rfind("if ($text == $buttonValues['cancel']) {")
+    ensure(legacy_start>end and
+           bot[legacy_start:].count('DELETE FROM `server_plans`')==1,
+           'Actual final legacy CANCEL fallback unavailable or unexpected')
+    legacy_end=bot.index('\n?>',legacy_start)
+    fallback=bot[legacy_start:legacy_end]
+    ensure('DELETE FROM `server_plans`' in fallback,
+           'Legacy CANCEL cleanup contract unexpectedly changed')
+    config=(ROOT/'config.php').read_text()
+    set_start=config.index("function setUser($value = 'none', $field = 'step'){")
+    set_end=config.index('function generateRandomString(',set_start)
+    (stage/'legacy-set-user.php').write_text('<?php\n'+config[set_start:set_end])
+    (stage/'gift-route.php').write_text('<?php\n'+route+'\n'+fallback+'\n')
     (stage/'driver.php').write_text(PHP)
     return stage
 
 def reset(work: Path, env: dict) -> None:
     q(work,env,"DELETE FROM setting WHERE type LIKE 'ACHBOT_DIRECT_GIFT_%'")
     q(work,env,"DELETE FROM orders_list WHERE id=92")
+    q(work,env,"DELETE FROM server_plans WHERE id=987")
     q(work,env,"UPDATE users SET step='none',isAdmin=CASE WHEN userid=9002 THEN 1 ELSE 0 END "
       "WHERE userid IN (9001,9002,1001)")
     q(work,env,"UPDATE orders_list SET server_id=2,inbound_id=0,remark='fixture-user',"
@@ -394,6 +423,149 @@ def race_claim_before_owner_release(work: Path, env: dict, stage: Path,
             gates['release_effect'].write_text('go')
 
 
+def seed_inactive_legacy_plan(work: Path, env: dict) -> None:
+    # This record belongs to the disposable original-schema DB only.
+    q(work,env,"INSERT INTO server_plans "
+      "(id,fileid,catid,server_id,acount,title,protocol,days,volume,"
+      "type,price,descr,pic,active,step,date) "
+      "VALUES (987,'987',1,2,1,'Fixture','vless',30,1,"
+      "'normal',100,'fixture','',0,0,'fixture')")
+
+
+def verify_global_cancel_stale_cache(work: Path, env: dict, stage: Path,
+                                     passed: list[str]) -> None:
+    # The actual bot.php global fallback and actual config.php setUser()
+    # are staged after the real protected route. A is frozen only AFTER
+    # config.php-equivalent userInfo was cached; B then commits a newer
+    # nonce-protected gift step. This interleaving must be observable in
+    # an unmodified/old candidate and safe in the corrected candidate.
+    for target, legacy_step in [
+        ('remark','none'),('day','giftServerDay2'),
+        ('volume','giftServerVolume2_2'),
+    ]:
+        reset(work,env);stage.joinpath('effects.jsonl').unlink(missing_ok=True)
+        if legacy_step!='none':
+            q(work,env,"UPDATE users SET step='"+legacy_step+
+              "' WHERE userid=9001")
+        seed_inactive_legacy_plan(work,env)
+        ready=stage/('owned-stale-cache-'+target)
+        release=stage/('owned-release-route-'+target)
+        ready.unlink(missing_ok=True);release.unlink(missing_ok=True)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+            try:
+                stale=pool.submit(call,work,env,stage,kind='message',actor=9001,
+                    update_id=599,message_id=49,text='CANCEL',
+                    mode='pause_before_route',cached_ready=str(ready),
+                    release_route=str(release))
+                wait_for(ready.exists,'Old CANCEL did not read its cached legacy state')
+                ensure(q(work,env,'SELECT step FROM users WHERE userid=9001')==legacy_step,
+                       'Old CANCEL fixture did not capture the expected legacy step')
+                begin(work,env,stage,update_id=600)
+                if target in ['day','volume']:
+                    remark(work,env,stage,update_id=601)
+                if target=='volume':
+                    day(work,env,stage,update_id=602)
+                exact=q(work,env,'SELECT step FROM users WHERE userid=9001')
+                ensure(exact.startswith('achbotDirectGift'+target.title()+':'),
+                       'Newer direct gift did not reach expected '+target+' step')
+                release.write_text('go')
+                result=stale.result(timeout=38)
+            finally:
+                release.write_text('go')
+        ensure(q(work,env,'SELECT step FROM users WHERE userid=9001')==exact and
+               q(work,env,"SELECT COUNT(*) FROM server_plans WHERE id=987")=='1' and
+               len(rows(work,env,'START'))==1 and not rows(work,env,'SOURCE') and
+               not effects(stage) and not any(
+                   e in ['WAIT','MAIN'] for e in result['events']),
+               'Stale cached global CANCEL erased a newer '+target+
+               ' wizard or performed legacy cleanup')
+        passed.append('global_cancel_stale_cached_legacy_preserves_'+target)
+
+    reset(work,env);stage.joinpath('effects.jsonl').unlink(missing_ok=True)
+    q(work,env,"UPDATE users SET step='giftServerDay2' WHERE userid=9001")
+    seed_inactive_legacy_plan(work,env)
+    fresh=call(work,env,stage,kind='message',actor=9001,
+               update_id=650,message_id=65,text='CANCEL')
+    ensure(q(work,env,'SELECT step FROM users WHERE userid=9001')=='none' and
+           q(work,env,"SELECT COUNT(*) FROM server_plans WHERE id=987")=='0' and
+           'WAIT' in fresh['events'] and 'MAIN' in fresh['events'],
+           'Fresh legacy CANCEL did not preserve existing step/cleanup UX')
+    passed.append('global_cancel_fresh_legacy_flow_unchanged')
+
+    # Revocation cannot allow an older cached fallback to clear an already
+    # committed delegated-admin gift; the guarded direct route rejects fresh
+    # revoked cancellation separately.
+    reset(work,env);stage.joinpath('effects.jsonl').unlink(missing_ok=True)
+    seed_inactive_legacy_plan(work,env)
+    ready=stage/'owned-delegated-cached-ready'
+    release=stage/'owned-delegated-cached-release'
+    ready.unlink(missing_ok=True);release.unlink(missing_ok=True)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+        try:
+            stale=pool.submit(call,work,env,stage,kind='message',actor=9002,
+                update_id=599,message_id=49,text='CANCEL',
+                mode='pause_before_route',cached_ready=str(ready),
+                release_route=str(release))
+            wait_for(ready.exists,'Delegated actor did not cache legacy state')
+            begin(work,env,stage,actor=9002,update_id=600)
+            current=q(work,env,'SELECT step FROM users WHERE userid=9002')
+            q(work,env,'UPDATE users SET isAdmin=0 WHERE userid=9002')
+            release.write_text('go')
+            result=stale.result(timeout=38)
+        finally:
+            release.write_text('go')
+    ensure(q(work,env,'SELECT step FROM users WHERE userid=9002')==current and
+           q(work,env,"SELECT COUNT(*) FROM server_plans WHERE id=987")=='1' and
+           not any(e in ['WAIT','MAIN'] for e in result['events']) and
+           not effects(stage),
+           'Revoked delegated actor old CANCEL clobbered newer gift')
+    passed.append('global_cancel_stale_revoked_delegate_does_not_clobber')
+
+    # A second class of obsolete handlers may call the original config.php
+    # setUser() before reaching the fallback. It must never overwrite an
+    # active direct-gift generation either.
+    reset(work,env);stage.joinpath('effects.jsonl').unlink(missing_ok=True)
+    seed_inactive_legacy_plan(work,env)
+    ready=stage/'owned-stale-set-user-ready'
+    release=stage/'owned-stale-set-user-release'
+    ready.unlink(missing_ok=True);release.unlink(missing_ok=True)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+        try:
+            stale=pool.submit(call,work,env,stage,kind='message',actor=9001,
+                update_id=599,message_id=49,text='CANCEL',
+                mode='stale_legacy_set_user',cached_ready=str(ready),
+                release_route=str(release))
+            wait_for(ready.exists,'Legacy setter did not cache older userInfo')
+            begin(work,env,stage,update_id=600)
+            current=q(work,env,'SELECT step FROM users WHERE userid=9001')
+            release.write_text('go')
+            result=stale.result(timeout=38)
+        finally:
+            release.write_text('go')
+    ensure(q(work,env,'SELECT step FROM users WHERE userid=9001')==current and
+           q(work,env,"SELECT COUNT(*) FROM server_plans WHERE id=987")=='1' and
+           not any(e in ['WAIT','MAIN'] for e in result['events']) and
+           not effects(stage),
+           'Other cached legacy setUser step write bypassed direct-gift lock')
+    passed.append('global_cancel_stale_legacy_setuser_cannot_clobber')
+
+    reset(work,env);stage.joinpath('effects.jsonl').unlink(missing_ok=True)
+    q(work,env,"UPDATE users SET step='giftServerDay2' WHERE userid=9001")
+    call(work,env,stage,kind='message',actor=9001,
+         update_id=650,message_id=65,text='CANCEL',mode='cancel_commit_unknown')
+    ensure(q(work,env,'SELECT step FROM users WHERE userid=9001')=='none',
+           'Unknown legacy CANCEL COMMIT acknowledgment did not preserve DB truth')
+    begin(work,env,stage,update_id=700)
+    current=q(work,env,'SELECT step FROM users WHERE userid=9001')
+    reissued=call(work,env,stage,kind='message',actor=9001,
+        update_id=650,message_id=65,text='CANCEL')
+    ensure(q(work,env,'SELECT step FROM users WHERE userid=9001')==current and
+           not any(e in ['WAIT','MAIN'] for e in reissued['events']) and
+           not effects(stage),
+           'Old CANCEL following uncertain ACK erased new direct-gift nonce')
+    passed.append('global_cancel_unknown_ack_replay_preserves_new_gift')
+
+
 def main() -> None:
     ap=argparse.ArgumentParser()
     ap.add_argument('--run-disposable',action='store_true',required=True)
@@ -402,6 +574,7 @@ def main() -> None:
     passed=[]
     with owned.owned_database() as (work,env):
         stage=setup(work,env)
+        verify_global_cancel_stale_cache(work,env,stage,passed)
 
         reset(work,env);prepare_final(work,env,stage)
         positive=volume(work,env,stage)
@@ -857,6 +1030,7 @@ def main() -> None:
     report={
         'complete':True,'cases':len(passed),'scenarios':passed,
         'real_bot_php_route':True,'real_mysqli_original_schema':True,
+        'actual_global_cancel_fallback':True,'actual_config_set_user':True,
         'shared_real_service_seam_with_synthetic_adapter':True,
         'owned_mariadb_only':True,'real_telegram_or_marzban_calls':0,
         'tenant_migrations':0,'production_operations':0,

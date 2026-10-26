@@ -1359,11 +1359,22 @@ def main():
             'corrupt_source_provenance_fail_closed_$.actor_id',
             'corrupt_source_provenance_fail_closed_$.source.actor_id',
             'completed_marker_reuse_only_after_distinct_new_wizard',
+            # F2-R1: real final bot.php global CANCEL + config.php setUser
+            # with a cached userInfo snapshot before a newer gift starts.
+            'global_cancel_stale_cached_legacy_preserves_remark',
+            'global_cancel_stale_cached_legacy_preserves_day',
+            'global_cancel_stale_cached_legacy_preserves_volume',
+            'global_cancel_fresh_legacy_flow_unchanged',
+            'global_cancel_stale_revoked_delegate_does_not_clobber',
+            'global_cancel_stale_legacy_setuser_cannot_clobber',
+            'global_cancel_unknown_ack_replay_preserves_new_gift',
         }
         if not (direct_gift.get('complete') is True and
-                direct_gift.get('cases')>=67 and
+                direct_gift.get('cases')>=74 and
                 required_direct_gift.issubset(set(direct_gift.get('scenarios',[]))) and
                 direct_gift.get('real_bot_php_route') is True and
+                direct_gift.get('actual_global_cancel_fallback') is True and
+                direct_gift.get('actual_config_set_user') is True and
                 direct_gift.get('real_mysqli_original_schema') is True and
                 direct_gift.get('shared_real_service_seam_with_synthetic_adapter') is True and
                 direct_gift.get('owned_mariadb_only') is True and
