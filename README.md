@@ -92,15 +92,25 @@ python3 tools/package_post_v9.py verify \
 
 These tests and archives do **not** certify live payment settlement, full database recovery, Telegram webhooks, real Marzban provisioning or production deployment. The Owner previously reported an RC3 agency-decline smoke check, and on 2026-10-17 the **Chili test bot** was independently verified on-disk at **RC5** with its `chilibot`-only shared ledger migration 003 applied and a basic Owner-reported successful bot smoke. Those bounded checks do not establish live payment/merchant settlement, end-to-end Cron operation, general deployment safety, or any other tenant readiness. [PR #46](https://github.com/ach1992/bot-refactor/pull/46) introduced the optional Cron runner now included in RC7; the Chili operator subsequently installed and scheduled it, while full Cron and financial acceptance remain open under [Issue #14](https://github.com/ach1992/bot-refactor/issues/14). For NOWPayments, a hosted browser return is not proof of payment; only verified provider `finished` can be eligible for settlement, subject to identity/amount and effect-idempotency checks still under development. The inherited financial/settlement risks are tracked in [Issue #26](https://github.com/ach1992/bot-refactor/issues/26).
 
-## Payment eligibility management (source candidate)
+## Payment eligibility and merchant configuration (source only)
 
 Gateway settings include **«مدیریت دسترسی به روش‌های پرداخت»**:
-per-payment-method and per-customer-category age/history rules with
-editable counts, rolling-day windows and signed private administrator
-confirmation. No new migration is required for these rules; an absent
-policy preserves existing gateway audience behavior. A source-only build is
-not an installed payment test or approval for production.
-[Rules, editor and test matrix](docs/post-v9/GATEWAY-ELIGIBILITY-RULES.md).
+per-payment-method and per-customer-category age/history rules with editable
+counts, rolling-day windows and signed private administrator confirmation,
+integrated in [PR #82](https://github.com/ach1992/bot-refactor/pull/82).
+An absent new policy preserves the legacy audience behavior.
+[Rules and test matrix](docs/post-v9/GATEWAY-ELIGIBILITY-RULES.md).
+
+The separately managed `PAYMENT_KEYS` editor uses current administrator
+authority, authenticated private Telegram input and per-field concurrency
+checks. Hosted NOWPayments/Zarinpal/NextPay API credentials appear as
+**configured/missing status only**, not plaintext on management buttons;
+public bank account, named holder and configured crypto destination/rate
+details remain usable. Existing manual-chain validation and `/clear` are
+preserved. This is source functionality, **not installed operator or live
+payment acceptance**, and does not authorize a release, database migration,
+provider operation or deployment.
+[Merchant editor acceptance and limitations](docs/post-v9/PAYMENT-UX-LIFECYCLE.md#merchant-credential-and-destination-editor).
 
 ## Documentation
 

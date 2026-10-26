@@ -17,6 +17,7 @@ $connection->set_charset("utf8mb4");
 require_once __DIR__ . '/src/Purchase/Core.php';
 require_once __DIR__ . '/src/Finance/PaymentLifecycle.php';
 require_once __DIR__ . '/src/Finance/GatewayRuleAdmin.php';
+require_once __DIR__ . '/src/Finance/PaymentKeyAdmin.php';
 
 function tgRetryAfter($res){
     require_once __DIR__ . '/src/Telegram/Response.php';
@@ -1216,15 +1217,15 @@ function getGateWaysKeys(){
             ['text'=>"لینک خرید گیفت‌کارت",'callback_data'=>"wizwizch"]
         ],
         [
-            ['text'=>(!empty($paymentKeys['nowpayment'])?$paymentKeys['nowpayment']:" "),'callback_data'=>"changePaymentKeysnowpayment"],
+            ['text'=>achbotPaymentKeyAdminMerchantLabel($paymentKeys,'nowpayment'),'callback_data'=>"changePaymentKeysnowpayment"],
             ['text'=>"کد درگاه nowPayment",'callback_data'=>"wizwizch"]
         ],
         [
-            ['text'=>(!empty($paymentKeys['zarinpal'])?$paymentKeys['zarinpal']:" "),'callback_data'=>"changePaymentKeyszarinpal"],
+            ['text'=>achbotPaymentKeyAdminMerchantLabel($paymentKeys,'zarinpal'),'callback_data'=>"changePaymentKeyszarinpal"],
             ['text'=>"کد درگاه زرین پال",'callback_data'=>"wizwizch"]
         ],
         [
-            ['text'=>(!empty($paymentKeys['nextpay'])?$paymentKeys['nextpay']:" "),'callback_data'=>"changePaymentKeysnextpay"],
+            ['text'=>achbotPaymentKeyAdminMerchantLabel($paymentKeys,'nextpay'),'callback_data'=>"changePaymentKeysnextpay"],
             ['text'=>"کد درگاه نکست پی",'callback_data'=>"wizwizch"]
         ],
         ...$cryptoRows,
