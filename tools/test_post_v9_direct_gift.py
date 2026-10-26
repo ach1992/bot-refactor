@@ -38,6 +38,12 @@ class DirectGiftMysqli extends mysqli {
             usleep(10000);
         }
     }
+    public function begin_transaction(int $flags=0,?string $name=null): bool {
+        $begun=parent::begin_transaction($flags,$name);
+        if ($begun && ($GLOBALS['spec']['mode']??'')==='probe_second_started')
+            file_put_contents($GLOBALS['spec']['second_begin'],'ready');
+        return $begun;
+    }
     public function commit(int $flags=0,?string $name=null): bool {
         $pausing=($GLOBALS['spec']['mode']??'')==='pause_claim_commit' &&
             !($GLOBALS['paused_claim']??false);
@@ -309,12 +315,34 @@ def wait_for(predicate, reason: str, timeout: float=12) -> None:
     raise RuntimeError(reason)
 
 
+def owner_row_lock_wait_visible(work: Path, env: dict) -> bool:
+    # Different MariaDB versions expose live waits through different views.
+    # Require positive evidence of a *current* InnoDB row-lock wait, not
+    # mere process overlap or a delay-based concurrency guess. This fixture
+    # is a dedicated disposable server with only these two active workers.
+    for sql in [
+        'SELECT COUNT(*) FROM information_schema.INNODB_LOCK_WAITS',
+        "SELECT COUNT(*) FROM information_schema.INNODB_TRX WHERE trx_state='LOCK WAIT'",
+        "SHOW GLOBAL STATUS LIKE 'Innodb_row_lock_current_waits'",
+    ]:
+        try:
+            raw=q(work,env,sql)
+            n=raw.split()[-1] if raw else '0'
+            if n.isdecimal() and int(n)>0:
+                return True
+        except (RuntimeError,ValueError):
+            # An unavailable introspection view is not proof of no lock.
+            continue
+    return False
+
+
 def race_claim_before_owner_release(work: Path, env: dict, stage: Path,
                                     isolation: str='REPEATABLE-READ') -> None:
     ensure(isolation in q(work,env,'SELECT @@tx_isolation').upper().replace('_','-'),
            'Disposable MariaDB isolation differs from required '+isolation)
     gates={k:stage/('owned-'+k) for k in
-           ['pause_ready','release_commit','post_commit_ready','release_effect']}
+           ['pause_ready','release_commit','post_commit_ready',
+            'release_effect','second_begin']}
     for path in gates.values():path.unlink(missing_ok=True)
     with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
         try:
@@ -324,12 +352,25 @@ def race_claim_before_owner_release(work: Path, env: dict, stage: Path,
             wait_for(lambda:gates['pause_ready'].exists(),
                      'First claimant did not pause with uncommitted claim')
             second=pool.submit(call,work,env,stage,kind='message',actor=9002,
-                update_id=603,message_id=63,text='1024')
-            # Real InnoDB row-lock wait, not a timer-only concurrency guess:
-            # B already performed pre-resolution, then waits on A's owner PK.
-            wait_for(lambda:int(q(work,env,
-                'SELECT COUNT(*) FROM information_schema.INNODB_LOCK_WAITS'))>0,
-                'Second real actor never entered InnoDB primary-owner row-lock wait')
+                update_id=603,message_id=63,text='1024',mode='probe_second_started',
+                second_begin=str(gates['second_begin']))
+            # Establish B actually began its claim transaction after its
+            # source/actor pre-resolution; then require real row-wait evidence.
+            wait_for(lambda:gates['second_begin'].exists(),
+                     'Second actor never began the serialized claim transaction')
+            try:
+                wait_for(lambda:owner_row_lock_wait_visible(work,env),
+                    'Second real actor never entered InnoDB primary-owner row-lock wait')
+            except RuntimeError as e:
+                # Snapshot-safe diagnostic: only synthetic disposable MariaDB.
+                version=q(work,env,'SELECT VERSION()')
+                process=q(work,env,
+                    "SELECT ID,COALESCE(STATE,''),LEFT(COALESCE(INFO,''),120) "
+                    "FROM information_schema.PROCESSLIST "
+                    "WHERE DB='"+DB+"' ORDER BY ID")
+                raise RuntimeError(str(e)+'; MariaDB='+version+
+                    '; B_done='+str(second.done())+
+                    '; processlist='+process[-800:]) from e
             gates['release_commit'].write_text('go')
             wait_for(lambda:gates['post_commit_ready'].exists(),
                      'First claimant did not commit its durable journal')
