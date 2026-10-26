@@ -484,6 +484,20 @@ def main() -> dict:
         statement(d, 'ALTER TABLE users ADD KEY idx_users_userid_v1 (userid)')
         cases.append('missing_required_final_authorization_index_blocks')
 
+        statement(d,'ALTER TABLE wallet_adjustments DROP INDEX uq_wallet_telegram_entry')
+        code, result, _ = report_run(d)
+        require(code == 2 and has(result,'schema_005','BLOCK'),
+                'missing_wallet_event_identity_key')
+        cases.append('wallet_telegram_event_key_missing_blocks')
+        statement(d,'ALTER TABLE wallet_adjustments ADD KEY '
+                    'uq_wallet_telegram_entry (telegram_update_id,entry_no)')
+        code, result, _ = report_run(d)
+        require(code == 2 and has(result,'schema_005','BLOCK'),
+                'nonunique_wallet_event_identity_key')
+        cases.append('wallet_telegram_event_key_nonunique_blocks')
+        statement(d,'ALTER TABLE wallet_adjustments DROP INDEX uq_wallet_telegram_entry, '
+                    'ADD UNIQUE KEY uq_wallet_telegram_entry (telegram_update_id,entry_no)')
+
         # Successful DDL detection alone does not prove correct migration
         # provenance: corrupting a named unique index must be detected.
         statement(d,'ALTER TABLE payment_attempts DROP INDEX uq_payment_attempt_ref')

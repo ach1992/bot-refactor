@@ -81,15 +81,29 @@ recipient. Both retain the sender as `actor_userid`, each affected wallet as
 original update/chat/message IDs. Administrator actions use
 `source_type='admin'`, the same source-ID convention and entry 1.
 
-The actual new private text-message envelope must match UpdateBindings;
-callback-associated old message text cannot authorize a transfer. Stable user
-locks, sufficient sender balance, recipient overflow checks, both wallet
-updates, step consumption and both journal INSERTs share one InnoDB transaction.
-Failure of either INSERT rolls everything back. Missing/incompatible 005
-blocks transfers as well as administrator adjustments. Unique source identity
-also prevents an old update from applying again after the user restarts a
-transfer step. Intentional admin debt is retained; an incoming transfer may
-reduce recipient debt but an ordinary transfer cannot deepen sender debt.
+The actual new private text-message envelope must match UpdateBindings at
+**recipient selection and amount submission**; callback-associated old message
+text cannot authorize either. Selection consumes the exact current selection
+step under the actor's InnoDB lock and persists
+`achbotTransferAmount:<recipient_id>:<selection_update_id>:<selection_message_id>`.
+The amount must have **both** update ID and message ID strictly greater than
+the stored selection identity, before any monetary transaction begins. A
+stale selection worker cannot overwrite a newer pending step. Legacy
+`tranfserUserAmount...` and malformed/unmarked pending steps are refused with
+a Persian restart message and an explicit `transferMyWallet` restart button.
+
+Stable user locks, sufficient sender balance, recipient overflow checks,
+both wallet updates, step consumption and both journal INSERTs share one
+InnoDB transaction. Failure of either INSERT rolls everything back.
+Missing/incompatible 005 blocks transfers as well as admin adjustments.
+The generic unique `(source_type,source_id,entry_no)` is supplemented by
+`uq_wallet_telegram_entry (telegram_update_id,entry_no)`, independent of
+operation type. Admin and transfer operations both own entry 1; only a
+transfer adds entry 2. The insert helper enforces those leg/kind contracts.
+An update already consumed by an admin adjustment cannot authorize a
+transfer, and vice versa, while an ordinary transfer still has two legs.
+Intentional admin debt is retained; incoming credit can reduce recipient
+debt but an ordinary transfer cannot deepen sender debt.
 
 A lost COMMIT acknowledgement remains under review, even if a later rollback
 API call returns success. Inspect the two legs and balances by source ID;
@@ -100,7 +114,7 @@ never auto-repeat or compensate an uncertain outcome.
 The source checks InnoDB, exact essential 005 columns/nullable/type/length
 contracts, binary adjustment kind, auto-increment primary ID, generated
 created-at default, binary source type/ID, unsigned leg number,
-unique source/leg index and absence of foreign keys.
+unique source/leg and cross-operation Telegram update/leg indexes, and absence of foreign keys.
 It additionally checks that the installed original users table is InnoDB
 with the signed INT wallet and expected operator userid, isAdmin and step
 column contract. The historical V9 schema file is unchanged: the installed
@@ -141,6 +155,7 @@ Run:
 
     python3 tools/test_post_v9_admin_wallet.py --run-disposable
     python3 tools/test_post_v9_wallet_transfer.py --run-disposable
+    python3 tools/test_post_v9_wallet_replay.py --run-disposable
 
 This executes the actual current PHP route against disposable, Unix-socket-only
 MariaDB and synthetic Telegram. Cases cover absent/malformed 005,

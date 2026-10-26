@@ -492,6 +492,15 @@ def main():
             'ADD UNIQUE KEY uq_wallet_source_entry (source_type,source_id,entry_no)')
         cases.append('schema_without_unique_identity_fails_closed')
 
+        # Event identity must span operation types, independently of source_type.
+        sql(work,env,'ALTER TABLE wallet_adjustments DROP INDEX uq_wallet_telegram_entry')
+        move_to_reason(work,env,'credit',7)
+        execute(work,env,text='missing cross-operation event key',update_id=754)
+        assert_state(work,env,1105,6)
+        sql(work,env,'ALTER TABLE wallet_adjustments '
+            'ADD UNIQUE KEY uq_wallet_telegram_entry (telegram_update_id,entry_no)')
+        cases.append('schema_without_cross_operation_event_key_fails_closed')
+
         sql(work,env,'ALTER TABLE wallet_adjustments MODIFY '
             'adjustment_type VARCHAR(16) COLLATE utf8mb4_unicode_ci NOT NULL')
         move_to_reason(work,env,'credit',7)

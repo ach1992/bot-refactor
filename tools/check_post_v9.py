@@ -333,6 +333,41 @@ def main():
                 and wallet_transfer.get("original_mariadb_socket_only")
                 and wallet_transfer.get("external_requests")==0):
             raise RuntimeError("Current wallet transfer safety/diagnostic acceptance incomplete")
+        replay_path=Path(tmp)/"wallet-replay-r1-r2.json"
+        subprocess.run(["python3",str(ROOT/"tools/test_post_v9_wallet_replay.py"),
+                        "--run-disposable","--report",str(replay_path)],
+                       cwd=ROOT,check=True,timeout=120,capture_output=True)
+        wallet_replay=json.loads(replay_path.read_text())
+        required_wallet_replay={
+            'r1_reviewed_source_red_accepts_older_amount',
+            'r2_reviewed_source_red_admin_then_transfer',
+            'r2_reviewed_source_red_transfer_then_admin',
+            'r1_reject_older_prior_stage',
+            'r1_reject_recipient_selection_redelivery',
+            'r1_reject_older_update_newer_message',
+            'r1_reject_newer_update_older_message',
+            'r1_reject_equal_update', 'r1_reject_equal_message',
+            'r1_amount_redelivery_after_real_restart_rejected',
+            'r1_stale_selection_snapshot_cannot_overwrite_new_stage',
+            'r1_selection_sql_failure_rolls_back_and_separates_diagnostics',
+            'r1_genuinely_newer_amount_commits_exact_pair',
+            'r1_legacy_unmarked_and_malformed_steps_require_restart',
+            'r1_recipient_selection_requires_authentic_private_source',
+            'r2_current_admin_then_transfer_rejected',
+            'r2_current_transfer_then_admin_rejected',
+        }
+        if not (wallet_replay.get('complete') is True
+                and wallet_replay.get('reviewed_source') ==
+                    '388e06358bef9f62dec75a7ebfe7db13a669e282'
+                and set(wallet_replay.get('scenarios',[]))==required_wallet_replay
+                and wallet_replay.get('cases')==len(required_wallet_replay)
+                and wallet_replay.get('baseline_red') is True
+                and wallet_replay.get('current_green') is True
+                and wallet_replay.get('real_php_mysqli') is True
+                and wallet_replay.get('owned_mariadb_only') is True
+                and wallet_replay.get('production_mutations')==0
+                and wallet_replay.get('real_telegram_or_provider_calls')==0):
+            raise RuntimeError('Transfer source freshness/cross-operation replay proof incomplete')
         admin_wallet_path=Path(tmp)/"admin-wallet-adjustment-current.json"
         subprocess.run(["python3",str(ROOT/"tools/test_post_v9_admin_wallet.py"),
                         "--run-disposable","--report",str(admin_wallet_path)],
@@ -358,6 +393,7 @@ def main():
             "silent_wallet_update_error_rolls_back_journal",
             "postcommit_telegram_failure_preserves_effect",
             "schema_without_unique_identity_fails_closed",
+            "schema_without_cross_operation_event_key_fails_closed",
             "schema_wrong_binary_identity_collation_fails_closed",
             "schema_incompatible_reason_contract_fails_closed",
             "schema_nontransactional_engine_fails_closed",
@@ -1022,6 +1058,8 @@ def main():
             'runtime_byte_drift_blocks',
             'retired_runtime_member_blocks',
             'partial_003_unique_index_missing_blocks',
+            'wallet_telegram_event_key_missing_blocks',
+            'wallet_telegram_event_key_nonunique_blocks',
             'missing_required_final_authorization_index_blocks',
             'database_connection_failure_sanitized',
             'private_sentinel_and_financial_rows_untouched',
@@ -2639,6 +2677,7 @@ def main():
                     "source":result,"marzban":marzban,"purchases":purchases,
                      "unsupported_wallet_preflight":wallet_guard,
                      "wallet_transfer_safety":wallet_transfer,
+                     "wallet_replay_freshness_and_operation_identity":wallet_replay,
                      "webhook_file_configuration":webhook_config,
                      "admin_wallet_adjustment_safety":admin_wallet,
                      "customer_error_privacy":audience,

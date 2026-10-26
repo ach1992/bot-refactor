@@ -2,6 +2,8 @@
 -- New table only: RC9 has no 005 journal. RC10 is not an upgrade baseline.
 -- Do not run this over any existing 005 table without a separate audit.
 -- Source identity + leg number is unique; a transfer has debit and credit legs.
+-- The Telegram update/leg key is independent of operation type: one event
+-- cannot authorize BOTH an admin adjustment and a transfer.
 -- REQUIRES separate Owner-authorized migration, tested backup/restore,
 -- and installed-runtime preflight before operator wallet UI may be used.
 -- 005 is independent of optional, still-uninstalled renewal migration 004.
@@ -25,6 +27,7 @@ CREATE TABLE wallet_adjustments (
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
     UNIQUE KEY uq_wallet_source_entry (source_type,source_id,entry_no),
+    UNIQUE KEY uq_wallet_telegram_entry (telegram_update_id,entry_no),
     KEY idx_wallet_target (target_userid,created_at),
     KEY idx_wallet_actor (actor_userid,created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

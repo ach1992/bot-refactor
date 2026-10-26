@@ -80,6 +80,14 @@ balances and consumed step commit together. Missing/incompatible journal
 or an INSERT failure blocks/rolls back the transfer. A lost COMMIT
 acknowledgement remains under review; never retry or refund automatically.
 
+Existing pending transfer-amount steps without recipient-selection update
+and message markers must be restarted using the displayed Persian restart
+button. A submitted amount must be newer in both IDs than its actual
+recipient selection. Migration 005 also requires the independent unique
+`(telegram_update_id,entry_no)` key; the same update cannot be reused across
+admin adjustments and transfers. A table missing this key is incompatible,
+even if its generic source index is present.
+
 The journal begins recording these routes after installation. It is not
 a reconstructed statement of every historical wallet movement. Existing
 pays/payment/attempt/effect/referral evidence remains authoritative.

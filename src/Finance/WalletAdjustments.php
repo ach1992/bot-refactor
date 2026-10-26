@@ -95,7 +95,9 @@ if (!function_exists('achbotWalletAdjustmentsReady')) {
             $stmt->close();
             if (($indexes['PRIMARY'] ?? null) !== [[0, 1, 'id']] ||
                 ($indexes['uq_wallet_source_entry'] ?? null) !==
-                    [[0, 1, 'source_type'], [0, 2, 'source_id'], [0, 3, 'entry_no']]) {
+                    [[0, 1, 'source_type'], [0, 2, 'source_id'], [0, 3, 'entry_no']] ||
+                ($indexes['uq_wallet_telegram_entry'] ?? null) !==
+                    [[0, 1, 'telegram_update_id'], [0, 2, 'entry_no']]) {
                 return false;
             }
             // Audit rows must survive deletion of the original bot user.
@@ -164,6 +166,8 @@ if (!function_exists('achbotWalletAdjustmentsReady')) {
  * Record one Telegram-sourced leg inside the caller's balance transaction.
  * The generic source identity permits multiple legs and future non-Telegram
  * writers without treating Telegram update IDs as globally unique row IDs.
+ * Telegram update/leg uniqueness additionally spans all operation types:
+ * both current operations own entry 1, and only a transfer adds entry 2.
  * Current callers use source_type admin/transfer, source_id = update ID.
  */
 function achbotInsertTelegramWalletAdjustment(
@@ -171,8 +175,16 @@ function achbotInsertTelegramWalletAdjustment(
     int $actorId, int $targetId, int $chatId, int $messageId,
     string $kind, int $amount, int $before, int $after, string $reason
 ): void {
+    // Every supported Telegram operation owns leg 1. Only its transfer
+    // credit may use leg 2; callers cannot evade event consumption via a
+    // different leg number or an inconsistent kind.
+    $validLeg = ($sourceType === 'admin' && $entryNo === 1 &&
+        in_array($kind, ['credit', 'debit', 'debt'], true)) ||
+        ($sourceType === 'transfer' &&
+         (($entryNo === 1 && $kind === 'transfer_out') ||
+          ($entryNo === 2 && $kind === 'transfer_in')));
     $delta = in_array($kind, ['credit', 'transfer_in'], true) ? $amount : -$amount;
-    if (!in_array($sourceType, ['admin', 'transfer'], true) ||
+    if (!$validLeg || !in_array($sourceType, ['admin', 'transfer'], true) ||
         !in_array($kind, ['credit', 'debit', 'debt', 'transfer_in', 'transfer_out'], true) ||
         $updateId <= 0 || $entryNo < 1 || $entryNo > 255 ||
         $actorId <= 0 || $targetId <= 0 || $chatId === 0 || $messageId <= 0 ||
