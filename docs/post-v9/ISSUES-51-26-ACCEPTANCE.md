@@ -7,6 +7,16 @@ Only **source/isolated synthetic** evidence is claimed here. A test marked PASS
 does **not** certify a live merchant, installed database, real Telegram message,
 real Marzban provisioning, refund or real-money correctness.
 
+## Pre-installed payment readiness snapshot (source-only tooling)
+
+The read-only [payment readiness preflight](PAYMENT-READINESS-PREFLIGHT.md)
+compares 102 installed runtime files against a supplied verified manifest,
+inspects the original schema and additive 001/003-009 table shapes, and checks
+unique settings documents, current gateway rules and method configuration
+without showing credentials or modifying financial rows. Its disposable
+MariaDB test runs in the exact-candidate CI; it is **not** a claim about an
+installed tenant or real payment.
+
 ## Reproducible test drivers
 
 - Finance callback/provider/HTTP/DB acceptance: ../../tools/test_post_v9_finance_routes.py;

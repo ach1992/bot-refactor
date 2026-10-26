@@ -1,7 +1,10 @@
 # Dynamic gateway and customer-category eligibility (Issue #51, PR #82)
 
-**Status:** source-only development candidate; independently reviewed, merged,
-released, installed and live paid/provider smoke tests are distinct gates.
+**Status:** source integrated through PR #82 and subsequent PR #83
+merchant-editor hardening; actual installed/operator readiness, SQL migration,
+release and real paid/provider smoke tests remain separate gates. See the
+[read-only operator preflight](PAYMENT-READINESS-PREFLIGHT.md) before requesting
+any such acceptance.
 
 ## Scope and data model
 

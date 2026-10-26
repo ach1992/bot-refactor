@@ -950,6 +950,45 @@ def main():
                 raise RuntimeError('Gateway rule financial route test used real side effects')
             reviewer_f1_f4[key]=evidence
 
+        # Issue #51 installed/payment-readiness boundary. This never touches
+        # installed tenants or real providers: native PHP runs with a REAL
+        # SELECT-only account against disposable original+sidecar MariaDB,
+        # and verifies all 102 source members against a synthetic manifest.
+        preflight_path=Path(tmp)/"payment-operator-readiness-preflight.json"
+        subprocess.run(
+            ["python3",str(ROOT/"tools/test_post_v9_payment_readiness.py"),
+             "--run-disposable","--report",str(preflight_path)],
+            cwd=ROOT,check=True,timeout=90,capture_output=True)
+        readiness=json.loads(preflight_path.read_text())
+        required_readiness={
+            'missing_ledger_and_settings_fail_closed',
+            'complete_migration_shapes_and_wallet_only_pass_no_sql_mutation',
+            'malformed_explicit_rules_block',
+            'unknown_legacy_audience_blocks',
+            'duplicate_payment_document_blocks',
+            'enabled_hosted_gateway_without_merchant_blocks',
+            'json_list_not_accepted_as_settings_object',
+            'usdt_only_manual_network_is_not_blocked_by_missing_trx',
+            'trx_only_manual_network_is_not_blocked_by_missing_usdt',
+            'shared_manual_switch_without_any_destination_blocks',
+            'non_string_merchant_credential_not_treated_as_configured',
+            'unverified_source_identity_blocks',
+            'runtime_byte_drift_blocks',
+            'retired_runtime_member_blocks',
+            'partial_003_unique_index_missing_blocks',
+            'database_connection_failure_sanitized',
+            'private_sentinel_and_financial_rows_untouched',
+        }
+        if not (readiness.get('complete') is True and
+                readiness.get('cases')==len(required_readiness) and
+                set(readiness.get('details',[]))==required_readiness and
+                readiness.get('readonly_sql_account_enforced') is True and
+                readiness.get('source_members_verified')==102 and
+                readiness.get('all_eight_additive_shapes_exercised') is True and
+                readiness.get('no_real_provider_or_telegram_calls') is True and
+                readiness.get('installed_operator_acceptance') is False):
+            raise RuntimeError('Payment readiness read-only native preflight incomplete')
+
         # Independent review R1 (after N2): every FINAL cohort current read
         # must stay owner-indexed on MariaDB 10.11 rather than implicitly
         # choosing a broad pays/orders/users locking scan. Hold customer A's
@@ -2561,6 +2600,7 @@ def main():
                     "automatic_renewal_ledger":auto_renew,
                     "payment_ux_lifecycle":payment_ux,
                     "payment_browser_feedback":browser_feedback,
+                    "payment_readiness_preflight":readiness,
                     "checkout_serialization":checkout_race,
                     "customer_method_serialization":method_race,
                     "wallet_authorization_freshness":wallet_freshness,
@@ -2614,6 +2654,7 @@ def main():
                       "automatic_renewal_cases":auto_renew["cases"],
                       "payment_ux_cases":payment_ux["cases"],
                       "payment_browser_feedback_cases":browser_feedback["cases"],
+                      "payment_readiness_preflight_cases":readiness["cases"],
                       "checkout_serialization_cases":checkout_race["cases"],
                       "customer_method_serialization_cases":method_race["cases"],
                       "wallet_authorization_freshness_cases":wallet_freshness["cases"],

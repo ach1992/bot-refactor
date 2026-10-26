@@ -28,6 +28,12 @@ In **Server Management → Panel Groups**, an administrator can name a group and
 
 Use the [post-V9 operator acceptance checklist](docs/post-v9/MARZBAN-OPERATOR-ACCEPTANCE.md) before considering a test installation accepted.
 
+Before payment-provider operator acceptance, use the
+[read-only payment readiness preflight](docs/post-v9/PAYMENT-READINESS-PREFLIGHT.md)
+to compare a selected installed runtime with its trusted manifest and inspect
+DB schema/settings without displaying credentials. The preflight neither runs
+SQL migrations nor certifies a live Telegram/provider transaction.
+
 **Unreleased service-edit correctness work:** The developing source uses a
 provider-neutral account-edit boundary with strict panel readback, bounded
 correction and financial completion only after service + SQL verification.
