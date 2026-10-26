@@ -25,8 +25,10 @@ It checks:
   executed parser/validation helpers must also match the supplied runtime
   manifest; a tool checkout from another source version is rejected.
   No other runtime file is deleted or overwritten. `baseInfo.php` is never read.
-- Original 23 table names, and expected distinguishing columns/named unique
-  indexes for additive `001`, `003`, `004`, `005`, `006`, `007`, `008`, `009`.
+- Original 23 table names, the three original-schema named owner lookup
+  indexes used by current final authorization's `FORCE INDEX`, and expected
+  distinguishing columns/named unique indexes for additive `001`, `003`,
+  `004`, `005`, `006`, `007`, `008`, `009`.
   Existing tables with partial/mismatched structures are **blocked**; no
   existing object is replaced. `002` is the retired historical RC4 path,
   not an instruction to install it. No sidecar SQL is executed.

@@ -981,6 +981,7 @@ def main():
             'runtime_byte_drift_blocks',
             'retired_runtime_member_blocks',
             'partial_003_unique_index_missing_blocks',
+            'missing_required_final_authorization_index_blocks',
             'database_connection_failure_sanitized',
             'private_sentinel_and_financial_rows_untouched',
         }

@@ -125,6 +125,7 @@ function verifyManifest(string $manifestPath, string $runtimePath): bool {
 function metadata(mysqli $db): array {
     $tables = [];
     $columns = [];
+    $indexes = [];
     $unique = [];
     $r = $db->query('SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_TYPE=\'BASE TABLE\'');
     foreach ($r as $row) $tables[(string)$row['TABLE_NAME']] = true;
@@ -132,9 +133,11 @@ function metadata(mysqli $db): array {
     foreach ($r as $row) $columns[$row['TABLE_NAME']][$row['COLUMN_NAME']] = true;
     $r = $db->query('SELECT TABLE_NAME,INDEX_NAME,NON_UNIQUE,SEQ_IN_INDEX,COLUMN_NAME FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=DATABASE() ORDER BY TABLE_NAME,INDEX_NAME,SEQ_IN_INDEX');
     foreach ($r as $row) {
-        if ((int)$row['NON_UNIQUE'] === 0) $unique[$row['TABLE_NAME']][$row['INDEX_NAME']][] = $row['COLUMN_NAME'];
+        $indexes[$row['TABLE_NAME']][$row['INDEX_NAME']][] = $row['COLUMN_NAME'];
+        if ((int)$row['NON_UNIQUE'] === 0)
+            $unique[$row['TABLE_NAME']][$row['INDEX_NAME']][] = $row['COLUMN_NAME'];
     }
-    return [$tables, $columns, $unique];
+    return [$tables, $columns, $indexes, $unique];
 }
 function validShape(array $spec, array $tables, array $cols, array $unique): bool {
     foreach ($spec as $table => $requirements) {
@@ -299,7 +302,7 @@ try {
     $db->set_charset('utf8mb4');
     $db->query('START TRANSACTION READ ONLY');
     finding('database_read_only', 'PASS', 'read_only_snapshot_opened');
-    [$tables, $columns, $unique] = metadata($db);
+    [$tables, $columns, $indexes, $unique] = metadata($db);
     $legacy = [
         'add_link','admins','bc_jobs','bc_messages','black_list','chats',
         'chats_info','discounts','gift_list','increase_day','increase_order',
@@ -310,6 +313,23 @@ try {
     $missing = array_filter($legacy, static fn(string $t): bool => !isset($tables[$t]));
     finding('original_23_tables', $missing ? 'BLOCK' : 'PASS',
         $missing ? 'original_schema_tables_missing' : 'original_table_names_present');
+    // The current source uses these explicit FORCE INDEX hints in the final
+    // financial policy and owner-lock reads. A missing named index causes
+    // runtime checkout failure even if all expected tables exist.
+    $criticalIndexes = [
+        'users' => ['idx_users_userid_v1' => ['userid']],
+        'pays' => ['idx_pays_user_v1' => ['user_id']],
+        'orders_list' => ['idx_orders_userid_v1' => ['userid']],
+    ];
+    $indexReady = true;
+    foreach ($criticalIndexes as $table => $required) {
+        foreach ($required as $index => $fields) {
+            if (($indexes[$table][$index] ?? null) !== $fields) $indexReady = false;
+        }
+    }
+    finding('final_payment_policy_indexes', $indexReady ? 'PASS' : 'BLOCK',
+        $indexReady ? 'required_owner_index_hints_present' :
+                      'missing_or_incompatible_final_authorization_index');
     $specs = [
         '001' => ['server_info'=>['columns'=>['panel_group_id']]],
         '003' => [

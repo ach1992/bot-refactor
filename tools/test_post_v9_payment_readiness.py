@@ -314,6 +314,15 @@ def main() -> dict:
         old.unlink()
         cases.append('retired_runtime_member_blocks')
 
+        # Current final payment/cohort SQL explicitly FORCE INDEXes these
+        # original-schema keys. No safe smoke can ignore a missing name.
+        statement(d, 'ALTER TABLE users DROP INDEX idx_users_userid_v1')
+        code, result, _ = report_run(d)
+        require(code == 2 and has(result, 'final_payment_policy_indexes',
+                                  'BLOCK'), 'missing_final_auth_index')
+        statement(d, 'ALTER TABLE users ADD KEY idx_users_userid_v1 (userid)')
+        cases.append('missing_required_final_authorization_index_blocks')
+
         # Successful DDL detection alone does not prove correct migration
         # provenance: corrupting a named unique index must be detected.
         statement(d,'ALTER TABLE payment_attempts DROP INDEX uq_payment_attempt_ref')
