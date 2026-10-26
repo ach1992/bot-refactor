@@ -218,6 +218,56 @@ def main() -> dict:
                 'merchant_field_non_string')
         cases.append('non_string_merchant_credential_not_treated_as_configured')
 
+        # Source-synchronized gift, bank, and TRX validation. A mere HTTPS
+        # prefix, nonempty bank string, or positive huge rate is insufficient.
+        gift_state = dict(state, walletState='off', giftCardState='on')
+        seed(d, gift_state, {'giftCardUrl':'https://alice:password@example.invalid/gift'})
+        code, result, _ = report_run(d)
+        require(code == 2 and has(result, 'method_gift_card', 'BLOCK'),
+                'userinfo_in_gift_url')
+        seed(d, gift_state, {'giftCardUrl':'https://example.invalid/gift#products'})
+        code, result, _ = report_run(d)
+        require(code == 0 and has(result, 'method_gift_card', 'PASS'),
+                'valid_gift_url_with_fragment')
+        cases.append('gift_url_matches_source_checkout_validation')
+
+        bank_state = dict(state, walletState='off', cartToCartState='on')
+        seed(d, bank_state, {'bankAccount':'X'*151, 'holderName':'Test'})
+        code, result, _ = report_run(d)
+        require(code == 2 and has(result, 'method_bank_transfer', 'BLOCK'),
+                'long_bank_detail')
+        seed(d, bank_state, {'bankAccount':'123-456', 'holderName':'Test'})
+        code, result, _ = report_run(d)
+        require(code == 0 and has(result, 'method_bank_transfer', 'PASS'),
+                'valid_bank_detail')
+        cases.append('bank_details_match_checkout_length_guard')
+
+        seed(d, only_trx, {'manualTrxWallet':'TJRabPrwbZy45sbavfcjinPJC18kjpRTv8',
+                          'manualTrxRateToman':'1234567890'})
+        code, result, _ = report_run(d)
+        require(code == 2 and has(result, 'method_manual_trx', 'BLOCK'),
+                'trx_rate_oversized')
+        cases.append('trx_rate_follows_source_nine_digit_limit')
+
+        # A malicious substituted inventory must be rejected before it can
+        # read arbitrary installed paths (including baseInfo.php).
+        manifest_file = d/'manifest.json'
+        data = json.loads(manifest_file.read_text())
+        old_name = 'src/Finance/PaymentLifecycle.php'
+        old_record = data['files'].pop(old_name)
+        data['files']['baseInfo.php'] = {
+            'size':len(private_before),
+            'sha256':hashlib.sha256(private_before).hexdigest(),
+        }
+        manifest_file.write_text(json.dumps(data))
+        code, result, _ = report_run(d)
+        require(code == 2 and has(result,'source_identity','BLOCK'),
+                'unexpected_member_inventory')
+        data['files'].pop('baseInfo.php')
+        data['files'][old_name] = old_record
+        manifest_file.write_text(json.dumps(data))
+        cases.append('untrusted_manifest_cannot_add_private_member')
+
         seed(d, state, keys)
         code, result, _ = report_run(d, manifest=False)
         require((code == 2 and has(result,'source_identity','BLOCK')), 'line_182')

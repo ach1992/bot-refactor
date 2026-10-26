@@ -19,7 +19,9 @@ cannot compensate for unnecessarily privileged credentials.
 It checks:
 
 - All 102 listed runtime files' byte lengths and SHA-256 against the
-  **provided** manifest, with no retired automatic TRON/WeSwap PHP files.
+  **provided** manifest, and an independently pinned 102-member filename
+  inventory (canonical sorted-set SHA-256 from `package_post_v9.members()`),
+  with no retired automatic TRON/WeSwap PHP files.
   No other runtime file is deleted or overwritten. `baseInfo.php` is never read.
 - Original 23 table names, and expected distinguishing columns/named unique
   indexes for additive `001`, `003`, `004`, `005`, `006`, `007`, `008`, `009`.
@@ -29,7 +31,9 @@ It checks:
 - Exactly one valid JSON-object `BOT_STATES` and `PAYMENT_KEYS` document,
   existing dynamic `gatewayRules` decoded with the **current production PHP
   parser**, legacy method audience values, and each method's current switch
-  and basic local configuration availability.
+  and basic local configuration availability. The gift seller URL, bank
+  identity length and TRX rate checks follow the corresponding runtime
+  validators; USDT private base rate is reported as needing operator review.
 - Only `configured/missing`-style signals, never raw merchant secrets,
   destinations, usernames, payment identifiers, DB credentials or user rows.
 

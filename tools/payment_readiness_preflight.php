@@ -74,6 +74,15 @@ function verifyManifest(string $manifestPath, string $runtimePath): bool {
             ($manifest['schema_migration_included'] ?? null) !== false ||
             ($manifest['private_config_included'] ?? null) !== false ||
             !preg_match('/\A[a-f0-9]{40}\z/D', (string)($manifest['candidate'] ?? ''))) return false;
+        // The expected current runtime inventory is pinned independently of
+        // supplied manifest bytes. Without this guard an attacker-controlled
+        // file list could request hashes of an installed private file.
+        // SHA-256 of newline-joined sorted package_post_v9.members() paths.
+        $members = array_keys($manifest['files']);
+        sort($members, SORT_STRING);
+        if (!hash_equals('541fb30dd989d2826b748e8a95724c487aae6497dec0817286a0b5e4cf71b3b2',
+                         hash('sha256', implode("\n", $members))) ||
+            in_array('baseInfo.php', $members, true)) return false;
         $root = realpath($runtimePath);
         if ($root === false || !is_dir($root)) return false;
         $report['source_candidate'] = $manifest['candidate'];
@@ -184,10 +193,11 @@ function methodChecks(array $state, array $keys): void {
             $address = textValue($keys['manualUsdtWallet'] ?? null);
         if (achbotManualUsdtWalletValid($address, $network)) $usdtConfigured = true;
     }
+    $trxRate = $keys['manualTrxRateToman'] ?? null;
     $trxConfigured = achbotManualTronAddressValid(
         textValue($keys['manualTrxWallet'] ?? null)) &&
-        filter_var($keys['manualTrxRateToman'] ?? null, FILTER_VALIDATE_INT,
-            ['options'=>['min_range'=>1]]) !== false;
+        is_scalar($trxRate) &&
+        preg_match('/\A[1-9][0-9]{0,8}\z/D', (string)$trxRate) === 1;
     $manualOn = flag($state, 'manualUsdtState');
     $on = [
         'nowpayments' => flag($state,'nowPaymentWallet') || flag($state,'nowPaymentOther'),
@@ -208,9 +218,11 @@ function methodChecks(array $state, array $keys): void {
                 'nowpayments' => available($keys['nowpayment'] ?? null),
                 'zarinpal', 'nextpay' => available($keys[$method] ?? null),
                 'bank_transfer' => available($keys['bankAccount'] ?? null) &&
-                    available($keys['holderName'] ?? null),
-                'gift_card' => filter_var(textValue($keys['giftCardUrl'] ?? null), FILTER_VALIDATE_URL) !== false &&
-                    strtolower((string)parse_url(textValue($keys['giftCardUrl'] ?? null), PHP_URL_SCHEME)) === 'https',
+                    available($keys['holderName'] ?? null) &&
+                    strlen(trim($keys['bankAccount'])) <= 150 &&
+                    strlen(trim($keys['holderName'])) <= 150,
+                'gift_card' => achbotManualGiftSellerUrlValid(
+                    textValue($keys['giftCardUrl'] ?? null)),
                 'manual_usdt' => $usdtConfigured,
                 'manual_trx' => $trxConfigured,
                 'wallet' => true,
