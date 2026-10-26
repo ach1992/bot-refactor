@@ -39,7 +39,7 @@ def source_checks():
         if (ROOT / field).read_bytes() != cmd("show", V9+":"+field):
             raise RuntimeError("Changed historical schema/private-template: " + field)
     files=package.members()
-    if len(files)!=99 or len(set(files))!=len(files):
+    if len(files)!=101 or len(set(files))!=len(files):
         raise RuntimeError("Source-only runtime file inventory changed")
     if any((ROOT/name).exists() or name in files
            for name in package.RETIRED_RUNTIME_MEMBERS):
@@ -727,6 +727,85 @@ def main():
                                 'owned_mariadb_only')),
             # Live-looking admin payment policy callbacks must not trust
             # revoked cached admin roles or stale BOT_STATES snapshots.
+            ('gateway_rules','test_post_v9_gateway_rules.py',
+             {
+                 'legacy_wallet',
+                 'legacy_nowpayments',
+                 'legacy_zarinpal',
+                 'legacy_nextpay',
+                 'legacy_bank_transfer',
+                 'legacy_gift_card',
+                 'legacy_manual_usdt',
+                 'legacy_manual_trx',
+                 'legacy_category_agents',
+                 'legacy_category_non_agents',
+                 'legacy_category_buyers',
+                 'legacy_category_non_buyers',
+                 'legacy_category_has_active_order',
+                 'legacy_category_no_active_order',
+                 'legacy_category_off',
+                 'legacy_category_all',
+                 'or_and_categories_READ-COMMITTED',
+                 'or_and_categories_REPEATABLE-READ',
+                 'new_category_all',
+                 'new_category_agents',
+                 'new_category_non_agents',
+                 'new_category_buyers',
+                 'new_category_non_buyers',
+                 'new_category_has_active_order',
+                 'new_category_no_active_order',
+                 'new_active_order_positive_and_inverse',
+                 'metric_dynamic_buy',
+                 'metric_dynamic_renew',
+                 'metric_dynamic_volume',
+                 'metric_dynamic_time',
+                 'metric_dynamic_topup',
+                 'registration_age_rolling_days',
+                 'empty_rules_deny',
+                 'off_gateway_deny',
+                 'rule_independent_method_nowpayments',
+                 'rule_independent_method_zarinpal',
+                 'rule_independent_method_nextpay',
+                 'rule_independent_method_bank_transfer',
+                 'rule_independent_method_gift_card',
+                 'rule_independent_method_manual_usdt',
+                 'rule_independent_method_manual_trx',
+                 'rule_independent_method_wallet',
+                 'nowpayments_subject_split',
+                 'explicit_invalid_document_denies_0',
+                 'explicit_invalid_document_denies_1',
+                 'explicit_invalid_document_denies_2',
+                 'explicit_invalid_document_denies_3',
+                 'explicit_invalid_document_denies_4',
+                 'negative_days_denied',
+                 'bad_registration_garbled',
+                 'bad_registration_future',
+                 'bad_registration_negative',
+                 'bad_registration_zero',
+                 'duplicate_customer_rejected',
+                 'inclusive_exact_cutoff_plus_minus_one_second',
+                 'future_timestamp_not_recent_success',
+                 'rolling_window_9_10_110_111_date_only_boundaries',
+                 'all_history_count_vs_disabled_zero_zero',
+                 'method_omission_retains_legacy_explicit_off',
+                 'intentional_explicit_new_rule_overrides_legacy_off',
+                 'nowpayments_topup_flag_independent',
+                 'operator_preview_does_not_persist',
+                 'operator_explicit_add',
+                 'operator_private_integer_confirm_commit',
+                 'operator_invalid_and_cancel',
+                 'two_admins_independent_fields',
+                 'unauthenticated_group_sender_rejected',
+                 'stale_or_revoked_admin_rejected',
+                 'operator_arbitrary_17_and_overflow_rejected',
+                 'operator_64_bit_integer_not_32_bit_preset',
+                 'two_admin_same_field_stale_editor_cas_rejected',
+                 'two_admin_distinct_field_interleaving_both_persist',
+                 'operator_delete_requires_confirmation_cancel_safe',
+                 'delete_fingerprint_conflict_with_other_admin',
+                 'operator_confirmed_delete_single_use',
+                 'no_financial_side_effects',
+             },('source_real','owned_original_mariadb','php_runtime')),
             ('gateway_admin_source','test_post_v9_gateway_admin_source.py',
              {
                  'red_revoked_delegate_changes_gateway_enabled',
@@ -2390,7 +2469,7 @@ def main():
                        cwd=ROOT,check=True,timeout=60,capture_output=True)
         swap=json.loads(overlay_report.read_text())
         if not (swap.get("complete") and swap.get("phase_count")==4
-                and swap.get("runtime_members")==99
+                and swap.get("runtime_members")==101
                 and swap.get("historical_runtime_members")==92
                 and swap.get("retired_old_payment_files_absent_after_source_upgrade")
                 and swap.get("source_roll_forward_and_back_byte_identical")

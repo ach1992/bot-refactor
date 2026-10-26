@@ -510,6 +510,75 @@ if(($data=="gateWays_Channels" or preg_match('/^changeGateWays([A-Za-z0-9_]+)$/D
     }
     editText($message_id,$mainValues['change_bot_settings_message'],getGateWaysKeys());
 }
+// Strict, source-authenticated private operator rules. The older audience
+// keyboard remains an alias, but new methods have independent category rules.
+if (is_string($data??null) &&
+    (str_starts_with($data,'gr|') || $data==='gatewayAudienceSettings')) {
+    if (!achbotGatewayAdminCanView($update,(int)$from_id,
+            (int)$chat_id,(int)$message_id,(int)$admin,$data)) {
+        answerCallbackQuery($callbackId,'دسترسی مدیریت پرداخت تأیید نشد.',true);
+        return;
+    }
+    $parts=explode('|',$data);
+    $action=$parts[1]??'l';
+    if ($data==='gatewayAudienceSettings') $data='gr|l';
+    if (in_array($action,['l','m','r','f'],true)) {
+        $page=achbotGatewayAdminPage($data);
+        editText($message_id,$page['text'],$page['keyboard']);
+        return;
+    }
+    $operation=achbotGatewayRuleCallback($data);
+    if ($operation===null ||
+        !achbotAdminGatewayChange($update,(int)$from_id,
+           (int)$chat_id,(int)$message_id,(int)$admin,'rule',$data)) {
+        answerCallbackQuery($callbackId,
+            'قانون تغییر نکرد؛ وضعیت فعلی، دسترسی یا اعتبار درخواست را بررسی کنید.',true);
+        return;
+    }
+    if ($operation['action']==='n') {
+        sendMessage("✏️ عدد صحیح دلخواه (از ۰ به بالا) وارد کنید.\n".
+            "۰ روز یعنی تمام سابقه؛ ۰ تراکنش با روز مثبت یعنی حداقل یک رویداد در بازه.\n".
+            "برای انصراف از دکمهٔ لغو استفاده کنید.",$cancelKey);
+        return;
+    }
+    if (in_array($operation['action'],['s','x'],true)) {
+        sendMessage($operation['action']==='s'?'✅ مقدار ذخیره شد.':'ویرایش لغو شد.');
+        $page=achbotGatewayAdminPage('gr|l');
+        sendMessage($page['text'],$page['keyboard']);
+        return;
+    }
+    $target=$operation['action']==='d'
+        ? 'gr|m|'.$operation['method']
+        : ($operation['action']==='q' ? 'gr|q|'.$operation['method'].'|'.$operation['category']
+        : (in_array($operation['action'],['v','c'],true)
+           ? 'gr|f|'.$operation['method'].'|'.$operation['category'].'|'.$operation['metric']
+           : 'gr|r|'.$operation['method'].'|'.$operation['category']));
+    $page=achbotGatewayAdminPage($target,
+        $operation['action']==='q'?(int)$update->update_id:null);
+    editText($message_id,'✅ تنظیم به‌روزرسانی شد.'."\n".$page['text'],$page['keyboard']);
+    return;
+}
+if (is_string($userInfo['step']??null) &&
+    str_starts_with($userInfo['step'],'gr|edit|')) {
+    if (!achbotAdminGatewayChange($update,(int)$from_id,
+            (int)$chat_id,(int)$message_id,(int)$admin,'number',
+            $userInfo['step'],(string)$text)) {
+        sendMessage('⛔️ عدد معتبر وارد کنید؛ تغییر اعمال نشد. / در صورت مشکل به فهرست مدیریت دسترسی بازگردید.',
+                    $cancelKey);
+        return;
+    }
+    if ($text===$buttonValues['cancel']) {
+        sendMessage('ویرایش لغو شد.');
+        return;
+    }
+    $sourceId=(int)($update->update_id??0);
+    sendMessage("🔎 مقدار پیشنهادی: ".$text."\nتا انتخاب «ذخیره»، قانون قبلی برقرار است.",
+        json_encode(['inline_keyboard'=>[
+            [['text'=>'💾 ذخیره مقدار','callback_data'=>'gr|s|'.$sourceId]],
+            [['text'=>'❌ انصراف','callback_data'=>'gr|x|'.$sourceId]]
+        ]],JSON_UNESCAPED_UNICODE));
+    return;
+}
 // Per-gateway audience restrictions. Re-check the current setting on every
 // callback; a forwarded stale administrator button cannot pick arbitrary keys.
 if (($from_id == $admin || (int)($userInfo['isAdmin']??0)===1) &&

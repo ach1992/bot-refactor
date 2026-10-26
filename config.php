@@ -16,6 +16,7 @@ if($connection->connect_error){
 $connection->set_charset("utf8mb4");
 require_once __DIR__ . '/src/Purchase/Core.php';
 require_once __DIR__ . '/src/Finance/PaymentLifecycle.php';
+require_once __DIR__ . '/src/Finance/GatewayRuleAdmin.php';
 
 function tgRetryAfter($res){
     require_once __DIR__ . '/src/Telegram/Response.php';
@@ -622,7 +623,7 @@ function setSettings($field, $value): bool {
  * payment option in the meantime. No schema change, no provider effect.
  */
 function achbotAdminGatewayChange($update,int $actor,int $chat,int $message,
-                                  int $primary,string $kind,string $key): bool {
+                                  int $primary,string $kind,string $key,?string $value=null): bool {
     global $connection;
     static $flags=[
         'giftCardState','manualUsdtState','cartToCartState','nextpay',
@@ -630,22 +631,27 @@ function achbotAdminGatewayChange($update,int $actor,int $chat,int $message,
     ];
     try {
         if ($actor<=0 || $primary<=0 || $chat!==$actor || $message<=0 ||
-            !in_array($kind,['toggle','audience'],true))
+            !in_array($kind,['toggle','audience','rule','number'],true))
             throw new RuntimeException('gateway_actor_or_operation_invalid');
         if ($kind==='toggle' && !in_array($key,$flags,true))
             throw new RuntimeException('gateway_toggle_unknown');
         if ($kind==='audience' &&
             !array_key_exists($key,achbotPayUxAudienceMethods()))
             throw new RuntimeException('gateway_audience_unknown');
+        if ($kind==='rule' && achbotGatewayRuleCallback($key)===null)
+            throw new RuntimeException('gateway_rule_callback_invalid');
+        if ($kind==='number' && (achbotGatewayRuleStep($key)===null ||
+            $value===null)) throw new RuntimeException('gateway_rule_message_invalid');
         $bound=$kind==='toggle' ? 'changeGateWays'.$key
-                                : 'cycleGatewayAudience_'.$key;
+              : ($kind==='audience' ? 'cycleGatewayAudience_'.$key
+              : ($kind==='rule' ? $key : (string)$value));
         if (strlen($bound)>64 || !function_exists('achbotWebhookIngressAuthenticated') ||
             !achbotWebhookIngressAuthenticated())
             throw new RuntimeException('gateway_webhook_not_authenticated');
         if (!function_exists('achbotDirectGiftWebhook'))
             require_once __DIR__.'/src/Subscription/DirectGift.php';
         $frame=achbotDirectGiftWebhook($update,$actor,$chat,$message,
-                                       $bound,'callback');
+                                       $bound,$kind==='number'?'message':'callback');
         $sourceId=(int)$frame['update_id'];
         // Find the exact actor PK before BEGIN to avoid a REPEATABLE READ
         // snapshot pinned ahead of the first current row lock.
@@ -661,7 +667,10 @@ function achbotAdminGatewayChange($update,int $actor,int $chat,int $message,
             return (int)$rows[0]['id'];
         };
         $pk=$findActor($connection,$actor);
-        $authorize=static function(mysqli $db) use($actor,$primary,$pk,$findActor): void {
+        $currentStep=null;
+        $authorize=static function(mysqli $db) use(
+            $actor,$primary,$pk,$findActor,&$currentStep
+        ): void {
             // FIRST read in the transaction: lock CURRENT actor privileges.
             $stmt=$db->prepare('SELECT id,userid,isAdmin,step FROM users WHERE id=? FOR UPDATE');
             if (!$stmt) throw new RuntimeException('gateway_actor_lock_prepare');
@@ -675,9 +684,10 @@ function achbotAdminGatewayChange($update,int $actor,int $chat,int $message,
                 (string)$current['step']==='banned' ||
                 $findActor($db,$actor)!==$pk)
                 throw new RuntimeException('gateway_actor_no_longer_authorized');
+            $currentStep=(string)$current['step'];
         };
         $apply=static function(array $state) use(
-            $connection,$kind,$key,$sourceId,$actor,$message
+            $connection,$kind,$key,$sourceId,$actor,$message,$value,$pk,&$currentStep
         ): array {
             // GET_LOCK in achbotMutateBotStates serializes all in-app writers.
             // setting.type is historically nonunique: refuse ambiguous rows.
@@ -704,7 +714,12 @@ function achbotAdminGatewayChange($update,int $actor,int $chat,int $message,
                 if (!in_array($current,['on','off'],true))
                     throw new RuntimeException('gateway_flag_invalid');
                 $state[$key]=$current==='on'?'off':'on';
-            } else {
+            } elseif ($kind==='audience') {
+                if (isset($state['gatewayRules'])) {
+                    $doc=achbotGatewayRulesDecode($state['gatewayRules']);
+                    if ($doc===null || array_key_exists($key,$doc['methods']))
+                        throw new RuntimeException('gateway_legacy_policy_superseded');
+                }
                 $map=$state['gatewayAudience']??[];
                 if (!is_array($map))
                     throw new RuntimeException('gateway_audience_map_invalid');
@@ -716,7 +731,21 @@ function achbotAdminGatewayChange($update,int $actor,int $chat,int $message,
                     :$modes[($position+1)%count($modes)];
                 $state['gatewayAudience']=$map;
             }
-            $value=json_encode([
+            $newStep=null;
+            if ($kind==='rule' || $kind==='number') {
+                $state=achbotGatewayRuleMutate($state,$kind,$key,$value,
+                    $currentStep??'',$sourceId,$newStep);
+            }
+            if ($newStep!==null) {
+                $stepStmt=$connection->prepare('UPDATE users SET step=? WHERE id=? AND step=?');
+                if (!$stepStmt) throw new RuntimeException('gateway_rule_step_prepare');
+                $stepStmt->bind_param('sis',$newStep,$pk,$currentStep);
+                $stepOk=$stepStmt->execute();$affected=$stepStmt->affected_rows;
+                $stepStmt->close();
+                if (!$stepOk || $affected!==1)
+                    throw new RuntimeException('gateway_rule_step_stale');
+            }
+            $markerValue=json_encode([
                 'version'=>1,'last_update_id'=>$sourceId,'actor_id'=>$actor,
                 'last_message_id'=>$message,'kind'=>$kind,'key'=>$key
             ],JSON_THROW_ON_ERROR);
@@ -725,11 +754,11 @@ function achbotAdminGatewayChange($update,int $actor,int $chat,int $message,
                 $stmt=$connection->prepare('UPDATE setting SET value=?
                     WHERE id=? AND type=? AND value=?');
                 if (!$stmt) throw new RuntimeException('gateway_source_update_prepare');
-                $stmt->bind_param('siss',$value,$id,$type,$before);
+                $stmt->bind_param('siss',$markerValue,$id,$type,$before);
             } else {
                 $stmt=$connection->prepare('INSERT INTO setting(type,value) VALUES (?,?)');
                 if (!$stmt) throw new RuntimeException('gateway_source_insert_prepare');
-                $stmt->bind_param('ss',$type,$value);
+                $stmt->bind_param('ss',$type,$markerValue);
             }
             $ok=$stmt->execute();$changed=$stmt->affected_rows;$stmt->close();
             if (!$ok || $changed!==1)
@@ -738,7 +767,12 @@ function achbotAdminGatewayChange($update,int $actor,int $chat,int $message,
         };
         return achbotMutateBotStates($apply,$authorize);
     } catch (Throwable $error) {
-        error_log('achbot_admin_gateway_change_deferred code='.(int)$error->getCode());
+        $reason=($error instanceof RuntimeException &&
+            preg_match('/\A[a-z0-9_]{1,100}\z/D',$error->getMessage())===1)
+            ? $error->getMessage() : 'unclassified';
+        error_log('achbot_admin_gateway_change_deferred kind='.$kind.
+            ' reason='.$reason.' code='.(int)$error->getCode().
+            ' class='.get_class($error));
         return false;
     }
 }
@@ -1243,8 +1277,8 @@ function getGateWaysKeys(){
 		],
         [['text'=>'⏱ مهلت فاکتورها و محدودیت رسید تکراری',
           'callback_data'=>'paymentPolicySettings']],
-        [['text'=>'👥 دسترسی درگاه‌ها بر اساس گروه کاربران',
-          'callback_data'=>'gatewayAudienceSettings']],
+        [['text'=>'🔐 مدیریت دسترسی به روش‌های پرداخت',
+          'callback_data'=>'gr|l']],
 			[['text'=>$buttonValues['back_button'],'callback_data'=>"managePanel"]]
         ]]);
 }
