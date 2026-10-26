@@ -96,20 +96,39 @@ function achbotDirectGiftEngines(mysqli $db): void {
     ]) throw new RuntimeException('direct_gift_pk_not_unique');
 }
 
-function achbotDirectGiftActorLocked(mysqli $db,int $actor,int $primary): array {
-    if ($actor<=0 || $primary<=0) throw new RuntimeException('direct_gift_actor_invalid');
-    $fetch=static function(int $id) use ($db): array {
-        // userid is not guaranteed unique/indexed. Find the single row
-        // without a locking table scan, then lock its real unique id PK.
+/** Resolve unindexed userid to unique PKs BEFORE starting a transaction.
+ * A consistent read inside the transaction, even before a later FOR UPDATE,
+ * would pin a stale REPEATABLE READ snapshot and hide another owner's claim.
+ */
+function achbotDirectGiftActorPks(mysqli $db,int $actor,int $primary): array {
+    if ($actor<=0 || $primary<=0)
+        throw new RuntimeException('direct_gift_actor_invalid');
+    $ids=[];
+    foreach (array_unique([$primary,$actor]) as $userid) {
         $probe=$db->prepare('SELECT id FROM users WHERE userid=? LIMIT 2');
         if (!$probe) throw new RuntimeException('direct_gift_actor_prepare');
-        $probe->bind_param('i',$id);
+        $probe->bind_param('i',$userid);
         $ok=$probe->execute();
         $found=$ok?$probe->get_result()->fetch_all(MYSQLI_ASSOC):[];
         $probe->close();
         if (!$ok || count($found)!==1 || (int)$found[0]['id']<=0)
             throw new RuntimeException('direct_gift_actor_ambiguous');
-        $pk=(int)$found[0]['id'];
+        $ids[$userid]=(int)$found[0]['id'];
+    }
+    return $ids;
+}
+
+/** FIRST transactional read must lock the primary-admin PK. No nonlocking
+ * consistent read may precede that lock in any direct-gift transaction.
+ * Verify the pre-resolved identities again after locking, on a fresh view.
+ */
+function achbotDirectGiftActorLocked(mysqli $db,int $actor,int $primary,array $pks): array {
+    if ($actor<=0 || $primary<=0 || !isset($pks[$actor],$pks[$primary]))
+        throw new RuntimeException('direct_gift_actor_invalid');
+    $fetch=static function(int $id) use ($db,$pks): array {
+        $pk=$pks[$id];
+        if (!is_int($pk) || $pk<=0)
+            throw new RuntimeException('direct_gift_actor_invalid');
         $stmt=$db->prepare('SELECT id,userid,isAdmin,step FROM users
                             WHERE id=? AND userid=? FOR UPDATE');
         if (!$stmt) throw new RuntimeException('direct_gift_actor_pk_prepare');
@@ -121,9 +140,21 @@ function achbotDirectGiftActorLocked(mysqli $db,int $actor,int $primary): array 
             throw new RuntimeException('direct_gift_actor_changed');
         return $row;
     };
-    // This unique row serializes ALL update_id claims across delegated admins.
+    // Serialize all source and physical-account claims through this unique PK.
     $owner=$fetch($primary);
     $row=$actor===$primary?$owner:$fetch($actor);
+    // The first nonlocking reads occur *after* the owner lock. This snapshot
+    // sees the preceding serialized claimant's committed account marker.
+    foreach (array_unique([$primary,$actor]) as $userid) {
+        $probe=$db->prepare('SELECT id FROM users WHERE userid=? LIMIT 2');
+        if (!$probe) throw new RuntimeException('direct_gift_actor_prepare');
+        $probe->bind_param('i',$userid);
+        $ok=$probe->execute();
+        $found=$ok?$probe->get_result()->fetch_all(MYSQLI_ASSOC):[];
+        $probe->close();
+        if (!$ok || count($found)!==1 || (int)$found[0]['id']!==$pks[$userid])
+            throw new RuntimeException('direct_gift_actor_ambiguous');
+    }
     if ($actor!==$primary && (int)$row['isAdmin']!==1)
         throw new RuntimeException('direct_gift_admin_revoked');
     return $row;
@@ -246,9 +277,10 @@ function achbotDirectGiftStart(mysqli $db,array $source,int $serverId,int $prima
         ($source['kind']??'')!=='telegram_direct_gift_callback_v1')
         throw new RuntimeException('direct_gift_start_invalid');
     achbotDirectGiftEngines($db);
+    $actorPks=achbotDirectGiftActorPks($db,$source['actor_id'],$primary);
     if (!$db->begin_transaction()) throw new RuntimeException('direct_gift_begin_failed');
     try {
-        $actor=achbotDirectGiftActorLocked($db,$source['actor_id'],$primary);
+        $actor=achbotDirectGiftActorLocked($db,$source['actor_id'],$primary,$actorPks);
         $lastUpdate=achbotDirectGiftStepUpdate((string)$actor['step']);
         if ($lastUpdate!==null && $source['update_id']<=$lastUpdate)
             throw new RuntimeException('direct_gift_stale_start');
@@ -283,9 +315,10 @@ function achbotDirectGiftStart(mysqli $db,array $source,int $serverId,int $prima
 function achbotDirectGiftAdvance(mysqli $db,array $source,int $primary,
                                   string $step,string $text): string {
     achbotDirectGiftEngines($db);
+    $actorPks=achbotDirectGiftActorPks($db,$source['actor_id'],$primary);
     if (!$db->begin_transaction()) throw new RuntimeException('direct_gift_begin_failed');
     try {
-        $actor=achbotDirectGiftActorLocked($db,$source['actor_id'],$primary);
+        $actor=achbotDirectGiftActorLocked($db,$source['actor_id'],$primary,$actorPks);
         if ($actor['step']!==$step)
             throw new RuntimeException('direct_gift_step_stale');
         if (preg_match('/\AachbotDirectGiftRemark:([1-9][0-9]*):([a-f0-9]{32}):([1-9][0-9]*)\z/D',$step,$m)) {
@@ -337,11 +370,25 @@ function achbotDirectGiftAdvance(mysqli $db,array $source,int $primary,
 
 function achbotDirectGiftCancel(mysqli $db,array $source,int $primary,string $step): void {
     achbotDirectGiftEngines($db);
+    $actorPks=achbotDirectGiftActorPks($db,$source['actor_id'],$primary);
     if (!$db->begin_transaction()) throw new RuntimeException('direct_gift_begin_failed');
     try {
-        $actor=achbotDirectGiftActorLocked($db,$source['actor_id'],$primary);
+        $actor=achbotDirectGiftActorLocked($db,$source['actor_id'],$primary,$actorPks);
         if ($actor['step']!==$step)
             throw new RuntimeException('direct_gift_step_stale');
+        // CANCEL must advance the same authenticated source order as a normal step.
+        $lastUpdate=achbotDirectGiftStepUpdate($step);
+        if ($lastUpdate===null || ($source['kind']??null)!=='telegram_direct_gift_v1' ||
+            !is_int($source['update_id']??null) ||
+            $source['update_id']<=$lastUpdate)
+            throw new RuntimeException('direct_gift_old_cancel');
+        if (preg_match('/\AachbotDirectGift(?:Day|Volume):([A-Za-z0-9_-]+)(?::[0-9]+)?\z/D',$step,$match)) {
+            $payload=achbotDirectGiftDecode($match[1]);
+            if ($payload['actor_id']!==$source['actor_id'] ||
+                !is_int($source['message_id']??null) ||
+                $source['message_id']<=$payload['last_message_id'])
+                throw new RuntimeException('direct_gift_old_cancel');
+        }
         achbotDirectGiftSetStepLocked($db,$actor,$step,'none');
         if (!$db->commit()) throw new RuntimeException('direct_gift_cancel_commit_unknown');
     } catch (Throwable $e) {
@@ -368,12 +415,30 @@ function achbotDirectGiftClaim(mysqli $db,array $source,int $primary,
     if (!is_int($expected['id']??null) || $expected['id']<=0)
         throw new RuntimeException('direct_gift_order_missing');
     achbotDirectGiftEngines($db);
+    $actorPks=achbotDirectGiftActorPks($db,$source['actor_id'],$primary);
     if (!$db->begin_transaction()) throw new RuntimeException('direct_gift_begin_failed');
     try {
-        $actor=achbotDirectGiftActorLocked($db,$source['actor_id'],$primary);
+        $actor=achbotDirectGiftActorLocked($db,$source['actor_id'],$primary,$actorPks);
         $type=achbotDirectGiftSourceType($source['update_id']);
         $prior=achbotDirectGiftRows($db,$type,true);
         if ($prior) {
+            $existing=json_decode((string)$prior[0]['value'],true);
+            // Source type is derived only from update_id; an existing type
+            // is not proof that the original Telegram actor, wizard and
+            // pinned account claim agree. Fail closed on provenance conflict.
+            if (!is_array($existing) ||
+                ($existing['version']??null)!==1 ||
+                ($existing['kind']??null)!=='achbot_direct_gift_v1' ||
+                !in_array($existing['state']??null,['pending','review','completed'],true) ||
+                ($existing['source']??null)!==$source ||
+                ($existing['actor_id']??null)!==$source['actor_id'] ||
+                ($existing['step_sha256']??null)!==hash('sha256',$step) ||
+                ($existing['nonce']??null)!==$payload['nonce'] ||
+                ($existing['order']??null)!==$expected ||
+                ($existing['days']??null)!==$days ||
+                ($existing['volume_mb']??null)!==$volume ||
+                !is_array($existing['target']??null))
+                throw new RuntimeException('direct_gift_duplicate_source_conflict');
             if (!$db->commit()) throw new RuntimeException('direct_gift_replay_commit_unknown');
             return ['claimed'=>false,'reason'=>'duplicate','id'=>(int)$prior[0]['id']];
         }
@@ -469,10 +534,11 @@ function achbotDirectGiftJournalLocked(mysqli $db,array $claim): array {
 function achbotDirectGiftPreEffect(mysqli $db,array $claim,
                                    int $actorId,int $primary): void {
     achbotDirectGiftEngines($db);
+    $actorPks=achbotDirectGiftActorPks($db,$actorId,$primary);
     if (!$db->begin_transaction())
         throw new RuntimeException('direct_gift_preflight_begin_failed');
     try {
-        achbotDirectGiftActorLocked($db,$actorId,$primary);
+        achbotDirectGiftActorLocked($db,$actorId,$primary,$actorPks);
         $order=achbotDirectGiftOrder($db,$claim['order']['id'],true);
         if ($order!==$claim['order'])
             throw new RuntimeException('direct_gift_preflight_order_changed');

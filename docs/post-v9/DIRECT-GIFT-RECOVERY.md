@@ -11,8 +11,11 @@ history and the original 23-table database remain unchanged.
 1. A newly delivered private Telegram giftToUser server callback starts a
    random-nonced wizard for the currently authorized operator. Each step
    needs a fresh private text update whose update/message IDs advance,
-   matching actor and fresh MariaDB administrator privilege. Revoked
-   delegated administrators and stale/out-of-order callbacks fail closed.
+   matching actor and fresh MariaDB administrator privilege. CANCEL is also
+   a guarded transition: its update ID must exceed the accepted step update,
+   and Day/Volume cancellation additionally requires a newer private-chat
+   message ID. Revoked delegated administrators and stale/out-of-order
+   callbacks or cancellations fail closed.
 2. Remark resolution requires exactly one active orders_list primary-key
    identity for the selected logical server. It pins order id, userid,
    server_id, inbound_id, fileid, remark, uuid, status and old expire_date.
@@ -21,10 +24,14 @@ history and the original 23-table database remain unchanged.
 3. Before potentially non-idempotent Marzban effects, one committed InnoDB
    transaction creates a permanent source journal and physical-account hold
    in setting and consumes the exact admin wizard step. The original
-   setting.type and users.userid are NOT unique, so the source serializes
-   through a genuine users.id primary-admin row and checks ambiguity.
-   Account identity uses the explicit panel group when available, otherwise
-   the pinned physical endpoint plus remark. The target credential hash is
+   setting.type and users.userid are NOT unique. Unindexed userid-to-PK
+   resolution happens **before** the transaction; the first transactional
+   read locks the real primary-admin users.id PK, then rechecks ambiguous
+   identities on a snapshot established **after** that lock. This order
+   prevents stale InnoDB REPEATABLE READ views from missing the previous
+   claimant's marker. No unindexed setting.type FOR UPDATE table scan is
+   needed. Account identity uses the explicit panel group when available,
+   otherwise the pinned physical endpoint plus remark. The target credential hash is
    captured, but no cleartext credential is stored in the journal.
 4. The verified service-edit seam must return true success, true verified,
    no uncertainty, and exact absolute integer expire and quota readback.
@@ -97,8 +104,12 @@ accepted additive schema decision, not an unreviewed migration.
   establish safe compensating controls before an authorized rollback.
 - Native test: python3 tools/test_post_v9_direct_gift.py --run-disposable
   runs actual bot.php handler, PHP/mysqli, original-schema disposable socket
-  MariaDB and synthetic Telegram/Marzban. PHP 8.1/8.4 full source/history CI,
-  artifact checks, independent review and operator acceptance remain gates.
+  MariaDB and synthetic Telegram/Marzban. The concurrency regression waits
+  for a real InnoDB owner-PK lock wait before committing the first claim;
+  it covers REPEATABLE READ and READ COMMITTED, and a disposable optional
+  panel-group alias check. No installed schema is changed. PHP 8.1/8.4
+  full source/history CI, artifact checks, independent review and operator
+  acceptance remain gates.
 - CI does NOT certify installed tenant schema, real Telegram webhook
   authentication, real provider account incarnation, PHP-FPM/LSAPI, actual
   customer data, payment state, real service effects, or production rollout.

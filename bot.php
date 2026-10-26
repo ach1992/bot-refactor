@@ -1580,7 +1580,9 @@ if (is_string($userInfo['step']??null) &&
         catch (Throwable $ignored) {}
         return;
     } catch (Throwable $e) {
-        error_log('direct_gift_claim_or_step_unconfirmed');
+        if ($e->getMessage()==='direct_gift_duplicate_source_conflict')
+            error_log('direct_gift_source_provenance_conflict update_id='.(int)$directSource['update_id']);
+        else error_log('direct_gift_claim_or_step_unconfirmed');
         try {sendMessage('وضعیت درخواست تأیید نشد. از ارسال دوباره تا بررسی وضعیت خودداری کنید.');}
         catch (Throwable $ignored) {}
         return;

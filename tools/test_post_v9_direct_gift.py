@@ -10,6 +10,7 @@ import concurrent.futures
 import json
 import os
 import subprocess
+import time
 from pathlib import Path
 
 import test_access_state as owned
@@ -28,8 +29,31 @@ set_error_handler(static function($n,$m) {throw new ErrorException($m,0,$n);});
 $spec=json_decode($argv[1],true,512,JSON_THROW_ON_ERROR);
 $GLOBALS['spec']=$spec;
 class DirectGiftMysqli extends mysqli {
+    private function fixtureGate(string $announce,string $release): void {
+        file_put_contents($GLOBALS['spec'][$announce],'ready');
+        $deadline=microtime(true)+25;
+        while (!file_exists($GLOBALS['spec'][$release])) {
+            if (microtime(true)>$deadline)
+                throw new RuntimeException('synthetic_gate_timeout_'.$announce);
+            usleep(10000);
+        }
+    }
     public function commit(int $flags=0,?string $name=null): bool {
+        $pausing=($GLOBALS['spec']['mode']??'')==='pause_claim_commit' &&
+            !($GLOBALS['paused_claim']??false);
+        if ($pausing) {
+            $rows=$this->query("SELECT id FROM setting WHERE type LIKE 'ACHBOT_DIRECT_GIFT_SOURCE_%' LIMIT 1");
+            $pausing=$rows && $rows->num_rows===1;
+            if ($pausing) {
+                $GLOBALS['paused_claim']=true;
+                $this->fixtureGate('pause_ready','release_commit');
+            }
+        }
         $done=parent::commit($flags,$name);
+        if ($done && $pausing)
+            $this->fixtureGate('post_commit_ready','release_effect');
+        if ($done && ($GLOBALS['spec']['mode']??'')==='cancel_commit_unknown')
+            throw new RuntimeException('synthetic_cancel_commit_ack_lost');
         if ($done && ($GLOBALS['spec']['mode']??'')==='commit_unknown' &&
             !($GLOBALS['did_unknown']??false)) {
             $rows=$this->query("SELECT id FROM setting WHERE type LIKE 'ACHBOT_DIRECT_GIFT_SOURCE_%' LIMIT 1");
@@ -250,6 +274,85 @@ def prepare_final(work: Path, env: dict, stage: Path,days: str='2',
     ensure(any('حجم' in x for x in day(work,env,stage,actor=actor,value=days)['events']),
            'Direct gift day did not progress to volume')
 
+def prepare_second_alias(work: Path, env: dict, stage: Path) -> None:
+    # Two real wizard generations, distinct actors/orders/logical servers,
+    # but the SAME physical endpoint and provider remark.
+    q(work,env,"INSERT INTO server_info (id,title,ucount,remark,flag,active,state) "
+      "VALUES(4,'Alias',5,'fixture','','1',1) "
+      "ON DUPLICATE KEY UPDATE title='Alias',active=1,state=1")
+    q(work,env,"UPDATE server_config SET type='marzban',"
+      "panel_url='http://127.0.0.1:9' WHERE id=4")
+    q(work,env,"INSERT INTO orders_list (id,userid,token,transid,fileid,server_id,"
+      "inbound_id,remark,uuid,protocol,expire_date,link,amount,status,date) "
+      "VALUES(92,1001,REPEAT('a',30),'fixture',7,4,0,'fixture-user',"
+      "'alias-uuid','vless',1800000100,'[]',100,1,'fixture')")
+    for kind,uid,mid,value in [
+        ('callback',600,60,'giftToUser4'),
+        ('message',601,61,'fixture-user'),
+        ('message',602,62,'2')
+    ]:
+        result=call(work,env,stage,kind=kind,actor=9002,
+                    update_id=uid,message_id=mid,text=value)
+        ensure(result['events'] and
+               not any('تأیید نشد' in e for e in result['events']),
+               'Second delegated actor could not reach legitimate final gift step')
+    ensure(q(work,env,'SELECT step FROM users WHERE userid=9002')
+               .startswith('achbotDirectGiftVolume:'),
+           'Second delegated actor did not reach final step')
+
+
+def wait_for(predicate, reason: str, timeout: float=12) -> None:
+    deadline=time.monotonic()+timeout
+    while time.monotonic()<deadline:
+        if predicate():return
+        time.sleep(.045)
+    raise RuntimeError(reason)
+
+
+def race_claim_before_owner_release(work: Path, env: dict, stage: Path,
+                                    isolation: str='REPEATABLE-READ') -> None:
+    ensure(isolation in q(work,env,'SELECT @@tx_isolation').upper().replace('_','-'),
+           'Disposable MariaDB isolation differs from required '+isolation)
+    gates={k:stage/('owned-'+k) for k in
+           ['pause_ready','release_commit','post_commit_ready','release_effect']}
+    for path in gates.values():path.unlink(missing_ok=True)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+        try:
+            first=pool.submit(call,work,env,stage,kind='message',actor=9001,
+                update_id=503,message_id=53,text='1024',mode='pause_claim_commit',
+                **{k:str(p) for k,p in gates.items()})
+            wait_for(lambda:gates['pause_ready'].exists(),
+                     'First claimant did not pause with uncommitted claim')
+            second=pool.submit(call,work,env,stage,kind='message',actor=9002,
+                update_id=603,message_id=63,text='1024')
+            # Real InnoDB row-lock wait, not a timer-only concurrency guess:
+            # B already performed pre-resolution, then waits on A's owner PK.
+            wait_for(lambda:int(q(work,env,
+                'SELECT COUNT(*) FROM information_schema.INNODB_LOCK_WAITS'))>0,
+                'Second real actor never entered InnoDB primary-owner row-lock wait')
+            gates['release_commit'].write_text('go')
+            wait_for(lambda:gates['post_commit_ready'].exists(),
+                     'First claimant did not commit its durable journal')
+            held=second.result(timeout=28)
+            ensure(any('انتظار' in e for e in held['events']),
+                   'Second competing actor did not receive a physical hold')
+            ensure(len(rows(work,env,'SOURCE'))==1 and
+                   len(rows(work,env,'ACCOUNT'))==1 and not effects(stage) and
+                   q(work,env,'SELECT step FROM users WHERE userid=9002')=='none',
+                   'REPEATABLE READ stale snapshot created conflicting source/marker')
+            gates['release_effect'].write_text('go')
+            completed=first.result(timeout=28)
+            ensure(any('✅' in e for e in completed['events']) and
+                   len(effects(stage))==1 and
+                   rows(work,env,'SOURCE')[0]['state']=='completed' and
+                   rows(work,env,'ACCOUNT')[0]['state']=='completed',
+                   'Original serialized claimant could not complete after hold loser')
+        finally:
+            # Release only fixture-owned gates before waiting on worker exit.
+            gates['release_commit'].write_text('go')
+            gates['release_effect'].write_text('go')
+
+
 def main() -> None:
     ap=argparse.ArgumentParser()
     ap.add_argument('--run-disposable',action='store_true',required=True)
@@ -339,6 +442,33 @@ def main() -> None:
 
         reset(work,env);stage.joinpath('effects.jsonl').unlink(missing_ok=True)
         prepare_final(work,env,stage)
+        original_step=q(work,env,'SELECT step FROM users WHERE userid=9001')
+        volume(work,env,stage,mode='provider_unknown')
+        ordinary_replay=call(work,env,stage,kind='message',actor=9001,
+            update_id=503,message_id=53,text='1024',stale_step=original_step)
+        ensure(any('قبلاً' in e for e in ordinary_replay['events']) and
+               len(rows(work,env,'SOURCE'))==1 and len(effects(stage))==1,
+               'Intact original source was not recognized as a harmless duplicate')
+        passed.append('verified_prior_source_envelope_duplicate_no_effect')
+
+        for key in ['$.actor_id','$.source.actor_id']:
+            reset(work,env);stage.joinpath('effects.jsonl').unlink(missing_ok=True)
+            prepare_final(work,env,stage)
+            old_step=q(work,env,'SELECT step FROM users WHERE userid=9001')
+            volume(work,env,stage,mode='provider_unknown')
+            q(work,env,"UPDATE setting SET value=JSON_SET(value,'"+key+"',9002) "
+              "WHERE type LIKE 'ACHBOT_DIRECT_GIFT_SOURCE_%'")
+            suspicious=call(work,env,stage,kind='message',actor=9001,
+                update_id=503,message_id=53,text='1024',stale_step=old_step)
+            ensure(not any('قبلاً' in e for e in suspicious['events']) and
+                   any('تأیید نشد' in e for e in suspicious['events']) and
+                   len(rows(work,env,'SOURCE'))==1 and
+                   len(rows(work,env,'ACCOUNT'))==1 and len(effects(stage))==1,
+                   'Conflicting stored '+key+' was mislabeled as clean duplicate')
+            passed.append('corrupt_source_provenance_fail_closed_'+key)
+
+        reset(work,env);stage.joinpath('effects.jsonl').unlink(missing_ok=True)
+        prepare_final(work,env,stage)
         unknown=volume(work,env,stage,mode='commit_unknown')
         ensure(len(effects(stage))==0 and
                len(rows(work,env,'SOURCE'))==1 and
@@ -381,6 +511,86 @@ def main() -> None:
                any('نام کاربری' in t for t in replacement['events']),
                'Fresh explicit callback could not restart the wizard')
         passed.append('new_callback_restarts_distinct_nonce')
+
+        # CANCEL is a real wizard transition and must reject older updates.
+        for stage_name in ['remark','day','volume']:
+            reset(work,env);stage.joinpath('effects.jsonl').unlink(missing_ok=True)
+            begin(work,env,stage)
+            if stage_name in ['day','volume']: remark(work,env,stage)
+            if stage_name=='volume': day(work,env,stage)
+            last={'remark':500,'day':501,'volume':502}[stage_name]
+            fresh=call(work,env,stage,kind='message',actor=9001,
+                       update_id=last+1,message_id=last-449,text='CANCEL')
+            ensure(q(work,env,'SELECT step FROM users WHERE userid=9001')=='none' and
+                   any('لغو شد' in e for e in fresh['events']) and
+                   not effects(stage) and not rows(work,env,'SOURCE'),
+                   'Fresh CANCEL did not consume exactly the current '+stage_name+' step')
+            passed.append('fresh_cancel_'+stage_name)
+
+        reset(work,env);begin(work,env,stage,update_id=600)
+        current=q(work,env,'SELECT step FROM users WHERE userid=9001')
+        stale=call(work,env,stage,kind='message',actor=9001,
+                   update_id=599,message_id=49,text='CANCEL')
+        ensure(q(work,env,'SELECT step FROM users WHERE userid=9001')==current and
+               not any('لغو شد' in e for e in stale['events']),
+               'Older CANCEL erased a newer nonce-protected wizard')
+        passed.append('old_cancel_cannot_erase_new_start_nonce')
+
+        for stage_name in ['day','volume']:
+            reset(work,env);begin(work,env,stage);remark(work,env,stage)
+            if stage_name=='volume': day(work,env,stage)
+            current=q(work,env,'SELECT step FROM users WHERE userid=9001')
+            last={'day':501,'volume':502}[stage_name]
+            old=call(work,env,stage,kind='message',actor=9001,
+                     update_id=last,message_id=last-450,text='CANCEL')
+            ensure(q(work,env,'SELECT step FROM users WHERE userid=9001')==current and
+                   not any('لغو شد' in e for e in old['events']),
+                   'Out-of-order CANCEL consumed '+stage_name+' step')
+            passed.append('old_cancel_preserves_'+stage_name)
+
+        reset(work,env);begin(work,env,stage);remark(work,env,stage)
+        current=q(work,env,'SELECT step FROM users WHERE userid=9001')
+        call(work,env,stage,kind='message',actor=9001,
+             update_id=503,message_id=51,text='CANCEL')
+        ensure(q(work,env,'SELECT step FROM users WHERE userid=9001')==current,
+               'CANCEL with newer update but stale chat message id was accepted')
+        passed.append('cancel_checks_last_message_as_well_as_update')
+
+        reset(work,env);begin(work,env,stage)
+        call(work,env,stage,kind='message',actor=9001,
+             update_id=501,message_id=51,text='CANCEL',mode='cancel_commit_unknown')
+        ensure(q(work,env,'SELECT step FROM users WHERE userid=9001')=='none' and
+               not effects(stage),
+               'Lost CANCEL COMMIT ACK rearmed the old wizard')
+        begin(work,env,stage,update_id=600)
+        current=q(work,env,'SELECT step FROM users WHERE userid=9001')
+        call(work,env,stage,kind='message',actor=9001,
+             update_id=501,message_id=51,text='CANCEL')
+        ensure(q(work,env,'SELECT step FROM users WHERE userid=9001')==current,
+               'Redelivered CANCEL after unknown COMMIT erased a new wizard')
+        passed.append('cancel_lost_commit_ack_then_redelivery_fails_closed')
+
+        reset(work,env);begin(work,env,stage,actor=9002)
+        current=q(work,env,'SELECT step FROM users WHERE userid=9002')
+        q(work,env,'UPDATE users SET isAdmin=0 WHERE userid=9002')
+        call(work,env,stage,kind='message',actor=9002,
+             update_id=501,message_id=51,text='CANCEL')
+        ensure(q(work,env,'SELECT step FROM users WHERE userid=9002')==current,
+               'Revoked delegated admin cancelled an active wizard')
+        passed.append('revoked_delegated_admin_cannot_cancel')
+
+        reset(work,env);begin(work,env,stage);remark(work,env,stage)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+            results=list(pool.map(lambda spec:call(work,env,stage,kind='message',
+                actor=9001,**spec),[
+                {'update_id':502,'message_id':52,'text':'2'},
+                {'update_id':503,'message_id':53,'text':'CANCEL'}]))
+        remaining=q(work,env,'SELECT step FROM users WHERE userid=9001')
+        ensure(remaining=='none' or remaining.startswith('achbotDirectGiftVolume:'),
+               'Concurrent CANCEL/progress created an invalid wizard generation')
+        ensure(not effects(stage) and not rows(work,env,'SOURCE'),
+               'Concurrent CANCEL/progress dispatched a provider effect')
+        passed.append('concurrent_cancel_and_progress_generation_cas')
 
         for kind,spec in [
             ('missing_webhook_secret',{'missing_header':True}),
@@ -494,6 +704,79 @@ def main() -> None:
                any('انتظار' in x for x in held['events']),
                'Same physical account through second logical server bypassed hold')
         passed.append('physical_account_alias_cross_order_cross_admin_held')
+
+        reset(work,env);stage.joinpath('effects.jsonl').unlink(missing_ok=True)
+        prepare_final(work,env,stage)
+        prepare_second_alias(work,env,stage)
+        race_claim_before_owner_release(work,env,stage)
+        passed.append('repeatable_read_two_admins_two_orders_lockwait_before_claim_commit')
+
+        # Verify the same owner-lock invariant under MariaDB READ COMMITTED;
+        # restore server isolation afterwards, never change any tenant setting.
+        q(work,env,'SET GLOBAL TRANSACTION ISOLATION LEVEL READ COMMITTED')
+        try:
+            reset(work,env);stage.joinpath('effects.jsonl').unlink(missing_ok=True)
+            prepare_final(work,env,stage)
+            prepare_second_alias(work,env,stage)
+            race_claim_before_owner_release(work,env,stage,'READ-COMMITTED')
+            passed.append('read_committed_two_admins_alias_lockwait_safe')
+        finally:
+            q(work,env,'SET GLOBAL TRANSACTION ISOLATION LEVEL REPEATABLE READ')
+
+        # An installed optional panel-group column must hold aliases with
+        # distinct URLs. Add/drop ONLY on our disposable fixture.
+        reset(work,env);stage.joinpath('effects.jsonl').unlink(missing_ok=True)
+        prepare_final(work,env,stage)
+        prepare_second_alias(work,env,stage)
+        q(work,env,'ALTER TABLE server_info ADD COLUMN panel_group_id INT NULL')
+        try:
+            q(work,env,"INSERT INTO setting (type,value) "
+              "VALUES ('ACHBOT_MARZBAN_PANEL_GROUP','{}')")
+            groupid=q(work,env,"SELECT id FROM setting WHERE type="
+                      "'ACHBOT_MARZBAN_PANEL_GROUP' ORDER BY id DESC LIMIT 1")
+            ensure(groupid.isdigit(),'Synthetic panel group identity was not persisted')
+            q(work,env,'UPDATE server_info SET panel_group_id='+groupid+
+                     ' WHERE id IN (2,4)')
+            q(work,env,"UPDATE server_config SET panel_url='http://127.0.0.1:10' WHERE id=4")
+            volume(work,env,stage,mode='provider_unknown')
+            held=call(work,env,stage,kind='message',actor=9002,
+                      update_id=603,message_id=63,text='1024')
+            ensure(len(effects(stage))==1 and
+                   len(rows(work,env,'SOURCE'))==1 and
+                   len(rows(work,env,'ACCOUNT'))==1 and
+                   any('انتظار' in e for e in held['events']),
+                   'Shared group alias with distinct physical URLs bypassed hold')
+            passed.append('shared_panel_group_two_urls_cross_admin_hold')
+        finally:
+            q(work,env,'ALTER TABLE server_info DROP COLUMN panel_group_id')
+            q(work,env,"DELETE FROM setting WHERE type='ACHBOT_MARZBAN_PANEL_GROUP'")
+
+        reset(work,env);stage.joinpath('effects.jsonl').unlink(missing_ok=True)
+        prepare_final(work,env,stage)
+        volume(work,env,stage,mode='provider_unknown')
+        call(work,env,stage,kind='message',actor=9001,
+             update_id=504,message_id=54,text='1024')
+        ensure(len(rows(work,env,'SOURCE'))==1 and
+               len(rows(work,env,'ACCOUNT'))==1 and len(effects(stage))==1,
+               'Distinct update IDs in same actor generation bypassed permanent hold')
+        passed.append('same_actor_distinct_update_ids_no_second_account_claim')
+
+        reset(work,env);stage.joinpath('effects.jsonl').unlink(missing_ok=True)
+        prepare_final(work,env,stage,days='0')
+        volume(work,env,stage,mode='verified')
+        begin(work,env,stage,update_id=600)
+        call(work,env,stage,kind='message',actor=9001,
+             update_id=601,message_id=61,text='fixture-user')
+        call(work,env,stage,kind='message',actor=9001,
+             update_id=602,message_id=62,text='0')
+        call(work,env,stage,kind='message',actor=9001,
+             update_id=603,message_id=63,text='1024')
+        ensure(len(rows(work,env,'SOURCE'))==2 and
+               len(rows(work,env,'ACCOUNT'))==1 and
+               len(effects(stage))==2 and
+               rows(work,env,'ACCOUNT')[0]['state']=='completed',
+               'Completed hold improperly blocked or duplicated new authorized request')
+        passed.append('completed_marker_reuse_only_after_distinct_new_wizard')
 
         reset(work,env);stage.joinpath('effects.jsonl').unlink(missing_ok=True)
         prepare_final(work,env,stage)
