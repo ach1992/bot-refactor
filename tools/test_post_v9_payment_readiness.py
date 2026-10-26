@@ -273,6 +273,32 @@ def main() -> dict:
         require((code == 2 and has(result,'source_identity','BLOCK')), 'line_182')
         cases.append('unverified_source_identity_blocks')
 
+        # Even matching remote file bytes + supplied manifest cannot make
+        # this checkout's source-real parser authoritative if helper versions
+        # disagree. Both local helper bytes and installed bytes are pinned.
+        helper_name = 'src/Finance/GatewayRules.php'
+        helper_file = runtime/helper_name
+        helper_original = helper_file.read_bytes()
+        changed_helper = helper_original + b'\n// foreign fixture version\n'
+        helper_file.write_bytes(changed_helper)
+        manifest_path = d/'manifest.json'
+        changed_manifest = json.loads(manifest_path.read_text())
+        changed_manifest['files'][helper_name] = {
+            'size': len(changed_helper),
+            'sha256': hashlib.sha256(changed_helper).hexdigest(),
+        }
+        manifest_path.write_text(json.dumps(changed_manifest))
+        code, result, _ = report_run(d)
+        require(code == 2 and has(result, 'source_identity', 'BLOCK'),
+                'foreign_source_parser')
+        helper_file.write_bytes(helper_original)
+        changed_manifest['files'][helper_name] = {
+            'size': len(helper_original),
+            'sha256': hashlib.sha256(helper_original).hexdigest(),
+        }
+        manifest_path.write_text(json.dumps(changed_manifest))
+        cases.append('helper_source_mismatch_with_manifest_blocks')
+
         member='src/Finance/PaymentLifecycle.php'
         target=runtime/member
         target.write_bytes(target.read_bytes()+b'\n')

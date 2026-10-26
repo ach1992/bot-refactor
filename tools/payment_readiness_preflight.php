@@ -83,6 +83,17 @@ function verifyManifest(string $manifestPath, string $runtimePath): bool {
         if (!hash_equals('541fb30dd989d2826b748e8a95724c487aae6497dec0817286a0b5e4cf71b3b2',
                          hash('sha256', implode("\n", $members))) ||
             in_array('baseInfo.php', $members, true)) return false;
+        // These helper implementations are executed by this tool. Bind them
+        // to the exact manifest version before trusting their policy and
+        // configuration validation; mixing different checkouts is unsafe.
+        foreach (['src/Finance/PaymentLifecycle.php',
+                  'src/Finance/GatewayRules.php',
+                  'src/Finance/ReceiptHelpers.php'] as $helper) {
+            $source = dirname(__DIR__) . DIRECTORY_SEPARATOR . $helper;
+            if (is_link($source) || !is_file($source) ||
+                !hash_equals((string)$manifest['files'][$helper]['sha256'],
+                             (string)hash_file('sha256', $source))) return false;
+        }
         $root = realpath($runtimePath);
         if ($root === false || !is_dir($root)) return false;
         $report['source_candidate'] = $manifest['candidate'];

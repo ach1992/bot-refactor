@@ -21,7 +21,9 @@ It checks:
 - All 102 listed runtime files' byte lengths and SHA-256 against the
   **provided** manifest, and an independently pinned 102-member filename
   inventory (canonical sorted-set SHA-256 from `package_post_v9.members()`),
-  with no retired automatic TRON/WeSwap PHP files.
+  with no retired automatic TRON/WeSwap PHP files. The three locally
+  executed parser/validation helpers must also match the supplied runtime
+  manifest; a tool checkout from another source version is rejected.
   No other runtime file is deleted or overwritten. `baseInfo.php` is never read.
 - Original 23 table names, and expected distinguishing columns/named unique
   indexes for additive `001`, `003`, `004`, `005`, `006`, `007`, `008`, `009`.

@@ -976,6 +976,7 @@ def main():
             'bank_details_match_checkout_length_guard',
             'trx_rate_follows_source_nine_digit_limit',
             'untrusted_manifest_cannot_add_private_member',
+            'helper_source_mismatch_with_manifest_blocks',
             'unverified_source_identity_blocks',
             'runtime_byte_drift_blocks',
             'retired_runtime_member_blocks',
