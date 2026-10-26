@@ -1,4 +1,9 @@
 <?php
+// config.php is an included library, not a standalone HTTP endpoint.
+if (realpath($_SERVER['SCRIPT_FILENAME']??'')===__FILE__) {
+    http_response_code(404);
+    exit;
+}
 
 include_once "settings/values.php";
 include_once 'settings/jdf.php';
@@ -254,8 +259,14 @@ function ip_in_range($ip, $range){
     return (($ip_decimal & $netmask_decimal) == ($range_decimal & $netmask_decimal));
 }
 
+// bot.php has already verified the Telegram webhook-secret header.
+// Apply the existing IP allowlist before any configuration-time callback.
+if (defined('ACHBOT_VERIFIED_WEBHOOK_ENTRYPOINT')) check();
 $time = time();
-$update = json_decode(file_get_contents("php://input"));
+// Other includes (payment return pages / Cron) are not Telegram webhooks.
+// Their arbitrary request bodies must never become privileged bot callbacks.
+$update = defined('ACHBOT_VERIFIED_WEBHOOK_ENTRYPOINT')
+    ? json_decode(file_get_contents("php://input")) : null;
 require __DIR__ . '/src/Telegram/UpdateBindings.php';
 if($from_id < 0) exit();
 $stmt = $connection->prepare("SELECT * FROM `users` WHERE `userid`=?");
@@ -283,53 +294,8 @@ $supportID = $botState['supportID'];
 $channelLock = $botState['lockChannel'];
 $joniedState= bot('getChatMember', ['chat_id' => $channelLock,'user_id' => $from_id])->result->status;
 
-if ($data == "addExemptUser") {
-    setUser("awaitingExemptUserID", "step");
-    sendMessage("لطفاً شناسه عددی کاربری که می‌خواهید از الزام عضویت در کانال معاف شود را وارد کنید:", $removeKeyboard);
-}
-if ($userInfo['step'] == "awaitingExemptUserID") {
-    if (!is_numeric($text)) {
-        sendMessage("❌ لطفاً فقط شناسه عددی معتبر وارد کنید.");
-        return;
-    }
-
-    // بررسی وجود EXEMPTED_USERS
-    $stmt = $connection->prepare("SELECT * FROM `setting` WHERE `type` = 'EXEMPTED_USERS'");
-    $stmt->execute();
-    $row = $stmt->get_result()->fetch_assoc();
-    $stmt->close();
-
-    if (!$row) {
-        // اگر وجود نداشت، ایجادش کن
-        $empty = json_encode([]);
-        $stmt = $connection->prepare("INSERT INTO `setting` (`type`, `value`) VALUES ('EXEMPTED_USERS', ?)");
-        $stmt->bind_param("s", $empty);
-        $stmt->execute();
-        $stmt->close();
-        $exemptedUsers = [];
-    } else {
-        $exemptedUsers = json_decode($row['value'], true);
-        if (!is_array($exemptedUsers)) $exemptedUsers = [];
-    }
-
-    // اضافه کردن آیدی اگر نبود
-    if (!in_array($text, $exemptedUsers)) {
-        $exemptedUsers[] = $text;
-
-        $updatedValue = json_encode($exemptedUsers);
-        $stmt = $connection->prepare("UPDATE `setting` SET `value` = ? WHERE `type` = 'EXEMPTED_USERS'");
-        $stmt->bind_param("s", $updatedValue);
-        $stmt->execute();
-        $stmt->close();
-
-        sendMessage("✅ کاربر با آیدی <code>$text</code> معاف شد.", $removeKeyboard, "HTML");
-    } else {
-        sendMessage("⚠️ این کاربر قبلاً معاف شده است.", $removeKeyboard, "HTML");
-    }
-
-    // پاک کردن step
-    setUser("none", "step");
-}
+// Channel exemption is dispatched by bot.php AFTER webhook/IP verification.
+// No privileged Telegram update may change EXEMPTED_USERS during bootstrap.
 
 // تابع مشترک ساخت درخواست پرداخت
 require_once __DIR__ . '/src/Finance/WalletStart.php';
@@ -2404,61 +2370,700 @@ function getOrderCountInRange($connection, $userId, $fromDate) {
 } 
 
 // ✨ هندل کردن تغییر وضعیت همکار و مسدودی
-function handleToggleCallbacks($data, $chat_id, $message_id) {
-    global $connection;
+/**
+ * Source-authenticated administrative moderation. bot.php calls this only
+ * after the ingress secret and legacy IP guard; revalidate both here.
+ *
+ * Policy: a fresh explicit authorized ban may preempt an active gift wizard,
+ * but a callback predating that wizard may NOT do so. Agent toggles never
+ * modify a wizard step. A per-operator source marker makes duplicate/out-of-
+ * order Telegram callbacks idempotent on the nonunique historical schema.
+ */
+/**
+ * Administrator channel-exemption wizard, reachable only from bot.php
+ * AFTER verified Telegram ingress AND its IP check.
+ *
+ * Source timestamps are carried by the nonce-bearing step and a durable
+ * per-actor source marker in original setting. Both actor and policy writes
+ * are serialized by the primary administrator PK to work with historical
+ * nonunique users.userid and setting.type (no schema migration).
+ */
+function achbotHandleChannelExemption($data, $text, $cached): bool {
+    global $connection, $admin, $from_id, $chat_id, $message_id, $update, $removeKeyboard;
+    $start=($data==='addExemptUser');
+    $step=is_array($cached)?(string)($cached['step']??''):'';
+    $continuing=str_starts_with($step,'achbotExempt:');
+    $legacy=($step==='awaitingExemptUserID');
+    if (!$start && !$continuing && !$legacy) return false;
 
-    // تغییر وضعیت همکار
-    if (preg_match('/^toggleAgent_(\d+)/', $data, $match)) {
-        $userId = intval($match[1]);
-
-        $stmt = $connection->prepare("SELECT `is_agent` FROM `users` WHERE `userid` = ?");
-        $stmt->bind_param("i", $userId);
-        $stmt->execute();
-        $result = $stmt->get_result();
-        $stmt->close();
-
-        if ($result->num_rows > 0) {
-            $row = $result->fetch_assoc();
-            $newVal = ($row['is_agent'] == 1) ? 0 : 1;
-
-            $stmt = $connection->prepare("UPDATE `users` SET `is_agent` = ? WHERE `userid` = ?");
-            $stmt->bind_param("ii", $newVal, $userId);
-            $stmt->execute();
-            $stmt->close();
-
-            bot('editMessageReplyMarkup', [
-                'chat_id' => $chat_id,
-                'message_id' => $message_id,
-                'reply_markup' => json_encode(getUserInfoKeys($userId))
-            ]);
+    // An installed pre-upgrade wizard has no verifiable update/nonce
+    // provenance. Require a fresh authenticated admin callback to restart.
+    if ($legacy && !$start) return true;
+    $begun=false;
+    try {
+        if (!function_exists('achbotWebhookIngressAuthenticated') ||
+            !achbotWebhookIngressAuthenticated() ||
+            !is_int($from_id) && !ctype_digit((string)$from_id))
+            throw new RuntimeException('exempt_ingress_unverified');
+        $actor=(int)$from_id;
+        if ($actor<=0 || !is_object($update) ||
+            !is_int($update->update_id??null) || $update->update_id<=0)
+            throw new RuntimeException('exempt_update_invalid');
+        if ($start) {
+            require_once __DIR__.'/src/Subscription/DirectGift.php';
+            $source=achbotDirectGiftWebhook(
+                $update,$actor,(int)$chat_id,(int)$message_id,
+                'addExemptUser','callback');
+            $targetId=null;
+        } else {
+            if (!is_string($text) ||
+                preg_match('/\A[1-9][0-9]{0,18}\z/D',$text)!==1)
+                throw new RuntimeException('exempt_target_invalid');
+            $targetId=filter_var($text,FILTER_VALIDATE_INT,
+                ['options'=>['min_range'=>1,'max_range'=>PHP_INT_MAX]]);
+            if ($targetId===false)
+                throw new RuntimeException('exempt_target_overflow');
+            require_once __DIR__.'/src/Subscription/GiftBatch.php';
+            $source=achbotGiftTelegramSource(
+                $update,$actor,(int)$chat_id,(int)$message_id,$text);
+            if (preg_match('/\AachbotExempt:([1-9][0-9]*):([1-9][0-9]*):[a-f0-9]{32}\z/D',$step,$m)!==1 ||
+                $source['update_id']<=(int)$m[1] ||
+                $source['message_id']<=(int)$m[2])
+                throw new RuntimeException('exempt_message_stale');
         }
+        $actorPk=(int)($cached['id']??0);
+        if ($actorPk<=0 || (int)($cached['userid']??0)!==$actor)
+            throw new RuntimeException('exempt_cached_actor_invalid');
+
+        // Resolve primary-admin PK and exact actor PKs before BEGIN. The
+        // first transactional SELECT must lock the primary-admin PK so a
+        // REPEATABLE READ snapshot is not frozen before serialization.
+        $ids=[];
+        foreach (array_unique([(int)$admin,$actor]) as $id) {
+            if ($id<=0) throw new RuntimeException('exempt_admin_identity_invalid');
+            $stmt=$connection->prepare('SELECT id FROM users WHERE userid=? LIMIT 2');
+            if (!$stmt) throw new RuntimeException('exempt_lookup_prepare');
+            $stmt->bind_param('i',$id);
+            $ok=$stmt->execute();
+            $rows=$ok?$stmt->get_result()->fetch_all(MYSQLI_ASSOC):[];
+            $stmt->close();
+            if (!$ok || count($rows)!==1)
+                throw new RuntimeException('exempt_identity_ambiguous');
+            $ids[$id]=(int)$rows[0]['id'];
+        }
+        if ($ids[$actor]!==$actorPk)
+            throw new RuntimeException('exempt_cached_pk_drift');
+        if (!$connection->begin_transaction())
+            throw new RuntimeException('exempt_begin_failed');
+        $begun=true;
+
+        $ownerPk=$ids[(int)$admin];
+        $stmt=$connection->prepare('SELECT id,userid FROM users WHERE id=? FOR UPDATE');
+        if (!$stmt) throw new RuntimeException('exempt_owner_lock_prepare');
+        $stmt->bind_param('i',$ownerPk);
+        $ok=$stmt->execute();
+        $owner=$ok?$stmt->get_result()->fetch_assoc():null;
+        $stmt->close();
+        if (!$ok || !$owner || (int)$owner['userid']!==(int)$admin)
+            throw new RuntimeException('exempt_owner_lock_failed');
+
+        $stmt=$connection->prepare('SELECT id,userid,isAdmin,step FROM users WHERE id=? FOR UPDATE');
+        if (!$stmt) throw new RuntimeException('exempt_actor_lock_prepare');
+        $stmt->bind_param('i',$actorPk);
+        $ok=$stmt->execute();
+        $current=$ok?$stmt->get_result()->fetch_assoc():null;
+        $stmt->close();
+        if (!$ok || !$current || (int)$current['userid']!==$actor ||
+            ($actor!==(int)$admin && (int)$current['isAdmin']!==1))
+            throw new RuntimeException('exempt_admin_revoked');
+        // Reject duplicated userids even when they were introduced between
+        // pretransaction discovery and acquisition of the owner PK lock.
+        $stmt=$connection->prepare('SELECT id FROM users WHERE userid=? LIMIT 2');
+        if (!$stmt) throw new RuntimeException('exempt_actor_recheck_prepare');
+        $stmt->bind_param('i',$actor);
+        $ok=$stmt->execute();
+        $rows=$ok?$stmt->get_result()->fetch_all(MYSQLI_ASSOC):[];
+        $stmt->close();
+        if (!$ok || count($rows)!==1 || (int)$rows[0]['id']!==$actorPk)
+            throw new RuntimeException('exempt_actor_duplicate');
+
+        $nowStep=(string)$current['step'];
+        if ($nowStep==='banned' || str_starts_with($nowStep,'achbotDirectGift'))
+            throw new RuntimeException('exempt_state_protected');
+        if (!$start && $nowStep!==$step)
+            throw new RuntimeException('exempt_cached_step_stale');
+        if ($start && str_starts_with($nowStep,'achbotExempt:')) {
+            if (preg_match('/\AachbotExempt:([1-9][0-9]*):/D',$nowStep,$m)!==1 ||
+                $source['update_id']<=(int)$m[1])
+                throw new RuntimeException('exempt_old_callback');
+        }
+
+        $markerType='ACHBOT_EXEMPT_SOURCE_'.hash('sha256',(string)$actor);
+        $stmt=$connection->prepare('SELECT id,value FROM setting WHERE type=? LIMIT 2');
+        if (!$stmt) throw new RuntimeException('exempt_marker_prepare');
+        $stmt->bind_param('s',$markerType);
+        $ok=$stmt->execute();
+        $markers=$ok?$stmt->get_result()->fetch_all(MYSQLI_ASSOC):[];
+        $stmt->close();
+        if (!$ok || count($markers)>1)
+            throw new RuntimeException('exempt_marker_ambiguous');
+        if ($markers) {
+            $old=json_decode((string)$markers[0]['value'],true,512,JSON_THROW_ON_ERROR);
+            if (!is_array($old) || ($old['version']??null)!==1 ||
+                ($old['actor_id']??null)!==$actor ||
+                !is_int($old['last_update_id']??null) ||
+                !is_int($old['last_message_id']??null) ||
+                // update_id is globally ordered. Callback message_id names
+                // an older BOT menu message and need not be monotonic.
+                $source['update_id']<=$old['last_update_id'] ||
+                (!$start && $source['message_id']<$old['last_message_id']))
+                throw new RuntimeException('exempt_marker_stale_or_corrupt');
+        }
+        $already=false;
+        $newStep=$start?
+            'achbotExempt:'.$source['update_id'].':'.$source['message_id'].':'.bin2hex(random_bytes(16)):
+            'none';
+        if (!$start) {
+            // Load the nonunique global policy only AFTER the owner PK lock.
+            // All current exemption writers must take this same lock first.
+            $type='EXEMPTED_USERS';
+            $stmt=$connection->prepare('SELECT id,value FROM setting WHERE type=? LIMIT 2');
+            if (!$stmt) throw new RuntimeException('exempt_policy_prepare');
+            $stmt->bind_param('s',$type);
+            $ok=$stmt->execute();
+            $records=$ok?$stmt->get_result()->fetch_all(MYSQLI_ASSOC):[];
+            $stmt->close();
+            if (!$ok || count($records)>1)
+                throw new RuntimeException('exempt_policy_ambiguous');
+            $members=$records?
+                json_decode((string)$records[0]['value'],true,512,JSON_THROW_ON_ERROR):[];
+            if (!is_array($members) || !array_is_list($members))
+                throw new RuntimeException('exempt_policy_corrupt');
+            foreach ($members as $member) {
+                if ((!is_int($member) && (!is_string($member) ||
+                    preg_match('/\A[1-9][0-9]*\z/D',$member)!==1)) ||
+                    (int)$member<=0)
+                    throw new RuntimeException('exempt_policy_member_invalid');
+                if ((int)$member===$targetId) $already=true;
+            }
+            if (!$already) {
+                // Preserve existing string-format userids for compatibility
+                // with bot.php in_array and the historical JSON policy.
+                $members[]=(string)$targetId;
+                $newValue=json_encode($members,JSON_THROW_ON_ERROR);
+                if ($records) {
+                    $rid=(int)$records[0]['id'];
+                    $previous=(string)$records[0]['value'];
+                    $stmt=$connection->prepare('UPDATE setting SET value=? WHERE id=? AND type=? AND value=?');
+                    if (!$stmt) throw new RuntimeException('exempt_policy_update_prepare');
+                    $stmt->bind_param('siss',$newValue,$rid,$type,$previous);
+                } else {
+                    $stmt=$connection->prepare('INSERT INTO setting(type,value) VALUES(?,?)');
+                    if (!$stmt) throw new RuntimeException('exempt_policy_insert_prepare');
+                    $stmt->bind_param('ss',$type,$newValue);
+                }
+                $ok=$stmt->execute();$affected=$stmt->affected_rows;$stmt->close();
+                if (!$ok || $affected!==1)
+                    throw new RuntimeException('exempt_policy_write_unconfirmed');
+            }
+        }
+
+        $stmt=$connection->prepare('UPDATE users SET step=? WHERE id=? AND userid=? AND step=?');
+        if (!$stmt) throw new RuntimeException('exempt_step_cas_prepare');
+        $stmt->bind_param('siis',$newStep,$actorPk,$actor,$nowStep);
+        $ok=$stmt->execute();$affected=$stmt->affected_rows;$stmt->close();
+        if (!$ok || $affected!==1)
+            throw new RuntimeException('exempt_step_cas_unconfirmed');
+
+        $markerValue=json_encode([
+            'version'=>1,'actor_id'=>$actor,
+            'last_update_id'=>$source['update_id'],
+            'last_message_id'=>$source['message_id'],
+        ],JSON_THROW_ON_ERROR);
+        if ($markers) {
+            $rid=(int)$markers[0]['id'];
+            $previous=(string)$markers[0]['value'];
+            $stmt=$connection->prepare('UPDATE setting SET value=? WHERE id=? AND type=? AND value=?');
+            if (!$stmt) throw new RuntimeException('exempt_marker_update_prepare');
+            $stmt->bind_param('siss',$markerValue,$rid,$markerType,$previous);
+        } else {
+            $stmt=$connection->prepare('INSERT INTO setting(type,value) VALUES(?,?)');
+            if (!$stmt) throw new RuntimeException('exempt_marker_insert_prepare');
+            $stmt->bind_param('ss',$markerType,$markerValue);
+        }
+        $ok=$stmt->execute();$affected=$stmt->affected_rows;$stmt->close();
+        if (!$ok || $affected!==1)
+            throw new RuntimeException('exempt_marker_write_unconfirmed');
+        if (!$connection->commit())
+            throw new RuntimeException('exempt_commit_unconfirmed');
+        $begun=false;
+    } catch (Throwable $error) {
+        if ($begun) {
+            try {$connection->rollback();} catch (Throwable $ignored) {}
+        }
+        error_log('admin_channel_exemption_source_or_commit_unconfirmed');
+        return true;
     }
+    if ($start) {
+        sendMessage("لطفاً شناسه عددی کاربری که می‌خواهید از الزام عضویت در کانال معاف شود را وارد کنید:",$removeKeyboard);
+    } elseif ($already) {
+        sendMessage("⚠️ این کاربر قبلاً معاف شده است.",$removeKeyboard,"HTML");
+    } else {
+        sendMessage("✅ کاربر با آیدی <code>$targetId</code> معاف شد.",$removeKeyboard,"HTML");
+    }
+    return true;
+}
 
-    // تغییر وضعیت مسدودی
-    if (preg_match('/^toggleBan_(\d+)/', $data, $match)) {
-        $userId = intval($match[1]);
+function handleToggleCallbacks($data, $chat_id, $message_id): bool {
+    global $connection, $admin, $from_id, $update, $callbackId;
+    if (!is_string($data) ||
+        !preg_match('/\Atoggle(?:Ban|Agent)_/D',$data))
+        return false;
 
-        $stmt = $connection->prepare("SELECT `step` FROM `users` WHERE `userid` = ?");
-        $stmt->bind_param("i", $userId);
-        $stmt->execute();
-        $result = $stmt->get_result();
-        $stmt->close();
+    $inTransaction=false;
+    try {
+        if (strlen($data)>55 ||
+            preg_match('/\Atoggle(Ban|Agent)_([1-9][0-9]*)\z/D',$data,$m)!==1 ||
+            !function_exists('achbotWebhookIngressAuthenticated') ||
+            !achbotWebhookIngressAuthenticated())
+            throw new RuntimeException('moderation_source_invalid');
+        $targetId=filter_var($m[2],FILTER_VALIDATE_INT,
+            ['options'=>['min_range'=>1,'max_range'=>PHP_INT_MAX]]);
+        if ($targetId===false || !is_object($update) ||
+            !is_int($update->update_id??null) || $update->update_id<=0)
+            throw new RuntimeException('moderation_source_invalid');
 
-        if ($result->num_rows > 0) {
-            $row = $result->fetch_assoc();
-            $newStep = ($row['step'] == 'banned') ? 'none' : 'banned';
-
-            $stmt = $connection->prepare("UPDATE `users` SET `step` = ? WHERE `userid` = ?");
-            $stmt->bind_param("si", $newStep, $userId);
-            $stmt->execute();
+        $keys=array_keys(get_object_vars($update));sort($keys);
+        if ($keys!==['callback_query','update_id'] ||
+            !is_object($update->callback_query??null))
+            throw new RuntimeException('moderation_callback_frame_invalid');
+        $callback=$update->callback_query;
+        $sender=$callback->from??null;
+        $message=$callback->message??null;
+        $chat=$message->chat??null;
+        if (!is_object($sender) || !is_object($message) || !is_object($chat) ||
+            !is_int($sender->id??null) || $sender->id<=0 ||
+            ($sender->is_bot??false)===true ||
+            !is_int($chat->id??null) || $chat->id!==$sender->id ||
+            ($chat->type??null)!=='private' ||
+            !is_int($message->message_id??null) ||
+            $message->message_id<=0 ||
+            !is_string($callback->data??null) || $callback->data!==$data ||
+            !is_string($callback->id??null) || $callback->id==='' ||
+            $sender->id!==(int)$from_id ||
+            $chat->id!==(int)$chat_id ||
+            $message->message_id!==(int)$message_id)
+            throw new RuntimeException('moderation_callback_identity_invalid');
+        $actorId=$sender->id;
+        // users.userid is NOT UNIQUE in the original 23-table schema.
+        // Discover the exact actor and target PKs before starting a transaction
+        // so the first transactional reads can acquire current PK row locks.
+        $getPks=static function(int $userid) use ($connection): array {
+            $stmt=$connection->prepare('SELECT id FROM users WHERE userid=? LIMIT 2');
+            if (!$stmt) throw new RuntimeException('moderation_pk_lookup_prepare');
+            $stmt->bind_param('i',$userid);
+            $ok=$stmt->execute();
+            $rows=$ok?$stmt->get_result()->fetch_all(MYSQLI_ASSOC):[];
             $stmt->close();
+            if (!$ok || count($rows)!==1)
+                throw new RuntimeException('moderation_user_identity_ambiguous');
+            return $rows[0];
+        };
+        $actorPk=(int)$getPks($actorId)['id'];
+        $targetPk=(int)$getPks($targetId)['id'];
+        if ($actorPk<=0 || $targetPk<=0)
+            throw new RuntimeException('moderation_pk_invalid');
 
-            bot('editMessageReplyMarkup', [
-                'chat_id' => $chat_id,
-                'message_id' => $message_id,
-                'reply_markup' => json_encode(getUserInfoKeys($userId))
-            ]);
+        if (!$connection->begin_transaction())
+            throw new RuntimeException('moderation_begin_failed');
+        $inTransaction=true;
+        $stmt=$connection->prepare('SELECT id,userid,isAdmin,step,is_agent
+             FROM users WHERE id IN (?,?) ORDER BY id FOR UPDATE');
+        if (!$stmt) throw new RuntimeException('moderation_lock_prepare');
+        $stmt->bind_param('ii',$actorPk,$targetPk);
+        $ok=$stmt->execute();
+        $rows=$ok?$stmt->get_result()->fetch_all(MYSQLI_ASSOC):[];
+        $stmt->close();
+        if (!$ok) throw new RuntimeException('moderation_lock_failed');
+        $actorRow=null;$targetRow=null;
+        foreach ($rows as $row) {
+            if ((int)$row['id']===$actorPk) $actorRow=$row;
+            if ((int)$row['id']===$targetPk) $targetRow=$row;
         }
+        if (!$actorRow || !$targetRow ||
+            (int)$actorRow['userid']!==$actorId ||
+            (int)$targetRow['userid']!==$targetId ||
+            ($actorId!==(int)$admin && (int)$actorRow['isAdmin']!==1))
+            throw new RuntimeException('moderation_actor_revoked_or_target_drift');
+        // Detect newly introduced ambiguous userid rows even if the original
+        // nonunique userid lookup and the PK lock were separated in time.
+        foreach (array_unique([$actorId,$targetId]) as $identity) {
+            $checked=$getPks($identity);
+            if ((int)$checked['id']!==($identity===$actorId?$actorPk:$targetPk))
+                throw new RuntimeException('moderation_user_identity_drift');
+        }
+
+        // Deliberate moderation precedence: only a NEWER signed source may
+        // ban an operator who has an active gift or exemption wizard.
+        // Older/malformed callback sources cannot erase either wizard.
+        if (str_starts_with((string)$targetRow['step'],'achbotDirectGift')) {
+            require_once __DIR__.'/src/Subscription/DirectGift.php';
+            $latestGift=achbotDirectGiftStepUpdate((string)$targetRow['step']);
+            if ($latestGift===null || $update->update_id<=$latestGift)
+                throw new RuntimeException('moderation_stale_before_gift');
+        }
+        if (str_starts_with((string)$targetRow['step'],'achbotExempt:')) {
+            if (preg_match('/\AachbotExempt:([1-9][0-9]*):/D',(string)$targetRow['step'],$sourceMatch)!==1 ||
+                $update->update_id<=(int)$sourceMatch[1])
+                throw new RuntimeException('moderation_stale_before_exemption');
+        }
+
+        $type='ACHBOT_ADMIN_MOD_SOURCE_'.hash('sha256',(string)$actorId);
+        $stmt=$connection->prepare('SELECT id,value FROM setting WHERE type=? LIMIT 2');
+        if (!$stmt) throw new RuntimeException('moderation_journal_lookup_prepare');
+        $stmt->bind_param('s',$type);
+        $ok=$stmt->execute();
+        $records=$ok?$stmt->get_result()->fetch_all(MYSQLI_ASSOC):[];
+        $stmt->close();
+        if (!$ok || count($records)>1)
+            throw new RuntimeException('moderation_source_ambiguous');
+        if ($records) {
+            $old=json_decode((string)$records[0]['value'],true,512,JSON_THROW_ON_ERROR);
+            if (!is_array($old) || ($old['version']??null)!==1 ||
+                ($old['actor_id']??null)!==$actorId ||
+                !is_int($old['last_update_id']??null) ||
+                !is_int($old['last_message_id']??null) ||
+                // A user may legitimately click a different older bot
+                // menu. Callback message_id is not ordered by update_id.
+                $update->update_id<=$old['last_update_id'])
+                throw new RuntimeException('moderation_stale_source_or_corrupt_journal');
+        }
+
+        if ($m[1]==='Ban') {
+            $before=(string)$targetRow['step'];
+            $next=$before==='banned'?'none':'banned';
+            // Shared target chronology covers old text/receipt Ban and
+            // authorized numeric Unban across DIFFERENT administrators.
+            achbotModerationTargetJournal(
+                $connection,$targetId,$actorId,$update->update_id,
+                $message->message_id,$next==='banned'?'Ban':'Unban');
+            $stmt=$connection->prepare('UPDATE users SET step=?
+                WHERE id=? AND userid=? AND step=?');
+            if (!$stmt) throw new RuntimeException('moderation_ban_update_prepare');
+            $stmt->bind_param('siis',$next,$targetPk,$targetId,$before);
+        } else {
+            $before=(int)$targetRow['is_agent'];
+            $next=$before===1?0:1;
+            $stmt=$connection->prepare('UPDATE users SET is_agent=?
+                WHERE id=? AND userid=? AND is_agent=?');
+            if (!$stmt) throw new RuntimeException('moderation_agent_update_prepare');
+            $stmt->bind_param('iiii',$next,$targetPk,$targetId,$before);
+        }
+        $ok=$stmt->execute();$affected=$stmt->affected_rows;$stmt->close();
+        if (!$ok || $affected!==1)
+            throw new RuntimeException('moderation_target_cas_unconfirmed');
+        $value=json_encode([
+            'version'=>1,'actor_id'=>$actorId,
+            'last_update_id'=>$update->update_id,
+            'last_message_id'=>$message->message_id,
+            'action'=>$m[1],'target_userid'=>$targetId
+        ],JSON_THROW_ON_ERROR);
+        if ($records) {
+            $recordId=(int)$records[0]['id'];
+            $oldValue=(string)$records[0]['value'];
+            $stmt=$connection->prepare('UPDATE setting SET value=?
+                WHERE id=? AND type=? AND value=?');
+            if (!$stmt) throw new RuntimeException('moderation_journal_update_prepare');
+            $stmt->bind_param('siss',$value,$recordId,$type,$oldValue);
+        } else {
+            $stmt=$connection->prepare('INSERT INTO setting(type,value) VALUES(?,?)');
+            if (!$stmt) throw new RuntimeException('moderation_journal_insert_prepare');
+            $stmt->bind_param('ss',$type,$value);
+        }
+        $ok=$stmt->execute();$affected=$stmt->affected_rows;$stmt->close();
+        if (!$ok || $affected!==1)
+            throw new RuntimeException('moderation_journal_write_unconfirmed');
+        if (!$connection->commit())
+            throw new RuntimeException('moderation_commit_unknown');
+        $inTransaction=false;
+    } catch (Throwable $error) {
+        if ($inTransaction) {
+            try {$connection->rollback();} catch (Throwable $ignored) {}
+        }
+        error_log('admin_moderation_source_or_commit_unconfirmed');
+        return true;
+    }
+    // Post-commit UI only. Never emit success on a rejected/uncertain mutation.
+    try {
+        bot('editMessageReplyMarkup',[
+            'chat_id'=>$chat_id,'message_id'=>$message_id,
+            'reply_markup'=>json_encode(getUserInfoKeys($targetId))
+        ]);
+    } catch (Throwable $error) {
+        error_log('admin_moderation_notice_unconfirmed');
+    }
+    return true;
+}
+
+
+/**
+ * Original-schema moderation provenance. users.userid and setting.type are
+ * not unique. Callers must lock the exact target PK before reading/writing a
+ * target watermark, and acquire all involved user PK locks before any
+ * consistent read in a transaction (including under REPEATABLE READ).
+ */
+function achbotModerationUniquePk(mysqli $db,int $userid): int {
+    if ($userid<=0) throw new RuntimeException('moderation_identity_invalid');
+    $stmt=$db->prepare('SELECT id FROM users WHERE userid=? LIMIT 2');
+    if (!$stmt) throw new RuntimeException('moderation_identity_prepare');
+    $stmt->bind_param('i',$userid);
+    $ok=$stmt->execute();
+    $rows=$ok?$stmt->get_result()->fetch_all(MYSQLI_ASSOC):[];
+    $stmt->close();
+    if (!$ok || count($rows)!==1 || (int)$rows[0]['id']<=0)
+        throw new RuntimeException('moderation_identity_ambiguous');
+    return (int)$rows[0]['id'];
+}
+
+function achbotModerationActorJournal(mysqli $db,int $actor,int $updateId,
+                                       int $messageId,string $action,int $target): void {
+    $type='ACHBOT_ADMIN_MOD_SOURCE_'.hash('sha256',(string)$actor);
+    $stmt=$db->prepare('SELECT id,value FROM setting WHERE type=? LIMIT 2');
+    if (!$stmt) throw new RuntimeException('moderation_actor_marker_prepare');
+    $stmt->bind_param('s',$type);
+    $ok=$stmt->execute();
+    $records=$ok?$stmt->get_result()->fetch_all(MYSQLI_ASSOC):[];
+    $stmt->close();
+    if (!$ok || count($records)>1)
+        throw new RuntimeException('moderation_actor_marker_ambiguous');
+    if ($records) {
+        $old=json_decode((string)$records[0]['value'],true,512,JSON_THROW_ON_ERROR);
+        if (!is_array($old) || ($old['version']??null)!==1 ||
+            ($old['actor_id']??null)!==$actor ||
+            !is_int($old['last_update_id']??null) ||
+            !is_int($old['last_message_id']??null) ||
+            $updateId<=$old['last_update_id'])
+            throw new RuntimeException('moderation_actor_source_stale');
+    }
+    $value=json_encode([
+        'version'=>1,'actor_id'=>$actor,'last_update_id'=>$updateId,
+        'last_message_id'=>$messageId,'action'=>$action,'target_userid'=>$target
+    ],JSON_THROW_ON_ERROR);
+    if ($records) {
+        $pk=(int)$records[0]['id'];$before=(string)$records[0]['value'];
+        $stmt=$db->prepare('UPDATE setting SET value=?
+            WHERE id=? AND type=? AND value=?');
+        if (!$stmt) throw new RuntimeException('moderation_actor_marker_update_prepare');
+        $stmt->bind_param('siss',$value,$pk,$type,$before);
+    } else {
+        $stmt=$db->prepare('INSERT INTO setting(type,value) VALUES(?,?)');
+        if (!$stmt) throw new RuntimeException('moderation_actor_marker_insert_prepare');
+        $stmt->bind_param('ss',$type,$value);
+    }
+    $ok=$stmt->execute();$changed=$stmt->affected_rows;$stmt->close();
+    if (!$ok || $changed!==1)
+        throw new RuntimeException('moderation_actor_marker_unconfirmed');
+}
+
+/**
+ * Cross-actor target chronology. Every BAN/UNBAN writer in this runtime
+ * participates, including the source-verified toggle callback. Global
+ * Telegram update_id, rather than a bot menu message_id, orders events.
+ */
+function achbotModerationTargetJournal(mysqli $db,int $target,int $actor,
+                                        int $updateId,int $messageId,
+                                        string $action): void {
+    $type='ACHBOT_ADMIN_TARGET_MOD_'.hash('sha256',(string)$target);
+    $stmt=$db->prepare('SELECT id,value FROM setting WHERE type=? LIMIT 2');
+    if (!$stmt) throw new RuntimeException('moderation_target_marker_prepare');
+    $stmt->bind_param('s',$type);
+    $ok=$stmt->execute();
+    $records=$ok?$stmt->get_result()->fetch_all(MYSQLI_ASSOC):[];
+    $stmt->close();
+    if (!$ok || count($records)>1)
+        throw new RuntimeException('moderation_target_marker_ambiguous');
+    if ($records) {
+        $old=json_decode((string)$records[0]['value'],true,512,JSON_THROW_ON_ERROR);
+        if (!is_array($old) || ($old['version']??null)!==1 ||
+            ($old['target_userid']??null)!==$target ||
+            !is_int($old['actor_id']??null) || $old['actor_id']<=0 ||
+            !is_int($old['last_update_id']??null) ||
+            !is_int($old['last_message_id']??null) ||
+            !in_array($old['action']??null,['Ban','Unban'],true) ||
+            $updateId<=$old['last_update_id'])
+            throw new RuntimeException('moderation_target_source_stale');
+    }
+    $value=json_encode([
+        'version'=>1,'target_userid'=>$target,'actor_id'=>$actor,
+        'last_update_id'=>$updateId,'last_message_id'=>$messageId,
+        'action'=>$action
+    ],JSON_THROW_ON_ERROR);
+    if ($records) {
+        $pk=(int)$records[0]['id'];$before=(string)$records[0]['value'];
+        $stmt=$db->prepare('UPDATE setting SET value=?
+            WHERE id=? AND type=? AND value=?');
+        if (!$stmt) throw new RuntimeException('moderation_target_marker_update_prepare');
+        $stmt->bind_param('siss',$value,$pk,$type,$before);
+    } else {
+        $stmt=$db->prepare('INSERT INTO setting(type,value) VALUES(?,?)');
+        if (!$stmt) throw new RuntimeException('moderation_target_marker_insert_prepare');
+        $stmt->bind_param('ss',$type,$value);
+    }
+    $ok=$stmt->execute();$changed=$stmt->affected_rows;$stmt->close();
+    if (!$ok || $changed!==1)
+        throw new RuntimeException('moderation_target_marker_unconfirmed');
+}
+
+/**
+ * Legacy Ban/Unban wizard start, private numeric completion and receipt Ban
+ * share an authenticated, current-role, source-ordered transaction boundary.
+ * This is invoked by existing bot.php includes only after its ingress/IP
+ * gates; no provider, payment or financial tables are ever modified here.
+ *
+ * Returns started | changed | already | rejected. Rejected and unknown COMMIT
+ * have NO success/cleanup notices; caller may display a generic rejection.
+ */
+function achbotLegacyModerationTransition(
+    mysqli $db,$update,int $actor,int $chat,int $message,
+    $cached,int $primary,string $operation,string $targetRaw=''
+): string {
+    if (!in_array($operation,['startBan','startUnban','ban','unban','receiptBan'],true))
+        return 'rejected';
+    $started=false;
+    try {
+        if (!function_exists('achbotWebhookIngressAuthenticated') ||
+            !achbotWebhookIngressAuthenticated() || $actor<=0 || $primary<=0 ||
+            !is_array($cached) || (int)($cached['userid']??0)!==$actor ||
+            (int)($cached['id']??0)<=0)
+            throw new RuntimeException('legacy_moderation_ingress_or_actor_invalid');
+        require_once __DIR__.'/src/Subscription/DirectGift.php';
+        $start=in_array($operation,['startBan','startUnban'],true);
+        $receipt=$operation==='receiptBan';
+        $bound=$start?($operation==='startBan'?'banUser':'unbanUser'):
+            ($receipt?'banUserDirect_'.$targetRaw:$targetRaw);
+        $source=achbotDirectGiftWebhook(
+            $update,$actor,$chat,$message,$bound,
+            ($start || $receipt)?'callback':'message');
+        $updateId=(int)$source['update_id'];
+        $messageId=(int)$source['message_id'];
+        if ($updateId<=0 || $messageId<=0)
+            throw new RuntimeException('legacy_moderation_source_invalid');
+        $action=($operation==='ban' || $receipt)?'Ban':'Unban';
+        $target=0;
+        if (!$start) {
+            if (preg_match('/\A[1-9][0-9]{0,18}\z/D',$targetRaw)!==1)
+                throw new RuntimeException('legacy_moderation_target_invalid');
+            $parsed=filter_var($targetRaw,FILTER_VALIDATE_INT,
+                ['options'=>['min_range'=>1,'max_range'=>PHP_INT_MAX]]);
+            if ($parsed===false)
+                throw new RuntimeException('legacy_moderation_target_overflow');
+            $target=$parsed;
+        }
+        // Pre-resolve nonunique userids before BEGIN. No consistent read
+        // precedes the unique-PK FOR UPDATE locks inside the transaction.
+        $actorPk=achbotModerationUniquePk($db,$actor);
+        $targetPk=$start?$actorPk:achbotModerationUniquePk($db,$target);
+        if ($actorPk!==(int)$cached['id'])
+            throw new RuntimeException('legacy_moderation_cached_pk_drift');
+        if (!$db->begin_transaction())
+            throw new RuntimeException('legacy_moderation_begin_failed');
+        $started=true;
+        $stmt=$db->prepare('SELECT id,userid,isAdmin,step FROM users
+            WHERE id IN (?,?) ORDER BY id FOR UPDATE');
+        if (!$stmt) throw new RuntimeException('legacy_moderation_lock_prepare');
+        $stmt->bind_param('ii',$actorPk,$targetPk);
+        $ok=$stmt->execute();
+        $rows=$ok?$stmt->get_result()->fetch_all(MYSQLI_ASSOC):[];
+        $stmt->close();
+        if (!$ok) throw new RuntimeException('legacy_moderation_lock_failed');
+        $actorRow=null;$targetRow=null;
+        foreach ($rows as $row) {
+            if ((int)$row['id']===$actorPk) $actorRow=$row;
+            if ((int)$row['id']===$targetPk) $targetRow=$row;
+        }
+        if (!$actorRow || !$targetRow ||
+            (int)$actorRow['userid']!==$actor ||
+            (int)$targetRow['userid']!==($start?$actor:$target) ||
+            ($actor!==$primary && (int)$actorRow['isAdmin']!==1))
+            throw new RuntimeException('legacy_moderation_role_revoked_or_target_drift');
+        foreach (array_unique([$actor,$target]) as $userid) {
+            if ($userid<=0) continue;
+            $expectedPk=$userid===$actor?$actorPk:$targetPk;
+            if (achbotModerationUniquePk($db,$userid)!==$expectedPk)
+                throw new RuntimeException('legacy_moderation_duplicate_userid');
+        }
+        $actorStep=(string)$actorRow['step'];
+        if ($start) {
+            if ($actorStep==='banned' ||
+                str_starts_with($actorStep,'achbotDirectGift') ||
+                str_starts_with($actorStep,'achbotExempt:'))
+                throw new RuntimeException('legacy_moderation_start_protected');
+            $next=$operation==='startBan'?'banUser':'unbanUser';
+            if ($next!==$actorStep) {
+                $stmt=$db->prepare('UPDATE users SET step=?
+                    WHERE id=? AND userid=? AND step=?');
+                if (!$stmt) throw new RuntimeException('legacy_moderation_start_prepare');
+                $stmt->bind_param('siis',$next,$actorPk,$actor,$actorStep);
+                $ok=$stmt->execute();$changed=$stmt->affected_rows;$stmt->close();
+                if (!$ok || $changed!==1)
+                    throw new RuntimeException('legacy_moderation_start_cas');
+            }
+            achbotModerationActorJournal(
+                $db,$actor,$updateId,$messageId,$operation,0);
+            $status='started';
+        } else {
+            $expected=$operation==='ban'?'banUser':
+                ($operation==='unban'?'unbanUser':null);
+            if (!$receipt && ($expected===null ||
+                $actorStep!==$expected ||
+                (string)($cached['step']??'')!==$expected))
+                throw new RuntimeException('legacy_moderation_step_stale');
+            $targetStep=(string)$targetRow['step'];
+            if (str_starts_with($targetStep,'achbotDirectGift') ||
+                str_starts_with($targetStep,'achbotExempt:'))
+                throw new RuntimeException('legacy_moderation_target_protected');
+            // Acquire and validate both source records while the exact
+            // actor/target PKs are held. A different moderator's newer Ban
+            // must defeat an older in-flight Unban, even after revocation.
+            achbotModerationActorJournal(
+                $db,$actor,$updateId,$messageId,$operation,$target);
+            achbotModerationTargetJournal(
+                $db,$target,$actor,$updateId,$messageId,$action);
+            $desired=$action==='Ban'?'banned':'none';
+            $status=$targetStep===$desired?'already':'changed';
+            if ($status==='changed') {
+                $stmt=$db->prepare('UPDATE users SET step=?
+                    WHERE id=? AND userid=? AND step=?');
+                if (!$stmt) throw new RuntimeException('legacy_moderation_target_prepare');
+                $stmt->bind_param('siis',$desired,$targetPk,$target,$targetStep);
+                $ok=$stmt->execute();$changed=$stmt->affected_rows;$stmt->close();
+                if (!$ok || $changed!==1)
+                    throw new RuntimeException('legacy_moderation_target_cas');
+            }
+            // A user can deliberately Ban their own privileged account.
+            // In that case the target transition is also their actor step;
+            // resetting the actor afterward would silently undo the Ban.
+            if (!$receipt && !($actor===$target && $desired==='banned')) {
+                $actorNext='none';
+                $stmt=$db->prepare('UPDATE users SET step=?
+                    WHERE id=? AND userid=? AND step=?');
+                if (!$stmt) throw new RuntimeException('legacy_moderation_actor_finish_prepare');
+                $stmt->bind_param('siis',$actorNext,$actorPk,$actor,$expected);
+                $ok=$stmt->execute();$changed=$stmt->affected_rows;$stmt->close();
+                if (!$ok || $changed!==1)
+                    throw new RuntimeException('legacy_moderation_actor_finish_cas');
+            }
+        }
+        if (!$db->commit())
+            throw new RuntimeException('legacy_moderation_commit_unknown');
+        $started=false;
+        return $status;
+    } catch (Throwable $error) {
+        if ($started) {
+            try {$db->rollback();} catch (Throwable $ignored) {}
+        }
+        error_log('legacy_moderation_source_or_commit_unconfirmed');
+        return 'rejected';
     }
 }
 
@@ -2513,8 +3118,9 @@ function getCallbackFromCommand($command) {
     }
 }
 
-$update = json_decode(file_get_contents("php://input"));
-handleToggleCallbacks($data, $chat_id, $message_id);
+// Reuse the authenticated update decoded above. Never reparse arbitrary
+// payment/Cron request bodies as Telegram messages or callbacks.
+// Administrative toggle dispatch is intentionally deferred to bot.php AFTER check().
 
 if (isset($update->message->text)) {
     $txt = trim($update->message->text);
@@ -2908,7 +3514,12 @@ function setUser($value = 'none', $field = 'step'){
     if($field == "wallet") $stmt = $connection->prepare("UPDATE `users` SET `wallet` = ? WHERE `userid` = ?");
     elseif($field == "phone") $stmt = $connection->prepare("UPDATE `users` SET `phone` = ? WHERE `userid` = ?");
     elseif($field == "refered_by") $stmt = $connection->prepare("UPDATE `users` SET `refered_by` = ? WHERE `userid` = ?");
-    elseif($field == "step") $stmt = $connection->prepare("UPDATE `users` SET `step` = ? WHERE `userid` = ?");
+    // The guarded direct-gift wizard exclusively owns its active nonce step.
+    // Generic legacy routes have neither a verified ban/unban source nor
+    // ownership of an active direct-gift generation. Only the dedicated
+    // authorized unban endpoints may consume 'banned'.
+    // Other legacy routes use cached userInfo and must not overwrite it.
+    elseif($field == "step") $stmt = $connection->prepare("UPDATE `users` SET `step` = ? WHERE `userid` = ? AND `step` <> 'banned' AND `step` NOT LIKE 'achbotDirectGift%' AND `step` NOT LIKE 'achbotExempt:%'");
     elseif($field == "freetrial") $stmt = $connection->prepare("UPDATE `users` SET `freetrial` = ? WHERE `userid` = ?");
     elseif($field == "isAdmin") $stmt = $connection->prepare("UPDATE `users` SET `isAdmin` = ? WHERE `userid` = ?");
     elseif($field == "first_start") $stmt = $connection->prepare("UPDATE `users` SET `first_start` = ? WHERE `userid` = ?");

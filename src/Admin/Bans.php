@@ -9,41 +9,39 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     exit;
 }
 
-if($data == "banUser" && ($from_id == $admin || $userInfo['isAdmin'] == true)){
-    delMessage();
-    sendMessage("😡 کی باز شلوغی کرده شناسه عددی شو بفرس تا برم ...... آرهههه:", $cancelKey);
-    setUser($data);
+if ($data === "banUser") {
+    $status=achbotLegacyModerationTransition(
+        $connection,$update,(int)$from_id,(int)$chat_id,(int)$message_id,
+        $userInfo,(int)$admin,'startBan');
+    if ($status==='started') {
+        delMessage();
+        sendMessage("😡 کی باز شلوغی کرده شناسه عددی شو بفرس تا برم ...... آرهههه:", $cancelKey);
+    }
 }
-if($data=="unbanUser" && ($from_id == $admin || $userInfo['isAdmin'] == true)){
-    delMessage();
-    sendMessage("شناسه عددیشو بفرست تا آزادش کنم", $cancelKey);
-    setUser($data);
+if ($data === "unbanUser") {
+    $status=achbotLegacyModerationTransition(
+        $connection,$update,(int)$from_id,(int)$chat_id,(int)$message_id,
+        $userInfo,(int)$admin,'startUnban');
+    if ($status==='started') {
+        delMessage();
+        sendMessage("شناسه عددیشو بفرست تا آزادش کنم", $cancelKey);
+    }
 }
-if($userInfo['step'] == "banUser" && ($from_id == $admin || $userInfo['isAdmin'] == true) && $text != $buttonValues['cancel']){
-    if(is_numeric($text)){
-        
-        $stmt = $connection->prepare("SELECT * FROM `users` WHERE `userid` = ?");
-        $stmt->bind_param("i", $text);
-        $stmt->execute();
-        $usersList = $stmt->get_result();
-        $stmt->close();
-        
-        if($usersList->num_rows >0){
-            $userState = $usersList->fetch_assoc();
-            if($userState['step'] != "banned"){
-                $stmt = $connection->prepare("UPDATE `users` SET `step` = 'banned' WHERE `userid` = ?");
-                $stmt->bind_param("i", $text);
-                $stmt->execute();
-                $stmt->close();
-                
-                sendMessage("❌ خب خب برید کنار که مسدودش کردم 😎😂",$removeKeyboard);
-            }else{
-                sendMessage("☑️ این کاربر که از قبل مسدود بود چیکارش داری بدبخت و 😂🤣",$removeKeyboard);
-            }
-        }else sendMessage("کاربری با این آیدی یافت نشد.");
-        setUser();
-        sendMessage($mainValues['reached_main_menu'],getAdminKeys());
-    }else{
+if (($userInfo['step']??null)==='banUser' && $text!==$buttonValues['cancel']) {
+    if (is_string($text) && preg_match('/\A[1-9][0-9]{0,18}\z/D',$text)===1) {
+        $status=achbotLegacyModerationTransition(
+            $connection,$update,(int)$from_id,(int)$chat_id,(int)$message_id,
+            $userInfo,(int)$admin,'ban',$text);
+        if ($status==='changed') {
+            sendMessage("❌ خب خب برید کنار که مسدودش کردم 😎😂",$removeKeyboard);
+        } elseif ($status==='already') {
+            sendMessage("☑️ این کاربر از قبل مسدود بود.",$removeKeyboard);
+        } else {
+            sendMessage('درخواست مسدودسازی تأیید نشد؛ وضعیت و دسترسی فعلی را بررسی کنید.');
+        }
+        if ($status==='changed' || $status==='already')
+            sendMessage($mainValues['reached_main_menu'],getAdminKeys());
+    } else {
         sendMessage($mainValues['send_only_number']);
     }
 }

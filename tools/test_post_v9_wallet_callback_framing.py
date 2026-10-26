@@ -180,7 +180,9 @@ def check() -> dict:
             bot_driver = bot_driver.replace(marker, replacement, 1)
         (work / 'owned-finance-guard.php').write_text(bot_driver)
         config_path.write_text('<?php function check() {} '
-                               'function checkSpam() { return false; }\n')
+                               'function handleToggleCallbacks(...$args) { return false; } '
+            'function achbotHandleChannelExemption(...$args) { return false; } '
+                          'function checkSpam() { return false; }\n')
         try:
             actor = 12101
             name = 'FrameBot12345'

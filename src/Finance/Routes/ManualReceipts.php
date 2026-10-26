@@ -657,44 +657,25 @@ if (preg_match('/^declineActionReason_(.+)_(\d+)$/', $userInfo['step'], $match) 
 	);
 }
 
-if (preg_match('/^banUserDirect_(\d+)$/', $data, $m) && ($from_id == $admin || $userInfo['isAdmin'] == true)) {
-
-    $targetUserId = (int)$m[1];
-	
-    // delMessage();
-
-    $stmt = $connection->prepare("SELECT `step` FROM `users` WHERE `userid` = ?");
-    $stmt->bind_param("i", $targetUserId);
-    $stmt->execute();
-    $res = $stmt->get_result();
-    $stmt->close();
-
-    if ($res->num_rows > 0) {
-        $u = $res->fetch_assoc();
-
-        if ($u['step'] != "banned") {
-            $stmt = $connection->prepare("UPDATE `users` SET `step` = 'banned' WHERE `userid` = ?");
-            $stmt->bind_param("i", $targetUserId);
-            $stmt->execute();
-            $stmt->close();
-
-            alert("✅ کاربر $targetUserId مسدود شد.");
-        } else {
-            alert("☑️ این کاربر از قبل مسدود بود.");
-        }
+if (is_string($data) &&
+    preg_match('/\AbanUserDirect_([1-9][0-9]{0,18})\z/D',$data,$m)===1) {
+    $status=achbotLegacyModerationTransition(
+        $connection,$update,(int)$from_id,(int)$chat_id,(int)$message_id,
+        $userInfo,(int)$admin,'receiptBan',$m[1]);
+    if ($status==='changed') {
+        alert("✅ کاربر {$m[1]} مسدود شد.");
+    } elseif ($status==='already') {
+        alert("☑️ این کاربر از قبل مسدود بود.");
     } else {
-        alert("⛔️ کاربری با این آیدی یافت نشد.");
+        alert('این درخواست مسدودسازی تأیید نشد؛ وضعیت را بررسی کنید.',true);
     }
-
-    $doneKeys = json_encode([
-        'inline_keyboard' => [
-            [
-                ['text' => "✅ مسدود شد: $targetUserId", 'callback_data' => "wizwizch"]
-            ]
-        ]
-    ]);
-    editKeys($doneKeys, $message_id, $chat_id);
-
+    // Do not claim or mark a failed/unknown callback as committed.
+    if ($status==='changed' || $status==='already') {
+        $doneKeys=json_encode(['inline_keyboard'=>[
+            [['text'=>"✅ مسدود شد: {$m[1]}",'callback_data'=>"wizwizch"]]
+        ]]);
+        editKeys($doneKeys,$message_id,$chat_id);
+    }
 }
 
 // END Decline Cart To Cart by ACh

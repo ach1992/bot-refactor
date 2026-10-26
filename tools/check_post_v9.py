@@ -39,7 +39,7 @@ def source_checks():
         if (ROOT / field).read_bytes() != cmd("show", V9+":"+field):
             raise RuntimeError("Changed historical schema/private-template: " + field)
     files=package.members()
-    if len(files)!=98 or len(set(files))!=len(files):
+    if len(files)!=99 or len(set(files))!=len(files):
         raise RuntimeError("Source-only runtime file inventory changed")
     if any((ROOT/name).exists() or name in files
            for name in package.RETIRED_RUNTIME_MEMBERS):
@@ -1303,6 +1303,175 @@ def main():
                 gift_source.get("production_mutations")==0 and
                 gift_source.get("real_provider_requests")==0):
             raise RuntimeError("Gift Telegram source idempotency contract incomplete")
+        # Issue #78: real single-admin gift bot.php source, fresh Telegram
+        # bindings, strict verified service-edit seam and disposable MariaDB.
+        direct_gift_path=Path(tmp)/"direct-gift-source.json"
+        direct_gift_run=subprocess.run(
+            ["python3",str(ROOT/"tools/test_post_v9_direct_gift.py"),
+             "--run-disposable","--report",str(direct_gift_path)],
+            cwd=ROOT,timeout=240,capture_output=True,text=True)
+        if direct_gift_run.returncode!=0:
+            # Do not swallow the disposable child exception: without it a
+            # PHP-version-specific failure is opaque in official CI logs.
+            # Fixture transport uses synthetic secrets; redact them anyway.
+            diagnostic=(direct_gift_run.stderr or direct_gift_run.stdout)[-2400:]
+            diagnostic=diagnostic.replace('fixture-password','[fixture-redacted]')
+            diagnostic=diagnostic.replace('fixture-direct-gift-token-NotReal_2026',
+                                          '[fixture-redacted]')
+            raise RuntimeError('Issue #78 direct gift child failed (source-real fixture): '+
+                               diagnostic)
+        direct_gift=json.loads(direct_gift_path.read_text())
+        required_direct_gift={
+            'real_bot_route_verified_combined_gift_success',
+            'real_bot_route_only_days','real_bot_route_only_volume',
+            'unknown_claim_commit_holds_no_provider_dispatch',
+            'postcommit_notice_failure_no_remote_replay',
+            'provider_or_local_failure_hold_provider_false',
+            'provider_or_local_failure_hold_provider_unknown',
+            'provider_or_local_failure_hold_provider_ambiguous_success',
+            'provider_or_local_failure_hold_sql_drift',
+            'provider_or_local_failure_hold_config_drift',
+            'delegated_admin_revoked_before_step',
+            'fresh_delegated_admin_private_gift',
+            'duplicate_remark_order_rejected',
+            'changed_order_identity_before_claim_denied',
+            'callback_text_never_used_as_gift_input',
+            'concurrent_workers_one_unique_durable_claim',
+            'old_callback_cannot_override_new_random_nonce',
+            'old_callback_cannot_interrupt_volume_stage',
+            'new_callback_restarts_distinct_nonce',
+            'physical_account_alias_cross_order_cross_admin_held',
+            'source_and_account_hold_rollback_when_step_consume_fails',
+            'journal_sql_insert_failure_prevents_provider_dispatch',
+            'original_23_table_schema_unmodified',
+            # Required independent-review F1/F2 race/cancel controls.
+            'repeatable_read_two_admins_two_orders_lockwait_before_claim_commit',
+            'read_committed_two_admins_alias_lockwait_safe',
+            'shared_panel_group_two_urls_cross_admin_hold',
+            'fresh_cancel_remark','fresh_cancel_day','fresh_cancel_volume',
+            'old_cancel_cannot_erase_new_start_nonce',
+            'old_cancel_preserves_day','old_cancel_preserves_volume',
+            'cancel_checks_last_message_as_well_as_update',
+            'cancel_lost_commit_ack_then_redelivery_fails_closed',
+            'revoked_delegated_admin_cannot_cancel',
+            'concurrent_cancel_and_progress_generation_cas',
+            'verified_prior_source_envelope_duplicate_no_effect',
+            'corrupt_source_provenance_fail_closed_$.actor_id',
+            'corrupt_source_provenance_fail_closed_$.source.actor_id',
+            'completed_marker_reuse_only_after_distinct_new_wizard',
+            # F2-R1: real final bot.php global CANCEL + config.php setUser
+            # with a cached userInfo snapshot before a newer gift starts.
+            'global_cancel_stale_cached_legacy_preserves_remark',
+            'global_cancel_stale_cached_legacy_preserves_day',
+            'global_cancel_stale_cached_legacy_preserves_volume',
+            'global_cancel_fresh_legacy_flow_unchanged',
+            'global_cancel_stale_revoked_delegate_does_not_clobber',
+            'global_cancel_stale_legacy_setuser_cannot_clobber',
+            'global_cancel_unknown_ack_replay_preserves_new_gift',
+            # B1/F2-R2: ingress, authorized moderation and stale legacy
+            # SQL step writes on the exact original-schema PHP runtime.
+            'moderation_rejects_absent_header',
+            'moderation_rejects_wrong_header',
+            'moderation_rejects_wrong_method',
+            'moderation_rejects_group_chat',
+            'moderation_rejects_mixed_update',
+            'moderation_rejects_bot_sender',
+            'moderation_rejects_malformed_callback',
+            'moderation_rejects_forged_actor_binding',
+            'moderation_current_admin_required',
+            'moderation_revoked_delegate_denied',
+            'moderation_fresh_admin_agent_idempotence',
+            'moderation_fresh_admin_ban_succeeds',
+            'moderation_old_callback_cannot_erase_gift_nonce',
+            'moderation_fresh_authorized_ban_preempts_gift',
+            'moderation_nonunique_target_identity_rejected',
+            'moderation_uncertain_commit_never_replays_toggle',
+            'manual_accounts_fresh_current_authorized_succeeds',
+            'manual_accounts_stale_cached_step_temp_preserves_new_gift',
+            'manual_accounts_current_delegate_role_required',
+            'manual_accounts_unknown_commit_replay_preserves_gift',
+            'manual_accounts_rejects_callback_old_bot_text',
+            'manual_accounts_rejects_mixed_update',
+            'manual_accounts_rejects_missing_ingress_secret',
+            'legacy_text_ban_cannot_erase_active_gift',
+            'legacy_receipt_ban_cannot_erase_active_gift',
+            'broadcast_bot_blocked_preserves_active_gift',
+            'broadcast_bot_blocked_ordinary_behavior_preserved',
+            # B1-R1/B1-R2: signed exemption + locked policy/step, stale
+            # mainMenu versus newer ban, explicit unban and nonce guards.
+            'exemption_authorized_current_start_and_atomic_completion',
+            'exemption_durable_source_replay_denied',
+            'exemption_ordinary_customer_start_denied',
+            'exemption_revoked_delegate_start_denied',
+            'exemption_revoked_delegate_completion_denied',
+            'exemption_start_rejects_unsigned',
+            'exemption_start_rejects_wrong_secret',
+            'exemption_start_rejects_group_callback',
+            'exemption_start_rejects_mixed_callback',
+            'exemption_start_rejects_bot_sender',
+            'exemption_start_rejects_wrong_actor',
+            'exemption_finish_rejects_callback_bot_text',
+            'exemption_finish_rejects_mixed_message',
+            'exemption_finish_rejects_stale_message_id',
+            'exemption_finish_rejects_stale_update_id',
+            'exemption_finish_rejects_wrong_chat',
+            'exemption_stale_cached_worker_preserves_new_gift_and_policy',
+            'exemption_unknown_commit_no_success_or_replay',
+            'exemption_nonunique_setting_fail_closed',
+            'legacy_main_menu_cannot_erase_newer_authorized_ban',
+            'legacy_stale_cancel_cannot_erase_newer_ban',
+            'legacy_explicit_authorized_unban_still_operates',
+            'legacy_nonbanned_main_menu_works',
+            'exemption_old_main_menu_cannot_erase_current_nonce',
+            'exemption_old_moderation_ban_cannot_erase_nonce',
+            'exemption_legacy_text_ban_cannot_erase_nonce',
+            'exemption_newer_authorized_moderation_ban_preempts_wizard',
+            'exemption_policy_and_step_atomic_rollback_on_sql_failure',
+            'exemption_existing_member_preserved_and_wizard_completed',
+            'exemption_new_update_from_old_bot_menu_still_works',
+            'moderation_new_update_from_old_bot_menu_still_works',
+            # R3: current banned CANCEL, cross-actor source ordering and
+            # revoked/stale legacy Ban/Unban/receipt transitions.
+            'r3_cancel_preserves_current_ban_primary',
+            'r3_cancel_preserves_current_ban_delegated',
+            'r3_cached_banned_cancel_does_not_cleanup',
+            'r3_legacy_unban_rejected_after_delegated_revocation',
+            'r3_legacy_unban_rejected_after_newer_other_admin_ban',
+            'r3_fresh_source_verified_legacy_unban_still_works',
+            'r3_legacy_unban_replay_denied',
+            'r3_legacy_start_rejects_missing_secret',
+            'r3_legacy_start_rejects_group',
+            'r3_legacy_start_rejects_mixed',
+            'r3_legacy_start_rejects_bot',
+            'r3_legacy_start_rejects_forged_actor',
+            'r3_legacy_start_rejects_revoked_delegate',
+            'r3_legacy_ban_revoked_worker_denied',
+            'r3_legacy_receipt_ban_revoked_worker_denied',
+            'r3_receipt_ban_fresh_authenticated_transition',
+            'r3_receipt_ban_source_replay_denied',
+            'r3_receipt_ban_unknown_commit_no_false_notice',
+            'r3_legacy_target_nonunique_userid_denied',
+            'r3_newer_verified_moderation_outorders_legacy_ban',
+        }
+        if not (direct_gift.get('complete') is True and
+                direct_gift.get('cases')>=152 and
+                required_direct_gift.issubset(set(direct_gift.get('scenarios',[]))) and
+                direct_gift.get('real_bot_php_route') is True and
+                direct_gift.get('actual_global_cancel_fallback') is True and
+                direct_gift.get('actual_config_set_user') is True and
+                direct_gift.get('actual_webhook_pre_config_auth') is True and
+                direct_gift.get('actual_config_moderation') is True and
+                direct_gift.get('actual_manual_account_handler') is True and
+                direct_gift.get('actual_channel_exemption_handler') is True and
+                direct_gift.get('actual_legacy_main_menu') is True and
+                direct_gift.get('actual_legacy_moderation_transactions') is True and
+                direct_gift.get('real_mysqli_original_schema') is True and
+                direct_gift.get('shared_real_service_seam_with_synthetic_adapter') is True and
+                direct_gift.get('owned_mariadb_only') is True and
+                direct_gift.get('real_telegram_or_marzban_calls')==0 and
+                direct_gift.get('tenant_migrations')==0 and
+                direct_gift.get('production_operations')==0):
+            raise RuntimeError('Issue #78 direct administrator gift safety assurance incomplete')
         # Whole-main review R1: run actual owned gift worker on disposable
         # original 23-table MariaDB, no live Telegram/Marzban service.
         gift_path=Path(tmp)/"gift-worker-verified-state.json"
@@ -2197,7 +2366,7 @@ def main():
                        cwd=ROOT,check=True,timeout=60,capture_output=True)
         swap=json.loads(overlay_report.read_text())
         if not (swap.get("complete") and swap.get("phase_count")==4
-                and swap.get("runtime_members")==98
+                and swap.get("runtime_members")==99
                 and swap.get("historical_runtime_members")==92
                 and swap.get("retired_old_payment_files_absent_after_source_upgrade")
                 and swap.get("source_roll_forward_and_back_byte_identical")
@@ -2225,6 +2394,7 @@ def main():
                     "service_effects":effects,
                     "strict_effect_transport_pin":pinned_effects,
                     "gift_source_enqueue_idempotency":gift_source,
+                    "direct_admin_gift_verified":direct_gift,
                     "gift_worker_safe_continuation":gift,
                     "gift_physical_target_continuity":physical_gift,
                     "wallet_paid_create":wallet_create,
@@ -2276,6 +2446,7 @@ def main():
                       "service_effect_cases":effects["cases"],
                       "strict_effect_transport_pin_cases":pinned_effects["cases"],
                       "gift_source_enqueue_cases":gift_source["cases"],
+                      "direct_admin_gift_cases":direct_gift["cases"],
                       "gift_worker_reconciliation_cases":gift["cases"],
                       "gift_physical_target_cases":physical_gift["cases"],
                       "wallet_paid_create_cases":wallet_create["cases"],

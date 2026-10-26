@@ -296,7 +296,7 @@ while ($user = $usersList->fetch_assoc()) {
         $code = isset($sendRes->error_code) ? (int)$sendRes->error_code : 0;
         if ($code === 400 || $code === 403) {
 			if ($code === 403) {
-				$u = $connection->prepare("UPDATE `users` SET `step`='Bot_Blocked' WHERE `userid`=? AND `step`<>'banned' AND (`step` IS NULL OR `step`<>'Bot_Blocked')");
+				$u = $connection->prepare("UPDATE `users` SET `step`='Bot_Blocked' WHERE `userid`=? AND `step`<>'banned' AND `step` NOT LIKE 'achbotDirectGift%' AND `step` NOT LIKE 'achbotExempt:%' AND (`step` IS NULL OR `step`<>'Bot_Blocked')");
 				if ($u) {
 					$uid = (int)$user['userid'];
 					$u->bind_param("i", $uid);

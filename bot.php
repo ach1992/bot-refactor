@@ -1,8 +1,35 @@
 <?php
 
+// ACHBOT_WEBHOOK_INGRESS_BEGIN
+// All webhook-driven mutations must be authenticated BEFORE loading config.php:
+// config.php initializes routes and may read request-derived state.
+function achbotWebhookIngressAuthenticated(): bool {
+    $secret=getenv('ACHBOT_TELEGRAM_WEBHOOK_SECRET');
+    $received=$_SERVER['HTTP_X_TELEGRAM_BOT_API_SECRET_TOKEN']??null;
+    return ($_SERVER['REQUEST_METHOD']??null)==='POST' &&
+        is_string($secret) && strlen($secret)>=16 && strlen($secret)<=256 &&
+        preg_match('/\A[A-Za-z0-9_-]+\z/D',$secret)===1 &&
+        is_string($received) && hash_equals($secret,$received);
+}
+if (!achbotWebhookIngressAuthenticated()) {
+    http_response_code(403);
+    error_log('achbot_webhook_ingress_unverified');
+    return;
+}
+// ACHBOT_WEBHOOK_INGRESS_END
+// Included configuration can run old request routes during initialization;
+// it must enforce the existing Telegram IP allowlist before those routes.
+define('ACHBOT_VERIFIED_WEBHOOK_ENTRYPOINT', true);
+
 require_once 'config.php';
 require_once 'buy_helpers.php';
 check();
+// Source-authenticated and IP-checked before any administrative moderation.
+if (handleToggleCallbacks($data??null,$chat_id??null,$message_id??null)) return;
+// Channel-exemption settings are admin-only and cannot execute before check().
+if (achbotHandleChannelExemption($data??null,$text??null,$userInfo??null)) return;
+// Privileged exemption changes are never allowed inside config bootstrap.
+if (achbotHandleChannelExemption($data??null,$text??null,$userInfo??null)) return;
 
 /*
 $log_data = "📩 New Update at " . date("Y-m-d H:i:s") . "\n";
@@ -229,6 +256,20 @@ if($userInfo['phone'] == null && $from_id != $admin && $userInfo['isAdmin'] != t
 }
 
 if (preg_match('/^\/([Ss]tart)/', $text) || $text == $buttonValues['back_to_main'] || $data == 'mainMenu') {
+
+    // Config has an early cached userInfo. A newer moderation ban or an
+    // active DirectGift wizard takes precedence over old menu callbacks.
+    $menuActor=(int)$from_id;
+    $menu=$connection->prepare('SELECT id,step FROM users WHERE userid=? LIMIT 2');
+    if (!$menu) return;
+    $menu->bind_param('i',$menuActor);
+    $menuOk=$menu->execute();
+    $menuRows=$menuOk?$menu->get_result()->fetch_all(MYSQLI_ASSOC):[];
+    $menu->close();
+    if (!$menuOk || count($menuRows)!==1 ||
+        (string)$menuRows[0]['step']==='banned' ||
+        str_starts_with((string)$menuRows[0]['step'],'achbotDirectGift') ||
+        str_starts_with((string)$menuRows[0]['step'],'achbotExempt:')) return;
 
     setUser();
     setUser("", "temp");
@@ -1509,67 +1550,156 @@ if(preg_match('/^giftToAll(\d+)/', $data, $match) && ($from_id == $admin || $use
     sendMessage("مدت زمان هدیه را به روز وارد کن (برای صفر، عدد 0 را وارد کن):", $cancelKey);
     setUser('giftServerDay' . $match[1]);
 }
-if(preg_match('/^giftToUser(\d+)/', $data, $match) && ($from_id == $admin || $userInfo['isAdmin'] == true)) {
-    sendMessage("نام کاربری (remark) کاربر موردنظر را وارد کن:", $cancelKey);
-    setUser("giftToUserRemark" . $match[1]);
-}
-
-if(preg_match('/^giftToUserRemark(\d+)/', $userInfo['step'], $match) && $text != $buttonValues['cancel']){
-    $sid = $match[1];
-    $remark = trim($text);
-    $stmt = $connection->prepare("SELECT * FROM `orders_list` WHERE `remark` = ? AND `server_id` = ?");
-    $stmt->bind_param("si", $remark, $sid);
-    $stmt->execute();
-    $result = $stmt->get_result();
-    $stmt->close();
-    if($result->num_rows > 0){
-        setUser("giftUserDay{$sid}_{$remark}");
-        sendMessage("مدت زمان هدیه را به روز وارد کن (برای صفر، عدد 0 را وارد کن):");
-    } else {
-        sendMessage("هیچ کاربری با این نام کاربری در این سرور پیدا نشد.");
+// ACHBOT_DIRECT_GIFT_ROUTE_BEGIN
+// Source-authenticated private Telegram input only. The direct-gift module
+// owns the entire privilege/step/claim lifecycle; do not call setUser() here.
+require_once __DIR__ . '/src/Subscription/DirectGift.php';
+if (is_string($data) &&
+    preg_match('/\AgiftToUser([1-9][0-9]*)\z/D',$data,$directGiftMatch)) {
+    try {
+        $directSource=achbotDirectGiftWebhook(
+            $update,(int)$from_id,(int)$chat_id,(int)$message_id,$data,'callback');
+    } catch (Throwable $e) {
+        error_log('direct_gift_callback_untrusted');
+        return;
     }
-}
-
-if(preg_match('/^giftUserDay(\d+)_(.*)/', $userInfo['step'], $match) && $text != $buttonValues['cancel']){
-    if(is_numeric($text) && $text >= 0){
-        setUser("giftUserVolume{$match[1]}_{$match[2]}_{$text}");
-        sendMessage("حجم هدیه را به مگابایت وارد کن (برای صفر، عدد 0 را وارد کن):");
-    } else {
-        sendMessage("فقط عدد معتبر وارد کن (0 یا بالاتر)." );
-    }
-}
-
-if(preg_match('/^giftUserVolume(\d+)_(.+)_(\d+)/', $userInfo['step'], $match) && $text != $buttonValues['cancel']){
-    if(is_numeric($text) && $text >= 0){
-        $sid = $match[1];
-        $remark = $match[2];
-        $day = $match[3];
-        $volume = $text;
-
-        $editReponse = editMarzbanConfig($sid, [
-            'remark' => $remark,
-            'plus_volume' => $volume / 1024,
-            'plus_day' => $day
-        ]);
-
-        if(!is_null($editReponse)){
-            $expire_date = $day * 86400;
-            $stmt = $connection->prepare("UPDATE `orders_list` SET `expire_date` = `expire_date` + ? WHERE `server_id` = ? AND `remark` = ?");
-            $stmt->bind_param("iis", $expire_date, $sid, $remark);
-            $stmt->execute();
-            $stmt->close();
-
-            sendMessage("🎉 هدیه با موفقیت به کاربر $remark داده شد.", $removeKeyboard);
+    try {
+        $created=achbotDirectGiftStart($connection,$directSource,
+            (int)$directGiftMatch[1],(int)$admin);
+        if ($created) {
+            sendMessage('نام کاربری اشتراک موردنظر را وارد کنید:',$cancelKey);
         } else {
-            sendMessage("❌ خطا در اعمال هدیه، لطفا بررسی کن.");
+            sendMessage('این درخواست قبلاً ثبت شده است. برای شروع جدید دوباره دکمه را انتخاب کنید.');
         }
-
-        sendMessage($mainValues['reached_main_menu'], getMainKeys());
-        setUser();
-    } else {
-        sendMessage("فقط عدد معتبر وارد کن (0 یا بالاتر)." );
+    } catch (Throwable $e) {
+        error_log('direct_gift_start_unconfirmed');
+        try {sendMessage('شروع هدیه تأیید نشد؛ پیش از تلاش مجدد وضعیت را بررسی کنید.');}
+        catch (Throwable $ignored) {}
     }
+    return;
 }
+if (is_string($userInfo['step']??null) &&
+    str_starts_with($userInfo['step'],'achbotDirectGift')) {
+    $directStep=$userInfo['step'];
+    try {
+        $directSource=achbotDirectGiftWebhook(
+            $update,(int)$from_id,(int)$chat_id,(int)$message_id,$text,'message');
+    } catch (Throwable $e) {
+        error_log('direct_gift_message_untrusted');
+        return;
+    }
+    if ($text===$buttonValues['cancel']) {
+        try {
+            achbotDirectGiftCancel($connection,$directSource,(int)$admin,$directStep);
+            sendMessage('درخواست هدیه لغو شد.',$removeKeyboard);
+        } catch (Throwable $e) {
+            error_log('direct_gift_cancel_unconfirmed');
+            try {sendMessage('لغو درخواست تأیید نشد؛ وضعیت را بررسی کنید.');}
+            catch (Throwable $ignored) {}
+        }
+        return;
+    }
+    try {
+        if (str_starts_with($directStep,'achbotDirectGiftRemark:')) {
+            achbotDirectGiftAdvance($connection,$directSource,(int)$admin,
+                $directStep,$text);
+            sendMessage('تعداد روز هدیه را به عدد صحیح وارد کنید (صفر مجاز است):');
+            return;
+        }
+        if (str_starts_with($directStep,'achbotDirectGiftDay:')) {
+            achbotDirectGiftAdvance($connection,$directSource,(int)$admin,
+                $directStep,$text);
+            sendMessage('حجم هدیه را به مگابایت وارد کنید؛ عدد صحیح و مضرب 1024 (صفر مجاز است):');
+            return;
+        }
+        if (!str_starts_with($directStep,'achbotDirectGiftVolume:'))
+            throw new RuntimeException('direct_gift_step_unknown');
+        $directClaim=achbotDirectGiftClaim($connection,$directSource,(int)$admin,
+                                          $directStep,$text);
+    } catch (InvalidArgumentException $e) {
+        try {sendMessage('ورودی نامعتبر است. روز باید عدد صحیح 0 تا 36500 باشد؛ حجم باید عدد صحیح غیرمنفی و مضرب 1024 مگابایت باشد و هر دو نمی‌توانند صفر باشند.');}
+        catch (Throwable $ignored) {}
+        return;
+    } catch (Throwable $e) {
+        if ($e->getMessage()==='direct_gift_duplicate_source_conflict')
+            error_log('direct_gift_source_provenance_conflict update_id='.(int)$directSource['update_id']);
+        else error_log('direct_gift_claim_or_step_unconfirmed');
+        try {sendMessage('وضعیت درخواست تأیید نشد. از ارسال دوباره تا بررسی وضعیت خودداری کنید.');}
+        catch (Throwable $ignored) {}
+        return;
+    }
+    if (!$directClaim['claimed']) {
+        try {
+            if ($directClaim['reason']==='hold') {
+                sendMessage('این اشتراک هدیهٔ در انتظار بررسی دارد (شناسه '.
+                    $directClaim['id'].'). پیش از درخواست جدید، وضعیت ثبت و اثر واقعی را دستی تطبیق دهید.');
+            } else {
+                sendMessage('این پیام قبلاً بررسی شده است؛ هیچ هدیهٔ جدیدی اعمال نشد.');
+            }
+        } catch (Throwable $ignored) {}
+        return;
+    }
+    $directChange=['remark'=>$directClaim['order']['remark']];
+    if ($directClaim['days']>0) $directChange['plus_day']=$directClaim['days'];
+    if ($directClaim['volume_mb']>0)
+        $directChange['plus_volume']=intdiv($directClaim['volume_mb'],1024);
+    $directFailure='direct_gift_provider_unverified';
+    try {
+        // A claim was committed before this potentially non-idempotent edit.
+        // Neither a failed result nor a lost response authorizes a retry.
+        achbotDirectGiftPreEffect($connection,$directClaim,
+            (int)$directSource['actor_id'],(int)$admin);
+        $directResult=achbotApplyServiceEdit($connection,
+            $directClaim['order']['server_id'],$directChange,$directClaim['target']);
+        if (!is_object($directResult))
+            throw new RuntimeException('direct_gift_result_invalid');
+        // Preserve safe machine-readable provider codes for operator review
+        // without emitting raw HTTP, database or credential details.
+        $directProviderCode=$directResult->msg??null;
+        if (is_string($directProviderCode) &&
+            preg_match('/\A[a-z0-9_]{1,70}\z/D',$directProviderCode)===1)
+            $directFailure='provider_'.$directProviderCode;
+        achbotDirectGiftComplete($connection,$directClaim,$directResult);
+        try {
+            sendMessage('✅ هدیهٔ اشتراک با نتیجهٔ قطعی ثبت شد (شناسه '.
+                $directClaim['id'].').',$removeKeyboard);
+            sendMessage($mainValues['reached_main_menu'],getMainKeys());
+        } catch (Throwable $noticeFailure) {
+            error_log('direct_gift_success_notice_unconfirmed');
+        }
+    } catch (Throwable $e) {
+        if ($e->getMessage()==='direct_gift_result_unverified' &&
+            $directFailure!=='direct_gift_provider_unverified') {
+            // Retain the validated provider result code for reconciliation.
+        } elseif (in_array($e->getMessage(),[
+            'direct_gift_preflight_order_changed',
+            'direct_gift_preflight_target_changed',
+            'direct_gift_admin_revoked','direct_gift_order_changed',
+            'direct_gift_result_invalid','direct_gift_result_unverified',
+            'direct_gift_expiry_did_not_increase',
+            'direct_gift_local_identity_changed'
+        ],true)) $directFailure=$e->getMessage();
+        else $directFailure='direct_gift_effect_or_sql_unconfirmed';
+        error_log('direct_gift_review source_id='.
+            (int)$directClaim['id'].' reason='.$directFailure);
+        achbotDirectGiftReview($connection,$directClaim,$directFailure);
+        try {
+            sendMessage('نتیجهٔ هدیه قطعی نیست (شناسه '.
+                $directClaim['id'].'). درخواست تکرار نمی‌شود؛ قبل از هر اقدام، اثر واقعی اشتراک و ثبت محلی را دستی تطبیق دهید.');
+        } catch (Throwable $ignored) {
+            error_log('direct_gift_review_notice_unconfirmed');
+        }
+    }
+    return;
+}
+// The inherited non-nonced direct-gift steps are intentionally inert.
+if (is_string($userInfo['step']??null) &&
+    preg_match('/\A(?:giftToUserRemark|giftUserDay|giftUserVolume)/',
+               $userInfo['step'])) {
+    return;
+}
+// ACHBOT_DIRECT_GIFT_ROUTE_END
+
 if(preg_match('/^giftServerDay(\d+)/',$userInfo['step'], $match) && ($from_id == $admin || $userInfo['isAdmin'] == true) && $text != $buttonValues['cancel']){
     if(is_numeric($text)){
         if($text >= 0){
@@ -2364,7 +2494,19 @@ if($data == 'reciveApplications') {
 ", json_encode(['inline_keyboard'=>$keyboard]), "html");
 }
 if ($text == $buttonValues['cancel']) {
-    setUser();
+    // config.php loaded userInfo before any concurrent direct-gift callback.
+    // Never let a stale generic CANCEL erase a newer nonce-protected step.
+    try {
+        $legacyCancelAccepted=achbotDirectGiftGuardLegacyCancel(
+            $connection,(int)$from_id,$userInfo);
+    } catch (Throwable $e) {
+        error_log('legacy_cancel_commit_or_identity_unconfirmed');
+        return;
+    }
+    if (!$legacyCancelAccepted) {
+        error_log('legacy_cancel_stale_cached_step');
+        return;
+    }
     $stmt = $connection->prepare("DELETE FROM `server_plans` WHERE `active`=0");
     $stmt->execute();
     $stmt->close();

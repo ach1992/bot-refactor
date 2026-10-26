@@ -69,7 +69,7 @@ NEW_RUNTIME_MEMBERS = ("settings/cronRunner.php", "src/Finance/PaymentPage.php",
                        "src/Finance/ServiceEffects.php", "src/Finance/BankPurchase.php",
                        "src/Finance/RecoveryInspection.php",
                        "src/Finance/RecoveryTransport.php",
-                       "src/Subscription/GiftBatch.php")
+                       "src/Subscription/GiftBatch.php", "src/Subscription/DirectGift.php")
 
 def members() -> list[str]:
     original = historical.members()
@@ -79,7 +79,7 @@ def members() -> list[str]:
         raise RuntimeError("Expected historical-only payment files missing")
     paths = [p for p in original if p not in RETIRED_RUNTIME_MEMBERS]
     paths.extend(NEW_RUNTIME_MEMBERS)
-    if len(paths)!=98 or len(set(paths))!=98:
+    if len(paths)!=99 or len(set(paths))!=99:
         raise RuntimeError("Post-V9 source inventory drift")
     for retired in RETIRED_RUNTIME_MEMBERS:
         if (ROOT/retired).exists() or retired in paths:

@@ -231,6 +231,8 @@ def check():
         assert fixture.count(marker)==1
         (work/'owned-finance-guard.php').write_text(fixture.replace(marker,replacement,1))
         config.write_text('<?php function check() {} '
+                          'function handleToggleCallbacks(...$args) { return false; } '
+            'function achbotHandleChannelExemption(...$args) { return false; } '
                           'function checkSpam() { return false; }\n')
         try:
             actor,name=seed('buy','ValidM42')
