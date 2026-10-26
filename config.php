@@ -508,7 +508,7 @@ function getAdminKeys(){
  * read the persisted document FOR UPDATE, and change only the intended field.
  * Financially significant audience changes cannot be lost to stale requests.
  */
-function achbotMutateBotStates(callable $mutate): bool {
+function achbotMutateBotStates(callable $mutate, ?callable $beforeStateLock = null): bool {
     global $connection, $botState;
     $lockName='achbot_bot_states_write';
     $ownsLock=false;$started=false;
@@ -522,6 +522,9 @@ function achbotMutateBotStates(callable $mutate): bool {
         if (!$ownsLock) throw new RuntimeException('settings_lock_unavailable');
         if (!$connection->begin_transaction()) throw new RuntimeException('settings_begin_failed');
         $started=true;
+        // Privileged gateway callbacks lock their CURRENT actor PK first.
+        // Financial owner -> setting readers depend on this lock ordering.
+        if ($beforeStateLock !== null) $beforeStateLock($connection);
         // Historical type has no index. Do not FOR UPDATE a full-table
         // scan: it can lock unrelated Marzban group records. The named
         // writer lock serializes in-app inserts; existing documents retain
@@ -607,22 +610,137 @@ function setSettings($field, $value): bool {
         return $state;
     });
 }
-/** Cycle a single audience method using the freshly persisted policy map. */
-function achbotCycleGatewayAudience(string $method): bool {
-    if (!array_key_exists($method,achbotPayUxAudienceMethods())) return false;
-    return achbotMutateBotStates(static function(array $state) use($method): array {
-        $map=array_key_exists('gatewayAudience',$state)
-            ? $state['gatewayAudience'] : [];
-        if (!is_array($map)) throw new RuntimeException('settings_invalid_audience_map');
-        $modes=array_keys(achbotPayUxAudienceModes());
-        $mode=array_key_exists($method,$map) ? $map[$method] : 'all';
-        $position=is_string($mode) ? array_search($mode,$modes,true) : false;
-        // Malformed explicit method stays blocked rather than resetting to all.
-        $map[$method]=$position===false ? 'off'
-            : $modes[($position+1)%count($modes)];
-        $state['gatewayAudience']=$map;
-        return $state;
-    });
+/**
+ * Source-ordered administrator payment availability and cohort changes.
+ *
+ * Existing in-app BOT_STATES writers remain supported through setSettings().
+ * Only signed, fresh private callbacks with CURRENT administrator privileges
+ * may reach the new privileged path. The named writer lock is shared with
+ * every settings writer; this path additionally persists a GLOBAL Telegram
+ * update-id watermark in the same transaction as BOT_STATES. It rejects an
+ * older admin's delayed callback even when another admin edited a different
+ * payment option in the meantime. No schema change, no provider effect.
+ */
+function achbotAdminGatewayChange($update,int $actor,int $chat,int $message,
+                                  int $primary,string $kind,string $key): bool {
+    global $connection;
+    static $flags=[
+        'giftCardState','manualUsdtState','cartToCartState','nextpay',
+        'zarinpal','nowPaymentWallet','nowPaymentOther','walletState'
+    ];
+    try {
+        if ($actor<=0 || $primary<=0 || $chat!==$actor || $message<=0 ||
+            !in_array($kind,['toggle','audience'],true))
+            throw new RuntimeException('gateway_actor_or_operation_invalid');
+        if ($kind==='toggle' && !in_array($key,$flags,true))
+            throw new RuntimeException('gateway_toggle_unknown');
+        if ($kind==='audience' &&
+            !array_key_exists($key,achbotPayUxAudienceMethods()))
+            throw new RuntimeException('gateway_audience_unknown');
+        $bound=$kind==='toggle' ? 'changeGateWays'.$key
+                                : 'cycleGatewayAudience_'.$key;
+        if (strlen($bound)>64 || !function_exists('achbotWebhookIngressAuthenticated') ||
+            !achbotWebhookIngressAuthenticated())
+            throw new RuntimeException('gateway_webhook_not_authenticated');
+        if (!function_exists('achbotDirectGiftWebhook'))
+            require_once __DIR__.'/src/Subscription/DirectGift.php';
+        $frame=achbotDirectGiftWebhook($update,$actor,$chat,$message,
+                                       $bound,'callback');
+        $sourceId=(int)$frame['update_id'];
+        // Find the exact actor PK before BEGIN to avoid a REPEATABLE READ
+        // snapshot pinned ahead of the first current row lock.
+        $findActor=static function(mysqli $db,int $actor): int {
+            $stmt=$db->prepare('SELECT id FROM users WHERE userid=? LIMIT 2');
+            if (!$stmt) throw new RuntimeException('gateway_actor_find_prepare');
+            $stmt->bind_param('i',$actor);
+            $ok=$stmt->execute();
+            $rows=$ok?$stmt->get_result()->fetch_all(MYSQLI_ASSOC):[];
+            $stmt->close();
+            if (!$ok || count($rows)!==1 || (int)$rows[0]['id']<=0)
+                throw new RuntimeException('gateway_actor_ambiguous');
+            return (int)$rows[0]['id'];
+        };
+        $pk=$findActor($connection,$actor);
+        $authorize=static function(mysqli $db) use($actor,$primary,$pk,$findActor): void {
+            // FIRST read in the transaction: lock CURRENT actor privileges.
+            $stmt=$db->prepare('SELECT id,userid,isAdmin,step FROM users WHERE id=? FOR UPDATE');
+            if (!$stmt) throw new RuntimeException('gateway_actor_lock_prepare');
+            $stmt->bind_param('i',$pk);
+            $ok=$stmt->execute();
+            $current=$ok?$stmt->get_result()->fetch_assoc():null;
+            $stmt->close();
+            if (!$ok || !$current || (int)$current['id']!==$pk ||
+                (int)$current['userid']!==$actor ||
+                ($actor!==$primary && (int)$current['isAdmin']!==1) ||
+                (string)$current['step']==='banned' ||
+                $findActor($db,$actor)!==$pk)
+                throw new RuntimeException('gateway_actor_no_longer_authorized');
+        };
+        $apply=static function(array $state) use(
+            $connection,$kind,$key,$sourceId,$actor,$message
+        ): array {
+            // GET_LOCK in achbotMutateBotStates serializes all in-app writers.
+            // setting.type is historically nonunique: refuse ambiguous rows.
+            $type='ACHBOT_ADMIN_GATEWAY_SOURCE';
+            $stmt=$connection->prepare(
+                'SELECT id,value FROM setting WHERE type=? ORDER BY id LIMIT 2');
+            if (!$stmt) throw new RuntimeException('gateway_source_find_prepare');
+            $stmt->bind_param('s',$type);
+            $ok=$stmt->execute();
+            $markers=$ok?$stmt->get_result()->fetch_all(MYSQLI_ASSOC):[];
+            $stmt->close();
+            if (!$ok || count($markers)>1)
+                throw new RuntimeException('gateway_source_ambiguous');
+            if ($markers) {
+                $old=json_decode((string)$markers[0]['value'],true,512,JSON_THROW_ON_ERROR);
+                if (!is_array($old) || ($old['version']??null)!==1 ||
+                    !is_int($old['last_update_id']??null) ||
+                    !is_int($old['actor_id']??null) ||
+                    $sourceId<=$old['last_update_id'])
+                    throw new RuntimeException('gateway_source_stale_or_invalid');
+            }
+            if ($kind==='toggle') {
+                $current=$state[$key]??'off';
+                if (!in_array($current,['on','off'],true))
+                    throw new RuntimeException('gateway_flag_invalid');
+                $state[$key]=$current==='on'?'off':'on';
+            } else {
+                $map=$state['gatewayAudience']??[];
+                if (!is_array($map))
+                    throw new RuntimeException('gateway_audience_map_invalid');
+                $modes=array_keys(achbotPayUxAudienceModes());
+                $now=$map[$key]??'all';
+                $position=is_string($now) ? array_search($now,$modes,true) : false;
+                // A corrupted method cannot silently become unrestricted.
+                $map[$key]=$position===false?'off'
+                    :$modes[($position+1)%count($modes)];
+                $state['gatewayAudience']=$map;
+            }
+            $value=json_encode([
+                'version'=>1,'last_update_id'=>$sourceId,'actor_id'=>$actor,
+                'last_message_id'=>$message,'kind'=>$kind,'key'=>$key
+            ],JSON_THROW_ON_ERROR);
+            if ($markers) {
+                $id=(int)$markers[0]['id'];$before=(string)$markers[0]['value'];
+                $stmt=$connection->prepare('UPDATE setting SET value=?
+                    WHERE id=? AND type=? AND value=?');
+                if (!$stmt) throw new RuntimeException('gateway_source_update_prepare');
+                $stmt->bind_param('siss',$value,$id,$type,$before);
+            } else {
+                $stmt=$connection->prepare('INSERT INTO setting(type,value) VALUES (?,?)');
+                if (!$stmt) throw new RuntimeException('gateway_source_insert_prepare');
+                $stmt->bind_param('ss',$type,$value);
+            }
+            $ok=$stmt->execute();$changed=$stmt->affected_rows;$stmt->close();
+            if (!$ok || $changed!==1)
+                throw new RuntimeException('gateway_source_commit_unconfirmed');
+            return $state;
+        };
+        return achbotMutateBotStates($apply,$authorize);
+    } catch (Throwable $error) {
+        error_log('achbot_admin_gateway_change_deferred code='.(int)$error->getCode());
+        return false;
+    }
 }
 
 function getRejectedAgentList(){

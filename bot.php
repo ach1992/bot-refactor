@@ -500,8 +500,13 @@ if(($data=="gateWays_Channels" or preg_match('/^changeGateWays([A-Za-z0-9_]+)$/D
             answerCallbackQuery($callbackId,'این درگاه قدیمی یا ناشناخته قابل تغییر نیست.',true);
             return;
         }
-        $newValue = ($botState[$match[1]] ?? 'off')==="on"?"off":"on";
-        setSettings($match[1], $newValue);
+        if (!achbotAdminGatewayChange($update,(int)$from_id,
+                (int)$chat_id,(int)$message_id,(int)$admin,
+                'toggle',$match[1])) {
+            answerCallbackQuery($callbackId,
+                'تنظیم تغییر نکرد؛ دسترسی یا اعتبار درخواست را بررسی کنید.',true);
+            return;
+        }
     }
     editText($message_id,$mainValues['change_bot_settings_message'],getGateWaysKeys());
 }
@@ -520,8 +525,11 @@ if (($from_id == $admin || (int)($userInfo['isAdmin']??0)===1) &&
         answerCallbackQuery($callbackId,'روش پرداخت ناشناخته است.',true);
         return;
     }
-    if (!achbotCycleGatewayAudience($method)) {
-        answerCallbackQuery($callbackId,'تنظیم ذخیره نشد؛ لطفاً وضعیت فعلی را بررسی کنید.',true);
+    if (!achbotAdminGatewayChange($update,(int)$from_id,
+            (int)$chat_id,(int)$message_id,(int)$admin,
+            'audience',$method)) {
+        answerCallbackQuery($callbackId,
+            'تنظیم ذخیره نشد؛ دسترسی یا اعتبار درخواست را بررسی کنید.',true);
         return;
     }
     editText($message_id,'👥 دسترسی درگاه‌ها برای گروه‌های مختلف کاربران',

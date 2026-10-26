@@ -55,7 +55,7 @@ def source_functions(previous=False):
     if previous:
         a=content.index(b'function setSettings($field, $value){')
     else:
-        a=content.index(b'function achbotMutateBotStates(callable $mutate): bool {')
+        a=content.index(b'function achbotMutateBotStates(')
     b=content.index(b'\nfunction getRejectedAgentList()',a)
     return b'<?php\n'+content[a:b]+b'\n'
 
