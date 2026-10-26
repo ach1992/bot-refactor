@@ -39,7 +39,7 @@ def source_checks():
         if (ROOT / field).read_bytes() != cmd("show", V9+":"+field):
             raise RuntimeError("Changed historical schema/private-template: " + field)
     files=package.members()
-    if len(files)!=101 or len(set(files))!=len(files):
+    if len(files)!=102 or len(set(files))!=len(files):
         raise RuntimeError("Source-only runtime file inventory changed")
     if any((ROOT/name).exists() or name in files
            for name in package.RETIRED_RUNTIME_MEMBERS):
@@ -853,6 +853,48 @@ def main():
                  'unsupported_cohort_name_never_persisted',
              },('baseline_red','new_source_green','actual_bot_callback_extraction',
                 'actual_config_writer_extraction','real_original_schema_mariadb')),
+            ('payment_key_admin','test_post_v9_payment_key_admin.py',
+             {
+                 'baseline_raw_merchant_secret_menu_red_current_masked_green',
+                 'baseline_revoked_cached_delegate_writer_red',
+                 'revoked_cached_delegate_cannot_open_payment_menu',
+                 'current_admin_private_menu_safe_and_editable',
+                 'revoked_delegate_cannot_open_merchant_editor',
+                 'signed_private_text_saves_field_without_credential_echo',
+                 'replayed_credential_message_has_no_write',
+                 'revocation_during_wizard_prevents_write',
+                 'forged_private_message_token_group_sender_text_denied',
+                 'stale_message_source_marker_denied',
+                 'signed_cancel_preserves_existing_values',
+                 'two_admins_independent_fields_both_persist',
+                 'two_admins_same_field_stale_baseline_denied',
+                 'same_field_aba_reversion_does_not_reopen_stale_editor',
+                 'public_bank_fields_editable_hmac_baseline_nonreversible',
+                 'malformed_and_retired_payment_keys_cannot_be_edited',
+                 'unverified_admin_key_callback_never_opens_step',
+                 'legacy_unbound_payment_key_step_denied',
+                 'ambiguous_payment_key_setting_type_denied',
+                 'malformed_payment_key_document_denied',
+                 'duplicate_administrator_userid_denied',
+                 'sql_write_failure_rollback_no_false_success',
+                 'retriable_authentic_save_after_sql_rollback',
+                 'gift_card_legacy_https_validation',
+                 'manual_trx_rate_positive_and_clear',
+                 'manual_usdt_rate_positive_range',
+                 'chain_address_manualUsdtWalletBEP20_validated_and_clear',
+                 'chain_address_manualUsdtWalletERC20_validated_and_clear',
+                 'chain_address_manualUsdtWalletTRC20_validated_and_clear',
+                 'chain_address_manualTrxWallet_validated_and_clear',
+                 'missing_payment_keys_row_created_once_under_lock',
+                 'duplicate_admin_source_marker_fails_closed',
+                 'independent_writers_read_committed_preserve_fields',
+                 'independent_writers_repeatable_read_preserve_fields',
+                 'operator_crypto_destination_visible_merchant_secret_hidden',
+                 'hosted_secret_labels_masked_public_fields_preserved',
+                 'operational_log_excludes_merchant_values',
+             },('source_real','original_schema_mariadb','baseline_red',
+                'current_source_green','two_authenticated_admins',
+                'no_real_provider_telegram_or_money')),
             ('cross_method_lock_order','test_post_v9_cross_method_lock_order.py',
              {
                  'f4_successor_current_read_uses_owner_index',
@@ -2498,7 +2540,7 @@ def main():
                        cwd=ROOT,check=True,timeout=60,capture_output=True)
         swap=json.loads(overlay_report.read_text())
         if not (swap.get("complete") and swap.get("phase_count")==4
-                and swap.get("runtime_members")==101
+                and swap.get("runtime_members")==102
                 and swap.get("historical_runtime_members")==92
                 and swap.get("retired_old_payment_files_absent_after_source_upgrade")
                 and swap.get("source_roll_forward_and_back_byte_identical")

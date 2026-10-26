@@ -58,6 +58,60 @@ Source-only additive migration: migrations/post-v9/006_payment_message_refs.sql.
 
 Before installing, require a separate Owner decision, exact versioned/checksummed SQL asset, 003/004/005/006 schema and compatibility preflight, backup + restore rehearsal, installed Marzban/Telegram checks and historical pending-invoice inventory. Do not autoapply migrations or put SQL files in the runtime ZIP. New src/Finance/PaymentLifecycle.php must be included in the runtime ZIP. The four-worker Cron remains unchanged. Runtime packaging removes old automatic TRON/WeSwap modules; generic unknown callbacks are denied before financial reads. NextPay remains optional for new payments with no legacy import.
 
+## Merchant credential and destination editor
+
+The separate administrator `PAYMENT_KEYS` editor is a source-only payment
+configuration path, **not** a new merchant gateway or settlement engine.
+From `درگاه‌ها`, select the desired credential, bank-account/holder, gift
+seller HTTPS URL, or independent USDT BEP20/TRC20/ERC20 and TRX TRON
+destination or exchange rate. An authenticated **private Telegram callback**
+opens a field-specific wizard; a new signed private text message saves the
+input, and **Cancel** leaves the stored value unchanged. Invalid URLs,
+network-incompatible addresses and rates show Persian correction hints
+without overwriting the active setting. `/clear` is supported for the
+manual crypto destination and rate fields already permitting it.
+
+The editor checks current primary/delegated administrator identity, role,
+ban status, exact owned wizard step, source identity and monotonic Telegram
+`update_id` on every action. It never trusts cached `userInfo` or
+`paymentKeys` to authorize a write. The historical `setting.type` has
+no unique constraint: the writer takes a named lock, verifies exactly one
+`PAYMENT_KEYS` document (or creates one), locks the current administrator
+PK **before** setting PKs, and commits the field-scoped settings JSON,
+`users.step` and the separate
+`ACHBOT_ADMIN_PAYMENT_KEYS_SOURCE` watermark together. A source marker
+stores per-field revision numbers, and a webhook-secret-keyed HMAC
+of the previewed value and revision is stored in the wizard; a stale editor
+cannot overwrite a concurrent modification, even if another administrator
+restores the original value (ABA). Different-field edits can both succeed.
+Malformed, duplicate, revoked, unsigned, replayed or unknown-commit
+operations return **no success confirmation**, with reason-code-only
+administrative logging. No private field value or submitted credential is
+echoed into logs, Telegram management menus or success feedback.
+
+Only `configured` / `missing` indicators are shown for
+**NOWPayments, Zarinpal and NextPay hosted merchant credentials**.
+The public bank account, holder and valid manual-chain destinations/rates
+remain displayed for the operator where needed. The settings menu itself
+requires a current signed private admin role check; prior forwarded or
+cached-role callbacks cannot expose its public destinations to a revoked
+administrator. The chat message containing a newly *typed* secret is
+still held by Telegram according to its own service behavior: the source
+fix cannot erase previous historic Telegram messages containing exposed
+merchant credentials. Any installed historical exposure assessment or
+credential rotation is a separate Owner/operator action; no rotation
+or production webhook was performed in source acceptance.
+
+**Required source-real regression:** `python3
+tools/test_post_v9_payment_key_admin.py --run-disposable` extracts the
+actual `bot.php` route and `config.php` menu and uses an isolated
+original 23-table MariaDB, independent PHP/MySQLi sessions, synthetic
+Telegram updates and no provider/network effects. This suite is mandatory
+in the exact-candidate `tools/check_post_v9.py` CI matrix alongside existing
+gateway/admin/financial tests. Source-only CI never proves installed
+configuration, merchant verification, payment settlement or production
+authorization. No SQL migration is needed for these editor changes.
+
 ## Acceptance
 
 tools/test_post_v9_payment_ux_lifecycle.py --run-disposable exercises actual PHP on owned original 23-table MariaDB plus only the optional disposable 003 and 006 migrations, with no external provider or Telegram network requests. It checks expiry, supersession, provenance, several messages edited, Telegram retry, manual receipt evidence and competing PHP/MySQLi clients. tools/check_post_v9.py must require all named cases. Frozen V0-V9 evidence remains unchanged. Installed E2E payment/provider and any real SQL activation require separate approval.

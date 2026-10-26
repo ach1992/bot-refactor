@@ -100,12 +100,20 @@ $connection=new mysqli('localhost','root','',$argv[3],0,$argv[2]);
 $connection->set_charset('utf8mb4');
 $from_id=(int)($spec['actor']??9001);
 $admin=9001;$chat_id=$from_id;
-$update=(object)['update_id'=>(int)($spec['update_id']??1),
-    'callback_query'=>(object)['id'=>'admin-test-callback',
-      'from'=>(object)['id'=>$from_id,'is_bot'=>false],
-      'message'=>(object)['message_id'=>600,
-        'chat'=>(object)['id'=>$from_id,'type'=>'private']],
-      'data'=>(string)($spec['data']??'')]];
+$sender=(object)['id'=>$from_id,'is_bot'=>false];
+$chat=(object)['id'=>$from_id,'type'=>'private'];
+$sourceId=(int)($spec['update_id']??1);
+if (($spec['source_kind']??'callback')==='message') {
+    $update=(object)['update_id'=>$sourceId,
+        'message'=>(object)['message_id'=>600,'from'=>$sender,
+            'chat'=>$chat,'text'=>(string)($spec['text']??'')]];
+} else {
+    $update=(object)['update_id'=>$sourceId,
+        'callback_query'=>(object)['id'=>'admin-test-callback',
+            'from'=>$sender,
+            'message'=>(object)['message_id'=>600,'chat'=>$chat],
+            'data'=>(string)($spec['data']??'')]];
+}
 $callbackId='fixture-callback';
 $message_id=600;
 $data=(string)($spec['data']??'');
@@ -137,6 +145,8 @@ function getBotSettingKeys() {return '{}';}
 function getGateWaysKeys() {return '{}';}
 require $root.'/src/Finance/PaymentLifecycle.php';
 require $root.'/src/Subscription/DirectGift.php';
+require $root.'/src/Finance/GatewayRuleAdmin.php';
+require $root.'/src/Finance/PaymentKeyAdmin.php';
 require $argv[7]; // Actual bot.php ingress-auth function, source-extracted.
 require $argv[5]; // Actual config.php writers, source-extracted.
 if (isset($spec['writer_key'])) {
@@ -154,7 +164,8 @@ echo json_encode(['events'=>$GLOBALS['events']],JSON_THROW_ON_ERROR |
 
 def php(work: Path, env: dict, script: Path, args: list[str]) -> object:
     cmd=['php','-n','-d','extension=mysqlnd','-d','extension=mysqli',
-         '-d','extension=tokenizer','-d','allow_url_fopen=0',
+         '-d','extension=tokenizer','-d','log_errors=1',
+         '-d',f'error_log={work}/admin-fixture.log','-d','allow_url_fopen=0',
          '-d','disable_functions=curl_init,curl_exec,fsockopen,pfsockopen,'
              'stream_socket_client,shell_exec,exec,system,passthru,popen,proc_open,mail,dl',
          str(script),*args]
@@ -217,13 +228,17 @@ def check() -> dict:
         route=(ROOT/'bot.php').read_text()
         begin=route.index('if(($data=="botSettings"')
         end=route.index('if($data=="changeConfigRemarkType")',begin)
-        editor_begin=route.index("if(preg_match('/^changePaymentKeys(",end)
+        editor_begin=route.index('// Privileged PAYMENT_KEYS editor:',end)
         editor_end=route.index("require __DIR__ . '/src/Agent/Discounts.php';",editor_begin)
         callback_source=route[begin:end]
         editor_source=route[editor_begin:editor_end]
         assert 'setSettings(' in callback_source
-        assert 'achbotManualTronAddressValid(' in editor_source
-        assert 'achbotManualUsdtWalletValid(' in editor_source
+        assert 'achbotAdminPaymentKeyChange(' in editor_source
+        # Address validation moved into the actual source-loaded editor
+        # instead of duplicating the legacy inline persistence shortcut.
+        key_helper=(ROOT/'src/Finance/PaymentKeyAdmin.php').read_text()
+        assert 'achbotManualTronAddressValid(' in key_helper
+        assert 'achbotManualUsdtWalletValid(' in key_helper
         (work/'admin-callbacks.php').write_text('<?php\n'+callback_source+
                                                  '\n'+editor_source)
         (work/'admin-driver.php').write_text(PHP_ADMIN)
@@ -285,6 +300,7 @@ def check() -> dict:
             return php(work,env,work/'admin-driver.php',[
                 str(ROOT),str(work/'mysql.sock'),DB,
                 json.dumps({'actor':actor,'data':data,'text':text,
+                            'source_kind':'message' if text else 'callback',
                             'update_id':sequence[0]}),
                 str(work/'actual-writers.php'),str(work/'admin-callbacks.php'),
                 str(work/'actual-ingress.php')
@@ -364,22 +380,29 @@ def check() -> dict:
         # stage. Corrupt addresses must not overwrite old valid destinations.
         for key,address in [('manualUsdtWalletTRC20',USDT_TRC20),
                             ('manualTrxWallet',TRX_TRON)]:
-            sql(work,env,"UPDATE users SET step='changePaymentKeys"+key+
-                "' WHERE userid=9001")
+            # Start with the exact source-authenticated current callback;
+            # only a newer genuine private message may finish its step.
+            start=run(data='changePaymentKeys'+key)
+            assert any(e[0]=='sendMessage' for e in start)
+            currentStep=sql(work,env,"SELECT step FROM users WHERE userid=9001")
+            assert currentStep.startswith('achbotPaymentKey|'+key+'|'),(key,currentStep)
             old=payment_raw()
             invalid=address[:-1]+('1' if address[-1]!='1' else '2')
             events=run(text=invalid)
             assert payment_raw()==old,(key,'invalid address persisted')
             assert any(e[0]=='sendMessage' and '⚠️' in str(e[1]) for e in events),key
+            assert sql(work,env,"SELECT step FROM users WHERE userid=9001")==currentStep
             assert protected_snapshot()==baseline_finance
             cases.append('actual_editor_rejects_checksum_corruption_'+key)
 
-            # Accept a separate independently verified legitimate destination.
+            # Accept a different officially documented valid destination.
             replacement=TRX_TRON if address==USDT_TRC20 else USDT_TRC20
             events=run(text=replacement)
             assert json.loads(payment_raw())[key]==replacement,key
             assert any(e[0]=='sendMessage' and 'Fixture saved' in str(e[1])
                        for e in events)
+            final_step=sql(work,env,"SELECT step FROM users WHERE userid=9001")
+            assert final_step.strip()=='none',(key,repr(final_step),events)
             assert protected_snapshot()==baseline_finance
             cases.append('actual_editor_accepts_checksums_'+key)
         cases.append('no_financial_effects_from_admin_settings_or_editors')

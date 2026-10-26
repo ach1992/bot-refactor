@@ -488,6 +488,14 @@ if($data=="changeUpdateConfigLinkState" && ($from_id == $admin || $userInfo['isA
     editText($message_id,$mainValues['change_bot_settings_message'],getBotSettingKeys());
 }
 if(($data=="gateWays_Channels" or preg_match('/^changeGateWays([A-Za-z0-9_]+)$/D',$data,$match)) && ($from_id == $admin || $userInfo['isAdmin'] == true)){
+    // Merchant/public-destination menu also requires CURRENT authorization,
+    // not merely a stale cached admin bit.
+    if ($data==="gateWays_Channels" && !achbotGatewayAdminCanView(
+            $update,(int)$from_id,(int)$chat_id,(int)$message_id,
+            (int)$admin,$data)) {
+        answerCallbackQuery($callbackId,'دسترسی مدیریت پرداخت تأیید نشد.',true);
+        return;
+    }
     if($data!="gateWays_Channels"){
         // Only currently displayed, supported gateway flags are editable.
         // Unknown or cross-surface callback identifiers cannot mutate BOT_STATES.
@@ -669,9 +677,19 @@ if($data=="changeConfigRemarkType"){
     setSettings('remark', $newValue);
     editText($message_id,$mainValues['change_bot_settings_message'],getBotSettingKeys());
 }
-if(preg_match('/^changePaymentKeys(\w+)/',$data,$match) && ($from_id == $admin || $userInfo['isAdmin'] == true)){
-    if (in_array($match[1], ['manualUsdtWallet','manualUsdtNetwork'], true)) {
-        answerCallbackQuery($callbackId, 'تنظیم قدیمی کنار گذاشته شد؛ از آدرس‌های مستقل هر شبکه استفاده کنید.', true);
+// Privileged PAYMENT_KEYS editor: signed private source + current actor
+// role, current owned step, field-level CAS, and a serialized atomic write.
+// Cached $userInfo / $paymentKeys are NEVER authorization/write authority.
+if (is_string($data??null) && str_starts_with($data,'changePaymentKeys')) {
+    if (!preg_match('/\AchangePaymentKeys([A-Za-z0-9]+)\z/D',$data,$match) ||
+        !in_array($match[1],achbotPaymentKeyAdminFields(),true)) {
+        answerCallbackQuery($callbackId, 'این تنظیم شناخته‌شده نیست.', true);
+        return;
+    }
+    if (!achbotAdminPaymentKeyChange($update,(int)$from_id,(int)$chat_id,
+            (int)$message_id,(int)$admin,'start',$match[1])) {
+        answerCallbackQuery($callbackId,
+            'تنظیم شروع نشد؛ دسترسی یا اطلاعات فعلی را بررسی کنید.',true);
         return;
     }
     delMessage();
@@ -714,72 +732,38 @@ if(preg_match('/^changePaymentKeys(\w+)/',$data,$match) && ($from_id == $admin |
             return;
     }
     sendMessage("🔘 لطفا $gate را وارد کنید", $cancelKey);
-    setUser($data);
+    return;
 }
-if(preg_match('/^changePaymentKeys(\w+)/',$userInfo['step'],$match) && $text != $buttonValues['cancel'] && ($from_id == $admin || $userInfo['isAdmin'] == true)){
-    $permittedPaymentKeys=[
-        'nowpayment','nextpay','zarinpal','bankAccount','holderName','giftCardUrl',
-        'manualUsdtWalletBEP20','manualUsdtWalletTRC20','manualUsdtWalletERC20',
-        'manualTrxWallet','manualUsdtRateToman','manualTrxRateToman'
-    ];
-    if (!in_array($match[1],$permittedPaymentKeys,true)) {
-        sendMessage('⛔️ این تنظیم قابل تغییر نیست.');
-        setUser();
+$paymentKeyStep=(string)($userInfo['step']??'');
+if (str_starts_with($paymentKeyStep,'achbotPaymentKey|') ||
+    str_starts_with($paymentKeyStep,'changePaymentKeys')) {
+    // A message must own the NEW baseline-bound wizard. Old pre-fix
+    // changePaymentKeys* steps never authorize a write or reset the step.
+    if (!is_object($update->message??null) || !is_string($text??null)) return;
+    $ownedStep=achbotPaymentKeyAdminStep($paymentKeyStep);
+    if ($ownedStep===null) {
+        sendMessage('⛔️ ویرایش قبلی معتبر نیست؛ از منوی درگاه‌ها دوباره شروع کنید.');
         return;
     }
-    $stmt = $connection->prepare("SELECT * FROM `setting` WHERE `type` = 'PAYMENT_KEYS'");
-    $stmt->execute();
-    $paymentInfo = $stmt->get_result();
-    $stmt->close();
-    $paymentKeys = json_decode($paymentInfo->fetch_assoc()['value'],true)??array();
-    if ($match[1] === 'giftCardUrl') {
-        $url = trim((string)$text);
-        if (!achbotManualGiftSellerUrlValid($url)) {
-            sendMessage("⚠️ لینک HTTPS معتبر بدون اطلاعات ورود و با حداکثر ۳۵۰ بایت ارسال کنید.", $cancelKey);
-            return;
-        }
-        $text = $url;
+    $kind=$text===$buttonValues['cancel']?'cancel':'save';
+    if (!achbotAdminPaymentKeyChange($update,(int)$from_id,(int)$chat_id,
+            (int)$message_id,(int)$admin,$kind,$ownedStep['field'],
+            (string)$text)) {
+        $hint=$kind==='save'
+            ? achbotPaymentKeyAdminInputHint($ownedStep['field'],(string)$text)
+            : null;
+        sendMessage($hint ??
+            '⛔️ تنظیم ذخیره نشد؛ ممکن است دسترسی یا مقدار قبلی تغییر کرده باشد.',
+            $cancelKey);
+        return;
     }
-    $cryptoAddresses = ['manualUsdtWalletBEP20'=>'BEP20',
-                        'manualUsdtWalletTRC20'=>'TRC20',
-                        'manualUsdtWalletERC20'=>'ERC20',
-                        'manualTrxWallet'=>'TRON'];
-    $cryptoRates=['manualUsdtRateToman','manualTrxRateToman'];
-    if (array_key_exists($match[1], $cryptoAddresses) || in_array($match[1], $cryptoRates, true)) {
-        $text=trim((string)$text);
-        if ($text === '/clear') {
-            $text='';
-        } elseif (array_key_exists($match[1], $cryptoAddresses)) {
-            $network=$cryptoAddresses[$match[1]];
-            $valid = $network==='TRON'
-                ? achbotManualTronAddressValid($text)
-                : achbotManualUsdtWalletValid($text,$network);
-            if (!$valid) {
-                sendMessage('⚠️ آدرس مقصد با شبکهٔ انتخاب‌شده سازگار نیست. برای غیرفعال‌کردن این شبکه /clear بفرستید.', $cancelKey);
-                return;
-            }
-        } else {
-            $pattern=$match[1]==='manualTrxRateToman'
-                ? '/^[1-9][0-9]{0,8}$/D' : '/^[1-9][0-9]{2,8}$/D';
-            if (!preg_match($pattern,$text)) {
-                sendMessage('⚠️ نرخ معتبر به تومان وارد کنید یا /clear بفرستید.', $cancelKey);
-                return;
-            }
-        }
+    if ($kind==='cancel') {
+        sendMessage('ویرایش لغو شد.', $removeKeyboard);
+    } else {
+        sendMessage($mainValues['saved_successfuly'],$removeKeyboard);
     }
-    $paymentKeys[$match[1]] = $text;
-    $paymentKeys = json_encode($paymentKeys);
-
-    if($paymentInfo->num_rows > 0) $stmt = $connection->prepare("UPDATE `setting` SET `value` = ? WHERE `type` = 'PAYMENT_KEYS'");
-    else $stmt = $connection->prepare("INSERT INTO `setting` (`type`, `value`) VALUES ('PAYMENT_KEYS', ?)");
-    $stmt->bind_param("s", $paymentKeys);
-    $stmt->execute();
-    $stmt->close();
-
-
-    sendMessage($mainValues['saved_successfuly'],$removeKeyboard);
     sendMessage($mainValues['change_bot_settings_message'],getGateWaysKeys());
-    setUser();
+    return;
 }
 require __DIR__ . '/src/Agent/Discounts.php';
 if(preg_match('/^edit(RewaredTime|cartToCartAutoAcceptTime)/', $data, $match) && ($from_id == $admin || $userInfo['isAdmin'] == true)){
