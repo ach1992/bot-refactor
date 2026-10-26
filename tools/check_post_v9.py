@@ -1306,10 +1306,20 @@ def main():
         # Issue #78: real single-admin gift bot.php source, fresh Telegram
         # bindings, strict verified service-edit seam and disposable MariaDB.
         direct_gift_path=Path(tmp)/"direct-gift-source.json"
-        subprocess.run(
+        direct_gift_run=subprocess.run(
             ["python3",str(ROOT/"tools/test_post_v9_direct_gift.py"),
              "--run-disposable","--report",str(direct_gift_path)],
-            cwd=ROOT,check=True,timeout=180,capture_output=True)
+            cwd=ROOT,timeout=240,capture_output=True,text=True)
+        if direct_gift_run.returncode!=0:
+            # Do not swallow the disposable child exception: without it a
+            # PHP-version-specific failure is opaque in official CI logs.
+            # Fixture transport uses synthetic secrets; redact them anyway.
+            diagnostic=(direct_gift_run.stderr or direct_gift_run.stdout)[-2400:]
+            diagnostic=diagnostic.replace('fixture-password','[fixture-redacted]')
+            diagnostic=diagnostic.replace('fixture-direct-gift-token-NotReal_2026',
+                                          '[fixture-redacted]')
+            raise RuntimeError('Issue #78 direct gift child failed (source-real fixture): '+
+                               diagnostic)
         direct_gift=json.loads(direct_gift_path.read_text())
         required_direct_gift={
             'real_bot_route_verified_combined_gift_success',
@@ -1334,9 +1344,24 @@ def main():
             'source_and_account_hold_rollback_when_step_consume_fails',
             'journal_sql_insert_failure_prevents_provider_dispatch',
             'original_23_table_schema_unmodified',
+            # Required independent-review F1/F2 race/cancel controls.
+            'repeatable_read_two_admins_two_orders_lockwait_before_claim_commit',
+            'read_committed_two_admins_alias_lockwait_safe',
+            'shared_panel_group_two_urls_cross_admin_hold',
+            'fresh_cancel_remark','fresh_cancel_day','fresh_cancel_volume',
+            'old_cancel_cannot_erase_new_start_nonce',
+            'old_cancel_preserves_day','old_cancel_preserves_volume',
+            'cancel_checks_last_message_as_well_as_update',
+            'cancel_lost_commit_ack_then_redelivery_fails_closed',
+            'revoked_delegated_admin_cannot_cancel',
+            'concurrent_cancel_and_progress_generation_cas',
+            'verified_prior_source_envelope_duplicate_no_effect',
+            'corrupt_source_provenance_fail_closed_$.actor_id',
+            'corrupt_source_provenance_fail_closed_$.source.actor_id',
+            'completed_marker_reuse_only_after_distinct_new_wizard',
         }
         if not (direct_gift.get('complete') is True and
-                direct_gift.get('cases')>=49 and
+                direct_gift.get('cases')>=67 and
                 required_direct_gift.issubset(set(direct_gift.get('scenarios',[]))) and
                 direct_gift.get('real_bot_php_route') is True and
                 direct_gift.get('real_mysqli_original_schema') is True and
