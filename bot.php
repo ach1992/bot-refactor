@@ -1,8 +1,28 @@
 <?php
 
+// ACHBOT_WEBHOOK_INGRESS_BEGIN
+// All webhook-driven mutations must be authenticated BEFORE loading config.php:
+// config.php initializes routes and may read request-derived state.
+function achbotWebhookIngressAuthenticated(): bool {
+    $secret=getenv('ACHBOT_TELEGRAM_WEBHOOK_SECRET');
+    $received=$_SERVER['HTTP_X_TELEGRAM_BOT_API_SECRET_TOKEN']??null;
+    return ($_SERVER['REQUEST_METHOD']??null)==='POST' &&
+        is_string($secret) && strlen($secret)>=16 && strlen($secret)<=256 &&
+        preg_match('/\A[A-Za-z0-9_-]+\z/D',$secret)===1 &&
+        is_string($received) && hash_equals($secret,$received);
+}
+if (!achbotWebhookIngressAuthenticated()) {
+    http_response_code(403);
+    error_log('achbot_webhook_ingress_unverified');
+    return;
+}
+// ACHBOT_WEBHOOK_INGRESS_END
+
 require_once 'config.php';
 require_once 'buy_helpers.php';
 check();
+// Source-authenticated and IP-checked before any administrative moderation.
+if (handleToggleCallbacks($data??null,$chat_id??null,$message_id??null)) return;
 
 /*
 $log_data = "📩 New Update at " . date("Y-m-d H:i:s") . "\n";

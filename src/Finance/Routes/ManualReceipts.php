@@ -663,21 +663,28 @@ if (preg_match('/^banUserDirect_(\d+)$/', $data, $m) && ($from_id == $admin || $
 	
     // delMessage();
 
-    $stmt = $connection->prepare("SELECT `step` FROM `users` WHERE `userid` = ?");
+    $stmt = $connection->prepare("SELECT `id`,`step` FROM `users` WHERE `userid` = ?");
     $stmt->bind_param("i", $targetUserId);
     $stmt->execute();
     $res = $stmt->get_result();
     $stmt->close();
 
-    if ($res->num_rows > 0) {
+    if ($res->num_rows === 1) {
         $u = $res->fetch_assoc();
 
         if ($u['step'] != "banned") {
-            $stmt = $connection->prepare("UPDATE `users` SET `step` = 'banned' WHERE `userid` = ?");
-            $stmt->bind_param("i", $targetUserId);
-            $stmt->execute();
-            $stmt->close();
-
+            // This inherited callback has no gift-generation freshness evidence.
+            // Do not let it preempt a protected nonced gift; the verified
+            // moderation route is the only explicit newer-source override.
+            $targetPk=(int)$u['id'];
+            $currentStep=(string)$u['step'];
+            $stmt = $connection->prepare("UPDATE `users` SET `step`='banned' WHERE `id`=? AND `userid`=? AND `step`=? AND `step` NOT LIKE 'achbotDirectGift%'");
+            $stmt->bind_param("iis", $targetPk, $targetUserId, $currentStep);
+            $ok=$stmt->execute();$updated=$stmt->affected_rows;$stmt->close();
+            if (!$ok || $updated!==1) {
+                alert('وضعیت کاربر تغییر کرده است؛ عملیات تأیید نشد.',true);
+                exit();
+            }
             alert("✅ کاربر $targetUserId مسدود شد.");
         } else {
             alert("☑️ این کاربر از قبل مسدود بود.");

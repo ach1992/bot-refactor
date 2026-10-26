@@ -34,6 +34,10 @@ $root = $argv[1];
 $dbname = $argv[2];
 $socket = $argv[3];
 $spec = json_decode($argv[4], true, 512, JSON_THROW_ON_ERROR);
+// Full-bot regression dispatch enters through the same authenticated ingress.
+putenv('ACHBOT_TELEGRAM_WEBHOOK_SECRET=owned-fixture-Telegram-2026');
+$_SERVER['HTTP_X_TELEGRAM_BOT_API_SECRET_TOKEN']='owned-fixture-Telegram-2026';
+$_SERVER['REQUEST_METHOD']='POST';
 $_GET = $spec['get'];
 $GLOBALS['network_calls'] = [];
 $GLOBALS['error'] = null;
@@ -3507,6 +3511,7 @@ def main():
         config_path=stage/'config.php'
         saved_config=config_path.read_bytes()
         config_path.write_text('<?php function check() {} '
+            'function handleToggleCallbacks(...$args) { return false; } '
             'function checkSpam() { return false; }\n')
         try:
             before=snapshot(work,env)

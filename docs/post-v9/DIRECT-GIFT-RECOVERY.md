@@ -22,7 +22,13 @@ history and the original 23-table database remain unchanged.
    the old state reset and unrelated legacy cleanup/notifications. The
    original config.php setUser() additionally refuses any legacy step write
    while an active direct-gift step owns the row, protecting other stale
-   legacy handlers. Ordinary fresh non-direct CANCEL remains supported.
+   legacy handlers. The legacy ManualAccounts numeric transition now
+   uses exact users.id, actor, current administrator role, expected step
+   and original temp as one transactional CAS; stale requests cannot alter
+   either step or temp or emit a false success. Other older ban/unban and
+   broadcast step writers are conditionally fenced so stale/automatic
+   transitions do not erase a newer gift. Ordinary fresh non-direct CANCEL
+   remains supported.
 2. Remark resolution requires exactly one active orders_list primary-key
    identity for the selected logical server. It pins order id, userid,
    server_id, inbound_id, fileid, remark, uuid, status and old expire_date.
@@ -52,8 +58,9 @@ history and the original 23-table database remain unchanged.
 
 ## Critical webhook authentication prerequisite
 
-**The direct gift feature fails closed unless configured with Telegram
-webhook secret authentication.** The PHP process must be able to read the
+**The bot.php webhook entrypoint now fails closed without Telegram
+webhook secret authentication, BEFORE config.php can run. This applies
+to all Telegram update routes, not only Direct Gift.** The PHP process must be able to read the
 ACHBOT_TELEGRAM_WEBHOOK_SECRET environment variable. Configure a distinct
 high-entropy 16–256 character secret with only ASCII letters, digits, hyphen
 and underscore as Telegram setWebhook secret_token, under separate operator
@@ -61,11 +68,26 @@ approval, and expose the same value to PHP-FPM/LSAPI. Telegram sends the
 X-Telegram-Bot-Api-Secret-Token request header. The route constant-time
 compares the header to its configured secret before trusting JSON input.
 
-Missing or mismatched secrets deny direct gifting without provider calls.
+Missing/mismatched secrets or non-POST requests return HTTP 403 before
+database initialization, legacy callbacks, messages or provider calls.
 A shell export does not establish that PHP-FPM/LSAPI sees the secret.
-Do not put it in this public repository, test data, logs or screenshots;
-do not call setWebhook as part of source CI. This change authenticates only
-the new direct gift route, not every legacy webhook entrypoint.
+**An installation without this provisioned secret will not receive any
+webhook updates after a separately authorized source deployment.** Validate
+the exact PHP-FPM/LSAPI process environment, webhook secret_token and
+operational rollout/rollback separately; never setWebhook in source CI.
+Do not put the secret in public code, test data, logs or screenshots.
+
+The formerly pre-check config.php toggleBan_*/toggleAgent_* callbacks now
+execute only after authenticated webhook ingress and the existing IP guard.
+They require an exact private callback envelope, freshly authorized
+administrator row, unique actor/target PKs, current state locks, and a
+durable per-actor update/message watermark in existing setting records.
+Repeated/out-of-order or ambiguous callbacks fail closed; unknown COMMIT
+acknowledgments do not authorize replay or a success notification.
+**Moderation precedence:** only a verified *newer* explicit administrator
+ban callback may supersede an active Direct Gift wizard. Older moderator
+callbacks and inherited legacy text/receipt bans cannot erase active gift
+state. Agent status toggling never changes the wizard's step.
 
 ## Manual reconciliation by an authorized operator
 
@@ -120,7 +142,15 @@ accepted additive schema decision, not an unreviewed migration.
   gift on another PHP worker, and confirms the obsolete CANCEL cannot erase
   it or perform legacy cleanup. Fresh legacy CANCEL, delegated revocation,
   lost COMMIT acknowledgment and the central legacy step-write guard are
-  covered. No installed schema is changed. PHP 8.1/8.4
+  covered. Additional B1/F2-R2 regressions exercise the actual ingress,
+  moderation callbacks and ManualAccounts.php with explicit two-worker
+  cached-step synchronization, valid/invalid provenance, role revocation,
+  stale/fresh moderator precedence, replay and ambiguous COMMIT outcomes.
+  The manual numeric route also rejects old callback bot-text/mixed frames;
+  actual legacy ban, receipt-ban and broadcast blocked-status writes are
+  tested on the original schema, including preserving ordinary broadcast
+  behavior. Source-real acceptance requires at least 101 cases.
+  No installed schema is changed. PHP 8.1/8.4
   full source/history CI, artifact checks, independent review and operator
   acceptance remain gates.
 - CI does NOT certify installed tenant schema, real Telegram webhook

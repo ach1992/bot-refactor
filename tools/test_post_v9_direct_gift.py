@@ -58,6 +58,9 @@ class DirectGiftMysqli extends mysqli {
         $done=parent::commit($flags,$name);
         if ($done && $pausing)
             $this->fixtureGate('post_commit_ready','release_effect');
+        if ($done && in_array(($GLOBALS['spec']['mode']??''),
+            ['moderation_commit_unknown','manual_commit_unknown'],true))
+            throw new RuntimeException('synthetic_lost_moderation_or_manual_ack');
         if ($done && ($GLOBALS['spec']['mode']??'')==='cancel_commit_unknown')
             throw new RuntimeException('synthetic_cancel_commit_ack_lost');
         if ($done && ($GLOBALS['spec']['mode']??'')==='commit_unknown' &&
@@ -74,6 +77,7 @@ class DirectGiftMysqli extends mysqli {
 $connection=new DirectGiftMysqli('localhost','root','',
     getenv('ACHBOT_DIRECT_DB'),0,getenv('ACHBOT_DIRECT_SOCKET'));
 $connection->set_charset('utf8mb4');
+$_SERVER['REQUEST_METHOD']=($spec['bad_method']??false)?'GET':'POST';
 $username='fixture';$first_name='Fixture';
 $admin=9001;
 $kind=(string)($spec['kind']??'message');
@@ -88,7 +92,7 @@ $sender=(object)['id'=>$wireActor,'is_bot'=>($spec['is_bot']??false),
                  'first_name'=>'Synthetic','username'=>'fixture'];
 $chat=(object)['id'=>$wireChat,'type'=>$wireType];
 $msg=(object)['from'=>$sender,'chat'=>$chat,'message_id'=>$messageId,
-             'text'=>$kind==='callback'?'Synthetic old bot text':$input];
+             'text'=>$kind==='callback'?(string)($spec['callback_bot_text']??'Synthetic old bot text'):$input];
 $update=(object)['update_id'=>$updateId];
 if ($kind==='callback') {
     $msg->reply_markup=(object)['inline_keyboard'=>[]];
@@ -111,7 +115,7 @@ if (!($spec['missing_header']??false)) {
     $_SERVER['HTTP_X_TELEGRAM_BOT_API_SECRET_TOKEN']=
         ($spec['bad_header']??false)?'bad-secret':getenv('ACHBOT_TELEGRAM_WEBHOOK_SECRET');
 }
-$stmt=$connection->prepare('SELECT id,userid,isAdmin,step FROM users WHERE userid=?');
+$stmt=$connection->prepare('SELECT id,userid,isAdmin,is_agent,step,temp FROM users WHERE userid=?');
 $stmt->bind_param('i',$from_id);$stmt->execute();
 $userInfo=$stmt->get_result()->fetch_assoc()?:['step'=>'none','isAdmin'=>0];
 $stmt->close();
@@ -127,9 +131,22 @@ if (in_array(($spec['mode']??''),['pause_before_route','stale_legacy_set_user'],
         usleep(10000);
     }
 }
-$buttonValues=['cancel'=>'CANCEL'];$mainValues=['reached_main_menu'=>'MAIN','waiting_message'=>'WAIT'];
+$buttonValues=['cancel'=>'CANCEL','back_to_main'=>'BACK'];$mainValues=['reached_main_menu'=>'MAIN','waiting_message'=>'WAIT'];
 $removeKeyboard='REMOVE';$cancelKey='CANCEL';
 $GLOBALS['events']=[];
+$GLOBALS['fixture_printed']=false;
+register_shutdown_function(static function() {
+    if (!$GLOBALS['fixture_printed'])
+        echo json_encode(['events'=>$GLOBALS['events']],JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE);
+});
+function bot($method,$args=[]) {
+    if ($method==='editMessageReplyMarkup') $GLOBALS['events'][]='MOD_NOTICE';
+    return (object)['ok'=>true];
+}
+function getUserInfoKeys($id) { return 'FIXTURE_MODERATION_KEYS'; }
+function alert($msg=null,$show=false) { $GLOBALS['events'][]='ALERT:'.(string)$msg; }
+function editKeys(...$args) { $GLOBALS['events'][]='EDIT_KEYS'; }
+function getAdminKeys() { return 'ADMIN_KEYS'; }
 function sendMessage($body=null,$key=null) {
     $GLOBALS['events'][]=(string)$body;
     if (($GLOBALS['spec']['mode']??'')==='notice_fail' &&
@@ -172,10 +189,29 @@ function editMarzbanConfig($sid,$change,?array $target=null): object {
         'applied_expire'=>$expire,'applied_bytes'=>4294967296];
 }
 require __DIR__.'/src/Purchase/Core.php';
-require __DIR__.'/legacy-set-user.php';
-if (($spec['mode']??'')==='stale_legacy_set_user')
-    setUser('obsoleteLegacyStep');
-require __DIR__.'/gift-route.php';
+require __DIR__.'/ingress-source.php';
+if (!achbotWebhookIngressAuthenticated()) {
+    http_response_code(403);
+} elseif (($spec['route']??'gift')==='moderation') {
+    require __DIR__.'/moderation-route.php';
+    handleToggleCallbacks($data,$chat_id,$message_id);
+} elseif (($spec['route']??'gift')==='manual') {
+    require __DIR__.'/src/Subscription/manual-route.php';
+} elseif (($spec['route']??'gift')==='legacy_ban') {
+    require __DIR__.'/legacy-set-user.php';
+    require __DIR__.'/legacy-ban.php';
+} elseif (($spec['route']??'gift')==='legacy_receipt_ban') {
+    require __DIR__.'/legacy-receipt-ban.php';
+} elseif (($spec['route']??'gift')==='broadcast') {
+    $user=['userid'=>(int)($spec['target']??9001)];
+    require __DIR__.'/broadcast-guard.php';
+} else {
+    require __DIR__.'/legacy-set-user.php';
+    if (($spec['mode']??'')==='stale_legacy_set_user')
+        setUser('obsoleteLegacyStep');
+    require __DIR__.'/gift-route.php';
+}
+$GLOBALS['fixture_printed']=true;
 echo json_encode(['events'=>$GLOBALS['events']],JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE);
 '''
 
@@ -221,13 +257,45 @@ def setup(work: Path, env: dict) -> Path:
     set_start=config.index("function setUser($value = 'none', $field = 'step'){")
     set_end=config.index('function generateRandomString(',set_start)
     (stage/'legacy-set-user.php').write_text('<?php\n'+config[set_start:set_end])
+    guard_start=bot.index('// ACHBOT_WEBHOOK_INGRESS_BEGIN')
+    guard_end=bot.index('if (!achbotWebhookIngressAuthenticated())',guard_start)
+    ensure(guard_start<guard_end<bot.index("require_once 'config.php';") and
+           bot.index('check();')<bot.index('if (handleToggleCallbacks(') and
+           'handleToggleCallbacks($data, $chat_id, $message_id);' not in config,
+           'Moderation can run before HTTP provenance/IP checks')
+    (stage/'ingress-source.php').write_text('<?php\n'+bot[guard_start:guard_end])
+    moderation_start=config.index('function handleToggleCallbacks(')
+    moderation_end=config.index('\n//---',moderation_start)
+    (stage/'moderation-route.php').write_text(
+        '<?php\n'+config[moderation_start:moderation_end])
+    manual=(ROOT/'src/Subscription/ManualAccounts.php').read_text()
+    manual_start=manual.index('function achbotManualAccountConsumeSelection(')
+    manual_end=manual.index('function detectServerIdFromRemark(',manual_start)
+    (stage/'src/Subscription/manual-route.php').write_text(
+        '<?php\n'+manual[manual_start:manual_end])
+    legacy_ban=(ROOT/'src/Admin/Bans.php').read_text()
+    ban_start=legacy_ban.index('if($userInfo[\'step\'] == "banUser"')
+    (stage/'legacy-ban.php').write_text('<?php\n'+legacy_ban[ban_start:])
+    receipt=(ROOT/'src/Finance/Routes/ManualReceipts.php').read_text()
+    receipt_start=receipt.index("if (preg_match('/^banUserDirect_")
+    receipt_end=receipt.index('// END Decline Cart To Cart by ACh',receipt_start)
+    (stage/'legacy-receipt-ban.php').write_text(
+        '<?php\n'+receipt[receipt_start:receipt_end])
+    broadcast=(ROOT/'src/Jobs/BroadcastSend.php').read_text()
+    import re
+    blocked=re.search(r'\$u = \$connection->prepare\("UPDATE `users`[^\"]+"\);\s*if \(\$u\) \{.*?\$u->close\(\);\s*\}',broadcast,re.S)
+    ensure(blocked is not None and "NOT LIKE 'achbotDirectGift%'" in blocked.group(),
+           'Automated broadcast-source step guard absent')
+    (stage/'broadcast-guard.php').write_text('<?php\n'+blocked.group())
     (stage/'gift-route.php').write_text('<?php\n'+route+'\n'+fallback+'\n')
     (stage/'driver.php').write_text(PHP)
     return stage
 
 def reset(work: Path, env: dict) -> None:
     q(work,env,"DELETE FROM setting WHERE type LIKE 'ACHBOT_DIRECT_GIFT_%'")
+    q(work,env,"DELETE FROM setting WHERE type LIKE 'ACHBOT_ADMIN_MOD_SOURCE_%'")
     q(work,env,"DELETE FROM orders_list WHERE id=92")
+    q(work,env,"UPDATE users SET is_agent=0,temp=NULL WHERE userid IN (9001,9002,1001)")
     q(work,env,"DELETE FROM server_plans WHERE id=987")
     q(work,env,"UPDATE users SET step='none',isAdmin=CASE WHEN userid=9002 THEN 1 ELSE 0 END "
       "WHERE userid IN (9001,9002,1001)")
@@ -566,6 +634,296 @@ def verify_global_cancel_stale_cache(work: Path, env: dict, stage: Path,
     passed.append('global_cancel_unknown_ack_replay_preserves_new_gift')
 
 
+def moderation_rows(work: Path, env: dict) -> list[dict]:
+    raw=q(work,env,"SELECT value FROM setting WHERE type LIKE 'ACHBOT_ADMIN_MOD_SOURCE_%'")
+    return [json.loads(x) for x in raw.splitlines() if x]
+
+
+def verify_admin_ingress_and_legacy_manual(work: Path, env: dict, stage: Path,
+                                           passed: list[str]) -> None:
+    # Same real current config.php moderation body, bot.php ingress function
+    # and ManualAccounts.php handler; all DB/socket and notices are disposable.
+    def temp(actor: int=9001) -> str:
+        return q(work,env,f"SELECT COALESCE(temp,'NULL') FROM users WHERE userid={actor}")
+
+    # An unauthenticated request must be denied by the bot.php ingress before
+    # any source-derived mutation. Invalid callback frames and nonadmins must
+    # also fail closed under current role/identity checks.
+    for label, extra in [
+        ('absent_header',{'missing_header':True}),
+        ('wrong_header',{'bad_header':True}),
+        ('wrong_method',{'bad_method':True}),
+        ('group_chat',{'chat_type':'group'}),
+        ('mixed_update',{'kind':'mixed'}),
+        ('bot_sender',{'is_bot':True}),
+        ('malformed_callback',{'text':'toggleBan_1001junk'}),
+        ('forged_actor_binding',{'bound_actor':9002}),
+    ]:
+        reset(work,env)
+        spec=dict(route='moderation',kind='callback',actor=9001,
+                  update_id=520,message_id=60,text='toggleBan_1001')
+        spec.update(extra)
+        result=call(work,env,stage,**spec)
+        ensure(q(work,env,"SELECT step FROM users WHERE userid=1001")=='none' and
+               not moderation_rows(work,env) and
+               not any('MOD_NOTICE' in e for e in result['events']),
+               'Unauthentic or malformed moderation mutated users: '+label)
+        passed.append('moderation_rejects_'+label)
+
+    reset(work,env)
+    ordinary=call(work,env,stage,route='moderation',kind='callback',
+        actor=1001,update_id=550,message_id=65,text='toggleBan_9001')
+    ensure(q(work,env,"SELECT step FROM users WHERE userid=9001")=='none' and
+           not moderation_rows(work,env) and
+           'MOD_NOTICE' not in ordinary['events'],
+           'An ordinary customer performed an admin moderation toggle')
+    passed.append('moderation_current_admin_required')
+
+    reset(work,env)
+    q(work,env,'UPDATE users SET isAdmin=0 WHERE userid=9002')
+    revoked=call(work,env,stage,route='moderation',kind='callback',
+        actor=9002,update_id=550,message_id=65,text='toggleAgent_1001')
+    ensure(q(work,env,"SELECT is_agent FROM users WHERE userid=1001")=='0' and
+           not moderation_rows(work,env) and
+           'MOD_NOTICE' not in revoked['events'],
+           'A revoked delegated administrator modified agent privileges')
+    passed.append('moderation_revoked_delegate_denied')
+
+    reset(work,env)
+    success=call(work,env,stage,route='moderation',kind='callback',
+        actor=9001,update_id=550,message_id=65,text='toggleAgent_1001')
+    ensure(q(work,env,'SELECT is_agent FROM users WHERE userid=1001')=='1' and
+           'MOD_NOTICE' in success['events'] and
+           len(moderation_rows(work,env))==1,
+           'A fresh verified administrator could not toggle agent status')
+    repeated=call(work,env,stage,route='moderation',kind='callback',
+        actor=9001,update_id=550,message_id=65,text='toggleAgent_1001')
+    ensure(q(work,env,'SELECT is_agent FROM users WHERE userid=1001')=='1' and
+           'MOD_NOTICE' not in repeated['events'] and
+           len(moderation_rows(work,env))==1,
+           'Replay of the same signed moderation update double-toggled user')
+    passed.append('moderation_fresh_admin_agent_idempotence')
+    later=call(work,env,stage,route='moderation',kind='callback',
+        actor=9001,update_id=551,message_id=65,text='toggleBan_1001')
+    ensure(q(work,env,'SELECT step FROM users WHERE userid=1001')=='banned' and
+           'MOD_NOTICE' in later['events'],
+           'Subsequent authorized moderation could not ban customer')
+    passed.append('moderation_fresh_admin_ban_succeeds')
+
+    # Reject a callback whose update_id predates a newly committed gift,
+    # even when it is a signed, currently privileged moderator.
+    reset(work,env)
+    begin(work,env,stage,update_id=600)
+    step=q(work,env,'SELECT step FROM users WHERE userid=9001')
+    old=call(work,env,stage,route='moderation',kind='callback',
+        actor=9002,update_id=599,message_id=59,text='toggleBan_9001')
+    ensure(q(work,env,'SELECT step FROM users WHERE userid=9001')==step and
+           not moderation_rows(work,env) and
+           'MOD_NOTICE' not in old['events'] and not effects(stage),
+           'Old signed moderator callback erased current gift wizard')
+    passed.append('moderation_old_callback_cannot_erase_gift_nonce')
+    # Deliberate NEWER authorized admin ban takes precedence over the gift,
+    # and only the exact current state may be consumed.
+    fresh=call(work,env,stage,route='moderation',kind='callback',
+        actor=9002,update_id=601,message_id=60,text='toggleBan_9001')
+    ensure(q(work,env,'SELECT step FROM users WHERE userid=9001')=='banned' and
+           'MOD_NOTICE' in fresh['events'] and not effects(stage),
+           'Explicit current moderation cannot preempt gift safely')
+    passed.append('moderation_fresh_authorized_ban_preempts_gift')
+
+    reset(work,env)
+    before=temp()
+    q(work,env,"INSERT INTO users(userid,name,username,refcode,wallet,date) "
+      "VALUES(1001,'Duplicate','duplicate','0',0,'1700000000')")
+    try:
+        denied=call(work,env,stage,route='moderation',kind='callback',
+            actor=9001,update_id=601,message_id=60,text='toggleAgent_1001')
+        ensure('MOD_NOTICE' not in denied['events'] and
+               not moderation_rows(work,env) and temp()==before,
+               'Ambiguous target identity was accepted for moderation')
+    finally:
+        q(work,env,"DELETE FROM users WHERE username='duplicate' AND userid=1001")
+    passed.append('moderation_nonunique_target_identity_rejected')
+
+    # Simulated lost post-COMMIT acknowledgment: durable source record ensures
+    # that retry cannot reverse a completed toggle, and no success is claimed.
+    reset(work,env)
+    uncertain=call(work,env,stage,route='moderation',kind='callback',
+        actor=9001,update_id=610,message_id=70,text='toggleAgent_1001',
+        mode='moderation_commit_unknown')
+    ensure(q(work,env,'SELECT is_agent FROM users WHERE userid=1001')=='1' and
+           'MOD_NOTICE' not in uncertain['events'] and
+           len(moderation_rows(work,env))==1,
+           'Unknown moderation COMMIT did not fail closed with journal')
+    retry=call(work,env,stage,route='moderation',kind='callback',
+        actor=9001,update_id=610,message_id=70,text='toggleAgent_1001')
+    ensure(q(work,env,'SELECT is_agent FROM users WHERE userid=1001')=='1' and
+           'MOD_NOTICE' not in retry['events'],
+           'Moderation duplicate replay after uncertain COMMIT changed state')
+    passed.append('moderation_uncertain_commit_never_replays_toggle')
+
+    legacy_json='{"awaiting_userid_for_add":true,"selected_server_id":2}'
+    # Fresh authorized ManualAccounts numeric input still consumes exactly its
+    # legacy step and matching temp, with no lost legitimate functionality.
+    reset(work,env)
+    q(work,env,"UPDATE users SET step='awaiting_userid_input',temp='"+
+      legacy_json+"' WHERE userid=9001")
+    fresh=call(work,env,stage,route='manual',kind='message',actor=9001,
+        update_id=500,message_id=50,text='1001')
+    ensure(q(work,env,'SELECT step FROM users WHERE userid=9001')=='' and
+           json.loads(temp())['custom_userid']==1001 and
+           any('با موفقیت ثبت شد' in e for e in fresh['events']) and
+           not effects(stage),
+           'Fresh legitimate ManualAccounts selection broke')
+    passed.append('manual_accounts_fresh_current_authorized_succeeds')
+
+    # A reads cached old step+temp, B commits newer direct gift, A resumes
+    # through the real ManualAccounts handler (which has historically exited
+    # before the protected direct-gift route).
+    reset(work,env)
+    q(work,env,"UPDATE users SET step='awaiting_userid_input',temp='"+
+      legacy_json+"' WHERE userid=9001")
+    ready=stage/'manual-cache-ready'
+    release=stage/'manual-release-route'
+    ready.unlink(missing_ok=True);release.unlink(missing_ok=True)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+        try:
+            stale=pool.submit(call,work,env,stage,route='manual',kind='message',
+                actor=9001,update_id=599,message_id=59,text='1001',
+                mode='pause_before_route',cached_ready=str(ready),
+                release_route=str(release))
+            wait_for(ready.exists,'ManualAccounts did not cache old step/temp')
+            ensure(q(work,env,"SELECT step FROM users WHERE userid=9001")==
+                   'awaiting_userid_input','ManualAccounts fixture incorrectly armed')
+            begin(work,env,stage,update_id=600)
+            current=q(work,env,'SELECT step FROM users WHERE userid=9001')
+            before=temp()
+            release.write_text('go')
+            result=stale.result(timeout=38)
+        finally:
+            release.write_text('go')
+    ensure(q(work,env,'SELECT step FROM users WHERE userid=9001')==current and
+           temp()==before and not any('با موفقیت ثبت شد' in e for e in result['events']) and
+           not effects(stage),
+           'Old ManualAccounts overwrote newer gift nonce, temp or notice')
+    passed.append('manual_accounts_stale_cached_step_temp_preserves_new_gift')
+
+    reset(work,env)
+    q(work,env,"UPDATE users SET step='awaiting_userid_input',temp='"+
+      legacy_json+"' WHERE userid=9002")
+    ready=stage/'manual-revoked-ready'
+    release=stage/'manual-revoked-release'
+    ready.unlink(missing_ok=True);release.unlink(missing_ok=True)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+        try:
+            old=pool.submit(call,work,env,stage,route='manual',kind='message',
+                actor=9002,update_id=600,message_id=60,text='1001',
+                mode='pause_before_route',cached_ready=str(ready),
+                release_route=str(release))
+            wait_for(ready.exists,'Delegated ManualAccounts worker not cached')
+            q(work,env,'UPDATE users SET isAdmin=0 WHERE userid=9002')
+            original=temp(9002)
+            release.write_text('go')
+            result=old.result(timeout=38)
+        finally:
+            release.write_text('go')
+    ensure(q(work,env,'SELECT step FROM users WHERE userid=9002')==
+           'awaiting_userid_input' and temp(9002)==original and
+           not any('با موفقیت ثبت شد' in e for e in result['events']),
+           'Revoked delegated admin modified stale ManualAccounts temp/step')
+    passed.append('manual_accounts_current_delegate_role_required')
+
+    reset(work,env)
+    q(work,env,"UPDATE users SET step='awaiting_userid_input',temp='"+
+      legacy_json+"' WHERE userid=9001")
+    unknown=call(work,env,stage,route='manual',kind='message',
+        actor=9001,update_id=610,message_id=70,text='1001',
+        mode='manual_commit_unknown')
+    ensure(q(work,env,'SELECT step FROM users WHERE userid=9001')=='' and
+           json.loads(temp())['custom_userid']==1001 and
+           not any('با موفقیت ثبت شد' in e for e in unknown['events']),
+           'Unknown ManualAccounts COMMIT asserted success or lost state')
+    begin(work,env,stage,update_id=700)
+    current=q(work,env,'SELECT step FROM users WHERE userid=9001')
+    replay=call(work,env,stage,route='manual',kind='message',
+        actor=9001,update_id=610,message_id=70,text='1001',
+        stale_step='awaiting_userid_input')
+    ensure(q(work,env,'SELECT step FROM users WHERE userid=9001')==current and
+           not any('با موفقیت ثبت شد' in e for e in replay['events']) and
+           not effects(stage),
+           'Old ManualAccounts after uncertain COMMIT erased later gift')
+    passed.append('manual_accounts_unknown_commit_replay_preserves_gift')
+
+    # A callback's old *bot-authored* text must never be consumed as a
+    # newly authored private numeric message; mixed frames fail identically.
+    for label, spec in [
+        ('callback_old_bot_text',dict(kind='callback',text='legacyAction',
+                                      callback_bot_text='1001')),
+        ('mixed_update',dict(kind='mixed',text='1001')),
+        ('missing_ingress_secret',dict(kind='message',text='1001',
+                                       missing_header=True)),
+    ]:
+        reset(work,env)
+        q(work,env,"UPDATE users SET step='awaiting_userid_input',temp='"+
+          legacy_json+"' WHERE userid=9001")
+        original=temp()
+        result=call(work,env,stage,route='manual',actor=9001,
+                    update_id=650,message_id=65,**spec)
+        ensure(q(work,env,'SELECT step FROM users WHERE userid=9001')==
+               'awaiting_userid_input' and temp()==original and
+               not any('با موفقیت ثبت شد' in e for e in result['events']) and
+               not effects(stage),
+               'ManualAccounts accepted non-message/unauthenticated input '+label)
+        passed.append('manual_accounts_rejects_'+label)
+
+def verify_audited_step_writers(work: Path, env: dict, stage: Path,
+                               passed: list[str]) -> None:
+    # Other pre-existing direct SQL users.step writers must not bypass the
+    # active direct-gift generation. These probes use actual source-extracted
+    # PHP handlers/statement on the same disposable historical schema.
+    reset(work,env);begin(work,env,stage,update_id=600)
+    current=q(work,env,'SELECT step FROM users WHERE userid=9001')
+    old=call(work,env,stage,route='legacy_ban',kind='message',
+        actor=9001,update_id=599,message_id=59,text='9001',
+        stale_step='banUser')
+    ensure(q(work,env,'SELECT step FROM users WHERE userid=9001')==current and
+           not any('مسدودش کردم' in e for e in old['events']) and
+           not effects(stage),
+           'Legacy ban text wrote an active direct-gift step')
+    passed.append('legacy_text_ban_cannot_erase_active_gift')
+
+    reset(work,env);begin(work,env,stage,update_id=600)
+    current=q(work,env,'SELECT step FROM users WHERE userid=9001')
+    old=call(work,env,stage,route='legacy_receipt_ban',kind='callback',
+        actor=9002,update_id=599,message_id=59,
+        text='banUserDirect_9001')
+    ensure(q(work,env,'SELECT step FROM users WHERE userid=9001')==current and
+           not any(e.startswith('ALERT:✅') or e=='EDIT_KEYS'
+                   for e in old['events']) and
+           not effects(stage),
+           'Old receipt-ban callback erased a protected direct-gift wizard')
+    passed.append('legacy_receipt_ban_cannot_erase_active_gift')
+
+    reset(work,env);begin(work,env,stage,update_id=600)
+    current=q(work,env,'SELECT step FROM users WHERE userid=9001')
+    call(work,env,stage,route='broadcast',kind='message',
+         actor=9001,update_id=601,message_id=61,text='irrelevant',
+         target=9001)
+    ensure(q(work,env,'SELECT step FROM users WHERE userid=9001')==current and
+           not effects(stage),
+           'Automated broadcast block erased a protected gift state')
+    passed.append('broadcast_bot_blocked_preserves_active_gift')
+
+    reset(work,env)
+    call(work,env,stage,route='broadcast',kind='message',
+         actor=1001,update_id=601,message_id=61,text='irrelevant',
+         target=1001)
+    ensure(q(work,env,'SELECT step FROM users WHERE userid=1001')==
+           'Bot_Blocked' and not effects(stage),
+           'Ordinary broadcast block behavior unexpectedly disabled')
+    passed.append('broadcast_bot_blocked_ordinary_behavior_preserved')
+
+
 def main() -> None:
     ap=argparse.ArgumentParser()
     ap.add_argument('--run-disposable',action='store_true',required=True)
@@ -575,6 +933,8 @@ def main() -> None:
     with owned.owned_database() as (work,env):
         stage=setup(work,env)
         verify_global_cancel_stale_cache(work,env,stage,passed)
+        verify_admin_ingress_and_legacy_manual(work,env,stage,passed)
+        verify_audited_step_writers(work,env,stage,passed)
 
         reset(work,env);prepare_final(work,env,stage)
         positive=volume(work,env,stage)
@@ -1031,6 +1391,9 @@ def main() -> None:
         'complete':True,'cases':len(passed),'scenarios':passed,
         'real_bot_php_route':True,'real_mysqli_original_schema':True,
         'actual_global_cancel_fallback':True,'actual_config_set_user':True,
+        'actual_webhook_pre_config_auth':True,
+        'actual_config_moderation':True,
+        'actual_manual_account_handler':True,
         'shared_real_service_seam_with_synthetic_adapter':True,
         'owned_mariadb_only':True,'real_telegram_or_marzban_calls':0,
         'tenant_migrations':0,'production_operations':0,

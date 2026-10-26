@@ -1368,13 +1368,45 @@ def main():
             'global_cancel_stale_revoked_delegate_does_not_clobber',
             'global_cancel_stale_legacy_setuser_cannot_clobber',
             'global_cancel_unknown_ack_replay_preserves_new_gift',
+            # B1/F2-R2: ingress, authorized moderation and stale legacy
+            # SQL step writes on the exact original-schema PHP runtime.
+            'moderation_rejects_absent_header',
+            'moderation_rejects_wrong_header',
+            'moderation_rejects_wrong_method',
+            'moderation_rejects_group_chat',
+            'moderation_rejects_mixed_update',
+            'moderation_rejects_bot_sender',
+            'moderation_rejects_malformed_callback',
+            'moderation_rejects_forged_actor_binding',
+            'moderation_current_admin_required',
+            'moderation_revoked_delegate_denied',
+            'moderation_fresh_admin_agent_idempotence',
+            'moderation_fresh_admin_ban_succeeds',
+            'moderation_old_callback_cannot_erase_gift_nonce',
+            'moderation_fresh_authorized_ban_preempts_gift',
+            'moderation_nonunique_target_identity_rejected',
+            'moderation_uncertain_commit_never_replays_toggle',
+            'manual_accounts_fresh_current_authorized_succeeds',
+            'manual_accounts_stale_cached_step_temp_preserves_new_gift',
+            'manual_accounts_current_delegate_role_required',
+            'manual_accounts_unknown_commit_replay_preserves_gift',
+            'manual_accounts_rejects_callback_old_bot_text',
+            'manual_accounts_rejects_mixed_update',
+            'manual_accounts_rejects_missing_ingress_secret',
+            'legacy_text_ban_cannot_erase_active_gift',
+            'legacy_receipt_ban_cannot_erase_active_gift',
+            'broadcast_bot_blocked_preserves_active_gift',
+            'broadcast_bot_blocked_ordinary_behavior_preserved',
         }
         if not (direct_gift.get('complete') is True and
-                direct_gift.get('cases')>=74 and
+                direct_gift.get('cases')>=101 and
                 required_direct_gift.issubset(set(direct_gift.get('scenarios',[]))) and
                 direct_gift.get('real_bot_php_route') is True and
                 direct_gift.get('actual_global_cancel_fallback') is True and
                 direct_gift.get('actual_config_set_user') is True and
+                direct_gift.get('actual_webhook_pre_config_auth') is True and
+                direct_gift.get('actual_config_moderation') is True and
+                direct_gift.get('actual_manual_account_handler') is True and
                 direct_gift.get('real_mysqli_original_schema') is True and
                 direct_gift.get('shared_real_service_seam_with_synthetic_adapter') is True and
                 direct_gift.get('owned_mariadb_only') is True and

@@ -17,13 +17,18 @@ if($userInfo['step'] == "unbanUser" && ($from_id == $admin || $userInfo['isAdmin
         $usersList = $stmt->get_result();
         $stmt->close();
 
-        if($usersList->num_rows >0){
+        if($usersList->num_rows === 1){
             $userState = $usersList->fetch_assoc();
             if($userState['step'] == "banned"){
-                $stmt = $connection->prepare("UPDATE `users` SET `step` = 'none' WHERE `userid` = ?");
-                $stmt->bind_param("i", $text);
-                $stmt->execute();
-                $stmt->close();
+                $targetPk=(int)$userState['id'];
+                $targetUserid=(int)$userState['userid'];
+                $stmt = $connection->prepare("UPDATE `users` SET `step`='none' WHERE `id`=? AND `userid`=? AND `step`='banned'");
+                $stmt->bind_param("ii",$targetPk,$targetUserid);
+                $ok=$stmt->execute();$updated=$stmt->affected_rows;$stmt->close();
+                if (!$ok || $updated!==1) {
+                    sendMessage('وضعیت کاربر تغییر کرده است؛ عملیات تأیید نشد.');
+                    exit();
+                }
 
                 sendMessage("✅ آزاد شدم خوشحالم ننه، ایشالا آزادی همه 😂",$removeKeyboard);
             }else{

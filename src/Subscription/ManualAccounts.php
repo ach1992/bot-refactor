@@ -38,26 +38,109 @@ if (preg_match("/^addSubscriptionToCustomer(\d+)/", $data, $match)) {
 
 $tempData = json_decode($userInfo['temp'], true) ?: [];
 
+/**
+ * Consume the legacy admin user-id selection atomically on the exact actor PK.
+ * Cached config.php userInfo is only a routing hint; neither step nor temp
+ * may be overwritten after a newer direct gift (or another legacy wizard)
+ * has acquired this user row. No schema change or provider operation.
+ */
+function achbotManualAccountConsumeSelection(mysqli $db,int $actorId,
+        int $primary,array $cached,string $newTemp): bool {
+    if ($actorId<=0 || ($cached['step']??null)!=='awaiting_userid_input' ||
+        !isset($cached['id'],$cached['userid']) ||
+        (int)$cached['userid']!==$actorId ||
+        !filter_var((string)$cached['id'],FILTER_VALIDATE_INT,
+            ['options'=>['min_range'=>1,'max_range'=>2147483647]]))
+        return false;
+    $id=(int)$cached['id'];
+    $stmt=$db->prepare('SELECT id FROM users WHERE userid=? LIMIT 2');
+    if (!$stmt) throw new RuntimeException('manual_account_pk_prepare');
+    $stmt->bind_param('i',$actorId);
+    $ok=$stmt->execute();$ids=$ok?$stmt->get_result()->fetch_all(MYSQLI_ASSOC):[];
+    $stmt->close();
+    if (!$ok || count($ids)!==1 || (int)$ids[0]['id']!==$id)
+        throw new RuntimeException('manual_account_actor_ambiguous');
+    if (!$db->begin_transaction())
+        throw new RuntimeException('manual_account_begin_failed');
+    try {
+        $stmt=$db->prepare('SELECT id,userid,step,temp,isAdmin
+                            FROM users WHERE id=? FOR UPDATE');
+        if (!$stmt) throw new RuntimeException('manual_account_lock_prepare');
+        $stmt->bind_param('i',$id);
+        $ok=$stmt->execute();
+        $current=$ok?$stmt->get_result()->fetch_assoc():null;
+        $stmt->close();
+        if (!$ok) throw new RuntimeException('manual_account_lock_failed');
+        if (!$current || (int)$current['userid']!==$actorId ||
+            $current['step']!=='awaiting_userid_input' ||
+            $current['temp']!==($cached['temp']??null) ||
+            ($actorId!==$primary && (int)$current['isAdmin']!==1)) {
+            $db->rollback();
+            return false;
+        }
+        // A post-lock identity lookup closes the nonunique userid gap.
+        $stmt=$db->prepare('SELECT id FROM users WHERE userid=? LIMIT 2');
+        if (!$stmt) throw new RuntimeException('manual_account_identity_prepare');
+        $stmt->bind_param('i',$actorId);
+        $ok=$stmt->execute();
+        $ids=$ok?$stmt->get_result()->fetch_all(MYSQLI_ASSOC):[];
+        $stmt->close();
+        if (!$ok || count($ids)!==1 || (int)$ids[0]['id']!==$id)
+            throw new RuntimeException('manual_account_identity_drift');
+        $next='';
+        $expected='awaiting_userid_input';
+        $expectedTemp=$current['temp'];
+        $stmt=$db->prepare('UPDATE users SET temp=?,step=?
+             WHERE id=? AND userid=? AND step=? AND temp <=> ?');
+        if (!$stmt) throw new RuntimeException('manual_account_cas_prepare');
+        $stmt->bind_param('ssiiss',$newTemp,$next,$id,$actorId,$expected,$expectedTemp);
+        $ok=$stmt->execute();$affected=$stmt->affected_rows;$stmt->close();
+        if (!$ok || $affected!==1)
+            throw new RuntimeException('manual_account_cas_unconfirmed');
+        if (!$db->commit())
+            throw new RuntimeException('manual_account_commit_unknown');
+        return true;
+    } catch (Throwable $e) {
+        try {$db->rollback();} catch (Throwable $ignored) {}
+        throw $e;
+    }
+}
+
 if ($userInfo['step'] == "awaiting_userid_input" && is_numeric($text)) {
+    // Never treat old bot text embedded in a callback as a newly authored
+    // numeric step, even when the current actor is still an administrator.
+    try {
+        require_once __DIR__.'/GiftBatch.php';
+        achbotGiftTelegramSource($update,$from_id,$chat_id,$message_id,$text);
+    } catch (Throwable $e) {
+        error_log('manual_account_source_unconfirmed');
+        exit();
+    }
     $customUserId = intval($text);
+    $tempData = json_decode($userInfo['temp'], true) ?: [];
     $tempData['custom_userid'] = $customUserId;
     unset($tempData['awaiting_userid_for_add']);
-
-    $stmt = $connection->prepare("UPDATE `users` SET `temp` = ?, `step` = '' WHERE `userid` = ?");
-    $tempJson = json_encode($tempData, JSON_UNESCAPED_UNICODE);
-    $stmt->bind_param("si", $tempJson, $from_id);
-    $stmt->execute();
-    $stmt->close();
+    try {
+        $tempJson = json_encode($tempData,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
+        $confirmed = achbotManualAccountConsumeSelection(
+            $connection,(int)$from_id,(int)$admin,$userInfo,$tempJson);
+        if (!$confirmed) {
+            error_log('manual_account_stale_step_or_role');
+            exit();
+        }
+    } catch (Throwable $e) {
+        // Lost COMMIT acknowledgments are uncertain, NOT proof of failure.
+        error_log('manual_account_selection_commit_unconfirmed');
+        exit();
+    }
 
     $serverId = intval($tempData['selected_server_id'] ?? 0);
-
     $msg = "✅ شناسه عددی <b>$customUserId</b> با موفقیت ثبت شد.";
     $keyboard = [
         [['text' => "➕ افزودن به اشتراک های کاربر ➕", 'callback_data' => "addToOrders" . $serverId]],
         [['text' => "🔍 جستجوی اشتراک کاربر", 'callback_data' => "searchUsersConfig"]],
-        [['text' => $buttonValues['back_to_main'], 'callback_data' => 'mainMenu']]
+        [['text' => $buttonValues['back_to_main'], 'callback_data' => "mainMenu"]]
     ];
-
     sendMessage($msg, json_encode(['inline_keyboard' => $keyboard]), "html", $from_id);
     exit();
 }
