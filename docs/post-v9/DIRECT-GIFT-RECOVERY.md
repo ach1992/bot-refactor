@@ -60,21 +60,24 @@ history and the original 23-table database remain unchanged.
 
 **The bot.php webhook entrypoint now fails closed without Telegram
 webhook secret authentication, BEFORE config.php can run. This applies
-to all Telegram update routes, not only Direct Gift.** The PHP process must be able to read the
-ACHBOT_TELEGRAM_WEBHOOK_SECRET environment variable. Configure a distinct
-high-entropy 16–256 character secret with only ASCII letters, digits, hyphen
-and underscore as Telegram setWebhook secret_token, under separate operator
-approval, and expose the same value to PHP-FPM/LSAPI. Telegram sends the
-X-Telegram-Bot-Api-Secret-Token request header. The route constant-time
-compares the header to its configured secret before trusting JSON input.
+to all Telegram update routes, not only Direct Gift.** Each installation's
+private `baseInfo.php` must define `$telegramWebhookSecret` as a distinct,
+high-entropy 16–256 character string containing only ASCII letters, digits,
+hyphen and underscore. Provision the same value as Telegram
+`setWebhook.secret_token` during a separately authorized rollout. Telegram
+sends `X-Telegram-Bot-Api-Secret-Token`; the route constant-time compares it
+before trusting JSON input. Direct Gift and payment-key HMAC baselines use
+this same file-local value. No shared PHP-FPM/LSAPI/OpenLiteSpeed environment
+setting or fallback is used.
 
-Missing/mismatched secrets or non-POST requests return HTTP 403 before
+Missing/mismatched/invalid secrets or non-POST requests return HTTP 403 before
 database initialization, legacy callbacks, messages or provider calls.
-A shell export does not establish that PHP-FPM/LSAPI sees the secret.
+Only the trusted private variables are loaded first, in global include scope;
+the subsequent `config.php` require_once retains its original DB bindings.
 **An installation without this provisioned secret will not receive any
-webhook updates after a separately authorized source deployment.** Validate
-the exact PHP-FPM/LSAPI process environment, webhook secret_token and
-operational rollout/rollback separately; never setWebhook in source CI.
+webhook updates after source deployment.** Validate each bot's private field
+and matching Telegram secret separately. Secret rotation invalidates pending
+payment-key editor HMAC baselines; restart those editor flows.
 Do not put the secret in public code, test data, logs or screenshots.
 
 The formerly pre-check config.php toggleBan_*/toggleAgent_* callbacks now

@@ -57,9 +57,39 @@ if (preg_match('/^tranfserUserAmount(\d+)$/D', (string)$userInfo['step'], $match
         exit;
     }
 
+    require_once dirname(__DIR__) . '/WalletAdjustments.php';
+    // Callback text is the referenced old bot message, never transfer consent.
+    // Match the actual new private message to UpdateBindings before any write.
+    $sourceKeys = is_object($update ?? null) ? array_keys(get_object_vars($update)) : [];
+    sort($sourceKeys);
+    $sourceMessage = is_object($update ?? null) ? ($update->message ?? null) : null;
+    $sourceSender = is_object($sourceMessage) ? ($sourceMessage->from ?? null) : null;
+    $sourceChat = is_object($sourceMessage) ? ($sourceMessage->chat ?? null) : null;
+    if ($sourceKeys !== ['message', 'update_id'] ||
+        !is_int($update->update_id ?? null) || $update->update_id <= 0 ||
+        !is_object($sourceMessage) || !is_object($sourceSender) || !is_object($sourceChat) ||
+        !is_int($sourceSender->id ?? null) || $sourceSender->id <= 0 ||
+        ($sourceSender->is_bot ?? false) === true ||
+        $sourceSender->id !== (int)$from_id ||
+        ($sourceChat->type ?? null) !== 'private' ||
+        ($sourceChat->id ?? null) !== $sourceSender->id ||
+        ($sourceChat->id ?? null) !== (int)($chat_id ?? 0) ||
+        !is_int($sourceMessage->message_id ?? null) || $sourceMessage->message_id <= 0 ||
+        $sourceMessage->message_id !== (int)($message_id ?? 0) ||
+        !is_string($sourceMessage->text ?? null) || $sourceMessage->text !== $text) {
+        sendMessage('⛔️ درخواست انتقال معتبر نیست؛ لطفاً دوباره از منو شروع کنید.');
+        exit;
+    }
+    $transferUpdateId = $update->update_id;
+    $transferChatId = $sourceChat->id;
+    $transferMessageId = $sourceMessage->message_id;
+
     $transactionActive = false;
     $commitStarted = false;
     try {
+        if (!achbotWalletAdjustmentsReady($connection)) {
+            throw new RuntimeException('transfer_journal_unavailable');
+        }
         if ($connection->begin_transaction() !== true) {
             throw new RuntimeException('transfer_begin_failed');
         }
@@ -162,6 +192,17 @@ if (preg_match('/^tranfserUserAmount(\d+)$/D', (string)$userInfo['step'], $match
         $sender_after = $sender_before - $amount;
         $receiver_after = $receiver_before + $amount;
 
+        // Both immutable legs commit WITH balances and the consumed step.
+        // A failure on either INSERT rolls all of them back.
+        achbotInsertTelegramWalletAdjustment($connection, 'transfer',
+            $transferUpdateId, 1, (int)$from_id, (int)$from_id,
+            $transferChatId, $transferMessageId, 'transfer_out', $amount,
+            $sender_before, $sender_after, 'wallet_transfer');
+        achbotInsertTelegramWalletAdjustment($connection, 'transfer',
+            $transferUpdateId, 2, (int)$from_id, $to_id,
+            $transferChatId, $transferMessageId, 'transfer_in', $amount,
+            $receiver_before, $receiver_after, 'wallet_transfer');
+
         $commitStarted = true;
         // A false or lost COMMIT acknowledgement is NOT evidence of rollback.
         if ($connection->commit() !== true) {
@@ -196,6 +237,10 @@ if (preg_match('/^tranfserUserAmount(\d+)$/D', (string)$userInfo['step'], $match
             'transfer_recipient_identity_ambiguous',
             'transfer_identity_lookup_failed',
             'transfer_begin_failed',
+            'transfer_journal_unavailable',
+            'wallet_journal_invalid_entry',
+            'wallet_journal_insert_unavailable',
+            'wallet_journal_insert_failed',
             'transfer_commit_unconfirmed',
             'transfer_recipient_credit_execution_failed',
             'transfer_sender_debit_execution_failed',
@@ -207,6 +252,7 @@ if (preg_match('/^tranfserUserAmount(\d+)$/D', (string)$userInfo['step'], $match
         $sqlstate = $e instanceof mysqli_sql_exception ? $e->getSqlState() : 'n/a';
         $adminReport = "⚠️ <b>AChBot wallet transfer failure</b>\n"
             . "Reference: <code>{$reference}</code>\n"
+            . "Telegram update: <code>{$transferUpdateId}</code>\n"
             . "Reason: <code>{$reason}</code>\n"
             . "Exception class: <code>" . htmlspecialchars(get_class($e), ENT_QUOTES, 'UTF-8') . "</code>\n"
             . "SQLSTATE: <code>" . htmlspecialchars((string)$sqlstate, ENT_QUOTES, 'UTF-8') . "</code>\n"

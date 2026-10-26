@@ -18,8 +18,8 @@ cannot compensate for unnecessarily privileged credentials.
 
 It checks:
 
-- All 102 listed runtime files' byte lengths and SHA-256 against the
-  **provided** manifest, and an independently pinned 102-member filename
+- All 103 listed runtime files' byte lengths and SHA-256 against the
+  **provided** manifest, and an independently pinned 103-member filename
   inventory (canonical sorted-set SHA-256 from `package_post_v9.members()`),
   with no retired automatic TRON/WeSwap PHP files. The three locally
   executed parser/validation helpers must also match the supplied runtime
@@ -145,7 +145,7 @@ python3 tools/test_post_v9_payment_readiness.py --run-disposable \
 
 This regression exercises the **actual PHP CLI** with an owned, socket-only
 MariaDB, original schema plus all eight synthetic sidecars, a real SELECT-only
-account and a 102-file ZIP-shaped runtime. It deliberately injects missing
+account and a 103-file ZIP-shaped runtime. It deliberately injects missing
 settings/migrations, duplicate documents, malformed policies, absent hosted
 keys, source drift, retired members, broken unique indexes and failed DB auth.
 It also compares USDT address/rate behavior and static policy precedence

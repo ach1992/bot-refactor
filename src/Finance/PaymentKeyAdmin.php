@@ -26,8 +26,9 @@ function achbotPaymentKeyAdminBaseline(array $keys,string $field,int $revision):
     // Protect low-entropy public account/rate fields against offline guessing
     // from stored user.step values. Source-authenticated webhook secret is
     // already mandatory for all editor operations.
-    $secret=getenv('ACHBOT_TELEGRAM_WEBHOOK_SECRET');
-    if (!is_string($secret) || strlen($secret)<16 || strlen($secret)>256)
+    $secret=$GLOBALS['telegramWebhookSecret']??null;
+    if (!is_string($secret) || strlen($secret)<16 || strlen($secret)>256 ||
+        preg_match('/\A[A-Za-z0-9_-]+\z/D',$secret)!==1)
         throw new RuntimeException('payment_key_baseline_secret_unavailable');
     return hash_hmac('sha256',json_encode(
         [$field,array_key_exists($field,$keys),$keys[$field]??null,$revision],

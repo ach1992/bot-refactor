@@ -29,7 +29,7 @@ set_error_handler(static function($level,$message) {
 $_SERVER['SCRIPT_FILENAME']=__FILE__;
 $_SERVER['REQUEST_METHOD']='POST';
 $_SERVER['HTTP_X_TELEGRAM_BOT_API_SECRET_TOKEN']='SafeSyntheticGatewayToken_2026';
-putenv('ACHBOT_TELEGRAM_WEBHOOK_SECRET=SafeSyntheticGatewayToken_2026');
+$telegramWebhookSecret='SafeSyntheticGatewayToken_2026';
 $root=$argv[1];$socket=$argv[2];$dbname=$argv[3];
 $config=$argv[4];$route=$argv[5];
 $spec=json_decode($argv[6],true,512,JSON_THROW_ON_ERROR);

@@ -20,7 +20,25 @@ import test_v8_native as purchase
 
 ROOT = Path(__file__).resolve().parents[1]
 DB = purchase.SIDE[1]
-TEST_ROUTE = b"<?php\nrequire __DIR__ . '/src/Finance/Routes/WalletTransfer.php';\n"
+TEST_ROUTE = rb"""<?php
+$update=(object)['update_id'=>(int)($spec['update_id']??(8000+$from_id)),
+    'message'=>(object)['from'=>(object)['id'=>$from_id,'is_bot'=>false],
+        'chat'=>(object)['id'=>$chat_id,'type'=>'private'],
+        'message_id'=>$message_id,'text'=>$text]];
+if (isset($spec['wire_mutation'])) {
+    switch ($spec['wire_mutation']) {
+        case 'callback': $update=(object)['update_id'=>$update->update_id,
+            'callback_query'=>(object)['message'=>$update->message]]; break;
+        case 'group': $update->message->chat->type='group'; break;
+        case 'actor': $update->message->from->id=9999; break;
+        case 'chat': $update->message->chat->id=9999; break;
+        case 'message': $update->message->message_id++; break;
+        case 'text': $update->message->text='301'; break;
+        case 'missing_update': unset($update->update_id); break;
+    }
+}
+require __DIR__ . '/src/Finance/Routes/WalletTransfer.php';
+"""
 
 
 def query(work, env, sql):
@@ -34,16 +52,18 @@ def balances(work, env):
 
 def prepare(work, env, sender=50000, recipient=50000, step="tranfserUserAmount9002"):
     purchase.init(work, env, "http://127.0.0.1:9")
+    query(work, env, "DROP TABLE IF EXISTS wallet_adjustments")
+    query(work, env, (ROOT / 'migrations/post-v9/005_wallet_adjustments.sql').read_text())
     query(work, env, "UPDATE users SET wallet={},step='{}' WHERE userid=1001;".format(sender, step))
     query(work, env, "UPDATE users SET wallet={},step='none' WHERE userid=9002;".format(recipient))
 
 
-def execute(work, env, stage, text, actor=1001, data=""):
+def execute(work, env, stage, text, actor=1001, data="", **source):
     orig = purchase.block
     try:
         purchase.block = lambda kind, modern: TEST_ROUTE if kind == "wallet_transfer_guard" else orig(kind, modern)
         return purchase.run(work, env, stage, DB, "wallet_transfer_guard",
-                            {"actor": actor, "text": text, "data": data}, modern=True)
+                            {"actor": actor, "text": text, "data": data, **source}, modern=True)
     finally:
         purchase.block = orig
 
@@ -131,19 +151,88 @@ def main():
     with owned.owned_database() as (work, env):
         stage = work / "current-wallet"
         stage_mod.stage_source(stage, True)
+        baseline_stage = work / "baseline-wallet"
+        stage_mod.stage_source(baseline_stage, True)
+        (baseline_stage / "src/Finance/Routes/WalletTransfer.php").write_bytes(
+            subprocess.check_output(["git","-C",str(ROOT),"show",
+                "ea6834cb0612b5fa687ec492fbd9c6e1fd0b6a50:src/Finance/Routes/WalletTransfer.php"]))
+        prepare(work, env)
+        assert_events(execute(work, env, baseline_stage, "300"),True)
+        if balances(work, env) != [(1001,49700,"none"),(9002,50300,"none")] or query(
+                work, env,"SELECT COUNT(*) FROM wallet_adjustments").strip() != "0":
+            raise RuntimeError("Baseline no longer reproduces unjournaled transfer")
+        reports.append("transfer_baseline_red_money_moves_without_journal")
         prepare(work, env)
         expected = [(1001, 49700, "none"), (9002, 50300, "none")]
         first = execute(work, env, stage, "300")
         assert_events(first, True)
         if balances(work, env) != expected:
             raise RuntimeError("Normal transfer not atomically completed")
+        rows = query(work, env, "SELECT CONCAT(source_type,':',source_id,':',entry_no,"
+            "':',actor_userid,':',target_userid,':',adjustment_type,':',amount_toman,"
+            "':',before_balance,':',after_balance,':',telegram_update_id,':',"
+            "source_chat_id,':',source_message_id) FROM wallet_adjustments ORDER BY entry_no")
+        expected_rows = ("transfer:9001:1:1001:1001:transfer_out:300:50000:49700:9001:1001:71\n"
+                         "transfer:9001:2:1001:9002:transfer_in:300:50000:50300:9001:1001:71")
+        if rows.strip() != expected_rows:
+            raise RuntimeError("Transfer legs do not retain exact identity and balances: "+rows)
         reports.append("transfer_positive_atomic")
+        reports.append("transfer_paired_immutable_journal_exact_evidence")
+
+        # Redelivery cannot debit again even if the UI starts another transfer.
+        # Unique journal identity is independent of the consumed legacy step.
+        query(work, env, "UPDATE users SET step='tranfserUserAmount9002' WHERE userid=1001")
+        before = balances(work, env)
+        assert_events(execute(work, env, stage, "300"), False)
+        if balances(work, env) != before or query(work, env,
+                "SELECT COUNT(*) FROM wallet_adjustments").strip() != "2":
+            raise RuntimeError("Restarted step replay duplicated historical transfer")
+        reports.append("transfer_journal_redelivery_after_step_restart_no_effect")
+        query(work, env, "UPDATE users SET step='none' WHERE userid=1001")
+
 
         replay = execute(work, env, stage, "300")
         assert_events(replay, False)
         if balances(work, env) != expected:
             raise RuntimeError("Telegram replay duplicated transfer")
         reports.append("transfer_replay_claim_consumed")
+
+        for mutation in ('callback','group','actor','chat','message','text','missing_update'):
+            prepare(work, env)
+            before = balances(work, env)
+            assert_events(execute(work, env, stage, "300",wire_mutation=mutation),False)
+            if balances(work, env) != before or query(work, env,
+                    "SELECT COUNT(*) FROM wallet_adjustments").strip() != "0":
+                raise RuntimeError("Invalid transfer source mutated money: "+mutation)
+            reports.append("transfer_source_rejects_"+mutation)
+
+        for drift in ("DROP TABLE wallet_adjustments",
+                      "ALTER TABLE wallet_adjustments DROP INDEX uq_wallet_source_entry",
+                      "ALTER TABLE wallet_adjustments ENGINE=MyISAM",
+                      "ALTER TABLE wallet_adjustments MODIFY source_id VARCHAR(64) COLLATE utf8mb4_unicode_ci NOT NULL"):
+            prepare(work, env)
+            before = balances(work, env)
+            query(work, env, drift)
+            assert_events(execute(work, env, stage, "300"),False)
+            if balances(work, env) != before:
+                raise RuntimeError("Incompatible journal permitted transfer: "+drift)
+        reports.append("transfer_missing_or_incompatible_journal_fails_closed")
+
+        # Second-leg failure happens AFTER BOTH monetary writes and first leg.
+        # Test-only trigger forces a real MariaDB insert failure.
+        prepare(work, env)
+        before=balances(work, env)
+        query(work, env, "CREATE TRIGGER achbot_owned_journal_failure "
+              "BEFORE INSERT ON wallet_adjustments FOR EACH ROW "
+              "SET NEW.entry_no=IF(NEW.entry_no=2,9999,NEW.entry_no)")
+        try:
+            assert_events(execute(work, env, stage, "300"),False)
+        finally:
+            query(work, env, "DROP TRIGGER achbot_owned_journal_failure")
+        if balances(work, env) != before or query(work, env,
+                "SELECT COUNT(*) FROM wallet_adjustments").strip() != "0":
+            raise RuntimeError("Second-leg insert failure left money or half journal")
+        reports.append("transfer_second_journal_leg_failure_rolls_back_everything")
 
         for case, text in [
             ("invalid_exponent", "3e2"), ("invalid_fraction", "300.5"),
@@ -422,6 +511,8 @@ def main():
             raise RuntimeError("Raw commit exception leaked to Telegram")
         if not any("نیاز به بررسی" in m for m in messages):
             raise RuntimeError("Customer did not receive review guidance")
+        if query(work, env,"SELECT COUNT(*) FROM wallet_adjustments").strip() != "2":
+            raise RuntimeError("Real committed lost acknowledgement lacks journal pair")
         reports.append("transfer_real_commit_lost_ack_outcome_unknown")
 
         false_stage = make_commit_fixture("commit-returned-false", (
@@ -490,6 +581,8 @@ def main():
         if sum(any(e["name"] == "sendMessage" and "انتقال یافت" in str(e["args"])
                    for e in report["events"]) for report in competing) != 1:
             raise RuntimeError("Concurrent sender transfer had multiple successes")
+        if query(work, env,"SELECT COUNT(*) FROM wallet_adjustments").strip() != "2":
+            raise RuntimeError("Concurrent replay did not produce exactly one journal pair")
         reports.append("transfer_two_workers_exactly_one")
 
         prepare(work, env)
@@ -499,11 +592,13 @@ def main():
             raise RuntimeError("Opposing transfers did not both complete: " + repr(balances(work, env)))
         if len(opposing) != 2:
             raise RuntimeError("Opposing transfer race missing report")
+        if query(work, env,"SELECT COUNT(*) FROM wallet_adjustments").strip() != "4":
+            raise RuntimeError("Opposing transfers lack two complete journal pairs")
         reports.append("transfer_opposing_lock_order_no_deadlock")
 
     result = {"complete": True, "cases": len(reports), "scenarios": reports,
               "original_mariadb_socket_only": True, "external_requests": 0,
-              "active_schema_migration": False}
+              "active_schema_migration": False, "baseline_red": True}
     if args.report:
         args.report.write_text(json.dumps(result, indent=2, ensure_ascii=False) + "\n")
     print(json.dumps(result, ensure_ascii=False))

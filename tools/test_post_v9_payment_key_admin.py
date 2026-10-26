@@ -33,7 +33,7 @@ $_SERVER['REQUEST_METHOD']='POST';
 $root=$argv[1];$socket=$argv[2];$dbname=$argv[3];
 $webhook=$argv[4];$menu=$argv[5];$route=$argv[6];
 $spec=json_decode($argv[7],true,512,JSON_THROW_ON_ERROR);
-putenv('ACHBOT_TELEGRAM_WEBHOOK_SECRET=ownedSyntheticMerchantToken2026');
+$telegramWebhookSecret='ownedSyntheticMerchantToken2026';
 $_SERVER['HTTP_X_TELEGRAM_BOT_API_SECRET_TOKEN']='ownedSyntheticMerchantToken2026';
 $connection=new mysqli('localhost','root','',$dbname,0,$socket);
 $connection->set_charset('utf8mb4');

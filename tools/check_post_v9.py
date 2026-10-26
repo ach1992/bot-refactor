@@ -39,7 +39,7 @@ def source_checks():
         if (ROOT / field).read_bytes() != cmd("show", V9+":"+field):
             raise RuntimeError("Changed historical schema/private-template: " + field)
     files=package.members()
-    if len(files)!=102 or len(set(files))!=len(files):
+    if len(files)!=103 or len(set(files))!=len(files):
         raise RuntimeError("Source-only runtime file inventory changed")
     if any((ROOT/name).exists() or name in files
            for name in package.RETIRED_RUNTIME_MEMBERS):
@@ -123,6 +123,19 @@ def main():
         raise RuntimeError("Payment capability randomness/bounds incomplete")
     audience=customer_errors.verify(ROOT)
     with tempfile.TemporaryDirectory(prefix="achbot-post-v9-acceptance-") as tmp:
+        webhook_path=Path(tmp)/"webhook-file-config.json"
+        subprocess.run(["python3",str(ROOT/"tools/test_post_v9_webhook_config.py"),
+                        "--run-disposable","--report",str(webhook_path)],
+                       cwd=ROOT,check=True,timeout=30,capture_output=True)
+        webhook_config=json.loads(webhook_path.read_text())
+        if not (webhook_config.get("complete") is True
+                and webhook_config.get("cases")==7
+                and webhook_config.get("baseline_red") is True
+                and webhook_config.get("real_php_http") is True
+                and webhook_config.get("loopback_only") is True
+                and webhook_config.get("production_mutations")==0
+                and webhook_config.get("external_provider_calls")==0):
+            raise RuntimeError("Per-install baseInfo webhook authentication incomplete")
         cron_path=Path(tmp)/"post-v9-cron-runner.json"
         subprocess.run(["python3",str(ROOT/"tools/test_post_v9_cron_runner.py"),
                         "--report",str(cron_path)],
@@ -294,6 +307,15 @@ def main():
             raise RuntimeError("Executed finance error privacy/uncertain-effects proof incomplete")
         required_transfer_cases={
             "transfer_positive_atomic", "transfer_replay_claim_consumed",
+            "transfer_baseline_red_money_moves_without_journal",
+            "transfer_paired_immutable_journal_exact_evidence",
+            "transfer_journal_redelivery_after_step_restart_no_effect",
+            "transfer_missing_or_incompatible_journal_fails_closed",
+            "transfer_second_journal_leg_failure_rolls_back_everything",
+            "transfer_source_rejects_callback", "transfer_source_rejects_group",
+            "transfer_source_rejects_actor", "transfer_source_rejects_chat",
+            "transfer_source_rejects_message", "transfer_source_rejects_text",
+            "transfer_source_rejects_missing_update",
             "transfer_negative_debt_no_spend", "transfer_recipient_overflow_refused",
             "transfer_debit_failure_rolls_back_and_redacts_user_error",
             "transfer_postcommit_notification_failure_preserves_commit",
@@ -953,7 +975,7 @@ def main():
         # Issue #51 installed/payment-readiness boundary. This never touches
         # installed tenants or real providers: native PHP runs with a REAL
         # SELECT-only account against disposable original+sidecar MariaDB,
-        # and verifies all 102 source members against a synthetic manifest.
+        # and verifies all 103 source members against a synthetic manifest.
         preflight_path=Path(tmp)/"payment-operator-readiness-preflight.json"
         subprocess.run(
             ["python3",str(ROOT/"tools/test_post_v9_payment_readiness.py"),
@@ -1010,7 +1032,7 @@ def main():
                 readiness.get('readonly_sql_account_enforced') is True and
                 readiness.get('source_usdt_production_helper_compared') is True and
                 readiness.get('source_policy_production_helper_compared') is True and
-                readiness.get('source_members_verified')==102 and
+                readiness.get('source_members_verified')==103 and
                 readiness.get('all_eight_additive_shapes_exercised') is True and
                 readiness.get('no_real_provider_or_telegram_calls') is True and
                 readiness.get('installed_operator_acceptance') is False):
@@ -2606,7 +2628,7 @@ def main():
                        cwd=ROOT,check=True,timeout=60,capture_output=True)
         swap=json.loads(overlay_report.read_text())
         if not (swap.get("complete") and swap.get("phase_count")==4
-                and swap.get("runtime_members")==102
+                and swap.get("runtime_members")==103
                 and swap.get("historical_runtime_members")==92
                 and swap.get("retired_old_payment_files_absent_after_source_upgrade")
                 and swap.get("source_roll_forward_and_back_byte_identical")
@@ -2617,6 +2639,7 @@ def main():
                     "source":result,"marzban":marzban,"purchases":purchases,
                      "unsupported_wallet_preflight":wallet_guard,
                      "wallet_transfer_safety":wallet_transfer,
+                     "webhook_file_configuration":webhook_config,
                      "admin_wallet_adjustment_safety":admin_wallet,
                      "customer_error_privacy":audience,
                      "telegram_transport_log_privacy":transport_privacy,

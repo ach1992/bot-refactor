@@ -100,7 +100,7 @@ jobs:
           (cd "$RUNNER_TEMP/achbot-marzban-only" && sha256sum payment-attempt-migration.sql > payment-attempt-migration.sha256)
           # Independent, separately approved source-only migrations.
           # These assets never execute as part of CI/package installation.
-          for id in 004_automatic_renewal_attempts 005_admin_wallet_adjustments 006_payment_message_refs 007_service_effects 008_referral_awards 009_bank_buy_invoice_claims; do
+          for id in 004_automatic_renewal_attempts 005_wallet_adjustments 006_payment_message_refs 007_service_effects 008_referral_awards 009_bank_buy_invoice_claims; do
             cp "migrations/post-v9/${id}.sql" "$RUNNER_TEMP/achbot-marzban-only/${id}.sql"
             (cd "$RUNNER_TEMP/achbot-marzban-only" && sha256sum "${id}.sql" > "${id}.sha256")
           done

@@ -3,8 +3,13 @@
 // ACHBOT_WEBHOOK_INGRESS_BEGIN
 // All webhook-driven mutations must be authenticated BEFORE loading config.php:
 // config.php initializes routes and may read request-derived state.
+// Load only this installation's trusted private variables in global scope.
+// config.php later uses require_once, so these bindings must not be function-local.
+if (is_file(__DIR__ . '/baseInfo.php')) {
+    require_once __DIR__ . '/baseInfo.php';
+}
 function achbotWebhookIngressAuthenticated(): bool {
-    $secret=getenv('ACHBOT_TELEGRAM_WEBHOOK_SECRET');
+    $secret=$GLOBALS['telegramWebhookSecret']??null;
     $received=$_SERVER['HTTP_X_TELEGRAM_BOT_API_SECRET_TOKEN']??null;
     return ($_SERVER['REQUEST_METHOD']??null)==='POST' &&
         is_string($secret) && strlen($secret)>=16 && strlen($secret)<=256 &&

@@ -1,6 +1,6 @@
 <?php
 /**
- * AChBot post-V9: audited operator wallet adjustments.
+ * AChBot post-V9: audited operator wallet adjustments in the shared movement journal.
  *
  * Source-only: migration 005 must be separately authorized and applied
  * before this route can alter balances. Never fall back to legacy writes.
@@ -10,149 +10,7 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     exit;
 }
 
-if (!function_exists('achbotAdminWalletLedgerReady')) {
-    function achbotAdminWalletLedgerReady(mysqli $db): bool
-    {
-        try {
-            $schema = $db->query("SELECT DATABASE() AS db")->fetch_assoc()['db'] ?? null;
-            if (!is_string($schema) || $schema === '') {
-                return false;
-            }
-            $stmt = $db->prepare("SELECT ENGINE FROM information_schema.TABLES
-                WHERE TABLE_SCHEMA=? AND TABLE_NAME='admin_wallet_adjustments'");
-            $stmt->bind_param('s', $schema);
-            $stmt->execute();
-            $engine = $stmt->get_result()->fetch_assoc()['ENGINE'] ?? null;
-            $stmt->close();
-            if (strtoupper((string)$engine) !== 'INNODB') {
-                return false;
-            }
-
-            $stmt = $db->prepare("SELECT COLUMN_NAME, DATA_TYPE, COLUMN_TYPE, IS_NULLABLE,
-                CHARACTER_MAXIMUM_LENGTH, COLLATION_NAME, EXTRA, COLUMN_DEFAULT
-                FROM information_schema.COLUMNS
-                WHERE TABLE_SCHEMA=? AND TABLE_NAME='admin_wallet_adjustments'");
-            $stmt->bind_param('s', $schema);
-            $stmt->execute();
-            $columns = [];
-            foreach ($stmt->get_result()->fetch_all(MYSQLI_ASSOC) as $column) {
-                $columns[$column['COLUMN_NAME']] = $column;
-            }
-            $stmt->close();
-            $required = [
-                'id'=>'bigint', 'operator_userid'=>'bigint', 'target_userid'=>'bigint',
-                'telegram_update_id'=>'bigint', 'source_chat_id'=>'bigint',
-                'source_message_id'=>'bigint', 'adjustment_type'=>'varchar',
-                'amount_toman'=>'int', 'before_balance'=>'int',
-                'after_balance'=>'int', 'reason'=>'varchar', 'created_at'=>'datetime'
-            ];
-            if (count($columns) !== count($required)) {
-                return false;
-            }
-            foreach ($required as $name => $type) {
-                if (!isset($columns[$name]) ||
-                    strtolower((string)$columns[$name]['DATA_TYPE']) !== $type ||
-                    $columns[$name]['IS_NULLABLE'] !== 'NO') {
-                    return false;
-                }
-            }
-            if (!str_contains(strtolower($columns['id']['COLUMN_TYPE']), 'unsigned') ||
-                !str_contains(strtolower($columns['amount_toman']['COLUMN_TYPE']), 'unsigned') ||
-                str_contains(strtolower($columns['before_balance']['COLUMN_TYPE']), 'unsigned') ||
-                str_contains(strtolower($columns['after_balance']['COLUMN_TYPE']), 'unsigned')) {
-                return false;
-            }
-            foreach (['operator_userid','target_userid','telegram_update_id',
-                'source_chat_id','source_message_id'] as $signedBigint) {
-                if (str_contains(strtolower($columns[$signedBigint]['COLUMN_TYPE']), 'unsigned')) {
-                    return false;
-                }
-            }
-            if ((int)$columns['adjustment_type']['CHARACTER_MAXIMUM_LENGTH'] !== 16 ||
-                $columns['adjustment_type']['COLLATION_NAME'] !== 'utf8mb4_bin' ||
-                (int)$columns['reason']['CHARACTER_MAXIMUM_LENGTH'] !== 500 ||
-                !str_contains(strtolower((string)$columns['id']['EXTRA']), 'auto_increment') ||
-                !str_contains(strtolower((string)$columns['created_at']['COLUMN_DEFAULT']), 'current_timestamp')) {
-                return false;
-            }
-            $stmt = $db->prepare("SELECT INDEX_NAME, NON_UNIQUE, SEQ_IN_INDEX, COLUMN_NAME
-                FROM information_schema.STATISTICS
-                WHERE TABLE_SCHEMA=? AND TABLE_NAME='admin_wallet_adjustments'
-                ORDER BY INDEX_NAME, SEQ_IN_INDEX");
-            $stmt->bind_param('s', $schema);
-            $stmt->execute();
-            $indexes = [];
-            foreach ($stmt->get_result()->fetch_all(MYSQLI_ASSOC) as $idx) {
-                $indexes[$idx['INDEX_NAME']][] = [
-                    (int)$idx['NON_UNIQUE'], (int)$idx['SEQ_IN_INDEX'], $idx['COLUMN_NAME']
-                ];
-            }
-            $stmt->close();
-            if (($indexes['PRIMARY'] ?? null) !== [[0, 1, 'id']] ||
-                ($indexes['uq_admin_wallet_update'] ?? null) !== [[0, 1, 'telegram_update_id']]) {
-                return false;
-            }
-            // Audit rows must survive deletion of the original bot user.
-            $stmt = $db->prepare("SELECT COUNT(*) AS n
-                FROM information_schema.KEY_COLUMN_USAGE
-                WHERE TABLE_SCHEMA=? AND TABLE_NAME='admin_wallet_adjustments'
-                  AND REFERENCED_TABLE_NAME IS NOT NULL");
-            $stmt->bind_param('s', $schema);
-            $stmt->execute();
-            $foreignKeys = (int)($stmt->get_result()->fetch_assoc()['n'] ?? -1);
-            $stmt->close();
-            if ($foreignKeys !== 0) {
-                return false;
-            }
-            // Financial balance and step must roll back WITH the 005 ledger.
-            // The historical users table is InnoDB, but an installed tenant
-            // may drift independently. Never assume the frozen dump is live.
-            $stmt = $db->prepare("SELECT ENGINE FROM information_schema.TABLES
-                WHERE TABLE_SCHEMA=? AND TABLE_NAME='users'");
-            $stmt->bind_param('s', $schema);
-            $stmt->execute();
-            $usersEngine = $stmt->get_result()->fetch_assoc()['ENGINE'] ?? null;
-            $stmt->close();
-            if (strtoupper((string)$usersEngine) !== 'INNODB') {
-                return false;
-            }
-
-            $stmt = $db->prepare("SELECT COLUMN_NAME, DATA_TYPE, COLUMN_TYPE,
-                IS_NULLABLE, CHARACTER_MAXIMUM_LENGTH
-                FROM information_schema.COLUMNS
-                WHERE TABLE_SCHEMA=? AND TABLE_NAME='users'
-                  AND COLUMN_NAME IN ('userid','wallet','step','isAdmin')");
-            $stmt->bind_param('s', $schema);
-            $stmt->execute();
-            $userColumns = [];
-            foreach ($stmt->get_result()->fetch_all(MYSQLI_ASSOC) as $column) {
-                $userColumns[$column['COLUMN_NAME']] = $column;
-            }
-            $stmt->close();
-            $userTypes = ['userid'=>'bigint', 'wallet'=>'int',
-                          'step'=>'varchar', 'isAdmin'=>'tinyint'];
-            if (count($userColumns) !== count($userTypes)) {
-                return false;
-            }
-            foreach ($userTypes as $column => $type) {
-                if (!isset($userColumns[$column]) ||
-                    strtolower((string)$userColumns[$column]['DATA_TYPE']) !== $type ||
-                    $userColumns[$column]['IS_NULLABLE'] !== 'NO' ||
-                    str_contains(strtolower((string)$userColumns[$column]['COLUMN_TYPE']),
-                        'unsigned')) {
-                    return false;
-                }
-            }
-            if ((int)$userColumns['step']['CHARACTER_MAXIMUM_LENGTH'] !== 1000) {
-                return false;
-            }
-            return true;
-        } catch (Throwable $error) {
-            error_log('achbot_admin_wallet_ledger_preflight_unavailable');
-            return false;
-        }
-    }
-}
+require_once dirname(__DIR__) . '/WalletAdjustments.php';
 
 if (!function_exists('achbotAdminWalletPrivateCallback')) {
     /** Enter the privileged wallet flow only via the operator's own bot DM. */
@@ -242,7 +100,7 @@ if (!function_exists('achbotApplyAdminWalletAdjustment')) {
             !in_array($kind, ['credit', 'debit', 'debt'], true) ||
             $amount < 1 || $amount > 2147483647 ||
             $reason === '' || strlen($reason) > 500 ||
-            !achbotAdminWalletLedgerReady($db)) {
+            !achbotWalletAdjustmentsReady($db)) {
             return 'unavailable';
         }
         try {
@@ -286,18 +144,9 @@ if (!function_exists('achbotApplyAdminWalletAdjustment')) {
                 $db->rollback();
                 return 'invalid';
             }
-            $stmt = $db->prepare("INSERT INTO admin_wallet_adjustments
-                (operator_userid,target_userid,telegram_update_id,source_chat_id,
-                 source_message_id,adjustment_type,amount_toman,before_balance,
-                 after_balance,reason)
-                VALUES (?,?,?,?,?,?,?,?,?,?)");
-            $stmt->bind_param('iiiiisiiis', $operatorId, $targetId,
-                $updateId, $chatId, $messageId, $kind, $amount,
+            achbotInsertTelegramWalletAdjustment($db, 'admin', $updateId, 1,
+                $operatorId, $targetId, $chatId, $messageId, $kind, $amount,
                 $before, $after, $reason);
-            if (!$stmt->execute()) {
-                throw new RuntimeException('journal_insert_failed');
-            }
-            $stmt->close();
 
             $stmt = $db->prepare("UPDATE users SET wallet=? WHERE userid=? AND wallet=?");
             $stmt->bind_param('iii', $after, $targetId, $before);
@@ -326,15 +175,17 @@ if (!function_exists('achbotApplyAdminWalletAdjustment')) {
             // Reconcile only this unique immutable update identity; never
             // automatically redo an ambiguous balance effect.
             try {
-                $stmt = $db->prepare("SELECT operator_userid,target_userid,
+                $stmt = $db->prepare("SELECT actor_userid,target_userid,
                     source_chat_id,source_message_id,reason,
-                    adjustment_type,amount_toman FROM admin_wallet_adjustments
-                    WHERE telegram_update_id=?");
-                $stmt->bind_param('i', $updateId);
+                    adjustment_type,amount_toman FROM wallet_adjustments
+                    WHERE source_type='admin' AND source_id=?
+                      AND entry_no=1 AND telegram_update_id=?");
+                $sourceId = (string)$updateId;
+                $stmt->bind_param('si', $sourceId, $updateId);
                 $stmt->execute();
                 $row = $stmt->get_result()->fetch_assoc();
                 $stmt->close();
-                if ($row && (int)$row['operator_userid'] === $operatorId &&
+                if ($row && (int)$row['actor_userid'] === $operatorId &&
                     (int)$row['target_userid'] === $targetId &&
                     (int)$row['source_chat_id'] === $chatId &&
                     (int)$row['source_message_id'] === $messageId &&
@@ -379,7 +230,7 @@ if (!function_exists('achbotCancelAdminWalletPendingStep')) {
     ): string {
         if ($operatorId <= 0 ||
             !achbotAdminWalletIsPendingStep($expectedStep) ||
-            !achbotAdminWalletLedgerReady($db)) {
+            !achbotWalletAdjustmentsReady($db)) {
             return 'review';
         }
 
@@ -465,7 +316,7 @@ $achbotWalletFreshText = achbotAdminWalletFreshReason(
 if ($achbotWalletCanAdmin && isset($achbotWalletModes[$data]) &&
     achbotAdminWalletPrivateCallback($update ?? null, $from_id ?? null,
         $chat_id ?? null, $message_id ?? null, $data)) {
-    if (!achbotAdminWalletLedgerReady($connection)) {
+    if (!achbotWalletAdjustmentsReady($connection)) {
         sendMessage('⚠️ ثبت تغییر موجودی فعلاً آماده نیست؛ مدیر سیستم باید دفتر ثبت مالی را بررسی کند.');
     } else {
         delMessage();

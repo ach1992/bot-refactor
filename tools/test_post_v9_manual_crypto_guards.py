@@ -93,7 +93,7 @@ set_error_handler(static function($level,$message){
 $_SERVER['SCRIPT_FILENAME']=__FILE__;
 $_SERVER['REQUEST_METHOD']='POST';
 $_SERVER['HTTP_X_TELEGRAM_BOT_API_SECRET_TOKEN']='SafeSyntheticGatewayToken_2026';
-putenv('ACHBOT_TELEGRAM_WEBHOOK_SECRET=SafeSyntheticGatewayToken_2026');
+$telegramWebhookSecret='SafeSyntheticGatewayToken_2026';
 $root=$argv[1];
 $spec=json_decode($argv[4],true,512,JSON_THROW_ON_ERROR);
 $connection=new mysqli('localhost','root','',$argv[3],0,$argv[2]);

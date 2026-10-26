@@ -1,10 +1,18 @@
-# Administrator wallet adjustment journal — Issue #26
+# Wallet adjustment journal — Issue #26
 
-**Source-only code merged via [PR #58](https://github.com/ach1992/bot-refactor/pull/58) on 2026-10-18. That merge did not publish a release, install any tenant, or apply migration 005.**
-The original historical V0–V9 schema and its tests remain unchanged.
-The only new persistence is the additive
-**migrations/post-v9/005_admin_wallet_adjustments.sql** table, independent of
-shared payment migration 003 and automatic renewal migration 004.
+The generic `wallet_adjustments` journal records administrator adjustments
+and paired user transfers. Migration **005_wallet_adjustments.sql** creates
+the new table for the owner's **RC9 -> RC11** upgrade. It is independent of
+shared payment migration 003 and automatic renewal migration 004. There is
+no RC10-to-RC11 rename/import path: RC10 will not be installed by this owner,
+and its published artifacts remain immutable. If either old or new 005 table
+already exists on another installation, stop and audit it separately.
+
+Historical V0–V9 schema/tests remain frozen. This scoped journal does not
+invent historical movement rows or replace pays, payment_attempts,
+payment_transactions, service_effects or referral_awards. Those retain their
+existing payment/business-effect proof. This is not a full historical wallet
+statement across all routes.
 
 ## Contract
 
@@ -14,7 +22,7 @@ shared payment migration 003 and automatic renewal migration 004.
   negative balance remains supported, not clamped to zero.
 - **Private operator conversation only**: start credit/debit/debt from an
   authenticated inline callback in the administrator's own Telegram private
-  chat (`chat.type=private`, `chat.id=operator_userid`). The user selection,
+  chat (`chat.type=private`, `chat.id=actor_userid`). The user selection,
   positive integer Toman amount and explicit reason must be **real fresh text
   messages in that same private conversation**. Group/supergroup messages,
   other users' private chats and group callbacks cannot advance or complete
@@ -47,7 +55,8 @@ shared payment migration 003 and automatic renewal migration 004.
 - One transaction locks administrator and target user rows, rechecks privileged
   identity and the expected flow step, inserts the immutable audit row,
   changes the signed users.wallet balance, and atomically consumes the step.
-  The unique source telegram_update_id prevents redelivery/replay, including
+  The unique `(source_type, source_id, entry_no)` prevents redelivery/replay,
+  including
   from competing PHP workers. Exact operator, target, operation, amount,
   reason, source chat/message and before/after balances are retained.
   The historical users.userid index is nonunique; duplicated target or
@@ -62,11 +71,36 @@ shared payment migration 003 and automatic renewal migration 004.
   Failed Telegram delivery after commit must never reverse the committed
   financial effect. Do not leak SQL errors or privileged details to customers.
 
+## User transfers and identity
+
+Each completed transfer writes two immutable rows under
+`source_type='transfer'`, `source_id=<Telegram update ID>`:
+entry 1 is `transfer_out` for the sender and entry 2 is `transfer_in` for the
+recipient. Both retain the sender as `actor_userid`, each affected wallet as
+`target_userid`, positive Toman amount, signed before/after balances and
+original update/chat/message IDs. Administrator actions use
+`source_type='admin'`, the same source-ID convention and entry 1.
+
+The actual new private text-message envelope must match UpdateBindings;
+callback-associated old message text cannot authorize a transfer. Stable user
+locks, sufficient sender balance, recipient overflow checks, both wallet
+updates, step consumption and both journal INSERTs share one InnoDB transaction.
+Failure of either INSERT rolls everything back. Missing/incompatible 005
+blocks transfers as well as administrator adjustments. Unique source identity
+also prevents an old update from applying again after the user restarts a
+transfer step. Intentional admin debt is retained; an incoming transfer may
+reduce recipient debt but an ordinary transfer cannot deepen sender debt.
+
+A lost COMMIT acknowledgement remains under review, even if a later rollback
+API call returns success. Inspect the two legs and balances by source ID;
+never auto-repeat or compensate an uncertain outcome.
+
 ## 005 schema readiness and migration gate
 
 The source checks InnoDB, exact essential 005 columns/nullable/type/length
 contracts, binary adjustment kind, auto-increment primary ID, generated
-created-at default, unique Telegram-update index and absence of foreign keys.
+created-at default, binary source type/ID, unsigned leg number,
+unique source/leg index and absence of foreign keys.
 It additionally checks that the installed original users table is InnoDB
 with the signed INT wallet and expected operator userid, isAdmin and step
 column contract. The historical V9 schema file is unchanged: the installed
@@ -76,7 +110,7 @@ An incompatible table is a hard stop, not a missing-table fallback.
 **Do not install source 005 route and assume wallet adjustments will work
 without migration 005.** Until authorized installation, the old deployed
 source stays untouched; this source-only candidate intentionally disables the
-operator adjustment UI if 005 is absent. The reverse is also dangerous:
+operator adjustment UI and user transfer commit if 005 is absent. The reverse is also dangerous:
 deploying migration 005 then reverting to an older source with legacy direct
 wallet UPDATEs bypasses the audit. Before any real rollout:
 
@@ -106,6 +140,7 @@ are active. Never DROP 005 or remove audit rows to simplify rollback.
 Run:
 
     python3 tools/test_post_v9_admin_wallet.py --run-disposable
+    python3 tools/test_post_v9_wallet_transfer.py --run-disposable
 
 This executes the actual current PHP route against disposable, Unix-socket-only
 MariaDB and synthetic Telegram. Cases cover absent/malformed 005,
