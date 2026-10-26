@@ -113,6 +113,27 @@ unban paths. Generic legacy step updates cannot consume the protected
 `banned`, `achbotDirectGift*`, or `achbotExempt:*` states; a cached old
 menu request also rechecks current status before showing its menu. An
 explicit, authorized unban still uses its dedicated PK/current-step CAS.
+Legacy global CANCEL also refuses any current or cached banned state
+(even for primary or still-delegated administrators): it cannot silently
+Unban, clear an inactive plan or send a cancellation success. Only an
+explicit, source-verified administrator moderation action may remove Ban.
+
+Legacy text Ban/Unban starts and numeric completions, as well as receipt
+banUserDirect_* callbacks, now require the real signed private Telegram
+source, unique current actor/target PKs, current administrator role and
+locked actor-step CAS. Every accepted Ban/Unban (including the existing
+verified toggleBan_* dispatcher) atomically records a per-target global
+Telegram update_id watermark in original setting, alongside the existing
+per-actor moderation source record. Target PK locks serialize competing
+moderators; an old Unban cannot override a newer Ban from another actor
+even when its cached role was valid. A revoked operator, ambiguous legacy
+account/setting, stale source, SQL failure or unknown COMMIT acknowledgment
+never reports success or marks a receipt button complete. The target
+marker is additive data inside the existing table, not a new SQL schema
+or migration. A legacy pre-upgrade wizard without source provenance must
+still use an authentic fresh private numeric message and satisfy the
+current actor-step and target-source checks; conflicts fail closed.
+
 Older text/receipt-ban and automated broadcast writers cannot erase either
 protected wizard generation; a *newer*, authenticated, authorized moderator
 callback can deliberately ban and supersede one. Other legacy non-banned
@@ -189,7 +210,11 @@ accepted additive schema decision, not an unreviewed migration.
   config.php channel-exemption handler, the actual bot.php mainMenu route,
   their lost-commit, revoked-admin, stale-frame, synchronized stale-worker,
   explicit-unban and nonce-preservation regressions. It requires at least
-  132 cases, including global-policy/actor-step atomic rollback when
+  152 cases, including R3 current-privileged-Ban global CANCEL rejection,
+  revoked delegated administrator text/receipt Ban and Unban, cross-actor
+  stale-Unban versus newer-Ban ordering, legitimate fresh Unban, duplicate
+  identities, and unknown-COMMIT no-success/no-replay. It also checks
+  global-policy/actor-step atomic rollback when
   an isolated SQL trigger rejects the state transition, preservation
   of already-existing exempt users, and signed newer callbacks from older
   bot-authored menu messages. Telegram update IDs order callback events;

@@ -657,51 +657,25 @@ if (preg_match('/^declineActionReason_(.+)_(\d+)$/', $userInfo['step'], $match) 
 	);
 }
 
-if (preg_match('/^banUserDirect_(\d+)$/', $data, $m) && ($from_id == $admin || $userInfo['isAdmin'] == true)) {
-
-    $targetUserId = (int)$m[1];
-	
-    // delMessage();
-
-    $stmt = $connection->prepare("SELECT `id`,`step` FROM `users` WHERE `userid` = ?");
-    $stmt->bind_param("i", $targetUserId);
-    $stmt->execute();
-    $res = $stmt->get_result();
-    $stmt->close();
-
-    if ($res->num_rows === 1) {
-        $u = $res->fetch_assoc();
-
-        if ($u['step'] != "banned") {
-            // This inherited callback has no gift-generation freshness evidence.
-            // Do not let it preempt a protected nonced gift; the verified
-            // moderation route is the only explicit newer-source override.
-            $targetPk=(int)$u['id'];
-            $currentStep=(string)$u['step'];
-            $stmt = $connection->prepare("UPDATE `users` SET `step`='banned' WHERE `id`=? AND `userid`=? AND `step`=? AND `step` NOT LIKE 'achbotDirectGift%' AND `step` NOT LIKE 'achbotExempt:%'");
-            $stmt->bind_param("iis", $targetPk, $targetUserId, $currentStep);
-            $ok=$stmt->execute();$updated=$stmt->affected_rows;$stmt->close();
-            if (!$ok || $updated!==1) {
-                alert('وضعیت کاربر تغییر کرده است؛ عملیات تأیید نشد.',true);
-                exit();
-            }
-            alert("✅ کاربر $targetUserId مسدود شد.");
-        } else {
-            alert("☑️ این کاربر از قبل مسدود بود.");
-        }
+if (is_string($data) &&
+    preg_match('/\AbanUserDirect_([1-9][0-9]{0,18})\z/D',$data,$m)===1) {
+    $status=achbotLegacyModerationTransition(
+        $connection,$update,(int)$from_id,(int)$chat_id,(int)$message_id,
+        $userInfo,(int)$admin,'receiptBan',$m[1]);
+    if ($status==='changed') {
+        alert("✅ کاربر {$m[1]} مسدود شد.");
+    } elseif ($status==='already') {
+        alert("☑️ این کاربر از قبل مسدود بود.");
     } else {
-        alert("⛔️ کاربری با این آیدی یافت نشد.");
+        alert('این درخواست مسدودسازی تأیید نشد؛ وضعیت را بررسی کنید.',true);
     }
-
-    $doneKeys = json_encode([
-        'inline_keyboard' => [
-            [
-                ['text' => "✅ مسدود شد: $targetUserId", 'callback_data' => "wizwizch"]
-            ]
-        ]
-    ]);
-    editKeys($doneKeys, $message_id, $chat_id);
-
+    // Do not claim or mark a failed/unknown callback as committed.
+    if ($status==='changed' || $status==='already') {
+        $doneKeys=json_encode(['inline_keyboard'=>[
+            [['text'=>"✅ مسدود شد: {$m[1]}",'callback_data'=>"wizwizch"]]
+        ]]);
+        editKeys($doneKeys,$message_id,$chat_id);
+    }
 }
 
 // END Decline Cart To Cart by ACh

@@ -147,6 +147,7 @@ function bot($method,$args=[]) {
 function getUserInfoKeys($id) { return 'FIXTURE_MODERATION_KEYS'; }
 function alert($msg=null,$show=false) { $GLOBALS['events'][]='ALERT:'.(string)$msg; }
 function editKeys(...$args) { $GLOBALS['events'][]='EDIT_KEYS'; }
+function delMessage(...$args) { $GLOBALS['events'][]='DELETE_MESSAGE'; }
 function getAdminKeys() { return 'ADMIN_KEYS'; }
 function editText($mid,$body,$keys=null) {
     $GLOBALS['events'][]='EDIT_TEXT:'.(string)$body;
@@ -195,11 +196,16 @@ function editMarzbanConfig($sid,$change,?array $target=null): object {
 }
 require __DIR__.'/src/Purchase/Core.php';
 require __DIR__.'/ingress-source.php';
+// The same source functions defined by the actual config.php are available
+// to every legacy administrative route in the real bot.
+require __DIR__.'/moderation-route.php';
 if (!achbotWebhookIngressAuthenticated()) {
     http_response_code(403);
 } elseif (($spec['route']??'gift')==='moderation') {
-    require __DIR__.'/moderation-route.php';
     handleToggleCallbacks($data,$chat_id,$message_id);
+} elseif (($spec['route']??'gift')==='legacy_ban_start' ||
+          ($spec['route']??'gift')==='legacy_unban_start') {
+    require __DIR__.'/legacy-ban-start.php';
 } elseif (($spec['route']??'gift')==='exemption') {
     require __DIR__.'/exemption-route.php';
     achbotHandleChannelExemption($data,$text,$userInfo);
@@ -300,13 +306,16 @@ def setup(work: Path, env: dict) -> Path:
     (stage/'src/Subscription/manual-route.php').write_text(
         '<?php\n'+manual[manual_start:manual_end])
     legacy_ban=(ROOT/'src/Admin/Bans.php').read_text()
-    ban_start=legacy_ban.index('if($userInfo[\'step\'] == "banUser"')
+    ban_start=legacy_ban.index("if (($userInfo['step']??null)==='banUser'")
+    start_begin=legacy_ban.index('if ($data === "banUser")')
+    (stage/'legacy-ban-start.php').write_text(
+        '<?php\n'+legacy_ban[start_begin:ban_start])
     (stage/'legacy-ban.php').write_text('<?php\n'+legacy_ban[ban_start:])
     unban=(ROOT/'src/Admin/Unban.php').read_text()
-    unban_start=unban.index('if($userInfo[\'step\'] == "unbanUser"')
+    unban_start=unban.index("if (($userInfo['step']??null)==='unbanUser'")
     (stage/'legacy-unban.php').write_text('<?php\n'+unban[unban_start:])
     receipt=(ROOT/'src/Finance/Routes/ManualReceipts.php').read_text()
-    receipt_start=receipt.index("if (preg_match('/^banUserDirect_")
+    receipt_start=receipt.index("if (is_string($data) &&")
     receipt_end=receipt.index('// END Decline Cart To Cart by ACh',receipt_start)
     (stage/'legacy-receipt-ban.php').write_text(
         '<?php\n'+receipt[receipt_start:receipt_end])
@@ -323,6 +332,7 @@ def setup(work: Path, env: dict) -> Path:
 def reset(work: Path, env: dict) -> None:
     q(work,env,"DELETE FROM setting WHERE type LIKE 'ACHBOT_DIRECT_GIFT_%'")
     q(work,env,"DELETE FROM setting WHERE type LIKE 'ACHBOT_ADMIN_MOD_SOURCE_%'")
+    q(work,env,"DELETE FROM setting WHERE type LIKE 'ACHBOT_ADMIN_TARGET_MOD_%'")
     q(work,env,"DELETE FROM setting WHERE type LIKE 'ACHBOT_EXEMPT_SOURCE_%'")
     q(work,env,"DELETE FROM setting WHERE type='EXEMPTED_USERS'")
     q(work,env,"DELETE FROM orders_list WHERE id=92")
@@ -1274,6 +1284,238 @@ def verify_exemption_and_ban_freshness(work: Path, env: dict, stage: Path,
     passed.append('exemption_existing_member_preserved_and_wizard_completed')
 
 
+
+def target_moderation_rows(work: Path, env: dict) -> list[dict]:
+    raw=q(work,env,"SELECT value FROM setting WHERE type LIKE "
+        "'ACHBOT_ADMIN_TARGET_MOD_%' ORDER BY id")
+    return [json.loads(line) for line in raw.splitlines() if line]
+
+
+def verify_r3_legacy_moderation(work: Path, env: dict, stage: Path,
+                                 passed: list[str]) -> None:
+    # R3-1: the authenticated global CANCEL must never become an
+    # unadvertised Unban, even for still-privileged actors excluded by
+    # bot.php's legacy early banned check.
+    for banned,operator in [(9001,9002),(9002,9001)]:
+        reset(work,env);seed_inactive_legacy_plan(work,env)
+        made=call(work,env,stage,route='moderation',kind='callback',
+            actor=operator,update_id=600,message_id=60,
+            text='toggleBan_'+str(banned))
+        ensure('MOD_NOTICE' in made['events'] and
+               q(work,env,f'SELECT step FROM users WHERE userid={banned}')=='banned',
+               'Fresh signed ban of privileged actor failed')
+        before=moderation_rows(work,env)
+        targetBefore=target_moderation_rows(work,env)
+        cancelled=call(work,env,stage,kind='message',
+            actor=banned,update_id=601,message_id=61,text='CANCEL')
+        ensure(q(work,env,f'SELECT step FROM users WHERE userid={banned}')=='banned' and
+               q(work,env,"SELECT COUNT(*) FROM server_plans WHERE id=987")=='1' and
+               moderation_rows(work,env)==before and
+               target_moderation_rows(work,env)==targetBefore and
+               not any(x in cancelled['events'] for x in ['WAIT','MAIN']) and
+               not effects(stage),
+               'Current privileged banned actor consumed global CANCEL')
+        passed.append('r3_cancel_preserves_current_ban_'+
+                      ('primary' if banned==9001 else 'delegated'))
+
+    reset(work,env);seed_inactive_legacy_plan(work,env)
+    previous=call(work,env,stage,kind='message',
+        actor=9001,update_id=599,message_id=59,text='CANCEL',
+        stale_step='banned')
+    ensure(q(work,env,'SELECT step FROM users WHERE userid=9001')=='none' and
+           q(work,env,"SELECT COUNT(*) FROM server_plans WHERE id=987")=='1' and
+           not any(x in previous['events'] for x in ['WAIT','MAIN']),
+           'Cached banned state falsely consumed by legacy CANCEL')
+    passed.append('r3_cached_banned_cancel_does_not_cleanup')
+
+    # R3-2: the old unban worker reads config.php's role/step first.
+    # A separate authorized actor then commits a newer Ban. Releasing A
+    # must neither clear the Ban nor emit a success after role revocation.
+    for revoke in [True,False]:
+        reset(work,env)
+        q(work,env,"UPDATE users SET step='unbanUser' WHERE userid=9002")
+        ready=stage/('r3-unban-ready-'+str(int(revoke)))
+        release=stage/('r3-unban-release-'+str(int(revoke)))
+        ready.unlink(missing_ok=True);release.unlink(missing_ok=True)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+            try:
+                old=pool.submit(call,work,env,stage,route='legacy_unban',
+                    kind='message',actor=9002,update_id=599,message_id=59,
+                    text='1001',mode='pause_before_route',
+                    cached_ready=str(ready),release_route=str(release))
+                wait_for(ready.exists,'Older legacy Unban did not cache admin')
+                latest=call(work,env,stage,route='moderation',kind='callback',
+                    actor=9001,update_id=600,message_id=60,
+                    text='toggleBan_1001')
+                ensure('MOD_NOTICE' in latest['events'] and
+                       q(work,env,'SELECT step FROM users WHERE userid=1001')=='banned',
+                       'Newer signed moderator Ban not established')
+                if revoke:
+                    q(work,env,'UPDATE users SET isAdmin=0 WHERE userid=9002')
+                release.write_text('go')
+                stale=old.result(timeout=38)
+            finally:
+                release.write_text('go')
+        ensure(q(work,env,'SELECT step FROM users WHERE userid=1001')=='banned' and
+               len(target_moderation_rows(work,env))==1 and
+               target_moderation_rows(work,env)[0]['last_update_id']==600 and
+               not any('✅' in x or 'آزاد شدم' in x
+                       for x in stale['events']) and
+               not effects(stage),
+               'Older legacy Unban reversed newer Ban'+str(revoke))
+        passed.append('r3_legacy_unban_rejected_after_'+
+                      ('delegated_revocation' if revoke else 'newer_other_admin_ban'))
+
+    # Fresh private source and active delegated role retain the normal
+    # explicit Unban workflow, and the new target watermark is monotonic
+    # across TWO administrators, not just one actor's journal.
+    reset(work,env)
+    ban=call(work,env,stage,route='moderation',kind='callback',
+        actor=9001,update_id=600,message_id=60,text='toggleBan_1001')
+    start=call(work,env,stage,route='legacy_unban_start',kind='callback',
+        actor=9002,update_id=601,message_id=45,text='unbanUser')
+    ensure('MOD_NOTICE' in ban['events'] and
+           q(work,env,'SELECT step FROM users WHERE userid=9002')=='unbanUser' and
+           any('آزادش کنم' in x for x in start['events']),
+           'Fresh authenticated legacy Unban callback not armed')
+    done=call(work,env,stage,route='legacy_unban',kind='message',
+        actor=9002,update_id=602,message_id=62,text='1001')
+    ensure(q(work,env,'SELECT step FROM users WHERE userid=1001')=='none' and
+           q(work,env,'SELECT step FROM users WHERE userid=9002')=='none' and
+           any('✅' in x for x in done['events']) and
+           target_moderation_rows(work,env)[0]['last_update_id']==602,
+           'Fresh authorized Unban did not consume current target under journal')
+    passed.append('r3_fresh_source_verified_legacy_unban_still_works')
+
+    replay=call(work,env,stage,route='legacy_unban',kind='message',
+        actor=9002,update_id=602,message_id=62,text='1001',
+        stale_step='unbanUser')
+    ensure(q(work,env,'SELECT step FROM users WHERE userid=1001')=='none' and
+           not any('✅' in x for x in replay['events']),
+           'Legacy Unban replay claimed success')
+    passed.append('r3_legacy_unban_replay_denied')
+
+    # Unauthenticated/cached-role legacy start must not arm any privileged
+    # wizard. Old bot menu message_id may legitimately precede a newer
+    # update_id, so only event ordering is enforced.
+    for label,extra in [
+        ('missing_secret',{'missing_header':True}),
+        ('group',{'chat_type':'group'}),
+        ('mixed',{'kind':'mixed'}),
+        ('bot',{'is_bot':True}),
+        ('forged_actor',{'bound_actor':9001}),
+        ('revoked_delegate',{'cached_admin':1}),
+    ]:
+        reset(work,env)
+        if label=='revoked_delegate':
+            q(work,env,'UPDATE users SET isAdmin=0 WHERE userid=9002')
+        spec=dict(route='legacy_ban_start',kind='callback',actor=9002,
+                  update_id=620,message_id=42,text='banUser')
+        spec.update(extra)
+        bad=call(work,env,stage,**spec)
+        ensure(q(work,env,'SELECT step FROM users WHERE userid=9002')=='none' and
+               not moderation_rows(work,env) and
+               not any('شلوغی' in x for x in bad['events']),
+               'Legacy moderator start accepted invalid source '+label)
+        passed.append('r3_legacy_start_rejects_'+label)
+
+    # A revoked older text Ban cannot act on its cached role.
+    for kind,route in [('message','legacy_ban'),('callback','legacy_receipt_ban')]:
+        reset(work,env)
+        if kind=='message':
+            q(work,env,"UPDATE users SET step='banUser' WHERE userid=9002")
+        ready=stage/('r3-ban-ready-'+kind)
+        release=stage/('r3-ban-release-'+kind)
+        ready.unlink(missing_ok=True);release.unlink(missing_ok=True)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+            try:
+                old=pool.submit(call,work,env,stage,route=route,
+                    kind=kind,actor=9002,update_id=601,message_id=61,
+                    text='1001' if kind=='message' else 'banUserDirect_1001',
+                    mode='pause_before_route',
+                    cached_ready=str(ready),release_route=str(release))
+                wait_for(ready.exists,'Legacy Ban did not cache role')
+                q(work,env,'UPDATE users SET isAdmin=0 WHERE userid=9002')
+                release.write_text('go')
+                stale=old.result(timeout=38)
+            finally:
+                release.write_text('go')
+        ensure(q(work,env,'SELECT step FROM users WHERE userid=1001')=='none' and
+               not target_moderation_rows(work,env) and
+               not moderation_rows(work,env) and
+               not any('✅' in x or 'مسدودش کردم' in x or
+                       x=='EDIT_KEYS' for x in stale['events']),
+               'Revoked cached legacy '+route+' mutated target')
+        passed.append('r3_'+route+'_revoked_worker_denied')
+
+    # A new receipt Ban can commit a real state change, but replay and
+    # an unknown COMMIT must not create a second success/keyboard update.
+    reset(work,env)
+    signed=call(work,env,stage,route='legacy_receipt_ban',kind='callback',
+        actor=9002,update_id=700,message_id=45,text='banUserDirect_1001')
+    ensure(q(work,env,'SELECT step FROM users WHERE userid=1001')=='banned' and
+           len(target_moderation_rows(work,env))==1 and
+           target_moderation_rows(work,env)[0]['last_update_id']==700 and
+           any('✅' in x for x in signed['events']) and
+           'EDIT_KEYS' in signed['events'],
+           'Fresh authenticated receipt Ban did not commit and update notice')
+    passed.append('r3_receipt_ban_fresh_authenticated_transition')
+    old=call(work,env,stage,route='legacy_receipt_ban',kind='callback',
+        actor=9002,update_id=700,message_id=45,text='banUserDirect_1001')
+    ensure(not any('✅' in x for x in old['events']) and
+           'EDIT_KEYS' not in old['events'] and
+           target_moderation_rows(work,env)[0]['last_update_id']==700,
+           'Duplicate receipt Ban replay asserted success')
+    passed.append('r3_receipt_ban_source_replay_denied')
+
+    reset(work,env)
+    unknown=call(work,env,stage,route='legacy_receipt_ban',kind='callback',
+        actor=9002,update_id=710,message_id=46,
+        text='banUserDirect_1001',mode='moderation_commit_unknown')
+    ensure(q(work,env,'SELECT step FROM users WHERE userid=1001')=='banned' and
+           target_moderation_rows(work,env)[0]['last_update_id']==710 and
+           not any('✅' in x for x in unknown['events']) and
+           'EDIT_KEYS' not in unknown['events'],
+           'Lost receipt Ban COMMIT ACK reported success')
+    retry=call(work,env,stage,route='legacy_receipt_ban',kind='callback',
+        actor=9002,update_id=710,message_id=46,text='banUserDirect_1001')
+    ensure(q(work,env,'SELECT step FROM users WHERE userid=1001')=='banned' and
+           not any('✅' in x for x in retry['events']) and
+           'EDIT_KEYS' not in retry['events'],
+           'Lost ACK receipt Ban replay falsely reported success')
+    passed.append('r3_receipt_ban_unknown_commit_no_false_notice')
+
+    # Strict identity: duplicated target userid is never a valid Ban subject.
+    reset(work,env)
+    q(work,env,"INSERT INTO users(userid,name,username,refcode,wallet,date) "
+      "VALUES(1001,'Duplicate','duplicate','0',0,'1700000000')")
+    try:
+        rejected=call(work,env,stage,route='legacy_receipt_ban',kind='callback',
+            actor=9002,update_id=720,message_id=47,text='banUserDirect_1001')
+        ensure(q(work,env,"SELECT COUNT(*) FROM users WHERE userid=1001 "
+                 "AND step='banned'")=='0' and
+               not target_moderation_rows(work,env) and
+               not any('✅' in x for x in rejected['events']),
+               'Duplicate userid accepted for receipt Ban')
+    finally:
+        q(work,env,"DELETE FROM users WHERE username='duplicate' AND userid=1001")
+    passed.append('r3_legacy_target_nonunique_userid_denied')
+
+    # Newer signed moderator callback must outrank an older legitimate
+    # legacy decision across actors (and vice versa).
+    reset(work,env)
+    earlier=call(work,env,stage,route='legacy_receipt_ban',kind='callback',
+        actor=9002,update_id=650,message_id=35,text='banUserDirect_1001')
+    newer=call(work,env,stage,route='moderation',kind='callback',
+        actor=9001,update_id=651,message_id=34,text='toggleBan_1001')
+    ensure(any('✅' in x for x in earlier['events']) and
+           'MOD_NOTICE' in newer['events'] and
+           q(work,env,'SELECT step FROM users WHERE userid=1001')=='none' and
+           target_moderation_rows(work,env)[0]['last_update_id']==651,
+           'Newer signed moderation callback did not supersede legacy Ban')
+    passed.append('r3_newer_verified_moderation_outorders_legacy_ban')
+
+
 def main() -> None:
     ap=argparse.ArgumentParser()
     ap.add_argument('--run-disposable',action='store_true',required=True)
@@ -1286,6 +1528,7 @@ def main() -> None:
         verify_admin_ingress_and_legacy_manual(work,env,stage,passed)
         verify_audited_step_writers(work,env,stage,passed)
         verify_exemption_and_ban_freshness(work,env,stage,passed)
+        verify_r3_legacy_moderation(work,env,stage,passed)
 
         reset(work,env);prepare_final(work,env,stage)
         positive=volume(work,env,stage)
@@ -1747,6 +1990,7 @@ def main() -> None:
         'actual_manual_account_handler':True,
         'actual_channel_exemption_handler':True,
         'actual_legacy_main_menu':True,
+        'actual_legacy_moderation_transactions':True,
         'shared_real_service_seam_with_synthetic_adapter':True,
         'owned_mariadb_only':True,'real_telegram_or_marzban_calls':0,
         'tenant_migrations':0,'production_operations':0,

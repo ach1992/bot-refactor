@@ -1430,9 +1430,31 @@ def main():
             'exemption_existing_member_preserved_and_wizard_completed',
             'exemption_new_update_from_old_bot_menu_still_works',
             'moderation_new_update_from_old_bot_menu_still_works',
+            # R3: current banned CANCEL, cross-actor source ordering and
+            # revoked/stale legacy Ban/Unban/receipt transitions.
+            'r3_cancel_preserves_current_ban_primary',
+            'r3_cancel_preserves_current_ban_delegated',
+            'r3_cached_banned_cancel_does_not_cleanup',
+            'r3_legacy_unban_rejected_after_delegated_revocation',
+            'r3_legacy_unban_rejected_after_newer_other_admin_ban',
+            'r3_fresh_source_verified_legacy_unban_still_works',
+            'r3_legacy_unban_replay_denied',
+            'r3_legacy_start_rejects_missing_secret',
+            'r3_legacy_start_rejects_group',
+            'r3_legacy_start_rejects_mixed',
+            'r3_legacy_start_rejects_bot',
+            'r3_legacy_start_rejects_forged_actor',
+            'r3_legacy_start_rejects_revoked_delegate',
+            'r3_legacy_ban_revoked_worker_denied',
+            'r3_legacy_receipt_ban_revoked_worker_denied',
+            'r3_receipt_ban_fresh_authenticated_transition',
+            'r3_receipt_ban_source_replay_denied',
+            'r3_receipt_ban_unknown_commit_no_false_notice',
+            'r3_legacy_target_nonunique_userid_denied',
+            'r3_newer_verified_moderation_outorders_legacy_ban',
         }
         if not (direct_gift.get('complete') is True and
-                direct_gift.get('cases')>=132 and
+                direct_gift.get('cases')>=152 and
                 required_direct_gift.issubset(set(direct_gift.get('scenarios',[]))) and
                 direct_gift.get('real_bot_php_route') is True and
                 direct_gift.get('actual_global_cancel_fallback') is True and
@@ -1442,6 +1464,7 @@ def main():
                 direct_gift.get('actual_manual_account_handler') is True and
                 direct_gift.get('actual_channel_exemption_handler') is True and
                 direct_gift.get('actual_legacy_main_menu') is True and
+                direct_gift.get('actual_legacy_moderation_transactions') is True and
                 direct_gift.get('real_mysqli_original_schema') is True and
                 direct_gift.get('shared_real_service_seam_with_synthetic_adapter') is True and
                 direct_gift.get('owned_mariadb_only') is True and

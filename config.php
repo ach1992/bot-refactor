@@ -2742,6 +2742,11 @@ function handleToggleCallbacks($data, $chat_id, $message_id): bool {
         if ($m[1]==='Ban') {
             $before=(string)$targetRow['step'];
             $next=$before==='banned'?'none':'banned';
+            // Shared target chronology covers old text/receipt Ban and
+            // authorized numeric Unban across DIFFERENT administrators.
+            achbotModerationTargetJournal(
+                $connection,$targetId,$actorId,$update->update_id,
+                $message->message_id,$next==='banned'?'Ban':'Unban');
             $stmt=$connection->prepare('UPDATE users SET step=?
                 WHERE id=? AND userid=? AND step=?');
             if (!$stmt) throw new RuntimeException('moderation_ban_update_prepare');
@@ -2798,6 +2803,268 @@ function handleToggleCallbacks($data, $chat_id, $message_id): bool {
         error_log('admin_moderation_notice_unconfirmed');
     }
     return true;
+}
+
+
+/**
+ * Original-schema moderation provenance. users.userid and setting.type are
+ * not unique. Callers must lock the exact target PK before reading/writing a
+ * target watermark, and acquire all involved user PK locks before any
+ * consistent read in a transaction (including under REPEATABLE READ).
+ */
+function achbotModerationUniquePk(mysqli $db,int $userid): int {
+    if ($userid<=0) throw new RuntimeException('moderation_identity_invalid');
+    $stmt=$db->prepare('SELECT id FROM users WHERE userid=? LIMIT 2');
+    if (!$stmt) throw new RuntimeException('moderation_identity_prepare');
+    $stmt->bind_param('i',$userid);
+    $ok=$stmt->execute();
+    $rows=$ok?$stmt->get_result()->fetch_all(MYSQLI_ASSOC):[];
+    $stmt->close();
+    if (!$ok || count($rows)!==1 || (int)$rows[0]['id']<=0)
+        throw new RuntimeException('moderation_identity_ambiguous');
+    return (int)$rows[0]['id'];
+}
+
+function achbotModerationActorJournal(mysqli $db,int $actor,int $updateId,
+                                       int $messageId,string $action,int $target): void {
+    $type='ACHBOT_ADMIN_MOD_SOURCE_'.hash('sha256',(string)$actor);
+    $stmt=$db->prepare('SELECT id,value FROM setting WHERE type=? LIMIT 2');
+    if (!$stmt) throw new RuntimeException('moderation_actor_marker_prepare');
+    $stmt->bind_param('s',$type);
+    $ok=$stmt->execute();
+    $records=$ok?$stmt->get_result()->fetch_all(MYSQLI_ASSOC):[];
+    $stmt->close();
+    if (!$ok || count($records)>1)
+        throw new RuntimeException('moderation_actor_marker_ambiguous');
+    if ($records) {
+        $old=json_decode((string)$records[0]['value'],true,512,JSON_THROW_ON_ERROR);
+        if (!is_array($old) || ($old['version']??null)!==1 ||
+            ($old['actor_id']??null)!==$actor ||
+            !is_int($old['last_update_id']??null) ||
+            !is_int($old['last_message_id']??null) ||
+            $updateId<=$old['last_update_id'])
+            throw new RuntimeException('moderation_actor_source_stale');
+    }
+    $value=json_encode([
+        'version'=>1,'actor_id'=>$actor,'last_update_id'=>$updateId,
+        'last_message_id'=>$messageId,'action'=>$action,'target_userid'=>$target
+    ],JSON_THROW_ON_ERROR);
+    if ($records) {
+        $pk=(int)$records[0]['id'];$before=(string)$records[0]['value'];
+        $stmt=$db->prepare('UPDATE setting SET value=?
+            WHERE id=? AND type=? AND value=?');
+        if (!$stmt) throw new RuntimeException('moderation_actor_marker_update_prepare');
+        $stmt->bind_param('siss',$value,$pk,$type,$before);
+    } else {
+        $stmt=$db->prepare('INSERT INTO setting(type,value) VALUES(?,?)');
+        if (!$stmt) throw new RuntimeException('moderation_actor_marker_insert_prepare');
+        $stmt->bind_param('ss',$type,$value);
+    }
+    $ok=$stmt->execute();$changed=$stmt->affected_rows;$stmt->close();
+    if (!$ok || $changed!==1)
+        throw new RuntimeException('moderation_actor_marker_unconfirmed');
+}
+
+/**
+ * Cross-actor target chronology. Every BAN/UNBAN writer in this runtime
+ * participates, including the source-verified toggle callback. Global
+ * Telegram update_id, rather than a bot menu message_id, orders events.
+ */
+function achbotModerationTargetJournal(mysqli $db,int $target,int $actor,
+                                        int $updateId,int $messageId,
+                                        string $action): void {
+    $type='ACHBOT_ADMIN_TARGET_MOD_'.hash('sha256',(string)$target);
+    $stmt=$db->prepare('SELECT id,value FROM setting WHERE type=? LIMIT 2');
+    if (!$stmt) throw new RuntimeException('moderation_target_marker_prepare');
+    $stmt->bind_param('s',$type);
+    $ok=$stmt->execute();
+    $records=$ok?$stmt->get_result()->fetch_all(MYSQLI_ASSOC):[];
+    $stmt->close();
+    if (!$ok || count($records)>1)
+        throw new RuntimeException('moderation_target_marker_ambiguous');
+    if ($records) {
+        $old=json_decode((string)$records[0]['value'],true,512,JSON_THROW_ON_ERROR);
+        if (!is_array($old) || ($old['version']??null)!==1 ||
+            ($old['target_userid']??null)!==$target ||
+            !is_int($old['actor_id']??null) || $old['actor_id']<=0 ||
+            !is_int($old['last_update_id']??null) ||
+            !is_int($old['last_message_id']??null) ||
+            !in_array($old['action']??null,['Ban','Unban'],true) ||
+            $updateId<=$old['last_update_id'])
+            throw new RuntimeException('moderation_target_source_stale');
+    }
+    $value=json_encode([
+        'version'=>1,'target_userid'=>$target,'actor_id'=>$actor,
+        'last_update_id'=>$updateId,'last_message_id'=>$messageId,
+        'action'=>$action
+    ],JSON_THROW_ON_ERROR);
+    if ($records) {
+        $pk=(int)$records[0]['id'];$before=(string)$records[0]['value'];
+        $stmt=$db->prepare('UPDATE setting SET value=?
+            WHERE id=? AND type=? AND value=?');
+        if (!$stmt) throw new RuntimeException('moderation_target_marker_update_prepare');
+        $stmt->bind_param('siss',$value,$pk,$type,$before);
+    } else {
+        $stmt=$db->prepare('INSERT INTO setting(type,value) VALUES(?,?)');
+        if (!$stmt) throw new RuntimeException('moderation_target_marker_insert_prepare');
+        $stmt->bind_param('ss',$type,$value);
+    }
+    $ok=$stmt->execute();$changed=$stmt->affected_rows;$stmt->close();
+    if (!$ok || $changed!==1)
+        throw new RuntimeException('moderation_target_marker_unconfirmed');
+}
+
+/**
+ * Legacy Ban/Unban wizard start, private numeric completion and receipt Ban
+ * share an authenticated, current-role, source-ordered transaction boundary.
+ * This is invoked by existing bot.php includes only after its ingress/IP
+ * gates; no provider, payment or financial tables are ever modified here.
+ *
+ * Returns started | changed | already | rejected. Rejected and unknown COMMIT
+ * have NO success/cleanup notices; caller may display a generic rejection.
+ */
+function achbotLegacyModerationTransition(
+    mysqli $db,$update,int $actor,int $chat,int $message,
+    $cached,int $primary,string $operation,string $targetRaw=''
+): string {
+    if (!in_array($operation,['startBan','startUnban','ban','unban','receiptBan'],true))
+        return 'rejected';
+    $started=false;
+    try {
+        if (!function_exists('achbotWebhookIngressAuthenticated') ||
+            !achbotWebhookIngressAuthenticated() || $actor<=0 || $primary<=0 ||
+            !is_array($cached) || (int)($cached['userid']??0)!==$actor ||
+            (int)($cached['id']??0)<=0)
+            throw new RuntimeException('legacy_moderation_ingress_or_actor_invalid');
+        require_once __DIR__.'/src/Subscription/DirectGift.php';
+        $start=in_array($operation,['startBan','startUnban'],true);
+        $receipt=$operation==='receiptBan';
+        $bound=$start?($operation==='startBan'?'banUser':'unbanUser'):
+            ($receipt?'banUserDirect_'.$targetRaw:$targetRaw);
+        $source=achbotDirectGiftWebhook(
+            $update,$actor,$chat,$message,$bound,
+            ($start || $receipt)?'callback':'message');
+        $updateId=(int)$source['update_id'];
+        $messageId=(int)$source['message_id'];
+        if ($updateId<=0 || $messageId<=0)
+            throw new RuntimeException('legacy_moderation_source_invalid');
+        $action=($operation==='ban' || $receipt)?'Ban':'Unban';
+        $target=0;
+        if (!$start) {
+            if (preg_match('/\A[1-9][0-9]{0,18}\z/D',$targetRaw)!==1)
+                throw new RuntimeException('legacy_moderation_target_invalid');
+            $parsed=filter_var($targetRaw,FILTER_VALIDATE_INT,
+                ['options'=>['min_range'=>1,'max_range'=>PHP_INT_MAX]]);
+            if ($parsed===false)
+                throw new RuntimeException('legacy_moderation_target_overflow');
+            $target=$parsed;
+        }
+        // Pre-resolve nonunique userids before BEGIN. No consistent read
+        // precedes the unique-PK FOR UPDATE locks inside the transaction.
+        $actorPk=achbotModerationUniquePk($db,$actor);
+        $targetPk=$start?$actorPk:achbotModerationUniquePk($db,$target);
+        if ($actorPk!==(int)$cached['id'])
+            throw new RuntimeException('legacy_moderation_cached_pk_drift');
+        if (!$db->begin_transaction())
+            throw new RuntimeException('legacy_moderation_begin_failed');
+        $started=true;
+        $stmt=$db->prepare('SELECT id,userid,isAdmin,step FROM users
+            WHERE id IN (?,?) ORDER BY id FOR UPDATE');
+        if (!$stmt) throw new RuntimeException('legacy_moderation_lock_prepare');
+        $stmt->bind_param('ii',$actorPk,$targetPk);
+        $ok=$stmt->execute();
+        $rows=$ok?$stmt->get_result()->fetch_all(MYSQLI_ASSOC):[];
+        $stmt->close();
+        if (!$ok) throw new RuntimeException('legacy_moderation_lock_failed');
+        $actorRow=null;$targetRow=null;
+        foreach ($rows as $row) {
+            if ((int)$row['id']===$actorPk) $actorRow=$row;
+            if ((int)$row['id']===$targetPk) $targetRow=$row;
+        }
+        if (!$actorRow || !$targetRow ||
+            (int)$actorRow['userid']!==$actor ||
+            (int)$targetRow['userid']!==($start?$actor:$target) ||
+            ($actor!==$primary && (int)$actorRow['isAdmin']!==1))
+            throw new RuntimeException('legacy_moderation_role_revoked_or_target_drift');
+        foreach (array_unique([$actor,$target]) as $userid) {
+            if ($userid<=0) continue;
+            $expectedPk=$userid===$actor?$actorPk:$targetPk;
+            if (achbotModerationUniquePk($db,$userid)!==$expectedPk)
+                throw new RuntimeException('legacy_moderation_duplicate_userid');
+        }
+        $actorStep=(string)$actorRow['step'];
+        if ($start) {
+            if ($actorStep==='banned' ||
+                str_starts_with($actorStep,'achbotDirectGift') ||
+                str_starts_with($actorStep,'achbotExempt:'))
+                throw new RuntimeException('legacy_moderation_start_protected');
+            $next=$operation==='startBan'?'banUser':'unbanUser';
+            if ($next!==$actorStep) {
+                $stmt=$db->prepare('UPDATE users SET step=?
+                    WHERE id=? AND userid=? AND step=?');
+                if (!$stmt) throw new RuntimeException('legacy_moderation_start_prepare');
+                $stmt->bind_param('siis',$next,$actorPk,$actor,$actorStep);
+                $ok=$stmt->execute();$changed=$stmt->affected_rows;$stmt->close();
+                if (!$ok || $changed!==1)
+                    throw new RuntimeException('legacy_moderation_start_cas');
+            }
+            achbotModerationActorJournal(
+                $db,$actor,$updateId,$messageId,$operation,0);
+            $status='started';
+        } else {
+            $expected=$operation==='ban'?'banUser':
+                ($operation==='unban'?'unbanUser':null);
+            if (!$receipt && ($expected===null ||
+                $actorStep!==$expected ||
+                (string)($cached['step']??'')!==$expected))
+                throw new RuntimeException('legacy_moderation_step_stale');
+            $targetStep=(string)$targetRow['step'];
+            if (str_starts_with($targetStep,'achbotDirectGift') ||
+                str_starts_with($targetStep,'achbotExempt:'))
+                throw new RuntimeException('legacy_moderation_target_protected');
+            // Acquire and validate both source records while the exact
+            // actor/target PKs are held. A different moderator's newer Ban
+            // must defeat an older in-flight Unban, even after revocation.
+            achbotModerationActorJournal(
+                $db,$actor,$updateId,$messageId,$operation,$target);
+            achbotModerationTargetJournal(
+                $db,$target,$actor,$updateId,$messageId,$action);
+            $desired=$action==='Ban'?'banned':'none';
+            $status=$targetStep===$desired?'already':'changed';
+            if ($status==='changed') {
+                $stmt=$db->prepare('UPDATE users SET step=?
+                    WHERE id=? AND userid=? AND step=?');
+                if (!$stmt) throw new RuntimeException('legacy_moderation_target_prepare');
+                $stmt->bind_param('siis',$desired,$targetPk,$target,$targetStep);
+                $ok=$stmt->execute();$changed=$stmt->affected_rows;$stmt->close();
+                if (!$ok || $changed!==1)
+                    throw new RuntimeException('legacy_moderation_target_cas');
+            }
+            // A user can deliberately Ban their own privileged account.
+            // In that case the target transition is also their actor step;
+            // resetting the actor afterward would silently undo the Ban.
+            if (!$receipt && !($actor===$target && $desired==='banned')) {
+                $actorNext='none';
+                $stmt=$db->prepare('UPDATE users SET step=?
+                    WHERE id=? AND userid=? AND step=?');
+                if (!$stmt) throw new RuntimeException('legacy_moderation_actor_finish_prepare');
+                $stmt->bind_param('siis',$actorNext,$actorPk,$actor,$expected);
+                $ok=$stmt->execute();$changed=$stmt->affected_rows;$stmt->close();
+                if (!$ok || $changed!==1)
+                    throw new RuntimeException('legacy_moderation_actor_finish_cas');
+            }
+        }
+        if (!$db->commit())
+            throw new RuntimeException('legacy_moderation_commit_unknown');
+        $started=false;
+        return $status;
+    } catch (Throwable $error) {
+        if ($started) {
+            try {$db->rollback();} catch (Throwable $ignored) {}
+        }
+        error_log('legacy_moderation_source_or_commit_unconfirmed');
+        return 'rejected';
+    }
 }
 
 //---

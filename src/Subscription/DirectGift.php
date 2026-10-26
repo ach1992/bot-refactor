@@ -410,7 +410,9 @@ function achbotDirectGiftCancel(mysqli $db,array $source,int $primary,string $st
 function achbotDirectGiftGuardLegacyCancel(mysqli $db,int $actorId,$cached): bool {
     if ($actorId<=0 || !is_array($cached) ||
         !is_string($cached['step']??null) ||
-        str_starts_with($cached['step'],'achbotDirectGift') ||
+        ($cached['step']==='banned' ||
+         str_starts_with($cached['step'],'achbotDirectGift') ||
+         str_starts_with($cached['step'],'achbotExempt:')) ||
         !isset($cached['id'],$cached['userid']))
         return false;
     $id=achbotDirectGiftInt((string)$cached['id'],1,2147483647);
@@ -432,7 +434,9 @@ function achbotDirectGiftGuardLegacyCancel(mysqli $db,int $actorId,$cached): boo
             (int)$current['userid']!==$actorId ||
             !is_string($current['step']??null) ||
             $current['step']!==$expected ||
-            str_starts_with($current['step'],'achbotDirectGift')) {
+            $current['step']==='banned' ||
+            str_starts_with($current['step'],'achbotDirectGift') ||
+            str_starts_with($current['step'],'achbotExempt:')) {
             $db->rollback();
             return false;
         }
