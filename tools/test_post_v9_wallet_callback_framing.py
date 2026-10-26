@@ -181,6 +181,7 @@ def check() -> dict:
         (work / 'owned-finance-guard.php').write_text(bot_driver)
         config_path.write_text('<?php function check() {} '
                                'function handleToggleCallbacks(...$args) { return false; } '
+            'function achbotHandleChannelExemption(...$args) { return false; } '
                           'function checkSpam() { return false; }\n')
         try:
             actor = 12101

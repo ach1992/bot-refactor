@@ -3512,6 +3512,7 @@ def main():
         saved_config=config_path.read_bytes()
         config_path.write_text('<?php function check() {} '
             'function handleToggleCallbacks(...$args) { return false; } '
+            'function achbotHandleChannelExemption(...$args) { return false; } '
             'function checkSpam() { return false; }\n')
         try:
             before=snapshot(work,env)
