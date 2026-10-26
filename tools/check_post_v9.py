@@ -950,6 +950,72 @@ def main():
                 raise RuntimeError('Gateway rule financial route test used real side effects')
             reviewer_f1_f4[key]=evidence
 
+        # Issue #51 installed/payment-readiness boundary. This never touches
+        # installed tenants or real providers: native PHP runs with a REAL
+        # SELECT-only account against disposable original+sidecar MariaDB,
+        # and verifies all 102 source members against a synthetic manifest.
+        preflight_path=Path(tmp)/"payment-operator-readiness-preflight.json"
+        subprocess.run(
+            ["python3",str(ROOT/"tools/test_post_v9_payment_readiness.py"),
+             "--run-disposable","--report",str(preflight_path)],
+            cwd=ROOT,check=True,timeout=90,capture_output=True)
+        readiness=json.loads(preflight_path.read_text())
+        required_readiness={
+            'missing_ledger_and_settings_fail_closed',
+            'complete_migration_shapes_and_wallet_only_pass_no_sql_mutation',
+            'malformed_explicit_rules_block',
+            'unknown_legacy_audience_blocks',
+            'duplicate_payment_document_blocks',
+            'enabled_hosted_gateway_without_merchant_blocks',
+            'json_list_not_accepted_as_settings_object',
+            'usdt_only_manual_network_is_not_blocked_by_missing_trx',
+            'trx_only_manual_network_is_not_blocked_by_missing_usdt',
+            'shared_manual_switch_without_any_destination_blocks',
+            'non_string_merchant_credential_not_treated_as_configured',
+            'usdt_explicit_clear_overrides_legacy',
+            'usdt_invalid_explicit_rate',
+            'usdt_explicit_rate_below_minimum',
+            'usdt_explicit_rate_above_maximum',
+            'usdt_explicit_infinite_rate',
+            'usdt_explicit_rate_valid',
+            'usdt_explicit_rate_upper_boundary',
+            'usdt_legacy_bep20_default',
+            'usdt_valid_trc20',
+            'usdt_valid_erc20',
+            'usdt_valid_legacy_private_rate_unverified',
+            'usdt_invalid_rate_remains_blocking_when_trx_is_valid',
+            'legacy_off_wallet_only',
+            'empty_explicit_new_rule_denies_wallet',
+            'all_disabled_rules_deny_wallet',
+            'enabled_new_rule_allows_wallet',
+            'new_enabled_rule_overrides_legacy_off',
+            'legacy_off_when_new_document_omits_wallet',
+            'denied_wallet_with_other_potentially_available_method',
+            'gift_url_matches_source_checkout_validation',
+            'bank_details_match_checkout_length_guard',
+            'trx_rate_follows_source_nine_digit_limit',
+            'untrusted_manifest_cannot_add_private_member',
+            'helper_source_mismatch_with_manifest_blocks',
+            'unverified_source_identity_blocks',
+            'runtime_byte_drift_blocks',
+            'retired_runtime_member_blocks',
+            'partial_003_unique_index_missing_blocks',
+            'missing_required_final_authorization_index_blocks',
+            'database_connection_failure_sanitized',
+            'private_sentinel_and_financial_rows_untouched',
+        }
+        if not (readiness.get('complete') is True and
+                readiness.get('cases')==len(required_readiness) and
+                set(readiness.get('details',[]))==required_readiness and
+                readiness.get('readonly_sql_account_enforced') is True and
+                readiness.get('source_usdt_production_helper_compared') is True and
+                readiness.get('source_policy_production_helper_compared') is True and
+                readiness.get('source_members_verified')==102 and
+                readiness.get('all_eight_additive_shapes_exercised') is True and
+                readiness.get('no_real_provider_or_telegram_calls') is True and
+                readiness.get('installed_operator_acceptance') is False):
+            raise RuntimeError('Payment readiness read-only native preflight incomplete')
+
         # Independent review R1 (after N2): every FINAL cohort current read
         # must stay owner-indexed on MariaDB 10.11 rather than implicitly
         # choosing a broad pays/orders/users locking scan. Hold customer A's
@@ -2561,6 +2627,7 @@ def main():
                     "automatic_renewal_ledger":auto_renew,
                     "payment_ux_lifecycle":payment_ux,
                     "payment_browser_feedback":browser_feedback,
+                    "payment_readiness_preflight":readiness,
                     "checkout_serialization":checkout_race,
                     "customer_method_serialization":method_race,
                     "wallet_authorization_freshness":wallet_freshness,
@@ -2614,6 +2681,7 @@ def main():
                       "automatic_renewal_cases":auto_renew["cases"],
                       "payment_ux_cases":payment_ux["cases"],
                       "payment_browser_feedback_cases":browser_feedback["cases"],
+                      "payment_readiness_preflight_cases":readiness["cases"],
                       "checkout_serialization_cases":checkout_race["cases"],
                       "customer_method_serialization_cases":method_race["cases"],
                       "wallet_authorization_freshness_cases":wallet_freshness["cases"],

@@ -1,7 +1,10 @@
 # Dynamic gateway and customer-category eligibility (Issue #51, PR #82)
 
-**Status:** source-only development candidate; independently reviewed, merged,
-released, installed and live paid/provider smoke tests are distinct gates.
+**Status:** source integrated through PR #82 and subsequent PR #83
+merchant-editor hardening; actual installed/operator readiness, SQL migration,
+release and real paid/provider smoke tests remain separate gates. See the
+[read-only operator preflight](PAYMENT-READINESS-PREFLIGHT.md) before requesting
+any such acceptance.
 
 ## Scope and data model
 
@@ -151,7 +154,8 @@ real money or customer accounts.
 | Invalid/empty explicit rule | hidden | denied | fails closed |
 | Previously issued verified/manual evidence; rule then revoked | historic claim remains visible for review | **no new** issuance | no automatic refund/cancellation |
 
-Before installing, confirm the exact PR SHA and 101-file runtime ZIP, do an
+Before installing, verify the exact PR SHA and runtime ZIP member count and
+file hashes against the independently verified manifest, then perform an
 owned isolated test, verify secrets remain private, and obtain independent
 review, Owner merge approval and separately scoped operator/deployment approval.
 No SQL migration is part of this eligibility feature. See also
