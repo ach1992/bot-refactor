@@ -432,7 +432,7 @@ def main():
             "r3_stale_navigation_does_not_clobber_new_operator_step",
             "r3_delegated_admin_revocation_guarded_cancellation",
         }
-        if not (admin_wallet.get("complete") and admin_wallet.get("cases")==56
+        if not (admin_wallet.get("complete") and admin_wallet.get("cases")==len(required_admin_wallet)
                 and required_admin_wallet.issubset(admin_wallet.get("scenarios",[]))
                 and admin_wallet.get("real_php_workers")==2
                 and admin_wallet.get("disposable_db") is True
