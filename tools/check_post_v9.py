@@ -542,7 +542,10 @@ def main():
                 and text_catalog["native"]["current_byte_preserved_keys"]
                     +text_catalog["native"]["current_style_changes"]
                     +text_catalog["native"]["current_added_admin_keys"]==2526
-                and text_catalog.get("native",{}).get("current_native_template_assertions",0)>=2526
+                and text_catalog.get("native",{}).get("current_native_template_assertions")==3711
+                and text_catalog.get("native",{}).get("current_object_conversion_templates")==237
+                and text_catalog.get("native",{}).get("current_shared_multi_parameter_templates")==55
+                and text_catalog.get("native",{}).get("current_one_pass_templates")==237
                 and text_catalog.get("native",{}).get("current_non_ascii_digit_templates")==0
                 and text_catalog.get("presentation",{}).get("status")=="PASS"
                 and text_catalog.get("presentation",{}).get("editable_files")==2

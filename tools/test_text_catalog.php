@@ -47,6 +47,7 @@ function catalogEvaluate(string $_catalogExpression,array $_catalogBindings): st
 final class CatalogStringProbe {
     private int $calls=0;
     public function __toString(): string {return '<probe '.(++$this->calls).' {time} %s>';}
+    public function conversions(): int {return $this->calls;}
 }
 function catalogBindings(array $expressions,$sample): array {
     $bindings=[];$values=[];
@@ -205,6 +206,7 @@ $parameterExceptions=[
     'gateway.gateway_return.perform_payment_effect.text.ed588b3bc9'=>['inbound_id'],
 ];
 $seenChanges=[];$preserved=0;$currentChecks=0;$parameterChanges=0;
+$currentObjectTemplates=0;$currentMultiParameterObjects=0;$currentOnePassTemplates=0;
 foreach ($current as $key=>$entry) {
     $text=is_array($entry)?$entry['text']:$entry;
     $parameters=is_array($entry)?$entry['parameters']:[];
@@ -239,15 +241,30 @@ foreach ($current as $key=>$entry) {
     }
     // Every shipping template executes through the real loader with inert,
     // adversarial display values; substitutions remain one-pass and exact.
-    foreach ($parameters?[null,0,-77,"نام <&>\"' {time} %s"]:[null] as $sample) {
+    $slotPayload='<&> '.implode(' ',array_map(static fn($name)=>'{'.$name.'}',$parameters));
+    foreach ($parameters?[null,0,-77,"نام <&>\"' {time} %s",$slotPayload,new CatalogStringProbe()]:[null] as $sample) {
         $values=[];$replace=[];
+        $actualObject=$sample instanceof CatalogStringProbe?clone $sample:null;
+        $expectedObject=$sample instanceof CatalogStringProbe?clone $sample:null;
         foreach ($parameters as $parameter) {
-            $values[$parameter]=$sample;
-            $replace['{'.$parameter.'}']=(string)$sample;
+            // All parameters share one object per side, so each conversion's
+            // order and exact count are observable without sharing test state.
+            $values[$parameter]=$actualObject??$sample;
+            $replace['{'.$parameter.'}']=(string)($expectedObject??$sample);
         }
         $expected=$replace?strtr($text,$replace):$text;
-        if (achbotMessage($key,$values)!==$expected)
+        // The caller may bind names in any array order. Only declaration order
+        // controls conversions; replacement values never become new slots.
+        if (achbotMessage($key,array_reverse($values,true))!==$expected)
             throw new RuntimeException('current_native_template_failed:'.$key);
+        if ($actualObject!==null) {
+            if ($actualObject->conversions()!==count($parameters)||
+                $expectedObject->conversions()!==count($parameters))
+                throw new RuntimeException('current_object_conversion_count_failed:'.$key);
+            $currentObjectTemplates++;
+            if (count($parameters)>1) $currentMultiParameterObjects++;
+        }
+        if ($parameters&&$sample===$slotPayload) $currentOnePassTemplates++;
         $currentChecks++;
     }
 }
@@ -267,4 +284,7 @@ echo json_encode(['status'=>'PASS',
     'current_style_changes'=>count($changes),'current_retired_implementation_keys'=>count($retired),
     'current_added_admin_keys'=>count($added),'current_parameter_privacy_changes'=>$parameterChanges,
     'current_native_template_assertions'=>$currentChecks,'current_non_ascii_digit_templates'=>0,
+    'current_object_conversion_templates'=>$currentObjectTemplates,
+    'current_shared_multi_parameter_templates'=>$currentMultiParameterObjects,
+    'current_one_pass_templates'=>$currentOnePassTemplates,
 ],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR)."\n";
