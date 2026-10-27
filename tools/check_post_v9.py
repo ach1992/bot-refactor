@@ -241,7 +241,8 @@ def main():
             'review_r4_signed_expiry_beyond',
             'review_r4_signed_expiry_long_renew',
             'panel_neutral_dispatch_to_current_verified_marzban_adapter',
-            'unimplemented_future_panel_denied_without_remote_dispatch',
+            'pasarguard_missing_migration_identity_denied_without_remote_dispatch',
+            'unknown_provider_denied_without_remote_dispatch',
             'two_concurrent_distinct_edits_serialized_no_lost_increment',
             'physical_panel_alias_different_urls_group_lock_no_lost_increment',
             'missing_physical_panel_group_rejects_before_remote_dispatch',
@@ -509,7 +510,10 @@ def main():
                 and text_catalog.get("ascii_ui_violations")==0
                 and text_catalog.get("ascii_audit_negative_controls")==5
                 and text_catalog.get("migrated_machine_fields_or_sql_arguments")==0
-                and text_catalog.get("direct_http_guards")==27):
+                and text_catalog.get("direct_http_guards")==27
+                and text_catalog.get("native",{}).get("templates")==3065
+                and text_catalog.get("native",{}).get("interpolated_templates")==292
+                and text_catalog.get("native",{}).get("byte_assertions")==4824):
             raise RuntimeError("Central copy byte-equivalence, audience and HTTP guard proof incomplete")
         unit_path=Path(tmp)/"service-unit-guards.json"
         subprocess.run(["python3",str(ROOT/"tools/test_post_v9_service_unit_guards.py"),
