@@ -168,6 +168,7 @@ def prepare(work):
         target=stage/filename
         target.parent.mkdir(parents=True,exist_ok=True)
         shutil.copyfile(ROOT/filename,target)
+    shutil.copytree(ROOT/'messages',stage/'messages')
     (stage/'config.php').write_text(CONFIG)
     (stage/'baseInfo.php').write_text('<?php // disposable isolated harness\n')
     (stage/'run.php').write_text(gift.RUNNER)

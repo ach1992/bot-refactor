@@ -9,6 +9,7 @@ import argparse
 import concurrent.futures
 import json
 import os
+import shutil
 import subprocess
 import time
 from pathlib import Path
@@ -255,6 +256,7 @@ def setup(work: Path, env: dict) -> Path:
         dst=stage/rel
         dst.parent.mkdir(parents=True,exist_ok=True)
         dst.write_bytes((ROOT/rel).read_bytes())
+    shutil.copytree(ROOT/'messages',stage/'messages')
     bot=(ROOT/'bot.php').read_text()
     begin=bot.index('// ACHBOT_DIRECT_GIFT_ROUTE_BEGIN')
     end=bot.index('// ACHBOT_DIRECT_GIFT_ROUTE_END',begin)+len('// ACHBOT_DIRECT_GIFT_ROUTE_END')

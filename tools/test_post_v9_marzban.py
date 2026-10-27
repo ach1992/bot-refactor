@@ -40,6 +40,7 @@ def git(*args: str) -> bytes:
 def prepare(work: Path, stage: Path, candidate: bool) -> None:
     stage.mkdir(parents=True, exist_ok=False)
     if candidate:
+        shutil.copytree(ROOT / "messages", stage / "messages")
         config = (ROOT / "config.php").read_bytes()
         get_bytes = lambda path: (ROOT / path).read_bytes()
     else:
@@ -107,6 +108,7 @@ def safe_core_negatives() -> dict:
 def retired_sub_link(work: Path) -> dict:
     stage = work / "retired-sub-link"
     (stage / "settings").mkdir(parents=True, exist_ok=False)
+    shutil.copytree(ROOT / "messages", stage / "messages")
     (stage / "settings/subLink.php").write_bytes((ROOT / "settings/subLink.php").read_bytes())
     # Use a loopback socket without any source/DB/private credentials available.
     sock = socket.socket()
