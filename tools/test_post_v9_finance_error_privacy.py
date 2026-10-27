@@ -152,6 +152,11 @@ def seed(work, env, case):
         pay_type = f"INCREASE_DAY_{order_id}_1"
     else:
         pay_type = "RENEW_ACCOUNT"
+    # These supported current fixtures carry the immutable quantity shown in
+    # the quote. Dedicated service-unit guards retain legacy zero/unprovable
+    # add-on negatives; do not manufacture units from a mutable SKU at effect time.
+    quoted_volume=7 if case['name'].startswith('extension_volume') else 0
+    quoted_day=7 if case['name'].startswith('extension_day') else 0
     # Wallet checkout must be unclaimed. Manual operator checks simulate an
     # inherited (pre-ledger) receipt already delivered to the administrator;
     # a missing Telegram delivery ID cannot authorize remote effects.
@@ -166,7 +171,7 @@ def seed(work, env, case):
         (hash_id,payid,user_id,type,plan_id,server_id,order_id,
          volume,day,price,request_date,state,message_id,chat_id)
         VALUES ('privacyhash','',1001,'{pay_type}',7,2,
-                {order_id},0,0,100,{request_date},'{pay_state}',
+                {order_id},{quoted_volume},{quoted_day},100,{request_date},'{pay_state}',
                 {message_id},{chat_id})""")
     return order_id
 
@@ -365,15 +370,16 @@ def main():
         source = current / "src/Finance/Routes/Extensions.php"
         original = source.read_text()
         catalog=catalog_source.templates(current)
-        message_key=next(key for key,value in catalog.items()
-                         if value.startswith('⚠️ وضعیت درخواست مشخص نیست.') and ("achbotMessage('"+key+"'") in original)
-        message_anchor="sendMessage("+chr(92)+"achbotMessage('"+message_key+"'"
+        message_key=next((key for key,value in catalog.items()
+                          if value.startswith('⚠️ وضعیت درخواست مشخص نیست.') and ("achbotMessage('"+key+"'") in original),None)
+        message_anchor=("sendMessage("+chr(92)+"achbotMessage('"+message_key+"'"
+                        if message_key else 'sendMessage("⚠️ وضعیت درخواست مشخص نیست.')
+        poisoned_customer="sendMessage($e->getMessage() . "+message_anchor[len('sendMessage('):]
         mutator_cases = [
             ("operator_raw_exception",
              original.replace("achbotFinanceDiagnosticReason($e)", "$e->getMessage()")),
             ("customer_dynamic_exception",
-             original.replace(message_anchor,
-                              "sendMessage($e->getMessage() . "+chr(92)+"achbotMessage('"+message_key+"'")),
+             original.replace(message_anchor,poisoned_customer)),
         ]
         for label, poisoned in mutator_cases:
             if poisoned == original:

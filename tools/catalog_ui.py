@@ -94,6 +94,16 @@ def ui_candidates(root,paths):
                     span=(start,end,'variable')
                     if span not in seen:seen.add(span);ranges.append(span);queue.append(span)
         for i,t in enumerate(tokens):
+            if t['kind']=='T_INLINE_HTML':
+                raw=t['raw']
+                masked=re.sub(r'<(?:style|script)\b[^>]*>[\s\S]*?</(?:style|script)\s*>',lambda m:' '*len(m[0]),raw,flags=re.I)
+                for match in re.finditer(r'(?<=>)[^<>]+(?=<|$)|^[^<>]+(?=<|$)',masked):
+                    if re.search('[A-Za-z]',match[0]):
+                        result.append(t|{'start':t['start']+len(raw[:match.start()].encode()),
+                            'end':t['start']+len(raw[:match.end()].encode()),
+                            'line':t['line']+raw[:match.start()].count('\n'),
+                            'raw':raw[match.start():match.end()],'ui_origin':['html_text']})
+                continue
             if t['kind'] not in {'T_CONSTANT_ENCAPSED_STRING','interpolated'}:continue
             owners=[origin for a,b,origin in ranges if a<=i<b]
             if not owners:continue

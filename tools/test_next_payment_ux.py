@@ -83,14 +83,20 @@ def check():
         sql(w,e,"INSERT INTO orders_list (id,userid,token,transid,fileid,server_id,inbound_id,remark,expire_date,link,amount,status,date,agent_bought) VALUES "
            f"(41,1001,'fixture','','7',2,0,'fixture41',{future},'[]',100,1,'fixture',0),"
            f"(42,9002,'fixture','','7',2,0,'fixture42',{future},'[]',100,1,'fixture',1)")
-        sql(w,e,"INSERT INTO increase_plan(id,volume,price) VALUES (51,2.5,1000)")
+        sql(w,e,"INSERT INTO increase_plan(id,volume,price) VALUES (51,2,1000),(52,2.5,1000)")
         sql(w,e,"UPDATE users SET discount_percent='{\"normal\":10,\"plans\":{\"7\":25},\"servers\":{\"2\":40}}' WHERE userid=9002")
         path=app/'src/Finance/Routes/Extensions.php';current=path.read_bytes()
         path.write_bytes(subprocess.check_output(['git','show',BASE+':src/Finance/Routes/Extensions.php'],cwd=ROOT))
         assert event(call(w,e,app,route='volume',data='increaseAVolume41',baseline=True),'ALERT')
         path.write_bytes(current);r=call(w,e,app,route='volume',data='increaseAVolume41')
-        assert '2.5' in str(r) and '1,000' in str(r) and 'increaseVolumePlan41_51' in str(r)
+        assert '2 گیگ' in str(r) and '1,000' in str(r) and 'increaseVolumePlan41_51' in str(r)
+        assert 'increaseVolumePlan41_52' not in str(r),r
         checks.append('baseline_RED_missing_order_identity_then_actual_volume_entry_GREEN')
+        before=purchase.snapshot(w,e,DB)
+        invalid=call(w,e,app,route='volume',data='increaseVolumePlan41_52')
+        assert event(invalid,'ALERT') and not event(invalid,'SEND') and not event(invalid,'EDIT'),invalid
+        assert purchase.snapshot(w,e,DB)==before
+        checks.append('fractional_plan_hidden_and_forged_selection_has_no_draft_or_effect')
         r=call(w,e,app,route='volume',data='increaseAVolume42',actor=9002)
         assert '750' in str(r)
         r=call(w,e,app,route='volume',data='increaseAVolume42',actor=9002,discount_mode='off')
@@ -113,6 +119,7 @@ def check():
         checks.append('retired_provider_and_expired_entry_and_selection_fail_closed')
         r=call(w,e,app,route='volume',data='increaseVolumePlan42_51',actor=9002)
         assert event(r,'SEND') and sql(w,e,"SELECT price FROM pays WHERE user_id=9002 ORDER BY id DESC LIMIT 1")=='750'
+        assert sql(w,e,"SELECT volume FROM pays WHERE user_id=9002 ORDER BY id DESC LIMIT 1")=='2'
         draft=sql(w,e,'SELECT hash_id FROM pays WHERE user_id=9002 ORDER BY id DESC LIMIT 1')
         assert sql(w,e,'SELECT CONCAT(plan_id,\':\',server_id,\':\',order_id) FROM pays WHERE user_id=9002 ORDER BY id DESC LIMIT 1')=='7:2:42'
         r=call(w,e,app,route='status',data='prePayCheck_Increase_wallet_'+draft,actor=9002)

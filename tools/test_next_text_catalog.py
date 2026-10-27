@@ -12,6 +12,8 @@ def runtime_paths():
     return [p for p in paths if not p.startswith(('tools/','tests/','phpqrcode/','messages/')) and p!='baseInfo.example.php']
 def main():
     inventory=json.loads((ROOT/'tools/text_catalog_inventory.json').read_text())
+    legacy=command('git','show',inventory['baseline']+':settings/values.php')
+    check(hashlib.sha256(legacy).hexdigest()==inventory['values_sha256'],'legacy default source identity mismatch')
     reverse=0
     for path,record in inventory['files'].items():
         current=(ROOT/path).read_bytes()
@@ -57,9 +59,9 @@ def main():
     check(not unused,'orphan copy entries: '+str(unused))
     with tempfile.TemporaryDirectory(prefix='achbot-catalog-audit-') as scratch:
         fixture=pathlib.Path(scratch)/'fixture.php'
-        fixture.write_text("<?php $message='Receipt accepted'; $message.=' Reference: '.$id; sendMessage($message); $keys=[['text'=>'Continue','callback_data'=>'keep_protocol']]; sendPhoto('file.png','Visible caption');")
+        fixture.write_text("<?php $message='Receipt accepted'; $message.=' Reference: '.$id; sendMessage($message); $keys=[['text'=>'Continue','callback_data'=>'keep_protocol']]; sendPhoto('file.png','Visible caption'); ?><p>Visible page title</p>")
         found={t['raw'] for t in catalog_ui.ui_candidates(ROOT,[str(fixture)])}
-        check(found=={"'Receipt accepted'","' Reference: '","'Continue'","'Visible caption'"},'ASCII audit negative control failed: '+str(found))
+        check(found=={"'Receipt accepted'","' Reference: '","'Continue'","'Visible caption'",'Visible page title'},'ASCII audit negative control failed: '+str(found))
     import test_post_v9_customer_errors as privacy
     import catalog_source
     copy=catalog_source.templates(ROOT)
@@ -92,6 +94,6 @@ def main():
     finally:
         process.terminate();process.wait(timeout=5)
     print(json.dumps({'status':'PASS','source_equivalent_occurrences':reverse,'source_files':len(inventory['files']),
-      'catalog_keys':len(entries),'runtime_references':len(refs),'static_ui_violations':len(violations),'ascii_ui_violations':len(ascii_ui),'ascii_audit_negative_controls':4,'migrated_machine_fields_or_sql_arguments':0,
+      'catalog_keys':len(entries),'runtime_references':len(refs),'static_ui_violations':len(violations),'ascii_ui_violations':len(ascii_ui),'ascii_audit_negative_controls':5,'migrated_machine_fields_or_sql_arguments':0,
       'direct_http_guards':len(guarded),'native':native},ensure_ascii=False))
 if __name__=='__main__':main()
