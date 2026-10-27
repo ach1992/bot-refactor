@@ -205,7 +205,7 @@ function getUserOrderDetailKeys($id, $offset = 0){
     $canToggle=$serverType!=='pasarguard' || in_array($traffic['status']??null,['active','disabled'],true);
     $enableText=getOrderStatusText($traffic,$serverType,$buttonValues);
 
-    $presentation=$uncertain?['config_html'=>'','subscription_html'=>'','backup_html'=>'']:
+    $presentation=$uncertain?['config_html'=>'','subscription_html'=>'','backup_html'=>'','notice_html'=>'']:
         achbotOrderPresentation($GLOBALS['connection'],$order,$server,$botState);
     $configLinks=$presentation['config_html'];
     $subLink=$presentation['subscription_html'];
@@ -340,7 +340,7 @@ function getOrderDetailKeys($from_id, $id, $offset = 0){
     $canToggle=$serverType!=='pasarguard' || in_array($traffic['status']??null,['active','disabled'],true);
     $enableText=getOrderStatusText($traffic,$serverType,$buttonValues,$mainValues['config_doesnt_exist']);
 
-    $presentation=$uncertain?['config_html'=>'','subscription_html'=>'','backup_html'=>'']:
+    $presentation=$uncertain?['config_html'=>'','subscription_html'=>'','backup_html'=>'','notice_html'=>'']:
         achbotOrderPresentation($GLOBALS['connection'],$order,$server,$botState);
     $configLinks=$presentation['config_html'];
     $subLink=$presentation['subscription_html'];
