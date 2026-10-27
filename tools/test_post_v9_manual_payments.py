@@ -32,9 +32,9 @@ $paymentKeys=$spec['keys']??[
     'manualUsdtWallet'=>'0x1111111111111111111111111111111111111111',
     'manualUsdtNetwork'=>'BEP20','manualUsdtRateToman'=>'100000',
 ];
-$USDTPrice='100000';$USDTPriceagent='110000';
 $admin=9001;
 require_once $root.'/src/Finance/ReceiptHelpers.php';
+require_once $root.'/src/Panel/ProviderRuntime.php';
 function achbotSupportsPaymentSubject(...$args) {return true;}
 // Legacy fixture isolates bank-row semantics; R8 cases below delete both
 // fakes and load the actual Core.php permissions + SQL paths.
@@ -165,7 +165,6 @@ $update=json_decode(json_encode($spec['update']??['message'=>[
     'photo'=>[['file_id'=>'fixture-small'],['file_id'=>'fixture-photo-id']]
 ]]),false);
 $removeKeyboard=null;$cancelKey='{}';$botUrl='http://127.0.0.1:9/fixture/';$supportID='fixture_support';
-$USDTPrice='100000';$USDTPriceagent='110000';
 $botState=array_replace([
     'cartToCartState'=>'on','giftCardState'=>'on','manualUsdtState'=>'on',
     'nowPaymentWallet'=>'off','zarinpal'=>'off','nextpay'=>'off',
@@ -655,10 +654,11 @@ def check():
         cases.append('manual_usdt_disabled_or_bad_configuration_fails_closed')
 
         assert base('agentusdt','claim','manual_usdt',user=9002,keys={
-            'manualUsdtWallet':'TNPeeaaFB7K9cmo4uQpcU32zGK8G1NYqeL','manualUsdtNetwork':'TRC20'}) is True
+            'manualUsdtWallet':'TNPeeaaFB7K9cmo4uQpcU32zGK8G1NYqeL','manualUsdtNetwork':'TRC20',
+            'manualUsdtRateToman':'100000','usdtAgentRateToman':'110000'}) is True
         agent=base('agentusdt','read','manual_usdt',user=9002)
         assert 'TRC20' in agent['body'] and '0.91 USDT' in agent['body']
-        cases.append('agent_existing_price_and_trc20_validated')
+        cases.append('agent_explicit_settings_price_and_trc20_validated')
 
         # A concurrent checkout across all three manual choices is reserved
         # by the shared UNIQUE(pay_row_id) and locked local invoice row.

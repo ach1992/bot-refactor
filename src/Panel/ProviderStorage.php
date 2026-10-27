@@ -59,11 +59,13 @@ function achbotProviderRequireSchema(mysqli $db): void {
             throw new RuntimeException('provider_schema_missing_or_invalid');
     }
     $s=achbotProviderStatement($db,"SELECT TABLE_NAME,ENGINE FROM information_schema.TABLES
-        WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME IN ('provider_panels','provider_accounts','service_effects')");
+        WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME IN ('provider_panels','provider_accounts','service_effects',
+        'users','pays','orders_list','server_info','server_plans','server_config','setting')");
     $engines=[];
     try { $r=$s->get_result(); while ($v=$r->fetch_assoc()) $engines[$v['TABLE_NAME']]=$v['ENGINE']; }
     finally { $s->close(); }
-    foreach (['provider_panels','provider_accounts','service_effects'] as $table)
+    foreach (['provider_panels','provider_accounts','service_effects',
+              'users','pays','orders_list','server_info','server_plans','server_config','setting'] as $table)
         if (strcasecmp($engines[$table]??'','InnoDB')!==0)
             throw new RuntimeException('provider_schema_missing_or_invalid');
     foreach ([
@@ -192,17 +194,22 @@ function achbotProviderReserveAccount(mysqli $db,int $effectId,array $snapshot,s
         preg_match('/[-_@.]{2}/',$username) || !preg_match('/^achbot:v1:[a-f0-9]{32}$/D',$marker) ||
         $entitlement['group_ids']!==$snapshot['group_ids'])
         throw new RuntimeException('provider_reservation_invalid');
-    $effect=achbotProviderRow($db,'SELECT operation_id,remote_username,endpoint_sha256,effect_kind,provider_snapshot
+    $effect=achbotProviderRow($db,'SELECT operation_id,remote_username,endpoint_sha256,effect_kind,provider_snapshot,requested_bytes,requested_expire
         FROM service_effects WHERE id=? FOR UPDATE','i',[$effectId]);
     try {
         $pinned=achbotProviderCanonicalSnapshot(json_decode((string)($effect['provider_snapshot']??''),true,64,JSON_THROW_ON_ERROR));
     } catch (Throwable $e) { throw new RuntimeException('provider_effect_snapshot_missing'); }
     if (!$effect || $effect['effect_kind']!=='create' || $effect['remote_username']!==$username ||
         'achbot:v1:'.$effect['operation_id']!==$marker ||
-        $effect['endpoint_sha256']!==$snapshot['endpoint_sha256'] || $pinned!==$snapshot)
+        $effect['endpoint_sha256']!==$snapshot['endpoint_sha256'] || $pinned!==$snapshot ||
+        (string)$effect['requested_bytes']!==(string)$entitlement['data_limit'] ||
+        (string)$effect['requested_expire']!==(string)($entitlement['expire']??0))
         throw new RuntimeException('provider_effect_identity_mismatch');
     $json=json_encode($entitlement,JSON_THROW_ON_ERROR);
-    $old=achbotProviderAccountByEffect($db,$effectId);
+    // Locking current read is required after waiting for a competing effect
+    // lock: an earlier repeatable-read snapshot may predate its committed row.
+    $old=achbotProviderAccountRow(achbotProviderRow($db,
+        'SELECT * FROM provider_accounts WHERE effect_id=? FOR UPDATE','i',[$effectId]));
     if ($old!==null) {
         foreach (['provider','panel_id','instance_key','endpoint_sha256'] as $k)
             if ($old[$k]!==$snapshot[$k]) throw new RuntimeException('provider_reservation_conflict');

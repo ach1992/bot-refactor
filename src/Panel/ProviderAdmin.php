@@ -25,6 +25,7 @@ function achbotPgServerAdminKeys(array $info,array $config,int $offset): string 
         [['text'=>'ظرفیت: '.$info['ucount'],'callback_data'=>'editServerMax'.$id]],
         [['text'=>'ریمـارک: '.$info['remark'],'callback_data'=>'editServerRemark'.$id]],
         [['text'=>'Groups پیش‌فرض','callback_data'=>'pgServerGroups'.$id]],
+        [['text'=>'⚙️ نمایش لینک و QR','callback_data'=>'serverDisplay'.$id]],
         [['text'=>'اتصال و API key','callback_data'=>'pgConnections']],
         [['text'=>'بازگشت','callback_data'=>'nextServerPage'.$offset]]
     ]],JSON_UNESCAPED_UNICODE);
@@ -125,7 +126,7 @@ function achbotHandleProviderAdmin(): bool {
                 $s->bind_param('sissis',$title,$count,$remark,$flag,$pid,$groups);
                 if (!$s->execute() || $s->affected_rows!==1) throw new RuntimeException('pg_server_insert_unconfirmed');
                 $id=(int)$s->insert_id;$s->close();$url=$panel['api_url'];
-                $s=$connection->prepare("INSERT INTO server_config(id,panel_url,type) VALUES(?,?,'pasarguard')");
+                $s=$connection->prepare("INSERT INTO server_config(id,panel_url,ip,sni,header_type,request_header,response_header,security,tlsSettings,username,password,type) VALUES(?,?,'','','none','','','none','','','','pasarguard')");
                 $s->bind_param('is',$id,$url);
                 if (!$s->execute() || $s->affected_rows!==1) throw new RuntimeException('pg_server_config_unconfirmed');$s->close();
                 if (!$connection->commit()) throw new RuntimeException('pg_server_commit_unknown');

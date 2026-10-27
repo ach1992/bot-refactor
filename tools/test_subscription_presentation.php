@@ -28,7 +28,8 @@ $four = 'future+native://native.invalid:443#Fourth';
 $sub = 'https://subscription.invalid/native?token=a&mode=b';
 $all = [$one, $two, $three, $four];
 $native = ['links' => $all, 'subscription_url' => $sub];
-$legacy = ['legacy' => ['showIndexes' => [2, 4], 'linkIndices' => [2, 9]]];
+$legacy = ['mode' => 'marzban_legacy', 'legacy' => ['showIndexes' => [2, 4], 'linkIndices' => [2, 9]]];
+$legacyHidden = array_replace($legacy, ['policy'=>['show_configs'=>false,'show_subscription'=>false]]);
 
 // Genuine Marzban contracts have distinct view and delivery index bases.
 $v = present('marzban', $native, $on, $legacy);
@@ -42,30 +43,30 @@ same(present('marzban', ['links' => array_slice($all, 0, 3)], $on, $legacy)['lin
     array_slice($all, 0, 3), 'marzban_small_view_ignores_indexes');
 same(present('marzban', ['links' => [$one, $two]], $on, $legacy, 'delivery')['qr_link'],
     $two, 'marzban_purchase_small_uses_second');
-same(present('marzban', ['links' => [$one]], $on, [], 'delivery')['qr_link'],
+same(present('marzban', ['links' => [$one]], $on, $legacy, 'delivery')['qr_link'],
     $one, 'marzban_purchase_one_uses_first');
-same(present('marzban', $native, $off, $legacy, 'delivery')['qr_link'],
+same(present('marzban', $native, $off, $legacyHidden, 'delivery')['qr_link'],
     $one, 'marzban_purchase_hidden_sub_many_falls_back_first');
-$hidden = present('marzban', $native, $off, $legacy);
+$hidden = present('marzban', $native, $off, $legacyHidden);
 same($hidden['config_html'], '', 'marzban_config_state_hides_inline_only');
 same($hidden['qr_config_links'], $all, 'marzban_config_state_preserves_qr_data');
-same(present('marzban', $native, $on, ['legacy' => ['hideConnectLinkForMarzban' => true]])['qr_config_links'],
+same(present('marzban', $native, $on, ['mode' => 'marzban_legacy', 'legacy' => ['hideConnectLinkForMarzban' => true]])['qr_config_links'],
     $all, 'marzban_hide_connect_keeps_qr');
-same(present('marzban', ['links' => [$one, $one]], $on)['qr_config_links'],
+same(present('marzban', ['links' => [$one, $one]], $on, $legacy)['qr_config_links'],
     [$one, $one], 'marzban_legacy_keeps_duplicates');
 $many = ['links' => array_fill(0, 11, $one), 'subscription_url' => $sub];
-same(present('marzban', $many, $on, ['legacy' => ['hideConfigIfMany' => true]], 'delivery')['links'],
+same(present('marzban', $many, $on, ['mode' => 'marzban_legacy', 'legacy' => ['hideConfigIfMany' => true]], 'delivery')['links'],
     [], 'marzban_hide_delivery_above_ten');
-same(present('marzban', ['subscription_url' => $sub], $on, [], 'delivery')['links'],
+same(present('marzban', ['subscription_url' => $sub], $on, ['mode'=>'marzban_legacy'], 'delivery')['links'],
     [$sub], 'marzban_no_configs_delivery_subscription_fallback');
-same(present('marzban', [], $off, [], 'delivery')['qr_link'], '', 'marzban_empty_no_qr');
+same(present('marzban', [], $off, $legacy, 'delivery')['qr_link'], '', 'marzban_empty_no_qr');
 check(!str_contains(present('marzban', [], $off, [], 'delivery')['config_html'], '<code>'),
     'marzban_empty_no_fabricated_config');
 
 // PG never adopts the legacy index settings; native URIs remain unchanged.
-same(present('pasarguard', $native, $on, $legacy)['links'], $all, 'pg_ignores_legacy_positions');
+same(present('pasarguard', $native, $on, ['legacy'=>$legacy['legacy']])['links'], $all, 'pg_ignores_legacy_positions');
 same(present('pasarguard', $native, $on)['qr_link'], $sub, 'pg_default_native_subscription_qr');
-same(present('pasarguard', $native, ['subLinkState' => 'off'])['qr_link'],
+same(present('pasarguard', $native, ['subLinkState' => 'off'], ['policy'=>['show_subscription'=>false]])['qr_link'],
     $one, 'pg_no_subscription_uses_selected_config');
 $policy = ['policy' => ['selectors' => [['protocol' => 'TROJAN'], ['name' => 'Fast']]]];
 $s = present('pasarguard', $native, $on, $policy);
@@ -145,7 +146,7 @@ check(str_contains($safe['config_html'], '&amp;type=ws') &&
     !str_contains($safe['config_html'], '&type=ws'), 'native_query_html_escaped');
 check(str_contains($safe['subscription_html'], 'token=a&amp;mode=b'), 'subscription_html_escaped');
 same(substr_count($safe['backup_html'], '<code>'), 1, 'backups_validated_deduplicated');
-same(present('pasarguard', ['backup_urls' => ['https://backup.invalid/x']], $off)['backup_html'],
+same(present('pasarguard', ['backup_urls' => ['https://backup.invalid/x']], $off, ['policy'=>['show_subscription'=>false]])['backup_html'],
     '', 'backup_respects_subscription_visibility');
 $msg = configMessage("STATE NAME\n🔌 لینک تکی کانفیگ:\nCONNECT-LINK\nSUB-LINK",
     '<enabled>', 'NAME<&SUB-LINK', $safe['config_html'], $safe['subscription_html'], '');
@@ -160,30 +161,20 @@ check($unavailable['missing_links'] && $unavailable['notice_html'] !== ''
     && !preg_match('/pasarguard|marzban|SQL|API|links_unavailable|invalid_policy/i',
         $unavailable['notice_html']), 'safe_customer_unavailable_notice');
 
-// Load the real compatibility wrappers without config.php bootstrap/network.
-$source = file_get_contents(dirname(__DIR__) . '/config.php');
-$begin = strpos($source, 'function buildSubscriptionPresentation(');
-$end = strpos($source, 'function getProtocolNamesRow(', $begin);
-check($begin !== false && $end !== false, 'wrapper_source_present');
-eval(str_replace('__DIR__', var_export(dirname(__DIR__), true),
-    substr($source, $begin, $end - $begin)));
-$showIndexes = [2, 4]; $linkIndices = [2, 9];
-$hideConfigIfMany = false; $hideConnectLinkForMarzban = false;
-$subscriptionPresentation = ['pasarguard' => ['selectors' => [['protocol' => 'trojan']]]];
-same(buildSubscriptionPresentation('pasarguard', $native, $on)['links'], [$two],
-    'per_bot_provider_wrapper_applies_policy');
-same(buildSubscriptionPresentation('marzban', $native, $on)['links'], [$two, $four],
-    'provider_policy_does_not_bleed_into_other_provider');
-same(buildConfigLinks($all, $on, [1, 3]),
-    '<code>' . htmlspecialchars($one, ENT_QUOTES, 'UTF-8') . "</code>\n\n<code>$three</code>",
-    'legacy_view_wrapper_honors_explicit_one_based_input');
-same(buildSubLink('pasarguard', 'https://panel.invalid', '', 'token', $on), '',
-    'legacy_url_helper_does_not_invent_pg_url');
-
-// The real delivery function accepts native objects/arrays and uses no DB.
-function achbotSupportsPanel($provider) {
-    return in_array($provider, ['marzban', 'pasarguard'], true);
-}
+// Real database resolver/wrapper/delivery coverage lives in test_server_display_settings.py.
+$largeNative = ['links' => array_map(static fn($i) => 'vless://native.invalid/'.$i, range(1, 80)),
+    'subscription_url' => $sub];
+$bounded = present('pasarguard', $largeNative, $on, ['policy'=>['max_links'=>1000]]);
+check(count($bounded['links']) === 10 && count($bounded['qr_config_links']) === 10
+    && $bounded['limited'] && $bounded['notice_html'] !== '', 'bounded_native_configs_and_qr_notice');
+check(strlen($bounded['config_html'].$bounded['subscription_html'].$bounded['backup_html']) <= 2200,
+    'telegram_link_text_budget');
+$largeUri = 'vless://native.invalid/' . str_repeat('a', 2000);
+$bounded = present('pasarguard', ['links'=>[$largeUri,$one], 'subscription_url'=>$sub], $on);
+check(strlen($bounded['config_html'].$bounded['subscription_html']) <= 2200
+    && !str_contains($bounded['config_html'], substr($largeUri,0,1000).'&'),
+    'whole_uri_display_budget_never_rewrites_credentials');
+function achbotSupportsPanel($provider) { return in_array($provider, ['marzban','pasarguard'], true); }
 $events = [];
 $photoOk = true; $textOk = true; $photoThrows = false;
 function sendMessage(...$args) {
@@ -206,42 +197,7 @@ class QRcode {
 require_once dirname(__DIR__) . '/buy_helpers.php';
 $temp = sys_get_temp_dir() . '/achbot-presentation-' . bin2hex(random_bytes(7));
 mkdir($temp, 0700);
-function delivery($provider, $response, $state, $indices = [], $hide = false, $send = false): array {
-    global $temp;
-    return buildLinksAndSendQr($provider, ['panel_url' => 'https://panel.invalid',
-        'sub_links' => 'https://backup.invalid'], $state, '', 1, 'stable-id', '',
-        'fixture<&', 0, '', 0, '', '', '', '', $response, 1234, 2, 30, [],
-        $indices, $hide, '', $temp, $send);
-}
 try {
-    $subscriptionPresentation = [];
-    $m = delivery('marzban', (object)['sub_link' => '/sub/native-token', 'vray_links' => $all],
-        $on, [2, 9]);
-    same([$m[0], $m[2]], ['native-token', 'native-token'], 'marzban_delivery_tuple_token');
-    check(str_contains($m[3], htmlspecialchars($three, ENT_QUOTES, 'UTF-8'))
-        && str_contains($m[3], 'fixture&lt;&amp;'), 'real_marzban_delivery_text_safe');
-    same($m[5], 'https://panel.invalid/sub/native-token', 'real_marzban_delivery_qr_policy');
-    $pg = delivery('pasarguard', (object)['links' => [$one, $two], 'subscription_url' => $sub], $on);
-    same(json_decode($pg[1], true), [$one, $two], 'real_pg_persists_native_links');
-    same([$pg[0], $pg[2]], ['', 'stable-id'], 'real_pg_no_invented_vendor_token');
-    check(str_contains($pg[3], htmlspecialchars($one, ENT_QUOTES, 'UTF-8'))
-        && !str_contains($pg[3], 'https://panel.invalid')
-        && !str_contains($pg[3], 'https://backup.invalid'), 'real_pg_opaque_native_delivery_no_marzban_reconstruction');
-    $pgArray = delivery('pasarguard', ['links' => [$one], 'subscription_url' => $sub], $on);
-    same($pgArray[5], $sub, 'native_array_result_supported');
-    $subscriptionPresentation = ['pasarguard' => ['selectors' => [['protocol' => 'trojan']],
-        'qr' => 'first_config']];
-    $pgPolicy = delivery('pasarguard', (object)['links' => [$one, $two]], $on);
-    same($pgPolicy[5], $two, 'real_delivery_uses_explicit_selector_qr');
-    check(!str_contains($pgPolicy[3], 'vless://'), 'real_delivery_does_not_leak_unselected_config');
-    $subscriptionPresentation = [];
-    $empty = delivery('pasarguard', (object)[], $on);
-    check(str_contains($empty[3], 'دوباره بررسی کنید') && $empty[5] === ''
-        && !preg_match('/pasarguard|marzban|SQL|API|links_unavailable/i', $empty[3]),
-        'real_empty_delivery_customer_next_step_no_internal_reason');
-    $events = [];
-    delivery('pasarguard', (object)[], $on, [], false, true);
-    same($events, ['text'], 'empty_delivery_no_empty_qr_effect');
     $events = [];
     check(sendQrFromLink('', 'fixture', '{}', '', 1234, '', $temp),
         'intentional_no_qr_delivery_needs_only_text_ack');
@@ -266,4 +222,4 @@ try {
     foreach (glob($temp . '/*') as $file) unlink($file);
     rmdir($temp);
 }
-echo "PASS subscription presentation: $checks checks; real renderer/wrappers/delivery; no DB/network\n";
+echo "PASS subscription presentation: $checks checks; real renderer/transport; no DB/network\n";

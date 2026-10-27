@@ -203,6 +203,36 @@ function achbotManualTronAddressValid(string $wallet): bool {
     return hash_equals($wallet, $canonical);
 }
 
+/** Validated explicit bot-setting rate; no private or network fallback. */
+function achbotUsdtRateValue($raw): ?float {
+    if ((!is_string($raw) && !is_int($raw) && !is_float($raw)) ||
+        !is_numeric($raw)) return null;
+    $rate=(float)$raw;
+    return is_finite($rate) && $rate>=100 && $rate<=1000000000 ? $rate : null;
+}
+
+/** A cleared optional agent override deliberately reuses the normal rate. */
+function achbotUsdtRate(bool $agent=false, ?array $keys=null): ?float {
+    $keys=$keys ?? (is_array($GLOBALS['paymentKeys']??null) ? $GLOBALS['paymentKeys'] : []);
+    if ($agent && array_key_exists('usdtAgentRateToman',$keys) &&
+        $keys['usdtAgentRateToman']!=='')
+        return achbotUsdtRateValue($keys['usdtAgentRateToman']);
+    return achbotUsdtRateValue($keys['manualUsdtRateToman']??null);
+}
+
+/** Quote/menu role comes from the actual account, never callback or cached UI. */
+function achbotUsdtRateForUser(mysqli $db,int $userId): ?float {
+    if ($userId<=0) return null;
+    try {
+        $stmt=$db->prepare('SELECT is_agent FROM users WHERE userid=? LIMIT 2');
+        if (!$stmt) return null;
+        $stmt->bind_param('i',$userId);
+        if (!$stmt->execute()) { $stmt->close(); return null; }
+        $rows=$stmt->get_result()->fetch_all(MYSQLI_ASSOC);$stmt->close();
+        return count($rows)===1 ? achbotUsdtRate((int)$rows[0]['is_agent']===1) : null;
+    } catch (Throwable $ignored) { return null; }
+}
+
 /**
  * All available manual-crypto destinations are independent. The existing
  * manualUsdtNetwork/manualUsdtWallet pair remains a read-compatible fallback
@@ -212,7 +242,7 @@ function achbotManualTronAddressValid(string $wallet): bool {
  * screenshot nor an operator click is automatic blockchain settlement proof.
  */
 function achbotManualUsdtConfiguration(?string $network = null): ?array {
-    global $paymentKeys, $USDTPrice, $USDTPriceagent;
+    global $paymentKeys;
     $keys = is_array($paymentKeys ?? null) ? $paymentKeys : [];
     if ($network === null) {
         $network = (string)($keys['manualUsdtNetwork'] ?? 'BEP20');
@@ -224,19 +254,9 @@ function achbotManualUsdtConfiguration(?string $network = null): ?array {
         : ((string)($keys['manualUsdtNetwork'] ?? 'BEP20') === $network
             ? trim((string)($keys['manualUsdtWallet'] ?? '')) : '');
     if (!achbotManualUsdtWalletValid($wallet, $network)) return null;
-    $rawRate = $keys['manualUsdtRateToman'] ?? null;
-    // Explicitly set but invalid rates must never fall back silently.
-    if ($rawRate !== null && $rawRate !== '' &&
-        (!is_numeric($rawRate) || !is_finite((float)$rawRate) ||
-         (float)$rawRate <= 0)) return null;
-    $override = $rawRate !== null && $rawRate !== '';
-    $rate = $override ? (float)$rawRate :
-        (isset($USDTPrice) && is_numeric($USDTPrice) ? (float)$USDTPrice : 0);
-    if (!is_finite($rate) || $rate < 100 || $rate > 1000000000) return null;
-    $agentRate = $override ? $rate :
-        (isset($USDTPriceagent) && is_numeric($USDTPriceagent)
-         ? (float)$USDTPriceagent : 0);
-    if (!is_finite($agentRate) || $agentRate <= 0) $agentRate = $rate;
+    $rate=achbotUsdtRate(false,$keys);
+    $agentRate=achbotUsdtRate(true,$keys);
+    if ($rate===null && $agentRate===null) return null;
     return ['network'=>$network, 'wallet'=>$wallet,
             'rate'=>$rate, 'agent_rate'=>$agentRate];
 }
@@ -261,12 +281,14 @@ function achbotManualTrxConfiguration(): ?array {
  * share the existing manual photo/approval pipeline. A claimed quote is
  * permanent even when admin settings change later.
  */
-function achbotManualCryptoOptions(): array {
-    global $botState;
+function achbotManualCryptoOptions(?int $userId=null): array {
+    global $botState, $connection;
     if (($botState['manualUsdtState'] ?? 'off') !== 'on') return [];
     $available = [];
+    $rateUsable=$userId===null || achbotUsdtRateForUser($connection,$userId)!==null;
     foreach (['BEP20'=>'b','TRC20'=>'c','ERC20'=>'e'] as $network=>$tag) {
-        if (achbotManualUsdtConfiguration($network) !== null) {
+        if (achbotManualUsdtConfiguration($network) !== null &&
+            $rateUsable) {
             $available[$tag] = ['provider'=>'manual_usdt','network'=>$network,
                                 'label'=>'💎 USDT — '.$network];
         }
@@ -278,8 +300,8 @@ function achbotManualCryptoOptions(): array {
     return $available;
 }
 
-function achbotManualCryptoEnabled(): bool {
-    return achbotManualCryptoOptions() !== [];
+function achbotManualCryptoEnabled(?int $userId=null): bool {
+    return achbotManualCryptoOptions($userId) !== [];
 }
 
 /** No implicit recipient or gift seller: invalid settings disable initiation. */
@@ -1425,13 +1447,9 @@ function achbotManualClaim(mysqli $connection, array $payInfo, string $method, i
                 $connection->rollback();
                 return false;
             }
-            $rate = $config['rate'];
-            $agentStmt = $connection->prepare('SELECT is_agent FROM users WHERE userid=? LIMIT 1');
-            $agentStmt->bind_param('i', $userId);
-            $agentStmt->execute();
-            $agent = $agentStmt->get_result()->fetch_assoc();
-            $agentStmt->close();
-            if ((int)($agent['is_agent'] ?? 0) === 1) $rate = $config['agent_rate'];
+            $rate=$method==='manual_trx' ? $config['rate']
+                : achbotUsdtRateForUser($connection,$userId);
+            if ($rate===null) { $connection->rollback(); return false; }
             $precision = $method === 'manual_trx' ? 6 : 2;
             $factor = $method === 'manual_trx' ? 1000000 : 100;
             $rawQuote=$price/$rate;
@@ -2194,7 +2212,7 @@ function achbotAutoRenewSchemaState(mysqli $db): string {
 /** Never infer physical panel identity from URLs or credentials. */
 function achbotAutoRenewSameAccount(mysqli $db, int $serverA, int $serverB): bool {
     return $serverA>0 && $serverB>0 &&
-        ($serverA===$serverB || achbotSameMarzbanPanel($db,$serverA,$serverB));
+        ($serverA===$serverB || achbotSameProviderPanel($db,$serverA,$serverB));
 }
 
 /**

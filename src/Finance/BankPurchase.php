@@ -144,7 +144,7 @@ function achbotAutoBankFinishBuySub(mysqli $db, array $pay, array $lines): bool 
  */
 function achbotAutoBankProvisionBuySub(
     mysqli $db, array $pay, array $botState, array $buttonValues,
-    array $linkIndices, bool $hideConfigIfMany, string $botUrl
+    array $unusedLinkIndices, bool $unusedHideConfigIfMany, string $botUrl
 ): array {
     achbotEffectRequireAutocommit($db);
     $payId=(int)($pay['id']??0); $owner=(int)($pay['user_id']??0);
@@ -228,11 +228,12 @@ function achbotAutoBankProvisionBuySub(
             (string)$p['protocol'],$remark,$port,(string)$p['net_type'],0,
             (int)$p['rahgozar'],(string)$p['custom_path'],
             (string)$p['custom_port'],(string)$p['custom_sni'],
-            $response,$owner,$volume,$days,$buttonValues,$linkIndices,
-            $hideConfigIfMany,'',null,false
+            $response,$owner,$volume,$days,$buttonValues,[],
+            false,'',null,false
         );
         if (!is_string($token) || ($p['panel_type']==='marzban' && $token==='') ||
-            !is_string($qr) || $qr==='' || !is_string($links) || $links==='')
+            !is_string($qr) || !is_string($caption) || trim($caption)==='' ||
+            !is_string($links) || $links==='')
             throw new RuntimeException('bank_buy_links_missing');
         $lines[]=['effect_id'=>$effectId,'remark'=>$remark,'volume'=>$volume,
             'days'=>$days,'token'=>$token,'uniqid'=>$uuid?:$uniqid,

@@ -88,8 +88,6 @@ def has(data: dict, name: str, status: str, code: str | None = None) -> bool:
 SOURCE_USDT_DRIVER = r"""
 $root=$argv[1];
 $GLOBALS['paymentKeys']=json_decode($argv[2],true,512,JSON_THROW_ON_ERROR);
-$GLOBALS['USDTPrice']=1000;
-$GLOBALS['USDTPriceagent']=1000;
 require $root.'/src/Finance/ReceiptHelpers.php';
 $available=[];
 foreach (['BEP20','TRC20','ERC20'] as $network)
@@ -201,7 +199,7 @@ def main() -> dict:
         require(has(result,'current_core_tables','PASS'), 'current_core_tables_pass')
         require(has(result,'schema_010','INFO'), 'cleanup_optional')
         require(has(result,'schema_011','INFO','optional_pasarguard_not_configured'), 'pg_optional_for_marzban')
-        statement(d, "UPDATE server_config SET type='pasarguard' WHERE id=2;")
+        statement(d, "INSERT INTO server_config(id,panel_url,ip,sni,header_type,request_header,response_header,security,tlsSettings,type,username,password) VALUES(2,'https://fixture.invalid','','','none','','','none','{}','pasarguard','','');")
         code, result, _ = report_run(d)
         require(code==2 and has(result,'schema_011','BLOCK','pasarguard_schema_required'), 'pg_requires_011')
         statement(d, "UPDATE server_config SET type='marzban' WHERE id=2;")
@@ -256,7 +254,7 @@ def main() -> dict:
         # One enabled manual network with the other intentionally absent is
         # legal: the shared switch does not require BOTH assets to be offered.
         only_usdt = dict(state, walletState='off', manualUsdtState='on')
-        seed(d, only_usdt, {'manualUsdtWalletBEP20':'0x' + 'a'*40})
+        seed(d, only_usdt, {'manualUsdtWalletBEP20':'0x' + 'a'*40,'manualUsdtRateToman':'1000'})
         code, result, _ = report_run(d)
         require(code == 0 and has(result,'method_manual_trx','WARN') and
                 result['methods']['manual_trx']['local_configuration']=='not_offered',
@@ -312,10 +310,14 @@ def main() -> dict:
               'manualUsdtRateToman':'1000'},True,False),
             ('usdt_valid_erc20',
              {'manualUsdtWalletERC20':addr,'manualUsdtRateToman':'1000'},True,False),
-            ('usdt_valid_legacy_private_rate_unverified',
-             {'manualUsdtWalletBEP20':addr},True,True),
+            ('usdt_missing_explicit_settings_rate',
+             {'manualUsdtWalletBEP20':addr},False,False),
+            ('usdt_cleared_explicit_settings_rate',
+             {'manualUsdtWalletBEP20':addr,'manualUsdtRateToman':''},False,False),
+            ('usdt_agent_only_settings_rate',
+             {'manualUsdtWalletBEP20':addr,'usdtAgentRateToman':'2000'},True,False),
         )
-        for label, money_keys, expected, private_rate in source_cases:
+        for label, money_keys, expected, _ in source_cases:
             require(source_usdt(money_keys) is expected,'source_'+label)
             seed(d,only_usdt,money_keys)
             code,result,raw=report_run(d)
@@ -324,14 +326,42 @@ def main() -> dict:
                     'method_'+label)
             require(has(result,'method_selection','PASS' if expected else 'BLOCK'),
                     'selection_'+label)
-            require(has(result,'manual_usdt_rate','WARN')==private_rate,
-                    'private_rate_review_'+label)
+            require(not has(result,'manual_usdt_rate','WARN'),
+                    'no_private_rate_fallback_'+label)
             require(result['methods']['manual_usdt']['local_configuration']==
                     ('present_not_verified' if expected else 'missing_or_invalid'),
                     'status_'+label)
             require(all(str(secret) not in raw for secret in (addr,SECRET,PASSWORD,
                    'TNPeeaaFB7K9cmo4uQpcU32zGK8G1NYqeL')),
                    'privacy_'+label)
+            cases.append(label)
+
+        for label,money_keys,normal,agent in (
+            ('normal_shared_rate_audiences',{'manualUsdtWalletBEP20':addr,
+             'manualUsdtRateToman':'1000'},True,True),
+            ('invalid_agent_rate_only_agent_unavailable',{'manualUsdtWalletBEP20':addr,
+             'manualUsdtRateToman':'1000','usdtAgentRateToman':'invalid'},True,False),
+            ('explicit_agent_rate_without_normal',{'manualUsdtWalletBEP20':addr,
+             'usdtAgentRateToman':'2000'},False,True),
+        ):
+            seed(d,only_usdt,money_keys)
+            code,result,raw=report_run(d)
+            require(code==0,'rate_audience_exit_'+label)
+            for audience,configured in (('normal',normal),('agent',agent)):
+                require(has(result,'usdt_rate_'+audience,'PASS' if configured else 'WARN'),
+                        'rate_audience_flag_'+label+'_'+audience)
+            require(addr not in raw and '2000' not in raw,'rate_privacy_'+label)
+            cases.append(label)
+        for label,money_keys,expected in (
+            ('hosted_merchant_without_explicit_rate_unavailable',{'nowpayment':SECRET},False),
+            ('hosted_merchant_explicit_rate_available',{'nowpayment':SECRET,
+             'manualUsdtRateToman':'1000'},True),
+        ):
+            seed(d,dict(state,nowPaymentOther='on'),money_keys)
+            code,result,raw=report_run(d)
+            require((code==0)==expected and has(result,'method_nowpayments',
+                    'PASS' if expected else 'BLOCK'),'hosted_rate_'+label)
+            require(SECRET not in raw,'hosted_rate_privacy_'+label)
             cases.append(label)
 
         # A known-bad explicit USDT rate must not be hidden behind a valid

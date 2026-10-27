@@ -21,7 +21,8 @@ creating a draft. Positive fractional volume plans remain valid. Agent plan and
 server discounts retain the existing configuration meaning.
 
 The owner-private attention menu collects supported payment subjects from
-unresolved shared method evidence, unresolved CREATE/hold evidence, and the
+unresolved shared method evidence, persisted processing/processing-wallet
+claims for any supported subject, unresolved CREATE/hold evidence, and the
 optional automatic-renewal journal. Historical `paid` purchases without modern
 journals, and completed CREATE records alone, do not become unresolved cases.
 The specialized NOWPayments evidence screen and exact CREATE readback remain

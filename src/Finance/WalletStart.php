@@ -146,9 +146,9 @@ function startWalletPayment(mysqli $connection, $botState, $buttonValues, $botUr
         $keyboard[] = [['text' => $buttonValues['cart_to_cart'], 'callback_data' => "payIncreaseWalletWithCartToCart$hash_id"]];
     if (achbotManualEnabled('gift_card') && achbotPayUxAudienceAllowed($connection,'gift_card',(int)$actor))
         $keyboard[] = [['text' => $buttonValues['gift_card'], 'callback_data' => "payIncreaseWalletWithGiftCard$hash_id"]];
-    if (achbotManualCryptoEnabled() && (achbotPayUxAudienceAllowed($connection,'manual_usdt',(int)$actor) || achbotPayUxAudienceAllowed($connection,'manual_trx',(int)$actor)))
+    if (achbotManualCryptoEnabled((int)$actor) && (achbotPayUxAudienceAllowed($connection,'manual_usdt',(int)$actor) || achbotPayUxAudienceAllowed($connection,'manual_trx',(int)$actor)))
         $keyboard[] = [['text' => '💎 پرداخت رمزارزی دستی', 'callback_data' => "mcm_$hash_id"]];
-    if (($botState['nowPaymentWallet'] == 'on' && achbotPayUxAudienceAllowed($connection,'nowpayments',(int)$actor)))
+    if (($botState['nowPaymentWallet'] == 'on' && achbotPayUxAudienceAllowed($connection,'nowpayments',(int)$actor) && achbotUsdtRateForUser($connection,(int)$actor)!==null))
         $keyboard[] = [['text' => $buttonValues['now_payment_gateway'], 'url' => $botUrl . 'pay/?nowpayment&hash_id=' . $hash_id]];
     if (($botState['zarinpal'] == 'on' && achbotPayUxAudienceAllowed($connection,'zarinpal',(int)$actor)))
         $keyboard[] = [['text' => $buttonValues['zarinpal_gateway'], 'url' => $botUrl . 'pay/?zarinpal&hash_id=' . $hash_id]];

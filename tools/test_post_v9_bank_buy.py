@@ -159,10 +159,11 @@ function buildLinksAndSendQr(...$args) {
     if (end($args)!==false) throw new RuntimeException('premature_qr_delivery');
     $GLOBALS['events'][]=['event'=>'RENDER','state'=>fixtureState()];
     return ['fixture-token','["vless://fixture.invalid"]','fixture-uuid',
-        'مشخصات اشتراک','{}','vless://fixture.invalid'];
+        'مشخصات اشتراک','{}',$mode==='text_only'?'':'vless://fixture.invalid'];
 }
 function sendQrFromLink(...$args) {
-    $GLOBALS['events'][]=['event'=>'DELIVER','state'=>fixtureState()];
+    $GLOBALS['events'][]=['event'=>'DELIVER','state'=>fixtureState(),
+        'empty_qr'=>($args[0]??null)==='', 'has_text'=>trim((string)($args[1]??''))!==''];
     if (($GLOBALS['spec']['mode']??'')==='telegram_failure')
         throw new RuntimeException('synthetic_telegram_failure');
     if (($GLOBALS['spec']['mode']??'')==='telegram_unconfirmed') return false;
@@ -328,6 +329,34 @@ def check():
         assert effects(work,env,good)=='local_recorded'
         assert not any(e['event']=='POST' for e in run(work,env,driver,pay=good)['events'])
         cases.append('one_verified_account_atomic_order_before_telegram_no_replay')
+
+        # A valid per-server qr:none is a text-only delivery, not a failed CREATE.
+        query(work,env,"INSERT INTO setting(type,value) VALUES ('ACHBOT_SERVER_DISPLAY_2'," +
+            "'"+json.dumps({'version':1,'server_id':2,'provider':'marzban','updated_source':1,
+                'display':{'mode':'native','policy':{'qr':'none'}}})+"')")
+        textonly=seed(work,env,'bankbuytextonly')
+        observed=run(work,env,driver,pay=textonly,mode='text_only')
+        assert state(work,env,textonly)=='auto_cart_approved',observed
+        assert total(work,env,'orders_list',textonly)==1 and effects(work,env,textonly)=='local_recorded'
+        deliveries=[e for e in observed['events'] if e['event']=='DELIVER']
+        assert len(deliveries)==1 and deliveries[0]['empty_qr'] and deliveries[0]['has_text'],observed
+        cases.append('configured_text_only_delivery_records_account_before_text_ack')
+        query(work,env,"UPDATE setting SET value='invalid json' WHERE type='ACHBOT_SERVER_DISPLAY_2'")
+        bad=seed(work,env,'bankbuybaddisplay')
+        cap_before=query(work,env,'SELECT ucount FROM server_info WHERE id=2')
+        observed=run(work,env,driver,pay=bad)
+        assert not any(e['event']=='POST' for e in observed['events']),observed
+        assert total(work,env,'orders_list',bad)==0
+        assert query(work,env,'SELECT ucount FROM server_info WHERE id=2')==cap_before
+        cases.append('malformed_server_display_blocks_before_remote_create_and_capacity')
+        query(work,env,"INSERT INTO setting(type,value) VALUES ('ACHBOT_SERVER_DISPLAY_2','invalid json')")
+        duplicate=seed(work,env,'bankbuyduplicatedisplay')
+        observed=run(work,env,driver,pay=duplicate)
+        assert not any(e['event']=='POST' for e in observed['events']),observed
+        assert total(work,env,'orders_list',duplicate)==0
+        assert query(work,env,'SELECT ucount FROM server_info WHERE id=2')==cap_before
+        query(work,env,"DELETE FROM setting WHERE type='ACHBOT_SERVER_DISPLAY_2'")
+        cases.append('duplicate_server_display_blocks_before_remote_create')
 
         for mode in ('lost','exists','wrong_note','fraction'):
             pid=seed(work,env,'bankbuy'+mode)

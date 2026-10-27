@@ -74,6 +74,7 @@ function achbotPgRequest(array $panel,string $method,string $path,?array $payloa
             409=>'pg_conflict',422=>'pg_request_rejected',429=>'pg_rate_limited'];
         return achbotPgFailure($reasons[$http]??($http>=500?'pg_vendor_unavailable':'pg_http_unexpected'),$write,$http);
     }
+    if ($method==='GET' && $http!==200) return achbotPgFailure('pg_read_status_invalid',false,$http);
     if ($http===204) return ['success'=>true,'uncertain'=>false,'reason'=>'','http'=>$http,'data'=>null];
     if ($text) {
         if (stripos($contentType,'text/plain')!==0) return achbotPgFailure('pg_content_type_invalid',$write,$http);
@@ -112,12 +113,18 @@ function achbotPgNormalizeUser(array $user): array {
     $user['note']=$user['note']??'';
     return array_intersect_key($user,array_flip(['id','username','created_at','note',
         'data_limit','expire','status','group_ids','used_traffic','subscription_url',
-        'proxy_settings','data_limit_reset_strategy','next_plan']));
+        'proxy_settings','data_limit_reset_strategy','next_plan','auto_delete_in_days',
+        'on_hold_expire_duration','on_hold_timeout']));
 }
 function achbotPgUserResult(array $result,bool $write=false): array {
     if (!$result['success']) return $result;
     try { $user=achbotPgNormalizeUser($result['data']); }
-    catch (Throwable $e) {return achbotPgFailure('pg_user_schema_invalid',$write,$result['http']);}
+    catch (Throwable $e) {
+        $reason=in_array($e->getMessage(),['pg_user_schema_invalid','pg_subscription_invalid',
+            'pg_datetime_invalid','pg_expiry_invalid','pg_groups_invalid'],true)?
+            $e->getMessage():'pg_user_schema_invalid';
+        return achbotPgFailure($reason,$write,$result['http']);
+    }
     return ['success'=>true,'uncertain'=>false,'reason'=>'','http'=>$result['http'],'user'=>$user];
 }
 function achbotPgIdentityValid(array $identity): bool {
@@ -140,9 +147,12 @@ function achbotPgRead(array $panel,array $identity): array {
 }
 function achbotPgManaged(array $user): bool {
     return $user['status']!=='on_hold' && ($user['next_plan']??null)===null &&
-        ($user['data_limit_reset_strategy']??null)==='no_reset';
+        ($user['data_limit_reset_strategy']??null)==='no_reset' &&
+        ($user['auto_delete_in_days']??null)===null &&
+        ($user['on_hold_expire_duration']??null)===null && ($user['on_hold_timeout']??null)===null;
 }
 function achbotPgCreate(array $panel,array $request): array {
+    $dispatched=false;
     try {
         if (!is_string($request['username']??null) ||
             !preg_match('/^[a-zA-Z0-9_@.-]{3,100}$/D',$request['username']) ||
@@ -157,7 +167,9 @@ function achbotPgCreate(array $panel,array $request): array {
         $payload=['username'=>$request['username'],'data_limit'=>$request['data_limit'],
             'expire'=>$request['expire']===null?null:gmdate('Y-m-d\TH:i:s\Z',$request['expire']),
             'group_ids'=>$groups,'status'=>'active','data_limit_reset_strategy'=>'no_reset',
-            'next_plan'=>null,'note'=>$request['operation_marker']];
+            'next_plan'=>null,'auto_delete_in_days'=>null,'on_hold_expire_duration'=>null,
+            'on_hold_timeout'=>null,'note'=>$request['operation_marker']];
+        $dispatched=true;
         $r=achbotPgRequest($panel,'POST','/api/user',$payload);
         if (!$r['success']) return $r;
         if ($r['http']!==201) return achbotPgFailure('pg_create_status_invalid',true,$r['http']);
@@ -176,9 +188,10 @@ function achbotPgCreate(array $panel,array $request): array {
             $u['status']!=='active' || !achbotPgManaged($u))
             return achbotPgFailure('pg_create_entitlement_unconfirmed',true,$read['http']);
         return $read;
-    } catch (Throwable $e) { return achbotPgFailure('pg_create_invalid'); }
+    } catch (Throwable $e) { return achbotPgFailure($dispatched?'pg_create_unconfirmed':'pg_create_invalid',$dispatched); }
 }
 function achbotPgModify(array $panel,array $identity,array $absoluteChanges): array {
+    $dispatched=false;
     try {
         if (!$absoluteChanges || array_diff(array_keys($absoluteChanges),['data_limit','expire','status','group_ids']))
             return achbotPgFailure('pg_modify_invalid');
@@ -197,6 +210,7 @@ function achbotPgModify(array $panel,array $identity,array $absoluteChanges): ar
         $before=achbotPgRead($panel,$identity);
         if (!$before['success']) return $before;
         if (!achbotPgManaged($before['user'])) return achbotPgFailure('pg_native_schedule_conflict');
+        $dispatched=true;
         $r=achbotPgRequest($panel,'PUT','/api/user/by-id/'.$identity['remote_user_id'],$payload);
         if (!$r['success']) return $r;
         if ($r['http']!==200) return achbotPgFailure('pg_modify_status_invalid',true,$r['http']);
@@ -213,7 +227,7 @@ function achbotPgModify(array $panel,array $identity,array $absoluteChanges): ar
         }
         if (!achbotPgManaged($read['user'])) return achbotPgFailure('pg_native_schedule_conflict',true,$read['http']);
         return $read;
-    } catch (Throwable $e) {return achbotPgFailure('pg_modify_invalid');}
+    } catch (Throwable $e) {return achbotPgFailure($dispatched?'pg_modify_unconfirmed':'pg_modify_invalid',$dispatched);}
 }
 function achbotPgAction(array $panel,array $identity,string $action): array {
     $before=achbotPgRead($panel,$identity);

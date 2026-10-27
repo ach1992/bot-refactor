@@ -10,7 +10,7 @@ function achbotPaymentKeyAdminFields(): array {
     return [
         'nowpayment','nextpay','zarinpal','bankAccount','holderName','giftCardUrl',
         'manualUsdtWalletBEP20','manualUsdtWalletTRC20','manualUsdtWalletERC20',
-        'manualTrxWallet','manualUsdtRateToman','manualTrxRateToman'
+        'manualTrxWallet','manualUsdtRateToman','usdtAgentRateToman','manualTrxRateToman'
     ];
 }
 
@@ -66,13 +66,14 @@ function achbotPaymentKeyAdminNormalize(string $field,string $input): ?string {
             : achbotManualUsdtWalletValid($value,$addresses[$field]);
         return $valid?$value:null;
     }
-    if (in_array($field,['manualUsdtRateToman','manualTrxRateToman'],true)) {
+    if (in_array($field,['manualUsdtRateToman','usdtAgentRateToman','manualTrxRateToman'],true)) {
         $value=trim($input);
         if ($value==='/clear') return '';
-        $regex=$field==='manualTrxRateToman'
-            ? '/\A[1-9][0-9]{0,8}\z/D'
-            : '/\A[1-9][0-9]{2,8}\z/D';
-        return preg_match($regex,$value)===1?$value:null;
+        if ($field==='manualTrxRateToman')
+            return preg_match('/\A[1-9][0-9]{0,8}\z/D',$value)===1?$value:null;
+        require_once __DIR__.'/ReceiptHelpers.php';
+        return preg_match('/\A[1-9][0-9]{2,9}\z/D',$value)===1 &&
+            achbotUsdtRateValue($value)!==null ? $value : null;
     }
     // Legacy merchant credentials and public account/holder fields accept
     // free text. Never display a submitted credential in bot confirmations.

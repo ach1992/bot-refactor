@@ -66,7 +66,7 @@ function achbotRecoveryAttentionSql(mysqli $db): string {
             AND r.stage IN ('reserved','remote_started','review'))" : '0';
     return "(p.type IN ('BUY_SUB','RENEW_ACCOUNT','INCREASE_WALLET')
         OR p.type LIKE 'INCREASE_DAY\_%' OR p.type LIKE 'INCREASE_VOLUME\_%')
-        AND (($ledger) OR ($create) OR ($renewal))";
+        AND (($ledger) OR ($create) OR ($renewal) OR p.state IN ('processing','processing_wallet'))";
 }
 
 function achbotRecoveryAttentionCases(mysqli $db, int $before=0): array {

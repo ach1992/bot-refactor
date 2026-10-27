@@ -29,6 +29,8 @@ define('ACHBOT_VERIFIED_WEBHOOK_ENTRYPOINT', true);
 require_once 'config.php';
 require_once 'buy_helpers.php';
 check();
+require_once __DIR__.'/src/Subscription/ServerDisplaySettings.php';
+if (achbotHandleServerDisplayAdmin()) return;
 require_once __DIR__.'/src/Panel/ProviderAdmin.php';
 if (achbotHandleProviderAdmin()) return;
 // Source-authenticated and IP-checked before any administrative moderation.
@@ -476,7 +478,7 @@ if(($data=="botSettings" or preg_match('/^changeBot([A-Za-z0-9_]+)$/D',$data,$ma
             'renewAccountState','renewAutoState','plandelkhahState',
             'switchLocationState','increaseTimeState','increaseVolumeState',
             'requirePhone','requireIranPhone','sellState','botState',
-            'subLinkState','configLinkState','searchState',
+            'searchState',
             'renewConfigLinkState','updateConfigLinkState','qrConfigState',
             'qrSubState','cartToCartAutoAcceptState','cartToCartAutoAcceptType'
         ];
@@ -730,7 +732,10 @@ if (is_string($data??null) && str_starts_with($data,'changePaymentKeys')) {
             $gate = "آدرس عمومی TRX در شبکهٔ TRON (برای حذف /clear بفرستید)";
             break;
         case "manualUsdtRateToman":
-            $gate = "قیمت هر USDT به تومان، عدد صحیح مثبت (برای حذف /clear بفرستید)";
+            $gate = "نرخ عادی USDT برای پرداخت دستی و NOWPayments، عدد صحیح ۱۰۰ تا ۱٬۰۰۰٬۰۰۰٬۰۰۰ تومان (حذف با /clear این روش‌ها را بدون نرخ غیرفعال می‌کند)";
+            break;
+        case "usdtAgentRateToman":
+            $gate = "نرخ USDT نماینده برای پرداخت دستی و NOWPayments، عدد صحیح ۱۰۰ تا ۱٬۰۰۰٬۰۰۰٬۰۰۰ تومان (با /clear از نرخ عادی استفاده می‌شود)";
             break;
         case "manualTrxRateToman":
             $gate = "قیمت مستقل هر TRX به تومان، عدد صحیح مثبت (برای حذف /clear بفرستید)";

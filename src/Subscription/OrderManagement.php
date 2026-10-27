@@ -175,6 +175,9 @@ function showOrderManagementPanel($order, $msgId = null){
         [["text" => "⚙️ بازگشت به مدیریت", "callback_data" => "managePanel"]],
     ];
 
+    if (achbotProviderType($GLOBALS['connection'],(int)$order['server_id'])==='pasarguard')
+        array_splice($keyboard,1,0,[[['text'=>'صفر کردن مصرف (PasarGuard)','callback_data'=>'pgResetAccount'.(int)$order['id']]]]);
+
     $msg = "🔧 مدیریت سفارش مربوط به:\n\n👤 UserID: <code>{$order['userid']}</code>\n📛 Remark: <code>{$order['remark']}</code>";
 
     if ($msgId) {

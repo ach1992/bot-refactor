@@ -24,7 +24,7 @@ if (preg_match('/^attention(Inbox|Case)(?:_([1-9][0-9]{0,17}))?$/D',(string)$dat
             $items=achbotRecoveryAttentionCases($connection,$before);
             $more=count($items)>12;$items=array_slice($items,0,12);
             $body="<b>📋 پرداخت‌ها و سفارش‌های نیازمند بررسی</b>\n\n".
-                "شواهد محلی روش‌های فعال: درگاه‌ها، رسیدهای دستی و سفارش‌های ساختِ در پردازش.\n".
+                "شواهد محلی روش‌های فعال: درگاه‌ها، رسیدهای دستی و عملیات در پردازش.\n".
                 "خرید، تمدید، افزایش روز/حجم و شارژ کیف پول بر اساس سند موجود بررسی می‌شوند.\n".
                 "سابقهٔ پرداخت‌شده بدون دفتر جدید، خودبه‌خود هشدار نیست. پوشش سابقه‌های فاقد سند کامل نیست.\n";
             foreach ($items as $item) $rows[]=[['text'=>'🧾 #'.(int)$item['id'].' | کاربر '.(int)$item['user_id'].' | '.number_format((int)$item['price']).' تومان',

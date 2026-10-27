@@ -35,7 +35,7 @@ def cmd(*args: str) -> bytes:
 def source_checks():
     if cmd("rev-parse", V9 + "^{tree}").decode().strip() != V9_TREE:
         raise RuntimeError("Frozen historical V9 reference changed")
-    for field in ("database/legacy-schema.sql", "baseInfo.example.php"):
+    for field in ("database/legacy-schema.sql",):
         if (ROOT / field).read_bytes() != cmd("show", V9+":"+field):
             raise RuntimeError("Changed historical schema/private-template: " + field)
     files=package.members()
@@ -104,7 +104,7 @@ def source_checks():
     return {"source_files":len(files),"php_lint":len(php_files),
             "original_historical_schema_file_unchanged":True,
             "current_additive_migration_separately_tested":True,
-            "synthetic_baseinfo_example_unchanged":True,
+            "synthetic_baseinfo_example_current_settings_removed":True,
             "historic_contract_changed":False,"retired_provider_api_removed":True,
             "admin_list_debug_artifact_writer_absent":True,
             "pasarguard_native_implemented":True, "new_xui_implemented":False}
@@ -503,7 +503,7 @@ def main():
                         "--run-disposable","--report",str(pg_client_path)],
                        cwd=ROOT,check=True,timeout=240,capture_output=True)
         pg_client=json.loads(pg_client_path.read_text())
-        if not (pg_client.get("complete") is True and pg_client.get("cases",0)>=69
+        if not (pg_client.get("complete") is True and pg_client.get("cases",0)>=99
                 and pg_client.get("real_php_curl") is True
                 and pg_client.get("disposable_socket_mariadb") is True):
             raise RuntimeError("Native PasarGuard transport and persistence proof incomplete")
@@ -519,9 +519,34 @@ def main():
         presentation_output=subprocess.check_output(
             ["php",str(ROOT/"tools/test_subscription_presentation.php")],
             cwd=ROOT,text=True,timeout=60)
-        if not re.search(r"PASS subscription presentation: 94 checks;",presentation_output):
+        if not re.search(r"PASS subscription presentation: 81 checks;",presentation_output):
             raise RuntimeError("Native subscription presentation proof incomplete")
-        presentation={"complete":True,"checks":94,"real_network":False}
+        presentation={"complete":True,"checks":81,"real_network":False}
+        provider_path=Path(tmp)/"provider-integration.json"
+        subprocess.run(["python3",str(ROOT/"tools/test_post_v9_provider_integration.py"),
+                        "--run-disposable","--report",str(provider_path)],
+                       cwd=ROOT,check=True,timeout=240,capture_output=True)
+        provider_integration=json.loads(provider_path.read_text())
+        if not (provider_integration.get("complete") is True and provider_integration.get("cases",0)>=97
+                and provider_integration.get("actual_php_curl") is True
+                and provider_integration.get("owned_socket_mariadb") is True
+                and provider_integration.get("real_provider_tested") is False):
+            raise RuntimeError("Native provider lifecycle and durable intent proof incomplete")
+        currency_path=Path(tmp)/"currency-settings.json"
+        subprocess.run(["python3",str(ROOT/"tools/test_next_currency_settings.py"),
+                        "--run-disposable","--report",str(currency_path)],
+                       cwd=ROOT,check=True,timeout=180,capture_output=True)
+        currency=json.loads(currency_path.read_text())
+        if not (currency.get("pass") is True and len(currency.get("cases",[]))==29):
+            raise RuntimeError("Explicit managed exchange-rate proof incomplete")
+        display_path=Path(tmp)/"server-display-settings.json"
+        subprocess.run(["python3",str(ROOT/"tools/test_server_display_settings.py"),
+                        "--run-disposable","--report",str(display_path)],
+                       cwd=ROOT,check=True,timeout=180,capture_output=True)
+        server_display=json.loads(display_path.read_text())
+        if not (server_display.get("pass") is True and server_display.get("checks",0)>=89
+                and server_display.get("network_calls")==0):
+            raise RuntimeError("Per-server managed display and admin authorization proof incomplete")
         subject_path=Path(tmp)/"payment-subjects.json"
         subprocess.run(["python3",str(ROOT/"tools/test_post_v9_subjects.py"),
                         "--run-disposable","--report",str(subject_path)],
@@ -1022,6 +1047,7 @@ def main():
                  'gift_card_legacy_https_validation',
                  'manual_trx_rate_positive_and_clear',
                  'manual_usdt_rate_positive_range',
+                 'normal_agent_rates_validated_upper_boundary_and_clear',
                  'chain_address_manualUsdtWalletBEP20_validated_and_clear',
                  'chain_address_manualUsdtWalletERC20_validated_and_clear',
                  'chain_address_manualUsdtWalletTRC20_validated_and_clear',
@@ -1123,7 +1149,14 @@ def main():
             'usdt_legacy_bep20_default',
             'usdt_valid_trc20',
             'usdt_valid_erc20',
-            'usdt_valid_legacy_private_rate_unverified',
+            'usdt_missing_explicit_settings_rate',
+            'usdt_cleared_explicit_settings_rate',
+            'usdt_agent_only_settings_rate',
+            'normal_shared_rate_audiences',
+            'invalid_agent_rate_only_agent_unavailable',
+            'explicit_agent_rate_without_normal',
+            'hosted_merchant_without_explicit_rate_unavailable',
+            'hosted_merchant_explicit_rate_available',
             'usdt_invalid_rate_remains_blocking_when_trx_is_valid',
             'legacy_off_wallet_only',
             'empty_explicit_new_rule_denies_wallet',
@@ -2770,6 +2803,9 @@ def main():
                      "admin_wallet_ux":wallet_ux,
                      "next_payment_ux":next_payment,
                      "pasarguard_client":pg_client,
+                     "provider_integration":provider_integration,
+                     "currency_settings":currency,
+                     "server_display_settings":server_display,
                      "optional_cleanup":cleanup,
                      "subscription_presentation":presentation,
                      "customer_error_privacy":audience,
@@ -2829,6 +2865,9 @@ def main():
                        "admin_wallet_ux_scenarios":wallet_ux["cases"],
                        "next_payment_ux_scenarios":next_payment["cases"],
                        "pasarguard_client_scenarios":pg_client["cases"],
+                       "provider_integration_scenarios":provider_integration["cases"],
+                       "currency_settings_scenarios":len(currency["cases"]),
+                       "server_display_checks":server_display["checks"],
                        "optional_cleanup_scenarios":cleanup["count"],
                        "subscription_presentation_checks":presentation["checks"],
                        "customer_literal_first_argument_messages_inspected":audience["literal_first_argument_calls_inspected"],

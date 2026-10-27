@@ -1,47 +1,40 @@
 <?php
-/** AChBot V6: original Telegram account/subscription routes; keep caller scope. */
-if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
-    http_response_code(404);
-    exit;
-}
+/** Native config refresh obeys the same per-server selection and QR bounds. */
+if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) { http_response_code(404); exit; }
 
-if (preg_match('/sConfigUpdate(\d+)/', $data, $match)) {
-    alert($mainValues['please_wait_message']);
-    $server_id = $match[1];
-    if (empty($userInfo['temp'])) { delMessage(); exit(); }
-
-    $configInfo = json_decode($userInfo['temp'], true);
-    $inboundId = $configInfo['id'] ?? 0;
-    $uuid = $configInfo['uuid'];
-    $remark = $configInfo['remark'];
-
-    // All active subscriptions are Marzban; never parse obsolete X-UI links.
-    if (empty($configInfo['marzban'])) {
-        alert("⛔️ به‌روزرسانی اطلاعات این اشتراک در حال حاضر امکان‌پذیر نیست.", true);
+if (is_string($data) && str_starts_with($data,'sConfigUpdate')) {
+    if (!preg_match('/^sConfigUpdate([1-9][0-9]*)$/D',$data,$match)) {
+        alert('⛔️ این دکمه معتبر نیست؛ اشتراک را دوباره باز کنید.',true);
         return;
     }
-    $info = achbotProviderUserInfo($server_id, $remark);
-    $vraylink = $info->links ?? null;
-
-    if ($vraylink == null) { delMessage(); exit(); }
-
-    include_once dirname(__DIR__, 2) . '/phpqrcode/qrlib.php';
-
-    if (!defined('IMAGE_WIDTH'))  define('IMAGE_WIDTH', 540);
-    if (!defined('IMAGE_HEIGHT')) define('IMAGE_HEIGHT', 540);
-
-    foreach ($vraylink as $vray_link) {
-        $acc_text = ($botState['configLinkState'] != "off") ? "<code>$vray_link</code>" : ".";
-
-        $ecc = 'L';
-        $pixel_Size = 11;
-        $frame_Size = 4;
-
-        $file = RandomString() . ".png";
-        QRcode::png($vray_link, $file, $ecc, $pixel_Size, $frame_Size);
-
-        sendPhoto($botUrl . $file, $acc_text, null, "HTML");
-        unlink($file);
+    $server_id=(int)$match[1];
+    $configInfo=json_decode((string)($userInfo['temp']??''),true);
+    // A callback cannot change the logical server of the persisted account view.
+    if (!is_array($configInfo) || (int)($configInfo['server_id']??0)!==$server_id ||
+        !is_string($configInfo['remark']??null) || $configInfo['remark']==='') {
+        alert('⛔️ اطلاعات اشتراک را دوباره باز کنید.',true);
+        return;
     }
+    $server=getServerConfigById($server_id);
+    $type=(string)($server['type']??'');
+    if (!achbotSupportsPanel($type)) {
+        alert('⛔️ به‌روزرسانی اطلاعات این اشتراک در حال حاضر امکان‌پذیر نیست.',true);
+        return;
+    }
+    alert($mainValues['please_wait_message']);
+    $info=achbotProviderUserInfo($server_id,$configInfo['remark']);
+    $presentation=buildSubscriptionPresentation($type,[
+        'links'=>$info->links??[],
+        'subscription_url'=>$info->subscription_url??'',
+    ],$botState,[],'view',$server_id);
+    if ($presentation['qr_config_links']===[]) {
+        sendMessage($presentation['notice_html']!==''?$presentation['notice_html']:
+            '🔎 کانفیگی برای نمایش انتخاب نشده است؛ لینک اشتراک را در اطلاعات اشتراک بررسی کنید.');
+        return;
+    }
+    foreach ($presentation['qr_config_links'] as $uri) {
+        sendQrFromLink($uri,\AchBot\Subscription\Presentation\codeLinks([$uri]),
+            '{}',(string)$botUrl,(int)$from_id);
+    }
+    if ($presentation['notice_html']!=='') sendMessage($presentation['notice_html']);
 }
-

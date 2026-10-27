@@ -82,14 +82,26 @@ function achbotProviderAction($serverId,$remark,string $action): object {
     };
     if ($type!=='pasarguard') return achbotProviderFailure('unsupported_provider',false);
     try {
+        if (!in_array($action,['delete','revoke','reset','toggle'],true)) return achbotProviderFailure('unsupported_action',false);
         $ctx=achbotPgRemarkContext($connection,(int)$serverId,(string)$remark);
         $panel=$ctx['panel'];$identity=$ctx['identity'];
         $key=$action==='delete'?'delete:'.(int)$ctx['account']['id']:achbotPgOperationKey($action);
-        $intent=achbotPgBeginMutation($connection,$ctx,$key,$action,[]);
+        $intent=achbotPgBeginMutation($connection,$ctx,$key,$action,['phase'=>'claimed']);
+        $read=achbotPgRead($panel,$identity);
+        if (($read['success']??false)!==true) throw new RuntimeException('pg_action_read_unverified');
+        $before=$read['user'];
+        $expected=match($action) {
+            'delete'=>['absent'=>true,'http'=>404],
+            'reset'=>['used_traffic'=>0],
+            'revoke'=>['proxy_identity_must_change'=>true,'before_proxy_sha256'=>hash('sha256',json_encode($before['proxy_settings'],JSON_THROW_ON_ERROR))],
+            'toggle'=>['status'=>$before['status']==='active'?'disabled':'active']
+        };
+        if ($action==='toggle' && !in_array($before['status'],['active','disabled'],true)) throw new RuntimeException('pg_status_restricted');
+        $intent=achbotPgPersistMutationIntent($connection,$ctx,$intent,[
+            'before_status'=>$before['status'],'expected'=>$expected]);
         $r=match($action) {
             'delete'=>achbotPgDelete($panel,$identity),'revoke'=>achbotPgRevoke($panel,$identity),
-            'reset'=>achbotPgReset($panel,$identity),
-            'toggle'=>achbotPgToggle($panel,$identity),default=>['success'=>false,'uncertain'=>false,'reason'=>'unsupported_action']
+            'reset'=>achbotPgReset($panel,$identity),'toggle'=>achbotPgModify($panel,$identity,$expected)
         };
         if (($r['success']??false)!==true) return achbotProviderFailure($r['reason']??'pg_action_unverified',(bool)($r['uncertain']??true));
         achbotPgFinishMutation($connection,$ctx,$intent,$r,$action==='delete'?'deleted':'linked');
@@ -99,13 +111,7 @@ function achbotProviderAction($serverId,$remark,string $action): object {
         return (object)array_merge((array)$user,['success'=>true,'verified'=>true]);
     } catch (Throwable $e) { return achbotProviderFailure('pg_action_requires_review'); }
 }
-function achbotPgToggle(array $panel,array $identity): array {
-    $r=achbotPgRead($panel,$identity);
-    if (($r['success']??false)!==true) return $r;
-    $status=$r['user']['status'];
-    if (!in_array($status,['active','disabled'],true)) return ['success'=>false,'uncertain'=>false,'reason'=>'pg_status_restricted'];
-    return achbotPgModify($panel,$identity,['status'=>$status==='active'?'disabled':'active']);
-}
+
 function achbotProviderDelete($serverId,$remark): object { return achbotProviderAction($serverId,$remark,'delete'); }
 function achbotProviderRevoke($serverId,$remark): object { return achbotProviderAction($serverId,$remark,'revoke'); }
 function achbotProviderToggle($serverId,$remark): object { return achbotProviderAction($serverId,$remark,'toggle'); }
@@ -161,7 +167,7 @@ function achbotPgPinPayment(mysqli $db,int $payId): void {
         if (($mutation['result']??'')==='verified') $groups=$mutation['current_group_ids']??$groups;
         $snapshot=['provider'=>'pasarguard','panel_id'=>(int)$ctx['panel']['id'],
             'instance_key'=>$ctx['panel']['instance_key'],'endpoint_sha256'=>$ctx['account']['endpoint_sha256'],
-            'group_ids'=>$groups,'provider_account_id'=>(int)$ctx['account']['id'],
+            'group_ids'=>$groups,'group_policy'=>'preserve_current','provider_account_id'=>(int)$ctx['account']['id'],
             'remote_user_id'=>(int)$ctx['account']['remote_user_id'],
             'remote_created_at'=>$ctx['account']['remote_created_at'],'operation_marker'=>$ctx['account']['operation_marker']];
     }
@@ -199,6 +205,7 @@ function achbotEffectTargetIdentity(mysqli $db,int $serverId,?int $planId,?int $
 }
 function achbotPgReserveEffect(mysqli $db,int $effectId,array $target,string $remark,string $operation,int $expire,int $bytes): void {
     if (!isset($target['snapshot'])) return;
+    if ($expire<=0 || $expire>2147483647) throw new RuntimeException('pg_create_local_expiry_overflow');
     $snapshot=$target['snapshot'];$json=json_encode($snapshot,JSON_THROW_ON_ERROR);
     $s=$db->prepare('UPDATE service_effects SET provider_snapshot=? WHERE id=? AND provider_snapshot IS NULL');$s->bind_param('si',$json,$effectId);
     if (!$s->execute() || $s->affected_rows!==1) throw new RuntimeException('pg_effect_snapshot_unconfirmed');$s->close();
@@ -270,9 +277,11 @@ function achbotPgLinkEffect(mysqli $db,int $effectId,int $orderId): bool {
     if (!$s->execute() || $s->affected_rows!==1) throw new RuntimeException('pg_effect_link_unconfirmed');$s->close();
     return true;
 }
+function achbotPgValidMutationKey($key): bool {
+    return is_string($key) && preg_match('/^[a-zA-Z0-9:_-]{1,100}$/D',$key)===1;
+}
 function achbotPgOperationKey(string $action,array $change=[]): string {
-    if (isset($change['operation_key']) && is_string($change['operation_key']) &&
-        preg_match('/^[a-zA-Z0-9:_-]{1,100}$/D',$change['operation_key'])===1) return $change['operation_key'];
+    if (achbotPgValidMutationKey($change['operation_key']??null)) return $change['operation_key'];
     if ((int)($change['pay_id']??0)>0) return 'pay:'.(int)$change['pay_id'];
     $update=$GLOBALS['update']??null;
     if (is_object($update) && is_int($update->update_id??null) && $update->update_id>0)
@@ -281,16 +290,44 @@ function achbotPgOperationKey(string $action,array $change=[]): string {
 }
 /** One durable account fence spans reset+modify and survives lost responses. */
 function achbotPgBeginMutation(mysqli $db,array $ctx,string $key,string $action,array $changes): array {
+    if (!achbotPgValidMutationKey($key)) throw new RuntimeException('pg_mutation_source_invalid');
     $tx=$db->query('SELECT @@in_transaction AS tx');
     if (!$tx || (int)($tx->fetch_assoc()['tx']??1)!==0) throw new RuntimeException('pg_mutation_requires_autocommit');
     if (!$db->begin_transaction()) throw new RuntimeException('pg_mutation_begin');
     try {
         $id=(int)$ctx['account']['id'];
-        $s=$db->prepare('SELECT state,mutation_key FROM provider_accounts WHERE id=? FOR UPDATE');
+        $s=$db->prepare('SELECT state,mutation_key,mutation_snapshot FROM provider_accounts WHERE id=? FOR UPDATE');
         $s->bind_param('i',$id);$s->execute();$a=$s->get_result()->fetch_assoc();$s->close();
-        if (!$a || $a['state']!=='linked' || ($a['mutation_key']??null)===$key)
+        if (!$a || $a['state']!=='linked') throw new RuntimeException('pg_account_mutation_requires_review');
+        // Empty replay authority exists only before the first mutation.
+        // Malformed or partial persisted history must never become [].
+        $lastKey=$a['mutation_key'];$snapshot=$a['mutation_snapshot'];
+        $consumed=[];
+        if ($lastKey!==null || $snapshot!==null) {
+            if (!achbotPgValidMutationKey($lastKey) || !is_string($snapshot))
+                throw new RuntimeException('pg_mutation_history_invalid');
+            try {$decoded=json_decode($snapshot,false,64,JSON_THROW_ON_ERROR);}
+            catch (Throwable $error) {throw new RuntimeException('pg_mutation_history_invalid');}
+            if (!($decoded instanceof stdClass)) throw new RuntimeException('pg_mutation_history_invalid');
+            $prior=(array)$decoded;
+            if (($prior['version']??null)!==1 ||
+                ($prior['key']??null)!==$lastKey || !is_array($prior['consumed_keys']??null) ||
+                !array_is_list($prior['consumed_keys']) || count($prior['consumed_keys'])<1 ||
+                count($prior['consumed_keys'])>4096)
+                throw new RuntimeException('pg_mutation_history_invalid');
+            $seen=[];
+            foreach ($prior['consumed_keys'] as $consumedKey) {
+                if (!achbotPgValidMutationKey($consumedKey) || isset($seen[$consumedKey]))
+                    throw new RuntimeException('pg_mutation_history_invalid');
+                $seen[$consumedKey]=true;
+            }
+            if (!isset($seen[$lastKey])) throw new RuntimeException('pg_mutation_history_invalid');
+            $consumed=$prior['consumed_keys'];
+        }
+        if ($lastKey===$key || in_array($key,$consumed,true) || count($consumed)>=4096)
             throw new RuntimeException('pg_account_mutation_requires_review');
-        $intent=['version'=>1,'key'=>$key,'action'=>$action,'changes'=>$changes,'identity'=>$ctx['identity'],
+        $consumed[]=$key;
+        $intent=['version'=>1,'key'=>$key,'consumed_keys'=>$consumed,'action'=>$action,'changes'=>$changes,'identity'=>$ctx['identity'],
             'requested_at'=>gmdate('c')];
         $json=json_encode($intent,JSON_THROW_ON_ERROR);
         $s=$db->prepare("UPDATE provider_accounts SET state='mutating',mutation_key=?,mutation_snapshot=? WHERE id=? AND state='linked'");
@@ -300,8 +337,20 @@ function achbotPgBeginMutation(mysqli $db,array $ctx,string $key,string $action,
         return $intent;
     } catch (Throwable $error) {try{$db->rollback();}catch(Throwable $ignored){}throw $error;}
 }
+function achbotPgPersistMutationIntent(mysqli $db,array $ctx,array $intent,array $changes): array {
+    $intent['changes']=$changes;$intent['phase']='dispatching';
+    $json=json_encode($intent,JSON_THROW_ON_ERROR);$id=(int)$ctx['account']['id'];$key=$intent['key'];
+    $s=$db->prepare("UPDATE provider_accounts SET mutation_snapshot=? WHERE id=? AND state='mutating' AND mutation_key=?");
+    $s->bind_param('sis',$json,$id,$key);
+    if (!$s->execute() || $s->affected_rows!==1) throw new RuntimeException('pg_mutation_intent_unconfirmed');$s->close();
+    return $intent;
+}
 function achbotPgFinishMutation(mysqli $db,array $ctx,array $intent,array $result,string $state='linked'): void {
     if (($result['success']??false)!==true) throw new RuntimeException('pg_mutation_requires_review');
+    $current=achbotPgServerPanel($db,(int)$ctx['order_server_id']);
+    if ($current['id']!==$ctx['panel']['id'] || $current['instance_key']!==$ctx['panel']['instance_key'] ||
+        $current['api_url']!==$ctx['panel']['api_url'] || !hash_equals($current['api_key'],$ctx['panel']['api_key']))
+        throw new RuntimeException('pg_mutation_target_changed');
     $id=(int)$ctx['account']['id'];$key=$intent['key'];
     $intent['verified_at']=gmdate('c');$intent['result']='verified';
     if (isset($result['user']['group_ids'])) $intent['current_group_ids']=$result['user']['group_ids'];
@@ -333,7 +382,8 @@ function achbotPgEditChanges(array $user,array $change,?int $clock=null): array 
         if ($bytes>PHP_INT_MAX-$extra) throw new RuntimeException('pg_edit_volume_overflow');
         $out['data_limit']=$bytes+$extra;
     } else $out['data_limit']=$bytes;
-    if (in_array($user['status'],['expired','limited'],true)) $out['status']='active';
+    if ($user['status']==='disabled') $out['status']='disabled';
+    elseif (in_array($user['status'],['expired','limited'],true)) $out['status']='active';
     return $out;
 }
 function achbotPgServiceEdit(mysqli $db,int $serverId,array $change,?array $giftTarget=null): object {
@@ -343,11 +393,15 @@ function achbotPgServiceEdit(mysqli $db,int $serverId,array $change,?array $gift
             throw new RuntimeException('pg_gift_target_changed');
         if ((int)($change['pay_id']??0)>0) achbotPgQuote($db,(int)$change['pay_id']);
         $key=achbotPgOperationKey('edit',$change);
+        // Own the durable account fence BEFORE observing limits. A competing
+        // completed edit is then included in this request's absolute arithmetic.
+        $intent=achbotPgBeginMutation($db,$ctx,$key,'edit',['phase'=>'claimed']);
         $read=achbotPgRead($ctx['panel'],$ctx['identity']);
         if (($read['success']??false)!==true) throw new RuntimeException('pg_edit_read_unverified');
         $absolute=achbotPgEditChanges($read['user'],$change);
-        $intent=achbotPgBeginMutation($db,$ctx,$key,'edit',[
-            'absolute'=>$absolute,'reset_usage'=>isset($change['volume']),'before'=>$read['user']['group_ids']]);
+        $intent=achbotPgPersistMutationIntent($db,$ctx,$intent,[
+            'absolute'=>$absolute,'reset_usage'=>isset($change['volume']),
+            'before'=>array_intersect_key($read['user'],array_flip(['data_limit','expire','status','group_ids','used_traffic']))]);
         if (isset($change['volume'])) {
             $reset=achbotPgReset($ctx['panel'],$ctx['identity']);
             if (($reset['success']??false)!==true) throw new RuntimeException('pg_reset_requires_review');
@@ -405,8 +459,9 @@ function achbotProviderGiftUsers(mysqli $db,int $serverId,array $target): object
     if (achbotProviderType($db,$serverId)==='marzban') return getMarzbanJson($serverId,null,$target);
     try {
         if (!achbotGiftTargetMatches($db,$serverId,$target)) throw new RuntimeException('pg_gift_target_changed');
-        $s=$db->prepare("SELECT o.id,o.remark FROM orders_list o JOIN provider_accounts a ON a.order_id=o.id WHERE o.server_id=? AND o.status=1 AND a.state='linked' ORDER BY o.id");
+        $s=$db->prepare("SELECT o.id,o.remark,a.state FROM orders_list o LEFT JOIN provider_accounts a ON a.order_id=o.id WHERE o.server_id=? AND o.status=1 ORDER BY o.id");
         $s->bind_param('i',$serverId);$s->execute();$rows=$s->get_result()->fetch_all(MYSQLI_ASSOC);$s->close();
+        foreach ($rows as $row) if (($row['state']??null)!=='linked') throw new RuntimeException('pg_gift_roster_account_requires_review');
         $users=[];foreach ($rows as $row) {
             $ctx=achbotPgOrderContext($db,(int)$row['id']);$r=achbotPgRead($ctx['panel'],$ctx['identity']);
             if (($r['success']??false)!==true) throw new RuntimeException('pg_gift_list_unverified');
@@ -414,4 +469,26 @@ function achbotProviderGiftUsers(mysqli $db,int $serverId,array $target): object
         }
         return (object)['users'=>$users,'total'=>count($users)];
     } catch (Throwable $error) {return achbotProviderFailure('pg_gift_list_requires_review');}
+}
+
+/** The same native presentation policy is used for details and both QR routes. */
+function achbotOrderPresentation(mysqli $db,array $order,array $server,array $state): array {
+    $type=(string)($server['type']??'');$native=['links'=>[],'subscription_url'=>'','backup_urls'=>[]];
+    if ($type==='marzban') {
+        $native['links']=json_decode((string)$order['link'],true)?:[];
+        if ((string)$order['token']!=='')
+            $native['subscription_url']=rtrim((string)$server['panel_url'],'/').'/sub/'.$order['token'];
+        foreach (array_filter(array_map('trim',explode(',',(string)($server['sub_links']??'')))) as $domain)
+            $native['backup_urls'][]=rtrim($domain,'/').'/sub/'.$order['token'];
+    } elseif ($type==='pasarguard') {
+        try {
+            $ctx=achbotPgOrderContext($db,(int)$order['id']);
+            $r=achbotPgRead($ctx['panel'],$ctx['identity']);
+            if (($r['success']??false)!==true) throw new RuntimeException('pg_presentation_read_unverified');
+            $native['subscription_url']=$r['user']['subscription_url'];
+            $links=achbotPgLinks($ctx['panel'],$ctx['identity']);
+            if (($links['success']??false)===true) $native['links']=$links['links'];
+        } catch (Throwable $error) {}
+    }
+    return buildSubscriptionPresentation($type,$native,$state,[],'view',(int)$order['server_id']);
 }

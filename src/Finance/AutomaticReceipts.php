@@ -74,8 +74,8 @@ if($botState['cartToCartAutoAcceptState']=="on"){
             require_once __DIR__.'/BankPurchase.php';
             $delivery=achbotAutoBankProvisionBuySub(
                 $connection,$payInfo,$botState,$buttonValues,
-                is_array($linkIndices??null)?$linkIndices:[0],
-                (bool)($hideConfigIfMany??false),(string)$botUrl
+                [],
+                false,(string)$botUrl
             );
             $autoServiceCompleted=$delivery['committed'];
             if ($autoServiceCompleted) {

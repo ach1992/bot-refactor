@@ -42,7 +42,7 @@ if ($isMenu || $isPick) {
             answerCallbackQuery($callbackId, 'این سفارش قبلاً با روشی دیگر ثبت یا وارد بررسی شده است.', true);
             return;
         }
-        $options=achbotManualCryptoOptions();
+        $options=achbotManualCryptoOptions((int)$from_id);
         // A current grant is needed to create a new claim. Existing pinned
         // claims remain visible for receipt/support even if policy changes.
         if (!$previous) {

@@ -1,136 +1,155 @@
-# Subscription presentation and delivery
+# Subscription presentation and per-server settings
 
-Source contract for the next-release candidate, Issue #81. This document does
-not establish installed PasarGuard acceptance or authorize private configuration,
-tenant data, schema, deployment, or live provider changes.
+Current source contract for Issue #81 / Issue #26 revision 3. This does not
+establish installed provider acceptance or authorize tenant/config/schema,
+deployment, payment, or real provider changes.
 
-## Entry points and data
+## Administrator configuration
 
-- Pure renderer: `AchBot\Subscription\Presentation\present($provider, $native, $botState, $options = [], $context = 'view')`.
-- Runtime wrapper: `buildSubscriptionPresentation(...)` reads the current bot's
-  optional `$subscriptionPresentation[$provider]` and existing legacy settings.
-- Delivery: `buildLinksAndSendQr(...)` consumes the same renderer in
-  `delivery` context. Existing tuple positions remain unchanged.
-- `sendQrFromLink(...)` confirms required photo and account-text effects
-  independently; an intentionally empty QR needs only the text acknowledgement.
-  It never retries an ambiguous transport effect automatically.
+Open **server settings → نمایش لینک و QR** for the desired logical Marzban or
+PasarGuard server, then use the config/subscription toggles, QR choices, link limits and guided
+protocol/name selections. Marzban compatibility has guided index lists. A concise
+Persian summary shows current values. Optional **ویرایش پیشرفته** accepts a full
+JSON document in the administrator's private chat.
+Logical servers sharing a physical panel have independent display documents.
 
-`$native` contains native `links`, `subscription_url` and optional
-`backup_urls`. Links may be a native list, newline text, or native
-`links_base64` text. Optional individual records have
-`{uri, name?, tags?}`. The URI scheme supplies protocol metadata. When no
-explicit name is supplied, a URI fragment or native VMess `ps` supplies its
-name. URI values remain opaque and unchanged; the renderer never creates
-protocol, host, transport, SNI, token, or Group values.
+~~~json
+{
+  "mode": "native",
+  "policy": {
+    "selectors": [{"protocol": "vless", "name": "Fast"}, {"protocol": "trojan"}],
+    "show_configs": true,
+    "show_subscription": true,
+    "max_links": 4,
+    "hide_if_more_than": 20,
+    "qr": "auto"
+  }
+}
+~~~
 
-The pinned PasarGuard client returns `links: list<string>` and the native
-absolute `subscription_url`. It supplies no link tags. Name selectors can
-match names derived from native URIs; tag selectors require explicit upstream
-metadata and must not infer tags from names or panel Groups. Delivery accepts
-native objects and arrays. It persists the native links, leaves the legacy token
-empty, and preserves the caller's account identifier. The provider account
-journal owns stable remote identity. PasarGuard never receives a synthesized
-Marzban `/sub/` path or backup-domain substitution.
+An absent setting defaults to native mode, visible configs and subscription,
+at most ten configs, and automatic QR selection. Defaults do not read/import
+old private globals or global bot display switches. The retired global display
+controls link administrators to server settings; old callbacks and persistence
+keys are rejected. Other bot/service/payment availability controls are unchanged.
 
-The return value contains:
+All fields in one selector must match; records are alternatives, processed in
+configured order with native order within a match. Protocol is case insensitive;
+name/tag are exact. Tags require upstream metadata, never an inferred name or
+provider Group. The pinned PasarGuard client supplies native links without tags.
+Duplicate native URIs are removed. Omitted selectors select all native configs;
+an empty list selects none. A miss never falls back to an unselected config.
 
-| Field | Meaning |
+| Native policy field | Valid values |
 | --- | --- |
-| `links`, `config_html` | Selected inline configs and escaped Telegram HTML |
-| `subscription_url`, `subscription_html` | Visible native HTTP(S) subscription URL and escaped HTML |
-| `backup_html` | Visible, valid distinct backup subscription URLs |
-| `qr_link` | Single QR candidate for delivery; legacy view context uses the visible subscription URL |
-| `qr_config_links` | Config-QR action data, including the explicit legacy exception below |
-| `missing_links`, `selection_missing` | Native data absent or explicit selection unmatched |
-| `reason` | Internal bounded diagnostic; never insert it into customer copy |
-| `notice_html` | Safe Persian next step when no usable links are available |
+| selectors | Up to 50 records with protocol/name/tag; bounded nonempty strings |
+| show_configs | Boolean; inline configs and native config QR data |
+| show_subscription | Boolean; subscription, backups and named subscription QR |
+| max_links | Integer 0–1000; zero selects none |
+| hide_if_more_than | Integer 0–1000; hide configs above native-count threshold |
+| qr | auto, subscription, first_config, none |
 
-A subscription-QR action must encode `subscription_url`, rather than a
-delivery fallback from `qr_link`. A config-QR action consumes
-`qr_config_links`. This keeps their button meanings truthful.
+The qr field controls the single delivery QR. Automatic selection uses the
+visible subscription then first visible config; subscription mode has no config
+fallback. A named subscription QR always uses subscription_url; a config QR
+action uses qr_config_links. The none mode is valid text-only delivery and does
+not prevent an otherwise verified account from being recorded. Text requires an
+independent Telegram acknowledgement. Ambiguous effects are never retried.
 
-## Per-bot/provider policy
+Hard transport bounds apply even to larger explicit limits: at most ten
+inline/config-QR links and 2200 bytes of rendered link content, prioritizing the
+subscription URL; at most two backup URLs within the remaining budget. Overlong
+native configs/URLs are omitted whole, never truncated or rewritten. A safe
+notice explains limits and directs the customer to their subscription/support.
+These are display limits, not provider entitlement controls.
 
-The setting is optional and belongs to each bot's existing private
-configuration. No private file is changed by this source work, and the frozen
-`baseInfo.example.php` is not extended. Example values below are synthetic:
+## Explicit managed Marzban compatibility
 
-```php
-$subscriptionPresentation = [
-    'pasarguard' => [
-        'selectors' => [
-            ['protocol' => 'vless', 'name' => 'Fast'],
-            ['protocol' => 'trojan'],
-        ],
-        'show_configs' => true,
-        'show_subscription' => true,
-        'max_links' => 4,
-        'hide_if_more_than' => 20,
-        'qr' => 'auto',
-    ],
-    // An explicit Marzban policy opts out of all positional legacy selection:
-    // 'marzban' => ['selectors' => [['protocol' => 'vless']]],
-];
-```
+This opt-in document preserves established positional selection without
+reading baseInfo.php:
 
-All selector fields in a record must match; records are alternatives. Selectors
-run in configured order, with native order inside each match. Duplicate URIs
-are removed before applying the maximum. There is no fallback to unselected
-configs when a selector misses. An empty selector list deliberately selects no
-configs. Omitted selectors select all native configs.
+~~~json
+{
+  "mode": "marzban_legacy",
+  "policy": {},
+  "legacy": {
+    "showIndexes": [2, 4],
+    "linkIndices": [0, 2],
+    "hideConfigIfMany": false,
+    "hideConnectLinkForMarzban": false
+  }
+}
+~~~
 
-| Option | Values and effect |
-| --- | --- |
-| `selectors` | List of selectors with exact `protocol`, `name`, `tag`; protocol comparison ignores case |
-| `show_configs` | Boolean; default true, combined with the bot config-link switch |
-| `show_subscription` | Boolean; default true, combined with the bot subscription-link switch |
-| `max_links` | Nonnegative integer maximum after selection; zero selects none |
-| `hide_if_more_than` | Nonnegative integer threshold on total valid native configs |
-| `qr` | `auto` (visible subscription, then first selected visible config), `subscription`, `first_config`, or `none` |
+showIndexes is one based, native-order membership only when view has more than
+three configs. linkIndices is zero based and configured-order for delivery;
+missing positions fall back to the first config and an empty list uses first.
+Delivery without native configs may use the visible subscription URL.
+hideConfigIfMany hides delivery configs above ten; hideConnectLinkForMarzban
+hides view configs. Small delivery uses second config (first if only one);
+above three use the visible subscription, then first-config fallback.
 
-The `qr` option controls the single delivery QR. Config-QR actions remain
-available for selected visible configs; use `show_configs => false` to hide
-both inline config text and config-QR data. Explicit policies use the same
-selection for view, delivery, and config QR. Invalid policy types, keys, or
-selector shapes fail closed with `invalid_policy` and safe customer copy.
-Unset/null Marzban policy enables compatibility; an explicit empty array opts
-into the new native policy with all configs.
+Legacy policy may contain only show_configs, show_subscription, and qr.
+Omitting qr preserves the legacy automatic rule. An explicit compatibility
+exception keeps raw Marzban config-QR data, including duplicates and hidden
+inline configs, subject to hard bounds. PasarGuard rejects this mode; it never
+consumes Marzban positions or a synthesized vendor subscription path.
 
-These settings control presentation only. They cannot constrain what a full
-subscription URL returns or replace provider-side Group/Host access controls.
-A bot that must limit entitlement must configure native provider Groups. Do not
-promise that hiding inline links restricts upstream subscription contents.
+## Storage, validation and migration
 
-## Marzban compatibility when no explicit policy is set
+The cohesive src/Subscription/ServerDisplaySettings.php module owns the resolver,
+transactional editor and authorization. Existing setting stores one row per
+logical server: type ACHBOT_SERVER_DISPLAY_<server_id>; value is a version 1
+envelope with exact server_id, provider, updated_source, and display document.
 
-The renderer preserves the real current Marzban distinctions:
+No DDL or automatic data migration is involved. setting.type is not unique,
+so duplicates fail closed. Unknown/deleted servers, provider mismatch,
+malformed envelopes, unknown keys, wrong types and unsupported modes suppress
+config, subscription and QR output. Administrators can explicitly repair one
+malformed row through the editor; duplicate rows require reviewed operator
+reconciliation. No automatic deletion or repair occurs.
 
-| Surface | Existing behavior |
-| --- | --- |
-| View with at most three links | All native links in native order; ignore `$showIndexes` |
-| View with more than three links | `$showIndexes` is **one-based** membership; preserve native order |
-| Delivery inline configs | `$linkIndices` is **zero-based**, in configured order; missing positions use the first link; empty setting uses first |
-| Delivery with no native configs | Use the visible subscription URL as the legacy config fallback |
-| Inline hiding | Bot `configLinkState=off` hides inline text; `$hideConnectLinkForMarzban` additionally hides it in view; `$hideConfigIfMany` hides delivery inline configs above ten |
-| Single delivery QR | Second native link, or first when only one, for at most three links; above three use visible subscription URL, then first-link fallback |
-| Explicit config-QR action | **All raw native links**, preserving order and duplicates, even when inline text is hidden |
-| Subscription visibility | Bot `subLinkState=on` controls subscription text, backup text, and named subscription QR |
+Edits require a verified webhook, exact private sender/chat/frame, current unique
+administrator identity, fresh source order, owned persisted step and unchanged
+baseline. A named writer lock and transaction serialize writes and role checks.
+Stale/replayed saves cannot overwrite another editor. Logs contain no settings,
+URLs, credentials, raw exceptions, or customer values.
 
-The old positional settings never select PasarGuard configs. Genuine legacy
-fallbacks remain confined to compatibility mode; explicit provider policies do
-not silently borrow indices, select a different config, or invent a URL.
+Before rollout, configure each desired logical server explicitly. Copy old
+values deliberately into native or managed legacy mode. Runtime no longer reads
+subscriptionPresentation, showIndexes, linkIndices, hideConfigIfMany,
+hideConnectLinkForMarzban, or retired global subLinkState/configLinkState values.
+No private file was read/edited. The current synthetic example removes obsolete
+lines; frozen V0–V9 source/tests/schema remain unchanged.
 
-## Evidence and limits
+Display settings do not filter the full subscription response. Native provider
+Groups/Hosts must enforce actual access.
 
-`php tools/test_subscription_presentation.php` runs real renderer,
-extracted runtime wrappers, and real delivery helpers with local synthetic
-transport. It checks native formats, selectors, policy failures, both Marzban
-index bases and QR contracts, malformed/empty data, customer escaping,
-independent Telegram acknowledgements, and QR-file cleanup. It uses no database,
-network, real account, credential, or customer information.
+## Runtime and evidence
 
-The existing `tools/test_post_v9_catalogue_qr.py` and
-`tools/test_post_v9_standard_integrity.py` retain native source/isolated
-database coverage for Marzban QR and financial delivery behaviour. Master owns
-aggregate call-site verification, exact-candidate PHP 8.1/8.4 CI, package gates,
-and installed/operator acceptance.
+- Pure renderer: AchBot\Subscription\Presentation\present(...).
+- Runtime facade: buildSubscriptionPresentation(provider, native, botState,
+  options, context, serverId); sixth argument binds the logical server. The
+  old options position remains compatible but cannot override stored settings.
+- Delivery resolves the existing server_id fifth argument of
+  buildLinksAndSendQr(...). Tuple positions/native persisted links remain.
+- Paid/nonpayment CREATE helpers preflight settings before reserving/dispatching
+  a remote CREATE. Later presentation changes never authorize replay.
+
+Run the following source-only checks:
+
+~~~sh
+php tools/test_subscription_presentation.php
+python3 tools/test_server_display_settings.py --run-disposable
+python3 tools/test_post_v9_bank_buy.py --run-disposable
+~~~
+
+They cover pure selection and transport acknowledgement/cleanup; actual resolver,
+facade, delivery, per-server isolation, authenticated admin frames, forged/stale
+operations, role revocation, malformed/duplicate rows, retired global controls
+and meaningful text-only delivery. The bank suite proves text-only account
+recording and invalid-display preflight before remote creation/capacity changes.
+Only disposable socket MariaDB, synthetic data and local spies are used.
+
+Master owns aggregate call sites/inventory, exact-candidate PHP 8.1/8.4,
+package/history gates, independent review and installed/operator acceptance.

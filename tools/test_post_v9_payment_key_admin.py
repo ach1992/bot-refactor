@@ -453,6 +453,22 @@ def main():
         saved('23456')
         assert state(w,e)['manualUsdtRateToman']=='23456'
         checks.append('manual_usdt_rate_positive_range')
+        opened('manualUsdtRateToman')
+        saved('1000000000')
+        assert state(w,e)['manualUsdtRateToman']=='1000000000'
+        opened('usdtAgentRateToman')
+        denied(saved('1'))
+        denied(saved('1000000001'))
+        saved('34567')
+        assert state(w,e)['usdtAgentRateToman']=='34567'
+        opened('usdtAgentRateToman')
+        saved('/clear')
+        assert state(w,e)['usdtAgentRateToman']==''
+        opened('manualUsdtRateToman')
+        saved('/clear')
+        assert state(w,e)['manualUsdtRateToman']==''
+        checks.append('normal_agent_rates_validated_upper_boundary_and_clear')
+
         # Four manual-chain destinations retain exactly their original
         # validators. Public wallet addresses, unlike merchant credentials,
         # are shown in operator menus and remain editable.
