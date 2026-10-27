@@ -1,0 +1,5572 @@
+{
+  "source": "621307be775163f0b85ae9fa5b21b1d0b654cfed",
+  "method": "Per-file PHP tokenizer, lexical SQL/include extraction, manually audited dynamic targets",
+  "limitations": [
+    "Source references do not prove installed absence, emptiness, external non-use, or retention disposition.",
+    "This inventory is a pinned audit, not a runtime/startup gate."
+  ],
+  "runtime_files": [
+    {
+      "path": "baseInfo.example.php",
+      "sha256": "f49adcbb7e563008d4682bc9db82b435016d4d7d98eb7742c8be19f3d092ba8e",
+      "role": "intentionally shipped synthetic private-config template",
+      "included_by": []
+    },
+    {
+      "path": "bot.php",
+      "sha256": "e2ebed3c6e57c46b6d6922742f78bed091c09f4da3a160a0d2fe8568f0e704fc",
+      "role": "authenticated Telegram webhook",
+      "included_by": []
+    },
+    {
+      "path": "buy_helpers.php",
+      "sha256": "5d6cb759396117a0f65e5dfad23cb8422223df1b975bb81cc8258f65e3e58d45",
+      "role": "current included module/library/facade",
+      "included_by": [
+        {
+          "file": "bot.php",
+          "line": 30
+        },
+        {
+          "file": "pay/back.php",
+          "line": 25
+        },
+        {
+          "file": "settings/rewardReport.php",
+          "line": 56
+        }
+      ]
+    },
+    {
+      "path": "config.php",
+      "sha256": "e280e2ba832b67e8ad8b3cdb0dab7b00971d6092552705a2d55ccedc486cfdbf",
+      "role": "current included module/library/facade",
+      "included_by": [
+        {
+          "file": "bot.php",
+          "line": 29
+        },
+        {
+          "file": "pay/back.php",
+          "line": 24
+        },
+        {
+          "file": "pay/index.php",
+          "line": 4
+        },
+        {
+          "file": "settings/gift2all.php",
+          "line": 12
+        },
+        {
+          "file": "settings/messagewizwiz.php",
+          "line": 3
+        },
+        {
+          "file": "settings/rewardReport.php",
+          "line": 4
+        },
+        {
+          "file": "settings/warnusers.php",
+          "line": 4
+        }
+      ]
+    },
+    {
+      "path": "health.php",
+      "sha256": "d7372abb5ba44ccfe4643909041e8ce3b628e9c2dfb98702cfc40ec7af2e5e9f",
+      "role": "public health endpoint",
+      "included_by": []
+    },
+    {
+      "path": "index.html",
+      "sha256": "7345551756bf9a5c8b3b49eb9ef4e27421deef3dd8e0d3d1ae3a1002c874a7a0",
+      "role": "existing public root landing page",
+      "included_by": []
+    },
+    {
+      "path": "pay/back.php",
+      "sha256": "013b757a25c0160420955c0f68c9dd1db2ab2f55350bdb23ea168e3397d07973",
+      "role": "public gateway return/IPN",
+      "included_by": []
+    },
+    {
+      "path": "pay/index.php",
+      "sha256": "3e80769cefd473f2d5cd446cb57db9028573a018cf0fad92fc9781746aa2b487",
+      "role": "public hosted checkout",
+      "included_by": []
+    },
+    {
+      "path": "phpqrcode/phpqrcode.php",
+      "sha256": "1c85fb1ba453646697e432986031dbc5d5daf081cd0bf55a08523ec0580b91b0",
+      "role": "current included module/library/facade",
+      "included_by": [
+        {
+          "file": "phpqrcode/qrlib.php",
+          "line": 6
+        }
+      ]
+    },
+    {
+      "path": "phpqrcode/qrlib.php",
+      "sha256": "08bc2c827e9fc926332f9a691260826341b2068cbdb3d7ed91aef1649011e401",
+      "role": "current included module/library/facade",
+      "included_by": [
+        {
+          "file": "buy_helpers.php",
+          "line": 73
+        },
+        {
+          "file": "buy_helpers.php",
+          "line": 255
+        }
+      ]
+    },
+    {
+      "path": "settings/gift2all.php",
+      "sha256": "b2ed374b59dead42a00433a6821910fb86b12c7453526915371012529907b249",
+      "role": "current gift worker entrypoint",
+      "included_by": []
+    },
+    {
+      "path": "settings/jdf.php",
+      "sha256": "dcd27141100bfa67f1f367c7cb6f87569e18b4b3006ed2155dc5e11ab4b3a33d",
+      "role": "current included module/library/facade",
+      "included_by": [
+        {
+          "file": "config.php",
+          "line": 9
+        },
+        {
+          "file": "settings/messagewizwiz.php",
+          "line": 4
+        }
+      ]
+    },
+    {
+      "path": "settings/messagewizwiz.php",
+      "sha256": "836e050a6c71c8d9e8c4efde94a1e606b78e307742bd132407d36cf5841ea056",
+      "role": "current broadcast worker entrypoint",
+      "included_by": []
+    },
+    {
+      "path": "settings/rewardReport.php",
+      "sha256": "dbad53de8399c2ae7cfaf18f158b24043236efcd51009c5ac4b44a314592410e",
+      "role": "current reward/backup/renewal worker entrypoint",
+      "included_by": []
+    },
+    {
+      "path": "settings/subLink.php",
+      "sha256": "89d02f9219d268e705731ab7e4a5418ed4aab7ba4f318750b9a40a9f573ef414",
+      "role": "public subscription endpoint",
+      "included_by": []
+    },
+    {
+      "path": "settings/values.php",
+      "sha256": "ff226972e99469c7fa25bb41786eac550b5d56a882101e59148d8e04751e353f",
+      "role": "current included module/library/facade",
+      "included_by": [
+        {
+          "file": "config.php",
+          "line": 8
+        },
+        {
+          "file": "health.php",
+          "line": 2
+        }
+      ]
+    },
+    {
+      "path": "settings/warnusers.php",
+      "sha256": "d2e673f5a9c13641c7725e2956735c288074d2b06fdf59cf167c870f31d4dfe0",
+      "role": "current warning worker entrypoint",
+      "included_by": []
+    },
+    {
+      "path": "src/Admin/Bans.php",
+      "sha256": "f7297385311bfb5ea3b9b40e84efb7ee27078d558993769830f3f4156c929767",
+      "role": "current included module/library/facade",
+      "included_by": [
+        {
+          "file": "bot.php",
+          "line": 1427
+        },
+        {
+          "file": "bot.php",
+          "line": 1429
+        },
+        {
+          "file": "bot.php",
+          "line": 1434
+        }
+      ]
+    },
+    {
+      "path": "src/Admin/Roles.php",
+      "sha256": "755b21680f075ffce2d795134bc37a74a10dd38fd9b60924c9a3eed9a32d1f17",
+      "role": "current included module/library/facade",
+      "included_by": [
+        {
+          "file": "bot.php",
+          "line": 465
+        }
+      ]
+    },
+    {
+      "path": "src/Admin/Unban.php",
+      "sha256": "001b903fd2b445761e7aa3009de0c4e289c57347d8fa4fec3ce32472435c4863",
+      "role": "current included module/library/facade",
+      "included_by": [
+        {
+          "file": "bot.php",
+          "line": 1481
+        }
+      ]
+    },
+    {
+      "path": "src/Agent/Applications.php",
+      "sha256": "95250b0ebec498c06109366c3f115bf0161b9513a6904fb66e05dca92c721aaf",
+      "role": "current included module/library/facade",
+      "included_by": [
+        {
+          "file": "bot.php",
+          "line": 1426
+        }
+      ]
+    },
+    {
+      "path": "src/Agent/Discounts.php",
+      "sha256": "a88a142996113094e8369a3bb32744e279bd3fc89c60d0a7691838d6f9dfb918",
+      "role": "current included module/library/facade",
+      "included_by": [
+        {
+          "file": "bot.php",
+          "line": 773
+        }
+      ]
+    },
+    {
+      "path": "src/Agent/Rejected.php",
+      "sha256": "7a1caea4f52538c6e59923bbd04c0beb11983d2344e5c97b51b5196a702583cc",
+      "role": "current included module/library/facade",
+      "included_by": [
+        {
+          "file": "bot.php",
+          "line": 1578
+        }
+      ]
+    },
+    {
+      "path": "src/Backup/Database.php",
+      "sha256": "3d3dc27a22e5eb8b2da91c07d8c2cd63d08717fa33e488148faaab35c1c9c847",
+      "role": "current included module/library/facade",
+      "included_by": [
+        {
+          "file": "config.php",
+          "line": 52
+        },
+        {
+          "file": "settings/rewardReport.php",
+          "line": 45
+        }
+      ]
+    },
+    {
+      "path": "src/Broadcast/Routes.php",
+      "sha256": "0c88a9c1f9295e45dd72e5e24412a1026d932d15a42977319a93b0ffd2148212",
+      "role": "current included module/library/facade",
+      "included_by": [
+        {
+          "file": "bot.php",
+          "line": 1342
+        }
+      ]
+    },
+    {
+      "path": "src/Finance/AgentDiscounts.php",
+      "sha256": "c909ccf889de205a4c7a5d1a206823d40a01c847f9e952d225152c1c8427b064",
+      "role": "current included module/library/facade",
+      "included_by": [
+        {
+          "file": "config.php",
+          "line": 929
+        }
+      ]
+    },
+    {
+      "path": "src/Finance/AutomaticReceipts.php",
+      "sha256": "900dec3c1235d6273e76bfabf331350b7190228a4073df3e8f9091117bdfcc36",
+      "role": "current included module/library/facade",
+      "included_by": [
+        {
+          "file": "settings/rewardReport.php",
+          "line": 68
+        }
+      ]
+    },
+    {
+      "path": "src/Finance/AutomaticRenewal.php",
+      "sha256": "6d884915742397fdcc1176083d45e28ac9a48675c0a23cb1133107fc30599e8e",
+      "role": "current included module/library/facade",
+      "included_by": [
+        {
+          "file": "settings/warnusers.php",
+          "line": 16
+        }
+      ]
+    },
+    {
+      "path": "src/Finance/Discounts.php",
+      "sha256": "a264f69b6510c9b3b4fec004ef2412292e8a713219f6761a1e32cff1149731ef",
+      "role": "current included module/library/facade",
+      "included_by": [
+        {
+          "file": "config.php",
+          "line": 3327
+        }
+      ]
+    },
+    {
+      "path": "src/Finance/GatewayClient.php",
+      "sha256": "4a63bad0a99597fc026039952c4f569c1f8814c7dfc193ac50e9d24ed19a3762",
+      "role": "current included module/library/facade",
+      "included_by": [
+        {
+          "file": "config.php",
+          "line": 930
+        },
+        {
+          "file": "pay/back.php",
+          "line": 18
+        },
+        {
+          "file": "src/Finance/GatewayReturn.php",
+          "line": 8
+        }
+      ]
+    },
+    {
+      "path": "src/Finance/GatewayInitiation.php",
+      "sha256": "2d01a400d4bdb801e3d07bdd7ebada22b520737fb59cba4be999541fd96e8365",
+      "role": "current included module/library/facade",
+      "included_by": [
+        {
+          "file": "pay/index.php",
+          "line": 6
+        }
+      ]
+    },
+    {
+      "path": "src/Finance/GatewayReturn.php",
+      "sha256": "81af64634277abf643464caae8ca90f674e4ab603ef662c3c6357244c30b7d27",
+      "role": "current included module/library/facade",
+      "included_by": [
+        {
+          "file": "pay/back.php",
+          "line": 19
+        },
+        {
+          "file": "pay/back.php",
+          "line": 34
+        },
+        {
+          "file": "settings/rewardReport.php",
+          "line": 57
+        },
+        {
+          "file": "src/Finance/Routes/ManualReceipts.php",
+          "line": 206
+        }
+      ]
+    },
+    {
+      "path": "src/Finance/ReceiptHelpers.php",
+      "sha256": "1d3b4982bfa20df26c0af0af1126751b14a161fba32ab408cfdc3ab46c4fdc33",
+      "role": "current included module/library/facade",
+      "included_by": [
+        {
+          "file": "buy_helpers.php",
+          "line": 338
+        },
+        {
+          "file": "config.php",
+          "line": 1171
+        },
+        {
+          "file": "src/Finance/AutomaticRenewal.php",
+          "line": 7
+        },
+        {
+          "file": "src/Subscription/AccountDeletion.php",
+          "line": 7
+        },
+        {
+          "file": "src/Subscription/OrderManagement.php",
+          "line": 7
+        },
+        {
+          "file": "src/Finance/PaymentKeyAdmin.php",
+          "line": 50
+        },
+        {
+          "file": "src/Finance/PaymentKeyAdmin.php",
+          "line": 61
+        }
+      ]
+    },
+    {
+      "path": "src/Finance/ReferralReward.php",
+      "sha256": "0dd3fbebd4d3c6beb3e05fe9373271791a2d9a9f144d79a337d2ac26786ef88a",
+      "role": "current included module/library/facade",
+      "included_by": [
+        {
+          "file": "buy_helpers.php",
+          "line": 293
+        }
+      ]
+    },
+    {
+      "path": "src/Finance/RenewalHelper.php",
+      "sha256": "6e09b41da0dfeca5f6a4133e57cd22280b9cd6a55f8cd6617be9242ce05c723f",
+      "role": "current included module/library/facade",
+      "included_by": [
+        {
+          "file": "buy_helpers.php",
+          "line": 294
+        }
+      ]
+    },
+    {
+      "path": "src/Finance/Routes/AdminWallet.php",
+      "sha256": "d90f203571ce3e9cc9ba6dbc46421cd19954f88c2f428a6a3b95160d7277ca66",
+      "role": "current included module/library/facade",
+      "included_by": [
+        {
+          "file": "bot.php",
+          "line": 1068
+        },
+        {
+          "file": "bot.php",
+          "line": 1069
+        },
+        {
+          "file": "bot.php",
+          "line": 1071
+        },
+        {
+          "file": "bot.php",
+          "line": 1072
+        }
+      ]
+    },
+    {
+      "path": "src/Finance/Routes/Checkout.php",
+      "sha256": "d76c40edb83edd30c82cc5cb14c65b2a2d424cfc6cd438141437bf2b73256e87",
+      "role": "current included module/library/facade",
+      "included_by": [
+        {
+          "file": "bot.php",
+          "line": 1342
+        },
+        {
+          "file": "bot.php",
+          "line": 1344
+        },
+        {
+          "file": "bot.php",
+          "line": 1345
+        },
+        {
+          "file": "bot.php",
+          "line": 1346
+        },
+        {
+          "file": "bot.php",
+          "line": 1347
+        },
+        {
+          "file": "bot.php",
+          "line": 1348
+        }
+      ]
+    },
+    {
+      "path": "src/Finance/Routes/DiscountAdministration.php",
+      "sha256": "ddb77a15b4d0c18dbb1b92bd97daa3cd6b9e47cf88718b17d3d0cdd88922f930",
+      "role": "current included module/library/facade",
+      "included_by": [
+        {
+          "file": "bot.php",
+          "line": 2516
+        }
+      ]
+    },
+    {
+      "path": "src/Finance/Routes/DiscountEntry.php",
+      "sha256": "ffc0b8eb9b0906ab17bd874fca7a51c9137fa2e2642690f0c9acbc8c0a91a796",
+      "role": "current included module/library/facade",
+      "included_by": [
+        {
+          "file": "bot.php",
+          "line": 1342
+        },
+        {
+          "file": "bot.php",
+          "line": 1344
+        },
+        {
+          "file": "bot.php",
+          "line": 1345
+        }
+      ]
+    },
+    {
+      "path": "src/Finance/Routes/Extensions.php",
+      "sha256": "7ea9e419ef56eb59237263459b3e57a977d7a1a4cf05a8fe5158f1426c05d104",
+      "role": "current included module/library/facade",
+      "included_by": [
+        {
+          "file": "bot.php",
+          "line": 1847
+        }
+      ]
+    },
+    {
+      "path": "src/Finance/Routes/ManualApproval.php",
+      "sha256": "9fb1c6cd79b32cb3db76e69d689453ddd0334d25753a2a89f214ac3661fd9eb4",
+      "role": "current included module/library/facade",
+      "included_by": [
+        {
+          "file": "bot.php",
+          "line": 1427
+        }
+      ]
+    },
+    {
+      "path": "src/Finance/Routes/ManualReceipts.php",
+      "sha256": "ceee128c1ac9ea15ce69cf9282eda6d3af4bd686df9cb2fff8602d9ddf0e3bc3",
+      "role": "current included module/library/facade",
+      "included_by": [
+        {
+          "file": "bot.php",
+          "line": 1068
+        },
+        {
+          "file": "bot.php",
+          "line": 1069
+        },
+        {
+          "file": "bot.php",
+          "line": 1071
+        }
+      ]
+    },
+    {
+      "path": "src/Finance/Routes/PrePayment.php",
+      "sha256": "52d34bbfd3595286112b3280bebd554299a864db68bd1e05d7919cbefc5e8a49",
+      "role": "current included module/library/facade",
+      "included_by": [
+        {
+          "file": "bot.php",
+          "line": 82
+        }
+      ]
+    },
+    {
+      "path": "src/Finance/Routes/RenewalCheckout.php",
+      "sha256": "88c88543383d76c2546ab1b6ca672c0a86b13609b286562b0079c772cc6b4d1e",
+      "role": "current included module/library/facade",
+      "included_by": [
+        {
+          "file": "bot.php",
+          "line": 1579
+        },
+        {
+          "file": "bot.php",
+          "line": 1583
+        },
+        {
+          "file": "bot.php",
+          "line": 1584
+        },
+        {
+          "file": "bot.php",
+          "line": 1586
+        },
+        {
+          "file": "bot.php",
+          "line": 1588
+        },
+        {
+          "file": "bot.php",
+          "line": 1589
+        },
+        {
+          "file": "bot.php",
+          "line": 1591
+        },
+        {
+          "file": "bot.php",
+          "line": 1592
+        },
+        {
+          "file": "bot.php",
+          "line": 1594
+        }
+      ]
+    },
+    {
+      "path": "src/Finance/Routes/RenewalPlan.php",
+      "sha256": "b59f35912095d1650595af1f9ccb31c15d1a15776d6d9a291511e52c2b431872",
+      "role": "current included module/library/facade",
+      "included_by": [
+        {
+          "file": "bot.php",
+          "line": 1579
+        },
+        {
+          "file": "bot.php",
+          "line": 1583
+        },
+        {
+          "file": "bot.php",
+          "line": 1584
+        },
+        {
+          "file": "bot.php",
+          "line": 1586
+        },
+        {
+          "file": "bot.php",
+          "line": 1588
+        }
+      ]
+    },
+    {
+      "path": "src/Finance/Routes/RenewalSelection.php",
+      "sha256": "884e9c0ba47561bcc7b65e7f0ae338bc8070c492fd4ae4dce5c9ee195e6f1f9d",
+      "role": "current included module/library/facade",
+      "included_by": [
+        {
+          "file": "bot.php",
+          "line": 1579
+        },
+        {
+          "file": "bot.php",
+          "line": 1583
+        }
+      ]
+    },
+    {
+      "path": "src/Finance/Routes/WalletRecharge.php",
+      "sha256": "9a759c5572ee8563c091c18cb0d2d6219a328ba9f01e9e0b32d49cb8ecd3c2a1",
+      "role": "current included module/library/facade",
+      "included_by": [
+        {
+          "file": "bot.php",
+          "line": 1068
+        },
+        {
+          "file": "bot.php",
+          "line": 1069
+        }
+      ]
+    },
+    {
+      "path": "src/Finance/Routes/WalletTransfer.php",
+      "sha256": "82f49775c0070f85d4f76d0f227e11e712cd8413d05062b0b527d105cc8ece3c",
+      "role": "current included module/library/facade",
+      "included_by": [
+        {
+          "file": "bot.php",
+          "line": 1068
+        }
+      ]
+    },
+    {
+      "path": "src/Finance/WalletSettlement.php",
+      "sha256": "2ed04a08ef045898fcad1861436dae9e54c25322543bb83db5624bcf2c58baee",
+      "role": "current included module/library/facade",
+      "included_by": [
+        {
+          "file": "buy_helpers.php",
+          "line": 295
+        }
+      ]
+    },
+    {
+      "path": "src/Finance/WalletStart.php",
+      "sha256": "580e836116eac8b3e4408056ccba8466f50a24fbe05c978465a2cbf01da30638",
+      "role": "current included module/library/facade",
+      "included_by": [
+        {
+          "file": "config.php",
+          "line": 303
+        }
+      ]
+    },
+    {
+      "path": "src/Jobs/BroadcastSend.php",
+      "sha256": "11ffdc3c89368298ee29c0191f8989124b3ec4fd2a84bf04f0a828cec822c7ad",
+      "role": "current included module/library/facade",
+      "included_by": [
+        {
+          "file": "settings/messagewizwiz.php",
+          "line": 23
+        }
+      ]
+    },
+    {
+      "path": "src/Jobs/Checkpoint.php",
+      "sha256": "bd6928cd421410ddd1876847519b7c618594d5fe97a372ec3635424b1890e8a1",
+      "role": "current included module/library/facade",
+      "included_by": [
+        {
+          "file": "settings/messagewizwiz.php",
+          "line": 9
+        }
+      ]
+    },
+    {
+      "path": "src/Jobs/MessageActions.php",
+      "sha256": "7e0c45718def613a9736ce5a7c0658ee47c6b5b96766d5de44889dbffb0836e5",
+      "role": "current included module/library/facade",
+      "included_by": [
+        {
+          "file": "settings/messagewizwiz.php",
+          "line": 20
+        }
+      ]
+    },
+    {
+      "path": "src/Notifications/Warnings.php",
+      "sha256": "b888368e5fce5c12a4dc6c3357a59bd1f2e6cf1f020cef222e24b4528ddf05e5",
+      "role": "current included module/library/facade",
+      "included_by": [
+        {
+          "file": "settings/warnusers.php",
+          "line": 9
+        }
+      ]
+    },
+    {
+      "path": "src/Panel/Accounts.php",
+      "sha256": "e415c6159296b66dd2697231c61e64c4515b4c717b8a70e2a8afbe1aa0199129",
+      "role": "current included module/library/facade",
+      "included_by": [
+        {
+          "file": "config.php",
+          "line": 3721
+        },
+        {
+          "file": "config.php",
+          "line": 3725
+        },
+        {
+          "file": "config.php",
+          "line": 3729
+        },
+        {
+          "file": "config.php",
+          "line": 3733
+        },
+        {
+          "file": "config.php",
+          "line": 3738
+        },
+        {
+          "file": "config.php",
+          "line": 3742
+        },
+        {
+          "file": "config.php",
+          "line": 3747
+        },
+        {
+          "file": "config.php",
+          "line": 3751
+        },
+        {
+          "file": "config.php",
+          "line": 3755
+        },
+        {
+          "file": "config.php",
+          "line": 3759
+        },
+        {
+          "file": "config.php",
+          "line": 3763
+        }
+      ]
+    },
+    {
+      "path": "src/Plans/Administration.php",
+      "sha256": "3fead024c39c6b38d57d90b8d900e039ec1d63259eeddb0280002d68e8acc1ad",
+      "role": "current included module/library/facade",
+      "included_by": [
+        {
+          "file": "bot.php",
+          "line": 1579
+        },
+        {
+          "file": "bot.php",
+          "line": 1583
+        },
+        {
+          "file": "bot.php",
+          "line": 1584
+        },
+        {
+          "file": "bot.php",
+          "line": 1586
+        },
+        {
+          "file": "bot.php",
+          "line": 1588
+        },
+        {
+          "file": "bot.php",
+          "line": 1589
+        },
+        {
+          "file": "bot.php",
+          "line": 1591
+        }
+      ]
+    },
+    {
+      "path": "src/Plans/Categories.php",
+      "sha256": "0363fbbff4ff38b2503baab5de568edf877ab37567e4f38e6c6acc50c67165ca",
+      "role": "current included module/library/facade",
+      "included_by": [
+        {
+          "file": "bot.php",
+          "line": 1847
+        },
+        {
+          "file": "bot.php",
+          "line": 1853
+        }
+      ]
+    },
+    {
+      "path": "src/Plans/Intervals.php",
+      "sha256": "3b2c12bc5404fb7d6e35e6bbddcd20dcb4a0874eee5d4bf42af84c6777b3ad95",
+      "role": "current included module/library/facade",
+      "included_by": [
+        {
+          "file": "bot.php",
+          "line": 1427
+        },
+        {
+          "file": "bot.php",
+          "line": 1429
+        }
+      ]
+    },
+    {
+      "path": "src/Presentation/Labels.php",
+      "sha256": "a071f9f50663ffe9415e90be2e8d1ec41b0da70c5045f36c640d41944bac0338",
+      "role": "current included module/library/facade",
+      "included_by": [
+        {
+          "file": "config.php",
+          "line": 103
+        },
+        {
+          "file": "config.php",
+          "line": 108
+        }
+      ]
+    },
+    {
+      "path": "src/Presentation/Text.php",
+      "sha256": "739f4107327156254deda3f017c3e9f0d0c5424c041bf898fd9d1ba74ab37e31",
+      "role": "current included module/library/facade",
+      "included_by": [
+        {
+          "file": "config.php",
+          "line": 305
+        },
+        {
+          "file": "config.php",
+          "line": 311
+        }
+      ]
+    },
+    {
+      "path": "src/Purchase/AgentPricing.php",
+      "sha256": "3d11b06428717876f8910349acc8d727e813c885c543cd4da24c1eb4ce67ada8",
+      "role": "current included module/library/facade",
+      "included_by": [
+        {
+          "file": "buy_helpers.php",
+          "line": 296
+        }
+      ]
+    },
+    {
+      "path": "src/Purchase/Catalogue.php",
+      "sha256": "85550542e558f3d93fb88342c3e3f1466cb0835fc5d3ce8d8592feba430d0630",
+      "role": "current included module/library/facade",
+      "included_by": [
+        {
+          "file": "bot.php",
+          "line": 1342
+        },
+        {
+          "file": "bot.php",
+          "line": 1344
+        }
+      ]
+    },
+    {
+      "path": "src/Purchase/Core.php",
+      "sha256": "8580190638d8e09094a60d577337f29eb026fb2d25f660d7bba7ee6fb78c47fe",
+      "role": "current included module/library/facade",
+      "included_by": [
+        {
+          "file": "buy_helpers.php",
+          "line": 3
+        },
+        {
+          "file": "config.php",
+          "line": 17
+        }
+      ]
+    },
+    {
+      "path": "src/Purchase/EntryAndBulk.php",
+      "sha256": "b70a7e613163ac9a47b43799e58e296586e0ab61c7e20b87fc9f5fccf5636b9a",
+      "role": "current included module/library/facade",
+      "included_by": [
+        {
+          "file": "bot.php",
+          "line": 1317
+        }
+      ]
+    },
+    {
+      "path": "src/Purchase/OrderWrites.php",
+      "sha256": "174147f73cb6dcd983262bef572b67b1bcaf9980b41fdb4f1c665671c9be708b",
+      "role": "current included module/library/facade",
+      "included_by": [
+        {
+          "file": "buy_helpers.php",
+          "line": 291
+        }
+      ]
+    },
+    {
+      "path": "src/Purchase/SelectPlan.php",
+      "sha256": "d3fc18f3e4e526482d10b50cc1204227edfa59d7b068a13a701b4d2c7119a9b2",
+      "role": "current included module/library/facade",
+      "included_by": [
+        {
+          "file": "bot.php",
+          "line": 1342
+        },
+        {
+          "file": "bot.php",
+          "line": 1344
+        },
+        {
+          "file": "bot.php",
+          "line": 1345
+        },
+        {
+          "file": "bot.php",
+          "line": 1346
+        },
+        {
+          "file": "bot.php",
+          "line": 1347
+        }
+      ]
+    },
+    {
+      "path": "src/Purchase/TrialCatalogue.php",
+      "sha256": "daa84ca26e05db812e3e671e9d712da7f8dd1aacbaae4249e7010b6593bd1a2e",
+      "role": "current included module/library/facade",
+      "included_by": [
+        {
+          "file": "bot.php",
+          "line": 1342
+        },
+        {
+          "file": "bot.php",
+          "line": 1344
+        },
+        {
+          "file": "bot.php",
+          "line": 1345
+        },
+        {
+          "file": "bot.php",
+          "line": 1346
+        }
+      ]
+    },
+    {
+      "path": "src/Purchase/TrialProvision.php",
+      "sha256": "2f480c5218a328b2776e52d30d9cd21b587ad8ba00f20e4f4e09bb7d40fa4794",
+      "role": "current included module/library/facade",
+      "included_by": [
+        {
+          "file": "bot.php",
+          "line": 1483
+        }
+      ]
+    },
+    {
+      "path": "src/Subscription/AccountDeletion.php",
+      "sha256": "9060c1a09911f12a8f9ee4dab5cd873268735089741a49919f93823699ea2e19",
+      "role": "current included module/library/facade",
+      "included_by": [
+        {
+          "file": "bot.php",
+          "line": 1845
+        }
+      ]
+    },
+    {
+      "path": "src/Subscription/AccountDetails.php",
+      "sha256": "6461e7885958ad70bb7f76a972aff5e4adc873b7c79cee2750ef7a177a8c1972",
+      "role": "current included module/library/facade",
+      "included_by": [
+        {
+          "file": "config.php",
+          "line": 3429
+        },
+        {
+          "file": "config.php",
+          "line": 3433
+        },
+        {
+          "file": "config.php",
+          "line": 3437
+        },
+        {
+          "file": "config.php",
+          "line": 3441
+        },
+        {
+          "file": "config.php",
+          "line": 3482
+        },
+        {
+          "file": "config.php",
+          "line": 3486
+        },
+        {
+          "file": "config.php",
+          "line": 3490
+        },
+        {
+          "file": "config.php",
+          "line": 3494
+        },
+        {
+          "file": "config.php",
+          "line": 3498
+        }
+      ]
+    },
+    {
+      "path": "src/Subscription/AccountTransfers.php",
+      "sha256": "6bb865cdc91ed682b73f45e4bbea1cce2b09e889811cd4bc2d00c0b63f99b02c",
+      "role": "current included module/library/facade",
+      "included_by": [
+        {
+          "file": "bot.php",
+          "line": 1579
+        },
+        {
+          "file": "bot.php",
+          "line": 1583
+        },
+        {
+          "file": "bot.php",
+          "line": 1584
+        },
+        {
+          "file": "bot.php",
+          "line": 1586
+        },
+        {
+          "file": "bot.php",
+          "line": 1588
+        },
+        {
+          "file": "bot.php",
+          "line": 1589
+        },
+        {
+          "file": "bot.php",
+          "line": 1591
+        },
+        {
+          "file": "bot.php",
+          "line": 1592
+        },
+        {
+          "file": "bot.php",
+          "line": 1594
+        },
+        {
+          "file": "bot.php",
+          "line": 1596
+        }
+      ]
+    },
+    {
+      "path": "src/Subscription/ConfigRefresh.php",
+      "sha256": "e8116c351798db517c8bef5219be414d45d7f9a6b5b1f0815496cd85e8e900b6",
+      "role": "current included module/library/facade",
+      "included_by": [
+        {
+          "file": "bot.php",
+          "line": 1579
+        },
+        {
+          "file": "bot.php",
+          "line": 1583
+        },
+        {
+          "file": "bot.php",
+          "line": 1584
+        },
+        {
+          "file": "bot.php",
+          "line": 1586
+        },
+        {
+          "file": "bot.php",
+          "line": 1588
+        },
+        {
+          "file": "bot.php",
+          "line": 1589
+        }
+      ]
+    },
+    {
+      "path": "src/Subscription/CustomerRoutes.php",
+      "sha256": "9b9aaa82810c8f95420d9a9ed31b520783c6856ce71a328c76e8b02a1c4411f4",
+      "role": "current included module/library/facade",
+      "included_by": [
+        {
+          "file": "bot.php",
+          "line": 1579
+        },
+        {
+          "file": "bot.php",
+          "line": 1583
+        },
+        {
+          "file": "bot.php",
+          "line": 1584
+        },
+        {
+          "file": "bot.php",
+          "line": 1586
+        },
+        {
+          "file": "bot.php",
+          "line": 1588
+        },
+        {
+          "file": "bot.php",
+          "line": 1589
+        },
+        {
+          "file": "bot.php",
+          "line": 1591
+        },
+        {
+          "file": "bot.php",
+          "line": 1592
+        }
+      ]
+    },
+    {
+      "path": "src/Subscription/ExternalAccounts.php",
+      "sha256": "155bc5d096338f2a0b590f09e139a839778ea087868dc3ce848e81a966c0b48d",
+      "role": "current included module/library/facade",
+      "included_by": [
+        {
+          "file": "bot.php",
+          "line": 1579
+        }
+      ]
+    },
+    {
+      "path": "src/Subscription/ManualAccounts.php",
+      "sha256": "da89e58c17bd2450bc7450d28d61e037b0512cd5cc1cb099b0ec2b1a27ceb449",
+      "role": "current included module/library/facade",
+      "included_by": [
+        {
+          "file": "bot.php",
+          "line": 1579
+        },
+        {
+          "file": "bot.php",
+          "line": 1583
+        },
+        {
+          "file": "bot.php",
+          "line": 1584
+        }
+      ]
+    },
+    {
+      "path": "src/Subscription/OrderManagement.php",
+      "sha256": "73fe25e27c93488977a9acfe53e3dc7b8df0a5965f8f7b4e58d671fc4e40ffa4",
+      "role": "current included module/library/facade",
+      "included_by": [
+        {
+          "file": "bot.php",
+          "line": 1579
+        },
+        {
+          "file": "bot.php",
+          "line": 1583
+        },
+        {
+          "file": "bot.php",
+          "line": 1584
+        },
+        {
+          "file": "bot.php",
+          "line": 1586
+        }
+      ]
+    },
+    {
+      "path": "src/Subscription/Presentation.php",
+      "sha256": "1bdd7cf9bf5c90327bf1ef4f67614229a4e2bf3b7e9c8c03493f456b712c2cc0",
+      "role": "current included module/library/facade",
+      "included_by": [
+        {
+          "file": "config.php",
+          "line": 3445
+        },
+        {
+          "file": "config.php",
+          "line": 3450
+        },
+        {
+          "file": "config.php",
+          "line": 3455
+        },
+        {
+          "file": "config.php",
+          "line": 3706
+        },
+        {
+          "file": "config.php",
+          "line": 3711
+        }
+      ]
+    },
+    {
+      "path": "src/Subscription/SubLinkSettings.php",
+      "sha256": "a67ed847979f4ef979164f9108044ae5023b6aad5594eabcf245333bf26ba3a7",
+      "role": "current included module/library/facade",
+      "included_by": [
+        {
+          "file": "bot.php",
+          "line": 2339
+        }
+      ]
+    },
+    {
+      "path": "src/Support/AdminReply.php",
+      "sha256": "b32cc4f8541c5dc2df4fdca6733d55c162fc16ee7dd6f7178846b45bd8425e27",
+      "role": "current included module/library/facade",
+      "included_by": [
+        {
+          "file": "bot.php",
+          "line": 1482
+        }
+      ]
+    },
+    {
+      "path": "src/Support/Categories.php",
+      "sha256": "bf93b56c9e073b825458904cc5aa642bac301b03693f41c015b116db126df065",
+      "role": "current included module/library/facade",
+      "included_by": [
+        {
+          "file": "bot.php",
+          "line": 1427
+        },
+        {
+          "file": "bot.php",
+          "line": 1429
+        },
+        {
+          "file": "bot.php",
+          "line": 1432
+        }
+      ]
+    },
+    {
+      "path": "src/Support/CreateTicket.php",
+      "sha256": "6b18e624caff2d759f2d77799c31c3a9523c47e12bbbcd0a2604275c60dddd5a",
+      "role": "current included module/library/facade",
+      "included_by": [
+        {
+          "file": "bot.php",
+          "line": 1427
+        },
+        {
+          "file": "bot.php",
+          "line": 1429
+        },
+        {
+          "file": "bot.php",
+          "line": 1430
+        }
+      ]
+    },
+    {
+      "path": "src/Support/CustomerConversation.php",
+      "sha256": "cdbd711c182e0d0a590ebadfa5f6ae294aaed7544a9a46074277376bc0dd0953",
+      "role": "current included module/library/facade",
+      "included_by": [
+        {
+          "file": "bot.php",
+          "line": 1427
+        },
+        {
+          "file": "bot.php",
+          "line": 1429
+        },
+        {
+          "file": "bot.php",
+          "line": 1431
+        }
+      ]
+    },
+    {
+      "path": "src/Support/Entry.php",
+      "sha256": "a48b8f5bb7c228b98f809fb8f9313d4ba716ec9872989a5c54fd6ec9db3da3f6",
+      "role": "current included module/library/facade",
+      "included_by": [
+        {
+          "file": "bot.php",
+          "line": 1427
+        },
+        {
+          "file": "bot.php",
+          "line": 1428
+        }
+      ]
+    },
+    {
+      "path": "src/Support/QueueAndHistory.php",
+      "sha256": "df694b04efa202a8c0248e2ef1d43c8640cc69527adb38d25df9c8d6c94532ea",
+      "role": "current included module/library/facade",
+      "included_by": [
+        {
+          "file": "bot.php",
+          "line": 1427
+        },
+        {
+          "file": "bot.php",
+          "line": 1429
+        },
+        {
+          "file": "bot.php",
+          "line": 1433
+        }
+      ]
+    },
+    {
+      "path": "src/Telegram/Markup.php",
+      "sha256": "a0f92a4f5d7730dc1c092ef1bef1c42a20be4265f1b58b66312971959659cd6e",
+      "role": "current included module/library/facade",
+      "included_by": [
+        {
+          "file": "config.php",
+          "line": 40
+        },
+        {
+          "file": "src/Telegram/Messages.php",
+          "line": 11
+        }
+      ]
+    },
+    {
+      "path": "src/Telegram/Messages.php",
+      "sha256": "7b869e6e1c39d12aa34251b7757a8ddf5f28245c5f3ab8a29c97cfca8444becf",
+      "role": "current included module/library/facade",
+      "included_by": [
+        {
+          "file": "config.php",
+          "line": 46
+        },
+        {
+          "file": "config.php",
+          "line": 61
+        },
+        {
+          "file": "config.php",
+          "line": 66
+        },
+        {
+          "file": "config.php",
+          "line": 72
+        },
+        {
+          "file": "config.php",
+          "line": 77
+        },
+        {
+          "file": "config.php",
+          "line": 83
+        },
+        {
+          "file": "config.php",
+          "line": 88
+        },
+        {
+          "file": "config.php",
+          "line": 93
+        },
+        {
+          "file": "config.php",
+          "line": 181
+        },
+        {
+          "file": "config.php",
+          "line": 186
+        },
+        {
+          "file": "config.php",
+          "line": 191
+        },
+        {
+          "file": "config.php",
+          "line": 197
+        },
+        {
+          "file": "config.php",
+          "line": 203
+        },
+        {
+          "file": "config.php",
+          "line": 209
+        }
+      ]
+    },
+    {
+      "path": "src/Telegram/Response.php",
+      "sha256": "bc452413c95aa23cade6e36788c23282573ba7148e3dcbf3ee599d995a4d21ca",
+      "role": "current included module/library/facade",
+      "included_by": [
+        {
+          "file": "config.php",
+          "line": 23
+        },
+        {
+          "file": "config.php",
+          "line": 98
+        },
+        {
+          "file": "config.php",
+          "line": 155
+        },
+        {
+          "file": "config.php",
+          "line": 160
+        },
+        {
+          "file": "src/Telegram/Messages.php",
+          "line": 10
+        },
+        {
+          "file": "src/Telegram/Transport.php",
+          "line": 13
+        }
+      ]
+    },
+    {
+      "path": "src/Telegram/Transport.php",
+      "sha256": "492045ab65cef20b3b44dee24ddf6677c1a3f8e7c894df8fd340d96b2b7f390b",
+      "role": "current included module/library/facade",
+      "included_by": [
+        {
+          "file": "config.php",
+          "line": 29
+        },
+        {
+          "file": "config.php",
+          "line": 35
+        }
+      ]
+    },
+    {
+      "path": "src/Telegram/UpdateBindings.php",
+      "sha256": "14a27ddc6901df157acd9acdde48356e9eeceb0a5f2a5ab46e4f319d38156dd9",
+      "role": "current included module/library/facade",
+      "included_by": [
+        {
+          "file": "config.php",
+          "line": 272
+        }
+      ]
+    },
+    {
+      "path": "settings/cronRunner.php",
+      "sha256": "9088214f99beef3ba0ecadb93b29a9aee154cd62d8724c7528f3859d02561d4c",
+      "role": "current scheduled coordinator",
+      "included_by": []
+    },
+    {
+      "path": "src/Finance/PaymentPage.php",
+      "sha256": "796cc55faed3e6c9cfe0ce71d2a25e7ff53f484d5d40d78fe42d2873cf5d215d",
+      "role": "current included module/library/facade",
+      "included_by": [
+        {
+          "file": "src/Finance/GatewayInitiation.php",
+          "line": 698
+        },
+        {
+          "file": "src/Finance/GatewayReturn.php",
+          "line": 1958
+        }
+      ]
+    },
+    {
+      "path": "src/Finance/Routes/ManualCrypto.php",
+      "sha256": "479a026a5694951f927ef842933c7ea219178ea8ece84c803f917d4cf71f1b6c",
+      "role": "current included module/library/facade",
+      "included_by": [
+        {
+          "file": "bot.php",
+          "line": 82
+        },
+        {
+          "file": "bot.php",
+          "line": 83
+        }
+      ]
+    },
+    {
+      "path": "src/Finance/PaymentLifecycle.php",
+      "sha256": "0968e1adcd0e225b079a9eb1eecbf708153b2a8f094393b39cc7804db2f11498",
+      "role": "current included module/library/facade",
+      "included_by": [
+        {
+          "file": "config.php",
+          "line": 18
+        },
+        {
+          "file": "settings/warnusers.php",
+          "line": 19
+        },
+        {
+          "file": "src/Finance/GatewayInitiation.php",
+          "line": 141
+        },
+        {
+          "file": "src/Finance/ReceiptHelpers.php",
+          "line": 1093
+        },
+        {
+          "file": "src/Finance/ReceiptHelpers.php",
+          "line": 1326
+        },
+        {
+          "file": "src/Finance/ReceiptHelpers.php",
+          "line": 1352
+        },
+        {
+          "file": "src/Finance/ReceiptHelpers.php",
+          "line": 1494
+        },
+        {
+          "file": "src/Finance/ReceiptHelpers.php",
+          "line": 1550
+        },
+        {
+          "file": "src/Finance/ReceiptHelpers.php",
+          "line": 1840
+        },
+        {
+          "file": "src/Finance/ReceiptHelpers.php",
+          "line": 2063
+        },
+        {
+          "file": "src/Finance/Routes/Checkout.php",
+          "line": 8
+        },
+        {
+          "file": "src/Finance/Routes/Checkout.php",
+          "line": 333
+        },
+        {
+          "file": "src/Finance/Routes/Checkout.php",
+          "line": 366
+        },
+        {
+          "file": "src/Finance/Routes/Checkout.php",
+          "line": 378
+        },
+        {
+          "file": "src/Finance/Routes/Checkout.php",
+          "line": 1187
+        },
+        {
+          "file": "src/Finance/Routes/Checkout.php",
+          "line": 1220
+        },
+        {
+          "file": "src/Finance/Routes/Checkout.php",
+          "line": 1232
+        },
+        {
+          "file": "src/Finance/Routes/Extensions.php",
+          "line": 8
+        },
+        {
+          "file": "src/Finance/Routes/Extensions.php",
+          "line": 116
+        },
+        {
+          "file": "src/Finance/Routes/Extensions.php",
+          "line": 145
+        },
+        {
+          "file": "src/Finance/Routes/Extensions.php",
+          "line": 178
+        },
+        {
+          "file": "src/Finance/Routes/Extensions.php",
+          "line": 190
+        },
+        {
+          "file": "src/Finance/Routes/Extensions.php",
+          "line": 966
+        },
+        {
+          "file": "src/Finance/Routes/Extensions.php",
+          "line": 995
+        },
+        {
+          "file": "src/Finance/Routes/Extensions.php",
+          "line": 1028
+        },
+        {
+          "file": "src/Finance/Routes/Extensions.php",
+          "line": 1040
+        },
+        {
+          "file": "src/Finance/Routes/PrePayment.php",
+          "line": 8
+        },
+        {
+          "file": "src/Finance/Routes/RenewalCheckout.php",
+          "line": 8
+        },
+        {
+          "file": "src/Finance/Routes/RenewalCheckout.php",
+          "line": 136
+        },
+        {
+          "file": "src/Finance/Routes/RenewalCheckout.php",
+          "line": 179
+        },
+        {
+          "file": "src/Finance/Routes/RenewalCheckout.php",
+          "line": 212
+        },
+        {
+          "file": "src/Finance/Routes/RenewalCheckout.php",
+          "line": 224
+        },
+        {
+          "file": "src/Finance/Routes/RenewalPlan.php",
+          "line": 8
+        },
+        {
+          "file": "src/Finance/Routes/RenewalPlan.php",
+          "line": 85
+        },
+        {
+          "file": "src/Finance/Routes/WalletRecharge.php",
+          "line": 8
+        },
+        {
+          "file": "src/Finance/Routes/WalletRecharge.php",
+          "line": 301
+        },
+        {
+          "file": "src/Finance/Routes/WalletRecharge.php",
+          "line": 334
+        },
+        {
+          "file": "src/Finance/Routes/WalletRecharge.php",
+          "line": 346
+        },
+        {
+          "file": "src/Finance/WalletSettlement.php",
+          "line": 51
+        },
+        {
+          "file": "src/Finance/WalletStart.php",
+          "line": 8
+        },
+        {
+          "file": "src/Finance/WalletStart.php",
+          "line": 162
+        },
+        {
+          "file": "src/Purchase/Catalogue.php",
+          "line": 8
+        },
+        {
+          "file": "src/Purchase/Catalogue.php",
+          "line": 311
+        },
+        {
+          "file": "src/Purchase/SelectPlan.php",
+          "line": 8
+        },
+        {
+          "file": "src/Purchase/SelectPlan.php",
+          "line": 163
+        },
+        {
+          "file": "src/Finance/Routes/ManualCrypto.php",
+          "line": 12
+        }
+      ]
+    },
+    {
+      "path": "src/Finance/GatewayRules.php",
+      "sha256": "f0abe8973973d6cf3a5951f2975e9fec56ab3b442de2b46a267da0fdc0da0308",
+      "role": "current included module/library/facade",
+      "included_by": [
+        {
+          "file": "src/Finance/PaymentLifecycle.php",
+          "line": 401
+        }
+      ]
+    },
+    {
+      "path": "src/Finance/GatewayRuleAdmin.php",
+      "sha256": "47a40a247fc7eb39cbbdaa3556b13916c28728bfd964ed5b5931758e0aa4d500",
+      "role": "current included module/library/facade",
+      "included_by": [
+        {
+          "file": "config.php",
+          "line": 19
+        }
+      ]
+    },
+    {
+      "path": "src/Finance/PaymentKeyAdmin.php",
+      "sha256": "73d431e9b55ee93c944e8054b76d8b24bc8890afd817177aef34d94abec391eb",
+      "role": "current included module/library/facade",
+      "included_by": [
+        {
+          "file": "config.php",
+          "line": 20
+        }
+      ]
+    },
+    {
+      "path": "src/Finance/ServiceEffects.php",
+      "sha256": "b8be06c5bcd2976c29cf85e9e555f7235a75bb952c995722a0940be72cc1721d",
+      "role": "current included module/library/facade",
+      "included_by": [
+        {
+          "file": "src/Finance/AutomaticReceipts.php",
+          "line": 73
+        },
+        {
+          "file": "src/Finance/GatewayReturn.php",
+          "line": 9
+        },
+        {
+          "file": "src/Finance/Routes/Checkout.php",
+          "line": 478
+        },
+        {
+          "file": "src/Finance/Routes/ManualApproval.php",
+          "line": 72
+        },
+        {
+          "file": "src/Finance/WalletSettlement.php",
+          "line": 220
+        },
+        {
+          "file": "src/Purchase/Catalogue.php",
+          "line": 231
+        },
+        {
+          "file": "src/Purchase/EntryAndBulk.php",
+          "line": 158
+        },
+        {
+          "file": "src/Purchase/TrialProvision.php",
+          "line": 31
+        },
+        {
+          "file": "src/Finance/RecoveryInspection.php",
+          "line": 14
+        }
+      ]
+    },
+    {
+      "path": "src/Finance/BankPurchase.php",
+      "sha256": "f63258554ca93209f9243ff5fb81f6c491a24ee12e989f7b58de77dbf06a25a3",
+      "role": "current included module/library/facade",
+      "included_by": [
+        {
+          "file": "src/Finance/AutomaticReceipts.php",
+          "line": 74
+        }
+      ]
+    },
+    {
+      "path": "src/Finance/RecoveryInspection.php",
+      "sha256": "d98c9b022797d9aff6986dc47d37d8603c005b074627f2dbf1b6fb643497fbcd",
+      "role": "current included module/library/facade",
+      "included_by": [
+        {
+          "file": "src/Finance/Routes/ManualReceipts.php",
+          "line": 22
+        }
+      ]
+    },
+    {
+      "path": "src/Finance/RecoveryTransport.php",
+      "sha256": "bde8da1bda25d8b1598deaa375723cfe68f7f88b0bf0badc55ded0407a5e50f0",
+      "role": "current included module/library/facade",
+      "included_by": [
+        {
+          "file": "src/Finance/Routes/ManualReceipts.php",
+          "line": 26
+        }
+      ]
+    },
+    {
+      "path": "src/Finance/WalletAdjustments.php",
+      "sha256": "eba6d198cc07b6765d2ee9d700bca0457238143c5a83380f99d928809501a39a",
+      "role": "current included module/library/facade",
+      "included_by": [
+        {
+          "file": "src/Finance/Routes/AdminWallet.php",
+          "line": 13
+        },
+        {
+          "file": "src/Finance/WalletTransferFlow.php",
+          "line": 7
+        }
+      ]
+    },
+    {
+      "path": "src/Finance/WalletTransferFlow.php",
+      "sha256": "ccde66521e2cf1650535ca9b12d7a023638202a080d9ae2b880486609ba91ac6",
+      "role": "current included module/library/facade",
+      "included_by": [
+        {
+          "file": "src/Finance/Routes/WalletTransfer.php",
+          "line": 8
+        }
+      ]
+    },
+    {
+      "path": "src/Subscription/GiftBatch.php",
+      "sha256": "f6bbaca2cc7de5cdce0f15aca18b2fe89ac57dbb881a8c261a8e9e9d7f67cacd",
+      "role": "current included module/library/facade",
+      "included_by": [
+        {
+          "file": "bot.php",
+          "line": 1813
+        },
+        {
+          "file": "config.php",
+          "line": 2579
+        },
+        {
+          "file": "settings/gift2all.php",
+          "line": 13
+        },
+        {
+          "file": "src/Panel/Accounts.php",
+          "line": 94
+        },
+        {
+          "file": "src/Panel/Accounts.php",
+          "line": 420
+        },
+        {
+          "file": "src/Purchase/Core.php",
+          "line": 540
+        },
+        {
+          "file": "src/Subscription/ManualAccounts.php",
+          "line": 113
+        },
+        {
+          "file": "src/Subscription/DirectGift.php",
+          "line": 10
+        }
+      ]
+    },
+    {
+      "path": "src/Subscription/DirectGift.php",
+      "sha256": "137887a59d8ea47a8e69ec74d0408ee2c391dc2350f06e4c1994fcf370d5bcbf",
+      "role": "current included module/library/facade",
+      "included_by": [
+        {
+          "file": "bot.php",
+          "line": 1636
+        },
+        {
+          "file": "config.php",
+          "line": 653
+        },
+        {
+          "file": "config.php",
+          "line": 2566
+        },
+        {
+          "file": "config.php",
+          "line": 2863
+        },
+        {
+          "file": "config.php",
+          "line": 3092
+        },
+        {
+          "file": "src/Finance/GatewayRuleAdmin.php",
+          "line": 341
+        },
+        {
+          "file": "src/Finance/PaymentKeyAdmin.php",
+          "line": 117
+        }
+      ]
+    }
+  ],
+  "tables": [
+    {
+      "name": "add_link",
+      "original": true,
+      "disposition": "active; preserve",
+      "literal_sql_sites": [
+        {
+          "file": "src/Subscription/ExternalAccounts.php",
+          "operations": {
+            "INSERT": [
+              90
+            ]
+          }
+        },
+        {
+          "file": "src/Subscription/ManualAccounts.php",
+          "operations": {
+            "SELECT": [
+              232
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "admins",
+      "original": true,
+      "disposition": "optional candidate; tenant audit required",
+      "literal_sql_sites": []
+    },
+    {
+      "name": "automatic_renewal_attempts",
+      "original": false,
+      "disposition": "active; preserve",
+      "literal_sql_sites": [
+        {
+          "file": "src/Finance/AutomaticRenewal.php",
+          "operations": {
+            "SELECT": [
+              48,
+              224,
+              350
+            ],
+            "INSERT": [
+              118
+            ],
+            "UPDATE": [
+              162,
+              190,
+              284,
+              360,
+              383,
+              391
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/ReceiptHelpers.php",
+          "operations": {
+            "SELECT": [
+              2229
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "bank_buy_invoice_claims",
+      "original": false,
+      "disposition": "active; preserve",
+      "literal_sql_sites": [
+        {
+          "file": "src/Finance/BankPurchase.php",
+          "operations": {
+            "SELECT": [
+              30,
+              170
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/ReceiptHelpers.php",
+          "operations": {
+            "INSERT": [
+              549
+            ],
+            "SELECT": [
+              600,
+              1358
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "bc_jobs",
+      "original": true,
+      "disposition": "active; preserve",
+      "literal_sql_sites": [
+        {
+          "file": "src/Broadcast/Routes.php",
+          "operations": {
+            "SELECT": [
+              500,
+              508,
+              644,
+              735,
+              802,
+              809
+            ],
+            "INSERT": [
+              664,
+              755
+            ],
+            "UPDATE": [
+              873
+            ]
+          }
+        },
+        {
+          "file": "src/Jobs/MessageActions.php",
+          "operations": {
+            "SELECT": [
+              22,
+              43
+            ],
+            "UPDATE": [
+              35,
+              61,
+              218,
+              221
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "bc_messages",
+      "original": true,
+      "disposition": "active; preserve",
+      "literal_sql_sites": [
+        {
+          "file": "config.php",
+          "operations": {
+            "INSERT": [
+              167
+            ]
+          }
+        },
+        {
+          "file": "src/Broadcast/Routes.php",
+          "operations": {
+            "SELECT": [
+              30,
+              246,
+              314,
+              446,
+              619
+            ]
+          }
+        },
+        {
+          "file": "src/Jobs/MessageActions.php",
+          "operations": {
+            "SELECT": [
+              95,
+              103,
+              111
+            ],
+            "UPDATE": [
+              154,
+              161,
+              207
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "black_list",
+      "original": true,
+      "disposition": "optional candidate; tenant audit required",
+      "literal_sql_sites": []
+    },
+    {
+      "name": "chats",
+      "original": true,
+      "disposition": "active; preserve",
+      "literal_sql_sites": [
+        {
+          "file": "src/Support/AdminReply.php",
+          "operations": {
+            "SELECT": [
+              19
+            ],
+            "UPDATE": [
+              63
+            ]
+          }
+        },
+        {
+          "file": "src/Support/CreateTicket.php",
+          "operations": {
+            "INSERT": [
+              31
+            ]
+          }
+        },
+        {
+          "file": "src/Support/CustomerConversation.php",
+          "operations": {
+            "SELECT": [
+              15,
+              22,
+              98,
+              157,
+              216
+            ],
+            "UPDATE": [
+              109,
+              225
+            ]
+          }
+        },
+        {
+          "file": "src/Support/QueueAndHistory.php",
+          "operations": {
+            "SELECT": [
+              15,
+              18,
+              21,
+              83,
+              84,
+              85,
+              150,
+              210
+            ],
+            "UPDATE": [
+              161
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "chats_info",
+      "original": true,
+      "disposition": "active; preserve",
+      "literal_sql_sites": [
+        {
+          "file": "src/Support/AdminReply.php",
+          "operations": {
+            "INSERT": [
+              35,
+              47
+            ]
+          }
+        },
+        {
+          "file": "src/Support/CreateTicket.php",
+          "operations": {
+            "INSERT": [
+              45,
+              52
+            ]
+          }
+        },
+        {
+          "file": "src/Support/CustomerConversation.php",
+          "operations": {
+            "SELECT": [
+              45
+            ],
+            "INSERT": [
+              170,
+              190
+            ]
+          }
+        },
+        {
+          "file": "src/Support/QueueAndHistory.php",
+          "operations": {
+            "SELECT": [
+              42,
+              109,
+              182,
+              199
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "discounts",
+      "original": true,
+      "disposition": "active; preserve",
+      "literal_sql_sites": [
+        {
+          "file": "src/Finance/Discounts.php",
+          "operations": {
+            "SELECT": [
+              37,
+              357,
+              375
+            ],
+            "UPDATE": [
+              274,
+              276
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/Routes/DiscountAdministration.php",
+          "operations": {
+            "SELECT": [
+              40,
+              533,
+              1148,
+              1211
+            ],
+            "INSERT": [
+              468
+            ],
+            "DELETE": [
+              519
+            ],
+            "UPDATE": [
+              692,
+              726,
+              759,
+              792,
+              862,
+              884,
+              926,
+              1011,
+              1026,
+              1041,
+              1073,
+              1106,
+              1191,
+              1225
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "gift_list",
+      "original": true,
+      "disposition": "active; preserve",
+      "literal_sql_sites": [
+        {
+          "file": "settings/gift2all.php",
+          "operations": {
+            "SELECT": [
+              15,
+              97,
+              228,
+              291,
+              380
+            ],
+            "UPDATE": [
+              260,
+              341
+            ],
+            "DELETE": [
+              418
+            ]
+          }
+        },
+        {
+          "file": "src/Subscription/GiftBatch.php",
+          "operations": {
+            "INSERT": [
+              276
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "increase_day",
+      "original": true,
+      "disposition": "active; preserve",
+      "literal_sql_sites": [
+        {
+          "file": "src/Finance/AutomaticReceipts.php",
+          "operations": {
+            "SELECT": [
+              203
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/GatewayReturn.php",
+          "operations": {
+            "SELECT": [
+              1628
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/Routes/Extensions.php",
+          "operations": {
+            "SELECT": [
+              11,
+              56,
+              248,
+              337,
+              560
+            ]
+          }
+        },
+        {
+          "file": "src/Plans/Intervals.php",
+          "operations": {
+            "SELECT": [
+              9,
+              74,
+              124,
+              176
+            ],
+            "INSERT": [
+              57
+            ],
+            "DELETE": [
+              67
+            ],
+            "UPDATE": [
+              117,
+              169
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "increase_order",
+      "original": true,
+      "disposition": "active; preserve",
+      "literal_sql_sites": [
+        {
+          "file": "buy_helpers.php",
+          "operations": {
+            "INSERT": [
+              311
+            ]
+          }
+        },
+        {
+          "file": "config.php",
+          "operations": {
+            "SELECT": [
+              1684,
+              1685,
+              1686,
+              1687,
+              2403
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/AutomaticRenewal.php",
+          "operations": {
+            "INSERT": [
+              250
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/ReceiptHelpers.php",
+          "operations": {
+            "INSERT": [
+              994
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/Routes/Extensions.php",
+          "operations": {
+            "INSERT": [
+              421,
+              662,
+              1230,
+              1440
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/Routes/RenewalCheckout.php",
+          "operations": {
+            "INSERT": [
+              476,
+              711
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "increase_plan",
+      "original": true,
+      "disposition": "active; preserve",
+      "literal_sql_sites": [
+        {
+          "file": "src/Finance/AutomaticReceipts.php",
+          "operations": {
+            "SELECT": [
+              261
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/GatewayReturn.php",
+          "operations": {
+            "SELECT": [
+              1743
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/Routes/Extensions.php",
+          "operations": {
+            "SELECT": [
+              864,
+              902,
+              1098,
+              1186,
+              1359
+            ]
+          }
+        },
+        {
+          "file": "src/Plans/Intervals.php",
+          "operations": {
+            "SELECT": [
+              211,
+              274,
+              320,
+              368
+            ],
+            "INSERT": [
+              257
+            ],
+            "DELETE": [
+              267
+            ],
+            "UPDATE": [
+              313,
+              361
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "needed_sofwares",
+      "original": true,
+      "disposition": "active; preserve",
+      "literal_sql_sites": [
+        {
+          "file": "bot.php",
+          "operations": {
+            "SELECT": [
+              2547
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "orders_list",
+      "original": true,
+      "disposition": "active; preserve",
+      "literal_sql_sites": [
+        {
+          "file": "bot.php",
+          "operations": {
+            "SELECT": [
+              1037,
+              1239,
+              1248
+            ]
+          }
+        },
+        {
+          "file": "config.php",
+          "operations": {
+            "SELECT": [
+              113,
+              121,
+              441,
+              819,
+              1520,
+              1565,
+              1589,
+              1590,
+              1628,
+              1678,
+              1679,
+              1680,
+              1681,
+              1698,
+              2328,
+              2382,
+              2391,
+              2517,
+              3387,
+              3509
+            ],
+            "UPDATE": [
+              3572
+            ]
+          }
+        },
+        {
+          "file": "settings/gift2all.php",
+          "operations": {
+            "SELECT": [
+              315,
+              593
+            ],
+            "UPDATE": [
+              330
+            ]
+          }
+        },
+        {
+          "file": "src/Backup/Database.php",
+          "operations": {
+            "SELECT": [
+              199
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/AutomaticReceipts.php",
+          "operations": {
+            "SELECT": [
+              127,
+              188,
+              248
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/AutomaticRenewal.php",
+          "operations": {
+            "SELECT": [
+              27,
+              218,
+              276,
+              416
+            ],
+            "UPDATE": [
+              89,
+              267
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/Discounts.php",
+          "operations": {
+            "SELECT": [
+              130
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/GatewayInitiation.php",
+          "operations": {
+            "SELECT": [
+              280
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/GatewayReturn.php",
+          "operations": {
+            "SELECT": [
+              1499,
+              1608,
+              1731
+            ],
+            "UPDATE": [
+              1762
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/GatewayRules.php",
+          "operations": {
+            "SELECT": [
+              128
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/PaymentLifecycle.php",
+          "operations": {
+            "SELECT": [
+              523
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/ReceiptHelpers.php",
+          "operations": {
+            "SELECT": [
+              725,
+              788,
+              824,
+              937,
+              980,
+              2195,
+              2217,
+              2266
+            ],
+            "UPDATE": [
+              806,
+              962,
+              968,
+              2239
+            ],
+            "DELETE": [
+              2276
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/RecoveryInspection.php",
+          "operations": {
+            "SELECT": [
+              88
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/ReferralReward.php",
+          "operations": {
+            "SELECT": [
+              195
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/Routes/Checkout.php",
+          "operations": {
+            "SELECT": [
+              205
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/Routes/Extensions.php",
+          "operations": {
+            "SELECT": [
+              16,
+              63,
+              235,
+              318,
+              531,
+              734,
+              781,
+              838,
+              910,
+              1085,
+              1166,
+              1339
+            ],
+            "UPDATE": [
+              798,
+              1235,
+              1434
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/Routes/ManualReceipts.php",
+          "operations": {
+            "SELECT": [
+              583
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/Routes/PrePayment.php",
+          "operations": {
+            "SELECT": [
+              203
+            ],
+            "UPDATE": [
+              238
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/Routes/RenewalCheckout.php",
+          "operations": {
+            "SELECT": [
+              39,
+              151,
+              277,
+              369,
+              573
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/ServiceEffects.php",
+          "operations": {
+            "UPDATE": [
+              452,
+              659
+            ]
+          }
+        },
+        {
+          "file": "src/Jobs/BroadcastSend.php",
+          "operations": {
+            "SELECT": [
+              113,
+              125,
+              170,
+              177
+            ]
+          }
+        },
+        {
+          "file": "src/Notifications/Warnings.php",
+          "operations": {
+            "SELECT": [
+              28,
+              114,
+              131
+            ],
+            "UPDATE": [
+              100,
+              107,
+              227
+            ]
+          }
+        },
+        {
+          "file": "src/Plans/Administration.php",
+          "operations": {
+            "SELECT": [
+              332
+            ]
+          }
+        },
+        {
+          "file": "src/Purchase/Core.php",
+          "operations": {
+            "SELECT": [
+              243,
+              348,
+              424
+            ],
+            "UPDATE": [
+              398
+            ]
+          }
+        },
+        {
+          "file": "src/Purchase/OrderWrites.php",
+          "operations": {
+            "INSERT": [
+              39
+            ]
+          }
+        },
+        {
+          "file": "src/Subscription/AccountDeletion.php",
+          "operations": {
+            "SELECT": [
+              11,
+              44,
+              139,
+              154
+            ]
+          }
+        },
+        {
+          "file": "src/Subscription/AccountDetails.php",
+          "operations": {
+            "SELECT": [
+              14,
+              17
+            ]
+          }
+        },
+        {
+          "file": "src/Subscription/AccountTransfers.php",
+          "operations": {
+            "SELECT": [
+              19
+            ]
+          }
+        },
+        {
+          "file": "src/Subscription/CustomerRoutes.php",
+          "operations": {
+            "SELECT": [
+              35,
+              44,
+              134,
+              151,
+              156,
+              257,
+              345,
+              418,
+              458
+            ],
+            "UPDATE": [
+              310,
+              393
+            ]
+          }
+        },
+        {
+          "file": "src/Subscription/DirectGift.php",
+          "operations": {
+            "SELECT": [
+              254,
+              332
+            ],
+            "UPDATE": [
+              648
+            ]
+          }
+        },
+        {
+          "file": "src/Subscription/ManualAccounts.php",
+          "operations": {
+            "SELECT": [
+              221,
+              331
+            ],
+            "INSERT": [
+              274
+            ]
+          }
+        },
+        {
+          "file": "src/Subscription/OrderManagement.php",
+          "operations": {
+            "SELECT": [
+              50,
+              132,
+              189,
+              213,
+              234,
+              264,
+              278,
+              292,
+              306,
+              333,
+              356,
+              379,
+              398,
+              437,
+              456,
+              481,
+              503,
+              515
+            ],
+            "UPDATE": [
+              273,
+              301,
+              327,
+              351,
+              374,
+              492
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "payment_attempts",
+      "original": false,
+      "disposition": "active; preserve",
+      "literal_sql_sites": [
+        {
+          "file": "src/Finance/BankPurchase.php",
+          "operations": {
+            "SELECT": [
+              50,
+              181
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/GatewayClient.php",
+          "operations": {
+            "SELECT": [
+              47
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/GatewayInitiation.php",
+          "operations": {
+            "INSERT": [
+              48,
+              457
+            ],
+            "UPDATE": [
+              101,
+              130,
+              485,
+              562
+            ],
+            "SELECT": [
+              314
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/GatewayReturn.php",
+          "operations": {
+            "SELECT": [
+              80,
+              185,
+              338,
+              539,
+              623,
+              710,
+              742,
+              900,
+              960,
+              1030,
+              1138
+            ],
+            "UPDATE": [
+              134,
+              149,
+              227,
+              293,
+              312,
+              359,
+              368,
+              382,
+              394,
+              404,
+              420,
+              429,
+              437,
+              461,
+              468,
+              478,
+              976,
+              1009
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/PaymentLifecycle.php",
+          "operations": {
+            "SELECT": [
+              83,
+              280,
+              350,
+              386,
+              704,
+              813,
+              842
+            ],
+            "UPDATE": [
+              115,
+              304,
+              368
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/ReceiptHelpers.php",
+          "operations": {
+            "SELECT": [
+              357,
+              375,
+              389,
+              586,
+              1097,
+              1291,
+              1344,
+              1364,
+              1468,
+              1495,
+              1539,
+              1618,
+              1664,
+              1731,
+              1791
+            ],
+            "INSERT": [
+              1453
+            ],
+            "UPDATE": [
+              1569,
+              1590,
+              1642
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/RecoveryInspection.php",
+          "operations": {
+            "SELECT": [
+              51
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/Routes/ManualCrypto.php",
+          "operations": {
+            "SELECT": [
+              34
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/Routes/ManualReceipts.php",
+          "operations": {
+            "SELECT": [
+              223,
+              284
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/Routes/PrePayment.php",
+          "operations": {
+            "SELECT": [
+              29,
+              170
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "payment_message_refs",
+      "original": false,
+      "disposition": "active; preserve",
+      "literal_sql_sites": [
+        {
+          "file": "src/Finance/PaymentLifecycle.php",
+          "operations": {
+            "INSERT": [
+              551,
+              590
+            ],
+            "SELECT": [
+              718,
+              872
+            ],
+            "UPDATE": [
+              732,
+              781,
+              790,
+              882
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "payment_transactions",
+      "original": false,
+      "disposition": "active; preserve",
+      "literal_sql_sites": [
+        {
+          "file": "src/Finance/GatewayReturn.php",
+          "operations": {
+            "SELECT": [
+              99,
+              185
+            ],
+            "INSERT": [
+              116
+            ],
+            "UPDATE": [
+              125,
+              227,
+              293
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/PaymentLifecycle.php",
+          "operations": {
+            "SELECT": [
+              299,
+              842
+            ],
+            "UPDATE": [
+              304
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/Routes/ManualReceipts.php",
+          "operations": {
+            "SELECT": [
+              304
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "pays",
+      "original": true,
+      "disposition": "active; preserve",
+      "literal_sql_sites": [
+        {
+          "file": "config.php",
+          "operations": {
+            "SELECT": [
+              1521,
+              1569,
+              1735,
+              1797,
+              1799,
+              1801,
+              1803,
+              1805,
+              1807,
+              1809,
+              1844,
+              1914,
+              1942,
+              1985,
+              2013,
+              2064,
+              2066,
+              2069,
+              2247,
+              2345,
+              2352,
+              2508
+            ],
+            "UPDATE": [
+              3805
+            ]
+          }
+        },
+        {
+          "file": "settings/rewardReport.php",
+          "operations": {
+            "SELECT": [
+              16
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/AutomaticReceipts.php",
+          "operations": {
+            "SELECT": [
+              10
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/AutomaticRenewal.php",
+          "operations": {
+            "INSERT": [
+              107
+            ],
+            "UPDATE": [
+              241
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/BankPurchase.php",
+          "operations": {
+            "SELECT": [
+              23,
+              155
+            ],
+            "UPDATE": [
+              120
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/Discounts.php",
+          "operations": {
+            "SELECT": [
+              10,
+              109
+            ],
+            "UPDATE": [
+              301
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/GatewayClient.php",
+          "operations": {
+            "SELECT": [
+              47
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/GatewayInitiation.php",
+          "operations": {
+            "SELECT": [
+              26,
+              87,
+              150,
+              158,
+              440,
+              545
+            ],
+            "UPDATE": [
+              60,
+              110,
+              468,
+              571
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/GatewayReturn.php",
+          "operations": {
+            "SELECT": [
+              80,
+              185,
+              338,
+              453,
+              518,
+              523,
+              568,
+              591,
+              654,
+              710,
+              742,
+              755,
+              769,
+              1030,
+              1104,
+              1550,
+              1653
+            ],
+            "UPDATE": [
+              437,
+              824,
+              858,
+              948,
+              1009,
+              1165
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/GatewayRules.php",
+          "operations": {
+            "SELECT": [
+              94
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/PaymentLifecycle.php",
+          "operations": {
+            "SELECT": [
+              71,
+              103,
+              208,
+              272,
+              342,
+              511,
+              572,
+              696,
+              813,
+              842
+            ],
+            "UPDATE": [
+              115,
+              312
+            ],
+            "INSERT": [
+              551,
+              590
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/ReceiptHelpers.php",
+          "operations": {
+            "SELECT": [
+              92,
+              574,
+              667,
+              873,
+              1030,
+              1333,
+              1532,
+              1609,
+              1853,
+              1868,
+              1885,
+              1948,
+              1958
+            ],
+            "UPDATE": [
+              632,
+              1002,
+              1059,
+              1590,
+              1634
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/RecoveryInspection.php",
+          "operations": {
+            "SELECT": [
+              19,
+              39,
+              146
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/ReferralReward.php",
+          "operations": {
+            "SELECT": [
+              180,
+              258
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/Routes/Checkout.php",
+          "operations": {
+            "SELECT": [
+              485
+            ],
+            "UPDATE": [
+              508,
+              611
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/Routes/Extensions.php",
+          "operations": {
+            "INSERT": [
+              92,
+              938
+            ],
+            "SELECT": [
+              291,
+              407,
+              487,
+              648,
+              1139,
+              1296
+            ],
+            "UPDATE": [
+              374,
+              429,
+              586,
+              616,
+              670,
+              1240,
+              1384,
+              1429
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/Routes/ManualApproval.php",
+          "operations": {
+            "SELECT": [
+              85
+            ],
+            "UPDATE": [
+              120,
+              205,
+              427
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/Routes/ManualCrypto.php",
+          "operations": {
+            "SELECT": [
+              25
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/Routes/ManualReceipts.php",
+          "operations": {
+            "SELECT": [
+              223,
+              284,
+              441,
+              532,
+              560
+            ],
+            "UPDATE": [
+              596
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/Routes/PrePayment.php",
+          "operations": {
+            "SELECT": [
+              15,
+              102
+            ],
+            "UPDATE": [
+              238
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/Routes/RenewalCheckout.php",
+          "operations": {
+            "INSERT": [
+              108
+            ],
+            "SELECT": [
+              347,
+              463,
+              535,
+              697
+            ],
+            "UPDATE": [
+              433,
+              483,
+              622,
+              666,
+              719
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/Routes/RenewalPlan.php",
+          "operations": {
+            "INSERT": [
+              64
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/ServiceEffects.php",
+          "operations": {
+            "SELECT": [
+              151,
+              702
+            ],
+            "UPDATE": [
+              452
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/WalletSettlement.php",
+          "operations": {
+            "SELECT": [
+              24,
+              53
+            ],
+            "UPDATE": [
+              196,
+              294,
+              328,
+              349
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/WalletStart.php",
+          "operations": {
+            "INSERT": [
+              124
+            ]
+          }
+        },
+        {
+          "file": "src/Purchase/Catalogue.php",
+          "operations": {
+            "SELECT": [
+              183
+            ],
+            "INSERT": [
+              287
+            ]
+          }
+        },
+        {
+          "file": "src/Purchase/SelectPlan.php",
+          "operations": {
+            "INSERT": [
+              126,
+              130
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "referral_awards",
+      "original": false,
+      "disposition": "active; preserve",
+      "literal_sql_sites": [
+        {
+          "file": "src/Finance/ReferralReward.php",
+          "operations": {
+            "SHOW": [
+              17
+            ],
+            "SELECT": [
+              29,
+              42,
+              267
+            ],
+            "UPDATE": [
+              57,
+              296
+            ],
+            "INSERT": [
+              223
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "send_list",
+      "original": true,
+      "disposition": "active; preserve",
+      "literal_sql_sites": [
+        {
+          "file": "src/Broadcast/Routes.php",
+          "operations": {
+            "SELECT": [
+              11,
+              246,
+              309,
+              314,
+              414,
+              508,
+              571,
+              603,
+              716,
+              809
+            ],
+            "UPDATE": [
+              89,
+              175,
+              192,
+              201,
+              220,
+              231,
+              772
+            ],
+            "INSERT": [
+              135
+            ]
+          }
+        },
+        {
+          "file": "src/Jobs/BroadcastSend.php",
+          "operations": {
+            "SELECT": [
+              22,
+              37,
+              76
+            ],
+            "UPDATE": [
+              57,
+              329
+            ]
+          }
+        },
+        {
+          "file": "src/Jobs/MessageActions.php",
+          "operations": {
+            "SELECT": [
+              81
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "server_categories",
+      "original": true,
+      "disposition": "active; preserve",
+      "literal_sql_sites": [
+        {
+          "file": "config.php",
+          "operations": {
+            "SELECT": [
+              1059,
+              1669,
+              3641
+            ]
+          }
+        },
+        {
+          "file": "src/Agent/Discounts.php",
+          "operations": {
+            "SELECT": [
+              68,
+              128
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/AgentDiscounts.php",
+          "operations": {
+            "SELECT": [
+              33
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/Routes/Checkout.php",
+          "operations": {
+            "SELECT": [
+              432,
+              1299
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/Routes/DiscountAdministration.php",
+          "operations": {
+            "SELECT": [
+              333,
+              607,
+              962
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/Routes/RenewalPlan.php",
+          "operations": {
+            "SELECT": [
+              44
+            ]
+          }
+        },
+        {
+          "file": "src/Plans/Administration.php",
+          "operations": {
+            "SELECT": [
+              35
+            ]
+          }
+        },
+        {
+          "file": "src/Plans/Categories.php",
+          "operations": {
+            "DELETE": [
+              17,
+              48
+            ],
+            "INSERT": [
+              22
+            ],
+            "UPDATE": [
+              36,
+              69
+            ],
+            "SELECT": [
+              55
+            ]
+          }
+        },
+        {
+          "file": "src/Purchase/Catalogue.php",
+          "operations": {
+            "SELECT": [
+              13,
+              245
+            ]
+          }
+        },
+        {
+          "file": "src/Purchase/EntryAndBulk.php",
+          "operations": {
+            "SELECT": [
+              62
+            ]
+          }
+        },
+        {
+          "file": "src/Purchase/SelectPlan.php",
+          "operations": {
+            "SELECT": [
+              92
+            ]
+          }
+        },
+        {
+          "file": "src/Purchase/TrialCatalogue.php",
+          "operations": {
+            "SELECT": [
+              23
+            ]
+          }
+        },
+        {
+          "file": "src/Subscription/AccountDetails.php",
+          "operations": {
+            "SELECT": [
+              40
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "server_config",
+      "original": true,
+      "disposition": "active; preserve",
+      "literal_sql_sites": [
+        {
+          "file": "bot.php",
+          "operations": {
+            "SELECT": [
+              1877,
+              2199,
+              2222,
+              2281
+            ],
+            "UPDATE": [
+              1889,
+              2327,
+              2433,
+              2434,
+              2435,
+              2436,
+              2437,
+              2438,
+              2442,
+              2447,
+              2449,
+              2450,
+              2455,
+              2457
+            ],
+            "INSERT": [
+              2174
+            ],
+            "DELETE": [
+              2352
+            ]
+          }
+        },
+        {
+          "file": "config.php",
+          "operations": {
+            "SELECT": [
+              971,
+              1026,
+              3363
+            ]
+          }
+        },
+        {
+          "file": "settings/gift2all.php",
+          "operations": {
+            "SELECT": [
+              440
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/AutomaticReceipts.php",
+          "operations": {
+            "SELECT": [
+              150,
+              211,
+              269
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/BankPurchase.php",
+          "operations": {
+            "SELECT": [
+              62,
+              155
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/RecoveryInspection.php",
+          "operations": {
+            "SELECT": [
+              146
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/Routes/Checkout.php",
+          "operations": {
+            "SELECT": [
+              222
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/Routes/Extensions.php",
+          "operations": {
+            "SELECT": [
+              350,
+              550,
+              1199,
+              1394
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/Routes/RenewalCheckout.php",
+          "operations": {
+            "SELECT": [
+              402,
+              632
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/ServiceEffects.php",
+          "operations": {
+            "SELECT": [
+              77,
+              151,
+              357,
+              414,
+              559,
+              702
+            ],
+            "UPDATE": [
+              428,
+              452,
+              659
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/WalletSettlement.php",
+          "operations": {
+            "SELECT": [
+              248
+            ]
+          }
+        },
+        {
+          "file": "src/Notifications/Warnings.php",
+          "operations": {
+            "SELECT": [
+              46,
+              150
+            ]
+          }
+        },
+        {
+          "file": "src/Panel/Accounts.php",
+          "operations": {
+            "SELECT": [
+              14,
+              84,
+              145,
+              179,
+              242,
+              275,
+              335,
+              407,
+              486,
+              817,
+              866,
+              901,
+              954
+            ]
+          }
+        },
+        {
+          "file": "src/Plans/Administration.php",
+          "operations": {
+            "SELECT": [
+              75,
+              83,
+              231,
+              301
+            ]
+          }
+        },
+        {
+          "file": "src/Purchase/Catalogue.php",
+          "operations": {
+            "SELECT": [
+              25,
+              47,
+              83
+            ]
+          }
+        },
+        {
+          "file": "src/Purchase/Core.php",
+          "operations": {
+            "SELECT": [
+              97,
+              210,
+              296,
+              319,
+              366,
+              381,
+              424,
+              527,
+              580
+            ]
+          }
+        },
+        {
+          "file": "src/Purchase/EntryAndBulk.php",
+          "operations": {
+            "SELECT": [
+              17,
+              38,
+              74,
+              96
+            ]
+          }
+        },
+        {
+          "file": "src/Purchase/TrialCatalogue.php",
+          "operations": {
+            "SELECT": [
+              13
+            ]
+          }
+        },
+        {
+          "file": "src/Subscription/AccountDeletion.php",
+          "operations": {
+            "SELECT": [
+              67,
+              166
+            ]
+          }
+        },
+        {
+          "file": "src/Subscription/AccountDetails.php",
+          "operations": {
+            "SELECT": [
+              53
+            ]
+          }
+        },
+        {
+          "file": "src/Subscription/CustomerRoutes.php",
+          "operations": {
+            "SELECT": [
+              283,
+              375,
+              430,
+              475
+            ]
+          }
+        },
+        {
+          "file": "src/Subscription/DirectGift.php",
+          "operations": {
+            "SELECT": [
+              287
+            ]
+          }
+        },
+        {
+          "file": "src/Subscription/ExternalAccounts.php",
+          "operations": {
+            "SELECT": [
+              97
+            ]
+          }
+        },
+        {
+          "file": "src/Subscription/GiftBatch.php",
+          "operations": {
+            "SELECT": [
+              19
+            ]
+          }
+        },
+        {
+          "file": "src/Subscription/OrderManagement.php",
+          "operations": {
+            "SELECT": [
+              456
+            ]
+          }
+        },
+        {
+          "file": "src/Subscription/SubLinkSettings.php",
+          "operations": {
+            "UPDATE": [
+              19
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "server_info",
+      "original": true,
+      "disposition": "active; preserve",
+      "literal_sql_sites": [
+        {
+          "file": "bot.php",
+          "operations": {
+            "SELECT": [
+              1181,
+              1368,
+              1405,
+              1599
+            ],
+            "UPDATE": [
+              1861,
+              2392,
+              2395,
+              2398,
+              2401,
+              2492,
+              2495,
+              2498,
+              2501
+            ],
+            "INSERT": [
+              2167
+            ],
+            "DELETE": [
+              2347
+            ]
+          }
+        },
+        {
+          "file": "config.php",
+          "operations": {
+            "SELECT": [
+              966,
+              1007,
+              1668,
+              1690,
+              1886
+            ]
+          }
+        },
+        {
+          "file": "settings/gift2all.php",
+          "operations": {
+            "SELECT": [
+              433
+            ]
+          }
+        },
+        {
+          "file": "src/Agent/Discounts.php",
+          "operations": {
+            "SELECT": [
+              88
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/AgentDiscounts.php",
+          "operations": {
+            "SELECT": [
+              45
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/BankPurchase.php",
+          "operations": {
+            "SELECT": [
+              155
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/GatewayInitiation.php",
+          "operations": {
+            "SELECT": [
+              259
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/ReceiptHelpers.php",
+          "operations": {
+            "UPDATE": [
+              1173,
+              2283
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/RecoveryInspection.php",
+          "operations": {
+            "SELECT": [
+              146
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/Routes/Checkout.php",
+          "operations": {
+            "SELECT": [
+              300,
+              1153,
+              1287
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/Routes/DiscountAdministration.php",
+          "operations": {
+            "SELECT": [
+              307,
+              599,
+              940
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/ServiceEffects.php",
+          "operations": {
+            "SELECT": [
+              77,
+              151,
+              357,
+              414,
+              559,
+              702
+            ],
+            "UPDATE": [
+              280,
+              428,
+              452,
+              604,
+              659,
+              734
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/WalletSettlement.php",
+          "operations": {
+            "SELECT": [
+              248
+            ]
+          }
+        },
+        {
+          "file": "src/Panel/Accounts.php",
+          "operations": {
+            "SELECT": [
+              335,
+              439,
+              498
+            ],
+            "SHOW": [
+              434
+            ]
+          }
+        },
+        {
+          "file": "src/Plans/Administration.php",
+          "operations": {
+            "SELECT": [
+              83,
+              231
+            ]
+          }
+        },
+        {
+          "file": "src/Purchase/Core.php",
+          "operations": {
+            "SELECT": [
+              75,
+              210,
+              243,
+              296,
+              319,
+              381,
+              574
+            ],
+            "UPDATE": [
+              266
+            ],
+            "DELETE": [
+              277
+            ]
+          }
+        },
+        {
+          "file": "src/Purchase/EntryAndBulk.php",
+          "operations": {
+            "SELECT": [
+              17,
+              38
+            ]
+          }
+        },
+        {
+          "file": "src/Purchase/OrderWrites.php",
+          "operations": {
+            "UPDATE": [
+              85
+            ]
+          }
+        },
+        {
+          "file": "src/Subscription/DirectGift.php",
+          "operations": {
+            "SELECT": [
+              287
+            ]
+          }
+        },
+        {
+          "file": "src/Subscription/GiftBatch.php",
+          "operations": {
+            "SHOW": [
+              42
+            ],
+            "SELECT": [
+              48,
+              57
+            ]
+          }
+        },
+        {
+          "file": "src/Subscription/ManualAccounts.php",
+          "operations": {
+            "SELECT": [
+              154
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "server_plans",
+      "original": true,
+      "disposition": "active; preserve",
+      "literal_sql_sites": [
+        {
+          "file": "bot.php",
+          "operations": {
+            "SELECT": [
+              1351,
+              1389,
+              1518
+            ],
+            "UPDATE": [
+              1570
+            ],
+            "DELETE": [
+              2590
+            ]
+          }
+        },
+        {
+          "file": "config.php",
+          "operations": {
+            "SELECT": [
+              1647,
+              1670,
+              2042,
+              3355,
+              3555,
+              3640
+            ]
+          }
+        },
+        {
+          "file": "src/Agent/Discounts.php",
+          "operations": {
+            "SELECT": [
+              59,
+              119
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/AgentDiscounts.php",
+          "operations": {
+            "SELECT": [
+              27
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/AutomaticReceipts.php",
+          "operations": {
+            "SELECT": [
+              140,
+              307
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/AutomaticRenewal.php",
+          "operations": {
+            "SELECT": [
+              58
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/BankPurchase.php",
+          "operations": {
+            "SELECT": [
+              62,
+              155
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/Discounts.php",
+          "operations": {
+            "SELECT": [
+              176
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/GatewayInitiation.php",
+          "operations": {
+            "SELECT": [
+              232
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/GatewayReturn.php",
+          "operations": {
+            "SELECT": [
+              185,
+              1515
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/ReceiptHelpers.php",
+          "operations": {
+            "SELECT": [
+              527,
+              667,
+              873,
+              1162
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/RecoveryInspection.php",
+          "operations": {
+            "SELECT": [
+              146
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/Routes/Checkout.php",
+          "operations": {
+            "SELECT": [
+              284,
+              426,
+              1135,
+              1278
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/Routes/DiscountAdministration.php",
+          "operations": {
+            "SELECT": [
+              359,
+              615,
+              984
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/Routes/Extensions.php",
+          "operations": {
+            "SELECT": [
+              753,
+              806
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/Routes/ManualReceipts.php",
+          "operations": {
+            "SELECT": [
+              284
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/Routes/RenewalCheckout.php",
+          "operations": {
+            "SELECT": [
+              91,
+              304,
+              388,
+              593
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/Routes/RenewalPlan.php",
+          "operations": {
+            "SELECT": [
+              38
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/Routes/RenewalSelection.php",
+          "operations": {
+            "SELECT": [
+              24
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/ServiceEffects.php",
+          "operations": {
+            "SELECT": [
+              77,
+              151,
+              559,
+              702
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/WalletSettlement.php",
+          "operations": {
+            "SELECT": [
+              248
+            ]
+          }
+        },
+        {
+          "file": "src/Panel/Accounts.php",
+          "operations": {
+            "SELECT": [
+              299
+            ]
+          }
+        },
+        {
+          "file": "src/Plans/Administration.php",
+          "operations": {
+            "DELETE": [
+              17,
+              368
+            ],
+            "INSERT": [
+              21
+            ],
+            "UPDATE": [
+              52,
+              62,
+              113,
+              127,
+              139,
+              151,
+              173,
+              219,
+              382,
+              402,
+              422,
+              442,
+              464,
+              467,
+              490,
+              493,
+              521,
+              524,
+              550,
+              568
+            ],
+            "SELECT": [
+              161,
+              301
+            ]
+          }
+        },
+        {
+          "file": "src/Purchase/Catalogue.php",
+          "operations": {
+            "SELECT": [
+              25,
+              47,
+              83,
+              108,
+              143,
+              239,
+              263
+            ]
+          }
+        },
+        {
+          "file": "src/Purchase/Core.php",
+          "operations": {
+            "SELECT": [
+              34,
+              97,
+              243,
+              424
+            ]
+          }
+        },
+        {
+          "file": "src/Purchase/EntryAndBulk.php",
+          "operations": {
+            "SELECT": [
+              74,
+              96
+            ]
+          }
+        },
+        {
+          "file": "src/Purchase/OrderWrites.php",
+          "operations": {
+            "UPDATE": [
+              97
+            ]
+          }
+        },
+        {
+          "file": "src/Purchase/SelectPlan.php",
+          "operations": {
+            "SELECT": [
+              82
+            ]
+          }
+        },
+        {
+          "file": "src/Purchase/TrialCatalogue.php",
+          "operations": {
+            "SELECT": [
+              13
+            ]
+          }
+        },
+        {
+          "file": "src/Subscription/AccountDeletion.php",
+          "operations": {
+            "SELECT": [
+              59
+            ]
+          }
+        },
+        {
+          "file": "src/Subscription/AccountDetails.php",
+          "operations": {
+            "SELECT": [
+              32
+            ]
+          }
+        },
+        {
+          "file": "src/Subscription/CustomerRoutes.php",
+          "operations": {
+            "UPDATE": [
+              205,
+              222,
+              226,
+              237
+            ],
+            "SELECT": [
+              273,
+              366
+            ]
+          }
+        },
+        {
+          "file": "src/Subscription/OrderManagement.php",
+          "operations": {
+            "SELECT": [
+              456
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "servers",
+      "original": true,
+      "disposition": "optional candidate; tenant audit required",
+      "literal_sql_sites": []
+    },
+    {
+      "name": "service_effects",
+      "original": false,
+      "disposition": "active; preserve",
+      "literal_sql_sites": [
+        {
+          "file": "src/Finance/BankPurchase.php",
+          "operations": {
+            "SELECT": [
+              79
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/RecoveryInspection.php",
+          "operations": {
+            "SELECT": [
+              64,
+              74,
+              88,
+              146
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/ReferralReward.php",
+          "operations": {
+            "SELECT": [
+              195
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/ServiceEffects.php",
+          "operations": {
+            "SHOW": [
+              33,
+              48
+            ],
+            "INSERT": [
+              102,
+              320,
+              630,
+              751
+            ],
+            "SELECT": [
+              217,
+              231,
+              297,
+              310,
+              592,
+              725
+            ],
+            "UPDATE": [
+              270,
+              428,
+              452,
+              659
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/WalletSettlement.php",
+          "operations": {
+            "SELECT": [
+              223
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "setting",
+      "original": true,
+      "disposition": "active; preserve",
+      "literal_sql_sites": [
+        {
+          "file": "bot.php",
+          "operations": {
+            "SELECT": [
+              98,
+              809,
+              831,
+              871,
+              909,
+              960,
+              968,
+              1485,
+              1961
+            ],
+            "UPDATE": [
+              877,
+              915
+            ],
+            "INSERT": [
+              883,
+              921,
+              1473
+            ],
+            "DELETE": [
+              1439
+            ]
+          }
+        },
+        {
+          "file": "config.php",
+          "operations": {
+            "SELECT": [
+              281,
+              288,
+              411,
+              534,
+              542,
+              697,
+              1144,
+              1165,
+              1289,
+              1333,
+              2655,
+              2683,
+              2875,
+              2984,
+              3030,
+              3331
+            ],
+            "UPDATE": [
+              558,
+              755,
+              2710,
+              2739,
+              2927,
+              3007,
+              3056
+            ],
+            "INSERT": [
+              563,
+              760,
+              2714,
+              2743,
+              2932,
+              3012,
+              3061
+            ]
+          }
+        },
+        {
+          "file": "pay/back.php",
+          "operations": {
+            "SELECT": [
+              27
+            ]
+          }
+        },
+        {
+          "file": "settings/gift2all.php",
+          "operations": {
+            "SELECT": [
+              37,
+              107,
+              181,
+              244,
+              253,
+              298,
+              387,
+              397
+            ],
+            "INSERT": [
+              126,
+              152,
+              266
+            ],
+            "UPDATE": [
+              352
+            ],
+            "DELETE": [
+              360,
+              404,
+              412
+            ]
+          }
+        },
+        {
+          "file": "src/Backup/Database.php",
+          "operations": {
+            "SELECT": [
+              287
+            ],
+            "UPDATE": [
+              308
+            ],
+            "INSERT": [
+              310
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/AutomaticRenewal.php",
+          "operations": {
+            "SELECT": [
+              411
+            ],
+            "UPDATE": [
+              447
+            ],
+            "INSERT": [
+              451
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/GatewayInitiation.php",
+          "operations": {
+            "SELECT": [
+              299
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/GatewayRuleAdmin.php",
+          "operations": {
+            "SELECT": [
+              195
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/PaymentKeyAdmin.php",
+          "operations": {
+            "SELECT": [
+              176,
+              186
+            ],
+            "UPDATE": [
+              237,
+              269
+            ],
+            "INSERT": [
+              248,
+              274
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/PaymentLifecycle.php",
+          "operations": {
+            "SELECT": [
+              434,
+              442
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/RecoveryInspection.php",
+          "operations": {
+            "SELECT": [
+              146
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/ReferralReward.php",
+          "operations": {
+            "SELECT": [
+              148
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/ServiceEffects.php",
+          "operations": {
+            "SELECT": [
+              77,
+              151,
+              559,
+              702
+            ],
+            "UPDATE": [
+              452,
+              659
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/WalletTransferFlow.php",
+          "operations": {
+            "SELECT": [
+              107,
+              115
+            ],
+            "INSERT": [
+              165
+            ],
+            "UPDATE": [
+              170
+            ]
+          }
+        },
+        {
+          "file": "src/Notifications/Warnings.php",
+          "operations": {
+            "SELECT": [
+              11
+            ],
+            "INSERT": [
+              20
+            ],
+            "UPDATE": [
+              125
+            ]
+          }
+        },
+        {
+          "file": "src/Panel/Accounts.php",
+          "operations": {
+            "SELECT": [
+              449
+            ]
+          }
+        },
+        {
+          "file": "src/Purchase/Core.php",
+          "operations": {
+            "SELECT": [
+              141,
+              174,
+              210,
+              234,
+              296
+            ],
+            "INSERT": [
+              185
+            ],
+            "DELETE": [
+              277
+            ]
+          }
+        },
+        {
+          "file": "src/Subscription/DirectGift.php",
+          "operations": {
+            "SELECT": [
+              180,
+              190
+            ],
+            "INSERT": [
+              203
+            ],
+            "UPDATE": [
+              210
+            ]
+          }
+        },
+        {
+          "file": "src/Subscription/GiftBatch.php",
+          "operations": {
+            "SELECT": [
+              68,
+              246,
+              344
+            ],
+            "INSERT": [
+              293,
+              306
+            ]
+          }
+        },
+        {
+          "file": "src/Support/Categories.php",
+          "operations": {
+            "SELECT": [
+              31,
+              64,
+              97
+            ],
+            "INSERT": [
+              58
+            ],
+            "DELETE": [
+              89
+            ]
+          }
+        },
+        {
+          "file": "src/Support/Entry.php",
+          "operations": {
+            "SELECT": [
+              22
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "users",
+      "original": true,
+      "disposition": "active; preserve",
+      "literal_sql_sites": [
+        {
+          "file": "bot.php",
+          "operations": {
+            "SELECT": [
+              164,
+              244,
+              268,
+              1328
+            ],
+            "INSERT": [
+              178
+            ],
+            "UPDATE": [
+              192
+            ]
+          }
+        },
+        {
+          "file": "config.php",
+          "operations": {
+            "SELECT": [
+              113,
+              121,
+              130,
+              138,
+              274,
+              660,
+              676,
+              784,
+              807,
+              890,
+              1519,
+              1548,
+              1588,
+              1592,
+              1593,
+              1596,
+              1599,
+              1602,
+              1605,
+              1816,
+              2289,
+              2311,
+              2597,
+              2614,
+              2623,
+              2634,
+              2815,
+              2833,
+              2970,
+              3124,
+              3651
+            ],
+            "UPDATE": [
+              741,
+              880,
+              2724,
+              2903,
+              2910,
+              3156,
+              3188,
+              3201,
+              3667,
+              3668,
+              3669,
+              3675,
+              3676,
+              3677,
+              3678,
+              3679,
+              3680,
+              3681,
+              3682,
+              3683
+            ],
+            "INSERT": [
+              3659
+            ]
+          }
+        },
+        {
+          "file": "src/Admin/Roles.php",
+          "operations": {
+            "UPDATE": [
+              16,
+              31
+            ]
+          }
+        },
+        {
+          "file": "src/Agent/Applications.php",
+          "operations": {
+            "SELECT": [
+              43
+            ],
+            "UPDATE": [
+              65,
+              98
+            ]
+          }
+        },
+        {
+          "file": "src/Agent/Discounts.php",
+          "operations": {
+            "UPDATE": [
+              25,
+              169,
+              198
+            ],
+            "SELECT": [
+              36,
+              46,
+              107,
+              158,
+              184
+            ]
+          }
+        },
+        {
+          "file": "src/Agent/Rejected.php",
+          "operations": {
+            "UPDATE": [
+              19
+            ]
+          }
+        },
+        {
+          "file": "src/Backup/Database.php",
+          "operations": {
+            "SELECT": [
+              195
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/AgentDiscounts.php",
+          "operations": {
+            "SELECT": [
+              11
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/AutomaticReceipts.php",
+          "operations": {
+            "SELECT": [
+              39
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/AutomaticRenewal.php",
+          "operations": {
+            "SELECT": [
+              79
+            ],
+            "UPDATE": [
+              129
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/Discounts.php",
+          "operations": {
+            "SELECT": [
+              80
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/GatewayInitiation.php",
+          "operations": {
+            "SELECT": [
+              357
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/GatewayReturn.php",
+          "operations": {
+            "SELECT": [
+              185,
+              1193
+            ],
+            "UPDATE": [
+              872
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/GatewayRuleAdmin.php",
+          "operations": {
+            "SELECT": [
+              343
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/GatewayRules.php",
+          "operations": {
+            "SELECT": [
+              158
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/PaymentKeyAdmin.php",
+          "operations": {
+            "SELECT": [
+              129,
+              150
+            ],
+            "UPDATE": [
+              257
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/PaymentLifecycle.php",
+          "operations": {
+            "SELECT": [
+              151,
+              500
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/ReceiptHelpers.php",
+          "operations": {
+            "UPDATE": [
+              27
+            ],
+            "SELECT": [
+              614,
+              1044,
+              1429
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/ReferralReward.php",
+          "operations": {
+            "SELECT": [
+              101,
+              172,
+              251,
+              277
+            ],
+            "UPDATE": [
+              288
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/Routes/AdminWallet.php",
+          "operations": {
+            "SELECT": [
+              111,
+              246,
+              336
+            ],
+            "UPDATE": [
+              151,
+              159,
+              272
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/Routes/Extensions.php",
+          "operations": {
+            "SELECT": [
+              573,
+              1373
+            ],
+            "UPDATE": [
+              609,
+              1424
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/Routes/ManualReceipts.php",
+          "operations": {
+            "SELECT": [
+              284
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/Routes/RenewalCheckout.php",
+          "operations": {
+            "SELECT": [
+              609
+            ],
+            "UPDATE": [
+              659
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/Routes/WalletTransfer.php",
+          "operations": {
+            "SELECT": [
+              129
+            ],
+            "UPDATE": [
+              190,
+              204
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/ServiceEffects.php",
+          "operations": {
+            "SELECT": [
+              544
+            ],
+            "UPDATE": [
+              613
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/WalletSettlement.php",
+          "operations": {
+            "SELECT": [
+              186
+            ],
+            "UPDATE": [
+              302
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/WalletStart.php",
+          "operations": {
+            "SELECT": [
+              31,
+              100
+            ],
+            "UPDATE": [
+              60,
+              113
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/WalletTransferFlow.php",
+          "operations": {
+            "SELECT": [
+              187,
+              219
+            ],
+            "UPDATE": [
+              235
+            ]
+          }
+        },
+        {
+          "file": "src/Jobs/BroadcastSend.php",
+          "operations": {
+            "SELECT": [
+              113,
+              125,
+              138,
+              150,
+              170,
+              177,
+              184,
+              190
+            ],
+            "UPDATE": [
+              299
+            ]
+          }
+        },
+        {
+          "file": "src/Plans/Administration.php",
+          "operations": {
+            "SELECT": [
+              345
+            ]
+          }
+        },
+        {
+          "file": "src/Subscription/DirectGift.php",
+          "operations": {
+            "SELECT": [
+              108,
+              132,
+              149,
+              425,
+              445
+            ],
+            "UPDATE": [
+              167,
+              455
+            ]
+          }
+        },
+        {
+          "file": "src/Subscription/GiftBatch.php",
+          "operations": {
+            "SELECT": [
+              224,
+              236
+            ],
+            "UPDATE": [
+              324
+            ]
+          }
+        },
+        {
+          "file": "src/Subscription/ManualAccounts.php",
+          "operations": {
+            "UPDATE": [
+              23,
+              93,
+              368
+            ],
+            "SELECT": [
+              56,
+              66,
+              82
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "wallet_adjustments",
+      "original": false,
+      "disposition": "active; preserve",
+      "literal_sql_sites": [
+        {
+          "file": "src/Finance/Routes/AdminWallet.php",
+          "operations": {
+            "SELECT": [
+              178
+            ]
+          }
+        },
+        {
+          "file": "src/Finance/WalletAdjustments.php",
+          "operations": {
+            "INSERT": [
+              198
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "dynamic_table_sites": [
+    {
+      "file": "src/Finance/ReceiptHelpers.php",
+      "line": 1213,
+      "operation": "SELECT",
+      "expression": "SELECT $fields FROM `$table` LIMIT 0"
+    },
+    {
+      "file": "src/Finance/ReceiptHelpers.php",
+      "line": 1231,
+      "operation": "SHOW",
+      "expression": "SHOW INDEX FROM `$table`"
+    },
+    {
+      "file": "src/Jobs/Checkpoint.php",
+      "line": 19,
+      "operation": "UPDATE",
+      "expression": "UPDATE `$table` SET `offset`=?, `updated_at`=NOW() WHERE `id`=? AND `state`=2"
+    },
+    {
+      "file": "src/Jobs/Checkpoint.php",
+      "line": 29,
+      "operation": "UPDATE",
+      "expression": "UPDATE `$table` SET `offset`=?, `state`=1, `updated_at`=NOW() WHERE `id`=? AND `state`=2"
+    },
+    {
+      "file": "src/Jobs/Checkpoint.php",
+      "line": 39,
+      "operation": "SELECT",
+      "expression": "SELECT `state` FROM `$table` WHERE `id`=? LIMIT 1"
+    },
+    {
+      "file": "src/Jobs/Checkpoint.php",
+      "line": 53,
+      "operation": "UPDATE",
+      "expression": "UPDATE `$table` SET `offset`=?, `state`=4, `updated_at`=NOW() WHERE `id`=?"
+    },
+    {
+      "file": "src/Jobs/Checkpoint.php",
+      "line": 63,
+      "operation": "UPDATE",
+      "expression": "UPDATE `$table` SET `offset`=?, `state`=3, `updated_at`=NOW() WHERE `id`=? AND `state`=2"
+    },
+    {
+      "file": "src/Purchase/Core.php",
+      "line": 494,
+      "operation": "SELECT",
+      "expression": "SELECT `id` FROM `$table` WHERE `id` = ? LIMIT 1"
+    }
+  ]
+}
