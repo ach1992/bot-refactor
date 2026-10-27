@@ -22,6 +22,9 @@ foreach ($files as $file) {
         if(in_array($kind,['T_CONSTANT_ENCAPSED_STRING','T_INLINE_HTML'],true)) {
             $all[]=['path'=>$file,'kind'=>$kind,'start'=>$offset,'end'=>$offset+strlen($text),'line'=>$line,'raw'=>$text];
         }
+        elseif (($argv[1] ?? '') === '--all') {
+            $all[]=['path'=>$file,'kind'=>$kind,'start'=>$offset,'end'=>$offset+strlen($text),'line'=>$line,'raw'=>$text];
+        }
         $offset+=strlen($text); $line+=substr_count($text,"\n");
     }
 }

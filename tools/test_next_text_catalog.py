@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Current-runtime copy audit and native equivalence. Frozen V0–V9 untouched."""
 from __future__ import annotations
-import hashlib, json, pathlib, re, socket, subprocess, sys, time, urllib.error, urllib.request
+import hashlib, json, pathlib, re, socket, subprocess, sys, tempfile, time, urllib.error, urllib.request
+import catalog_ui
 ROOT=pathlib.Path(__file__).resolve().parents[1]
 def command(*args,**kw):return subprocess.check_output(args,cwd=ROOT,**kw)
 def check(ok,message):
@@ -41,6 +42,8 @@ def main():
         if re.search(r"['\"](?:text|caption)['\"]\s*=>\s*$",source[-100:]) and re.search('[A-Za-z]',literal):
             violations.append([path,token['line'],literal[:100]])
     check(not violations,'UI literals outside catalog: '+json.dumps(violations,ensure_ascii=False))
+    ascii_ui=catalog_ui.ui_candidates(ROOT,runtime_paths())
+    check(not ascii_ui,'ASCII UI copy outside catalog: '+json.dumps(ascii_ui,ensure_ascii=False))
     refs=set()
     for path in runtime_paths():
         refs.update(re.findall(r"\\?achbotMessage(?:Html)?\('([^']+)'",(ROOT/path).read_text()))
@@ -51,6 +54,21 @@ def main():
     check(refs<=entries,'unknown catalog references: '+str(refs-entries))
     unused={k for k in entries-refs if not k.startswith(('legacy_messages.','legacy_buttons.'))}
     check(not unused,'orphan copy entries: '+str(unused))
+    with tempfile.TemporaryDirectory(prefix='achbot-catalog-audit-') as scratch:
+        fixture=pathlib.Path(scratch)/'fixture.php'
+        fixture.write_text("<?php $message='Receipt accepted'; $message.=' Reference: '.$id; sendMessage($message); $keys=[['text'=>'Continue','callback_data'=>'keep_protocol']]; sendPhoto('file.png','Visible caption');")
+        found={t['raw'] for t in catalog_ui.ui_candidates(ROOT,[str(fixture)])}
+        check(found=={"'Receipt accepted'","' Reference: '","'Continue'","'Visible caption'"},'ASCII audit negative control failed: '+str(found))
+    import test_post_v9_customer_errors as privacy
+    import catalog_source
+    copy=catalog_source.templates(ROOT)
+    privacy.verify(ROOT,copy)
+    surface=(ROOT/privacy.CUSTOMER_SURFACES[0]).read_text()
+    key=re.search(r"(?:sendMessage|alert)\(\s*\\achbotMessage\('([^']+)'",surface)[1]
+    poisoned=dict(copy);poisoned[key]+=' SQLSTATE'
+    try:privacy.verify(ROOT,poisoned)
+    except RuntimeError as error:check('exposes infrastructure' in str(error),'catalog privacy negative control failed for wrong reason')
+    else:raise AssertionError('catalog privacy negative control missed infrastructure copy')
     native=json.loads(command('php','tools/test_text_catalog.php'))
     check(native['status']=='PASS','native byte equivalence')
     # Direct requests must not expose any internal catalog/module source or text.
@@ -73,6 +91,6 @@ def main():
     finally:
         process.terminate();process.wait(timeout=5)
     print(json.dumps({'status':'PASS','source_equivalent_occurrences':reverse,'source_files':len(inventory['files']),
-      'catalog_keys':len(entries),'runtime_references':len(refs),'static_ui_violations':len(violations),
+      'catalog_keys':len(entries),'runtime_references':len(refs),'static_ui_violations':len(violations),'ascii_ui_violations':len(ascii_ui),'ascii_audit_negative_controls':4,
       'direct_http_guards':len(guarded),'native':native},ensure_ascii=False))
 if __name__=='__main__':main()

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Customer-visible diagnostic privacy guard for the active post-V9 runtime.
 
-Static guard catches ONLY first-argument literal Telegram regressions on
+Static guard catches ONLY first-argument literal/resolved-catalog template regressions on
 customer-only surfaces. It does not prove full customer or administrator privacy.
 Mixed finance customer/admin branches are executed using owned MariaDB and
 synthetic sensitive provider errors in test_post_v9_finance_error_privacy.py.
@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
+import catalog_source
 
 ROOT = Path(__file__).resolve().parents[1]
 CUSTOMER_SURFACES = (
@@ -36,10 +37,11 @@ SENSITIVE_TERMS = (
 LITERAL_MESSAGE = re.compile(r'\b(?:alert|sendMessage|editText)\s*\(\s*(["\'])(.*?)\1', re.S)
 
 
-def verify(root: Path = ROOT) -> dict:
+def verify(root: Path = ROOT, catalog: dict | None = None) -> dict:
+    catalog = catalog_source.templates(root) if catalog is None else catalog
     examined = 0
     for rel in CUSTOMER_SURFACES:
-        source = (root / rel).read_text()
+        source = catalog_source.expanded((root / rel).read_text(), catalog)
         message_count = 0
         for match in LITERAL_MESSAGE.finditer(source):
             message_count += 1
@@ -52,7 +54,7 @@ def verify(root: Path = ROOT) -> dict:
                     f"Customer error exposes infrastructure: {rel}:{line} {leaking}"
                 )
         if not message_count:
-            raise RuntimeError(f"Customer surface lacks auditable literal messages: {rel}")
+            raise RuntimeError(f"Customer surface lacks auditable literal/catalog messages: {rel}")
         examined += message_count
 
     mixed = {
@@ -70,7 +72,7 @@ def verify(root: Path = ROOT) -> dict:
         ),
     }
     for rel, expected in mixed.items():
-        source = (root / rel).read_text()
+        source = catalog_source.expanded((root / rel).read_text(), catalog)
         if not all(x in source for x in expected):
             raise RuntimeError("Mixed customer/admin financial copy regressed: " + rel)
     return {
@@ -78,7 +80,7 @@ def verify(root: Path = ROOT) -> dict:
         "customer_surface_files": len(CUSTOMER_SURFACES),
         "literal_first_argument_calls_inspected": examined,
         "mixed_financial_routes_copy_markers_checked": len(mixed),
-        "coverage": "first-argument literal inspection only; runtime fixtures required",
+        "coverage": "first-argument literal/resolved-catalog template inspection only; runtime fixtures required",
         "dynamic_audience_privacy_proved": False,
     }
 

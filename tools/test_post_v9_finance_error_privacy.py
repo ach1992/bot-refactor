@@ -18,6 +18,7 @@ import test_access_state as owned
 import test_post_v9_purchases as stages
 import test_v6_native as sql_native
 import test_v8_native as purchase
+import catalog_source
 
 DB = purchase.SIDE[1]
 ROOT = Path(__file__).resolve().parents[1]
@@ -317,12 +318,16 @@ def main():
         # exception text, without ever changing the actual source tree.
         source = current / "src/Finance/Routes/Extensions.php"
         original = source.read_text()
+        catalog=catalog_source.templates(current)
+        message_key=next(key for key,value in catalog.items()
+                         if value.startswith('⚠️ وضعیت درخواست مشخص نیست.') and ("achbotMessage('"+key+"'") in original)
+        message_anchor="sendMessage("+chr(92)+"achbotMessage('"+message_key+"'"
         mutator_cases = [
             ("operator_raw_exception",
              original.replace("achbotFinanceDiagnosticReason($e)", "$e->getMessage()")),
             ("customer_dynamic_exception",
-             original.replace('sendMessage("⚠️ وضعیت درخواست مشخص نیست.',
-                              'sendMessage($e->getMessage() . "⚠️ وضعیت درخواست مشخص نیست.')),
+             original.replace(message_anchor,
+                              "sendMessage($e->getMessage() . "+chr(92)+"achbotMessage('"+message_key+"'")),
         ]
         for label, poisoned in mutator_cases:
             if poisoned == original:

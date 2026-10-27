@@ -6,8 +6,27 @@ function catalogEvaluate(string $_catalogExpression,array $_catalogBindings): st
     extract($_catalogBindings,EXTR_SKIP);
     return eval('return '.$_catalogExpression.';');
 }
+final class CatalogStringProbe {
+    private int $calls=0;
+    public function __toString(): string {return '<probe '.(++$this->calls).' {time} %s>';}
+}
+function catalogBindings(array $expressions,$sample): array {
+    $bindings=[];$values=[];
+    foreach ($expressions as $expression) {
+        if (!preg_match('/\A\$([A-Za-z_][A-Za-z0-9_]*)(?:\[(?:([0-9]+)|[\'"]([A-Za-z0-9_]+)[\'"])\])?\z/D',$expression,$m)) {
+            throw new RuntimeException('unsupported_fixture_expression:'.$expression);
+        }
+        if (!array_key_exists($expression,$values)) $values[$expression]=is_object($sample)?clone $sample:$sample;
+        $value=$values[$expression];
+        if (isset($m[2]) && $m[2]!=='' || isset($m[3]) && $m[3]!=='') {
+            $key=isset($m[3])&&$m[3]!==''?$m[3]:(int)$m[2];
+            $bindings[$m[1]][$key]=$value;
+        } else $bindings[$m[1]]=$value;
+    }
+    return $bindings;
+}
 $checks=0;$templates=0;$interpolated=0;
-$samples=[0,42,-77,null,true,"نام <&>\"' {time} %s $ \\\r\n"];
+$samples=[0,42,-77,null,true,"نام <&>\"' {time} %s $ \\\r\n",new CatalogStringProbe()];
 foreach ($inventory['files'] as $path=>$file) {
     foreach ($file['edits'] as $edit) {
         if (!empty($edit['formatting'])) continue;
@@ -19,18 +38,8 @@ foreach ($inventory['files'] as $path=>$file) {
         $expressions=$edit['expressions'];
         if ($expressions) $interpolated++;
         foreach ($expressions?$samples:[null] as $sample) {
-            $bindings=[];
-            foreach ($expressions as $expression) {
-                if (!preg_match('/\A\$([A-Za-z_][A-Za-z0-9_]*)(?:\[(?:([0-9]+)|[\'"]([A-Za-z0-9_]+)[\'"])\])?\z/D',$expression,$m)) {
-                    throw new RuntimeException('unsupported_fixture_expression:'.$expression);
-                }
-                if (isset($m[2]) && $m[2]!=='' || isset($m[3]) && $m[3]!=='') {
-                    $key=isset($m[3])&&$m[3]!==''?$m[3]:(int)$m[2];
-                    $bindings[$m[1]][$key]=$sample;
-                } else $bindings[$m[1]]=$sample;
-            }
-            $expected=catalogEvaluate($edit['original'],$bindings);
-            $actual=catalogEvaluate($edit['replacement'],$bindings);
+            $expected=catalogEvaluate($edit['original'],catalogBindings($expressions,$sample));
+            $actual=catalogEvaluate($edit['replacement'],catalogBindings($expressions,$sample));
             if ($expected!==$actual) throw new RuntimeException('byte_mismatch:'.$path.':'.$edit['line']);
             $checks++;
         }
@@ -69,4 +78,5 @@ $checks+=2;
 require_once dirname(__DIR__).'/src/Presentation/Labels.php';
 if (\AchBot\Presentation\Labels\paymentType('BUY_SUB')!== 'خرید اشتراک') throw new RuntimeException('namespaced_standalone_load_failed');
 echo json_encode(['status'=>'PASS','templates'=>$templates,'interpolated_templates'=>$interpolated,'byte_assertions'=>$checks,
-    'html_escaping'=>'PASS','one_pass_substitution'=>'PASS','legacy_facades'=>'PASS'],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR)."\n";
+    'html_escaping'=>'PASS','one_pass_substitution'=>'PASS','legacy_facades'=>'PASS',
+    'repeated_interpolation_string_conversion'=>'PASS'],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR)."\n";

@@ -47,23 +47,18 @@ EXACT_EXCLUSIONS={
  ('settings/jdf.php',"'٫'"):'numeric transliteration decimal separator/default parameter, not prose',
 }
 ASCII_EXTRA={
- 'config.php':{'You do not have access','Unknown Plan','Path Custom'},
+ 'config.php':{'You do not have access','Unknown Plan','Path Custom','Error'},
+ 'src/Finance/PaymentLifecycle.php':{'NOWPayments'},
  'settings/subLink.php':{'Method not allowed','Wrong token','Legacy subscription link retired; use the current Marzban subscription URL.'},
 }
-ASCII_RANGES={
- 'src/Finance/Routes/WalletTransfer.php':[(287,303),(390,392)],
- 'src/Finance/AutomaticRenewal.php':[(373,376)],
-}
+ASCII_SELECTED=set()
 def is_candidate(t,source):
     p=t['path'];r=t['raw'];before=source[:t['start']].decode()
     if p in EXCLUSIONS or (p,r) in EXACT_EXCLUSIONS: return False
     if t['kind']=='T_INLINE_HTML':return False
     if any(ord(c)>127 for c in r):return True
     if r[1:-1] in ASCII_EXTRA.get(p,set()):return True
-    if any(a<=t['line']<=b for a,b in ASCII_RANGES.get(p,[])):return True
-    # Explicit button/caption sink: identifiers/callbacks remain untouched.
-    if re.search(r"['\"](?:text|caption)['\"]\s*=>\s*$",before[-100:]) and re.search('[A-Za-z]',r):
-        if r[1:-1] not in ['text','caption']:return True
+    if (p,r) in ASCII_SELECTED:return True
     return False
 
 def template(t):
@@ -90,7 +85,9 @@ def template(t):
                 expr+=']';i+=1
         else: raise ValueError(('unexpected interpolation',t,parts[i]))
         name=re.sub('[^A-Za-z0-9_]+','_',expr.lstrip('$')).strip('_') or 'value'
-        if name in exprs and exprs[name]!=expr:raise ValueError(('slot conflict',t))
+        base=name;occurrence=2
+        while name in exprs:
+            name=base+'_'+str(occurrence);occurrence+=1
         exprs[name]=expr;pieces.append(('slot',name))
     literals=decode(['"'+c+'"' for c in chunks])
     return ''.join(literals[v] if k=='literal' else '{'+v+'}' for k,v in pieces),exprs
@@ -128,6 +125,20 @@ def main():
     cached=dict(zip(literals,decode_raw(literals)))
     globals()['decode']=lambda raw:[cached[s] for s in raw]
     sources={p:(ROOT/p).read_bytes() for p in paths}
+    import catalog_ui
+    ASCII_SELECTED.update((t['path'],t['raw']) for t in catalog_ui.ui_candidates(ROOT,paths))
+    ASCII_SELECTED.update({('src/Finance/Routes/ManualApproval.php',"' chat:'"),('src/Finance/Routes/ManualApproval.php',"'additional_targets:'")})
+    if '--apply' in sys.argv:
+        for p,raw in sources.items():
+            if raw!=git('show',BASE+':'+p):raise RuntimeError('Migration requires exact unmodified baseline source: '+p)
+    # Preserve previously assigned stable identities when upstream adds/moves copy.
+    previous=json.loads(subprocess.check_output(['php','-r',
+        'require "messages/loader.php";$r=[];foreach(glob("messages/fa/*.php") as $p){$t=basename($p,".php");if(str_starts_with($t,"legacy_"))continue;foreach(achbotMessages($t) as $k=>$v)$r[]=[$t,$k,$v];}echo json_encode($r,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);'],cwd=ROOT))
+    stable={}
+    for top,local,value in previous:
+        text=value['text'] if isinstance(value,dict) else value
+        params=tuple(value['parameters']) if isinstance(value,dict) else ()
+        stable[(top,text,params)]=top+'.'+local
     catalog=collections.defaultdict(dict);dedup={};plan=collections.defaultdict(list)
     for t in tokens:
         p=t['path'];source=sources[p]
@@ -137,7 +148,7 @@ def main():
         ident=(top,value,tuple(exprs))
         if ident in dedup:key=dedup[ident]
         else:
-            local=key_context(t,source,value);key=top+'.'+local
+            key=stable.get(ident,top+'.'+key_context(t,source,value));local=key.split('.',1)[1]
             catalog[top][local]={'text':value,'parameters':list(exprs)} if exprs else value
             dedup[ident]=key
         args=', ['+', '.join(quote(n)+' => '+expr for n,expr in exprs.items())+']' if exprs else ''
