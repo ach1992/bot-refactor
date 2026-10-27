@@ -1,30 +1,130 @@
 # Next-release source contract
 
-Owner scope: Issue #26 comments 6433839924, 6434034586 and superseding revision3 6434233761. This document describes the development candidate after RC11. Published RC10/RC11 artifacts remain immutable. No installed tenant, actual private baseInfo.php, production database, Telegram webhook, Cron or real-money operation is changed by this source work.
+The development scope after RC11 targets **planned RC12 source-only delivery**.
+This document does not establish publication or installation. Use
+[Releases](https://github.com/ach1992/bot-refactor/releases) for published artifact
+identities. Published RC10/RC11 and frozen V0–V9 evidence remain immutable.
+Owner scope is recorded in #26 comments
+[6433839924](https://github.com/ach1992/bot-refactor/issues/26#issuecomment-6433839924),
+[6434034586](https://github.com/ach1992/bot-refactor/issues/26#issuecomment-6434034586)
+and [6434233761](https://github.com/ach1992/bot-refactor/issues/26#issuecomment-6434233761).
+See the [RC11 preparation guide](RC11-TO-RC12.md) for package, settings and recovery
+steps. No actual private configuration, tenant, database, webhook, Cron or money
+is changed by this source work.
 
-## Intended behavior
+## Customer and administrator behavior
 
-- The original Increase/Decrease wallet controls remain. A negative Decrease requires an explicit locked before/after preview and separate confirmation. Customers receive the committed amount/direction/resulting balance; administrators also receive numeric target ID, before/after and tracking identity.
-- Home sends a new menu and preserves invoices, status results and payment evidence. Payment references include their persisted customer's numeric ID.
-- Volume selection retains actual order identity, owner, expiry and agent pricing. The attention inventory distinguishes uncertain operations from historical successful paid orders and describes the evidence available for each payment subject. It never automatically approves, refunds, retries or repairs money.
-- PasarGuard uses native5.5.1 API identities and Group access, independently from Marzban Host selection. Existing Marzban physical-panel grouping remains unchanged. Retired X-UI variants stay unsupported.
-- Native config/subscription presentation is managed per logical server in the administrator UI. Secrets remain per installation in private baseInfo.php; display policy and exchange rates do not belong there. Existing private values are not silently imported.
-- Bot-facing copy is maintained in one topic-organized message catalog. Callback/state/SQL/provider identifiers remain code contracts and are not translations.
+- The two original **Increase/Decrease wallet controls** remain. A Decrease that
+  would create or deepen debt requires a locked before/after preview and separate
+  explicit confirmation; preview moves no money. Customer notices report the
+  committed operation, amount and resulting balance. Private administrator
+  notices also report numeric target ID, before/after balances and tracking ID.
+  Failed Telegram delivery does not reverse a committed movement.
+- Home sends a new menu while preserving invoices, status results and payment
+  evidence. References display the persisted customer's numeric Telegram ID.
+  The attention inventory distinguishes unresolved claims/effects from historical
+  successful `paid` orders. It shows subject-specific evidence gaps and never
+  automatically approves, retries, refunds, reissues or repairs money.
+- New volume/day add-on invoices pin **whole GiB/days** in existing `pays.volume`
+  or `pays.day`, with the other axis zero and the original `pays.price` retained.
+  Fulfillment uses these immutable issued units even after a catalogue change
+  or deletion. Legacy zero/NULL/missing/inconsistent quantities do not prove the
+  original entitlement: refuse new claim/debit/provider effects and retain
+  paid/processing evidence for operator reconciliation. Do not autofill from
+  today's SKU, rewrite old quotes, refund or replay automatically. See the
+  [financial boundary](FINANCIAL-CONSOLIDATION.md#immutable-add-on-quantity-and-rc11-pending-invoice-boundary).
 
-## Schema and upgrade boundaries
+## Providers, display, rates and copy
 
-Existing RC11 installations already use the RC9-to-RC11 journal/migrations; do not rerun005, rename journals or import RC10. The exact wallet journal identity and both transfer legs remain unchanged.
+The candidate uses genuine Marzban and native **PasarGuard 5.5.1** paths.
+PasarGuard persists concrete panel incarnation and remote numeric account
+identity, pins native Group IDs and uses native subscription/config responses.
+Its Groups are distinct from customer payment cohorts and Marzban physical-panel
+groups. Existing Marzban grouping remains unchanged. Retired X-UI variants stay
+unsupported; User Templates, `on_hold` and native next-plan/reset scheduling are
+not managed. Configure native Groups/Hosts and an absolute subscription URL
+prefix before PasarGuard use; mutable upstream Group contents are not frozen by
+a pinned ID. Details: [PasarGuard contract](PASARGUARD-CONTRACT.md).
 
-Migration011_provider_identity.sql is an additive, separately shipped provider identity/snapshot journal. It is required before PasarGuard setup/use and optional for existing Marzban-only installations. A partial or incompatible011 fails closed. It records physical connection incarnation, quote-pinned Groups, remote ID/created-at/operation marker, committed create reservation and non-create mutation intent. An ambiguous provider write is held for reconciliation; it never authorizes a blind second dispatch. Purchased entitlement and later mutation observations remain distinct.
+In each logical server's **نمایش لینک و QR** settings, administrators use guided
+config/subscription toggles, QR choices, limits and protocol/name selectors.
+Marzban positional compatibility is an explicit managed mode; PasarGuard never
+reuses those indices. Logical servers have independent policies even when they
+share a backend. Configure the intended policy before rollout; an absent setting
+uses documented native defaults, while malformed/duplicate/provider-mismatched
+settings fail closed. No display setting changes actual subscription access.
+See [presentation settings](SUBSCRIPTION-PRESENTATION.md).
 
-010_cleanup_manifest.json and its guarded CLI are optional operator maintenance tools, not an automatically applied DROP migration or a readiness prerequisite. The only original-table retirement candidates are admins,black_list,servers, and only exact empty original shapes without dependencies and with explicit tenant/operator retention disposition can be applied. A static source search does not prove safe deletion of installed data. All current runtime members have a necessary role; there is no fabricated file-removal quota. Known retired automatic-TRON/WeSwap paths are audited by exact hash/path, with unknown files and active schedules refused.
+Administrator gateway settings own normal/shared `manualUsdtRateToman` and
+optional `usdtAgentRateToman` for both manual USDT and hosted NOWPayments.
+Missing/cleared agent override uses the explicit normal rate; invalid explicit
+override disables only that audience's quoting. TRX keeps its independent rate,
+and older pinned attempts retain their original quote. Configure rates before
+new use; no private/external/1:1 fallback exists. See [USDT settings](USDT-RATE-SETTINGS.md).
 
-Frozen original V0–V9 schema, tests and release evidence remain separate and unchanged. Current baseInfo.example.php removes only the six obsolete display/rate assignments explicitly authorized in revision3; real baseInfo.php remains untouched. Source ZIPs contain neither private configuration nor SQL installer effects.
+All bot/PHP payment-page copy lives in **25 topic files under `messages/fa/`**
+with `messages/loader.php`; legacy settings keys remain a compatibility facade.
+Use the [editing map](RC11-TO-RC12.md#message-editing-map) and
+[catalog contract](../../messages/README.md), preserving keys, declared parameters,
+escaping and legacy placeholders. Callback/state/SQL/provider identifiers and
+diagnostic codes remain implementation contracts.
 
-## Validation and delivery
+The actual private `baseInfo.php` remains untouched. The six obsolete globals
+`hideConnectLinkForMarzban`, `showIndexes`, `hideConfigIfMany`, `linkIndices`,
+`USDTPrice` and `USDTPriceagent` are ignored as runtime configuration sources,
+not imported. Only those six assignments are removed from the current synthetic
+example; secrets remain per installation.
 
-The Master must bind final source tests, PHP8.1/8.4 CI, detached original-V9 historical gates, runtime manifest/package and fresh independent review to the exact stabilized candidate. Intermediate worker tests are not aggregate acceptance. Installed Telegram/provider/payment acceptance, production migration and deployment require their own authorized operator evidence.
+## Schema and package boundaries
 
-Actual adapter proof: client30f8eab14b01421b0cab221a301d392673f696f8 completed all11 native probe phases against unmodified upstream PasarGuard5.5.1 commit eba70d68eaa5a89e34ffebb47c8fd5ce054d0e43 on a task-owned loopback panel. Native-generated links and links_base64 each contained one configuration; DELETE204 was followed by by-ID404. This does not certify the still-changing aggregate bot or customer data-plane traffic. See Issue #81 milestones6434115683 and6434178553 and the client contract for prerequisites and diagnostic boundaries.
+A compatible RC11 installation already has its reviewed financial journals.
+Do not rerun **005**, rename journals or import RC10; preserve wallet journal
+identity and both transfer legs. Audit actual shape/state rather than assuming
+a previous upgrade ran.
 
-Operational notes: configure an absolute PasarGuard subscription URL prefix and valid native Groups/Hosts before use. The bot does not manage User Templates,on_hold or native next-plan/reset scheduling. Lower Telegram update IDs after a long idle epoch and retained transfer cursors still require explicit reconciliation; never erase financial replay history to restore availability.
+[011_provider_identity.sql](../../migrations/post-v9/011_provider_identity.sql)
+is additive and separately applied **only when PasarGuard is used**.
+Existing Marzban-only operation does not require it. Missing, partial or
+incompatible 011 blocks PasarGuard; it does not authorize repair or fallback.
+Persistence separates the purchased entitlement from later mutation observations;
+uncertain provider writes require reconciliation, never blind second dispatch.
+
+[010 cleanup](CURRENT-RUNTIME-CLEANUP.md) is optional operator maintenance, not
+an automatic DROP migration or readiness prerequisite. Its strict manifest and
+guarded CLI allow only reviewed empty original table shapes with dependency,
+retention and tenant identity checks plus explicit maintenance authorization.
+Unknown/custom/nonempty state must be retained. Retired TRON/WeSwap source audits
+also reject unknown files and active schedules; source search is not permission
+to delete installed data.
+
+The candidate runtime contains **135 files**, including the loader and all
+25 message topics. Verify every file against the trusted exact-release manifest;
+a partial overlay without `messages/` is unusable. Source ZIPs contain no private
+configuration and perform no SQL installation or maintenance.
+
+## Validation, delivery and rollback
+
+The Master binds exact stabilized source, PHP 8.1/8.4 current tests, detached
+original-V9 gates, package/manifest and fresh author-separated review. Intermediate
+worker checks and adapter probes are not aggregate or installed acceptance.
+[Issue #81](https://github.com/ach1992/bot-refactor/issues/81) retains the Owner
+merge/release and separate provider/operator gates. No production approval is
+implied here.
+
+Bounded adapter evidence: client `30f8eab14b01421b0cab221a301d392673f696f8`
+completed 11 native probe phases against unmodified upstream PasarGuard 5.5.1
+commit `eba70d68eaa5a89e34ffebb47c8fd5ce054d0e43` on a task-owned loopback panel.
+Native links and links_base64 each contained one configuration; DELETE204 was
+followed by by-ID404. This does not certify the aggregate bot or customer
+data-plane traffic. See #81 milestones
+[6434115683](https://github.com/ach1992/bot-refactor/issues/81#issuecomment-6434115683)
+and [6434178553](https://github.com/ach1992/bot-refactor/issues/81#issuecomment-6434178553).
+
+Rollback must preserve committed money, payment/effect/replay journals, provider
+identities and remote accounts. Older source may not understand PasarGuard or the
+new message/settings dependencies; a source downgrade is not a financial undo.
+Never erase journals or restore an old database blindly to make old code run.
+Reconcile any uncertain operation against protected local/provider evidence and
+use a separately reviewed recovery plan. Lower Telegram update IDs after a long
+idle epoch and retained transfer cursors also require explicit reconciliation,
+not erasing replay history.
