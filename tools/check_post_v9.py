@@ -505,16 +505,48 @@ def main():
         text_catalog=json.loads(catalog_output.stdout)
         if not (text_catalog.get("status")=="PASS"
                 and text_catalog.get("source_files")==78
-                and text_catalog.get("source_equivalent_occurrences")==3201
+                and text_catalog.get("source_equivalent_occurrences")==3202
                 and text_catalog.get("static_ui_violations")==0
                 and text_catalog.get("ascii_ui_violations")==0
-                and text_catalog.get("ascii_audit_negative_controls")==5
+                and text_catalog.get("ascii_audit_negative_controls")==8
                 and text_catalog.get("migrated_machine_fields_or_sql_arguments")==0
                 and text_catalog.get("direct_http_guards")==27
-                and text_catalog.get("native",{}).get("templates")==3065
-                and text_catalog.get("native",{}).get("interpolated_templates")==292
-                and text_catalog.get("native",{}).get("byte_assertions")==4824):
+                and text_catalog.get("native",{}).get("templates")==3066
+                and text_catalog.get("native",{}).get("interpolated_templates")==293
+                and text_catalog.get("native",{}).get("byte_assertions")==4839
+                and text_catalog.get("authorized_source_dependency_files")==3
+                and text_catalog.get("authorized_bootstrap_flow_changes")==1
+                and text_catalog.get("approved_public_copy_corrections")==3
+                and text_catalog.get("native",{}).get("byte_preserved_templates")==3063
+                and text_catalog.get("native",{}).get("approved_wording_corrections")==3
+                and text_catalog.get("native",{}).get("actual_traffic_helper_parity_cases")==18):
             raise RuntimeError("Central copy byte-equivalence, audience and HTTP guard proof incomplete")
+        bootstrap_output=subprocess.run(
+            ["python3",str(ROOT/"tools/test_next_bootstrap_privacy.py")],
+            cwd=ROOT,check=True,timeout=60,capture_output=True,text=True)
+        bootstrap_privacy=json.loads(bootstrap_output.stdout)
+        if not (bootstrap_privacy.get("status")=="PASS" and bootstrap_privacy.get("cases")==16
+                and bootstrap_privacy.get("archived_disclosure_RED")==2
+                and bootstrap_privacy.get("actual_bootstrap_prefix") is True
+                and bootstrap_privacy.get("exception_and_nonthrowing_connection_charset") is True
+                and bootstrap_privacy.get("owned_http_only") is True
+                and bootstrap_privacy.get("real_database_or_provider_calls")==0):
+            raise RuntimeError("Public bootstrap throwing/nonthrowing failure privacy proof incomplete")
+        gateway_output=subprocess.run(
+            ["python3",str(ROOT/"tools/test_next_gateway_privacy.py"),"--run-disposable"],
+            cwd=ROOT,check=True,timeout=180,capture_output=True,text=True)
+        gateway_privacy=json.loads(gateway_output.stdout)
+        if not (gateway_privacy.get("status")=="PASS" and gateway_privacy.get("cases")==12
+                and gateway_privacy.get("actual_public_pay_entry") is True
+                and gateway_privacy.get("actual_initiation_and_renderer") is True
+                and gateway_privacy.get("archived_unsafe_copy_RED")==3
+                and gateway_privacy.get("static_audience_negative_controls")==3
+                and gateway_privacy.get("native_public_paths")==3
+                and gateway_privacy.get("http_public_paths")==3
+                and gateway_privacy.get("financial_snapshot_unchanged") is True
+                and gateway_privacy.get("provider_or_telegram_calls")==0
+                and gateway_privacy.get("owned_mariadb_and_loopback_only") is True):
+            raise RuntimeError("Public gateway source/HTTP audience privacy proof incomplete")
         unit_path=Path(tmp)/"service-unit-guards.json"
         subprocess.run(["python3",str(ROOT/"tools/test_post_v9_service_unit_guards.py"),
                         "--run-disposable","--report",str(unit_path)],
@@ -2868,6 +2900,8 @@ def main():
                      "admin_wallet_ux":wallet_ux,
                      "next_payment_ux":next_payment,
                      "central_text_catalog":text_catalog,
+                     "public_bootstrap_privacy":bootstrap_privacy,
+                     "public_gateway_privacy":gateway_privacy,
                      "service_unit_quote_guards":unit_guards,
                      "pasarguard_client":pg_client,
                      "provider_integration":provider_integration,
