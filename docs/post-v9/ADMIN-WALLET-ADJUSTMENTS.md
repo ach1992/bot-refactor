@@ -16,10 +16,13 @@ statement across all routes.
 
 ## Contract
 
-- Authorized primary/delegated administrator uses **increase**, **routine
-  decrease**, or separately labeled **decrease with permission to create debt**.
-  Routine decrease cannot create/deepen negative debt. A deliberate privileged
-  negative balance remains supported, not clamped to zero.
+- Authorized primary/delegated administrator uses the two existing controls:
+  **increase** and **decrease**. Decrease that would create/deepen debt saves
+  a locked before/after preview after the reason, then requires a separate
+  explicit private confirmation with a fresh random nonce. No money moves at
+  preview. A changed balance invalidates that consent and requires restart.
+  Old debt buttons restart the safe Decrease flow; old saved debt reasons
+  cannot bypass consent. Deliberate privileged negative balances remain valid.
 - **Private operator conversation only**: start credit/debit/debt from an
   authenticated inline callback in the administrator's own Telegram private
   chat (`chat.type=private`, `chat.id=actor_userid`). The user selection,
@@ -70,6 +73,12 @@ statement across all routes.
   preceding operator action before a separately authorized repair.
   Failed Telegram delivery after commit must never reverse the committed
   financial effect. Do not leak SQL errors or privileged details to customers.
+
+Customer notices state the credited/debited amount and resulting wallet balance.
+Administrator notices also state the target numeric user ID, before/after
+balances and tracking ID. These facts come from the committed transaction
+or its unique reconciled journal row, never a later mutable balance read.
+Telegram delivery is best effort and cannot roll back committed money.
 
 ## User transfers and identity
 
@@ -188,6 +197,7 @@ are active. Never DROP 005 or remove audit rows to simplify rollback.
 Run:
 
     python3 tools/test_post_v9_admin_wallet.py --run-disposable
+    python3 tools/test_post_v9_admin_wallet_ux.py --run-disposable
     python3 tools/test_post_v9_wallet_transfer.py --run-disposable
     python3 tools/test_post_v9_wallet_replay.py --run-disposable
     python3 tools/test_post_v9_transfer_generation.py --run-disposable

@@ -90,7 +90,9 @@ function verifyManifest(string $manifestPath, string $runtimePath): bool {
                   'src/Finance/GatewayRules.php',
                   'src/Finance/ReceiptHelpers.php',
                   'src/Finance/WalletAdjustments.php',
-                  'src/Finance/WalletTransferFlow.php'] as $helper) {
+                  'src/Finance/WalletTransferFlow.php',
+                  'src/Panel/PasarGuard.php',
+                  'src/Panel/ProviderStorage.php'] as $helper) {
             $source = dirname(__DIR__) . DIRECTORY_SEPARATOR . $helper;
             if (is_link($source) || !is_file($source) ||
                 !hash_equals((string)$manifest['files'][$helper]['sha256'],
@@ -440,6 +442,30 @@ try {
             ($present === 0 ? 'missing' : 'partial_or_incompatible_schema_requires_audit');
         $report['schema'][$migration] = $code;
         finding('schema_' . $migration, $isPresent ? 'PASS' : 'BLOCK', $code);
+    }
+    // 011 is optional for an existing Marzban-only installation. A partial
+    // schema, or any configured PasarGuard server without it, fails closed.
+    $pgConfigured = isset($tables['server_config']) &&
+        $db->query("SELECT id FROM server_config WHERE type='pasarguard' LIMIT 1")->num_rows > 0;
+    $pgPresent = isset($tables['provider_panels']) || isset($tables['provider_accounts']) ||
+        isset($columns['server_info']['provider_panel_id']) ||
+        isset($columns['server_info']['provider_group_ids']) ||
+        isset($columns['server_plans']['provider_group_ids']) ||
+        isset($columns['pays']['provider_snapshot']) ||
+        isset($columns['service_effects']['provider_snapshot']);
+    if (!$pgPresent) {
+        $report['schema']['011'] = $pgConfigured ? 'pasarguard_schema_required' : 'optional_pasarguard_not_configured';
+        finding('schema_011', $pgConfigured ? 'BLOCK' : 'INFO', $report['schema']['011']);
+    } else {
+        try {
+            require_once dirname(__DIR__) . '/src/Panel/ProviderStorage.php';
+            achbotProviderRequireSchema($db);
+            $report['schema']['011'] = 'provider_identity_schema_detected_not_ddl_certified';
+            finding('schema_011', 'PASS', $report['schema']['011']);
+        } catch (Throwable $ignored) {
+            $report['schema']['011'] = 'partial_or_incompatible_provider_schema_requires_audit';
+            finding('schema_011', 'BLOCK', $report['schema']['011']);
+        }
     }
     require_once dirname(__DIR__) . '/src/Finance/WalletTransferFlow.php';
     $transferStorageReady = achbotWalletTransferFlowReady($db);

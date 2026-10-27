@@ -480,6 +480,48 @@ def main():
                 and admin_wallet.get("production_mutations")==0
                 and admin_wallet.get("external_provider_calls")==0):
             raise RuntimeError("Administrator wallet journal and debt proof incomplete")
+        wallet_ux_path=Path(tmp)/"admin-wallet-ux.json"
+        subprocess.run(["python3",str(ROOT/"tools/test_post_v9_admin_wallet_ux.py"),
+                        "--run-disposable","--report",str(wallet_ux_path)],
+                       cwd=ROOT,check=True,timeout=180,capture_output=True)
+        wallet_ux=json.loads(wallet_ux_path.read_text())
+        if not (wallet_ux.get("complete") is True and wallet_ux.get("cases")==33
+                and wallet_ux.get("source_native_php") is True
+                and wallet_ux.get("disposable_db") is True
+                and wallet_ux.get("production_mutations")==0
+                and wallet_ux.get("external_provider_calls")==0):
+            raise RuntimeError("Two-control wallet consent/committed-notice proof incomplete")
+        next_payment_path=Path(tmp)/"next-payment-ux.json"
+        subprocess.run(["python3",str(ROOT/"tools/test_next_payment_ux.py"),
+                        "--run-disposable","--report",str(next_payment_path)],
+                       cwd=ROOT,check=True,timeout=180,capture_output=True)
+        next_payment=json.loads(next_payment_path.read_text())
+        if not (next_payment.get("complete") is True and next_payment.get("cases")==10):
+            raise RuntimeError("Durable payment messages, volume entry and attention proof incomplete")
+        pg_client_path=Path(tmp)/"pasarguard-client.json"
+        subprocess.run(["python3",str(ROOT/"tools/test_post_v9_pasarguard_client.py"),
+                        "--run-disposable","--report",str(pg_client_path)],
+                       cwd=ROOT,check=True,timeout=240,capture_output=True)
+        pg_client=json.loads(pg_client_path.read_text())
+        if not (pg_client.get("complete") is True and pg_client.get("cases",0)>=69
+                and pg_client.get("real_php_curl") is True
+                and pg_client.get("disposable_socket_mariadb") is True):
+            raise RuntimeError("Native PasarGuard transport and persistence proof incomplete")
+        cleanup_path=Path(tmp)/"cleanup.json"
+        subprocess.run(["python3",str(ROOT/"tools/test_post_v9_cleanup.py"),
+                        "--run-disposable","--report",str(cleanup_path)],
+                       cwd=ROOT,check=True,timeout=180,capture_output=True)
+        cleanup=json.loads(cleanup_path.read_text())
+        if not (cleanup.get("complete") is True and cleanup.get("count")==16
+                and cleanup.get("live_database_touched") is False
+                and cleanup.get("live_files_touched") is False):
+            raise RuntimeError("Optional cleanup safety proof incomplete")
+        presentation_output=subprocess.check_output(
+            ["php",str(ROOT/"tools/test_subscription_presentation.php")],
+            cwd=ROOT,text=True,timeout=60)
+        if not re.search(r"PASS subscription presentation: 94 checks;",presentation_output):
+            raise RuntimeError("Native subscription presentation proof incomplete")
+        presentation={"complete":True,"checks":94,"real_network":False}
         subject_path=Path(tmp)/"payment-subjects.json"
         subprocess.run(["python3",str(ROOT/"tools/test_post_v9_subjects.py"),
                         "--run-disposable","--report",str(subject_path)],
@@ -1106,6 +1148,7 @@ def main():
             'missing_required_final_authorization_index_blocks',
             'database_connection_failure_sanitized',
             'private_sentinel_and_financial_rows_untouched',
+            'optional_cleanup_and_provider_schema_strict_read_only',
         }
         if not (readiness.get('complete') is True and
                 readiness.get('cases')==len(required_readiness) and
@@ -2724,6 +2767,11 @@ def main():
                      "wallet_transfer_generation":transfer_generation,
                      "webhook_file_configuration":webhook_config,
                      "admin_wallet_adjustment_safety":admin_wallet,
+                     "admin_wallet_ux":wallet_ux,
+                     "next_payment_ux":next_payment,
+                     "pasarguard_client":pg_client,
+                     "optional_cleanup":cleanup,
+                     "subscription_presentation":presentation,
                      "customer_error_privacy":audience,
                      "telegram_transport_log_privacy":transport_privacy,
                     "source_only_overlays":swap,
@@ -2778,6 +2826,11 @@ def main():
                        "wallet_transfer_scenarios":wallet_transfer["cases"],
                        "wallet_transfer_generation_scenarios":transfer_generation["cases"],
                        "admin_wallet_adjustment_scenarios":admin_wallet["cases"],
+                       "admin_wallet_ux_scenarios":wallet_ux["cases"],
+                       "next_payment_ux_scenarios":next_payment["cases"],
+                       "pasarguard_client_scenarios":pg_client["cases"],
+                       "optional_cleanup_scenarios":cleanup["count"],
+                       "subscription_presentation_checks":presentation["checks"],
                        "customer_literal_first_argument_messages_inspected":audience["literal_first_argument_calls_inspected"],
                        "finance_error_audience_execution_cases":finance_privacy["cases"],
                        "telegram_transport_privacy_cases":transport_privacy["cases"],
