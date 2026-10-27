@@ -1,6 +1,6 @@
 # RC11 → RC12 upgrade guide
 
-**Later development:** this guide describes the immutable RC12 release, including its optional agent rate. The [subsequent Owner decision](https://github.com/ach1992/bot-refactor/issues/26#issuecomment-6453867569) removes that override in the next candidate; see the [current shared-rate contract](USDT-RATE-SETTINGS.md). This does not change the published RC12 ZIP.
+**Later development:** this guide describes the immutable RC12 release, including its optional agent rate. The [subsequent Owner decision](https://github.com/ach1992/bot-refactor/issues/26#issuecomment-6453867569) removes that override in [RC13](RC12-TO-RC13.md); see the [current shared-rate contract](USDT-RATE-SETTINGS.md). This does not change the published RC12 ZIP.
 
 [راهنمای فارسی](RC11-TO-RC12.fa.md)
 
