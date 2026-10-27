@@ -672,8 +672,30 @@ def main():
                         "--run-disposable","--report",str(currency_path)],
                        cwd=ROOT,check=True,timeout=180,capture_output=True)
         currency=json.loads(currency_path.read_text())
-        if not (currency.get("pass") is True and len(currency.get("cases",[]))==29):
-            raise RuntimeError("Explicit managed exchange-rate proof incomplete")
+        required_currency={
+            'no_settings_ignores_private_globals','shared_normal',
+            'minimum_normal_rate','maximum_normal_rate',
+            'retired_agent_override_ignored','invalid_retired_agent_ignored',
+            'cleared_retired_agent_ignored','nonscalar_retired_agent_ignored',
+            'retired_agent_cannot_rescue_clear_normal','clear_normal_no_fallback',
+            *('invalid_explicit_normal_'+str(i) for i in range(8)),
+            'archived_rc12_override_RED_current_shared_GREEN',
+            *('rc12_agent_quote_preserved_'+network for network in ['BEP20','TRC20','ERC20']),
+            *('shared_quote_'+network+'_'+str(user)
+              for network in ['BEP20','TRC20','ERC20'] for user in [1001,9002]),
+            'normalquote_pinned_after_settings_clear','agentquote_pinned_after_settings_clear',
+            'agentfallback_pinned_after_settings_clear',
+            'invalidagentclaim_no_attempt_no_money','missingnormalclaim_no_attempt_no_money',
+            'rc12_hosted_agent_quote_preserved_no_new_request',
+            *(name+'_audience_quote_and_privacy' for name in [
+                'hostnormal','hostagent','hostfallback','hostmissing','hostbadagent',
+                'hostagentmissingnormal']),
+            'no_wallet_or_settlement_effect','private_config_unread_and_unchanged',
+        }
+        if not (currency.get("pass") is True and len(required_currency)==42
+                and len(currency.get("cases",[]))==len(required_currency)
+                and set(currency["cases"])==required_currency):
+            raise RuntimeError("Shared managed exchange-rate proof incomplete")
         display_path=Path(tmp)/"server-display-settings.json"
         subprocess.run(["python3",str(ROOT/"tools/test_server_display_settings.py"),
                         "--run-disposable","--report",str(display_path)],
@@ -1182,7 +1204,10 @@ def main():
                  'gift_card_legacy_https_validation',
                  'manual_trx_rate_positive_and_clear',
                  'manual_usdt_rate_positive_range',
-                 'normal_agent_rates_validated_upper_boundary_and_clear',
+                 'shared_usdt_rate_upper_boundary_and_clear',
+                 'retired_agent_rate_menu_and_callback_removed',
+                 'rc12_retired_revision_preserved_other_fields_editable',
+                 'retired_pending_editor_cannot_write',
                  'chain_address_manualUsdtWalletBEP20_validated_and_clear',
                  'chain_address_manualUsdtWalletERC20_validated_and_clear',
                  'chain_address_manualUsdtWalletTRC20_validated_and_clear',
@@ -1288,7 +1313,7 @@ def main():
             'usdt_cleared_explicit_settings_rate',
             'usdt_agent_only_settings_rate',
             'normal_shared_rate_audiences',
-            'invalid_agent_rate_only_agent_unavailable',
+            'retired_invalid_agent_rate_ignored',
             'explicit_agent_rate_without_normal',
             'hosted_merchant_without_explicit_rate_unavailable',
             'hosted_merchant_explicit_rate_available',
