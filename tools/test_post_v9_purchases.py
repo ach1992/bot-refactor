@@ -2,6 +2,7 @@
 """Current Marzban-only purchase flow vs immutable V9 on owned PHP + MariaDB."""
 from __future__ import annotations
 import argparse
+import copy
 import hashlib
 import json
 import re
@@ -17,7 +18,9 @@ import package_post_v9 as current_runtime
 
 ROOT=Path(__file__).resolve().parents[1]
 HISTORY='7eb077fd8e6d0a303421626d1500f69e295a6664'
-# Unchanged UI/catalogue/negative authorization retains exact V9 parity.
+# Catalogue/negative authorization retains exact V9 finance/protocol parity.
+# Owner-approved copy changes are compared only as exact manifest pairs in
+# recognized UI text arguments; all other event/SQL/provider fields stay exact.
 # CREATE routes now intentionally differ: debit and capacity must commit
 # before remote HTTP, and real effect ids + Telegram update evidence are
 # mandatory. Never weaken frozen V9 itself; it is executed separately at
@@ -31,6 +34,205 @@ INTENTIONALLY_CHANGED=['customer_paid_wallet','agent_one_wallet',
        'agent_many_wallet','custom_paid_wallet','free_trial',
        'free_trial_replay_denied','admin_bulk_create',
        'provider_reject_free','provider_unavailable_free']
+
+
+STYLE_BASELINE='7faac9b067f8a171e5e26d6aea5aaf9f4088a3e7'
+UI_TEXT_ARGUMENTS={'sendMessage':0,'editText':1,'alert':0}
+UI_MARKUP_ARGUMENTS={'sendMessage':1,'editText':2}
+
+def authorized_ui_pairs() -> dict[tuple[str,str],list[str]]:
+    """Validate literal display pairs against immutable and actual catalogs.
+
+    Parameterized templates are deliberately ineligible: this comparator
+    never guesses where a rendered amount, account or recipient came from.
+    """
+    manifest=json.loads((ROOT/'tools/text_catalog_style_amendments.json').read_text())
+    if manifest.get('version')!=1 or manifest.get('baseline_commit')!=STYLE_BASELINE:
+        raise RuntimeError('UI parity style baseline mismatch')
+    literal={key:record for key,record in manifest['changes'].items()
+             if record.get('parameters')==[] and record.get('before_parameters',[])==[]}
+    topics=sorted({key.split('.',1)[0] for key in literal})
+    archived={topic:subprocess.check_output(
+        ['git','-C',str(ROOT),'show',STYLE_BASELINE+':messages/fa/'+topic+'.php']).decode()
+        for topic in topics}
+    # Only inert catalog arrays from pinned Git objects are evaluated. The
+    # current loader imports its two public copy files, never private bootstrap.
+    driver=r"""
+require 'messages/loader.php';
+$old=[];
+foreach(json_decode(stream_get_contents(STDIN),true,512,JSON_THROW_ON_ERROR) as $topic=>$source) {
+    $start=strpos($source,'return [');
+    if($start===false)throw new RuntimeException('old_copy_definition_missing');
+    $old[$topic]=eval(substr($source,$start));
+}
+echo json_encode(['old'=>$old,'current'=>achbotMessageCatalog()],JSON_THROW_ON_ERROR);
+"""
+    definitions=json.loads(subprocess.check_output(['php','-r',driver],cwd=ROOT,
+        input=json.dumps(archived).encode()))
+    pairs={}
+    for key,record in literal.items():
+        topic,name=key.split('.',1)
+        before=definitions['old'][topic][name];after=definitions['current'][topic][name]
+        old_parameters=before.get('parameters',[]) if isinstance(before,dict) else []
+        new_parameters=after.get('parameters',[]) if isinstance(after,dict) else []
+        old_text=before['text'] if isinstance(before,dict) else before
+        new_text=after['text'] if isinstance(after,dict) else after
+        if (old_parameters or new_parameters or record['before']!=old_text
+                or record['after']!=new_text or old_text==new_text
+                or not isinstance(old_text,str) or not isinstance(new_text,str)
+                or not record.get('reasons')):
+            raise RuntimeError('Unverified literal UI parity pair: '+key)
+        pairs.setdefault((old_text,new_text),[]).append(key)
+    if not pairs:raise RuntimeError('No authorized literal UI pairs')
+    return pairs
+
+def project_reply_markup(before,after,pairs:dict) -> list[dict] | None:
+    """Allow exact approved labels at inline_keyboard[row][button].text only.
+
+    JSON encoding is compared structurally only after at least one verified
+    label changes. All other markup values and list positions remain exact.
+    """
+    if type(before) is not type(after):return None
+    def unique_object(items):
+        result={}
+        for key,value in items:
+            if key in result:raise ValueError('duplicate reply-markup key')
+            result[key]=value
+        return result
+    try:
+        old=json.loads(before,object_pairs_hook=unique_object) if isinstance(before,str) else before
+        new=json.loads(after,object_pairs_hook=unique_object) if isinstance(after,str) else after
+    except (ValueError,TypeError):return None
+    if not isinstance(old,dict) or not isinstance(new,dict):return None
+    old_rows=old.get('inline_keyboard');new_rows=new.get('inline_keyboard')
+    if not isinstance(old_rows,list) or not isinstance(new_rows,list) or len(old_rows)!=len(new_rows):
+        return None
+    projected=copy.deepcopy(old);changes=[]
+    for row_index,(old_row,new_row) in enumerate(zip(old_rows,new_rows)):
+        if not isinstance(old_row,list) or not isinstance(new_row,list) or len(old_row)!=len(new_row):
+            return None
+        for button_index,(old_button,new_button) in enumerate(zip(old_row,new_row)):
+            if not isinstance(old_button,dict) or not isinstance(new_button,dict):return None
+            old_text=old_button.get('text');new_text=new_button.get('text')
+            if old_text==new_text:continue
+            if not isinstance(old_text,str) or not isinstance(new_text,str):return None
+            keys=pairs.get((old_text,new_text))
+            if keys is None:return None
+            projected['inline_keyboard'][row_index][button_index]['text']=new_text
+            changes.append({'field_path':['inline_keyboard',row_index,button_index,'text'],
+                            'catalog_keys':keys})
+    return changes if changes and projected==new else None
+
+def project_ui_observation(before:dict,after:dict,pairs:dict) -> tuple[bool,list[dict]]:
+    """Project recognized complete text arguments and verified button labels."""
+    if before==after:return True,[]
+    projected=copy.deepcopy(before);changes=[]
+    old_events=projected.get('events');new_events=after.get('events')
+    if not isinstance(old_events,list) or not isinstance(new_events,list) or len(old_events)!=len(new_events):
+        return False,[]
+    for index,(old,new) in enumerate(zip(old_events,new_events)):
+        if not isinstance(old,dict) or not isinstance(new,dict) or old.get('name')!=new.get('name'):
+            return False,[]
+        args=old.get('args');new_args=new.get('args')
+        if not isinstance(args,list) or not isinstance(new_args,list) or len(args)!=len(new_args):
+            return False,[]
+        slot=UI_TEXT_ARGUMENTS.get(old.get('name'))
+        if slot is not None and slot<len(args) and args[slot]!=new_args[slot]:
+            old_text=args[slot];new_text=new_args[slot]
+            keys=pairs.get((old_text,new_text)) if isinstance(old_text,str) and isinstance(new_text,str) else None
+            if keys is not None:
+                args[slot]=new_text
+                changes.append({'event_index':index,'event_name':old['name'],
+                                'argument_index':slot,'field_path':[],'catalog_keys':keys})
+        markup_slot=UI_MARKUP_ARGUMENTS.get(old.get('name'))
+        if markup_slot is not None and markup_slot<len(args) and args[markup_slot]!=new_args[markup_slot]:
+            markup_changes=project_reply_markup(args[markup_slot],new_args[markup_slot],pairs)
+            if markup_changes is not None:
+                args[markup_slot]=copy.deepcopy(new_args[markup_slot])
+                changes.extend({'event_index':index,'event_name':old['name'],
+                                'argument_index':markup_slot,**change} for change in markup_changes)
+    return (True,changes) if projected==after else (False,[])
+
+def compare_native_runs(before:dict,after:dict,old_wire,new_wire,old_sql,new_sql,pairs:dict):
+    if old_wire!=new_wire or old_sql!=new_sql:return False,[]
+    return project_ui_observation(before,after,pairs)
+
+def ui_projection_negative_controls(pairs:dict) -> list[str]:
+    control_key='plans.administration.edit_custom_plan.message.06d5c646c1'
+    selected=[pair for pair,keys in pairs.items() if control_key in keys]
+    if len(selected)!=1:raise RuntimeError('Observed plan-label control missing')
+    old_text,new_text=selected[0]
+    before={'events':[
+        {'name':'sendMessage','args':[old_text,{'inline_keyboard':[[
+            {'text':'Proceed','callback_data':'confirm_100'}]]},'HTML',1001,None]},
+        {'name':'setUser','args':['none','step']}],
+        'warnings':[],'stdout':'','returned':True,'exception':None}
+    after=copy.deepcopy(before);after['events'][0]['args'][0]=new_text
+    wire=[{'method':'fixture','amount':100}]
+    sql={'wallet':'1001\t50000','step':'none'}
+    initial=copy.deepcopy(before)
+    allowed,fields=compare_native_runs(before,after,wire,wire,sql,sql,pairs)
+    if not allowed or len(fields)!=1 or before!=initial:
+        raise RuntimeError('Exact authorized UI projection control failed')
+    tests=[]
+    for name in ['changed_amount','changed_recipient','changed_callback','changed_state',
+                 'unrecorded_wording','changed_provider_wire','changed_method','changed_parse_mode']:
+        candidate=copy.deepcopy(after);new_wire=copy.deepcopy(wire);new_sql=copy.deepcopy(sql)
+        if name=='changed_amount':new_sql['wallet']='1001\t49000'
+        elif name=='changed_recipient':candidate['events'][0]['args'][3]=1002
+        elif name=='changed_callback':candidate['events'][0]['args'][1]['inline_keyboard'][0][0]['callback_data']='confirm_101'
+        elif name=='changed_state':candidate['events'][1]['args'][0]='pending'
+        elif name=='unrecorded_wording':candidate['events'][0]['args'][0]+=' unrecorded wording'
+        elif name=='changed_provider_wire':new_wire[0]['amount']=101
+        elif name=='changed_method':candidate['events'][0]['name']='sendToAllAdmins'
+        elif name=='changed_parse_mode':candidate['events'][0]['args'][2]=None
+        if compare_native_runs(before,candidate,wire,new_wire,sql,new_sql,pairs)[0]:
+            raise RuntimeError('UI parity projection hid '+name)
+        tests.append(name)
+    # Identical-looking text in a persisted-state argument is never a UI slot.
+    state_before={'events':[{'name':'setUser','args':[old_text,'step']}]}
+    state_after={'events':[{'name':'setUser','args':[new_text,'step']}]}
+    if project_ui_observation(state_before,state_after,pairs)[0]:
+        raise RuntimeError('UI parity projection normalized persisted state')
+    tests.append('authorized_text_in_non_ui_state_slot')
+    # Exercise the real JSON reply-markup shape, plus the supported dict form.
+    label_pairs=[pair for pair,keys in pairs.items() if pair[0]=='افزودن پلن زمانی جدید']
+    if len(label_pairs)!=1:raise RuntimeError('Observed interval button control missing')
+    old_label,new_label=label_pairs[0]
+    old_markup={'inline_keyboard':[[{'text':old_label,'callback_data':'addNewDayPlan'}],
+                                  [{'text':'fixture-button','callback_data':'backplan'}]]}
+    new_markup=copy.deepcopy(old_markup);new_markup['inline_keyboard'][0][0]['text']=new_label
+    for encoded in [False,True]:
+        old_arg=json.dumps(old_markup) if encoded else old_markup
+        new_arg=json.dumps(new_markup) if encoded else new_markup
+        old_run={'events':[{'name':'editText','args':[71,'same title',old_arg]}]}
+        new_run={'events':[{'name':'editText','args':[71,'same title',new_arg]}]}
+        snapshot=copy.deepcopy(old_run)
+        allowed,fields=compare_native_runs(old_run,new_run,wire,wire,sql,sql,pairs)
+        if not allowed or len(fields)!=1 or fields[0]['field_path']!=['inline_keyboard',0,0,'text'] or old_run!=snapshot:
+            raise RuntimeError('Exact inline-button projection failed')
+    old_run={'events':[{'name':'editText','args':[71,'same title',json.dumps(old_markup)]}]}
+    for name in ['keyboard_callback_changed','keyboard_row_added','keyboard_button_added',
+                 'keyboard_unknown_field_changed','keyboard_unrecorded_label',
+                 'keyboard_dynamic_amount_changed','keyboard_label_pair_in_url',
+                 'keyboard_duplicate_json_key']:
+        candidate=copy.deepcopy(new_markup)
+        if name=='keyboard_callback_changed':candidate['inline_keyboard'][0][0]['callback_data']='other'
+        elif name=='keyboard_row_added':candidate['inline_keyboard'].append([])
+        elif name=='keyboard_button_added':candidate['inline_keyboard'][0].append({'text':'extra','callback_data':'x'})
+        elif name=='keyboard_unknown_field_changed':candidate['resize_keyboard']=True
+        elif name=='keyboard_unrecorded_label':candidate['inline_keyboard'][0][0]['text']+=' unrecorded'
+        elif name=='keyboard_dynamic_amount_changed':candidate['inline_keyboard'][1][0]['text']='10001 تومان'
+        elif name=='keyboard_label_pair_in_url':candidate['inline_keyboard'][0][0]['url']=new_label
+        encoded=json.dumps(candidate)
+        if name=='keyboard_duplicate_json_key':
+            encoded=encoded[:-1]+',"inline_keyboard":'+json.dumps(candidate['inline_keyboard'])+'}'
+        new_run={'events':[{'name':'editText','args':[71,'same title',encoded]}]}
+        if compare_native_runs(old_run,new_run,wire,wire,sql,sql,pairs)[0]:
+            raise RuntimeError('UI parity projection hid '+name)
+        tests.append(name)
+
+    return tests
 
 
 def stage_source(stage:Path,current:bool)->dict:
@@ -82,7 +284,9 @@ def main():
     args=ap.parse_args()
     if subprocess.check_output(['git','-C',str(ROOT),'rev-parse',HISTORY+'^{tree}'],text=True).strip()!='7da17725c1e7f0448119b7e41c8b11b21f3e093d':
         raise RuntimeError('Original V9 TREE drift')
-    records=[]
+    records=[];authorized_fields=[]
+    pairs=authorized_ui_pairs()
+    projection_controls=ui_projection_negative_controls(pairs)
     with owned.owned_database() as (work,env),native.owned_provider() as (provider,url):
         old=work/'original-v9'
         current=work/'marzban-only'
@@ -117,7 +321,9 @@ def main():
                     observations.append(result)
                     wires.append(list(provider.trace))
                     states.append(purchase.snapshot(work,env,db))
-                if observations[0]!=observations[1] or wires[0]!=wires[1] or states[0]!=states[1]:
+                equivalent,projected=compare_native_runs(
+                    observations[0],observations[1],wires[0],wires[1],states[0],states[1],pairs)
+                if not equivalent:
                     reason={'case':label,'step':i,'route':kind,
                             'events_equal':observations[0]==observations[1],
                             'wire_equal':wires[0]==wires[1],
@@ -128,7 +334,9 @@ def main():
                     raise RuntimeError('Wallet action never reached fake provider')
                 if kind=='trialprovision' and provider.mode!='ok' and not wires[0]:
                     raise RuntimeError('Provider rejection did not exercise error')
+                authorized_fields.extend({'case':label,'step':i,'kind':kind,**field} for field in projected)
                 records.append({'case':label,'step':i,'kind':kind,
+                                'authorized_ui_field_differences':len(projected),
                                 'fake_provider_calls':len(wires[0]),
                                 'sql_sha256':hashlib.sha256(
                                     json.dumps(states[0],sort_keys=True).encode()).hexdigest()})
@@ -143,6 +351,14 @@ def main():
     report={'complete':True,'historical_v9':HISTORY,'scenarios':len(CASES),
             'steps':len(records),'schema_tables':23,'mysql_socket_only':True,
             'php_sql_telegram_fake_provider_parity':True,
+            'telegram_comparison':'exact_except_explicit_authorized_ui_text_fields',
+            'sql_provider_wire_exact':True,
+            'ui_projection_baseline':STYLE_BASELINE,
+            'verified_literal_style_pairs':len(pairs),
+            'authorized_ui_field_differences':len(authorized_fields),
+            'authorized_ui_fields':authorized_fields,
+            'ui_projection_negative_controls':len(projection_controls),
+            'rejected_projection_mutations':projection_controls,
             'changed_paid_nonpaid_source_contracts':INTENTIONALLY_CHANGED,
             'new_source_contracts_mandatory_in_full_aggregate':True,
             'historical_original_v9_requires_separate_pinned_ci':True,
