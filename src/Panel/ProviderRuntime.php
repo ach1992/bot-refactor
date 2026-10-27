@@ -167,7 +167,7 @@ function achbotPgPinPayment(mysqli $db,int $payId): void {
         if (($mutation['result']??'')==='verified') $groups=$mutation['current_group_ids']??$groups;
         $snapshot=['provider'=>'pasarguard','panel_id'=>(int)$ctx['panel']['id'],
             'instance_key'=>$ctx['panel']['instance_key'],'endpoint_sha256'=>$ctx['account']['endpoint_sha256'],
-            'group_ids'=>$groups,'provider_account_id'=>(int)$ctx['account']['id'],
+            'group_ids'=>$groups,'group_policy'=>'preserve_current','provider_account_id'=>(int)$ctx['account']['id'],
             'remote_user_id'=>(int)$ctx['account']['remote_user_id'],
             'remote_created_at'=>$ctx['account']['remote_created_at'],'operation_marker'=>$ctx['account']['operation_marker']];
     }
@@ -364,14 +364,13 @@ function achbotPgServiceEdit(mysqli $db,int $serverId,array $change,?array $gift
         $ctx=achbotPgRemarkContext($db,$serverId,$change['remark']);
         if ($giftTarget!==null && !achbotGiftTargetMatches($db,$serverId,$giftTarget))
             throw new RuntimeException('pg_gift_target_changed');
-        $quote=(int)($change['pay_id']??0)>0?achbotPgQuote($db,(int)$change['pay_id']):null;
+        if ((int)($change['pay_id']??0)>0) achbotPgQuote($db,(int)$change['pay_id']);
         $key=achbotPgOperationKey('edit',$change);
         // Own the durable account fence BEFORE observing limits. A competing
         // completed edit is then included in this request's absolute arithmetic.
         $intent=achbotPgBeginMutation($db,$ctx,$key,'edit',['phase'=>'claimed']);
         $read=achbotPgRead($ctx['panel'],$ctx['identity']);
         if (($read['success']??false)!==true) throw new RuntimeException('pg_edit_read_unverified');
-        if ($quote!==null && $quote['group_ids']!==$read['user']['group_ids']) throw new RuntimeException('pg_quoted_groups_changed');
         $absolute=achbotPgEditChanges($read['user'],$change);
         $intent=achbotPgPersistMutationIntent($db,$ctx,$intent,[
             'absolute'=>$absolute,'reset_usage'=>isset($change['volume']),

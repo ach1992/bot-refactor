@@ -7,6 +7,8 @@ import test_post_v9_pasarguard_client as pg
 import test_access_state as owned
 import test_v6_native as native
 import test_v8_native as purchase
+import test_v6_panels as panel_functions
+import re
 ROOT=Path(__file__).resolve().parents[1]
 PHP=r'''<?php
 error_reporting(E_ALL);
@@ -16,9 +18,30 @@ require $argv[1].'/src/Purchase/Core.php';
 require $argv[1].'/src/Finance/ServiceEffects.php';
 require $argv[1].'/src/Finance/PaymentLifecycle.php';
 require $argv[1].'/src/Panel/ProviderAdmin.php';
+require __DIR__.'/presentation-under-test.php';
+chdir(__DIR__);set_include_path(__DIR__);
 function achbotSupportsPanel($type){return in_array($type,['marzban','pasarguard'],true);}
 $connection=new mysqli('localhost','root','',$argv[3],0,$argv[2]);$connection->set_charset('utf8mb4');
 $spec=json_decode($argv[4],true);$db=$connection;
+$GLOBALS['events']=[];
+function alert(...$args){$GLOBALS['events'][]=['alert'=>(string)($args[0]??'')];}
+function sendMessage(...$args){$GLOBALS['events'][]=['message'=>(string)($args[0]??'')];return (object)['ok'=>true];}
+function editText(...$args){$GLOBALS['events'][]=['edit'=>(string)($args[1]??'')];return (object)['ok'=>true];}
+function getServerListKeys(...$args){return '{}';}
+function setUser($value=null,$field='step'){
+ global $connection,$from_id;
+ if ($field!=='step') throw new RuntimeException('fixture_step_only');
+ $step=$value??'none';$q=$connection->prepare('UPDATE users SET step=? WHERE userid=?');
+ $q->bind_param('si',$step,$from_id);$q->execute();$q->close();
+}
+function delMessage(...$args){$GLOBALS['events'][]=['delete_message'=>true];}
+function jdate(...$args){return 'fixture-date';}
+function RandomString(){return 'ownedqr';}
+function sendPhoto(...$args){$GLOBALS['events'][]=['photo'=>(string)($args[0]??'')];return (object)['ok'=>true];}
+function bot(...$args){return (object)['ok'=>true,'result'=>(object)['first_name'=>'Fixture']];}
+function getUserOrderDetailKeys(...$args){return ['msg'=>'fixture admin details','keyboard'=>'{}'];}
+function getOrderDetailKeys(...$args){return ['msg'=>'fixture owner details','keyboard'=>'{}'];}
+
 try {
 switch($spec['op']){
 case 'gate':$out=['plan'=>achbotSupportsPlan($db,7),'marzban'=>achbotSupportsMarzbanPlan($db,7)];break;
@@ -32,6 +55,41 @@ case 'trial':
 $out=achbotCreateNonPaymentAccount($db,'free_trial','trial:1001',1001,1,1,
 ['server_type'=>'pasarguard','server_id'=>2,'inbound_id'=>0,'plan_id'=>8,'remark'=>'trial_user',
 'volume'=>2,'days'=>30,'user_id'=>1001,'port'=>0]);break;
+case 'admin':
+$actor=(int)($spec['actor']??9001);$admin=9001;
+$update=json_decode(json_encode(['update_id'=>$spec['source'],'message'=>[
+'message_id'=>$spec['source'],'text'=>$spec['text'],'from'=>['id'=>$actor,'username'=>'fixture_admin','first_name'=>'Fixture'],
+'chat'=>['id'=>$actor,'type'=>'private']]]));
+require $argv[1].'/src/Telegram/UpdateBindings.php';$data=$spec['callback']??'';
+$q=$db->prepare('SELECT * FROM users WHERE userid=?');$q->bind_param('i',$from_id);$q->execute();$userInfo=$q->get_result()->fetch_assoc();$q->close();
+$cancelKey='{}';$buttonValues=['cancel'=>'cancel'];
+$out=['handled'=>achbotHandleProviderAdmin(),'events'=>$GLOBALS['events']];break;
+case 'view':
+case 'qr':
+$from_id=1001;$admin=9001;$userInfo=['is_agent'=>1,'step'=>'none'];$showIndexes=[];$botUrl='https://bot.example.invalid/';
+$buttonValues=array_fill_keys($spec['buttons'],'fixture-label');
+$mainValues=['config_details_message'=>"STATE\nNAME\nCONNECT-LINK\nSUB-LINK",'config_doesnt_exist'=>'missing'];
+$botState=array_fill_keys(['renewAutoState','sellState','renewAccountState','switchLocationState','increaseVolumeState','increaseTimeState','renewConfigLinkState','updateConfigLinkState','qrConfigState','qrSubState','subLinkState','configLinkState'],'on');
+if ($spec['op']==='view') {
+ require $argv[1].'/src/Subscription/AccountDetails.php';
+ $out=\AchBot\Subscription\AccountDetails\getOrderDetailKeys(1001,91);
+} else {
+ $data=$spec['callback'];
+ require $argv[1].'/src/Finance/Routes/Checkout.php';
+ $out=['events'=>$GLOBALS['events'],'qr_payloads'=>$GLOBALS['qr_payloads']??[]];
+}
+break;
+case 'route':
+$actor=(int)$spec['actor'];$admin=9001;
+$update=json_decode(json_encode(['update_id'=>$spec['source'],'callback_query'=>[
+'id'=>'fixture_callback','data'=>$spec['callback'],'from'=>['id'=>$actor,'username'=>'fixture_actor','first_name'=>'Fixture'],
+'message'=>['message_id'=>1,'text'=>'cached foreign text','from'=>['id'=>9001],
+'chat'=>['id'=>$actor,'type'=>'private'],'reply_markup'=>['inline_keyboard'=>[]]]]]));
+require $argv[1].'/src/Telegram/UpdateBindings.php';
+$q=$db->prepare('SELECT * FROM users WHERE userid=?');$q->bind_param('i',$from_id);$q->execute();$userInfo=$q->get_result()->fetch_assoc();$q->close();
+$mainValues=['please_wait_message'=>'منتظر بمانید'];$botState=[];$buttonValues=[];
+require $argv[1].'/src/Subscription/CustomerRoutes.php';
+$out=['actor'=>$from_id,'events'=>$GLOBALS['events']];break;
 case 'autoreserve':
 require $argv[1].'/src/Finance/ReceiptHelpers.php';require $argv[1].'/src/Finance/AutomaticRenewal.php';
 $out=achbotAutoRenewReserve($db,92,1001);break;
@@ -64,11 +122,13 @@ default:throw new RuntimeException('fixture_op_missing');
 echo json_encode(['out'=>$out],JSON_THROW_ON_ERROR);
 }catch(Throwable $e){try{$db->rollback();}catch(Throwable $ignored){}echo json_encode(['error'=>$e->getMessage()]);}
 '''
-# Deliver B's captured pre-A observation only after A has completed.
-# This deterministically tests stale absolute math across a released SQL fence.
+# Hold B's first observation while A attempts to enter. B must already own
+# the durable fence; an old read-before-claim implementation would admit A.
 ORIGINAL_HANDLE=pg.Handler.handle_request
 def stale_observation(self):
  server=self.server
+ if self.headers.get('X-Api-Key')=='fixture-rotated-key' and getattr(server,'allow_rotated',False):
+  self.headers.replace_header('X-Api-Key','fixture-private-key')
  if self.command=='GET' and urlsplit(self.path).path=='/api/user/by-id/17' and getattr(server,'capture_stale_once',False):
   server.capture_stale_once=False
   value=copy.deepcopy(server.user)
@@ -87,6 +147,12 @@ def main():
  with owned.owned_database() as (work,env),pg.panel() as (server,url):
   purchase.init(work,env,url);db=purchase.SIDE[1]
   script=work/'integration.php';script.write_text(PHP)
+  (work/'src/Subscription').mkdir(parents=True)
+  (work/'src/Subscription/Presentation.php').write_bytes((ROOT/'src/Subscription/Presentation.php').read_bytes())
+  (work/'presentation-under-test.php').write_bytes(panel_functions.function_bodies((ROOT/'config.php').read_bytes(),['buildSubscriptionPresentation','buildConfigMessage']))
+  (work/'phpqrcode').mkdir()
+  (work/'phpqrcode/qrlib.php').write_text("<?php class QRcode {public static function png($payload,$file,...$rest){$GLOBALS['qr_payloads'][]=$payload;file_put_contents($file,'owned-png-placeholder');}}")
+  buttons=['back_to_main']+sorted(set(re.findall(r"\$buttonValues\['([^']+)'\]",(ROOT/'src/Subscription/AccountDetails.php').read_text())))
   def call(op,**spec):
    out=subprocess.run(['php','-d','display_errors=0','-d','log_errors=0',str(script),str(ROOT),str(work/'mysql.sock'),db,json.dumps(dict(op=op,**spec))],capture_output=True,text=True,timeout=25)
    if out.returncode or out.stderr:raise AssertionError((out.returncode,out.stderr))
@@ -108,11 +174,43 @@ def main():
   expire=r['out'][0]['expire']
   sql("INSERT INTO orders_list(id,userid,token,transid,fileid,server_id,inbound_id,remark,uuid,protocol,expire_date,link,amount,status,date) VALUES(91,1001,'','',7,2,0,'fixture_user','native-placeholder','vless',"+str(expire)+",'[]',100,1,'fixture')")
   r=call('link',effect=effect);yes(r['out']['id']==17 and r['out']['provider']=='pasarguard','verified_account_links_order_by_native_id')
+  view=call('view',buttons=buttons)['out'];keys=view['keyboard']
+  yes('https://sub.example.invalid/token' in view['msg'] and 'vless://native-identity' in view['msg'],'actual_pg_view_uses_native_subscription_and_links')
+  for callback in ['renewAccountAsk91','increaseAVolume91','increaseADay91','switchLocation91','changAccountConnectionLink91','showQrConfig91','showQrSub91']:
+   yes(callback in keys,'actual_pg_view_exposes_'+callback)
+  r=call('qr',callback='showQrSub91',buttons=buttons);assert 'out' in r,r;qr=r['out']
+  yes(qr['qr_payloads']==['https://sub.example.invalid/token'],'actual_pg_subscription_QR_uses_native_url')
+  qr=call('qr',callback='showQrConfig91',buttons=buttons)['out']
+  yes(len(qr['qr_payloads'])==2 and qr['qr_payloads'][0].startswith('vless://native-identity'),'actual_pg_config_QR_uses_native_links')
+  sql("INSERT INTO users(userid,name,username,refcode,wallet,date,isAdmin,first_start,is_agent) VALUES(1002,'Foreign','foreign','0',50000,'1700000000',0,'sent',1)")
+  for provider in ['marzban','pasarguard']:
+   sql("UPDATE server_config SET type='"+provider+"' WHERE id=2")
+   for callback in ['changeUserConfigState91','agentChangeUserConfigState91','updateConfigConnectionLink91','changAccountConnectionLink91']:
+    before=len(server.trace);r=call('route',actor=1002,source=200,callback=callback)
+    yes('out' in r and r['out']['actor']==1002 and len(server.trace)==before,provider+'_genuine_update_foreign_'+callback+'_no_request')
+  sql("UPDATE users SET is_agent=0 WHERE userid=1001;UPDATE orders_list SET agent_bought=1 WHERE id=91")
+  before=len(server.trace)
+  r=call('route',actor=1001,source=201,callback='agentChangeUserConfigState91')
+  yes('out' in r and len(server.trace)==before,'owner_without_agent_role_cannot_use_agent_action')
+  sql("UPDATE users SET is_agent=1 WHERE userid=1001;UPDATE orders_list SET agent_bought=0 WHERE id=91")
+  before=len(server.trace)
+  r=call('route',actor=1001,source=202,callback='agentChangeUserConfigState91')
+  yes('out' in r and len(server.trace)==before,'agent_without_agent_purchase_cannot_use_agent_action')
+  sql("UPDATE orders_list SET agent_bought=1 WHERE id=91")
+  r=call('route',actor=1001,source=203,callback='agentChangeUserConfigState91')
+  yes('out' in r and server.user['status']=='disabled','owned_agent_purchase_action_verified')
+  r=call('route',actor=9001,source=204,callback='changeUserConfigState91')
+  yes('out' in r and server.user['status']=='active','genuine_admin_action_verified')
+  server.mode='write_lost'
+  r=call('route',actor=1001,source=205,callback='changeUserConfigState91')
+  text=json.dumps(r,ensure_ascii=False)
+  yes('pg_' not in text and 'pasarguard' not in text.lower() and ('نیاز' in text or 'قطعی' in text),'customer_action_error_hides_provider_diagnostics')
+  server.mode='ok';sql("UPDATE provider_accounts SET state='linked' WHERE order_id=91");server.user['status']='active'
   posts=sum(t[0]=='POST' and t[1]=='/api/user' for t in server.trace)
   yes('error' in call('create') and sum(t[0]=='POST' and t[1]=='/api/user' for t in server.trace)==posts,'duplicate_create_never_dispatches')
   yes(call('gate')['out']=={'plan':True,'marzban':False},'neutral_gate_admits_pg_without_marzban_alias')
   sql("INSERT INTO pays(id,hash_id,user_id,plan_id,server_id,order_id,type,state,price,request_date) VALUES(2,'pgrenew',1001,7,2,91,'RENEW_ACCOUNT','processing',100,1700000000)")
-  yes(call('pin',pay=2)['out']['group_ids']==[2,5],'renewal_snapshot_preserves_purchased_groups')
+  yes(call('pin',pay=2)['out']['group_ids']==[2,5],'renewal_snapshot_retains_account_identity_without_reinheriting_plan')
   r=call('edit',pay=2,change={'plus_day':3});yes(r['out'].get('success') is True and server.user['group_ids']==[2,5],'day_extension_verified_and_groups_preserved')
   writes=server.write_count
   yes(call('edit',pay=2,change={'plus_day':3})['out']['success'] is False and server.write_count==writes,'same_mutation_key_cannot_repeat')
@@ -121,6 +219,13 @@ def main():
   r=call('switch',source=100);yes(r['out']['target_id']==3 and server.user['group_ids']==[5],'explicit_switch_updates_groups_then_local_route')
   # Switch back for remaining exact local-context checks.
   sql("UPDATE orders_list SET server_id=2 WHERE id=91")
+  sql("INSERT INTO pays(id,hash_id,user_id,plan_id,server_id,order_id,type,state,price,request_date) VALUES(6,'pgmanualgroupsbefore',1001,7,2,91,'RENEW_ACCOUNT','processing',100,1700000000),(7,'pgmanualgroupsafter',1001,7,2,91,'RENEW_ACCOUNT','processing',100,1700000000)")
+  server.user['group_ids']=[2]
+  call('pin',pay=6)
+  yes(call('edit',pay=6,change={'plus_day':1})['out']['success'] is True and server.user['group_ids']==[2],'manual_group_change_before_quote_preserved_by_extension')
+  call('pin',pay=7);server.user['group_ids']=[5]
+  yes(call('edit',pay=7,change={'plus_volume':1})['out']['success'] is True and server.user['group_ids']==[5],'manual_group_change_after_quote_preserved_by_extension')
+
   sql("INSERT INTO pays(id,hash_id,user_id,plan_id,server_id,order_id,type,state,price,request_date) VALUES(4,'pgparallelA',1001,7,2,91,'INCREASE_VOLUME_91_1','processing',100,1700000000),(5,'pgparallelB',1001,7,2,91,'INCREASE_VOLUME_91_1','processing',100,1700000000)")
   call('pin',pay=4);call('pin',pay=5)
   server.capture_stale_once=True;server.stale_captured=threading.Event();server.release_stale=threading.Event()
@@ -168,6 +273,30 @@ def main():
   writes=server.write_count;yes(call('action',action='delete',source=105)['out']['success'] is False and server.write_count==writes,'deleted_identity_cannot_repeat')
   r=call('groups',groups='2,5,2');assert 'out' in r,r;yes(r['out']==[2,5],'admin_groups_are_native_validated')
   yes('error' in call('groups',groups='999'),'admin_unknown_group_denied')
+  sql("UPDATE users SET step='pg:connection' WHERE userid=9001")
+  r=call('admin',source=2000,text='Fixture connection two\n'+url+'\nfixture-private-key')
+  yes(r['out']['handled'] is True and 'fixture-private-key' not in json.dumps(r),'actual_admin_connection_setup_hides_key')
+  panel2=int(sql("SELECT id FROM provider_panels WHERE name='Fixture connection two'").strip())
+  sql("UPDATE users SET step='pg:server:"+str(panel2)+"' WHERE userid=9001")
+  r=call('admin',source=2001,text='Fixture logical server\n10\npgnew\nFlag\n2,5')
+  server_new=sql("SELECT i.id FROM server_info i JOIN server_config c ON c.id=i.id WHERE i.provider_panel_id="+str(panel2)+" AND c.type='pasarguard'").strip()
+  yes(server_new.isdigit(),'actual_admin_logical_server_native_groups_setup')
+  server.allow_rotated=True
+  sql("UPDATE users SET step='pg:key:"+str(panel2)+"' WHERE userid=9001")
+  r=call('admin',source=2002,text='fixture-rotated-key')
+  yes(sql("SELECT api_key FROM provider_panels WHERE id="+str(panel2)).strip()=='fixture-rotated-key' and 'fixture-rotated-key' not in json.dumps(r),'actual_admin_key_rotation_validated_without_echo')
+  sql("UPDATE users SET step='pg:groups:server:2' WHERE userid=9001")
+  call('admin',source=2003,text='2,5')
+  yes(sql("SELECT provider_group_ids FROM server_info WHERE id=2").strip()=='[2,5]','actual_admin_server_default_groups')
+  sql("UPDATE users SET step='pg:groups:plan:7' WHERE userid=9001")
+  call('admin',source=2004,text='/inherit')
+  yes(sql("SELECT provider_group_ids IS NULL FROM server_plans WHERE id=7").strip()=='1','actual_admin_plan_groups_inherit')
+  sql("UPDATE users SET step='pg:groups:plan:7' WHERE userid=9001")
+  call('admin',source=2005,text='5')
+  yes(sql("SELECT provider_group_ids FROM server_plans WHERE id=7").strip()=='[5]','actual_admin_plan_groups_replace')
+  before=len(server.trace)
+  r=call('admin',actor=1002,source=2006,text='none',callback='pgAddConnection')
+  yes(len(server.trace)==before and r['out']['handled'] is True,'actual_admin_nonprivileged_callback_denied')
   pg.USER['id']=18
   r=call('trial');yes('error' not in r,'trial_uses_same_durable_native_create')
   trial_effect=r['out'][3];trial_expire=r['out'][0]['expire']
