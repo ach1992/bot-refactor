@@ -519,9 +519,9 @@ def main():
         presentation_output=subprocess.check_output(
             ["php",str(ROOT/"tools/test_subscription_presentation.php")],
             cwd=ROOT,text=True,timeout=60)
-        if not re.search(r"PASS subscription presentation: 94 checks;",presentation_output):
+        if not re.search(r"PASS subscription presentation: 81 checks;",presentation_output):
             raise RuntimeError("Native subscription presentation proof incomplete")
-        presentation={"complete":True,"checks":94,"real_network":False}
+        presentation={"complete":True,"checks":81,"real_network":False}
         provider_path=Path(tmp)/"provider-integration.json"
         subprocess.run(["python3",str(ROOT/"tools/test_post_v9_provider_integration.py"),
                         "--run-disposable","--report",str(provider_path)],

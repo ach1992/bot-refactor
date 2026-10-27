@@ -69,7 +69,7 @@ function verifyManifest(string $manifestPath, string $runtimePath): bool {
         if ($json === false || strlen($json) > 500000) return false;
         $manifest = json_decode($json, true, 512, JSON_THROW_ON_ERROR);
         if (!is_array($manifest) || !isset($manifest['files']) ||
-            !is_array($manifest['files']) || count($manifest['files']) !== 108 ||
+            !is_array($manifest['files']) || count($manifest['files']) !== 135 ||
             ($manifest['file_count'] ?? null) !== count($manifest['files']) ||
             ($manifest['schema_migration_included'] ?? null) !== false ||
             ($manifest['private_config_included'] ?? null) !== false ||
@@ -80,7 +80,7 @@ function verifyManifest(string $manifestPath, string $runtimePath): bool {
         // SHA-256 of newline-joined sorted package_post_v9.members() paths.
         $members = array_keys($manifest['files']);
         sort($members, SORT_STRING);
-        if (!hash_equals('06effb37cfedb40cea6de9aecd9028bee52ede69227ecaaf0b23fa33e0bdb66e',
+        if (!hash_equals('6c1589a0bab3ac80b4400ab8d0319ffd328e4536e86a521f2f7abd6050234df6',
                          hash('sha256', implode("\n", $members))) ||
             in_array('baseInfo.php', $members, true)) return false;
         // All tool-side runtime source is bound before any helper executes.
