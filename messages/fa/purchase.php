@@ -2,10 +2,8 @@
 /** AChBot Persian copy; keys are stable module/context/purpose identities. */
 if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {http_response_code(404);exit;}
 return [
-    'catalogue.name.5e291d7bcb' => ['text' => '{name}', 'parameters' => ['name']],
     'catalogue.text.dda7ff2974' => 'رایگان',
     'catalogue.text.bfb7221456' => ' تومان ',
-    'catalogue.name_price.5107423b94' => ['text' => '{name} - {price}', 'parameters' => ['name', 'price']],
     'catalogue.text.1bc7ba6a31' => '/پلن\\s(\\d+)\\sگیگ\\s/',
     'catalogue.alert.67fda139df' => '⛔️ طرح انتخابی یافت نشد.',
     'catalogue.message.ef774be0a5' => '😡 لطفا فقط عدد ارسال کن',
@@ -19,7 +17,6 @@ return [
     'catalogue.button.05c3a1e3f4' => ' 🎟 افزودن کد تخفیف ',
     'core.get_plan_details.alert.93f191e066' => '❌ پلن مورد نظر یافت نشد.',
     'core.get_server_info_and_config.alert.c0552cb2f5' => '❌ اطلاعات سرور یا تنظیمات آن یافت نشد.',
-    'entry_and_bulk.agent_much_buy.flag_name.2542df190a' => ['text' => '{flag} {name}', 'parameters' => ['flag', 'name']],
     'entry_and_bulk.create_multiple_accounts.alert.de33518bf8' => 'هیچ دسته بندی برای این سرور وجود ندارد.',
     'entry_and_bulk.create_multiple_accounts.alert.174c6a61d7' => '♻️ دریافت دسته بندی ...',
     'entry_and_bulk.create_multiple_accounts.message.2f3dfcbe8e' => '2️⃣ مرحله دو' . "\n" . '' . "\n" . 'دسته بندی مورد نظرت رو انتخاب کن 🤭',

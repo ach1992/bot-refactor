@@ -8,9 +8,7 @@ return [
     'automatic_renewal.auto_renew_alert_review.a_ch_bot_automatic_renewal_requires_operator.bcbe5e6050' => 'AChBot automatic renewal requires operator reconciliation' . "\n" . '',
     'automatic_renewal.auto_renew_alert_review.attempt.b7a6466686' => 'Attempt: ',
     'automatic_renewal.auto_renew_alert_review.order.88c68296e4' => '' . "\n" . 'Order: ',
-    'automatic_renewal.auto_renew_alert_review.order_id.ca13a6b2c9' => 'order_id',
     'automatic_renewal.auto_renew_alert_review.stage.9b4e401970' => '' . "\n" . 'Stage: ',
-    'automatic_renewal.auto_renew_alert_review.stage.c7ff6dcd94' => 'stage',
     'automatic_renewal.auto_renew_alert_review.reason.ff1f74d040' => '' . "\n" . 'Reason: ',
     'automatic_renewal.auto_renew_alert_review.do_not_replay_remote_renewal.962be3fe3d' => '' . "\n" . 'Do not replay remote renewal or refund until checked.',
     'extensions.alert.d0779ad27d' => '⛔️ افزایش حجم یا مدت برای این اشتراک در حال حاضر امکان‌پذیر نیست.',
@@ -102,7 +100,6 @@ return [
     'renewal_checkout.admin_err.7f953ff1fb' => '⚠️ خطا در تمدید با کیف پول' . "\n" . '' . "\n" . '',
     'renewal_plan.alert.b1e40557e8' => '⛔️ طرح انتخابی با اشتراک شما سازگار نیست.',
     'renewal_selection.text.bfb7221456' => ' تومان ',
-    'renewal_selection.name_price.5107423b94' => ['text' => '{name} - {price}', 'parameters' => ['name', 'price']],
     'renewal_selection.message.51ab077156' => '3️⃣ مرحله سه' . "\n" . '' . "\n" . '🤲 🕋 یکی از پلن هارو انتخاب کنید.' . "\n" . '➕ اگر سرویس مورد نظر شما در لیست زیر نیست لازم هست اول اشتراک را به لیست اشتراک های خودتان اضافه کنید و بعد با زدن دکمه ← 🔄 تغییر پلن، پلن انتخاب کنید تا بتوانید اشتراک خودتان را تمدید و یا شارژ کنید. ',
     'renewal_selection.message.5223e5a747' => '💡 پلنی در این دسته بندی وجود ندارد. ',
 ];

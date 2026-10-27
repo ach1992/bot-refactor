@@ -4,6 +4,8 @@ if (realpath($_SERVER['SCRIPT_FILENAME']??'')===__FILE__) {
     http_response_code(404);
     exit;
 }
+require_once __DIR__ . '/messages/loader.php'; // ACHBOT_TEXT_CATALOG
+
 
 include_once "settings/values.php";
 include_once 'settings/jdf.php';
@@ -233,7 +235,7 @@ function check($return = false){
         return false;
     }
 
-    die('You do not have access');
+    die(\achbotMessage('admin_settings.config.check.you_do_not_have_access.816f78fb2c'));
 
 }
 
@@ -397,7 +399,7 @@ function getMainKeys(){
             [['text'=>$buttonValues['individual_existence'],'callback_data'=>"availableServers2"]] : []
         ),
 		(($from_id != $admin && $userInfo['isAdmin'] != true) ?
-			[['text' => "🔰 دریافت پنل همکاری", 'url' => getSupportUrl($botState)]] : []
+			[['text' => \achbotMessage('admin_settings.config.get_main_keys.button.b7d6aa7173'), 'url' => getSupportUrl($botState)]] : []
 			// [['text' => "👋 پشتیبانی ربات", 'url' => 'https://t.me/+xiKk-5AhNZ5mMWU0']] : []
 		),
 		(($from_id != $admin && $userInfo['isAdmin'] != true) ?
@@ -427,8 +429,8 @@ function getMainKeys(){
     array_push($mainKeys, $temp);
 
     if ($from_id == $admin || $userInfo['isAdmin'] == true) {
-        array_push($mainKeys, [['text' => "🔍 جستجوی اشتراک کاربر", 'callback_data' => "searchUsersConfig"]]);
-        array_push($mainKeys, [['text' => "⚙️ مدیریت ربات", 'callback_data' => "managePanel"]]);
+        array_push($mainKeys, [['text' => \achbotMessage('admin_settings.config.get_main_keys.button.11b0188fcb'), 'callback_data' => "searchUsersConfig"]]);
+        array_push($mainKeys, [['text' => \achbotMessage('admin_settings.config.get_main_keys.button.d9c51cced4'), 'callback_data' => "managePanel"]]);
     }
 
     return json_encode(['inline_keyboard' => $mainKeys]);
@@ -497,7 +499,7 @@ function getAdminKeys(){
     // identities must never be revealed in ordinary staff/user menus.
     if ((int)$from_id === (int)$admin) {
         array_unshift($keyboard, [[
-            'text'=>'📋 بررسی پرداخت‌های نیازمند رسیدگی',
+            'text'=>\achbotMessage('admin_settings.config.get_admin_keys.button.f5a816a832'),
             'callback_data'=>'attentionInbox'
         ]]);
     }
@@ -787,14 +789,14 @@ function getRejectedAgentList(){
     
     if($list->num_rows>0){
         $keys = array();
-        $keys[] = [['text'=>"آزاد ساختن",'callback_data'=>"wizwizch"],['text'=>"اسم کاربر",'callback_data'=>'wizwizch'],['text'=>"شناسه عددی",'callback_data'=>"wizwizch"]];
+        $keys[] = [['text'=>\achbotMessage('admin_settings.config.get_rejected_agent_list.button.df8e33a61a'),'callback_data'=>"wizwizch"],['text'=>\achbotMessage('admin_settings.config.get_rejected_agent_list.button.c9b4331f4f'),'callback_data'=>'wizwizch'],['text'=>\achbotMessage('admin_settings.config.get_rejected_agent_list.button.2dc9dcf8cd'),'callback_data'=>"wizwizch"]];
         while($row = $list->fetch_assoc()){
             $userId = $row['userid'];
             
             $userDetail = bot('getChat',['chat_id'=>$userId])->result;
             $fullName = $userDetail->first_name . " " . $userDetail->last_name;
             
-            $keys[] = [['text'=>"✅",'callback_data'=>"releaseRejectedAgent" . $userId],['text'=>$fullName,'callback_data'=>"wizwizch"],['text'=>$userId,'callback_data'=>"wizwizch"]];
+            $keys[] = [['text'=>\achbotMessage('admin_settings.config.get_rejected_agent_list.button.1d456424c3'),'callback_data'=>"releaseRejectedAgent" . $userId],['text'=>$fullName,'callback_data'=>"wizwizch"],['text'=>$userId,'callback_data'=>"wizwizch"]];
         }
         $keys[] = [['text'=>$buttonValues['back_button'],'callback_data'=>"managePanel"]];
         return json_encode(['inline_keyboard'=>$keys]);
@@ -839,19 +841,19 @@ function getAgentDetails($userId){
     return json_encode(['inline_keyboard'=>[
         [
             ['text'=>"(" . $todayIncome['count'] . ") " . number_format($todayIncome['total']),'callback_data'=>'wizwizch'],
-            ['text'=>"درآمد امروز",'callback_data'=>'wizwizch']
+            ['text'=>\achbotMessage('admin_settings.config.get_agent_details.button.5a788e64cb'),'callback_data'=>'wizwizch']
             ],
         [
             ['text'=>"(" . $yesterdayIncome['count'] . ") " . number_format($yesterdayIncome['total']),'callback_data'=>"wizwizch"],
-            ['text'=>"درآمد دیروز",'callback_data'=>"wizwizch"]
+            ['text'=>\achbotMessage('admin_settings.config.get_agent_details.button.4ad1c24edd'),'callback_data'=>"wizwizch"]
             ],
         [
             ['text'=>"(" . $lastWeekIncome['count'] . ") " . number_format($lastWeekIncome['total']),'callback_data'=>"wizwizch"],
-            ['text'=>"درآمد یک هفته",'callback_data'=>"wizwizch"]
+            ['text'=>\achbotMessage('admin_settings.config.get_agent_details.button.b939f33fef'),'callback_data'=>"wizwizch"]
             ],
         [
             ['text'=>"(" . $lastMonthIncome['count'] . ") " . number_format($lastMonthIncome['total']),'callback_data'=>"wizwizch"],
-            ['text'=>"درآمد یک ماه",'callback_data'=>"wizwizch"]
+            ['text'=>\achbotMessage('admin_settings.config.get_agent_details.button.12c33cffe7'),'callback_data'=>"wizwizch"]
             ],
         [['text' => $buttonValues['back_button'], 'callback_data' => "agentsList"]]
         ]]);
@@ -895,7 +897,7 @@ function getAgentsList($offset = 0){
     $keys = array();
     if($agentList->num_rows == 0 && $offset == 0) return null;
     
-    $keys[] = [['text'=>"حذف",'callback_data'=>"wizwizch"],['text'=>"درصد تخفیف",'callback_data'=>"wizwizch"],['text'=>"تاریخ همکاری",'callback_data'=>"wizwizch"],['text'=>"اسم همکار",'callback_data'=>"wizwizch"],['text'=>"شناسه عددی",'callback_data'=>"wizwizch"]];
+    $keys[] = [['text'=>\achbotMessage('admin_settings.config.get_agents_list.button.59ca629220'),'callback_data'=>"wizwizch"],['text'=>\achbotMessage('admin_settings.config.get_agents_list.button.9f7ae9d87f'),'callback_data'=>"wizwizch"],['text'=>\achbotMessage('admin_settings.config.get_agents_list.button.83a20e2f87'),'callback_data'=>"wizwizch"],['text'=>\achbotMessage('admin_settings.config.get_agents_list.button.1882d627a1'),'callback_data'=>"wizwizch"],['text'=>\achbotMessage('admin_settings.config.get_rejected_agent_list.button.2dc9dcf8cd'),'callback_data'=>"wizwizch"]];
     if($agentList->num_rows > 0){
         while($row = $agentList->fetch_assoc()){
             $userId = $row['userid'];
@@ -905,21 +907,21 @@ function getAgentsList($offset = 0){
             $fullName = $userDetail->first_name . " " . $userDetail->last_name;
             $joinedDate = jdate("Y-m-d H:i",$row['agent_date']);
 
-            $keys[] = [['text'=>"❌",'callback_data'=>"removeAgent" . $userId],['text'=>"⚙️",'callback_data'=>"agentPercentDetails" . $userId],['text'=>$joinedDate,'callback_data'=>"wizwizch"],['text'=>$fullName,'callback_data'=>"agentDetails" . $userId],['text'=>$userId,'callback_data'=>"agentDetails" . $userId]];
+            $keys[] = [['text'=>\achbotMessage('admin_settings.config.get_agents_list.button.2b2966a54e'),'callback_data'=>"removeAgent" . $userId],['text'=>\achbotMessage('admin_settings.config.get_agents_list.button.bee87e34d1'),'callback_data'=>"agentPercentDetails" . $userId],['text'=>$joinedDate,'callback_data'=>"wizwizch"],['text'=>$fullName,'callback_data'=>"agentDetails" . $userId],['text'=>$userId,'callback_data'=>"agentDetails" . $userId]];
         }
     }
     if($offset == 0 && $limit <= $agentList->num_rows)
         $keys[] = [
-            ['text'=>" »» صفحه بعدی »»",'callback_data'=>"nextAgentList" . ($offset + $limit)]
+            ['text'=>\achbotMessage('admin_settings.config.get_agents_list.button.6b88de15f3'),'callback_data'=>"nextAgentList" . ($offset + $limit)]
             ];
     elseif($limit <= $agentList->num_rows)
         $keys[] = [
-            ['text'=>" »» صفحه بعدی »»",'callback_data'=>"nextAgentList" . ($offset + $limit)],
-            ['text'=>" «« صفحه قبلی ««",'callback_data'=>"nextAgentList" . ($offset - $limit)]
+            ['text'=>\achbotMessage('admin_settings.config.get_agents_list.button.6b88de15f3'),'callback_data'=>"nextAgentList" . ($offset + $limit)],
+            ['text'=>\achbotMessage('admin_settings.config.get_agents_list.button.78d753bffb'),'callback_data'=>"nextAgentList" . ($offset - $limit)]
             ];
     elseif($offset != 0)
         $keys[] = [
-            ['text'=>" «« صفحه قبلی ««",'callback_data'=>"nextAgentList" . ($offset - $limit)]
+            ['text'=>\achbotMessage('admin_settings.config.get_agents_list.button.78d753bffb'),'callback_data'=>"nextAgentList" . ($offset - $limit)]
             ];
             
     $keys[] = [['text' => $buttonValues['back_button'], 'callback_data' => "managePanel"]];
@@ -935,13 +937,13 @@ function getMarzbanPanelGroupKeys($mode, $serverId = 0) {
         $cb = $mode === 'add'
             ? "selectNewPanelGroup_$id"
             : "setServerPanelGroup_{$serverId}_{$id}";
-        $keys[] = [['text'=>'🏷 ' . $group['name'], 'callback_data'=>$cb]];
+        $keys[] = [['text'=>\achbotMessage('admin_settings.config.get_marzban_panel_group_keys.button.62b58eccfe') . $group['name'], 'callback_data'=>$cb]];
     }
     $none = $mode === 'add'
         ? 'selectNewPanelGroup_0'
         : "setServerPanelGroup_{$serverId}_0";
-    $keys[] = [['text'=>'⭕ بدون گروه (انتقال غیرفعال)', 'callback_data'=>$none]];
-    $keys[] = [['text'=>$buttonValues['back_button'] ?? '🔙 بازگشت',
+    $keys[] = [['text'=>\achbotMessage('admin_settings.config.get_marzban_panel_group_keys.button.9bdffdaedc'), 'callback_data'=>$none]];
+    $keys[] = [['text'=>$buttonValues['back_button'] ?? \achbotMessage('admin_settings.config.get_marzban_panel_group_keys.text.b35a2352f5'),
                 'callback_data'=>$mode === 'add' ? 'serversSetting' : "showServerSettings{$serverId}_0"]];
     return json_encode(['inline_keyboard'=>$keys], JSON_UNESCAPED_UNICODE);
 }
@@ -951,13 +953,13 @@ function getMarzbanPanelGroupsManagementKeys() {
     foreach (achbotMarzbanPanelGroups($connection) as $group) {
         $id = (int)$group['id'];
         $keys[] = [
-            ['text'=>'🏷 ' . $group['name'], 'callback_data'=>'wizwizch'],
-            ['text'=>'🗑 حذف گروه بدون سرور', 'callback_data'=>"deleteMarzbanPanelGroup_$id"],
+            ['text'=>\achbotMessage('admin_settings.config.get_marzban_panel_group_keys.button.62b58eccfe') . $group['name'], 'callback_data'=>'wizwizch'],
+            ['text'=>\achbotMessage('admin_settings.config.get_marzban_panel_groups_management_keys.button.eb25cfbc94'), 'callback_data'=>"deleteMarzbanPanelGroup_$id"],
         ];
     }
-    if (!$keys) $keys[] = [['text'=>'هنوز گروهی تعریف نشده', 'callback_data'=>'wizwizch']];
-    $keys[] = [['text'=>'➕ تعریف گروه پنل جدید', 'callback_data'=>'addMarzbanPanelGroup']];
-    $keys[] = [['text'=>$buttonValues['back_button'] ?? '🔙 بازگشت', 'callback_data'=>'serversSetting']];
+    if (!$keys) $keys[] = [['text'=>\achbotMessage('admin_settings.config.get_marzban_panel_groups_management_keys.button.d376787114'), 'callback_data'=>'wizwizch']];
+    $keys[] = [['text'=>\achbotMessage('admin_settings.config.get_marzban_panel_groups_management_keys.button.a6b2138672'), 'callback_data'=>'addMarzbanPanelGroup']];
+    $keys[] = [['text'=>$buttonValues['back_button'] ?? \achbotMessage('admin_settings.config.get_marzban_panel_group_keys.text.b35a2352f5'), 'callback_data'=>'serversSetting']];
     return json_encode(['inline_keyboard'=>$keys], JSON_UNESCAPED_UNICODE);
 }
 function getServerConfigKeys($serverId,$offset = 0){
@@ -976,7 +978,7 @@ function getServerConfigKeys($serverId,$offset = 0){
     $back = [['text' => $buttonValues['back_button'], 'callback_data' => "nextServerPage" . $offset]];
     if (!$info || !achbotSupportsPanel($config['type'] ?? null)) {
         return json_encode(['inline_keyboard' => [
-            [['text'=>'پنل پشتیبانی نمی‌شود', 'callback_data'=>'wizwizch']],
+            [['text'=>\achbotMessage('admin_settings.config.get_server_config_keys.button.a726d3f27d'), 'callback_data'=>'wizwizch']],
             $back,
         ]]);
     }
@@ -986,19 +988,19 @@ function getServerConfigKeys($serverId,$offset = 0){
         return achbotPgServerAdminKeys($info,$config,(int)$offset);
     }
     $panelGroup = achbotMarzbanGroup($connection, $id);
-    $groupLabel = $panelGroup === null ? 'بدون گروه' : $panelGroup['name'];
+    $groupLabel = $panelGroup === null ? \achbotMessage('admin_settings.config.get_server_config_keys.text.176dbab285') : $panelGroup['name'];
     $keys = [
         [['text'=>$config['panel_url'], 'callback_data'=>'wizwizch']],
-        [['text'=>$info['title'], 'callback_data'=>"editServerName$id"], ['text'=>'❕نام سرور', 'callback_data'=>'wizwizch']],
-        [['text'=>$info['flag'], 'callback_data'=>"editServerFlag$id"], ['text'=>'🚩 پرچم سرور', 'callback_data'=>'wizwizch']],
-        [['text'=>$groupLabel, 'callback_data'=>"editMarzbanGroup$id"], ['text'=>'🏷 گروه پنل مشترک', 'callback_data'=>'wizwizch']],
-        [['text'=>$info['remark'], 'callback_data'=>"editServerRemark$id"], ['text'=>'📣 ریمارک سرور', 'callback_data'=>'wizwizch']],
-        [['text'=>'مرزبان', 'callback_data'=>'wizwizch'], ['text'=>'نوع سرور', 'callback_data'=>'wizwizch']],
-        [['text'=>$info['ucount'], 'callback_data'=>"editServerMax$id"], ['text'=>'ظرفیت سرور', 'callback_data'=>'wizwizch']],
-        [['text'=>'🔅 تغییر اطلاعات ورود', 'callback_data'=>"changesServerLoginInfo$id"]],
-        [['text'=>'🔗 لینک اشتراک کمکی', 'callback_data'=>"editSubLinks$id"]],
-        [['text'=>'⚙️ نمایش لینک و QR', 'callback_data'=>"serverDisplay$id"]],
-        [['text'=>'✂️ حذف سرور', 'callback_data'=>"wizwizdeleteserver$id"]],
+        [['text'=>$info['title'], 'callback_data'=>"editServerName$id"], ['text'=>\achbotMessage('admin_settings.config.get_server_config_keys.button.2f6b3d0d80'), 'callback_data'=>'wizwizch']],
+        [['text'=>$info['flag'], 'callback_data'=>"editServerFlag$id"], ['text'=>\achbotMessage('admin_settings.config.get_server_config_keys.button.d004e8d654'), 'callback_data'=>'wizwizch']],
+        [['text'=>$groupLabel, 'callback_data'=>"editMarzbanGroup$id"], ['text'=>\achbotMessage('admin_settings.config.get_server_config_keys.button.e2c055db59'), 'callback_data'=>'wizwizch']],
+        [['text'=>$info['remark'], 'callback_data'=>"editServerRemark$id"], ['text'=>\achbotMessage('admin_settings.config.get_server_config_keys.button.afaaf8dedd'), 'callback_data'=>'wizwizch']],
+        [['text'=>\achbotMessage('admin_settings.config.get_server_config_keys.button.b1501587df'), 'callback_data'=>'wizwizch'], ['text'=>\achbotMessage('admin_settings.config.get_server_config_keys.button.28724e896c'), 'callback_data'=>'wizwizch']],
+        [['text'=>$info['ucount'], 'callback_data'=>"editServerMax$id"], ['text'=>\achbotMessage('admin_settings.config.get_server_config_keys.button.f86cfd6077'), 'callback_data'=>'wizwizch']],
+        [['text'=>\achbotMessage('admin_settings.config.get_server_config_keys.button.c7349637fa'), 'callback_data'=>"changesServerLoginInfo$id"]],
+        [['text'=>\achbotMessage('admin_settings.config.get_server_config_keys.button.7ae29940f8'), 'callback_data'=>"editSubLinks$id"]],
+        [['text'=>\achbotMessage('admin_settings.config.get_server_config_keys.button.3a95407812'), 'callback_data'=>"serverDisplay$id"]],
+        [['text'=>\achbotMessage('admin_settings.config.get_server_config_keys.button.fed5753818'), 'callback_data'=>"wizwizdeleteserver$id"]],
         $back,
     ];
     return json_encode(['inline_keyboard'=>$keys]);
@@ -1016,9 +1018,9 @@ function getServerListKeys($offset = 0){
 
 
     $keys = array();
-    $keys[] = [['text'=>"وضعیت",'callback_data'=>"wizwizch"],['text'=>"تنظیمات",'callback_data'=>"wizwizch"],['text'=>"نوع",'callback_data'=>"wizwizch"],['text'=>"سرور",'callback_data'=>"wizwizch"]];
+    $keys[] = [['text'=>\achbotMessage('admin_settings.config.get_server_list_keys.button.68d7eb08ef'),'callback_data'=>"wizwizch"],['text'=>\achbotMessage('admin_settings.config.get_server_list_keys.button.6badcac8c1'),'callback_data'=>"wizwizch"],['text'=>\achbotMessage('admin_settings.config.get_server_list_keys.button.b55501074d'),'callback_data'=>"wizwizch"],['text'=>\achbotMessage('admin_settings.config.get_server_list_keys.button.0b29754285'),'callback_data'=>"wizwizch"]];
     if($cats->num_rows == 0){
-        $keys[] = [['text'=>"سروری یافت نشد",'callback_data'=>"wizwizch"]];
+        $keys[] = [['text'=>\achbotMessage('admin_settings.config.get_server_list_keys.button.5a370aba9d'),'callback_data'=>"wizwizch"]];
     }else {
         while($cty = $cats->fetch_assoc()){
             $id = $cty['id'];
@@ -1033,27 +1035,27 @@ function getServerListKeys($offset = 0){
             $serverTypeInfo= $stmt->get_result()->fetch_assoc();
             $stmt->close(); 
             $serverType = achbotSupportsPanel($serverTypeInfo['type'] ?? null)
-                ? (($serverTypeInfo['type']??'')==='pasarguard'?'PasarGuard':'مرزبان') : 'پشتیبانی نمی‌شود';
-            $keys[] = [['text'=>$state,'callback_data'=>'toggleServerState' . $id . "_" . $offset],['text'=>"⚙️",'callback_data'=>"showServerSettings" . $id . "_" . $offset],['text'=>$serverType??" ",'callback_data'=>"wizwizch"],['text'=>$cname,'callback_data'=>"wizwizch"]];
+                ? (($serverTypeInfo['type']??'')==='pasarguard'?\achbotMessage('admin_settings.config.get_server_list_keys.pasar_guard.9841f310c8'):\achbotMessage('admin_settings.config.get_server_config_keys.button.b1501587df')) : \achbotMessage('admin_settings.config.get_server_list_keys.text.3d978ef5e3');
+            $keys[] = [['text'=>$state,'callback_data'=>'toggleServerState' . $id . "_" . $offset],['text'=>\achbotMessage('admin_settings.config.get_agents_list.button.bee87e34d1'),'callback_data'=>"showServerSettings" . $id . "_" . $offset],['text'=>$serverType??" ",'callback_data'=>"wizwizch"],['text'=>$cname,'callback_data'=>"wizwizch"]];
         } 
     }
     if($offset == 0 && $cats->num_rows >= $limit){
-        $keys[] = [['text'=>" »» صفحه بعدی »»",'callback_data'=>"nextServerPage" . ($offset + $limit)]];
+        $keys[] = [['text'=>\achbotMessage('admin_settings.config.get_agents_list.button.6b88de15f3'),'callback_data'=>"nextServerPage" . ($offset + $limit)]];
     }
     elseif($cats->num_rows >= $limit){
         $keys[] = [
-            ['text'=>" »» صفحه بعدی »»",'callback_data'=>"nextServerPage" . ($offset + $limit)],
-            ['text'=>" «« صفحه قبلی ««",'callback_data'=>"nextServerPage" . ($offset - $limit)]
+            ['text'=>\achbotMessage('admin_settings.config.get_agents_list.button.6b88de15f3'),'callback_data'=>"nextServerPage" . ($offset + $limit)],
+            ['text'=>\achbotMessage('admin_settings.config.get_agents_list.button.78d753bffb'),'callback_data'=>"nextServerPage" . ($offset - $limit)]
             ];
     }
     elseif($offset != 0){
-        $keys[] = [['text'=>" «« صفحه قبلی ««",'callback_data'=>"nextServerPage" . ($offset - $limit)]];
+        $keys[] = [['text'=>\achbotMessage('admin_settings.config.get_agents_list.button.78d753bffb'),'callback_data'=>"nextServerPage" . ($offset - $limit)]];
     }
     $keys[] = [
-        ['text'=>"➕ ثبت سرور مرزبان",'callback_data'=>"addNewMarzbanPanel"]
+        ['text'=>\achbotMessage('admin_settings.config.get_server_list_keys.button.a4f3f3f06a'),'callback_data'=>"addNewMarzbanPanel"]
         ];
-    $keys[] = [['text'=>'➕ اتصال و سرور PasarGuard','callback_data'=>'pgConnections']];
-    $keys[] = [['text'=>'🏷 مدیریت گروه‌های پنل مرزبان', 'callback_data'=>'manageMarzbanPanelGroups']];
+    $keys[] = [['text'=>\achbotMessage('admin_settings.config.get_server_list_keys.button.a600a38b6f'),'callback_data'=>'pgConnections']];
+    $keys[] = [['text'=>\achbotMessage('admin_settings.config.get_server_list_keys.button.def9f141f2'), 'callback_data'=>'manageMarzbanPanelGroups']];
     $keys[] = [['text' => $buttonValues['back_button'], 'callback_data' => "managePanel"]];
     return json_encode(['inline_keyboard'=>$keys]);
 }
@@ -1069,44 +1071,44 @@ function getCategoriesKeys($offset = 0){
 
 
     $keys = array();
-    $keys[] = [['text'=>"حذف",'callback_data'=>"wizwizch"],['text'=>"اسم دسته",'callback_data'=>"wizwizch"]];
+    $keys[] = [['text'=>\achbotMessage('admin_settings.config.get_agents_list.button.59ca629220'),'callback_data'=>"wizwizch"],['text'=>\achbotMessage('admin_settings.config.get_categories_keys.button.47ccdcb5f1'),'callback_data'=>"wizwizch"]];
     if($cats->num_rows == 0){
-        $keys[] = [['text'=>"دسته بندی یافت نشد.",'callback_data'=>"wizwizch"]];
+        $keys[] = [['text'=>\achbotMessage('admin_settings.config.get_categories_keys.button.fba2c6927b'),'callback_data'=>"wizwizch"]];
     }else {
         while($cty = $cats->fetch_assoc()){
             $id = $cty['id'];
             $cname = $cty['title'];
-            $keys[] = [['text'=>"❌",'callback_data'=>"wizwizcategorydelete$id" . "_" . $offset],['text'=>$cname,'callback_data'=>"wizwizcategoryedit$id" . "_" . $offset]];
+            $keys[] = [['text'=>\achbotMessage('admin_settings.config.get_agents_list.button.2b2966a54e'),'callback_data'=>"wizwizcategorydelete$id" . "_" . $offset],['text'=>$cname,'callback_data'=>"wizwizcategoryedit$id" . "_" . $offset]];
         }
     }
     
     if($offset == 0 && $cats->num_rows >= $limit){
-        $keys[] = [['text'=>" »» صفحه بعدی »»",'callback_data'=>"nextCategoryPage" . ($offset + $limit)]];
+        $keys[] = [['text'=>\achbotMessage('admin_settings.config.get_agents_list.button.6b88de15f3'),'callback_data'=>"nextCategoryPage" . ($offset + $limit)]];
     }
     elseif($cats->num_rows >= $limit){
         $keys[] = [
-            ['text'=>" »» صفحه بعدی »»",'callback_data'=>"nextCategoryPage" . ($offset + $limit)],
-            ['text'=>" «« صفحه قبلی ««",'callback_data'=>"nextCategoryPage" . ($offset - $limit)]
+            ['text'=>\achbotMessage('admin_settings.config.get_agents_list.button.6b88de15f3'),'callback_data'=>"nextCategoryPage" . ($offset + $limit)],
+            ['text'=>\achbotMessage('admin_settings.config.get_agents_list.button.78d753bffb'),'callback_data'=>"nextCategoryPage" . ($offset - $limit)]
             ];
     }
     elseif($offset != 0){
-        $keys[] = [['text'=>" «« صفحه قبلی ««",'callback_data'=>"nextCategoryPage" . ($offset - $limit)]];
+        $keys[] = [['text'=>\achbotMessage('admin_settings.config.get_agents_list.button.78d753bffb'),'callback_data'=>"nextCategoryPage" . ($offset - $limit)]];
     }
     
-    $keys[] = [['text'=>'➕ افزودن دسته جدید','callback_data'=>"addNewCategory"]];
+    $keys[] = [['text'=>\achbotMessage('admin_settings.config.get_categories_keys.button.5c2a29a6ab'),'callback_data'=>"addNewCategory"]];
     $keys[] = [['text' => $buttonValues['back_button'], 'callback_data' => "managePanel"]];
     return json_encode(['inline_keyboard'=>$keys]);
 }
 /** Strictly bounded per-instance financial UX policy editor. */
 function achbotPaymentPolicyFields(): array {
     return [
-        'paymentDraftMinutes'=>['label'=>'مهلت پیش‌نویس (دقیقه)','default'=>30,'min'=>5,'max'=>180],
-        'paymentManualHours'=>['label'=>'فاکتور دستی بدون شروع رسید (ساعت)','default'=>6,'min'=>1,'max'=>72],
-        'paymentHostedHours'=>['label'=>'مهلت لینک آنلاین پیش از بررسی (ساعت)','default'=>6,'min'=>1,'max'=>72],
-        'receiptApprovedMinutes'=>['label'=>'تکرار خرید/شارژ تأییدشده (دقیقه)','default'=>10,'min'=>1,'max'=>1440],
-        'receiptApprovedOtherMinutes'=>['label'=>'تکرار سایر پرداخت‌های تأییدشده (دقیقه)','default'=>60,'min'=>1,'max'=>1440],
-        'receiptReviewMinutes'=>['label'=>'رسید مشابه در حال بررسی (دقیقه)','default'=>360,'min'=>1,'max'=>1440],
-        'receiptDeclinedMinutes'=>['label'=>'تکرار رسید ردشده (دقیقه)','default'=>3,'min'=>1,'max'=>1440],
+        'paymentDraftMinutes'=>['label'=>\achbotMessage('admin_settings.config.payment_policy_fields.text.ca36f51ec1'),'default'=>30,'min'=>5,'max'=>180],
+        'paymentManualHours'=>['label'=>\achbotMessage('admin_settings.config.payment_policy_fields.text.9bd7de27ab'),'default'=>6,'min'=>1,'max'=>72],
+        'paymentHostedHours'=>['label'=>\achbotMessage('admin_settings.config.payment_policy_fields.text.7763855ebb'),'default'=>6,'min'=>1,'max'=>72],
+        'receiptApprovedMinutes'=>['label'=>\achbotMessage('admin_settings.config.payment_policy_fields.text.99467f1d89'),'default'=>10,'min'=>1,'max'=>1440],
+        'receiptApprovedOtherMinutes'=>['label'=>\achbotMessage('admin_settings.config.payment_policy_fields.text.c23b59a9e3'),'default'=>60,'min'=>1,'max'=>1440],
+        'receiptReviewMinutes'=>['label'=>\achbotMessage('admin_settings.config.payment_policy_fields.text.7b27bba920'),'default'=>360,'min'=>1,'max'=>1440],
+        'receiptDeclinedMinutes'=>['label'=>\achbotMessage('admin_settings.config.payment_policy_fields.text.5fea8ef738'),'default'=>3,'min'=>1,'max'=>1440],
     ];
 }
 function achbotPaymentPolicyKeyboard(): string {
@@ -1121,7 +1123,7 @@ function achbotPaymentPolicyKeyboard(): string {
         $rows[]=[['text'=>$field['label'].': '.$value,
                  'callback_data'=>'editPaymentPolicy_'.$key]];
     }
-    $rows[]=[['text'=>'🔙 بازگشت به درگاه‌ها','callback_data'=>'gateWays_Channels']];
+    $rows[]=[['text'=>\achbotMessage('admin_settings.config.payment_policy_keyboard.button.264663a645'),'callback_data'=>'gateWays_Channels']];
     return json_encode(['inline_keyboard'=>$rows],JSON_UNESCAPED_UNICODE);
 }
 /** Admin-only audience selectors; stored under BOT_STATES.gatewayAudience. */
@@ -1136,11 +1138,11 @@ function achbotGatewayAudienceKeyboard(): string {
         $selected=is_array($policy)
             ? (array_key_exists($name,$policy) ? $policy[$name] : 'all') : null;
         $group=is_string($selected) && array_key_exists($selected,$labels)
-            ? $labels[$selected] : '⚠️ سیاست نامعتبر (مسدود)';
-        $rows[]=[['text'=>$methodLabel.' — '.$group,
+            ? $labels[$selected] : \achbotMessage('admin_settings.config.gateway_audience_keyboard.text.256b1382f5');
+        $rows[]=[['text'=>$methodLabel.\achbotMessage('admin_settings.config.gateway_audience_keyboard.text.3b2e8119b6').$group,
                   'callback_data'=>'cycleGatewayAudience_'.$name]];
     }
-    $rows[]=[['text'=>'🔙 بازگشت به درگاه‌ها','callback_data'=>'gateWays_Channels']];
+    $rows[]=[['text'=>\achbotMessage('admin_settings.config.payment_policy_keyboard.button.264663a645'),'callback_data'=>'gateWays_Channels']];
     return json_encode(['inline_keyboard'=>$rows],JSON_UNESCAPED_UNICODE);
 }
 function getGateWaysKeys(){
@@ -1175,8 +1177,8 @@ function getGateWaysKeys(){
     $stmt->close();
     require_once __DIR__ . '/src/Finance/ReceiptHelpers.php';
     $giftSellerUrl = trim((string)($paymentKeys['giftCardUrl'] ?? ''));
-    $giftSellerStatus = $giftSellerUrl === '' ? "⚠️ تنظیم‌نشده" :
-        (achbotManualGiftSellerUrlValid($giftSellerUrl) ? "✅ تنظیم‌شده" : "⚠️ نامعتبر");
+    $giftSellerStatus = $giftSellerUrl === '' ? \achbotMessage('admin_settings.config.get_gate_ways_keys.text.9fec3d676e') :
+        (achbotManualGiftSellerUrlValid($giftSellerUrl) ? \achbotMessage('admin_settings.config.get_gate_ways_keys.text.ad271ae97c') : \achbotMessage('admin_settings.config.get_gate_ways_keys.text.213a608ab9'));
     $cryptoRows=[];
     foreach (['BEP20','TRC20','ERC20'] as $network) {
         $field='manualUsdtWallet'.$network;
@@ -1184,115 +1186,115 @@ function getGateWaysKeys(){
             ? trim((string)$paymentKeys[$field])
             : (((string)($paymentKeys['manualUsdtNetwork'] ?? 'BEP20'))===$network
                 ? trim((string)($paymentKeys['manualUsdtWallet'] ?? '')) : '');
-        $label=achbotManualUsdtWalletValid($value,$network) ? $value : '⚠️ تنظیم‌نشده';
+        $label=achbotManualUsdtWalletValid($value,$network) ? $value : \achbotMessage('admin_settings.config.get_gate_ways_keys.text.9fec3d676e');
         $cryptoRows[]=[
             ['text'=>$label,'callback_data'=>'changePaymentKeys'.$field],
-            ['text'=>'آدرس USDT '.$network,'callback_data'=>'wizwizch']
+            ['text'=>\achbotMessage('admin_settings.config.get_gate_ways_keys.button.e1971f4d7a').$network,'callback_data'=>'wizwizch']
         ];
     }
     $trxWallet=trim((string)($paymentKeys['manualTrxWallet']??''));
     $cryptoRows[]=[
-        ['text'=>achbotManualTronAddressValid($trxWallet) ? $trxWallet : '⚠️ تنظیم‌نشده',
+        ['text'=>achbotManualTronAddressValid($trxWallet) ? $trxWallet : \achbotMessage('admin_settings.config.get_gate_ways_keys.text.9fec3d676e'),
          'callback_data'=>'changePaymentKeysmanualTrxWallet'],
-        ['text'=>'آدرس TRX — TRON','callback_data'=>'wizwizch']
+        ['text'=>\achbotMessage('admin_settings.config.get_gate_ways_keys.button.99a296169c'),'callback_data'=>'wizwizch']
     ];
     $rateRows=[];
-    foreach (['manualUsdtRateToman'=>'نرخ USDT عادی — دستی و NOWPayments',
-              'usdtAgentRateToman'=>'نرخ USDT نماینده — دستی و NOWPayments'] as $field=>$label) {
+    foreach (['manualUsdtRateToman'=>\achbotMessage('admin_settings.config.get_gate_ways_keys.text.f87b607b2d'),
+              'usdtAgentRateToman'=>\achbotMessage('admin_settings.config.get_gate_ways_keys.text.84a6dfb6ae')] as $field=>$label) {
         $raw=$paymentKeys[$field]??null;
         $rate=achbotUsdtRateValue($raw);
         $fallback=$field==='usdtAgentRateToman' &&
             (!array_key_exists($field,$paymentKeys) || $raw==='');
         $rateRows[]=[
-            ['text'=>$rate!==null ? number_format($rate).' تومان' :
-                ($fallback ? 'استفاده از نرخ عادی' : '⚠️ تنظیم‌نشده یا نامعتبر'),
+            ['text'=>$rate!==null ? number_format($rate).\achbotMessage('admin_settings.config.get_gate_ways_keys.text.2cc98f7f7c') :
+                ($fallback ? \achbotMessage('admin_settings.config.get_gate_ways_keys.text.f419959ea3') : \achbotMessage('admin_settings.config.get_gate_ways_keys.text.8da09df26e')),
              'callback_data'=>'changePaymentKeys'.$field],
             ['text'=>$label,'callback_data'=>'wizwizch']
         ];
     }
     $cryptoRows[]=[
         ['text'=>(!empty($paymentKeys['manualTrxRateToman']) ?
-            number_format((int)$paymentKeys['manualTrxRateToman']).' تومان' : '⚠️ تنظیم‌نشده'),
+            number_format((int)$paymentKeys['manualTrxRateToman']).\achbotMessage('admin_settings.config.get_gate_ways_keys.text.2cc98f7f7c') : \achbotMessage('admin_settings.config.get_gate_ways_keys.text.9fec3d676e')),
          'callback_data'=>'changePaymentKeysmanualTrxRateToman'],
-        ['text'=>'قیمت هر TRX','callback_data'=>'wizwizch']
+        ['text'=>\achbotMessage('admin_settings.config.get_gate_ways_keys.button.2f0a69097a'),'callback_data'=>'wizwizch']
     ];
     return json_encode(['inline_keyboard'=>[
         [
             ['text'=>(!empty($paymentKeys['bankAccount'])?$paymentKeys['bankAccount']:" "),'callback_data'=>"changePaymentKeysbankAccount"],
-            ['text'=>"شماره حساب",'callback_data'=>"wizwizch"]
+            ['text'=>\achbotMessage('admin_settings.config.get_gate_ways_keys.button.7879419f7f'),'callback_data'=>"wizwizch"]
         ],
         [
             ['text'=>(!empty($paymentKeys['holderName'])?$paymentKeys['holderName']:" "),'callback_data'=>"changePaymentKeysholderName"],
-            ['text'=>"دارنده حساب",'callback_data'=>"wizwizch"]
+            ['text'=>\achbotMessage('admin_settings.config.get_gate_ways_keys.button.b4ed07bc66'),'callback_data'=>"wizwizch"]
         ],
         [
             ['text'=>$giftSellerStatus,'callback_data'=>"changePaymentKeysgiftCardUrl"],
-            ['text'=>"لینک خرید گیفت‌کارت",'callback_data'=>"wizwizch"]
+            ['text'=>\achbotMessage('admin_settings.config.get_gate_ways_keys.button.ae176aeaf4'),'callback_data'=>"wizwizch"]
         ],
         [
             ['text'=>achbotPaymentKeyAdminMerchantLabel($paymentKeys,'nowpayment'),'callback_data'=>"changePaymentKeysnowpayment"],
-            ['text'=>"کد درگاه nowPayment",'callback_data'=>"wizwizch"]
+            ['text'=>\achbotMessage('admin_settings.config.get_gate_ways_keys.button.480677fee4'),'callback_data'=>"wizwizch"]
         ],
         [
             ['text'=>achbotPaymentKeyAdminMerchantLabel($paymentKeys,'zarinpal'),'callback_data'=>"changePaymentKeyszarinpal"],
-            ['text'=>"کد درگاه زرین پال",'callback_data'=>"wizwizch"]
+            ['text'=>\achbotMessage('admin_settings.config.get_gate_ways_keys.button.fd8662735a'),'callback_data'=>"wizwizch"]
         ],
         [
             ['text'=>achbotPaymentKeyAdminMerchantLabel($paymentKeys,'nextpay'),'callback_data'=>"changePaymentKeysnextpay"],
-            ['text'=>"کد درگاه نکست پی",'callback_data'=>"wizwizch"]
+            ['text'=>\achbotMessage('admin_settings.config.get_gate_ways_keys.button.02de54ccc3'),'callback_data'=>"wizwizch"]
         ],
         ...$rateRows,
         ...$cryptoRows,
         [
             ['text'=>$giftCardState,'callback_data'=>"changeGateWaysgiftCardState"],
-            ['text'=>"🎁 پرداخت با گیفت‌کارت",'callback_data'=>"wizwizch"]
+            ['text'=>\achbotMessage('admin_settings.config.get_gate_ways_keys.button.d71108ddb3'),'callback_data'=>"wizwizch"]
         ],
         [
             ['text'=>$manualUsdtState,'callback_data'=>"changeGateWaysmanualUsdtState"],
-            ['text'=>"💎 پرداخت رمزارزی دستی (USDT/TRX)",'callback_data'=>"wizwizch"]
+            ['text'=>\achbotMessage('admin_settings.config.get_gate_ways_keys.button.986ea8b25b'),'callback_data'=>"wizwizch"]
         ],
         [
             ['text'=>$cartToCartState,'callback_data'=>"changeGateWayscartToCartState"],
-            ['text'=>"کارت به کارت",'callback_data'=>"wizwizch"]
+            ['text'=>\achbotMessage('admin_settings.config.get_gate_ways_keys.button.04029e7ea7'),'callback_data'=>"wizwizch"]
         ],
         [
             ['text'=>$nextpay,'callback_data'=>"changeGateWaysnextpay"],
-            ['text'=>"درگاه نکست پی",'callback_data'=>"wizwizch"]
+            ['text'=>\achbotMessage('admin_settings.config.get_gate_ways_keys.button.26003a476f'),'callback_data'=>"wizwizch"]
         ],
         [
             ['text'=>$zarinpal,'callback_data'=>"changeGateWayszarinpal"],
-            ['text'=>"درگاه زرین پال",'callback_data'=>"wizwizch"]
+            ['text'=>\achbotMessage('admin_settings.config.get_gate_ways_keys.button.c0199d5243'),'callback_data'=>"wizwizch"]
         ],
         [
             ['text'=>$nowPaymentWallet,'callback_data'=>"changeGateWaysnowPaymentWallet"],
-            ['text'=>"درگاه NowPayment کیف پول",'callback_data'=>"wizwizch"]
+            ['text'=>\achbotMessage('admin_settings.config.get_gate_ways_keys.button.6e3e91d426'),'callback_data'=>"wizwizch"]
         ],
         [
             ['text'=>$nowPaymentOther,'callback_data'=>"changeGateWaysnowPaymentOther"],
-            ['text'=>"درگاه NowPayment سایر",'callback_data'=>"wizwizch"]
+            ['text'=>\achbotMessage('admin_settings.config.get_gate_ways_keys.button.a0c8498d77'),'callback_data'=>"wizwizch"]
         ],
         [
             ['text'=>$walletState,'callback_data'=>"changeGateWayswalletState"],
-            ['text'=>"کیف پول",'callback_data'=>"wizwizch"]
+            ['text'=>\achbotMessage('admin_settings.config.get_gate_ways_keys.button.6295c35212'),'callback_data'=>"wizwizch"]
         ],
 		[
 			['text'=>$supportID, 'callback_data' => 'editSupportID'],
-			['text'=>"آیدی پشتیبانی",'callback_data'=>'wizwizch']
+			['text'=>\achbotMessage('admin_settings.config.get_gate_ways_keys.button.179f3c4369'),'callback_data'=>'wizwizch']
 		],
         [
             ['text'=>$rewaredChannel,'callback_data'=>'editRewardChannel'],
-            ['text'=>"کانال گزارش درآمد",'callback_data'=>'wizwizch']
+            ['text'=>\achbotMessage('admin_settings.config.get_gate_ways_keys.button.536c328504'),'callback_data'=>'wizwizch']
 		],
         [
             ['text'=>$lockChannel,'callback_data'=>'editLockChannel'],
-            ['text'=>"کانال قفل",'callback_data'=>'wizwizch']
+            ['text'=>\achbotMessage('admin_settings.config.get_gate_ways_keys.button.ea01411739'),'callback_data'=>'wizwizch']
 		],
 		[
-			['text'=>"معاف کاربر از عضویت در کانال",'callback_data'=>"addExemptUser"]
+			['text'=>\achbotMessage('admin_settings.config.get_gate_ways_keys.button.16aec30ea0'),'callback_data'=>"addExemptUser"]
 		],
-        [['text'=>'⏱ مهلت فاکتورها و محدودیت رسید تکراری',
+        [['text'=>\achbotMessage('admin_settings.config.get_gate_ways_keys.button.fff77fef22'),
           'callback_data'=>'paymentPolicySettings']],
-        [['text'=>'🔐 مدیریت دسترسی به روش‌های پرداخت',
+        [['text'=>\achbotMessage('admin_settings.config.get_gate_ways_keys.button.2110b39744'),
           'callback_data'=>'gr|l']],
 			[['text'=>$buttonValues['back_button'],'callback_data'=>"managePanel"]]
         ]]);
@@ -1328,17 +1330,17 @@ function getBotSettingKeys(){
     $sellState = $botState['sellState']=="on"?$buttonValues['on']:$buttonValues['off'];
     $robotState = $botState['botState']=="on"?$buttonValues['on']:$buttonValues['off'];
     $searchState = $botState['searchState']=="on"?$buttonValues['on']:$buttonValues['off'];
-    $updateConnectionState = $botState['updateConnectionState']=="robot"?"از روی ربات":"از روی سایت";
-    $rewaredTime = ($botState['rewaredTime']??0) . " ساعت";
+    $updateConnectionState = $botState['updateConnectionState']=="robot"?\achbotMessage('admin_settings.config.get_bot_setting_keys.text.0fbe848798'):\achbotMessage('admin_settings.config.get_bot_setting_keys.text.c840773241');
+    $rewaredTime = ($botState['rewaredTime']??0) . \achbotMessage('admin_settings.config.get_bot_setting_keys.text.69419edd93');
     switch($botState['remark']){
         case "digits":
-            $remarkType = "عدد رندم 5 حرفی";
+            $remarkType = \achbotMessage('admin_settings.config.get_bot_setting_keys.remark_type.af25c56d42');
             break;
         case "manual":
-            $remarkType = "توسط کاربر";
+            $remarkType = \achbotMessage('admin_settings.config.get_bot_setting_keys.remark_type.af52103a2f');
             break;
         default:
-            $remarkType = "آیدی و عدد رندوم";
+            $remarkType = \achbotMessage('admin_settings.config.get_bot_setting_keys.remark_type.8ede2b5100');
             break;
     }
     
@@ -1350,118 +1352,118 @@ function getBotSettingKeys(){
     $stmt->close();
     return json_encode(['inline_keyboard'=>[
         [
-            ['text'=>"🎗 بنر بازاریابی 🎗",'callback_data'=>"inviteSetting"]
+            ['text'=>\achbotMessage('admin_settings.config.get_bot_setting_keys.button.f386be17f5'),'callback_data'=>"inviteSetting"]
             ],
         [
             ['text'=> $updateConnectionState,'callback_data'=>"changeUpdateConfigLinkState"],
-            ['text'=>"آپدیت کانفیگ",'callback_data'=>"wizwizch"]
+            ['text'=>\achbotMessage('admin_settings.config.get_bot_setting_keys.button.fc7f747159'),'callback_data'=>"wizwizch"]
             ],
         [
             ['text'=> $agency,'callback_data'=>"changeBotagencyState"],
-            ['text'=>"همکاری",'callback_data'=>"wizwizch"]
+            ['text'=>\achbotMessage('admin_settings.config.get_bot_setting_keys.button.3b878712ee'),'callback_data'=>"wizwizch"]
             ],
         [
             ['text'=> $agencyPlanDiscount,'callback_data'=>"changeBotagencyPlanDiscount"],
-            ['text'=>"نوع تخفیف همکاری",'callback_data'=>"wizwizch"]
+            ['text'=>\achbotMessage('admin_settings.config.get_bot_setting_keys.button.c2df8234c5'),'callback_data'=>"wizwizch"]
             ],
         [
             ['text'=>$individualExistence,'callback_data'=>"changeBotindividualExistence"],
-            ['text'=>"موجودی اختصاصی",'callback_data'=>"wizwizch"]
+            ['text'=>\achbotMessage('admin_settings.config.get_bot_setting_keys.button.546c2c8acc'),'callback_data'=>"wizwizch"]
         ],
         [
             ['text'=>$sharedExistence,'callback_data'=>"changeBotsharedExistence"],
-            ['text'=>"موجودی اشتراکی",'callback_data'=>"wizwizch"]
+            ['text'=>\achbotMessage('admin_settings.config.get_bot_setting_keys.button.bbc39b9150'),'callback_data'=>"wizwizch"]
         ],
         [
             ['text'=>$testAccount,'callback_data'=>"changeBottestAccount"],
-            ['text'=>"اکانت تست",'callback_data'=>"wizwizch"]
+            ['text'=>\achbotMessage('admin_settings.config.get_bot_setting_keys.button.11ee94f26d'),'callback_data'=>"wizwizch"]
         ],
         [
             ['text'=>$changeProtocole,'callback_data'=>"changeBotchangeProtocolState"],
-            ['text'=>"تغییر پروتکل",'callback_data'=>"wizwizch"]
+            ['text'=>\achbotMessage('admin_settings.config.get_bot_setting_keys.button.5705eee73b'),'callback_data'=>"wizwizch"]
         ],
         [
             ['text'=>$renewAccount,'callback_data'=>"changeBotrenewAccountState"],
-            ['text'=>"تمدید اشتراک",'callback_data'=>"wizwizch"]
+            ['text'=>\achbotMessage('admin_settings.config.get_bot_setting_keys.button.df1c62b99e'),'callback_data'=>"wizwizch"]
         ],
         [
             ['text' => $renewAuto, 'callback_data' => "changeBotrenewAutoState"],
-            ['text'=>"تمدید خودکار اشتراک",'callback_data'=>"wizwizch"]
+            ['text'=>\achbotMessage('admin_settings.config.get_bot_setting_keys.button.f9a77f614a'),'callback_data'=>"wizwizch"]
         ],
         [
             ['text'=>$plandelkhahwiz,'callback_data'=>"changeBotplandelkhahState"],
-            ['text'=>"پلن دلخواه",'callback_data'=>"wizwizch"]
+            ['text'=>\achbotMessage('admin_settings.config.get_bot_setting_keys.button.8ef9c2184e'),'callback_data'=>"wizwizch"]
         ],
         [
             ['text'=>$switchLocation,'callback_data'=>"changeBotswitchLocationState"],
-            ['text'=>"تغییر سرویس",'callback_data'=>"wizwizch"]
+            ['text'=>\achbotMessage('admin_settings.config.get_bot_setting_keys.button.c6b7f26615'),'callback_data'=>"wizwizch"]
         ],
         [
             ['text'=>$increaseTime,'callback_data'=>"changeBotincreaseTimeState"],
-            ['text'=>"افزایش زمان",'callback_data'=>"wizwizch"]
+            ['text'=>\achbotMessage('admin_settings.config.get_bot_setting_keys.button.070602773a'),'callback_data'=>"wizwizch"]
         ],
         [
             ['text'=>$increaseVolume,'callback_data'=>"changeBotincreaseVolumeState"],
-            ['text'=>"افزایش حجم",'callback_data'=>"wizwizch"]
+            ['text'=>\achbotMessage('admin_settings.config.get_bot_setting_keys.button.4bbbd988ad'),'callback_data'=>"wizwizch"]
         ],
         [
             ['text'=>$requirePhone,'callback_data'=>"changeBotrequirePhone"],
-            ['text'=>"تایید شماره",'callback_data'=>"wizwizch"]
+            ['text'=>\achbotMessage('admin_settings.config.get_bot_setting_keys.button.bb9acf5637'),'callback_data'=>"wizwizch"]
         ],
         [
             ['text'=>$requireIranPhone,'callback_data'=>"changeBotrequireIranPhone"],
-            ['text'=>"تایید شماره ایرانی",'callback_data'=>"wizwizch"]
+            ['text'=>\achbotMessage('admin_settings.config.get_bot_setting_keys.button.354012a9d5'),'callback_data'=>"wizwizch"]
         ],
         [
             ['text'=>$sellState,'callback_data'=>"changeBotsellState"],
-            ['text'=>"فروش",'callback_data'=>"wizwizch"]
+            ['text'=>\achbotMessage('admin_settings.config.get_bot_setting_keys.button.3cd98f07be'),'callback_data'=>"wizwizch"]
         ],
         [
             ['text'=>$robotState,'callback_data'=>"changeBotbotState"],
-            ['text'=>"وضعیت ربات",'callback_data'=>"wizwizch"]
+            ['text'=>\achbotMessage('admin_settings.config.get_bot_setting_keys.button.5a3a8ecb3c'),'callback_data'=>"wizwizch"]
         ],
         [
-            ['text'=>'⚙️ نمایش لینک و QR برای هر سرور','callback_data'=>'serversSetting']
+            ['text'=>\achbotMessage('admin_settings.config.get_bot_setting_keys.button.ce5bb2416c'),'callback_data'=>'serversSetting']
         ],
         [
             ['text'=>$searchState,'callback_data'=>"changeBotsearchState"],
-            ['text'=>"مشخصات اشتراک",'callback_data'=>"wizwizch"]
+            ['text'=>\achbotMessage('admin_settings.config.get_bot_setting_keys.button.c56b392566'),'callback_data'=>"wizwizch"]
         ],
         [
             ['text'=>$renewConfigLink,'callback_data'=>"changeBotrenewConfigLinkState"],
-            ['text'=>"دریافت لینک جدید",'callback_data'=>"wizwizch"]
+            ['text'=>\achbotMessage('admin_settings.config.get_bot_setting_keys.button.242b408ae2'),'callback_data'=>"wizwizch"]
         ],
         [
             ['text'=>$updateConfigLink,'callback_data'=>"changeBotupdateConfigLinkState"],
-            ['text'=>"بروزرسانی لینک",'callback_data'=>"wizwizch"]
+            ['text'=>\achbotMessage('admin_settings.config.get_bot_setting_keys.button.fb0475aeb4'),'callback_data'=>"wizwizch"]
         ],
         [
             ['text'=>$qrConfig,'callback_data'=>"changeBotqrConfigState"],
-            ['text'=>"کیوآرکد کانفیگ",'callback_data'=>"wizwizch"]
+            ['text'=>\achbotMessage('admin_settings.config.get_bot_setting_keys.button.59be548183'),'callback_data'=>"wizwizch"]
         ],
         [
             ['text'=>$qrSub,'callback_data'=>"changeBotqrSubState"],
-            ['text'=>"کیوآرکد اشتراک",'callback_data'=>"wizwizch"]
+            ['text'=>\achbotMessage('admin_settings.config.get_bot_setting_keys.button.ae54bb8cbe'),'callback_data'=>"wizwizch"]
         ],
         [
             ['text'=>$remarkType,'callback_data'=>"changeConfigRemarkType"],
-            ['text'=>"نوع ریمارک",'callback_data'=>"wizwizch"]
+            ['text'=>\achbotMessage('admin_settings.config.get_bot_setting_keys.button.8855cd3ee5'),'callback_data'=>"wizwizch"]
         ],
         [
             ['text'=>$rewaredTime,'callback_data'=>'editRewaredTime'],
-            ['text'=>"ارسال گزارش درآمد", 'callback_data'=>'wizwizch']
+            ['text'=>\achbotMessage('admin_settings.config.get_bot_setting_keys.button.2d0dc535a6'), 'callback_data'=>'wizwizch']
             ],
         [
             ['text'=>$botState['cartToCartAutoAcceptState']=="on"?$buttonValues['on']:$buttonValues['off'],'callback_data'=>"changeBotcartToCartAutoAcceptState"],
-            ['text'=>"تایید خودکار کارت به کارت",'callback_data'=>"wizwizch"]
+            ['text'=>\achbotMessage('admin_settings.config.get_bot_setting_keys.button.f5d3c64f2a'),'callback_data'=>"wizwizch"]
         ],
         ($botState['cartToCartAutoAcceptState']=="on"?[
-            ['text'=>($botState['cartToCartAutoAcceptType'] == "0"?"همکار":($botState['cartToCartAutoAcceptType'] == "1"?"کاربر":"همه")),'callback_data'=>"changeBotcartToCartAutoAcceptType"],
-            ['text'=>"نوع تایید",'callback_data'=>"wizwizch"]
+            ['text'=>($botState['cartToCartAutoAcceptType'] == "0"?\achbotMessage('admin_settings.config.get_bot_setting_keys.text.62c92fb90c'):($botState['cartToCartAutoAcceptType'] == "1"?\achbotMessage('admin_settings.config.get_bot_setting_keys.text.5bf4b36161'):\achbotMessage('admin_settings.config.get_bot_setting_keys.text.15270886ea'))),'callback_data'=>"changeBotcartToCartAutoAcceptType"],
+            ['text'=>\achbotMessage('admin_settings.config.get_bot_setting_keys.button.aaeffd7e20'),'callback_data'=>"wizwizch"]
         ]:[]),
         ($botState['cartToCartAutoAcceptState']=="on"?[
-            ['text'=>($botState['cartToCartAutoAcceptTime']??"10") . " دقیقه",'callback_data'=>"editcartToCartAutoAcceptTime"],
-            ['text'=>"زمان تایید خودکار ",'callback_data'=>"wizwizch"]
+            ['text'=>($botState['cartToCartAutoAcceptTime']??"10") . \achbotMessage('admin_settings.config.get_bot_setting_keys.text.5e2c83ade1'),'callback_data'=>"editcartToCartAutoAcceptTime"],
+            ['text'=>\achbotMessage('admin_settings.config.get_bot_setting_keys.button.333513e744'),'callback_data'=>"wizwizch"]
         ]:[]),
         [['text'=>$buttonValues['back_button'],'callback_data'=>"managePanel"]]
         ]]);
@@ -1490,17 +1492,17 @@ function sendChunkedMessages($data, $messageType) {
         $text = ($index === 0) ? "$messageType:\n\n" : "";
         foreach ($group as $row) {
             // استفاده از user_id برای جدول pays
-            $userId = isset($row['user_id']) ? $row['user_id'] : (isset($row['userid']) ? $row['userid'] : 'N/A');
+            $userId = isset($row['user_id']) ? $row['user_id'] : (isset($row['userid']) ? $row['userid'] : \achbotMessage('admin_settings.config.send_chunked_messages.text.e2f79e5b60'));
             $amount = number_format($row['wallet'] ?? $row['total_orders'] ?? $row['total_paid']);
             
-            $text .= "👤 شناسه کاربر: <code>$userId</code>\n";
+            $text .= \achbotMessage('admin_settings.config.send_chunked_messages.text.833406bb32', ['userId' => $userId]);
             
             if (isset($row['wallet'])) {
-                $text .= "💰 موجودی: <b>$amount تومان</b>\n\n";
+                $text .= \achbotMessage('admin_settings.config.send_chunked_messages.text.60cf33455d', ['amount' => $amount]);
             } elseif (isset($row['total_orders'])) {
-                $text .= "📦 تعداد اشتراک‌ها: <b>$amount</b>\n\n";
+                $text .= \achbotMessage('admin_settings.config.send_chunked_messages.text.5a5302e156', ['amount' => $amount]);
             } else {
-                $text .= "💰 مبلغ پرداختی: <b>$amount تومان</b>\n\n";
+                $text .= \achbotMessage('admin_settings.config.send_chunked_messages.text.bffd2d6f62', ['amount' => $amount]);
             }
         }
 
@@ -1514,10 +1516,10 @@ function getBotReportKeys($data = null) {
     // منوی اصلی آمار
     if ($data == null || $data == 'show_stats_menu') {
         return json_encode(['inline_keyboard' => [
-            [['text' => '👥 آمار کاربران', 'callback_data' => 'stats_users']],
-            [['text' => '📦 آمار اشتراک‌ها', 'callback_data' => 'stats_orders']],
-            [['text' => '💰 آمار فروش', 'callback_data' => 'stats_sales']],
-            [['text' => '🔙 بازگشت به مدیریت', 'callback_data' => 'managePanel']]
+            [['text' => \achbotMessage('admin_settings.config.get_bot_report_keys.button.6d1fec5b8b'), 'callback_data' => 'stats_users']],
+            [['text' => \achbotMessage('admin_settings.config.get_bot_report_keys.button.2ef1b34354'), 'callback_data' => 'stats_orders']],
+            [['text' => \achbotMessage('admin_settings.config.get_bot_report_keys.button.adb2cb111d'), 'callback_data' => 'stats_sales']],
+            [['text' => \achbotMessage('admin_settings.config.get_bot_report_keys.button.255cc89ba7'), 'callback_data' => 'managePanel']]
         ]]);
     }
 
@@ -1538,14 +1540,14 @@ function getBotReportKeys($data = null) {
 
             // بررسی اینکه کدام دکمه انتخاب شده است و ارسال پیام مناسب
             if ($data == 'top_50_wallet') {
-                sendChunkedMessages($users, "📈 کاربران با بیشترین موجودی");
+                sendChunkedMessages($users, \achbotMessage('admin_settings.config.get_bot_report_keys.text.e9de3103c2'));
             } elseif ($data == 'top_50_orders') {
-                sendChunkedMessages($users, "📦 کاربران با بیشترین تعداد اشتراک");
+                sendChunkedMessages($users, \achbotMessage('admin_settings.config.get_bot_report_keys.text.cc383ee7c0'));
             } elseif ($data == 'top_50_users_pays') {
-                sendChunkedMessages($users, "🛍 کاربران با بیشترین حجم خرید");
+                sendChunkedMessages($users, \achbotMessage('admin_settings.config.get_bot_report_keys.text.178803da84'));
             }
         } else {
-            sendMessage("❌ کوئری مشکلی داشت یا داده‌ها موجود نیستند", null, "html", $from_id);
+            sendMessage(\achbotMessage('admin_settings.config.get_bot_report_keys.message.eafbeaf37f'), null, "html", $from_id);
         }
         return false;
     }
@@ -1562,7 +1564,7 @@ function getBotReportKeys($data = null) {
             }
             $chunks = array_chunk($agents, 15);
             foreach ($chunks as $index => $group) {
-                $text = "🧑‍💼 لیست کاربران همکار:\n\n";
+                $text = \achbotMessage('admin_settings.config.get_bot_report_keys.text.900e008efe');
                 foreach ($group as $row) {
                     $userId = $row['userid'];
                     $agentDate = $row['agent_date'];
@@ -1577,15 +1579,15 @@ function getBotReportKeys($data = null) {
                     $totalPaid = number_format($paymentResult['total_paid']);
 
                     // افزودن اطلاعات به متن پیام
-                    $text .= "👤 شناسه کاربر: <code>$userId</code>\n";
-                    $text .= "📦 تعداد اشتراک‌ها: <b>$totalOrders</b>\n";
-                    $text .= "💰 مجموع پرداخت‌ها: <b>$totalPaid تومان</b>\n";
-                    $text .= "📅 تاریخ شروع همکاری: <b>$formattedDate</b>\n\n";
+                    $text .= \achbotMessage('admin_settings.config.send_chunked_messages.text.833406bb32', ['userId' => $userId]);
+                    $text .= \achbotMessage('admin_settings.config.get_bot_report_keys.text.fa6bc48623', ['totalOrders' => $totalOrders]);
+                    $text .= \achbotMessage('admin_settings.config.get_bot_report_keys.text.9a3a995798', ['totalPaid' => $totalPaid]);
+                    $text .= \achbotMessage('admin_settings.config.get_bot_report_keys.text.8fdd85c8a9', ['formattedDate' => $formattedDate]);
                 }
                 sendMessage($text, null, "html", $from_id);
             }
         } else {
-            sendMessage("❌ هیچ کاربر همکاری یافت نشد.", null, "html", $from_id);
+            sendMessage(\achbotMessage('admin_settings.config.get_bot_report_keys.message.3bb6042c9e'), null, "html", $from_id);
         }
         return false;
     }
@@ -1612,21 +1614,21 @@ function getBotReportKeys($data = null) {
         $new3Month = fetchData("SELECT COUNT(*) as total FROM users WHERE date >= ?", ["i", $month3Start])->fetch_assoc()['total'];
 
         return json_encode(['inline_keyboard' => [
-            [['text' => "$allUsers", 'callback_data' => 'wizwizch'], ['text' => "👤 تعداد کل کاربران", 'callback_data' => 'wizwizch']],
-            [['text' => "$allOrders", 'callback_data' => 'wizwizch'], ['text' => "🧾 کل اشتراک‌های کاربران", 'callback_data' => 'wizwizch']],
-            [['text' => "$usersWithOrders", 'callback_data' => 'wizwizch'], ['text' => "👥 کاربران دارای اشتراک", 'callback_data' => 'wizwizch']],
-            [['text' => "$usersWithoutOrders", 'callback_data' => 'wizwizch'], ['text' => "🚫 کاربران بدون اشتراک", 'callback_data' => 'wizwizch']],
-            [['text' => "$walletSum تومان", 'callback_data' => 'wizwizch'], ['text' => "💳 مجموع کیف پول کاربران", 'callback_data' => 'wizwizch']],
-            [['text' => "$agentUsers", 'callback_data' => 'wizwizch'], ['text' => "🤝 تعداد کاربران همکار", 'callback_data' => 'wizwizch']],
-            [['text' => "$newToday", 'callback_data' => 'wizwizch'], ['text' => "🔂 کاربران جدید امروز", 'callback_data' => 'wizwizch']],
-            [['text' => "$newWeek", 'callback_data' => 'wizwizch'], ['text' => "📅 کاربران جدید هفته", 'callback_data' => 'wizwizch']],
-            [['text' => "$newMonth", 'callback_data' => 'wizwizch'], ['text' => "🗓 کاربران جدید ماه", 'callback_data' => 'wizwizch']],
-            [['text' => "$new3Month", 'callback_data' => 'wizwizch'], ['text' => "📊 کاربران جدید ۳ ماه", 'callback_data' => 'wizwizch']],
-            [['text' => '📈 کاربران با بیشترین موجودی (50 کاربر)', 'callback_data' => 'top_50_wallet']],
-            [['text' => '📦 کاربران با بیشترین تعداد اشتراک (50 کاربر)', 'callback_data' => 'top_50_orders']],
-            [['text' => '🛍 کاربران با بیشترین حجم خرید (50 کاربر)', 'callback_data' => 'top_50_users_pays']],
-            [['text' => '🧑‍💼 لیست کاربران همکار', 'callback_data' => 'agent_users_list']],
-            [['text' => '🔙 بازگشت به آمار', 'callback_data' => 'show_stats_menu']]
+            [['text' => "$allUsers", 'callback_data' => 'wizwizch'], ['text' => \achbotMessage('admin_settings.config.get_bot_report_keys.button.674417d275'), 'callback_data' => 'wizwizch']],
+            [['text' => "$allOrders", 'callback_data' => 'wizwizch'], ['text' => \achbotMessage('admin_settings.config.get_bot_report_keys.button.a99b0b7e93'), 'callback_data' => 'wizwizch']],
+            [['text' => "$usersWithOrders", 'callback_data' => 'wizwizch'], ['text' => \achbotMessage('admin_settings.config.get_bot_report_keys.button.1dec5ab169'), 'callback_data' => 'wizwizch']],
+            [['text' => "$usersWithoutOrders", 'callback_data' => 'wizwizch'], ['text' => \achbotMessage('admin_settings.config.get_bot_report_keys.button.31f6ac9005'), 'callback_data' => 'wizwizch']],
+            [['text' => \achbotMessage('admin_settings.config.get_bot_report_keys.button.db5e8c8ec7', ['walletSum' => $walletSum]), 'callback_data' => 'wizwizch'], ['text' => \achbotMessage('admin_settings.config.get_bot_report_keys.button.c86863d416'), 'callback_data' => 'wizwizch']],
+            [['text' => "$agentUsers", 'callback_data' => 'wizwizch'], ['text' => \achbotMessage('admin_settings.config.get_bot_report_keys.button.b04b9eb38d'), 'callback_data' => 'wizwizch']],
+            [['text' => "$newToday", 'callback_data' => 'wizwizch'], ['text' => \achbotMessage('admin_settings.config.get_bot_report_keys.button.ed72e83e54'), 'callback_data' => 'wizwizch']],
+            [['text' => "$newWeek", 'callback_data' => 'wizwizch'], ['text' => \achbotMessage('admin_settings.config.get_bot_report_keys.button.4d7b442a7e'), 'callback_data' => 'wizwizch']],
+            [['text' => "$newMonth", 'callback_data' => 'wizwizch'], ['text' => \achbotMessage('admin_settings.config.get_bot_report_keys.button.b1030d4034'), 'callback_data' => 'wizwizch']],
+            [['text' => "$new3Month", 'callback_data' => 'wizwizch'], ['text' => \achbotMessage('admin_settings.config.get_bot_report_keys.button.93735d95b2'), 'callback_data' => 'wizwizch']],
+            [['text' => \achbotMessage('admin_settings.config.get_bot_report_keys.button.f4b4f9e83b'), 'callback_data' => 'top_50_wallet']],
+            [['text' => \achbotMessage('admin_settings.config.get_bot_report_keys.button.e484192c7b'), 'callback_data' => 'top_50_orders']],
+            [['text' => \achbotMessage('admin_settings.config.get_bot_report_keys.button.7893f23dd9'), 'callback_data' => 'top_50_users_pays']],
+            [['text' => \achbotMessage('admin_settings.config.get_bot_report_keys.button.493393af17'), 'callback_data' => 'agent_users_list']],
+            [['text' => \achbotMessage('admin_settings.config.get_bot_report_keys.button.c79b329841'), 'callback_data' => 'show_stats_menu']]
         ]]);
     }
 	
@@ -1645,25 +1647,25 @@ function getBotReportKeys($data = null) {
 			$chunks = array_chunk($plans, 50);
 
 			foreach ($chunks as $index => $group) {
-				$text = "🧮 تعداد اشتراک‌ها بر اساس پلن:\n\n";
+				$text = \achbotMessage('admin_settings.config.get_bot_report_keys.text.696814adc4');
 				foreach ($group as $row) {
 					$planId = $row['fileid'];
 					$planCount = $row['plan_count'];
 
 					// استخراج نام پلن از جدول server_plans
 					$planNameResult = fetchData("SELECT title FROM server_plans WHERE id = ?", ["i", $planId])->fetch_assoc();
-					$planName = $planNameResult ? $planNameResult['title'] : "ناشناس";
+					$planName = $planNameResult ? $planNameResult['title'] : \achbotMessage('admin_settings.config.get_bot_report_keys.text.b91a8cfa14');
 
 					// افزودن اطلاعات به متن پیام
-					$text .= "📝 نام پلن: <b>$planName</b>\n";
-					$text .= "🔐 تعداد اشتراک‌ها: <b>$planCount</b>\n\n";
+					$text .= \achbotMessage('admin_settings.config.get_bot_report_keys.text.549ee88ce8', ['planName' => $planName]);
+					$text .= \achbotMessage('admin_settings.config.get_bot_report_keys.text.0ad85f8c38', ['planCount' => $planCount]);
 				}
 
 				// ارسال پیام برای هر بخش از دکمه‌ها
 				sendMessage($text, null, "html", $from_id);
 			}
 		} else {
-			sendMessage("❌ هیچ اشتراکی برای پلن‌ها یافت نشد.", null, "html", $from_id);
+			sendMessage(\achbotMessage('admin_settings.config.get_bot_report_keys.message.7acd771562'), null, "html", $from_id);
 		}
 
 		return false;
@@ -1705,30 +1707,30 @@ function getBotReportKeys($data = null) {
             $serverSubscriptions = fetchData("SELECT COUNT(*) as total FROM orders_list WHERE server_id = ?", ["i", $serverId])->fetch_assoc()['total'];
 
             // ایجاد دکمه برای هر سرور
-			$serverButtons[] = ['text' => "$serverSubscriptions اشتراک", 'callback_data' => "server_$serverId"."_subscriptions"];
+			$serverButtons[] = ['text' => \achbotMessage('admin_settings.config.get_bot_report_keys.button.e6e825f918', ['serverSubscriptions' => $serverSubscriptions]), 'callback_data' => "server_$serverId"."_subscriptions"];
             $serverButtons[] = ['text' => "$serverTitle", 'callback_data' => "server_$serverId"];
         }
 		$serverButtonsChunked = array_chunk($serverButtons, 2);
 	
         return json_encode([
             'inline_keyboard' => [
-                [['text' => "$serverCount", 'callback_data' => 'wizwizch'], ['text' => "🌐 تعداد سرورها", 'callback_data' => 'wizwizch']],
-                [['text' => "$categoryCount", 'callback_data' => 'wizwizch'], ['text' => "📦 تعداد دسته‌بندی‌ها", 'callback_data' => 'wizwizch']],
-                [['text' => "$planCount", 'callback_data' => 'wizwizch'], ['text' => "📝 تعداد پلن‌ها", 'callback_data' => 'wizwizch']],
-				[['text' => '🛒 آمار اشتراک‌ها بر اساس خرید جدید', 'callback_data' => 'wizwizch']],
-                [['text' => "$ordersToday اشتراک", 'callback_data' => 'wizwizch'], ['text' => "🛍 تعداد خرید جدید امروز", 'callback_data' => 'wizwizch']],
-                [['text' => "$ordersWeek اشتراک", 'callback_data' => 'wizwizch'], ['text' => "🛍 تعداد خرید جدید هفته", 'callback_data' => 'wizwizch']],
-                [['text' => "$ordersMonth اشتراک", 'callback_data' => 'wizwizch'], ['text' => "🛍 تعداد خرید جدید ماه", 'callback_data' => 'wizwizch']],
-                [['text' => "$ordersThreeMonth اشتراک", 'callback_data' => 'wizwizch'], ['text' => "🛍 تعداد خرید جدید سه ماه", 'callback_data' => 'wizwizch']],
-				[['text' => '♻️ آمار اشتراک‌ها بر اساس تمدید', 'callback_data' => 'wizwizch']],
-                [['text' => "$renewalsToday اشتراک", 'callback_data' => 'wizwizch'], ['text' => "🔄 تعداد تمدیدهای امروز", 'callback_data' => 'wizwizch']],
-                [['text' => "$renewalsWeek اشتراک", 'callback_data' => 'wizwizch'], ['text' => "🔄 تعداد تمدیدهای هفته", 'callback_data' => 'wizwizch']],
-                [['text' => "$renewalsMonth اشتراک", 'callback_data' => 'wizwizch'], ['text' => "🔄 تعداد تمدیدهای ماه", 'callback_data' => 'wizwizch']],
-                [['text' => "$renewalsThreeMonth اشتراک", 'callback_data' => 'wizwizch'], ['text' => "🔄 تعداد تمدیدهای سه ماه", 'callback_data' => 'wizwizch']],
-				[['text' => '🌐 تفکیک اشتراک‌ها بر اساس هر سرور', 'callback_data' => 'wizwizch']],
+                [['text' => "$serverCount", 'callback_data' => 'wizwizch'], ['text' => \achbotMessage('admin_settings.config.get_bot_report_keys.button.fc04241ae0'), 'callback_data' => 'wizwizch']],
+                [['text' => "$categoryCount", 'callback_data' => 'wizwizch'], ['text' => \achbotMessage('admin_settings.config.get_bot_report_keys.button.9c208df2f7'), 'callback_data' => 'wizwizch']],
+                [['text' => "$planCount", 'callback_data' => 'wizwizch'], ['text' => \achbotMessage('admin_settings.config.get_bot_report_keys.button.8e7b64fdf1'), 'callback_data' => 'wizwizch']],
+				[['text' => \achbotMessage('admin_settings.config.get_bot_report_keys.button.00b2a29f8d'), 'callback_data' => 'wizwizch']],
+                [['text' => \achbotMessage('admin_settings.config.get_bot_report_keys.button.16da81c599', ['ordersToday' => $ordersToday]), 'callback_data' => 'wizwizch'], ['text' => \achbotMessage('admin_settings.config.get_bot_report_keys.button.ee7b776736'), 'callback_data' => 'wizwizch']],
+                [['text' => \achbotMessage('admin_settings.config.get_bot_report_keys.button.c39f78b6aa', ['ordersWeek' => $ordersWeek]), 'callback_data' => 'wizwizch'], ['text' => \achbotMessage('admin_settings.config.get_bot_report_keys.button.8b95706e47'), 'callback_data' => 'wizwizch']],
+                [['text' => \achbotMessage('admin_settings.config.get_bot_report_keys.button.e6153b95de', ['ordersMonth' => $ordersMonth]), 'callback_data' => 'wizwizch'], ['text' => \achbotMessage('admin_settings.config.get_bot_report_keys.button.5c6b1b3ffa'), 'callback_data' => 'wizwizch']],
+                [['text' => \achbotMessage('admin_settings.config.get_bot_report_keys.button.71532993a2', ['ordersThreeMonth' => $ordersThreeMonth]), 'callback_data' => 'wizwizch'], ['text' => \achbotMessage('admin_settings.config.get_bot_report_keys.button.ae5e1f25b3'), 'callback_data' => 'wizwizch']],
+				[['text' => \achbotMessage('admin_settings.config.get_bot_report_keys.button.6cb051aad0'), 'callback_data' => 'wizwizch']],
+                [['text' => \achbotMessage('admin_settings.config.get_bot_report_keys.button.b71f3ef283', ['renewalsToday' => $renewalsToday]), 'callback_data' => 'wizwizch'], ['text' => \achbotMessage('admin_settings.config.get_bot_report_keys.button.465e469987'), 'callback_data' => 'wizwizch']],
+                [['text' => \achbotMessage('admin_settings.config.get_bot_report_keys.button.5f0e984ed8', ['renewalsWeek' => $renewalsWeek]), 'callback_data' => 'wizwizch'], ['text' => \achbotMessage('admin_settings.config.get_bot_report_keys.button.3bc1627f8e'), 'callback_data' => 'wizwizch']],
+                [['text' => \achbotMessage('admin_settings.config.get_bot_report_keys.button.cbeabf852f', ['renewalsMonth' => $renewalsMonth]), 'callback_data' => 'wizwizch'], ['text' => \achbotMessage('admin_settings.config.get_bot_report_keys.button.3c901f5f22'), 'callback_data' => 'wizwizch']],
+                [['text' => \achbotMessage('admin_settings.config.get_bot_report_keys.button.141b60b894', ['renewalsThreeMonth' => $renewalsThreeMonth]), 'callback_data' => 'wizwizch'], ['text' => \achbotMessage('admin_settings.config.get_bot_report_keys.button.e9e6fdc049'), 'callback_data' => 'wizwizch']],
+				[['text' => \achbotMessage('admin_settings.config.get_bot_report_keys.button.90081b08bc'), 'callback_data' => 'wizwizch']],
                 ...$serverButtonsChunked,
-				[['text' => '🗂 مشاهده تعداد اشتراک‌ها بر اساس هر پلن', 'callback_data' => 'plan_sales']],
-				[['text' => '🔙 بازگشت به آمار', 'callback_data' => 'show_stats_menu']]
+				[['text' => \achbotMessage('admin_settings.config.get_bot_report_keys.button.6a2304367f'), 'callback_data' => 'plan_sales']],
+				[['text' => \achbotMessage('admin_settings.config.get_bot_report_keys.button.c79b329841'), 'callback_data' => 'show_stats_menu']]
             ]
         ]);
     }
@@ -1738,24 +1740,24 @@ function getBotReportKeys($data = null) {
 	if (in_array($data, ['top_50_pays', 'top_50_pays_month', 'top_50_pays_week', 'top_50_pays_24h'])) {
 		$endTimestamp = time();
 		$params = [];
-		$title = "💎 50 بیشترین پرداخت تا به امروز:";
+		$title = \achbotMessage('admin_settings.config.get_bot_report_keys.title.cbbecc9fa5');
 		$sql = "SELECT price, user_id, request_date FROM pays WHERE state IN ('paid', 'approved', 'auto_cart_approved')";
 
 		if ($data == 'top_50_pays_month') {
 			$startTimestamp = strtotime('-30 days');
 			$sql .= " AND request_date BETWEEN ? AND ?";
 			$params = ["ii", $startTimestamp, $endTimestamp];
-			$title = "💎 50 بیشترین پرداخت 30 روز گذشته:";
+			$title = \achbotMessage('admin_settings.config.get_bot_report_keys.title.d8d034561a');
 		} elseif ($data == 'top_50_pays_week') {
 			$startTimestamp = strtotime('-7 days');
 			$sql .= " AND request_date BETWEEN ? AND ?";
 			$params = ["ii", $startTimestamp, $endTimestamp];
-			$title = "💎 50 بیشترین پرداخت 7 روز گذشته:";
+			$title = \achbotMessage('admin_settings.config.get_bot_report_keys.title.f1fb3841fc');
 		} elseif ($data == 'top_50_pays_24h') {
 			$startTimestamp = strtotime('-24 hours');
 			$sql .= " AND request_date BETWEEN ? AND ?";
 			$params = ["ii", $startTimestamp, $endTimestamp];
-			$title = "💎 50 بیشترین پرداخت 24 ساعت گذشته:";
+			$title = \achbotMessage('admin_settings.config.get_bot_report_keys.title.3e55e6fad3');
 		}
 
 		$sql .= " ORDER BY price DESC LIMIT 50";
@@ -1774,17 +1776,17 @@ function getBotReportKeys($data = null) {
 				foreach ($group as $row) {
 					$amount = number_format($row['price']);
 					$userId = $row['user_id'];
-					$payDate = !empty($row['request_date']) ? date("Y-m-d H:i", (int)$row['request_date']) : "نامشخص";
+					$payDate = !empty($row['request_date']) ? date("Y-m-d H:i", (int)$row['request_date']) : \achbotMessage('admin_settings.config.get_bot_report_keys.text.f07a81a062');
 
-					$text .= "💰 مبلغ پرداختی: <b>$amount</b>\n";
-					$text .= "👤 شناسه کاربر: <code>$userId</code>\n";
-					$text .= "🕒 تاریخ پرداخت: <b>$payDate</b>\n\n";
+					$text .= \achbotMessage('admin_settings.config.get_bot_report_keys.text.540ff4775c', ['amount' => $amount]);
+					$text .= \achbotMessage('admin_settings.config.send_chunked_messages.text.833406bb32', ['userId' => $userId]);
+					$text .= \achbotMessage('admin_settings.config.get_bot_report_keys.text.7c8cf9ce1b', ['payDate' => $payDate]);
 				}
 
 				sendMessage($text, null, "html", $from_id);
 			}
 		} else {
-			sendMessage("❌ هیچ پرداختی با وضعیت مورد نظر در این بازه یافت نشد.", null, "html", $from_id);
+			sendMessage(\achbotMessage('admin_settings.config.get_bot_report_keys.message.51e32ebcd1'), null, "html", $from_id);
 		}
 
 		return false;
@@ -2056,10 +2058,10 @@ function getBotReportKeys($data = null) {
 				if ($row = $result->fetch_assoc()) {
 					return $row['title'];  // بازگشت نام پلن
 				} else {
-					return 'Unknown Plan';  // اگر نام پلن یافت نشد
+					return \achbotMessage('admin_settings.config.get_plan_title.unknown__plan.53f2a99925');  // اگر نام پلن یافت نشد
 				}
 			} else {
-				return 'Error';
+				return \achbotMessage('admin_settings.config.get_plan_title.error.54a0e8c17e');
 			}
 		}
 
@@ -2078,29 +2080,29 @@ function getBotReportKeys($data = null) {
 
         return json_encode([
             'inline_keyboard' => [
-                [['text' => number_format($salesTotal) . ' تومان', 'callback_data' => 'wizwizch'], ['text' => '📈 فروش کل', 'callback_data' => 'wizwizch']],
-                [['text' => number_format($salesToday) . ' تومان', 'callback_data' => 'wizwizch'], ['text' => '🛍 فروش امروز', 'callback_data' => 'wizwizch']],
-                [['text' => number_format($salesWeek) . ' تومان', 'callback_data' => 'wizwizch'], ['text' => '🛍 فروش هفته', 'callback_data' => 'wizwizch']],
-                [['text' => number_format($salesMonth) . ' تومان', 'callback_data' => 'wizwizch'], ['text' => '🛍 فروش ماه', 'callback_data' => 'wizwizch']],
-                [['text' => number_format($salesThreeMonth) . ' تومان', 'callback_data' => 'wizwizch'], ['text' => '🛍 فروش سه ماه اخیر', 'callback_data' => 'wizwizch']],
-                [['text' => number_format($salesSixMonth) . ' تومان', 'callback_data' => 'wizwizch'], ['text' => '🛍 فروش شش ماه اخیر', 'callback_data' => 'wizwizch']],
-                [['text' => number_format($salesYear) . ' تومان', 'callback_data' => 'wizwizch'], ['text' => '🛍 فروش یکسال اخیر', 'callback_data' => 'wizwizch']],
-				[['text' => "$totalPaidWithWalletCount اشتراک", 'callback_data' => 'wizwizch'], ['text' => "💼 تعداد فروش با کیف پول", 'callback_data' => 'wizwizch']],
-				[['text' => number_format($totalPaidWithWalletSum) . ' تومان', 'callback_data' => 'wizwizch'], ['text' => '💼 مجموع فروش با کیف پول', 'callback_data' => 'wizwizch']],
-				[['text' => "$unfinishedPurchases عدد", 'callback_data' => 'wizwizch'], ['text' => "🚫 خریدهای نهایی نشده", 'callback_data' => 'wizwizch']],
-				[['text' => '🛒 آمار فروش همکاری', 'callback_data' => 'wizwizch']],
-				[['text' => number_format($agentSalesToday) . ' تومان', 'callback_data' => 'wizwizch'], ['text' => '🤝 فروش همکاری امروز', 'callback_data' => 'wizwizch']],
-                [['text' => number_format($agentSalesWeek) . ' تومان', 'callback_data' => 'wizwizch'], ['text' => '🤝 فروش همکاری هفته', 'callback_data' => 'wizwizch']],
-                [['text' => number_format($agentSalesMonth) . ' تومان', 'callback_data' => 'wizwizch'], ['text' => '🤝 فروش همکاری ماه', 'callback_data' => 'wizwizch']],
-                [['text' => number_format($agentSalesThreeMonth) . ' تومان', 'callback_data' => 'wizwizch'], ['text' => '🤝 فروش همکاری سه ماه', 'callback_data' => 'wizwizch']],
-                [['text' => number_format($agentSalesSixMonth) . ' تومان', 'callback_data' => 'wizwizch'], ['text' => '🤝 فروش همکاری شش ماه', 'callback_data' => 'wizwizch']],
-                [['text' => number_format($agentSalesYear) . ' تومان', 'callback_data' => 'wizwizch'], ['text' => '🤝 فروش همکاری یکسال', 'callback_data' => 'wizwizch']],
-				[['text' => '🌐 آمار فروش کلی هر سرور', 'callback_data' => 'wizwizch']],
+                [['text' => number_format($salesTotal) . \achbotMessage('admin_settings.config.get_gate_ways_keys.text.2cc98f7f7c'), 'callback_data' => 'wizwizch'], ['text' => \achbotMessage('admin_settings.config.get_plan_title.button.878127aca8'), 'callback_data' => 'wizwizch']],
+                [['text' => number_format($salesToday) . \achbotMessage('admin_settings.config.get_gate_ways_keys.text.2cc98f7f7c'), 'callback_data' => 'wizwizch'], ['text' => \achbotMessage('admin_settings.config.get_plan_title.button.643203ba32'), 'callback_data' => 'wizwizch']],
+                [['text' => number_format($salesWeek) . \achbotMessage('admin_settings.config.get_gate_ways_keys.text.2cc98f7f7c'), 'callback_data' => 'wizwizch'], ['text' => \achbotMessage('admin_settings.config.get_plan_title.button.4d01a2bc86'), 'callback_data' => 'wizwizch']],
+                [['text' => number_format($salesMonth) . \achbotMessage('admin_settings.config.get_gate_ways_keys.text.2cc98f7f7c'), 'callback_data' => 'wizwizch'], ['text' => \achbotMessage('admin_settings.config.get_plan_title.button.85093d3e2a'), 'callback_data' => 'wizwizch']],
+                [['text' => number_format($salesThreeMonth) . \achbotMessage('admin_settings.config.get_gate_ways_keys.text.2cc98f7f7c'), 'callback_data' => 'wizwizch'], ['text' => \achbotMessage('admin_settings.config.get_plan_title.button.4fdc585861'), 'callback_data' => 'wizwizch']],
+                [['text' => number_format($salesSixMonth) . \achbotMessage('admin_settings.config.get_gate_ways_keys.text.2cc98f7f7c'), 'callback_data' => 'wizwizch'], ['text' => \achbotMessage('admin_settings.config.get_plan_title.button.a033e66e78'), 'callback_data' => 'wizwizch']],
+                [['text' => number_format($salesYear) . \achbotMessage('admin_settings.config.get_gate_ways_keys.text.2cc98f7f7c'), 'callback_data' => 'wizwizch'], ['text' => \achbotMessage('admin_settings.config.get_plan_title.button.1b9161ba4e'), 'callback_data' => 'wizwizch']],
+				[['text' => \achbotMessage('admin_settings.config.get_plan_title.button.1090ae2ef1', ['totalPaidWithWalletCount' => $totalPaidWithWalletCount]), 'callback_data' => 'wizwizch'], ['text' => \achbotMessage('admin_settings.config.get_plan_title.button.4992ee1ce3'), 'callback_data' => 'wizwizch']],
+				[['text' => number_format($totalPaidWithWalletSum) . \achbotMessage('admin_settings.config.get_gate_ways_keys.text.2cc98f7f7c'), 'callback_data' => 'wizwizch'], ['text' => \achbotMessage('admin_settings.config.get_plan_title.button.3e6902a0a5'), 'callback_data' => 'wizwizch']],
+				[['text' => \achbotMessage('admin_settings.config.get_plan_title.button.9170a0b384', ['unfinishedPurchases' => $unfinishedPurchases]), 'callback_data' => 'wizwizch'], ['text' => \achbotMessage('admin_settings.config.get_plan_title.button.4a9dde94ce'), 'callback_data' => 'wizwizch']],
+				[['text' => \achbotMessage('admin_settings.config.get_plan_title.button.ec06326997'), 'callback_data' => 'wizwizch']],
+				[['text' => number_format($agentSalesToday) . \achbotMessage('admin_settings.config.get_gate_ways_keys.text.2cc98f7f7c'), 'callback_data' => 'wizwizch'], ['text' => \achbotMessage('admin_settings.config.get_plan_title.button.94e51af9f2'), 'callback_data' => 'wizwizch']],
+                [['text' => number_format($agentSalesWeek) . \achbotMessage('admin_settings.config.get_gate_ways_keys.text.2cc98f7f7c'), 'callback_data' => 'wizwizch'], ['text' => \achbotMessage('admin_settings.config.get_plan_title.button.bec5bd798a'), 'callback_data' => 'wizwizch']],
+                [['text' => number_format($agentSalesMonth) . \achbotMessage('admin_settings.config.get_gate_ways_keys.text.2cc98f7f7c'), 'callback_data' => 'wizwizch'], ['text' => \achbotMessage('admin_settings.config.get_plan_title.button.95e6d0f605'), 'callback_data' => 'wizwizch']],
+                [['text' => number_format($agentSalesThreeMonth) . \achbotMessage('admin_settings.config.get_gate_ways_keys.text.2cc98f7f7c'), 'callback_data' => 'wizwizch'], ['text' => \achbotMessage('admin_settings.config.get_plan_title.button.8533ebdb23'), 'callback_data' => 'wizwizch']],
+                [['text' => number_format($agentSalesSixMonth) . \achbotMessage('admin_settings.config.get_gate_ways_keys.text.2cc98f7f7c'), 'callback_data' => 'wizwizch'], ['text' => \achbotMessage('admin_settings.config.get_plan_title.button.93640c9789'), 'callback_data' => 'wizwizch']],
+                [['text' => number_format($agentSalesYear) . \achbotMessage('admin_settings.config.get_gate_ways_keys.text.2cc98f7f7c'), 'callback_data' => 'wizwizch'], ['text' => \achbotMessage('admin_settings.config.get_plan_title.button.94b1f2942e'), 'callback_data' => 'wizwizch']],
+				[['text' => \achbotMessage('admin_settings.config.get_plan_title.button.e24c37f91d'), 'callback_data' => 'wizwizch']],
 				// دکمه های سرورها
 				...array_map(function ($server) use ($serverSales) {
 					return [
 						[
-							'text' => number_format($serverSales[$server['id']]) . ' تومان', // میزان فروش کلی
+							'text' => number_format($serverSales[$server['id']]) . \achbotMessage('admin_settings.config.get_gate_ways_keys.text.2cc98f7f7c'), // میزان فروش کلی
 							'callback_data' => 'server_sales_' . $server['id']
 						],
 						[
@@ -2109,12 +2111,12 @@ function getBotReportKeys($data = null) {
 						]
 					];
 				}, $servers),
-				[['text' => '🌙 آمار فروش ماهانه هر سرور', 'callback_data' => 'wizwizch']],
+				[['text' => \achbotMessage('admin_settings.config.get_plan_title.button.b5fda480a4'), 'callback_data' => 'wizwizch']],
 				// دکمه های فروش ماهانه سرورها
 				...array_map(function ($server) use ($serverSalesMonth) {
 					return [
 						[
-							'text' => number_format($serverSalesMonth[$server['id']]) . ' تومان', // فروش ماهانه به تومان
+							'text' => number_format($serverSalesMonth[$server['id']]) . \achbotMessage('admin_settings.config.get_gate_ways_keys.text.2cc98f7f7c'), // فروش ماهانه به تومان
 							'callback_data' => 'server_sales_month_' . $server['id']
 						],
 						[
@@ -2123,13 +2125,13 @@ function getBotReportKeys($data = null) {
 						]
 					];
 				}, $servers),
-				[['text' => '🗂 آمار فروش 5 پلن برتر تاریخ', 'callback_data' => 'wizwizch']],
+				[['text' => \achbotMessage('admin_settings.config.get_plan_title.button.ee3938f6be'), 'callback_data' => 'wizwizch']],
 				// دکمه های پلن های برتر کل تاریخ
 				...array_map(function ($plan) {
 					$planTitle = getPlanTitle($plan['plan_id']);  // استخراج عنوان پلن
 					return [
 						[
-							'text' => number_format($plan['total']) . ' تومان',  // فروش کل پلن به تومان
+							'text' => number_format($plan['total']) . \achbotMessage('admin_settings.config.get_gate_ways_keys.text.2cc98f7f7c'),  // فروش کل پلن به تومان
 							'callback_data' => 'plan_sales_' . $plan['plan_id']
 						],
 						[
@@ -2138,13 +2140,13 @@ function getBotReportKeys($data = null) {
 						]
 					];
 				}, $topPlans),
-				[['text' => '🌛 آمار فروش 5 پلن برتر ماه', 'callback_data' => 'wizwizch']],
+				[['text' => \achbotMessage('admin_settings.config.get_plan_title.button.a2b1f547e5'), 'callback_data' => 'wizwizch']],
 				// دکمه های پلن های برتر ماه
 				...array_map(function ($plan) {
 					$planTitle = getPlanTitle($plan['plan_id']);  // استخراج عنوان پلن
 					return [
 						[
-							'text' => number_format($plan['total']) . ' تومان',  // فروش ماهانه پلن به تومان
+							'text' => number_format($plan['total']) . \achbotMessage('admin_settings.config.get_gate_ways_keys.text.2cc98f7f7c'),  // فروش ماهانه پلن به تومان
 							'callback_data' => 'plan_sales_month_' . $plan['plan_id']
 						],
 						[
@@ -2153,12 +2155,12 @@ function getBotReportKeys($data = null) {
 						]
 					];
 				}, $topPlansMonth),
-                [['text' => '📈 50 بیشترین مبلغ پرداختی تا امروز', 'callback_data' => 'top_50_pays']],
-                [['text' => '📅 50 بیشترین مبلغ پرداختی ماه گذشته', 'callback_data' => 'top_50_pays_month']],
-                [['text' => '🗓 50 بیشترین مبلغ پرداختی 7 روز گذشته', 'callback_data' => 'top_50_pays_week']],
-                [['text' => '⏱ 50 بیشترین مبلغ پرداختی 24 ساعت گذشته', 'callback_data' => 'top_50_pays_24h']],
-                [['text' => '📆 مشاهده فروش در بازه دلخواه', 'callback_data' => 'custom_sales_date']],
-                [['text' => '🔙 بازگشت به آمار', 'callback_data' => 'show_stats_menu']]
+                [['text' => \achbotMessage('admin_settings.config.get_plan_title.button.214362e879'), 'callback_data' => 'top_50_pays']],
+                [['text' => \achbotMessage('admin_settings.config.get_plan_title.button.e5784b9b3b'), 'callback_data' => 'top_50_pays_month']],
+                [['text' => \achbotMessage('admin_settings.config.get_plan_title.button.69efb97897'), 'callback_data' => 'top_50_pays_week']],
+                [['text' => \achbotMessage('admin_settings.config.get_plan_title.button.4b6a5b2ff6'), 'callback_data' => 'top_50_pays_24h']],
+                [['text' => \achbotMessage('admin_settings.config.get_plan_title.button.fc75a7a82f'), 'callback_data' => 'custom_sales_date']],
+                [['text' => \achbotMessage('admin_settings.config.get_bot_report_keys.button.c79b329841'), 'callback_data' => 'show_stats_menu']]
             ]
         ]);
     }
@@ -2166,7 +2168,7 @@ function getBotReportKeys($data = null) {
 
 if (!function_exists('convertPersianDigitsToEnglishForStats')) {
     function convertPersianDigitsToEnglishForStats($string) {
-        $persian = ['۰','۱','۲','۳','۴','۵','۶','۷','۸','۹','٠','١','٢','٣','٤','٥','٦','٧','٨','٩'];
+        $persian = [\achbotMessage('admin_settings.config.convert_persian_digits_to_english_for_stats.text.9b5548a048'),\achbotMessage('admin_settings.config.convert_persian_digits_to_english_for_stats.text.62b6701398'),\achbotMessage('admin_settings.config.convert_persian_digits_to_english_for_stats.text.bc9c03bb97'),\achbotMessage('admin_settings.config.convert_persian_digits_to_english_for_stats.text.2e3bc84092'),\achbotMessage('admin_settings.config.convert_persian_digits_to_english_for_stats.text.d689787678'),\achbotMessage('admin_settings.config.convert_persian_digits_to_english_for_stats.text.09f360198d'),\achbotMessage('admin_settings.config.convert_persian_digits_to_english_for_stats.text.5b0a493e52'),\achbotMessage('admin_settings.config.convert_persian_digits_to_english_for_stats.text.6cb53cda3a'),\achbotMessage('admin_settings.config.convert_persian_digits_to_english_for_stats.text.1cf982ef60'),\achbotMessage('admin_settings.config.convert_persian_digits_to_english_for_stats.text.662756ac0f'),\achbotMessage('admin_settings.config.convert_persian_digits_to_english_for_stats.text.f01f2e7542'),\achbotMessage('admin_settings.config.convert_persian_digits_to_english_for_stats.text.628f6d71f7'),\achbotMessage('admin_settings.config.convert_persian_digits_to_english_for_stats.text.537dcdbcaa'),\achbotMessage('admin_settings.config.convert_persian_digits_to_english_for_stats.text.1a4fd527b1'),\achbotMessage('admin_settings.config.convert_persian_digits_to_english_for_stats.text.17cd7f45b2'),\achbotMessage('admin_settings.config.convert_persian_digits_to_english_for_stats.text.398ca650b2'),\achbotMessage('admin_settings.config.convert_persian_digits_to_english_for_stats.text.54083d9d00'),\achbotMessage('admin_settings.config.convert_persian_digits_to_english_for_stats.text.015ef630ee'),\achbotMessage('admin_settings.config.convert_persian_digits_to_english_for_stats.text.ca8c93db97'),\achbotMessage('admin_settings.config.convert_persian_digits_to_english_for_stats.text.0ff8ff1d86')];
         $english = ['0','1','2','3','4','5','6','7','8','9','0','1','2','3','4','5','6','7','8','9'];
         return str_replace($persian, $english, $string);
     }
@@ -2207,7 +2209,7 @@ if (!function_exists('parseStatsDateRange')) {
         ], ' ', $dateRange);
 
         $dateRange = trim($dateRange);
-        $dateRange = str_replace(['–', '—', '−', '.', "\\"], ['-', '-', '-', '/', '/'], $dateRange);
+        $dateRange = str_replace([\achbotMessage('admin_settings.config.parse_stats_date_range.text.d4f85d3675'), \achbotMessage('admin_settings.config.parse_stats_date_range.text.bda050585a'), \achbotMessage('admin_settings.config.parse_stats_date_range.text.afba2418d6'), '.', "\\"], ['-', '-', '-', '/', '/'], $dateRange);
         $dateRange = preg_replace('/\s+/u', ' ', $dateRange);
 
         // به جای وابستگی به کلمه to، دو تاریخ معتبر را از هر متنی استخراج می‌کنیم.
@@ -2239,7 +2241,7 @@ function calculateSalesBetweenDates($startDate, $endDate) {
     global $connection, $cancelKey, $removeKeyboard;
 
     if (empty($startDate) || empty($endDate)) {
-        sendMessage("❌ تاریخ شروع یا پایان به درستی ذخیره نشده است.", $cancelKey, "HTML");
+        sendMessage(\achbotMessage('admin_settings.config.calculate_sales_between_dates.message.91315a4cbe'), $cancelKey, "HTML");
         return;
     }
 
@@ -2247,7 +2249,7 @@ function calculateSalesBetweenDates($startDate, $endDate) {
     $endTimestamp = strtotime($endDate . ' 23:59:59');
 
     if ($startTimestamp === false || $endTimestamp === false) {
-        sendMessage("❌ تاریخ وارد شده معتبر نیست.", $cancelKey, "HTML");
+        sendMessage(\achbotMessage('admin_settings.config.calculate_sales_between_dates.message.1e138ee7c6'), $cancelKey, "HTML");
         return;
     }
 
@@ -2261,7 +2263,7 @@ function calculateSalesBetweenDates($startDate, $endDate) {
     ");
 
     if (!$stmt) {
-        sendMessage("❌ خطا در آماده‌سازی کوئری فروش.", $cancelKey, "HTML");
+        sendMessage(\achbotMessage('admin_settings.config.calculate_sales_between_dates.message.85858f5676'), $cancelKey, "HTML");
         return;
     }
 
@@ -2275,8 +2277,8 @@ function calculateSalesBetweenDates($startDate, $endDate) {
     $totalPayments = (int)($row['totalPayments'] ?? 0);
 
     sendMessage(
-        "💸 مجموع فروش بین تاریخ‌های <code>" . date("Y-m-d", $startTimestamp) . "</code> و <code>" . date("Y-m-d", $endTimestamp) . "</code> برابر با <b>" . number_format($totalSales) . "</b> تومان است.\n\n" .
-        "🧾 تعداد پرداخت‌های موفق در این بازه: <b>" . number_format($totalPayments) . "</b>",
+        \achbotMessage('admin_settings.config.calculate_sales_between_dates.message.020a3bcea9') . date("Y-m-d", $startTimestamp) . \achbotMessage('admin_settings.config.calculate_sales_between_dates.message.bd8ed16d1e') . date("Y-m-d", $endTimestamp) . \achbotMessage('admin_settings.config.calculate_sales_between_dates.message.28ec14e2c0') . number_format($totalSales) . \achbotMessage('admin_settings.config.calculate_sales_between_dates.text.9944ee4dd6') .
+        \achbotMessage('admin_settings.config.calculate_sales_between_dates.text.dd92eb2ae0') . number_format($totalPayments) . "</b>",
         $removeKeyboard,
         "HTML"
     );
@@ -2285,7 +2287,7 @@ function calculateSalesBetweenDates($startDate, $endDate) {
 // در صورتی که دکمه لغو (Cancel) فشرده شد
 if ($data == 'cancel_operation') {
     setUser("none", "step");
-    sendMessage("❌ عملیات لغو شد.", $removeKeyboard, "HTML");
+    sendMessage(\achbotMessage('admin_settings.config.calculate_sales_between_dates.message.0108e71350'), $removeKeyboard, "HTML");
 }
 // انتهای بخش آمار ربات
 
@@ -2299,12 +2301,12 @@ function getAdminsKeys(){
     $stmt->close();
     if($usersList->num_rows > 0){
         while($user = $usersList->fetch_assoc()){
-            $keys[] = [['text'=>"❌",'callback_data'=>"delAdmin" . $user['userid']],['text'=>$user['name'], "callback_data"=>"wizwizch"]];
+            $keys[] = [['text'=>\achbotMessage('admin_settings.config.get_agents_list.button.2b2966a54e'),'callback_data'=>"delAdmin" . $user['userid']],['text'=>$user['name'], "callback_data"=>"wizwizch"]];
         }
     }else{
-        $keys[] = [['text'=>"لیست ادمین ها خالی است ❕",'callback_data'=>"wizwizch"]];
+        $keys[] = [['text'=>\achbotMessage('admin_settings.config.get_admins_keys.button.612ffac236'),'callback_data'=>"wizwizch"]];
     }
-    $keys[] = [['text'=>"➕ افزودن ادمین",'callback_data'=>"addNewAdmin"]];
+    $keys[] = [['text'=>\achbotMessage('admin_settings.config.get_admins_keys.button.bc56086ddd'),'callback_data'=>"addNewAdmin"]];
     $keys[] = [['text'=>$buttonValues['back_button'],'callback_data'=>"managePanel"]];
     return json_encode(['inline_keyboard'=>$keys]);
 }
@@ -2323,13 +2325,13 @@ function getUserInfoKeys($userId) {
  
     if ($userCount->num_rows > 0) { 
         $userInfos = $userCount->fetch_assoc(); 
-        $userWallet = number_format($userInfos['wallet'] ?? 0) . " تومان"; 
+        $userWallet = number_format($userInfos['wallet'] ?? 0) . \achbotMessage('admin_settings.config.get_gate_ways_keys.text.2cc98f7f7c');
  
         // وضعیت همکاری و مسدودی
         $isAgent = $userInfos['is_agent'] ?? 0;
         $step = $userInfos['step'] ?? 'none';
-        $agentStatus = ($isAgent == 1) ? "✅ هست" : "❌ نیست";
-        $banStatus = ($step == 'banned') ? "🚫 هست" : "🟢 نیست";
+        $agentStatus = ($isAgent == 1) ? \achbotMessage('admin_settings.config.get_user_info_keys.text.e0b20b49a2') : \achbotMessage('admin_settings.config.get_user_info_keys.text.3a66d0d476');
+        $banStatus = ($step == 'banned') ? \achbotMessage('admin_settings.config.get_user_info_keys.text.160244c35f') : \achbotMessage('admin_settings.config.get_user_info_keys.text.0173cd6574');
  
         // گرفتن تعداد و مجموع خرید از جدول orders_list 
         $stmt = $connection->prepare("SELECT COUNT(amount) as count, SUM(amount) as total FROM orders_list WHERE userid = ?"); 
@@ -2360,7 +2362,7 @@ function getUserInfoKeys($userId) {
         $stmt->bind_param("i", $userId); 
         $stmt->execute(); 
         $val = $stmt->get_result()->fetch_assoc()['totalApprovedPayments'] ?? 0; 
-        $totalApprovedPayments = number_format($val) . " تومان"; 
+        $totalApprovedPayments = number_format($val) . \achbotMessage('admin_settings.config.get_gate_ways_keys.text.2cc98f7f7c');
         $stmt->close(); 
  
         // محاسبه بازه های زمانی 
@@ -2404,7 +2406,7 @@ function getUserInfoKeys($userId) {
             while ($expireRow = $expireResult->fetch_assoc()) { 
                 $expire_timestamp = $expireRow['expire_date']; 
                 $expire_date = date('Y-m-d H:i:s', $expire_timestamp); 
-                $subscriptions[] = "👤 نام کاربری: <code>$remark</code>\n📅 تاریخ انقضا: $expire_date"; 
+                $subscriptions[] = \achbotMessage('admin_settings.config.get_user_info_keys.text.609b681dab', ['remark' => $remark, 'expire_date' => $expire_date]);
             } 
  
             $stmt2 = $connection->prepare("SELECT SUM(amount) as totalIncreaseAmount FROM increase_order WHERE userid = ? AND remark = ?"); 
@@ -2417,7 +2419,7 @@ function getUserInfoKeys($userId) {
         } 
  
         $totalAmountWithIncrease = $totalBoughtPrice + $increaseAmountTotal; 
-        $totalAmountWithIncreaseFormatted = number_format($totalAmountWithIncrease) . " تومان"; 
+        $totalAmountWithIncreaseFormatted = number_format($totalAmountWithIncrease) . \achbotMessage('admin_settings.config.get_gate_ways_keys.text.2cc98f7f7c');
  
         // آماده سازی لیست اشتراک ها 
         $chunkedSubscriptions = array_chunk($subscriptions, 20); 
@@ -2430,71 +2432,71 @@ function getUserInfoKeys($userId) {
             'inline_keyboard' => [ 
                 [ 
                     ['text' => $userUserName ?: " ", 'url' => "t.me/$userUserName"], 
-                    ['text' => "نام کاربری", 'callback_data' => "wizwizch"] 
+                    ['text' => \achbotMessage('admin_settings.config.get_user_info_keys.button.173fec6019'), 'callback_data' => "wizwizch"]
                 ], 
                 [ 
                     ['text' => $fullName ?: " ", 'callback_data' => "wizwizch"], 
-                    ['text' => "نام", 'callback_data' => "wizwizch"] 
+                    ['text' => \achbotMessage('admin_settings.config.get_user_info_keys.button.69c1e5b1fe'), 'callback_data' => "wizwizch"]
                 ], 
                 [ 
                     ['text' => $boughtService, 'callback_data' => "wizwizch"], 
-                    ['text' => "🔄 تعداد کل سرویس ها", 'callback_data' => "wizwizch"] 
+                    ['text' => \achbotMessage('admin_settings.config.get_user_info_keys.button.f2d07fafb5'), 'callback_data' => "wizwizch"]
                 ], 
                 [ 
                     ['text' => $countWeek, 'callback_data' => "wizwizch"], 
-                    ['text' => "هفته اخیر", 'callback_data' => "wizwizch"] 
+                    ['text' => \achbotMessage('admin_settings.config.get_user_info_keys.button.a07470ed6e'), 'callback_data' => "wizwizch"]
                 ], 
                 [ 
                     ['text' => $countMonth, 'callback_data' => "wizwizch"], 
-                    ['text' => "ماه اخیر", 'callback_data' => "wizwizch"] 
+                    ['text' => \achbotMessage('admin_settings.config.get_user_info_keys.button.37886dfbc2'), 'callback_data' => "wizwizch"]
                 ], 
                 [ 
                     ['text' => $countThreeMonths, 'callback_data' => "wizwizch"], 
-                    ['text' => "3 ماه اخیر", 'callback_data' => "wizwizch"] 
+                    ['text' => \achbotMessage('admin_settings.config.get_user_info_keys.button.e924268a40'), 'callback_data' => "wizwizch"]
                 ], 
                 [ 
                     ['text' => $countSixMonths, 'callback_data' => "wizwizch"], 
-                    ['text' => "6 ماه اخیر", 'callback_data' => "wizwizch"] 
+                    ['text' => \achbotMessage('admin_settings.config.get_user_info_keys.button.653fd00888'), 'callback_data' => "wizwizch"]
                 ], 
                 [ 
                     ['text' => $totalAmountWithIncreaseFormatted, 'callback_data' => "wizwizch"], 
-                    ['text' => "ارزش سرویس ها", 'callback_data' => "wizwizch"] 
+                    ['text' => \achbotMessage('admin_settings.config.get_user_info_keys.button.ceb490f817'), 'callback_data' => "wizwizch"]
                 ], 
                 [ 
                     ['text' => $approvedPayments, 'callback_data' => "wizwizch"], 
-                    ['text' => "تعداد پرداخت ها", 'callback_data' => "wizwizch"] 
+                    ['text' => \achbotMessage('admin_settings.config.get_user_info_keys.button.3c25eb15a8'), 'callback_data' => "wizwizch"]
                 ], 
                 [ 
                     ['text' => $totalApprovedPayments, 'callback_data' => "wizwizch"], 
-                    ['text' => "💰 جمع کل پرداخت ها", 'callback_data' => "wizwizch"] 
+                    ['text' => \achbotMessage('admin_settings.config.get_user_info_keys.button.513b143e10'), 'callback_data' => "wizwizch"]
                 ], 
                 [ 
                     ['text' => $totalWeekPayments, 'callback_data' => "wizwizch"], 
-                    ['text' => "هفته اخیر", 'callback_data' => "wizwizch"] 
+                    ['text' => \achbotMessage('admin_settings.config.get_user_info_keys.button.a07470ed6e'), 'callback_data' => "wizwizch"]
                 ], 
                 [ 
                     ['text' => $totalMonthPayments, 'callback_data' => "wizwizch"], 
-                    ['text' => "ماه اخیر", 'callback_data' => "wizwizch"] 
+                    ['text' => \achbotMessage('admin_settings.config.get_user_info_keys.button.37886dfbc2'), 'callback_data' => "wizwizch"]
                 ], 
                 [ 
                     ['text' => $totalThreeMonthsPayments, 'callback_data' => "wizwizch"], 
-                    ['text' => "3 ماه اخیر", 'callback_data' => "wizwizch"] 
+                    ['text' => \achbotMessage('admin_settings.config.get_user_info_keys.button.e924268a40'), 'callback_data' => "wizwizch"]
                 ], 
                 [ 
                     ['text' => $totalSixMonthsPayments, 'callback_data' => "wizwizch"], 
-                    ['text' => "6 ماه اخیر", 'callback_data' => "wizwizch"] 
+                    ['text' => \achbotMessage('admin_settings.config.get_user_info_keys.button.653fd00888'), 'callback_data' => "wizwizch"]
                 ], 
                 [ 
                     ['text' => $userWallet, 'callback_data' => "wizwizch"], 
-                    ['text' => "موجودی کیف پول", 'callback_data' => "wizwizch"] 
+                    ['text' => \achbotMessage('admin_settings.config.get_user_info_keys.button.88bf6cf5c6'), 'callback_data' => "wizwizch"]
                 ],
                 [
                     ['text' => $agentStatus, 'callback_data' => "toggleAgent_{$userId}"],
-                    ['text' => "همکار", 'callback_data' => "wizwizch"]
+                    ['text' => \achbotMessage('admin_settings.config.get_bot_setting_keys.text.62c92fb90c'), 'callback_data' => "wizwizch"]
                 ],
                 [
                     ['text' => $banStatus, 'callback_data' => "toggleBan_{$userId}"],
-                    ['text' => "مسدود", 'callback_data' => "wizwizch"]
+                    ['text' => \achbotMessage('admin_settings.config.get_user_info_keys.button.05b7dda9cc'), 'callback_data' => "wizwizch"]
                 ],
                 [ 
                     ['text' => $buttonValues['subscriptions_list'], 'callback_data' => "showUserSubscriptions$userId"] 
@@ -2517,7 +2519,7 @@ function getPaymentSumInRange($connection, $userId, $fromDate) {
     $stmt->execute(); 
     $result = $stmt->get_result()->fetch_assoc()['total'] ?? 0; 
     $stmt->close(); 
-    return number_format($result) . " تومان"; 
+    return number_format($result) . \achbotMessage('admin_settings.config.get_gate_ways_keys.text.2cc98f7f7c');
 } 
  
 function getOrderCountInRange($connection, $userId, $fromDate) { 
@@ -2765,11 +2767,11 @@ function achbotHandleChannelExemption($data, $text, $cached): bool {
         return true;
     }
     if ($start) {
-        sendMessage("لطفاً شناسه عددی کاربری که می‌خواهید از الزام عضویت در کانال معاف شود را وارد کنید:",$removeKeyboard);
+        sendMessage(\achbotMessage('admin_settings.config.handle_channel_exemption.message.f4395ba7cb'),$removeKeyboard);
     } elseif ($already) {
-        sendMessage("⚠️ این کاربر قبلاً معاف شده است.",$removeKeyboard,"HTML");
+        sendMessage(\achbotMessage('admin_settings.config.handle_channel_exemption.message.cca4b2908c'),$removeKeyboard,"HTML");
     } else {
-        sendMessage("✅ کاربر با آیدی <code>$targetId</code> معاف شد.",$removeKeyboard,"HTML");
+        sendMessage(\achbotMessage('admin_settings.config.handle_channel_exemption.message.4a4db9f14a', ['targetId' => $targetId]),$removeKeyboard,"HTML");
     }
     return true;
 }
@@ -3237,12 +3239,12 @@ function getCallbackFromCommand($command) {
     switch ($command) {
         case '/buy':
             if (($botState['sellState'] ?? 'off') !== "on" && !$isRealAdmin) {
-                sendMessage("⛔️ سیستم فروش غیرفعال است.", null, "MarkDown", $chat_id);
+                sendMessage(\achbotMessage('admin_settings.config.get_callback_from_command.message.616c172303'), null, "MarkDown", $chat_id);
                 exit();
             }
 
             if (($botState['cartToCartState'] ?? 'off') == "off" && ($botState['giftCardState'] ?? 'off') == "off" && ($botState['manualUsdtState'] ?? 'off') == "off" && ($botState['walletState'] ?? 'off') == "off") {
-                sendMessage("⛔️ سیستم فروش غیرفعال است.", null, "MarkDown", $chat_id);
+                sendMessage(\achbotMessage('admin_settings.config.get_callback_from_command.message.616c172303'), null, "MarkDown", $chat_id);
                 exit();
             }
 
@@ -3256,7 +3258,7 @@ function getCallbackFromCommand($command) {
                 ];
 
                 sendMessage(
-                    "⛔️ لطفا از دکمه خرید تکی یا خرید انبوه استفاده کنید.",
+                    \achbotMessage('admin_settings.config.get_callback_from_command.message.ce7759512b'),
                     json_encode(['inline_keyboard' => $keyboard]),
                     "MarkDown",
                     $chat_id
@@ -3310,12 +3312,12 @@ if (isset($update->message->text)) {
 
         if ($mappedText === "/buy") {
             if (($botState['sellState'] ?? 'off') !== "on" && !$isRealAdmin) {
-                sendMessage("⛔️ سیستم فروش غیرفعال است.", null, "MarkDown", $chat_id);
+                sendMessage(\achbotMessage('admin_settings.config.get_callback_from_command.message.616c172303'), null, "MarkDown", $chat_id);
                 exit;
             }
 
             if (($botState['cartToCartState'] ?? 'off') == "off" && ($botState['giftCardState'] ?? 'off') == "off" && ($botState['manualUsdtState'] ?? 'off') == "off" && ($botState['walletState'] ?? 'off') == "off") {
-                sendMessage("⛔️ سیستم فروش غیرفعال است.", null, "MarkDown", $chat_id);
+                sendMessage(\achbotMessage('admin_settings.config.get_callback_from_command.message.616c172303'), null, "MarkDown", $chat_id);
                 exit;
             }
         }
@@ -3347,13 +3349,13 @@ function getMainMenuButtonsKeys(){
             $title = str_replace("MAIN_BUTTONS","", $row['type']);
             $answer = $row['value'];
             $keys[] = [
-                        ['text'=>"❌",'callback_data'=>"delMainButton" . $rowId],
+                        ['text'=>\achbotMessage('admin_settings.config.get_agents_list.button.2b2966a54e'),'callback_data'=>"delMainButton" . $rowId],
                         ['text'=>$title??" " ,'callback_data'=>"wizwizch"]];
         }
     }else{
-        $keys[] = [['text'=>"دکمه ای یافت نشد❕",'callback_data'=>"wizwizch"]];
+        $keys[] = [['text'=>\achbotMessage('admin_settings.config.get_main_menu_buttons_keys.button.e8debfae48'),'callback_data'=>"wizwizch"]];
     }
-    $keys[] = [['text'=>"➕ افزودن دکمه جدید",'callback_data'=>"addNewMainButton"]];
+    $keys[] = [['text'=>\achbotMessage('admin_settings.config.get_main_menu_buttons_keys.button.6c3bcb48ce'),'callback_data'=>"addNewMainButton"]];
     $keys[] = [['text'=>$buttonValues['back_button'],'callback_data'=>"managePanel"]];
     return json_encode(['inline_keyboard'=>$keys]);
 }
@@ -3399,33 +3401,33 @@ function getPlanDetailsKeys($planId){
 
         $srvid= $pd['server_id'];
         $keyboard = [
-            ($rahgozar==true?[['text'=>"* نوع پلن: رهگذر *",'callback_data'=>'wizwizch']]:[]),
+            ($rahgozar==true?[['text'=>\achbotMessage('admin_settings.config.get_plan_details_keys.button.de357139be'),'callback_data'=>'wizwizch']]:[]),
             ($rahgozar==true?[
                 ['text'=>$customPath,'callback_data'=>'changeCustomPath' . $id],
-                ['text'=>"Path Custom",'callback_data'=>'wizwizch'],
+                ['text'=>\achbotMessage('admin_settings.config.get_plan_details_keys.path__custom.1ff5a72ea5'),'callback_data'=>'wizwizch'],
                 ]:[]),
             ($rahgozar==true?[
                 ['text'=>$customPort,'callback_data'=>'changeCustomPort' . $id],
-                ['text'=>"پورت دلخواه",'callback_data'=>'wizwizch'],
+                ['text'=>\achbotMessage('admin_settings.config.get_plan_details_keys.button.0c7b1a3966'),'callback_data'=>'wizwizch'],
                 ]:[]),
             ($rahgozar==true?[
                 ['text'=>$customSni,'callback_data'=>'changeCustomSni' . $id],
-                ['text'=>"sni دلخواه",'callback_data'=>'wizwizch'],
+                ['text'=>\achbotMessage('admin_settings.config.get_plan_details_keys.button.ef806d47e3'),'callback_data'=>'wizwizch'],
                 ]:[]),
-            [['text'=>$name,'callback_data'=>"wizwizplanname$id"],['text'=>"🔮 نام پلن",'callback_data'=>"wizwizch"]],
-            ($reality == "true"?[['text'=>$dest,'callback_data'=>"editDestName$id"],['text'=>"dest",'callback_data'=>"wizwizch"]]:[]),
-            ($reality == "true"?[['text'=>$serverName,'callback_data'=>"editServerNames$id"],['text'=>"serverNames",'callback_data'=>"wizwizch"]]:[]),
-            ($reality == "true"?[['text'=>$spiderX,'callback_data'=>"editSpiderX$id"],['text'=>"spiderX",'callback_data'=>"wizwizch"]]:[]),
-            ($reality == "true"?[['text'=>$flow,'callback_data'=>"editFlow$id"],['text'=>"flow",'callback_data'=>"wizwizch"]]:[]),
-            [['text'=>$wizwizplanaccnumber,'callback_data'=>"wizwizch"],['text'=>"🎗 تعداد اکانت های فروخته شده",'callback_data'=>"wizwizch"]],
-            ($pd['inbound_id'] != 0?[['text'=>"$acount",'callback_data'=>"wizwizplanslimit$id"],['text'=>"🚪 تغییر ظرفیت کانفیگ",'callback_data'=>"wizwizch"]]:[]),
-            ($pd['inbound_id'] != 0?[['text'=>$pd['inbound_id'],'callback_data'=>"wizwizplansinobundid$id"],['text'=>"🚪 سطر کانفیگ",'callback_data'=>"wizwizch"]]:[]),
-            [['text'=>"✏️ ویرایش توضیحات",'callback_data'=>"wizwizplaneditdes$id"]],
-            [['text'=>number_format($price) . " تومان",'callback_data'=>"wizwizplanrial$id"],['text'=>"💰 قیمت پلن",'callback_data'=>"wizwizch"]],
-            [['text'=>"♻️ دریافت لیست اکانت ها",'callback_data'=>"wizwizplanacclist$id"]],
-            ($server_info['type'] == "marzban"?[['text'=>"انتخاب Host",'callback_data'=>"marzbanHostSettings" . $id]]:[]),
-            ($server_info['type']==='pasarguard'?[['text'=>'Groups پلن (جایگزین پیش‌فرض)','callback_data'=>'pgPlanGroups'.$id]]:[]),
-            [['text'=>"✂️ حذف",'callback_data'=>"wizwizplandelete$id"]],
+            [['text'=>$name,'callback_data'=>"wizwizplanname$id"],['text'=>\achbotMessage('admin_settings.config.get_plan_details_keys.button.e1615aff08'),'callback_data'=>"wizwizch"]],
+            ($reality == "true"?[['text'=>$dest,'callback_data'=>"editDestName$id"],['text'=>\achbotMessage('admin_settings.config.get_plan_details_keys.dest.1d5e6a1edd'),'callback_data'=>"wizwizch"]]:[]),
+            ($reality == "true"?[['text'=>$serverName,'callback_data'=>"editServerNames$id"],['text'=>\achbotMessage('admin_settings.config.get_plan_details_keys.server_names.649d37195b'),'callback_data'=>"wizwizch"]]:[]),
+            ($reality == "true"?[['text'=>$spiderX,'callback_data'=>"editSpiderX$id"],['text'=>\achbotMessage('admin_settings.config.get_plan_details_keys.spider_x.3bb7e32507'),'callback_data'=>"wizwizch"]]:[]),
+            ($reality == "true"?[['text'=>$flow,'callback_data'=>"editFlow$id"],['text'=>\achbotMessage('admin_settings.config.get_plan_details_keys.flow.3b21278178'),'callback_data'=>"wizwizch"]]:[]),
+            [['text'=>$wizwizplanaccnumber,'callback_data'=>"wizwizch"],['text'=>\achbotMessage('admin_settings.config.get_plan_details_keys.button.a3ec946c94'),'callback_data'=>"wizwizch"]],
+            ($pd['inbound_id'] != 0?[['text'=>"$acount",'callback_data'=>"wizwizplanslimit$id"],['text'=>\achbotMessage('admin_settings.config.get_plan_details_keys.button.82572df158'),'callback_data'=>"wizwizch"]]:[]),
+            ($pd['inbound_id'] != 0?[['text'=>$pd['inbound_id'],'callback_data'=>"wizwizplansinobundid$id"],['text'=>\achbotMessage('admin_settings.config.get_plan_details_keys.button.b149ed3392'),'callback_data'=>"wizwizch"]]:[]),
+            [['text'=>\achbotMessage('admin_settings.config.get_plan_details_keys.button.f2662557fe'),'callback_data'=>"wizwizplaneditdes$id"]],
+            [['text'=>number_format($price) . \achbotMessage('admin_settings.config.get_gate_ways_keys.text.2cc98f7f7c'),'callback_data'=>"wizwizplanrial$id"],['text'=>\achbotMessage('admin_settings.config.get_plan_details_keys.button.433f647c69'),'callback_data'=>"wizwizch"]],
+            [['text'=>\achbotMessage('admin_settings.config.get_plan_details_keys.button.c1c11f088f'),'callback_data'=>"wizwizplanacclist$id"]],
+            ($server_info['type'] == "marzban"?[['text'=>\achbotMessage('admin_settings.config.get_plan_details_keys.button.51a75fa72c'),'callback_data'=>"marzbanHostSettings" . $id]]:[]),
+            ($server_info['type']==='pasarguard'?[['text'=>\achbotMessage('admin_settings.config.get_plan_details_keys.button.6399e067cb'),'callback_data'=>'pgPlanGroups'.$id]]:[]),
+            [['text'=>\achbotMessage('admin_settings.config.get_plan_details_keys.button.c3a5bc0cbd'),'callback_data'=>"wizwizplandelete$id"]],
             [['text' => $buttonValues['back_button'], 'callback_data' =>"plansList$srvid"]]
             ];
         return json_encode(['inline_keyboard'=>$keyboard]);
@@ -3516,12 +3518,12 @@ if (preg_match('/^(toggleAutoRenew|adminToggleAutoRenew)(\d+)$/', $data, $match)
     $stmt->close();
 
     if (!$order) {
-        alert("❌ سفارش مورد نظر یافت نشد.", true);
+        alert(\achbotMessage('admin_settings.config.get_order_detail_keys.alert.2871efbc4d'), true);
         return;
     }
 
     if ((int)$order['amount'] === 0) {
-        alert("⚠️ امکان فعالسازی تمدید خودکار برای این نوع اشتراک وجود ندارد.", true);
+        alert(\achbotMessage('admin_settings.config.get_order_detail_keys.alert.8338c921ca'), true);
         return;
     }
 
@@ -3533,12 +3535,12 @@ if (preg_match('/^(toggleAutoRenew|adminToggleAutoRenew)(\d+)$/', $data, $match)
     // کنترل دسترسی
     if ($mode === "toggleAutoRenew") {
         if ((int)$order['userid'] !== (int)$from_id) {
-            alert("⚠️ شما اجازه تغییر این سفارش را ندارید.", true);
+            alert(\achbotMessage('admin_settings.config.get_order_detail_keys.alert.1bd8f019af'), true);
             return;
         }
     } else {
         if (!$isAdmin) {
-            alert("⚠️ دسترسی ادمین ندارید.", true);
+            alert(\achbotMessage('admin_settings.config.get_order_detail_keys.alert.7e78156592'), true);
             return;
         }
     }
@@ -3551,7 +3553,7 @@ if (preg_match('/^(toggleAutoRenew|adminToggleAutoRenew)(\d+)$/', $data, $match)
 
         $fileId = (int)($order['fileid'] ?? 0);
         if ($fileId <= 0) {
-            alert("⚠️ پلن این سفارش مشخص نیست (fileid نامعتبر است).", true);
+            alert(\achbotMessage('admin_settings.config.get_order_detail_keys.alert.fb223619e1'), true);
             return;
         }
 
@@ -3562,12 +3564,12 @@ if (preg_match('/^(toggleAutoRenew|adminToggleAutoRenew)(\d+)$/', $data, $match)
         $stmt->close();
 
         if (!$plan) {
-            alert("⚠️ پلن مربوط به این سفارش در server_plans پیدا نشد.", true);
+            alert(\achbotMessage('admin_settings.config.get_order_detail_keys.alert.4f0ac830c9'), true);
             return;
         }
 
         if ((float)$plan['price'] <= 0) {
-            alert("⚠️ امکان فعالسازی تمدید خودکار برای این نوع اشتراک وجود ندارد.", true);
+            alert(\achbotMessage('admin_settings.config.get_order_detail_keys.alert.8338c921ca'), true);
             return;
         }
     }
@@ -3584,16 +3586,16 @@ if (preg_match('/^(toggleAutoRenew|adminToggleAutoRenew)(\d+)$/', $data, $match)
     }
 
     if (!$keys || empty($keys['msg']) || empty($keys['keyboard'])) {
-        alert("⚠️ خطایی در بروزرسانی صفحه رخ داد. دوباره امتحان کنید.", true);
+        alert(\achbotMessage('admin_settings.config.get_order_detail_keys.alert.50f82fc4e9'), true);
         return;
     }
 
     editText($message_id, $keys['msg'], $keys['keyboard'], "HTML");
 
     alert(
-        "🔄 وضعیت تمدید خودکار سفارش «{$order['remark']}» به حالت " .
-        ($new === 'on' ? 'روشن' : 'خاموش') .
-        " تغییر کرد.",
+        \achbotMessage('admin_settings.config.get_order_detail_keys.alert.d0438c36e0', ['order_remark' => $order['remark']]) .
+        ($new === 'on' ? \achbotMessage('admin_settings.config.get_order_detail_keys.alert.be9fd3bd1b') : \achbotMessage('admin_settings.config.get_order_detail_keys.alert.841b8cb341')) .
+        \achbotMessage('admin_settings.config.get_order_detail_keys.alert.c826d2d1f7'),
         true
     );
 }

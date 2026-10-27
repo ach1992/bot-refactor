@@ -49,6 +49,7 @@ EXACT_EXCLUSIONS={
 ASCII_EXTRA={
  'config.php':{'You do not have access','Unknown Plan','Path Custom','Error'},
  'src/Finance/PaymentLifecycle.php':{'NOWPayments'},
+ 'src/Finance/Routes/DiscountAdministration.php':{'ID '},
  'settings/subLink.php':{'Method not allowed','Wrong token','Legacy subscription link retired; use the current Marzban subscription URL.'},
 }
 ASCII_SELECTED=set()
@@ -58,7 +59,7 @@ def is_candidate(t,source):
     if t['kind']=='T_INLINE_HTML':return False
     if any(ord(c)>127 for c in r):return True
     if r[1:-1] in ASCII_EXTRA.get(p,set()):return True
-    if (p,r) in ASCII_SELECTED:return True
+    if (p,t['start']) in ASCII_SELECTED:return True
     return False
 
 def template(t):
@@ -126,8 +127,8 @@ def main():
     globals()['decode']=lambda raw:[cached[s] for s in raw]
     sources={p:(ROOT/p).read_bytes() for p in paths}
     import catalog_ui
-    ASCII_SELECTED.update((t['path'],t['raw']) for t in catalog_ui.ui_candidates(ROOT,paths))
-    ASCII_SELECTED.update({('src/Finance/Routes/ManualApproval.php',"' chat:'"),('src/Finance/Routes/ManualApproval.php',"'additional_targets:'")})
+    ASCII_SELECTED.update((t['path'],t['start']) for t in catalog_ui.ui_candidates(ROOT,paths))
+    ASCII_SELECTED.update((t['path'],t['start']) for t in tokens if t['path']=='src/Finance/Routes/ManualApproval.php' and t['raw'] in {"' chat:'","'additional_targets:'"})
     if '--apply' in sys.argv:
         for p,raw in sources.items():
             if raw!=git('show',BASE+':'+p):raise RuntimeError('Migration requires exact unmodified baseline source: '+p)
@@ -145,6 +146,14 @@ def main():
         if p=='settings/values.php':continue
         if not is_candidate(t,source):continue
         value,exprs=template(t);top=topic(p)
+        # Human diagnostic labels live in the catalog; fixed reason/state codes
+        # remain explicit implementation data at their original call sites.
+        for code in dict.fromkeys(re.findall(r'<code>([a-z][a-z0-9]*(?:_[a-z0-9]+)+|yes|no)</code>',value)):
+            slot='reason_code' if '_' in code else 'status_code'
+            base=slot;index=2
+            while slot in exprs:slot=base+'_'+str(index);index+=1
+            value=value.replace('<code>'+code+'</code>','<code>{'+slot+'}</code>')
+            exprs[slot]=quote(code)
         ident=(top,value,tuple(exprs))
         if ident in dedup:key=dedup[ident]
         else:

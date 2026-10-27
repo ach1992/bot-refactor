@@ -6,6 +6,7 @@ return [
     'provider_admin.pg_server_admin_keys.button.93b4ef5cbb' => 'ظرفیت: ',
     'provider_admin.pg_server_admin_keys.button.9dee35a276' => 'ریمـارک: ',
     'provider_admin.pg_server_admin_keys.button.c84bd01998' => 'Groups پیش‌فرض',
+    'provider_admin.pg_server_admin_keys.button.3a95407812' => '⚙️ نمایش لینک و QR',
     'provider_admin.pg_server_admin_keys.button.e2e7e28899' => 'اتصال و API key',
     'provider_admin.pg_server_admin_keys.button.b233883d0d' => 'بازگشت',
     'provider_admin.handle_provider_admin.alert.057ec5448c' => '⛔️ دسترسی لازم وجود ندارد.',

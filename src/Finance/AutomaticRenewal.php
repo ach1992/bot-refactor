@@ -4,6 +4,8 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     http_response_code(404);
     exit;
 }
+require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
+
 require_once __DIR__ . '/ReceiptHelpers.php';
 
 /**
@@ -309,7 +311,7 @@ function handleAutoRenewCallback($data): void {
     $claim=achbotAutoRenewReserve($connection,$orderId,$userId);
     if ($claim['status']==='insufficient_funds') {
         try {
-            sendMessage("❌ موجودی کیف پول برای تمدید خودکار کافی نیست؛ تمدید خودکار این اشتراک غیرفعال شد. لطفاً موجودی را افزایش دهید و سپس آن را دوباره فعال کنید.",
+            sendMessage(\achbotMessage('renewal.automatic_renewal.handle_auto_renew_callback.message.30ad9ebf7b'),
                 null,null,$userId);
         } catch (Throwable $ignored) {}
         return;
@@ -337,8 +339,8 @@ function handleAutoRenewCallback($data): void {
     }
     // Telegram delivery cannot revert a completed remote+financial outcome.
     try {
-        sendMessage("✅ تمدید خودکار اشتراک انجام شد؛ مبلغ ".number_format($claim['amount']).
-            " تومان از کیف پول شما کسر شد.",null,null,$userId);
+        sendMessage(\achbotMessage('renewal.automatic_renewal.handle_auto_renew_callback.message.cab5f13fd1').number_format($claim['amount']).
+            \achbotMessage('renewal.automatic_renewal.handle_auto_renew_callback.message.1c7e390d77'),null,null,$userId);
     } catch (Throwable $ignored) {}
 }
 
@@ -371,10 +373,10 @@ function achbotAutoRenewAlertReview(mysqli $db, $adminChatId): void {
             $stmt->close();
             if (!$claimed) continue;
             $reason=preg_replace('/[^a-z_]/','',(string)($item['reason_code']??'none'));
-            $msg="AChBot automatic renewal requires operator reconciliation\n".
-                "Attempt: ".$id."\nOrder: ".(int)$item['order_id'].
-                "\nStage: ".$item['stage']."\nReason: ".$reason.
-                "\nDo not replay remote renewal or refund until checked.";
+            $msg=\achbotMessage('renewal.automatic_renewal.auto_renew_alert_review.a_ch_bot_automatic_renewal_requires_operator.bcbe5e6050').
+                \achbotMessage('renewal.automatic_renewal.auto_renew_alert_review.attempt.b7a6466686').$id.\achbotMessage('renewal.automatic_renewal.auto_renew_alert_review.order.88c68296e4').(int)$item['order_id'].
+                \achbotMessage('renewal.automatic_renewal.auto_renew_alert_review.stage.9b4e401970').$item['stage'].\achbotMessage('renewal.automatic_renewal.auto_renew_alert_review.reason.ff1f74d040').$reason.
+                \achbotMessage('renewal.automatic_renewal.auto_renew_alert_review.do_not_replay_remote_renewal.962be3fe3d');
             $sent=false;
             try {
                 $reply=sendMessage($msg,null,null,(int)$adminChatId);

@@ -13,6 +13,8 @@ final class CatalogStringProbe {
 function catalogBindings(array $expressions,$sample): array {
     $bindings=[];$values=[];
     foreach ($expressions as $expression) {
+        if (preg_match('/\\A\'[a-z][a-z0-9_]*\'\\z/D',$expression)) continue; // fixed diagnostic code, not a caller variable
+
         if (!preg_match('/\A\$([A-Za-z_][A-Za-z0-9_]*)(?:\[(?:([0-9]+)|[\'"]([A-Za-z0-9_]+)[\'"])\])?\z/D',$expression,$m)) {
             throw new RuntimeException('unsupported_fixture_expression:'.$expression);
         }

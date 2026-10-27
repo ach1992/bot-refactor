@@ -28,6 +28,11 @@ def main():
         check(hashlib.sha256(current).hexdigest()==record['source_sha256'],'non-copy source changed: '+path)
         original=command('git','show',record['source_commit']+':'+path)
         check(current==original,'baseline source identity mismatch: '+path)
+        for edit in record['edits']:
+            if edit.get('formatting'):continue
+            before=current[:edit['start']].decode()
+            check(not re.search(r"['\"](?:callback_data|step|provider|state)['\"]\s*=>\s*$",before[-100:]),'Machine field moved into catalog: '+path)
+            check(not re.search(r'->(?:prepare|query)\(\s*$',before[-100:]),'SQL argument moved into catalog: '+path)
         reverse+=len(record['edits'])
     tokens=json.loads(command('php','tools/catalog_tokens.php',input=json.dumps(runtime_paths()).encode()))
     exclusions={(e['path'],e['literal']) for e in inventory['excluded_tokens']}
@@ -36,10 +41,6 @@ def main():
         path=token['path'];literal=token['raw']
         if path in inventory['excluded_files'] or (path,literal) in exclusions:continue
         if any(ord(c)>127 for c in literal):
-            violations.append([path,token['line'],literal[:100]])
-        # ASCII literal copy directly inside explicit Telegram button/caption sinks.
-        source=(ROOT/path).read_bytes()[:token['start']].decode()
-        if re.search(r"['\"](?:text|caption)['\"]\s*=>\s*$",source[-100:]) and re.search('[A-Za-z]',literal):
             violations.append([path,token['line'],literal[:100]])
     check(not violations,'UI literals outside catalog: '+json.dumps(violations,ensure_ascii=False))
     ascii_ui=catalog_ui.ui_candidates(ROOT,runtime_paths())
@@ -91,6 +92,6 @@ def main():
     finally:
         process.terminate();process.wait(timeout=5)
     print(json.dumps({'status':'PASS','source_equivalent_occurrences':reverse,'source_files':len(inventory['files']),
-      'catalog_keys':len(entries),'runtime_references':len(refs),'static_ui_violations':len(violations),'ascii_ui_violations':len(ascii_ui),'ascii_audit_negative_controls':4,
+      'catalog_keys':len(entries),'runtime_references':len(refs),'static_ui_violations':len(violations),'ascii_ui_violations':len(ascii_ui),'ascii_audit_negative_controls':4,'migrated_machine_fields_or_sql_arguments':0,
       'direct_http_guards':len(guarded),'native':native},ensure_ascii=False))
 if __name__=='__main__':main()

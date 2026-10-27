@@ -51,6 +51,15 @@ def ui_candidates(root,paths):
                 elif j in matching:j=matching[j]
                 j+=1
             spans.append((start,end));return spans
+        function_regions=[]
+        for index,token in enumerate(tokens):
+            if token['kind']!='T_FUNCTION':continue
+            body=index+1
+            while body<len(tokens) and tokens[body]['kind'] not in {'{',';'}:body+=1
+            if body in matching:function_regions.append((body,matching[body]))
+        def scope(index):
+            regions=[(a,b) for a,b in function_regions if a<index<b]
+            return min(regions,key=lambda r:r[1]-r[0]) if regions else None
         calls=[];ranges=[];assignments=collections.defaultdict(list)
         for i,t in enumerate(tokens):
             if t['kind'] in {'T_STRING','T_NAME_FULLY_QUALIFIED','T_NAME_QUALIFIED'} and i+1<len(tokens) and tokens[i+1]['kind']=='(':
@@ -72,8 +81,12 @@ def ui_candidates(root,paths):
         queue=list(ranges);seen=set(ranges)
         while queue:
             a,b,origin=queue.pop()
-            for var in {t['raw'] for t in tokens[a:b] if t['kind']=='T_VARIABLE'}:
-                preceding=[x for x in assignments[var] if x[0]<a and tokens[a]['line']-tokens[x[0]]['line']<=100]
+            variables={t['raw'] for t in tokens[a:b] if t['kind']=='T_VARIABLE'}
+            variables.update(value for t in tokens[a:b] if t['kind']=='interpolated'
+                             for kind,value in t['parts'] if kind=='T_VARIABLE')
+            for var in variables:
+                if var in {'$action','$field','$mode','$state','$stage','$provider','$method','$step','$data','$type','$reason','$sqlstate','$gateType'}:continue
+                preceding=[x for x in assignments[var] if x[0]<a and scope(a)==scope(x[0])]
                 if not preceding:continue
                 base=len(preceding)-1
                 while base>0 and preceding[base][3]=='T_CONCAT_EQUAL':base-=1
@@ -102,6 +115,7 @@ def ui_candidates(root,paths):
             if re.match(r'^(?:https?://|tg://|t\.me/|/\^|/\\A|~\^|[a-z]+\|)',value):continue
             if re.fullmatch(r'</?[A-Za-z][A-Za-z0-9]*(?:\s[^>]*)?>\\?[nr]?',value):continue
             if value.startswith(('achbot_','ACHBOT_')):continue
-            if owners==['variable'] and re.fullmatch('[a-z][A-Za-z0-9_:-]*',value):continue
+            if owners==['variable'] and re.fullmatch('[a-z][A-Za-z0-9_:-]*',visible.strip()):continue
+            if re.fullmatch(r'/[A-Za-z][A-Za-z0-9_]*',value):continue
             result.append(t|{'ui_origin':sorted(set(owners))})
     return result

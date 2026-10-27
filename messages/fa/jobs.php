@@ -4,6 +4,7 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {http_response_cod
 return [
     'gift2all.message.0addd1b9d4' => 'وضعیت تراکنشی پایگاه داده هدیه تأیید نشد؛ بررسی مدیر لازم است.',
     'gift2all.message.53c655af49' => 'ساختار تراکنشی هدیه معتبر نیست؛ عملیات متوقف شد.',
+    'gift2all.invalid_job_parameters.084a81c66e' => '(invalid job parameters)',
     'gift2all.message.be772b3ac0' => ['text' => 'بررسی دستی هدیه لازم است. شناسه: {rowId}؛ سرور: {serverId}؛ ', 'parameters' => ['rowId', 'serverId']],
     'gift2all.message.90aec44bc4' => ['text' => 'ردیف: {index}؛ کاربر: {who}؛ علت: {reason}. ', 'parameters' => ['index', 'who', 'reason']],
     'gift2all.message.d0b68f4613' => ['text' => 'تکرار خودکار متوقف شد. رکورد: {holdType}', 'parameters' => ['holdType']],
