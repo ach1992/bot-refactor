@@ -21,7 +21,14 @@ require $argv[1].'/src/Panel/ProviderAdmin.php';
 require __DIR__.'/presentation-under-test.php';
 chdir(__DIR__);set_include_path(__DIR__);
 function achbotSupportsPanel($type){return in_array($type,['marzban','pasarguard'],true);}
-$connection=new mysqli('localhost','root','',$argv[3],0,$argv[2]);$connection->set_charset('utf8mb4');
+$GLOBALS['order_reads']=0;$GLOBALS['chat_reads']=0;
+class OrderReadTraceMysqli extends mysqli {
+ public function prepare(string $query): mysqli_stmt|false {
+  if (preg_match('/^\\s*SELECT\\b.*\\borders_list\\b/is',$query)) ++$GLOBALS['order_reads'];
+  return parent::prepare($query);
+ }
+}
+$connection=new OrderReadTraceMysqli('localhost','root','',$argv[3],0,$argv[2]);$connection->set_charset('utf8mb4');
 $spec=json_decode($argv[4],true);$db=$connection;
 $GLOBALS['events']=[];
 function alert(...$args){$GLOBALS['events'][]=['alert'=>(string)($args[0]??'')];}
@@ -38,9 +45,15 @@ function delMessage(...$args){$GLOBALS['events'][]=['delete_message'=>true];}
 function jdate(...$args){return 'fixture-date';}
 function RandomString(){return 'ownedqr';}
 function sendPhoto(...$args){$GLOBALS['events'][]=['photo'=>(string)($args[0]??'')];return (object)['ok'=>true];}
-function bot(...$args){return (object)['ok'=>true,'result'=>(object)['first_name'=>'Fixture']];}
-function getUserOrderDetailKeys(...$args){return ['msg'=>'fixture admin details','keyboard'=>'{}'];}
-function getOrderDetailKeys(...$args){return ['msg'=>'fixture owner details','keyboard'=>'{}'];}
+function bot(...$args){if (($args[0]??'')==='getChat') ++$GLOBALS['chat_reads'];return (object)['ok'=>true,'result'=>(object)['first_name'=>'Fixture']];}
+function getUserOrderDetailKeys(...$args){
+ if ($GLOBALS['actual_detail']??false) {global $argv;require_once $argv[1].'/src/Subscription/AccountDetails.php';return \AchBot\Subscription\AccountDetails\getUserOrderDetailKeys(...$args);}
+ return ['msg'=>'fixture admin details','keyboard'=>'{}'];
+}
+function getOrderDetailKeys(...$args){
+ if ($GLOBALS['actual_detail']??false) {global $argv;require_once $argv[1].'/src/Subscription/AccountDetails.php';return \AchBot\Subscription\AccountDetails\getOrderDetailKeys(...$args);}
+ return ['msg'=>'fixture owner details','keyboard'=>'{}'];
+}
 
 try {
 switch($spec['op']){
@@ -68,7 +81,7 @@ case 'view':
 case 'adminview':
 case 'traffic':
 case 'qr':
-$from_id=1001;$admin=9001;$userInfo=['is_agent'=>1,'step'=>'none'];$showIndexes=[];$botUrl='https://bot.example.invalid/';
+$from_id=$spec['op']==='adminview'?9001:1001;$admin=9001;$userInfo=['is_agent'=>1,'step'=>'none'];$showIndexes=[];$botUrl='https://bot.example.invalid/';
 $buttonValues=array_fill_keys($spec['buttons'],'fixture-label');
 $buttonValues['active']='CONFIRMED_ACTIVE_FIXTURE';$buttonValues['deactive']='CONFIRMED_DISABLED_FIXTURE';
 $mainValues=['config_details_message'=>"STATE\nNAME\nCONNECT-LINK\nSUB-LINK",'config_doesnt_exist'=>'missing'];
@@ -87,6 +100,33 @@ if (in_array($spec['op'],['view','adminview','traffic'],true)) {
  $out=['events'=>$GLOBALS['events'],'qr_payloads'=>$GLOBALS['qr_payloads']??[]];
 }
 break;
+case 'detailread':
+$GLOBALS['actual_detail']=true;$actor=(int)$spec['actor'];$admin=9001;
+$base=['update_id'=>$spec['source']];
+$sender=['id'=>$actor,'username'=>'fixture_reader','first_name'=>'Fixture'];
+$message=['message_id'=>1,'text'=>$spec['text']??'cached foreign text','from'=>['id'=>9001],
+ 'chat'=>['id'=>$actor,'type'=>'private'],'reply_markup'=>['inline_keyboard'=>[]]];
+if (isset($spec['text'])) {$message['from']=$sender;$base['message']=$message;}
+else $base['callback_query']=['id'=>'fixture_read','data'=>$spec['callback']??'none','from'=>$sender,'message'=>$message];
+$update=json_decode(json_encode($base));require $argv[1].'/src/Telegram/UpdateBindings.php';
+$data=$data??'';$condition='';
+$q=$db->prepare('SELECT * FROM users WHERE userid=?');$q->bind_param('i',$from_id);$q->execute();$userInfo=$q->get_result()->fetch_assoc()??['step'=>'none'];$q->close();
+if (!empty($spec['cached_admin'])) $userInfo['isAdmin']=1;
+$buttonValues=array_fill_keys(array_merge($spec['buttons'],['cancel','active','deactive']),'fixture-label');
+$mainValues=['config_details_message'=>"STATE\nNAME\nCONNECT-LINK\nSUB-LINK",'config_doesnt_exist'=>'missing',
+ 'no_order_found'=>'NO_ORDER','please_wait_message'=>'WAIT','send_config_remark'=>'ENTER_REMARK'];
+$botState=array_fill_keys(['renewAutoState','sellState','renewAccountState','switchLocationState','increaseVolumeState','increaseTimeState','renewConfigLinkState','updateConfigLinkState','qrConfigState','qrSubState'],'on');
+$cancelKey='{}';$removeKeyboard='{}';$botUrl='https://bot.example.invalid/';
+register_shutdown_function(static function(){echo json_encode(['out'=>['actor'=>$GLOBALS['from_id'],'events'=>$GLOBALS['events'],
+ 'detail'=>$GLOBALS['detail_result']??null,'order_reads'=>$GLOBALS['order_reads'],'chat_reads'=>$GLOBALS['chat_reads'],
+ 'error'=>$GLOBALS['read_error']??null]],JSON_THROW_ON_ERROR);});
+try {
+ if ($spec['mode']==='directadmin') $GLOBALS['detail_result']=getUserOrderDetailKeys(91);
+ elseif ($spec['mode']==='directowner') $GLOBALS['detail_result']=getOrderDetailKeys($spec['owner']??$actor,91);
+ elseif ($spec['mode']==='quick') require $argv[1].'/src/Subscription/OrderManagement.php';
+ else require $argv[1].'/src/Subscription/CustomerRoutes.php';
+} catch (Throwable $error) {$GLOBALS['read_error']=$error->getMessage();}
+exit;
 case 'route':
 $actor=(int)$spec['actor'];$admin=9001;
 $update=json_decode(json_encode(['update_id'=>$spec['source'],'callback_query'=>[
@@ -200,6 +240,41 @@ def main():
   expire=r['out'][0]['expire']
   sql("INSERT INTO orders_list(id,userid,token,transid,fileid,server_id,inbound_id,remark,uuid,protocol,expire_date,link,amount,status,date) VALUES(91,1001,'','',7,2,0,'fixture_user','native-placeholder','vless',"+str(expire)+",'[]',100,1,'fixture')")
   r=call('link',effect=effect);yes(r['out']['id']==17 and r['out']['provider']=='pasarguard','verified_account_links_order_by_native_id')
+  sql("INSERT INTO users(userid,name,username,refcode,wallet,date,isAdmin,first_start,is_agent) VALUES(1011,'Foreign','foreign','0',50000,'1700000000',0,'sent',0),(1012,'Agent','agent','0',50000,'1700000000',0,'sent',1),(1013,'CurrentAdmin','currentadmin','0',50000,'1700000000',1,'sent',0),(1014,'RevokedAdmin','revokedadmin','0',50000,'1700000000',0,'sent',0)")
+  def read_snapshot():return sql("SELECT * FROM users ORDER BY id;SELECT * FROM orders_list ORDER BY id;SELECT * FROM provider_accounts ORDER BY id")
+  def read_call(actor,mode,**spec):return call('detailread',actor=actor,mode=mode,source=7000,buttons=buttons,**spec)['out']
+  denied=[('directadmin',{}),('directowner',{'owner':1001}),('route',{'callback':'userOrderDetails91_0'}),
+   ('quick',{'callback':'quickUserOrderDetails_91'}),('route',{'callback':'searchUsersConfig'}),
+   ('route',{'text':'fixture_user'})]
+  for actor in [1011,1012,1014,1015]:
+   for mode,spec in denied:
+    sql("UPDATE users SET step='"+('searchUsersConfig' if 'text' in spec else 'none')+"' WHERE userid="+str(actor))
+    before=read_snapshot();requests=len(server.trace);writes=server.write_count
+    result=read_call(actor,mode,cached_admin=True,**spec);shown=json.dumps(result,ensure_ascii=False)
+    yes(result['error'] is None and result['actor']==actor and result['detail'] is None and result['order_reads']==0 and result['chat_reads']==0 and len(server.trace)==requests and server.write_count==writes and read_snapshot()==before and 'sub.example.invalid' not in shown and 'vless://' not in shown and 'changePlan_' not in shown and 'fixture_user' not in shown,'read_auth_'+str(actor)+'_'+mode+'_'+('searchtext' if 'text' in spec else spec.get('callback','direct'))+'_no_privileged_query_or_disclosure')
+  sql("UPDATE users SET step='none' WHERE userid IN(1011,1012,1014)")
+  primary_role=sql('SELECT isAdmin FROM users WHERE userid=9001').strip()
+  sql('UPDATE users SET isAdmin=0 WHERE userid=9001')
+  for actor in [9001,1013]:
+   for mode,spec in [('directadmin',{}),('route',{'callback':'userOrderDetails91_0'}),('quick',{'callback':'quickUserOrderDetails_91'}),('route',{'text':'fixture_user'})]:
+    sql("UPDATE users SET step='"+('searchUsersConfig' if 'text' in spec else 'none')+"' WHERE userid="+str(actor))
+    requests=len(server.trace);writes=server.write_count;account_before=sql('SELECT * FROM provider_accounts WHERE order_id=91')
+    result=read_call(actor,mode,**spec);shown=json.dumps(result,ensure_ascii=False)
+    assert result['error'] is None and result['detail'] is not None if mode=='directadmin' else result['error'] is None,(actor,mode,result)
+    yes(result['error'] is None and result['order_reads']>0 and result['chat_reads']==1 and len(server.trace)>requests and server.write_count==writes and sql('SELECT * FROM provider_accounts WHERE order_id=91')==account_before and 'https://sub.example.invalid/token' in shown and 'vless://native-identity' in shown,'read_auth_current_'+str(actor)+'_'+mode+'_'+('searchtext' if 'text' in spec else spec.get('callback','direct'))+'_real_native_detail')
+   sql("UPDATE users SET step='none' WHERE userid="+str(actor))
+  sql('UPDATE users SET isAdmin='+primary_role+' WHERE userid=9001')
+  for agent in [0,1]:
+   sql('UPDATE users SET is_agent='+str(agent)+",step='none' WHERE userid=1001;UPDATE orders_list SET agent_bought="+str(agent)+' WHERE id=91')
+   for mode,spec in [('directowner',{'owner':1001}),('route',{'callback':'orderDetails91'}),('route',{'text':'fixture_user'})]:
+    sql("UPDATE users SET step='"+(('searchAgentConfig' if agent else 'searchMyConfig') if 'text' in spec else 'none')+"' WHERE userid=1001")
+    requests=len(server.trace);writes=server.write_count
+    result=read_call(1001,mode,**spec);shown=json.dumps(result,ensure_ascii=False)
+    assert result['error'] is None,(agent,mode,result)
+    yes(result['error'] is None and len(server.trace)>requests and server.write_count==writes and 'https://sub.example.invalid/token' in shown and 'vless://native-identity' in shown and 'adminToggleAutoRenew91' not in shown and 'delUserConfig91' not in shown,'read_auth_owned_'+str(agent)+'_'+mode+'_'+('searchtext' if 'text' in spec else spec.get('callback','direct'))+'_customer_detail_retained')
+   requests=len(server.trace);result=read_call(1001,'directadmin')
+   yes(result['detail'] is None and result['order_reads']==0 and result['chat_reads']==0 and len(server.trace)==requests,'read_auth_owned_'+str(agent)+'_cannot_elevate_to_admin_facade')
+  sql("UPDATE users SET is_agent=1,step='none' WHERE userid=1001;UPDATE orders_list SET agent_bought=0 WHERE id=91")
   invalid_units=[('plus_volume',0.5),('plus_volume','1.25'),('plus_volume','0.1'),
    ('volume',0.5),('plus_day',0.5),('days','1.2'),('plus_volume',0),('plus_volume',-1),
    ('volume',None),('plus_volume',True),('plus_volume',[]),('plus_volume',{}),
