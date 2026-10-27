@@ -118,3 +118,22 @@ MariaDB strict snapshot isolation may instead reject a competing transaction
 whose earlier read view predates the reservation; that SQL rejection is private,
 rolls back local work and never grants remote dispatch. Runtime does not alter
 SQL isolation settings or automatically retry an uncertain external write.
+
+
+## Mutation replay-history integrity
+
+A linked account may start with empty history only when both
+`mutation_key` and `mutation_snapshot` are SQL NULL. After the first
+mutation, the snapshot must be valid JSON version 1, its key must equal
+`mutation_key`, and `consumed_keys` must be a nonempty JSON list of unique,
+valid 1–100-character operation keys containing the last key. Partial NULL,
+malformed JSON, wrong types, missing fields, duplicate keys or inconsistent
+last-key evidence refuse the next mutation before provider GET or write;
+the runtime never substitutes an empty history.
+
+The retained list is bounded at **4096 consumed sources**. An account at that
+bound fails closed for new mutations and requires operator review. History
+is never automatically pruned, reset or reconstructed to authorize a retry.
+This does not claim protection against a fully privileged operator manually
+rewriting the database. Existing-account operations preserve current remote
+Groups; initial CREATE still uses its pinned quote Groups.

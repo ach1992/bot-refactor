@@ -191,6 +191,46 @@ def main():
    for callback in ['changeUserConfigState91','agentChangeUserConfigState91','updateConfigConnectionLink91','changAccountConnectionLink91']:
     before=len(server.trace);r=call('route',actor=1002,source=200,callback=callback)
     yes('out' in r and r['out']['actor']==1002 and len(server.trace)==before,provider+'_genuine_update_foreign_'+callback+'_no_request')
+  # Only the actual initial both-NULL state may have no consumed history.
+  # Each corrupted fixture must survive rejection unchanged, with no new claim
+  # and no provider GET/write. Restoring this still-initial fixture is test-only.
+  initial_history=sql("SELECT IFNULL(HEX(mutation_key),'NULL'),IFNULL(HEX(mutation_snapshot),'NULL'),state FROM provider_accounts WHERE order_id=91").strip()
+  yes(initial_history=='NULL\tNULL\tlinked','initial_linked_account_has_both_history_fields_null')
+  valid_history={'version':1,'key':'history:old','consumed_keys':['history:old']}
+  bad_histories=[
+   ('malformed_json','history:old','{'),
+   ('null_json','history:old','null'),
+   ('scalar_json','history:old','"history"'),
+   ('missing_consumed','history:old',json.dumps({'version':1,'key':'history:old'})),
+   ('nonarray_consumed','history:old',json.dumps(dict(valid_history,consumed_keys='history:old'))),
+   ('object_consumed','history:old',json.dumps(dict(valid_history,consumed_keys={'a':'history:old'}))),
+   ('numeric_object_consumed','history:old',json.dumps(dict(valid_history,consumed_keys={'0':'history:old'}))),
+   ('empty_consumed','history:old',json.dumps(dict(valid_history,consumed_keys=[]))),
+   ('duplicate_consumed','history:old',json.dumps(dict(valid_history,consumed_keys=['history:old','history:old']))),
+   ('nonstrict_version','history:old',json.dumps(dict(valid_history,version='1'))),
+   ('unsupported_version','history:old',json.dumps(dict(valid_history,version=2))),
+   ('last_key_mismatch','history:old',json.dumps(dict(valid_history,key='history:other'))),
+   ('last_key_not_retained','history:old',json.dumps(dict(valid_history,consumed_keys=['history:earlier']))),
+   ('numeric_source_key','history:old',json.dumps(dict(valid_history,consumed_keys=[1,'history:old']))),
+   ('empty_source_key','history:old',json.dumps(dict(valid_history,consumed_keys=['','history:old']))),
+   ('oversized_source_key','history:old',json.dumps(dict(valid_history,consumed_keys=['x'*101,'history:old']))),
+   ('invalid_source_key','history:old',json.dumps(dict(valid_history,consumed_keys=['history:new\n','history:old']))),
+   ('null_key_with_snapshot',None,json.dumps(valid_history)),
+   ('key_with_null_snapshot','history:old',None),
+   ('empty_snapshot','history:old',''),
+   ('overbound_history','history:old',json.dumps(dict(valid_history,consumed_keys=['history:'+str(i) for i in range(4096)]+['history:old']))),
+   ('full_4096_history','history:old',json.dumps(dict(valid_history,consumed_keys=['history:'+str(i) for i in range(4095)]+['history:old']))),
+  ]
+  def text_sql(value):
+   return 'NULL' if value is None else "CONVERT(X'"+value.encode().hex()+"' USING utf8mb4)"
+  for index,(name,last,snapshot) in enumerate(bad_histories):
+   sql("UPDATE provider_accounts SET mutation_key="+text_sql(last)+",mutation_snapshot="+text_sql(snapshot)+" WHERE order_id=91")
+   before=sql("SELECT IFNULL(HEX(mutation_key),'NULL'),IFNULL(HEX(mutation_snapshot),'NULL'),state FROM provider_accounts WHERE order_id=91").strip()
+   requests=len(server.trace);writes=server.write_count
+   result=call('action',action='toggle',source=250+index)
+   after=sql("SELECT IFNULL(HEX(mutation_key),'NULL'),IFNULL(HEX(mutation_snapshot),'NULL'),state FROM provider_accounts WHERE order_id=91").strip()
+   yes(result['out']['success'] is False and len(server.trace)==requests and server.write_count==writes and after==before,'history_'+name+'_rejects_without_HTTP_or_new_claim')
+  sql("UPDATE provider_accounts SET mutation_key=NULL,mutation_snapshot=NULL WHERE order_id=91")
   sql("UPDATE users SET is_agent=0 WHERE userid=1001;UPDATE orders_list SET agent_bought=1 WHERE id=91")
   before=len(server.trace)
   r=call('route',actor=1001,source=201,callback='agentChangeUserConfigState91')

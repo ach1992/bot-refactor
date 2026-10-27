@@ -277,9 +277,11 @@ function achbotPgLinkEffect(mysqli $db,int $effectId,int $orderId): bool {
     if (!$s->execute() || $s->affected_rows!==1) throw new RuntimeException('pg_effect_link_unconfirmed');$s->close();
     return true;
 }
+function achbotPgValidMutationKey($key): bool {
+    return is_string($key) && preg_match('/^[a-zA-Z0-9:_-]{1,100}$/D',$key)===1;
+}
 function achbotPgOperationKey(string $action,array $change=[]): string {
-    if (isset($change['operation_key']) && is_string($change['operation_key']) &&
-        preg_match('/^[a-zA-Z0-9:_-]{1,100}$/D',$change['operation_key'])===1) return $change['operation_key'];
+    if (achbotPgValidMutationKey($change['operation_key']??null)) return $change['operation_key'];
     if ((int)($change['pay_id']??0)>0) return 'pay:'.(int)$change['pay_id'];
     $update=$GLOBALS['update']??null;
     if (is_object($update) && is_int($update->update_id??null) && $update->update_id>0)
@@ -288,6 +290,7 @@ function achbotPgOperationKey(string $action,array $change=[]): string {
 }
 /** One durable account fence spans reset+modify and survives lost responses. */
 function achbotPgBeginMutation(mysqli $db,array $ctx,string $key,string $action,array $changes): array {
+    if (!achbotPgValidMutationKey($key)) throw new RuntimeException('pg_mutation_source_invalid');
     $tx=$db->query('SELECT @@in_transaction AS tx');
     if (!$tx || (int)($tx->fetch_assoc()['tx']??1)!==0) throw new RuntimeException('pg_mutation_requires_autocommit');
     if (!$db->begin_transaction()) throw new RuntimeException('pg_mutation_begin');
@@ -295,9 +298,33 @@ function achbotPgBeginMutation(mysqli $db,array $ctx,string $key,string $action,
         $id=(int)$ctx['account']['id'];
         $s=$db->prepare('SELECT state,mutation_key,mutation_snapshot FROM provider_accounts WHERE id=? FOR UPDATE');
         $s->bind_param('i',$id);$s->execute();$a=$s->get_result()->fetch_assoc();$s->close();
-        $prior=json_decode((string)($a['mutation_snapshot']??''),true);
-        $consumed=is_array($prior['consumed_keys']??null)?$prior['consumed_keys']:[];
-        if (!$a || $a['state']!=='linked' || ($a['mutation_key']??null)===$key || in_array($key,$consumed,true) || count($consumed)>=4096)
+        if (!$a || $a['state']!=='linked') throw new RuntimeException('pg_account_mutation_requires_review');
+        // Empty replay authority exists only before the first mutation.
+        // Malformed or partial persisted history must never become [].
+        $lastKey=$a['mutation_key'];$snapshot=$a['mutation_snapshot'];
+        $consumed=[];
+        if ($lastKey!==null || $snapshot!==null) {
+            if (!achbotPgValidMutationKey($lastKey) || !is_string($snapshot))
+                throw new RuntimeException('pg_mutation_history_invalid');
+            try {$decoded=json_decode($snapshot,false,64,JSON_THROW_ON_ERROR);}
+            catch (Throwable $error) {throw new RuntimeException('pg_mutation_history_invalid');}
+            if (!($decoded instanceof stdClass)) throw new RuntimeException('pg_mutation_history_invalid');
+            $prior=(array)$decoded;
+            if (($prior['version']??null)!==1 ||
+                ($prior['key']??null)!==$lastKey || !is_array($prior['consumed_keys']??null) ||
+                !array_is_list($prior['consumed_keys']) || count($prior['consumed_keys'])<1 ||
+                count($prior['consumed_keys'])>4096)
+                throw new RuntimeException('pg_mutation_history_invalid');
+            $seen=[];
+            foreach ($prior['consumed_keys'] as $consumedKey) {
+                if (!achbotPgValidMutationKey($consumedKey) || isset($seen[$consumedKey]))
+                    throw new RuntimeException('pg_mutation_history_invalid');
+                $seen[$consumedKey]=true;
+            }
+            if (!isset($seen[$lastKey])) throw new RuntimeException('pg_mutation_history_invalid');
+            $consumed=$prior['consumed_keys'];
+        }
+        if ($lastKey===$key || in_array($key,$consumed,true) || count($consumed)>=4096)
             throw new RuntimeException('pg_account_mutation_requires_review');
         $consumed[]=$key;
         $intent=['version'=>1,'key'=>$key,'consumed_keys'=>$consumed,'action'=>$action,'changes'=>$changes,'identity'=>$ctx['identity'],
