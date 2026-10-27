@@ -1,5 +1,7 @@
 # AChBot — canonical product and historical refactor contract
 
+**Superseding current development contract (2026-10-27):** Issue #26 revision3 adds native PasarGuard5.5.1, managed per-server display policies, bot-managed exchange rates and a central text catalog. The earlier Marzban-only and private display/rate descriptions below are historical where superseded. Read [the next-release source contract](post-v9/NEXT-RELEASE.md) for exact current boundaries; source development is not a production rollout.
+
 ## Current post-V9 supported-product contract — Owner-confirmed 2026-10-14
 
 **Authoritative contract:** [Issue #31](https://github.com/ach1992/bot-refactor/issues/31) owns the post-V9 Marzban-only acceptance, and [Issue #29](https://github.com/ach1992/bot-refactor/issues/29) defines the remaining roadmap. The intentionally changed post-V9 implementation is integrated into `main` by [PR #32](https://github.com/ach1992/bot-refactor/pull/32); the frozen published V9 source and its historical evidence remain separate. **Source integration, public release, installed behavior, real MariaDB migration and operator approval are different gates.** The current post-V9 contract must never be misrepresented as a completed production rollout.
