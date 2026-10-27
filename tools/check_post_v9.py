@@ -307,7 +307,7 @@ def main():
                         "--run-disposable","--report",str(privacy_path)],
                        cwd=ROOT,check=True,timeout=180,capture_output=True)
         finance_privacy=json.loads(privacy_path.read_text())
-        if not (finance_privacy.get("complete") and finance_privacy.get("cases")==23
+        if not (finance_privacy.get("complete") and finance_privacy.get("cases")==25
                 and finance_privacy.get("mutant_privacy_failures_proved")==2
                 and finance_privacy.get("external_requests")==0):
             raise RuntimeError("Executed finance error privacy/uncertain-effects proof incomplete")
@@ -496,8 +496,32 @@ def main():
                         "--run-disposable","--report",str(next_payment_path)],
                        cwd=ROOT,check=True,timeout=180,capture_output=True)
         next_payment=json.loads(next_payment_path.read_text())
-        if not (next_payment.get("complete") is True and next_payment.get("cases")==10):
+        if not (next_payment.get("complete") is True and next_payment.get("cases")==11):
             raise RuntimeError("Durable payment messages, volume entry and attention proof incomplete")
+        catalog_output=subprocess.run(
+            ["python3",str(ROOT/"tools/test_next_text_catalog.py")],
+            cwd=ROOT,check=True,timeout=180,capture_output=True,text=True)
+        text_catalog=json.loads(catalog_output.stdout)
+        if not (text_catalog.get("status")=="PASS"
+                and text_catalog.get("source_files")==78
+                and text_catalog.get("source_equivalent_occurrences")==3201
+                and text_catalog.get("static_ui_violations")==0
+                and text_catalog.get("ascii_ui_violations")==0
+                and text_catalog.get("ascii_audit_negative_controls")==5
+                and text_catalog.get("migrated_machine_fields_or_sql_arguments")==0
+                and text_catalog.get("direct_http_guards")==27):
+            raise RuntimeError("Central copy byte-equivalence, audience and HTTP guard proof incomplete")
+        unit_path=Path(tmp)/"service-unit-guards.json"
+        subprocess.run(["python3",str(ROOT/"tools/test_post_v9_service_unit_guards.py"),
+                        "--run-disposable","--report",str(unit_path)],
+                       cwd=ROOT,check=True,timeout=180,capture_output=True)
+        unit_guards=json.loads(unit_path.read_text())
+        if not (unit_guards.get("complete") is True and unit_guards.get("cases")==26
+                and unit_guards.get("actual_php_mysqli") is True
+                and unit_guards.get("owned_socket_mariadb") is True
+                and unit_guards.get("provider_requests")==0
+                and unit_guards.get("production_mutations")==0):
+            raise RuntimeError("Whole-unit immutable add-on quote/claim proof incomplete")
         pg_client_path=Path(tmp)/"pasarguard-client.json"
         subprocess.run(["python3",str(ROOT/"tools/test_post_v9_pasarguard_client.py"),
                         "--run-disposable","--report",str(pg_client_path)],
@@ -527,7 +551,7 @@ def main():
                         "--run-disposable","--report",str(provider_path)],
                        cwd=ROOT,check=True,timeout=240,capture_output=True)
         provider_integration=json.loads(provider_path.read_text())
-        if not (provider_integration.get("complete") is True and provider_integration.get("cases",0)>=97
+        if not (provider_integration.get("complete") is True and provider_integration.get("cases",0)>=179
                 and provider_integration.get("actual_php_curl") is True
                 and provider_integration.get("owned_socket_mariadb") is True
                 and provider_integration.get("real_provider_tested") is False):
@@ -544,7 +568,7 @@ def main():
                         "--run-disposable","--report",str(display_path)],
                        cwd=ROOT,check=True,timeout=180,capture_output=True)
         server_display=json.loads(display_path.read_text())
-        if not (server_display.get("pass") is True and server_display.get("checks",0)>=89
+        if not (server_display.get("pass") is True and server_display.get("checks",0)>=131
                 and server_display.get("network_calls")==0):
             raise RuntimeError("Per-server managed display and admin authorization proof incomplete")
         subject_path=Path(tmp)/"payment-subjects.json"
@@ -2802,6 +2826,8 @@ def main():
                      "admin_wallet_adjustment_safety":admin_wallet,
                      "admin_wallet_ux":wallet_ux,
                      "next_payment_ux":next_payment,
+                     "central_text_catalog":text_catalog,
+                     "service_unit_quote_guards":unit_guards,
                      "pasarguard_client":pg_client,
                      "provider_integration":provider_integration,
                      "currency_settings":currency,
