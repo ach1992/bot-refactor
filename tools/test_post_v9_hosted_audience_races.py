@@ -153,7 +153,7 @@ def main():
         sql(w,e,(ROOT/'migrations/post-v9/003_payment_attempts.sql').read_text())
         sql(w,e,"INSERT INTO setting (type,value) VALUES ('BOT_STATES','{\"walletState\":\"on\",\"cartToCartState\":\"on\",\"giftCardState\":\"on\",\"manualUsdtState\":\"on\",\"nowPaymentWallet\":\"on\",\"nowPaymentOther\":\"on\",\"zarinpal\":\"on\",\"nextpay\":\"on\"}')")
         keys=json.dumps({'nowpayment':'LOCAL','nextpay':'LOCAL','zarinpal':'LOCAL',
-                         'nowpayment_ipn_secret':'LOCAL'})
+                         'nowpayment_ipn_secret':'LOCAL','manualUsdtRateToman':'100000'})
         sql(w,e,"INSERT INTO setting(type,value) VALUES('PAYMENT_KEYS','"+
             keys.replace("'","''")+"')")
         driver=w/'f2-hosted-driver.php';driver.write_text(driver_text())
