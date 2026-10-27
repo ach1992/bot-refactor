@@ -1671,9 +1671,15 @@ def main():
                 and effects.get("installed_operator_tested") is False):
             raise RuntimeError("Per-account service operation ledger contract incomplete")
         locking_path=Path(tmp)/"create-verification-locking.json"
-        subprocess.run(["python3",str(ROOT/"tools/test_post_v9_create_verification_locking.py"),
-                        "--run-disposable","--report",str(locking_path)],
-                       cwd=ROOT,check=True,timeout=180,capture_output=True)
+        try:
+            subprocess.run(["python3",str(ROOT/"tools/test_post_v9_create_verification_locking.py"),
+                            "--run-disposable","--report",str(locking_path)],
+                           cwd=ROOT,check=True,timeout=180,capture_output=True)
+        except (subprocess.CalledProcessError,subprocess.TimeoutExpired) as error:
+            # Owned synthetic fixtures only: retain the actionable child cause
+            # instead of hiding it behind a bare CalledProcessError in CI.
+            detail=(error.stderr or error.stdout or b'').decode(errors='replace')[-6000:]
+            raise RuntimeError("Native CREATE locking regression failed:\n"+detail) from error
         verification_locking=json.loads(locking_path.read_text())
         required_locking={
             "prior_011c_lock_inversion_expected_RED",
@@ -2510,7 +2516,7 @@ def main():
             "historical_invalid_tron_destination_requires_review_t",
             "existing_valid_tron_intent_survives_bad_new_config_c",
             "existing_valid_tron_intent_survives_bad_new_config_t",
-            "agent_existing_price_and_trc20_validated",
+            "agent_explicit_settings_price_and_trc20_validated",
             "one_attempt_no_cross_method_claim",
             "single_receipt_claim_no_duplicate_photo_submission",
             "manual_usdt_no_automatic_wallet_credit",
