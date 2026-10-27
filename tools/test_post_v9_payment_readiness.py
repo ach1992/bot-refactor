@@ -133,7 +133,7 @@ def main() -> dict:
         runtime = d/'runtime'
         runtime.mkdir()
         files = package.members()
-        require((len(files) == 104), 'line_90')
+        require((len(files) == package.EXPECTED_RUNTIME_COUNT), 'line_90')
         checksums = {}
         for name in files:
             original = ROOT/name
@@ -186,7 +186,7 @@ def main() -> dict:
                           "SELECT type,value FROM setting ORDER BY id;")
         code, result, raw = report_run(d)
         require((code == 0), 'line_142')
-        require((result['source_file_count'] == 104), 'line_143')
+        require((result['source_file_count'] == package.EXPECTED_RUNTIME_COUNT), 'line_143')
         require((all(result['schema'][k] == 'columns_and_named_unique_indexes_detected_not_ddl_certified'
                    for k in ('001','003','004','005','006','007','008','009'))), 'line_144')
         require((has(result,'gateway_policies','PASS')), 'line_146')
@@ -534,7 +534,7 @@ def main() -> dict:
         'readonly_sql_account_enforced':True,
         'source_usdt_production_helper_compared':True,
         'source_policy_production_helper_compared':True,
-        'source_members_verified':104,
+        'source_members_verified':package.EXPECTED_RUNTIME_COUNT,
         'original_23_table_schema_used':True,
         'all_eight_additive_shapes_exercised':True,
         'no_real_provider_or_telegram_calls':True,

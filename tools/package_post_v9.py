@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Marzban-only source-only ZIP with SHA/TREE-bound all-file source manifest.
+"""AChBot current source-only ZIP with SHA/TREE-bound all-file source manifest.
 
 Not a deployment operation, installer, or production/payment attestation.
 Historical V9 packaging is immutable and deliberately not reused.
@@ -71,7 +71,11 @@ NEW_RUNTIME_MEMBERS = ("settings/cronRunner.php", "src/Finance/PaymentPage.php",
                        "src/Finance/ServiceEffects.php", "src/Finance/BankPurchase.php",
                        "src/Finance/RecoveryInspection.php",
                        "src/Finance/RecoveryTransport.php", "src/Finance/WalletAdjustments.php", "src/Finance/WalletTransferFlow.php",
-                       "src/Subscription/GiftBatch.php", "src/Subscription/DirectGift.php")
+                       "src/Subscription/GiftBatch.php", "src/Subscription/DirectGift.php",
+                       "src/Panel/PasarGuard.php", "src/Panel/ProviderStorage.php",
+                       "src/Panel/ProviderRuntime.php", "src/Panel/ProviderAdmin.php")
+
+EXPECTED_RUNTIME_COUNT = 92 - len(RETIRED_RUNTIME_MEMBERS) + len(NEW_RUNTIME_MEMBERS)
 
 def members() -> list[str]:
     original = historical.members()
@@ -81,7 +85,7 @@ def members() -> list[str]:
         raise RuntimeError("Expected historical-only payment files missing")
     paths = [p for p in original if p not in RETIRED_RUNTIME_MEMBERS]
     paths.extend(NEW_RUNTIME_MEMBERS)
-    if len(paths)!=104 or len(set(paths))!=104:
+    if len(paths)!=EXPECTED_RUNTIME_COUNT or len(set(paths))!=EXPECTED_RUNTIME_COUNT:
         raise RuntimeError("Post-V9 source inventory drift")
     for retired in RETIRED_RUNTIME_MEMBERS:
         if (ROOT/retired).exists() or retired in paths:
@@ -118,7 +122,7 @@ def build() -> tuple[bytes, dict]:
             archive.writestr(info,raw,compress_type=zipfile.ZIP_DEFLATED,compresslevel=9)
     data=mem.getvalue()
     metadata={
-        "name":"AChBot post-V9 Marzban-only source-only development candidate",
+        "name":"AChBot post-V9 source-only development candidate",
         "candidate":head,"tree":tree,"historical_base":V9,
         "zip_timestamp_utc":list(zip_time),
         "file_count":len(names),"zip_sha256":digest(data),

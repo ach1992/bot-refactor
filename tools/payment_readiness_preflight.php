@@ -69,7 +69,7 @@ function verifyManifest(string $manifestPath, string $runtimePath): bool {
         if ($json === false || strlen($json) > 500000) return false;
         $manifest = json_decode($json, true, 512, JSON_THROW_ON_ERROR);
         if (!is_array($manifest) || !isset($manifest['files']) ||
-            !is_array($manifest['files']) || count($manifest['files']) !== 104 ||
+            !is_array($manifest['files']) || count($manifest['files']) !== 108 ||
             ($manifest['file_count'] ?? null) !== count($manifest['files']) ||
             ($manifest['schema_migration_included'] ?? null) !== false ||
             ($manifest['private_config_included'] ?? null) !== false ||
@@ -80,7 +80,7 @@ function verifyManifest(string $manifestPath, string $runtimePath): bool {
         // SHA-256 of newline-joined sorted package_post_v9.members() paths.
         $members = array_keys($manifest['files']);
         sort($members, SORT_STRING);
-        if (!hash_equals('0fd547f440cbbf3d33e1d561d35d7efeab49be30ed8f08769a948ad7ce7a85a2',
+        if (!hash_equals('06effb37cfedb40cea6de9aecd9028bee52ede69227ecaaf0b23fa33e0bdb66e',
                          hash('sha256', implode("\n", $members))) ||
             in_array('baseInfo.php', $members, true)) return false;
         // These helper implementations are executed by this tool. Bind them
@@ -378,15 +378,18 @@ try {
     finding('database_read_only', 'PASS', 'read_only_snapshot_opened');
     [$tables, $columns, $indexes, $unique] = metadata($db);
     $legacy = [
-        'add_link','admins','bc_jobs','bc_messages','black_list','chats',
+        'add_link','bc_jobs','bc_messages','chats',
         'chats_info','discounts','gift_list','increase_day','increase_order',
         'increase_plan','needed_sofwares','orders_list','pays','send_list',
-        'servers','server_categories','server_config','server_info',
+        'server_categories','server_config','server_info',
         'server_plans','setting','users',
     ];
     $missing = array_filter($legacy, static fn(string $t): bool => !isset($tables[$t]));
-    finding('original_23_tables', $missing ? 'BLOCK' : 'PASS',
-        $missing ? 'original_schema_tables_missing' : 'original_table_names_present');
+    finding('current_core_tables', $missing ? 'BLOCK' : 'PASS',
+        $missing ? 'current_core_tables_missing' : 'current_core_table_names_present');
+    $report['schema']['010'] = array_intersect(['admins','black_list','servers'], array_keys($tables))
+        ? 'optional_retired_tables_present_no_cleanup_inferred' : 'optional_retired_tables_absent';
+    finding('schema_010', 'INFO', $report['schema']['010']);
     // The current source uses these explicit FORCE INDEX hints in the final
     // financial policy and owner-lock reads. A missing named index causes
     // runtime checkout failure even if all expected tables exist.

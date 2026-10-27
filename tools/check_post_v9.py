@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Post-V9 Marzban-only acceptance; does NOT redefine immutable V9 parity."""
+"""Post-V9 current-runtime acceptance; does NOT redefine immutable V9 parity."""
 from __future__ import annotations
 
 import argparse
@@ -39,7 +39,7 @@ def source_checks():
         if (ROOT / field).read_bytes() != cmd("show", V9+":"+field):
             raise RuntimeError("Changed historical schema/private-template: " + field)
     files=package.members()
-    if len(files)!=104 or len(set(files))!=len(files):
+    if len(files)!=package.EXPECTED_RUNTIME_COUNT or len(set(files))!=len(files):
         raise RuntimeError("Source-only runtime file inventory changed")
     if any((ROOT/name).exists() or name in files
            for name in package.RETIRED_RUNTIME_MEMBERS):
@@ -80,7 +80,13 @@ def source_checks():
     check=(ROOT/"config.php").read_text()
     if not re.search(r"function achbotSupportsPanel\(\$type\)",check):
         raise RuntimeError("Missing explicit current supported-panel seam")
-    if "return $type === 'marzban';" not in check:
+    support = re.search(r"function achbotSupportsPanel\(\$type\)\s*\{([^}]+)\}", check)
+    if support is None:
+        raise RuntimeError("Missing supported-provider predicate")
+    probe = "function achbotSupportsPanel($type){" + support.group(1) + "}"
+    probe += "echo json_encode(array_map('achbotSupportsPanel', ['marzban','pasarguard','xui','sanaei','alireza','normal','',null,0,true,[], 'Marzban']));"
+    supported = json.loads(subprocess.check_output(['php','-r',probe],text=True))
+    if supported != [True,True] + [False]*10:
         raise RuntimeError("Unexpected implicit panel support")
     bot=(ROOT/"bot.php").read_text()
     config=(ROOT/"config.php").read_text()
@@ -101,7 +107,7 @@ def source_checks():
             "synthetic_baseinfo_example_unchanged":True,
             "historic_contract_changed":False,"retired_provider_api_removed":True,
             "admin_list_debug_artifact_writer_absent":True,
-            "future_pasarguard_or_new_xui_implemented":False}
+            "pasarguard_native_implemented":True, "new_xui_implemented":False}
 
 
 def main():
@@ -1107,7 +1113,7 @@ def main():
                 readiness.get('readonly_sql_account_enforced') is True and
                 readiness.get('source_usdt_production_helper_compared') is True and
                 readiness.get('source_policy_production_helper_compared') is True and
-                readiness.get('source_members_verified')==104 and
+                readiness.get('source_members_verified')==package.EXPECTED_RUNTIME_COUNT and
                 readiness.get('all_eight_additive_shapes_exercised') is True and
                 readiness.get('no_real_provider_or_telegram_calls') is True and
                 readiness.get('installed_operator_acceptance') is False):
@@ -2703,7 +2709,7 @@ def main():
                        cwd=ROOT,check=True,timeout=60,capture_output=True)
         swap=json.loads(overlay_report.read_text())
         if not (swap.get("complete") and swap.get("phase_count")==4
-                and swap.get("runtime_members")==104
+                and swap.get("runtime_members")==package.EXPECTED_RUNTIME_COUNT
                 and swap.get("historical_runtime_members")==92
                 and swap.get("retired_old_payment_files_absent_after_source_upgrade")
                 and swap.get("source_roll_forward_and_back_byte_identical")
