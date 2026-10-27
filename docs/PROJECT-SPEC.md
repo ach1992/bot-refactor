@@ -3,7 +3,7 @@
 **Superseding current source contract (2026-10-27):** Issue #26 revisions3–4 add native PasarGuard5.5.1, managed per-server display policies, bot-managed exchange rates and exactly two editable audience catalogs (user/admin), with ASCII bot-owned digits and consistent meaningful emoji/formatting that preserves established wording. Parser matchers remain implementation data; shared display fragments are not decorated as whole messages. The earlier Marzban-only and private display/rate descriptions below are historical where superseded. Read [the RC12 source contract](post-v9/NEXT-RELEASE.md) for exact current boundaries; [RC12](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.12) publishes this source contract through PR #87; source publication is not a production rollout.
 
 
-**Post-RC12 amendment (2026-10-28):** current development uses one shared USDT rate for every account and removes the optional agent override. See [USDT settings](post-v9/USDT-RATE-SETTINGS.md). The published RC12 package retains its reviewed behavior; this amendment requires a subsequent reviewed delivery.
+**RC13 amendment (2026-10-28):** [v0.10.0-rc.13](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.13) uses one shared USDT rate for every account and removes the optional agent override. See [USDT settings](post-v9/USDT-RATE-SETTINGS.md) and [RC12 → RC13](post-v9/RC12-TO-RC13.md). The code was independently approved at `a9175a2`; publication documentation changes no runtime files. Published RC12 retains its reviewed behavior; source publication is not an installed rollout.
 
 ## Earlier post-V9 decisions — historical where superseded, Owner-confirmed 2026-10-14
 

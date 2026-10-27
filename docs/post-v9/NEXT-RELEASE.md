@@ -1,6 +1,10 @@
-# RC12 release scope and delivery contract
+# RC13 release scope and delivery contract
 
-**Post-RC12 development amendment:** the [2026-10-28 Owner decision](https://github.com/ach1992/bot-refactor/issues/26#issuecomment-6453867569) removes the optional agent USDT override. Current development uses only `manualUsdtRateToman` for all accounts and both manual USDT/NOWPayments; old issued quotes are preserved. See the [shared-rate contract](USDT-RATE-SETTINGS.md). The RC12 scope below describes the published immutable package, not this later candidate.
+[RC13](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.13) removes the separate agent USDT rate. Every new manual USDT and hosted NOWPayments quote uses only `manualUsdtRateToman`, including agent accounts; old issued quotes retain their pinned rate and amount. The [Owner decision](https://github.com/ach1992/bot-refactor/issues/26#issuecomment-6453867569), [PR89](https://github.com/ach1992/bot-refactor/pull/89), exact PHP8.1/8.4 CI and independent APPROVE cover runtime source `a9175a2`. Publication documentation introduces no runtime changes. Read [RC12 → RC13](RC12-TO-RC13.md) or the [Persian guide](RC12-TO-RC13.fa.md). A compatible RC12 installation needs no new SQL; earlier migration and operator gates remain separate.
+
+The inherited RC12 scope below remains available, except its optional agent-rate description is historical and superseded by RC13's [shared-rate contract](USDT-RATE-SETTINGS.md).
+
+## Inherited RC12 scope
 
 [RC12](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.12) is published as a source-only prerelease. Its runtime and manifest identify the reviewed source `ecd30ba9192ed374703118a6c131be8809cc7b06`, integrated through [PR #87](https://github.com/ach1992/bot-refactor/pull/87). This document describes that release scope; publication does not establish installation or operational acceptance. Published RC10/RC11 and frozen V0–V9 evidence remain immutable.
 Owner scope is recorded in #26 comments

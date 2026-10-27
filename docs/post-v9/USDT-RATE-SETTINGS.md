@@ -1,6 +1,6 @@
 # AChBot shared USDT rate settings
 
-The [Owner decision of 2026-10-28](https://github.com/ach1992/bot-refactor/issues/26#issuecomment-6453867569) removes the separate agent USDT rate from development after RC12. This document describes the new source contract; the published RC12 ZIP remains unchanged and includes its former optional override.
+The [Owner decision of 2026-10-28](https://github.com/ach1992/bot-refactor/issues/26#issuecomment-6453867569) removes the separate agent USDT rate in [RC13](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.13). This document describes the RC13 contract; the published RC12 ZIP remains unchanged and includes its former optional override. See [RC12 → RC13](RC12-TO-RC13.md) for the no-new-SQL upgrade boundary.
 
 In administrator **gateway settings**, configure the existing shared rate:
 
