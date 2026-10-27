@@ -6,7 +6,7 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
 }
 
 if (!function_exists('renewConfigOnServer')) {
-    function renewConfigOnServer($connection, $server_id, $inbound_id, $uuid, $remark, $days, $volume, $isMarzban)
+    function renewConfigOnServer($connection, $server_id, $inbound_id, $uuid, $remark, $days, $volume, $isMarzban, ?int $payId=null)
     {
         list($serverInfo, $serverConfig) = getServerInfoAndConfig($connection, $server_id);
         $serverType = $serverConfig['type'] ?? '';
@@ -15,7 +15,7 @@ if (!function_exists('renewConfigOnServer')) {
             throw new \UnexpectedValueException('unsupported_panel');
         }
         $response = achbotApplyServiceEdit($connection,$server_id, [
-            'remark' => $remark,
+            'pay_id'=>$payId,'remark' => $remark,
             'days' => $days,
             'volume' => $volume,
         ]);

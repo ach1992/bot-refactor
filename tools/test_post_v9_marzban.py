@@ -40,6 +40,7 @@ def git(*args: str) -> bytes:
 def prepare(work: Path, stage: Path, candidate: bool) -> None:
     stage.mkdir(parents=True, exist_ok=False)
     if candidate:
+        shutil.copytree(ROOT / "messages", stage / "messages")
         config = (ROOT / "config.php").read_bytes()
         get_bytes = lambda path: (ROOT / path).read_bytes()
     else:
@@ -50,6 +51,12 @@ def prepare(work: Path, stage: Path, candidate: bool) -> None:
         dest = stage / name
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_bytes(get_bytes(name))
+    if candidate:
+        dest=stage/'src/Panel/ProviderRuntime.php'
+        dest.parent.mkdir(parents=True,exist_ok=True)
+        dest.write_bytes((ROOT/'src/Panel/ProviderRuntime.php').read_bytes())
+        with (stage/'functions-under-test.php').open('ab') as stream:
+            stream.write(b"\nrequire_once __DIR__.'/src/Panel/ProviderRuntime.php';\n")
     (stage / "native.php").write_bytes((ROOT / "tests/v6/native.php").read_bytes())
     (stage / "baseInfo.php").write_text("<?php // owned synthetic placeholder\n")
     (stage / "private-state.json").write_text('{"fixture":"post-v9"}\n')
@@ -101,6 +108,7 @@ def safe_core_negatives() -> dict:
 def retired_sub_link(work: Path) -> dict:
     stage = work / "retired-sub-link"
     (stage / "settings").mkdir(parents=True, exist_ok=False)
+    shutil.copytree(ROOT / "messages", stage / "messages")
     (stage / "settings/subLink.php").write_bytes((ROOT / "settings/subLink.php").read_bytes())
     # Use a loopback socket without any source/DB/private credentials available.
     sock = socket.socket()
@@ -132,7 +140,7 @@ def retired_sub_link(work: Path) -> dict:
                 ("GET", "/settings/subLink.php", 200, "Wrong token"),
                 ("GET", "/settings/subLink.php?token=short", 200, "Wrong token"),
                 ("GET", "/settings/subLink.php?token=" + "a"*30, 410,
-                 "Legacy subscription link retired; use the current Marzban subscription URL."),
+                 "Legacy subscription link retired; use the current subscription URL."),
                 ("POST", "/settings/subLink.php?token=" + "a"*30, 405, "Method not allowed"),
             ]
             for method, path, status, expected in samples:

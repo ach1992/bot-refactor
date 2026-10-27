@@ -4,6 +4,8 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     http_response_code(404);
     exit;
 }
+require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
+
 
 require_once __DIR__ . '/PaymentLifecycle.php';
 
@@ -146,9 +148,9 @@ function startWalletPayment(mysqli $connection, $botState, $buttonValues, $botUr
         $keyboard[] = [['text' => $buttonValues['cart_to_cart'], 'callback_data' => "payIncreaseWalletWithCartToCart$hash_id"]];
     if (achbotManualEnabled('gift_card') && achbotPayUxAudienceAllowed($connection,'gift_card',(int)$actor))
         $keyboard[] = [['text' => $buttonValues['gift_card'], 'callback_data' => "payIncreaseWalletWithGiftCard$hash_id"]];
-    if (achbotManualCryptoEnabled() && (achbotPayUxAudienceAllowed($connection,'manual_usdt',(int)$actor) || achbotPayUxAudienceAllowed($connection,'manual_trx',(int)$actor)))
-        $keyboard[] = [['text' => '💎 پرداخت رمزارزی دستی', 'callback_data' => "mcm_$hash_id"]];
-    if (($botState['nowPaymentWallet'] == 'on' && achbotPayUxAudienceAllowed($connection,'nowpayments',(int)$actor)))
+    if (achbotManualCryptoEnabled((int)$actor) && (achbotPayUxAudienceAllowed($connection,'manual_usdt',(int)$actor) || achbotPayUxAudienceAllowed($connection,'manual_trx',(int)$actor)))
+        $keyboard[] = [['text' => \achbotMessage('wallet.wallet_start.start_wallet_payment.button.e729457ba2'), 'callback_data' => "mcm_$hash_id"]];
+    if (($botState['nowPaymentWallet'] == 'on' && achbotPayUxAudienceAllowed($connection,'nowpayments',(int)$actor) && achbotUsdtRateForUser($connection,(int)$actor)!==null))
         $keyboard[] = [['text' => $buttonValues['now_payment_gateway'], 'url' => $botUrl . 'pay/?nowpayment&hash_id=' . $hash_id]];
     if (($botState['zarinpal'] == 'on' && achbotPayUxAudienceAllowed($connection,'zarinpal',(int)$actor)))
         $keyboard[] = [['text' => $buttonValues['zarinpal_gateway'], 'url' => $botUrl . 'pay/?zarinpal&hash_id=' . $hash_id]];
@@ -157,8 +159,8 @@ function startWalletPayment(mysqli $connection, $botState, $buttonValues, $botUr
     $keyboard[] = [['text' => $buttonValues['cancel'], 'callback_data' => 'mainMenu']];
     $keys = json_encode(['inline_keyboard' => $keyboard], JSON_UNESCAPED_UNICODE);
     try {
-        $reply = sendMessage("اطلاعات شارژ:\nمبلغ " . number_format($amount) .
-            " تومان\n\nلطفا روش پرداخت را انتخاب کنید:", $keys);
+        $reply = sendMessage(\achbotMessage('wallet.wallet_start.start_wallet_payment.message.1f46b2b87f') . number_format($amount) .
+            \achbotMessage('wallet.wallet_start.start_wallet_payment.message.64ab796d01'), $keys);
         require_once __DIR__ . '/PaymentLifecycle.php';
         achbotPayUxTrackByHash($connection,$hash_id,$actor,$reply);
         if (!is_object($reply) || ($reply->ok ?? false) !== true) {

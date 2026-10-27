@@ -4,6 +4,8 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     http_response_code(404);
     exit;
 }
+require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
+
 
 if (!function_exists('processWalletPayment')) {
     function processWalletPayment($connection, $hashId, $handler, ?string $expectedBuyMode = null)
@@ -29,7 +31,7 @@ if (!function_exists('processWalletPayment')) {
             $preview->close();
             if ($previewPay && (int)($previewPay['user_id']??0)===(int)$from_id &&
                 !achbotSupportsPaymentSubject($connection,$previewPay)) {
-                alert("⛔️ پرداخت این اشتراک در حال حاضر امکان‌پذیر نیست؛ مبلغی از کیف پول کسر نشد.", true);
+                alert(\achbotMessage('wallet.wallet_settlement.process_wallet_payment.alert.244ca46c8f'), true);
                 return [
                     'status'=>'unsupported_panel',
                     'payInfo'=>$previewPay,
@@ -73,7 +75,7 @@ if (!function_exists('processWalletPayment')) {
             // This is a customer callback, not an administrator settlement.
             if ((int)$payInfo['user_id'] <= 0 || (int)$payInfo['user_id'] !== (int)$from_id) {
                 $connection->rollback();
-                alert("⛔️ این سفارش متعلق به شما نیست.", true);
+                alert(\achbotMessage('wallet.wallet_settlement.process_wallet_payment.alert.669afe458a'), true);
                 return ['status'=>'invalid_owner','payInfo'=>null];
             }
 
@@ -92,7 +94,7 @@ if (!function_exists('processWalletPayment')) {
 
             if ($payInfo['state'] === 'processing_wallet') {
                 $connection->rollback();
-                alert("⏳ وضعیت درخواست هنوز در حال بررسی است. لطفاً وضعیت سفارش را کنترل کنید و پیش از ثبت دوباره با پشتیبانی هماهنگ شوید.", true);
+                alert(\achbotMessage('wallet.wallet_settlement.process_wallet_payment.alert.978c658074'), true);
                 return [
                     'status'       => 'in_progress',
                     'payInfo'      => $payInfo,
@@ -108,13 +110,13 @@ if (!function_exists('processWalletPayment')) {
             if (!in_array((string)$payInfo['state'], ['pending','send','low_wallet'], true) ||
                 (string)($payInfo['payid'] ?? '') !== '') {
                 $connection->rollback();
-                alert("⛔️ روش پرداخت این سفارش قبلاً تعیین شده یا در حال بررسی است.", true);
+                alert(\achbotMessage('wallet.wallet_settlement.process_wallet_payment.alert.86fa6b6506'), true);
                 return ['status'=>'invalid_state','payInfo'=>$payInfo];
             }
             $blockedStates = ['approved', 'declined', 'expired_have_sent'];
 			if (in_array($payInfo['state'], $blockedStates, true)) {
 				$connection->rollback();
-				alert("⛔️ پرداخت این سفارش از کیف پول در حال حاضر امکان‌پذیر نیست. وضعیت سفارش را بررسی کنید.", true);
+				alert(\achbotMessage('wallet.wallet_settlement.process_wallet_payment.alert.98b1616048'), true);
 				return [
 					'status'       => 'invalid_state',
 					'payInfo'      => $payInfo,
@@ -129,7 +131,7 @@ if (!function_exists('processWalletPayment')) {
             // Invalid/negative prices never become credits or free fulfillment.
             if ($price <= 0) {
                 $connection->rollback();
-                alert("مبلغ این سفارش معتبر نیست؛ موجودی کیف پول تغییر نکرد.", true);
+                alert(\achbotMessage('wallet.wallet_settlement.process_wallet_payment.alert.2d688eba81'), true);
                 return ['status'=>'invalid_amount','payInfo'=>$payInfo];
             }
 
@@ -137,7 +139,7 @@ if (!function_exists('processWalletPayment')) {
             // customer orders need the shared-ledger exclusivity lookup.
             if (!achbotWalletDirectAllowedLocked($connection, $payInfo, (int)$from_id)) {
                 $connection->rollback();
-                alert("⛔️ این سفارش قبلاً با روش دیگری آغاز شده است؛ پرداخت دوباره انجام ندهید.", true);
+                alert(\achbotMessage('wallet.wallet_settlement.process_wallet_payment.alert.b691af4dc7'), true);
                 return ['status'=>'claimed_provider','payInfo'=>$payInfo];
             }
 
@@ -148,7 +150,7 @@ if (!function_exists('processWalletPayment')) {
             // Uses the original schema; no migrations or new payment policy.
             if (!achbotSupportsPaymentSubject($connection, $payInfo, true)) {
                 $connection->rollback();
-                alert("⛔️ پرداخت این اشتراک در حال حاضر امکان‌پذیر نیست؛ مبلغی از کیف پول کسر نشد.", true);
+                alert(\achbotMessage('wallet.wallet_settlement.process_wallet_payment.alert.244ca46c8f'), true);
                 return [
                     'status' => 'unsupported_panel',
                     'payInfo' => $payInfo,
@@ -176,7 +178,7 @@ if (!function_exists('processWalletPayment')) {
                 : ($expectedBuyMode===null || $expectedBuyMode==='standard');
             if (!$modeMatchesLockedRequest) {
                 $connection->rollback();
-                alert('⛔️ روش خرید با مشخصات این سفارش مطابقت ندارد؛ مبلغی از کیف پول کسر نشد.',true);
+                alert(\achbotMessage('wallet.wallet_settlement.process_wallet_payment.alert.5d2e89e5ed'),true);
                 return ['status'=>'invalid_request','payInfo'=>$payInfo];
             }
 
@@ -200,9 +202,9 @@ if (!function_exists('processWalletPayment')) {
                 if (!$connection->commit()) throw new RuntimeException('wallet_low_balance_commit_unknown');
 
                 alert(
-                    "❌ موجودی کیف پول شما کافی نیست.\n" .
-                    "💵 موجودی فعلی: " . number_format($userWallet) . " تومان\n" .
-                    "🔺 مورد نیاز: " . number_format($price - $userWallet) . " تومان",
+                    \achbotMessage('wallet.wallet_settlement.process_wallet_payment.alert.ae55877021') .
+                    \achbotMessage('wallet.wallet_settlement.process_wallet_payment.alert.4092b19ef1') . number_format($userWallet) . \achbotMessage('wallet.admin_wallet.admin_wallet_report_result.text.81a62ff6c6') .
+                    \achbotMessage('wallet.wallet_settlement.process_wallet_payment.alert.f82b5605a9') . number_format($price - $userWallet) . \achbotMessage('wallet.admin_wallet.admin_wallet_report_result.text.2cc98f7f7c'),
                     true
                 );
 
@@ -240,7 +242,7 @@ if (!function_exists('processWalletPayment')) {
                     (!$isCustom && $manualRemark &&
                      !achbotEffectValidUsername($persistedRemark))) {
                     $connection->rollback();
-                    alert('⛔️ نام یا مشخصات این سفارش معتبر نیست؛ مبلغی از کیف پول کسر نشد.',true);
+                    alert(\achbotMessage('wallet.wallet_settlement.process_wallet_payment.alert.95b8db0b7f'),true);
                     return ['status'=>'invalid_request','payInfo'=>$payInfo];
                 }
                 $planId=(int)($payInfo['plan_id']??0);
@@ -271,18 +273,18 @@ if (!function_exists('processWalletPayment')) {
                     (int)$plan['inbound_id']!==0 ||
                     (int)$plan['server_active']!==1 ||
                     (int)$plan['server_state']!==1 ||
-                    ($plan['panel_type']??'')!=='marzban' ||
+                    !achbotSupportsAccount($plan['panel_type']??'',0) ||
                     (!$isCustom && ($planDays<=0 || $planDays>36500 ||
                      $planVolume<=0 ||
                      $planVolume>intdiv(PHP_INT_MAX,1073741824))) ||
                     ($isCustom && $quantity!==1) || !$generatedValid) {
                     $connection->rollback();
-                    alert('⛔️ مشخصات این سفارش معتبر نیست؛ مبلغی از کیف پول کسر نشد.',true);
+                    alert(\achbotMessage('wallet.wallet_settlement.process_wallet_payment.alert.b05ed79353'),true);
                     return ['status'=>'invalid_request','payInfo'=>$payInfo];
                 }
                 if ((int)$plan['ucount']<$quantity) {
                     $connection->rollback();
-                    alert('⛔️ ظرفیت این سفارش کافی نیست؛ مبلغی از کیف پول کسر نشد.',true);
+                    alert(\achbotMessage('wallet.wallet_settlement.process_wallet_payment.alert.0b74ab3f2e'),true);
                     return ['status'=>'insufficient_capacity','payInfo'=>$payInfo];
                 }
                 // The full plan row was locked and validated before debit.
@@ -375,10 +377,10 @@ if (!function_exists('processWalletPayment')) {
             if ($heldDebit)
                 error_log('achbot_wallet_held_debit_review hash='.
                     preg_replace('/[^A-Za-z0-9_-]/','',(string)$hashId));
-            $adminErr = "⚠️ خطا در پرداخت با کیف پول\n\n"
-                . "🆔 Hash ID: {$hashId}\n"
-                . "👤 User: {$from_id}\n"
-                . "⚠️ External effect: unverified; verify before retry or compensation\n📄 Reason (sanitized): " . (function_exists('achbotFinanceDiagnosticReason')
+            $adminErr = \achbotMessage('wallet.wallet_settlement.process_wallet_payment.admin_err.51996ec850')
+                . \achbotMessage('wallet.wallet_settlement.process_wallet_payment.hash__i_d_hash_id.e73fee2172', ['hashId' => $hashId])
+                . \achbotMessage('wallet.wallet_settlement.process_wallet_payment.user_from_id.45aa9ea684', ['from_id' => $from_id])
+                . \achbotMessage('wallet.wallet_settlement.process_wallet_payment.external_effect_unverified_verify_before.10e2ccf8a3') . (function_exists('achbotFinanceDiagnosticReason')
                 ? achbotFinanceDiagnosticReason($e)
                 : 'wallet_transaction_guard_error_' . (int)$e->getCode());
             try { sendMessage($adminErr, null, null, $admin); }
@@ -386,7 +388,7 @@ if (!function_exists('processWalletPayment')) {
                 error_log('achbot_wallet_failure_operator_notice_deferred');
             }
 
-            alert("⚠️ وضعیت درخواست پرداخت نیاز به بررسی دارد. لطفاً وضعیت سفارش و پرداخت را بررسی کنید و پیش از تکرار با پشتیبانی هماهنگ شوید.", true);
+            alert(\achbotMessage('wallet.wallet_settlement.process_wallet_payment.alert.9538721ade'), true);
 
             return [
                 'status'       => 'error',

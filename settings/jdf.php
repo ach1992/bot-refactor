@@ -1,4 +1,6 @@
-<?php /* In the name of Allah = بسم اللّه الرّحمن الرّحیم */
+<?php
+require_once __DIR__ . '/../messages/loader.php'; // ACHBOT_TEXT_CATALOG
+ /* In the name of Allah = بسم اللّه الرّحمن الرّحیم */
 
 /**
  * @فارسی : توابع زمان و تاریخ هجری شمسی (جلالی) در پی اچ پی
@@ -49,11 +51,11 @@ function jdate($format, $timestamp = '', $none = '', $time_zone = 'Asia/Tehran',
         break;
 
       case 'a':
-        $out .= ($date[0] < 12) ? 'ق.ظ' : 'ب.ظ';
+        $out .= ($date[0] < 12) ? \achbotMessage('date.jdf.jdate.text.97c8436cd1') : \achbotMessage('date.jdf.jdate.text.0c5015067c');
         break;
 
       case 'A':
-        $out .= ($date[0] < 12) ? 'قبل از ظهر' : 'بعد از ظهر';
+        $out .= ($date[0] < 12) ? \achbotMessage('date.jdf.jdate.text.a8554c7a06') : \achbotMessage('date.jdf.jdate.text.67c8744cfc');
         break;
 
       case 'b':
@@ -61,7 +63,7 @@ function jdate($format, $timestamp = '', $none = '', $time_zone = 'Asia/Tehran',
         break;
 
       case 'c':
-        $out .= $j_y . '/' . $j_m . '/' . $j_d . ' ،' . $date[0] . ':' . $date[1] . ':' . $date[6] . ' ' . $date[5];
+        $out .= $j_y . '/' . $j_m . '/' . $j_d . \achbotMessage('date.jdf.jdate.text.f06d8475f4') . $date[0] . ':' . $date[1] . ':' . $date[6] . ' ' . $date[5];
         break;
 
       case 'C':
@@ -160,7 +162,7 @@ function jdate($format, $timestamp = '', $none = '', $time_zone = 'Asia/Tehran',
 
       case 'r':
         $key = jdate_words(array('rh' => $date[7], 'mm' => $j_m));
-        $out .= $date[0] . ':' . $date[1] . ':' . $date[6] . ' ' . $date[4] . ' ' . $key['rh'] . '، ' . $j_d . ' ' . $key['mm'] . ' ' . $j_y;
+        $out .= $date[0] . ':' . $date[1] . ':' . $date[6] . ' ' . $date[4] . ' ' . $key['rh'] . \achbotMessage('date.jdf.jdate.text.11735aabd3') . $j_d . ' ' . $key['mm'] . ' ' . $j_y;
         break;
 
       case 's':
@@ -168,7 +170,7 @@ function jdate($format, $timestamp = '', $none = '', $time_zone = 'Asia/Tehran',
         break;
 
       case 'S':
-        $out .= 'ام';
+        $out .= \achbotMessage('date.jdf.jdate.out.9de4642363');
         break;
 
       case 't':
@@ -365,15 +367,15 @@ function jstrftime($format, $timestamp = '', $none = '', $time_zone = 'Asia/Tehr
         break;
 
       case 'p':
-        $out .= ($date[1] < 12) ? 'قبل از ظهر' : 'بعد از ظهر';
+        $out .= ($date[1] < 12) ? \achbotMessage('date.jdf.jdate.text.a8554c7a06') : \achbotMessage('date.jdf.jdate.text.67c8744cfc');
         break;
 
       case 'P':
-        $out .= ($date[1] < 12) ? 'ق.ظ' : 'ب.ظ';
+        $out .= ($date[1] < 12) ? \achbotMessage('date.jdf.jdate.text.97c8436cd1') : \achbotMessage('date.jdf.jdate.text.0c5015067c');
         break;
 
       case 'r':
-        $out .= $date[0] . ':' . $date[2] . ':' . $date[5] . ' ' . (($date[1] < 12) ? 'قبل از ظهر' : 'بعد از ظهر');
+        $out .= $date[0] . ':' . $date[2] . ':' . $date[5] . ' ' . (($date[1] < 12) ? \achbotMessage('date.jdf.jdate.text.a8554c7a06') : \achbotMessage('date.jdf.jdate.text.67c8744cfc'));
         break;
 
       case 'R':
@@ -403,7 +405,7 @@ function jstrftime($format, $timestamp = '', $none = '', $time_zone = 'Asia/Tehr
         /* Time and Date Stamps */
       case 'c':
         $key = jdate_words(array('rh' => $date[6], 'mm' => $j_m));
-        $out .= $date[1] . ':' . $date[2] . ':' . $date[5] . ' ' . date('P', $ts) . ' ' . $key['rh'] . '، ' . $j_d . ' ' . $key['mm'] . ' ' . $j_y;
+        $out .= $date[1] . ':' . $date[2] . ':' . $date[5] . ' ' . date('P', $ts) . ' ' . $key['rh'] . \achbotMessage('date.jdf.jdate.text.11735aabd3') . $j_d . ' ' . $key['mm'] . ' ' . $j_y;
         break;
 
       case 'D':
@@ -522,62 +524,62 @@ function jdate_words($array, $mod = '') {
         $h3 = $h34 = $h4 = '';
         if ($xy3 == 1) {
           $p34 = '';
-          $k34 = array('ده', 'یازده', 'دوازده', 'سیزده', 'چهارده', 'پانزده', 'شانزده', 'هفده', 'هجده', 'نوزده');
+          $k34 = array(\achbotMessage('date.jdf.jdate_words.text.8ac71c873a'), \achbotMessage('date.jdf.jdate_words.text.57d5767cf6'), \achbotMessage('date.jdf.jdate_words.text.bf2558f509'), \achbotMessage('date.jdf.jdate_words.text.24c27340c1'), \achbotMessage('date.jdf.jdate_words.text.0e5c6c20c4'), \achbotMessage('date.jdf.jdate_words.text.5ae225e758'), \achbotMessage('date.jdf.jdate_words.text.cf20908d6d'), \achbotMessage('date.jdf.jdate_words.text.3c0d6a9786'), \achbotMessage('date.jdf.jdate_words.text.3cd22200d6'), \achbotMessage('date.jdf.jdate_words.text.a0748d2617'));
           $h34 = $k34[substr($num, 2 - $sl, 2) - 10];
         } else {
           $xy4 = substr($num, 3 - $sl, 1);
-          $p34 = ($xy3 == 0 or $xy4 == 0) ? '' : ' و ';
-          $k3 = array('', '', 'بیست', 'سی', 'چهل', 'پنجاه', 'شصت', 'هفتاد', 'هشتاد', 'نود');
+          $p34 = ($xy3 == 0 or $xy4 == 0) ? '' : \achbotMessage('date.jdf.jdate_words.text.1a51e219ec');
+          $k3 = array('', '', \achbotMessage('date.jdf.jdate_words.text.24bb93ca32'), \achbotMessage('date.jdf.jdate_words.text.f9bd23e4d1'), \achbotMessage('date.jdf.jdate_words.text.54b58e0a94'), \achbotMessage('date.jdf.jdate_words.text.a5b7b060db'), \achbotMessage('date.jdf.jdate_words.text.75e495e488'), \achbotMessage('date.jdf.jdate_words.text.c9ecd884e4'), \achbotMessage('date.jdf.jdate_words.text.8f8040072c'), \achbotMessage('date.jdf.jdate_words.text.dd905fd6a1'));
           $h3 = $k3[$xy3];
-          $k4 = array('', 'یک', 'دو', 'سه', 'چهار', 'پنج', 'شش', 'هفت', 'هشت', 'نه');
+          $k4 = array('', \achbotMessage('date.jdf.jdate_words.text.fdebba67c0'), \achbotMessage('date.jdf.jdate_words.text.44db1d0eb9'), \achbotMessage('date.jdf.jdate_words.text.5c777e7f21'), \achbotMessage('date.jdf.jdate_words.text.f36ac14abd'), \achbotMessage('date.jdf.jdate_words.text.4a1a9e0101'), \achbotMessage('date.jdf.jdate_words.text.3155888dfb'), \achbotMessage('date.jdf.jdate_words.text.c8641c6a56'), \achbotMessage('date.jdf.jdate_words.text.f651432e38'), \achbotMessage('date.jdf.jdate_words.text.b0e91feb14'));
           $h4 = $k4[$xy4];
         }
         $array[$type] = (($num > 99) ? str_replace(
           array('12', '13', '14', '19', '20'),
-          array('هزار و دویست', 'هزار و سیصد', 'هزار و چهارصد', 'هزار و نهصد', 'دوهزار'),
+          array(\achbotMessage('date.jdf.jdate_words.text.d025e64fdc'), \achbotMessage('date.jdf.jdate_words.text.789475ce59'), \achbotMessage('date.jdf.jdate_words.text.acecc99d12'), \achbotMessage('date.jdf.jdate_words.text.87d414234d'), \achbotMessage('date.jdf.jdate_words.text.e788887c33')),
           substr($num, 0, 2)
-        ) . ((substr($num, 2, 2) == '00') ? '' : ' و ') : '') . $h3 . $p34 . $h34 . $h4;
+        ) . ((substr($num, 2, 2) == '00') ? '' : \achbotMessage('date.jdf.jdate_words.text.1a51e219ec')) : '') . $h3 . $p34 . $h34 . $h4;
         break;
 
       case 'mm':
-        $key = array('فروردین', 'اردیبهشت', 'خرداد', 'تیر', 'مرداد', 'شهریور', 'مهر', 'آبان', 'آذر', 'دی', 'بهمن', 'اسفند');
+        $key = array(\achbotMessage('date.jdf.jdate_words.text.606f195ef4'), \achbotMessage('date.jdf.jdate_words.text.85d23ae9bc'), \achbotMessage('date.jdf.jdate_words.text.26020bdf0f'), \achbotMessage('date.jdf.jdate_words.text.e666598ef2'), \achbotMessage('date.jdf.jdate_words.text.73461f2073'), \achbotMessage('date.jdf.jdate_words.text.88eb449d9d'), \achbotMessage('date.jdf.jdate_words.text.8a4bc93ff1'), \achbotMessage('date.jdf.jdate_words.text.2171b57a2e'), \achbotMessage('date.jdf.jdate_words.text.ca7ec525a9'), \achbotMessage('date.jdf.jdate_words.text.2ae9c04860'), \achbotMessage('date.jdf.jdate_words.text.569bd7b0d5'), \achbotMessage('date.jdf.jdate_words.text.fd6af47420'));
         $array[$type] = $key[$num - 1];
         break;
 
       case 'rr':
         $key = array(
-          'یک', 'دو', 'سه', 'چهار', 'پنج', 'شش', 'هفت', 'هشت', 'نه', 'ده', 'یازده', 'دوازده', 'سیزده', 'چهارده', 'پانزده', 'شانزده', 'هفده', 'هجده', 'نوزده', 'بیست', 'بیست و یک', 'بیست و دو', 'بیست و سه', 'بیست و چهار', 'بیست و پنج', 'بیست و شش', 'بیست و هفت', 'بیست و هشت', 'بیست و نه', 'سی', 'سی و یک'
+          \achbotMessage('date.jdf.jdate_words.text.fdebba67c0'), \achbotMessage('date.jdf.jdate_words.text.44db1d0eb9'), \achbotMessage('date.jdf.jdate_words.text.5c777e7f21'), \achbotMessage('date.jdf.jdate_words.text.f36ac14abd'), \achbotMessage('date.jdf.jdate_words.text.4a1a9e0101'), \achbotMessage('date.jdf.jdate_words.text.3155888dfb'), \achbotMessage('date.jdf.jdate_words.text.c8641c6a56'), \achbotMessage('date.jdf.jdate_words.text.f651432e38'), \achbotMessage('date.jdf.jdate_words.text.b0e91feb14'), \achbotMessage('date.jdf.jdate_words.text.8ac71c873a'), \achbotMessage('date.jdf.jdate_words.text.57d5767cf6'), \achbotMessage('date.jdf.jdate_words.text.bf2558f509'), \achbotMessage('date.jdf.jdate_words.text.24c27340c1'), \achbotMessage('date.jdf.jdate_words.text.0e5c6c20c4'), \achbotMessage('date.jdf.jdate_words.text.5ae225e758'), \achbotMessage('date.jdf.jdate_words.text.cf20908d6d'), \achbotMessage('date.jdf.jdate_words.text.3c0d6a9786'), \achbotMessage('date.jdf.jdate_words.text.3cd22200d6'), \achbotMessage('date.jdf.jdate_words.text.a0748d2617'), \achbotMessage('date.jdf.jdate_words.text.24bb93ca32'), \achbotMessage('date.jdf.jdate_words.text.8c4c6b36e7'), \achbotMessage('date.jdf.jdate_words.text.d3ff544bea'), \achbotMessage('date.jdf.jdate_words.text.439b063855'), \achbotMessage('date.jdf.jdate_words.text.c9d9ba3716'), \achbotMessage('date.jdf.jdate_words.text.af0e478da6'), \achbotMessage('date.jdf.jdate_words.text.bd9dc6e277'), \achbotMessage('date.jdf.jdate_words.text.820843a493'), \achbotMessage('date.jdf.jdate_words.text.bb6b11a383'), \achbotMessage('date.jdf.jdate_words.text.9d0e2bc724'), \achbotMessage('date.jdf.jdate_words.text.f9bd23e4d1'), \achbotMessage('date.jdf.jdate_words.text.96470812b8')
         );
         $array[$type] = $key[$num - 1];
         break;
 
       case 'rh':
-        $key = array('یکشنبه', 'دوشنبه', 'سه شنبه', 'چهارشنبه', 'پنجشنبه', 'جمعه', 'شنبه');
+        $key = array(\achbotMessage('date.jdf.jdate_words.text.58f0fe06c4'), \achbotMessage('date.jdf.jdate_words.text.cd9be78f65'), \achbotMessage('date.jdf.jdate_words.text.1b2a908a00'), \achbotMessage('date.jdf.jdate_words.text.2415ff5948'), \achbotMessage('date.jdf.jdate_words.text.7a75d6fc3d'), \achbotMessage('date.jdf.jdate_words.text.ce9bd10902'), \achbotMessage('date.jdf.jdate_words.text.7c580b5cf1'));
         $array[$type] = $key[$num];
         break;
 
       case 'sh':
-        $key = array('مار', 'اسب', 'گوسفند', 'میمون', 'مرغ', 'سگ', 'خوک', 'موش', 'گاو', 'پلنگ', 'خرگوش', 'نهنگ');
+        $key = array(\achbotMessage('date.jdf.jdate_words.text.40bf697661'), \achbotMessage('date.jdf.jdate_words.text.159c77fc3f'), \achbotMessage('date.jdf.jdate_words.text.d8c87c7360'), \achbotMessage('date.jdf.jdate_words.text.86275fa4b8'), \achbotMessage('date.jdf.jdate_words.text.ff94940c89'), \achbotMessage('date.jdf.jdate_words.text.61426b93ae'), \achbotMessage('date.jdf.jdate_words.text.3aae7a9973'), \achbotMessage('date.jdf.jdate_words.text.b30fa541f5'), \achbotMessage('date.jdf.jdate_words.text.88accd6ad2'), \achbotMessage('date.jdf.jdate_words.text.65e0559b01'), \achbotMessage('date.jdf.jdate_words.text.cda84920a1'), \achbotMessage('date.jdf.jdate_words.text.b91e9abb45'));
         $array[$type] = $key[$num % 12];
         break;
 
       case 'mb':
-        $key = array('حمل', 'ثور', 'جوزا', 'سرطان', 'اسد', 'سنبله', 'میزان', 'عقرب', 'قوس', 'جدی', 'دلو', 'حوت');
+        $key = array(\achbotMessage('date.jdf.jdate_words.text.f27cd3e3e4'), \achbotMessage('date.jdf.jdate_words.text.1d2d7fee62'), \achbotMessage('date.jdf.jdate_words.text.70fa3386b5'), \achbotMessage('date.jdf.jdate_words.text.963dcc40e1'), \achbotMessage('date.jdf.jdate_words.text.12051e6ea6'), \achbotMessage('date.jdf.jdate_words.text.f617c2fbf3'), \achbotMessage('date.jdf.jdate_words.text.9e1021c56a'), \achbotMessage('date.jdf.jdate_words.text.55b950d068'), \achbotMessage('date.jdf.jdate_words.text.6a46b71cf7'), \achbotMessage('date.jdf.jdate_words.text.892c828347'), \achbotMessage('date.jdf.jdate_words.text.26d96d8de4'), \achbotMessage('date.jdf.jdate_words.text.17524579e9'));
         $array[$type] = $key[$num - 1];
         break;
 
       case 'ff':
-        $key = array('بهار', 'تابستان', 'پاییز', 'زمستان');
+        $key = array(\achbotMessage('date.jdf.jdate_words.text.0915a0498e'), \achbotMessage('date.jdf.jdate_words.text.ea3b03e1db'), \achbotMessage('date.jdf.jdate_words.text.1e73cac3a1'), \achbotMessage('date.jdf.jdate_words.text.58aa8ecda3'));
         $array[$type] = $key[(int) ($num / 3.1)];
         break;
 
       case 'km':
-        $key = array('فر', 'ار', 'خر', 'تی‍', 'مر', 'شه‍', 'مه‍', 'آب‍', 'آذ', 'دی', 'به‍', 'اس‍');
+        $key = array(\achbotMessage('date.jdf.jdate_words.text.0fe3742522'), \achbotMessage('date.jdf.jdate_words.text.cc3fbbc47c'), \achbotMessage('date.jdf.jdate_words.text.799e0eab15'), \achbotMessage('date.jdf.jdate_words.text.089d5e89d0'), \achbotMessage('date.jdf.jdate_words.text.ae392b88fc'), \achbotMessage('date.jdf.jdate_words.text.0912ebf6ec'), \achbotMessage('date.jdf.jdate_words.text.a8e9299515'), \achbotMessage('date.jdf.jdate_words.text.569d81c129'), \achbotMessage('date.jdf.jdate_words.text.5d5caabe1a'), \achbotMessage('date.jdf.jdate_words.text.2ae9c04860'), \achbotMessage('date.jdf.jdate_words.text.d43f14f514'), \achbotMessage('date.jdf.jdate_words.text.ca47cec5c4'));
         $array[$type] = $key[$num - 1];
         break;
 
       case 'kh':
-        $key = array('ی', 'د', 'س', 'چ', 'پ', 'ج', 'ش');
+        $key = array(\achbotMessage('date.jdf.jdate_words.text.65fe35f471'), \achbotMessage('date.jdf.jdate_words.text.b15aa8e25e'), \achbotMessage('date.jdf.jdate_words.text.861183a44b'), \achbotMessage('date.jdf.jdate_words.text.154ec3b687'), \achbotMessage('date.jdf.jdate_words.text.7078edd9b1'), \achbotMessage('date.jdf.jdate_words.text.51c9a584ad'), \achbotMessage('date.jdf.jdate_words.text.119c5451ad'));
         $array[$type] = $key[$num];
         break;
 

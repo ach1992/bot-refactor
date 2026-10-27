@@ -6,6 +6,7 @@ import http.client
 import json
 import os
 from pathlib import Path
+import shutil
 import socket
 import subprocess
 import tempfile
@@ -55,6 +56,7 @@ def main():
         def stage(name, config, bot=source):
             folder = root / name
             folder.mkdir()
+            shutil.copytree(ROOT / "messages", folder / "messages")
             (folder / "bot.php").write_text(prefix(bot))
             if config is not None:
                 (folder / "baseInfo.php").write_text(

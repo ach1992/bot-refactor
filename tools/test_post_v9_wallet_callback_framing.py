@@ -81,7 +81,11 @@ def check() -> dict:
                 'day': f'INCREASE_DAY_{order_id}_901',
                 'volume': f'INCREASE_VOLUME_{order_id}_902',
             }[subject]
-            day, volume = (30, 2) if subject == 'custom' else (0, 0)
+            # Valid NEW add-on quotes own their purchased units before dispatch.
+            # These callback framing positives must not masquerade as unprovable
+            # legacy zero-quantity invoices (covered by the unit guard suite).
+            day, volume = {'custom': (30, 2), 'day': (7, 0),
+                           'volume': (0, 8)}.get(subject, (0, 0))
             sql('INSERT INTO pays '
                 '(hash_id,user_id,type,plan_id,server_id,order_id,agent_count,'
                 'day,volume,price,description,request_date,state) VALUES '

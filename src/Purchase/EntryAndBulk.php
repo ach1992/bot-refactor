@@ -4,6 +4,8 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     http_response_code(404);
     exit;
 }
+require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
+
 
 if(($data == "agentOneBuy" || $data=='buySubscription' || $data == "agentMuchBuy") && ($botState['sellState']=="on" || ($from_id == $admin || $userInfo['isAdmin'] == true))){
     if(!achbotManualEnabled('bank_transfer') && !achbotManualEnabled('gift_card') && !achbotManualEnabled('manual_usdt') && ($botState['walletState'] ?? 'off') == "off"){
@@ -14,7 +16,7 @@ if(($data == "agentOneBuy" || $data=='buySubscription' || $data == "agentMuchBuy
     elseif($data=="agentOneBuy") $buyType = "one";
     elseif($data== "agentMuchBuy") $buyType = "much";
     
-    $stmt = $connection->prepare("SELECT si.* FROM `server_info` si INNER JOIN `server_config` sc ON sc.`id`=si.`id` AND sc.`type`='marzban' WHERE si.`active`=1 and si.`state`=1 and si.`ucount` > 0 ORDER BY si.`id` ASC");
+    $stmt = $connection->prepare("SELECT si.* FROM `server_info` si INNER JOIN `server_config` sc ON sc.`id`=si.`id` AND sc.`type` IN ('marzban','pasarguard') WHERE si.`active`=1 and si.`state`=1 and si.`ucount` > 0 ORDER BY si.`id` ASC");
     $stmt->execute();
     $respd = $stmt->get_result();
     $stmt->close();
@@ -35,7 +37,7 @@ if(($data == "agentOneBuy" || $data=='buySubscription' || $data == "agentMuchBuy
 }
 
 if($data=='createMultipleAccounts' && ($from_id == $admin || $userInfo['isAdmin'] == true)){
-    $stmt = $connection->prepare("SELECT si.* FROM `server_info` si INNER JOIN `server_config` sc ON sc.`id`=si.`id` AND sc.`type`='marzban' WHERE si.`active`=1 and si.`ucount` > 0 ORDER BY si.`id` ASC");
+    $stmt = $connection->prepare("SELECT si.* FROM `server_info` si INNER JOIN `server_config` sc ON sc.`id`=si.`id` AND sc.`type` IN ('marzban','pasarguard') WHERE si.`active`=1 and si.`ucount` > 0 ORDER BY si.`id` ASC");
     $stmt->execute();
     $respd = $stmt->get_result();
     $stmt->close();
@@ -64,14 +66,14 @@ if(preg_match('/createAccServer(\d+)/',$data, $match) && ($from_id == $admin || 
     $respd = $stmt->get_result();
     $stmt->close();
     if($respd->num_rows == 0){
-        alert("هیچ دسته بندی برای این سرور وجود ندارد.");
+        alert(\achbotMessage('purchase.entry_and_bulk.create_multiple_accounts.alert.de33518bf8'));
     }else{
         
         $keyboard = [];
         while ($file = $respd->fetch_assoc()){
             $id = $file['id'];
             $name = $file['title'];
-            $stmt = $connection->prepare("SELECT p.* FROM `server_plans` p INNER JOIN `server_config` sc ON sc.`id`=p.`server_id` AND sc.`type`='marzban' WHERE p.`server_id`=? and p.`catid`=? and p.`active`=1 AND p.`inbound_id`=0");
+            $stmt = $connection->prepare("SELECT p.* FROM `server_plans` p INNER JOIN `server_config` sc ON sc.`id`=p.`server_id` AND sc.`type` IN ('marzban','pasarguard') WHERE p.`server_id`=? and p.`catid`=? and p.`active`=1 AND p.`inbound_id`=0");
             $stmt->bind_param("ii", $sid, $id);
             $stmt->execute();
             $rowcount = $stmt->get_result()->num_rows; 
@@ -79,29 +81,27 @@ if(preg_match('/createAccServer(\d+)/',$data, $match) && ($from_id == $admin || 
             if($rowcount>0) $keyboard[] = ['text' => "$name", 'callback_data' => "createAccCategory{$id}_{$sid}"];
         }
         if(empty($keyboard)){
-            alert("هیچ دسته بندی برای این سرور وجود ندارد.");exit;
+            alert(\achbotMessage('purchase.entry_and_bulk.create_multiple_accounts.alert.de33518bf8'));exit;
         }
-        alert("♻️ دریافت دسته بندی ...");
+        alert(\achbotMessage('purchase.entry_and_bulk.create_multiple_accounts.alert.174c6a61d7'));
         $keyboard[] = ['text' => $buttonValues['back_to_main'], 'callback_data' => "createMultipleAccounts"];
         $keyboard = array_chunk($keyboard,1);
-        editText($message_id, "2️⃣ مرحله دو
-
-دسته بندی مورد نظرت رو انتخاب کن 🤭", json_encode(['inline_keyboard'=>$keyboard]));
+        editText($message_id, \achbotMessage('purchase.entry_and_bulk.create_multiple_accounts.message.2f3dfcbe8e'), json_encode(['inline_keyboard'=>$keyboard]));
     }
 
 }
 if(preg_match('/createAccCategory(\d+)_(\d+)/',$data,$match) && ($from_id == $admin || $userInfo['isAdmin'] == true)) {
     $call_id = $match[1];
     $sid = $match[2];
-    $stmt = $connection->prepare("SELECT p.* FROM `server_plans` p INNER JOIN `server_config` sc ON sc.`id`=p.`server_id` AND sc.`type`='marzban' WHERE p.`server_id`=? and p.`catid`=? and p.`active`=1 AND p.`inbound_id`=0 order by p.`id` asc");
+    $stmt = $connection->prepare("SELECT p.* FROM `server_plans` p INNER JOIN `server_config` sc ON sc.`id`=p.`server_id` AND sc.`type` IN ('marzban','pasarguard') WHERE p.`server_id`=? and p.`catid`=? and p.`active`=1 AND p.`inbound_id`=0 order by p.`id` asc");
     $stmt->bind_param("ii", $sid, $call_id);
     $stmt->execute();
     $respd = $stmt->get_result();
     $stmt->close();
     if($respd->num_rows==0){
-        alert("💡 پلنی در این دسته بندی وجود ندارد. ");
+        alert(\achbotMessage('purchase.entry_and_bulk.create_multiple_accounts.alert.5223e5a747'));
     }else{
-        alert("📍 در حال دریافت لیست پلن ها");
+        alert(\achbotMessage('purchase.entry_and_bulk.create_multiple_accounts.alert.465c2a0af9'));
         $keyboard = [];
         while($file = $respd->fetch_assoc()){
             $id = $file['id'];
@@ -110,31 +110,29 @@ if(preg_match('/createAccCategory(\d+)_(\d+)/',$data,$match) && ($from_id == $ad
         }
         $keyboard[] = ['text' => $buttonValues['back_to_main'], 'callback_data' => "createAccServer$sid"];
         $keyboard = array_chunk($keyboard,1);
-        editText($message_id, "3️⃣ مرحله سه
-
-یکی از پلن هارو انتخاب کن و برو برای پرداختش 🤲 🕋", json_encode(['inline_keyboard'=>$keyboard]));
+        editText($message_id, \achbotMessage('purchase.entry_and_bulk.create_multiple_accounts.message.7f4d98ab9b'), json_encode(['inline_keyboard'=>$keyboard]));
     }
 
 }
 if(preg_match('/^createAccPlan(\d+)/',$data,$match) && $text != $buttonValues['cancel'] && ($from_id == $admin || $userInfo['isAdmin'] == true)){
-    if (!achbotSupportsMarzbanPlan($connection, (int)$match[1])) {
-        alert("⛔️ طرح انتخابی در حال حاضر قابل خرید نیست.", true);
+    if (!achbotSupportsPlan($connection, (int)$match[1])) {
+        alert(\achbotMessage('purchase.entry_and_bulk.create_multiple_accounts.alert.d3fb64c4d9'), true);
         return;
     }
     delMessage();
-    sendMessage("❗️ لطفا مدت زمان اکانت را به ( روز ) وارد کن:",$cancelKey);
+    sendMessage(\achbotMessage('purchase.entry_and_bulk.create_multiple_accounts.message.c754e347bf'),$cancelKey);
     setUser('createAccDate' . $match[1]);
 }
 if(preg_match('/^createAccDate(\d+)/',$userInfo['step'],$match) && $text != $buttonValues['cancel'] && ($from_id == $admin || $userInfo['isAdmin'] == true)){
     if(is_numeric($text)){
         if($text >0){
-            sendMessage("❕ حجم اکانت ها رو به گیگابایت ( GB ) وارد کن:");
+            sendMessage(\achbotMessage('purchase.entry_and_bulk.create_multiple_accounts.message.f018216ab3'));
             setUser('createAccVolume' . $match[1] . "_" . $text);
         }else{
-            sendMessage("عدد باید بیشتر از 0 باشه");
+            sendMessage(\achbotMessage('purchase.entry_and_bulk.create_multiple_accounts.message.9cc4de866d'));
         }
     }else{
-        sendMessage('😡 مگه نمیگم فقط عدد بفرس نمیفهمی؟ یا خودتو زدی به نفهمی؟');
+        sendMessage(\achbotMessage('purchase.entry_and_bulk.create_multiple_accounts.message.141dd787b4'));
     }
 }
 if(preg_match('/^createAccVolume(\d+)_(\d+)/',$userInfo['step'],$match) && $text != $buttonValues['cancel'] && ($from_id == $admin || $userInfo['isAdmin'] == true)){
@@ -142,7 +140,7 @@ if(preg_match('/^createAccVolume(\d+)_(\d+)/',$userInfo['step'],$match) && $text
         sendMessage($mainValues['send_only_number']);
         exit();
     }elseif($text <=0){
-        sendMessage("مقداری بزرگتر از 0 وارد کن");
+        sendMessage(\achbotMessage('purchase.entry_and_bulk.create_multiple_accounts.message.f30d6ad265'));
         exit();
     }
     sendMessage($mainValues['enter_account_amount']);
@@ -161,7 +159,7 @@ if (
             $update,(int)$from_id,'admin_bulk',(string)$text,
             (int)$from_id===(int)$admin);
     } catch (Throwable $error) {
-        alert('⛔️ درخواست قدیمی یا نامعتبر است؛ از منوی ساخت گروهی دوباره اقدام کنید.',true);
+        alert(\achbotMessage('purchase.entry_and_bulk.create_multiple_accounts.alert.dd52ddf02f'),true);
         return;
     }
 
@@ -174,7 +172,7 @@ if (
     }
     $count = (int)$text;
     if ($count <= 0) {
-        sendMessage("مقداری بزرگتر از 0 وارد کن");
+        sendMessage(\achbotMessage('purchase.entry_and_bulk.create_multiple_accounts.message.f30d6ad265'));
         exit();
     }
 
@@ -183,8 +181,8 @@ if (
     $daysFromStep   = (int)$match[2];
     $volumeFromStep = (int)$match[3];
 
-    if (!achbotSupportsMarzbanPlan($connection, $fidFromStep)) {
-        alert("⛔️ طرح انتخابی در حال حاضر قابل خرید نیست.", true);
+    if (!achbotSupportsPlan($connection, $fidFromStep)) {
+        alert(\achbotMessage('purchase.entry_and_bulk.create_multiple_accounts.alert.d3fb64c4d9'), true);
         return;
     }
     $planDetails = getPlanDetails($connection, $fidFromStep);
@@ -284,8 +282,8 @@ if (
             $volume,
             $days,
             $buttonValues,
-            $linkIndices,
-            $hideConfigIfMany,
+            [],
+            false,
             '',
             null,
             false
@@ -315,10 +313,10 @@ if (
             preg_replace('/[^A-Za-z0-9_:]/','',$bulkSource).
             ' class='.get_class($error));
         try {
-            sendMessage('⚠️ ساخت گروهی نیازمند تطبیق اکانت‌های ثبت‌شده است. '.
-                'از اجرای دوبارهٔ خودکار خودداری کنید.',null,null,$admin);
+            sendMessage(\achbotMessage('purchase.entry_and_bulk.create_multiple_accounts.message.76499f65f3').
+                \achbotMessage('purchase.entry_and_bulk.create_multiple_accounts.message.fbde023d57'),null,null,$admin);
         } catch (Throwable $ignored) {}
-        alert('⚠️ ساخت گروهی هنوز قطعی نیست؛ وضعیت سرویس‌ها را بررسی کنید.',true);
+        alert(\achbotMessage('purchase.entry_and_bulk.create_multiple_accounts.alert.c7ce33a4eb'),true);
         return;
     }
     foreach ($pendingDeliveries as $packet) {
@@ -332,7 +330,7 @@ if (
                 ' class='.get_class($error));
         }
     }
-    sendMessage("☑️ اکانت‌ها ثبت شدند؛ در صورت نقص ارسال، وضعیت را بررسی کنید.", getMainKeys());
+    sendMessage(\achbotMessage('purchase.entry_and_bulk.create_multiple_accounts.message.62d6e89b94'), getMainKeys());
     setUser();
 }
 

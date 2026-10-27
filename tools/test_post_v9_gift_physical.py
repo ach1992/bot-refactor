@@ -164,10 +164,12 @@ def prepare(work):
     stage=work/'real-gift'
     (stage/'settings').mkdir(parents=True)
     for filename in ['settings/gift2all.php','src/Subscription/GiftBatch.php',
-                     'src/Panel/Accounts.php','src/Purchase/Core.php']:
+                     'src/Panel/Accounts.php','src/Purchase/Core.php',
+                     'src/Panel/ProviderRuntime.php','src/Panel/ProviderStorage.php','src/Panel/PasarGuard.php']:
         target=stage/filename
         target.parent.mkdir(parents=True,exist_ok=True)
         shutil.copyfile(ROOT/filename,target)
+    shutil.copytree(ROOT/'messages',stage/'messages')
     (stage/'config.php').write_text(CONFIG)
     (stage/'baseInfo.php').write_text('<?php // disposable isolated harness\n')
     (stage/'run.php').write_text(gift.RUNNER)

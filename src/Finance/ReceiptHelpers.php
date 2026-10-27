@@ -4,6 +4,10 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     http_response_code(404);
     exit;
 }
+require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
+
+
+require_once __DIR__.'/../Panel/ProviderRuntime.php';
 
 if (!function_exists('payTypeToDescription')) {
     function payTypeToDescription($payType)
@@ -70,13 +74,13 @@ if (!function_exists('refundToWalletAndNotify')) {
     ) {
         if (!addToWallet($connection, $userId, $amount)) return false;
 
-        $userMsg = "✅ مبلغ " . number_format($amount) . " تومان به حساب شما اضافه شد.";
+        $userMsg = \achbotMessage('manual_payment.receipt_helpers.refund_to_wallet_and_notify.user_msg.a5b15e454e') . number_format($amount) . \achbotMessage('manual_payment.automatic_receipts.message.6f42cf1050');
         if (!empty($userReasonText)) {
             $userMsg .= "\n\n" . $userReasonText;
         }
         sendMessage($userMsg, null, null, $userId);
 
-        $adminText = "✅ مبلغ " . number_format($amount) . " تومان به کیف پول کاربر $userId توسط درگاه $gateType اضافه شد. " . $adminTextSuffix;
+        $adminText = \achbotMessage('manual_payment.receipt_helpers.refund_to_wallet_and_notify.user_msg.a5b15e454e') . number_format($amount) . \achbotMessage('manual_payment.receipt_helpers.refund_to_wallet_and_notify.text.32f7062209', ['userId' => $userId, 'gateType' => $gateType]) . $adminTextSuffix;
 
         if ($rewardChannel === null) {
             global $botState;
@@ -143,10 +147,10 @@ function achbotManualMethod(string $choice): ?string {
 
 function achbotManualLabel(string $method): string {
     return match ($method) {
-        'gift_card' => 'گیفت‌کارت',
-        'manual_usdt' => 'تتر دستی (USDT)',
-        'manual_trx' => 'ترون دستی (TRX)',
-        default => 'کارت‌به‌کارت بانکی'
+        'gift_card' => \achbotMessage('manual_payment.receipt_helpers.manual_label.text.3904ef0f3d'),
+        'manual_usdt' => \achbotMessage('manual_payment.receipt_helpers.manual_label.text.2f1fd66193'),
+        'manual_trx' => \achbotMessage('manual_payment.receipt_helpers.manual_label.text.ea9faa7b63'),
+        default => \achbotMessage('manual_payment.receipt_helpers.manual_label.text.ace4b5ad89')
     };
 }
 
@@ -203,6 +207,36 @@ function achbotManualTronAddressValid(string $wallet): bool {
     return hash_equals($wallet, $canonical);
 }
 
+/** Validated explicit bot-setting rate; no private or network fallback. */
+function achbotUsdtRateValue($raw): ?float {
+    if ((!is_string($raw) && !is_int($raw) && !is_float($raw)) ||
+        !is_numeric($raw)) return null;
+    $rate=(float)$raw;
+    return is_finite($rate) && $rate>=100 && $rate<=1000000000 ? $rate : null;
+}
+
+/** A cleared optional agent override deliberately reuses the normal rate. */
+function achbotUsdtRate(bool $agent=false, ?array $keys=null): ?float {
+    $keys=$keys ?? (is_array($GLOBALS['paymentKeys']??null) ? $GLOBALS['paymentKeys'] : []);
+    if ($agent && array_key_exists('usdtAgentRateToman',$keys) &&
+        $keys['usdtAgentRateToman']!=='')
+        return achbotUsdtRateValue($keys['usdtAgentRateToman']);
+    return achbotUsdtRateValue($keys['manualUsdtRateToman']??null);
+}
+
+/** Quote/menu role comes from the actual account, never callback or cached UI. */
+function achbotUsdtRateForUser(mysqli $db,int $userId): ?float {
+    if ($userId<=0) return null;
+    try {
+        $stmt=$db->prepare('SELECT is_agent FROM users WHERE userid=? LIMIT 2');
+        if (!$stmt) return null;
+        $stmt->bind_param('i',$userId);
+        if (!$stmt->execute()) { $stmt->close(); return null; }
+        $rows=$stmt->get_result()->fetch_all(MYSQLI_ASSOC);$stmt->close();
+        return count($rows)===1 ? achbotUsdtRate((int)$rows[0]['is_agent']===1) : null;
+    } catch (Throwable $ignored) { return null; }
+}
+
 /**
  * All available manual-crypto destinations are independent. The existing
  * manualUsdtNetwork/manualUsdtWallet pair remains a read-compatible fallback
@@ -212,7 +246,7 @@ function achbotManualTronAddressValid(string $wallet): bool {
  * screenshot nor an operator click is automatic blockchain settlement proof.
  */
 function achbotManualUsdtConfiguration(?string $network = null): ?array {
-    global $paymentKeys, $USDTPrice, $USDTPriceagent;
+    global $paymentKeys;
     $keys = is_array($paymentKeys ?? null) ? $paymentKeys : [];
     if ($network === null) {
         $network = (string)($keys['manualUsdtNetwork'] ?? 'BEP20');
@@ -224,19 +258,9 @@ function achbotManualUsdtConfiguration(?string $network = null): ?array {
         : ((string)($keys['manualUsdtNetwork'] ?? 'BEP20') === $network
             ? trim((string)($keys['manualUsdtWallet'] ?? '')) : '');
     if (!achbotManualUsdtWalletValid($wallet, $network)) return null;
-    $rawRate = $keys['manualUsdtRateToman'] ?? null;
-    // Explicitly set but invalid rates must never fall back silently.
-    if ($rawRate !== null && $rawRate !== '' &&
-        (!is_numeric($rawRate) || !is_finite((float)$rawRate) ||
-         (float)$rawRate <= 0)) return null;
-    $override = $rawRate !== null && $rawRate !== '';
-    $rate = $override ? (float)$rawRate :
-        (isset($USDTPrice) && is_numeric($USDTPrice) ? (float)$USDTPrice : 0);
-    if (!is_finite($rate) || $rate < 100 || $rate > 1000000000) return null;
-    $agentRate = $override ? $rate :
-        (isset($USDTPriceagent) && is_numeric($USDTPriceagent)
-         ? (float)$USDTPriceagent : 0);
-    if (!is_finite($agentRate) || $agentRate <= 0) $agentRate = $rate;
+    $rate=achbotUsdtRate(false,$keys);
+    $agentRate=achbotUsdtRate(true,$keys);
+    if ($rate===null && $agentRate===null) return null;
     return ['network'=>$network, 'wallet'=>$wallet,
             'rate'=>$rate, 'agent_rate'=>$agentRate];
 }
@@ -261,25 +285,27 @@ function achbotManualTrxConfiguration(): ?array {
  * share the existing manual photo/approval pipeline. A claimed quote is
  * permanent even when admin settings change later.
  */
-function achbotManualCryptoOptions(): array {
-    global $botState;
+function achbotManualCryptoOptions(?int $userId=null): array {
+    global $botState, $connection;
     if (($botState['manualUsdtState'] ?? 'off') !== 'on') return [];
     $available = [];
+    $rateUsable=$userId===null || achbotUsdtRateForUser($connection,$userId)!==null;
     foreach (['BEP20'=>'b','TRC20'=>'c','ERC20'=>'e'] as $network=>$tag) {
-        if (achbotManualUsdtConfiguration($network) !== null) {
+        if (achbotManualUsdtConfiguration($network) !== null &&
+            $rateUsable) {
             $available[$tag] = ['provider'=>'manual_usdt','network'=>$network,
-                                'label'=>'💎 USDT — '.$network];
+                                'label'=>\achbotMessage('manual_payment.receipt_helpers.manual_crypto_options.u_s_d_t.1974a6095a').$network];
         }
     }
     if (achbotManualTrxConfiguration() !== null) {
         $available['t']=['provider'=>'manual_trx','network'=>'TRON',
-                          'label'=>'🔴 TRX — TRON'];
+                          'label'=>\achbotMessage('manual_payment.receipt_helpers.manual_crypto_options.t_r_x__t_r_o_n.e3a2653517')];
     }
     return $available;
 }
 
-function achbotManualCryptoEnabled(): bool {
-    return achbotManualCryptoOptions() !== [];
+function achbotManualCryptoEnabled(?int $userId=null): bool {
+    return achbotManualCryptoOptions($userId) !== [];
 }
 
 /** No implicit recipient or gift seller: invalid settings disable initiation. */
@@ -582,6 +608,10 @@ function achbotAutoBankClaim(mysqli $connection, array $seen): bool {
             $connection->rollback();
             return false;
         }
+        if (preg_match('/^INCREASE_(?:DAY|VOLUME)_/',(string)$pay['type']) &&
+            achbotPinnedAddonUnits($pay)===null) {
+            $connection->rollback();return false;
+        }
         // Do not classify a failed ledger lookup as a legacy card receipt.
         $stmt = $connection->prepare('SELECT * FROM payment_attempts
             WHERE pay_row_id=? LIMIT 1 FOR UPDATE');
@@ -665,7 +695,7 @@ function achbotAutoBankEditPreflight(mysqli $db, array $pay, string $kind,
         return false;
     try {
         $stmt=$db->prepare("SELECT p.user_id,p.server_id,p.plan_id,p.price,
-            p.order_id,p.state,p.type,p.description,
+            p.order_id,p.state,p.type,p.description,p.volume,p.day,
             sp.server_id AS plan_server
             FROM pays p LEFT JOIN server_plans sp ON sp.id=p.plan_id
             WHERE p.id=?");
@@ -709,17 +739,7 @@ function achbotAutoBankEditPreflight(mysqli $db, array $pay, string $kind,
                 // nonzero ID must never contradict the encoded subject.
                 ((int)($paid['order_id']??0)!==0 &&
                  (int)$paid['order_id']!==$orderId)) return false;
-            // The existing quote is the only permitted source of units.
-            $table=$kind==='day'?'increase_day':'increase_plan';
-            $quoteId=(int)$m[2];
-            $quote=$db->prepare("SELECT volume FROM ".$table." WHERE id=?");
-            if (!$quote) return false;
-            $quote->bind_param('i',$quoteId);
-            $exists=$quote->execute();
-            $value=$exists?$quote->get_result()->fetch_assoc():null;
-            $quote->close();
-            if (!$value || !is_numeric($value['volume']) ||
-                (float)$value['volume']!==(float)$units) return false;
+            if (achbotPinnedAddonUnits($paid)!==$units || achbotPinnedAddonUnits($pay)!==$units) return false;
         }
         if ($orderId<=0) return false;
         $orderStmt=$db->prepare("SELECT userid,fileid,server_id,inbound_id,
@@ -737,7 +757,7 @@ function achbotAutoBankEditPreflight(mysqli $db, array $pay, string $kind,
             (string)$record['remark']===$remark &&
             // Real Core authorization, not a shortcut from the plan's old
             // logical server ID. Cross-panel aliases fail before HTTP.
-            achbotSupportsMarzbanOrder($db,$orderId,
+            achbotSupportsOrder($db,$orderId,
                 (int)$paid['plan_id'],$owner);
     } catch (Throwable $error) {
         error_log('achbot_auto_service_preflight_deferred pay_id='.$payId.
@@ -871,7 +891,7 @@ function achbotAutoBankFinishEdit(mysqli $db, array $pay,
     try {
         if ($db->begin_transaction()!==true) return false;
         $stmt=$db->prepare("SELECT p.id,p.type,p.state,p.user_id,p.order_id,
-                p.price,p.server_id,p.plan_id,p.description,
+                p.price,p.server_id,p.plan_id,p.description,p.volume,p.day,
                 sp.server_id AS current_plan_server
             FROM pays p LEFT JOIN server_plans sp ON sp.id=p.plan_id
             WHERE p.id=? FOR UPDATE");
@@ -908,16 +928,7 @@ function achbotAutoBankFinishEdit(mysqli $db, array $pay,
                  (int)$locked['order_id']!==$orderId)) {
                 $db->rollback();return false;
             }
-            $quote=$db->prepare("SELECT volume FROM ".
-                ($kind==='day'?'increase_day':'increase_plan')." WHERE id=?");
-            if (!$quote) throw new RuntimeException('auto_service_quote_prepare_failed');
-            $quoteId=(int)$m[2];
-            $quote->bind_param('i',$quoteId);
-            $ok=$quote->execute();
-            $row=$ok?$quote->get_result()->fetch_assoc():null;
-            $quote->close();
-            if (!$row || !is_numeric($row['volume']) ||
-                (float)$row['volume']!==(float)$units) {
+            if (achbotPinnedAddonUnits($locked)!==$units || achbotPinnedAddonUnits($pay)!==$units) {
                 $db->rollback();return false;
             }
         }
@@ -949,7 +960,7 @@ function achbotAutoBankFinishEdit(mysqli $db, array $pay,
                 // Refresh physical group membership under SQL locks after
                 // remote verification. A revoked alias cannot finalize a
                 // previously valid preflight; do not trust its old snapshot.
-                !achbotSupportsMarzbanOrder($db,$orderId,
+                !achbotSupportsOrder($db,$orderId,
                     (int)$locked['plan_id'],$userId,true) ||
                 // B may have finalized a newer edit after this payment's
                 // original pre-remote snapshot. Never let A restore old
@@ -1425,13 +1436,9 @@ function achbotManualClaim(mysqli $connection, array $payInfo, string $method, i
                 $connection->rollback();
                 return false;
             }
-            $rate = $config['rate'];
-            $agentStmt = $connection->prepare('SELECT is_agent FROM users WHERE userid=? LIMIT 1');
-            $agentStmt->bind_param('i', $userId);
-            $agentStmt->execute();
-            $agent = $agentStmt->get_result()->fetch_assoc();
-            $agentStmt->close();
-            if ((int)($agent['is_agent'] ?? 0) === 1) $rate = $config['agent_rate'];
+            $rate=$method==='manual_trx' ? $config['rate']
+                : achbotUsdtRateForUser($connection,$userId);
+            if ($rate===null) { $connection->rollback(); return false; }
             $precision = $method === 'manual_trx' ? 6 : 2;
             $factor = $method === 'manual_trx' ? 1000000 : 100;
             $rawQuote=$price/$rate;
@@ -1657,8 +1664,9 @@ function achbotManualFinishEvidence(mysqli $connection, string $hashId, string $
 
 function achbotManualCaption(mysqli $connection, array $payInfo, string $caption): string {
     $method = achbotManualSelectedMethod($connection, $payInfo);
-    $label = $method === null ? 'نیازمند بررسی' : achbotManualLabel($method);
-    $header = '🧾 روش پرداخت: <b>' . $label . "</b>\n";
+    $label = $method === null ? \achbotMessage('manual_payment.receipt_helpers.manual_caption.text.9c641f40e0') : achbotManualLabel($method);
+    require_once __DIR__.'/PaymentLifecycle.php';
+    $header = achbotPayUxReference($payInfo).\achbotMessage('manual_payment.receipt_helpers.manual_caption.text.342127f41e') . $label . "</b>\n";
     if (in_array($method, ['manual_usdt','manual_trx','bank_transfer'], true)) {
         try {
             $stmt = $connection->prepare('SELECT provider,quote_amount,quote_currency,
@@ -1677,17 +1685,17 @@ function achbotManualCaption(mysqli $connection, array $payInfo, string $caption
                     ? $network === 'TRON' && achbotManualTronAddressValid($address)
                     : achbotManualUsdtWalletValid($address, $network);
                 if ($details['quote_currency'] === $asset && $valid) {
-                    $header .= '💎 مبلغ رمزارز: <code>' .
+                    $header .= \achbotMessage('manual_payment.receipt_helpers.manual_caption.header.cc6f426145') .
                         htmlspecialchars((string)$details['quote_amount'], ENT_QUOTES, 'UTF-8') .
-                        ' ' . $asset . '</code> | شبکه: <b>' . htmlspecialchars($network, ENT_QUOTES, 'UTF-8') .
-                        "</b>\nآدرس: <code>" . htmlspecialchars($address, ENT_QUOTES, 'UTF-8') .
+                        ' ' . $asset . \achbotMessage('manual_payment.receipt_helpers.manual_caption.text.1c777cb98d') . htmlspecialchars($network, ENT_QUOTES, 'UTF-8') .
+                        \achbotMessage('manual_payment.receipt_helpers.manual_caption.text.cef75b4291') . htmlspecialchars($address, ENT_QUOTES, 'UTF-8') .
                         "</code>\n";
                 }
             } elseif ($intent && $method === 'bank_transfer' &&
                       $details['quote_currency'] === 'toman') {
-                $header .= '💳 مبلغ دقیق حواله: <code>' .
-                    number_format((int)$details['quote_amount']) . " تومان</code>\n";
-                $header .= '💳 مقصد: <code>' .
+                $header .= \achbotMessage('manual_payment.receipt_helpers.manual_caption.header.12c0babe12') .
+                    number_format((int)$details['quote_amount']) . \achbotMessage('manual_payment.receipt_helpers.manual_caption.text.de6a1a6756');
+                $header .= \achbotMessage('manual_payment.receipt_helpers.manual_caption.header.559f60f115') .
                     htmlspecialchars((string)($intent['account'] ?? ''), ENT_QUOTES, 'UTF-8') .
                     '</code> | ' . htmlspecialchars((string)($intent['holder'] ?? ''), ENT_QUOTES, 'UTF-8') . "\n";
             }
@@ -1709,9 +1717,10 @@ function achbotManualReceiptPrompt(array $mainValues, string $method): string {
 }
 
 function achbotManualAcknowledgement(array $payInfo, string $method): string {
-    return "📥 تصویر " . achbotManualLabel($method) . " دریافت شد.\n" .
-        "🧾 سفارش: <code>" . htmlspecialchars((string)$payInfo['hash_id'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') . "</code>\n" .
-        "⏳ رسید در انتظار بررسی مدیر است؛ ارسال تصویر به معنی تأیید پرداخت یا تحویل سرویس نیست.";
+    require_once __DIR__.'/PaymentLifecycle.php';
+    return \achbotMessage('manual_payment.receipt_helpers.manual_acknowledgement.label.a5f27211f7') . achbotManualLabel($method) . \achbotMessage('manual_payment.receipt_helpers.manual_acknowledgement.text.29e14cf62e') .
+        achbotPayUxReference($payInfo) .
+        \achbotMessage('manual_payment.receipt_helpers.manual_acknowledgement.text.62e569e922');
 }
 
 function getCartToCartMessageKey(string $messageType): string {
@@ -1728,6 +1737,10 @@ function buildCartToCartInfoMessage(array $paymentKeys, array $mainValues, int $
     if (!in_array($method, ['bank_transfer','gift_card','manual_usdt','manual_trx'], true) ||
         $hashId === '' || !($connection instanceof mysqli)) return '';
     try {
+        require_once __DIR__.'/PaymentLifecycle.php';
+        $pay=achbotPayUxOwnedReference($connection,$hashId,$userId);
+        if (!$pay) return '';
+        $reference=achbotPayUxReference($pay);
         $stmt = $connection->prepare("SELECT provider,quote_amount,quote_currency,
             local_amount_toman,settlement_currency,checkout_url
             FROM payment_attempts WHERE order_hash=? AND provider=? LIMIT 1");
@@ -1752,7 +1765,7 @@ function buildCartToCartInfoMessage(array $paymentKeys, array $mainValues, int $
                 (float)$attempt['quote_amount'] <= 0) return '';
             $template = (string)($mainValues[$method === 'manual_trx'
                 ? 'brw_cart_to_cart_trx' : 'brw_cart_to_cart_usdt'] ?? '');
-            return strtr($template, [
+            return $reference.strtr($template, [
                 'PRICE-TOMAN-ROUND' => number_format($priceToman),
                 'PRICE-USDT' => number_format((float)$attempt['quote_amount'], 2, '.', ''),
                 'USDT-NETWORK' => htmlspecialchars($network, ENT_QUOTES, 'UTF-8'),
@@ -1769,7 +1782,7 @@ function buildCartToCartInfoMessage(array $paymentKeys, array $mainValues, int $
              trim((string)($intent['holder'] ?? '')) === '')) return '';
         $template = (string)($mainValues[$method === 'gift_card' ?
             'brw_cart_to_cart_gift' : 'brw_cart_to_cart_detail'] ?? '');
-        return strtr($template, [
+        return $reference.strtr($template, [
             'PRICE-TOMAN-ROUND' => number_format($priceToman),
             'PRICE-TOMAN' => number_format($amount),
             'PRICE-RIAL' => number_format($amount * 10),
@@ -1832,7 +1845,7 @@ function duplicateReceiptGuard(mysqli $connection, array $payInfo, int $nowTs): 
     $hashId   = (string)$payInfo['hash_id'];
 
     if (in_array($payInfo['state'], ['have_sent', 'approved'], true)) {
-        return "⛔️ شما درخواست مشابه‌ای قبلا ثبت کرده‌اید.\n⚠️ لطفاً منتظر بررسی پشتیبانی بمانید.";
+        return \achbotMessage('manual_payment.receipt_helpers.duplicate_receipt_guard.label.2ea72e23b7');
     }
 
     // BOT_STATES bounds prevent malformed settings from weakening legacy
@@ -1925,20 +1938,20 @@ function duplicateReceiptGuard(mysqli $connection, array $payInfo, int $nowTs): 
     if ($latestHaveSentDiff !== null && $latestHaveSentDiff < $windowHaveSent) {
         $remain = $windowHaveSent - $latestHaveSentDiff;
         $mins = (int)ceil($remain / 60);
-        return "⛔️ یک درخواست مشابه شما در حال بررسی است.\n⚠️ لطفاً حدود {$mins} دقیقه دیگر دوباره تلاش کنید.";
+        return \achbotMessage('manual_payment.receipt_helpers.duplicate_receipt_guard.label.2f5e71511d', ['mins' => $mins]);
     }
 
 
     if ($latestApprovedDiff !== null && $latestApprovedDiff < $windowApproved) {
         $remain = $windowApproved - $latestApprovedDiff;
         $mins = (int)ceil($remain / 60);
-        return "⛔️ شما اخیراً یک درخواست مشابه با وضعیت تایید شده داشته‌اید.\n⚠️ لطفاً حدود {$mins} دقیقه دیگر دوباره تلاش کنید.";
+        return \achbotMessage('manual_payment.receipt_helpers.duplicate_receipt_guard.label.c571825a4a', ['mins' => $mins]);
     }
 
 
     if ($latestDeclinedDiff !== null && $latestDeclinedDiff < $windowDeclined) {
         $remain = $windowDeclined - $latestDeclinedDiff;
-        return "⛔️ درخواست مشابه قبلی شما اخیراً رد شده است.\n⚠️ لطفاً {$remain} ثانیه دیگر دوباره تلاش کنید.";
+        return \achbotMessage('manual_payment.receipt_helpers.duplicate_receipt_guard.label.a2fecf9749', ['remain' => $remain]);
     }
 
     return null;
@@ -1986,19 +1999,19 @@ function buildAdminKeyboardWithStats(
             ['text' => $buttonValues['approve'], 'callback_data' => $approveCb],
         ],
         [
-            ['text' => $approvedCount . ' عدد', 'callback_data' => "noop_okc_{$hashId}"],
-            ['text' => 'پرداخت موفق', 'callback_data' => "noop_ok_{$hashId}"],
+            ['text' => $approvedCount . \achbotMessage('manual_payment.receipt_helpers.build_admin_keyboard_with_stats.text.839cad204e'), 'callback_data' => "noop_okc_{$hashId}"],
+            ['text' => \achbotMessage('manual_payment.receipt_helpers.build_admin_keyboard_with_stats.button.30b0414601'), 'callback_data' => "noop_ok_{$hashId}"],
         ],
         [
-            ['text' => $declinedCount . ' عدد', 'callback_data' => "noop_badc_{$hashId}"],
-            ['text' => 'پرداخت رد شده', 'callback_data' => "noop_bad_{$hashId}"],
+            ['text' => $declinedCount . \achbotMessage('manual_payment.receipt_helpers.build_admin_keyboard_with_stats.text.839cad204e'), 'callback_data' => "noop_badc_{$hashId}"],
+            ['text' => \achbotMessage('manual_payment.receipt_helpers.build_admin_keyboard_with_stats.button.c2c33e1499'), 'callback_data' => "noop_bad_{$hashId}"],
         ],
         [
-            ['text' => number_format($approvedSum) . ' تومان', 'callback_data' => "noop_sumv_{$hashId}"],
-			['text' => 'مجموع', 'callback_data' => "noop_sum_{$hashId}"],
+            ['text' => number_format($approvedSum) . \achbotMessage('manual_payment.automatic_receipts.text.2cc98f7f7c'), 'callback_data' => "noop_sumv_{$hashId}"],
+			['text' => \achbotMessage('manual_payment.receipt_helpers.build_admin_keyboard_with_stats.button.e892623fb9'), 'callback_data' => "noop_sum_{$hashId}"],
         ],
         [
-            ['text' => "🆔 {$hashId}", 'callback_data' => "noop_{$hashId}"]
+            ['text' => \achbotMessage('manual_payment.receipt_helpers.build_admin_keyboard_with_stats.hash_id.286c7d3faf', ['hashId' => $hashId]), 'callback_data' => "noop_{$hashId}"]
         ],
     ]);
 }
@@ -2048,7 +2061,7 @@ function sendWithStartButton($text, $buttonText, $botUsername, $startPayload = '
 {
     $buttons = [];
     if ($paymentHash !== '' && preg_match('/^[A-Za-z0-9_-]{1,50}$/D', $paymentHash)) {
-        $buttons[] = [['text'=>'🔄 بررسی وضعیت', 'callback_data'=>'ps_'.$paymentHash]];
+        $buttons[] = [['text'=>\achbotMessage('manual_payment.receipt_helpers.send_with_start_button.button.dcb9c20928'), 'callback_data'=>'ps_'.$paymentHash]];
     }
     $buttons[] = [[
         'text' => $buttonText,
@@ -2056,6 +2069,14 @@ function sendWithStartButton($text, $buttonText, $botUsername, $startPayload = '
     ]];
     $keyboard = json_encode(['inline_keyboard'=>$buttons], JSON_UNESCAPED_UNICODE);
 
+    // A start deep link already sends a NEW menu. Enrich evidence before send,
+    // using persisted ownership rather than a callback-supplied numeric ID.
+    if ($paymentHash!=='' && ($GLOBALS['connection']??null) instanceof mysqli) {
+        require_once __DIR__.'/PaymentLifecycle.php';
+        $pay=achbotPayUxOwnedReference($GLOBALS['connection'],$paymentHash,(int)($GLOBALS['from_id']??0));
+        if ($pay && !str_contains($text,achbotPayUxReference($pay)))
+            $text=achbotPayUxReference($pay).$text;
+    }
     $sent=sendMessage($text, $keyboard, $parseMode);
     if ($paymentHash!=='' && isset($GLOBALS['connection']) &&
         $GLOBALS['connection'] instanceof mysqli &&
@@ -2180,7 +2201,7 @@ function achbotAutoRenewSchemaState(mysqli $db): string {
 /** Never infer physical panel identity from URLs or credentials. */
 function achbotAutoRenewSameAccount(mysqli $db, int $serverA, int $serverB): bool {
     return $serverA>0 && $serverB>0 &&
-        ($serverA===$serverB || achbotSameMarzbanPanel($db,$serverA,$serverB));
+        ($serverA===$serverB || achbotSameProviderPanel($db,$serverA,$serverB));
 }
 
 /**

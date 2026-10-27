@@ -3,6 +3,8 @@
 if (realpath($_SERVER['SCRIPT_FILENAME']??'')===__FILE__) {
     http_response_code(404);exit;
 }
+require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
+
 /** UI-state token: detects superseded administrator buttons on current data.
  * 15 hex chars fit Telegram's 64-byte callback limit even for longest route.
  * It is a CAS token, not an authentication capability (webhook/role are separate).
@@ -208,38 +210,38 @@ function achbotGatewayAdminMarkup(array $rows): string {
 }
 function achbotGatewayAdminMethodFlags(string $method,array $state): string {
     $flags=[
-        'nowpayments'=>['nowPaymentWallet'=>'شارژ','nowPaymentOther'=>'سایر'],
-        'zarinpal'=>['zarinpal'=>'فعال'],'nextpay'=>['nextpay'=>'فعال'],
-        'bank_transfer'=>['cartToCartState'=>'فعال'],
-        'gift_card'=>['giftCardState'=>'فعال'],
-        'manual_usdt'=>['manualUsdtState'=>'فعال'],
-        'manual_trx'=>['manualUsdtState'=>'فعال'],
-        'wallet'=>['walletState'=>'فعال']
+        'nowpayments'=>['nowPaymentWallet'=>\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_method_flags.text.c7cf334c78'),'nowPaymentOther'=>\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_method_flags.text.452e2203fa')],
+        'zarinpal'=>['zarinpal'=>\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_method_flags.text.a3fa2a3ffc')],'nextpay'=>['nextpay'=>\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_method_flags.text.a3fa2a3ffc')],
+        'bank_transfer'=>['cartToCartState'=>\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_method_flags.text.a3fa2a3ffc')],
+        'gift_card'=>['giftCardState'=>\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_method_flags.text.a3fa2a3ffc')],
+        'manual_usdt'=>['manualUsdtState'=>\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_method_flags.text.a3fa2a3ffc')],
+        'manual_trx'=>['manualUsdtState'=>\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_method_flags.text.a3fa2a3ffc')],
+        'wallet'=>['walletState'=>\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_method_flags.text.a3fa2a3ffc')]
     ];
     $labels=[];
     foreach ($flags[$method]??[] as $key=>$label) {
-        $labels[]=$label.': '.(($state[$key]??'off')==='on'?'روشن':'خاموش');
+        $labels[]=$label.': '.(($state[$key]??'off')==='on'?\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_method_flags.text.be9fd3bd1b'):\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_method_flags.text.841b8cb341'));
     }
-    return implode('، ',$labels);
+    return implode(\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_method_flags.text.11735aabd3'),$labels);
 }
 function achbotGatewayAdminPage(string $data,?int $nonce=null): array {
     $state=achbotGatewayAdminCurrent();
     if ($state===null) return [
-        'text'=>'⛔️ تنظیمات پرداخت خواندنی نیست؛ هیچ قانون نامعتبر خودکار فعال نمی‌شود.',
-        'keyboard'=>achbotGatewayAdminMarkup([[['text'=>'بازگشت','callback_data'=>'gateWays_Channels']]])
+        'text'=>\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.button.36e4da5935'),
+        'keyboard'=>achbotGatewayAdminMarkup([[['text'=>\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.button.b233883d0d'),'callback_data'=>'gateWays_Channels']]])
     ];
     $policy=isset($state['gatewayRules'])
         ? achbotGatewayRulesDecode($state['gatewayRules'])['methods'] : [];
     $legacy=$state['gatewayAudience']??[];
     $p=explode('|',$data);
-    $back=[[['text'=>'🔙 بازگشت','callback_data'=>'gateWays_Channels']]];
+    $back=[[['text'=>\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.button.b35a2352f5'),'callback_data'=>'gateWays_Channels']]];
     if ($data==='gr|l' || $data==='gatewayAudienceSettings') {
-        $rows=[];$text="🔐 مدیریت دسترسی به روش‌های پرداخت\n";
-        $text.="قوانین هر روش و هر دسته مستقل‌اند. خاموش‌بودن درگاه همیشه مانع پرداخت است.\n";
+        $rows=[];$text=\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.text.778e46431a');
+        $text.=\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.text.557fcc0258');
         foreach (achbotPayUxAudienceMethods() as $method=>$label) {
             $count=count($policy[$method]??[]);
-            $suffix=array_key_exists($method,$policy)?($count.' قانون'):'سیاست قبلی';
-            $rows[]=[['text'=>$label.' — '.$suffix,
+            $suffix=array_key_exists($method,$policy)?($count.\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.text.5c034d60ca')):\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.text.17dc013fc7');
+            $rows[]=[['text'=>$label.\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.text.3b2e8119b6').$suffix,
                        'callback_data'=>'gr|m|'.$method]];
         }
         return ['text'=>$text,'keyboard'=>achbotGatewayAdminMarkup(array_merge(
@@ -247,20 +249,20 @@ function achbotGatewayAdminPage(string $data,?int $nonce=null): array {
     }
     if (count($p)<3 || $p[0]!=='gr' ||
         !array_key_exists($p[2],achbotPayUxAudienceMethods())) return [
-            'text'=>'⛔️ انتخاب ناشناخته است.','keyboard'=>achbotGatewayAdminMarkup($back)];
+            'text'=>\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.button.1ca8c08333'),'keyboard'=>achbotGatewayAdminMarkup($back)];
     $method=$p[2];$methodLabel=achbotPayUxAudienceMethods()[$method];
-    $methodBack=[[['text'=>'🔙 روش‌های پرداخت','callback_data'=>'gr|l']]];
+    $methodBack=[[['text'=>\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.button.4b1d33d728'),'callback_data'=>'gr|l']]];
     if ($p[1]==='m' && count($p)===3) {
-        $text="💳 $methodLabel\n".achbotGatewayAdminMethodFlags($method,$state)."\n";
-        $text.="حالت پیشین: ".(achbotPayUxAudienceModes()[$legacy[$method]??'all']??'نامعتبر')."\n";
-        $text.="شرط‌های هر قانون با AND و قوانین فعال با OR ترکیب می‌شوند.\n";
+        $text=\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.method_label.b0c241d56f', ['methodLabel' => $methodLabel]).achbotGatewayAdminMethodFlags($method,$state)."\n";
+        $text.=\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.text.cffb41a268').(achbotPayUxAudienceModes()[$legacy[$method]??'all']??\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.text.a3544b7c99'))."\n";
+        $text.=\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.text.82e58a9a6a');
         $rows=[];
         foreach (achbotGatewayRuleCategories() as $category=>$label) {
             $rule=null;
             foreach ($policy[$method]??[] as $entry)
                 if ($entry['category']===$category) {$rule=$entry;break;}
-            $tag=$rule===null?'افزودن':($rule['enabled']?'فعال':'غیرفعال');
-            $rows[]=[['text'=>$label.' — '.$tag,
+            $tag=$rule===null?\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.text.50c8d65df6'):($rule['enabled']?\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_method_flags.text.a3fa2a3ffc'):\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.text.4e67bd8e34'));
+            $rows[]=[['text'=>$label.\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.text.3b2e8119b6').$tag,
                 'callback_data'=>'gr|r|'.$method.'|'.$category]];
         }
         return ['text'=>$text,'keyboard'=>achbotGatewayAdminMarkup(
@@ -272,60 +274,60 @@ function achbotGatewayAdminPage(string $data,?int $nonce=null): array {
     $r=null;
     foreach ($policy[$method]??[] as $entry)
         if ($entry['category']===$category) {$r=$entry;break;}
-    $ruleBack=[[['text'=>'🔙 دسته‌ها','callback_data'=>'gr|m|'.$method]]];
+    $ruleBack=[[['text'=>\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.button.557627db84'),'callback_data'=>'gr|m|'.$method]]];
     $prefix=$method.'|'.$category;
     if ($p[1]==='q' && count($p)===4 && $r!==null) {
         if (!$nonce || $nonce<=0)
-            return ['text'=>'⛔️ تأیید حذف منقضی شده است.',
+            return ['text'=>\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.button.78eea75cd9'),
                 'keyboard'=>achbotGatewayAdminMarkup($ruleBack)];
-        return ['text'=>"⚠️ قانون $categoryLabel از $methodLabel حذف شود؟\n".
-            "اگر آخرین قانون باشد، روش تا تعریف قانون جدید مسدود می‌ماند.",
+        return ['text'=>\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.button.50abbe7e6f', ['categoryLabel' => $categoryLabel, 'methodLabel' => $methodLabel]).
+            \achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.text.63f13c4d9f'),
             'keyboard'=>achbotGatewayAdminMarkup([
-                [['text'=>'🗑 تأیید حذف','callback_data'=>'gr|d|'.$prefix.'|'.$nonce]],
-                [['text'=>'انصراف','callback_data'=>'gr|x|'.$nonce]]
+                [['text'=>\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.button.909c78e8f7'),'callback_data'=>'gr|d|'.$prefix.'|'.$nonce]],
+                [['text'=>\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.button.fa7af603d4'),'callback_data'=>'gr|x|'.$nonce]]
             ])];
     }
     if ($r===null) {
-        return ['text'=>"💳 $methodLabel / $categoryLabel\n".
-            "هنوز قانونی ثبت نشده است. با ذخیره، این دسته بدون شرط عددی مجاز می‌شود. ".
-            "می‌توانید بعداً سن و سابقهٔ خرید را محدود کنید.",
+        return ['text'=>\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.method_label_category_label.2d180b42ba', ['methodLabel' => $methodLabel, 'categoryLabel' => $categoryLabel]).
+            \achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.text.c050f2e620').
+            \achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.text.9a38991a3b'),
             'keyboard'=>achbotGatewayAdminMarkup([
-                [['text'=>'💾 ذخیره و فعال‌سازی','callback_data'=>'gr|a|'.$prefix]],
+                [['text'=>\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.button.f9e2c2e01e'),'callback_data'=>'gr|a|'.$prefix]],
                 ...$ruleBack])];
     }
     if ($p[1]==='f' && count($p)===5 &&
         array_key_exists($p[4],achbotGatewayRuleMetrics())) {
         $metric=$p[4];$v=$r['metrics'][$metric];
         $tag=achbotGatewayRuleControlTag($r);
-        $text="📊 $categoryLabel / ".achbotGatewayRuleMetrics()[$metric]."\n";
-        $text.="حداقل تعداد: ".$v['count']."\nروز: ".$v['days'].
-            "\nجهت زمان: ".($v['direction']==='older'?'قدیمی‌تر':'اخیر')."\n";
-        $text.="۰/۰ = غیرفعال، تعداد ۰ و روز مثبت = حداقل یک تراکنش در بازه.\n";
-        $text.="تاریخ، زمان ثبت درخواست پرداخت است، نه زمان قطعی تسویه.";
+        $text=\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.category_label.5c0303d4dc', ['categoryLabel' => $categoryLabel]).achbotGatewayRuleMetrics()[$metric]."\n";
+        $text.=\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.text.b35dd70a37').$v['count'].\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.text.930aa8fb30').$v['days'].
+            \achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.text.e943a81156').($v['direction']==='older'?\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.text.12186b2949'):\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.text.c6bdd72afe'))."\n";
+        $text.=\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.text.3153c0f2f5');
+        $text.=\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.text.0d5b2ce24e');
         return ['text'=>$text,'keyboard'=>achbotGatewayAdminMarkup([
-            [['text'=>'✏️ ویرایش تعداد','callback_data'=>'gr|n|'.$prefix.'|'.$metric.'|count|'.$tag]],
-            [['text'=>'✏️ ویرایش روز','callback_data'=>'gr|n|'.$prefix.'|'.$metric.'|days|'.$tag]],
-            [['text'=>'🔁 تغییر جهت (قدیمی‌تر / اخیر)','callback_data'=>'gr|v|'.$prefix.'|'.$metric.'|'.$tag]],
-            [['text'=>'⛔️ غیرفعال‌سازی شرط (۰/۰)','callback_data'=>'gr|c|'.$prefix.'|'.$metric.'|'.$tag]],
-            [['text'=>'🔙 قانون','callback_data'=>'gr|r|'.$prefix]]
+            [['text'=>\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.button.4402a7a7da'),'callback_data'=>'gr|n|'.$prefix.'|'.$metric.'|count|'.$tag]],
+            [['text'=>\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.button.38748be977'),'callback_data'=>'gr|n|'.$prefix.'|'.$metric.'|days|'.$tag]],
+            [['text'=>\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.button.74c39e45b8'),'callback_data'=>'gr|v|'.$prefix.'|'.$metric.'|'.$tag]],
+            [['text'=>\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.button.dd5c4f32ce'),'callback_data'=>'gr|c|'.$prefix.'|'.$metric.'|'.$tag]],
+            [['text'=>\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.button.2fe0521c21'),'callback_data'=>'gr|r|'.$prefix]]
         ])];
     }
-    $text="📋 $methodLabel / $categoryLabel\n";
-    $text.="وضعیت قانون: ".($r['enabled']?'فعال':'غیرفعال').
-        "\nحداقل سابقهٔ عضویت: ".$r['registration_age_days']." روز\n";
-    $text.="۰ روز = بدون محدودیت سن عضویت\n";
+    $text=\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.method_label_category_label.f136e472ba', ['methodLabel' => $methodLabel, 'categoryLabel' => $categoryLabel]);
+    $text.=\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.text.c5d6fc3ebd').($r['enabled']?\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_method_flags.text.a3fa2a3ffc'):\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.text.4e67bd8e34')).
+        \achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.text.633cdaf049').$r['registration_age_days'].\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.text.f91c474748');
+    $text.=\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.text.03d7bf8c63');
     foreach (achbotGatewayRuleMetrics() as $key=>$label) {
         $v=$r['metrics'][$key];
-        $value=$v['count'].' تراکنش، '.$v['days'].' روز';
-        $text.=$label.': '.$value.' ('.($v['direction']==='older'?'قدیمی‌تر':'اخیر').")\n";
+        $value=$v['count'].\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.text.103d12a4c3').$v['days'].\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.text.69ff4a27e5');
+        $text.=$label.': '.$value.' ('.($v['direction']==='older'?\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.text.12186b2949'):\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.text.c6bdd72afe')).")\n";
     }
     $tag=achbotGatewayRuleControlTag($r);
-    $rows=[[['text'=>'✏️ سن عضویت (روز)','callback_data'=>'gr|n|'.$prefix.'|age|days|'.$tag]]];
+    $rows=[[['text'=>\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.button.02bfa8380c'),'callback_data'=>'gr|n|'.$prefix.'|age|days|'.$tag]]];
     foreach (achbotGatewayRuleMetrics() as $metric=>$label)
-        $rows[]=[['text'=>'📊 '.$label,'callback_data'=>'gr|f|'.$prefix.'|'.$metric]];
-    $rows[]=[['text'=>$r['enabled']?'⏸ غیرفعال‌کردن قانون':'▶️ فعال‌کردن قانون',
+        $rows[]=[['text'=>\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.button.1e53a1442f').$label,'callback_data'=>'gr|f|'.$prefix.'|'.$metric]];
+    $rows[]=[['text'=>$r['enabled']?\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.text.fe79dd4aa2'):\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.text.9dda803abf'),
                'callback_data'=>'gr|t|'.$prefix.'|'.$tag]];
-    $rows[]=[['text'=>'🗑 حذف قانون','callback_data'=>'gr|q|'.$prefix]];
+    $rows[]=[['text'=>\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.button.661846f2c0'),'callback_data'=>'gr|q|'.$prefix]];
     return ['text'=>$text,'keyboard'=>achbotGatewayAdminMarkup(
         array_merge($rows,$ruleBack))];
 }

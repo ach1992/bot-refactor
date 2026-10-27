@@ -4,6 +4,8 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     http_response_code(404);
     exit;
 }
+require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
+
 
 $time = time(); 
 
@@ -50,8 +52,8 @@ if ($orders && $orders->num_rows > 0) {
         $stmt->close();
         $serverType = $serverConfig['type'];
 
-        if (achbotSupportsMarzbanAccount($serverType, $inbound_id)) {
-            $info = getMarzbanUser($server_id, $remark);
+        if (achbotSupportsAccount($serverType, $inbound_id)) {
+            $info = achbotProviderUser($server_id, $remark);
             if (isset($info->username)) {
                 $found = true;
                 $total = $info->data_limit;
@@ -75,18 +77,15 @@ if ($orders && $orders->num_rows > 0) {
         if ($expiryTime && $notif == 0) {
             $send = "";
             if ($expiryTime < time() + 129600) {
-                $send = "1 روز";
+                $send = \achbotMessage('notifications.warnings.send.1e5349d9b2');
             }
             elseif ($leftgb < 0.5 && $total != null && $total > 0) {
-                $send = "0.5 گیگ";
+                $send = \achbotMessage('notifications.warnings.send.0458ad0612');
             }
 
             if ($send !== "") {
 				if ((int)$order['amount'] !== 0) {
-					$msg = "💡 کاربر گرامی، اشتراک  <code>$remark</code>  به زودی تمام می شود. کمتر از  <b>$send</b>  مانده است. 
-🔰 می‌توانید از ← 🔄 <b>مشاهده اشتراک ها</b> آن را تمدید کنید یا اشتراک جدید خریداری کنید.  
-🛑 بعد از اتمام در صورتی که <b>تا 3 روز</b> تمدید نکنید از لیست اشتراک های شما حذف می شود.
-💳 می توانید <b>قبل از اتمام، کیف پول خودتان را شارژ کنید</b> و از بخش <b>مشاهده اشتراک ها تمدید خودکار را روشن کنید</b> تا به صورت خودکار وقتی اشتراک تمام شد تمدید شود."; 
+					$msg = \achbotMessage('notifications.warnings.msg.804056ecc4', ['remark' => $remark, 'send' => $send]);
 					$keyboard = [ 
 						[ 
 							['text' => $buttonValues['my_subscriptions'], 'callback_data' => 'mySubscriptions'], 
@@ -158,8 +157,8 @@ if ($orders) {
             $found = false;
             $logedIn = false;
 
-            if (achbotSupportsMarzbanAccount($serverType, $inbound_id)) {
-                $info = getMarzbanUser($server_id, $remark);
+            if (achbotSupportsAccount($serverType, $inbound_id)) {
+                $info = achbotProviderUser($server_id, $remark);
                 if (isset($info->username)) {
                     $found = true;
                     $logedIn = true;
@@ -177,8 +176,12 @@ if ($orders) {
             if (!$found && !$logedIn) continue;
 
             $leftgb = round(($totalLeft) / 1073741824, 2);
-            if ($expiryTime <= time()) $send = true;
-            elseif ($leftgb <= 0) $send = true;
+            if ($serverType==='pasarguard') {
+                $send=($expiryTime!==null && $expiryTime>0 && $expiryTime<=time()) || ($total>0 && $totalLeft<=0);
+            } else {
+                if ($expiryTime <= time()) $send = true;
+                elseif ($leftgb <= 0) $send = true;
+            }
 
             if ($send) {
                 if (!achbotSupportsPanel($serverType)) continue;
@@ -187,7 +190,7 @@ if ($orders) {
                 if (!achbotAutoRenewPrepareDeletion($connection,(int)$order['id']))
                     continue;
                 try {
-                    $res = deleteMarzban($server_id, $remark);
+                    $res = achbotProviderDelete($server_id, $remark);
                 } catch (Throwable $error) {
                     error_log('achbot_warning_remote_delete_deferred order_id='.(int)$order['id']);
                     continue;
@@ -195,19 +198,14 @@ if ($orders) {
                 if (is_object($res) && ($res->success??false)===true &&
                     achbotAutoRenewFinalizeDeletion(
                         $connection,(int)$order['id'],(int)$server_id,false)) {
-                    $msg = "💡 کاربر گرامی، اشتراک  <code>$remark</code>  تمام شده بود و از لیست اشتراک ها حذف گردید. لطفا اشتراک جدید خریداری کنید.";
+                    $msg = \achbotMessage('notifications.warnings.msg.c7907b6342', ['remark' => $remark]);
                     $keyboard = [
                         [['text' => $buttonValues['back_to_main'], 'callback_data' => 'mainMenu']]
                     ];
                     sendMessage($msg, json_encode(['inline_keyboard' => $keyboard]), "html", $from_id);
 
                     // ارسال پیام به ادمین
-                    $channelMessage = "
-❌ اشتراک منقضی شده حذف شد.
-
-👤 آیدی کاربر: $from_id
-🎈 نام کاربری سرویس: $remark
-";
+                    $channelMessage = \achbotMessage('notifications.warnings.channel_message.5e59a4a33e', ['from_id' => $from_id, 'remark' => $remark]);
                     //sendMessage($channelMessage, null, "html", $admin);
                     //sendToAllAdmins('sendMessage', ['text' => $channelMessage, 'parse_mode' => "html"]);
 					

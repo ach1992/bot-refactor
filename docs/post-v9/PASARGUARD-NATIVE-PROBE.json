@@ -1,0 +1,95 @@
+{
+  "complete": true,
+  "provider_pin": "5.5.1",
+  "events": [
+    {
+      "phase": "check",
+      "success": true,
+      "uncertain": false,
+      "http": 200,
+      "reason": ""
+    },
+    {
+      "phase": "create201_readback",
+      "success": true,
+      "uncertain": false,
+      "http": 200,
+      "reason": ""
+    },
+    {
+      "phase": "by_id_read",
+      "success": true,
+      "uncertain": false,
+      "http": 200,
+      "reason": ""
+    },
+    {
+      "phase": "absolute_quota_expiry_groups",
+      "success": true,
+      "uncertain": false,
+      "http": 200,
+      "reason": ""
+    },
+    {
+      "phase": "status_disabled",
+      "success": true,
+      "uncertain": false,
+      "http": 200,
+      "reason": ""
+    },
+    {
+      "phase": "status_active",
+      "success": true,
+      "uncertain": false,
+      "http": 200,
+      "reason": ""
+    },
+    {
+      "phase": "reset",
+      "success": true,
+      "uncertain": false,
+      "http": 200,
+      "reason": ""
+    },
+    {
+      "phase": "revoke_proxy_identity",
+      "success": true,
+      "uncertain": false,
+      "http": 200,
+      "reason": ""
+    },
+    {
+      "phase": "links",
+      "success": true,
+      "uncertain": false,
+      "http": 200,
+      "reason": "",
+      "links_count": 1
+    },
+    {
+      "phase": "links_base64",
+      "success": true,
+      "uncertain": false,
+      "http": 200,
+      "reason": "",
+      "links_count": 1
+    },
+    {
+      "phase": "delete204_by_id404",
+      "success": true,
+      "uncertain": false,
+      "http": 204,
+      "reason": ""
+    }
+  ],
+  "live_customer_or_traffic_tested": false,
+  "adapter_commit": "30f8eab14b01421b0cab221a301d392673f696f8",
+  "upstream_commit": "eba70d68eaa5a89e34ffebb47c8fd5ce054d0e43",
+  "php": "8.4.27",
+  "environment": "task_owned_loopback_native_panel_no_nodes_or_customer_data",
+  "observed_at_utc": "2026-10-27T05:09:05Z",
+  "source_hashes": {
+    "src/Panel/PasarGuard.php": "cd54583285231d4b13c2f9ee6d7ef1879808f09f16dc7400cd6417d0d2605a54",
+    "tools/probe_pasarguard_native.php": "669df0c216e47beae93fe28bdec64eabec0d44099359b76f2f990490a3c9befa"
+  }
+}

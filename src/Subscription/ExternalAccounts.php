@@ -4,6 +4,8 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     http_response_code(404);
     exit;
 }
+require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
+
 
 // BEGIN Edit by ACh
 if($data == "showUUIDLeft" && ($botState['searchState'] == "on" || $from_id == $admin || $userInfo['isAdmin'] == true)){ 
@@ -83,7 +85,7 @@ if ($userInfo['step'] == "showAccount" && $text != $buttonValues['cancel']) {
 	}
 
     if (!$username || !$token) { 
-        sendMessage("❌ لینک نامعتبر است.", $cancelKey); 
+        sendMessage(\achbotMessage('subscription.external_accounts.extract_username_from_link.message.02e023c2c2'), $cancelKey);
         exit(); 
     } 
 
@@ -92,7 +94,7 @@ if ($userInfo['step'] == "showAccount" && $text != $buttonValues['cancel']) {
     $stmt->execute(); 
     $stmt->close(); 
 
-    sendMessage("🔍 در حال بررسی اکانت، لطفاً صبر کنید...", $removeKeyboard); 
+    sendMessage(\achbotMessage('subscription.external_accounts.extract_username_from_link.message.4c80cbd8b8'), $removeKeyboard);
 
     $stmt = $connection->prepare("SELECT * FROM server_config WHERE type = 'marzban'"); 
     $stmt->execute(); 
@@ -105,7 +107,7 @@ if ($userInfo['step'] == "showAccount" && $text != $buttonValues['cancel']) {
 
     while ($row = $serversList->fetch_assoc()) { 
         $currentServerId = (int)$row['id']; 
-        $userData = getMarzbanUser($currentServerId, $username); 
+        $userData = achbotProviderUser($currentServerId, $username);
 
         if (!empty($userData) && !isset($userData->detail) && !empty($userData->username)) { 
             $found = true; 
@@ -116,7 +118,7 @@ if ($userInfo['step'] == "showAccount" && $text != $buttonValues['cancel']) {
     } 
 
     if (!$found || empty($config)) { 
-        sendMessage("❌ اشتراک موردنظر پیدا نشد. اگر اعتبار آن تمام شده و بیش از ۱۵ روز گذشته باشد، ممکن است حذف شده باشد.", $cancelKey);
+        sendMessage(\achbotMessage('subscription.external_accounts.extract_username_from_link.message.bb8dfc256d'), $cancelKey);
         exit(); 
     } 
 
@@ -127,11 +129,11 @@ if ($userInfo['step'] == "showAccount" && $text != $buttonValues['cancel']) {
     $usedTraffic = $config->used_traffic ?? 0; 
     $expire = $config->expire ?? 0; 
 
-    $total = $dataLimit != 0 ? sumerize($dataLimit) : "نامحدود"; 
+    $total = $dataLimit != 0 ? sumerize($dataLimit) : \achbotMessage('subscription.account_deletion.no_dont_delete.text.5e6ee5eaa1');
     $totalUsed = sumerize($usedTraffic); 
-    $leftMb = $dataLimit != 0 ? sumerize(max(0, $dataLimit - $usedTraffic)) : "نامحدود"; 
-    $expiryTime = $expire != 0 ? jdate("Y-m-d H:i:s", $expire) : "نامحدود"; 
-    $expiryDay = $expire != 0 ? floor(($expire - time()) / (60 * 60 * 24)) : "نامحدود"; 
+    $leftMb = $dataLimit != 0 ? sumerize(max(0, $dataLimit - $usedTraffic)) : \achbotMessage('subscription.account_deletion.no_dont_delete.text.5e6ee5eaa1');
+    $expiryTime = $expire != 0 ? jdate("Y-m-d H:i:s", $expire) : \achbotMessage('subscription.account_deletion.no_dont_delete.text.5e6ee5eaa1');
+    $expiryDay = $expire != 0 ? floor(($expire - time()) / (60 * 60 * 24)) : \achbotMessage('subscription.account_deletion.no_dont_delete.text.5e6ee5eaa1');
 
     if (is_numeric($expiryDay) && $expiryDay < 0) { 
         $expiryDay = 0; 
@@ -161,31 +163,31 @@ if ($userInfo['step'] == "showAccount" && $text != $buttonValues['cancel']) {
     $keyboard = [ 
         [ 
             ['text' => $state ?? " ", 'callback_data' => "wizwizch"], 
-            ['text' => "🔘 وضعیت اکانت 🔘", 'callback_data' => "wizwizch"], 
+            ['text' => \achbotMessage('subscription.external_accounts.extract_username_from_link.button.e2fee6e8d7'), 'callback_data' => "wizwizch"],
         ], 
         [ 
             ['text' => $remark ?? " ", 'callback_data' => "wizwizch"], 
-            ['text' => "👤 نام کاربری", 'callback_data' => "wizwizch"], 
+            ['text' => \achbotMessage('subscription.external_accounts.extract_username_from_link.button.da22eb1607'), 'callback_data' => "wizwizch"],
         ], 
         [ 
             ['text' => $totalUsed ?? " ", 'callback_data' => "wizwizch"], 
-            ['text' => "↕️ آپلود + دانلود", 'callback_data' => "wizwizch"], 
+            ['text' => \achbotMessage('subscription.external_accounts.extract_username_from_link.button.ba58ec87db'), 'callback_data' => "wizwizch"],
         ], 
         [ 
             ['text' => $total ?? " ", 'callback_data' => "wizwizch"], 
-            ['text' => "🔋 حجم کلی", 'callback_data' => "wizwizch"], 
+            ['text' => \achbotMessage('subscription.external_accounts.extract_username_from_link.button.4ab7460a09'), 'callback_data' => "wizwizch"],
         ], 
         [ 
             ['text' => $leftMb ?? " ", 'callback_data' => "wizwizch"], 
-            ['text' => "🪫 حجم باقیمانده ", 'callback_data' => "wizwizch"], 
+            ['text' => \achbotMessage('subscription.external_accounts.extract_username_from_link.button.ae4f062fc5'), 'callback_data' => "wizwizch"],
         ], 
         [ 
             ['text' => $expiryTime ?? " ", 'callback_data' => "wizwizch"], 
-            ['text' => "📆 تاریخ اتمام", 'callback_data' => "wizwizch"], 
+            ['text' => \achbotMessage('subscription.external_accounts.extract_username_from_link.button.b7fed20dcb'), 'callback_data' => "wizwizch"],
         ], 
         [ 
             ['text' => $expiryDay ?? " ", 'callback_data' => "wizwizch"], 
-            ['text' => "🔄 تعداد روز باقیمانده", 'callback_data' => "wizwizch"], 
+            ['text' => \achbotMessage('subscription.external_accounts.extract_username_from_link.button.f5f1dcdabf'), 'callback_data' => "wizwizch"],
         ], 
     ]; 
 
@@ -204,23 +206,19 @@ if ($userInfo['step'] == "showAccount" && $text != $buttonValues['cancel']) {
 
     if ($from_id == $admin || $userInfo['isAdmin'] == true) { 
         if (empty($userInfo['addToCustomerClicked']) || $userInfo['addToCustomerClicked'] != true) { 
-            $keyboard[] = [['text' => "➕ افزودن به حساب مشتری ➕", 'callback_data' => "addSubscriptionToCustomer" . $serverId]]; 
+            $keyboard[] = [['text' => \achbotMessage('subscription.external_accounts.extract_username_from_link.button.8ce785e9a5'), 'callback_data' => "addSubscriptionToCustomer" . $serverId]];
         } 
     } else { 
-        $keyboard[] = [['text' => "➕ افزودن به مشاهده اشتراک ها ➕", 'callback_data' => "addToOrders" . $serverId]]; 
+        $keyboard[] = [['text' => \achbotMessage('subscription.external_accounts.extract_username_from_link.button.387c334ec1'), 'callback_data' => "addToOrders" . $serverId]];
     } 
 
-    $keyboard[] = [['text' => "↪️ برگشت به منوی اصلی", 'callback_data' => "mainMenu"]]; 
+    $keyboard[] = [['text' => \achbotMessage('subscription.external_accounts.extract_username_from_link.button.a4ebab2a7b'), 'callback_data' => "mainMenu"]];
     $keys = json_encode(['inline_keyboard' => $keyboard]); 
 
     setUser(); 
     setUser(json_encode($configLocation, JSON_UNESCAPED_UNICODE), "temp"); 
     $userInfo['temp'] = json_encode($configLocation, JSON_UNESCAPED_UNICODE); 
 
-    sendMessage("🔰 مشخصات اشتراک ارسالی 🔰 
-🔄 در اینجا می توانید اشتراکی که برای خودتان یا دیگران است را تمدید کنید. 
-🛑 لطفا دقت کنید فقط اشتراکی که برای خودتان است را به لیست اشتراک ها اضافه کنید و اشتراک دیگران را اضافه نکنید. 
-➕ <b>نکته مهم:</b> اگر اشتراک برای خودتان هست قبل از تمدید اول آن را به ربات اضافه کنید و بعد از بخش مشاهده اشتراک ها پلن خودتان را انتخاب و تمدید کنید. 
-", $keys, "HTML"); 
+    sendMessage(\achbotMessage('subscription.external_accounts.extract_username_from_link.message.b2f5ea228c'), $keys, "HTML");
 }
 

@@ -8,6 +8,7 @@ from __future__ import annotations
 import argparse
 import concurrent.futures
 import json
+import shutil
 import subprocess
 import time
 from pathlib import Path
@@ -130,9 +131,11 @@ def prepare(work,env):
                "VALUES(2,'Fixture','0','fixture','','1',1) "
                "ON DUPLICATE KEY UPDATE title='Fixture'")
     stage=work/'owned-gift-enqueue'
-    for file in ['src/Subscription/GiftBatch.php','src/Telegram/UpdateBindings.php']:
+    for file in ['src/Subscription/GiftBatch.php','src/Telegram/UpdateBindings.php',
+                 'src/Panel/ProviderRuntime.php','src/Panel/ProviderStorage.php','src/Panel/PasarGuard.php']:
         dst=stage/file;dst.parent.mkdir(parents=True,exist_ok=True)
         dst.write_bytes((ROOT/file).read_bytes())
+    shutil.copytree(ROOT/'messages',stage/'messages')
     bot=(ROOT/'bot.php').read_text()
     start=bot.index("if(preg_match('/^giftServerVolume")
     end=bot.index("\nelse {\n    require __DIR__ . '/src/Subscription/AccountDeletion.php';",start)
@@ -144,9 +147,11 @@ def prepare(work,env):
     (stage/'gift-route.php').write_text('<?php\n'+route+'\n')
     (stage/'driver.php').write_text(PHP)
     worker=work/'owned-gift-worker'
-    for file in ['src/Subscription/GiftBatch.php','settings/gift2all.php']:
+    for file in ['src/Subscription/GiftBatch.php','settings/gift2all.php',
+                 'src/Panel/ProviderRuntime.php','src/Panel/ProviderStorage.php','src/Panel/PasarGuard.php']:
         dst=worker/file;dst.parent.mkdir(parents=True,exist_ok=True)
         dst.write_bytes((ROOT/file).read_bytes())
+    shutil.copytree(ROOT/'messages',worker/'messages')
     (worker/'config.php').write_text(gift.CONFIG)
     (worker/'baseInfo.php').write_text('<?php // disposable\n')
     (worker/'run.php').write_text(gift.RUNNER)

@@ -25,7 +25,7 @@ separate Owner approval and independently proven restore.
 
 ## Three distinct manual payment options (2026-10-17, Issue #51)
 
-AChBot supports manual bank transfer (`bank_transfer`), purchased gift cards (`gift_card`) and one **manual crypto selector** across purchase/renewal/extension/wallet subjects. Its independent network options are USDT BEP20, TRC20, ERC20 (provider `manual_usdt`) and native TRX on TRON (provider `manual_trx`). Administrators configure `manualUsdtWalletBEP20`, `manualUsdtWalletTRC20`, `manualUsdtWalletERC20`, `manualTrxWallet` and independent rates `manualUsdtRateToman` and `manualTrxRateToman` under the existing shared toggle `manualUsdtState`. Native TRX **requires** its explicit rate and wallet, while USDT may use a valid private exchange rate. No unconfigured or invalid address/rate is offered. The earlier `manualUsdtWallet` / `manualUsdtNetwork` pair remains usable only as a fallback for its original network, while retired `tronwallet` does not activate manual TRX.
+AChBot supports manual bank transfer (`bank_transfer`), purchased gift cards (`gift_card`) and one **manual crypto selector** across purchase/renewal/extension/wallet subjects. Its independent network options are USDT BEP20, TRC20, ERC20 (provider `manual_usdt`) and native TRX on TRON (provider `manual_trx`). Administrators configure `manualUsdtWalletBEP20`, `manualUsdtWalletTRC20`, `manualUsdtWalletERC20`, `manualTrxWallet` and independent rates `manualUsdtRateToman` and `manualTrxRateToman` under the existing shared toggle `manualUsdtState`. Native TRX **requires** its explicit rate and wallet, while manual USDT and hosted NOWPayments share explicit normal `PAYMENT_KEYS.manualUsdtRateToman` and optional `usdtAgentRateToman` for actual agent accounts. A missing/cleared agent override reuses the explicit normal rate. An invalid override disables only agent USDT quoting; missing/invalid normal rate does not disable a valid explicit agent rate, TRX, or other methods. No private exchange-rate, external-price lookup, or 1:1 fallback exists. No unconfigured or invalid address/rate is offered. The earlier `manualUsdtWallet` / `manualUsdtNetwork` pair remains usable only as a fallback for its original network, while retired `tronwallet` does not activate manual TRX.
 
 **TRON recipient-integrity contract (PR #54 independent R1/R2 remediation):** Both USDT/TRC20 and native TRX/TRON destinations use the SAME deterministic offline Base58Check verification: canonical 34-character encoding, exactly 25 decoded bytes, a 0x41 plus 20-byte payload, and the four-byte double-SHA256 checksum. EVM addresses retain separate 0x/20-byte validation. The rule covers administrator editor, configured-network chooser, new attempt claims, legacy/JSON pinned-intent reading, receipt submission and customer instructions. A malformed historical pinned address is **retained for operator review**; the bot must not overwrite, silently repair, resume or display payment instructions for it. These checks establish destination syntax, **not address ownership, funds receipt, intended USDT token contract or chain settlement**. Official format: https://developers.tron.network/docs/encoding and https://developers.tron.network/docs/account. Addresses from those pages are non-payment fixture examples only, NEVER customer receiving accounts.
 
@@ -1040,3 +1040,39 @@ does not imply such protection for edits. Durable post-crash reconciliation
 remains a separately gated Issue #26 requirement. Never infer success from
 remote account counts. No installed database or real provider operation was
 performed for this source-only change.
+
+
+### Whole-unit admission clarification (next-release correction)
+
+A FLOAT add-on catalogue column is not proof of supported fractional
+fulfillment. Existing `pays.volume` and `increase_order.volume` are INT,
+and `src/Panel/Accounts.php` explicitly rejects non-whole days/GB before
+PUT/reset. Entry-only tests that displayed 2.5 GiB did not prove settlement;
+that earlier positive-fixture expectation is superseded by whole-unit
+admission and explicit unsupported-fraction negatives.
+
+New fractional selections cannot create a quote, wallet debit, payment claim
+or provider effect. Raw units are revalidated at locked/manual/scheduled/hosted
+boundaries before integer conversion. Existing fractional/unprovable invoices
+remain reviewable without rewriting prices, historic rows or pinned financial
+evidence, and without an automatic debit, provider write, refund or backfill.
+This does not add immutable original-unit proof to legacy ID-based add-on
+invoices; a precision/accounting or compatibility redesign remains separate.
+
+
+### Immutable add-on quantity and RC11 pending-invoice boundary
+
+New volume add-on drafts pin their original whole GiB in `pays.volume`
+with `day=0`; new day add-on drafts pin whole days in `pays.day` with
+`volume=0`. These existing INT fields require no DDL. All manual, wallet,
+hosted and scheduled effects use the original pinned quantity and invoice
+price, not the mutable catalogue row. Later SKU quantity/price changes or
+deletion cannot replace the entitlement of an issued quote.
+
+Legacy RC11 and earlier add-on rows with zero, NULL, missing or inconsistent
+quantity do not prove an original entitlement. They fail closed before a new
+claim, wallet debit or provider effect; already paid/claimed rows remain under
+review. There is no automatic backfill, invoice rewrite, refund or replay.
+Operators must reconcile original evidence separately rather than reviving a
+legacy invoice by changing its SKU. New supported quotes can be issued only
+through the guarded current quote path.

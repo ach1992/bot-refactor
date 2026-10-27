@@ -109,12 +109,14 @@ def wait(path,proc):
         time.sleep(.012)
     assert path.exists(),str(path)
 
-def get_result(proc):
+def get_result(proc, *, allow_display_denial=False):
     out,err=proc.communicate(timeout=14)
     expected_review_log=b'achbot_wallet_held_debit_review hash=f24panel'
     safe_lines=[line for line in err.splitlines() if line]
     assert proc.returncode==0 and all(
-        line.startswith(expected_review_log) for line in safe_lines),(out,err)
+        line.startswith(expected_review_log) or
+        (allow_display_denial and line==b'achbot_server_display_unavailable')
+        for line in safe_lines),(out,err)
     return json.loads(out)
 
 def policy_race(w,e,stage,driver,index,previous,iso,variant='audience'):
@@ -178,7 +180,10 @@ def panel_race(w,e,stage,driver,index,previous,iso,field):
         else:
             assert update.poll() is None,('revocation_escaped_lock',field,iso)
         (folder/'release').write_text('settle')
-        observed=get_result(p)
+        # A provider revoked after the committed hold can be rejected by
+        # the display preflight. Permit only its exact sanitized metadata,
+        # in this current provider-revocation case; monetary checks follow.
+        observed=get_result(p,allow_display_denial=(not previous and field=='type'))
         out,err=update.communicate(timeout=8)
         assert update.returncode==0 and out==b'REVOKED' and not err,(out,err)
         assert observed['effects']==1,(field,previous,observed)

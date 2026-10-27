@@ -4,6 +4,8 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     http_response_code(404);
     exit;
 }
+require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
+
 require_once __DIR__ . '/ReceiptHelpers.php';
 
 /**
@@ -34,7 +36,7 @@ function achbotAutoRenewReserve(mysqli $db, int $orderId, int $userId): array {
         if (!$order || (int)$order['userid']!==$userId ||
             (int)$order['status']!==1 || (int)$order['notif']===0 ||
             (string)$order['autoRenew']!=='on' ||
-            !achbotSupportsMarzbanOrder($db,$orderId,(int)$order['fileid'],$userId)) {
+            !achbotSupportsOrder($db,$orderId,(int)$order['fileid'],$userId)) {
             $db->rollback(); return ['status'=>'ineligible'];
         }
         // Distinct orders can alias the SAME physical Marzban account.
@@ -115,6 +117,7 @@ function achbotAutoRenewReserve(mysqli $db, int $orderId, int $userId): array {
         $payId=(int)$db->insert_id;
         $stmt->close();
         if ($payId<=0) throw new RuntimeException('renewal_pay_claim_failed');
+        achbotPgPinPayment($db,$payId);
         $stmt=$db->prepare("INSERT INTO automatic_renewal_attempts
             (order_id,cycle_expire,pay_row_id,user_id,plan_id,server_id,
              account_remark,price_toman,duration_days,volume_gb,new_expire,stage)
@@ -308,7 +311,7 @@ function handleAutoRenewCallback($data): void {
     $claim=achbotAutoRenewReserve($connection,$orderId,$userId);
     if ($claim['status']==='insufficient_funds') {
         try {
-            sendMessage("❌ موجودی کیف پول برای تمدید خودکار کافی نیست؛ تمدید خودکار این اشتراک غیرفعال شد. لطفاً موجودی را افزایش دهید و سپس آن را دوباره فعال کنید.",
+            sendMessage(\achbotMessage('renewal.automatic_renewal.handle_auto_renew_callback.message.30ad9ebf7b'),
                 null,null,$userId);
         } catch (Throwable $ignored) {}
         return;
@@ -320,7 +323,7 @@ function handleAutoRenewCallback($data): void {
     }
     try {
         $reply=achbotApplyServiceEdit($connection,$claim['server_id'],[
-            'remark'=>$claim['remark'],'days'=>$claim['days'],
+            'pay_id'=>(int)$claim['pay_id'],'operation_key'=>'autorenew:'.(int)$claim['id'],'remark'=>$claim['remark'],'days'=>$claim['days'],
             'volume'=>$claim['volume']
         ]);
         $success=(is_object($reply) && ($reply->success??false)===true)
@@ -336,8 +339,8 @@ function handleAutoRenewCallback($data): void {
     }
     // Telegram delivery cannot revert a completed remote+financial outcome.
     try {
-        sendMessage("✅ تمدید خودکار اشتراک انجام شد؛ مبلغ ".number_format($claim['amount']).
-            " تومان از کیف پول شما کسر شد.",null,null,$userId);
+        sendMessage(\achbotMessage('renewal.automatic_renewal.handle_auto_renew_callback.message.cab5f13fd1').number_format($claim['amount']).
+            \achbotMessage('renewal.automatic_renewal.handle_auto_renew_callback.message.1c7e390d77'),null,null,$userId);
     } catch (Throwable $ignored) {}
 }
 
@@ -370,10 +373,10 @@ function achbotAutoRenewAlertReview(mysqli $db, $adminChatId): void {
             $stmt->close();
             if (!$claimed) continue;
             $reason=preg_replace('/[^a-z_]/','',(string)($item['reason_code']??'none'));
-            $msg="AChBot automatic renewal requires operator reconciliation\n".
-                "Attempt: ".$id."\nOrder: ".(int)$item['order_id'].
-                "\nStage: ".$item['stage']."\nReason: ".$reason.
-                "\nDo not replay remote renewal or refund until checked.";
+            $msg=\achbotMessage('renewal.automatic_renewal.auto_renew_alert_review.a_ch_bot_automatic_renewal_requires_operator.bcbe5e6050').
+                \achbotMessage('renewal.automatic_renewal.auto_renew_alert_review.attempt.b7a6466686').$id.\achbotMessage('renewal.automatic_renewal.auto_renew_alert_review.order.88c68296e4').(int)$item['order_id'].
+                \achbotMessage('renewal.automatic_renewal.auto_renew_alert_review.stage.9b4e401970').$item['stage'].\achbotMessage('renewal.automatic_renewal.auto_renew_alert_review.reason.ff1f74d040').$reason.
+                \achbotMessage('renewal.automatic_renewal.auto_renew_alert_review.do_not_replay_remote_renewal.962be3fe3d');
             $sent=false;
             try {
                 $reply=sendMessage($msg,null,null,(int)$adminChatId);
@@ -422,8 +425,8 @@ function achbotAutoRenewSweep(mysqli $db, array $botState): void {
     $stmt->close();
     foreach ($orders as $order) {
         $orderId=(int)$order['id'];
-        if (!achbotSupportsMarzbanOrder($db,$orderId)) continue;
-        $remote=getMarzbanUser((int)$order['server_id'],(string)$order['remark']);
+        if (!achbotSupportsOrder($db,$orderId)) continue;
+        $remote=achbotProviderUser((int)$order['server_id'],(string)$order['remark']);
         if (!is_object($remote) || !isset($remote->username,$remote->expire,
             $remote->used_traffic) || !property_exists($remote,'data_limit') ||
             (string)$remote->username!==(string)$order['remark'] ||

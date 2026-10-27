@@ -351,7 +351,8 @@ def main():
         move_to_reason(work,env,'debit',50351)
         out=execute(work,env,text='routine debit',update_id=702)
         assert_state(work,env,50350,1)
-        assert any('معتبر نیست' in m for m in messages(out))
+        assert any('تأیید' in m and 'هنوز مبلغی اعمال نشده' in m for m in messages(out))
+        assert step(work,env).startswith('achbotWalletDebt:1001:50351:50350:')
         cases.append('routine_debit_cannot_create_debt')
 
         move_to_reason(work,env,'debit',50)
@@ -368,9 +369,15 @@ def main():
         assert step(work,env)=='achbotWalletReason:debt:1001:50400:90:1'
         assert not any('✅' in m for m in messages(debt_callback))
         cases.append('f1_privileged_debt_needs_new_message_reason')
-        execute(work,env,text='contractually approved debt',update_id=704)
+        preview=execute(work,env,text='contractually approved debt',update_id=704)
+        assert_state(work,env,50300,2)
+        keys=[json.loads(e['args'][1]) for e in preview['events']
+              if e['kind']=='sendMessage' and len(e['args'])>1
+              and isinstance(e['args'][1],str) and e['args'][1].startswith('{')]
+        token=keys[0]['inline_keyboard'][0][0]['callback_data']
+        execute(work,env,data=token,update_id=709,message_id=92)
         assert_state(work,env,-100,3)
-        assert journal(work,env,704)=='9001:1001:debt:50400:50300:-100'
+        assert journal(work,env,709)=='9001:1001:debt:50400:50300:-100'
         cases.append('explicit_privileged_negative_debt')
 
         move_to_reason(work,env,'debit',10)
@@ -711,14 +718,14 @@ def main():
         assert not any('✅' in m for m in messages(group_reentry))
         cases.append('r1_group_reentry_cannot_override_pending_debt')
 
-        # The same genuine administrator in the correct DM can still
-        # intentionally commit negative debt with a NEW, explicit reason.
+        # A legacy saved debt mode in the correct DM is now ordinary
+        # Decrease when its result stays nonnegative; new reason required.
         real_private=execute(work,env,text='Explicit fresh debt reason',
             update_id=816,message_id=91)
         assert step(work,env)=='none'
         assert_state(work,env,base_wallet-10,base_rows+1)
         assert journal(work,env,816)==(
-            f'9001:1001:debt:10:{base_wallet}:{base_wallet-10}')
+            f'9001:1001:debit:10:{base_wallet}:{base_wallet-10}')
         assert any('✅' in m for m in messages(real_private))
         repeat=execute(work,env,text='Explicit fresh debt reason',
             update_id=816,message_id=91)

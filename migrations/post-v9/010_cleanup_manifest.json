@@ -1,0 +1,57 @@
+{
+  "version": 1,
+  "historical_schema_source": "database/legacy-schema.sql",
+  "historical_schema_sha256": "f790a6257e28916430c44172498bd08cb70c803f8690298dc5c8c7d145568a88",
+  "tables": {
+    "admins": {
+      "schema_sha256": "b60353718a639de927b2b4ed9d94848268dc244e66fd2ef4ec801c1fd75107c7",
+      "original_create_ddl": "CREATE TABLE `admins` (\n  `id` int(11) NOT NULL AUTO_INCREMENT,\n  `username` varchar(200) NOT NULL,\n  `password` varchar(200) NOT NULL,\n  `backupchannel` varchar(200) NOT NULL,\n  `lang` varchar(10) NOT NULL,\n  PRIMARY KEY (`id`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+    },
+    "black_list": {
+      "schema_sha256": "e5a092cbf163eb5ccb2ecb4b4787818814ae2f5edcab1dd927ccea78c2166ee9",
+      "original_create_ddl": "CREATE TABLE `black_list` (\n  `id` int(11) NOT NULL AUTO_INCREMENT,\n  `info` varchar(20) DEFAULT NULL,\n  PRIMARY KEY (`id`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+    },
+    "servers": {
+      "schema_sha256": "eced40b76276c2effb9ad5f0921bac3adc42dc3c5a102f3f1bbf9cb7654667e9",
+      "original_create_ddl": "CREATE TABLE `servers` (\n  `id` int(11) NOT NULL AUTO_INCREMENT,\n  `ip` varchar(200) NOT NULL,\n  `port` int(11) NOT NULL,\n  `username` varchar(200) NOT NULL,\n  `password` varchar(200) NOT NULL,\n  `name` varchar(200) NOT NULL,\n  `panel` varchar(100) NOT NULL,\n  `status` int(11) NOT NULL,\n  PRIMARY KEY (`id`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+    }
+  },
+  "retired_files": {
+    "settings/tronChecker.php": [
+      {
+        "size": 104,
+        "sha256": "6e72d90cbd1327dfd2c3898f054d27168110be30c6a3629afb7a68ea0fe7d2cc",
+        "source": "7eb077fd8e6d0a303421626d1500f69e295a6664"
+      },
+      {
+        "size": 316,
+        "sha256": "c811a9589e4f2a0d60e86e194f45df090881852f49bb8f6c534a457b5fdc38ca",
+        "source": "68d0109349e579829ab48f0ee7d872359d1b6306"
+      }
+    ],
+    "src/Finance/CryptoChecker.php": [
+      {
+        "size": 44278,
+        "sha256": "fe7e7486b41e75cc66283f6740ea248d02acd6c2c9ad71d017c3cd5c7a681de2",
+        "source": "7eb077fd8e6d0a303421626d1500f69e295a6664"
+      },
+      {
+        "size": 200,
+        "sha256": "58e27a08bd912856e910eaa3cc44e5ee20bfa4c0202df7d77ed366845489f4bc",
+        "source": "68d0109349e579829ab48f0ee7d872359d1b6306"
+      }
+    ],
+    "src/Finance/Routes/CryptoAndExchange.php": [
+      {
+        "size": 33887,
+        "sha256": "027d5c69f6c6da6227e90836e1f6d0162578171a034b6939dc49e7bf2c21c04f",
+        "source": "7eb077fd8e6d0a303421626d1500f69e295a6664"
+      },
+      {
+        "size": 1078,
+        "sha256": "f226f80e0de1110525fac9ad00a1a9c1cd5592da558eb1fe54fa5af82fa6d295",
+        "source": "68d0109349e579829ab48f0ee7d872359d1b6306"
+      }
+    ]
+  }
+}

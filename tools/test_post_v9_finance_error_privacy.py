@@ -18,6 +18,7 @@ import test_access_state as owned
 import test_post_v9_purchases as stages
 import test_v6_native as sql_native
 import test_v8_native as purchase
+import catalog_source
 
 DB = purchase.SIDE[1]
 ROOT = Path(__file__).resolve().parents[1]
@@ -37,6 +38,9 @@ $socket = $argv[3];
 $case = json_decode($argv[4], true, 512, JSON_THROW_ON_ERROR);
 $events = [];
 $remote_calls = 0;
+$dispatch_snapshot = null;
+$GLOBALS['ownedPrivacyDb']=$db;
+$GLOBALS['ownedPrivacySocket']=$socket;
 $uncaught = null;
 $connection = new mysqli('localhost', 'root', '', $db, 0, $socket);
 $connection->set_charset('utf8mb4');
@@ -70,7 +74,14 @@ function editKeys(...$args) {
 }
 function getMainKeys() { return '{}'; }
 function achbotSupportsPanel($type) { return $type==='marzban'; }
+function privacyDispatchSnapshot(): void {
+    $reader=new mysqli('localhost','root','',$GLOBALS['ownedPrivacyDb'],0,$GLOBALS['ownedPrivacySocket']);
+    $row=$reader->query("SELECT p.state,u.wallet FROM pays p JOIN users u ON u.userid=p.user_id WHERE p.hash_id='privacyhash'")->fetch_assoc();
+    $reader->close();
+    $GLOBALS['dispatch_snapshot']=$row;
+}
 function editMarzbanConfig($server_id, $info) {
+    privacyDispatchSnapshot();
     $GLOBALS['remote_calls']++;
     if ($GLOBALS['case']['provider'] === 'reject') {
         return (object)['success' => false,
@@ -88,6 +99,7 @@ try {
         require $root . '/src/Finance/WalletSettlement.php';
         $result = processWalletPayment($connection, 'privacyhash',
             function ($payment, $account) {
+                privacyDispatchSnapshot();
                 $GLOBALS['remote_calls']++;
                 if ($GLOBALS['case']['provider'] === 'reject') {
                     throw new RuntimeException('provider_rejected');
@@ -104,7 +116,7 @@ try {
     $uncaught = get_class($e) . ':' . $e->getMessage();
 }
 echo json_encode(['events' => $events, 'remote_calls' => $remote_calls,
-                  'uncaught' => $uncaught], JSON_INVALID_UTF8_SUBSTITUTE |
+                  'uncaught' => $uncaught, 'dispatch_snapshot'=>$dispatch_snapshot], JSON_INVALID_UTF8_SUBSTITUTE |
                   JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
 """
 
@@ -140,6 +152,11 @@ def seed(work, env, case):
         pay_type = f"INCREASE_DAY_{order_id}_1"
     else:
         pay_type = "RENEW_ACCOUNT"
+    # These supported current fixtures carry the immutable quantity shown in
+    # the quote. Dedicated service-unit guards retain legacy zero/unprovable
+    # add-on negatives; do not manufacture units from a mutable SKU at effect time.
+    quoted_volume=7 if case['name'].startswith('extension_volume') else 0
+    quoted_day=7 if case['name'].startswith('extension_day') else 0
     # Wallet checkout must be unclaimed. Manual operator checks simulate an
     # inherited (pre-ledger) receipt already delivered to the administrator;
     # a missing Telegram delivery ID cannot authorize remote effects.
@@ -154,12 +171,12 @@ def seed(work, env, case):
         (hash_id,payid,user_id,type,plan_id,server_id,order_id,
          volume,day,price,request_date,state,message_id,chat_id)
         VALUES ('privacyhash','',1001,'{pay_type}',7,2,
-                {order_id},0,0,100,{request_date},'{pay_state}',
+                {order_id},{quoted_volume},{quoted_day},100,{request_date},'{pay_state}',
                 {message_id},{chat_id})""")
     return order_id
 
 
-def php(work, env, stage, case):
+def php(work, env, stage, case, expected_remote_calls=1):
     path = work / "finance-privacy-driver.php"
     if not path.exists():
         path.write_text(DRIVER)
@@ -178,8 +195,8 @@ def php(work, env, stage, case):
         raise RuntimeError("Privacy route runner PHP failure: " + repr(
             (p.returncode, p.stdout[-400:], p.stderr[-500:])))
     result = json.loads(p.stdout)
-    if result["uncaught"] or result["remote_calls"] != 1:
-        raise RuntimeError("Privacy route failed before/after remote exactly once: "
+    if result["uncaught"] or result["remote_calls"] != expected_remote_calls:
+        raise RuntimeError("Privacy route dispatch/exception boundary failed: "
                            + repr(result)[:1400])
     return result
 
@@ -284,17 +301,17 @@ def main():
                 assert_privacy(result, case["audience"], expected,
                                require_sql_secret=(provider == "success"
                                                    and case["name"] != "wallet_settlement"))
-                # Day/full-renewal routes now commit nonterminal payment
-                # ownership (and wallet debit reservation) BEFORE their
-                # external PUT; a subsequent SQL/provider fault deliberately
-                # keeps that state for human reconciliation. Old volume/
-                # wallet-settlement routes retain their existing local
-                # transaction policy. No failure may duplicate debit or
+                # Shared day/volume/full-renewal routes commit ownership
+                # and a wallet reservation BEFORE external PUT. The injected
+                # increase_order INSERT failure occurs after that dispatch;
+                # retained debit/processing is intentional review, not a new
+                # refund. The separate legacy wallet-settlement handler keeps
+                # its existing local transaction policy. No failure may duplicate debit or
                 # claim delivered; preserving a spent reservation is safer
                 # than rolling it back and authorizing a second remote PUT.
                 changes_owner = case["name"] in (
-                    "extension_day_wallet", "renewal_wallet",
-                    "extension_day_manual", "renewal_manual")
+                    "extension_day_wallet", "extension_volume_wallet", "renewal_wallet",
+                    "extension_day_manual", "extension_volume_manual", "renewal_manual")
                 expected_state = (
                     "processing_wallet" if changes_owner and case["audience"]=="wallet"
                     else "processing" if changes_owner else pay_before)
@@ -309,20 +326,60 @@ def main():
                                        repr((case["name"],provider,
                                              new_state,new_wallet,
                                              expected_state,expected_wallet)))
+                if changes_owner:
+                    # A separate native connection at the provider spy proves
+                    # claim/debit durability before any simulated vendor write.
+                    dispatch=result['dispatch_snapshot']
+                    if dispatch['state']!=expected_state or int(dispatch['wallet'])!=expected_wallet:
+                        raise RuntimeError('Provider dispatched before durable claim/debit: '+repr(dispatch))
+                    claim_count=sql(work,env,"SELECT COUNT(*) FROM pays WHERE hash_id='privacyhash'").strip()
+                    if claim_count!='1' or sql(work,env,"SELECT COUNT(*) FROM increase_order").strip()!='0':
+                        raise RuntimeError('Ambiguous operation manufactured a duplicate claim/completion')
+                    # Replaying the identical callback must neither redispatch
+                    # nor debit/complete/refund the unresolved operation.
+                    replay=php(work,env,current,spec,expected_remote_calls=0)
+                    if replay['dispatch_snapshot'] is not None:
+                        raise RuntimeError('Unresolved callback replay reached provider boundary')
+                    if int(sql(work,env,"SELECT wallet FROM users WHERE userid=1001").strip())!=expected_wallet or sql(work,env,"SELECT state FROM pays WHERE hash_id='privacyhash'").strip()!=expected_state:
+                        raise RuntimeError('Unresolved replay changed claim/debit')
+                    customer=[str(e['args'][0]) for e in replay['events'] if e['name'] in ('sendMessage','alert') and (e['name']=='alert' or len(e['args'])<4 or e['args'][3]!=9001)]
+                    if any(term in '\n'.join(customer) for term in ('برگشت داده شد','بازگردانده شد','انجام نشد')):
+                        raise RuntimeError('Unresolved replay claimed false refund/failure')
                 names.append(case["name"] + "_" + mode)
                 if provider == "success":
                     sql(work, env, "DROP TRIGGER achbot_privacy_sql_failure")
+
+        # A failure before the claim COMMIT must still roll back the tentative
+        # debit and never dispatch. This distinguishes the post-dispatch review
+        # cases above from an uncommitted local reservation failure.
+        for case in (route_cases()[1],route_cases()[4]):
+            seed(work,env,case)
+            wallet_before=sql(work,env,"SELECT wallet FROM users WHERE userid=1001").strip()
+            pay_before=sql(work,env,"SELECT state FROM pays WHERE hash_id='privacyhash'").strip()
+            claimed='processing_wallet' if case['audience']=='wallet' else 'processing'
+            sql(work,env,"CREATE TRIGGER achbot_privacy_preclaim_failure BEFORE UPDATE ON pays FOR EACH ROW SET NEW.price=IF(NEW.state='"+claimed+"',999999999999999,NEW.price)")
+            try:
+                result=php(work,env,current,{**case,'provider':'success'},expected_remote_calls=0)
+                if result['dispatch_snapshot'] is not None or sql(work,env,"SELECT wallet FROM users WHERE userid=1001").strip()!=wallet_before or sql(work,env,"SELECT state FROM pays WHERE hash_id='privacyhash'").strip()!=pay_before:
+                    raise RuntimeError('Preclaim failure was not fully rolled back before dispatch')
+                names.append(case['name']+'_preclaim_failure_rolls_back_without_dispatch')
+            finally:sql(work,env,'DROP TRIGGER achbot_privacy_preclaim_failure')
 
         # Check that tests fail when a staged operator path uses untrusted
         # exception text, without ever changing the actual source tree.
         source = current / "src/Finance/Routes/Extensions.php"
         original = source.read_text()
+        catalog=catalog_source.templates(current)
+        message_key=next((key for key,value in catalog.items()
+                          if value.startswith('⚠️ وضعیت درخواست مشخص نیست.') and ("achbotMessage('"+key+"'") in original),None)
+        message_anchor=("sendMessage("+chr(92)+"achbotMessage('"+message_key+"'"
+                        if message_key else 'sendMessage("⚠️ وضعیت درخواست مشخص نیست.')
+        poisoned_customer="sendMessage($e->getMessage() . "+message_anchor[len('sendMessage('):]
         mutator_cases = [
             ("operator_raw_exception",
              original.replace("achbotFinanceDiagnosticReason($e)", "$e->getMessage()")),
             ("customer_dynamic_exception",
-             original.replace('sendMessage("⚠️ وضعیت درخواست مشخص نیست.',
-                              'sendMessage($e->getMessage() . "⚠️ وضعیت درخواست مشخص نیست.')),
+             original.replace(message_anchor,poisoned_customer)),
         ]
         for label, poisoned in mutator_cases:
             if poisoned == original:

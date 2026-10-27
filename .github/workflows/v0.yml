@@ -38,16 +38,16 @@ jobs:
           git worktree add --detach "$ref" 7eb077fd8e6d0a303421626d1500f69e295a6664
           (cd "$ref" && python3 tools/check_v9.py --php81 --report "$RUNNER_TEMP/frozen-v9-php81.json")
           git worktree remove "$ref"
-      - name: Verify NEW Marzban-only runtime under actual PHP 8.1
+      - name: Verify NEW current provider runtime under actual PHP 8.1
         run: |
           set -euo pipefail
           python3 tools/check_post_v9.py --report "$RUNNER_TEMP/post-v9-php81.json"
       - name: Record candidate-vs-history PHP 8.1 evidence
         run: |
-          printf '## AChBot post-V9 Marzban-only PHP 8.1\n\n' >> "$GITHUB_STEP_SUMMARY"
+          printf '## AChBot post-V9 current provider PHP 8.1\n\n' >> "$GITHUB_STEP_SUMMARY"
           printf 'New HEAD: `%s`\n\n' "$(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
           printf 'New tree: `%s`\n\n' "$(git rev-parse HEAD^{tree})" >> "$GITHUB_STEP_SUMMARY"
-          printf 'Original V9 frozen baseline exercised in its own pinned checkout; new runtime Marzban-only tests separate. No real operator/deploy/finance approval.\n' >> "$GITHUB_STEP_SUMMARY"
+          printf 'Original V9 frozen baseline exercised in its own pinned checkout; new runtime current provider tests separate. No real operator/deploy/finance approval.\n' >> "$GITHUB_STEP_SUMMARY"
   phase1-php84-full-history:
     runs-on: ubuntu-24.04
     timeout-minutes: 65
@@ -76,7 +76,7 @@ jobs:
           git worktree add --detach "$ref" 7eb077fd8e6d0a303421626d1500f69e295a6664
           (cd "$ref" && python3 tools/check_v9.py --report "$RUNNER_TEMP/frozen-v9-php84.json" --evidence-dir "$RUNNER_TEMP/frozen-v9-evidence")
           git worktree remove "$ref"
-      - name: Verify NEW Marzban-only runtime and native HTTP/MariaDB tests under PHP 8.4
+      - name: Verify NEW current provider runtime and native HTTP/MariaDB tests under PHP 8.4
         run: |
           set -euo pipefail
           python3 tools/check_post_v9.py --report "$RUNNER_TEMP/post-v9-php84.json"
@@ -86,43 +86,49 @@ jobs:
           python3 -m unittest tools.test_verify_installed_runtime -v
       - name: Regression check for reproducible, release-specific ZIP timestamps
         run: python3 tools/test_post_v9_zip_timestamp.py -v
-      - name: Package and verify NEW exact-head Marzban-only runtime
+      - name: Package and verify NEW exact-head current provider runtime
         run: |
           set -euo pipefail
-          mkdir -p "$RUNNER_TEMP/achbot-marzban-only"
-          python3 tools/package_post_v9.py create --output "$RUNNER_TEMP/achbot-marzban-only/runtime.zip"
-          python3 tools/package_post_v9.py verify --zip "$RUNNER_TEMP/achbot-marzban-only/runtime.zip" --manifest "$RUNNER_TEMP/achbot-marzban-only/runtime.zip.manifest.json"
-          cp migrations/post-v9/001_marzban_panel_group_id.sql "$RUNNER_TEMP/achbot-marzban-only/panel-group-migration.sql"
-          (cd "$RUNNER_TEMP/achbot-marzban-only" && sha256sum panel-group-migration.sql > panel-group-migration.sha256)
+          mkdir -p "$RUNNER_TEMP/achbot-current"
+          python3 tools/package_post_v9.py create --output "$RUNNER_TEMP/achbot-current/runtime.zip"
+          python3 tools/package_post_v9.py verify --zip "$RUNNER_TEMP/achbot-current/runtime.zip" --manifest "$RUNNER_TEMP/achbot-current/runtime.zip.manifest.json"
+          cp migrations/post-v9/001_marzban_panel_group_id.sql "$RUNNER_TEMP/achbot-current/panel-group-migration.sql"
+          (cd "$RUNNER_TEMP/achbot-current" && sha256sum panel-group-migration.sql > panel-group-migration.sha256)
           # The shared migration supersedes RC4's provider-specific 002 source.
           # SQL assets remain separate from runtime.zip, never auto-applied.
-          cp migrations/post-v9/003_payment_attempts.sql "$RUNNER_TEMP/achbot-marzban-only/payment-attempt-migration.sql"
-          (cd "$RUNNER_TEMP/achbot-marzban-only" && sha256sum payment-attempt-migration.sql > payment-attempt-migration.sha256)
+          cp migrations/post-v9/003_payment_attempts.sql "$RUNNER_TEMP/achbot-current/payment-attempt-migration.sql"
+          (cd "$RUNNER_TEMP/achbot-current" && sha256sum payment-attempt-migration.sql > payment-attempt-migration.sha256)
           # Independent, separately approved source-only migrations.
           # These assets never execute as part of CI/package installation.
           for id in 004_automatic_renewal_attempts 005_wallet_adjustments 006_payment_message_refs 007_service_effects 008_referral_awards 009_bank_buy_invoice_claims; do
-            cp "migrations/post-v9/${id}.sql" "$RUNNER_TEMP/achbot-marzban-only/${id}.sql"
-            (cd "$RUNNER_TEMP/achbot-marzban-only" && sha256sum "${id}.sql" > "${id}.sha256")
+            cp "migrations/post-v9/${id}.sql" "$RUNNER_TEMP/achbot-current/${id}.sql"
+            (cd "$RUNNER_TEMP/achbot-current" && sha256sum "${id}.sql" > "${id}.sha256")
           done
-          cp migrations/post-v9/legacy_rc4_nowpayments_import.sql "$RUNNER_TEMP/achbot-marzban-only/legacy-rc4-import.sql"
-          (cd "$RUNNER_TEMP/achbot-marzban-only" && sha256sum legacy-rc4-import.sql > legacy-rc4-import.sha256)
-          cp "$RUNNER_TEMP/post-v9-php84.json" "$RUNNER_TEMP/achbot-marzban-only/post-v9-acceptance.json"
-          cp "$RUNNER_TEMP/frozen-v9-php84.json" "$RUNNER_TEMP/achbot-marzban-only/frozen-v9-historical.json"
-          cp -R "$RUNNER_TEMP/frozen-v9-evidence" "$RUNNER_TEMP/achbot-marzban-only/frozen-v9-evidence"
+          cp migrations/post-v9/011_provider_identity.sql "$RUNNER_TEMP/achbot-current/011_provider_identity.sql"
+          (cd "$RUNNER_TEMP/achbot-current" && sha256sum 011_provider_identity.sql > 011_provider_identity.sha256)
+          mkdir -p "$RUNNER_TEMP/achbot-current/optional-cleanup/tools" "$RUNNER_TEMP/achbot-current/optional-cleanup/migrations/post-v9"
+          cp tools/cleanup_post_v9.php "$RUNNER_TEMP/achbot-current/optional-cleanup/tools/"
+          cp migrations/post-v9/010_cleanup_manifest.json "$RUNNER_TEMP/achbot-current/optional-cleanup/migrations/post-v9/"
+          (cd "$RUNNER_TEMP/achbot-current/optional-cleanup" && sha256sum tools/cleanup_post_v9.php migrations/post-v9/010_cleanup_manifest.json > SHA256SUMS)
+          cp migrations/post-v9/legacy_rc4_nowpayments_import.sql "$RUNNER_TEMP/achbot-current/legacy-rc4-import.sql"
+          (cd "$RUNNER_TEMP/achbot-current" && sha256sum legacy-rc4-import.sql > legacy-rc4-import.sha256)
+          cp "$RUNNER_TEMP/post-v9-php84.json" "$RUNNER_TEMP/achbot-current/post-v9-acceptance.json"
+          cp "$RUNNER_TEMP/frozen-v9-php84.json" "$RUNNER_TEMP/achbot-current/frozen-v9-historical.json"
+          cp -R "$RUNNER_TEMP/frozen-v9-evidence" "$RUNNER_TEMP/achbot-current/frozen-v9-evidence"
       - name: Record exact candidate identity and distinct frozen historical evidence
         run: |
-          printf '## AChBot post-V9 Marzban-only acceptance\n\n' >> "$GITHUB_STEP_SUMMARY"
+          printf '## AChBot post-V9 current provider acceptance\n\n' >> "$GITHUB_STEP_SUMMARY"
           printf 'New candidate HEAD: `%s`\n\n' "$(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
           printf 'New candidate tree: `%s`\n\n' "$(git rev-parse HEAD^{tree})" >> "$GITHUB_STEP_SUMMARY"
-          printf 'The current exact-candidate runtime ZIP is separately reproducibly verified; source does not modify the frozen 23-table historical V9 schema. Optional 001, 003, 004, 005, 006, revised 007, 008 referral awards and 009 bank invoice claim SQL migrations are distinct checksum-shipped sidecars, never automatically installed. CI exercises proposed 007, 008 and 009 only against isolated disposable MariaDB. Frozen historical V9 source/schema exercised independently at pinned commit 7eb077fd. Source ZIP does NOT apply SQL; separately shipped migrations require independent backup, Owner approval and operator proof. No financial/production deployment approval.\n\n' >> "$GITHUB_STEP_SUMMARY"
+          printf 'The current exact-candidate runtime ZIP is separately reproducibly verified; source does not modify the frozen 23-table historical V9 schema. Optional 001, 003, 004, 005, 006, revised 007, 008 referral awards 009 bank invoice claim and optional provider011 SQL migrations are distinct checksum-shipped sidecars, never automatically installed. Cleanup010 is a guarded optional tool with its manifest, never an automatic SQL DROP. CI exercises proposed migrations only against isolated disposable MariaDB. Frozen historical V9 source/schema exercised independently at pinned commit 7eb077fd. Source ZIP does NOT apply SQL; separately shipped migrations require independent backup, Owner approval and operator proof. No financial/production deployment approval.\n\n' >> "$GITHUB_STEP_SUMMARY"
           printf '```json\n' >> "$GITHUB_STEP_SUMMARY"
           cat "$RUNNER_TEMP/post-v9-php84.json" >> "$GITHUB_STEP_SUMMARY"
           printf '\n```\n' >> "$GITHUB_STEP_SUMMARY"
       - name: Upload post-V9 exact-candidate source and separate historical evidence
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: achbot-marzban-only-${{ github.event.pull_request.head.sha || github.sha }}
-          path: ${{ runner.temp }}/achbot-marzban-only/
+          name: achbot-current-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/achbot-current/
           if-no-files-found: error
           retention-days: 14
           compression-level: 0

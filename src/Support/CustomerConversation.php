@@ -9,6 +9,8 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     http_response_code(404);
     exit;
 }
+require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
+
 
 if($data== "usersOpenTickets" || $data == "userAllTickets"){
     if($data== "usersOpenTickets"){
@@ -49,16 +51,16 @@ if($data== "usersOpenTickets" || $data == "userAllTickets"){
             $stmt->close();
             
             $lastmsg = $ticketInfo['text'];
-            $sentType = $ticketInfo['msg_type']=="ADMIN"?"پشتیبانی":"کاربر";
+            $sentType = $ticketInfo['msg_type']=="ADMIN"?\achbotMessage('support.customer_conversation.user_all_tickets.text.13ad0eef28'):\achbotMessage('support.customer_conversation.user_all_tickets.text.5bf4b36161');
             if($state !=2){
                 $keys = [
-                        [['text'=>"بستن تیکت 🗳",'callback_data'=>"closeTicket_$rowId"],['text'=>"پاسخ به تیکت 📝",'callback_data'=>"replySupport_{$rowId}"]],
-                        [['text'=>"آخرین پیام ها 📩",'callback_data'=>"latestMsg_$rowId"]]
+                        [['text'=>\achbotMessage('support.admin_reply.button.173875ae6b'),'callback_data'=>"closeTicket_$rowId"],['text'=>\achbotMessage('support.admin_reply.button.f8a34e79d9'),'callback_data'=>"replySupport_{$rowId}"]],
+                        [['text'=>\achbotMessage('support.customer_conversation.user_all_tickets.button.2f9a0fbfd0'),'callback_data'=>"latestMsg_$rowId"]]
                         ];
             }
             else{
                 $keys = [
-                    [['text'=>"آخرین پیام ها 📩",'callback_data'=>"latestMsg_$rowId"]]
+                    [['text'=>\achbotMessage('support.customer_conversation.user_all_tickets.button.2f9a0fbfd0'),'callback_data'=>"latestMsg_$rowId"]]
                     ];
             }
                 
@@ -66,16 +68,10 @@ if($data== "usersOpenTickets" || $data == "userAllTickets"){
                 $info = json_decode($lastmsg,true);
                 $fileid = $info['file_id'];
                 $caption = $info['caption'];
-                $txt ="🔘 موضوع: $title
-            		💭 دسته بندی:  {$category}
-            		\n
-            		$sentType: $caption";
+                $txt =\achbotMessage('support.customer_conversation.user_all_tickets.txt.d10f40bde9', ['title' => $title, 'category' => $category, 'sentType' => $sentType, 'caption' => $caption]);
                 sendPhoto($fileid, $txt,json_encode(['inline_keyboard'=>$keys]), "HTML");
             }else{
-                sendMessage("🔘 موضوع: $title
-            		💭 دسته بندی:  {$category}
-            		\n
-            		$sentType: $lastmsg",json_encode(['inline_keyboard'=>$keys]),"HTML");
+                sendMessage(\achbotMessage('support.customer_conversation.user_all_tickets.message.dfae2b8b30', ['title' => $title, 'category' => $category, 'sentType' => $sentType, 'lastmsg' => $lastmsg]),json_encode(['inline_keyboard'=>$keys]),"HTML");
             }
 
 			if($current>=$cont){
@@ -84,12 +80,12 @@ if($data== "usersOpenTickets" || $data == "userAllTickets"){
         }
         
 		if($allList > $cont){
-		    sendmessage("موارد بیشتر",json_encode(['inline_keyboard'=>[
-                		        [['text'=>"دریافت",'callback_data'=>"moreTicket_{$type}_{$cont}"]]
+		    sendmessage(\achbotMessage('support.customer_conversation.user_all_tickets.text.7555aab9b2'),json_encode(['inline_keyboard'=>[
+                                        [['text'=>\achbotMessage('support.customer_conversation.user_all_tickets.button.29582a35e0'),'callback_data'=>"moreTicket_{$type}_{$cont}"]]
                 		        ]]),"HTML");
 		}
 	}else{
-	    alert("تیکتی یافت نشد");
+	    alert(\achbotMessage('support.customer_conversation.user_all_tickets.alert.69716a6209'));
         exit();
 	}
 }
@@ -113,42 +109,42 @@ if(preg_match('/^closeTicket_(\d+)/',$data,$match) and  $from_id != $admin){
     
     editKeys();
 
-    $ticketClosed = " $title 🟰 $category \n\n" . "این تیکت بسته شد\n به این تیکت رأی بدهید";;
+    $ticketClosed = \achbotMessage('support.customer_conversation.user_all_tickets.title_category.f58d7d9818', ['title' => $title, 'category' => $category]) . \achbotMessage('support.customer_conversation.user_all_tickets.text.54487cb6cb');;
     
     $keys = json_encode(['inline_keyboard'=>[
-        [['text'=>"بسیار بد 😠",'callback_data'=>"rate_{$chatRowId}_1"]],
-        [['text'=>"بد 🙁",'callback_data'=>"rate_{$chatRowId}_2"]],
-        [['text'=>"خوب 😐",'callback_data'=>"rate_{$chatRowId}_3"]],
-        [['text'=>"بسیار خوب 😃",'callback_data'=>"rate_{$chatRowId}_4"]],
-        [['text'=>"عالی 🤩",'callback_data'=>"rate_{$chatRowId}_5"]]
+        [['text'=>\achbotMessage('support.customer_conversation.user_all_tickets.button.67c753a13d'),'callback_data'=>"rate_{$chatRowId}_1"]],
+        [['text'=>\achbotMessage('support.customer_conversation.user_all_tickets.button.6f4e0b97a2'),'callback_data'=>"rate_{$chatRowId}_2"]],
+        [['text'=>\achbotMessage('support.customer_conversation.user_all_tickets.button.e26806a4af'),'callback_data'=>"rate_{$chatRowId}_3"]],
+        [['text'=>\achbotMessage('support.customer_conversation.user_all_tickets.button.3ed1f2e72a'),'callback_data'=>"rate_{$chatRowId}_4"]],
+        [['text'=>\achbotMessage('support.customer_conversation.user_all_tickets.button.3d61f01bbd'),'callback_data'=>"rate_{$chatRowId}_5"]]
         ]]);
     sendMessage($ticketClosed,$keys,'html');
     
     $keys = json_encode(['inline_keyboard'=>[
         [
             ['text'=>"$from_id",'callback_data'=>"wizwizch"],
-            ['text'=>"شناسه عددی",'callback_data'=>'wizwizch']
+            ['text'=>\achbotMessage('support.customer_conversation.user_all_tickets.button.2dc9dcf8cd'),'callback_data'=>'wizwizch']
         ],
         [
             ['text'=>$first_name??" ",'callback_data'=>"wizwizch"],
-            ['text'=>"اسم کاربر",'callback_data'=>'wizwizch']
+            ['text'=>\achbotMessage('support.customer_conversation.user_all_tickets.button.c9b4331f4f'),'callback_data'=>'wizwizch']
         ],
         [
             ['text'=>"$title",'callback_data'=>'wizwizch'],
-            ['text'=>"عنوان",'callback_data'=>'wizwizch']
+            ['text'=>\achbotMessage('support.customer_conversation.user_all_tickets.button.74190f4bb0'),'callback_data'=>'wizwizch']
         ],
         [
             ['text'=>"$category",'callback_data'=>'wizwizch'],
-            ['text'=>"دسته بندی",'callback_data'=>'wizwizch']
+            ['text'=>\achbotMessage('support.categories.tickets_category.button.0fc3aac224'),'callback_data'=>'wizwizch']
         ],
         ]]);
-    sendMessage("☑️ تیکت توسط کاربر بسته شد.",$keys,"HTML",$admin);
-    sendToAllAdmins('sendMessage', ['text' => "☑️ تیکت توسط کاربر بسته شد.", 'reply_markup' => $keys, 'parse_mode' => "HTML"]);
+    sendMessage(\achbotMessage('support.customer_conversation.user_all_tickets.message.2baf15e3c0'),$keys,"HTML",$admin);
+    sendToAllAdmins('sendMessage', ['text' => \achbotMessage('support.customer_conversation.user_all_tickets.message.2baf15e3c0'), 'reply_markup' => $keys, 'parse_mode' => "HTML"]);
 
 }
 if(preg_match('/^replySupport_(.*)/',$data,$match)){
     delMessage();
-    sendMessage("💠 لطفا متن پیام خود را بصورت ساده و مختصر ارسال کنید!",$cancelKey);
+    sendMessage(\achbotMessage('support.customer_conversation.user_all_tickets.message.13e7a1cdbb'),$cancelKey);
 	setUser("sendMsg_" . $match[1]);
 }
 if(preg_match('/^sendMsg_(.*)/',$userInfo['step'],$match)  and $text!=$buttonValues['cancel']){
@@ -164,14 +160,14 @@ if(preg_match('/^sendMsg_(.*)/',$userInfo['step'],$match)  and $text!=$buttonVal
 
     $time = time();
     if(isset($text)){
-        $txt = "پیام جدید:\n[$ticketTitle] <i>{$ticketCat}</i>\n\nکاربر: <a href='tg://user?id=$from_id'>$first_name</a>\nنام کاربری: $username\nشناسه عددی: $from_id\n" . "\nمتن پیام: $text";
+        $txt = \achbotMessage('support.customer_conversation.user_all_tickets.txt.54b5fecc08', ['ticketTitle' => $ticketTitle, 'ticketCat' => $ticketCat, 'from_id' => $from_id, 'first_name' => $first_name, 'username' => $username, 'from_id_2' => $from_id]) . \achbotMessage('support.customer_conversation.user_all_tickets.text.a79a2fa69e', ['text' => $text]);
     
         $text = str_replace(["/","'","#"],['\/',"\'","\#"],$text);
         $stmt = $connection->prepare("INSERT INTO `chats_info` (`chat_id`,`sent_date`,`msg_type`,`text`) VALUES (?,?,'USER',?)");
         $stmt->bind_param("iis",$ticketRowId, $time, $text);
 
         $keys = json_encode(['inline_keyboard'=>[
-            [['text'=>"پاسخ",'callback_data'=>"reply_{$ticketRowId}"]]
+            [['text'=>\achbotMessage('support.create_ticket.button.3b90dccc67'),'callback_data'=>"reply_{$ticketRowId}"]]
         ]]);
 
         // ارسال به ادمین اصلی
@@ -185,14 +181,14 @@ if(preg_match('/^sendMsg_(.*)/',$userInfo['step'],$match)  and $text!=$buttonVal
         ]);
 
     } else {
-        $txt = "پیام جدید:\n[$ticketTitle] <i>{$ticketCat}</i>\n\nکاربر: <a href='tg://user?id=$from_id'>$first_name</a>\nنام کاربری: $username\nشناسه عددی: $from_id\n" . "\nمتن پیام: $caption";
+        $txt = \achbotMessage('support.customer_conversation.user_all_tickets.txt.54b5fecc08', ['ticketTitle' => $ticketTitle, 'ticketCat' => $ticketCat, 'from_id' => $from_id, 'first_name' => $first_name, 'username' => $username, 'from_id_2' => $from_id]) . \achbotMessage('support.customer_conversation.user_all_tickets.text.46d8580795', ['caption' => $caption]);
         
         $stmt = $connection->prepare("INSERT INTO `chats_info` (`chat_id`,`sent_date`,`msg_type`,`text`) VALUES (?,?,'USER',?)");
         $text = json_encode(['file_id'=>$fileid, 'caption'=>$caption]);
         $stmt->bind_param("iis", $ticketRowId, $time, $text);
 
         $keys = json_encode(['inline_keyboard'=>[
-            [['text'=>"پاسخ",'callback_data'=>"reply_{$ticketRowId}"]]
+            [['text'=>\achbotMessage('support.create_ticket.button.3b90dccc67'),'callback_data'=>"reply_{$ticketRowId}"]]
         ]]);
 
         sendPhoto($fileid, $txt,$keys, "HTML", $admin);
@@ -206,7 +202,7 @@ if(preg_match('/^sendMsg_(.*)/',$userInfo['step'],$match)  and $text!=$buttonVal
     $stmt->execute();
     $stmt->close();
                 
-    sendMessage("پیام شما با موفقیت ثبت شد.",getMainKeys(),"HTML");
+    sendMessage(\achbotMessage('support.create_ticket.message.5c9c3dda00'),getMainKeys(),"HTML");
 	setUser("none");
 }
 if(preg_match("/^rate_+([0-9])+_+([0-9])/",$data,$match)){
@@ -226,23 +222,15 @@ if(preg_match("/^rate_+([0-9])+_+([0-9])/",$data,$match)){
     $stmt->bind_param("i", $rowChatId);
     $stmt->execute();
     $stmt->close();
-    editText($message_id,"✅");
+    editText($message_id,\achbotMessage('support.customer_conversation.user_all_tickets.message.1d456424c3'));
     
     $keys = json_encode(['inline_keyboard'=>[
         [
-            ['text'=>"رای تیکت",'callback_data'=>"wizwizch"]
+            ['text'=>\achbotMessage('support.customer_conversation.user_all_tickets.button.105e0409bc'),'callback_data'=>"wizwizch"]
             ],
         ]]);
 
-	$text = "📨 رأی به تیکت 
-
-👤 شناسه عددی: $from_id
-❕ نام کاربر: $first_name
-❗️ نام کاربری: @$username
-〽️ عنوان: $title
-⚜️ دسته بندی: $category
-❤️ رای: $rate
-";
+	$text = \achbotMessage('support.customer_conversation.user_all_tickets.text.497743bb13', ['from_id' => $from_id, 'first_name' => $first_name, 'username' => $username, 'title' => $title, 'category' => $category, 'rate' => $rate]);
 	sendMessage($text, $keys, "HTML", $admin);
 	sendToAllAdmins('sendMessage', ['text' => $text, 'reply_markup' => $keys, 'parse_mode' => "HTML"]);
 }

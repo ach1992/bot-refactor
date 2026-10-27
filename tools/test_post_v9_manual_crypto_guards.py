@@ -345,8 +345,19 @@ def check() -> dict:
         }
         # Detect drift in the actual active administrator keyboard and ensure
         # every advertised toggle remains editable after the allowlist fix.
-        assert len(advertised['changeBot'])>=25,advertised['changeBot']
-        assert len(advertised['changeGateWays'])>=8,advertised['changeGateWays']
+        baseline_source=subprocess.check_output(['git','-C',str(ROOT),'show',
+            '621307be775163f0b85ae9fa5b21b1d0b654cfed:config.php'],text=True)
+        baseline={surface:set(re.findall(
+            r"'callback_data'\s*=>\s*[\"']"+surface+r"([A-Za-z0-9_]+)[\"']",
+            baseline_source)) for surface in advertised}
+        # The Owner moved ONLY these two display controls into per-server
+        # management. Keep every other original toggle and test its real writer.
+        moved_display={'configLinkState','subLinkState'}
+        assert len(baseline['changeBot'])==25 and len(baseline['changeGateWays'])==8
+        assert advertised['changeBot']==baseline['changeBot']-moved_display,advertised
+        assert advertised['changeGateWays']==baseline['changeGateWays'],advertised
+        assert not moved_display.intersection(advertised['changeBot'])
+        cases.append('managed_display_replaces_only_two_legacy_global_toggles')
         assert not {'weSwapState','tronWallet'}.intersection(
             advertised['changeBot']|advertised['changeGateWays'])
         for surface,keys in advertised.items():
@@ -417,6 +428,9 @@ def check() -> dict:
         'retired_flags_preserved_not_mutated':True,
         'retired_keys_denied_at_persistence_boundary':True,
         'all_advertised_current_admin_toggles_work':True,
+        'moved_display_global_toggles':sorted(moved_display),
+        'retained_original_bot_toggles':len(advertised['changeBot']),
+        'retained_original_gateway_toggles':len(advertised['changeGateWays']),
         'schema_tables':23,
         'isolated_socket_only':True,
         'live_provider_or_chain_calls':0,

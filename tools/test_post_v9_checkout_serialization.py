@@ -131,7 +131,7 @@ def setup(w,e):
     keys=json.dumps({'nowpayment':'SYNTHETIC-LOCAL-ONLY',
                      'nextpay':'SYNTHETIC-LOCAL-ONLY',
                      'zarinpal':'SYNTHETIC-LOCAL-ONLY',
-                     'nowpayment_ipn_secret':'LOCAL-IPN-SECRET'})
+                     'nowpayment_ipn_secret':'LOCAL-IPN-SECRET','manualUsdtRateToman':'100000'})
     sql(w,e,"INSERT INTO setting (type,value) VALUES ('PAYMENT_KEYS','"+
         keys.replace("'","''")+"')")
     return stage

@@ -9,6 +9,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import shutil
 import subprocess
@@ -20,6 +21,7 @@ ROOT = Path(__file__).resolve().parents[1]
 DB = 'achbot_v4_new'
 SECRET = 'SYNTHETIC_HOSTED_SECRET_NEVER_REPORT_2026'
 PASSWORD = 'fixture_readonly_only_secret'
+SOURCE_FAILURE_REFERENCE = 'faa326cce364fa30ec634c6947013d17664ae200'
 
 def require(verified: bool, check_name: str) -> None:
     if not verified:
@@ -52,7 +54,8 @@ def seed(d: Path, state: dict, keys: dict) -> None:
 
 
 def report_run(d: Path, *, manifest: bool = True,
-               env_update: dict | None = None) -> tuple[int, dict, str]:
+               env_update: dict | None = None,
+               tool: Path | None = None) -> tuple[int, dict, str]:
     environment = dict(os.environ,
         ACHBOT_PREFLIGHT_DB_HOST='localhost',
         ACHBOT_PREFLIGHT_DB_NAME=DB,
@@ -60,7 +63,7 @@ def report_run(d: Path, *, manifest: bool = True,
         ACHBOT_PREFLIGHT_DB_PASSWORD=PASSWORD,
         ACHBOT_PREFLIGHT_DB_SOCKET=str(d/'mysql.sock'))
     if env_update: environment.update(env_update)
-    cmd = ['php', str(ROOT/'tools/payment_readiness_preflight.php')]
+    cmd = ['php', str(tool or ROOT/'tools/payment_readiness_preflight.php')]
     if manifest:
         cmd.extend(['--manifest', str(d/'manifest.json'),
                     '--runtime-dir', str(d/'runtime')])
@@ -88,8 +91,6 @@ def has(data: dict, name: str, status: str, code: str | None = None) -> bool:
 SOURCE_USDT_DRIVER = r"""
 $root=$argv[1];
 $GLOBALS['paymentKeys']=json_decode($argv[2],true,512,JSON_THROW_ON_ERROR);
-$GLOBALS['USDTPrice']=1000;
-$GLOBALS['USDTPriceagent']=1000;
 require $root.'/src/Finance/ReceiptHelpers.php';
 $available=[];
 foreach (['BEP20','TRC20','ERC20'] as $network)
@@ -127,13 +128,103 @@ def rule(category: str = 'all', enabled: bool = True) -> dict:
             'metrics':{key:{'count':0,'days':0,'direction':'older'}
                        for key in ('buy','renew','volume','time','topup')}}
 
+def database_connections(d: Path) -> int:
+    return int(sql(d, "SHOW GLOBAL STATUS LIKE 'Connections'").strip().split('\t')[1])
+
+
+def all_row_snapshot_query(d: Path) -> str:
+    queries=[]
+    for table in sql(d,'SHOW TABLES').splitlines():
+        require(re.fullmatch(r'[A-Za-z0-9_]+',table) is not None,'snapshot_table_name')
+        columns=[line.split('\t')[0] for line in sql(d,f'SHOW COLUMNS FROM `{table}`').splitlines()]
+        require(all(re.fullmatch(r'[A-Za-z0-9_]+',c) is not None for c in columns),'snapshot_column_names')
+        fields=','.join(f"'{c}',`{c}`" for c in columns)
+        queries.append(f"SELECT JSON_OBJECT('table','{table}','row',JSON_OBJECT({fields})) FROM `{table}`")
+    return ';'.join(queries)
+
+
+def source_failure_regressions(d: Path) -> list[dict]:
+    # Both tools execute as real CLI source in a complete owned runtime copy.
+    # Only these staged helper/catalog bytes receive inert file canaries.
+    stage=d/'source-identity-canaries'
+    for name in package.members():
+        target=stage/name
+        target.parent.mkdir(parents=True,exist_ok=True)
+        shutil.copyfile(ROOT/name,target)
+    (stage/'tools').mkdir()
+    current=stage/'tools/payment_readiness_preflight.php'
+    archived=stage/'tools/payment_readiness_preflight_previous.php'
+    shutil.copyfile(ROOT/'tools/payment_readiness_preflight.php',current)
+    previous=subprocess.check_output(['git','show',SOURCE_FAILURE_REFERENCE+
+        ':tools/payment_readiness_preflight.php'],cwd=ROOT)
+    archived.write_bytes(previous)
+    require(previous!=current.read_bytes(),'source_failure_reference_differs')
+    helper='src/Finance/PaymentLifecycle.php'
+    catalog='messages/fa/user.php'
+    originals={name:(stage/name).read_bytes() for name in (helper,catalog)}
+    query=all_row_snapshot_query(d)
+    rows=lambda:tuple(sorted(sql(d,query).splitlines()))
+    records=[]
+    scenarios=(
+        ('mismatched_helper_stops_before_database_and_execution',helper,True,False),
+        ('mismatched_catalog_stops_before_database_and_execution',catalog,True,False),
+        ('missing_manifest_stops_before_database_and_execution',helper,False,False),
+        ('mismatched_source_precedes_invalid_database_environment',helper,True,True),
+        ('missing_manifest_precedes_invalid_database_environment',helper,False,True),
+    )
+    for label,poison,manifest,invalid_env in scenarios:
+        for name,raw in originals.items():(stage/name).write_bytes(raw)
+        marker=stage/'entered-canary'
+        marker.unlink(missing_ok=True)
+        # Keep all real definitions/catalog values; entry merely writes an
+        # owned sentinel. An archived fallthrough therefore stays observable.
+        canary=('<?php file_put_contents('+json.dumps(str(marker))+',"entered");\n').encode()
+        require(originals[poison].startswith(b'<?php'),'canary_php_open')
+        (stage/poison).write_bytes(canary+originals[poison][5:])
+        before=rows()
+        env_update={'ACHBOT_PREFLIGHT_DB_NAME':'invalid-name!'} if invalid_env else None
+        old_connections=database_connections(d)
+        old_code,old_report,_=report_run(d,manifest=manifest,env_update=env_update,tool=archived)
+        # Reading this global status opens exactly one observer connection;
+        # the remaining delta is actual native preflight connection attempts.
+        old_db_entries=database_connections(d)-old_connections-1
+        old_entered=marker.exists()
+        expected_code=('manifest_mismatch_or_untrusted_shape' if manifest else
+                       'manifest_and_runtime_dir_required')
+        require(old_code==2 and has(old_report,'source_identity','BLOCK',expected_code),
+                'archived_source_block_'+label)
+        require(has(old_report,'php_runtime','PASS'),'archived_reaches_php_'+label)
+        if invalid_env:
+            require(has(old_report,'database_connect','BLOCK','explicit_db_environment_required')
+                    and old_db_entries==0 and not old_entered,'archived_reaches_db_environment_'+label)
+        else:
+            require(has(old_report,'database_read_only','PASS') and
+                    old_db_entries==1 and old_entered,'archived_executes_untrusted_source_'+label)
+        marker.unlink(missing_ok=True)
+        new_connections=database_connections(d)
+        code,result,_=report_run(d,manifest=manifest,env_update=env_update,tool=current)
+        new_db_entries=database_connections(d)-new_connections-1
+        require(code==2 and result['checks']==[{'id':'source_identity','status':'BLOCK',
+                'code':expected_code}],'source_finding_is_only_result_'+label)
+        require(result['schema']==[] and result['methods']==[] and
+                result['blocking_checks']==1,'no_downstream_report_'+label)
+        require(new_db_entries==0 and not marker.exists(),'no_db_or_canary_entry_'+label)
+        require(rows()==before,'source_failure_all_rows_unchanged_'+label)
+        records.append({'case':label,'archived_red':True,
+            'archived_database_connections':old_db_entries,'archived_canary_entered':old_entered,
+            'current_database_connections':new_db_entries,'current_canary_entered':marker.exists(),
+            'source_finding_only':len(result['checks'])==1,'all_rows_unchanged':True,
+            'rows_sha256':hashlib.sha256('\n'.join(before).encode()).hexdigest()})
+    return records
+
+
 def main() -> dict:
     cases = []
     with fixture.owned_database() as (d, _env):
         runtime = d/'runtime'
         runtime.mkdir()
         files = package.members()
-        require((len(files) == 104), 'line_90')
+        require((len(files) == package.EXPECTED_RUNTIME_COUNT), 'line_90')
         checksums = {}
         for name in files:
             original = ROOT/name
@@ -186,7 +277,7 @@ def main() -> dict:
                           "SELECT type,value FROM setting ORDER BY id;")
         code, result, raw = report_run(d)
         require((code == 0), 'line_142')
-        require((result['source_file_count'] == 104), 'line_143')
+        require((result['source_file_count'] == package.EXPECTED_RUNTIME_COUNT), 'line_143')
         require((all(result['schema'][k] == 'columns_and_named_unique_indexes_detected_not_ddl_certified'
                    for k in ('001','003','004','005','006','007','008','009'))), 'line_144')
         require((has(result,'gateway_policies','PASS')), 'line_146')
@@ -197,6 +288,25 @@ def main() -> dict:
                                   "SELECT type,value FROM setting ORDER BY id;")), 'line_149')
         require(((runtime/'baseInfo.php').read_bytes() == private_before), 'line_151')
         cases.append('complete_migration_shapes_and_wallet_only_pass_no_sql_mutation')
+
+        require(has(result,'current_core_tables','PASS'), 'current_core_tables_pass')
+        require(has(result,'schema_010','INFO'), 'cleanup_optional')
+        require(has(result,'schema_011','INFO','optional_pasarguard_not_configured'), 'pg_optional_for_marzban')
+        statement(d, "INSERT INTO server_config(id,panel_url,ip,sni,header_type,request_header,response_header,security,tlsSettings,type,username,password) VALUES(2,'https://fixture.invalid','','','none','','','none','{}','pasarguard','','');")
+        code, result, _ = report_run(d)
+        require(code==2 and has(result,'schema_011','BLOCK','pasarguard_schema_required'), 'pg_requires_011')
+        statement(d, "UPDATE server_config SET type='marzban' WHERE id=2;")
+        statement(d, (ROOT/'migrations/post-v9/011_provider_identity.sql').read_text())
+        code, result, _ = report_run(d)
+        require(code==0 and has(result,'schema_011','PASS'), 'pg_complete_schema_pass')
+        statement(d, 'ALTER TABLE provider_accounts DROP INDEX uq_provider_remote;')
+        code, result, _ = report_run(d)
+        require(code==2 and has(result,'schema_011','BLOCK','partial_or_incompatible_provider_schema_requires_audit'), 'pg_missing_unique_block')
+        statement(d, 'ALTER TABLE provider_accounts ADD UNIQUE KEY uq_provider_remote(panel_id,remote_user_id);')
+        statement(d, 'DROP TABLE admins,black_list,servers;')
+        code, result, _ = report_run(d)
+        require(code==0 and has(result,'current_core_tables','PASS') and has(result,'schema_010','INFO','optional_retired_tables_absent'), 'retired_tables_absent_pass')
+        cases.append('optional_cleanup_and_provider_schema_strict_read_only')
 
         # Current parsers, not a lax lookalike: invalid version or unknown
         # method policy is a blocking finding even if another method works.
@@ -237,7 +347,7 @@ def main() -> dict:
         # One enabled manual network with the other intentionally absent is
         # legal: the shared switch does not require BOTH assets to be offered.
         only_usdt = dict(state, walletState='off', manualUsdtState='on')
-        seed(d, only_usdt, {'manualUsdtWalletBEP20':'0x' + 'a'*40})
+        seed(d, only_usdt, {'manualUsdtWalletBEP20':'0x' + 'a'*40,'manualUsdtRateToman':'1000'})
         code, result, _ = report_run(d)
         require(code == 0 and has(result,'method_manual_trx','WARN') and
                 result['methods']['manual_trx']['local_configuration']=='not_offered',
@@ -293,10 +403,14 @@ def main() -> dict:
               'manualUsdtRateToman':'1000'},True,False),
             ('usdt_valid_erc20',
              {'manualUsdtWalletERC20':addr,'manualUsdtRateToman':'1000'},True,False),
-            ('usdt_valid_legacy_private_rate_unverified',
-             {'manualUsdtWalletBEP20':addr},True,True),
+            ('usdt_missing_explicit_settings_rate',
+             {'manualUsdtWalletBEP20':addr},False,False),
+            ('usdt_cleared_explicit_settings_rate',
+             {'manualUsdtWalletBEP20':addr,'manualUsdtRateToman':''},False,False),
+            ('usdt_agent_only_settings_rate',
+             {'manualUsdtWalletBEP20':addr,'usdtAgentRateToman':'2000'},True,False),
         )
-        for label, money_keys, expected, private_rate in source_cases:
+        for label, money_keys, expected, _ in source_cases:
             require(source_usdt(money_keys) is expected,'source_'+label)
             seed(d,only_usdt,money_keys)
             code,result,raw=report_run(d)
@@ -305,14 +419,42 @@ def main() -> dict:
                     'method_'+label)
             require(has(result,'method_selection','PASS' if expected else 'BLOCK'),
                     'selection_'+label)
-            require(has(result,'manual_usdt_rate','WARN')==private_rate,
-                    'private_rate_review_'+label)
+            require(not has(result,'manual_usdt_rate','WARN'),
+                    'no_private_rate_fallback_'+label)
             require(result['methods']['manual_usdt']['local_configuration']==
                     ('present_not_verified' if expected else 'missing_or_invalid'),
                     'status_'+label)
             require(all(str(secret) not in raw for secret in (addr,SECRET,PASSWORD,
                    'TNPeeaaFB7K9cmo4uQpcU32zGK8G1NYqeL')),
                    'privacy_'+label)
+            cases.append(label)
+
+        for label,money_keys,normal,agent in (
+            ('normal_shared_rate_audiences',{'manualUsdtWalletBEP20':addr,
+             'manualUsdtRateToman':'1000'},True,True),
+            ('invalid_agent_rate_only_agent_unavailable',{'manualUsdtWalletBEP20':addr,
+             'manualUsdtRateToman':'1000','usdtAgentRateToman':'invalid'},True,False),
+            ('explicit_agent_rate_without_normal',{'manualUsdtWalletBEP20':addr,
+             'usdtAgentRateToman':'2000'},False,True),
+        ):
+            seed(d,only_usdt,money_keys)
+            code,result,raw=report_run(d)
+            require(code==0,'rate_audience_exit_'+label)
+            for audience,configured in (('normal',normal),('agent',agent)):
+                require(has(result,'usdt_rate_'+audience,'PASS' if configured else 'WARN'),
+                        'rate_audience_flag_'+label+'_'+audience)
+            require(addr not in raw and '2000' not in raw,'rate_privacy_'+label)
+            cases.append(label)
+        for label,money_keys,expected in (
+            ('hosted_merchant_without_explicit_rate_unavailable',{'nowpayment':SECRET},False),
+            ('hosted_merchant_explicit_rate_available',{'nowpayment':SECRET,
+             'manualUsdtRateToman':'1000'},True),
+        ):
+            seed(d,dict(state,nowPaymentOther='on'),money_keys)
+            code,result,raw=report_run(d)
+            require((code==0)==expected and has(result,'method_nowpayments',
+                    'PASS' if expected else 'BLOCK'),'hosted_rate_'+label)
+            require(SECRET not in raw,'hosted_rate_privacy_'+label)
             cases.append(label)
 
         # A known-bad explicit USDT rate must not be hidden behind a valid
@@ -529,12 +671,23 @@ def main() -> dict:
         require((data_before == sql(d,"SELECT userid,wallet FROM users ORDER BY id;"+
                                   "SELECT type,value FROM setting ORDER BY id;")), 'line_214')
         cases.append('private_sentinel_and_financial_rows_untouched')
+        require(len(cases)==54,'original_54_cases_preserved')
+        source_failures=source_failure_regressions(d)
+        cases.extend(r['case'] for r in source_failures)
     return {
         'complete':True, 'cases':len(cases), 'details':cases,
+        'original_cases_preserved':54,
+        'source_failure_reference':SOURCE_FAILURE_REFERENCE,
+        'source_failure_regressions':source_failures,
+        'archived_source_failure_fallthrough_red':all(r['archived_red'] for r in source_failures),
+        'source_failure_stops_before_database_and_helpers':all(
+            r['current_database_connections']==0 and not r['current_canary_entered'] for r in source_failures),
+        'source_identity_only_on_failure':all(r['source_finding_only'] for r in source_failures),
+        'source_failure_all_rows_unchanged':all(r['all_rows_unchanged'] for r in source_failures),
         'readonly_sql_account_enforced':True,
         'source_usdt_production_helper_compared':True,
         'source_policy_production_helper_compared':True,
-        'source_members_verified':104,
+        'source_members_verified':package.EXPECTED_RUNTIME_COUNT,
         'original_23_table_schema_used':True,
         'all_eight_additive_shapes_exercised':True,
         'no_real_provider_or_telegram_calls':True,

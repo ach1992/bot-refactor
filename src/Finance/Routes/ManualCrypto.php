@@ -8,6 +8,8 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     http_response_code(404);
     exit;
 }
+require_once __DIR__ . '/../../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
+
 
 require_once __DIR__ . '/../PaymentLifecycle.php';
 
@@ -28,7 +30,7 @@ if ($isMenu || $isPick) {
         $selectedPay=$stmt->get_result()->fetch_assoc();$stmt->close();
         if (!$selectedPay || (int)$selectedPay['user_id'] !== (int)$from_id ||
             $selectedPay['state'] !== 'pending' || (string)($selectedPay['payid'] ?? '') !== '') {
-            answerCallbackQuery($callbackId, 'این سفارش در انتظار پرداخت نیست یا متعلق به شما نیست.', true);
+            answerCallbackQuery($callbackId, \achbotMessage('manual_payment.manual_crypto.alert.d0d07ef447'), true);
             return;
         }
         $stmt=$connection->prepare('SELECT provider,stage,checkout_url FROM payment_attempts
@@ -39,10 +41,10 @@ if ($isMenu || $isPick) {
         if ($previous && (!in_array((string)$previous['provider'],
                                    ['manual_usdt','manual_trx'],true) ||
                           (string)$previous['stage']!=='pending')) {
-            answerCallbackQuery($callbackId, 'این سفارش قبلاً با روشی دیگر ثبت یا وارد بررسی شده است.', true);
+            answerCallbackQuery($callbackId, \achbotMessage('manual_payment.manual_crypto.alert.4d788a75be'), true);
             return;
         }
-        $options=achbotManualCryptoOptions();
+        $options=achbotManualCryptoOptions((int)$from_id);
         // A current grant is needed to create a new claim. Existing pinned
         // claims remain visible for receipt/support even if policy changes.
         if (!$previous) {
@@ -56,7 +58,7 @@ if ($isMenu || $isPick) {
             $intent=achbotManualIntentDecode((string)$previous['checkout_url'],
                                              (string)$previous['provider']);
             if (!$intent) {
-                answerCallbackQuery($callbackId, 'اطلاعات پرداخت قبلی نیازمند بررسی است.', true);
+                answerCallbackQuery($callbackId, \achbotMessage('manual_payment.manual_crypto.alert.5ce97176e4'), true);
                 return;
             }
             // Do not substitute a newly configured wallet for a pinned one.
@@ -65,16 +67,16 @@ if ($isMenu || $isPick) {
                 'BEP20'=>'b','TRC20'=>'c','ERC20'=>'e','TRON'=>'t',default=>null
             };
             if ($tag===null) {
-                answerCallbackQuery($callbackId, 'اطلاعات پرداخت قبلی نیازمند بررسی است.', true);
+                answerCallbackQuery($callbackId, \achbotMessage('manual_payment.manual_crypto.alert.5ce97176e4'), true);
                 return;
             }
             $options=[$tag=>['provider'=>(string)$previous['provider'],
                              'network'=>$originalNetwork,
-                             'label'=>($tag==='t'?'🔴 TRX — ':'💎 USDT — ').$originalNetwork]];
+                             'label'=>($tag==='t'?\achbotMessage('manual_payment.manual_crypto.t_r_x.a23d6fad8d'):\achbotMessage('manual_payment.receipt_helpers.manual_crypto_options.u_s_d_t.1974a6095a')).$originalNetwork]];
         }
         if ($isMenu) {
             if (!$options) {
-                answerCallbackQuery($callbackId, 'هیچ شبکه‌ای با آدرس و نرخ معتبر فعال نیست.', true);
+                answerCallbackQuery($callbackId, \achbotMessage('manual_payment.manual_crypto.alert.26fc4467a8'), true);
                 return;
             }
             $keyboard=[];
@@ -82,10 +84,10 @@ if ($isMenu || $isPick) {
                 $keyboard[]=[['text'=>$option['label'],
                               'callback_data'=>'mc_'.$tag.'_'.$hashId]];
             }
-            $keyboard[]=[['text'=>'🏠 منوی اصلی','callback_data'=>'mainMenu']];
-            $message="💎 <b>پرداخت رمزارزی دستی</b>\n\n".
-                "ارز و شبکه انتقال را انتخاب کنید. فقط به آدرس همان شبکه واریز کنید.\n".
-                "ارسال رسید به معنی تأیید پرداخت نیست؛ بررسی مدیر لازم است.";
+            $keyboard[]=[['text'=>\achbotMessage('manual_payment.manual_crypto.button.1121ffbf88'),'callback_data'=>'mainMenu']];
+            $message=\achbotMessage('manual_payment.manual_crypto.message.d05b7cfc7d').
+                \achbotMessage('manual_payment.manual_crypto.text.0a49531de8').
+                \achbotMessage('manual_payment.manual_crypto.text.ee4ae4b0c7');
             answerCallbackQuery($callbackId);
             // Some older callback messages may be media, not editable text.
             $edited=editText($message_id,$message,
@@ -99,7 +101,7 @@ if ($isMenu || $isPick) {
         }
         $option=$options[$pickMatch[1]] ?? null;
         if (!$option) {
-            answerCallbackQuery($callbackId, 'این شبکه برای سفارش در دسترس نیست.', true);
+            answerCallbackQuery($callbackId, \achbotMessage('manual_payment.manual_crypto.alert.93decba032'), true);
             return;
         }
         $type=(string)$selectedPay['type'];
@@ -116,7 +118,7 @@ if ($isMenu || $isPick) {
             default => null
         };
         if ($target===null) {
-            answerCallbackQuery($callbackId, 'این نوع سفارش از این پرداخت پشتیبانی نمی‌کند.', true);
+            answerCallbackQuery($callbackId, \achbotMessage('manual_payment.manual_crypto.alert.fc9718b40b'), true);
             return;
         }
         $GLOBALS['achbotManualCryptoChoice']=$option['network'];
@@ -129,7 +131,7 @@ if ($isMenu || $isPick) {
         // The existing purchase/renewal/top-up route owns the one-attempt
         // transaction, quote, receipt and guarded human approval.
     } catch (Throwable $error) {
-        answerCallbackQuery($callbackId, 'وضعیت سفارش قابل خواندن نیست؛ لطفاً بعداً تلاش کنید.', true);
+        answerCallbackQuery($callbackId, \achbotMessage('manual_payment.manual_crypto.alert.5216f25f85'), true);
         return;
     }
 }

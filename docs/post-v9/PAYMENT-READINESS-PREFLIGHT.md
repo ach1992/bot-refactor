@@ -45,12 +45,13 @@ It checks:
   source validators. Manual USDT availability calls the exact production
   `achbotManualUsdtConfiguration()` for each network, preserving explicit
   empty-field precedence over legacy addresses, the default legacy BEP20
-  network, and explicit numeric/finite/range rate validation. The tool uses a
-  **synthetic valid legacy base rate in memory** solely when evaluating
-  potential USDT options without access to the private `$USDTPrice`. A usable
-  address without an explicit rate produces `manual_usdt_rate=WARN` and
-  **requires a separate private rate check**; a valid address with a known
-  invalid explicit rate is `BLOCK` even if TRX is also configured.
+  network, and explicit numeric/finite/range rate validation. The tool uses an
+  **explicit persisted bot rate only** (`manualUsdtRateToman`, with optional
+  `usdtAgentRateToman`); it never loads private configuration or queries a
+  price service. Reports distinguish normal/agent rate availability without
+  emitting rates. A valid address without any usable settings rate is not
+  offerable. An explicitly invalid rate remains a configuration finding;
+  valid TRX and other methods keep their own independent availability.
 - Report signals distinguish `potentially_offerable`,
   `configured_but_policy_denied`, `not_offered`, and `unavailable`. Each
   method explicitly states `actual_customer_eligibility=not_tested`. No
@@ -64,7 +65,7 @@ prove exact migration DDL, foreign-key integrity, real row compatibility or
 actual installed migration history; ambiguous/previously deployed sidecars
 require a separate schema-and-row audit. A configured merchant field does not
 prove the credential is valid, active, funded or authorized. Manual USDT
-using a legacy/private rate requires operator verification of the actual rate
+using configured USDT rates requires operator verification of the chosen rate
 and its service applicability; this CLI does not load `baseInfo.php`.
 Customer-specific cohorts and real merchant/payment availability are not
 certified even when a method is marked `potentially_offerable`. PHP CLI file checks do

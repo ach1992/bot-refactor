@@ -4,6 +4,8 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     http_response_code(404);
     exit;
 }
+require_once __DIR__ . '/../../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
+
 
 require_once __DIR__ . '/../PaymentLifecycle.php';
 
@@ -18,19 +20,20 @@ if(preg_match('/increaseADay(.*)/', $data, $match)){
     $stmt->execute();
     $orderInfo = $stmt->get_result()->fetch_assoc();
     $stmt->close();
-    if (!$orderInfo || !achbotSupportsMarzbanOrder($connection, (int)$orderInfo['id'])) {
-        alert("⛔️ افزایش حجم یا مدت برای این اشتراک در حال حاضر امکان‌پذیر نیست.", true);
+    if (!$orderInfo || (int)$orderInfo['userid']!==(int)$from_id || !achbotSupportsOrder($connection, (int)$orderInfo['id'])) {
+        alert(\achbotMessage('renewal.extensions.alert.d0779ad27d'), true);
         return;
     }
 
     $agentBought = $orderInfo['agent_bought'];
 
     if($res->num_rows == 0){
-        alert("در حال حاضر هیچ پلنی برای افزایش مدت زمان اشتراک وجود ندارد.");
+        alert(\achbotMessage('renewal.extensions.alert.6732b29e55'));
         exit;
     }
     $keyboard = [];
     while ($cat = $res->fetch_assoc()){
+        if (achbotWholeServiceUnits($cat['volume'],36500)===null) continue;
         $id = $cat['id'];
         $title = $cat['volume'];
         $price = $cat['price'];
@@ -40,13 +43,13 @@ if(preg_match('/increaseADay(.*)/', $data, $match)){
             else $discount = $discounts['servers'][$orderInfo['server_id']]?? $discounts['normal'];
             $price -= floor($price * $discount / 100);
         }
-        if($price == 0) $price = "رایگان";
-        else $price = number_format($price) . " تومان";
-        $keyboard[] = ['text' => "$title روز $price", 'callback_data' => "selectPlanDayIncrease{$match[1]}_$id"];
+        if($price == 0) $price = \achbotMessage('renewal.extensions.price.dda7ff2974');
+        else $price = number_format($price) . \achbotMessage('renewal.extensions.text.2cc98f7f7c');
+        $keyboard[] = ['text' => \achbotMessage('renewal.extensions.button.fbb9f61105', ['title' => $title, 'price' => $price]), 'callback_data' => "selectPlanDayIncrease{$match[1]}_$id"];
     }
     $keyboard = array_chunk($keyboard,2);
     $keyboard[] = [['text' => $buttonValues['back_to_main'], 'callback_data' => "mainMenu"]];
-    editText($message_id, "لطفا یکی از پلن های افزایشی را انتخاب کنید:", json_encode([
+    editText($message_id, \achbotMessage('renewal.extensions.message.c2bde2a3e0'), json_encode([
             'inline_keyboard' => $keyboard
         ]));
 }
@@ -58,6 +61,8 @@ if(preg_match('/selectPlanDayIncrease(?<orderId>.+)_(?<dayId>.+)/',$data,$match)
     $stmt->execute();
     $res = $stmt->get_result()->fetch_assoc();
     $stmt->close();
+    $quotedUnits=$res?achbotWholeServiceUnits($res['volume'],36500):null;
+    if ($quotedUnits===null) {alert(\achbotMessage('renewal.extensions.alert.584426a8a8'),true);return;}
     $planprice = $res['price'];
 
     $stmt = $connection->prepare("SELECT * FROM `orders_list` WHERE `id` = ?");
@@ -65,8 +70,8 @@ if(preg_match('/selectPlanDayIncrease(?<orderId>.+)_(?<dayId>.+)/',$data,$match)
     $stmt->execute();
     $orderInfo = $stmt->get_result()->fetch_assoc();
     $stmt->close();
-    if (!$orderInfo || !achbotSupportsMarzbanOrder($connection, (int)$orderInfo['id'])) {
-        alert("⛔️ افزایش حجم یا مدت برای این اشتراک در حال حاضر امکان‌پذیر نیست.", true);
+    if (!$orderInfo || (int)$orderInfo['userid']!==(int)$from_id || !achbotSupportsOrder($connection, (int)$orderInfo['id'])) {
+        alert(\achbotMessage('renewal.extensions.alert.d0779ad27d'), true);
         return;
     }
 
@@ -90,13 +95,13 @@ if(preg_match('/selectPlanDayIncrease(?<orderId>.+)_(?<dayId>.+)/',$data,$match)
 	$order_id = $match['orderId'];
 
 	$stmt = $connection->prepare("INSERT INTO `pays` (`hash_id`, `user_id`, `type`, `plan_id`, `server_id`, `order_id`, `volume`, `day`, `price`, `request_date`, `state`)
-								VALUES (?, ?, ?, ?, ?, ?, '0', '0', ?, ?, 'pending')");
+								VALUES (?, ?, ?, ?, ?, ?, '0', ?, ?, ?, 'pending')");
     $type = "INCREASE_DAY_$data";
-	$stmt->bind_param("sisiiiii", $hash_id, $from_id, $type, $plan_id, $server_id, $order_id, $planprice, $time);
+	$stmt->bind_param("sisiiiiii", $hash_id, $from_id, $type, $plan_id, $server_id, $order_id, $quotedUnits, $planprice, $time);
     $newDraftId=achbotPayUxInsertDraft($connection,(int)$from_id,$stmt);
     $stmt->close();
     if ($newDraftId<=0) {
-        alert('⚠️ ثبت پیش‌نویس به‌طور قطعی تأیید نشد؛ از ایجاد پرداخت مجدد پرهیز کنید.',true);
+        alert(\achbotMessage('renewal.extensions.alert.ae271a2d1d'),true);
         return;
     }
 
@@ -104,14 +109,14 @@ if(preg_match('/selectPlanDayIncrease(?<orderId>.+)_(?<dayId>.+)/',$data,$match)
     $keyboard = array();
     if(achbotManualEnabled('bank_transfer') && achbotPayUxAudienceAllowed($connection,'bank_transfer',(int)$from_id)) $keyboard[] = [['text' => $buttonValues['cart_to_cart'],  'callback_data' => "payIncreaseDayWithCartToCart$hash_id"]];
     if(achbotManualEnabled('gift_card') && achbotPayUxAudienceAllowed($connection,'gift_card',(int)$from_id)) $keyboard[] = [['text' => $buttonValues['gift_card'], 'callback_data' => "payIncreaseDayWithGiftCard$hash_id"]];
-    if (achbotManualCryptoEnabled() && (achbotPayUxAudienceAllowed($connection,'manual_usdt',(int)$from_id) || achbotPayUxAudienceAllowed($connection,'manual_trx',(int)$from_id))) $keyboard[] = [['text' => '💎 پرداخت رمزارزی دستی', 'callback_data' => "mcm_$hash_id"]];
-    if(($botState['nowPaymentOther'] == "on" && achbotPayUxAudienceAllowed($connection,'nowpayments',(int)$from_id))) $keyboard[] = [['text' => $buttonValues['now_payment_gateway'],  'url' => $botUrl . "pay/?nowpayment&hash_id=" . $hash_id]];
+    if (achbotManualCryptoEnabled((int)$from_id) && (achbotPayUxAudienceAllowed($connection,'manual_usdt',(int)$from_id) || achbotPayUxAudienceAllowed($connection,'manual_trx',(int)$from_id))) $keyboard[] = [['text' => \achbotMessage('renewal.extensions.button.e729457ba2'), 'callback_data' => "mcm_$hash_id"]];
+    if(($botState['nowPaymentOther'] == "on" && achbotPayUxAudienceAllowed($connection,'nowpayments',(int)$from_id) && achbotUsdtRateForUser($connection,(int)$from_id)!==null)) $keyboard[] = [['text' => $buttonValues['now_payment_gateway'],  'url' => $botUrl . "pay/?nowpayment&hash_id=" . $hash_id]];
     if(($botState['zarinpal'] == "on" && achbotPayUxAudienceAllowed($connection,'zarinpal',(int)$from_id))) $keyboard[] = [['text' => $buttonValues['zarinpal_gateway'],  'url' => $botUrl . "pay/?zarinpal&hash_id=" . $hash_id]];
     if(($botState['nextpay'] == "on" && achbotPayUxAudienceAllowed($connection,'nextpay',(int)$from_id))) $keyboard[] = [['text' => $buttonValues['nextpay_gateway'],  'url' => $botUrl . "pay/?nextpay&hash_id=" . $hash_id]];
     if(($botState['walletState'] == "on" && achbotPayUxAudienceAllowed($connection,'wallet',(int)$from_id))) $keyboard[] = [['text' => $buttonValues['pay_with_wallet'],  'callback_data' => "payIncreaseDayWithWallet$hash_id"]];
 
     $keyboard[] = [['text'=>$buttonValues['cancel'], 'callback_data'=> "mainMenu"]];
-    $sent=sendMessage("🧾 روش پرداخت سفارش را انتخاب کنید.",
+    $sent=sendMessage(\achbotMessage('renewal.extensions.message.48930749a9'),
         json_encode(['inline_keyboard'=>$keyboard]),'HTML',$from_id);
     require_once __DIR__ . '/../PaymentLifecycle.php';
     achbotPayUxTrackByHash($connection,(string)$hash_id,(int)$from_id,$sent);
@@ -130,13 +135,13 @@ if (is_string($data) && (strlen($data) <= 64 || ($GLOBALS['achbotManualCryptoVer
         (str_starts_with($data, 'payIncreaseDayWithGiftCard') ? 'gift_card' : 'bank_transfer');
     if (!achbotManualClaim($connection, $payInfo, $method, (int)$from_id,
                            $GLOBALS['achbotManualCryptoChoice'] ?? null)) {
-        alert("⚠️ پرداخت این سفارش با این روش مجاز نیست یا قبلاً به روش دیگری آغاز شده است.", true);
+        alert(\achbotMessage('renewal.extensions.alert.1a885aaca4'), true);
         return;
     }
 
 	$msg = buildCartToCartInfoMessage($paymentKeys, $mainValues, (int)$payInfo['price'], (int)$payInfo['user_id'], $method, (string)$payInfo['hash_id']);
     if ($msg === "") {
-        alert("⚠️ اطلاعات این پرداخت قابل بازیابی نیست؛ با پشتیبانی تماس بگیرید.", true);
+        alert(\achbotMessage('renewal.extensions.alert.07ee06b4bc'), true);
         return;
     }
     $keyboard = kbSendReceiptAndCancel(in_array($method, ['manual_usdt','manual_trx'], true) ? "sendIncreaseDayUsdtReceipt" : ($method === 'gift_card' ? "sendIncreaseDayGiftReceipt" : "sendIncreaseDayReceipt"), "cancelIncreaseDayReceipt", $match[1], $method);
@@ -150,7 +155,7 @@ if (is_string($data) && (strlen($data) <= 64 || ($GLOBALS['achbotManualCryptoVer
     } else {
         // The pinned attempt may be reopened. Never erase the selection menu
         // if Telegram failed to deliver the replacement instructions.
-        alert("⚠️ نمایش اطلاعات پرداخت تأیید نشد. از همان دکمه دوباره تلاش کنید و وجهی ارسال نکنید.", true);
+        alert(\achbotMessage('renewal.extensions.alert.7a9c30e938'), true);
     }
     exit;
 }
@@ -167,7 +172,7 @@ if (preg_match('/send(?:IncreaseDay|IncreaseDayGift|IncreaseDayUsdt)Receipt(?<ha
     $method = strpos($data, 'UsdtReceipt') !== false ? achbotManualCryptoReceiptProviderByHash($connection, (string)$match['hashId']) :
         (strpos($data, 'GiftReceipt') !== false ? 'gift_card' : 'bank_transfer');
     if (!achbotManualReceiptAllowed($connection, $payInfo, $method, (int)$from_id)) {
-        alert("⚠️ این رسید با روش پرداخت انتخاب‌شده مطابقت ندارد یا سفارش در انتظار پرداخت نیست.", true);
+        alert(\achbotMessage('renewal.extensions.alert.d06bc731eb'), true);
         return;
     }
     $guardMsg = duplicateReceiptGuard($connection, $payInfo, time());
@@ -178,7 +183,7 @@ if (preg_match('/send(?:IncreaseDay|IncreaseDayGift|IncreaseDayUsdt)Receipt(?<ha
     require_once __DIR__ . '/../PaymentLifecycle.php';
     if (!achbotPayUxStartManualReceipt($connection,(int)$payInfo['id'],
                                       $method,(int)$from_id)) {
-        alert('⌛️ مهلت شروع ارسال رسید پایان یافته یا فاکتور در حال بررسی است. اگر وجهی فرستاده‌اید با پشتیبانی تماس بگیرید.',true);
+        alert(\achbotMessage('renewal.extensions.alert.560f05f822'),true);
         return;
     }
 
@@ -203,7 +208,7 @@ if (preg_match('/wait(?:IncreaseDay|IncreaseDayGift|IncreaseDayUsdt)Receipt(.*)/
     $receiptPay = dbFetchPayByHash($connection, $match[1]);
     if (!$receiptPay || !achbotManualReceiptAllowed($connection, $receiptPay, $method, (int)$from_id)) {
         setUser();
-        alert("⚠️ این سفارش قابل ثبت رسید نیست؛ برای بررسی با پشتیبانی تماس بگیرید.", true);
+        alert(\achbotMessage('renewal.extensions.alert.882596d0f1'), true);
         return;
     }
     $fileid = extractPhotoFileId($update);
@@ -215,7 +220,7 @@ if (preg_match('/wait(?:IncreaseDay|IncreaseDayGift|IncreaseDayUsdt)Receipt(.*)/
 
     $deliveryToken = achbotManualBeginEvidence($connection, $receiptPay, $method, (int)$from_id, $fileid);
     if ($deliveryToken === null) {
-        alert("⚠️ ثبت یا ارسال رسید در جریان است. همان تصویر را دوباره ارسال کنید؛ در صورت تداوم مشکل با پشتیبانی تماس بگیرید.", true);
+        alert(\achbotMessage('renewal.extensions.alert.795c4bddb8'), true);
         return;
     }
 
@@ -237,8 +242,8 @@ if (preg_match('/wait(?:IncreaseDay|IncreaseDayGift|IncreaseDayUsdt)Receipt(.*)/
     $stmt->execute();
     $orderInfo = $stmt->get_result()->fetch_assoc();
     $stmt->close();
-    if (!$orderInfo || !achbotSupportsMarzbanOrder($connection, (int)$orderInfo['id'])) {
-        alert("⛔️ افزایش حجم یا مدت برای این اشتراک در حال حاضر امکان‌پذیر نیست.", true);
+    if (!$orderInfo || !achbotSupportsOrder($connection, (int)$orderInfo['id'])) {
+        alert(\achbotMessage('renewal.extensions.alert.d0779ad27d'), true);
         return;
     }
 
@@ -252,13 +257,13 @@ if (preg_match('/wait(?:IncreaseDay|IncreaseDayGift|IncreaseDayUsdt)Receipt(.*)/
     $stmt->close();
 
     $price  = $payInfoRes['price'];
-    $volume = $res['volume'];
+    $volume = achbotPinnedAddonUnits($payInfoRes);
 
 
 
     $msg = str_replace(
         ['INCREASE', 'TYPE', "USER-ID", "USERNAME", "NAME", "PRICE", "REMARK"],
-        [$volume, 'زمان', $from_id, $username, $first_name, $price, $remark],
+        [$volume, \achbotMessage('renewal.extensions.text.9699c34220'), $from_id, $username, $first_name, $price, $remark],
         $mainValues['increase_account_request_message']
     );
 
@@ -277,7 +282,7 @@ if (preg_match('/wait(?:IncreaseDay|IncreaseDayGift|IncreaseDayUsdt)Receipt(.*)/
         setUser();
         sendWithStartButton(achbotManualAcknowledgement($receiptPay, $method), $buttonValues['start_bot'], $botUsername, 'mainMenu', 'HTML', (string)$receiptPay['hash_id']);
     } else {
-        sendMessage("📥 تصویر برای پیگیری ثبت شده اما تأیید ارسال به مدیر دریافت نشده است. لطفاً همان تصویر را دوباره بفرستید یا با پشتیبانی تماس بگیرید. پرداخت مجدد انجام ندهید.");
+        sendMessage(\achbotMessage('renewal.extensions.message.c346a0d62e'));
     }
     exit;
 }
@@ -294,7 +299,7 @@ if (preg_match('/approveIncreaseDay(.*)/', $data, $match) && ($from_id == $admin
         $payParam = $stmt->get_result()->fetch_assoc();
         if (!achbotSupportsPaymentSubject($connection, $payParam, true)) {
             $connection->rollback();
-            alert("⛔️ تایید دستی افزایشی برای این پنل مجاز نیست.", true);
+            alert(\achbotMessage('renewal.extensions.alert.135aa8877f'), true);
             return;
         }
 
@@ -302,7 +307,7 @@ if (preg_match('/approveIncreaseDay(.*)/', $data, $match) && ($from_id == $admin
 
         if (!achbotManualServiceApprovalAllowedLocked($connection, $payParam, 'day')) {
             $connection->rollback();
-            alert('⛔️ این افزایش زمان رسید دستی معتبر و در انتظار تأیید ندارد.', true);
+            alert(\achbotMessage('renewal.extensions.alert.7a08f2df0b'), true);
             return;
         }
 
@@ -320,7 +325,7 @@ if (preg_match('/approveIncreaseDay(.*)/', $data, $match) && ($from_id == $admin
         $stmt->execute();
         $orderInfo = $stmt->get_result()->fetch_assoc();
     $stmt->close();
-    if (!$orderInfo || !achbotSupportsMarzbanOrder($connection, (int)$orderInfo['id'])) {
+    if (!$orderInfo || !achbotSupportsOrder($connection, (int)$orderInfo['id'])) {
         throw new RuntimeException('day_extension_order_ineligible');
     }
 
@@ -334,18 +339,11 @@ if (preg_match('/approveIncreaseDay(.*)/', $data, $match) && ($from_id == $admin
         $remark     = $orderInfo['remark'];
         $uuid       = $orderInfo['uuid'] ?? "0";
 
-        $stmt = $connection->prepare("SELECT * FROM `increase_day` WHERE `id` = ?");
-        $stmt->bind_param("i", $planid);
-        $stmt->execute();
-        $res = $stmt->get_result()->fetch_assoc();
-        $stmt->close();
-
-        if (!$res) {
-            throw new Exception("increase_day_plan_not_found");
-        }
-
-        $price  = intval($res['price']);
-        $volume = intval($res['volume']); 
+        $quotedUnits=achbotPinnedAddonUnits($payParam);
+        if ($quotedUnits===null) throw new RuntimeException('service_quote_units_unverified');
+        $price  = intval($payParam['price']);
+        $volume = $quotedUnits;
+        if ($volume===null) throw new RuntimeException('unsupported_service_units');
 
         $stmt = $connection->prepare("SELECT * FROM server_config WHERE id=?");
         $stmt->bind_param("i", $server_id);
@@ -383,7 +381,7 @@ if (preg_match('/approveIncreaseDay(.*)/', $data, $match) && ($from_id == $admin
         unset($markup[count($markup)-1]);
 
         if (achbotSupportsPanel($serverType)) {
-            $response = achbotApplyServiceEdit($connection,$server_id, ['remark' => $remark, 'plus_day' => $volume]);
+            $response = achbotApplyServiceEdit($connection,$server_id, ['pay_id'=>(int)$payId, 'remark' => $remark, 'plus_day' => $volume]);
         } else {
             throw new \UnexpectedValueException('unsupported_panel');
         }
@@ -437,8 +435,8 @@ if (preg_match('/approveIncreaseDay(.*)/', $data, $match) && ($from_id == $admin
 
         $keys = json_encode([
             'inline_keyboard' => [
-                [['text' => "✅ تایید شد توسط $from_id", 'callback_data' => "wizwizch"]],
-                [['text' => "🆔 $hash_id", 'callback_data' => "noop_$hash_id"]]
+                [['text' => \achbotMessage('renewal.extensions.button.139c829462', ['from_id' => $from_id]), 'callback_data' => "wizwizch"]],
+                [['text' => \achbotMessage('renewal.extensions.hash_id.2899228604', ['hash_id' => $hash_id]), 'callback_data' => "noop_$hash_id"]]
             ]
         ], 488);
 
@@ -455,7 +453,7 @@ if (preg_match('/approveIncreaseDay(.*)/', $data, $match) && ($from_id == $admin
             }
         }
 
-        sendMessage("✅ <b>$volume</b> روز به مدت زمان اشتراک <code>$remark</code> اضافه شد.", null, "HTML", $uid);
+        sendMessage(\achbotMessage('renewal.extensions.message.24dea9b122', ['volume' => $volume, 'remark' => $remark]), null, "HTML", $uid);
         return;
 
     } catch (Throwable $e) {
@@ -466,13 +464,13 @@ if (preg_match('/approveIncreaseDay(.*)/', $data, $match) && ($from_id == $admin
         try {$connection->rollback();} catch (Throwable $ignored) {}
 
         // پیام فنی برای ادمین اقدام‌کننده
-        $err = "⚠️ خطا در تایید افزایش زمان (کارت‌به‌کارت)\n\n"
-             . "🆔 Hash ID: {$match[1]}\n"
-             . "👤 Admin: {$from_id}\n"
-             . "⚠️ External effect: unverified; verify before retry or compensation\n📄 Reason (sanitized): " . achbotFinanceDiagnosticReason($e);
+        $err = \achbotMessage('renewal.extensions.err.28163d77c1')
+             . \achbotMessage('renewal.extensions.hash__i_d_match_1.3abb834966', ['match_1' => $match[1]])
+             . \achbotMessage('renewal.extensions.admin_from_id.748897de00', ['from_id' => $from_id])
+             . \achbotMessage('renewal.extensions.external_effect_unverified_verify_before.10e2ccf8a3') . achbotFinanceDiagnosticReason($e);
         sendMessage($err, null, null, $admin);
 
-        alert("⚠️ نتیجه افزایش زمان نیاز به بررسی دارد. وضعیت اشتراک و پرداخت را کنترل کنید؛ از اجرای مجدد خودکار خودداری کنید.", true);
+        alert(\achbotMessage('renewal.extensions.alert.ba92f03500'), true);
         return;
     }
 }
@@ -503,13 +501,13 @@ if(is_string($data) && strlen($data) <= 64 && preg_match('/\ApayIncreaseDayWithW
         // this exact pays row is already locked in the current transaction.
         if (!achbotWalletDirectAllowedLocked($connection, $payParam, (int)$from_id)) {
             $connection->rollback();
-            alert("⛔️ این سفارش متعلق به شما نیست یا روش پرداخت دیگری برای آن ثبت شده است؛ دوباره پرداخت نکنید.", true);
+            alert(\achbotMessage('renewal.extensions.alert.9b6f1fa91f'), true);
             return;
         }
 
         if (!achbotSupportsPaymentSubject($connection, $payParam, true)) {
             $connection->rollback();
-            alert("⛔️ افزایش اشتراک در حال حاضر امکان‌پذیر نیست. اگر پرداختی انجام داده‌اید، وضعیت آن را با پشتیبانی بررسی کنید.", true);
+            alert(\achbotMessage('renewal.extensions.alert.31d13e9866'), true);
             return;
         }
 
@@ -533,7 +531,7 @@ if(is_string($data) && strlen($data) <= 64 && preg_match('/\ApayIncreaseDayWithW
         $stmt->execute();
         $orderInfo = $stmt->get_result()->fetch_assoc();
     $stmt->close();
-    if (!$orderInfo || !achbotSupportsMarzbanOrder($connection, (int)$orderInfo['id'])) {
+    if (!$orderInfo || !achbotSupportsOrder($connection, (int)$orderInfo['id'])) {
         throw new RuntimeException('wallet_day_order_ineligible');
     }
 
@@ -557,18 +555,11 @@ if(is_string($data) && strlen($data) <= 64 && preg_match('/\ApayIncreaseDayWithW
         }
         $serverType = $serverConfig['type'];
 
-        $stmt = $connection->prepare("SELECT * FROM `increase_day` WHERE `id` = ?");
-        $stmt->bind_param("i", $planid);
-        $stmt->execute();
-        $res = $stmt->get_result()->fetch_assoc();
-        $stmt->close();
-
-        if(!$res){
-            throw new Exception("increase_day_plan_not_found");
-        }
-
+        $quotedUnits=achbotPinnedAddonUnits($payParam);
+        if ($quotedUnits===null) throw new RuntimeException('service_quote_units_unverified');
         $price  = intval($payParam['price']);
-        $volume = intval($res['volume']);
+        $volume = $quotedUnits;
+        if ($volume===null) throw new RuntimeException('unsupported_service_units');
 
         $stmt = $connection->prepare("SELECT id,wallet FROM users
             WHERE userid=? FOR UPDATE");
@@ -590,7 +581,7 @@ if(is_string($data) && strlen($data) <= 64 && preg_match('/\ApayIncreaseDayWithW
 
             $connection->commit();
 
-            alert("❌ موجودی کیف پول کافی نیست.\n💵 موجودی فعلی: " . number_format($userwallet) . " تومان\n🔺 مورد نیاز: " . number_format($needamount) . " تومان", true);
+            alert(\achbotMessage('renewal.extensions.alert.39c72d8044') . number_format($userwallet) . \achbotMessage('renewal.extensions.alert.71a2507661') . number_format($needamount) . \achbotMessage('renewal.extensions.text.2cc98f7f7c'), true);
             return;
         }
 
@@ -624,7 +615,7 @@ if(is_string($data) && strlen($data) <= 64 && preg_match('/\ApayIncreaseDayWithW
             throw new RuntimeException('wallet_day_claim_unconfirmed');
 
         if (achbotSupportsPanel($serverType)){
-            $response = achbotApplyServiceEdit($connection,$server_id, ['remark'=>$remark, 'plus_day'=>$volume]);
+            $response = achbotApplyServiceEdit($connection,$server_id, ['pay_id'=>(int)$payId, 'remark'=>$remark, 'plus_day'=>$volume]);
         } else {
             throw new \UnexpectedValueException('unsupported_panel');
         }
@@ -676,27 +667,18 @@ if(is_string($data) && strlen($data) <= 64 && preg_match('/\ApayIncreaseDayWithW
             throw new RuntimeException('wallet_day_finish_unconfirmed');
         $localCommitted=true;
 
-        editText($message_id, "✅ $volume روز به مدت زمان اشتراک شما اضافه شد.", getMainKeys());
+        editText($message_id, \achbotMessage('renewal.extensions.message.cce260f97e', ['volume' => $volume]), getMainKeys());
 
         $keys = json_encode(['inline_keyboard'=>[
             [
-                ['text'=>"⏳ افزایش زمان اشتراک",'callback_data'=>"wizwizch"]
+                ['text'=>\achbotMessage('renewal.extensions.button.aba3054570'),'callback_data'=>"wizwizch"]
             ],
             [
-                ['text'=>"🆔 $hash_id", 'callback_data'=>"noop_$hash_id"]
+                ['text'=>\achbotMessage('renewal.extensions.hash_id.2899228604', ['hash_id' => $hash_id]), 'callback_data'=>"noop_$hash_id"]
             ]
         ]]);
 
-        $msg = "
-🔋|💰 افزایش زمان با (کیف پول)
-
-🎫 شناسه عددی: $from_id
-👨 اسم کاربر: $first_name
-⚡️ نام کاربری: @$username
-🎈 نام کاربری اشتراک: $remark
-⏰ مدت افزایش: $volume روز
-💰 قیمت: $price تومان
-";
+        $msg = \achbotMessage('renewal.extensions.msg.bfc1b46322', ['from_id' => $from_id, 'first_name' => $first_name, 'username' => $username, 'remark' => $remark, 'volume' => $volume, 'price' => $price]);
         sendMessage($msg, $keys,"html", $admin);
         //sendToAllAdmins('sendMessage', ['text' => $msg,'reply_markup' => $keys,'parse_mode' => "html"]);
 		
@@ -716,13 +698,13 @@ if(is_string($data) && strlen($data) <= 64 && preg_match('/\ApayIncreaseDayWithW
         try {$connection->rollback();} catch (Throwable $ignored) {}
 
         // پیام فنی برای ادمین
-        $adminErr = "⚠️ خطا در افزایش زمان با کیف پول\n\n"
-                  . "🆔 Hash ID: {$match[1]}\n"
-                  . "👤 User: {$from_id}\n"
-                  . "⚠️ External effect: unverified; verify before retry or compensation\n📄 Reason (sanitized): ".achbotFinanceDiagnosticReason($e);
+        $adminErr = \achbotMessage('renewal.extensions.admin_err.70cf66359f')
+                  . \achbotMessage('renewal.extensions.hash__i_d_match_1.3abb834966', ['match_1' => $match[1]])
+                  . \achbotMessage('renewal.extensions.user_from_id.45aa9ea684', ['from_id' => $from_id])
+                  . \achbotMessage('renewal.extensions.external_effect_unverified_verify_before.10e2ccf8a3').achbotFinanceDiagnosticReason($e);
         sendMessage($adminErr, null, null, $admin);
 
-        sendMessage("⚠️ وضعیت درخواست مشخص نیست. لطفاً وضعیت اشتراک و پرداخت را بررسی کنید و پیش از ثبت دوباره با پشتیبانی هماهنگ شوید.", null, null, $uid);
+        sendMessage(\achbotMessage('renewal.extensions.message.ba8adc7121'), null, null, $uid);
 
         return;
     }
@@ -736,14 +718,14 @@ if (preg_match('/^changePlan_(\d+)/', $data, $match)) {
     $stmt->execute();
     $orderInfo = $stmt->get_result()->fetch_assoc();
     $stmt->close();
-    if (!$orderInfo || !achbotSupportsMarzbanOrder($connection, (int)$orderInfo['id'])) {
-        alert("⛔️ افزایش حجم یا مدت برای این اشتراک در حال حاضر امکان‌پذیر نیست.", true);
+    if (!$orderInfo || !achbotSupportsOrder($connection, (int)$orderInfo['id'])) {
+        alert(\achbotMessage('renewal.extensions.alert.d0779ad27d'), true);
         return;
     }
 
 	
 	if ((int)$orderInfo['amount'] === 0) {
-		alert("⚠️ امکان تغییر پلن برای این نوع اشتراک وجود ندارد.", true);
+		alert(\achbotMessage('renewal.extensions.alert.65fc393064'), true);
 		return;
 	}
 
@@ -764,10 +746,9 @@ if (preg_match('/^changePlan_(\d+)/', $data, $match)) {
     $buttons[] = [['text' => $buttonValues['back_button'], 'callback_data' => "mainMenu"]];
 
     if (count($buttons) === 1) {
-        sendMessage("هیچ پلنی برای این سرور وجود ندارد.");
+        sendMessage(\achbotMessage('renewal.extensions.message.655234a584'));
     } else {
-        sendMessage("🎲 لطفاً یکی از پلن‌های زیر را انتخاب کنید.
-♻️ بعد از تغییر پلن می توانید اشتراک خودتان را مطابق پلن جدید تمدید کنید.", json_encode(['inline_keyboard' => $buttons]), "html");
+        sendMessage(\achbotMessage('renewal.extensions.message.143c7f81f1'), json_encode(['inline_keyboard' => $buttons]), "html");
     }
 
     exit;
@@ -783,14 +764,14 @@ if (preg_match('/^confirmChangePlan_(\d+)_(\d+)/', $data, $match)) {
     $stmt->execute();
     $orderInfo = $stmt->get_result()->fetch_assoc();
     $stmt->close();
-    if (!$orderInfo || !achbotSupportsMarzbanOrder($connection, (int)$orderInfo['id'])) {
-        alert("⛔️ افزایش حجم یا مدت برای این اشتراک در حال حاضر امکان‌پذیر نیست.", true);
+    if (!$orderInfo || !achbotSupportsOrder($connection, (int)$orderInfo['id'])) {
+        alert(\achbotMessage('renewal.extensions.alert.d0779ad27d'), true);
         return;
     }
 
 
     if ($orderInfo['fileid'] == $newPlanId) {
-        sendMessage("❗️پلن فعلی شما همین است. لطفاً پلن متفاوتی انتخاب کنید.");
+        sendMessage(\achbotMessage('renewal.extensions.message.dee2da49f3'));
         exit;
     }
 
@@ -800,7 +781,7 @@ if (preg_match('/^confirmChangePlan_(\d+)_(\d+)/', $data, $match)) {
     $stmt->execute();
     $stmt->close();
 
-    editText($message_id, "✅ پلن اشتراک شما با موفقیت تغییر یافت.");
+    editText($message_id, \achbotMessage('renewal.extensions.message.3067ddba76'));
 
     // Get new plan title
     $stmt = $connection->prepare("SELECT title FROM `server_plans` WHERE `id` = ?");
@@ -812,16 +793,7 @@ if (preg_match('/^confirmChangePlan_(\d+)_(\d+)/', $data, $match)) {
 
     $planTitle = $planInfo['title'];
 
-    $channelMessage = "
-📦 تغییر پلن اشتراک توسط کاربر
-
-🔐 شناسه عددی: <code>{$orderInfo['userid']}</code>
-👨 اسم کاربر: $first_name
-⚡️ نام کاربری: @$username
-🎈 نام کاربری اشتراک: <code>{$orderInfo['remark']}</code>
-🔄 پلن جدید: $planTitle
-🔖 آیدی پلن جدید: $newPlanId
-";
+    $channelMessage = \achbotMessage('renewal.extensions.channel_message.f9e3ed8281', ['orderInfo_userid' => $orderInfo['userid'], 'first_name' => $first_name, 'username' => $username, 'orderInfo_remark' => $orderInfo['remark'], 'planTitle' => $planTitle, 'newPlanId' => $newPlanId]);
 
     sendMessage($channelMessage, null, "html", $admin);
     //sendToAllAdmins('sendMessage', ['text' => $channelMessage,'parse_mode' => "html"]);
@@ -833,31 +805,33 @@ if (preg_match('/^confirmChangePlan_(\d+)_(\d+)/', $data, $match)) {
 	}
     exit;
 }
-if (preg_match('/^increaseAVolume(.*)/', $data, $match)) {
+if (preg_match('/^increaseAVolume([1-9][0-9]{0,9})$/D', $data, $match)) {
     // بررسی تاریخ انقضا
-    $stmt = $connection->prepare("SELECT `expire_date` FROM `orders_list` WHERE `id` = ?");
+    $stmt = $connection->prepare("SELECT * FROM `orders_list` WHERE `id` = ?");
     $stmt->bind_param("i", $match[1]);
     $stmt->execute();
     $orderInfo = $stmt->get_result()->fetch_assoc();
     $stmt->close();
-    if (!$orderInfo || !achbotSupportsMarzbanOrder($connection, (int)$orderInfo['id'])) {
-        alert("⛔️ افزایش حجم یا مدت برای این اشتراک در حال حاضر امکان‌پذیر نیست.", true);
+    if (!$orderInfo || (int)$orderInfo['userid']!==(int)$from_id ||
+        !achbotSupportsOrder($connection, (int)$orderInfo['id'])) {
+        alert(\achbotMessage('renewal.extensions.alert.d0779ad27d'), true);
         return;
     }
 
 
+    $agentBought = (bool)$orderInfo['agent_bought'];
     $expireDate = (int) $orderInfo['expire_date']; // تبدیل به عدد صحیح
     $currentDate = time();
 
     // بررسی اینکه آیا تاریخ معتبر است یا خیر
     if ($expireDate === false) {
-        alert("📆 تاریخ انقضا برای این سفارش نامعتبر است.");
+        alert(\achbotMessage('renewal.extensions.alert.0340c363d2'));
         exit;
     }
 	
     // اگر تاریخ انقضا کمتر از تاریخ و ساعت فعلی باشد
-    if ($expireDate < $currentDate) {
-        alert("📆 اشتراک شما منقضی شده است. لطفاً آن را تمدید کنید تا بتوانید افزایش حجم دهید.");
+    if ($expireDate <= $currentDate) {
+        alert(\achbotMessage('renewal.extensions.alert.96762b5a42'));
         exit;
     }
 
@@ -867,11 +841,12 @@ if (preg_match('/^increaseAVolume(.*)/', $data, $match)) {
     $stmt->close();
 
     if ($res->num_rows == 0) {
-        alert("در حال حاضر هیچ پلن حجمی وجود ندارد.");
+        alert(\achbotMessage('renewal.extensions.alert.e6c27b8039'));
         exit;
     }
     $keyboard = [];
     while ($cat = $res->fetch_assoc()) {
+        if ((int)$cat['price']<0 || achbotWholeServiceUnits($cat['volume'],achbotServiceVolumeMax())===null) continue;
         $id = $cat['id'];
         $title = $cat['volume'];
         $price = $cat['price'];
@@ -884,39 +859,48 @@ if (preg_match('/^increaseAVolume(.*)/', $data, $match)) {
             $price -= floor($price * $discount / 100);
         }
         if ($price == 0) 
-            $price = "رایگان";
+            $price = \achbotMessage('renewal.extensions.price.dda7ff2974');
         else 
-            $price = number_format($price) .  ' تومان';
+            $price = number_format($price) .  \achbotMessage('renewal.extensions.text.2cc98f7f7c');
         
-        $keyboard[] = ['text' => "$title گیگ $price", 'callback_data' => "increaseVolumePlan{$match[1]}_{$id}"];
+        $keyboard[] = ['text' => \achbotMessage('renewal.extensions.button.249377f2b7', ['title' => $title, 'price' => $price]), 'callback_data' => "increaseVolumePlan{$match[1]}_{$id}"];
     }
     $keyboard = array_chunk($keyboard, 2);
-    $keyboard[] = [['text' => "⤵️ برگرد به منوی اصلی", 'callback_data' => "mainMenu"]];
-    $res = editText($message_id, "لطفا یکی از پلن های حجمی را انتخاب کنید:", json_encode([
+    $keyboard[] = [['text' => \achbotMessage('renewal.extensions.button.8405a4154f'), 'callback_data' => "mainMenu"]];
+    $res = editText($message_id, \achbotMessage('renewal.extensions.message.ab954c63e6'), json_encode([
         'inline_keyboard' => $keyboard
     ]));
 }
 
-if(preg_match('/increaseVolumePlan(?<orderId>.+)_(?<volumeId>.+)/',$data,$match)){
+if(preg_match('/^increaseVolumePlan(?<orderId>[1-9][0-9]{0,9})_(?<volumeId>[1-9][0-9]{0,9})$/D',$data,$match)){
     $data = str_replace('increaseVolumePlan','',$data);
     $stmt = $connection->prepare("SELECT * FROM `increase_plan` WHERE `id` = ?");
     $stmt->bind_param("i", $match['volumeId']);
     $stmt->execute();
     $res = $stmt->get_result()->fetch_assoc();
     $stmt->close();
+    if (!$res || (int)$res['price']<0 || achbotWholeServiceUnits($res['volume'],achbotServiceVolumeMax())===null) {
+        alert(\achbotMessage('renewal.extensions.alert.6173c35986'),true);
+        return;
+    }
     $planprice = $res['price'];
-    $plangb = $res['volume'];
+    $plangb = achbotWholeServiceUnits($res['volume'],achbotServiceVolumeMax());
 
     $stmt = $connection->prepare("SELECT * FROM `orders_list` WHERE `id` = ?");
     $stmt->bind_param("i", $match['orderId']);
     $stmt->execute();
     $orderInfo = $stmt->get_result()->fetch_assoc();
     $stmt->close();
-    if (!$orderInfo || !achbotSupportsMarzbanOrder($connection, (int)$orderInfo['id'])) {
-        alert("⛔️ افزایش حجم یا مدت برای این اشتراک در حال حاضر امکان‌پذیر نیست.", true);
+    if (!$orderInfo || (int)$orderInfo['userid']!==(int)$from_id ||
+        !achbotSupportsOrder($connection, (int)$orderInfo['id'])) {
+        alert(\achbotMessage('renewal.extensions.alert.d0779ad27d'), true);
         return;
     }
 
+    if ((int)$orderInfo['expire_date']<=time()) {
+        alert(\achbotMessage('renewal.extensions.alert.f5aab191db'),true);
+        return;
+    }
     $agentBought = $orderInfo['agent_bought'];
  
     if($agentBought == true){
@@ -936,32 +920,32 @@ if(preg_match('/increaseVolumePlan(?<orderId>.+)_(?<volumeId>.+)/',$data,$match)
 	$order_id = $match['orderId'];
 	
 	$stmt = $connection->prepare("INSERT INTO `pays` (`hash_id`, `user_id`, `type`, `plan_id`, `server_id`, `order_id`, `volume`, `day`, `price`, `request_date`, `state`)
-								VALUES (?, ?, ?, ?, ?, ?, '0', '0', ?, ?, 'pending')");
+								VALUES (?, ?, ?, ?, ?, ?, ?, '0', ?, ?, 'pending')");
 	$type = "INCREASE_VOLUME_$data";
-	$stmt->bind_param("sisiiiii", $hash_id, $from_id, $type, $plan_id, $server_id, $order_id, $planprice, $time);
+	$stmt->bind_param("sisiiiiii", $hash_id, $from_id, $type, $plan_id, $server_id, $order_id, $plangb, $planprice, $time);
 	$newDraftId=achbotPayUxInsertDraft($connection,(int)$from_id,$stmt);
 	$stmt->close();
 	if ($newDraftId<=0) {
-	    alert('⚠️ ثبت پیش‌نویس به‌طور قطعی تأیید نشد؛ از ایجاد پرداخت مجدد پرهیز کنید.',true);
+	    alert(\achbotMessage('renewal.extensions.alert.ae271a2d1d'),true);
 	    return;
 	}
 
     $keyboard = array();
 
-    if($planprice == 0) $planprice = ' رایگان';
-    else $planprice = " " . number_format($planprice) . " تومان";
+    if($planprice == 0) $planprice = \achbotMessage('renewal.extensions.planprice.97e0b2bd8a');
+    else $planprice = " " . number_format($planprice) . \achbotMessage('renewal.extensions.text.2cc98f7f7c');
 
     
     if(achbotManualEnabled('bank_transfer') && achbotPayUxAudienceAllowed($connection,'bank_transfer',(int)$from_id)) $keyboard[] = [['text' => $buttonValues['cart_to_cart'] . $planprice,  'callback_data' => "payIncreaseWithCartToCart$hash_id"]];
     if(achbotManualEnabled('gift_card') && achbotPayUxAudienceAllowed($connection,'gift_card',(int)$from_id)) $keyboard[] = [['text' => $buttonValues['gift_card'], 'callback_data' => "payIncreaseWithGiftCard$hash_id"]];
-    if (achbotManualCryptoEnabled() && (achbotPayUxAudienceAllowed($connection,'manual_usdt',(int)$from_id) || achbotPayUxAudienceAllowed($connection,'manual_trx',(int)$from_id))) $keyboard[] = [['text' => '💎 پرداخت رمزارزی دستی', 'callback_data' => "mcm_$hash_id"]];
-    if(($botState['nowPaymentOther'] == "on" && achbotPayUxAudienceAllowed($connection,'nowpayments',(int)$from_id))) $keyboard[] = [['text' => $buttonValues['now_payment_gateway'],  'url' => $botUrl . "pay/?nowpayment&hash_id=" . $hash_id]];
+    if (achbotManualCryptoEnabled((int)$from_id) && (achbotPayUxAudienceAllowed($connection,'manual_usdt',(int)$from_id) || achbotPayUxAudienceAllowed($connection,'manual_trx',(int)$from_id))) $keyboard[] = [['text' => \achbotMessage('renewal.extensions.button.e729457ba2'), 'callback_data' => "mcm_$hash_id"]];
+    if(($botState['nowPaymentOther'] == "on" && achbotPayUxAudienceAllowed($connection,'nowpayments',(int)$from_id) && achbotUsdtRateForUser($connection,(int)$from_id)!==null)) $keyboard[] = [['text' => $buttonValues['now_payment_gateway'],  'url' => $botUrl . "pay/?nowpayment&hash_id=" . $hash_id]];
     if(($botState['zarinpal'] == "on" && achbotPayUxAudienceAllowed($connection,'zarinpal',(int)$from_id))) $keyboard[] = [['text' => $buttonValues['zarinpal_gateway'],  'url' => $botUrl . "pay/?zarinpal&hash_id=" . $hash_id]];
     if(($botState['nextpay'] == "on" && achbotPayUxAudienceAllowed($connection,'nextpay',(int)$from_id))) $keyboard[] = [['text' => $buttonValues['nextpay_gateway'],  'url' => $botUrl . "pay/?nextpay&hash_id=" . $hash_id]];
-    if(($botState['walletState'] == "on" && achbotPayUxAudienceAllowed($connection,'wallet',(int)$from_id))) $keyboard[] = [['text' => "💰پرداخت با موجودی" . $planprice,  'callback_data' => "payIncreaseWithWallet$hash_id"]];
+    if(($botState['walletState'] == "on" && achbotPayUxAudienceAllowed($connection,'wallet',(int)$from_id))) $keyboard[] = [['text' => \achbotMessage('renewal.extensions.button.5adbd64a32') . $planprice,  'callback_data' => "payIncreaseWithWallet$hash_id"]];
 
     $keyboard[] = [['text'=>$buttonValues['cancel'], 'callback_data'=> "mainMenu"]];
-    $sent=sendMessage("🧾 روش پرداخت سفارش را انتخاب کنید.",
+    $sent=sendMessage(\achbotMessage('renewal.extensions.message.48930749a9'),
         json_encode(['inline_keyboard'=>$keyboard]),'HTML',$from_id);
     require_once __DIR__ . '/../PaymentLifecycle.php';
     achbotPayUxTrackByHash($connection,(string)$hash_id,(int)$from_id,$sent);
@@ -980,13 +964,13 @@ if (is_string($data) && (strlen($data) <= 64 || ($GLOBALS['achbotManualCryptoVer
         (str_starts_with($data, 'payIncreaseWithGiftCard') ? 'gift_card' : 'bank_transfer');
     if (!achbotManualClaim($connection, $payInfo, $method, (int)$from_id,
                            $GLOBALS['achbotManualCryptoChoice'] ?? null)) {
-        alert("⚠️ پرداخت این سفارش با این روش مجاز نیست یا قبلاً به روش دیگری آغاز شده است.", true);
+        alert(\achbotMessage('renewal.extensions.alert.1a885aaca4'), true);
         return;
     }
 
 	$msg = buildCartToCartInfoMessage($paymentKeys, $mainValues, (int)$payInfo['price'], (int)$payInfo['user_id'], $method, (string)$payInfo['hash_id']);
     if ($msg === "") {
-        alert("⚠️ اطلاعات این پرداخت قابل بازیابی نیست؛ با پشتیبانی تماس بگیرید.", true);
+        alert(\achbotMessage('renewal.extensions.alert.07ee06b4bc'), true);
         return;
     }
     $keyboard = kbSendReceiptAndCancel(in_array($method, ['manual_usdt','manual_trx'], true) ? "sendIncreaseVolumeUsdtReceipt" : ($method === 'gift_card' ? "sendIncreaseVolumeGiftReceipt" : "sendIncreaseVolumeReceipt"), "cancelIncreaseVolumeReceipt", $match[1], $method);
@@ -1000,7 +984,7 @@ if (is_string($data) && (strlen($data) <= 64 || ($GLOBALS['achbotManualCryptoVer
     } else {
         // The pinned attempt may be reopened. Never erase the selection menu
         // if Telegram failed to deliver the replacement instructions.
-        alert("⚠️ نمایش اطلاعات پرداخت تأیید نشد. از همان دکمه دوباره تلاش کنید و وجهی ارسال نکنید.", true);
+        alert(\achbotMessage('renewal.extensions.alert.7a9c30e938'), true);
     }
     exit;
 }
@@ -1017,7 +1001,7 @@ if (preg_match('/send(?:IncreaseVolume|IncreaseVolumeGift|IncreaseVolumeUsdt)Rec
     $method = strpos($data, 'UsdtReceipt') !== false ? achbotManualCryptoReceiptProviderByHash($connection, (string)$match['hashId']) :
         (strpos($data, 'GiftReceipt') !== false ? 'gift_card' : 'bank_transfer');
     if (!achbotManualReceiptAllowed($connection, $payInfo, $method, (int)$from_id)) {
-        alert("⚠️ این رسید با روش پرداخت انتخاب‌شده مطابقت ندارد یا سفارش در انتظار پرداخت نیست.", true);
+        alert(\achbotMessage('renewal.extensions.alert.d06bc731eb'), true);
         return;
     }
     $guardMsg = duplicateReceiptGuard($connection, $payInfo, time());
@@ -1028,7 +1012,7 @@ if (preg_match('/send(?:IncreaseVolume|IncreaseVolumeGift|IncreaseVolumeUsdt)Rec
     require_once __DIR__ . '/../PaymentLifecycle.php';
     if (!achbotPayUxStartManualReceipt($connection,(int)$payInfo['id'],
                                       $method,(int)$from_id)) {
-        alert('⌛️ مهلت شروع ارسال رسید پایان یافته یا فاکتور در حال بررسی است. اگر وجهی فرستاده‌اید با پشتیبانی تماس بگیرید.',true);
+        alert(\achbotMessage('renewal.extensions.alert.560f05f822'),true);
         return;
     }
 
@@ -1053,7 +1037,7 @@ if (preg_match('/wait(?:IncreaseVolume|IncreaseVolumeGift|IncreaseVolumeUsdt)Rec
     $receiptPay = dbFetchPayByHash($connection, $match[1]);
     if (!$receiptPay || !achbotManualReceiptAllowed($connection, $receiptPay, $method, (int)$from_id)) {
         setUser();
-        alert("⚠️ این سفارش قابل ثبت رسید نیست؛ برای بررسی با پشتیبانی تماس بگیرید.", true);
+        alert(\achbotMessage('renewal.extensions.alert.882596d0f1'), true);
         return;
     }
     $fileid = extractPhotoFileId($update);
@@ -1065,7 +1049,7 @@ if (preg_match('/wait(?:IncreaseVolume|IncreaseVolumeGift|IncreaseVolumeUsdt)Rec
 
     $deliveryToken = achbotManualBeginEvidence($connection, $receiptPay, $method, (int)$from_id, $fileid);
     if ($deliveryToken === null) {
-        alert("⚠️ ثبت یا ارسال رسید در جریان است. همان تصویر را دوباره ارسال کنید؛ در صورت تداوم مشکل با پشتیبانی تماس بگیرید.", true);
+        alert(\achbotMessage('renewal.extensions.alert.795c4bddb8'), true);
         return;
     }
 
@@ -1087,8 +1071,8 @@ if (preg_match('/wait(?:IncreaseVolume|IncreaseVolumeGift|IncreaseVolumeUsdt)Rec
     $stmt->execute();
     $orderInfo = $stmt->get_result()->fetch_assoc();
     $stmt->close();
-    if (!$orderInfo || !achbotSupportsMarzbanOrder($connection, (int)$orderInfo['id'])) {
-        alert("⛔️ افزایش حجم یا مدت برای این اشتراک در حال حاضر امکان‌پذیر نیست.", true);
+    if (!$orderInfo || !achbotSupportsOrder($connection, (int)$orderInfo['id'])) {
+        alert(\achbotMessage('renewal.extensions.alert.d0779ad27d'), true);
         return;
     }
 
@@ -1102,13 +1086,13 @@ if (preg_match('/wait(?:IncreaseVolume|IncreaseVolumeGift|IncreaseVolumeUsdt)Rec
     $stmt->close();
 
     $price  = $payParam['price'];
-    $volume = $res['volume'];
+    $volume = achbotPinnedAddonUnits($payParam);
 
 
 
     $msg = str_replace(
         ['INCREASE', 'TYPE', "USER-ID", "USERNAME", "NAME", "PRICE", "REMARK"],
-        [$volume, 'حجم', $from_id, $username, $first_name, $price, $remark],
+        [$volume, \achbotMessage('renewal.extensions.text.4123904480'), $from_id, $username, $first_name, $price, $remark],
         $mainValues['increase_account_request_message']
     );
 
@@ -1127,22 +1111,24 @@ if (preg_match('/wait(?:IncreaseVolume|IncreaseVolumeGift|IncreaseVolumeUsdt)Rec
         setUser();
         sendWithStartButton(achbotManualAcknowledgement($receiptPay, $method), $buttonValues['start_bot'], $botUsername, 'mainMenu', 'HTML', (string)$receiptPay['hash_id']);
     } else {
-        sendMessage("📥 تصویر برای پیگیری ثبت شده اما تأیید ارسال به مدیر دریافت نشده است. لطفاً همان تصویر را دوباره بفرستید یا با پشتیبانی تماس بگیرید. پرداخت مجدد انجام ندهید.");
+        sendMessage(\achbotMessage('renewal.extensions.message.c346a0d62e'));
     }
     exit;
 }
 
 if (preg_match('/approveIncreaseVolume(.*)/', $data, $match) && ($from_id == $admin || $userInfo['isAdmin'] == true)) {
     $connection->begin_transaction();
+    $localCommitted=false;
     try {
         $hash_id = $match[1];
+
         $stmt = $connection->prepare("SELECT * FROM `pays` WHERE `hash_id` = ? FOR UPDATE");
         $stmt->bind_param("s", $hash_id);
         $stmt->execute();
         $payParam = $stmt->get_result()->fetch_assoc();
         if (!achbotSupportsPaymentSubject($connection, $payParam, true)) {
             $connection->rollback();
-            alert("⛔️ تایید دستی افزایشی برای این پنل مجاز نیست.", true);
+            alert(\achbotMessage('renewal.extensions.alert.135aa8877f'), true);
             return;
         }
 
@@ -1150,15 +1136,15 @@ if (preg_match('/approveIncreaseVolume(.*)/', $data, $match) && ($from_id == $ad
 
         if (!achbotManualServiceApprovalAllowedLocked($connection, $payParam, 'volume')) {
             $connection->rollback();
-            alert('⛔️ این افزایش حجم رسید دستی معتبر و در انتظار تأیید ندارد.', true);
+            alert(\achbotMessage('renewal.extensions.alert.733308c9fe'), true);
             return;
         }
 
         $payType = $payParam['type'];
+
         if (!preg_match('/^INCREASE_VOLUME_(\d+)_(\d+)/', $payType, $increaseInfo)) {
             throw new Exception("invalid_increase_type");
         }
-
         $orderId = intval($increaseInfo[1]);
         $planid  = intval($increaseInfo[2]);
         $uid     = intval($payParam['user_id']);
@@ -1168,9 +1154,8 @@ if (preg_match('/approveIncreaseVolume(.*)/', $data, $match) && ($from_id == $ad
         $stmt->execute();
         $orderInfo = $stmt->get_result()->fetch_assoc();
     $stmt->close();
-    if (!$orderInfo || !achbotSupportsMarzbanOrder($connection, (int)$orderInfo['id'])) {
-        alert("⛔️ افزایش حجم یا مدت برای این اشتراک در حال حاضر امکان‌پذیر نیست.", true);
-        return;
+    if (!$orderInfo || !achbotSupportsOrder($connection, (int)$orderInfo['id'])) {
+        throw new RuntimeException('volume_extension_order_ineligible');
     }
 
 
@@ -1183,20 +1168,13 @@ if (preg_match('/approveIncreaseVolume(.*)/', $data, $match) && ($from_id == $ad
         $remark     = $orderInfo['remark'];
         $uuid       = $orderInfo['uuid'] ?? "0";
 
-        $stmt = $connection->prepare("SELECT * FROM `increase_plan` WHERE `id` = ?");
-        $stmt->bind_param("i", $planid);
-        $stmt->execute();
-        $res = $stmt->get_result()->fetch_assoc();
-        $stmt->close();
+        $quotedUnits=achbotPinnedAddonUnits($payParam);
+        if ($quotedUnits===null) throw new RuntimeException('service_quote_units_unverified');
+        $price  = intval($payParam['price']);
+        $volume = $quotedUnits;
+        if ($volume===null) throw new RuntimeException('unsupported_service_units');
 
-        if (!$res) {
-            throw new Exception("increase_plan_not_found");
-        }
-
-        $price  = intval($res['price']);
-        $volume = intval($res['volume']);
-
-        $stmt = $connection->prepare("SELECT * FROM server_config WHERE id = ?");
+        $stmt = $connection->prepare("SELECT * FROM server_config WHERE id=?");
         $stmt->bind_param("i", $server_id);
         $stmt->execute();
         $server_info = $stmt->get_result()->fetch_assoc();
@@ -1208,8 +1186,31 @@ if (preg_match('/approveIncreaseVolume(.*)/', $data, $match) && ($from_id == $ad
 
         $serverType = $server_info['type'];
 
+        if (!achbotSupportsPanel($serverType))
+            throw new UnexpectedValueException('unsupported_panel');
+        // Operator receipt approval is financial ownership, not a remote
+        // effect claim. Commit a unique nonterminal claim BEFORE the PUT.
+        // An ambiguous crash/SQL reply can leave review pending, never a
+        // second automatic remote request on this same receipt.
+        if ((int)$payParam['price']!==$price ||
+            (int)$payParam['user_id']!==$uid ||
+            (string)$payParam['type']!=="INCREASE_VOLUME_{$orderId}_{$planid}")
+            throw new RuntimeException('volume_extension_claim_subject_changed');
+        $payId=(int)$payParam['id'];
+        $payType=(string)$payParam['type'];
+        $stmt=$connection->prepare("UPDATE pays SET state='processing'
+            WHERE id=? AND user_id=? AND hash_id=? AND type=?
+              AND price=? AND state='have_sent'");
+        $stmt->bind_param('iissi',$payId,$uid,$hash_id,$payType,$price);
+        $claimed=$stmt->execute() && $stmt->affected_rows===1;
+        $stmt->close();
+        if (!$claimed || $connection->commit()!==true)
+            throw new RuntimeException('volume_extension_claim_unconfirmed');
+
+        unset($markup[count($markup)-1]);
+
         if (achbotSupportsPanel($serverType)) {
-            $response = achbotApplyServiceEdit($connection,$server_id, ['remark' => $remark, 'plus_volume' => $volume]);
+            $response = achbotApplyServiceEdit($connection,$server_id, ['pay_id'=>(int)$payId, 'remark' => $remark, 'plus_volume' => $volume]);
         } else {
             throw new \UnexpectedValueException('unsupported_panel');
         }
@@ -1226,69 +1227,86 @@ if (preg_match('/approveIncreaseVolume(.*)/', $data, $match) && ($from_id == $ad
             throw new Exception("provider_rejected");
         }
 
-        $now = time();
-        $stmt = $connection->prepare("INSERT INTO `increase_order` (`userid`, `server_id`, `inbound_id`, `remark`, `amount`, `date`, `volume`) VALUES (?, ?, ?, ?, ?, ?, ?)");
-        $stmt->bind_param("iiisiii", $uid, $server_id, $inbound_id, $remark, $price, $now, $volume);
-        $stmt->execute();
+        if (!is_object($response) || ($response->verified??false)!==true)
+            throw new RuntimeException('volume_extension_provider_result_unverified');
+        if ($connection->begin_transaction()!==true)
+            throw new RuntimeException('volume_extension_finalization_begin_failed');
+        $stmt=$connection->prepare("SELECT id,state,user_id,hash_id,type,price
+            FROM pays WHERE id=? FOR UPDATE");
+        $stmt->bind_param('i',$payId);
+        $ok=$stmt->execute();
+        $locked=$ok?$stmt->get_result()->fetch_assoc():null;
         $stmt->close();
-
-        $stmt = $connection->prepare("UPDATE `orders_list` SET `notif` = 0 WHERE `uuid` = ?");
-        $stmt->bind_param("s", $uuid);
-        $stmt->execute();
+        if (!$locked || $locked['state']!=='processing' ||
+            (int)$locked['user_id']!==$uid ||
+            (int)$locked['price']!==$price ||
+            (string)$locked['hash_id']!==$hash_id ||
+            (string)$locked['type']!==$payType)
+            throw new RuntimeException('volume_extension_claim_stale');
+        achbotStoreVerifiedServiceExpiryLocked($connection,$orderInfo,$response);
+        $timeNow=time();
+        $stmt=$connection->prepare("INSERT INTO increase_order
+            (userid,server_id,inbound_id,remark,amount,date,volume)
+            VALUES (?,?,?,?,?,?,?)");
+        $stmt->bind_param('iiisiii',$uid,$server_id,$inbound_id,
+                          $remark,$price,$timeNow,$volume);
+        $saved=$stmt->execute() && $stmt->affected_rows===1;
         $stmt->close();
-
-        $stmt = $connection->prepare("UPDATE `pays` SET `state` = 'approved', `approved_by` = ? WHERE `hash_id` = ? AND `state` = 'have_sent'");
-        $stmt->bind_param('is', $from_id, $hash_id);
-        $stmt->execute();
-        $changed = $stmt->affected_rows;
+        if (!$saved) throw new RuntimeException('volume_extension_audit_unconfirmed');
+        $stmt=$connection->prepare("UPDATE pays SET state='approved',approved_by=?
+            WHERE id=? AND user_id=? AND hash_id=? AND state='processing'");
+        $stmt->bind_param('iiis',$from_id,$payId,$uid,$hash_id);
+        $saved=$stmt->execute() && $stmt->affected_rows===1;
         $stmt->close();
-        if ($changed !== 1) throw new Exception('extension_receipt_claim_failed');
-
-        $connection->commit();
+        if (!$saved || $connection->commit()!==true)
+            throw new RuntimeException('volume_extension_finish_unconfirmed');
+        $localCommitted=true;
 
         $keys = json_encode([
             'inline_keyboard' => [
-                [['text' => "✅ تایید شد توسط $from_id", 'callback_data' => "wizwizch"]],
-                [['text' => "🆔 $hash_id", 'callback_data' => "noop_$hash_id"]]
+                [['text' => \achbotMessage('renewal.extensions.button.139c829462', ['from_id' => $from_id]), 'callback_data' => "wizwizch"]],
+                [['text' => \achbotMessage('renewal.extensions.hash_id.2899228604', ['hash_id' => $hash_id]), 'callback_data' => "noop_$hash_id"]]
             ]
         ], 488);
 
         // ویرایش پیام ادمین اصلی
         editKeys($keys, $payParam['message_id'], $payParam['chat_id']);
 
-        // ویرایش پیام سایر ادمین ها
+        // ویرایش پیام سایر ادمین‌ها
         $adminMessages = json_decode($payParam['admins_messages'], true);
         if (is_array($adminMessages)) {
             foreach ($adminMessages as $msgInfo) {
-                if (
-                    isset($msgInfo['chat_id'], $msgInfo['message_id']) &&
-                    $msgInfo['chat_id'] != $payParam['chat_id']
-                ) {
+                if (isset($msgInfo['chat_id'], $msgInfo['message_id']) && $msgInfo['chat_id'] != $payParam['chat_id']) {
                     editKeys($keys, $msgInfo['message_id'], $msgInfo['chat_id']);
                 }
             }
         }
 
-        sendMessage("✅ <b>$volume</b> گیگ به حجم اشتراک <code>$remark</code> اضافه شد.", null, "HTML", $uid);
+        sendMessage(\achbotMessage('renewal.extensions.message.d5b6a4e6e7', ['volume' => $volume, 'remark' => $remark]), null, "HTML", $uid);
         return;
 
-    } catch (Exception $e) {
-        $connection->rollback();
+    } catch (Throwable $e) {
+        if ($localCommitted) {
+            error_log('achbot_manual_day_notice_unconfirmed pay_id='.(int)($payId??0));
+            return;
+        }
+        try {$connection->rollback();} catch (Throwable $ignored) {}
 
         // پیام فنی برای ادمین اقدام‌کننده
-        $err = "⚠️ خطا در تایید افزایش حجم (کارت‌به‌کارت)\n\n"
-             . "🆔 Hash ID: {$match[1]}\n"
-             . "👤 Admin: {$from_id}\n"
-             . "⚠️ External effect: unverified; verify before retry or compensation\n📄 Reason (sanitized): " . achbotFinanceDiagnosticReason($e);
+        $err = \achbotMessage('renewal.extensions.err.322385c9dd')
+             . \achbotMessage('renewal.extensions.hash__i_d_match_1.3abb834966', ['match_1' => $match[1]])
+             . \achbotMessage('renewal.extensions.admin_from_id.748897de00', ['from_id' => $from_id])
+             . \achbotMessage('renewal.extensions.external_effect_unverified_verify_before.10e2ccf8a3') . achbotFinanceDiagnosticReason($e);
         sendMessage($err, null, null, $admin);
 
-        alert("⚠️ نتیجه افزایش حجم نیاز به بررسی دارد. وضعیت اشتراک و پرداخت را کنترل کنید؛ از اجرای مجدد خودکار خودداری کنید.", true);
+        alert(\achbotMessage('renewal.extensions.alert.36f9c089de'), true);
         return;
     }
 }
 
 if(is_string($data) && strlen($data) <= 64 && preg_match('/\ApayIncreaseWithWallet([A-Za-z0-9_-]{1,50})\z/D', $data, $match)){
     $connection->begin_transaction();
+    $localCommitted=false;
     try {
         // Customer-wallet issuance shares the same owner-first lock as drafts
         // and manual/hosted claims. Never lock pays before users.userid.
@@ -1299,7 +1317,7 @@ if(is_string($data) && strlen($data) <= 64 && preg_match('/\ApayIncreaseWithWall
         $payRes = $stmt->get_result();
         $stmt->close();
 
-        if ($payRes->num_rows == 0){
+        if($payRes->num_rows == 0){
             $connection->rollback();
             $text = "/start";
             $data = "";
@@ -1312,13 +1330,13 @@ if(is_string($data) && strlen($data) <= 64 && preg_match('/\ApayIncreaseWithWall
         // this exact pays row is already locked in the current transaction.
         if (!achbotWalletDirectAllowedLocked($connection, $payParam, (int)$from_id)) {
             $connection->rollback();
-            alert("⛔️ این سفارش متعلق به شما نیست یا روش پرداخت دیگری برای آن ثبت شده است؛ دوباره پرداخت نکنید.", true);
+            alert(\achbotMessage('renewal.extensions.alert.9b6f1fa91f'), true);
             return;
         }
 
         if (!achbotSupportsPaymentSubject($connection, $payParam, true)) {
             $connection->rollback();
-            alert("⛔️ افزایش اشتراک در حال حاضر امکان‌پذیر نیست. اگر پرداختی انجام داده‌اید، وضعیت آن را با پشتیبانی بررسی کنید.", true);
+            alert(\achbotMessage('renewal.extensions.alert.31d13e9866'), true);
             return;
         }
 
@@ -1335,15 +1353,15 @@ if(is_string($data) && strlen($data) <= 64 && preg_match('/\ApayIncreaseWithWall
         }
         $orderId = intval($increaseInfo[1]);
         $planid  = intval($increaseInfo[2]);
+        $uid     = intval($payParam['user_id'] ?? $from_id);
 
         $stmt = $connection->prepare("SELECT * FROM `orders_list` WHERE `id` = ?");
         $stmt->bind_param("i", $orderId);
         $stmt->execute();
         $orderInfo = $stmt->get_result()->fetch_assoc();
     $stmt->close();
-    if (!$orderInfo || !achbotSupportsMarzbanOrder($connection, (int)$orderInfo['id'])) {
-        alert("⛔️ افزایش حجم یا مدت برای این اشتراک در حال حاضر امکان‌پذیر نیست.", true);
-        return;
+    if (!$orderInfo || !achbotSupportsOrder($connection, (int)$orderInfo['id'])) {
+        throw new RuntimeException('wallet_day_order_ineligible');
     }
 
 
@@ -1356,55 +1374,77 @@ if(is_string($data) && strlen($data) <= 64 && preg_match('/\ApayIncreaseWithWall
         $remark     = $orderInfo['remark'];
         $uuid       = $orderInfo['uuid'] ?? "0";
 
-        $stmt = $connection->prepare("SELECT * FROM `increase_plan` WHERE `id` = ?");
-        $stmt->bind_param("i", $planid);
+        $stmt = $connection->prepare("SELECT * FROM `server_config` WHERE `id` = ?");
+        $stmt->bind_param('i', $server_id);
         $stmt->execute();
-        $res = $stmt->get_result()->fetch_assoc();
+        $serverConfig = $stmt->get_result()->fetch_assoc();
         $stmt->close();
-
-        if (!$res){
-            throw new Exception("increase_plan_not_found");
+        if(!$serverConfig){
+            throw new Exception("server_config_missing");
         }
+        $serverType = $serverConfig['type'];
 
+        $quotedUnits=achbotPinnedAddonUnits($payParam);
+        if ($quotedUnits===null) throw new RuntimeException('service_quote_units_unverified');
         $price  = intval($payParam['price']);
-        $volume = intval($res['volume']);
+        $volume = $quotedUnits;
+        if ($volume===null) throw new RuntimeException('unsupported_service_units');
 
-        $uid = intval($payParam['user_id'] ?? $from_id);
-        $stmt = $connection->prepare("SELECT `wallet` FROM `users` WHERE `userid` = ? FOR UPDATE");
-        $stmt->bind_param("i", $uid);
-        $stmt->execute();
-        $wRow = $stmt->get_result()->fetch_assoc();
+        $stmt = $connection->prepare("SELECT id,wallet FROM users
+            WHERE userid=? FOR UPDATE");
+        $stmt->bind_param('i',$uid);
+        if (!$stmt->execute()) throw new RuntimeException('wallet_day_owner_read_failed');
+        $owners=$stmt->get_result()->fetch_all(MYSQLI_ASSOC);
         $stmt->close();
-
-        $userwallet = intval($wRow['wallet'] ?? 0);
-        if ($userwallet < $price) {
+        if (count($owners)!==1)
+            throw new RuntimeException('wallet_day_owner_ambiguous');
+        $uRow=$owners[0];
+        $userwallet=(int)$uRow['wallet'];
+        if($userwallet < $price) {
             $needamount = $price - $userwallet;
 
-            // وضعیت پرداخت کمبود موجودی
             $stmt = $connection->prepare("UPDATE `pays` SET `state` = 'low_wallet' WHERE `hash_id` = ?");
             $stmt->bind_param("s", $hash_id);
             $stmt->execute();
             $stmt->close();
 
             $connection->commit();
-            alert("❌ موجودی کیف پول کافی نیست.\n💵 موجودی فعلی: " . number_format($userwallet) . " تومان\n🔺 مورد نیاز: " . number_format($needamount) . " تومان", true);
+
+            alert(\achbotMessage('renewal.extensions.alert.39c72d8044') . number_format($userwallet) . \achbotMessage('renewal.extensions.alert.71a2507661') . number_format($needamount) . \achbotMessage('renewal.extensions.text.2cc98f7f7c'), true);
             return;
         }
 
-        $stmt = $connection->prepare("SELECT * FROM server_config WHERE id=?");
-        $stmt->bind_param("i", $server_id);
-        $stmt->execute();
-        $server_info = $stmt->get_result()->fetch_assoc();
+        if (!achbotSupportsPanel($serverType))
+            throw new UnexpectedValueException('unsupported_panel');
+        // Reserve the debit and unique payment ownership together BEFORE
+        // dispatch. An unknown remote/local result remains processing_wallet
+        // for operator review; callback replay cannot debit or dispatch again.
+        $payId=(int)$payParam['id'];
+        $payType=(string)$payParam['type'];
+        if ((int)$payParam['price']!==$price ||
+            (int)$payParam['user_id']!==$uid ||
+            $payType!=="INCREASE_VOLUME_{$orderId}_{$planid}")
+            throw new RuntimeException('wallet_day_claim_subject_changed');
+        $ownerPk=(int)$uRow['id'];
+        $stmt=$connection->prepare("UPDATE users SET wallet=wallet-?
+            WHERE id=? AND userid=? AND wallet>=?");
+        $stmt->bind_param('iiii',$price,$ownerPk,$uid,$price);
+        $reserved=$stmt->execute() && $stmt->affected_rows===1;
         $stmt->close();
-
-        if (!$server_info){
-            throw new Exception("server_config_missing");
-        }
-
-        $serverType = $server_info['type'];
+        if (!$reserved) throw new RuntimeException('wallet_day_reservation_unconfirmed');
+        $payState=(string)$payParam['state'];
+        $stmt=$connection->prepare("UPDATE pays SET state='processing_wallet'
+            WHERE id=? AND user_id=? AND hash_id=? AND type=? AND price=?
+              AND state=?");
+        $stmt->bind_param('iissis',$payId,$uid,$hash_id,$payType,
+                          $price,$payState);
+        $claimed=$stmt->execute() && $stmt->affected_rows===1;
+        $stmt->close();
+        if (!$claimed || $connection->commit()!==true)
+            throw new RuntimeException('wallet_day_claim_unconfirmed');
 
         if (achbotSupportsPanel($serverType)){
-            $response = achbotApplyServiceEdit($connection,$server_id, ['remark'=>$remark, 'plus_volume'=>$volume]);
+            $response = achbotApplyServiceEdit($connection,$server_id, ['pay_id'=>(int)$payId, 'remark'=>$remark, 'plus_volume'=>$volume]);
         } else {
             throw new \UnexpectedValueException('unsupported_panel');
         }
@@ -1421,53 +1461,55 @@ if(is_string($data) && strlen($data) <= 64 && preg_match('/\ApayIncreaseWithWall
             throw new Exception("provider_rejected");
         }
 
-        $stmt = $connection->prepare("UPDATE `users` SET `wallet` = `wallet` - ? WHERE `userid` = ?");
-        $stmt->bind_param("ii", $price, $uid);
-        $stmt->execute();
+        if (!is_object($response) || ($response->verified??false)!==true)
+            throw new RuntimeException('wallet_day_provider_result_unverified');
+        if ($connection->begin_transaction()!==true)
+            throw new RuntimeException('wallet_day_finish_begin_failed');
+        $stmt=$connection->prepare("SELECT id,state,user_id,hash_id,type,price
+            FROM pays WHERE id=? FOR UPDATE");
+        $stmt->bind_param('i',$payId);
+        $ok=$stmt->execute();
+        $locked=$ok?$stmt->get_result()->fetch_assoc():null;
         $stmt->close();
-
-        $stmt = $connection->prepare("UPDATE `pays` SET `state` = 'paid_with_wallet' WHERE `hash_id` = ?");
-        $stmt->bind_param("s", $hash_id);
-        $stmt->execute();
+        if (!$locked || $locked['state']!=='processing_wallet' ||
+            (int)$locked['user_id']!==$uid ||
+            (int)$locked['price']!==$price ||
+            (string)$locked['hash_id']!==$hash_id ||
+            (string)$locked['type']!==$payType)
+            throw new RuntimeException('wallet_day_claim_stale');
+        achbotStoreVerifiedServiceExpiryLocked($connection,$orderInfo,$response);
+        $timeNow=time();
+        $stmt=$connection->prepare("INSERT INTO increase_order
+            (userid,server_id,inbound_id,remark,amount,date,volume)
+            VALUES (?,?,?,?,?,?,?)");
+        $stmt->bind_param('iiisiii',$uid,$server_id,$inbound_id,
+                          $remark,$price,$timeNow,$volume);
+        $saved=$stmt->execute() && $stmt->affected_rows===1;
         $stmt->close();
-
-        $stmt = $connection->prepare("UPDATE `orders_list` SET `notif` = 0 WHERE `uuid` = ?");
-        $stmt->bind_param("s", $uuid);
-        $stmt->execute();
+        if (!$saved) throw new RuntimeException('wallet_day_audit_unconfirmed');
+        $stmt=$connection->prepare("UPDATE pays SET state='paid_with_wallet'
+            WHERE id=? AND user_id=? AND hash_id=? AND state='processing_wallet'");
+        $stmt->bind_param('iis',$payId,$uid,$hash_id);
+        $saved=$stmt->execute() && $stmt->affected_rows===1;
         $stmt->close();
+        if (!$saved || $connection->commit()!==true)
+            throw new RuntimeException('wallet_day_finish_unconfirmed');
+        $localCommitted=true;
 
-        $timeNow = time();
-        $stmt = $connection->prepare("INSERT INTO `increase_order` (`userid`, `server_id`, `inbound_id`, `remark`, `amount`, `date`, `volume`) VALUES (?, ?, ?, ?, ?, ?, ?)");
-        $stmt->bind_param("iiisiii", $uid, $server_id, $inbound_id, $remark, $price, $timeNow, $volume);
-        $stmt->execute();
-        $stmt->close();
-
-        // COMMIT
-        $connection->commit();
-
-        editText($message_id, "✅ $volume گیگ به حجم اشتراک شما اضافه شد.", getMainKeys());
+        editText($message_id, \achbotMessage('renewal.extensions.message.2d27ba4eea', ['volume' => $volume]), getMainKeys());
 
         $keys = json_encode(['inline_keyboard'=>[
             [
-                ['text'=>"🔋 افزایش حجم اشتراک",'callback_data'=>"wizwizch"]
+                ['text'=>\achbotMessage('renewal.extensions.button.9a3cb8176f'),'callback_data'=>"wizwizch"]
             ],
             [
-                ['text'=>"🆔 $hash_id", 'callback_data'=>"noop_$hash_id"]
+                ['text'=>\achbotMessage('renewal.extensions.hash_id.2899228604', ['hash_id' => $hash_id]), 'callback_data'=>"noop_$hash_id"]
             ]
         ]]);
 
-        $msg = "
-🔋|💰 افزایش حجم با (کیف پول)
-
-🎫 شناسه عددی: $from_id
-👨 اسم کاربر: $first_name
-⚡️ نام کاربری: @$username
-🎈 نام کاربری اشتراک: $remark
-🔝 مقدار افزایش: $volume گیگ
-💰 قیمت: $price تومان
-";
-        sendMessage($msg, $keys, "html", $admin);
-        //sendToAllAdmins('sendMessage', ['text' => $msg, 'reply_markup' => $keys, 'parse_mode' => "html"]);
+        $msg = \achbotMessage('renewal.extensions.msg.0e12e9ce3d', ['from_id' => $from_id, 'first_name' => $first_name, 'username' => $username, 'remark' => $remark, 'volume' => $volume, 'price' => $price]);
+        sendMessage($msg, $keys,"html", $admin);
+        //sendToAllAdmins('sendMessage', ['text' => $msg,'reply_markup' => $keys,'parse_mode' => "html"]);
 		
 		// ارسال پیام به کانال گزارشات
         $rewardChannel = $botState['rewardChannel'];
@@ -1477,20 +1519,22 @@ if(is_string($data) && strlen($data) <= 64 && preg_match('/\ApayIncreaseWithWall
 
         return;
 
-    } catch (Exception $e) {
-        // بازگردانی تغییرات
-        $connection->rollback();
+    } catch (Throwable $e) {
+        if ($localCommitted) {
+            error_log('achbot_wallet_day_notice_unconfirmed pay_id='.(int)($payId??0));
+            return;
+        }
+        try {$connection->rollback();} catch (Throwable $ignored) {}
 
         // پیام فنی برای ادمین
-        $adminErr = "⚠️ خطا در افزایش حجم با کیف پول\n\n"
-                  . "🆔 Hash ID: {$match[1]}\n"
-                  . "👤 User: {$from_id}\n"
-                  . "⚠️ External effect: unverified; verify before retry or compensation\n📄 Reason (sanitized): ".achbotFinanceDiagnosticReason($e);
+        $adminErr = \achbotMessage('renewal.extensions.admin_err.128069a4b4')
+                  . \achbotMessage('renewal.extensions.hash__i_d_match_1.3abb834966', ['match_1' => $match[1]])
+                  . \achbotMessage('renewal.extensions.user_from_id.45aa9ea684', ['from_id' => $from_id])
+                  . \achbotMessage('renewal.extensions.external_effect_unverified_verify_before.10e2ccf8a3').achbotFinanceDiagnosticReason($e);
         sendMessage($adminErr, null, null, $admin);
 
-        sendMessage("⚠️ وضعیت درخواست مشخص نیست. لطفاً وضعیت اشتراک و پرداخت را بررسی کنید و پیش از ثبت دوباره با پشتیبانی هماهنگ شوید.", null, null, $uid);
+        sendMessage(\achbotMessage('renewal.extensions.message.ba8adc7121'), null, null, $uid);
 
         return;
     }
 }
-

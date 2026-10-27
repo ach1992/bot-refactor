@@ -4,6 +4,8 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     http_response_code(404);
     exit;
 }
+require_once __DIR__ . '/../../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
+
 
 // Telegram may return ok=false or null without throwing an exception.
 if (!function_exists('achbotManualStandardRequireTelegramResult')) {
@@ -46,15 +48,15 @@ if (!function_exists('achbotManualStandardReportDelivery')) {
         foreach (array_slice($issues,0,24) as $issue) {
             $line=(string)$issue['stage'];
             if ($issue['ordinal']>0) $line.=' #'.(int)$issue['ordinal'];
-            if ($issue['target']!==0) $line.=' chat:'.(int)$issue['target'];
+            if ($issue['target']!==0) $line.=\achbotMessage('manual_payment.manual_approval.manual_standard_report_delivery.chat.127f57d934').(int)$issue['target'];
             $lines[]=$line;
         }
-        if (count($issues)>24) $lines[]='additional_targets:'.(count($issues)-24);
+        if (count($issues)>24) $lines[]=\achbotMessage('manual_payment.manual_approval.manual_standard_report_delivery.additional_targets.83d6318b6e').(count($issues)-24);
         try {
             achbotManualStandardRequireTelegramResult(
-                sendMessage("✅ سفارش/سرویس ثبت شده است؛ اما اطلاع‌رسانی تعدادی از حساب‌ها یا مدیران نامطمئن است.\n🆔 "
+                sendMessage(\achbotMessage('manual_payment.manual_approval.manual_standard_report_delivery.message.7c3a3ec221')
                     .$hashId."\n".implode("\n",$lines).
-                    "\nحساب‌ها و پیام‌ها را تطبیق دهید؛ عملیات سرویس/مالی را تکرار نکنید.",
+                    \achbotMessage('manual_payment.manual_approval.manual_standard_report_delivery.message.be6b530354'),
                     null,null,$admin),
                 'delivery_summary');
         } catch (Throwable $error) {
@@ -94,7 +96,7 @@ if (
             !achbotManualServiceApprovalAllowedLocked($connection, $payInfo, $receiptSubject)) {
             $connection->rollback();
             $claimOpen = false;
-            alert('⛔️ این درخواست قابل تأیید نیست؛ وضعیت رسید، روش پرداخت یا نوع سفارش را بررسی کنید.');
+            alert(\achbotMessage('manual_payment.manual_approval.manual_standard_report_delivery.alert.9ca98e8676'));
             return;
         }
         $payId = (int)$payInfo['id'];
@@ -133,7 +135,7 @@ if (
             try { $connection->rollback(); } catch (Throwable $ignored) {}
         }
         error_log('achbot_manual_standard_claim_needs_review pay_id='.(int)($payInfo['id']??0). ' exception='.get_class($error).' code='.(int)$error->getCode());
-        alert('⚠️ نتیجهٔ ثبت تأیید قطعی نیست. ابتدا وضعیت سفارش را بررسی کنید؛ تأیید را تکرار نکنید.');
+        alert(\achbotMessage('manual_payment.manual_approval.manual_standard_report_delivery.alert.fd978f1d4d'));
         return;
     }
 
@@ -216,7 +218,7 @@ if (
             } catch (Throwable $e) {
                 try { $connection->rollback(); } catch (Throwable $ignored) {}
                 error_log('achbot_manual_standard_remote_finish_review pay_id='.$payId.' subject=renewal exception='.get_class($e).' code='.(int)$e->getCode());
-                sendMessage("⚠️ نتیجهٔ ثبت تمدید قطعی نیست و نیازمند بررسی است.\n🆔 $hash_id\nقبل از هر تأیید دوباره، سرویس و پرداخت را تطبیق دهید.", null, null, $admin);
+                sendMessage(\achbotMessage('manual_payment.manual_approval.manual_standard_report_delivery.message.4194effbee', ['hash_id' => $hash_id]), null, null, $admin);
                 return;
             }
 
@@ -226,14 +228,14 @@ if (
                         $mainValues['renewed_config_to_user']),getMainKeys(),null,null),
                 'renewal_customer',$payId,$deliveryIssues,0,(int)$from_id);
             achbotManualStandardNotice(
-                static fn()=>sendMessage("✅ اشتراک $remark با موفقیت تمدید شد.",null,null,$uid),
+                static fn()=>sendMessage(\achbotMessage('manual_payment.automatic_receipts.message.cca1075329', ['remark' => $remark]),null,null,$uid),
                 'renewal_user_notice',$payId,$deliveryIssues,0,$uid);
 
             $keys = json_encode([
                 'inline_keyboard' => [
-                    [['text' => "✅ تایید شد توسط $from_id", 'callback_data' => "wizwizch"]],
-                    [['text' => "🔄 $remark",                'callback_data' => "noop"]],
-                    [['text' => "🆔 $hash_id",              'callback_data' => "noop_$hash_id"]],
+                    [['text' => \achbotMessage('manual_payment.manual_approval.manual_standard_report_delivery.button.139c829462', ['from_id' => $from_id]), 'callback_data' => "wizwizch"]],
+                    [['text' => \achbotMessage('manual_payment.manual_approval.manual_standard_report_delivery.remark.4348a3fd9b', ['remark' => $remark]),                'callback_data' => "noop"]],
+                    [['text' => \achbotMessage('manual_payment.manual_approval.manual_standard_report_delivery.hash_id.2899228604', ['hash_id' => $hash_id]),              'callback_data' => "noop_$hash_id"]],
                 ]
             ], 488);
 
@@ -248,7 +250,7 @@ if (
                 $deliveryIssues[]=['stage'=>'renewal_operator_buttons',
                     'ordinal'=>0,'target'=>(int)$payInfo['chat_id']];
                 achbotManualStandardNotice(
-                    static fn()=>sendMessage("✅ تمدید ثبت شده است، اما به‌روزرسانی دکمه‌های پیام مدیر تأیید نشد.\n🆔 $hash_id\nوضعیت پیام را بررسی کنید؛ تمدید را دوباره تأیید نکنید.",null,null,$admin),
+                    static fn()=>sendMessage(\achbotMessage('manual_payment.manual_approval.manual_standard_report_delivery.message.60d43de4f9', ['hash_id' => $hash_id]),null,null,$admin),
                     'renewal_buttons_operator_alert',$payId,$deliveryIssues,0,$admin);
             }
 
@@ -356,8 +358,8 @@ if (
                 $volume,
                 $days,
                 $buttonValues,
-                $linkIndices,
-                $hideConfigIfMany,
+                [],
+                false,
                 '',
                 null,
                 false
@@ -391,7 +393,7 @@ if (
 
         if (count($toInsertOrders) === 0) {
             error_log('achbot_manual_standard_empty_remote_result pay_id='.$payId);
-            sendMessage("⚠️ نتیجهٔ ساخت اکانت‌ها قطعی نیست و نیازمند بررسی است.\n🆔 $hash_id\nپرداخت را دوباره تأیید نکنید.", null, null, $admin);
+            sendMessage(\achbotMessage('manual_payment.manual_approval.manual_standard_report_delivery.message.5eb93029eb', ['hash_id' => $hash_id]), null, null, $admin);
             return;
         }
 
@@ -439,7 +441,7 @@ if (
             try { $connection->rollback(); } catch (Throwable $ignored) {}
             // One or more remote accounts may exist without local orders.
             error_log('achbot_manual_standard_remote_finish_review pay_id='.$payId.' subject=purchase exception='.get_class($e).' code='.(int)$e->getCode());
-            sendMessage("⚠️ نتیجهٔ ثبت سفارش پس از عملیات سرویس قطعی نیست.\n🆔 $hash_id\nبرای تطبیق اکانت‌ها و پرداخت بررسی دستی لازم است؛ دوباره تأیید نکنید.",
+            sendMessage(\achbotMessage('manual_payment.manual_approval.manual_standard_report_delivery.message.6f4a274426', ['hash_id' => $hash_id]),
                         null, null, $admin);
             return;
         }
@@ -470,9 +472,9 @@ if (
 
         $keys = json_encode([
             'inline_keyboard' => [
-                [['text' => "✅ تایید شد توسط $from_id", 'callback_data' => "wizwizch"]],
-                [['text' => "🔄 $lastRemarkForAdminMsg",  'callback_data' => "noop"]],
-                [['text' => "🆔 $hash_id",               'callback_data' => "noop_$hash_id"]],
+                [['text' => \achbotMessage('manual_payment.manual_approval.manual_standard_report_delivery.button.139c829462', ['from_id' => $from_id]), 'callback_data' => "wizwizch"]],
+                [['text' => \achbotMessage('manual_payment.manual_approval.manual_standard_report_delivery.last_remark_for_admin_msg.2b262756e6', ['lastRemarkForAdminMsg' => $lastRemarkForAdminMsg]),  'callback_data' => "noop"]],
+                [['text' => \achbotMessage('manual_payment.manual_approval.manual_standard_report_delivery.hash_id.2899228604', ['hash_id' => $hash_id]),               'callback_data' => "noop_$hash_id"]],
             ]
         ], 488);
 
@@ -487,7 +489,7 @@ if (
             $deliveryIssues[]=['stage'=>'purchase_operator_buttons',
                 'ordinal'=>0,'target'=>(int)$payInfo['chat_id']];
             achbotManualStandardNotice(
-                static fn()=>sendMessage("✅ سفارش ثبت شده است، اما به‌روزرسانی دکمه‌های پیام مدیر تأیید نشد.\n🆔 $hash_id\nوضعیت پیام را بررسی کنید؛ سفارش را دوباره تأیید نکنید.",null,null,$admin),
+                static fn()=>sendMessage(\achbotMessage('manual_payment.manual_approval.manual_standard_report_delivery.message.76fb0b9a90', ['hash_id' => $hash_id]),null,null,$admin),
                 'purchase_buttons_operator_alert',$payId,$deliveryIssues,0,$admin);
         }
 
@@ -509,7 +511,7 @@ if (
             $uname=$user_detail['name'];
             $user_name=$user_detail['username'];
             $keys2=json_encode(['inline_keyboard'=>[[
-                ['text'=>"🛍 خرید اشتراک جدید",'callback_data'=>"wizwizch"]
+                ['text'=>\achbotMessage('manual_payment.manual_approval.manual_standard_report_delivery.button.e401f3d5a2'),'callback_data'=>"wizwizch"]
             ]]]);
             $msg=str_replace(
                 ['USER-ID','USERNAME','NAME','PRICE','REMARK','HASHID'],
@@ -539,23 +541,23 @@ if (
                 ' stage='.$followupStage.' exception='.get_class($e).' code='.(int)$e->getCode());
             try {
                 $accountContext=$followupOrdinal>0
-                    ?"\n🔢 شماره حساب: ".$followupOrdinal:'';
+                    ?\achbotMessage('manual_payment.manual_approval.manual_standard_report_delivery.text.1b02ee00d1').$followupOrdinal:'';
                 $rewardContext=($followupStage==='referral_reward' && isset($inviterId))
-                    ?"\n🎁 شناسه معرف: ".(int)$inviterId:'';
+                    ?\achbotMessage('manual_payment.manual_approval.manual_standard_report_delivery.text.29a5fe19ed').(int)$inviterId:'';
                 $phaseText=match($followupStage) {
-                    'renewal_customer_notice'=>'پیام تمدید مشتری',
-                    'renewal_operator_buttons'=>'دکمه‌های تأیید مدیر',
-                    'purchase_account_delivery'=>'ارسال اطلاعات سرویس مشتری',
-                    'purchase_operator_notice'=>'پیام مدیر',
-                    'purchase_operator_buttons'=>'دکمه‌های مدیر',
-                    'referral_reward'=>'اعتبار یا پیام پاداش معرف',
-                    default=>'اطلاع‌رسانی تکمیلی',
+                    'renewal_customer_notice'=>\achbotMessage('manual_payment.manual_approval.manual_standard_report_delivery.text.33f0297acd'),
+                    'renewal_operator_buttons'=>\achbotMessage('manual_payment.manual_approval.manual_standard_report_delivery.text.b24a7f8dca'),
+                    'purchase_account_delivery'=>\achbotMessage('manual_payment.manual_approval.manual_standard_report_delivery.text.f91dbdba95'),
+                    'purchase_operator_notice'=>\achbotMessage('manual_payment.manual_approval.manual_standard_report_delivery.text.dccef59f47'),
+                    'purchase_operator_buttons'=>\achbotMessage('manual_payment.manual_approval.manual_standard_report_delivery.text.3345bdc147'),
+                    'referral_reward'=>\achbotMessage('manual_payment.manual_approval.manual_standard_report_delivery.text.9e7605c2cd'),
+                    default=>\achbotMessage('manual_payment.manual_approval.manual_standard_report_delivery.text.1b5f3e9a80'),
                 };
                 achbotManualStandardRequireTelegramResult(
-                    sendMessage("✅ سفارش ثبت شده و عملیات سرویس در سیستم تأیید شده است، اما اطلاع‌رسانی یا پاداش در مرحلهٔ "
-                        .$phaseText." ناقص/نامطمئن است.\n🆔 $hash_id"
+                    sendMessage(\achbotMessage('manual_payment.manual_approval.manual_standard_report_delivery.message.797f106a46')
+                        .$phaseText.\achbotMessage('manual_payment.manual_approval.manual_standard_report_delivery.message.67ca045c30', ['hash_id' => $hash_id])
                         .$accountContext.$rewardContext.
-                        "\nارسال پیام یا اعتبار معرف را دستی تطبیق دهید؛ سرویس و اعتبار را دوباره اعمال نکنید.",
+                        \achbotMessage('manual_payment.manual_approval.manual_standard_report_delivery.text.c46767b99f'),
                         null,null,$admin),
                     'postcommit_operator_alert');
             } catch (Throwable $notifyError) {
@@ -567,7 +569,7 @@ if (
         // Remote effects and SQL are not one transaction. Never re-arm a claim.
         error_log('achbot_manual_standard_effect_needs_review pay_id='.$payId.' exception='.get_class($e).' code='.(int)$e->getCode());
         try {
-            sendMessage("⚠️ نتیجهٔ تکمیل سفارش هنوز قطعی نیست.\n🆔 $hash_id\nابتدا پرداخت و اکانت‌های سرویس را بررسی کنید؛ تأیید را تکرار نکنید.",
+            sendMessage(\achbotMessage('manual_payment.manual_approval.manual_standard_report_delivery.message.79749fa46e', ['hash_id' => $hash_id]),
                         null, null, $admin);
         } catch (Throwable $notifyError) {
             error_log('achbot_manual_standard_review_notice_failed pay_id='.$payId.

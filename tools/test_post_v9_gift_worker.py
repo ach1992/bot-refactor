@@ -380,9 +380,12 @@ def main():
         stage=work/'gift-worker'
         (stage/'settings').mkdir(parents=True)
         shutil.copyfile(ROOT/'settings/gift2all.php',stage/'settings/gift2all.php')
+        (stage/'src/Panel').mkdir(parents=True)
+        shutil.copyfile(ROOT/'src/Panel/ProviderRuntime.php',stage/'src/Panel/ProviderRuntime.php')
         (stage/'src/Subscription').mkdir(parents=True)
         shutil.copyfile(ROOT/'src/Subscription/GiftBatch.php',
                         stage/'src/Subscription/GiftBatch.php')
+        shutil.copytree(ROOT/'messages',stage/'messages')
         (stage/'baseInfo.php').write_text('<?php // owned test\n')
         (stage/'config.php').write_text(CONFIG)
         (stage/'run.php').write_text(RUNNER)

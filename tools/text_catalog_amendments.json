@@ -1,0 +1,56 @@
+{
+  "version": 1,
+  "authorization": "https://github.com/ach1992/bot-refactor/issues/26#issuecomment-6436048941",
+  "catalog_commit": "011c17698a5082fb74ae2421bc4cdb6655263db3",
+  "assignment_base": "f3c6fa956edcdfcb057a05a80da2c05741de5a69",
+  "source_dependencies": {
+    "src/Subscription/AccountDetails.php": {
+      "commit": "0bf368f01409c519b93bd4a8bcc98cbc5c2e220b",
+      "diff_sha256": "2e9cd8fc442f9d57206dc59d99f693188e05b15819e19a55fc19607f8f319b13",
+      "reason": "NEXT-ADMIN-READ-AUTH-7: fresh actor/role/ownership guards only; no copy change"
+    },
+    "src/Subscription/CustomerRoutes.php": {
+      "commit": "0bf368f01409c519b93bd4a8bcc98cbc5c2e220b",
+      "diff_sha256": "f3c8e8e33921e36bb886352970f5bd65f2c9866d0e0cd956385a95f9c946696f",
+      "reason": "NEXT-ADMIN-READ-AUTH-7: fresh actor/role/ownership guards only; no copy change"
+    },
+    "src/Subscription/OrderManagement.php": {
+      "commit": "0bf368f01409c519b93bd4a8bcc98cbc5c2e220b",
+      "diff_sha256": "aa656882a53155affbeef5171afb15ac50721866d78fc619e40ba4a7905dc00b",
+      "reason": "NEXT-ADMIN-READ-AUTH-7: fresh actor/role/ownership guards only; no copy change"
+    }
+  },
+  "source_edits": [
+    {
+      "path": "src/Subscription/AccountDetails.php",
+      "original": "round(($total - $used) / 1073741824, 2) . ' GB'",
+      "replacement": "\\achbotMessage('subscription.account_details.remaining_traffic', ['remaining_gib' => round(($total - $used) / 1073741824, 2)])",
+      "kind": "byte_preserved_presentation",
+      "key": "subscription.account_details.remaining_traffic"
+    },
+    {
+      "path": "config.php",
+      "original": "$connection = new mysqli('localhost',$dbUserName,$dbPassword,$dbName);\nif($connection->connect_error){\n    exit(\"error \" . $connection->connect_error);  \n}\n$connection->set_charset(\"utf8mb4\");",
+      "replacement": "// Fail closed before any query or outgoing request; diagnostics contain no inputs.\n$bootstrapStage = 'connection';\ntry {\n    $connection = @new mysqli('localhost',$dbUserName,$dbPassword,$dbName);\n    if ($connection->connect_error) throw new RuntimeException('bootstrap_connection_failed');\n    $bootstrapStage = 'charset';\n    if (@$connection->set_charset('utf8mb4') !== true)\n        throw new RuntimeException('bootstrap_charset_failed');\n} catch (Throwable $ignored) {\n    error_log('AChBot bootstrap_unavailable stage=' . $bootstrapStage);\n    http_response_code(503);\n    header('Content-Type: text/plain; charset=utf-8');\n    echo \\achbotMessage('bot.bootstrap.unavailable');\n    exit(1);\n}\nunset($bootstrapStage);",
+      "kind": "authorized_bootstrap_privacy",
+      "key": "bot.bootstrap.unavailable"
+    }
+  ],
+  "approved_copy": {
+    "gateway.gateway_initiation.mark_checkout_uncertain.message.c2f74dfd7e": {
+      "before": "این سرویس در پنل مرزبان قابل پرداخت نیست.",
+      "after": "پرداخت این اشتراک در حال حاضر امکان‌پذیر نیست؛ برای راهنمایی با پشتیبانی تماس بگیرید.",
+      "reason": "Master-authorized correction under the recorded Owner error-privacy policy (AGENTS.md and Issue #26 comments 6436048941 / 6436136237); intentionally not byte parity"
+    },
+    "gateway.gateway_initiation.mark_checkout_uncertain.message.c4414cfacc": {
+      "before": "کلید امن اعلان NOWPayments هنوز توسط مدیر ثبت نشده است.",
+      "after": "این روش پرداخت فعلاً در دسترس نیست؛ روش دیگری را انتخاب کنید یا با پشتیبانی تماس بگیرید.",
+      "reason": "Master-authorized correction under the recorded Owner error-privacy policy (AGENTS.md and Issue #26 comments 6436048941 / 6436136237); intentionally not byte parity"
+    },
+    "gateway.gateway_initiation.mark_checkout_uncertain.message.df2a7c68c7": {
+      "before": "کلید درگاه NowPayments تنظیم نشده است.",
+      "after": "این روش پرداخت فعلاً در دسترس نیست؛ روش دیگری را انتخاب کنید یا با پشتیبانی تماس بگیرید.",
+      "reason": "Master-authorized correction under the recorded Owner error-privacy policy (AGENTS.md and Issue #26 comments 6436048941 / 6436136237); intentionally not byte parity"
+    }
+  }
+}

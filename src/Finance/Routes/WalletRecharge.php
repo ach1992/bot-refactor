@@ -4,6 +4,8 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     http_response_code(404);
     exit;
 }
+require_once __DIR__ . '/../../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
+
 
 require_once __DIR__ . '/../PaymentLifecycle.php';
 
@@ -120,10 +122,10 @@ if (!function_exists('achbotWalletTopupSentMessageId')) {
 
 if (!function_exists('achbotWalletTopupAmountProblem')) {
     function achbotWalletTopupAmountProblem($amount): ?string {
-        if ($amount === null) return '⚠️ مبلغ شارژ معتبر نیست. لطفاً فقط عدد صحیح با ارقام انگلیسی وارد کنید.';
-        if ($amount < 100000) return '⚠️ لطفا مقداری بیشتر یا مساوی 100,000 تومان وارد کنید.';
-        if ($amount > 10000000) return '⚠️ حداکثر مبلغ قابل شارژ کیف پول 10,000,000 تومان می‌باشد.';
-        if ($amount % 50000 !== 0) return '⚠️ مبلغ واردشده باید مضربی از 50,000 تومان باشد.';
+        if ($amount === null) return \achbotMessage('wallet.wallet_recharge.wallet_topup_amount_problem.label.7fab54f38e');
+        if ($amount < 100000) return \achbotMessage('wallet.wallet_recharge.wallet_topup_amount_problem.label.a5b8f4d84e');
+        if ($amount > 10000000) return \achbotMessage('wallet.wallet_recharge.wallet_topup_amount_problem.label.2ee8d817fc');
+        if ($amount % 50000 !== 0) return \achbotMessage('wallet.wallet_recharge.wallet_topup_amount_problem.label.9185f287a6');
         return null;
     }
 }
@@ -137,25 +139,25 @@ if ($data === 'increaseMyWallet') {
                                       $opening, $updateId);
     if ($result !== 'applied') return;
 
-    $textMsg = "✅ با شارژ کیف پول می‌توانید هنگام خرید از <b>دکمه پرداخت با موجودی</b> استفاده کنید و منتظر تأیید ادمین <b>نمانید</b>.\n\n❇️ لطفاً مبلغ شارژ کیف پول را انتخاب کنید:";
+    $textMsg = \achbotMessage('wallet.wallet_recharge.wallet_topup_amount_problem.text_msg.a8d7f77dea');
     $keyboard = [
         [
-            ['text' => '100,000 تومان', 'callback_data' => 'increaseWallet_100000'],
-            ['text' => '200,000 تومان', 'callback_data' => 'increaseWallet_200000'],
+            ['text' => \achbotMessage('wallet.wallet_recharge.wallet_topup_amount_problem.button.e0736904e5'), 'callback_data' => 'increaseWallet_100000'],
+            ['text' => \achbotMessage('wallet.wallet_recharge.wallet_topup_amount_problem.button.15bec8537a'), 'callback_data' => 'increaseWallet_200000'],
         ],
         [
-            ['text' => '300,000 تومان', 'callback_data' => 'increaseWallet_300000'],
-            ['text' => '500,000 تومان', 'callback_data' => 'increaseWallet_500000'],
+            ['text' => \achbotMessage('wallet.wallet_recharge.wallet_topup_amount_problem.button.c18668d617'), 'callback_data' => 'increaseWallet_300000'],
+            ['text' => \achbotMessage('wallet.wallet_recharge.wallet_topup_amount_problem.button.d960e787a3'), 'callback_data' => 'increaseWallet_500000'],
         ],
         [
-            ['text' => '1,000,000 تومان', 'callback_data' => 'increaseWallet_1000000'],
-            ['text' => '2,000,000 تومان', 'callback_data' => 'increaseWallet_2000000'],
+            ['text' => \achbotMessage('wallet.wallet_recharge.wallet_topup_amount_problem.button.79fa13dc2b'), 'callback_data' => 'increaseWallet_1000000'],
+            ['text' => \achbotMessage('wallet.wallet_recharge.wallet_topup_amount_problem.button.1f4dbe4fcb'), 'callback_data' => 'increaseWallet_2000000'],
         ],
         [
-            ['text' => '5,000,000 تومان', 'callback_data' => 'increaseWallet_5000000'],
+            ['text' => \achbotMessage('wallet.wallet_recharge.wallet_topup_amount_problem.button.f4f1019c8d'), 'callback_data' => 'increaseWallet_5000000'],
         ],
         [
-            ['text' => '✏️ مبلغ دلخواه', 'callback_data' => 'increaseWalletCustom'],
+            ['text' => \achbotMessage('wallet.wallet_recharge.wallet_topup_amount_problem.button.5e7e50f6fe'), 'callback_data' => 'increaseWalletCustom'],
         ],
         [
             ['text' => $buttonValues['cancel'], 'callback_data' => 'mainMenu'],
@@ -197,7 +199,7 @@ if (strpos($data, 'increaseWallet_') === 0) {
         return;
     }
     if (!$canSelect) {
-        sendMessage('⚠️ این گزینه مربوط به درخواست فعلی نیست. شارژ کیف پول را دوباره از منو آغاز کنید.');
+        sendMessage(\achbotMessage('wallet.wallet_recharge.wallet_topup_amount_problem.message.778b5776b6'));
         return;
     }
     $result = startWalletPayment($connection, $botState, $buttonValues, $botUrl,
@@ -206,16 +208,16 @@ if (strpos($data, 'increaseWallet_') === 0) {
     if ($result === 'created') {
         achbotWalletTopupRetirePrompt();
     } elseif ($result === 'review') {
-        sendMessage('⚠️ وضعیت درخواست شارژ نیازمند بررسی است؛ قبل از تلاش مجدد، وضعیت را بررسی کنید.');
+        sendMessage(\achbotMessage('wallet.wallet_recharge.wallet_topup_amount_problem.message.983d706c66'));
     } else {
-        sendMessage('⚠️ این درخواست قبلاً پردازش یا جایگزین شده است. شارژ کیف پول را دوباره از منو آغاز کنید.');
+        sendMessage(\achbotMessage('wallet.wallet_recharge.wallet_topup_amount_problem.message.d0531e17b9'));
     }
     return;
 }
 
 if ($data === 'increaseWalletCustom') {
     if (!$canSelect) {
-        sendMessage('⚠️ این گزینه مربوط به درخواست فعلی نیست. شارژ کیف پول را دوباره از منو آغاز کنید.');
+        sendMessage(\achbotMessage('wallet.wallet_recharge.wallet_topup_amount_problem.message.778b5776b6'));
         return;
     }
     $updateId = $update->update_id;
@@ -225,7 +227,7 @@ if ($data === 'increaseWalletCustom') {
         return;
     }
     try {
-        $reply = sendMessage("💰 لطفاً مبلغ شارژ را وارد کنید.\n✅ حداقل مبلغ قابل شارژ <b>100,000 تومان</b> می باشد.\n✅ حداکثر مبلغ قابل شارژ <b>10,000,000 تومان</b> می باشد.\n✅ مبلغ باید فقط مضربی از <b>50,000 تومان</b> باشد.\n🔢 لطفاً فقط اعداد انگلیسی وارد کنید.", $cancelKey, 'HTML');
+        $reply = sendMessage(\achbotMessage('wallet.wallet_recharge.wallet_topup_amount_problem.message.ae69d93a89'), $cancelKey, 'HTML');
     } catch (Throwable $failure) {
         $reply = null;
     }
@@ -266,9 +268,9 @@ if ($text != ($buttonValues['cancel'] ?? null) &&
         $from_id, $removeKeyboard, $amount, $amountStep,
         $update->update_id, $message_id);
     if ($result === 'review') {
-        sendMessage('⚠️ وضعیت درخواست شارژ نیازمند بررسی است؛ قبل از تلاش مجدد، وضعیت را بررسی کنید.');
+        sendMessage(\achbotMessage('wallet.wallet_recharge.wallet_topup_amount_problem.message.983d706c66'));
     } elseif ($result !== 'created') {
-        sendMessage('⚠️ این درخواست قبلاً پردازش یا جایگزین شده است. شارژ کیف پول را دوباره از منو آغاز کنید.');
+        sendMessage(\achbotMessage('wallet.wallet_recharge.wallet_topup_amount_problem.message.d0531e17b9'));
     }
     return;
 }
@@ -286,13 +288,13 @@ if (is_string($data) && (strlen($data) <= 64 || ($GLOBALS['achbotManualCryptoVer
         (str_starts_with($data, 'payIncreaseWalletWithGiftCard') ? 'gift_card' : 'bank_transfer');
     if (!achbotManualClaim($connection, $payInfo, $method, (int)$from_id,
                            $GLOBALS['achbotManualCryptoChoice'] ?? null)) {
-        alert("⚠️ پرداخت این سفارش با این روش مجاز نیست یا قبلاً به روش دیگری آغاز شده است.", true);
+        alert(\achbotMessage('wallet.wallet_recharge.wallet_topup_amount_problem.alert.1a885aaca4'), true);
         return;
     }
 
 	$msg = buildCartToCartInfoMessage($paymentKeys, $mainValues, (int)$payInfo['price'], (int)$payInfo['user_id'], $method, (string)$payInfo['hash_id']);
     if ($msg === "") {
-        alert("⚠️ اطلاعات این پرداخت قابل بازیابی نیست؛ با پشتیبانی تماس بگیرید.", true);
+        alert(\achbotMessage('wallet.wallet_recharge.wallet_topup_amount_problem.alert.07ee06b4bc'), true);
         return;
     }
     $keyboard = kbSendReceiptAndCancel(in_array($method, ['manual_usdt','manual_trx'], true) ? "sendIncreaseWalletUsdtReceipt" : ($method === 'gift_card' ? "sendIncreaseWalletGiftReceipt" : "sendIncreaseWalletReceipt"), "cancelIncreaseWalletReceipt", $match['hashId'], $method);
@@ -306,7 +308,7 @@ if (is_string($data) && (strlen($data) <= 64 || ($GLOBALS['achbotManualCryptoVer
     } else {
         // The pinned attempt may be reopened. Never erase the selection menu
         // if Telegram failed to deliver the replacement instructions.
-        alert("⚠️ نمایش اطلاعات پرداخت تأیید نشد. از همان دکمه دوباره تلاش کنید و وجهی ارسال نکنید.", true);
+        alert(\achbotMessage('wallet.wallet_recharge.wallet_topup_amount_problem.alert.7a9c30e938'), true);
     }
     exit;
 }
@@ -323,7 +325,7 @@ if (preg_match('/send(?:IncreaseWallet|IncreaseWalletGift|IncreaseWalletUsdt)Rec
     $method = strpos($data, 'UsdtReceipt') !== false ? achbotManualCryptoReceiptProviderByHash($connection, (string)$match['hashId']) :
         (strpos($data, 'GiftReceipt') !== false ? 'gift_card' : 'bank_transfer');
     if (!achbotManualReceiptAllowed($connection, $payInfo, $method, (int)$from_id)) {
-        alert("⚠️ این رسید با روش پرداخت انتخاب‌شده مطابقت ندارد یا سفارش در انتظار پرداخت نیست.", true);
+        alert(\achbotMessage('wallet.wallet_recharge.wallet_topup_amount_problem.alert.d06bc731eb'), true);
         return;
     }
     $guardMsg = duplicateReceiptGuard($connection, $payInfo, time());
@@ -334,7 +336,7 @@ if (preg_match('/send(?:IncreaseWallet|IncreaseWalletGift|IncreaseWalletUsdt)Rec
     require_once __DIR__ . '/../PaymentLifecycle.php';
     if (!achbotPayUxStartManualReceipt($connection,(int)$payInfo['id'],
                                       $method,(int)$from_id)) {
-        alert('⌛️ مهلت شروع ارسال رسید پایان یافته یا فاکتور در حال بررسی است. اگر وجهی فرستاده‌اید با پشتیبانی تماس بگیرید.',true);
+        alert(\achbotMessage('wallet.wallet_recharge.wallet_topup_amount_problem.alert.560f05f822'),true);
         return;
     }
 
@@ -359,7 +361,7 @@ if (preg_match('/wait(?:IncreaseWallet|IncreaseWalletGift|IncreaseWalletUsdt)Rec
     $receiptPay = dbFetchPayByHash($connection, $match[1]);
     if (!$receiptPay || !achbotManualReceiptAllowed($connection, $receiptPay, $method, (int)$from_id)) {
         setUser();
-        alert("⚠️ این سفارش قابل ثبت رسید نیست؛ برای بررسی با پشتیبانی تماس بگیرید.", true);
+        alert(\achbotMessage('wallet.wallet_recharge.wallet_topup_amount_problem.alert.882596d0f1'), true);
         return;
     }
     $fileid = extractPhotoFileId($update);
@@ -371,7 +373,7 @@ if (preg_match('/wait(?:IncreaseWallet|IncreaseWalletGift|IncreaseWalletUsdt)Rec
 
     $deliveryToken = achbotManualBeginEvidence($connection, $receiptPay, $method, (int)$from_id, $fileid);
     if ($deliveryToken === null) {
-        alert("⚠️ ثبت یا ارسال رسید در جریان است. همان تصویر را دوباره ارسال کنید؛ در صورت تداوم مشکل با پشتیبانی تماس بگیرید.", true);
+        alert(\achbotMessage('wallet.wallet_recharge.wallet_topup_amount_problem.alert.795c4bddb8'), true);
         return;
     }
 
@@ -414,7 +416,7 @@ if (preg_match('/wait(?:IncreaseWallet|IncreaseWalletGift|IncreaseWalletUsdt)Rec
         setUser();
         sendWithStartButton(achbotManualAcknowledgement($receiptPay, $method), $buttonValues['start_bot'], $botUsername, 'mainMenu', 'HTML', (string)$receiptPay['hash_id']);
     } else {
-        sendMessage("📥 تصویر برای پیگیری ثبت شده اما تأیید ارسال به مدیر دریافت نشده است. لطفاً همان تصویر را دوباره بفرستید یا با پشتیبانی تماس بگیرید. پرداخت مجدد انجام ندهید.");
+        sendMessage(\achbotMessage('wallet.wallet_recharge.wallet_topup_amount_problem.message.c346a0d62e'));
     }
     exit;
 }

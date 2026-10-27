@@ -1,0 +1,202 @@
+{
+  "version": 1,
+  "baseline_commit": "7faac9b067f8a171e5e26d6aea5aaf9f4088a3e7",
+  "authorization": "https://github.com/ach1992/bot-refactor/issues/26#issuecomment-6447224257",
+  "edits": [
+    {
+      "path": "config.php",
+      "original": "\\achbotMessage('admin_settings.config.convert_persian_digits_to_english_for_stats.text.9b5548a048')",
+      "replacement": "\"\\u{06F0}\"",
+      "reason": "implementation_token_not_editable_ui"
+    },
+    {
+      "path": "config.php",
+      "original": "\\achbotMessage('admin_settings.config.convert_persian_digits_to_english_for_stats.text.62b6701398')",
+      "replacement": "\"\\u{06F1}\"",
+      "reason": "implementation_token_not_editable_ui"
+    },
+    {
+      "path": "config.php",
+      "original": "\\achbotMessage('admin_settings.config.convert_persian_digits_to_english_for_stats.text.bc9c03bb97')",
+      "replacement": "\"\\u{06F2}\"",
+      "reason": "implementation_token_not_editable_ui"
+    },
+    {
+      "path": "config.php",
+      "original": "\\achbotMessage('admin_settings.config.convert_persian_digits_to_english_for_stats.text.2e3bc84092')",
+      "replacement": "\"\\u{06F3}\"",
+      "reason": "implementation_token_not_editable_ui"
+    },
+    {
+      "path": "config.php",
+      "original": "\\achbotMessage('admin_settings.config.convert_persian_digits_to_english_for_stats.text.d689787678')",
+      "replacement": "\"\\u{06F4}\"",
+      "reason": "implementation_token_not_editable_ui"
+    },
+    {
+      "path": "config.php",
+      "original": "\\achbotMessage('admin_settings.config.convert_persian_digits_to_english_for_stats.text.09f360198d')",
+      "replacement": "\"\\u{06F5}\"",
+      "reason": "implementation_token_not_editable_ui"
+    },
+    {
+      "path": "config.php",
+      "original": "\\achbotMessage('admin_settings.config.convert_persian_digits_to_english_for_stats.text.5b0a493e52')",
+      "replacement": "\"\\u{06F6}\"",
+      "reason": "implementation_token_not_editable_ui"
+    },
+    {
+      "path": "config.php",
+      "original": "\\achbotMessage('admin_settings.config.convert_persian_digits_to_english_for_stats.text.6cb53cda3a')",
+      "replacement": "\"\\u{06F7}\"",
+      "reason": "implementation_token_not_editable_ui"
+    },
+    {
+      "path": "config.php",
+      "original": "\\achbotMessage('admin_settings.config.convert_persian_digits_to_english_for_stats.text.1cf982ef60')",
+      "replacement": "\"\\u{06F8}\"",
+      "reason": "implementation_token_not_editable_ui"
+    },
+    {
+      "path": "config.php",
+      "original": "\\achbotMessage('admin_settings.config.convert_persian_digits_to_english_for_stats.text.662756ac0f')",
+      "replacement": "\"\\u{06F9}\"",
+      "reason": "implementation_token_not_editable_ui"
+    },
+    {
+      "path": "config.php",
+      "original": "\\achbotMessage('admin_settings.config.convert_persian_digits_to_english_for_stats.text.f01f2e7542')",
+      "replacement": "\"\\u{0660}\"",
+      "reason": "implementation_token_not_editable_ui"
+    },
+    {
+      "path": "config.php",
+      "original": "\\achbotMessage('admin_settings.config.convert_persian_digits_to_english_for_stats.text.628f6d71f7')",
+      "replacement": "\"\\u{0661}\"",
+      "reason": "implementation_token_not_editable_ui"
+    },
+    {
+      "path": "config.php",
+      "original": "\\achbotMessage('admin_settings.config.convert_persian_digits_to_english_for_stats.text.537dcdbcaa')",
+      "replacement": "\"\\u{0662}\"",
+      "reason": "implementation_token_not_editable_ui"
+    },
+    {
+      "path": "config.php",
+      "original": "\\achbotMessage('admin_settings.config.convert_persian_digits_to_english_for_stats.text.1a4fd527b1')",
+      "replacement": "\"\\u{0663}\"",
+      "reason": "implementation_token_not_editable_ui"
+    },
+    {
+      "path": "config.php",
+      "original": "\\achbotMessage('admin_settings.config.convert_persian_digits_to_english_for_stats.text.17cd7f45b2')",
+      "replacement": "\"\\u{0664}\"",
+      "reason": "implementation_token_not_editable_ui"
+    },
+    {
+      "path": "config.php",
+      "original": "\\achbotMessage('admin_settings.config.convert_persian_digits_to_english_for_stats.text.398ca650b2')",
+      "replacement": "\"\\u{0665}\"",
+      "reason": "implementation_token_not_editable_ui"
+    },
+    {
+      "path": "config.php",
+      "original": "\\achbotMessage('admin_settings.config.convert_persian_digits_to_english_for_stats.text.54083d9d00')",
+      "replacement": "\"\\u{0666}\"",
+      "reason": "implementation_token_not_editable_ui"
+    },
+    {
+      "path": "config.php",
+      "original": "\\achbotMessage('admin_settings.config.convert_persian_digits_to_english_for_stats.text.015ef630ee')",
+      "replacement": "\"\\u{0667}\"",
+      "reason": "implementation_token_not_editable_ui"
+    },
+    {
+      "path": "config.php",
+      "original": "\\achbotMessage('admin_settings.config.convert_persian_digits_to_english_for_stats.text.ca8c93db97')",
+      "replacement": "\"\\u{0668}\"",
+      "reason": "implementation_token_not_editable_ui"
+    },
+    {
+      "path": "config.php",
+      "original": "\\achbotMessage('admin_settings.config.convert_persian_digits_to_english_for_stats.text.0ff8ff1d86')",
+      "replacement": "\"\\u{0669}\"",
+      "reason": "implementation_token_not_editable_ui"
+    },
+    {
+      "path": "config.php",
+      "original": "\\achbotMessage('admin_settings.config.parse_stats_date_range.text.d4f85d3675')",
+      "replacement": "\"\\u{2013}\"",
+      "reason": "implementation_token_not_editable_ui"
+    },
+    {
+      "path": "config.php",
+      "original": "\\achbotMessage('admin_settings.config.parse_stats_date_range.text.bda050585a')",
+      "replacement": "\"\\u{2014}\"",
+      "reason": "implementation_token_not_editable_ui"
+    },
+    {
+      "path": "config.php",
+      "original": "\\achbotMessage('admin_settings.config.parse_stats_date_range.text.afba2418d6')",
+      "replacement": "\"\\u{2212}\"",
+      "reason": "implementation_token_not_editable_ui"
+    },
+    {
+      "path": "src/Purchase/OrderWrites.php",
+      "original": "$userMessage = \\achbotMessage('purchase.order_writes.ensure_account_creation_succeeded.user_message.7a64d65208', ['inbound_id' => $inbound_id]);",
+      "replacement": "$userMessage = \\achbotMessage('purchase.order_writes.ensure_account_creation_succeeded.user_message.7a64d65208');\n            $title = $serverInfo['title'] ?? \\achbotMessage('purchase.order_writes.ensure_account_creation_succeeded.text.f07a81a062');\n            $adminMessage = \\achbotMessage('purchase.order_writes.ensure_account_creation_succeeded.admin_message.inbound_missing', ['title' => $title, 'inbound_id' => $inbound_id]);",
+      "reason": "customer_privacy_with_authorized_admin_diagnostic"
+    },
+    {
+      "path": "src/Finance/GatewayReturn.php",
+      "original": "\\achbotMessage('gateway.gateway_return.perform_payment_effect.message.3768e94d51', ['inbound_id' => $inbound_id])",
+      "replacement": "\\achbotMessage('gateway.gateway_return.perform_payment_effect.message.3768e94d51')",
+      "reason": "customer_privacy_with_authorized_admin_diagnostic"
+    },
+    {
+      "path": "src/Finance/GatewayReturn.php",
+      "original": "\\achbotMessage('gateway.gateway_return.perform_payment_effect.text.ed588b3bc9')",
+      "replacement": "\\achbotMessage('gateway.gateway_return.perform_payment_effect.text.ed588b3bc9', ['inbound_id' => $inbound_id])",
+      "reason": "customer_privacy_with_authorized_admin_diagnostic"
+    }
+  ],
+  "retired_keys": [
+    "admin_settings.config.convert_persian_digits_to_english_for_stats.text.9b5548a048",
+    "admin_settings.config.convert_persian_digits_to_english_for_stats.text.62b6701398",
+    "admin_settings.config.convert_persian_digits_to_english_for_stats.text.bc9c03bb97",
+    "admin_settings.config.convert_persian_digits_to_english_for_stats.text.2e3bc84092",
+    "admin_settings.config.convert_persian_digits_to_english_for_stats.text.d689787678",
+    "admin_settings.config.convert_persian_digits_to_english_for_stats.text.09f360198d",
+    "admin_settings.config.convert_persian_digits_to_english_for_stats.text.5b0a493e52",
+    "admin_settings.config.convert_persian_digits_to_english_for_stats.text.6cb53cda3a",
+    "admin_settings.config.convert_persian_digits_to_english_for_stats.text.1cf982ef60",
+    "admin_settings.config.convert_persian_digits_to_english_for_stats.text.662756ac0f",
+    "admin_settings.config.convert_persian_digits_to_english_for_stats.text.f01f2e7542",
+    "admin_settings.config.convert_persian_digits_to_english_for_stats.text.628f6d71f7",
+    "admin_settings.config.convert_persian_digits_to_english_for_stats.text.537dcdbcaa",
+    "admin_settings.config.convert_persian_digits_to_english_for_stats.text.1a4fd527b1",
+    "admin_settings.config.convert_persian_digits_to_english_for_stats.text.17cd7f45b2",
+    "admin_settings.config.convert_persian_digits_to_english_for_stats.text.398ca650b2",
+    "admin_settings.config.convert_persian_digits_to_english_for_stats.text.54083d9d00",
+    "admin_settings.config.convert_persian_digits_to_english_for_stats.text.015ef630ee",
+    "admin_settings.config.convert_persian_digits_to_english_for_stats.text.ca8c93db97",
+    "admin_settings.config.convert_persian_digits_to_english_for_stats.text.0ff8ff1d86",
+    "admin_settings.config.parse_stats_date_range.text.d4f85d3675",
+    "admin_settings.config.parse_stats_date_range.text.bda050585a",
+    "admin_settings.config.parse_stats_date_range.text.afba2418d6"
+  ],
+  "source_sha256": {
+    "config.php": {
+      "before": "c18f179dfe71268e4c18a1249099c0ff4893fa199b4e635ae1b6fc322ec9a388",
+      "after": "d5c6cdf2085eeafb4d4c0fd54b9f470da06d0ee4bba6caba0baf9c5297fde128"
+    },
+    "src/Purchase/OrderWrites.php": {
+      "before": "325a4cd915567c489d9eb719062e6efa680a31e9be023a9f8433dae9969bcea0",
+      "after": "6273758aa4d051a9b7a48438c8b8970bcc637d1315d5fd46ef4f3fa1482ab9d6"
+    },
+    "src/Finance/GatewayReturn.php": {
+      "before": "6a363ee0707d5f45613fb3f68503b4002f2d1fd6eef8e69a6321968be40828f9",
+      "after": "2fff9ec44c52dc284847079904ee85ae52a05284ace16a7d536820cfc83ffe4a"
+    }
+  }
+}

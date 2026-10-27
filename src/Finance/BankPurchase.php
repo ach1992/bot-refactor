@@ -71,7 +71,7 @@ function achbotAutoBankFinishBuySub(mysqli $db, array $pay, array $lines): bool 
         $volume=(int)$claim['entitled_volume'];
         $days=(int)$claim['entitled_days'];
         if (!$plan || (int)$plan['server_id']!==$server ||
-            (int)$plan['inbound_id']!==0 || $plan['panel_type']!=='marzban' ||
+            (int)$plan['inbound_id']!==0 || !achbotSupportsPanel($plan['panel_type']) ||
             $volume<=0 || $days<=0 || $days>36500 ||
             $volume>intdiv(PHP_INT_MAX,1073741824))
             throw new RuntimeException('bank_buy_plan_changed');
@@ -144,7 +144,7 @@ function achbotAutoBankFinishBuySub(mysqli $db, array $pay, array $lines): bool 
  */
 function achbotAutoBankProvisionBuySub(
     mysqli $db, array $pay, array $botState, array $buttonValues,
-    array $linkIndices, bool $hideConfigIfMany, string $botUrl
+    array $unusedLinkIndices, bool $unusedHideConfigIfMany, string $botUrl
 ): array {
     achbotEffectRequireAutocommit($db);
     $payId=(int)($pay['id']??0); $owner=(int)($pay['user_id']??0);
@@ -190,7 +190,7 @@ function achbotAutoBankProvisionBuySub(
     if ($p['type']!=='BUY_SUB' || $p['state']!=='processing' ||
         (int)$p['user_id']!==$owner || (int)$p['plan_id']!==$planId ||
         (int)$p['server_id']!==$server || (int)$p['plan_server']!==$server ||
-        (int)$p['inbound_id']!==0 || $p['panel_type']!=='marzban' ||
+        (int)$p['inbound_id']!==0 || !achbotSupportsPanel($p['panel_type']) ||
         !achbotSupportsPanel($p['panel_type']) || $price<=0 || $count>$price ||
         (int)$p['ucount']<$count || !is_string($p['panel_url']) ||
         $p['panel_url']==='')
@@ -213,7 +213,7 @@ function achbotAutoBankProvisionBuySub(
             $description,$owner,$description!==''?$description:null);
         if ($count>1 && $description!=='') $remark.='_'.$i;
         [$response,$remark,$port,$effectId]=achbotCreatePaidAccount($db,$payId,$i,[
-            'user_id'=>$owner,'server_type'=>'marzban','server_id'=>$server,
+            'user_id'=>$owner,'server_type'=>$p['panel_type'],'server_id'=>$server,
             'inbound_id'=>0,'plan_id'=>$planId,'remark'=>$remark,
             'volume'=>$volume,'days'=>$days,'uniqid'=>$uniqid,
             'protocol'=>(string)$p['protocol'],'port'=>$port,
@@ -224,15 +224,16 @@ function achbotAutoBankProvisionBuySub(
             throw new RuntimeException('bank_buy_create_unconfirmed');
 
         [$token,$links,$uuid,$caption,$keys,$qr]=buildLinksAndSendQr(
-            'marzban',$p,$botState,$botUrl,$server,$uniqid,
+            $p['panel_type'],$p,$botState,$botUrl,$server,$uniqid,
             (string)$p['protocol'],$remark,$port,(string)$p['net_type'],0,
             (int)$p['rahgozar'],(string)$p['custom_path'],
             (string)$p['custom_port'],(string)$p['custom_sni'],
-            $response,$owner,$volume,$days,$buttonValues,$linkIndices,
-            $hideConfigIfMany,'',null,false
+            $response,$owner,$volume,$days,$buttonValues,[],
+            false,'',null,false
         );
-        if (!is_string($token) || $token==='' ||
-            !is_string($qr) || $qr==='' || !is_string($links) || $links==='')
+        if (!is_string($token) || ($p['panel_type']==='marzban' && $token==='') ||
+            !is_string($qr) || !is_string($caption) || trim($caption)==='' ||
+            !is_string($links) || $links==='')
             throw new RuntimeException('bank_buy_links_missing');
         $lines[]=['effect_id'=>$effectId,'remark'=>$remark,'volume'=>$volume,
             'days'=>$days,'token'=>$token,'uniqid'=>$uuid?:$uniqid,

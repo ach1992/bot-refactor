@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Post-V9 Marzban-only acceptance; does NOT redefine immutable V9 parity."""
+"""Post-V9 current-runtime acceptance; does NOT redefine immutable V9 parity."""
 from __future__ import annotations
 
 import argparse
@@ -35,11 +35,11 @@ def cmd(*args: str) -> bytes:
 def source_checks():
     if cmd("rev-parse", V9 + "^{tree}").decode().strip() != V9_TREE:
         raise RuntimeError("Frozen historical V9 reference changed")
-    for field in ("database/legacy-schema.sql", "baseInfo.example.php"):
+    for field in ("database/legacy-schema.sql",):
         if (ROOT / field).read_bytes() != cmd("show", V9+":"+field):
             raise RuntimeError("Changed historical schema/private-template: " + field)
     files=package.members()
-    if len(files)!=104 or len(set(files))!=len(files):
+    if len(files)!=package.EXPECTED_RUNTIME_COUNT or len(set(files))!=len(files):
         raise RuntimeError("Source-only runtime file inventory changed")
     if any((ROOT/name).exists() or name in files
            for name in package.RETIRED_RUNTIME_MEMBERS):
@@ -80,7 +80,13 @@ def source_checks():
     check=(ROOT/"config.php").read_text()
     if not re.search(r"function achbotSupportsPanel\(\$type\)",check):
         raise RuntimeError("Missing explicit current supported-panel seam")
-    if "return $type === 'marzban';" not in check:
+    support = re.search(r"function achbotSupportsPanel\(\$type\)\s*\{([^}]+)\}", check)
+    if support is None:
+        raise RuntimeError("Missing supported-provider predicate")
+    probe = "function achbotSupportsPanel($type){" + support.group(1) + "}"
+    probe += "echo json_encode(array_map('achbotSupportsPanel', ['marzban','pasarguard','xui','sanaei','alireza','normal','',null,0,true,[], 'Marzban']));"
+    supported = json.loads(subprocess.check_output(['php','-r',probe],text=True))
+    if supported != [True,True] + [False]*10:
         raise RuntimeError("Unexpected implicit panel support")
     bot=(ROOT/"bot.php").read_text()
     config=(ROOT/"config.php").read_text()
@@ -98,10 +104,10 @@ def source_checks():
     return {"source_files":len(files),"php_lint":len(php_files),
             "original_historical_schema_file_unchanged":True,
             "current_additive_migration_separately_tested":True,
-            "synthetic_baseinfo_example_unchanged":True,
+            "synthetic_baseinfo_example_current_settings_removed":True,
             "historic_contract_changed":False,"retired_provider_api_removed":True,
             "admin_list_debug_artifact_writer_absent":True,
-            "future_pasarguard_or_new_xui_implemented":False}
+            "pasarguard_native_implemented":True, "new_xui_implemented":False}
 
 
 def main():
@@ -235,7 +241,8 @@ def main():
             'review_r4_signed_expiry_beyond',
             'review_r4_signed_expiry_long_renew',
             'panel_neutral_dispatch_to_current_verified_marzban_adapter',
-            'unimplemented_future_panel_denied_without_remote_dispatch',
+            'pasarguard_missing_migration_identity_denied_without_remote_dispatch',
+            'unknown_provider_denied_without_remote_dispatch',
             'two_concurrent_distinct_edits_serialized_no_lost_increment',
             'physical_panel_alias_different_urls_group_lock_no_lost_increment',
             'missing_physical_panel_group_rejects_before_remote_dispatch',
@@ -270,9 +277,21 @@ def main():
         purchases=json.loads(purchase_path.read_text())
         if not (purchases.get("complete") and purchases.get("scenarios")==8 and
                 purchases.get("php_sql_telegram_fake_provider_parity") and
+                purchases.get("sql_provider_wire_exact") is True and
+                purchases.get("telegram_comparison")=="exact_except_explicit_authorized_ui_text_fields" and
+                purchases.get("ui_projection_baseline")=="7faac9b067f8a171e5e26d6aea5aaf9f4088a3e7" and
+                purchases.get("verified_literal_style_pairs")==488 and
+                purchases.get("authorized_ui_field_differences")==3 and
+                purchases.get("ui_projection_negative_controls")==17 and
+                len(purchases.get("rejected_projection_mutations",[]))==17 and
+                {(f.get("case"),f.get("step"),f.get("event_name"),f.get("argument_index"),tuple(f.get("field_path",[])))
+                 for f in purchases.get("authorized_ui_fields",[])}=={
+                    ("admin_plan_price_edit",1,"sendMessage",0,()),
+                    ("interval_plan_manage",0,"editText",1,()),
+                    ("interval_plan_manage",0,"editText",2,("inline_keyboard",0,0,"text"))} and
                 len(purchases.get("changed_paid_nonpaid_source_contracts",[]))==9 and
                 purchases.get("new_source_contracts_mandatory_in_full_aggregate")):
-            raise RuntimeError("Unchanged V9 purchasing/UI parity incomplete")
+            raise RuntimeError("Current purchasing financial/protocol and authorized UI parity incomplete")
         transport_cli=subprocess.run(
             ["php","-n",str(ROOT/"tools/test_post_v9_telegram_log_privacy.php")],
             cwd=ROOT,check=True,timeout=20,capture_output=True,text=True)
@@ -282,14 +301,21 @@ def main():
                 and transport_privacy.get("network_requests")==0
                 and transport_privacy.get("raw_payload_log_records")==0):
             raise RuntimeError("Telegram transport failure logs exposed private data")
-        wallet_cli=subprocess.run(["php",str(ROOT/"tools/test_post_v9_wallet_guard.php")],
-                                  cwd=ROOT,check=True,timeout=25,
-                                  capture_output=True,text=True)
-        wallet_guard=json.loads(wallet_cli.stdout)
+        wallet_guard_path=Path(tmp)/"native-wallet-preflight.json"
+        subprocess.run(["python3",str(ROOT/"tools/test_post_v9_wallet_guard.py"),
+                        "--run-disposable","--report",str(wallet_guard_path)],
+                       cwd=ROOT,check=True,timeout=180,capture_output=True,text=True)
+        wallet_guard=json.loads(wallet_guard_path.read_text())
         if not (wallet_guard.get("complete") and wallet_guard.get("cases")==7
                 and wallet_guard.get("manual_cases")==7
                 and wallet_guard.get("http_calls")==0
-                and wallet_guard.get("committed_sql_mutations")==0):
+                and wallet_guard.get("committed_sql_mutations")==0
+                and wallet_guard.get("total_cases")==15
+                and wallet_guard.get("actual_php_mysqli") is True
+                and wallet_guard.get("select_only_account_enforced") is True
+                and wallet_guard.get("original_23_table_snapshots_unchanged") is True
+                and wallet_guard.get("wallet_rejects_before_transaction") is True
+                and wallet_guard.get("manual_rejects_single_rollback") is True):
             raise RuntimeError("Unsupported wallet checkout mutated money or failed to reject panel")
         wallet_transfer_path=Path(tmp)/"wallet-transfer-current.json"
         subprocess.run(["python3",str(ROOT/"tools/test_post_v9_wallet_transfer.py"),
@@ -301,7 +327,7 @@ def main():
                         "--run-disposable","--report",str(privacy_path)],
                        cwd=ROOT,check=True,timeout=180,capture_output=True)
         finance_privacy=json.loads(privacy_path.read_text())
-        if not (finance_privacy.get("complete") and finance_privacy.get("cases")==23
+        if not (finance_privacy.get("complete") and finance_privacy.get("cases")==25
                 and finance_privacy.get("mutant_privacy_failures_proved")==2
                 and finance_privacy.get("external_requests")==0):
             raise RuntimeError("Executed finance error privacy/uncertain-effects proof incomplete")
@@ -474,6 +500,186 @@ def main():
                 and admin_wallet.get("production_mutations")==0
                 and admin_wallet.get("external_provider_calls")==0):
             raise RuntimeError("Administrator wallet journal and debt proof incomplete")
+        wallet_ux_path=Path(tmp)/"admin-wallet-ux.json"
+        subprocess.run(["python3",str(ROOT/"tools/test_post_v9_admin_wallet_ux.py"),
+                        "--run-disposable","--report",str(wallet_ux_path)],
+                       cwd=ROOT,check=True,timeout=180,capture_output=True)
+        wallet_ux=json.loads(wallet_ux_path.read_text())
+        if not (wallet_ux.get("complete") is True and wallet_ux.get("cases")==33
+                and wallet_ux.get("source_native_php") is True
+                and wallet_ux.get("disposable_db") is True
+                and wallet_ux.get("production_mutations")==0
+                and wallet_ux.get("external_provider_calls")==0):
+            raise RuntimeError("Two-control wallet consent/committed-notice proof incomplete")
+        next_payment_path=Path(tmp)/"next-payment-ux.json"
+        subprocess.run(["python3",str(ROOT/"tools/test_next_payment_ux.py"),
+                        "--run-disposable","--report",str(next_payment_path)],
+                       cwd=ROOT,check=True,timeout=180,capture_output=True)
+        next_payment=json.loads(next_payment_path.read_text())
+        if not (next_payment.get("complete") is True and next_payment.get("cases")==11):
+            raise RuntimeError("Durable payment messages, volume entry and attention proof incomplete")
+        catalog_output=subprocess.run(
+            ["python3",str(ROOT/"tools/test_next_text_catalog.py")],
+            cwd=ROOT,check=True,timeout=180,capture_output=True,text=True)
+        text_catalog=json.loads(catalog_output.stdout)
+        if not (text_catalog.get("status")=="PASS"
+                and text_catalog.get("source_files")==78
+                and text_catalog.get("pre_style_source_equivalent_occurrences")==3202
+                and text_catalog.get("static_ui_violations")==0
+                and text_catalog.get("ascii_ui_violations")==0
+                and text_catalog.get("ascii_audit_negative_controls")==8
+                and text_catalog.get("migrated_machine_fields_or_sql_arguments")==0
+                and text_catalog.get("direct_http_guards")==4
+                and text_catalog.get("native",{}).get("pre_style_templates")==3066
+                and text_catalog.get("native",{}).get("pre_style_interpolated_templates")==293
+                and text_catalog.get("native",{}).get("pre_style_byte_assertions")==4839
+                and text_catalog.get("authorized_source_dependency_files")==3
+                and text_catalog.get("authorized_bootstrap_flow_changes")==1
+                and text_catalog.get("approved_public_copy_corrections")==3
+                and text_catalog.get("native",{}).get("pre_style_byte_preserved_templates")==3063
+                and text_catalog.get("native",{}).get("pre_style_privacy_corrections")==3
+                and text_catalog.get("native",{}).get("actual_traffic_helper_parity_cases")==18
+                and text_catalog.get("editable_catalog_files")==2
+                and text_catalog.get("logical_topics")==25
+                and text_catalog.get("current_authorized_source_edits")==26
+                and text_catalog.get("retired_parser_tokens")==23
+                and text_catalog.get("catalog_keys")==2526
+                and text_catalog.get("native",{}).get("editable_catalog_files")==2
+                and text_catalog.get("native",{}).get("logical_topics")==25
+                and text_catalog.get("native",{}).get("current_catalog_keys")==2526
+                and text_catalog.get("native",{}).get("current_retired_implementation_keys")==23
+                and text_catalog.get("native",{}).get("current_added_admin_keys")==1
+                and text_catalog.get("native",{}).get("current_parameter_privacy_changes")==3
+                and text_catalog.get("native",{}).get("current_style_changes",0)>0
+                and text_catalog["native"]["current_byte_preserved_keys"]
+                    +text_catalog["native"]["current_style_changes"]
+                    +text_catalog["native"]["current_added_admin_keys"]==2526
+                and text_catalog.get("native",{}).get("current_native_template_assertions")==3711
+                and text_catalog.get("native",{}).get("current_object_conversion_templates")==237
+                and text_catalog.get("native",{}).get("current_shared_multi_parameter_templates")==55
+                and text_catalog.get("native",{}).get("current_one_pass_templates")==237
+                and text_catalog.get("native",{}).get("current_non_ascii_digit_templates")==0
+                and text_catalog.get("presentation",{}).get("status")=="PASS"
+                and text_catalog.get("presentation",{}).get("editable_files")==2
+                and text_catalog.get("presentation",{}).get("current_keys")==2526
+                and text_catalog.get("presentation",{}).get("numeric_template_changes")==24
+                and text_catalog.get("presentation",{}).get("adjacent_emoji_violations")==0
+                and text_catalog.get("presentation",{}).get("parameter_exception_count")==3
+                and text_catalog.get("presentation",{}).get("semantic_label_icon_cases")==12
+                and text_catalog.get("presentation",{}).get("semantic_context_icon_cases")==16
+                and text_catalog.get("presentation",{}).get("native_compositions")==6
+                and text_catalog.get("presentation",{}).get("reviewed_semantic_context_cases")==9
+                and text_catalog.get("presentation",{}).get("archived_semantic_context_RED")==7
+                and text_catalog.get("presentation",{}).get("recipient_placement_cases")==12
+                and text_catalog.get("presentation",{}).get("archived_recipient_placement_RED")==12
+                and text_catalog.get("presentation",{}).get("recipient_payloads_byte_unchanged") is True
+                and text_catalog.get("presentation",{}).get("recipient_source_files")==3):
+            raise RuntimeError("Pre-style relocation or current two-file/audience/presentation proof incomplete")
+        copy_audience_output=subprocess.run(
+            ["python3",str(ROOT/"tools/test_next_copy_audience.py")],
+            cwd=ROOT,check=True,timeout=60,capture_output=True,text=True)
+        copy_audience=json.loads(copy_audience_output.stdout)
+        if not (copy_audience.get("complete") is True
+                and copy_audience.get("cases")==16
+                and copy_audience.get("archived_disclosure_RED")==2
+                and copy_audience.get("actual_customer_admin_separation") is True
+                and copy_audience.get("actual_stats_parser_equivalence") is True
+                and copy_audience.get("actual_ascii_date_output") is True
+                and copy_audience.get("database_provider_network_calls")==0
+                and copy_audience.get("presentation_only") is True):
+            raise RuntimeError("Actual copy audience, parser and ASCII date evidence incomplete")
+        bootstrap_output=subprocess.run(
+            ["python3",str(ROOT/"tools/test_next_bootstrap_privacy.py")],
+            cwd=ROOT,check=True,timeout=60,capture_output=True,text=True)
+        bootstrap_privacy=json.loads(bootstrap_output.stdout)
+        if not (bootstrap_privacy.get("status")=="PASS" and bootstrap_privacy.get("cases")==16
+                and bootstrap_privacy.get("archived_disclosure_RED")==2
+                and bootstrap_privacy.get("actual_bootstrap_prefix") is True
+                and bootstrap_privacy.get("exception_and_nonthrowing_connection_charset") is True
+                and bootstrap_privacy.get("owned_http_only") is True
+                and bootstrap_privacy.get("real_database_or_provider_calls")==0):
+            raise RuntimeError("Public bootstrap throwing/nonthrowing failure privacy proof incomplete")
+        gateway_output=subprocess.run(
+            ["python3",str(ROOT/"tools/test_next_gateway_privacy.py"),"--run-disposable"],
+            cwd=ROOT,check=True,timeout=180,capture_output=True,text=True)
+        gateway_privacy=json.loads(gateway_output.stdout)
+        if not (gateway_privacy.get("status")=="PASS" and gateway_privacy.get("cases")==12
+                and gateway_privacy.get("actual_public_pay_entry") is True
+                and gateway_privacy.get("actual_initiation_and_renderer") is True
+                and gateway_privacy.get("archived_unsafe_copy_RED")==3
+                and gateway_privacy.get("static_audience_negative_controls")==3
+                and gateway_privacy.get("native_public_paths")==3
+                and gateway_privacy.get("http_public_paths")==3
+                and gateway_privacy.get("financial_snapshot_unchanged") is True
+                and gateway_privacy.get("provider_or_telegram_calls")==0
+                and gateway_privacy.get("owned_mariadb_and_loopback_only") is True):
+            raise RuntimeError("Public gateway source/HTTP audience privacy proof incomplete")
+        unit_path=Path(tmp)/"service-unit-guards.json"
+        subprocess.run(["python3",str(ROOT/"tools/test_post_v9_service_unit_guards.py"),
+                        "--run-disposable","--report",str(unit_path)],
+                       cwd=ROOT,check=True,timeout=180,capture_output=True)
+        unit_guards=json.loads(unit_path.read_text())
+        if not (unit_guards.get("complete") is True and unit_guards.get("cases")==26
+                and unit_guards.get("actual_php_mysqli") is True
+                and unit_guards.get("owned_socket_mariadb") is True
+                and unit_guards.get("provider_requests")==0
+                and unit_guards.get("production_mutations")==0):
+            raise RuntimeError("Whole-unit immutable add-on quote/claim proof incomplete")
+        pg_client_path=Path(tmp)/"pasarguard-client.json"
+        subprocess.run(["python3",str(ROOT/"tools/test_post_v9_pasarguard_client.py"),
+                        "--run-disposable","--report",str(pg_client_path)],
+                       cwd=ROOT,check=True,timeout=240,capture_output=True)
+        pg_client=json.loads(pg_client_path.read_text())
+        if not (pg_client.get("complete") is True and pg_client.get("cases",0)>=99
+                and pg_client.get("real_php_curl") is True
+                and pg_client.get("disposable_socket_mariadb") is True):
+            raise RuntimeError("Native PasarGuard transport and persistence proof incomplete")
+        cleanup_path=Path(tmp)/"cleanup.json"
+        subprocess.run(["python3",str(ROOT/"tools/test_post_v9_cleanup.py"),
+                        "--run-disposable","--report",str(cleanup_path)],
+                       cwd=ROOT,check=True,timeout=180,capture_output=True)
+        cleanup=json.loads(cleanup_path.read_text())
+        if not (cleanup.get("complete") is True and cleanup.get("count")==16
+                and cleanup.get("live_database_touched") is False
+                and cleanup.get("live_files_touched") is False):
+            raise RuntimeError("Optional cleanup safety proof incomplete")
+        presentation_output=subprocess.check_output(
+            ["php",str(ROOT/"tools/test_subscription_presentation.php")],
+            cwd=ROOT,text=True,timeout=60)
+        if not re.search(r"PASS subscription presentation: 81 checks;",presentation_output):
+            raise RuntimeError("Native subscription presentation proof incomplete")
+        presentation={"complete":True,"checks":81,"real_network":False}
+        provider_path=Path(tmp)/"provider-integration.json"
+        subprocess.run(["python3",str(ROOT/"tools/test_post_v9_provider_integration.py"),
+                        "--run-disposable","--report",str(provider_path)],
+                       cwd=ROOT,check=True,timeout=240,capture_output=True)
+        provider_integration=json.loads(provider_path.read_text())
+        if not (provider_integration.get("complete") is True and provider_integration.get("cases",0)>=219
+                and provider_integration.get("actual_php_curl") is True
+                and provider_integration.get("owned_socket_mariadb") is True
+                and provider_integration.get("real_provider_tested") is False
+                and provider_integration.get("lifecycle_cases")==179
+                and provider_integration.get("admin_read_authorization_cases")==40
+                and provider_integration.get("forbidden_order_queries")==0
+                and provider_integration.get("forbidden_provider_requests")==0
+                and provider_integration.get("baseline_red") is True
+                and provider_integration.get("baseline_red_source")=="fb138eacdc5817922cc1e1c9c200323d24c79838"):
+            raise RuntimeError("Native provider lifecycle and durable intent proof incomplete")
+        currency_path=Path(tmp)/"currency-settings.json"
+        subprocess.run(["python3",str(ROOT/"tools/test_next_currency_settings.py"),
+                        "--run-disposable","--report",str(currency_path)],
+                       cwd=ROOT,check=True,timeout=180,capture_output=True)
+        currency=json.loads(currency_path.read_text())
+        if not (currency.get("pass") is True and len(currency.get("cases",[]))==29):
+            raise RuntimeError("Explicit managed exchange-rate proof incomplete")
+        display_path=Path(tmp)/"server-display-settings.json"
+        subprocess.run(["python3",str(ROOT/"tools/test_server_display_settings.py"),
+                        "--run-disposable","--report",str(display_path)],
+                       cwd=ROOT,check=True,timeout=180,capture_output=True)
+        server_display=json.loads(display_path.read_text())
+        if not (server_display.get("pass") is True and server_display.get("checks",0)>=131
+                and server_display.get("network_calls")==0):
+            raise RuntimeError("Per-server managed display and admin authorization proof incomplete")
         subject_path=Path(tmp)/"payment-subjects.json"
         subprocess.run(["python3",str(ROOT/"tools/test_post_v9_subjects.py"),
                         "--run-disposable","--report",str(subject_path)],
@@ -974,6 +1180,7 @@ def main():
                  'gift_card_legacy_https_validation',
                  'manual_trx_rate_positive_and_clear',
                  'manual_usdt_rate_positive_range',
+                 'normal_agent_rates_validated_upper_boundary_and_clear',
                  'chain_address_manualUsdtWalletBEP20_validated_and_clear',
                  'chain_address_manualUsdtWalletERC20_validated_and_clear',
                  'chain_address_manualUsdtWalletTRC20_validated_and_clear',
@@ -1075,7 +1282,14 @@ def main():
             'usdt_legacy_bep20_default',
             'usdt_valid_trc20',
             'usdt_valid_erc20',
-            'usdt_valid_legacy_private_rate_unverified',
+            'usdt_missing_explicit_settings_rate',
+            'usdt_cleared_explicit_settings_rate',
+            'usdt_agent_only_settings_rate',
+            'normal_shared_rate_audiences',
+            'invalid_agent_rate_only_agent_unavailable',
+            'explicit_agent_rate_without_normal',
+            'hosted_merchant_without_explicit_rate_unavailable',
+            'hosted_merchant_explicit_rate_available',
             'usdt_invalid_rate_remains_blocking_when_trx_is_valid',
             'legacy_off_wallet_only',
             'empty_explicit_new_rule_denies_wallet',
@@ -1100,14 +1314,27 @@ def main():
             'missing_required_final_authorization_index_blocks',
             'database_connection_failure_sanitized',
             'private_sentinel_and_financial_rows_untouched',
+            'optional_cleanup_and_provider_schema_strict_read_only',
         }
+        required_readiness.update({
+            'mismatched_helper_stops_before_database_and_execution',
+            'mismatched_catalog_stops_before_database_and_execution',
+            'missing_manifest_stops_before_database_and_execution',
+            'mismatched_source_precedes_invalid_database_environment',
+            'missing_manifest_precedes_invalid_database_environment',
+        })
         if not (readiness.get('complete') is True and
                 readiness.get('cases')==len(required_readiness) and
                 set(readiness.get('details',[]))==required_readiness and
                 readiness.get('readonly_sql_account_enforced') is True and
+                readiness.get('original_cases_preserved')==54 and
+                readiness.get('archived_source_failure_fallthrough_red') is True and
+                readiness.get('source_failure_stops_before_database_and_helpers') is True and
+                readiness.get('source_identity_only_on_failure') is True and
+                readiness.get('source_failure_all_rows_unchanged') is True and
                 readiness.get('source_usdt_production_helper_compared') is True and
                 readiness.get('source_policy_production_helper_compared') is True and
-                readiness.get('source_members_verified')==104 and
+                readiness.get('source_members_verified')==package.EXPECTED_RUNTIME_COUNT and
                 readiness.get('all_eight_additive_shapes_exercised') is True and
                 readiness.get('no_real_provider_or_telegram_calls') is True and
                 readiness.get('installed_operator_acceptance') is False):
@@ -1490,7 +1717,11 @@ def main():
             "exact_local_order_fk_join_and_no_second_finalize",
             "historical_effect_retained_after_local_subscription_deletion",
         }
-        if not (effects.get("complete") and effects.get("cases")>=22
+        required_effects.update({
+            "paid_link_outside_caller_transaction_refused_without_write",
+            "nonpaid_link_outside_caller_transaction_refused_without_write",
+        })
+        if not (effects.get("complete") and effects.get("cases")>=61
                 and required_effects.issubset(effects.get("scenarios",[]))
                 and effects.get("source_real_php") is True
                 and effects.get("owned_mariadb_only") is True
@@ -1499,6 +1730,40 @@ def main():
                 and effects.get("external_account_count_not_used") is True
                 and effects.get("installed_operator_tested") is False):
             raise RuntimeError("Per-account service operation ledger contract incomplete")
+        locking_path=Path(tmp)/"create-verification-locking.json"
+        try:
+            subprocess.run(["python3",str(ROOT/"tools/test_post_v9_create_verification_locking.py"),
+                            "--run-disposable","--report",str(locking_path)],
+                           cwd=ROOT,check=True,timeout=180,capture_output=True)
+        except (subprocess.CalledProcessError,subprocess.TimeoutExpired) as error:
+            # Owned synthetic fixtures only: retain the actionable child cause
+            # instead of hiding it behind a bare CalledProcessError in CI.
+            detail=(error.stderr or error.stdout or b'').decode(errors='replace')[-6000:]
+            raise RuntimeError("Native CREATE locking regression failed:\n"+detail) from error
+        verification_locking=json.loads(locking_path.read_text())
+        required_locking={
+            "prior_011c_lock_inversion_expected_RED",
+            "corrected_config_first_native_purchase_GREEN",
+            "nonpaid_prior_7dca_expected_RED", "nonpaid_canonical_target_locks_GREEN",
+            "linker_prior_7dca_expected_RED", "linker_canonical_target_locks_GREEN",
+            "active_caller_transaction_refused_without_implicit_commit_or_rollback",
+        }
+        required_locking.update(fault+"_held_no_refund_or_repeat_create" for fault in (
+            "password_drift","username_drift","endpoint_drift","group_drift",
+            "operation_drift","journal_endpoint_drift","verified_write_failure",
+            "commit_false","commit_ack_lost"))
+        locking_cases=verification_locking.get("cases_detail",[])
+        if not (verification_locking.get("complete") is True
+                and verification_locking.get("cases")==len(required_locking)
+                and {r.get("case") for r in locking_cases}==required_locking
+                and all(r.get("pass") is True for r in locking_cases)
+                and verification_locking.get("native_php_mysqli") is True
+                and verification_locking.get("native_pk_lock_witness") is True
+                and verification_locking.get("owned_socket_only") is True
+                and verification_locking.get("isolation_changed") is False
+                and verification_locking.get("live_provider_requests")==0
+                and verification_locking.get("financial_http_retries")==0):
+            raise RuntimeError("Deterministic CREATE claim/link lock-order and unknown-commit proof incomplete")
         # Full PR #66 high-assurance R2: actual global PHP facades, original
         # Core/007 dispatcher and pinned cURL transport on two local panels.
         # This proves route+credential checks survive the real facade boundary.
@@ -2312,7 +2577,7 @@ def main():
             "historical_invalid_tron_destination_requires_review_t",
             "existing_valid_tron_intent_survives_bad_new_config_c",
             "existing_valid_tron_intent_survives_bad_new_config_t",
-            "agent_existing_price_and_trc20_validated",
+            "agent_explicit_settings_price_and_trc20_validated",
             "one_attempt_no_cross_method_claim",
             "single_receipt_claim_no_duplicate_photo_submission",
             "manual_usdt_no_automatic_wallet_credit",
@@ -2607,9 +2872,10 @@ def main():
             'no_financial_effects_from_admin_settings_or_editors',
             'final_persistence_denies_retired_key_weSwapState',
             'final_persistence_denies_retired_key_tronWallet',
+            'managed_display_replaces_only_two_legacy_global_toggles',
         }
         if not (crypto_guard.get('complete')
-                and crypto_guard.get('cases')>=136
+                and crypto_guard.get('cases')>=135
                 and required_crypto_guard.issubset(crypto_guard.get('scenarios',[]))
                 and crypto_guard.get('official_tron_test_vectors_verified')
                 and crypto_guard.get('independent_base58check_oracle')
@@ -2619,6 +2885,9 @@ def main():
                 and crypto_guard.get('retired_flags_preserved_not_mutated')
                 and crypto_guard.get('retired_keys_denied_at_persistence_boundary')
                 and crypto_guard.get('all_advertised_current_admin_toggles_work')
+                and crypto_guard.get('moved_display_global_toggles')==['configLinkState','subLinkState']
+                and crypto_guard.get('retained_original_bot_toggles')==23
+                and crypto_guard.get('retained_original_gateway_toggles')==8
                 and crypto_guard.get('schema_tables')==23
                 and crypto_guard.get('isolated_socket_only')
                 and crypto_guard.get('live_provider_or_chain_calls')==0
@@ -2703,7 +2972,7 @@ def main():
                        cwd=ROOT,check=True,timeout=60,capture_output=True)
         swap=json.loads(overlay_report.read_text())
         if not (swap.get("complete") and swap.get("phase_count")==4
-                and swap.get("runtime_members")==104
+                and swap.get("runtime_members")==package.EXPECTED_RUNTIME_COUNT
                 and swap.get("historical_runtime_members")==92
                 and swap.get("retired_old_payment_files_absent_after_source_upgrade")
                 and swap.get("source_roll_forward_and_back_byte_identical")
@@ -2718,6 +2987,19 @@ def main():
                      "wallet_transfer_generation":transfer_generation,
                      "webhook_file_configuration":webhook_config,
                      "admin_wallet_adjustment_safety":admin_wallet,
+                     "admin_wallet_ux":wallet_ux,
+                     "next_payment_ux":next_payment,
+                     "central_text_catalog":text_catalog,
+                     "copy_audience_and_numeric_source":copy_audience,
+                     "public_bootstrap_privacy":bootstrap_privacy,
+                     "public_gateway_privacy":gateway_privacy,
+                     "service_unit_quote_guards":unit_guards,
+                     "pasarguard_client":pg_client,
+                     "provider_integration":provider_integration,
+                     "currency_settings":currency,
+                     "server_display_settings":server_display,
+                     "optional_cleanup":cleanup,
+                     "subscription_presentation":presentation,
                      "customer_error_privacy":audience,
                      "telegram_transport_log_privacy":transport_privacy,
                     "source_only_overlays":swap,
@@ -2733,6 +3015,7 @@ def main():
                     "wallet_authorization_freshness":wallet_freshness,
                     "latest_review_f1_f4":reviewer_f1_f4,
                     "service_effects":effects,
+                    "create_verification_lock_order":verification_locking,
                     "strict_effect_transport_pin":pinned_effects,
                     "gift_source_enqueue_idempotency":gift_source,
                     "direct_admin_gift_verified":direct_gift,
@@ -2772,6 +3055,14 @@ def main():
                        "wallet_transfer_scenarios":wallet_transfer["cases"],
                        "wallet_transfer_generation_scenarios":transfer_generation["cases"],
                        "admin_wallet_adjustment_scenarios":admin_wallet["cases"],
+                       "admin_wallet_ux_scenarios":wallet_ux["cases"],
+                       "next_payment_ux_scenarios":next_payment["cases"],
+                       "pasarguard_client_scenarios":pg_client["cases"],
+                       "provider_integration_scenarios":provider_integration["cases"],
+                       "currency_settings_scenarios":len(currency["cases"]),
+                       "server_display_checks":server_display["checks"],
+                       "optional_cleanup_scenarios":cleanup["count"],
+                       "subscription_presentation_checks":presentation["checks"],
                        "customer_literal_first_argument_messages_inspected":audience["literal_first_argument_calls_inspected"],
                        "finance_error_audience_execution_cases":finance_privacy["cases"],
                        "telegram_transport_privacy_cases":transport_privacy["cases"],
@@ -2815,4 +3106,12 @@ def main():
 
 
 if __name__=="__main__":
-    main()
+    try:
+        main()
+    except subprocess.CalledProcessError as error:
+        print("Acceptance child failed (exit %s). Captured source-only fixture diagnostics:" % error.returncode, file=sys.stderr)
+        for label, output in (("stdout", error.stdout), ("stderr", error.stderr)):
+            if output:
+                if isinstance(output, bytes): output=output.decode("utf-8", "replace")
+                print(label+":\n"+output[-16000:], file=sys.stderr)
+        raise
