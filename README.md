@@ -1,6 +1,6 @@
 # AChBot
 
-AChBot is a PHP Telegram bot for managing VPN subscriptions, customer/admin accounts, plans, support and scheduled operations. The RC12 source release supports **Marzban and native PasarGuard 5.5.1**; the retired X-UI/Sanaei/Alireza/legacy normal adapters remain unsupported. See the [next-release contract](docs/post-v9/NEXT-RELEASE.md) for the released scope and migration boundaries.
+AChBot is a PHP Telegram bot for managing VPN subscriptions, customer/admin accounts, plans, support and scheduled operations. The RC12 source release supports **Marzban and native PasarGuard 5.5.1**; the retired X-UI/Sanaei/Alireza/legacy normal adapters remain unsupported. See the [release contract](docs/post-v9/NEXT-RELEASE.md) for the released scope and migration boundaries.
 
 **Current release:** [v0.10.0-rc.12](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.12), a source-only prerelease with native PasarGuard, managed server/rate settings, wallet/payment follow-up fixes and two editable text files.
 

@@ -7,7 +7,7 @@ This guide describes the published [RC12 source-only prerelease](https://github.
 immutable published evidence. RC9 installations must first follow their
 [RC9 → RC11 contract](RC9-TO-RC11.md); this is not an RC10 import procedure.
 
-[Issue #81](https://github.com/ach1992/bot-refactor/issues/81) retains the Owner
+[Issue #81](https://github.com/ach1992/bot-refactor/issues/81) retains
 separate installed provider/operator acceptance gates; RC12 source merge and
 publication are complete.
 Source tests, a source ZIP or a successful adapter probe do not grant deployment,

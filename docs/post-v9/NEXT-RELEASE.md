@@ -110,7 +110,7 @@ configuration and perform no SQL installation or maintenance.
 The Master binds exact stabilized source, PHP 8.1/8.4 current tests, detached
 original-V9 gates, package/manifest and fresh author-separated review. Intermediate
 worker checks and adapter probes are not aggregate or installed acceptance.
-[Issue #81](https://github.com/ach1992/bot-refactor/issues/81) retains the Owner
+[Issue #81](https://github.com/ach1992/bot-refactor/issues/81) retains
 separate provider/operator gates. The Owner-authorized RC12 source merge and
 publication are complete; no production approval is implied here.
 
