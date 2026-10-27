@@ -17,7 +17,7 @@ requesting owner; callback data never supplies the displayed numeric identity.
 
 Volume entry reads the complete order needed for identity, provider, expiry,
 agent and plan pricing. Selection repeats owner/provider/expiry checks before
-creating a draft. Positive fractional volume plans remain valid. Agent plan and
+creating a draft. New volume/day add-on invoices require positive whole GiB/days. Agent plan and
 server discounts retain the existing configuration meaning.
 
 The owner-private attention menu collects supported payment subjects from

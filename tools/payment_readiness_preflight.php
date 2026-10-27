@@ -339,10 +339,12 @@ function methodChecks(array $state, array $keys): void {
 $args = options($argv);
 if (($args['--manifest'] ?? null) === null || ($args['--runtime-dir'] ?? null) === null) {
     finding('source_identity', 'BLOCK', 'manifest_and_runtime_dir_required');
+    finish(2);
 } elseif (verifyManifest($args['--manifest'], $args['--runtime-dir'])) {
     finding('source_identity', 'PASS', 'matches_supplied_manifest_not_provenance');
 } else {
     finding('source_identity', 'BLOCK', 'manifest_mismatch_or_untrusted_shape');
+    finish(2);
 }
 if (PHP_VERSION_ID < 80100 || !extension_loaded('mysqli'))
     errorExit('php_runtime', 'php81_and_mysqli_required');
