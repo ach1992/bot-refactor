@@ -11,6 +11,8 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     http_response_code(404);
     exit;
 }
+require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
+
 require_once __DIR__.'/ServiceEffects.php';
 
 require_once __DIR__.'/PaymentLifecycle.php';
@@ -125,26 +127,26 @@ function achbotRecoverySubjectText(array $pay): string {
     $safe=static fn($v)=>htmlspecialchars(substr((string)$v,0,128),ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8');
     $out='';$attempt=$pay['attempt']??null;
     if ($attempt) {
-        $out.="📑 مبلغِ ثبت‌شدهٔ روش پرداخت: <code>".$safe($attempt['quote_amount'])." ".$safe($attempt['quote_currency'])."</code>\n";
+        $out.=\achbotMessage('payment_review.recovery_inspection.recovery_subject_text.out.67b61bb75d').$safe($attempt['quote_amount'])." ".$safe($attempt['quote_currency'])."</code>\n";
         foreach (array_slice($pay['transactions']??[],0,6) as $t)
-            $out.="سند تراکنش: <code>".$safe($t['payment_id'])."</code> | مشاهدهٔ ثبت‌شده: <code>".$safe($t['observed_status'])."</code>\n";
-        $out.="مشاهدهٔ وضعیتِ روش پرداخت به‌تنهایی اثبات تسویه یا تحویل نیست.\n";
+            $out.=\achbotMessage('payment_review.recovery_inspection.recovery_subject_text.out.ba84960b42').$safe($t['payment_id']).\achbotMessage('payment_review.recovery_inspection.recovery_subject_text.text.4f7e040914').$safe($t['observed_status'])."</code>\n";
+        $out.=\achbotMessage('payment_review.recovery_inspection.recovery_subject_text.out.1f27f2ca2e');
     }
     if ($pay['type']==='INCREASE_WALLET') {
-        return $out."اثر مورد بررسی: اعتبار همین شارژ در کیف پول. موجودی فعلی و دفتر تغییرات مدیر، سند این شارژ نیستند؛ این صفحه سند مستقلِ ماندهٔ قبل/بعد برای شارژ ندارد.\n";
+        return $out.\achbotMessage('payment_review.recovery_inspection.recovery_subject_text.text.1cb692e6c9');
     }
     if ($pay['type']==='BUY_SUB') return $out;
-    $kind=$pay['type']==='RENEW_ACCOUNT'?'تمدید':
-        (str_starts_with((string)$pay['type'],'INCREASE_DAY_')?'افزایش روز':'افزایش حجم');
-    $out.="اثر مورد بررسی: ".$kind." اشتراک #".(int)($pay['order_id']??0).".\n";
+    $kind=$pay['type']==='RENEW_ACCOUNT'?\achbotMessage('payment_review.recovery_inspection.recovery_subject_text.text.3225fab3cd'):
+        (str_starts_with((string)$pay['type'],'INCREASE_DAY_')?\achbotMessage('payment_review.recovery_inspection.recovery_subject_text.text.41beb22aa1'):\achbotMessage('payment_review.recovery_inspection.recovery_subject_text.text.4bbbd988ad'));
+    $out.=\achbotMessage('payment_review.recovery_inspection.recovery_subject_text.out.460e830650').$kind.\achbotMessage('payment_review.recovery_inspection.recovery_subject_text.text.679a7d0587').(int)($pay['order_id']??0).".\n";
     $r=$pay['renewal']??null;
     if ($r && (int)$r['user_id']===(int)$pay['user_id'] && (int)$r['order_id']===(int)($pay['order_id']??0)) {
-        $out.="سند تمدید خودکار: <code>".$safe($r['stage'])."</code> | دلیل: <code>".$safe($r['reason_code']??'')."</code>\n".
-            "انقضای چرخه: <code>".$safe($r['cycle_expire'])."</code> | مقصد ثبت‌شده: <code>".$safe($r['new_expire'])."</code>\n";
-    } else $out.="سند مستقلِ اثر برای همین پرداخت در این صفحه موجود نیست؛ دفتر CREATE و شباهت سوابق تغییرات، اثبات این تمدید/افزایش نیستند.\n";
+        $out.=\achbotMessage('payment_review.recovery_inspection.recovery_subject_text.out.44c6ee7199').$safe($r['stage']).\achbotMessage('payment_review.recovery_inspection.recovery_subject_text.text.86754560fe').$safe($r['reason_code']??'')."</code>\n".
+            \achbotMessage('payment_review.recovery_inspection.recovery_subject_text.text.a75318378a').$safe($r['cycle_expire']).\achbotMessage('payment_review.recovery_inspection.recovery_subject_text.text.2048d071c8').$safe($r['new_expire'])."</code>\n";
+    } else $out.=\achbotMessage('payment_review.recovery_inspection.recovery_subject_text.out.4a791e1065');
     if ($pay['target_order']??null)
-        $out.="انقضای فعلیِ اشتراک متعلق به همین مشتری: <code>".$safe($pay['target_order']['expire_date'])."</code>؛ این مقدار قابل تغییر، سند نتیجهٔ این پرداخت نیست.\n";
-    else $out.="اشتراک فعلی با مالکیت این مشتری قابل تطبیق نیست؛ از نبود آن، شکست عملیات تاریخی را نتیجه نگیرید.\n";
+        $out.=\achbotMessage('payment_review.recovery_inspection.recovery_subject_text.out.1cf809d536').$safe($pay['target_order']['expire_date']).\achbotMessage('payment_review.recovery_inspection.recovery_subject_text.text.9480810971');
+    else $out.=\achbotMessage('payment_review.recovery_inspection.recovery_subject_text.out.708e0c6a1f');
     return $out;
 }
 
@@ -154,16 +156,16 @@ function achbotRecoveryEvidenceText(array $pay, ?array $attempt): string {
     $stage=(string)($attempt['stage']??'');
     $status=(string)($attempt['provider_status']??'');
     $terminal=in_array($state,['paid','approved','auto_cart_approved','paid_with_wallet'],true);
-    $funds=$terminal ? 'پرداخت در سابقهٔ سامانه ثبت شده است؛ این صفحه تأیید مالی تازه‌ای انجام نمی‌دهد.'
-        : ($state==='processing_wallet' ? 'برداشت/رزرو کیف پول نیازمند تطبیق با سند ثبت‌شده است.'
-        : ($state==='have_sent' ? 'رسید دریافت شده؛ تصمیم انسانی هنوز ثبت نشده است.'
-        : 'نتیجهٔ پرداخت از شواهد این صفحه قطعی نیست؛ سند روش پرداخت را تطبیق دهید.'));
+    $funds=$terminal ? \achbotMessage('payment_review.recovery_inspection.recovery_evidence_text.text.b02573f9d0')
+        : ($state==='processing_wallet' ? \achbotMessage('payment_review.recovery_inspection.recovery_evidence_text.text.7651d424f1')
+        : ($state==='have_sent' ? \achbotMessage('payment_review.recovery_inspection.recovery_evidence_text.text.fbc388c114')
+        : \achbotMessage('payment_review.recovery_inspection.recovery_evidence_text.text.b7b90e0fc2')));
     $effect=$stage==='done'
-        ? ($status==='compensated' ? 'جبران محلی در دفتر روش پرداخت ثبت شده؛ آن را تحویل سرویس تلقی نکنید.'
-           : 'نتیجهٔ نهایی محلی در دفتر روش پرداخت ثبت شده است؛ این پرونده هشدارِ باز نیست.')
-        : ($terminal && $attempt===null ? 'دفتر جدید روش پرداخت برای این سابقه موجود نیست؛ نبود آن نشانهٔ عدم پرداخت یا عدم تحویل نیست.'
-           : 'تحویل/اثر را جداگانه با سند مختص همین سفارش بررسی کنید؛ عملیات را خودکار تکرار نکنید.');
-    return "💳 پرداخت: ".$funds."\n📦 نتیجه: ".$effect."\n";
+        ? ($status==='compensated' ? \achbotMessage('payment_review.recovery_inspection.recovery_evidence_text.text.49cdc62e8b')
+           : \achbotMessage('payment_review.recovery_inspection.recovery_evidence_text.text.cd957f37f7'))
+        : ($terminal && $attempt===null ? \achbotMessage('payment_review.recovery_inspection.recovery_evidence_text.text.e0191bbaea')
+           : \achbotMessage('payment_review.recovery_inspection.recovery_evidence_text.text.97ebe49e23'));
+    return \achbotMessage('payment_review.recovery_inspection.recovery_evidence_text.label.440766e324').$funds.\achbotMessage('payment_review.recovery_inspection.recovery_evidence_text.text.7fc33173f7').$effect."\n";
 }
 
 /**

@@ -1,4 +1,6 @@
 <?php
+require_once __DIR__ . '/messages/loader.php'; // ACHBOT_TEXT_CATALOG
+
 
 require_once __DIR__ . '/src/Purchase/Core.php';
 require_once __DIR__ . '/src/Subscription/Presentation.php';
@@ -101,27 +103,20 @@ if (!function_exists('buildLinksAndSendQr')) {
         $safeRemark = \AchBot\Subscription\Presentation\escape($remark);
         $safeVolume = \AchBot\Subscription\Presentation\escape($volume);
         $safeDays = \AchBot\Subscription\Presentation\escape($days);
-        $acc_text = "
-🛍 <b>اطلاعات اشتراک جدید شما</b>
-
-🎈 نام کاربری اشتراک:
-<code>$safeRemark</code>
-🔋 حجم اشتراک: $safeVolume گیگ
-⏰ مدت اشتراک: $safeDays روز\n
-";
+        $acc_text = \achbotMessage('subscription.buy_helpers.build_links_and_send_qr.acc_text.698f512161', ['safeRemark' => $safeRemark, 'safeVolume' => $safeVolume, 'safeDays' => $safeDays]);
         if ($presentation['config_html'] !== '') {
-            $acc_text .= "🔌 لینک تکی کانفیگ:\n" . $presentation['config_html'] . "\n\n";
+            $acc_text .= \achbotMessage('subscription.buy_helpers.build_links_and_send_qr.acc_text.2f530a8e37') . $presentation['config_html'] . "\n\n";
         }
         if ($presentation['subscription_html'] !== '') {
-            $acc_text .= "🌐 لینک اصلی اشتراک:\n" . $presentation['subscription_html'];
+            $acc_text .= \achbotMessage('subscription.buy_helpers.build_links_and_send_qr.acc_text.8eb803f6b0') . $presentation['subscription_html'];
         }
         if ($presentation['backup_html'] !== '') {
             $acc_text .= "\n" . $presentation['backup_html'];
         }
         if ($presentation['subscription_url'] !== '') {
-            $acc_text .= "\n\n💡 همیشه اکانت را با لینک اشتراک وارد کنید تا به همه کانفیگ ها دسترسی داشته باشد.";
+            $acc_text .= \achbotMessage('subscription.buy_helpers.build_links_and_send_qr.acc_text.a2bb8da6b7');
             if ($presentation['backup_html'] !== '') {
-                $acc_text .= "\n⚠️ در صورتی که لینک اصلی اشتراک کار نکرد از لینک کمکی اشتراک استفاده کنید.";
+                $acc_text .= \achbotMessage('subscription.buy_helpers.build_links_and_send_qr.acc_text.d5f471a600');
             }
         } elseif ($presentation['notice_html'] !== '') {
             $acc_text .= "\n\n" . $presentation['notice_html'];

@@ -1,6 +1,8 @@
 <?php
 /** AChBot pure subscription presentation; no bootstrap, database or network. */
 namespace AchBot\Subscription\Presentation;
+require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
+
 
 function escape($value): string {
     return htmlspecialchars((string)$value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
@@ -139,7 +141,7 @@ function present(string $provider, array $native, array $botState, array $option
     if (($rawPolicy !== null && !is_array($rawPolicy))
         || (is_array($rawPolicy) && !validPolicy($rawPolicy))) {
         $result['reason'] = 'invalid_policy';
-        $result['notice_html'] = '🔎 لینک‌های اتصال این اشتراک در حال حاضر در دسترس نیست؛ از بخش اشتراک‌های من دوباره بررسی کنید.';
+        $result['notice_html'] = \achbotMessage('subscription.presentation.present.text.d60293ba07');
         return $result;
     }
     $policy = $rawPolicy ?? [];
@@ -219,11 +221,11 @@ function present(string $provider, array $native, array $botState, array $option
             if (is_string($backup) && $backup !== $url && subscriptionUrl($backup) !== '') $backups[] = $backup;
         }
     }
-    if ($backups !== []) $result['backup_html'] = "\n🔁 لینک کمکی اشتراک:\n" . codeLinks(array_values(array_unique($backups)));
+    if ($backups !== []) $result['backup_html'] = \achbotMessage('subscription.presentation.present.text.3ff0456031') . codeLinks(array_values(array_unique($backups)));
     if ($result['selection_missing']) $result['reason'] = 'selection_missing';
     elseif ($result['missing_links']) $result['reason'] = 'links_unavailable';
     if ($result['reason'] !== '' && $result['links'] === [] && $visibleUrl === '') {
-        $result['notice_html'] = '🔎 لینک‌های اتصال این اشتراک در حال حاضر در دسترس نیست؛ از بخش اشتراک‌های من دوباره بررسی کنید.';
+        $result['notice_html'] = \achbotMessage('subscription.presentation.present.text.d60293ba07');
     }
     return $result;
 }
@@ -245,12 +247,12 @@ function backupLinks($subRaw, $token) {
     foreach (array_filter(array_map('trim', explode(',', $subRaw))) as $domain) {
         $links[] = rtrim($domain, '/') . "/sub/$token";
     }
-    return "\n🔁 لینک کمکی اشتراک:\n" . codeLinks($links);
+    return \achbotMessage('subscription.presentation.present.text.3ff0456031') . codeLinks($links);
 }
 
 function configMessage($template, $enableText, $remark, $configLinks, $subLink, $backupSection, bool $hideConfigs = false): string {
     if ($hideConfigs || $configLinks === '') {
-        $template = str_replace("\n🔌 لینک تکی کانفیگ:\nCONNECT-LINK\n", '', $template);
+        $template = str_replace(\achbotMessage('subscription.presentation.config_message.text.2953f9a4ad'), '', $template);
         if ($hideConfigs) $configLinks = '';
     }
     $msg = strtr($template, [
@@ -258,17 +260,17 @@ function configMessage($template, $enableText, $remark, $configLinks, $subLink, 
         'CONNECT-LINK' => $configLinks, 'SUB-LINK' => $subLink,
     ]);
     $msg .= $backupSection;
-    return $msg . "\n\n♻️ در صورتی که قصد دارید حجم دیگری خریداری کنید می توانید از دکمه ← 🔄 <b>تغییر پلن</b> استفاده و بعد تمدید کنید.";
+    return $msg . \achbotMessage('subscription.presentation.config_message.text.359fef2e2b');
 }
 
 function formatTraffic($amount){
     $gb = $amount / (1024 * 1024 * 1024);
     if($gb > 1){
-      return round($gb,2) . " گیگابایت";
+      return round($gb,2) . \achbotMessage('subscription.presentation.format_traffic.text.2acc4ef207');
     }
     else{
         $gb *= 1024;
-        return round($gb,2) . " مگابایت";
+        return round($gb,2) . \achbotMessage('subscription.presentation.format_traffic.text.4f65338b34');
     }
 }
 

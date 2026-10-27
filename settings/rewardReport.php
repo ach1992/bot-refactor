@@ -1,10 +1,12 @@
 <?php
+require_once __DIR__ . '/../messages/loader.php'; // ACHBOT_TEXT_CATALOG
+
 
 include_once __DIR__ . '/../baseInfo.php';
 include_once __DIR__ . '/../config.php';
 
-$sellState=$botState['sellState']=="off"?"خاموش ❌":"روشن ✅";
-$searchState=$botState['searchState']=="off"?"خاموش ❌":"روشن ✅";
+$sellState=$botState['sellState']=="off"?\achbotMessage('jobs.reward_report.text.c2dd5f586f'):\achbotMessage('jobs.reward_report.text.f28e680498');
+$searchState=$botState['searchState']=="off"?\achbotMessage('jobs.reward_report.text.c2dd5f586f'):\achbotMessage('jobs.reward_report.text.f28e680498');
 $rewaredTime = ($botState['rewaredTime']??0);
 $rewaredChannel = $botState['rewardChannel'];
 
@@ -24,14 +26,7 @@ if($rewaredTime>0 && $rewaredChannel != null){
         // overwrite a concurrent administrator's gateway restriction.
         $nextRewardMessage = time() + ($rewaredTime * 60 * 60);
         if (setSettings('lastRewardMessage', $nextRewardMessage)) {
-            $txt = "
-🔰 فروش من در $rewaredTime ساعت گذشته
-
-💰 مبلغ: $totalRewards تومان
-
-☑️ $channelLock
-
-";
+            $txt = \achbotMessage('jobs.reward_report.txt.1bceb49379', ['rewaredTime' => $rewaredTime, 'totalRewards' => $totalRewards, 'channelLock' => $channelLock]);
             sendMessage($txt, null, null, $rewaredChannel);
         } else {
             // Avoid a misleading success/sent state when persistence failed.

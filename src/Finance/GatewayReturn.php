@@ -4,6 +4,8 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     http_response_code(404);
     exit;
 }
+require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
+
 
 require_once __DIR__ . '/GatewayClient.php';
 require_once __DIR__ . '/ServiceEffects.php';
@@ -245,42 +247,42 @@ function achbotNpAlertOperator(mysqli $connection, $adminChatId,
             substr((string)($value ?? ''),0,128),
             ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8');
         $subject=match ((string)$a['type']) {
-            'INCREASE_WALLET' => 'شارژ کیف پول',
-            'BUY_SUB' => 'خرید اشتراک',
-            'RENEW_ACCOUNT' => 'تمدید اشتراک',
-            default => 'پرداخت سفارش',
+            'INCREASE_WALLET' => \achbotMessage('gateway.gateway_initiation.mark_checkout_uncertain.type.991ae08d64'),
+            'BUY_SUB' => \achbotMessage('gateway.gateway_initiation.mark_checkout_uncertain.type.e6343571a4'),
+            'RENEW_ACCOUNT' => \achbotMessage('gateway.gateway_initiation.mark_checkout_uncertain.type.df1c62b99e'),
+            default => \achbotMessage('gateway.gateway_return.np_alert_operator.text.df83eb82dd'),
         };
         $reason=match ((string)$a['provider_status']) {
             'additional_payment','multiple_payments' =>
-                'شواهد پرداخت دیگری برای همین فاکتور دریافت شده است',
-            'partially_paid' => 'مبلغی دریافت شده اما پرداخت کامل نیست',
+                \achbotMessage('gateway.gateway_return.np_alert_operator.text.cc4537b3c7'),
+            'partially_paid' => \achbotMessage('gateway.gateway_return.np_alert_operator.text.ec28d8fba7'),
             'fulfillment_failed','fulfillment_unconfirmed',
-            'fulfillment_needs_review' => 'نتیجهٔ تحویل یا اعتباردهی قطعی نیست',
-            default => 'وضعیت دریافت وجه یا سفارش نیاز به تطبیق دارد',
+            'fulfillment_needs_review' => \achbotMessage('gateway.gateway_return.np_alert_operator.text.84a1e5c442'),
+            default => \achbotMessage('gateway.gateway_return.np_alert_operator.text.2d09871a1b'),
         };
         $username=trim((string)($a['user_handle']??''),'@');
-        $identity=$safe($a['user_name'] ?: 'نامشخص').
+        $identity=$safe($a['user_name'] ?: \achbotMessage('gateway.gateway_return.np_alert_operator.text.f07a81a062')).
             ($username!=='' ? ' (@'.$safe($username).')':'');
         $quote=$safe($a['quote_amount']).' '.$safe($a['quote_currency']);
-        $message="⚠️ <b>پرداخت نیازمند بررسی مالی</b>\n\n".
-                 "👤 <b>کاربر:</b> ".$identity."\n".
-                 "🆔 <b>شناسه تلگرام:</b> <code>".(int)$a['user_id']."</code>\n".
-                 "🧾 <b>موضوع:</b> ".$subject.
-                 (!empty($a['plan_title']) ? ' ـ '.$safe($a['plan_title']):'')."\n".
-                 "💰 <b>مبلغ سفارش:</b> ".number_format((int)$a['price'])." تومان\n".
-                 "💱 <b>مبلغ فاکتور:</b> ".$quote."\n".
-                 "💳 <b>درگاه:</b> NOWPayments\n".
-                 "🔖 <b>سفارش:</b> <code>".$safe($a['order_hash'])."</code>\n".
-                 "🔗 <b>فاکتور درگاه:</b> <code>".$safe($a['provider_reference'])."</code>\n".
-                 "📌 <b>شناسه اصلی:</b> <code>".$safe($a['payment_id'] ?: 'ثبت نشده')."</code>\n".
-                 "📊 <b>شناسه‌های گزارش‌شده:</b> ".$childCount.
-                 " (شواهد وجه اضافی: ".(int)$a['extra_evidence_count'].")\n".
-                 "⚠️ <b>علت:</b> ".$reason."\n".
-                 "🕓 <b>آخرین تغییر:</b> ".$safe($a['updated_at'])."\n\n".
-                 "برای تصمیم مالی ابتدا مبلغ و وضعیت واقعی وجوه و ".
-                 "نتیجهٔ تحویل را تطبیق دهید؛ این اعلان به‌معنی پرداخت موفق دوم نیست.";
+        $message=\achbotMessage('gateway.gateway_return.np_alert_operator.message.00aa2f3ddb').
+                 \achbotMessage('gateway.gateway_return.np_alert_operator.text.a5c241ee14').$identity."\n".
+                 \achbotMessage('gateway.gateway_return.np_alert_operator.text.51de176d3c').(int)$a['user_id']."</code>\n".
+                 \achbotMessage('gateway.gateway_return.np_alert_operator.text.8029d14042').$subject.
+                 (!empty($a['plan_title']) ? \achbotMessage('gateway.gateway_return.np_alert_operator.text.3ecde6c863').$safe($a['plan_title']):'')."\n".
+                 \achbotMessage('gateway.gateway_return.np_alert_operator.text.ff1755f857').number_format((int)$a['price']).\achbotMessage('gateway.gateway_return.np_alert_operator.text.81a62ff6c6').
+                 \achbotMessage('gateway.gateway_return.np_alert_operator.text.7d4d150298').$quote."\n".
+                 \achbotMessage('gateway.gateway_return.np_alert_operator.text.9d6887c013').
+                 \achbotMessage('gateway.gateway_return.np_alert_operator.text.0a771c866b').$safe($a['order_hash'])."</code>\n".
+                 \achbotMessage('gateway.gateway_return.np_alert_operator.text.9c71d4bcce').$safe($a['provider_reference'])."</code>\n".
+                 \achbotMessage('gateway.gateway_return.np_alert_operator.text.64ce2f53c9').$safe($a['payment_id'] ?: \achbotMessage('gateway.gateway_return.np_alert_operator.text.5749a86140'))."</code>\n".
+                 \achbotMessage('gateway.gateway_return.np_alert_operator.text.bc5958e0ae').$childCount.
+                 \achbotMessage('gateway.gateway_return.np_alert_operator.text.daf218b959').(int)$a['extra_evidence_count'].")\n".
+                 \achbotMessage('gateway.gateway_return.np_alert_operator.text.04d4b236f8').$reason."\n".
+                 \achbotMessage('gateway.gateway_return.np_alert_operator.text.283ba2c09b').$safe($a['updated_at'])."\n\n".
+                 \achbotMessage('gateway.gateway_return.np_alert_operator.text.515a991cf3').
+                 \achbotMessage('gateway.gateway_return.np_alert_operator.text.30a0d023b8');
         $keyboard=json_encode(['inline_keyboard'=>[[
-            ['text'=>'🔍 مشاهده و پیگیری پرونده',
+            ['text'=>\achbotMessage('gateway.gateway_return.np_alert_operator.button.3506f17600'),
              'callback_data'=>'npReviewCase_'.$id],
         ]]],JSON_UNESCAPED_UNICODE);
         try {
@@ -511,7 +513,7 @@ if (defined('ACHBOT_NP_RECONCILE_ONLY')) {
         $incomingPaymentId = (string) $_GET['NP_id'];
         $callbackHash = (string) ($_GET['hash_id'] ?? '');
         if ($incomingPaymentId === '') {
-            showForm("کد پرداخت نامعتبر است.", "خطا!");
+            showForm(\achbotMessage('gateway.gateway_return.np_reconcile_batch.message.f8a82e5394'), \achbotMessage('gateway.gateway_return.np_reconcile_batch.message.f48a802b77'));
             return;
         }
         if ($callbackHash !== '') {
@@ -528,7 +530,7 @@ if (defined('ACHBOT_NP_RECONCILE_ONLY')) {
         $stmt->close();
         if (!$preflightPay || empty($preflightPay['payid']) ||
             !achbotSupportsPaymentSubject($connection, $preflightPay)) {
-            showForm("تایید این پرداخت برای سرویس غیرقابل پشتیبانی متوقف شد؛ با پشتیبانی تماس بگیرید.", "خطا");
+            showForm(\achbotMessage('gateway.gateway_return.np_reconcile_batch.message.e898fa59b8'), \achbotMessage('gateway.gateway_return.np_reconcile_batch.message.28954419df'));
             return;
         }
         // New signed-IPN invoices MUST finish only through the shared
@@ -546,8 +548,8 @@ if (defined('ACHBOT_NP_RECONCILE_ONLY')) {
                 // Stage is local evidence; never infer final settlement here.
                 $presentation = in_array((string)$existing['stage'], ['pending','creating'], true)
                     ? 'pending' : 'review';
-                showForm("درخواست پرداخت ثبت شده و بدون نیاز به این صفحه، خودکار بررسی می‌شود.",
-                         "پیگیری پرداخت", false, $presentation);
+                showForm(\achbotMessage('gateway.gateway_return.np_reconcile_batch.message.678120fc1c'),
+                         \achbotMessage('gateway.gateway_return.np_reconcile_batch.message.da0bc406d8'), false, $presentation);
                 return;
             }
         }
@@ -556,8 +558,8 @@ if (defined('ACHBOT_NP_RECONCILE_ONLY')) {
         // payout policy. Even an authenticated 'finished' GET cannot prove
         // that this particular order's agreed fiat amount was settled.
         // Never auto-credit or auto-cancel from a legacy browser callback.
-        showForm("این فاکتور قدیمی نیازمند بررسی تایید مبلغ توسط پشتیبانی است؛ وضعیت آن بدون تغییر محفوظ ماند.",
-                 "پیگیری پرداخت", false, 'review');
+        showForm(\achbotMessage('gateway.gateway_return.np_reconcile_batch.message.bd2edf700f'),
+                 \achbotMessage('gateway.gateway_return.np_reconcile_batch.message.da0bc406d8'), false, 'review');
         return;
     } else {
         // The success_url carries only the merchant order hash, not a trusted
@@ -573,14 +575,14 @@ if (defined('ACHBOT_NP_RECONCILE_ONLY')) {
             $state=$local['state'] ?? null;
         }
         if ($state === 'paid') {
-            showForm("پرداخت شما ثبت شده است؛ نتیجه و لینک سرویس در ربات ارسال می‌شود.",
-                     "پرداخت ثبت‌شده", true, 'review');
+            showForm(\achbotMessage('gateway.gateway_return.np_reconcile_batch.message.0116c30fc4'),
+                     \achbotMessage('gateway.gateway_return.np_reconcile_batch.message.5cf3e172d8'), true, 'review');
         } elseif ($state === 'pending' || $state === 'send') {
-            showForm("پرداخت در حال بررسی خودکار است؛ برای دریافت سرویس نیازی به زدن دکمه بازگشت نیست.",
-                     "در حال بررسی", true, 'pending');
+            showForm(\achbotMessage('gateway.gateway_return.np_reconcile_batch.message.e46087af54'),
+                     \achbotMessage('gateway.gateway_return.np_reconcile_batch.message.f71cd91dad'), true, 'pending');
         } else {
-            showForm("نتیجه پرداخت در این صفحه قابل تایید نیست؛ وضعیت سفارش را در ربات پیگیری کنید.",
-                     "پیگیری پرداخت", false, 'review');
+            showForm(\achbotMessage('gateway.gateway_return.np_reconcile_batch.message.c4374c5a30'),
+                     \achbotMessage('gateway.gateway_return.np_reconcile_batch.message.da0bc406d8'), false, 'review');
         }
     }
 
@@ -595,11 +597,11 @@ if (defined('ACHBOT_NP_RECONCILE_ONLY')) {
     $stmt->close();
 
     if (mysqli_num_rows($payInfo) == 0) {
-        showForm("کد پرداخت یافت نشد.", "خطا!");
+        showForm(\achbotMessage('gateway.gateway_initiation.mark_checkout_uncertain.message.2d0a6d7c50'), \achbotMessage('gateway.gateway_return.np_reconcile_batch.message.f48a802b77'));
     } else {
         $payParam = $payInfo->fetch_assoc();
         if (!achbotSupportsPaymentSubject($connection, $payParam)) {
-            showForm("تایید این پرداخت برای سرویس غیرقابل پشتیبانی متوقف شد؛ با پشتیبانی تماس بگیرید.", "خطا");
+            showForm(\achbotMessage('gateway.gateway_return.np_reconcile_batch.message.e898fa59b8'), \achbotMessage('gateway.gateway_return.np_reconcile_batch.message.28954419df'));
             return;
         }
 
@@ -611,7 +613,7 @@ if (defined('ACHBOT_NP_RECONCILE_ONLY')) {
         // this exact order. Old orders without stored Authority need manual
         // review: there is no safe auto-settlement identity binding.
         if ($Authority === '' || (string)($payParam['payid'] ?? '') !== $Authority) {
-            showForm("شناسه پرداخت زرین پال با سفارش مطابقت ندارد؛ نیازمند بررسی است.", "درگاه زرین پال", false, 'review');
+            showForm(\achbotMessage('gateway.gateway_return.np_reconcile_batch.message.cf271d9662'), \achbotMessage('gateway.gateway_return.np_reconcile_batch.message.c0199d5243'), false, 'review');
             return;
         }
         // New attempts use a provider-scoped unique external identity. Old
@@ -637,14 +639,14 @@ if (defined('ACHBOT_NP_RECONCILE_ONLY')) {
                 (int)$attempt['local_amount_toman']!==$amount ||
                 !achbotNpDecimalAtLeast($attempt['quote_amount'],(string)$amount) ||
                 !achbotNpDecimalAtLeast((string)$amount,$attempt['quote_amount'])))) {
-                showForm("این پرداخت نیازمند تطبیق امن با سفارش است.", "پیگیری پرداخت", false, 'review');
+                showForm(\achbotMessage('gateway.gateway_return.np_reconcile_batch.message.e72296ca09'), \achbotMessage('gateway.gateway_return.np_reconcile_batch.message.da0bc406d8'), false, 'review');
                 return;
             }
             $scoped=$attempt!==null;
             if ($scoped &&
                 achbotHasUnscopedPaymentReferenceCollision($connection,$Authority,$rowId)) {
-                showForm("شناسه پرداخت نیازمند بررسی پشتیبانی است؛ سفارش محفوظ ماند.",
-                         "پیگیری پرداخت", false, 'review');
+                showForm(\achbotMessage('gateway.gateway_return.np_reconcile_batch.message.67fa35fa63'),
+                         \achbotMessage('gateway.gateway_return.np_reconcile_batch.message.da0bc406d8'), false, 'review');
                 return;
             }
         }
@@ -658,7 +660,7 @@ if (defined('ACHBOT_NP_RECONCILE_ONLY')) {
             $stmt->close();
             if ($authorities->num_rows!==1 ||
                 (int)$authorities->fetch_assoc()['id']!==$rowId) {
-                showForm("شناسه تراکنش یکتا نیست؛ تسویه برای بررسی متوقف شد.", "پیگیری پرداخت", false, 'review');
+                showForm(\achbotMessage('gateway.gateway_return.np_reconcile_batch.message.498c9fb2b1'), \achbotMessage('gateway.gateway_return.np_reconcile_batch.message.da0bc406d8'), false, 'review');
                 return;
             }
         }
@@ -674,8 +676,8 @@ if (defined('ACHBOT_NP_RECONCILE_ONLY')) {
                 'Amount'=>$amount
             ]);
         } catch (\Throwable $error) {
-            showForm("وضعیت تراکنش از پذیرنده قابل تایید نبود؛ سفارش محفوظ است.",
-                     "پیگیری زرین پال", false, 'review');
+            showForm(\achbotMessage('gateway.gateway_return.np_reconcile_batch.message.965bc59eaf'),
+                     \achbotMessage('gateway.gateway_return.np_reconcile_batch.message.858b02ccfe'), false, 'review');
             return;
         }
         // SOAP Status is an exact protocol code, not a numeric amount:
@@ -692,8 +694,8 @@ if (defined('ACHBOT_NP_RECONCILE_ONLY')) {
             // are not documented here as irreversible nonpayment. Never
             // cancel an order without independently established, exact
             // provider-specific terminal-negative proof.
-            showForm("نتیجه تراکنش نیازمند تطبیق با پذیرنده است؛ سفارش لغو نشد.",
-                     "پیگیری زرین پال", false, 'review');
+            showForm(\achbotMessage('gateway.gateway_return.np_reconcile_batch.message.26b2f2ff4c'),
+                     \achbotMessage('gateway.gateway_return.np_reconcile_batch.message.858b02ccfe'), false, 'review');
         }
     }
 
@@ -726,13 +728,13 @@ if (defined('ACHBOT_NP_RECONCILE_ONLY')) {
                 (int)$payParam['attempt_local_amount']!==(int)$payParam['price'] ||
                 !achbotNpDecimalAtLeast($payParam['quote_amount'],(string)$payParam['price']) ||
                 !achbotNpDecimalAtLeast((string)$payParam['price'],$payParam['quote_amount'])))) {
-                showForm("هویت یا مبلغ این پرداخت نیازمند بررسی است.", "پیگیری پرداخت", false, 'review');
+                showForm(\achbotMessage('gateway.gateway_return.np_reconcile_batch.message.2a57015571'), \achbotMessage('gateway.gateway_return.np_reconcile_batch.message.da0bc406d8'), false, 'review');
                 return;
             }
             if ($payParam && achbotHasUnscopedPaymentReferenceCollision(
                 $connection,$hash_id,(int)$payParam['id'])) {
-                showForm("شناسه تراکنش نیازمند تطبیق پشتیبانی است؛ سفارش محفوظ ماند.",
-                         "پیگیری پرداخت", false, 'review');
+                showForm(\achbotMessage('gateway.gateway_return.np_reconcile_batch.message.149dd8c934'),
+                         \achbotMessage('gateway.gateway_return.np_reconcile_batch.message.da0bc406d8'), false, 'review');
                 return;
             }
             if (!$payParam) {
@@ -776,14 +778,14 @@ if (defined('ACHBOT_NP_RECONCILE_ONLY')) {
     }
 
     if (!$payParam) {
-        showForm("کد پرداخت یافت نشد یا یکتا نیست.", "خطا!");
+        showForm(\achbotMessage('gateway.gateway_return.np_reconcile_batch.message.faca1dabd3'), \achbotMessage('gateway.gateway_return.np_reconcile_batch.message.f48a802b77'));
     } else {
         if (!in_array($payParam['state'], ['pending', 'send'], true)) {
-            showForm("این پرداخت قبلاً بررسی شده است.", "خطا!");
+            showForm(\achbotMessage('gateway.gateway_return.np_reconcile_batch.message.cef6ec0c00'), \achbotMessage('gateway.gateway_return.np_reconcile_batch.message.f48a802b77'));
             return;
         }
         if (!achbotSupportsPaymentSubject($connection, $payParam)) {
-            showForm("تایید این پرداخت برای سرویس غیرقابل پشتیبانی متوقف شد؛ با پشتیبانی تماس بگیرید.", "خطا");
+            showForm(\achbotMessage('gateway.gateway_return.np_reconcile_batch.message.e898fa59b8'), \achbotMessage('gateway.gateway_return.np_reconcile_batch.message.28954419df'));
             return;
         }
 
@@ -827,19 +829,19 @@ if (defined('ACHBOT_NP_RECONCILE_ONLY')) {
             $changed = $stmt->affected_rows === 1;
             $stmt->close();
             if (!$changed) {
-                showForm("وضعیت پرداخت تغییر کرده است؛ با پشتیبانی تماس بگیرید.", "خطا!", false, 'review');
+                showForm(\achbotMessage('gateway.gateway_return.np_reconcile_batch.message.d9ed0f4231'), \achbotMessage('gateway.gateway_return.np_reconcile_batch.message.f48a802b77'), false, 'review');
                 return;
             }
-            showForm("پرداخت شما انجام نشد!", "درگاه نکست پی", false, 'failed');
+            showForm(\achbotMessage('gateway.gateway_return.np_reconcile_batch.message.4406d657a1'), \achbotMessage('gateway.gateway_return.np_reconcile_batch.message.26003a476f'), false, 'failed');
         } else {
             // Preserve the current payment for a later trusted verification.
             // Do not debit, credit or settle an unknown payment outcome.
-            showForm("وضعیت پرداخت هنوز قطعی نیست یا استعلام در دسترس نیست؛ لطفاً بعداً دوباره بررسی کنید.", "درگاه نکست پی", false, 'review');
+            showForm(\achbotMessage('gateway.gateway_return.np_reconcile_batch.message.463d7338a5'), \achbotMessage('gateway.gateway_return.np_reconcile_batch.message.26003a476f'), false, 'review');
         }
     }
 
 } else {
-    showForm("درگاه پرداخت شناسایی نشد.", "خطا!");
+    showForm(\achbotMessage('gateway.gateway_return.np_reconcile_batch.message.1d15981671'), \achbotMessage('gateway.gateway_return.np_reconcile_batch.message.f48a802b77'));
     exit();
 }
 
@@ -1076,7 +1078,7 @@ function achbotNpDeferUncertainRemoteEffect($gateType, $payDescription): bool {
     // Provider settlement cannot prove remote Marzban success. A timeout
     // after remote success is NOT evidence that a refund is safe.
     if (!in_array($gateType,['nowpayment','nextpay','zarinpal'],true)) return false;
-    showForm('پرداخت تایید شده است اما نتیجه عملیات سرویس هنوز قطعی نیست. وضعیت برای بررسی امن ثبت می‌شود و بازپرداخت خودکار انجام نمی‌شود.', $payDescription, false, 'review');
+    showForm(\achbotMessage('gateway.gateway_return.np_defer_uncertain_remote_effect.message.adae4bb365'), $payDescription, false, 'review');
     return true;
 }
 
@@ -1091,7 +1093,7 @@ function achbotPerformPaymentEffect($payRowId, $gateType, &$effectStage = null) 
     $rewardChannel = $botState['rewardChannel'] ?? null;
     $buttonValuesLocal = (isset($buttonValues) && is_array($buttonValues))
         ? $buttonValues
-        : ['back_to_main' => "↪️ بازگشت به منوی اصلی"];
+        : ['back_to_main' => \achbotMessage('gateway.gateway_return.perform_payment_effect.text.275b4903d9')];
 
     $linkIndicesLocal = (isset($linkIndices) && is_array($linkIndices) && count($linkIndices))
         ? $linkIndices
@@ -1108,13 +1110,13 @@ function achbotPerformPaymentEffect($payRowId, $gateType, &$effectStage = null) 
     $stmt->close();
 
     if (mysqli_num_rows($payInfo) == 0) {
-        showForm("کد پرداخت یافت نشد.", "خطا!");
+        showForm(\achbotMessage('gateway.gateway_initiation.mark_checkout_uncertain.message.2d0a6d7c50'), \achbotMessage('gateway.gateway_return.np_reconcile_batch.message.f48a802b77'));
         return false;
     }
 
     $payParam = $payInfo->fetch_assoc();
         if (!achbotSupportsPaymentSubject($connection, $payParam)) {
-            showForm("تایید این پرداخت برای سرویس غیرقابل پشتیبانی متوقف شد؛ با پشتیبانی تماس بگیرید.", "خطا");
+            showForm(\achbotMessage('gateway.gateway_return.np_reconcile_batch.message.e898fa59b8'), \achbotMessage('gateway.gateway_return.np_reconcile_batch.message.28954419df'));
             return false;
         }
 
@@ -1132,7 +1134,7 @@ function achbotPerformPaymentEffect($payRowId, $gateType, &$effectStage = null) 
     $agentBought= (int)($payParam['agent_bought'] ?? 0);
 
     $payDescription = payTypeToDescription($payType);
-    if ($gateType == "zarinpal" || $gateType == "nextpay") $payDescription = "خرید اشتراک";
+    if ($gateType == "zarinpal" || $gateType == "nextpay") $payDescription = \achbotMessage('gateway.gateway_initiation.mark_checkout_uncertain.type.e6343571a4');
 
     if ($gateType === 'nowpayment') {
         $stmt=$connection->prepare("SELECT local_amount_toman FROM payment_attempts
@@ -1143,7 +1145,7 @@ function achbotPerformPaymentEffect($payRowId, $gateType, &$effectStage = null) 
         $stmt->close();
         if (!$expected || (int)$expected['local_amount_toman'] <= 0 ||
             (int)$expected['local_amount_toman'] !== $amount) {
-            showForm("مبلغ سفارش پس از صدور فاکتور تغییر کرده است؛ تحویل متوقف شد.", "پیگیری پرداخت", false, 'review');
+            showForm(\achbotMessage('gateway.gateway_return.perform_payment_effect.message.c79ed0ecc0'), \achbotMessage('gateway.gateway_return.np_reconcile_batch.message.da0bc406d8'), false, 'review');
             return false;
         }
     }
@@ -1174,11 +1176,11 @@ function achbotPerformPaymentEffect($payRowId, $gateType, &$effectStage = null) 
             in_array($gateType,['nextpay','zarinpal'],true)) {
             // Provider verification has succeeded, but neither a local paid
             // claim nor an operator-review row is guaranteed to exist.
-            showForm('پرداخت تأیید شده است اما ثبت نتیجهٔ سفارش تکمیل نشده است. لطفاً دوباره پرداخت نکنید، مشخصات پرداخت را نگه دارید و با پشتیبانی تماس بگیرید.',
-                     'پیگیری پرداخت', false, 'review');
+            showForm(\achbotMessage('gateway.gateway_return.perform_payment_effect.message.a64929caf4'),
+                     \achbotMessage('gateway.gateway_return.np_reconcile_batch.message.da0bc406d8'), false, 'review');
             return 'ambiguous';
         }
-        showForm("این پرداخت در حال پردازش یا قبلاً نهایی شده است.", "پیگیری پرداخت", false, 'review');
+        showForm(\achbotMessage('gateway.gateway_return.perform_payment_effect.message.e3ee1490e9'), \achbotMessage('gateway.gateway_return.np_reconcile_batch.message.da0bc406d8'), false, 'review');
         return false;
     }
 
@@ -1234,13 +1236,13 @@ function achbotPerformPaymentEffect($payRowId, $gateType, &$effectStage = null) 
                 $amount,
                 $gateType,
                 $admin,
-                "میخواست اشتراک بخره، ظرفیت پر بود.",
+                \achbotMessage('gateway.gateway_return.perform_payment_effect.text.97b1eb9941'),
 				$rewardChannel
             )) {
-                showForm('⚠️ پرداخت ثبت شده ولی بازگشت اعتبار کیف پول تأیید نشد؛ پشتیبانی باید بررسی کند.', $payDescription, false, 'review');
+                showForm(\achbotMessage('gateway.gateway_return.perform_payment_effect.message.bd952e9bc9'), $payDescription, false, 'review');
                 return 'ambiguous';
             }
-            showForm('پرداخت شما انجام شد ولی ظرفیت این کانکشن پر شده است، مبلغ ' . number_format($amount) . " تومان به کیف پول شما اضافه شد.", $payDescription, false, 'review');
+            showForm(\achbotMessage('gateway.gateway_return.perform_payment_effect.message.cf0e1ca461') . number_format($amount) . \achbotMessage('gateway.gateway_return.perform_payment_effect.message.606f350948'), $payDescription, false, 'review');
 
             return 'compensated';
         }
@@ -1296,13 +1298,13 @@ function achbotPerformPaymentEffect($payRowId, $gateType, &$effectStage = null) 
                     $amount,
                     $gateType,
                     $admin,
-                    "میخواست اشتراک بخره، اتصال به سرور برقرار نبود",
+                    \achbotMessage('gateway.gateway_return.perform_payment_effect.text.bcbe393f99'),
 					$rewardChannel
                 )) {
-                    showForm('⚠️ پرداخت ثبت شده ولی بازگشت اعتبار کیف پول تأیید نشد؛ پشتیبانی باید بررسی کند.', $payDescription, false, 'review');
+                    showForm(\achbotMessage('gateway.gateway_return.perform_payment_effect.message.bd952e9bc9'), $payDescription, false, 'review');
                     return 'ambiguous';
                 }
-                showForm('⚠️ پرداخت شما با موفقیت انجام شد. ولی اتصال به سرور برقرار نیست لطفا مدیر رو در جریان بزار ... مبلغ ' . number_format($amount) . " به کیف پولت اضافه شد.", $payDescription, false, 'review');
+                showForm(\achbotMessage('gateway.gateway_return.perform_payment_effect.message.6ae4e71c95') . number_format($amount) . \achbotMessage('gateway.gateway_return.perform_payment_effect.message.c042799f80'), $payDescription, false, 'review');
 
                 return 'compensated';
             }
@@ -1317,13 +1319,13 @@ function achbotPerformPaymentEffect($payRowId, $gateType, &$effectStage = null) 
                     $amount,
                     $gateType,
                     $admin,
-                    "میخواست اشتراک بخره، ولی اینباند پیدا نشد.",
+                    \achbotMessage('gateway.gateway_return.perform_payment_effect.text.ed588b3bc9'),
 					$rewardChannel
                 )) {
-                    showForm('⚠️ پرداخت ثبت شده ولی بازگشت اعتبار کیف پول تأیید نشد؛ پشتیبانی باید بررسی کند.', $payDescription, false, 'review');
+                    showForm(\achbotMessage('gateway.gateway_return.perform_payment_effect.message.bd952e9bc9'), $payDescription, false, 'review');
                     return 'ambiguous';
                 }
-                showForm("پرداخت شما با موفقیت انجام شد. ولی ❌ | 🥺 سطر (inbound) با آیدی $inbound_id تو این سرور وجود نداره، مدیر رو در جریان بزار ... مبلغ " . number_format($amount) . " به کیف پول شما اضافه شد.", $payDescription, false, 'review');
+                showForm(\achbotMessage('gateway.gateway_return.perform_payment_effect.message.3768e94d51', ['inbound_id' => $inbound_id]) . number_format($amount) . \achbotMessage('gateway.gateway_return.perform_payment_effect.message.3828187c8e'), $payDescription, false, 'review');
 
                 return 'compensated';
             }
@@ -1342,7 +1344,7 @@ function achbotPerformPaymentEffect($payRowId, $gateType, &$effectStage = null) 
                 if (achbotNpDeferUncertainRemoteEffect($gateType, $payDescription)) return 'ambiguous';
 
 
-                $adminErr = "خطای سرور " . ($serverInfo['title'] ?? '-') . ":\n\n" . ($msg ?: 'بدون پیام خطا');
+                $adminErr = \achbotMessage('gateway.gateway_return.perform_payment_effect.admin_err.7ac91c73da') . ($serverInfo['title'] ?? '-') . ":\n\n" . ($msg ?: \achbotMessage('gateway.gateway_return.perform_payment_effect.text.9d93e5efb8'));
 				notifyAllAdminsSimple($adminErr, $admin, "html", null, $rewardChannel);
 
                 if (!refundToWalletAndNotify(
@@ -1351,13 +1353,13 @@ function achbotPerformPaymentEffect($payRowId, $gateType, &$effectStage = null) 
                     $amount,
                     $gateType,
                     $admin,
-                    "میخواست اشتراک بخره، ولی خطا داد.",
+                    \achbotMessage('gateway.gateway_return.perform_payment_effect.text.e3675596f3'),
 					$rewardChannel
                 )) {
-                    showForm('⚠️ پرداخت ثبت شده ولی بازگشت اعتبار کیف پول تأیید نشد؛ پشتیبانی باید بررسی کند.', $payDescription, false, 'review');
+                    showForm(\achbotMessage('gateway.gateway_return.perform_payment_effect.message.bd952e9bc9'), $payDescription, false, 'review');
                     return 'ambiguous';
                 }
-                showForm('⚠️ پرداخت شما با موفقیت انجام شد. ولی خطا داد لطفا به مدیر اطلاع دهید ... مبلغ ' . number_format($amount) . " تومان به کیف پولت اضافه شد.", $payDescription, false, 'review');
+                showForm(\achbotMessage('gateway.gateway_return.perform_payment_effect.message.7ea4d9ee52') . number_format($amount) . \achbotMessage('gateway.gateway_return.perform_payment_effect.message.a0b19d8503'), $payDescription, false, 'review');
 
                 return 'compensated';
             }
@@ -1437,7 +1439,7 @@ function achbotPerformPaymentEffect($payRowId, $gateType, &$effectStage = null) 
             }
         }
 
-        showForm('✅ پرداخت تأیید شد؛ وضعیت تحویل سرویس را در ربات بررسی کنید.',
+        showForm(\achbotMessage('gateway.gateway_return.perform_payment_effect.message.effdee0c2d'),
                  $payDescription, true, 'review');
 
         $user_info = Bot('getChat', ['chat_id' => $user_id])->result;
@@ -1446,24 +1448,14 @@ function achbotPerformPaymentEffect($payRowId, $gateType, &$effectStage = null) 
 
         $keys = json_encode(['inline_keyboard' => [
             [
-                ['text' => "💳 خرید از درگاه $gateType", 'callback_data' => 'wizwizch'],
+                ['text' => \achbotMessage('gateway.gateway_return.perform_payment_effect.button.b9d052f74c', ['gateType' => $gateType]), 'callback_data' => 'wizwizch'],
             ],
             [
-                ['text' => "🆔 $hash_id", 'callback_data' => "noop_$hash_id"]
+                ['text' => \achbotMessage('gateway.gateway_return.perform_payment_effect.hash_id.2899228604', ['hash_id' => $hash_id]), 'callback_data' => "noop_$hash_id"]
             ]
         ]]);
 
-        $msg = "
-➕ خرید جدید (درگاه $gateType)
-
-🔐 آیدی کاربر: $user_id
-🛡️ نام کاربر: $first_name
-🔖 نام کاربری تلگرام: @$username
-💰 مبلغ پرداختی: $amount تومان
-🎈 نام اشتراک: $remark
-🔋 حجم اشتراک: $volume گیگ
-⏰ مدت اشتراک: $days روز
-";
+        $msg = \achbotMessage('gateway.gateway_return.perform_payment_effect.msg.8205ac68fa', ['gateType' => $gateType, 'user_id' => $user_id, 'first_name' => $first_name, 'username' => $username, 'amount' => $amount, 'remark' => $remark, 'volume' => $volume, 'days' => $days]);
 		notifyAllAdminsSimple($msg, $admin, "html", $keys, $rewardChannel);
     }
 
@@ -1471,24 +1463,11 @@ function achbotPerformPaymentEffect($payRowId, $gateType, &$effectStage = null) 
 
         // Credit was already committed atomically with pays.state='paid'.
         // Repeating it here would double-credit on the same verified event.
-        showForm("✅ پرداخت شما با موفقیت انجام شد، مبلغ " . number_format($amount) . " تومان به کیف پول شما اضافه شد.", $payDescription, true, 'completed');
+        showForm(\achbotMessage('gateway.gateway_return.perform_payment_effect.message.bbf27ebefd') . number_format($amount) . \achbotMessage('gateway.gateway_return.perform_payment_effect.message.606f350948'), $payDescription, true, 'completed');
 
-        sendMessage("✅ مبلغ " . number_format($amount) . " تومان به حساب شما اضافه شد.\n\n<blockquote>
-⚠️ لطفا دقت کنید شما فقط کیف پول خودتان را شارژ کرده‌اید، برای خرید یا تمدید باید از دکمه های زیر استفاده کنید:
+        sendMessage(\achbotMessage('gateway.gateway_return.perform_payment_effect.message.a5b15e454e') . number_format($amount) . \achbotMessage('gateway.gateway_return.perform_payment_effect.message.dd866497c7', ['supportID' => $supportID]), null, "html", $user_id);
 
-🛒 <b>خرید اشتراک جدید</b>
-یا <b>🔄 تمدید یا مشاهده اشتراک ها</b>
-
-و در مرحله پرداخت روی دکمه زیر بزنید:
-
-💰 <b>پرداخت با موجودی</b>
-
-</blockquote>
-📨 پشتیبانی:
-
-🆔 $supportID", null, "html", $user_id);
-
-        $adminText = "✅ مبلغ " . number_format($amount) . " تومان به کیف پول کاربر $user_id توسط درگاه $gateType اضافه شد.";
+        $adminText = \achbotMessage('gateway.gateway_return.perform_payment_effect.message.a5b15e454e') . number_format($amount) . \achbotMessage('gateway.gateway_return.perform_payment_effect.text.3908dcee07', ['user_id' => $user_id, 'gateType' => $gateType]);
 		notifyAllAdminsSimple($adminText, $admin, "html", null, $rewardChannel);
     }
 
@@ -1569,15 +1548,15 @@ function achbotPerformPaymentEffect($payRowId, $gateType, &$effectStage = null) 
             throw $error;
         }
 
-        showForm("✅ پرداخت شما با موفقیت انجام شد. اشتراک $remark با موفقیت تمدید شد.", $payDescription, true, 'completed');
-        sendMessage("✅ پرداخت شما با موفقیت انجام شد. اشتراک $remark با موفقیت تمدید شد.", json_encode(['inline_keyboard' => [[['text' => "↪️ بازگشت به منوی اصلی", 'callback_data' => "mainMenu"]]]]), null, $user_id);
+        showForm(\achbotMessage('gateway.gateway_return.perform_payment_effect.message.a3b46e7d37', ['remark' => $remark]), $payDescription, true, 'completed');
+        sendMessage(\achbotMessage('gateway.gateway_return.perform_payment_effect.message.a3b46e7d37', ['remark' => $remark]), json_encode(['inline_keyboard' => [[['text' => \achbotMessage('gateway.gateway_return.perform_payment_effect.text.275b4903d9'), 'callback_data' => "mainMenu"]]]]), null, $user_id);
 
         $keys = json_encode(['inline_keyboard' => [
             [
-                ['text' => "💳 خرید از درگاه $gateType", 'callback_data' => 'wizwizch'],
+                ['text' => \achbotMessage('gateway.gateway_return.perform_payment_effect.button.b9d052f74c', ['gateType' => $gateType]), 'callback_data' => 'wizwizch'],
             ],
             [
-                ['text' => "🆔 $hash_id", 'callback_data' => "noop_$hash_id"]
+                ['text' => \achbotMessage('gateway.gateway_return.perform_payment_effect.hash_id.2899228604', ['hash_id' => $hash_id]), 'callback_data' => "noop_$hash_id"]
             ]
         ]]);
 
@@ -1585,18 +1564,7 @@ function achbotPerformPaymentEffect($payRowId, $gateType, &$effectStage = null) 
         $first_name = $user_info->first_name ?? '-';
         $username = $user_info->username ?? '-';
 
-        $msg = "
-💚 تمدید اشتراک (درگاه $gateType)
-
-🔐 آیدی کاربر: $user_id
-🛡️ نام کاربر: $first_name
-🔖 نام کاربری تلگرام: @$username
-💰 مبلغ پرداختی: $amount تومان
-🎈 نام اشتراک: $remark
-🔋 حجم اشتراک: $volume گیگ
-⏰ مدت اشتراک: $days روز
-
-";
+        $msg = \achbotMessage('gateway.gateway_return.perform_payment_effect.msg.c281132242', ['gateType' => $gateType, 'user_id' => $user_id, 'first_name' => $first_name, 'username' => $username, 'amount' => $amount, 'remark' => $remark, 'volume' => $volume, 'days' => $days]);
 		notifyAllAdminsSimple($msg, $admin, "html", $keys, $rewardChannel);
         return 'delivered';
     }
@@ -1673,15 +1641,15 @@ function achbotPerformPaymentEffect($payRowId, $gateType, &$effectStage = null) 
                 throw $error; // previously staged paid/review claim persists
             }
 
-            showForm("✅ پرداخت شما با موفقیت انجام شد. $plusDays روز به مدت زمان اشتراک شما اضافه شد.", $payDescription, true, 'completed');
-            sendMessage("✅ پرداخت شما با موفقیت انجام شد. $plusDays روز به مدت زمان اشتراک شما اضافه شد.", json_encode(['inline_keyboard' => [[['text' => "↪️ بازگشت به منوی اصلی", 'callback_data' => "mainMenu"]]]]), null, $user_id);
+            showForm(\achbotMessage('gateway.gateway_return.perform_payment_effect.message.8ab1d455cf', ['plusDays' => $plusDays]), $payDescription, true, 'completed');
+            sendMessage(\achbotMessage('gateway.gateway_return.perform_payment_effect.message.8ab1d455cf', ['plusDays' => $plusDays]), json_encode(['inline_keyboard' => [[['text' => \achbotMessage('gateway.gateway_return.perform_payment_effect.text.275b4903d9'), 'callback_data' => "mainMenu"]]]]), null, $user_id);
 
             $keys = json_encode(['inline_keyboard' => [
                 [
-                    ['text' => "💳 خرید از درگاه $gateType", 'callback_data' => 'wizwizch'],
+                    ['text' => \achbotMessage('gateway.gateway_return.perform_payment_effect.button.b9d052f74c', ['gateType' => $gateType]), 'callback_data' => 'wizwizch'],
                 ],
                 [
-                    ['text' => "🆔 $hash_id", 'callback_data' => "noop_$hash_id"]
+                    ['text' => \achbotMessage('gateway.gateway_return.perform_payment_effect.hash_id.2899228604', ['hash_id' => $hash_id]), 'callback_data' => "noop_$hash_id"]
                 ]
             ]]);
 
@@ -1689,16 +1657,7 @@ function achbotPerformPaymentEffect($payRowId, $gateType, &$effectStage = null) 
             $first_name = $user_info->first_name ?? '-';
             $username = $user_info->username ?? '-';
 
-            $msg = "
-💜 افزایش زمان اشتراک (درگاه $gateType)
-
-🔐 آیدی کاربر: $user_id
-🛡️ نام کاربر: $first_name
-🔖 نام کاربری تلگرام: @$username
-💰 مبلغ پرداختی: $amount تومان
-🎈 نام اشتراک: $remark
-🕚 زمان اضافه شده: $plusDays روز
-";
+            $msg = \achbotMessage('gateway.gateway_return.perform_payment_effect.msg.3337e72606', ['gateType' => $gateType, 'user_id' => $user_id, 'first_name' => $first_name, 'username' => $username, 'amount' => $amount, 'remark' => $remark, 'plusDays' => $plusDays]);
             notifyAllAdminsSimple($msg, $admin, "html", $keys, $rewardChannel);
 			return 'delivered';
 
@@ -1712,13 +1671,13 @@ function achbotPerformPaymentEffect($payRowId, $gateType, &$effectStage = null) 
                 $amount,
                 $gateType,
                 $admin,
-                "میخواست زمان اشتراکشو افزایش بده",
+                \achbotMessage('gateway.gateway_return.perform_payment_effect.text.1d7ceca732'),
 				$rewardChannel
             )) {
-                showForm('⚠️ پرداخت ثبت شده ولی بازگشت اعتبار کیف پول تأیید نشد؛ پشتیبانی باید بررسی کند.', $payDescription, false, 'review');
+                showForm(\achbotMessage('gateway.gateway_return.perform_payment_effect.message.bd952e9bc9'), $payDescription, false, 'review');
                 return 'ambiguous';
             }
-            showForm("⚠️ پرداخت شما با موفقیت انجام شد ولی به دلیل مشکل فنی امکان افزایش حجم نیست. لطفا به مدیریت اطلاع بدید یا 5 دقیقه دیگر دوباره تست کنید مبلغ " . number_format($amount) . " تومان به کیف پول شما اضافه شد.", $payDescription, false, 'review');
+            showForm(\achbotMessage('gateway.gateway_return.perform_payment_effect.message.9f4f326fa4') . number_format($amount) . \achbotMessage('gateway.gateway_return.perform_payment_effect.message.606f350948'), $payDescription, false, 'review');
 
             return 'compensated';
         }
@@ -1769,15 +1728,15 @@ function achbotPerformPaymentEffect($payRowId, $gateType, &$effectStage = null) 
             $time2 = time();
             createIncreaseOrder($connection, $user_id, $server_id, $inbound_id, $remark, $amount, $time2, $plusVolume, null, true);
 
-            showForm("✅ پرداخت شما با موفقیت انجام شد. $plusVolume گیگ به حجم اشتراک شما اضافه شد.", $payDescription, true, 'completed');
-            sendMessage("✅ پرداخت شما با موفقیت انجام شد. $plusVolume گیگ به حجم اشتراک شما اضافه شد.", json_encode(['inline_keyboard' => [[['text' => "↪️ بازگشت به منوی اصلی", 'callback_data' => "mainMenu"]]]]), null, $user_id);
+            showForm(\achbotMessage('gateway.gateway_return.perform_payment_effect.message.20ac3e8049', ['plusVolume' => $plusVolume]), $payDescription, true, 'completed');
+            sendMessage(\achbotMessage('gateway.gateway_return.perform_payment_effect.message.20ac3e8049', ['plusVolume' => $plusVolume]), json_encode(['inline_keyboard' => [[['text' => \achbotMessage('gateway.gateway_return.perform_payment_effect.text.275b4903d9'), 'callback_data' => "mainMenu"]]]]), null, $user_id);
 
             $keys = json_encode(['inline_keyboard' => [
                 [
-                    ['text' => "💳 خرید از درگاه $gateType", 'callback_data' => 'wizwizch'],
+                    ['text' => \achbotMessage('gateway.gateway_return.perform_payment_effect.button.b9d052f74c', ['gateType' => $gateType]), 'callback_data' => 'wizwizch'],
                 ],
                 [
-                    ['text' => "🆔 $hash_id", 'callback_data' => "noop_$hash_id"]
+                    ['text' => \achbotMessage('gateway.gateway_return.perform_payment_effect.hash_id.2899228604', ['hash_id' => $hash_id]), 'callback_data' => "noop_$hash_id"]
                 ]
             ]]);
 
@@ -1785,16 +1744,7 @@ function achbotPerformPaymentEffect($payRowId, $gateType, &$effectStage = null) 
             $first_name = $user_info->first_name ?? '-';
             $username = $user_info->username ?? '-';
 
-            $msg = "
-🤎 افزایش حجم اشتراک (درگاه $gateType)
-
-🔐 آیدی کاربر: $user_id
-🛡️ نام کاربر: $first_name
-🔖 نام کاربری تلگرام: @$username
-💰 مبلغ پرداختی: $amount تومان
-🎈 نام اشتراک: $remark
-🩸 حجم اضافه شده: $plusVolume گیگ
-";
+            $msg = \achbotMessage('gateway.gateway_return.perform_payment_effect.msg.05d5688689', ['gateType' => $gateType, 'user_id' => $user_id, 'first_name' => $first_name, 'username' => $username, 'amount' => $amount, 'remark' => $remark, 'plusVolume' => $plusVolume]);
 			notifyAllAdminsSimple($msg, $admin, "html", $keys, $rewardChannel);
             return 'delivered';
 
@@ -1808,13 +1758,13 @@ function achbotPerformPaymentEffect($payRowId, $gateType, &$effectStage = null) 
                 $amount,
                 $gateType,
                 $admin,
-                "میخواست حجم اشتراکشو افزایش بده",
+                \achbotMessage('gateway.gateway_return.perform_payment_effect.text.c7546a7b9b'),
 				$rewardChannel
             )) {
-                showForm('⚠️ پرداخت ثبت شده ولی بازگشت اعتبار کیف پول تأیید نشد؛ پشتیبانی باید بررسی کند.', $payDescription, false, 'review');
+                showForm(\achbotMessage('gateway.gateway_return.perform_payment_effect.message.bd952e9bc9'), $payDescription, false, 'review');
                 return 'ambiguous';
             }
-            showForm("⚠️ پرداخت شما با موفقیت انجام شد ولی مشکل فنی در ارتباط با سرور، لطفا سلامت سرور را بررسی کنید مبلغ " . number_format($amount) . " تومان به کیف پول شما اضافه شد.", $payDescription, false, 'review');
+            showForm(\achbotMessage('gateway.gateway_return.perform_payment_effect.message.28ba281162') . number_format($amount) . \achbotMessage('gateway.gateway_return.perform_payment_effect.message.606f350948'), $payDescription, false, 'review');
 
             return 'compensated';
         }
@@ -1869,20 +1819,20 @@ function achbotPerformPaymentEffect($payRowId, $gateType, &$effectStage = null) 
 				true
 			);
 
-			showForm("✅ پرداخت شما با موفقیت انجام شد. اشتراک $remark با موفقیت تمدید شد.", $payDescription, true, 'completed');
-			sendMessage("✅ پرداخت شما با موفقیت انجام شد. اشتراک $remark با موفقیت تمدید شد.",
-				json_encode(['inline_keyboard' => [[['text' => "صفحه اصلی 🏘", 'callback_data' => "mainMenu"]]]]),
+			showForm(\achbotMessage('gateway.gateway_return.perform_payment_effect.message.a3b46e7d37', ['remark' => $remark]), $payDescription, true, 'completed');
+			sendMessage(\achbotMessage('gateway.gateway_return.perform_payment_effect.message.a3b46e7d37', ['remark' => $remark]),
+				json_encode(['inline_keyboard' => [[['text' => \achbotMessage('gateway.gateway_return.perform_payment_effect.button.82f7af5445'), 'callback_data' => "mainMenu"]]]]),
 				null,
 				$user_id
 			);
 
-			$adminText = "✅ تمدید اشتراک (درگاه $gateType)\n\n"
+			$adminText = \achbotMessage('gateway.gateway_return.perform_payment_effect.admin_text.b660a2780f', ['gateType' => $gateType])
 				. "UserID: $user_id\n"
 				. "Remark: $remark\n"
 				. "PlanID: $fid\n"
 				. "Amount: " . number_format($amount) . "\n"
-				. "🔋 حجم اشتراک: $volume گیگ\n"
-				. "⏰ مدت اشتراک: $days روز\n"
+				. \achbotMessage('gateway.gateway_return.perform_payment_effect.text.a918020ba1', ['volume' => $volume])
+				. \achbotMessage('gateway.gateway_return.perform_payment_effect.text.dc6dc4aa59', ['days' => $days])
 				. "HashID: $hash_id";
 
 			notifyAllAdminsSimple($adminText, $admin, null, null, $rewardChannel);
@@ -1892,24 +1842,24 @@ function achbotPerformPaymentEffect($payRowId, $gateType, &$effectStage = null) 
 		} catch (Exception $e) {
 
             if (achbotNpDeferUncertainRemoteEffect($gateType, $payDescription)) return 'ambiguous';
-			$reason = "پرداخت انجام شد ولی تمدید به دلیل خطای سرور انجام نشد.\n"
-				. "لطفاً به مدیریت اطلاع دهید.\n"
-				. "کد خطا: " . $e->getMessage();
+			$reason = \achbotMessage('gateway.gateway_return.perform_payment_effect.reason.3b9fd32170')
+				. \achbotMessage('gateway.gateway_return.perform_payment_effect.text.9eb6edd609')
+				. \achbotMessage('gateway.gateway_return.perform_payment_effect.text.c957e6dfa7') . $e->getMessage();
 
 
 
 			if (!refundToWalletAndNotify($connection, $user_id, $amount, $gateType, $reason, $admin, $rewardChannel)) {
-			    showForm('⚠️ پرداخت ثبت شده ولی بازگشت اعتبار کیف پول تأیید نشد؛ پشتیبانی باید بررسی کند.', $payDescription, false, 'review');
+			    showForm(\achbotMessage('gateway.gateway_return.perform_payment_effect.message.bd952e9bc9'), $payDescription, false, 'review');
 			    return 'ambiguous';
 			}
-			showForm("پرداخت شما با موفقیت انجام شد ولی مشکل فنی در تمدید.\nمبلغ " . number_format($amount) . " تومان به کیف پول شما اضافه شد.", $payDescription, false, 'review');
+			showForm(\achbotMessage('gateway.gateway_return.perform_payment_effect.message.68e2abdadb') . number_format($amount) . \achbotMessage('gateway.gateway_return.perform_payment_effect.message.606f350948'), $payDescription, false, 'review');
 
 
 			return 'compensated';
 		}
 	}
 
-    sendMessage("✅ پرداخت شما با موفقیت انجام شد.", json_encode(['inline_keyboard' => [[['text' => "↪️ بازگشت به منوی اصلی", 'callback_data' => "mainMenu"]]]]), null, $user_id);
+    sendMessage(\achbotMessage('gateway.gateway_return.perform_payment_effect.message.81c4bb3acb'), json_encode(['inline_keyboard' => [[['text' => \achbotMessage('gateway.gateway_return.perform_payment_effect.text.275b4903d9'), 'callback_data' => "mainMenu"]]]]), null, $user_id);
     return 'delivered';
 }
 
@@ -1937,9 +1887,9 @@ function doAction($payRowId, $gateType) {
         error_log($event.' pay_id='.(int)$payRowId.
                   ' provider='.$gateType.' code='.$reason);
         $message=$afterClaim
-            ? 'پرداخت تأیید شده است اما نتیجهٔ تکمیل سفارش هنوز قطعی نیست. لطفاً دوباره پرداخت نکنید، مشخصات پرداخت را نگه دارید و با پشتیبانی تماس بگیرید.'
-            : 'پرداخت تأیید شده است اما ثبت نتیجهٔ سفارش هنوز قطعی نیست. لطفاً دوباره پرداخت نکنید، مشخصات پرداخت را نگه دارید و با پشتیبانی تماس بگیرید.';
-        showForm($message,'پیگیری پرداخت',false,'review');
+            ? \achbotMessage('gateway.gateway_return.do_action.text.83188c9e00')
+            : \achbotMessage('gateway.gateway_return.do_action.text.30e9647ee1');
+        showForm($message,\achbotMessage('gateway.gateway_return.np_reconcile_batch.message.da0bc406d8'),false,'review');
         return 'ambiguous';
     }
     if (in_array($gateType,['nextpay','zarinpal'],true) &&

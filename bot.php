@@ -1,4 +1,6 @@
 <?php
+require_once __DIR__ . '/messages/loader.php'; // ACHBOT_TEXT_CATALOG
+
 
 // ACHBOT_WEBHOOK_INGRESS_BEGIN
 // All webhook-driven mutations must be authenticated BEFORE loading config.php:
@@ -63,7 +65,7 @@ if ($userInfo['step'] == "banned" && $from_id != $admin && $userInfo['isAdmin'] 
 $checkSpam = checkSpam();
 if(is_numeric($checkSpam)){
     $time = jdate("Y-m-d H:i:s", $checkSpam);
-    sendMessage("اکانت شما به دلیل اسپم مسدود شده است.\nزمان آزادسازی اکانت شما: \n$time");
+    sendMessage(\achbotMessage('bot.bot.webhook_ingress_authenticated.message.5e45680470', ['time' => $time]));
     exit();
 }
 
@@ -76,7 +78,7 @@ if (is_string($data) && preg_match(
         '/\A' . preg_quote($paymentAction[0], '/') . '[A-Za-z0-9_-]{1,50}\z/D',
         $data)) {
         answerCallbackQuery($callbackId,
-            'این دکمهٔ پرداخت معتبر نیست؛ لطفاً از فاکتور جدید استفاده کنید.', true);
+            \achbotMessage('bot.bot.webhook_ingress_authenticated.alert.d4b0660226'), true);
         return;
     }
 }
@@ -197,18 +199,18 @@ if(strstr($text, "/start ")){
 					$stmt->close();
 
 					// ارسال پیام به دعوت‌کننده
-					$inviterMsg = "🎉 تبریک! کاربر جدیدی با لینک دعوت شما عضو شد.\n\n"
-						. "💰 مبلغ هدیه شما: " . number_format($inviteReward) . " تومان\n"
-						. "💼 موجودی قبل: " . number_format($oldWallet) . " تومان\n"
-						. "💵 موجودی جدید: " . number_format($newWallet) . " تومان";
+					$inviterMsg = \achbotMessage('bot.bot.webhook_ingress_authenticated.inviter_msg.0a64da8ef5')
+						. \achbotMessage('bot.bot.webhook_ingress_authenticated.text.750b1aaad1') . number_format($inviteReward) . \achbotMessage('bot.bot.webhook_ingress_authenticated.text.81a62ff6c6')
+						. \achbotMessage('bot.bot.webhook_ingress_authenticated.text.87d0794e8e') . number_format($oldWallet) . \achbotMessage('bot.bot.webhook_ingress_authenticated.text.81a62ff6c6')
+						. \achbotMessage('bot.bot.webhook_ingress_authenticated.text.447278518a') . number_format($newWallet) . \achbotMessage('bot.bot.webhook_ingress_authenticated.text.2cc98f7f7c');
 					sendMessage($inviterMsg, null, "html", $inviter);
 
 					// ارسال پیام به ادمین
-					$adminMsg = "👥 <b>دعوت موفق توسط <code>$inviter</code> انجام شد.</b>\n\n"
-						. "🎫 شناسه کاربر جدید: <code>$from_id</code>\n"
-						. "💸 پاداش داده‌شده: " . number_format($inviteReward) . " تومان\n"
-						. "💼 موجودی قبل: " . number_format($oldWallet) . " تومان\n"
-						. "💵 موجودی جدید: " . number_format($newWallet) . " تومان";
+					$adminMsg = \achbotMessage('bot.bot.webhook_ingress_authenticated.admin_msg.a511ccf2ec', ['inviter' => $inviter])
+						. \achbotMessage('bot.bot.webhook_ingress_authenticated.text.c69814bacf', ['from_id' => $from_id])
+						. \achbotMessage('bot.bot.webhook_ingress_authenticated.text.5f8f2b70e9') . number_format($inviteReward) . \achbotMessage('bot.bot.webhook_ingress_authenticated.text.81a62ff6c6')
+						. \achbotMessage('bot.bot.webhook_ingress_authenticated.text.87d0794e8e') . number_format($oldWallet) . \achbotMessage('bot.bot.webhook_ingress_authenticated.text.81a62ff6c6')
+						. \achbotMessage('bot.bot.webhook_ingress_authenticated.text.447278518a') . number_format($newWallet) . \achbotMessage('bot.bot.webhook_ingress_authenticated.text.2cc98f7f7c');
 					sendMessage($adminMsg, null, "html", $admin);
 
 					// ارسال به کانال گزارشات
@@ -356,12 +358,12 @@ if (preg_match('/^\/([Ss]tart)/', $text) || $text == $buttonValues['back_to_main
 }
 
 if(preg_match('/^sendMessageToUser(\d+)/',$data,$match) && ($from_id == $admin || $userInfo['isAdmin'] == true) && $text != $buttonValues['cancel']){
-    editText($message_id,'✉️ لطفا پیام خود را بنویسید.');
+    editText($message_id,\achbotMessage('bot.bot.webhook_ingress_authenticated.message.305cb98154'));
     setUser($data);
 }
 if(preg_match('/^sendMessageToUser(\d+)/',$userInfo['step'],$match) && ($from_id == $admin || $userInfo['isAdmin'] == true) && $text != $buttonValues['cancel']){
     sendMessage($text,null,null,$match[1]);
-	sendMessage("پیام شما برای کاربر <code>{$match[1]}</code> ارسال شد.", $removeKeyboard, "html");
+	sendMessage(\achbotMessage('bot.bot.webhook_ingress_authenticated.message.21095e090c', ['match_1' => $match[1]]), $removeKeyboard, "html");
     sendMessage($mainValues['reached_main_menu'],getAdminKeys());
     setUser();
 }
@@ -372,9 +374,9 @@ if(preg_match('/^sendMessageToUser(\d+)/',$userInfo['step'],$match) && ($from_id
 if (isset($data) && $data == "custom_sales_date" && ($from_id == $admin || $userInfo['isAdmin'] == true)) {
     setUser("awaitingDateRange", "step");
     sendMessage(
-        "📅 لطفاً تاریخ شروع و پایان فروش را وارد کنید:\n\n" .
-        "فرمت نمونه:\n<code>2026-05-21 to 2026-05-22</code>\n" .
-        "یا\n<code>2026/05/21 تا 2026/05/22</code>",
+        \achbotMessage('bot.bot.webhook_ingress_authenticated.message.4e0fd88f4b') .
+        \achbotMessage('bot.bot.webhook_ingress_authenticated.message.9c3afd43bd') .
+        \achbotMessage('bot.bot.webhook_ingress_authenticated.message.312da09ba8'),
         $cancelKey,
         "HTML"
     );
@@ -388,7 +390,7 @@ if (
 ) {
     if (isset($text) && $text == $buttonValues['cancel']) {
         setUser("none", "step");
-        sendMessage("❌ عملیات لغو شد.", $removeKeyboard, "HTML");
+        sendMessage(\achbotMessage('bot.bot.webhook_ingress_authenticated.message.0108e71350'), $removeKeyboard, "HTML");
         exit;
     }
 
@@ -402,7 +404,7 @@ if (
 
     if (!$dates) {
         sendMessage(
-            "❌ فرمت تاریخ درست نیست. لطفاً دقیقاً مثل نمونه وارد کنید:\n<code>2026-05-21 to 2026-05-22</code>",
+            \achbotMessage('bot.bot.webhook_ingress_authenticated.message.f438b1a27b'),
             $cancelKey,
             "HTML"
         );
@@ -413,7 +415,7 @@ if (
     $endDate = $dates[1];
 
     if (strtotime($startDate . ' 00:00:00') > strtotime($endDate . ' 23:59:59')) {
-        sendMessage("❌ تاریخ شروع نباید بعد از تاریخ پایان باشد.", $cancelKey, "HTML");
+        sendMessage(\achbotMessage('bot.bot.webhook_ingress_authenticated.message.4684e19e66'), $cancelKey, "HTML");
         exit;
     }
 
@@ -448,13 +450,13 @@ if (in_array($data, $statOptions) && ($from_id == $admin || $userInfo['isAdmin']
 
     // آرایه برای عنوان‌ها
     $titles = [
-        'stats_users' => "👤 آمار کاربران",
-        'stats_orders' => "📦 آمار اشتراک‌ها",
-        'stats_sales' => "💰 آمار فروش",
+        'stats_users' => \achbotMessage('bot.bot.webhook_ingress_authenticated.text.d4b423ba4f'),
+        'stats_orders' => \achbotMessage('bot.bot.webhook_ingress_authenticated.text.2ef1b34354'),
+        'stats_sales' => \achbotMessage('bot.bot.webhook_ingress_authenticated.text.adb2cb111d'),
     ];
 
     // انتخاب عنوان بر اساس کلید
-    $title = $titles[$statsKey] ?? "📊 لطفاً یکی از بخش‌های آماری زیر را انتخاب کنید:";
+    $title = $titles[$statsKey] ?? \achbotMessage('bot.bot.webhook_ingress_authenticated.text.cab0824f0a');
 
     $replyMarkup = getBotReportKeys($statsKey);
 
@@ -481,7 +483,7 @@ if(($data=="botSettings" or preg_match('/^changeBot([A-Za-z0-9_]+)$/D',$data,$ma
             'qrSubState','cartToCartAutoAcceptState','cartToCartAutoAcceptType'
         ];
         if (!in_array($match[1],$editableBotToggles,true)) {
-            answerCallbackQuery($callbackId,'این تنظیم قدیمی یا ناشناخته قابل تغییر نیست.',true);
+            answerCallbackQuery($callbackId,\achbotMessage('bot.bot.webhook_ingress_authenticated.alert.c0889a8ad7'),true);
             return;
         }
         if($match[1] == "cartToCartAutoAcceptType") $newValue = $botState[$match[1]] == "0"?"1":($botState[$match[1]] == "1"?"2":0);
@@ -501,7 +503,7 @@ if(($data=="gateWays_Channels" or preg_match('/^changeGateWays([A-Za-z0-9_]+)$/D
     if ($data==="gateWays_Channels" && !achbotGatewayAdminCanView(
             $update,(int)$from_id,(int)$chat_id,(int)$message_id,
             (int)$admin,$data)) {
-        answerCallbackQuery($callbackId,'دسترسی مدیریت پرداخت تأیید نشد.',true);
+        answerCallbackQuery($callbackId,\achbotMessage('bot.bot.webhook_ingress_authenticated.alert.18796a4549'),true);
         return;
     }
     if($data!="gateWays_Channels"){
@@ -513,14 +515,14 @@ if(($data=="gateWays_Channels" or preg_match('/^changeGateWays([A-Za-z0-9_]+)$/D
             'walletState'
         ];
         if (!in_array($match[1],$editableGatewayToggles,true)) {
-            answerCallbackQuery($callbackId,'این درگاه قدیمی یا ناشناخته قابل تغییر نیست.',true);
+            answerCallbackQuery($callbackId,\achbotMessage('bot.bot.webhook_ingress_authenticated.alert.9eac3467d5'),true);
             return;
         }
         if (!achbotAdminGatewayChange($update,(int)$from_id,
                 (int)$chat_id,(int)$message_id,(int)$admin,
                 'toggle',$match[1])) {
             answerCallbackQuery($callbackId,
-                'تنظیم تغییر نکرد؛ دسترسی یا اعتبار درخواست را بررسی کنید.',true);
+                \achbotMessage('bot.bot.webhook_ingress_authenticated.alert.31513d032b'),true);
             return;
         }
     }
@@ -532,7 +534,7 @@ if (is_string($data??null) &&
     (str_starts_with($data,'gr|') || $data==='gatewayAudienceSettings')) {
     if (!achbotGatewayAdminCanView($update,(int)$from_id,
             (int)$chat_id,(int)$message_id,(int)$admin,$data)) {
-        answerCallbackQuery($callbackId,'دسترسی مدیریت پرداخت تأیید نشد.',true);
+        answerCallbackQuery($callbackId,\achbotMessage('bot.bot.webhook_ingress_authenticated.alert.18796a4549'),true);
         return;
     }
     $parts=explode('|',$data);
@@ -548,7 +550,7 @@ if (is_string($data??null) &&
         !achbotAdminGatewayChange($update,(int)$from_id,
            (int)$chat_id,(int)$message_id,(int)$admin,'rule',$data)) {
         answerCallbackQuery($callbackId,
-            'تغییر ذخیره نشد؛ ممکن است دکمه مربوط به نسخهٔ قبلی قوانین باشد.',true);
+            \achbotMessage('bot.bot.gateway_audience_settings.alert.ce46e4b2e2'),true);
         // A rejection must never leave a stale editor that invites more
         // unsafe clicks. Re-validate authorization before showing fresh data.
         if ($operation!==null &&
@@ -560,19 +562,19 @@ if (is_string($data??null) &&
                 : 'gr|r|'.$operation['method'].'|'.$operation['category'];
             $page=achbotGatewayAdminPage($refresh);
             editText($message_id,
-                "⚠️ تغییری ذخیره نشد. اطلاعات دکمه ممکن است قدیمی باشد؛ وضعیت فعلی:\n".
+                \achbotMessage('bot.bot.gateway_audience_settings.message.553d718ccf').
                 $page['text'],$page['keyboard']);
         }
         return;
     }
     if ($operation['action']==='n') {
-        sendMessage("✏️ عدد صحیح دلخواه (از ۰ به بالا) وارد کنید.\n".
-            "۰ روز یعنی تمام سابقه؛ ۰ تراکنش با روز مثبت یعنی حداقل یک رویداد در بازه.\n".
-            "برای انصراف از دکمهٔ لغو استفاده کنید.",$cancelKey);
+        sendMessage(\achbotMessage('bot.bot.gateway_audience_settings.message.56c51082c2').
+            \achbotMessage('bot.bot.gateway_audience_settings.message.dff975b57d').
+            \achbotMessage('bot.bot.gateway_audience_settings.message.8f166cf7c0'),$cancelKey);
         return;
     }
     if (in_array($operation['action'],['s','x'],true)) {
-        sendMessage($operation['action']==='s'?'✅ مقدار ذخیره شد.':'ویرایش لغو شد.');
+        sendMessage($operation['action']==='s'?\achbotMessage('bot.bot.gateway_audience_settings.message.fdfbaf2a40'):\achbotMessage('bot.bot.gateway_audience_settings.message.74d707fe02'));
         $page=achbotGatewayAdminPage('gr|l');
         sendMessage($page['text'],$page['keyboard']);
         return;
@@ -585,7 +587,7 @@ if (is_string($data??null) &&
            : 'gr|r|'.$operation['method'].'|'.$operation['category']));
     $page=achbotGatewayAdminPage($target,
         $operation['action']==='q'?(int)$update->update_id:null);
-    editText($message_id,'✅ تنظیم به‌روزرسانی شد.'."\n".$page['text'],$page['keyboard']);
+    editText($message_id,\achbotMessage('bot.bot.gateway_audience_settings.message.4ce38d7e7f')."\n".$page['text'],$page['keyboard']);
     return;
 }
 if (is_string($userInfo['step']??null) &&
@@ -593,19 +595,19 @@ if (is_string($userInfo['step']??null) &&
     if (!achbotAdminGatewayChange($update,(int)$from_id,
             (int)$chat_id,(int)$message_id,(int)$admin,'number',
             $userInfo['step'],(string)$text)) {
-        sendMessage('⛔️ عدد معتبر وارد کنید؛ تغییر اعمال نشد. / در صورت مشکل به فهرست مدیریت دسترسی بازگردید.',
+        sendMessage(\achbotMessage('bot.bot.gateway_audience_settings.message.f621efb0b3'),
                     $cancelKey);
         return;
     }
     if ($text===$buttonValues['cancel']) {
-        sendMessage('ویرایش لغو شد.');
+        sendMessage(\achbotMessage('bot.bot.gateway_audience_settings.message.74d707fe02'));
         return;
     }
     $sourceId=(int)($update->update_id??0);
-    sendMessage("🔎 مقدار پیشنهادی: ".$text."\nتا انتخاب «ذخیره»، قانون قبلی برقرار است.",
+    sendMessage(\achbotMessage('bot.bot.gateway_audience_settings.message.397d3e91b6').$text.\achbotMessage('bot.bot.gateway_audience_settings.message.c5bdeadc6b'),
         json_encode(['inline_keyboard'=>[
-            [['text'=>'💾 ذخیره مقدار','callback_data'=>'gr|s|'.$sourceId]],
-            [['text'=>'❌ انصراف','callback_data'=>'gr|x|'.$sourceId]]
+            [['text'=>\achbotMessage('bot.bot.gateway_audience_settings.button.9b026e4934'),'callback_data'=>'gr|s|'.$sourceId]],
+            [['text'=>\achbotMessage('bot.bot.gateway_audience_settings.button.1fe862ea18'),'callback_data'=>'gr|x|'.$sourceId]]
         ]],JSON_UNESCAPED_UNICODE));
     return;
 }
@@ -613,7 +615,7 @@ if (is_string($userInfo['step']??null) &&
 // callback; a forwarded stale administrator button cannot pick arbitrary keys.
 if (($from_id == $admin || (int)($userInfo['isAdmin']??0)===1) &&
     $data==='gatewayAudienceSettings') {
-    editText($message_id,'👥 دسترسی درگاه‌ها برای گروه‌های مختلف کاربران',
+    editText($message_id,\achbotMessage('bot.bot.gateway_audience_settings.message.e2238b091f'),
              achbotGatewayAudienceKeyboard());
     return;
 }
@@ -621,24 +623,24 @@ if (($from_id == $admin || (int)($userInfo['isAdmin']??0)===1) &&
     preg_match('/^cycleGatewayAudience_([a-z_]+)$/D',(string)$data,$policyMatch)) {
     $method=$policyMatch[1];
     if (!isset(achbotPayUxAudienceMethods()[$method])) {
-        answerCallbackQuery($callbackId,'روش پرداخت ناشناخته است.',true);
+        answerCallbackQuery($callbackId,\achbotMessage('bot.bot.gateway_audience_settings.alert.a677e95601'),true);
         return;
     }
     if (!achbotAdminGatewayChange($update,(int)$from_id,
             (int)$chat_id,(int)$message_id,(int)$admin,
             'audience',$method)) {
         answerCallbackQuery($callbackId,
-            'تنظیم ذخیره نشد؛ دسترسی یا اعتبار درخواست را بررسی کنید.',true);
+            \achbotMessage('bot.bot.gateway_audience_settings.alert.0b06afc291'),true);
         return;
     }
-    editText($message_id,'👥 دسترسی درگاه‌ها برای گروه‌های مختلف کاربران',
+    editText($message_id,\achbotMessage('bot.bot.gateway_audience_settings.message.e2238b091f'),
              achbotGatewayAudienceKeyboard());
     return;
 }
 // Only actual administrators may change invoice and anti-duplicate windows.
 if (($from_id == $admin || (int)($userInfo['isAdmin']??0)===1) &&
     $data==='paymentPolicySettings') {
-    editText($message_id,'⏱ <b>مهلت فاکتورها و محافظ‌های رسید تکراری</b>',
+    editText($message_id,\achbotMessage('bot.bot.payment_policy_settings.message.e0a3b58e1e'),
         achbotPaymentPolicyKeyboard(),'HTML',$from_id);
     return;
 }
@@ -646,11 +648,11 @@ if (($from_id == $admin || (int)($userInfo['isAdmin']??0)===1) &&
     preg_match('/^editPaymentPolicy_([A-Za-z]+)$/D',(string)$data,$policyMatch)) {
     $fields=achbotPaymentPolicyFields();$key=$policyMatch[1];
     if (!isset($fields[$key])) {
-        answerCallbackQuery($callbackId,'تنظیم ناشناخته است.',true);return;
+        answerCallbackQuery($callbackId,\achbotMessage('bot.bot.payment_policy_settings.alert.ddd4bda562'),true);return;
     }
     $field=$fields[$key];
     setUser('paymentPolicyValue_'.$key);
-    sendMessage($field['label']."\nیک عدد بین ".$field['min']." و ".$field['max']." وارد کنید.",$cancelKey);
+    sendMessage($field['label'].\achbotMessage('bot.bot.payment_policy_settings.message.0aef5ea61e').$field['min'].\achbotMessage('bot.bot.payment_policy_settings.message.1a51e219ec').$field['max'].\achbotMessage('bot.bot.payment_policy_settings.message.121434bafe'),$cancelKey);
     return;
 }
 if (($from_id == $admin || (int)($userInfo['isAdmin']??0)===1) &&
@@ -659,15 +661,15 @@ if (($from_id == $admin || (int)($userInfo['isAdmin']??0)===1) &&
     $fields=achbotPaymentPolicyFields();$key=$policyMatch[1];
     if (!isset($fields[$key]) || !preg_match('/^[0-9]{1,5}$/D',(string)$text) ||
         (int)$text<$fields[$key]['min'] || (int)$text>$fields[$key]['max']) {
-        sendMessage('⛔️ مقدار واردشده نامعتبر است؛ در بازهٔ نمایش‌داده‌شده وارد کنید.', $cancelKey);
+        sendMessage(\achbotMessage('bot.bot.payment_policy_settings.message.bd6943ee9d'), $cancelKey);
         return;
     }
     if (!setSettings($key,(int)$text)) {
-        sendMessage('⛔️ تنظیم ذخیره نشد؛ لطفاً دوباره وضعیت را بررسی کنید.', $cancelKey);
+        sendMessage(\achbotMessage('bot.bot.payment_policy_settings.message.ed51b4cad2'), $cancelKey);
         return;
     }
     setUser();
-    sendMessage('✅ تنظیم ذخیره شد.',achbotPaymentPolicyKeyboard());
+    sendMessage(\achbotMessage('bot.bot.payment_policy_settings.message.8525c6215f'),achbotPaymentPolicyKeyboard());
     return;
 }
 if($data=="changeConfigRemarkType"){
@@ -691,55 +693,55 @@ if($data=="changeConfigRemarkType"){
 if (is_string($data??null) && str_starts_with($data,'changePaymentKeys')) {
     if (!preg_match('/\AchangePaymentKeys([A-Za-z0-9]+)\z/D',$data,$match) ||
         !in_array($match[1],achbotPaymentKeyAdminFields(),true)) {
-        answerCallbackQuery($callbackId, 'این تنظیم شناخته‌شده نیست.', true);
+        answerCallbackQuery($callbackId, \achbotMessage('bot.bot.change_config_remark_type.alert.b1f29d520c'), true);
         return;
     }
     if (!achbotAdminPaymentKeyChange($update,(int)$from_id,(int)$chat_id,
             (int)$message_id,(int)$admin,'start',$match[1])) {
         answerCallbackQuery($callbackId,
-            'تنظیم شروع نشد؛ دسترسی یا اطلاعات فعلی را بررسی کنید.',true);
+            \achbotMessage('bot.bot.change_config_remark_type.alert.f73d7912f7'),true);
         return;
     }
     delMessage();
     switch($match[1]){
         case "nextpay":
-            $gate = "کد جدید درگاه نکست پی";
+            $gate = \achbotMessage('bot.bot.change_config_remark_type.gate.44b818af28');
             break;
         case "nowpayment":
-            $gate = "کد جدید درگاه nowPayment";
+            $gate = \achbotMessage('bot.bot.change_config_remark_type.gate.55d4692d90');
             break;
         case "zarinpal":
-            $gate = "کد جدید درگاه زرین پال";
+            $gate = \achbotMessage('bot.bot.change_config_remark_type.gate.6dc3d1ffc2');
             break;
         case "bankAccount":
-            $gate = "شماره حساب جدید";
+            $gate = \achbotMessage('bot.bot.change_config_remark_type.gate.4267cb9eda');
             break;
         case "holderName":
-            $gate = "اسم دارنده حساب";
+            $gate = \achbotMessage('bot.bot.change_config_remark_type.gate.a77ae56406');
             break;
         case "giftCardUrl":
-            $gate = "لینک HTTPS معتبر خرید گیفت‌کارت (حداکثر ۳۵۰ بایت)";
+            $gate = \achbotMessage('bot.bot.change_config_remark_type.gate.9d8c0fcdf4');
             break;
         case "manualUsdtWalletBEP20":
         case "manualUsdtWalletTRC20":
         case "manualUsdtWalletERC20":
             $network = substr($match[1], strlen('manualUsdtWallet'));
-            $gate = "آدرس عمومی USDT برای شبکهٔ $network (برای حذف /clear بفرستید)";
+            $gate = \achbotMessage('bot.bot.change_config_remark_type.gate.7602e74547', ['network' => $network]);
             break;
         case "manualTrxWallet":
-            $gate = "آدرس عمومی TRX در شبکهٔ TRON (برای حذف /clear بفرستید)";
+            $gate = \achbotMessage('bot.bot.change_config_remark_type.gate.7e0248ed23');
             break;
         case "manualUsdtRateToman":
-            $gate = "قیمت هر USDT به تومان، عدد صحیح مثبت (برای حذف /clear بفرستید)";
+            $gate = \achbotMessage('bot.bot.change_config_remark_type.gate.31f01d4872');
             break;
         case "manualTrxRateToman":
-            $gate = "قیمت مستقل هر TRX به تومان، عدد صحیح مثبت (برای حذف /clear بفرستید)";
+            $gate = \achbotMessage('bot.bot.change_config_remark_type.gate.4f73f2daea');
             break;
         default:
-            answerCallbackQuery($callbackId, 'این تنظیم شناخته‌شده نیست.', true);
+            answerCallbackQuery($callbackId, \achbotMessage('bot.bot.change_config_remark_type.alert.b1f29d520c'), true);
             return;
     }
-    sendMessage("🔘 لطفا $gate را وارد کنید", $cancelKey);
+    sendMessage(\achbotMessage('bot.bot.change_config_remark_type.message.8f40ac53e7', ['gate' => $gate]), $cancelKey);
     return;
 }
 $paymentKeyStep=(string)($userInfo['step']??'');
@@ -750,7 +752,7 @@ if (str_starts_with($paymentKeyStep,'achbotPaymentKey|') ||
     if (!is_object($update->message??null) || !is_string($text??null)) return;
     $ownedStep=achbotPaymentKeyAdminStep($paymentKeyStep);
     if ($ownedStep===null) {
-        sendMessage('⛔️ ویرایش قبلی معتبر نیست؛ از منوی درگاه‌ها دوباره شروع کنید.');
+        sendMessage(\achbotMessage('bot.bot.change_config_remark_type.message.1bc265a941'));
         return;
     }
     $kind=$text===$buttonValues['cancel']?'cancel':'save';
@@ -761,12 +763,12 @@ if (str_starts_with($paymentKeyStep,'achbotPaymentKey|') ||
             ? achbotPaymentKeyAdminInputHint($ownedStep['field'],(string)$text)
             : null;
         sendMessage($hint ??
-            '⛔️ تنظیم ذخیره نشد؛ ممکن است دسترسی یا مقدار قبلی تغییر کرده باشد.',
+            \achbotMessage('bot.bot.change_config_remark_type.message.28b20d4ea7'),
             $cancelKey);
         return;
     }
     if ($kind==='cancel') {
-        sendMessage('ویرایش لغو شد.', $removeKeyboard);
+        sendMessage(\achbotMessage('bot.bot.gateway_audience_settings.message.74d707fe02'), $removeKeyboard);
     } else {
         sendMessage($mainValues['saved_successfuly'],$removeKeyboard);
     }
@@ -776,15 +778,15 @@ if (str_starts_with($paymentKeyStep,'achbotPaymentKey|') ||
 require __DIR__ . '/src/Agent/Discounts.php';
 if(preg_match('/^edit(RewaredTime|cartToCartAutoAcceptTime)/', $data, $match) && ($from_id == $admin || $userInfo['isAdmin'] == true)){
     delMessage();
-    if($match[1] == "RewaredTime") $txt = "🙃 لطفا زمان تأخیر در ارسال گزارش رو به ساعت وارد کن\n\nنکته: هر n ساعت گزارش به ربات ارسال میشه! ";
-    else $txt = "لطفا زمان مورد نظر را به دقیقه وارد کنید.";
+    if($match[1] == "RewaredTime") $txt = \achbotMessage('bot.bot.change_config_remark_type.txt.d867040876');
+    else $txt = \achbotMessage('bot.bot.change_config_remark_type.txt.fcd2e548b6');
 
     sendMessage($txt,$cancelKey);
     setUser($data);
 }
 if ($data == "userReports" && ($from_id == $admin || $userInfo['isAdmin'] == true)) {
     delMessage();
-    sendMessage("🔢 لطفا شناسه عددی کاربر رو وارد کنید.", $cancelKey);
+    sendMessage(\achbotMessage('bot.bot.user_reports.message.b1c793c917'), $cancelKey);
     setUser($data);
 }
 
@@ -798,36 +800,36 @@ if ($userInfo['step'] == "userReports" && $text != $buttonValues['cancel'] && ($
 			$keys = json_encode([
 				'inline_keyboard' => $keysData['inline_keyboard']
 			]);
-			sendMessage("📊 اطلاعات کاربر\n\n<code>🆔 $text</code>", $keys, "html");
+			sendMessage(\achbotMessage('bot.bot.user_reports.message.e55e5591d2', ['text' => $text]), $keys, "html");
 			setUser();
 		} else {
-            sendMessage("کاربری با این آیدی یافت نشد.");
+            sendMessage(\achbotMessage('bot.bot.user_reports.message.c1d7ab477b'));
         }
     } else {
-        sendMessage("😡 لطفا فقط عدد ارسال کنید.");
+        sendMessage(\achbotMessage('bot.bot.user_reports.message.a5e5f6a89b'));
     }
 }
 
 if($data=="inviteSetting" && ($from_id == $admin || $userInfo['isAdmin'] == true)){
     $stmt = $connection->prepare("SELECT * FROM `setting` WHERE `type` = 'INVITE_BANNER_AMOUNT'");
     $stmt->execute();
-    $inviteAmount = number_format($stmt->get_result()->fetch_assoc()['value']??0) . " تومان";
+    $inviteAmount = number_format($stmt->get_result()->fetch_assoc()['value']??0) . \achbotMessage('bot.bot.webhook_ingress_authenticated.text.2cc98f7f7c');
     $stmt->close();
     setUser();
     $keys = json_encode(['inline_keyboard'=>[
-        [['text'=>"❗️بنر دعوت",'callback_data'=>"inviteBanner"]],
+        [['text'=>\achbotMessage('bot.bot.invite_setting.button.e5798de28e'),'callback_data'=>"inviteBanner"]],
         [
             ['text'=>$inviteAmount,'callback_data'=>"editInviteAmount"],
-            ['text'=>"مقدار پورسانت",'callback_data'=>"wizwizch"]
+            ['text'=>\achbotMessage('bot.bot.invite_setting.button.0854688c71'),'callback_data'=>"wizwizch"]
             ],
         [
             ['text'=>$buttonValues['back_button'],'callback_data'=>"botSettings"]
             ],
         ]]);
-    $res = editText($message_id,"✅ تنظیمات بازاریابی",$keys);
+    $res = editText($message_id,\achbotMessage('bot.bot.invite_setting.message.554f354e70'),$keys);
     if(!$res->ok){
         delMessage();
-        sendMessage("✅ تنظیمات بازاریابی",$keys);
+        sendMessage(\achbotMessage('bot.bot.invite_setting.message.554f354e70'),$keys);
     }
 }
 if($data=="inviteBanner" && ($from_id == $admin || $userInfo['isAdmin'] == true)){
@@ -837,23 +839,23 @@ if($data=="inviteBanner" && ($from_id == $admin || $userInfo['isAdmin'] == true)
     $inviteText = $inviteText != null?json_decode($inviteText,true):array('type'=>'text');
     $stmt->close();
     $keys = json_encode(['inline_keyboard'=>[
-        [['text'=>"ویرایش",'callback_data'=>'editInviteBannerText']],
+        [['text'=>\achbotMessage('bot.bot.invite_banner.button.d6aa12d559'),'callback_data'=>'editInviteBannerText']],
         [['text'=>$buttonValues['back_button'],'callback_data'=>'inviteSetting']]
         ]]);
     if($inviteText['type'] == "text"){
-        editText($message_id,"بنر فعلی: \n" . $inviteText['text'],$keys);
+        editText($message_id,\achbotMessage('bot.bot.invite_banner.message.379af3c42e') . $inviteText['text'],$keys);
     }else{
         delMessage();
         $res = sendPhoto($inviteText['file_id'], $inviteText['caption'], $keys,null);
         if(!$res->ok){
-            sendMessage("تصویر فعلی یافت نشد، لطفا اقدام به ویرایش بنر کنید",$keys);
+            sendMessage(\achbotMessage('bot.bot.invite_banner.message.e5b34cbee4'),$keys);
         }
     }
     setUser();
 }
 if($data=="editInviteBannerText" && ($from_id == $admin || $userInfo['isAdmin'] == true)){
     delMessage();
-    sendMessage("🪧 لطفا بنر جدید را بفرستید از متن LINK برای نمایش لینک دعوت استفاده کنید.",$cancelKey);
+    sendMessage(\achbotMessage('bot.bot.edit_invite_banner_text.message.28f265f083'),$cancelKey);
     setUser($data);
 }
 if($userInfo['step']=="editInviteBannerText" && ($from_id == $admin || $userInfo['isAdmin'] == true) && $text != $buttonValues['cancel']){
@@ -867,7 +869,7 @@ if($userInfo['step']=="editInviteBannerText" && ($from_id == $admin || $userInfo
         $data['type'] = 'text';
         $data['text'] = $text;
     }else{
-        sendMessage("🥺 بنر ارسال شده پشتیبانی نمی شود.");
+        sendMessage(\achbotMessage('bot.bot.edit_invite_banner_text.message.155c179a84'));
         exit();
     }
 
@@ -892,11 +894,11 @@ if($userInfo['step']=="editInviteBannerText" && ($from_id == $admin || $userInfo
 
     sendMessage($mainValues['saved_successfuly'],$removeKeyboard);
     $keys = json_encode(['inline_keyboard'=>[
-        [['text'=>"ویرایش",'callback_data'=>'editInviteBannerText']],
+        [['text'=>\achbotMessage('bot.bot.invite_banner.button.d6aa12d559'),'callback_data'=>'editInviteBannerText']],
         [['text'=>$buttonValues['back_button'],'callback_data'=>'inviteSetting']]
         ]]);
     if(isset($update->message->text)){
-        sendMessage("بنر فعلی: \n" . $text,$keys);
+        sendMessage(\achbotMessage('bot.bot.invite_banner.message.379af3c42e') . $text,$keys);
     }else{
         sendPhoto($fileid, $caption, $keys);
     }
@@ -904,7 +906,7 @@ if($userInfo['step']=="editInviteBannerText" && ($from_id == $admin || $userInfo
 }
 if($data=="editInviteAmount" && ($from_id == $admin || $userInfo['isAdmin'] == true)){
     delMessage();
-    sendMessage("لطفا مبلغ پورسانت را به تومان وارد کنید.",$cancelKey);
+    sendMessage(\achbotMessage('bot.bot.edit_invite_amount.message.0372e8b9cd'),$cancelKey);
     setUser($data);
 }
 if($userInfo['step'] == "editInviteAmount" && ($from_id == $admin || $userInfo['isAdmin'] == true)){
@@ -930,26 +932,26 @@ if($userInfo['step'] == "editInviteAmount" && ($from_id == $admin || $userInfo['
         sendMessage($mainValues['saved_successfuly'],$removeKeyboard);
 
         $keys = json_encode(['inline_keyboard'=>[
-            [['text'=>"❗️بنر دعوت",'callback_data'=>"inviteBanner"]],
+            [['text'=>\achbotMessage('bot.bot.invite_setting.button.e5798de28e'),'callback_data'=>"inviteBanner"]],
             [
-                ['text'=>number_format($text) . " تومان",'callback_data'=>"editInviteAmount"],
-                ['text'=>"مقدار پورسانت",'callback_data'=>"wizwizch"]
+                ['text'=>number_format($text) . \achbotMessage('bot.bot.webhook_ingress_authenticated.text.2cc98f7f7c'),'callback_data'=>"editInviteAmount"],
+                ['text'=>\achbotMessage('bot.bot.invite_setting.button.0854688c71'),'callback_data'=>"wizwizch"]
                 ],
             [
                 ['text'=>$buttonValues['back_button'],'callback_data'=>"botSettings"]
                 ],
             ]]);
-        sendMessage("✅ تنظیمات بازاریابی",$keys);
+        sendMessage(\achbotMessage('bot.bot.invite_setting.message.554f354e70'),$keys);
         setUser();
     }else sendMessage($mainValues['send_only_number']);
 }
 if(preg_match('/^edit(RewaredTime|cartToCartAutoAcceptTime)/', $userInfo['step'], $match) && ($from_id == $admin || $userInfo['isAdmin'] == true) && $text != $buttonValues['cancel']){
     if(!is_numeric($text)){
-        sendMessage("لطفا عدد بفرستید.");
+        sendMessage(\achbotMessage('bot.bot.edit_invite_amount.message.d86a0557a7'));
         exit();
     }
     elseif($text <0 ){
-        sendMessage("مقدار وارد شده معتبر نیست.");
+        sendMessage(\achbotMessage('bot.bot.edit_invite_amount.message.736a04e908'));
         exit();
     }
 
@@ -970,7 +972,7 @@ if($data=="inviteFriends"){
 
         $stmt = $connection->prepare("SELECT * FROM `setting` WHERE `type` = 'INVITE_BANNER_AMOUNT'");
         $stmt->execute();
-        $inviteAmount = number_format($stmt->get_result()->fetch_assoc()['value'] ?? 0) . " تومان";
+        $inviteAmount = number_format($stmt->get_result()->fetch_assoc()['value'] ?? 0) . \achbotMessage('bot.bot.webhook_ingress_authenticated.text.2cc98f7f7c');
         $stmt->close();
 
         $getBotInfo = json_decode(file_get_contents("http://api.telegram.org/bot" . $botToken . "/getMe"), true);
@@ -1006,8 +1008,8 @@ if($data=="inviteFriends"){
 
         if(file_exists($photoPath) && is_readable($photoPath)){
             $caption =
-"🎁 هدیه هر دعوت: <b>$inviteReward تومان</b>\n" .
-"💵 پورسانت هر خرید: <b>$inviteAmount</b>";
+\achbotMessage('bot.bot.invite_friends.caption.16ca7a4696', ['inviteReward' => $inviteReward]) .
+\achbotMessage('bot.bot.invite_friends.text.c14f10907e', ['inviteAmount' => $inviteAmount]);
 
             $photoFile = function_exists('curl_file_create')
                 ? curl_file_create($photoPath)
@@ -1032,7 +1034,7 @@ if($data=="inviteFriends"){
         }
 
     } else {
-        alert("این قسمت غیر فعال است.");
+        alert(\achbotMessage('bot.bot.invite_friends.alert.56fd80c6d5'));
     }
 }
 
@@ -1043,29 +1045,18 @@ if($data=="myInfo"){
     $totalBuys = $stmt->get_result()->num_rows;
     $stmt->close();
 
-    $myWallet = number_format($userInfo['wallet']) . " تومان";
+    $myWallet = number_format($userInfo['wallet']) . \achbotMessage('bot.bot.webhook_ingress_authenticated.text.2cc98f7f7c');
 
     $keys = json_encode(['inline_keyboard'=>[
         [
-            ['text'=>"شارژ کیف پول 💵",'callback_data'=>"increaseMyWallet"],
-            ['text'=>"🔀 جابجایی موجودی",'callback_data'=>"transferMyWallet"]
+            ['text'=>\achbotMessage('bot.bot.my_info.button.3d0ddff816'),'callback_data'=>"increaseMyWallet"],
+            ['text'=>\achbotMessage('bot.bot.my_info.button.2aa445c2af'),'callback_data'=>"transferMyWallet"]
         ],
         [
             ['text'=>$buttonValues['back_button'],'callback_data'=>"mainMenu"]
             ]
         ]]);
-    editText($message_id, "
-📊 اطلاعات حساب شما:
-
-🎫 شناسه عددی: <code>$from_id</code>
-🔰 نام کاربری: @$username
-👤 اسم: $first_name
-💰 موجودی: <b>$myWallet</b>
-
-🌐 تعداد کل اشتراک ها: <b>$totalBuys</b> عدد
-
-💡 پیشنهاد می کنیم همیشه کیف پول خودتون رو قبل از پایان اکانت یا تمام شدن حجم شارژ کنید تا هر زمان که خواستید بدون نیاز به تایید ادمین بتوانید اکانت خود را تمدید کنید.
-",
+    editText($message_id, \achbotMessage('bot.bot.my_info.message.4fb6af58ae', ['from_id' => $from_id, 'username' => $username, 'first_name' => $first_name, 'myWallet' => $myWallet, 'totalBuys' => $totalBuys]),
             $keys,"html");
 }
 if (($achbotV8Result = require __DIR__ . '/src/Finance/Routes/WalletTransfer.php') === null) return;
@@ -1075,7 +1066,7 @@ if (($achbotV8Result = require __DIR__ . '/src/Finance/Routes/ManualReceipts.php
 if (($achbotV8Result = require __DIR__ . '/src/Finance/Routes/AdminWallet.php') === null) return;
 if($data=="editRewardChannel" && ($from_id == $admin || $userInfo['isAdmin'] == true)){
     delMessage();
-    sendMessage("⚠️ لطفا ربات را در کانال ادمین کنید و آیدی کانال را بفرستید.",$cancelKey);
+    sendMessage(\achbotMessage('bot.bot.edit_reward_channel.message.1f35a73f71'),$cancelKey);
     setUser($data);
 }
 // Edited by ACh
@@ -1088,14 +1079,14 @@ if (
 
     $me = bot('getMe');
     if (!$me || empty($me->ok)) {
-        sendMessage($mainValues['network_error_try_again'] ?? "❗️اختلال شبکه؛ لطفاً دوباره تلاش کنید.");
+        sendMessage($mainValues['network_error_try_again'] ?? \achbotMessage('bot.bot.edit_reward_channel.message.eef6d10f94'));
         exit;
     }
     $botId = $me->result->id;
 
     $chat = bot('getChat', ['chat_id' => $text]);
     if (!$chat || empty($chat->ok) || empty($chat->result->id)) {
-        sendMessage($mainValues['invalid_channel_id'] ?? "❗️آیدی کانال صحیح نیست یا ربات به کانال دسترسی ندارد.");
+        sendMessage($mainValues['invalid_channel_id'] ?? \achbotMessage('bot.bot.edit_reward_channel.message.2f497eef41'));
         exit;
     }
     $chatId = $chat->result->id;
@@ -1108,12 +1099,12 @@ if (
         exit;
     }
 
-    sendMessage("😡 ای بابا، ربات هنوز تو کانال عضو/ادمین نشده، اول ربات رو تو کانال ادمین کن و آیدیش رو بفرست.");
+    sendMessage(\achbotMessage('bot.bot.edit_reward_channel.message.f400fa3a23'));
 }
 
 if ($data == "editLockChannel" && ($from_id == $admin || $userInfo['isAdmin'] == true)) {
     delMessage();
-    sendMessage("🤗 لطفاً ربات رو در کانال ادمین کن و آیدی کانال رو بفرست", $cancelKey);
+    sendMessage(\achbotMessage('bot.bot.edit_lock_channel.message.b324b87609'), $cancelKey);
     setUser($data);
 }
 
@@ -1126,14 +1117,14 @@ if (
 
     $me = bot('getMe');
     if (!$me || empty($me->ok)) {
-        sendMessage($mainValues['network_error_try_again'] ?? "❗️اختلال شبکه؛ لطفاً دوباره تلاش کنید.");
+        sendMessage($mainValues['network_error_try_again'] ?? \achbotMessage('bot.bot.edit_reward_channel.message.eef6d10f94'));
         exit;
     }
     $botId = $me->result->id;
 
     $chat = bot('getChat', ['chat_id' => $text]);
     if (!$chat || empty($chat->ok) || empty($chat->result->id)) {
-        sendMessage($mainValues['invalid_channel_id'] ?? "❗️آیدی کانال صحیح نیست یا ربات به کانال دسترسی ندارد.");
+        sendMessage($mainValues['invalid_channel_id'] ?? \achbotMessage('bot.bot.edit_reward_channel.message.2f497eef41'));
         exit;
     }
     $chatId = $chat->result->id;
@@ -1146,19 +1137,19 @@ if (
         exit;
     }
 
-    sendMessage($mainValues['the_bot_in_not_admin'] ?? "❗️ربات در کانال ادمین نیست یا دسترسی کافی ندارد.");
+    sendMessage($mainValues['the_bot_in_not_admin'] ?? \achbotMessage('bot.bot.edit_lock_channel.message.949fda751f'));
 }
 // End Edited by ACh
 
 if($data=="editSupportID" && ($from_id == $admin || $userInfo['isAdmin'] == true)){
     delMessage();
-    sendMessage("🤗 لطفا آیدی پشتیبانی رو وارد کنید.",$cancelKey);
+    sendMessage(\achbotMessage('bot.bot.edit_support_i_d.message.2e136a38a2'),$cancelKey);
     setUser($data);
 }
 
 if($userInfo['step'] == "editSupportID" && ($from_id == $admin || $userInfo['isAdmin'] == true) && $text != $buttonValues['cancel']){
     setSettings('supportID', $text);
-    sendMessage("✅ آیدی پشتیبانی با موفقیت ذخیره شد.", getGateWaysKeys());
+    sendMessage(\achbotMessage('bot.bot.edit_support_i_d.message.6279ae207e'), getGateWaysKeys());
     setUser();
     exit();
 }
@@ -1175,7 +1166,7 @@ function processCallbackQuery($data, $chat_id, $from_id) {
         if ($botState['sellState'] == "on" || $isRealAdmin) {
 
             if (($botState['cartToCartState'] ?? 'off') == "off" && ($botState['giftCardState'] ?? 'off') == "off" && ($botState['manualUsdtState'] ?? 'off') == "off" && ($botState['walletState'] ?? 'off') == "off") {
-                sendMessage("⛔️ سیستم فروش غیرفعال است.", null, "MarkDown", $chat_id);
+                sendMessage(\achbotMessage('bot.bot.process_callback_query.message.616c172303'), null, "MarkDown", $chat_id);
                 exit();
             }
 
@@ -1198,7 +1189,7 @@ function processCallbackQuery($data, $chat_id, $from_id) {
                 $flag = $cat['flag'];
 
                 $keyboard[] = [
-                    'text' => "$flag $name",
+                    'text' => \achbotMessage('bot.bot.process_callback_query.flag_name.2542df190a', ['flag' => $flag, 'name' => $name]),
                     'callback_data' => "selectServer{$id}_{$buyType}"
                 ];
             }
@@ -1206,15 +1197,12 @@ function processCallbackQuery($data, $chat_id, $from_id) {
             $keyboard = array_chunk($keyboard, 1);
             $keyboard[] = [['text' => $buttonValues['back_to_main'], 'callback_data' => "mainMenu"]];
 
-            $textToSend = "1️⃣ مرحله یک
-
-➕ لطفا یک مورد را انتخاب کنید.
-💡 شما می توانید کیف پول خودتون رو قبل از پایان اکانت یا اتمام حجم شارژ کنید تا هر زمان که خواستید بدون نیاز به تایید ادمین بتوانید اکانت جدید خریداری کنید یا تمدید کنید.";
+            $textToSend = \achbotMessage('bot.bot.process_callback_query.text_to_send.6f1f09466a');
 
             sendMessage($textToSend, json_encode(['inline_keyboard' => $keyboard]), "MarkDown", $chat_id);
 
         } else {
-            sendMessage("⛔️ سیستم فروش غیرفعال است.", null, "MarkDown", $chat_id);
+            sendMessage(\achbotMessage('bot.bot.process_callback_query.message.616c172303'), null, "MarkDown", $chat_id);
         }
     }
 
@@ -1279,14 +1267,14 @@ function processCallbackQuery($data, $chat_id, $from_id) {
 
         if ($prev > 0) {
             $buttons[] = [
-                'text' => "⬅️",
+                'text' => \achbotMessage('bot.bot.process_callback_query.button.68f5beb4a0'),
                 'callback_data' => $isAgentView ? "changeAgentOrder$prev" : "changeOrdersPage$prev"
             ];
         }
 
         if ($page < $number_of_page) {
             $buttons[] = [
-                'text' => "➡️",
+                'text' => \achbotMessage('bot.bot.process_callback_query.button.b32013f76e'),
                 'callback_data' => $isAgentView ? "changeAgentOrder$next" : "changeOrdersPage$next"
             ];
         }
@@ -1335,7 +1323,7 @@ if($userInfo['step'] == "messageToSpeceficUser" && $text != $buttonValues['cance
     $stmt->close();
 
     if($usersCount > 0 ){
-        sendMessage("📨 پیامی که می خواهید کاربر دریافت کند را ارسال کنید.");
+        sendMessage(\achbotMessage('bot.bot.process_callback_query.message.d57aef02e2'));
         setUser("sendMessageToUser" . $text);
     }else{
         sendMessage($mainValues['user_not_found']);
@@ -1358,9 +1346,9 @@ if($data=="availableServers"){
 
     $keys = array();
     $keys[] = [
-        ['text'=>"تعداد باقیمانده",'callback_data'=>"wizwizch"],
-        ['text'=>"پلن",'callback_data'=>"wizwizch"],
-        ['text'=>'سرور','callback_data'=>"wizwizch"]
+        ['text'=>\achbotMessage('bot.bot.process_callback_query.button.423ff3a159'),'callback_data'=>"wizwizch"],
+        ['text'=>\achbotMessage('bot.bot.process_callback_query.button.d9772fd001'),'callback_data'=>"wizwizch"],
+        ['text'=>\achbotMessage('bot.bot.process_callback_query.button.0b29754285'),'callback_data'=>"wizwizch"]
         ];
     while($file_detail = $serversList->fetch_assoc()){
         $days = $file_detail['days'];
@@ -1378,7 +1366,7 @@ if($data=="availableServers"){
             $name = $name->fetch_assoc()['title'];
 
             $keys[] = [
-                ['text'=>$acount . " اکانت",'callback_data'=>"wizwizch"],
+                ['text'=>$acount . \achbotMessage('bot.bot.process_callback_query.text.d789169bd3'),'callback_data'=>"wizwizch"],
                 ['text'=>$title??" ",'callback_data'=>"wizwizch"],
                 ['text'=>$name??" ",'callback_data'=>"wizwizch"]
                 ];
@@ -1386,7 +1374,7 @@ if($data=="availableServers"){
     }
     $keys[] = [['text'=>$buttonValues['back_button'],'callback_data'=>"mainMenu"]];
     $keys = json_encode(['inline_keyboard'=>$keys]);
-    editText($message_id, "🟢 موجودی پلن اشتراکی:", $keys);
+    editText($message_id, \achbotMessage('bot.bot.process_callback_query.message.dda719f1cb'), $keys);
 }
 if($data=="availableServers2"){
     $stmt = $connection->prepare("SELECT * FROM `server_plans` WHERE `inbound_id` = 0");
@@ -1396,8 +1384,8 @@ if($data=="availableServers2"){
 
     $keys = array();
     $keys[] = [
-        ['text'=>"تعداد باقیمانده",'callback_data'=>"wizwizch"],
-        ['text'=>'سرور','callback_data'=>"wizwizch"]
+        ['text'=>\achbotMessage('bot.bot.process_callback_query.button.423ff3a159'),'callback_data'=>"wizwizch"],
+        ['text'=>\achbotMessage('bot.bot.process_callback_query.button.0b29754285'),'callback_data'=>"wizwizch"]
         ];
     while($file_detail2 = $serversList->fetch_assoc()){
         $days2 = $file_detail2['days'];
@@ -1417,14 +1405,14 @@ if($data=="availableServers2"){
             $acount2 = $sInfo['ucount'];
 
             $keys[] = [
-                ['text'=>$acount2 . " اکانت",'callback_data'=>"wizwizch"],
+                ['text'=>$acount2 . \achbotMessage('bot.bot.process_callback_query.text.d789169bd3'),'callback_data'=>"wizwizch"],
                 ['text'=>$title2??" ",'callback_data'=>"wizwizch"],
                 ];
         }
     }
     $keys[] = [['text'=>$buttonValues['back_button'],'callback_data'=>"mainMenu"]];
     $keys = json_encode(['inline_keyboard'=>$keys]);
-    editText($message_id, "🟢 موجودی پلن اختصاصی:", $keys);
+    editText($message_id, \achbotMessage('bot.bot.process_callback_query.message.e8f25aae49'), $keys);
 }
 require __DIR__ . '/src/Agent/Applications.php';
 if (($achbotV8Result = require __DIR__ . '/src/Finance/Routes/ManualApproval.php') === null) return;
@@ -1436,7 +1424,7 @@ require __DIR__ . '/src/Support/Categories.php';
 require __DIR__ . '/src/Support/QueueAndHistory.php';
 require __DIR__ . '/src/Admin/Bans.php';
 if($data=="mainMenuButtons" && ($from_id == $admin || $userInfo['isAdmin'] == true)){
-    editText($message_id,"🧮 مدیریت دکمه ها",getMainMenuButtonsKeys());
+    editText($message_id,\achbotMessage('bot.bot.process_callback_query.message.70afb19fd8'),getMainMenuButtonsKeys());
 }
 if(preg_match('/^delMainButton(\d+)/',$data,$match) && ($from_id == $admin || $userInfo['isAdmin'] == true)){
     $stmt = $connection->prepare("DELETE FROM `setting` WHERE `id` = ?");
@@ -1444,26 +1432,26 @@ if(preg_match('/^delMainButton(\d+)/',$data,$match) && ($from_id == $admin || $u
     $stmt->execute();
     $stmt->close();
 
-    alert("با موفقیت حذف شد.");
-    editText($message_id,"🧮 مدیریت دکمه ها",getMainMenuButtonsKeys());
+    alert(\achbotMessage('bot.bot.process_callback_query.alert.e1e7245408'));
+    editText($message_id,\achbotMessage('bot.bot.process_callback_query.message.70afb19fd8'),getMainMenuButtonsKeys());
 }
 if($data == "addNewMainButton" && ($from_id == $admin || $userInfo['isAdmin'] == true)){
     delMessage();
-    sendMessage("لطفا اسم دکمه را وارد کنید",$cancelKey);
+    sendMessage(\achbotMessage('bot.bot.process_callback_query.message.ed098f7f93'),$cancelKey);
     setUser($data);
 }
 if($userInfo['step'] == "addNewMainButton" && $text != $buttonValues['cancel'] && ($from_id == $admin || $userInfo['isAdmin'] == true)){
     if(!isset($update->message->text)){
-        sendMessage("لطفا فقط متن بفرستید");
+        sendMessage(\achbotMessage('bot.bot.process_callback_query.message.0caee5986d'));
         exit();
     }
-    sendMessage("لطفا پاسخ دکمه را وارد کنید");
+    sendMessage(\achbotMessage('bot.bot.process_callback_query.message.ea8c224138'));
     setUser("setMainButtonAnswer" . $text);
 }
 
 if (preg_match('/^setMainButtonAnswer(.*)/', $userInfo['step'], $match) && ($from_id == $admin || $userInfo['isAdmin'] == true)) {
     if (!isset($update->message->text)) {
-        sendMessage("لطفا فقط متن بفرستید");
+        sendMessage(\achbotMessage('bot.bot.process_callback_query.message.0caee5986d'));
         exit();
     }
     setUser();
@@ -1478,7 +1466,7 @@ if (preg_match('/^setMainButtonAnswer(.*)/', $userInfo['step'], $match) && ($fro
     $stmt->execute();
     $stmt->close();
 
-    sendMessage("🧮 مدیریت دکمه ها", getMainMenuButtonsKeys());
+    sendMessage(\achbotMessage('bot.bot.process_callback_query.message.70afb19fd8'), getMainMenuButtonsKeys());
 }
 
 require __DIR__ . '/src/Admin/Unban.php';
@@ -1531,17 +1519,17 @@ if(preg_match('/^marzbanHostSettings(\d+)/',$data,$match) && ($from_id == $admin
     }
     $networkType[] = [['text'=>$buttonValues['cancel'], 'callback_data'=>"planDetails" . $match[1]]];
     $networkType = json_encode(['inline_keyboard'=>$networkType]);
-    editText($message_id, "لطفا نوع شبکه های این پلن را انتخاب کنید.",$networkType);
+    editText($message_id, \achbotMessage('bot.bot.process_callback_query.message.2c4ec0c4cc'),$networkType);
 }
 if(preg_match('/^selectHost(?<planId>\d+)\*_\*(?<protocol>.+)\*_\*(?<tag>.*)/',$data,$match) && ($from_id == $admin || $userInfo['isAdmin'] == true)){
-    $saveBtn = "ذخیره ✅";
+    $saveBtn = \achbotMessage('bot.bot.process_callback_query.save_btn.b3a82cd642');
     unset($markup[count($markup)-1]);
     if($markup[count($markup)-1][0]['text'] == $saveBtn) unset($markup[count($markup)-1]);
     foreach($markup as $key => $keyboard){
-        if($keyboard[0]['callback_data'] == $data) $markup[$key][0]['text'] = $keyboard['0']['text'] == $match['tag'] . " ✅" ? $match['tag']:$match['tag'] . " ✅";
+        if($keyboard[0]['callback_data'] == $data) $markup[$key][0]['text'] = $keyboard['0']['text'] == $match['tag'] . \achbotMessage('bot.bot.process_callback_query.text.64554c955e') ? $match['tag']:$match['tag'] . \achbotMessage('bot.bot.process_callback_query.text.64554c955e');
     }
 
-    if(strstr(json_encode($markup,JSON_UNESCAPED_UNICODE), "✅") && !strstr(json_encode($markup,JSON_UNESCAPED_UNICODE), $saveBtn)){
+    if(strstr(json_encode($markup,JSON_UNESCAPED_UNICODE), \achbotMessage('bot.bot.process_callback_query.text.1d456424c3')) && !strstr(json_encode($markup,JSON_UNESCAPED_UNICODE), $saveBtn)){
         $markup[] = [['text'=>$saveBtn,'callback_data'=>"saveServerHost" . $match['planId']]];
     }
     $markup[] = [['text'=>$buttonValues['cancel'], 'callback_data'=>"planDetails" . $match['planId']]];
@@ -1555,7 +1543,7 @@ if(preg_match('/^saveServerHost(\d+)/',$data,$match) && ($from_id == $admin || $
     unset($markup[count($markup)-1]);
 
     foreach($markup as $key=>$value){
-        $tag = trim(str_replace("✅", "", $value[0]['text'], $state));
+        $tag = trim(str_replace(\achbotMessage('bot.bot.process_callback_query.text.1d456424c3'), "", $value[0]['text'], $state));
         if($state > 0){
             preg_match('/^selectHost(?<serverId>\d+)\*_\*(?<protocol>.+)\*_\*(?<tag>.*)/',$value[0]['callback_data'],$info);
             $inbounds[$info['protocol']][] = $tag;
@@ -1575,7 +1563,7 @@ if(preg_match('/^saveServerHost(\d+)/',$data,$match) && ($from_id == $admin || $
     $stmt->execute();
     $stmt->close();
 
-    editText($message_id, "با موفقیت ذخیره شد.",getPlanDetailsKeys($match[1]));
+    editText($message_id, \achbotMessage('bot.bot.process_callback_query.message.e3bd301365'),getPlanDetailsKeys($match[1]));
     setUser();
 }
 require __DIR__ . '/src/Agent/Rejected.php';
@@ -1604,18 +1592,18 @@ if($data=="giftVolumeAndDay" && ($from_id == $admin || $userInfo['isAdmin'] == t
     $respd = $stmt->get_result();
     $stmt->close();
     if($respd->num_rows == 0){
-        alert('در حال حاضر هیچ سرور فعالی برای هدیه دادن وجود ندارد.',true);
+        alert(\achbotMessage('bot.bot.process_callback_query.alert.c0aaf0af38'),true);
         exit;
     }
     $keyboard = [];
     while($cat = $respd->fetch_assoc()){
         $sid = $cat['id'];
         $name = $cat['title'];
-        $keyboard[] = ['text' => "$name", 'callback_data' => "giftToServer{$sid}"];
+        $keyboard[] = ['text' => \achbotMessage('bot.bot.process_callback_query.name.5e291d7bcb', ['name' => $name]), 'callback_data' => "giftToServer{$sid}"];
     }
     $keyboard = array_chunk($keyboard,2);
     $keyboard[] = [['text' => $buttonValues['back_button'], 'callback_data' => "managePanel"]];
-    editText($message_id, ' 📍 لطفا برای هدیه دادن, یکی از سرورها را انتخاب کنید👇',json_encode([
+    editText($message_id, \achbotMessage('bot.bot.process_callback_query.message.997b4e1b83'),json_encode([
             'inline_keyboard' => $keyboard
         ]));
 }
@@ -1623,14 +1611,14 @@ if(preg_match('/^giftToServer(\d+)/',$data,$match) && ($from_id == $admin || $us
     delMessage();
     $sid = $match[1];
     $keyboard = [
-        [['text' => "🎁 هدیه به همه کاربران", 'callback_data' => "giftToAll{$sid}"]],
-        [['text' => "👤 هدیه به کاربر خاص", 'callback_data' => "giftToUser{$sid}"]],
+        [['text' => \achbotMessage('bot.bot.process_callback_query.button.e2a9773071'), 'callback_data' => "giftToAll{$sid}"]],
+        [['text' => \achbotMessage('bot.bot.process_callback_query.button.b80add87e4'), 'callback_data' => "giftToUser{$sid}"]],
         [['text' => $buttonValues['back_button'], 'callback_data' => "giftVolumeAndDay"]]
     ];
-    sendMessage("لطفا نوع هدیه دادن را انتخاب کن:", json_encode(['inline_keyboard' => $keyboard]));
+    sendMessage(\achbotMessage('bot.bot.process_callback_query.message.41aa3dcaf2'), json_encode(['inline_keyboard' => $keyboard]));
 }
 if(preg_match('/^giftToAll(\d+)/', $data, $match) && ($from_id == $admin || $userInfo['isAdmin'] == true)) {
-    sendMessage("مدت زمان هدیه را به روز وارد کن (برای صفر، عدد 0 را وارد کن):", $cancelKey);
+    sendMessage(\achbotMessage('bot.bot.process_callback_query.message.dc1943b7b1'), $cancelKey);
     setUser('giftServerDay' . $match[1]);
 }
 // ACHBOT_DIRECT_GIFT_ROUTE_BEGIN
@@ -1650,13 +1638,13 @@ if (is_string($data) &&
         $created=achbotDirectGiftStart($connection,$directSource,
             (int)$directGiftMatch[1],(int)$admin);
         if ($created) {
-            sendMessage('نام کاربری اشتراک موردنظر را وارد کنید:',$cancelKey);
+            sendMessage(\achbotMessage('bot.bot.process_callback_query.message.8386c28679'),$cancelKey);
         } else {
-            sendMessage('این درخواست قبلاً ثبت شده است. برای شروع جدید دوباره دکمه را انتخاب کنید.');
+            sendMessage(\achbotMessage('bot.bot.process_callback_query.message.a4712f82bb'));
         }
     } catch (Throwable $e) {
         error_log('direct_gift_start_unconfirmed');
-        try {sendMessage('شروع هدیه تأیید نشد؛ پیش از تلاش مجدد وضعیت را بررسی کنید.');}
+        try {sendMessage(\achbotMessage('bot.bot.process_callback_query.message.97447b213e'));}
         catch (Throwable $ignored) {}
     }
     return;
@@ -1674,10 +1662,10 @@ if (is_string($userInfo['step']??null) &&
     if ($text===$buttonValues['cancel']) {
         try {
             achbotDirectGiftCancel($connection,$directSource,(int)$admin,$directStep);
-            sendMessage('درخواست هدیه لغو شد.',$removeKeyboard);
+            sendMessage(\achbotMessage('bot.bot.gift_volume_and_day.message.ac0da574b4'),$removeKeyboard);
         } catch (Throwable $e) {
             error_log('direct_gift_cancel_unconfirmed');
-            try {sendMessage('لغو درخواست تأیید نشد؛ وضعیت را بررسی کنید.');}
+            try {sendMessage(\achbotMessage('bot.bot.gift_volume_and_day.message.e0e7fe8fcb'));}
             catch (Throwable $ignored) {}
         }
         return;
@@ -1686,13 +1674,13 @@ if (is_string($userInfo['step']??null) &&
         if (str_starts_with($directStep,'achbotDirectGiftRemark:')) {
             achbotDirectGiftAdvance($connection,$directSource,(int)$admin,
                 $directStep,$text);
-            sendMessage('تعداد روز هدیه را به عدد صحیح وارد کنید (صفر مجاز است):');
+            sendMessage(\achbotMessage('bot.bot.gift_volume_and_day.message.ceaba67bc5'));
             return;
         }
         if (str_starts_with($directStep,'achbotDirectGiftDay:')) {
             achbotDirectGiftAdvance($connection,$directSource,(int)$admin,
                 $directStep,$text);
-            sendMessage('حجم هدیه را به مگابایت وارد کنید؛ عدد صحیح و مضرب 1024 (صفر مجاز است):');
+            sendMessage(\achbotMessage('bot.bot.gift_volume_and_day.message.2ff3f6e643'));
             return;
         }
         if (!str_starts_with($directStep,'achbotDirectGiftVolume:'))
@@ -1700,24 +1688,24 @@ if (is_string($userInfo['step']??null) &&
         $directClaim=achbotDirectGiftClaim($connection,$directSource,(int)$admin,
                                           $directStep,$text);
     } catch (InvalidArgumentException $e) {
-        try {sendMessage('ورودی نامعتبر است. روز باید عدد صحیح 0 تا 36500 باشد؛ حجم باید عدد صحیح غیرمنفی و مضرب 1024 مگابایت باشد و هر دو نمی‌توانند صفر باشند.');}
+        try {sendMessage(\achbotMessage('bot.bot.gift_volume_and_day.message.430119925b'));}
         catch (Throwable $ignored) {}
         return;
     } catch (Throwable $e) {
         if ($e->getMessage()==='direct_gift_duplicate_source_conflict')
             error_log('direct_gift_source_provenance_conflict update_id='.(int)$directSource['update_id']);
         else error_log('direct_gift_claim_or_step_unconfirmed');
-        try {sendMessage('وضعیت درخواست تأیید نشد. از ارسال دوباره تا بررسی وضعیت خودداری کنید.');}
+        try {sendMessage(\achbotMessage('bot.bot.gift_volume_and_day.message.e411fd7a97'));}
         catch (Throwable $ignored) {}
         return;
     }
     if (!$directClaim['claimed']) {
         try {
             if ($directClaim['reason']==='hold') {
-                sendMessage('این اشتراک هدیهٔ در انتظار بررسی دارد (شناسه '.
-                    $directClaim['id'].'). پیش از درخواست جدید، وضعیت ثبت و اثر واقعی را دستی تطبیق دهید.');
+                sendMessage(\achbotMessage('bot.bot.gift_volume_and_day.message.71a178ae08').
+                    $directClaim['id'].\achbotMessage('bot.bot.gift_volume_and_day.message.f988eb99dc'));
             } else {
-                sendMessage('این پیام قبلاً بررسی شده است؛ هیچ هدیهٔ جدیدی اعمال نشد.');
+                sendMessage(\achbotMessage('bot.bot.gift_volume_and_day.message.8c36c4327a'));
             }
         } catch (Throwable $ignored) {}
         return;
@@ -1744,7 +1732,7 @@ if (is_string($userInfo['step']??null) &&
             $directFailure='provider_'.$directProviderCode;
         achbotDirectGiftComplete($connection,$directClaim,$directResult);
         try {
-            sendMessage('✅ هدیهٔ اشتراک با نتیجهٔ قطعی ثبت شد (شناسه '.
+            sendMessage(\achbotMessage('bot.bot.gift_volume_and_day.message.df8d2180ae').
                 $directClaim['id'].').',$removeKeyboard);
             sendMessage($mainValues['reached_main_menu'],getMainKeys());
         } catch (Throwable $noticeFailure) {
@@ -1767,8 +1755,8 @@ if (is_string($userInfo['step']??null) &&
             (int)$directClaim['id'].' reason='.$directFailure);
         achbotDirectGiftReview($connection,$directClaim,$directFailure);
         try {
-            sendMessage('نتیجهٔ هدیه قطعی نیست (شناسه '.
-                $directClaim['id'].'). درخواست تکرار نمی‌شود؛ قبل از هر اقدام، اثر واقعی اشتراک و ثبت محلی را دستی تطبیق دهید.');
+            sendMessage(\achbotMessage('bot.bot.gift_volume_and_day.message.5999ce86f9').
+                $directClaim['id'].\achbotMessage('bot.bot.gift_volume_and_day.message.e36a2dd90a'));
         } catch (Throwable $ignored) {
             error_log('direct_gift_review_notice_unconfirmed');
         }
@@ -1786,9 +1774,9 @@ if (is_string($userInfo['step']??null) &&
 if(preg_match('/^giftServerDay(\d+)/',$userInfo['step'], $match) && ($from_id == $admin || $userInfo['isAdmin'] == true) && $text != $buttonValues['cancel']){
     if(is_numeric($text)){
         if($text >= 0){
-            sendMessage("حجم هدیه را به مگابایت وارد کن (برای صفر، عدد 0 را وارد کن):");
+            sendMessage(\achbotMessage('bot.bot.gift_volume_and_day.message.9ab673c836'));
             setUser('giftServerVolume' . $match[1] . "_" . $text);
-        }else sendMessage("عددی بزرگتر و یا مساوی 0 واردکنید.");
+        }else sendMessage(\achbotMessage('bot.bot.gift_volume_and_day.message.40747d2ee6'));
     }else sendMessage($mainValues['send_only_number']);
 }
 if(preg_match('/^giftServerVolume(\d+)_(\d+)/',$userInfo['step'],$match) && ($from_id == $admin || $userInfo['isAdmin'] == true) && $text != $buttonValues['cancel']){
@@ -1806,7 +1794,7 @@ if(preg_match('/^giftServerVolume(\d+)_(\d+)/',$userInfo['step'],$match) && ($fr
                 $volume===false || $days===false || $sid===false ||
                 ($volume===0 && $days===0) ||
                 ($volume>0 && $volume%1024!==0)) {
-                sendMessage('حجم باید مضرب 1024 مگابایت و حداقل یکی از حجم یا روز مثبت باشد.');
+                sendMessage(\achbotMessage('bot.bot.gift_volume_and_day.message.dda8b45a3f'));
             } else {
                 // Source authority comes from THIS received Telegram text
                 // update, not cached step text or a callback's old bot text.
@@ -1823,7 +1811,7 @@ if(preg_match('/^giftServerVolume(\d+)_(\d+)/',$userInfo['step'],$match) && ($fr
                     // An unknown COMMIT acknowledgement can mean the batch
                     // exists. Never submit a replacement job with a new
                     // source identity or claim failed SQL is absent.
-                    sendMessage('وضعیت ثبت هدیه تأیید نشد؛ پیش از هر اقدام جدید صف هدایا را بررسی کنید.');
+                    sendMessage(\achbotMessage('bot.bot.gift_volume_and_day.message.6463835f72'));
                     return;
                 }
                 // The one-time wizard step was consumed atomically with
@@ -1833,7 +1821,7 @@ if(preg_match('/^giftServerVolume(\d+)_(\d+)/',$userInfo['step'],$match) && ($fr
                     if ($giftEnqueue['created']) {
                         sendMessage($mainValues['saved_successfuly'],$removeKeyboard);
                     } else {
-                        sendMessage('این پیام قبلاً برای هدیه ثبت شده و درخواست تکراری ایجاد نشد.',
+                        sendMessage(\achbotMessage('bot.bot.gift_volume_and_day.message.b155540ffb'),
                                     $removeKeyboard);
                     }
                     sendMessage($mainValues['reached_main_menu'],getMainKeys());
@@ -1841,7 +1829,7 @@ if(preg_match('/^giftServerVolume(\d+)_(\d+)/',$userInfo['step'],$match) && ($fr
                     error_log('gift_enqueue_telegram_notice_unconfirmed');
                 }
             }
-        }else sendMessage("عددی بزرگتر و یا مساوی 0 واردکنید.");
+        }else sendMessage(\achbotMessage('bot.bot.gift_volume_and_day.message.40747d2ee6'));
     }else sendMessage($mainValues['send_only_number']);
 }
 else {
@@ -1850,7 +1838,7 @@ else {
 if (($achbotV8Result = require __DIR__ . '/src/Finance/Routes/Extensions.php') === null) return;
 if ($achbotV8Result === '__ACHBOT_V8_GOTO_START__') goto GOTOSTART;
 if($data == 'cantEditTrojan'){
-    alert("پروتکل تروجان فقط نوع شبکه TCP را دارد");
+    alert(\achbotMessage('bot.bot.cant_edit_trojan.alert.4d3c064114'));
     exit;
 }
 if ((require __DIR__ . '/src/Plans/Categories.php') === null) return;
@@ -1858,7 +1846,7 @@ if(($data=='serversSetting' || preg_match('/^nextServerPage(\d+)/',$data,$match)
     if(isset($match[1])) $keys = getServerListKeys($match[1]);
     else $keys = getServerListKeys();
 
-    editText($message_id,"☑️ مدیریت سرور ها:",$keys);
+    editText($message_id,\achbotMessage('bot.bot.servers_setting.message.4c0e6ed6fc'),$keys);
 }
 if(preg_match('/^toggleServerState(\d+)_(\d+)/',$data,$match) && ($from_id == $admin || $userInfo['isAdmin'] == true)){
     $stmt = $connection->prepare("UPDATE `server_info` SET `state` = IF(`state` = 0,1,0) WHERE `id`=?");
@@ -1867,24 +1855,24 @@ if(preg_match('/^toggleServerState(\d+)_(\d+)/',$data,$match) && ($from_id == $a
     $cats= $stmt->get_result();
     $stmt->close();
 
-    alert("وضعیت سرور با موفقیت تغییر کرد.");
+    alert(\achbotMessage('bot.bot.servers_setting.alert.9f4e68eda7'));
 
     $keys = getServerListKeys($match[2]);
-    editText($message_id,"☑️ مدیریت سرور ها:",$keys);
+    editText($message_id,\achbotMessage('bot.bot.servers_setting.message.4c0e6ed6fc'),$keys);
 }
 if(preg_match('/^showServerSettings(\d+)_(\d+)/',$data,$match) and ($from_id == $admin || $userInfo['isAdmin'] == true)){
     $keys = getServerConfigKeys($match[1], $match[2]);
-    editText($message_id,"☑️ مدیریت سرور ها: $cname",$keys);
+    editText($message_id,\achbotMessage('bot.bot.servers_setting.message.ac9cd6d52a', ['cname' => $cname]),$keys);
 }
 if(preg_match('/^changesServerIp(\d+)/',$data,$match) && ($from_id == $admin || $userInfo['isAdmin'] == true)){
     $stmt = $connection->prepare("SELECT * FROM `server_config` WHERE `id`=?");
     $stmt->bind_param("i", $match[1]);
     $stmt->execute();
-    $serverIp= $stmt->get_result()->fetch_assoc()['ip']??"اطلاعاتی یافت نشد";
+    $serverIp= $stmt->get_result()->fetch_assoc()['ip']??\achbotMessage('bot.bot.servers_setting.text.7267d348aa');
     $stmt->close();
 
     delMessage();
-    sendMessage("لیست آیپی های فعلی: \n$serverIp\nلطفا آیپی های جدید را در خط های جدا بفرستید\n\nبرای خالی کردن متن /empty را وارد کنید",$cancelKey,null,null,null);
+    sendMessage(\achbotMessage('bot.bot.servers_setting.message.47c8f910e4', ['serverIp' => $serverIp]),$cancelKey,null,null,null);
     setUser($data);
     exit();
 }
@@ -1898,24 +1886,24 @@ if(preg_match('/^changesServerIp(\d+)/',$userInfo['step'],$match) && ($from_id =
     setUser();
 
     $keys = getServerConfigKeys($match[1]);
-    sendMessage("☑️ مدیریت سرور ها: $cname",$keys);
+    sendMessage(\achbotMessage('bot.bot.servers_setting.message.ac9cd6d52a', ['cname' => $cname]),$keys);
     exit();
 }
 // Old buttons can still arrive from a Telegram message sent before
 // upgrading. Respond safely instead of silently dropping the callback.
 if ($data === 'addNewServer' && ($from_id == $admin || ($userInfo['isAdmin'] ?? false) == true)) {
-    alert("ثبت پنل‌های قدیمی حذف شده است؛ از ثبت سرور مرزبان استفاده کنید.", true);
+    alert(\achbotMessage('bot.bot.add_new_server.alert.649a7042c3'), true);
     return;
 }
 // Obsolete X-UI transport/Reality callbacks are intentionally retired.
 if(preg_match('/^(?:changePortType|changeRealityState)\d+$/', (string)$data)){
-    alert("تنظیمات پنل‌های قدیمی دیگر پشتیبانی نمی‌شود.", true);
+    alert(\achbotMessage('bot.bot.add_new_server.alert.e9e9974e92'), true);
     return;
 }
 // Previously sent legacy admin panel-selector callbacks must never
 // mutate provider type or accidentally switch a Marzban server to X-UI.
 if(preg_match('/^(?:changeServerType\d+|chhangeServerType\w+_\d+)$/', (string)$data)){
-    alert("پنل‌های قدیمی حذف شده‌اند؛ تنها مرزبان پشتیبانی می‌شود.", true);
+    alert(\achbotMessage('bot.bot.add_new_server.alert.3340eb9465'), true);
     return;
 }
 // Define real-panel identity groups centrally, before assigning them to
@@ -1923,37 +1911,37 @@ if(preg_match('/^(?:changeServerType\d+|chhangeServerType\w+_\d+)$/', (string)$d
 // inferred from endpoint aliases or Marzban admin credential equality.
 if ($data === 'manageMarzbanPanelGroups' &&
     ($from_id == $admin || ($userInfo['isAdmin'] ?? false))) {
-    editText($message_id, "🏷 گروه‌های پنل مرزبان؛ فقط سرورهایی که به یک پنل واقعی متصل‌اند باید گروه مشترک داشته باشند.",
+    editText($message_id, \achbotMessage('bot.bot.manage_marzban_panel_groups.message.59d5170317'),
         getMarzbanPanelGroupsManagementKeys());
     return;
 }
 if ($data === 'addMarzbanPanelGroup' &&
     ($from_id == $admin || ($userInfo['isAdmin'] ?? false))) {
     setUser('newMarzbanPanelGroup');
-    sendMessage("نام گروه پنل جدید را وارد کنید (۱ تا ۶۰ حرف؛ فارسی مجاز است).\n"
-        . "توجه: این گروه صرفاً برای ورودی‌های متعلق به یک پنل واقعی مرزبان استفاده شود.", $cancelKey);
+    sendMessage(\achbotMessage('bot.bot.add_marzban_panel_group.message.01f02c2ac6')
+        . \achbotMessage('bot.bot.add_marzban_panel_group.message.31116063c0'), $cancelKey);
     return;
 }
 if (($userInfo['step'] ?? '') === 'newMarzbanPanelGroup' &&
     $text != $buttonValues['cancel'] &&
     ($from_id == $admin || ($userInfo['isAdmin'] ?? false))) {
     if (!achbotMarzbanGroupValid((string)$text)) {
-        sendMessage("نام گروه نامعتبر است؛ حداکثر ۶۰ کاراکتر و بدون خط جدید.");
+        sendMessage(\achbotMessage('bot.bot.add_marzban_panel_group.message.c697bdb683'));
         return;
     }
     try {
         // Creation owns the transaction and cross-connection catalog lock.
         $groupId = achbotCreateMarzbanPanelGroup($connection, $text);
         if ($groupId === null) {
-            sendMessage("این نام قبلاً تعریف شده است یا معتبر نیست؛ نام دیگری وارد کنید.");
+            sendMessage(\achbotMessage('bot.bot.add_marzban_panel_group.message.cfb10ede6f'));
             return;
         }
     } catch (\Throwable $e) {
-        sendMessage("ذخیره گروه پنل انجام نشد.");
+        sendMessage(\achbotMessage('bot.bot.add_marzban_panel_group.message.7c6b361e59'));
         return;
     }
     setUser();
-    sendMessage("✅ گروه پنل ثبت شد.", getMarzbanPanelGroupsManagementKeys());
+    sendMessage(\achbotMessage('bot.bot.add_marzban_panel_group.message.1de4f68601'), getMarzbanPanelGroupsManagementKeys());
     return;
 }
 if (preg_match('/^deleteMarzbanPanelGroup_(\d+)$/D', (string)($data ?? ''), $groupMatch) &&
@@ -1972,25 +1960,23 @@ if (preg_match('/^deleteMarzbanPanelGroup_(\d+)$/D', (string)($data ?? ''), $gro
         $connection->commit();
     } catch (\Throwable $e) {
         $connection->rollback();
-        alert("حذف گروه پنل ناموفق بود.", true);
+        alert(\achbotMessage('bot.bot.add_marzban_panel_group.alert.a77f2c705d'), true);
         return;
     }
-    alert($removed ? "گروه استفاده‌نشده حذف شد." :
-        "گروه پیدا نشد یا هنوز به سرور متصل است؛ ابتدا سرورها را از آن خارج کنید.", true);
-    editText($message_id, "🏷 مدیریت گروه‌های پنل مرزبان", getMarzbanPanelGroupsManagementKeys());
+    alert($removed ? \achbotMessage('bot.bot.add_marzban_panel_group.alert.2b2b180a96') :
+        \achbotMessage('bot.bot.add_marzban_panel_group.alert.cc8538eba9'), true);
+    editText($message_id, \achbotMessage('bot.bot.add_marzban_panel_group.message.def9f141f2'), getMarzbanPanelGroupsManagementKeys());
     return;
 }
 if($data == "addNewMarzbanPanel" and ($from_id == $admin || $userInfo['isAdmin'] == true)){
     delMessage();
     setUser($data, 'temp');
     setUser('addserverName');
-    sendMessage("مرحله اول:
-▪️ یه اسم برا سرورت انتخاب کن:",$cancelKey);
+    sendMessage(\achbotMessage('bot.bot.add_new_marzban_panel.message.2dcf34731e'),$cancelKey);
     exit();
 }
 if($userInfo['step'] == 'addserverName' and $text != $buttonValues['cancel'] && ($from_id == $admin || $userInfo['isAdmin'] == true)) {
-	sendMessage('مرحله دوم:
-▪️ ظرفیت تعداد ساخت اشتراک رو برای سرورت مشخص کن ( عدد باشه )');
+	sendMessage(\achbotMessage('bot.bot.addserver_name.message.3dd8c855bc'));
     $data = array();
     $data['title'] = $text;
 
@@ -2001,10 +1987,7 @@ if(preg_match('/^addServerUCount(.*)/',$userInfo['step'],$match) and $text != $b
     $data = json_decode($match[1],true);
     $data['ucount'] = $text;
 
-    sendMessage("مرحله سوم:
-▪️ یه اسم (نام کاربری) برای اشتراک انتخاب کن:
- ( به صورت انگیلیسی و بدون فاصله )
-");
+    sendMessage(\achbotMessage('bot.bot.addserver_name.message.ae25347c18'));
     setUser('addServerRemark' . json_encode($data,JSON_UNESCAPED_UNICODE));
     exit();
 }
@@ -2012,27 +1995,14 @@ if(preg_match('/^addServerRemark(.*)/',$userInfo['step'], $match) and $text != $
     $data = json_decode($match[1], true);
     $data['remark'] = $text;
 
-    sendMessage("مرحله چهارم:
-▪️ لطفا یه ( ایموجی پرچم 🇮🇷 ) برا سرورت انتخاب کن:");
+    sendMessage(\achbotMessage('bot.bot.addserver_name.message.ba9445a606'));
     setUser('addServerFlag' . json_encode($data,JSON_UNESCAPED_UNICODE));
     exit();
 }
 if(preg_match('/^addServerFlag(.*)/',$userInfo['step'], $match) and $text != $buttonValues['cancel'] && ($from_id == $admin || $userInfo['isAdmin'] == true)) {
     $data = json_decode($match[1],true);
     $data['flag'] = $text;
-    sendMessage("مرحله پنجم:
-
-▪️ لطفا آدرس پنل مرزبان رو به صورت مثال زیر وارد کن:
-
-❕https://yourdomain.com:54321
-❕https://yourdomain.com:54321/path
-❗️http://125.12.12.36:54321
-❗️http://125.12.12.36:54321/path
-
-اگر سرور مورد نظر با دامنه و ssl هست از مثال ( ❕) استفاده کنید.
-اگر سرور مورد نظر با ip و بدون ssl هست از مثال ( ❗️) استفاده کنید.
-⁮⁮ ⁮⁮ ⁮⁮ ⁮⁮
-");
+    sendMessage(\achbotMessage('bot.bot.addserver_name.message.63c645dbbd'));
     setUser('addServerPanelUrl' . json_encode($data,JSON_UNESCAPED_UNICODE));
     exit();
 }
@@ -2040,7 +2010,7 @@ if(preg_match('/^addServerPanelUrl(.*)/',$userInfo['step'],$match) and $text != 
     $data = json_decode($match[1],true);
     $data['panel_url'] = $text;
     if(($userInfo['temp'] ?? '') !== "addNewMarzbanPanel"){
-        alert("این نوع پنل دیگر پشتیبانی نمی‌شود.", true);
+        alert(\achbotMessage('bot.bot.addserver_name.alert.f1fb84ec27'), true);
         return;
     }
     $data['panel_ip'] = "/empty";
@@ -2052,10 +2022,10 @@ if(preg_match('/^addServerPanelUrl(.*)/',$userInfo['step'],$match) and $text != 
     $data['tls_setting'] = "/empty";
 
     setUser('addServerPanelGroup' . json_encode($data, JSON_UNESCAPED_UNICODE));
-    sendMessage("مرحله ششم: 🏷 گروه پنل واقعی را انتخاب کنید.\n"
-        . "این گروه فقط برای سرورهایی یکسان باشد که واقعاً یک پنل مرزبان هستند؛"
-        . " حتی اگر آدرس API و نام کاربری مدیریتی آنها متفاوت باشد.\n"
-        . "برای تعریف گروه جدید از «مدیریت گروه‌های پنل» در تنظیمات سرورها استفاده کنید.",
+    sendMessage(\achbotMessage('bot.bot.addserver_name.message.8da737cc0d')
+        . \achbotMessage('bot.bot.addserver_name.message.3de3b9cb9e')
+        . \achbotMessage('bot.bot.addserver_name.message.9a519033ca')
+        . \achbotMessage('bot.bot.addserver_name.text.395b086745'),
         getMarzbanPanelGroupKeys('add'));
     exit();
 }
@@ -2063,7 +2033,7 @@ if (preg_match('/^selectNewPanelGroup_(\d+)$/D', (string)($data ?? ''), $select)
     ($from_id == $admin || ($userInfo['isAdmin'] ?? false))) {
     if (!preg_match('/^addServerPanelGroup(.*)$/s', (string)($userInfo['step'] ?? ''), $match) ||
         ($userInfo['temp'] ?? '') !== 'addNewMarzbanPanel') {
-        alert("مراحل ثبت سرور منقضی شده است.", true);
+        alert(\achbotMessage('bot.bot.addserver_name.alert.f07dd5dcd6'), true);
         return;
     }
     $wizard = json_decode($match[1], true);
@@ -2073,24 +2043,23 @@ if (preg_match('/^selectNewPanelGroup_(\d+)$/D', (string)($data ?? ''), $select)
         if ((int)$group['id'] === $groupId) $found = true;
     }
     if (!is_array($wizard) || !$found) {
-        alert("گروه انتخابی وجود ندارد؛ لطفاً دوباره انتخاب کنید.", true);
+        alert(\achbotMessage('bot.bot.addserver_name.alert.55b6ebf4b1'), true);
         return;
     }
     $wizard['panel_group_id'] = $groupId;
     setUser('addServerPanelUser' . json_encode($wizard, JSON_UNESCAPED_UNICODE));
-    sendMessage("مرحله هفتم: ▪️ لطفا نام کاربری پنل مرزبان را وارد کنید:");
+    sendMessage(\achbotMessage('bot.bot.addserver_name.message.cd5fbb01df'));
     return;
 }
 if(preg_match('/^addServerPanelUser(.*)/',$userInfo['step'],$match) and $text != $buttonValues['cancel'] && ($from_id == $admin || $userInfo['isAdmin'] == true)) {
     $data = json_decode($match[1],true);
     $data['panel_user'] = $text;
     setUser('addServerPanePassword' . json_encode($data, JSON_UNESCAPED_UNICODE));
-    sendMessage( "مرحله هشتم:
-▪️لطفا پسورد پنل را وارد کنید:");
+    sendMessage( \achbotMessage('bot.bot.addserver_name.message.cf8b6b8420'));
 exit();
 }
 if(preg_match('/^addServerPanePassword(.*)/',$userInfo['step'],$match) and $text != $buttonValues['cancel'] && ($from_id == $admin || $userInfo['isAdmin'] == true)){
-    sendMessage("⏳ در حال ورود به اکانت ...");
+    sendMessage(\achbotMessage('bot.bot.addserver_name.message.4a29ff45e6'));
     $data = json_decode($match[1],true);
     $title = $data['title'];
     $ucount = $data['ucount'];
@@ -2109,13 +2078,13 @@ if(preg_match('/^addServerPanePassword(.*)/',$userInfo['step'],$match) and $text
     $serverPass = $text;
     $panelGroupId = (int)($data['panel_group_id'] ?? 0);
     if ($panelGroupId < 0) {
-        alert("شناسه گروه پنل معتبر نیست.", true);
+        alert(\achbotMessage('bot.bot.addserver_name.alert.6558e924a9'), true);
         return;
     }
 
     $loginResponse['success'] = false;
     if(($userInfo['temp'] ?? '') !== 'addNewMarzbanPanel'){
-        alert("این نوع پنل دیگر پشتیبانی نمی‌شود.", true);
+        alert(\achbotMessage('bot.bot.addserver_name.alert.f1fb84ec27'), true);
         return;
     }
     $loginResponse['success'] = false;
@@ -2151,16 +2120,7 @@ if(preg_match('/^addServerPanePassword(.*)/',$userInfo['step'],$match) and $text
 
     if(!$loginResponse['success']){
         setUser('addServerPanelUser' . json_encode($data, JSON_UNESCAPED_UNICODE));
-        sendMessage( "
-⚠️ با خطا مواجه شدی!
-
-برای رفع این مشکل روی لینک زیر بزن و ویس رو با دقت گوش کن 👇
-
-⛔️🔗 https://t.me/wizwizch/186
-
-مجدد نام کاربری پنل را وارد کنید:
-⁮⁮ ⁮⁮
-        ");
+        sendMessage( \achbotMessage('bot.bot.addserver_name.message.aaacd0e81b'));
         exit();
     }
     // One atomic original-schema write: a failed group setting cannot
@@ -2183,13 +2143,13 @@ if(preg_match('/^addServerPanePassword(.*)/',$userInfo['step'],$match) and $text
         $connection->commit();
     } catch (\Throwable $e) {
         $connection->rollback();
-        sendMessage("ثبت سرور انجام نشد؛ هیچ سرور ناقصی در دیتابیس ذخیره نشد.");
+        sendMessage(\achbotMessage('bot.bot.addserver_name.message.b1a72d260a'));
         return;
     }
 
-    sendMessage(" تبریک، سرورت رو ثبت کردی 🥹",$removeKeyboard);
+    sendMessage(\achbotMessage('bot.bot.addserver_name.message.8e97362beb'),$removeKeyboard);
     $keys = getServerListKeys();
-    sendMessage("☑️ مدیریت سرور ها",$keys);
+    sendMessage(\achbotMessage('bot.bot.addserver_name.message.c93e2f0866'),$keys);
 
     setUser();
     exit();
@@ -2205,10 +2165,10 @@ if (preg_match('/^editMarzbanGroup(\d+)$/D', (string)($data ?? ''), $groupMatch)
     $panel = $stmt->get_result()->fetch_assoc();
     $stmt->close();
     if (!achbotSupportsPanel($panel['type'] ?? null)) {
-        alert("تنها پنل مرزبان پشتیبانی می‌شود.", true);
+        alert(\achbotMessage('bot.bot.addserver_name.alert.27e6f9c466'), true);
         return;
     }
-    sendMessage("🏷 گروه پنل این سرور را انتخاب کنید. فقط سرورهای متعلق به یک پنل واقعی مرزبان باید گروه مشترک داشته باشند.",
+    sendMessage(\achbotMessage('bot.bot.addserver_name.message.c31e264971'),
         getMarzbanPanelGroupKeys('edit', $id));
     return;
 }
@@ -2217,7 +2177,7 @@ if (preg_match('/^setServerPanelGroup_(\d+)_(\d+)$/D', (string)($data ?? ''), $g
     $id = (int)$groupMatch[1];
     $groupId = (int)$groupMatch[2];
     if ($id <= 0) {
-        alert("شناسه سرور معتبر نیست.", true);
+        alert(\achbotMessage('bot.bot.addserver_name.alert.48259ae799'), true);
         return;
     }
     $connection->begin_transaction();
@@ -2229,17 +2189,17 @@ if (preg_match('/^setServerPanelGroup_(\d+)_(\d+)$/D', (string)($data ?? ''), $g
         $stmt->close();
         if (!achbotSupportsPanel($panel['type'] ?? null)) {
             $connection->rollback();
-            alert("پنل مرزبان معتبر نیست.", true);
+            alert(\achbotMessage('bot.bot.addserver_name.alert.9ee9f25355'), true);
             return;
         }
         achbotSetMarzbanGroup($connection, $id, $groupId);
         $connection->commit();
     } catch (\Throwable $e) {
         $connection->rollback();
-        alert("تغییر گروه مجاز نیست: گروه مقصد نامعتبر است یا سفارش‌های وابسته را ناسازگار می‌کند.", true);
+        alert(\achbotMessage('bot.bot.addserver_name.alert.a5625b915f'), true);
         return;
     }
-    sendMessage("✅ گروه پنل سرور به‌روزرسانی شد.", getServerConfigKeys($id));
+    sendMessage(\achbotMessage('bot.bot.addserver_name.message.9495c6622a'), getServerConfigKeys($id));
     return;
 }
 // Refuse an older in-flight R3 free-text group step rather than
@@ -2248,31 +2208,31 @@ if (preg_match('/^editMarzbanGroup\d+$/D', (string)($userInfo['step'] ?? '')) &&
     $text != $buttonValues['cancel'] &&
     ($from_id == $admin || ($userInfo['isAdmin'] ?? false))) {
     setUser();
-    sendMessage("روش گروه‌بندی تغییر کرده است؛ گروه را از فهرست تعریف‌شده انتخاب کنید.");
+    sendMessage(\achbotMessage('bot.bot.addserver_name.message.8dc219842f'));
     return;
 }
 if(preg_match('/^changesServerLoginInfo(\d+)/',$data,$match) && ($from_id == $admin || $userInfo['isAdmin'] == true)) {
     delMessage();
     setUser($data);
-    sendMessage( "▪️ لطفا آدرس پنل را وارد کنید:",$cancelKey);
+    sendMessage( \achbotMessage('bot.bot.addserver_name.message.adf1de6a42'),$cancelKey);
 }
 if(preg_match('/^changesServerLoginInfo(\d+)/',$userInfo['step'],$match) && $text != $buttonValues['cancel'] && ($from_id == $admin || $userInfo['isAdmin'] == true)) {
     $data = array();
     $data['rowId'] = $match[1];
     $data['panel_url'] = $text;
     setUser('editServerPaneUser' . json_encode($data, JSON_UNESCAPED_UNICODE));
-    sendMessage( "▪️ لطفا یوزر پنل را وارد کنید:",$cancelKey);
+    sendMessage( \achbotMessage('bot.bot.addserver_name.message.bae567d2c7'),$cancelKey);
     exit();
 }
 if(preg_match('/^editServerPaneUser(.*)/',$userInfo['step'],$match) && $text != $buttonValues['cancel'] && ($from_id == $admin || $userInfo['isAdmin'] == true)) {
     $data = json_decode($match[1],true);
     $data['panel_user'] = $text;
     setUser('editServerPanePassword' . json_encode($data, JSON_UNESCAPED_UNICODE));
-    sendMessage( "▪️ لطفا پسورد پنل را وارد کنید:");
+    sendMessage( \achbotMessage('bot.bot.addserver_name.message.530a9525e2'));
     exit();
 }
 if(preg_match('/^editServerPanePassword(.*)/',$userInfo['step'],$match) and $text != $buttonValues['cancel'] && ($from_id == $admin || $userInfo['isAdmin'] == true)){
-    sendMessage("⏳ در حال ورود به اکانت ...");
+    sendMessage(\achbotMessage('bot.bot.addserver_name.message.4a29ff45e6'));
     $data = json_decode($match[1],true);
 
     $rowId = $data['rowId'];
@@ -2287,7 +2247,7 @@ if(preg_match('/^editServerPanePassword(.*)/',$userInfo['step'],$match) and $tex
     $serverInfo = $stmt->get_result()->fetch_assoc();
     $stmt->close();
     if(!achbotSupportsPanel($serverInfo['type'] ?? null)){
-        alert("این نوع پنل دیگر پشتیبانی نمی‌شود.", true);
+        alert(\achbotMessage('bot.bot.addserver_name.alert.f1fb84ec27'), true);
         setUser();
         return;
     }
@@ -2325,25 +2285,25 @@ if(preg_match('/^editServerPanePassword(.*)/',$userInfo['step'],$match) and $tex
         }
 
 
-    if(!$loginResponse['success']) sendMessage( "اطلاعاتی که وارد کردی اشتباهه 😂");
+    if(!$loginResponse['success']) sendMessage( \achbotMessage('bot.bot.addserver_name.message.c7ea45277d'));
     else{
         $stmt = $connection->prepare("UPDATE `server_config` SET `panel_url` = ?, `username` = ?, `password` = ? WHERE `id` = ?");
         $stmt->bind_param("sssi", $panel_url, $serverName, $serverPass, $rowId);
         $stmt->execute();
         $stmt->close();
 
-        sendMessage("اطلاعات ورود سرور با موفقیت عوض شد.",$removeKeyboard);
+        sendMessage(\achbotMessage('bot.bot.addserver_name.message.bf4ac7e119'),$removeKeyboard);
     }
     $keys = getServerConfigKeys($rowId);
-    sendMessage('☑️ مدیریت سرور ها:',$keys);
+    sendMessage(\achbotMessage('bot.bot.servers_setting.message.4c0e6ed6fc'),$keys);
     setUser();
 }
 
 if ((require __DIR__ . '/src/Subscription/SubLinkSettings.php') === null) return;
 
 if(preg_match('/^wizwizdeleteserver(\d+)/',$data,$match) and ($from_id == $admin || ($userInfo['isAdmin'] == true && $permissions['servers']))){
-    editText($message_id,"از حذف سرور مطمئنی؟",json_encode(['inline_keyboard'=>[
-        [['text'=>"بله",'callback_data'=>"yesDeleteServer" . $match[1]],['text'=>"نخير",'callback_data'=>"showServerSettings" . $match[1] . "_0"]]
+    editText($message_id,\achbotMessage('bot.bot.addserver_name.message.ead7addb70'),json_encode(['inline_keyboard'=>[
+        [['text'=>\achbotMessage('bot.bot.addserver_name.button.13159f8c74'),'callback_data'=>"yesDeleteServer" . $match[1]],['text'=>\achbotMessage('bot.bot.addserver_name.button.f47dddc181'),'callback_data'=>"showServerSettings" . $match[1] . "_0"]]
         ]]));
 }
 if(preg_match('/^yesDeleteServer(\d+)/',$data,$match) && ($from_id == $admin || ($userInfo['isAdmin'] == true && $permissions['servers']))){
@@ -2358,34 +2318,34 @@ if(preg_match('/^yesDeleteServer(\d+)/',$data,$match) && ($from_id == $admin || 
     $stmt->close();
     // The group is a nullable server_info field and is removed with its row.
 
-    alert("🙂 سرور رو چرا حذف کردی اخه ...");
+    alert(\achbotMessage('bot.bot.addserver_name.alert.601504ae47'));
 
 
     $keys = getServerListKeys();
-    if($keys == null) editText($message_id,"موردی یافت نشد.");
-    else editText($message_id,"☑️ مدیریت سرور ها:",$keys);
+    if($keys == null) editText($message_id,\achbotMessage('bot.bot.addserver_name.message.756c3005d3'));
+    else editText($message_id,\achbotMessage('bot.bot.servers_setting.message.4c0e6ed6fc'),$keys);
 }
 if(preg_match('/^editServer(\D+)(\d+)/',$data,$match) && $text != $buttonValues['cancel'] && ($from_id == $admin || $userInfo['isAdmin'] == true)){
     switch($match[1]){
         case "Name":
-            $txt ="اسم";
+            $txt =\achbotMessage('bot.bot.addserver_name.txt.437acc9f7f');
             break;
         case "Max":
-            $txt = "ظرفیت";
+            $txt = \achbotMessage('bot.bot.addserver_name.txt.57400196e6');
             break;
         case "Remark":
-            $txt ="ریمارک";
+            $txt =\achbotMessage('bot.bot.addserver_name.txt.f4e3596bd2');
             break;
         case "Flag":
-            $txt = "پرچم";
+            $txt = \achbotMessage('bot.bot.addserver_name.txt.fe242ccc0e');
             break;
         default:
             $txt = str_replace("_", " ", $match[1]);
-            $end = "برای خالی کردن متن /empty را وارد کنید";
+            $end = \achbotMessage('bot.bot.addserver_name.end.42b150373f');
             break;
     }
     delMessage();
-    sendMessage("🔘 لطفا " . $txt . " جدید را وارد کنید." . $end,$cancelKey);
+    sendMessage(\achbotMessage('bot.bot.addserver_name.message.8f3366957d') . $txt . \achbotMessage('bot.bot.addserver_name.message.035f46db23') . $end,$cancelKey);
     setUser($data);
     exit();
 }
@@ -2421,13 +2381,13 @@ if(preg_match('/^editServer(\D+)(\d+)/',$userInfo['step'],$match) && $text != $b
     setUser();
 
     $keys = getServerConfigKeys($match[2]);
-    sendMessage("مدیریت سرور $cname",$keys);
+    sendMessage(\achbotMessage('bot.bot.addserver_name.message.664df12986', ['cname' => $cname]),$keys);
     exit();
 }
 if(preg_match('/^editsServer(\D+)(\d+)/',$data,$match) && $text != $buttonValues['cancel'] && ($from_id == $admin || $userInfo['isAdmin'] == true)){
     $txt = str_replace("_", " ", $match[1]);
     delMessage();
-    sendMessage("🔘 لطفا " . $txt . " جدید را وارد کنید.\nبرای خالی کردن متن /empty را وارد کنید.",$cancelKey);
+    sendMessage(\achbotMessage('bot.bot.addserver_name.message.8f3366957d') . $txt . \achbotMessage('bot.bot.addserver_name.message.25ce426865'),$cancelKey);
     setUser($data);
     exit();
 }
@@ -2445,7 +2405,7 @@ if(preg_match('/^editsServer(\D+)(\d+)/',$userInfo['step'],$match) && $text != $
         if($match[1] == "sni") $stmt = $connection->prepare("UPDATE `server_config` SET `sni`=? WHERE `id`=?");
         elseif($match[1] == "header_type"){
             if($text != "http" && $text != "none"){
-                sendMessage("برای نوع header type فقط none و یا http مجاز است.");
+                sendMessage(\achbotMessage('bot.bot.addserver_name.message.cac7dafe0d'));
                 exit();
             }else $stmt = $connection->prepare("UPDATE `server_config` SET `header_type`=? WHERE `id`=?");
         }
@@ -2453,7 +2413,7 @@ if(preg_match('/^editsServer(\D+)(\d+)/',$userInfo['step'],$match) && $text != $
         elseif($match[1] == "response_header") $stmt = $connection->prepare("UPDATE `server_config` SET `response_header`=? WHERE `id`=?");
         elseif($match[1] == "security"){
             if($text != "tls" && $text != "none" && $text != "xtls"){
-                sendMessage("برای نوع security فقط tls یا xtls و یا هم none مجاز است.");
+                sendMessage(\achbotMessage('bot.bot.addserver_name.message.d763b5be93'));
                 exit();
             }else $stmt = $connection->prepare("UPDATE `server_config` SET `security`=? WHERE `id`=?");
         }
@@ -2467,26 +2427,26 @@ if(preg_match('/^editsServer(\D+)(\d+)/',$userInfo['step'],$match) && $text != $
     setUser();
 
     $keys = getServerConfigKeys($match[2]);
-    sendMessage("مدیریت سرور $cname",$keys);
+    sendMessage(\achbotMessage('bot.bot.addserver_name.message.664df12986', ['cname' => $cname]),$keys);
     exit();
 }
 if(preg_match('/^editServer(\D+)(\d+)/',$data,$match) && $text != $buttonValues['cancel'] && ($from_id == $admin || $userInfo['isAdmin'] == true)){
     switch($match[1]){
         case "Name":
-            $txt ="اسم";
+            $txt =\achbotMessage('bot.bot.addserver_name.txt.437acc9f7f');
             break;
         case "Max":
-            $txt = "ظرفیت";
+            $txt = \achbotMessage('bot.bot.addserver_name.txt.57400196e6');
             break;
         case "Remark":
-            $txt ="ریمارک";
+            $txt =\achbotMessage('bot.bot.addserver_name.txt.f4e3596bd2');
             break;
         case "Flag":
-            $txt = "پرچم";
+            $txt = \achbotMessage('bot.bot.addserver_name.txt.fe242ccc0e');
             break;
     }
     delMessage();
-    sendMessage("🔘 لطفا " . $txt . " جدید را وارد کنید.",$cancelKey);
+    sendMessage(\achbotMessage('bot.bot.addserver_name.message.8f3366957d') . $txt . \achbotMessage('bot.bot.addserver_name.message.035f46db23'),$cancelKey);
     setUser($data);
 }
 if(preg_match('/^editServer(\D+)(\d+)/',$userInfo['step'],$match) && $text != $buttonValues['cancel'] && ($from_id == $admin || $userInfo['isAdmin'] == true)){
@@ -2513,7 +2473,7 @@ if(preg_match('/^editServer(\D+)(\d+)/',$userInfo['step'],$match) && $text != $b
     setUser();
 
     $keys = getServerConfigKeys($match[2]);
-    sendMessage("مدیریت سرور $cname",$keys);
+    sendMessage(\achbotMessage('bot.bot.addserver_name.message.664df12986', ['cname' => $cname]),$keys);
 }
 
 if (($achbotV8Result = require __DIR__ . '/src/Finance/Routes/DiscountAdministration.php') === null) return;
@@ -2533,16 +2493,12 @@ if($data == "managePanel" and (($from_id == $admin || $userInfo['isAdmin'] == tr
         // Preserve the existing nonfinancial panel-navigation behavior.
         setUser();
     }
-    $msg = "
-👤 به بخش مدیریت خوش اومدی $first_name
-
-🚪 /start
-";
+    $msg = \achbotMessage('bot.bot.manage_panel.msg.5db5d59c90', ['first_name' => $first_name]);
     if ($walletPanelOutcome === 'canceled') {
-        $msg .= "\n⚠️ درخواست تغییر موجودی نیمه‌تمام لغو شد؛ مبلغی از این درخواست اعمال نشد.\n";
+        $msg .= \achbotMessage('bot.bot.manage_panel.msg.7d8f330c92');
     } elseif ($walletPanelCancellation) {
         // Stale/ambiguous database state is NOT proof of cancellation.
-        $msg .= "\n⚠️ وضعیت درخواست تغییر موجودی در حال بررسی است؛ ممکن است قبلاً پردازش شده باشد. قبل از اقدام مجدد، موجودی و سوابق تغییرات را بررسی کنید.\n";
+        $msg .= \achbotMessage('bot.bot.manage_panel.msg.19a94a73a2');
     }
     editText($message_id, $msg, getAdminKeys());
 }
@@ -2556,25 +2512,11 @@ if($data == 'reciveApplications') {
     while($file =  $respd->fetch_assoc()){
         $link = $file['link'];
         $title = $file['title'];
-        $keyboard[] = ['text' => "$title", 'url' => $link];
+        $keyboard[] = ['text' => \achbotMessage('bot.bot.recive_applications.title.d78de36670', ['title' => $title]), 'url' => $link];
     }
 	$keyboard[] = ['text'=>$buttonValues['back_to_main'],'callback_data'=>"mainMenu"];
     $keyboard = array_chunk($keyboard,1);
-    editText($message_id, "
-⁉️  <b>نرم افزارها و آموزش های لازم جهت اتصال 🔌 به سرویس</b>
-
-🌐 برای اتصال به کمک لینک اشتراک باید از نرم افزارهایی که کانال معرفی شده اند استفاده کنید.
-
-⭕️ لطفا <b>حداقل 2 تا</b> از نرم افزارهای گفته شده را نصب داشته باشید، با توجه به محدودیت هایی که از سمت اپراتورها گذاشته شده و تفاوت تکنولوژی عبور از تحریم نرم افزارها، ممکن است یک کانفیگ روی یک نرم افزار مشکل داشته باشد ولی روی نرم افزار بعدی بدون مشکل و با سرعت بسیار خوب متصل شود.
-
-💡تمامی نرم افزارها <b>رایگان</b> هستند.
-
-📥 برای <b>مشاهد آموزش ها و دانلود نرم افزارها</b> لطفا یکی از دکمه های زیر را انتخاب کنید.
-
-🛒 جهت پشتیبانی یا سوال در مورد خرید به آی دی زیر پیام دهید:
-
-🆔 $supportID
-", json_encode(['inline_keyboard'=>$keyboard]), "html");
+    editText($message_id, \achbotMessage('bot.bot.recive_applications.message.ec86dead1a', ['supportID' => $supportID]), json_encode(['inline_keyboard'=>$keyboard]), "html");
 }
 if ($text == $buttonValues['cancel']) {
     // config.php loaded userInfo before any concurrent direct-gift callback.

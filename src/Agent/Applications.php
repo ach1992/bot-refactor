@@ -8,6 +8,8 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     http_response_code(404);
     exit;
 }
+require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
+
 
 if($data=="agencySettings" && $userInfo['is_agent'] == 1){
     editText($message_id, $mainValues['agent_setting_message'] ,getAgentKeys());
@@ -35,7 +37,7 @@ if($data=="requestAgency"){
         setUser(2, 'is_agent');
         alert($mainValues['agency_request_sent']);
     }elseif($userInfo['is_agent'] == -1) alert($mainValues['agency_request_declined']);
-    elseif($userInfo['is_agent'] == 1) editText($message_id,"لطفا یکی از کلید های زیر را انتخاب کنید.",getMainKeys());
+    elseif($userInfo['is_agent'] == 1) editText($message_id,\achbotMessage('agent.applications.request_agency.message.b059640ccc'),getMainKeys());
 }
 // Resolve exactly one pending applicant before a state transition. The legacy
 // schema does not enforce uniqueness on users.userid; ambiguous IDs fail closed.
