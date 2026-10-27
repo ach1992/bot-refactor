@@ -4,7 +4,8 @@ Only task-owned loopback HTTP, synthetic values and socket-only temporary SQL.
 This is deterministic native-client evidence, not a real PasarGuard installation.
 """
 from __future__ import annotations
-import argparse, base64, contextlib, copy, json, socket, subprocess, tempfile, threading
+from concurrent.futures import ThreadPoolExecutor
+import argparse, base64, contextlib, copy, json, socket, subprocess, tempfile, threading, time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlsplit, parse_qs
@@ -18,7 +19,7 @@ USER=dict(id=17,username='fixture_user',created_at='2026-10-26T05:00:00.123456+0
     note=MARKER,data_limit=2147483648,expire='2033-05-18T03:33:20Z',status='active',
     group_ids=[2,5],used_traffic=10,subscription_url='https://sub.example.invalid/token',
     proxy_settings={'vless':{'id':'fixture-identity'}},data_limit_reset_strategy='no_reset',
-    next_plan=None,admin={'private_fixture_field':'MUST_NOT_ESCAPE_NORMALIZATION'})
+    next_plan=None,auto_delete_in_days=None,on_hold_expire_duration=None,on_hold_timeout=None,admin={'private_fixture_field':'MUST_NOT_ESCAPE_NORMALIZATION'})
 IDENTITY=dict(remote_user_id=17,remote_created_at=USER['created_at'],operation_marker=MARKER)
 REQUEST=dict(username='fixture_user',operation_marker=MARKER,data_limit=2147483648,
     expire=2000000000,group_ids=[5,2,2])
@@ -87,18 +88,26 @@ class Handler(BaseHTTPRequestHandler):
                 if mode=='foreign_created': value['created_at']='2026-10-25T05:00:00Z'
                 if mode=='foreign_note': value['note']='foreign'
                 if mode=='foreign_id': value['id']=18
+                if mode=='scheduled_reset': value['data_limit_reset_strategy']='month'
+                if mode=='scheduled_delete': value['auto_delete_in_days']=0
+                if mode=='scheduled_hold': value['on_hold_expire_duration']=86400
+                if mode=='native_on_hold': value['status']='on_hold'
                 if mode=='wrong_numeric_type': value['data_limit']=2147483648.5
                 if mode=='links_identity_race' and s.links_requested: value['created_at']='2026-10-25T05:00:00Z'
+        if self.command!='GET' and mode=='write_timeout': time.sleep(11)
         if self.command!='GET' and mode=='write_lost':
             self.connection.shutdown(socket.SHUT_RDWR);self.connection.close();return
+        if mode=='relative_subscription': value['subscription_url']='relative_token'
         if mode.startswith('http_'):
             status=int(mode[5:]);value={'detail':'MUST_NOT_ESCAPE_RAW_RESPONSE fixture-private-key'}
-        if mode=='malformed': encoded=b'{"unclosed"';content_type='application/json'
+        if mode=='too_large': encoded=b'{"padding":"'+b'x'*1048576+b'"}';content_type='application/json'
+        elif mode=='malformed': encoded=b'{"unclosed"';content_type='application/json'
         elif mode=='content_type': encoded=b'not json MUST_NOT_ESCAPE_RAW_RESPONSE';content_type='text/html'
         else: encoded=(json.dumps(value).encode() if content_type.startswith('application/json') else value.encode()) if status!=204 else b''
         self.send_response(status);self.send_header('Content-Type',content_type)
         self.send_header('Content-Length',str(len(encoded)));self.end_headers()
-        self.wfile.write(encoded)
+        try: self.wfile.write(encoded)
+        except (BrokenPipeError,ConnectionResetError): pass
 
 @contextlib.contextmanager
 def panel():
@@ -153,17 +162,25 @@ def adapter_checks(work):
             code="require $argv[1].'/src/Panel/PasarGuard.php';echo json_encode(achbotPgNormalizeUser(json_decode($argv[2],true)));"
             out=subprocess.check_output(['php','-r',code,str(ROOT),json.dumps(dict(USER,status=status))])
             assert json.loads(out)['status']==status;cases.append('native_status:'+status)
-        for mode in ['malformed','content_type','wrong_numeric_type']:
+        for mode in ['malformed','content_type','wrong_numeric_type','relative_subscription','too_large']:
             call('achbotPgRead',[IDENTITY],mode,False,False)
-        for status in [401,403,404,409,422,429,503]:
+        for status in [201,204,401,403,404,409,422,429,503]:
             call('achbotPgRead',[IDENTITY],'http_'+str(status),False,False)
+        for mode in ['scheduled_reset','scheduled_delete','scheduled_hold','native_on_hold']:
+            call('achbotPgModify',[IDENTITY,{'data_limit':4294967296}],mode,False,False)
+            assert s.write_count==0
+            call('achbotPgReset',[IDENTITY],mode,False,False);assert s.write_count==0
         r=call('achbotPgModify',[IDENTITY,{'data_limit':4294967296,'expire':2100000000}])
         assert r['user']['group_ids']==[2,5] and s.write_count==1
         call('achbotPgModify',[IDENTITY,{'group_ids':[9]}]);assert s.user['group_ids']==[9]
-        for mode in ['modify_lie','write_lost']:
+        for mode in ['modify_lie','write_lost','write_timeout']:
             call('achbotPgModify',[IDENTITY,{'data_limit':4294967296}],mode,False,True)
             assert s.write_count==1
+        call('achbotPgCreate',[dict(REQUEST,data_limit=0,expire=None)]);assert s.user['data_limit']==0 and s.user['expire'] is None
+        call('achbotPgCreate',[REQUEST],'relative_subscription',False,True)
+        assert sum(e[0]=='POST' for e in s.trace)==1
         call('achbotPgCreate',[REQUEST],'create_wrong_status',False,True)
+        call('achbotPgCreate',[REQUEST],'too_large',False,True)
         call('achbotPgCreate',[REQUEST],'write_lost',False,True)
         assert sum(e[0]=='POST' for e in s.trace)==1
         call('achbotPgCreate',[dict(REQUEST,group_ids=[])],success=False,uncertain=False);assert not s.trace
@@ -203,6 +220,17 @@ function denied(callable $fn,$reason){try{$fn();throw new LogicException('expect
 try {
  if($spec['op']==='missing'){
    denied(fn()=>achbotProviderPanel($db,1),'provider_schema_missing_or_invalid');
+ }elseif($spec['op']==='reserve_race'){
+   if (($spec['snapshot_compat']??false) && $db->query("SHOW VARIABLES LIKE 'innodb_snapshot_isolation'")->num_rows)
+       $db->query('SET SESSION innodb_snapshot_isolation=OFF');
+   $db->begin_transaction();
+   $snap=achbotProviderSnapshot($db,2,0);
+   // Both sessions establish a read view before serializing on the effect.
+   usleep(250000);
+   $r=achbotProviderReserveAccount($db,2,$snap,'fixture_race','achbot:v1:'.str_repeat('d',32),
+      ['data_limit'=>2147483648,'expire'=>2000000000,'group_ids'=>$snap['group_ids'],'status'=>'active']);
+   $db->commit();
+   echo json_encode(['newly_reserved'=>$r['newly_reserved']]);exit;
  }elseif($spec['op']==='all'){
    $snap=achbotProviderSnapshot($db,2,7);
    ok($snap['group_ids']===[2,5],'nullable_plan_inherits_default');
@@ -228,6 +256,7 @@ try {
    $db->begin_transaction();
    $again=achbotProviderReserveAccount($db,1,$snap,'fixture_user',$marker,$ent);
    ok($again['newly_reserved']===false,'existing_reservation_no_dispatch');
+   denied(fn()=>achbotProviderReserveAccount($db,1,$snap,'fixture_user',$marker,array_replace($ent,['data_limit'=>0])),'provider_effect_identity_mismatch');
    denied(fn()=>achbotProviderReserveAccount($db,1,$snap,'wrong_user',$marker,$ent),'provider_effect_identity_mismatch');
    $db->commit();
    $user=$spec['user'];$user['created_at']=achbotPgDate($user['created_at']);$user['expire']=2000000000;
@@ -246,7 +275,11 @@ try {
    denied(fn()=>achbotProviderPanel($db,1),'provider_unique_index_invalid');
  }
  echo json_encode(['complete'=>true,'cases'=>$cases],JSON_THROW_ON_ERROR);
-}catch(Throwable $e){echo json_encode(['fixture_exception'=>$e->getMessage(),'cases'=>$cases]);}
+}catch(Throwable $e){
+ if($spec['op']==='reserve_race' && $e->getMessage()==='provider_storage_unavailable') {
+   echo json_encode(['reservation_rejected'=>true]);
+ }else echo json_encode(['fixture_exception'=>$e->getMessage(),'cases'=>$cases]);
+}
 '''
 def storage_checks(work,env):
     script=work/'pg-storage.php';script.write_text(STORAGE)
@@ -275,6 +308,41 @@ INSERT INTO orders_list(id,userid,token,transid,fileid,server_id,inbound_id,rema
  VALUES(91,1001,'fixture-token','',7,2,0,'fixture_user','native-placeholder','vless',2000000000,'[]',100,1,'fixture');
 """,db)
     r=php(script,ROOT,work/'mysql.sock',db,json.dumps({'op':'all','user':USER}));cases+=r['cases']
+    native.sql(work,env,"ALTER TABLE provider_accounts ADD UNIQUE KEY uq_provider_effect(effect_id);",db)
+    snap['group_ids']=[8]
+    race_snapshot=json.dumps(snap,separators=(',',':'))
+    native.sql(work,env,"""INSERT INTO service_effects (id,source_kind,source_ref,actor_userid,ordinal,operation_id,
+ target_server_id,target_key,endpoint_sha256,plan_id,remote_username,requested_expire,
+ requested_bytes,request_sha256,provider_snapshot)
+ VALUES(2,'trial','fixture-race',1001,1,REPEAT('d',32),2,'pg:fixture',
+ SHA2('https://panel.example.invalid',256),7,'fixture_race',2000000000,2147483648,
+ REPEAT('e',64),'"""+race_snapshot+"');",db)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results=list(pool.map(lambda _:php(script,ROOT,work/'mysql.sock',db,json.dumps({'op':'reserve_race'})),range(2)))
+    # Modern MariaDB strict snapshot isolation may reject the loser rather than
+    # expose a row created after its read view. Both outcomes forbid dispatch.
+    assert sum(r.get('newly_reserved') is True for r in results)==1,results
+    assert all(r.get('newly_reserved') in [False,True] if 'newly_reserved' in r else r=={'reservation_rejected':True} for r in results),results
+    assert native.sql(work,env,'SELECT COUNT(*) FROM provider_accounts WHERE effect_id=2',db).strip()=='1'
+    cases.append('concurrent_default_snapshot_single_reservation_safe_loser')
+    native.sql(work,env,'DELETE FROM provider_accounts WHERE effect_id=2',db)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results=list(pool.map(lambda _:php(script,ROOT,work/'mysql.sock',db,json.dumps({'op':'reserve_race','snapshot_compat':True})),range(2)))
+    assert sorted(r.get('newly_reserved') for r in results)==[False,True],results
+    cases.append('concurrent_compat_snapshot_current_read_single_dispatch')
+    # RED control: a nonlocking reservation read sees the stale repeatable-read
+    # snapshot and attempts an INSERT rejected by the unique effect fence.
+    native.sql(work,env,'DELETE FROM provider_accounts WHERE effect_id=2',db)
+    negative=work/'negative-source';(negative/'src/Panel').mkdir(parents=True)
+    (negative/'src/Panel/PasarGuard.php').write_bytes((ROOT/'src/Panel/PasarGuard.php').read_bytes())
+    text=(ROOT/'src/Panel/ProviderStorage.php').read_text()
+    old="'SELECT * FROM provider_accounts WHERE effect_id=? FOR UPDATE','i',[$effectId]"
+    assert text.count(old)==1
+    (negative/'src/Panel/ProviderStorage.php').write_text(text.replace(old,"'SELECT * FROM provider_accounts WHERE effect_id=?','i',[$effectId]"))
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results=list(pool.map(lambda _:php(script,negative,work/'mysql.sock',db,json.dumps({'op':'reserve_race','snapshot_compat':True})),range(2)))
+    assert sum(r.get('newly_reserved') is True for r in results)==1 and any(r.get('reservation_rejected') for r in results),results
+    cases.append('red_nonlocking_snapshot_regression_reproduced')
     return cases
 
 def main():
