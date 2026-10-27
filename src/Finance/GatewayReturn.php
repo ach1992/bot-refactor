@@ -1504,7 +1504,7 @@ function achbotPerformPaymentEffect($payRowId, $gateType, &$effectStage = null) 
 
         if (!$order || (int)$order['userid']!==$user_id ||
             (int)$order['status']!==1 ||
-            !achbotSupportsMarzbanOrder($connection,$oid))
+            !achbotSupportsOrder($connection,$oid))
             throw new RuntimeException('hosted_renew_order_ineligible');
         $fid = (int)$order['fileid'];
         $remark = $order['remark'];
@@ -1526,7 +1526,7 @@ function achbotPerformPaymentEffect($payRowId, $gateType, &$effectStage = null) 
 
         $isMarzban = ($serverType === "marzban");
 
-        $response = renewConfigOnServer($connection, $server_id, $inbound_id, $uuid, $remark, $days, $volume, $isMarzban);
+        $response = renewConfigOnServer($connection, $server_id, $inbound_id, $uuid, $remark, $days, $volume, $isMarzban, $rowId);
 
         if (is_null($response)) {
             // A lost provider response does not prove that renewal failed.
@@ -1617,7 +1617,7 @@ function achbotPerformPaymentEffect($payRowId, $gateType, &$effectStage = null) 
         if (!$orderInfo || (int)$orderInfo['id']!==$orderId ||
             (int)$orderInfo['userid']!==$user_id ||
             (int)$orderInfo['status']!==1 ||
-            !achbotSupportsMarzbanOrder($connection,$orderId))
+            !achbotSupportsOrder($connection,$orderId))
             throw new RuntimeException('hosted_day_order_ineligible');
         $server_id  = (int)$orderInfo['server_id'];
         $inbound_id = (int)$orderInfo['inbound_id'];
@@ -1637,7 +1637,7 @@ function achbotPerformPaymentEffect($payRowId, $gateType, &$effectStage = null) 
         $serverType = $srvConfig['type'] ?? '';
 
         if (achbotSupportsPanel($serverType)) {
-            $response = achbotApplyServiceEdit($connection,$server_id, ['remark' => $remark, 'plus_day' => $plusDays]);
+            $response = achbotApplyServiceEdit($connection,$server_id, ['pay_id'=>(int)$rowId, 'remark' => $remark, 'plus_day' => $plusDays]);
         } else {
             throw new \UnexpectedValueException('unsupported_panel');
         }
@@ -1752,7 +1752,7 @@ function achbotPerformPaymentEffect($payRowId, $gateType, &$effectStage = null) 
         $serverType = $srvConfig['type'] ?? '';
 
         if (achbotSupportsPanel($serverType)) {
-            $response = achbotApplyServiceEdit($connection,$server_id, ['remark' => $remark, 'plus_volume' => $plusVolume]);
+            $response = achbotApplyServiceEdit($connection,$server_id, ['pay_id'=>(int)$rowId, 'remark' => $remark, 'plus_volume' => $plusVolume]);
         } else {
             throw new \UnexpectedValueException('unsupported_panel');
         }

@@ -981,6 +981,10 @@ function getServerConfigKeys($serverId,$offset = 0){
         ]]);
     }
     $id = $info['id'];
+    if ($config['type']==='pasarguard') {
+        require_once __DIR__.'/src/Panel/ProviderAdmin.php';
+        return achbotPgServerAdminKeys($info,$config,(int)$offset);
+    }
     $panelGroup = achbotMarzbanGroup($connection, $id);
     $groupLabel = $panelGroup === null ? 'بدون گروه' : $panelGroup['name'];
     $keys = [
@@ -1028,7 +1032,7 @@ function getServerListKeys($offset = 0){
             $serverTypeInfo= $stmt->get_result()->fetch_assoc();
             $stmt->close(); 
             $serverType = achbotSupportsPanel($serverTypeInfo['type'] ?? null)
-                ? 'مرزبان' : 'پشتیبانی نمی‌شود';
+                ? (($serverTypeInfo['type']??'')==='pasarguard'?'PasarGuard':'مرزبان') : 'پشتیبانی نمی‌شود';
             $keys[] = [['text'=>$state,'callback_data'=>'toggleServerState' . $id . "_" . $offset],['text'=>"⚙️",'callback_data'=>"showServerSettings" . $id . "_" . $offset],['text'=>$serverType??" ",'callback_data'=>"wizwizch"],['text'=>$cname,'callback_data'=>"wizwizch"]];
         } 
     }
@@ -1047,6 +1051,7 @@ function getServerListKeys($offset = 0){
     $keys[] = [
         ['text'=>"➕ ثبت سرور مرزبان",'callback_data'=>"addNewMarzbanPanel"]
         ];
+    $keys[] = [['text'=>'➕ اتصال و سرور PasarGuard','callback_data'=>'pgConnections']];
     $keys[] = [['text'=>'🏷 مدیریت گروه‌های پنل مرزبان', 'callback_data'=>'manageMarzbanPanelGroups']];
     $keys[] = [['text' => $buttonValues['back_button'], 'callback_data' => "managePanel"]];
     return json_encode(['inline_keyboard'=>$keys]);
@@ -3416,6 +3421,7 @@ function getPlanDetailsKeys($planId){
             [['text'=>number_format($price) . " تومان",'callback_data'=>"wizwizplanrial$id"],['text'=>"💰 قیمت پلن",'callback_data'=>"wizwizch"]],
             [['text'=>"♻️ دریافت لیست اکانت ها",'callback_data'=>"wizwizplanacclist$id"]],
             ($server_info['type'] == "marzban"?[['text'=>"انتخاب Host",'callback_data'=>"marzbanHostSettings" . $id]]:[]),
+            ($server_info['type']==='pasarguard'?[['text'=>'Groups پلن (جایگزین پیش‌فرض)','callback_data'=>'pgPlanGroups'.$id]]:[]),
             [['text'=>"✂️ حذف",'callback_data'=>"wizwizplandelete$id"]],
             [['text' => $buttonValues['back_button'], 'callback_data' =>"plansList$srvid"]]
             ];
@@ -3724,7 +3730,7 @@ function sumerize2($amount){
 // Post-V9: legacy X-UI/Sanaei/Alireza facades have been removed.
 // Marzban remains the sole supported panel for this candidate.
 function achbotSupportsPanel($type) {
-    return $type === 'marzban';
+    return in_array($type, ['marzban','pasarguard'], true);
 }
 
 function getMarzbanToken($server_id, ?string $expectedPanelUrl = null, ?array $effectTarget = null) {

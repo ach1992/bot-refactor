@@ -72,7 +72,7 @@ if(($userInfo['step'] ?? '') === 'addNewMarzbanPlan' and $text!=$buttonValues['c
     if($step==3 and $text!=$buttonValues['cancel']){
         $srvkey = [];
 
-        $stmt = $connection->prepare("SELECT `id` FROM `server_config` WHERE `type` = 'marzban'");
+        $stmt = $connection->prepare("SELECT `id` FROM `server_config` WHERE `type` IN ('marzban','pasarguard')");
         $stmt->execute();
         $info = $stmt->get_result()->fetch_all();
         $stmt->close();
@@ -81,7 +81,7 @@ if(($userInfo['step'] ?? '') === 'addNewMarzbanPlan' and $text!=$buttonValues['c
 
         $stmt = $connection->prepare(
             "SELECT si.* FROM `server_info` si
-             INNER JOIN `server_config` sc ON sc.`id`=si.`id` AND sc.`type`='marzban'
+             INNER JOIN `server_config` sc ON sc.`id`=si.`id` AND sc.`type` IN ('marzban','pasarguard')
              WHERE si.`active`=1 ORDER BY si.`id`"
         );
         $stmt->execute();
@@ -228,7 +228,7 @@ if(($userInfo['step'] ?? '') === 'addNewMarzbanPlan' and $text!=$buttonValues['c
     }
 }
 if($data == 'backplan' and ($from_id == $admin || $userInfo['isAdmin'] == true)){
-    $stmt = $connection->prepare("SELECT si.* FROM `server_info` si INNER JOIN `server_config` sc ON sc.`id`=si.`id` AND sc.`type`='marzban' WHERE si.`active`=1");
+    $stmt = $connection->prepare("SELECT si.* FROM `server_info` si INNER JOIN `server_config` sc ON sc.`id`=si.`id` AND sc.`type` IN ('marzban','pasarguard') WHERE si.`active`=1");
     $stmt->execute();
     $res = $stmt->get_result();
     $stmt->close();
@@ -298,7 +298,7 @@ if(preg_match('/^editCustom(gbPrice|dayPrice)/',$data,$match) && ($from_id == $a
     setUser($data);
 }
 if(preg_match('/plansList(\d+)/', $data,$match) && ($from_id == $admin || $userInfo['isAdmin'] == true)){
-    $stmt = $connection->prepare("SELECT p.* FROM `server_plans` p INNER JOIN `server_config` sc ON sc.`id`=p.`server_id` AND sc.`type`='marzban' WHERE p.`server_id`=? AND p.`inbound_id`=0 ORDER BY p.`id` ASC");
+    $stmt = $connection->prepare("SELECT p.* FROM `server_plans` p INNER JOIN `server_config` sc ON sc.`id`=p.`server_id` AND sc.`type` IN ('marzban','pasarguard') WHERE p.`server_id`=? AND p.`inbound_id`=0 ORDER BY p.`id` ASC");
     $stmt->bind_param("i", $match[1]);
     $stmt->execute();
     $res = $stmt->get_result();

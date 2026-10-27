@@ -82,8 +82,8 @@ elseif(preg_match('/^yesDeleteConfig(\d+)/',$data,$match)){
         exit;
     }
     try {
-        $configInfo = getMarzbanUser($server_id, $remark);
-        $deleted = deleteMarzban($server_id, $remark);
+        $configInfo = achbotProviderUser($server_id, $remark);
+        $deleted = achbotProviderDelete($server_id, $remark);
         if (!is_object($deleted) || ($deleted->success??false)!==true)
             throw new RuntimeException('delete_remote_unconfirmed');
         $leftMb = sumerize($configInfo->data_limit - $configInfo->used_traffic);
@@ -180,7 +180,7 @@ elseif(preg_match('/^yesDeleteUserConfig(\d+)/',$data,$match) && ($from_id == $a
         exit;
     }
     try {
-        $res = deleteMarzban($server_id, $remark);
+        $res = achbotProviderDelete($server_id, $remark);
         if (!is_object($res) || ($res->success??false)!==true)
             throw new RuntimeException('admin_delete_remote_unconfirmed');
     } catch (Throwable $error) {

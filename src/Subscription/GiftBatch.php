@@ -22,6 +22,12 @@ if (!function_exists('achbotGiftPhysicalTarget')) {
         $ok=$stmt->execute();
         $row=$ok?$stmt->get_result()->fetch_assoc():null;
         $stmt->close();
+        if ($row && ($row['type']??null)==='pasarguard') {
+            $panel=achbotPgServerPanel($db,$serverId);
+            return ['provider'=>'pasarguard','panel_id'=>$panel['id'],'instance_key'=>$panel['instance_key'],
+                'panel_url'=>$panel['api_url'],'credential_hash'=>hash('sha256',$panel['api_key']),
+                'group_id'=>null,'has_group_column'=>false];
+        }
         if (!$row || ($row['type']??null)!=='marzban')
             throw new RuntimeException('gift_target_unsupported');
         $url=rtrim((string)($row['panel_url']??''),'/');
@@ -84,6 +90,8 @@ if (!function_exists('achbotGiftPhysicalTarget')) {
     }
 
     function achbotGiftPublicTarget(array $target): array {
+        if (($target['provider']??'')==='pasarguard') return array_intersect_key($target,array_flip([
+            'provider','panel_id','instance_key','panel_url','credential_hash','group_id','has_group_column']));
         return [
             'panel_url'=>$target['panel_url'],
             'credential_hash'=>$target['credential_hash'],
@@ -97,6 +105,7 @@ if (!function_exists('achbotGiftPhysicalTarget')) {
             $current=achbotGiftPhysicalTarget($db,$serverId);
             $expected=achbotGiftPublicTarget($original);
             $actual=achbotGiftPublicTarget($current);
+            if (($expected['provider']??'')==='pasarguard') return $expected===$actual;
             return is_string($expected['credential_hash']??null) &&
                 hash_equals($expected['credential_hash'],$actual['credential_hash']) &&
                 $expected['panel_url']===$actual['panel_url'] &&

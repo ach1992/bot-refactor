@@ -4,6 +4,7 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     http_response_code(404);
     exit;
 }
+require_once __DIR__.'/../Panel/ProviderRuntime.php';
 
 /**
  * Compatibility hook called before new payment-draft INSERTs. It MUST remain
@@ -457,10 +458,14 @@ if (!function_exists('achbotSupportsPaymentSubject')) {
         $type = (string)($pay['type'] ?? '');
         // Wallet top-ups are deliberately not tied to VPN providers.
         if ($type === 'INCREASE_WALLET') return true;
+        if (achbotProviderType($connection,(int)($pay['server_id']??0))==='pasarguard') {
+            try {achbotPgQuote($connection,(int)($pay['id']??0));}
+            catch (Throwable $error) {return false;}
+        }
         $pid = (int)($pay['plan_id'] ?? 0);
         $uid = (int)($pay['user_id'] ?? 0);
         if ($type === 'BUY_SUB') {
-            return $pid > 0 && achbotSupportsMarzbanPlan(
+            return $pid > 0 && achbotSupportsPlan(
                 $connection, $pid, 0, $pay['server_id'] ?? null, $lock
             );
         }
@@ -479,14 +484,14 @@ if (!function_exists('achbotSupportsPaymentSubject')) {
                 achbotSupportsMarzbanPlan($connection, $pid, 0, $sid, $lock);
         }
         if ($type === 'RENEW_ACCOUNT') {
-            return $pid > 0 && achbotSupportsMarzbanOrder(
+            return $pid > 0 && achbotSupportsOrder(
                 $connection, (int)($pay['order_id'] ?? 0), $pid, $uid > 0 ? $uid : null, $lock
             );
         }
         if (preg_match('/^INCREASE_(DAY|VOLUME)_(\d+)_(\d+)$/', $type, $match)) {
             $oid = (int)$match[2];
             $addon = (int)$match[3];
-            if ($addon <= 0 || !achbotSupportsMarzbanOrder(
+            if ($addon <= 0 || !achbotSupportsOrder(
                 $connection, $oid, $pid > 0 ? $pid : null, $uid > 0 ? $uid : null, $lock
             )) return false;
             if (!empty($pay['order_id']) && (int)$pay['order_id'] !== $oid) return false;
@@ -538,7 +543,7 @@ if (!function_exists('achbotApplyServiceEdit')) {
         $type=(string)($panel['type']??'');
         if ($giftTarget!==null) {
             require_once __DIR__ . '/../Subscription/GiftBatch.php';
-            if ($type!=='marzban' ||
+            if (!in_array($type,['marzban','pasarguard'],true) ||
                 !achbotGiftTargetMatches($db,$serverId,$giftTarget))
                 return (object)['success'=>false,'uncertain'=>true,
                                 'msg'=>'gift_service_target_changed'];
@@ -547,6 +552,7 @@ if (!function_exists('achbotApplyServiceEdit')) {
         // No speculative fallback or implicit behavior for future panels.
         $outcome=match($type) {
             'marzban'=>editMarzbanConfig($serverId,$change,$giftTarget),
+            'pasarguard'=>achbotPgServiceEdit($db,$serverId,$change,$giftTarget),
             default=>(object)['success'=>false,'uncertain'=>false,
                               'msg'=>'unsupported_service_adapter'],
         };
@@ -693,6 +699,9 @@ if (!function_exists('createServerAccount')) {
             return [(object)['success' => false, 'msg' => 'unsupported_panel'], $remark, $port];
         }
 
+        if ($serverType!=='marzban') {
+            return [(object)['success'=>false,'uncertain'=>false,'msg'=>'pg_durable_effect_required'],$remark,$port];
+        }
         $note = $effectOperationId === null ? null : 'achbot:v1:'.$effectOperationId;
         $response = addMarzbanUser($server_id, $remark, $volume, $days, $fid, $note, $effectExpire, $effectTarget);
         // A durable effect can NEVER change its remote username and retry.

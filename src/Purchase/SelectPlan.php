@@ -13,7 +13,7 @@ if((preg_match('/^discountSelectPlan(\d+)_(\d+)_(\d+)/',$userInfo['step'],$match
     preg_match('/selectPlan(\d+)_(\d+)_(?<buyType>\w+)/',$data, $match)) &&  
     ($botState['sellState']=="on" ||$from_id ==$admin) &&  
     $text != $buttonValues['cancel']){ 
-    if (!achbotSupportsMarzbanPlan($connection, (int)($match[1] ?? 0))) {
+    if (!achbotSupportsPlan($connection, (int)($match[1] ?? 0))) {
         alert("⛔️ طرح انتخابی در حال حاضر قابل خرید نیست.", true);
         return;
     }

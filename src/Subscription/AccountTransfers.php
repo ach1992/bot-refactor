@@ -25,12 +25,12 @@ if (preg_match('/^switchLocation([0-9]+)_([0-9]+)_[^_]{1,40}_[^_]{1,40}$/D', (st
     $stmt->close();
     if (!$order || (int)$order['server_id'] !== $sourceId ||
         (int)$order['inbound_id'] !== 0 ||
-        !achbotSupportsMarzbanOrder($connection, $orderId)) {
+        !achbotSupportsOrder($connection, $orderId)) {
         alert("⛔️ سفارش یا سرور فعلی معتبر نیست.", true);
         return;
     }
 
-    $targets = achbotMarzbanRelocationTargets($connection, $sourceId);
+    $targets = achbotProviderRelocationTargets($connection, $sourceId);
     if (!$targets) {
         alert("در حال حاضر گزینه مقصد سازگار دیگری برای این اشتراک وجود ندارد.", true);
         return;
@@ -44,7 +44,7 @@ if (preg_match('/^switchLocation([0-9]+)_([0-9]+)_[^_]{1,40}_[^_]{1,40}$/D', (st
     $keyboard[] = [['text'=>$buttonValues['back_button'] ?? 'بازگشت',
                     'callback_data'=>'orderDetails' . $orderId]];
     editText($message_id,
-        "📍 سرور مقصد را انتخاب کنید. این جابه‌جایی فقط محل نمایش اشتراک در ربات را تغییر می‌دهد و اطلاعات اتصال شما ثابت می‌ماند.",
+        "📍 سرور مقصد را انتخاب کنید. تنظیمات مقصد پس از بررسی اشتراک اعمال می‌شود.",
         json_encode(['inline_keyboard'=>$keyboard], JSON_UNESCAPED_UNICODE));
     return;
 }
@@ -56,7 +56,7 @@ if (preg_match('/^switchServer([0-9]+)_([0-9]+)$/D', (string)($data ?? ''), $mat
     }
     $targetId = (int)$match[1];
     $orderId = (int)$match[2];
-    $result = achbotReassignMarzbanLogicalServer(
+    $result = achbotReassignLogicalServer(
         $connection, $orderId, $targetId, $from_id, false
     );
     if (!$result) {
@@ -66,7 +66,7 @@ if (preg_match('/^switchServer([0-9]+)_([0-9]+)$/D', (string)($data ?? ''), $mat
 
     $title = htmlspecialchars((string)$result['title'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
     $remark = htmlspecialchars((string)$result['remark'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
-    editText($message_id, "✅ سرویس {$remark} در ربات به سرور {$title} اختصاص یافت. اطلاعات اتصال شما تغییر نکرد.",
+    editText($message_id, "✅ سرویس {$remark} در ربات به سرور {$title} اختصاص یافت. در صورت نیاز، لینک‌های اشتراک را به‌روزرسانی کنید.",
         json_encode(['inline_keyboard'=>[[['text'=>$buttonValues['back_button'] ?? 'بازگشت',
         'callback_data'=>'orderDetails' . $orderId]]]], JSON_UNESCAPED_UNICODE));
     $adminMessage = "🌐 تغییر سرور منطقی مرزبان در ربات\n"

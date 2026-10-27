@@ -20,7 +20,7 @@ if (preg_match('/sConfigUpdate(\d+)/', $data, $match)) {
         alert("⛔️ به‌روزرسانی اطلاعات این اشتراک در حال حاضر امکان‌پذیر نیست.", true);
         return;
     }
-    $info = getMarzbanUserInfo($server_id, $remark);
+    $info = achbotProviderUserInfo($server_id, $remark);
     $vraylink = $info->links ?? null;
 
     if ($vraylink == null) { delMessage(); exit(); }

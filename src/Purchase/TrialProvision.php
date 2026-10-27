@@ -7,7 +7,7 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
 
 if (preg_match('/freeTrial(\d+)_(?<buyType>\w+)/', $data, $match)) {
     $planId  = (int)$match[1];
-    if (!achbotSupportsMarzbanPlan($connection, $planId)) {
+    if (!achbotSupportsPlan($connection, $planId)) {
         alert("⛔️ فعال‌سازی سرویس آزمایشی در حال حاضر امکان‌پذیر نیست.", true);
         return;
     }

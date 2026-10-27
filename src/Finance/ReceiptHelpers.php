@@ -737,7 +737,7 @@ function achbotAutoBankEditPreflight(mysqli $db, array $pay, string $kind,
             (string)$record['remark']===$remark &&
             // Real Core authorization, not a shortcut from the plan's old
             // logical server ID. Cross-panel aliases fail before HTTP.
-            achbotSupportsMarzbanOrder($db,$orderId,
+            achbotSupportsOrder($db,$orderId,
                 (int)$paid['plan_id'],$owner);
     } catch (Throwable $error) {
         error_log('achbot_auto_service_preflight_deferred pay_id='.$payId.
@@ -949,7 +949,7 @@ function achbotAutoBankFinishEdit(mysqli $db, array $pay,
                 // Refresh physical group membership under SQL locks after
                 // remote verification. A revoked alias cannot finalize a
                 // previously valid preflight; do not trust its old snapshot.
-                !achbotSupportsMarzbanOrder($db,$orderId,
+                !achbotSupportsOrder($db,$orderId,
                     (int)$locked['plan_id'],$userId,true) ||
                 // B may have finalized a newer edit after this payment's
                 // original pre-remote snapshot. Never let A restore old

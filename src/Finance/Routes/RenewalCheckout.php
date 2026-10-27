@@ -50,7 +50,7 @@ if (
 
     $order = $order->fetch_assoc();
     $fid = $order['fileid'];
-    if (!achbotSupportsMarzbanOrder($connection, (int)$oid, (int)$fid, (int)$order['userid'])) {
+    if (!achbotSupportsOrder($connection, (int)$oid, (int)$fid, (int)$order['userid'])) {
         alert("⛔️ تمدید این اشتراک در حال حاضر امکان‌پذیر نیست.", true);
         return;
     }
@@ -439,7 +439,7 @@ if(preg_match('/approveRenewAcc(.*)/',$data,$match) && ($from_id == $admin || $u
         if (!$claimed || $connection->commit()!==true)
             throw new RuntimeException('manual_renew_claim_unconfirmed');
         if (achbotSupportsPanel($serverType)) {
-            $response = achbotApplyServiceEdit($connection,$server_id, ['remark'=>$remark, 'days'=>$days, 'volume' => $volume]);
+            $response = achbotApplyServiceEdit($connection,$server_id, ['pay_id'=>(int)$payId, 'remark'=>$remark, 'days'=>$days, 'volume' => $volume]);
         } else {
             throw new \UnexpectedValueException('unsupported_panel');
         } 
@@ -673,7 +673,7 @@ if(is_string($data) && strlen($data) <= 64 && preg_match('/\ApayRenewWithWallet(
             throw new RuntimeException('wallet_renew_claim_unconfirmed');
 
         if (achbotSupportsPanel($serverType)){
-            $response = achbotApplyServiceEdit($connection,$server_id, ['remark'=>$remark, 'days'=>$days, 'volume' => $volume]);
+            $response = achbotApplyServiceEdit($connection,$server_id, ['pay_id'=>(int)$payId, 'remark'=>$remark, 'days'=>$days, 'volume' => $volume]);
         } else {
             throw new \UnexpectedValueException('unsupported_panel');
         }

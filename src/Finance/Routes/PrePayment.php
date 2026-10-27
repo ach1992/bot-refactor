@@ -210,8 +210,8 @@ if (is_string($data) && str_starts_with($data, 'prePayCheck_')) {
             // Do not reinterpret unsupported/foreign accounts as a valid
             // renewal just because the saved plan identifier is stale.
             if ($userId<=0 || (int)$order['userid']!==$userId ||
-                !achbotSupportsMarzbanOrder($connection,$oid,null,$userId) ||
-                !achbotSupportsMarzbanPlan($connection,$savedFid,0,$payInfo['server_id']??null)) {
+                !achbotSupportsOrder($connection,$oid,null,$userId) ||
+                !achbotSupportsPlan($connection,$savedFid,0,$payInfo['server_id']??null)) {
                 alert("⛔️ انجام این درخواست برای اشتراک انتخاب‌شده امکان‌پذیر نیست. با پشتیبانی تماس بگیرید.",true);
                 return;
             }

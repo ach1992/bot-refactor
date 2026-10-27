@@ -484,7 +484,7 @@ if ($target===null) {
     }
     return;
 }
-$listed=getMarzbanJson($serverId,null,$target);
+$listed=achbotProviderGiftUsers($connection,$serverId,$target);
 if (!is_object($listed) || !is_array($listed->users??null) ||
     !array_is_list($listed->users) ||
     !property_exists($listed,'total') ||
@@ -612,6 +612,7 @@ foreach ($rosterNames as $index=>$remark) {
 
     try {
         $change['remark']=$remark;
+        $change['operation_key']='gift:'.(int)$holdId;
         $result=achbotApplyServiceEdit($connection,$serverId,$change,$target);
         $verified=is_object($result) &&
             ($result->success??false)===true &&

@@ -67,7 +67,7 @@ function getOrderTrafficInfo($serverType, $server_id, $remark, $uuid, $inbound_i
     ];
     if ($serverType !== 'marzban' || (int)$inbound_id !== 0) return $result;
 
-    $info = getMarzbanUser($server_id, $remark);
+    $info = achbotProviderUser($server_id, $remark);
     if (!is_object($info) || !isset($info->username)) return $result;
 
     $result['found'] = true;

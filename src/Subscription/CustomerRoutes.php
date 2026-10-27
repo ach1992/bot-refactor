@@ -260,7 +260,7 @@ if(preg_match('/updateConfigConnectionLink(\d+)/', $data,$match)){
     $order = $stmt->get_result()->fetch_assoc();
     $stmt->close();
 
-    if (!$order || !achbotSupportsMarzbanOrder($connection, (int)$oid)) {
+    if (!$order || !achbotSupportsOrder($connection, (int)$oid, null, ((int)$from_id===(int)$admin || !empty($userInfo['isAdmin']))?null:(int)$from_id)) {
         alert("⛔️ انجام این درخواست برای اشتراک انتخاب‌شده امکان‌پذیر نیست.", true);
         return;
     }
@@ -291,8 +291,8 @@ if(preg_match('/updateConfigConnectionLink(\d+)/', $data,$match)){
     
     $success = false; // Flag برای موفقیت آمیز بودن عملیات
     
-    if (achbotSupportsMarzbanAccount($serverType, $inboundId)) {
-        $info = getMarzbanUser($server_id, $remark);
+    if (achbotSupportsAccount($serverType, $inboundId)) {
+        $info = achbotProviderUser($server_id, $remark);
         if(isset($info->links) && !empty($info->links)) {
             $vraylink = $info->links;
             $success = true;
@@ -348,7 +348,7 @@ if(preg_match('/changAccountConnectionLink(\d+)/', $data,$match)){
     $order = $stmt->get_result()->fetch_assoc(); 
     $stmt->close(); 
  
-    if (!$order || !achbotSupportsMarzbanOrder($connection, (int)$oid)) {
+    if (!$order || !achbotSupportsOrder($connection, (int)$oid, null, ((int)$from_id===(int)$admin || !empty($userInfo['isAdmin']))?null:(int)$from_id)) {
         alert("⛔️ انجام این درخواست برای اشتراک انتخاب‌شده امکان‌پذیر نیست.", true);
         return;
     }
@@ -380,10 +380,14 @@ if(preg_match('/changAccountConnectionLink(\d+)/', $data,$match)){
      
     $serverType = $server_info['type']; 
  
-    if (achbotSupportsMarzbanAccount($serverType, $inboundId)) {
-        $res = renewMarzbanUUID($server_id, $remark); 
-        $vraylink = $res->links; 
-        $newUuid = $newToken = str_replace("/sub/", "", $res->subscription_url); 
+    if (achbotSupportsAccount($serverType, $inboundId)) {
+        $res = achbotProviderRevoke($server_id, $remark);
+        if (($res->success??false)!==true || ($res->verified??false)!==true || !isset($res->links)) {
+            alert('⚠️ نتیجه تغییر لینک نیاز به بررسی دارد؛ درخواست را تکرار نکنید.',true);return;
+        }
+        $vraylink = $res->links;
+        $newUuid=$order['uuid'];$newToken=$order['token'];
+        if ($serverType==='marzban') $newUuid=$newToken=str_replace("/sub/", "", $res->subscription_url);
     }else{
         alert("⛔️ انجام این درخواست برای اشتراک انتخاب‌شده امکان‌پذیر نیست.", true);
         return;
@@ -439,7 +443,7 @@ if(preg_match('/changeUserConfigState(\d+)/', $data,$match)){
         alert("⛔️ انجام این درخواست برای اشتراک انتخاب‌شده امکان‌پذیر نیست.", true);
         return;
     }
-    $update_response = changeMarzbanState($server_id, $remark);
+    $update_response = achbotProviderToggle($server_id, $remark);
     
     if($update_response->success){
         alert($mainValues['please_wait_message']);
@@ -491,7 +495,7 @@ if (preg_match('/agentChangeUserConfigState(\d+)/', $data, $match)) {
         alert("⛔️ انجام این درخواست برای اشتراک انتخاب‌شده امکان‌پذیر نیست.", true);
         return;
     }
-    $update_response = changeMarzbanState($server_id, $remark);
+    $update_response = achbotProviderToggle($server_id, $remark);
 
     // بروزرسانی موفق بود
     if ($update_response->success) {

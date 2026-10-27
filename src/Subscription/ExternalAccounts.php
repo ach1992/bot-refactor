@@ -105,7 +105,7 @@ if ($userInfo['step'] == "showAccount" && $text != $buttonValues['cancel']) {
 
     while ($row = $serversList->fetch_assoc()) { 
         $currentServerId = (int)$row['id']; 
-        $userData = getMarzbanUser($currentServerId, $username); 
+        $userData = achbotProviderUser($currentServerId, $username);
 
         if (!empty($userData) && !isset($userData->detail) && !empty($userData->username)) { 
             $found = true; 

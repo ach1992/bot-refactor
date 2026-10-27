@@ -29,6 +29,8 @@ define('ACHBOT_VERIFIED_WEBHOOK_ENTRYPOINT', true);
 require_once 'config.php';
 require_once 'buy_helpers.php';
 check();
+require_once __DIR__.'/src/Panel/ProviderAdmin.php';
+if (achbotHandleProviderAdmin()) return;
 // Source-authenticated and IP-checked before any administrative moderation.
 if (handleToggleCallbacks($data??null,$chat_id??null,$message_id??null)) return;
 // Channel-exemption settings are admin-only and cannot execute before check().

@@ -10,7 +10,7 @@ require_once __DIR__ . '/../PaymentLifecycle.php';
 if(preg_match('/sConfigRenewPlan(\d+)_(\d+)/',$data, $match) && ($botState['sellState']=="on" ||$from_id ==$admin) && $text != $buttonValues['cancel']){
     $id = $match[1];
 	$inbound_id = $match[2];
-    if (!achbotSupportsMarzbanPlan($connection, (int)$id, (int)$inbound_id)) {
+    if (!achbotSupportsPlan($connection, (int)$id, (int)$inbound_id)) {
         alert("⛔️ تمدید این اشتراک در حال حاضر امکان‌پذیر نیست.", true);
         return;
     }
@@ -26,7 +26,7 @@ if(preg_match('/sConfigRenewPlan(\d+)_(\d+)/',$data, $match) && ($botState['sell
     $accountServer = (int)($configInfo['server_id'] ?? 0);
     if (!is_array($configInfo) || ($configInfo['marzban'] ?? null) !== true ||
         empty($configInfo['remark']) || $accountServer <= 0 ||
-        !achbotSupportsMarzbanPlan($connection, (int)$id, 0, $accountServer)) {
+        !achbotSupportsPlan($connection, (int)$id, 0, $accountServer)) {
         alert("⛔️ طرح انتخابی با اشتراک شما سازگار نیست.", true);
         return;
     }

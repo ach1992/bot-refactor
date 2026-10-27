@@ -34,7 +34,7 @@ function achbotAutoRenewReserve(mysqli $db, int $orderId, int $userId): array {
         if (!$order || (int)$order['userid']!==$userId ||
             (int)$order['status']!==1 || (int)$order['notif']===0 ||
             (string)$order['autoRenew']!=='on' ||
-            !achbotSupportsMarzbanOrder($db,$orderId,(int)$order['fileid'],$userId)) {
+            !achbotSupportsOrder($db,$orderId,(int)$order['fileid'],$userId)) {
             $db->rollback(); return ['status'=>'ineligible'];
         }
         // Distinct orders can alias the SAME physical Marzban account.
@@ -320,7 +320,7 @@ function handleAutoRenewCallback($data): void {
     }
     try {
         $reply=achbotApplyServiceEdit($connection,$claim['server_id'],[
-            'remark'=>$claim['remark'],'days'=>$claim['days'],
+            'operation_key'=>'autorenew:'.(int)$claim['id'],'remark'=>$claim['remark'],'days'=>$claim['days'],
             'volume'=>$claim['volume']
         ]);
         $success=(is_object($reply) && ($reply->success??false)===true)
@@ -422,8 +422,8 @@ function achbotAutoRenewSweep(mysqli $db, array $botState): void {
     $stmt->close();
     foreach ($orders as $order) {
         $orderId=(int)$order['id'];
-        if (!achbotSupportsMarzbanOrder($db,$orderId)) continue;
-        $remote=getMarzbanUser((int)$order['server_id'],(string)$order['remark']);
+        if (!achbotSupportsOrder($db,$orderId)) continue;
+        $remote=achbotProviderUser((int)$order['server_id'],(string)$order['remark']);
         if (!is_object($remote) || !isset($remote->username,$remote->expire,
             $remote->used_traffic) || !property_exists($remote,'data_limit') ||
             (string)$remote->username!==(string)$order['remark'] ||

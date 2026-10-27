@@ -167,8 +167,8 @@ function achbotPayUxInsertDraft(mysqli $db, int $actor, mysqli_stmt $insert): in
         if (!$insert->execute() || $insert->affected_rows!==1)
             throw new RuntimeException('draft_insert_failed');
         $draftId=(int)$insert->insert_id;
-        if ($draftId>0 && function_exists('achbotPgPinPayment'))
-            achbotPgPinPayment($db,$draftId);
+        require_once __DIR__.'/../Panel/ProviderRuntime.php';
+        achbotPgPinPayment($db,$draftId);
         if ($draftId<=0 || !$db->commit())
             throw new RuntimeException('draft_commit_unknown');
         return $draftId;

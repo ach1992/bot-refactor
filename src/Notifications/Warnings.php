@@ -50,8 +50,8 @@ if ($orders && $orders->num_rows > 0) {
         $stmt->close();
         $serverType = $serverConfig['type'];
 
-        if (achbotSupportsMarzbanAccount($serverType, $inbound_id)) {
-            $info = getMarzbanUser($server_id, $remark);
+        if (achbotSupportsAccount($serverType, $inbound_id)) {
+            $info = achbotProviderUser($server_id, $remark);
             if (isset($info->username)) {
                 $found = true;
                 $total = $info->data_limit;
@@ -158,8 +158,8 @@ if ($orders) {
             $found = false;
             $logedIn = false;
 
-            if (achbotSupportsMarzbanAccount($serverType, $inbound_id)) {
-                $info = getMarzbanUser($server_id, $remark);
+            if (achbotSupportsAccount($serverType, $inbound_id)) {
+                $info = achbotProviderUser($server_id, $remark);
                 if (isset($info->username)) {
                     $found = true;
                     $logedIn = true;
@@ -177,8 +177,12 @@ if ($orders) {
             if (!$found && !$logedIn) continue;
 
             $leftgb = round(($totalLeft) / 1073741824, 2);
-            if ($expiryTime <= time()) $send = true;
-            elseif ($leftgb <= 0) $send = true;
+            if ($serverType==='pasarguard') {
+                $send=($expiryTime!==null && $expiryTime>0 && $expiryTime<=time()) || ($total>0 && $totalLeft<=0);
+            } else {
+                if ($expiryTime <= time()) $send = true;
+                elseif ($leftgb <= 0) $send = true;
+            }
 
             if ($send) {
                 if (!achbotSupportsPanel($serverType)) continue;
@@ -187,7 +191,7 @@ if ($orders) {
                 if (!achbotAutoRenewPrepareDeletion($connection,(int)$order['id']))
                     continue;
                 try {
-                    $res = deleteMarzban($server_id, $remark);
+                    $res = achbotProviderDelete($server_id, $remark);
                 } catch (Throwable $error) {
                     error_log('achbot_warning_remote_delete_deferred order_id='.(int)$order['id']);
                     continue;

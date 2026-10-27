@@ -159,7 +159,7 @@ if($botState['cartToCartAutoAcceptState']=="on"){
                 throw new RuntimeException('auto_service_subject_drift');
             if(achbotSupportsPanel($serverType)){
                 try {
-                    $response = achbotApplyServiceEdit($connection,$server_id, ['remark'=>$remark, 'days'=>$days, 'volume' => $volume]);
+                    $response = achbotApplyServiceEdit($connection,$server_id, ['pay_id'=>(int)$rowId, 'remark'=>$remark, 'days'=>$days, 'volume' => $volume]);
                 } catch (Throwable $error) {
                     // A provider/SQL exception after dispatch is UNKNOWN,
                     // never authorization to claim completed or refund.
@@ -220,7 +220,7 @@ if($botState['cartToCartAutoAcceptState']=="on"){
                 throw new RuntimeException('auto_service_subject_drift');
             if(achbotSupportsPanel($serverType)){
                 try {
-                    $response = achbotApplyServiceEdit($connection,$server_id, ['remark'=>$remark, 'plus_day'=>$volume]);
+                    $response = achbotApplyServiceEdit($connection,$server_id, ['pay_id'=>(int)$rowId, 'remark'=>$remark, 'plus_day'=>$volume]);
                 } catch (Throwable $error) {
                     // A provider/SQL exception after dispatch is UNKNOWN,
                     // never authorization to claim completed or refund.
@@ -278,7 +278,7 @@ if($botState['cartToCartAutoAcceptState']=="on"){
                 throw new RuntimeException('auto_service_subject_drift');
             if(achbotSupportsPanel($serverType)){
                     try {
-                    $response = achbotApplyServiceEdit($connection,$server_id, ['remark'=>$remark, 'plus_volume'=>$volume]);
+                    $response = achbotApplyServiceEdit($connection,$server_id, ['pay_id'=>(int)$rowId, 'remark'=>$remark, 'plus_volume'=>$volume]);
                 } catch (Throwable $error) {
                     // A provider/SQL exception after dispatch is UNKNOWN,
                     // never authorization to claim completed or refund.
@@ -327,7 +327,7 @@ if($botState['cartToCartAutoAcceptState']=="on"){
 
             try {
                 $response = achbotApplyServiceEdit($connection,$server_id,
-                    ['remark'=>$remark, 'days'=>$days, 'volume'=>$volume]);
+                    ['pay_id'=>(int)$rowId, 'remark'=>$remark, 'days'=>$days, 'volume'=>$volume]);
             } catch (Throwable $error) {
                 error_log('achbot_auto_service_dispatch_deferred pay_id='.(int)$rowId.
                     ' class='.get_class($error).' code='.(int)$error->getCode());

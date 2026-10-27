@@ -401,11 +401,11 @@ if (preg_match('/^changeServerId_(\d+)$/D', (string)($data ?? ''), $match)) {
     $stmt->execute();
     $order = $stmt->get_result()->fetch_assoc();
     $stmt->close();
-    if (!$order || !achbotSupportsMarzbanOrder($connection, $id)) {
+    if (!$order || !achbotSupportsOrder($connection, $id)) {
         alert("⛔️ سفارش مرزبان معتبر نیست.", true);
         return;
     }
-    $targets = achbotMarzbanRelocationTargets($connection, (int)$order['server_id']);
+    $targets = achbotProviderRelocationTargets($connection, (int)$order['server_id']);
     if (!$targets) {
         alert("هیچ سرور دیگری با همان پنل مرزبان وجود ندارد.", true);
         return;
@@ -416,7 +416,7 @@ if (preg_match('/^changeServerId_(\d+)$/D', (string)($data ?? ''), $match)) {
             'callback_data'=>'selectServerId_' . $id . '_' . (int)$server['id']]];
     }
     $keyboard[] = [['text'=>'🔙 بازگشت', 'callback_data'=>'returnToPanel_' . $id]];
-    sendMessage("🌐 سرور منطقی مقصد را انتخاب کنید. حساب در خود مرزبان تغییر نمی‌کند.",
+    sendMessage("🌐 سرور منطقی مقصد را انتخاب کنید. تنظیمات مقصد پس از بررسی اشتراک اعمال می‌شود.",
         json_encode(['inline_keyboard'=>$keyboard], JSON_UNESCAPED_UNICODE));
     return;
 }
@@ -428,12 +428,12 @@ if (preg_match('/^selectServerId_(\d+)_(\d+)$/D', (string)($data ?? ''), $match)
     }
     $id = (int)$match[1];
     $targetId = (int)$match[2];
-    $result = achbotReassignMarzbanLogicalServer($connection, $id, $targetId, $from_id, true);
+    $result = achbotReassignLogicalServer($connection, $id, $targetId, $from_id, true);
     if (!$result) {
-        alert("⛔️ سرور مقصد باید با سرور فعلی به یک پنل مرزبان تعلق داشته باشد.", true);
+        alert("⛔️ مقصد با اشتراک فعلی سازگار نیست یا نتیجه نیاز به بررسی دارد.", true);
         return;
     }
-    sendMessage("✅ فقط Server ID منطقی سفارش تغییر کرد؛ حساب مرزبان و پلن محفوظ هستند.");
+    sendMessage("✅ مقصد اشتراک پس از بررسی به‌روزرسانی شد.");
     $stmt = $connection->prepare("SELECT * FROM `orders_list` WHERE `id` = ?");
     $stmt->bind_param('i', $id);
     $stmt->execute();
@@ -448,7 +448,7 @@ if (preg_match('/^changeFileId_(\\d+)_(\\d+)$/', (string) ($data ?? ''), $match)
     $id = (int)$match[1];
     $serverId = (int)$match[2];
     // A cached plan-selector callback cannot supply another server id.
-    if (!achbotSupportsMarzbanOrder($connection, $id) || $serverId <= 0) {
+    if (!achbotSupportsOrder($connection, $id) || $serverId <= 0) {
         alert("⛔️ سفارش مرزبان معتبر نیست.", true);
         return;
     }
@@ -456,7 +456,7 @@ if (preg_match('/^changeFileId_(\\d+)_(\\d+)$/', (string) ($data ?? ''), $match)
         "SELECT p.`id`, p.`title` FROM `server_plans` p
          INNER JOIN `server_config` c ON c.`id` = p.`server_id`
          INNER JOIN `orders_list` o ON o.`id` = ? AND o.`server_id` = p.`server_id`
-         WHERE p.`server_id` = ? AND p.`inbound_id` = 0 AND c.`type` = 'marzban'"
+         WHERE p.`server_id` = ? AND p.`inbound_id` = 0 AND c.`type` IN ('marzban','pasarguard')"
     );
     $stmt->bind_param("ii", $id, $serverId);
     $stmt->execute();
@@ -483,8 +483,8 @@ if (preg_match('/^selectFileId_(\\d+)_(\\d+)$/', (string) ($data ?? ''), $match)
         $stmt->execute();
         $locked = $stmt->get_result()->fetch_assoc();
         $stmt->close();
-        if (!$locked || !achbotSupportsMarzbanOrder($connection, $id) ||
-            !achbotSupportsMarzbanPlan($connection, $newFileId, 0, $locked['server_id'])) {
+        if (!$locked || !achbotSupportsOrder($connection, $id) ||
+            !achbotSupportsPlan($connection, $newFileId, 0, $locked['server_id'])) {
             $connection->rollback();
             alert("⛔️ پلن انتخابی با سرور مرزبان این سفارش سازگار نیست.", true);
             return;

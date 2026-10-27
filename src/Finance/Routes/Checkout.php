@@ -208,7 +208,7 @@ if (preg_match('/^showQr(Sub|Config)(\d+)/', $data, $match)) {
     $order = $stmt->get_result()->fetch_assoc();
     $stmt->close();
 
-    if (!$order || !achbotSupportsMarzbanOrder($connection, (int)$order['id'])) {
+    if (!$order || !achbotSupportsOrder($connection, (int)$order['id'])) {
         alert("⛔️ اطلاعات این اشتراک در حال حاضر قابل نمایش نیست.", true);
         return;
     }

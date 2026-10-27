@@ -271,7 +271,7 @@ if (!function_exists('processWalletPayment')) {
                     (int)$plan['inbound_id']!==0 ||
                     (int)$plan['server_active']!==1 ||
                     (int)$plan['server_state']!==1 ||
-                    ($plan['panel_type']??'')!=='marzban' ||
+                    !achbotSupportsPanel($plan['panel_type']??'') ||
                     (!$isCustom && ($planDays<=0 || $planDays>36500 ||
                      $planVolume<=0 ||
                      $planVolume>intdiv(PHP_INT_MAX,1073741824))) ||
