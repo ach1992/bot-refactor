@@ -1,9 +1,47 @@
 <?php
-/** Native byte-equivalence proof. Only inert tracked string expressions run. */
+/** Retained pre-style byte proof and exact current audience-catalog acceptance. */
 require_once dirname(__DIR__).'/messages/loader.php';
 $inventory=json_decode(file_get_contents(__DIR__.'/text_catalog_inventory.json'),true,512,JSON_THROW_ON_ERROR);
+const CATALOG_STYLE_BASELINE='7faac9b067f8a171e5e26d6aea5aaf9f4088a3e7';
+function catalogImmutableTopics(): array {
+    static $topics=null;
+    if ($topics!==null) return $topics;
+    $topics=[];
+    $root=dirname(__DIR__);
+    $paths=shell_exec('git -C '.escapeshellarg($root).' ls-tree -r --name-only '.
+        escapeshellarg(CATALOG_STYLE_BASELINE).' -- messages/fa/');
+    if (!is_string($paths)) throw new RuntimeException('pre_style_source_missing');
+    foreach (array_filter(explode("\n",trim($paths))) as $path) {
+        if (!str_ends_with($path,'.php')) continue;
+        $source=shell_exec('git -C '.escapeshellarg($root).' show '.
+            escapeshellarg(CATALOG_STYLE_BASELINE.':'.$path));
+        $begin=is_string($source)?strpos($source,'return ['):false;
+        if ($begin===false) throw new RuntimeException('pre_style_definition_missing');
+        // Only the inert array expression from an immutable Git object runs.
+        $entries=eval(substr($source,$begin));
+        if (!is_array($entries)) throw new RuntimeException('pre_style_definition_invalid');
+        $topics[basename($path,'.php')]=$entries;
+    }
+    if (count($topics)!==25) throw new RuntimeException('pre_style_topic_scope_drift');
+    return $topics;
+}
+function catalogPreStyleMessage(string $key,array $values=[]): string {
+    [$topic,$name]=explode('.',$key,2);
+    $entry=catalogImmutableTopics()[$topic][$name]??null;
+    if ($entry===null) throw new RuntimeException('pre_style_key_missing:'.$key);
+    $text=is_array($entry)?$entry['text']:$entry;
+    $parameters=is_array($entry)?$entry['parameters']:[];
+    if (count($values)!==count($parameters)||array_diff($parameters,array_keys($values)))
+        throw new RuntimeException('pre_style_parameters_mismatch');
+    $replace=[];
+    foreach ($parameters as $parameter) $replace['{'.$parameter.'}']=(string)$values[$parameter];
+    return $replace?strtr($text,$replace):$text;
+}
 function catalogEvaluate(string $_catalogExpression,array $_catalogBindings): string {
     extract($_catalogBindings,EXTR_SKIP);
+    // Preserve the original relocation proof against the immutable pre-style
+    // definitions. Current presentation is checked separately below.
+    $_catalogExpression=str_replace('achbotMessage(','catalogPreStyleMessage(',$_catalogExpression);
     return eval('return '.$_catalogExpression.';');
 }
 final class CatalogStringProbe {
@@ -36,7 +74,7 @@ foreach ($inventory['files'] as $path=>$file) {
         if (!empty($edit['formatting'])) continue;
         $templates++;
         if (!empty($edit['inline_html'])) {
-            if (achbotMessage($edit['key'])!==$edit['original']) throw new RuntimeException('inline_html_mismatch:'.$path);
+            if (catalogPreStyleMessage($edit['key'])!==$edit['original']) throw new RuntimeException('inline_html_mismatch:'.$path);
             $checks++;continue;
         }
         if (isset($amendments['approved_copy'][$edit['key']])) {
@@ -98,8 +136,8 @@ foreach (['marzban','pasarguard'] as $provider) {
 }
 $templates++;$interpolated++;
 $dynamic=null;
-foreach(glob(dirname(__DIR__).'/messages/fa/*.php') as $path) {
-    $topic=basename($path,'.php');$group=achbotMessages($topic);
+foreach(achbotMessageTopics() as $topic) {
+    $group=achbotMessages($topic);
     foreach($group as $key=>$entry) if(is_array($entry)&&$entry['parameters']) {$dynamic=[$topic.'.'.$key,$entry];break 2;}
 }
 if (!$dynamic) throw new RuntimeException('missing_dynamic_coverage');
@@ -121,15 +159,112 @@ foreach(['../secret.key','unknown','unknown.key'] as $bad) {
     catch(InvalidArgumentException|OutOfBoundsException $expected) {$checks++;}
 }
 require dirname(__DIR__).'/settings/values.php';
-$main=$mainValues;$buttons=$buttonValues;
+if ($mainValues!==achbotMessages('legacy_messages')||$buttonValues!==achbotMessages('legacy_buttons'))
+    throw new RuntimeException('current_facade_mismatch');
+$main=catalogImmutableTopics()['legacy_messages'];
+$buttons=catalogImmutableTopics()['legacy_buttons'];
 $legacy=shell_exec('git -C '.escapeshellarg(dirname(__DIR__)).' show '.escapeshellarg($inventory['baseline'].':settings/values.php'));
 if (!is_string($legacy)) throw new RuntimeException('legacy_source_missing');
 ob_start();eval('?>'.$legacy);ob_end_clean();
 if($main!==$mainValues||$buttons!==$buttonValues) throw new RuntimeException('legacy_facade_mismatch');
 $checks+=2;
 require_once dirname(__DIR__).'/src/Presentation/Labels.php';
-if (\AchBot\Presentation\Labels\paymentType('BUY_SUB')!== 'خرید اشتراک') throw new RuntimeException('namespaced_standalone_load_failed');
-echo json_encode(['status'=>'PASS','templates'=>$templates,'interpolated_templates'=>$interpolated,'byte_assertions'=>$checks,
+if (\AchBot\Presentation\Labels\paymentType('BUY_SUB')!==achbotMessage('labels.labels.payment_type.label.e6343571a4'))
+    throw new RuntimeException('namespaced_standalone_load_failed');
+$style=json_decode(file_get_contents(__DIR__.'/text_catalog_style_amendments.json'),true,512,JSON_THROW_ON_ERROR);
+if (($style['version']??null)!==1||($style['baseline_commit']??null)!==CATALOG_STYLE_BASELINE)
+    throw new RuntimeException('style_baseline_drift');
+$baseline=[];
+foreach (catalogImmutableTopics() as $topic=>$entries)
+    foreach ($entries as $key=>$entry) $baseline[$topic.'.'.$key]=$entry;
+$current=[];
+foreach (achbotMessageTopics() as $topic)
+    foreach (achbotMessages($topic) as $key=>$entry) $current[$topic.'.'.$key]=$entry;
+$changes=$style['changes']??[];
+$retired=$style['retired_keys']??[];
+$added=$style['added_keys']??[];
+$expectedRetired=array_filter(array_keys($baseline),static fn($key)=>
+    str_starts_with($key,'admin_settings.config.convert_persian_digits_to_english_for_stats.')||
+    str_starts_with($key,'admin_settings.config.parse_stats_date_range.text.'));
+sort($expectedRetired);$retiredKeys=array_keys($retired);sort($retiredKeys);
+if (count($expectedRetired)!==23||$retiredKeys!==array_values($expectedRetired))
+    throw new RuntimeException('implementation_token_retirement_scope_drift');
+$approvedAdded='purchase.order_writes.ensure_account_creation_succeeded.admin_message.inbound_missing';
+if (array_keys($added)!==[$approvedAdded])
+    throw new RuntimeException('admin_diagnostic_addition_scope_drift');
+$expectedKeys=array_values(array_diff(array_keys($baseline),$retiredKeys));
+$expectedKeys[]=$approvedAdded;sort($expectedKeys);$actualKeys=array_keys($current);sort($actualKeys);
+if ($actualKeys!==$expectedKeys) throw new RuntimeException('current_catalog_key_scope_drift');
+foreach ($retired as $key=>$record) {
+    if (($record['before']??null)!==$baseline[$key]||empty($record['reason']))
+        throw new RuntimeException('implementation_token_baseline_mismatch:'.$key);
+}
+$parameterExceptions=[
+    'purchase.order_writes.ensure_account_creation_succeeded.user_message.7a64d65208'=>[],
+    'gateway.gateway_return.perform_payment_effect.message.3768e94d51'=>[],
+    'gateway.gateway_return.perform_payment_effect.text.ed588b3bc9'=>['inbound_id'],
+];
+$seenChanges=[];$preserved=0;$currentChecks=0;$parameterChanges=0;
+foreach ($current as $key=>$entry) {
+    $text=is_array($entry)?$entry['text']:$entry;
+    $parameters=is_array($entry)?$entry['parameters']:[];
+    if (!is_string($text)||!is_array($parameters)||preg_match('/[۰-۹٠-٩]/u',$text))
+        throw new RuntimeException('current_template_or_digits_invalid:'.$key);
+    if (isset($added[$key])) {
+        $record=$added[$key];
+        if ($text!==($record['after']??null)||$parameters!==($record['parameters']??null)||
+            $parameters!==['title','inbound_id']||empty($record['reasons']))
+            throw new RuntimeException('admin_diagnostic_definition_mismatch');
+    } else {
+        $beforeEntry=$baseline[$key];$before=is_array($beforeEntry)?$beforeEntry['text']:$beforeEntry;
+        $beforeParameters=is_array($beforeEntry)?$beforeEntry['parameters']:[];
+        if (isset($changes[$key])) {
+            $record=$changes[$key];
+            if (($record['before']??null)!==$before||($record['after']??null)!==$text||
+                ($record['parameters']??null)!==$parameters||empty($record['reasons'])||$before===$text&&$beforeParameters===$parameters)
+                throw new RuntimeException('style_definition_mismatch:'.$key);
+            if ($parameters!==$beforeParameters) {
+                if (!array_key_exists($key,$parameterExceptions)||$parameters!==$parameterExceptions[$key]||
+                    ($record['before_parameters']??null)!==$beforeParameters)
+                    throw new RuntimeException('unapproved_style_parameters:'.$key);
+                $parameterChanges++;
+            } elseif (isset($record['before_parameters'])&&$record['before_parameters']!==$beforeParameters) {
+                throw new RuntimeException('style_before_parameters_mismatch:'.$key);
+            }
+            $seenChanges[$key]=true;
+        } else {
+            if ($entry!==$beforeEntry) throw new RuntimeException('unrecorded_current_copy_change:'.$key);
+            $preserved++;
+        }
+    }
+    // Every shipping template executes through the real loader with inert,
+    // adversarial display values; substitutions remain one-pass and exact.
+    foreach ($parameters?[null,0,-77,"نام <&>\"' {time} %s"]:[null] as $sample) {
+        $values=[];$replace=[];
+        foreach ($parameters as $parameter) {
+            $values[$parameter]=$sample;
+            $replace['{'.$parameter.'}']=(string)$sample;
+        }
+        $expected=$replace?strtr($text,$replace):$text;
+        if (achbotMessage($key,$values)!==$expected)
+            throw new RuntimeException('current_native_template_failed:'.$key);
+        $currentChecks++;
+    }
+}
+if (count($seenChanges)!==count($changes)||$parameterChanges!==3)
+    throw new RuntimeException('style_change_coverage_missing');
+$files=glob(dirname(__DIR__).'/messages/fa/*.php');sort($files);
+if (array_map('basename',$files)!==['admin.php','user.php'])
+    throw new RuntimeException('editable_catalog_file_count_drift');
+echo json_encode(['status'=>'PASS',
+    'pre_style_templates'=>$templates,'pre_style_interpolated_templates'=>$interpolated,
+    'pre_style_byte_assertions'=>$checks,'pre_style_byte_preserved_templates'=>$templates-count($approvedSeen),
+    'pre_style_privacy_corrections'=>count($approvedSeen),
     'html_escaping'=>'PASS','one_pass_substitution'=>'PASS','legacy_facades'=>'PASS',
-    'repeated_interpolation_string_conversion'=>'PASS','byte_preserved_templates'=>$templates-count($approvedSeen),
-    'approved_wording_corrections'=>count($approvedSeen),'actual_traffic_helper_parity_cases'=>$trafficCases],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR)."\n";
+    'repeated_interpolation_string_conversion'=>'PASS','actual_traffic_helper_parity_cases'=>$trafficCases,
+    'editable_catalog_files'=>count($files),'logical_topics'=>count(achbotMessageTopics()),
+    'current_catalog_keys'=>count($current),'current_byte_preserved_keys'=>$preserved,
+    'current_style_changes'=>count($changes),'current_retired_implementation_keys'=>count($retired),
+    'current_added_admin_keys'=>count($added),'current_parameter_privacy_changes'=>$parameterChanges,
+    'current_native_template_assertions'=>$currentChecks,'current_non_ascii_digit_templates'=>0,
+],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR)."\n";

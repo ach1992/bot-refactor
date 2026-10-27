@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Current-runtime copy audit and native equivalence. Frozen V0–V9 untouched."""
+"""Retained relocation proof plus current two-file copy/audience acceptance."""
 from __future__ import annotations
 import hashlib, json, pathlib, re, socket, subprocess, sys, tempfile, time, urllib.error, urllib.request
 import catalog_ui
@@ -10,6 +10,36 @@ def check(ok,message):
 def runtime_paths():
     paths=command('git','ls-files','*.php').decode().splitlines()
     return [p for p in paths if not p.startswith(('tools/','tests/','phpqrcode/','messages/')) and p!='baseInfo.example.php']
+STYLE_BASELINE='7faac9b067f8a171e5e26d6aea5aaf9f4088a3e7'
+def style_source_reconstruction():
+    source=json.loads((ROOT/'tools/text_catalog_style_source.json').read_text())
+    style=json.loads((ROOT/'tools/text_catalog_style_amendments.json').read_text())
+    check(source.get('version')==1 and source.get('baseline_commit')==STYLE_BASELINE,
+          'style source baseline drift')
+    check(style.get('version')==1 and style.get('baseline_commit')==STYLE_BASELINE,
+          'style definition baseline drift')
+    edits=source['edits']
+    allowed={'config.php','src/Purchase/OrderWrites.php','src/Finance/GatewayReturn.php'}
+    check(len(edits)==26 and {e['path'] for e in edits}==allowed and
+          set(source['source_sha256'])==allowed,'style source scope drift')
+    check(len(source['retired_keys'])==23 and set(source['retired_keys'])==set(style['retired_keys']),
+          'retired implementation token/source coverage drift')
+    restored={}
+    for path in allowed:
+        current=(ROOT/path).read_bytes()
+        hashes=source['source_sha256'][path]
+        baseline=command('git','show',STYLE_BASELINE+':'+path)
+        check(hashlib.sha256(current).hexdigest()==hashes['after'] and
+              hashlib.sha256(baseline).hexdigest()==hashes['before'],
+              'style source identity mismatch: '+path)
+        for edit in reversed([e for e in edits if e['path']==path]):
+            before=edit['original'].encode();after=edit['replacement'].encode()
+            check(before!=after and current.count(after)==1 and bool(edit['reason']),
+                  'style source expression drift: '+path)
+            current=current.replace(after,before,1)
+        check(current==baseline,'style source reversal differs from immutable source: '+path)
+        restored[path]=current
+    return restored,source,style
 def main():
     inventory=json.loads((ROOT/'tools/text_catalog_inventory.json').read_text())
     legacy=command('git','show',inventory['baseline']+':settings/values.php')
@@ -23,9 +53,10 @@ def main():
     followups=amendments['source_edits']
     check(len(followups)==2 and {e['kind'] for e in followups}=={
         'byte_preserved_presentation','authorized_bootstrap_privacy'},'followup scope drift')
+    restored,style_source,style=style_source_reconstruction()
     reverse=0
     for path,record in inventory['files'].items():
-        current=(ROOT/path).read_bytes()
+        current=restored.get(path,(ROOT/path).read_bytes())
         relevant=[e for e in followups if e['path']==path]
         for edit in reversed(relevant):
             before=edit['original'].encode();after=edit['replacement'].encode()
@@ -76,7 +107,7 @@ def main():
     for path in runtime_paths():
         refs.update(re.findall(r"\\?achbotMessage(?:Html)?\('([^']+)'",(ROOT/path).read_text()))
     catalog=json.loads(command('php','-r',
-        'require "messages/loader.php";$r=[];foreach(glob("messages/fa/*.php") as $p){$t=basename($p,".php");foreach(achbotMessages($t) as $k=>$v)$r[]=$t.".".$k;}echo json_encode($r);'))
+        'require "messages/loader.php";$r=[];foreach(achbotMessageTopics() as $t){foreach(achbotMessages($t) as $k=>$v)$r[]=$t.".".$k;}echo json_encode($r);'))
     entries=set(catalog)
     check(len(entries)==len(catalog),'duplicate catalog keys')
     check(refs<=entries,'unknown catalog references: '+str(refs-entries))
@@ -106,7 +137,15 @@ def main():
     except RuntimeError as error:check('exposes infrastructure' in str(error),'catalog privacy negative control failed for wrong reason')
     else:raise AssertionError('catalog privacy negative control missed infrastructure copy')
     native=json.loads(command('php','tools/test_text_catalog.php'))
-    check(native['status']=='PASS','native byte equivalence')
+    check(native['status']=='PASS','pre-style byte and current exact-presentation acceptance')
+    presentation=json.loads(command('python3','tools/test_text_catalog_style.py'))
+    check(presentation.get('status')=='PASS' and presentation.get('editable_files')==2
+          and presentation.get('current_keys')==2526 and presentation.get('retired_keys')==23
+          and presentation.get('added_keys')==1 and presentation.get('logical_topics')==25
+          and presentation.get('numeric_template_changes')==24
+          and presentation.get('adjacent_emoji_violations')==0
+          and presentation.get('parameter_exception_count')==3,
+          'two-file style, digit and audience acceptance incomplete')
     # Direct requests must not expose any internal catalog/module source or text.
     with socket.socket() as sock:sock.bind(('127.0.0.1',0));port=sock.getsockname()[1]
     process=subprocess.Popen(['php','-S','127.0.0.1:'+str(port),'-t',str(ROOT)],cwd=ROOT,
@@ -126,8 +165,9 @@ def main():
             check(status==404 and not body,'direct guard failed: '+path)
     finally:
         process.terminate();process.wait(timeout=5)
-    print(json.dumps({'status':'PASS','source_equivalent_occurrences':reverse,'source_files':len(inventory['files']),
+    print(json.dumps({'status':'PASS','pre_style_source_equivalent_occurrences':reverse,'source_files':len(inventory['files']),
       'catalog_keys':len(entries),'runtime_references':len(refs),'static_ui_violations':len(violations),'ascii_ui_violations':len(ascii_ui),'ascii_audit_negative_controls':8,'migrated_machine_fields_or_sql_arguments':0,
       'authorized_source_dependency_files':len(amendments['source_dependencies']),'authorized_bootstrap_flow_changes':1,'approved_public_copy_corrections':len(amendments['approved_copy']),
-      'direct_http_guards':len(guarded),'native':native},ensure_ascii=False))
+      'direct_http_guards':len(guarded),'editable_catalog_files':2,'logical_topics':25,
+      'current_authorized_source_edits':len(style_source['edits']),'retired_parser_tokens':len(style_source['retired_keys']),'presentation':presentation,'native':native},ensure_ascii=False))
 if __name__=='__main__':main()

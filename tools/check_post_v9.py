@@ -512,22 +512,58 @@ def main():
         text_catalog=json.loads(catalog_output.stdout)
         if not (text_catalog.get("status")=="PASS"
                 and text_catalog.get("source_files")==78
-                and text_catalog.get("source_equivalent_occurrences")==3202
+                and text_catalog.get("pre_style_source_equivalent_occurrences")==3202
                 and text_catalog.get("static_ui_violations")==0
                 and text_catalog.get("ascii_ui_violations")==0
                 and text_catalog.get("ascii_audit_negative_controls")==8
                 and text_catalog.get("migrated_machine_fields_or_sql_arguments")==0
-                and text_catalog.get("direct_http_guards")==27
-                and text_catalog.get("native",{}).get("templates")==3066
-                and text_catalog.get("native",{}).get("interpolated_templates")==293
-                and text_catalog.get("native",{}).get("byte_assertions")==4839
+                and text_catalog.get("direct_http_guards")==4
+                and text_catalog.get("native",{}).get("pre_style_templates")==3066
+                and text_catalog.get("native",{}).get("pre_style_interpolated_templates")==293
+                and text_catalog.get("native",{}).get("pre_style_byte_assertions")==4839
                 and text_catalog.get("authorized_source_dependency_files")==3
                 and text_catalog.get("authorized_bootstrap_flow_changes")==1
                 and text_catalog.get("approved_public_copy_corrections")==3
-                and text_catalog.get("native",{}).get("byte_preserved_templates")==3063
-                and text_catalog.get("native",{}).get("approved_wording_corrections")==3
-                and text_catalog.get("native",{}).get("actual_traffic_helper_parity_cases")==18):
-            raise RuntimeError("Central copy byte-equivalence, audience and HTTP guard proof incomplete")
+                and text_catalog.get("native",{}).get("pre_style_byte_preserved_templates")==3063
+                and text_catalog.get("native",{}).get("pre_style_privacy_corrections")==3
+                and text_catalog.get("native",{}).get("actual_traffic_helper_parity_cases")==18
+                and text_catalog.get("editable_catalog_files")==2
+                and text_catalog.get("logical_topics")==25
+                and text_catalog.get("current_authorized_source_edits")==26
+                and text_catalog.get("retired_parser_tokens")==23
+                and text_catalog.get("catalog_keys")==2526
+                and text_catalog.get("native",{}).get("editable_catalog_files")==2
+                and text_catalog.get("native",{}).get("logical_topics")==25
+                and text_catalog.get("native",{}).get("current_catalog_keys")==2526
+                and text_catalog.get("native",{}).get("current_retired_implementation_keys")==23
+                and text_catalog.get("native",{}).get("current_added_admin_keys")==1
+                and text_catalog.get("native",{}).get("current_parameter_privacy_changes")==3
+                and text_catalog.get("native",{}).get("current_style_changes",0)>0
+                and text_catalog["native"]["current_byte_preserved_keys"]
+                    +text_catalog["native"]["current_style_changes"]
+                    +text_catalog["native"]["current_added_admin_keys"]==2526
+                and text_catalog.get("native",{}).get("current_native_template_assertions",0)>=2526
+                and text_catalog.get("native",{}).get("current_non_ascii_digit_templates")==0
+                and text_catalog.get("presentation",{}).get("status")=="PASS"
+                and text_catalog.get("presentation",{}).get("editable_files")==2
+                and text_catalog.get("presentation",{}).get("current_keys")==2526
+                and text_catalog.get("presentation",{}).get("numeric_template_changes")==24
+                and text_catalog.get("presentation",{}).get("adjacent_emoji_violations")==0
+                and text_catalog.get("presentation",{}).get("parameter_exception_count")==3):
+            raise RuntimeError("Pre-style relocation or current two-file/audience/presentation proof incomplete")
+        copy_audience_output=subprocess.run(
+            ["python3",str(ROOT/"tools/test_next_copy_audience.py")],
+            cwd=ROOT,check=True,timeout=60,capture_output=True,text=True)
+        copy_audience=json.loads(copy_audience_output.stdout)
+        if not (copy_audience.get("complete") is True
+                and copy_audience.get("cases")==16
+                and copy_audience.get("archived_disclosure_RED")==2
+                and copy_audience.get("actual_customer_admin_separation") is True
+                and copy_audience.get("actual_stats_parser_equivalence") is True
+                and copy_audience.get("actual_ascii_date_output") is True
+                and copy_audience.get("database_provider_network_calls")==0
+                and copy_audience.get("presentation_only") is True):
+            raise RuntimeError("Actual copy audience, parser and ASCII date evidence incomplete")
         bootstrap_output=subprocess.run(
             ["python3",str(ROOT/"tools/test_next_bootstrap_privacy.py")],
             cwd=ROOT,check=True,timeout=60,capture_output=True,text=True)
@@ -2930,6 +2966,7 @@ def main():
                      "admin_wallet_ux":wallet_ux,
                      "next_payment_ux":next_payment,
                      "central_text_catalog":text_catalog,
+                     "copy_audience_and_numeric_source":copy_audience,
                      "public_bootstrap_privacy":bootstrap_privacy,
                      "public_gateway_privacy":gateway_privacy,
                      "service_unit_quote_guards":unit_guards,

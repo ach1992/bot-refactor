@@ -77,30 +77,7 @@ NEW_RUNTIME_MEMBERS = ("settings/cronRunner.php", "src/Finance/PaymentPage.php",
                        "src/Subscription/ServerDisplaySettings.php",
                        "messages/loader.php",
                        "messages/fa/admin.php",
-                       "messages/fa/admin_settings.php",
-                       "messages/fa/agent.php",
-                       "messages/fa/backup.php",
-                       "messages/fa/bot.php",
-                       "messages/fa/broadcast.php",
-                       "messages/fa/date.php",
-                       "messages/fa/gateway.php",
-                       "messages/fa/jobs.php",
-                       "messages/fa/labels.php",
-                       "messages/fa/legacy_buttons.php",
-                       "messages/fa/legacy_messages.php",
-                       "messages/fa/manual_payment.php",
-                       "messages/fa/notifications.php",
-                       "messages/fa/payment.php",
-                       "messages/fa/payment_review.php",
-                       "messages/fa/payment_settings.php",
-                       "messages/fa/plans.php",
-                       "messages/fa/provider.php",
-                       "messages/fa/purchase.php",
-                       "messages/fa/renewal.php",
-                       "messages/fa/subscription.php",
-                       "messages/fa/support.php",
-                       "messages/fa/telegram.php",
-                       "messages/fa/wallet.php")
+                       "messages/fa/user.php")
 
 EXPECTED_RUNTIME_COUNT = 92 - len(RETIRED_RUNTIME_MEMBERS) + len(NEW_RUNTIME_MEMBERS)
 
@@ -125,6 +102,10 @@ def members() -> list[str]:
     for retired in RETIRED_RUNTIME_MEMBERS:
         if (ROOT/retired).exists() or retired in paths:
             raise RuntimeError("Retired old-payment source reintroduced: " + retired)
+    catalogs={path.relative_to(ROOT).as_posix()
+              for path in (ROOT/"messages/fa").glob("*.php")}
+    if catalogs!={"messages/fa/user.php","messages/fa/admin.php"}:
+        raise RuntimeError("Expected exactly the two editable audience catalogs")
     for path in paths:
         if path=="baseInfo.php" or not (ROOT/path).is_file() or (ROOT/path).is_symlink():
             raise RuntimeError("Illegal/missing runtime member: "+path)

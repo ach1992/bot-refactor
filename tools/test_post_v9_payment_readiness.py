@@ -160,7 +160,7 @@ def source_failure_regressions(d: Path) -> list[dict]:
     archived.write_bytes(previous)
     require(previous!=current.read_bytes(),'source_failure_reference_differs')
     helper='src/Finance/PaymentLifecycle.php'
-    catalog='messages/fa/payment.php'
+    catalog='messages/fa/user.php'
     originals={name:(stage/name).read_bytes() for name in (helper,catalog)}
     query=all_row_snapshot_query(d)
     rows=lambda:tuple(sorted(sql(d,query).splitlines()))

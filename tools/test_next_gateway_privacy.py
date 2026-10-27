@@ -68,10 +68,28 @@ require_once __DIR__.'/src/Finance/GatewayClient.php';
         (app/'baseInfo.php').write_text('<?php // Synthetic source-only instance.\n')
         (app/'config.php').write_text(bootstrap)
         (w/'driver.php').write_text('<?php parse_str($argv[1],$_GET);require '+json.dumps(str(app/'pay/index.php'))+';')
-        topic=app/'messages/fa/gateway.php';current=topic.read_bytes()
+        # Keep the shipping two-file layout. Transplant only the three real
+        # unsafe values from the immutable old Git object for the RED control.
+        # Restore exact shipping bytes before every current GREEN path.
+        catalog_paths=[app/'messages/fa/user.php',app/'messages/fa/admin.php']
+        current={path:path.read_bytes() for path in catalog_paths}
         archived=subprocess.check_output(['git','show',BASE+':messages/fa/gateway.php'],cwd=ROOT)
+        old_file=w/'archived-gateway-copy.php';old_file.write_bytes(archived)
+        old_values=json.loads(subprocess.check_output(['php','-r',
+            '$s=file_get_contents($argv[1]);echo json_encode(eval(substr($s,strpos($s,"return ["))),JSON_THROW_ON_ERROR);',
+            str(old_file)],cwd=ROOT))
+        for key,entry in corrections.items():
+            local=key.split('.',1)[1]
+            check(old_values[local]==entry['before'],'archived unsafe definition drift: '+key)
+        for path in catalog_paths:
+            entries=json.loads(subprocess.check_output(['php','-r',
+                '$entries=require $argv[1];echo json_encode($entries,JSON_THROW_ON_ERROR);',str(path)],cwd=ROOT))
+            for key,entry in corrections.items():
+                topic,local=key.split('.',1)
+                if local in entries.get(topic,{}):entries[topic][local]=old_values[local]
+            serialized=json.dumps(entries,ensure_ascii=True).replace('\\','\\\\').replace("'","\\'")
+            path.write_text("<?php\nreturn json_decode('"+serialized+"',true,512,JSON_THROW_ON_ERROR);\n")
         before=purchase.snapshot(w,e,DB)
-        topic.write_bytes(archived)
         for case,actor,kind,suffix in CASES:
             query=urllib.parse.urlencode({'nowpayment':'','hash_id':'privacy-'+case,'fixture':case})
             body=php(w,app,query)
@@ -79,10 +97,10 @@ require_once __DIR__.'/src/Finance/GatewayClient.php';
             check(corrections[key]['before'] in body,'archived public copy RED missing: '+case)
             checks+=1
         check(purchase.snapshot(w,e,DB)==before,'archived denial changed financial state')
-        topic.write_bytes(current)
+        for path,raw in current.items():path.write_bytes(raw)
         def verify(body,case,suffix):
             key='gateway.gateway_initiation.mark_checkout_uncertain.message.'+suffix
-            check(corrections[key]['after'] in body,'public safe guidance missing: '+case)
+            check(copy[key] in body,'public safe guidance missing: '+case)
             check(all(x not in body for x in ['PRIVATE_GATEWAY_SIGNING_CANARY','SQLSTATE','مرزبان','پنل','NOWPayments','NowPayments','کلید امن','کلید درگاه']),'public initiation leaks setup/provider detail: '+case)
             check('data-status="completed"' not in body,'denial falsely claims settlement')
         for case,actor,kind,suffix in CASES:

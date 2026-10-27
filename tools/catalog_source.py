@@ -8,7 +8,7 @@ import json,re,subprocess
 from pathlib import Path
 def templates(root:Path)->dict[str,str]:
     raw=subprocess.check_output(['php','-r',
-      'require "messages/loader.php";$r=[];foreach(glob("messages/fa/*.php") as $p){$t=basename($p,".php");foreach(achbotMessages($t) as $k=>$v)$r[$t.".".$k]=is_array($v)?$v["text"]:$v;}echo json_encode($r,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);'],
+      'require "messages/loader.php";$r=[];foreach(achbotMessageTopics() as $t){foreach(achbotMessages($t) as $k=>$v)$r[$t.".".$k]=is_array($v)?$v["text"]:$v;}echo json_encode($r,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);'],
       cwd=root)
     return json.loads(raw)
 def expanded(source:str,catalog:dict[str,str])->str:
