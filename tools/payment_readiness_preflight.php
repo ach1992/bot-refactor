@@ -221,26 +221,22 @@ function achbotPreflightPolicyPotential(array $state, string $method): bool {
 /** Use only explicit PAYMENT_KEYS rates and production network validation. */
 function achbotPreflightUsdtConfiguration(array $keys): array {
     $GLOBALS['paymentKeys']=$keys;
-    $normal=achbotUsdtRate(false,$keys)!==null;
-    $agent=achbotUsdtRate(true,$keys)!==null;
+    $rateConfigured=achbotUsdtRate($keys)!==null;
     $configured=false;$address=false;
     foreach (['BEP20','TRC20','ERC20'] as $network) {
         if (achbotManualUsdtConfiguration($network)!==null) $configured=true;
         // Isolate destination validity without pretending a private rate exists.
         $probe=$keys;
         $probe['manualUsdtRateToman']='1000';
-        $probe['usdtAgentRateToman']='';
         $GLOBALS['paymentKeys']=$probe;
         if (achbotManualUsdtConfiguration($network)!==null) $address=true;
         $GLOBALS['paymentKeys']=$keys;
     }
-    $invalid=false;
-    foreach (['manualUsdtRateToman','usdtAgentRateToman'] as $field) {
-        if (array_key_exists($field,$keys) && $keys[$field]!=='' &&
-            achbotUsdtRateValue($keys[$field])===null) $invalid=true;
-    }
+    $invalid=array_key_exists('manualUsdtRateToman',$keys) &&
+        $keys['manualUsdtRateToman']!=='' &&
+        achbotUsdtRateValue($keys['manualUsdtRateToman'])===null;
     return ['configured'=>$configured,'invalid_explicit_rate'=>$address && $invalid,
-            'normal_rate_configured'=>$normal,'agent_rate_configured'=>$agent];
+            'rate_configured'=>$rateConfigured];
 }
 
 function methodChecks(array $state, array $keys): void {
@@ -273,7 +269,7 @@ function methodChecks(array $state, array $keys): void {
         if ($active) {
             $configured = match ($method) {
                 'nowpayments' => available($keys['nowpayment'] ?? null) &&
-                    ($usdt['normal_rate_configured'] || $usdt['agent_rate_configured']),
+                    $usdt['rate_configured'],
                 'zarinpal', 'nextpay' => available($keys[$method] ?? null),
                 'bank_transfer' => available($keys['bankAccount'] ?? null) &&
                     available($keys['holderName'] ?? null) &&
@@ -329,10 +325,9 @@ function methodChecks(array $state, array $keys): void {
         $offerable > 0 ? 'one_or_more_methods_potentially_offerable' :
                          'no_potentially_offerable_method_for_operator_smoke');
     if ($manualOn || $on['nowpayments']) {
-        foreach (['normal','agent'] as $audience)
-            finding('usdt_rate_'.$audience, $usdt[$audience.'_rate_configured'] ? 'PASS' : 'WARN',
-                $usdt[$audience.'_rate_configured'] ? 'explicit_settings_rate_available' :
-                    'usdt_methods_unavailable_for_audience_configure_gateway_settings');
+        finding('usdt_rate', $usdt['rate_configured'] ? 'PASS' : 'WARN',
+            $usdt['rate_configured'] ? 'explicit_settings_rate_available' :
+                'usdt_methods_unavailable_configure_gateway_settings');
     }
 }
 

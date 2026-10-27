@@ -657,7 +657,7 @@ def check():
             'manualUsdtWallet':'TNPeeaaFB7K9cmo4uQpcU32zGK8G1NYqeL','manualUsdtNetwork':'TRC20',
             'manualUsdtRateToman':'100000','usdtAgentRateToman':'110000'}) is True
         agent=base('agentusdt','read','manual_usdt',user=9002)
-        assert 'TRC20' in agent['body'] and '0.91 USDT' in agent['body']
+        assert 'TRC20' in agent['body'] and '1.00 USDT' in agent['body']
         cases.append('agent_explicit_settings_price_and_trc20_validated')
 
         # A concurrent checkout across all three manual choices is reserved

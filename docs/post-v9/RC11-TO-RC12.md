@@ -1,5 +1,7 @@
 # RC11 → RC12 upgrade guide
 
+**Later development:** this guide describes the immutable RC12 release, including its optional agent rate. The [subsequent Owner decision](https://github.com/ach1992/bot-refactor/issues/26#issuecomment-6453867569) removes that override in the next candidate; see the [current shared-rate contract](USDT-RATE-SETTINGS.md). This does not change the published RC12 ZIP.
+
 [راهنمای فارسی](RC11-TO-RC12.fa.md)
 
 This guide describes the published [RC12 source-only prerelease](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.12) for a compatible RC11 installation. Download its complete verified runtime and exact manifest from that release. Publication does not upgrade a tenant or authorize an installation, SQL migration or real financial/provider operation. The attached guides preserve the reviewed source snapshot; this live guide records its publication status.

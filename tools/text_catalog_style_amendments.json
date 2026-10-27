@@ -835,14 +835,6 @@
         "ascii_digits"
       ]
     },
-    "bot.bot.change_config_remark_type.gate.ce14a45981": {
-      "before": "نرخ USDT نماینده برای پرداخت دستی و NOWPayments، عدد صحیح ۱۰۰ تا ۱٬۰۰۰٬۰۰۰٬۰۰۰ تومان (با /clear از نرخ عادی استفاده می‌شود)",
-      "after": "نرخ USDT نماینده برای پرداخت دستی و NOWPayments، عدد صحیح 100 تا 1٬000٬000٬000 تومان (با /clear از نرخ عادی استفاده می‌شود)",
-      "parameters": [],
-      "reasons": [
-        "ascii_digits"
-      ]
-    },
     "bot.bot.change_config_remark_type.txt.fcd2e548b6": {
       "before": "لطفا زمان مورد نظر را به دقیقه وارد کنید.",
       "after": "📅 لطفا زمان مورد نظر را به دقیقه وارد کنید.",
@@ -4936,5 +4928,20 @@
       "reason": "actual_customer_or_shared_destination"
     }
   },
-  "semantic_context_reference": "707d1c930162bf69e220424bd648860be8e64195"
+  "semantic_context_reference": "707d1c930162bf69e220424bd648860be8e64195",
+  "feature_retirements_authorization": "https://github.com/ach1992/bot-refactor/issues/26#issuecomment-6453867569",
+  "retired_feature_keys": {
+    "bot.bot.change_config_remark_type.gate.ce14a45981": {
+      "before": "نرخ USDT نماینده برای پرداخت دستی و NOWPayments، عدد صحیح ۱۰۰ تا ۱٬۰۰۰٬۰۰۰٬۰۰۰ تومان (با /clear از نرخ عادی استفاده می‌شود)",
+      "reason": "Owner removed separate agent USDT rate; all accounts use the normal gateway rate."
+    },
+    "admin_settings.config.get_gate_ways_keys.text.84a6dfb6ae": {
+      "before": "نرخ USDT نماینده — دستی و NOWPayments",
+      "reason": "Owner removed separate agent USDT rate; all accounts use the normal gateway rate."
+    },
+    "admin_settings.config.get_gate_ways_keys.text.f419959ea3": {
+      "before": "استفاده از نرخ عادی",
+      "reason": "Owner removed separate agent USDT rate; all accounts use the normal gateway rate."
+    }
+  }
 }

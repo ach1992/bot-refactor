@@ -215,25 +215,22 @@ function achbotUsdtRateValue($raw): ?float {
     return is_finite($rate) && $rate>=100 && $rate<=1000000000 ? $rate : null;
 }
 
-/** A cleared optional agent override deliberately reuses the normal rate. */
-function achbotUsdtRate(bool $agent=false, ?array $keys=null): ?float {
+/** One explicit USDT rate for every account; retired overrides are ignored. */
+function achbotUsdtRate(?array $keys=null): ?float {
     $keys=$keys ?? (is_array($GLOBALS['paymentKeys']??null) ? $GLOBALS['paymentKeys'] : []);
-    if ($agent && array_key_exists('usdtAgentRateToman',$keys) &&
-        $keys['usdtAgentRateToman']!=='')
-        return achbotUsdtRateValue($keys['usdtAgentRateToman']);
     return achbotUsdtRateValue($keys['manualUsdtRateToman']??null);
 }
 
-/** Quote/menu role comes from the actual account, never callback or cached UI. */
+/** Preserve unique account lookup for quote/menu eligibility, without role pricing. */
 function achbotUsdtRateForUser(mysqli $db,int $userId): ?float {
     if ($userId<=0) return null;
     try {
-        $stmt=$db->prepare('SELECT is_agent FROM users WHERE userid=? LIMIT 2');
+        $stmt=$db->prepare('SELECT userid FROM users WHERE userid=? LIMIT 2');
         if (!$stmt) return null;
         $stmt->bind_param('i',$userId);
         if (!$stmt->execute()) { $stmt->close(); return null; }
         $rows=$stmt->get_result()->fetch_all(MYSQLI_ASSOC);$stmt->close();
-        return count($rows)===1 ? achbotUsdtRate((int)$rows[0]['is_agent']===1) : null;
+        return count($rows)===1 ? achbotUsdtRate() : null;
     } catch (Throwable $ignored) { return null; }
 }
 
@@ -258,11 +255,9 @@ function achbotManualUsdtConfiguration(?string $network = null): ?array {
         : ((string)($keys['manualUsdtNetwork'] ?? 'BEP20') === $network
             ? trim((string)($keys['manualUsdtWallet'] ?? '')) : '');
     if (!achbotManualUsdtWalletValid($wallet, $network)) return null;
-    $rate=achbotUsdtRate(false,$keys);
-    $agentRate=achbotUsdtRate(true,$keys);
-    if ($rate===null && $agentRate===null) return null;
-    return ['network'=>$network, 'wallet'=>$wallet,
-            'rate'=>$rate, 'agent_rate'=>$agentRate];
+    $rate=achbotUsdtRate($keys);
+    if ($rate===null) return null;
+    return ['network'=>$network, 'wallet'=>$wallet, 'rate'=>$rate];
 }
 
 /** Independent, explicit TRX/Toman rate; never infer it from legacy checker. */

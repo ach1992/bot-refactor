@@ -543,26 +543,28 @@ def main():
                 and text_catalog.get("logical_topics")==25
                 and text_catalog.get("current_authorized_source_edits")==26
                 and text_catalog.get("retired_parser_tokens")==23
-                and text_catalog.get("catalog_keys")==2526
+                and text_catalog.get("relocation_source_ref")=="ecd30ba9192ed374703118a6c131be8809cc7b06"
+                and text_catalog.get("native",{}).get("current_retired_feature_keys")==3
+                and text_catalog.get("catalog_keys")==2523
                 and text_catalog.get("native",{}).get("editable_catalog_files")==2
                 and text_catalog.get("native",{}).get("logical_topics")==25
-                and text_catalog.get("native",{}).get("current_catalog_keys")==2526
+                and text_catalog.get("native",{}).get("current_catalog_keys")==2523
                 and text_catalog.get("native",{}).get("current_retired_implementation_keys")==23
                 and text_catalog.get("native",{}).get("current_added_admin_keys")==1
                 and text_catalog.get("native",{}).get("current_parameter_privacy_changes")==3
                 and text_catalog.get("native",{}).get("current_style_changes",0)>0
                 and text_catalog["native"]["current_byte_preserved_keys"]
                     +text_catalog["native"]["current_style_changes"]
-                    +text_catalog["native"]["current_added_admin_keys"]==2526
-                and text_catalog.get("native",{}).get("current_native_template_assertions")==3711
+                    +text_catalog["native"]["current_added_admin_keys"]==2523
+                and text_catalog.get("native",{}).get("current_native_template_assertions")==3708
                 and text_catalog.get("native",{}).get("current_object_conversion_templates")==237
                 and text_catalog.get("native",{}).get("current_shared_multi_parameter_templates")==55
                 and text_catalog.get("native",{}).get("current_one_pass_templates")==237
                 and text_catalog.get("native",{}).get("current_non_ascii_digit_templates")==0
                 and text_catalog.get("presentation",{}).get("status")=="PASS"
                 and text_catalog.get("presentation",{}).get("editable_files")==2
-                and text_catalog.get("presentation",{}).get("current_keys")==2526
-                and text_catalog.get("presentation",{}).get("numeric_template_changes")==24
+                and text_catalog.get("presentation",{}).get("current_keys")==2523
+                and text_catalog.get("presentation",{}).get("numeric_template_changes")==23
                 and text_catalog.get("presentation",{}).get("adjacent_emoji_violations")==0
                 and text_catalog.get("presentation",{}).get("parameter_exception_count")==3
                 and text_catalog.get("presentation",{}).get("semantic_label_icon_cases")==12
