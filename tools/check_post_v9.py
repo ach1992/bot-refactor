@@ -539,6 +539,14 @@ def main():
         currency=json.loads(currency_path.read_text())
         if not (currency.get("pass") is True and len(currency.get("cases",[]))==29):
             raise RuntimeError("Explicit managed exchange-rate proof incomplete")
+        display_path=Path(tmp)/"server-display-settings.json"
+        subprocess.run(["python3",str(ROOT/"tools/test_server_display_settings.py"),
+                        "--run-disposable","--report",str(display_path)],
+                       cwd=ROOT,check=True,timeout=180,capture_output=True)
+        server_display=json.loads(display_path.read_text())
+        if not (server_display.get("pass") is True and server_display.get("checks",0)>=89
+                and server_display.get("network_calls")==0):
+            raise RuntimeError("Per-server managed display and admin authorization proof incomplete")
         subject_path=Path(tmp)/"payment-subjects.json"
         subprocess.run(["python3",str(ROOT/"tools/test_post_v9_subjects.py"),
                         "--run-disposable","--report",str(subject_path)],
@@ -1039,6 +1047,7 @@ def main():
                  'gift_card_legacy_https_validation',
                  'manual_trx_rate_positive_and_clear',
                  'manual_usdt_rate_positive_range',
+                 'normal_agent_rates_validated_upper_boundary_and_clear',
                  'chain_address_manualUsdtWalletBEP20_validated_and_clear',
                  'chain_address_manualUsdtWalletERC20_validated_and_clear',
                  'chain_address_manualUsdtWalletTRC20_validated_and_clear',
@@ -2796,6 +2805,7 @@ def main():
                      "pasarguard_client":pg_client,
                      "provider_integration":provider_integration,
                      "currency_settings":currency,
+                     "server_display_settings":server_display,
                      "optional_cleanup":cleanup,
                      "subscription_presentation":presentation,
                      "customer_error_privacy":audience,
@@ -2857,6 +2867,7 @@ def main():
                        "pasarguard_client_scenarios":pg_client["cases"],
                        "provider_integration_scenarios":provider_integration["cases"],
                        "currency_settings_scenarios":len(currency["cases"]),
+                       "server_display_checks":server_display["checks"],
                        "optional_cleanup_scenarios":cleanup["count"],
                        "subscription_presentation_checks":presentation["checks"],
                        "customer_literal_first_argument_messages_inspected":audience["literal_first_argument_calls_inspected"],

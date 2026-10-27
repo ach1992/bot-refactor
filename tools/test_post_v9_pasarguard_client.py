@@ -220,6 +220,8 @@ function denied(callable $fn,$reason){try{$fn();throw new LogicException('expect
 try {
  if($spec['op']==='missing'){
    denied(fn()=>achbotProviderPanel($db,1),'provider_schema_missing_or_invalid');
+ }elseif($spec['op']==='engine'){
+   denied(fn()=>achbotProviderRequireSchema($db),'provider_schema_missing_or_invalid');
  }elseif($spec['op']==='reserve_race'){
    if (($spec['snapshot_compat']??false) && $db->query("SHOW VARIABLES LIKE 'innodb_snapshot_isolation'")->num_rows)
        $db->query('SET SESSION innodb_snapshot_isolation=OFF');
@@ -307,6 +309,21 @@ INSERT INTO orders_list(id,userid,token,transid,fileid,server_id,inbound_id,rema
  uuid,protocol,expire_date,link,amount,status,date)
  VALUES(91,1001,'fixture-token','',7,2,0,'fixture_user','native-placeholder','vless',2000000000,'[]',100,1,'fixture');
 """,db)
+    # Deliberately construct incompatible storage in this disposable DB only;
+    # the real FK otherwise prevents converting the payment/effect pair.
+    native.sql(work,env,'ALTER TABLE service_effects DROP FOREIGN KEY fk_effect_pay',db)
+    for table in ['provider_panels','provider_accounts','service_effects','users','pays',
+                  'orders_list','server_info','server_plans','server_config','setting']:
+        before=native.sql(work,env,'SELECT COUNT(*) FROM '+table,db)
+        native.sql(work,env,'ALTER TABLE '+table+' ENGINE=Aria TRANSACTIONAL=0',db)
+        try:
+            r=php(script,ROOT,work/'mysql.sock',db,json.dumps({'op':'engine'}))
+            assert r.get('complete') is True and len(r['cases'])==1,r
+            assert native.sql(work,env,'SELECT COUNT(*) FROM '+table,db)==before
+            cases.append('nontransactional_'+table+'_blocks_before_provider_dispatch')
+        finally:
+            native.sql(work,env,'ALTER TABLE '+table+' ENGINE=InnoDB',db)
+    native.sql(work,env,'ALTER TABLE service_effects ADD CONSTRAINT fk_effect_pay FOREIGN KEY(pay_row_id) REFERENCES pays(id) ON DELETE RESTRICT ON UPDATE RESTRICT',db)
     r=php(script,ROOT,work/'mysql.sock',db,json.dumps({'op':'all','user':USER}));cases+=r['cases']
     native.sql(work,env,"ALTER TABLE provider_accounts ADD UNIQUE KEY uq_provider_effect(effect_id);",db)
     snap['group_ids']=[8]

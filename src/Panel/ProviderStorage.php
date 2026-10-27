@@ -59,11 +59,13 @@ function achbotProviderRequireSchema(mysqli $db): void {
             throw new RuntimeException('provider_schema_missing_or_invalid');
     }
     $s=achbotProviderStatement($db,"SELECT TABLE_NAME,ENGINE FROM information_schema.TABLES
-        WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME IN ('provider_panels','provider_accounts','service_effects')");
+        WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME IN ('provider_panels','provider_accounts','service_effects',
+        'users','pays','orders_list','server_info','server_plans','server_config','setting')");
     $engines=[];
     try { $r=$s->get_result(); while ($v=$r->fetch_assoc()) $engines[$v['TABLE_NAME']]=$v['ENGINE']; }
     finally { $s->close(); }
-    foreach (['provider_panels','provider_accounts','service_effects'] as $table)
+    foreach (['provider_panels','provider_accounts','service_effects',
+              'users','pays','orders_list','server_info','server_plans','server_config','setting'] as $table)
         if (strcasecmp($engines[$table]??'','InnoDB')!==0)
             throw new RuntimeException('provider_schema_missing_or_invalid');
     foreach ([
