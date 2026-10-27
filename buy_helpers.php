@@ -53,7 +53,7 @@ if (!function_exists('buildLinksAndSendQr')) {
         $qrFsDir = null,
         $sendToUser = true
     ) {
-        global $botUsername, $subscriptionPresentation;
+        global $botUsername, $connection;
 
         $response = is_object($response) ? get_object_vars($response)
             : (is_array($response) ? $response : []);
@@ -88,11 +88,8 @@ if (!function_exists('buildLinksAndSendQr')) {
             'subscription_url' => $mainSubLink,
             'backup_urls' => $backupUrls,
         ];
-        $options = [
-            'policy' => is_array($subscriptionPresentation ?? null)
-                ? ($subscriptionPresentation[$serverType] ?? null) : null,
-            'legacy' => ['linkIndices' => $linkIndices, 'hideConfigIfMany' => $hideConfigIfMany],
-        ];
+        require_once __DIR__ . '/src/Subscription/ServerDisplaySettings.php';
+        $options = achbotServerDisplayOptions($connection ?? null, (int)$server_id, (string)$serverType);
         $presentation = \AchBot\Subscription\Presentation\present(
             $serverType, $native, $botState, $options, 'delivery'
         );
@@ -123,7 +120,8 @@ if (!function_exists('buildLinksAndSendQr')) {
             if ($presentation['backup_html'] !== '') {
                 $acc_text .= "\n⚠️ در صورتی که لینک اصلی اشتراک کار نکرد از لینک کمکی اشتراک استفاده کنید.";
             }
-        } elseif ($presentation['notice_html'] !== '') {
+        }
+        if ($presentation['notice_html'] !== '') {
             $acc_text .= "\n\n" . $presentation['notice_html'];
         }
 

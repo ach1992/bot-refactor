@@ -130,8 +130,8 @@ if (preg_match('/freeTrial(\d+)_(?<buyType>\w+)/', $data, $match)) {
         $volume,
         $days,
         $buttonValues,
-        $linkIndices,
-        $hideConfigIfMany,
+        [],
+        false,
         '',
         null,
         false

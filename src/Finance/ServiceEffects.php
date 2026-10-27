@@ -12,6 +12,7 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
 }
 
 require_once __DIR__.'/../Panel/ProviderRuntime.php';
+require_once __DIR__.'/../Subscription/ServerDisplaySettings.php';
 
 /** Fail closed if the caller would roll back the pre-dispatch marker. */
 function achbotEffectRequireAutocommit(mysqli $db): void {
@@ -141,6 +142,8 @@ function achbotCreatePaidAccount(mysqli $db, int $payId, int $ordinal, array $p)
         !achbotEffectValidUsername($remark)) {
         throw new RuntimeException('effect_invalid_account_request');
     }
+
+    achbotRequireServerDisplay($db,$serverId,(string)$p['server_type']);
 
     // Keep the source claim and unique line-item reservation in a SHORT local
     // transaction. Its pay-row lock prevents a concurrent terminal payment
@@ -537,6 +540,7 @@ function achbotCreateNonPaymentAccount(
         !str_starts_with($sourceRef,explode(':',$sourceRef)[0].':'.$actor)) {
         throw new RuntimeException('nonpaid_effect_source_binding_invalid');
     }
+    achbotRequireServerDisplay($db,$serverId,(string)$p['server_type']);
     if ($db->begin_transaction()!==true)
         throw new RuntimeException('nonpaid_effect_begin');
     try {

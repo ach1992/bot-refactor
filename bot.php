@@ -29,6 +29,8 @@ define('ACHBOT_VERIFIED_WEBHOOK_ENTRYPOINT', true);
 require_once 'config.php';
 require_once 'buy_helpers.php';
 check();
+require_once __DIR__.'/src/Subscription/ServerDisplaySettings.php';
+if (achbotHandleServerDisplayAdmin()) return;
 require_once __DIR__.'/src/Panel/ProviderAdmin.php';
 if (achbotHandleProviderAdmin()) return;
 // Source-authenticated and IP-checked before any administrative moderation.
@@ -476,7 +478,7 @@ if(($data=="botSettings" or preg_match('/^changeBot([A-Za-z0-9_]+)$/D',$data,$ma
             'renewAccountState','renewAutoState','plandelkhahState',
             'switchLocationState','increaseTimeState','increaseVolumeState',
             'requirePhone','requireIranPhone','sellState','botState',
-            'subLinkState','configLinkState','searchState',
+            'searchState',
             'renewConfigLinkState','updateConfigLinkState','qrConfigState',
             'qrSubState','cartToCartAutoAcceptState','cartToCartAutoAcceptType'
         ];

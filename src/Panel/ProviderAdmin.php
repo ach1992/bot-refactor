@@ -25,6 +25,7 @@ function achbotPgServerAdminKeys(array $info,array $config,int $offset): string 
         [['text'=>'ظرفیت: '.$info['ucount'],'callback_data'=>'editServerMax'.$id]],
         [['text'=>'ریمـارک: '.$info['remark'],'callback_data'=>'editServerRemark'.$id]],
         [['text'=>'Groups پیش‌فرض','callback_data'=>'pgServerGroups'.$id]],
+        [['text'=>'⚙️ نمایش لینک و QR','callback_data'=>'serverDisplay'.$id]],
         [['text'=>'اتصال و API key','callback_data'=>'pgConnections']],
         [['text'=>'بازگشت','callback_data'=>'nextServerPage'.$offset]]
     ]],JSON_UNESCAPED_UNICODE);

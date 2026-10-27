@@ -8,7 +8,7 @@ function escape($value): string {
 
 /** Validate an opaque native subscription URL; never infer a vendor path. */
 function subscriptionUrl($value): string {
-    if (!is_string($value) || preg_match('~[\x00-\x20\x7f<>"\x60]~', $value)) return '';
+    if (!is_string($value) || strlen($value)>1600 || preg_match('~[\x00-\x20\x7f<>"\x60]~', $value)) return '';
     $parts = parse_url($value);
     return is_array($parts) && in_array(strtolower($parts['scheme'] ?? ''), ['http', 'https'], true)
         && !empty($parts['host']) && !isset($parts['user']) && !isset($parts['pass'])
@@ -40,7 +40,7 @@ function nativeLinks($input): array {
     foreach ($input as $item) {
         $metadata = is_object($item) ? get_object_vars($item) : (is_array($item) ? $item : []);
         $uri = is_string($item) ? $item : ($metadata['uri'] ?? '');
-        if (!is_string($uri)) continue;
+        if (!is_string($uri) || strlen($uri)>2048) continue;
         $uri = trim($uri);
         if (!preg_match('~^([a-z][a-z0-9+.-]*)://[^\x00-\x20\x7f<>"\x60]+$~iD', $uri, $match)) continue;
         // The native format may add protocols unknown to the bot. Keep the
@@ -115,8 +115,8 @@ function validPolicy(array $policy): bool {
 /**
  * Neutral renderer contract:
  * native = {links: array|string, subscription_url: absolute URL, backup_urls?:array}
- * options = {policy?: provider-specific array, legacy?: old private settings}
- * An absent Marzban policy enables explicit legacy compatibility by context.
+ * options = {policy?: array, mode?: native|marzban_legacy, legacy?: managed values}
+ * Legacy compatibility requires an explicit validated per-server mode.
  * A configured policy uses the same selection for view, delivery and config QR.
  * These are display choices only. Panel Groups remain the access authority.
  */
@@ -126,7 +126,7 @@ function present(string $provider, array $native, array $botState, array $option
         'subscription_html' => '', 'backup_html' => '', 'qr_link' => '',
         'qr_config_links' => [], 'missing_links' => false,
         'selection_missing' => false, 'reason' => '',
-        'notice_html' => '',
+        'notice_html' => '', 'limited' => false,
     ];
     if (!in_array($provider, ['marzban', 'pasarguard'], true)) {
         $result['reason'] = 'unsupported_provider';
@@ -135,19 +135,20 @@ function present(string $provider, array $native, array $botState, array $option
     $url = subscriptionUrl($native['subscription_url'] ?? '');
     $legacy = is_array($options['legacy'] ?? null) ? $options['legacy'] : [];
     $rawPolicy = $options['policy'] ?? null;
-    $compat = $provider === 'marzban' && $rawPolicy === null;
-    if (($rawPolicy !== null && !is_array($rawPolicy))
+    $mode = $options['mode'] ?? 'native';
+    $compat = $provider === 'marzban' && $mode === 'marzban_legacy';
+    if (!in_array($mode, ['native', 'marzban_legacy'], true)
+        || ($mode === 'marzban_legacy' && $provider !== 'marzban')
+        || ($rawPolicy !== null && !is_array($rawPolicy))
         || (is_array($rawPolicy) && !validPolicy($rawPolicy))) {
         $result['reason'] = 'invalid_policy';
         $result['notice_html'] = '🔎 لینک‌های اتصال این اشتراک در حال حاضر در دسترس نیست؛ از بخش اشتراک‌های من دوباره بررسی کنید.';
         return $result;
     }
     $policy = $rawPolicy ?? [];
-    $subscriptionVisible = ($botState['subLinkState'] ?? '') === 'on'
-        && ($policy['show_subscription'] ?? true) === true;
+    $subscriptionVisible = ($policy['show_subscription'] ?? true) === true;
     $visibleUrl = $subscriptionVisible ? $url : '';
-    $configsVisible = ($botState['configLinkState'] ?? '') !== 'off'
-        && ($policy['show_configs'] ?? true) === true;
+    $configsVisible = ($policy['show_configs'] ?? true) === true;
     if ($compat) {
         $all = legacyLinks($native['links'] ?? []);
         $selected = [];
@@ -194,6 +195,7 @@ function present(string $provider, array $native, array $botState, array $option
         }
         $selected = array_values(array_unique($selected));
         if (isset($policy['max_links']) && is_int($policy['max_links']) && $policy['max_links'] >= 0) {
+            if ($policy['max_links'] > 0 && count($selected) > $policy['max_links']) $result['limited'] = true;
             $selected = array_slice($selected, 0, $policy['max_links']);
         }
         if (isset($policy['hide_if_more_than']) && is_int($policy['hide_if_more_than'])
@@ -209,6 +211,35 @@ function present(string $provider, array $native, array $botState, array $option
             $result['qr_link'] = $result['qr_config_links'][0] ?? '';
         }
     }
+    // Bound complete URI records, never their credential/token bytes.
+    $budget = max(0, 2200 - strlen($visibleUrl === '' ? '' : codeLinks([$visibleUrl])));
+    $bounded = static function (array $links, int $bytes, int $count = 10): array {
+        $out = []; $used = 0;
+        foreach ($links as $uri) {
+            $size = strlen(codeLinks([(string)$uri])) + ($out === [] ? 0 : 2);
+            if (count($out) >= $count || strlen((string)$uri) > 2048 || $used + $size > $bytes) break;
+            $out[] = $uri; $used += $size;
+        }
+        return $out;
+    };
+    $boundedSelected = $bounded($selected, $budget);
+    if ($boundedSelected !== $selected) $result['limited'] = true;
+    $selected = $boundedSelected;
+    $qrConfigs = $bounded($result['qr_config_links'], $compat ? 2200 : $budget);
+    if ($qrConfigs !== $result['qr_config_links']) $result['limited'] = true;
+    $result['qr_config_links'] = $qrConfigs;
+    if (!$compat) {
+        $result['qr_config_links'] = $configsVisible ? $selected : [];
+        if (($policy['qr'] ?? 'auto') === 'first_config' ||
+            (($policy['qr'] ?? 'auto') === 'auto' && $visibleUrl === ''))
+            $result['qr_link'] = $result['qr_config_links'][0] ?? '';
+    }
+    if ($compat && array_key_exists('qr', $policy)) {
+        if ($policy['qr'] === 'none') $result['qr_link'] = '';
+        elseif ($policy['qr'] === 'subscription') $result['qr_link'] = $visibleUrl;
+        elseif ($policy['qr'] === 'first_config') $result['qr_link'] = $configsVisible ? ($selected[0] ?? '') : '';
+    }
+    if (strlen($result['qr_link']) > 2048) { $result['qr_link'] = ''; $result['limited'] = true; }
     $result['links'] = $configsVisible ? $selected : [];
     $result['config_html'] = codeLinks($result['links']);
     $result['subscription_url'] = $visibleUrl;
@@ -219,22 +250,31 @@ function present(string $provider, array $native, array $botState, array $option
             if (is_string($backup) && $backup !== $url && subscriptionUrl($backup) !== '') $backups[] = $backup;
         }
     }
-    if ($backups !== []) $result['backup_html'] = "\n🔁 لینک کمکی اشتراک:\n" . codeLinks(array_values(array_unique($backups)));
+    if ($backups !== []) {
+        $backups = array_values(array_unique($backups));
+        $remaining = max(0, 2100 - strlen($result['config_html']) - strlen($result['subscription_html']));
+        $shown = $bounded($backups, $remaining, 2);
+        if ($shown !== $backups) $result['limited'] = true;
+        if ($shown !== []) $result['backup_html'] = "\n🔁 لینک کمکی اشتراک:\n" . codeLinks($shown);
+    }
     if ($result['selection_missing']) $result['reason'] = 'selection_missing';
     elseif ($result['missing_links']) $result['reason'] = 'links_unavailable';
     if ($result['reason'] !== '' && $result['links'] === [] && $visibleUrl === '') {
         $result['notice_html'] = '🔎 لینک‌های اتصال این اشتراک در حال حاضر در دسترس نیست؛ از بخش اشتراک‌های من دوباره بررسی کنید.';
     }
+    if ($result['limited']) {
+        $result['reason'] = 'display_limit';
+        $result['notice_html'] = 'ℹ️ تعداد یا طول لینک‌ها از ظرفیت نمایش بیشتر است؛ برای دریافت همه تنظیمات از لینک اشتراک استفاده کنید یا با پشتیبانی تماس بگیرید.';
+    }
     return $result;
 }
 
-function configLinks($acc_link, $botState, $showIndexes) {
+function configLinks($acc_link, $botState, $unusedIndexes) {
     return present('marzban', ['links' => $acc_link], $botState,
-        ['legacy' => ['showIndexes' => $showIndexes]])['config_html'];
+        ['policy' => []])['config_html'];
 }
 
 function primaryLink($serverType, $panelUrl, $botUrl, $token, $botState) {
-    if (($botState['subLinkState'] ?? '') !== 'on') return '';
     if ($serverType !== 'marzban') return '';
     return codeLinks([rtrim($panelUrl, '/') . "/sub/$token"]);
 }

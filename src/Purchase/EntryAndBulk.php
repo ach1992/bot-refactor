@@ -284,8 +284,8 @@ if (
             $volume,
             $days,
             $buttonValues,
-            $linkIndices,
-            $hideConfigIfMany,
+            [],
+            false,
             '',
             null,
             false

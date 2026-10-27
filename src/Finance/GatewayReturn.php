@@ -1085,7 +1085,7 @@ function achbotPerformPaymentEffect($payRowId, $gateType, &$effectStage = null) 
     // settlement/review row is assured before the paid claim succeeds.
     $effectStage='preclaim';
     global $connection, $admin, $userInfo, $from_id, $botUrl, $botState;
-    global $buttonValues, $linkIndices, $hideConfigIfMany;
+    global $buttonValues;
 	
 	$supportID = $botState['supportID'] ?? '';
     $rewardChannel = $botState['rewardChannel'] ?? null;
@@ -1093,11 +1093,6 @@ function achbotPerformPaymentEffect($payRowId, $gateType, &$effectStage = null) 
         ? $buttonValues
         : ['back_to_main' => "↪️ بازگشت به منوی اصلی"];
 
-    $linkIndicesLocal = (isset($linkIndices) && is_array($linkIndices) && count($linkIndices))
-        ? $linkIndices
-        : [0];
-
-    $hideConfigIfManyLocal = isset($hideConfigIfMany) ? (bool)$hideConfigIfMany : false;
 
     $time = time();
 
@@ -1383,8 +1378,8 @@ function achbotPerformPaymentEffect($payRowId, $gateType, &$effectStage = null) 
                 $volume,
                 $days,
                 $buttonValuesLocal,
-                $linkIndicesLocal,
-                $hideConfigIfManyLocal,
+                [],
+                false,
                 "pay/",
                 dirname(__DIR__, 2) . '/pay'
             );
