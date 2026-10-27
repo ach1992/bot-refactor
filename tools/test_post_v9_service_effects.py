@@ -126,6 +126,7 @@ $p=[
     'protocol'=>'vless','port'=>12345,'expire_microdate'=>0,
     'net_type'=>'normal','rahgozar'=>0,'limitip'=>0
 ];
+$ownedLinkTransaction=false;
 try {
     if (($spec['operation']??'')==='probe_uncommitted') {
         // Deliberately leave speculative writes open while invoking only the
@@ -187,13 +188,29 @@ try {
         $value=['success'=>$result[0]->success,'username'=>$result[1],
             'port'=>$result[2],'effect_id'=>$result[3]];
     } elseif (($spec['operation']??'')==='nonpaid_link') {
+        if (empty($spec['outside_transaction'])) {
+            if (!$connection->begin_transaction()) throw new RuntimeException('fixture_link_begin_failed');
+            $ownedLinkTransaction=true;
+        }
         achbotLinkNonPaymentAccountEffect($connection,
             (int)($spec['effect']??0),(int)($spec['order']??0));
+        if ($ownedLinkTransaction) {
+            if (!$connection->commit()) throw new RuntimeException('fixture_link_commit_failed');
+            $ownedLinkTransaction=false;
+        }
         $value=['linked'=>(int)$spec['effect'],'order'=>(int)$spec['order']];
     } elseif (($spec['operation']??'create')==='link') {
         $id=(int)($spec['effect']??0);
         $order=(int)($spec['order']??0);
+        if (empty($spec['outside_transaction'])) {
+            if (!$connection->begin_transaction()) throw new RuntimeException('fixture_link_begin_failed');
+            $ownedLinkTransaction=true;
+        }
         achbotLinkPaidAccountEffect($connection,$id,$order);
+        if ($ownedLinkTransaction) {
+            if (!$connection->commit()) throw new RuntimeException('fixture_link_commit_failed');
+            $ownedLinkTransaction=false;
+        }
         $value=['linked'=>$id,'order'=>$order];
     } elseif (($spec['operation']??'create')==='link_transactional') {
         $id=(int)($spec['effect']??0);
@@ -218,7 +235,7 @@ try {
     }
     $error=null;
 } catch(Throwable $e) {
-    if (in_array(($spec['operation']??''),['link_transactional','manual_capacity'],true)) {
+    if ($ownedLinkTransaction || in_array(($spec['operation']??''),['link_transactional','manual_capacity'],true)) {
         try {$connection->rollback();} catch(Throwable $ignored) {}
     }
     $value=null;
@@ -234,12 +251,16 @@ def query(work,env,sql,db=DB):
 
 def run_php(work,env,driver,**spec):
     db=spec.pop('db',DB)
+    # Only the intentionally unconfigured target may emit this exact private
+    # fixed diagnostic; every other stderr byte still fails the fixture.
+    display_diagnostic=spec.pop('expect_display_unavailable',False)
+    allowed_stderr=('', 'achbot_server_display_unavailable\n') if display_diagnostic else ('',)
     cmd=['php','-n','-d','extension=mysqlnd','-d','extension=mysqli',
          '-d','allow_url_fopen=0','-d','display_errors=1',
          '-d','disable_functions=curl_init,curl_exec,exec,shell_exec,system,passthru,popen,proc_open,mail',
          str(driver),str(ROOT),str(work/'mysql.sock'),db,json.dumps(spec)]
     p=subprocess.run(cmd,cwd=work,env=env,capture_output=True,text=True,timeout=20)
-    if p.returncode or p.stderr:
+    if p.returncode or p.stderr not in allowed_stderr:
         raise RuntimeError('local PHP helper failed '+repr((p.returncode,p.stderr[-900:]))[:1100])
     return json.loads(p.stdout)
 
@@ -404,6 +425,16 @@ def main():
             "VALUES (1001,'token','',7,2,0,'account_for_order','fixture-uuid','vless',"
             "2000000000,'[]',100,1,'fixture',0,0,0)")
         order=int(query(work,env,"SELECT id FROM orders_list WHERE remark='account_for_order'"))
+        # Genuine source/order identities still require the caller's own
+        # transaction; refusal must leave rows and wallets unchanged.
+        before_link=state(work,env,recorded)
+        before_wallet=query(work,env,'SELECT userid,wallet FROM users ORDER BY userid')
+        outside=run_php(work,env,driver,operation='link',effect=created['result']['effect_id'],
+                        order=order,outside_transaction=True)
+        assert outside['error']=='effect_target_lock_requires_transaction' and outside['events']==[],outside
+        assert state(work,env,recorded)==before_link
+        assert query(work,env,'SELECT userid,wallet FROM users ORDER BY userid')==before_wallet
+        cases.append('paid_link_outside_caller_transaction_refused_without_write')
         bad=run_php(work,env,driver,operation='link',effect=created['result']['effect_id'],order=order+999)
         assert bad['error'] and state(work,env,recorded).split('\t')[1]=='verified'
         good=run_php(work,env,driver,operation='link',effect=created['result']['effect_id'],order=order)
@@ -460,7 +491,8 @@ def main():
         # even when a forged PHP caller reaches the function directly.
         for change in ({'plan':8},{'target':1},{'line':2},{'username':'bad name'}):
             id=pay(work,env,'effectwrong'+str(len(cases)))
-            wrong=run_php(work,env,driver,pay=id,**change)
+            wrong=run_php(work,env,driver,pay=id,
+                          expect_display_unavailable=change.get('target')==1,**change)
             assert wrong['error'] and wrong['events']==[],wrong
             assert state(work,env,id)==''
             cases.append('wrong_identity_rejected_without_post_'+str(len(cases)))
@@ -616,6 +648,12 @@ def main():
             "VALUES (1001,'token','',7,2,0,'free_trial_source','uuid','vless',"
             "2000000000,'[]',0,1,'fixture',0,0,0)")
         order=int(query(work,env,"SELECT id FROM orders_list WHERE remark='free_trial_source'"))
+        before_link=query(work,env,f'SELECT state,IFNULL(order_id,0) FROM service_effects WHERE id={effect}')
+        outside=run_php(work,env,driver,operation='nonpaid_link',effect=effect,order=order,
+                        outside_transaction=True)
+        assert outside['error']=='effect_target_lock_requires_transaction' and outside['events']==[],outside
+        assert query(work,env,f'SELECT state,IFNULL(order_id,0) FROM service_effects WHERE id={effect}')==before_link
+        cases.append('nonpaid_link_outside_caller_transaction_refused_without_write')
         assert run_php(work,env,driver,operation='nonpaid_link',
                        effect=effect,order=order)['error'] is None
         assert run_php(work,env,driver,operation='nonpaid_link',

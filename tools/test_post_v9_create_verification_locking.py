@@ -18,9 +18,11 @@ from pathlib import Path
 
 import package_post_v9 as runtime
 import test_post_v9_standard_integrity as standard
+import test_post_v9_service_effects as effects
 
 ROOT = Path(__file__).resolve().parents[1]
 OLD = '011c17698a5082fb74ae2421bc4cdb6655263db3'
+INTERMEDIATE = '7dca1378cf54b4de035cd8a024a453e52c76fec8'
 DB = standard.DB
 
 SUPPORT = r'''
@@ -61,6 +63,54 @@ class OwnedCommitFaultMysqli extends mysqli {
 EXTRA_OPERATIONS = r'''
 require_once $root.'/src/Finance/ServiceEffects.php';
 $GLOBALS['events'][]=['name'=>'FIX_PRESENT','value'=>function_exists('achbotVerifyMarzbanCreatedEffect')];
+if (($spec['role']??'')==='info_blocker') {
+    $connection->begin_transaction();
+    $connection->query('SELECT id FROM server_info WHERE id=2 FOR UPDATE');
+    ownedBarrier('info-locked','release-info');
+    $connection->rollback();exit;
+}
+if (($spec['role']??'')==='nonpaid') {
+    file_put_contents((string)$spec['barrier_dir'].'/contender-start',(string)$connection->thread_id);
+    try {
+        achbotCreateNonPaymentAccount($connection,'admin_bulk','bulk:9001:777',9001,1,1,
+            ['server_id'=>2,'plan_id'=>7,'server_type'=>'marzban','inbound_id'=>0,
+             'remark'=>'owned-nonpaid','volume'=>2,'days'=>30,'is_primary_admin'=>true,
+             'protocol'=>'vless','user_id'=>9001]);
+        $GLOBALS['events'][]=['name'=>'CONTENDER_RESULT','success'=>true];
+    } catch(Throwable $error) {
+        $GLOBALS['events'][]=['name'=>'CONTENDER_RESULT','success'=>false,
+            'errno'=>(int)$error->getCode(),
+            'sqlstate'=>method_exists($error,'getSqlState')?$error->getSqlState():null];
+    }
+    exit;
+}
+if (($spec['role']??'')==='linker') {
+    file_put_contents((string)$spec['barrier_dir'].'/contender-start',(string)$connection->thread_id);
+    $id=(int)$spec['effect'];
+    try {
+        $connection->begin_transaction();
+        // The actual insertOrder caller writes only orders_list. This native
+        // INSERT SELECT supplies the same exact identity to the real linker.
+        $connection->query("INSERT INTO orders_list
+            (userid,token,transid,fileid,server_id,inbound_id,remark,uuid,protocol,
+             expire_date,link,amount,status,date,notif,rahgozar,agent_bought)
+             SELECT p.user_id,'token','',e.plan_id,e.target_server_id,0,
+                    e.remote_username,'fixture-uuid','vless',2000000000,'[]',
+                    100,1,'fixture',0,0,0
+             FROM service_effects e JOIN pays p ON p.id=e.pay_row_id WHERE e.id=".$id);
+        $order=(int)$connection->insert_id;
+        achbotLinkPaidAccountEffect($connection,$id,$order);
+        $connection->commit();
+        $GLOBALS['events'][]=['name'=>'CONTENDER_RESULT','success'=>true];
+    } catch(Throwable $error) {
+        $connection->rollback();
+        $GLOBALS['events'][]=['name'=>'CONTENDER_RESULT','success'=>false,
+            'errno'=>(int)$error->getCode(),
+            'sqlstate'=>method_exists($error,'getSqlState')?$error->getSqlState():null];
+    }
+    exit;
+}
+
 if (($spec['role']??'')==='claimant') {
     // The actual source claimant sequence from ManualApproval: lock pays,
     // locked Core plan/config preflight, then guarded capacity reservation.
@@ -153,12 +203,13 @@ def initialize(work, env):
         sql(work, env, (ROOT/'migrations/post-v9'/filename).read_text())
 
 
-def stage_source(work, name, old=False):
+def stage_source(work, name, old=False, ref=None):
     stage = work/name
     stage.mkdir()
     members = runtime.members()
-    if old:
-        raw = subprocess.check_output(['git','-C',str(ROOT),'archive',OLD,'--',*members])
+    ref = OLD if old else ref
+    if ref:
+        raw = subprocess.check_output(['git','-C',str(ROOT),'archive',ref,'--',*members])
         with tarfile.open(fileobj=io.BytesIO(raw)) as archive:
             archive.extractall(stage, filter='data')
     else:
@@ -277,6 +328,100 @@ def concurrency(old):
                 'orders':orders,'replay_creates':0,'old_deadlock_graph':graph if old else None}
 
 
+
+def wait_owned_lock(work,env,requestor,blocker,table):
+    end=time.monotonic()+5
+    while time.monotonic()<end:
+        rows=sql(work,env,"SELECT r.trx_mysql_thread_id,b.trx_mysql_thread_id,l.lock_table "
+            "FROM information_schema.INNODB_LOCK_WAITS w "
+            "JOIN information_schema.INNODB_TRX r ON r.trx_id=w.requesting_trx_id "
+            "JOIN information_schema.INNODB_TRX b ON b.trx_id=w.blocking_trx_id "
+            "JOIN information_schema.INNODB_LOCKS l ON l.lock_id=w.requested_lock_id")
+        if any(r.split('\t')[:2]==[str(requestor),str(blocker)] and table in r
+               for r in rows.splitlines()):return
+        time.sleep(.02)
+    raise AssertionError(('missing_owned_lock',requestor,blocker,table,rows))
+
+
+def prepare_link(work,env,stage):
+    sql(work,env,"INSERT INTO pays (hash_id,user_id,type,plan_id,server_id,agent_count,day,volume,price,request_date,state,message_id,chat_id,description) VALUES ('link_b',1001,'BUY_SUB',7,2,1,0,0,100,1700000000,'have_sent',212,9001,'link-account')")
+    pay=int(sql(work,env,"SELECT id FROM pays WHERE hash_id='link_b'"))
+    driver=work/'native-effect-preparation.php';driver.write_text(effects.PHP)
+    before=effects.ROOT
+    try:
+        effects.ROOT=stage
+        assert effects.run_php(work,env,driver,pay=pay,operation='manual_capacity')['error'] is None
+        result=effects.run_php(work,env,driver,pay=pay)
+        assert result['error'] is None,result
+        assert [e['event'] for e in result['events']]==['POST','GET']
+        return result['result']['effect_id']
+    finally:effects.ROOT=before
+
+
+def cross_caller(kind,old):
+    # Third SQL worker queues the actual contender on info before verification
+    # starts. It adds no writes, timing trigger, or runtime source hook.
+    with standard.owned.owned_database() as (work,env):
+        initialize(work,env)
+        stage=stage_source(work,'cross-caller',ref=INTERMEDIATE if old else None)
+        driver=work/'cross-caller.php';driver.write_text(driver_source())
+        standard.seed(work,env,'claim_a',capacity=3 if kind=='linker' else 2)
+        effect=prepare_link(work,env,stage) if kind=='linker' else 0
+        wallet=sql(work,env,'SELECT userid,wallet FROM users ORDER BY userid')
+        gates=work/'gates';gates.mkdir();processes=[]
+        try:
+            a=launch(work,env,stage,driver,hash='claim_a',role='verifier',barrier_dir=str(gates));processes.append(a)
+            aid=wait_file(gates/'http-ready',a)
+            c=launch(work,env,stage,driver,hash='claim_a',role='info_blocker',barrier_dir=str(gates));processes.append(c)
+            cid=wait_file(gates/'info-locked',c)
+            b=launch(work,env,stage,driver,hash='claim_a',role=kind,effect=effect,barrier_dir=str(gates));processes.append(b)
+            bid=wait_file(gates/'contender-start',b)
+            wait_owned_lock(work,env,bid,cid,'server_info')
+            (gates/'release-verifier').write_text('go')
+            end=time.monotonic()+5
+            while time.monotonic()<end:
+                # MariaDB can omit a second waiter for the same record from
+                # INNODB_LOCK_WAITS. Observe this owned session's actual PK
+                # locking statement as well; its source config lock precedes it.
+                query=sql(work,env,f'SELECT INFO FROM information_schema.PROCESSLIST WHERE ID={aid}')
+                if 'FOR UPDATE' in query and ('server_info' in query or 'server_config' in query):break
+                if a.poll() is not None:raise AssertionError(('early_verifier',finish(a)))
+                time.sleep(.02)
+            else:raise AssertionError(('verifier_not_at_server_lock',query))
+            (gates/'release-info').write_text('go')
+            ae,aerr=finish(a);be,berr=finish(b);finish(c)
+        finally:
+            for name in ('release-verifier','release-info'):(gates/name).write_text('cleanup')
+            for proc in processes:
+                if proc.poll() is None:proc.kill();proc.communicate(timeout=3)
+        graph=deadlock_graph(work,env)
+        assert len(named(ae,'CREATE'))==1 and all(e['active']==0 for e in named(ae,'HTTP_TRANSACTION'))
+        assert sql(work,env,'SELECT userid,wallet FROM users ORDER BY userid')==wallet
+        orders=int(sql(work,env,'SELECT COUNT(*) FROM orders_list'))
+        if old:
+            assert graph and 'server_info' in graph and 'server_config' in graph,graph
+            assert ('FROM server_plans s' if kind=='nonpaid' else 'UPDATE service_effects e') in graph
+        else:
+            assert not graph,graph
+            assert named(be,'CONTENDER_RESULT')==[{'name':'CONTENDER_RESULT','success':True}],(be,berr)
+            assert sql(work,env,"SELECT state FROM pays WHERE hash_id='claim_a'")=='approved',(ae,aerr)
+            assert orders==(2 if kind=='linker' else 1)
+            assert sql(work,env,'SELECT ucount FROM server_info WHERE id=2')==('1' if kind=='linker' else '0')
+            assert len(named(be,'CREATE'))==(0 if kind=='linker' else 1)
+            assert all(e['active']==0 for e in named(be,'HTTP_TRANSACTION'))
+            assert sql(work,env,"SELECT COUNT(*) FROM service_effects WHERE effect_kind='create' AND state='local_recorded'")==str(orders)
+        again,_=finish(launch(work,env,stage,driver,hash='claim_a'))
+        assert not named(again,'CREATE')
+        if not old:
+            repeat,_=finish(launch(work,env,stage,driver,hash='claim_a',role=kind,effect=effect,barrier_dir=str(gates)))
+            assert not named(repeat,'CREATE') and named(repeat,'CONTENDER_RESULT')[0]['success'] is False
+        assert int(sql(work,env,'SELECT COUNT(*) FROM orders_list'))==orders
+        assert sql(work,env,'SELECT userid,wallet FROM users ORDER BY userid')==wallet
+        return {'case':kind+('_prior_7dca_expected_RED' if old else '_canonical_target_locks_GREEN'),
+                'pass':True,'source_deadlock_observed':bool(graph),'verifier_creates':1,
+                'orders':orders,'replay_creates':0,'old_deadlock_graph':graph if old else None}
+
+
 def boundaries():
     records=[]
     with standard.owned.owned_database() as (work,env):
@@ -326,7 +471,9 @@ def main():
     ap.add_argument('--run-disposable',action='store_true',required=True)
     ap.add_argument('--report',type=Path)
     args=ap.parse_args()
-    records=[concurrency(True),concurrency(False),*boundaries()]
+    records=[concurrency(True),concurrency(False),
+             *[cross_caller(kind,old) for kind in ('nonpaid','linker') for old in (True,False)],
+             *boundaries()]
     report={'complete':True,'cases':len(records),'old_source':OLD,
             'current_head':subprocess.check_output(['git','-C',str(ROOT),'rev-parse','HEAD'],text=True).strip(),
             'native_php_mysqli':True,'owned_socket_only':True,'isolation_changed':False,
