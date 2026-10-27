@@ -503,7 +503,7 @@ def main():
                         "--run-disposable","--report",str(pg_client_path)],
                        cwd=ROOT,check=True,timeout=240,capture_output=True)
         pg_client=json.loads(pg_client_path.read_text())
-        if not (pg_client.get("complete") is True and pg_client.get("cases",0)>=69
+        if not (pg_client.get("complete") is True and pg_client.get("cases",0)>=99
                 and pg_client.get("real_php_curl") is True
                 and pg_client.get("disposable_socket_mariadb") is True):
             raise RuntimeError("Native PasarGuard transport and persistence proof incomplete")
@@ -527,7 +527,7 @@ def main():
                         "--run-disposable","--report",str(provider_path)],
                        cwd=ROOT,check=True,timeout=240,capture_output=True)
         provider_integration=json.loads(provider_path.read_text())
-        if not (provider_integration.get("complete") is True and provider_integration.get("cases",0)>=40
+        if not (provider_integration.get("complete") is True and provider_integration.get("cases",0)>=97
                 and provider_integration.get("actual_php_curl") is True
                 and provider_integration.get("owned_socket_mariadb") is True
                 and provider_integration.get("real_provider_tested") is False):
