@@ -100,3 +100,21 @@ route matches establish this contract, not an invented OpenAPI fixture.
 Scoped API key needs users create/read/update/delete/reset_usage/revoke_sub,
 Groups read/read_simple, require_template=false and permitted native Groups.
 OWN scope suffices for same-admin-created accounts. Do not require owner key.
+
+## Native panel configuration prerequisite
+
+Configure the native subscription URL prefix/origin before admission. PasarGuard
+5.5.1 may return a relative/token-only subscription_url when its subscription
+url_prefix is unset; this adapter deliberately requires a native absolute HTTP(S)
+URL and holds a CREATE with invalid link readback as uncertain. Never manufacture
+a subscription URL or repeat that CREATE. Reconcile the exact owned marker and
+incarnation. Read-only system/admin/Groups preflight does not certify subscription
+configuration; it intentionally does not require wider settings permissions.
+Native auto-delete, on-hold timing, next-plan and periodic reset settings must be
+absent for AChBot-managed accounts; externally configured scheduling fails closed.
+
+Reservation reads lock the current account row after serializing on its effect.
+MariaDB strict snapshot isolation may instead reject a competing transaction
+whose earlier read view predates the reservation; that SQL rejection is private,
+rolls back local work and never grants remote dispatch. Runtime does not alter
+SQL isolation settings or automatically retry an uncertain external write.
