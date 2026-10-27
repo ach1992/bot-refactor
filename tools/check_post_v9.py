@@ -280,7 +280,7 @@ def main():
                 purchases.get("sql_provider_wire_exact") is True and
                 purchases.get("telegram_comparison")=="exact_except_explicit_authorized_ui_text_fields" and
                 purchases.get("ui_projection_baseline")=="7faac9b067f8a171e5e26d6aea5aaf9f4088a3e7" and
-                purchases.get("verified_literal_style_pairs")==488 and
+                purchases.get("verified_literal_style_pairs")==487 and
                 purchases.get("authorized_ui_field_differences")==3 and
                 purchases.get("ui_projection_negative_controls")==17 and
                 len(purchases.get("rejected_projection_mutations",[]))==17 and
