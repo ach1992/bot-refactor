@@ -126,7 +126,9 @@ if (!function_exists('ensureAccountCreationSucceeded')) {
         } elseif ($response === "inbound not Found") {
             $hasError    = true;
             $errorCode   = 'inbound_not_found';
-            $userMessage = \achbotMessage('purchase.order_writes.ensure_account_creation_succeeded.user_message.7a64d65208', ['inbound_id' => $inbound_id]);
+            $userMessage = \achbotMessage('purchase.order_writes.ensure_account_creation_succeeded.user_message.7a64d65208');
+            $title = $serverInfo['title'] ?? \achbotMessage('purchase.order_writes.ensure_account_creation_succeeded.text.f07a81a062');
+            $adminMessage = \achbotMessage('purchase.order_writes.ensure_account_creation_succeeded.admin_message.inbound_missing', ['title' => $title, 'inbound_id' => $inbound_id]);
 
         } else {
             $success = false;

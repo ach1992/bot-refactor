@@ -1,6 +1,6 @@
 # AChBot — canonical product and historical refactor contract
 
-**Superseding current development contract (2026-10-27):** Issue #26 revision3 adds native PasarGuard5.5.1, managed per-server display policies, bot-managed exchange rates and a central text catalog. The earlier Marzban-only and private display/rate descriptions below are historical where superseded. Read [the next-release source contract](post-v9/NEXT-RELEASE.md) for exact current boundaries; source development is not a production rollout.
+**Superseding current development contract (2026-10-27):** Issue #26 revisions3–4 add native PasarGuard5.5.1, managed per-server display policies, bot-managed exchange rates and exactly two editable audience catalogs (user/admin), with ASCII bot-owned digits and consistent meaningful emoji/formatting that preserves established wording. Parser matchers remain implementation data; shared display fragments are not decorated as whole messages. The earlier Marzban-only and private display/rate descriptions below are historical where superseded. Read [the next-release source contract](post-v9/NEXT-RELEASE.md) for exact current boundaries; source development is not a production rollout.
 
 ## Current post-V9 supported-product contract — Owner-confirmed 2026-10-14
 

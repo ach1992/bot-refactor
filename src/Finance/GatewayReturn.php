@@ -1314,13 +1314,13 @@ function achbotPerformPaymentEffect($payRowId, $gateType, &$effectStage = null) 
                     $amount,
                     $gateType,
                     $admin,
-                    \achbotMessage('gateway.gateway_return.perform_payment_effect.text.ed588b3bc9'),
+                    \achbotMessage('gateway.gateway_return.perform_payment_effect.text.ed588b3bc9', ['inbound_id' => $inbound_id]),
 					$rewardChannel
                 )) {
                     showForm(\achbotMessage('gateway.gateway_return.perform_payment_effect.message.bd952e9bc9'), $payDescription, false, 'review');
                     return 'ambiguous';
                 }
-                showForm(\achbotMessage('gateway.gateway_return.perform_payment_effect.message.3768e94d51', ['inbound_id' => $inbound_id]) . number_format($amount) . \achbotMessage('gateway.gateway_return.perform_payment_effect.message.3828187c8e'), $payDescription, false, 'review');
+                showForm(\achbotMessage('gateway.gateway_return.perform_payment_effect.message.3768e94d51') . number_format($amount) . \achbotMessage('gateway.gateway_return.perform_payment_effect.message.3828187c8e'), $payDescription, false, 'review');
 
                 return 'compensated';
             }

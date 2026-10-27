@@ -62,8 +62,14 @@ override disables only that audience's quoting. TRX keeps its independent rate,
 and older pinned attempts retain their original quote. Configure rates before
 new use; no private/external/1:1 fallback exists. See [USDT settings](USDT-RATE-SETTINGS.md).
 
-All bot/PHP payment-page copy lives in **25 topic files under `messages/fa/`**
-with `messages/loader.php`; legacy settings keys remain a compatibility facade.
+All bot/PHP payment-page copy lives in exactly **two editable files**:
+`messages/fa/user.php` for customer/agent journeys and shared safe labels, and
+`messages/fa/admin.php` for administrator management and diagnostics. Logical
+topic sections and stable keys remain; `messages/loader.php` is code-only and
+legacy settings keys remain a compatibility facade. Bot-owned prose/numeric
+presentation uses ASCII digits, coordinated meaningful emoji and the format
+supported by its actual Telegram or browser consumer. Keep established wording
+where possible; never decorate parser/date/unit fragments as whole messages.
 Use the [editing map](RC11-TO-RC12.md#message-editing-map) and
 [catalog contract](../../messages/README.md), preserving keys, declared parameters,
 escaping and legacy placeholders. Callback/state/SQL/provider identifiers and

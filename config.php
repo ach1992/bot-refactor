@@ -2179,7 +2179,7 @@ function getBotReportKeys($data = null) {
 
 if (!function_exists('convertPersianDigitsToEnglishForStats')) {
     function convertPersianDigitsToEnglishForStats($string) {
-        $persian = [\achbotMessage('admin_settings.config.convert_persian_digits_to_english_for_stats.text.9b5548a048'),\achbotMessage('admin_settings.config.convert_persian_digits_to_english_for_stats.text.62b6701398'),\achbotMessage('admin_settings.config.convert_persian_digits_to_english_for_stats.text.bc9c03bb97'),\achbotMessage('admin_settings.config.convert_persian_digits_to_english_for_stats.text.2e3bc84092'),\achbotMessage('admin_settings.config.convert_persian_digits_to_english_for_stats.text.d689787678'),\achbotMessage('admin_settings.config.convert_persian_digits_to_english_for_stats.text.09f360198d'),\achbotMessage('admin_settings.config.convert_persian_digits_to_english_for_stats.text.5b0a493e52'),\achbotMessage('admin_settings.config.convert_persian_digits_to_english_for_stats.text.6cb53cda3a'),\achbotMessage('admin_settings.config.convert_persian_digits_to_english_for_stats.text.1cf982ef60'),\achbotMessage('admin_settings.config.convert_persian_digits_to_english_for_stats.text.662756ac0f'),\achbotMessage('admin_settings.config.convert_persian_digits_to_english_for_stats.text.f01f2e7542'),\achbotMessage('admin_settings.config.convert_persian_digits_to_english_for_stats.text.628f6d71f7'),\achbotMessage('admin_settings.config.convert_persian_digits_to_english_for_stats.text.537dcdbcaa'),\achbotMessage('admin_settings.config.convert_persian_digits_to_english_for_stats.text.1a4fd527b1'),\achbotMessage('admin_settings.config.convert_persian_digits_to_english_for_stats.text.17cd7f45b2'),\achbotMessage('admin_settings.config.convert_persian_digits_to_english_for_stats.text.398ca650b2'),\achbotMessage('admin_settings.config.convert_persian_digits_to_english_for_stats.text.54083d9d00'),\achbotMessage('admin_settings.config.convert_persian_digits_to_english_for_stats.text.015ef630ee'),\achbotMessage('admin_settings.config.convert_persian_digits_to_english_for_stats.text.ca8c93db97'),\achbotMessage('admin_settings.config.convert_persian_digits_to_english_for_stats.text.0ff8ff1d86')];
+        $persian = ["\u{06F0}","\u{06F1}","\u{06F2}","\u{06F3}","\u{06F4}","\u{06F5}","\u{06F6}","\u{06F7}","\u{06F8}","\u{06F9}","\u{0660}","\u{0661}","\u{0662}","\u{0663}","\u{0664}","\u{0665}","\u{0666}","\u{0667}","\u{0668}","\u{0669}"];
         $english = ['0','1','2','3','4','5','6','7','8','9','0','1','2','3','4','5','6','7','8','9'];
         return str_replace($persian, $english, $string);
     }
@@ -2220,7 +2220,7 @@ if (!function_exists('parseStatsDateRange')) {
         ], ' ', $dateRange);
 
         $dateRange = trim($dateRange);
-        $dateRange = str_replace([\achbotMessage('admin_settings.config.parse_stats_date_range.text.d4f85d3675'), \achbotMessage('admin_settings.config.parse_stats_date_range.text.bda050585a'), \achbotMessage('admin_settings.config.parse_stats_date_range.text.afba2418d6'), '.', "\\"], ['-', '-', '-', '/', '/'], $dateRange);
+        $dateRange = str_replace(["\u{2013}", "\u{2014}", "\u{2212}", '.', "\\"], ['-', '-', '-', '/', '/'], $dateRange);
         $dateRange = preg_replace('/\s+/u', ' ', $dateRange);
 
         // به جای وابستگی به کلمه to، دو تاریخ معتبر را از هر متنی استخراج می‌کنیم.

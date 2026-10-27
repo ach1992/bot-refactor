@@ -23,7 +23,7 @@ SQL, provider, wallet, webhook or Cron authority.
 | Providers | Native PasarGuard 5.5.1 joins Marzban, using concrete panel/account identities and native Group IDs. It does not reinterpret Marzban identities or reenable retired panels. |
 | Links and QR | Each logical server has its own guided administrator display settings; native provider configs/subscriptions are used. Display selection does not enforce upstream access. |
 | Exchange rates | Normal/shared and optional agent USDT rates live in bot gateway settings, for manual USDT and hosted NOWPayments. TRX has an independent rate. |
-| Messages | One loader and 25 topic catalogs hold bot/PHP payment-page copy. Existing legacy facade keys/placeholders remain compatible. |
+| Messages | One loader and two editable audience catalogs (user/admin) hold bot/PHP payment-page copy. Existing legacy facade keys/placeholders remain compatible. |
 | Wallet | The original Increase/Decrease controls remain. Debt-producing Decrease requires an explicit locked preview/confirmation; notices use committed facts. |
 | Payment evidence | Home adds a menu while preserving invoices/status/evidence. Attention views distinguish actual unresolved claims from historical paid orders and state evidence gaps. |
 | Add-ons | New quotes pin whole GiB/days and price in existing `pays` fields. Later catalogue edits/deletion cannot reprice or replace issued units. |
@@ -47,8 +47,8 @@ is introduced.
 3. Select the intended provider and review the conditional sidecars below.
    Apply nothing merely because a new sidecar is present in release assets.
 4. Stage the entire exact runtime and verify its trusted manifest. The candidate
-   has **135 runtime files**, including `messages/loader.php` and **all 25**
-   `messages/fa/*.php` topics. A changed-file-only overlay or omitted
+   has **112 runtime files**, including `messages/loader.php` and **both**
+   `messages/fa/user.php` and `messages/fa/admin.php`. A changed-file-only overlay or omitted
    `messages/` directory is not a valid runtime. GitHub's automatic Source
    code archive is not the verified runtime ZIP.
 5. Configure intended per-server display policies and bot FX in the
@@ -160,51 +160,42 @@ account quota/expiry. Missing correlated evidence remains an explicit gap.
 
 ## Message editing map
 
-Change wording in the matching `messages/fa/` file, keeping the stable key,
-declared parameter names, HTML/escaping assumptions and legacy placeholders.
-Do not move callback/state/SQL/provider identifiers or diagnostic codes into
-translations. `settings/values.php` remains a compatibility facade.
-[Catalog authoring and validation](../../messages/README.md) describes one-pass
-substitution and the source/byte audit.
+Edit wording in only these two files; each contains named sections for the
+existing logical topics. Keep stable keys, declared parameter names,
+HTML/escaping assumptions and legacy placeholders. `settings/values.php` is a
+compatibility facade, not a third editable copy file; `messages/loader.php`
+contains loading/substitution code only.
 
-| Topic file | Copy area |
+| Editable file | Copy area |
 | --- | --- |
-| `admin.php` | Administrator actions and management. |
-| `admin_settings.php` | General administrator/server configuration. |
-| `agent.php` | Agent journeys and management. |
-| `backup.php` | Backup outcomes and notices. |
-| `bot.php` | Main bot navigation and shared routes. |
-| `broadcast.php` | Broadcast administration. |
-| `date.php` | Date/calendar display labels. |
-| `gateway.php` | Hosted gateway initiation/return. |
-| `jobs.php` | Scheduled-job messages. |
-| `labels.php` | Shared display labels. |
-| `legacy_buttons.php` | Existing `$buttonValues` compatibility text. |
-| `legacy_messages.php` | Existing `$mainValues` compatibility text. |
-| `manual_payment.php` | Bank, gift-card and manual crypto receipts. |
-| `notifications.php` | Account/customer notification copy. |
-| `payment.php` | Payment invoices, status and checkout. |
-| `payment_review.php` | Payment evidence and operator review. |
-| `payment_settings.php` | Gateway, destination, rate and eligibility settings. |
-| `plans.php` | Plan/catalogue management and selection. |
-| `provider.php` | Native provider setup/account operations. |
-| `purchase.php` | New subscription purchase journeys. |
-| `renewal.php` | Renewal and add-on journeys. |
-| `subscription.php` | Subscription/config/QR presentation and settings. |
-| `support.php` | Support and ticket flows. |
-| `telegram.php` | Telegram interaction/transport-facing copy. |
-| `wallet.php` | Wallet adjustment, transfer and debt flows. |
+| [messages/fa/user.php](../../messages/fa/user.php) | Customer and agent journeys, public payment pages and shared safe display/date labels. |
+| [messages/fa/admin.php](../../messages/fa/admin.php) | Administrator management, configuration, review and private diagnostic notices. |
 
-Runtime callers require `messages/loader.php` and the complete topic set.
-A local wording change creates a different source identity: review it, run the
-catalog audit and verify a matching artifact rather than editing an approved
-package without recording the change.
+Use one relevant leading emoji for whole messages/buttons where appropriate;
+remove stacked decoration, preserve familiar wording and use bold/code only
+when the actual consumer supports that parse mode. Alerts and keyboard labels
+are plain text; HTML tags must not be inserted indiscriminately. Date, unit,
+sentence-continuation and machine-data fragments are not complete messages.
+Bot-owned digits use ASCII `0–9`. Input parsers still recognize accepted digits
+and separators; user/provider values and identifiers are not globally rewritten.
+
+Do not move callback/state/SQL/provider identifiers, digit matchers or diagnostic
+reason codes into editable translations. Shared harmless labels live once in
+user.php; file placement alone is not authorization. Actual route ownership and
+administrator checks determine who receives a message.
+[Catalog authoring and validation](../../messages/README.md) explains one-pass
+substitution and the source/copy audit. Historical byte relocation is retained
+separately from explicit Owner-approved style/privacy changes.
+
+Runtime callers require the loader and both catalogs. A local wording change
+creates a different source identity: review it, run the catalog audit and verify
+a matching artifact rather than silently modifying an approved package.
 
 ## Rollback is a coordinated recovery operation
 
 Retain a verified complete source/config backup and a separately reviewed
 compatible recovery path before cutover. Restore source only as a coherent
-package, including its matching message loader/topics and schedule contract.
+package, including its matching message loader and both catalogs and schedule contract.
 An older version that cannot represent PasarGuard accounts or current financial
 state must not continue operating those records.
 
