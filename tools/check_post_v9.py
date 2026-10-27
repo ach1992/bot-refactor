@@ -1698,6 +1698,7 @@ def main():
                 and {r.get("case") for r in locking_cases}==required_locking
                 and all(r.get("pass") is True for r in locking_cases)
                 and verification_locking.get("native_php_mysqli") is True
+                and verification_locking.get("native_pk_lock_witness") is True
                 and verification_locking.get("owned_socket_only") is True
                 and verification_locking.get("isolation_changed") is False
                 and verification_locking.get("live_provider_requests")==0
