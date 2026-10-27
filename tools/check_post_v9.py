@@ -522,6 +522,16 @@ def main():
         if not re.search(r"PASS subscription presentation: 94 checks;",presentation_output):
             raise RuntimeError("Native subscription presentation proof incomplete")
         presentation={"complete":True,"checks":94,"real_network":False}
+        provider_path=Path(tmp)/"provider-integration.json"
+        subprocess.run(["python3",str(ROOT/"tools/test_post_v9_provider_integration.py"),
+                        "--run-disposable","--report",str(provider_path)],
+                       cwd=ROOT,check=True,timeout=240,capture_output=True)
+        provider_integration=json.loads(provider_path.read_text())
+        if not (provider_integration.get("complete") is True and provider_integration.get("cases",0)>=40
+                and provider_integration.get("actual_php_curl") is True
+                and provider_integration.get("owned_socket_mariadb") is True
+                and provider_integration.get("real_provider_tested") is False):
+            raise RuntimeError("Native provider lifecycle and durable intent proof incomplete")
         subject_path=Path(tmp)/"payment-subjects.json"
         subprocess.run(["python3",str(ROOT/"tools/test_post_v9_subjects.py"),
                         "--run-disposable","--report",str(subject_path)],
@@ -2770,6 +2780,7 @@ def main():
                      "admin_wallet_ux":wallet_ux,
                      "next_payment_ux":next_payment,
                      "pasarguard_client":pg_client,
+                     "provider_integration":provider_integration,
                      "optional_cleanup":cleanup,
                      "subscription_presentation":presentation,
                      "customer_error_privacy":audience,
@@ -2829,6 +2840,7 @@ def main():
                        "admin_wallet_ux_scenarios":wallet_ux["cases"],
                        "next_payment_ux_scenarios":next_payment["cases"],
                        "pasarguard_client_scenarios":pg_client["cases"],
+                       "provider_integration_scenarios":provider_integration["cases"],
                        "optional_cleanup_scenarios":cleanup["count"],
                        "subscription_presentation_checks":presentation["checks"],
                        "customer_literal_first_argument_messages_inspected":audience["literal_first_argument_calls_inspected"],
