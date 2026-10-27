@@ -201,7 +201,7 @@ def main() -> dict:
         require(has(result,'current_core_tables','PASS'), 'current_core_tables_pass')
         require(has(result,'schema_010','INFO'), 'cleanup_optional')
         require(has(result,'schema_011','INFO','optional_pasarguard_not_configured'), 'pg_optional_for_marzban')
-        statement(d, "UPDATE server_config SET type='pasarguard' WHERE id=2;")
+        statement(d, "INSERT INTO server_config(id,panel_url,ip,sni,header_type,request_header,response_header,security,tlsSettings,type,username,password) VALUES(2,'https://fixture.invalid','','','none','','','none','{}','pasarguard','','');")
         code, result, _ = report_run(d)
         require(code==2 and has(result,'schema_011','BLOCK','pasarguard_schema_required'), 'pg_requires_011')
         statement(d, "UPDATE server_config SET type='marzban' WHERE id=2;")

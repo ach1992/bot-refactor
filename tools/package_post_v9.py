@@ -77,6 +77,14 @@ NEW_RUNTIME_MEMBERS = ("settings/cronRunner.php", "src/Finance/PaymentPage.php",
 
 EXPECTED_RUNTIME_COUNT = 92 - len(RETIRED_RUNTIME_MEMBERS) + len(NEW_RUNTIME_MEMBERS)
 
+def expected_current_example() -> bytes:
+    """Owner-authorized current removal; immutable original V9 remains intact."""
+    old=git("show",V9+":baseInfo.example.php")
+    retired=(b"$hideConnectLinkForMarzban =",b"$showIndexes =",b"$hideConfigIfMany =",
+             b"$linkIndices =",b"$USDTPrice =",b"$USDTPriceagent =")
+    return b"".join(line for line in old.splitlines(keepends=True)
+                    if not line.startswith(retired))
+
 def members() -> list[str]:
     original = historical.members()
     if len(original)!=92 or len(set(original))!=92:
@@ -95,9 +103,11 @@ def members() -> list[str]:
             raise RuntimeError("Illegal/missing runtime member: "+path)
     if (ROOT/"baseInfo.php").exists():
         raise RuntimeError("Real private config exists in checkout")
-    for path in ["database/legacy-schema.sql","baseInfo.example.php"]:
+    for path in ["database/legacy-schema.sql"]:
         if (ROOT/path).read_bytes()!=git("show",V9+":"+path):
             raise RuntimeError("Original schema or fake private example changed")
+    if (ROOT/"baseInfo.example.php").read_bytes()!=expected_current_example():
+        raise RuntimeError("Unexpected current synthetic config template change")
     return paths
 
 

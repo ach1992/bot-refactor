@@ -35,7 +35,7 @@ def cmd(*args: str) -> bytes:
 def source_checks():
     if cmd("rev-parse", V9 + "^{tree}").decode().strip() != V9_TREE:
         raise RuntimeError("Frozen historical V9 reference changed")
-    for field in ("database/legacy-schema.sql", "baseInfo.example.php"):
+    for field in ("database/legacy-schema.sql",):
         if (ROOT / field).read_bytes() != cmd("show", V9+":"+field):
             raise RuntimeError("Changed historical schema/private-template: " + field)
     files=package.members()
@@ -104,7 +104,7 @@ def source_checks():
     return {"source_files":len(files),"php_lint":len(php_files),
             "original_historical_schema_file_unchanged":True,
             "current_additive_migration_separately_tested":True,
-            "synthetic_baseinfo_example_unchanged":True,
+            "synthetic_baseinfo_example_current_settings_removed":True,
             "historic_contract_changed":False,"retired_provider_api_removed":True,
             "admin_list_debug_artifact_writer_absent":True,
             "pasarguard_native_implemented":True, "new_xui_implemented":False}
