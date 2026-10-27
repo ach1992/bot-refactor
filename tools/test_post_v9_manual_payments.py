@@ -34,6 +34,7 @@ $paymentKeys=$spec['keys']??[
 ];
 $admin=9001;
 require_once $root.'/src/Finance/ReceiptHelpers.php';
+require_once $root.'/src/Panel/ProviderRuntime.php';
 function achbotSupportsPaymentSubject(...$args) {return true;}
 // Legacy fixture isolates bank-row semantics; R8 cases below delete both
 // fakes and load the actual Core.php permissions + SQL paths.

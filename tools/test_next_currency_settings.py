@@ -54,6 +54,8 @@ echo json_encode([$normal,$agent,array_keys(achbotManualCryptoOptions(1001)),
         for label,keys,want in [
             ('no_settings_ignores_private_globals',{},[None,None,[],[]]),
             ('shared_normal',NORMAL,[100000,100000,['b','t'],['b','t']]),
+            ('minimum_normal_rate',dict(NORMAL,manualUsdtRateToman='100'),[100,100,['b','t'],['b','t']]),
+            ('maximum_normal_rate',dict(NORMAL,manualUsdtRateToman='1000000000'),[1000000000,1000000000,['b','t'],['b','t']]),
             ('distinct_agent',dict(NORMAL,usdtAgentRateToman='200000'),[100000,200000,['b','t'],['b','t']]),
             ('invalid_agent_only',dict(NORMAL,usdtAgentRateToman='bad'),[100000,None,['b','t'],['t']]),
             ('clear_agent_reuses_normal',dict(NORMAL,usdtAgentRateToman=''),[100000,100000,['b','t'],['b','t']]),
@@ -86,8 +88,7 @@ echo json_encode([$normal,$agent,array_keys(achbotManualCryptoOptions(1001)),
         (stage/'baseInfo.php').write_text('<?php throw new RuntimeException("PRIVATE_CONFIG_READ");')
         private_before=hashlib.sha256((stage/'baseInfo.php').read_bytes()).hexdigest()
         # Reuse source-real HTTP initiation with disabled cURL replacements.
-        hosted=finance.PHP_DRIVER.replace('$paymentKeys = [',"$paymentKeys = $spec['keys'] ?? [",1)
-        (work/'owned-finance-guard.php').write_text(hosted)
+        (work/'owned-finance-guard.php').write_text(finance.PHP_DRIVER)
         for label,user,keys,want in [
             ('hostnormal',1001,NORMAL,'1.00000000'),
             ('hostagent',9002,dict(NORMAL,usdtAgentRateToman='200000'),'0.50000000'),
@@ -95,6 +96,9 @@ echo json_encode([$normal,$agent,array_keys(achbotManualCryptoOptions(1001)),
             ('hostmissing',1001,dict(NORMAL,manualUsdtRateToman=''),None),
             ('hostbadagent',9002,dict(NORMAL,usdtAgentRateToman='bad'),None),
         ]:
+            sql("DELETE FROM setting WHERE type='PAYMENT_KEYS'")
+            document=json.dumps(keys).replace("'","''")
+            sql("INSERT INTO setting(type,value) VALUES ('PAYMENT_KEYS','"+document+"')")
             finance.seed_payment(work,env,label,'INCREASE_WALLET',payid='')
             sql(f"UPDATE pays SET user_id={user},price=100000 WHERE hash_id='{label}'")
             result=finance.run_php(work,env,stage,dict(route='initiate',get={'nowpayment':'','hash_id':label},
@@ -108,6 +112,7 @@ echo json_encode([$normal,$agent,array_keys(achbotManualCryptoOptions(1001)),
                 assert len(result['network_calls'])==1,result
                 pinned=sql(f"SELECT quote_amount FROM payment_attempts WHERE order_hash='{label}'")
                 assert pinned==want,(label,pinned)
+                sql("UPDATE setting SET value='{}' WHERE type='PAYMENT_KEYS'")
                 reused=finance.run_php(work,env,stage,dict(route='initiate',get={'nowpayment':'','hash_id':label},keys={}))
                 assert reused['network_calls']==[],reused
                 assert sql(f"SELECT quote_amount FROM payment_attempts WHERE order_hash='{label}'")==pinned

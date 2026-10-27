@@ -351,7 +351,8 @@ if(mysqli_num_rows($payInfo)==0){
             exit;
         }
         require_once __DIR__.'/ReceiptHelpers.php';
-        $dollarPrice=achbotUsdtRateForUser($connection,(int)($payParam['user_id']??0));
+        $userId=(int)($payParam['user_id']??0);
+        $dollarPrice=achbotUsdtRateForUser($connection,$userId);
         if ($dollarPrice===null) {
             showForm('این روش پرداخت فعلاً در دسترس نیست؛ روش دیگری را انتخاب کنید یا با پشتیبانی تماس بگیرید.');
             exit;

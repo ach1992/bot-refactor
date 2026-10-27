@@ -102,8 +102,6 @@ $GLOBALS['known_inherited_warnings'] = [];
 $botState = array_replace(['nowPaymentWallet'=>'on','nowPaymentOther'=>'on',
     'zarinpal'=>'on','nextpay'=>'on'], $spec['states']??[]);
 $botUrl = 'http://127.0.0.1:9/owned-fixture/';
-$USDTPrice = 100000;
-$USDTPriceagent = 100000;
 $nowpaymentsIpnSecret = 'LOCAL-IPN-SECRET';
 // No merchant payout floor is the normal hosted-checkout configuration.
 // Set this optional variable only for legacy stricter-policy fixtures.
@@ -800,7 +798,7 @@ def main():
         sql(work,env,"INSERT INTO setting (type,value) VALUES ('BOT_STATES','{\"walletState\":\"on\",\"cartToCartState\":\"on\",\"giftCardState\":\"on\",\"manualUsdtState\":\"on\",\"nowPaymentWallet\":\"on\",\"nowPaymentOther\":\"on\",\"zarinpal\":\"on\",\"nextpay\":\"on\"}')")
         if len(sql(work,env,'SHOW TABLES').splitlines()) != 23:
             raise RuntimeError('Original schema missing')
-        keys=json.dumps({'nowpayment':'SYNTHETIC-LOCAL-ONLY','nextpay':'SYNTHETIC-LOCAL-ONLY','zarinpal':'SYNTHETIC-LOCAL-ONLY','nowpayment_ipn_secret':'LOCAL-IPN-SECRET'})
+        keys=json.dumps({'nowpayment':'SYNTHETIC-LOCAL-ONLY','nextpay':'SYNTHETIC-LOCAL-ONLY','zarinpal':'SYNTHETIC-LOCAL-ONLY','nowpayment_ipn_secret':'LOCAL-IPN-SECRET','manualUsdtRateToman':'100000'})
         sql(work,env,"INSERT INTO setting (type,value) VALUES ('PAYMENT_KEYS','" + keys + "')")
         # O1-R1 independent-review regression: execute the ACTUAL finish
         # helper against the second original-schema, 003-ABSENT database.

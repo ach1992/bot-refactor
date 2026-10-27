@@ -65,7 +65,7 @@ prove exact migration DDL, foreign-key integrity, real row compatibility or
 actual installed migration history; ambiguous/previously deployed sidecars
 require a separate schema-and-row audit. A configured merchant field does not
 prove the credential is valid, active, funded or authorized. Manual USDT
-using a legacy/private rate requires operator verification of the actual rate
+using configured USDT rates requires operator verification of the chosen rate
 and its service applicability; this CLI does not load `baseInfo.php`.
 Customer-specific cohorts and real merchant/payment availability are not
 certified even when a method is marked `potentially_offerable`. PHP CLI file checks do

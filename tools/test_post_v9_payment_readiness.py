@@ -317,7 +317,7 @@ def main() -> dict:
             ('usdt_agent_only_settings_rate',
              {'manualUsdtWalletBEP20':addr,'usdtAgentRateToman':'2000'},True,False),
         )
-        for label, money_keys, expected, private_rate in source_cases:
+        for label, money_keys, expected, _ in source_cases:
             require(source_usdt(money_keys) is expected,'source_'+label)
             seed(d,only_usdt,money_keys)
             code,result,raw=report_run(d)
@@ -334,6 +334,34 @@ def main() -> dict:
             require(all(str(secret) not in raw for secret in (addr,SECRET,PASSWORD,
                    'TNPeeaaFB7K9cmo4uQpcU32zGK8G1NYqeL')),
                    'privacy_'+label)
+            cases.append(label)
+
+        for label,money_keys,normal,agent in (
+            ('normal_shared_rate_audiences',{'manualUsdtWalletBEP20':addr,
+             'manualUsdtRateToman':'1000'},True,True),
+            ('invalid_agent_rate_only_agent_unavailable',{'manualUsdtWalletBEP20':addr,
+             'manualUsdtRateToman':'1000','usdtAgentRateToman':'invalid'},True,False),
+            ('explicit_agent_rate_without_normal',{'manualUsdtWalletBEP20':addr,
+             'usdtAgentRateToman':'2000'},False,True),
+        ):
+            seed(d,only_usdt,money_keys)
+            code,result,raw=report_run(d)
+            require(code==0,'rate_audience_exit_'+label)
+            for audience,configured in (('normal',normal),('agent',agent)):
+                require(has(result,'usdt_rate_'+audience,'PASS' if configured else 'WARN'),
+                        'rate_audience_flag_'+label+'_'+audience)
+            require(addr not in raw and '2000' not in raw,'rate_privacy_'+label)
+            cases.append(label)
+        for label,money_keys,expected in (
+            ('hosted_merchant_without_explicit_rate_unavailable',{'nowpayment':SECRET},False),
+            ('hosted_merchant_explicit_rate_available',{'nowpayment':SECRET,
+             'manualUsdtRateToman':'1000'},True),
+        ):
+            seed(d,dict(state,nowPaymentOther='on'),money_keys)
+            code,result,raw=report_run(d)
+            require((code==0)==expected and has(result,'method_nowpayments',
+                    'PASS' if expected else 'BLOCK'),'hosted_rate_'+label)
+            require(SECRET not in raw,'hosted_rate_privacy_'+label)
             cases.append(label)
 
         # A known-bad explicit USDT rate must not be hidden behind a valid
