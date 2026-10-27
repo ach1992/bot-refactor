@@ -81,16 +81,50 @@ recipient. Both retain the sender as `actor_userid`, each affected wallet as
 original update/chat/message IDs. Administrator actions use
 `source_type='admin'`, the same source-ID convention and entry 1.
 
-The actual new private text-message envelope must match UpdateBindings at
-**recipient selection and amount submission**; callback-associated old message
-text cannot authorize either. Selection consumes the exact current selection
-step under the actor's InnoDB lock and persists
-`achbotTransferAmount:<recipient_id>:<selection_update_id>:<selection_message_id>`.
-The amount must have **both** update ID and message ID strictly greater than
-the stored selection identity, before any monetary transaction begins. A
-stale selection worker cannot overwrite a newer pending step. Legacy
-`tranfserUserAmount...` and malformed/unmarked pending steps are refused with
-a Persian restart message and an explicit `transferMyWallet` restart button.
+An authenticated private `transferMyWallet` callback starts a versioned
+generation under the actor's InnoDB row lock. The selection step is
+`achbotTransferRecipient:<start_update_id>:<start_message_floor>`.
+The genuine selection message must be strictly newer than the start update
+and the retained private-message floor; it atomically claims that exact
+generation. The amount step is
+`achbotTransferAmount:<recipient_id>:<selection_update_id>:<selection_message_id>:<start_update_id>:<start_message_floor>`.
+The amount must have both IDs strictly greater than the selection identity,
+and monetary commitment rechecks the entire step and generation under lock.
+An old selection cannot acquire a restarted flow, even when that flow has
+returned to recipient selection.
+
+One bounded JSON cursor per actor is retained in the existing `setting` table
+under `ACHBOT_WALLET_TRANSFER_<userid>`. No new DDL/table is needed beyond
+005. It stores the start, selection and last accepted update/message IDs,
+phase, actor PK and selected recipient PK. The actor lock serializes absent
+cursor creation; only the discovered cursor PK is subsequently locked.
+Duplicate/malformed cursors, account incarnation changes and incompatible
+storage fail closed. The original `setting.type` is nonunique and unindexed:
+discovery uses a nonlocking lookup with LIMIT 2, not a broad locking scan.
+This retains one row per actor rather than an append-only workflow history;
+it is not a benchmark or a claim of index-backed lookup.
+
+The cursor survives successful completion and generic menu cancellation.
+A start callback must be newer than the last accepted flow event; stale or
+duplicate starts cannot regress an active or completed generation. Reusing
+an old menu in a genuinely new callback never lowers the private-message
+floor. Both journal legs, balances, consumed step and cursor completion are
+one transaction. Never delete/reset the cursor to work around stale inputs.
+
+All unversioned `transferMyWallet`, old three-field amount markers,
+`tranfserUserAmount...` and malformed steps require an authenticated fresh
+start. Persian guidance supplies an explicit restart button. Old pending
+steps are not migrated into authorization.
+
+Telegram documents that update IDs may restart at a random value after at
+least a week without updates ([official Update contract](https://core.telegram.org/bots/api#update)).
+This implementation deliberately refuses IDs below its retained cursor;
+it does not infer a safe new epoch from a lower ID or automatically erase
+replay history. If that availability boundary is encountered, transfers for
+affected actors stay blocked pending separately authorized reconciliation
+of the exact bot, retained cursor, journal and incoming Telegram identities.
+A routine retry/restart cannot bypass it. Recipient/actor deletion and
+recreation similarly require reconciliation rather than silent rebinding.
 
 Stable user locks, sufficient sender balance, recipient overflow checks,
 both wallet updates, step consumption and both journal INSERTs share one
@@ -156,6 +190,7 @@ Run:
     python3 tools/test_post_v9_admin_wallet.py --run-disposable
     python3 tools/test_post_v9_wallet_transfer.py --run-disposable
     python3 tools/test_post_v9_wallet_replay.py --run-disposable
+    python3 tools/test_post_v9_transfer_generation.py --run-disposable
 
 This executes the actual current PHP route against disposable, Unix-socket-only
 MariaDB and synthetic Telegram. Cases cover absent/malformed 005,
@@ -175,6 +210,16 @@ preservation, delegated-role revocation and a forced SQL failure.
 This is controlled source-only route characterization, NOT a full production
 bot bootstrap or live Telegram acceptance.
 It invokes no real bot, provider, bank account, payments or production SQL.
+
+The R3 generation suite reproduces the wrong-recipient ABA defect on exact
+reviewed source `18aa3629290db60a1a6e7c9be9c9f47464dcf333`, then verifies
+the current source using genuine start callbacks, selections and amounts.
+It covers completed A -> restarted B -> redelivered A selection; unchanged
+B state/money/journal; stale/duplicate/reordered starts; fresh selection of
+recipient Y; old-menu reuse; two-worker start races; malformed/duplicate
+cursor storage; cursor-write rollback and recipient incarnation changes.
+Generic navigation is modeled by clearing `users.step` while retaining the
+cursor; this suite does not claim execution of the full cancellation route.
 
 There is **no installed/live-money acceptance** in this source-only PR.
 The other #26 risks remain separate: referral idempotency, manual evidence,

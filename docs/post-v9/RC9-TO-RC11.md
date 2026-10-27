@@ -7,7 +7,7 @@ that a tenant has been upgraded.
 
 ## Source and schema
 
-The runtime has **103 files**. SQL sidecars remain outside the source ZIP
+The runtime has **104 files**. SQL sidecars remain outside the source ZIP
 and are never applied by extraction. Verify the release checksums and exact
 manifest before staging the package. Keep the installed private
 `baseInfo.php`, database, access controls and unrelated bots intact.
@@ -80,13 +80,26 @@ balances and consumed step commit together. Missing/incompatible journal
 or an INSERT failure blocks/rolls back the transfer. A lost COMMIT
 acknowledgement remains under review; never retry or refund automatically.
 
-Existing pending transfer-amount steps without recipient-selection update
-and message markers must be restarted using the displayed Persian restart
-button. A submitted amount must be newer in both IDs than its actual
-recipient selection. Migration 005 also requires the independent unique
+Existing pending transfers with unversioned or older markers must be
+restarted using the displayed Persian action. New starts, recipient
+selection and amounts are bound to one actor-locked versioned generation.
+Both update/message freshness checks apply at each message stage. A
+durable per-actor cursor in the original InnoDB `setting` table survives
+completion/cancellation, preventing old starts or selections from taking
+over another flow. No extra SQL sidecar is needed for that cursor.
+Do not remove `ACHBOT_WALLET_TRANSFER_*` records during cleanup/rollback.
+
+Migration 005 also requires the independent unique
 `(telegram_update_id,entry_no)` key; the same update cannot be reused across
 admin adjustments and transfers. A table missing this key is incompatible,
 even if its generic source index is present.
+
+If Telegram assigns a lower update ID after a long idle period, or an actor
+account is deleted/recreated, retained cursor ownership fails closed.
+Do not clear it automatically: stop affected transfers and reconcile the
+specific bot's cursor, incoming identities and journal under separate
+operator authorization. See the full cursor/storage/replay contract in
+[ADMIN-WALLET-ADJUSTMENTS.md](ADMIN-WALLET-ADJUSTMENTS.md).
 
 The journal begins recording these routes after installation. It is not
 a reconstructed statement of every historical wallet movement. Existing

@@ -35,14 +35,17 @@ def rows(work, env):
 
 def setstep(work, env, actor, step):
     admin.setstep(work, env, actor, step)
+    transfer.seed_flow(work,env,actor,step)
 
 
 def pending(actor=9002, update=9000, message=90, legacy=False):
     return ("tranfserUserAmount" + str(actor) if legacy else
-            f"achbotTransferAmount:{actor}:{update}:{message}")
+            f"achbotTransferAmount:{actor}:{update}:{message}:8900:79")
 
 
-def reset(work, env, legacy=False, step="transferMyWallet"):
+def reset(work, env, legacy=False, step=None):
+    if step is None:
+        step="transferMyWallet" if legacy else "achbotTransferRecipient:8900:79"
     transfer.prepare(work, env, step=step)
     if legacy:
         sql(work, env, "DROP TABLE wallet_adjustments")
@@ -230,7 +233,7 @@ def main():
                 "Selection error leaked diagnostics or concealed the affected action")
         log = (current / "owned-selection.log").read_text()
         require("update_id=9000" in log and "sqlstate=" in log and
-                "reason=transfer_selection_database_or_runtime_error" in log and
+                "reason=transfer_state_database_or_runtime_error" in log and
                 "Data too long" not in log,
                 "Protected selection diagnostics lack safe source/reason correlation")
         cases.append("r1_selection_sql_failure_rolls_back_and_separates_diagnostics")

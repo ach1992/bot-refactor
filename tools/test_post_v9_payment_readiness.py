@@ -133,7 +133,7 @@ def main() -> dict:
         runtime = d/'runtime'
         runtime.mkdir()
         files = package.members()
-        require((len(files) == 103), 'line_90')
+        require((len(files) == 104), 'line_90')
         checksums = {}
         for name in files:
             original = ROOT/name
@@ -186,10 +186,11 @@ def main() -> dict:
                           "SELECT type,value FROM setting ORDER BY id;")
         code, result, raw = report_run(d)
         require((code == 0), 'line_142')
-        require((result['source_file_count'] == 103), 'line_143')
+        require((result['source_file_count'] == 104), 'line_143')
         require((all(result['schema'][k] == 'columns_and_named_unique_indexes_detected_not_ddl_certified'
                    for k in ('001','003','004','005','006','007','008','009'))), 'line_144')
         require((has(result,'gateway_policies','PASS')), 'line_146')
+        require(has(result,'wallet_transfer_storage','PASS'), 'wallet_cursor_storage_ready')
         require((result['methods']['wallet']['switch'] == 'on'), 'line_147')
         require((result['methods']['nowpayments']['switch'] == 'off'), 'line_148')
         require((data_before == sql(d,"SELECT userid,wallet FROM users ORDER BY id;"+
@@ -498,6 +499,19 @@ def main() -> dict:
         statement(d,'ALTER TABLE wallet_adjustments DROP INDEX uq_wallet_telegram_entry, '
                     'ADD UNIQUE KEY uq_wallet_telegram_entry (telegram_update_id,entry_no)')
 
+        statement(d,'ALTER TABLE setting ENGINE=MyISAM')
+        code, result, _ = report_run(d)
+        require(code == 2 and has(result,'wallet_transfer_storage','BLOCK'),
+                'nontransactional_wallet_cursor_storage')
+        statement(d,'ALTER TABLE setting ENGINE=InnoDB')
+        cases.append('wallet_cursor_nontransactional_storage_blocks')
+        statement(d,'ALTER TABLE setting MODIFY type VARCHAR(499) NOT NULL')
+        code, result, _ = report_run(d)
+        require(code == 2 and has(result,'wallet_transfer_storage','BLOCK'),
+                'incompatible_wallet_cursor_storage')
+        statement(d,'ALTER TABLE setting MODIFY type VARCHAR(500) NOT NULL')
+        cases.append('wallet_cursor_incompatible_storage_blocks')
+
         # Successful DDL detection alone does not prove correct migration
         # provenance: corrupting a named unique index must be detected.
         statement(d,'ALTER TABLE payment_attempts DROP INDEX uq_payment_attempt_ref')
@@ -520,7 +534,7 @@ def main() -> dict:
         'readonly_sql_account_enforced':True,
         'source_usdt_production_helper_compared':True,
         'source_policy_production_helper_compared':True,
-        'source_members_verified':103,
+        'source_members_verified':104,
         'original_23_table_schema_used':True,
         'all_eight_additive_shapes_exercised':True,
         'no_real_provider_or_telegram_calls':True,

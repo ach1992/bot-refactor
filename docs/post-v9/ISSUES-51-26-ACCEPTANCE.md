@@ -10,7 +10,7 @@ real Marzban provisioning, refund or real-money correctness.
 ## Pre-installed payment readiness snapshot (source-only tooling)
 
 The read-only [payment readiness preflight](PAYMENT-READINESS-PREFLIGHT.md)
-compares 103 installed runtime files against a supplied verified manifest,
+compares 104 installed runtime files against a supplied verified manifest,
 inspects the original schema and additive 001/003-009 table shapes, and checks
 unique settings documents, current gateway rules and method configuration
 without showing credentials or modifying financial rows. Its disposable

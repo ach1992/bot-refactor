@@ -39,7 +39,7 @@ def source_checks():
         if (ROOT / field).read_bytes() != cmd("show", V9+":"+field):
             raise RuntimeError("Changed historical schema/private-template: " + field)
     files=package.members()
-    if len(files)!=103 or len(set(files))!=len(files):
+    if len(files)!=104 or len(set(files))!=len(files):
         raise RuntimeError("Source-only runtime file inventory changed")
     if any((ROOT/name).exists() or name in files
            for name in package.RETIRED_RUNTIME_MEMBERS):
@@ -368,6 +368,41 @@ def main():
                 and wallet_replay.get('production_mutations')==0
                 and wallet_replay.get('real_telegram_or_provider_calls')==0):
             raise RuntimeError('Transfer source freshness/cross-operation replay proof incomplete')
+        generation_path=Path(tmp)/"wallet-transfer-generation-r3.json"
+        subprocess.run(["python3",str(ROOT/"tools/test_post_v9_transfer_generation.py"),
+                        "--run-disposable","--report",str(generation_path)],
+                       cwd=ROOT,check=True,timeout=180,capture_output=True)
+        transfer_generation=json.loads(generation_path.read_text())
+        required_transfer_generation={
+            'r3_reviewed_red_old_selection_hijacks_new_generation',
+            'r3_old_selection_after_new_start_preserves_entire_state',
+            'r3_old_duplicate_and_out_of_order_starts_preserve_recipient_stage',
+            'r3_stale_cached_selection_cannot_claim_new_generation',
+            'r3_fresh_b_selection_and_amount_use_recipient_y',
+            'r3_completed_flow_rejects_old_start_callbacks',
+            'r3_navigation_reset_retains_cursor_and_new_flow_still_completes',
+            'r3_old_menu_reuse_never_lowers_private_message_floor',
+            'r3_two_start_workers_claim_exactly_once',
+            'r3_reordered_start_workers_converge_to_newest_generation',
+            'r3_start_requires_authentic_private_callback',
+            'r3_duplicate_cursor_fails_closed',
+            'r3_malformed_cursor_fails_closed',
+            'r3_nontransactional_cursor_fails_closed',
+            'r3_cursor_write_failure_rolls_back_balances_legs_and_step',
+            'r3_replaced_recipient_requires_new_selection',
+        }
+        if not (transfer_generation.get('complete') is True
+                and transfer_generation.get('reviewed_source') ==
+                    '18aa3629290db60a1a6e7c9be9c9f47464dcf333'
+                and set(transfer_generation.get('scenarios',[]))==required_transfer_generation
+                and transfer_generation.get('cases')==len(required_transfer_generation)
+                and transfer_generation.get('baseline_red') is True
+                and transfer_generation.get('current_green') is True
+                and transfer_generation.get('real_php_mysqli') is True
+                and transfer_generation.get('owned_mariadb_only') is True
+                and transfer_generation.get('production_mutations')==0
+                and transfer_generation.get('external_requests')==0):
+            raise RuntimeError('Transfer initiation/generation replay proof incomplete')
         admin_wallet_path=Path(tmp)/"admin-wallet-adjustment-current.json"
         subprocess.run(["python3",str(ROOT/"tools/test_post_v9_admin_wallet.py"),
                         "--run-disposable","--report",str(admin_wallet_path)],
@@ -1011,7 +1046,7 @@ def main():
         # Issue #51 installed/payment-readiness boundary. This never touches
         # installed tenants or real providers: native PHP runs with a REAL
         # SELECT-only account against disposable original+sidecar MariaDB,
-        # and verifies all 103 source members against a synthetic manifest.
+        # and verifies all 104 source members against a synthetic manifest.
         preflight_path=Path(tmp)/"payment-operator-readiness-preflight.json"
         subprocess.run(
             ["python3",str(ROOT/"tools/test_post_v9_payment_readiness.py"),
@@ -1060,6 +1095,8 @@ def main():
             'partial_003_unique_index_missing_blocks',
             'wallet_telegram_event_key_missing_blocks',
             'wallet_telegram_event_key_nonunique_blocks',
+            'wallet_cursor_nontransactional_storage_blocks',
+            'wallet_cursor_incompatible_storage_blocks',
             'missing_required_final_authorization_index_blocks',
             'database_connection_failure_sanitized',
             'private_sentinel_and_financial_rows_untouched',
@@ -1070,7 +1107,7 @@ def main():
                 readiness.get('readonly_sql_account_enforced') is True and
                 readiness.get('source_usdt_production_helper_compared') is True and
                 readiness.get('source_policy_production_helper_compared') is True and
-                readiness.get('source_members_verified')==103 and
+                readiness.get('source_members_verified')==104 and
                 readiness.get('all_eight_additive_shapes_exercised') is True and
                 readiness.get('no_real_provider_or_telegram_calls') is True and
                 readiness.get('installed_operator_acceptance') is False):
@@ -2666,7 +2703,7 @@ def main():
                        cwd=ROOT,check=True,timeout=60,capture_output=True)
         swap=json.loads(overlay_report.read_text())
         if not (swap.get("complete") and swap.get("phase_count")==4
-                and swap.get("runtime_members")==103
+                and swap.get("runtime_members")==104
                 and swap.get("historical_runtime_members")==92
                 and swap.get("retired_old_payment_files_absent_after_source_upgrade")
                 and swap.get("source_roll_forward_and_back_byte_identical")
@@ -2678,6 +2715,7 @@ def main():
                      "unsupported_wallet_preflight":wallet_guard,
                      "wallet_transfer_safety":wallet_transfer,
                      "wallet_replay_freshness_and_operation_identity":wallet_replay,
+                     "wallet_transfer_generation":transfer_generation,
                      "webhook_file_configuration":webhook_config,
                      "admin_wallet_adjustment_safety":admin_wallet,
                      "customer_error_privacy":audience,
@@ -2732,6 +2770,7 @@ def main():
                        "unsupported_wallet_negatives":wallet_guard["cases"],
                        "unsupported_manual_negatives":wallet_guard["manual_cases"],
                        "wallet_transfer_scenarios":wallet_transfer["cases"],
+                       "wallet_transfer_generation_scenarios":transfer_generation["cases"],
                        "admin_wallet_adjustment_scenarios":admin_wallet["cases"],
                        "customer_literal_first_argument_messages_inspected":audience["literal_first_argument_calls_inspected"],
                        "finance_error_audience_execution_cases":finance_privacy["cases"],
