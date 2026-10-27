@@ -140,7 +140,7 @@ def retired_sub_link(work: Path) -> dict:
                 ("GET", "/settings/subLink.php", 200, "Wrong token"),
                 ("GET", "/settings/subLink.php?token=short", 200, "Wrong token"),
                 ("GET", "/settings/subLink.php?token=" + "a"*30, 410,
-                 "Legacy subscription link retired; use the current Marzban subscription URL."),
+                 "Legacy subscription link retired; use the current subscription URL."),
                 ("POST", "/settings/subLink.php?token=" + "a"*30, 405, "Method not allowed"),
             ]
             for method, path, status, expected in samples:
