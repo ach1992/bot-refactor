@@ -2,7 +2,7 @@
 
 AChBot is a PHP Telegram bot for managing VPN subscriptions through **Marzban**. It includes customer subscription and account flows, administrator server/plan management, support and scheduled operations. The current source is **Marzban-only**; the retired X-UI/Sanaei/Alireza/legacy normal panel adapters are not supported.
 
-> **Release status:** Consult [GitHub Releases](https://github.com/ach1992/bot-refactor/releases) for the latest **Marzban-only source-only prerelease** and exact artifact identity. Earlier [v0.10.0-rc.2](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.2) was a security-only `config.php` hotfix to [RC1](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.1); historical V9 remains at [v0.9.0-rc.1](https://github.com/ach1992/bot-refactor/releases/tag/v0.9.0-rc.1). **Full installed/operator and financial acceptance is incomplete; source-only prereleases are not production-certified.** A ZIP replacement is neither atomic nor proof of active running code. Preserve local configuration and require separate deployment authorization.
+> **Release status:** The current **Marzban-only source-only prerelease** is [v0.10.0-rc.11](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.11), with wallet transfer replay protection and per-bot secrets in private `baseInfo.php`. For the direct **RC9 → RC11** upgrade, read the [upgrade guide](docs/post-v9/RC9-TO-RC11.md); published RC10 files are unchanged. Consult [GitHub Releases](https://github.com/ach1992/bot-refactor/releases) for exact artifact identities. Earlier [v0.10.0-rc.2](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.2) was a security-only `config.php` hotfix to [RC1](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.1); historical V9 remains at [v0.9.0-rc.1](https://github.com/ach1992/bot-refactor/releases/tag/v0.9.0-rc.1). **Full installed/operator and financial acceptance is incomplete; source-only prereleases are not production-certified.** A ZIP replacement is neither atomic nor proof of active running code. Preserve local configuration and require separate deployment authorization.
 
 ## Requirements
 
@@ -34,11 +34,11 @@ to compare a selected installed runtime with its trusted manifest and inspect
 DB schema/settings without displaying credentials. The preflight neither runs
 SQL migrations nor certifies a live Telegram/provider transaction.
 
-**Unreleased service-edit correctness work:** The developing source uses a
+**Service-edit correctness (source-level verification):** The current source uses a
 provider-neutral account-edit boundary with strict panel readback, bounded
 correction and financial completion only after service + SQL verification.
 This is not support for a new panel or payment gateway: active support remains
-Marzban-only, with separate installed/release approval required. See the
+Marzban-only, with separate installed acceptance and deployment authorization required. See the
 [financial consolidation document](docs/post-v9/FINANCIAL-CONSOLIDATION.md)
 and [operator checklist](docs/post-v9/MARZBAN-OPERATOR-ACCEPTANCE.md).
 Uncertain effects after worker termination may still need reconciliation;

@@ -5,6 +5,21 @@ will skip RC10. No RC10 rename/import migration is included; published
 RC10 artifacts remain unchanged. This guide is preparation, not evidence
 that a tenant has been upgraded.
 
+## Published package
+
+Use [v0.10.0-rc.11](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.11)
+and its verified `achbot-v0.10.0-rc.11-runtime.zip`, accompanying manifest,
+checksums and separate SQL assets. The [Persian guide](https://github.com/ach1992/bot-refactor/releases/download/v0.10.0-rc.11/achbot-v0.10.0-rc.11-UPGRADE-fa.md)
+is attached to the release. GitHub's automatic Source code archive is not
+the verified runtime package.
+
+The tag and manifest pin independently approved source
+`2b3719a298b50448d66944ff644d6f466c44396b`; [CI 40431797398](https://github.com/ach1992/bot-refactor/actions/runs/40431797398)
+passed on PHP 8.1 and 8.4. Protected-main integration `a034950028093ebe9c2c198004caf4aff1317139`
+has the identical reviewed tree. The release remains a source-only
+prerelease for owner-run installed acceptance; publication performs no
+tenant installation or SQL migration.
+
 ## Source and schema
 
 The runtime has **104 files**. SQL sidecars remain outside the source ZIP
