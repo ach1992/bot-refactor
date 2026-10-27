@@ -127,6 +127,7 @@ provider operation or deployment.
 
 - [Next-release scope and delivery gates](docs/post-v9/NEXT-RELEASE.md)
 - [RC11 → planned RC12 preparation, settings and message editing map](docs/post-v9/RC11-TO-RC12.md)
+- [راهنمای فارسی آماده‌سازی ارتقای RC11 به RC12](docs/post-v9/RC11-TO-RC12.fa.md)
 - [Native PasarGuard 5.5.1 contract](docs/post-v9/PASARGUARD-CONTRACT.md)
 - [Per-server subscription/config/QR settings](docs/post-v9/SUBSCRIPTION-PRESENTATION.md)
 - [Bot-managed normal/agent USDT rates](docs/post-v9/USDT-RATE-SETTINGS.md)

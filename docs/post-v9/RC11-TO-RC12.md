@@ -1,5 +1,7 @@
 # RC11 → RC12 preparation guide
 
+[راهنمای فارسی](RC11-TO-RC12.fa.md)
+
 This guide describes the **planned RC12 source-only target** for a compatible
 RC11 installation. It is preparation, not evidence that RC12 is published or
 that a tenant was upgraded. Choose artifacts and their exact source identity
