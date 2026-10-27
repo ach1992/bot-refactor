@@ -3440,9 +3440,29 @@ function getOrderTrafficInfo($serverType, $server_id, $remark, $uuid, $inbound_i
     require_once __DIR__ . '/src/Subscription/AccountDetails.php';
     return \AchBot\Subscription\AccountDetails\getOrderTrafficInfo($serverType, $server_id, $remark, $uuid, $inbound_id, $rahgozar);
 }
-function buildConfigLinks($acc_link, $botState, $showIndexes) {
+function buildSubscriptionPresentation($provider, $native, $botState, $options = [], $context = 'view') {
+    global $subscriptionPresentation, $showIndexes, $linkIndices,
+        $hideConfigIfMany, $hideConnectLinkForMarzban;
     require_once __DIR__ . '/src/Subscription/Presentation.php';
-    return \AchBot\Subscription\Presentation\configLinks($acc_link, $botState, $showIndexes);
+    $defaults = [
+        'policy' => is_array($subscriptionPresentation ?? null)
+            ? ($subscriptionPresentation[$provider] ?? null) : null,
+        'legacy' => [
+            'showIndexes' => $showIndexes ?? [],
+            'linkIndices' => $linkIndices ?? [],
+            'hideConfigIfMany' => $hideConfigIfMany ?? false,
+            'hideConnectLinkForMarzban' => $hideConnectLinkForMarzban ?? false,
+        ],
+    ];
+    $options = array_replace($defaults, $options);
+    $options['legacy'] = array_replace($defaults['legacy'],
+        is_array($options['legacy'] ?? null) ? $options['legacy'] : []);
+    return \AchBot\Subscription\Presentation\present($provider, $native, $botState, $options, $context);
+}
+
+function buildConfigLinks($acc_link, $botState, $showIndexes) {
+    return buildSubscriptionPresentation('marzban', ['links' => $acc_link], $botState,
+        ['legacy' => ['showIndexes' => $showIndexes]])['config_html'];
 }
 
 function buildSubLink($serverType, $panelUrl, $botUrl, $token, $botState) {
@@ -3456,26 +3476,17 @@ function buildSubBackupSection($subRaw, $token) {
 }
 
 function buildConfigMessage($enableText, $remark, $configLinks, $subLink, $backupSection, $serverType) {
-    global $mainValues, $hideConnectLinkForMarzban;
-
-    if ($hideConnectLinkForMarzban && $serverType == "marzban") {
-        $template = str_replace("\n🔌 لینک تکی کانفیگ:\nCONNECT-LINK\n", "", $mainValues['config_details_message']);
-    } else {
-        $template = $mainValues['config_details_message'];
-    }
-
-    $msg = str_replace(
-        ["STATE", "NAME", "CONNECT-LINK", "SUB-LINK"],
-        [$enableText, $remark, $configLinks, $subLink],
-        $template
+    global $mainValues, $hideConnectLinkForMarzban, $subscriptionPresentation;
+    require_once __DIR__ . '/src/Subscription/Presentation.php';
+    // A new explicit provider policy supersedes old view-only hiding.
+    $compat = $serverType === 'marzban'
+        && !is_array($subscriptionPresentation['marzban'] ?? null);
+    return \AchBot\Subscription\Presentation\configMessage(
+        $mainValues['config_details_message'], $enableText, $remark,
+        $configLinks, $subLink, $backupSection,
+        $compat && !empty($hideConnectLinkForMarzban)
     );
-
-    $msg .= $backupSection;
-    $msg .= "\n\n♻️ در صورتی که قصد دارید حجم دیگری خریداری کنید می توانید از دکمه ← 🔄 <b>تغییر پلن</b> استفاده و بعد تمدید کنید.";
-
-    return $msg;
 }
-
 
 function getProtocolNamesRow($protocol, $netType, $security, $rahgozar, $inbound_id) {
     require_once __DIR__ . '/src/Subscription/AccountDetails.php';
