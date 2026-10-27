@@ -23,6 +23,11 @@ if (!function_exists('achbotAdminWalletPrivateCallback')) {
             !is_int($update->update_id ?? null) || $update->update_id <= 0) {
             return false;
         }
+        $keys = array_keys(get_object_vars($update));
+        sort($keys);
+        if ($keys !== ['callback_query', 'update_id']) {
+            return false;
+        }
         $callback = $update->callback_query;
         $sender = $callback->from ?? null;
         $message = $callback->message ?? null;
@@ -85,16 +90,45 @@ if (!function_exists('achbotAdminWalletFreshReason')) {
     }
 }
 
+if (!function_exists('achbotAdminWalletClaimStep')) {
+    /** Called only while the unique, authorized operator row is locked. */
+    function achbotAdminWalletClaimStep(
+        mysqli $db, int $operatorId, string $expectedStep, string $nextStep
+    ): void {
+        $stmt = $db->prepare('UPDATE users SET step=? WHERE userid=? AND step=?');
+        $stmt->bind_param('sis', $nextStep, $operatorId, $expectedStep);
+        if (!$stmt->execute() || $stmt->affected_rows !== 1) {
+            $stmt->close();
+            throw new RuntimeException('operator_claim_failed');
+        }
+        $stmt->close();
+    }
+}
+
+if (!function_exists('achbotAdminWalletOperation')) {
+    /** Facts captured under the wallet lock, exposed only after COMMIT. */
+    function achbotAdminWalletOperation(
+        int $targetId, string $kind, int $amount, int $before, int $after,
+        int $updateId
+    ): array {
+        return ['target' => $targetId, 'kind' => $kind, 'amount' => $amount,
+            'before' => $before, 'after' => $after, 'correlation' => $updateId];
+    }
+}
+
 if (!function_exists('achbotApplyAdminWalletAdjustment')) {
     /**
      * Exactly one ledger row and wallet effect per authentic Telegram update.
-     * Returns applied, already_applied, stale, invalid, unavailable, or review.
+     * Returns applied/already_applied with committed operation facts, or a
+     * nonfinancial debt_required, balance_changed, stale/invalid/review result.
      */
     function achbotApplyAdminWalletAdjustment(
         mysqli $db, int $operatorId, int $targetId, int $updateId,
         int $chatId, int $messageId, string $kind, int $amount,
-        string $reason, string $expectedStep, int $primaryAdmin
+        string $reason, string $expectedStep, int $primaryAdmin,
+        ?array &$operation = null, ?int $expectedBefore = null
     ): string {
+        $operation = null;
         if ($operatorId <= 0 || $targetId <= 0 || $updateId <= 0 ||
             $messageId <= 0 || $chatId === 0 ||
             !in_array($kind, ['credit', 'debit', 'debt'], true) ||
@@ -103,6 +137,7 @@ if (!function_exists('achbotApplyAdminWalletAdjustment')) {
             !achbotWalletAdjustmentsReady($db)) {
             return 'unavailable';
         }
+        $moneyAttempted = false;
         try {
             if (!$db->begin_transaction()) {
                 throw new RuntimeException('journal_transaction_start_failed');
@@ -139,11 +174,37 @@ if (!function_exists('achbotApplyAdminWalletAdjustment')) {
             $before = (int)$users[$targetId]['wallet'];
             $delta = $kind === 'credit' ? $amount : -$amount;
             $after = $before + $delta;
-            if ($after < -2147483648 || $after > 2147483647 ||
-                ($kind === 'debit' && $after < 0)) {
+            if ($after < -2147483648 || $after > 2147483647) {
                 $db->rollback();
                 return 'invalid';
             }
+            if ($expectedBefore !== null && $before !== $expectedBefore) {
+                // Consent was to this exact signed balance result. A concurrent
+                // credit/debit must never silently change the accepted debt.
+                achbotAdminWalletClaimStep($db, $operatorId, $expectedStep, 'none');
+                if (!$db->commit()) {
+                    throw new RuntimeException('journal_commit_unconfirmed');
+                }
+                return 'balance_changed';
+            }
+            if ($kind === 'debit' && $after < 0) {
+                // No movement/journal row yet. Persist the original private
+                // reason and this locked preview in the SAME operator claim.
+                // A fresh nonce prevents replayed source messages from
+                // reconstructing a previously canceled flow's consent.
+                $nextStep = 'achbotWalletDebt:' . $targetId . ':' . $amount . ':' .
+                    $before . ':' . $messageId . ':' . $updateId . ':' .
+                    bin2hex(random_bytes(16)) . ':' . base64_encode($reason);
+                achbotAdminWalletClaimStep($db, $operatorId, $expectedStep, $nextStep);
+                if (!$db->commit()) {
+                    throw new RuntimeException('journal_commit_unconfirmed');
+                }
+                $operation = achbotAdminWalletOperation($targetId, 'debt',
+                    $amount, $before, $after, $updateId);
+                $operation['pending_step'] = $nextStep;
+                return 'debt_required';
+            }
+            $moneyAttempted = true;
             achbotInsertTelegramWalletAdjustment($db, 'admin', $updateId, 1,
                 $operatorId, $targetId, $chatId, $messageId, $kind, $amount,
                 $before, $after, $reason);
@@ -156,18 +217,12 @@ if (!function_exists('achbotApplyAdminWalletAdjustment')) {
             if ($affected !== 1) {
                 throw new RuntimeException('balance_guard_failed');
             }
-            $stmt = $db->prepare("UPDATE users SET step='none'
-                WHERE userid=? AND step=?");
-            $stmt->bind_param('is', $operatorId, $expectedStep);
-            $stmt->execute();
-            $affected = $stmt->affected_rows;
-            $stmt->close();
-            if ($affected !== 1) {
-                throw new RuntimeException('operator_claim_failed');
-            }
+            achbotAdminWalletClaimStep($db, $operatorId, $expectedStep, 'none');
             if (!$db->commit()) {
                 throw new RuntimeException('journal_commit_unconfirmed');
             }
+            $operation = achbotAdminWalletOperation($targetId, $kind, $amount,
+                $before, $after, $updateId);
             return 'applied';
         } catch (Throwable $error) {
             try { $db->rollback(); } catch (Throwable $ignored) {}
@@ -175,9 +230,12 @@ if (!function_exists('achbotApplyAdminWalletAdjustment')) {
             // Reconcile only this unique immutable update identity; never
             // automatically redo an ambiguous balance effect.
             try {
+                if (!$moneyAttempted) {
+                    throw new RuntimeException('nonfinancial_commit_unconfirmed');
+                }
                 $stmt = $db->prepare("SELECT actor_userid,target_userid,
                     source_chat_id,source_message_id,reason,
-                    adjustment_type,amount_toman FROM wallet_adjustments
+                    adjustment_type,amount_toman,before_balance,after_balance FROM wallet_adjustments
                     WHERE source_type='admin' AND source_id=?
                       AND entry_no=1 AND telegram_update_id=?");
                 $sourceId = (string)$updateId;
@@ -192,6 +250,10 @@ if (!function_exists('achbotApplyAdminWalletAdjustment')) {
                     (string)$row['reason'] === $reason &&
                     (string)$row['adjustment_type'] === $kind &&
                     (int)$row['amount_toman'] === $amount) {
+                    $operation = achbotAdminWalletOperation(
+                        (int)$row['target_userid'], (string)$row['adjustment_type'],
+                        (int)$row['amount_toman'], (int)$row['before_balance'],
+                        (int)$row['after_balance'], $updateId);
                     return 'already_applied';
                 }
             } catch (Throwable $ignored) {}
@@ -210,7 +272,8 @@ if (!function_exists('achbotAdminWalletIsPendingStep')) {
             'increaseUserWallet', 'decreaseUserWallet', 'createUserWalletDebt'
         ], true) ||
             preg_match('/^(increaseWalletUser|decreaseWalletUser|debtWalletUser)[1-9][0-9]{0,18}$/D', $step) === 1 ||
-            str_starts_with($step, 'achbotWalletReason:');
+            str_starts_with($step, 'achbotWalletReason:') ||
+            str_starts_with($step, 'achbotWalletDebt:');
     }
 }
 
@@ -299,11 +362,86 @@ if (!function_exists('achbotCancelAdminWalletPendingStep')) {
     }
 }
 
+if (!function_exists('achbotAdminWalletDebtCallback')) {
+    function achbotAdminWalletDebtCallback(int $operatorId, string $step): string
+    {
+        return substr(hash('sha256', $operatorId . ':' . $step), 0, 32);
+    }
+}
+
+if (!function_exists('achbotAdminWalletReportResult')) {
+    function achbotAdminWalletReportResult(
+        string $result, ?array $operation, int $updateId
+    ): void {
+        global $mainValues, $removeKeyboard, $from_id;
+        if ($result === 'debt_required' && $operation !== null) {
+            $token = achbotAdminWalletDebtCallback((int)$from_id,
+                $operation['pending_step']);
+            sendMessage("⚠️ این کاهش، موجودی کیف پول کاربر را منفی می‌کند.\n" .
+                'شناسه عددی کاربر: ' . $operation['target'] . "\n" .
+                'مبلغ کسر: ' . number_format($operation['amount']) . " تومان\n" .
+                'موجودی قبل: ' . number_format($operation['before']) . " تومان\n" .
+                'موجودی بعد: ' . number_format($operation['after']) . " تومان\n" .
+                'هنوز مبلغی اعمال نشده است. ایجاد یا افزایش این بدهی را تأیید می‌کنید؟',
+                json_encode(['inline_keyboard' => [
+                    [['text' => '⚠️ تأیید کسر و ایجاد بدهی',
+                      'callback_data' => 'walletDebtYes:' . $token]],
+                    [['text' => 'لغو درخواست',
+                      'callback_data' => 'walletDebtNo:' . $token]]
+                ]], JSON_UNESCAPED_UNICODE));
+        } elseif (($result === 'applied' || $result === 'already_applied') &&
+            $operation !== null) {
+            // Never re-read users.wallet after COMMIT: another operation may
+            // already have changed it. Reconciled outcomes use journal facts.
+            $verb = $operation['kind'] === 'credit' ? 'افزوده' : 'کسر';
+            $customer = '✅ مبلغ ' . number_format($operation['amount']) .
+                ' تومان ' . ($operation['kind'] === 'credit' ?
+                    'به کیف پول شما افزوده شد.' : 'از کیف پول شما کسر شد.') .
+                "\nموجودی کیف پول شما پس از این تغییر: " .
+                number_format($operation['after']) . ' تومان';
+            $notices = [
+                ['operator_confirmation', ['✅ مبلغ ' .
+                    number_format($operation['amount']) . ' تومان ' . $verb .
+                    " شد.\nشناسه عددی کاربر: " . $operation['target'] .
+                    "\nموجودی قبل: " . number_format($operation['before']) .
+                    " تومان\nموجودی بعد: " . number_format($operation['after']) .
+                    " تومان\nشناسه پیگیری: " . $operation['correlation'], $removeKeyboard]],
+                ['operator_menu', [$mainValues['reached_main_menu'], getMainKeys()]],
+                ['target_notice', [$customer, null, null, $operation['target']]]
+            ];
+            foreach ($notices as [$stage, $args]) {
+                try {
+                    $delivery = sendMessage(...$args);
+                    if (!is_object($delivery) || ($delivery->ok ?? false) !== true) {
+                        error_log('achbot_admin_wallet_notification_deferred update_id=' .
+                            $updateId . ' stage=' . $stage);
+                    }
+                } catch (Throwable $error) {
+                    error_log('achbot_admin_wallet_notification_deferred update_id=' .
+                        $updateId . ' stage=' . $stage);
+                }
+            }
+        } elseif ($result === 'balance_changed') {
+            sendMessage('⚠️ موجودی کاربر پس از نمایش تأیید بدهی تغییر کرده است. ' .
+                'این درخواست لغو شد و مبلغی از آن اعمال نشد؛ کاهش موجودی را دوباره شروع کنید.',
+                $removeKeyboard);
+        } elseif ($result === 'stale') {
+            sendMessage('⚠️ این درخواست قبلاً پردازش یا لغو شده است؛ وضعیت کیف پول را بررسی کنید.');
+        } elseif ($result === 'invalid') {
+            sendMessage('⚠️ موجودی، مبلغ یا دسترسی معتبر نیست. تغییری اعمال نشد.');
+        } else {
+            sendMessage('⚠️ نتیجه عملیات مشخص نیست؛ تا بررسی شناسه پیگیری ' .
+                $updateId . ' آن را تکرار نکنید.');
+        }
+    }
+}
+
 $achbotWalletCanAdmin = ($from_id == $admin || ($userInfo['isAdmin'] ?? false) == true);
 $achbotWalletModes = [
     'increaseUserWallet' => ['credit', 'increaseWalletUser', 'enter_increase_amount'],
     'decreaseUserWallet' => ['debit', 'decreaseWalletUser', 'enter_decrease_amount'],
-    'createUserWalletDebt' => ['debt', 'debtWalletUser', 'enter_debt_amount']
+    // Old inline buttons restart the safe Decrease flow, never debt consent.
+    'createUserWalletDebt' => ['debit', 'decreaseWalletUser', 'enter_decrease_amount']
 ];
 $achbotWalletStep = (string)($userInfo['step'] ?? 'none');
 $achbotWalletInput = trim((string)($text ?? ''));
@@ -321,7 +459,7 @@ if ($achbotWalletCanAdmin && isset($achbotWalletModes[$data]) &&
     } else {
         delMessage();
         sendMessage($mainValues['send_user_id'], $cancelKey);
-        setUser($data);
+        setUser($data === 'createUserWalletDebt' ? 'decreaseUserWallet' : $data);
     }
 }
 
@@ -357,7 +495,7 @@ if ($achbotWalletCanAdmin && $achbotWalletFreshText !== null &&
     preg_match('/^(increaseWalletUser|decreaseWalletUser|debtWalletUser)([1-9][0-9]{0,18})$/D',
         $achbotWalletStep, $match)) {
     $kind = ['increaseWalletUser'=>'credit', 'decreaseWalletUser'=>'debit',
-             'debtWalletUser'=>'debt'][$match[1]];
+             'debtWalletUser'=>'debit'][$match[1]];
     if (!preg_match('/^[1-9][0-9]{0,9}$/D', $achbotWalletInput) ||
         (float)$achbotWalletInput > 2147483647) {
         sendMessage('⚠️ فقط مبلغ صحیح، مثبت و بدون اعشار تا سقف مجاز وارد کنید.');
@@ -387,41 +525,46 @@ if ($achbotWalletCanAdmin && $achbotWalletFreshText !== null &&
         $updateId = filter_var($update->update_id ?? null, FILTER_VALIDATE_INT);
         $message = filter_var($message_id ?? null, FILTER_VALIDATE_INT);
         $chat = filter_var($chat_id ?? null, FILTER_VALIDATE_INT);
+        // Pre-upgrade saved debt reasons carry no current consent.
+        // Treat them as Decrease and require a fresh negative preview.
         $result = achbotApplyAdminWalletAdjustment(
             $connection, (int)$from_id, (int)$match[2], (int)($updateId ?: 0),
-            (int)($chat ?: 0), (int)($message ?: 0), $match[1],
-            (int)$match[3], $reason, $achbotWalletStep, (int)$admin
+            (int)($chat ?: 0), (int)($message ?: 0),
+            $match[1] === 'debt' ? 'debit' : $match[1],
+            (int)$match[3], $reason, $achbotWalletStep, (int)$admin, $operation
         );
-        if ($result === 'applied' || $result === 'already_applied') {
-            $verb = $match[1] === 'credit' ? 'افزوده' :
-                'کسر';
-            $notices = [
-                ['operator_confirmation', ['✅ مبلغ ' . number_format((int)$match[3]) .
-                    ' تومان ' . $verb . ' شد. شناسه پیگیری: ' . (int)$updateId,
-                    $removeKeyboard]],
-                ['operator_menu', [$mainValues['reached_main_menu'], getMainKeys()]],
-                ['target_notice', ['اطلاعیه: موجودی کیف پول شما توسط مدیر تغییر کرد.',
-                    null, null, (int)$match[2]]]
-            ];
-            foreach ($notices as [$stage, $args]) {
-                try {
-                    $delivery = sendMessage(...$args);
-                    if (!is_object($delivery) || ($delivery->ok ?? false) !== true) {
-                        error_log('achbot_admin_wallet_notification_deferred update_id=' .
-                            (int)$updateId . ' stage=' . $stage);
-                    }
-                } catch (Throwable $error) {
-                    error_log('achbot_admin_wallet_notification_deferred update_id=' .
-                        (int)$updateId . ' stage=' . $stage);
-                }
-            }
-        } elseif ($result === 'stale') {
-            sendMessage('⚠️ این درخواست قبلاً پردازش یا لغو شده است؛ وضعیت کیف پول را بررسی کنید.');
-        } elseif ($result === 'invalid') {
-            sendMessage('⚠️ موجودی، مبلغ یا دسترسی معتبر نیست. تغییری اعمال نشد.');
+        achbotAdminWalletReportResult($result, $operation, (int)($updateId ?: 0));
+    }
+}
+
+
+if ($achbotWalletCanAdmin &&
+    preg_match('/^walletDebt(Yes|No):([a-f0-9]{32})$/D', (string)$data, $consent) &&
+    achbotAdminWalletPrivateCallback($update ?? null, $from_id ?? null,
+        $chat_id ?? null, $message_id ?? null, $data)) {
+    if (!preg_match('/^achbotWalletDebt:([1-9][0-9]{0,18}):([1-9][0-9]{0,9}):(-?[0-9]{1,10}):([1-9][0-9]{0,18}):([1-9][0-9]{0,18}):([a-f0-9]{32}):([A-Za-z0-9+\/=]+)$/D',
+            $achbotWalletStep, $pending) ||
+        !hash_equals(achbotAdminWalletDebtCallback((int)$from_id, $achbotWalletStep),
+            $consent[2]) ||
+        $update->update_id <= (int)$pending[5] ||
+        $message_id <= (int)$pending[4]) {
+        achbotAdminWalletReportResult('stale', null, (int)$update->update_id);
+    } elseif ($consent[1] === 'No') {
+        $cancelResult = achbotCancelAdminWalletPendingStep($connection,
+            (int)$from_id, $achbotWalletStep, (int)$admin);
+        if ($cancelResult === 'canceled') {
+            sendMessage('درخواست تغییر موجودی لغو شد؛ مبلغی از این درخواست اعمال نشد.',
+                $removeKeyboard);
         } else {
-            sendMessage('⚠️ نتیجه عملیات مشخص نیست؛ تا بررسی شناسه پیگیری ' .
-                (int)($updateId ?: 0) . ' آن را تکرار نکنید.');
+            achbotAdminWalletReportResult($cancelResult, null, (int)$update->update_id);
         }
+    } else {
+        $reason = base64_decode($pending[7], true);
+        $operation = null;
+        $result = $reason === false ? 'invalid' : achbotApplyAdminWalletAdjustment(
+            $connection, (int)$from_id, (int)$pending[1], (int)$update->update_id,
+            (int)$chat_id, (int)$message_id, 'debt', (int)$pending[2], $reason,
+            $achbotWalletStep, (int)$admin, $operation, (int)$pending[3]);
+        achbotAdminWalletReportResult($result, $operation, (int)$update->update_id);
     }
 }

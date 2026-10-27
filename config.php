@@ -461,7 +461,6 @@ function getAdminKeys(){
         [[['bot_reports','botReports',fn()=>canSeeButton('bot_reports',$from_id)]]],
         [[['user_reports','userReports'],['message_to_user','messageToSpeceficUser']]],
         [[['increase_wallet','increaseUserWallet'],['decrease_wallet','decreaseUserWallet']]],
-        [[['create_wallet_debt','createUserWalletDebt']]],
         [[['create_account','createMultipleAccounts'],['gift_volume_day','giftVolumeAndDay']]],
         [[['ban_user','banUser'],['unban_user','unbanUser']]],
         [[['manage_order_database','manageorderdatabase']]],
