@@ -552,7 +552,10 @@ def main():
                 and text_catalog.get("presentation",{}).get("current_keys")==2526
                 and text_catalog.get("presentation",{}).get("numeric_template_changes")==24
                 and text_catalog.get("presentation",{}).get("adjacent_emoji_violations")==0
-                and text_catalog.get("presentation",{}).get("parameter_exception_count")==3):
+                and text_catalog.get("presentation",{}).get("parameter_exception_count")==3
+                and text_catalog.get("presentation",{}).get("semantic_label_icon_cases")==12
+                and text_catalog.get("presentation",{}).get("semantic_context_icon_cases")==16
+                and text_catalog.get("presentation",{}).get("native_compositions")==6):
             raise RuntimeError("Pre-style relocation or current two-file/audience/presentation proof incomplete")
         copy_audience_output=subprocess.run(
             ["python3",str(ROOT/"tools/test_next_copy_audience.py")],

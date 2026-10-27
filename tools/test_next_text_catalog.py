@@ -144,7 +144,10 @@ def main():
           and presentation.get('added_keys')==1 and presentation.get('logical_topics')==25
           and presentation.get('numeric_template_changes')==24
           and presentation.get('adjacent_emoji_violations')==0
-          and presentation.get('parameter_exception_count')==3,
+          and presentation.get('parameter_exception_count')==3
+          and presentation.get('semantic_label_icon_cases')==12
+          and presentation.get('semantic_context_icon_cases')==16
+          and presentation.get('native_compositions')==6,
           'two-file style, digit and audience acceptance incomplete')
     # Direct requests must not expose any internal catalog/module source or text.
     with socket.socket() as sock:sock.bind(('127.0.0.1',0));port=sock.getsockname()[1]
