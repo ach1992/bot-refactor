@@ -532,6 +532,13 @@ def main():
                 and provider_integration.get("owned_socket_mariadb") is True
                 and provider_integration.get("real_provider_tested") is False):
             raise RuntimeError("Native provider lifecycle and durable intent proof incomplete")
+        currency_path=Path(tmp)/"currency-settings.json"
+        subprocess.run(["python3",str(ROOT/"tools/test_next_currency_settings.py"),
+                        "--run-disposable","--report",str(currency_path)],
+                       cwd=ROOT,check=True,timeout=180,capture_output=True)
+        currency=json.loads(currency_path.read_text())
+        if not (currency.get("pass") is True and len(currency.get("cases",[]))==29):
+            raise RuntimeError("Explicit managed exchange-rate proof incomplete")
         subject_path=Path(tmp)/"payment-subjects.json"
         subprocess.run(["python3",str(ROOT/"tools/test_post_v9_subjects.py"),
                         "--run-disposable","--report",str(subject_path)],
@@ -1133,7 +1140,14 @@ def main():
             'usdt_legacy_bep20_default',
             'usdt_valid_trc20',
             'usdt_valid_erc20',
-            'usdt_valid_legacy_private_rate_unverified',
+            'usdt_missing_explicit_settings_rate',
+            'usdt_cleared_explicit_settings_rate',
+            'usdt_agent_only_settings_rate',
+            'normal_shared_rate_audiences',
+            'invalid_agent_rate_only_agent_unavailable',
+            'explicit_agent_rate_without_normal',
+            'hosted_merchant_without_explicit_rate_unavailable',
+            'hosted_merchant_explicit_rate_available',
             'usdt_invalid_rate_remains_blocking_when_trx_is_valid',
             'legacy_off_wallet_only',
             'empty_explicit_new_rule_denies_wallet',
@@ -2781,6 +2795,7 @@ def main():
                      "next_payment_ux":next_payment,
                      "pasarguard_client":pg_client,
                      "provider_integration":provider_integration,
+                     "currency_settings":currency,
                      "optional_cleanup":cleanup,
                      "subscription_presentation":presentation,
                      "customer_error_privacy":audience,
@@ -2841,6 +2856,7 @@ def main():
                        "next_payment_ux_scenarios":next_payment["cases"],
                        "pasarguard_client_scenarios":pg_client["cases"],
                        "provider_integration_scenarios":provider_integration["cases"],
+                       "currency_settings_scenarios":len(currency["cases"]),
                        "optional_cleanup_scenarios":cleanup["count"],
                        "subscription_presentation_checks":presentation["checks"],
                        "customer_literal_first_argument_messages_inspected":audience["literal_first_argument_calls_inspected"],

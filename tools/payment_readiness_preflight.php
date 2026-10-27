@@ -83,19 +83,13 @@ function verifyManifest(string $manifestPath, string $runtimePath): bool {
         if (!hash_equals('06effb37cfedb40cea6de9aecd9028bee52ede69227ecaaf0b23fa33e0bdb66e',
                          hash('sha256', implode("\n", $members))) ||
             in_array('baseInfo.php', $members, true)) return false;
-        // These helper implementations are executed by this tool. Bind them
-        // to the exact manifest version before trusting their policy and
-        // configuration validation; mixing different checkouts is unsafe.
-        foreach (['src/Finance/PaymentLifecycle.php',
-                  'src/Finance/GatewayRules.php',
-                  'src/Finance/ReceiptHelpers.php',
-                  'src/Finance/WalletAdjustments.php',
-                  'src/Finance/WalletTransferFlow.php',
-                  'src/Panel/PasarGuard.php',
-                  'src/Panel/ProviderStorage.php'] as $helper) {
+        // All tool-side runtime source is bound before any helper executes.
+        // This also covers helper dependencies and topic catalogs, avoiding
+        // mixed source versions. Inventory above excludes private files.
+        foreach ($manifest['files'] as $helper => $entry) {
             $source = dirname(__DIR__) . DIRECTORY_SEPARATOR . $helper;
             if (is_link($source) || !is_file($source) ||
-                !hash_equals((string)$manifest['files'][$helper]['sha256'],
+                !hash_equals((string)($entry['sha256'] ?? ''),
                              (string)hash_file('sha256', $source))) return false;
         }
         $root = realpath($runtimePath);
