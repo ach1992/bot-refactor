@@ -1256,10 +1256,22 @@ def main():
             'private_sentinel_and_financial_rows_untouched',
             'optional_cleanup_and_provider_schema_strict_read_only',
         }
+        required_readiness.update({
+            'mismatched_helper_stops_before_database_and_execution',
+            'mismatched_catalog_stops_before_database_and_execution',
+            'missing_manifest_stops_before_database_and_execution',
+            'mismatched_source_precedes_invalid_database_environment',
+            'missing_manifest_precedes_invalid_database_environment',
+        })
         if not (readiness.get('complete') is True and
                 readiness.get('cases')==len(required_readiness) and
                 set(readiness.get('details',[]))==required_readiness and
                 readiness.get('readonly_sql_account_enforced') is True and
+                readiness.get('original_cases_preserved')==54 and
+                readiness.get('archived_source_failure_fallthrough_red') is True and
+                readiness.get('source_failure_stops_before_database_and_helpers') is True and
+                readiness.get('source_identity_only_on_failure') is True and
+                readiness.get('source_failure_all_rows_unchanged') is True and
                 readiness.get('source_usdt_production_helper_compared') is True and
                 readiness.get('source_policy_production_helper_compared') is True and
                 readiness.get('source_members_verified')==package.EXPECTED_RUNTIME_COUNT and
