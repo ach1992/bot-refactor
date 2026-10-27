@@ -30,6 +30,9 @@ $root=$argv[1];$socket=$argv[2];$dbName=$argv[3];
 $spec=json_decode($argv[4],true,512,JSON_THROW_ON_ERROR);
 $connection=new mysqli('localhost','root','',$dbName,0,$socket);
 $connection->set_charset('utf8mb4');
+// Fixture-only deterministic suffixes deliberately expose cross-case name
+// reuse. Each independent invoice receives its own server remark prefix.
+mt_srand(424242);
 if (!empty($spec['nonthrowing'])) mysqli_report(MYSQLI_REPORT_OFF);
 $botState=['cartToCartAutoAcceptState'=>'on','cartToCartAutoAcceptTime'=>1,
     'cartToCartAutoAcceptType'=>2,'remark'=>'default','subLinkState'=>'on',
@@ -225,8 +228,12 @@ def run(work,env,driver,**spec):
     p=subprocess.run(args,cwd=work,env=env,capture_output=True,text=True,timeout=25)
     if p.returncode or not p.stdout.strip():
         raise RuntimeError('native bank PHP failed '+repr((p.returncode,p.stderr[-1250:])))
-    try: return json.loads(p.stdout)
+    try: result=json.loads(p.stdout)
     except ValueError as e: raise RuntimeError('unexpected PHP output '+p.stdout[-700:]) from e
+    # Synthetic-only diagnostics must survive a successful PHP exit followed
+    # by a failed semantic assertion; never suppress the actual child stderr.
+    result['diagnostic_stderr']=p.stderr[-8000:]
+    return result
 
 def issuer_driver(work):
     # Shared source-real disposable bank issuer for all bank/recovery fixtures.
@@ -235,6 +242,15 @@ def issuer_driver(work):
     if not driver.exists():
         driver.write_text(manual.PHP)
     return driver
+
+
+def invoice_namespace(work,env,pay_id):
+    # Separate independent fixture invoices while keeping the same genuine
+    # source buildRemark() and same prefix for two workers of ONE invoice.
+    # This is display metadata set BEFORE issuance, not a physical identity
+    # or a mutation while the tested financial transactions are running.
+    assert int(pay_id)>0
+    query(work,env,f"UPDATE server_info SET remark='bank_fixture_{int(pay_id)}' WHERE id=2")
 
 
 def seed(work,env,key,count=1,plan=7,method='bank_transfer',
@@ -250,6 +266,7 @@ def seed(work,env,key,count=1,plan=7,method='bank_transfer',
         f"('{key}',1001,'BUY_SUB',{plan},2,{volume},{days},101,UNIX_TIMESTAMP()-120,"
         f"'pending',{count},550,9001,'{safe_description}')")
     pid=int(query(work,env,f"SELECT id FROM pays WHERE hash_id='{key}'"))
+    invoice_namespace(work,env,pid)
     if method=='bank_transfer':
         issued=manual.run_php(work,env,issuer_driver(work),key,'claim','bank_transfer')
         if issued is not True:
@@ -272,7 +289,9 @@ def pending_bank(work,env,key):
         "INSERT INTO pays (hash_id,user_id,type,plan_id,server_id,volume,day,"
         "price,request_date,state,agent_count) VALUES "
         f"('{key}',1001,'BUY_SUB',7,2,0,0,101,UNIX_TIMESTAMP(),'pending',1)")
-    return int(query(work,env,f"SELECT id FROM pays WHERE hash_id='{key}'"))
+    pid=int(query(work,env,f"SELECT id FROM pays WHERE hash_id='{key}'"))
+    invoice_namespace(work,env,pid)
+    return pid
 
 def state(work,env,pid):
     return query(work,env,f"SELECT state FROM pays WHERE id={pid}")
@@ -790,6 +809,33 @@ def check():
         assert not any(e['event']=='POST' for e in blocked['events'])
         cases.append('nonbank_attempt_never_auto_provisions')
 
+        # A real duplicate remote identity remains a refusal. Namespace
+        # isolation must never hide or relax the unique journal invariant.
+        first=seed(work,env,'bank_fixture_collision_first',description='fixture_same_remote_name')
+        accepted=run(work,env,driver,pay=first)
+        assert state(work,env,first)=='auto_cart_approved',accepted
+        assert sum(e['event']=='POST'for e in accepted['events'])==1,accepted
+        duplicate=seed(work,env,'bank_fixture_collision_duplicate',description='fixture_same_remote_name')
+        capacity_before=int(query(work,env,'SELECT ucount FROM server_info WHERE id=2'))
+        wallet_before=query(work,env,'SELECT wallet FROM users WHERE userid=1001')
+        denied=run(work,env,driver,pay=duplicate)
+        assert state(work,env,duplicate)=='processing',denied
+        assert not any(e['event']=='POST'for e in denied['events']),denied
+        assert total(work,env,'service_effects',duplicate)==0
+        assert total(work,env,'orders_list',duplicate)==0
+        assert total(work,env,'service_effects',first)==1
+        assert int(query(work,env,'SELECT ucount FROM server_info WHERE id=2'))==capacity_before
+        assert query(work,env,'SELECT wallet FROM users WHERE userid=1001')==wallet_before
+        cases.append('explicit_duplicate_username_refused_before_post_without_financial_effect')
+        replay=run(work,env,driver,pay=duplicate)
+        assert not any(e['event']=='POST'for e in replay['events']),replay
+        assert state(work,env,duplicate)=='processing'
+        assert total(work,env,'service_effects',duplicate)==0
+        assert total(work,env,'orders_list',duplicate)==0
+        assert int(query(work,env,'SELECT ucount FROM server_info WHERE id=2'))==capacity_before
+        assert query(work,env,'SELECT wallet FROM users WHERE userid=1001')==wallet_before
+        cases.append('duplicate_username_hold_never_replayed_or_refunded')
+
         race=seed(work,env,'bankbuyrace')
         with ThreadPoolExecutor(max_workers=2) as pool:
             results=list(pool.map(lambda _:run(work,env,driver,pay=race),range(2)))
@@ -800,7 +846,8 @@ def check():
     return dict(complete=True,cases=len(cases),scenarios=cases,
         source_real_php=True,owned_mariadb_only=True,
         real_provider_requests=0,real_financial_effects=0,
-        installed_operator_tested=False)
+        installed_operator_tested=False,fixture_mt_seed=424242,
+        independent_invoice_namespaces=True,successful_exit_stderr_retained=True)
 
 def main():
     parser=argparse.ArgumentParser()
