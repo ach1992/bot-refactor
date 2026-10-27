@@ -260,7 +260,9 @@ if($userInfo['phone'] == null && $from_id != $admin && $userInfo['isAdmin'] != t
     }
 }
 
-if (preg_match('/^\/([Ss]tart)/', $text) || $text == $buttonValues['back_to_main'] || $data == 'mainMenu') {
+$paymentHomeMatch=[];
+$paymentHome=is_string($data) && preg_match('/^ph_([A-Za-z0-9_-]{1,50})$/D',$data,$paymentHomeMatch)===1;
+if (preg_match('/^\/([Ss]tart)/', $text) || $text == $buttonValues['back_to_main'] || $data == 'mainMenu' || $data == 'evidenceHome' || $paymentHome) {
 
     // Config has an early cached userInfo. A newer moderation ban or an
     // active DirectGift wizard takes precedence over old menu callbacks.
@@ -283,12 +285,11 @@ if (preg_match('/^\/([Ss]tart)/', $text) || $text == $buttonValues['back_to_main
     $isFirstStart = ($from_id != $admin && empty($userInfo['first_start']));
     $canBuy       = (($botState['sellState'] ?? 'off') == "on" || $isRealAdmin);
 
-    if (isset($data) && $data == "mainMenu") {
-
-        $res = editText($message_id, $mainValues['start_message'], getMainKeys());
-        if (!$res->ok) {
-            sendMessage($mainValues['start_message'], getMainKeys());
-        }
+    if (isset($data) && ($data == "mainMenu" || $data == "evidenceHome" || $paymentHome)) {
+        // Legacy Home buttons can be on untracked financial/support evidence.
+        // Always send the actor's own menu; never edit/delete the source or
+        // read another customer's invoice merely to navigate Home.
+        sendMessage($mainValues['start_message'], getMainKeys());
 
     } else {
 

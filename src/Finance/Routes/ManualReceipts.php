@@ -5,6 +5,76 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     exit;
 }
 
+// Unified read-only attention hub. Existing NP child inquiry and exact
+// BUY_SUB CREATE readback remain specialized, separately gated tools.
+$attentionMatch=[];
+if (preg_match('/^attention(Inbox|Case)(?:_([1-9][0-9]{0,17}))?$/D',(string)$data,$attentionMatch)) {
+    if ((int)$admin<=0 || (int)$from_id!==(int)$admin || (int)($chat_id??0)!==(int)$admin) {
+        answerCallbackQuery($callbackId,'این بخش فقط در گفتگوی خصوصی مدیر در دسترس است.',true);
+        return;
+    }
+    require_once __DIR__.'/../RecoveryInspection.php';
+    if (!defined('ACHBOT_NP_RECONCILE_ONLY')) define('ACHBOT_NP_RECONCILE_ONLY',true);
+    require_once __DIR__.'/../GatewayReturn.php';
+    $escAttention=static fn($v)=>htmlspecialchars(substr((string)$v,0,150),ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8');
+    $rows=[];
+    try {
+        if ($attentionMatch[1]==='Inbox') {
+            $before=(int)($attentionMatch[2]??0);
+            $items=achbotRecoveryAttentionCases($connection,$before);
+            $more=count($items)>12;$items=array_slice($items,0,12);
+            $body="<b>📋 پرداخت‌ها و سفارش‌های نیازمند بررسی</b>\n\n".
+                "شواهد محلی روش‌های فعال: درگاه‌ها، رسیدهای دستی و سفارش‌های ساختِ در پردازش.\n".
+                "خرید، تمدید، افزایش روز/حجم و شارژ کیف پول بر اساس سند موجود بررسی می‌شوند.\n".
+                "سابقهٔ پرداخت‌شده بدون دفتر جدید، خودبه‌خود هشدار نیست. پوشش سابقه‌های فاقد سند کامل نیست.\n";
+            foreach ($items as $item) $rows[]=[['text'=>'🧾 #'.(int)$item['id'].' | کاربر '.(int)$item['user_id'].' | '.number_format((int)$item['price']).' تومان',
+                'callback_data'=>'attentionCase_'.(int)$item['id']]];
+            if (!$items) $body.="\nدر این صفحه موردی با شواهد قابل بررسی پیدا نشد؛ این به معنی تأیید همهٔ پرداخت‌ها نیست.";
+            if ($more) $rows[]=[['text'=>'➡️ پرونده‌های قدیمی‌تر','callback_data'=>'attentionInbox_'.(int)end($items)['id']]];
+            if ($before>0) $rows[]=[['text'=>'🔝 فهرست جدیدتر','callback_data'=>'attentionInbox']];
+        } else {
+            $id=(int)($attentionMatch[2]??0);
+            $pay=achbotRecoveryAttentionCase($connection,$id);
+            if (!$pay) throw new RuntimeException('attention_pay_not_found');
+            $a=$pay['attempt'];
+            $body="<b>🧾 شواهد محلی پروندهٔ #".$id."</b>\n".
+                achbotPayUxReference($pay)."💰 مبلغ: ".number_format((int)$pay['price'])." تومان\n".
+                "موضوع: <code>".$escAttention($pay['type'])."</code>\n".
+                "روش: <code>".$escAttention($a['provider']??'سند موجود نیست')."</code> | وضعیت سابقه: <code>".$escAttention($pay['state'])."</code>\n".
+                "مرحلهٔ دفتر: <code>".$escAttention($a['stage']??'موجود نیست')."</code> | نتیجه: <code>".$escAttention($a['provider_status']??'ثبت نشده')."</code>\n\n".
+                achbotRecoveryEvidenceText($pay,$a).achbotRecoverySubjectText($pay);
+            if ($a && (string)($a['payment_id']??'')!=='') $body.="شناسهٔ ثبت‌شدهٔ روش پرداخت: <code>".$escAttention($a['payment_id'])."</code>\n";
+            if (($a['provider']??'')==='nowpayments') {
+                $stmt=$connection->prepare('SELECT id FROM payment_attempts WHERE pay_row_id=? LIMIT 1');
+                $stmt->bind_param('i',$id);$stmt->execute();$attemptId=(int)($stmt->get_result()->fetch_assoc()['id']??0);$stmt->close();
+                if ($attemptId>0) $rows[]=[['text'=>'🔍 جزئیات شواهد NOWPayments','callback_data'=>'npReviewCase_'.$attemptId]];
+            }
+            if ($pay['type']==='BUY_SUB' && in_array($pay['state'],['processing','processing_wallet','paid'],true))
+                $rows[]=[['text'=>'🧩 جزئیات عملیات ساخت','callback_data'=>'bankReviewCase_'.$id]];
+            $manual=achbotPayUxManualProvider((string)($a['provider']??''));
+            if ($manual && $pay['state']==='have_sent') $body.="\nگام بعد: تصویر و مقصد/مبلغِ ثبت‌شده را در پیام اصلی رسید بررسی کنید؛ تصمیم فقط در مسیر اصلیِ مجازِ رسید انجام شود.";
+            elseif ($pay['type']==='INCREASE_WALLET') $body.="\nگام بعد: سند پرداخت و اعتبار کیف پول را برای همین شناسه تطبیق دهید؛ موجودی فعلی به‌تنهایی سند این شارژ نیست.";
+            elseif ($pay['type']!=='BUY_SUB') $body.="\nگام بعد: سند پرداخت و نتیجهٔ تمدید/تغییر همان اشتراک را تطبیق دهید؛ دفتر CREATE اثبات این تغییر نیست.";
+            else $body.="\nگام بعد: سند پرداخت و عملیات هر حساب را جداگانه بررسی کنید؛ در نبود هویت ثبت‌شده، بررسی انسانی لازم است.";
+            $rows[]=[['text'=>'📋 فهرست بررسی','callback_data'=>'attentionInbox']];
+        }
+        if (!achbotPayUxTable($connection,'payment_attempts') || !achbotPayUxTable($connection,'service_effects') ||
+            !achbotPayUxTable($connection,'automatic_renewal_attempts'))
+            $body.="\n⚠️ بخشی از دفترهای جدید در دسترس نیست؛ پوشش محدود است و نبود سند، موفقیت/شکست را ثابت نمی‌کند.";
+        $body.="\n\nاین صفحه فقط‌خواندنی است؛ تأیید، برداشت، بازپرداخت یا تکرار عملیات انجام نمی‌دهد.";
+        $rows[]=[['text'=>'🔍 شواهد تخصصی NOWPayments','callback_data'=>'npReviewInbox']];
+        $rows[]=[['text'=>'🏠 منوی اصلی','callback_data'=>'evidenceHome']];
+        answerCallbackQuery($callbackId,'فقط شواهد ثبت‌شده خوانده شد.');
+        $markup=json_encode(['inline_keyboard'=>$rows],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
+        $result=editText($message_id,$body,$markup,'HTML',$admin);
+        if (!is_object($result) || ($result->ok??false)!==true) sendMessage($body,$markup,'HTML',$admin);
+    } catch (Throwable $error) {
+        error_log('achbot_attention_inspection_unavailable class='.get_class($error));
+        sendMessage('⚠️ شواهد این فهرست در دسترس نیست؛ پوشش قابل احراز نیست. از پیام اصلی رسید یا مسیر تخصصی روش پرداخت پیگیری کنید. هیچ عملیات مالی انجام نشد.',null,'HTML',$admin);
+    }
+    return;
+}
+
 // The operator recovery workbench is never available to other admins or chats.
 $bankInboxMatch=[];$bankCaseMatch=[];$bankReadMatch=[];
 $bankInbox=preg_match('/^bankReviewInbox(?:_([1-9][0-9]{0,17}))?$/D',
@@ -68,11 +138,11 @@ if ($bankInbox || $bankCase || $bankRead) {
             }
             if ($before>0)
                 $buttons[]=[['text'=>'🔝 فهرست جدیدتر','callback_data'=>'bankReviewInbox']];
-            $buttons[]=[['text'=>'📋 مرکز بررسی پرداخت‌ها','callback_data'=>'npReviewInbox']];
+            $buttons[]=[['text'=>'📋 مرکز بررسی پرداخت‌ها','callback_data'=>'attentionInbox']];
             $buttons[]=[['text'=>'🏠 مدیریت','callback_data'=>'managePanel']];
             $body="<b>🧩 سفارش‌های سرویس نیازمند تطبیق</b>\n\n".
-                "فقط سفارش‌های BUY_SUB در وضعیت پردازش/پرداخت ثبت‌شده نمایش داده می‌شوند. ".
-                "این وضعیت‌ها و رسید بانکی به‌تنهایی اثبات وصول وجه یا تحویل سرویس نیستند.\n".
+                "فقط خریدهای در پردازش یا دارای سندِ حل‌نشدهٔ عملیات ساخت نمایش داده می‌شوند. ".
+                "سابقهٔ پرداخت‌شده بدون دفتر جدید، به‌تنهایی پروندهٔ ناتمام نیست.\n".
                 "هیچ اقدامی برای ساخت، تمدید، تأیید، برگشت وجه یا تغییر وضعیت انجام نمی‌شود.";
             if (!$items) $body.="\n\nدر این صفحه پرونده‌ای پیدا نشد.";
             $bankShow($body,$buttons);
@@ -104,8 +174,8 @@ if ($bankInbox || $bankCase || $bankRead) {
             "💵 مبلغ ثبت‌شده: ".number_format((int)$case['amount'])." تومان\n".
             "📦 حساب‌های درخواستی: ".$requested." | عملیات ثبت‌شده: ".$recorded."\n".
             "💳 روش: <code>".$escRecovery($case['method'])."</code>\n".
-            "📍 وضعیت پرداخت: <code>".$escRecovery($case['payment_state'])."</code> ".
-            "(وصول وجه احراز نشده)\n";
+            "📍 وضعیت سابقه: <code>".$escRecovery($case['payment_state'])."</code>\n".
+            $case['evidence_text'];
         if ($case['payment_state']==='processing_wallet') {
             $body.="
 💳 برداشت و رزرو کیف پول: <code>".
@@ -115,7 +185,9 @@ if ($bankInbox || $bankCase || $bankRead) {
                 (int)$case['wallet_capacity_reserved']."</code>
 ";
         }
-        if (!$case['journal_complete'])
+        if ($case['historical_evidence_unavailable'])
+            $body.="ℹ️ دفتر CREATE برای این سابقه موجود نیست؛ نبود دفتر جدید اثبات عدم تحویل نیست.\n";
+        elseif (!$case['journal_complete'])
             $body.="⚠️ دفتر عملیات ناقص یا نامنطبق است؛ ردیف‌های ثبت‌نشده وضعیت نامعلوم دارند.\n";
         else
             $body.="ℹ️ کامل‌بودن تعداد ردیف‌ها اثبات تحویل حساب نیست.\n";
@@ -251,7 +323,7 @@ if ($isInbox ||
                     : "✅ <b>پروندهٔ دارای شواهد وجه و نیازمند رسیدگی پیدا نشد.</b>\n".
                       "ساخت شناسه یا فاکتور پرداخت به‌تنهایی هشدار مالی نیست.";
             } else {
-                $body="📋 <b>مرکز بررسی پرداخت‌ها</b>\n\n".
+                $body="📋 <b>شواهد تخصصی NOWPayments</b>\n\n".
                     "فقط پرونده‌های دارای شواهد وجه یا نتیجهٔ مالی نامطمئن نمایش داده می‌شوند.\n".
                     "هر صفحه حداکثر ۱۲ پرونده دارد؛ برای دیدن جزئیات یکی را انتخاب کنید.";
             }
@@ -267,7 +339,8 @@ if ($isInbox ||
             if ($hasCursor)
                 $rows[]=[['text'=>'🔝 بازگشت به فهرست جدیدتر',
                     'callback_data'=>'npReviewInbox']];
-            $rows[]=[['text'=>'🧩 سفارش‌های سرویس ناتمام',
+            $rows[]=[['text'=>'📋 بررسی همهٔ روش‌ها','callback_data'=>'attentionInbox']];
+            $rows[]=[['text'=>'🧩 عملیات ساخت نیازمند تطبیق',
                        'callback_data'=>'bankReviewInbox']];
             $rows[]=[['text'=>'🏠 مدیریت','callback_data'=>'managePanel']];
             answerCallbackQuery($callbackId,'فهرست بر اساس اطلاعات مالی ثبت‌شده است.');

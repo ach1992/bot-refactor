@@ -591,7 +591,7 @@ if(mysqli_num_rows($payInfo)==0){
                 [['text'=>'🧾 بررسی وضعیت سفارش','callback_data'=>'ps_'.$hash_id]]
             ]], JSON_UNESCAPED_UNICODE);
             try {
-                $notice=sendMessage("🧾 فاکتور سفارش <code>$hash_id</code> ثبت شد.\n"
+                $notice=sendMessage("🧾 فاکتور ثبت شد.\n".achbotPayUxReference($payParam)
                     ."پرداخت فقط پس از تأیید درگاه و ثبت نتیجه در ربات نهایی است؛ "
                     ."پردازش ممکن است بیش از چند دقیقه طول بکشد.",
                     $keyboard, 'HTML', $userId);

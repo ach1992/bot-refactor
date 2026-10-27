@@ -498,7 +498,7 @@ function getAdminKeys(){
     if ((int)$from_id === (int)$admin) {
         array_unshift($keyboard, [[
             'text'=>'📋 بررسی پرداخت‌های نیازمند رسیدگی',
-            'callback_data'=>'npReviewInbox'
+            'callback_data'=>'attentionInbox'
         ]]);
     }
     return json_encode(['inline_keyboard'=>$keyboard]);

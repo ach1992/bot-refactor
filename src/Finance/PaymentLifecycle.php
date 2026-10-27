@@ -12,7 +12,7 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
 
 function achbotPayUxTable(mysqli $db, string $name): bool {
     if (!in_array($name, ['payment_attempts','payment_transactions',
-                          'payment_message_refs'], true)) return false;
+                          'payment_message_refs','service_effects','automatic_renewal_attempts'], true)) return false;
     try {
         $result = $db->query("SHOW TABLES LIKE '".$name."'");
         return $result instanceof mysqli_result && $result->num_rows === 1;
@@ -167,6 +167,8 @@ function achbotPayUxInsertDraft(mysqli $db, int $actor, mysqli_stmt $insert): in
         if (!$insert->execute() || $insert->affected_rows!==1)
             throw new RuntimeException('draft_insert_failed');
         $draftId=(int)$insert->insert_id;
+        if ($draftId>0 && function_exists('achbotPgPinPayment'))
+            achbotPgPinPayment($db,$draftId);
         if ($draftId<=0 || !$db->commit())
             throw new RuntimeException('draft_commit_unknown');
         return $draftId;
@@ -640,6 +642,24 @@ function achbotPayUxState(array $pay, ?array $attempt): string {
     return 'awaiting_payment';
 }
 
+/** Customer/order references must originate in an authenticated persisted pay row. */
+function achbotPayUxReference(array $pay): string {
+    $hash=htmlspecialchars((string)($pay['hash_id']??''),ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8');
+    return "🆔 سفارش: <code>".$hash."</code>\n".
+        "👤 شناسهٔ تلگرام: <code>".(int)($pay['user_id']??0)."</code>\n";
+}
+
+/** Read-only reference lookup: the hash is a locator, never authentication. */
+function achbotPayUxOwnedReference(mysqli $db, string $hash, int $actor): ?array {
+    if ($actor<=0 || preg_match('/^[A-Za-z0-9_-]{1,50}$/D',$hash)!==1) return null;
+    try {
+        $stmt=$db->prepare('SELECT id,hash_id,user_id FROM pays WHERE hash_id=? AND user_id=? LIMIT 2');
+        $stmt->bind_param('si',$hash,$actor);$stmt->execute();
+        $rows=$stmt->get_result()->fetch_all(MYSQLI_ASSOC);$stmt->close();
+        return count($rows)===1?$rows[0]:null;
+    } catch (Throwable $ignored) { return null; }
+}
+
 /** Public-facing messages cannot include a raw provider link or secret. */
 function achbotPayUxStatusText(array $pay, ?array $attempt): string {
     $state = achbotPayUxState($pay,$attempt);
@@ -657,7 +677,6 @@ function achbotPayUxStatusText(array $pay, ?array $attempt): string {
         default => '🧾 فاکتور در انتظار پرداخت است',
     };
     $safe = static fn($v) => htmlspecialchars((string)$v,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8');
-    $hash = $safe($pay['hash_id'] ?? '');
     $amount = number_format((int)($pay['price'] ?? 0));
     $next = match ($state) {
         'expired' => achbotPayUxManualProvider((string)($attempt['provider']??''))
@@ -671,7 +690,7 @@ function achbotPayUxStatusText(array $pay, ?array $attempt): string {
         'needs_review' => 'فاکتور یا وجه را دوباره پرداخت نکنید؛ با شناسه سفارش از پشتیبانی پیگیری کنید.',
         default => 'تنها تا زمانی که وضعیت سفارش اجازه دهد از دکمه پرداخت استفاده کنید.',
     };
-    return "<b>".$safe($title)."</b>\n🆔 سفارش: <code>{$hash}</code>\n"
+    return "<b>".$safe($title)."</b>\n".achbotPayUxReference($pay)
         ."موضوع: ".$safe($subject)."\nمبلغ: {$amount} تومان\n\n".$safe($next);
 }
 
@@ -680,7 +699,7 @@ function achbotPayUxStatusKeyboard(string $hash): string {
     if (preg_match('/^[A-Za-z0-9_-]{1,50}$/D',$hash)) {
         $rows[] = [['text'=>'🔄 بررسی وضعیت سفارش','callback_data'=>'ps_'.$hash]];
     }
-    $rows[] = [['text'=>'🏠 منوی اصلی','callback_data'=>'mainMenu']];
+    $rows[] = [['text'=>'🏠 منوی اصلی','callback_data'=>preg_match('/^[A-Za-z0-9_-]{1,50}$/D',$hash)?'ph_'.$hash:'mainMenu']];
     return json_encode(['inline_keyboard'=>$rows],JSON_UNESCAPED_UNICODE);
 }
 

@@ -1658,7 +1658,8 @@ function achbotManualFinishEvidence(mysqli $connection, string $hashId, string $
 function achbotManualCaption(mysqli $connection, array $payInfo, string $caption): string {
     $method = achbotManualSelectedMethod($connection, $payInfo);
     $label = $method === null ? 'نیازمند بررسی' : achbotManualLabel($method);
-    $header = '🧾 روش پرداخت: <b>' . $label . "</b>\n";
+    require_once __DIR__.'/PaymentLifecycle.php';
+    $header = achbotPayUxReference($payInfo).'🧾 روش پرداخت: <b>' . $label . "</b>\n";
     if (in_array($method, ['manual_usdt','manual_trx','bank_transfer'], true)) {
         try {
             $stmt = $connection->prepare('SELECT provider,quote_amount,quote_currency,
@@ -1709,8 +1710,9 @@ function achbotManualReceiptPrompt(array $mainValues, string $method): string {
 }
 
 function achbotManualAcknowledgement(array $payInfo, string $method): string {
+    require_once __DIR__.'/PaymentLifecycle.php';
     return "📥 تصویر " . achbotManualLabel($method) . " دریافت شد.\n" .
-        "🧾 سفارش: <code>" . htmlspecialchars((string)$payInfo['hash_id'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') . "</code>\n" .
+        achbotPayUxReference($payInfo) .
         "⏳ رسید در انتظار بررسی مدیر است؛ ارسال تصویر به معنی تأیید پرداخت یا تحویل سرویس نیست.";
 }
 
@@ -1728,6 +1730,10 @@ function buildCartToCartInfoMessage(array $paymentKeys, array $mainValues, int $
     if (!in_array($method, ['bank_transfer','gift_card','manual_usdt','manual_trx'], true) ||
         $hashId === '' || !($connection instanceof mysqli)) return '';
     try {
+        require_once __DIR__.'/PaymentLifecycle.php';
+        $pay=achbotPayUxOwnedReference($connection,$hashId,$userId);
+        if (!$pay) return '';
+        $reference=achbotPayUxReference($pay);
         $stmt = $connection->prepare("SELECT provider,quote_amount,quote_currency,
             local_amount_toman,settlement_currency,checkout_url
             FROM payment_attempts WHERE order_hash=? AND provider=? LIMIT 1");
@@ -1752,7 +1758,7 @@ function buildCartToCartInfoMessage(array $paymentKeys, array $mainValues, int $
                 (float)$attempt['quote_amount'] <= 0) return '';
             $template = (string)($mainValues[$method === 'manual_trx'
                 ? 'brw_cart_to_cart_trx' : 'brw_cart_to_cart_usdt'] ?? '');
-            return strtr($template, [
+            return $reference.strtr($template, [
                 'PRICE-TOMAN-ROUND' => number_format($priceToman),
                 'PRICE-USDT' => number_format((float)$attempt['quote_amount'], 2, '.', ''),
                 'USDT-NETWORK' => htmlspecialchars($network, ENT_QUOTES, 'UTF-8'),
@@ -1769,7 +1775,7 @@ function buildCartToCartInfoMessage(array $paymentKeys, array $mainValues, int $
              trim((string)($intent['holder'] ?? '')) === '')) return '';
         $template = (string)($mainValues[$method === 'gift_card' ?
             'brw_cart_to_cart_gift' : 'brw_cart_to_cart_detail'] ?? '');
-        return strtr($template, [
+        return $reference.strtr($template, [
             'PRICE-TOMAN-ROUND' => number_format($priceToman),
             'PRICE-TOMAN' => number_format($amount),
             'PRICE-RIAL' => number_format($amount * 10),
@@ -2056,6 +2062,14 @@ function sendWithStartButton($text, $buttonText, $botUsername, $startPayload = '
     ]];
     $keyboard = json_encode(['inline_keyboard'=>$buttons], JSON_UNESCAPED_UNICODE);
 
+    // A start deep link already sends a NEW menu. Enrich evidence before send,
+    // using persisted ownership rather than a callback-supplied numeric ID.
+    if ($paymentHash!=='' && ($GLOBALS['connection']??null) instanceof mysqli) {
+        require_once __DIR__.'/PaymentLifecycle.php';
+        $pay=achbotPayUxOwnedReference($GLOBALS['connection'],$paymentHash,(int)($GLOBALS['from_id']??0));
+        if ($pay && !str_contains($text,achbotPayUxReference($pay)))
+            $text=achbotPayUxReference($pay).$text;
+    }
     $sent=sendMessage($text, $keyboard, $parseMode);
     if ($paymentHash!=='' && isset($GLOBALS['connection']) &&
         $GLOBALS['connection'] instanceof mysqli &&

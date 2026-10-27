@@ -1,6 +1,6 @@
 <?php
 /**
- * AChBot #26 — owner-only, read-only paid BUY_SUB effect inspection.
+ * AChBot #26 — owner-only, read-only payment attention and BUY_SUB effect inspection.
  *
  * This source does not send Telegram, charge/refund, mutate payment/order/
  * service_effects, issue remote CREATE/PUT/DELETE, or decide financial policy.
@@ -13,19 +13,157 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
 }
 require_once __DIR__.'/ServiceEffects.php';
 
-/** Bounded newest-to-oldest, keyset-paginated pending BUY_SUB cases. */
+require_once __DIR__.'/PaymentLifecycle.php';
+
+/** Current unresolved CREATE evidence only; absence never condemns paid history. */
+function achbotRecoveryCreateAttentionSql(mysqli $db, string $p='p'): string {
+    $claims=achbotPayUxTable($db,'payment_attempts')
+        ? "EXISTS (SELECT 1 FROM payment_attempts a WHERE a.pay_row_id=$p.id
+            AND a.stage IN ('review','checking','fulfilling'))" : '0';
+    $effects=achbotPayUxTable($db,'service_effects')
+        ? "EXISTS (SELECT 1 FROM service_effects e WHERE e.pay_row_id=$p.id
+            AND ((e.effect_kind='create' AND e.state IN ('dispatching','verified'))
+              OR (e.effect_kind IN ('wallet_hold','manual_hold') AND e.state='reserved')))" : '0';
+    return "$p.type='BUY_SUB' AND ($p.state IN ('processing','processing_wallet')
+        OR ($p.state='paid' AND (($claims) OR ($effects))))";
+}
+
+/** Bounded newest-to-oldest pending BUY_SUB cases, excluding completed history. */
 function achbotRecoveryPendingCases(mysqli $db, int $before=0): array {
     if ($before<0) throw new InvalidArgumentException('recovery_invalid_cursor');
-    $stmt=$db->prepare("SELECT id,user_id,price,agent_count,state
-        FROM pays WHERE type='BUY_SUB' AND state IN ('processing','paid','processing_wallet')
-          AND (?=0 OR id<?)
-        ORDER BY id DESC LIMIT 13");
+    $scope=achbotRecoveryCreateAttentionSql($db);
+    $stmt=$db->prepare("SELECT p.id,p.user_id,p.price,p.agent_count,p.state
+        FROM pays p WHERE ($scope) AND (?=0 OR p.id<?)
+        ORDER BY p.id DESC LIMIT 13");
     if (!$stmt) throw new RuntimeException('recovery_list_prepare_failed');
     $stmt->bind_param('ii',$before,$before);
     if (!$stmt->execute()) throw new RuntimeException('recovery_list_failed');
-    $rows=$stmt->get_result()->fetch_all(MYSQLI_ASSOC);
-    $stmt->close();
+    $rows=$stmt->get_result()->fetch_all(MYSQLI_ASSOC);$stmt->close();
     return $rows;
+}
+
+/** Unified LOCAL attention inventory. No provider reconciliation or repair.
+ * Supported shared-ledger methods/subjects only. Pure invoice creation,
+ * terminal manual approvals and completed attempts are not financial alarms.
+ * Missing newer tables narrows coverage, never fabricates historical effects.
+ */
+function achbotRecoveryAttentionSql(mysqli $db): string {
+    $ledger='0';
+    if (achbotPayUxTable($db,'payment_attempts')) {
+        // Reuse NOWPayments' funds-evidence gate, including extra-child proof.
+        $np=function_exists('achbotNpOperatorWorkSql') && achbotPayUxTable($db,'payment_transactions')
+            ? achbotNpOperatorWorkSql() : '0';
+        $ledger="EXISTS (SELECT 1 FROM payment_attempts a WHERE a.pay_row_id=p.id AND (
+            ($np) OR (a.provider='nowpayments' AND a.stage IN ('checking','fulfilling')) OR (a.provider IN ('nextpay','zarinpal','bank_transfer','gift_card','manual_usdt','manual_trx')
+              AND a.stage IN ('review','checking','fulfilling')
+              AND p.state NOT IN ('approved','auto_cart_approved','paid_with_wallet','declined','expired_have_sent')
+              AND NOT (p.state='paid' AND a.stage='review' AND a.provider IN ('bank_transfer','gift_card','manual_usdt','manual_trx')
+                AND COALESCE(a.provider_status,'') NOT IN ('fulfillment_started','fulfillment_unconfirmed','fulfillment_failed','fulfillment_needs_review')))))";
+    }
+    $create=achbotRecoveryCreateAttentionSql($db);
+    $renewal=achbotPayUxTable($db,'automatic_renewal_attempts')
+        ? "EXISTS (SELECT 1 FROM automatic_renewal_attempts r WHERE r.pay_row_id=p.id
+            AND r.stage IN ('reserved','remote_started','review'))" : '0';
+    return "(p.type IN ('BUY_SUB','RENEW_ACCOUNT','INCREASE_WALLET')
+        OR p.type LIKE 'INCREASE_DAY\_%' OR p.type LIKE 'INCREASE_VOLUME\_%')
+        AND (($ledger) OR ($create) OR ($renewal))";
+}
+
+function achbotRecoveryAttentionCases(mysqli $db, int $before=0): array {
+    if ($before<0) throw new InvalidArgumentException('recovery_invalid_cursor');
+    $scope=achbotRecoveryAttentionSql($db);
+    $stmt=$db->prepare("SELECT p.id,p.user_id,p.price,p.type,p.state FROM pays p
+        WHERE ($scope) AND (?=0 OR p.id<?) ORDER BY p.id DESC LIMIT 13");
+    $stmt->bind_param('ii',$before,$before);
+    if (!$stmt->execute()) throw new RuntimeException('recovery_attention_list_failed');
+    $rows=$stmt->get_result()->fetch_all(MYSQLI_ASSOC);$stmt->close();return $rows;
+}
+
+/** Any existing pay can be read by the separately authorized owner by ID.
+ * This lookup does not turn a completed/historical record into an open case.
+ */
+function achbotRecoveryAttentionCase(mysqli $db, int $payId): ?array {
+    $stmt=$db->prepare('SELECT * FROM pays WHERE id=? LIMIT 1');
+    $stmt->bind_param('i',$payId);$stmt->execute();
+    $pay=$stmt->get_result()->fetch_assoc();$stmt->close();
+    if (!$pay) return null;
+    $attempt=null;
+    if (achbotPayUxTable($db,'payment_attempts')) {
+        $stmt=$db->prepare('SELECT id,provider,stage,provider_status,payment_id,quote_amount,quote_currency,local_amount_toman FROM payment_attempts WHERE pay_row_id=? LIMIT 1');
+        $stmt->bind_param('i',$payId);$stmt->execute();
+        $attempt=$stmt->get_result()->fetch_assoc()?:null;$stmt->close();
+    }
+    $pay['attempt']=$attempt;
+    $pay['transactions']=[];
+    if ($attempt && achbotPayUxTable($db,'payment_transactions')) {
+        $stmt=$db->prepare('SELECT payment_id,observed_status FROM payment_transactions
+            WHERE attempt_id=? AND provider=? ORDER BY id DESC LIMIT 6');
+        $aid=(int)$attempt['id'];$provider=(string)$attempt['provider'];
+        $stmt->bind_param('is',$aid,$provider);$stmt->execute();
+        $pay['transactions']=$stmt->get_result()->fetch_all(MYSQLI_ASSOC);$stmt->close();
+    }
+    $pay['renewal']=null;
+    if ($pay['type']==='RENEW_ACCOUNT' && achbotPayUxTable($db,'automatic_renewal_attempts')) {
+        $stmt=$db->prepare('SELECT order_id,user_id,cycle_expire,new_expire,stage,reason_code
+            FROM automatic_renewal_attempts WHERE pay_row_id=? LIMIT 1');
+        $stmt->bind_param('i',$payId);$stmt->execute();
+        $pay['renewal']=$stmt->get_result()->fetch_assoc()?:null;$stmt->close();
+    }
+    // Mutable account values are context only, never proof of this payment's effect.
+    $pay['target_order']=null;
+    if ((int)($pay['order_id']??0)>0 && $pay['type']!=='INCREASE_WALLET') {
+        $stmt=$db->prepare('SELECT id,expire_date FROM orders_list WHERE id=? AND userid=? LIMIT 1');
+        $oid=(int)$pay['order_id'];$uid=(int)$pay['user_id'];
+        $stmt->bind_param('ii',$oid,$uid);$stmt->execute();
+        $pay['target_order']=$stmt->get_result()->fetch_assoc()?:null;$stmt->close();
+    }
+    return $pay;
+}
+
+/** Subject-specific evidence; never infer a payment effect from today's balance/account. */
+function achbotRecoverySubjectText(array $pay): string {
+    $safe=static fn($v)=>htmlspecialchars(substr((string)$v,0,128),ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8');
+    $out='';$attempt=$pay['attempt']??null;
+    if ($attempt) {
+        $out.="📑 مبلغِ ثبت‌شدهٔ روش پرداخت: <code>".$safe($attempt['quote_amount'])." ".$safe($attempt['quote_currency'])."</code>\n";
+        foreach (array_slice($pay['transactions']??[],0,6) as $t)
+            $out.="سند تراکنش: <code>".$safe($t['payment_id'])."</code> | مشاهدهٔ ثبت‌شده: <code>".$safe($t['observed_status'])."</code>\n";
+        $out.="مشاهدهٔ وضعیتِ روش پرداخت به‌تنهایی اثبات تسویه یا تحویل نیست.\n";
+    }
+    if ($pay['type']==='INCREASE_WALLET') {
+        return $out."اثر مورد بررسی: اعتبار همین شارژ در کیف پول. موجودی فعلی و دفتر تغییرات مدیر، سند این شارژ نیستند؛ این صفحه سند مستقلِ ماندهٔ قبل/بعد برای شارژ ندارد.\n";
+    }
+    if ($pay['type']==='BUY_SUB') return $out;
+    $kind=$pay['type']==='RENEW_ACCOUNT'?'تمدید':
+        (str_starts_with((string)$pay['type'],'INCREASE_DAY_')?'افزایش روز':'افزایش حجم');
+    $out.="اثر مورد بررسی: ".$kind." اشتراک #".(int)($pay['order_id']??0).".\n";
+    $r=$pay['renewal']??null;
+    if ($r && (int)$r['user_id']===(int)$pay['user_id'] && (int)$r['order_id']===(int)($pay['order_id']??0)) {
+        $out.="سند تمدید خودکار: <code>".$safe($r['stage'])."</code> | دلیل: <code>".$safe($r['reason_code']??'')."</code>\n".
+            "انقضای چرخه: <code>".$safe($r['cycle_expire'])."</code> | مقصد ثبت‌شده: <code>".$safe($r['new_expire'])."</code>\n";
+    } else $out.="سند مستقلِ اثر برای همین پرداخت در این صفحه موجود نیست؛ دفتر CREATE و شباهت سوابق تغییرات، اثبات این تمدید/افزایش نیستند.\n";
+    if ($pay['target_order']??null)
+        $out.="انقضای فعلیِ اشتراک متعلق به همین مشتری: <code>".$safe($pay['target_order']['expire_date'])."</code>؛ این مقدار قابل تغییر، سند نتیجهٔ این پرداخت نیست.\n";
+    else $out.="اشتراک فعلی با مالکیت این مشتری قابل تطبیق نیست؛ از نبود آن، شکست عملیات تاریخی را نتیجه نگیرید.\n";
+    return $out;
+}
+
+/** Payment recording and fulfillment are independent, conservative facts. */
+function achbotRecoveryEvidenceText(array $pay, ?array $attempt): string {
+    $state=(string)($pay['state']??$pay['payment_state']??'');
+    $stage=(string)($attempt['stage']??'');
+    $status=(string)($attempt['provider_status']??'');
+    $terminal=in_array($state,['paid','approved','auto_cart_approved','paid_with_wallet'],true);
+    $funds=$terminal ? 'پرداخت در سابقهٔ سامانه ثبت شده است؛ این صفحه تأیید مالی تازه‌ای انجام نمی‌دهد.'
+        : ($state==='processing_wallet' ? 'برداشت/رزرو کیف پول نیازمند تطبیق با سند ثبت‌شده است.'
+        : ($state==='have_sent' ? 'رسید دریافت شده؛ تصمیم انسانی هنوز ثبت نشده است.'
+        : 'نتیجهٔ پرداخت از شواهد این صفحه قطعی نیست؛ سند روش پرداخت را تطبیق دهید.'));
+    $effect=$stage==='done'
+        ? ($status==='compensated' ? 'جبران محلی در دفتر روش پرداخت ثبت شده؛ آن را تحویل سرویس تلقی نکنید.'
+           : 'نتیجهٔ نهایی محلی در دفتر روش پرداخت ثبت شده است؛ این پرونده هشدارِ باز نیست.')
+        : ($terminal && $attempt===null ? 'دفتر جدید روش پرداخت برای این سابقه موجود نیست؛ نبود آن نشانهٔ عدم پرداخت یا عدم تحویل نیست.'
+           : 'تحویل/اثر را جداگانه با سند مختص همین سفارش بررسی کنید؛ عملیات را خودکار تکرار نکنید.');
+    return "💳 پرداخت: ".$funds."\n📦 نتیجه: ".$effect."\n";
 }
 
 /**
@@ -36,7 +174,7 @@ function achbotRecoveryCase(mysqli $db, int $payId, int $afterOrdinal=0): ?array
     if ($payId<=0 || $afterOrdinal<0)
         throw new InvalidArgumentException('recovery_invalid_subject');
     achbotEffectRequireUniqueLine($db);
-    $stmt=$db->prepare("SELECT id,user_id,price,agent_count,state,server_id,
+    $stmt=$db->prepare("SELECT id,hash_id,user_id,type,price,agent_count,state,server_id,
             plan_id FROM pays
         WHERE id=? AND type='BUY_SUB' AND state IN ('processing','paid','processing_wallet')
         LIMIT 1");
@@ -48,7 +186,7 @@ function achbotRecoveryCase(mysqli $db, int $payId, int $afterOrdinal=0): ?array
     if (!$pay) return null;
 
     // Do not guess funds from a processing/paid label or a bank screenshot.
-    $stmt=$db->prepare("SELECT provider,stage FROM payment_attempts
+    $stmt=$db->prepare("SELECT provider,stage,provider_status FROM payment_attempts
         WHERE pay_row_id=? LIMIT 1");
     if (!$stmt) throw new RuntimeException('recovery_method_prepare_failed');
     $stmt->bind_param('i',$payId);
@@ -124,6 +262,9 @@ function achbotRecoveryCase(mysqli $db, int $payId, int $afterOrdinal=0): ?array
     }
     return [
         'pay_id'=>(int)$pay['id'],'user_id'=>(int)$pay['user_id'],
+        'hash_id'=>(string)$pay['hash_id'],
+        'evidence_text'=>achbotRecoveryEvidenceText($pay,$method?:null),
+        'historical_evidence_unavailable'=>$recorded===0 && $pay['state']==='paid',
         'amount'=>(int)$pay['price'],'requested_accounts'=>$requested,
         'recorded_accounts'=>$recorded,'journal_complete'=>$complete,
         'journal_assurance'=>'current_mutable_payment_count_only',

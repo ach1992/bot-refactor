@@ -63,7 +63,7 @@ if (preg_match('/^ps_([A-Za-z0-9_-]{1,50})$/D', $data, $statusMatch)) {
     if (!in_array($uiState,['expired','declined','payment_recorded'],true)) {
         $actions[]=[['text'=>'🔄 بررسی دوباره وضعیت','callback_data'=>'ps_'.$hashId]];
     }
-    $actions[]=[['text'=>'🏠 منوی اصلی','callback_data'=>'mainMenu']];
+    $actions[]=[['text'=>'🏠 منوی اصلی','callback_data'=>'ph_'.$hashId]];
     $keyboard=inlineKeyboard($actions);
     answerCallbackQuery($callbackId, "وضعیت سفارش از اطلاعات ثبت‌شده خوانده شد.");
     // The clicked Telegram message is our canonical status card; never
@@ -309,8 +309,7 @@ if (is_string($data) && str_starts_with($data, 'prePayCheck_')) {
             ? '⏳ پردازش رمزارزی ممکن است بیش از چند دقیقه طول بکشد.'
             : '⚠️ بازگشت از درگاه، به‌تنهایی تأیید مالی نیست.';
         $sent = sendMessage(
-            "🧾 <b>فاکتور آماده است</b>\n🆔 شناسه: <code>".$hash_id.
-            "</code>\n".$extra."\nپس از پرداخت، وضعیت سفارش را در ربات بررسی کنید.",
+            "🧾 <b>فاکتور آماده است</b>\n".achbotPayUxReference($payInfo).$extra."\nپس از پرداخت، وضعیت سفارش را در ربات بررسی کنید.",
             json_encode($button,JSON_UNESCAPED_UNICODE),'HTML',$from_id
         );
         achbotPayUxTrackMessage($connection,(int)$payInfo['id'],(int)$from_id,$sent);

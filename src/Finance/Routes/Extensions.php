@@ -833,19 +833,21 @@ if (preg_match('/^confirmChangePlan_(\d+)_(\d+)/', $data, $match)) {
 	}
     exit;
 }
-if (preg_match('/^increaseAVolume(.*)/', $data, $match)) {
+if (preg_match('/^increaseAVolume([1-9][0-9]{0,9})$/D', $data, $match)) {
     // بررسی تاریخ انقضا
-    $stmt = $connection->prepare("SELECT `expire_date` FROM `orders_list` WHERE `id` = ?");
+    $stmt = $connection->prepare("SELECT * FROM `orders_list` WHERE `id` = ?");
     $stmt->bind_param("i", $match[1]);
     $stmt->execute();
     $orderInfo = $stmt->get_result()->fetch_assoc();
     $stmt->close();
-    if (!$orderInfo || !achbotSupportsMarzbanOrder($connection, (int)$orderInfo['id'])) {
+    if (!$orderInfo || (int)$orderInfo['userid']!==(int)$from_id ||
+        !achbotSupportsMarzbanOrder($connection, (int)$orderInfo['id'])) {
         alert("⛔️ افزایش حجم یا مدت برای این اشتراک در حال حاضر امکان‌پذیر نیست.", true);
         return;
     }
 
 
+    $agentBought = (bool)$orderInfo['agent_bought'];
     $expireDate = (int) $orderInfo['expire_date']; // تبدیل به عدد صحیح
     $currentDate = time();
 
@@ -856,7 +858,7 @@ if (preg_match('/^increaseAVolume(.*)/', $data, $match)) {
     }
 	
     // اگر تاریخ انقضا کمتر از تاریخ و ساعت فعلی باشد
-    if ($expireDate < $currentDate) {
+    if ($expireDate <= $currentDate) {
         alert("📆 اشتراک شما منقضی شده است. لطفاً آن را تمدید کنید تا بتوانید افزایش حجم دهید.");
         exit;
     }
@@ -872,6 +874,8 @@ if (preg_match('/^increaseAVolume(.*)/', $data, $match)) {
     }
     $keyboard = [];
     while ($cat = $res->fetch_assoc()) {
+        if ((int)$cat['price']<0 || !is_numeric($cat['volume']) ||
+            !is_finite((float)$cat['volume']) || (float)$cat['volume']<=0) continue;
         $id = $cat['id'];
         $title = $cat['volume'];
         $price = $cat['price'];
@@ -897,13 +901,17 @@ if (preg_match('/^increaseAVolume(.*)/', $data, $match)) {
     ]));
 }
 
-if(preg_match('/increaseVolumePlan(?<orderId>.+)_(?<volumeId>.+)/',$data,$match)){
+if(preg_match('/^increaseVolumePlan(?<orderId>[1-9][0-9]{0,9})_(?<volumeId>[1-9][0-9]{0,9})$/D',$data,$match)){
     $data = str_replace('increaseVolumePlan','',$data);
     $stmt = $connection->prepare("SELECT * FROM `increase_plan` WHERE `id` = ?");
     $stmt->bind_param("i", $match['volumeId']);
     $stmt->execute();
     $res = $stmt->get_result()->fetch_assoc();
     $stmt->close();
+    if (!$res || (int)$res['price']<0 || !is_numeric($res['volume']) || !is_finite((float)$res['volume']) || (float)$res['volume']<=0) {
+        alert('پلن حجمی در دسترس نیست؛ دوباره از منوی اشتراک انتخاب کنید.',true);
+        return;
+    }
     $planprice = $res['price'];
     $plangb = $res['volume'];
 
@@ -912,11 +920,16 @@ if(preg_match('/increaseVolumePlan(?<orderId>.+)_(?<volumeId>.+)/',$data,$match)
     $stmt->execute();
     $orderInfo = $stmt->get_result()->fetch_assoc();
     $stmt->close();
-    if (!$orderInfo || !achbotSupportsMarzbanOrder($connection, (int)$orderInfo['id'])) {
+    if (!$orderInfo || (int)$orderInfo['userid']!==(int)$from_id ||
+        !achbotSupportsMarzbanOrder($connection, (int)$orderInfo['id'])) {
         alert("⛔️ افزایش حجم یا مدت برای این اشتراک در حال حاضر امکان‌پذیر نیست.", true);
         return;
     }
 
+    if ((int)$orderInfo['expire_date']<=time()) {
+        alert('📆 اشتراک شما منقضی شده است. ابتدا آن را تمدید کنید.',true);
+        return;
+    }
     $agentBought = $orderInfo['agent_bought'];
  
     if($agentBought == true){
