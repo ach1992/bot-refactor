@@ -5,6 +5,8 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     exit;
 }
 
+require_once __DIR__.'/../Panel/ProviderRuntime.php';
+
 if (!function_exists('payTypeToDescription')) {
     function payTypeToDescription($payType)
     {
@@ -604,6 +606,10 @@ function achbotAutoBankClaim(mysqli $connection, array $seen): bool {
             $connection->rollback();
             return false;
         }
+        if (preg_match('/^INCREASE_(?:DAY|VOLUME)_/',(string)$pay['type']) &&
+            achbotAddonWholeUnits($connection,(string)$pay['type'],true)===null) {
+            $connection->rollback();return false;
+        }
         // Do not classify a failed ledger lookup as a legacy card receipt.
         $stmt = $connection->prepare('SELECT * FROM payment_attempts
             WHERE pay_row_id=? LIMIT 1 FOR UPDATE');
@@ -740,8 +746,7 @@ function achbotAutoBankEditPreflight(mysqli $db, array $pay, string $kind,
             $exists=$quote->execute();
             $value=$exists?$quote->get_result()->fetch_assoc():null;
             $quote->close();
-            if (!$value || !is_numeric($value['volume']) ||
-                (float)$value['volume']!==(float)$units) return false;
+            if (!$value || achbotWholeServiceUnits($value['volume'],$kind==='day'?36500:achbotServiceVolumeMax())!==$units) return false;
         }
         if ($orderId<=0) return false;
         $orderStmt=$db->prepare("SELECT userid,fileid,server_id,inbound_id,
@@ -938,8 +943,7 @@ function achbotAutoBankFinishEdit(mysqli $db, array $pay,
             $ok=$quote->execute();
             $row=$ok?$quote->get_result()->fetch_assoc():null;
             $quote->close();
-            if (!$row || !is_numeric($row['volume']) ||
-                (float)$row['volume']!==(float)$units) {
+            if (!$row || achbotWholeServiceUnits($row['volume'],$kind==='day'?36500:achbotServiceVolumeMax())!==$units) {
                 $db->rollback();return false;
             }
         }

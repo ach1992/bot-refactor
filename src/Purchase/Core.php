@@ -495,13 +495,7 @@ if (!function_exists('achbotSupportsPaymentSubject')) {
                 $connection, $oid, $pid > 0 ? $pid : null, $uid > 0 ? $uid : null, $lock
             )) return false;
             if (!empty($pay['order_id']) && (int)$pay['order_id'] !== $oid) return false;
-            $table = $match[1] === 'DAY' ? 'increase_day' : 'increase_plan';
-            $stmt = $connection->prepare("SELECT `id` FROM `$table` WHERE `id` = ? LIMIT 1".($lock?' FOR UPDATE':''));
-            $stmt->bind_param('i', $addon);
-            $stmt->execute();
-            $exists = (bool)$stmt->get_result()->fetch_assoc();
-            $stmt->close();
-            return $exists;
+            return achbotAddonWholeUnits($connection,$type,$lock)!==null;
         }
         return false;
     }

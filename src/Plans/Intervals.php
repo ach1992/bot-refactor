@@ -51,8 +51,9 @@ if($data=='addNewDayPlan' and ($from_id == $admin || $userInfo['isAdmin'] == tru
  ",$cancelKey);exit;
 }
 if($userInfo['step'] == "addNewDayPlan" and $text != $buttonValues['cancel'] && ($from_id == $admin || $userInfo['isAdmin'] == true)) {
-    $input = explode('-',$text); 
-    $volume = $input[0];
+    $input = explode('-',$text);
+    $volume=achbotWholeServiceUnits($input[0]??null,achbotServiceVolumeMax());
+    if (count($input)!==2 || $volume===null) {sendMessage('حجم را به گیگابایت کامل وارد کنید؛ مقدار اعشاری پشتیبانی نمی‌شود.',$cancelKey);return;}
     $price = $input[1];
     $stmt = $connection->prepare("INSERT INTO `increase_day` VALUES (NULL, ?, ?)");
     $stmt->bind_param("ii", $volume, $price);
@@ -245,15 +246,16 @@ if($data=='addNewVolumePlan' and ($from_id == $admin || $userInfo['isAdmin'] == 
     sendMessage("حجم و قیمت آن را بصورت زیر وارد کنید:
 10-30000
 
-مقدار اول حجم (10) گیگابایت
+مقدار اول حجم صحیح و کامل (10) گیگابایت؛ مقدار اعشاری پشتیبانی نمی‌شود.
 مقدار دوم قیمت (30000) تومان
  ",$cancelKey);
  exit;
 }
 if($userInfo['step'] == "addNewVolumePlan" and $text != $buttonValues['cancel'] && ($from_id == $admin || $userInfo['isAdmin'] == true)) {
-    $input = explode('-',$text); 
-    $volume = $input[0];
-    $price = $input[1];
+    $input=explode('-',$text);
+    $volume=achbotWholeServiceUnits($input[0]??null,achbotServiceVolumeMax());
+    if (count($input)!==2 || $volume===null) {sendMessage('حجم را به گیگابایت کامل وارد کنید؛ مقدار اعشاری پشتیبانی نمی‌شود.',$cancelKey);return;}
+    $price=$input[1];
     $stmt = $connection->prepare("INSERT INTO `increase_plan` VALUES (NULL, ? ,?)");
     $stmt->bind_param("ii",$volume,$price);
     $stmt->execute();
@@ -353,13 +355,15 @@ if(preg_match('/^changeVolumePlanPrice(\d+)/',$userInfo['step'],$match) and $tex
 if(preg_match('/^changeVolumePlanVolume(\d+)/',$data) and ($from_id == $admin || $userInfo['isAdmin'] == true)){
     setUser($data);
     delMessage();
-    sendMessage("حجم جدید را وارد کنید:", $cancelKey);
+    sendMessage('حجم جدید را به گیگابایت کامل وارد کنید؛ مقدار اعشاری پشتیبانی نمی‌شود.',$cancelKey);
     exit;
 }
 if(preg_match('/^changeVolumePlanVolume(\d+)/',$userInfo['step'], $match) and $text != $buttonValues['cancel'] && ($from_id == $admin || $userInfo['isAdmin'] == true)) {
     $pid=$match[1];
+    $volume=achbotWholeServiceUnits($text,achbotServiceVolumeMax());
+    if ($volume===null) {sendMessage('حجم را به گیگابایت کامل وارد کنید؛ مقدار اعشاری پشتیبانی نمی‌شود.',$cancelKey);return;}
     $stmt = $connection->prepare("UPDATE `increase_plan` SET `volume` = ? WHERE `id` = ?");
-    $stmt->bind_param("ii", $text, $pid);
+    $stmt->bind_param("ii", $volume, $pid);
     $stmt->execute();
     $stmt->close();
     sendMessage("✅ عملیات با موفقیت انجام شد.",$removeKeyboard);

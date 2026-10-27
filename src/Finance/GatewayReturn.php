@@ -1741,7 +1741,8 @@ function achbotPerformPaymentEffect($payRowId, $gateType, &$effectStage = null) 
         $res = $stmt->get_result()->fetch_assoc();
         $stmt->close();
 
-        $plusVolume = (int)$res['volume'];
+        $plusVolume = achbotWholeServiceUnits($res['volume'],achbotServiceVolumeMax());
+        if ($plusVolume===null) throw new RuntimeException('unsupported_service_units');
 
         [$srvInfo, $srvConfig] = getServerInfoAndConfig($connection, $server_id);
         $serverType = $srvConfig['type'] ?? '';

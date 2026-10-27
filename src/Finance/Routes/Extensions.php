@@ -345,7 +345,8 @@ if (preg_match('/approveIncreaseDay(.*)/', $data, $match) && ($from_id == $admin
         }
 
         $price  = intval($res['price']);
-        $volume = intval($res['volume']); 
+        $volume = achbotWholeServiceUnits($res['volume'],36500);
+        if ($volume===null) throw new RuntimeException('unsupported_service_units');
 
         $stmt = $connection->prepare("SELECT * FROM server_config WHERE id=?");
         $stmt->bind_param("i", $server_id);
@@ -568,7 +569,8 @@ if(is_string($data) && strlen($data) <= 64 && preg_match('/\ApayIncreaseDayWithW
         }
 
         $price  = intval($payParam['price']);
-        $volume = intval($res['volume']);
+        $volume = achbotWholeServiceUnits($res['volume'],36500);
+        if ($volume===null) throw new RuntimeException('unsupported_service_units');
 
         $stmt = $connection->prepare("SELECT id,wallet FROM users
             WHERE userid=? FOR UPDATE");
@@ -874,8 +876,7 @@ if (preg_match('/^increaseAVolume([1-9][0-9]{0,9})$/D', $data, $match)) {
     }
     $keyboard = [];
     while ($cat = $res->fetch_assoc()) {
-        if ((int)$cat['price']<0 || !is_numeric($cat['volume']) ||
-            !is_finite((float)$cat['volume']) || (float)$cat['volume']<=0) continue;
+        if ((int)$cat['price']<0 || achbotWholeServiceUnits($cat['volume'],achbotServiceVolumeMax())===null) continue;
         $id = $cat['id'];
         $title = $cat['volume'];
         $price = $cat['price'];
@@ -908,7 +909,7 @@ if(preg_match('/^increaseVolumePlan(?<orderId>[1-9][0-9]{0,9})_(?<volumeId>[1-9]
     $stmt->execute();
     $res = $stmt->get_result()->fetch_assoc();
     $stmt->close();
-    if (!$res || (int)$res['price']<0 || !is_numeric($res['volume']) || !is_finite((float)$res['volume']) || (float)$res['volume']<=0) {
+    if (!$res || (int)$res['price']<0 || achbotWholeServiceUnits($res['volume'],achbotServiceVolumeMax())===null) {
         alert('پلن حجمی در دسترس نیست؛ دوباره از منوی اشتراک انتخاب کنید.',true);
         return;
     }
@@ -1208,7 +1209,8 @@ if (preg_match('/approveIncreaseVolume(.*)/', $data, $match) && ($from_id == $ad
         }
 
         $price  = intval($res['price']);
-        $volume = intval($res['volume']);
+        $volume = achbotWholeServiceUnits($res['volume'],achbotServiceVolumeMax());
+        if ($volume===null) throw new RuntimeException('unsupported_service_units');
 
         $stmt = $connection->prepare("SELECT * FROM server_config WHERE id=?");
         $stmt->bind_param("i", $server_id);
@@ -1431,7 +1433,8 @@ if(is_string($data) && strlen($data) <= 64 && preg_match('/\ApayIncreaseWithWall
         }
 
         $price  = intval($payParam['price']);
-        $volume = intval($res['volume']);
+        $volume = achbotWholeServiceUnits($res['volume'],achbotServiceVolumeMax());
+        if ($volume===null) throw new RuntimeException('unsupported_service_units');
 
         $stmt = $connection->prepare("SELECT id,wallet FROM users
             WHERE userid=? FOR UPDATE");

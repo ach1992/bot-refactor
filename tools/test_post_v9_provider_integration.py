@@ -120,6 +120,15 @@ achbotGiftPhysicalTarget($db,2));break;
 case 'link':
 $db->begin_transaction();achbotLinkPaidAccountEffect($db,(int)$spec['effect'],91);$db->commit();
 $out=achbotProviderUser(2,'fixture_user');break;
+case 'rawedit':
+$raw=$spec['value'];
+if ($raw==='@NAN') $raw=NAN;
+elseif ($raw==='@INF') $raw=INF;
+elseif ($raw==='@NEG_INF') $raw=-INF;
+$change=['remark'=>'fixture_user','operation_key'=>'units:'.(int)$spec['source'],$spec['field']=>$raw];
+if ($spec['field']==='both_volume') {$change['volume']=1;$change['plus_volume']=1;}
+if ($spec['field']==='both_days') {$change['days']=1;$change['plus_day']=1;}
+$out=achbotApplyServiceEdit($db,2,$change);break;
 case 'edit':$out=achbotApplyServiceEdit($db,2,array_merge(['remark'=>'fixture_user','pay_id'=>$spec['pay']],$spec['change']));break;
 case 'action':
 $GLOBALS['update']=(object)['update_id'=>$spec['source']];
@@ -191,6 +200,18 @@ def main():
   expire=r['out'][0]['expire']
   sql("INSERT INTO orders_list(id,userid,token,transid,fileid,server_id,inbound_id,remark,uuid,protocol,expire_date,link,amount,status,date) VALUES(91,1001,'','',7,2,0,'fixture_user','native-placeholder','vless',"+str(expire)+",'[]',100,1,'fixture')")
   r=call('link',effect=effect);yes(r['out']['id']==17 and r['out']['provider']=='pasarguard','verified_account_links_order_by_native_id')
+  invalid_units=[('plus_volume',0.5),('plus_volume','1.25'),('plus_volume','0.1'),
+   ('volume',0.5),('plus_day',0.5),('days','1.2'),('plus_volume',0),('plus_volume',-1),
+   ('volume',None),('plus_volume',True),('plus_volume',[]),('plus_volume',{}),
+   ('plus_volume','not-a-number'),('plus_volume','NaN'),('plus_volume','INF'),
+   ('plus_volume','1e309'),('plus_volume',2147483648),('days',36501),
+   ('plus_volume','@NAN'),('plus_volume','@INF'),('plus_volume','@NEG_INF'),
+   ('both_volume',1),('both_days',1)]
+  for index,(field,value) in enumerate(invalid_units):
+   requests=len(server.trace);writes=server.write_count
+   before=sql("SELECT * FROM provider_accounts WHERE order_id=91;SELECT userid,wallet FROM users ORDER BY userid;SELECT id,state,price FROM pays ORDER BY id")
+   result=call('rawedit',source=5000+index,field=field,value=value)
+   yes(result['out']['success'] is False and len(server.trace)==requests and server.write_count==writes and sql("SELECT * FROM provider_accounts WHERE order_id=91;SELECT userid,wallet FROM users ORDER BY userid;SELECT id,state,price FROM pays ORDER BY id")==before,'invalid_unit_'+str(index)+'_rejects_before_native_GET_claim_or_money_change')
   view=call('view',buttons=buttons)['out'];keys=view['keyboard']
   yes('https://sub.example.invalid/token' in view['msg'] and 'vless://native-identity' in view['msg'],'actual_pg_view_uses_native_subscription_and_links')
   for callback in ['renewAccountAsk91','increaseAVolume91','increaseADay91','switchLocation91','changAccountConnectionLink91','showQrConfig91','showQrSub91']:
@@ -367,6 +388,23 @@ def main():
   writes=server.write_count
   yes(call('action',action='toggle',source=101)['out']['success'] is False and server.write_count==writes,'nonadjacent_old_mutation_key_cannot_repeat')
 
+  before_groups=copy.deepcopy(server.user['group_ids']);before_status=server.user['status']
+  quota=server.user['data_limit']
+  result=call('rawedit',source=5100,field='plus_volume',value=1.0)
+  yes(result['out']['success'] is True and server.user['data_limit']==quota+1073741824 and server.user['group_ids']==before_groups and server.user['status']==before_status,'whole_float_unit_remains_exact_native_GiB')
+  result=call('rawedit',source=5101,field='volume',value=0)
+  yes(result['out']['success'] is True and server.user['data_limit']==0 and server.user['used_traffic']==0 and server.user['group_ids']==before_groups,'explicit_zero_replacement_preserves_native_unlimited_semantics')
+  writes=server.write_count
+  result=call('rawedit',source=5102,field='plus_volume',value=1)
+  yes(result['out']['success'] is False and server.write_count==writes and server.user['data_limit']==0,'current_unlimited_addon_refuses_before_first_write')
+  sql("UPDATE provider_accounts SET state='linked' WHERE order_id=91")
+  result=call('rawedit',source=5103,field='volume',value=2)
+  yes(result['out']['success'] is True and server.user['data_limit']==2147483648 and server.user['group_ids']==before_groups,'whole_replacement_from_unlimited_still_verified')
+  server.user['data_limit']=9223372036854775807;writes=server.write_count
+  result=call('rawedit',source=5104,field='plus_volume',value=1)
+  yes(result['out']['success'] is False and server.write_count==writes and server.user['data_limit']==9223372036854775807,'integer_native_addition_overflow_refused_before_first_write')
+  server.user['data_limit']=2147483648
+  sql("UPDATE provider_accounts SET state='linked' WHERE order_id=91")
   yes(call('action',action='delete',source=105)['out']['success'] is True and server.user is None,'native_delete_requires_by_id_404')
   writes=server.write_count;yes(call('action',action='delete',source=105)['out']['success'] is False and server.write_count==writes,'deleted_identity_cannot_repeat')
   r=call('groups',groups='2,5,2');assert 'out' in r,r;yes(r['out']==[2,5],'admin_groups_are_native_validated')

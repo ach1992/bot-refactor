@@ -264,7 +264,8 @@ if($botState['cartToCartAutoAcceptState']=="on"){
             $res = $stmt->get_result()->fetch_assoc();
             $stmt->close();
             $price = $payInfo['price'];
-            $volume = $res['volume'];
+            $volume = achbotWholeServiceUnits($res['volume'],achbotServiceVolumeMax());
+            if ($volume===null) throw new RuntimeException('unsupported_service_units');
             
                 $stmt = $connection->prepare("SELECT * FROM server_config WHERE id=?");
                 $stmt->bind_param("i", $server_id);

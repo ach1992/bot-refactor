@@ -137,3 +137,26 @@ is never automatically pruned, reset or reconstructed to authorize a retry.
 This does not claim protection against a fully privileged operator manually
 rewriting the database. Existing-account operations preserve current remote
 Groups; initial CREATE still uses its pinned quote Groups.
+
+
+## Whole-unit service edits
+
+The existing accounting contract supports whole days and whole GiB only.
+`increase_plan.volume` is FLOAT, but `pays.volume` and
+`increase_order.volume` are INT; the current Marzban adapter explicitly
+refuses fractional units rather than silently truncating them. The same
+contract applies to native service edits. No new fractional rounding,
+precision migration or accounting policy is introduced here.
+
+Pure unit/type/finiteness/bounds validation happens before a native account
+claim or provider GET. Current quota and expiry are observed and calculated
+only under the durable account claim. Explicit zero quota replacement remains
+unlimited; adding volume to current unlimited service refuses before any
+write and retains the review fence. Addition uses checked integer arithmetic.
+
+Unsupported fractional add-on rows are hidden from new selections and refused
+before new quote/payment/wallet claims. Manual and scheduled preflight recheck
+raw units before casts; existing invoice, money and service evidence is not
+rewritten or automatically refunded. Existing addon invoices retain their
+historical ID-based unit reference; this change does not invent original-unit
+evidence or perform a compatibility backfill when a mutable plan later changes.

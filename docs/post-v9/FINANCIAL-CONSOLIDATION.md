@@ -1040,3 +1040,21 @@ does not imply such protection for edits. Durable post-crash reconciliation
 remains a separately gated Issue #26 requirement. Never infer success from
 remote account counts. No installed database or real provider operation was
 performed for this source-only change.
+
+
+### Whole-unit admission clarification (next-release correction)
+
+A FLOAT add-on catalogue column is not proof of supported fractional
+fulfillment. Existing `pays.volume` and `increase_order.volume` are INT,
+and `src/Panel/Accounts.php` explicitly rejects non-whole days/GB before
+PUT/reset. Entry-only tests that displayed 2.5 GiB did not prove settlement;
+that earlier positive-fixture expectation is superseded by whole-unit
+admission and explicit unsupported-fraction negatives.
+
+New fractional selections cannot create a quote, wallet debit, payment claim
+or provider effect. Raw units are revalidated at locked/manual/scheduled/hosted
+boundaries before integer conversion. Existing fractional/unprovable invoices
+remain reviewable without rewriting prices, historic rows or pinned financial
+evidence, and without an automatic debit, provider write, refund or backfill.
+This does not add immutable original-unit proof to legacy ID-based add-on
+invoices; a precision/accounting or compatibility redesign remains separate.

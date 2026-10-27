@@ -359,26 +359,52 @@ function achbotPgFinishMutation(mysqli $db,array $ctx,array $intent,array $resul
     $s->bind_param('ssis',$state,$json,$id,$key);
     if (!$s->execute() || $s->affected_rows!==1) throw new RuntimeException('pg_mutation_finish_unknown');$s->close();
 }
+/** Existing shared accounting stores whole days/GiB; never round a quote. */
+function achbotWholeServiceUnits($raw,int $max,bool $allowZero=false): ?int {
+    if (!(is_int($raw)||is_float($raw)||is_string($raw)) || !is_numeric($raw)) return null;
+    $number=(float)$raw;
+    if (!is_finite($number) || $number!==floor($number) ||
+        $number<($allowZero?0:1) || $number>$max) return null;
+    return (int)$number;
+}
+function achbotServiceVolumeMax(): int {return min(2147483647,intdiv(PHP_INT_MAX,1073741824));}
+function achbotAddonWholeUnits(mysqli $db,string $type,bool $lock=false): ?int {
+    if (preg_match('/^INCREASE_(DAY|VOLUME)_([1-9][0-9]*)_([1-9][0-9]*)$/D',$type,$m)!==1) return null;
+    $table=$m[1]==='DAY'?'increase_day':'increase_plan';$id=(int)$m[3];
+    $s=$db->prepare("SELECT volume FROM $table WHERE id=?".($lock?' FOR UPDATE':''));
+    if (!$s) return null;
+    $s->bind_param('i',$id);$ok=$s->execute();$row=$ok?$s->get_result()->fetch_assoc():null;$s->close();
+    return $row?achbotWholeServiceUnits($row['volume'],$m[1]==='DAY'?36500:achbotServiceVolumeMax()):null;
+}
+/** Pure validation runs before an account claim or provider GET. */
+function achbotPgEditInputUnits(array $change): array {
+    $units=[];
+    foreach (['days','plus_day','volume','plus_volume'] as $field) {
+        if (!array_key_exists($field,$change)) continue;
+        $days=in_array($field,['days','plus_day'],true);
+        $value=achbotWholeServiceUnits($change[$field],$days?36500:achbotServiceVolumeMax(),$field==='volume');
+        if ($value===null) throw new RuntimeException('pg_edit_units_invalid');
+        $units[$field]=$value;
+    }
+    if (!$units || isset($units['days'],$units['plus_day']) || isset($units['volume'],$units['plus_volume']))
+        throw new RuntimeException('pg_edit_units_invalid');
+    return $units;
+}
 /** Pure absolute entitlement calculation; provider Groups are never replaced on renewal. */
 function achbotPgEditChanges(array $user,array $change,?int $clock=null): array {
     $now=$clock??time();$expire=$user['expire'];$bytes=$user['data_limit'];
     if (!is_int($expire) || $expire<=0 || !is_int($bytes) || $bytes<0)
         throw new RuntimeException('pg_entitlement_not_finite');
-    $whole=static function($raw,int $max,bool $zero=false): int {
-        if ((!is_int($raw) && (!is_string($raw) || preg_match('/^(0|[1-9][0-9]*)$/D',$raw)!==1)) ||
-            filter_var($raw,FILTER_VALIDATE_INT)===false || (int)$raw<($zero?0:1) || (int)$raw>$max)
-            throw new RuntimeException('pg_edit_units_invalid');
-        return (int)$raw;
-    };
+    $units=achbotPgEditInputUnits($change);
     $out=[];
-    if (isset($change['days'])) $out['expire']=$now+86400*$whole($change['days'],36500);
-    elseif (isset($change['plus_day'])) $out['expire']=max($expire,$now)+86400*$whole($change['plus_day'],36500);
+    if (isset($change['days'])) $out['expire']=$now+86400*$units['days'];
+    elseif (isset($change['plus_day'])) $out['expire']=max($expire,$now)+86400*$units['plus_day'];
     else $out['expire']=$expire;
     if ($out['expire']>2147483647) throw new RuntimeException('pg_edit_expire_overflow');
-    if (isset($change['volume'])) $out['data_limit']=1073741824*$whole($change['volume'],intdiv(PHP_INT_MAX,1073741824),true);
+    if (isset($change['volume'])) $out['data_limit']=1073741824*$units['volume'];
     elseif (isset($change['plus_volume'])) {
         if ($bytes===0) throw new RuntimeException('pg_unlimited_volume_extension');
-        $extra=1073741824*$whole($change['plus_volume'],intdiv(PHP_INT_MAX,1073741824));
+        $extra=1073741824*$units['plus_volume'];
         if ($bytes>PHP_INT_MAX-$extra) throw new RuntimeException('pg_edit_volume_overflow');
         $out['data_limit']=$bytes+$extra;
     } else $out['data_limit']=$bytes;
@@ -388,6 +414,7 @@ function achbotPgEditChanges(array $user,array $change,?int $clock=null): array 
 }
 function achbotPgServiceEdit(mysqli $db,int $serverId,array $change,?array $giftTarget=null): object {
     try {
+        $requestUnits=achbotPgEditInputUnits($change);
         $ctx=achbotPgRemarkContext($db,$serverId,$change['remark']);
         if ($giftTarget!==null && !achbotGiftTargetMatches($db,$serverId,$giftTarget))
             throw new RuntimeException('pg_gift_target_changed');
@@ -395,7 +422,7 @@ function achbotPgServiceEdit(mysqli $db,int $serverId,array $change,?array $gift
         $key=achbotPgOperationKey('edit',$change);
         // Own the durable account fence BEFORE observing limits. A competing
         // completed edit is then included in this request's absolute arithmetic.
-        $intent=achbotPgBeginMutation($db,$ctx,$key,'edit',['phase'=>'claimed']);
+        $intent=achbotPgBeginMutation($db,$ctx,$key,'edit',['phase'=>'claimed','requested_units'=>$requestUnits]);
         $read=achbotPgRead($ctx['panel'],$ctx['identity']);
         if (($read['success']??false)!==true) throw new RuntimeException('pg_edit_read_unverified');
         $absolute=achbotPgEditChanges($read['user'],$change);
