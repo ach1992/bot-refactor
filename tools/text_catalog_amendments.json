@@ -40,17 +40,17 @@
     "gateway.gateway_initiation.mark_checkout_uncertain.message.c2f74dfd7e": {
       "before": "این سرویس در پنل مرزبان قابل پرداخت نیست.",
       "after": "پرداخت این اشتراک در حال حاضر امکان‌پذیر نیست؛ برای راهنمایی با پشتیبانی تماس بگیرید.",
-      "reason": "Explicit owner-approved public checkout privacy correction; intentionally not byte parity"
+      "reason": "Master-authorized correction under the recorded Owner error-privacy policy (AGENTS.md and Issue #26 comments 6436048941 / 6436136237); intentionally not byte parity"
     },
     "gateway.gateway_initiation.mark_checkout_uncertain.message.c4414cfacc": {
       "before": "کلید امن اعلان NOWPayments هنوز توسط مدیر ثبت نشده است.",
       "after": "این روش پرداخت فعلاً در دسترس نیست؛ روش دیگری را انتخاب کنید یا با پشتیبانی تماس بگیرید.",
-      "reason": "Explicit owner-approved public checkout privacy correction; intentionally not byte parity"
+      "reason": "Master-authorized correction under the recorded Owner error-privacy policy (AGENTS.md and Issue #26 comments 6436048941 / 6436136237); intentionally not byte parity"
     },
     "gateway.gateway_initiation.mark_checkout_uncertain.message.df2a7c68c7": {
       "before": "کلید درگاه NowPayments تنظیم نشده است.",
       "after": "این روش پرداخت فعلاً در دسترس نیست؛ روش دیگری را انتخاب کنید یا با پشتیبانی تماس بگیرید.",
-      "reason": "Explicit owner-approved public checkout privacy correction; intentionally not byte parity"
+      "reason": "Master-authorized correction under the recorded Owner error-privacy policy (AGENTS.md and Issue #26 comments 6436048941 / 6436136237); intentionally not byte parity"
     }
   }
 }

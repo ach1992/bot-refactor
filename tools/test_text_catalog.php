@@ -59,6 +59,44 @@ foreach ($inventory['files'] as $path=>$file) {
 }
 if (count($approvedSeen)!==3 || count($amendments['approved_copy'])!==3)
     throw new RuntimeException('approved_copy_coverage_missing');
+// Execute the actual traffic helper against the immutable pre-followup helper.
+// Only its provider-read SPI is synthetic; every returned field must match.
+function achbotSupportsAccount($type,$inbound): bool {return in_array($type,['marzban','pasarguard'],true)&&$inbound===0;}
+function achbotProviderUser($server,$remark) {
+    $GLOBALS['catalogTrafficReads']++;
+    return $GLOBALS['catalogTrafficInfo'];
+}
+require_once dirname(__DIR__).'/src/Subscription/AccountDetails.php';
+$trafficSource=shell_exec('git -C '.escapeshellarg(dirname(__DIR__)).' show '.escapeshellarg($amendments['assignment_base'].':src/Subscription/AccountDetails.php'));
+$begin=strpos($trafficSource,'function getOrderTrafficInfo(');
+$end=strpos($trafficSource,'function getOrderStatusText(',$begin);
+if ($begin===false||$end===false) throw new RuntimeException('traffic_fixture_boundary_drift');
+$originalHelper=substr($trafficSource,$begin,$end-$begin);
+if (substr_count($originalHelper,'round(($total - $used) / 1073741824, 2)')!==1)
+    throw new RuntimeException('traffic_round_expression_drift');
+eval('namespace CatalogTrafficBaseline;'.$originalHelper);
+$trafficCases=0;
+foreach (['marzban','pasarguard'] as $provider) {
+    foreach ([
+        (object)['username'=>'fixture','status'=>'active','data_limit'=>10*1073741824,'used_traffic'=>3*1073741824],
+        (object)['username'=>'fixture','status'=>'disabled','data_limit'=>1073741824,'used_traffic'=>123456789],
+        (object)['username'=>'fixture','status'=>'limited','data_limit'=>1073741824,'used_traffic'=>2*1073741824],
+        (object)['username'=>'fixture','status'=>'expired','data_limit'=>0,'used_traffic'=>0],
+        (object)['username'=>'fixture','status'=>'active','data_limit'=>0.0,'used_traffic'=>123],
+        (object)['username'=>'fixture','status'=>'active','data_limit'=>0.005*1073741824,'used_traffic'=>0],
+        (object)['username'=>'fixture','status'=>'active','data_limit'=>0.015*1073741824,'used_traffic'=>0],
+        (object)['username'=>'fixture','status'=>'unknown'],
+        null,
+    ] as $info) {
+        $GLOBALS['catalogTrafficInfo']=$info;$GLOBALS['catalogTrafficReads']=0;
+        $expected=\CatalogTrafficBaseline\getOrderTrafficInfo($provider,2,'fixture','',0);
+        $actual=\AchBot\Subscription\AccountDetails\getOrderTrafficInfo($provider,2,'fixture','',0);
+        if ($actual!==$expected||$GLOBALS['catalogTrafficReads']!==2)
+            throw new RuntimeException('traffic_full_helper_byte_parity_failed');
+        $trafficCases++;$checks++;
+    }
+}
+$templates++;$interpolated++;
 $dynamic=null;
 foreach(glob(dirname(__DIR__).'/messages/fa/*.php') as $path) {
     $topic=basename($path,'.php');$group=achbotMessages($topic);
@@ -94,4 +132,4 @@ if (\AchBot\Presentation\Labels\paymentType('BUY_SUB')!== 'خرید اشتراک
 echo json_encode(['status'=>'PASS','templates'=>$templates,'interpolated_templates'=>$interpolated,'byte_assertions'=>$checks,
     'html_escaping'=>'PASS','one_pass_substitution'=>'PASS','legacy_facades'=>'PASS',
     'repeated_interpolation_string_conversion'=>'PASS','byte_preserved_templates'=>$templates-count($approvedSeen),
-    'approved_wording_corrections'=>count($approvedSeen)],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR)."\n";
+    'approved_wording_corrections'=>count($approvedSeen),'actual_traffic_helper_parity_cases'=>$trafficCases],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR)."\n";

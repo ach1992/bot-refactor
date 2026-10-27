@@ -18,8 +18,10 @@ Existing call sites retain their original dynamic expressions and escaping.
 The loader does not implicitly escape or normalize them. New HTML callers
 can use achbotMessageHtml when every supplied parameter is untrusted;
 already escaped display values must use achbotMessage to avoid double
-escaping. Catalog HTML, spaces, line endings, zero-width characters, emoji
-and percent/braced literals preserve the previous output bytes. Repeated
+escaping. The byte-preserved relocation retains catalog HTML, spaces, line endings,
+zero-width characters, emoji and percent/braced literals. Master-authorized
+privacy wording corrections under the Owner policy are separately enumerated
+in tools/text_catalog_amendments.json; they are not reported as byte parity. Repeated
 interpolation occurrences have separate slots so their original string
 conversion count and order remain intact. Fixed diagnostic reason/state codes
 remain explicit call-site parameters rather than editable catalog prose.
@@ -38,6 +40,7 @@ Run python3 tools/test_next_text_catalog.py for:
   null, integer, signed, boolean, Unicode, HTML and placeholder-shaped values;
 - legacy facade equality, explicit escaping and one-pass substitution checks;
 - Persian literal inventory and ASCII UI sink/variable/interpolation tracing,
+  including selected array fields through same-file named function returns,
   unknown/orphan catalog references and direct HTTP guards;
 - ASCII button/caption/indirect-message and poisoned-catalog privacy negative
   controls, retaining the separate native audience/privacy fixtures.
@@ -56,3 +59,21 @@ The inventory is characterization evidence against its recorded Git source
 identity, not a golden file to update merely to bless changed business behavior.
 After an independently authorized runtime change, review and re-characterize
 only the affected source dependency. Frozen V0–V9 checks remain untouched.
+
+Current bounded followups retain the original inventory verbatim. The
+amendments manifest records the exact accepted admin-read authorization diff
+for three source files, the remaining-traffic template relocation, the
+bootstrap connection/charset privacy correction, and three explicit public
+checkout wording corrections. The source proof reverses only those named
+edits and verifies each immutable dependency before applying the original
+per-file reconstruction. No broad baseline refresh is permitted.
+
+The native catalog proof also compares the actual remaining-traffic helper
+with its immutable previous helper over signed, fractional, rounding,
+unlimited and uncertain results. Run python3 tools/test_next_bootstrap_privacy.py
+for source-native connection/charset CLI and HTTP canaries (no real database),
+and python3 tools/test_next_gateway_privacy.py --run-disposable for actual
+public checkout denial pages over a socket-only synthetic database and owned
+loopback HTTP. Those two suites are separate from test_next_text_catalog.py.
+The ASCII scanner is a bounded audit aid; it does not interpret dynamic PHP
+dispatch or arbitrary cross-file data flow.

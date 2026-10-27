@@ -16,6 +16,7 @@ import catalog_source
 
 ROOT = Path(__file__).resolve().parents[1]
 CUSTOMER_SURFACES = (
+    "src/Finance/GatewayInitiation.php",
     "src/Finance/Routes/PrePayment.php",
     "src/Finance/Routes/RenewalSelection.php",
     "src/Finance/Routes/RenewalPlan.php",
@@ -34,7 +35,7 @@ SENSITIVE_TERMS = (
     "مرزبان", "مارزبان", "Marzban", "MariaDB", "mysqli",
     "SQLSTATE", "database", "stack trace", "پنل",
 )
-LITERAL_MESSAGE = re.compile(r'\b(?:alert|sendMessage|editText)\s*\(\s*(["\'])(.*?)\1', re.S)
+LITERAL_MESSAGE = re.compile(r'\b(?:alert|sendMessage|editText|showForm)\s*\(\s*(["\'])(.*?)\1', re.S)
 
 
 def verify(root: Path = ROOT, catalog: dict | None = None) -> dict:
@@ -48,6 +49,9 @@ def verify(root: Path = ROOT, catalog: dict | None = None) -> dict:
             payload = match.group(2)
             leaking = [term for term in SENSITIVE_TERMS
                        if term.casefold() in payload.casefold()]
+            if rel=='src/Finance/GatewayInitiation.php':
+                leaking += [term for term in ('NOWPayments','کلید امن','کلید درگاه','signing','merchant key')
+                            if term.casefold() in payload.casefold()]
             if leaking:
                 line = source.count("\n", 0, match.start()) + 1
                 raise RuntimeError(

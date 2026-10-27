@@ -87,6 +87,14 @@ def main():
         fixture.write_text("<?php $message='Receipt accepted'; $message.=' Reference: '.$id; sendMessage($message); $keys=[['text'=>'Continue','callback_data'=>'keep_protocol']]; sendPhoto('file.png','Visible caption'); ?><p>Visible page title</p>")
         found={t['raw'] for t in catalog_ui.ui_candidates(ROOT,[str(fixture)])}
         check(found=={"'Receipt accepted'","' Reference: '","'Continue'","'Visible caption'",'Visible page title'},'ASCII audit negative control failed: '+str(found))
+        fixture.write_text("<?php function record(){ $result=['protocol'=>'kept_machine','leftgb'=>round(1.234,2).' GB']; return $result; } function label(){return 'Returned label';} $traffic=record();$leftgb=$traffic['leftgb'];$keys=[['text'=>$leftgb,'callback_data'=>$traffic['protocol']]];sendMessage(label());")
+        found={t['raw'] for t in catalog_ui.ui_candidates(ROOT,[str(fixture)])}
+        check(found=={"' GB'","'Returned label'"},'array-field/return audit negative control failed: '+str(found))
+        # Real helper/consumer flow must be detected when this one relocation
+        # is reverted. The immutable source is copied only into a temporary file.
+        fixture.write_bytes(command('git','show',amendments['assignment_base']+':src/Subscription/AccountDetails.php'))
+        found={t['raw'] for t in catalog_ui.ui_candidates(ROOT,[str(fixture)])}
+        check(found=={"' GB'"},'actual remaining-traffic audit negative control failed: '+str(found))
     import test_post_v9_customer_errors as privacy
     import catalog_source
     copy=catalog_source.templates(ROOT)
@@ -119,7 +127,7 @@ def main():
     finally:
         process.terminate();process.wait(timeout=5)
     print(json.dumps({'status':'PASS','source_equivalent_occurrences':reverse,'source_files':len(inventory['files']),
-      'catalog_keys':len(entries),'runtime_references':len(refs),'static_ui_violations':len(violations),'ascii_ui_violations':len(ascii_ui),'ascii_audit_negative_controls':5,'migrated_machine_fields_or_sql_arguments':0,
+      'catalog_keys':len(entries),'runtime_references':len(refs),'static_ui_violations':len(violations),'ascii_ui_violations':len(ascii_ui),'ascii_audit_negative_controls':8,'migrated_machine_fields_or_sql_arguments':0,
       'authorized_source_dependency_files':len(amendments['source_dependencies']),'authorized_bootstrap_flow_changes':1,'approved_public_copy_corrections':len(amendments['approved_copy']),
       'direct_http_guards':len(guarded),'native':native},ensure_ascii=False))
 if __name__=='__main__':main()

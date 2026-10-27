@@ -1,4 +1,4 @@
-"""Token-based ASCII UI sink inventory, with bounded local variable tracing.
+"""Token-based ASCII UI sink inventory, with bounded local variable, array-field and return tracing.
 
 This is an audit aid, not a PHP interpreter. It excludes array/record keys,
 comparisons, formatting/encoding/protocol arguments and catalog references.
@@ -51,16 +51,28 @@ def ui_candidates(root,paths):
                 elif j in matching:j=matching[j]
                 j+=1
             spans.append((start,end));return spans
-        function_regions=[]
+        function_regions=[];functions=collections.defaultdict(list)
         for index,token in enumerate(tokens):
             if token['kind']!='T_FUNCTION':continue
             body=index+1
             while body<len(tokens) and tokens[body]['kind'] not in {'{',';'}:body+=1
-            if body in matching:function_regions.append((body,matching[body]))
+            if body in matching:
+                region=(body,matching[body]);function_regions.append(region)
+                name=index+1
+                if tokens[name]['kind']=='&':name+=1
+                if tokens[name]['kind']=='T_STRING':functions[tokens[name]['raw']].append(region)
         def scope(index):
             regions=[(a,b) for a,b in function_regions if a<index<b]
             return min(regions,key=lambda r:r[1]-r[0]) if regions else None
-        calls=[];ranges=[];assignments=collections.defaultdict(list)
+        def access(index,end):
+            parts=[tokens[index]['raw']];j=index+1
+            while j+2<end and tokens[j]['kind']=='[' and matching.get(j)==j+2:
+                field=tokens[j+1]
+                if field['kind'] not in {'T_CONSTANT_ENCAPSED_STRING','T_LNUMBER'}:break
+                parts.append(field['raw'][1:-1] if field['kind']=='T_CONSTANT_ENCAPSED_STRING' else field['raw'])
+                j+=3
+            return tuple(parts),j
+        calls=[];ranges=[];assignments=collections.defaultdict(list);returns=collections.defaultdict(list)
         for i,t in enumerate(tokens):
             if t['kind'] in {'T_STRING','T_NAME_FULLY_QUALIFIED','T_NAME_QUALIFIED'} and i+1<len(tokens) and tokens[i+1]['kind']=='(':
                 if i and tokens[i-1]['kind']=='T_FUNCTION':continue
@@ -75,24 +87,57 @@ def ui_candidates(root,paths):
                     if arg<len(spans):ranges.append((*spans[arg],'sink'))
             if t['kind']=='T_CONSTANT_ENCAPSED_STRING' and t['raw'][1:-1] in {'text','caption'} and i+1<len(tokens) and tokens[i+1]['kind']=='T_DOUBLE_ARROW':
                 ranges.append((i+2,expression_end(i+2),'field'))
-            if t['kind']=='T_VARIABLE' and i+1<len(tokens) and tokens[i+1]['kind'] in {'=','T_CONCAT_EQUAL'}:
-                assignments[t['raw']].append((i,i+2,expression_end(i+2),tokens[i+1]['kind']))
-        # Trace local display variables, including adjacent .= fragments.
-        queue=list(ranges);seen=set(ranges)
+            if t['kind']=='T_VARIABLE':
+                target,j=access(i,len(tokens))
+                if j<len(tokens) and tokens[j]['kind'] in {'=','T_CONCAT_EQUAL'}:
+                    assignments[target].append((i,j+1,expression_end(j+1),tokens[j]['kind']))
+            if t['kind']=='T_RETURN':
+                returns[scope(i)].append((i+1,expression_end(i+1)))
+        # A demand keeps its selected record field through assignments and
+        # same-file named function returns. Other record fields stay machine data.
+        queue=[(a,b,origin,()) for a,b,origin in ranges];seen=set(queue)
+        def enqueue(a,b,origin,selected=()):
+            item=(a,b,origin,selected)
+            if item not in seen:
+                seen.add(item);queue.append(item)
         while queue:
-            a,b,origin=queue.pop()
-            variables={t['raw'] for t in tokens[a:b] if t['kind']=='T_VARIABLE'}
-            variables.update(value for t in tokens[a:b] if t['kind']=='interpolated'
-                             for kind,value in t['parts'] if kind=='T_VARIABLE')
-            for var in variables:
-                if var in {'$action','$field','$mode','$state','$stage','$provider','$method','$step','$data','$type','$reason','$sqlstate','$gateType'}:continue
-                preceding=[x for x in assignments[var] if x[0]<a and scope(a)==scope(x[0])]
-                if not preceding:continue
-                base=len(preceding)-1
-                while base>0 and preceding[base][3]=='T_CONCAT_EQUAL':base-=1
-                for _,start,end,_ in preceding[base:]:
-                    span=(start,end,'variable')
-                    if span not in seen:seen.add(span);ranges.append(span);queue.append(span)
+            a,b,origin,selected=queue.pop()
+            if not selected and a<b and tokens[a]['kind']=='[' and matching.get(a)==b-1:
+                if any(start+1<end and tokens[start+1]['kind']=='T_DOUBLE_ARROW' for start,end in args(a)):
+                    continue # A whole record is structured data; trace a demanded field.
+            if not selected:ranges.append((a,b,origin))
+            if selected and a<b and tokens[a]['kind']=='[' and matching.get(a)==b-1:
+                for start,end in args(a):
+                    if start+1<end and tokens[start+1]['kind']=='T_DOUBLE_ARROW':
+                        key=tokens[start]['raw'].strip("'\"")
+                        if key==selected[0]:enqueue(start+2,end,'array_field',selected[1:])
+                continue
+            known=[c for c in calls if a<=c[0]<b and c[2] in functions]
+            for start,end,name,_ in known:
+                # Ambiguous duplicate/anonymous definitions are not guessed.
+                if len(functions[name])==1:
+                    for ra,rb in returns[functions[name][0]]:
+                        enqueue(ra,rb,'return',selected)
+            references=[]
+            i=a
+            while i<b:
+                if tokens[i]['kind']=='T_VARIABLE':
+                    key,j=access(i,b);references.append(key+selected);i=j
+                else:
+                    if tokens[i]['kind']=='interpolated':
+                        references.extend((value,)+selected for kind,value in tokens[i]['parts'] if kind=='T_VARIABLE')
+                    i+=1
+            for key in set(references):
+                if len(key)==1 and key[0] in {'$action','$field','$mode','$state','$stage','$provider','$method','$step','$data','$type','$reason','$sqlstate','$gateType'}:continue
+                # Try field writes as well as whole-record assignments. Select
+                # only the requested field from an initializer/returned record.
+                for size in range(len(key),0,-1):
+                    preceding=[x for x in assignments[key[:size]] if x[0]<a and scope(a)==scope(x[0])]
+                    if not preceding:continue
+                    base=len(preceding)-1
+                    while base>0 and preceding[base][3]=='T_CONCAT_EQUAL':base-=1
+                    for _,start,end,_ in preceding[base:]:
+                        enqueue(start,end,'array_field' if len(key)>1 else 'variable',key[size:])
         for i,t in enumerate(tokens):
             if t['kind']=='T_INLINE_HTML':
                 raw=t['raw']
