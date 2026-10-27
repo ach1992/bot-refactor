@@ -1018,10 +1018,11 @@
     },
     "bot.bot.process_callback_query.message.a4712f82bb": {
       "before": "این درخواست قبلاً ثبت شده است. برای شروع جدید دوباره دکمه را انتخاب کنید.",
-      "after": "✅ این درخواست قبلاً ثبت شده است. برای شروع جدید دوباره دکمه را انتخاب کنید.",
+      "after": "ℹ️ این درخواست قبلاً ثبت شده است. برای شروع جدید دوباره دکمه را انتخاب کنید.",
       "parameters": [],
       "reasons": [
-        "leading_context_emoji"
+        "leading_context_emoji",
+        "whole_outcome_or_task_context"
       ]
     },
     "bot.bot.process_callback_query.message.97447b213e": {
@@ -1042,10 +1043,11 @@
     },
     "bot.bot.gift_volume_and_day.message.e0e7fe8fcb": {
       "before": "لغو درخواست تأیید نشد؛ وضعیت را بررسی کنید.",
-      "after": "❌ لغو درخواست تأیید نشد؛ وضعیت را بررسی کنید.",
+      "after": "⚠️ لغو درخواست تأیید نشد؛ وضعیت را بررسی کنید.",
       "parameters": [],
       "reasons": [
-        "leading_context_emoji"
+        "leading_context_emoji",
+        "whole_outcome_or_task_context"
       ]
     },
     "bot.bot.gift_volume_and_day.message.ceaba67bc5": {
@@ -1106,10 +1108,11 @@
     },
     "bot.bot.gift_volume_and_day.message.dda8b45a3f": {
       "before": "حجم باید مضرب 1024 مگابایت و حداقل یکی از حجم یا روز مثبت باشد.",
-      "after": "📅 حجم باید مضرب 1024 مگابایت و حداقل یکی از حجم یا روز مثبت باشد.",
+      "after": "📦 حجم باید مضرب 1024 مگابایت و حداقل یکی از حجم یا روز مثبت باشد.",
       "parameters": [],
       "reasons": [
-        "leading_context_emoji"
+        "leading_context_emoji",
+        "whole_outcome_or_task_context"
       ]
     },
     "bot.bot.gift_volume_and_day.message.6463835f72": {
@@ -1122,10 +1125,11 @@
     },
     "bot.bot.gift_volume_and_day.message.b155540ffb": {
       "before": "این پیام قبلاً برای هدیه ثبت شده و درخواست تکراری ایجاد نشد.",
-      "after": "✅ این پیام قبلاً برای هدیه ثبت شده و درخواست تکراری ایجاد نشد.",
+      "after": "ℹ️ این پیام قبلاً برای هدیه ثبت شده و درخواست تکراری ایجاد نشد.",
       "parameters": [],
       "reasons": [
-        "leading_context_emoji"
+        "leading_context_emoji",
+        "whole_outcome_or_task_context"
       ]
     },
     "bot.bot.servers_setting.alert.9f4e68eda7": {
@@ -1205,10 +1209,11 @@
     },
     "bot.bot.add_marzban_panel_group.alert.a77f2c705d": {
       "before": "حذف گروه پنل ناموفق بود.",
-      "after": "✅ حذف گروه پنل ناموفق بود.",
+      "after": "❌ حذف گروه پنل ناموفق بود.",
       "parameters": [],
       "reasons": [
-        "leading_context_emoji"
+        "leading_context_emoji",
+        "whole_outcome_or_task_context"
       ]
     },
     "bot.bot.add_new_marzban_panel.message.2dcf34731e": {
@@ -1572,12 +1577,13 @@
     },
     "jobs.gift2all.message.1ea4ee3d49": {
       "before": "اعمال هدیه برای ردیف {index} رد شد؛ هیچ موفقیتی اعلام نشد.",
-      "after": "✅ اعمال هدیه برای ردیف {index} رد شد؛ هیچ موفقیتی اعلام نشد.",
+      "after": "❌ اعمال هدیه برای ردیف {index} رد شد؛ هیچ موفقیتی اعلام نشد.",
       "parameters": [
         "index"
       ],
       "reasons": [
-        "leading_context_emoji"
+        "leading_context_emoji",
+        "whole_outcome_or_task_context"
       ]
     },
     "jobs.gift2all.message.1bf0942a3d": {
@@ -3136,10 +3142,11 @@
     },
     "provider.provider_admin.handle_provider_admin.message.bf4b28ea45": {
       "before": "API key جدید را بفرستید. پیام کلید حذف می‌شود.",
-      "after": "🗑 API key جدید را بفرستید. پیام کلید حذف می‌شود.",
+      "after": "🔑 API key جدید را بفرستید. پیام کلید حذف می‌شود.",
       "parameters": [],
       "reasons": [
-        "leading_context_emoji"
+        "leading_context_emoji",
+        "whole_outcome_or_task_context"
       ]
     },
     "purchase.catalogue.message.05308dd049": {
@@ -4854,5 +4861,80 @@
     ],
     "shared_copy": "User-visible or harmless shared copy is edited once in user.php; admin.php holds exclusive management/operational copy. File placement is not an authorization mechanism.",
     "style": "Preserve prose; ASCII display digits; one context emoji at complete-message/control starts, no automatic runtime rewriting, no emoji added to fragments/date words/browser protocol replies. Existing caller parse modes and markup remain unchanged."
-  }
+  },
+  "recipient_placements": {
+    "support.customer_conversation.user_all_tickets.message.2baf15e3c0": {
+      "from": "user",
+      "to": "admin",
+      "source": "src/Support/CustomerConversation.php",
+      "reason": "actual_administrator_destination"
+    },
+    "support.customer_conversation.user_all_tickets.txt.54b5fecc08": {
+      "from": "user",
+      "to": "admin",
+      "source": "src/Support/CustomerConversation.php",
+      "reason": "actual_administrator_destination"
+    },
+    "support.customer_conversation.user_all_tickets.text.a79a2fa69e": {
+      "from": "user",
+      "to": "admin",
+      "source": "src/Support/CustomerConversation.php",
+      "reason": "actual_administrator_destination"
+    },
+    "support.customer_conversation.user_all_tickets.text.46d8580795": {
+      "from": "user",
+      "to": "admin",
+      "source": "src/Support/CustomerConversation.php",
+      "reason": "actual_administrator_destination"
+    },
+    "support.customer_conversation.user_all_tickets.text.497743bb13": {
+      "from": "user",
+      "to": "admin",
+      "source": "src/Support/CustomerConversation.php",
+      "reason": "actual_administrator_destination"
+    },
+    "support.customer_conversation.user_all_tickets.button.2dc9dcf8cd": {
+      "from": "user",
+      "to": "admin",
+      "source": "src/Support/CustomerConversation.php",
+      "reason": "actual_administrator_destination"
+    },
+    "support.customer_conversation.user_all_tickets.button.c9b4331f4f": {
+      "from": "user",
+      "to": "admin",
+      "source": "src/Support/CustomerConversation.php",
+      "reason": "actual_administrator_destination"
+    },
+    "support.customer_conversation.user_all_tickets.button.74190f4bb0": {
+      "from": "user",
+      "to": "admin",
+      "source": "src/Support/CustomerConversation.php",
+      "reason": "actual_administrator_destination"
+    },
+    "support.customer_conversation.user_all_tickets.button.105e0409bc": {
+      "from": "user",
+      "to": "admin",
+      "source": "src/Support/CustomerConversation.php",
+      "reason": "actual_administrator_destination"
+    },
+    "support.admin_reply.button.f8a34e79d9": {
+      "from": "admin",
+      "to": "user",
+      "source": "src/Support/AdminReply.php",
+      "reason": "actual_customer_or_shared_destination"
+    },
+    "support.admin_reply.button.173875ae6b": {
+      "from": "admin",
+      "to": "user",
+      "source": "src/Support/AdminReply.php",
+      "reason": "actual_customer_or_shared_destination"
+    },
+    "support.queue_and_history.all_tickets.text.61cf036058": {
+      "from": "admin",
+      "to": "user",
+      "source": "src/Support/QueueAndHistory.php",
+      "reason": "actual_customer_or_shared_destination"
+    }
+  },
+  "semantic_context_reference": "707d1c930162bf69e220424bd648860be8e64195"
 }

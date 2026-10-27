@@ -555,7 +555,13 @@ def main():
                 and text_catalog.get("presentation",{}).get("parameter_exception_count")==3
                 and text_catalog.get("presentation",{}).get("semantic_label_icon_cases")==12
                 and text_catalog.get("presentation",{}).get("semantic_context_icon_cases")==16
-                and text_catalog.get("presentation",{}).get("native_compositions")==6):
+                and text_catalog.get("presentation",{}).get("native_compositions")==6
+                and text_catalog.get("presentation",{}).get("reviewed_semantic_context_cases")==9
+                and text_catalog.get("presentation",{}).get("archived_semantic_context_RED")==7
+                and text_catalog.get("presentation",{}).get("recipient_placement_cases")==12
+                and text_catalog.get("presentation",{}).get("archived_recipient_placement_RED")==12
+                and text_catalog.get("presentation",{}).get("recipient_payloads_byte_unchanged") is True
+                and text_catalog.get("presentation",{}).get("recipient_source_files")==3):
             raise RuntimeError("Pre-style relocation or current two-file/audience/presentation proof incomplete")
         copy_audience_output=subprocess.run(
             ["python3",str(ROOT/"tools/test_next_copy_audience.py")],
@@ -3088,4 +3094,12 @@ def main():
 
 
 if __name__=="__main__":
-    main()
+    try:
+        main()
+    except subprocess.CalledProcessError as error:
+        print("Acceptance child failed (exit %s). Captured source-only fixture diagnostics:" % error.returncode, file=sys.stderr)
+        for label, output in (("stdout", error.stdout), ("stderr", error.stderr)):
+            if output:
+                if isinstance(output, bytes): output=output.decode("utf-8", "replace")
+                print(label+":\n"+output[-16000:], file=sys.stderr)
+        raise

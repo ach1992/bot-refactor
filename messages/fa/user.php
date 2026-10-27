@@ -175,7 +175,7 @@ return [
         'bot.process_callback_query.message.616c172303' => '⛔️ سیستم فروش غیرفعال است.',
         'bot.process_callback_query.message.dda719f1cb' => '🟢 موجودی پلن اشتراکی:',
         'bot.process_callback_query.message.8386c28679' => '📋 نام کاربری اشتراک موردنظر را وارد کنید:',
-        'bot.process_callback_query.message.a4712f82bb' => '✅ این درخواست قبلاً ثبت شده است. برای شروع جدید دوباره دکمه را انتخاب کنید.',
+        'bot.process_callback_query.message.a4712f82bb' => 'ℹ️ این درخواست قبلاً ثبت شده است. برای شروع جدید دوباره دکمه را انتخاب کنید.',
         // bot.recive_applications
         'bot.recive_applications.message.ec86dead1a' => ['text' => '' . "\n" . '⁉️  <b>نرم افزارها و آموزش های لازم جهت اتصال 🔌 به سرویس</b>' . "\n" . '' . "\n" . '🌐 برای اتصال به کمک لینک اشتراک باید از نرم افزارهایی که کانال معرفی شده اند استفاده کنید.' . "\n" . '' . "\n" . '⭕️ لطفا <b>حداقل 2 تا</b> از نرم افزارهای گفته شده را نصب داشته باشید، با توجه به محدودیت هایی که از سمت اپراتورها گذاشته شده و تفاوت تکنولوژی عبور از تحریم نرم افزارها، ممکن است یک کانفیگ روی یک نرم افزار مشکل داشته باشد ولی روی نرم افزار بعدی بدون مشکل و با سرعت بسیار خوب متصل شود.' . "\n" . '' . "\n" . '💡تمامی نرم افزارها <b>رایگان</b> هستند.' . "\n" . '' . "\n" . '📥 برای <b>مشاهد آموزش ها و دانلود نرم افزارها</b> لطفا یکی از دکمه های زیر را انتخاب کنید.' . "\n" . '' . "\n" . '🛒 جهت پشتیبانی یا سوال در مورد خرید به آی دی زیر پیام دهید:' . "\n" . '' . "\n" . '🆔 {supportID}' . "\n" . '', 'parameters' => ['supportID']],
         // bootstrap.unavailable
@@ -953,6 +953,9 @@ return [
 
     // ── پشتیبانی و تیکت ──
     'support' => [
+        'admin_reply.button.f8a34e79d9' => '💬 پاسخ به تیکت',
+        'admin_reply.button.173875ae6b' => '💬 بستن تیکت',
+        'queue_and_history.all_tickets.text.61cf036058' => '📷 تصویر /dlPic',
         // create_ticket.message
         'create_ticket.message.5c9c3dda00' => '✅ پیام شما با موفقیت ثبت شد.',
         'create_ticket.message.b059640ccc' => '📝 لطفا یکی از کلید های زیر را انتخاب کنید.',
@@ -973,17 +976,8 @@ return [
         'customer_conversation.user_all_tickets.button.e26806a4af' => 'خوب',
         'customer_conversation.user_all_tickets.button.3ed1f2e72a' => 'بسیار خوب',
         'customer_conversation.user_all_tickets.button.3d61f01bbd' => 'عالی',
-        'customer_conversation.user_all_tickets.button.2dc9dcf8cd' => '🆔 شناسه عددی',
-        'customer_conversation.user_all_tickets.button.c9b4331f4f' => '👤 اسم کاربر',
-        'customer_conversation.user_all_tickets.button.74190f4bb0' => 'عنوان',
-        'customer_conversation.user_all_tickets.message.2baf15e3c0' => '☑️ تیکت توسط کاربر بسته شد.',
         'customer_conversation.user_all_tickets.message.13e7a1cdbb' => '💠 لطفا متن پیام خود را بصورت ساده و مختصر ارسال کنید!',
-        'customer_conversation.user_all_tickets.txt.54b5fecc08' => ['text' => 'پیام جدید:' . "\n" . '[{ticketTitle}] <i>{ticketCat}</i>' . "\n" . '' . "\n" . 'کاربر: <a href=\'tg://user?id={from_id}\'>{first_name}</a>' . "\n" . 'نام کاربری: {username}' . "\n" . 'شناسه عددی: {from_id_2}' . "\n" . '', 'parameters' => ['ticketTitle', 'ticketCat', 'from_id', 'first_name', 'username', 'from_id_2']],
-        'customer_conversation.user_all_tickets.text.a79a2fa69e' => ['text' => '' . "\n" . 'متن پیام: {text}', 'parameters' => ['text']],
-        'customer_conversation.user_all_tickets.text.46d8580795' => ['text' => '' . "\n" . 'متن پیام: {caption}', 'parameters' => ['caption']],
         'customer_conversation.user_all_tickets.message.1d456424c3' => '✅',
-        'customer_conversation.user_all_tickets.button.105e0409bc' => '💬 رای تیکت',
-        'customer_conversation.user_all_tickets.text.497743bb13' => ['text' => '📨 رأی به تیکت ' . "\n" . '' . "\n" . '🆔 شناسه عددی: {from_id}' . "\n" . '👤 نام کاربر: {first_name}' . "\n" . '👤 نام کاربری: @{username}' . "\n" . '〽️ عنوان: {title}' . "\n" . '⚜️ دسته بندی: {category}' . "\n" . '❤️ رای: {rate}' . "\n" . '', 'parameters' => ['from_id', 'first_name', 'username', 'title', 'category', 'rate']],
         // entry.support_section
         'entry.support_section.message.7089955c27' => '🛂 به بخش پشتیبانی خوش آمدید.' . "\n" . '❇️ لطفا، یکی از دکمه های زیر را انتخاب نمایید.',
         'entry.support_section.button.47b4e6ab96' => '✉️ ثبت تیکت',

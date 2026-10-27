@@ -7,6 +7,8 @@ Only **two files contain editable bot/PHP payment-page copy**:
 
 Both files have named topic sections. Search for the current sentence, then edit its value in place. Keep the stable key, parameter names and placeholders unchanged. For example, keep `{amount}`, `USER-ID`, `PRICE-TOMAN` or `CONNECT-LINK` exactly as written. `settings/values.php` is a compatibility facade; it contains no separate copy to maintain. `loader.php` is loading/substitution code, not a third text file.
 
+Classify editing placement from the actual recipient, including forwarded support reports and shared controls; a route filename alone is not an audience. Choose status/action emoji from the complete outcome and action, not an isolated word such as success, unsuccessful, delete or duplicate.
+
 File placement does not authorize a recipient. Existing actor/owner checks and explicit destinations decide whether a message may reach a user or administrator. A harmless shared label lives once in `user.php`, even when administrators also see it. Never move an operational diagnostic into a customer message to help troubleshooting.
 
 ## Presentation conventions

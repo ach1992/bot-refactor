@@ -200,7 +200,7 @@ return [
         'bot.process_callback_query.message.97447b213e' => '⚠️ شروع هدیه تأیید نشد؛ پیش از تلاش مجدد وضعیت را بررسی کنید.',
         // bot.gift_volume_and_day
         'bot.gift_volume_and_day.message.ac0da574b4' => '❌ درخواست هدیه لغو شد.',
-        'bot.gift_volume_and_day.message.e0e7fe8fcb' => '❌ لغو درخواست تأیید نشد؛ وضعیت را بررسی کنید.',
+        'bot.gift_volume_and_day.message.e0e7fe8fcb' => '⚠️ لغو درخواست تأیید نشد؛ وضعیت را بررسی کنید.',
         'bot.gift_volume_and_day.message.ceaba67bc5' => '📅 تعداد روز هدیه را به عدد صحیح وارد کنید (صفر مجاز است):',
         'bot.gift_volume_and_day.message.2ff3f6e643' => '📦 حجم هدیه را به مگابایت وارد کنید؛ عدد صحیح و مضرب 1024 (صفر مجاز است):',
         'bot.gift_volume_and_day.message.430119925b' => '⚠️ ورودی نامعتبر است. روز باید عدد صحیح 0 تا 36500 باشد؛ حجم باید عدد صحیح غیرمنفی و مضرب 1024 مگابایت باشد و هر دو نمی‌توانند صفر باشند.',
@@ -213,9 +213,9 @@ return [
         'bot.gift_volume_and_day.message.e36a2dd90a' => '). درخواست تکرار نمی‌شود؛ قبل از هر اقدام، اثر واقعی اشتراک و ثبت محلی را دستی تطبیق دهید.',
         'bot.gift_volume_and_day.message.9ab673c836' => '📦 حجم هدیه را به مگابایت وارد کن (برای صفر، عدد 0 را وارد کن):',
         'bot.gift_volume_and_day.message.40747d2ee6' => '🔢 عددی بزرگتر و یا مساوی 0 واردکنید.',
-        'bot.gift_volume_and_day.message.dda8b45a3f' => '📅 حجم باید مضرب 1024 مگابایت و حداقل یکی از حجم یا روز مثبت باشد.',
+        'bot.gift_volume_and_day.message.dda8b45a3f' => '📦 حجم باید مضرب 1024 مگابایت و حداقل یکی از حجم یا روز مثبت باشد.',
         'bot.gift_volume_and_day.message.6463835f72' => '⚠️ وضعیت ثبت هدیه تأیید نشد؛ پیش از هر اقدام جدید صف هدایا را بررسی کنید.',
-        'bot.gift_volume_and_day.message.b155540ffb' => '✅ این پیام قبلاً برای هدیه ثبت شده و درخواست تکراری ایجاد نشد.',
+        'bot.gift_volume_and_day.message.b155540ffb' => 'ℹ️ این پیام قبلاً برای هدیه ثبت شده و درخواست تکراری ایجاد نشد.',
         // bot.cant_edit_trojan
         'bot.cant_edit_trojan.alert.4d3c064114' => 'پروتکل تروجان فقط نوع شبکه TCP را دارد',
         // bot.servers_setting
@@ -237,7 +237,7 @@ return [
         'bot.add_marzban_panel_group.message.cfb10ede6f' => '⚠️ این نام قبلاً تعریف شده است یا معتبر نیست؛ نام دیگری وارد کنید.',
         'bot.add_marzban_panel_group.message.7c6b361e59' => '⚠️ ذخیره گروه پنل انجام نشد.',
         'bot.add_marzban_panel_group.message.1de4f68601' => '✅ گروه پنل ثبت شد.',
-        'bot.add_marzban_panel_group.alert.a77f2c705d' => '✅ حذف گروه پنل ناموفق بود.',
+        'bot.add_marzban_panel_group.alert.a77f2c705d' => '❌ حذف گروه پنل ناموفق بود.',
         'bot.add_marzban_panel_group.alert.2b2b180a96' => 'گروه استفاده‌نشده حذف شد.',
         'bot.add_marzban_panel_group.alert.cc8538eba9' => 'گروه پیدا نشد یا هنوز به سرور متصل است؛ ابتدا سرورها را از آن خارج کنید.',
         'bot.add_marzban_panel_group.message.def9f141f2' => '🏷 مدیریت گروه‌های پنل مرزبان',
@@ -1131,11 +1131,18 @@ return [
 
     // ── پشتیبانی و تیکت ──
     'support' => [
+        'customer_conversation.user_all_tickets.message.2baf15e3c0' => '☑️ تیکت توسط کاربر بسته شد.',
+        'customer_conversation.user_all_tickets.txt.54b5fecc08' => ['text' => 'پیام جدید:' . "\n" . '[{ticketTitle}] <i>{ticketCat}</i>' . "\n" . '' . "\n" . 'کاربر: <a href=\'tg://user?id={from_id}\'>{first_name}</a>' . "\n" . 'نام کاربری: {username}' . "\n" . 'شناسه عددی: {from_id_2}' . "\n" . '', 'parameters' => ['ticketTitle', 'ticketCat', 'from_id', 'first_name', 'username', 'from_id_2']],
+        'customer_conversation.user_all_tickets.text.a79a2fa69e' => ['text' => '' . "\n" . 'متن پیام: {text}', 'parameters' => ['text']],
+        'customer_conversation.user_all_tickets.text.46d8580795' => ['text' => '' . "\n" . 'متن پیام: {caption}', 'parameters' => ['caption']],
+        'customer_conversation.user_all_tickets.text.497743bb13' => ['text' => '📨 رأی به تیکت ' . "\n" . '' . "\n" . '🆔 شناسه عددی: {from_id}' . "\n" . '👤 نام کاربر: {first_name}' . "\n" . '👤 نام کاربری: @{username}' . "\n" . '〽️ عنوان: {title}' . "\n" . '⚜️ دسته بندی: {category}' . "\n" . '❤️ رای: {rate}' . "\n" . '', 'parameters' => ['from_id', 'first_name', 'username', 'title', 'category', 'rate']],
+        'customer_conversation.user_all_tickets.button.2dc9dcf8cd' => '🆔 شناسه عددی',
+        'customer_conversation.user_all_tickets.button.c9b4331f4f' => '👤 اسم کاربر',
+        'customer_conversation.user_all_tickets.button.74190f4bb0' => 'عنوان',
+        'customer_conversation.user_all_tickets.button.105e0409bc' => '💬 رای تیکت',
         // admin_reply.message
         'admin_reply.message.8da2c2756b' => '💬 لطفا پیام خود را ارسال کنید.',
         // admin_reply.button
-        'admin_reply.button.f8a34e79d9' => '💬 پاسخ به تیکت',
-        'admin_reply.button.173875ae6b' => '💬 بستن تیکت',
         // admin_reply.message
         'admin_reply.message.5cd91cfb0b' => '✅ پیام شما با موفقیت ارسال شد.',
         // categories.tickets_list
@@ -1168,7 +1175,6 @@ return [
         'queue_and_history.all_tickets.message.abf3f55cac' => ['text' => '🆔 شناسه عددی: {admin}' . "\n" . 'نام کاربر: {username}' . "\n" . 'دسته بندی: {category} {rate}' . "\n" . '' . "\n" . 'موضوع: {title}' . "\n" . 'آخرین پیام:' . "\n" . '[{sentType}] {lastmsg}', 'parameters' => ['admin', 'username', 'category', 'rate', 'title', 'sentType', 'lastmsg']],
         'queue_and_history.all_tickets.alert.5974314756' => '⚠️ تیکتی یافت نشد.',
         'queue_and_history.all_tickets.button.b1eee8adee' => '💬 تیکت بسته شد',
-        'queue_and_history.all_tickets.text.61cf036058' => '📷 تصویر /dlPic',
     ],
 
     // ── همکاری و همکاران ──
@@ -1648,7 +1654,7 @@ return [
         'provider_admin.handle_provider_admin.message.601077bd6d' => '⚙️ اتصال فیزیکی را انتخاب کنید تا سرور منطقی با Groups مستقل بسازید.',
         'provider_admin.handle_provider_admin.message.d0e9e358ec' => '📝 سه خط بفرستید:' . "\n" . 'نام اتصال' . "\n" . 'آدرس پایه PasarGuard' . "\n" . 'API key دارای دسترسی کاربران و Groups' . "\n" . 'نسخه پشتیبانی‌شده 5.5.1 است؛ پیام کلید پس از دریافت حذف می‌شود.',
         'provider_admin.handle_provider_admin.message.339107229c' => 'پنج خط بفرستید:' . "\n" . 'نام سرور' . "\n" . 'ظرفیت عددی' . "\n" . 'ریمـارک ASCII' . "\n" . 'پرچم' . "\n" . 'شناسه Groups با کاما' . "\n" . '',
-        'provider_admin.handle_provider_admin.message.bf4b28ea45' => '🗑 API key جدید را بفرستید. پیام کلید حذف می‌شود.',
+        'provider_admin.handle_provider_admin.message.bf4b28ea45' => '🔑 API key جدید را بفرستید. پیام کلید حذف می‌شود.',
         'provider_admin.handle_provider_admin.message.254f747510' => 'شناسه Groups را با کاما بفرستید. برای ارث‌بری پلن از سرور /inherit را بفرستید.' . "\n" . '',
         'provider_admin.handle_provider_admin.message.84166ad032' => '✅ اتصال تأیید و ذخیره شد. از فهرست اتصال‌ها سرور منطقی بسازید.',
         'provider_admin.handle_provider_admin.message.7a19204ab5' => '✅ API key تأیید و تعویض شد.',
@@ -1911,7 +1917,7 @@ return [
         'gift2all.message.5f467e3e2c' => '⚠️ ثبت عبور از گیرندهٔ غیرفعال تأیید نشد؛ بررسی مدیر لازم است.',
         'gift2all.message.f4b87a5740' => '⚠️ هویت سفارش هدیه مبهم است؛ عملیات متوقف شد.',
         'gift2all.message.65625b8a59' => '⚠️ ثبت توقف امن هدیه تأیید نشد؛ سرویس تغییر نکرد.',
-        'gift2all.message.1ea4ee3d49' => ['text' => '✅ اعمال هدیه برای ردیف {index} رد شد؛ هیچ موفقیتی اعلام نشد.', 'parameters' => ['index']],
+        'gift2all.message.1ea4ee3d49' => ['text' => '❌ اعمال هدیه برای ردیف {index} رد شد؛ هیچ موفقیتی اعلام نشد.', 'parameters' => ['index']],
         'gift2all.message.07c38a54a9' => 'هدیه ثبت شد اما اعلان کاربر تأیید نشد. ',
         'gift2all.message.9b87258e16' => ['text' => 'شناسه: {rowId}؛ کاربر: {remark}', 'parameters' => ['rowId', 'remark']],
         'gift2all.message.4ba0cee07a' => 'هدیه ثبت شد اما ارسال اعلان کاربر ناموفق بود. ',

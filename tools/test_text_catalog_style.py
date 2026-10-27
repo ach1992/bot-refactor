@@ -29,6 +29,90 @@ def words(value):
     # They are approved visual markers, not added/removed product wording.
     value=''.join(' 'if c in EMOJI_LETTERS else c for c in value)
     return re.findall(r'[^\W\d_]+|[0-9]+',value.translate(DIGITS),re.UNICODE)
+CONTEXT_REFERENCE='707d1c930162bf69e220424bd648860be8e64195'
+CONTEXT_CUES={
+ 'jobs.gift2all.message.1ea4ee3d49':'❌',
+ 'bot.bot.add_marzban_panel_group.alert.a77f2c705d':'❌',
+ 'bot.bot.gift_volume_and_day.message.dda8b45a3f':'📦',
+ 'provider.provider_admin.handle_provider_admin.message.bf4b28ea45':'🔑',
+ 'bot.bot.gift_volume_and_day.message.e0e7fe8fcb':'⚠️',
+ 'bot.bot.gift_volume_and_day.message.b155540ffb':'ℹ️',
+ 'bot.bot.process_callback_query.message.a4712f82bb':'ℹ️',
+ 'wallet.wallet_transfer.wallet_transfer_restart.message.6924ce253f':'⚠️',
+ 'wallet.admin_wallet.admin_wallet_report_result.customer.a5b15e454e':'✅',
+}
+CONTEXT_REPAIRS=list(CONTEXT_CUES)[:7]
+PRIVATE_SUPPORT=['support.customer_conversation.user_all_tickets.'+key for key in [
+ 'message.2baf15e3c0','txt.54b5fecc08','text.a79a2fa69e','text.46d8580795','text.497743bb13',
+ 'button.2dc9dcf8cd','button.c9b4331f4f','button.74190f4bb0','button.105e0409bc']]
+SHARED_SUPPORT=['support.admin_reply.button.f8a34e79d9','support.admin_reply.button.173875ae6b',
+ 'support.queue_and_history.all_tickets.text.61cf036058']
+def context_cue(entries,key):
+    check(text(entries[key]).startswith(CONTEXT_CUES[key]+' '),'semantic_status_context_mismatch:'+key)
+def recipient_side(sides,key,target):
+    other='admin'if target=='user'else'user'
+    check(key in sides[target]and key not in sides[other],'recipient_placement_mismatch:'+key)
+def reviewed_context_proof(sides,merged,manifest):
+    check(manifest.get('semantic_context_reference')==CONTEXT_REFERENCE,'context reference drift')
+    archived={}
+    decode='$s=stream_get_contents(STDIN);$p=strpos($s,"return [");if($p===false)throw new RuntimeException("array_missing");echo json_encode(eval(substr($s,$p)),JSON_THROW_ON_ERROR);'
+    for audience in ['user','admin']:
+        raw=command('git','show',CONTEXT_REFERENCE+':messages/fa/'+audience+'.php')
+        archived[audience]=flatten(json.loads(command('php','-r',decode,input=raw)))
+    old={**archived['user'],**archived['admin']}
+    for key in CONTEXT_CUES:context_cue(merged,key)
+    rejected=0
+    for key in CONTEXT_REPAIRS:
+        try:context_cue(old,key)
+        except AssertionError as error:
+            check(str(error)=='semantic_status_context_mismatch:'+key,'context RED rejected wrong property')
+            rejected+=1
+        else:raise AssertionError('actual archived bad context not rejected:'+key)
+    expected={key:('user','admin')for key in PRIVATE_SUPPORT}|{key:('admin','user')for key in SHARED_SUPPORT}
+    placements=manifest.get('recipient_placements',{})
+    check(set(placements)==set(expected),'recipient placement scope drift')
+    role_red=0
+    for key,(before,after)in expected.items():
+        record=placements[key]
+        check(record['from']==before and record['to']==after and record.get('reason'),'recipient amendment drift:'+key)
+        recipient_side(sides,key,after)
+        check(merged[key]==old[key],'relocation changed actual payload:'+key)
+        check(key in archived[before],'archived placement identity drift:'+key)
+        try:recipient_side(archived,key,after)
+        except AssertionError as error:
+            check(str(error)=='recipient_placement_mismatch:'+key,'recipient RED rejected wrong property')
+            role_red+=1
+        else:raise AssertionError('actual archived misplaced entry accepted:'+key)
+    # Bind recipient reasoning to the three unchanged real route sources. These
+    # checks concern editing placement, not a general authorization proof.
+    sources={name:(ROOT/('src/Support/'+name)).read_text()for name in ['CustomerConversation.php','AdminReply.php','QueueAndHistory.php']}
+    for name,source in sources.items():
+        check(source==command('git','show',CONTEXT_REFERENCE+':src/Support/'+name).decode(),'recipient source changed:'+name)
+    customer=sources['CustomerConversation.php'];admin=sources['AdminReply.php'];history=sources['QueueAndHistory.php']
+    close=customer[customer.index("if(preg_match('/^closeTicket_"):customer.index("if(preg_match('/^replySupport_")]
+    check(all(key in close for key in PRIVATE_SUPPORT if key.endswith(('2baf15e3c0','2dc9dcf8cd','c9b4331f4f','74190f4bb0')))
+          and 'sendMessage(\\achbotMessage(\'support.customer_conversation.user_all_tickets.message.2baf15e3c0\'),$keys,"HTML",$admin)'in close
+          and "sendToAllAdmins('sendMessage'"in close,'actual administrator closure recipients drift')
+    incoming=customer[customer.index("if(preg_match('/^sendMsg_"):customer.index('if(preg_match("/^rate_')]
+    check(all(key in incoming for key in PRIVATE_SUPPORT if key.endswith(('54b5fecc08','a79a2fa69e','46d8580795')))
+          and 'sendMessage($txt, $keys, "HTML", $admin)'in incoming
+          and 'sendPhoto($fileid, $txt,$keys, "HTML", $admin)'in incoming
+          and "'text' => $txt"in incoming and "'caption' => $txt"in incoming,'actual administrator incoming recipients drift')
+    rating=customer[customer.index('if(preg_match("/^rate_'):]
+    check(all(key in rating for key in PRIVATE_SUPPORT if key.endswith(('497743bb13','105e0409bc')))
+          and 'sendMessage($text, $keys, "HTML", $admin)'in rating
+          and "sendToAllAdmins('sendMessage'"in rating,'actual administrator rating recipients drift')
+    listing=customer[:customer.index("if(preg_match('/^closeTicket_")]
+    check(all(key in listing and key in admin for key in SHARED_SUPPORT[:2])
+          and 'sendPhoto($fileid, $txt,json_encode' in listing
+          and '"MarkDown", $userId)'in admin,'actual shared customer ticket controls drift')
+    latest=history[history.index("if(preg_match('/^latestMsg_"):history.index("if(preg_match('/^\\/dlPic")]
+    check(SHARED_SUPPORT[2]in latest and 'sendMessage($output, null, "html")'in latest
+          and '"latestMsg_$rowId"'in listing,'actual customer shared history label drift')
+    return {'reviewed_semantic_context_cases':len(CONTEXT_CUES),'archived_semantic_context_RED':rejected,
+            'recipient_placement_cases':len(expected),'archived_recipient_placement_RED':role_red,
+            'recipient_payloads_byte_unchanged':True,'recipient_source_files':len(sources)}
+
 def main():
     files=sorted(p.relative_to(ROOT).as_posix()for p in(ROOT/'messages/fa').glob('*.php'))
     check(files==['messages/fa/admin.php','messages/fa/user.php'],'editable copy must be exactly user.php/admin.php')
@@ -81,6 +165,7 @@ def main():
         assertions+=1
     check(set(changes)<=set(old)&set(merged),'unmatched amendment')
     for key,record in retired.items():check(record['before']==old[key],'retired baseline mismatch')
+    reviewed=reviewed_context_proof(sides,merged,manifest)
     # Known operational notices and customer outcomes have actually different
     # recipients in the source. Shared harmless labels remain edited once.
     admin_cases=[
@@ -197,5 +282,5 @@ echo json_encode(['violations'=>$violations,'topics'=>count(achbotMessageTopics(
             except urllib.error.HTTPError as error:status=error.code;body=error.read()
             check(status==404 and not body,'direct copy source leaked '+file)
     finally:listener.terminate();listener.wait(timeout=5)
-    print(json.dumps({'status':'PASS','editable_files':2,'current_keys':len(merged),'logical_topics':native['topics'],'style_changes':len(changes),'numeric_template_changes':sum('ascii_digits'in v['reasons']for v in changes.values()),'retired_keys':len(retired),'added_keys':len(added),'current_entry_assertions':assertions,'parameter_exception_count':len(param_keys),'adjacent_emoji_violations':0,'emoji_negative_controls':native['emoji_negative_controls'],'audience_admin_diagnostic_cases':len(admin_cases),'audience_customer_cases':len(user_cases),'preserved_shared_fragments':len(fragments),'native_compositions':native['native_compositions'],'semantic_label_icon_cases':native['semantic_label_icon_cases'],'semantic_context_icon_cases':native['semantic_context_icon_cases'],'direct_http_guards':len(guarded),'loader_negative_controls':2},ensure_ascii=False))
+    print(json.dumps({'status':'PASS','editable_files':2,'current_keys':len(merged),'logical_topics':native['topics'],'style_changes':len(changes),'numeric_template_changes':sum('ascii_digits'in v['reasons']for v in changes.values()),'retired_keys':len(retired),'added_keys':len(added),'current_entry_assertions':assertions,'parameter_exception_count':len(param_keys),'adjacent_emoji_violations':0,'emoji_negative_controls':native['emoji_negative_controls'],'audience_admin_diagnostic_cases':len(admin_cases),'audience_customer_cases':len(user_cases),'preserved_shared_fragments':len(fragments),'native_compositions':native['native_compositions'],'semantic_label_icon_cases':native['semantic_label_icon_cases'],'semantic_context_icon_cases':native['semantic_context_icon_cases'],'direct_http_guards':len(guarded),'loader_negative_controls':2,**reviewed},ensure_ascii=False))
 if __name__=='__main__':main()

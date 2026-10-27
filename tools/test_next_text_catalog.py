@@ -147,7 +147,13 @@ def main():
           and presentation.get('parameter_exception_count')==3
           and presentation.get('semantic_label_icon_cases')==12
           and presentation.get('semantic_context_icon_cases')==16
-          and presentation.get('native_compositions')==6,
+          and presentation.get('native_compositions')==6
+          and presentation.get('reviewed_semantic_context_cases')==9
+          and presentation.get('archived_semantic_context_RED')==7
+          and presentation.get('recipient_placement_cases')==12
+          and presentation.get('archived_recipient_placement_RED')==12
+          and presentation.get('recipient_payloads_byte_unchanged') is True
+          and presentation.get('recipient_source_files')==3,
           'two-file style, digit and audience acceptance incomplete')
     # Direct requests must not expose any internal catalog/module source or text.
     with socket.socket() as sock:sock.bind(('127.0.0.1',0));port=sock.getsockname()[1]
