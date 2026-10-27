@@ -240,4 +240,5 @@ return [
     'sub_link_settings.message.9f2715dc7c' => '🔗 لطفاً لینک‌های کمکی اشتراک سرور را وارد کنید.' . "\n" . '📌 لینک‌ها را با کاما (,) از هم جدا کنید.' . "\n" . '' . "\n" . 'مثال:' . "\n" . '`https://sub1.domain.com,https://sub2.domain.com`',
     'sub_link_settings.message.745a80a770' => '✅ لینک‌های کمکی با موفقیت ذخیره شدند.',
     'sub_link_settings.message.aee64f26a1' => '☑️ مدیریت سرور:',
+    'account_details.remaining_traffic' => ['text' => '{remaining_gib} GB', 'parameters' => ['remaining_gib']],
 ];

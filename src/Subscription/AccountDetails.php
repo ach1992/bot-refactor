@@ -81,7 +81,7 @@ function getOrderTrafficInfo($serverType, $server_id, $remark, $uuid, $inbound_i
     $result['enable'] = ($info->status == 'active');
     $total = $info->data_limit ?? 0;
     $used = $info->used_traffic ?? 0;
-    $result['leftgb'] = $serverType==='pasarguard' && $total===0 ? \achbotMessage('subscription.account_deletion.no_dont_delete.text.5e6ee5eaa1') : round(($total - $used) / 1073741824, 2) . ' GB';
+    $result['leftgb'] = $serverType==='pasarguard' && $total===0 ? \achbotMessage('subscription.account_deletion.no_dont_delete.text.5e6ee5eaa1') : \achbotMessage('subscription.account_details.remaining_traffic', ['remaining_gib' => round(($total - $used) / 1073741824, 2)]);
     return $result;
 }
 

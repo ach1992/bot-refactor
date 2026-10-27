@@ -14,9 +14,33 @@ def main():
     inventory=json.loads((ROOT/'tools/text_catalog_inventory.json').read_text())
     legacy=command('git','show',inventory['baseline']+':settings/values.php')
     check(hashlib.sha256(legacy).hexdigest()==inventory['values_sha256'],'legacy default source identity mismatch')
+    amendments=json.loads((ROOT/'tools/text_catalog_amendments.json').read_text())
+    # Preserve the original per-file raw baselines. First reverse only the two
+    # explicit followup edits, then prove the three authorized auth dependencies.
+    check(set(amendments['source_dependencies'])=={
+        'src/Subscription/AccountDetails.php','src/Subscription/CustomerRoutes.php',
+        'src/Subscription/OrderManagement.php'},'authorized source scope drift')
+    followups=amendments['source_edits']
+    check(len(followups)==2 and {e['kind'] for e in followups}=={
+        'byte_preserved_presentation','authorized_bootstrap_privacy'},'followup scope drift')
     reverse=0
     for path,record in inventory['files'].items():
         current=(ROOT/path).read_bytes()
+        relevant=[e for e in followups if e['path']==path]
+        for edit in reversed(relevant):
+            before=edit['original'].encode();after=edit['replacement'].encode()
+            check(current.count(after)==1,'followup expression drift: '+path)
+            current=current.replace(after,before,1)
+        if path in amendments['source_dependencies']:
+            dependency=amendments['source_dependencies'][path]
+            accepted=command('git','show',dependency['commit']+':'+path)
+            check(current==accepted,'authorized source dependency drift: '+path)
+            diff=command('git','diff',amendments['catalog_commit'],dependency['commit'],'--',path)
+            check(hashlib.sha256(diff).hexdigest()==dependency['diff_sha256'],'authorized diff identity drift: '+path)
+            current=command('git','show',amendments['catalog_commit']+':'+path)
+        elif relevant:
+            check(current==command('git','show',amendments['assignment_base']+':'+path),
+                  'non-copy followup source drift: '+path)
         marker=('\n'+record['loader']).encode()
         check(current.count(marker)==1,'loader marker drift: '+path)
         current=current.replace(marker,b'',1)
@@ -36,6 +60,7 @@ def main():
             check(not re.search(r"['\"](?:callback_data|step|provider|state)['\"]\s*=>\s*$",before[-100:]),'Machine field moved into catalog: '+path)
             check(not re.search(r'->(?:prepare|query)\(\s*$',before[-100:]),'SQL argument moved into catalog: '+path)
         reverse+=len(record['edits'])
+    reverse+=sum(e['kind']=='byte_preserved_presentation' for e in followups)
     tokens=json.loads(command('php','tools/catalog_tokens.php',input=json.dumps(runtime_paths()).encode()))
     exclusions={(e['path'],e['literal']) for e in inventory['excluded_tokens']}
     violations=[]
@@ -95,5 +120,6 @@ def main():
         process.terminate();process.wait(timeout=5)
     print(json.dumps({'status':'PASS','source_equivalent_occurrences':reverse,'source_files':len(inventory['files']),
       'catalog_keys':len(entries),'runtime_references':len(refs),'static_ui_violations':len(violations),'ascii_ui_violations':len(ascii_ui),'ascii_audit_negative_controls':5,'migrated_machine_fields_or_sql_arguments':0,
+      'authorized_source_dependency_files':len(amendments['source_dependencies']),'authorized_bootstrap_flow_changes':1,'approved_public_copy_corrections':len(amendments['approved_copy']),
       'direct_http_guards':len(guarded),'native':native},ensure_ascii=False))
 if __name__=='__main__':main()

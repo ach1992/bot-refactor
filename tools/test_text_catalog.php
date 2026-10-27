@@ -27,6 +27,8 @@ function catalogBindings(array $expressions,$sample): array {
     }
     return $bindings;
 }
+$amendments=json_decode(file_get_contents(__DIR__.'/text_catalog_amendments.json'),true,512,JSON_THROW_ON_ERROR);
+$approvedSeen=[];
 $checks=0;$templates=0;$interpolated=0;
 $samples=[0,42,-77,null,true,"نام <&>\"' {time} %s $ \\\r\n",new CatalogStringProbe()];
 foreach ($inventory['files'] as $path=>$file) {
@@ -36,6 +38,14 @@ foreach ($inventory['files'] as $path=>$file) {
         if (!empty($edit['inline_html'])) {
             if (achbotMessage($edit['key'])!==$edit['original']) throw new RuntimeException('inline_html_mismatch:'.$path);
             $checks++;continue;
+        }
+        if (isset($amendments['approved_copy'][$edit['key']])) {
+            $approved=$amendments['approved_copy'][$edit['key']];
+            if ($edit['expressions'] || catalogEvaluate($edit['original'],[])!==$approved['before'] ||
+                catalogEvaluate($edit['replacement'],[])!==$approved['after'])
+                throw new RuntimeException('unapproved_copy_change:'.$edit['key']);
+            $approvedSeen[$edit['key']]=true;
+            continue; // Intentional owner-approved wording change, not byte parity.
         }
         $expressions=$edit['expressions'];
         if ($expressions) $interpolated++;
@@ -47,6 +57,8 @@ foreach ($inventory['files'] as $path=>$file) {
         }
     }
 }
+if (count($approvedSeen)!==3 || count($amendments['approved_copy'])!==3)
+    throw new RuntimeException('approved_copy_coverage_missing');
 $dynamic=null;
 foreach(glob(dirname(__DIR__).'/messages/fa/*.php') as $path) {
     $topic=basename($path,'.php');$group=achbotMessages($topic);
@@ -81,4 +93,5 @@ require_once dirname(__DIR__).'/src/Presentation/Labels.php';
 if (\AchBot\Presentation\Labels\paymentType('BUY_SUB')!== 'خرید اشتراک') throw new RuntimeException('namespaced_standalone_load_failed');
 echo json_encode(['status'=>'PASS','templates'=>$templates,'interpolated_templates'=>$interpolated,'byte_assertions'=>$checks,
     'html_escaping'=>'PASS','one_pass_substitution'=>'PASS','legacy_facades'=>'PASS',
-    'repeated_interpolation_string_conversion'=>'PASS'],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR)."\n";
+    'repeated_interpolation_string_conversion'=>'PASS','byte_preserved_templates'=>$templates-count($approvedSeen),
+    'approved_wording_corrections'=>count($approvedSeen)],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR)."\n";

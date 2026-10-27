@@ -11,11 +11,22 @@ include_once "settings/values.php";
 include_once 'settings/jdf.php';
 require_once 'baseInfo.php';
 
-$connection = new mysqli('localhost',$dbUserName,$dbPassword,$dbName);
-if($connection->connect_error){
-    exit("error " . $connection->connect_error);  
+// Fail closed before any query or outgoing request; diagnostics contain no inputs.
+$bootstrapStage = 'connection';
+try {
+    $connection = @new mysqli('localhost',$dbUserName,$dbPassword,$dbName);
+    if ($connection->connect_error) throw new RuntimeException('bootstrap_connection_failed');
+    $bootstrapStage = 'charset';
+    if (@$connection->set_charset('utf8mb4') !== true)
+        throw new RuntimeException('bootstrap_charset_failed');
+} catch (Throwable $ignored) {
+    error_log('AChBot bootstrap_unavailable stage=' . $bootstrapStage);
+    http_response_code(503);
+    header('Content-Type: text/plain; charset=utf-8');
+    echo \achbotMessage('bot.bootstrap.unavailable');
+    exit(1);
 }
-$connection->set_charset("utf8mb4");
+unset($bootstrapStage);
 require_once __DIR__ . '/src/Purchase/Core.php';
 require_once __DIR__ . '/src/Finance/PaymentLifecycle.php';
 require_once __DIR__ . '/src/Finance/GatewayRuleAdmin.php';
