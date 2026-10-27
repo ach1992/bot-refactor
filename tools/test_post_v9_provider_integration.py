@@ -47,12 +47,10 @@ function RandomString(){return 'ownedqr';}
 function sendPhoto(...$args){$GLOBALS['events'][]=['photo'=>(string)($args[0]??'')];return (object)['ok'=>true];}
 function bot(...$args){if (($args[0]??'')==='getChat') ++$GLOBALS['chat_reads'];return (object)['ok'=>true,'result'=>(object)['first_name'=>'Fixture']];}
 function getUserOrderDetailKeys(...$args){
- if ($GLOBALS['actual_detail']??false) {global $argv;require_once $argv[1].'/src/Subscription/AccountDetails.php';return \AchBot\Subscription\AccountDetails\getUserOrderDetailKeys(...$args);}
- return ['msg'=>'fixture admin details','keyboard'=>'{}'];
+ global $argv;require_once $argv[1].'/src/Subscription/AccountDetails.php';return \AchBot\Subscription\AccountDetails\getUserOrderDetailKeys(...$args);
 }
 function getOrderDetailKeys(...$args){
- if ($GLOBALS['actual_detail']??false) {global $argv;require_once $argv[1].'/src/Subscription/AccountDetails.php';return \AchBot\Subscription\AccountDetails\getOrderDetailKeys(...$args);}
- return ['msg'=>'fixture owner details','keyboard'=>'{}'];
+ global $argv;require_once $argv[1].'/src/Subscription/AccountDetails.php';return \AchBot\Subscription\AccountDetails\getOrderDetailKeys(...$args);
 }
 
 try {
@@ -101,7 +99,7 @@ if (in_array($spec['op'],['view','adminview','traffic'],true)) {
 }
 break;
 case 'detailread':
-$GLOBALS['actual_detail']=true;$actor=(int)$spec['actor'];$admin=9001;
+$actor=(int)$spec['actor'];$admin=9001;
 $base=['update_id'=>$spec['source']];
 $sender=['id'=>$actor,'username'=>'fixture_reader','first_name'=>'Fixture'];
 $message=['message_id'=>1,'text'=>$spec['text']??'cached foreign text','from'=>['id'=>9001],
@@ -135,7 +133,10 @@ $update=json_decode(json_encode(['update_id'=>$spec['source'],'callback_query'=>
 'chat'=>['id'=>$actor,'type'=>'private'],'reply_markup'=>['inline_keyboard'=>[]]]]]));
 require $argv[1].'/src/Telegram/UpdateBindings.php';
 $q=$db->prepare('SELECT * FROM users WHERE userid=?');$q->bind_param('i',$from_id);$q->execute();$userInfo=$q->get_result()->fetch_assoc();$q->close();
-$mainValues=['please_wait_message'=>'منتظر بمانید'];$botState=[];$buttonValues=[];
+$mainValues=['please_wait_message'=>'منتظر بمانید','no_order_found'=>'NO_ORDER',
+ 'config_details_message'=>"STATE\nNAME\nCONNECT-LINK\nSUB-LINK",'config_doesnt_exist'=>'missing'];
+$botState=[];$buttonValues=array_fill_keys(array_merge($spec['buttons'],['active','deactive']),'fixture-label');
+$botUrl='https://bot.example.invalid/';
 require $argv[1].'/src/Subscription/CustomerRoutes.php';
 $out=['actor'=>$from_id,'events'=>$GLOBALS['events']];break;
 case 'autoreserve':
@@ -220,6 +221,7 @@ def main():
   (work/'phpqrcode/qrlib.php').write_text("<?php class QRcode {public static function png($payload,$file,...$rest){$GLOBALS['qr_payloads'][]=$payload;file_put_contents($file,'owned-png-placeholder');}}")
   buttons=['back_to_main']+sorted(set(re.findall(r"\$buttonValues\['([^']+)'\]",(ROOT/'src/Subscription/AccountDetails.php').read_text())))
   def call(op,**spec):
+   if op=='route':spec.setdefault('buttons',buttons)
    out=subprocess.run(['php','-d','display_errors=0','-d','log_errors=0',str(script),str(ROOT),str(work/'mysql.sock'),db,json.dumps(dict(op=op,**spec))],capture_output=True,text=True,timeout=25)
    if out.returncode or out.stderr:raise AssertionError((out.returncode,out.stderr))
    return json.loads(out.stdout)
