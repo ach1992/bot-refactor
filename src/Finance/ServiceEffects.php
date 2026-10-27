@@ -89,7 +89,7 @@ function achbotEffectRecordManualCapacityLocked(mysqli $db,array $pay,int $count
     if (!$stmt->execute()) throw new RuntimeException('manual_hold_target_read_failed');
     $target=$stmt->get_result()->fetch_assoc();$stmt->close();
     if (!$target || (int)$target['server_id']!==$serverId ||
-        (int)$target['inbound_id']!==0 || !achbotSupportsPanel($target['type']) ||
+        (int)$target['inbound_id']!==0 || !achbotSupportsAccount($target['type'],0) ||
         ($target['type']==='marzban' && $target['panel_group_id']!==null && $target['valid_group']===null) ||
         !is_string($target['panel_url']) || $target['panel_url']==='')
         throw new RuntimeException('manual_hold_target_invalid');
@@ -135,7 +135,7 @@ function achbotCreatePaidAccount(mysqli $db, int $payId, int $ordinal, array $p)
     $volume=(int)($p['volume']??0);
     $days=(int)($p['days']??0);
     if ($payId<=0 || $ordinal<=0 || $serverId<=0 ||
-        $planId<=0 || $inboundId!==0 || !achbotSupportsPanel($p['server_type']??'') ||
+        $planId<=0 || $inboundId!==0 || !achbotSupportsAccount($p['server_type']??'',0) ||
         $volume<=0 || $days<=0 || $days>36500 ||
         $volume>intdiv(PHP_INT_MAX,1073741824) ||
         !achbotEffectValidUsername($remark)) {
@@ -178,7 +178,7 @@ function achbotCreatePaidAccount(mysqli $db, int $payId, int $ordinal, array $p)
             (int)$claim['paid_server']!==(int)$claim['plan_server'] ||
             (int)$claim['plan_server']!==$serverId ||
             (int)$claim['plan_inbound']!==$inboundId ||
-            !achbotSupportsPanel($claim['panel_type']) ||
+            !achbotSupportsAccount($claim['panel_type'],0) ||
             ($claim['panel_type']==='marzban' && $claim['panel_group_id']!==null && $claim['valid_group']===null) ||
             !is_string($claim['panel_url']) || $claim['panel_url']==='' ||
             // 0/null is the documented historical one-account default.
@@ -359,7 +359,7 @@ function achbotEffectDispatchReservedAccount(
         $check->bind_param('i',$serverId);
         if (!$check->execute()) throw new RuntimeException('effect_target_check_failed');
         $target=$check->get_result()->fetch_assoc();$check->close();
-        if (!$target || !achbotSupportsPanel($target['type']) ||
+        if (!$target || !achbotSupportsAccount($target['type'],0) ||
             ($target['panel_group_id']===null?null:(int)$target['panel_group_id'])!==$group ||
             hash('sha256',rtrim((string)$target['panel_url'],'/'))!==$endpoint ||
             hash('sha256',json_encode([
@@ -524,7 +524,7 @@ function achbotCreateNonPaymentAccount(
         !preg_match('/^(trial|trial_admin|bulk):[1-9][0-9]*(?::[1-9][0-9]*)?$/D',$sourceRef) ||
         $actor<=0 || $ordinal<1 || $count<1 || $ordinal>$count ||
         ($kind==='free_trial' && $count!==1) ||
-        $serverId<=0 || $planId<=0 || !achbotSupportsPanel($p['server_type']??'') ||
+        $serverId<=0 || $planId<=0 || !achbotSupportsAccount($p['server_type']??'',0) ||
         (int)($p['inbound_id']??-1)!==0 ||
         $volume<=0 || $days<=0 || $days>36500 ||
         $volume>intdiv(PHP_INT_MAX,1073741824) ||
@@ -570,7 +570,7 @@ function achbotCreateNonPaymentAccount(
         if (!$plan->execute()) throw new RuntimeException('nonpaid_effect_plan_read');
         $locked=$plan->get_result()->fetch_assoc();$plan->close();
         if (!$locked || (int)$locked['server_id']!==$serverId ||
-            (int)$locked['inbound_id']!==0 || !achbotSupportsPanel($locked['type']) ||
+            (int)$locked['inbound_id']!==0 || !achbotSupportsAccount($locked['type'],0) ||
             ($locked['type']==='marzban' && $locked['panel_group_id']!==null && $locked['valid_group']===null) ||
             (string)$locked['panel_url']==='')
             throw new RuntimeException('nonpaid_effect_target_changed');
@@ -715,7 +715,7 @@ function achbotEffectReserveWalletCapacityLocked(mysqli $db, array $pay): void {
         $row['type']!=='BUY_SUB' || $row['state']!=='processing_wallet' ||
         (int)$row['server_id']!==$serverId ||
         (int)$row['inbound_id']!==0 || (int)$row['active']!==1 ||
-        !achbotSupportsPanel($row['panel_type']) ||
+        !achbotSupportsAccount($row['panel_type'],0) ||
         ($row['panel_type']==='marzban' && $row['panel_group_id']!==null && $row['valid_group']===null) ||
         (string)$row['panel_url']==='')
         throw new RuntimeException('wallet_hold_plan_changed');

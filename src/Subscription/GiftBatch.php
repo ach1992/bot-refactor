@@ -10,6 +10,7 @@
  * + optional panel group identity. Secret values are used only transiently
  * for authenticated requests, and never written to setting rows or logs.
  */
+require_once __DIR__.'/../Panel/ProviderRuntime.php';
 if (!function_exists('achbotGiftPhysicalTarget')) {
     function achbotGiftPhysicalTarget(mysqli $db, int $serverId,
                                       bool $lock=false): array {

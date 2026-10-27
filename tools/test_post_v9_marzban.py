@@ -50,6 +50,12 @@ def prepare(work: Path, stage: Path, candidate: bool) -> None:
         dest = stage / name
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_bytes(get_bytes(name))
+    if candidate:
+        dest=stage/'src/Panel/ProviderRuntime.php'
+        dest.parent.mkdir(parents=True,exist_ok=True)
+        dest.write_bytes((ROOT/'src/Panel/ProviderRuntime.php').read_bytes())
+        with (stage/'functions-under-test.php').open('ab') as stream:
+            stream.write(b"\nrequire_once __DIR__.'/src/Panel/ProviderRuntime.php';\n")
     (stage / "native.php").write_bytes((ROOT / "tests/v6/native.php").read_bytes())
     (stage / "baseInfo.php").write_text("<?php // owned synthetic placeholder\n")
     (stage / "private-state.json").write_text('{"fixture":"post-v9"}\n')

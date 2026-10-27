@@ -65,7 +65,7 @@ function getOrderTrafficInfo($serverType, $server_id, $remark, $uuid, $inbound_i
         'found' => false, 'enable' => false, 'leftgb' => "⚠️",
         'netType' => null, 'security' => null,
     ];
-    if ($serverType !== 'marzban' || (int)$inbound_id !== 0) return $result;
+    if (!achbotSupportsAccount($serverType,$inbound_id)) return $result;
 
     $info = achbotProviderUser($server_id, $remark);
     if (!is_object($info) || !isset($info->username)) return $result;
@@ -74,7 +74,7 @@ function getOrderTrafficInfo($serverType, $server_id, $remark, $uuid, $inbound_i
     $result['enable'] = ($info->status == 'active');
     $total = $info->data_limit ?? 0;
     $used = $info->used_traffic ?? 0;
-    $result['leftgb'] = round(($total - $used) / 1073741824, 2) . ' GB';
+    $result['leftgb'] = $serverType==='pasarguard' && $total===0 ? 'نامحدود' : round(($total - $used) / 1073741824, 2) . ' GB';
     return $result;
 }
 
@@ -124,7 +124,7 @@ function buildAdminProtocolButtons($protocol, $netType, $security, $rahgozar, $i
 
 
 function buildUserProtocolButtons($protocol, $netType, $security, $rahgozar, $inbound_id, $serverType, $botState, $fid, $id) {
-    if ($serverType == "marzban") return [];
+    if (achbotSupportsAccount($serverType,$inbound_id)) return [];
 
     $names = getProtocolNamesRow($protocol, $netType, $security, $rahgozar, $inbound_id);
 
@@ -179,9 +179,10 @@ function getUserOrderDetailKeys($id, $offset = 0){
     $enableBool  = $traffic['enable'] ?? false;
     $enableText  = $enableBool ? $buttonValues['active'] : $buttonValues['deactive'];
 
-    $configLinks = buildConfigLinks($acc_link, $botState, $showIndexes);
-    $subLink     = buildSubLink($serverType, $panelUrl, $botUrl, $token, $botState);
-    $backup      = buildSubBackupSection($subLinksRaw, $token);
+    $presentation=achbotOrderPresentation($GLOBALS['connection'],$order,$server,$botState);
+    $configLinks=$presentation['config_html'];
+    $subLink=$presentation['subscription_html'];
+    $backup=$presentation['backup_html'];
 
     $msg = buildConfigMessage($enableText, $remark, $configLinks, $subLink, $backup, $serverType);
 
@@ -308,9 +309,10 @@ function getOrderDetailKeys($from_id, $id, $offset = 0){
         ? ($enableBool ? $buttonValues['active'] : $buttonValues['deactive'])
         : $mainValues['config_doesnt_exist'];
 
-    $configLinks = buildConfigLinks($acc_link, $botState, $showIndexes);
-    $subLink     = buildSubLink($serverType, $panelUrl, $botUrl, $token, $botState);
-    $backup      = buildSubBackupSection($subLinksRaw, $token);
+    $presentation=achbotOrderPresentation($GLOBALS['connection'],$order,$server,$botState);
+    $configLinks=$presentation['config_html'];
+    $subLink=$presentation['subscription_html'];
+    $backup=$presentation['backup_html'];
 
     $msg = buildConfigMessage($enableText, $remark, $configLinks, $subLink, $backup, $serverType);
 
@@ -340,7 +342,7 @@ function getOrderDetailKeys($from_id, $id, $offset = 0){
     ];
 
     // protocol label
-    if ($serverType != "marzban") {
+    if (!achbotSupportsAccount($serverType,$inbound_id)) {
         $keyboard[] = [
             ['text' => $buttonValues['selected_protocol'], 'callback_data' => "wizwizch"],
         ];
@@ -380,7 +382,7 @@ function getOrderDetailKeys($from_id, $id, $offset = 0){
         }
 
         if (($botState['switchLocationState'] ?? 'off') === 'on' &&
-            $serverType === 'marzban' && (int)$inbound_id === 0) {
+            achbotSupportsAccount($serverType,$inbound_id)) {
             // The callback carries the old shape but never grants authority.
             $temp[] = ['text' => '📍 تغییر سرور',
                        'callback_data' => "switchLocation{$id}_{$server_id}_0_0"];

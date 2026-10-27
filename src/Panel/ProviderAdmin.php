@@ -125,7 +125,7 @@ function achbotHandleProviderAdmin(): bool {
                 $s->bind_param('sissis',$title,$count,$remark,$flag,$pid,$groups);
                 if (!$s->execute() || $s->affected_rows!==1) throw new RuntimeException('pg_server_insert_unconfirmed');
                 $id=(int)$s->insert_id;$s->close();$url=$panel['api_url'];
-                $s=$connection->prepare("INSERT INTO server_config(id,panel_url,type) VALUES(?,?,'pasarguard')");
+                $s=$connection->prepare("INSERT INTO server_config(id,panel_url,ip,sni,header_type,request_header,response_header,security,tlsSettings,username,password,type) VALUES(?,?,'','','none','','','none','','','','pasarguard')");
                 $s->bind_param('is',$id,$url);
                 if (!$s->execute() || $s->affected_rows!==1) throw new RuntimeException('pg_server_config_unconfirmed');$s->close();
                 if (!$connection->commit()) throw new RuntimeException('pg_server_commit_unknown');

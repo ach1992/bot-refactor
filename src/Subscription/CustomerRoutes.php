@@ -417,6 +417,7 @@ if(preg_match('/changAccountConnectionLink(\d+)/', $data,$match)){
 
 if(preg_match('/changeUserConfigState(\d+)/', $data,$match)){
     alert($mainValues['please_wait_message']);
+    $stateActorAdmin=((int)$from_id===(int)$admin || !empty($userInfo['isAdmin']));
     $oid = $match[1];
 
     $stmt = $connection->prepare("SELECT * FROM `orders_list` WHERE `id`=?");
@@ -425,6 +426,7 @@ if(preg_match('/changeUserConfigState(\d+)/', $data,$match)){
     $order = $stmt->get_result()->fetch_assoc();
     $stmt->close();
     
+    if (!$order || !achbotSupportsOrder($connection,(int)$oid,null,$stateActorAdmin?null:(int)$from_id)) {alert('⛔️ اشتراک معتبر نیست.',true);return;}
     $userId = $order['userid'];
     $uuid = $order['uuid']??"0";
     $inboundId = $order['inbound_id'];
@@ -448,9 +450,9 @@ if(preg_match('/changeUserConfigState(\d+)/', $data,$match)){
     if($update_response->success){
         alert($mainValues['please_wait_message']);
     
-        $keys = getUserOrderDetailKeys($oid);
+        $keys = $stateActorAdmin?getUserOrderDetailKeys($oid):getOrderDetailKeys((int)$from_id,$oid);
         editText($message_id, $keys['msg'], $keys['keyboard'], "HTML");
-    }else sendMessage("عملیات مورد نظر با مشکل روبرو شد.\n" . $update_response->msg);
+    }else sendMessage('⚠️ نتیجه تغییر وضعیت هنوز قطعی نیست؛ برای بررسی با پشتیبانی تماس بگیرید.');
 }
 
 if (preg_match('/agentChangeUserConfigState(\d+)/', $data, $match)) {
@@ -465,7 +467,10 @@ if (preg_match('/agentChangeUserConfigState(\d+)/', $data, $match)) {
     $order = $stmt->get_result()->fetch_assoc();
     $stmt->close();
 
-    if (!$order) {
+    if (!$order || !achbotSupportsOrder($connection,(int)$oid,null,
+        ((int)$from_id===(int)$admin || !empty($userInfo['isAdmin']))?null:(int)$from_id) ||
+        (!((int)$from_id===(int)$admin || !empty($userInfo['isAdmin'])) &&
+         ((int)($userInfo['is_agent']??0)!==1 || (int)($order['agent_bought']??0)!==1))) {
         sendMessage("سفارش مورد نظر یافت نشد.");
         return;
     }
@@ -506,7 +511,7 @@ if (preg_match('/agentChangeUserConfigState(\d+)/', $data, $match)) {
         editText($message_id, $keys['msg'], $keys['keyboard'], "HTML");
 
     } else {
-        sendMessage("عملیات مورد نظر با مشکل روبرو شد.\n" . $update_response->msg);
+        sendMessage('⚠️ نتیجه تغییر وضعیت هنوز قطعی نیست؛ برای بررسی با پشتیبانی تماس بگیرید.');
     }
 }
 

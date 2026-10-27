@@ -115,6 +115,7 @@ function achbotAutoRenewReserve(mysqli $db, int $orderId, int $userId): array {
         $payId=(int)$db->insert_id;
         $stmt->close();
         if ($payId<=0) throw new RuntimeException('renewal_pay_claim_failed');
+        achbotPgPinPayment($db,$payId);
         $stmt=$db->prepare("INSERT INTO automatic_renewal_attempts
             (order_id,cycle_expire,pay_row_id,user_id,plan_id,server_id,
              account_remark,price_toman,duration_days,volume_gb,new_expire,stage)
@@ -320,7 +321,7 @@ function handleAutoRenewCallback($data): void {
     }
     try {
         $reply=achbotApplyServiceEdit($connection,$claim['server_id'],[
-            'operation_key'=>'autorenew:'.(int)$claim['id'],'remark'=>$claim['remark'],'days'=>$claim['days'],
+            'pay_id'=>(int)$claim['pay_id'],'operation_key'=>'autorenew:'.(int)$claim['id'],'remark'=>$claim['remark'],'days'=>$claim['days'],
             'volume'=>$claim['volume']
         ]);
         $success=(is_object($reply) && ($reply->success??false)===true)

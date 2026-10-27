@@ -10,6 +10,7 @@ from pathlib import Path
 
 import test_access_state as owned
 import test_v6_native as native
+import test_v6_panels as panel_functions
 import test_v8_native as purchase
 import v9_contract as v9
 import package_post_v9 as current_runtime
@@ -41,7 +42,14 @@ def stage_source(stage:Path,current:bool)->dict:
         raw=(ROOT/rel).read_bytes() if current else subprocess.check_output(
             ['git','-C',str(ROOT),'show',HISTORY+':'+rel])
         dest.write_bytes(raw)
+    if current:
+        # Fragment fixture executes the real common provider seam too.
+        for rel in ['src/Panel/ProviderRuntime.php','src/Panel/ProviderAdmin.php','src/Panel/ProviderStorage.php','src/Panel/PasarGuard.php','src/Subscription/Presentation.php']:
+            dest=stage/rel;dest.parent.mkdir(parents=True,exist_ok=True);dest.write_bytes((ROOT/rel).read_bytes())
     fixture=(ROOT/'tests/v7/native-purchase.php').read_text()
+    if current:
+        (stage/'presentation-under-test.php').write_bytes(panel_functions.function_bodies((ROOT/'config.php').read_bytes(),['buildSubscriptionPresentation']))
+        fixture=fixture.replace('<?php','<?php\nrequire_once __DIR__ . "/presentation-under-test.php";',1)
     # Stage the same explicitly configured, synthetic bank destination for
     # immutable V9 and current source. Real manual checkout now requires it;
     # do not modify the pinned historical fixture or waive event parity.

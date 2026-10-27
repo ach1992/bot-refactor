@@ -628,11 +628,19 @@ def main():
             'function':'achbotOwnedEditRouter',
             'args':[2,{'remark':'fixture-user','plus_volume':1}]})
         assert future['exception'] is None and future['result']['success'] is False,future
-        assert future['result']['msg']=='unsupported_service_adapter',future
+        assert future['result']['msg']=='pg_edit_requires_review',future
         assert panel.trace==[],panel.trace
         native.sql(work,env,"UPDATE server_config SET type='marzban' WHERE id=2",
                    native.DBS[1])
-        cases.append('unimplemented_future_panel_denied_without_remote_dispatch')
+        cases.append('pasarguard_missing_migration_identity_denied_without_remote_dispatch')
+
+        native.sql(work,env,"UPDATE server_config SET type='unknown_fixture_provider' WHERE id=2",native.DBS[1])
+        panel.trace.clear()
+        unknown=native.run(work,env,source,native.DBS[1],{'function':'achbotOwnedEditRouter','args':[2,{'remark':'fixture-user','plus_volume':1}]})
+        assert unknown['exception'] is None and unknown['result']['msg']=='unsupported_service_adapter',unknown
+        assert panel.trace==[]
+        native.sql(work,env,"UPDATE server_config SET type='marzban' WHERE id=2",native.DBS[1])
+        cases.append('unknown_provider_denied_without_remote_dispatch')
 
         # Each parallel PHP worker needs its OWN fixture directory. Sharing
         # native.php/case.json/result.json would falsely test file races rather

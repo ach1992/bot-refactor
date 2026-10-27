@@ -2194,7 +2194,7 @@ function achbotAutoRenewSchemaState(mysqli $db): string {
 /** Never infer physical panel identity from URLs or credentials. */
 function achbotAutoRenewSameAccount(mysqli $db, int $serverA, int $serverB): bool {
     return $serverA>0 && $serverB>0 &&
-        ($serverA===$serverB || achbotSameMarzbanPanel($db,$serverA,$serverB));
+        ($serverA===$serverB || achbotSameProviderPanel($db,$serverA,$serverB));
 }
 
 /**

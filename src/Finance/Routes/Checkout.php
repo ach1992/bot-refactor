@@ -218,18 +218,12 @@ if (preg_match('/^showQr(Sub|Config)(\d+)/', $data, $match)) {
     if (!defined('IMAGE_WIDTH'))  define('IMAGE_WIDTH', 540);
     if (!defined('IMAGE_HEIGHT')) define('IMAGE_HEIGHT', 540);
 
+    $stmt=$connection->prepare('SELECT * FROM server_config WHERE id=?');
+    $stmt->bind_param('i',$order['server_id']);$stmt->execute();$panel=$stmt->get_result()->fetch_assoc();$stmt->close();
+    $presentation=achbotOrderPresentation($connection,$order,$panel?:[],$botState);
     if ($match[1] == "Sub") {
-        $stmt = $connection->prepare("SELECT `panel_url` FROM `server_config` WHERE `id` = ? AND `type` = 'marzban' LIMIT 1");
-        $stmt->bind_param("i", $order['server_id']);
-        $stmt->execute();
-        $panel = $stmt->get_result()->fetch_assoc();
-        $stmt->close();
-        if (!$panel || empty($panel['panel_url']) || empty($order['token'])) {
-            alert("⛔️ لینک این اشتراک در حال حاضر در دسترس نیست.", true);
-            return;
-        }
-        $subLink = rtrim($panel['panel_url'], '/') . "/sub/" . $order['token'];
-
+        $subLink=$presentation['subscription_url'];
+        if ($subLink==='') {alert('⛔️ لینک اشتراک در حال حاضر در دسترس نیست.',true);return;}
         $file = RandomString() . ".png";
         $ecc = 'L';
         $pixel_Size = 11;
@@ -248,7 +242,8 @@ if (preg_match('/^showQr(Sub|Config)(\d+)/', $data, $match)) {
     }
     elseif ($match[1] == "Config") {
 
-        $vraylink = json_decode($order['link'], true);
+        $vraylink = $presentation['qr_config_links'];
+        if (!$vraylink) {alert('⛔️ کانفیگ قابل نمایش در دسترس نیست.',true);return;}
 
         foreach ($vraylink as $vray_link) {
             $file = RandomString() . ".png";
@@ -260,10 +255,10 @@ if (preg_match('/^showQr(Sub|Config)(\d+)/', $data, $match)) {
 
             sendPhoto(
                 $botUrl . $file,
-                $acc_text,
+                ($acc_text ?? ''),
                 json_encode(['inline_keyboard' => [[['text' => $buttonValues['back_to_main'], 'callback_data' => "mainMenu"]]]]),
                 "HTML",
-                $uid
+                $from_id
             );
             unlink($file);
         }
