@@ -13,7 +13,7 @@ set_error_handler(static function($s,$m,$f,$l) {
     if ($s===E_DEPRECATED) return true;
     throw new ErrorException($m,0,$s,$f,$l);
 });
-$root=$argv[1];
+$root=$argv[1];chdir(dirname($argv[2]));
 $connection=new mysqli('localhost','root','',$argv[3],0,$argv[2]);
 $connection->set_charset('utf8mb4');
 require_once $root.'/src/Subscription/ServerDisplaySettings.php';
@@ -256,6 +256,88 @@ equal(count($events),1,'text_only_single_text_effect_no_photo');
 removeSetting(3);settingRow(3,['mode'=>'native','policy'=>[]],'marzban',201);
 noChange(static fn()=>rejects(static fn()=>achbotRequireServerDisplay($connection,3,'pasarguard'),
     'invalid_display_preflight_throws'),'invalid_preflight_read_only');
+// Normal administrator controls require no JSON and bind the visible revision.
+$serverOneBefore=achbotServerDisplayOptions($connection,1,'marzban');
+callback('serverDisplay2',300);
+verify(str_contains(json_encode($events,JSON_UNESCAPED_UNICODE),'serverDisplaySet2_cfg_flip_31') &&
+    !str_contains($events[0][0],'<pre>'),'friendly_summary_and_normal_controls');
+callback('serverDisplaySet2_cfg_flip_31',301);
+equal(achbotServerDisplayOptions($connection,2,'marzban')['policy']['show_configs'],false,'normal_config_toggle');
+equal(achbotServerDisplayOptions($connection,1,'marzban'),$serverOneBefore,'normal_toggle_isolated_by_server');
+noChange(static fn()=>callback('serverDisplaySet2_cfg_flip_31',301),'normal_toggle_replay_rejected');
+noChange(static fn()=>callback('serverDisplaySet2_cfgx_flip_301',302),'forged_control_field_rejected');
+callback('serverDisplaySet2_cfg_flip_301',303);
+callback('serverDisplaySet2_sub_flip_303',304);
+equal(achbotServerDisplayOptions($connection,2,'marzban')['policy']['show_subscription'],true,'normal_subscription_toggle');
+callback('serverDisplayQr2',305);
+verify(str_contains(json_encode($events,JSON_UNESCAPED_UNICODE),'serverDisplaySet2_qr_none_304'),'normal_qr_choice_menu');
+callback('serverDisplaySet2_qr_none_304',306);
+equal(achbotServerDisplayOptions($connection,2,'marzban')['policy']['qr'],'none','normal_text_only_choice');
+callback('serverDisplayValue2_max_306',307);
+noChange(static fn()=>message('-1',308),'guided_number_invalid_no_write');
+message('2',309);
+equal(achbotServerDisplayOptions($connection,2,'marzban')['policy']['max_links'],2,'guided_number_save');
+callback('serverDisplayValue2_protocols_309',310);message('vless,trojan',311);
+equal(achbotServerDisplayOptions($connection,2,'marzban')['policy']['selectors'],
+    [['protocol'=>'vless'],['protocol'=>'trojan']],'guided_native_protocol_selection');
+callback('serverDisplayValue2_names_311',312);message("Fast\nBackup",313);
+equal(achbotServerDisplayOptions($connection,2,'marzban')['policy']['selectors'],
+    [['name'=>'Fast'],['name'=>'Backup']],'guided_native_name_selection');
+callback('serverDisplayValue2_threshold_313',314);message('/off',315);
+verify(!isset(achbotServerDisplayOptions($connection,2,'marzban')['policy']['hide_if_more_than']),'guided_threshold_off');
+callback('serverDisplaySet2_mode_marzban_legacy_315',316);
+callback('serverDisplayValue2_view_316',317);message('2,4',318);
+callback('serverDisplayValue2_delivery_318',319);message('2,9',320);
+$managed=achbotServerDisplayOptions($connection,2,'marzban');
+equal(present('marzban',$native,$on,$managed)['links'],[$two,$four],'guided_legacy_one_based_view');
+equal(present('marzban',$native,$on,$managed,'delivery')['links'],[$three,$one],'guided_legacy_zero_based_delivery');
+removeSetting(3);settingRow(3,achbotServerDisplayDefault(),'pasarguard',330);
+noChange(static fn()=>callback('serverDisplaySet3_mode_marzban_legacy_330',331),'normal_pg_rejects_legacy_positions');
+noChange(static fn()=>callback('serverDisplaySet2_sub_flip_31',332),'normal_old_screen_revision_rejected');
+// Native helper resolves the actual order logical server, including shared panels.
+$order=['id'=>1,'server_id'=>1,'link'=>json_encode($all),'token'=>'native-token'];
+$server=['type'=>'marzban','panel_url'=>'https://native.invalid','sub_links'=>''];
+equal(achbotOrderPresentation($connection,$order,$server,$on)['links'],[$two,$four],'actual_order_helper_uses_server_one_policy');
+removeSetting(2);settingRow(2,$policyB,'marzban',400);
+$order['server_id']=2;
+equal(achbotOrderPresentation($connection,$order,$server,$on)['links'],[$one],'actual_order_helper_uses_server_two_policy');
+// Current refresh and administrator account-list paths consume the same resolver.
+$a=strpos($cfg,'function getServerConfigById(');$b=strpos($cfg,'function getOrderTrafficInfo(',$a);
+eval(str_replace('__DIR__',var_export($root,true),substr($cfg,$a,$b-$a)));
+function alert(...$args) {$GLOBALS['events'][]=['alert'=>(string)($args[0]??'')];}
+function sendPhoto(...$args) {$GLOBALS['events'][]=['photo'=>true];return (object)['ok'=>true];}
+function getMarzbanUserInfo($sid,$remark) {
+    $GLOBALS['native_reads']=($GLOBALS['native_reads']??0)+1;
+    return (object)['links'=>$GLOBALS['all'],'subscription_url'=>$GLOBALS['sub']];
+}
+$from_id=1001;$botState=['configLinkState'=>'off','subLinkState'=>'off'];$botUrl='https://fixture.invalid/';$mainValues=['please_wait_message'=>'Working'];
+$userInfo=['step'=>'none','isAdmin'=>false,'temp'=>json_encode(['server_id'=>2,'remark'=>'fixture'])];
+$data='sConfigUpdate1';$events=[];$native_reads=0;
+require $root.'/src/Subscription/ConfigRefresh.php';
+equal($native_reads,0,'refresh_rejects_forged_logical_server_before_provider_read');
+$data='sConfigUpdate2garbage';require $root.'/src/Subscription/ConfigRefresh.php';
+equal($native_reads,0,'refresh_rejects_malformed_callback');
+$data='sConfigUpdate2';$events=[];
+require $root.'/src/Subscription/ConfigRefresh.php';
+equal($native_reads,1,'refresh_uses_native_provider_data_once');
+$rendered=json_encode($events,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
+verify(str_contains($rendered,htmlspecialchars($one,ENT_QUOTES,'UTF-8')) &&
+    !str_contains($rendered,$two),'refresh_applies_managed_native_selection_to_qr_and_text');
+verify(count(glob(getcwd().'/*.png'))===0,'refresh_qr_files_cleaned');
+function jdate(...$args) {return 'fixture-date';}
+$links=$connection->real_escape_string(json_encode($all));
+$connection->query("INSERT INTO orders_list(userid,token,transid,fileid,server_id,inbound_id,remark,uuid,
+    protocol,expire_date,link,amount,status,date) VALUES
+    (1001,'native-token','',7,2,0,'fixture','id','vless',2000000000,'".$links."',100,1,'1700000000')");
+$data='wizwizplanacclist7';$from_id=9001;$userInfo=['step'=>'none','isAdmin'=>true];
+$channelLock='fixture';$events=[];
+$plans=file_get_contents($root.'/src/Plans/Administration.php');
+$a=strpos($plans,"if(preg_match('/^wizwizplanacclist");
+$b=strpos($plans,"if(preg_match('/^wizwizplandelete",$a);
+eval(substr($plans,$a,$b-$a));
+$rendered=json_encode($events,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
+verify(str_contains($rendered,htmlspecialchars($one,ENT_QUOTES,'UTF-8')) &&
+    !str_contains($rendered,$two),'actual_admin_plan_account_list_uses_per_server_policy');
 $tooMany=['links'=>array_map(static fn($i)=>'vless://native.invalid/'.$i,range(1,200)),
     'subscription_url'=>$sub];
 $bounded=present('pasarguard',$tooMany,$on,achbotServerDisplayDefault());

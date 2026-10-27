@@ -145,7 +145,7 @@ function buildUserProtocolButtons($protocol, $netType, $security, $rahgozar, $in
 
 
 function getUserOrderDetailKeys($id, $offset = 0){
-    global $botState, $buttonValues, $botUrl, $showIndexes;
+    global $botState, $buttonValues, $botUrl;
 
     $order = findOrder($id);
     if (!$order) return null;
@@ -185,6 +185,7 @@ function getUserOrderDetailKeys($id, $offset = 0){
     $backup=$presentation['backup_html'];
 
     $msg = buildConfigMessage($enableText, $remark, $configLinks, $subLink, $backup, $serverType);
+    if ($presentation['notice_html'] !== '') $msg .= "\n\n" . $presentation['notice_html'];
 
     // ---- Admin Keyboard ----
     $keyboard = [];
@@ -272,7 +273,7 @@ function getUserOrderDetailKeys($id, $offset = 0){
 
 
 function getOrderDetailKeys($from_id, $id, $offset = 0){
-    global $botState, $mainValues, $buttonValues, $botUrl, $userInfo, $showIndexes;
+    global $botState, $mainValues, $buttonValues, $botUrl, $userInfo;
 
     $order = findOrder($id, $from_id);
     if (!$order) return null;
@@ -315,6 +316,7 @@ function getOrderDetailKeys($from_id, $id, $offset = 0){
     $backup=$presentation['backup_html'];
 
     $msg = buildConfigMessage($enableText, $remark, $configLinks, $subLink, $backup, $serverType);
+    if ($presentation['notice_html'] !== '') $msg .= "\n\n" . $presentation['notice_html'];
 
     // ---- User Keyboard ----
     $keyboard = [];

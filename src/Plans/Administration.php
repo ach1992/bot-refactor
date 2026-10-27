@@ -357,9 +357,10 @@ if(preg_match('/^wizwizplanacclist(\d+)/',$data,$match) and ($from_id == $admin 
         $accid = $order['id'];
         $orderLink = json_decode($order['link'],true);
         $txt = "$sold \n  ☑️ $remark ";
-        foreach($orderLink as $link){
-            $txt .= $botState['configLinkState'] != "off"?"<code>".$link."</code> \n":"";
-        }
+        $server=getServerConfigById((int)$order['server_id']);
+        $presentation=achbotOrderPresentation($connection,$order,$server,$botState);
+        $txt .= "\n".$presentation['config_html']."\n".$presentation['subscription_html'].
+            $presentation['backup_html']."\n".$presentation['notice_html'];
         $txt .= "\n ❗ $channelLock \n";
         sendMessage($txt, null, "HTML");
     }

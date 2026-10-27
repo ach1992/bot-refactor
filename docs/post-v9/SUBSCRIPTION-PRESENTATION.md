@@ -7,8 +7,10 @@ deployment, payment, or real provider changes.
 ## Administrator configuration
 
 Open **server settings → نمایش لینک و QR** for the desired logical Marzban or
-PasarGuard server, then **ویرایش سیاست نمایش**. The bot shows the schema guide
-and accepts a complete JSON document in the administrator's private chat.
+PasarGuard server, then use the config/subscription toggles, QR choices, link limits and guided
+protocol/name selections. Marzban compatibility has guided index lists. A concise
+Persian summary shows current values. Optional **ویرایش پیشرفته** accepts a full
+JSON document in the administrator's private chat.
 Logical servers sharing a physical panel have independent display documents.
 
 ~~~json

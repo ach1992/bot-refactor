@@ -109,10 +109,79 @@ function achbotServerDisplayFrame($update,int $actor,int $chat,int $message,stri
  * Server/provider, fresh database role, user step and baseline are checked under lock.
  * A stale/replayed callback cannot commit a new setting or overwrite another editor.
  */
+function achbotServerDisplayChange(array $document,string $provider,string $field,string $input): array {
+    $policy=$document['policy'];
+    $keys=['cfg'=>'show_configs','sub'=>'show_subscription'];
+    if (isset($keys[$field]) && $input==='flip') {
+        $key=$keys[$field];$policy[$key]=!($policy[$key]??true);
+    } elseif ($field==='qr') {
+        if (!in_array($input,['auto','subscription','first_config','none'],true))
+            throw new RuntimeException('display_choice_invalid');
+        $policy['qr']=$input;
+    } elseif ($field==='mode') {
+        if (!in_array($input,['native','marzban_legacy'],true) || ($input==='marzban_legacy' && $provider!=='marzban'))
+            throw new RuntimeException('display_mode_invalid');
+        $policy=array_intersect_key($policy,array_flip(['show_configs','show_subscription','qr']));
+        $document=$input==='native'
+            ? ['mode'=>'native','policy'=>$policy+['max_links'=>10]]
+            : ['mode'=>'marzban_legacy','policy'=>$policy,'legacy'=>[
+                'showIndexes'=>[1],'linkIndices'=>[0],
+                'hideConfigIfMany'=>false,'hideConnectLinkForMarzban'=>false]];
+        if (!achbotServerDisplayValid($document,$provider)) throw new RuntimeException('display_input_invalid');
+        return $document;
+    } elseif (in_array($field,['many','viewhide'],true) && $input==='flip' && $document['mode']==='marzban_legacy') {
+        $key=$field==='many'?'hideConfigIfMany':'hideConnectLinkForMarzban';
+        $document['legacy'][$key]=!($document['legacy'][$key]??false);
+    } elseif (in_array($field,['view','delivery'],true) && $document['mode']==='marzban_legacy') {
+        $indices=[];
+        if ($input!=='/empty') {
+            if (!preg_match('/^[0-9]+(?:\s*,\s*[0-9]+)*$/D',trim($input)))
+                throw new RuntimeException('display_indices_invalid');
+            foreach (preg_split('/\s*,\s*/',trim($input)) as $part) {
+                if (strlen($part)>4) throw new RuntimeException('display_indices_invalid');
+                $indices[]=(int)$part;
+            }
+        }
+        $document['legacy'][$field==='view'?'showIndexes':'linkIndices']=$indices;
+    } elseif ($document['mode']==='native' && in_array($field,['max','threshold'],true)) {
+        $key=$field==='max'?'max_links':'hide_if_more_than';
+        if ($field==='threshold' && $input==='/off') unset($policy[$key]);
+        else {
+            if (!preg_match('/^(?:0|[1-9][0-9]{0,3})$/D',trim($input)) || (int)$input>1000)
+                throw new RuntimeException('display_number_invalid');
+            $policy[$key]=(int)$input;
+        }
+    } elseif ($document['mode']==='native' && $field==='select') {
+        if ($input==='all') unset($policy['selectors']);
+        elseif ($input==='none') $policy['selectors']=[];
+        else throw new RuntimeException('display_choice_invalid');
+    } elseif ($document['mode']==='native' && in_array($field,['protocols','names'],true)) {
+        $values=$field==='protocols'?explode(',',$input):preg_split('/\R/',trim($input));
+        $policy['selectors']=[];
+        foreach ($values as $value) {
+            $value=trim($value);
+            if ($value==='' || ($field==='protocols' && !preg_match('/^[a-z][a-z0-9+.-]{0,30}$/iD',$value)))
+                throw new RuntimeException('display_selector_invalid');
+            $policy['selectors'][]=[$field==='protocols'?'protocol':'name'=>$value];
+        }
+    } else throw new RuntimeException('display_field_invalid');
+    $document['policy']=$policy;
+    if (!achbotServerDisplayValid($document,$provider)) throw new RuntimeException('display_input_invalid');
+    return $document;
+}
+function achbotServerDisplayRevision(?array $row): int {
+    if ($row===null) return 0;
+    $value=json_decode((string)$row['value'],true,32,JSON_THROW_ON_ERROR);
+    if (!is_array($value) || !is_int($value['updated_source']??null) || $value['updated_source']<=0)
+        throw new RuntimeException('display_revision_invalid');
+    return $value['updated_source'];
+}
 function achbotServerDisplayEdit(mysqli $db,int $serverId,int $actor,int $primary,
-    int $source,string $kind,?string $input=null): void {
-    if ($source<=0 || !in_array($kind,['start','save','cancel'],true))
+    int $source,string $kind,?string $input=null,string $field='document',?int $expected=null): void {
+    if ($source<=0 || !in_array($kind,['start','save','cancel','set'],true))
         throw new RuntimeException('display_edit_invalid');
+    if (!in_array($field,['document','cfg','sub','qr','mode','many','viewhide','view','delivery',
+        'max','threshold','select','protocols','names'],true)) throw new RuntimeException('display_field_invalid');
     $name='achbot_server_display_writer';$owns=false;$begun=false;
     try {
         $s=$db->prepare('SELECT GET_LOCK(?,5) AS acquired');$s->bind_param('s',$name);$s->execute();
@@ -121,52 +190,67 @@ function achbotServerDisplayEdit(mysqli $db,int $serverId,int $actor,int $primar
         if (!$db->begin_transaction()) throw new RuntimeException('display_begin_failed');$begun=true;
         $user=achbotServerDisplayActor($db,$actor,$primary,true);
         $server=achbotServerDisplayServer($db,$serverId,true);$provider=$server['type'];
-        $row=achbotServerDisplayRow($db,$serverId,true);
-        $step=(string)$user['step'];
-        // Starting an editor does not overwrite any in-progress wizard.
-        if ($kind==='start') {
+        $row=achbotServerDisplayRow($db,$serverId,true);$step=(string)$user['step'];$write=null;
+        if ($kind==='start' || $kind==='set') {
             if ($step!=='none' && !str_starts_with($step,'achbotDisplay|'))
                 throw new RuntimeException('display_other_editor_active');
-            if ($row!==null) {
+            // Advanced editing may repair one malformed row. Normal controls
+            // require a valid document and the revision shown on their button.
+            if ($field!=='document' || $kind==='set') {
+                $document=achbotServerDisplayDocument($row,$serverId,$provider);
+                $revision=achbotServerDisplayRevision($row);
+                if ($expected===null || $expected!==$revision || $source<=$revision)
+                    throw new RuntimeException('display_control_stale');
+            } elseif ($row!==null) {
                 $stored=json_decode($row['value'],true);
                 if (is_array($stored) && is_int($stored['updated_source']??null) &&
-                    $source<=$stored['updated_source'])
-                    throw new RuntimeException('display_source_stale');
+                    $source<=$stored['updated_source']) throw new RuntimeException('display_source_stale');
             }
-            // A malformed single row may be repaired explicitly by its admin;
-            // duplicate rows remain blocked for an operator to reconcile.
-            $next='achbotDisplay|'.$serverId.'|'.$source.'|'.achbotServerDisplayBaseline($row);
-            if (preg_match('/^achbotDisplay\|[1-9][0-9]*\|([1-9][0-9]*)\|[a-f0-9]{64}$/D',$step,$m)
+            if (preg_match('/^achbotDisplay\|[1-9][0-9]*\|([1-9][0-9]*)\|[a-f0-9]{64}(?:\|[a-z]+)?$/D',$step,$m)
                 && $source<=(int)$m[1]) throw new RuntimeException('display_source_stale');
+            if ($kind==='start') {
+                $next='achbotDisplay|'.$serverId.'|'.$source.'|'.achbotServerDisplayBaseline($row).'|'.$field;
+            } else {
+                $write=achbotServerDisplayChange($document,$provider,$field,(string)$input);
+                $next='none';
+            }
         } else {
-            if (!preg_match('/^achbotDisplay\|([1-9][0-9]*)\|([1-9][0-9]*)\|([a-f0-9]{64})$/D',$step,$m) ||
+            if (!preg_match('/^achbotDisplay\|([1-9][0-9]*)\|([1-9][0-9]*)\|([a-f0-9]{64})(?:\|([a-z]+))?$/D',$step,$m) ||
                 (int)$m[1]!==$serverId || $source<=(int)$m[2] ||
                 !hash_equals($m[3],achbotServerDisplayBaseline($row)))
                 throw new RuntimeException('display_editor_stale');
             $next='none';
             if ($kind==='save') {
                 if (!is_string($input) || strlen($input)>12000) throw new RuntimeException('display_input_invalid');
-                $document=json_decode($input,true,32,JSON_THROW_ON_ERROR);
-                if (!is_array($document) || !achbotServerDisplayValid($document,$provider))
-                    throw new RuntimeException('display_input_invalid');
-                $value=json_encode(['version'=>1,'server_id'=>$serverId,'provider'=>$provider,
-                    'updated_source'=>$source,'display'=>$document],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
-                if ($row===null) {
-                    $type=achbotServerDisplayType($serverId);
-                    $s=$db->prepare('INSERT INTO setting(type,value) VALUES (?,?)');$s->bind_param('ss',$type,$value);
-                } else {
-                    $id=(int)$row['id'];$old=(string)$row['value'];
-                    $s=$db->prepare('UPDATE setting SET value=? WHERE id=? AND BINARY value=BINARY ?');
-                    $s->bind_param('sis',$value,$id,$old);
-                }
-                $ok=$s->execute();$count=$s->affected_rows;$s->close();
-                if (!$ok || $count!==1) throw new RuntimeException('display_write_unconfirmed');
+                $ownedField=$m[4]??'document';
+                if ($ownedField==='document') {
+                    $write=json_decode($input,true,32,JSON_THROW_ON_ERROR);
+                    if (!is_array($write) || !achbotServerDisplayValid($write,$provider))
+                        throw new RuntimeException('display_input_invalid');
+                } else $write=achbotServerDisplayChange(
+                    achbotServerDisplayDocument($row,$serverId,$provider),$provider,$ownedField,$input);
             }
         }
-        $id=(int)$user['id'];
-        $s=$db->prepare('UPDATE users SET step=? WHERE id=? AND step=?');$s->bind_param('sis',$next,$id,$step);
-        $ok=$s->execute();$count=$s->affected_rows;$s->close();
-        if (!$ok || $count!==1) throw new RuntimeException('display_step_unconfirmed');
+        if ($write!==null) {
+            $value=json_encode(['version'=>1,'server_id'=>$serverId,'provider'=>$provider,
+                'updated_source'=>$source,'display'=>$write],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
+            if ($row===null) {
+                $type=achbotServerDisplayType($serverId);
+                $s=$db->prepare('INSERT INTO setting(type,value) VALUES (?,?)');$s->bind_param('ss',$type,$value);
+            } else {
+                $id=(int)$row['id'];$old=(string)$row['value'];
+                $s=$db->prepare('UPDATE setting SET value=? WHERE id=? AND BINARY value=BINARY ?');
+                $s->bind_param('sis',$value,$id,$old);
+            }
+            $ok=$s->execute();$count=$s->affected_rows;$s->close();
+            if (!$ok || $count!==1) throw new RuntimeException('display_write_unconfirmed');
+        }
+        if ($next!==$step) {
+            $id=(int)$user['id'];
+            $s=$db->prepare('UPDATE users SET step=? WHERE id=? AND step=?');$s->bind_param('sis',$next,$id,$step);
+            $ok=$s->execute();$count=$s->affected_rows;$s->close();
+            if (!$ok || $count!==1) throw new RuntimeException('display_step_unconfirmed');
+        }
         if (!$db->commit()) throw new RuntimeException('display_commit_unknown');$begun=false;
     } finally {
         if ($begun) {try {$db->rollback();} catch(Throwable $ignored) {}}
@@ -175,11 +259,89 @@ function achbotServerDisplayEdit(mysqli $db,int $serverId,int $actor,int $primar
         }
     }
 }
-function achbotServerDisplayKeys(int $serverId): string {
-    return json_encode(['inline_keyboard'=>[
-        [['text'=>'✏️ ویرایش سیاست نمایش','callback_data'=>'serverDisplayEdit'.$serverId]],
-        [['text'=>'🔙 تنظیمات سرور','callback_data'=>'showServerSettings'.$serverId.'_0']],
-    ]],JSON_UNESCAPED_UNICODE);
+function achbotServerDisplayKeys(int $serverId,?array $document=null,int $revision=0): string {
+    $keys=[];
+    if ($document!==null) {
+        $p=$document['policy'];
+        $label=static fn($value)=>$value?'روشن':'خاموش';
+        $keys[]=[
+            ['text'=>'کانفیگ: '.$label($p['show_configs']??true),'callback_data'=>"serverDisplaySet{$serverId}_cfg_flip_{$revision}"],
+            ['text'=>'اشتراک: '.$label($p['show_subscription']??true),'callback_data'=>"serverDisplaySet{$serverId}_sub_flip_{$revision}"],
+        ];
+        $keys[]=[['text'=>'انتخاب QR تحویل','callback_data'=>'serverDisplayQr'.$serverId]];
+        if ($document['mode']==='native') {
+            $keys[]=[
+                ['text'=>'سقف لینک‌ها','callback_data'=>"serverDisplayValue{$serverId}_max_{$revision}"],
+                ['text'=>'آستانه مخفی‌سازی','callback_data'=>"serverDisplayValue{$serverId}_threshold_{$revision}"],
+            ];
+            $keys[]=[['text'=>'انتخاب کانفیگ‌ها','callback_data'=>'serverDisplaySelect'.$serverId]];
+        } else {
+            $keys[]=[
+                ['text'=>'موقعیت‌های نمایش','callback_data'=>"serverDisplayValue{$serverId}_view_{$revision}"],
+                ['text'=>'موقعیت‌های تحویل','callback_data'=>"serverDisplayValue{$serverId}_delivery_{$revision}"],
+            ];
+            $keys[]=[
+                ['text'=>'مخفی‌کردن بالای ۱۰: '.$label($document['legacy']['hideConfigIfMany']??false),
+                    'callback_data'=>"serverDisplaySet{$serverId}_many_flip_{$revision}"],
+                ['text'=>'مخفی‌کردن متن نمایش: '.$label($document['legacy']['hideConnectLinkForMarzban']??false),
+                    'callback_data'=>"serverDisplaySet{$serverId}_viewhide_flip_{$revision}"],
+            ];
+        }
+        $keys[]=[['text'=>'روش انتخاب مرزبان','callback_data'=>'serverDisplayMode'.$serverId]];
+    }
+    $keys[]=[['text'=>'ویرایش پیشرفته','callback_data'=>'serverDisplayEdit'.$serverId]];
+    $keys[]=[['text'=>'🔙 تنظیمات سرور','callback_data'=>'showServerSettings'.$serverId.'_0']];
+    return json_encode(['inline_keyboard'=>$keys],JSON_UNESCAPED_UNICODE);
+}
+function achbotServerDisplayQrLabel(string $mode): string {
+    return ['auto'=>'خودکار','subscription'=>'لینک اشتراک','first_config'=>'اولین کانفیگ','none'=>'بدون QR'][$mode]??'خودکار';
+}
+function achbotServerDisplaySummary(array $document): string {
+    $p=$document['policy'];$yes=static fn($v)=>$v?'روشن':'خاموش';
+    $body="⚙️ نمایش لینک‌های این سرور\nکانفیگ: ".$yes($p['show_configs']??true).
+        " | اشتراک: ".$yes($p['show_subscription']??true).
+        "\nQR تحویل: ".achbotServerDisplayQrLabel($p['qr']??'auto');
+    if ($document['mode']==='native') {
+        $selected=!array_key_exists('selectors',$p)?'همه کانفیگ‌ها':
+            ($p['selectors']===[]?'هیچ کانفیگی':count($p['selectors']).' شرط انتخاب');
+        $body.="\nانتخاب بومی: ".$selected."\nسقف لینک‌ها: ".($p['max_links']??10).
+            " | آستانه مخفی‌سازی: ".($p['hide_if_more_than']??'غیرفعال');
+    } else {
+        $body.="\nروش سازگار مرزبان\nموقعیت‌های نمایش (از ۱): ".
+            implode(', ',$document['legacy']['showIndexes']??[]).
+            "\nموقعیت‌های تحویل (از ۰): ".implode(', ',$document['legacy']['linkIndices']??[]);
+    }
+    return $body."\nاین انتخاب فقط نمایش را تغییر می‌دهد؛ محتوای لینک کامل اشتراک را محدود نمی‌کند.";
+}
+function achbotServerDisplayShow(mysqli $db,int $serverId,string $prefix=''): void {
+    $server=achbotServerDisplayServer($db,$serverId);
+    $row=achbotServerDisplayRow($db,$serverId);
+    try {
+        $document=achbotServerDisplayDocument($row,$serverId,$server['type']);
+        $keys=achbotServerDisplayKeys($serverId,$document,achbotServerDisplayRevision($row));
+        // Native mode selector is useful only for Marzban. PG has one real mode.
+        if ($server['type']!=='marzban') {
+            $parsed=json_decode($keys,true);
+            $parsed['inline_keyboard']=array_values(array_filter($parsed['inline_keyboard'],
+                static fn($r)=>($r[0]['callback_data']??'')!=='serverDisplayMode'.$serverId));
+            $keys=json_encode($parsed,JSON_UNESCAPED_UNICODE);
+        }
+        $body=achbotServerDisplaySummary($document);
+    } catch (Throwable $error) {
+        $body='⚠️ تنظیمات ذخیره‌شده معتبر نیست و نمایش لینک متوقف است. از ویرایش پیشرفته، سیاست کامل این سرور را اصلاح کنید.';
+        $keys=achbotServerDisplayKeys($serverId);
+    }
+    sendMessage($prefix.$body,$keys);
+}
+function achbotServerDisplayPrompt(string $field): string {
+    return [
+        'max'=>"سقف تعداد کانفیگ را از ۰ تا ۱۰۰۰ بفرستید. ۰ هیچ کانفیگی نشان نمی‌دهد. ظرفیت هر نمایش حداکثر ۱۰ لینک کامل است.",
+        'threshold'=>"اگر تعداد کانفیگ‌های واقعی از چه عددی بیشتر شد، متن کانفیگ و QR آن مخفی شود؟ عدد ۰ تا ۱۰۰۰ بفرستید؛ برای غیرفعال‌کردن /off را بفرستید.",
+        'protocols'=>"نام پروتکل‌ها را با کاما بفرستید؛ مثلاً vless,trojan. ترتیب انتخاب حفظ می‌شود و فقط لینک‌های واقعیِ منطبق نشان داده می‌شوند.",
+        'names'=>"نام دقیق کانفیگ‌ها را هر کدام در یک خط بفرستید. ترتیب نام‌ها حفظ می‌شود؛ نام ناموجود با کانفیگ دیگری جایگزین نمی‌شود.",
+        'view'=>"موقعیت‌های نمایش مرزبان را با کاما بفرستید؛ مثلاً 2,4. شماره از ۱ شروع می‌شود و فقط برای بیش از ۳ کانفیگ اعمال می‌شود. برای فهرست خالی /empty را بفرستید.",
+        'delivery'=>"موقعیت‌های تحویل مرزبان را با کاما بفرستید؛ مثلاً 0,2. شماره از ۰ شروع می‌شود؛ موقعیت ناموجود به اولین کانفیگ برمی‌گردد. برای فهرست خالی /empty را بفرستید.",
+    ][$field]??throw new RuntimeException('display_field_invalid');
 }
 function achbotServerDisplayGuide(string $provider): string {
     $example=json_encode(achbotServerDisplayDefault(),JSON_UNESCAPED_UNICODE|JSON_PRETTY_PRINT);
@@ -207,35 +369,60 @@ function achbotHandleServerDisplayAdmin(): bool {
     if (!$callback && !str_starts_with($step,'achbotDisplay|')) return false;
     try {
         if ($callback) {
-            if (!preg_match('/^serverDisplay(Edit)?([1-9][0-9]{0,9})$/D',$data,$m))
-                throw new RuntimeException('display_callback_invalid');
-            $sid=(int)$m[2];
+            if (strlen($data)>64) throw new RuntimeException('display_callback_invalid');
+            $basic=preg_match('/^serverDisplay(Edit|Qr|Select|Mode)?([1-9][0-9]{0,9})$/D',$data,$m);
+            $value=$set=false;
+            if ($basic) {$action=$m[1];$sid=(int)$m[2];}
+            elseif ($value=preg_match('/^serverDisplayValue([1-9][0-9]{0,9})_([a-z]{1,12})_(0|[1-9][0-9]*)$/D',$data,$m)) {
+                $action='Value';$sid=(int)$m[1];$field=$m[2];$revision=(int)$m[3];
+            } elseif ($set=preg_match('/^serverDisplaySet([1-9][0-9]{0,9})_([a-z]{1,12})_([a-z_]{1,14})_(0|[1-9][0-9]*)$/D',$data,$m)) {
+                $action='Set';$sid=(int)$m[1];$field=$m[2];$choice=$m[3];$revision=(int)$m[4];
+            } else throw new RuntimeException('display_callback_invalid');
             $source=achbotServerDisplayFrame($update,(int)$from_id,(int)$chat_id,(int)$message_id,$data,'callback');
             achbotServerDisplayActor($connection,(int)$from_id,(int)$admin);
             $server=achbotServerDisplayServer($connection,$sid);
-            if ($m[1]==='Edit') {
-                achbotServerDisplayEdit($connection,$sid,(int)$from_id,(int)$admin,$source,'start');
-                sendMessage(achbotServerDisplayGuide($server['type']),$cancelKey);
-            } else {
+            if ($action==='Edit' || $action==='Value') {
+                $field=$action==='Edit'?'document':$field;
+                $prompt=$field==='document'?achbotServerDisplayGuide($server['type']):achbotServerDisplayPrompt($field);
+                achbotServerDisplayEdit($connection,$sid,(int)$from_id,(int)$admin,$source,'start',
+                    null,$field,$action==='Edit'?null:$revision);
+                sendMessage($prompt,$cancelKey);
+            } elseif ($action==='Set') {
+                achbotServerDisplayEdit($connection,$sid,(int)$from_id,(int)$admin,$source,'set',$choice,$field,$revision);
+                achbotServerDisplayShow($connection,$sid,"✅ ذخیره شد.\n");
+            } elseif (in_array($action,['Qr','Select','Mode'],true)) {
                 $row=achbotServerDisplayRow($connection,$sid);
-                try {
-                    $document=achbotServerDisplayDocument($row,$sid,$server['type']);
-                    $body="⚙️ نمایش لینک‌های این سرور\n<pre>".
-                        \AchBot\Subscription\Presentation\escape(json_encode($document,JSON_UNESCAPED_UNICODE|JSON_PRETTY_PRINT))."</pre>";
-                } catch (Throwable $error) {
-                    $body='⚠️ تنظیمات ذخیره‌شده معتبر نیست و نمایش لینک متوقف است. برای اصلاح، سیاست کامل این سرور را دوباره ذخیره کنید.';
-                }
-                sendMessage($body,achbotServerDisplayKeys($sid));
-            }
+                $document=achbotServerDisplayDocument($row,$sid,$server['type']);
+                $revision=achbotServerDisplayRevision($row);$keys=[];
+                if ($action==='Qr') {
+                    foreach (['auto','subscription','first_config','none'] as $choice)
+                        $keys[]=[['text'=>achbotServerDisplayQrLabel($choice),
+                            'callback_data'=>"serverDisplaySet{$sid}_qr_{$choice}_{$revision}"]];
+                    $body='QR تحویل را انتخاب کنید. QR اشتراک فقط لینک اشتراک قابل‌نمایش را دارد؛ بدون QR یعنی ارسال متن اشتراک.';
+                } elseif ($action==='Select' && $document['mode']==='native') {
+                    $keys=[
+                        [['text'=>'بر اساس پروتکل','callback_data'=>"serverDisplayValue{$sid}_protocols_{$revision}"]],
+                        [['text'=>'بر اساس نام دقیق','callback_data'=>"serverDisplayValue{$sid}_names_{$revision}"]],
+                        [['text'=>'همه کانفیگ‌ها','callback_data'=>"serverDisplaySet{$sid}_select_all_{$revision}"],
+                         ['text'=>'هیچ کانفیگی','callback_data'=>"serverDisplaySet{$sid}_select_none_{$revision}"]],
+                    ];
+                    $body='روش انتخاب کانفیگ‌های واقعی را تعیین کنید. انتخاب تازه جایگزین انتخاب قبلی می‌شود. شرط‌های ترکیبی و تگ واقعی در ویرایش پیشرفته در دسترس است.';
+                } elseif ($action==='Mode' && $server['type']==='marzban') {
+                    foreach (['native'=>'انتخاب بومی (پیشنهادی)','marzban_legacy'=>'سازگاری موقعیت‌های مرزبان'] as $choice=>$label)
+                        $keys[]=[['text'=>$label,'callback_data'=>"serverDisplaySet{$sid}_mode_{$choice}_{$revision}"]];
+                    $body='روش انتخاب را تغییر دهید. با تغییر روش، انتخاب قبلی پاک می‌شود. در سازگاری مرزبان، QR کانفیگ همه لینک‌های خام را تا سقف نمایش دارد، حتی اگر متن مخفی باشد.';
+                } else throw new RuntimeException('display_action_invalid');
+                $keys[]=[['text'=>'🔙 نمایش همین سرور','callback_data'=>'serverDisplay'.$sid]];
+                sendMessage($body,json_encode(['inline_keyboard'=>$keys],JSON_UNESCAPED_UNICODE));
+            } else achbotServerDisplayShow($connection,$sid);
         } else {
-            if (!preg_match('/^achbotDisplay\|([1-9][0-9]*)\|/D',$step,$m))
+            if (!preg_match('/^achbotDisplay\|([1-9][0-9]*)\|/D',$step,$m) || !is_string($text))
                 throw new RuntimeException('display_step_invalid');
             $sid=(int)$m[1];
-            if (!is_string($text)) throw new RuntimeException('display_message_invalid');
             $source=achbotServerDisplayFrame($update,(int)$from_id,(int)$chat_id,(int)$message_id,$text,'message');
             $kind=$text===($buttonValues['cancel']??null)?'cancel':'save';
             achbotServerDisplayEdit($connection,$sid,(int)$from_id,(int)$admin,$source,$kind,$text);
-            sendMessage($kind==='save'?'✅ تنظیمات نمایش این سرور ذخیره شد.':'ویرایش لغو شد.',achbotServerDisplayKeys($sid));
+            achbotServerDisplayShow($connection,$sid,$kind==='save'?"✅ ذخیره شد.\n":"ویرایش لغو شد.\n");
         }
     } catch (Throwable $error) {
         error_log('achbot_server_display_admin_deferred');

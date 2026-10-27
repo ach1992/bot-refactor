@@ -47,8 +47,8 @@ if (!function_exists('buildLinksAndSendQr')) {
         $volume,
         $days,
         $buttonValues,
-        $linkIndices,
-        $hideConfigIfMany,
+        $unusedLinkIndices,
+        $unusedHideConfigIfMany,
         $qrPublicPrefix = '',
         $qrFsDir = null,
         $sendToUser = true

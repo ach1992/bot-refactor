@@ -150,9 +150,10 @@ def main():
  with owned.owned_database() as (work,env),pg.panel() as (server,url):
   purchase.init(work,env,url);db=purchase.SIDE[1]
   script=work/'integration.php';script.write_text(PHP)
-  (work/'src/Subscription').mkdir(parents=True)
-  (work/'src/Subscription/Presentation.php').write_bytes((ROOT/'src/Subscription/Presentation.php').read_bytes())
-  (work/'presentation-under-test.php').write_bytes(panel_functions.function_bodies((ROOT/'config.php').read_bytes(),['buildSubscriptionPresentation','buildConfigMessage']))
+  # Facades use the real runtime dependency root. ServiceEffects has already
+  # loaded its resolver; a second physical copy would redeclare those functions.
+  facades=panel_functions.function_bodies((ROOT/'config.php').read_bytes(),['buildSubscriptionPresentation','buildConfigMessage'])
+  (work/'presentation-under-test.php').write_bytes(facades.replace(b'__DIR__',repr(str(ROOT)).encode()))
   (work/'phpqrcode').mkdir()
   (work/'phpqrcode/qrlib.php').write_text("<?php class QRcode {public static function png($payload,$file,...$rest){$GLOBALS['qr_payloads'][]=$payload;file_put_contents($file,'owned-png-placeholder');}}")
   buttons=['back_to_main']+sorted(set(re.findall(r"\$buttonValues\['([^']+)'\]",(ROOT/'src/Subscription/AccountDetails.php').read_text())))
