@@ -1,5 +1,5 @@
 {
-  "baseline": "fbb7b701ced630764acbe56405d04e7a8317c46c",
+  "baseline": "8c4bb966f01871c79a9e1665c772acb59de60c66",
   "excluded_files": {
     "src/Telegram/Transport.php": "redacted transport diagnostics only; never UI copy"
   },
@@ -13,7 +13,7 @@
   "files": {
     "bot.php": {
       "source_sha256": "c6248e879d7e07c2fc53ce9fd9ad33e4ea96ac91bad666c7ca2c5df92c7c2af5",
-      "source_commit": "fbb7b701ced630764acbe56405d04e7a8317c46c",
+      "source_commit": "8c4bb966f01871c79a9e1665c772acb59de60c66",
       "loader": "require_once __DIR__ . '/messages/loader.php'; // ACHBOT_TEXT_CATALOG\n",
       "edits": [
         {
@@ -2454,7 +2454,7 @@
     },
     "buy_helpers.php": {
       "source_sha256": "1127018f6b3b0299f072bcebe1e9f1223389d73d1d9d0cfca2d50a1d222fa7cb",
-      "source_commit": "fbb7b701ced630764acbe56405d04e7a8317c46c",
+      "source_commit": "8c4bb966f01871c79a9e1665c772acb59de60c66",
       "loader": "require_once __DIR__ . '/messages/loader.php'; // ACHBOT_TEXT_CATALOG\n",
       "edits": [
         {
@@ -2535,7 +2535,7 @@
     },
     "config.php": {
       "source_sha256": "2e0a3e419af7cbdcf4083f92ae3f05f8803ec4837b28e4b4f9249a0851d8479a",
-      "source_commit": "fbb7b701ced630764acbe56405d04e7a8317c46c",
+      "source_commit": "8c4bb966f01871c79a9e1665c772acb59de60c66",
       "loader": "require_once __DIR__ . '/messages/loader.php'; // ACHBOT_TEXT_CATALOG\n",
       "edits": [
         {
@@ -6188,7 +6188,7 @@
     },
     "settings/gift2all.php": {
       "source_sha256": "fb9c721dbe9c5784a561be00a23c915f3475f19a9897fbe66802f1138f2ff1ac",
-      "source_commit": "fbb7b701ced630764acbe56405d04e7a8317c46c",
+      "source_commit": "8c4bb966f01871c79a9e1665c772acb59de60c66",
       "loader": "require_once __DIR__ . '/../messages/loader.php'; // ACHBOT_TEXT_CATALOG\n",
       "edits": [
         {
@@ -6524,7 +6524,7 @@
     },
     "settings/jdf.php": {
       "source_sha256": "dcd27141100bfa67f1f367c7cb6f87569e18b4b3006ed2155dc5e11ab4b3a33d",
-      "source_commit": "fbb7b701ced630764acbe56405d04e7a8317c46c",
+      "source_commit": "8c4bb966f01871c79a9e1665c772acb59de60c66",
       "loader": "require_once __DIR__ . '/../messages/loader.php'; // ACHBOT_TEXT_CATALOG\n",
       "edits": [
         {
@@ -7836,7 +7836,7 @@
     },
     "settings/rewardReport.php": {
       "source_sha256": "dbad53de8399c2ae7cfaf18f158b24043236efcd51009c5ac4b44a314592410e",
-      "source_commit": "fbb7b701ced630764acbe56405d04e7a8317c46c",
+      "source_commit": "8c4bb966f01871c79a9e1665c772acb59de60c66",
       "loader": "require_once __DIR__ . '/../messages/loader.php'; // ACHBOT_TEXT_CATALOG\n",
       "edits": [
         {
@@ -7892,7 +7892,7 @@
     },
     "settings/subLink.php": {
       "source_sha256": "89d02f9219d268e705731ab7e4a5418ed4aab7ba4f318750b9a40a9f573ef414",
-      "source_commit": "fbb7b701ced630764acbe56405d04e7a8317c46c",
+      "source_commit": "8c4bb966f01871c79a9e1665c772acb59de60c66",
       "loader": "require_once __DIR__ . '/../messages/loader.php'; // ACHBOT_TEXT_CATALOG\n",
       "edits": [
         {
@@ -7926,7 +7926,7 @@
     },
     "src/Admin/Bans.php": {
       "source_sha256": "f7297385311bfb5ea3b9b40e84efb7ee27078d558993769830f3f4156c929767",
-      "source_commit": "fbb7b701ced630764acbe56405d04e7a8317c46c",
+      "source_commit": "8c4bb966f01871c79a9e1665c772acb59de60c66",
       "loader": "require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG\n",
       "edits": [
         {
@@ -7978,7 +7978,7 @@
     },
     "src/Admin/Roles.php": {
       "source_sha256": "755b21680f075ffce2d795134bc37a74a10dd38fd9b60924c9a3eed9a32d1f17",
-      "source_commit": "fbb7b701ced630764acbe56405d04e7a8317c46c",
+      "source_commit": "8c4bb966f01871c79a9e1665c772acb59de60c66",
       "loader": "require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG\n",
       "edits": [
         {
@@ -8030,7 +8030,7 @@
     },
     "src/Admin/Unban.php": {
       "source_sha256": "001b903fd2b445761e7aa3009de0c4e289c57347d8fa4fec3ce32472435c4863",
-      "source_commit": "fbb7b701ced630764acbe56405d04e7a8317c46c",
+      "source_commit": "8c4bb966f01871c79a9e1665c772acb59de60c66",
       "loader": "require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG\n",
       "edits": [
         {
@@ -8064,7 +8064,7 @@
     },
     "src/Agent/Applications.php": {
       "source_sha256": "95250b0ebec498c06109366c3f115bf0161b9513a6904fb66e05dca92c721aaf",
-      "source_commit": "fbb7b701ced630764acbe56405d04e7a8317c46c",
+      "source_commit": "8c4bb966f01871c79a9e1665c772acb59de60c66",
       "loader": "require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG\n",
       "edits": [
         {
@@ -8080,7 +8080,7 @@
     },
     "src/Agent/Discounts.php": {
       "source_sha256": "a88a142996113094e8369a3bb32744e279bd3fc89c60d0a7691838d6f9dfb918",
-      "source_commit": "fbb7b701ced630764acbe56405d04e7a8317c46c",
+      "source_commit": "8c4bb966f01871c79a9e1665c772acb59de60c66",
       "loader": "require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG\n",
       "edits": [
         {
@@ -8210,7 +8210,7 @@
     },
     "src/Agent/Rejected.php": {
       "source_sha256": "7a1caea4f52538c6e59923bbd04c0beb11983d2344e5c97b51b5196a702583cc",
-      "source_commit": "fbb7b701ced630764acbe56405d04e7a8317c46c",
+      "source_commit": "8c4bb966f01871c79a9e1665c772acb59de60c66",
       "loader": "require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG\n",
       "edits": [
         {
@@ -8253,7 +8253,7 @@
     },
     "src/Backup/Database.php": {
       "source_sha256": "3d3dc27a22e5eb8b2da91c07d8c2cd63d08717fa33e488148faaab35c1c9c847",
-      "source_commit": "fbb7b701ced630764acbe56405d04e7a8317c46c",
+      "source_commit": "8c4bb966f01871c79a9e1665c772acb59de60c66",
       "loader": "require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG\n",
       "edits": [
         {
@@ -8273,7 +8273,7 @@
     },
     "src/Broadcast/Routes.php": {
       "source_sha256": "0c88a9c1f9295e45dd72e5e24412a1026d932d15a42977319a93b0ffd2148212",
-      "source_commit": "fbb7b701ced630764acbe56405d04e7a8317c46c",
+      "source_commit": "8c4bb966f01871c79a9e1665c772acb59de60c66",
       "loader": "require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG\n",
       "edits": [
         {
@@ -10300,7 +10300,7 @@
     },
     "src/Finance/AgentDiscounts.php": {
       "source_sha256": "c909ccf889de205a4c7a5d1a206823d40a01c847f9e952d225152c1c8427b064",
-      "source_commit": "fbb7b701ced630764acbe56405d04e7a8317c46c",
+      "source_commit": "8c4bb966f01871c79a9e1665c772acb59de60c66",
       "loader": "require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG\n",
       "edits": [
         {
@@ -10359,8 +10359,8 @@
       ]
     },
     "src/Finance/AutomaticReceipts.php": {
-      "source_sha256": "e700babcc5c0efa8eba922a5b9b82965ca4da1da95a8a6afc8135379b715b0fc",
-      "source_commit": "fbb7b701ced630764acbe56405d04e7a8317c46c",
+      "source_sha256": "bfea7d7dfd817e4af1b80b8293718f2e50b5754c31923d6e92d0b72edbc0e82b",
+      "source_commit": "8c4bb966f01871c79a9e1665c772acb59de60c66",
       "loader": "require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG\n",
       "edits": [
         {
@@ -10492,9 +10492,9 @@
           "expressions": {}
         },
         {
-          "start": 12538,
-          "end": 12607,
-          "line": 240,
+          "start": 12650,
+          "end": 12719,
+          "line": 241,
           "original": "\"✅ $volume روز به مدت اشتراک شما اضافه شد.\"",
           "replacement": "\\achbotMessage('manual_payment.automatic_receipts.message.7c7851027c', ['volume' => $volume])",
           "key": "manual_payment.automatic_receipts.message.7c7851027c",
@@ -10503,18 +10503,18 @@
           }
         },
         {
-          "start": 12687,
-          "end": 12832,
-          "line": 242,
+          "start": 12799,
+          "end": 12944,
+          "line": 243,
           "original": "\"⚠️ نتیجهٔ افزایش روز هنوز قطعی نیست. پرداخت محفوظ است؛ درخواست را تکرار نکنید.\"",
           "replacement": "\\achbotMessage('manual_payment.automatic_receipts.message.6223bac2fc')",
           "key": "manual_payment.automatic_receipts.message.6223bac2fc",
           "expressions": {}
         },
         {
-          "start": 15589,
-          "end": 15658,
-          "line": 298,
+          "start": 15808,
+          "end": 15877,
+          "line": 300,
           "original": "\"✅ $volume گیگ به حجم اشتراک شما اضافه شد.\"",
           "replacement": "\\achbotMessage('manual_payment.automatic_receipts.message.1660fa3e00', ['volume' => $volume])",
           "key": "manual_payment.automatic_receipts.message.1660fa3e00",
@@ -10523,18 +10523,18 @@
           }
         },
         {
-          "start": 15738,
-          "end": 15883,
-          "line": 300,
+          "start": 15957,
+          "end": 16102,
+          "line": 302,
           "original": "\"⚠️ نتیجهٔ افزایش حجم هنوز قطعی نیست. پرداخت محفوظ است؛ درخواست را تکرار نکنید.\"",
           "replacement": "\\achbotMessage('manual_payment.automatic_receipts.message.530f1966b8')",
           "key": "manual_payment.automatic_receipts.message.530f1966b8",
           "expressions": {}
         },
         {
-          "start": 17978,
-          "end": 18039,
-          "line": 342,
+          "start": 18197,
+          "end": 18258,
+          "line": 344,
           "original": "\"✅ اشتراک $remark با موفقیت تمدید شد.\"",
           "replacement": "\\achbotMessage('manual_payment.automatic_receipts.message.cca1075329', ['remark' => $remark])",
           "key": "manual_payment.automatic_receipts.message.cca1075329",
@@ -10543,81 +10543,81 @@
           }
         },
         {
-          "start": 18110,
-          "end": 18257,
-          "line": 344,
+          "start": 18329,
+          "end": 18476,
+          "line": 346,
           "original": "\"⚠️ نتیجهٔ تمدید هنوز قطعی نیست. وضعیت پرداخت محفوظ است؛ درخواست را تکرار نکنید.\"",
           "replacement": "\\achbotMessage('manual_payment.automatic_receipts.message.16c2ec4018')",
           "key": "manual_payment.automatic_receipts.message.16c2ec4018",
           "expressions": {}
         },
         {
-          "start": 18379,
-          "end": 18427,
-          "line": 349,
+          "start": 18598,
+          "end": 18646,
+          "line": 351,
           "original": "'✅ خودکار تأیید و اعمال شد'",
           "replacement": "\\achbotMessage('manual_payment.automatic_receipts.text.2898f8f112')",
           "key": "manual_payment.automatic_receipts.text.2898f8f112",
           "expressions": {}
         },
         {
-          "start": 18442,
-          "end": 18490,
-          "line": 350,
+          "start": 18661,
+          "end": 18709,
+          "line": 352,
           "original": "'⚠️ در انتظار تطبیق سرویس'",
           "replacement": "\\achbotMessage('manual_payment.automatic_receipts.text.0f42c8d853')",
           "key": "manual_payment.automatic_receipts.text.0f42c8d853",
           "expressions": {}
         },
         {
-          "start": 18569,
-          "end": 18708,
-          "line": 352,
+          "start": 18788,
+          "end": 18927,
+          "line": 354,
           "original": "\"⚠️ تأیید رسید ثبت شده، اما تغییر واقعی سرویس یا ثبت نهایی سفارش قطعی نیست.\\n\"",
           "replacement": "\\achbotMessage('manual_payment.automatic_receipts.message.1b315333c8')",
           "key": "manual_payment.automatic_receipts.message.1b315333c8",
           "expressions": {}
         },
         {
-          "start": 18726,
-          "end": 18753,
-          "line": 353,
+          "start": 18945,
+          "end": 18972,
+          "line": 355,
           "original": "\"شناسه پرداخت: \"",
           "replacement": "\\achbotMessage('manual_payment.automatic_receipts.message.ba9287d8c1')",
           "key": "manual_payment.automatic_receipts.message.ba9287d8c1",
           "expressions": {}
         },
         {
-          "start": 18785,
-          "end": 18884,
-          "line": 353,
+          "start": 19004,
+          "end": 19103,
+          "line": 355,
           "original": "\"\\nبدون تطبیق سرویس، تمدید یا بازپرداخت را تکرار نکنید.\"",
           "replacement": "\\achbotMessage('manual_payment.automatic_receipts.message.4624bd3d02')",
           "key": "manual_payment.automatic_receipts.message.4624bd3d02",
           "expressions": {}
         },
         {
-          "start": 20503,
-          "end": 20719,
-          "line": 387,
+          "start": 20722,
+          "end": 20938,
+          "line": 389,
           "original": "'⚠️ پرداخت شما محفوظ است، اما نتیجهٔ ساخت اشتراک قطعی نیست. برای بررسی با پشتیبانی تماس بگیرید؛ پرداخت را تکرار نکنید.'",
           "replacement": "\\achbotMessage('manual_payment.automatic_receipts.message.39254abe63')",
           "key": "manual_payment.automatic_receipts.message.39254abe63",
           "expressions": {}
         },
         {
-          "start": 20773,
-          "end": 20889,
-          "line": 388,
+          "start": 20992,
+          "end": 21108,
+          "line": 390,
           "original": "\"⚠️ ساخت اشتراک با رسید بانکی نیازمند تطبیق است.\\nشناسه پرداخت: \"",
           "replacement": "\\achbotMessage('manual_payment.automatic_receipts.message.8c2e6c4f2e')",
           "key": "manual_payment.automatic_receipts.message.8c2e6c4f2e",
           "expressions": {}
         },
         {
-          "start": 20921,
-          "end": 21036,
-          "line": 388,
+          "start": 21140,
+          "end": 21255,
+          "line": 390,
           "original": "\"\\nاز ساخت مجدد یا بازپرداخت خودکار تا بررسی شواهد خودداری کنید.\"",
           "replacement": "\\achbotMessage('manual_payment.automatic_receipts.message.52406798d0')",
           "key": "manual_payment.automatic_receipts.message.52406798d0",
@@ -10627,7 +10627,7 @@
     },
     "src/Finance/AutomaticRenewal.php": {
       "source_sha256": "1a780a40bad07ee28bffb5c1a766d62f0ceca1fad80385dfe6054c80ecf33166",
-      "source_commit": "fbb7b701ced630764acbe56405d04e7a8317c46c",
+      "source_commit": "8c4bb966f01871c79a9e1665c772acb59de60c66",
       "loader": "require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG\n",
       "edits": [
         {
@@ -10715,7 +10715,7 @@
     },
     "src/Finance/Discounts.php": {
       "source_sha256": "a264f69b6510c9b3b4fec004ef2412292e8a713219f6761a1e32cff1149731ef",
-      "source_commit": "fbb7b701ced630764acbe56405d04e7a8317c46c",
+      "source_commit": "8c4bb966f01871c79a9e1665c772acb59de60c66",
       "loader": "require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG\n",
       "edits": [
         {
@@ -10925,7 +10925,7 @@
     },
     "src/Finance/GatewayInitiation.php": {
       "source_sha256": "b320760e2ba4336973525f5abbd7414410c8ee8602e5a40ac303cb3ed0935dac",
-      "source_commit": "fbb7b701ced630764acbe56405d04e7a8317c46c",
+      "source_commit": "8c4bb966f01871c79a9e1665c772acb59de60c66",
       "loader": "require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG\n",
       "edits": [
         {
@@ -11374,8 +11374,8 @@
       ]
     },
     "src/Finance/GatewayReturn.php": {
-      "source_sha256": "e9f03828f3cba794729a28a2cf4de75ae6e74a21683360997ed0dc4a57551d86",
-      "source_commit": "fbb7b701ced630764acbe56405d04e7a8317c46c",
+      "source_sha256": "5a44edfffce1f227458a15528e4049924c3128199ab89ddd24d8950034102eb0",
+      "source_commit": "8c4bb966f01871c79a9e1665c772acb59de60c66",
       "loader": "require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG\n",
       "edits": [
         {
@@ -12532,19 +12532,8 @@
           }
         },
         {
-          "start": 82830,
-          "end": 82965,
-          "line": 1671,
-          "original": "\"✅ پرداخت شما با موفقیت انجام شد. $plusDays روز به مدت زمان اشتراک شما اضافه شد.\"",
-          "replacement": "\\achbotMessage('gateway.gateway_return.perform_payment_effect.message.8ab1d455cf', ['plusDays' => $plusDays])",
-          "key": "gateway.gateway_return.perform_payment_effect.message.8ab1d455cf",
-          "expressions": {
-            "plusDays": "$plusDays"
-          }
-        },
-        {
-          "start": 83028,
-          "end": 83163,
+          "start": 82936,
+          "end": 83071,
           "line": 1672,
           "original": "\"✅ پرداخت شما با موفقیت انجام شد. $plusDays روز به مدت زمان اشتراک شما اضافه شد.\"",
           "replacement": "\\achbotMessage('gateway.gateway_return.perform_payment_effect.message.8ab1d455cf', ['plusDays' => $plusDays])",
@@ -12554,18 +12543,29 @@
           }
         },
         {
-          "start": 83212,
-          "end": 83256,
-          "line": 1672,
+          "start": 83134,
+          "end": 83269,
+          "line": 1673,
+          "original": "\"✅ پرداخت شما با موفقیت انجام شد. $plusDays روز به مدت زمان اشتراک شما اضافه شد.\"",
+          "replacement": "\\achbotMessage('gateway.gateway_return.perform_payment_effect.message.8ab1d455cf', ['plusDays' => $plusDays])",
+          "key": "gateway.gateway_return.perform_payment_effect.message.8ab1d455cf",
+          "expressions": {
+            "plusDays": "$plusDays"
+          }
+        },
+        {
+          "start": 83318,
+          "end": 83362,
+          "line": 1673,
           "original": "\"↪️ بازگشت به منوی اصلی\"",
           "replacement": "\\achbotMessage('gateway.gateway_return.perform_payment_effect.text.275b4903d9')",
           "key": "gateway.gateway_return.perform_payment_effect.text.275b4903d9",
           "expressions": {}
         },
         {
-          "start": 83417,
-          "end": 83458,
-          "line": 1676,
+          "start": 83523,
+          "end": 83564,
+          "line": 1677,
           "original": "\"💳 خرید از درگاه $gateType\"",
           "replacement": "\\achbotMessage('gateway.gateway_return.perform_payment_effect.button.b9d052f74c', ['gateType' => $gateType])",
           "key": "gateway.gateway_return.perform_payment_effect.button.b9d052f74c",
@@ -12574,9 +12574,9 @@
           }
         },
         {
-          "start": 83560,
-          "end": 83575,
-          "line": 1679,
+          "start": 83666,
+          "end": 83681,
+          "line": 1680,
           "original": "\"🆔 $hash_id\"",
           "replacement": "\\achbotMessage('gateway.gateway_return.perform_payment_effect.hash_id.2899228604', ['hash_id' => $hash_id])",
           "key": "gateway.gateway_return.perform_payment_effect.hash_id.2899228604",
@@ -12585,9 +12585,9 @@
           }
         },
         {
-          "start": 83853,
-          "end": 84177,
-          "line": 1687,
+          "start": 83959,
+          "end": 84283,
+          "line": 1688,
           "original": "\"\n💜 افزایش زمان اشتراک (درگاه $gateType)\n\n🔐 آیدی کاربر: $user_id\n🛡️ نام کاربر: $first_name\n🔖 نام کاربری تلگرام: @$username\n💰 مبلغ پرداختی: $amount تومان\n🎈 نام اشتراک: $remark\n🕚 زمان اضافه شده: $plusDays روز\n\"",
           "replacement": "\\achbotMessage('gateway.gateway_return.perform_payment_effect.msg.3337e72606', ['gateType' => $gateType, 'user_id' => $user_id, 'first_name' => $first_name, 'username' => $username, 'amount' => $amount, 'remark' => $remark, 'plusDays' => $plusDays])",
           "key": "gateway.gateway_return.perform_payment_effect.msg.3337e72606",
@@ -12602,45 +12602,45 @@
           }
         },
         {
-          "start": 84591,
-          "end": 84653,
-          "line": 1710,
+          "start": 84697,
+          "end": 84759,
+          "line": 1711,
           "original": "\"میخواست زمان اشتراکشو افزایش بده\"",
           "replacement": "\\achbotMessage('gateway.gateway_return.perform_payment_effect.text.1d7ceca732')",
           "key": "gateway.gateway_return.perform_payment_effect.text.1d7ceca732",
           "expressions": {}
         },
         {
-          "start": 84716,
-          "end": 84863,
-          "line": 1713,
+          "start": 84822,
+          "end": 84969,
+          "line": 1714,
           "original": "'⚠️ پرداخت ثبت شده ولی بازگشت اعتبار کیف پول تأیید نشد؛ پشتیبانی باید بررسی کند.'",
           "replacement": "\\achbotMessage('gateway.gateway_return.perform_payment_effect.message.bd952e9bc9')",
           "key": "gateway.gateway_return.perform_payment_effect.message.bd952e9bc9",
           "expressions": {}
         },
         {
-          "start": 84971,
-          "end": 85224,
-          "line": 1716,
+          "start": 85077,
+          "end": 85330,
+          "line": 1717,
           "original": "\"⚠️ پرداخت شما با موفقیت انجام شد ولی به دلیل مشکل فنی امکان افزایش حجم نیست. لطفا به مدیریت اطلاع بدید یا 5 دقیقه دیگر دوباره تست کنید مبلغ \"",
           "replacement": "\\achbotMessage('gateway.gateway_return.perform_payment_effect.message.9f4f326fa4')",
           "key": "gateway.gateway_return.perform_payment_effect.message.9f4f326fa4",
           "expressions": {}
         },
         {
-          "start": 85252,
-          "end": 85308,
-          "line": 1716,
+          "start": 85358,
+          "end": 85414,
+          "line": 1717,
           "original": "\" تومان به کیف پول شما اضافه شد.\"",
           "replacement": "\\achbotMessage('gateway.gateway_return.perform_payment_effect.message.606f350948')",
           "key": "gateway.gateway_return.perform_payment_effect.message.606f350948",
           "expressions": {}
         },
         {
-          "start": 87229,
-          "end": 87357,
-          "line": 1767,
+          "start": 87438,
+          "end": 87566,
+          "line": 1769,
           "original": "\"✅ پرداخت شما با موفقیت انجام شد. $plusVolume گیگ به حجم اشتراک شما اضافه شد.\"",
           "replacement": "\\achbotMessage('gateway.gateway_return.perform_payment_effect.message.20ac3e8049', ['plusVolume' => $plusVolume])",
           "key": "gateway.gateway_return.perform_payment_effect.message.20ac3e8049",
@@ -12649,9 +12649,9 @@
           }
         },
         {
-          "start": 87420,
-          "end": 87548,
-          "line": 1768,
+          "start": 87629,
+          "end": 87757,
+          "line": 1770,
           "original": "\"✅ پرداخت شما با موفقیت انجام شد. $plusVolume گیگ به حجم اشتراک شما اضافه شد.\"",
           "replacement": "\\achbotMessage('gateway.gateway_return.perform_payment_effect.message.20ac3e8049', ['plusVolume' => $plusVolume])",
           "key": "gateway.gateway_return.perform_payment_effect.message.20ac3e8049",
@@ -12660,18 +12660,18 @@
           }
         },
         {
-          "start": 87597,
-          "end": 87641,
-          "line": 1768,
+          "start": 87806,
+          "end": 87850,
+          "line": 1770,
           "original": "\"↪️ بازگشت به منوی اصلی\"",
           "replacement": "\\achbotMessage('gateway.gateway_return.perform_payment_effect.text.275b4903d9')",
           "key": "gateway.gateway_return.perform_payment_effect.text.275b4903d9",
           "expressions": {}
         },
         {
-          "start": 87802,
-          "end": 87843,
-          "line": 1772,
+          "start": 88011,
+          "end": 88052,
+          "line": 1774,
           "original": "\"💳 خرید از درگاه $gateType\"",
           "replacement": "\\achbotMessage('gateway.gateway_return.perform_payment_effect.button.b9d052f74c', ['gateType' => $gateType])",
           "key": "gateway.gateway_return.perform_payment_effect.button.b9d052f74c",
@@ -12680,9 +12680,9 @@
           }
         },
         {
-          "start": 87945,
-          "end": 87960,
-          "line": 1775,
+          "start": 88154,
+          "end": 88169,
+          "line": 1777,
           "original": "\"🆔 $hash_id\"",
           "replacement": "\\achbotMessage('gateway.gateway_return.perform_payment_effect.hash_id.2899228604', ['hash_id' => $hash_id])",
           "key": "gateway.gateway_return.perform_payment_effect.hash_id.2899228604",
@@ -12691,9 +12691,9 @@
           }
         },
         {
-          "start": 88238,
-          "end": 88560,
-          "line": 1783,
+          "start": 88447,
+          "end": 88769,
+          "line": 1785,
           "original": "\"\n🤎 افزایش حجم اشتراک (درگاه $gateType)\n\n🔐 آیدی کاربر: $user_id\n🛡️ نام کاربر: $first_name\n🔖 نام کاربری تلگرام: @$username\n💰 مبلغ پرداختی: $amount تومان\n🎈 نام اشتراک: $remark\n🩸 حجم اضافه شده: $plusVolume گیگ\n\"",
           "replacement": "\\achbotMessage('gateway.gateway_return.perform_payment_effect.msg.05d5688689', ['gateType' => $gateType, 'user_id' => $user_id, 'first_name' => $first_name, 'username' => $username, 'amount' => $amount, 'remark' => $remark, 'plusVolume' => $plusVolume])",
           "key": "gateway.gateway_return.perform_payment_effect.msg.05d5688689",
@@ -12708,76 +12708,76 @@
           }
         },
         {
-          "start": 88974,
-          "end": 89034,
-          "line": 1806,
+          "start": 89183,
+          "end": 89243,
+          "line": 1808,
           "original": "\"میخواست حجم اشتراکشو افزایش بده\"",
           "replacement": "\\achbotMessage('gateway.gateway_return.perform_payment_effect.text.c7546a7b9b')",
           "key": "gateway.gateway_return.perform_payment_effect.text.c7546a7b9b",
           "expressions": {}
         },
         {
-          "start": 89097,
-          "end": 89244,
-          "line": 1809,
+          "start": 89306,
+          "end": 89453,
+          "line": 1811,
           "original": "'⚠️ پرداخت ثبت شده ولی بازگشت اعتبار کیف پول تأیید نشد؛ پشتیبانی باید بررسی کند.'",
           "replacement": "\\achbotMessage('gateway.gateway_return.perform_payment_effect.message.bd952e9bc9')",
           "key": "gateway.gateway_return.perform_payment_effect.message.bd952e9bc9",
           "expressions": {}
         },
         {
-          "start": 89352,
-          "end": 89535,
-          "line": 1812,
+          "start": 89561,
+          "end": 89744,
+          "line": 1814,
           "original": "\"⚠️ پرداخت شما با موفقیت انجام شد ولی مشکل فنی در ارتباط با سرور، لطفا سلامت سرور را بررسی کنید مبلغ \"",
           "replacement": "\\achbotMessage('gateway.gateway_return.perform_payment_effect.message.28ba281162')",
           "key": "gateway.gateway_return.perform_payment_effect.message.28ba281162",
           "expressions": {}
         },
         {
-          "start": 89563,
-          "end": 89619,
-          "line": 1812,
+          "start": 89772,
+          "end": 89828,
+          "line": 1814,
           "original": "\" تومان به کیف پول شما اضافه شد.\"",
           "replacement": "\\achbotMessage('gateway.gateway_return.perform_payment_effect.message.606f350948')",
           "key": "gateway.gateway_return.perform_payment_effect.message.606f350948",
           "expressions": {}
         },
         {
-          "start": 90805,
-          "end": 90921,
-          "line": 1867,
-          "original": "\"✅ پرداخت شما با موفقیت انجام شد. اشتراک $remark با موفقیت تمدید شد.\"",
-          "replacement": "\\achbotMessage('gateway.gateway_return.perform_payment_effect.message.a3b46e7d37', ['remark' => $remark])",
-          "key": "gateway.gateway_return.perform_payment_effect.message.a3b46e7d37",
-          "expressions": {
-            "remark": "$remark"
-          }
-        },
-        {
-          "start": 90975,
-          "end": 91091,
-          "line": 1868,
-          "original": "\"✅ پرداخت شما با موفقیت انجام شد. اشتراک $remark با موفقیت تمدید شد.\"",
-          "replacement": "\\achbotMessage('gateway.gateway_return.perform_payment_effect.message.a3b46e7d37', ['remark' => $remark])",
-          "key": "gateway.gateway_return.perform_payment_effect.message.a3b46e7d37",
-          "expressions": {
-            "remark": "$remark"
-          }
-        },
-        {
-          "start": 91144,
-          "end": 91168,
+          "start": 91014,
+          "end": 91130,
           "line": 1869,
+          "original": "\"✅ پرداخت شما با موفقیت انجام شد. اشتراک $remark با موفقیت تمدید شد.\"",
+          "replacement": "\\achbotMessage('gateway.gateway_return.perform_payment_effect.message.a3b46e7d37', ['remark' => $remark])",
+          "key": "gateway.gateway_return.perform_payment_effect.message.a3b46e7d37",
+          "expressions": {
+            "remark": "$remark"
+          }
+        },
+        {
+          "start": 91184,
+          "end": 91300,
+          "line": 1870,
+          "original": "\"✅ پرداخت شما با موفقیت انجام شد. اشتراک $remark با موفقیت تمدید شد.\"",
+          "replacement": "\\achbotMessage('gateway.gateway_return.perform_payment_effect.message.a3b46e7d37', ['remark' => $remark])",
+          "key": "gateway.gateway_return.perform_payment_effect.message.a3b46e7d37",
+          "expressions": {
+            "remark": "$remark"
+          }
+        },
+        {
+          "start": 91353,
+          "end": 91377,
+          "line": 1871,
           "original": "\"صفحه اصلی 🏘\"",
           "replacement": "\\achbotMessage('gateway.gateway_return.perform_payment_effect.button.82f7af5445')",
           "key": "gateway.gateway_return.perform_payment_effect.button.82f7af5445",
           "expressions": {}
         },
         {
-          "start": 91252,
-          "end": 91308,
-          "line": 1874,
+          "start": 91461,
+          "end": 91517,
+          "line": 1876,
           "original": "\"✅ تمدید اشتراک (درگاه $gateType)\\n\\n\"",
           "replacement": "\\achbotMessage('gateway.gateway_return.perform_payment_effect.admin_text.b660a2780f', ['gateType' => $gateType])",
           "key": "gateway.gateway_return.perform_payment_effect.admin_text.b660a2780f",
@@ -12786,9 +12786,9 @@
           }
         },
         {
-          "start": 91315,
-          "end": 91335,
-          "line": 1875,
+          "start": 91524,
+          "end": 91544,
+          "line": 1877,
           "original": "\"UserID: $user_id\\n\"",
           "replacement": "\\achbotMessage('gateway.gateway_return.perform_payment_effect.user_i_d_user_id.8fd1cfbf5d', ['user_id' => $user_id])",
           "key": "gateway.gateway_return.perform_payment_effect.user_i_d_user_id.8fd1cfbf5d",
@@ -12797,9 +12797,9 @@
           }
         },
         {
-          "start": 91342,
-          "end": 91361,
-          "line": 1876,
+          "start": 91551,
+          "end": 91570,
+          "line": 1878,
           "original": "\"Remark: $remark\\n\"",
           "replacement": "\\achbotMessage('gateway.gateway_return.perform_payment_effect.remark_remark.806b185dfd', ['remark' => $remark])",
           "key": "gateway.gateway_return.perform_payment_effect.remark_remark.806b185dfd",
@@ -12808,9 +12808,9 @@
           }
         },
         {
-          "start": 91368,
-          "end": 91384,
-          "line": 1877,
+          "start": 91577,
+          "end": 91593,
+          "line": 1879,
           "original": "\"PlanID: $fid\\n\"",
           "replacement": "\\achbotMessage('gateway.gateway_return.perform_payment_effect.plan_i_d_fid.1471242965', ['fid' => $fid])",
           "key": "gateway.gateway_return.perform_payment_effect.plan_i_d_fid.1471242965",
@@ -12819,18 +12819,18 @@
           }
         },
         {
-          "start": 91391,
-          "end": 91401,
-          "line": 1878,
+          "start": 91600,
+          "end": 91610,
+          "line": 1880,
           "original": "\"Amount: \"",
           "replacement": "\\achbotMessage('gateway.gateway_return.perform_payment_effect.amount.ad7e6bbc81')",
           "key": "gateway.gateway_return.perform_payment_effect.amount.ad7e6bbc81",
           "expressions": {}
         },
         {
-          "start": 91440,
-          "end": 91484,
-          "line": 1879,
+          "start": 91649,
+          "end": 91693,
+          "line": 1881,
           "original": "\"🔋 حجم اشتراک: $volume گیگ\\n\"",
           "replacement": "\\achbotMessage('gateway.gateway_return.perform_payment_effect.text.a918020ba1', ['volume' => $volume])",
           "key": "gateway.gateway_return.perform_payment_effect.text.a918020ba1",
@@ -12839,9 +12839,9 @@
           }
         },
         {
-          "start": 91491,
-          "end": 91532,
-          "line": 1880,
+          "start": 91700,
+          "end": 91741,
+          "line": 1882,
           "original": "\"⏰ مدت اشتراک: $days روز\\n\"",
           "replacement": "\\achbotMessage('gateway.gateway_return.perform_payment_effect.text.dc6dc4aa59', ['days' => $days])",
           "key": "gateway.gateway_return.perform_payment_effect.text.dc6dc4aa59",
@@ -12850,9 +12850,9 @@
           }
         },
         {
-          "start": 91539,
-          "end": 91557,
-          "line": 1881,
+          "start": 91748,
+          "end": 91766,
+          "line": 1883,
           "original": "\"HashID: $hash_id\"",
           "replacement": "\\achbotMessage('gateway.gateway_return.perform_payment_effect.hash_i_d_hash_id.89efdc649b', ['hash_id' => $hash_id])",
           "key": "gateway.gateway_return.perform_payment_effect.hash_i_d_hash_id.89efdc649b",
@@ -12861,99 +12861,99 @@
           }
         },
         {
-          "start": 91800,
-          "end": 91901,
-          "line": 1890,
+          "start": 92009,
+          "end": 92110,
+          "line": 1892,
           "original": "\"پرداخت انجام شد ولی تمدید به دلیل خطای سرور انجام نشد.\\n\"",
           "replacement": "\\achbotMessage('gateway.gateway_return.perform_payment_effect.reason.3b9fd32170')",
           "key": "gateway.gateway_return.perform_payment_effect.reason.3b9fd32170",
           "expressions": {}
         },
         {
-          "start": 91908,
-          "end": 91961,
-          "line": 1891,
+          "start": 92117,
+          "end": 92170,
+          "line": 1893,
           "original": "\"لطفاً به مدیریت اطلاع دهید.\\n\"",
           "replacement": "\\achbotMessage('gateway.gateway_return.perform_payment_effect.text.9eb6edd609')",
           "key": "gateway.gateway_return.perform_payment_effect.text.9eb6edd609",
           "expressions": {}
         },
         {
-          "start": 91968,
-          "end": 91983,
-          "line": 1892,
+          "start": 92177,
+          "end": 92192,
+          "line": 1894,
           "original": "\"کد خطا: \"",
           "replacement": "\\achbotMessage('gateway.gateway_return.perform_payment_effect.text.c957e6dfa7')",
           "key": "gateway.gateway_return.perform_payment_effect.text.c957e6dfa7",
           "expressions": {}
         },
         {
-          "start": 92134,
-          "end": 92281,
-          "line": 1897,
+          "start": 92343,
+          "end": 92490,
+          "line": 1899,
           "original": "'⚠️ پرداخت ثبت شده ولی بازگشت اعتبار کیف پول تأیید نشد؛ پشتیبانی باید بررسی کند.'",
           "replacement": "\\achbotMessage('gateway.gateway_return.perform_payment_effect.message.bd952e9bc9')",
           "key": "gateway.gateway_return.perform_payment_effect.message.bd952e9bc9",
           "expressions": {}
         },
         {
-          "start": 92362,
-          "end": 92468,
-          "line": 1900,
+          "start": 92571,
+          "end": 92677,
+          "line": 1902,
           "original": "\"پرداخت شما با موفقیت انجام شد ولی مشکل فنی در تمدید.\\nمبلغ \"",
           "replacement": "\\achbotMessage('gateway.gateway_return.perform_payment_effect.message.68e2abdadb')",
           "key": "gateway.gateway_return.perform_payment_effect.message.68e2abdadb",
           "expressions": {}
         },
         {
-          "start": 92496,
-          "end": 92552,
-          "line": 1900,
+          "start": 92705,
+          "end": 92761,
+          "line": 1902,
           "original": "\" تومان به کیف پول شما اضافه شد.\"",
           "replacement": "\\achbotMessage('gateway.gateway_return.perform_payment_effect.message.606f350948')",
           "key": "gateway.gateway_return.perform_payment_effect.message.606f350948",
           "expressions": {}
         },
         {
-          "start": 92640,
-          "end": 92700,
-          "line": 1907,
+          "start": 92849,
+          "end": 92909,
+          "line": 1909,
           "original": "\"✅ پرداخت شما با موفقیت انجام شد.\"",
           "replacement": "\\achbotMessage('gateway.gateway_return.perform_payment_effect.message.81c4bb3acb')",
           "key": "gateway.gateway_return.perform_payment_effect.message.81c4bb3acb",
           "expressions": {}
         },
         {
-          "start": 92749,
-          "end": 92793,
-          "line": 1907,
+          "start": 92958,
+          "end": 93002,
+          "line": 1909,
           "original": "\"↪️ بازگشت به منوی اصلی\"",
           "replacement": "\\achbotMessage('gateway.gateway_return.perform_payment_effect.text.275b4903d9')",
           "key": "gateway.gateway_return.perform_payment_effect.text.275b4903d9",
           "expressions": {}
         },
         {
-          "start": 94054,
-          "end": 94310,
-          "line": 1935,
+          "start": 94263,
+          "end": 94519,
+          "line": 1937,
           "original": "'پرداخت تأیید شده است اما نتیجهٔ تکمیل سفارش هنوز قطعی نیست. لطفاً دوباره پرداخت نکنید، مشخصات پرداخت را نگه دارید و با پشتیبانی تماس بگیرید.'",
           "replacement": "\\achbotMessage('gateway.gateway_return.do_action.text.83188c9e00')",
           "key": "gateway.gateway_return.do_action.text.83188c9e00",
           "expressions": {}
         },
         {
-          "start": 94325,
-          "end": 94577,
-          "line": 1936,
+          "start": 94534,
+          "end": 94786,
+          "line": 1938,
           "original": "'پرداخت تأیید شده است اما ثبت نتیجهٔ سفارش هنوز قطعی نیست. لطفاً دوباره پرداخت نکنید، مشخصات پرداخت را نگه دارید و با پشتیبانی تماس بگیرید.'",
           "replacement": "\\achbotMessage('gateway.gateway_return.do_action.text.30e9647ee1')",
           "key": "gateway.gateway_return.do_action.text.30e9647ee1",
           "expressions": {}
         },
         {
-          "start": 94605,
-          "end": 94632,
-          "line": 1937,
+          "start": 94814,
+          "end": 94841,
+          "line": 1939,
           "original": "'پیگیری پرداخت'",
           "replacement": "\\achbotMessage('gateway.gateway_return.np_reconcile_batch.message.da0bc406d8')",
           "key": "gateway.gateway_return.np_reconcile_batch.message.da0bc406d8",
@@ -12963,7 +12963,7 @@
     },
     "src/Finance/GatewayRuleAdmin.php": {
       "source_sha256": "47a40a247fc7eb39cbbdaa3556b13916c28728bfd964ed5b5931758e0aa4d500",
-      "source_commit": "fbb7b701ced630764acbe56405d04e7a8317c46c",
+      "source_commit": "8c4bb966f01871c79a9e1665c772acb59de60c66",
       "loader": "require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG\n",
       "edits": [
         {
@@ -13604,7 +13604,7 @@
     },
     "src/Finance/GatewayRules.php": {
       "source_sha256": "f0abe8973973d6cf3a5951f2975e9fec56ab3b442de2b46a267da0fdc0da0308",
-      "source_commit": "fbb7b701ced630764acbe56405d04e7a8317c46c",
+      "source_commit": "8c4bb966f01871c79a9e1665c772acb59de60c66",
       "loader": "require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG\n",
       "edits": [
         {
@@ -13656,7 +13656,7 @@
     },
     "src/Finance/PaymentKeyAdmin.php": {
       "source_sha256": "bb490464259c45fdbe035782bcb8b0cd1d09fe9f5cc5df83fc97775ba7213862",
-      "source_commit": "fbb7b701ced630764acbe56405d04e7a8317c46c",
+      "source_commit": "8c4bb966f01871c79a9e1665c772acb59de60c66",
       "loader": "require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG\n",
       "edits": [
         {
@@ -13717,7 +13717,7 @@
     },
     "src/Finance/PaymentLifecycle.php": {
       "source_sha256": "54d8902e3a8e2fa86f70d8555827e221a79f1b7a9bc01e7babef9bb1964e1190",
-      "source_commit": "fbb7b701ced630764acbe56405d04e7a8317c46c",
+      "source_commit": "8c4bb966f01871c79a9e1665c772acb59de60c66",
       "loader": "require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG\n",
       "edits": [
         {
@@ -14086,7 +14086,7 @@
     },
     "src/Finance/PaymentPage.php": {
       "source_sha256": "796cc55faed3e6c9cfe0ce71d2a25e7ff53f484d5d40d78fe42d2873cf5d215d",
-      "source_commit": "fbb7b701ced630764acbe56405d04e7a8317c46c",
+      "source_commit": "8c4bb966f01871c79a9e1665c772acb59de60c66",
       "loader": "require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG\n",
       "edits": [
         {
@@ -14206,41 +14206,41 @@
       ]
     },
     "src/Finance/ReceiptHelpers.php": {
-      "source_sha256": "5672472b2fdac024f94cf1ce459f58d26e998f000cd3c288bb8be68d5e4d51a0",
-      "source_commit": "fbb7b701ced630764acbe56405d04e7a8317c46c",
+      "source_sha256": "0b3c1979b357245584bb29d398a74ee8a34ac251661fb442248847422b6b6a96",
+      "source_commit": "8c4bb966f01871c79a9e1665c772acb59de60c66",
       "loader": "require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG\n",
       "edits": [
         {
-          "start": 2297,
-          "end": 2312,
-          "line": 73,
+          "start": 2352,
+          "end": 2367,
+          "line": 75,
           "original": "\"✅ مبلغ \"",
           "replacement": "\\achbotMessage('manual_payment.receipt_helpers.refund_to_wallet_and_notify.user_msg.a5b15e454e')",
           "key": "manual_payment.receipt_helpers.refund_to_wallet_and_notify.user_msg.a5b15e454e",
           "expressions": {}
         },
         {
-          "start": 2340,
-          "end": 2391,
-          "line": 73,
+          "start": 2395,
+          "end": 2446,
+          "line": 75,
           "original": "\" تومان به حساب شما اضافه شد.\"",
           "replacement": "\\achbotMessage('manual_payment.automatic_receipts.message.6f42cf1050')",
           "key": "manual_payment.automatic_receipts.message.6f42cf1050",
           "expressions": {}
         },
         {
-          "start": 2566,
-          "end": 2581,
-          "line": 79,
+          "start": 2621,
+          "end": 2636,
+          "line": 81,
           "original": "\"✅ مبلغ \"",
           "replacement": "\\achbotMessage('manual_payment.receipt_helpers.refund_to_wallet_and_notify.user_msg.a5b15e454e')",
           "key": "manual_payment.receipt_helpers.refund_to_wallet_and_notify.user_msg.a5b15e454e",
           "expressions": {}
         },
         {
-          "start": 2609,
-          "end": 2708,
-          "line": 79,
+          "start": 2664,
+          "end": 2763,
+          "line": 81,
           "original": "\" تومان به کیف پول کاربر $userId توسط درگاه $gateType اضافه شد. \"",
           "replacement": "\\achbotMessage('manual_payment.receipt_helpers.refund_to_wallet_and_notify.text.32f7062209', ['userId' => $userId, 'gateType' => $gateType])",
           "key": "manual_payment.receipt_helpers.refund_to_wallet_and_notify.text.32f7062209",
@@ -14250,171 +14250,171 @@
           }
         },
         {
-          "start": 4662,
-          "end": 4683,
-          "line": 146,
+          "start": 4717,
+          "end": 4738,
+          "line": 148,
           "original": "'گیفت‌کارت'",
           "replacement": "\\achbotMessage('manual_payment.receipt_helpers.manual_label.text.3904ef0f3d')",
           "key": "manual_payment.receipt_helpers.manual_label.text.3904ef0f3d",
           "expressions": {}
         },
         {
-          "start": 4710,
-          "end": 4734,
-          "line": 147,
+          "start": 4765,
+          "end": 4789,
+          "line": 149,
           "original": "'تتر دستی (USDT)'",
           "replacement": "\\achbotMessage('manual_payment.receipt_helpers.manual_label.text.2f1fd66193')",
           "key": "manual_payment.receipt_helpers.manual_label.text.2f1fd66193",
           "expressions": {}
         },
         {
-          "start": 4760,
-          "end": 4785,
-          "line": 148,
+          "start": 4815,
+          "end": 4840,
+          "line": 150,
           "original": "'ترون دستی (TRX)'",
           "replacement": "\\achbotMessage('manual_payment.receipt_helpers.manual_label.text.ea9faa7b63')",
           "key": "manual_payment.receipt_helpers.manual_label.text.ea9faa7b63",
           "expressions": {}
         },
         {
-          "start": 4806,
-          "end": 4845,
-          "line": 149,
+          "start": 4861,
+          "end": 4900,
+          "line": 151,
           "original": "'کارت‌به‌کارت بانکی'",
           "replacement": "\\achbotMessage('manual_payment.receipt_helpers.manual_label.text.ace4b5ad89')",
           "key": "manual_payment.receipt_helpers.manual_label.text.ace4b5ad89",
           "expressions": {}
         },
         {
-          "start": 11378,
-          "end": 11394,
-          "line": 293,
+          "start": 11433,
+          "end": 11449,
+          "line": 295,
           "original": "'💎 USDT — '",
           "replacement": "\\achbotMessage('manual_payment.receipt_helpers.manual_crypto_options.u_s_d_t.1974a6095a')",
           "key": "manual_payment.receipt_helpers.manual_crypto_options.u_s_d_t.1974a6095a",
           "expressions": {}
         },
         {
-          "start": 11577,
-          "end": 11596,
-          "line": 298,
+          "start": 11632,
+          "end": 11651,
+          "line": 300,
           "original": "'🔴 TRX — TRON'",
           "replacement": "\\achbotMessage('manual_payment.receipt_helpers.manual_crypto_options.t_r_x__t_r_o_n.e3a2653517')",
           "key": "manual_payment.receipt_helpers.manual_crypto_options.t_r_x__t_r_o_n.e3a2653517",
           "expressions": {}
         },
         {
-          "start": 80536,
-          "end": 80563,
-          "line": 1678,
+          "start": 79878,
+          "end": 79905,
+          "line": 1665,
           "original": "'نیازمند بررسی'",
           "replacement": "\\achbotMessage('manual_payment.receipt_helpers.manual_caption.text.9c641f40e0')",
           "key": "manual_payment.receipt_helpers.manual_caption.text.9c641f40e0",
           "expressions": {}
         },
         {
-          "start": 80689,
-          "end": 80720,
-          "line": 1680,
+          "start": 80031,
+          "end": 80062,
+          "line": 1667,
           "original": "'🧾 روش پرداخت: <b>'",
           "replacement": "\\achbotMessage('manual_payment.receipt_helpers.manual_caption.text.342127f41e')",
           "key": "manual_payment.receipt_helpers.manual_caption.text.342127f41e",
           "expressions": {}
         },
         {
-          "start": 81895,
-          "end": 81931,
-          "line": 1699,
+          "start": 81237,
+          "end": 81273,
+          "line": 1686,
           "original": "'💎 مبلغ رمزارز: <code>'",
           "replacement": "\\achbotMessage('manual_payment.receipt_helpers.manual_caption.header.cc6f426145')",
           "key": "manual_payment.receipt_helpers.manual_caption.header.cc6f426145",
           "expressions": {}
         },
         {
-          "start": 82071,
-          "end": 82096,
-          "line": 1701,
+          "start": 81413,
+          "end": 81438,
+          "line": 1688,
           "original": "'</code> | شبکه: <b>'",
           "replacement": "\\achbotMessage('manual_payment.receipt_helpers.manual_caption.text.1c777cb98d')",
           "key": "manual_payment.receipt_helpers.manual_caption.text.1c777cb98d",
           "expressions": {}
         },
         {
-          "start": 82173,
-          "end": 82197,
-          "line": 1702,
+          "start": 81515,
+          "end": 81539,
+          "line": 1689,
           "original": "\"</b>\\nآدرس: <code>\"",
           "replacement": "\\achbotMessage('manual_payment.receipt_helpers.manual_caption.text.cef75b4291')",
           "key": "manual_payment.receipt_helpers.manual_caption.text.cef75b4291",
           "expressions": {}
         },
         {
-          "start": 82460,
-          "end": 82503,
-          "line": 1707,
+          "start": 81802,
+          "end": 81845,
+          "line": 1694,
           "original": "'💳 مبلغ دقیق حواله: <code>'",
           "replacement": "\\achbotMessage('manual_payment.receipt_helpers.manual_caption.header.12c0babe12')",
           "key": "manual_payment.receipt_helpers.manual_caption.header.12c0babe12",
           "expressions": {}
         },
         {
-          "start": 82573,
-          "end": 82595,
-          "line": 1708,
+          "start": 81915,
+          "end": 81937,
+          "line": 1695,
           "original": "\" تومان</code>\\n\"",
           "replacement": "\\achbotMessage('manual_payment.receipt_helpers.manual_caption.text.de6a1a6756')",
           "key": "manual_payment.receipt_helpers.manual_caption.text.de6a1a6756",
           "expressions": {}
         },
         {
-          "start": 82624,
-          "end": 82647,
-          "line": 1709,
+          "start": 81966,
+          "end": 81989,
+          "line": 1696,
           "original": "'💳 مقصد: <code>'",
           "replacement": "\\achbotMessage('manual_payment.receipt_helpers.manual_caption.header.559f60f115')",
           "key": "manual_payment.receipt_helpers.manual_caption.header.559f60f115",
           "expressions": {}
         },
         {
-          "start": 83532,
-          "end": 83550,
-          "line": 1732,
+          "start": 82874,
+          "end": 82892,
+          "line": 1719,
           "original": "\"📥 تصویر \"",
           "replacement": "\\achbotMessage('manual_payment.receipt_helpers.manual_acknowledgement.label.a5f27211f7')",
           "key": "manual_payment.receipt_helpers.manual_acknowledgement.label.a5f27211f7",
           "expressions": {}
         },
         {
-          "start": 83582,
-          "end": 83605,
-          "line": 1732,
+          "start": 82924,
+          "end": 82947,
+          "line": 1719,
           "original": "\" دریافت شد.\\n\"",
           "replacement": "\\achbotMessage('manual_payment.receipt_helpers.manual_acknowledgement.text.29e14cf62e')",
           "key": "manual_payment.receipt_helpers.manual_acknowledgement.text.29e14cf62e",
           "expressions": {}
         },
         {
-          "start": 83657,
-          "end": 83815,
-          "line": 1734,
+          "start": 82999,
+          "end": 83157,
+          "line": 1721,
           "original": "\"⏳ رسید در انتظار بررسی مدیر است؛ ارسال تصویر به معنی تأیید پرداخت یا تحویل سرویس نیست.\"",
           "replacement": "\\achbotMessage('manual_payment.receipt_helpers.manual_acknowledgement.text.62e569e922')",
           "key": "manual_payment.receipt_helpers.manual_acknowledgement.text.62e569e922",
           "expressions": {}
         },
         {
-          "start": 90225,
-          "end": 90380,
-          "line": 1859,
+          "start": 89567,
+          "end": 89722,
+          "line": 1846,
           "original": "\"⛔️ شما درخواست مشابه‌ای قبلا ثبت کرده‌اید.\\n⚠️ لطفاً منتظر بررسی پشتیبانی بمانید.\"",
           "replacement": "\\achbotMessage('manual_payment.receipt_helpers.duplicate_receipt_guard.label.2ea72e23b7')",
           "key": "manual_payment.receipt_helpers.duplicate_receipt_guard.label.2ea72e23b7",
           "expressions": {}
         },
         {
-          "start": 93855,
-          "end": 94020,
-          "line": 1952,
+          "start": 93197,
+          "end": 93362,
+          "line": 1939,
           "original": "\"⛔️ یک درخواست مشابه شما در حال بررسی است.\\n⚠️ لطفاً حدود {$mins} دقیقه دیگر دوباره تلاش کنید.\"",
           "replacement": "\\achbotMessage('manual_payment.receipt_helpers.duplicate_receipt_guard.label.2f5e71511d', ['mins' => $mins])",
           "key": "manual_payment.receipt_helpers.duplicate_receipt_guard.label.2f5e71511d",
@@ -14423,9 +14423,9 @@
           }
         },
         {
-          "start": 94224,
-          "end": 94426,
-          "line": 1959,
+          "start": 93566,
+          "end": 93768,
+          "line": 1946,
           "original": "\"⛔️ شما اخیراً یک درخواست مشابه با وضعیت تایید شده داشته‌اید.\\n⚠️ لطفاً حدود {$mins} دقیقه دیگر دوباره تلاش کنید.\"",
           "replacement": "\\achbotMessage('manual_payment.receipt_helpers.duplicate_receipt_guard.label.c571825a4a', ['mins' => $mins])",
           "key": "manual_payment.receipt_helpers.duplicate_receipt_guard.label.c571825a4a",
@@ -14434,9 +14434,9 @@
           }
         },
         {
-          "start": 94589,
-          "end": 94753,
-          "line": 1965,
+          "start": 93931,
+          "end": 94095,
+          "line": 1952,
           "original": "\"⛔️ درخواست مشابه قبلی شما اخیراً رد شده است.\\n⚠️ لطفاً {$remain} ثانیه دیگر دوباره تلاش کنید.\"",
           "replacement": "\\achbotMessage('manual_payment.receipt_helpers.duplicate_receipt_guard.label.a2fecf9749', ['remain' => $remain])",
           "key": "manual_payment.receipt_helpers.duplicate_receipt_guard.label.a2fecf9749",
@@ -14445,63 +14445,63 @@
           }
         },
         {
-          "start": 96229,
-          "end": 96238,
-          "line": 2013,
+          "start": 95571,
+          "end": 95580,
+          "line": 2000,
           "original": "' عدد'",
           "replacement": "\\achbotMessage('manual_payment.receipt_helpers.build_admin_keyboard_with_stats.text.839cad204e')",
           "key": "manual_payment.receipt_helpers.build_admin_keyboard_with_stats.text.839cad204e",
           "expressions": {}
         },
         {
-          "start": 96305,
-          "end": 96328,
-          "line": 2014,
+          "start": 95647,
+          "end": 95670,
+          "line": 2001,
           "original": "'پرداخت موفق'",
           "replacement": "\\achbotMessage('manual_payment.receipt_helpers.build_admin_keyboard_with_stats.button.30b0414601')",
           "key": "manual_payment.receipt_helpers.build_admin_keyboard_with_stats.button.30b0414601",
           "expressions": {}
         },
         {
-          "start": 96432,
-          "end": 96441,
-          "line": 2017,
+          "start": 95774,
+          "end": 95783,
+          "line": 2004,
           "original": "' عدد'",
           "replacement": "\\achbotMessage('manual_payment.receipt_helpers.build_admin_keyboard_with_stats.text.839cad204e')",
           "key": "manual_payment.receipt_helpers.build_admin_keyboard_with_stats.text.839cad204e",
           "expressions": {}
         },
         {
-          "start": 96509,
-          "end": 96535,
-          "line": 2018,
+          "start": 95851,
+          "end": 95877,
+          "line": 2005,
           "original": "'پرداخت رد شده'",
           "replacement": "\\achbotMessage('manual_payment.receipt_helpers.build_admin_keyboard_with_stats.button.c2c33e1499')",
           "key": "manual_payment.receipt_helpers.build_admin_keyboard_with_stats.button.c2c33e1499",
           "expressions": {}
         },
         {
-          "start": 96653,
-          "end": 96666,
-          "line": 2021,
+          "start": 95995,
+          "end": 96008,
+          "line": 2008,
           "original": "' تومان'",
           "replacement": "\\achbotMessage('manual_payment.automatic_receipts.text.2cc98f7f7c')",
           "key": "manual_payment.automatic_receipts.text.2cc98f7f7c",
           "expressions": {}
         },
         {
-          "start": 96725,
-          "end": 96737,
-          "line": 2022,
+          "start": 96067,
+          "end": 96079,
+          "line": 2009,
           "original": "'مجموع'",
           "replacement": "\\achbotMessage('manual_payment.receipt_helpers.build_admin_keyboard_with_stats.button.e892623fb9')",
           "key": "manual_payment.receipt_helpers.build_admin_keyboard_with_stats.button.e892623fb9",
           "expressions": {}
         },
         {
-          "start": 96825,
-          "end": 96841,
-          "line": 2025,
+          "start": 96167,
+          "end": 96183,
+          "line": 2012,
           "original": "\"🆔 {$hashId}\"",
           "replacement": "\\achbotMessage('manual_payment.receipt_helpers.build_admin_keyboard_with_stats.hash_id.286c7d3faf', ['hashId' => $hashId])",
           "key": "manual_payment.receipt_helpers.build_admin_keyboard_with_stats.hash_id.286c7d3faf",
@@ -14510,9 +14510,9 @@
           }
         },
         {
-          "start": 98564,
-          "end": 98592,
-          "line": 2075,
+          "start": 97906,
+          "end": 97934,
+          "line": 2062,
           "original": "'🔄 بررسی وضعیت'",
           "replacement": "\\achbotMessage('manual_payment.receipt_helpers.send_with_start_button.button.dcb9c20928')",
           "key": "manual_payment.receipt_helpers.send_with_start_button.button.dcb9c20928",
@@ -14522,7 +14522,7 @@
     },
     "src/Finance/RecoveryInspection.php": {
       "source_sha256": "dd1c82a6f1803f81204b005404cd231a21e7098f125360f33f5829eb2249cab5",
-      "source_commit": "fbb7b701ced630764acbe56405d04e7a8317c46c",
+      "source_commit": "8c4bb966f01871c79a9e1665c772acb59de60c66",
       "loader": "require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG\n",
       "edits": [
         {
@@ -14781,7 +14781,7 @@
     },
     "src/Finance/ReferralReward.php": {
       "source_sha256": "0dd3fbebd4d3c6beb3e05fe9373271791a2d9a9f144d79a337d2ac26786ef88a",
-      "source_commit": "fbb7b701ced630764acbe56405d04e7a8317c46c",
+      "source_commit": "8c4bb966f01871c79a9e1665c772acb59de60c66",
       "loader": "require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG\n",
       "edits": [
         {
@@ -14905,7 +14905,7 @@
     },
     "src/Finance/Routes/AdminWallet.php": {
       "source_sha256": "0529dc3355ce4726b5350abe8c09237d82a43c09bfac58db9fbc500f6701c4f6",
-      "source_commit": "fbb7b701ced630764acbe56405d04e7a8317c46c",
+      "source_commit": "8c4bb966f01871c79a9e1665c772acb59de60c66",
       "loader": "require_once __DIR__ . '/../../../messages/loader.php'; // ACHBOT_TEXT_CATALOG\n",
       "edits": [
         {
@@ -15263,7 +15263,7 @@
     },
     "src/Finance/Routes/Checkout.php": {
       "source_sha256": "ddef670fe6e92a27612fefabf9153680c97d95d5f2326ac1159a8f68bfb9b35d",
-      "source_commit": "fbb7b701ced630764acbe56405d04e7a8317c46c",
+      "source_commit": "8c4bb966f01871c79a9e1665c772acb59de60c66",
       "loader": "require_once __DIR__ . '/../../../messages/loader.php'; // ACHBOT_TEXT_CATALOG\n",
       "edits": [
         {
@@ -15799,7 +15799,7 @@
     },
     "src/Finance/Routes/DiscountAdministration.php": {
       "source_sha256": "ddb77a15b4d0c18dbb1b92bd97daa3cd6b9e47cf88718b17d3d0cdd88922f930",
-      "source_commit": "fbb7b701ced630764acbe56405d04e7a8317c46c",
+      "source_commit": "8c4bb966f01871c79a9e1665c772acb59de60c66",
       "loader": "require_once __DIR__ . '/../../../messages/loader.php'; // ACHBOT_TEXT_CATALOG\n",
       "edits": [
         {
@@ -17404,13 +17404,13 @@
       ]
     },
     "src/Finance/Routes/Extensions.php": {
-      "source_sha256": "80647b0a2cccb37976994aff27984a4332381959be187352ce8ad16d8bb86df9",
-      "source_commit": "fbb7b701ced630764acbe56405d04e7a8317c46c",
+      "source_sha256": "ff5f0f6b0dbc15543a9315a30bc40ac702dbbb300d3262e84f761d98bc01deba",
+      "source_commit": "8c4bb966f01871c79a9e1665c772acb59de60c66",
       "loader": "require_once __DIR__ . '/../../../messages/loader.php'; // ACHBOT_TEXT_CATALOG\n",
       "edits": [
         {
-          "start": 733,
-          "end": 855,
+          "start": 778,
+          "end": 900,
           "line": 22,
           "original": "\"⛔️ افزایش حجم یا مدت برای این اشتراک در حال حاضر امکان‌پذیر نیست.\"",
           "replacement": "\\achbotMessage('renewal.extensions.alert.d0779ad27d')",
@@ -17418,8 +17418,8 @@
           "expressions": {}
         },
         {
-          "start": 978,
-          "end": 1088,
+          "start": 1023,
+          "end": 1133,
           "line": 29,
           "original": "\"در حال حاضر هیچ پلنی برای افزایش مدت زمان اشتراک وجود ندارد.\"",
           "replacement": "\\achbotMessage('renewal.extensions.alert.6732b29e55')",
@@ -17427,27 +17427,27 @@
           "expressions": {}
         },
         {
-          "start": 1700,
-          "end": 1714,
-          "line": 43,
+          "start": 1821,
+          "end": 1835,
+          "line": 44,
           "original": "\"رایگان\"",
           "replacement": "\\achbotMessage('renewal.extensions.price.dda7ff2974')",
           "key": "renewal.extensions.price.dda7ff2974",
           "expressions": {}
         },
         {
-          "start": 1762,
-          "end": 1775,
-          "line": 44,
+          "start": 1883,
+          "end": 1896,
+          "line": 45,
           "original": "\" تومان\"",
           "replacement": "\\achbotMessage('renewal.extensions.text.2cc98f7f7c')",
           "key": "renewal.extensions.text.2cc98f7f7c",
           "expressions": {}
         },
         {
-          "start": 1810,
-          "end": 1832,
-          "line": 45,
+          "start": 1931,
+          "end": 1953,
+          "line": 46,
           "original": "\"$title روز $price\"",
           "replacement": "\\achbotMessage('renewal.extensions.button.fbb9f61105', ['title' => $title, 'price' => $price])",
           "key": "renewal.extensions.button.fbb9f61105",
@@ -17457,162 +17457,171 @@
           }
         },
         {
-          "start": 2062,
-          "end": 2141,
-          "line": 49,
+          "start": 2183,
+          "end": 2262,
+          "line": 50,
           "original": "\"لطفا یکی از پلن های افزایشی را انتخاب کنید:\"",
           "replacement": "\\achbotMessage('renewal.extensions.message.c2bde2a3e0')",
           "key": "renewal.extensions.message.c2bde2a3e0",
           "expressions": {}
         },
         {
-          "start": 2941,
-          "end": 3063,
-          "line": 69,
+          "start": 2820,
+          "end": 2929,
+          "line": 63,
+          "original": "'پلن زمانی در دسترس نیست؛ دوباره از منوی اشتراک انتخاب کنید.'",
+          "replacement": "\\achbotMessage('renewal.extensions.alert.584426a8a8')",
+          "key": "renewal.extensions.alert.584426a8a8",
+          "expressions": {}
+        },
+        {
+          "start": 3342,
+          "end": 3464,
+          "line": 72,
           "original": "\"⛔️ افزایش حجم یا مدت برای این اشتراک در حال حاضر امکان‌پذیر نیست.\"",
           "replacement": "\\achbotMessage('renewal.extensions.alert.d0779ad27d')",
           "key": "renewal.extensions.alert.d0779ad27d",
           "expressions": {}
         },
         {
-          "start": 4290,
-          "end": 4425,
-          "line": 99,
+          "start": 4704,
+          "end": 4839,
+          "line": 102,
           "original": "'⚠️ ثبت پیش‌نویس به‌طور قطعی تأیید نشد؛ از ایجاد پرداخت مجدد پرهیز کنید.'",
           "replacement": "\\achbotMessage('renewal.extensions.alert.ae271a2d1d')",
           "key": "renewal.extensions.alert.ae271a2d1d",
           "expressions": {}
         },
         {
-          "start": 5161,
-          "end": 5204,
-          "line": 107,
+          "start": 5575,
+          "end": 5618,
+          "line": 110,
           "original": "'💎 پرداخت رمزارزی دستی'",
           "replacement": "\\achbotMessage('renewal.extensions.button.e729457ba2')",
           "key": "renewal.extensions.button.e729457ba2",
           "expressions": {}
         },
         {
-          "start": 6332,
-          "end": 6397,
-          "line": 114,
+          "start": 6746,
+          "end": 6811,
+          "line": 117,
           "original": "\"🧾 روش پرداخت سفارش را انتخاب کنید.\"",
           "replacement": "\\achbotMessage('renewal.extensions.message.48930749a9')",
           "key": "renewal.extensions.message.48930749a9",
           "expressions": {}
         },
         {
-          "start": 7442,
-          "end": 7581,
-          "line": 133,
+          "start": 7856,
+          "end": 7995,
+          "line": 136,
           "original": "\"⚠️ پرداخت این سفارش با این روش مجاز نیست یا قبلاً به روش دیگری آغاز شده است.\"",
           "replacement": "\\achbotMessage('renewal.extensions.alert.1a885aaca4')",
           "key": "renewal.extensions.alert.1a885aaca4",
           "expressions": {}
         },
         {
-          "start": 7801,
-          "end": 7924,
-          "line": 139,
+          "start": 8215,
+          "end": 8338,
+          "line": 142,
           "original": "\"⚠️ اطلاعات این پرداخت قابل بازیابی نیست؛ با پشتیبانی تماس بگیرید.\"",
           "replacement": "\\achbotMessage('renewal.extensions.alert.07ee06b4bc')",
           "key": "renewal.extensions.alert.07ee06b4bc",
           "expressions": {}
         },
         {
-          "start": 8853,
-          "end": 9008,
-          "line": 153,
+          "start": 9267,
+          "end": 9422,
+          "line": 156,
           "original": "\"⚠️ نمایش اطلاعات پرداخت تأیید نشد. از همان دکمه دوباره تلاش کنید و وجهی ارسال نکنید.\"",
           "replacement": "\\achbotMessage('renewal.extensions.alert.7a9c30e938')",
           "key": "renewal.extensions.alert.7a9c30e938",
           "expressions": {}
         },
         {
-          "start": 9654,
-          "end": 9806,
-          "line": 170,
+          "start": 10068,
+          "end": 10220,
+          "line": 173,
           "original": "\"⚠️ این رسید با روش پرداخت انتخاب‌شده مطابقت ندارد یا سفارش در انتظار پرداخت نیست.\"",
           "replacement": "\\achbotMessage('renewal.extensions.alert.d06bc731eb')",
           "key": "renewal.extensions.alert.d06bc731eb",
           "expressions": {}
         },
         {
-          "start": 10307,
-          "end": 10509,
-          "line": 181,
+          "start": 10721,
+          "end": 10923,
+          "line": 184,
           "original": "'⌛️ مهلت شروع ارسال رسید پایان یافته یا فاکتور در حال بررسی است. اگر وجهی فرستاده‌اید با پشتیبانی تماس بگیرید.'",
           "replacement": "\\achbotMessage('renewal.extensions.alert.560f05f822')",
           "key": "renewal.extensions.alert.560f05f822",
           "expressions": {}
         },
         {
-          "start": 11764,
-          "end": 11891,
-          "line": 206,
+          "start": 12178,
+          "end": 12305,
+          "line": 209,
           "original": "\"⚠️ این سفارش قابل ثبت رسید نیست؛ برای بررسی با پشتیبانی تماس بگیرید.\"",
           "replacement": "\\achbotMessage('renewal.extensions.alert.882596d0f1')",
           "key": "renewal.extensions.alert.882596d0f1",
           "expressions": {}
         },
         {
-          "start": 12314,
-          "end": 12517,
-          "line": 218,
+          "start": 12728,
+          "end": 12931,
+          "line": 221,
           "original": "\"⚠️ ثبت یا ارسال رسید در جریان است. همان تصویر را دوباره ارسال کنید؛ در صورت تداوم مشکل با پشتیبانی تماس بگیرید.\"",
           "replacement": "\\achbotMessage('renewal.extensions.alert.795c4bddb8')",
           "key": "renewal.extensions.alert.795c4bddb8",
           "expressions": {}
         },
         {
-          "start": 13233,
-          "end": 13355,
-          "line": 241,
+          "start": 13647,
+          "end": 13769,
+          "line": 244,
           "original": "\"⛔️ افزایش حجم یا مدت برای این اشتراک در حال حاضر امکان‌پذیر نیست.\"",
           "replacement": "\\achbotMessage('renewal.extensions.alert.d0779ad27d')",
           "key": "renewal.extensions.alert.d0779ad27d",
           "expressions": {}
         },
         {
-          "start": 13824,
-          "end": 13834,
-          "line": 261,
+          "start": 14259,
+          "end": 14269,
+          "line": 264,
           "original": "'زمان'",
           "replacement": "\\achbotMessage('renewal.extensions.text.9699c34220')",
           "key": "renewal.extensions.text.9699c34220",
           "expressions": {}
         },
         {
-          "start": 14598,
-          "end": 14883,
-          "line": 280,
+          "start": 15033,
+          "end": 15318,
+          "line": 283,
           "original": "\"📥 تصویر برای پیگیری ثبت شده اما تأیید ارسال به مدیر دریافت نشده است. لطفاً همان تصویر را دوباره بفرستید یا با پشتیبانی تماس بگیرید. پرداخت مجدد انجام ندهید.\"",
           "replacement": "\\achbotMessage('renewal.extensions.message.c346a0d62e')",
           "key": "renewal.extensions.message.c346a0d62e",
           "expressions": {}
         },
         {
-          "start": 15475,
-          "end": 15560,
-          "line": 297,
+          "start": 15910,
+          "end": 15995,
+          "line": 300,
           "original": "\"⛔️ تایید دستی افزایشی برای این پنل مجاز نیست.\"",
           "replacement": "\\achbotMessage('renewal.extensions.alert.135aa8877f')",
           "key": "renewal.extensions.alert.135aa8877f",
           "expressions": {}
         },
         {
-          "start": 15768,
-          "end": 15878,
-          "line": 305,
+          "start": 16203,
+          "end": 16313,
+          "line": 308,
           "original": "'⛔️ این افزایش زمان رسید دستی معتبر و در انتظار تأیید ندارد.'",
           "replacement": "\\achbotMessage('renewal.extensions.alert.7a08f2df0b')",
           "key": "renewal.extensions.alert.7a08f2df0b",
           "expressions": {}
         },
         {
-          "start": 21755,
-          "end": 21794,
-          "line": 440,
+          "start": 22096,
+          "end": 22135,
+          "line": 436,
           "original": "\"✅ تایید شد توسط $from_id\"",
           "replacement": "\\achbotMessage('renewal.extensions.button.139c829462', ['from_id' => $from_id])",
           "key": "renewal.extensions.button.139c829462",
@@ -17621,9 +17630,9 @@
           }
         },
         {
-          "start": 21857,
-          "end": 21872,
-          "line": 441,
+          "start": 22198,
+          "end": 22213,
+          "line": 437,
           "original": "\"🆔 $hash_id\"",
           "replacement": "\\achbotMessage('renewal.extensions.hash_id.2899228604', ['hash_id' => $hash_id])",
           "key": "renewal.extensions.hash_id.2899228604",
@@ -17632,9 +17641,9 @@
           }
         },
         {
-          "start": 22560,
-          "end": 22659,
-          "line": 458,
+          "start": 22901,
+          "end": 23000,
+          "line": 454,
           "original": "\"✅ <b>$volume</b> روز به مدت زمان اشتراک <code>$remark</code> اضافه شد.\"",
           "replacement": "\\achbotMessage('renewal.extensions.message.24dea9b122', ['volume' => $volume, 'remark' => $remark])",
           "key": "renewal.extensions.message.24dea9b122",
@@ -17644,18 +17653,18 @@
           }
         },
         {
-          "start": 23033,
-          "end": 23119,
-          "line": 469,
+          "start": 23374,
+          "end": 23460,
+          "line": 465,
           "original": "\"⚠️ خطا در تایید افزایش زمان (کارت‌به‌کارت)\\n\\n\"",
           "replacement": "\\achbotMessage('renewal.extensions.err.28163d77c1')",
           "key": "renewal.extensions.err.28163d77c1",
           "expressions": {}
         },
         {
-          "start": 23135,
-          "end": 23164,
-          "line": 470,
+          "start": 23476,
+          "end": 23505,
+          "line": 466,
           "original": "\"🆔 Hash ID: {$match[1]}\\n\"",
           "replacement": "\\achbotMessage('renewal.extensions.hash__i_d_match_1.3abb834966', ['match_1' => $match[1]])",
           "key": "renewal.extensions.hash__i_d_match_1.3abb834966",
@@ -17664,9 +17673,9 @@
           }
         },
         {
-          "start": 23180,
-          "end": 23206,
-          "line": 471,
+          "start": 23521,
+          "end": 23547,
+          "line": 467,
           "original": "\"👤 Admin: {$from_id}\\n\"",
           "replacement": "\\achbotMessage('renewal.extensions.admin_from_id.748897de00', ['from_id' => $from_id])",
           "key": "renewal.extensions.admin_from_id.748897de00",
@@ -17675,72 +17684,72 @@
           }
         },
         {
-          "start": 23222,
-          "end": 23322,
-          "line": 472,
+          "start": 23563,
+          "end": 23663,
+          "line": 468,
           "original": "\"⚠️ External effect: unverified; verify before retry or compensation\\n📄 Reason (sanitized): \"",
           "replacement": "\\achbotMessage('renewal.extensions.external_effect_unverified_verify_before.10e2ccf8a3')",
           "key": "renewal.extensions.external_effect_unverified_verify_before.10e2ccf8a3",
           "expressions": {}
         },
         {
-          "start": 23422,
-          "end": 23628,
-          "line": 475,
+          "start": 23763,
+          "end": 23969,
+          "line": 471,
           "original": "\"⚠️ نتیجه افزایش زمان نیاز به بررسی دارد. وضعیت اشتراک و پرداخت را کنترل کنید؛ از اجرای مجدد خودکار خودداری کنید.\"",
           "replacement": "\\achbotMessage('renewal.extensions.alert.ba92f03500')",
           "key": "renewal.extensions.alert.ba92f03500",
           "expressions": {}
         },
         {
-          "start": 24855,
-          "end": 25024,
-          "line": 506,
+          "start": 25196,
+          "end": 25365,
+          "line": 502,
           "original": "\"⛔️ این سفارش متعلق به شما نیست یا روش پرداخت دیگری برای آن ثبت شده است؛ دوباره پرداخت نکنید.\"",
           "replacement": "\\achbotMessage('renewal.extensions.alert.9b6f1fa91f')",
           "key": "renewal.extensions.alert.9b6f1fa91f",
           "expressions": {}
         },
         {
-          "start": 25194,
-          "end": 25398,
-          "line": 512,
+          "start": 25535,
+          "end": 25739,
+          "line": 508,
           "original": "\"⛔️ افزایش اشتراک در حال حاضر امکان‌پذیر نیست. اگر پرداختی انجام داده‌اید، وضعیت آن را با پشتیبانی بررسی کنید.\"",
           "replacement": "\\achbotMessage('renewal.extensions.alert.31d13e9866')",
           "key": "renewal.extensions.alert.31d13e9866",
           "expressions": {}
         },
         {
-          "start": 28261,
-          "end": 28342,
-          "line": 593,
+          "start": 28506,
+          "end": 28587,
+          "line": 582,
           "original": "\"❌ موجودی کیف پول کافی نیست.\\n💵 موجودی فعلی: \"",
           "replacement": "\\achbotMessage('renewal.extensions.alert.39c72d8044')",
           "key": "renewal.extensions.alert.39c72d8044",
           "expressions": {}
         },
         {
-          "start": 28374,
-          "end": 28413,
-          "line": 593,
+          "start": 28619,
+          "end": 28658,
+          "line": 582,
           "original": "\" تومان\\n🔺 مورد نیاز: \"",
           "replacement": "\\achbotMessage('renewal.extensions.alert.71a2507661')",
           "key": "renewal.extensions.alert.71a2507661",
           "expressions": {}
         },
         {
-          "start": 28445,
-          "end": 28458,
-          "line": 593,
+          "start": 28690,
+          "end": 28703,
+          "line": 582,
           "original": "\" تومان\"",
           "replacement": "\\achbotMessage('renewal.extensions.text.2cc98f7f7c')",
           "key": "renewal.extensions.text.2cc98f7f7c",
           "expressions": {}
         },
         {
-          "start": 32800,
-          "end": 32878,
-          "line": 679,
+          "start": 33045,
+          "end": 33123,
+          "line": 668,
           "original": "\"✅ $volume روز به مدت زمان اشتراک شما اضافه شد.\"",
           "replacement": "\\achbotMessage('renewal.extensions.message.cce260f97e', ['volume' => $volume])",
           "key": "renewal.extensions.message.cce260f97e",
@@ -17749,18 +17758,18 @@
           }
         },
         {
-          "start": 32986,
-          "end": 33026,
-          "line": 683,
+          "start": 33231,
+          "end": 33271,
+          "line": 672,
           "original": "\"⏳ افزایش زمان اشتراک\"",
           "replacement": "\\achbotMessage('renewal.extensions.button.aba3054570')",
           "key": "renewal.extensions.button.aba3054570",
           "expressions": {}
         },
         {
-          "start": 33110,
-          "end": 33125,
-          "line": 686,
+          "start": 33355,
+          "end": 33370,
+          "line": 675,
           "original": "\"🆔 $hash_id\"",
           "replacement": "\\achbotMessage('renewal.extensions.hash_id.2899228604', ['hash_id' => $hash_id])",
           "key": "renewal.extensions.hash_id.2899228604",
@@ -17769,9 +17778,9 @@
           }
         },
         {
-          "start": 33204,
-          "end": 33491,
-          "line": 690,
+          "start": 33449,
+          "end": 33736,
+          "line": 679,
           "original": "\"\n🔋|💰 افزایش زمان با (کیف پول)\n\n🎫 شناسه عددی: $from_id\n👨 اسم کاربر: $first_name\n⚡️ نام کاربری: @$username\n🎈 نام کاربری اشتراک: $remark\n⏰ مدت افزایش: $volume روز\n💰 قیمت: $price تومان\n\"",
           "replacement": "\\achbotMessage('renewal.extensions.msg.bfc1b46322', ['from_id' => $from_id, 'first_name' => $first_name, 'username' => $username, 'remark' => $remark, 'volume' => $volume, 'price' => $price])",
           "key": "renewal.extensions.msg.bfc1b46322",
@@ -17785,18 +17794,18 @@
           }
         },
         {
-          "start": 34204,
-          "end": 34269,
-          "line": 719,
+          "start": 34449,
+          "end": 34514,
+          "line": 708,
           "original": "\"⚠️ خطا در افزایش زمان با کیف پول\\n\\n\"",
           "replacement": "\\achbotMessage('renewal.extensions.admin_err.70cf66359f')",
           "key": "renewal.extensions.admin_err.70cf66359f",
           "expressions": {}
         },
         {
-          "start": 34290,
-          "end": 34319,
-          "line": 720,
+          "start": 34535,
+          "end": 34564,
+          "line": 709,
           "original": "\"🆔 Hash ID: {$match[1]}\\n\"",
           "replacement": "\\achbotMessage('renewal.extensions.hash__i_d_match_1.3abb834966', ['match_1' => $match[1]])",
           "key": "renewal.extensions.hash__i_d_match_1.3abb834966",
@@ -17805,9 +17814,9 @@
           }
         },
         {
-          "start": 34340,
-          "end": 34365,
-          "line": 721,
+          "start": 34585,
+          "end": 34610,
+          "line": 710,
           "original": "\"👤 User: {$from_id}\\n\"",
           "replacement": "\\achbotMessage('renewal.extensions.user_from_id.45aa9ea684', ['from_id' => $from_id])",
           "key": "renewal.extensions.user_from_id.45aa9ea684",
@@ -17816,90 +17825,90 @@
           }
         },
         {
-          "start": 34386,
-          "end": 34486,
-          "line": 722,
+          "start": 34631,
+          "end": 34731,
+          "line": 711,
           "original": "\"⚠️ External effect: unverified; verify before retry or compensation\\n📄 Reason (sanitized): \"",
           "replacement": "\\achbotMessage('renewal.extensions.external_effect_unverified_verify_before.10e2ccf8a3')",
           "key": "renewal.extensions.external_effect_unverified_verify_before.10e2ccf8a3",
           "expressions": {}
         },
         {
-          "start": 34595,
-          "end": 34804,
-          "line": 725,
+          "start": 34840,
+          "end": 35049,
+          "line": 714,
           "original": "\"⚠️ وضعیت درخواست مشخص نیست. لطفاً وضعیت اشتراک و پرداخت را بررسی کنید و پیش از ثبت دوباره با پشتیبانی هماهنگ شوید.\"",
           "replacement": "\\achbotMessage('renewal.extensions.message.ba8adc7121')",
           "key": "renewal.extensions.message.ba8adc7121",
           "expressions": {}
         },
         {
-          "start": 35244,
-          "end": 35366,
-          "line": 740,
+          "start": 35489,
+          "end": 35611,
+          "line": 729,
           "original": "\"⛔️ افزایش حجم یا مدت برای این اشتراک در حال حاضر امکان‌پذیر نیست.\"",
           "replacement": "\\achbotMessage('renewal.extensions.alert.d0779ad27d')",
           "key": "renewal.extensions.alert.d0779ad27d",
           "expressions": {}
         },
         {
-          "start": 35448,
-          "end": 35542,
-          "line": 746,
+          "start": 35693,
+          "end": 35787,
+          "line": 735,
           "original": "\"⚠️ امکان تغییر پلن برای این نوع اشتراک وجود ندارد.\"",
           "replacement": "\\achbotMessage('renewal.extensions.alert.65fc393064')",
           "key": "renewal.extensions.alert.65fc393064",
           "expressions": {}
         },
         {
-          "start": 36217,
-          "end": 36280,
-          "line": 767,
+          "start": 36462,
+          "end": 36525,
+          "line": 756,
           "original": "\"هیچ پلنی برای این سرور وجود ندارد.\"",
           "replacement": "\\achbotMessage('renewal.extensions.message.655234a584')",
           "key": "renewal.extensions.message.655234a584",
           "expressions": {}
         },
         {
-          "start": 36316,
-          "end": 36530,
-          "line": 769,
+          "start": 36561,
+          "end": 36775,
+          "line": 758,
           "original": "\"🎲 لطفاً یکی از پلن‌های زیر را انتخاب کنید.\n♻️ بعد از تغییر پلن می توانید اشتراک خودتان را مطابق پلن جدید تمدید کنید.\"",
           "replacement": "\\achbotMessage('renewal.extensions.message.143c7f81f1')",
           "key": "renewal.extensions.message.143c7f81f1",
           "expressions": {}
         },
         {
-          "start": 37071,
-          "end": 37193,
-          "line": 787,
+          "start": 37316,
+          "end": 37438,
+          "line": 776,
           "original": "\"⛔️ افزایش حجم یا مدت برای این اشتراک در حال حاضر امکان‌پذیر نیست.\"",
           "replacement": "\\achbotMessage('renewal.extensions.alert.d0779ad27d')",
           "key": "renewal.extensions.alert.d0779ad27d",
           "expressions": {}
         },
         {
-          "start": 37292,
-          "end": 37395,
-          "line": 793,
+          "start": 37537,
+          "end": 37640,
+          "line": 782,
           "original": "\"❗️پلن فعلی شما همین است. لطفاً پلن متفاوتی انتخاب کنید.\"",
           "replacement": "\\achbotMessage('renewal.extensions.message.dee2da49f3')",
           "key": "renewal.extensions.message.dee2da49f3",
           "expressions": {}
         },
         {
-          "start": 37663,
-          "end": 37734,
-          "line": 803,
+          "start": 37908,
+          "end": 37979,
+          "line": 792,
           "original": "\"✅ پلن اشتراک شما با موفقیت تغییر یافت.\"",
           "replacement": "\\achbotMessage('renewal.extensions.message.3067ddba76')",
           "key": "renewal.extensions.message.3067ddba76",
           "expressions": {}
         },
         {
-          "start": 38067,
-          "end": 38414,
-          "line": 815,
+          "start": 38312,
+          "end": 38659,
+          "line": 804,
           "original": "\"\n📦 تغییر پلن اشتراک توسط کاربر\n\n🔐 شناسه عددی: <code>{$orderInfo['userid']}</code>\n👨 اسم کاربر: $first_name\n⚡️ نام کاربری: @$username\n🎈 نام کاربری اشتراک: <code>{$orderInfo['remark']}</code>\n🔄 پلن جدید: $planTitle\n🔖 آیدی پلن جدید: $newPlanId\n\"",
           "replacement": "\\achbotMessage('renewal.extensions.channel_message.f9e3ed8281', ['orderInfo_userid' => $orderInfo['userid'], 'first_name' => $first_name, 'username' => $username, 'orderInfo_remark' => $orderInfo['remark'], 'planTitle' => $planTitle, 'newPlanId' => $newPlanId])",
           "key": "renewal.extensions.channel_message.f9e3ed8281",
@@ -17913,63 +17922,63 @@
           }
         },
         {
-          "start": 39253,
-          "end": 39375,
-          "line": 845,
+          "start": 39498,
+          "end": 39620,
+          "line": 834,
           "original": "\"⛔️ افزایش حجم یا مدت برای این اشتراک در حال حاضر امکان‌پذیر نیست.\"",
           "replacement": "\\achbotMessage('renewal.extensions.alert.d0779ad27d')",
           "key": "renewal.extensions.alert.d0779ad27d",
           "expressions": {}
         },
         {
-          "start": 39699,
-          "end": 39777,
-          "line": 856,
+          "start": 39944,
+          "end": 40022,
+          "line": 845,
           "original": "\"📆 تاریخ انقضا برای این سفارش نامعتبر است.\"",
           "replacement": "\\achbotMessage('renewal.extensions.alert.0340c363d2')",
           "key": "renewal.extensions.alert.0340c363d2",
           "expressions": {}
         },
         {
-          "start": 39946,
-          "end": 40089,
-          "line": 862,
+          "start": 40191,
+          "end": 40334,
+          "line": 851,
           "original": "\"📆 اشتراک شما منقضی شده است. لطفاً آن را تمدید کنید تا بتوانید افزایش حجم دهید.\"",
           "replacement": "\\achbotMessage('renewal.extensions.alert.96762b5a42')",
           "key": "renewal.extensions.alert.96762b5a42",
           "expressions": {}
         },
         {
-          "start": 40300,
-          "end": 40366,
-          "line": 872,
+          "start": 40545,
+          "end": 40611,
+          "line": 861,
           "original": "\"در حال حاضر هیچ پلن حجمی وجود ندارد.\"",
           "replacement": "\\achbotMessage('renewal.extensions.alert.e6c27b8039')",
           "key": "renewal.extensions.alert.e6c27b8039",
           "expressions": {}
         },
         {
-          "start": 41187,
-          "end": 41201,
-          "line": 891,
+          "start": 41399,
+          "end": 41413,
+          "line": 879,
           "original": "\"رایگان\"",
           "replacement": "\\achbotMessage('renewal.extensions.price.dda7ff2974')",
           "key": "renewal.extensions.price.dda7ff2974",
           "expressions": {}
         },
         {
-          "start": 41263,
-          "end": 41276,
-          "line": 893,
+          "start": 41475,
+          "end": 41488,
+          "line": 881,
           "original": "' تومان'",
           "replacement": "\\achbotMessage('renewal.extensions.text.2cc98f7f7c')",
           "key": "renewal.extensions.text.2cc98f7f7c",
           "expressions": {}
         },
         {
-          "start": 41320,
-          "end": 41342,
-          "line": 895,
+          "start": 41532,
+          "end": 41554,
+          "line": 883,
           "original": "\"$title گیگ $price\"",
           "replacement": "\\achbotMessage('renewal.extensions.button.249377f2b7', ['title' => $title, 'price' => $price])",
           "key": "renewal.extensions.button.249377f2b7",
@@ -17979,216 +17988,216 @@
           }
         },
         {
-          "start": 41482,
-          "end": 41524,
-          "line": 898,
+          "start": 41694,
+          "end": 41736,
+          "line": 886,
           "original": "\"⤵️ برگرد به منوی اصلی\"",
           "replacement": "\\achbotMessage('renewal.extensions.button.8405a4154f')",
           "key": "renewal.extensions.button.8405a4154f",
           "expressions": {}
         },
         {
-          "start": 41592,
-          "end": 41665,
-          "line": 899,
+          "start": 41804,
+          "end": 41877,
+          "line": 887,
           "original": "\"لطفا یکی از پلن های حجمی را انتخاب کنید:\"",
           "replacement": "\\achbotMessage('renewal.extensions.message.ab954c63e6')",
           "key": "renewal.extensions.message.ab954c63e6",
           "expressions": {}
         },
         {
-          "start": 42270,
-          "end": 42377,
-          "line": 912,
+          "start": 42461,
+          "end": 42568,
+          "line": 900,
           "original": "'پلن حجمی در دسترس نیست؛ دوباره از منوی اشتراک انتخاب کنید.'",
           "replacement": "\\achbotMessage('renewal.extensions.alert.6173c35986')",
           "key": "renewal.extensions.alert.6173c35986",
           "expressions": {}
         },
         {
-          "start": 42842,
-          "end": 42964,
-          "line": 925,
+          "start": 43083,
+          "end": 43205,
+          "line": 913,
           "original": "\"⛔️ افزایش حجم یا مدت برای این اشتراک در حال حاضر امکان‌پذیر نیست.\"",
           "replacement": "\\achbotMessage('renewal.extensions.alert.d0779ad27d')",
           "key": "renewal.extensions.alert.d0779ad27d",
           "expressions": {}
         },
         {
-          "start": 43060,
-          "end": 43154,
-          "line": 930,
+          "start": 43301,
+          "end": 43395,
+          "line": 918,
           "original": "'📆 اشتراک شما منقضی شده است. ابتدا آن را تمدید کنید.'",
           "replacement": "\\achbotMessage('renewal.extensions.alert.f5aab191db')",
           "key": "renewal.extensions.alert.f5aab191db",
           "expressions": {}
         },
         {
-          "start": 44374,
-          "end": 44509,
-          "line": 958,
+          "start": 44623,
+          "end": 44758,
+          "line": 946,
           "original": "'⚠️ ثبت پیش‌نویس به‌طور قطعی تأیید نشد؛ از ایجاد پرداخت مجدد پرهیز کنید.'",
           "replacement": "\\achbotMessage('renewal.extensions.alert.ae271a2d1d')",
           "key": "renewal.extensions.alert.ae271a2d1d",
           "expressions": {}
         },
         {
-          "start": 44597,
-          "end": 44612,
-          "line": 964,
+          "start": 44846,
+          "end": 44861,
+          "line": 952,
           "original": "' رایگان'",
           "replacement": "\\achbotMessage('renewal.extensions.planprice.97e0b2bd8a')",
           "key": "renewal.extensions.planprice.97e0b2bd8a",
           "expressions": {}
         },
         {
-          "start": 44670,
-          "end": 44683,
-          "line": 965,
+          "start": 44919,
+          "end": 44932,
+          "line": 953,
           "original": "\" تومان\"",
           "replacement": "\\achbotMessage('renewal.extensions.text.2cc98f7f7c')",
           "key": "renewal.extensions.text.2cc98f7f7c",
           "expressions": {}
         },
         {
-          "start": 45377,
-          "end": 45420,
-          "line": 970,
+          "start": 45626,
+          "end": 45669,
+          "line": 958,
           "original": "'💎 پرداخت رمزارزی دستی'",
           "replacement": "\\achbotMessage('renewal.extensions.button.e729457ba2')",
           "key": "renewal.extensions.button.e729457ba2",
           "expressions": {}
         },
         {
-          "start": 46348,
-          "end": 46384,
-          "line": 974,
+          "start": 46597,
+          "end": 46633,
+          "line": 962,
           "original": "\"💰پرداخت با موجودی\"",
           "replacement": "\\achbotMessage('renewal.extensions.button.5adbd64a32')",
           "key": "renewal.extensions.button.5adbd64a32",
           "expressions": {}
         },
         {
-          "start": 46562,
-          "end": 46627,
-          "line": 977,
+          "start": 46811,
+          "end": 46876,
+          "line": 965,
           "original": "\"🧾 روش پرداخت سفارش را انتخاب کنید.\"",
           "replacement": "\\achbotMessage('renewal.extensions.message.48930749a9')",
           "key": "renewal.extensions.message.48930749a9",
           "expressions": {}
         },
         {
-          "start": 47663,
-          "end": 47802,
-          "line": 996,
+          "start": 47912,
+          "end": 48051,
+          "line": 984,
           "original": "\"⚠️ پرداخت این سفارش با این روش مجاز نیست یا قبلاً به روش دیگری آغاز شده است.\"",
           "replacement": "\\achbotMessage('renewal.extensions.alert.1a885aaca4')",
           "key": "renewal.extensions.alert.1a885aaca4",
           "expressions": {}
         },
         {
-          "start": 48022,
-          "end": 48145,
-          "line": 1002,
+          "start": 48271,
+          "end": 48394,
+          "line": 990,
           "original": "\"⚠️ اطلاعات این پرداخت قابل بازیابی نیست؛ با پشتیبانی تماس بگیرید.\"",
           "replacement": "\\achbotMessage('renewal.extensions.alert.07ee06b4bc')",
           "key": "renewal.extensions.alert.07ee06b4bc",
           "expressions": {}
         },
         {
-          "start": 49083,
-          "end": 49238,
-          "line": 1016,
+          "start": 49332,
+          "end": 49487,
+          "line": 1004,
           "original": "\"⚠️ نمایش اطلاعات پرداخت تأیید نشد. از همان دکمه دوباره تلاش کنید و وجهی ارسال نکنید.\"",
           "replacement": "\\achbotMessage('renewal.extensions.alert.7a9c30e938')",
           "key": "renewal.extensions.alert.7a9c30e938",
           "expressions": {}
         },
         {
-          "start": 49893,
-          "end": 50045,
-          "line": 1033,
+          "start": 50142,
+          "end": 50294,
+          "line": 1021,
           "original": "\"⚠️ این رسید با روش پرداخت انتخاب‌شده مطابقت ندارد یا سفارش در انتظار پرداخت نیست.\"",
           "replacement": "\\achbotMessage('renewal.extensions.alert.d06bc731eb')",
           "key": "renewal.extensions.alert.d06bc731eb",
           "expressions": {}
         },
         {
-          "start": 50546,
-          "end": 50748,
-          "line": 1044,
+          "start": 50795,
+          "end": 50997,
+          "line": 1032,
           "original": "'⌛️ مهلت شروع ارسال رسید پایان یافته یا فاکتور در حال بررسی است. اگر وجهی فرستاده‌اید با پشتیبانی تماس بگیرید.'",
           "replacement": "\\achbotMessage('renewal.extensions.alert.560f05f822')",
           "key": "renewal.extensions.alert.560f05f822",
           "expressions": {}
         },
         {
-          "start": 52027,
-          "end": 52154,
-          "line": 1069,
+          "start": 52276,
+          "end": 52403,
+          "line": 1057,
           "original": "\"⚠️ این سفارش قابل ثبت رسید نیست؛ برای بررسی با پشتیبانی تماس بگیرید.\"",
           "replacement": "\\achbotMessage('renewal.extensions.alert.882596d0f1')",
           "key": "renewal.extensions.alert.882596d0f1",
           "expressions": {}
         },
         {
-          "start": 52580,
-          "end": 52783,
-          "line": 1081,
+          "start": 52829,
+          "end": 53032,
+          "line": 1069,
           "original": "\"⚠️ ثبت یا ارسال رسید در جریان است. همان تصویر را دوباره ارسال کنید؛ در صورت تداوم مشکل با پشتیبانی تماس بگیرید.\"",
           "replacement": "\\achbotMessage('renewal.extensions.alert.795c4bddb8')",
           "key": "renewal.extensions.alert.795c4bddb8",
           "expressions": {}
         },
         {
-          "start": 53496,
-          "end": 53618,
-          "line": 1104,
+          "start": 53745,
+          "end": 53867,
+          "line": 1092,
           "original": "\"⛔️ افزایش حجم یا مدت برای این اشتراک در حال حاضر امکان‌پذیر نیست.\"",
           "replacement": "\\achbotMessage('renewal.extensions.alert.d0779ad27d')",
           "key": "renewal.extensions.alert.d0779ad27d",
           "expressions": {}
         },
         {
-          "start": 54086,
-          "end": 54094,
-          "line": 1124,
+          "start": 54354,
+          "end": 54362,
+          "line": 1112,
           "original": "'حجم'",
           "replacement": "\\achbotMessage('renewal.extensions.text.4123904480')",
           "key": "renewal.extensions.text.4123904480",
           "expressions": {}
         },
         {
-          "start": 54859,
-          "end": 55144,
-          "line": 1143,
+          "start": 55127,
+          "end": 55412,
+          "line": 1131,
           "original": "\"📥 تصویر برای پیگیری ثبت شده اما تأیید ارسال به مدیر دریافت نشده است. لطفاً همان تصویر را دوباره بفرستید یا با پشتیبانی تماس بگیرید. پرداخت مجدد انجام ندهید.\"",
           "replacement": "\\achbotMessage('renewal.extensions.message.c346a0d62e')",
           "key": "renewal.extensions.message.c346a0d62e",
           "expressions": {}
         },
         {
-          "start": 55739,
-          "end": 55824,
-          "line": 1160,
+          "start": 56007,
+          "end": 56092,
+          "line": 1148,
           "original": "\"⛔️ تایید دستی افزایشی برای این پنل مجاز نیست.\"",
           "replacement": "\\achbotMessage('renewal.extensions.alert.135aa8877f')",
           "key": "renewal.extensions.alert.135aa8877f",
           "expressions": {}
         },
         {
-          "start": 56035,
-          "end": 56143,
-          "line": 1168,
+          "start": 56303,
+          "end": 56411,
+          "line": 1156,
           "original": "'⛔️ این افزایش حجم رسید دستی معتبر و در انتظار تأیید ندارد.'",
           "replacement": "\\achbotMessage('renewal.extensions.alert.733308c9fe')",
           "key": "renewal.extensions.alert.733308c9fe",
           "expressions": {}
         },
         {
-          "start": 62057,
-          "end": 62096,
-          "line": 1303,
+          "start": 62230,
+          "end": 62269,
+          "line": 1284,
           "original": "\"✅ تایید شد توسط $from_id\"",
           "replacement": "\\achbotMessage('renewal.extensions.button.139c829462', ['from_id' => $from_id])",
           "key": "renewal.extensions.button.139c829462",
@@ -18197,9 +18206,9 @@
           }
         },
         {
-          "start": 62159,
-          "end": 62174,
-          "line": 1304,
+          "start": 62332,
+          "end": 62347,
+          "line": 1285,
           "original": "\"🆔 $hash_id\"",
           "replacement": "\\achbotMessage('renewal.extensions.hash_id.2899228604', ['hash_id' => $hash_id])",
           "key": "renewal.extensions.hash_id.2899228604",
@@ -18208,9 +18217,9 @@
           }
         },
         {
-          "start": 62862,
-          "end": 62959,
-          "line": 1321,
+          "start": 63035,
+          "end": 63132,
+          "line": 1302,
           "original": "\"✅ <b>$volume</b> گیگ به حجم حجم اشتراک <code>$remark</code> اضافه شد.\"",
           "replacement": "\\achbotMessage('renewal.extensions.message.d5b6a4e6e7', ['volume' => $volume, 'remark' => $remark])",
           "key": "renewal.extensions.message.d5b6a4e6e7",
@@ -18220,18 +18229,18 @@
           }
         },
         {
-          "start": 63333,
-          "end": 63417,
-          "line": 1332,
+          "start": 63506,
+          "end": 63590,
+          "line": 1313,
           "original": "\"⚠️ خطا در تایید افزایش حجم (کارت‌به‌کارت)\\n\\n\"",
           "replacement": "\\achbotMessage('renewal.extensions.err.322385c9dd')",
           "key": "renewal.extensions.err.322385c9dd",
           "expressions": {}
         },
         {
-          "start": 63433,
-          "end": 63462,
-          "line": 1333,
+          "start": 63606,
+          "end": 63635,
+          "line": 1314,
           "original": "\"🆔 Hash ID: {$match[1]}\\n\"",
           "replacement": "\\achbotMessage('renewal.extensions.hash__i_d_match_1.3abb834966', ['match_1' => $match[1]])",
           "key": "renewal.extensions.hash__i_d_match_1.3abb834966",
@@ -18240,9 +18249,9 @@
           }
         },
         {
-          "start": 63478,
-          "end": 63504,
-          "line": 1334,
+          "start": 63651,
+          "end": 63677,
+          "line": 1315,
           "original": "\"👤 Admin: {$from_id}\\n\"",
           "replacement": "\\achbotMessage('renewal.extensions.admin_from_id.748897de00', ['from_id' => $from_id])",
           "key": "renewal.extensions.admin_from_id.748897de00",
@@ -18251,72 +18260,72 @@
           }
         },
         {
-          "start": 63520,
-          "end": 63620,
-          "line": 1335,
+          "start": 63693,
+          "end": 63793,
+          "line": 1316,
           "original": "\"⚠️ External effect: unverified; verify before retry or compensation\\n📄 Reason (sanitized): \"",
           "replacement": "\\achbotMessage('renewal.extensions.external_effect_unverified_verify_before.10e2ccf8a3')",
           "key": "renewal.extensions.external_effect_unverified_verify_before.10e2ccf8a3",
           "expressions": {}
         },
         {
-          "start": 63720,
-          "end": 63924,
-          "line": 1338,
+          "start": 63893,
+          "end": 64097,
+          "line": 1319,
           "original": "\"⚠️ نتیجه افزایش حجم نیاز به بررسی دارد. وضعیت اشتراک و پرداخت را کنترل کنید؛ از اجرای مجدد خودکار خودداری کنید.\"",
           "replacement": "\\achbotMessage('renewal.extensions.alert.36f9c089de')",
           "key": "renewal.extensions.alert.36f9c089de",
           "expressions": {}
         },
         {
-          "start": 65148,
-          "end": 65317,
-          "line": 1369,
+          "start": 65321,
+          "end": 65490,
+          "line": 1350,
           "original": "\"⛔️ این سفارش متعلق به شما نیست یا روش پرداخت دیگری برای آن ثبت شده است؛ دوباره پرداخت نکنید.\"",
           "replacement": "\\achbotMessage('renewal.extensions.alert.9b6f1fa91f')",
           "key": "renewal.extensions.alert.9b6f1fa91f",
           "expressions": {}
         },
         {
-          "start": 65487,
-          "end": 65691,
-          "line": 1375,
+          "start": 65660,
+          "end": 65864,
+          "line": 1356,
           "original": "\"⛔️ افزایش اشتراک در حال حاضر امکان‌پذیر نیست. اگر پرداختی انجام داده‌اید، وضعیت آن را با پشتیبانی بررسی کنید.\"",
           "replacement": "\\achbotMessage('renewal.extensions.alert.31d13e9866')",
           "key": "renewal.extensions.alert.31d13e9866",
           "expressions": {}
         },
         {
-          "start": 68559,
-          "end": 68640,
-          "line": 1456,
+          "start": 68634,
+          "end": 68715,
+          "line": 1430,
           "original": "\"❌ موجودی کیف پول کافی نیست.\\n💵 موجودی فعلی: \"",
           "replacement": "\\achbotMessage('renewal.extensions.alert.39c72d8044')",
           "key": "renewal.extensions.alert.39c72d8044",
           "expressions": {}
         },
         {
-          "start": 68672,
-          "end": 68711,
-          "line": 1456,
+          "start": 68747,
+          "end": 68786,
+          "line": 1430,
           "original": "\" تومان\\n🔺 مورد نیاز: \"",
           "replacement": "\\achbotMessage('renewal.extensions.alert.71a2507661')",
           "key": "renewal.extensions.alert.71a2507661",
           "expressions": {}
         },
         {
-          "start": 68743,
-          "end": 68756,
-          "line": 1456,
+          "start": 68818,
+          "end": 68831,
+          "line": 1430,
           "original": "\" تومان\"",
           "replacement": "\\achbotMessage('renewal.extensions.text.2cc98f7f7c')",
           "key": "renewal.extensions.text.2cc98f7f7c",
           "expressions": {}
         },
         {
-          "start": 73107,
-          "end": 73183,
-          "line": 1542,
+          "start": 73182,
+          "end": 73258,
+          "line": 1516,
           "original": "\"✅ $volume گیگ به حجم حجم اشتراک شما اضافه شد.\"",
           "replacement": "\\achbotMessage('renewal.extensions.message.2d27ba4eea', ['volume' => $volume])",
           "key": "renewal.extensions.message.2d27ba4eea",
@@ -18325,18 +18334,18 @@
           }
         },
         {
-          "start": 73291,
-          "end": 73329,
-          "line": 1546,
+          "start": 73366,
+          "end": 73404,
+          "line": 1520,
           "original": "\"⏳ افزایش حجم اشتراک\"",
           "replacement": "\\achbotMessage('renewal.extensions.button.9a3cb8176f')",
           "key": "renewal.extensions.button.9a3cb8176f",
           "expressions": {}
         },
         {
-          "start": 73413,
-          "end": 73428,
-          "line": 1549,
+          "start": 73488,
+          "end": 73503,
+          "line": 1523,
           "original": "\"🆔 $hash_id\"",
           "replacement": "\\achbotMessage('renewal.extensions.hash_id.2899228604', ['hash_id' => $hash_id])",
           "key": "renewal.extensions.hash_id.2899228604",
@@ -18345,9 +18354,9 @@
           }
         },
         {
-          "start": 73507,
-          "end": 73792,
-          "line": 1553,
+          "start": 73582,
+          "end": 73867,
+          "line": 1527,
           "original": "\"\n🔋|💰 افزایش حجم با (کیف پول)\n\n🎫 شناسه عددی: $from_id\n👨 اسم کاربر: $first_name\n⚡️ نام کاربری: @$username\n🎈 نام کاربری اشتراک: $remark\n⏰ حجم افزایش: $volume گیگ\n💰 قیمت: $price تومان\n\"",
           "replacement": "\\achbotMessage('renewal.extensions.msg.0e12e9ce3d', ['from_id' => $from_id, 'first_name' => $first_name, 'username' => $username, 'remark' => $remark, 'volume' => $volume, 'price' => $price])",
           "key": "renewal.extensions.msg.0e12e9ce3d",
@@ -18361,18 +18370,18 @@
           }
         },
         {
-          "start": 74505,
-          "end": 74568,
-          "line": 1582,
+          "start": 74580,
+          "end": 74643,
+          "line": 1556,
           "original": "\"⚠️ خطا در افزایش حجم با کیف پول\\n\\n\"",
           "replacement": "\\achbotMessage('renewal.extensions.admin_err.128069a4b4')",
           "key": "renewal.extensions.admin_err.128069a4b4",
           "expressions": {}
         },
         {
-          "start": 74589,
-          "end": 74618,
-          "line": 1583,
+          "start": 74664,
+          "end": 74693,
+          "line": 1557,
           "original": "\"🆔 Hash ID: {$match[1]}\\n\"",
           "replacement": "\\achbotMessage('renewal.extensions.hash__i_d_match_1.3abb834966', ['match_1' => $match[1]])",
           "key": "renewal.extensions.hash__i_d_match_1.3abb834966",
@@ -18381,9 +18390,9 @@
           }
         },
         {
-          "start": 74639,
-          "end": 74664,
-          "line": 1584,
+          "start": 74714,
+          "end": 74739,
+          "line": 1558,
           "original": "\"👤 User: {$from_id}\\n\"",
           "replacement": "\\achbotMessage('renewal.extensions.user_from_id.45aa9ea684', ['from_id' => $from_id])",
           "key": "renewal.extensions.user_from_id.45aa9ea684",
@@ -18392,18 +18401,18 @@
           }
         },
         {
-          "start": 74685,
-          "end": 74785,
-          "line": 1585,
+          "start": 74760,
+          "end": 74860,
+          "line": 1559,
           "original": "\"⚠️ External effect: unverified; verify before retry or compensation\\n📄 Reason (sanitized): \"",
           "replacement": "\\achbotMessage('renewal.extensions.external_effect_unverified_verify_before.10e2ccf8a3')",
           "key": "renewal.extensions.external_effect_unverified_verify_before.10e2ccf8a3",
           "expressions": {}
         },
         {
-          "start": 74894,
-          "end": 75103,
-          "line": 1588,
+          "start": 74969,
+          "end": 75178,
+          "line": 1562,
           "original": "\"⚠️ وضعیت درخواست مشخص نیست. لطفاً وضعیت اشتراک و پرداخت را بررسی کنید و پیش از ثبت دوباره با پشتیبانی هماهنگ شوید.\"",
           "replacement": "\\achbotMessage('renewal.extensions.message.ba8adc7121')",
           "key": "renewal.extensions.message.ba8adc7121",
@@ -18413,7 +18422,7 @@
     },
     "src/Finance/Routes/ManualApproval.php": {
       "source_sha256": "7f5dcab52627ed2009bab39cf4241aeb4c639e869f57b930da1b44064b79d8ba",
-      "source_commit": "fbb7b701ced630764acbe56405d04e7a8317c46c",
+      "source_commit": "8c4bb966f01871c79a9e1665c772acb59de60c66",
       "loader": "require_once __DIR__ . '/../../../messages/loader.php'; // ACHBOT_TEXT_CATALOG\n",
       "edits": [
         {
@@ -18736,7 +18745,7 @@
     },
     "src/Finance/Routes/ManualCrypto.php": {
       "source_sha256": "85feafc2ca9f4af59adef0459882d9b3a7560cc2367e8de371714701313a268b",
-      "source_commit": "fbb7b701ced630764acbe56405d04e7a8317c46c",
+      "source_commit": "8c4bb966f01871c79a9e1665c772acb59de60c66",
       "loader": "require_once __DIR__ . '/../../../messages/loader.php'; // ACHBOT_TEXT_CATALOG\n",
       "edits": [
         {
@@ -18869,7 +18878,7 @@
     },
     "src/Finance/Routes/ManualReceipts.php": {
       "source_sha256": "5b3b31d6997b377d404a770439f91267cd3fb0fbd422557fe8ff3551e294b771",
-      "source_commit": "fbb7b701ced630764acbe56405d04e7a8317c46c",
+      "source_commit": "8c4bb966f01871c79a9e1665c772acb59de60c66",
       "loader": "require_once __DIR__ . '/../../../messages/loader.php'; // ACHBOT_TEXT_CATALOG\n",
       "edits": [
         {
@@ -20791,7 +20800,7 @@
     },
     "src/Finance/Routes/PrePayment.php": {
       "source_sha256": "0ef072768c864ee27cc7c021dfef0f43021249c13077da27ed61c3b657b8eec6",
-      "source_commit": "fbb7b701ced630764acbe56405d04e7a8317c46c",
+      "source_commit": "8c4bb966f01871c79a9e1665c772acb59de60c66",
       "loader": "require_once __DIR__ . '/../../../messages/loader.php'; // ACHBOT_TEXT_CATALOG\n",
       "edits": [
         {
@@ -21203,7 +21212,7 @@
     },
     "src/Finance/Routes/RenewalCheckout.php": {
       "source_sha256": "82f0e908f17ed8c3acabfcf88f91b88cca360b1a24706f64cd62739629271b6a",
-      "source_commit": "fbb7b701ced630764acbe56405d04e7a8317c46c",
+      "source_commit": "8c4bb966f01871c79a9e1665c772acb59de60c66",
       "loader": "require_once __DIR__ . '/../../../messages/loader.php'; // ACHBOT_TEXT_CATALOG\n",
       "edits": [
         {
@@ -21676,7 +21685,7 @@
     },
     "src/Finance/Routes/RenewalPlan.php": {
       "source_sha256": "5fbbe1dc43443c0534199396284fdb0e208040c2edeaa0d162b8ba52fa22c653",
-      "source_commit": "fbb7b701ced630764acbe56405d04e7a8317c46c",
+      "source_commit": "8c4bb966f01871c79a9e1665c772acb59de60c66",
       "loader": "require_once __DIR__ . '/../../../messages/loader.php'; // ACHBOT_TEXT_CATALOG\n",
       "edits": [
         {
@@ -21719,7 +21728,7 @@
     },
     "src/Finance/Routes/RenewalSelection.php": {
       "source_sha256": "884e9c0ba47561bcc7b65e7f0ae338bc8070c492fd4ae4dce5c9ee195e6f1f9d",
-      "source_commit": "fbb7b701ced630764acbe56405d04e7a8317c46c",
+      "source_commit": "8c4bb966f01871c79a9e1665c772acb59de60c66",
       "loader": "require_once __DIR__ . '/../../../messages/loader.php'; // ACHBOT_TEXT_CATALOG\n",
       "edits": [
         {
@@ -21771,7 +21780,7 @@
     },
     "src/Finance/Routes/WalletRecharge.php": {
       "source_sha256": "9a759c5572ee8563c091c18cb0d2d6219a328ba9f01e9e0b32d49cb8ecd3c2a1",
-      "source_commit": "fbb7b701ced630764acbe56405d04e7a8317c46c",
+      "source_commit": "8c4bb966f01871c79a9e1665c772acb59de60c66",
       "loader": "require_once __DIR__ . '/../../../messages/loader.php'; // ACHBOT_TEXT_CATALOG\n",
       "edits": [
         {
@@ -22030,7 +22039,7 @@
     },
     "src/Finance/Routes/WalletTransfer.php": {
       "source_sha256": "82f49775c0070f85d4f76d0f227e11e712cd8413d05062b0b527d105cc8ece3c",
-      "source_commit": "fbb7b701ced630764acbe56405d04e7a8317c46c",
+      "source_commit": "8c4bb966f01871c79a9e1665c772acb59de60c66",
       "loader": "require_once __DIR__ . '/../../../messages/loader.php'; // ACHBOT_TEXT_CATALOG\n",
       "edits": [
         {
@@ -22638,7 +22647,7 @@
     },
     "src/Finance/WalletSettlement.php": {
       "source_sha256": "eded56642105b2c57e37b4c8f90cecceaf2f1d33f389807b070e9272099b8fe4",
-      "source_commit": "fbb7b701ced630764acbe56405d04e7a8317c46c",
+      "source_commit": "8c4bb966f01871c79a9e1665c772acb59de60c66",
       "loader": "require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG\n",
       "edits": [
         {
@@ -22959,7 +22968,7 @@
     },
     "src/Finance/WalletStart.php": {
       "source_sha256": "03da7b7e7f8a03020889b357ec5d023f210fbf855e8edf5623608f6833209488",
-      "source_commit": "fbb7b701ced630764acbe56405d04e7a8317c46c",
+      "source_commit": "8c4bb966f01871c79a9e1665c772acb59de60c66",
       "loader": "require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG\n",
       "edits": [
         {
@@ -22993,7 +23002,7 @@
     },
     "src/Jobs/BroadcastSend.php": {
       "source_sha256": "11ffdc3c89368298ee29c0191f8989124b3ec4fd2a84bf04f0a828cec822c7ad",
-      "source_commit": "fbb7b701ced630764acbe56405d04e7a8317c46c",
+      "source_commit": "8c4bb966f01871c79a9e1665c772acb59de60c66",
       "loader": "require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG\n",
       "edits": [
         {
@@ -23112,7 +23121,7 @@
     },
     "src/Jobs/MessageActions.php": {
       "source_sha256": "7e0c45718def613a9736ce5a7c0658ee47c6b5b96766d5de44889dbffb0836e5",
-      "source_commit": "fbb7b701ced630764acbe56405d04e7a8317c46c",
+      "source_commit": "8c4bb966f01871c79a9e1665c772acb59de60c66",
       "loader": "require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG\n",
       "edits": [
         {
@@ -23156,7 +23165,7 @@
     },
     "src/Notifications/Warnings.php": {
       "source_sha256": "677e7fd0a0fbd5ad54a34b7d7ee78a4d3a6d2283933aa014204c3cbebabb003b",
-      "source_commit": "fbb7b701ced630764acbe56405d04e7a8317c46c",
+      "source_commit": "8c4bb966f01871c79a9e1665c772acb59de60c66",
       "loader": "require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG\n",
       "edits": [
         {
@@ -23224,7 +23233,7 @@
     },
     "src/Panel/ProviderAdmin.php": {
       "source_sha256": "dc0beb4ff3b07b219ea7baf73fdb4ea7f5cad150a93474e66f3ac85d13b1be7e",
-      "source_commit": "fbb7b701ced630764acbe56405d04e7a8317c46c",
+      "source_commit": "8c4bb966f01871c79a9e1665c772acb59de60c66",
       "loader": "require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG\n",
       "edits": [
         {
@@ -23429,7 +23438,7 @@
     },
     "src/Plans/Administration.php": {
       "source_sha256": "687cade0ab29ca1e1cd839b9d7665d76147eb47f14625c0419e49cb1d131128d",
-      "source_commit": "fbb7b701ced630764acbe56405d04e7a8317c46c",
+      "source_commit": "8c4bb966f01871c79a9e1665c772acb59de60c66",
       "loader": "require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG\n",
       "edits": [
         {
@@ -24188,7 +24197,7 @@
     },
     "src/Plans/Categories.php": {
       "source_sha256": "0363fbbff4ff38b2503baab5de568edf877ab37567e4f38e6c6acc50c67165ca",
-      "source_commit": "fbb7b701ced630764acbe56405d04e7a8317c46c",
+      "source_commit": "8c4bb966f01871c79a9e1665c772acb59de60c66",
       "loader": "require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG\n",
       "edits": [
         {
@@ -24266,8 +24275,8 @@
       ]
     },
     "src/Plans/Intervals.php": {
-      "source_sha256": "3b2c12bc5404fb7d6e35e6bbddcd20dcb4a0874eee5d4bf42af84c6777b3ad95",
-      "source_commit": "fbb7b701ced630764acbe56405d04e7a8317c46c",
+      "source_sha256": "4256add0fad9cc543cfc30809a39f4f5533191b5fecb07802cec687ea939cfdd",
+      "source_commit": "8c4bb966f01871c79a9e1665c772acb59de60c66",
       "loader": "require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG\n",
       "edits": [
         {
@@ -24361,702 +24370,729 @@
           "expressions": {}
         },
         {
-          "start": 2584,
-          "end": 2646,
-          "line": 62,
+          "start": 2478,
+          "end": 2600,
+          "line": 56,
+          "original": "'حجم را به گیگابایت کامل وارد کنید؛ مقدار اعشاری پشتیبانی نمی‌شود.'",
+          "replacement": "\\achbotMessage('plans.intervals.add_new_day_plan.message.a2684ce4cc')",
+          "key": "plans.intervals.add_new_day_plan.message.a2684ce4cc",
+          "expressions": {}
+        },
+        {
+          "start": 2839,
+          "end": 2901,
+          "line": 63,
           "original": "\"پلن زمانی جدید با موفقیت اضافه شد\"",
           "replacement": "\\achbotMessage('plans.intervals.add_new_day_plan.message.9acd097b34')",
           "key": "plans.intervals.add_new_day_plan.message.9acd097b34",
           "expressions": {}
         },
         {
-          "start": 3029,
-          "end": 3083,
-          "line": 71,
+          "start": 3284,
+          "end": 3338,
+          "line": 72,
           "original": "\"پلن موردنظر با موفقیت حذف شد.\"",
           "replacement": "\\achbotMessage('plans.intervals.add_new_day_plan.alert.b7bba0b0c0')",
           "key": "plans.intervals.add_new_day_plan.alert.b7bba0b0c0",
           "expressions": {}
         },
         {
-          "start": 3295,
-          "end": 3347,
-          "line": 80,
+          "start": 3550,
+          "end": 3602,
+          "line": 81,
           "original": "'لیست پلن های زمانی خالی است.'",
           "replacement": "\\achbotMessage('plans.intervals.day_plan_settings.message.f253e3780e')",
           "key": "plans.intervals.day_plan_settings.message.f253e3780e",
           "expressions": {}
         },
         {
-          "start": 3433,
-          "end": 3474,
-          "line": 82,
+          "start": 3688,
+          "end": 3729,
+          "line": 83,
           "original": "\"افزودن پلن زمانی جدید\"",
           "replacement": "\\achbotMessage('plans.intervals.day_plan_settings.button.4e0a1e41c8')",
           "key": "plans.intervals.day_plan_settings.button.4e0a1e41c8",
           "expressions": {}
         },
         {
-          "start": 3708,
-          "end": 3716,
-          "line": 89,
+          "start": 3963,
+          "end": 3971,
+          "line": 90,
           "original": "\"حذف\"",
           "replacement": "\\achbotMessage('plans.intervals.day_plan_settings.button.59ca629220')",
           "key": "plans.intervals.day_plan_settings.button.59ca629220",
           "expressions": {}
         },
         {
-          "start": 3755,
-          "end": 3765,
-          "line": 89,
+          "start": 4010,
+          "end": 4020,
+          "line": 90,
           "original": "\"قیمت\"",
           "replacement": "\\achbotMessage('plans.intervals.day_plan_settings.button.7d2c8a1926')",
           "key": "plans.intervals.day_plan_settings.button.7d2c8a1926",
           "expressions": {}
         },
         {
-          "start": 3804,
-          "end": 3823,
-          "line": 89,
+          "start": 4059,
+          "end": 4078,
+          "line": 90,
           "original": "\"تعداد روز\"",
           "replacement": "\\achbotMessage('plans.intervals.day_plan_settings.button.be0d8f0892')",
           "key": "plans.intervals.day_plan_settings.button.be0d8f0892",
           "expressions": {}
         },
         {
-          "start": 3999,
-          "end": 4012,
-          "line": 93,
+          "start": 4254,
+          "end": 4267,
+          "line": 94,
           "original": "\" تومان\"",
           "replacement": "\\achbotMessage('plans.administration.edit_custom_plan.text.2cc98f7f7c')",
           "key": "plans.administration.edit_custom_plan.text.2cc98f7f7c",
           "expressions": {}
         },
         {
-          "start": 4080,
-          "end": 4085,
-          "line": 96,
+          "start": 4335,
+          "end": 4340,
+          "line": 97,
           "original": "\"❌\"",
           "replacement": "\\achbotMessage('plans.intervals.day_plan_settings.button.2b2966a54e')",
           "key": "plans.intervals.day_plan_settings.button.2b2966a54e",
           "expressions": {}
         },
         {
-          "start": 4284,
-          "end": 4325,
-          "line": 98,
+          "start": 4539,
+          "end": 4580,
+          "line": 99,
           "original": "\"افزودن پلن زمانی جدید\"",
           "replacement": "\\achbotMessage('plans.intervals.day_plan_settings.button.4e0a1e41c8')",
           "key": "plans.intervals.day_plan_settings.button.4e0a1e41c8",
           "expressions": {}
         },
         {
-          "start": 4471,
-          "end": 4554,
-          "line": 100,
+          "start": 4726,
+          "end": 4809,
+          "line": 101,
           "original": "' 📍 برای دیدن جزییات پلن زمانی روی آن بزنید👇'",
           "replacement": "\\achbotMessage('plans.intervals.day_plan_settings.msg.0eb1f0debf')",
           "key": "plans.intervals.day_plan_settings.msg.0eb1f0debf",
           "expressions": {}
         },
         {
-          "start": 4844,
-          "end": 4887,
-          "line": 111,
+          "start": 5099,
+          "end": 5142,
+          "line": 112,
           "original": "\"قیمت جدید را وارد کنید:\"",
           "replacement": "\\achbotMessage('plans.intervals.add_new_day_plan.message.b9989bb7c2')",
           "key": "plans.intervals.add_new_day_plan.message.b9989bb7c2",
           "expressions": {}
         },
         {
-          "start": 5292,
-          "end": 5345,
-          "line": 122,
+          "start": 5547,
+          "end": 5600,
+          "line": 123,
           "original": "\"✅ عملیات با موفقیت انجام شد.\"",
           "replacement": "\\achbotMessage('plans.intervals.add_new_day_plan.message.d03501095b')",
           "key": "plans.intervals.add_new_day_plan.message.d03501095b",
           "expressions": {}
         },
         {
-          "start": 5591,
-          "end": 5643,
-          "line": 130,
+          "start": 5846,
+          "end": 5898,
+          "line": 131,
           "original": "'لیست پلن های زمانی خالی است.'",
           "replacement": "\\achbotMessage('plans.intervals.day_plan_settings.message.f253e3780e')",
           "key": "plans.intervals.day_plan_settings.message.f253e3780e",
           "expressions": {}
         },
         {
-          "start": 5737,
-          "end": 5778,
-          "line": 132,
+          "start": 5992,
+          "end": 6033,
+          "line": 133,
           "original": "\"افزودن پلن زمانی جدید\"",
           "replacement": "\\achbotMessage('plans.intervals.day_plan_settings.button.4e0a1e41c8')",
           "key": "plans.intervals.day_plan_settings.button.4e0a1e41c8",
           "expressions": {}
         },
         {
-          "start": 6040,
-          "end": 6048,
-          "line": 139,
+          "start": 6295,
+          "end": 6303,
+          "line": 140,
           "original": "\"حذف\"",
           "replacement": "\\achbotMessage('plans.intervals.day_plan_settings.button.59ca629220')",
           "key": "plans.intervals.day_plan_settings.button.59ca629220",
           "expressions": {}
         },
         {
-          "start": 6087,
-          "end": 6097,
-          "line": 139,
+          "start": 6342,
+          "end": 6352,
+          "line": 140,
           "original": "\"قیمت\"",
           "replacement": "\\achbotMessage('plans.intervals.day_plan_settings.button.7d2c8a1926')",
           "key": "plans.intervals.day_plan_settings.button.7d2c8a1926",
           "expressions": {}
         },
         {
-          "start": 6136,
-          "end": 6155,
-          "line": 139,
+          "start": 6391,
+          "end": 6410,
+          "line": 140,
           "original": "\"تعداد روز\"",
           "replacement": "\\achbotMessage('plans.intervals.day_plan_settings.button.be0d8f0892')",
           "key": "plans.intervals.day_plan_settings.button.be0d8f0892",
           "expressions": {}
         },
         {
-          "start": 6347,
-          "end": 6360,
-          "line": 143,
+          "start": 6602,
+          "end": 6615,
+          "line": 144,
           "original": "\" تومان\"",
           "replacement": "\\achbotMessage('plans.administration.edit_custom_plan.text.2cc98f7f7c')",
           "key": "plans.administration.edit_custom_plan.text.2cc98f7f7c",
           "expressions": {}
         },
         {
-          "start": 6440,
-          "end": 6445,
-          "line": 146,
+          "start": 6695,
+          "end": 6700,
+          "line": 147,
           "original": "\"❌\"",
           "replacement": "\\achbotMessage('plans.intervals.day_plan_settings.button.2b2966a54e')",
           "key": "plans.intervals.day_plan_settings.button.2b2966a54e",
           "expressions": {}
         },
         {
-          "start": 6652,
-          "end": 6693,
-          "line": 148,
+          "start": 6907,
+          "end": 6948,
+          "line": 149,
           "original": "\"افزودن پلن زمانی جدید\"",
           "replacement": "\\achbotMessage('plans.intervals.day_plan_settings.button.4e0a1e41c8')",
           "key": "plans.intervals.day_plan_settings.button.4e0a1e41c8",
           "expressions": {}
         },
         {
-          "start": 6847,
-          "end": 6931,
-          "line": 150,
+          "start": 7102,
+          "end": 7186,
+          "line": 151,
           "original": "' 📍 برای دیدن جزییات پلن زمانی روی آن بزنید 👇'",
           "replacement": "\\achbotMessage('plans.intervals.add_new_day_plan.msg.34a6e4ec60')",
           "key": "plans.intervals.add_new_day_plan.msg.34a6e4ec60",
           "expressions": {}
         },
         {
-          "start": 7090,
-          "end": 7146,
-          "line": 158,
+          "start": 7345,
+          "end": 7401,
+          "line": 159,
           "original": "\"یک مقدار عددی و صحیح وارد کنید\"",
           "replacement": "\\achbotMessage('plans.intervals.add_new_day_plan.message.a7db47ad08')",
           "key": "plans.intervals.add_new_day_plan.message.a7db47ad08",
           "expressions": {}
         },
         {
-          "start": 7325,
-          "end": 7366,
-          "line": 164,
+          "start": 7580,
+          "end": 7621,
+          "line": 165,
           "original": "\"روز جدید را وارد کنید:\"",
           "replacement": "\\achbotMessage('plans.intervals.add_new_day_plan.message.395f467a7d')",
           "key": "plans.intervals.add_new_day_plan.message.395f467a7d",
           "expressions": {}
         },
         {
-          "start": 7768,
-          "end": 7821,
-          "line": 174,
+          "start": 8023,
+          "end": 8076,
+          "line": 175,
           "original": "\"✅ عملیات با موفقیت انجام شد.\"",
           "replacement": "\\achbotMessage('plans.intervals.add_new_day_plan.message.d03501095b')",
           "key": "plans.intervals.add_new_day_plan.message.d03501095b",
           "expressions": {}
         },
         {
-          "start": 8035,
-          "end": 8087,
-          "line": 182,
+          "start": 8290,
+          "end": 8342,
+          "line": 183,
           "original": "'لیست پلن های زمانی خالی است.'",
           "replacement": "\\achbotMessage('plans.intervals.day_plan_settings.message.f253e3780e')",
           "key": "plans.intervals.day_plan_settings.message.f253e3780e",
           "expressions": {}
         },
         {
-          "start": 8173,
-          "end": 8214,
-          "line": 184,
+          "start": 8428,
+          "end": 8469,
+          "line": 185,
           "original": "\"افزودن پلن زمانی جدید\"",
           "replacement": "\\achbotMessage('plans.intervals.day_plan_settings.button.4e0a1e41c8')",
           "key": "plans.intervals.day_plan_settings.button.4e0a1e41c8",
           "expressions": {}
         },
         {
-          "start": 8448,
-          "end": 8456,
-          "line": 191,
+          "start": 8703,
+          "end": 8711,
+          "line": 192,
           "original": "\"حذف\"",
           "replacement": "\\achbotMessage('plans.intervals.day_plan_settings.button.59ca629220')",
           "key": "plans.intervals.day_plan_settings.button.59ca629220",
           "expressions": {}
         },
         {
-          "start": 8495,
-          "end": 8505,
-          "line": 191,
+          "start": 8750,
+          "end": 8760,
+          "line": 192,
           "original": "\"قیمت\"",
           "replacement": "\\achbotMessage('plans.intervals.day_plan_settings.button.7d2c8a1926')",
           "key": "plans.intervals.day_plan_settings.button.7d2c8a1926",
           "expressions": {}
         },
         {
-          "start": 8544,
-          "end": 8563,
-          "line": 191,
+          "start": 8799,
+          "end": 8818,
+          "line": 192,
           "original": "\"تعداد روز\"",
           "replacement": "\\achbotMessage('plans.intervals.day_plan_settings.button.be0d8f0892')",
           "key": "plans.intervals.day_plan_settings.button.be0d8f0892",
           "expressions": {}
         },
         {
-          "start": 8739,
-          "end": 8752,
-          "line": 195,
+          "start": 8994,
+          "end": 9007,
+          "line": 196,
           "original": "\" تومان\"",
           "replacement": "\\achbotMessage('plans.administration.edit_custom_plan.text.2cc98f7f7c')",
           "key": "plans.administration.edit_custom_plan.text.2cc98f7f7c",
           "expressions": {}
         },
         {
-          "start": 8820,
-          "end": 8825,
-          "line": 198,
+          "start": 9075,
+          "end": 9080,
+          "line": 199,
           "original": "\"❌\"",
           "replacement": "\\achbotMessage('plans.intervals.day_plan_settings.button.2b2966a54e')",
           "key": "plans.intervals.day_plan_settings.button.2b2966a54e",
           "expressions": {}
         },
         {
-          "start": 9024,
-          "end": 9065,
-          "line": 200,
+          "start": 9279,
+          "end": 9320,
+          "line": 201,
           "original": "\"افزودن پلن زمانی جدید\"",
           "replacement": "\\achbotMessage('plans.intervals.day_plan_settings.button.4e0a1e41c8')",
           "key": "plans.intervals.day_plan_settings.button.4e0a1e41c8",
           "expressions": {}
         },
         {
-          "start": 9211,
-          "end": 9294,
-          "line": 202,
+          "start": 9466,
+          "end": 9549,
+          "line": 203,
           "original": "' 📍 برای دیدن جزییات پلن زمانی روی آن بزنید👇'",
           "replacement": "\\achbotMessage('plans.intervals.day_plan_settings.msg.0eb1f0debf')",
           "key": "plans.intervals.day_plan_settings.msg.0eb1f0debf",
           "expressions": {}
         },
         {
-          "start": 9700,
-          "end": 9750,
-          "line": 217,
+          "start": 9955,
+          "end": 10005,
+          "line": 218,
           "original": "'لیست پلن های حجمی خالی است.'",
           "replacement": "\\achbotMessage('plans.intervals.volume_plan_settings.message.63f1e596ef')",
           "key": "plans.intervals.volume_plan_settings.message.63f1e596ef",
           "expressions": {}
         },
         {
-          "start": 9836,
-          "end": 9875,
-          "line": 219,
+          "start": 10091,
+          "end": 10130,
+          "line": 220,
           "original": "\"افزودن پلن حجمی جدید\"",
           "replacement": "\\achbotMessage('plans.intervals.volume_plan_settings.button.a3524cb835')",
           "key": "plans.intervals.volume_plan_settings.button.a3524cb835",
           "expressions": {}
         },
         {
-          "start": 10102,
-          "end": 10110,
-          "line": 225,
+          "start": 10357,
+          "end": 10365,
+          "line": 226,
           "original": "\"حذف\"",
           "replacement": "\\achbotMessage('plans.intervals.day_plan_settings.button.59ca629220')",
           "key": "plans.intervals.day_plan_settings.button.59ca629220",
           "expressions": {}
         },
         {
-          "start": 10149,
-          "end": 10159,
-          "line": 225,
+          "start": 10404,
+          "end": 10414,
+          "line": 226,
           "original": "\"قیمت\"",
           "replacement": "\\achbotMessage('plans.intervals.day_plan_settings.button.7d2c8a1926')",
           "key": "plans.intervals.day_plan_settings.button.7d2c8a1926",
           "expressions": {}
         },
         {
-          "start": 10198,
-          "end": 10217,
-          "line": 225,
+          "start": 10453,
+          "end": 10472,
+          "line": 226,
           "original": "\"مقدار حجم\"",
           "replacement": "\\achbotMessage('plans.intervals.volume_plan_settings.button.57fa83c28f')",
           "key": "plans.intervals.volume_plan_settings.button.57fa83c28f",
           "expressions": {}
         },
         {
-          "start": 10396,
-          "end": 10409,
-          "line": 229,
+          "start": 10651,
+          "end": 10664,
+          "line": 230,
           "original": "\" تومان\"",
           "replacement": "\\achbotMessage('plans.administration.edit_custom_plan.text.2cc98f7f7c')",
           "key": "plans.administration.edit_custom_plan.text.2cc98f7f7c",
           "expressions": {}
         },
         {
-          "start": 10452,
-          "end": 10457,
-          "line": 231,
+          "start": 10707,
+          "end": 10712,
+          "line": 232,
           "original": "\"❌\"",
           "replacement": "\\achbotMessage('plans.intervals.day_plan_settings.button.2b2966a54e')",
           "key": "plans.intervals.day_plan_settings.button.2b2966a54e",
           "expressions": {}
         },
         {
-          "start": 10668,
-          "end": 10707,
-          "line": 233,
+          "start": 10923,
+          "end": 10962,
+          "line": 234,
           "original": "\"افزودن پلن حجمی جدید\"",
           "replacement": "\\achbotMessage('plans.intervals.volume_plan_settings.button.a3524cb835')",
           "key": "plans.intervals.volume_plan_settings.button.a3524cb835",
           "expressions": {}
         },
         {
-          "start": 10852,
-          "end": 10933,
-          "line": 235,
+          "start": 11107,
+          "end": 11188,
+          "line": 236,
           "original": "' 📍 برای دیدن جزییات پلن حجمی روی آن بزنید👇'",
           "replacement": "\\achbotMessage('plans.intervals.volume_plan_settings.msg.573ae79cf6')",
           "key": "plans.intervals.volume_plan_settings.msg.573ae79cf6",
           "expressions": {}
         },
         {
-          "start": 11202,
-          "end": 11374,
-          "line": 245,
-          "original": "\"حجم و قیمت آن را بصورت زیر وارد کنید:\n10-30000\n\nمقدار اول حجم (10) گیگابایت\nمقدار دوم قیمت (30000) تومان\n \"",
-          "replacement": "\\achbotMessage('plans.intervals.add_new_volume_plan.message.45a0bf24bb')",
-          "key": "plans.intervals.add_new_volume_plan.message.45a0bf24bb",
+          "start": 11457,
+          "end": 11710,
+          "line": 246,
+          "original": "\"حجم و قیمت آن را بصورت زیر وارد کنید:\n10-30000\n\nمقدار اول حجم صحیح و کامل (10) گیگابایت؛ مقدار اعشاری پشتیبانی نمی‌شود.\nمقدار دوم قیمت (30000) تومان\n \"",
+          "replacement": "\\achbotMessage('plans.intervals.add_new_volume_plan.message.d36c49c30e')",
+          "key": "plans.intervals.add_new_volume_plan.message.d36c49c30e",
           "expressions": {}
         },
         {
-          "start": 11811,
-          "end": 11872,
-          "line": 262,
+          "start": 12040,
+          "end": 12162,
+          "line": 257,
+          "original": "'حجم را به گیگابایت کامل وارد کنید؛ مقدار اعشاری پشتیبانی نمی‌شود.'",
+          "replacement": "\\achbotMessage('plans.intervals.add_new_day_plan.message.a2684ce4cc')",
+          "key": "plans.intervals.add_new_day_plan.message.a2684ce4cc",
+          "expressions": {}
+        },
+        {
+          "start": 12398,
+          "end": 12459,
+          "line": 264,
           "original": "\"پلن حجمی جدید با موفقیت اضافه شد.\"",
           "replacement": "\\achbotMessage('plans.intervals.add_new_volume_plan.message.b003cdcfab')",
           "key": "plans.intervals.add_new_volume_plan.message.b003cdcfab",
           "expressions": {}
         },
         {
-          "start": 12259,
-          "end": 12314,
-          "line": 271,
+          "start": 12846,
+          "end": 12901,
+          "line": 273,
           "original": "\"پلن مورد نظر با موفقیت حذف شد.\"",
           "replacement": "\\achbotMessage('plans.intervals.add_new_volume_plan.alert.d5009733f9')",
           "key": "plans.intervals.add_new_volume_plan.alert.d5009733f9",
           "expressions": {}
         },
         {
-          "start": 12535,
-          "end": 12585,
-          "line": 280,
+          "start": 13122,
+          "end": 13172,
+          "line": 282,
           "original": "'لیست پلن های حجمی خالی است.'",
           "replacement": "\\achbotMessage('plans.intervals.volume_plan_settings.message.63f1e596ef')",
           "key": "plans.intervals.volume_plan_settings.message.63f1e596ef",
           "expressions": {}
         },
         {
-          "start": 12671,
-          "end": 12710,
-          "line": 282,
+          "start": 13258,
+          "end": 13297,
+          "line": 284,
           "original": "\"افزودن پلن حجمی جدید\"",
           "replacement": "\\achbotMessage('plans.intervals.volume_plan_settings.button.a3524cb835')",
           "key": "plans.intervals.volume_plan_settings.button.a3524cb835",
           "expressions": {}
         },
         {
-          "start": 12940,
-          "end": 12948,
-          "line": 288,
+          "start": 13527,
+          "end": 13535,
+          "line": 290,
           "original": "\"حذف\"",
           "replacement": "\\achbotMessage('plans.intervals.day_plan_settings.button.59ca629220')",
           "key": "plans.intervals.day_plan_settings.button.59ca629220",
           "expressions": {}
         },
         {
-          "start": 12987,
-          "end": 12997,
-          "line": 288,
+          "start": 13574,
+          "end": 13584,
+          "line": 290,
           "original": "\"قیمت\"",
           "replacement": "\\achbotMessage('plans.intervals.day_plan_settings.button.7d2c8a1926')",
           "key": "plans.intervals.day_plan_settings.button.7d2c8a1926",
           "expressions": {}
         },
         {
-          "start": 13036,
-          "end": 13055,
-          "line": 288,
+          "start": 13623,
+          "end": 13642,
+          "line": 290,
           "original": "\"مقدار حجم\"",
           "replacement": "\\achbotMessage('plans.intervals.volume_plan_settings.button.57fa83c28f')",
           "key": "plans.intervals.volume_plan_settings.button.57fa83c28f",
           "expressions": {}
         },
         {
-          "start": 13234,
-          "end": 13247,
-          "line": 292,
+          "start": 13821,
+          "end": 13834,
+          "line": 294,
           "original": "\" تومان\"",
           "replacement": "\\achbotMessage('plans.administration.edit_custom_plan.text.2cc98f7f7c')",
           "key": "plans.administration.edit_custom_plan.text.2cc98f7f7c",
           "expressions": {}
         },
         {
-          "start": 13290,
-          "end": 13295,
-          "line": 294,
+          "start": 13877,
+          "end": 13882,
+          "line": 296,
           "original": "\"❌\"",
           "replacement": "\\achbotMessage('plans.intervals.day_plan_settings.button.2b2966a54e')",
           "key": "plans.intervals.day_plan_settings.button.2b2966a54e",
           "expressions": {}
         },
         {
-          "start": 13506,
-          "end": 13545,
-          "line": 296,
+          "start": 14093,
+          "end": 14132,
+          "line": 298,
           "original": "\"افزودن پلن حجمی جدید\"",
           "replacement": "\\achbotMessage('plans.intervals.volume_plan_settings.button.a3524cb835')",
           "key": "plans.intervals.volume_plan_settings.button.a3524cb835",
           "expressions": {}
         },
         {
-          "start": 13693,
-          "end": 13774,
-          "line": 298,
+          "start": 14280,
+          "end": 14361,
+          "line": 300,
           "original": "' 📍 برای دیدن جزییات پلن حجمی روی آن بزنید👇'",
           "replacement": "\\achbotMessage('plans.intervals.volume_plan_settings.msg.573ae79cf6')",
           "key": "plans.intervals.volume_plan_settings.msg.573ae79cf6",
           "expressions": {}
         },
         {
-          "start": 14064,
-          "end": 14107,
-          "line": 307,
+          "start": 14651,
+          "end": 14694,
+          "line": 309,
           "original": "\"قیمت جدید را وارد کنید:\"",
           "replacement": "\\achbotMessage('plans.intervals.add_new_day_plan.message.b9989bb7c2')",
           "key": "plans.intervals.add_new_day_plan.message.b9989bb7c2",
           "expressions": {}
         },
         {
-          "start": 14561,
-          "end": 14610,
-          "line": 317,
+          "start": 15148,
+          "end": 15197,
+          "line": 319,
           "original": "\"عملیات با موفقیت انجام شد.\"",
           "replacement": "\\achbotMessage('plans.intervals.add_new_volume_plan.message.76731ef62b')",
           "key": "plans.intervals.add_new_volume_plan.message.76731ef62b",
           "expressions": {}
         },
         {
-          "start": 14884,
-          "end": 14934,
-          "line": 326,
+          "start": 15471,
+          "end": 15521,
+          "line": 328,
           "original": "'لیست پلن های حجمی خالی است.'",
           "replacement": "\\achbotMessage('plans.intervals.volume_plan_settings.message.63f1e596ef')",
           "key": "plans.intervals.volume_plan_settings.message.63f1e596ef",
           "expressions": {}
         },
         {
-          "start": 15028,
-          "end": 15067,
-          "line": 328,
+          "start": 15615,
+          "end": 15654,
+          "line": 330,
           "original": "\"افزودن پلن حجمی جدید\"",
           "replacement": "\\achbotMessage('plans.intervals.volume_plan_settings.button.a3524cb835')",
           "key": "plans.intervals.volume_plan_settings.button.a3524cb835",
           "expressions": {}
         },
         {
-          "start": 15321,
-          "end": 15329,
-          "line": 334,
+          "start": 15908,
+          "end": 15916,
+          "line": 336,
           "original": "\"حذف\"",
           "replacement": "\\achbotMessage('plans.intervals.day_plan_settings.button.59ca629220')",
           "key": "plans.intervals.day_plan_settings.button.59ca629220",
           "expressions": {}
         },
         {
-          "start": 15368,
-          "end": 15378,
-          "line": 334,
+          "start": 15955,
+          "end": 15965,
+          "line": 336,
           "original": "\"قیمت\"",
           "replacement": "\\achbotMessage('plans.intervals.day_plan_settings.button.7d2c8a1926')",
           "key": "plans.intervals.day_plan_settings.button.7d2c8a1926",
           "expressions": {}
         },
         {
-          "start": 15417,
-          "end": 15436,
-          "line": 334,
+          "start": 16004,
+          "end": 16023,
+          "line": 336,
           "original": "\"مقدار حجم\"",
           "replacement": "\\achbotMessage('plans.intervals.volume_plan_settings.button.57fa83c28f')",
           "key": "plans.intervals.volume_plan_settings.button.57fa83c28f",
           "expressions": {}
         },
         {
-          "start": 15631,
-          "end": 15644,
-          "line": 338,
+          "start": 16218,
+          "end": 16231,
+          "line": 340,
           "original": "\" تومان\"",
           "replacement": "\\achbotMessage('plans.administration.edit_custom_plan.text.2cc98f7f7c')",
           "key": "plans.administration.edit_custom_plan.text.2cc98f7f7c",
           "expressions": {}
         },
         {
-          "start": 15695,
-          "end": 15700,
-          "line": 340,
+          "start": 16282,
+          "end": 16287,
+          "line": 342,
           "original": "\"❌\"",
           "replacement": "\\achbotMessage('plans.intervals.day_plan_settings.button.2b2966a54e')",
           "key": "plans.intervals.day_plan_settings.button.2b2966a54e",
           "expressions": {}
         },
         {
-          "start": 15919,
-          "end": 15958,
-          "line": 342,
+          "start": 16506,
+          "end": 16545,
+          "line": 344,
           "original": "\"افزودن پلن حجمی جدید\"",
           "replacement": "\\achbotMessage('plans.intervals.volume_plan_settings.button.a3524cb835')",
           "key": "plans.intervals.volume_plan_settings.button.a3524cb835",
           "expressions": {}
         },
         {
-          "start": 16114,
-          "end": 16196,
-          "line": 344,
+          "start": 16701,
+          "end": 16783,
+          "line": 346,
           "original": "' 📍 برای دیدن جزییات پلن حجمی روی آن بزنید 👇'",
           "replacement": "\\achbotMessage('plans.intervals.add_new_volume_plan.msg.9725f12c7b')",
           "key": "plans.intervals.add_new_volume_plan.msg.9725f12c7b",
           "expressions": {}
         },
         {
-          "start": 16348,
-          "end": 16404,
-          "line": 350,
+          "start": 16935,
+          "end": 16991,
+          "line": 352,
           "original": "\"یک مقدار عددی و صحیح وارد کنید\"",
           "replacement": "\\achbotMessage('plans.intervals.add_new_day_plan.message.a7db47ad08')",
           "key": "plans.intervals.add_new_day_plan.message.a7db47ad08",
           "expressions": {}
         },
         {
-          "start": 16582,
-          "end": 16623,
-          "line": 356,
-          "original": "\"حجم جدید را وارد کنید:\"",
-          "replacement": "\\achbotMessage('plans.intervals.add_new_volume_plan.message.e8e94558e4')",
-          "key": "plans.intervals.add_new_volume_plan.message.e8e94558e4",
+          "start": 17169,
+          "end": 17300,
+          "line": 358,
+          "original": "'حجم جدید را به گیگابایت کامل وارد کنید؛ مقدار اعشاری پشتیبانی نمی‌شود.'",
+          "replacement": "\\achbotMessage('plans.intervals.add_new_volume_plan.message.149e31d927')",
+          "key": "plans.intervals.add_new_volume_plan.message.149e31d927",
           "expressions": {}
         },
         {
-          "start": 17032,
-          "end": 17085,
-          "line": 365,
+          "start": 17622,
+          "end": 17744,
+          "line": 364,
+          "original": "'حجم را به گیگابایت کامل وارد کنید؛ مقدار اعشاری پشتیبانی نمی‌شود.'",
+          "replacement": "\\achbotMessage('plans.intervals.add_new_day_plan.message.a2684ce4cc')",
+          "key": "plans.intervals.add_new_day_plan.message.a2684ce4cc",
+          "expressions": {}
+        },
+        {
+          "start": 17960,
+          "end": 18013,
+          "line": 369,
           "original": "\"✅ عملیات با موفقیت انجام شد.\"",
           "replacement": "\\achbotMessage('plans.intervals.add_new_day_plan.message.d03501095b')",
           "key": "plans.intervals.add_new_day_plan.message.d03501095b",
           "expressions": {}
         },
         {
-          "start": 17319,
-          "end": 17369,
-          "line": 374,
+          "start": 18247,
+          "end": 18297,
+          "line": 378,
           "original": "'لیست پلن های حجمی خالی است.'",
           "replacement": "\\achbotMessage('plans.intervals.volume_plan_settings.message.63f1e596ef')",
           "key": "plans.intervals.volume_plan_settings.message.63f1e596ef",
           "expressions": {}
         },
         {
-          "start": 17455,
-          "end": 17494,
-          "line": 376,
+          "start": 18383,
+          "end": 18422,
+          "line": 380,
           "original": "\"افزودن پلن حجمی جدید\"",
           "replacement": "\\achbotMessage('plans.intervals.volume_plan_settings.button.a3524cb835')",
           "key": "plans.intervals.volume_plan_settings.button.a3524cb835",
           "expressions": {}
         },
         {
-          "start": 17724,
-          "end": 17732,
-          "line": 382,
+          "start": 18652,
+          "end": 18660,
+          "line": 386,
           "original": "\"حذف\"",
           "replacement": "\\achbotMessage('plans.intervals.day_plan_settings.button.59ca629220')",
           "key": "plans.intervals.day_plan_settings.button.59ca629220",
           "expressions": {}
         },
         {
-          "start": 17771,
-          "end": 17781,
-          "line": 382,
+          "start": 18699,
+          "end": 18709,
+          "line": 386,
           "original": "\"قیمت\"",
           "replacement": "\\achbotMessage('plans.intervals.day_plan_settings.button.7d2c8a1926')",
           "key": "plans.intervals.day_plan_settings.button.7d2c8a1926",
           "expressions": {}
         },
         {
-          "start": 17820,
-          "end": 17839,
-          "line": 382,
+          "start": 18748,
+          "end": 18767,
+          "line": 386,
           "original": "\"مقدار حجم\"",
           "replacement": "\\achbotMessage('plans.intervals.volume_plan_settings.button.57fa83c28f')",
           "key": "plans.intervals.volume_plan_settings.button.57fa83c28f",
           "expressions": {}
         },
         {
-          "start": 18018,
-          "end": 18031,
-          "line": 386,
+          "start": 18946,
+          "end": 18959,
+          "line": 390,
           "original": "\" تومان\"",
           "replacement": "\\achbotMessage('plans.administration.edit_custom_plan.text.2cc98f7f7c')",
           "key": "plans.administration.edit_custom_plan.text.2cc98f7f7c",
           "expressions": {}
         },
         {
-          "start": 18074,
-          "end": 18079,
-          "line": 388,
+          "start": 19002,
+          "end": 19007,
+          "line": 392,
           "original": "\"❌\"",
           "replacement": "\\achbotMessage('plans.intervals.day_plan_settings.button.2b2966a54e')",
           "key": "plans.intervals.day_plan_settings.button.2b2966a54e",
           "expressions": {}
         },
         {
-          "start": 18290,
-          "end": 18329,
-          "line": 390,
+          "start": 19218,
+          "end": 19257,
+          "line": 394,
           "original": "\"افزودن پلن حجمی جدید\"",
           "replacement": "\\achbotMessage('plans.intervals.volume_plan_settings.button.a3524cb835')",
           "key": "plans.intervals.volume_plan_settings.button.a3524cb835",
           "expressions": {}
         },
         {
-          "start": 18477,
-          "end": 18558,
-          "line": 392,
+          "start": 19405,
+          "end": 19486,
+          "line": 396,
           "original": "' 📍 برای دیدن جزییات پلن حجمی روی آن بزنید👇'",
           "replacement": "\\achbotMessage('plans.intervals.volume_plan_settings.msg.573ae79cf6')",
           "key": "plans.intervals.volume_plan_settings.msg.573ae79cf6",
@@ -25066,7 +25102,7 @@
     },
     "src/Presentation/Labels.php": {
       "source_sha256": "a071f9f50663ffe9415e90be2e8d1ec41b0da70c5045f36c640d41944bac0338",
-      "source_commit": "fbb7b701ced630764acbe56405d04e7a8317c46c",
+      "source_commit": "8c4bb966f01871c79a9e1665c772acb59de60c66",
       "loader": "require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG\n",
       "edits": [
         {
@@ -25217,7 +25253,7 @@
     },
     "src/Purchase/Catalogue.php": {
       "source_sha256": "34d457ecbbe3b3c3565620265fd86b9f2a3916c9bdb3408598e09ff96c171805",
-      "source_commit": "fbb7b701ced630764acbe56405d04e7a8317c46c",
+      "source_commit": "8c4bb966f01871c79a9e1665c772acb59de60c66",
       "loader": "require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG\n",
       "edits": [
         {
@@ -25401,8 +25437,8 @@
       ]
     },
     "src/Purchase/Core.php": {
-      "source_sha256": "bcb445d830afed176694e11a57b028a8e5ab08ecb50789c45a2a494c872d6128",
-      "source_commit": "fbb7b701ced630764acbe56405d04e7a8317c46c",
+      "source_sha256": "646d7fb420724cf998ebef0fb6ac9d85d46bc864fcda8295185e83379b66f850",
+      "source_commit": "8c4bb966f01871c79a9e1665c772acb59de60c66",
       "loader": "require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG\n",
       "edits": [
         {
@@ -25415,9 +25451,9 @@
           "expressions": {}
         },
         {
-          "start": 26572,
-          "end": 26643,
-          "line": 593,
+          "start": 26454,
+          "end": 26525,
+          "line": 589,
           "original": "'❌ اطلاعات سرور یا تنظیمات آن یافت نشد.'",
           "replacement": "\\achbotMessage('purchase.core.get_server_info_and_config.alert.c0552cb2f5')",
           "key": "purchase.core.get_server_info_and_config.alert.c0552cb2f5",
@@ -25432,9 +25468,9 @@
           "formatting": true
         },
         {
-          "start": 26645,
-          "end": 26646,
-          "line": 593,
+          "start": 26527,
+          "end": 26528,
+          "line": 589,
           "original": "\r",
           "replacement": "",
           "formatting": true
@@ -25443,7 +25479,7 @@
     },
     "src/Purchase/EntryAndBulk.php": {
       "source_sha256": "4817763a47269d62d298456c82e1b782c9c360bc4426b385ed94cc2eaf679c49",
-      "source_commit": "fbb7b701ced630764acbe56405d04e7a8317c46c",
+      "source_commit": "8c4bb966f01871c79a9e1665c772acb59de60c66",
       "loader": "require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG\n",
       "edits": [
         {
@@ -25630,7 +25666,7 @@
     },
     "src/Purchase/OrderWrites.php": {
       "source_sha256": "174147f73cb6dcd983262bef572b67b1bcaf9980b41fdb4f1c665671c9be708b",
-      "source_commit": "fbb7b701ced630764acbe56405d04e7a8317c46c",
+      "source_commit": "8c4bb966f01871c79a9e1665c772acb59de60c66",
       "loader": "require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG\n",
       "edits": [
         {
@@ -25735,7 +25771,7 @@
     },
     "src/Purchase/SelectPlan.php": {
       "source_sha256": "9b4c2374f5817e0ccf1f922089bca169908c77c7cc538eaf76c589150ce03855",
-      "source_commit": "fbb7b701ced630764acbe56405d04e7a8317c46c",
+      "source_commit": "8c4bb966f01871c79a9e1665c772acb59de60c66",
       "loader": "require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG\n",
       "edits": [
         {
@@ -25855,7 +25891,7 @@
     },
     "src/Purchase/TrialCatalogue.php": {
       "source_sha256": "b48172e04a8cce4043d03f8259c231a97613da5d0b210be792d5f78ab7454e36",
-      "source_commit": "fbb7b701ced630764acbe56405d04e7a8317c46c",
+      "source_commit": "8c4bb966f01871c79a9e1665c772acb59de60c66",
       "loader": "require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG\n",
       "edits": [
         {
@@ -25889,7 +25925,7 @@
     },
     "src/Purchase/TrialProvision.php": {
       "source_sha256": "1cdca8e3a9f5d1c28c14beec4c6fb96c6f79f2c1b21b1cbb3999d1cb8e12cebb",
-      "source_commit": "fbb7b701ced630764acbe56405d04e7a8317c46c",
+      "source_commit": "8c4bb966f01871c79a9e1665c772acb59de60c66",
       "loader": "require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG\n",
       "edits": [
         {
@@ -25975,7 +26011,7 @@
     },
     "src/Subscription/AccountDeletion.php": {
       "source_sha256": "7a259e4545b42a31de55b9afb36b171a9b5b5ee3fb232eeb42c08f979f6e434c",
-      "source_commit": "fbb7b701ced630764acbe56405d04e7a8317c46c",
+      "source_commit": "8c4bb966f01871c79a9e1665c772acb59de60c66",
       "loader": "require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG\n",
       "edits": [
         {
@@ -26206,8 +26242,8 @@
       ]
     },
     "src/Subscription/AccountDetails.php": {
-      "source_sha256": "44996d956bb0edf95735d42a9d36ab39465f6cf1ff85fa518e5d6faf51798f57",
-      "source_commit": "fbb7b701ced630764acbe56405d04e7a8317c46c",
+      "source_sha256": "1d40f09305d563f6850478eb01259f10808abf8a4be49165b9f73392f17bc073",
+      "source_commit": "8c4bb966f01871c79a9e1665c772acb59de60c66",
       "loader": "require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG\n",
       "edits": [
         {
@@ -26296,8 +26332,8 @@
           "expressions": {}
         },
         {
-          "start": 7579,
-          "end": 7600,
+          "start": 7597,
+          "end": 7618,
           "line": 221,
           "original": "\"آیدی کاربر\"",
           "replacement": "\\achbotMessage('subscription.account_details.get_user_order_detail_keys.button.d35e1b4661')",
@@ -26305,8 +26341,8 @@
           "expressions": {}
         },
         {
-          "start": 7744,
-          "end": 7763,
+          "start": 7762,
+          "end": 7781,
           "line": 226,
           "original": "\"اسم کاربر\"",
           "replacement": "\\achbotMessage('subscription.account_details.get_user_order_detail_keys.button.c9b4331f4f')",
@@ -26314,8 +26350,8 @@
           "expressions": {}
         },
         {
-          "start": 7860,
-          "end": 7868,
+          "start": 7878,
+          "end": 7886,
           "line": 230,
           "original": "\"بله\"",
           "replacement": "\\achbotMessage('subscription.account_deletion.button.13159f8c74')",
@@ -26323,8 +26359,8 @@
           "expressions": {}
         },
         {
-          "start": 7871,
-          "end": 7879,
+          "start": 7889,
+          "end": 7897,
           "line": 230,
           "original": "\"خیر\"",
           "replacement": "\\achbotMessage('subscription.account_deletion.button.5f5c4c72bd')",
@@ -26332,8 +26368,8 @@
           "expressions": {}
         },
         {
-          "start": 7933,
-          "end": 7954,
+          "start": 7951,
+          "end": 7972,
           "line": 231,
           "original": "\"خرید همکار\"",
           "replacement": "\\achbotMessage('subscription.account_details.get_user_order_detail_keys.button.1c7f597d4f')",
@@ -26341,8 +26377,8 @@
           "expressions": {}
         },
         {
-          "start": 9109,
-          "end": 9148,
+          "start": 9127,
+          "end": 9166,
           "line": 262,
           "original": "\"🟢 تمدید خودکار روشن\"",
           "replacement": "\\achbotMessage('subscription.account_details.get_user_order_detail_keys.text.ed76444585')",
@@ -26350,8 +26386,8 @@
           "expressions": {}
         },
         {
-          "start": 9151,
-          "end": 9192,
+          "start": 9169,
+          "end": 9210,
           "line": 262,
           "original": "\"🔴 تمدید خودکار خاموش\"",
           "replacement": "\\achbotMessage('subscription.account_details.get_user_order_detail_keys.text.fb6d00ad8d')",
@@ -26359,8 +26395,8 @@
           "expressions": {}
         },
         {
-          "start": 11560,
-          "end": 11568,
+          "start": 11578,
+          "end": 11586,
           "line": 335,
           "original": "\"⚠️\"",
           "replacement": "\\achbotMessage('subscription.account_details.get_order_traffic_info.text.f07ac0638d')",
@@ -26368,8 +26404,8 @@
           "expressions": {}
         },
         {
-          "start": 13561,
-          "end": 13600,
+          "start": 13597,
+          "end": 13636,
           "line": 385,
           "original": "\"🟢 تمدید خودکار روشن\"",
           "replacement": "\\achbotMessage('subscription.account_details.get_user_order_detail_keys.text.ed76444585')",
@@ -26377,8 +26413,8 @@
           "expressions": {}
         },
         {
-          "start": 13603,
-          "end": 13644,
+          "start": 13639,
+          "end": 13680,
           "line": 385,
           "original": "\"🔴 تمدید خودکار خاموش\"",
           "replacement": "\\achbotMessage('subscription.account_details.get_user_order_detail_keys.text.fb6d00ad8d')",
@@ -26386,8 +26422,8 @@
           "expressions": {}
         },
         {
-          "start": 14628,
-          "end": 14654,
+          "start": 14664,
+          "end": 14690,
           "line": 419,
           "original": "'📍 تغییر سرور'",
           "replacement": "\\achbotMessage('subscription.account_details.get_order_detail_keys.button.5c38085697')",
@@ -26398,7 +26434,7 @@
     },
     "src/Subscription/AccountTransfers.php": {
       "source_sha256": "a85ef1c7ea8e3438cbcbdc41f0394e4ac58b900d41964b997e43177235e6cf82",
-      "source_commit": "fbb7b701ced630764acbe56405d04e7a8317c46c",
+      "source_commit": "8c4bb966f01871c79a9e1665c772acb59de60c66",
       "loader": "require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG\n",
       "edits": [
         {
@@ -26534,7 +26570,7 @@
     },
     "src/Subscription/ConfigRefresh.php": {
       "source_sha256": "e0558cdafb8a40d5680d2c43c26aaba08f3b457d3c8f41196f8b602634aafe00",
-      "source_commit": "fbb7b701ced630764acbe56405d04e7a8317c46c",
+      "source_commit": "8c4bb966f01871c79a9e1665c772acb59de60c66",
       "loader": "require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG\n",
       "edits": [
         {
@@ -26577,7 +26613,7 @@
     },
     "src/Subscription/CustomerRoutes.php": {
       "source_sha256": "50b4a1a85ff42dc90df505c708301b979bdf8fb916119743a04cc73e36797be9",
-      "source_commit": "fbb7b701ced630764acbe56405d04e7a8317c46c",
+      "source_commit": "8c4bb966f01871c79a9e1665c772acb59de60c66",
       "loader": "require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG\n",
       "edits": [
         {
@@ -26971,7 +27007,7 @@
     },
     "src/Subscription/ExternalAccounts.php": {
       "source_sha256": "d04ab6da10abfebd3cea4ef742b3f4eebec9843d21856d1311f3a67564650e24",
-      "source_commit": "fbb7b701ced630764acbe56405d04e7a8317c46c",
+      "source_commit": "8c4bb966f01871c79a9e1665c772acb59de60c66",
       "loader": "require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG\n",
       "edits": [
         {
@@ -27276,7 +27312,7 @@
     },
     "src/Subscription/ManualAccounts.php": {
       "source_sha256": "da89e58c17bd2450bc7450d28d61e037b0512cd5cc1cb099b0ec2b1a27ceb449",
-      "source_commit": "fbb7b701ced630764acbe56405d04e7a8317c46c",
+      "source_commit": "8c4bb966f01871c79a9e1665c772acb59de60c66",
       "loader": "require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG\n",
       "edits": [
         {
@@ -27409,7 +27445,7 @@
     },
     "src/Subscription/OrderManagement.php": {
       "source_sha256": "1eb23086c8575902522c6313f77a74aef7640e9563fb3eb2ac22ef3e6d85a3a8",
-      "source_commit": "fbb7b701ced630764acbe56405d04e7a8317c46c",
+      "source_commit": "8c4bb966f01871c79a9e1665c772acb59de60c66",
       "loader": "require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG\n",
       "edits": [
         {
@@ -27990,7 +28026,7 @@
     },
     "src/Subscription/Presentation.php": {
       "source_sha256": "4722c53de74517f5e16ddf99e0f346d12b934cab6d635c390b1f71c6bc92db94",
-      "source_commit": "fbb7b701ced630764acbe56405d04e7a8317c46c",
+      "source_commit": "8c4bb966f01871c79a9e1665c772acb59de60c66",
       "loader": "require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG\n",
       "edits": [
         {
@@ -28078,7 +28114,7 @@
     },
     "src/Subscription/ServerDisplaySettings.php": {
       "source_sha256": "fcdf1dd967cc1d65fb7c81898f74427ca9b5c70e55ecbb553970b4c47889cc59",
-      "source_commit": "fbb7b701ced630764acbe56405d04e7a8317c46c",
+      "source_commit": "8c4bb966f01871c79a9e1665c772acb59de60c66",
       "loader": "require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG\n",
       "edits": [
         {
@@ -28679,7 +28715,7 @@
     },
     "src/Subscription/SubLinkSettings.php": {
       "source_sha256": "a67ed847979f4ef979164f9108044ae5023b6aad5594eabcf245333bf26ba3a7",
-      "source_commit": "fbb7b701ced630764acbe56405d04e7a8317c46c",
+      "source_commit": "8c4bb966f01871c79a9e1665c772acb59de60c66",
       "loader": "require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG\n",
       "edits": [
         {
@@ -28713,7 +28749,7 @@
     },
     "src/Support/AdminReply.php": {
       "source_sha256": "b32cc4f8541c5dc2df4fdca6733d55c162fc16ee7dd6f7178846b45bd8425e27",
-      "source_commit": "fbb7b701ced630764acbe56405d04e7a8317c46c",
+      "source_commit": "8c4bb966f01871c79a9e1665c772acb59de60c66",
       "loader": "require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG\n",
       "edits": [
         {
@@ -28774,7 +28810,7 @@
     },
     "src/Support/Categories.php": {
       "source_sha256": "bf93b56c9e073b825458904cc5aa642bac301b03693f41c015b116db126df065",
-      "source_commit": "fbb7b701ced630764acbe56405d04e7a8317c46c",
+      "source_commit": "8c4bb966f01871c79a9e1665c772acb59de60c66",
       "loader": "require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG\n",
       "edits": [
         {
@@ -29006,7 +29042,7 @@
     },
     "src/Support/CreateTicket.php": {
       "source_sha256": "6b18e624caff2d759f2d77799c31c3a9523c47e12bbbcd0a2604275c60dddd5a",
-      "source_commit": "fbb7b701ced630764acbe56405d04e7a8317c46c",
+      "source_commit": "8c4bb966f01871c79a9e1665c772acb59de60c66",
       "loader": "require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG\n",
       "edits": [
         {
@@ -29101,7 +29137,7 @@
     },
     "src/Support/CustomerConversation.php": {
       "source_sha256": "cdbd711c182e0d0a590ebadfa5f6ae294aaed7544a9a46074277376bc0dd0953",
-      "source_commit": "fbb7b701ced630764acbe56405d04e7a8317c46c",
+      "source_commit": "8c4bb966f01871c79a9e1665c772acb59de60c66",
       "loader": "require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG\n",
       "edits": [
         {
@@ -29469,7 +29505,7 @@
     },
     "src/Support/Entry.php": {
       "source_sha256": "a48b8f5bb7c228b98f809fb8f9313d4ba716ec9872989a5c54fd6ec9db3da3f6",
-      "source_commit": "fbb7b701ced630764acbe56405d04e7a8317c46c",
+      "source_commit": "8c4bb966f01871c79a9e1665c772acb59de60c66",
       "loader": "require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG\n",
       "edits": [
         {
@@ -29530,7 +29566,7 @@
     },
     "src/Support/QueueAndHistory.php": {
       "source_sha256": "df694b04efa202a8c0248e2ef1d43c8640cc69527adb38d25df9c8d6c94532ea",
-      "source_commit": "fbb7b701ced630764acbe56405d04e7a8317c46c",
+      "source_commit": "8c4bb966f01871c79a9e1665c772acb59de60c66",
       "loader": "require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG\n",
       "edits": [
         {
@@ -29849,7 +29885,7 @@
     },
     "src/Telegram/Markup.php": {
       "source_sha256": "a0f92a4f5d7730dc1c092ef1bef1c42a20be4265f1b58b66312971959659cd6e",
-      "source_commit": "fbb7b701ced630764acbe56405d04e7a8317c46c",
+      "source_commit": "8c4bb966f01871c79a9e1665c772acb59de60c66",
       "loader": "require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG\n",
       "edits": [
         {
@@ -29919,7 +29955,7 @@
     },
     "src/Telegram/UpdateBindings.php": {
       "source_sha256": "14a27ddc6901df157acd9acdde48356e9eeceb0a5f2a5ab46e4f319d38156dd9",
-      "source_commit": "fbb7b701ced630764acbe56405d04e7a8317c46c",
+      "source_commit": "8c4bb966f01871c79a9e1665c772acb59de60c66",
       "loader": "require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG\n",
       "edits": [
         {

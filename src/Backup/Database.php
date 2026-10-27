@@ -5,6 +5,8 @@
  * No real backup is attempted until the existing scheduled rewardReport.php calls it.
  */
 namespace AchBot\Backup\Database;
+require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
+
 
 if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     http_response_code(404);
@@ -203,7 +205,7 @@ function send($connection, $dbUserName, $dbPassword, $dbName, $channelId, callab
 
         date_default_timezone_set('Asia/Tehran');
         $now = date('Y-m-d H:i:s');
-        $caption = "\n📦 Bot Database Backup\n\n⏰ Time: $now\n👤 Users: $userCount\n📋 Subscriptions: $orderCount\n";
+        $caption = \achbotMessage('backup.database.send.bot__database__backup__time_now.f5b56afb9a', ['now' => $now, 'userCount' => $userCount, 'orderCount' => $orderCount]);
 
         $archive = new \ZipArchive();
         if ($archive->open($zipPath, \ZipArchive::CREATE | \ZipArchive::OVERWRITE) !== true) {

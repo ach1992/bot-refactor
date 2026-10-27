@@ -9,12 +9,14 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     http_response_code(404);
     exit;
 }
+require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
+
 
 if($data=="supportSection"){
-    editText($message_id,"🛂 به بخش پشتیبانی خوش آمدید.\n❇️ لطفا، یکی از دکمه های زیر را انتخاب نمایید.",
+    editText($message_id,\achbotMessage('support.entry.support_section.message.7089955c27'),
         json_encode(['inline_keyboard'=>[
-        [['text'=>"✉️ ثبت تیکت",'callback_data'=>"usersNewTicket"]],
-        [['text'=>"تیکت های باز 📨",'callback_data'=>"usersOpenTickets"],['text'=>"📮 لیست تیکت ها", 'callback_data'=>"userAllTickets"]],
+        [['text'=>\achbotMessage('support.entry.support_section.button.47b4e6ab96'),'callback_data'=>"usersNewTicket"]],
+        [['text'=>\achbotMessage('support.entry.support_section.button.a203213e37'),'callback_data'=>"usersOpenTickets"],['text'=>\achbotMessage('support.entry.support_section.button.b15cb57126'), 'callback_data'=>"userAllTickets"]],
         [['text'=>$buttonValues['back_button'],'callback_data'=>"mainMenu"]]
         ]]));
 }
@@ -44,10 +46,8 @@ if($data== "usersNewTicket"){
         }
         $temp[] = ['text'=>$buttonValues['back_button'],'callback_data'=>"mainMenu"];
         array_push($keys,$temp);
-        editText($message_id,"⁉️ لطفا واحد مورد نظر خود را انتخاب نمایید!
-🛑 از ارسال درخواست های نامفهوم و بیجا خودداری کنید، بدون اخطار اکانت شما مسدود می شود.
-🚫 فقط به درخواست هایی که به زبان فارسی تایپ می شوند پاسخ داده می شود.",json_encode(['inline_keyboard'=>$keys]));
+        editText($message_id,\achbotMessage('support.entry.users_new_ticket.message.adca0ba3c2'),json_encode(['inline_keyboard'=>$keys]));
     }else{
-        alert("ای وای، ببخشید الان نیستم");
+        alert(\achbotMessage('support.entry.users_new_ticket.alert.46a8c85d10'));
     }
 }

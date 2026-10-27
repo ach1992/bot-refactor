@@ -4,6 +4,8 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     http_response_code(404);
     exit;
 }
+require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
+
 
 /**
  * Claim one gateway per local order before an external, non-idempotent API
@@ -143,7 +145,7 @@ require_once __DIR__ . '/PaymentLifecycle.php';
 //====================//  Get  //==============================
 $hash_id = (string)($_GET['hash_id'] ?? '');
 if(!isset($_GET['zarinpal']) && !isset($_GET['nowpayment']) && !isset($_GET['nextpay'])){
-    showForm("درگاه پرداخت شناسایی نشد!");
+    showForm(\achbotMessage('gateway.gateway_initiation.mark_checkout_uncertain.message.1f5b86dd86'));
     exit();
 }
 
@@ -162,32 +164,32 @@ if(mysqli_num_rows($payInfo)==0){
         $stmt->close();
         if (($existing['state'] ?? '')==='paid') {
             // A paid local row does not prove customer Telegram delivery.
-            showForm("این سفارش قبلاً پرداخت شده؛ لینک یا تاییدیه در ربات ارسال می‌شود.", 'review');
+            showForm(\achbotMessage('gateway.gateway_initiation.mark_checkout_uncertain.message.32264671e4'), 'review');
         } elseif ($existing) {
             // 'send' is in progress; other nonpending states require review.
-            showForm("این سفارش در حال پردازش یا نیازمند پیگیری است؛ فاکتور جدید صادر نشد.",
+            showForm(\achbotMessage('gateway.gateway_initiation.mark_checkout_uncertain.message.33526fc91c'),
                 ($existing['state'] ?? '') === 'send' ? 'pending' : 'review');
         } else {
-            showForm("کد پرداخت یافت نشد.");
+            showForm(\achbotMessage('gateway.gateway_initiation.mark_checkout_uncertain.message.2d0a6d7c50'));
         }
     } else {
-        showForm("کد پرداخت یافت نشد.");
+        showForm(\achbotMessage('gateway.gateway_initiation.mark_checkout_uncertain.message.2d0a6d7c50'));
     }
 }else{
     $payParam = $payInfo->fetch_assoc();
     // The URL is only a guarded *request*, never an irrevocable provider link.
     // Refuse stale drafts and older invoices before any checkout side effect.
     if (achbotPayUxExpireDraft($connection,(int)$payParam['id'])) {
-        showForm("مهلت این فاکتور پایان یافته است؛ از ربات درخواست جدید ثبت کنید.");
+        showForm(\achbotMessage('gateway.gateway_initiation.mark_checkout_uncertain.message.24fe31bc43'));
         exit;
     }
     try {
         if (achbotPayUxHasNewer($connection,$payParam)) {
-            showForm("فاکتور جدیدتری ثبت شده است. لینک قبلی دیگر برای پرداخت نمایش داده نمی‌شود؛ اگر وجهی فرستاده‌اید برای بررسی با پشتیبانی تماس بگیرید.", 'review');
+            showForm(\achbotMessage('gateway.gateway_initiation.mark_checkout_uncertain.message.8cdb71a59f'), 'review');
             exit;
         }
     } catch (Throwable $ignored) {
-        showForm("وضعیت درخواست پرداخت قابل اطمینان نیست؛ برای جلوگیری از پرداخت تکراری با پشتیبانی تماس بگیرید.", 'review');
+        showForm(\achbotMessage('gateway.gateway_initiation.mark_checkout_uncertain.message.2186b9a9dd'), 'review');
         exit;
     }
     // Payment-audience restrictions apply at the exact first-party HTTP
@@ -200,7 +202,7 @@ if(mysqli_num_rows($payInfo)==0){
         : $checkoutMethod;
     if (($botState[$stateFlag]??'off')!=='on' ||
         !achbotPayUxAudienceAllowed($connection,$checkoutMethod,(int)$payParam['user_id'])) {
-        showForm('این روش پرداخت برای حساب شما فعال نیست؛ اگر فاکتور قبلی صادر شده با پشتیبانی وضعیت آن را پیگیری کنید.');
+        showForm(\achbotMessage('gateway.gateway_initiation.mark_checkout_uncertain.message.32573bc25a'));
         exit;
     }
     // A hosted invoice can remain payable upstream after a stale bot link
@@ -208,15 +210,15 @@ if(mysqli_num_rows($payInfo)==0){
     // but preserve the exact provider claim for asynchronous reconciliation.
     try {
         if (achbotPayUxHostedAttentionElapsed($connection,(int)$payParam['id'])) {
-            showForm('مهلت استفاده از لینک این فاکتور پایان یافته است. وضعیت پرداخت در حال پیگیری است؛ وجه را دوباره ارسال نکنید.', 'review');
+            showForm(\achbotMessage('gateway.gateway_initiation.mark_checkout_uncertain.message.2d6b333856'), 'review');
             exit;
         }
     } catch (Throwable $ignored) {
-        showForm('وضعیت فاکتور آنلاین نیازمند بررسی است؛ پرداخت مجدد انجام ندهید.', 'review');
+        showForm(\achbotMessage('gateway.gateway_initiation.mark_checkout_uncertain.message.eaf7a98f3e'), 'review');
         exit;
     }
     if (!achbotSupportsPaymentSubject($connection, $payParam)) {
-        showForm("این سرویس در پنل مرزبان قابل پرداخت نیست.");
+        showForm(\achbotMessage('gateway.gateway_initiation.mark_checkout_uncertain.message.c2f74dfd7e'));
         exit();
     }
 
@@ -235,7 +237,7 @@ if(mysqli_num_rows($payInfo)==0){
         $file_detail = $stmt->get_result()->fetch_assoc();
         $stmt->close();
         if (!$file_detail) {
-            showForm("پلن مورد نظر یافت نشد.");
+            showForm(\achbotMessage('gateway.gateway_initiation.mark_checkout_uncertain.message.c6fe64557e'));
             exit;
         }
         $server_id = $file_detail['server_id'];
@@ -251,7 +253,7 @@ if(mysqli_num_rows($payInfo)==0){
     
     
     if($acount == 0 and $inbound_id != 0 && $payType == "BUY_SUB"){
-        showForm('ظرفیت این کانکشن پر شده است.');
+        showForm(\achbotMessage('gateway.gateway_initiation.mark_checkout_uncertain.message.09d73ebed8'));
         exit;
     }
 
@@ -263,19 +265,19 @@ if(mysqli_num_rows($payInfo)==0){
         $stmt->close();
 
         if($server_info['ucount'] == 0) {
-            showForm('ظرفیت این سرور پر شده است.');
+            showForm(\achbotMessage('gateway.gateway_initiation.mark_checkout_uncertain.message.bdc1d950b2'));
             exit;
         }
     }elseif($payType == "BUY_SUB"){
         if($acount != 0 && $acount < $text){
-            showForm("روی این پلن فقط $acount اشتراک میشه ساخت.");
+            showForm(\achbotMessage('gateway.gateway_initiation.mark_checkout_uncertain.message.091b17d805', ['acount' => $acount]));
             exit();
         }
     }
     
-    if($payType == "BUY_SUB") $type = "خرید اشتراک";
+    if($payType == "BUY_SUB") $type = \achbotMessage('gateway.gateway_initiation.mark_checkout_uncertain.type.e6343571a4');
     elseif($payType == "RENEW_ACCOUNT"){
-        $type = "تمدید اشتراک";
+        $type = \achbotMessage('gateway.gateway_initiation.mark_checkout_uncertain.type.df1c62b99e');
         $oid = $payParam['order_id'];
         $stmt = $connection->prepare("SELECT * FROM `orders_list` WHERE `id` = ?");
         $stmt->bind_param("i", $oid);
@@ -289,10 +291,10 @@ if(mysqli_num_rows($payInfo)==0){
         }
 
     }
-    elseif($payType == "RENEW_SCONFIG") $type = "تمدید اشتراک";
-    elseif($payType == "INCREASE_WALLET") $type ="شارژ کیف پول";
-    elseif(preg_match('/^INCREASE_DAY_(\d+)_(\d+)/',$payType)) $type = "افزایش زمان اشتراک";
-    elseif(preg_match('/^INCREASE_VOLUME_(\d+)_(\d+)/',$payType)) $type = "افزایش حجم اشتراک";
+    elseif($payType == "RENEW_SCONFIG") $type = \achbotMessage('gateway.gateway_initiation.mark_checkout_uncertain.type.df1c62b99e');
+    elseif($payType == "INCREASE_WALLET") $type =\achbotMessage('gateway.gateway_initiation.mark_checkout_uncertain.type.991ae08d64');
+    elseif(preg_match('/^INCREASE_DAY_(\d+)_(\d+)/',$payType)) $type = \achbotMessage('gateway.gateway_initiation.mark_checkout_uncertain.type.884cfdce97');
+    elseif(preg_match('/^INCREASE_VOLUME_(\d+)_(\d+)/',$payType)) $type = \achbotMessage('gateway.gateway_initiation.mark_checkout_uncertain.type.160a34aa6d');
     
     
     
@@ -308,7 +310,7 @@ if(mysqli_num_rows($payInfo)==0){
         // Old payments with an invoice ID but no attempt are not reissued
         // automatically: creating a second provider invoice may double charge.
         if (!achbotSharedPaymentTablesReady($connection)) {
-            showForm("پیکربندی پیگیری امن پرداخت هنوز تکمیل نشده است.");
+            showForm(\achbotMessage('gateway.gateway_initiation.mark_checkout_uncertain.message.71632f6c74'));
             exit;
         }
         $stmt = $connection->prepare("SELECT * FROM payment_attempts WHERE pay_row_id=? AND provider='nowpayments' LIMIT 2");
@@ -319,7 +321,7 @@ if(mysqli_num_rows($payInfo)==0){
         if ($stored->num_rows === 1) {
             $attempt = $stored->fetch_assoc();
             if ($attempt['stage'] === 'creating' && $attempt['order_hash'] === $hash_id) {
-                showForm("فاکتور این سفارش در حال صدور است؛ از ایجاد درخواست تکراری جلوگیری شد.", 'pending');
+                showForm(\achbotMessage('gateway.gateway_initiation.mark_checkout_uncertain.message.f4702323f6'), 'pending');
                 exit;
             }
             // A previously observed provider payment must not be reopened
@@ -328,7 +330,7 @@ if(mysqli_num_rows($payInfo)==0){
                 (string)($attempt['payment_id'] ?? '') !== '') {
                 // An observed child payment is not necessarily in an active
                 // state: an already-quarantined attempt requires review.
-                showForm("پرداخت برای این فاکتور شناسایی شده است و در حال بررسی است. برای مشاهده وضعیت به ربات مراجعه کنید.",
+                showForm(\achbotMessage('gateway.gateway_initiation.mark_checkout_uncertain.message.7de7c0e3e6'),
                     $attempt['stage'] === 'pending' ? 'pending' : 'review');
                 exit;
             }
@@ -339,27 +341,27 @@ if(mysqli_num_rows($payInfo)==0){
                 header('Location: '.$attempt['checkout_url'], true, 302);
                 exit;
             }
-            showForm("لینک فاکتور نیاز به بررسی پشتیبانی دارد.", 'review');
+            showForm(\achbotMessage('gateway.gateway_initiation.mark_checkout_uncertain.message.eda31ba620'), 'review');
             exit;
         }
         if ($stored->num_rows > 1 || !empty($payParam['payid'])) {
-            showForm("برای این سفارش قبلاً فاکتور صادر شده است؛ از ایجاد فاکتور تکراری جلوگیری شد.", 'review');
+            showForm(\achbotMessage('gateway.gateway_initiation.mark_checkout_uncertain.message.cdfa4a6049'), 'review');
             exit;
         }
         if (empty($nowpaymentsIpnSecret)) {
-            showForm("کلید امن اعلان NOWPayments هنوز توسط مدیر ثبت نشده است.");
+            showForm(\achbotMessage('gateway.gateway_initiation.mark_checkout_uncertain.message.c4414cfacc'));
             exit;
         }
         require_once __DIR__.'/ReceiptHelpers.php';
         $userId=(int)($payParam['user_id']??0);
         $dollarPrice=achbotUsdtRateForUser($connection,$userId);
         if ($dollarPrice===null) {
-            showForm('این روش پرداخت فعلاً در دسترس نیست؛ روش دیگری را انتخاب کنید یا با پشتیبانی تماس بگیرید.');
+            showForm(\achbotMessage('gateway.gateway_initiation.mark_checkout_uncertain.message.7f6fcbdd9d'));
             exit;
         }
 
         if(empty($paymentKeys['nowpayment'])){
-            showForm("کلید درگاه NowPayments تنظیم نشده است.");
+            showForm(\achbotMessage('gateway.gateway_initiation.mark_checkout_uncertain.message.df2a7c68c7'));
             exit();
         }
 
@@ -367,7 +369,7 @@ if(mysqli_num_rows($payInfo)==0){
 
         $quoteUsd = number_format(round($amount / $dollarPrice, 2), 2, '.', '');
         if ((float)$quoteUsd <= 0 || (int)$amount <= 0) {
-            showForm("مبلغ فاکتور معتبر نیست.");
+            showForm(\achbotMessage('gateway.gateway_initiation.mark_checkout_uncertain.message.868477ce4f'));
             exit;
         }
         // Default merchant behavior accepts the provider's ordinary payout
@@ -390,7 +392,7 @@ if(mysqli_num_rows($payInfo)==0){
             $minimumOutcome = preg_match('/^[a-z0-9]{2,32}$/D',$payoutCurrency)
                 ? achbotNpMinimumPayout($quoteUsd,$payoutRate) : null;
             if ($minimumOutcome === null) {
-                showForm("این روش پرداخت فعلاً در دسترس نیست؛ لطفاً روش دیگری را انتخاب کنید.");
+                showForm(\achbotMessage('gateway.gateway_initiation.mark_checkout_uncertain.message.d591bf832a'));
                 exit;
             }
         }
@@ -453,7 +455,7 @@ if(mysqli_num_rows($payInfo)==0){
             }
         } catch (Throwable $error) {
             $connection->rollback();
-            showForm("فاکتور این سفارش در حال صدور یا نیازمند بررسی است؛ درخواست تکراری ایجاد نشد.", 'review');
+            showForm(\achbotMessage('gateway.gateway_initiation.mark_checkout_uncertain.message.b0a8fa5e67'), 'review');
             exit;
         }
 
@@ -491,7 +493,7 @@ if(mysqli_num_rows($payInfo)==0){
 
         if($responseBody === false || !empty($curlError)){
             $markCheckoutUncertain();
-            showForm("وضعیت صدور فاکتور درگاه نامشخص است؛ درخواست جدید صادر نمی‌شود و به بررسی نیاز دارد.", 'review');
+            showForm(\achbotMessage('gateway.gateway_initiation.mark_checkout_uncertain.message.f3414a91d3'), 'review');
             exit();
         }
 
@@ -499,13 +501,13 @@ if(mysqli_num_rows($payInfo)==0){
 
         if($httpCode < 200 || $httpCode >= 300){
             $markCheckoutUncertain();
-            showForm("صدور فاکتور درگاه تأیید نشد؛ برای جلوگیری از فاکتور تکراری بررسی لازم است.", 'review');
+            showForm(\achbotMessage('gateway.gateway_initiation.mark_checkout_uncertain.message.5e673fef71'), 'review');
             exit();
         }
 
         if(empty($res['id']) || empty($res['invoice_url'])){
             $markCheckoutUncertain();
-            showForm("پاسخ صدور فاکتور ناقص بود؛ درخواست جدید خودکار صادر نمی‌شود.", 'review');
+            showForm(\achbotMessage('gateway.gateway_initiation.mark_checkout_uncertain.message.9c2d3b3672'), 'review');
             exit();
         }
 
@@ -514,7 +516,7 @@ if(mysqli_num_rows($payInfo)==0){
         if (!preg_match('/^[A-Za-z0-9_-]{1,128}$/D', $payid) ||
             !achbotNpValidInvoiceUrl($invoiceUrl)) {
             $markCheckoutUncertain();
-            showForm("هویت یا لینک فاکتور درگاه نامعتبر است و به بررسی نیاز دارد.", 'review');
+            showForm(\achbotMessage('gateway.gateway_initiation.mark_checkout_uncertain.message.8196433946'), 'review');
             exit;
         }
         try {
@@ -555,7 +557,7 @@ if(mysqli_num_rows($payInfo)==0){
         } catch (Throwable $error) {
             $connection->rollback();
             $markCheckoutUncertain();
-            showForm("فاکتور صادر شد اما اتصال ایمن آن به سفارش نیازمند بررسی است؛ درخواست جدید صادر نمی‌شود.", 'review');
+            showForm(\achbotMessage('gateway.gateway_initiation.mark_checkout_uncertain.message.0c31b5ab6a'), 'review');
             exit;
         }
 
@@ -563,14 +565,14 @@ if(mysqli_num_rows($payInfo)==0){
         // subsequent click; also preserve a direct button in Telegram.
         if ($userId > 0) {
             $keyboard = json_encode(['inline_keyboard'=>[
-                [['text'=>'💳 پرداخت فاکتور',
+                [['text'=>\achbotMessage('gateway.gateway_initiation.mark_checkout_uncertain.button.f81a8cfcdd'),
                   'url'=>$botUrl.'pay/?nowpayment&hash_id='.urlencode($hash_id)]],
-                [['text'=>'🧾 بررسی وضعیت سفارش','callback_data'=>'ps_'.$hash_id]]
+                [['text'=>\achbotMessage('gateway.gateway_initiation.mark_checkout_uncertain.button.f0137e1007'),'callback_data'=>'ps_'.$hash_id]]
             ]], JSON_UNESCAPED_UNICODE);
             try {
-                $notice=sendMessage("🧾 فاکتور ثبت شد.\n".achbotPayUxReference($payParam)
-                    ."پرداخت فقط پس از تأیید درگاه و ثبت نتیجه در ربات نهایی است؛ "
-                    ."پردازش ممکن است بیش از چند دقیقه طول بکشد.",
+                $notice=sendMessage(\achbotMessage('gateway.gateway_initiation.mark_checkout_uncertain.message.cd27d14216').achbotPayUxReference($payParam)
+                    .\achbotMessage('gateway.gateway_initiation.mark_checkout_uncertain.message.0c4a9612f7')
+                    .\achbotMessage('gateway.gateway_initiation.mark_checkout_uncertain.message.0a2e0bc7bc'),
                     $keyboard, 'HTML', $userId);
                 achbotPayUxTrackMessage($connection,(int)$orderId,(int)$userId,$notice);
             } catch (Throwable $ignored) {
@@ -586,8 +588,8 @@ if(mysqli_num_rows($payInfo)==0){
         if ($marker === null) {
             $sharedTablesReady = achbotSharedPaymentTablesReady($connection);
             showForm($sharedTablesReady
-                ? "یک درخواست پرداخت برای این سفارش قبلاً صادر شده است؛ تغییر درگاه نیازمند بررسی است."
-                : "پیکربندی پیگیری امن پرداخت هنوز تکمیل نشده است.",
+                ? \achbotMessage('gateway.gateway_initiation.mark_checkout_uncertain.message.9dfdbeaa81')
+                : \achbotMessage('gateway.gateway_initiation.mark_checkout_uncertain.message.71632f6c74'),
                 $sharedTablesReady ? 'review' : null);
             exit;
         }
@@ -617,7 +619,7 @@ if(mysqli_num_rows($payInfo)==0){
         } catch (Throwable $error) {
             // Do not reissue when provider may already have accepted a request.
             achbotMarkCheckoutUncertain($connection,(int)$orderId,'zarinpal');
-            showForm("وضعیت صدور فاکتور نامشخص است؛ برای جلوگیری از پرداخت تکراری نیاز به بررسی دارد.", 'review');
+            showForm(\achbotMessage('gateway.gateway_initiation.mark_checkout_uncertain.message.1f2efee2e5'), 'review');
             exit;
         }
     }
@@ -627,8 +629,8 @@ if(mysqli_num_rows($payInfo)==0){
         if ($marker === null) {
             $sharedTablesReady = achbotSharedPaymentTablesReady($connection);
             showForm($sharedTablesReady
-                ? "یک درخواست پرداخت برای این سفارش قبلاً صادر شده است؛ تغییر درگاه نیازمند بررسی است."
-                : "پیکربندی پیگیری امن پرداخت هنوز تکمیل نشده است.",
+                ? \achbotMessage('gateway.gateway_initiation.mark_checkout_uncertain.message.9dfdbeaa81')
+                : \achbotMessage('gateway.gateway_initiation.mark_checkout_uncertain.message.71632f6c74'),
                 $sharedTablesReady ? 'review' : null);
             exit;
         }
@@ -664,7 +666,7 @@ if(mysqli_num_rows($payInfo)==0){
             }
         }
         achbotMarkCheckoutUncertain($connection,(int)$orderId,'nextpay');
-        showForm("وضعیت ایجاد تراکنش نامشخص است؛ درخواست پرداخت جدید خودکار صادر نمی‌شود.", 'review');
+        showForm(\achbotMessage('gateway.gateway_initiation.mark_checkout_uncertain.message.afca7c1801'), 'review');
     }
 }
 

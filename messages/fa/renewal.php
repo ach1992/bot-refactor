@@ -17,6 +17,7 @@ return [
     'extensions.text.2cc98f7f7c' => ' تومان',
     'extensions.button.fbb9f61105' => ['text' => '{title} روز {price}', 'parameters' => ['title', 'price']],
     'extensions.message.c2bde2a3e0' => 'لطفا یکی از پلن های افزایشی را انتخاب کنید:',
+    'extensions.alert.584426a8a8' => 'پلن زمانی در دسترس نیست؛ دوباره از منوی اشتراک انتخاب کنید.',
     'extensions.alert.ae271a2d1d' => '⚠️ ثبت پیش‌نویس به‌طور قطعی تأیید نشد؛ از ایجاد پرداخت مجدد پرهیز کنید.',
     'extensions.button.e729457ba2' => '💎 پرداخت رمزارزی دستی',
     'extensions.message.48930749a9' => '🧾 روش پرداخت سفارش را انتخاب کنید.',

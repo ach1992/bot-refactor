@@ -8,11 +8,13 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     http_response_code(404);
     exit;
 }
+require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
+
 
 if(($data == "agentsList" || preg_match('/^nextAgentList(\d+)/',$data,$match)) && ($from_id == $admin || $userInfo['isAdmin'] == true)){
     $keys = getAgentsList($match[1]??0);
     if($keys != null) editText($message_id,$mainValues['agents_list'], $keys);
-    else alert("همکاری یافت نشد.");
+    else alert(\achbotMessage('agent.discounts.agents_list.alert.6a01bdb6c4'));
 }
 if(preg_match('/^agentDetails(\d+)/',$data,$match) && ($from_id == $admin || $userInfo['isAdmin'] == true)){
     $userDetail = bot('getChat',['chat_id'=>$match[1]])->result;
@@ -75,13 +77,13 @@ if(preg_match('/^addDiscount(Server|Plan)Agent(\d+)/',$data,$match) && ($from_id
             }
             
             if($list->num_rows >= $limit){
-                $keys[] = [['text'=>"▶️",'callback_data'=>"nextAgentDiscountPlan" . $match[2] . "_" . ($offset + $limit)]];
+                $keys[] = [['text'=>\achbotMessage('agent.discounts.agents_list.button.8f9628264c'),'callback_data'=>"nextAgentDiscountPlan" . $match[2] . "_" . ($offset + $limit)]];
             }
             $keys[] = [['text' => $buttonValues['back_button'], 'callback_data' => "agentPercentDetails" . $match[2]]];
             $keys = json_encode(['inline_keyboard'=>$keys]);
             
-            editText($message_id,"لطفا سرور مورد نظر را برای افزودن تخفیف به همکار $userName انتخاب کنید.",$keys);
-        }else alert("سروری باقی نمانده است.");
+            editText($message_id,\achbotMessage('agent.discounts.agents_list.message.3c0d01e71b', ['userName' => $userName]),$keys);
+        }else alert(\achbotMessage('agent.discounts.agents_list.alert.75b2cb38d6'));
     }else{
         $condition = array_values(array_keys(json_decode($info['discount_percent'],true)['servers']??array()));
         $condition = count($condition) > 0? "WHERE `id` NOT IN (" . implode(",", $condition) . ")":"";
@@ -99,8 +101,8 @@ if(preg_match('/^addDiscount(Server|Plan)Agent(\d+)/',$data,$match) && ($from_id
             $keys[] = [['text' => $buttonValues['back_button'], 'callback_data' => "agentPercentDetails" . $match[2]]];
             $keys = json_encode(['inline_keyboard'=>$keys]);
             
-            editText($message_id,"لطفا سرور مورد نظر را برای افزودن تخفیف به همکار $userName انتخاب کنید.",$keys);
-        }else alert("سروری باقی نمانده است.");
+            editText($message_id,\achbotMessage('agent.discounts.agents_list.message.3c0d01e71b', ['userName' => $userName]),$keys);
+        }else alert(\achbotMessage('agent.discounts.agents_list.alert.75b2cb38d6'));
     }
 }
 if(preg_match('/^nextAgentDiscountPlan(?<agentId>\d+)_(?<offset>\d+)/',$data,$match) &&($from_id == $admin || $userInfo['isAdmin'] == true)){
@@ -135,24 +137,24 @@ if(preg_match('/^nextAgentDiscountPlan(?<agentId>\d+)_(?<offset>\d+)/',$data,$ma
         }
         
         if($list->num_rows >= $limit && $offset == 0){
-            $keys[] = [['text'=>"▶️",'callback_data'=>"nextAgentDiscountPlan" . $match['agentId'] . "_" . ($offset + $limit)]];
+            $keys[] = [['text'=>\achbotMessage('agent.discounts.agents_list.button.8f9628264c'),'callback_data'=>"nextAgentDiscountPlan" . $match['agentId'] . "_" . ($offset + $limit)]];
         }
         elseif($list->num_rows >= $limit && $offset != 0){
             $keys[] = [
-                ['text'=>"◀️️",'callback_data'=>"nextAgentDiscountPlan" . $match['agentId'] . "_" . ($offset - $limit)],
-                ['text'=>"▶️",'callback_data'=>"nextAgentDiscountPlan" . $match['agentId'] . "_" . ($offset + $limit)]
+                ['text'=>\achbotMessage('agent.discounts.agents_list.button.a38a46edb9'),'callback_data'=>"nextAgentDiscountPlan" . $match['agentId'] . "_" . ($offset - $limit)],
+                ['text'=>\achbotMessage('agent.discounts.agents_list.button.8f9628264c'),'callback_data'=>"nextAgentDiscountPlan" . $match['agentId'] . "_" . ($offset + $limit)]
                 ];
         }
         elseif($offset != 0){
             $keys[] = [
-                ['text'=>"◀️️",'callback_data'=>"nextAgentDiscountPlan" . $match['agentId'] . "_" . ($offset - $limit)]
+                ['text'=>\achbotMessage('agent.discounts.agents_list.button.a38a46edb9'),'callback_data'=>"nextAgentDiscountPlan" . $match['agentId'] . "_" . ($offset - $limit)]
                 ];
         }
         $keys[] = [['text' => $buttonValues['back_button'], 'callback_data' => "agentPercentDetails" . $match['agentId']]];
         $keys = json_encode(['inline_keyboard'=>$keys]);
         
-        editText($message_id,"لطفا سرور مورد نظر را برای افزودن تخفیف به همکار $userName انتخاب کنید.",$keys);
-    }else alert("سروری باقی نمانده است.");
+        editText($message_id,\achbotMessage('agent.discounts.agents_list.message.3c0d01e71b', ['userName' => $userName]),$keys);
+    }else alert(\achbotMessage('agent.discounts.agents_list.alert.75b2cb38d6'));
 }
 if(preg_match('/^removePercentOfAgent(?<type>Server|Plan)(?<agentId>\d+)_(?<serverId>\d+)/',$data,$match) && ($from_id == $admin || $userInfo['isAdmin'] == true)){
     $stmt = $connection->prepare("SELECT * FROM `users` WHERE `userid` = ?");
@@ -171,7 +173,7 @@ if(preg_match('/^removePercentOfAgent(?<type>Server|Plan)(?<agentId>\d+)_(?<serv
     $stmt->execute();
     $stmt->close();
     
-    alert('با موفقیت حذف شد.');
+    alert(\achbotMessage('agent.discounts.agents_list.alert.e1e7245408'));
     editText($message_id, str_replace("AGENT-NAME", $userName, $mainValues['agent_discount_settings']), getAgentDiscounts($match['agentId']));
 }
 if(preg_match('/^editAgentDiscount(Server|Plan|Normal)(\d+)_(.*)/',$data,$match) && ($from_id == $admin || $userInfo['isAdmin'] == true)){

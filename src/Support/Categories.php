@@ -9,23 +9,22 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     http_response_code(404);
     exit;
 }
+require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
+
 
 if($data=="ticketsList" and ($from_id == $admin || $userInfo['isAdmin'] == true)){
     $ticketSection = json_encode(['inline_keyboard'=>[
         [
-            ['text'=>"تیکت های باز",'callback_data'=>"openTickets"],
-            ['text'=>"تیکت های جدید",'callback_data'=>"newTickets"]
+            ['text'=>\achbotMessage('support.categories.tickets_list.button.33d6fa9470'),'callback_data'=>"openTickets"],
+            ['text'=>\achbotMessage('support.categories.tickets_list.button.732c0fd101'),'callback_data'=>"newTickets"]
             ],
         [
-            ['text'=>"همه ی تیکت ها",'callback_data'=>"allTickets"],
-            ['text'=>"دسته بندی تیکت ها",'callback_data'=>"ticketsCategory"]
+            ['text'=>\achbotMessage('support.categories.tickets_list.button.c77cd22d1c'),'callback_data'=>"allTickets"],
+            ['text'=>\achbotMessage('support.categories.tickets_list.button.0e6cb76a8c'),'callback_data'=>"ticketsCategory"]
             ],
         [['text' => $buttonValues['back_button'], 'callback_data' => "managePanel"]]
         ]]);
-    editText($message_id, "به بخش تیکت ها خوش اومدید
-    
-🚪 /start
-    ",$ticketSection);
+    editText($message_id, \achbotMessage('support.categories.tickets_list.message.41905ef3f3'),$ticketSection);
 }
 if($data=='ticketsCategory' and ($from_id == $admin || $userInfo['isAdmin'] == true)){
     $stmt = $connection->prepare("SELECT * FROM `setting` WHERE `type` = 'TICKETS_CATEGORY'");
@@ -33,26 +32,26 @@ if($data=='ticketsCategory' and ($from_id == $admin || $userInfo['isAdmin'] == t
     $ticketCategory = $stmt->get_result();
     $stmt->close();
     $keys = array();
-    $keys[] = [['text'=>"حذف",'callback_data'=>"wizwizch"],['text'=>"دسته بندی",'callback_data'=>"wizwizch"]];
+    $keys[] = [['text'=>\achbotMessage('support.categories.tickets_category.button.59ca629220'),'callback_data'=>"wizwizch"],['text'=>\achbotMessage('support.categories.tickets_category.button.0fc3aac224'),'callback_data'=>"wizwizch"]];
     
     if($ticketCategory->num_rows>0){
         while($row = $ticketCategory->fetch_assoc()){
             $rowId = $row['id'];
             $ticketName = $row['value'];
-            $keys[] = [['text'=>"❌",'callback_data'=>"delTicketCat_$rowId"],['text'=>$ticketName,'callback_data'=>"wizwizch"]];
+            $keys[] = [['text'=>\achbotMessage('support.categories.tickets_category.button.2b2966a54e'),'callback_data'=>"delTicketCat_$rowId"],['text'=>$ticketName,'callback_data'=>"wizwizch"]];
         }
     }else{
-        $keys[] = [['text'=>"دسته بندی یافت نشد",'callback_data'=>"wizwizch"]];
+        $keys[] = [['text'=>\achbotMessage('support.categories.tickets_category.button.7f9f2e3157'),'callback_data'=>"wizwizch"]];
     }
-    $keys[] = [['text'=>"افزودن دسته بندی",'callback_data'=>"addTicketCategory"]];
+    $keys[] = [['text'=>\achbotMessage('support.categories.tickets_category.button.ee4edcb19e'),'callback_data'=>"addTicketCategory"]];
     $keys[] = [['text'=>$buttonValues['back_button'],'callback_data'=>"ticketsList"]];
     
     $keys =  json_encode(['inline_keyboard'=>$keys]);
-    editText($message_id,"دسته بندی تیکت ها",$keys);
+    editText($message_id,\achbotMessage('support.categories.tickets_list.button.0e6cb76a8c'),$keys);
 }
 if($data=="addTicketCategory" and ($from_id == $admin || $userInfo['isAdmin'] == true)){
     setUser('addTicketCategory');
-    editText($message_id,"لطفا اسم دسته بندی را وارد کنید");
+    editText($message_id,\achbotMessage('support.categories.add_ticket_category.message.f17638132c'));
 }
 if ($userInfo['step']=="addTicketCategory" and ($from_id == $admin || $userInfo['isAdmin'] == true)){
 	$stmt = $connection->prepare("INSERT INTO `setting` (`type`, `value`) VALUES ('TICKETS_CATEGORY', ?)");	
@@ -67,23 +66,23 @@ if ($userInfo['step']=="addTicketCategory" and ($from_id == $admin || $userInfo[
     $stmt->close();
     
     $keys = array();
-    $keys[] = [['text'=>"حذف",'callback_data'=>"wizwizch"],['text'=>"دسته بندی",'callback_data'=>"wizwizch"]];
+    $keys[] = [['text'=>\achbotMessage('support.categories.tickets_category.button.59ca629220'),'callback_data'=>"wizwizch"],['text'=>\achbotMessage('support.categories.tickets_category.button.0fc3aac224'),'callback_data'=>"wizwizch"]];
     
     if($ticketCategory->num_rows>0){
         while ($row = $ticketCategory->fetch_assoc()){
             
             $rowId = $row['id'];
             $ticketName = $row['value'];
-            $keys[] = [['text'=>"❌",'callback_data'=>"delTicketCat_$rowId"],['text'=>$ticketName,'callback_data'=>"wizwizch"]];
+            $keys[] = [['text'=>\achbotMessage('support.categories.tickets_category.button.2b2966a54e'),'callback_data'=>"delTicketCat_$rowId"],['text'=>$ticketName,'callback_data'=>"wizwizch"]];
         }
     }else{
-        $keys[] = [['text'=>"دسته بندی یافت نشد",'callback_data'=>"wizwizch"]];
+        $keys[] = [['text'=>\achbotMessage('support.categories.tickets_category.button.7f9f2e3157'),'callback_data'=>"wizwizch"]];
     }
-    $keys[] = [['text'=>"افزودن دسته بندی",'callback_data'=>"addTicketCategory"]];
+    $keys[] = [['text'=>\achbotMessage('support.categories.tickets_category.button.ee4edcb19e'),'callback_data'=>"addTicketCategory"]];
     $keys[] = [['text'=>$buttonValues['back_button'],'callback_data'=>"ticketsList"]];
     
     $keys =  json_encode(['inline_keyboard'=>$keys]);
-    sendMessage("دسته بندی تیکت ها",$keys);
+    sendMessage(\achbotMessage('support.categories.tickets_list.button.0e6cb76a8c'),$keys);
 }
 if(preg_match("/^delTicketCat_(\d+)/",$data,$match) and ($from_id == $admin || $userInfo['isAdmin'] == true)){
     $stmt = $connection->prepare("DELETE FROM `setting` WHERE `id` = ?");
@@ -91,7 +90,7 @@ if(preg_match("/^delTicketCat_(\d+)/",$data,$match) and ($from_id == $admin || $
     $stmt->execute();
     $stmt->close();
     
-    alert("با موفقیت حذف شد.");
+    alert(\achbotMessage('support.categories.add_ticket_category.alert.e1e7245408'));
         
 
     $stmt = $connection->prepare("SELECT * FROM `setting` WHERE `type` = 'TICKETS_CATEGORY'");
@@ -100,21 +99,21 @@ if(preg_match("/^delTicketCat_(\d+)/",$data,$match) and ($from_id == $admin || $
     $stmt->close();
     
     $keys = array();
-    $keys[] = [['text'=>"حذف",'callback_data'=>"wizwizch"],['text'=>"دسته بندی",'callback_data'=>"wizwizch"]];
+    $keys[] = [['text'=>\achbotMessage('support.categories.tickets_category.button.59ca629220'),'callback_data'=>"wizwizch"],['text'=>\achbotMessage('support.categories.tickets_category.button.0fc3aac224'),'callback_data'=>"wizwizch"]];
     
     if($ticketCategory->num_rows>0){
         while ($row = $ticketCategory->fetch_assoc()){
             
             $rowId = $row['id'];
             $ticketName = $row['value'];
-            $keys[] = [['text'=>"❌",'callback_data'=>"delTicketCat_$rowId"],['text'=>$ticketName,'callback_data'=>"wizwizch"]];
+            $keys[] = [['text'=>\achbotMessage('support.categories.tickets_category.button.2b2966a54e'),'callback_data'=>"delTicketCat_$rowId"],['text'=>$ticketName,'callback_data'=>"wizwizch"]];
         }
     }else{
-        $keys[] = [['text'=>"دسته بندی یافت نشد.",'callback_data'=>"wizwizch"]];
+        $keys[] = [['text'=>\achbotMessage('support.categories.add_ticket_category.button.fba2c6927b'),'callback_data'=>"wizwizch"]];
     }
-    $keys[] = [['text'=>"افزودن دسته بندی",'callback_data'=>"addTicketCategory"]];
+    $keys[] = [['text'=>\achbotMessage('support.categories.tickets_category.button.ee4edcb19e'),'callback_data'=>"addTicketCategory"]];
     $keys[] = [['text'=>$buttonValues['back_button'],'callback_data'=>"ticketsList"]];
     
     $keys =  json_encode(['inline_keyboard'=>$keys]);
-    editText($message_id, "دسته بندی تیکت ها",$keys);
+    editText($message_id, \achbotMessage('support.categories.tickets_list.button.0e6cb76a8c'),$keys);
 }

@@ -4,10 +4,12 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     http_response_code(404);
     exit;
 }
+require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
+
 
 if($data=="getTestAccount"){
     if($userInfo['freetrial'] != null && $from_id != $admin && $userInfo['isAdmin'] != true){
-        alert("شما اکانت تست را قبلا استفاده کرده اید.");
+        alert(\achbotMessage('purchase.trial_catalogue.get_test_account.alert.0143c681c4'));
         exit();
     }
     $stmt = $connection->prepare("SELECT p.* FROM `server_plans` p INNER JOIN `server_config` sc ON sc.`id`=p.`server_id` AND sc.`type` IN ('marzban','pasarguard') WHERE p.`price`=0 AND p.`active`=1 AND p.`inbound_id`=0");
@@ -35,7 +37,7 @@ if($data=="getTestAccount"){
 
         }
     	$keyboard[] = [['text' => $buttonValues['back_to_main'], 'callback_data' => "mainMenu"]];
-        editText($message_id,"لطفا یکی از کلید های زیر را انتخاب کنید.", json_encode(['inline_keyboard'=>$keyboard]), "HTML");
-    }else alert("این بخش موقتا غیر فعال است.");
+        editText($message_id,\achbotMessage('purchase.trial_catalogue.get_test_account.message.b059640ccc'), json_encode(['inline_keyboard'=>$keyboard]), "HTML");
+    }else alert(\achbotMessage('purchase.trial_catalogue.get_test_account.alert.d1ae7ac011'));
 }
 

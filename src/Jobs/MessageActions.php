@@ -4,6 +4,8 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     http_response_code(404);
     exit;
 }
+require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
+
 
 // BEGIN Processor: bc_jobs (pin / unpin / delete / edit)
 $bc_staleMinutes = 30;
@@ -71,7 +73,7 @@ if ($aff == 0) {
 if ($bc_offsetJ == 0) {
     bot('sendMessage', [
         'chat_id' => $admin,
-        'text'    => "▶️ فرآیند با ID:$bc_jobId و عمل $action برای ارسال با ID:$broadcastId شروع شد."
+        'text'    => \achbotMessage('jobs.message_actions.button.5d55dfe1f8', ['bc_jobId' => $bc_jobId, 'action' => $action, 'broadcastId' => $broadcastId])
     ]);
 }
 
@@ -140,7 +142,7 @@ if ($rows && $rows->num_rows > 0) {
 
             if (isCancelled($connection, "bc_jobs", $bc_jobId)) {
                 markCancelled($connection, "bc_jobs", $bc_jobId, $bc_offsetJ);
-                bot('sendMessage', ['chat_id'=>$admin,'text'=>"⛔️ فرآیند با ID:$bc_jobId لغو شد."]);
+                bot('sendMessage', ['chat_id'=>$admin,'text'=>\achbotMessage('jobs.message_actions.button.76bf7d1a9d', ['bc_jobId' => $bc_jobId])]);
                 $bc_finished = true;
                 return;
             }
@@ -233,7 +235,7 @@ if ($rows && $rows->num_rows > 0) {
     markFinished($connection, "bc_jobs", $bc_jobId, $bc_offsetJ);
     bot('sendMessage', [
         'chat_id'=>$admin,
-        'text'=>"✅ فرآیند با ID:$bc_jobId و عمل $action برای ارسال با ID:$broadcastId تمام شد."
+        'text'=>\achbotMessage('jobs.message_actions.button.8ece62920c', ['bc_jobId' => $bc_jobId, 'action' => $action, 'broadcastId' => $broadcastId])
     ]);
 }
 

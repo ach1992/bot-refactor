@@ -4,12 +4,14 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     http_response_code(404);
     exit;
 }
+require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
+
 
 if(($data=='categoriesSetting' || preg_match('/^nextCategoryPage(\d+)/',$data,$match)) and ($from_id == $admin || $userInfo['isAdmin'] == true)){
     if(isset($match[1])) $keys = getCategoriesKeys($match[1]);
     else $keys = getCategoriesKeys();
     
-    editText($message_id,"☑️ مدیریت دسته ها:", $keys);
+    editText($message_id,\achbotMessage('plans.categories.categories_setting.message.12ae9f8483'), $keys);
 }
 if($data=='addNewCategory' and (($from_id == $admin || $userInfo['isAdmin'] == true))){
     setUser($data);
@@ -25,7 +27,7 @@ if($data=='addNewCategory' and (($from_id == $admin || $userInfo['isAdmin'] == t
     $stmt->close();
 
 
-    $msg = '▪️ یه اسم برای دسته بندی وارد کن:';
+    $msg = \achbotMessage('plans.categories.add_new_category.msg.3eab115e65');
     sendMessage($msg,$cancelKey);
     exit;
 }
@@ -39,7 +41,7 @@ if(preg_match('/^addNewCategory/',$userInfo['step']) and $text!=$buttonValues['c
         $stmt->close();
 
 
-        $msg = 'یه دسته بندی جدید برات ثبت کردم 🙂☑️';
+        $msg = \achbotMessage('plans.categories.add_new_category.msg.5ba2f5c693');
         sendMessage($msg,$removeKeyboard);
         sendMessage($mainValues['reached_main_menu'],getCategoriesKeys());
     }
@@ -50,7 +52,7 @@ if(preg_match('/^wizwizcategorydelete(\d+)_(\d+)/',$data, $match) and ($from_id 
     $stmt->execute();
     $stmt->close();
 
-    alert("دسته بندی رو برات حذفش کردم ☹️☑️");
+    alert(\achbotMessage('plans.categories.add_new_category.alert.d13765614a'));
     
     $stmt = $connection->prepare("SELECT * FROM `server_categories` WHERE `active`=1 AND `parent`=0");
     $stmt->execute();
@@ -58,12 +60,12 @@ if(preg_match('/^wizwizcategorydelete(\d+)_(\d+)/',$data, $match) and ($from_id 
     $stmt->close();
 
     $keys = getCategoriesKeys($match[2]);
-    editText($message_id,"☑️ مدیریت دسته ها:", $keys);
+    editText($message_id,\achbotMessage('plans.categories.categories_setting.message.12ae9f8483'), $keys);
 }
 if(preg_match('/^wizwizcategoryedit/',$data) and ($from_id == $admin || $userInfo['isAdmin'] == true) && $text != $buttonValues['cancel']){
     setUser($data);
     delMessage();
-    sendMessage("〽️ یه اسم جدید برا دسته بندی انتخاب کن:",$cancelKey);exit;
+    sendMessage(\achbotMessage('plans.categories.add_new_category.message.15337e0db0'),$cancelKey);exit;
 }
 if(preg_match('/wizwizcategoryedit(\d+)_(\d+)/',$userInfo['step'], $match) && ($from_id == $admin || $userInfo['isAdmin'] == true) && $text != $buttonValues['cancel']){
     $stmt = $connection->prepare("UPDATE `server_categories` SET `title`=? WHERE `id`=?");
@@ -71,8 +73,8 @@ if(preg_match('/wizwizcategoryedit(\d+)_(\d+)/',$userInfo['step'], $match) && ($
     $stmt->execute();
     $stmt->close();
 
-    sendMessage("☑️ با موفقیت برات تغییر دادم.");
+    sendMessage(\achbotMessage('plans.administration.edit_custom_plan.message.43afd491f6'));
     setUser();
     
-    sendMessage("☑️ مدیریت دسته ها:", getCategoriesKeys($match[2]));
+    sendMessage(\achbotMessage('plans.categories.categories_setting.message.12ae9f8483'), getCategoriesKeys($match[2]));
 }
