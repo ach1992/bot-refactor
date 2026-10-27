@@ -1058,3 +1058,21 @@ remain reviewable without rewriting prices, historic rows or pinned financial
 evidence, and without an automatic debit, provider write, refund or backfill.
 This does not add immutable original-unit proof to legacy ID-based add-on
 invoices; a precision/accounting or compatibility redesign remains separate.
+
+
+### Immutable add-on quantity and RC11 pending-invoice boundary
+
+New volume add-on drafts pin their original whole GiB in `pays.volume`
+with `day=0`; new day add-on drafts pin whole days in `pays.day` with
+`volume=0`. These existing INT fields require no DDL. All manual, wallet,
+hosted and scheduled effects use the original pinned quantity and invoice
+price, not the mutable catalogue row. Later SKU quantity/price changes or
+deletion cannot replace the entitlement of an issued quote.
+
+Legacy RC11 and earlier add-on rows with zero, NULL, missing or inconsistent
+quantity do not prove an original entitlement. They fail closed before a new
+claim, wallet debit or provider effect; already paid/claimed rows remain under
+review. There is no automatic backfill, invoice rewrite, refund or replay.
+Operators must reconcile original evidence separately rather than reviving a
+legacy invoice by changing its SKU. New supported quotes can be issued only
+through the guarded current quote path.

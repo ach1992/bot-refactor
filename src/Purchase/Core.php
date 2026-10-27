@@ -495,7 +495,7 @@ if (!function_exists('achbotSupportsPaymentSubject')) {
                 $connection, $oid, $pid > 0 ? $pid : null, $uid > 0 ? $uid : null, $lock
             )) return false;
             if (!empty($pay['order_id']) && (int)$pay['order_id'] !== $oid) return false;
-            return achbotAddonWholeUnits($connection,$type,$lock)!==null;
+            return achbotPinnedAddonUnits($pay)!==null;
         }
         return false;
     }
@@ -523,6 +523,8 @@ if (!function_exists('achbotApplyServiceEdit')) {
             return (object)['success'=>false,'uncertain'=>false,
                 'msg'=>'service_edit_invalid_request'];
 
+        if ((int)($change['pay_id']??0)>0 && !achbotServiceEditMatchesPay($db,(int)$change['pay_id'],$change))
+            return (object)['success'=>false,'uncertain'=>true,'msg'=>'service_quote_units_unverified'];
         $stmt=$db->prepare('SELECT type FROM server_config WHERE id=?');
         if (!$stmt) return (object)['success'=>false,'uncertain'=>true,
                                    'msg'=>'service_adapter_lookup_unavailable'];

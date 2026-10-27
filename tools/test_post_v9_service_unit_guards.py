@@ -16,7 +16,7 @@ $connection=new mysqli('localhost','root','',$argv[3],0,$argv[2]);$connection->s
 $from_id=(int)($spec['actor']??1001);$admin=9001;$chat_id=$from_id;$message_id=702;$callbackId='fixture';
 $data=$spec['data']??'';$text=$spec['text']??'';$time=time();$first_name='Fixture';$username='fixture';$agentBought=false;
 $botState=['walletState'=>'on','nowPaymentOther'=>'off','zarinpal'=>'off','nextpay'=>'off','agencyPlanDiscount'=>'on'];
-$buttonValues=['cancel'=>'Cancel','back_to_main'=>'Home'];$mainValues=['reached_main_menu'=>'fixture-home'];$paymentKeys=[];$botUrl='https://bot.example.invalid/';
+$buttonValues=['cancel'=>'Cancel','back_to_main'=>'Home','pay_with_wallet'=>'Wallet'];$mainValues=['reached_main_menu'=>'fixture-home'];$paymentKeys=[];$botUrl='https://bot.example.invalid/';
 $cancelKey='{}';$removeKeyboard='{}';$q=$connection->prepare('SELECT * FROM users WHERE userid=?');$q->bind_param('i',$from_id);$q->execute();$userInfo=$q->get_result()->fetch_assoc();$q->close();
 $GLOBALS['events']=[];$GLOBALS['writes']=0;
 register_shutdown_function(static function(){echo json_encode(['events'=>$GLOBALS['events'],'provider_writes'=>$GLOBALS['writes']],JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE);});
@@ -34,6 +34,9 @@ require_once $root.'/src/Purchase/Core.php';require_once $root.'/src/Finance/Rec
 if (($spec['route']??'extensions')==='claim') {
  $s=$connection->prepare('SELECT * FROM pays WHERE hash_id=?');$s->bind_param('s',$spec['hash']);$s->execute();$pay=$s->get_result()->fetch_assoc();$s->close();
  $GLOBALS['events'][]=['event'=>'CLAIM','value'=>achbotAutoBankClaim($connection,$pay)];
+} elseif ($spec['route']==='effectmatch') {
+ $s=$connection->prepare('SELECT id FROM pays WHERE hash_id=?');$s->bind_param('s',$spec['hash']);$s->execute();$id=(int)$s->get_result()->fetch_assoc()['id'];$s->close();
+ $GLOBALS['events'][]=['event'=>'MATCH','value'=>achbotServiceEditMatchesPay($connection,$id,['plus_volume'=>$spec['units']])];
 } elseif ($spec['route']==='subject') {
  $s=$connection->prepare('SELECT * FROM pays WHERE hash_id=?');$s->bind_param('s',$spec['hash']);$s->execute();$pay=$s->get_result()->fetch_assoc();$s->close();
  $GLOBALS['events'][]=['event'=>'SUBJECT','value'=>achbotSupportsPaymentSubject($connection,$pay)];
@@ -51,6 +54,7 @@ def main():
   future=int(time.time())+86400*30
   sql("INSERT INTO orders_list(id,userid,token,transid,fileid,server_id,inbound_id,remark,expire_date,link,amount,status,date) VALUES(41,1001,'','','7',2,0,'units-order',"+str(future)+",'[]',100,1,'fixture')")
   sql("INSERT INTO increase_plan(id,volume,price) VALUES(51,2,100),(52,0.5,100),(53,1.5,100),(54,0,100),(55,-1,100),(56,1000000000000,100)")
+  sql("INSERT INTO increase_day(id,volume,price) VALUES(61,3,200)")
   driver=w/'unit-routes.php';driver.write_text(PHP)
   def call(**spec):
    r=subprocess.run(['php','-d','display_errors=0','-d','log_errors=0',str(driver),str(ROOT),str(w/'mysql.sock'),DB,json.dumps(spec)],capture_output=True,text=True,timeout=20)
@@ -68,28 +72,41 @@ def main():
    yes(snapshot()==before and r['provider_writes']==0,'unsupported_selection_'+str(plan)+'_creates_no_quote_claim_or_debit')
   r=call(route='extensions',data='increaseVolumePlan41_51')
   yes(sql("SELECT COUNT(*) FROM pays WHERE type='INCREASE_VOLUME_41_51'")=='1' and r['provider_writes']==0,'whole_addon_quote_remains_available')
+  quoted=sql("SELECT hash_id FROM pays WHERE type='INCREASE_VOLUME_41_51' ORDER BY id DESC LIMIT 1")
+  yes(sql("SELECT CONCAT(volume,':',day,':',price) FROM pays WHERE hash_id='"+quoted+"'")=='2:0:100','new_volume_draft_pins_original_whole_quantity_and_price')
+  sql("UPDATE increase_plan SET volume=0.5,price=999 WHERE id=51")
+  yes(call(route='subject',hash=quoted)['events'][-1]['value'] is True,'issued_volume_quote_survives_fractional_SKU_and_price_drift')
+  yes(call(route='effectmatch',hash=quoted,units=2)['events'][-1]['value'] is True and call(route='effectmatch',hash=quoted,units=10)['events'][-1]['value'] is False,'final_effect_must_match_pinned_quantity_not_new_SKU')
+  sql("DELETE FROM increase_plan WHERE id=51")
+  yes(call(route='subject',hash=quoted)['events'][-1]['value'] is True,'issued_volume_quote_survives_SKU_deletion')
+  call(route='extensions',data='selectPlanDayIncrease41_61')
+  dayquote=sql("SELECT hash_id FROM pays WHERE type='INCREASE_DAY_41_61' ORDER BY id DESC LIMIT 1")
+  yes(sql("SELECT CONCAT(volume,':',day,':',price) FROM pays WHERE hash_id='"+dayquote+"'")=='0:3:200','new_day_draft_pins_original_whole_quantity_and_price')
+  sql("UPDATE increase_day SET volume=9,price=999 WHERE id=61")
+  yes(call(route='subject',hash=dayquote)['events'][-1]['value'] is True,'issued_day_quote_survives_SKU_quantity_price_drift')
+
   for kind,state,actor,callback in [('wallet','pending',1001,'payIncreaseWithWallet'),('manual','have_sent',9001,'approveIncreaseVolume')]:
    key='units_'+kind
-   sql("INSERT INTO pays(hash_id,user_id,type,plan_id,server_id,order_id,price,request_date,state) VALUES('"+key+"',1001,'INCREASE_VOLUME_41_52',7,2,41,100,UNIX_TIMESTAMP(),'"+state+"')")
+   sql("INSERT INTO pays(hash_id,user_id,type,plan_id,server_id,order_id,price,request_date,state,volume,day) VALUES('"+key+"',1001,'INCREASE_VOLUME_41_52',7,2,41,100,UNIX_TIMESTAMP(),'"+state+"',0,0)")
    before=snapshot();r=call(route='extensions',data=callback+key,actor=actor)
    yes(snapshot()==before and r['provider_writes']==0,'fractional_'+kind+'_invoice_no_claim_debit_effect_or_refund')
   for state in ['pending','have_sent','processing','paid']:
    key='units_subject_'+state
-   sql("INSERT INTO pays(hash_id,user_id,type,plan_id,server_id,order_id,price,request_date,state) VALUES('"+key+"',1001,'INCREASE_VOLUME_41_53',7,2,41,100,UNIX_TIMESTAMP(),'"+state+"')")
+   sql("INSERT INTO pays(hash_id,user_id,type,plan_id,server_id,order_id,price,request_date,state,volume,day) VALUES('"+key+"',1001,'INCREASE_VOLUME_41_53',7,2,41,100,UNIX_TIMESTAMP(),'"+state+"',0,0)")
    before=snapshot();r=call(route='subject',hash=key)
    yes(r['events'][-1]['value'] is False and snapshot()==before,'fractional_'+state+'_subject_refused_without_mutation')
   key='units_auto_fraction'
-  sql("INSERT INTO pays(hash_id,user_id,type,plan_id,server_id,order_id,price,request_date,state) VALUES('"+key+"',1001,'INCREASE_VOLUME_41_52',7,2,41,100,UNIX_TIMESTAMP(),'have_sent')")
+  sql("INSERT INTO pays(hash_id,user_id,type,plan_id,server_id,order_id,price,request_date,state,volume,day) VALUES('"+key+"',1001,'INCREASE_VOLUME_41_52',7,2,41,100,UNIX_TIMESTAMP(),'have_sent',0,0)")
   before=snapshot();r=call(route='claim',hash=key)
   yes(r['events'][-1]['value'] is False and snapshot()==before,'scheduled_fractional_quote_cannot_claim')
   key='units_auto_whole'
-  sql("INSERT INTO pays(hash_id,user_id,type,plan_id,server_id,order_id,price,request_date,state) VALUES('"+key+"',1001,'INCREASE_VOLUME_41_51',7,2,41,100,UNIX_TIMESTAMP(),'have_sent')")
+  sql("INSERT INTO pays(hash_id,user_id,type,plan_id,server_id,order_id,price,request_date,state,volume,day) VALUES('"+key+"',1001,'INCREASE_VOLUME_41_51',7,2,41,100,UNIX_TIMESTAMP(),'have_sent',2,0)")
   r=call(route='claim',hash=key)
   yes(r['events'][-1]['value'] is True and sql("SELECT state FROM pays WHERE hash_id='"+key+"'")=='processing','scheduled_whole_quote_claim_still_valid')
   # A later operator/template change is not permission to truncate a quote.
-  sql("UPDATE increase_plan SET volume=0.5 WHERE id=51")
+  sql("INSERT INTO increase_plan(id,volume,price) VALUES(51,0.5,999)")
   before=snapshot();r=call(route='subject',hash=key)
-  yes(r['events'][-1]['value'] is False and snapshot()==before,'postclaim_fractional_plan_drift_stays_under_review')
+  yes(r['events'][-1]['value'] is True and snapshot()==before,'claimed_pinned_quote_ignores_later_fractional_SKU')
   sql("UPDATE users SET step='addNewVolumePlan' WHERE userid=9001")
   before=snapshot();r=call(route='admin',actor=9001,text='0.5-100',data='')
   yes(snapshot()==before and any('اعشاری' in str(x) for x in r['events']),'admin_fractional_create_refused_with_setup_guidance')

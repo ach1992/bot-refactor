@@ -607,7 +607,7 @@ function achbotAutoBankClaim(mysqli $connection, array $seen): bool {
             return false;
         }
         if (preg_match('/^INCREASE_(?:DAY|VOLUME)_/',(string)$pay['type']) &&
-            achbotAddonWholeUnits($connection,(string)$pay['type'],true)===null) {
+            achbotPinnedAddonUnits($pay)===null) {
             $connection->rollback();return false;
         }
         // Do not classify a failed ledger lookup as a legacy card receipt.
@@ -693,7 +693,7 @@ function achbotAutoBankEditPreflight(mysqli $db, array $pay, string $kind,
         return false;
     try {
         $stmt=$db->prepare("SELECT p.user_id,p.server_id,p.plan_id,p.price,
-            p.order_id,p.state,p.type,p.description,
+            p.order_id,p.state,p.type,p.description,p.volume,p.day,
             sp.server_id AS plan_server
             FROM pays p LEFT JOIN server_plans sp ON sp.id=p.plan_id
             WHERE p.id=?");
@@ -737,16 +737,7 @@ function achbotAutoBankEditPreflight(mysqli $db, array $pay, string $kind,
                 // nonzero ID must never contradict the encoded subject.
                 ((int)($paid['order_id']??0)!==0 &&
                  (int)$paid['order_id']!==$orderId)) return false;
-            // The existing quote is the only permitted source of units.
-            $table=$kind==='day'?'increase_day':'increase_plan';
-            $quoteId=(int)$m[2];
-            $quote=$db->prepare("SELECT volume FROM ".$table." WHERE id=?");
-            if (!$quote) return false;
-            $quote->bind_param('i',$quoteId);
-            $exists=$quote->execute();
-            $value=$exists?$quote->get_result()->fetch_assoc():null;
-            $quote->close();
-            if (!$value || achbotWholeServiceUnits($value['volume'],$kind==='day'?36500:achbotServiceVolumeMax())!==$units) return false;
+            if (achbotPinnedAddonUnits($paid)!==$units || achbotPinnedAddonUnits($pay)!==$units) return false;
         }
         if ($orderId<=0) return false;
         $orderStmt=$db->prepare("SELECT userid,fileid,server_id,inbound_id,
@@ -898,7 +889,7 @@ function achbotAutoBankFinishEdit(mysqli $db, array $pay,
     try {
         if ($db->begin_transaction()!==true) return false;
         $stmt=$db->prepare("SELECT p.id,p.type,p.state,p.user_id,p.order_id,
-                p.price,p.server_id,p.plan_id,p.description,
+                p.price,p.server_id,p.plan_id,p.description,p.volume,p.day,
                 sp.server_id AS current_plan_server
             FROM pays p LEFT JOIN server_plans sp ON sp.id=p.plan_id
             WHERE p.id=? FOR UPDATE");
@@ -935,15 +926,7 @@ function achbotAutoBankFinishEdit(mysqli $db, array $pay,
                  (int)$locked['order_id']!==$orderId)) {
                 $db->rollback();return false;
             }
-            $quote=$db->prepare("SELECT volume FROM ".
-                ($kind==='day'?'increase_day':'increase_plan')." WHERE id=?");
-            if (!$quote) throw new RuntimeException('auto_service_quote_prepare_failed');
-            $quoteId=(int)$m[2];
-            $quote->bind_param('i',$quoteId);
-            $ok=$quote->execute();
-            $row=$ok?$quote->get_result()->fetch_assoc():null;
-            $quote->close();
-            if (!$row || achbotWholeServiceUnits($row['volume'],$kind==='day'?36500:achbotServiceVolumeMax())!==$units) {
+            if (achbotPinnedAddonUnits($locked)!==$units || achbotPinnedAddonUnits($pay)!==$units) {
                 $db->rollback();return false;
             }
         }

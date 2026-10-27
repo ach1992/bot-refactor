@@ -18,7 +18,7 @@ if(preg_match('/increaseADay(.*)/', $data, $match)){
     $stmt->execute();
     $orderInfo = $stmt->get_result()->fetch_assoc();
     $stmt->close();
-    if (!$orderInfo || !achbotSupportsOrder($connection, (int)$orderInfo['id'])) {
+    if (!$orderInfo || (int)$orderInfo['userid']!==(int)$from_id || !achbotSupportsOrder($connection, (int)$orderInfo['id'])) {
         alert("⛔️ افزایش حجم یا مدت برای این اشتراک در حال حاضر امکان‌پذیر نیست.", true);
         return;
     }
@@ -31,6 +31,7 @@ if(preg_match('/increaseADay(.*)/', $data, $match)){
     }
     $keyboard = [];
     while ($cat = $res->fetch_assoc()){
+        if (achbotWholeServiceUnits($cat['volume'],36500)===null) continue;
         $id = $cat['id'];
         $title = $cat['volume'];
         $price = $cat['price'];
@@ -58,6 +59,8 @@ if(preg_match('/selectPlanDayIncrease(?<orderId>.+)_(?<dayId>.+)/',$data,$match)
     $stmt->execute();
     $res = $stmt->get_result()->fetch_assoc();
     $stmt->close();
+    $quotedUnits=$res?achbotWholeServiceUnits($res['volume'],36500):null;
+    if ($quotedUnits===null) {alert('پلن زمانی در دسترس نیست؛ دوباره از منوی اشتراک انتخاب کنید.',true);return;}
     $planprice = $res['price'];
 
     $stmt = $connection->prepare("SELECT * FROM `orders_list` WHERE `id` = ?");
@@ -65,7 +68,7 @@ if(preg_match('/selectPlanDayIncrease(?<orderId>.+)_(?<dayId>.+)/',$data,$match)
     $stmt->execute();
     $orderInfo = $stmt->get_result()->fetch_assoc();
     $stmt->close();
-    if (!$orderInfo || !achbotSupportsOrder($connection, (int)$orderInfo['id'])) {
+    if (!$orderInfo || (int)$orderInfo['userid']!==(int)$from_id || !achbotSupportsOrder($connection, (int)$orderInfo['id'])) {
         alert("⛔️ افزایش حجم یا مدت برای این اشتراک در حال حاضر امکان‌پذیر نیست.", true);
         return;
     }
@@ -90,9 +93,9 @@ if(preg_match('/selectPlanDayIncrease(?<orderId>.+)_(?<dayId>.+)/',$data,$match)
 	$order_id = $match['orderId'];
 
 	$stmt = $connection->prepare("INSERT INTO `pays` (`hash_id`, `user_id`, `type`, `plan_id`, `server_id`, `order_id`, `volume`, `day`, `price`, `request_date`, `state`)
-								VALUES (?, ?, ?, ?, ?, ?, '0', '0', ?, ?, 'pending')");
+								VALUES (?, ?, ?, ?, ?, ?, '0', ?, ?, ?, 'pending')");
     $type = "INCREASE_DAY_$data";
-	$stmt->bind_param("sisiiiii", $hash_id, $from_id, $type, $plan_id, $server_id, $order_id, $planprice, $time);
+	$stmt->bind_param("sisiiiiii", $hash_id, $from_id, $type, $plan_id, $server_id, $order_id, $quotedUnits, $planprice, $time);
     $newDraftId=achbotPayUxInsertDraft($connection,(int)$from_id,$stmt);
     $stmt->close();
     if ($newDraftId<=0) {
@@ -252,7 +255,7 @@ if (preg_match('/wait(?:IncreaseDay|IncreaseDayGift|IncreaseDayUsdt)Receipt(.*)/
     $stmt->close();
 
     $price  = $payInfoRes['price'];
-    $volume = $res['volume'];
+    $volume = achbotPinnedAddonUnits($payInfoRes);
 
 
 
@@ -334,18 +337,10 @@ if (preg_match('/approveIncreaseDay(.*)/', $data, $match) && ($from_id == $admin
         $remark     = $orderInfo['remark'];
         $uuid       = $orderInfo['uuid'] ?? "0";
 
-        $stmt = $connection->prepare("SELECT * FROM `increase_day` WHERE `id` = ?");
-        $stmt->bind_param("i", $planid);
-        $stmt->execute();
-        $res = $stmt->get_result()->fetch_assoc();
-        $stmt->close();
-
-        if (!$res) {
-            throw new Exception("increase_day_plan_not_found");
-        }
-
-        $price  = intval($res['price']);
-        $volume = achbotWholeServiceUnits($res['volume'],36500);
+        $quotedUnits=achbotPinnedAddonUnits($payParam);
+        if ($quotedUnits===null) throw new RuntimeException('service_quote_units_unverified');
+        $price  = intval($payParam['price']);
+        $volume = $quotedUnits;
         if ($volume===null) throw new RuntimeException('unsupported_service_units');
 
         $stmt = $connection->prepare("SELECT * FROM server_config WHERE id=?");
@@ -558,18 +553,10 @@ if(is_string($data) && strlen($data) <= 64 && preg_match('/\ApayIncreaseDayWithW
         }
         $serverType = $serverConfig['type'];
 
-        $stmt = $connection->prepare("SELECT * FROM `increase_day` WHERE `id` = ?");
-        $stmt->bind_param("i", $planid);
-        $stmt->execute();
-        $res = $stmt->get_result()->fetch_assoc();
-        $stmt->close();
-
-        if(!$res){
-            throw new Exception("increase_day_plan_not_found");
-        }
-
+        $quotedUnits=achbotPinnedAddonUnits($payParam);
+        if ($quotedUnits===null) throw new RuntimeException('service_quote_units_unverified');
         $price  = intval($payParam['price']);
-        $volume = achbotWholeServiceUnits($res['volume'],36500);
+        $volume = $quotedUnits;
         if ($volume===null) throw new RuntimeException('unsupported_service_units');
 
         $stmt = $connection->prepare("SELECT id,wallet FROM users
@@ -914,7 +901,7 @@ if(preg_match('/^increaseVolumePlan(?<orderId>[1-9][0-9]{0,9})_(?<volumeId>[1-9]
         return;
     }
     $planprice = $res['price'];
-    $plangb = $res['volume'];
+    $plangb = achbotWholeServiceUnits($res['volume'],achbotServiceVolumeMax());
 
     $stmt = $connection->prepare("SELECT * FROM `orders_list` WHERE `id` = ?");
     $stmt->bind_param("i", $match['orderId']);
@@ -950,9 +937,9 @@ if(preg_match('/^increaseVolumePlan(?<orderId>[1-9][0-9]{0,9})_(?<volumeId>[1-9]
 	$order_id = $match['orderId'];
 	
 	$stmt = $connection->prepare("INSERT INTO `pays` (`hash_id`, `user_id`, `type`, `plan_id`, `server_id`, `order_id`, `volume`, `day`, `price`, `request_date`, `state`)
-								VALUES (?, ?, ?, ?, ?, ?, '0', '0', ?, ?, 'pending')");
+								VALUES (?, ?, ?, ?, ?, ?, ?, '0', ?, ?, 'pending')");
 	$type = "INCREASE_VOLUME_$data";
-	$stmt->bind_param("sisiiiii", $hash_id, $from_id, $type, $plan_id, $server_id, $order_id, $planprice, $time);
+	$stmt->bind_param("sisiiiiii", $hash_id, $from_id, $type, $plan_id, $server_id, $order_id, $plangb, $planprice, $time);
 	$newDraftId=achbotPayUxInsertDraft($connection,(int)$from_id,$stmt);
 	$stmt->close();
 	if ($newDraftId<=0) {
@@ -1116,7 +1103,7 @@ if (preg_match('/wait(?:IncreaseVolume|IncreaseVolumeGift|IncreaseVolumeUsdt)Rec
     $stmt->close();
 
     $price  = $payParam['price'];
-    $volume = $res['volume'];
+    $volume = achbotPinnedAddonUnits($payParam);
 
 
 
@@ -1198,18 +1185,10 @@ if (preg_match('/approveIncreaseVolume(.*)/', $data, $match) && ($from_id == $ad
         $remark     = $orderInfo['remark'];
         $uuid       = $orderInfo['uuid'] ?? "0";
 
-        $stmt = $connection->prepare("SELECT * FROM `increase_plan` WHERE `id` = ?");
-        $stmt->bind_param("i", $planid);
-        $stmt->execute();
-        $res = $stmt->get_result()->fetch_assoc();
-        $stmt->close();
-
-        if (!$res) {
-            throw new Exception("increase_plan_plan_not_found");
-        }
-
-        $price  = intval($res['price']);
-        $volume = achbotWholeServiceUnits($res['volume'],achbotServiceVolumeMax());
+        $quotedUnits=achbotPinnedAddonUnits($payParam);
+        if ($quotedUnits===null) throw new RuntimeException('service_quote_units_unverified');
+        $price  = intval($payParam['price']);
+        $volume = $quotedUnits;
         if ($volume===null) throw new RuntimeException('unsupported_service_units');
 
         $stmt = $connection->prepare("SELECT * FROM server_config WHERE id=?");
@@ -1422,18 +1401,10 @@ if(is_string($data) && strlen($data) <= 64 && preg_match('/\ApayIncreaseWithWall
         }
         $serverType = $serverConfig['type'];
 
-        $stmt = $connection->prepare("SELECT * FROM `increase_plan` WHERE `id` = ?");
-        $stmt->bind_param("i", $planid);
-        $stmt->execute();
-        $res = $stmt->get_result()->fetch_assoc();
-        $stmt->close();
-
-        if(!$res){
-            throw new Exception("increase_plan_plan_not_found");
-        }
-
+        $quotedUnits=achbotPinnedAddonUnits($payParam);
+        if ($quotedUnits===null) throw new RuntimeException('service_quote_units_unverified');
         $price  = intval($payParam['price']);
-        $volume = achbotWholeServiceUnits($res['volume'],achbotServiceVolumeMax());
+        $volume = $quotedUnits;
         if ($volume===null) throw new RuntimeException('unsupported_service_units');
 
         $stmt = $connection->prepare("SELECT id,wallet FROM users

@@ -346,6 +346,7 @@ def main():
   yes(call('edit',pay=7,change={'plus_volume':1})['out']['success'] is True and server.user['group_ids']==[5],'manual_group_change_after_quote_preserved_by_extension')
 
   sql("INSERT INTO pays(id,hash_id,user_id,plan_id,server_id,order_id,type,state,price,request_date) VALUES(4,'pgparallelA',1001,7,2,91,'INCREASE_VOLUME_91_1','processing',100,1700000000),(5,'pgparallelB',1001,7,2,91,'INCREASE_VOLUME_91_1','processing',100,1700000000)")
+  sql("UPDATE pays SET volume=1,day=0 WHERE id IN (4,5)")
   call('pin',pay=4);call('pin',pay=5)
   server.capture_stale_once=True;server.stale_captured=threading.Event();server.release_stale=threading.Event()
   args=['php','-d','display_errors=0','-d','log_errors=0',str(script),str(ROOT),str(work/'mysql.sock'),db,json.dumps(dict(op='edit',pay=5,change={'plus_volume':1}))]
@@ -364,6 +365,7 @@ def main():
   yes(call('edit',pay=4,change={'plus_volume':1})['out']['success'] is True and server.user['data_limit']==prior_quota+1073741824,'later_edit_observes_completed_prior_quota')
 
   sql("INSERT INTO pays(id,hash_id,user_id,plan_id,server_id,order_id,type,state,price,request_date) VALUES(3,'pgvolume',1001,7,2,91,'INCREASE_VOLUME_91_1','processing',100,1700000000)")
+  sql("UPDATE pays SET volume=1,day=0 WHERE id=3")
   call('pin',pay=3);server.mode='write_lost'
   writes=server.write_count
   r=call('edit',pay=3,change={'plus_volume':1});yes(r['out']['success'] is False and server.write_count==writes+1,'lost_write_is_uncertain')

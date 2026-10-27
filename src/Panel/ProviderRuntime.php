@@ -368,13 +368,23 @@ function achbotWholeServiceUnits($raw,int $max,bool $allowZero=false): ?int {
     return (int)$number;
 }
 function achbotServiceVolumeMax(): int {return min(2147483647,intdiv(PHP_INT_MAX,1073741824));}
-function achbotAddonWholeUnits(mysqli $db,string $type,bool $lock=false): ?int {
-    if (preg_match('/^INCREASE_(DAY|VOLUME)_([1-9][0-9]*)_([1-9][0-9]*)$/D',$type,$m)!==1) return null;
-    $table=$m[1]==='DAY'?'increase_day':'increase_plan';$id=(int)$m[3];
-    $s=$db->prepare("SELECT volume FROM $table WHERE id=?".($lock?' FOR UPDATE':''));
-    if (!$s) return null;
-    $s->bind_param('i',$id);$ok=$s->execute();$row=$ok?$s->get_result()->fetch_assoc():null;$s->close();
-    return $row?achbotWholeServiceUnits($row['volume'],$m[1]==='DAY'?36500:achbotServiceVolumeMax()):null;
+function achbotPinnedAddonUnits(array $pay): ?int {
+    if (preg_match('/^INCREASE_(DAY|VOLUME)_([1-9][0-9]*)_([1-9][0-9]*)$/D',(string)($pay['type']??''),$m)!==1) return null;
+    $field=$m[1]==='DAY'?'day':'volume';$other=$field==='day'?'volume':'day';
+    if (achbotWholeServiceUnits($pay[$other]??null,2147483647,true)!==0) return null;
+    return achbotWholeServiceUnits($pay[$field]??null,$field==='day'?36500:achbotServiceVolumeMax());
+}
+function achbotServiceEditMatchesPay(mysqli $db,int $payId,array $change): bool {
+    $s=$db->prepare('SELECT type,volume,day FROM pays WHERE id=?');
+    if (!$s) return false;
+    $s->bind_param('i',$payId);$ok=$s->execute();$pay=$ok?$s->get_result()->fetch_assoc():null;$s->close();
+    if (!$pay) return false;
+    if (preg_match('/^INCREASE_(DAY|VOLUME)_/',(string)$pay['type'],$m)!==1) return true;
+    $units=achbotPinnedAddonUnits($pay);
+    $field=$m[1]==='DAY'?'plus_day':'plus_volume';
+    $seen=array_intersect(array_keys($change),['days','plus_day','volume','plus_volume']);
+    return $units!==null && count($seen)===1 &&
+        achbotWholeServiceUnits($change[$field]??null,$field==='plus_day'?36500:achbotServiceVolumeMax())===$units;
 }
 /** Pure validation runs before an account claim or provider GET. */
 function achbotPgEditInputUnits(array $change): array {

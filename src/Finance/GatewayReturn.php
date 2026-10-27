@@ -1626,7 +1626,8 @@ function achbotPerformPaymentEffect($payRowId, $gateType, &$effectStage = null) 
         $res = $stmt->get_result()->fetch_assoc();
         $stmt->close();
 
-        $plusDays = (int)$res['volume'];
+        $plusDays = achbotPinnedAddonUnits($payParam);
+        if ($plusDays===null) throw new RuntimeException('service_quote_units_unverified');
 
         [$srvInfo, $srvConfig] = getServerInfoAndConfig($connection, $server_id);
         $serverType = $srvConfig['type'] ?? '';
@@ -1741,7 +1742,7 @@ function achbotPerformPaymentEffect($payRowId, $gateType, &$effectStage = null) 
         $res = $stmt->get_result()->fetch_assoc();
         $stmt->close();
 
-        $plusVolume = achbotWholeServiceUnits($res['volume'],achbotServiceVolumeMax());
+        $plusVolume = achbotPinnedAddonUnits($payParam);
         if ($plusVolume===null) throw new RuntimeException('unsupported_service_units');
 
         [$srvInfo, $srvConfig] = getServerInfoAndConfig($connection, $server_id);

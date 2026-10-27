@@ -206,7 +206,8 @@ if($botState['cartToCartAutoAcceptState']=="on"){
             $res = $stmt->get_result()->fetch_assoc();
             $stmt->close();
             $price = $payInfo['price'];
-            $volume = $res['volume'];
+            $volume = achbotPinnedAddonUnits($payInfo);
+            if ($volume===null) throw new RuntimeException('service_quote_units_unverified');
         
             $stmt = $connection->prepare("SELECT * FROM server_config WHERE id=?");
             $stmt->bind_param("i", $server_id);
@@ -264,7 +265,7 @@ if($botState['cartToCartAutoAcceptState']=="on"){
             $res = $stmt->get_result()->fetch_assoc();
             $stmt->close();
             $price = $payInfo['price'];
-            $volume = achbotWholeServiceUnits($res['volume'],achbotServiceVolumeMax());
+            $volume = achbotPinnedAddonUnits($payInfo);
             if ($volume===null) throw new RuntimeException('unsupported_service_units');
             
                 $stmt = $connection->prepare("SELECT * FROM server_config WHERE id=?");
