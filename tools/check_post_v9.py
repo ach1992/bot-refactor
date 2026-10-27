@@ -555,10 +555,16 @@ def main():
                         "--run-disposable","--report",str(provider_path)],
                        cwd=ROOT,check=True,timeout=240,capture_output=True)
         provider_integration=json.loads(provider_path.read_text())
-        if not (provider_integration.get("complete") is True and provider_integration.get("cases",0)>=179
+        if not (provider_integration.get("complete") is True and provider_integration.get("cases",0)>=219
                 and provider_integration.get("actual_php_curl") is True
                 and provider_integration.get("owned_socket_mariadb") is True
-                and provider_integration.get("real_provider_tested") is False):
+                and provider_integration.get("real_provider_tested") is False
+                and provider_integration.get("lifecycle_cases")==179
+                and provider_integration.get("admin_read_authorization_cases")==40
+                and provider_integration.get("forbidden_order_queries")==0
+                and provider_integration.get("forbidden_provider_requests")==0
+                and provider_integration.get("baseline_red") is True
+                and provider_integration.get("baseline_red_source")=="fb138eacdc5817922cc1e1c9c200323d24c79838"):
             raise RuntimeError("Native provider lifecycle and durable intent proof incomplete")
         currency_path=Path(tmp)/"currency-settings.json"
         subprocess.run(["python3",str(ROOT/"tools/test_next_currency_settings.py"),
@@ -1600,7 +1606,11 @@ def main():
             "exact_local_order_fk_join_and_no_second_finalize",
             "historical_effect_retained_after_local_subscription_deletion",
         }
-        if not (effects.get("complete") and effects.get("cases")>=22
+        required_effects.update({
+            "paid_link_outside_caller_transaction_refused_without_write",
+            "nonpaid_link_outside_caller_transaction_refused_without_write",
+        })
+        if not (effects.get("complete") and effects.get("cases")>=61
                 and required_effects.issubset(effects.get("scenarios",[]))
                 and effects.get("source_real_php") is True
                 and effects.get("owned_mariadb_only") is True
@@ -1609,6 +1619,33 @@ def main():
                 and effects.get("external_account_count_not_used") is True
                 and effects.get("installed_operator_tested") is False):
             raise RuntimeError("Per-account service operation ledger contract incomplete")
+        locking_path=Path(tmp)/"create-verification-locking.json"
+        subprocess.run(["python3",str(ROOT/"tools/test_post_v9_create_verification_locking.py"),
+                        "--run-disposable","--report",str(locking_path)],
+                       cwd=ROOT,check=True,timeout=180,capture_output=True)
+        verification_locking=json.loads(locking_path.read_text())
+        required_locking={
+            "prior_011c_lock_inversion_expected_RED",
+            "corrected_config_first_native_purchase_GREEN",
+            "nonpaid_prior_7dca_expected_RED", "nonpaid_canonical_target_locks_GREEN",
+            "linker_prior_7dca_expected_RED", "linker_canonical_target_locks_GREEN",
+            "active_caller_transaction_refused_without_implicit_commit_or_rollback",
+        }
+        required_locking.update(fault+"_held_no_refund_or_repeat_create" for fault in (
+            "password_drift","username_drift","endpoint_drift","group_drift",
+            "operation_drift","journal_endpoint_drift","verified_write_failure",
+            "commit_false","commit_ack_lost"))
+        locking_cases=verification_locking.get("cases_detail",[])
+        if not (verification_locking.get("complete") is True
+                and verification_locking.get("cases")==len(required_locking)
+                and {r.get("case") for r in locking_cases}==required_locking
+                and all(r.get("pass") is True for r in locking_cases)
+                and verification_locking.get("native_php_mysqli") is True
+                and verification_locking.get("owned_socket_only") is True
+                and verification_locking.get("isolation_changed") is False
+                and verification_locking.get("live_provider_requests")==0
+                and verification_locking.get("financial_http_retries")==0):
+            raise RuntimeError("Deterministic CREATE claim/link lock-order and unknown-commit proof incomplete")
         # Full PR #66 high-assurance R2: actual global PHP facades, original
         # Core/007 dispatcher and pinned cURL transport on two local panels.
         # This proves route+credential checks survive the real facade boundary.
@@ -2853,6 +2890,7 @@ def main():
                     "wallet_authorization_freshness":wallet_freshness,
                     "latest_review_f1_f4":reviewer_f1_f4,
                     "service_effects":effects,
+                    "create_verification_lock_order":verification_locking,
                     "strict_effect_transport_pin":pinned_effects,
                     "gift_source_enqueue_idempotency":gift_source,
                     "direct_admin_gift_verified":direct_gift,
