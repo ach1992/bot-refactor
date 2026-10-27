@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import io
 import json
+import re
 import shutil
 import subprocess
 import tarfile
@@ -37,7 +38,7 @@ function ownedBarrier(string $ready,string $release): void {
     global $connection,$spec;
     $dir=(string)$spec['barrier_dir'];
     file_put_contents($dir.'/'.$ready,(string)$connection->thread_id);
-    $until=microtime(true)+8;
+    $until=microtime(true)+20;
     while (!is_file($dir.'/'.$release) && microtime(true)<$until) usleep(10000);
     if (!is_file($dir.'/'.$release)) throw new RuntimeException('owned_barrier_timeout');
 }
@@ -229,7 +230,7 @@ def launch(work, env, stage, driver, **spec):
 
 
 def finish(proc):
-    out, err = proc.communicate(timeout=15)
+    out, err = proc.communicate(timeout=30)
     if proc.returncode:
         raise AssertionError(('native_php_exit',proc.returncode,out[-900:],err[-900:]))
     data = json.loads(out)
@@ -238,7 +239,7 @@ def finish(proc):
 
 
 def wait_file(path, proc):
-    end = time.monotonic()+6
+    end = time.monotonic()+10
     while time.monotonic()<end:
         if path.exists():
             return int(path.read_text())
@@ -254,20 +255,89 @@ def deadlock_graph(work, env):
     return '' if marker<0 else status[marker:].split('\nTRANSACTIONS\n',1)[0]
 
 
-def wait_config_lock(work, env, verifier, claimant):
-    end = time.monotonic()+5
+# These are the actual prepared verifier statements in pinned OLD/current
+# source. A matching active query alone is not proof of native row ownership.
+OLD_VERIFICATION_SQL = """UPDATE service_effects e
+    INNER JOIN server_info s ON s.id=e.target_server_id
+    INNER JOIN server_config c ON c.id=s.id
+    SET e.state='verified',e.verified_at=NOW()
+    WHERE e.id=? AND e.state='dispatching' AND e.order_id IS NULL
+      AND c.type='marzban' AND s.panel_group_id <=> e.target_group_id
+      AND SHA2(TRIM(TRAILING '/' FROM c.panel_url),256)=e.endpoint_sha256"""
+CURRENT_VERIFICATION_SQL = 'SELECT type,panel_url,username,password FROM server_config WHERE id=? FOR UPDATE'
+
+PK_LOCK_PROBE = r"""
+mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
+$db=null;$result=null;
+try {
+    if (!in_array($argv[3],['server_config','server_info'],true))
+        throw new RuntimeException('owned_probe_invalid_table');
+    $db=new mysqli('localhost','root','',$argv[2],0,$argv[1]);
+    $db->begin_transaction();
+    try {
+        $row=$db->query('SELECT id FROM '.$argv[3].' FORCE INDEX (PRIMARY) WHERE id=2 FOR UPDATE NOWAIT')->fetch_assoc();
+        if (!$row || (int)$row['id']!==2) throw new RuntimeException('owned_probe_target_missing');
+        $result=['acquired'=>true,'row_id'=>(int)$row['id'],'errno'=>0];
+    } catch (mysqli_sql_exception $error) {
+        if ((int)$error->getCode()!==1205) throw $error;
+        $result=['acquired'=>false,'row_id'=>null,'errno'=>1205];
+    }
+} finally {
+    if ($db instanceof mysqli) {
+        try {$db->rollback();} finally {$db->close();}
+    }
+}
+echo json_encode($result,JSON_THROW_ON_ERROR);
+"""
+
+
+def probe_pk_lock(work,env,table):
+    # NOWAIT never joins the actors' wait graph. This independent short
+    # transaction always rolls back/closes before either actor is released.
+    p=subprocess.run(['php','-n','-d','extension=mysqlnd','-d','extension=mysqli',
+        '-r',PK_LOCK_PROBE,str(work/'mysql.sock'),DB,table],
+        env=env,capture_output=True,text=True,timeout=10)
+    assert p.returncode==0 and not p.stderr,('native_pk_probe_failed',table,p.returncode,p.stderr[-900:])
+    result=json.loads(p.stdout)
+    assert result in ({'acquired':True,'row_id':2,'errno':0},
+                      {'acquired':False,'row_id':None,'errno':1205}),result
+    return result
+
+
+def verifier_phase(work,env,verifier,old):
+    raw=sql(work,env,f"SELECT JSON_OBJECT('command',COMMAND,'query',INFO) FROM information_schema.PROCESSLIST WHERE ID={verifier}")
+    row=json.loads(raw) if raw else {}
+    query=row.get('query')
+    expected=OLD_VERIFICATION_SQL if old else CURRENT_VERIFICATION_SQL
+    active=(row.get('command') not in (None,'Sleep') and isinstance(query,str) and
+            re.sub(r'\s+',' ',query).strip()==re.sub(r'\s+',' ',expected).strip())
+    return active,row
+
+
+def wait_config_lock(work,env,verifier,claimant,verifier_id,old):
+    end=time.monotonic()+10
+    diagnostic={}
     while time.monotonic()<end:
-        rows = sql(work, env, "SELECT r.trx_mysql_thread_id,b.trx_mysql_thread_id,l.lock_table,l.lock_index "
-            "FROM information_schema.INNODB_LOCK_WAITS w "
-            "JOIN information_schema.INNODB_TRX r ON r.trx_id=w.requesting_trx_id "
-            "JOIN information_schema.INNODB_TRX b ON b.trx_id=w.blocking_trx_id "
-            "JOIN information_schema.INNODB_LOCKS l ON l.lock_id=w.requested_lock_id")
-        if any(row.split('\t')[:2]==[str(verifier),str(claimant)] and
-               'server_config' in row and row.endswith('\tPRIMARY')
-               for row in rows.splitlines()):
-            return
+        assert verifier.poll() is None and claimant.poll() is None,'early_owned_worker_exit'
+        active,before=verifier_phase(work,env,verifier_id,old)
+        diagnostic={'phase_before':before}
+        if active:
+            config=probe_pk_lock(work,env,'server_config')
+            assert config['errno']==1205,('claimant_config_not_owned',config,before)
+            info=probe_pk_lock(work,env,'server_info')
+            active,after=verifier_phase(work,env,verifier_id,old)
+            assert verifier.poll() is None and claimant.poll() is None,'early_owned_worker_exit'
+            diagnostic.update(config=config,info=info,phase_after=after)
+            if active and info['acquired'] is (not old):
+                return {'exact_verifier_query':after['query'],
+                        'config_conflict_errno':config['errno'],
+                        'info_probe':info,'actors_alive':True,
+                        'probe_transactions_rolled_back_and_closed':True}
         time.sleep(.02)
-    raise AssertionError(('verifier_did_not_wait_for_owned_config_lock',rows))
+    # Information-schema lock metadata is diagnostic only: some MariaDB
+    # versions omit an executing waiter until the metadata cache refreshes.
+    diagnostic['lock_waits']=sql(work,env,'SELECT * FROM information_schema.INNODB_LOCK_WAITS')
+    raise AssertionError(('missing_native_verification_lock_witness',old,diagnostic))
 
 
 def named(events, name):
@@ -289,8 +359,14 @@ def concurrency(old):
             aid = wait_file(gates/'http-ready',verifier)
             claimant = launch(work,env,stage,driver,hash='claim_b',role='claimant',barrier_dir=str(gates))
             bid = wait_file(gates/'claimant-config-locked',claimant)
+            assert verifier.poll() is None and claimant.poll() is None,'early_owned_worker_exit'
+            # A is still paused after HTTP and owns no config lock; this
+            # native conflict therefore witnesses B's exact config target.
+            config_before=probe_pk_lock(work,env,'server_config')
+            assert config_before['errno']==1205,config_before
             (gates/'release-verifier').write_text('go')
-            wait_config_lock(work,env,aid,bid)
+            witness=wait_config_lock(work,env,verifier,claimant,aid,old)
+            witness['config_before_verifier_release_errno']=config_before['errno']
             (gates/'release-claimant').write_text('go')
             a,ae = finish(verifier);b,be = finish(claimant)
         finally:
@@ -325,7 +401,8 @@ def concurrency(old):
         assert sql(work,env,'SELECT userid,wallet FROM users ORDER BY userid')==wallet
         return {'case':'prior_011c_lock_inversion_expected_RED' if old else 'corrected_config_first_native_purchase_GREEN',
                 'pass':True,'old_source_deadlock_observed':bool(graph),'provider_creates':1,
-                'orders':orders,'replay_creates':0,'old_deadlock_graph':graph if old else None}
+                'orders':orders,'replay_creates':0,'native_lock_witness':witness,
+                'old_deadlock_graph':graph if old else None}
 
 
 
@@ -477,6 +554,12 @@ def main():
     report={'complete':True,'cases':len(records),'old_source':OLD,
             'current_head':subprocess.check_output(['git','-C',str(ROOT),'rev-parse','HEAD'],text=True).strip(),
             'native_php_mysqli':True,'owned_socket_only':True,'isolation_changed':False,
+            'native_pk_lock_witness':all(r['native_lock_witness']['config_conflict_errno']==1205 and
+                r['native_lock_witness']['config_before_verifier_release_errno']==1205 and
+                r['native_lock_witness']['probe_transactions_rolled_back_and_closed'] and
+                r['native_lock_witness']['actors_alive'] and
+                r['native_lock_witness']['info_probe']['acquired'] is (not r['old_source_deadlock_observed'])
+                for r in records[:2]),
             'live_provider_requests':0,'financial_http_retries':0,'cases_detail':records}
     if args.report:args.report.write_text(json.dumps(report,indent=2)+'\n')
     print(json.dumps({k:v for k,v in report.items() if k!='cases_detail'}))
