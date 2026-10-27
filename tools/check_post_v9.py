@@ -2811,9 +2811,10 @@ def main():
             'no_financial_effects_from_admin_settings_or_editors',
             'final_persistence_denies_retired_key_weSwapState',
             'final_persistence_denies_retired_key_tronWallet',
+            'managed_display_replaces_only_two_legacy_global_toggles',
         }
         if not (crypto_guard.get('complete')
-                and crypto_guard.get('cases')>=136
+                and crypto_guard.get('cases')>=135
                 and required_crypto_guard.issubset(crypto_guard.get('scenarios',[]))
                 and crypto_guard.get('official_tron_test_vectors_verified')
                 and crypto_guard.get('independent_base58check_oracle')
@@ -2823,6 +2824,9 @@ def main():
                 and crypto_guard.get('retired_flags_preserved_not_mutated')
                 and crypto_guard.get('retired_keys_denied_at_persistence_boundary')
                 and crypto_guard.get('all_advertised_current_admin_toggles_work')
+                and crypto_guard.get('moved_display_global_toggles')==['configLinkState','subLinkState']
+                and crypto_guard.get('retained_original_bot_toggles')==23
+                and crypto_guard.get('retained_original_gateway_toggles')==8
                 and crypto_guard.get('schema_tables')==23
                 and crypto_guard.get('isolated_socket_only')
                 and crypto_guard.get('live_provider_or_chain_calls')==0
