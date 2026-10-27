@@ -1,6 +1,6 @@
 # PasarGuard native contract (source candidate)
 
-Issue #81, NEXT-PG-CLIENT-1 / #26 revision1. Supported source pin: 5.5.1,
+Issue #81, NEXT-PG-CLIENT-2 / #26 revision2. Supported source pin: 5.5.1,
 eba70d68eaa5a89e34ffebb47c8fd5ce054d0e43. Actual target source/version verification:
 https://github.com/ach1992/bot-refactor/issues/81#issuecomment-6427352542 .
 This contract does not establish installed/live acceptance.
@@ -72,8 +72,16 @@ Global storage functions in src/Panel/ProviderStorage.php:
 Storage errors throw private reason-only RuntimeException. Reservation uses the
 caller's SQL transaction; caller MUST commit it before HTTP. It is idempotent
 only for the exact same existing reservation; returned state never authorizes a
-second dispatch. Shared service_effects owns financial/replay state. Pure
+second dispatch. The returned row includes newly_reserved=true only on INSERT;
+exact existing reservations return newly_reserved=false. Reserve requires an
+open caller transaction and validates the shared effect operation/username,
+endpoint and pinned snapshot. Trials use genuine nonpaid shared effect rows. Shared service_effects owns financial/replay state. Pure
 existing Marzban does not load/use provider tables.
+Source-only revision2 adds nullable provider_accounts.mutation_key (VARCHAR100)
+and mutation_snapshot (LONGTEXT) for durable action/absolute-intent fencing.
+The runtime commits linked -> mutating with intent before HTTP; unconfirmed
+writes remain mutating/review and cannot authorize replay. The purchased
+entitlement_snapshot remains intact. No production migration is implied.
 Account extension preserves existing purchased Groups. Explicit service switch
 updates remote Groups and verifies before local routing/snapshot completion.
 Native Group contents are mutable upstream; IDs do not freeze Hosts/inbounds.

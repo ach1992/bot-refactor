@@ -33,6 +33,8 @@ CREATE TABLE provider_accounts (
  remote_username VARCHAR(100) COLLATE utf8mb4_bin NOT NULL,
  operation_marker VARCHAR(64) COLLATE utf8mb4_bin NOT NULL,
  entitlement_snapshot LONGTEXT COLLATE utf8mb4_bin NOT NULL,
+ mutation_key VARCHAR(100) COLLATE utf8mb4_bin DEFAULT NULL,
+ mutation_snapshot LONGTEXT COLLATE utf8mb4_bin DEFAULT NULL,
  state VARCHAR(24) COLLATE utf8mb4_bin NOT NULL DEFAULT 'reserved',
  verified_at DATETIME DEFAULT NULL,
  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
