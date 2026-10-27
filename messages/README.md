@@ -1,79 +1,34 @@
-# AChBot message catalog
+# AChBot message editing
 
-All current bot-facing Persian/English copy lives in fa/*.php, grouped by
-product topic. settings/values.php remains a compatibility facade for the
-existing $mainValues and $buttonValues keys, customization and replacement
-rules. Those keys and their legacy placeholders are unchanged.
+Only **two files contain editable bot/PHP payment-page copy**:
 
-Load messages/loader.php with require_once from an isolated module or test.
-It needs no private configuration, database or bootstrap. Internal PHP files
-retain direct HTTP guards; namespace declarations precede loader imports.
+- `fa/user.php`: customer and agent messages, customer buttons and harmless shared labels/date words.
+- `fa/admin.php`: administrator controls, operational reports and administrator-only diagnostics.
 
-Use achbotMessage('topic.stable_key', ['name' => $displayValue]). Each
-interpolated entry declares its exact parameter names. Substitution is
-one-pass; replacement values cannot recursively substitute other parameters.
-Missing/extra parameters and unknown keys are programming errors.
+Both files have named topic sections. Search for the current sentence, then edit its value in place. Keep the stable key, parameter names and placeholders unchanged. For example, keep `{amount}`, `USER-ID`, `PRICE-TOMAN` or `CONNECT-LINK` exactly as written. `settings/values.php` is a compatibility facade; it contains no separate copy to maintain. `loader.php` is loading/substitution code, not a third text file.
 
-Existing call sites retain their original dynamic expressions and escaping.
-The loader does not implicitly escape or normalize them. New HTML callers
-can use achbotMessageHtml when every supplied parameter is untrusted;
-already escaped display values must use achbotMessage to avoid double
-escaping. The byte-preserved relocation retains catalog HTML, spaces, line endings,
-zero-width characters, emoji and percent/braced literals. Master-authorized
-privacy wording corrections under the Owner policy are separately enumerated
-in tools/text_catalog_amendments.json; they are not reported as byte parity. Repeated
-interpolation occurrences have separate slots so their original string
-conversion count and order remain intact. Fixed diagnostic reason/state codes
-remain explicit call-site parameters rather than editable catalog prose.
+File placement does not authorize a recipient. Existing actor/owner checks and explicit destinations decide whether a message may reach a user or administrator. A harmless shared label lives once in `user.php`, even when administrators also see it. Never move an operational diagnostic into a customer message to help troubleshooting.
 
-Keys describe the original module, function/route and display purpose. A short
-content fingerprint disambiguates distinct fragments without relying on source
-line numbers or sequence numbers. Treat keys as stable identifiers when editing
-wording; change the catalog value in place. The source inventory locates every
-migrated occurrence and preserves its exact original expression for review.
+## Presentation conventions
 
-Run python3 tools/test_next_text_catalog.py for:
+- Use ASCII digits (`0`–`9`) in bot-owned visible numbers and examples. Keep dates, amounts, IDs and units meaningful; never rewrite customer-supplied names/messages or protocol payloads merely for appearance.
+- A complete message or control may start with one relevant emoji. Reuse the same cue for the same task: `💰` wallet, `💳` payment, `📋` subscriptions/plans, `📦` volume, `📅` time, `💬` support, `🔎` search, `🔙` back, `✅` confirmed success, `⚠️` uncertainty or a problem, `❌` cancel and `⛔️` access denial.
+- Do not stack emoji, decorate both ends of a heading, or add emoji to date words, units, continuation fragments, URLs or data labels indiscriminately. A flag or joined emoji is one glyph and must remain intact.
+- Preserve the caller's parse mode. Buttons and callback alerts are plain text. Use `<b>` for headings/important amounts and `<code>` for copyable IDs/addresses only in messages whose caller explicitly uses HTML. Markdown and plain messages must not receive HTML tags. Many entries are fragments; do not add or close a formatting tag without checking the complete message.
+- Keep existing wording unless clarity/privacy requires a reviewed correction. A payment or delivery with an unknown result remains under review; never imply confirmed success, rollback or refund without evidence.
 
-- exact reverse-source reconstruction of the characterized runtime, including
-  unchanged SQL, callback/state/protocol literals and financial expressions;
-- native PHP byte comparison of all static and interpolated expressions, with
-  null, integer, signed, boolean, Unicode, HTML and placeholder-shaped values;
-- legacy facade equality, explicit escaping and one-pass substitution checks;
-- Persian literal inventory and ASCII UI sink/variable/interpolation tracing,
-  including selected array fields through same-file named function returns,
-  unknown/orphan catalog references and direct HTTP guards;
-- ASCII button/caption/indirect-message and poisoned-catalog privacy negative
-  controls, retaining the separate native audience/privacy fixtures.
+## Runtime API and compatibility
 
-The source audit intentionally excludes third-party QR implementation,
-redacted transport diagnostics, comments, frozen historical evidence and the
-numeric decimal separator used by JDF transliteration. The unrelated static
-root index.html remains the existing landing page; its branding is outside the
-bot/PHP payment-page copy migration. SQL, callback data, persisted enum/state
-identifiers and diagnostic reason codes remain runtime implementation data.
-Display labels that spell technical option names are catalog text; callback,
-provider payload, selection and persistence values remain implementation data.
-Pure dynamic values, punctuation and markup remain rendering expressions.
+Require `messages/loader.php` once. It needs no private config, database or bootstrap. It loads only the two fixed audience files, rejects duplicate cross-file keys and retains the existing logical `topic.stable_key` API:
 
-The inventory is characterization evidence against its recorded Git source
-identity, not a golden file to update merely to bless changed business behavior.
-After an independently authorized runtime change, review and re-characterize
-only the affected source dependency. Frozen V0–V9 checks remain untouched.
+```php
+achbotMessage('topic.stable_key', ['amount' => $displayAmount]);
+achbotMessages('legacy_messages');
+achbotMessageTopics(); // Logical sections; independent of physical filenames.
+```
 
-Current bounded followups retain the original inventory verbatim. The
-amendments manifest records the exact accepted admin-read authorization diff
-for three source files, the remaining-traffic template relocation, the
-bootstrap connection/charset privacy correction, and three explicit public
-checkout wording corrections. The source proof reverses only those named
-edits and verifies each immutable dependency before applying the original
-per-file reconstruction. No broad baseline refresh is permitted.
+Substitution is explicit and one-pass. Missing/extra parameters and unknown keys are programming errors. Existing callers retain escaping and dynamic expressions. `achbotMessageHtml` escapes every supplied value and is suitable only when all parameters are untrusted; already escaped display values use `achbotMessage` to avoid double escaping. The loader performs no automatic emoji, digit or customer-content rewrite.
 
-The native catalog proof also compares the actual remaining-traffic helper
-with its immutable previous helper over signed, fractional, rounding,
-unlimited and uncertain results. Run python3 tools/test_next_bootstrap_privacy.py
-for source-native connection/charset CLI and HTTP canaries (no real database),
-and python3 tools/test_next_gateway_privacy.py --run-disposable for actual
-public checkout denial pages over a socket-only synthetic database and owned
-loopback HTTP. Those two suites are separate from test_next_text_catalog.py.
-The ASCII scanner is a bounded audit aid; it does not interpret dynamic PHP
-dispatch or arbitrary cross-file data flow.
+The original relocation inventory remains immutable evidence. Owner revision 4 permits this two-file layout and controlled style/privacy changes. `tools/text_catalog_style_amendments.json` pins each changed value against `7faac9b`, separates the retired implementation-only parser matchers, and explicitly records privacy parameter/diagnostic exceptions. Runtime parser matchers belong in implementation code, not editable copy.
+
+Run `python3 tools/test_text_catalog_style.py` for focused two-file, stable-key, digits, emoji, markup, parameter, audience and native composition checks. The full catalog/source/financial acceptance remains a separate required gate; source checks do not certify a live Telegram rendering or installed operator behavior.

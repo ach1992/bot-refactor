@@ -1,6 +1,6 @@
 <?php
 /**
- * AChBot bot-facing copy. Safe to load from bootstrap or an isolated module.
+ * AChBot copy loader for the two audience files. Safe for isolated modules.
  * Templates never evaluate PHP or implicitly escape existing display values.
  */
 if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
@@ -8,19 +8,43 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     exit;
 }
 
+/** Internal merged view; the only editable prose sources are user.php/admin.php. */
+function achbotMessageCatalog(): array {
+    static $catalog = null;
+    if ($catalog !== null) return $catalog;
+    $loaded = [];
+    foreach (['user', 'admin'] as $audience) {
+        $groups = require __DIR__ . '/fa/' . $audience . '.php';
+        if (!is_array($groups)) throw new UnexpectedValueException('message_catalog_invalid');
+        foreach ($groups as $topic => $entries) {
+            if (!is_string($topic) || !preg_match('/\\A[a-z][a-z0-9_]*\\z/D', $topic) || !is_array($entries)) {
+                throw new UnexpectedValueException('message_topic_invalid');
+            }
+            if (!array_key_exists($topic, $loaded)) $loaded[$topic] = [];
+            foreach ($entries as $key => $entry) {
+                if (!is_string($key) || array_key_exists($key, $loaded[$topic])) {
+                    throw new UnexpectedValueException('message_key_duplicate_or_invalid');
+                }
+                $loaded[$topic][$key] = $entry;
+            }
+        }
+    }
+    $catalog = $loaded;
+    return $catalog;
+}
+
+/** Logical topics remain stable independently of the two-file editing layout. */
+function achbotMessageTopics(): array {
+    return array_keys(achbotMessageCatalog());
+}
+
 function achbotMessages(string $topic): array {
-    static $topics = [];
-    if (!preg_match('/\A[a-z][a-z0-9_]*\z/D', $topic)) {
+    if (!preg_match('/\\A[a-z][a-z0-9_]*\\z/D', $topic)) {
         throw new InvalidArgumentException('message_topic_invalid');
     }
-    if (!array_key_exists($topic, $topics)) {
-        $path = __DIR__ . '/fa/' . $topic . '.php';
-        if (!is_file($path)) throw new OutOfBoundsException('message_topic_unknown:' . $topic);
-        $entries = require $path;
-        if (!is_array($entries)) throw new UnexpectedValueException('message_topic_invalid:' . $topic);
-        $topics[$topic] = $entries;
-    }
-    return $topics[$topic];
+    $catalog = achbotMessageCatalog();
+    if (!array_key_exists($topic, $catalog)) throw new OutOfBoundsException('message_topic_unknown:' . $topic);
+    return $catalog[$topic];
 }
 
 /**

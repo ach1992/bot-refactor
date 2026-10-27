@@ -1,0 +1,4303 @@
+{
+  "version": 1,
+  "authorization": "https://github.com/ach1992/bot-refactor/issues/26#issuecomment-6447224257",
+  "baseline_commit": "7faac9b067f8a171e5e26d6aea5aaf9f4088a3e7",
+  "changes": {
+    "admin.bans.unban_user.message.450fb58659": {
+      "before": "شناسه عددیشو بفرست تا آزادش کنم",
+      "after": "🔢 شناسه عددیشو بفرست تا آزادش کنم",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "admin.bans.unban_user.message.8921035044": {
+      "before": "❌ خب خب برید کنار که مسدودش کردم 😎😂",
+      "after": "❌ خب خب برید کنار که مسدودش کردم 😎",
+      "parameters": [],
+      "reasons": [
+        "single_emoji"
+      ]
+    },
+    "admin.bans.unban_user.message.8764ea2164": {
+      "before": "درخواست مسدودسازی تأیید نشد؛ وضعیت و دسترسی فعلی را بررسی کنید.",
+      "after": "⛔️ درخواست مسدودسازی تأیید نشد؛ وضعیت و دسترسی فعلی را بررسی کنید.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "admin.roles.admins_list.message.191495d5fc": {
+      "before": "لیست ادمین ها",
+      "after": "📝 لیست ادمین ها",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "admin.roles.add_new_admin.message.2e675a6e17": {
+      "before": "✅ | 🥳 خب کاربر الان ادمین شد تبریک میگم",
+      "after": "✅ خب کاربر الان ادمین شد تبریک میگم",
+      "parameters": [],
+      "reasons": [
+        "single_emoji"
+      ]
+    },
+    "admin.unban.message.ee9604a51b": {
+      "before": "درخواست رفع مسدودی تأیید نشد؛ وضعیت و دسترسی فعلی را بررسی کنید.",
+      "after": "⛔️ درخواست رفع مسدودی تأیید نشد؛ وضعیت و دسترسی فعلی را بررسی کنید.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "admin_settings.config.get_rejected_agent_list.button.df8e33a61a": {
+      "before": "آزاد ساختن",
+      "after": "📝 آزاد ساختن",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "admin_settings.config.get_rejected_agent_list.button.c9b4331f4f": {
+      "before": "اسم کاربر",
+      "after": "📝 اسم کاربر",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "admin_settings.config.get_rejected_agent_list.button.2dc9dcf8cd": {
+      "before": "شناسه عددی",
+      "after": "🔢 شناسه عددی",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "admin_settings.config.get_agent_details.button.5a788e64cb": {
+      "before": "درآمد امروز",
+      "after": "📅 درآمد امروز",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "admin_settings.config.get_agent_details.button.4ad1c24edd": {
+      "before": "درآمد دیروز",
+      "after": "📅 درآمد دیروز",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "admin_settings.config.get_agent_details.button.b939f33fef": {
+      "before": "درآمد یک هفته",
+      "after": "📝 درآمد یک هفته",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "admin_settings.config.get_agent_details.button.12c33cffe7": {
+      "before": "درآمد یک ماه",
+      "after": "📝 درآمد یک ماه",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "admin_settings.config.get_agents_list.button.59ca629220": {
+      "before": "حذف",
+      "after": "🗑 حذف",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "admin_settings.config.get_agents_list.button.9f7ae9d87f": {
+      "before": "درصد تخفیف",
+      "after": "📝 درصد تخفیف",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "admin_settings.config.get_agents_list.button.83a20e2f87": {
+      "before": "تاریخ همکاری",
+      "after": "📅 تاریخ همکاری",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "admin_settings.config.get_agents_list.button.1882d627a1": {
+      "before": "اسم همکار",
+      "after": "📝 اسم همکار",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "admin_settings.config.get_marzban_panel_groups_management_keys.button.d376787114": {
+      "before": "هنوز گروهی تعریف نشده",
+      "after": "📝 هنوز گروهی تعریف نشده",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "admin_settings.config.get_server_config_keys.button.a726d3f27d": {
+      "before": "پنل پشتیبانی نمی‌شود",
+      "after": "⚠️ پنل پشتیبانی نمی‌شود",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "admin_settings.config.get_server_config_keys.button.b1501587df": {
+      "before": "مرزبان",
+      "after": "📝 مرزبان",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "admin_settings.config.get_server_config_keys.button.28724e896c": {
+      "before": "نوع سرور",
+      "after": "📝 نوع سرور",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "admin_settings.config.get_server_config_keys.button.f86cfd6077": {
+      "before": "ظرفیت سرور",
+      "after": "⚠️ ظرفیت سرور",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "admin_settings.config.get_server_list_keys.button.68d7eb08ef": {
+      "before": "وضعیت",
+      "after": "📝 وضعیت",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "admin_settings.config.get_server_list_keys.button.6badcac8c1": {
+      "before": "تنظیمات",
+      "after": "⚙️ تنظیمات",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "admin_settings.config.get_server_list_keys.button.b55501074d": {
+      "before": "نوع",
+      "after": "📝 نوع",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "admin_settings.config.get_server_list_keys.button.0b29754285": {
+      "before": "سرور",
+      "after": "📝 سرور",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "admin_settings.config.get_server_list_keys.button.5a370aba9d": {
+      "before": "سروری یافت نشد",
+      "after": "⚠️ سروری یافت نشد",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "admin_settings.config.get_categories_keys.button.47ccdcb5f1": {
+      "before": "اسم دسته",
+      "after": "📝 اسم دسته",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "admin_settings.config.get_categories_keys.button.fba2c6927b": {
+      "before": "دسته بندی یافت نشد.",
+      "after": "⚠️ دسته بندی یافت نشد.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "admin_settings.config.get_gate_ways_keys.button.99a296169c": {
+      "before": "آدرس TRX — TRON",
+      "after": "📝 آدرس TRX — TRON",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "admin_settings.config.get_gate_ways_keys.button.2f0a69097a": {
+      "before": "قیمت هر TRX",
+      "after": "📝 قیمت هر TRX",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "admin_settings.config.get_gate_ways_keys.button.7879419f7f": {
+      "before": "شماره حساب",
+      "after": "📝 شماره حساب",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "admin_settings.config.get_gate_ways_keys.button.b4ed07bc66": {
+      "before": "دارنده حساب",
+      "after": "📝 دارنده حساب",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "admin_settings.config.get_gate_ways_keys.button.ae176aeaf4": {
+      "before": "لینک خرید گیفت‌کارت",
+      "after": "🔗 لینک خرید گیفت‌کارت",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "admin_settings.config.get_gate_ways_keys.button.480677fee4": {
+      "before": "کد درگاه nowPayment",
+      "after": "📝 کد درگاه nowPayment",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "admin_settings.config.get_gate_ways_keys.button.fd8662735a": {
+      "before": "کد درگاه زرین پال",
+      "after": "📝 کد درگاه زرین پال",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "admin_settings.config.get_gate_ways_keys.button.02de54ccc3": {
+      "before": "کد درگاه نکست پی",
+      "after": "📝 کد درگاه نکست پی",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "admin_settings.config.get_gate_ways_keys.button.04029e7ea7": {
+      "before": "کارت به کارت",
+      "after": "📝 کارت به کارت",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "admin_settings.config.get_gate_ways_keys.button.26003a476f": {
+      "before": "درگاه نکست پی",
+      "after": "📝 درگاه نکست پی",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "admin_settings.config.get_gate_ways_keys.button.c0199d5243": {
+      "before": "درگاه زرین پال",
+      "after": "📝 درگاه زرین پال",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "admin_settings.config.get_gate_ways_keys.button.6e3e91d426": {
+      "before": "درگاه NowPayment کیف پول",
+      "after": "💰 درگاه NowPayment کیف پول",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "admin_settings.config.get_gate_ways_keys.button.a0c8498d77": {
+      "before": "درگاه NowPayment سایر",
+      "after": "📝 درگاه NowPayment سایر",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "admin_settings.config.get_gate_ways_keys.button.6295c35212": {
+      "before": "کیف پول",
+      "after": "💰 کیف پول",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "admin_settings.config.get_gate_ways_keys.button.179f3c4369": {
+      "before": "آیدی پشتیبانی",
+      "after": "💬 آیدی پشتیبانی",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "admin_settings.config.get_gate_ways_keys.button.536c328504": {
+      "before": "کانال گزارش درآمد",
+      "after": "📝 کانال گزارش درآمد",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "admin_settings.config.get_gate_ways_keys.button.ea01411739": {
+      "before": "کانال قفل",
+      "after": "📝 کانال قفل",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "admin_settings.config.get_gate_ways_keys.button.16aec30ea0": {
+      "before": "معاف کاربر از عضویت در کانال",
+      "after": "📝 معاف کاربر از عضویت در کانال",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "admin_settings.config.get_bot_setting_keys.button.f386be17f5": {
+      "before": "🎗 بنر بازاریابی 🎗",
+      "after": "🎗 بنر بازاریابی",
+      "parameters": [],
+      "reasons": [
+        "single_heading_emoji"
+      ]
+    },
+    "admin_settings.config.get_bot_setting_keys.button.fc7f747159": {
+      "before": "آپدیت کانفیگ",
+      "after": "📝 آپدیت کانفیگ",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "admin_settings.config.get_bot_setting_keys.button.3b878712ee": {
+      "before": "همکاری",
+      "after": "📝 همکاری",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "admin_settings.config.get_bot_setting_keys.button.c2df8234c5": {
+      "before": "نوع تخفیف همکاری",
+      "after": "📝 نوع تخفیف همکاری",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "admin_settings.config.get_bot_setting_keys.button.546c2c8acc": {
+      "before": "موجودی اختصاصی",
+      "after": "💰 موجودی اختصاصی",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "admin_settings.config.get_bot_setting_keys.button.bbc39b9150": {
+      "before": "موجودی اشتراکی",
+      "after": "💰 موجودی اشتراکی",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "admin_settings.config.get_bot_setting_keys.button.11ee94f26d": {
+      "before": "اکانت تست",
+      "after": "📝 اکانت تست",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "admin_settings.config.get_bot_setting_keys.button.5705eee73b": {
+      "before": "تغییر پروتکل",
+      "after": "📝 تغییر پروتکل",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "admin_settings.config.get_bot_setting_keys.button.df1c62b99e": {
+      "before": "تمدید اشتراک",
+      "after": "📋 تمدید اشتراک",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "admin_settings.config.get_bot_setting_keys.button.f9a77f614a": {
+      "before": "تمدید خودکار اشتراک",
+      "after": "📋 تمدید خودکار اشتراک",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "admin_settings.config.get_bot_setting_keys.button.8ef9c2184e": {
+      "before": "پلن دلخواه",
+      "after": "📋 پلن دلخواه",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "admin_settings.config.get_bot_setting_keys.button.c6b7f26615": {
+      "before": "تغییر سرویس",
+      "after": "📝 تغییر سرویس",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "admin_settings.config.get_bot_setting_keys.button.070602773a": {
+      "before": "افزایش زمان",
+      "after": "📅 افزایش زمان",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "admin_settings.config.get_bot_setting_keys.button.4bbbd988ad": {
+      "before": "افزایش حجم",
+      "after": "📦 افزایش حجم",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "admin_settings.config.get_bot_setting_keys.button.bb9acf5637": {
+      "before": "تایید شماره",
+      "after": "📝 تایید شماره",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "admin_settings.config.get_bot_setting_keys.button.354012a9d5": {
+      "before": "تایید شماره ایرانی",
+      "after": "📝 تایید شماره ایرانی",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "admin_settings.config.get_bot_setting_keys.button.3cd98f07be": {
+      "before": "فروش",
+      "after": "📝 فروش",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "admin_settings.config.get_bot_setting_keys.button.5a3a8ecb3c": {
+      "before": "وضعیت ربات",
+      "after": "📝 وضعیت ربات",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "admin_settings.config.get_bot_setting_keys.button.c56b392566": {
+      "before": "مشخصات اشتراک",
+      "after": "📋 مشخصات اشتراک",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "admin_settings.config.get_bot_setting_keys.button.242b408ae2": {
+      "before": "دریافت لینک جدید",
+      "after": "🔗 دریافت لینک جدید",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "admin_settings.config.get_bot_setting_keys.button.fb0475aeb4": {
+      "before": "بروزرسانی لینک",
+      "after": "📅 بروزرسانی لینک",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "admin_settings.config.get_bot_setting_keys.button.59be548183": {
+      "before": "کیوآرکد کانفیگ",
+      "after": "📝 کیوآرکد کانفیگ",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "admin_settings.config.get_bot_setting_keys.button.ae54bb8cbe": {
+      "before": "کیوآرکد اشتراک",
+      "after": "📋 کیوآرکد اشتراک",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "admin_settings.config.get_bot_setting_keys.button.8855cd3ee5": {
+      "before": "نوع ریمارک",
+      "after": "📝 نوع ریمارک",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "admin_settings.config.get_bot_setting_keys.button.2d0dc535a6": {
+      "before": "ارسال گزارش درآمد",
+      "after": "📝 ارسال گزارش درآمد",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "admin_settings.config.get_bot_setting_keys.button.f5d3c64f2a": {
+      "before": "تایید خودکار کارت به کارت",
+      "after": "📝 تایید خودکار کارت به کارت",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "admin_settings.config.get_bot_setting_keys.button.aaeffd7e20": {
+      "before": "نوع تایید",
+      "after": "📝 نوع تایید",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "admin_settings.config.get_bot_report_keys.button.93735d95b2": {
+      "before": "📊 کاربران جدید ۳ ماه",
+      "after": "📊 کاربران جدید 3 ماه",
+      "parameters": [],
+      "reasons": [
+        "ascii_digits"
+      ]
+    },
+    "admin_settings.config.get_admins_keys.button.612ffac236": {
+      "before": "لیست ادمین ها خالی است ❕",
+      "after": "📝 لیست ادمین ها خالی است",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "admin_settings.config.get_user_info_keys.button.173fec6019": {
+      "before": "نام کاربری",
+      "after": "📝 نام کاربری",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "admin_settings.config.get_user_info_keys.button.69c1e5b1fe": {
+      "before": "نام",
+      "after": "📝 نام",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "admin_settings.config.get_user_info_keys.button.a07470ed6e": {
+      "before": "هفته اخیر",
+      "after": "📝 هفته اخیر",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "admin_settings.config.get_user_info_keys.button.37886dfbc2": {
+      "before": "ماه اخیر",
+      "after": "📝 ماه اخیر",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "admin_settings.config.get_user_info_keys.button.e924268a40": {
+      "before": "3 ماه اخیر",
+      "after": "📝 3 ماه اخیر",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "admin_settings.config.get_user_info_keys.button.653fd00888": {
+      "before": "6 ماه اخیر",
+      "after": "📝 6 ماه اخیر",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "admin_settings.config.get_user_info_keys.button.ceb490f817": {
+      "before": "ارزش سرویس ها",
+      "after": "📝 ارزش سرویس ها",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "admin_settings.config.get_user_info_keys.button.3c25eb15a8": {
+      "before": "تعداد پرداخت ها",
+      "after": "💳 تعداد پرداخت ها",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "admin_settings.config.get_user_info_keys.button.88bf6cf5c6": {
+      "before": "موجودی کیف پول",
+      "after": "💰 موجودی کیف پول",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "admin_settings.config.get_user_info_keys.button.05b7dda9cc": {
+      "before": "مسدود",
+      "after": "⛔️ مسدود",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "admin_settings.config.handle_channel_exemption.message.f4395ba7cb": {
+      "before": "لطفاً شناسه عددی کاربری که می‌خواهید از الزام عضویت در کانال معاف شود را وارد کنید:",
+      "after": "🔢 لطفاً شناسه عددی کاربری که می‌خواهید از الزام عضویت در کانال معاف شود را وارد کنید:",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "admin_settings.config.get_main_menu_buttons_keys.button.e8debfae48": {
+      "before": "دکمه ای یافت نشد❕",
+      "after": "⚠️ دکمه ای یافت نشد",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "admin_settings.config.get_plan_details_keys.button.0c7b1a3966": {
+      "before": "پورت دلخواه",
+      "after": "📝 پورت دلخواه",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "admin_settings.config.get_plan_details_keys.button.ef806d47e3": {
+      "before": "sni دلخواه",
+      "after": "📝 sni دلخواه",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "admin_settings.config.get_plan_details_keys.button.51a75fa72c": {
+      "before": "انتخاب Host",
+      "after": "📋 انتخاب Host",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "admin_settings.config.get_plan_details_keys.button.6399e067cb": {
+      "before": "Groups پلن (جایگزین پیش‌فرض)",
+      "after": "📋 Groups پلن (جایگزین پیش‌فرض)",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "admin_settings.config.get_order_detail_keys.alert.fb223619e1": {
+      "before": "⚠️ پلن این سفارش مشخص نیست (fileid نامعتبر است).",
+      "after": "⚠️ پلن این سفارش مشخص نیست؛ برای بررسی با پشتیبانی تماس بگیرید.",
+      "parameters": [],
+      "reasons": [
+        "customer_privacy"
+      ]
+    },
+    "admin_settings.config.get_order_detail_keys.alert.4f0ac830c9": {
+      "before": "⚠️ پلن مربوط به این سفارش در server_plans پیدا نشد.",
+      "after": "⚠️ پلن مربوط به این سفارش پیدا نشد؛ برای بررسی با پشتیبانی تماس بگیرید.",
+      "parameters": [],
+      "reasons": [
+        "customer_privacy"
+      ]
+    },
+    "agent.discounts.agents_list.alert.6a01bdb6c4": {
+      "before": "همکاری یافت نشد.",
+      "after": "⚠️ همکاری یافت نشد.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "agent.discounts.agents_list.alert.75b2cb38d6": {
+      "before": "سروری باقی نمانده است.",
+      "after": "📝 سروری باقی نمانده است.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "agent.discounts.agents_list.alert.e1e7245408": {
+      "before": "با موفقیت حذف شد.",
+      "after": "✅ با موفقیت حذف شد.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "agent.rejected.rejected_agent_list.alert.d5290e0a13": {
+      "before": "کاربری یافت نشد.",
+      "after": "⚠️ کاربری یافت نشد.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "bot.bot.webhook_ingress_authenticated.message.5e45680470": {
+      "before": "اکانت شما به دلیل اسپم مسدود شده است.\nزمان آزادسازی اکانت شما: \n{time}",
+      "after": "⛔️ اکانت شما به دلیل اسپم مسدود شده است.\nزمان آزادسازی اکانت شما: \n{time}",
+      "parameters": [
+        "time"
+      ],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "bot.bot.webhook_ingress_authenticated.message.21095e090c": {
+      "before": "پیام شما برای کاربر <code>{match_1}</code> ارسال شد.",
+      "after": "💬 پیام شما برای کاربر <code>{match_1}</code> ارسال شد.",
+      "parameters": [
+        "match_1"
+      ],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "bot.bot.gateway_audience_settings.message.56c51082c2": {
+      "before": "✏️ عدد صحیح دلخواه (از ۰ به بالا) وارد کنید.\n",
+      "after": "✏️ عدد صحیح دلخواه (از 0 به بالا) وارد کنید.\n",
+      "parameters": [],
+      "reasons": [
+        "ascii_digits"
+      ]
+    },
+    "bot.bot.gateway_audience_settings.message.dff975b57d": {
+      "before": "۰ روز یعنی تمام سابقه؛ ۰ تراکنش با روز مثبت یعنی حداقل یک رویداد در بازه.\n",
+      "after": "0 روز یعنی تمام سابقه؛ 0 تراکنش با روز مثبت یعنی حداقل یک رویداد در بازه.\n",
+      "parameters": [],
+      "reasons": [
+        "ascii_digits"
+      ]
+    },
+    "bot.bot.gateway_audience_settings.message.74d707fe02": {
+      "before": "ویرایش لغو شد.",
+      "after": "❌ ویرایش لغو شد.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "bot.bot.change_config_remark_type.gate.9d8c0fcdf4": {
+      "before": "لینک HTTPS معتبر خرید گیفت‌کارت (حداکثر ۳۵۰ بایت)",
+      "after": "لینک HTTPS معتبر خرید گیفت‌کارت (حداکثر 350 بایت)",
+      "parameters": [],
+      "reasons": [
+        "ascii_digits"
+      ]
+    },
+    "bot.bot.change_config_remark_type.gate.e152f81bc6": {
+      "before": "نرخ عادی USDT برای پرداخت دستی و NOWPayments، عدد صحیح ۱۰۰ تا ۱٬۰۰۰٬۰۰۰٬۰۰۰ تومان (حذف با /clear این روش‌ها را بدون نرخ غیرفعال می‌کند)",
+      "after": "نرخ عادی USDT برای پرداخت دستی و NOWPayments، عدد صحیح 100 تا 1٬000٬000٬000 تومان (حذف با /clear این روش‌ها را بدون نرخ غیرفعال می‌کند)",
+      "parameters": [],
+      "reasons": [
+        "ascii_digits"
+      ]
+    },
+    "bot.bot.change_config_remark_type.gate.ce14a45981": {
+      "before": "نرخ USDT نماینده برای پرداخت دستی و NOWPayments، عدد صحیح ۱۰۰ تا ۱٬۰۰۰٬۰۰۰٬۰۰۰ تومان (با /clear از نرخ عادی استفاده می‌شود)",
+      "after": "نرخ USDT نماینده برای پرداخت دستی و NOWPayments، عدد صحیح 100 تا 1٬000٬000٬000 تومان (با /clear از نرخ عادی استفاده می‌شود)",
+      "parameters": [],
+      "reasons": [
+        "ascii_digits"
+      ]
+    },
+    "bot.bot.change_config_remark_type.txt.fcd2e548b6": {
+      "before": "لطفا زمان مورد نظر را به دقیقه وارد کنید.",
+      "after": "📅 لطفا زمان مورد نظر را به دقیقه وارد کنید.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "bot.bot.user_reports.message.c1d7ab477b": {
+      "before": "کاربری با این آیدی یافت نشد.",
+      "after": "⚠️ کاربری با این آیدی یافت نشد.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "bot.bot.invite_setting.button.0854688c71": {
+      "before": "مقدار پورسانت",
+      "after": "📝 مقدار پورسانت",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "bot.bot.invite_banner.button.d6aa12d559": {
+      "before": "ویرایش",
+      "after": "📝 ویرایش",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "bot.bot.invite_banner.message.e5b34cbee4": {
+      "before": "تصویر فعلی یافت نشد، لطفا اقدام به ویرایش بنر کنید",
+      "after": "⚠️ تصویر فعلی یافت نشد، لطفا اقدام به ویرایش بنر کنید",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "bot.bot.edit_invite_amount.message.0372e8b9cd": {
+      "before": "لطفا مبلغ پورسانت را به تومان وارد کنید.",
+      "after": "💰 لطفا مبلغ پورسانت را به تومان وارد کنید.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "bot.bot.edit_invite_amount.message.d86a0557a7": {
+      "before": "لطفا عدد بفرستید.",
+      "after": "🔢 لطفا عدد بفرستید.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "bot.bot.edit_invite_amount.message.736a04e908": {
+      "before": "مقدار وارد شده معتبر نیست.",
+      "after": "⚠️ مقدار وارد شده معتبر نیست.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "bot.bot.invite_friends.alert.56fd80c6d5": {
+      "before": "این قسمت غیر فعال است.",
+      "after": "⛔️ این قسمت غیر فعال است.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "bot.bot.my_info.button.3d0ddff816": {
+      "before": "شارژ کیف پول 💵",
+      "after": "💰 شارژ کیف پول",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "bot.bot.process_callback_query.button.423ff3a159": {
+      "before": "تعداد باقیمانده",
+      "after": "📝 تعداد باقیمانده",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "bot.bot.process_callback_query.button.d9772fd001": {
+      "before": "پلن",
+      "after": "📋 پلن",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "bot.bot.process_callback_query.button.0b29754285": {
+      "before": "سرور",
+      "after": "📝 سرور",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "bot.bot.process_callback_query.alert.e1e7245408": {
+      "before": "با موفقیت حذف شد.",
+      "after": "✅ با موفقیت حذف شد.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "bot.bot.process_callback_query.message.ed098f7f93": {
+      "before": "لطفا اسم دکمه را وارد کنید",
+      "after": "📝 لطفا اسم دکمه را وارد کنید",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "bot.bot.process_callback_query.message.0caee5986d": {
+      "before": "لطفا فقط متن بفرستید",
+      "after": "📝 لطفا فقط متن بفرستید",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "bot.bot.process_callback_query.message.ea8c224138": {
+      "before": "لطفا پاسخ دکمه را وارد کنید",
+      "after": "📝 لطفا پاسخ دکمه را وارد کنید",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "bot.bot.process_callback_query.alert.c0aaf0af38": {
+      "before": "در حال حاضر هیچ سرور فعالی برای هدیه دادن وجود ندارد.",
+      "after": "⚠️ در حال حاضر هیچ سرور فعالی برای هدیه دادن وجود ندارد.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "bot.bot.process_callback_query.message.41aa3dcaf2": {
+      "before": "لطفا نوع هدیه دادن را انتخاب کن:",
+      "after": "📋 لطفا نوع هدیه دادن را انتخاب کن:",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "bot.bot.process_callback_query.message.dc1943b7b1": {
+      "before": "مدت زمان هدیه را به روز وارد کن (برای صفر، عدد 0 را وارد کن):",
+      "after": "📅 مدت زمان هدیه را به روز وارد کن (برای صفر، عدد 0 را وارد کن):",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "bot.bot.process_callback_query.message.8386c28679": {
+      "before": "نام کاربری اشتراک موردنظر را وارد کنید:",
+      "after": "📋 نام کاربری اشتراک موردنظر را وارد کنید:",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "bot.bot.process_callback_query.message.a4712f82bb": {
+      "before": "این درخواست قبلاً ثبت شده است. برای شروع جدید دوباره دکمه را انتخاب کنید.",
+      "after": "✅ این درخواست قبلاً ثبت شده است. برای شروع جدید دوباره دکمه را انتخاب کنید.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "bot.bot.process_callback_query.message.97447b213e": {
+      "before": "شروع هدیه تأیید نشد؛ پیش از تلاش مجدد وضعیت را بررسی کنید.",
+      "after": "⚠️ شروع هدیه تأیید نشد؛ پیش از تلاش مجدد وضعیت را بررسی کنید.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "bot.bot.gift_volume_and_day.message.ac0da574b4": {
+      "before": "درخواست هدیه لغو شد.",
+      "after": "❌ درخواست هدیه لغو شد.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "bot.bot.gift_volume_and_day.message.e0e7fe8fcb": {
+      "before": "لغو درخواست تأیید نشد؛ وضعیت را بررسی کنید.",
+      "after": "❌ لغو درخواست تأیید نشد؛ وضعیت را بررسی کنید.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "bot.bot.gift_volume_and_day.message.ceaba67bc5": {
+      "before": "تعداد روز هدیه را به عدد صحیح وارد کنید (صفر مجاز است):",
+      "after": "📅 تعداد روز هدیه را به عدد صحیح وارد کنید (صفر مجاز است):",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "bot.bot.gift_volume_and_day.message.2ff3f6e643": {
+      "before": "حجم هدیه را به مگابایت وارد کنید؛ عدد صحیح و مضرب 1024 (صفر مجاز است):",
+      "after": "📦 حجم هدیه را به مگابایت وارد کنید؛ عدد صحیح و مضرب 1024 (صفر مجاز است):",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "bot.bot.gift_volume_and_day.message.430119925b": {
+      "before": "ورودی نامعتبر است. روز باید عدد صحیح 0 تا 36500 باشد؛ حجم باید عدد صحیح غیرمنفی و مضرب 1024 مگابایت باشد و هر دو نمی‌توانند صفر باشند.",
+      "after": "⚠️ ورودی نامعتبر است. روز باید عدد صحیح 0 تا 36500 باشد؛ حجم باید عدد صحیح غیرمنفی و مضرب 1024 مگابایت باشد و هر دو نمی‌توانند صفر باشند.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "bot.bot.gift_volume_and_day.message.e411fd7a97": {
+      "before": "وضعیت درخواست تأیید نشد. از ارسال دوباره تا بررسی وضعیت خودداری کنید.",
+      "after": "⚠️ وضعیت درخواست تأیید نشد. از ارسال دوباره تا بررسی وضعیت خودداری کنید.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "bot.bot.gift_volume_and_day.message.8c36c4327a": {
+      "before": "این پیام قبلاً بررسی شده است؛ هیچ هدیهٔ جدیدی اعمال نشد.",
+      "after": "💬 این پیام قبلاً بررسی شده است؛ هیچ هدیهٔ جدیدی اعمال نشد.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "bot.bot.gift_volume_and_day.message.9ab673c836": {
+      "before": "حجم هدیه را به مگابایت وارد کن (برای صفر، عدد 0 را وارد کن):",
+      "after": "📦 حجم هدیه را به مگابایت وارد کن (برای صفر، عدد 0 را وارد کن):",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "bot.bot.gift_volume_and_day.message.40747d2ee6": {
+      "before": "عددی بزرگتر و یا مساوی 0 واردکنید.",
+      "after": "🔢 عددی بزرگتر و یا مساوی 0 واردکنید.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "bot.bot.gift_volume_and_day.message.dda8b45a3f": {
+      "before": "حجم باید مضرب 1024 مگابایت و حداقل یکی از حجم یا روز مثبت باشد.",
+      "after": "📅 حجم باید مضرب 1024 مگابایت و حداقل یکی از حجم یا روز مثبت باشد.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "bot.bot.gift_volume_and_day.message.6463835f72": {
+      "before": "وضعیت ثبت هدیه تأیید نشد؛ پیش از هر اقدام جدید صف هدایا را بررسی کنید.",
+      "after": "⚠️ وضعیت ثبت هدیه تأیید نشد؛ پیش از هر اقدام جدید صف هدایا را بررسی کنید.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "bot.bot.gift_volume_and_day.message.b155540ffb": {
+      "before": "این پیام قبلاً برای هدیه ثبت شده و درخواست تکراری ایجاد نشد.",
+      "after": "✅ این پیام قبلاً برای هدیه ثبت شده و درخواست تکراری ایجاد نشد.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "bot.bot.cant_edit_trojan.alert.4d3c064114": {
+      "before": "پروتکل تروجان فقط نوع شبکه TCP را دارد",
+      "after": "📝 پروتکل تروجان فقط نوع شبکه TCP را دارد",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "bot.bot.servers_setting.alert.9f4e68eda7": {
+      "before": "وضعیت سرور با موفقیت تغییر کرد.",
+      "after": "✅ وضعیت سرور با موفقیت تغییر کرد.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "bot.bot.servers_setting.message.47c8f910e4": {
+      "before": "لیست آیپی های فعلی: \n{serverIp}\nلطفا آیپی های جدید را در خط های جدا بفرستید\n\nبرای خالی کردن متن /empty را وارد کنید",
+      "after": "📝 لیست آیپی های فعلی: \n{serverIp}\nلطفا آیپی های جدید را در خط های جدا بفرستید\n\nبرای خالی کردن متن /empty را وارد کنید",
+      "parameters": [
+        "serverIp"
+      ],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "bot.bot.add_new_server.alert.649a7042c3": {
+      "before": "ثبت پنل‌های قدیمی حذف شده است؛ از ثبت سرور مرزبان استفاده کنید.",
+      "after": "🗑 ثبت پنل‌های قدیمی حذف شده است؛ از ثبت سرور مرزبان استفاده کنید.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "bot.bot.add_new_server.alert.e9e9974e92": {
+      "before": "تنظیمات پنل‌های قدیمی دیگر پشتیبانی نمی‌شود.",
+      "after": "⚠️ تنظیمات پنل‌های قدیمی دیگر پشتیبانی نمی‌شود.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "bot.bot.add_new_server.alert.3340eb9465": {
+      "before": "پنل‌های قدیمی حذف شده‌اند؛ تنها مرزبان پشتیبانی می‌شود.",
+      "after": "🗑 پنل‌های قدیمی حذف شده‌اند؛ تنها مرزبان پشتیبانی می‌شود.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "bot.bot.add_marzban_panel_group.message.01f02c2ac6": {
+      "before": "نام گروه پنل جدید را وارد کنید (۱ تا ۶۰ حرف؛ فارسی مجاز است).\n",
+      "after": "نام گروه پنل جدید را وارد کنید (1 تا 60 حرف؛ فارسی مجاز است).\n",
+      "parameters": [],
+      "reasons": [
+        "ascii_digits"
+      ]
+    },
+    "bot.bot.add_marzban_panel_group.message.c697bdb683": {
+      "before": "نام گروه نامعتبر است؛ حداکثر ۶۰ کاراکتر و بدون خط جدید.",
+      "after": "⚠️ نام گروه نامعتبر است؛ حداکثر 60 کاراکتر و بدون خط جدید.",
+      "parameters": [],
+      "reasons": [
+        "ascii_digits",
+        "leading_context_emoji"
+      ]
+    },
+    "bot.bot.add_marzban_panel_group.message.cfb10ede6f": {
+      "before": "این نام قبلاً تعریف شده است یا معتبر نیست؛ نام دیگری وارد کنید.",
+      "after": "⚠️ این نام قبلاً تعریف شده است یا معتبر نیست؛ نام دیگری وارد کنید.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "bot.bot.add_marzban_panel_group.message.7c6b361e59": {
+      "before": "ذخیره گروه پنل انجام نشد.",
+      "after": "⚠️ ذخیره گروه پنل انجام نشد.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "bot.bot.add_marzban_panel_group.alert.a77f2c705d": {
+      "before": "حذف گروه پنل ناموفق بود.",
+      "after": "✅ حذف گروه پنل ناموفق بود.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "bot.bot.add_new_marzban_panel.message.2dcf34731e": {
+      "before": "مرحله اول:\n▪️ یه اسم برا سرورت انتخاب کن:",
+      "after": "📝 مرحله اول:\n▪️ یه اسم برا سرورت انتخاب کن:",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "bot.bot.addserver_name.message.3dd8c855bc": {
+      "before": "مرحله دوم:\n▪️ ظرفیت تعداد ساخت اشتراک رو برای سرورت مشخص کن ( عدد باشه )",
+      "after": "📝 مرحله دوم:\n▪️ ظرفیت تعداد ساخت اشتراک رو برای سرورت مشخص کن ( عدد باشه )",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "bot.bot.addserver_name.message.ba9445a606": {
+      "before": "مرحله چهارم:\n▪️ لطفا یه ( ایموجی پرچم 🇮🇷 ) برا سرورت انتخاب کن:",
+      "after": "📝 مرحله چهارم:\n▪️ لطفا یه ( ایموجی پرچم 🇮🇷 ) برا سرورت انتخاب کن:",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "bot.bot.addserver_name.alert.f1fb84ec27": {
+      "before": "این نوع پنل دیگر پشتیبانی نمی‌شود.",
+      "after": "⚠️ این نوع پنل دیگر پشتیبانی نمی‌شود.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "bot.bot.addserver_name.alert.f07dd5dcd6": {
+      "before": "مراحل ثبت سرور منقضی شده است.",
+      "after": "📝 مراحل ثبت سرور منقضی شده است.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "bot.bot.addserver_name.alert.55b6ebf4b1": {
+      "before": "گروه انتخابی وجود ندارد؛ لطفاً دوباره انتخاب کنید.",
+      "after": "⚠️ گروه انتخابی وجود ندارد؛ لطفاً دوباره انتخاب کنید.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "bot.bot.addserver_name.message.cd5fbb01df": {
+      "before": "مرحله هفتم: ▪️ لطفا نام کاربری پنل مرزبان را وارد کنید:",
+      "after": "📝 مرحله هفتم: ▪️ لطفا نام کاربری پنل مرزبان را وارد کنید:",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "bot.bot.addserver_name.message.cf8b6b8420": {
+      "before": "مرحله هشتم:\n▪️لطفا پسورد پنل را وارد کنید:",
+      "after": "📝 مرحله هشتم:\n▪️لطفا پسورد پنل را وارد کنید:",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "bot.bot.addserver_name.alert.6558e924a9": {
+      "before": "شناسه گروه پنل معتبر نیست.",
+      "after": "⚠️ شناسه گروه پنل معتبر نیست.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "bot.bot.addserver_name.message.aaacd0e81b": {
+      "before": "\n⚠️ با خطا مواجه شدی!\n\nبرای رفع این مشکل روی لینک زیر بزن و ویس رو با دقت گوش کن 👇\n\n⛔️🔗 https://t.me/wizwizch/186\n\nمجدد نام کاربری پنل را وارد کنید:\n⁮⁮ ⁮⁮\n        ",
+      "after": "\n⚠️ با خطا مواجه شدی!\n\nبرای رفع این مشکل روی لینک زیر بزن و ویس رو با دقت گوش کن 👇\n\n⛔️ https://t.me/wizwizch/186\n\nمجدد نام کاربری پنل را وارد کنید:\n⁮⁮ ⁮⁮\n        ",
+      "parameters": [],
+      "reasons": [
+        "single_emoji"
+      ]
+    },
+    "bot.bot.addserver_name.message.b1a72d260a": {
+      "before": "ثبت سرور انجام نشد؛ هیچ سرور ناقصی در دیتابیس ذخیره نشد.",
+      "after": "⚠️ ثبت سرور انجام نشد؛ هیچ سرور ناقصی در دیتابیس ذخیره نشد.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "bot.bot.addserver_name.alert.27e6f9c466": {
+      "before": "تنها پنل مرزبان پشتیبانی می‌شود.",
+      "after": "💬 تنها پنل مرزبان پشتیبانی می‌شود.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "bot.bot.addserver_name.alert.48259ae799": {
+      "before": "شناسه سرور معتبر نیست.",
+      "after": "⚠️ شناسه سرور معتبر نیست.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "bot.bot.addserver_name.alert.9ee9f25355": {
+      "before": "پنل مرزبان معتبر نیست.",
+      "after": "⚠️ پنل مرزبان معتبر نیست.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "bot.bot.addserver_name.alert.a5625b915f": {
+      "before": "تغییر گروه مجاز نیست: گروه مقصد نامعتبر است یا سفارش‌های وابسته را ناسازگار می‌کند.",
+      "after": "⛔️ تغییر گروه مجاز نیست: گروه مقصد نامعتبر است یا سفارش‌های وابسته را ناسازگار می‌کند.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "bot.bot.addserver_name.message.8dc219842f": {
+      "before": "روش گروه‌بندی تغییر کرده است؛ گروه را از فهرست تعریف‌شده انتخاب کنید.",
+      "after": "📋 روش گروه‌بندی تغییر کرده است؛ گروه را از فهرست تعریف‌شده انتخاب کنید.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "bot.bot.addserver_name.message.c7ea45277d": {
+      "before": "اطلاعاتی که وارد کردی اشتباهه 😂",
+      "after": "⚠️ اطلاعاتی که وارد کردی اشتباهه 😂",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "bot.bot.addserver_name.message.bf4ac7e119": {
+      "before": "اطلاعات ورود سرور با موفقیت عوض شد.",
+      "after": "✅ اطلاعات ورود سرور با موفقیت عوض شد.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "bot.bot.addserver_name.button.13159f8c74": {
+      "before": "بله",
+      "after": "📝 بله",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "bot.bot.addserver_name.button.f47dddc181": {
+      "before": "نخير",
+      "after": "📝 نخير",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "bot.bot.addserver_name.txt.437acc9f7f": {
+      "before": "اسم",
+      "after": "📝 اسم",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "bot.bot.addserver_name.txt.57400196e6": {
+      "before": "ظرفیت",
+      "after": "⚠️ ظرفیت",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "bot.bot.addserver_name.txt.f4e3596bd2": {
+      "before": "ریمارک",
+      "after": "📝 ریمارک",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "bot.bot.addserver_name.txt.fe242ccc0e": {
+      "before": "پرچم",
+      "after": "📝 پرچم",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "bot.bot.addserver_name.message.664df12986": {
+      "before": "مدیریت سرور {cname}",
+      "after": "⚙️ مدیریت سرور {cname}",
+      "parameters": [
+        "cname"
+      ],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "bot.bot.addserver_name.message.cac7dafe0d": {
+      "before": "برای نوع header type فقط none و یا http مجاز است.",
+      "after": "📝 برای نوع header type فقط none و یا http مجاز است.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "bot.bot.addserver_name.message.d763b5be93": {
+      "before": "برای نوع security فقط tls یا xtls و یا هم none مجاز است.",
+      "after": "📝 برای نوع security فقط tls یا xtls و یا هم none مجاز است.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "broadcast.routes.message2_all.button.b233883d0d": {
+      "before": "بازگشت",
+      "after": "🔙 بازگشت",
+      "parameters": [],
+      "reasons": [
+        "consistent_control_emoji"
+      ]
+    },
+    "broadcast.routes.broadcast_start.message.76bb0d02d0": {
+      "before": "پیام را به کدام گروه می‌خواهید ارسال کنید؟",
+      "after": "💬 پیام را به کدام گروه می‌خواهید ارسال کنید؟",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "broadcast.routes.broadcast_start.message.a3919d081e": {
+      "before": "برای گروه انتخاب‌شده فوروارد کنم؟",
+      "after": "📋 برای گروه انتخاب‌شده فوروارد کنم؟",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "broadcast.routes.broadcast_start.button.8157c7d122": {
+      "before": "بفرست",
+      "after": "📝 بفرست",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "broadcast.routes.broadcast_start.button.5734fc6a07": {
+      "before": "نفرست",
+      "after": "📝 نفرست",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "broadcast.routes.broadcast_start.message.f041aa9600": {
+      "before": "برای گروه انتخاب‌شده ارسال کنم؟",
+      "after": "📋 برای گروه انتخاب‌شده ارسال کنم؟",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "gateway.gateway_return.perform_payment_effect.text.ed588b3bc9": {
+      "before": "میخواست اشتراک بخره، ولی اینباند پیدا نشد.",
+      "after": "میخواست اشتراک بخره، ولی اینباند پیدا نشد. Inbound ID: {inbound_id}",
+      "parameters": [
+        "inbound_id"
+      ],
+      "reasons": [
+        "authorized_privacy_parameter_change",
+        "administrator_diagnostic_preservation"
+      ],
+      "before_parameters": []
+    },
+    "gateway.gateway_return.perform_payment_effect.message.3768e94d51": {
+      "before": "پرداخت شما با موفقیت انجام شد. ولی ❌ | 🥺 سطر (inbound) با آیدی {inbound_id} تو این سرور وجود نداره، مدیر رو در جریان بزار ... مبلغ ",
+      "after": "✅ پرداخت شما با موفقیت انجام شد، اما اشتراک آماده نشد. مبلغ ",
+      "parameters": [],
+      "reasons": [
+        "authorized_privacy_parameter_change",
+        "customer_privacy"
+      ],
+      "before_parameters": [
+        "inbound_id"
+      ]
+    },
+    "jobs.gift2all.message.0addd1b9d4": {
+      "before": "وضعیت تراکنشی پایگاه داده هدیه تأیید نشد؛ بررسی مدیر لازم است.",
+      "after": "⚠️ وضعیت تراکنشی پایگاه داده هدیه تأیید نشد؛ بررسی مدیر لازم است.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "jobs.gift2all.message.53c655af49": {
+      "before": "ساختار تراکنشی هدیه معتبر نیست؛ عملیات متوقف شد.",
+      "after": "⚠️ ساختار تراکنشی هدیه معتبر نیست؛ عملیات متوقف شد.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "jobs.gift2all.message.5a6e527b3b": {
+      "before": "پنل انتخابی پشتیبانی نمی‌شود؛ عملیات هدیه متوقف شد.",
+      "after": "⚠️ پنل انتخابی پشتیبانی نمی‌شود؛ عملیات هدیه متوقف شد.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "jobs.gift2all.message.3582d30e0f": {
+      "before": "امکان ثبت توقف امن هدیه وجود ندارد؛ نیاز به بررسی مدیر.",
+      "after": "⚠️ امکان ثبت توقف امن هدیه وجود ندارد؛ نیاز به بررسی مدیر.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "jobs.gift2all.message.8f73c792e1": {
+      "before": "هویت صف هدیه از نسخهٔ جدید نیست؛ بررسی مدیر لازم است.",
+      "after": "📝 هویت صف هدیه از نسخهٔ جدید نیست؛ بررسی مدیر لازم است.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "jobs.gift2all.message.4a086d03d8": {
+      "before": "هویت فیزیکی مقصد هدیه تغییر کرده؛ بررسی مدیر لازم است.",
+      "after": "📝 هویت فیزیکی مقصد هدیه تغییر کرده؛ بررسی مدیر لازم است.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "jobs.gift2all.message.3316d71705": {
+      "before": "هویت مقصد هنگام دریافت فهرست تغییر کرد؛ بررسی مدیر لازم است.",
+      "after": "📝 هویت مقصد هنگام دریافت فهرست تغییر کرد؛ بررسی مدیر لازم است.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "jobs.gift2all.message.8fdb87d977": {
+      "before": "فهرست کاربران هدیه تأیید نشد؛ هیچ تغییری ثبت نشد.",
+      "after": "⚠️ فهرست کاربران هدیه تأیید نشد؛ هیچ تغییری ثبت نشد.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "jobs.gift2all.message.ee040491ba": {
+      "before": "فهرست گیرندگان هدیه مبهم است؛ بررسی مدیر لازم است.",
+      "after": "📝 فهرست گیرندگان هدیه مبهم است؛ بررسی مدیر لازم است.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "jobs.gift2all.message.f575c8d1dc": {
+      "before": "هویت مقصد پس از فهرست تغییر کرد؛ بررسی مدیر لازم است.",
+      "after": "📝 هویت مقصد پس از فهرست تغییر کرد؛ بررسی مدیر لازم است.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "jobs.gift2all.message.b184e2ae4a": {
+      "before": "فهرست ثابت هدیه تأیید نشد؛ پردازش متوقف و بررسی مدیر لازم است.",
+      "after": "⚠️ فهرست ثابت هدیه تأیید نشد؛ پردازش متوقف و بررسی مدیر لازم است.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "jobs.gift2all.message.e9658f3341": {
+      "before": "عملیات هدیه حجم و زمان سرور {serverName} شروع شد.",
+      "after": "📅 عملیات هدیه حجم و زمان سرور {serverName} شروع شد.",
+      "parameters": [
+        "serverName"
+      ],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "jobs.gift2all.message.9014385dca": {
+      "before": "گیرندهٔ ثبت‌شدهٔ هدیه یافت نشد؛ بررسی مدیر لازم است.",
+      "after": "⚠️ گیرندهٔ ثبت‌شدهٔ هدیه یافت نشد؛ بررسی مدیر لازم است.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "jobs.gift2all.message.5f467e3e2c": {
+      "before": "ثبت عبور از گیرندهٔ غیرفعال تأیید نشد؛ بررسی مدیر لازم است.",
+      "after": "⚠️ ثبت عبور از گیرندهٔ غیرفعال تأیید نشد؛ بررسی مدیر لازم است.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "jobs.gift2all.message.f4b87a5740": {
+      "before": "هویت سفارش هدیه مبهم است؛ عملیات متوقف شد.",
+      "after": "📝 هویت سفارش هدیه مبهم است؛ عملیات متوقف شد.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "jobs.gift2all.message.65625b8a59": {
+      "before": "ثبت توقف امن هدیه تأیید نشد؛ سرویس تغییر نکرد.",
+      "after": "⚠️ ثبت توقف امن هدیه تأیید نشد؛ سرویس تغییر نکرد.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "jobs.gift2all.message.1ea4ee3d49": {
+      "before": "اعمال هدیه برای ردیف {index} رد شد؛ هیچ موفقیتی اعلام نشد.",
+      "after": "✅ اعمال هدیه برای ردیف {index} رد شد؛ هیچ موفقیتی اعلام نشد.",
+      "parameters": [
+        "index"
+      ],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "jobs.gift2all.message.1bf0942a3d": {
+      "before": "به اشتراک {remark} شما {giftText} اضافه شد",
+      "after": "📋 به اشتراک {remark} شما {giftText} اضافه شد",
+      "parameters": [
+        "remark",
+        "giftText"
+      ],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "jobs.gift2all.message.e6f582671d": {
+      "before": "عملیات هدیه حجم و زمان سرور {serverName} به اتمام رسید.",
+      "after": "📅 عملیات هدیه حجم و زمان سرور {serverName} به اتمام رسید.",
+      "parameters": [
+        "serverName"
+      ],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "jobs.gift2all.message.4d3e24cb7c": {
+      "before": "جمع‌بندی فهرست هدیه تأیید نشد؛ بررسی مدیر لازم است.",
+      "after": "⚠️ جمع‌بندی فهرست هدیه تأیید نشد؛ بررسی مدیر لازم است.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "jobs.sub_link.legacy_subscription_link_retired_use.6e4eb03e96": {
+      "before": "Legacy subscription link retired; use the current Marzban subscription URL.",
+      "after": "Legacy subscription link retired; use the current subscription URL.",
+      "parameters": [],
+      "reasons": [
+        "customer_privacy"
+      ]
+    },
+    "legacy_buttons.bot_reports": {
+      "before": "📉 آمار کلی ربات",
+      "after": "📊 آمار کلی ربات",
+      "parameters": [],
+      "reasons": [
+        "consistent_control_emoji"
+      ]
+    },
+    "legacy_buttons.message_to_user": {
+      "before": "📞 پیام خصوصی",
+      "after": "💬 پیام خصوصی",
+      "parameters": [],
+      "reasons": [
+        "consistent_control_emoji"
+      ]
+    },
+    "legacy_buttons.user_reports": {
+      "before": "🔑 اطلاعات کاربر",
+      "after": "👤 اطلاعات کاربر",
+      "parameters": [],
+      "reasons": [
+        "consistent_control_emoji"
+      ]
+    },
+    "legacy_buttons.subscriptions_list": {
+      "before": "⬇️ لیست اشتراک‌ها",
+      "after": "📋 لیست اشتراک‌ها",
+      "parameters": [],
+      "reasons": [
+        "consistent_control_emoji"
+      ]
+    },
+    "legacy_buttons.increase_wallet": {
+      "before": "💵 افزایش موجودی",
+      "after": "💰 افزایش موجودی",
+      "parameters": [],
+      "reasons": [
+        "consistent_control_emoji"
+      ]
+    },
+    "legacy_buttons.decrease_wallet": {
+      "before": "💸 کاهش موجودی",
+      "after": "💰 کاهش موجودی",
+      "parameters": [],
+      "reasons": [
+        "consistent_control_emoji"
+      ]
+    },
+    "legacy_buttons.create_account": {
+      "before": "⌨️ ایجاد اکانت انبوه",
+      "after": "📋 ایجاد اکانت انبوه",
+      "parameters": [],
+      "reasons": [
+        "consistent_control_emoji"
+      ]
+    },
+    "legacy_buttons.ban_user": {
+      "before": "❌ مسدود کردن کاربر",
+      "after": "⛔️ مسدود کردن کاربر",
+      "parameters": [],
+      "reasons": [
+        "consistent_control_emoji"
+      ]
+    },
+    "legacy_buttons.server_settings": {
+      "before": "🚦 مدیریت و تنظیمات سرورها",
+      "after": "⚙️ مدیریت و تنظیمات سرورها",
+      "parameters": [],
+      "reasons": [
+        "consistent_control_emoji"
+      ]
+    },
+    "legacy_buttons.plan_settings": {
+      "before": "🪣 مدیریت پلن ها",
+      "after": "📋 مدیریت پلن ها",
+      "parameters": [],
+      "reasons": [
+        "consistent_control_emoji"
+      ]
+    },
+    "legacy_buttons.main_button_settings": {
+      "before": "🕹 مدیریت دکمه ها ",
+      "after": "⚙️ مدیریت دکمه ها",
+      "parameters": [],
+      "reasons": [
+        "consistent_control_emoji"
+      ]
+    },
+    "legacy_buttons.tickets_list": {
+      "before": "📪 تیکت ها",
+      "after": "💬 تیکت ها",
+      "parameters": [],
+      "reasons": [
+        "consistent_control_emoji"
+      ]
+    },
+    "legacy_buttons.message_to_all": {
+      "before": "🗳 ارسال پیام همگانی",
+      "after": "📣 ارسال پیام همگانی",
+      "parameters": [],
+      "reasons": [
+        "consistent_control_emoji"
+      ]
+    },
+    "legacy_buttons.back_to_main": {
+      "before": "↪️ بازگشت",
+      "after": "🔙 بازگشت",
+      "parameters": [],
+      "reasons": [
+        "consistent_control_emoji"
+      ]
+    },
+    "legacy_buttons.declined": {
+      "before": "رد شد",
+      "after": "📝 رد شد",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "legacy_buttons.back_button": {
+      "before": "↪️ برگشت",
+      "after": "🔙 برگشت",
+      "parameters": [],
+      "reasons": [
+        "consistent_control_emoji"
+      ]
+    },
+    "legacy_buttons.update_config_connection": {
+      "before": "⌛️ بروزرسانی اشتراک",
+      "after": "🔄 بروزرسانی اشتراک",
+      "parameters": [],
+      "reasons": [
+        "consistent_control_emoji"
+      ]
+    },
+    "legacy_buttons.increase_config_volume": {
+      "before": "🩸 افزایش حجم اشتراک",
+      "after": "📦 افزایش حجم اشتراک",
+      "parameters": [],
+      "reasons": [
+        "consistent_control_emoji"
+      ]
+    },
+    "legacy_buttons.increase_config_days": {
+      "before": "📆 افزایش زمان اشتراک",
+      "after": "📅 افزایش زمان اشتراک",
+      "parameters": [],
+      "reasons": [
+        "consistent_control_emoji"
+      ]
+    },
+    "legacy_buttons.renew_config": {
+      "before": "♻ تمدید اشتراک",
+      "after": "🔄 تمدید اشتراک",
+      "parameters": [],
+      "reasons": [
+        "consistent_control_emoji"
+      ]
+    },
+    "legacy_buttons.change_config_location": {
+      "before": "🌎 تغییر سرویس",
+      "after": "🌐 تغییر سرویس",
+      "parameters": [],
+      "reasons": [
+        "consistent_control_emoji"
+      ]
+    },
+    "legacy_buttons.on": {
+      "before": "روشن ✅",
+      "after": "✅ روشن",
+      "parameters": [],
+      "reasons": [
+        "consistent_control_emoji"
+      ]
+    },
+    "legacy_buttons.off": {
+      "before": "خاموش ❌",
+      "after": "❌ خاموش",
+      "parameters": [],
+      "reasons": [
+        "consistent_control_emoji"
+      ]
+    },
+    "legacy_buttons.active": {
+      "before": "فعال 🟢",
+      "after": "🟢 فعال",
+      "parameters": [],
+      "reasons": [
+        "consistent_control_emoji"
+      ]
+    },
+    "legacy_buttons.deactive": {
+      "before": "غیرفعال 🔴",
+      "after": "🔴 غیرفعال",
+      "parameters": [],
+      "reasons": [
+        "consistent_control_emoji"
+      ]
+    },
+    "legacy_buttons.send_phone_number": {
+      "before": "☎️ ارسال شماره",
+      "after": "📱 ارسال شماره",
+      "parameters": [],
+      "reasons": [
+        "consistent_control_emoji"
+      ]
+    },
+    "legacy_buttons.send_message_to_user": {
+      "before": "✉️ ارسال پیام به کاربر",
+      "after": "💬 ارسال پیام به کاربر",
+      "parameters": [],
+      "reasons": [
+        "consistent_control_emoji"
+      ]
+    },
+    "legacy_buttons.join_channel": {
+      "before": "عضویت در کانال",
+      "after": "📢 عضویت در کانال",
+      "parameters": [],
+      "reasons": [
+        "consistent_control_emoji"
+      ]
+    },
+    "legacy_buttons.have_joined": {
+      "before": "عضو شدم ✅",
+      "after": "✅ عضو شدم",
+      "parameters": [],
+      "reasons": [
+        "consistent_control_emoji"
+      ]
+    },
+    "legacy_buttons.gift_volume_day": {
+      "before": "🎯 هدیه حجم و زمان",
+      "after": "🎁 هدیه حجم و زمان",
+      "parameters": [],
+      "reasons": [
+        "consistent_control_emoji"
+      ]
+    },
+    "legacy_buttons.invite_friends": {
+      "before": "🧲 کسب درآمد با معرفی❗️",
+      "after": "🎁 کسب درآمد با معرفی",
+      "parameters": [],
+      "reasons": [
+        "consistent_control_emoji"
+      ]
+    },
+    "legacy_buttons.my_info": {
+      "before": "🔐 حساب کاربری",
+      "after": "👤 حساب کاربری",
+      "parameters": [],
+      "reasons": [
+        "consistent_control_emoji"
+      ]
+    },
+    "legacy_buttons.my_subscriptions": {
+      "before": "🔄 تمدید یا مشاهده اشتراک ها",
+      "after": "📋 تمدید یا مشاهده اشتراک ها",
+      "parameters": [],
+      "reasons": [
+        "consistent_control_emoji"
+      ]
+    },
+    "legacy_buttons.my_tickets": {
+      "before": "📨 تیکت های من",
+      "after": "💬 تیکت های من",
+      "parameters": [],
+      "reasons": [
+        "consistent_control_emoji"
+      ]
+    },
+    "legacy_buttons.search_config": {
+      "before": "➕ افزودن یا مشاهده مشخصات اشتراک ➕",
+      "after": "🔎 افزودن یا مشاهده مشخصات اشتراک",
+      "parameters": [],
+      "reasons": [
+        "single_heading_emoji",
+        "consistent_control_emoji"
+      ]
+    },
+    "legacy_buttons.delete_config": {
+      "before": "❌ حذف اشتراک",
+      "after": "🗑 حذف اشتراک",
+      "parameters": [],
+      "reasons": [
+        "consistent_control_emoji"
+      ]
+    },
+    "legacy_buttons.change_plan": {
+      "before": "🔁 تغییر پلن",
+      "after": "🔄 تغییر پلن",
+      "parameters": [],
+      "reasons": [
+        "consistent_control_emoji"
+      ]
+    },
+    "legacy_buttons.pay_with_wallet": {
+      "before": "💰پرداخت با موجودی",
+      "after": "💰 پرداخت با موجودی",
+      "parameters": [],
+      "reasons": [
+        "consistent_control_emoji"
+      ]
+    },
+    "legacy_buttons.request_agency": {
+      "before": "➕ درخواست همکاری ➕",
+      "after": "🤝 درخواست همکاری",
+      "parameters": [],
+      "reasons": [
+        "single_heading_emoji",
+        "consistent_control_emoji"
+      ]
+    },
+    "legacy_buttons.agency_setting": {
+      "before": "➰ پنل همکاری ➰",
+      "after": "🤝 پنل همکاری",
+      "parameters": [],
+      "reasons": [
+        "single_heading_emoji",
+        "consistent_control_emoji"
+      ]
+    },
+    "legacy_buttons.agent_one_buy": {
+      "before": "➕ خرید تکی",
+      "after": "🛍 خرید تکی",
+      "parameters": [],
+      "reasons": [
+        "consistent_control_emoji"
+      ]
+    },
+    "legacy_buttons.agent_much_buy": {
+      "before": "♾ خرید انبوه",
+      "after": "🛍 خرید انبوه",
+      "parameters": [],
+      "reasons": [
+        "consistent_control_emoji"
+      ]
+    },
+    "legacy_buttons.agent_list": {
+      "before": "📍 مدیریت همکاران 📍",
+      "after": "👤 مدیریت همکاران",
+      "parameters": [],
+      "reasons": [
+        "single_heading_emoji",
+        "consistent_control_emoji"
+      ]
+    },
+    "legacy_buttons.rejected_agent_list": {
+      "before": "درخواست های رد شده",
+      "after": "📋 درخواست های رد شده",
+      "parameters": [],
+      "reasons": [
+        "consistent_control_emoji"
+      ]
+    },
+    "legacy_buttons.search_agent_config": {
+      "before": "🔍 جستجوی اشتراک",
+      "after": "🔎 جستجوی اشتراک",
+      "parameters": [],
+      "reasons": [
+        "consistent_control_emoji"
+      ]
+    },
+    "legacy_buttons.search_admin_config": {
+      "before": "🔍 جستجوی اشتراک کاربر",
+      "after": "🔎 جستجوی اشتراک کاربر",
+      "parameters": [],
+      "reasons": [
+        "consistent_control_emoji"
+      ]
+    },
+    "legacy_buttons.manage_order_database": {
+      "before": "📁 ویرایش سفارش در دیتابیس",
+      "after": "🗂 ویرایش سفارش در دیتابیس",
+      "parameters": [],
+      "reasons": [
+        "consistent_control_emoji"
+      ]
+    },
+    "legacy_buttons.sharj": {
+      "before": "💳 شارژ کیف پول",
+      "after": "💰 شارژ کیف پول",
+      "parameters": [],
+      "reasons": [
+        "consistent_control_emoji"
+      ]
+    },
+    "legacy_buttons.enable_config": {
+      "before": "فعال سازی اشتراک",
+      "after": "✅ فعال سازی اشتراک",
+      "parameters": [],
+      "reasons": [
+        "consistent_control_emoji"
+      ]
+    },
+    "legacy_buttons.disable_config": {
+      "before": "غیرفعال سازی اشتراک",
+      "after": "⛔️ غیرفعال سازی اشتراک",
+      "parameters": [],
+      "reasons": [
+        "consistent_control_emoji"
+      ]
+    },
+    "legacy_messages.banned": {
+      "before": "❌ شما مسدود شدید.\n🛑 برای آزادسازی به پشتیبانی پیام دهید.\n\n🆔 SUPPORTID",
+      "after": "⛔️ شما مسدود شدید.\n🛑 برای آزادسازی به پشتیبانی پیام دهید.\n\n🆔 SUPPORTID",
+      "parameters": [],
+      "reasons": [
+        "consistent_status_emoji"
+      ]
+    },
+    "legacy_messages.customer_custome_plan_name": {
+      "before": "اسم اشتراک رو وارد کنید (حروف انگیلیسی و عدد باهم وارد کنید)",
+      "after": "🔢 اسم اشتراک رو وارد کنید (حروف انگیلیسی و عدد باهم وارد کنید)",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "legacy_messages.user_not_found": {
+      "before": "🥴 کاربر مورد نظر وجود ندارد.",
+      "after": "⚠️ کاربر مورد نظر وجود ندارد.",
+      "parameters": [],
+      "reasons": [
+        "consistent_status_emoji"
+      ]
+    },
+    "legacy_messages.order_submitted": {
+      "before": "✅ ممنون از اعتمادتون، درخواست شما با موفقیت ثبت شد.\n🔰 لطفا کمی صبر کنید تا تایید شود. 🌹🙏\n🚫 ارسال درخواست تکراری باعث مسدودی اکانت می شود.\n<blockquote>\n⏳ معمولا در کمتر از 3 دقیقه تایید می شود، در ساعات غیر کاری ممکن است تا 30 دقیقه و بیشتر طول بکشد.\n❌ لطفا قبل از 45 دقیقه برای تایید رسید به پشتیبانی پیام ندهید رسید شما رد می شود.\n</blockquote>\n📨 پشتیبانی:\n🆔 SUPPORTID",
+      "after": "✅ ممنون از اعتمادتون، درخواست شما با موفقیت ثبت شد.\n🔰 لطفا کمی صبر کنید تا تایید شود. 🌹\n🚫 ارسال درخواست تکراری باعث مسدودی اکانت می شود.\n<blockquote>\n⏳ معمولا در کمتر از 3 دقیقه تایید می شود، در ساعات غیر کاری ممکن است تا 30 دقیقه و بیشتر طول بکشد.\n❌ لطفا قبل از 45 دقیقه برای تایید رسید به پشتیبانی پیام ندهید رسید شما رد می شود.\n</blockquote>\n📨 پشتیبانی:\n🆔 SUPPORTID",
+      "parameters": [],
+      "reasons": [
+        "single_emoji"
+      ]
+    },
+    "legacy_messages.user_welcome_message": {
+      "before": "👋 درود، خوش آمدید🌹❤️\n\n🔥 با Hell Service اینترنت محدود میره به جهنم!\n\n♾️ مناسب اینترنت ملی و نیم بها\n⚡️ سرعت و پایداری بالا به همراه پایینترین پینگ\n🚀 مناسب بازی و Game\n🏳️‍🌈 مولتی لوکیشن\n📶 مناسب ترید و دارای IP ثابت\n\n🛒 جهت پشتیبانی یا سوال در مورد خرید به آی دی زیر پیام دهید:\n\n🆔 SUPPORTID\n🎫 شناسه عددی: userid",
+      "after": "👋 درود، خوش آمدید🌹\n\n🔥 با Hell Service اینترنت محدود میره به جهنم!\n\n♾️ مناسب اینترنت ملی و نیم بها\n⚡️ سرعت و پایداری بالا به همراه پایینترین پینگ\n🚀 مناسب بازی و Game\n🏳️‍🌈 مولتی لوکیشن\n📶 مناسب ترید و دارای IP ثابت\n\n🛒 جهت پشتیبانی یا سوال در مورد خرید به آی دی زیر پیام دهید:\n\n🆔 SUPPORTID\n🎫 شناسه عددی: userid",
+      "parameters": [],
+      "reasons": [
+        "single_emoji"
+      ]
+    },
+    "legacy_messages.out_of_connection_capacity": {
+      "before": "ظرفیت این کانکشن پر شده است.",
+      "after": "⚠️ ظرفیت این کانکشن پر شده است.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "legacy_messages.out_of_server_capacity": {
+      "before": "ظرفیت این سرور پر شده است.",
+      "after": "⚠️ ظرفیت این سرور پر شده است.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "legacy_messages.can_create_specific_account": {
+      "before": "روی این پلن فقط AMOUNT اکانت میشه ساخت",
+      "after": "📋 روی این پلن فقط AMOUNT اکانت میشه ساخت",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "legacy_messages.buy_new_account_request": {
+      "before": "❗️| 💳 خرید جدید (TYPE)\n\n🧝 شناسه عددی: USER-ID\n👨 اسم کاربر: NAME\n⚡️ نام کاربری: @USERNAME\n💰 مبلغ پرداختی: PRICE تومان\n🚦 سرور: SERVERNAME\n✏️ نام اشتراک یا پلن: REMARK\n🔋 حجم اشتراک: VOLUME گیگ\n⏰ مدت اشتراک: DAYS روز",
+      "after": "❗️ خرید جدید (TYPE)\n\n🧝 شناسه عددی: USER-ID\n👨 اسم کاربر: NAME\n⚡️ نام کاربری: @USERNAME\n💰 مبلغ پرداختی: PRICE تومان\n🚦 سرور: SERVERNAME\n✏️ نام اشتراک یا پلن: REMARK\n🔋 حجم اشتراک: VOLUME گیگ\n⏰ مدت اشتراک: DAYS روز",
+      "parameters": [],
+      "reasons": [
+        "single_emoji"
+      ]
+    },
+    "legacy_messages.buy_new_much_account_request": {
+      "before": "❗️| 💳 خرید جدید (TYPE)\n\n🧝 شناسه عددی: USER-ID\n👨 اسم کاربر: NAME\n⚡️ نام کاربری: @USERNAME\n💰 مبلغ پرداختی: PRICE تومان\n🏖 تعداد اکانت: ACCOUNT-COUNT\n✏️ نام اشتراک یا پلن: REMARK",
+      "after": "❗️ خرید جدید (TYPE)\n\n🧝 شناسه عددی: USER-ID\n👨 اسم کاربر: NAME\n⚡️ نام کاربری: @USERNAME\n💰 مبلغ پرداختی: PRICE تومان\n🏖 تعداد اکانت: ACCOUNT-COUNT\n✏️ نام اشتراک یا پلن: REMARK",
+      "parameters": [],
+      "reasons": [
+        "single_emoji"
+      ]
+    },
+    "legacy_messages.bot_is_updating": {
+      "before": "🌛 ربات در حال بروزرسانی می باشد ...",
+      "after": "⏳ ربات در حال بروزرسانی می باشد ...",
+      "parameters": [],
+      "reasons": [
+        "consistent_status_emoji"
+      ]
+    },
+    "legacy_messages.you_dont_have_config": {
+      "before": "هیچ سفارشی ندارید 🙁 باید یه اشتراک خریداری کنید.",
+      "after": "📋 هیچ سفارشی ندارید 🙁 باید یه اشتراک خریداری کنید.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "legacy_messages.config_details_message": {
+      "before": "وضعیت اشتراک: STATE\n    \n🔮 نام کاربری اشتراک: \n<code>NAME</code>\n\n🔌 لینک تکی کانفیگ:\nCONNECT-LINK\n\n🌐 لینک اصلی اشتراک:\nSUB-LINK\n",
+      "after": "📋 وضعیت اشتراک: STATE\n    \n🔮 نام کاربری اشتراک: \n<code>NAME</code>\n\n🔌 لینک تکی کانفیگ:\nCONNECT-LINK\n\n🌐 لینک اصلی اشتراک:\nSUB-LINK\n",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "legacy_messages.please_wait_message": {
+      "before": "🙃 لطفا کمی صبر کنید.",
+      "after": "⏳ لطفا کمی صبر کنید.",
+      "parameters": [],
+      "reasons": [
+        "consistent_status_emoji"
+      ]
+    },
+    "legacy_messages.send_only_number": {
+      "before": "😡 لطفا فقط عدد ارسال کنید. دقت کنید اعداد انگلیسی باشند.",
+      "after": "🔢 لطفا فقط عدد ارسال کنید. دقت کنید اعداد انگلیسی باشند.",
+      "parameters": [],
+      "reasons": [
+        "consistent_status_emoji"
+      ]
+    },
+    "legacy_messages.invited_user_joined_message": {
+      "before": "😍 تبریک یه نفر با لینک شما وارد ربات شد.\n💵 در صورتی که خریدی انجام دهد مبلغ پورسانت به صورت خودکار به کیف پول شما شارژ می شود.",
+      "after": "🎉 تبریک یه نفر با لینک شما وارد ربات شد.\n💵 در صورتی که خریدی انجام دهد مبلغ پورسانت به صورت خودکار به کیف پول شما شارژ می شود.",
+      "parameters": [],
+      "reasons": [
+        "consistent_status_emoji"
+      ]
+    },
+    "legacy_messages.use_iranian_number_only": {
+      "before": "🔘 لطفا فقط با شماره ایرانی اقدام کنید.",
+      "after": "📱 لطفا فقط با شماره ایرانی اقدام کنید.",
+      "parameters": [],
+      "reasons": [
+        "consistent_status_emoji"
+      ]
+    },
+    "legacy_messages.send_your_phone_number": {
+      "before": "سلام عزیزم، برای استفاده از ربات شماره تماس خود را با استفاده از کلید زیر ارسال کنید 👇",
+      "after": "📱 سلام عزیزم، برای استفاده از ربات شماره تماس خود را با استفاده از کلید زیر ارسال کنید 👇",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "legacy_messages.not_joine_yet": {
+      "before": "هنوز عضو کانال نشدید.",
+      "after": "📢 هنوز عضو کانال نشدید.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "legacy_messages.not_valid_discount_code": {
+      "before": "😔 کد تخفیف نامعتبر است.",
+      "after": "⚠️ کد تخفیف نامعتبر است.",
+      "parameters": [],
+      "reasons": [
+        "consistent_status_emoji"
+      ]
+    },
+    "legacy_messages.discount_not_found": {
+      "before": "کد تخفیف وارد شده اشتباه است.",
+      "after": "⚠️ کد تخفیف وارد شده اشتباه است.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "legacy_messages.discount_not_for_user": {
+      "before": "این کد برای حساب شما فعال نیست.",
+      "after": "⛔️ این کد برای حساب شما فعال نیست.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "legacy_messages.discount_not_for_service": {
+      "before": "این کد برای این سرویس قابل استفاده نیست.",
+      "after": "⚠️ این کد برای این سرویس قابل استفاده نیست.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "legacy_messages.discount_min_price": {
+      "before": "این کد فقط برای سفارش‌های بالاتر از MINPRICE قابل استفاده است.",
+      "after": "⚠️ این کد فقط برای سفارش‌های بالاتر از MINPRICE قابل استفاده است.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "legacy_messages.discount_user_limit": {
+      "before": "از این کد به حداکثر تعداد مجاز استفاده کرده‌اید.",
+      "after": "⚠️ از این کد به حداکثر تعداد مجاز استفاده کرده‌اید.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "legacy_messages.used_discount_code": {
+      "before": "☑️ | 🎁 کد تخفیف استفاده شد.\n\n🔰 شناسه عددی: USERID\n👨 اسم کاربر: NAME\n⚡️ نام کاربری: @USERNAME\n🎁 کد تخفیف: DISCOUNTCODE\n💰 مقدار تخفیف: AMOUNT\n",
+      "after": "☑️ کد تخفیف استفاده شد.\n\n🔰 شناسه عددی: USERID\n👨 اسم کاربر: NAME\n⚡️ نام کاربری: @USERNAME\n🎁 کد تخفیف: DISCOUNTCODE\n💰 مقدار تخفیف: AMOUNT\n",
+      "parameters": [],
+      "reasons": [
+        "single_emoji"
+      ]
+    },
+    "legacy_messages.not_correct_text": {
+      "before": "متن وارد شده معتبر نمی باشد.",
+      "after": "⚠️ متن وارد شده معتبر نمی باشد.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "legacy_messages.request_agency_message": {
+      "before": "➕ درخواست همکاری ➕\n\n🔰 شناسه عددی: USERID\n👨 اسم کاربر: NAME\n⚡️ نام کاربری: @USERNAME\n",
+      "after": "➕ درخواست همکاری\n\n🔰 شناسه عددی: USERID\n👨 اسم کاربر: NAME\n⚡️ نام کاربری: @USERNAME\n",
+      "parameters": [],
+      "reasons": [
+        "single_heading_emoji"
+      ]
+    },
+    "legacy_messages.agency_request_sent": {
+      "before": "درخواست شما با موفقیت ارسال شد، لطفا به پشتیبانی پیام دهید!",
+      "after": "✅ درخواست شما با موفقیت ارسال شد، لطفا به پشتیبانی پیام دهید!",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "legacy_messages.agency_request_already_sent": {
+      "before": "درخواست شما قبلاً ارسال شده، لطفا منتظر باشید!",
+      "after": "⏳ درخواست شما قبلاً ارسال شده، لطفا منتظر باشید!",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "legacy_messages.send_agent_discount_percent": {
+      "before": "لطفا مقدار تخفیف این همکاری را به صورت درصد (مثلا 10) وارد کنید.",
+      "after": "📝 لطفا مقدار تخفیف این همکاری را به صورت درصد (مثلا 10) وارد کنید.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "legacy_messages.selling_is_off": {
+      "before": "فعلا فروش نداریم",
+      "after": "⛔️ فعلا فروش نداریم",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "legacy_messages.no_server_available": {
+      "before": "😔 در حال حاضر هیچ سرور فعالی نداریم لطفا بعدا مجدد تست کنید.",
+      "after": "⚠️ در حال حاضر هیچ سرور فعالی نداریم لطفا بعدا مجدد تست کنید.",
+      "parameters": [],
+      "reasons": [
+        "consistent_status_emoji"
+      ]
+    },
+    "legacy_messages.the_bot_in_not_admin": {
+      "before": "😡 ای بابا، ربات هنوز تو کانال عضو نشده، اول ربات رو تو کانال ادمین کن و آیدیش رو بفرست",
+      "after": "⚠️ ای بابا، ربات هنوز تو کانال عضو نشده، اول ربات رو تو کانال ادمین کن و آیدیش رو بفرست",
+      "parameters": [],
+      "reasons": [
+        "consistent_status_emoji"
+      ]
+    },
+    "legacy_messages.category_not_avilable": {
+      "before": "هیچ دسته بندی برای این سرور وجود ندارد.",
+      "after": "⚠️ هیچ دسته بندی برای این سرور وجود ندارد.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "legacy_messages.select_one_plan_to_edit": {
+      "before": "یکی از پلن ها رو برای ویرایش انتخاب کنید.",
+      "after": "📋 یکی از پلن ها رو برای ویرایش انتخاب کنید.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "legacy_messages.send_positive_number": {
+      "before": "لطفا عددی بزرگتر از 0 وارد کنید",
+      "after": "🔢 لطفا عددی بزرگتر از 0 وارد کنید",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "legacy_messages.buy_subscription_detail": {
+      "before": "〽️ نام پلن: PLAN-NAME\n        ➖➖➖➖➖➖➖\n        💎 قیمت پلن: PRICE\n        ➖➖➖➖➖➖➖\n\n💳 برای شرایط بازگشت وجه کانال را بررسی کنید.\n\n        DESCRIPTION\n\t\t\n🔰 لطفا یکی از روش های زیر را انتخاب کنید و روی آن بزنید.\n",
+      "after": "〽️ نام پلن: PLAN-NAME\n        ➖\n        💎 قیمت پلن: PRICE\n        ➖\n\n💳 برای شرایط بازگشت وجه کانال را بررسی کنید.\n\n        DESCRIPTION\n\t\t\n🔰 لطفا یکی از روش های زیر را انتخاب کنید و روی آن بزنید.\n",
+      "parameters": [],
+      "reasons": [
+        "single_emoji"
+      ]
+    },
+    "legacy_messages.buy_much_subscription_detail": {
+      "before": "〽️ نام پلن: PLAN-NAME\n        تعداد اکانت: ACCOUNT-COUNT\n        قیمت پلن: PRICE\n        ➖➖➖➖➖➖➖\n        💎 قیمت کل: TOTAL-PRICE\n        ➖➖➖➖➖➖➖\n✅ سرویس با بالاترین کیفیت و اتصال تضمینی روی تمام اپراتورها در تمام روزهای سال، جهت استفاده از سرویس بخش آموزش ها را ببینید.\n\n💳 برای شرایط بازگشت وجه کانال را بررسی کنید.\n\n        DESCRIPTION\n\t\t\n🔰 لطفا یکی از روش های زیر را انتخاب کنید و روی آن بزنید.\n",
+      "after": "〽️ نام پلن: PLAN-NAME\n        تعداد اکانت: ACCOUNT-COUNT\n        قیمت پلن: PRICE\n        ➖\n        💎 قیمت کل: TOTAL-PRICE\n        ➖\n✅ سرویس با بالاترین کیفیت و اتصال تضمینی روی تمام اپراتورها در تمام روزهای سال، جهت استفاده از سرویس بخش آموزش ها را ببینید.\n\n💳 برای شرایط بازگشت وجه کانال را بررسی کنید.\n\n        DESCRIPTION\n\t\t\n🔰 لطفا یکی از روش های زیر را انتخاب کنید و روی آن بزنید.\n",
+      "parameters": [],
+      "reasons": [
+        "single_emoji"
+      ]
+    },
+    "legacy_messages.buy_custom_subscription_detail": {
+      "before": "〽️ نام پلن: PLAN-NAME\n        حجم اختصاصی: VOLUME GB\n        مدت اختصاصی: DAYS روز\n        ➖➖➖➖➖➖➖\n        💎 قیمت پلن: PRICE\n        ➖➖➖➖➖➖➖\n✅ سرویس با بالاترین کیفیت و اتصال تضمینی روی تمام اپراتورها در تمام روزهای سال، جهت استفاده از سرویس بخش آموزش ها را ببینید.\n\n💳 برای شرایط بازگشت وجه کانال را بررسی کنید.\n\n        DESCRIPTION\n\t\t\n🔰 لطفا یکی از روش های زیر را انتخاب کنید و روی آن بزنید.\n",
+      "after": "〽️ نام پلن: PLAN-NAME\n        حجم اختصاصی: VOLUME GB\n        مدت اختصاصی: DAYS روز\n        ➖\n        💎 قیمت پلن: PRICE\n        ➖\n✅ سرویس با بالاترین کیفیت و اتصال تضمینی روی تمام اپراتورها در تمام روزهای سال، جهت استفاده از سرویس بخش آموزش ها را ببینید.\n\n💳 برای شرایط بازگشت وجه کانال را بررسی کنید.\n\n        DESCRIPTION\n\t\t\n🔰 لطفا یکی از روش های زیر را انتخاب کنید و روی آن بزنید.\n",
+      "parameters": [],
+      "reasons": [
+        "single_emoji"
+      ]
+    },
+    "legacy_messages.agent_deleted_successfuly": {
+      "before": "همکاری با موفقیت حذف شد.",
+      "after": "✅ همکاری با موفقیت حذف شد.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "legacy_messages.forward_your_message": {
+      "before": "لطفا پیام مورد نظر خود را به ربات فوروارد کنید.",
+      "after": "💬 لطفا پیام مورد نظر خود را به ربات فوروارد کنید.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "legacy_messages.sending_config_to_user": {
+      "before": "🚀 | 😍 در حال ارسال اشتراک به مشتری ...",
+      "after": "🚀 در حال ارسال اشتراک به مشتری ...",
+      "parameters": [],
+      "reasons": [
+        "single_emoji"
+      ]
+    },
+    "legacy_messages.config_not_found": {
+      "before": "مشکلی پیش آمده است، لطفا دوباره انجام دهید.",
+      "after": "⚠️ مشکلی پیش آمده است، لطفا دوباره انجام دهید.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "legacy_messages.incorrect_config_name": {
+      "before": "😡 اسم وارد شده معتبر نمی باشد.",
+      "after": "⚠️ اسم وارد شده معتبر نمی باشد.",
+      "parameters": [],
+      "reasons": [
+        "consistent_status_emoji"
+      ]
+    },
+    "legacy_messages.agent_discount_settings": {
+      "before": "مدیریت تخفیف های همکار AGENT-NAME",
+      "after": "⚙️ مدیریت تخفیف های همکار AGENT-NAME",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "legacy_messages.config_doesnt_exist": {
+      "before": "اشتراک یافت نشد.",
+      "after": "⚠️ اشتراک یافت نشد.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "manual_payment.receipt_helpers.build_admin_keyboard_with_stats.button.30b0414601": {
+      "before": "پرداخت موفق",
+      "after": "✅ پرداخت موفق",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "manual_payment.receipt_helpers.build_admin_keyboard_with_stats.button.c2c33e1499": {
+      "before": "پرداخت رد شده",
+      "after": "💳 پرداخت رد شده",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "manual_payment.receipt_helpers.build_admin_keyboard_with_stats.button.e892623fb9": {
+      "before": "مجموع",
+      "after": "📝 مجموع",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "manual_payment.manual_receipts.text.1993d8c086": {
+      "before": "هر صفحه حداکثر ۱۲ پرونده دارد؛ برای دیدن جزئیات یکی را انتخاب کنید.",
+      "after": "هر صفحه حداکثر 12 پرونده دارد؛ برای دیدن جزئیات یکی را انتخاب کنید.",
+      "parameters": [],
+      "reasons": [
+        "ascii_digits"
+      ]
+    },
+    "manual_payment.manual_receipts.button.407c2a3b62": {
+      "before": "🔝 بازگشت به فهرست جدیدتر",
+      "after": "🔙 بازگشت به فهرست جدیدتر",
+      "parameters": [],
+      "reasons": [
+        "consistent_control_emoji"
+      ]
+    },
+    "manual_payment.manual_receipts.button.014e4e047f": {
+      "before": "📋 بازگشت به فهرست",
+      "after": "🔙 بازگشت به فهرست",
+      "parameters": [],
+      "reasons": [
+        "consistent_control_emoji"
+      ]
+    },
+    "manual_payment.manual_receipts.alert.abf0b6c70d": {
+      "before": "این درخواست مسدودسازی تأیید نشد؛ وضعیت را بررسی کنید.",
+      "after": "⛔️ این درخواست مسدودسازی تأیید نشد؛ وضعیت را بررسی کنید.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "payment.agent_discounts.get_agent_discounts.button.526e310df4": {
+      "before": "عمومی",
+      "after": "📝 عمومی",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "payment.agent_discounts.get_agent_discounts.button.d15a8dbd6d": {
+      "before": "افزودن تخفیف پلن",
+      "after": "📋 افزودن تخفیف پلن",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "payment.agent_discounts.get_agent_discounts.button.82aaebb083": {
+      "before": "افزودن تخفیف سرور",
+      "after": "📝 افزودن تخفیف سرور",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "payment.discounts.get_discount_code_keys.button.7f34ceb3ad": {
+      "before": "کد",
+      "after": "📝 کد",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "payment.discounts.get_discount_code_keys.button.70fad032e5": {
+      "before": "مقدار",
+      "after": "📝 مقدار",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "payment.discounts.get_discount_code_keys.button.68d7eb08ef": {
+      "before": "وضعیت",
+      "after": "📝 وضعیت",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "payment.discounts.get_discount_code_keys.button.d6aa12d559": {
+      "before": "ویرایش",
+      "after": "📝 ویرایش",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "payment.discounts.get_discount_code_keys.button.59ca629220": {
+      "before": "حذف",
+      "after": "🗑 حذف",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "payment.discounts.get_discount_code_keys.button.b5534c44c8": {
+      "before": "صفحه {page} از {totalPages}",
+      "after": "📝 صفحه {page} از {totalPages}",
+      "parameters": [
+        "page",
+        "totalPages"
+      ],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "payment.discounts.get_discount_code_keys.button.8817b56474": {
+      "before": "کد تخفیفی یافت نشد.",
+      "after": "⚠️ کد تخفیفی یافت نشد.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "payment.discount_administration.add_discount_code.button.ee7ae9b315": {
+      "before": "همه کاربران",
+      "after": "📝 همه کاربران",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "payment.discount_administration.add_discount_code.button.8d713207b6": {
+      "before": "یک کاربر خاص",
+      "after": "📝 یک کاربر خاص",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "payment.discount_administration.add_discount_code.button.921ac284c7": {
+      "before": "همکاران (agents)",
+      "after": "📝 همکاران (agents)",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "payment.discount_administration.add_discount_code.button.04640cdbe9": {
+      "before": "کاربران غیر همکار",
+      "after": "📝 کاربران غیر همکار",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "payment.discount_administration.add_discount_code.button.3f8deb4819": {
+      "before": "کاربران دارای خرید",
+      "after": "📝 کاربران دارای خرید",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "payment.discount_administration.add_discount_code.button.2e948917ed": {
+      "before": "کاربران بدون خرید",
+      "after": "📝 کاربران بدون خرید",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "payment.discount_administration.add_discount_code.button.69b656b3b1": {
+      "before": "کاربران دارای سفارش",
+      "after": "📝 کاربران دارای سفارش",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "payment.discount_administration.add_discount_code.button.3decf2dd44": {
+      "before": "کاربران بدون سفارش",
+      "after": "📝 کاربران بدون سفارش",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "payment.discount_administration.add_discount_code.button.cd7a54c9e2": {
+      "before": "همه پلن‌ها",
+      "after": "📋 همه پلن‌ها",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "payment.discount_administration.add_discount_code.button.ca013ac6e2": {
+      "before": "فقط یک سرور",
+      "after": "📝 فقط یک سرور",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "payment.discount_administration.add_discount_code.button.9cc8fb5765": {
+      "before": "فقط یک دسته‌بندی",
+      "after": "📝 فقط یک دسته‌بندی",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "payment.discount_administration.add_discount_code.button.14a5228ae9": {
+      "before": "فقط یک پلن",
+      "after": "📋 فقط یک پلن",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "payment.discount_administration.add_discount_code.button.7f3ca89659": {
+      "before": "سروری یافت نشد.",
+      "after": "⚠️ سروری یافت نشد.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "payment.discount_administration.add_discount_code.button.0a243a6b6f": {
+      "before": "دسته‌ای یافت نشد.",
+      "after": "⚠️ دسته‌ای یافت نشد.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "payment.discount_administration.add_discount_code.button.b9342f92d9": {
+      "before": "پلنی یافت نشد.",
+      "after": "⚠️ پلنی یافت نشد.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "payment.discount_administration.add_discount_code.button.a766691671": {
+      "before": "❌ خیر، بازگشت",
+      "after": "🔙 خیر، بازگشت",
+      "parameters": [],
+      "reasons": [
+        "consistent_control_emoji"
+      ]
+    },
+    "payment.discount_administration.add_discount_code.alert.f007c663c6": {
+      "before": "کد تخفیف مورد نظر با موفقیت حذف شد.",
+      "after": "✅ کد تخفیف مورد نظر با موفقیت حذف شد.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "payment.discount_administration.add_discount_code.alert.fa58f63a4f": {
+      "before": "کد تخفیف یافت نشد.",
+      "after": "⚠️ کد تخفیف یافت نشد.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "payment.discount_administration.add_discount_code.button.6928c28094": {
+      "before": "مقدار تخفیف",
+      "after": "📝 مقدار تخفیف",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "payment.discount_administration.add_discount_code.button.500a41c19c": {
+      "before": "تاریخ انقضا",
+      "after": "📅 تاریخ انقضا",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "payment.discount_administration.add_discount_code.button.2a9c76274d": {
+      "before": "تعداد کل",
+      "after": "📝 تعداد کل",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "payment.discount_administration.add_discount_code.button.aa2cf0b48b": {
+      "before": "محدودیت استفاده",
+      "after": "📝 محدودیت استفاده",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "payment.discount_administration.add_discount_code.button.de8e46e3ed": {
+      "before": "گروه کاربران",
+      "after": "📝 گروه کاربران",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "payment.discount_administration.add_discount_code.button.81302c92dd": {
+      "before": "هدف سرویس",
+      "after": "📝 هدف سرویس",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "payment.discount_administration.add_discount_code.button.c74b84ea09": {
+      "before": "حداقل مبلغ",
+      "after": "💰 حداقل مبلغ",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "payment.discount_administration.add_discount_code.button.39009afb83": {
+      "before": "سقف تخفیف",
+      "after": "⚠️ سقف تخفیف",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "payment.discount_administration.add_discount_code.button.e6eabe4b9d": {
+      "before": "حذف کاربر از استفاده کنندگان",
+      "after": "🗑 حذف کاربر از استفاده کنندگان",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "payment.discount_administration.add_discount_code.button.6b16e7f231": {
+      "before": "↪️ بازگشت به لیست",
+      "after": "🔙 بازگشت به لیست",
+      "parameters": [],
+      "reasons": [
+        "consistent_control_emoji"
+      ]
+    },
+    "payment.pre_payment.message.34461be871": {
+      "before": "پلن اشتراک تغییر کرده ولی وضعیت پرداخت/فاکتور قبلی محفوظ است. لطفاً برای تطبیق پرداخت با پشتیبانی تماس بگیرید.",
+      "after": "📋 پلن اشتراک تغییر کرده ولی وضعیت پرداخت/فاکتور قبلی محفوظ است. لطفاً برای تطبیق پرداخت با پشتیبانی تماس بگیرید.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "payment.pre_payment.message.59e3040876": {
+      "before": "وضعیت صدور فاکتور این سفارش در حال بررسی است. برای جلوگیری از درخواست تکراری با پشتیبانی تماس بگیرید.",
+      "after": "⏳ وضعیت صدور فاکتور این سفارش در حال بررسی است. برای جلوگیری از درخواست تکراری با پشتیبانی تماس بگیرید.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "payment_settings.gateway_rule_admin.gateway_admin_page.button.b233883d0d": {
+      "before": "بازگشت",
+      "after": "🔙 بازگشت",
+      "parameters": [],
+      "reasons": [
+        "consistent_control_emoji"
+      ]
+    },
+    "payment_settings.gateway_rule_admin.gateway_admin_page.button.fa7af603d4": {
+      "before": "انصراف",
+      "after": "📝 انصراف",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "payment_settings.gateway_rule_admin.gateway_admin_page.text.3153c0f2f5": {
+      "before": "۰/۰ = غیرفعال، تعداد ۰ و روز مثبت = حداقل یک تراکنش در بازه.\n",
+      "after": "0/0 = غیرفعال، تعداد 0 و روز مثبت = حداقل یک تراکنش در بازه.\n",
+      "parameters": [],
+      "reasons": [
+        "ascii_digits"
+      ]
+    },
+    "payment_settings.gateway_rule_admin.gateway_admin_page.button.dd5c4f32ce": {
+      "before": "⛔️ غیرفعال‌سازی شرط (۰/۰)",
+      "after": "⛔️ غیرفعال‌سازی شرط (0/0)",
+      "parameters": [],
+      "reasons": [
+        "ascii_digits"
+      ]
+    },
+    "payment_settings.gateway_rule_admin.gateway_admin_page.text.03d7bf8c63": {
+      "before": "۰ روز = بدون محدودیت سن عضویت\n",
+      "after": "0 روز = بدون محدودیت سن عضویت\n",
+      "parameters": [],
+      "reasons": [
+        "ascii_digits"
+      ]
+    },
+    "payment_settings.payment_key_admin.payment_key_admin_input_hint.label.7fa91d9aaf": {
+      "before": "⚠️ لینک HTTPS معتبر، بدون اطلاعات ورود و حداکثر ۳۵۰ بایت وارد کنید.",
+      "after": "⚠️ لینک HTTPS معتبر، بدون اطلاعات ورود و حداکثر 350 بایت وارد کنید.",
+      "parameters": [],
+      "reasons": [
+        "ascii_digits"
+      ]
+    },
+    "plans.administration.alert.f785716e8a": {
+      "before": "ثبت پلن پنل قدیمی حذف شده است؛ از پلن مرزبان استفاده کنید.",
+      "after": "🗑 ثبت پلن پنل قدیمی حذف شده است؛ از پلن مرزبان استفاده کنید.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "plans.administration.add_new_marzban_plan.message.2c4ec0c4cc": {
+      "before": "لطفا نوع شبکه های این پلن را انتخاب کنید.",
+      "after": "📋 لطفا نوع شبکه های این پلن را انتخاب کنید.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "plans.administration.backplan.button.9708693ebe": {
+      "before": "➖➖➖",
+      "after": "➖",
+      "parameters": [],
+      "reasons": [
+        "single_emoji"
+      ]
+    },
+    "plans.administration.edit_custom_plan.message.be59f23713": {
+      "before": "فقط عدد ارسال کن",
+      "after": "🔢 فقط عدد ارسال کن",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "plans.administration.edit_custom_plan.button.7a96416b62": {
+      "before": "هزینه هر گیگ",
+      "after": "📦 هزینه هر گیگ",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "plans.administration.edit_custom_plan.button.31bc93a08d": {
+      "before": "هزینه هر روز",
+      "after": "📅 هزینه هر روز",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "plans.administration.edit_custom_plan.message.e3b03f6c8e": {
+      "before": "تنظیمات پلن دلخواه",
+      "after": "📋 تنظیمات پلن دلخواه",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "plans.administration.edit_custom_plan.alert.1633521d7d": {
+      "before": "متاسفانه، هیچ پلنی براش انتخاب نکردی 😑",
+      "after": "📋 متاسفانه، هیچ پلنی براش انتخاب نکردی 😑",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "plans.administration.edit_custom_plan.alert.756c3005d3": {
+      "before": "موردی یافت نشد.",
+      "after": "⚠️ موردی یافت نشد.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "plans.administration.edit_custom_plan.message.06d5c646c1": {
+      "before": "ویرایش تنظیمات پلن:",
+      "after": "📋 ویرایش تنظیمات پلن:",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "plans.administration.edit_custom_plan.alert.7aeabddffe": {
+      "before": "لیست خالی است.",
+      "after": "📝 لیست خالی است.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "plans.administration.edit_custom_plan.alert.3064bbd794": {
+      "before": "پلن رو برات حذفش کردم ☹️☑️",
+      "after": "🗑 پلن رو برات حذفش کردم ☹️",
+      "parameters": [],
+      "reasons": [
+        "single_emoji",
+        "leading_context_emoji"
+      ]
+    },
+    "plans.administration.edit_custom_plan.message.923b819fc4": {
+      "before": "لطفا قیمت را به صورت عددی وارد کنید.",
+      "after": "🔢 لطفا قیمت را به صورت عددی وارد کنید.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "plans.categories.add_new_category.msg.5ba2f5c693": {
+      "before": "یه دسته بندی جدید برات ثبت کردم 🙂☑️",
+      "after": "📝 یه دسته بندی جدید برات ثبت کردم 🙂",
+      "parameters": [],
+      "reasons": [
+        "single_emoji",
+        "leading_context_emoji"
+      ]
+    },
+    "plans.categories.add_new_category.alert.d13765614a": {
+      "before": "دسته بندی رو برات حذفش کردم ☹️☑️",
+      "after": "🗑 دسته بندی رو برات حذفش کردم ☹️",
+      "parameters": [],
+      "reasons": [
+        "single_emoji",
+        "leading_context_emoji"
+      ]
+    },
+    "plans.intervals.day_plan_settings.message.f253e3780e": {
+      "before": "لیست پلن های زمانی خالی است.",
+      "after": "📅 لیست پلن های زمانی خالی است.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "plans.intervals.day_plan_settings.button.4e0a1e41c8": {
+      "before": "افزودن پلن زمانی جدید",
+      "after": "📅 افزودن پلن زمانی جدید",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "plans.intervals.day_plan_settings.button.59ca629220": {
+      "before": "حذف",
+      "after": "🗑 حذف",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "plans.intervals.day_plan_settings.button.7d2c8a1926": {
+      "before": "قیمت",
+      "after": "📝 قیمت",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "plans.intervals.day_plan_settings.button.be0d8f0892": {
+      "before": "تعداد روز",
+      "after": "📅 تعداد روز",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "plans.intervals.add_new_day_plan.message.a2684ce4cc": {
+      "before": "حجم را به گیگابایت کامل وارد کنید؛ مقدار اعشاری پشتیبانی نمی‌شود.",
+      "after": "⚠️ حجم را به گیگابایت کامل وارد کنید؛ مقدار اعشاری پشتیبانی نمی‌شود.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "plans.intervals.add_new_day_plan.message.9acd097b34": {
+      "before": "پلن زمانی جدید با موفقیت اضافه شد",
+      "after": "✅ پلن زمانی جدید با موفقیت اضافه شد",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "plans.intervals.add_new_day_plan.alert.b7bba0b0c0": {
+      "before": "پلن موردنظر با موفقیت حذف شد.",
+      "after": "✅ پلن موردنظر با موفقیت حذف شد.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "plans.intervals.add_new_day_plan.message.b9989bb7c2": {
+      "before": "قیمت جدید را وارد کنید:",
+      "after": "📝 قیمت جدید را وارد کنید:",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "plans.intervals.add_new_day_plan.message.a7db47ad08": {
+      "before": "یک مقدار عددی و صحیح وارد کنید",
+      "after": "🔢 یک مقدار عددی و صحیح وارد کنید",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "plans.intervals.add_new_day_plan.message.395f467a7d": {
+      "before": "روز جدید را وارد کنید:",
+      "after": "📅 روز جدید را وارد کنید:",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "plans.intervals.volume_plan_settings.message.63f1e596ef": {
+      "before": "لیست پلن های حجمی خالی است.",
+      "after": "📦 لیست پلن های حجمی خالی است.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "plans.intervals.volume_plan_settings.button.a3524cb835": {
+      "before": "افزودن پلن حجمی جدید",
+      "after": "📦 افزودن پلن حجمی جدید",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "plans.intervals.volume_plan_settings.button.57fa83c28f": {
+      "before": "مقدار حجم",
+      "after": "📦 مقدار حجم",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "plans.intervals.add_new_volume_plan.message.b003cdcfab": {
+      "before": "پلن حجمی جدید با موفقیت اضافه شد.",
+      "after": "✅ پلن حجمی جدید با موفقیت اضافه شد.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "plans.intervals.add_new_volume_plan.alert.d5009733f9": {
+      "before": "پلن مورد نظر با موفقیت حذف شد.",
+      "after": "✅ پلن مورد نظر با موفقیت حذف شد.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "plans.intervals.add_new_volume_plan.message.76731ef62b": {
+      "before": "عملیات با موفقیت انجام شد.",
+      "after": "✅ عملیات با موفقیت انجام شد.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "plans.intervals.add_new_volume_plan.message.149e31d927": {
+      "before": "حجم جدید را به گیگابایت کامل وارد کنید؛ مقدار اعشاری پشتیبانی نمی‌شود.",
+      "after": "⚠️ حجم جدید را به گیگابایت کامل وارد کنید؛ مقدار اعشاری پشتیبانی نمی‌شود.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "provider.provider_admin.pg_server_admin_keys.button.c84bd01998": {
+      "before": "Groups پیش‌فرض",
+      "after": "📝 Groups پیش‌فرض",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "provider.provider_admin.pg_server_admin_keys.button.e2e7e28899": {
+      "before": "اتصال و API key",
+      "after": "📝 اتصال و API key",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "provider.provider_admin.pg_server_admin_keys.button.b233883d0d": {
+      "before": "بازگشت",
+      "after": "🔙 بازگشت",
+      "parameters": [],
+      "reasons": [
+        "consistent_control_emoji"
+      ]
+    },
+    "provider.provider_admin.handle_provider_admin.button.c672a35381": {
+      "before": "تعویض API key",
+      "after": "📝 تعویض API key",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "provider.provider_admin.handle_provider_admin.message.601077bd6d": {
+      "before": "اتصال فیزیکی را انتخاب کنید تا سرور منطقی با Groups مستقل بسازید.",
+      "after": "📋 اتصال فیزیکی را انتخاب کنید تا سرور منطقی با Groups مستقل بسازید.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "provider.provider_admin.handle_provider_admin.message.d0e9e358ec": {
+      "before": "سه خط بفرستید:\nنام اتصال\nآدرس پایه PasarGuard\nAPI key دارای دسترسی کاربران و Groups\nنسخه پشتیبانی‌شده 5.5.1 است؛ پیام کلید پس از دریافت حذف می‌شود.",
+      "after": "📝 سه خط بفرستید:\nنام اتصال\nآدرس پایه PasarGuard\nAPI key دارای دسترسی کاربران و Groups\nنسخه پشتیبانی‌شده 5.5.1 است؛ پیام کلید پس از دریافت حذف می‌شود.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "provider.provider_admin.handle_provider_admin.message.bf4b28ea45": {
+      "before": "API key جدید را بفرستید. پیام کلید حذف می‌شود.",
+      "after": "🗑 API key جدید را بفرستید. پیام کلید حذف می‌شود.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "purchase.catalogue.message.05308dd049": {
+      "before": "لطفا عددی بزرگتر از 0 وارد کن",
+      "after": "🔢 لطفا عددی بزرگتر از 0 وارد کن",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "purchase.catalogue.message.3fbe481726": {
+      "before": "عدد اعشاری مجاز نیست",
+      "after": "⛔️ عدد اعشاری مجاز نیست",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "purchase.entry_and_bulk.create_multiple_accounts.alert.de33518bf8": {
+      "before": "هیچ دسته بندی برای این سرور وجود ندارد.",
+      "after": "⚠️ هیچ دسته بندی برای این سرور وجود ندارد.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "purchase.entry_and_bulk.create_multiple_accounts.message.7f4d98ab9b": {
+      "before": "3️⃣ مرحله سه\n\nیکی از پلن هارو انتخاب کن و برو برای پرداختش 🤲 🕋",
+      "after": "3️⃣ مرحله سه\n\nیکی از پلن هارو انتخاب کن و برو برای پرداختش 🤲",
+      "parameters": [],
+      "reasons": [
+        "single_emoji"
+      ]
+    },
+    "purchase.entry_and_bulk.create_multiple_accounts.message.9cc4de866d": {
+      "before": "عدد باید بیشتر از 0 باشه",
+      "after": "🔢 عدد باید بیشتر از 0 باشه",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "purchase.entry_and_bulk.create_multiple_accounts.message.f30d6ad265": {
+      "before": "مقداری بزرگتر از 0 وارد کن",
+      "after": "📝 مقداری بزرگتر از 0 وارد کن",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "purchase.order_writes.ensure_account_creation_succeeded.user_message.7a64d65208": {
+      "before": "❌ سطر (inbound) با آیدی {inbound_id} تو این سرور وجود ندارد، لطفا پشتیبانی را در جریان بگذارید.",
+      "after": "❌ ساخت اشتراک انجام نشد، لطفا پشتیبانی را در جریان بگذارید.",
+      "parameters": [],
+      "reasons": [
+        "authorized_privacy_parameter_change",
+        "customer_privacy"
+      ],
+      "before_parameters": [
+        "inbound_id"
+      ]
+    },
+    "purchase.trial_catalogue.get_test_account.alert.0143c681c4": {
+      "before": "شما اکانت تست را قبلا استفاده کرده اید.",
+      "after": "📝 شما اکانت تست را قبلا استفاده کرده اید.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "purchase.trial_catalogue.get_test_account.alert.d1ae7ac011": {
+      "before": "این بخش موقتا غیر فعال است.",
+      "after": "⛔️ این بخش موقتا غیر فعال است.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "renewal.extensions.alert.6732b29e55": {
+      "before": "در حال حاضر هیچ پلنی برای افزایش مدت زمان اشتراک وجود ندارد.",
+      "after": "⚠️ در حال حاضر هیچ پلنی برای افزایش مدت زمان اشتراک وجود ندارد.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "renewal.extensions.alert.584426a8a8": {
+      "before": "پلن زمانی در دسترس نیست؛ دوباره از منوی اشتراک انتخاب کنید.",
+      "after": "📅 پلن زمانی در دسترس نیست؛ دوباره از منوی اشتراک انتخاب کنید.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "renewal.extensions.msg.bfc1b46322": {
+      "before": "\n🔋|💰 افزایش زمان با (کیف پول)\n\n🎫 شناسه عددی: {from_id}\n👨 اسم کاربر: {first_name}\n⚡️ نام کاربری: @{username}\n🎈 نام کاربری اشتراک: {remark}\n⏰ مدت افزایش: {volume} روز\n💰 قیمت: {price} تومان\n",
+      "after": "\n🔋 افزایش زمان با (کیف پول)\n\n🎫 شناسه عددی: {from_id}\n👨 اسم کاربر: {first_name}\n⚡️ نام کاربری: @{username}\n🎈 نام کاربری اشتراک: {remark}\n⏰ مدت افزایش: {volume} روز\n💰 قیمت: {price} تومان\n",
+      "parameters": [
+        "from_id",
+        "first_name",
+        "username",
+        "remark",
+        "volume",
+        "price"
+      ],
+      "reasons": [
+        "single_emoji"
+      ]
+    },
+    "renewal.extensions.message.655234a584": {
+      "before": "هیچ پلنی برای این سرور وجود ندارد.",
+      "after": "⚠️ هیچ پلنی برای این سرور وجود ندارد.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "renewal.extensions.alert.e6c27b8039": {
+      "before": "در حال حاضر هیچ پلن حجمی وجود ندارد.",
+      "after": "⚠️ در حال حاضر هیچ پلن حجمی وجود ندارد.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "renewal.extensions.alert.6173c35986": {
+      "before": "پلن حجمی در دسترس نیست؛ دوباره از منوی اشتراک انتخاب کنید.",
+      "after": "📦 پلن حجمی در دسترس نیست؛ دوباره از منوی اشتراک انتخاب کنید.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "renewal.extensions.msg.0e12e9ce3d": {
+      "before": "\n🔋|💰 افزایش حجم با (کیف پول)\n\n🎫 شناسه عددی: {from_id}\n👨 اسم کاربر: {first_name}\n⚡️ نام کاربری: @{username}\n🎈 نام کاربری اشتراک: {remark}\n⏰ حجم افزایش: {volume} گیگ\n💰 قیمت: {price} تومان\n",
+      "after": "\n🔋 افزایش حجم با (کیف پول)\n\n🎫 شناسه عددی: {from_id}\n👨 اسم کاربر: {first_name}\n⚡️ نام کاربری: @{username}\n🎈 نام کاربری اشتراک: {remark}\n⏰ حجم افزایش: {volume} گیگ\n💰 قیمت: {price} تومان\n",
+      "parameters": [
+        "from_id",
+        "first_name",
+        "username",
+        "remark",
+        "volume",
+        "price"
+      ],
+      "reasons": [
+        "single_emoji"
+      ]
+    },
+    "renewal.renewal_selection.message.51ab077156": {
+      "before": "3️⃣ مرحله سه\n\n🤲 🕋 یکی از پلن هارو انتخاب کنید.\n➕ اگر سرویس مورد نظر شما در لیست زیر نیست لازم هست اول اشتراک را به لیست اشتراک های خودتان اضافه کنید و بعد با زدن دکمه ← 🔄 تغییر پلن، پلن انتخاب کنید تا بتوانید اشتراک خودتان را تمدید و یا شارژ کنید. ",
+      "after": "3️⃣ مرحله سه\n\n🤲 یکی از پلن هارو انتخاب کنید.\n➕ اگر سرویس مورد نظر شما در لیست زیر نیست لازم هست اول اشتراک را به لیست اشتراک های خودتان اضافه کنید و بعد با زدن دکمه ← 🔄 تغییر پلن، پلن انتخاب کنید تا بتوانید اشتراک خودتان را تمدید و یا شارژ کنید. ",
+      "parameters": [],
+      "reasons": [
+        "single_emoji"
+      ]
+    },
+    "subscription.account_deletion.button.13159f8c74": {
+      "before": "بله",
+      "after": "📝 بله",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "subscription.account_deletion.button.5f5c4c72bd": {
+      "before": "خیر",
+      "after": "📝 خیر",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "subscription.account_details.get_user_order_detail_keys.button.d35e1b4661": {
+      "before": "آیدی کاربر",
+      "after": "📝 آیدی کاربر",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "subscription.account_details.get_user_order_detail_keys.button.c9b4331f4f": {
+      "before": "اسم کاربر",
+      "after": "📝 اسم کاربر",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "subscription.account_details.get_user_order_detail_keys.button.1c7f597d4f": {
+      "before": "خرید همکار",
+      "after": "📝 خرید همکار",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "subscription.account_transfers.alert.6b5b63fb0f": {
+      "before": "تغییر سرور غیرفعال است.",
+      "after": "⛔️ تغییر سرور غیرفعال است.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "subscription.account_transfers.alert.33278b6a77": {
+      "before": "در حال حاضر گزینه مقصد سازگار دیگری برای این اشتراک وجود ندارد.",
+      "after": "⚠️ در حال حاضر گزینه مقصد سازگار دیگری برای این اشتراک وجود ندارد.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "subscription.customer_routes.cancel_search_keyboard.alert.06fdc45418": {
+      "before": "نمی توانید نوع این اشتراک را تغییر دهید.",
+      "after": "⚠️ نمی توانید نوع این اشتراک را تغییر دهید.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "subscription.customer_routes.cancel_search_keyboard.message.3034785b83": {
+      "before": "لطفا پورت مورد نظر خود را وارد کنید.\nبرای حذف پورت دلخواه عدد 0 را وارد کنید.",
+      "after": "📝 لطفا پورت مورد نظر خود را وارد کنید.\nبرای حذف پورت دلخواه عدد 0 را وارد کنید.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "subscription.customer_routes.cancel_search_keyboard.message.06d5c646c1": {
+      "before": "ویرایش تنظیمات پلن:",
+      "after": "📋 ویرایش تنظیمات پلن:",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "subscription.customer_routes.cancel_search_keyboard.message.d4b5f70a92": {
+      "before": "لطفا sni مورد نظر خود را وارد کنید.\nبرای حذف متن /empty را وارد کنید.",
+      "after": "📝 لطفا sni مورد نظر خود را وارد کنید.\nبرای حذف متن /empty را وارد کنید.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "subscription.customer_routes.cancel_search_keyboard.alert.477e4570c3": {
+      "before": "تغییر پروتکل غیر فعال است.",
+      "after": "⛔️ تغییر پروتکل غیر فعال است.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "subscription.customer_routes.cancel_search_keyboard.message.f0a1fc755c": {
+      "before": "سفارش مورد نظر یافت نشد.",
+      "after": "⚠️ سفارش مورد نظر یافت نشد.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "subscription.customer_routes.cancel_search_keyboard.message.a7cb7bc569": {
+      "before": "اطلاعات سرور یافت نشد.",
+      "after": "⚠️ اطلاعات سرور یافت نشد.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "subscription.external_accounts.extract_username_from_link.message.bb8dfc256d": {
+      "before": "❌ اشتراک موردنظر پیدا نشد. اگر اعتبار آن تمام شده و بیش از ۱۵ روز گذشته باشد، ممکن است حذف شده باشد.",
+      "after": "❌ اشتراک موردنظر پیدا نشد. اگر اعتبار آن تمام شده و بیش از 15 روز گذشته باشد، ممکن است حذف شده باشد.",
+      "parameters": [],
+      "reasons": [
+        "ascii_digits"
+      ]
+    },
+    "subscription.external_accounts.extract_username_from_link.button.e2fee6e8d7": {
+      "before": "🔘 وضعیت اکانت 🔘",
+      "after": "🔘 وضعیت اکانت",
+      "parameters": [],
+      "reasons": [
+        "single_heading_emoji"
+      ]
+    },
+    "subscription.external_accounts.extract_username_from_link.button.8ce785e9a5": {
+      "before": "➕ افزودن به حساب مشتری ➕",
+      "after": "➕ افزودن به حساب مشتری",
+      "parameters": [],
+      "reasons": [
+        "single_heading_emoji"
+      ]
+    },
+    "subscription.external_accounts.extract_username_from_link.button.387c334ec1": {
+      "before": "➕ افزودن به مشاهده اشتراک ها ➕",
+      "after": "➕ افزودن به مشاهده اشتراک ها",
+      "parameters": [],
+      "reasons": [
+        "single_heading_emoji"
+      ]
+    },
+    "subscription.external_accounts.extract_username_from_link.button.a4ebab2a7b": {
+      "before": "↪️ برگشت به منوی اصلی",
+      "after": "🔙 برگشت به منوی اصلی",
+      "parameters": [],
+      "reasons": [
+        "consistent_control_emoji"
+      ]
+    },
+    "subscription.external_accounts.extract_username_from_link.message.b2f5ea228c": {
+      "before": "🔰 مشخصات اشتراک ارسالی 🔰 \n🔄 در اینجا می توانید اشتراکی که برای خودتان یا دیگران است را تمدید کنید. \n🛑 لطفا دقت کنید فقط اشتراکی که برای خودتان است را به لیست اشتراک ها اضافه کنید و اشتراک دیگران را اضافه نکنید. \n➕ <b>نکته مهم:</b> اگر اشتراک برای خودتان هست قبل از تمدید اول آن را به ربات اضافه کنید و بعد از بخش مشاهده اشتراک ها پلن خودتان را انتخاب و تمدید کنید. \n",
+      "after": "🔰 مشخصات اشتراک ارسالی \n🔄 در اینجا می توانید اشتراکی که برای خودتان یا دیگران است را تمدید کنید. \n🛑 لطفا دقت کنید فقط اشتراکی که برای خودتان است را به لیست اشتراک ها اضافه کنید و اشتراک دیگران را اضافه نکنید. \n➕ <b>نکته مهم:</b> اگر اشتراک برای خودتان هست قبل از تمدید اول آن را به ربات اضافه کنید و بعد از بخش مشاهده اشتراک ها پلن خودتان را انتخاب و تمدید کنید. \n",
+      "parameters": [],
+      "reasons": [
+        "single_heading_emoji"
+      ]
+    },
+    "subscription.manual_accounts.msg.a88437a461": {
+      "before": "لطفاً شناسه عددی کاربر (user_id) را وارد کنید:",
+      "after": "🔢 لطفاً شناسه عددی کاربر (user_id) را وارد کنید:",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "subscription.manual_accounts.manual_account_consume_selection.button.0c983c9f0f": {
+      "before": "➕ افزودن به اشتراک های کاربر ➕",
+      "after": "➕ افزودن به اشتراک های کاربر",
+      "parameters": [],
+      "reasons": [
+        "single_heading_emoji"
+      ]
+    },
+    "subscription.order_management.message.6e1cf97901": {
+      "before": "هیچ اشتراکی برای این کاربر موجود نیست.",
+      "after": "📋 هیچ اشتراکی برای این کاربر موجود نیست.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "subscription.order_management.show_order_management_panel.button.087a5a43b1": {
+      "before": "⚙️ بازگشت به مدیریت",
+      "after": "🔙 بازگشت به مدیریت",
+      "parameters": [],
+      "reasons": [
+        "consistent_control_emoji"
+      ]
+    },
+    "subscription.order_management.show_order_management_panel.button.198b410113": {
+      "before": "صفر کردن مصرف (PasarGuard)",
+      "after": "📝 صفر کردن مصرف (PasarGuard)",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "subscription.order_management.show_order_management_panel.alert.7a6ebab798": {
+      "before": "هیچ سرور دیگری با همان پنل مرزبان وجود ندارد.",
+      "after": "⚠️ هیچ سرور دیگری با همان پنل مرزبان وجود ندارد.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "subscription.server_display_settings.server_display_keys.button.3ca7cc1405": {
+      "before": "انتخاب QR تحویل",
+      "after": "📋 انتخاب QR تحویل",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "subscription.server_display_settings.server_display_keys.button.f86223c190": {
+      "before": "سقف لینک‌ها",
+      "after": "⚠️ سقف لینک‌ها",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "subscription.server_display_settings.server_display_keys.button.6b77433ae2": {
+      "before": "آستانه مخفی‌سازی",
+      "after": "📝 آستانه مخفی‌سازی",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "subscription.server_display_settings.server_display_keys.button.a4c3ef092e": {
+      "before": "انتخاب کانفیگ‌ها",
+      "after": "📋 انتخاب کانفیگ‌ها",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "subscription.server_display_settings.server_display_keys.button.9eea37f5f0": {
+      "before": "موقعیت‌های نمایش",
+      "after": "📝 موقعیت‌های نمایش",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "subscription.server_display_settings.server_display_keys.button.c0668ff5b5": {
+      "before": "موقعیت‌های تحویل",
+      "after": "📝 موقعیت‌های تحویل",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "subscription.server_display_settings.server_display_keys.button.b71d77fe36": {
+      "before": "مخفی‌کردن بالای ۱۰: ",
+      "after": "مخفی‌کردن بالای 10: ",
+      "parameters": [],
+      "reasons": [
+        "ascii_digits"
+      ]
+    },
+    "subscription.server_display_settings.server_display_keys.button.b3ba57d81a": {
+      "before": "روش انتخاب مرزبان",
+      "after": "📋 روش انتخاب مرزبان",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "subscription.server_display_settings.server_display_keys.button.ad00f1d27d": {
+      "before": "ویرایش پیشرفته",
+      "after": "📝 ویرایش پیشرفته",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "subscription.server_display_settings.server_display_summary.body.f97693c9e9": {
+      "before": "\nروش سازگار مرزبان\nموقعیت‌های نمایش (از ۱): ",
+      "after": "\nروش سازگار مرزبان\nموقعیت‌های نمایش (از 1): ",
+      "parameters": [],
+      "reasons": [
+        "ascii_digits"
+      ]
+    },
+    "subscription.server_display_settings.server_display_summary.text.9453bf36b1": {
+      "before": "\nموقعیت‌های تحویل (از ۰): ",
+      "after": "\nموقعیت‌های تحویل (از 0): ",
+      "parameters": [],
+      "reasons": [
+        "ascii_digits"
+      ]
+    },
+    "subscription.server_display_settings.server_display_prompt.text.9314449c88": {
+      "before": "سقف تعداد کانفیگ را از ۰ تا ۱۰۰۰ بفرستید. ۰ هیچ کانفیگی نشان نمی‌دهد. ظرفیت هر نمایش حداکثر ۱۰ لینک کامل است.",
+      "after": "سقف تعداد کانفیگ را از 0 تا 1000 بفرستید. 0 هیچ کانفیگی نشان نمی‌دهد. ظرفیت هر نمایش حداکثر 10 لینک کامل است.",
+      "parameters": [],
+      "reasons": [
+        "ascii_digits"
+      ]
+    },
+    "subscription.server_display_settings.server_display_prompt.text.dc76b33303": {
+      "before": "اگر تعداد کانفیگ‌های واقعی از چه عددی بیشتر شد، متن کانفیگ و QR آن مخفی شود؟ عدد ۰ تا ۱۰۰۰ بفرستید؛ برای غیرفعال‌کردن /off را بفرستید.",
+      "after": "اگر تعداد کانفیگ‌های واقعی از چه عددی بیشتر شد، متن کانفیگ و QR آن مخفی شود؟ عدد 0 تا 1000 بفرستید؛ برای غیرفعال‌کردن /off را بفرستید.",
+      "parameters": [],
+      "reasons": [
+        "ascii_digits"
+      ]
+    },
+    "subscription.server_display_settings.server_display_prompt.text.4750c0b8eb": {
+      "before": "موقعیت‌های نمایش مرزبان را با کاما بفرستید؛ مثلاً 2,4. شماره از ۱ شروع می‌شود و فقط برای بیش از ۳ کانفیگ اعمال می‌شود. برای فهرست خالی /empty را بفرستید.",
+      "after": "موقعیت‌های نمایش مرزبان را با کاما بفرستید؛ مثلاً 2,4. شماره از 1 شروع می‌شود و فقط برای بیش از 3 کانفیگ اعمال می‌شود. برای فهرست خالی /empty را بفرستید.",
+      "parameters": [],
+      "reasons": [
+        "ascii_digits"
+      ]
+    },
+    "subscription.server_display_settings.server_display_prompt.text.4408da75e8": {
+      "before": "موقعیت‌های تحویل مرزبان را با کاما بفرستید؛ مثلاً 0,2. شماره از ۰ شروع می‌شود؛ موقعیت ناموجود به اولین کانفیگ برمی‌گردد. برای فهرست خالی /empty را بفرستید.",
+      "after": "موقعیت‌های تحویل مرزبان را با کاما بفرستید؛ مثلاً 0,2. شماره از 0 شروع می‌شود؛ موقعیت ناموجود به اولین کانفیگ برمی‌گردد. برای فهرست خالی /empty را بفرستید.",
+      "parameters": [],
+      "reasons": [
+        "ascii_digits"
+      ]
+    },
+    "subscription.server_display_settings.server_display_guide.text.effa069ca6": {
+      "before": "max_links: سقف تعداد لینک؛ hide_if_more_than: مخفی‌کردن کانفیگ‌ها بالاتر از این تعداد (۰ تا ۱۰۰۰)\n",
+      "after": "max_links: سقف تعداد لینک؛ hide_if_more_than: مخفی‌کردن کانفیگ‌ها بالاتر از این تعداد (0 تا 1000)\n",
+      "parameters": [],
+      "reasons": [
+        "ascii_digits"
+      ]
+    },
+    "subscription.server_display_settings.server_display_guide.guide.bdbed004bb": {
+      "before": "\nسازگاری اختیاری مرزبان: showIndexes یک‌مبنا در نمایش بیشتر از ۳ لینک؛ linkIndices صفرمبنا در تحویل است. QR کانفیگ در این حالت همه لینک‌های خام را دارد، حتی اگر متن مخفی باشد.\n<pre>",
+      "after": "\nسازگاری اختیاری مرزبان: showIndexes یک‌مبنا در نمایش بیشتر از 3 لینک؛ linkIndices صفرمبنا در تحویل است. QR کانفیگ در این حالت همه لینک‌های خام را دارد، حتی اگر متن مخفی باشد.\n<pre>",
+      "parameters": [],
+      "reasons": [
+        "ascii_digits"
+      ]
+    },
+    "subscription.server_display_settings.handle_server_display_admin.body.97ea2ac3c4": {
+      "before": "QR تحویل را انتخاب کنید. QR اشتراک فقط لینک اشتراک قابل‌نمایش را دارد؛ بدون QR یعنی ارسال متن اشتراک.",
+      "after": "🔗 QR تحویل را انتخاب کنید. QR اشتراک فقط لینک اشتراک قابل‌نمایش را دارد؛ بدون QR یعنی ارسال متن اشتراک.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "subscription.server_display_settings.handle_server_display_admin.button.ddeef82ae5": {
+      "before": "بر اساس پروتکل",
+      "after": "📝 بر اساس پروتکل",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "subscription.server_display_settings.handle_server_display_admin.button.9397b410f0": {
+      "before": "بر اساس نام دقیق",
+      "after": "📝 بر اساس نام دقیق",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "subscription.server_display_settings.handle_server_display_admin.body.dc1a09d9ef": {
+      "before": "روش انتخاب کانفیگ‌های واقعی را تعیین کنید. انتخاب تازه جایگزین انتخاب قبلی می‌شود. شرط‌های ترکیبی و تگ واقعی در ویرایش پیشرفته در دسترس است.",
+      "after": "📋 روش انتخاب کانفیگ‌های واقعی را تعیین کنید. انتخاب تازه جایگزین انتخاب قبلی می‌شود. شرط‌های ترکیبی و تگ واقعی در ویرایش پیشرفته در دسترس است.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "subscription.server_display_settings.handle_server_display_admin.body.fccad7f96a": {
+      "before": "روش انتخاب را تغییر دهید. با تغییر روش، انتخاب قبلی پاک می‌شود. در سازگاری مرزبان، QR کانفیگ همه لینک‌های خام را تا سقف نمایش دارد، حتی اگر متن مخفی باشد.",
+      "after": "⚠️ روش انتخاب را تغییر دهید. با تغییر روش، انتخاب قبلی پاک می‌شود. در سازگاری مرزبان، QR کانفیگ همه لینک‌های خام را تا سقف نمایش دارد، حتی اگر متن مخفی باشد.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "support.admin_reply.message.8da2c2756b": {
+      "before": "لطفا پیام خود را ارسال کنید.",
+      "after": "💬 لطفا پیام خود را ارسال کنید.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "support.admin_reply.button.f8a34e79d9": {
+      "before": "پاسخ به تیکت 📝",
+      "after": "💬 پاسخ به تیکت",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "support.admin_reply.button.173875ae6b": {
+      "before": "بستن تیکت 🗳",
+      "after": "💬 بستن تیکت",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "support.categories.tickets_list.button.33d6fa9470": {
+      "before": "تیکت های باز",
+      "after": "💬 تیکت های باز",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "support.categories.tickets_list.button.732c0fd101": {
+      "before": "تیکت های جدید",
+      "after": "💬 تیکت های جدید",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "support.categories.tickets_list.button.c77cd22d1c": {
+      "before": "همه ی تیکت ها",
+      "after": "💬 همه ی تیکت ها",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "support.categories.tickets_list.button.0e6cb76a8c": {
+      "before": "دسته بندی تیکت ها",
+      "after": "💬 دسته بندی تیکت ها",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "support.categories.tickets_category.button.59ca629220": {
+      "before": "حذف",
+      "after": "🗑 حذف",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "support.categories.tickets_category.button.0fc3aac224": {
+      "before": "دسته بندی",
+      "after": "📝 دسته بندی",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "support.categories.tickets_category.button.7f9f2e3157": {
+      "before": "دسته بندی یافت نشد",
+      "after": "⚠️ دسته بندی یافت نشد",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "support.categories.tickets_category.button.ee4edcb19e": {
+      "before": "افزودن دسته بندی",
+      "after": "📝 افزودن دسته بندی",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "support.categories.add_ticket_category.alert.e1e7245408": {
+      "before": "با موفقیت حذف شد.",
+      "after": "✅ با موفقیت حذف شد.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "support.categories.add_ticket_category.button.fba2c6927b": {
+      "before": "دسته بندی یافت نشد.",
+      "after": "⚠️ دسته بندی یافت نشد.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "support.create_ticket.button.3b90dccc67": {
+      "before": "پاسخ",
+      "after": "📝 پاسخ",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "support.create_ticket.message.5c9c3dda00": {
+      "before": "پیام شما با موفقیت ثبت شد.",
+      "after": "✅ پیام شما با موفقیت ثبت شد.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "support.create_ticket.message.b059640ccc": {
+      "before": "لطفا یکی از کلید های زیر را انتخاب کنید.",
+      "after": "📋 لطفا یکی از کلید های زیر را انتخاب کنید.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "support.create_ticket.message.19602d80df": {
+      "before": "پیام مورد نظر پشتیبانی نمی شود",
+      "after": "💬 پیام مورد نظر پشتیبانی نمی شود",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "support.customer_conversation.user_all_tickets.button.2f9a0fbfd0": {
+      "before": "آخرین پیام ها 📩",
+      "after": "💬 آخرین پیام ها",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "support.customer_conversation.user_all_tickets.text.7555aab9b2": {
+      "before": "موارد بیشتر",
+      "after": "📝 موارد بیشتر",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "support.customer_conversation.user_all_tickets.button.29582a35e0": {
+      "before": "دریافت",
+      "after": "📝 دریافت",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "support.customer_conversation.user_all_tickets.alert.69716a6209": {
+      "before": "تیکتی یافت نشد",
+      "after": "⚠️ تیکتی یافت نشد",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "support.customer_conversation.user_all_tickets.button.67c753a13d": {
+      "before": "بسیار بد 😠",
+      "after": "📝 بسیار بد",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "support.customer_conversation.user_all_tickets.button.6f4e0b97a2": {
+      "before": "بد 🙁",
+      "after": "📝 بد",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "support.customer_conversation.user_all_tickets.button.e26806a4af": {
+      "before": "خوب 😐",
+      "after": "📝 خوب",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "support.customer_conversation.user_all_tickets.button.3ed1f2e72a": {
+      "before": "بسیار خوب 😃",
+      "after": "📝 بسیار خوب",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "support.customer_conversation.user_all_tickets.button.3d61f01bbd": {
+      "before": "عالی 🤩",
+      "after": "📝 عالی",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "support.customer_conversation.user_all_tickets.button.2dc9dcf8cd": {
+      "before": "شناسه عددی",
+      "after": "🔢 شناسه عددی",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "support.customer_conversation.user_all_tickets.button.c9b4331f4f": {
+      "before": "اسم کاربر",
+      "after": "📝 اسم کاربر",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "support.customer_conversation.user_all_tickets.button.74190f4bb0": {
+      "before": "عنوان",
+      "after": "📝 عنوان",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "support.customer_conversation.user_all_tickets.button.105e0409bc": {
+      "before": "رای تیکت",
+      "after": "💬 رای تیکت",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "support.entry.support_section.button.a203213e37": {
+      "before": "تیکت های باز 📨",
+      "after": "💬 تیکت های باز",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "support.entry.users_new_ticket.alert.46a8c85d10": {
+      "before": "ای وای، ببخشید الان نیستم",
+      "after": "📝 ای وای، ببخشید الان نیستم",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "support.queue_and_history.all_tickets.button.12e9251ccb": {
+      "before": "بستن تیکت",
+      "after": "💬 بستن تیکت",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "support.queue_and_history.all_tickets.button.ce4f25e31b": {
+      "before": "آخرین پیام ها",
+      "after": "💬 آخرین پیام ها",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "support.queue_and_history.all_tickets.message.abf3f55cac": {
+      "before": "شناسه عددی: {admin}\nنام کاربر: {username}\nدسته بندی: {category} {rate}\n\nموضوع: {title}\nآخرین پیام:\n[{sentType}] {lastmsg}",
+      "after": "🔢 شناسه عددی: {admin}\nنام کاربر: {username}\nدسته بندی: {category} {rate}\n\nموضوع: {title}\nآخرین پیام:\n[{sentType}] {lastmsg}",
+      "parameters": [
+        "admin",
+        "username",
+        "category",
+        "rate",
+        "title",
+        "sentType",
+        "lastmsg"
+      ],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "support.queue_and_history.all_tickets.alert.5974314756": {
+      "before": "تیکتی یافت نشد.",
+      "after": "⚠️ تیکتی یافت نشد.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "support.queue_and_history.all_tickets.button.b1eee8adee": {
+      "before": "تیکت بسته شد",
+      "after": "💬 تیکت بسته شد",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "support.queue_and_history.all_tickets.text.61cf036058": {
+      "before": "تصویر /dlPic",
+      "after": "📝 تصویر /dlPic",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "wallet.admin_wallet.admin_wallet_report_result.button.aad0953301": {
+      "before": "لغو درخواست",
+      "after": "❌ لغو درخواست",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "wallet.admin_wallet.admin_wallet_report_result.message.a4b902d78b": {
+      "before": "⚠️ دلیل باید غیرخالی و حداکثر ۵۰۰ بایت باشد. لطفاً دوباره وارد کنید.",
+      "after": "⚠️ دلیل باید غیرخالی و حداکثر 500 بایت باشد. لطفاً دوباره وارد کنید.",
+      "parameters": [],
+      "reasons": [
+        "ascii_digits"
+      ]
+    },
+    "wallet.admin_wallet.admin_wallet_report_result.message.2f08aabfdd": {
+      "before": "درخواست تغییر موجودی لغو شد؛ مبلغی از این درخواست اعمال نشد.",
+      "after": "❌ درخواست تغییر موجودی لغو شد؛ مبلغی از این درخواست اعمال نشد.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "wallet.wallet_recharge.wallet_topup_amount_problem.button.e0736904e5": {
+      "before": "100,000 تومان",
+      "after": "📝 100,000 تومان",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "wallet.wallet_recharge.wallet_topup_amount_problem.button.15bec8537a": {
+      "before": "200,000 تومان",
+      "after": "📝 200,000 تومان",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "wallet.wallet_recharge.wallet_topup_amount_problem.button.c18668d617": {
+      "before": "300,000 تومان",
+      "after": "📝 300,000 تومان",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "wallet.wallet_recharge.wallet_topup_amount_problem.button.d960e787a3": {
+      "before": "500,000 تومان",
+      "after": "📝 500,000 تومان",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "wallet.wallet_recharge.wallet_topup_amount_problem.button.79fa13dc2b": {
+      "before": "1,000,000 تومان",
+      "after": "📝 1,000,000 تومان",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "wallet.wallet_recharge.wallet_topup_amount_problem.button.1f4dbe4fcb": {
+      "before": "2,000,000 تومان",
+      "after": "📝 2,000,000 تومان",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "wallet.wallet_recharge.wallet_topup_amount_problem.button.f4f1019c8d": {
+      "before": "5,000,000 تومان",
+      "after": "📝 5,000,000 تومان",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "wallet.wallet_transfer.wallet_transfer_restart.message.8bd13292ba": {
+      "before": "لطفا مبلغ مورد نظر را به تومان و با اعداد انگلیسی وارد کنید.",
+      "after": "💰 لطفا مبلغ مورد نظر را به تومان و با اعداد انگلیسی وارد کنید.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "wallet.wallet_transfer.wallet_transfer_restart.message.a04cf98a41": {
+      "before": "لطفا عددی بزرگتر از صفر وارد کنید.",
+      "after": "🔢 لطفا عددی بزرگتر از صفر وارد کنید.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "wallet.wallet_transfer.wallet_transfer_restart.message.bf9e4dcf22": {
+      "before": "موجودی حساب شما کم است.",
+      "after": "⚠️ موجودی حساب شما کم است.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    },
+    "wallet.wallet_settlement.process_wallet_payment.alert.2d688eba81": {
+      "before": "مبلغ این سفارش معتبر نیست؛ موجودی کیف پول تغییر نکرد.",
+      "after": "⚠️ مبلغ این سفارش معتبر نیست؛ موجودی کیف پول تغییر نکرد.",
+      "parameters": [],
+      "reasons": [
+        "leading_context_emoji"
+      ]
+    }
+  },
+  "retired_keys": {
+    "admin_settings.config.convert_persian_digits_to_english_for_stats.text.9b5548a048": {
+      "before": "۰",
+      "reason": "Implementation-only input normalization matcher; returned to source as an explicit Unicode escape, not displayed copy."
+    },
+    "admin_settings.config.convert_persian_digits_to_english_for_stats.text.62b6701398": {
+      "before": "۱",
+      "reason": "Implementation-only input normalization matcher; returned to source as an explicit Unicode escape, not displayed copy."
+    },
+    "admin_settings.config.convert_persian_digits_to_english_for_stats.text.bc9c03bb97": {
+      "before": "۲",
+      "reason": "Implementation-only input normalization matcher; returned to source as an explicit Unicode escape, not displayed copy."
+    },
+    "admin_settings.config.convert_persian_digits_to_english_for_stats.text.2e3bc84092": {
+      "before": "۳",
+      "reason": "Implementation-only input normalization matcher; returned to source as an explicit Unicode escape, not displayed copy."
+    },
+    "admin_settings.config.convert_persian_digits_to_english_for_stats.text.d689787678": {
+      "before": "۴",
+      "reason": "Implementation-only input normalization matcher; returned to source as an explicit Unicode escape, not displayed copy."
+    },
+    "admin_settings.config.convert_persian_digits_to_english_for_stats.text.09f360198d": {
+      "before": "۵",
+      "reason": "Implementation-only input normalization matcher; returned to source as an explicit Unicode escape, not displayed copy."
+    },
+    "admin_settings.config.convert_persian_digits_to_english_for_stats.text.5b0a493e52": {
+      "before": "۶",
+      "reason": "Implementation-only input normalization matcher; returned to source as an explicit Unicode escape, not displayed copy."
+    },
+    "admin_settings.config.convert_persian_digits_to_english_for_stats.text.6cb53cda3a": {
+      "before": "۷",
+      "reason": "Implementation-only input normalization matcher; returned to source as an explicit Unicode escape, not displayed copy."
+    },
+    "admin_settings.config.convert_persian_digits_to_english_for_stats.text.1cf982ef60": {
+      "before": "۸",
+      "reason": "Implementation-only input normalization matcher; returned to source as an explicit Unicode escape, not displayed copy."
+    },
+    "admin_settings.config.convert_persian_digits_to_english_for_stats.text.662756ac0f": {
+      "before": "۹",
+      "reason": "Implementation-only input normalization matcher; returned to source as an explicit Unicode escape, not displayed copy."
+    },
+    "admin_settings.config.convert_persian_digits_to_english_for_stats.text.f01f2e7542": {
+      "before": "٠",
+      "reason": "Implementation-only input normalization matcher; returned to source as an explicit Unicode escape, not displayed copy."
+    },
+    "admin_settings.config.convert_persian_digits_to_english_for_stats.text.628f6d71f7": {
+      "before": "١",
+      "reason": "Implementation-only input normalization matcher; returned to source as an explicit Unicode escape, not displayed copy."
+    },
+    "admin_settings.config.convert_persian_digits_to_english_for_stats.text.537dcdbcaa": {
+      "before": "٢",
+      "reason": "Implementation-only input normalization matcher; returned to source as an explicit Unicode escape, not displayed copy."
+    },
+    "admin_settings.config.convert_persian_digits_to_english_for_stats.text.1a4fd527b1": {
+      "before": "٣",
+      "reason": "Implementation-only input normalization matcher; returned to source as an explicit Unicode escape, not displayed copy."
+    },
+    "admin_settings.config.convert_persian_digits_to_english_for_stats.text.17cd7f45b2": {
+      "before": "٤",
+      "reason": "Implementation-only input normalization matcher; returned to source as an explicit Unicode escape, not displayed copy."
+    },
+    "admin_settings.config.convert_persian_digits_to_english_for_stats.text.398ca650b2": {
+      "before": "٥",
+      "reason": "Implementation-only input normalization matcher; returned to source as an explicit Unicode escape, not displayed copy."
+    },
+    "admin_settings.config.convert_persian_digits_to_english_for_stats.text.54083d9d00": {
+      "before": "٦",
+      "reason": "Implementation-only input normalization matcher; returned to source as an explicit Unicode escape, not displayed copy."
+    },
+    "admin_settings.config.convert_persian_digits_to_english_for_stats.text.015ef630ee": {
+      "before": "٧",
+      "reason": "Implementation-only input normalization matcher; returned to source as an explicit Unicode escape, not displayed copy."
+    },
+    "admin_settings.config.convert_persian_digits_to_english_for_stats.text.ca8c93db97": {
+      "before": "٨",
+      "reason": "Implementation-only input normalization matcher; returned to source as an explicit Unicode escape, not displayed copy."
+    },
+    "admin_settings.config.convert_persian_digits_to_english_for_stats.text.0ff8ff1d86": {
+      "before": "٩",
+      "reason": "Implementation-only input normalization matcher; returned to source as an explicit Unicode escape, not displayed copy."
+    },
+    "admin_settings.config.parse_stats_date_range.text.d4f85d3675": {
+      "before": "–",
+      "reason": "Implementation-only input normalization matcher; returned to source as an explicit Unicode escape, not displayed copy."
+    },
+    "admin_settings.config.parse_stats_date_range.text.bda050585a": {
+      "before": "—",
+      "reason": "Implementation-only input normalization matcher; returned to source as an explicit Unicode escape, not displayed copy."
+    },
+    "admin_settings.config.parse_stats_date_range.text.afba2418d6": {
+      "before": "−",
+      "reason": "Implementation-only input normalization matcher; returned to source as an explicit Unicode escape, not displayed copy."
+    }
+  },
+  "added_keys": {
+    "purchase.order_writes.ensure_account_creation_succeeded.admin_message.inbound_missing": {
+      "after": "⚠️ ساخت اشتراک انجام نشد.\nسرویس: {title}\nعلت: inbound_not_found\nInbound ID: {inbound_id}",
+      "parameters": [
+        "title",
+        "inbound_id"
+      ],
+      "reasons": [
+        "administrator_diagnostic_preservation"
+      ]
+    }
+  },
+  "policy": {
+    "editable_files": [
+      "messages/fa/user.php",
+      "messages/fa/admin.php"
+    ],
+    "shared_copy": "User-visible or harmless shared copy is edited once in user.php; admin.php holds exclusive management/operational copy. File placement is not an authorization mechanism.",
+    "style": "Preserve prose; ASCII display digits; one context emoji at complete-message/control starts, no automatic runtime rewriting, no emoji added to fragments/date words/browser protocol replies. Existing caller parse modes and markup remain unchanged."
+  }
+}
