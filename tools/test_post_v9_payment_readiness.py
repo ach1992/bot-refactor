@@ -88,8 +88,6 @@ def has(data: dict, name: str, status: str, code: str | None = None) -> bool:
 SOURCE_USDT_DRIVER = r"""
 $root=$argv[1];
 $GLOBALS['paymentKeys']=json_decode($argv[2],true,512,JSON_THROW_ON_ERROR);
-$GLOBALS['USDTPrice']=1000;
-$GLOBALS['USDTPriceagent']=1000;
 require $root.'/src/Finance/ReceiptHelpers.php';
 $available=[];
 foreach (['BEP20','TRC20','ERC20'] as $network)
@@ -256,7 +254,7 @@ def main() -> dict:
         # One enabled manual network with the other intentionally absent is
         # legal: the shared switch does not require BOTH assets to be offered.
         only_usdt = dict(state, walletState='off', manualUsdtState='on')
-        seed(d, only_usdt, {'manualUsdtWalletBEP20':'0x' + 'a'*40})
+        seed(d, only_usdt, {'manualUsdtWalletBEP20':'0x' + 'a'*40,'manualUsdtRateToman':'1000'})
         code, result, _ = report_run(d)
         require(code == 0 and has(result,'method_manual_trx','WARN') and
                 result['methods']['manual_trx']['local_configuration']=='not_offered',
@@ -312,8 +310,12 @@ def main() -> dict:
               'manualUsdtRateToman':'1000'},True,False),
             ('usdt_valid_erc20',
              {'manualUsdtWalletERC20':addr,'manualUsdtRateToman':'1000'},True,False),
-            ('usdt_valid_legacy_private_rate_unverified',
-             {'manualUsdtWalletBEP20':addr},True,True),
+            ('usdt_missing_explicit_settings_rate',
+             {'manualUsdtWalletBEP20':addr},False,False),
+            ('usdt_cleared_explicit_settings_rate',
+             {'manualUsdtWalletBEP20':addr,'manualUsdtRateToman':''},False,False),
+            ('usdt_agent_only_settings_rate',
+             {'manualUsdtWalletBEP20':addr,'usdtAgentRateToman':'2000'},True,False),
         )
         for label, money_keys, expected, private_rate in source_cases:
             require(source_usdt(money_keys) is expected,'source_'+label)
@@ -324,8 +326,8 @@ def main() -> dict:
                     'method_'+label)
             require(has(result,'method_selection','PASS' if expected else 'BLOCK'),
                     'selection_'+label)
-            require(has(result,'manual_usdt_rate','WARN')==private_rate,
-                    'private_rate_review_'+label)
+            require(not has(result,'manual_usdt_rate','WARN'),
+                    'no_private_rate_fallback_'+label)
             require(result['methods']['manual_usdt']['local_configuration']==
                     ('present_not_verified' if expected else 'missing_or_invalid'),
                     'status_'+label)

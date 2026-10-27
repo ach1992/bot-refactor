@@ -730,7 +730,10 @@ if (is_string($data??null) && str_starts_with($data,'changePaymentKeys')) {
             $gate = "آدرس عمومی TRX در شبکهٔ TRON (برای حذف /clear بفرستید)";
             break;
         case "manualUsdtRateToman":
-            $gate = "قیمت هر USDT به تومان، عدد صحیح مثبت (برای حذف /clear بفرستید)";
+            $gate = "نرخ عادی USDT برای پرداخت دستی و NOWPayments، عدد صحیح ۱۰۰ تا ۱٬۰۰۰٬۰۰۰٬۰۰۰ تومان (حذف با /clear این روش‌ها را بدون نرخ غیرفعال می‌کند)";
+            break;
+        case "usdtAgentRateToman":
+            $gate = "نرخ USDT نماینده برای پرداخت دستی و NOWPayments، عدد صحیح ۱۰۰ تا ۱٬۰۰۰٬۰۰۰٬۰۰۰ تومان (با /clear از نرخ عادی استفاده می‌شود)";
             break;
         case "manualTrxRateToman":
             $gate = "قیمت مستقل هر TRX به تومان، عدد صحیح مثبت (برای حذف /clear بفرستید)";

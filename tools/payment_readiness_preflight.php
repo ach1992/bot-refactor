@@ -224,41 +224,29 @@ function achbotPreflightPolicyPotential(array $state, string $method): bool {
         $mode !== 'off';
 }
 
-/**
- * Reuse production's manual-USDT address precedence and explicit rate rules.
- * The *only* synthetic value is a known-valid legacy fallback rate (1000):
- * baseInfo.php must never be loaded. This establishes potential availability,
- * NOT that the real operator-private base rate is present or correct.
- */
+/** Use only explicit PAYMENT_KEYS rates and production network validation. */
 function achbotPreflightUsdtConfiguration(array $keys): array {
-    $GLOBALS['paymentKeys'] = $keys;
-    $GLOBALS['USDTPrice'] = 1000;
-    $GLOBALS['USDTPriceagent'] = 1000;
-    $anySourceOption = static function(): bool {
-        foreach (['BEP20','TRC20','ERC20'] as $network) {
-            if (achbotManualUsdtConfiguration($network) !== null) return true;
-        }
-        return false;
-    };
-    $configured = $anySourceOption();
-    $rate = $keys['manualUsdtRateToman'] ?? null;
-    $explicitRate = $rate !== null && $rate !== '';
-    $invalidExplicitRate = false;
-    if (!$configured && $explicitRate) {
-        // A valid address whose explicitly persisted rate is invalid is a
-        // known config error, not a missing network. Do not let valid TRX
-        // make it silently disappear from the report.
-        $withoutRate = $keys;
-        unset($withoutRate['manualUsdtRateToman']);
-        $GLOBALS['paymentKeys'] = $withoutRate;
-        $invalidExplicitRate = $anySourceOption();
-        $GLOBALS['paymentKeys'] = $keys;
+    $GLOBALS['paymentKeys']=$keys;
+    $normal=achbotUsdtRate(false,$keys)!==null;
+    $agent=achbotUsdtRate(true,$keys)!==null;
+    $configured=false;$address=false;
+    foreach (['BEP20','TRC20','ERC20'] as $network) {
+        if (achbotManualUsdtConfiguration($network)!==null) $configured=true;
+        // Isolate destination validity without pretending a private rate exists.
+        $probe=$keys;
+        $probe['manualUsdtRateToman']='1000';
+        $probe['usdtAgentRateToman']='';
+        $GLOBALS['paymentKeys']=$probe;
+        if (achbotManualUsdtConfiguration($network)!==null) $address=true;
+        $GLOBALS['paymentKeys']=$keys;
     }
-    return [
-        'configured' => $configured,
-        'invalid_explicit_rate' => $invalidExplicitRate,
-        'legacy_private_rate_unverified' => $configured && !$explicitRate,
-    ];
+    $invalid=false;
+    foreach (['manualUsdtRateToman','usdtAgentRateToman'] as $field) {
+        if (array_key_exists($field,$keys) && $keys[$field]!=='' &&
+            achbotUsdtRateValue($keys[$field])===null) $invalid=true;
+    }
+    return ['configured'=>$configured,'invalid_explicit_rate'=>$address && $invalid,
+            'normal_rate_configured'=>$normal,'agent_rate_configured'=>$agent];
 }
 
 function methodChecks(array $state, array $keys): void {
@@ -290,7 +278,8 @@ function methodChecks(array $state, array $keys): void {
         $policyPotential = $active && achbotPreflightPolicyPotential($state, $method);
         if ($active) {
             $configured = match ($method) {
-                'nowpayments' => available($keys['nowpayment'] ?? null),
+                'nowpayments' => available($keys['nowpayment'] ?? null) &&
+                    ($usdt['normal_rate_configured'] || $usdt['agent_rate_configured']),
                 'zarinpal', 'nextpay' => available($keys[$method] ?? null),
                 'bank_transfer' => available($keys['bankAccount'] ?? null) &&
                     available($keys['holderName'] ?? null) &&
@@ -345,8 +334,12 @@ function methodChecks(array $state, array $keys): void {
     finding('method_selection', $offerable > 0 ? 'PASS' : 'BLOCK',
         $offerable > 0 ? 'one_or_more_methods_potentially_offerable' :
                          'no_potentially_offerable_method_for_operator_smoke');
-    if ($manualOn && $usdt['legacy_private_rate_unverified'])
-        finding('manual_usdt_rate', 'WARN', 'private_base_rate_requires_operator_validation');
+    if ($manualOn || $on['nowpayments']) {
+        foreach (['normal','agent'] as $audience)
+            finding('usdt_rate_'.$audience, $usdt[$audience.'_rate_configured'] ? 'PASS' : 'WARN',
+                $usdt[$audience.'_rate_configured'] ? 'explicit_settings_rate_available' :
+                    'usdt_methods_unavailable_for_audience_configure_gateway_settings');
+    }
 }
 
 $args = options($argv);

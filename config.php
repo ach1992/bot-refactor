@@ -1195,12 +1195,20 @@ function getGateWaysKeys(){
          'callback_data'=>'changePaymentKeysmanualTrxWallet'],
         ['text'=>'آدرس TRX — TRON','callback_data'=>'wizwizch']
     ];
-    $cryptoRows[]=[
-        ['text'=>(!empty($paymentKeys['manualUsdtRateToman']) ?
-            number_format((int)$paymentKeys['manualUsdtRateToman']).' تومان' : 'نرخ پایه USDT'),
-         'callback_data'=>'changePaymentKeysmanualUsdtRateToman'],
-        ['text'=>'قیمت هر USDT','callback_data'=>'wizwizch']
-    ];
+    $rateRows=[];
+    foreach (['manualUsdtRateToman'=>'نرخ USDT عادی — دستی و NOWPayments',
+              'usdtAgentRateToman'=>'نرخ USDT نماینده — دستی و NOWPayments'] as $field=>$label) {
+        $raw=$paymentKeys[$field]??null;
+        $rate=achbotUsdtRateValue($raw);
+        $fallback=$field==='usdtAgentRateToman' &&
+            (!array_key_exists($field,$paymentKeys) || $raw==='');
+        $rateRows[]=[
+            ['text'=>$rate!==null ? number_format($rate).' تومان' :
+                ($fallback ? 'استفاده از نرخ عادی' : '⚠️ تنظیم‌نشده یا نامعتبر'),
+             'callback_data'=>'changePaymentKeys'.$field],
+            ['text'=>$label,'callback_data'=>'wizwizch']
+        ];
+    }
     $cryptoRows[]=[
         ['text'=>(!empty($paymentKeys['manualTrxRateToman']) ?
             number_format((int)$paymentKeys['manualTrxRateToman']).' تومان' : '⚠️ تنظیم‌نشده'),
@@ -1232,6 +1240,7 @@ function getGateWaysKeys(){
             ['text'=>achbotPaymentKeyAdminMerchantLabel($paymentKeys,'nextpay'),'callback_data'=>"changePaymentKeysnextpay"],
             ['text'=>"کد درگاه نکست پی",'callback_data'=>"wizwizch"]
         ],
+        ...$rateRows,
         ...$cryptoRows,
         [
             ['text'=>$giftCardState,'callback_data'=>"changeGateWaysgiftCardState"],

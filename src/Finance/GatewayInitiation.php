@@ -350,35 +350,11 @@ if(mysqli_num_rows($payInfo)==0){
             showForm("کلید امن اعلان NOWPayments هنوز توسط مدیر ثبت نشده است.");
             exit;
         }
-        $userId = (int)($payParam['user_id'] ?? 0);
-        $isAgent = 0;
-
-        if($userId > 0){
-            $stmt = $connection->prepare("SELECT `is_agent` FROM `users` WHERE `userid` = ? LIMIT 1");
-            $stmt->bind_param("i", $userId);
-            $stmt->execute();
-            $userRow = $stmt->get_result()->fetch_assoc();
-            $stmt->close();
-
-            $isAgent = (int)($userRow['is_agent'] ?? 0);
-        }
-
-        if($isAgent === 1 && isset($USDTPriceagent) && trim($USDTPriceagent) !== '' && is_numeric($USDTPriceagent)){
-            $dollarPrice = (float)$USDTPriceagent;
-        } elseif(isset($USDTPrice) && trim($USDTPrice) !== '' && is_numeric($USDTPrice)){
-            $dollarPrice = (float)$USDTPrice;
-        } else {
-            $tlResponse = @file_get_contents('https://api.tetherland.com/currencies');
-            $tlData = json_decode($tlResponse, true);
-
-            $dollarPrice = isset($tlData['data']['currencies']['USDT']['price'])
-                ? (float)$tlData['data']['currencies']['USDT']['price']
-                : 0;
-        }
-
-        if($dollarPrice <= 0){
-            showForm("قیمت تتر نامعتبر است.");
-            exit();
+        require_once __DIR__.'/ReceiptHelpers.php';
+        $dollarPrice=achbotUsdtRateForUser($connection,(int)($payParam['user_id']??0));
+        if ($dollarPrice===null) {
+            showForm('این روش پرداخت فعلاً در دسترس نیست؛ روش دیگری را انتخاب کنید یا با پشتیبانی تماس بگیرید.');
+            exit;
         }
 
         if(empty($paymentKeys['nowpayment'])){
