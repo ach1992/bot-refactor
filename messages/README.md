@@ -12,7 +12,7 @@ File placement does not authorize a recipient. Existing actor/owner checks and e
 ## Presentation conventions
 
 - Use ASCII digits (`0`–`9`) in bot-owned visible numbers and examples. Keep dates, amounts, IDs and units meaningful; never rewrite customer-supplied names/messages or protocol payloads merely for appearance.
-- A complete message or control may start with one relevant emoji. Reuse the same cue for the same task: `💰` wallet, `💳` payment, `📋` subscriptions/plans, `📦` volume, `📅` time, `💬` support, `🔎` search, `🔙` back, `✅` confirmed success, `⚠️` uncertainty or a problem, `❌` cancel and `⛔️` access denial.
+- A complete message or control may start with one relevant emoji. Reuse the same cue for the same task: `💰` wallet, `💳` payment, `📋` subscriptions/plans, `📦` volume, `📅` time, `💬` support, `🔎` search, `🔙` back, `♻️` renewal, `🔄` refresh, `✅` confirmed success, `⚠️` uncertainty or a problem, `❌` cancel and `⛔️` access denial.
 - Do not stack emoji, decorate both ends of a heading, or add emoji to date words, units, continuation fragments, URLs or data labels indiscriminately. A flag or joined emoji is one glyph and must remain intact.
 - Preserve the caller's parse mode. Buttons and callback alerts are plain text. Use `<b>` for headings/important amounts and `<code>` for copyable IDs/addresses only in messages whose caller explicitly uses HTML. Markdown and plain messages must not receive HTML tags. Many entries are fragments; do not add or close a formatting tag without checking the complete message.
 - Keep existing wording unless clarity/privacy requires a reviewed correction. A payment or delivery with an unknown result remains under review; never imply confirmed success, rollback or refund without evidence.

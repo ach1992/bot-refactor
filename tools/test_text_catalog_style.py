@@ -23,7 +23,12 @@ def baseline():
                     path=out/rel;path.parent.mkdir(parents=True,exist_ok=True);path.write_bytes(source.extractfile(member).read())
         php='require '+json.dumps(str(out/'messages/loader.php'))+';$r=[];foreach(glob('+json.dumps(str(out/'messages/fa/*.php'))+')as$p){$t=basename($p,".php");$r[$t]=achbotMessages($t);}echo json_encode($r,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);'
         return flatten(json.loads(command('php','-r',php)))
-def words(value):return re.findall(r'[^\W\d_]+|[0-9]+',value.translate(DIGITS),re.UNICODE)
+EMOJI_LETTERS=set()
+def words(value):
+    # Unicode includes pictographic letters such as the information glyph.
+    # They are approved visual markers, not added/removed product wording.
+    value=''.join(' 'if c in EMOJI_LETTERS else c for c in value)
+    return re.findall(r'[^\W\d_]+|[0-9]+',value.translate(DIGITS),re.UNICODE)
 def main():
     files=sorted(p.relative_to(ROOT).as_posix()for p in(ROOT/'messages/fa').glob('*.php'))
     check(files==['messages/fa/admin.php','messages/fa/user.php'],'editable copy must be exactly user.php/admin.php')
@@ -34,6 +39,9 @@ def main():
     sides={a:flatten(v)for a,v in current.items()}
     check(not set(sides['user'])&set(sides['admin']),'duplicate key across audiences')
     merged={**sides['user'],**sides['admin']};old=baseline()
+    chars=sorted({c for entry in[*old.values(),*merged.values()]for c in text(entry)if c.isalpha()})
+    glyphs='$r=[];foreach(json_decode(file_get_contents("php://stdin"),true)as$c)if(preg_match("/\\\\p{Extended_Pictographic}/u",$c))$r[]=$c;echo json_encode($r,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);'
+    EMOJI_LETTERS.update(json.loads(command('php','-r',glyphs,input=json.dumps(chars).encode())))
     manifest=json.loads((ROOT/'tools/text_catalog_style_amendments.json').read_text())
     check(manifest['version']==1 and manifest['baseline_commit']==BASE,'style baseline drift')
     changes=manifest['changes'];retired=manifest['retired_keys'];added=manifest['added_keys']
@@ -130,7 +138,31 @@ if(!str_contains($sample,'inbound_not_found')||!str_contains($sample,'Inbound ID
 $private=achbotMessage('purchase.order_writes.ensure_account_creation_succeeded.user_message.7a64d65208');
 if(str_contains($private,'123')||str_contains($private,'inbound'))throw new RuntimeException('customer_inbound_disclosure');
 require 'settings/values.php';if($mainValues!==achbotMessages('legacy_messages')||$buttonValues!==achbotMessages('legacy_buttons'))throw new RuntimeException('legacy_facade_drift');
-echo json_encode(['violations'=>$violations,'topics'=>count(achbotMessageTopics()),'native_compositions'=>4,'emoji_negative_controls'=>7],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);'''
+// Exercise the original legacy user quote/admin request compositions. These
+// assertions fail for their old battery/name/ID/money/date marker mix.
+$userQuote=str_replace(['PLAN-NAME','VOLUME','DAYS','PRICE','DESCRIPTION'],['Fixture plan','10','30','100000','Fixture description'],$mainValues['buy_custom_subscription_detail']);
+$adminRequest=strtr($mainValues['buy_new_account_request'],['TYPE'=>'bank','USER-ID'=>'1001','NAME'=>'Fixture customer','USERNAME'=>'fixture_user','PRICE'=>'100000','SERVERNAME'=>'Fixture service','REMARK'=>'fixture_account','VOLUME'=>'10','DAYS'=>'30']);
+$fields=[
+ [$adminRequest,'🆔','شناسه عددی:'],[$adminRequest,'👤','اسم کاربر:'],
+ [$adminRequest,'👤','نام کاربری:'],[$adminRequest,'💰','مبلغ پرداختی:'],
+ [$adminRequest,'📦','حجم اشتراک:'],[$adminRequest,'📅','مدت اشتراک:'],
+ [$userQuote,'📦','حجم اختصاصی:'],[$userQuote,'📅','مدت اختصاصی:'],[$userQuote,'💰','قیمت پلن:'],
+ [$buttonValues['volume_left'],'📦','حجم باقیمانده:'],
+ [$buttonValues['expire_date'],'📅','تاریخ انقضاء:'],[$buttonValues['buy_date'],'📅','تاریخ خرید:'],
+];
+foreach($fields as[$value,$icon,$label])if(!preg_match('/(?:^|\R)[ \t]*'.preg_quote($icon,'/').'[ \t]*'.preg_quote($label,'/').'/u',strip_tags($value)))throw new RuntimeException('semantic_field_marker_mismatch');
+if(adjacentEmoji($userQuote)||adjacentEmoji($adminRequest))throw new RuntimeException('legacy_composition_stacked_marker');
+$contexts=0;
+foreach(achbotMessages('wallet')as$key=>$entry)if(str_starts_with($key,'wallet_recharge.wallet_topup_amount_problem.button.')&&preg_match('/\d[0-9,]* تومان/u',is_array($entry)?$entry['text']:$entry)){
+ $value=is_array($entry)?$entry['text']:$entry;
+ if(!str_starts_with($value,'💰 '))throw new RuntimeException('amount_choice_unrelated_marker');$contexts++;
+}
+if($contexts!==7)throw new RuntimeException('amount_choice_fixture_drift');
+foreach(['config.get_gate_ways_keys.button.26003a476f','config.get_gate_ways_keys.button.c0199d5243','config.get_gate_ways_keys.button.a0c8498d77']as$key){if(!str_starts_with(achbotMessage('admin_settings.'.$key),'💳 '))throw new RuntimeException('gateway_choice_unrelated_marker');$contexts++;}
+foreach([$buttonValues['renew_config'],achbotMessage('admin_settings.config.get_bot_setting_keys.button.df1c62b99e'),achbotMessage('admin_settings.config.get_bot_setting_keys.button.f9a77f614a')]as$value){if(!str_starts_with($value,'♻️ '))throw new RuntimeException('renew_action_marker_mismatch');$contexts++;}
+foreach([[$buttonValues['back_to_main'],'🔙 '],[$buttonValues['back_button'],'🔙 '],[achbotMessage('manual_payment.manual_crypto.button.1121ffbf88'),'🏠 ']]as[$value,$icon]){if(!str_starts_with($value,$icon))throw new RuntimeException('navigation_marker_mismatch');$contexts++;}
+if(!str_starts_with(achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.message.6924ce253f'),'⚠️ '))throw new RuntimeException('unknown_transfer_misleading_failure_marker');
+echo json_encode(['violations'=>$violations,'topics'=>count(achbotMessageTopics()),'native_compositions'=>6,'emoji_negative_controls'=>7,'semantic_label_icon_cases'=>count($fields),'semantic_context_icon_cases'=>$contexts],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);'''
     native=json.loads(command('php','-r',php))
     check(not native['violations'],'adjacent emoji: '+str(native['violations']))
     check(native['topics']==25,'logical topics changed')
@@ -165,5 +197,5 @@ echo json_encode(['violations'=>$violations,'topics'=>count(achbotMessageTopics(
             except urllib.error.HTTPError as error:status=error.code;body=error.read()
             check(status==404 and not body,'direct copy source leaked '+file)
     finally:listener.terminate();listener.wait(timeout=5)
-    print(json.dumps({'status':'PASS','editable_files':2,'current_keys':len(merged),'logical_topics':native['topics'],'style_changes':len(changes),'numeric_template_changes':sum('ascii_digits'in v['reasons']for v in changes.values()),'retired_keys':len(retired),'added_keys':len(added),'current_entry_assertions':assertions,'parameter_exception_count':len(param_keys),'adjacent_emoji_violations':0,'emoji_negative_controls':native['emoji_negative_controls'],'audience_admin_diagnostic_cases':len(admin_cases),'audience_customer_cases':len(user_cases),'preserved_shared_fragments':len(fragments),'native_compositions':native['native_compositions'],'direct_http_guards':len(guarded),'loader_negative_controls':2},ensure_ascii=False))
+    print(json.dumps({'status':'PASS','editable_files':2,'current_keys':len(merged),'logical_topics':native['topics'],'style_changes':len(changes),'numeric_template_changes':sum('ascii_digits'in v['reasons']for v in changes.values()),'retired_keys':len(retired),'added_keys':len(added),'current_entry_assertions':assertions,'parameter_exception_count':len(param_keys),'adjacent_emoji_violations':0,'emoji_negative_controls':native['emoji_negative_controls'],'audience_admin_diagnostic_cases':len(admin_cases),'audience_customer_cases':len(user_cases),'preserved_shared_fragments':len(fragments),'native_compositions':native['native_compositions'],'semantic_label_icon_cases':native['semantic_label_icon_cases'],'semantic_context_icon_cases':native['semantic_context_icon_cases'],'direct_http_guards':len(guarded),'loader_negative_controls':2},ensure_ascii=False))
 if __name__=='__main__':main()
