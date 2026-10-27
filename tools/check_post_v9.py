@@ -289,14 +289,21 @@ def main():
                 and transport_privacy.get("network_requests")==0
                 and transport_privacy.get("raw_payload_log_records")==0):
             raise RuntimeError("Telegram transport failure logs exposed private data")
-        wallet_cli=subprocess.run(["php",str(ROOT/"tools/test_post_v9_wallet_guard.php")],
-                                  cwd=ROOT,check=True,timeout=25,
-                                  capture_output=True,text=True)
-        wallet_guard=json.loads(wallet_cli.stdout)
+        wallet_guard_path=Path(tmp)/"native-wallet-preflight.json"
+        subprocess.run(["python3",str(ROOT/"tools/test_post_v9_wallet_guard.py"),
+                        "--run-disposable","--report",str(wallet_guard_path)],
+                       cwd=ROOT,check=True,timeout=180,capture_output=True,text=True)
+        wallet_guard=json.loads(wallet_guard_path.read_text())
         if not (wallet_guard.get("complete") and wallet_guard.get("cases")==7
                 and wallet_guard.get("manual_cases")==7
                 and wallet_guard.get("http_calls")==0
-                and wallet_guard.get("committed_sql_mutations")==0):
+                and wallet_guard.get("committed_sql_mutations")==0
+                and wallet_guard.get("total_cases")==15
+                and wallet_guard.get("actual_php_mysqli") is True
+                and wallet_guard.get("select_only_account_enforced") is True
+                and wallet_guard.get("original_23_table_snapshots_unchanged") is True
+                and wallet_guard.get("wallet_rejects_before_transaction") is True
+                and wallet_guard.get("manual_rejects_single_rollback") is True):
             raise RuntimeError("Unsupported wallet checkout mutated money or failed to reject panel")
         wallet_transfer_path=Path(tmp)/"wallet-transfer-current.json"
         subprocess.run(["python3",str(ROOT/"tools/test_post_v9_wallet_transfer.py"),
