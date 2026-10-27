@@ -432,8 +432,9 @@ function achbotProviderGiftUsers(mysqli $db,int $serverId,array $target): object
     if (achbotProviderType($db,$serverId)==='marzban') return getMarzbanJson($serverId,null,$target);
     try {
         if (!achbotGiftTargetMatches($db,$serverId,$target)) throw new RuntimeException('pg_gift_target_changed');
-        $s=$db->prepare("SELECT o.id,o.remark FROM orders_list o JOIN provider_accounts a ON a.order_id=o.id WHERE o.server_id=? AND o.status=1 AND a.state='linked' ORDER BY o.id");
+        $s=$db->prepare("SELECT o.id,o.remark,a.state FROM orders_list o LEFT JOIN provider_accounts a ON a.order_id=o.id WHERE o.server_id=? AND o.status=1 ORDER BY o.id");
         $s->bind_param('i',$serverId);$s->execute();$rows=$s->get_result()->fetch_all(MYSQLI_ASSOC);$s->close();
+        foreach ($rows as $row) if (($row['state']??null)!=='linked') throw new RuntimeException('pg_gift_roster_account_requires_review');
         $users=[];foreach ($rows as $row) {
             $ctx=achbotPgOrderContext($db,(int)$row['id']);$r=achbotPgRead($ctx['panel'],$ctx['identity']);
             if (($r['success']??false)!==true) throw new RuntimeException('pg_gift_list_unverified');

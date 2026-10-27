@@ -101,6 +101,9 @@ $out=achbotCreateNonPaymentAccount($db,'admin_bulk','bulk:9001:201',9001,$spec['
 'remark'=>'bulk_user_'.$spec['line'],'volume'=>2,'days'=>30,'user_id'=>9001,'port'=>0]);break;
 case 'link_nonpaid':
 $db->begin_transaction();achbotLinkNonPaymentAccountEffect($db,(int)$spec['effect'],(int)$spec['order']);$db->commit();$out=['linked'=>true];break;
+case 'giftlist':
+require $argv[1].'/src/Subscription/GiftBatch.php';
+$out=achbotProviderGiftUsers($db,2,achbotGiftPhysicalTarget($db,2));break;
 case 'gift':
 require $argv[1].'/src/Subscription/GiftBatch.php';
 $ctx=achbotPgOrderContext($db,92);
@@ -312,6 +315,14 @@ def main():
   claim=r['out'];r=call('autoedit',pay=claim['pay_id'],attempt=claim['id'])
   yes(r['out']['success'] is True and server.user['used_traffic']==0,'auto_renew_native_reset_and_absolute_limits_verified')
   yes(call('autoreserve')['out']['status']=='already_claimed','auto_renew_source_never_redebits')
+  sql("UPDATE orders_list SET status=0 WHERE id=91")
+  r=call('giftlist')
+  yes(r['out']['total']==1 and r['out']['users'][0]['id']==18,'native_gift_roster_enumerates_exact_owned_by_id')
+  sql("UPDATE provider_accounts SET state='mutating' WHERE order_id=92")
+  before=len(server.trace);r=call('giftlist')
+  yes(r['out']['success'] is False and len(server.trace)==before,'native_gift_roster_never_silently_omits_unknown_account')
+  sql("UPDATE provider_accounts SET state='linked' WHERE order_id=92")
+
 
   for line,remote in [(1,19),(2,20)]:
    pg.USER['id']=remote
