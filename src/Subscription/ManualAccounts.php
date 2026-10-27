@@ -4,8 +4,6 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     http_response_code(404);
     exit;
 }
-require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
-
 
 //Added by ACh
 
@@ -14,7 +12,7 @@ if (preg_match("/^addSubscriptionToCustomer(\d+)/", $data, $match)) {
     $tempData = json_decode($userInfo['temp'], true) ?: [];
     
     if ($from_id != $admin && $userInfo['isAdmin'] != true) {
-        alert(\achbotMessage('subscription.manual_accounts.alert.03aea25611'));
+        alert("❌ شما دسترسی لازم برای این عملیات را ندارید.");
         exit();
     }
 
@@ -28,7 +26,7 @@ if (preg_match("/^addSubscriptionToCustomer(\d+)/", $data, $match)) {
     $stmt->execute();
     $stmt->close();
 
-    $msg = \achbotMessage('subscription.manual_accounts.msg.a88437a461');
+    $msg = "لطفاً شناسه عددی کاربر (user_id) را وارد کنید:";
     $keyboard = [
         [['text' => $buttonValues['back_to_main'], 'callback_data' => 'mainMenu']]
     ];
@@ -137,10 +135,10 @@ if ($userInfo['step'] == "awaiting_userid_input" && is_numeric($text)) {
     }
 
     $serverId = intval($tempData['selected_server_id'] ?? 0);
-    $msg = \achbotMessage('subscription.manual_accounts.manual_account_consume_selection.msg.86a1eb982f', ['customUserId' => $customUserId]);
+    $msg = "✅ شناسه عددی <b>$customUserId</b> با موفقیت ثبت شد.";
     $keyboard = [
-        [['text' => \achbotMessage('subscription.manual_accounts.manual_account_consume_selection.button.0c983c9f0f'), 'callback_data' => "addToOrders" . $serverId]],
-        [['text' => \achbotMessage('subscription.manual_accounts.manual_account_consume_selection.button.11b0188fcb'), 'callback_data' => "searchUsersConfig"]],
+        [['text' => "➕ افزودن به اشتراک های کاربر ➕", 'callback_data' => "addToOrders" . $serverId]],
+        [['text' => "🔍 جستجوی اشتراک کاربر", 'callback_data' => "searchUsersConfig"]],
         [['text' => $buttonValues['back_to_main'], 'callback_data' => "mainMenu"]]
     ];
     sendMessage($msg, json_encode(['inline_keyboard' => $keyboard]), "html", $from_id);
@@ -210,7 +208,7 @@ if (preg_match("/^addToOrders(\d+)/", $data, $match)) {
     $finalUserId = !empty($tempData['custom_userid']) ? intval($tempData['custom_userid']) : $from_id;
 
     if (empty($remark)) {
-        alert(\achbotMessage('subscription.manual_accounts.detect_server_id_from_remark.alert.0e59a3d9a8'));
+        alert("❌ اطلاعات اشتراک یافت نشد.");
         exit();
     }
 
@@ -227,7 +225,7 @@ if (preg_match("/^addToOrders(\d+)/", $data, $match)) {
     $stmt->close();
 
     if ($exists) {
-        alert(\achbotMessage('subscription.manual_accounts.detect_server_id_from_remark.alert.4c5aeb77e7'));
+        alert("✅ این اشتراک قبلاً اضافه شده است.");
         exit();
     }
 
@@ -250,7 +248,7 @@ if (preg_match("/^addToOrders(\d+)/", $data, $match)) {
     $stmt->close();
 
     if (empty($token)) {
-        alert(\achbotMessage('subscription.manual_accounts.detect_server_id_from_remark.alert.eade9d3428'));
+        alert("❌ توکن یافت نشد.");
         exit();
     }
 
@@ -305,9 +303,21 @@ if (preg_match("/^addToOrders(\d+)/", $data, $match)) {
 
         $connection->commit();
 
-        alert(\achbotMessage('subscription.manual_accounts.detect_server_id_from_remark.alert.ecf2df32d7'));
+        alert("✅ اشتراک با موفقیت به لیست اضافه شد.");
 
-        $msg = \achbotMessage('subscription.manual_accounts.detect_server_id_from_remark.msg.10aa1e12ec', ['remark' => $remark]);
+        $msg = "⚠️ اشتراک  <code>$remark</code>  با موفقیت برای شما در ربات ثبت شد. از پایین بزنید روی دکمه:
+
+ ← 🔄 <b>مشاهده اشتراک ها</b> 
+
+🔰 از لیست اشتراک خودتان را انتخاب کنید و در صفحه بعد اگر قصد تمدید دارید بزنید روی دکمه: 
+
+← ♻️ <b>تمدید اشتراک</b>
+
+💰 وقتی مبلغ نمایش داده شد روی دکمه زیر بزنید:
+
+← 💳 <b>کارت به کارت</b>
+
+⬆️ حالا بروید <b>مبلغ را کارت به کارت کنید</b> و بیایید رسید آن را در داخل ربات بفرستید.";
 
         $keyboard = [
             [
@@ -329,11 +339,18 @@ if (preg_match("/^addToOrders(\d+)/", $data, $match)) {
         if ($orderId > 0) {
             $inlineKeyboard = json_encode([
                 'inline_keyboard' => [
-                    [['text' => \achbotMessage('subscription.manual_accounts.detect_server_id_from_remark.button.48f23552b7'), 'callback_data' => "quickUserOrderDetails_{$orderId}"]]
+                    [['text' => "💡مشاهده مشخصات اشتراک", 'callback_data' => "quickUserOrderDetails_{$orderId}"]]
                 ]
             ]);
 
-            $adminMessage = \achbotMessage('subscription.manual_accounts.detect_server_id_from_remark.admin_message.7e7a367cc0', ['finalUserId' => $finalUserId, 'first_name' => $first_name, 'username' => $username, 'remark' => $remark]);
+            $adminMessage = "
+➕ اشتراک جدید اضافه شد
+
+👤 شناسه عددی: <code>$finalUserId</code>
+👨 اسم کاربر: $first_name
+⚡️ نام کاربری: @$username
+🎈 نام کاربری اشتراک: <code>$remark</code>
+";
 
             sendMessage($adminMessage, $inlineKeyboard, "html", $admin);
             sendToAllAdmins('sendMessage', [
@@ -356,7 +373,7 @@ if (preg_match("/^addToOrders(\d+)/", $data, $match)) {
 
     } catch (Exception $e) {
         $connection->rollback();
-        alert(\achbotMessage('subscription.manual_accounts.detect_server_id_from_remark.alert.6b70d2424a'));
+        alert("❌ ثبت اشتراک با خطا مواجه شد.");
         exit();
     }
 

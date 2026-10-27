@@ -9,8 +9,6 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     http_response_code(404);
     exit;
 }
-require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
-
 
 function achbotPayUxTable(mysqli $db, string $name): bool {
     if (!in_array($name, ['payment_attempts','payment_transactions',
@@ -404,16 +402,16 @@ function achbotPayUxHostedAttentionElapsed(mysqli $db, int $payId): bool {
  */
 require_once __DIR__.'/GatewayRules.php';
 function achbotPayUxAudienceModes(): array {
-    return ['all'=>\achbotMessage('payment.payment_lifecycle.pay_ux_audience_modes.text.15270886ea'),'agents'=>\achbotMessage('payment.payment_lifecycle.pay_ux_audience_modes.text.452a2d6fed'),'non_agents'=>\achbotMessage('payment.payment_lifecycle.pay_ux_audience_modes.text.8b3e917f90'),
-            'buyers'=>\achbotMessage('payment.payment_lifecycle.pay_ux_audience_modes.text.446e7017e1'),'non_buyers'=>\achbotMessage('payment.payment_lifecycle.pay_ux_audience_modes.text.711a7d07d3'),
-            'has_active_order'=>\achbotMessage('payment.payment_lifecycle.pay_ux_audience_modes.text.08f38edd68'),
-            'no_active_order'=>\achbotMessage('payment.payment_lifecycle.pay_ux_audience_modes.text.3310f2a1e3'),'off'=>\achbotMessage('payment.payment_lifecycle.pay_ux_audience_modes.text.29dbbef63d')];
+    return ['all'=>'همه','agents'=>'همکاران','non_agents'=>'غیرهمکاران',
+            'buyers'=>'خریداران','non_buyers'=>'بدون خرید',
+            'has_active_order'=>'دارای سرویس فعال',
+            'no_active_order'=>'بدون سرویس فعال','off'=>'هیچ‌کس'];
 }
 function achbotPayUxAudienceMethods(): array {
     return [
-        'nowpayments'=>\achbotMessage('payment.payment_lifecycle.pay_ux_audience_methods.n_o_w_payments.83db3cb125'),'zarinpal'=>\achbotMessage('payment.payment_lifecycle.pay_ux_audience_methods.text.7d213c0bc4'),'nextpay'=>\achbotMessage('payment.payment_lifecycle.pay_ux_audience_methods.text.d5f4cc2d6e'),
-        'bank_transfer'=>\achbotMessage('payment.payment_lifecycle.pay_ux_audience_methods.text.64c20e2b45'),'gift_card'=>\achbotMessage('payment.payment_lifecycle.pay_ux_audience_methods.text.3904ef0f3d'),
-        'manual_usdt'=>\achbotMessage('payment.payment_lifecycle.pay_ux_audience_methods.text.4fafcb549d'),'manual_trx'=>\achbotMessage('payment.payment_lifecycle.pay_ux_audience_methods.text.349ece736f'),'wallet'=>\achbotMessage('payment.payment_lifecycle.pay_ux_audience_methods.text.6295c35212')
+        'nowpayments'=>'NOWPayments','zarinpal'=>'زرین‌پال','nextpay'=>'نکست‌پی',
+        'bank_transfer'=>'کارت‌به‌کارت','gift_card'=>'گیفت‌کارت',
+        'manual_usdt'=>'USDT دستی','manual_trx'=>'TRX دستی','wallet'=>'کیف پول'
     ];
 }
 /**
@@ -647,8 +645,8 @@ function achbotPayUxState(array $pay, ?array $attempt): string {
 /** Customer/order references must originate in an authenticated persisted pay row. */
 function achbotPayUxReference(array $pay): string {
     $hash=htmlspecialchars((string)($pay['hash_id']??''),ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8');
-    return \achbotMessage('payment.payment_lifecycle.pay_ux_reference.label.edb6e627ea').$hash."</code>\n".
-        \achbotMessage('payment.payment_lifecycle.pay_ux_reference.text.d031212b3c').(int)($pay['user_id']??0)."</code>\n";
+    return "🆔 سفارش: <code>".$hash."</code>\n".
+        "👤 شناسهٔ تلگرام: <code>".(int)($pay['user_id']??0)."</code>\n";
 }
 
 /** Read-only reference lookup: the hash is a locator, never authentication. */
@@ -667,41 +665,41 @@ function achbotPayUxStatusText(array $pay, ?array $attempt): string {
     $state = achbotPayUxState($pay,$attempt);
     $subject = function_exists('payTypeToDescription')
         ? (string)payTypeToDescription((string)$pay['type'])
-        : \achbotMessage('payment.payment_lifecycle.pay_ux_status_text.text.df83eb82dd');
+        : 'پرداخت سفارش';
     $title = match ($state) {
-        'expired' => \achbotMessage('payment.payment_lifecycle.pay_ux_status_text.text.a1026d7b85'),
-        'superseded' => \achbotMessage('payment.payment_lifecycle.pay_ux_status_text.text.74adf2adfe'),
-        'declined' => \achbotMessage('payment.payment_lifecycle.pay_ux_status_text.text.f8f1a7f2f5'),
-        'receipt_review' => \achbotMessage('payment.payment_lifecycle.pay_ux_status_text.text.0a0cf2fd64'),
-        'awaiting_receipt' => \achbotMessage('payment.payment_lifecycle.pay_ux_status_text.text.8c253d0486'),
-        'needs_review' => \achbotMessage('payment.payment_lifecycle.pay_ux_status_text.text.aa6e41205d'),
-        'payment_recorded' => \achbotMessage('payment.payment_lifecycle.pay_ux_status_text.text.7873970550'),
-        default => \achbotMessage('payment.payment_lifecycle.pay_ux_status_text.text.c7ccf032ac'),
+        'expired' => '⌛️ مهلت این درخواست پرداخت پایان یافته است',
+        'superseded' => '🧾 درخواست جدیدتری جایگزین این پیش‌نویس شده است',
+        'declined' => '❌ درخواست پرداخت تأیید نشد',
+        'receipt_review' => '📥 رسید دریافت شده و در انتظار بررسی مدیر است',
+        'awaiting_receipt' => '📤 در انتظار تصویر رسید یا گیفت‌کارت شما',
+        'needs_review' => '⚠️ پرداخت یا تحویل نیازمند بررسی است',
+        'payment_recorded' => '✅ وضعیت پرداخت ثبت شده است',
+        default => '🧾 فاکتور در انتظار پرداخت است',
     };
     $safe = static fn($v) => htmlspecialchars((string)$v,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8');
     $amount = number_format((int)($pay['price'] ?? 0));
     $next = match ($state) {
         'expired' => achbotPayUxManualProvider((string)($attempt['provider']??''))
-            ? \achbotMessage('payment.payment_lifecycle.pay_ux_status_text.text.8b1195f62f')
-            : \achbotMessage('payment.payment_lifecycle.pay_ux_status_text.text.90290d6783'),
-        'awaiting_receipt' => \achbotMessage('payment.payment_lifecycle.pay_ux_status_text.text.4bca689fc3'),
-        'superseded' => \achbotMessage('payment.payment_lifecycle.pay_ux_status_text.text.c0ee0533a8'),
-        'declined' => \achbotMessage('payment.payment_lifecycle.pay_ux_status_text.text.b2948cf010'),
-        'receipt_review' => \achbotMessage('payment.payment_lifecycle.pay_ux_status_text.text.d5b12a8ef5'),
-        'payment_recorded' => \achbotMessage('payment.payment_lifecycle.pay_ux_status_text.text.368ad58967'),
-        'needs_review' => \achbotMessage('payment.payment_lifecycle.pay_ux_status_text.text.f1092775b2'),
-        default => \achbotMessage('payment.payment_lifecycle.pay_ux_status_text.text.5e55076dd5'),
+            ? 'مهلت ارسال رسید از طریق این فاکتور پایان یافته است. اگر وجهی انتقال داده‌اید، شواهد را فقط از طریق پشتیبانی ارائه کنید؛ انقضا به معنی برگشت وجه نیست.'
+            : 'مهلت این درخواست پایان یافته است. برای پرداخت جدید از منوی ربات اقدام کنید.',
+        'awaiting_receipt' => 'درخواست ارسال رسید ثبت شد. تصویر معتبر را در گفت‌وگوی ربات بفرستید؛ صرف این دکمه به معنی پرداخت یا شروع بررسی مدیر نیست.',
+        'superseded' => 'از فاکتور جدید استفاده کنید. لینک قبلی دیگر برای پرداخت قابل استفاده نیست؛ اگر وجهی فرستاده‌اید با پشتیبانی هماهنگ کنید.',
+        'declined' => 'جزئیات بررسی را از پشتیبانی پیگیری کنید.',
+        'receipt_review' => 'ارسال رسید به معنی تأیید مالی نیست. وجه یا رسید را دوباره ارسال نکنید.',
+        'payment_recorded' => 'ثبت وجه به‌تنهایی به معنی تحویل سرویس نیست؛ وضعیت سفارش را در ربات بررسی کنید.',
+        'needs_review' => 'فاکتور یا وجه را دوباره پرداخت نکنید؛ با شناسه سفارش از پشتیبانی پیگیری کنید.',
+        default => 'تنها تا زمانی که وضعیت سفارش اجازه دهد از دکمه پرداخت استفاده کنید.',
     };
     return "<b>".$safe($title)."</b>\n".achbotPayUxReference($pay)
-        .\achbotMessage('payment.payment_lifecycle.pay_ux_status_text.text.d251ffde03').$safe($subject).\achbotMessage('payment.payment_lifecycle.pay_ux_status_text.text.20714482be', ['amount' => $amount]).$safe($next);
+        ."موضوع: ".$safe($subject)."\nمبلغ: {$amount} تومان\n\n".$safe($next);
 }
 
 function achbotPayUxStatusKeyboard(string $hash): string {
     $rows = [];
     if (preg_match('/^[A-Za-z0-9_-]{1,50}$/D',$hash)) {
-        $rows[] = [['text'=>\achbotMessage('payment.payment_lifecycle.pay_ux_status_keyboard.button.9e25b02e86'),'callback_data'=>'ps_'.$hash]];
+        $rows[] = [['text'=>'🔄 بررسی وضعیت سفارش','callback_data'=>'ps_'.$hash]];
     }
-    $rows[] = [['text'=>\achbotMessage('payment.payment_lifecycle.pay_ux_status_keyboard.button.1121ffbf88'),'callback_data'=>preg_match('/^[A-Za-z0-9_-]{1,50}$/D',$hash)?'ph_'.$hash:'mainMenu']];
+    $rows[] = [['text'=>'🏠 منوی اصلی','callback_data'=>preg_match('/^[A-Za-z0-9_-]{1,50}$/D',$hash)?'ph_'.$hash:'mainMenu']];
     return json_encode(['inline_keyboard'=>$rows],JSON_UNESCAPED_UNICODE);
 }
 

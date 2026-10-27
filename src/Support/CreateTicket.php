@@ -9,8 +9,6 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     http_response_code(404);
     exit;
 }
-require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
-
 
 if(preg_match('/^supportCat(.*)/',$data,$match)){
     delMessage();
@@ -39,10 +37,10 @@ if(preg_match('/^sendTicket_(.*)/',$userInfo['step'],$match)  and $text!=$button
         $stmt->close();
         
         $keys = json_encode(['inline_keyboard'=>[
-            [['text'=>\achbotMessage('support.create_ticket.button.3b90dccc67'),'callback_data'=>"reply_{$chatRowId}"]]
+            [['text'=>"پاسخ",'callback_data'=>"reply_{$chatRowId}"]]
             ]]);
         if(isset($text)){
-            $txt = \achbotMessage('support.create_ticket.txt.e819afcdf4', ['from_id' => $from_id, 'first_name' => $first_name, 'username' => $username, 'from_id_2' => $from_id, 'ticketCat' => $ticketCat]) .$ticketTitle . \achbotMessage('support.create_ticket.text.fe45cc8381', ['text' => $text]);
+            $txt = "تیکت جدید:\n\nکاربر: <a href='tg://user?id=$from_id'>$first_name</a>\nنام کاربری: @$username\nشناسه عددی: $from_id\n\nموضوع تیکت: $ticketCat\n\nعنوان تیکت: " .$ticketTitle . "\nمتن تیکت: $text";
             $text = str_replace(["/","'","#"],['\/',"\'","\#"],$text);
             $stmt = $connection->prepare("INSERT INTO `chats_info` (`chat_id`,`sent_date`,`msg_type`,`text`) VALUES
                         (?,?,'USER',?)");
@@ -50,7 +48,7 @@ if(preg_match('/^sendTicket_(.*)/',$userInfo['step'],$match)  and $text!=$button
             sendMessage($txt,$keys,"html", $admin);
             sendToAllAdmins('sendMessage', ['text' => $txt, 'reply_markup' => $keys, 'parse_mode' => "html"]);
         }else{
-            $txt = \achbotMessage('support.create_ticket.txt.e819afcdf4', ['from_id' => $from_id, 'first_name' => $first_name, 'username' => $username, 'from_id_2' => $from_id, 'ticketCat' => $ticketCat]) .$ticketTitle . \achbotMessage('support.create_ticket.text.4479736037', ['caption' => $caption]);
+            $txt = "تیکت جدید:\n\nکاربر: <a href='tg://user?id=$from_id'>$first_name</a>\nنام کاربری: @$username\nشناسه عددی: $from_id\n\nموضوع تیکت: $ticketCat\n\nعنوان تیکت: " .$ticketTitle . "\nمتن تیکت: $caption";
             $stmt = $connection->prepare("INSERT INTO `chats_info` (`chat_id`,`sent_date`,`msg_type`,`text`) VALUES
                         (?,?,'USER',?)");
             $text = json_encode(['file_id'=>$fileid, 'caption'=>$caption]);
@@ -61,13 +59,13 @@ if(preg_match('/^sendTicket_(.*)/',$userInfo['step'],$match)  and $text!=$button
         $stmt->execute();
         $stmt->close();
         
-        sendMessage(\achbotMessage('support.create_ticket.message.5c9c3dda00'),$removeKeyboard,"HTML");
-        sendMessage(\achbotMessage('support.create_ticket.message.b059640ccc'),getMainKeys());
+        sendMessage("پیام شما با موفقیت ثبت شد.",$removeKeyboard,"HTML");
+        sendMessage("لطفا یکی از کلید های زیر را انتخاب کنید.",getMainKeys());
             
         setUser(NULL,'temp');
     	setUser("none");
     }else{
-        sendMessage(\achbotMessage('support.create_ticket.message.19602d80df'));
+        sendMessage("پیام مورد نظر پشتیبانی نمی شود");
     }
     
 }

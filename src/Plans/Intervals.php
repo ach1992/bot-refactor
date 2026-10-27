@@ -4,8 +4,6 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     http_response_code(404);
     exit;
 }
-require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
-
 
 if($data == 'dayPlanSettings' and ($from_id == $admin || $userInfo['isAdmin'] == true)){
     $stmt = $connection->prepare("SELECT * FROM `increase_day`");
@@ -14,27 +12,27 @@ if($data == 'dayPlanSettings' and ($from_id == $admin || $userInfo['isAdmin'] ==
     $stmt->close();
 
     if($res->num_rows == 0){
-       editText($message_id, \achbotMessage('plans.intervals.day_plan_settings.message.f253e3780e'),json_encode([
+       editText($message_id, 'لیست پلن های زمانی خالی است.',json_encode([
                 'inline_keyboard' => [
-                    [['text' => \achbotMessage('plans.intervals.day_plan_settings.button.4e0a1e41c8'), 'callback_data' =>"addNewDayPlan"]],
+                    [['text' => "افزودن پلن زمانی جدید", 'callback_data' =>"addNewDayPlan"]],
                     [['text'=>$buttonValues['back_button'],'callback_data'=>"backplan"]]
                 ]
             ]));
         exit;
     }
     $keyboard = [];
-    $keyboard[] = [['text'=>\achbotMessage('plans.intervals.day_plan_settings.button.59ca629220'),'callback_data'=>"wizwizch"],['text'=>\achbotMessage('plans.intervals.day_plan_settings.button.7d2c8a1926'),'callback_data'=>"wizwizch"],['text'=>\achbotMessage('plans.intervals.day_plan_settings.button.be0d8f0892'),'callback_data'=>"wizwizch"]];
+    $keyboard[] = [['text'=>"حذف",'callback_data'=>"wizwizch"],['text'=>"قیمت",'callback_data'=>"wizwizch"],['text'=>"تعداد روز",'callback_data'=>"wizwizch"]];
     while($cat = $res->fetch_assoc()){
         $id = $cat['id'];
         $title = $cat['volume'];
-        $price=number_format($cat['price']) . \achbotMessage('plans.administration.edit_custom_plan.text.2cc98f7f7c');
+        $price=number_format($cat['price']) . " تومان";
         $acount =$cat['acount'];
 
-        $keyboard[] = [['text'=>\achbotMessage('plans.intervals.day_plan_settings.button.2b2966a54e'),'callback_data'=>"deleteDayPlan" . $id],['text'=>$price,'callback_data'=>"changeDayPlanPrice" . $id],['text'=>$title,'callback_data'=>"changeDayPlanDay" . $id]];
+        $keyboard[] = [['text'=>"❌",'callback_data'=>"deleteDayPlan" . $id],['text'=>$price,'callback_data'=>"changeDayPlanPrice" . $id],['text'=>$title,'callback_data'=>"changeDayPlanDay" . $id]];
     }
-    $keyboard[] = [['text' => \achbotMessage('plans.intervals.day_plan_settings.button.4e0a1e41c8'), 'callback_data' =>"addNewDayPlan"]];
+    $keyboard[] = [['text' => "افزودن پلن زمانی جدید", 'callback_data' =>"addNewDayPlan"]];
     $keyboard[] = [['text' => $buttonValues['back_button'], 'callback_data' => "backplan"]];
-    $msg = \achbotMessage('plans.intervals.day_plan_settings.msg.0eb1f0debf');
+    $msg = ' 📍 برای دیدن جزییات پلن زمانی روی آن بزنید👇';
     
     editText($message_id,$msg,json_encode([
             'inline_keyboard' => $keyboard
@@ -45,7 +43,12 @@ if($data == 'dayPlanSettings' and ($from_id == $admin || $userInfo['isAdmin'] ==
 if($data=='addNewDayPlan' and ($from_id == $admin || $userInfo['isAdmin'] == true)){
     setUser($data);
     delMessage();
-    sendMessage(\achbotMessage('plans.intervals.add_new_day_plan.message.3bf1033cb0'),$cancelKey);exit;
+    sendMessage("تعداد روز و قیمت آن را بصورت زیر وارد کنید:
+10-30000
+
+مقدار اول مدت زمان (10) روز
+مقدار دوم قیمت (30000) تومان
+ ",$cancelKey);exit;
 }
 if($userInfo['step'] == "addNewDayPlan" and $text != $buttonValues['cancel'] && ($from_id == $admin || $userInfo['isAdmin'] == true)) {
     $input = explode('-',$text); 
@@ -56,7 +59,7 @@ if($userInfo['step'] == "addNewDayPlan" and $text != $buttonValues['cancel'] && 
     $stmt->execute();
     $stmt->close();
     
-    sendMessage(\achbotMessage('plans.intervals.add_new_day_plan.message.9acd097b34'),$removeKeyboard);
+    sendMessage("پلن زمانی جدید با موفقیت اضافه شد",$removeKeyboard);
     sendMessage($mainValues['reached_main_menu'],getAdminKeys());
     setUser();
 }
@@ -65,7 +68,7 @@ if(preg_match('/^deleteDayPlan(\d+)/',$data,$match) and ($from_id == $admin || $
     $stmt->bind_param("i", $match[1]);
     $stmt->execute();
     $stmt->close();
-    alert(\achbotMessage('plans.intervals.add_new_day_plan.alert.b7bba0b0c0'));
+    alert("پلن موردنظر با موفقیت حذف شد.");
     
     
     $stmt = $connection->prepare("SELECT * FROM `increase_day`");
@@ -74,27 +77,27 @@ if(preg_match('/^deleteDayPlan(\d+)/',$data,$match) and ($from_id == $admin || $
     $stmt->close();
 
     if($res->num_rows == 0){
-       editText($message_id, \achbotMessage('plans.intervals.day_plan_settings.message.f253e3780e'),json_encode([
+       editText($message_id, 'لیست پلن های زمانی خالی است.',json_encode([
                 'inline_keyboard' => [
-                    [['text' => \achbotMessage('plans.intervals.day_plan_settings.button.4e0a1e41c8'), 'callback_data' =>"addNewDayPlan"]],
+                    [['text' => "افزودن پلن زمانی جدید", 'callback_data' =>"addNewDayPlan"]],
                     [['text'=>$buttonValues['back_button'],'callback_data'=>"managePanel"]]
                 ]
             ]));
         exit;
     }
     $keyboard = [];
-    $keyboard[] = [['text'=>\achbotMessage('plans.intervals.day_plan_settings.button.59ca629220'),'callback_data'=>"wizwizch"],['text'=>\achbotMessage('plans.intervals.day_plan_settings.button.7d2c8a1926'),'callback_data'=>"wizwizch"],['text'=>\achbotMessage('plans.intervals.day_plan_settings.button.be0d8f0892'),'callback_data'=>"wizwizch"]];
+    $keyboard[] = [['text'=>"حذف",'callback_data'=>"wizwizch"],['text'=>"قیمت",'callback_data'=>"wizwizch"],['text'=>"تعداد روز",'callback_data'=>"wizwizch"]];
     while($cat = $res->fetch_assoc()){
         $id = $cat['id'];
         $title = $cat['volume'];
-        $price=number_format($cat['price']) . \achbotMessage('plans.administration.edit_custom_plan.text.2cc98f7f7c');
+        $price=number_format($cat['price']) . " تومان";
         $acount =$cat['acount'];
 
-        $keyboard[] = [['text'=>\achbotMessage('plans.intervals.day_plan_settings.button.2b2966a54e'),'callback_data'=>"deleteDayPlan" . $id],['text'=>$price,'callback_data'=>"changeDayPlanPrice" . $id],['text'=>$title,'callback_data'=>"changeDayPlanDay" . $id]];
+        $keyboard[] = [['text'=>"❌",'callback_data'=>"deleteDayPlan" . $id],['text'=>$price,'callback_data'=>"changeDayPlanPrice" . $id],['text'=>$title,'callback_data'=>"changeDayPlanDay" . $id]];
     }
-    $keyboard[] = [['text' => \achbotMessage('plans.intervals.day_plan_settings.button.4e0a1e41c8'), 'callback_data' =>"addNewDayPlan"]];
+    $keyboard[] = [['text' => "افزودن پلن زمانی جدید", 'callback_data' =>"addNewDayPlan"]];
     $keyboard[] = [['text' => $buttonValues['back_button'], 'callback_data' => "managePanel"]];
-    $msg = \achbotMessage('plans.intervals.day_plan_settings.msg.0eb1f0debf');
+    $msg = ' 📍 برای دیدن جزییات پلن زمانی روی آن بزنید👇';
     
     editText($message_id,$msg,json_encode([
             'inline_keyboard' => $keyboard
@@ -105,7 +108,7 @@ if(preg_match('/^deleteDayPlan(\d+)/',$data,$match) and ($from_id == $admin || $
 if(preg_match('/^changeDayPlanPrice(\d+)/',$data,$match) and ($from_id == $admin || $userInfo['isAdmin'] == true)){
     setUser($data);
     delMessage();
-    sendMessage(\achbotMessage('plans.intervals.add_new_day_plan.message.b9989bb7c2'), $cancelKey);
+    sendMessage("قیمت جدید را وارد کنید:", $cancelKey);
     exit;
 }
 if(preg_match('/^changeDayPlanPrice(\d+)/',$userInfo['step'],$match) and $text != $buttonValues['cancel']){
@@ -116,7 +119,7 @@ if(preg_match('/^changeDayPlanPrice(\d+)/',$userInfo['step'],$match) and $text !
         $stmt->execute();
         $stmt->close();
         
-        sendMessage(\achbotMessage('plans.intervals.add_new_day_plan.message.d03501095b'),$removeKeyboard);
+        sendMessage("✅ عملیات با موفقیت انجام شد.",$removeKeyboard);
         
         $stmt = $connection->prepare("SELECT * FROM `increase_day`");
         $stmt->execute();
@@ -124,27 +127,27 @@ if(preg_match('/^changeDayPlanPrice(\d+)/',$userInfo['step'],$match) and $text !
         $stmt->close();
     
         if($res->num_rows == 0){
-           sendMessage( \achbotMessage('plans.intervals.day_plan_settings.message.f253e3780e'),json_encode([
+           sendMessage( 'لیست پلن های زمانی خالی است.',json_encode([
                     'inline_keyboard' => [
-                        [['text' => \achbotMessage('plans.intervals.day_plan_settings.button.4e0a1e41c8'), 'callback_data' =>"addNewDayPlan"]],
+                        [['text' => "افزودن پلن زمانی جدید", 'callback_data' =>"addNewDayPlan"]],
                         [['text'=>$buttonValues['back_button'],'callback_data'=>"managePanel"]]
                     ]
                 ]));
             exit;
         }
         $keyboard = [];
-        $keyboard[] = [['text'=>\achbotMessage('plans.intervals.day_plan_settings.button.59ca629220'),'callback_data'=>"wizwizch"],['text'=>\achbotMessage('plans.intervals.day_plan_settings.button.7d2c8a1926'),'callback_data'=>"wizwizch"],['text'=>\achbotMessage('plans.intervals.day_plan_settings.button.be0d8f0892'),'callback_data'=>"wizwizch"]];
+        $keyboard[] = [['text'=>"حذف",'callback_data'=>"wizwizch"],['text'=>"قیمت",'callback_data'=>"wizwizch"],['text'=>"تعداد روز",'callback_data'=>"wizwizch"]];
         while($cat = $res->fetch_assoc()){
             $id = $cat['id'];
             $title = $cat['volume'];
-            $price=number_format($cat['price']) . \achbotMessage('plans.administration.edit_custom_plan.text.2cc98f7f7c');
+            $price=number_format($cat['price']) . " تومان";
             $acount =$cat['acount'];
     
-            $keyboard[] = [['text'=>\achbotMessage('plans.intervals.day_plan_settings.button.2b2966a54e'),'callback_data'=>"deleteDayPlan" . $id],['text'=>$price,'callback_data'=>"changeDayPlanPrice" . $id],['text'=>$title,'callback_data'=>"changeDayPlanDay" . $id]];
+            $keyboard[] = [['text'=>"❌",'callback_data'=>"deleteDayPlan" . $id],['text'=>$price,'callback_data'=>"changeDayPlanPrice" . $id],['text'=>$title,'callback_data'=>"changeDayPlanDay" . $id]];
         }
-        $keyboard[] = [['text' => \achbotMessage('plans.intervals.day_plan_settings.button.4e0a1e41c8'), 'callback_data' =>"addNewDayPlan"]];
+        $keyboard[] = [['text' => "افزودن پلن زمانی جدید", 'callback_data' =>"addNewDayPlan"]];
         $keyboard[] = [['text' => $buttonValues['back_button'], 'callback_data' => "managePanel"]];
-        $msg = \achbotMessage('plans.intervals.add_new_day_plan.msg.34a6e4ec60');
+        $msg = ' 📍 برای دیدن جزییات پلن زمانی روی آن بزنید 👇';
         
         sendMessage($msg,json_encode([
                 'inline_keyboard' => $keyboard
@@ -152,13 +155,13 @@ if(preg_match('/^changeDayPlanPrice(\d+)/',$userInfo['step'],$match) and $text !
     
         
     }else{
-        sendMessage(\achbotMessage('plans.intervals.add_new_day_plan.message.a7db47ad08'));
+        sendMessage("یک مقدار عددی و صحیح وارد کنید");
     }
 }
 if(preg_match('/^changeDayPlanDay(\d+)/',$data,$match) and ($from_id == $admin || $userInfo['isAdmin'] == true)){
     setUser($data);
     delMessage();
-    sendMessage(\achbotMessage('plans.intervals.add_new_day_plan.message.395f467a7d'), $cancelKey);
+    sendMessage("روز جدید را وارد کنید:", $cancelKey);
     exit;
 }
 if(preg_match('/^changeDayPlanDay(\d+)/',$userInfo['step'],$match) && ($from_id == $admin || $userInfo['isAdmin'] == true) and $text != $buttonValues['cancel']) {
@@ -168,7 +171,7 @@ if(preg_match('/^changeDayPlanDay(\d+)/',$userInfo['step'],$match) && ($from_id 
     $stmt->execute();
     $stmt->close();
 
-    sendMessage(\achbotMessage('plans.intervals.add_new_day_plan.message.d03501095b'),$removeKeyboard);
+    sendMessage("✅ عملیات با موفقیت انجام شد.",$removeKeyboard);
     
     $stmt = $connection->prepare("SELECT * FROM `increase_day`");
     $stmt->execute();
@@ -176,27 +179,27 @@ if(preg_match('/^changeDayPlanDay(\d+)/',$userInfo['step'],$match) && ($from_id 
     $stmt->close();
 
     if($res->num_rows == 0){
-       sendMessage( \achbotMessage('plans.intervals.day_plan_settings.message.f253e3780e'),json_encode([
+       sendMessage( 'لیست پلن های زمانی خالی است.',json_encode([
                 'inline_keyboard' => [
-                    [['text' => \achbotMessage('plans.intervals.day_plan_settings.button.4e0a1e41c8'), 'callback_data' =>"addNewDayPlan"]],
+                    [['text' => "افزودن پلن زمانی جدید", 'callback_data' =>"addNewDayPlan"]],
                     [['text'=>$buttonValues['back_button'],'callback_data'=>"managePanel"]]
                 ]
             ]));
         exit;
     }
     $keyboard = [];
-    $keyboard[] = [['text'=>\achbotMessage('plans.intervals.day_plan_settings.button.59ca629220'),'callback_data'=>"wizwizch"],['text'=>\achbotMessage('plans.intervals.day_plan_settings.button.7d2c8a1926'),'callback_data'=>"wizwizch"],['text'=>\achbotMessage('plans.intervals.day_plan_settings.button.be0d8f0892'),'callback_data'=>"wizwizch"]];
+    $keyboard[] = [['text'=>"حذف",'callback_data'=>"wizwizch"],['text'=>"قیمت",'callback_data'=>"wizwizch"],['text'=>"تعداد روز",'callback_data'=>"wizwizch"]];
     while($cat = $res->fetch_assoc()){
         $id = $cat['id'];
         $title = $cat['volume'];
-        $price=number_format($cat['price']) . \achbotMessage('plans.administration.edit_custom_plan.text.2cc98f7f7c');
+        $price=number_format($cat['price']) . " تومان";
         $acount =$cat['acount'];
 
-        $keyboard[] = [['text'=>\achbotMessage('plans.intervals.day_plan_settings.button.2b2966a54e'),'callback_data'=>"deleteDayPlan" . $id],['text'=>$price,'callback_data'=>"changeDayPlanPrice" . $id],['text'=>$title,'callback_data'=>"changeDayPlanDay" . $id]];
+        $keyboard[] = [['text'=>"❌",'callback_data'=>"deleteDayPlan" . $id],['text'=>$price,'callback_data'=>"changeDayPlanPrice" . $id],['text'=>$title,'callback_data'=>"changeDayPlanDay" . $id]];
     }
-    $keyboard[] = [['text' => \achbotMessage('plans.intervals.day_plan_settings.button.4e0a1e41c8'), 'callback_data' =>"addNewDayPlan"]];
+    $keyboard[] = [['text' => "افزودن پلن زمانی جدید", 'callback_data' =>"addNewDayPlan"]];
     $keyboard[] = [['text' => $buttonValues['back_button'], 'callback_data' => "managePanel"]];
-    $msg = \achbotMessage('plans.intervals.day_plan_settings.msg.0eb1f0debf');
+    $msg = ' 📍 برای دیدن جزییات پلن زمانی روی آن بزنید👇';
     
     sendMessage($msg,json_encode([
             'inline_keyboard' => $keyboard
@@ -211,25 +214,25 @@ if($data == 'volumePlanSettings' and ($from_id == $admin || $userInfo['isAdmin']
     $stmt->close();
     
     if($plans->num_rows == 0){
-       editText($message_id, \achbotMessage('plans.intervals.volume_plan_settings.message.63f1e596ef'),json_encode([
+       editText($message_id, 'لیست پلن های حجمی خالی است.',json_encode([
                 'inline_keyboard' => [
-                    [['text' => \achbotMessage('plans.intervals.volume_plan_settings.button.a3524cb835'), 'callback_data' =>"addNewVolumePlan"]],
+                    [['text' => "افزودن پلن حجمی جدید", 'callback_data' =>"addNewVolumePlan"]],
                     [['text' => $buttonValues['back_button'],'callback_data'=>"backplan"]]
                     ]]));
         exit;
     }
     $keyboard = [];
-    $keyboard[] = [['text'=>\achbotMessage('plans.intervals.day_plan_settings.button.59ca629220'),'callback_data'=>"wizwizch"],['text'=>\achbotMessage('plans.intervals.day_plan_settings.button.7d2c8a1926'),'callback_data'=>"wizwizch"],['text'=>\achbotMessage('plans.intervals.volume_plan_settings.button.57fa83c28f'),'callback_data'=>"wizwizch"]];
+    $keyboard[] = [['text'=>"حذف",'callback_data'=>"wizwizch"],['text'=>"قیمت",'callback_data'=>"wizwizch"],['text'=>"مقدار حجم",'callback_data'=>"wizwizch"]];
     while ($cat = $plans->fetch_assoc()){
         $id = $cat['id'];
         $title = $cat['volume'];
-        $price=number_format($cat['price']) . \achbotMessage('plans.administration.edit_custom_plan.text.2cc98f7f7c');
+        $price=number_format($cat['price']) . " تومان";
         
-        $keyboard[] = [['text'=>\achbotMessage('plans.intervals.day_plan_settings.button.2b2966a54e'),'callback_data'=>"deleteVolumePlan" . $id],['text'=>$price,'callback_data'=>"changeVolumePlanPrice" . $id],['text'=>$title,'callback_data'=>"changeVolumePlanVolume" . $id]];
+        $keyboard[] = [['text'=>"❌",'callback_data'=>"deleteVolumePlan" . $id],['text'=>$price,'callback_data'=>"changeVolumePlanPrice" . $id],['text'=>$title,'callback_data'=>"changeVolumePlanVolume" . $id]];
     }
-    $keyboard[] = [['text' => \achbotMessage('plans.intervals.volume_plan_settings.button.a3524cb835'), 'callback_data' =>"addNewVolumePlan"]];
+    $keyboard[] = [['text' => "افزودن پلن حجمی جدید", 'callback_data' =>"addNewVolumePlan"]];
     $keyboard[] = [['text' =>$buttonValues['back_button'], 'callback_data' => "backplan"]];
-    $msg = \achbotMessage('plans.intervals.volume_plan_settings.msg.573ae79cf6');
+    $msg = ' 📍 برای دیدن جزییات پلن حجمی روی آن بزنید👇';
     
     $res = editText($message_id, $msg,json_encode([
             'inline_keyboard' => $keyboard
@@ -239,7 +242,12 @@ if($data == 'volumePlanSettings' and ($from_id == $admin || $userInfo['isAdmin']
 if($data=='addNewVolumePlan' and ($from_id == $admin || $userInfo['isAdmin'] == true)){
     setUser($data);
     delMessage();
-    sendMessage(\achbotMessage('plans.intervals.add_new_volume_plan.message.45a0bf24bb'),$cancelKey);
+    sendMessage("حجم و قیمت آن را بصورت زیر وارد کنید:
+10-30000
+
+مقدار اول حجم (10) گیگابایت
+مقدار دوم قیمت (30000) تومان
+ ",$cancelKey);
  exit;
 }
 if($userInfo['step'] == "addNewVolumePlan" and $text != $buttonValues['cancel'] && ($from_id == $admin || $userInfo['isAdmin'] == true)) {
@@ -251,7 +259,7 @@ if($userInfo['step'] == "addNewVolumePlan" and $text != $buttonValues['cancel'] 
     $stmt->execute();
     $stmt->close();
     
-    sendMessage(\achbotMessage('plans.intervals.add_new_volume_plan.message.b003cdcfab'),$removeKeyboard);
+    sendMessage("پلن حجمی جدید با موفقیت اضافه شد.",$removeKeyboard);
     sendMessage($mainValues['reached_main_menu'],getAdminKeys());
     setUser();
 }
@@ -260,7 +268,7 @@ if(preg_match('/^deleteVolumePlan(\d+)/',$data,$match) and ($from_id == $admin |
     $stmt->bind_param("i", $match[1]);
     $stmt->execute();
     $stmt->close();
-    alert(\achbotMessage('plans.intervals.add_new_volume_plan.alert.d5009733f9'));
+    alert("پلن مورد نظر با موفقیت حذف شد.");
     
     
     $stmt = $connection->prepare("SELECT * FROM `increase_plan`");
@@ -269,25 +277,25 @@ if(preg_match('/^deleteVolumePlan(\d+)/',$data,$match) and ($from_id == $admin |
     $stmt->close();
     
     if($plans->num_rows == 0){
-       editText($message_id, \achbotMessage('plans.intervals.volume_plan_settings.message.63f1e596ef'),json_encode([
+       editText($message_id, 'لیست پلن های حجمی خالی است.',json_encode([
                 'inline_keyboard' => [
-                    [['text' => \achbotMessage('plans.intervals.volume_plan_settings.button.a3524cb835'), 'callback_data' =>"addNewVolumePlan"]],
+                    [['text' => "افزودن پلن حجمی جدید", 'callback_data' =>"addNewVolumePlan"]],
                     [['text' => $buttonValues['back_button'],'callback_data'=>"managePanel"]]
                     ]]));
         exit;
     }
     $keyboard = [];
-    $keyboard[] = [['text'=>\achbotMessage('plans.intervals.day_plan_settings.button.59ca629220'),'callback_data'=>"wizwizch"],['text'=>\achbotMessage('plans.intervals.day_plan_settings.button.7d2c8a1926'),'callback_data'=>"wizwizch"],['text'=>\achbotMessage('plans.intervals.volume_plan_settings.button.57fa83c28f'),'callback_data'=>"wizwizch"]];
+    $keyboard[] = [['text'=>"حذف",'callback_data'=>"wizwizch"],['text'=>"قیمت",'callback_data'=>"wizwizch"],['text'=>"مقدار حجم",'callback_data'=>"wizwizch"]];
     while ($cat = $plans->fetch_assoc()){
         $id = $cat['id'];
         $title = $cat['volume'];
-        $price=number_format($cat['price']) . \achbotMessage('plans.administration.edit_custom_plan.text.2cc98f7f7c');
+        $price=number_format($cat['price']) . " تومان";
         
-        $keyboard[] = [['text'=>\achbotMessage('plans.intervals.day_plan_settings.button.2b2966a54e'),'callback_data'=>"deleteVolumePlan" . $id],['text'=>$price,'callback_data'=>"changeVolumePlanPrice" . $id],['text'=>$title,'callback_data'=>"changeVolumePlanVolume" . $id]];
+        $keyboard[] = [['text'=>"❌",'callback_data'=>"deleteVolumePlan" . $id],['text'=>$price,'callback_data'=>"changeVolumePlanPrice" . $id],['text'=>$title,'callback_data'=>"changeVolumePlanVolume" . $id]];
     }
-    $keyboard[] = [['text' => \achbotMessage('plans.intervals.volume_plan_settings.button.a3524cb835'), 'callback_data' =>"addNewVolumePlan"]];
+    $keyboard[] = [['text' => "افزودن پلن حجمی جدید", 'callback_data' =>"addNewVolumePlan"]];
     $keyboard[] = [['text' =>$buttonValues['back_button'], 'callback_data' => "managePanel"]];
-    $msg = \achbotMessage('plans.intervals.volume_plan_settings.msg.573ae79cf6');
+    $msg = ' 📍 برای دیدن جزییات پلن حجمی روی آن بزنید👇';
     
     $res = editText($message_id, $msg,json_encode([
             'inline_keyboard' => $keyboard
@@ -296,7 +304,7 @@ if(preg_match('/^deleteVolumePlan(\d+)/',$data,$match) and ($from_id == $admin |
 if(preg_match('/^changeVolumePlanPrice(\d+)/',$data,$match) and ($from_id == $admin || $userInfo['isAdmin'] == true)){
     setUser($data);
     delMessage();
-    sendMessage(\achbotMessage('plans.intervals.add_new_day_plan.message.b9989bb7c2'), $cancelKey);
+    sendMessage("قیمت جدید را وارد کنید:", $cancelKey);
     exit;
 }
 if(preg_match('/^changeVolumePlanPrice(\d+)/',$userInfo['step'],$match) and $text != $buttonValues['cancel'] and ($from_id == $admin || $userInfo['isAdmin'] == true)) {
@@ -306,7 +314,7 @@ if(preg_match('/^changeVolumePlanPrice(\d+)/',$userInfo['step'],$match) and $tex
         $stmt->bind_param("ii", $text, $pid);
         $stmt->execute();
         $stmt->close();
-        sendMessage(\achbotMessage('plans.intervals.add_new_volume_plan.message.76731ef62b'),$removeKeyboard);
+        sendMessage("عملیات با موفقیت انجام شد.",$removeKeyboard);
         
         setUser();
         $stmt = $connection->prepare("SELECT * FROM `increase_plan`");
@@ -315,37 +323,37 @@ if(preg_match('/^changeVolumePlanPrice(\d+)/',$userInfo['step'],$match) and $tex
         $stmt->close();
         
         if($plans->num_rows == 0){
-           sendMessage( \achbotMessage('plans.intervals.volume_plan_settings.message.63f1e596ef'),json_encode([
+           sendMessage( 'لیست پلن های حجمی خالی است.',json_encode([
                     'inline_keyboard' => [
-                        [['text' => \achbotMessage('plans.intervals.volume_plan_settings.button.a3524cb835'), 'callback_data' =>"addNewVolumePlan"]],
+                        [['text' => "افزودن پلن حجمی جدید", 'callback_data' =>"addNewVolumePlan"]],
                         [['text' => $buttonValues['back_button'],'callback_data'=>"managePanel"]]
                         ]]));
             exit;
         }
         $keyboard = [];
-        $keyboard[] = [['text'=>\achbotMessage('plans.intervals.day_plan_settings.button.59ca629220'),'callback_data'=>"wizwizch"],['text'=>\achbotMessage('plans.intervals.day_plan_settings.button.7d2c8a1926'),'callback_data'=>"wizwizch"],['text'=>\achbotMessage('plans.intervals.volume_plan_settings.button.57fa83c28f'),'callback_data'=>"wizwizch"]];
+        $keyboard[] = [['text'=>"حذف",'callback_data'=>"wizwizch"],['text'=>"قیمت",'callback_data'=>"wizwizch"],['text'=>"مقدار حجم",'callback_data'=>"wizwizch"]];
         while ($cat = $plans->fetch_assoc()){
             $id = $cat['id'];
             $title = $cat['volume'];
-            $price=number_format($cat['price']) . \achbotMessage('plans.administration.edit_custom_plan.text.2cc98f7f7c');
+            $price=number_format($cat['price']) . " تومان";
             
-            $keyboard[] = [['text'=>\achbotMessage('plans.intervals.day_plan_settings.button.2b2966a54e'),'callback_data'=>"deleteVolumePlan" . $id],['text'=>$price,'callback_data'=>"changeVolumePlanPrice" . $id],['text'=>$title,'callback_data'=>"changeVolumePlanVolume" . $id]];
+            $keyboard[] = [['text'=>"❌",'callback_data'=>"deleteVolumePlan" . $id],['text'=>$price,'callback_data'=>"changeVolumePlanPrice" . $id],['text'=>$title,'callback_data'=>"changeVolumePlanVolume" . $id]];
         }
-        $keyboard[] = [['text' => \achbotMessage('plans.intervals.volume_plan_settings.button.a3524cb835'), 'callback_data' =>"addNewVolumePlan"]];
+        $keyboard[] = [['text' => "افزودن پلن حجمی جدید", 'callback_data' =>"addNewVolumePlan"]];
         $keyboard[] = [['text' =>$buttonValues['back_button'], 'callback_data' => "managePanel"]];
-        $msg = \achbotMessage('plans.intervals.add_new_volume_plan.msg.9725f12c7b');
+        $msg = ' 📍 برای دیدن جزییات پلن حجمی روی آن بزنید 👇';
         
         $res = sendMessage($msg,json_encode([
                 'inline_keyboard' => $keyboard
             ]));
     }else{
-        sendMessage(\achbotMessage('plans.intervals.add_new_day_plan.message.a7db47ad08'));
+        sendMessage("یک مقدار عددی و صحیح وارد کنید");
     }
 }
 if(preg_match('/^changeVolumePlanVolume(\d+)/',$data) and ($from_id == $admin || $userInfo['isAdmin'] == true)){
     setUser($data);
     delMessage();
-    sendMessage(\achbotMessage('plans.intervals.add_new_volume_plan.message.e8e94558e4'), $cancelKey);
+    sendMessage("حجم جدید را وارد کنید:", $cancelKey);
     exit;
 }
 if(preg_match('/^changeVolumePlanVolume(\d+)/',$userInfo['step'], $match) and $text != $buttonValues['cancel'] && ($from_id == $admin || $userInfo['isAdmin'] == true)) {
@@ -354,7 +362,7 @@ if(preg_match('/^changeVolumePlanVolume(\d+)/',$userInfo['step'], $match) and $t
     $stmt->bind_param("ii", $text, $pid);
     $stmt->execute();
     $stmt->close();
-    sendMessage(\achbotMessage('plans.intervals.add_new_day_plan.message.d03501095b'),$removeKeyboard);
+    sendMessage("✅ عملیات با موفقیت انجام شد.",$removeKeyboard);
     setUser();
 
     $stmt = $connection->prepare("SELECT * FROM `increase_plan`");
@@ -363,25 +371,25 @@ if(preg_match('/^changeVolumePlanVolume(\d+)/',$userInfo['step'], $match) and $t
     $stmt->close();
     
     if($plans->num_rows == 0){
-       sendMessage( \achbotMessage('plans.intervals.volume_plan_settings.message.63f1e596ef'),json_encode([
+       sendMessage( 'لیست پلن های حجمی خالی است.',json_encode([
                 'inline_keyboard' => [
-                    [['text' => \achbotMessage('plans.intervals.volume_plan_settings.button.a3524cb835'), 'callback_data' =>"addNewVolumePlan"]],
+                    [['text' => "افزودن پلن حجمی جدید", 'callback_data' =>"addNewVolumePlan"]],
                     [['text' => $buttonValues['back_button'],'callback_data'=>"managePanel"]]
                     ]]));
         exit;
     }
     $keyboard = [];
-    $keyboard[] = [['text'=>\achbotMessage('plans.intervals.day_plan_settings.button.59ca629220'),'callback_data'=>"wizwizch"],['text'=>\achbotMessage('plans.intervals.day_plan_settings.button.7d2c8a1926'),'callback_data'=>"wizwizch"],['text'=>\achbotMessage('plans.intervals.volume_plan_settings.button.57fa83c28f'),'callback_data'=>"wizwizch"]];
+    $keyboard[] = [['text'=>"حذف",'callback_data'=>"wizwizch"],['text'=>"قیمت",'callback_data'=>"wizwizch"],['text'=>"مقدار حجم",'callback_data'=>"wizwizch"]];
     while ($cat = $plans->fetch_assoc()){
         $id = $cat['id'];
         $title = $cat['volume'];
-        $price=number_format($cat['price']) . \achbotMessage('plans.administration.edit_custom_plan.text.2cc98f7f7c');
+        $price=number_format($cat['price']) . " تومان";
         
-        $keyboard[] = [['text'=>\achbotMessage('plans.intervals.day_plan_settings.button.2b2966a54e'),'callback_data'=>"deleteVolumePlan" . $id],['text'=>$price,'callback_data'=>"changeVolumePlanPrice" . $id],['text'=>$title,'callback_data'=>"changeVolumePlanVolume" . $id]];
+        $keyboard[] = [['text'=>"❌",'callback_data'=>"deleteVolumePlan" . $id],['text'=>$price,'callback_data'=>"changeVolumePlanPrice" . $id],['text'=>$title,'callback_data'=>"changeVolumePlanVolume" . $id]];
     }
-    $keyboard[] = [['text' => \achbotMessage('plans.intervals.volume_plan_settings.button.a3524cb835'), 'callback_data' =>"addNewVolumePlan"]];
+    $keyboard[] = [['text' => "افزودن پلن حجمی جدید", 'callback_data' =>"addNewVolumePlan"]];
     $keyboard[] = [['text' =>$buttonValues['back_button'], 'callback_data' => "managePanel"]];
-    $msg = \achbotMessage('plans.intervals.volume_plan_settings.msg.573ae79cf6');
+    $msg = ' 📍 برای دیدن جزییات پلن حجمی روی آن بزنید👇';
     
     $res = sendMessage( $msg,json_encode([
             'inline_keyboard' => $keyboard

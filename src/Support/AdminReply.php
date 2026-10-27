@@ -9,12 +9,10 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     http_response_code(404);
     exit;
 }
-require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
-
 
 if(preg_match("/^reply_(.*)/",$data,$match) and  ($from_id == $admin || $userInfo['isAdmin'] == true)){
     setUser("answer_" . $match[1]);
-    sendMessage(\achbotMessage('support.admin_reply.message.8da2c2756b'),$cancelKey);
+    sendMessage("لطفا پیام خود را ارسال کنید.",$cancelKey);
 }
 if(preg_match('/^answer_(.*)/', $userInfo['step'], $match) && ($from_id == $admin || $userInfo['isAdmin'] == true) && $text != $buttonValues['cancel']){
     $chatRowId = $match[1];
@@ -40,8 +38,8 @@ if(preg_match('/^answer_(.*)/', $userInfo['step'], $match) && ($from_id == $admi
         
         sendMessage("\[$ticketTitle] _{$ticketCat}_\n\n" . $text,json_encode(['inline_keyboard'=>[
             [
-                ['text'=>\achbotMessage('support.admin_reply.button.f8a34e79d9'),'callback_data'=>"replySupport_$chatRowId"],
-                ['text'=>\achbotMessage('support.admin_reply.button.173875ae6b'),'callback_data'=>"closeTicket_$chatRowId"]
+                ['text'=>'پاسخ به تیکت 📝','callback_data'=>"replySupport_$chatRowId"],
+                ['text'=>"بستن تیکت 🗳",'callback_data'=>"closeTicket_$chatRowId"]
                 ]
             ]]),"MarkDown", $userId);        
     }else{
@@ -52,8 +50,8 @@ if(preg_match('/^answer_(.*)/', $userInfo['step'], $match) && ($from_id == $admi
         
         $keyboard = json_encode(['inline_keyboard'=>[
             [
-                ['text'=>\achbotMessage('support.admin_reply.button.f8a34e79d9'),'callback_data'=>"replySupport_$chatRowId"],
-                ['text'=>\achbotMessage('support.admin_reply.button.173875ae6b'),'callback_data'=>"closeTicket_$chatRowId"]
+                ['text'=>'پاسخ به تیکت 📝','callback_data'=>"replySupport_$chatRowId"],
+                ['text'=>"بستن تیکت 🗳",'callback_data'=>"closeTicket_$chatRowId"]
                 ]
             ]]);
             
@@ -68,6 +66,6 @@ if(preg_match('/^answer_(.*)/', $userInfo['step'], $match) && ($from_id == $admi
     $stmt->close();
     
     setUser();
-    sendMessage(\achbotMessage('support.admin_reply.message.5cd91cfb0b'),$removeKeyboard);
+    sendMessage("✅ پیام شما با موفقیت ارسال شد.",$removeKeyboard);
 }
 

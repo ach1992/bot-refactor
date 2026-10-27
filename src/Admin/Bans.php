@@ -8,8 +8,6 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     http_response_code(404);
     exit;
 }
-require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
-
 
 if ($data === "banUser") {
     $status=achbotLegacyModerationTransition(
@@ -17,7 +15,7 @@ if ($data === "banUser") {
         $userInfo,(int)$admin,'startBan');
     if ($status==='started') {
         delMessage();
-        sendMessage(\achbotMessage('admin.bans.ban_user.message.e2ecb94a9c'), $cancelKey);
+        sendMessage("😡 کی باز شلوغی کرده شناسه عددی شو بفرس تا برم ...... آرهههه:", $cancelKey);
     }
 }
 if ($data === "unbanUser") {
@@ -26,7 +24,7 @@ if ($data === "unbanUser") {
         $userInfo,(int)$admin,'startUnban');
     if ($status==='started') {
         delMessage();
-        sendMessage(\achbotMessage('admin.bans.unban_user.message.450fb58659'), $cancelKey);
+        sendMessage("شناسه عددیشو بفرست تا آزادش کنم", $cancelKey);
     }
 }
 if (($userInfo['step']??null)==='banUser' && $text!==$buttonValues['cancel']) {
@@ -35,11 +33,11 @@ if (($userInfo['step']??null)==='banUser' && $text!==$buttonValues['cancel']) {
             $connection,$update,(int)$from_id,(int)$chat_id,(int)$message_id,
             $userInfo,(int)$admin,'ban',$text);
         if ($status==='changed') {
-            sendMessage(\achbotMessage('admin.bans.unban_user.message.8921035044'),$removeKeyboard);
+            sendMessage("❌ خب خب برید کنار که مسدودش کردم 😎😂",$removeKeyboard);
         } elseif ($status==='already') {
-            sendMessage(\achbotMessage('admin.bans.unban_user.message.8b8e660e87'),$removeKeyboard);
+            sendMessage("☑️ این کاربر از قبل مسدود بود.",$removeKeyboard);
         } else {
-            sendMessage(\achbotMessage('admin.bans.unban_user.message.8764ea2164'));
+            sendMessage('درخواست مسدودسازی تأیید نشد؛ وضعیت و دسترسی فعلی را بررسی کنید.');
         }
         if ($status==='changed' || $status==='already')
             sendMessage($mainValues['reached_main_menu'],getAdminKeys());

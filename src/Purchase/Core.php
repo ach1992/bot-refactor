@@ -4,8 +4,6 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     http_response_code(404);
     exit;
 }
-require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
-
 require_once __DIR__.'/../Panel/ProviderRuntime.php';
 
 /**
@@ -41,7 +39,7 @@ if (!function_exists('getPlanDetails')) {
         $stmt->close();
 
         if (!$plan) {
-            alert(\achbotMessage('purchase.core.get_plan_details.alert.93f191e066'));
+            alert('❌ پلن مورد نظر یافت نشد.');
             exit;
         }
 
@@ -592,7 +590,7 @@ if (!function_exists('getServerInfoAndConfig')) {
         $stmt->close();
 
         if (!$serverInfo || !$serverConfig) {
-            alert(\achbotMessage('purchase.core.get_server_info_and_config.alert.c0552cb2f5'));
+            alert('❌ اطلاعات سرور یا تنظیمات آن یافت نشد.');
             exit;
         }
 

@@ -4,8 +4,6 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     http_response_code(404);
     exit;
 }
-require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
-
 
 function applyDiscountToPay($connection, $rowId, $discountCode, $from_id, $username, $first_name, $admin, $mainValues, $botState){
     // گرفتن اطلاعات پرداخت
@@ -227,7 +225,7 @@ function applyDiscountToPay($connection, $rowId, $discountCode, $from_id, $usern
 
     if ($minPrice > 0 && $price < $minPrice) {
         if (!empty($mainValues['discount_min_price'])) {
-            $msg = str_replace("MINPRICE", number_format($minPrice) . \achbotMessage('payment.discounts.apply_discount_to_pay.text.2cc98f7f7c'), $mainValues['discount_min_price']);
+            $msg = str_replace("MINPRICE", number_format($minPrice) . " تومان", $mainValues['discount_min_price']);
             sendMessage($msg);
         } else {
             sendMessage($mainValues['not_valid_discount_code']);
@@ -307,19 +305,19 @@ function applyDiscountToPay($connection, $rowId, $discountCode, $from_id, $usern
 
     // پیام به کاربر
 
-    $discountText = number_format($discountValue) . \achbotMessage('payment.discounts.apply_discount_to_pay.text.2cc98f7f7c');
+    $discountText = number_format($discountValue) . " تومان";
 
     if (!empty($mainValues['valid_discount_code'])) {
         sendMessage(str_replace("AMOUNT", $discountText, $mainValues['valid_discount_code']));
     } else {
-        sendMessage(\achbotMessage('payment.discounts.apply_discount_to_pay.message.e3c216313a') . $discountText);
+        sendMessage("کد تخفیف با موفقیت اعمال شد. مبلغ تخفیف: " . $discountText);
     }
 
     // پیام به ادمین و کانال گزارش
 
     $keys = json_encode(['inline_keyboard'=>[
         [
-            ['text'=>\achbotMessage('payment.discounts.apply_discount_to_pay.button.16e81418a3'), "callback_data"=>"wizwizch"]
+            ['text'=>"❤️", "callback_data"=>"wizwizch"]
         ],
     ]]);
 
@@ -389,17 +387,17 @@ function getDiscountCodeKeys($page = 1){
 		
         $keys[] = [
             [
-                'text' => \achbotMessage('payment.discounts.get_discount_code_keys.button.54f0bc3a22', ['page' => $page]),
+                'text' => "📋 لیست کدهای تخفیف (صفحه {$page})",
                 'callback_data' => "wizwizch"
             ]
         ];
 
         $keys[] = [
-            ['text' => \achbotMessage('payment.discounts.get_discount_code_keys.button.7f34ceb3ad'),      'callback_data' => "wizwizch"],
-            ['text' => \achbotMessage('payment.discounts.get_discount_code_keys.button.70fad032e5'),  'callback_data' => "wizwizch"],
-            ['text' => \achbotMessage('payment.discounts.get_discount_code_keys.button.68d7eb08ef'),  'callback_data' => "wizwizch"],
-            ['text' => \achbotMessage('payment.discounts.get_discount_code_keys.button.d6aa12d559'), 'callback_data' => "wizwizch"],
-            ['text' => \achbotMessage('payment.discounts.get_discount_code_keys.button.59ca629220'),    'callback_data' => "wizwizch"],
+            ['text' => "کد",      'callback_data' => "wizwizch"],
+            ['text' => "مقدار",  'callback_data' => "wizwizch"],
+            ['text' => "وضعیت",  'callback_data' => "wizwizch"],
+            ['text' => "ویرایش", 'callback_data' => "wizwizch"],
+            ['text' => "حذف",    'callback_data' => "wizwizch"],
         ];
 
         while($row = $list->fetch_assoc()){
@@ -413,20 +411,20 @@ function getDiscountCodeKeys($page = 1){
             if($row['type'] == 'percent'){
                 $amountText = $row['amount'] . "%";
             }else{
-                $amountText = number_format($row['amount']) . \achbotMessage('payment.discounts.apply_discount_to_pay.text.2cc98f7f7c');
+                $amountText = number_format($row['amount']) . " تومان";
             }
 
             $isExpiredDate   = ($expireDate != 0 && $expireDate < $now);
 			$isCountFinished = ($expireCount == 0);
 
 			if ($isExpiredDate) {
-				$statusText = \achbotMessage('payment.discounts.get_discount_code_keys.status_text.83f88b09cc');
+				$statusText = "📅 منقضی";
 			}
 			elseif ($isCountFinished) {
-				$statusText = \achbotMessage('payment.discounts.get_discount_code_keys.status_text.5136ccff12');
+				$statusText = "🔢 ناموجود";
 			}
 			else {
-				$statusText = $isActiveFlag ? \achbotMessage('payment.discounts.get_discount_code_keys.text.96befbea77') : \achbotMessage('payment.discounts.get_discount_code_keys.text.278aabbf79');
+				$statusText = $isActiveFlag ? "✅ فعال" : "⛔️ غیرفعال";
 			}
 
             // ردیف هر کد:
@@ -448,12 +446,12 @@ function getDiscountCodeKeys($page = 1){
                 ],
                 // ویرایش
                 [
-                    'text' => \achbotMessage('payment.discounts.get_discount_code_keys.button.dc31579458'),
+                    'text' => "✏️",
                     'callback_data' => "editDiscount" . $id
                 ],
                 // حذف (با تأیید)
                 [
-                    'text' => \achbotMessage('payment.agent_discounts.get_agent_discounts.button.2b2966a54e'),
+                    'text' => "❌",
                     'callback_data' => "delDiscountConfirm" . $id
                 ],
             ];
@@ -465,7 +463,7 @@ function getDiscountCodeKeys($page = 1){
             if($page > 1){
                 $prevPage = $page - 1;
                 $navRow[] = [
-                    'text' => \achbotMessage('payment.discounts.get_discount_code_keys.button.68f5beb4a0'),
+                    'text' => "⬅️",
                     'callback_data' => "discount_codes_" . $prevPage
                 ];
             }
@@ -473,7 +471,7 @@ function getDiscountCodeKeys($page = 1){
             if($page < $totalPages){
                 $nextPage = $page + 1;
                 $navRow[] = [
-                    'text' => \achbotMessage('payment.discounts.get_discount_code_keys.button.b32013f76e'),
+                    'text' => "➡️",
                     'callback_data' => "discount_codes_" . $nextPage
                 ];
             }
@@ -484,7 +482,7 @@ function getDiscountCodeKeys($page = 1){
 
             $keys[] = [
                 [
-                    'text' => \achbotMessage('payment.discounts.get_discount_code_keys.button.b5534c44c8', ['page' => $page, 'totalPages' => $totalPages]),
+                    'text' => "صفحه {$page} از {$totalPages}",
                     'callback_data' => "wizwizch"
                 ]
             ];
@@ -493,14 +491,14 @@ function getDiscountCodeKeys($page = 1){
     }else{
         $keys[] = [
             [
-                'text'=>\achbotMessage('payment.discounts.get_discount_code_keys.button.8817b56474'),'callback_data'=>"wizwizch"
+                'text'=>"کد تخفیفی یافت نشد.",'callback_data'=>"wizwizch"
             ]
         ];
     }
 
     // دکمه افزودن + برگشت
     $keys[] = [
-        ['text'=>\achbotMessage('payment.discounts.get_discount_code_keys.button.87e5644bfa'), 'callback_data'=>"addDiscountCode"]
+        ['text'=>"➕ افزودن کد تخفیف", 'callback_data'=>"addDiscountCode"]
     ];
     $keys[] = [
         ['text'=>$buttonValues['back_button'],'callback_data'=>"managePanel"]

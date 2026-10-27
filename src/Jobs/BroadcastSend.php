@@ -4,8 +4,6 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     http_response_code(404);
     exit;
 }
-require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
-
 
 // BEGIN send to all
 $staleMinutes = 15;
@@ -97,7 +95,7 @@ $message_id = $info['message_id'];
 $group      = $info['target_group'] ?? 'all';
 
 if ($offset == 0) {
-    $msg = ($type == "forwardall") ? \achbotMessage('jobs.broadcast_send.text.5168e99d1c') : \achbotMessage('jobs.broadcast_send.text.afcd1bb579');
+    $msg = ($type == "forwardall") ? "عملیات فوروارد همگانی شروع شد." : "عملیات ارسال پیام همگانی شروع شد.";
     bot('sendMessage', ['chat_id' => $admin, 'text' => $msg]);
 }
 
@@ -204,12 +202,12 @@ if (!$usersList || $usersList->num_rows == 0) {
     }
 
     $msg = ($type == "forwardall")
-        ? \achbotMessage('jobs.broadcast_send.text.2c23963c7c')
-        : \achbotMessage('jobs.broadcast_send.text.684e7d6efc');
+        ? "✅ عملیات فوروارد همگانی با موفقیت انجام شد."
+        : "✅ عملیات ارسال پیام همگانی با موفقیت انجام شد.";
 
     bot('sendMessage', [
         'chat_id' => $admin,
-        'text'    => $msg . \achbotMessage('jobs.broadcast_send.text.f9f933d21b') . $processedCount . \achbotMessage('jobs.broadcast_send.text.2e434e30b2')
+        'text'    => $msg . "\n❇️ تا اینجا روی حدود " . $processedCount . " نفر پردازش انجام شد."
     ]);
 
     markFinished($connection, "send_list", $sendId, $offset);
@@ -313,11 +311,11 @@ while ($user = $usersList->fetch_assoc()) {
                 file_put_contents($logFile, "");
             }
 
-            $log  = \achbotMessage('jobs.broadcast_send.broadcast__send__failed_code.0164fbb749', ['code' => $code]);
-            $log .= \achbotMessage('jobs.broadcast_send.time.b8d6847128') . date("Y-m-d H:i:s") . "\n";
-            $log .= \achbotMessage('jobs.broadcast_send.user.d9c380b9a1') . $user['userid'] . "\n";
-            $log .= \achbotMessage('jobs.broadcast_send.type.e40b1c7f35') . $type . "\n";
-            $log .= \achbotMessage('jobs.broadcast_send.desc.5bd89bf4d5') . ($sendRes->description ?? '') . "\n";
+            $log  = "⚠️ Broadcast Send Failed: {$code}\n";
+            $log .= "🕒 Time: " . date("Y-m-d H:i:s") . "\n";
+            $log .= "👤 User: " . $user['userid'] . "\n";
+            $log .= "📡 Type: " . $type . "\n";
+            $log .= "📝 Desc: " . ($sendRes->description ?? '') . "\n";
             $log .= "---------------------------\n";
             file_put_contents($logFile, $log, FILE_APPEND);
         }
@@ -356,7 +354,7 @@ while ($user = $usersList->fetch_assoc()) {
 
             bot('sendMessage', [
                 'chat_id' => $admin,
-                'text'    => \achbotMessage('jobs.broadcast_send.button.488a04a1e0', ['offset' => $offset])
+                'text'    => "⛔️ ارسال همگانی لغو شد.\nتا اینجا آخرین کاربر با id=$offset پردازش شده بود."
             ]);
 
             $finished = true;

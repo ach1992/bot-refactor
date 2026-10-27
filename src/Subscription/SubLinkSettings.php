@@ -4,13 +4,11 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     http_response_code(404);
     exit;
 }
-require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
-
 
 if(preg_match('/^editSubLinks(\d+)/', $data, $match) && ($from_id == $admin || $userInfo['isAdmin'] == true)) {
     delMessage();
     setUser("subLinksInput" . $match[1]);
-    sendMessage(\achbotMessage('subscription.sub_link_settings.message.9f2715dc7c'), $cancelKey, "Markdown");
+    sendMessage("🔗 لطفاً لینک‌های کمکی اشتراک سرور را وارد کنید.\n📌 لینک‌ها را با کاما (,) از هم جدا کنید.\n\nمثال:\n`https://sub1.domain.com,https://sub2.domain.com`", $cancelKey, "Markdown");
     exit();
 }
 if(preg_match('/^subLinksInput(\d+)/', $userInfo['step'], $match) && $text != $buttonValues['cancel'] && ($from_id == $admin || $userInfo['isAdmin'] == true)) {
@@ -23,11 +21,11 @@ if(preg_match('/^subLinksInput(\d+)/', $userInfo['step'], $match) && $text != $b
     $stmt->execute();
     $stmt->close();
 
-    sendMessage(\achbotMessage('subscription.sub_link_settings.message.745a80a770'), $removeKeyboard);
+    sendMessage("✅ لینک‌های کمکی با موفقیت ذخیره شدند.", $removeKeyboard);
 
     // برگشت به منوی سرور
     $keys = getServerConfigKeys($rowId);
-    sendMessage(\achbotMessage('subscription.sub_link_settings.message.aee64f26a1'), $keys);
+    sendMessage("☑️ مدیریت سرور:", $keys);
     setUser();
     exit();
 }

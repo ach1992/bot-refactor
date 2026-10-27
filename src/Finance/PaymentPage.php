@@ -11,8 +11,6 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     http_response_code(404);
     exit;
 }
-require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
-
 
 /**
  * Only an explicit presentation disposition from the *trusted caller*
@@ -34,17 +32,17 @@ function achbotPaymentPageViewState($trustedOutcome = null): string {
 
 function achbotRenderPaymentPage($msg, $type = "", $state = false, $outcome = null) {
     global $botUsername;
-    $heading = trim((string)$type) ?: \achbotMessage('gateway.payment_page.render_payment_page.text.0134bd87ce');
+    $heading = trim((string)$type) ?: 'وضعیت پرداخت';
     $message = (string)$msg;
     // $state is intentionally accepted for public showForm compatibility,
     // but cannot authorize a positive customer-facing disposition.
     $variant = achbotPaymentPageViewState($outcome);
     $status = [
-        'completed' => \achbotMessage('gateway.payment_page.render_payment_page.text.e5b6190b3e'),
-        'failed' => \achbotMessage('gateway.payment_page.render_payment_page.text.0aa6b2235a'),
-        'pending' => \achbotMessage('gateway.payment_page.render_payment_page.text.a5c5d3b4fb'),
-        'review' => \achbotMessage('gateway.payment_page.render_payment_page.text.9c641f40e0'),
-        'neutral' => \achbotMessage('gateway.payment_page.render_payment_page.text.cb52f9e6dc'),
+        'completed' => 'عملیات ثبت و تکمیل شد',
+        'failed' => 'پرداخت انجام نشد',
+        'pending' => 'در انتظار نتیجه',
+        'review' => 'نیازمند بررسی',
+        'neutral' => 'وضعیت سفارش',
     ][$variant];
     $title = htmlspecialchars($heading, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
     $content = htmlspecialchars($message, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
@@ -74,7 +72,7 @@ function achbotRenderPaymentPage($msg, $type = "", $state = false, $outcome = nu
     <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
     <meta name="theme-color" content="#17152c">
     <meta name="robots" content="noindex,nofollow,noarchive">
-    <title><?= $title ?><?= \achbotMessage('gateway.payment_page.browser_text.cc431d379c') ?></title>
+    <title><?= $title ?> — وضعیت سفارش</title>
     <style>
         *,*::before,*::after{box-sizing:border-box}
         :root{color-scheme:dark;--fg:#f7f7fd;--muted:#c5cbe0;--accent:#c4bcff;--border:rgba(206,211,246,.24)}
@@ -119,20 +117,20 @@ function achbotRenderPaymentPage($msg, $type = "", $state = false, $outcome = nu
 </head>
 <body>
     <main class="panel <?= $variant ?>">
-        <div class="eyebrow"><?= \achbotMessage('gateway.payment_page.browser_text.d364810dea') ?></div>
+        <div class="eyebrow">اطلاع‌رسانی سفارش</div>
         <h1><?= $title ?></h1>
         <div class="status" role="status"><span class="dot" aria-hidden="true"></span>
             <?= $status ?>
         </div>
         <div class="message" dir="rtl"><?= $content ?></div>
-        <p class="hint"><?= \achbotMessage('gateway.payment_page.browser_text.e71900f476') ?></p>
+        <p class="hint">این صفحه به‌تنهایی مدرک تسویه یا تحویل سرویس نیست. نتیجه نهایی را در ربات پیگیری کنید. بررسی بعضی پرداخت‌ها بیش از پنج دقیقه زمان می‌برد.</p>
         <?php if ($botLink !== null): ?>
             <a class="button" href="<?= htmlspecialchars($botLink, ENT_QUOTES, 'UTF-8') ?>"
-               rel="noopener noreferrer"><?= \achbotMessage('gateway.payment_page.browser_text.df24f2d651') ?></a>
+               rel="noopener noreferrer">بازگشت به ربات و پیگیری سفارش</a>
         <?php else: ?>
-            <p class="manual"><?= \achbotMessage('gateway.payment_page.browser_text.911c66993a') ?></p>
+            <p class="manual">برای پیگیری، از داخل ربات وارد بخش سفارش‌های خود شوید.</p>
         <?php endif; ?>
-        <footer><?= \achbotMessage('gateway.payment_page.browser_text.58121493fd') ?></footer>
+        <footer>در صورت مغایرت، شناسه سفارش را برای پشتیبانی ارسال کنید.</footer>
     </main>
 </body>
 </html>

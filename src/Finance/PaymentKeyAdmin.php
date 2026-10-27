@@ -5,8 +5,6 @@
 if (realpath($_SERVER['SCRIPT_FILENAME']??'')===__FILE__) {
     http_response_code(404);exit;
 }
-require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
-
 
 function achbotPaymentKeyAdminFields(): array {
     return [
@@ -21,7 +19,7 @@ function achbotPaymentKeyAdminMerchantLabel(array $keys,string $field): string {
     if (!in_array($field,['nowpayment','zarinpal','nextpay'],true))
         throw new RuntimeException('payment_key_not_hosted_merchant');
     return is_string($keys[$field]??null) && trim($keys[$field])!==''
-        ? \achbotMessage('payment_settings.payment_key_admin.payment_key_admin_merchant_label.text.ad271ae97c') : \achbotMessage('payment_settings.payment_key_admin.payment_key_admin_merchant_label.text.9fec3d676e');
+        ? '✅ تنظیم‌شده' : '⚠️ تنظیم‌نشده';
 }
 
 function achbotPaymentKeyAdminBaseline(array $keys,string $field,int $revision): string {
@@ -86,12 +84,12 @@ function achbotPaymentKeyAdminNormalize(string $field,string $input): ?string {
 function achbotPaymentKeyAdminInputHint(string $field,string $input): ?string {
     if (achbotPaymentKeyAdminNormalize($field,$input)!==null) return null;
     if ($field==='giftCardUrl')
-        return \achbotMessage('payment_settings.payment_key_admin.payment_key_admin_input_hint.label.7fa91d9aaf');
+        return '⚠️ لینک HTTPS معتبر، بدون اطلاعات ورود و حداکثر ۳۵۰ بایت وارد کنید.';
     if (str_starts_with($field,'manualUsdtWallet') || $field==='manualTrxWallet')
-        return \achbotMessage('payment_settings.payment_key_admin.payment_key_admin_input_hint.label.ac73e2af02');
+        return '⚠️ آدرس مقصد با شبکهٔ انتخاب‌شده سازگار نیست؛ برای حذف /clear ارسال کنید.';
     if (str_ends_with($field,'RateToman'))
-        return \achbotMessage('payment_settings.payment_key_admin.payment_key_admin_input_hint.label.f095f7b183');
-    return \achbotMessage('payment_settings.payment_key_admin.payment_key_admin_input_hint.label.0cf54d9a12');
+        return '⚠️ نرخ معتبر به تومان وارد کنید؛ برای حذف /clear ارسال کنید.';
+    return '⛔️ مقدار واردشده معتبر نیست.';
 }
 
 /**

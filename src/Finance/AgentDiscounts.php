@@ -4,8 +4,6 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     http_response_code(404);
     exit;
 }
-require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
-
 
 function getAgentDiscounts($agentId){
     global $connection, $mainValues, $buttonValues, $botState;
@@ -22,7 +20,7 @@ function getAgentDiscounts($agentId){
     $normal = $discounts['normal'];
     $keys[] = [['text'=>" ",'callback_data'=>"wizwizch"],
     ['text'=>$normal . "%",'callback_data'=>"editAgentDiscountNormal" . $agentId . "_0"],
-    ['text'=>\achbotMessage('payment.agent_discounts.get_agent_discounts.button.526e310df4'),'callback_data'=>"wizwizch"]];
+    ['text'=>"عمومی",'callback_data'=>"wizwizch"]];            
     
     if($botState['agencyPlanDiscount']=="on"){
         foreach($discounts['plans'] as $planId=>$discount){
@@ -38,7 +36,7 @@ function getAgentDiscounts($agentId){
             $catInfo = $stmt->get_result()->fetch_assoc();
             $stmt->close();
             
-            $keys[] = [['text'=>\achbotMessage('payment.agent_discounts.get_agent_discounts.button.2b2966a54e'),'callback_data'=>"removePercentOfAgentPlan" . $agentId . "_" . $planId],
+            $keys[] = [['text'=>"❌",'callback_data'=>"removePercentOfAgentPlan" . $agentId . "_" . $planId],
             ['text'=>$discount . "%",'callback_data'=>"editAgentDiscountPlan" . $agentId . "_" . $planId],
             ['text'=>$info['title'] . " " . $catInfo['title'],'callback_data'=>"wizwizch"]];            
         }
@@ -50,13 +48,13 @@ function getAgentDiscounts($agentId){
             $info = $stmt->get_result()->fetch_assoc();
             $stmt->close();
             
-            $keys[] = [['text'=>\achbotMessage('payment.agent_discounts.get_agent_discounts.button.2b2966a54e'),'callback_data'=>"removePercentOfAgentServer" . $agentId . "_" . $serverId],
+            $keys[] = [['text'=>"❌",'callback_data'=>"removePercentOfAgentServer" . $agentId . "_" . $serverId],
             ['text'=>$discount . "%",'callback_data'=>"editAgentDiscountServer" . $agentId . "_" . $serverId],
             ['text'=>$info['title'],'callback_data'=>"wizwizch"]];            
         }                
     }
-    if($botState['agencyPlanDiscount']=="on")$keys[] = [['text' => \achbotMessage('payment.agent_discounts.get_agent_discounts.button.d15a8dbd6d'), 'callback_data' => "addDiscountPlanAgent" . $agentId]];
-    else $keys[] = [['text' => \achbotMessage('payment.agent_discounts.get_agent_discounts.button.82aaebb083'), 'callback_data' => "addDiscountServerAgent" . $agentId]];
+    if($botState['agencyPlanDiscount']=="on")$keys[] = [['text' => "افزودن تخفیف پلن", 'callback_data' => "addDiscountPlanAgent" . $agentId]];
+    else $keys[] = [['text' => "افزودن تخفیف سرور", 'callback_data' => "addDiscountServerAgent" . $agentId]];
     $keys[] = [['text' => $buttonValues['back_button'], 'callback_data' => "agentsList"]];
     return json_encode(['inline_keyboard'=>$keys]);
 }

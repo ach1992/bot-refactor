@@ -4,8 +4,6 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     http_response_code(404);
     exit;
 }
-require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
-
 
 /**
  * Split integer paid amounts across ordered accounts without losing a unit.
@@ -121,12 +119,12 @@ if (!function_exists('ensureAccountCreationSucceeded')) {
         if (is_null($response)) {
             $hasError    = true;
             $errorCode   = 'server_connection_null';
-            $userMessage = \achbotMessage('purchase.order_writes.ensure_account_creation_succeeded.user_message.7eb9410072');
+            $userMessage = '❌ اتصال به سرور برقرار نیست. لطفا پشتیبانی را در جریان بگذارید.';
 
         } elseif ($response === "inbound not Found") {
             $hasError    = true;
             $errorCode   = 'inbound_not_found';
-            $userMessage = \achbotMessage('purchase.order_writes.ensure_account_creation_succeeded.user_message.7a64d65208', ['inbound_id' => $inbound_id]);
+            $userMessage = "❌ سطر (inbound) با آیدی $inbound_id تو این سرور وجود ندارد، لطفا پشتیبانی را در جریان بگذارید.";
 
         } else {
             $success = false;
@@ -143,10 +141,10 @@ if (!function_exists('ensureAccountCreationSucceeded')) {
             if (!$success) {
                 $hasError    = true;
                 $errorCode   = 'server_response_failed';
-                $userMessage = \achbotMessage('purchase.order_writes.ensure_account_creation_succeeded.user_message.b3fe04305c');
+                $userMessage = '❌ خطایی در ساخت/بروزرسانی اکانت رخ داد، لطفا پشتیبانی را در جریان بگذارید.';
 
-                $title = $serverInfo['title'] ?? \achbotMessage('purchase.order_writes.ensure_account_creation_succeeded.text.f07a81a062');
-                $adminMessage = \achbotMessage('purchase.order_writes.ensure_account_creation_succeeded.admin_message.7af76743b5', ['title' => $title]) . ($msg ?: \achbotMessage('purchase.order_writes.ensure_account_creation_succeeded.text.9d93e5efb8'));
+                $title = $serverInfo['title'] ?? 'نامشخص';
+                $adminMessage = "خطای سرور {$title}:\n\n" . ($msg ?: 'بدون پیام خطا');
             }
         }
 

@@ -9,8 +9,6 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     http_response_code(404);
     exit;
 }
-require_once __DIR__ . '/../../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
-
 
 require_once dirname(__DIR__) . '/WalletAdjustments.php';
 
@@ -379,35 +377,35 @@ if (!function_exists('achbotAdminWalletReportResult')) {
         if ($result === 'debt_required' && $operation !== null) {
             $token = achbotAdminWalletDebtCallback((int)$from_id,
                 $operation['pending_step']);
-            sendMessage(\achbotMessage('wallet.admin_wallet.admin_wallet_report_result.message.eb04c96492') .
-                \achbotMessage('wallet.admin_wallet.admin_wallet_report_result.message.9573fb5f6d') . $operation['target'] . "\n" .
-                \achbotMessage('wallet.admin_wallet.admin_wallet_report_result.message.ed76c199b7') . number_format($operation['amount']) . \achbotMessage('wallet.admin_wallet.admin_wallet_report_result.text.81a62ff6c6') .
-                \achbotMessage('wallet.admin_wallet.admin_wallet_report_result.text.b2b0f14f77') . number_format($operation['before']) . \achbotMessage('wallet.admin_wallet.admin_wallet_report_result.text.81a62ff6c6') .
-                \achbotMessage('wallet.admin_wallet.admin_wallet_report_result.text.1228d2c9db') . number_format($operation['after']) . \achbotMessage('wallet.admin_wallet.admin_wallet_report_result.text.81a62ff6c6') .
-                \achbotMessage('wallet.admin_wallet.admin_wallet_report_result.text.bacd083a7f'),
+            sendMessage("⚠️ این کاهش، موجودی کیف پول کاربر را منفی می‌کند.\n" .
+                'شناسه عددی کاربر: ' . $operation['target'] . "\n" .
+                'مبلغ کسر: ' . number_format($operation['amount']) . " تومان\n" .
+                'موجودی قبل: ' . number_format($operation['before']) . " تومان\n" .
+                'موجودی بعد: ' . number_format($operation['after']) . " تومان\n" .
+                'هنوز مبلغی اعمال نشده است. ایجاد یا افزایش این بدهی را تأیید می‌کنید؟',
                 json_encode(['inline_keyboard' => [
-                    [['text' => \achbotMessage('wallet.admin_wallet.admin_wallet_report_result.button.5b56135d41'),
+                    [['text' => '⚠️ تأیید کسر و ایجاد بدهی',
                       'callback_data' => 'walletDebtYes:' . $token]],
-                    [['text' => \achbotMessage('wallet.admin_wallet.admin_wallet_report_result.button.aad0953301'),
+                    [['text' => 'لغو درخواست',
                       'callback_data' => 'walletDebtNo:' . $token]]
                 ]], JSON_UNESCAPED_UNICODE));
         } elseif (($result === 'applied' || $result === 'already_applied') &&
             $operation !== null) {
             // Never re-read users.wallet after COMMIT: another operation may
             // already have changed it. Reconciled outcomes use journal facts.
-            $verb = $operation['kind'] === 'credit' ? \achbotMessage('wallet.admin_wallet.admin_wallet_report_result.text.82c078bc71') : \achbotMessage('wallet.admin_wallet.admin_wallet_report_result.text.e818e354c3');
-            $customer = \achbotMessage('wallet.admin_wallet.admin_wallet_report_result.customer.a5b15e454e') . number_format($operation['amount']) .
-                \achbotMessage('wallet.admin_wallet.admin_wallet_report_result.text.bfb7221456') . ($operation['kind'] === 'credit' ?
-                    \achbotMessage('wallet.admin_wallet.admin_wallet_report_result.text.cac43b05c7') : \achbotMessage('wallet.admin_wallet.admin_wallet_report_result.text.587ace91f5')) .
-                \achbotMessage('wallet.admin_wallet.admin_wallet_report_result.text.25f7017bbb') .
-                number_format($operation['after']) . \achbotMessage('wallet.admin_wallet.admin_wallet_report_result.text.2cc98f7f7c');
+            $verb = $operation['kind'] === 'credit' ? 'افزوده' : 'کسر';
+            $customer = '✅ مبلغ ' . number_format($operation['amount']) .
+                ' تومان ' . ($operation['kind'] === 'credit' ?
+                    'به کیف پول شما افزوده شد.' : 'از کیف پول شما کسر شد.') .
+                "\nموجودی کیف پول شما پس از این تغییر: " .
+                number_format($operation['after']) . ' تومان';
             $notices = [
-                ['operator_confirmation', [\achbotMessage('wallet.admin_wallet.admin_wallet_report_result.customer.a5b15e454e') .
-                    number_format($operation['amount']) . \achbotMessage('wallet.admin_wallet.admin_wallet_report_result.text.bfb7221456') . $verb .
-                    \achbotMessage('wallet.admin_wallet.admin_wallet_report_result.text.a3e148be80') . $operation['target'] .
-                    \achbotMessage('wallet.admin_wallet.admin_wallet_report_result.text.dff0fbb433') . number_format($operation['before']) .
-                    \achbotMessage('wallet.admin_wallet.admin_wallet_report_result.text.a3e128be40') . number_format($operation['after']) .
-                    \achbotMessage('wallet.admin_wallet.admin_wallet_report_result.text.4a74d658e8') . $operation['correlation'], $removeKeyboard]],
+                ['operator_confirmation', ['✅ مبلغ ' .
+                    number_format($operation['amount']) . ' تومان ' . $verb .
+                    " شد.\nشناسه عددی کاربر: " . $operation['target'] .
+                    "\nموجودی قبل: " . number_format($operation['before']) .
+                    " تومان\nموجودی بعد: " . number_format($operation['after']) .
+                    " تومان\nشناسه پیگیری: " . $operation['correlation'], $removeKeyboard]],
                 ['operator_menu', [$mainValues['reached_main_menu'], getMainKeys()]],
                 ['target_notice', [$customer, null, null, $operation['target']]]
             ];
@@ -424,16 +422,16 @@ if (!function_exists('achbotAdminWalletReportResult')) {
                 }
             }
         } elseif ($result === 'balance_changed') {
-            sendMessage(\achbotMessage('wallet.admin_wallet.admin_wallet_report_result.message.b996aa6de3') .
-                \achbotMessage('wallet.admin_wallet.admin_wallet_report_result.message.8e316dfa3e'),
+            sendMessage('⚠️ موجودی کاربر پس از نمایش تأیید بدهی تغییر کرده است. ' .
+                'این درخواست لغو شد و مبلغی از آن اعمال نشد؛ کاهش موجودی را دوباره شروع کنید.',
                 $removeKeyboard);
         } elseif ($result === 'stale') {
-            sendMessage(\achbotMessage('wallet.admin_wallet.admin_wallet_report_result.message.ce5d096603'));
+            sendMessage('⚠️ این درخواست قبلاً پردازش یا لغو شده است؛ وضعیت کیف پول را بررسی کنید.');
         } elseif ($result === 'invalid') {
-            sendMessage(\achbotMessage('wallet.admin_wallet.admin_wallet_report_result.message.c3cca2f742'));
+            sendMessage('⚠️ موجودی، مبلغ یا دسترسی معتبر نیست. تغییری اعمال نشد.');
         } else {
-            sendMessage(\achbotMessage('wallet.admin_wallet.admin_wallet_report_result.message.472c52debf') .
-                $updateId . \achbotMessage('wallet.admin_wallet.admin_wallet_report_result.message.1601e8a95b'));
+            sendMessage('⚠️ نتیجه عملیات مشخص نیست؛ تا بررسی شناسه پیگیری ' .
+                $updateId . ' آن را تکرار نکنید.');
         }
     }
 }
@@ -457,7 +455,7 @@ if ($achbotWalletCanAdmin && isset($achbotWalletModes[$data]) &&
     achbotAdminWalletPrivateCallback($update ?? null, $from_id ?? null,
         $chat_id ?? null, $message_id ?? null, $data)) {
     if (!achbotWalletAdjustmentsReady($connection)) {
-        sendMessage(\achbotMessage('wallet.admin_wallet.admin_wallet_report_result.message.7f5443f0df'));
+        sendMessage('⚠️ ثبت تغییر موجودی فعلاً آماده نیست؛ مدیر سیستم باید دفتر ثبت مالی را بررسی کند.');
     } else {
         delMessage();
         sendMessage($mainValues['send_user_id'], $cancelKey);
@@ -481,7 +479,7 @@ if ($achbotWalletCanAdmin && isset($achbotWalletModes[$achbotWalletStep]) &&
         if ($matches !== 1) {
             setUser();
             sendMessage($matches > 1 ?
-                \achbotMessage('wallet.admin_wallet.admin_wallet_report_result.message.840dca2362') :
+                '⚠️ شناسه کاربری چند رکورد دارد؛ قبل از تغییر موجودی بررسی کنید.' :
                 $mainValues['user_not_found'], $removeKeyboard);
             sendMessage($mainValues['reached_main_menu'], getMainKeys());
         } else {
@@ -500,7 +498,7 @@ if ($achbotWalletCanAdmin && $achbotWalletFreshText !== null &&
              'debtWalletUser'=>'debit'][$match[1]];
     if (!preg_match('/^[1-9][0-9]{0,9}$/D', $achbotWalletInput) ||
         (float)$achbotWalletInput > 2147483647) {
-        sendMessage(\achbotMessage('wallet.admin_wallet.admin_wallet_report_result.message.5022bf056a'));
+        sendMessage('⚠️ فقط مبلغ صحیح، مثبت و بدون اعشار تا سقف مجاز وارد کنید.');
     } else {
         $target = (int)$match[2];
         $amount = (int)$achbotWalletInput;
@@ -508,9 +506,9 @@ if ($achbotWalletCanAdmin && $achbotWalletFreshText !== null &&
         // Older/out-of-order private messages cannot provide its reason.
         setUser('achbotWalletReason:' . $kind . ':' . $target . ':' . $amount
             . ':' . $update->message->message_id . ':' . $update->update_id);
-        sendMessage(\achbotMessage('wallet.admin_wallet.admin_wallet_report_result.message.b890d4f5e3')
-            . \achbotMessage('wallet.admin_wallet.admin_wallet_report_result.message.e8ac1326af')
-            . ($kind === 'debt' ? \achbotMessage('wallet.admin_wallet.admin_wallet_report_result.message.ff1e51077f') : ''));
+        sendMessage('📝 دلیل این تغییر موجودی را در یک پیام جداگانه وارد کنید. '
+            . 'تغییر فقط پس از ثبت دلیل اعمال می‌شود.'
+            . ($kind === 'debt' ? ' این کسر مجاز است موجودی را منفی کند.' : ''));
     }
 }
 
@@ -522,7 +520,7 @@ if ($achbotWalletCanAdmin && $achbotWalletFreshText !== null &&
     $update->update_id > (int)$match[5]) {
     $reason = $achbotWalletFreshText;
     if ($reason === '' || strlen($reason) > 500) {
-        sendMessage(\achbotMessage('wallet.admin_wallet.admin_wallet_report_result.message.a4b902d78b'));
+        sendMessage('⚠️ دلیل باید غیرخالی و حداکثر ۵۰۰ بایت باشد. لطفاً دوباره وارد کنید.');
     } else {
         $updateId = filter_var($update->update_id ?? null, FILTER_VALIDATE_INT);
         $message = filter_var($message_id ?? null, FILTER_VALIDATE_INT);
@@ -555,7 +553,7 @@ if ($achbotWalletCanAdmin &&
         $cancelResult = achbotCancelAdminWalletPendingStep($connection,
             (int)$from_id, $achbotWalletStep, (int)$admin);
         if ($cancelResult === 'canceled') {
-            sendMessage(\achbotMessage('wallet.admin_wallet.admin_wallet_report_result.message.2f08aabfdd'),
+            sendMessage('درخواست تغییر موجودی لغو شد؛ مبلغی از این درخواست اعمال نشد.',
                 $removeKeyboard);
         } else {
             achbotAdminWalletReportResult($cancelResult, null, (int)$update->update_id);

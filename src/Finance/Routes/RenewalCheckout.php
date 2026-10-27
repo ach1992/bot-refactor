@@ -4,8 +4,6 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     http_response_code(404);
     exit;
 }
-require_once __DIR__ . '/../../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
-
 
 require_once __DIR__ . '/../PaymentLifecycle.php';
 
@@ -15,15 +13,15 @@ if (preg_match('/^renewAccountAsk(\d+)$/', $data, $match)) {
     $keyboard = json_encode([
         'inline_keyboard' => [
             [
-                ['text' => \achbotMessage('renewal.renewal_checkout.button.faa57a99b5'), 'callback_data' => "renewAccount{$oid}"]
+                ['text' => "✅ تأیید تمدید", 'callback_data' => "renewAccount{$oid}"]
             ],
             [
-                ['text' => \achbotMessage('renewal.renewal_checkout.button.1fe862ea18'), 'callback_data' => "mySubscriptions"]
+                ['text' => "❌ انصراف", 'callback_data' => "mySubscriptions"]
             ]
         ]
     ]);
 
-    sendMessage(\achbotMessage('renewal.renewal_checkout.message.7159ade06f'), $keyboard);
+    sendMessage("⚠️ دقت کنید با تمدید اشتراک، در صورتی که حجم باقی مانده داشته باشید منتقل نمی شود.\n✅ می توانید کیف پول خود را شارژ کنید و گزینه تمدید خودکار را روشن کنید تا هر زمان اشتراک شما تمام شد خودکار تمدید شود.\n🔰 در صورت تمایل به ادامه روی دکمه «تایید تمدید» بزنید.", $keyboard);
     exit();
 }
 
@@ -53,12 +51,14 @@ if (
     $order = $order->fetch_assoc();
     $fid = $order['fileid'];
     if (!achbotSupportsOrder($connection, (int)$oid, (int)$fid, (int)$order['userid'])) {
-        alert(\achbotMessage('renewal.renewal_checkout.alert.6aa152a253'), true);
+        alert("⛔️ تمدید این اشتراک در حال حاضر امکان‌پذیر نیست.", true);
         return;
     }
     // بررسی اگر fileid برابر 0 باشد
     if($fid == 0){
-        sendMessage(\achbotMessage('renewal.renewal_checkout.message.4c2448e6fa'));
+        sendMessage("✋ لطفاً ابتدا با زدن دکمه: 
+        ← 🔄 تغییر پلن
+یک پلن برای اشتراک خود انتخاب کنید و بعد اقدام به تمدید نمایید.");
         exit();
     }
 	
@@ -111,28 +111,28 @@ if (
         $rowId=achbotPayUxInsertDraft($connection,(int)$from_id,$stmt);
         $stmt->close();
         if ($rowId<=0) {
-            alert(\achbotMessage('renewal.renewal_checkout.alert.201380d8bf'),true);
+            alert('⚠️ صدور پیش‌نویس به‌طور قطعی تأیید نشد؛ برای پیگیری از پشتیبانی کمک بگیرید.',true);
             return;
         }
     }else $price = $afterDiscount;
 
-    if($price == 0) $price = \achbotMessage('renewal.extensions.price.dda7ff2974');
-    else $price .= \achbotMessage('renewal.extensions.text.2cc98f7f7c');
+    if($price == 0) $price = "رایگان";
+    else $price .= " تومان";
 	
 	$keyboard = [];
 	$actionType = "Renew";
-	if (achbotManualEnabled('bank_transfer') && achbotPayUxAudienceAllowed($connection,'bank_transfer',(int)$from_id)) $keyboard[] = [['text' => \achbotMessage('renewal.renewal_checkout.button.5b3252c790', ['price' => $price]), 'callback_data' => "prePayCheck_{$actionType}_CartToCart_{$hash_id}"]];
-	if (achbotManualEnabled('gift_card') && achbotPayUxAudienceAllowed($connection,'gift_card',(int)$from_id)) $keyboard[] = [['text' => \achbotMessage('renewal.renewal_checkout.button.cf580700a3', ['price' => $price]), 'callback_data' => "prePayCheck_{$actionType}_GiftCard_{$hash_id}"]];
-	if (achbotManualCryptoEnabled((int)$from_id) && (achbotPayUxAudienceAllowed($connection,'manual_usdt',(int)$from_id) || achbotPayUxAudienceAllowed($connection,'manual_trx',(int)$from_id))) $keyboard[] = [['text' => \achbotMessage('renewal.renewal_checkout.button.73f7c8deeb', ['price' => $price]), 'callback_data' => "prePayCheck_{$actionType}_ManualUsdt_{$hash_id}"]];
+	if (achbotManualEnabled('bank_transfer') && achbotPayUxAudienceAllowed($connection,'bank_transfer',(int)$from_id)) $keyboard[] = [['text' => "💳 کارت به کارت مبلغ $price", 'callback_data' => "prePayCheck_{$actionType}_CartToCart_{$hash_id}"]];
+	if (achbotManualEnabled('gift_card') && achbotPayUxAudienceAllowed($connection,'gift_card',(int)$from_id)) $keyboard[] = [['text' => "🎁 گیفت‌کارت مبلغ $price", 'callback_data' => "prePayCheck_{$actionType}_GiftCard_{$hash_id}"]];
+	if (achbotManualCryptoEnabled((int)$from_id) && (achbotPayUxAudienceAllowed($connection,'manual_usdt',(int)$from_id) || achbotPayUxAudienceAllowed($connection,'manual_trx',(int)$from_id))) $keyboard[] = [['text' => "💎 پرداخت رمزارزی دستی مبلغ $price", 'callback_data' => "prePayCheck_{$actionType}_ManualUsdt_{$hash_id}"]];
 	if (($botState['nowPaymentOther'] == "on" && achbotPayUxAudienceAllowed($connection,'nowpayments',(int)$from_id) && achbotUsdtRateForUser($connection,(int)$from_id)!==null)) $keyboard[] = [['text' => $buttonValues['now_payment_gateway'], 'callback_data' => "prePayCheck_{$actionType}_nowpayment_{$hash_id}"]];
 	if (($botState['zarinpal'] == "on" && achbotPayUxAudienceAllowed($connection,'zarinpal',(int)$from_id))) $keyboard[] = [['text' => $buttonValues['zarinpal_gateway'], 'callback_data' => "prePayCheck_{$actionType}_zarinpal_{$hash_id}"]];
 	if (($botState['nextpay'] == "on" && achbotPayUxAudienceAllowed($connection,'nextpay',(int)$from_id))) $keyboard[] = [['text' => $buttonValues['nextpay_gateway'], 'callback_data' => "prePayCheck_{$actionType}_nextpay_{$hash_id}"]];
-	if (($botState['walletState'] == "on" && achbotPayUxAudienceAllowed($connection,'wallet',(int)$from_id))) $keyboard[] = [['text' => \achbotMessage('renewal.renewal_checkout.button.0eed1dd8e8', ['price' => $price]), 'callback_data' => "prePayCheck_{$actionType}_Wallet_{$hash_id}"]];
-	if (!preg_match('/^discountRenew/', $userInfo['step'])) $keyboard[] = [['text' => \achbotMessage('renewal.renewal_checkout.button.05c3a1e3f4'), 'callback_data' => "haveDiscountRenew_{$match[1]}_{$rowId}"]];
+	if (($botState['walletState'] == "on" && achbotPayUxAudienceAllowed($connection,'wallet',(int)$from_id))) $keyboard[] = [['text' => "💰پرداخت با موجودی مبلغ $price", 'callback_data' => "prePayCheck_{$actionType}_Wallet_{$hash_id}"]];
+	if (!preg_match('/^discountRenew/', $userInfo['step'])) $keyboard[] = [['text' => " 🎟 افزودن کد تخفیف ", 'callback_data' => "haveDiscountRenew_{$match[1]}_{$rowId}"]];
 	
 	$keyboard[] = [['text' => $buttonValues['cancel'], 'callback_data' => "mainMenu"]];
 	
-    $sent=sendMessage(\achbotMessage('renewal.renewal_checkout.message.24ae8c4399'), json_encode(['inline_keyboard' => $keyboard]));
+    $sent=sendMessage("🧾 روش پرداخت این تمدید را انتخاب کنید. فقط یک روش فعال را ادامه دهید.", json_encode(['inline_keyboard' => $keyboard]));
     require_once __DIR__ . '/../PaymentLifecycle.php';
     achbotPayUxTrackByHash($connection,(string)$hash_id,(int)$from_id,$sent);
 }
@@ -164,13 +164,13 @@ if (is_string($data) && (strlen($data) <= 64 || ($GLOBALS['achbotManualCryptoVer
         (str_starts_with($data, 'payRenewWithGiftCard') ? 'gift_card' : 'bank_transfer');
     if (!achbotManualClaim($connection, $payInfo, $method, (int)$from_id,
                            $GLOBALS['achbotManualCryptoChoice'] ?? null)) {
-        alert(\achbotMessage('renewal.extensions.alert.1a885aaca4'), true);
+        alert("⚠️ پرداخت این سفارش با این روش مجاز نیست یا قبلاً به روش دیگری آغاز شده است.", true);
         return;
     }
 
 	$msg = buildCartToCartInfoMessage($paymentKeys, $mainValues, (int)$payInfo['price'], (int)$payInfo['user_id'], $method, (string)$payInfo['hash_id']);
     if ($msg === "") {
-        alert(\achbotMessage('renewal.extensions.alert.07ee06b4bc'), true);
+        alert("⚠️ اطلاعات این پرداخت قابل بازیابی نیست؛ با پشتیبانی تماس بگیرید.", true);
         return;
     }
     $keyboard = kbSendReceiptAndCancel(in_array($method, ['manual_usdt','manual_trx'], true) ? "sendRenewUsdtReceipt" : ($method === 'gift_card' ? "sendRenewGiftReceipt" : "sendRenewCartReceipt"), "cancelRenewCartReceipt", $match[1], $method);
@@ -184,7 +184,7 @@ if (is_string($data) && (strlen($data) <= 64 || ($GLOBALS['achbotManualCryptoVer
     } else {
         // The pinned attempt may be reopened. Never erase the selection menu
         // if Telegram failed to deliver the replacement instructions.
-        alert(\achbotMessage('renewal.extensions.alert.7a9c30e938'), true);
+        alert("⚠️ نمایش اطلاعات پرداخت تأیید نشد. از همان دکمه دوباره تلاش کنید و وجهی ارسال نکنید.", true);
     }
     exit;
 }
@@ -201,7 +201,7 @@ if (preg_match('/send(?:RenewCart|RenewGift|RenewUsdt)Receipt(?<hashId>.*)/', $d
     $method = strpos($data, 'UsdtReceipt') !== false ? achbotManualCryptoReceiptProviderByHash($connection, (string)$match['hashId']) :
         (strpos($data, 'GiftReceipt') !== false ? 'gift_card' : 'bank_transfer');
     if (!achbotManualReceiptAllowed($connection, $payInfo, $method, (int)$from_id)) {
-        alert(\achbotMessage('renewal.extensions.alert.d06bc731eb'), true);
+        alert("⚠️ این رسید با روش پرداخت انتخاب‌شده مطابقت ندارد یا سفارش در انتظار پرداخت نیست.", true);
         return;
     }
     $guardMsg = duplicateReceiptGuard($connection, $payInfo, time());
@@ -212,7 +212,7 @@ if (preg_match('/send(?:RenewCart|RenewGift|RenewUsdt)Receipt(?<hashId>.*)/', $d
     require_once __DIR__ . '/../PaymentLifecycle.php';
     if (!achbotPayUxStartManualReceipt($connection,(int)$payInfo['id'],
                                       $method,(int)$from_id)) {
-        alert(\achbotMessage('renewal.extensions.alert.560f05f822'),true);
+        alert('⌛️ مهلت شروع ارسال رسید پایان یافته یا فاکتور در حال بررسی است. اگر وجهی فرستاده‌اید با پشتیبانی تماس بگیرید.',true);
         return;
     }
 
@@ -237,7 +237,7 @@ if (preg_match('/wait(?:RenewCart|RenewGift|RenewUsdt)Receipt(.*)/', $userInfo['
     $receiptPay = dbFetchPayByHash($connection, $match[1]);
     if (!$receiptPay || !achbotManualReceiptAllowed($connection, $receiptPay, $method, (int)$from_id)) {
         setUser();
-        alert(\achbotMessage('renewal.extensions.alert.882596d0f1'), true);
+        alert("⚠️ این سفارش قابل ثبت رسید نیست؛ برای بررسی با پشتیبانی تماس بگیرید.", true);
         return;
     }
     $fileid = extractPhotoFileId($update);
@@ -249,7 +249,7 @@ if (preg_match('/wait(?:RenewCart|RenewGift|RenewUsdt)Receipt(.*)/', $userInfo['
 
     $deliveryToken = achbotManualBeginEvidence($connection, $receiptPay, $method, (int)$from_id, $fileid);
     if ($deliveryToken === null) {
-        alert(\achbotMessage('renewal.extensions.alert.795c4bddb8'), true);
+        alert("⚠️ ثبت یا ارسال رسید در جریان است. همان تصویر را دوباره ارسال کنید؛ در صورت تداوم مشکل با پشتیبانی تماس بگیرید.", true);
         return;
     }
 
@@ -266,7 +266,7 @@ if (preg_match('/wait(?:RenewCart|RenewGift|RenewUsdt)Receipt(.*)/', $userInfo['
     $requestTime = (int)$payInfo['request_date'];
     if ($now - $requestTime > 10800) {
         delMessage();
-        sendMessage(\achbotMessage('renewal.renewal_checkout.message.2c9a5e948c'));
+        sendMessage("⏳ مهلت این خرید به پایان رسیده است.\n♻️ لطفاً مجدداً روی دکمه تمدید اشتراک کلیک کرده و خرید جدیدی ثبت کنید.");
 
         sendMessage($mainValues['reached_main_menu'], getMainKeys());
         exit;
@@ -293,7 +293,7 @@ if (preg_match('/wait(?:RenewCart|RenewGift|RenewUsdt)Receipt(.*)/', $userInfo['
 
     if ($fid != $savedFid) {
         delMessage();
-        sendMessage(\achbotMessage('renewal.renewal_checkout.message.aaa858e3e6'));
+        sendMessage("❗️پلن شما از زمان شروع پرداخت تا ارسال رسید تغییر کرده است.\n♻️ لطفاً دوباره روی دکمه تمدید اشتراک کلیک کرده و پرداخت جدید انجام دهید.");
 
         sendMessage($mainValues['reached_main_menu'], getMainKeys());
         exit;
@@ -334,7 +334,7 @@ if (preg_match('/wait(?:RenewCart|RenewGift|RenewUsdt)Receipt(.*)/', $userInfo['
         setUser();
         sendWithStartButton(achbotManualAcknowledgement($receiptPay, $method), $buttonValues['start_bot'], $botUsername, 'mainMenu', 'HTML', (string)$receiptPay['hash_id']);
     } else {
-        sendMessage(\achbotMessage('renewal.extensions.message.c346a0d62e'));
+        sendMessage("📥 تصویر برای پیگیری ثبت شده اما تأیید ارسال به مدیر دریافت نشده است. لطفاً همان تصویر را دوباره بفرستید یا با پشتیبانی تماس بگیرید. پرداخت مجدد انجام ندهید.");
     }
 
     exit;
@@ -350,14 +350,14 @@ if(preg_match('/approveRenewAcc(.*)/',$data,$match) && ($from_id == $admin || $u
         $payInfo = $stmt->get_result()->fetch_assoc();
         if (!achbotSupportsPaymentSubject($connection, $payInfo, true)) {
             $connection->rollback();
-            alert(\achbotMessage('renewal.renewal_checkout.alert.fbaa266905'), true);
+            alert("⛔️ تأیید پرداخت این سرویس در مرزبان مجاز نیست.", true);
             return;
         }
         $stmt->close(); 
 
         if (!achbotManualServiceApprovalAllowedLocked($connection, $payInfo, 'renewal')) {
             $connection->rollback();
-            alert(\achbotMessage('renewal.renewal_checkout.alert.259244b81a'), true);
+            alert('⛔️ این تمدید رسید دستی معتبر و در انتظار تأیید ندارد.', true);
             return;
         } 
 
@@ -414,8 +414,8 @@ if(preg_match('/approveRenewAcc(.*)/',$data,$match) && ($from_id == $admin || $u
             'message_id' => $payInfo['message_id'],
             'keys'       => json_encode([
                 'inline_keyboard' => [
-                    [['text' => \achbotMessage('renewal.extensions.button.139c829462', ['from_id' => $from_id]), 'callback_data' => "wizwizch"]],
-                    [['text' => \achbotMessage('renewal.extensions.hash_id.2899228604', ['hash_id' => $hash_id]), 'callback_data' => "noop_$hash_id"]]
+                    [['text' => "✅ تایید شد توسط $from_id", 'callback_data' => "wizwizch"]],
+                    [['text' => "🆔 $hash_id", 'callback_data' => "noop_$hash_id"]]
                 ]
             ], 488),
             'admins_messages' => $payInfo['admins_messages']
@@ -504,7 +504,7 @@ if(preg_match('/approveRenewAcc(.*)/',$data,$match) && ($from_id == $admin || $u
         sendMessage(str_replace(["USERID", "REMARK", "VOLUME", "DAYS", "PRICE", "HASHID"],
                     [$uid, $remark, $volume, $days, $price, $hash_id], $mainValues['renewed_config_to_user']),
                     getMainKeys(), null, null); 
-        sendMessage(\achbotMessage('renewal.renewal_checkout.message.47b1149fb0', ['remark' => $remark]), null, "HTML", $uid);
+        sendMessage("✅ اشتراک <code>$remark</code> با موفقیت تمدید شد.", null, "HTML", $uid); 
         return;
 
     } catch (Throwable $e) {
@@ -514,13 +514,13 @@ if(preg_match('/approveRenewAcc(.*)/',$data,$match) && ($from_id == $admin || $u
         }
         try {$connection->rollback();} catch (Throwable $ignored) {}
 
-        $err = \achbotMessage('renewal.renewal_checkout.err.a6df2ab8a6')
-             . \achbotMessage('renewal.extensions.hash__i_d_match_1.3abb834966', ['match_1' => $match[1]])
-             . \achbotMessage('renewal.extensions.admin_from_id.748897de00', ['from_id' => $from_id])
-             . \achbotMessage('renewal.extensions.external_effect_unverified_verify_before.10e2ccf8a3') . achbotFinanceDiagnosticReason($e);
+        $err = "⚠️ خطا در تایید تمدید کارت‌به‌کارت\n\n"
+             . "🆔 Hash ID: {$match[1]}\n"
+             . "👤 Admin: {$from_id}\n"
+             . "⚠️ External effect: unverified; verify before retry or compensation\n📄 Reason (sanitized): " . achbotFinanceDiagnosticReason($e);
         sendMessage($err, null, null, $admin);
 
-        alert(\achbotMessage('renewal.renewal_checkout.alert.3955ffc5de'), true);
+        alert('⚠️ نتیجه تمدید نیاز به بررسی دارد. وضعیت اشتراک و پرداخت را کنترل کنید؛ پیش از اقدام مجدد با پشتیبانی هماهنگ شوید.', true);
         return;
     }
 }
@@ -551,13 +551,13 @@ if(is_string($data) && strlen($data) <= 64 && preg_match('/\ApayRenewWithWallet(
         // this exact pays row is already locked in the current transaction.
         if (!achbotWalletDirectAllowedLocked($connection, $payInfo, (int)$from_id)) {
             $connection->rollback();
-            alert(\achbotMessage('renewal.extensions.alert.9b6f1fa91f'), true);
+            alert("⛔️ این سفارش متعلق به شما نیست یا روش پرداخت دیگری برای آن ثبت شده است؛ دوباره پرداخت نکنید.", true);
             return;
         }
 
         if (!achbotSupportsPaymentSubject($connection, $payInfo, true)) {
             $connection->rollback();
-            alert(\achbotMessage('renewal.renewal_checkout.alert.0e312f38cb'), true);
+            alert("⚠️ وضعیت این تمدید نیاز به بررسی دارد. لطفاً وضعیت اشتراک و پرداخت را با پشتیبانی بررسی کنید.", true);
             return;
         }
         $hash_id   = $payInfo['hash_id'];
@@ -625,7 +625,7 @@ if(is_string($data) && strlen($data) <= 64 && preg_match('/\ApayRenewWithWallet(
             $stmt->close();
 
             $connection->commit(); // همین تغییر state ثبت شود
-            alert(\achbotMessage('renewal.extensions.alert.39c72d8044') . number_format($userwallet) . \achbotMessage('renewal.extensions.alert.71a2507661') . number_format($needamount) . \achbotMessage('renewal.extensions.text.2cc98f7f7c'), true);
+            alert("❌ موجودی کیف پول کافی نیست.\n💵 موجودی فعلی: " . number_format($userwallet) . " تومان\n🔺 مورد نیاز: " . number_format($needamount) . " تومان", true);
             return;
         }
 
@@ -724,20 +724,20 @@ if(is_string($data) && strlen($data) <= 64 && preg_match('/\ApayRenewWithWallet(
         if (!$finished || $connection->commit()!==true)
             throw new RuntimeException('wallet_renew_finish_unconfirmed');
         $localCommitted=true;
-        editText($message_id, \achbotMessage('renewal.renewal_checkout.message.cca1075329', ['remark' => $remark]), getMainKeys());
+        editText($message_id, "✅ اشتراک $remark با موفقیت تمدید شد.", getMainKeys());
 
         $keys = json_encode(['inline_keyboard'=>[
             [
-                ['text'=>\achbotMessage('renewal.renewal_checkout.button.7deb81ef97'),'callback_data'=>"wizwizch"]
+                ['text'=>"♻️ تمدید اشتراک",'callback_data'=>"wizwizch"]
             ],
             [
-                ['text'=>\achbotMessage('renewal.extensions.hash_id.2899228604', ['hash_id' => $hash_id]), 'callback_data'=>"noop_$hash_id"]
+                ['text'=>"🆔 $hash_id", 'callback_data'=>"noop_$hash_id"]
             ]
         ]]);
 
         $msg = str_replace(
             ['TYPE', "USER-ID", "USERNAME", "NAME", "PRICE", "REMARK", "VOLUME", "DAYS"],
-            [\achbotMessage('renewal.renewal_checkout.text.6295c35212'), $from_id, $username, $first_name, $price, $remark, $volume, $days],
+            ['کیف پول', $from_id, $username, $first_name, $price, $remark, $volume, $days],
             $mainValues['renew_account_request_message']
         );
         sendMessage($msg, $keys, "html", $admin);
@@ -759,13 +759,13 @@ if(is_string($data) && strlen($data) <= 64 && preg_match('/\ApayRenewWithWallet(
         try {$connection->rollback();} catch (Throwable $ignored) {}
 
         // پیام فنی به ادمین
-        $adminErr = \achbotMessage('renewal.renewal_checkout.admin_err.7f953ff1fb')
-                  . \achbotMessage('renewal.extensions.hash__i_d_match_1.3abb834966', ['match_1' => $match[1]])
-                  . \achbotMessage('renewal.extensions.user_from_id.45aa9ea684', ['from_id' => $from_id])
-                  . \achbotMessage('renewal.extensions.external_effect_unverified_verify_before.10e2ccf8a3').achbotFinanceDiagnosticReason($e);
+        $adminErr = "⚠️ خطا در تمدید با کیف پول\n\n"
+                  . "🆔 Hash ID: {$match[1]}\n"
+                  . "👤 User: {$from_id}\n"
+                  . "⚠️ External effect: unverified; verify before retry or compensation\n📄 Reason (sanitized): ".achbotFinanceDiagnosticReason($e);
         sendMessage($adminErr, null, null, $admin);
 
-        sendMessage(\achbotMessage('renewal.extensions.message.ba8adc7121'), null, null, $uid);
+        sendMessage("⚠️ وضعیت درخواست مشخص نیست. لطفاً وضعیت اشتراک و پرداخت را بررسی کنید و پیش از ثبت دوباره با پشتیبانی هماهنگ شوید.", null, null, $uid);
 
         return;
     }

@@ -1,6 +1,4 @@
 <?php
-require_once __DIR__ . '/../messages/loader.php'; // ACHBOT_TEXT_CATALOG
-
 /**
  * Legacy bulk gift worker, source-only remediation for PR #66 R1.
  *
@@ -53,13 +51,13 @@ $engines=$connection->query(
        AND TABLE_NAME IN ('gift_list','setting','orders_list')"
 );
 if (!$engines || $engines->num_rows!==3) {
-    sendMessage(\achbotMessage('jobs.gift2all.message.0addd1b9d4'),
+    sendMessage('وضعیت تراکنشی پایگاه داده هدیه تأیید نشد؛ بررسی مدیر لازم است.',
                 null,null,$admin);
     return;
 }
 foreach ($engines->fetch_all(MYSQLI_ASSOC) as $table) {
     if (strtoupper((string)$table['ENGINE'])!=='INNODB') {
-        sendMessage(\achbotMessage('jobs.gift2all.message.53c655af49'),
+        sendMessage('ساختار تراکنشی هدیه معتبر نیست؛ عملیات متوقف شد.',
                     null,null,$admin);
         return;
     }
@@ -69,13 +67,13 @@ $engines->free();
 $notifyHold=static function(string $remark,int $index,string $reason) use (
     $admin,$rowId,$serverId,$holdType
 ): void {
-    $who=$remark===''?\achbotMessage('jobs.gift2all.invalid_job_parameters.084a81c66e'):$remark;
+    $who=$remark===''?'(invalid job parameters)':$remark;
     // Exact row/index/user are operator-only. Never announce unverified
     // provider effects to the customer or expose provider credentials.
     sendMessage(
-        \achbotMessage('jobs.gift2all.message.be772b3ac0', ['rowId' => $rowId, 'serverId' => $serverId]).
-        \achbotMessage('jobs.gift2all.message.90aec44bc4', ['index' => $index, 'who' => $who, 'reason' => $reason]).
-        \achbotMessage('jobs.gift2all.message.d0b68f4613', ['holdType' => $holdType]),
+        "بررسی دستی هدیه لازم است. شناسه: {$rowId}؛ سرور: {$serverId}؛ ".
+        "ردیف: {$index}؛ کاربر: {$who}؛ علت: {$reason}. ".
+        "تکرار خودکار متوقف شد. رکورد: $holdType",
         null,null,$admin
     );
 };
@@ -447,7 +445,7 @@ $serverType=(string)($stmt->get_result()->fetch_assoc()['type']??'');
 $stmt->close();
 
 if (!achbotSupportsPanel($serverType)) {
-    sendMessage(\achbotMessage('jobs.gift2all.message.5a6e527b3b'),null,null,$admin);
+    sendMessage('پنل انتخابی پشتیبانی نمی‌شود؛ عملیات هدیه متوقف شد.',null,null,$admin);
     return;
 }
 
@@ -457,7 +455,7 @@ if ($volume<0 || $day<0 || ($volume===0 && $day===0) ||
         $reserve($offset,'','gift_units_unsupported');
         $notifyHold('',$offset,'gift_units_unsupported');
     } catch (Throwable $e) {
-        sendMessage(\achbotMessage('jobs.gift2all.message.3582d30e0f'),null,null,$admin);
+        sendMessage('امکان ثبت توقف امن هدیه وجود ندارد؛ نیاز به بررسی مدیر.',null,null,$admin);
     }
     return;
 }
@@ -472,7 +470,7 @@ if ($receipt===null) {
         $reserve($offset,'','legacy_batch_missing_enqueued_provenance');
         $notifyHold('',$offset,'legacy_batch_missing_enqueued_provenance');
     } catch (Throwable $ignored) {
-        sendMessage(\achbotMessage('jobs.gift2all.message.8f73c792e1'),null,null,$admin);
+        sendMessage('هویت صف هدیه از نسخهٔ جدید نیست؛ بررسی مدیر لازم است.',null,null,$admin);
     }
     return;
 }
@@ -482,7 +480,7 @@ if ($target===null) {
         $reserve($offset,'','gift_physical_target_changed');
         $notifyHold('',$offset,'gift_physical_target_changed');
     } catch (Throwable $ignored) {
-        sendMessage(\achbotMessage('jobs.gift2all.message.4a086d03d8'),null,null,$admin);
+        sendMessage('هویت فیزیکی مقصد هدیه تغییر کرده؛ بررسی مدیر لازم است.',null,null,$admin);
     }
     return;
 }
@@ -500,11 +498,11 @@ if (!is_object($listed) || !is_array($listed->users??null) ||
             $reserve($offset,'','gift_physical_target_changed_during_list');
             $notifyHold('',$offset,'gift_physical_target_changed_during_list');
         } catch (Throwable $ignored) {
-            sendMessage(\achbotMessage('jobs.gift2all.message.3316d71705'),
+            sendMessage('هویت مقصد هنگام دریافت فهرست تغییر کرد؛ بررسی مدیر لازم است.',
                         null,null,$admin);
         }
     } else {
-        sendMessage(\achbotMessage('jobs.gift2all.message.8fdb87d977'),
+        sendMessage('فهرست کاربران هدیه تأیید نشد؛ هیچ تغییری ثبت نشد.',
                     null,null,$admin);
     }
     return;
@@ -526,7 +524,7 @@ if ($ambiguous) {
         $reserve($offset,'','provider_membership_ambiguous');
         $notifyHold('',$offset,'provider_membership_ambiguous');
     } catch (Throwable $e) {
-        sendMessage(\achbotMessage('jobs.gift2all.message.ee040491ba'),null,null,$admin);
+        sendMessage('فهرست گیرندگان هدیه مبهم است؛ بررسی مدیر لازم است.',null,null,$admin);
     }
     return;
 }
@@ -535,7 +533,7 @@ if (!achbotGiftTargetMatches($connection,$serverId,$receipt['target'])) {
         $reserve($offset,'','gift_physical_target_changed_after_list');
         $notifyHold('',$offset,'gift_physical_target_changed_after_list');
     } catch (Throwable $ignored) {
-        sendMessage(\achbotMessage('jobs.gift2all.message.f575c8d1dc'),null,null,$admin);
+        sendMessage('هویت مقصد پس از فهرست تغییر کرد؛ بررسی مدیر لازم است.',null,null,$admin);
     }
     return;
 }
@@ -548,13 +546,13 @@ try {
         $reserve($offset,'','roster_snapshot_requires_reconciliation');
         $notifyHold('',$offset,'roster_snapshot_requires_reconciliation');
     } catch (Throwable $ignored) {
-        sendMessage(\achbotMessage('jobs.gift2all.message.b184e2ae4a'),null,null,$admin);
+        sendMessage('فهرست ثابت هدیه تأیید نشد؛ پردازش متوقف و بررسی مدیر لازم است.',null,null,$admin);
     }
     return;
 }
 if ($offset===0) {
-    sendMessage(\achbotMessage('jobs.gift2all.message.e9658f3341', ['serverName' => $serverName]),null,null,$admin);
-    sendToAllAdmins('sendMessage',['text'=>\achbotMessage('jobs.gift2all.message.e9658f3341', ['serverName' => $serverName]),
+    sendMessage("عملیات هدیه حجم و زمان سرور $serverName شروع شد.",null,null,$admin);
+    sendToAllAdmins('sendMessage',['text'=>"عملیات هدیه حجم و زمان سرور $serverName شروع شد.",
         'reply_markup'=>null,'parse_mode'=>null]);
 }
 
@@ -570,7 +568,7 @@ foreach ($rosterNames as $index=>$remark) {
             $reserve($index,$remark,'snapshot_recipient_missing');
             $notifyHold($remark,$index,'snapshot_recipient_missing');
         } catch (Throwable $e) {
-            sendMessage(\achbotMessage('jobs.gift2all.message.9014385dca'),null,null,$admin);
+            sendMessage('گیرندهٔ ثبت‌شدهٔ هدیه یافت نشد؛ بررسی مدیر لازم است.',null,null,$admin);
         }
         return;
     }
@@ -584,7 +582,7 @@ foreach ($rosterNames as $index=>$remark) {
         try {
             $finish($index,null,$next,null,null);
         } catch (Throwable $e) {
-            sendMessage(\achbotMessage('jobs.gift2all.message.5f467e3e2c'),null,null,$admin);
+            sendMessage('ثبت عبور از گیرندهٔ غیرفعال تأیید نشد؛ بررسی مدیر لازم است.',null,null,$admin);
             return;
         }
         $offset=$next;
@@ -599,7 +597,7 @@ foreach ($rosterNames as $index=>$remark) {
     $orders=$ok?$orderStmt->get_result()->fetch_all(MYSQLI_ASSOC):null;
     $orderStmt->close();
     if ($orders===null || count($orders)>1) {
-        sendMessage(\achbotMessage('jobs.gift2all.message.f4b87a5740'),null,null,$admin);
+        sendMessage('هویت سفارش هدیه مبهم است؛ عملیات متوقف شد.',null,null,$admin);
         return;
     }
     $order=$orders[0]??null;
@@ -608,7 +606,7 @@ foreach ($rosterNames as $index=>$remark) {
         [$held,$holdId]=$reserve($index,$remark,'pending_service_edit');
     } catch (Throwable $e) {
         // No outbound edit without a confirmed durable review hold.
-        sendMessage(\achbotMessage('jobs.gift2all.message.65625b8a59'),null,null,$admin);
+        sendMessage('ثبت توقف امن هدیه تأیید نشد؛ سرویس تغییر نکرد.',null,null,$admin);
         return;
     }
 
@@ -629,7 +627,7 @@ foreach ($rosterNames as $index=>$remark) {
                 ($result->uncertain??null)===false) {
                 // A validated deterministic refusal has no remote effect.
                 $finish($held,$holdId,$index+1,null,null);
-                sendMessage(\achbotMessage('jobs.gift2all.message.1ea4ee3d49', ['index' => $index]),
+                sendMessage("اعمال هدیه برای ردیف $index رد شد؛ هیچ موفقیتی اعلام نشد.",
                             null,null,$admin);
                 $offset=$index+1;
                 continue;
@@ -644,21 +642,21 @@ foreach ($rosterNames as $index=>$remark) {
 
         if ($order!==null) {
             $giftText='';
-            if ($volume>0) $giftText.=\achbotMessage('jobs.gift2all.gift_text.8f714dee13', ['volume' => $volume]);
-            if ($day>0) $giftText.=($giftText===''?'':\achbotMessage('jobs.gift2all.text.1a51e219ec')).\achbotMessage('jobs.gift2all.text.b70363d685', ['day' => $day]);
+            if ($volume>0) $giftText.="$volume مگابایت حجم";
+            if ($day>0) $giftText.=($giftText===''?'':' و ')." $day روز زمان";
             // Telegram delivery can fail after a confirmed provider effect
             // and local COMMIT. It cannot turn a successful gift into a
             // pending external-effect hold or authorize another edit.
             try {
-                $notice=sendMessage(\achbotMessage('jobs.gift2all.message.1bf0942a3d', ['remark' => $remark, 'giftText' => $giftText]),
+                $notice=sendMessage("به اشتراک $remark شما $giftText اضافه شد",
                     null,null,(int)$order['userid']);
                 if (!is_object($notice) || ($notice->ok??false)!==true)
-                    sendMessage(\achbotMessage('jobs.gift2all.message.07c38a54a9').
-                        \achbotMessage('jobs.gift2all.message.9b87258e16', ['rowId' => $rowId, 'remark' => $remark]),null,null,$admin);
+                    sendMessage("هدیه ثبت شد اما اعلان کاربر تأیید نشد. ".
+                        "شناسه: {$rowId}؛ کاربر: {$remark}",null,null,$admin);
             } catch (Throwable $notificationError) {
                 try {
-                    sendMessage(\achbotMessage('jobs.gift2all.message.4ba0cee07a').
-                        \achbotMessage('jobs.gift2all.message.9b87258e16', ['rowId' => $rowId, 'remark' => $remark]),null,null,$admin);
+                    sendMessage("هدیه ثبت شد اما ارسال اعلان کاربر ناموفق بود. ".
+                        "شناسه: {$rowId}؛ کاربر: {$remark}",null,null,$admin);
                 } catch (Throwable $ignored) {}
             }
         }
@@ -671,12 +669,12 @@ foreach ($rosterNames as $index=>$remark) {
 }
 if (!$processedThisTick && $offset===count($rosterNames)) {
     if ($closeRoster($rosterId,$rosterMeta,count($rosterNames))) {
-        sendMessage(\achbotMessage('jobs.gift2all.message.e6f582671d', ['serverName' => $serverName]),
+        sendMessage("عملیات هدیه حجم و زمان سرور $serverName به اتمام رسید.",
                     null,null,$admin);
-        sendToAllAdmins('sendMessage',['text'=>\achbotMessage('jobs.gift2all.message.e6f582671d', ['serverName' => $serverName]),
+        sendToAllAdmins('sendMessage',['text'=>"عملیات هدیه حجم و زمان سرور $serverName به اتمام رسید.",
             'reply_markup'=>null,'parse_mode'=>null]);
     } else {
-        sendMessage(\achbotMessage('jobs.gift2all.message.4d3e24cb7c'),
+        sendMessage('جمع‌بندی فهرست هدیه تأیید نشد؛ بررسی مدیر لازم است.',
                     null,null,$admin);
     }
 }

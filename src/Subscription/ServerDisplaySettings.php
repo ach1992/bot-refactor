@@ -1,8 +1,6 @@
 <?php
 /** AChBot per-logical-server subscription display settings; existing setting storage only. */
 if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) { http_response_code(404); exit; }
-require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
-
 require_once __DIR__.'/Presentation.php';
 
 function achbotServerDisplayDefault(): array {
@@ -265,55 +263,55 @@ function achbotServerDisplayKeys(int $serverId,?array $document=null,int $revisi
     $keys=[];
     if ($document!==null) {
         $p=$document['policy'];
-        $label=static fn($value)=>$value?\achbotMessage('subscription.server_display_settings.server_display_keys.text.be9fd3bd1b'):\achbotMessage('subscription.server_display_settings.server_display_keys.text.841b8cb341');
+        $label=static fn($value)=>$value?'روشن':'خاموش';
         $keys[]=[
-            ['text'=>\achbotMessage('subscription.server_display_settings.server_display_keys.button.d087c68a83').$label($p['show_configs']??true),'callback_data'=>"serverDisplaySet{$serverId}_cfg_flip_{$revision}"],
-            ['text'=>\achbotMessage('subscription.server_display_settings.server_display_keys.button.9508cf3453').$label($p['show_subscription']??true),'callback_data'=>"serverDisplaySet{$serverId}_sub_flip_{$revision}"],
+            ['text'=>'کانفیگ: '.$label($p['show_configs']??true),'callback_data'=>"serverDisplaySet{$serverId}_cfg_flip_{$revision}"],
+            ['text'=>'اشتراک: '.$label($p['show_subscription']??true),'callback_data'=>"serverDisplaySet{$serverId}_sub_flip_{$revision}"],
         ];
-        $keys[]=[['text'=>\achbotMessage('subscription.server_display_settings.server_display_keys.button.3ca7cc1405'),'callback_data'=>'serverDisplayQr'.$serverId]];
+        $keys[]=[['text'=>'انتخاب QR تحویل','callback_data'=>'serverDisplayQr'.$serverId]];
         if ($document['mode']==='native') {
             $keys[]=[
-                ['text'=>\achbotMessage('subscription.server_display_settings.server_display_keys.button.f86223c190'),'callback_data'=>"serverDisplayValue{$serverId}_max_{$revision}"],
-                ['text'=>\achbotMessage('subscription.server_display_settings.server_display_keys.button.6b77433ae2'),'callback_data'=>"serverDisplayValue{$serverId}_threshold_{$revision}"],
+                ['text'=>'سقف لینک‌ها','callback_data'=>"serverDisplayValue{$serverId}_max_{$revision}"],
+                ['text'=>'آستانه مخفی‌سازی','callback_data'=>"serverDisplayValue{$serverId}_threshold_{$revision}"],
             ];
-            $keys[]=[['text'=>\achbotMessage('subscription.server_display_settings.server_display_keys.button.a4c3ef092e'),'callback_data'=>'serverDisplaySelect'.$serverId]];
+            $keys[]=[['text'=>'انتخاب کانفیگ‌ها','callback_data'=>'serverDisplaySelect'.$serverId]];
         } else {
             $keys[]=[
-                ['text'=>\achbotMessage('subscription.server_display_settings.server_display_keys.button.9eea37f5f0'),'callback_data'=>"serverDisplayValue{$serverId}_view_{$revision}"],
-                ['text'=>\achbotMessage('subscription.server_display_settings.server_display_keys.button.c0668ff5b5'),'callback_data'=>"serverDisplayValue{$serverId}_delivery_{$revision}"],
+                ['text'=>'موقعیت‌های نمایش','callback_data'=>"serverDisplayValue{$serverId}_view_{$revision}"],
+                ['text'=>'موقعیت‌های تحویل','callback_data'=>"serverDisplayValue{$serverId}_delivery_{$revision}"],
             ];
             $keys[]=[
-                ['text'=>\achbotMessage('subscription.server_display_settings.server_display_keys.button.b71d77fe36').$label($document['legacy']['hideConfigIfMany']??false),
+                ['text'=>'مخفی‌کردن بالای ۱۰: '.$label($document['legacy']['hideConfigIfMany']??false),
                     'callback_data'=>"serverDisplaySet{$serverId}_many_flip_{$revision}"],
-                ['text'=>\achbotMessage('subscription.server_display_settings.server_display_keys.button.f4c0c5cd38').$label($document['legacy']['hideConnectLinkForMarzban']??false),
+                ['text'=>'مخفی‌کردن متن نمایش: '.$label($document['legacy']['hideConnectLinkForMarzban']??false),
                     'callback_data'=>"serverDisplaySet{$serverId}_viewhide_flip_{$revision}"],
             ];
         }
-        $keys[]=[['text'=>\achbotMessage('subscription.server_display_settings.server_display_keys.button.b3ba57d81a'),'callback_data'=>'serverDisplayMode'.$serverId]];
+        $keys[]=[['text'=>'روش انتخاب مرزبان','callback_data'=>'serverDisplayMode'.$serverId]];
     }
-    $keys[]=[['text'=>\achbotMessage('subscription.server_display_settings.server_display_keys.button.ad00f1d27d'),'callback_data'=>'serverDisplayEdit'.$serverId]];
-    $keys[]=[['text'=>\achbotMessage('subscription.server_display_settings.server_display_keys.button.8d809988a8'),'callback_data'=>'showServerSettings'.$serverId.'_0']];
+    $keys[]=[['text'=>'ویرایش پیشرفته','callback_data'=>'serverDisplayEdit'.$serverId]];
+    $keys[]=[['text'=>'🔙 تنظیمات سرور','callback_data'=>'showServerSettings'.$serverId.'_0']];
     return json_encode(['inline_keyboard'=>$keys],JSON_UNESCAPED_UNICODE);
 }
 function achbotServerDisplayQrLabel(string $mode): string {
-    return ['auto'=>\achbotMessage('subscription.server_display_settings.server_display_qr_label.text.fe9c7660a2'),'subscription'=>\achbotMessage('subscription.server_display_settings.server_display_qr_label.text.140669bdb0'),'first_config'=>\achbotMessage('subscription.server_display_settings.server_display_qr_label.text.2dd7aa82b8'),'none'=>\achbotMessage('subscription.server_display_settings.server_display_qr_label.text.e5be3d69e3')][$mode]??\achbotMessage('subscription.server_display_settings.server_display_qr_label.text.fe9c7660a2');
+    return ['auto'=>'خودکار','subscription'=>'لینک اشتراک','first_config'=>'اولین کانفیگ','none'=>'بدون QR'][$mode]??'خودکار';
 }
 function achbotServerDisplaySummary(array $document): string {
-    $p=$document['policy'];$yes=static fn($v)=>$v?\achbotMessage('subscription.server_display_settings.server_display_keys.text.be9fd3bd1b'):\achbotMessage('subscription.server_display_settings.server_display_keys.text.841b8cb341');
-    $body=\achbotMessage('subscription.server_display_settings.server_display_summary.body.d15b654a37').$yes($p['show_configs']??true).
-        \achbotMessage('subscription.server_display_settings.server_display_summary.text.3623a042e1').$yes($p['show_subscription']??true).
-        \achbotMessage('subscription.server_display_settings.server_display_summary.text.5f5512eac0').achbotServerDisplayQrLabel($p['qr']??'auto');
+    $p=$document['policy'];$yes=static fn($v)=>$v?'روشن':'خاموش';
+    $body="⚙️ نمایش لینک‌های این سرور\nکانفیگ: ".$yes($p['show_configs']??true).
+        " | اشتراک: ".$yes($p['show_subscription']??true).
+        "\nQR تحویل: ".achbotServerDisplayQrLabel($p['qr']??'auto');
     if ($document['mode']==='native') {
-        $selected=!array_key_exists('selectors',$p)?\achbotMessage('subscription.server_display_settings.server_display_summary.text.704a2e9016'):
-            ($p['selectors']===[]?\achbotMessage('subscription.server_display_settings.server_display_summary.text.571525117a'):count($p['selectors']).\achbotMessage('subscription.server_display_settings.server_display_summary.text.2496192b9b'));
-        $body.=\achbotMessage('subscription.server_display_settings.server_display_summary.body.8fc24cefa6').$selected.\achbotMessage('subscription.server_display_settings.server_display_summary.text.3305f8a04f').($p['max_links']??10).
-            \achbotMessage('subscription.server_display_settings.server_display_summary.text.ae2383a123').($p['hide_if_more_than']??\achbotMessage('subscription.server_display_settings.server_display_summary.text.4e67bd8e34'));
+        $selected=!array_key_exists('selectors',$p)?'همه کانفیگ‌ها':
+            ($p['selectors']===[]?'هیچ کانفیگی':count($p['selectors']).' شرط انتخاب');
+        $body.="\nانتخاب بومی: ".$selected."\nسقف لینک‌ها: ".($p['max_links']??10).
+            " | آستانه مخفی‌سازی: ".($p['hide_if_more_than']??'غیرفعال');
     } else {
-        $body.=\achbotMessage('subscription.server_display_settings.server_display_summary.body.f97693c9e9').
+        $body.="\nروش سازگار مرزبان\nموقعیت‌های نمایش (از ۱): ".
             implode(', ',$document['legacy']['showIndexes']??[]).
-            \achbotMessage('subscription.server_display_settings.server_display_summary.text.9453bf36b1').implode(', ',$document['legacy']['linkIndices']??[]);
+            "\nموقعیت‌های تحویل (از ۰): ".implode(', ',$document['legacy']['linkIndices']??[]);
     }
-    return $body.\achbotMessage('subscription.server_display_settings.server_display_summary.text.7724fb5e57');
+    return $body."\nاین انتخاب فقط نمایش را تغییر می‌دهد؛ محتوای لینک کامل اشتراک را محدود نمی‌کند.";
 }
 function achbotServerDisplayShow(mysqli $db,int $serverId,string $prefix=''): void {
     $server=achbotServerDisplayServer($db,$serverId);
@@ -330,36 +328,36 @@ function achbotServerDisplayShow(mysqli $db,int $serverId,string $prefix=''): vo
         }
         $body=achbotServerDisplaySummary($document);
     } catch (Throwable $error) {
-        $body=\achbotMessage('subscription.server_display_settings.server_display_show.body.e2f9302913');
+        $body='⚠️ تنظیمات ذخیره‌شده معتبر نیست و نمایش لینک متوقف است. از ویرایش پیشرفته، سیاست کامل این سرور را اصلاح کنید.';
         $keys=achbotServerDisplayKeys($serverId);
     }
     sendMessage($prefix.$body,$keys);
 }
 function achbotServerDisplayPrompt(string $field): string {
     return [
-        'max'=>\achbotMessage('subscription.server_display_settings.server_display_prompt.text.9314449c88'),
-        'threshold'=>\achbotMessage('subscription.server_display_settings.server_display_prompt.text.dc76b33303'),
-        'protocols'=>\achbotMessage('subscription.server_display_settings.server_display_prompt.text.43b25df873'),
-        'names'=>\achbotMessage('subscription.server_display_settings.server_display_prompt.text.44c7e97137'),
-        'view'=>\achbotMessage('subscription.server_display_settings.server_display_prompt.text.4750c0b8eb'),
-        'delivery'=>\achbotMessage('subscription.server_display_settings.server_display_prompt.text.4408da75e8'),
+        'max'=>"سقف تعداد کانفیگ را از ۰ تا ۱۰۰۰ بفرستید. ۰ هیچ کانفیگی نشان نمی‌دهد. ظرفیت هر نمایش حداکثر ۱۰ لینک کامل است.",
+        'threshold'=>"اگر تعداد کانفیگ‌های واقعی از چه عددی بیشتر شد، متن کانفیگ و QR آن مخفی شود؟ عدد ۰ تا ۱۰۰۰ بفرستید؛ برای غیرفعال‌کردن /off را بفرستید.",
+        'protocols'=>"نام پروتکل‌ها را با کاما بفرستید؛ مثلاً vless,trojan. ترتیب انتخاب حفظ می‌شود و فقط لینک‌های واقعیِ منطبق نشان داده می‌شوند.",
+        'names'=>"نام دقیق کانفیگ‌ها را هر کدام در یک خط بفرستید. ترتیب نام‌ها حفظ می‌شود؛ نام ناموجود با کانفیگ دیگری جایگزین نمی‌شود.",
+        'view'=>"موقعیت‌های نمایش مرزبان را با کاما بفرستید؛ مثلاً 2,4. شماره از ۱ شروع می‌شود و فقط برای بیش از ۳ کانفیگ اعمال می‌شود. برای فهرست خالی /empty را بفرستید.",
+        'delivery'=>"موقعیت‌های تحویل مرزبان را با کاما بفرستید؛ مثلاً 0,2. شماره از ۰ شروع می‌شود؛ موقعیت ناموجود به اولین کانفیگ برمی‌گردد. برای فهرست خالی /empty را بفرستید.",
     ][$field]??throw new RuntimeException('display_field_invalid');
 }
 function achbotServerDisplayGuide(string $provider): string {
     $example=json_encode(achbotServerDisplayDefault(),JSON_UNESCAPED_UNICODE|JSON_PRETTY_PRINT);
-    $guide=\achbotMessage('subscription.server_display_settings.server_display_guide.guide.80a3795e36').
-        \achbotMessage('subscription.server_display_settings.server_display_guide.mode_native_policy.4b6249e7e9').
-        \achbotMessage('subscription.server_display_settings.server_display_guide.text.07b6a43417').
-        \achbotMessage('subscription.server_display_settings.server_display_guide.text.effa069ca6').
-        \achbotMessage('subscription.server_display_settings.server_display_guide.text.c45066e46f').
-        \achbotMessage('subscription.server_display_settings.server_display_guide.text.37cb4134e8').
-        \achbotMessage('subscription.server_display_settings.server_display_guide.text.700a492c3b').
-        \achbotMessage('subscription.server_display_settings.server_display_guide.text.a585d74e4d').
-        \achbotMessage('subscription.server_display_settings.server_display_guide.text.9cc423134a').\AchBot\Subscription\Presentation\escape($example)."</pre>";
+    $guide="تنظیمات فقط برای همین سرور ذخیره می‌شود. سند JSON کامل را بفرستید.\n".
+        "mode=native و policy:\n".
+        "show_configs و show_subscription: true یا false\n".
+        "max_links: سقف تعداد لینک؛ hide_if_more_than: مخفی‌کردن کانفیگ‌ها بالاتر از این تعداد (۰ تا ۱۰۰۰)\n".
+        "qr: auto، subscription، first_config یا none\n".
+        "selectors: فهرست شرط‌های protocol، name یا tag؛ شرط‌های یک رکورد همزمان و رکوردها به‌ترتیب اجرا می‌شوند. [] هیچ کانفیگی انتخاب نمی‌کند. حذف selectors همه را انتخاب می‌کند.\n".
+        "name دقیق است. tag فقط از فراداده واقعی می‌آید؛ نام یا Group تگ نیست.\n".
+        "QR اشتراک فقط لینک اشتراکِ قابل‌نمایش را دارد؛ QR کانفیگ فقط انتخاب‌های قابل‌نمایش را دارد. مخفی‌کردن لینک، دسترسی محتوای اشتراک را محدود نمی‌کند.\n".
+        "نمونه:\n<pre>".\AchBot\Subscription\Presentation\escape($example)."</pre>";
     if ($provider==='marzban') {
         $legacy=['mode'=>'marzban_legacy','policy'=>new stdClass(),'legacy'=>[
             'showIndexes'=>[2,4],'linkIndices'=>[0,2],'hideConfigIfMany'=>false,'hideConnectLinkForMarzban'=>false]];
-        $guide.=\achbotMessage('subscription.server_display_settings.server_display_guide.guide.bdbed004bb').
+        $guide.="\nسازگاری اختیاری مرزبان: showIndexes یک‌مبنا در نمایش بیشتر از ۳ لینک؛ linkIndices صفرمبنا در تحویل است. QR کانفیگ در این حالت همه لینک‌های خام را دارد، حتی اگر متن مخفی باشد.\n<pre>".
             \AchBot\Subscription\Presentation\escape(json_encode($legacy,JSON_UNESCAPED_UNICODE|JSON_PRETTY_PRINT))."</pre>";
     }
     return $guide;
@@ -391,7 +389,7 @@ function achbotHandleServerDisplayAdmin(): bool {
                 sendMessage($prompt,$cancelKey);
             } elseif ($action==='Set') {
                 achbotServerDisplayEdit($connection,$sid,(int)$from_id,(int)$admin,$source,'set',$choice,$field,$revision);
-                achbotServerDisplayShow($connection,$sid,\achbotMessage('subscription.server_display_settings.handle_server_display_admin.text.ed95738546'));
+                achbotServerDisplayShow($connection,$sid,"✅ ذخیره شد.\n");
             } elseif (in_array($action,['Qr','Select','Mode'],true)) {
                 $row=achbotServerDisplayRow($connection,$sid);
                 $document=achbotServerDisplayDocument($row,$sid,$server['type']);
@@ -400,21 +398,21 @@ function achbotHandleServerDisplayAdmin(): bool {
                     foreach (['auto','subscription','first_config','none'] as $choice)
                         $keys[]=[['text'=>achbotServerDisplayQrLabel($choice),
                             'callback_data'=>"serverDisplaySet{$sid}_qr_{$choice}_{$revision}"]];
-                    $body=\achbotMessage('subscription.server_display_settings.handle_server_display_admin.body.97ea2ac3c4');
+                    $body='QR تحویل را انتخاب کنید. QR اشتراک فقط لینک اشتراک قابل‌نمایش را دارد؛ بدون QR یعنی ارسال متن اشتراک.';
                 } elseif ($action==='Select' && $document['mode']==='native') {
                     $keys=[
-                        [['text'=>\achbotMessage('subscription.server_display_settings.handle_server_display_admin.button.ddeef82ae5'),'callback_data'=>"serverDisplayValue{$sid}_protocols_{$revision}"]],
-                        [['text'=>\achbotMessage('subscription.server_display_settings.handle_server_display_admin.button.9397b410f0'),'callback_data'=>"serverDisplayValue{$sid}_names_{$revision}"]],
-                        [['text'=>\achbotMessage('subscription.server_display_settings.server_display_summary.text.704a2e9016'),'callback_data'=>"serverDisplaySet{$sid}_select_all_{$revision}"],
-                         ['text'=>\achbotMessage('subscription.server_display_settings.server_display_summary.text.571525117a'),'callback_data'=>"serverDisplaySet{$sid}_select_none_{$revision}"]],
+                        [['text'=>'بر اساس پروتکل','callback_data'=>"serverDisplayValue{$sid}_protocols_{$revision}"]],
+                        [['text'=>'بر اساس نام دقیق','callback_data'=>"serverDisplayValue{$sid}_names_{$revision}"]],
+                        [['text'=>'همه کانفیگ‌ها','callback_data'=>"serverDisplaySet{$sid}_select_all_{$revision}"],
+                         ['text'=>'هیچ کانفیگی','callback_data'=>"serverDisplaySet{$sid}_select_none_{$revision}"]],
                     ];
-                    $body=\achbotMessage('subscription.server_display_settings.handle_server_display_admin.body.dc1a09d9ef');
+                    $body='روش انتخاب کانفیگ‌های واقعی را تعیین کنید. انتخاب تازه جایگزین انتخاب قبلی می‌شود. شرط‌های ترکیبی و تگ واقعی در ویرایش پیشرفته در دسترس است.';
                 } elseif ($action==='Mode' && $server['type']==='marzban') {
-                    foreach (['native'=>\achbotMessage('subscription.server_display_settings.handle_server_display_admin.text.50539a0548'),'marzban_legacy'=>\achbotMessage('subscription.server_display_settings.handle_server_display_admin.text.19adf0f6e6')] as $choice=>$label)
+                    foreach (['native'=>'انتخاب بومی (پیشنهادی)','marzban_legacy'=>'سازگاری موقعیت‌های مرزبان'] as $choice=>$label)
                         $keys[]=[['text'=>$label,'callback_data'=>"serverDisplaySet{$sid}_mode_{$choice}_{$revision}"]];
-                    $body=\achbotMessage('subscription.server_display_settings.handle_server_display_admin.body.fccad7f96a');
+                    $body='روش انتخاب را تغییر دهید. با تغییر روش، انتخاب قبلی پاک می‌شود. در سازگاری مرزبان، QR کانفیگ همه لینک‌های خام را تا سقف نمایش دارد، حتی اگر متن مخفی باشد.';
                 } else throw new RuntimeException('display_action_invalid');
-                $keys[]=[['text'=>\achbotMessage('subscription.server_display_settings.handle_server_display_admin.button.63b4398cc3'),'callback_data'=>'serverDisplay'.$sid]];
+                $keys[]=[['text'=>'🔙 نمایش همین سرور','callback_data'=>'serverDisplay'.$sid]];
                 sendMessage($body,json_encode(['inline_keyboard'=>$keys],JSON_UNESCAPED_UNICODE));
             } else achbotServerDisplayShow($connection,$sid);
         } else {
@@ -424,11 +422,11 @@ function achbotHandleServerDisplayAdmin(): bool {
             $source=achbotServerDisplayFrame($update,(int)$from_id,(int)$chat_id,(int)$message_id,$text,'message');
             $kind=$text===($buttonValues['cancel']??null)?'cancel':'save';
             achbotServerDisplayEdit($connection,$sid,(int)$from_id,(int)$admin,$source,$kind,$text);
-            achbotServerDisplayShow($connection,$sid,$kind==='save'?\achbotMessage('subscription.server_display_settings.handle_server_display_admin.text.ed95738546'):\achbotMessage('subscription.server_display_settings.handle_server_display_admin.text.147f04122e'));
+            achbotServerDisplayShow($connection,$sid,$kind==='save'?"✅ ذخیره شد.\n":"ویرایش لغو شد.\n");
         }
     } catch (Throwable $error) {
         error_log('achbot_server_display_admin_deferred');
-        sendMessage(\achbotMessage('subscription.server_display_settings.handle_server_display_admin.message.b57e3f0cb1'),$cancelKey);
+        sendMessage('⚠️ تنظیمات نمایش تأیید نشد. دسترسی و قالب مقادیر را بررسی و ویرایش را از تنظیمات همان سرور دوباره آغاز کنید.',$cancelKey);
     }
     return true;
 }

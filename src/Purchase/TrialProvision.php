@@ -4,13 +4,11 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     http_response_code(404);
     exit;
 }
-require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
-
 
 if (preg_match('/freeTrial(\d+)_(?<buyType>\w+)/', $data, $match)) {
     $planId  = (int)$match[1];
     if (!achbotSupportsPlan($connection, $planId)) {
-        alert(\achbotMessage('purchase.trial_provision.alert.efb178e861'), true);
+        alert("⛔️ فعال‌سازی سرویس آزمایشی در حال حاضر امکان‌پذیر نیست.", true);
         return;
     }
     $buyType = $match['buyType'] ?? '';
@@ -26,7 +24,7 @@ if (preg_match('/freeTrial(\d+)_(?<buyType>\w+)/', $data, $match)) {
         $from_id != $admin &&
         $normalDiscount !== "100"
     ) {
-        alert(\achbotMessage('purchase.trial_provision.alert.72ed718294'));
+        alert('⚠️ شما قبلا هدیه رایگان خود را دریافت کردید.');
         exit;
     }
 
@@ -36,7 +34,7 @@ if (preg_match('/freeTrial(\d+)_(?<buyType>\w+)/', $data, $match)) {
             $update,(int)$from_id,'free_trial',(string)$data,
             (int)$from_id===(int)$admin);
     } catch (Throwable $error) {
-        alert(\achbotMessage('purchase.trial_provision.alert.fc60efd929'),true);
+        alert('⛔️ درخواست معتبر نیست؛ از منوی اشتراک دوباره اقدام کنید.',true);
         return;
     }
     delMessage();
@@ -158,11 +156,11 @@ if (preg_match('/freeTrial(\d+)_(?<buyType>\w+)/', $data, $match)) {
             preg_replace('/[^A-Za-z0-9_:]/','',$trialSource).
             ' class='.get_class($error));
         try {
-            sendMessage(\achbotMessage('purchase.trial_provision.message.30b8933da5').
-                \achbotMessage('purchase.trial_provision.message.922f2b9906'),
+            sendMessage('⚠️ وضعیت ساخت Trial نیاز به بررسی دارد. '.
+                'پیش از اقدام مجدد، حساب و ظرفیت را تطبیق دهید.',
                 null,null,$admin);
         } catch (Throwable $ignored) {}
-        alert(\achbotMessage('purchase.trial_provision.alert.cf3893b9c0'),true);
+        alert('⚠️ نتیجهٔ درخواست هنوز قطعی نیست؛ برای بررسی با پشتیبانی تماس بگیرید.',true);
         return;
     }
 
@@ -178,9 +176,18 @@ if (preg_match('/freeTrial(\d+)_(?<buyType>\w+)/', $data, $match)) {
     $fullName = $userInfo['name'] ?? '---';
     $username = $userInfo['username'] ?? '';
 
-    $usernameText = !empty($username) ? '@' . $username : \achbotMessage('purchase.trial_provision.text.8c2d826d72');
+    $usernameText = !empty($username) ? '@' . $username : 'ندارد';
 
-    $channelMessage = \achbotMessage('purchase.trial_provision.channel_message.d22e3c7448', ['userId' => $userId, 'fullName' => $fullName, 'usernameText' => $usernameText, 'remark' => $remark, 'volume' => $volume, 'days' => $days]);
+    $channelMessage = "
+🔄 اشتراک تست ایجاد شد.
+
+🎫 شناسه عددی: <code>{$userId}</code>
+👨 اسم کاربر: {$fullName}
+⚡️ نام کاربری: {$usernameText}
+🎈 نام کاربری اشتراک: <code>{$remark}</code>
+🔋 حجم اولیه اشتراک: {$volume} گیگ
+⏰ مدت اشتراک: {$days} روز
+";
 
     // ارسال پیام به ادمین اصلی
     sendMessage($channelMessage, null, "html", $admin);

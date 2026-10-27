@@ -4,8 +4,6 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     http_response_code(404);
     exit;
 }
-require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
-
 
 if($botState['cartToCartAutoAcceptState']=="on"){
     $date = strtotime("-" . ($botState['cartToCartAutoAcceptTime']??10) . " minutes");
@@ -58,15 +56,15 @@ if($botState['cartToCartAutoAcceptState']=="on"){
         // Operator-only context for a claimed but not yet fulfilled bank BUY_SUB.
         // Price is the stored order amount, never proof of bank settlement.
         $bankReviewContext=$payType==='BUY_SUB'
-            ? \achbotMessage('manual_payment.automatic_receipts.text.ba58f1caaf').(int)$user_id
-                .\achbotMessage('manual_payment.automatic_receipts.text.12646a1ad0').number_format((int)$price).\achbotMessage('manual_payment.automatic_receipts.text.2cc98f7f7c')
-                .\achbotMessage('manual_payment.automatic_receipts.text.e1cad19d95').max(1,(int)($payInfo['agent_count']??1))
+            ? "\n👤 شناسه کاربر: ".(int)$user_id
+                ."\n💵 مبلغ سفارش: ".number_format((int)$price)." تومان"
+                ."\n📦 تعداد اشتراک: ".max(1,(int)($payInfo['agent_count']??1))
             : '';
         try {
         
         if($payType == "INCREASE_WALLET"){
             // Wallet credit and the terminal claim already committed atomically.
-            sendMessage(\achbotMessage('manual_payment.automatic_receipts.message.38dd599e83') . number_format($price). \achbotMessage('manual_payment.automatic_receipts.message.6f42cf1050'), null, null, $user_id);
+            sendMessage("افزایش حساب شما با موفقیت تایید شد.\n✅ مبلغ " . number_format($price). " تومان به حساب شما اضافه شد.", null, null, $user_id);
         }
         elseif($payType == "BUY_SUB"){
             // The bank receipt is paid evidence, not a completed subscription.
@@ -102,10 +100,10 @@ if($botState['cartToCartAutoAcceptState']=="on"){
                     // Fulfillment is already committed. Never retry CREATE just
                     // because a Telegram acknowledgment was lost.
                     try {
-                        sendMessage(\achbotMessage('manual_payment.automatic_receipts.message.9b88994424')
-                            .\achbotMessage('manual_payment.automatic_receipts.message.ba9287d8c1').(int)$rowId.$bankReviewContext
-                            .\achbotMessage('manual_payment.automatic_receipts.text.d828bce37f').implode(', ',$unconfirmedDeliveries)
-                            .\achbotMessage('manual_payment.automatic_receipts.text.38146cb4da'),
+                        sendMessage("⚠️ سفارش ثبت و سرویس ساخته شده، ولی تحویل مشخصات به کاربر قطعی نیست.\n"
+                            ."شناسه پرداخت: ".(int)$rowId.$bankReviewContext
+                            ."\nردیف‌های نیازمند بررسی: ".implode(', ',$unconfirmedDeliveries)
+                            ."\nفقط تحویل اشتراک ثبت‌شده را بررسی کنید؛ سرویس جدید نسازید و بازپرداخت خودکار نکنید.",
                             null,null,$admin);
                     } catch (Throwable $noticeError) {
                         error_log('achbot_bank_buy_delivery_notice_failed pay_id='.(int)$rowId);
@@ -119,8 +117,8 @@ if($botState['cartToCartAutoAcceptState']=="on"){
                         (int)$userinfo['refered_by'],$admin,$botState,null,$rowId);
                 }
             } else {
-                sendMessage(\achbotMessage('manual_payment.automatic_receipts.message.809aa9e256')
-                    .\achbotMessage('manual_payment.automatic_receipts.message.c0b5e951d8'),
+                sendMessage("⚠️ پرداخت ثبت شده است، اما تکمیل ساخت اشتراک هنوز قطعی نیست. "
+                    ."برای بررسی با پشتیبانی تماس بگیرید؛ خرید را تکرار نکنید.",
                     null,null,$user_id);
             }
         }
@@ -177,11 +175,11 @@ if($botState['cartToCartAutoAcceptState']=="on"){
                 $connection,$payInfo,$response,'renew',(int)$server_id,
                 (int)$oid,(string)$remark,(int)$price,0,(int)$order['expire_date']);
             if ($autoServiceCompleted) {
-                sendMessage(\achbotMessage('manual_payment.automatic_receipts.message.cca1075329', ['remark' => $remark]),getMainKeys(),null,$user_id);
+                sendMessage("✅ اشتراک $remark با موفقیت تمدید شد.",getMainKeys(),null,$user_id);
             } else {
                 // Bank receipt and possible remote effect stay durably claimed.
                 // No false success, second remote write or blind wallet refund.
-                sendMessage(\achbotMessage('manual_payment.automatic_receipts.message.ca1eaa01e6'),null,null,$user_id);
+                sendMessage("⚠️ نتیجهٔ تمدید هنوز قطعی نیست. پرداخت ثبت شده و سرویس نیازمند تطبیق است؛ پرداخت یا تمدید را تکرار نکنید.",null,null,$user_id);
             }
         }
         elseif(preg_match('/^INCREASE_DAY_(\d+)_(\d+)/',$payType, $increaseInfo)){
@@ -239,9 +237,9 @@ if($botState['cartToCartAutoAcceptState']=="on"){
                 (int)$orderId,(string)$remark,(int)$price,(int)$volume,
                 (int)$orderInfo['expire_date']);
             if ($autoServiceCompleted) {
-                sendMessage(\achbotMessage('manual_payment.automatic_receipts.message.7c7851027c', ['volume' => $volume]),getMainKeys(),null,$user_id);
+                sendMessage("✅ $volume روز به مدت اشتراک شما اضافه شد.",getMainKeys(),null,$user_id);
             } else {
-                sendMessage(\achbotMessage('manual_payment.automatic_receipts.message.6223bac2fc'),null,null,$user_id);
+                sendMessage("⚠️ نتیجهٔ افزایش روز هنوز قطعی نیست. پرداخت محفوظ است؛ درخواست را تکرار نکنید.",null,null,$user_id);
             }
         }
         elseif(preg_match('/^INCREASE_VOLUME_(\d+)_(\d+)/',$payType, $increaseInfo)){
@@ -297,9 +295,9 @@ if($botState['cartToCartAutoAcceptState']=="on"){
                 (int)$orderId,(string)$remark,(int)$price,(int)$volume,
                 (int)$orderInfo['expire_date']);
             if ($autoServiceCompleted) {
-                sendMessage(\achbotMessage('manual_payment.automatic_receipts.message.1660fa3e00', ['volume' => $volume]),getMainKeys(),null,$user_id);
+                sendMessage("✅ $volume گیگ به حجم اشتراک شما اضافه شد.",getMainKeys(),null,$user_id);
             } else {
-                sendMessage(\achbotMessage('manual_payment.automatic_receipts.message.530f1966b8'),null,null,$user_id);
+                sendMessage("⚠️ نتیجهٔ افزایش حجم هنوز قطعی نیست. پرداخت محفوظ است؛ درخواست را تکرار نکنید.",null,null,$user_id);
             }
         }
         elseif($payType == "RENEW_SCONFIG"){
@@ -341,18 +339,18 @@ if($botState['cartToCartAutoAcceptState']=="on"){
                 $connection,$payInfo,$response,'standard',(int)$server_id,
                 0,(string)$remark,(int)$price);
             if ($autoServiceCompleted) {
-                sendMessage(\achbotMessage('manual_payment.automatic_receipts.message.cca1075329', ['remark' => $remark]),null,null,$user_id);
+                sendMessage("✅ اشتراک $remark با موفقیت تمدید شد.",null,null,$user_id);
             } else {
-                sendMessage(\achbotMessage('manual_payment.automatic_receipts.message.16c2ec4018'),null,null,$user_id);
+                sendMessage("⚠️ نتیجهٔ تمدید هنوز قطعی نیست. وضعیت پرداخت محفوظ است؛ درخواست را تکرار نکنید.",null,null,$user_id);
         	}
         }
         
         $autoServiceLabel=($autoServiceCompleted??true)
-            ? \achbotMessage('manual_payment.automatic_receipts.text.2898f8f112')
-            : \achbotMessage('manual_payment.automatic_receipts.text.0f42c8d853');
+            ? '✅ خودکار تأیید و اعمال شد'
+            : '⚠️ در انتظار تطبیق سرویس';
         if (($autoServiceCompleted??true)===false) {
-            sendMessage(\achbotMessage('manual_payment.automatic_receipts.message.1b315333c8')
-                .\achbotMessage('manual_payment.automatic_receipts.message.ba9287d8c1').(int)$rowId.$bankReviewContext.\achbotMessage('manual_payment.automatic_receipts.message.4624bd3d02'),
+            sendMessage("⚠️ تأیید رسید ثبت شده، اما تغییر واقعی سرویس یا ثبت نهایی سفارش قطعی نیست.\n"
+                ."شناسه پرداخت: ".(int)$rowId.$bankReviewContext."\nبدون تطبیق سرویس، تمدید یا بازپرداخت را تکرار نکنید.",
                 null,null,$admin);
         }
         // دکمه مدیر نباید قبل از اعمال سرویس، موفقیت را اعلام کند.
@@ -386,8 +384,8 @@ if($botState['cartToCartAutoAcceptState']=="on"){
             // explicit customer/operator review, never a false refund notice.
             if ($payType==='BUY_SUB' && $autoServiceCompleted!==true) {
                 try {
-                    sendMessage(\achbotMessage('manual_payment.automatic_receipts.message.39254abe63'),null,null,$user_id);
-                    sendMessage(\achbotMessage('manual_payment.automatic_receipts.message.8c2e6c4f2e').(int)$rowId.$bankReviewContext.\achbotMessage('manual_payment.automatic_receipts.message.52406798d0'),null,null,$admin);
+                    sendMessage('⚠️ پرداخت شما محفوظ است، اما نتیجهٔ ساخت اشتراک قطعی نیست. برای بررسی با پشتیبانی تماس بگیرید؛ پرداخت را تکرار نکنید.',null,null,$user_id);
+                    sendMessage("⚠️ ساخت اشتراک با رسید بانکی نیازمند تطبیق است.\nشناسه پرداخت: ".(int)$rowId.$bankReviewContext."\nاز ساخت مجدد یا بازپرداخت خودکار تا بررسی شواهد خودداری کنید.",null,null,$admin);
                 } catch (Throwable $noticeError) {
                     error_log('achbot_bank_buy_review_notice_failed pay_id='.(int)$rowId);
                 }
