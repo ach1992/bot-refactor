@@ -114,7 +114,8 @@ def main():
         sql(work,env,(ROOT/'migrations/post-v9/007_service_effects.sql').read_text())
         stage=work/'strict-create'
         marzban.prepare(work,stage,True)
-        for f in ('src/Purchase/Core.php','src/Finance/ServiceEffects.php'):
+        for f in ('src/Purchase/Core.php','src/Finance/ServiceEffects.php',
+                  'src/Subscription/ServerDisplaySettings.php','src/Subscription/Presentation.php'):
             target=stage/f;target.parent.mkdir(parents=True,exist_ok=True)
             shutil.copyfile(ROOT/f,target)
         with (stage/'functions-under-test.php').open('a') as output:

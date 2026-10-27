@@ -251,6 +251,9 @@ def setup(work: Path, env: dict) -> Path:
         'src/Subscription/DirectGift.php',
         'src/Subscription/GiftBatch.php',
         'src/Purchase/Core.php',
+        'src/Panel/ProviderRuntime.php',
+        'src/Panel/ProviderStorage.php',
+        'src/Panel/PasarGuard.php',
         'src/Telegram/UpdateBindings.php'
     ]:
         dst=stage/rel
@@ -1215,8 +1218,10 @@ def verify_exemption_and_ban_freshness(work: Path, env: dict, stage: Path,
     ordinary=call(work,env,stage,route='main_menu',kind='callback',
         actor=9001,update_id=600,message_id=60,text='mainMenu')
     ensure(q(work,env,'SELECT step FROM users WHERE userid=9001')=='none' and
-           any('EDIT_TEXT:WELCOME' in e for e in ordinary['events']),
-           'Ordinary non-banned mainMenu stopped functioning')
+           ordinary['events'].count('WELCOME')==1 and
+           not any(e.startswith('EDIT_TEXT:') or e in ['EDIT_KEYS','DELETE_MESSAGE']
+                   for e in ordinary['events']),
+           'Ordinary non-banned mainMenu must send its own menu and preserve evidence')
     passed.append('legacy_nonbanned_main_menu_works')
 
     # Exemption is itself a nonce-protected administrator wizard. Obsolete
