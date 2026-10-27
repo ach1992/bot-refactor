@@ -153,6 +153,7 @@ function achbotCreatePaidAccount(mysqli $db, int $payId, int $ordinal, array $p)
     }
     try {
         // These values are owned by the committed payment claim, not callback text.
+        achbotEffectLockTargetRows($db,$serverId,$planId,$payId);
         $stmt=$db->prepare("SELECT p.user_id,p.plan_id,p.server_id AS paid_server,p.type,p.state,p.approved_by,
             p.agent_count AS raw_count,
             CASE WHEN p.agent_count>0 THEN p.agent_count ELSE 1 END AS requested_count,
@@ -342,6 +343,62 @@ function achbotCreatePaidAccount(mysqli $db, int $payId, int $ordinal, array $p)
         $volume,$days,$planId,$operation,$expiry,$bytes,$p,$credentials);
 }
 
+/**
+ * Lock shared local targets in one order before a joined effect statement.
+ * The caller owns the transaction; this function never starts/commits one.
+ * Payment/plan ownership precedes config -> info. No HTTP occurs here.
+ */
+function achbotEffectLockTargetRows(
+    mysqli $db,int $serverId,?int $planId=null,?int $payId=null
+): void {
+    $status=$db->query('SELECT @@in_transaction AS active_transaction');
+    if (!$status || (int)($status->fetch_assoc()['active_transaction']??0)!==1)
+        throw new RuntimeException('effect_target_lock_requires_transaction');
+    if ($serverId<=0 || ($planId!==null && $planId<=0) || ($payId!==null && $payId<=0))
+        throw new RuntimeException('effect_target_lock_invalid');
+    if ($payId!==null) {
+        $stmt=$db->prepare('SELECT id FROM pays WHERE id=? FOR UPDATE');
+        if (!$stmt) throw new RuntimeException('effect_target_payment_prepare');
+        $stmt->bind_param('i',$payId);
+        if (!$stmt->execute() || $stmt->get_result()->num_rows!==1)
+            throw new RuntimeException('effect_target_payment_missing');
+        $stmt->close();
+    }
+    if ($planId!==null) {
+        $stmt=$db->prepare('SELECT server_id FROM server_plans WHERE id=? FOR UPDATE');
+        if (!$stmt) throw new RuntimeException('effect_target_plan_prepare');
+        $stmt->bind_param('i',$planId);
+        if (!$stmt->execute()) throw new RuntimeException('effect_target_plan_read');
+        $plan=$stmt->get_result()->fetch_assoc();$stmt->close();
+        if (!$plan || (int)$plan['server_id']!==$serverId)
+            throw new RuntimeException('effect_target_plan_changed');
+    }
+    foreach (['server_config','server_info'] as $table) {
+        // Fixed table allowlist; never request-derived SQL identifiers.
+        $stmt=$db->prepare('SELECT id FROM '.$table.' WHERE id=? FOR UPDATE');
+        if (!$stmt) throw new RuntimeException('effect_target_server_prepare');
+        $stmt->bind_param('i',$serverId);
+        if (!$stmt->execute() || $stmt->get_result()->num_rows!==1)
+            throw new RuntimeException('effect_target_server_missing');
+        $stmt->close();
+    }
+}
+
+/** Discover immutable effect routing, then lock its exact current local target. */
+function achbotEffectLockLinkRows(mysqli $db,int $effectId,bool $paid): array {
+    $stmt=$db->prepare('SELECT target_server_id,pay_row_id FROM service_effects WHERE id=?');
+    if (!$stmt) throw new RuntimeException('effect_link_target_prepare');
+    $stmt->bind_param('i',$effectId);
+    if (!$stmt->execute()) throw new RuntimeException('effect_link_target_read');
+    $target=$stmt->get_result()->fetch_assoc();$stmt->close();
+    $serverId=(int)($target['target_server_id']??0);
+    $payId=$target && $target['pay_row_id']!==null?(int)$target['pay_row_id']:null;
+    if (!$target || $serverId<=0 || ($paid?($payId===null || $payId<=0):$payId!==null))
+        throw new RuntimeException('effect_link_target_invalid');
+    achbotEffectLockTargetRows($db,$serverId,null,$payId);
+    return [$serverId,$payId];
+}
+
 /** Persist verified CREATE without reversing the capacity claimant lock order.
  * No HTTP occurs here. A failed/unknown COMMIT remains review-only.
  */
@@ -477,6 +534,7 @@ function achbotEffectDispatchReservedAccount(
 function achbotLinkPaidAccountEffect(mysqli $db, int $effectId, int $orderId): void {
     if (achbotPgLinkEffect($db,$effectId,$orderId)) return;
     if ($effectId<=0 || $orderId<=0) throw new RuntimeException('effect_order_id_unconfirmed');
+    [$lockedServerId,$lockedPayId]=achbotEffectLockLinkRows($db,$effectId,true);
     $stmt=$db->prepare("UPDATE service_effects e
       INNER JOIN pays p ON p.id=e.pay_row_id
       INNER JOIN orders_list o ON o.id=?
@@ -485,7 +543,8 @@ function achbotLinkPaidAccountEffect(mysqli $db, int $effectId, int $orderId): v
       LEFT JOIN setting g ON g.id=i.panel_group_id
         AND g.type='ACHBOT_MARZBAN_PANEL_GROUP'
       SET e.order_id=o.id,e.state='local_recorded'
-      WHERE e.id=? AND e.state='verified' AND e.order_id IS NULL
+      WHERE e.id=? AND e.target_server_id=? AND e.pay_row_id=?
+        AND e.state='verified' AND e.order_id IS NULL
         AND o.userid=p.user_id AND o.fileid=e.plan_id
         AND p.server_id=e.target_server_id
         AND o.server_id=e.target_server_id AND o.inbound_id=0
@@ -495,7 +554,7 @@ function achbotLinkPaidAccountEffect(mysqli $db, int $effectId, int $orderId): v
         AND (i.panel_group_id IS NULL OR g.id IS NOT NULL)
         AND SHA2(TRIM(TRAILING '/' FROM c.panel_url),256)=e.endpoint_sha256");
     if (!$stmt) throw new RuntimeException('effect_link_prepare_failed');
-    $stmt->bind_param('ii',$orderId,$effectId);
+    $stmt->bind_param('iiii',$orderId,$effectId,$lockedServerId,$lockedPayId);
     if (!$stmt->execute() || $stmt->affected_rows!==1)
         throw new RuntimeException('effect_link_unconfirmed');
     $stmt->close();
@@ -585,6 +644,7 @@ function achbotCreateNonPaymentAccount(
             in_array($owners[0]['freetrial'],['reserved','used'],true))
             throw new RuntimeException('nonpaid_effect_trial_already_claimed');
 
+        achbotEffectLockTargetRows($db,$serverId,$planId);
         $plan=$db->prepare("SELECT s.server_id,s.inbound_id,c.type,i.panel_group_id,
             c.panel_url,c.username AS panel_username,
             c.password AS panel_password,g.id AS valid_group
@@ -684,6 +744,7 @@ function achbotCreateNonPaymentAccount(
 function achbotLinkNonPaymentAccountEffect(mysqli $db, int $effectId, int $orderId): void {
     if (achbotPgLinkEffect($db,$effectId,$orderId)) return;
     if ($effectId<=0 || $orderId<=0) throw new RuntimeException('nonpaid_effect_order_invalid');
+    [$lockedServerId]=achbotEffectLockLinkRows($db,$effectId,false);
     $stmt=$db->prepare("UPDATE service_effects e
         INNER JOIN orders_list o ON o.id=?
         INNER JOIN server_info i ON i.id=e.target_server_id
@@ -691,7 +752,7 @@ function achbotLinkNonPaymentAccountEffect(mysqli $db, int $effectId, int $order
         LEFT JOIN setting g ON g.id=i.panel_group_id
             AND g.type='ACHBOT_MARZBAN_PANEL_GROUP'
         SET e.order_id=o.id,e.state='local_recorded'
-        WHERE e.id=? AND e.pay_row_id IS NULL
+        WHERE e.id=? AND e.target_server_id=? AND e.pay_row_id IS NULL
           AND e.source_kind IN ('free_trial','admin_bulk')
           AND e.state='verified' AND e.order_id IS NULL
           AND o.userid=e.actor_userid AND o.fileid=e.plan_id
@@ -701,7 +762,7 @@ function achbotLinkNonPaymentAccountEffect(mysqli $db, int $effectId, int $order
           AND (i.panel_group_id IS NULL OR g.id IS NOT NULL)
           AND SHA2(TRIM(TRAILING '/' FROM c.panel_url),256)=e.endpoint_sha256");
     if (!$stmt) throw new RuntimeException('nonpaid_effect_link_prepare');
-    $stmt->bind_param('ii',$orderId,$effectId);
+    $stmt->bind_param('iii',$orderId,$effectId,$lockedServerId);
     if (!$stmt->execute() || $stmt->affected_rows!==1)
         throw new RuntimeException('nonpaid_effect_link_unconfirmed');
     $stmt->close();
@@ -727,6 +788,7 @@ function achbotEffectReserveWalletCapacityLocked(mysqli $db, array $pay): void {
     if (!$tx || (int)($tx->fetch_assoc()['tx']??0)!==1)
         throw new RuntimeException('wallet_hold_requires_transaction');
 
+    achbotEffectLockTargetRows($db,$serverId,$planId,$payId);
     $stmt=$db->prepare("SELECT p.id,p.user_id,p.type,p.state,
         s.server_id,s.inbound_id,s.active,i.panel_group_id,
         c.type AS panel_type,c.panel_url,g.id AS valid_group
