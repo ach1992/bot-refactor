@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """AChBot provider integration: actual PHP, owned socket MariaDB and native HTTP fixtures."""
-import argparse,copy,json,subprocess,tempfile,threading
+import argparse,copy,io,json,shutil,subprocess,sys,tarfile,tempfile,threading
 from urllib.parse import urlsplit
 from pathlib import Path
 import test_post_v9_pasarguard_client as pg
@@ -248,11 +248,13 @@ def main():
   denied=[('directadmin',{}),('directowner',{'owner':1001}),('route',{'callback':'userOrderDetails91_0'}),
    ('quick',{'callback':'quickUserOrderDetails_91'}),('route',{'callback':'searchUsersConfig'}),
    ('route',{'text':'fixture_user'})]
+  forbidden_order_queries=0;forbidden_provider_requests=0
   for actor in [1011,1012,1014,1015]:
    for mode,spec in denied:
     sql("UPDATE users SET step='"+('searchUsersConfig' if 'text' in spec else 'none')+"' WHERE userid="+str(actor))
     before=read_snapshot();requests=len(server.trace);writes=server.write_count
     result=read_call(actor,mode,cached_admin=True,**spec);shown=json.dumps(result,ensure_ascii=False)
+    forbidden_order_queries+=result['order_reads'];forbidden_provider_requests+=len(server.trace)-requests
     yes(result['error'] is None and result['actor']==actor and result['detail'] is None and result['order_reads']==0 and result['chat_reads']==0 and len(server.trace)==requests and server.write_count==writes and read_snapshot()==before and 'sub.example.invalid' not in shown and 'vless://' not in shown and 'changePlan_' not in shown and 'fixture_user' not in shown,'read_auth_'+str(actor)+'_'+mode+'_'+('searchtext' if 'text' in spec else spec.get('callback','direct'))+'_no_privileged_query_or_disclosure')
   sql("UPDATE users SET step='none' WHERE userid IN(1011,1012,1014)")
   primary_role=sql('SELECT isAdmin FROM users WHERE userid=9001').strip()
@@ -558,7 +560,23 @@ def main():
   posts=sum(t[0]=='POST' and t[1]=='/api/user' for t in server.trace)
   yes('error' in call('bulk',line=2) and sum(t[0]=='POST' and t[1]=='/api/user' for t in server.trace)==posts,'bulk_partial_source_cannot_reissue')
 
- report={'complete':True,'cases':len(checks),'checks':checks,'actual_php_curl':True,'owned_socket_mariadb':True,'real_provider_tested':False}
+ # Bind RED evidence to the exact reviewed pre-remediation source on every
+ # invocation. The archived run fails at the first disclosure negative before
+ # this block, so it cannot recursively start another archived run.
+ baseline='fb138eacdc5817922cc1e1c9c200323d24c79838'
+ with tempfile.TemporaryDirectory(prefix='achbot-admin-read-baseline-') as archived:
+  root=Path(archived)
+  source=subprocess.check_output(['git','-C',str(ROOT),'archive',baseline])
+  with tarfile.open(fileobj=io.BytesIO(source)) as archive:archive.extractall(root,filter='data')
+  shutil.copyfile(Path(__file__),root/'tools/test_post_v9_provider_integration.py')
+  red=subprocess.run([sys.executable,str(root/'tools/test_post_v9_provider_integration.py'),'--run-disposable'],capture_output=True,text=True,timeout=60)
+  baseline_red=red.returncode!=0 and 'read_auth_1011_directadmin_direct_no_privileged_query_or_disclosure' in red.stderr
+  assert baseline_red,('admin_read_baseline_did_not_reproduce',red.returncode,red.stdout,red.stderr)
+ auth_cases=sum(name.startswith('read_auth_') for name in checks)
+ report={'complete':True,'cases':len(checks),'checks':checks,'actual_php_curl':True,'owned_socket_mariadb':True,'real_provider_tested':False,
+  'lifecycle_cases':len(checks)-auth_cases,'admin_read_authorization_cases':auth_cases,
+  'forbidden_order_queries':forbidden_order_queries,'forbidden_provider_requests':forbidden_provider_requests,
+  'baseline_red':baseline_red,'baseline_red_source':baseline}
  if a.report:a.report.write_text(json.dumps(report,indent=2)+'\n')
  print(json.dumps(report))
 if __name__=='__main__':main()
