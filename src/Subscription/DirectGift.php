@@ -21,7 +21,7 @@ function achbotDirectGiftWebhook($update,int $actor,int $chatId,int $messageId,
                                   $bound,string $kind): array {
     // The JSON actor id alone is forgeable. This privileged route requires
     // Telegram's configured secret_token header, not only a private-chat flag.
-    $secret=getenv('ACHBOT_TELEGRAM_WEBHOOK_SECRET');
+    $secret=$GLOBALS['telegramWebhookSecret']??null;
     $received=$_SERVER['HTTP_X_TELEGRAM_BOT_API_SECRET_TOKEN']??null;
     if (!is_string($secret) || strlen($secret)<16 || strlen($secret)>256 ||
         preg_match('/\A[A-Za-z0-9_-]+\z/D',$secret)!==1 ||

@@ -35,7 +35,7 @@ $dbname = $argv[2];
 $socket = $argv[3];
 $spec = json_decode($argv[4], true, 512, JSON_THROW_ON_ERROR);
 // Full-bot regression dispatch enters through the same authenticated ingress.
-putenv('ACHBOT_TELEGRAM_WEBHOOK_SECRET=owned-fixture-Telegram-2026');
+$telegramWebhookSecret='owned-fixture-Telegram-2026';
 $_SERVER['HTTP_X_TELEGRAM_BOT_API_SECRET_TOKEN']='owned-fixture-Telegram-2026';
 $_SERVER['REQUEST_METHOD']='POST';
 $_GET = $spec['get'];

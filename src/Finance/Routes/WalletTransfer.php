@@ -1,37 +1,75 @@
 <?php
-/** AChBot V8: source-pinned financial compatibility module. */
+/** AChBot wallet transfer: fresh consent, atomic balances and journal legs. */
 if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     http_response_code(404);
     exit;
 }
 
-if($data=="transferMyWallet"){
-    if($userInfo['wallet'] > 0 ){
+require_once dirname(__DIR__) . '/WalletTransferFlow.php';
+
+if (!function_exists('achbotWalletTransferRestart')) {
+function achbotWalletTransferRestart(bool $unavailable = false): void
+{
+    sendMessage($unavailable
+        ? '⚠️ آماده‌سازی درخواست انتقال با مشکل روبه‌رو شد؛ لطفاً انتقال را دوباره شروع کنید.'
+        : '⛔️ این پیام برای مرحلهٔ فعلی انتقال معتبر نیست؛ لطفاً از منوی کیف پول انتقال تازه‌ای شروع کنید.',
+        json_encode(['inline_keyboard'=>[[[
+            'text'=>'🔀 شروع دوباره انتقال', 'callback_data'=>'transferMyWallet'
+        ]]]], JSON_UNESCAPED_UNICODE));
+}
+
+}
+
+if ($data === 'transferMyWallet') {
+    $start=achbotWalletTransferSource($update ?? null,$from_id ?? null,
+        $chat_id ?? null,$message_id ?? null,$data,'callback');
+    if ($start===null) { achbotWalletTransferRestart(); return; }
+    $status=achbotWalletTransferAdvance($connection,$start,'start');
+    if ($status==='ready') {
         delMessage();
         sendMessage("🔀 در صورتی که قصد انتقال مبلغ دلخواه از موجودی خودتان به کاربری دیگری را دارید از اینجا می توانید انجام دهید.
 🔢 لطفا شناسه عددی کاربری که می خواهید موجودی به حساب آن منتقل کنید را وارد کنید.",$cancelKey);
-        setUser($data);
-    }else alert("⛔️ موجودی حساب شما کم است. موجودی حساب شما باید بیشتر از 0 باشد.");
+    } elseif ($status==='insufficient') {
+        alert("⛔️ موجودی حساب شما کم است. موجودی حساب شما باید بیشتر از 0 باشد.");
+    } else achbotWalletTransferRestart($status==='review');
+    return;
 }
-if($userInfo['step'] =="transferMyWallet" && $text != $buttonValues['cancel']){
-    if(preg_match('/^[1-9][0-9]*$/D', (string)$text) &&
-        strlen((string)$text) <= 19 && (string)(int)$text === (string)$text){
-        if($text != $from_id){
-            $stmt= $connection->prepare("SELECT * FROM `users` WHERE `userid` = ?");
-            $stmt->bind_param("i", $text);
-            $stmt->execute();
-            $checkExist = $stmt->get_result();
-            $stmt->close();
-            
-            if($checkExist->num_rows > 0){
-                setUser("tranfserUserAmount" . $text);
-                sendMessage("لطفا مبلغ مورد نظر را به تومان و با اعداد انگلیسی وارد کنید.");
-            }else sendMessage("⛔️ کاربری با این شناسه عددی یافت نشد.");
-        }else sendMessage("⚠️ لطفا شناسه عددی کاربری غیر از خودتان را ارسال کنید.");
-    }else sendMessage($mainValues['send_only_number']);
+
+$transferStep=(string)$userInfo['step'];
+$pendingTransfer=achbotWalletTransferPending($transferStep);
+if ($text != $buttonValues['cancel'] &&
+    (($pendingTransfer['stage'] ?? null)==='recipient')) {
+    $selection=achbotWalletTransferSource($update ?? null,$from_id ?? null,
+        $chat_id ?? null,$message_id ?? null,$text,'message');
+    if ($selection===null ||
+        $selection['update_id']<=$pendingTransfer['start_update_id'] ||
+        $selection['message_id']<=$pendingTransfer['start_message_floor']) {
+        achbotWalletTransferRestart(); return;
+    }
+    if (preg_match('/^[1-9][0-9]*$/D',(string)$text)!==1 ||
+        strlen((string)$text)>19 || (string)(int)$text!==(string)$text) {
+        sendMessage($mainValues['send_only_number']); return;
+    }
+    if ((int)$text===(int)$from_id) {
+        sendMessage("⚠️ لطفا شناسه عددی کاربری غیر از خودتان را ارسال کنید."); return;
+    }
+    $status=achbotWalletTransferAdvance($connection,$selection,'select',(int)$text,$transferStep);
+    if ($status==='ready')
+        sendMessage("لطفا مبلغ مورد نظر را به تومان و با اعداد انگلیسی وارد کنید.");
+    elseif ($status==='missing')
+        sendMessage("⛔️ کاربری با این شناسه عددی یافت نشد.");
+    else achbotWalletTransferRestart($status==='review');
+    return;
 }
-if (preg_match('/^tranfserUserAmount(\d+)$/D', (string)$userInfo['step'], $match) &&
-    $text != $buttonValues['cancel']) {
+
+if ((str_starts_with($transferStep,'achbotTransferAmount:') ||
+     str_starts_with($transferStep,'achbotTransferRecipient:') ||
+     str_starts_with($transferStep,'tranfserUserAmount') ||
+     $transferStep==='transferMyWallet') && $text != $buttonValues['cancel']) {
+    if (($pendingTransfer['stage'] ?? null)!=='amount') {
+        // All unversioned/old generations require an authenticated fresh start.
+        achbotWalletTransferRestart(); exit;
+    }
 
     if (!preg_match('/^[0-9]+$/D', (string)$text)) {
         sendMessage($mainValues['send_only_number']);
@@ -45,7 +83,7 @@ if (preg_match('/^tranfserUserAmount(\d+)$/D', (string)$userInfo['step'], $match
         exit;
     }
     $amount = (int)$digits;
-    $to_id  = (int)$match[1];
+    $to_id = $pendingTransfer['recipient_id'];
 
     if ($amount <= 0) {
         sendMessage("لطفا عددی بزرگتر از صفر وارد کنید.");
@@ -57,9 +95,24 @@ if (preg_match('/^tranfserUserAmount(\d+)$/D', (string)$userInfo['step'], $match
         exit;
     }
 
+    $amountSource = achbotWalletTransferSource($update ?? null, $from_id ?? null,
+        $chat_id ?? null, $message_id ?? null, $text, 'message');
+    if ($amountSource === null ||
+        $amountSource['update_id'] <= $pendingTransfer['selection_update_id'] ||
+        $amountSource['message_id'] <= $pendingTransfer['selection_message_id']) {
+        achbotWalletTransferRestart();
+        exit;
+    }
+    $transferUpdateId = $amountSource['update_id'];
+    $transferChatId = $amountSource['chat_id'];
+    $transferMessageId = $amountSource['message_id'];
+
     $transactionActive = false;
     $commitStarted = false;
     try {
+        if (!achbotWalletTransferFlowReady($connection)) {
+            throw new RuntimeException('transfer_journal_unavailable');
+        }
         if ($connection->begin_transaction() !== true) {
             throw new RuntimeException('transfer_begin_failed');
         }
@@ -108,6 +161,9 @@ if (preg_match('/^tranfserUserAmount(\d+)$/D', (string)$userInfo['step'], $match
             sendMessage("⛔️ این درخواست انتقال قبلاً پردازش شده یا معتبر نیست.");
             exit;
         }
+
+        $transferCursor=achbotWalletTransferOwned($connection,$sender,$receiver,
+            $expectedStep,$amountSource);
 
         $sender_before = (int)$sender['wallet'];
         $receiver_before = (int)$receiver['wallet'];
@@ -162,6 +218,21 @@ if (preg_match('/^tranfserUserAmount(\d+)$/D', (string)$userInfo['step'], $match
         $sender_after = $sender_before - $amount;
         $receiver_after = $receiver_before + $amount;
 
+        // Both immutable legs commit WITH balances and the consumed step.
+        // A failure on either INSERT rolls all of them back.
+        achbotInsertTelegramWalletAdjustment($connection, 'transfer',
+            $transferUpdateId, 1, (int)$from_id, (int)$from_id,
+            $transferChatId, $transferMessageId, 'transfer_out', $amount,
+            $sender_before, $sender_after, 'wallet_transfer');
+        achbotInsertTelegramWalletAdjustment($connection, 'transfer',
+            $transferUpdateId, 2, (int)$from_id, $to_id,
+            $transferChatId, $transferMessageId, 'transfer_in', $amount,
+            $receiver_before, $receiver_after, 'wallet_transfer');
+
+        // Keep replay ownership after users.step is consumed, including
+        // after later menu navigation/cancellation or a lost COMMIT reply.
+        achbotWalletTransferComplete($connection,$transferCursor,$amountSource);
+
         $commitStarted = true;
         // A false or lost COMMIT acknowledgement is NOT evidence of rollback.
         if ($connection->commit() !== true) {
@@ -196,6 +267,14 @@ if (preg_match('/^tranfserUserAmount(\d+)$/D', (string)$userInfo['step'], $match
             'transfer_recipient_identity_ambiguous',
             'transfer_identity_lookup_failed',
             'transfer_begin_failed',
+            'transfer_journal_unavailable',
+            'transfer_state_ownership_mismatch',
+            'transfer_state_ambiguous', 'transfer_state_missing', 'transfer_state_invalid',
+            'transfer_state_read_unavailable', 'transfer_state_read_failed',
+            'transfer_state_write_unavailable', 'transfer_state_write_failed',
+            'wallet_journal_invalid_entry',
+            'wallet_journal_insert_unavailable',
+            'wallet_journal_insert_failed',
             'transfer_commit_unconfirmed',
             'transfer_recipient_credit_execution_failed',
             'transfer_sender_debit_execution_failed',
@@ -207,6 +286,7 @@ if (preg_match('/^tranfserUserAmount(\d+)$/D', (string)$userInfo['step'], $match
         $sqlstate = $e instanceof mysqli_sql_exception ? $e->getSqlState() : 'n/a';
         $adminReport = "⚠️ <b>AChBot wallet transfer failure</b>\n"
             . "Reference: <code>{$reference}</code>\n"
+            . "Telegram update: <code>{$transferUpdateId}</code>\n"
             . "Reason: <code>{$reason}</code>\n"
             . "Exception class: <code>" . htmlspecialchars(get_class($e), ENT_QUOTES, 'UTF-8') . "</code>\n"
             . "SQLSTATE: <code>" . htmlspecialchars((string)$sqlstate, ENT_QUOTES, 'UTF-8') . "</code>\n"
@@ -227,7 +307,7 @@ if (preg_match('/^tranfserUserAmount(\d+)$/D', (string)$userInfo['step'], $match
         }
         if (!$reported) {
             error_log("ACHBOT_WALLET_TRANSFER_FAILURE reference={$reference} "
-                . "reason={$reason} sqlstate={$sqlstate} "
+                . "update_id={$transferUpdateId} reason={$reason} sqlstate={$sqlstate} "
                 . "commit_attempted=" . ($commitStarted ? 'yes' : 'no')
                 . " outcome={$transactionOutcome} rollback_api={$rollbackApi}");
         }

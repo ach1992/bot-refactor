@@ -16,7 +16,7 @@ import test_v6_native as native
 
 ROOT = Path(__file__).resolve().parents[1]
 DB = "achbot_v4_new"
-MIGRATION = ROOT / "migrations/post-v9/005_admin_wallet_adjustments.sql"
+MIGRATION = ROOT / "migrations/post-v9/005_wallet_adjustments.sql"
 
 PHP = r"""<?php
 if (PHP_SAPI!=='cli' || !extension_loaded('mysqli')) exit(3);
@@ -174,12 +174,12 @@ def step(work, env, who=9001):
     return sql(work,env,f"SELECT step FROM users WHERE userid={who}")
 
 def nledger(work, env):
-    return int(sql(work,env,"SELECT COUNT(*) FROM admin_wallet_adjustments"))
+    return int(sql(work,env,"SELECT COUNT(*) FROM wallet_adjustments"))
 
 def journal(work, env, update_id):
-    return sql(work,env,"SELECT CONCAT(operator_userid,':',target_userid,':',"
+    return sql(work,env,"SELECT CONCAT(actor_userid,':',target_userid,':',"
         "adjustment_type,':',amount_toman,':',before_balance,':',after_balance) "
-        "FROM admin_wallet_adjustments WHERE telegram_update_id="+str(update_id))
+        "FROM wallet_adjustments WHERE telegram_update_id="+str(update_id))
 
 def setstep(work,env,act,expected):
     safe=expected.replace("'","''")
@@ -484,40 +484,49 @@ def main():
         cases.append('postcommit_telegram_failure_preserves_effect')
 
         # Missing crucial unique key => no permission to spend.
-        sql(work,env,'ALTER TABLE admin_wallet_adjustments DROP INDEX uq_admin_wallet_update')
+        sql(work,env,'ALTER TABLE wallet_adjustments DROP INDEX uq_wallet_source_entry')
         move_to_reason(work,env,'credit',7)
         execute(work,env,text='schema broken',update_id=750)
         assert_state(work,env,1105,6)
-        sql(work,env,'ALTER TABLE admin_wallet_adjustments '
-            'ADD UNIQUE KEY uq_admin_wallet_update (telegram_update_id)')
+        sql(work,env,'ALTER TABLE wallet_adjustments '
+            'ADD UNIQUE KEY uq_wallet_source_entry (source_type,source_id,entry_no)')
         cases.append('schema_without_unique_identity_fails_closed')
 
-        sql(work,env,'ALTER TABLE admin_wallet_adjustments MODIFY '
+        # Event identity must span operation types, independently of source_type.
+        sql(work,env,'ALTER TABLE wallet_adjustments DROP INDEX uq_wallet_telegram_entry')
+        move_to_reason(work,env,'credit',7)
+        execute(work,env,text='missing cross-operation event key',update_id=754)
+        assert_state(work,env,1105,6)
+        sql(work,env,'ALTER TABLE wallet_adjustments '
+            'ADD UNIQUE KEY uq_wallet_telegram_entry (telegram_update_id,entry_no)')
+        cases.append('schema_without_cross_operation_event_key_fails_closed')
+
+        sql(work,env,'ALTER TABLE wallet_adjustments MODIFY '
             'adjustment_type VARCHAR(16) COLLATE utf8mb4_unicode_ci NOT NULL')
         move_to_reason(work,env,'credit',7)
         execute(work,env,text='schema wrong collation',update_id=752)
         assert_state(work,env,1105,6)
-        sql(work,env,'ALTER TABLE admin_wallet_adjustments MODIFY '
+        sql(work,env,'ALTER TABLE wallet_adjustments MODIFY '
             'adjustment_type VARCHAR(16) COLLATE utf8mb4_bin NOT NULL')
         cases.append('schema_wrong_binary_identity_collation_fails_closed')
 
-        sql(work,env,'ALTER TABLE admin_wallet_adjustments MODIFY '
+        sql(work,env,'ALTER TABLE wallet_adjustments MODIFY '
             'reason VARCHAR(200) NOT NULL')
         move_to_reason(work,env,'credit',7)
         execute(work,env,text='schema wrong reason length',update_id=753)
         assert_state(work,env,1105,6)
-        sql(work,env,'ALTER TABLE admin_wallet_adjustments MODIFY '
+        sql(work,env,'ALTER TABLE wallet_adjustments MODIFY '
             'reason VARCHAR(500) NOT NULL')
         cases.append('schema_incompatible_reason_contract_fails_closed')
 
         # Engine mismatch cannot turn ledger+wallet writes into nontransactional
         # nonrollbackable partial state; test in disposable database only.
-        sql(work,env,'ALTER TABLE admin_wallet_adjustments ENGINE=MyISAM')
+        sql(work,env,'ALTER TABLE wallet_adjustments ENGINE=MyISAM')
         move_to_reason(work,env,'credit',7)
         execute(work,env,text='schema unsafe engine',update_id=751)
         assert_state(work,env,1105,6)
         cases.append('schema_nontransactional_engine_fails_closed')
-        sql(work,env,'ALTER TABLE admin_wallet_adjustments ENGINE=InnoDB')
+        sql(work,env,'ALTER TABLE wallet_adjustments ENGINE=InnoDB')
 
         # The frozen original users.userid index is not UNIQUE. A duplicated
         # Telegram identity is unsafe even when the balances differ.
@@ -578,7 +587,7 @@ def main():
         assert journal(work,env,775)=='9001:1001:credit:17:1105:1122'
         audit=sql(work,env,
             'SELECT CONCAT(source_chat_id,":",source_message_id,":",reason) '
-            'FROM admin_wallet_adjustments WHERE telegram_update_id=775')
+            'FROM wallet_adjustments WHERE telegram_update_id=775')
         assert audit=='9001:91:explicit new operator explanation',audit
         replay=execute(work,env,text='explicit new operator explanation',update_id=775)
         assert_state(work,env,1122,8)

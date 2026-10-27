@@ -106,6 +106,7 @@ elseif ($kind==='mixed') {
     $update->callback_query=(object)['id'=>'fixture','data'=>$input,
                                      'from'=>$sender,'message'=>$msg];
 } else throw new RuntimeException('fixture_invalid_kind');
+require_once __DIR__.'/baseInfo.php';
 $from_id=$actor;$chat_id=$wireChat;$message_id=$messageId;
 $data=null;$text=null;
 require __DIR__.'/src/Telegram/UpdateBindings.php';
@@ -113,7 +114,7 @@ if (isset($spec['bound_actor'])) $from_id=(int)$spec['bound_actor'];
 if (isset($spec['bound_text'])) $text=$spec['bound_text'];
 if (!($spec['missing_header']??false)) {
     $_SERVER['HTTP_X_TELEGRAM_BOT_API_SECRET_TOKEN']=
-        ($spec['bad_header']??false)?'bad-secret':getenv('ACHBOT_TELEGRAM_WEBHOOK_SECRET');
+        ($spec['bad_header']??false)?'bad-secret':$telegramWebhookSecret;
 }
 $stmt=$connection->prepare('SELECT id,userid,isAdmin,is_agent,step,temp FROM users WHERE userid=?');
 $stmt->bind_param('i',$from_id);$stmt->execute();
@@ -284,6 +285,7 @@ def setup(work: Path, env: dict) -> Path:
            'handleToggleCallbacks($data, $chat_id, $message_id);' not in config,
            'Moderation can run before HTTP provenance/IP checks')
     (stage/'ingress-source.php').write_text('<?php\n'+bot[guard_start:guard_end])
+    (stage/'baseInfo.php').write_text("<?php\n$telegramWebhookSecret='"+SECRET+"';\n")
     moderation_start=config.index('function handleToggleCallbacks(')
     moderation_end=config.index('\n//---',moderation_start)
     (stage/'moderation-route.php').write_text(
@@ -359,8 +361,7 @@ def call(work: Path, env: dict, stage: Path, **spec) -> dict:
          str(stage/'driver.php'),json.dumps(spec)],
         cwd=stage,env={**env,'ACHBOT_DIRECT_DB':DB,
             'ACHBOT_DIRECT_SOCKET':str(work/'mysql.sock'),
-            'ACHBOT_DIRECT_LOG':str(log),
-            'ACHBOT_TELEGRAM_WEBHOOK_SECRET':SECRET},
+            'ACHBOT_DIRECT_LOG':str(log)},
         capture_output=True,text=True,timeout=38)
     ensure(proc.returncode==0,
         f'Actual PHP source route exception: rc={proc.returncode} stdout={proc.stdout[-500:]} stderr={proc.stderr[-1200:]} mode={spec}')

@@ -18,11 +18,11 @@ cannot compensate for unnecessarily privileged credentials.
 
 It checks:
 
-- All 102 listed runtime files' byte lengths and SHA-256 against the
-  **provided** manifest, and an independently pinned 102-member filename
+- All 104 listed runtime files' byte lengths and SHA-256 against the
+  **provided** manifest, and an independently pinned 104-member filename
   inventory (canonical sorted-set SHA-256 from `package_post_v9.members()`),
-  with no retired automatic TRON/WeSwap PHP files. The three locally
-  executed parser/validation helpers must also match the supplied runtime
+  with no retired automatic TRON/WeSwap PHP files. The locally
+  executed policy and wallet validation helpers must also match the supplied runtime
   manifest; a tool checkout from another source version is rejected.
   No other runtime file is deleted or overwritten. `baseInfo.php` is never read.
 - Original 23 table names, the three original-schema named owner lookup
@@ -145,7 +145,7 @@ python3 tools/test_post_v9_payment_readiness.py --run-disposable \
 
 This regression exercises the **actual PHP CLI** with an owned, socket-only
 MariaDB, original schema plus all eight synthetic sidecars, a real SELECT-only
-account and a 102-file ZIP-shaped runtime. It deliberately injects missing
+account and a 104-file ZIP-shaped runtime. It deliberately injects missing
 settings/migrations, duplicate documents, malformed policies, absent hosted
 keys, source drift, retired members, broken unique indexes and failed DB auth.
 It also compares USDT address/rate behavior and static policy precedence
@@ -155,3 +155,9 @@ valid independent alternatives.
 It verifies the read-only user cannot issue UPDATE, retains synthetic wallet
 and private config sentinels, and makes zero real external calls. It is part
 of `tools/check_post_v9.py` for exact candidate CI on PHP 8.1 and 8.4.
+
+The `wallet_transfer_storage` check additionally executes the manifest-bound
+current transfer readiness helper: users, journal 005 and the original
+`setting` cursor storage must satisfy their transactional schema contracts.
+It performs metadata reads only; it neither creates cursors nor certifies
+individual cursor contents, historical migration execution or live transfers.

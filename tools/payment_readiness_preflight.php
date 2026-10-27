@@ -69,7 +69,7 @@ function verifyManifest(string $manifestPath, string $runtimePath): bool {
         if ($json === false || strlen($json) > 500000) return false;
         $manifest = json_decode($json, true, 512, JSON_THROW_ON_ERROR);
         if (!is_array($manifest) || !isset($manifest['files']) ||
-            !is_array($manifest['files']) || count($manifest['files']) !== 102 ||
+            !is_array($manifest['files']) || count($manifest['files']) !== 104 ||
             ($manifest['file_count'] ?? null) !== count($manifest['files']) ||
             ($manifest['schema_migration_included'] ?? null) !== false ||
             ($manifest['private_config_included'] ?? null) !== false ||
@@ -80,7 +80,7 @@ function verifyManifest(string $manifestPath, string $runtimePath): bool {
         // SHA-256 of newline-joined sorted package_post_v9.members() paths.
         $members = array_keys($manifest['files']);
         sort($members, SORT_STRING);
-        if (!hash_equals('541fb30dd989d2826b748e8a95724c487aae6497dec0817286a0b5e4cf71b3b2',
+        if (!hash_equals('0fd547f440cbbf3d33e1d561d35d7efeab49be30ed8f08769a948ad7ce7a85a2',
                          hash('sha256', implode("\n", $members))) ||
             in_array('baseInfo.php', $members, true)) return false;
         // These helper implementations are executed by this tool. Bind them
@@ -88,7 +88,9 @@ function verifyManifest(string $manifestPath, string $runtimePath): bool {
         // configuration validation; mixing different checkouts is unsafe.
         foreach (['src/Finance/PaymentLifecycle.php',
                   'src/Finance/GatewayRules.php',
-                  'src/Finance/ReceiptHelpers.php'] as $helper) {
+                  'src/Finance/ReceiptHelpers.php',
+                  'src/Finance/WalletAdjustments.php',
+                  'src/Finance/WalletTransferFlow.php'] as $helper) {
             $source = dirname(__DIR__) . DIRECTORY_SEPARATOR . $helper;
             if (is_link($source) || !is_file($source) ||
                 !hash_equals((string)$manifest['files'][$helper]['sha256'],
@@ -413,8 +415,9 @@ try {
         ],
         '004' => ['automatic_renewal_attempts'=>['columns'=>['order_id','cycle_expire','pay_row_id'],
             'unique'=>['uq_renewal_cycle'=>['order_id','cycle_expire']]]],
-        '005' => ['admin_wallet_adjustments'=>['columns'=>['operator_userid','target_userid','telegram_update_id','reason'],
-            'unique'=>['uq_admin_wallet_update'=>['telegram_update_id']]]],
+        '005' => ['wallet_adjustments'=>['columns'=>['source_type','source_id','entry_no','actor_userid','target_userid','telegram_update_id','reason'],
+            'unique'=>['uq_wallet_source_entry'=>['source_type','source_id','entry_no'],
+                       'uq_wallet_telegram_entry'=>['telegram_update_id','entry_no']]]],
         '006' => ['payment_message_refs'=>['columns'=>['pay_row_id','chat_id','message_id','updated_at'],
             'unique'=>['uq_payment_message_chat'=>['chat_id','message_id']]]],
         '007' => ['service_effects'=>['columns'=>['pay_row_id','source_kind','source_ref','operation_id','target_key','target_server_id','requested_bytes'],
@@ -435,6 +438,11 @@ try {
         $report['schema'][$migration] = $code;
         finding('schema_' . $migration, $isPresent ? 'PASS' : 'BLOCK', $code);
     }
+    require_once dirname(__DIR__) . '/src/Finance/WalletTransferFlow.php';
+    $transferStorageReady = achbotWalletTransferFlowReady($db);
+    finding('wallet_transfer_storage', $transferStorageReady ? 'PASS' : 'BLOCK',
+        $transferStorageReady ? 'transactional_wallet_and_cursor_schema_ready' :
+            'wallet_or_cursor_schema_missing_or_incompatible');
     if (isset($tables['setting'])) {
         $settings = readSettings($db);
         if ($settings !== null) {
