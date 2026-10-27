@@ -131,7 +131,17 @@ def main():
     changes=manifest['changes'];retired=manifest['retired_keys'];added=manifest['added_keys']
     expected_retired={key for key in old if key.startswith(('admin_settings.config.convert_persian_digits_to_english_for_stats.','admin_settings.config.parse_stats_date_range.'))}
     check(set(retired)==expected_retired and len(retired)==23,'retired matcher scope drift')
-    check(len(added)==1 and set(merged)==set(old)-set(retired)|set(added),'stable keys or retirement/addition drift')
+    feature_retired=manifest.get('retired_feature_keys',{})
+    expected_feature_retired={
+        'bot.bot.change_config_remark_type.gate.ce14a45981',
+        'admin_settings.config.get_gate_ways_keys.text.84a6dfb6ae',
+        'admin_settings.config.get_gate_ways_keys.text.f419959ea3',
+    }
+    check(set(feature_retired)==expected_feature_retired and manifest.get('feature_retirements_authorization')==
+          'https://github.com/ach1992/bot-refactor/issues/26#issuecomment-6453867569','feature retirement scope drift')
+    for key,record in feature_retired.items():
+        check(record['before']==old[key] and record.get('reason'),'feature retirement baseline mismatch')
+    check(len(added)==1 and set(merged)==set(old)-set(retired)-set(feature_retired)|set(added),'stable keys or retirement/addition drift')
     privacy_keys={
       'purchase.order_writes.ensure_account_creation_succeeded.user_message.7a64d65208',
       'gateway.gateway_return.perform_payment_effect.message.3768e94d51',
@@ -282,5 +292,5 @@ echo json_encode(['violations'=>$violations,'topics'=>count(achbotMessageTopics(
             except urllib.error.HTTPError as error:status=error.code;body=error.read()
             check(status==404 and not body,'direct copy source leaked '+file)
     finally:listener.terminate();listener.wait(timeout=5)
-    print(json.dumps({'status':'PASS','editable_files':2,'current_keys':len(merged),'logical_topics':native['topics'],'style_changes':len(changes),'numeric_template_changes':sum('ascii_digits'in v['reasons']for v in changes.values()),'retired_keys':len(retired),'added_keys':len(added),'current_entry_assertions':assertions,'parameter_exception_count':len(param_keys),'adjacent_emoji_violations':0,'emoji_negative_controls':native['emoji_negative_controls'],'audience_admin_diagnostic_cases':len(admin_cases),'audience_customer_cases':len(user_cases),'preserved_shared_fragments':len(fragments),'native_compositions':native['native_compositions'],'semantic_label_icon_cases':native['semantic_label_icon_cases'],'semantic_context_icon_cases':native['semantic_context_icon_cases'],'direct_http_guards':len(guarded),'loader_negative_controls':2,**reviewed},ensure_ascii=False))
+    print(json.dumps({'status':'PASS','editable_files':2,'current_keys':len(merged),'logical_topics':native['topics'],'style_changes':len(changes),'numeric_template_changes':sum('ascii_digits'in v['reasons']for v in changes.values()),'retired_keys':len(retired),'retired_feature_keys':len(feature_retired),'added_keys':len(added),'current_entry_assertions':assertions,'parameter_exception_count':len(param_keys),'adjacent_emoji_violations':0,'emoji_negative_controls':native['emoji_negative_controls'],'audience_admin_diagnostic_cases':len(admin_cases),'audience_customer_cases':len(user_cases),'preserved_shared_fragments':len(fragments),'native_compositions':native['native_compositions'],'semantic_label_icon_cases':native['semantic_label_icon_cases'],'semantic_context_icon_cases':native['semantic_context_icon_cases'],'direct_http_guards':len(guarded),'loader_negative_controls':2,**reviewed},ensure_ascii=False))
 if __name__=='__main__':main()

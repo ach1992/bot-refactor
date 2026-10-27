@@ -193,7 +193,20 @@ if (count($expectedRetired)!==23||$retiredKeys!==array_values($expectedRetired))
 $approvedAdded='purchase.order_writes.ensure_account_creation_succeeded.admin_message.inbound_missing';
 if (array_keys($added)!==[$approvedAdded])
     throw new RuntimeException('admin_diagnostic_addition_scope_drift');
-$expectedKeys=array_values(array_diff(array_keys($baseline),$retiredKeys));
+$featureRetired=$style['retired_feature_keys']??[];
+$expectedFeatureRetired=[
+    'bot.bot.change_config_remark_type.gate.ce14a45981',
+    'admin_settings.config.get_gate_ways_keys.text.84a6dfb6ae',
+    'admin_settings.config.get_gate_ways_keys.text.f419959ea3',
+];
+if (array_keys($featureRetired)!==$expectedFeatureRetired ||
+    ($style['feature_retirements_authorization']??null)!=='https://github.com/ach1992/bot-refactor/issues/26#issuecomment-6453867569')
+    throw new RuntimeException('feature_retirement_scope_drift');
+foreach ($featureRetired as $key=>$record) {
+    if (($record['before']??null)!==$baseline[$key]||empty($record['reason']))
+        throw new RuntimeException('feature_retirement_baseline_mismatch:'.$key);
+}
+$expectedKeys=array_values(array_diff(array_keys($baseline),$retiredKeys,$expectedFeatureRetired));
 $expectedKeys[]=$approvedAdded;sort($expectedKeys);$actualKeys=array_keys($current);sort($actualKeys);
 if ($actualKeys!==$expectedKeys) throw new RuntimeException('current_catalog_key_scope_drift');
 foreach ($retired as $key=>$record) {
@@ -281,7 +294,7 @@ echo json_encode(['status'=>'PASS',
     'repeated_interpolation_string_conversion'=>'PASS','actual_traffic_helper_parity_cases'=>$trafficCases,
     'editable_catalog_files'=>count($files),'logical_topics'=>count(achbotMessageTopics()),
     'current_catalog_keys'=>count($current),'current_byte_preserved_keys'=>$preserved,
-    'current_style_changes'=>count($changes),'current_retired_implementation_keys'=>count($retired),
+    'current_style_changes'=>count($changes),'current_retired_implementation_keys'=>count($retired),'current_retired_feature_keys'=>count($featureRetired),
     'current_added_admin_keys'=>count($added),'current_parameter_privacy_changes'=>$parameterChanges,
     'current_native_template_assertions'=>$currentChecks,'current_non_ascii_digit_templates'=>0,
     'current_object_conversion_templates'=>$currentObjectTemplates,

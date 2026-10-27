@@ -12,7 +12,7 @@ function achbotPaymentKeyAdminFields(): array {
     return [
         'nowpayment','nextpay','zarinpal','bankAccount','holderName','giftCardUrl',
         'manualUsdtWalletBEP20','manualUsdtWalletTRC20','manualUsdtWalletERC20',
-        'manualTrxWallet','manualUsdtRateToman','usdtAgentRateToman','manualTrxRateToman'
+        'manualTrxWallet','manualUsdtRateToman','manualTrxRateToman'
     ];
 }
 
@@ -68,7 +68,7 @@ function achbotPaymentKeyAdminNormalize(string $field,string $input): ?string {
             : achbotManualUsdtWalletValid($value,$addresses[$field]);
         return $valid?$value:null;
     }
-    if (in_array($field,['manualUsdtRateToman','usdtAgentRateToman','manualTrxRateToman'],true)) {
+    if (in_array($field,['manualUsdtRateToman','manualTrxRateToman'],true)) {
         $value=trim($input);
         if ($value==='/clear') return '';
         if ($field==='manualTrxRateToman')
@@ -213,7 +213,10 @@ function achbotAdminPaymentKeyChange($update,int $actor,int $chat,int $message,
         if (!is_array($revisions)) throw new RuntimeException('payment_key_revisions_invalid');
         foreach ($revisions as $revisionField=>$revision) {
             if (!is_string($revisionField) ||
-                !in_array($revisionField,achbotPaymentKeyAdminFields(),true) ||
+                // RC12 may retain a revision for this retired field. Accept only
+                // its validated history; it is never an editable setting.
+                (!in_array($revisionField,achbotPaymentKeyAdminFields(),true) &&
+                 $revisionField!=='usdtAgentRateToman') ||
                 !is_int($revision) || $revision<=0)
                 throw new RuntimeException('payment_key_revisions_invalid');
         }

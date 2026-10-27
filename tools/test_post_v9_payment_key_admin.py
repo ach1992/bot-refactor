@@ -456,18 +456,40 @@ def main():
         opened('manualUsdtRateToman')
         saved('1000000000')
         assert state(w,e)['manualUsdtRateToman']=='1000000000'
-        opened('usdtAgentRateToman')
-        denied(saved('1'))
+        opened('manualUsdtRateToman')
         denied(saved('1000000001'))
-        saved('34567')
-        assert state(w,e)['usdtAgentRateToman']=='34567'
-        opened('usdtAgentRateToman')
-        saved('/clear')
-        assert state(w,e)['usdtAgentRateToman']==''
         opened('manualUsdtRateToman')
         saved('/clear')
         assert state(w,e)['manualUsdtRateToman']==''
-        checks.append('normal_agent_rates_validated_upper_boundary_and_clear')
+        checks.append('shared_usdt_rate_upper_boundary_and_clear')
+        # A previously installed RC12 editor may have stored this field and
+        # revision. Preserve the history without offering or authorizing it.
+        reset({'manualUsdtRateToman':'100000','usdtAgentRateToman':'200000'})
+        opened('manualUsdtRateToman')
+        saved('100001')
+        old_marker=marker(w,e)
+        old_marker['field_versions']['usdtAgentRateToman']=seq[0]-1
+        encoded=json.dumps(old_marker).replace("'","''")
+        sql(w,e,"UPDATE setting SET value='"+encoded+"' WHERE type='ACHBOT_ADMIN_PAYMENT_KEYS_SOURCE'")
+        old_state=state(w,e);old_step=step(w,e)
+        denied(call(data='changePaymentKeysusdtAgentRateToman'))
+        assert state(w,e)==old_state and step(w,e)==old_step
+        menu=invoke(w,e,new,kind='menu')
+        assert 'changePaymentKeysusdtAgentRateToman' not in str(menu)
+        assert 'changePaymentKeysmanualUsdtRateToman' in str(menu)
+        checks.append('retired_agent_rate_menu_and_callback_removed')
+        opened('manualUsdtRateToman')
+        saved('123456')
+        assert state(w,e)==dict(old_state,manualUsdtRateToman='123456')
+        assert marker(w,e)['field_versions']['usdtAgentRateToman']==old_marker['field_versions']['usdtAgentRateToman']
+        checks.append('rc12_retired_revision_preserved_other_fields_editable')
+        # An in-flight retired wizard cannot save or clear its old value.
+        sql(w,e,"UPDATE users SET step='achbotPaymentKey|usdtAgentRateToman|1|"+'a'*64+"' WHERE userid=9002")
+        before_state=state(w,e);before_marker=marker(w,e);before_step=step(w,e)
+        denied(saved('34567'))
+        assert state(w,e)==before_state and marker(w,e)==before_marker and step(w,e)==before_step
+        checks.append('retired_pending_editor_cannot_write')
+        reset()
 
         # Four manual-chain destinations retain exactly their original
         # validators. Public wallet addresses, unlike merchant credentials,

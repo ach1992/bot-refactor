@@ -1,40 +1,20 @@
-# AChBot USDT rate settings
+# AChBot shared USDT rate settings
 
-Contract revision 3 moves exchange rates from private configuration into the
-existing `setting` row with `type=PAYMENT_KEYS`. No schema change or automatic
-configuration import is performed. Existing installations must explicitly set
-rates through the bot’s administrator gateway settings before issuing new USDT
-or NOWPayments invoices. The real private `baseInfo.php` is never inspected or
-modified by this change; published historical source remains unchanged.
+The [Owner decision of 2026-10-28](https://github.com/ach1992/bot-refactor/issues/26#issuecomment-6453867569) removes the separate agent USDT rate from development after RC12. This document describes the new source contract; the published RC12 ZIP remains unchanged and includes its former optional override.
 
-In administrator **gateway settings**, the two rate rows appear beside the
-hosted gateway configuration and identify both manual USDT and NOWPayments:
+In administrator **gateway settings**, configure the existing shared rate:
 
 | Setting | Meaning | `/clear` behavior |
 |---|---|---|
-| `manualUsdtRateToman` | Normal USD/Toman rate for manual USDT on every configured network and hosted NOWPayments conversion | New normal quotes are unavailable; agents remain available only with a valid explicit agent override |
-| `usdtAgentRateToman` | Optional rate for actual `users.is_agent=1` accounts, for both manual USDT and NOWPayments | Reuse the explicit normal rate; no separate agent default |
+| `manualUsdtRateToman` | One USD/Toman rate for every account, every configured manual USDT network and hosted NOWPayments conversion | Disable new USDT/NOWPayments quotes for everyone |
 | `manualTrxRateToman` | Independent native TRX/Toman rate | Disable new TRX quotes only |
 
-USDT editor values are whole Toman amounts from 100 through 1,000,000,000.
-Runtime readers reject nonnumeric, nonfinite, out-of-range and nonscalar values.
-An explicitly invalid agent override never silently falls back to the normal
-rate. Without a usable rate, only the affected audience’s USDT/NOWPayments
-option is unavailable; card payments, gift cards, wallet payments, other hosted
-gateways and independently configured TRX remain unchanged. Customers receive
-plain support guidance if a stale initiation link has no usable rate.
+USDT editor values are whole Toman amounts from 100 through 1,000,000,000. Runtime readers reject nonnumeric, nonfinite, out-of-range and nonscalar values. Card payments, gift cards, wallet payments, other hosted gateways and independently configured TRX retain their own availability. Existing customer/agent eligibility rules are unchanged; account role never selects a different exchange rate. Customer errors retain plain support guidance without infrastructure details.
 
-The old `USDTPrice` and `USDTPriceagent` private globals and Tetherland lookup
-are no longer runtime rate sources. There is no 1:1 or other automatic default.
-The existing single-network address fallback remains address compatibility
-only; it does not supply a rate. No credentials move out of private config.
+The retired `usdtAgentRateToman` field is absent from the menu, editor allowlist and help. Old callbacks and unfinished retired editors cannot write it. Any retained value is inert, whether valid, invalid or cleared, and cannot rescue a missing/invalid shared rate. Valid RC12 per-field editor revision history remains readable so other gateway settings can still be edited; it never authorizes editing the retired setting. No schema migration, automatic JSON deletion or actual private configuration change is required.
 
-Existing `payment_attempts` retain their original quote, asset, network,
-recipient and rate even if settings are edited, cleared or invalidated later.
-Settings changes do not reprice, settle, refund, or reissue an existing claim.
-Manual receipts still require independent authorized human verification.
+The old `USDTPrice` and `USDTPriceagent` private globals and Tetherland lookup are not runtime rate sources. There is no private, external, 1:1 or other automatic rate fallback. Single-network address compatibility does not supply a rate; no credentials move out of private config.
 
-Validation: `tools/test_next_currency_settings.py --run-disposable`, the
-post-V9 manual-payments, payment-key administrator, financial-routes and
-readiness suites exercise synthetic PHP and socket-only MariaDB. These checks
-perform no installed DB, wallet, provider, Telegram or production operations.
+Existing `payment_attempts` retain their original quote, asset, network, recipient and rate, including quotes originally issued with RC12 agent pricing. Settings changes do not reprice, settle, refund or reissue an existing claim. Manual receipts still require independent authorized human verification.
+
+Validation uses actual PHP and socket-only disposable MariaDB: `tools/test_next_currency_settings.py --run-disposable`, plus manual-payments, payment-key editor, financial-routes, readiness and full current-source acceptance. Coverage includes archived RC12 override behavior, shared manual quotes on all three networks, hosted conversion, invalid/missing shared rates despite retained overrides, immutable prior quotes, rejected retired editors and retained editor revisions. No installed DB, wallet, provider, Telegram or production operation is performed.

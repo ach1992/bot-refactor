@@ -1209,20 +1209,13 @@ function getGateWaysKeys(){
          'callback_data'=>'changePaymentKeysmanualTrxWallet'],
         ['text'=>\achbotMessage('admin_settings.config.get_gate_ways_keys.button.99a296169c'),'callback_data'=>'wizwizch']
     ];
-    $rateRows=[];
-    foreach (['manualUsdtRateToman'=>\achbotMessage('admin_settings.config.get_gate_ways_keys.text.f87b607b2d'),
-              'usdtAgentRateToman'=>\achbotMessage('admin_settings.config.get_gate_ways_keys.text.84a6dfb6ae')] as $field=>$label) {
-        $raw=$paymentKeys[$field]??null;
-        $rate=achbotUsdtRateValue($raw);
-        $fallback=$field==='usdtAgentRateToman' &&
-            (!array_key_exists($field,$paymentKeys) || $raw==='');
-        $rateRows[]=[
-            ['text'=>$rate!==null ? number_format($rate).\achbotMessage('admin_settings.config.get_gate_ways_keys.text.2cc98f7f7c') :
-                ($fallback ? \achbotMessage('admin_settings.config.get_gate_ways_keys.text.f419959ea3') : \achbotMessage('admin_settings.config.get_gate_ways_keys.text.8da09df26e')),
-             'callback_data'=>'changePaymentKeys'.$field],
-            ['text'=>$label,'callback_data'=>'wizwizch']
-        ];
-    }
+    $rate=achbotUsdtRate($paymentKeys);
+    $rateRows=[[
+        ['text'=>$rate!==null ? number_format($rate).\achbotMessage('admin_settings.config.get_gate_ways_keys.text.2cc98f7f7c') :
+            \achbotMessage('admin_settings.config.get_gate_ways_keys.text.8da09df26e'),
+         'callback_data'=>'changePaymentKeysmanualUsdtRateToman'],
+        ['text'=>\achbotMessage('admin_settings.config.get_gate_ways_keys.text.f87b607b2d'),'callback_data'=>'wizwizch']
+    ]];
     $cryptoRows[]=[
         ['text'=>(!empty($paymentKeys['manualTrxRateToman']) ?
             number_format((int)$paymentKeys['manualTrxRateToman']).\achbotMessage('admin_settings.config.get_gate_ways_keys.text.2cc98f7f7c') : \achbotMessage('admin_settings.config.get_gate_ways_keys.text.9fec3d676e')),

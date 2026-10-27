@@ -46,10 +46,10 @@ It checks:
   `achbotManualUsdtConfiguration()` for each network, preserving explicit
   empty-field precedence over legacy addresses, the default legacy BEP20
   network, and explicit numeric/finite/range rate validation. The tool uses an
-  **explicit persisted bot rate only** (`manualUsdtRateToman`, with optional
-  `usdtAgentRateToman`); it never loads private configuration or queries a
-  price service. Reports distinguish normal/agent rate availability without
-  emitting rates. A valid address without any usable settings rate is not
+  **one explicit persisted bot rate only** (`manualUsdtRateToman`) for every
+  account; retired agent overrides are ignored. It never loads private
+  configuration or queries a price service. The `usdt_rate` finding reports
+  shared availability without emitting its value. A valid address without any usable settings rate is not
   offerable. An explicitly invalid rate remains a configuration finding;
   valid TRX and other methods keep their own independent availability.
 - Report signals distinguish `potentially_offerable`,

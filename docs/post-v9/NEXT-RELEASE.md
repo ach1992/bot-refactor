@@ -1,5 +1,7 @@
 # RC12 release scope and delivery contract
 
+**Post-RC12 development amendment:** the [2026-10-28 Owner decision](https://github.com/ach1992/bot-refactor/issues/26#issuecomment-6453867569) removes the optional agent USDT override. Current development uses only `manualUsdtRateToman` for all accounts and both manual USDT/NOWPayments; old issued quotes are preserved. See the [shared-rate contract](USDT-RATE-SETTINGS.md). The RC12 scope below describes the published immutable package, not this later candidate.
+
 [RC12](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.12) is published as a source-only prerelease. Its runtime and manifest identify the reviewed source `ecd30ba9192ed374703118a6c131be8809cc7b06`, integrated through [PR #87](https://github.com/ach1992/bot-refactor/pull/87). This document describes that release scope; publication does not establish installation or operational acceptance. Published RC10/RC11 and frozen V0–V9 evidence remain immutable.
 Owner scope is recorded in #26 comments
 [6433839924](https://github.com/ach1992/bot-refactor/issues/26#issuecomment-6433839924),

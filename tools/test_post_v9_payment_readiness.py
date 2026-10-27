@@ -408,7 +408,7 @@ def main() -> dict:
             ('usdt_cleared_explicit_settings_rate',
              {'manualUsdtWalletBEP20':addr,'manualUsdtRateToman':''},False,False),
             ('usdt_agent_only_settings_rate',
-             {'manualUsdtWalletBEP20':addr,'usdtAgentRateToman':'2000'},True,False),
+             {'manualUsdtWalletBEP20':addr,'usdtAgentRateToman':'2000'},False,False),
         )
         for label, money_keys, expected, _ in source_cases:
             require(source_usdt(money_keys) is expected,'source_'+label)
@@ -432,17 +432,18 @@ def main() -> dict:
         for label,money_keys,normal,agent in (
             ('normal_shared_rate_audiences',{'manualUsdtWalletBEP20':addr,
              'manualUsdtRateToman':'1000'},True,True),
-            ('invalid_agent_rate_only_agent_unavailable',{'manualUsdtWalletBEP20':addr,
-             'manualUsdtRateToman':'1000','usdtAgentRateToman':'invalid'},True,False),
+            ('retired_invalid_agent_rate_ignored',{'manualUsdtWalletBEP20':addr,
+             'manualUsdtRateToman':'1000','usdtAgentRateToman':'invalid'},True,True),
             ('explicit_agent_rate_without_normal',{'manualUsdtWalletBEP20':addr,
-             'usdtAgentRateToman':'2000'},False,True),
+             'usdtAgentRateToman':'2000'},False,False),
         ):
             seed(d,only_usdt,money_keys)
             code,result,raw=report_run(d)
-            require(code==0,'rate_audience_exit_'+label)
-            for audience,configured in (('normal',normal),('agent',agent)):
-                require(has(result,'usdt_rate_'+audience,'PASS' if configured else 'WARN'),
-                        'rate_audience_flag_'+label+'_'+audience)
+            require((code==0)==normal,'shared_rate_exit_'+label)
+            require(normal==agent,'single_rate_contract_'+label)
+            require(has(result,'usdt_rate','PASS' if normal else 'WARN'),'shared_rate_flag_'+label)
+            require(not any(check['id'].startswith('usdt_rate_') for check in result['checks']),
+                    'no_separate_audience_rates_'+label)
             require(addr not in raw and '2000' not in raw,'rate_privacy_'+label)
             cases.append(label)
         for label,money_keys,expected in (

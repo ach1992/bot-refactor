@@ -736,9 +736,6 @@ if (is_string($data??null) && str_starts_with($data,'changePaymentKeys')) {
         case "manualUsdtRateToman":
             $gate = \achbotMessage('bot.bot.change_config_remark_type.gate.e152f81bc6');
             break;
-        case "usdtAgentRateToman":
-            $gate = \achbotMessage('bot.bot.change_config_remark_type.gate.ce14a45981');
-            break;
         case "manualTrxRateToman":
             $gate = \achbotMessage('bot.bot.change_config_remark_type.gate.4f73f2daea');
             break;

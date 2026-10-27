@@ -11,6 +11,9 @@ def runtime_paths():
     paths=command('git','ls-files','*.php').decode().splitlines()
     return [p for p in paths if not p.startswith(('tools/','tests/','phpqrcode/','messages/')) and p!='baseInfo.example.php']
 STYLE_BASELINE='7faac9b067f8a171e5e26d6aea5aaf9f4088a3e7'
+RELOCATION_SOURCE='ecd30ba9192ed374703118a6c131be8809cc7b06'
+def relocation_source(path):
+    return command('git','show',RELOCATION_SOURCE+':'+path)
 def style_source_reconstruction():
     source=json.loads((ROOT/'tools/text_catalog_style_source.json').read_text())
     style=json.loads((ROOT/'tools/text_catalog_style_amendments.json').read_text())
@@ -26,7 +29,7 @@ def style_source_reconstruction():
           'retired implementation token/source coverage drift')
     restored={}
     for path in allowed:
-        current=(ROOT/path).read_bytes()
+        current=relocation_source(path)
         hashes=source['source_sha256'][path]
         baseline=command('git','show',STYLE_BASELINE+':'+path)
         check(hashlib.sha256(current).hexdigest()==hashes['after'] and
@@ -56,7 +59,7 @@ def main():
     restored,style_source,style=style_source_reconstruction()
     reverse=0
     for path,record in inventory['files'].items():
-        current=restored.get(path,(ROOT/path).read_bytes())
+        current=restored.get(path,relocation_source(path))
         relevant=[e for e in followups if e['path']==path]
         for edit in reversed(relevant):
             before=edit['original'].encode();after=edit['replacement'].encode()
@@ -140,9 +143,9 @@ def main():
     check(native['status']=='PASS','pre-style byte and current exact-presentation acceptance')
     presentation=json.loads(command('python3','tools/test_text_catalog_style.py'))
     check(presentation.get('status')=='PASS' and presentation.get('editable_files')==2
-          and presentation.get('current_keys')==2526 and presentation.get('retired_keys')==23
+          and presentation.get('current_keys')==2523 and presentation.get('retired_keys')==23
           and presentation.get('added_keys')==1 and presentation.get('logical_topics')==25
-          and presentation.get('numeric_template_changes')==24
+          and presentation.get('numeric_template_changes')==23
           and presentation.get('adjacent_emoji_violations')==0
           and presentation.get('parameter_exception_count')==3
           and presentation.get('semantic_label_icon_cases')==12
@@ -178,5 +181,5 @@ def main():
       'catalog_keys':len(entries),'runtime_references':len(refs),'static_ui_violations':len(violations),'ascii_ui_violations':len(ascii_ui),'ascii_audit_negative_controls':8,'migrated_machine_fields_or_sql_arguments':0,
       'authorized_source_dependency_files':len(amendments['source_dependencies']),'authorized_bootstrap_flow_changes':1,'approved_public_copy_corrections':len(amendments['approved_copy']),
       'direct_http_guards':len(guarded),'editable_catalog_files':2,'logical_topics':25,
-      'current_authorized_source_edits':len(style_source['edits']),'retired_parser_tokens':len(style_source['retired_keys']),'presentation':presentation,'native':native},ensure_ascii=False))
+      'current_authorized_source_edits':len(style_source['edits']),'retired_parser_tokens':len(style_source['retired_keys']),'relocation_source_ref':RELOCATION_SOURCE,'presentation':presentation,'native':native},ensure_ascii=False))
 if __name__=='__main__':main()
