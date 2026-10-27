@@ -1457,7 +1457,7 @@ def main():
         inbox=run_php(work,env,stage,dict(admin_identity,
             callback_data='npReviewInbox'))
         cards=[e for e in inbox['events'] if e['name']=='editText']
-        if (len(cards)!=1 or 'مرکز بررسی پرداخت' not in cards[0]['args'][1]
+        if (len(cards)!=1 or 'شواهد تخصصی NOWPayments' not in cards[0]['args'][1]
             or ('npReviewCase_'+str(admin_case)) not in cards[0]['args'][2]):
             raise RuntimeError('Admin inbox has no actionable case selector')
         details=run_php(work,env,stage,dict(admin_identity,
