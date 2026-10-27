@@ -65,17 +65,39 @@ function getOrderTrafficInfo($serverType, $server_id, $remark, $uuid, $inbound_i
         'found' => false, 'enable' => false, 'leftgb' => "⚠️",
         'netType' => null, 'security' => null,
     ];
+    if ($serverType==='pasarguard') $result+=['uncertain'=>true,'status'=>null];
     if (!achbotSupportsAccount($serverType,$inbound_id)) return $result;
 
     $info = achbotProviderUser($server_id, $remark);
     if (!is_object($info) || !isset($info->username)) return $result;
 
+    if ($serverType==='pasarguard') {
+        if (!in_array($info->status??null,['active','disabled','expired','limited'],true)) return $result;
+        $result['uncertain']=false;$result['status']=$info->status;
+    }
     $result['found'] = true;
     $result['enable'] = ($info->status == 'active');
     $total = $info->data_limit ?? 0;
     $used = $info->used_traffic ?? 0;
     $result['leftgb'] = $serverType==='pasarguard' && $total===0 ? 'نامحدود' : round(($total - $used) / 1073741824, 2) . ' GB';
     return $result;
+}
+
+
+function getOrderStatusText(array $traffic,string $serverType,array $buttons,?string $missing=null): string {
+    if ($serverType==='pasarguard') {
+        if (($traffic['uncertain']??true)===true || ($traffic['found']??false)!==true)
+            return '⚠️ وضعیت اشتراک قابل تأیید نیست؛ نتیجه در حال بررسی است.';
+        return match($traffic['status']??null) {
+            'active'=>$buttons['active'],
+            'disabled'=>$buttons['deactive'],
+            'expired'=>'⏰ مدت اشتراک تمام شده است.',
+            'limited'=>'🔋 حجم اشتراک تمام شده است.',
+            default=>'⚠️ وضعیت اشتراک قابل تأیید نیست؛ نتیجه در حال بررسی است.'
+        };
+    }
+    if ($missing!==null && !($traffic['found']??false)) return $missing;
+    return ($traffic['enable']??false)?$buttons['active']:$buttons['deactive'];
 }
 
 
@@ -177,15 +199,19 @@ function getUserOrderDetailKeys($id, $offset = 0){
 
     $leftgb      = $traffic['leftgb'] ?? "⚠️";
     $enableBool  = $traffic['enable'] ?? false;
-    $enableText  = $enableBool ? $buttonValues['active'] : $buttonValues['deactive'];
+    $uncertain=($traffic['uncertain']??false)===true;
+    $canToggle=$serverType!=='pasarguard' || in_array($traffic['status']??null,['active','disabled'],true);
+    $enableText=getOrderStatusText($traffic,$serverType,$buttonValues);
 
-    $presentation=achbotOrderPresentation($GLOBALS['connection'],$order,$server,$botState);
+    $presentation=$uncertain?['config_html'=>'','subscription_html'=>'','backup_html'=>'']:
+        achbotOrderPresentation($GLOBALS['connection'],$order,$server,$botState);
     $configLinks=$presentation['config_html'];
     $subLink=$presentation['subscription_html'];
     $backup=$presentation['backup_html'];
 
     $msg = buildConfigMessage($enableText, $remark, $configLinks, $subLink, $backup, $serverType);
     if ($presentation['notice_html'] !== '') $msg .= "\n\n" . $presentation['notice_html'];
+    if ($uncertain && !str_contains($msg,$enableText)) $msg.="\n\n".$enableText;
 
     // ---- Admin Keyboard ----
     $keyboard = [];
@@ -227,11 +253,11 @@ function getUserOrderDetailKeys($id, $offset = 0){
 
     // Physical relocation is held by Issue #31 until cross-panel transfer
     // and failure recovery are proved; never expose the DB-only legacy route.
-    $keyboard[] = [
+    if (!$uncertain) $keyboard[] = [
         ['text' => $buttonValues['change_plan'], 'callback_data' => "changePlan_{$id}"],
     ];
 
-    if (($botState['renewAutoState'] ?? "off") == "on") {
+    if (!$uncertain && ($botState['renewAutoState'] ?? "off") == "on") {
         $keyboard[] = [[
             'text' => (($autoRenew ?? 'off') == "on" ? "🟢 تمدید خودکار روشن" : "🔴 تمدید خودکار خاموش"),
             'callback_data' => "adminToggleAutoRenew{$order['id']}"
@@ -249,16 +275,18 @@ function getUserOrderDetailKeys($id, $offset = 0){
     }*/
 
     // enable/disable + delete
-    $keyboard[] = [
-        [
-            'text' => ($enableBool ? $buttonValues['disable_config'] : $buttonValues['enable_config']),
-            'callback_data' => "changeUserConfigState" . $order['id']
-        ],
-        [
-            'text' => $buttonValues['delete_config'],
-            'callback_data' => "delUserConfig" . $order['id']
-        ],
-    ];
+    if (!$uncertain) {
+        $stateActions=[];
+        if ($canToggle) $stateActions[]=[
+            'text'=>($enableBool?$buttonValues['disable_config']:$buttonValues['enable_config']),
+            'callback_data'=>"changeUserConfigState".$order['id']
+        ];
+        $stateActions[]=[
+            'text'=>$buttonValues['delete_config'],
+            'callback_data'=>"delUserConfig".$order['id']
+        ];
+        $keyboard[]=$stateActions;
+    }
 
     $keyboard[] = [[
         'text' => $buttonValues['back_button'],
@@ -306,17 +334,19 @@ function getOrderDetailKeys($from_id, $id, $offset = 0){
     $enableBool = $traffic['enable'] ?? false;
     $leftgb     = $traffic['leftgb'] ?? "⚠️";
 
-    $enableText = $found
-        ? ($enableBool ? $buttonValues['active'] : $buttonValues['deactive'])
-        : $mainValues['config_doesnt_exist'];
+    $uncertain=($traffic['uncertain']??false)===true;
+    $canToggle=$serverType!=='pasarguard' || in_array($traffic['status']??null,['active','disabled'],true);
+    $enableText=getOrderStatusText($traffic,$serverType,$buttonValues,$mainValues['config_doesnt_exist']);
 
-    $presentation=achbotOrderPresentation($GLOBALS['connection'],$order,$server,$botState);
+    $presentation=$uncertain?['config_html'=>'','subscription_html'=>'','backup_html'=>'']:
+        achbotOrderPresentation($GLOBALS['connection'],$order,$server,$botState);
     $configLinks=$presentation['config_html'];
     $subLink=$presentation['subscription_html'];
     $backup=$presentation['backup_html'];
 
     $msg = buildConfigMessage($enableText, $remark, $configLinks, $subLink, $backup, $serverType);
     if ($presentation['notice_html'] !== '') $msg .= "\n\n" . $presentation['notice_html'];
+    if ($uncertain && !str_contains($msg,$enableText)) $msg.="\n\n".$enableText;
 
     // ---- User Keyboard ----
     $keyboard = [];
@@ -350,7 +380,7 @@ function getOrderDetailKeys($from_id, $id, $offset = 0){
         ];
     }
 
-    if (($botState['renewAutoState'] ?? "off") == "on") {
+    if (!$uncertain && ($botState['renewAutoState'] ?? "off") == "on") {
         $keyboard[] = [[
             'text' => (($autoRenew ?? 'off') == "on" ? "🟢 تمدید خودکار روشن" : "🔴 تمدید خودکار خاموش"),
             'callback_data' => "toggleAutoRenew{$id}"
@@ -431,7 +461,7 @@ function getOrderDetailKeys($from_id, $id, $offset = 0){
             $flatButtons[] = ['text' => $buttonValues['qr_sub'], 'callback_data' => "showQrSub{$id}"];
 
         // همکار enable/disable
-        if (!empty($userInfo['is_agent']) && (int)$userInfo['is_agent'] == 1) {
+        if ($canToggle && ($serverType!=='pasarguard' || $agentBought == true) && !empty($userInfo['is_agent']) && (int)$userInfo['is_agent'] == 1) {
             $flatButtons[] = [
                 'text' => ($enableBool ? $buttonValues['disable_config'] : $buttonValues['enable_config']),
                 'callback_data' => "agentChangeUserConfigState{$id}"

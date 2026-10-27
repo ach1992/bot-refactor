@@ -65,14 +65,22 @@ $q=$db->prepare('SELECT * FROM users WHERE userid=?');$q->bind_param('i',$from_i
 $cancelKey='{}';$buttonValues=['cancel'=>'cancel'];
 $out=['handled'=>achbotHandleProviderAdmin(),'events'=>$GLOBALS['events']];break;
 case 'view':
+case 'adminview':
+case 'traffic':
 case 'qr':
 $from_id=1001;$admin=9001;$userInfo=['is_agent'=>1,'step'=>'none'];$showIndexes=[];$botUrl='https://bot.example.invalid/';
 $buttonValues=array_fill_keys($spec['buttons'],'fixture-label');
+$buttonValues['active']='CONFIRMED_ACTIVE_FIXTURE';$buttonValues['deactive']='CONFIRMED_DISABLED_FIXTURE';
 $mainValues=['config_details_message'=>"STATE\nNAME\nCONNECT-LINK\nSUB-LINK",'config_doesnt_exist'=>'missing'];
+if (!empty($spec['omit_status_template'])) $mainValues['config_details_message']="NAME\nCONNECT-LINK\nSUB-LINK";
 $botState=array_fill_keys(['renewAutoState','sellState','renewAccountState','switchLocationState','increaseVolumeState','increaseTimeState','renewConfigLinkState','updateConfigLinkState','qrConfigState','qrSubState','subLinkState','configLinkState'],'on');
-if ($spec['op']==='view') {
+if (in_array($spec['op'],['view','adminview','traffic'],true)) {
  require $argv[1].'/src/Subscription/AccountDetails.php';
- $out=\AchBot\Subscription\AccountDetails\getOrderDetailKeys(1001,91);
+ $out=match($spec['op']) {
+  'view'=>\AchBot\Subscription\AccountDetails\getOrderDetailKeys(1001,91),
+  'adminview'=>\AchBot\Subscription\AccountDetails\getUserOrderDetailKeys(91),
+  'traffic'=>\AchBot\Subscription\AccountDetails\getOrderTrafficInfo('pasarguard',2,'fixture_user','native-placeholder',0)
+ };
 } else {
  $data=$spec['callback'];
  require $argv[1].'/src/Finance/Routes/Checkout.php';
@@ -132,6 +140,11 @@ def stale_observation(self):
  server=self.server
  if self.headers.get('X-Api-Key')=='fixture-rotated-key' and getattr(server,'allow_rotated',False):
   self.headers.replace_header('X-Api-Key','fixture-private-key')
+ if self.command=='GET' and urlsplit(self.path).path=='/api/user/by-id/17' and server.mode=='read_timeout':
+  server.trace.append(('GET',self.path,None))
+  threading.Event().wait(11)
+  self.close_connection=True
+  return
  if self.command=='GET' and urlsplit(self.path).path=='/api/user/by-id/17' and getattr(server,'capture_stale_once',False):
   server.capture_stale_once=False
   value=copy.deepcopy(server.user)
@@ -186,6 +199,47 @@ def main():
   yes(qr['qr_payloads']==['https://sub.example.invalid/token'],'actual_pg_subscription_QR_uses_native_url')
   qr=call('qr',callback='showQrConfig91',buttons=buttons)['out']
   yes(len(qr['qr_payloads'])==2 and qr['qr_payloads'][0].startswith('vless://native-identity'),'actual_pg_config_QR_uses_native_links')
+  # Native status is distinct from failed observation. Real timeouts use the
+  # client's unchanged10-second cURL limit on the task-owned loopback fixture.
+  sql("UPDATE orders_list SET agent_bought=1 WHERE id=91")
+  original_status=server.user['status']
+  status_labels={'active':'CONFIRMED_ACTIVE_FIXTURE','disabled':'CONFIRMED_DISABLED_FIXTURE',
+    'expired':'مدت اشتراک تمام','limited':'حجم اشتراک تمام'}
+  for status,label in status_labels.items():
+   server.user['status']=status
+   traffic=call('traffic',buttons=buttons)['out']
+   yes(traffic['uncertain'] is False and traffic['found'] is True and traffic['status']==status,'confirmed_native_'+status+'_traffic_semantics')
+   for audience in ['view','adminview']:
+    state_before=sql("SELECT * FROM provider_accounts WHERE order_id=91;SELECT * FROM orders_list WHERE id=91")
+    writes=server.write_count
+    result=call(audience,buttons=buttons)['out']
+    yes(label in result['msg'],'confirmed_native_'+status+'_'+audience+'_status_copy')
+    callback='agentChangeUserConfigState91' if audience=='view' else 'changeUserConfigState91'
+    yes((callback in result['keyboard'])==(status in ['active','disabled']) and server.write_count==writes and sql("SELECT * FROM provider_accounts WHERE order_id=91;SELECT * FROM orders_list WHERE id=91")==state_before,'confirmed_native_'+status+'_'+audience+'_eligible_controls_without_writes')
+  server.user['status']=original_status
+  dangerous=['renewAccountAsk91','increaseAVolume91','increaseADay91','switchLocation91','changePlan_91',
+   'changAccountConnectionLink91','updateConfigConnectionLink91','showQrConfig91','showQrSub91',
+   'deleteMyConfig91','changeUserConfigState91','agentChangeUserConfigState91','delUserConfig91',
+   'toggleAutoRenew91','adminToggleAutoRenew91']
+  for mode in ['read_timeout','foreign_created','held_mutating','http_404']:
+   server.mode='ok' if mode=='held_mutating' else mode
+   if mode=='held_mutating':sql("UPDATE provider_accounts SET state='mutating' WHERE order_id=91")
+   traffic=call('traffic',buttons=buttons)['out']
+   yes(traffic['uncertain'] is True and traffic['found'] is False,mode+'_traffic_reports_uncertainty')
+   for audience in ['view','adminview']:
+    state_before=sql("SELECT * FROM provider_accounts WHERE order_id=91;SELECT * FROM orders_list WHERE id=91")
+    writes=server.write_count;requests=len(server.trace)
+    result=call(audience,buttons=buttons)['out'];shown=result['msg']+result['keyboard']
+    yes('قابل تأیید نیست' in result['msg'] and 'در حال بررسی' in result['msg'] and 'missing' not in shown and 'CONFIRMED_' not in shown and 'pg_' not in shown and 'pasarguard' not in shown.lower(),mode+'_'+audience+'_truthful_private_copy')
+    yes(not any(action in result['keyboard'] for action in dangerous),mode+'_'+audience+'_no_unconfirmed_actions')
+    yes(server.write_count==writes and sql("SELECT * FROM provider_accounts WHERE order_id=91;SELECT * FROM orders_list WHERE id=91")==state_before and (mode!='held_mutating' or len(server.trace)==requests),mode+'_'+audience+'_preserves_rows_and_no_external_writes')
+   if mode=='held_mutating':sql("UPDATE provider_accounts SET state='linked' WHERE order_id=91")
+  server.mode='foreign_created'
+  for audience in ['view','adminview']:
+   result=call(audience,buttons=buttons,omit_status_template=True)['out']
+   yes('قابل تأیید نیست' in result['msg'],'uncertainty_notice_survives_custom_statusless_'+audience+'_template')
+  server.mode='ok'
+  sql("UPDATE orders_list SET agent_bought=0 WHERE id=91")
   sql("INSERT INTO users(userid,name,username,refcode,wallet,date,isAdmin,first_start,is_agent) VALUES(1002,'Foreign','foreign','0',50000,'1700000000',0,'sent',1)")
   for provider in ['marzban','pasarguard']:
    sql("UPDATE server_config SET type='"+provider+"' WHERE id=2")
