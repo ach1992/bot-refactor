@@ -150,10 +150,14 @@ def setup_case(w,e,route,actor,n):
     if route[0]=='renewal':typ='RENEW_ACCOUNT'
     elif route[0]=='day':typ='INCREASE_DAY_'+str(oid)+'_901'
     else:typ='INCREASE_VOLUME_'+str(oid)+'_902'
+    # These races start from valid NEW quotes; retain the exact existing
+    # debit/provider-count expectations after a competing invoice rewrite.
+    volume=8 if route[0]=='volume' else 0
+    days=7 if route[0]=='day' else 0
     hash_='f1route'+str(n)
     sql(w,e,("INSERT INTO pays(hash_id,user_id,type,plan_id,server_id,order_id,"
              "volume,day,price,request_date,state)"
-             f" VALUES('{hash_}',{actor},'{typ}',7,2,{oid},0,0,100000,"
+             f" VALUES('{hash_}',{actor},'{typ}',7,2,{oid},{volume},{days},100000,"
              "UNIX_TIMESTAMP(),'pending')"))
     return hash_,typ,oid
 

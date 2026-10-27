@@ -55,8 +55,11 @@ def main():
             VALUES (1001,'synthetic-token','',7,2,0,'synthetic','synthetic-uuid',
                     'vless',2000000000,'[]',100,1,'synthetic')''')
         oid=int(sql(work,env,'SELECT id FROM orders_list WHERE remark="synthetic" LIMIT 1').strip())
-        addon_day=sql(work,env,'SELECT id FROM increase_day ORDER BY id LIMIT 1').strip()
-        addon_volume=sql(work,env,'SELECT id FROM increase_plan ORDER BY id LIMIT 1').strip()
+        # Valid NEW quotes carry their issued whole quantity. Do not depend
+        # on empty historical add-on tables and silently skip this boundary.
+        addon_day='9970';addon_volume='9971'
+        sql(work,env,'INSERT INTO increase_day(id,volume,price) VALUES(9970,7,100)')
+        sql(work,env,'INSERT INTO increase_plan(id,volume,price) VALUES(9971,8,100)')
         subjects=[
             ('marzban_purchase',dict(type='BUY_SUB',plan_id=7,server_id=2),True),
             ('marzban_renew',dict(type='RENEW_ACCOUNT',plan_id=7,order_id=oid,user_id=1001),True),
@@ -87,12 +90,30 @@ def main():
             ('missing_extension',dict(type='INCREASE_VOLUME_999_999',plan_id=7,order_id=999),False),
             ('unknown_payment_type',dict(type='OTHER_PANEL',plan_id=7),False),
         ]
-        if addon_day:
-            subjects.append(('marzban_day_extension',
-                dict(type=f'INCREASE_DAY_{oid}_{addon_day}',plan_id=7,order_id=oid,user_id=1001),True))
-        if addon_volume:
-            subjects.append(('marzban_volume_extension',
-                dict(type=f'INCREASE_VOLUME_{oid}_{addon_volume}',plan_id=7,order_id=oid,user_id=1001),True))
+        pinned=[]
+        for kind,sku,field,other,units,limit in (
+            ('DAY',addon_day,'day','volume',7,36500),
+            ('VOLUME',addon_volume,'volume','day',8,2147483647),
+        ):
+            quote=dict(type=f'INCREASE_{kind}_{oid}_{sku}',plan_id=7,
+                       server_id=2,order_id=oid,user_id=1001,
+                       **{field:units,other:0})
+            pinned.append((kind,sku,quote))
+            subjects.append(('marzban_'+kind.lower()+'_extension',quote,True))
+            # Legacy zero/NULL/missing or inconsistent quantities cannot be
+            # inferred from a mutable SKU, even when the SKU is valid today.
+            for label,values in (
+                ('missing',{}),('null',{field:None,other:0}),
+                ('zero',{field:0,other:0}),('negative',{field:-1,other:0}),
+                ('fractional',{field:1.5,other:0}),
+                ('overflow',{field:limit+1,other:0}),
+                ('other_axis',{field:units,other:1}),
+                ('other_null',{field:units,other:None}),
+                ('other_missing',{field:units}),
+            ):
+                invalid={k:v for k,v in quote.items() if k not in (field,other)}
+                invalid.update(values)
+                subjects.append(('legacy_'+kind.lower()+'_'+label,invalid,False))
         baseline=purchase.snapshot(work,env,purchase.SIDE[1])
         for name,pay,want in subjects:
             got=evaluate(work,env,pay)
@@ -100,6 +121,22 @@ def main():
             if purchase.snapshot(work,env,purchase.SIDE[1])!=baseline:
                 raise RuntimeError('Payment preflight mutated DB: '+name)
             observations.append({'case':name,'expected_supported':want,'pass':True})
+        # Issued pays units stay authoritative after administrator SKU
+        # edits/deletion; no current catalog value can rewrite the quote.
+        for kind,sku,quote in pinned:
+            table='increase_day' if kind=='DAY' else 'increase_plan'
+            for change in ('changed','deleted'):
+                if change=='changed':
+                    sql(work,env,f'UPDATE {table} SET volume=99,price=777 WHERE id={sku}')
+                else:
+                    sql(work,env,f'DELETE FROM {table} WHERE id={sku}')
+                before=purchase.snapshot(work,env,purchase.SIDE[1])
+                if not evaluate(work,env,quote):
+                    raise RuntimeError('Pinned quote lost after SKU '+change+' '+kind)
+                if purchase.snapshot(work,env,purchase.SIDE[1])!=before:
+                    raise RuntimeError('Pinned subject preflight mutated SQL')
+                observations.append({'case':'pinned_'+kind.lower()+'_sku_'+change,
+                                     'expected_supported':True,'pass':True})
         for panel in ('sanaei','alireza','normal','mystery'):
             sql(work,env,"UPDATE server_config SET type='"+panel+"' WHERE id=2")
             if evaluate(work,env,dict(type='BUY_SUB',plan_id=7,server_id=2)):

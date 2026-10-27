@@ -757,12 +757,12 @@ def run_php(work, env, stage, spec, db=DB):
         result['protected_diagnostic']=p.stderr.decode('utf-8')
     return result
 
-def seed_payment(work,env,name,type_name,plan=0,server=0,payid=None):
+def seed_payment(work,env,name,type_name,plan=0,server=0,payid=None,*,volume=0,day=0):
     invoice=payid if payid is not None else 'invoice-'+name
     query="""INSERT INTO pays
     (hash_id,payid,user_id,type,plan_id,server_id,volume,day,price,request_date,state)
-    VALUES ('{}','{}',1001,'{}',{},{},0,0,100,{},'pending')""".format(
-       name,invoice,type_name,plan,server,int(clock.time()))
+    VALUES ('{}','{}',1001,'{}',{},{},{},{},100,{},'pending')""".format(
+       name,invoice,type_name,plan,server,int(volume),int(day),int(clock.time()))
     sql(work,env,query)
     return invoice
 
@@ -2690,7 +2690,10 @@ def main():
             ('sql_throwing','nextpay','sql_fault',False),
             ('sql_permissive','zarinpal','sql_fault',True),
             ('concurrent_order_drift','zarinpal','stale',False),
+            ('sku_changed','nextpay','sku_changed',False),
+            ('sku_deleted','zarinpal','sku_deleted',False),
         ):
+            settles=mode in ('success','sku_changed','sku_deleted')
             name='r7-hosted-day-'+label
             sql(work,env,"INSERT INTO orders_list "
                 "(userid,token,transid,fileid,server_id,inbound_id,remark,uuid,"
@@ -2700,8 +2703,13 @@ def main():
             order_id=int(sql(work,env,
                 f"SELECT id FROM orders_list WHERE uuid='r7-{label}' ORDER BY id DESC LIMIT 1"))
             seed_payment(work,env,name,f'INCREASE_DAY_{order_id}_9971',
-                         7,2,name+'-invoice')
+                         7,2,name+'-invoice',day=7)
             sql(work,env,f"UPDATE pays SET order_id={order_id} WHERE hash_id='{name}'")
+            # Issued day=7/volume=0 and price=100 survive catalog changes.
+            if mode=='sku_changed':
+                sql(work,env,'UPDATE increase_day SET volume=99,price=777 WHERE id=9971')
+            elif mode=='sku_deleted':
+                sql(work,env,'DELETE FROM increase_day WHERE id=9971')
             sql(work,env,
                 "INSERT INTO payment_attempts "
                 "(pay_row_id,provider,order_hash,provider_reference,checkout_url,"
@@ -2722,27 +2730,29 @@ def main():
                     pay_row_id=payid,provider=provider,
                     marzban_edit_drift_order_id=order_id if mode=='stale' else 0,
                     mysqli_report_off=nonthrowing,
-                    expect_local_error=(mode!='success')))
+                    expect_local_error=not settles))
             finally:
                 if mode=='sql_fault':
                     sql(work,env,'DROP TRIGGER achbot_r7_hosted_fail')
             completed=int(clock.time())
             outcome=[e['result'] for e in result['events'] if e['name']=='do_action_result']
-            expected_result='delivered' if mode=='success' else 'ambiguous'
+            expected_result='delivered' if settles else 'ambiguous'
             assert outcome==[expected_result],(name,outcome,result['events'])
             assert sql(work,env,f'SELECT state FROM pays WHERE id={payid}').strip()=='paid'
             attempt=sql(work,env,
                 f"SELECT stage,provider_status FROM payment_attempts WHERE pay_row_id={payid}").strip()
             assert attempt==(
-                'done	delivered' if mode=='success' else 'review	fulfillment_started'),(name,attempt)
+                'done	delivered' if settles else 'review	fulfillment_started'),(name,attempt)
             assert sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip()==wallet_before
-            assert int(sql(work,env,'SELECT COUNT(*) FROM increase_order'))==audit_before+(mode=='success')
+            assert int(sql(work,env,'SELECT COUNT(*) FROM increase_order'))==audit_before+settles
             expire=int(sql(work,env,
                 f'SELECT expire_date FROM orders_list WHERE id={order_id}'))
-            if mode=='success':
+            if settles:
                 # Marzban fake baseline: now+1 day; +7 days purchased.
                 assert started+8*86400<=expire<=completed+8*86400+2,(name,expire,started,completed)
                 assert expire!=2000000000+7*86400
+                assert sql(work,env,'SELECT amount,day FROM increase_order ORDER BY id DESC LIMIT 1').strip()=='100\t7'
+                assert sql(work,env,f'SELECT volume,day,price FROM pays WHERE id={payid}').strip()=='0\t7\t100'
             elif mode=='stale':
                 assert expire==2000000009,(name,expire)
             else:
@@ -2751,8 +2761,25 @@ def main():
                 pay_row_id=payid,provider=provider))
             assert not any('/api/user/' in url and
                 '/reset' not in url for url in replay['network_calls']),name
-            assert int(sql(work,env,'SELECT COUNT(*) FROM increase_order'))==audit_before+(mode=='success')
+            assert int(sql(work,env,'SELECT COUNT(*) FROM increase_order'))==audit_before+settles
             records.append(dict(case='r7_hosted_day_'+label+'_atomic_remote_absolute_no_replay',
+                                pass_=True,real_provider_requests=0))
+
+        for quantity in ('zero','null'):
+            name='legacy-hosted-day-'+quantity
+            seed_payment(work,env,name,f'INCREASE_DAY_{order_id}_9971',7,2)
+            sql(work,env,f"UPDATE pays SET order_id={order_id}"+
+                (',day=NULL' if quantity=='null' else '')+f" WHERE hash_id='{name}'")
+            legacy_id=int(sql(work,env,f"SELECT id FROM pays WHERE hash_id='{name}'"))
+            before=snapshot(work,env)
+            audit_before=sql(work,env,'SELECT COUNT(*) FROM increase_order')
+            result=run_php(work,env,stage,dict(route='do_action',get={},
+                pay_row_id=legacy_id,provider='nextpay'))
+            assert [e['result'] for e in result['events'] if e['name']=='do_action_result']==[False]
+            assert not result['network_calls'],(name,result)
+            verify_unchanged(work,env,before,name)
+            assert sql(work,env,'SELECT COUNT(*) FROM increase_order')==audit_before
+            records.append(dict(case='legacy_hosted_day_'+quantity+'_refused_before_claim',
                                 pass_=True,real_provider_requests=0))
 
         # Execute the ACTUAL Marzban PHP PUT adapter, not a substitute

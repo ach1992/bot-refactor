@@ -366,7 +366,7 @@ function decreaseServerCapacity(...$args){
         end($args)===true) throw new RuntimeException('fixture_unconfirmed_capacity_change');
 }
 function editMarzbanConfig(...$args){
-    $GLOBALS['events'][]=['name'=>'remote_edit'];
+    $GLOBALS['events'][]=['name'=>'remote_edit','change'=>$args[1]??null];
     $mode=$GLOBALS['spec']['remote_mode']??'success';
     if ($mode==='uncertain')
         throw new RuntimeException('fixture_remote_result_unknown');
@@ -749,15 +749,22 @@ def check():
         # Review F1/F2: execute actual service operator callback handlers, not
         # merely helper functions. Every remote action is a local spy.
         def service_pay(key,subject='BUY_SUB',method='bank_transfer',received=True,
-                        amount=100000,quantity=0):
+                        amount=100000,quantity=0,addon_units=None):
             seed(work,env,key,price=amount)
             # A physical Marzban username cannot be reused for two paid
             # identities on the same provider. Synthetic custom descriptions
             # must therefore differ per payment; real mismatches fail closed.
             description='fx_'+key if (key.startswith('custom') or
                 key.startswith('servicecallbackrace')) else 'fixture'
+            # Only explicitly NEW add-on scenarios get a pinned quantity.
+            # Wallet/legacy seed defaults remain zero and are tested below.
+            days,volume=30,10
+            if subject.startswith(('INCREASE_DAY_','INCREASE_VOLUME_')):
+                if addon_units is None:raise ValueError('explicit add-on quote required')
+                days,volume=((addon_units,0) if subject.startswith('INCREASE_DAY_')
+                             else (0,addon_units))
             query(work,env,"UPDATE pays SET type='"+subject+"',plan_id=1,"
-                  f"server_id=1,day=30,volume=10,agent_count={quantity},"
+                  f"server_id=1,day={days},volume={volume},agent_count={quantity},"
                   "description='"+description+"' "
                   "WHERE hash_id='"+key+"'")
             assert base(key,'claim',method)
@@ -1183,7 +1190,8 @@ def check():
             ('extension','approveIncreaseVolume','INCREASE_VOLUME_1_2','volume'),
         ]:
             prefix='safeguard'+guard
-            service_pay(prefix,subject=subject,method='manual_usdt')
+            service_pay(prefix,subject=subject,method='manual_usdt',
+                        addon_units={'renewal':None,'day':7,'volume':8}[guard])
             assert base(prefix,'service_guard',subject=guard) is True
             # The scheduled bank claim has priority only for a bank receipt;
             # its terminal state must never be accepted by a later operator.
@@ -1263,7 +1271,8 @@ def check():
             # Independent synthetic remote cases cannot share a stale local
             # expiry left by the preceding successful callback.
             query(work,env,f'UPDATE orders_list SET expire_date=2000000000 WHERE id={service_oid}')
-            service_pay(key,subject=subject,method='bank_transfer')
+            service_pay(key,subject=subject,method='bank_transfer',
+                        addon_units={'renewal':None,'day':7,'volume':8}[guard])
             query(work,env,"UPDATE pays SET plan_id=7,server_id=2,order_id="+str(service_oid)+
                   ",price=100 WHERE hash_id='"+key+"'")
             before=int(query(work,env,'SELECT COUNT(*) FROM increase_order'))
@@ -1298,7 +1307,7 @@ def check():
         ):
             oid=day_order(label,expiry=1000000000 if label=='walletdayexpired' else 2000000000)
             seed(work,env,label,price=100)
-            query(work,env,f"UPDATE pays SET type='INCREASE_DAY_{oid}_901',"
+            query(work,env,f"UPDATE pays SET type='INCREASE_DAY_{oid}_901',day=7,volume=0,"
                   f"plan_id=7,server_id=2,order_id={oid},price=100 WHERE hash_id='{label}'")
             wallet_before=int(query(work,env,'SELECT wallet FROM users WHERE userid=1001 LIMIT 1'))
             count_before=int(query(work,env,'SELECT COUNT(*) FROM increase_order'))
@@ -1418,6 +1427,87 @@ def check():
         cases.append('review_r7_wallet_renew_cross_panel_alias_denied_predebit')
         query(work,env,'UPDATE server_info SET panel_group_id=NULL WHERE id=2')
 
+        # Original zero/NULL add-ons are not retrospectively issued quotes.
+        # Exercise actual Core + wallet/operator routes and the bank claim:
+        # no new claim, debit, remote write, audit or automatic refund.
+        for kind,sku,field,prefix,approve in (
+            ('day',901,'day','payIncreaseDayWithWallet','approveIncreaseDay'),
+            ('volume',902,'volume','payIncreaseWithWallet','approveIncreaseVolume'),
+        ):
+            for quantity in ('zero','null'):
+                key='legacyaddon'+kind+quantity
+                oid=day_order(key,expiry=2000000000)
+                seed(work,env,key,price=100)
+                query(work,env,f"UPDATE pays SET type='INCREASE_{kind.upper()}_{oid}_{sku}',"
+                      f"plan_id=7,server_id=2,order_id={oid},day=0,volume=0,"
+                      "message_id=222,chat_id=9001 WHERE hash_id='"+key+"'")
+                if quantity=='null':
+                    query(work,env,f"UPDATE pays SET {field}=NULL WHERE hash_id='{key}'")
+                before=service_snapshot(key)
+                events=run_route(work,env,alias_driver,data=prefix+key,route='extension')
+                assert not any(e['name'] in ('remote_edit','order_insert') for e in events),(key,events)
+                assert service_snapshot(key)==before
+                cases.append('legacy_'+kind+'_'+quantity+'_wallet_preclaim_no_debit')
+                query(work,env,f"UPDATE pays SET state='have_sent' WHERE hash_id='{key}'")
+                before=service_snapshot(key)
+                events=run_route(work,env,alias_driver,data=approve+key,actor=9001,route='extension')
+                assert not any(e['name'] in ('remote_edit','order_insert') for e in events),(key,events)
+                assert service_snapshot(key)==before
+                assert base(key,'bank_auto_claim') is False
+                assert service_snapshot(key)==before
+                cases.append('legacy_'+kind+'_'+quantity+'_manual_and_bank_no_claim')
+                query(work,env,f"UPDATE pays SET state='processing' WHERE hash_id='{key}'")
+                before=service_snapshot(key)
+                events=run_route(work,env,alias_driver,data=approve+key,actor=9001,route='extension')
+                assert not any(e['name'] in ('remote_edit','order_insert') for e in events),(key,events)
+                assert service_snapshot(key)==before
+                assert int(query(work,env,f'SELECT expire_date FROM orders_list WHERE id={oid}'))==2000000000
+                cases.append('legacy_'+kind+'_'+quantity+'_claimed_stays_review_no_refund_replay')
+
+        # Source-real wallet/operator final callers must use the original
+        # issued units and price after a SKU edit or deletion, and replay
+        # must preserve the exact one-debit/one-audit/one-provider effect.
+        for method in ('wallet','manual'):
+            for kind,sku,field,units,prefix,approve in (
+                ('day',9951,'day',7,'payIncreaseDayWithWallet','approveIncreaseDay'),
+                ('volume',9952,'volume',8,'payIncreaseWithWallet','approveIncreaseVolume'),
+            ):
+                table='increase_day' if kind=='day' else 'increase_plan'
+                for change in ('changed','deleted'):
+                    key='pinned'+method+kind+change
+                    query(work,env,f'INSERT INTO {table}(id,volume,price) VALUES({sku},{units},100) '
+                          f'ON DUPLICATE KEY UPDATE volume={units},price=100')
+                    oid=day_order(key,expiry=2000000000)
+                    subject=f'INCREASE_{kind.upper()}_{oid}_{sku}'
+                    if method=='manual':
+                        service_pay(key,subject=subject,method='gift_card',amount=100,addon_units=units)
+                    else:
+                        seed(work,env,key,price=100)
+                    query(work,env,f"UPDATE pays SET type='{subject}',plan_id=7,server_id=2,"
+                          f"order_id={oid},day={units if kind=='day' else 0},"
+                          f"volume={units if kind=='volume' else 0},price=100 WHERE hash_id='{key}'")
+                    if change=='changed':
+                        query(work,env,f'UPDATE {table} SET volume=99,price=999 WHERE id={sku}')
+                    else:
+                        query(work,env,f'DELETE FROM {table} WHERE id={sku}')
+                    wallet_before=int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'))
+                    audit_before=int(query(work,env,'SELECT COUNT(*) FROM increase_order'))
+                    args=dict(data=(approve if method=='manual' else prefix)+key,route='extension',
+                              actor=9001 if method=='manual' else 1001,edit_order_id=oid)
+                    events=run_route(work,env,alias_driver,**args)
+                    edits=[e for e in events if e['name']=='remote_edit']
+                    assert len(edits)==1 and edits[0]['change']['plus_'+kind]==units,(key,events)
+                    assert query(work,env,f"SELECT state FROM pays WHERE hash_id='{key}'")==(
+                        'approved' if method=='manual' else 'paid_with_wallet'),(key,events)
+                    assert int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'))==wallet_before-(100 if method=='wallet' else 0)
+                    assert int(query(work,env,'SELECT COUNT(*) FROM increase_order'))==audit_before+1
+                    assert query(work,env,f"SELECT amount,{field} FROM increase_order WHERE remark='{key}' ORDER BY id DESC LIMIT 1")==f'100\t{units}'
+                    repeated=run_route(work,env,alias_driver,**args)
+                    assert not any(e['name']=='remote_edit' for e in repeated),(key,repeated)
+                    assert int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'))==wallet_before-(100 if method=='wallet' else 0)
+                    assert int(query(work,env,'SELECT COUNT(*) FROM increase_order'))==audit_before+1
+                    cases.append('pinned_'+method+'_'+kind+'_sku_'+change+'_original_units_price_no_replay')
+
         # Operator-reviewed day receipts use their own processing claim:
         # authenticated remote absolute expiry + local CAS + audit + approved
         # MUST commit atomically. No callback replay after unknown/SQL failure.
@@ -1431,7 +1521,7 @@ def check():
             ('manualdaysqlpermissive','success',1850000404,'processing',True,True),
         ):
             oid=day_order(label,expiry=1000000000 if label=='manualdayexpired' else 2000000000)
-            service_pay(label,subject=f'INCREASE_DAY_{oid}_901')
+            service_pay(label,subject=f'INCREASE_DAY_{oid}_901',addon_units=7)
             query(work,env,f"UPDATE pays SET plan_id=7,server_id=2,order_id={oid},price=100 "
                   f"WHERE hash_id='{label}'")
             audit_before=int(query(work,env,'SELECT COUNT(*) FROM increase_order'))
@@ -1907,7 +1997,8 @@ def check():
             ('oldvolwallet','extension','payIncreaseWithWallet','INCREASE_VOLUME_1_2')
         ]:
             seed(work,env,key)
-            query(work,env,f"UPDATE pays SET type='{pay_type}' WHERE hash_id='{key}'")
+            query(work,env,f"UPDATE pays SET type='{pay_type}',day={7 if route=='extension' and 'DAY' in pay_type else 0},"
+                  f"volume={8 if 'VOLUME' in pay_type else 0} WHERE hash_id='{key}'")
             assert base(key,'claim','manual_usdt')
             before=int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'))
             refused=run_route(work,env,route_driver,
@@ -1979,7 +2070,7 @@ def check():
                 f"SELECT id FROM orders_list WHERE remark='{remark}' ORDER BY id DESC LIMIT 1"))
             query(work,env,"INSERT INTO increase_day (id,volume,price) "
                 "VALUES (981,5,100) ON DUPLICATE KEY UPDATE volume=5,price=100")
-            query(work,env,f"UPDATE pays SET type='INCREASE_DAY_{oid}_981',"
+            query(work,env,f"UPDATE pays SET type='INCREASE_DAY_{oid}_981',day=5,volume=0,"
                 "server_id=1,plan_id=1,order_id="+str(oid)+","
                 "message_id=550,chat_id=9001,state='have_sent',"
                 "request_date=UNIX_TIMESTAMP()-120 WHERE hash_id='"+key+"'")
@@ -2036,6 +2127,7 @@ def check():
                 f"'{json.dumps({'remark':remark,'uuid':'fixture-uuid'},separators=(',',':'))}'"
                 if kind=='standard' else "description")
             query(work,env,f"UPDATE pays SET type='{typ}',state='have_sent',"
+                f"day={3 if kind=='day' else 0},volume={3 if kind=='volume' else 0},"
                 f"order_id={oid},server_id=2,plan_id=7,description={description} "
                 f"WHERE hash_id='{key}'")
             assert base(key,'bank_auto_claim') is True
@@ -2094,11 +2186,12 @@ def check():
             typ={'renew':'RENEW_ACCOUNT',
                  'day':f'INCREASE_DAY_{oid}_9921',
                  'volume':f'INCREASE_VOLUME_{oid}_9922'}[kind]
+            units={'renew':0,'day':5,'volume':4}[kind]
             query(work,env,f"UPDATE pays SET type='{typ}',state='have_sent',"
+                  f"day={units if kind=='day' else 0},volume={units if kind=='volume' else 0},"
                   f"server_id=2,plan_id=1,order_id={oid},price=100,"
                   "request_date=UNIX_TIMESTAMP()-120,message_id=550,chat_id=9001 "
                   f"WHERE hash_id='{key}'")
-            units={'renew':0,'day':5,'volume':4}[kind]
             return oid,{'edit_kind':kind,'server_id':2,'order_id':oid,
                         'remark':key,'units':units}
 
@@ -2126,6 +2219,29 @@ def check():
             assert real_bank(key,'auto_probe')=={'remote_calls':0}
             assert int(query(work,env,'SELECT COUNT(*) FROM increase_order'))==before_audit+1
             cases.append('review_r8_bank_grouped_'+kind+'_scheduler_verified_once')
+
+        for kind,table,sku,units in (
+            ('day','increase_day',9921,5),('volume','increase_plan',9922,4),
+        ):
+            for change in ('changed','deleted'):
+                query(work,env,f'INSERT INTO {table}(id,volume,price) VALUES({sku},{units},100) '
+                      f'ON DUPLICATE KEY UPDATE volume={units},price=100')
+                key='bankpinned'+kind+change
+                oid,args=alias_bank_case(key,kind)
+                if change=='changed':
+                    query(work,env,f'UPDATE {table} SET volume=99,price=999 WHERE id={sku}')
+                else:
+                    query(work,env,f'DELETE FROM {table} WHERE id={sku}')
+                before_wallet=query(work,env,'SELECT wallet FROM users WHERE userid=1001')
+                before_audit=int(query(work,env,'SELECT COUNT(*) FROM increase_order'))
+                assert real_bank(key,'auto_probe')=={'remote_calls':1},key
+                assert query(work,env,f"SELECT state FROM pays WHERE hash_id='{key}'")=='auto_cart_approved'
+                assert query(work,env,f"SELECT amount,{kind} FROM increase_order WHERE remark='{key}' ORDER BY id DESC LIMIT 1")==f'100\t{units}'
+                assert query(work,env,'SELECT wallet FROM users WHERE userid=1001')==before_wallet
+                assert int(query(work,env,'SELECT COUNT(*) FROM increase_order'))==before_audit+1
+                assert real_bank(key,'auto_probe')=={'remote_calls':0}
+                assert int(query(work,env,'SELECT COUNT(*) FROM increase_order'))==before_audit+1
+                cases.append('pinned_bank_scheduler_'+kind+'_sku_'+change+'_original_units_price_no_replay')
 
         # Cross-panel aliases cannot reach any remote operation, even when
         # the logical target and username appear otherwise legitimate.
@@ -2268,7 +2384,7 @@ def check():
                               remark+"' ORDER BY id DESC LIMIT 1"))
                 query(work,env,"INSERT INTO increase_day (id,volume,price) VALUES "
                     "(9903,1,100) ON DUPLICATE KEY UPDATE volume=1,price=100")
-                query(work,env,f"UPDATE pays SET type='INCREASE_DAY_{oid}_9903',"
+                query(work,env,f"UPDATE pays SET type='INCREASE_DAY_{oid}_9903',day=1,volume=0,"
                     f"state='have_sent',server_id=2,plan_id=7,order_id={oid} WHERE hash_id='{key}'")
                 assert base(key,'bank_auto_claim') is True
                 result=base(key,'finish_bank_service_edit',edit_kind='day',
@@ -2298,7 +2414,7 @@ def check():
         query(work,env,"INSERT INTO increase_day (id,volume,price) VALUES "
             "(9904,1,100) ON DUPLICATE KEY UPDATE volume=1,price=100")
         for key in ('bankracea','bankraceb'):
-            query(work,env,f"UPDATE pays SET type='INCREASE_DAY_{oid}_9904',"
+            query(work,env,f"UPDATE pays SET type='INCREASE_DAY_{oid}_9904',day=1,volume=0,"
                   f"state='have_sent',server_id=2,plan_id=7,order_id={oid} WHERE hash_id='{key}'")
             assert base(key,'bank_auto_claim') is True
         prior=int(query(work,env,"SELECT COUNT(*) FROM increase_order"))
@@ -2336,6 +2452,7 @@ def check():
             else:
                 kind='day';typ=f'INCREASE_DAY_{oid}_9904'
             query(work,env,f"UPDATE pays SET type='{typ}',"
+                  f"day={1 if kind=='day' else 0},volume={1 if kind=='volume' else 0},"
                   f"state='have_sent',server_id=2,plan_id=7,order_id={oid} "
                   f"WHERE hash_id='{key}'")
             assert base(key,'bank_auto_claim') is True
