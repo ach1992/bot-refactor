@@ -103,7 +103,7 @@ Unknown/custom/nonempty state must be retained. Retired TRON/WeSwap source audit
 also reject unknown files and active schedules; source search is not permission
 to delete installed data.
 
-The candidate runtime contains **135 files**, including the loader and all
+The candidate runtime contains **112 files**, including the loader and all
 25 message topics. Verify every file against the trusted exact-release manifest;
 a partial overlay without `messages/` is unusable. Source ZIPs contain no private
 configuration and perform no SQL installation or maintenance.

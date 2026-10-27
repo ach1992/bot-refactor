@@ -277,9 +277,21 @@ def main():
         purchases=json.loads(purchase_path.read_text())
         if not (purchases.get("complete") and purchases.get("scenarios")==8 and
                 purchases.get("php_sql_telegram_fake_provider_parity") and
+                purchases.get("sql_provider_wire_exact") is True and
+                purchases.get("telegram_comparison")=="exact_except_explicit_authorized_ui_text_fields" and
+                purchases.get("ui_projection_baseline")=="7faac9b067f8a171e5e26d6aea5aaf9f4088a3e7" and
+                purchases.get("verified_literal_style_pairs")==488 and
+                purchases.get("authorized_ui_field_differences")==3 and
+                purchases.get("ui_projection_negative_controls")==17 and
+                len(purchases.get("rejected_projection_mutations",[]))==17 and
+                {(f.get("case"),f.get("step"),f.get("event_name"),f.get("argument_index"),tuple(f.get("field_path",[])))
+                 for f in purchases.get("authorized_ui_fields",[])}=={
+                    ("admin_plan_price_edit",1,"sendMessage",0,()),
+                    ("interval_plan_manage",0,"editText",1,()),
+                    ("interval_plan_manage",0,"editText",2,("inline_keyboard",0,0,"text"))} and
                 len(purchases.get("changed_paid_nonpaid_source_contracts",[]))==9 and
                 purchases.get("new_source_contracts_mandatory_in_full_aggregate")):
-            raise RuntimeError("Unchanged V9 purchasing/UI parity incomplete")
+            raise RuntimeError("Current purchasing financial/protocol and authorized UI parity incomplete")
         transport_cli=subprocess.run(
             ["php","-n",str(ROOT/"tools/test_post_v9_telegram_log_privacy.php")],
             cwd=ROOT,check=True,timeout=20,capture_output=True,text=True)
