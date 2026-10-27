@@ -514,7 +514,11 @@ if (preg_match('/^selectFileId_(\\d+)_(\\d+)$/', (string) ($data ?? ''), $match)
     setUser();
 }
 
-if (preg_match('/^quickUserOrderDetails_(\d+)/', $data, $match)) {
+if (preg_match('/^quickUserOrderDetails_(\d+)$/D', $data, $match)) {
+    require_once __DIR__ . '/AccountDetails.php';
+    if (!\AchBot\Subscription\AccountDetails\canReadAdminOrderDetails()) {
+        alert(\achbotMessage('subscription.order_management.show_order_management_panel.alert.afe3a5b10e'));return;
+    }
     $orderId = intval($match[1]);
 
     $stmt = $connection->prepare("SELECT * FROM `orders_list` WHERE `id` = ?");

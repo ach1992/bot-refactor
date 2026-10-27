@@ -123,6 +123,12 @@ if (
 }
 
 if($data=="searchAgentConfig" || $data == "searchMyConfig" || $data=="searchUsersConfig"){
+    if ($data==='searchUsersConfig') {
+        require_once __DIR__ . '/AccountDetails.php';
+        if (!\AchBot\Subscription\AccountDetails\canReadAdminOrderDetails()) {
+            alert($mainValues['no_order_found'],true);return;
+        }
+    }
     //delMessage();
     sendMessage($mainValues['send_config_remark'],$cancelKey);
     setUser($data);
@@ -148,10 +154,15 @@ if(($userInfo['step'] == "searchAgentConfig" || $userInfo['step'] == "searchMyCo
     }
 }
 
-if(($userInfo['step'] == "searchUsersConfig" && $text != $buttonValues['cancel']) || preg_match('/^userOrderDetails(\d+)_(\d+)/',$data,$match)){
-    if(isset($data)){
+$adminOrderDetailCallback=preg_match('/^userOrderDetails(\d+)_(\d+)$/D',(string)($data??''),$adminOrderDetailMatch)===1;
+if(($userInfo['step'] == "searchUsersConfig" && $text != $buttonValues['cancel']) || $adminOrderDetailCallback){
+    require_once __DIR__ . '/AccountDetails.php';
+    if (!\AchBot\Subscription\AccountDetails\canReadAdminOrderDetails()) {
+        alert($mainValues['no_order_found'],true);return;
+    }
+    if($adminOrderDetailCallback){
         $stmt = $connection->prepare("SELECT * FROM `orders_list` WHERE `id` = ?");
-        $stmt->bind_param("i", $match[1]);
+        $stmt->bind_param("i", $adminOrderDetailMatch[1]);
     }
     else{
         sendMessage($mainValues['please_wait_message'], $removeKeyboard); 
@@ -166,11 +177,11 @@ if(($userInfo['step'] == "searchUsersConfig" && $text != $buttonValues['cancel']
     if($orderInfo->num_rows == 0) sendMessage($mainValues['no_order_found'], cancelSearchKeyboard()); 
     else {
         $orderId = $orderInfo->fetch_assoc()['id'];
-        $keys = getUserOrderDetailKeys($orderId, isset($data)?$match[2]:0);
+        $keys = getUserOrderDetailKeys($orderId, $adminOrderDetailCallback?$adminOrderDetailMatch[2]:0);
 
         if($keys == null) sendMessage($mainValues['no_order_found'], cancelSearchKeyboard()); 
         else{
-            if(!isset($data)) sendMessage($keys['msg'], $keys['keyboard'], "HTML");
+            if(!$adminOrderDetailCallback) sendMessage($keys['msg'], $keys['keyboard'], "HTML");
             else editText($message_id, $keys['msg'], $keys['keyboard'], "HTML");
             setUser();
         }

@@ -168,9 +168,29 @@ function buildUserProtocolButtons($protocol, $netType, $security, $rahgozar, $in
 }
 
 
+/** Resolve the current actor from persisted roles before disclosing account secrets. */
+function currentOrderDetailActor(): ?array {
+    global $connection, $from_id;
+    $actor=(int)($from_id??0);
+    if (!($connection instanceof \mysqli) || $actor<=0) return null;
+    try {
+        $stmt=$connection->prepare('SELECT userid,isAdmin,step FROM users WHERE userid=? LIMIT 2');
+        $stmt->bind_param('i',$actor);$stmt->execute();
+        $rows=$stmt->get_result()->fetch_all(MYSQLI_ASSOC);$stmt->close();
+        if (count($rows)!==1 || (string)$rows[0]['step']==='banned') return null;
+        return $rows[0];
+    } catch (\Throwable $error) {return null;}
+}
+function canReadAdminOrderDetails(): bool {
+    global $admin;
+    $actor=currentOrderDetailActor();
+    return $actor!==null && ((int)$actor['userid']===(int)($admin??0) || (int)$actor['isAdmin']===1);
+}
+
 function getUserOrderDetailKeys($id, $offset = 0){
     global $botState, $buttonValues, $botUrl;
 
+    if (!canReadAdminOrderDetails()) return null;
     $order = findOrder($id);
     if (!$order) return null;
 
@@ -305,6 +325,8 @@ function getUserOrderDetailKeys($id, $offset = 0){
 function getOrderDetailKeys($from_id, $id, $offset = 0){
     global $botState, $mainValues, $buttonValues, $botUrl, $userInfo;
 
+    $actor=currentOrderDetailActor();
+    if ($actor===null || ((int)$actor['userid']!==(int)$from_id && !canReadAdminOrderDetails())) return null;
     $order = findOrder($id, $from_id);
     if (!$order) return null;
 
