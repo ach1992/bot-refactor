@@ -207,14 +207,16 @@ def initialize(work, env):
 def stage_source(work, name, old=False, ref=None):
     stage = work/name
     stage.mkdir()
-    members = runtime.members()
     ref = OLD if old else ref
     if ref:
-        raw = subprocess.check_output(['git','-C',str(ROOT),'archive',ref,'--',*members])
+        # An immutable baseline owns its entire source layout. In particular,
+        # older topic catalogs must not be selected using today's two-file
+        # runtime inventory, or overlaid with today's loader/catalog bytes.
+        raw = subprocess.check_output(['git','-C',str(ROOT),'archive',ref])
         with tarfile.open(fileobj=io.BytesIO(raw)) as archive:
             archive.extractall(stage, filter='data')
     else:
-        for member in members:
+        for member in runtime.members():
             dest = stage/member
             dest.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(ROOT/member, dest)
