@@ -8,6 +8,7 @@ new source must preserve no attempt and issue zero remote invoices. No real IO.
 """
 from __future__ import annotations
 import argparse
+import ast
 import json
 from pathlib import Path
 import subprocess
@@ -63,8 +64,19 @@ def stages_for(w,old,baseline=HEAD):
     p.write_bytes(source)
     return stage
 
-def driver_text():
+def driver_text(baseline=None):
     t=finance.PHP_DRIVER
+    if baseline is not None:
+        # Pair each immutable post-V9 RED module with its own original
+        # synthetic driver. Current source never receives legacy globals.
+        raw=subprocess.check_output(['git','show',
+            baseline+':tools/test_post_v9_finance_routes.py'],cwd=ROOT)
+        constants=[ast.literal_eval(node.value) for node in ast.parse(raw).body
+            if isinstance(node,ast.Assign) and any(
+                isinstance(target,ast.Name) and target.id=='PHP_DRIVER'
+                for target in node.targets)]
+        assert len(constants)==1 and isinstance(constants[0],str),baseline
+        t=constants[0]
     a="$GLOBALS['events'] = [];"
     assert t.count(a)==1
     t=t.replace(a,a+"""
@@ -157,15 +169,17 @@ def main():
         sql(w,e,"INSERT INTO setting(type,value) VALUES('PAYMENT_KEYS','"+
             keys.replace("'","''")+"')")
         driver=w/'f2-hosted-driver.php';driver.write_text(driver_text())
+        old_driver=w/'f2-hosted-old-driver.php';old_driver.write_text(driver_text(HEAD))
+        n1_driver=w/'f2-hosted-n1-driver.php';n1_driver.write_text(driver_text(N1_HEAD))
         idx=0
         for provider in PROVIDERS:
             for mode in ('policy','cohort'):
-                cases.append(one(w,e,old,driver,provider,mode,True,idx,'READ-COMMITTED'));idx+=1
+                cases.append(one(w,e,old,old_driver,provider,mode,True,idx,'READ-COMMITTED'));idx+=1
                 for iso in ('READ-COMMITTED','REPEATABLE-READ'):
                     cases.append(one(w,e,new,driver,provider,mode,False,idx,iso));idx+=1
         for name,policy_method,typ,flag in PRIMARY_CASES:
             provider=(name,policy_method)
-            cases.append(one(w,e,n1_old,driver,provider,'primary',True,idx,
+            cases.append(one(w,e,n1_old,n1_driver,provider,'primary',True,idx,
                              'READ-COMMITTED',typ,flag));idx+=1
             for iso in ('READ-COMMITTED','REPEATABLE-READ'):
                 cases.append(one(w,e,new,driver,provider,'primary',False,idx,iso,
