@@ -1,9 +1,6 @@
-# Next-release source contract
+# RC12 release scope and delivery contract
 
-The development scope after RC11 targets **planned RC12 source-only delivery**.
-This document does not establish publication or installation. Use
-[Releases](https://github.com/ach1992/bot-refactor/releases) for published artifact
-identities. Published RC10/RC11 and frozen V0–V9 evidence remain immutable.
+[RC12](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.12) is published as a source-only prerelease. Its runtime and manifest identify the reviewed source `ecd30ba9192ed374703118a6c131be8809cc7b06`, integrated through [PR #87](https://github.com/ach1992/bot-refactor/pull/87). This document describes that release scope; publication does not establish installation or operational acceptance. Published RC10/RC11 and frozen V0–V9 evidence remain immutable.
 Owner scope is recorded in #26 comments
 [6433839924](https://github.com/ach1992/bot-refactor/issues/26#issuecomment-6433839924),
 [6434034586](https://github.com/ach1992/bot-refactor/issues/26#issuecomment-6434034586)
@@ -36,7 +33,7 @@ is changed by this source work.
 
 ## Providers, display, rates and copy
 
-The candidate uses genuine Marzban and native **PasarGuard 5.5.1** paths.
+RC12 uses genuine Marzban and native **PasarGuard 5.5.1** paths.
 PasarGuard persists concrete panel incarnation and remote numeric account
 identity, pins native Group IDs and uses native subscription/config responses.
 Its Groups are distinct from customer payment cohorts and Marzban physical-panel
@@ -103,7 +100,7 @@ Unknown/custom/nonempty state must be retained. Retired TRON/WeSwap source audit
 also reject unknown files and active schedules; source search is not permission
 to delete installed data.
 
-The candidate runtime contains **112 files**, including the loader and all
+The RC12 runtime contains **112 files**, including the loader and all
 25 message topics. Verify every file against the trusted exact-release manifest;
 a partial overlay without `messages/` is unusable. Source ZIPs contain no private
 configuration and perform no SQL installation or maintenance.
@@ -113,9 +110,9 @@ configuration and perform no SQL installation or maintenance.
 The Master binds exact stabilized source, PHP 8.1/8.4 current tests, detached
 original-V9 gates, package/manifest and fresh author-separated review. Intermediate
 worker checks and adapter probes are not aggregate or installed acceptance.
-[Issue #81](https://github.com/ach1992/bot-refactor/issues/81) retains the Owner
-merge/release and separate provider/operator gates. No production approval is
-implied here.
+[Issue #81](https://github.com/ach1992/bot-refactor/issues/81) retains
+separate provider/operator gates. The Owner-authorized RC12 source merge and
+publication are complete; no production approval is implied here.
 
 Bounded adapter evidence: client `30f8eab14b01421b0cab221a301d392673f696f8`
 completed 11 native probe phases against unmodified upstream PasarGuard 5.5.1

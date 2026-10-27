@@ -1,22 +1,19 @@
-# RC11 → RC12 preparation guide
+# RC11 → RC12 upgrade guide
 
 [راهنمای فارسی](RC11-TO-RC12.fa.md)
 
-This guide describes the **planned RC12 source-only target** for a compatible
-RC11 installation. It is preparation, not evidence that RC12 is published or
-that a tenant was upgraded. Choose artifacts and their exact source identity
-from [GitHub Releases](https://github.com/ach1992/bot-refactor/releases) only after
-the required review and separate Owner publication/installation decisions.
+This guide describes the published [RC12 source-only prerelease](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.12) for a compatible RC11 installation. Download its complete verified runtime and exact manifest from that release. Publication does not upgrade a tenant or authorize an installation, SQL migration or real financial/provider operation. The attached guides preserve the reviewed source snapshot; this live guide records its publication status.
 [RC11](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.11) remains
 immutable published evidence. RC9 installations must first follow their
 [RC9 → RC11 contract](RC9-TO-RC11.md); this is not an RC10 import procedure.
 
-[Issue #81](https://github.com/ach1992/bot-refactor/issues/81) retains the Owner
-merge/release and separate installed provider/operator acceptance gates.
+[Issue #81](https://github.com/ach1992/bot-refactor/issues/81) retains
+separate installed provider/operator acceptance gates; RC12 source merge and
+publication are complete.
 Source tests, a source ZIP or a successful adapter probe do not grant deployment,
 SQL, provider, wallet, webhook or Cron authority.
 
-## What the source candidate changes
+## What RC12 changes
 
 | Area | Result and boundary |
 | --- | --- |
