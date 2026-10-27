@@ -4,8 +4,6 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     http_response_code(404);
     exit;
 }
-require_once __DIR__ . '/../../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
-
 
 require_once __DIR__ . '/../PaymentLifecycle.php';
 
@@ -144,17 +142,17 @@ if (is_string($data) && strlen($data) <= 64 && preg_match('/\ApayCustomWithWalle
         $keys = json_encode([
             'inline_keyboard' => [
                 [
-                    ['text' => \achbotMessage('payment.checkout.button.e401f3d5a2'), 'callback_data' => "wizwizch"]
+                    ['text' => "🛍 خرید اشتراک جدید", 'callback_data' => "wizwizch"]
                 ],
                 [
-                    ['text' => \achbotMessage('payment.checkout.hash_id_local.09f20c4022', ['hashIdLocal' => $hashIdLocal]), 'callback_data' => "noop_$hashIdLocal"]
+                    ['text' => "🆔 $hashIdLocal", 'callback_data' => "noop_$hashIdLocal"]
                 ]
             ]
         ]);
 
         $msg = str_replace(
             ['TYPE', 'USER-ID', 'USERNAME', 'NAME', 'PRICE', 'REMARK', 'VOLUME', 'DAYS'],
-            [\achbotMessage('payment.payment_lifecycle.pay_ux_audience_methods.text.6295c35212'), $uid, $username, $first_name, $price, $remark, $volume, $days],
+            ['کیف پول', $uid, $username, $first_name, $price, $remark, $volume, $days],
             $mainValues['buy_custom_account_request']
         );
 
@@ -185,9 +183,9 @@ if (is_string($data) && strlen($data) <= 64 && preg_match('/\ApayCustomWithWalle
             error_log('achbot_custom_wallet_delivery_review pay_id='.
                 $reviewPay.' class='.get_class($error));
             try {
-                sendMessage(\achbotMessage('payment.checkout.message.2a6cba0152').
-                    \achbotMessage('payment.checkout.message.4f5582ec37').
-                    \achbotMessage('payment.referral_reward.referral_warn_operator.pay__i_d.9ac91aa748').$reviewPay,null,null,$admin);
+                sendMessage('⚠️ تحویل خرید سفارشی کیف پول نیازمند بررسی است. '.
+                    'پرداخت و سرویس ثبت شده‌اند؛ ساخت مجدد خودکار ممنوع است.'.
+                    "\n🆔 Pay ID: ".$reviewPay,null,null,$admin);
             } catch (Throwable $ignored) {
                 error_log('achbot_custom_wallet_owner_notice_failed pay_id='.$reviewPay);
             }
@@ -211,7 +209,7 @@ if (preg_match('/^showQr(Sub|Config)(\d+)/', $data, $match)) {
     $stmt->close();
 
     if (!$order || !achbotSupportsOrder($connection, (int)$order['id'])) {
-        alert(\achbotMessage('payment.checkout.alert.7f1f245514'), true);
+        alert("⛔️ اطلاعات این اشتراک در حال حاضر قابل نمایش نیست.", true);
         return;
     }
 
@@ -227,7 +225,7 @@ if (preg_match('/^showQr(Sub|Config)(\d+)/', $data, $match)) {
         $panel = $stmt->get_result()->fetch_assoc();
         $stmt->close();
         if (!$panel || empty($panel['panel_url']) || empty($order['token'])) {
-            alert(\achbotMessage('payment.checkout.alert.681ad8702c'), true);
+            alert("⛔️ لینک این اشتراک در حال حاضر در دسترس نیست.", true);
             return;
         }
         $subLink = rtrim($panel['panel_url'], '/') . "/sub/" . $order['token'];
@@ -320,13 +318,13 @@ if (is_string($data) && (strlen($data) <= 64 || ($GLOBALS['achbotManualCryptoVer
         (str_starts_with($data, 'payCustomWithGiftCard') ? 'gift_card' : 'bank_transfer');
     if (!achbotManualClaim($connection, $payInfo, $method, (int)$from_id,
                            $GLOBALS['achbotManualCryptoChoice'] ?? null)) {
-        alert(\achbotMessage('payment.checkout.alert.1a885aaca4'), true);
+        alert("⚠️ پرداخت این سفارش با این روش مجاز نیست یا قبلاً به روش دیگری آغاز شده است.", true);
         return;
     }
 
 	$msg = buildCartToCartInfoMessage($paymentKeys, $mainValues, (int)$payInfo['price'], (int)$payInfo['user_id'], $method, (string)$payInfo['hash_id']);
     if ($msg === "") {
-        alert(\achbotMessage('payment.checkout.alert.07ee06b4bc'), true);
+        alert("⚠️ اطلاعات این پرداخت قابل بازیابی نیست؛ با پشتیبانی تماس بگیرید.", true);
         return;
     }
     $keyboard = kbSendReceiptAndCancel(in_array($method, ['manual_usdt','manual_trx'], true) ? "sendCustomUsdtReceipt" : ($method === 'gift_card' ? "sendCustomGiftReceipt" : "sendCustomCartReceipt"), "cancelCustomCartReceipt", $match[1], $method);
@@ -340,7 +338,7 @@ if (is_string($data) && (strlen($data) <= 64 || ($GLOBALS['achbotManualCryptoVer
     } else {
         // The pinned attempt may be reopened. Never erase the selection menu
         // if Telegram failed to deliver the replacement instructions.
-        alert(\achbotMessage('payment.checkout.alert.7a9c30e938'), true);
+        alert("⚠️ نمایش اطلاعات پرداخت تأیید نشد. از همان دکمه دوباره تلاش کنید و وجهی ارسال نکنید.", true);
     }
     exit;
 }
@@ -357,7 +355,7 @@ if (preg_match('/send(?:CustomCart|CustomGift|CustomUsdt)Receipt(?<hashId>.*)/',
     $method = strpos($data, 'UsdtReceipt') !== false ? achbotManualCryptoReceiptProviderByHash($connection, (string)$match['hashId']) :
         (strpos($data, 'GiftReceipt') !== false ? 'gift_card' : 'bank_transfer');
     if (!achbotManualReceiptAllowed($connection, $payInfo, $method, (int)$from_id)) {
-        alert(\achbotMessage('payment.checkout.alert.d06bc731eb'), true);
+        alert("⚠️ این رسید با روش پرداخت انتخاب‌شده مطابقت ندارد یا سفارش در انتظار پرداخت نیست.", true);
         return;
     }
     $guardMsg = duplicateReceiptGuard($connection, $payInfo, time());
@@ -368,7 +366,7 @@ if (preg_match('/send(?:CustomCart|CustomGift|CustomUsdt)Receipt(?<hashId>.*)/',
     require_once __DIR__ . '/../PaymentLifecycle.php';
     if (!achbotPayUxStartManualReceipt($connection,(int)$payInfo['id'],
                                       $method,(int)$from_id)) {
-        alert(\achbotMessage('payment.checkout.alert.560f05f822'),true);
+        alert('⌛️ مهلت شروع ارسال رسید پایان یافته یا فاکتور در حال بررسی است. اگر وجهی فرستاده‌اید با پشتیبانی تماس بگیرید.',true);
         return;
     }
 
@@ -393,7 +391,7 @@ if (preg_match('/wait(?:CustomCart|CustomGift|CustomUsdt)Receipt(.*)/', $userInf
     $receiptPay = dbFetchPayByHash($connection, $match[1]);
     if (!$receiptPay || !achbotManualReceiptAllowed($connection, $receiptPay, $method, (int)$from_id)) {
         setUser();
-        alert(\achbotMessage('payment.checkout.alert.882596d0f1'), true);
+        alert("⚠️ این سفارش قابل ثبت رسید نیست؛ برای بررسی با پشتیبانی تماس بگیرید.", true);
         return;
     }
     $fileid = extractPhotoFileId($update);
@@ -405,7 +403,7 @@ if (preg_match('/wait(?:CustomCart|CustomGift|CustomUsdt)Receipt(.*)/', $userInf
 
     $deliveryToken = achbotManualBeginEvidence($connection, $receiptPay, $method, (int)$from_id, $fileid);
     if ($deliveryToken === null) {
-        alert(\achbotMessage('payment.checkout.alert.795c4bddb8'), true);
+        alert("⚠️ ثبت یا ارسال رسید در جریان است. همان تصویر را دوباره ارسال کنید؛ در صورت تداوم مشکل با پشتیبانی تماس بگیرید.", true);
         return;
     }
 
@@ -445,7 +443,7 @@ if (preg_match('/wait(?:CustomCart|CustomGift|CustomUsdt)Receipt(.*)/', $userInf
 
     $msg = str_replace(
         ['TYPE', 'USER-ID', 'USERNAME', 'NAME', 'PRICE', 'REMARK', 'VOLUME', 'DAYS'],
-        [\achbotMessage('payment.checkout.text.04029e7ea7'), $from_id, $username, $first_name, $fileprice, $remark, $volume, $days],
+        ["کارت به کارت", $from_id, $username, $first_name, $fileprice, $remark, $volume, $days],
         $mainValues['buy_custom_account_request']
     );
 
@@ -464,14 +462,14 @@ if (preg_match('/wait(?:CustomCart|CustomGift|CustomUsdt)Receipt(.*)/', $userInf
         setUser();
         sendWithStartButton(achbotManualAcknowledgement($receiptPay, $method), $buttonValues['start_bot'], $botUsername, 'mainMenu', 'HTML', (string)$receiptPay['hash_id']);
     } else {
-        sendMessage(\achbotMessage('payment.checkout.message.c346a0d62e'));
+        sendMessage("📥 تصویر برای پیگیری ثبت شده اما تأیید ارسال به مدیر دریافت نشده است. لطفاً همان تصویر را دوباره بفرستید یا با پشتیبانی تماس بگیرید. پرداخت مجدد انجام ندهید.");
     }
     exit;
 }
 
 if (preg_match('/^accCustom(.+)$/D', $data, $match) && $text != $buttonValues['cancel']) {
     if ((int)$from_id <= 0 || ((int)$from_id !== (int)$admin && empty($userInfo['isAdmin']))) {
-        alert(\achbotMessage('payment.checkout.alert.873a4950ab'), true);
+        alert('⛔️ تأیید پرداخت فقط توسط مدیر مجاز است.', true);
         return;
     }
 
@@ -494,7 +492,7 @@ if (preg_match('/^accCustom(.+)$/D', $data, $match) && $text != $buttonValues['c
             !achbotSupportsPaymentSubject($connection, $payInfo)) {
             $connection->rollback();
             $claimOpen=false;
-            alert(\achbotMessage('payment.checkout.alert.e733abf9ba'), true);
+            alert('⛔️ این خرید رسید دستی معتبر و در انتظار تأیید ندارد.', true);
             return;
         }
 
@@ -632,9 +630,9 @@ if (preg_match('/^accCustom(.+)$/D', $data, $match) && $text != $buttonValues['c
             ' class='.get_class($e));
         // A remote operation could have succeeded before the local rollback.
         // Never retry it blindly; an operator must reconcile the real service.
-        sendMessage(\achbotMessage('payment.checkout.message.3b8e6e3a15') . \achbotMessage('payment.checkout.message.eccb64d3cb') . $hash_id,
+        sendMessage('⚠️ تأیید خرید دستی نیازمند بررسی سرویس و پرداخت است. از اجرای دوباره خودکار خودداری کنید.' . "\n🆔 " . $hash_id,
             null, null, $admin);
-        alert(\achbotMessage('payment.checkout.alert.6fa04cd4c0'), true);
+        alert('⚠️ نتیجه تأیید نیاز به بررسی دستی دارد؛ وضعیت سرویس را پیش از اقدام مجدد کنترل کنید.', true);
         return;
     }
 
@@ -654,9 +652,9 @@ if (preg_match('/^accCustom(.+)$/D', $data, $match) && $text != $buttonValues['c
         error_log('achbot_custom_receipt_delivery_review pay_id='.$payRowId.
             ' class='.get_class($error));
         try {
-            sendMessage(\achbotMessage('payment.checkout.message.c97c0eb0f0').
-                \achbotMessage('payment.referral_reward.referral_warn_operator.pay__i_d.9ac91aa748').$payRowId.
-                \achbotMessage('payment.checkout.message.6cee937835'),null,null,$admin);
+            sendMessage('⚠️ تحویل خرید دستی بعد از ثبت سفارش نیاز به بررسی دارد.'.
+                "\n🆔 Pay ID: ".$payRowId.
+                "\nسرویس را بدون تطبیق مجدد ایجاد نکنید.",null,null,$admin);
         } catch (Throwable $ignored) {
             error_log('achbot_custom_receipt_owner_notice_failed pay_id='.$payRowId);
         }
@@ -664,13 +662,13 @@ if (preg_match('/^accCustom(.+)$/D', $data, $match) && $text != $buttonValues['c
     // Presentation failures after committed financial/referral outcomes must
     // remain separate owner-visible delivery problems, never reopen CREATE.
     try {
-    sendMessage(\achbotMessage('payment.checkout.message.5c1a932720'), getMainKeys());
+    sendMessage('✅ اشتراک ثبت شده است.', getMainKeys());
 
     $keys = json_encode([
         'inline_keyboard' => [
-            [['text' => \achbotMessage('payment.checkout.button.139c829462', ['from_id' => $from_id]), 'callback_data' => "wizwizch"]],
-            [['text' => \achbotMessage('payment.checkout.remark.4348a3fd9b', ['remark' => $remark]),                'callback_data' => "noop"]],
-            [['text' => \achbotMessage('payment.checkout.hash_id.2899228604', ['hash_id' => $hash_id]),              'callback_data' => "noop_$hash_id"]],
+            [['text' => "✅ تایید شد توسط $from_id", 'callback_data' => "wizwizch"]],
+            [['text' => "🔄 $remark",                'callback_data' => "noop"]],
+            [['text' => "🆔 $hash_id",              'callback_data' => "noop_$hash_id"]],
         ]
     ], 488);
 
@@ -697,7 +695,7 @@ if (preg_match('/^accCustom(.+)$/D', $data, $match) && $text != $buttonValues['c
             $keys2 = json_encode([
                 'inline_keyboard' => [
                     [
-                        ['text' => \achbotMessage('payment.checkout.button.e401f3d5a2'), 'callback_data' => "wizwizch"]
+                        ['text' => "🛍 خرید اشتراک جدید", 'callback_data' => "wizwizch"]
                     ],
                 ]
             ]);
@@ -720,9 +718,9 @@ if (preg_match('/^accCustom(.+)$/D', $data, $match) && $text != $buttonValues['c
         error_log('achbot_custom_receipt_postcommit_notice_review pay_id='.$payRowId.
             ' class='.get_class($error));
         try {
-            sendMessage(\achbotMessage('payment.checkout.message.3f598b595a').
-                \achbotMessage('payment.referral_reward.referral_warn_operator.pay__i_d.9ac91aa748').$payRowId.
-                \achbotMessage('payment.checkout.message.cfed3110bf'),
+            sendMessage('⚠️ پرداخت و سفارش ثبت شده‌اند، اما اطلاع‌رسانی نیازمند بررسی است.'.
+                "\n🆔 Pay ID: ".$payRowId.
+                "\nسرویس یا پاداش را بدون تطبیق دوباره صادر نکنید.",
                 null,null,$admin);
         } catch (Throwable $ignored) {
             error_log('achbot_custom_receipt_postcommit_owner_notice_failed pay_id='.$payRowId);
@@ -824,7 +822,7 @@ if (is_string($data) && strlen($data) <= 64 && preg_match('/\ApayBuyWithWallet([
 
                 $deferredRenewSuccess = [
                     $message_id,
-                    \achbotMessage('payment.checkout.text.cca1075329', ['remark' => $remark]),
+                    "✅ اشتراک $remark با موفقیت تمدید شد.",
                     $keys
                 ];
 
@@ -1006,9 +1004,9 @@ if (is_string($data) && strlen($data) <= 64 && preg_match('/\ApayBuyWithWallet([
 		$uidForLog = (int)($payInfo['user_id'] ?? $from_id);
 
 		sendMessage(
-			\achbotMessage('payment.checkout.message.54c81d71b7') .
-			\achbotMessage('payment.checkout.user_i_d_uid_for_log.6a12f817c0', ['uidForLog' => $uidForLog]) .
-			\achbotMessage('payment.checkout.hash_id.286c7d3faf', ['hashId' => $hashId]),
+			"⚠️ پرداخت هنوز نهایی نشده؛ ارسال انجام نشد.\n" .
+			"👤 UserID: {$uidForLog}\n" .
+			"🆔 $hashId",
 			null,
 			null,
 			$admin
@@ -1042,10 +1040,10 @@ if (is_string($data) && strlen($data) <= 64 && preg_match('/\ApayBuyWithWallet([
         }
         if ($deliveryReview) {
             try {
-                sendMessage(\achbotMessage('payment.checkout.message.c150d2e039').
-                    \achbotMessage('payment.referral_reward.referral_warn_operator.pay__i_d.9ac91aa748').(int)$payInfo['id'].
-                    \achbotMessage('payment.checkout.message.e09fe6fd6b').implode(',',$deliveryReview).
-                    \achbotMessage('payment.checkout.text.0ec6de536f'),
+                sendMessage('⚠️ تحویل اشتراک کیف پول نیاز به بررسی دارد.'.
+                    "\n🆔 Pay ID: ".(int)$payInfo['id'].
+                    "\n🔢 موارد: ".implode(',',$deliveryReview).
+                    "\nپرداخت و سرویس ثبت شده‌اند؛ ساخت مجدد انجام نشود.",
                     null,null,$admin);
             } catch (Throwable $error) {
                 error_log('achbot_wallet_checkout_owner_notice_failed pay_id='.
@@ -1075,9 +1073,9 @@ if (is_string($data) && strlen($data) <= 64 && preg_match('/\ApayBuyWithWallet([
             error_log('achbot_wallet_paid_report_quote_unavailable pay_id='.
                 (int)$payInfo['id']);
             try {
-                sendMessage(\achbotMessage('payment.checkout.message.7aa67614a5').
-                    \achbotMessage('payment.referral_reward.referral_warn_operator.pay__i_d.9ac91aa748').(int)$payInfo['id'].
-                    \achbotMessage('payment.checkout.message.f8ec758aca'),
+                sendMessage('⚠️ پرداخت و سرویس ثبت شده‌اند، اما گزارش مشخصات خرید نیازمند بررسی است.'.
+                    "\n🆔 Pay ID: ".(int)$payInfo['id'].
+                    "\nسفارش را با سرویس صادرشده تطبیق دهید؛ آن را دوباره ایجاد نکنید.",
                     null,null,$admin);
             } catch (Throwable $ignored) {
                 error_log('achbot_wallet_paid_report_owner_notice_failed pay_id='.
@@ -1096,21 +1094,21 @@ if (is_string($data) && strlen($data) <= 64 && preg_match('/\ApayBuyWithWallet([
 
     $keys = json_encode([
         'inline_keyboard' => [
-            [ ['text' => \achbotMessage('payment.checkout.button.e401f3d5a2'), 'callback_data' => "wizwizch"] ],
-            [ ['text' => \achbotMessage('payment.checkout.hash_id.286c7d3faf', ['hashId' => $hashId]),          'callback_data' => "noop_$hashId"] ]
+            [ ['text' => "🛍 خرید اشتراک جدید", 'callback_data' => "wizwizch"] ],
+            [ ['text' => "🆔 $hashId",          'callback_data' => "noop_$hashId"] ]
         ]
     ], JSON_UNESCAPED_UNICODE);
 
     if ($payType === "RENEW_SCONFIG") {
         $msg = str_replace(
             ['TYPE', 'USER-ID', 'USERNAME', 'NAME', 'PRICE', 'REMARK', 'VOLUME', 'DAYS'],
-            [\achbotMessage('payment.payment_lifecycle.pay_ux_audience_methods.text.6295c35212'), $from_id, $username, $first_name, $price, $lastRemark, $volume, $days],
+            ['کیف پول', $from_id, $username, $first_name, $price, $lastRemark, $volume, $days],
             $mainValues['renew_account_request_message']
         );
     } else {
         $msg = str_replace(
             ['SERVERNAME', 'TYPE', 'USER-ID', 'USERNAME', 'NAME', 'PRICE', 'REMARK', 'VOLUME', 'DAYS'],
-            [$serverTitle, \achbotMessage('payment.payment_lifecycle.pay_ux_audience_methods.text.6295c35212'), $from_id, $username, $first_name, $price, $lastRemark, $volume, $days],
+            [$serverTitle, 'کیف پول', $from_id, $username, $first_name, $price, $lastRemark, $volume, $days],
             $mainValues['buy_new_account_request']
         );
     }
@@ -1174,13 +1172,13 @@ if (is_string($data) && (strlen($data) <= 64 || ($GLOBALS['achbotManualCryptoVer
         (str_starts_with($data, 'payBuyWithGiftCard') ? 'gift_card' : 'bank_transfer');
     if (!achbotManualClaim($connection, $payInfo, $method, (int)$from_id,
                            $GLOBALS['achbotManualCryptoChoice'] ?? null)) {
-        alert(\achbotMessage('payment.checkout.alert.1a885aaca4'), true);
+        alert("⚠️ پرداخت این سفارش با این روش مجاز نیست یا قبلاً به روش دیگری آغاز شده است.", true);
         return;
     }
 
 	$msg = buildCartToCartInfoMessage($paymentKeys, $mainValues, (int)$payInfo['price'], (int)$payInfo['user_id'], $method, (string)$payInfo['hash_id']);
     if ($msg === "") {
-        alert(\achbotMessage('payment.checkout.alert.07ee06b4bc'), true);
+        alert("⚠️ اطلاعات این پرداخت قابل بازیابی نیست؛ با پشتیبانی تماس بگیرید.", true);
         return;
     }
     $keyboard = kbSendReceiptAndCancel(in_array($method, ['manual_usdt','manual_trx'], true) ? "sendBuyUsdtReceipt" : ($method === 'gift_card' ? "sendBuyGiftReceipt" : "sendBuyCartReceipt"), "cancelBuyCartReceipt", $match[1], $method);
@@ -1194,7 +1192,7 @@ if (is_string($data) && (strlen($data) <= 64 || ($GLOBALS['achbotManualCryptoVer
     } else {
         // The pinned attempt may be reopened. Never erase the selection menu
         // if Telegram failed to deliver the replacement instructions.
-        alert(\achbotMessage('payment.checkout.alert.7a9c30e938'), true);
+        alert("⚠️ نمایش اطلاعات پرداخت تأیید نشد. از همان دکمه دوباره تلاش کنید و وجهی ارسال نکنید.", true);
     }
     exit;
 }
@@ -1211,7 +1209,7 @@ if (preg_match('/send(?:BuyCart|BuyGift|BuyUsdt)Receipt(?<hashId>.*)/', $data, $
     $method = strpos($data, 'UsdtReceipt') !== false ? achbotManualCryptoReceiptProviderByHash($connection, (string)$match['hashId']) :
         (strpos($data, 'GiftReceipt') !== false ? 'gift_card' : 'bank_transfer');
     if (!achbotManualReceiptAllowed($connection, $payInfo, $method, (int)$from_id)) {
-        alert(\achbotMessage('payment.checkout.alert.d06bc731eb'), true);
+        alert("⚠️ این رسید با روش پرداخت انتخاب‌شده مطابقت ندارد یا سفارش در انتظار پرداخت نیست.", true);
         return;
     }
     $guardMsg = duplicateReceiptGuard($connection, $payInfo, time());
@@ -1222,7 +1220,7 @@ if (preg_match('/send(?:BuyCart|BuyGift|BuyUsdt)Receipt(?<hashId>.*)/', $data, $
     require_once __DIR__ . '/../PaymentLifecycle.php';
     if (!achbotPayUxStartManualReceipt($connection,(int)$payInfo['id'],
                                       $method,(int)$from_id)) {
-        alert(\achbotMessage('payment.checkout.alert.560f05f822'),true);
+        alert('⌛️ مهلت شروع ارسال رسید پایان یافته یا فاکتور در حال بررسی است. اگر وجهی فرستاده‌اید با پشتیبانی تماس بگیرید.',true);
         return;
     }
 
@@ -1247,7 +1245,7 @@ if (preg_match('/wait(?:BuyCart|BuyGift|BuyUsdt)Receipt(.*)/', $userInfo['step']
     $receiptPay = dbFetchPayByHash($connection, $match[1]);
     if (!$receiptPay || !achbotManualReceiptAllowed($connection, $receiptPay, $method, (int)$from_id)) {
         setUser();
-        alert(\achbotMessage('payment.checkout.alert.882596d0f1'), true);
+        alert("⚠️ این سفارش قابل ثبت رسید نیست؛ برای بررسی با پشتیبانی تماس بگیرید.", true);
         return;
     }
     $fileid = extractPhotoFileId($update);
@@ -1259,7 +1257,7 @@ if (preg_match('/wait(?:BuyCart|BuyGift|BuyUsdt)Receipt(.*)/', $userInfo['step']
 
     $deliveryToken = achbotManualBeginEvidence($connection, $receiptPay, $method, (int)$from_id, $fileid);
     if ($deliveryToken === null) {
-        alert(\achbotMessage('payment.checkout.alert.795c4bddb8'), true);
+        alert("⚠️ ثبت یا ارسال رسید در جریان است. همان تصویر را دوباره ارسال کنید؛ در صورت تداوم مشکل با پشتیبانی تماس بگیرید.", true);
         return;
     }
 
@@ -1339,7 +1337,7 @@ if (sendReceiptToAdminsAndUpdatePay($connection, $fileid,
         setUser();
         sendWithStartButton(achbotManualAcknowledgement($receiptPay, $method), $buttonValues['start_bot'], $botUsername, 'mainMenu', 'HTML', (string)$receiptPay['hash_id']);
     } else {
-        sendMessage(\achbotMessage('payment.checkout.message.c346a0d62e'));
+        sendMessage("📥 تصویر برای پیگیری ثبت شده اما تأیید ارسال به مدیر دریافت نشده است. لطفاً همان تصویر را دوباره بفرستید یا با پشتیبانی تماس بگیرید. پرداخت مجدد انجام ندهید.");
     }
     exit;
 }

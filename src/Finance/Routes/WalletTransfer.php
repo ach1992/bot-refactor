@@ -4,8 +4,6 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     http_response_code(404);
     exit;
 }
-require_once __DIR__ . '/../../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
-
 
 require_once dirname(__DIR__) . '/WalletTransferFlow.php';
 
@@ -13,10 +11,10 @@ if (!function_exists('achbotWalletTransferRestart')) {
 function achbotWalletTransferRestart(bool $unavailable = false): void
 {
     sendMessage($unavailable
-        ? \achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.message.1286cd29ed')
-        : \achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.message.03d3c27bc2'),
+        ? '⚠️ آماده‌سازی درخواست انتقال با مشکل روبه‌رو شد؛ لطفاً انتقال را دوباره شروع کنید.'
+        : '⛔️ این پیام برای مرحلهٔ فعلی انتقال معتبر نیست؛ لطفاً از منوی کیف پول انتقال تازه‌ای شروع کنید.',
         json_encode(['inline_keyboard'=>[[[
-            'text'=>\achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.button.79f89c9b92'), 'callback_data'=>'transferMyWallet'
+            'text'=>'🔀 شروع دوباره انتقال', 'callback_data'=>'transferMyWallet'
         ]]]], JSON_UNESCAPED_UNICODE));
 }
 
@@ -29,9 +27,10 @@ if ($data === 'transferMyWallet') {
     $status=achbotWalletTransferAdvance($connection,$start,'start');
     if ($status==='ready') {
         delMessage();
-        sendMessage(\achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.message.60862c92c3'),$cancelKey);
+        sendMessage("🔀 در صورتی که قصد انتقال مبلغ دلخواه از موجودی خودتان به کاربری دیگری را دارید از اینجا می توانید انجام دهید.
+🔢 لطفا شناسه عددی کاربری که می خواهید موجودی به حساب آن منتقل کنید را وارد کنید.",$cancelKey);
     } elseif ($status==='insufficient') {
-        alert(\achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.alert.e05ab0cee3'));
+        alert("⛔️ موجودی حساب شما کم است. موجودی حساب شما باید بیشتر از 0 باشد.");
     } else achbotWalletTransferRestart($status==='review');
     return;
 }
@@ -52,13 +51,13 @@ if ($text != $buttonValues['cancel'] &&
         sendMessage($mainValues['send_only_number']); return;
     }
     if ((int)$text===(int)$from_id) {
-        sendMessage(\achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.message.9d368ab3bb')); return;
+        sendMessage("⚠️ لطفا شناسه عددی کاربری غیر از خودتان را ارسال کنید."); return;
     }
     $status=achbotWalletTransferAdvance($connection,$selection,'select',(int)$text,$transferStep);
     if ($status==='ready')
-        sendMessage(\achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.message.8bd13292ba'));
+        sendMessage("لطفا مبلغ مورد نظر را به تومان و با اعداد انگلیسی وارد کنید.");
     elseif ($status==='missing')
-        sendMessage(\achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.message.71963e9012'));
+        sendMessage("⛔️ کاربری با این شناسه عددی یافت نشد.");
     else achbotWalletTransferRestart($status==='review');
     return;
 }
@@ -80,19 +79,19 @@ if ((str_starts_with($transferStep,'achbotTransferAmount:') ||
     $digits = ltrim((string)$text, '0');
     if ($digits === '' || strlen($digits) > 10 ||
         (strlen($digits) === 10 && strcmp($digits, '2147483647') > 0)) {
-        sendMessage(\achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.message.dcff0b471b'));
+        sendMessage('⛔️ مبلغ انتقال نامعتبر یا خارج از محدوده مجاز است.');
         exit;
     }
     $amount = (int)$digits;
     $to_id = $pendingTransfer['recipient_id'];
 
     if ($amount <= 0) {
-        sendMessage(\achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.message.a04cf98a41'));
+        sendMessage("لطفا عددی بزرگتر از صفر وارد کنید.");
         exit;
     }
 
     if ($to_id === (int)$from_id) {
-        sendMessage(\achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.message.9d368ab3bb'));
+        sendMessage("⚠️ لطفا شناسه عددی کاربری غیر از خودتان را ارسال کنید.");
         exit;
     }
 
@@ -150,7 +149,7 @@ if ((str_starts_with($transferStep,'achbotTransferAmount:') ||
         if (!$receiver) {
             $connection->rollback();
             $transactionActive = false;
-            sendMessage(\achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.message.71963e9012'));
+            sendMessage("⛔️ کاربری با این شناسه عددی یافت نشد.");
             exit;
         }
 
@@ -159,7 +158,7 @@ if ((str_starts_with($transferStep,'achbotTransferAmount:') ||
         if ((string)$sender['step'] !== $expectedStep) {
             $connection->rollback();
             $transactionActive = false;
-            sendMessage(\achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.message.ecde76fc7f'));
+            sendMessage("⛔️ این درخواست انتقال قبلاً پردازش شده یا معتبر نیست.");
             exit;
         }
 
@@ -171,7 +170,7 @@ if ((str_starts_with($transferStep,'achbotTransferAmount:') ||
         if ($sender_before < $amount) {
             $connection->rollback();
             $transactionActive = false;
-            sendMessage(\achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.message.bf9e4dcf22'));
+            sendMessage("موجودی حساب شما کم است.");
             exit;
         }
         // The original wallet is signed INT(11): incoming genuine credit may
@@ -179,7 +178,7 @@ if ((str_starts_with($transferStep,'achbotTransferAmount:') ||
         if ($receiver_before > 2147483647 - $amount) {
             $connection->rollback();
             $transactionActive = false;
-            sendMessage(\achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.message.8fb7125cfb'));
+            sendMessage("⛔️ انتقال این مبلغ در حال حاضر امکان‌پذیر نیست؛ مبلغی کسر نشد.");
             exit;
         }
 
@@ -285,22 +284,22 @@ if ((str_starts_with($transferStep,'achbotTransferAmount:') ||
         $reason = in_array($e->getMessage(), $knownReasons, true)
             ? $e->getMessage() : 'transfer_database_or_runtime_error';
         $sqlstate = $e instanceof mysqli_sql_exception ? $e->getSqlState() : 'n/a';
-        $adminReport = \achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.a_ch_bot_wallet_transfer_failure.2e028e487d')
-            . \achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.reference_reference.f5ec5fabf8', ['reference' => $reference])
-            . \achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.telegram_update_transfer_update_id.9ccad7d18e', ['transferUpdateId' => $transferUpdateId])
-            . \achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.reason_reason.2ef4e18461', ['reason' => $reason])
-            . \achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.exception_class.bed555cfab') . htmlspecialchars(get_class($e), ENT_QUOTES, \achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.u_t_f.3ad3031f55')) . \achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.text.b3bdb9b746')
-            . \achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.s_q_l_s_t_a_t_e.e54fa53e31') . htmlspecialchars((string)$sqlstate, ENT_QUOTES, \achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.u_t_f.3ad3031f55')) . \achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.text.b3bdb9b746')
-            . \achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.commit_attempted.48f79f5883') . ($commitStarted ? \achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.yes.8a798890fe') : \achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.no.9390298f3f')) . \achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.text.b3bdb9b746')
-            . \achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.transaction_outcome_transaction_outcome.e7b94c824a', ['transactionOutcome' => $transactionOutcome])
-            . \achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.rollback__a_p_i_rollback_api_not_proof.d4dbeb853e', ['rollbackApi' => $rollbackApi])
-            . \achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.sender.3d56306cdd') . (int)$from_id . \achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.text.b3bdb9b746')
-            . \achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.recipient_to_id.5b5f69f5c8', ['to_id' => $to_id])
-            . \achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.amount__toman_amount.615f9f4c22', ['amount' => $amount]);
+        $adminReport = "⚠️ <b>AChBot wallet transfer failure</b>\n"
+            . "Reference: <code>{$reference}</code>\n"
+            . "Telegram update: <code>{$transferUpdateId}</code>\n"
+            . "Reason: <code>{$reason}</code>\n"
+            . "Exception class: <code>" . htmlspecialchars(get_class($e), ENT_QUOTES, 'UTF-8') . "</code>\n"
+            . "SQLSTATE: <code>" . htmlspecialchars((string)$sqlstate, ENT_QUOTES, 'UTF-8') . "</code>\n"
+            . "Commit attempted: <code>" . ($commitStarted ? 'yes' : 'no') . "</code>\n"
+            . "Transaction outcome: <code>{$transactionOutcome}</code>\n"
+            . "Rollback API: <code>{$rollbackApi}</code> (not proof after ambiguous COMMIT)\n"
+            . "Sender: <code>" . (int)$from_id . "</code>\n"
+            . "Recipient: <code>{$to_id}</code>\n"
+            . "Amount (Toman): <code>{$amount}</code>";
         $reported = false;
         if (isset($admin) && (int)$admin > 0) {
             try {
-                $reply = sendMessage($adminReport, null, \achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.h_t_m_l.07239dbd2a'), $admin);
+                $reply = sendMessage($adminReport, null, 'HTML', $admin);
                 $reported = is_object($reply) && isset($reply->ok) && $reply->ok === true;
             } catch (Throwable $notifyError) {
                 // A missing Telegram notification must not hide the failure.
@@ -312,9 +311,9 @@ if ((str_starts_with($transferStep,'achbotTransferAmount:') ||
                 . "commit_attempted=" . ($commitStarted ? 'yes' : 'no')
                 . " outcome={$transactionOutcome} rollback_api={$rollbackApi}");
         }
-        sendMessage(\achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.message.6924ce253f')
-            . \achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.message.f933fbcd9d')
-            . \achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.message.e9940862a9', ['reference' => $reference]));
+        sendMessage("❌ وضعیت درخواست انتقال شما نیاز به بررسی دارد. "
+            . "لطفاً موجودی کیف پول را بررسی کنید و در صورت نیاز "
+            . "کد پیگیری {$reference} را به پشتیبانی بدهید.");
         exit;
     }
 
@@ -334,35 +333,35 @@ if ((str_starts_with($transferStep,'achbotTransferAmount:') ||
     };
 
     // ساخت نام و یوزرنیم
-        $sender_name = !empty($sender['name']) ? $sender['name'] : \achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.text.bda050585a');
-        $receiver_name = !empty($receiver['name']) ? $receiver['name'] : \achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.text.bda050585a');
+        $sender_name = !empty($sender['name']) ? $sender['name'] : '—';
+        $receiver_name = !empty($receiver['name']) ? $receiver['name'] : '—';
 
-        $sender_username = !empty($sender['username']) ? '@' . $sender['username'] : \achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.text.bda050585a');
-        $receiver_username = !empty($receiver['username']) ? '@' . $receiver['username'] : \achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.text.bda050585a');
+        $sender_username = !empty($sender['username']) ? '@' . $sender['username'] : '—';
+        $receiver_username = !empty($receiver['username']) ? '@' . $receiver['username'] : '—';
 
         // پیام برای مقصد
         $sendTransferNotice(
-            \achbotMessage('wallet.admin_wallet.admin_wallet_report_result.customer.a5b15e454e') . number_format($amount) . \achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.text.ecbce64eed', ['from_id' => $from_id]),
+            "✅ مبلغ " . number_format($amount) . " تومان به کیف پول شما توسط کاربر $from_id انتقال یافت.",
             null, null, $to_id, 'recipient'
         );
 
         // گزارش برای ادمین/کانال
         $channelMessage =
-            \achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.channel_message.4dcd886908')
-            . \achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.text.f7c8f1486f')
-            . \achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.text.1c463d5538', ['from_id' => $from_id])
-            . \achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.text.d6da19205d') . htmlspecialchars($sender_name) . "</b>\n"
-            . \achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.text.0abd13e218') . htmlspecialchars($sender_username) . "</b>\n"
-            . \achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.text.3a7e183abf') . number_format($sender_before) . "</b>\n"
-            . \achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.text.77d4a377ae') . number_format($sender_after) . "</b>\n"
-            . \achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.text.f7c8f1486f')
-            . \achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.text.f7206f6d33', ['to_id' => $to_id])
-            . \achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.text.d6da19205d') . htmlspecialchars($receiver_name) . "</b>\n"
-            . \achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.text.0abd13e218') . htmlspecialchars($receiver_username) . "</b>\n"
-            . \achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.text.3a7e183abf') . number_format($receiver_before) . "</b>\n"
-            . \achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.text.77d4a377ae') . number_format($receiver_after) . "</b>\n"
-            . \achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.text.f7c8f1486f')
-            . \achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.text.431f74945a') . number_format($amount) . \achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.text.b971f2d37a');
+            "🔀 <b>گزارش جابجایی موجودی</b>\n"
+            . "━━━━━━━━━━━━\n"
+            . "🎫 <b>مبدأ</b>: <code>$from_id</code>\n"
+            . "🧾 نام: <b>" . htmlspecialchars($sender_name) . "</b>\n"
+            . "🔰 نام کاربری: <b>" . htmlspecialchars($sender_username) . "</b>\n"
+            . "💼 قبل: <b>" . number_format($sender_before) . "</b>\n"
+            . "💼 بعد: <b>" . number_format($sender_after) . "</b>\n"
+            . "━━━━━━━━━━━━\n"
+            . "🎫 <b>مقصد</b>: <code>$to_id</code>\n"
+            . "🧾 نام: <b>" . htmlspecialchars($receiver_name) . "</b>\n"
+            . "🔰 نام کاربری: <b>" . htmlspecialchars($receiver_username) . "</b>\n"
+            . "💼 قبل: <b>" . number_format($receiver_before) . "</b>\n"
+            . "💼 بعد: <b>" . number_format($receiver_after) . "</b>\n"
+            . "━━━━━━━━━━━━\n"
+            . "💰 مبلغ انتقال: <b>" . number_format($amount) . "</b> تومان";
 
         // ارسال به ادمین
         $sendTransferNotice($channelMessage, null, "html", $admin, 'admin');
@@ -374,10 +373,10 @@ if ((str_starts_with($transferStep,'achbotTransferAmount:') ||
         }
 
         // پیام برای مبدأ؛ قدم قبلاً در همان تراکنش مصرف شده است.
-        $sendTransferNotice(\achbotMessage('wallet.admin_wallet.admin_wallet_report_result.customer.a5b15e454e') . number_format($amount) .
-            \achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.text.8e5e1ee663'),
+        $sendTransferNotice("✅ مبلغ " . number_format($amount) .
+            " تومان به کیف پول کاربر مورد نظر شما انتقال یافت.",
             $removeKeyboard, null, $from_id, 'sender');
-        $sendTransferNotice(\achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.text.b059640ccc'),
+        $sendTransferNotice("لطفا یکی از کلید های زیر را انتخاب کنید.",
             getMainKeys(), null, $from_id, 'sender_menu');
 
     // A committed transfer is never undone because an outbound Telegram
@@ -386,11 +385,11 @@ if ((str_starts_with($transferStep,'achbotTransferAmount:') ||
     if ($deliveryProblems !== []) {
         $noticeReference = strtoupper(bin2hex(random_bytes(6)));
         $failedRoles = implode(',', array_unique($deliveryProblems));
-        $notice = \achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.a_ch_bot_wallet_transfer_notification_failure.9a285d7145')
+        $notice = "⚠️ <b>AChBot wallet transfer notification failure</b>\n"
             . "Reference: <code>{$noticeReference}</code>\n"
-            . \achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.reason_transfer_notification_unconfirmed.b0125f07f4')
-            . \achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.failed_roles_failed_roles.dbaa3d3e0e', ['failedRoles' => $failedRoles])
-            . \achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.transfer_already_committed_yes.4ce8092444')
+            . "Reason: <code>transfer_notification_unconfirmed</code>\n"
+            . "Failed roles: <code>{$failedRoles}</code>\n"
+            . "Transfer already committed: <code>yes</code>\n"
             . "Sender: <code>" . (int)$from_id . "</code>\n"
             . "Recipient: <code>{$to_id}</code>\n"
             . "Amount (Toman): <code>{$amount}</code>";

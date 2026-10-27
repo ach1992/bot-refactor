@@ -4,8 +4,6 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     http_response_code(404);
     exit;
 }
-require_once __DIR__ . '/../../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
-
 
 require_once __DIR__ . '/../PaymentLifecycle.php';
 
@@ -13,7 +11,7 @@ if(preg_match('/sConfigRenewPlan(\d+)_(\d+)/',$data, $match) && ($botState['sell
     $id = $match[1];
 	$inbound_id = $match[2];
     if (!achbotSupportsPlan($connection, (int)$id, (int)$inbound_id)) {
-        alert(\achbotMessage('renewal.renewal_checkout.alert.6aa152a253'), true);
+        alert("⛔️ تمدید این اشتراک در حال حاضر امکان‌پذیر نیست.", true);
         return;
     }
 
@@ -29,7 +27,7 @@ if(preg_match('/sConfigRenewPlan(\d+)_(\d+)/',$data, $match) && ($botState['sell
     if (!is_array($configInfo) || ($configInfo['marzban'] ?? null) !== true ||
         empty($configInfo['remark']) || $accountServer <= 0 ||
         !achbotSupportsPlan($connection, (int)$id, 0, $accountServer)) {
-        alert(\achbotMessage('renewal.renewal_plan.alert.b1e40557e8'), true);
+        alert("⛔️ طرح انتخابی با اشتراک شما سازگار نیست.", true);
         return;
     }
     $uuid = $configInfo['uuid'] ?? '';
@@ -69,14 +67,14 @@ if(preg_match('/sConfigRenewPlan(\d+)_(\d+)/',$data, $match) && ($botState['sell
     $rowId=achbotPayUxInsertDraft($connection,(int)$from_id,$stmt);
     $stmt->close();
     if ($rowId<=0) {
-        alert(\achbotMessage('renewal.renewal_checkout.alert.201380d8bf'),true);
+        alert('⚠️ صدور پیش‌نویس به‌طور قطعی تأیید نشد؛ برای پیگیری از پشتیبانی کمک بگیرید.',true);
         return;
     }
 
 
     if(achbotManualEnabled('bank_transfer') && achbotPayUxAudienceAllowed($connection,'bank_transfer',(int)$from_id)) $keyboard[] = [['text' => $buttonValues['cart_to_cart'],  'callback_data' => "payBuyWithCartToCart$hash_id"]];
     if(achbotManualEnabled('gift_card') && achbotPayUxAudienceAllowed($connection,'gift_card',(int)$from_id)) $keyboard[] = [['text' => $buttonValues['gift_card'], 'callback_data' => "payBuyWithGiftCard$hash_id"]];
-    if ((achbotManualCryptoEnabled() && (achbotPayUxAudienceAllowed($connection,'manual_usdt',(int)$from_id) || achbotPayUxAudienceAllowed($connection,'manual_trx',(int)$from_id)))) $keyboard[] = [['text' => \achbotMessage('renewal.extensions.button.e729457ba2'), 'callback_data' => "mcm_$hash_id"]];
+    if ((achbotManualCryptoEnabled() && (achbotPayUxAudienceAllowed($connection,'manual_usdt',(int)$from_id) || achbotPayUxAudienceAllowed($connection,'manual_trx',(int)$from_id)))) $keyboard[] = [['text' => '💎 پرداخت رمزارزی دستی', 'callback_data' => "mcm_$hash_id"]];
     if(($botState['nowPaymentOther'] == "on" && achbotPayUxAudienceAllowed($connection,'nowpayments',(int)$from_id))) $keyboard[] = [['text' => $buttonValues['now_payment_gateway'],  'url' => $botUrl . "pay/?nowpayment&hash_id=" . $hash_id]];
     if(($botState['zarinpal'] == "on" && achbotPayUxAudienceAllowed($connection,'zarinpal',(int)$from_id))) $keyboard[] = [['text' => $buttonValues['zarinpal_gateway'],  'url' => $botUrl . "pay/?zarinpal&hash_id=" . $hash_id]];
     if(($botState['nextpay'] == "on" && achbotPayUxAudienceAllowed($connection,'nextpay',(int)$from_id))) $keyboard[] = [['text' => $buttonValues['nextpay_gateway'],  'url' => $botUrl . "pay/?nextpay&hash_id=" . $hash_id]];

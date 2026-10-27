@@ -1,6 +1,4 @@
 <?php
-require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
-
 /** Legacy update bindings: execute in the including scope, in the original order. */
 if(isset($update->message)){
     $from_id    = $update->message->from->id;
@@ -11,7 +9,7 @@ if(isset($update->message)){
 
     $first_name = htmlspecialchars($update->message->from->first_name ?? '');
     $last_name  = htmlspecialchars($update->message->from->last_name ?? '');
-    $username   = $update->message->from->username ?? \achbotMessage('telegram.update_bindings.text.32f665d21c');
+    $username   = $update->message->from->username ?? " ندارد ";
 
     $forward_from_name = null;
     $forward_from_id   = null;
@@ -30,7 +28,7 @@ if(isset($update->callback_query)){
     $message_id = $update->callback_query->message->message_id;
     $chat_id = $update->callback_query->message->chat->id;
     $chat_type = $update->callback_query->message->chat->type;
-    $username = htmlspecialchars($update->callback_query->from->username)?? \achbotMessage('telegram.update_bindings.text.32f665d21c');
+    $username = htmlspecialchars($update->callback_query->from->username)?? " ندارد ";
     $from_id = $update->callback_query->from->id;
     $first_name = htmlspecialchars($update->callback_query->from->first_name);
     $markup = json_decode(json_encode($update->callback_query->message->reply_markup->inline_keyboard),true);

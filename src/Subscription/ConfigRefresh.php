@@ -4,8 +4,6 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     http_response_code(404);
     exit;
 }
-require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
-
 
 if (preg_match('/sConfigUpdate(\d+)/', $data, $match)) {
     alert($mainValues['please_wait_message']);
@@ -19,7 +17,7 @@ if (preg_match('/sConfigUpdate(\d+)/', $data, $match)) {
 
     // All active subscriptions are Marzban; never parse obsolete X-UI links.
     if (empty($configInfo['marzban'])) {
-        alert(\achbotMessage('subscription.config_refresh.alert.05e5654640'), true);
+        alert("⛔️ به‌روزرسانی اطلاعات این اشتراک در حال حاضر امکان‌پذیر نیست.", true);
         return;
     }
     $info = achbotProviderUserInfo($server_id, $remark);

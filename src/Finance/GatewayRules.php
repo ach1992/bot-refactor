@@ -7,15 +7,13 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     http_response_code(404);
     exit;
 }
-require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
-
 function achbotGatewayRuleCategories(): array {
     return array_diff_key(achbotPayUxAudienceModes(),['off'=>true]);
 }
 function achbotGatewayRuleMetrics(): array {
     return [
-        'buy'=>\achbotMessage('payment_settings.gateway_rules.gateway_rule_metrics.text.7021d6f38e'),'renew'=>\achbotMessage('payment_settings.gateway_rules.gateway_rule_metrics.text.3225fab3cd'),'volume'=>\achbotMessage('payment_settings.gateway_rules.gateway_rule_metrics.text.4bbbd988ad'),
-        'time'=>\achbotMessage('payment_settings.gateway_rules.gateway_rule_metrics.text.070602773a'),'topup'=>\achbotMessage('payment_settings.gateway_rules.gateway_rule_metrics.text.991ae08d64')
+        'buy'=>'خرید اولیه','renew'=>'تمدید','volume'=>'افزایش حجم',
+        'time'=>'افزایش زمان','topup'=>'شارژ کیف پول'
     ];
 }
 function achbotGatewayRuleBlank(string $category): array {

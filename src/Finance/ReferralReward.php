@@ -7,8 +7,6 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     http_response_code(404);
     exit;
 }
-require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
-
 
 if (!function_exists('achbotReferralSchemaReady')) {
     function achbotReferralSchemaReady(mysqli $db): bool {
@@ -73,10 +71,10 @@ if (!function_exists('achbotReferralWarnOperator')) {
         if ($admin<=0 || $payId<=0 || !function_exists('sendMessage')) return;
         try {
             $ack=sendMessage(
-                \achbotMessage('payment.referral_reward.referral_warn_operator.message.5365cd589c').
-                \achbotMessage('payment.referral_reward.referral_warn_operator.pay__i_d.9ac91aa748').$payId.
-                \achbotMessage('payment.referral_reward.referral_warn_operator.message.69ec1d7580').
-                \achbotMessage('payment.referral_reward.referral_warn_operator.text.3ad839e956'),
+                '⚠️ وضعیت پاداش معرفی نیاز به بررسی دارد.'.
+                "\n🆔 Pay ID: ".$payId.
+                "\nقبل از هر اصلاح، Ledger و موجودی را تطبیق دهید؛".
+                ' واریز مجدد خودکار انجام ندهید.',
                 null,null,$admin);
             if (!is_object($ack) || ($ack->ok??false)!==true)
                 throw new RuntimeException('referral_review_notice_unconfirmed');
@@ -317,12 +315,12 @@ if (!function_exists('giveReferralReward')) {
             return false;
         }
 
-        $buyerMsg=\achbotMessage('payment.referral_reward.give_referral_reward.buyer_msg.51caba68b5').number_format($amount).
-            \achbotMessage('payment.referral_reward.give_referral_reward.text.b87aec1eb7').number_format($before).
-            \achbotMessage('payment.referral_reward.give_referral_reward.text.c0780ce268').number_format($after).\achbotMessage('payment.discounts.apply_discount_to_pay.text.2cc98f7f7c');
-        $operatorMsg=\achbotMessage('payment.referral_reward.give_referral_reward.operator_msg.7c8cfd9d4f').$payId.
-            \achbotMessage('payment.referral_reward.give_referral_reward.text.23d0786d9b').$buyer.\achbotMessage('payment.referral_reward.give_referral_reward.text.6aaba1c235').$inviter.
-            \achbotMessage('payment.referral_reward.give_referral_reward.text.534fd54cb9').number_format($amount).\achbotMessage('payment.discounts.apply_discount_to_pay.text.2cc98f7f7c');
+        $buyerMsg="🎁 پاداش معرفی شما به مبلغ ".number_format($amount).
+            " تومان ثبت شد.\n💰 موجودی قبلی: ".number_format($before).
+            " تومان\n💵 موجودی جدید: ".number_format($after)." تومان";
+        $operatorMsg="👥 پاداش معرفی خرید ثبت شد.\nشناسه پرداخت: ".$payId.
+            "\nشناسه خریدار: ".$buyer."\nشناسه معرف: ".$inviter.
+            "\nمبلغ: ".number_format($amount)." تومان";
         $targets=[['inviter',$inviter,$buyerMsg,null],
                   ['admin',$admin,$operatorMsg,'html']];
         $channel=$botState['rewardChannel']??null;

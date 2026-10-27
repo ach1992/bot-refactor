@@ -4,8 +4,6 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     http_response_code(404);
     exit;
 }
-require_once __DIR__ . '/../../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
-
 
 if(preg_match('/sConfigRenew(\d+)/', $data,$match)){
     if($botState['sellState']=="off" && $from_id !=$admin){ alert($mainValues['bot_is_updating']); exit(); }
@@ -20,7 +18,7 @@ if(preg_match('/sConfigRenew(\d+)/', $data,$match)){
     $remark = $configInfo['remark'];
 
     if (empty($configInfo['marzban']) || (int)$inboundId !== 0) {
-        alert(\achbotMessage('renewal.renewal_checkout.alert.6aa152a253'), true);
+        alert("⛔️ تمدید این اشتراک در حال حاضر امکان‌پذیر نیست.", true);
         return;
     }
     $stmt = $connection->prepare("SELECT * FROM `server_plans` WHERE `server_id` = ? AND `custom_sni` LIKE '%inbounds%' AND `active` = 1 AND `price` != 0 AND `inbound_id` = 0 ORDER BY id ASC");
@@ -36,13 +34,16 @@ if(preg_match('/sConfigRenew(\d+)/', $data,$match)){
                 $id = $file['id'];
                 $name = $file['title'];
                 $price = $file['price'];
-                $price = ($price == 0) ? \achbotMessage('renewal.extensions.price.dda7ff2974') : number_format($price).\achbotMessage('renewal.renewal_selection.text.bfb7221456');
-                $keyboard[] = ['text' => \achbotMessage('renewal.renewal_selection.name_price.5107423b94', ['name' => $name, 'price' => $price]), 'callback_data' => "sConfigRenewPlan{$id}_{$inboundId}"];
+                $price = ($price == 0) ? 'رایگان' : number_format($price).' تومان ';
+                $keyboard[] = ['text' => "$name - $price", 'callback_data' => "sConfigRenewPlan{$id}_{$inboundId}"];
             }
         }
         $keyboard[] = ['text' => $buttonValues['back_to_main'], 'callback_data' => "mainMenu"];
         $keyboard = array_chunk($keyboard,1);
-        editText($message_id, \achbotMessage('renewal.renewal_selection.message.51ab077156'), json_encode(['inline_keyboard'=>$keyboard]));
-    }else sendMessage(\achbotMessage('renewal.renewal_selection.message.5223e5a747'));
+        editText($message_id, "3️⃣ مرحله سه
+
+🤲 🕋 یکی از پلن هارو انتخاب کنید.
+➕ اگر سرویس مورد نظر شما در لیست زیر نیست لازم هست اول اشتراک را به لیست اشتراک های خودتان اضافه کنید و بعد با زدن دکمه ← 🔄 تغییر پلن، پلن انتخاب کنید تا بتوانید اشتراک خودتان را تمدید و یا شارژ کنید. ", json_encode(['inline_keyboard'=>$keyboard]));
+    }else sendMessage("💡 پلنی در این دسته بندی وجود ندارد. ");
 }
 

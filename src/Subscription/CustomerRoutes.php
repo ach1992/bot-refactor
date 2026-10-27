@@ -4,14 +4,12 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     http_response_code(404);
     exit;
 }
-require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
-
 
 function cancelSearchKeyboard() {
     return json_encode([
         'inline_keyboard' => [
             [
-                ['text' => \achbotMessage('subscription.customer_routes.cancel_search_keyboard.button.cc357a4c9f'), 'callback_data' => 'cancelSearchConfig']
+                ['text' => '❌ لغو عملیات', 'callback_data' => 'cancelSearchConfig']
             ]
         ]
     ]);
@@ -71,14 +69,14 @@ if (
     $buttons = [];
     if ($prev > 0) {
         $buttons[] = [
-            'text' => \achbotMessage('subscription.customer_routes.cancel_search_keyboard.button.0b8da1e098'),
+            'text' => "◀",
             'callback_data' => $isAgentConfig ? "changeAgentOrder$prev" : "changeOrdersPage$prev"
         ];
     }
 
     if ($page < $number_of_page) {
         $buttons[] = [
-            'text' => \achbotMessage('subscription.customer_routes.cancel_search_keyboard.button.0d56714222'),
+            'text' => "➡",
             'callback_data' => $isAgentConfig ? "changeAgentOrder$next" : "changeOrdersPage$next"
         ];
     }
@@ -194,12 +192,12 @@ if(preg_match('/^orderDetails(\d+)(_|)(?<offset>\d+|)/', $data, $match)){
 }
 
 if($data=="cantEditGrpc"){
-    alert(\achbotMessage('subscription.customer_routes.cancel_search_keyboard.alert.06fdc45418'));
+    alert("نمی توانید نوع این اشتراک را تغییر دهید.");
     exit();
 }
 if(preg_match('/^changeCustomPort(\d+)/',$data,$match) && ($from_id == $admin || $userInfo['isAdmin'] == true)){
     delMessage();
-    sendMessage(\achbotMessage('subscription.customer_routes.cancel_search_keyboard.message.3034785b83'), $cancelKey);
+    sendMessage("لطفا پورت مورد نظر خود را وارد کنید.\nبرای حذف پورت دلخواه عدد 0 را وارد کنید.", $cancelKey);
     setUser($data);
 }
 if(preg_match('/^changeCustomPort(\d+)/',$userInfo['step'],$match) && ($from_id == $admin || $userInfo['isAdmin'] == true) && $text != $buttonValues['cancel']){
@@ -210,13 +208,13 @@ if(preg_match('/^changeCustomPort(\d+)/',$userInfo['step'],$match) && ($from_id 
         $stmt->close();  
         sendMessage($mainValues['saved_successfuly'],$removeKeyboard);
          
-        sendMessage(\achbotMessage('subscription.customer_routes.cancel_search_keyboard.message.06d5c646c1'), getPlanDetailsKeys($match[1]));
+        sendMessage("ویرایش تنظیمات پلن:", getPlanDetailsKeys($match[1]));
         setUser();
     }else sendMessage($mainValues['send_only_number']);
 }
 if(preg_match('/^changeCustomSni(\d+)/',$data,$match) && ($from_id == $admin || $userInfo['isAdmin'] == true)){
     delMessage();
-    sendMessage(\achbotMessage('subscription.customer_routes.cancel_search_keyboard.message.d4b5f70a92'), $cancelKey);
+    sendMessage("لطفا sni مورد نظر خود را وارد کنید.\nبرای حذف متن /empty را وارد کنید.", $cancelKey);
     setUser($data);
 }
 if(preg_match('/^changeCustomSni(\d+)/',$userInfo['step'],$match) && ($from_id == $admin || $userInfo['isAdmin'] == true) && $text != $buttonValues['cancel']){
@@ -232,7 +230,7 @@ if(preg_match('/^changeCustomSni(\d+)/',$userInfo['step'],$match) && ($from_id =
     $stmt->close();  
     sendMessage($mainValues['saved_successfuly'],$removeKeyboard);
      
-    sendMessage(\achbotMessage('subscription.customer_routes.cancel_search_keyboard.message.06d5c646c1'), getPlanDetailsKeys($match[1]));
+    sendMessage("ویرایش تنظیمات پلن:", getPlanDetailsKeys($match[1]));
     setUser();
 }
 if(preg_match('/^changeCustomPath(\d+)/',$data,$match) && ($from_id == $admin || $userInfo['isAdmin'] == true)){
@@ -245,11 +243,11 @@ if(preg_match('/^changeCustomPath(\d+)/',$data,$match) && ($from_id == $admin ||
 }
 // Retired inbound/X-UI network-mode callbacks have no Marzban analogue.
 if(preg_match('/changeNetworkType(\d+)_(\d+)/', $data, $match)){
-    alert(\achbotMessage('subscription.customer_routes.cancel_search_keyboard.alert.77c239f956'), true);
+    alert("⛔️ تغییر نوع شبکه برای این اشتراک در دسترس نیست.", true);
     return;
 }
 if($data=="changeProtocolIsDisable"){
-    alert(\achbotMessage('subscription.customer_routes.cancel_search_keyboard.alert.477e4570c3'));
+    alert("تغییر پروتکل غیر فعال است.");
 }
 
 if(preg_match('/updateConfigConnectionLink(\d+)/', $data,$match)){
@@ -263,7 +261,7 @@ if(preg_match('/updateConfigConnectionLink(\d+)/', $data,$match)){
     $stmt->close();
 
     if (!$order || !achbotSupportsOrder($connection, (int)$oid, null, ((int)$from_id===(int)$admin || !empty($userInfo['isAdmin']))?null:(int)$from_id)) {
-        alert(\achbotMessage('subscription.customer_routes.cancel_search_keyboard.alert.724ff90245'), true);
+        alert("⛔️ انجام این درخواست برای اشتراک انتخاب‌شده امکان‌پذیر نیست.", true);
         return;
     }
     $remark = $order['remark'];
@@ -299,10 +297,10 @@ if(preg_match('/updateConfigConnectionLink(\d+)/', $data,$match)){
             $vraylink = $info->links;
             $success = true;
         } else {
-            $vraylink = \achbotMessage('subscription.customer_routes.cancel_search_keyboard.vraylink.cde59051f4');
+            $vraylink = "خطا در دریافت لینک";
         }
     } else {
-        alert(\achbotMessage('subscription.customer_routes.cancel_search_keyboard.alert.724ff90245'), true);
+        alert("⛔️ انجام این درخواست برای اشتراک انتخاب‌شده امکان‌پذیر نیست.", true);
         return;
         }
     
@@ -315,23 +313,23 @@ if(preg_match('/updateConfigConnectionLink(\d+)/', $data,$match)){
         $stmt->close();
         
         // ارسال پیام موفقیت با HTML
-        $successMessage = \achbotMessage('subscription.customer_routes.cancel_search_keyboard.success_message.6d1ad0af39')
-            . \achbotMessage('subscription.customer_routes.cancel_search_keyboard.text.02845d07de')
-            . \achbotMessage('subscription.customer_routes.cancel_search_keyboard.text.672ff8ac41')
-            . \achbotMessage('subscription.customer_routes.cancel_search_keyboard.text.caaf926e2a')
-            . \achbotMessage('subscription.customer_routes.cancel_search_keyboard.text.0aa0ee1c1f')
-            . \achbotMessage('subscription.customer_routes.cancel_search_keyboard.text.1ed8d0a6cf')
-            . \achbotMessage('subscription.customer_routes.cancel_search_keyboard.text.47dcd18697')
-			. \achbotMessage('subscription.customer_routes.cancel_search_keyboard.text.0bd7d3c032');
+        $successMessage = "<b>✅ بروزرسانی موفق بود!</b>\n\n"
+            . "⭕️ دقت کنید باید لینک اشتراک را دوباره وارد برنامه کنید یا داخل برنامه نیز بروزرسانی بزنید.\n\n"
+            . "🔄 <b>در صورتی که کانفیگ ها با لینک اشتراک اصلی یا کمکی برای شما لود نمی شوند، لطفاً مراحل زیر را انجام دهید:</b>\n\n"
+            . "1. کانفیگ های قدیمی را از نرم‌افزار خود حذف کنید.\n"
+            . "2. کانفیگ های جدید را از قسمت بالا کپی کنید.\n"
+            . "3. کانفیگ ها را به نرم‌افزار اضافه کنید.\n\n"
+            . "📱 <i>برای اتصال موفق، حتماً از آخرین نسخه نرم‌افزار استفاده نمایید.</i>\n"
+			. "⚠️ <b>بعد اتصال به کمک کانفیگ های تکی، برای اینکه همه کانفیگ ها را داشته باشید حتما دوباره با لینک اشتراک وارد کنید.</b>";
         
         // استفاده از parse_mode: "HTML" برای نمایش متن بولد شده
         sendMessage($successMessage, null, "HTML");
         
     } else {
         // ارسال پیام خطا
-        $errorMessage = \achbotMessage('subscription.customer_routes.cancel_search_keyboard.error_message.496a7eede8')
-            . \achbotMessage('subscription.customer_routes.cancel_search_keyboard.text.fd5bccf56e')
-            . \achbotMessage('subscription.customer_routes.cancel_search_keyboard.text.0d78481f3e');
+        $errorMessage = "<b>❌ خطا در بروزرسانی</b>\n\n"
+            . "متأسفانه عملیات بروزرسانی با مشکل مواجه شد.\n"
+            . "لطفاً مجدداً تلاش کنید یا با پشتیبانی تماس بگیرید.";
         
         sendMessage($errorMessage, null, "HTML");
     }
@@ -351,7 +349,7 @@ if(preg_match('/changAccountConnectionLink(\d+)/', $data,$match)){
     $stmt->close(); 
  
     if (!$order || !achbotSupportsOrder($connection, (int)$oid, null, ((int)$from_id===(int)$admin || !empty($userInfo['isAdmin']))?null:(int)$from_id)) {
-        alert(\achbotMessage('subscription.customer_routes.cancel_search_keyboard.alert.724ff90245'), true);
+        alert("⛔️ انجام این درخواست برای اشتراک انتخاب‌شده امکان‌پذیر نیست.", true);
         return;
     }
     $date = jdate("Y-m-d H:i",$order['date']); 
@@ -385,13 +383,13 @@ if(preg_match('/changAccountConnectionLink(\d+)/', $data,$match)){
     if (achbotSupportsAccount($serverType, $inboundId)) {
         $res = achbotProviderRevoke($server_id, $remark);
         if (($res->success??false)!==true || ($res->verified??false)!==true || !isset($res->links)) {
-            alert(\achbotMessage('subscription.customer_routes.cancel_search_keyboard.alert.001c06ff23'),true);return;
+            alert('⚠️ نتیجه تغییر لینک نیاز به بررسی دارد؛ درخواست را تکرار نکنید.',true);return;
         }
         $vraylink = $res->links;
         $newUuid=$order['uuid'];$newToken=$order['token'];
         if ($serverType==='marzban') $newUuid=$newToken=str_replace("/sub/", "", $res->subscription_url);
     }else{
-        alert(\achbotMessage('subscription.customer_routes.cancel_search_keyboard.alert.724ff90245'), true);
+        alert("⛔️ انجام این درخواست برای اشتراک انتخاب‌شده امکان‌پذیر نیست.", true);
         return;
         } 
  
@@ -402,14 +400,14 @@ if(preg_match('/changAccountConnectionLink(\d+)/', $data,$match)){
     $stmt->close(); 
 
     // ✅ ارسال پیام به کاربر بعد از تغییر لینک
-    $successMessage = \achbotMessage('subscription.customer_routes.cancel_search_keyboard.success_message.eb1ae135ff')
-        . \achbotMessage('subscription.customer_routes.cancel_search_keyboard.text.36244c21e0')
-        . \achbotMessage('subscription.customer_routes.cancel_search_keyboard.text.f82d5bd5ad')
-        . \achbotMessage('subscription.customer_routes.cancel_search_keyboard.text.97f8afa554')
-        . \achbotMessage('subscription.customer_routes.cancel_search_keyboard.text.f3bed97abc')
-        . \achbotMessage('subscription.customer_routes.cancel_search_keyboard.text.4267d2ca77')
-        . \achbotMessage('subscription.customer_routes.cancel_search_keyboard.text.30d20d2a47')
-        . \achbotMessage('subscription.customer_routes.cancel_search_keyboard.text.3c4d2c9dc6');
+    $successMessage = "<b>✅ لینک اشتراک شما با موفقیت تغییر کرد!</b>\n\n"
+        . "♻️ لینک اشتراک و کانفیگ‌های شما مجدد ساخته شد.\n\n"
+        . "🔄 <b>برای استفاده از لینک جدید این مراحل را انجام دهید:</b>\n\n"
+        . "1) لینک اشتراک قبلی و کانفیگ‌های قبلی را از نرم‌افزار کامل حذف کنید.\n"
+        . "2) لینک اشتراک جدید را از پیام بالا که شامل اطلاعات اشتراک هست کپی کنید.\n"
+        . "3) لینک را وارد نرم افزار کنید تا کانفیگ ها لود شوند اگر لینک اصلی کار نکرد از لینک کمکی استفاده کنید.\n\n"
+        . "📱 <i>پیشنهاد می کنیم از نرم‌افزار Karing استفاده کنید.</i>\n"
+        . "⚠️ <b>اگر می‌خواهید همه کانفیگ‌ها را تک تک داشته باشید، بزنید روی دکمه کیوآر کانفیگ تا تک تک ارسال شود.</b>";
 
     sendMessage($successMessage, null, "HTML"); 
  
@@ -442,7 +440,7 @@ if(preg_match('/changeUserConfigState(\d+)/', $data,$match)){
 
     
     if (!achbotSupportsPanel($serverType) || (int)$inboundId !== 0) {
-        alert(\achbotMessage('subscription.customer_routes.cancel_search_keyboard.alert.724ff90245'), true);
+        alert("⛔️ انجام این درخواست برای اشتراک انتخاب‌شده امکان‌پذیر نیست.", true);
         return;
     }
     $update_response = achbotProviderToggle($server_id, $remark);
@@ -452,7 +450,7 @@ if(preg_match('/changeUserConfigState(\d+)/', $data,$match)){
     
         $keys = getUserOrderDetailKeys($oid);
         editText($message_id, $keys['msg'], $keys['keyboard'], "HTML");
-    }else sendMessage(\achbotMessage('subscription.customer_routes.cancel_search_keyboard.message.7651e3b139') . $update_response->msg);
+    }else sendMessage("عملیات مورد نظر با مشکل روبرو شد.\n" . $update_response->msg);
 }
 
 if (preg_match('/agentChangeUserConfigState(\d+)/', $data, $match)) {
@@ -468,7 +466,7 @@ if (preg_match('/agentChangeUserConfigState(\d+)/', $data, $match)) {
     $stmt->close();
 
     if (!$order) {
-        sendMessage(\achbotMessage('subscription.customer_routes.cancel_search_keyboard.message.f0a1fc755c'));
+        sendMessage("سفارش مورد نظر یافت نشد.");
         return;
     }
 
@@ -485,7 +483,7 @@ if (preg_match('/agentChangeUserConfigState(\d+)/', $data, $match)) {
     $stmt->close();
 
     if (!$server_info) {
-        sendMessage(\achbotMessage('subscription.customer_routes.cancel_search_keyboard.message.a7cb7bc569'));
+        sendMessage("اطلاعات سرور یافت نشد.");
         return;
     }
 
@@ -494,7 +492,7 @@ if (preg_match('/agentChangeUserConfigState(\d+)/', $data, $match)) {
     // Marzban-only: refuse obsolete inbound metadata instead of altering a
     // different panel/account by guesswork.
     if (!achbotSupportsPanel($serverType) || (int)$inboundId !== 0) {
-        alert(\achbotMessage('subscription.customer_routes.cancel_search_keyboard.alert.724ff90245'), true);
+        alert("⛔️ انجام این درخواست برای اشتراک انتخاب‌شده امکان‌پذیر نیست.", true);
         return;
     }
     $update_response = achbotProviderToggle($server_id, $remark);
@@ -508,12 +506,12 @@ if (preg_match('/agentChangeUserConfigState(\d+)/', $data, $match)) {
         editText($message_id, $keys['msg'], $keys['keyboard'], "HTML");
 
     } else {
-        sendMessage(\achbotMessage('subscription.customer_routes.cancel_search_keyboard.message.7651e3b139') . $update_response->msg);
+        sendMessage("عملیات مورد نظر با مشکل روبرو شد.\n" . $update_response->msg);
     }
 }
 
 // Old X-UI protocol mutation must not alter a Marzban order or its payment.
 if(preg_match('/changeAccProtocol(\d+)_(\d+)_(.*)/', $data, $match)){
-    alert(\achbotMessage('subscription.customer_routes.cancel_search_keyboard.alert.d6602f696a'), true);
+    alert("⛔️ تغییر نوع اتصال برای این اشتراک در دسترس نیست.", true);
     return;
 }

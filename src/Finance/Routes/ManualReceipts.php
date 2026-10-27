@@ -4,15 +4,13 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     http_response_code(404);
     exit;
 }
-require_once __DIR__ . '/../../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
-
 
 // Unified read-only attention hub. Existing NP child inquiry and exact
 // BUY_SUB CREATE readback remain specialized, separately gated tools.
 $attentionMatch=[];
 if (preg_match('/^attention(Inbox|Case)(?:_([1-9][0-9]{0,17}))?$/D',(string)$data,$attentionMatch)) {
     if ((int)$admin<=0 || (int)$from_id!==(int)$admin || (int)($chat_id??0)!==(int)$admin) {
-        answerCallbackQuery($callbackId,\achbotMessage('manual_payment.manual_receipts.alert.0a23f88410'),true);
+        answerCallbackQuery($callbackId,'این بخش فقط در گفتگوی خصوصی مدیر در دسترس است.',true);
         return;
     }
     require_once __DIR__.'/../RecoveryInspection.php';
@@ -25,54 +23,54 @@ if (preg_match('/^attention(Inbox|Case)(?:_([1-9][0-9]{0,17}))?$/D',(string)$dat
             $before=(int)($attentionMatch[2]??0);
             $items=achbotRecoveryAttentionCases($connection,$before);
             $more=count($items)>12;$items=array_slice($items,0,12);
-            $body=\achbotMessage('manual_payment.manual_receipts.body.33cce3f587').
-                \achbotMessage('manual_payment.manual_receipts.text.1e0e468f21').
-                \achbotMessage('manual_payment.manual_receipts.text.fc540b5b95').
-                \achbotMessage('manual_payment.manual_receipts.text.892c054af9');
-            foreach ($items as $item) $rows[]=[['text'=>\achbotMessage('manual_payment.manual_receipts.button.8b87c9c9f0').(int)$item['id'].\achbotMessage('manual_payment.manual_receipts.text.44017e9932').(int)$item['user_id'].' | '.number_format((int)$item['price']).\achbotMessage('manual_payment.automatic_receipts.text.2cc98f7f7c'),
+            $body="<b>📋 پرداخت‌ها و سفارش‌های نیازمند بررسی</b>\n\n".
+                "شواهد محلی روش‌های فعال: درگاه‌ها، رسیدهای دستی و سفارش‌های ساختِ در پردازش.\n".
+                "خرید، تمدید، افزایش روز/حجم و شارژ کیف پول بر اساس سند موجود بررسی می‌شوند.\n".
+                "سابقهٔ پرداخت‌شده بدون دفتر جدید، خودبه‌خود هشدار نیست. پوشش سابقه‌های فاقد سند کامل نیست.\n";
+            foreach ($items as $item) $rows[]=[['text'=>'🧾 #'.(int)$item['id'].' | کاربر '.(int)$item['user_id'].' | '.number_format((int)$item['price']).' تومان',
                 'callback_data'=>'attentionCase_'.(int)$item['id']]];
-            if (!$items) $body.=\achbotMessage('manual_payment.manual_receipts.body.344ad306af');
-            if ($more) $rows[]=[['text'=>\achbotMessage('manual_payment.manual_receipts.button.2a07cf7022'),'callback_data'=>'attentionInbox_'.(int)end($items)['id']]];
-            if ($before>0) $rows[]=[['text'=>\achbotMessage('manual_payment.manual_receipts.button.19ff81effd'),'callback_data'=>'attentionInbox']];
+            if (!$items) $body.="\nدر این صفحه موردی با شواهد قابل بررسی پیدا نشد؛ این به معنی تأیید همهٔ پرداخت‌ها نیست.";
+            if ($more) $rows[]=[['text'=>'➡️ پرونده‌های قدیمی‌تر','callback_data'=>'attentionInbox_'.(int)end($items)['id']]];
+            if ($before>0) $rows[]=[['text'=>'🔝 فهرست جدیدتر','callback_data'=>'attentionInbox']];
         } else {
             $id=(int)($attentionMatch[2]??0);
             $pay=achbotRecoveryAttentionCase($connection,$id);
             if (!$pay) throw new RuntimeException('attention_pay_not_found');
             $a=$pay['attempt'];
-            $body=\achbotMessage('manual_payment.manual_receipts.body.069b961bf9').$id."</b>\n".
-                achbotPayUxReference($pay).\achbotMessage('manual_payment.manual_receipts.text.be26bedc74').number_format((int)$pay['price']).\achbotMessage('manual_payment.manual_receipts.text.81a62ff6c6').
-                \achbotMessage('manual_payment.manual_receipts.text.cb30509da2').$escAttention($pay['type'])."</code>\n".
-                \achbotMessage('manual_payment.manual_receipts.text.f0b53210c3').$escAttention($a['provider']??\achbotMessage('manual_payment.manual_receipts.text.260481666f')).\achbotMessage('manual_payment.manual_receipts.text.8e4c17a2df').$escAttention($pay['state'])."</code>\n".
-                \achbotMessage('manual_payment.manual_receipts.text.11acfb8b65').$escAttention($a['stage']??\achbotMessage('manual_payment.manual_receipts.text.8e25fa8b4c')).\achbotMessage('manual_payment.manual_receipts.text.57895a27e1').$escAttention($a['provider_status']??\achbotMessage('manual_payment.manual_receipts.text.5749a86140'))."</code>\n\n".
+            $body="<b>🧾 شواهد محلی پروندهٔ #".$id."</b>\n".
+                achbotPayUxReference($pay)."💰 مبلغ: ".number_format((int)$pay['price'])." تومان\n".
+                "موضوع: <code>".$escAttention($pay['type'])."</code>\n".
+                "روش: <code>".$escAttention($a['provider']??'سند موجود نیست')."</code> | وضعیت سابقه: <code>".$escAttention($pay['state'])."</code>\n".
+                "مرحلهٔ دفتر: <code>".$escAttention($a['stage']??'موجود نیست')."</code> | نتیجه: <code>".$escAttention($a['provider_status']??'ثبت نشده')."</code>\n\n".
                 achbotRecoveryEvidenceText($pay,$a).achbotRecoverySubjectText($pay);
-            if ($a && (string)($a['payment_id']??'')!=='') $body.=\achbotMessage('manual_payment.manual_receipts.body.5c0b1f20fc').$escAttention($a['payment_id'])."</code>\n";
+            if ($a && (string)($a['payment_id']??'')!=='') $body.="شناسهٔ ثبت‌شدهٔ روش پرداخت: <code>".$escAttention($a['payment_id'])."</code>\n";
             if (($a['provider']??'')==='nowpayments') {
                 $stmt=$connection->prepare('SELECT id FROM payment_attempts WHERE pay_row_id=? LIMIT 1');
                 $stmt->bind_param('i',$id);$stmt->execute();$attemptId=(int)($stmt->get_result()->fetch_assoc()['id']??0);$stmt->close();
-                if ($attemptId>0) $rows[]=[['text'=>\achbotMessage('manual_payment.manual_receipts.button.8b5b783029'),'callback_data'=>'npReviewCase_'.$attemptId]];
+                if ($attemptId>0) $rows[]=[['text'=>'🔍 جزئیات شواهد NOWPayments','callback_data'=>'npReviewCase_'.$attemptId]];
             }
             if ($pay['type']==='BUY_SUB' && in_array($pay['state'],['processing','processing_wallet','paid'],true))
-                $rows[]=[['text'=>\achbotMessage('manual_payment.manual_receipts.button.ea309dff23'),'callback_data'=>'bankReviewCase_'.$id]];
+                $rows[]=[['text'=>'🧩 جزئیات عملیات ساخت','callback_data'=>'bankReviewCase_'.$id]];
             $manual=achbotPayUxManualProvider((string)($a['provider']??''));
-            if ($manual && $pay['state']==='have_sent') $body.=\achbotMessage('manual_payment.manual_receipts.body.189e0e519d');
-            elseif ($pay['type']==='INCREASE_WALLET') $body.=\achbotMessage('manual_payment.manual_receipts.body.12b390893d');
-            elseif ($pay['type']!=='BUY_SUB') $body.=\achbotMessage('manual_payment.manual_receipts.body.6c27eff9db');
-            else $body.=\achbotMessage('manual_payment.manual_receipts.body.3e0c446f58');
-            $rows[]=[['text'=>\achbotMessage('manual_payment.manual_receipts.button.4d6cf1a248'),'callback_data'=>'attentionInbox']];
+            if ($manual && $pay['state']==='have_sent') $body.="\nگام بعد: تصویر و مقصد/مبلغِ ثبت‌شده را در پیام اصلی رسید بررسی کنید؛ تصمیم فقط در مسیر اصلیِ مجازِ رسید انجام شود.";
+            elseif ($pay['type']==='INCREASE_WALLET') $body.="\nگام بعد: سند پرداخت و اعتبار کیف پول را برای همین شناسه تطبیق دهید؛ موجودی فعلی به‌تنهایی سند این شارژ نیست.";
+            elseif ($pay['type']!=='BUY_SUB') $body.="\nگام بعد: سند پرداخت و نتیجهٔ تمدید/تغییر همان اشتراک را تطبیق دهید؛ دفتر CREATE اثبات این تغییر نیست.";
+            else $body.="\nگام بعد: سند پرداخت و عملیات هر حساب را جداگانه بررسی کنید؛ در نبود هویت ثبت‌شده، بررسی انسانی لازم است.";
+            $rows[]=[['text'=>'📋 فهرست بررسی','callback_data'=>'attentionInbox']];
         }
         if (!achbotPayUxTable($connection,'payment_attempts') || !achbotPayUxTable($connection,'service_effects') ||
             !achbotPayUxTable($connection,'automatic_renewal_attempts'))
-            $body.=\achbotMessage('manual_payment.manual_receipts.body.75381485c2');
-        $body.=\achbotMessage('manual_payment.manual_receipts.body.2d8dc82a81');
-        $rows[]=[['text'=>\achbotMessage('manual_payment.manual_receipts.button.3d941bcb15'),'callback_data'=>'npReviewInbox']];
-        $rows[]=[['text'=>\achbotMessage('manual_payment.manual_crypto.button.1121ffbf88'),'callback_data'=>'evidenceHome']];
-        answerCallbackQuery($callbackId,\achbotMessage('manual_payment.manual_receipts.alert.c3fb4bd548'));
+            $body.="\n⚠️ بخشی از دفترهای جدید در دسترس نیست؛ پوشش محدود است و نبود سند، موفقیت/شکست را ثابت نمی‌کند.";
+        $body.="\n\nاین صفحه فقط‌خواندنی است؛ تأیید، برداشت، بازپرداخت یا تکرار عملیات انجام نمی‌دهد.";
+        $rows[]=[['text'=>'🔍 شواهد تخصصی NOWPayments','callback_data'=>'npReviewInbox']];
+        $rows[]=[['text'=>'🏠 منوی اصلی','callback_data'=>'evidenceHome']];
+        answerCallbackQuery($callbackId,'فقط شواهد ثبت‌شده خوانده شد.');
         $markup=json_encode(['inline_keyboard'=>$rows],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
         $result=editText($message_id,$body,$markup,'HTML',$admin);
         if (!is_object($result) || ($result->ok??false)!==true) sendMessage($body,$markup,'HTML',$admin);
     } catch (Throwable $error) {
         error_log('achbot_attention_inspection_unavailable class='.get_class($error));
-        sendMessage(\achbotMessage('manual_payment.manual_receipts.message.c46e102fab'),null,'HTML',$admin);
+        sendMessage('⚠️ شواهد این فهرست در دسترس نیست؛ پوشش قابل احراز نیست. از پیام اصلی رسید یا مسیر تخصصی روش پرداخت پیگیری کنید. هیچ عملیات مالی انجام نشد.',null,'HTML',$admin);
     }
     return;
 }
@@ -88,7 +86,7 @@ $bankRead=preg_match('/^bankReviewRead_([1-9][0-9]{0,17})_([1-9][0-9]{0,9})_([0-
 if ($bankInbox || $bankCase || $bankRead) {
     if ((int)$admin<=0 || (int)$from_id!==(int)$admin ||
         (int)($chat_id??0)!==(int)$admin) {
-        answerCallbackQuery($callbackId,\achbotMessage('manual_payment.manual_receipts.alert.0a23f88410'),true);
+        answerCallbackQuery($callbackId,'این بخش فقط در گفتگوی خصوصی مدیر در دسترس است.',true);
         return;
     }
     require_once __DIR__.'/../RecoveryInspection.php';
@@ -121,7 +119,7 @@ if ($bankInbox || $bankCase || $bankRead) {
 
     $payId=0;
     try {
-        $bankAck($bankRead?\achbotMessage('manual_payment.manual_receipts.text.e4945a4036'):\achbotMessage('manual_payment.manual_receipts.text.f45bd281a9'));
+        $bankAck($bankRead?'استعلام فقط‌خواندنی آغاز شد.':'نمایش شواهد محلی فقط‌خواندنی است.');
         if ($bankInbox) {
             $before=(int)($bankInboxMatch[1]??0);
             $items=achbotRecoveryPendingCases($connection,$before);
@@ -129,24 +127,24 @@ if ($bankInbox || $bankCase || $bankRead) {
             $items=array_slice($items,0,12);
             $buttons=[];
             foreach ($items as $item) {
-                $buttons[]=[['text'=>\achbotMessage('manual_payment.manual_receipts.button.8b87c9c9f0').(int)$item['id'].\achbotMessage('manual_payment.manual_receipts.text.44017e9932').
-                    (int)$item['user_id'].' | '.number_format((int)$item['price']).\achbotMessage('manual_payment.automatic_receipts.text.2cc98f7f7c'),
+                $buttons[]=[['text'=>'🧾 #'.(int)$item['id'].' | کاربر '.
+                    (int)$item['user_id'].' | '.number_format((int)$item['price']).' تومان',
                     'callback_data'=>'bankReviewCase_'.(int)$item['id']]];
             }
             if ($more && $items) {
                 $last=end($items);
-                $buttons[]=[['text'=>\achbotMessage('manual_payment.manual_receipts.button.2a07cf7022'),
+                $buttons[]=[['text'=>'➡️ پرونده‌های قدیمی‌تر',
                     'callback_data'=>'bankReviewInbox_'.(int)$last['id']]];
             }
             if ($before>0)
-                $buttons[]=[['text'=>\achbotMessage('manual_payment.manual_receipts.button.19ff81effd'),'callback_data'=>'bankReviewInbox']];
-            $buttons[]=[['text'=>\achbotMessage('manual_payment.manual_receipts.button.84fe055cdf'),'callback_data'=>'attentionInbox']];
-            $buttons[]=[['text'=>\achbotMessage('manual_payment.manual_receipts.button.c7ac8dfee0'),'callback_data'=>'managePanel']];
-            $body=\achbotMessage('manual_payment.manual_receipts.body.0b11329132').
-                \achbotMessage('manual_payment.manual_receipts.text.daf7f84c9e').
-                \achbotMessage('manual_payment.manual_receipts.text.0702ddffac').
-                \achbotMessage('manual_payment.manual_receipts.text.d18917f91a');
-            if (!$items) $body.=\achbotMessage('manual_payment.manual_receipts.body.83bffce220');
+                $buttons[]=[['text'=>'🔝 فهرست جدیدتر','callback_data'=>'bankReviewInbox']];
+            $buttons[]=[['text'=>'📋 مرکز بررسی پرداخت‌ها','callback_data'=>'attentionInbox']];
+            $buttons[]=[['text'=>'🏠 مدیریت','callback_data'=>'managePanel']];
+            $body="<b>🧩 سفارش‌های سرویس نیازمند تطبیق</b>\n\n".
+                "فقط خریدهای در پردازش یا دارای سندِ حل‌نشدهٔ عملیات ساخت نمایش داده می‌شوند. ".
+                "سابقهٔ پرداخت‌شده بدون دفتر جدید، به‌تنهایی پروندهٔ ناتمام نیست.\n".
+                "هیچ اقدامی برای ساخت، تمدید، تأیید، برگشت وجه یا تغییر وضعیت انجام نمی‌شود.";
+            if (!$items) $body.="\n\nدر این صفحه پرونده‌ای پیدا نشد.";
             $bankShow($body,$buttons);
             return;
         }
@@ -163,83 +161,85 @@ if ($bankInbox || $bankCase || $bankRead) {
         }
         $case=achbotRecoveryCase($connection,$payId,$cursor);
         if (!$case) {
-            $bankShow(\achbotMessage('manual_payment.manual_receipts.text.78315abd05').$payId.\achbotMessage('manual_payment.manual_receipts.text.5743ace55a').
-                \achbotMessage('manual_payment.manual_receipts.text.5743a85170').
-                \achbotMessage('manual_payment.manual_receipts.text.1348893533'),
-                [[['text'=>\achbotMessage('manual_payment.manual_receipts.button.cec3d268b6'),'callback_data'=>'bankReviewInbox']]]);
+            $bankShow("<b>⚠️ پروندهٔ #".$payId." در دسترس نیست.</b>\n".
+                "وضعیت پرداخت هنگام بررسی تغییر کرده یا ردیف آن حذف شده است. ".
+                "هیچ نتیجهٔ دوردستی، تأیید وجه یا تحویل سرویس از این نبود به دست نمی‌آید.",
+                [[['text'=>'📋 فهرست پرونده‌ها','callback_data'=>'bankReviewInbox']]]);
             return;
         }
         $requested=(int)$case['requested_accounts'];
         $recorded=(int)$case['recorded_accounts'];
-        $body=\achbotMessage('manual_payment.manual_receipts.body.7dd7fb1632').(int)$case['pay_id']."</b>\n\n".
-            \achbotMessage('manual_payment.manual_receipts.text.d2bbfff6d2').(int)$case['user_id']."\n".
-            \achbotMessage('manual_payment.manual_receipts.text.db022eb061').number_format((int)$case['amount']).\achbotMessage('manual_payment.manual_receipts.text.81a62ff6c6').
-            \achbotMessage('manual_payment.manual_receipts.text.d279f3e369').$requested.\achbotMessage('manual_payment.manual_receipts.text.f5bbd167b7').$recorded."\n".
-            \achbotMessage('manual_payment.manual_receipts.text.955398cb47').$escRecovery($case['method'])."</code>\n".
-            \achbotMessage('manual_payment.manual_receipts.text.1adade53f0').$escRecovery($case['payment_state'])."</code>\n".
+        $body="<b>🧩 پروندهٔ سرویس #".(int)$case['pay_id']."</b>\n\n".
+            "👤 شناسهٔ کاربر: ".(int)$case['user_id']."\n".
+            "💵 مبلغ ثبت‌شده: ".number_format((int)$case['amount'])." تومان\n".
+            "📦 حساب‌های درخواستی: ".$requested." | عملیات ثبت‌شده: ".$recorded."\n".
+            "💳 روش: <code>".$escRecovery($case['method'])."</code>\n".
+            "📍 وضعیت سابقه: <code>".$escRecovery($case['payment_state'])."</code>\n".
             $case['evidence_text'];
         if ($case['payment_state']==='processing_wallet') {
-            $body.=\achbotMessage('manual_payment.manual_receipts.body.421579cc6a').
+            $body.="
+💳 برداشت و رزرو کیف پول: <code>".
                 $escRecovery($case['wallet_hold_state'])."</code>".
-                \achbotMessage('manual_payment.manual_receipts.text.7a7fde1704').
+                "
+🧱 ظرفیت رزروشده: <code>".
                 (int)$case['wallet_capacity_reserved']."</code>
 ";
         }
         if ($case['historical_evidence_unavailable'])
-            $body.=\achbotMessage('manual_payment.manual_receipts.body.a9416a9d0f');
+            $body.="ℹ️ دفتر CREATE برای این سابقه موجود نیست؛ نبود دفتر جدید اثبات عدم تحویل نیست.\n";
         elseif (!$case['journal_complete'])
-            $body.=\achbotMessage('manual_payment.manual_receipts.body.a578ddc599');
+            $body.="⚠️ دفتر عملیات ناقص یا نامنطبق است؛ ردیف‌های ثبت‌نشده وضعیت نامعلوم دارند.\n";
         else
-            $body.=\achbotMessage('manual_payment.manual_receipts.body.dbc1d1ad5d');
-        $body.=\achbotMessage('manual_payment.manual_receipts.body.9c35b59ec6').
-               \achbotMessage('manual_payment.manual_receipts.text.1fd9b81d66');
+            $body.="ℹ️ کامل‌بودن تعداد ردیف‌ها اثبات تحویل حساب نیست.\n";
+        $body.="تعداد درخواست بر مبنای رکورد فعلی پرداخت است؛ مقدار تاریخی تغییرناپذیر جداگانه ثبت نشده است.\n\n".
+               "<b>شناسنامهٔ عملیات ثبت‌شده:</b>\n";
         $states=[
-            'dispatching'=>\achbotMessage('manual_payment.manual_receipts.text.9509889d5a'),
-            'verified'=>\achbotMessage('manual_payment.manual_receipts.text.ced6988f1b'),
-            'local_recorded'=>\achbotMessage('manual_payment.manual_receipts.text.872f51fba7')
+            'dispatching'=>'ارسال ثبت‌شده؛ نتیجه نامعلوم',
+            'verified'=>'تطبیق در پردازش؛ نیازمند بررسی',
+            'local_recorded'=>'سفارش محلی ثبت‌شده'
         ];
         $orderStates=[
-            'not_recorded'=>\achbotMessage('manual_payment.manual_receipts.text.49dcc53128'),
-            'historical_order_missing'=>\achbotMessage('manual_payment.manual_receipts.text.23f88a8e40'),
-            'linked'=>\achbotMessage('manual_payment.manual_receipts.text.592fae7fc5'),
-            'linked_mismatch'=>\achbotMessage('manual_payment.manual_receipts.text.1dcc76aa6d')
+            'not_recorded'=>'سفارش محلی ثبت نشده',
+            'historical_order_missing'=>'ارجاع تاریخی؛ سفارش اکنون موجود نیست',
+            'linked'=>'ارجاع سفارش محلی برقرار',
+            'linked_mismatch'=>'ارجاع سفارش محلی مغایر'
         ];
         $buttons=[];
         foreach ($case['lines'] as $line) {
             $num=(int)$line['ordinal'];
-            $body.=\achbotMessage('manual_payment.manual_receipts.body.e32998c4f2').$num." | <code>".$escRecovery($line['username'])."</code>\n".
-                \achbotMessage('manual_payment.manual_receipts.text.5def5245fd').$escRecovery($states[$line['state']]??\achbotMessage('manual_payment.manual_receipts.text.f8ba5b2ba2'))."\n".
-                \achbotMessage('manual_payment.manual_receipts.text.7906264202').$escRecovery($line['operation_id'])."</code>\n".
-                \achbotMessage('manual_payment.manual_receipts.text.1fa4518da2').(int)$line['effect_id'].\achbotMessage('manual_payment.manual_receipts.text.e79a84073f').
-                    ($line['order_id']===null?\achbotMessage('manual_payment.manual_receipts.text.cbf88cdc30'):(int)$line['order_id'])."\n".
-                \achbotMessage('manual_payment.manual_receipts.text.a8d37ad733').$escRecovery($orderStates[$line['local_evidence']]??\achbotMessage('manual_payment.manual_receipts.text.aa75bd9846'))."\n";
+            $body.="• ردیف ".$num." | <code>".$escRecovery($line['username'])."</code>\n".
+                "  وضعیت: ".$escRecovery($states[$line['state']]??'وضعیت نامشخص')."\n".
+                "  عملیات: <code>".$escRecovery($line['operation_id'])."</code>\n".
+                "  شناسه اثر: ".(int)$line['effect_id']." | سفارش: ".
+                    ($line['order_id']===null?'ثبت‌نشده':(int)$line['order_id'])."\n".
+                "  سند محلی: ".$escRecovery($orderStates[$line['local_evidence']]??'نامعلوم')."\n";
             if ($num>$requested)
-                $body.=\achbotMessage('manual_payment.manual_receipts.body.549aabe72c');
-            $buttons[]=[['text'=>\achbotMessage('manual_payment.manual_receipts.button.3b19e9c031').$num,
+                $body.="  ⚠️ شمارهٔ ردیف خارج از تعداد فعلی سفارش است.\n";
+            $buttons[]=[['text'=>'🔍 استعلام فقط‌خواندنی ردیف '.$num,
                 'callback_data'=>'bankReviewRead_'.(int)$case['pay_id'].'_'.$num.'_'.$cursor]];
         }
         if (!$case['lines'])
-            $body.=\achbotMessage('manual_payment.manual_receipts.body.f8d79baf6f');
+            $body.="در این صفحه عملیات CREATE ثبت نشده؛ از نبود ردیف، نبود عملیات دوردست را نتیجه نگیرید.\n";
         if ($observation!==null) {
             $explain=match($observation['status']) {
-                'matching_observation'=>\achbotMessage('manual_payment.manual_receipts.text.b4dda864a4'),
-                'remote_mismatch'=>\achbotMessage('manual_payment.manual_receipts.text.f5ca620f64'),
-                'remote_unavailable'=>\achbotMessage('manual_payment.manual_receipts.text.7d1ab789a1'),
-                'changed_during_inspection'=>\achbotMessage('manual_payment.manual_receipts.text.e802d83881'),
-                default=>\achbotMessage('manual_payment.manual_receipts.text.81d4f3f95f'),
+                'matching_observation'=>'شواهد لحظه‌ای حساب با شناسه، نشانگر عملیات، سهمیه و انقضا تطبیق دارد؛ اثبات وصول وجه یا مجوز تأیید نیست.',
+                'remote_mismatch'=>'مغایرت شواهد دوردست؛ بدون ساخت یا بازپرداخت مجدد، نیازمند بررسی است.',
+                'remote_unavailable'=>'استعلام قابل اتکا دریافت نشد؛ 404 یا Timeout نشانهٔ اجرا نشدن CREATE نیست.',
+                'changed_during_inspection'=>'اطلاعات هدف/سفارش هنگام استعلام تغییر کرد؛ نتیجه غیرقطعی است.',
+                default=>'شناسهٔ پرداخت یا مقصد اصلی قابل احراز نیست؛ هیچ درخواست دوردست انجام نشد.',
             };
-            $body.=\achbotMessage('manual_payment.manual_receipts.body.46a1988ab1').(int)$observation['ordinal'].":</b>\n".$explain."\n";
+            $body.="\n<b>استعلام ردیف ".(int)$observation['ordinal'].":</b>\n".$explain."\n";
         }
-        $body.=\achbotMessage('manual_payment.manual_receipts.body.f6f12cb363').
-            \achbotMessage('manual_payment.manual_receipts.text.6cd6e8610f');
+        $body.="\n⚠️ هیچ ردیفی با شمارش کل حساب‌ها تأیید نمی‌شود. ".
+            "تا بررسی انسانی و مستند، ساخت مجدد، پرداخت/بازپرداخت و تغییر وضعیت ممنوع است.";
         if ((int)$case['next_ordinal']>0)
-            $buttons[]=[['text'=>\achbotMessage('manual_payment.manual_receipts.button.30c297064a'),
+            $buttons[]=[['text'=>'➡️ ردیف‌های بعدی',
                 'callback_data'=>'bankReviewCase_'.(int)$case['pay_id'].'_'.
                     (int)$case['next_ordinal']]];
         if ($cursor>0)
-            $buttons[]=[['text'=>\achbotMessage('manual_payment.manual_receipts.button.e9b88c11de'),
+            $buttons[]=[['text'=>'🔝 نخستین ردیف‌ها',
                 'callback_data'=>'bankReviewCase_'.(int)$case['pay_id']]];
-        $buttons[]=[['text'=>\achbotMessage('manual_payment.manual_receipts.button.2de264e127'),
+        $buttons[]=[['text'=>'📋 فهرست پرونده‌های سرویس',
             'callback_data'=>'bankReviewInbox']];
         $bankShow($body,$buttons);
     } catch (Throwable $error) {
@@ -247,11 +247,11 @@ if ($bankInbox || $bankCase || $bankRead) {
         error_log('achbot_service_recovery_inspection_unavailable pay_id='.
             (int)$payId.' class='.get_class($error));
         try {
-            $bankAck(\achbotMessage('manual_payment.manual_receipts.text.f8772986a6'));
-            $bankShow(\achbotMessage('manual_payment.manual_receipts.text.7434f799ae').
-                \achbotMessage('manual_payment.manual_receipts.text.7aefae1fe7').$payId.\achbotMessage('manual_payment.manual_receipts.text.1f851ceccd').
-                \achbotMessage('manual_payment.manual_receipts.text.39f6c134e8'),
-                [[['text'=>\achbotMessage('manual_payment.manual_receipts.button.cec3d268b6'),'callback_data'=>'bankReviewInbox']]]);
+            $bankAck('شواهد این پرونده قابل دریافت نیست.');
+            $bankShow("<b>⚠️ نتیجهٔ استعلام قابل احراز نیست.</b>\n".
+                "پروندهٔ #".$payId." هنگام بررسی یا ارسال پیام دچار خطا شد. ".
+                "هیچ اثبات وصول وجه، تطبیق قطعی یا مجوز ایجاد مجدد سرویس حاصل نشده است.",
+                [[['text'=>'📋 فهرست پرونده‌ها','callback_data'=>'bankReviewInbox']]]);
         } catch (Throwable $deliveryError) {
             error_log('achbot_service_recovery_owner_delivery_failed class='.
                 get_class($deliveryError));
@@ -271,7 +271,7 @@ if ($isInbox ||
                (string)$data)) {
     if ((int)$from_id !== (int)$admin ||
         (int)($chat_id??0) !== (int)$admin) {
-        answerCallbackQuery($callbackId,\achbotMessage('manual_payment.manual_receipts.alert.f961d21391'),true);
+        answerCallbackQuery($callbackId,'دسترسی به بررسی مالی مجاز نیست.',true);
         return;
     }
     if (!defined('ACHBOT_NP_RECONCILE_ONLY')) define('ACHBOT_NP_RECONCILE_ONLY',true);
@@ -287,7 +287,7 @@ if ($isInbox ||
             if ($hasCursor) {
                 $cursorTime=DateTimeImmutable::createFromFormat('!YmdHis',$cursorText);
                 if (!$cursorTime || $cursorTime->format('YmdHis')!==$cursorText) {
-                    answerCallbackQuery($callbackId,\achbotMessage('manual_payment.manual_receipts.alert.b4db548d5f'),true);
+                    answerCallbackQuery($callbackId,'نشانی صفحه معتبر نیست.',true);
                     return;
                 }
                 $cursorDate=$cursorTime->format('Y-m-d H:i:s');
@@ -311,21 +311,21 @@ if ($isInbox ||
             $items=array_slice($items,0,12);
             $rows=[];
             foreach ($items as $item) {
-                $label=\achbotMessage('manual_payment.manual_receipts.button.8b87c9c9f0').(int)$item['id'].' | '.
-                    number_format((int)$item['price']).\achbotMessage('manual_payment.manual_receipts.text.e9f634ddbd').
+                $label='🧾 #'.(int)$item['id'].' | '.
+                    number_format((int)$item['price']).' تومان | کاربر '.
                     (int)$item['user_id'];
                 $rows[]=[['text'=>$label,
                     'callback_data'=>'npReviewCase_'.(int)$item['id']]];
             }
             if (!$items) {
                 $body=$hasCursor
-                    ? \achbotMessage('manual_payment.manual_receipts.text.46ec3f45b9')
-                    : \achbotMessage('manual_payment.manual_receipts.text.40b9cc08aa').
-                      \achbotMessage('manual_payment.manual_receipts.text.1ce7bc1f9c');
+                    ? "📋 <b>پروندهٔ قدیمی‌تری در این صفحه پیدا نشد.</b>"
+                    : "✅ <b>پروندهٔ دارای شواهد وجه و نیازمند رسیدگی پیدا نشد.</b>\n".
+                      "ساخت شناسه یا فاکتور پرداخت به‌تنهایی هشدار مالی نیست.";
             } else {
-                $body=\achbotMessage('manual_payment.manual_receipts.body.13e6c95688').
-                    \achbotMessage('manual_payment.manual_receipts.text.e06224688d').
-                    \achbotMessage('manual_payment.manual_receipts.text.1993d8c086');
+                $body="📋 <b>شواهد تخصصی NOWPayments</b>\n\n".
+                    "فقط پرونده‌های دارای شواهد وجه یا نتیجهٔ مالی نامطمئن نمایش داده می‌شوند.\n".
+                    "هر صفحه حداکثر ۱۲ پرونده دارد؛ برای دیدن جزئیات یکی را انتخاب کنید.";
             }
             if ($hasOlder) {
                 // Anchor after the last displayed row; next page excludes it.
@@ -333,17 +333,17 @@ if ($isInbox ||
                 $stamp=str_replace(['-',' ',':'],'',(string)$last['updated_at']);
                 if (!preg_match('/^[0-9]{14}$/D',$stamp))
                     throw new RuntimeException('operator_inbox_cursor_unconfirmed');
-                $rows[]=[['text'=>\achbotMessage('manual_payment.manual_receipts.button.2a07cf7022'),
+                $rows[]=[['text'=>'➡️ پرونده‌های قدیمی‌تر',
                     'callback_data'=>'npReviewInbox_'.$stamp.'_'.(int)$last['id']]];
             }
             if ($hasCursor)
-                $rows[]=[['text'=>\achbotMessage('manual_payment.manual_receipts.button.407c2a3b62'),
+                $rows[]=[['text'=>'🔝 بازگشت به فهرست جدیدتر',
                     'callback_data'=>'npReviewInbox']];
-            $rows[]=[['text'=>\achbotMessage('manual_payment.manual_receipts.button.0fbb8a589a'),'callback_data'=>'attentionInbox']];
-            $rows[]=[['text'=>\achbotMessage('manual_payment.manual_receipts.button.02aaa18210'),
+            $rows[]=[['text'=>'📋 بررسی همهٔ روش‌ها','callback_data'=>'attentionInbox']];
+            $rows[]=[['text'=>'🧩 عملیات ساخت نیازمند تطبیق',
                        'callback_data'=>'bankReviewInbox']];
-            $rows[]=[['text'=>\achbotMessage('manual_payment.manual_receipts.button.c7ac8dfee0'),'callback_data'=>'managePanel']];
-            answerCallbackQuery($callbackId,\achbotMessage('manual_payment.manual_receipts.alert.3f27859840'));
+            $rows[]=[['text'=>'🏠 مدیریت','callback_data'=>'managePanel']];
+            answerCallbackQuery($callbackId,'فهرست بر اساس اطلاعات مالی ثبت‌شده است.');
             editText($message_id,$body,json_encode(['inline_keyboard'=>$rows],
                 JSON_UNESCAPED_UNICODE),'HTML');
             return;
@@ -369,7 +369,7 @@ if ($isInbox ||
         $case=$stmt->get_result()->fetch_assoc();
         $stmt->close();
         if (!$case) {
-            answerCallbackQuery($callbackId,\achbotMessage('manual_payment.manual_receipts.alert.5e6ddc1f5c'),true);
+            answerCallbackQuery($callbackId,'پرونده در دسترس نیست.',true);
             return;
         }
         // Cursor is the first ledger row of this page. Fetch one extra row
@@ -389,53 +389,53 @@ if ($isInbox ||
         $esc=static fn($value) => htmlspecialchars(
             substr((string)($value??''),0,128),ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8');
         $subject=match ((string)$case['type']) {
-            'INCREASE_WALLET'=>\achbotMessage('manual_payment.manual_receipts.text.991ae08d64'),
-            'BUY_SUB'=>\achbotMessage('manual_payment.manual_receipts.text.e6343571a4'),
-            'RENEW_ACCOUNT'=>\achbotMessage('manual_payment.manual_receipts.text.df1c62b99e'),
-            default=>\achbotMessage('manual_payment.manual_receipts.text.df83eb82dd'),
+            'INCREASE_WALLET'=>'شارژ کیف پول',
+            'BUY_SUB'=>'خرید اشتراک',
+            'RENEW_ACCOUNT'=>'تمدید اشتراک',
+            default=>'پرداخت سفارش',
         };
         $handle=ltrim((string)($case['user_handle']??''),'@');
-        $body=\achbotMessage('manual_payment.manual_receipts.body.8725ef87b4').$attemptId."</b>\n\n".
-              \achbotMessage('manual_payment.manual_receipts.text.73d52bae11').$esc($case['user_name']?:\achbotMessage('manual_payment.manual_receipts.text.f07a81a062')).
+        $body="📋 <b>پروندهٔ مالی #".$attemptId."</b>\n\n".
+              "👤 کاربر: ".$esc($case['user_name']?:'نامشخص').
               ($handle!==''?' (@'.$esc($handle).')':'')."\n".
-              \achbotMessage('manual_payment.manual_receipts.text.7b98936196').(int)$case['user_id']."</code>\n".
-              \achbotMessage('manual_payment.manual_receipts.text.cc92486df2').$subject.
-              (!empty($case['plan_title'])?\achbotMessage('manual_payment.manual_receipts.text.3ecde6c863').$esc($case['plan_title']):'')."\n".
-              \achbotMessage('manual_payment.manual_receipts.text.4edea352b1').number_format((int)$case['price']).\achbotMessage('manual_payment.manual_receipts.text.81a62ff6c6').
-              \achbotMessage('manual_payment.manual_receipts.text.8ec86d6a5e').$esc($case['quote_amount']).' '.
+              "🆔 شناسه تلگرام: <code>".(int)$case['user_id']."</code>\n".
+              "🧾 موضوع: ".$subject.
+              (!empty($case['plan_title'])?' ـ '.$esc($case['plan_title']):'')."\n".
+              "💰 مبلغ سفارش: ".number_format((int)$case['price'])." تومان\n".
+              "💱 مبلغ فاکتور: ".$esc($case['quote_amount']).' '.
               $esc($case['quote_currency'])."\n".
-              \achbotMessage('manual_payment.manual_receipts.text.36ea78fe22').
-              \achbotMessage('manual_payment.manual_receipts.text.15263040e4').$esc($case['order_hash'])."</code>\n".
-              \achbotMessage('manual_payment.manual_receipts.text.d5edc0c62b').$esc($case['provider_reference'])."</code>\n".
-              \achbotMessage('manual_payment.manual_receipts.text.701b748131').$esc($case['payment_id']?:\achbotMessage('manual_payment.manual_receipts.text.5749a86140'))."</code>\n".
-              \achbotMessage('manual_payment.manual_receipts.text.293c249101').$esc($case['stage'])."</code>\n".
-              \achbotMessage('manual_payment.manual_receipts.text.91c6437ebc').$esc($case['updated_at'])."\n\n".
-              \achbotMessage('manual_payment.manual_receipts.text.50a075354e').
-              ($cursor>0?\achbotMessage('manual_payment.manual_receipts.text.b93ce429b1'):'');
+              "💳 درگاه: NOWPayments\n".
+              "🔖 سفارش: <code>".$esc($case['order_hash'])."</code>\n".
+              "🔗 فاکتور: <code>".$esc($case['provider_reference'])."</code>\n".
+              "📌 شناسه اصلی: <code>".$esc($case['payment_id']?:'ثبت نشده')."</code>\n".
+              "🔍 وضعیت داخلی: <code>".$esc($case['stage'])."</code>\n".
+              "🕓 آخرین تغییر: ".$esc($case['updated_at'])."\n\n".
+              "<b>گزارش شناسه‌های پرداخت:</b>\n".
+              ($cursor>0?"📄 ادامهٔ پرونده (شناسه‌های بعدی)\n":'');
         foreach ($children as $i=>$child) {
             $status=match ((string)$child['observed_status']) {
-                'waiting'=>\achbotMessage('manual_payment.manual_receipts.text.24b45eeaa4'),
-                'failed','expired'=>\achbotMessage('manual_payment.manual_receipts.text.3425d64f6c'),
-                'confirming'=>\achbotMessage('manual_payment.manual_receipts.text.06ddd1f056'),
-                'confirmed'=>\achbotMessage('manual_payment.manual_receipts.text.6a31c94af4'),
-                'sending'=>\achbotMessage('manual_payment.manual_receipts.text.6935f64e3e'),
-                'partially_paid'=>\achbotMessage('manual_payment.manual_receipts.text.21678e358d'),
-                'finished'=>\achbotMessage('manual_payment.manual_receipts.text.5ddc257365'),
-                'refunded'=>\achbotMessage('manual_payment.manual_receipts.text.6fdf2d7c0c'),
-                default=>\achbotMessage('manual_payment.manual_receipts.text.582a8d1e93'),
+                'waiting'=>'در انتظار واریز؛ وجهی احراز نشده',
+                'failed','expired'=>'ناموفق/منقضی؛ مدرک وصول نیست',
+                'confirming'=>'شروع تأیید شبکه؛ هنوز نهایی نیست',
+                'confirmed'=>'تأیید اولیه؛ تسویه نهایی نیست',
+                'sending'=>'پرداخت در مسیر تسویه',
+                'partially_paid'=>'وجه ناکافی/جزئی گزارش شده',
+                'finished'=>'درگاه وضعیت نهایی گزارش کرده',
+                'refunded'=>'بازپرداخت/وجه نیازمند تطبیق',
+                default=>'وضعیت نامشخص؛ نیازمند استعلام',
             };
-            $body.=\achbotMessage('manual_payment.manual_receipts.body.8cd41a21bb').$esc($child['payment_id']).'</code>: '.$status.
-                \achbotMessage('manual_payment.manual_receipts.text.028fd2b704').$esc($child['received_at'])."\n";
+            $body.='• <code>'.$esc($child['payment_id']).'</code>: '.$status.
+                ' | ثبت: '.$esc($child['received_at'])."\n";
         }
-        if (!$children) $body.=\achbotMessage('manual_payment.manual_receipts.body.2f148e055f');
+        if (!$children) $body.="هیچ شناسهٔ پرداختی ثبت نشده است.\n";
         if ($action==='Verify') {
             // Each callback makes AT MOST ONE provider GET (7s timeout),
             // avoiding a 5x7s webhook stall and allowing sequential review
             // of each child without storing broader merchant credentials.
             $apiKey=(string)($paymentKeys['nowpayment']??'');
-            $body.=\achbotMessage('manual_payment.manual_receipts.body.96d1157ea2');
+            $body.="\n<b>استعلام فقط‌خواندنی از درگاه:</b>\n";
             if ($apiKey==='') {
-                $body.=\achbotMessage('manual_payment.manual_receipts.body.787ece4365');
+                $body.="کلید درگاه موجود نیست؛ وضعیت نامشخص است.\n";
             } else {
                 foreach (array_slice($children,$childIndex,1) as $child) {
                     $remote=achbotNpGetVerifiedPayment(
@@ -444,16 +444,16 @@ if ($isInbox ||
                         (string)($remote['payment_id']??'')!==(string)$child['payment_id'] ||
                         (string)($remote['invoice_id']??'')!==(string)$case['provider_reference'] ||
                         (string)($remote['order_id']??'')!==(string)$case['order_hash']) {
-                        $body.=\achbotMessage('manual_payment.manual_receipts.body.8cd41a21bb').$esc($child['payment_id']).
-                            \achbotMessage('manual_payment.manual_receipts.text.bf0550b9ae');
+                        $body.='• <code>'.$esc($child['payment_id']).
+                            "</code>: پاسخ معتبر و منطبق دریافت نشد.\n";
                         continue;
                     }
                     $raw=(string)($remote['payment_status']??'');
                     $kind=achbotNpChildEvidenceRank($raw)>0
-                        ? \achbotMessage('manual_payment.manual_receipts.text.90eb6509fc')
-                        : \achbotMessage('manual_payment.manual_receipts.text.bb5fcc74b7');
-                    $body.=\achbotMessage('manual_payment.manual_receipts.body.8cd41a21bb').$esc($child['payment_id']).
-                        '</code>: '.$esc($raw).\achbotMessage('manual_payment.manual_receipts.text.3b2e8119b6').$kind."\n";
+                        ? 'شواهد واریز/تسویه (نیازمند تطبیق مبلغ)'
+                        : 'مدرک واریز شناسایی نشد؛ امکان پرداخت دیرهنگام باقی است';
+                    $body.='• <code>'.$esc($child['payment_id']).
+                        '</code>: '.$esc($raw).' — '.$kind."\n";
                     // These monetary observations are provider-readonly,
                     // after strict payment/invoice/order identity matching.
                     $gross=(string)($remote['actually_paid']??'');
@@ -465,45 +465,45 @@ if ($isInbox ||
                     if (achbotNpChildEvidenceRank($raw)>0 &&
                         $validAmount($gross) &&
                         preg_match('/^[a-z0-9]{2,32}$/iD',$asset)) {
-                        $body.=\achbotMessage('manual_payment.manual_receipts.body.a4a120e0d3').$esc($gross).' '.
+                        $body.='  مقدار گزارش‌شده: '.$esc($gross).' '.
                             $esc($asset)."\n";
                     }
                     if (achbotNpChildEvidenceRank($raw)>0 &&
                         $validAmount($net) &&
                         preg_match('/^[a-z0-9]{2,32}$/iD',$netAsset)) {
-                        $body.=\achbotMessage('manual_payment.manual_receipts.body.8efe531abe').$esc($net).' '.
+                        $body.='  خالص گزارش‌شده: '.$esc($net).' '.
                             $esc($netAsset)."\n";
                     }
                 }
             }
         }
-        $body.=\achbotMessage('manual_payment.manual_receipts.body.b167f67bcd').
-            \achbotMessage('manual_payment.manual_receipts.text.f4e8720908');
+        $body.="\n⚠️ مشاهده یا استعلام، پرداخت را تأیید/رد نمی‌کند ".
+            "و هیچ اعتبار، تحویل یا بازپرداختی انجام نمی‌دهد.";
         $pageSuffix=$cursor>0?'_0_'.$cursor:'';
         $buttons=[
-            [['text'=>\achbotMessage('manual_payment.manual_receipts.button.462a4081da'),
+            [['text'=>'🔄 تازه‌سازی اطلاعات',
               'callback_data'=>'npReviewRefresh_'.$attemptId.$pageSuffix]],
         ];
         if ($children) {
             $next=$action==='Verify'
                 ? ($childIndex+1)%count($children) : 0;
-            $buttons[]=[['text'=>\achbotMessage('manual_payment.manual_receipts.button.5fb8e2523c').($next+1).\achbotMessage('manual_payment.manual_receipts.text.a624a1e41f').count($children),
+            $buttons[]=[['text'=>'🔍 استعلام شناسهٔ '.($next+1).' از '.count($children),
                          'callback_data'=>'npReviewVerify_'.$attemptId.'_'.$next.
                              ($cursor>0?'_'.$cursor:'')]];
         }
         if ($nextCursor>0) {
-            $buttons[]=[['text'=>\achbotMessage('manual_payment.manual_receipts.button.af4b7d7113'),
+            $buttons[]=[['text'=>'➡️ شناسه‌های بعدی',
                 'callback_data'=>'npReviewCase_'.$attemptId.'_0_'.$nextCursor]];
         }
-        $buttons[]=[['text'=>\achbotMessage('manual_payment.manual_receipts.button.014e4e047f'),
+        $buttons[]=[['text'=>'📋 بازگشت به فهرست',
                      'callback_data'=>'npReviewInbox']];
-        answerCallbackQuery($callbackId,\achbotMessage('manual_payment.manual_receipts.alert.671dc77b41'));
+        answerCallbackQuery($callbackId,'جزئیات محافظت‌شدهٔ پرونده بارگذاری شد.');
         editText($message_id,$body,json_encode(['inline_keyboard'=>$buttons],
             JSON_UNESCAPED_UNICODE),'HTML');
     } catch (Throwable $error) {
         error_log('achbot_payment_operator_inbox_unavailable');
         answerCallbackQuery($callbackId,
-            \achbotMessage('manual_payment.manual_receipts.alert.55c0496662'),true);
+            'اطلاعات فعلاً قابل بازیابی نیست؛ بعداً دوباره تلاش کنید.',true);
     }
     return;
 }
@@ -517,12 +517,12 @@ if (preg_match('/^approvePayment(.*)/', $data, $match) && ($from_id == $admin ||
     $payInfo = $stmt->get_result()->fetch_assoc();
     $stmt->close();
     if (!$payInfo) {
-        alert(\achbotMessage('manual_payment.manual_receipts.alert.9e5ae0bfa1'));
+        alert("⛔️ اطلاعات پرداخت پیدا نشد.");
         return;
     }
     $approved = achbotApproveManualWalletTopup($connection, $hash_id, (int)$from_id);
     if ($approved === null) {
-        alert(\achbotMessage('manual_payment.manual_receipts.alert.2d252fd96f'));
+        alert("⛔️ این رسید قبلاً بررسی شده، قابل تأیید نیست یا به بررسی پشتیبانی نیاز دارد.");
         return;
     }
 
@@ -538,8 +538,8 @@ if (preg_match('/^approvePayment(.*)/', $data, $match) && ($from_id == $admin ||
 
     $keys = json_encode([
         'inline_keyboard' => [
-            [['text' => \achbotMessage('manual_payment.manual_approval.manual_standard_report_delivery.button.139c829462', ['from_id' => $from_id]), 'callback_data' => "wizwizch"]],
-            [['text' => \achbotMessage('manual_payment.manual_approval.manual_standard_report_delivery.hash_id.2899228604', ['hash_id' => $hash_id]), 'callback_data' => "noop_$hash_id"]]
+            [['text' => "✅ تایید شد توسط $from_id", 'callback_data' => "wizwizch"]],
+            [['text' => "🆔 $hash_id", 'callback_data' => "noop_$hash_id"]]
         ]
     ], 488);
 
@@ -568,21 +568,33 @@ if (preg_match('/^approvePayment(.*)/', $data, $match) && ($from_id == $admin ||
     }
 
     // ارسال پیام به ادمین‌ها
-    $adminMessages = \achbotMessage('manual_payment.manual_receipts.admin_messages.31d90c5e69', ['methodName' => $methodName, 'userId' => $userId]) . number_format($currentWallet) . \achbotMessage('manual_payment.manual_receipts.text.c0780ce268') . number_format($newWallet) . \achbotMessage('manual_payment.manual_receipts.text.89a4910ebe', ['hash_id' => $hash_id]);
+    $adminMessages = "✅ تأیید دستی {$methodName} و افزایش موجودی کاربر $userId انجام شد.
+
+💰 موجودی قدیم: " . number_format($currentWallet) . " تومان
+💵 موجودی جدید: " . number_format($newWallet) . " تومان
+🔓 شناسه پرداخت: $hash_id";
     sendToAllAdmins('sendMessage', ['text' => $adminMessages, 'parse_mode' => "html"]);
     
     // ارسال پیام به ادمین خاص
     sendMessage($adminMessages, null, "html", $admin);
 
     // ارسال پیام به کاربر
-    sendMessage(\achbotMessage('manual_payment.manual_receipts.message.f568baa065') . number_format($price) . \achbotMessage('manual_payment.manual_receipts.message.f6331b33af', ['supportID' => $supportID]), null, "HTML", $userId);
+    sendMessage("✅ افزایش حساب شما با موفقیت تایید شد.\n💰 مبلغ <b>" . number_format($price) . " تومان</b> به کیف پول شما اضافه شد.\n\n<blockquote>
+⚠️ لطفا دقت کنید شما فقط کیف پول خودتان را شارژ کرده‌اید، برای خرید یا تمدید باید از دکمه های زیر استفاده کنید:
+🛒 <b>خرید اشتراک جدید</b>
+یا <b>🔄 تمدید یا مشاهده اشتراک ها</b>
+و در مرحله پرداخت روی دکمه زیر بزنید:
+💰 <b>پرداخت با موجودی</b>
+</blockquote>
+📨 پشتیبانی:
+🆔 $supportID", null, "HTML", $userId);
 }
 
 // Decline Cart To Cart by ACh
 
 if (preg_match('/^noop_(.+)$/', $data, $m)) {
 	$hash_id = $m[1];
-	sendMessage(\achbotMessage('manual_payment.manual_receipts.hash__i_d_hash_id.0ce5b30b71', ['hash_id' => $hash_id]), null, "HTML", $from_id);
+	sendMessage("🆔 Hash ID: <code>$hash_id</code>", null, "HTML", $from_id);
 	exit;
 }
 
@@ -597,17 +609,17 @@ if (preg_match('/^declineAction_(.+)$/', $data, $match) && ($from_id == $admin |
     $stmt->close();
 
 	if (!$payInfo || ($payInfo['state'] === 'expired_have_sent')) {
-		alert(!$payInfo ? \achbotMessage('manual_payment.manual_receipts.alert.9e5ae0bfa1') : \achbotMessage('manual_payment.manual_receipts.alert.caa1f4e27c'));
+		alert(!$payInfo ? "⛔️ اطلاعات پرداخت پیدا نشد." : "⛔️ این درخواست منقضی شده است.");
 		return;
 	}
 
     if ($payInfo['state'] === 'approved' || $payInfo['state'] === 'declined') {
-        alert(\achbotMessage('manual_payment.manual_receipts.alert.af4cc41dc0'));
+        alert("⛔️ این درخواست قبلاً بررسی شده است.");
         return;
     }
 
     setUser("declineActionReason_" . $hash_id . "_" . $message_id);
-    sendMessage(\achbotMessage('manual_payment.manual_receipts.message.a757d0e2a6'), $cancelKey);
+    sendMessage("📝 لطفاً دلیل رد این درخواست را با جزئیات بنویسید تا به کاربر اطلاع داده شود:", $cancelKey);
 }
 
 if (preg_match('/^declineActionReason_(.+)_(\d+)$/', $userInfo['step'], $match) &&
@@ -625,17 +637,17 @@ if (preg_match('/^declineActionReason_(.+)_(\d+)$/', $userInfo['step'], $match) 
     $stmt->close();
 	
 	if (!$payInfo || ($payInfo['state'] === 'expired_have_sent')) {
-		alert(!$payInfo ? \achbotMessage('manual_payment.manual_receipts.alert.9e5ae0bfa1') : \achbotMessage('manual_payment.manual_receipts.alert.caa1f4e27c'));
+		alert(!$payInfo ? "⛔️ اطلاعات پرداخت پیدا نشد." : "⛔️ این درخواست منقضی شده است.");
 		return;
 	}
 
     if ($payInfo['state'] === 'approved' || $payInfo['state'] === 'declined') {
-		alert(\achbotMessage('manual_payment.manual_receipts.alert.af4cc41dc0'));
+		alert("⛔️ این درخواست قبلاً بررسی شده است.");
 		return;
 	}
 
     $uid = $payInfo['user_id'];
-    $price = !empty($payInfo['price']) ? number_format($payInfo['price']) . \achbotMessage('manual_payment.automatic_receipts.text.2cc98f7f7c') : "---";
+    $price = !empty($payInfo['price']) ? number_format($payInfo['price']) . " تومان" : "---";
     $reason = $text;
 	$remark = "---";
 	
@@ -661,13 +673,13 @@ if (preg_match('/^declineActionReason_(.+)_(\d+)$/', $userInfo['step'], $match) 
     $declined = $stmt->affected_rows === 1;
     $stmt->close();
     if (!$declined) {
-        alert(\achbotMessage('manual_payment.manual_receipts.alert.872f260882'));
+        alert("⛔️ وضعیت درخواست هنگام بررسی تغییر کرده است؛ برای جلوگیری از تداخل با پشتیبانی بررسی کنید.");
         return;
     }
 	
     $keys = json_encode(['inline_keyboard' => [
-        [['text' => \achbotMessage('manual_payment.manual_receipts.button.51fdc91d69', ['from_id' => $from_id]), 'callback_data' => "wizwizch"]],
-		[['text' => \achbotMessage('manual_payment.manual_approval.manual_standard_report_delivery.hash_id.2899228604', ['hash_id' => $hash_id]), 'callback_data' => "noop_$hash_id"]]
+        [['text' => "❌ رد شد توسط $from_id", 'callback_data' => "wizwizch"]],
+		[['text' => "🆔 $hash_id", 'callback_data' => "noop_$hash_id"]]
     ]]);
 
     // ویرایش دکمه ادمین اصلی
@@ -691,28 +703,28 @@ if (preg_match('/^declineActionReason_(.+)_(\d+)$/', $userInfo['step'], $match) 
 		'inline_keyboard' => [
 			[
 				[
-					'text' => \achbotMessage('manual_payment.manual_receipts.button.e3517e568b'),
+					'text' => "🔄 درخواست دوباره",
 					'url'  => "https://t.me/$botUsername?start=restart_$hash_id"
 				]
 			]
 		]
 	]);
-    $message = \achbotMessage('manual_payment.manual_receipts.message.bc0155976d', ['reason' => $reason]);
-    $message .= \achbotMessage('manual_payment.manual_receipts.message.c4d810a7d3', ['price' => $price]);
-    $message .= \achbotMessage('manual_payment.manual_receipts.message.61d75413a2', ['remark' => $remark]);
-	$message .= \achbotMessage('manual_payment.manual_receipts.message.df4f415ed5', ['hash_id' => $hash_id]);
+    $message = "❌ درخواست شما به دلایل زیر رد شد:\n\n<blockquote>$reason</blockquote>\n\n⚠️ اطلاعات درخواست:\n";
+    $message .= "💰 مبلغ: <b>$price</b>\n";
+    $message .= "♾️ نام اشتراک: <code>$remark</code>\n";
+	$message .= "💳 شناسه پرداخت: <code>$hash_id</code>";
     sendMessage($message, $retryButton, "HTML", $uid);
 
 	$adminAfterSendKeys = json_encode([
 		'inline_keyboard' => [
 			[
-				['text' => \achbotMessage('manual_payment.manual_receipts.button.7918a2f411'), 'callback_data' => "banUserDirect_$uid"]
+				['text' => "🚫 مسدود کردن کاربر", 'callback_data' => "banUserDirect_$uid"]
 			]
 		]
 	]);
 
 	sendMessage(
-		\achbotMessage('manual_payment.manual_receipts.message.667f0ab959', ['uid' => $uid, 'price' => $price, 'remark' => $remark, 'hash_id' => $hash_id]),
+		"📩 پیام شما برای کاربر <code>$uid</code> ارسال شد.\n\n⚠️ جزئیات درخواست کاربر:\n💰 مبلغ: <b>$price</b>\n♾️ نام اشتراک: <code>$remark</code>\n💳 شناسه پرداخت: <code>$hash_id</code>",
 		$adminAfterSendKeys,
 		"html"
 	);
@@ -724,16 +736,16 @@ if (is_string($data) &&
         $connection,$update,(int)$from_id,(int)$chat_id,(int)$message_id,
         $userInfo,(int)$admin,'receiptBan',$m[1]);
     if ($status==='changed') {
-        alert(\achbotMessage('manual_payment.manual_receipts.alert.61d5318e58', ['m_1' => $m[1]]));
+        alert("✅ کاربر {$m[1]} مسدود شد.");
     } elseif ($status==='already') {
-        alert(\achbotMessage('manual_payment.manual_receipts.alert.8b8e660e87'));
+        alert("☑️ این کاربر از قبل مسدود بود.");
     } else {
-        alert(\achbotMessage('manual_payment.manual_receipts.alert.abf0b6c70d'),true);
+        alert('این درخواست مسدودسازی تأیید نشد؛ وضعیت را بررسی کنید.',true);
     }
     // Do not claim or mark a failed/unknown callback as committed.
     if ($status==='changed' || $status==='already') {
         $doneKeys=json_encode(['inline_keyboard'=>[
-            [['text'=>\achbotMessage('manual_payment.manual_receipts.button.85f4d0ad41', ['m_1' => $m[1]]),'callback_data'=>"wizwizch"]]
+            [['text'=>"✅ مسدود شد: {$m[1]}",'callback_data'=>"wizwizch"]]
         ]]);
         editKeys($doneKeys,$message_id,$chat_id);
     }

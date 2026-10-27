@@ -4,8 +4,6 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     http_response_code(404);
     exit;
 }
-require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
-
 require_once __DIR__ . '/../Finance/ReceiptHelpers.php';
 
 if(preg_match('/^deleteMyConfig(\d+)/', $data, $match)){
@@ -17,16 +15,17 @@ if(preg_match('/^deleteMyConfig(\d+)/', $data, $match)){
     $stmt->close();
     // The preview callback is user-controlled: do not expose another account.
     if (!$order || (int)$order['userid']!==(int)$from_id) {
-        alert(\achbotMessage('subscription.account_deletion.alert.a370755120'), true);
+        alert("⛔️ این اشتراک متعلق به حساب شما نیست.", true);
         exit;
     }
     $remark = $order['remark'];
 
     editText($message_id,
-        \achbotMessage('subscription.account_deletion.message.acb79596be', ['remark' => $remark]),
+        "⚠️ آیا از حذف اشتراک <code>$remark</code> مطمئن هستید؟
+🛑 دقت کنید با انتخاب گزینه <b>بله</b> اشتراک شما برای همیشه حذف می‌شود، این عمل غیرقابل برگشت بوده و در صورت فعال بودن اشتراک هزینه آن به شما برگشت داده نمی‌شود.",
         json_encode([
             'inline_keyboard' => [
-                [['text'=>\achbotMessage('subscription.account_deletion.button.13159f8c74'),'callback_data'=>"yesDeleteConfig" . $match[1]],['text'=>\achbotMessage('subscription.account_deletion.button.5f5c4c72bd'),'callback_data'=>"noDontDelete"]]
+                [['text'=>"بله",'callback_data'=>"yesDeleteConfig" . $match[1]],['text'=>"خیر",'callback_data'=>"noDontDelete"]]
             ]
         ]),
         "HTML"
@@ -34,7 +33,7 @@ if(preg_match('/^deleteMyConfig(\d+)/', $data, $match)){
 }
 
 elseif($data=="noDontDelete"){
-    editText($message_id, \achbotMessage('subscription.account_deletion.no_dont_delete.message.4ca0ffd711'),json_encode([
+    editText($message_id, "عملیات مورد نظر لغو شد.",json_encode([
         'inline_keyboard' => [
             [['text'=>$buttonValues['back_to_main'],'callback_data'=>"mainMenu"]]
             ]
@@ -48,7 +47,7 @@ elseif(preg_match('/^yesDeleteConfig(\d+)/',$data,$match)){
     $order = $stmt->get_result()->fetch_assoc();
     $stmt->close();
     if (!$order || (int)$order['userid']!==(int)$from_id) {
-        alert(\achbotMessage('subscription.account_deletion.alert.a370755120'), true);
+        alert("⛔️ این اشتراک متعلق به حساب شما نیست.", true);
         exit;
     }
     $inbound_id = $order['inbound_id'];
@@ -74,12 +73,12 @@ elseif(preg_match('/^yesDeleteConfig(\d+)/',$data,$match)){
 
 	
     if (!achbotSupportsPanel($serverType) || (int)$inbound_id !== 0) {
-        alert(\achbotMessage('subscription.account_deletion.no_dont_delete.alert.739703d8ae'), true);
+        alert("⛔️ حذف این اشتراک در حال حاضر امکان‌پذیر نیست.", true);
         exit;
     }
     // Fence the original order before the remote, non-idempotent DELETE.
     if (!achbotAutoRenewPrepareDeletion($connection,(int)$oid)) {
-        alert(\achbotMessage('subscription.account_deletion.no_dont_delete.alert.fc1b571950'), true);
+        alert("⚠️ این اشتراک در حال بررسی است؛ حذف نیازمند پیگیری پشتیبانی است.", true);
         exit;
     }
     try {
@@ -89,10 +88,10 @@ elseif(preg_match('/^yesDeleteConfig(\d+)/',$data,$match)){
             throw new RuntimeException('delete_remote_unconfirmed');
         $leftMb = sumerize($configInfo->data_limit - $configInfo->used_traffic);
         $expiryDay = $configInfo->expire != 0?
-            floor(($configInfo->expire - time()) / 86400):\achbotMessage('subscription.account_deletion.no_dont_delete.text.5e6ee5eaa1');
+            floor(($configInfo->expire - time()) / 86400):"نامحدود";
     } catch (Throwable $error) {
         error_log('achbot_account_delete_remote_deferred order_id='.(int)$oid);
-        alert(\achbotMessage('subscription.account_deletion.no_dont_delete.alert.9347ccc8b0'), true);
+        alert("⚠️ نتیجه حذف اشتراک مشخص نیست؛ لطفاً با پشتیبانی تماس بگیرید.", true);
         exit;
     }
 
@@ -103,17 +102,25 @@ elseif(preg_match('/^yesDeleteConfig(\d+)/',$data,$match)){
 
     if (!achbotAutoRenewFinalizeDeletion($connection,(int)$oid,(int)$server_id,true)) {
         error_log('achbot_account_delete_local_deferred order_id='.(int)$oid);
-        alert(\achbotMessage('subscription.account_deletion.no_dont_delete.alert.e2cbeb044b'), true);
+        alert("⚠️ حذف اشتراک نیازمند بررسی است؛ لطفاً با پشتیبانی تماس بگیرید.", true);
         exit;
     }
 
-    editText($message_id, \achbotMessage('subscription.account_deletion.no_dont_delete.message.ab50b51b1f', ['remark' => $remark]),json_encode([
+    editText($message_id, "اشتراک $remark با موفقیت حذف شد.",json_encode([
             'inline_keyboard' => [
                 [['text'=>$buttonValues['back_to_main'],'callback_data'=>"mainMenu"]]
                 ]
         ]));
         
-$channelMessage = \achbotMessage('subscription.account_deletion.no_dont_delete.channel_message.f5930d6ccb', ['from_id' => $from_id, 'first_name' => $first_name, 'username' => $username, 'remark' => $remark, 'volume' => $volume, 'days' => $days]);
+$channelMessage = "🔋 حذف اشتراک توسط کاربر
+
+🎫 شناسه عددی: <code>$from_id</code>
+👨 اسم کاربر: $first_name
+⚡️ نام کاربری: @$username
+🎈 نام کاربری اشتراک: $remark
+🔋 حجم اولیه اشتراک: $volume گیگ
+⏰ مدت اشتراک: $days روز
+";
 
 // ارسال پیام به ادمین خاص
 sendMessage($channelMessage, null, "html", $admin);
@@ -136,9 +143,9 @@ elseif(preg_match('/^delUserConfig(\d+)/',$data,$match) && ($from_id == $admin |
     $stmt->close();
     $remark = $order['remark'];
 
-    editText($message_id, \achbotMessage('subscription.account_deletion.no_dont_delete.message.2ddfbc22e4', ['remark' => $remark]),json_encode([
+    editText($message_id, "آیا از حذف اشتراک $remark مطمئن هستید؟",json_encode([
         'inline_keyboard' => [
-            [['text'=>\achbotMessage('subscription.account_deletion.button.13159f8c74'),'callback_data'=>"yesDeleteUserConfig" . $match[1]],['text'=>\achbotMessage('subscription.account_deletion.button.5f5c4c72bd'),'callback_data'=>"noDontDelete"]]
+            [['text'=>"بله",'callback_data'=>"yesDeleteUserConfig" . $match[1]],['text'=>"خیر",'callback_data'=>"noDontDelete"]]
             ]
     ]));
 }
@@ -149,7 +156,7 @@ elseif(preg_match('/^yesDeleteUserConfig(\d+)/',$data,$match) && ($from_id == $a
     $stmt->execute();
     $order = $stmt->get_result()->fetch_assoc();
     $stmt->close();
-    if (!$order) { alert(\achbotMessage('subscription.account_deletion.no_dont_delete.alert.bd8e953385'), true); exit; }
+    if (!$order) { alert("⛔️ سفارش یافت نشد.", true); exit; }
     $userId = $order['userid'];
     $inbound_id = $order['inbound_id'];
     $server_id = $order['server_id'];
@@ -165,11 +172,11 @@ elseif(preg_match('/^yesDeleteUserConfig(\d+)/',$data,$match) && ($from_id == $a
     
 	
     if (!achbotSupportsPanel($serverType) || (int)$inbound_id !== 0) {
-        alert(\achbotMessage('subscription.account_deletion.no_dont_delete.alert.739703d8ae'), true);
+        alert("⛔️ حذف این اشتراک در حال حاضر امکان‌پذیر نیست.", true);
         exit;
     }
     if (!achbotAutoRenewPrepareDeletion($connection,(int)$oid)) {
-        alert(\achbotMessage('subscription.account_deletion.no_dont_delete.alert.1186ae9204'), true);
+        alert("⚠️ این اشتراک در حال بررسی است؛ حذف نیازمند پیگیری است.", true);
         exit;
     }
     try {
@@ -178,24 +185,29 @@ elseif(preg_match('/^yesDeleteUserConfig(\d+)/',$data,$match) && ($from_id == $a
             throw new RuntimeException('admin_delete_remote_unconfirmed');
     } catch (Throwable $error) {
         error_log('achbot_admin_delete_remote_deferred order_id='.(int)$oid);
-        alert(\achbotMessage('subscription.account_deletion.no_dont_delete.alert.3c93240b6e'), true);
+        alert("⚠️ نتیجه حذف اشتراک مشخص نیست؛ لطفاً بررسی دستی انجام دهید.", true);
         exit;
     }
     
 
     if (!achbotAutoRenewFinalizeDeletion($connection,(int)$oid,(int)$server_id,true)) {
         error_log('achbot_account_delete_local_deferred order_id='.(int)$oid);
-        alert(\achbotMessage('subscription.account_deletion.no_dont_delete.alert.e2cbeb044b'), true);
+        alert("⚠️ حذف اشتراک نیازمند بررسی است؛ لطفاً با پشتیبانی تماس بگیرید.", true);
         exit;
     }
 
-    editText($message_id, \achbotMessage('subscription.account_deletion.no_dont_delete.message.ab50b51b1f', ['remark' => $remark]),json_encode([
+    editText($message_id, "اشتراک $remark با موفقیت حذف شد.",json_encode([
             'inline_keyboard' => [
                 [['text'=>$buttonValues['back_to_main'],'callback_data'=>"mainMenu"]]
                 ]
 	]));
 	// ارسال پیام به ادمین
-	$adminMessage = \achbotMessage('subscription.account_deletion.no_dont_delete.admin_message.53224aee55', ['userId' => $userId, 'remark' => $remark]);
+	$adminMessage = "
+❌ اشتراک توسط ادمین حذف شد.
+
+👤 شناسه عددی: $userId
+🎈 نام کاربری اشتراک: $remark
+";
 	sendMessage($adminMessage, null, "html", $admin);
 	sendToAllAdmins('sendMessage', ['text' => $adminMessage,'parse_mode' => "html"]);
         

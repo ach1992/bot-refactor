@@ -4,8 +4,6 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     http_response_code(404);
     exit;
 }
-require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
-
 
 require_once __DIR__ . '/../Finance/PaymentLifecycle.php';
 
@@ -16,7 +14,7 @@ if((preg_match('/^discountSelectPlan(\d+)_(\d+)_(\d+)/',$userInfo['step'],$match
     ($botState['sellState']=="on" ||$from_id ==$admin) &&  
     $text != $buttonValues['cancel']){ 
     if (!achbotSupportsPlan($connection, (int)($match[1] ?? 0))) {
-        alert(\achbotMessage('purchase.entry_and_bulk.create_multiple_accounts.alert.d3fb64c4d9'), true);
+        alert("⛔️ طرح انتخابی در حال حاضر قابل خرید نیست.", true);
         return;
     }
     if(preg_match('/^discountSelectPlan/', $userInfo['step'])){ 
@@ -88,7 +86,7 @@ if((preg_match('/^discountSelectPlan(\d+)_(\d+)_(\d+)/',$userInfo['step'],$match
     $stmt->close(); 
      
     if (!$respd) {
-        alert(\achbotMessage('purchase.select_plan.alert.789af84a82'), true);
+        alert("⛔️ پلن موردنظر معتبر نیست.", true);
         return;
     }
     $stmt = $connection->prepare("SELECT * FROM `server_categories` WHERE `id`=?"); 
@@ -114,7 +112,7 @@ if((preg_match('/^discountSelectPlan(\d+)_(\d+)_(\d+)/',$userInfo['step'],$match
         $agentBought = true; 
     } 
     if($price == 0 or ($from_id == $admin)){ 
-        $keyboard[] = [['text' => \achbotMessage('purchase.select_plan.button.8719396e1e'), 'callback_data' => "freeTrial{$id}_{$match['buyType']}"]];
+        $keyboard[] = [['text' => '📥 دریافت رایگان', 'callback_data' => "freeTrial{$id}_{$match['buyType']}"]]; 
         setUser($remark, 'temp'); 
     }else{ 
         $token = base64_encode("{$from_id}.{$id}"); 
@@ -136,7 +134,7 @@ if((preg_match('/^discountSelectPlan(\d+)_(\d+)_(\d+)/',$userInfo['step'],$match
             $rowId=achbotPayUxInsertDraft($connection,(int)$from_id,$stmt);
             $stmt->close();
             if ($rowId<=0) {
-                alert(\achbotMessage('purchase.catalogue.alert.201380d8bf'),true);
+                alert('⚠️ صدور پیش‌نویس به‌طور قطعی تأیید نشد؛ برای پیگیری از پشتیبانی کمک بگیرید.',true);
                 return;
             }
         }else{ 
@@ -145,19 +143,19 @@ if((preg_match('/^discountSelectPlan(\d+)_(\d+)_(\d+)/',$userInfo['step'],$match
          
         if(achbotManualEnabled('bank_transfer') && achbotPayUxAudienceAllowed($connection,'bank_transfer',(int)$from_id)) $keyboard[] = [['text' => $buttonValues['cart_to_cart'],  'callback_data' => "payBuyWithCartToCart$hash_id"]];
         if(achbotManualEnabled('gift_card') && achbotPayUxAudienceAllowed($connection,'gift_card',(int)$from_id)) $keyboard[] = [['text' => $buttonValues['gift_card'], 'callback_data' => "payBuyWithGiftCard$hash_id"]];
-    if ((achbotManualCryptoEnabled() && (achbotPayUxAudienceAllowed($connection,'manual_usdt',(int)$from_id) || achbotPayUxAudienceAllowed($connection,'manual_trx',(int)$from_id)))) $keyboard[] = [['text' => \achbotMessage('purchase.catalogue.button.e729457ba2'), 'callback_data' => "mcm_$hash_id"]];
+    if ((achbotManualCryptoEnabled() && (achbotPayUxAudienceAllowed($connection,'manual_usdt',(int)$from_id) || achbotPayUxAudienceAllowed($connection,'manual_trx',(int)$from_id)))) $keyboard[] = [['text' => '💎 پرداخت رمزارزی دستی', 'callback_data' => "mcm_$hash_id"]];
         if(($botState['nowPaymentOther'] == "on" && achbotPayUxAudienceAllowed($connection,'nowpayments',(int)$from_id))) $keyboard[] = [['text' => $buttonValues['now_payment_gateway'],  'url' => $botUrl . "pay/?nowpayment&hash_id=" . $hash_id]];
         if(($botState['zarinpal'] == "on" && achbotPayUxAudienceAllowed($connection,'zarinpal',(int)$from_id))) $keyboard[] = [['text' => $buttonValues['zarinpal_gateway'],  'url' => $botUrl . "pay/?zarinpal&hash_id=" . $hash_id]];
         if(($botState['nextpay'] == "on" && achbotPayUxAudienceAllowed($connection,'nextpay',(int)$from_id))) $keyboard[] = [['text' => $buttonValues['nextpay_gateway'],  'url' => $botUrl . "pay/?nextpay&hash_id=" . $hash_id]];
         if(($botState['walletState'] == "on" && achbotPayUxAudienceAllowed($connection,'wallet',(int)$from_id))) $keyboard[] = [['text' => $buttonValues['pay_with_wallet'],  'callback_data' => "payBuyWithWallet$hash_id"]];
          
-        if(!preg_match('/^discountSelectPlan/', $userInfo['step'])) $keyboard[] = [['text' => \achbotMessage('purchase.catalogue.button.05c3a1e3f4'),  'callback_data' => "haveDiscountSelectPlan_" . $match[1] . "_" . $match[2] . "_" . $rowId]];
+        if(!preg_match('/^discountSelectPlan/', $userInfo['step'])) $keyboard[] = [['text' => " 🎟 افزودن کد تخفیف ",  'callback_data' => "haveDiscountSelectPlan_" . $match[1] . "_" . $match[2] . "_" . $rowId]]; 
  
     } 
 	$keyboard[] = [['text' => $buttonValues['back_to_main'], 'callback_data' => "selectCategory{$call_id}_{$sid}_{$match['buyType']}"]]; 
-    $priceC = ($price == 0) ? \achbotMessage('purchase.catalogue.text.dda7ff2974') : number_format($price).\achbotMessage('purchase.catalogue.text.bfb7221456');
+    $priceC = ($price == 0) ? 'رایگان' : number_format($price).' تومان '; 
     if(isset($accountCount)){ 
-        $eachPrice = number_format($price / $accountCount) . \achbotMessage('purchase.select_plan.text.2cc98f7f7c');
+        $eachPrice = number_format($price / $accountCount) . " تومان"; 
         $msg = str_replace(['ACCOUNT-COUNT', 'TOTAL-PRICE', 'PLAN-NAME', 'PRICE', 'DESCRIPTION'], [$accountCount, $priceC, $name, $eachPrice, $desc], $mainValues['buy_much_subscription_detail']); 
     } 
     else $msg = str_replace(['PLAN-NAME', 'PRICE', 'DESCRIPTION'], [$name, $priceC, $desc], $mainValues['buy_subscription_detail']); 

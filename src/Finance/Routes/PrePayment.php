@@ -4,8 +4,6 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     http_response_code(404);
     exit;
 }
-require_once __DIR__ . '/../../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
-
 
 require_once __DIR__ . '/../PaymentLifecycle.php';
 
@@ -20,7 +18,7 @@ if (preg_match('/^ps_([A-Za-z0-9_-]{1,50})$/D', $data, $statusMatch)) {
     $pay = $stmt->get_result()->fetch_assoc();
     $stmt->close();
     if (!$pay || (int)$pay['user_id'] !== (int)$from_id) {
-        answerCallbackQuery($callbackId, \achbotMessage('payment.pre_payment.alert.8fbaa8aebc'));
+        answerCallbackQuery($callbackId, "این سفارش برای شما قابل مشاهده نیست.");
         return;
     }
     achbotPayUxTrackClicked($connection,(int)$pay['id'],(int)$from_id,(int)$message_id);
@@ -42,32 +40,32 @@ if (preg_match('/^ps_([A-Za-z0-9_-]{1,50})$/D', $data, $statusMatch)) {
         // No attempt evidence: do not manufacture a verified status.
     }
     $manual = in_array($provider, ['bank_transfer','gift_card','manual_usdt','manual_trx'], true);
-    $methodName = $provider === 'manual_trx' ? \achbotMessage('payment.pre_payment.text.ea9faa7b63') :
-        ($provider === 'manual_usdt' ? \achbotMessage('payment.pre_payment.text.16b71e846a') : ($provider === 'gift_card' ? \achbotMessage('payment.payment_lifecycle.pay_ux_audience_methods.text.3904ef0f3d') :
-        ($provider === 'bank_transfer' ? \achbotMessage('payment.pre_payment.text.ace4b5ad89') :
-        ($provider === 'nowpayments' ? \achbotMessage('payment.pre_payment.text.46daee8b43') :
+    $methodName = $provider === 'manual_trx' ? 'ترون دستی (TRX)' :
+        ($provider === 'manual_usdt' ? 'تتر دستی' : ($provider === 'gift_card' ? 'گیفت‌کارت' :
+        ($provider === 'bank_transfer' ? 'کارت‌به‌کارت بانکی' :
+        ($provider === 'nowpayments' ? 'پرداخت رمزارزی' :
         ($provider === 'nextpay' ? 'NextPay' :
-        ($provider === 'zarinpal' ? 'Zarinpal' : \achbotMessage('payment.pre_payment.text.f07a81a062')))))));
+        ($provider === 'zarinpal' ? 'Zarinpal' : 'نامشخص'))))));
     // A newer order invalidates the old call-to-action even before the next
     // one-minute maintenance tick. Keep any issued provider claim intact.
     try { $pay['superseded']=achbotPayUxHasNewer($connection,$pay); }
     catch (Throwable $ignored) { $pay['superseded']=true; }
     $body = achbotPayUxStatusText($pay,$attempt) .
-        \achbotMessage('payment.pre_payment.text.c8886e46d5') . htmlspecialchars($methodName,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8');
+        "\nروش: " . htmlspecialchars($methodName,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8');
     $uiState = achbotPayUxState($pay,$attempt);
     if (in_array((string)$pay['state'],['approved','auto_cart_approved'],true) &&
         preg_match('/^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}$/D',
                    (string)($pay['updated_at'] ?? ''))) {
-        $body .= \achbotMessage('payment.pre_payment.body.ff6ceb47bf') .
+        $body .= "\n📅 تاریخ تأیید: <code>" .
             htmlspecialchars((string)$pay['updated_at'],ENT_QUOTES,'UTF-8') . "</code>";
     }
     $actions=[];
     if (!in_array($uiState,['expired','declined','payment_recorded'],true)) {
-        $actions[]=[['text'=>\achbotMessage('payment.pre_payment.button.ea1db2132d'),'callback_data'=>'ps_'.$hashId]];
+        $actions[]=[['text'=>'🔄 بررسی دوباره وضعیت','callback_data'=>'ps_'.$hashId]];
     }
-    $actions[]=[['text'=>\achbotMessage('payment.payment_lifecycle.pay_ux_status_keyboard.button.1121ffbf88'),'callback_data'=>'ph_'.$hashId]];
+    $actions[]=[['text'=>'🏠 منوی اصلی','callback_data'=>'ph_'.$hashId]];
     $keyboard=inlineKeyboard($actions);
-    answerCallbackQuery($callbackId, \achbotMessage('payment.pre_payment.alert.fdf0d1d6f9'));
+    answerCallbackQuery($callbackId, "وضعیت سفارش از اطلاعات ثبت‌شده خوانده شد.");
     // The clicked Telegram message is our canonical status card; never
     // manufacture a second status message on every refresh.
     editText($message_id, $body, $keyboard, 'HTML', $from_id);
@@ -84,7 +82,7 @@ if (is_string($data) && str_starts_with($data, 'prePayCheck_')) {
         !preg_match('/^prePayCheck_([a-zA-Z0-9]+)_([a-zA-Z0-9]+)_([a-zA-Z0-9]{1,50})$/D',
                     $data, $match)) {
         answerCallbackQuery($callbackId,
-            \achbotMessage('payment.pre_payment.alert.d4b0660226'), true);
+            'این دکمهٔ پرداخت معتبر نیست؛ لطفاً از فاکتور جدید استفاده کنید.', true);
         return;
     }
     $actionType = $match[1];
@@ -97,7 +95,7 @@ if (is_string($data) && str_starts_with($data, 'prePayCheck_')) {
         'zarinpal','nowpayment','nextpay','wallet',
         'carttocart','giftcard','manualusdt'
     ],true)) {
-        answerCallbackQuery($callbackId,\achbotMessage('payment.pre_payment.alert.192c7f896f'),true);
+        answerCallbackQuery($callbackId,'این روش پرداخت پشتیبانی نمی‌شود.',true);
         return;
     }
 
@@ -109,7 +107,7 @@ if (is_string($data) && str_starts_with($data, 'prePayCheck_')) {
 
     if (!$payInfo) {
         delMessage();
-        sendMessage(\achbotMessage('payment.pre_payment.message.6fe859eb01'), getMainKeys());
+        sendMessage("❌ سفارش یافت نشد یا حذف شده است.", getMainKeys());
         exit;
     }
 
@@ -117,7 +115,7 @@ if (is_string($data) && str_starts_with($data, 'prePayCheck_')) {
     // expire, re-route or reveal the original buyer's payment information.
     if ((int)($payInfo['user_id'] ?? 0) <= 0 ||
         (int)$payInfo['user_id'] !== (int)$from_id) {
-        answerCallbackQuery($callbackId, \achbotMessage('payment.pre_payment.alert.4b56f62df2'), true);
+        answerCallbackQuery($callbackId, "این درخواست پرداخت متعلق به حساب شما نیست.", true);
         return;
     }
 
@@ -125,7 +123,7 @@ if (is_string($data) && str_starts_with($data, 'prePayCheck_')) {
     // Reject ALL terminal states before checking plans, expiry or gateways.
     // Never let a stale Telegram callback rewrite a paid/terminal receipt.
     if (!in_array((string)$payInfo['state'], ['pending','send'], true)) {
-        answerCallbackQuery($callbackId, \achbotMessage('payment.pre_payment.alert.bf99a9262b'));
+        answerCallbackQuery($callbackId, "این سفارش دیگر در انتظار پرداخت نیست.");
         return;
     }
 
@@ -145,13 +143,13 @@ if (is_string($data) && str_starts_with($data, 'prePayCheck_')) {
         : ($policyMethod===null ||
            achbotPayUxAudienceAllowed($connection,$policyMethod,(int)$from_id));
     if (!$methodAllowed) {
-        answerCallbackQuery($callbackId,\achbotMessage('payment.pre_payment.alert.cb95ca3290'),true);
+        answerCallbackQuery($callbackId,'این روش پرداخت برای گروه کاربری شما فعال نیست.',true);
         return;
     }
     if (achbotPayUxExpireDraft($connection,(int)$payInfo['id'])) {
-        answerCallbackQuery($callbackId,\achbotMessage('payment.pre_payment.alert.15d949aabf'),true);
+        answerCallbackQuery($callbackId,'مهلت این درخواست پایان یافته است.',true);
         editText($message_id,
-            \achbotMessage('payment.pre_payment.message.e3aaf3c571'),
+            '⌛️ این درخواست پرداخت منقضی شده است. از منوی ربات درخواست جدید بسازید.',
             achbotPayUxStatusKeyboard((string)$payInfo['hash_id']), 'HTML',$from_id);
         achbotPayUxTrackClicked($connection,(int)$payInfo['id'],(int)$from_id,(int)$message_id);
         return;
@@ -160,7 +158,7 @@ if (is_string($data) && str_starts_with($data, 'prePayCheck_')) {
     // A changed RENEW_ACCOUNT plan is deliberately handled below with its
     // own owner/provider preflight; other unsupported subjects fail here.
     if (!$subjectSupported && $payInfo['type']!=='RENEW_ACCOUNT') {
-        alert(\achbotMessage('payment.pre_payment.alert.fa55f5201f'), true);
+        alert("⛔️ انجام این درخواست برای اشتراک انتخاب‌شده امکان‌پذیر نیست. با پشتیبانی تماس بگیرید.", true);
         return;
     }
     $now = time();
@@ -181,16 +179,16 @@ if (is_string($data) && str_starts_with($data, 'prePayCheck_')) {
     if ($activeGatewayClaim) {
         try {
             if (achbotPayUxHostedAttentionElapsed($connection,(int)$payInfo['id'])) {
-                answerCallbackQuery($callbackId,\achbotMessage('payment.pre_payment.alert.6871e8bfbf'),true);
+                answerCallbackQuery($callbackId,'مهلت لینک آنلاین پایان یافته است؛ وضعیت را پیگیری کنید.',true);
                 editText($message_id,
-                    \achbotMessage('payment.pre_payment.message.904e919e0e'),
+                    '⏳ مهلت لینک فاکتور گذشته است؛ پرداخت یا تحویل هنوز باید بررسی شود. اگر وجهی ارسال کرده‌اید مجدداً پرداخت نکنید.',
                     achbotPayUxStatusKeyboard((string)$payInfo['hash_id']),
                     'HTML',$from_id);
                 achbotPayUxTrackClicked($connection,(int)$payInfo['id'],(int)$from_id,(int)$message_id);
                 return;
             }
         } catch (Throwable $ignored) {
-            answerCallbackQuery($callbackId,\achbotMessage('payment.pre_payment.alert.e3336d72e2'),true);
+            answerCallbackQuery($callbackId,'وضعیت فاکتور درگاه نامشخص است؛ از پرداخت تکراری پرهیز کنید.',true);
             return;
         }
     }
@@ -214,7 +212,7 @@ if (is_string($data) && str_starts_with($data, 'prePayCheck_')) {
             if ($userId<=0 || (int)$order['userid']!==$userId ||
                 !achbotSupportsOrder($connection,$oid,null,$userId) ||
                 !achbotSupportsPlan($connection,$savedFid,0,$payInfo['server_id']??null)) {
-                alert(\achbotMessage('payment.pre_payment.alert.fa55f5201f'),true);
+                alert("⛔️ انجام این درخواست برای اشتراک انتخاب‌شده امکان‌پذیر نیست. با پشتیبانی تماس بگیرید.",true);
                 return;
             }
 
@@ -224,10 +222,10 @@ if (is_string($data) && str_starts_with($data, 'prePayCheck_')) {
                 (string)($payInfo['payid']??'')!=='' ||
                 (string)$payInfo['state']!=='pending';
             if ($claimedInvoice) {
-                answerCallbackQuery($callbackId,\achbotMessage('payment.pre_payment.alert.b801192b87'));
+                answerCallbackQuery($callbackId,"این پرداخت قبلاً ثبت شده یا در حال بررسی است.");
                 // Do not advertise a still-payable link for a now-mismatched
                 // plan: retain the invoice ID/URL for operator reconciliation.
-                sendMessage(\achbotMessage('payment.pre_payment.message.34461be871'),
+                sendMessage("پلن اشتراک تغییر کرده ولی وضعیت پرداخت/فاکتور قبلی محفوظ است. لطفاً برای تطبیق پرداخت با پشتیبانی تماس بگیرید.",
                     getMainKeys(),null,$from_id);
                 return;
             }
@@ -255,13 +253,13 @@ if (is_string($data) && str_starts_with($data, 'prePayCheck_')) {
             $invalidated=$stmt->affected_rows===1;
             $stmt->close();
             sendMessage($invalidated
-                ? \achbotMessage('payment.pre_payment.message.6a728137d5')
-                : \achbotMessage('payment.pre_payment.message.f7acca2890'),
+                ? "❗️ پلن فعلی شما تغییر کرده است.\n♻️ لطفاً دوباره روی دکمه تمدید اشتراک بزنید تا قیمت جدید محاسبه شود."
+                : "وضعیت پرداخت این سفارش تغییر کرده است؛ برای جلوگیری از پرداخت تکراری با پشتیبانی تماس بگیرید.",
                 getMainKeys());
             return;
         }
         if (!$subjectSupported) {
-            alert(\achbotMessage('payment.pre_payment.alert.fa55f5201f'),true);
+            alert("⛔️ انجام این درخواست برای اشتراک انتخاب‌شده امکان‌پذیر نیست. با پشتیبانی تماس بگیرید.",true);
             return;
         }
     }
@@ -269,18 +267,18 @@ if (is_string($data) && str_starts_with($data, 'prePayCheck_')) {
     // The same order cannot be reissued with a different payment provider.
     $selectedProvider=$payMethod==='nowpayment' ? 'nowpayments' : $payMethod;
     if ($activeGatewayClaim && $selectedProvider!==(string)$paymentAttempt['provider']) {
-        answerCallbackQuery($callbackId,\achbotMessage('payment.pre_payment.alert.a421affc40'));
+        answerCallbackQuery($callbackId,"این سفارش قبلاً در یک درگاه پرداخت ثبت شده است.");
         $invoiceUrl=(string)($paymentAttempt['checkout_url']??'');
         if ($paymentAttempt['provider']==='nowpayments' && $invoiceUrl!=='' &&
             function_exists('achbotNpValidInvoiceUrl') &&
             achbotNpValidInvoiceUrl($invoiceUrl)) {
             $keyboard=json_encode(['inline_keyboard'=>[[
-                ['text'=>\achbotMessage('payment.pre_payment.button.9638a59ddc'),'url'=>$botUrl.'pay/?nowpayment&hash_id='.urlencode($hash_id)]
+                ['text'=>'🔄 مشاهده وضعیت فاکتور','url'=>$botUrl.'pay/?nowpayment&hash_id='.urlencode($hash_id)]
             ]]],JSON_UNESCAPED_UNICODE);
-            sendMessage(\achbotMessage('payment.pre_payment.message.08a2b0a6f6'),
+            sendMessage("💳 فاکتور این سفارش محفوظ است؛ با لینک زیر وضعیت آن را بررسی کنید. اگر پرداختی انجام داده‌اید دوباره پرداخت نکنید.",
                         $keyboard,"html",$from_id);
         } else {
-            sendMessage(\achbotMessage('payment.pre_payment.message.59e3040876'),
+            sendMessage("وضعیت صدور فاکتور این سفارش در حال بررسی است. برای جلوگیری از درخواست تکراری با پشتیبانی تماس بگیرید.",
                         getMainKeys(),null,$from_id);
         }
         return;
@@ -291,7 +289,7 @@ if (is_string($data) && str_starts_with($data, 'prePayCheck_')) {
         // The guarded expiry may have failed because the original payment
         // was claimed concurrently. Never bypass that financial guard.
         answerCallbackQuery($callbackId,
-            \achbotMessage('payment.pre_payment.alert.5ba8749860'),true);
+            'مهلت پیش‌نویس پایان یافته یا وضعیت آن نیازمند بررسی است.',true);
         return;
     }
 
@@ -302,16 +300,16 @@ if (is_string($data) && str_starts_with($data, 'prePayCheck_')) {
 		// دکمه با لینک مستقیم به درگاه
         $button = [
             'inline_keyboard'=>[
-                [['text'=>\achbotMessage('payment.pre_payment.button.f81a8cfcdd'),'url'=>$redirectUrl]],
-                [['text'=>\achbotMessage('payment.payment_lifecycle.pay_ux_status_keyboard.button.9e25b02e86'),'callback_data'=>'ps_'.$hash_id]]
+                [['text'=>'💳 پرداخت فاکتور','url'=>$redirectUrl]],
+                [['text'=>'🔄 بررسی وضعیت سفارش','callback_data'=>'ps_'.$hash_id]]
             ]
         ];
-        answerCallbackQuery($callbackId,\achbotMessage('payment.pre_payment.alert.093b359bab'));
+        answerCallbackQuery($callbackId,'فاکتور آمادهٔ پرداخت است.');
         $extra = $payMethod==='nowpayment'
-            ? \achbotMessage('payment.pre_payment.text.52bdfa0dce')
-            : \achbotMessage('payment.pre_payment.text.64b1e46fd3');
+            ? '⏳ پردازش رمزارزی ممکن است بیش از چند دقیقه طول بکشد.'
+            : '⚠️ بازگشت از درگاه، به‌تنهایی تأیید مالی نیست.';
         $sent = sendMessage(
-            \achbotMessage('payment.pre_payment.message.b3b3cf5aae').achbotPayUxReference($payInfo).$extra.\achbotMessage('payment.pre_payment.message.69b0efb715'),
+            "🧾 <b>فاکتور آماده است</b>\n".achbotPayUxReference($payInfo).$extra."\nپس از پرداخت، وضعیت سفارش را در ربات بررسی کنید.",
             json_encode($button,JSON_UNESCAPED_UNICODE),'HTML',$from_id
         );
         achbotPayUxTrackMessage($connection,(int)$payInfo['id'],(int)$from_id,$sent);
@@ -328,7 +326,7 @@ if (is_string($data) && str_starts_with($data, 'prePayCheck_')) {
 
     if (!isset($map[$payMethod])) {
         delMessage();
-        sendMessage(\achbotMessage('payment.pre_payment.message.526bf7b198'), getMainKeys());
+        sendMessage("⛔️ روش پرداخت ناشناخته است.", getMainKeys());
         exit;
     }
 

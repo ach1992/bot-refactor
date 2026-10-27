@@ -4,8 +4,6 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     http_response_code(404);
     exit;
 }
-require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
-
 
 if (!function_exists('payTypeToDescription')) {
     function payTypeToDescription($payType)
@@ -72,13 +70,13 @@ if (!function_exists('refundToWalletAndNotify')) {
     ) {
         if (!addToWallet($connection, $userId, $amount)) return false;
 
-        $userMsg = \achbotMessage('manual_payment.receipt_helpers.refund_to_wallet_and_notify.user_msg.a5b15e454e') . number_format($amount) . \achbotMessage('manual_payment.automatic_receipts.message.6f42cf1050');
+        $userMsg = "✅ مبلغ " . number_format($amount) . " تومان به حساب شما اضافه شد.";
         if (!empty($userReasonText)) {
             $userMsg .= "\n\n" . $userReasonText;
         }
         sendMessage($userMsg, null, null, $userId);
 
-        $adminText = \achbotMessage('manual_payment.receipt_helpers.refund_to_wallet_and_notify.user_msg.a5b15e454e') . number_format($amount) . \achbotMessage('manual_payment.receipt_helpers.refund_to_wallet_and_notify.text.32f7062209', ['userId' => $userId, 'gateType' => $gateType]) . $adminTextSuffix;
+        $adminText = "✅ مبلغ " . number_format($amount) . " تومان به کیف پول کاربر $userId توسط درگاه $gateType اضافه شد. " . $adminTextSuffix;
 
         if ($rewardChannel === null) {
             global $botState;
@@ -145,10 +143,10 @@ function achbotManualMethod(string $choice): ?string {
 
 function achbotManualLabel(string $method): string {
     return match ($method) {
-        'gift_card' => \achbotMessage('manual_payment.receipt_helpers.manual_label.text.3904ef0f3d'),
-        'manual_usdt' => \achbotMessage('manual_payment.receipt_helpers.manual_label.text.2f1fd66193'),
-        'manual_trx' => \achbotMessage('manual_payment.receipt_helpers.manual_label.text.ea9faa7b63'),
-        default => \achbotMessage('manual_payment.receipt_helpers.manual_label.text.ace4b5ad89')
+        'gift_card' => 'گیفت‌کارت',
+        'manual_usdt' => 'تتر دستی (USDT)',
+        'manual_trx' => 'ترون دستی (TRX)',
+        default => 'کارت‌به‌کارت بانکی'
     };
 }
 
@@ -270,12 +268,12 @@ function achbotManualCryptoOptions(): array {
     foreach (['BEP20'=>'b','TRC20'=>'c','ERC20'=>'e'] as $network=>$tag) {
         if (achbotManualUsdtConfiguration($network) !== null) {
             $available[$tag] = ['provider'=>'manual_usdt','network'=>$network,
-                                'label'=>\achbotMessage('manual_payment.receipt_helpers.manual_crypto_options.u_s_d_t.1974a6095a').$network];
+                                'label'=>'💎 USDT — '.$network];
         }
     }
     if (achbotManualTrxConfiguration() !== null) {
         $available['t']=['provider'=>'manual_trx','network'=>'TRON',
-                          'label'=>\achbotMessage('manual_payment.receipt_helpers.manual_crypto_options.t_r_x__t_r_o_n.e3a2653517')];
+                          'label'=>'🔴 TRX — TRON'];
     }
     return $available;
 }
@@ -1659,9 +1657,9 @@ function achbotManualFinishEvidence(mysqli $connection, string $hashId, string $
 
 function achbotManualCaption(mysqli $connection, array $payInfo, string $caption): string {
     $method = achbotManualSelectedMethod($connection, $payInfo);
-    $label = $method === null ? \achbotMessage('manual_payment.receipt_helpers.manual_caption.text.9c641f40e0') : achbotManualLabel($method);
+    $label = $method === null ? 'نیازمند بررسی' : achbotManualLabel($method);
     require_once __DIR__.'/PaymentLifecycle.php';
-    $header = achbotPayUxReference($payInfo).\achbotMessage('manual_payment.receipt_helpers.manual_caption.text.342127f41e') . $label . "</b>\n";
+    $header = achbotPayUxReference($payInfo).'🧾 روش پرداخت: <b>' . $label . "</b>\n";
     if (in_array($method, ['manual_usdt','manual_trx','bank_transfer'], true)) {
         try {
             $stmt = $connection->prepare('SELECT provider,quote_amount,quote_currency,
@@ -1680,17 +1678,17 @@ function achbotManualCaption(mysqli $connection, array $payInfo, string $caption
                     ? $network === 'TRON' && achbotManualTronAddressValid($address)
                     : achbotManualUsdtWalletValid($address, $network);
                 if ($details['quote_currency'] === $asset && $valid) {
-                    $header .= \achbotMessage('manual_payment.receipt_helpers.manual_caption.header.cc6f426145') .
+                    $header .= '💎 مبلغ رمزارز: <code>' .
                         htmlspecialchars((string)$details['quote_amount'], ENT_QUOTES, 'UTF-8') .
-                        ' ' . $asset . \achbotMessage('manual_payment.receipt_helpers.manual_caption.text.1c777cb98d') . htmlspecialchars($network, ENT_QUOTES, 'UTF-8') .
-                        \achbotMessage('manual_payment.receipt_helpers.manual_caption.text.cef75b4291') . htmlspecialchars($address, ENT_QUOTES, 'UTF-8') .
+                        ' ' . $asset . '</code> | شبکه: <b>' . htmlspecialchars($network, ENT_QUOTES, 'UTF-8') .
+                        "</b>\nآدرس: <code>" . htmlspecialchars($address, ENT_QUOTES, 'UTF-8') .
                         "</code>\n";
                 }
             } elseif ($intent && $method === 'bank_transfer' &&
                       $details['quote_currency'] === 'toman') {
-                $header .= \achbotMessage('manual_payment.receipt_helpers.manual_caption.header.12c0babe12') .
-                    number_format((int)$details['quote_amount']) . \achbotMessage('manual_payment.receipt_helpers.manual_caption.text.de6a1a6756');
-                $header .= \achbotMessage('manual_payment.receipt_helpers.manual_caption.header.559f60f115') .
+                $header .= '💳 مبلغ دقیق حواله: <code>' .
+                    number_format((int)$details['quote_amount']) . " تومان</code>\n";
+                $header .= '💳 مقصد: <code>' .
                     htmlspecialchars((string)($intent['account'] ?? ''), ENT_QUOTES, 'UTF-8') .
                     '</code> | ' . htmlspecialchars((string)($intent['holder'] ?? ''), ENT_QUOTES, 'UTF-8') . "\n";
             }
@@ -1713,9 +1711,9 @@ function achbotManualReceiptPrompt(array $mainValues, string $method): string {
 
 function achbotManualAcknowledgement(array $payInfo, string $method): string {
     require_once __DIR__.'/PaymentLifecycle.php';
-    return \achbotMessage('manual_payment.receipt_helpers.manual_acknowledgement.label.a5f27211f7') . achbotManualLabel($method) . \achbotMessage('manual_payment.receipt_helpers.manual_acknowledgement.text.29e14cf62e') .
+    return "📥 تصویر " . achbotManualLabel($method) . " دریافت شد.\n" .
         achbotPayUxReference($payInfo) .
-        \achbotMessage('manual_payment.receipt_helpers.manual_acknowledgement.text.62e569e922');
+        "⏳ رسید در انتظار بررسی مدیر است؛ ارسال تصویر به معنی تأیید پرداخت یا تحویل سرویس نیست.";
 }
 
 function getCartToCartMessageKey(string $messageType): string {
@@ -1840,7 +1838,7 @@ function duplicateReceiptGuard(mysqli $connection, array $payInfo, int $nowTs): 
     $hashId   = (string)$payInfo['hash_id'];
 
     if (in_array($payInfo['state'], ['have_sent', 'approved'], true)) {
-        return \achbotMessage('manual_payment.receipt_helpers.duplicate_receipt_guard.label.2ea72e23b7');
+        return "⛔️ شما درخواست مشابه‌ای قبلا ثبت کرده‌اید.\n⚠️ لطفاً منتظر بررسی پشتیبانی بمانید.";
     }
 
     // BOT_STATES bounds prevent malformed settings from weakening legacy
@@ -1933,20 +1931,20 @@ function duplicateReceiptGuard(mysqli $connection, array $payInfo, int $nowTs): 
     if ($latestHaveSentDiff !== null && $latestHaveSentDiff < $windowHaveSent) {
         $remain = $windowHaveSent - $latestHaveSentDiff;
         $mins = (int)ceil($remain / 60);
-        return \achbotMessage('manual_payment.receipt_helpers.duplicate_receipt_guard.label.2f5e71511d', ['mins' => $mins]);
+        return "⛔️ یک درخواست مشابه شما در حال بررسی است.\n⚠️ لطفاً حدود {$mins} دقیقه دیگر دوباره تلاش کنید.";
     }
 
 
     if ($latestApprovedDiff !== null && $latestApprovedDiff < $windowApproved) {
         $remain = $windowApproved - $latestApprovedDiff;
         $mins = (int)ceil($remain / 60);
-        return \achbotMessage('manual_payment.receipt_helpers.duplicate_receipt_guard.label.c571825a4a', ['mins' => $mins]);
+        return "⛔️ شما اخیراً یک درخواست مشابه با وضعیت تایید شده داشته‌اید.\n⚠️ لطفاً حدود {$mins} دقیقه دیگر دوباره تلاش کنید.";
     }
 
 
     if ($latestDeclinedDiff !== null && $latestDeclinedDiff < $windowDeclined) {
         $remain = $windowDeclined - $latestDeclinedDiff;
-        return \achbotMessage('manual_payment.receipt_helpers.duplicate_receipt_guard.label.a2fecf9749', ['remain' => $remain]);
+        return "⛔️ درخواست مشابه قبلی شما اخیراً رد شده است.\n⚠️ لطفاً {$remain} ثانیه دیگر دوباره تلاش کنید.";
     }
 
     return null;
@@ -1994,19 +1992,19 @@ function buildAdminKeyboardWithStats(
             ['text' => $buttonValues['approve'], 'callback_data' => $approveCb],
         ],
         [
-            ['text' => $approvedCount . \achbotMessage('manual_payment.receipt_helpers.build_admin_keyboard_with_stats.text.839cad204e'), 'callback_data' => "noop_okc_{$hashId}"],
-            ['text' => \achbotMessage('manual_payment.receipt_helpers.build_admin_keyboard_with_stats.button.30b0414601'), 'callback_data' => "noop_ok_{$hashId}"],
+            ['text' => $approvedCount . ' عدد', 'callback_data' => "noop_okc_{$hashId}"],
+            ['text' => 'پرداخت موفق', 'callback_data' => "noop_ok_{$hashId}"],
         ],
         [
-            ['text' => $declinedCount . \achbotMessage('manual_payment.receipt_helpers.build_admin_keyboard_with_stats.text.839cad204e'), 'callback_data' => "noop_badc_{$hashId}"],
-            ['text' => \achbotMessage('manual_payment.receipt_helpers.build_admin_keyboard_with_stats.button.c2c33e1499'), 'callback_data' => "noop_bad_{$hashId}"],
+            ['text' => $declinedCount . ' عدد', 'callback_data' => "noop_badc_{$hashId}"],
+            ['text' => 'پرداخت رد شده', 'callback_data' => "noop_bad_{$hashId}"],
         ],
         [
-            ['text' => number_format($approvedSum) . \achbotMessage('manual_payment.automatic_receipts.text.2cc98f7f7c'), 'callback_data' => "noop_sumv_{$hashId}"],
-			['text' => \achbotMessage('manual_payment.receipt_helpers.build_admin_keyboard_with_stats.button.e892623fb9'), 'callback_data' => "noop_sum_{$hashId}"],
+            ['text' => number_format($approvedSum) . ' تومان', 'callback_data' => "noop_sumv_{$hashId}"],
+			['text' => 'مجموع', 'callback_data' => "noop_sum_{$hashId}"],
         ],
         [
-            ['text' => \achbotMessage('manual_payment.receipt_helpers.build_admin_keyboard_with_stats.hash_id.286c7d3faf', ['hashId' => $hashId]), 'callback_data' => "noop_{$hashId}"]
+            ['text' => "🆔 {$hashId}", 'callback_data' => "noop_{$hashId}"]
         ],
     ]);
 }
@@ -2056,7 +2054,7 @@ function sendWithStartButton($text, $buttonText, $botUsername, $startPayload = '
 {
     $buttons = [];
     if ($paymentHash !== '' && preg_match('/^[A-Za-z0-9_-]{1,50}$/D', $paymentHash)) {
-        $buttons[] = [['text'=>\achbotMessage('manual_payment.receipt_helpers.send_with_start_button.button.dcb9c20928'), 'callback_data'=>'ps_'.$paymentHash]];
+        $buttons[] = [['text'=>'🔄 بررسی وضعیت', 'callback_data'=>'ps_'.$paymentHash]];
     }
     $buttons[] = [[
         'text' => $buttonText,

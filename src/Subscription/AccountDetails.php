@@ -1,8 +1,6 @@
 <?php
 /** AChBot V6: exact V5 internal src/Subscription/AccountDetails.php bodies; keep legacy effects. */
 namespace AchBot\Subscription\AccountDetails;
-require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
-
 
 if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     http_response_code(404);
@@ -64,7 +62,7 @@ function getServerConfigById($server_id) {
 
 function getOrderTrafficInfo($serverType, $server_id, $remark, $uuid, $inbound_id, $rahgozar=false) {
     $result = [
-        'found' => false, 'enable' => false, 'leftgb' => \achbotMessage('subscription.account_details.get_order_traffic_info.text.f07ac0638d'),
+        'found' => false, 'enable' => false, 'leftgb' => "⚠️",
         'netType' => null, 'security' => null,
     ];
     if ($serverType !== 'marzban' || (int)$inbound_id !== 0) return $result;
@@ -116,7 +114,7 @@ function buildAdminProtocolButtons($protocol, $netType, $security, $rahgozar, $i
     $row = [];
     foreach ($names as $name) {
         $row[] = [
-            'text' => ($protocol == $name ? \achbotMessage('subscription.account_details.build_admin_protocol_buttons.name.177d6f2a4e', ['name' => $name]) : $name),
+            'text' => ($protocol == $name ? "☑️ $name" : $name),
             'callback_data' => "wizwizch"
         ];
     }
@@ -137,7 +135,7 @@ function buildUserProtocolButtons($protocol, $netType, $security, $rahgozar, $in
             : "changeProtocolIsDisable";
 
         $row[] = [
-            'text' => ($protocol == $name ? \achbotMessage('subscription.account_details.build_admin_protocol_buttons.name.177d6f2a4e', ['name' => $name]) : $name),
+            'text' => ($protocol == $name ? "☑️ $name" : $name),
             'callback_data' => $cb
         ];
     }
@@ -177,7 +175,7 @@ function getUserOrderDetailKeys($id, $offset = 0){
 
     $traffic     = getOrderTrafficInfo($serverType, $server_id, $remark, $uuid, $inbound_id, $rahgozar);
 
-    $leftgb      = $traffic['leftgb'] ?? \achbotMessage('subscription.account_details.get_order_traffic_info.text.f07ac0638d');
+    $leftgb      = $traffic['leftgb'] ?? "⚠️";
     $enableBool  = $traffic['enable'] ?? false;
     $enableText  = $enableBool ? $buttonValues['active'] : $buttonValues['deactive'];
 
@@ -192,17 +190,17 @@ function getUserOrderDetailKeys($id, $offset = 0){
 
     $keyboard[] = [
         ['text' => $userId, 'callback_data' => "wizwizch"],
-        ['text' => \achbotMessage('subscription.account_details.get_user_order_detail_keys.button.d35e1b4661'), 'callback_data' => "wizwizch"],
+        ['text' => "آیدی کاربر", 'callback_data' => "wizwizch"],
     ];
 
     $keyboard[] = [
         ['text' => $firstName, 'callback_data' => "wizwizch"],
-        ['text' => \achbotMessage('subscription.account_details.get_user_order_detail_keys.button.c9b4331f4f'), 'callback_data' => "wizwizch"],
+        ['text' => "اسم کاربر", 'callback_data' => "wizwizch"],
     ];
 
     $keyboard[] = [
-        ['text' => ($agentBought ? \achbotMessage('subscription.account_deletion.button.13159f8c74') : \achbotMessage('subscription.account_deletion.button.5f5c4c72bd')), 'callback_data' => "wizwizch"],
-        ['text' => \achbotMessage('subscription.account_details.get_user_order_detail_keys.button.1c7f597d4f'), 'callback_data' => "wizwizch"],
+        ['text' => ($agentBought ? "بله" : "خیر"), 'callback_data' => "wizwizch"],
+        ['text' => "خرید همکار", 'callback_data' => "wizwizch"],
     ];
 
     $keyboard[] = [
@@ -233,7 +231,7 @@ function getUserOrderDetailKeys($id, $offset = 0){
 
     if (($botState['renewAutoState'] ?? "off") == "on") {
         $keyboard[] = [[
-            'text' => (($autoRenew ?? 'off') == "on" ? \achbotMessage('subscription.account_details.get_user_order_detail_keys.text.ed76444585') : \achbotMessage('subscription.account_details.get_user_order_detail_keys.text.fb6d00ad8d')),
+            'text' => (($autoRenew ?? 'off') == "on" ? "🟢 تمدید خودکار روشن" : "🔴 تمدید خودکار خاموش"),
             'callback_data' => "adminToggleAutoRenew{$order['id']}"
         ]];
     }
@@ -304,7 +302,7 @@ function getOrderDetailKeys($from_id, $id, $offset = 0){
 
     $found      = $traffic['found'] ?? false;
     $enableBool = $traffic['enable'] ?? false;
-    $leftgb     = $traffic['leftgb'] ?? \achbotMessage('subscription.account_details.get_order_traffic_info.text.f07ac0638d');
+    $leftgb     = $traffic['leftgb'] ?? "⚠️";
 
     $enableText = $found
         ? ($enableBool ? $buttonValues['active'] : $buttonValues['deactive'])
@@ -350,7 +348,7 @@ function getOrderDetailKeys($from_id, $id, $offset = 0){
 
     if (($botState['renewAutoState'] ?? "off") == "on") {
         $keyboard[] = [[
-            'text' => (($autoRenew ?? 'off') == "on" ? \achbotMessage('subscription.account_details.get_user_order_detail_keys.text.ed76444585') : \achbotMessage('subscription.account_details.get_user_order_detail_keys.text.fb6d00ad8d')),
+            'text' => (($autoRenew ?? 'off') == "on" ? "🟢 تمدید خودکار روشن" : "🔴 تمدید خودکار خاموش"),
             'callback_data' => "toggleAutoRenew{$id}"
         ]];
     }
@@ -384,7 +382,7 @@ function getOrderDetailKeys($from_id, $id, $offset = 0){
         if (($botState['switchLocationState'] ?? 'off') === 'on' &&
             $serverType === 'marzban' && (int)$inbound_id === 0) {
             // The callback carries the old shape but never grants authority.
-            $temp[] = ['text' => \achbotMessage('subscription.account_details.get_order_detail_keys.button.5c38085697'),
+            $temp[] = ['text' => '📍 تغییر سرور',
                        'callback_data' => "switchLocation{$id}_{$server_id}_0_0"];
         }
 
