@@ -342,6 +342,58 @@ function achbotCreatePaidAccount(mysqli $db, int $payId, int $ordinal, array $p)
         $volume,$days,$planId,$operation,$expiry,$bytes,$p,$credentials);
 }
 
+/** Persist verified CREATE without reversing the capacity claimant lock order.
+ * No HTTP occurs here. A failed/unknown COMMIT remains review-only.
+ */
+function achbotVerifyMarzbanCreatedEffect(
+    mysqli $db,int $effectId,int $serverId,?int $group,
+    string $endpoint,string $operation,array $pinnedTarget
+): void {
+    $transaction=false;
+    try {
+        $status=$db->query('SELECT @@in_transaction AS active_transaction');
+        if (!$status || (int)($status->fetch_assoc()['active_transaction']??1)!==0)
+            throw new RuntimeException('effect_verification_requires_autocommit');
+        if (!$db->begin_transaction()) throw new RuntimeException('effect_verification_begin_failed');
+        $transaction=true;
+        // Claimants already lock config via the plan preflight, then info for
+        // capacity. Explicit PK locks prevent an UPDATE JOIN from taking the
+        // inverse info -> config order after the remote CREATE has succeeded.
+        $stmt=$db->prepare('SELECT type,panel_url,username,password FROM server_config WHERE id=? FOR UPDATE');
+        if (!$stmt) throw new RuntimeException('effect_verification_config_prepare');
+        $stmt->bind_param('i',$serverId);
+        if (!$stmt->execute()) throw new RuntimeException('effect_verification_config_read');
+        $config=$stmt->get_result()->fetch_assoc();$stmt->close();
+        $stmt=$db->prepare('SELECT panel_group_id FROM server_info WHERE id=? FOR UPDATE');
+        if (!$stmt) throw new RuntimeException('effect_verification_server_prepare');
+        $stmt->bind_param('i',$serverId);
+        if (!$stmt->execute()) throw new RuntimeException('effect_verification_server_read');
+        $server=$stmt->get_result()->fetch_assoc();$stmt->close();
+        if (!$config || !$server || $config['type']!=='marzban' ||
+            rtrim((string)$config['panel_url'],'/')!==$pinnedTarget['panel_url'] ||
+            (string)$config['username']!==$pinnedTarget['username'] ||
+            (string)$config['password']!==$pinnedTarget['password'] ||
+            ($server['panel_group_id']===null?null:(int)$server['panel_group_id'])!==$group)
+            throw new RuntimeException('effect_credentials_changed_post');
+        $stmt=$db->prepare("UPDATE service_effects SET state='verified',verified_at=NOW()
+            WHERE id=? AND state='dispatching' AND order_id IS NULL
+              AND target_server_id=? AND target_group_id <=> ?
+              AND endpoint_sha256=? AND operation_id=?");
+        if (!$stmt) throw new RuntimeException('effect_verification_prepare_failed');
+        $stmt->bind_param('iiiss',$effectId,$serverId,$group,$endpoint,$operation);
+        if (!$stmt->execute() || $stmt->affected_rows!==1)
+            throw new RuntimeException('effect_verification_unconfirmed');
+        $stmt->close();
+        if (!$db->commit()) throw new RuntimeException('effect_verification_commit_unknown');
+        $transaction=false;
+    } catch (Throwable $error) {
+        if ($transaction) {try {$db->rollback();} catch (Throwable $ignored) {}}
+        // Rollback acknowledgement cannot disprove an unknown COMMIT.
+        // Never repeat CREATE, compensate money, or claim confirmed rollback.
+        throw $error;
+    }
+}
+
 /** Shared remote dispatch/readback for paid and authenticated non-paid claims. */
 function achbotEffectDispatchReservedAccount(
     mysqli $db, int $effectId, int $serverId, ?int $group,
@@ -410,34 +462,8 @@ function achbotEffectDispatchReservedAccount(
             $exactNonnegative($remote->data_limit)!==$bytes) {
             throw new RuntimeException('effect_remote_readback_unverified');
         }
-        // A credential switch on the same URL is ALSO a destination identity
-        // change. The immutable snapshot is not replaced after the POST.
-        $credentialsAfter=$db->prepare('SELECT c.type,c.panel_url,c.username,c.password,
-            i.panel_group_id FROM server_info i JOIN server_config c ON c.id=i.id
-            WHERE i.id=? LIMIT 1');
-        if (!$credentialsAfter) throw new RuntimeException('effect_credentials_check_prepare');
-        $credentialsAfter->bind_param('i',$serverId);
-        if (!$credentialsAfter->execute()) throw new RuntimeException('effect_credentials_check_failed');
-        $current=$credentialsAfter->get_result()->fetch_assoc();$credentialsAfter->close();
-        if (!$current || $current['type']!=='marzban' ||
-            rtrim((string)$current['panel_url'],'/')!==$pinnedTarget['panel_url'] ||
-            (string)$current['username']!==$pinnedTarget['username'] ||
-            (string)$current['password']!==$pinnedTarget['password'] ||
-            ($current['panel_group_id']===null?null:(int)$current['panel_group_id'])!==$group)
-            throw new RuntimeException('effect_credentials_changed_post');
-        // The target might have been reconfigured during the remote call.
-        $stmt=$db->prepare("UPDATE service_effects e
-           INNER JOIN server_info s ON s.id=e.target_server_id
-           INNER JOIN server_config c ON c.id=s.id
-           SET e.state='verified',e.verified_at=NOW()
-           WHERE e.id=? AND e.state='dispatching' AND e.order_id IS NULL
-             AND c.type='marzban' AND s.panel_group_id <=> e.target_group_id
-             AND SHA2(TRIM(TRAILING '/' FROM c.panel_url),256)=e.endpoint_sha256");
-        if (!$stmt) throw new RuntimeException('effect_verification_prepare_failed');
-        $stmt->bind_param('i',$effectId);
-        if (!$stmt->execute() || $stmt->affected_rows!==1)
-            throw new RuntimeException('effect_verification_unconfirmed');
-        $stmt->close();
+        achbotVerifyMarzbanCreatedEffect($db,$effectId,$serverId,$group,
+            $endpoint,$operation,$pinnedTarget);
         return [$response,$remark,$port,$effectId];
     } catch (Throwable $e) {
         // The original payment route owns the operator alert. The effect ID
