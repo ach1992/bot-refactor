@@ -90,6 +90,11 @@ def main():
    sql("INSERT INTO pays(hash_id,user_id,type,plan_id,server_id,order_id,price,request_date,state,volume,day) VALUES('"+key+"',1001,'INCREASE_VOLUME_41_52',7,2,41,100,UNIX_TIMESTAMP(),'"+state+"',0,0)")
    before=snapshot();r=call(route='extensions',data=callback+key,actor=actor)
    yes(snapshot()==before and r['provider_writes']==0,'fractional_'+kind+'_invoice_no_claim_debit_effect_or_refund')
+  for kind,state,actor,callback in [('wallet','pending',1001,'payIncreaseDayWithWallet'),('manual','have_sent',9001,'approveIncreaseDay')]:
+   key='legacy_day_'+kind
+   sql("INSERT INTO pays(hash_id,user_id,type,plan_id,server_id,order_id,price,request_date,state,volume,day) VALUES('"+key+"',1001,'INCREASE_DAY_41_61',7,2,41,200,UNIX_TIMESTAMP(),'"+state+"',0,0)")
+   before=snapshot();result=call(route='extensions',actor=actor,data=callback+key)
+   yes(snapshot()==before and result['provider_writes']==0,'legacy_zero_day_'+kind+'_invoice_no_claim_debit_or_effect')
   for state in ['pending','have_sent','processing','paid']:
    key='units_subject_'+state
    sql("INSERT INTO pays(hash_id,user_id,type,plan_id,server_id,order_id,price,request_date,state,volume,day) VALUES('"+key+"',1001,'INCREASE_VOLUME_41_53',7,2,41,100,UNIX_TIMESTAMP(),'"+state+"',0,0)")

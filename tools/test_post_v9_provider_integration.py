@@ -366,7 +366,23 @@ def main():
 
   sql("INSERT INTO pays(id,hash_id,user_id,plan_id,server_id,order_id,type,state,price,request_date) VALUES(3,'pgvolume',1001,7,2,91,'INCREASE_VOLUME_91_1','processing',100,1700000000)")
   sql("UPDATE pays SET volume=1,day=0 WHERE id=3")
-  call('pin',pay=3);server.mode='write_lost'
+  call('pin',pay=3)
+  before=sql("SELECT * FROM provider_accounts WHERE order_id=91");requests=len(server.trace)
+  mismatch=call('edit',pay=3,change={'plus_volume':2})
+  yes(mismatch['out']['success'] is False and len(server.trace)==requests and sql("SELECT * FROM provider_accounts WHERE order_id=91")==before,'paid_addon_mismatched_quantity_refused_before_native_claim')
+  sql("UPDATE pays SET volume=0 WHERE id=3")
+  legacy=call('edit',pay=3,change={'plus_volume':1})
+  yes(legacy['out']['success'] is False and len(server.trace)==requests and sql("SELECT * FROM provider_accounts WHERE order_id=91")==before,'paid_legacy_zero_addon_refused_before_native_claim')
+  sql("UPDATE pays SET volume=1 WHERE id=3")
+  sql("INSERT INTO pays(id,hash_id,user_id,plan_id,server_id,order_id,type,state,price,request_date,volume,day) VALUES(10,'pgpinnedvol',1001,7,2,91,'INCREASE_VOLUME_91_81','processing_wallet',100,1700000000,2,0),(11,'pgpinnedday',1001,7,2,91,'INCREASE_DAY_91_82','processing',200,1700000000,0,2)")
+  call('pin',pay=10);call('pin',pay=11)
+  quota=server.user['data_limit'];groups=copy.deepcopy(server.user['group_ids'])
+  pinned=call('edit',pay=10,change={'plus_volume':2})
+  yes(pinned['out']['success'] is True and server.user['data_limit']==quota+2147483648 and server.user['group_ids']==groups and sql("SELECT price FROM pays WHERE id=10").strip()=='100','wallet_style_pinned_volume_fulfills_exactly_after_SKU_absent')
+  expiry=pinned['out']['applied_expire'];quota=server.user['data_limit']
+  pinned=call('edit',pay=11,change={'plus_day':2})
+  yes(pinned['out']['success'] is True and pinned['out']['applied_expire']==expiry+172800 and server.user['data_limit']==quota and server.user['group_ids']==groups and sql("SELECT price FROM pays WHERE id=11").strip()=='200','manual_style_pinned_day_fulfills_exactly_after_SKU_absent')
+  server.mode='write_lost'
   writes=server.write_count
   r=call('edit',pay=3,change={'plus_volume':1});yes(r['out']['success'] is False and server.write_count==writes+1,'lost_write_is_uncertain')
   writes=server.write_count;server.mode='ok'
