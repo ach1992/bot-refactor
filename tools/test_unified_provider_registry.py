@@ -198,7 +198,11 @@ def main():
    native_read=want and pay.get('type')!='BUY_SUB'
    observed=run(ROOT,'subject',pay=pay,lock=lock,native_read=native_read)
    out=observed['out'];trace=panel.trace[start:]
-   expected=[('GET','/api/user/by-id/17',None)]*(2 if native_read else 0)
+   # This driver explicitly probes quote eligibility, then the common
+   # payment subject. An add-on subject additionally reads its current native
+   # expiry/quota; a prior quote's native read cannot authorize this action.
+   native_reads=(3 if pay.get('type','').startswith('INCREASE_')else 2)if native_read else 0
+   expected=[('GET','/api/user/by-id/17',None)]*native_reads
    yes(out['subject']is want and out['quote']is want and out['server']==expected_server
        and out['caller_unchanged'] and before==snapshot() and not observed['events']
        and trace==expected and panel.write_count==0,name)

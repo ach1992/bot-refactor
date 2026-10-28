@@ -713,6 +713,7 @@ def main():
      db(f'UPDATE orders_list SET date={created},notif={notif} WHERE id={oid}')
 
    before_pays=int(db('SELECT COUNT(*) FROM pays'));writes=len(remote_writes())
+   reference_before={oid:db(f'SELECT * FROM orders_list WHERE id={oid}')for oid in links.values()}
    barrier=threading.Barrier(2)
    def concurrent_sweep():
     barrier.wait(timeout=10)
@@ -727,13 +728,29 @@ def main():
        raw()['used_traffic']==0 and raw()['data_limit']==3*GIB and
        len(remote_writes())==writes+2,
        provider+'_two_concurrent_actual_shared_sweeps_have_one_payer_one_reset_and_one_native_full_renewal')
-   yes(db('SELECT COUNT(DISTINCT expire_date),MIN(notif),MAX(notif) FROM orders_list WHERE id IN('+
-       ','.join(map(str,links.values()))+')')=='1\t0\t0',
-       provider+'_one_verified_auto_renewal_synchronizes_every_shared_reference_expiry_and_warning')
+   payer_order=int(db('SELECT order_id FROM automatic_renewal_attempts'))
+   native_expiry=raw()['expire']
+   if isinstance(native_expiry,str):native_expiry=int(datetime.fromisoformat(native_expiry.replace('Z','+00:00')).timestamp())
+   yes(payer_order in [links[1001],links[1002]]and
+       db(f'SELECT expire_date,notif FROM orders_list WHERE id={payer_order}')==str(native_expiry)+'\t0'and
+       all(db(f'SELECT * FROM orders_list WHERE id={oid}')==before
+           for oid,before in reference_before.items()if oid!=payer_order),
+       provider+'_one_verified_auto_renewal_updates_only_paying_order_and_preserves_other_references')
+   reference_after={oid:db(f'SELECT * FROM orders_list WHERE id={oid}')for oid in links.values()}
    before=finance();writes=len(remote_writes());invoke('sweep')
    yes(finance()==before and len(remote_writes())==writes and
-       db('SELECT COUNT(*) FROM automatic_renewal_attempts')=='1',
-       provider+'_second_shared_sweep_cannot_charge_the_other_user_for_the_same_cycle')
+       db('SELECT COUNT(*) FROM automatic_renewal_attempts')=='1'and
+       all(db(f'SELECT * FROM orders_list WHERE id={oid}')==row for oid,row in reference_after.items()),
+       provider+'_fresh_native_second_shared_sweep_cannot_charge_or_rewrite_the_other_user')
+   expected_date=invoke('date',expiry=native_expiry)['out']
+   for actor,oid in links.items():
+    visible=invoke('view',actor=actor,owner=actor,order=oid)['out']
+    actual_date=json.loads(visible['keyboard'])['inline_keyboard'][1][0]['text']
+    yes(actual_date==expected_date,
+        provider+'_shared_reference_'+str(actor)+'_renders_fresh_native_auto_renewal_expiry_without_local_sync')
+   yes(finance()==before and len(remote_writes())==writes and
+       all(db(f'SELECT * FROM orders_list WHERE id={oid}')==row for oid,row in reference_after.items()),
+       provider+'_fresh_shared_views_leave_every_reference_and_financial_record_unchanged')
    # Regeneration changes the physical service once; every reference must
    # immediately render the same new native configs, without a local transfer.
    before=finance();writes=len(remote_writes())
@@ -1222,6 +1239,7 @@ echo json_encode(['required'=>count(achbotProviderRequiredOperations()),
  report.update(cases=len(checks),shared_native_registration_for_multiple_users=True,
      genuine_import_plan_confirm_paid_renewal=True,shared_native_auto_renew_debits_once=True,concurrent_shared_native_auto_renew_verified=True,shared_payment_owner_and_replay_verified=True,
      shared_native_views_coherent=True,shared_physical_anchor_history_preserved=True,
+     automatic_renewal_updates_only_paying_order=True,fresh_shared_views_without_peer_sync=True,
      shared_native_action_views_coherent=True,known_native_guard_preclaim_no_poison=True,
      actual_native_URL_import_warnings=True,zero_amount_import_warning_delivery_retry=True,
      planless_and_selected_plan_native_warning_verified=True,
