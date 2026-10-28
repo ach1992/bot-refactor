@@ -1227,6 +1227,14 @@ return [
 
     // ── منوها و گزارش‌های مدیریت ──
     'admin_settings' => [
+        'management.warning_unprocessed' => "🔔 هشدار: ثبت نشده",
+        'management.warning_processed' => "🔔 هشدار: پردازش شده",
+        'management.warning_retry' => "🔔 هشدار: در انتظار ارسال مجدد",
+        'management.warning_grace' => ['text'=>"⏳ مهلت نگهداری تا {date}",'parameters'=>["date"]],
+        'management.warning_unknown' => "⚠️ وضعیت هشدار نیازمند بررسی",
+        'management.warning_explanation' => "ℹ️ این بخش وضعیت پردازش هشدار را نشان می‌دهد و کلید روشن یا خاموش نیست. «پردازش شده» به معنی تضمین تحویل پیام نیست. پایان مهلت نگهداری فقط زمان بررسی برای حذف سرویسی است که همچنان تمام شده است.",
+        'management.warning_grace_state' => "⏳ مهلت نگهداری",
+
         'management.interval_input' => "⚠️ مقدار و قیمت را با عدد صحیح وارد کنید. مقدار باید بیشتر از 0 و قیمت بین 0 تا 2147483647 تومان باشد؛ مثال: 10-50000 یعنی 10 روز یا 10 گیگابایت با قیمت 50000 تومان.",
         'management.interval_price' => "⚠️ قیمت را به تومان، با عدد صحیح بین 0 تا 2147483647 وارد کنید؛ مثال: 50000.",
         'management.order_context' => ['text'=>"\n\n📋 سفارش {order_id}\nسرور: {server}\nپلن ثبت‌شده: {plan}\nتاریخ ثبت‌شده: {recorded_expiry}\n\n📝 این بخش مشخصات ثبت‌شده سفارش را اصلاح می‌کند؛ تغییر این اطلاعات به‌تنهایی اعتبار یا حجم سرویس را تغییر نمی‌دهد.",'parameters'=>["order_id", "server", "plan", "recorded_expiry"]],

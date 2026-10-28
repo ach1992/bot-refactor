@@ -1,15 +1,122 @@
 #!/usr/bin/env python3
 """AChBot common customer service views and read-only catalogue admission."""
 from __future__ import annotations
-import argparse,json,re,subprocess
+import argparse,hashlib,json,re,subprocess,time
 from pathlib import Path
 import test_access_state as owned
 import test_v6_native as native
 import test_v8_native as purchase
 ROOT=Path(__file__).resolve().parents[1]
-PHP="<?php\nerror_reporting(E_ALL);\nset_error_handler(static function($n,$m){if($n===E_DEPRECATED)return true;throw new ErrorException($m,0,$n);});\n$_SERVER['SCRIPT_FILENAME']=__FILE__;\n$spec=json_decode($argv[4],true);$root=$argv[1];\nrequire $root.'/messages/loader.php';\nrequire $root.'/settings/values.php';\n$connection=new mysqli('localhost','root','',$argv[3],0,$argv[2]);$connection->set_charset('utf8mb4');\n$from_id=(int)($spec['actor']??1001);$admin=9001;$botUrl='https://bot.example.invalid/';\n$q=$connection->prepare('SELECT * FROM users WHERE userid=?');$q->bind_param('i',$from_id);$q->execute();$userInfo=$q->get_result()->fetch_assoc()??['step'=>'none','isAdmin'=>0,'is_agent'=>0,'freetrial'=>null];$q->close();\n$botState=array_fill_keys(['renewAutoState','sellState','renewAccountState','switchLocationState','increaseVolumeState','increaseTimeState','renewConfigLinkState','updateConfigLinkState','qrConfigState','qrSubState','subLinkState','configLinkState'],'on');\n$botState['plandelkhahState']='off';$botState['agencyPlanDiscount']='off';\n$data=$spec['data']??'';$text='';$message_id=1;$cancelKey='{}';$removeKeyboard='{}';$time=time();\n$GLOBALS['response_emitted']=false;register_shutdown_function(static function(){if(!$GLOBALS['response_emitted'])echo json_encode(['out'=>$GLOBALS['out']??$GLOBALS['events'],'reads'=>$GLOBALS['reads'],'presentations'=>$GLOBALS['presentations']],JSON_THROW_ON_ERROR);});\n$GLOBALS['reads']=0;$GLOBALS['presentations']=0;$GLOBALS['events']=[];\nfunction achbotSupportsAccount($type,$inbound){return in_array($type,['marzban','pasarguard'],true)&&(int)$inbound===0;}\nfunction achbotProviderSqlTypes(){return \"'marzban','pasarguard'\";}\nfunction achbotProviderUser($server,$remark,$withLinks=true){++$GLOBALS['reads'];if($withLinks)throw new RuntimeException('unexpected_link_read');return json_decode(json_encode($GLOBALS['spec']['remote']??null));}\nfunction achbotProviderRelocationTargets($db,$server){return $GLOBALS['spec']['relocations']??[];}\nfunction achbotOrderPresentation(...$args){\n ++$GLOBALS['presentations'];\n $hide=$GLOBALS['spec']['hidden_links']??false;\n return ['config_html'=>$hide?'':'vless://fixture-config','subscription_html'=>$hide?'':'https://sub.example.invalid/fixture',\n  'backup_html'=>'','notice_html'=>'','subscription_url'=>$hide?'':'https://sub.example.invalid/fixture',\n  'qr_config_links'=>$hide?[]:['vless://fixture-config']];\n}\nfunction buildConfigMessage($state,$remark,$links,$sub,$backup,$type){return $state.\"\\n\".$remark.\"\\n\".$links.\"\\n\".$sub;}\nfunction jdate($format,$stamp){return 'DATE:'.$stamp;}\nfunction bot(...$args){return (object)['result'=>(object)['first_name'=>'Fixture']];}\nfunction alert(...$args){$GLOBALS['events'][]=['alert'=>$args[0]];}\nfunction editText(...$args){$GLOBALS['events'][]=['edit'=>$args[1],'keyboard'=>$args[2]??null];}\nfunction sendMessage(...$args){$GLOBALS['events'][]=['message'=>$args[0],'keyboard'=>$args[1]??null];return (object)['ok'=>true];}\nfunction delMessage(...$args){}\nfunction setUser(...$args){throw new RuntimeException('unexpected_state_write');}\ntry {\n switch($spec['op']) {\n case 'admission':\n  function achbotManualEnabled($method){return in_array($method,$GLOBALS['spec']['manual']??[],true);}\n  function achbotManualCryptoEnabled($actor=null){return (bool)array_intersect($GLOBALS['spec']['manual']??[],['manual_usdt','manual_trx']);}\n  function achbotPayUxAudienceAllowed($db,$method,$actor,...$rest){return !in_array($method,$GLOBALS['spec']['denied']??[],true);}\n  function achbotUsdtRateForUser($db,$actor){return $GLOBALS['spec']['rate']??null;}\n  require $root.'/src/Purchase/EntryAndBulk.php';\n  $out=achbotCustomerHasPaymentMethod($connection,$from_id,$spec['state']??[]);break;\n case 'catalogue':\n  require $root.'/src/Purchase/Catalogue.php';$out=$GLOBALS['events'];break;\n case 'trial':\n  require $root.'/src/Purchase/TrialCatalogue.php';$out=$GLOBALS['events'];break;\n default:\n  require $root.'/src/Subscription/AccountDetails.php';\n  $out=match($spec['op']){\n   'traffic'=>\\AchBot\\Subscription\\AccountDetails\\getOrderTrafficInfo($spec['provider'],2,'fixture_user','fixture',0),\n   'admin'=>\\AchBot\\Subscription\\AccountDetails\\getUserOrderDetailKeys(91),\n   default=>\\AchBot\\Subscription\\AccountDetails\\getOrderDetailKeys(1001,91)\n  };\n }\n $GLOBALS['response_emitted']=true;echo json_encode(['out'=>$out,'reads'=>$GLOBALS['reads'],'presentations'=>$GLOBALS['presentations']],JSON_THROW_ON_ERROR);\n} catch(Throwable $error){fwrite(STDERR,get_class($error).':'.$error->getMessage());exit(1);}\n"
+PHP=r'''<?php
+error_reporting(E_ALL);
+set_error_handler(static function($n,$m){if($n===E_DEPRECATED)return true;throw new ErrorException($m,0,$n);});
+$_SERVER['SCRIPT_FILENAME']=__FILE__;
+$spec=json_decode($argv[4],true);$root=$argv[1];
+require $root.'/messages/loader.php';
+require_once $root.'/messages/loader.php';
+$mainValues=achbotMessages('legacy_messages');
+$buttonValues=achbotMessages('legacy_buttons');
+$connection=new mysqli('localhost','root','',$argv[3],0,$argv[2]);$connection->set_charset('utf8mb4');
+$from_id=(int)($spec['actor']??1001);$admin=9001;$botUrl='https://bot.example.invalid/';
+$q=$connection->prepare('SELECT * FROM users WHERE userid=?');$q->bind_param('i',$from_id);$q->execute();$userInfo=$q->get_result()->fetch_assoc()??['step'=>'none','isAdmin'=>0,'is_agent'=>0,'freetrial'=>null];$q->close();
+$botState=array_fill_keys(['renewAutoState','sellState','renewAccountState','switchLocationState','increaseVolumeState','increaseTimeState','renewConfigLinkState','updateConfigLinkState','qrConfigState','qrSubState','subLinkState','configLinkState'],'on');
+$botState['plandelkhahState']='off';$botState['agencyPlanDiscount']='off';
+$data=$spec['data']??'';$text='';$message_id=1;$cancelKey='{}';$removeKeyboard='{}';$time=time();
+$GLOBALS['response_emitted']=false;register_shutdown_function(static function(){if(!$GLOBALS['response_emitted'])echo json_encode(['out'=>$GLOBALS['out']??$GLOBALS['events'],'reads'=>$GLOBALS['reads'],'presentations'=>$GLOBALS['presentations']],JSON_THROW_ON_ERROR);});
+$GLOBALS['reads']=0;$GLOBALS['presentations']=0;$GLOBALS['events']=[];
+function achbotSupportsAccount($type,$inbound){return in_array($type,['marzban','pasarguard'],true)&&(int)$inbound===0;}
+function achbotProviderSqlTypes(){return "'marzban','pasarguard'";}
+function achbotProviderUser($server,$remark,$withLinks=true){++$GLOBALS['reads'];if($withLinks)throw new RuntimeException('unexpected_link_read');return json_decode(json_encode($GLOBALS['spec']['remote']??null));}
+function achbotProviderRelocationTargets($db,$server){return $GLOBALS['spec']['relocations']??[];}
+function achbotOrderPresentation(...$args){
+ ++$GLOBALS['presentations'];
+ $hide=$GLOBALS['spec']['hidden_links']??false;
+ return ['config_html'=>$hide?'':'vless://fixture-config','subscription_html'=>$hide?'':'https://sub.example.invalid/fixture',
+  'backup_html'=>'','notice_html'=>'','subscription_url'=>$hide?'':'https://sub.example.invalid/fixture',
+  'qr_config_links'=>$hide?[]:['vless://fixture-config']];
+}
+function buildConfigMessage($state,$remark,$links,$sub,$backup,$type){return $state."\n".$remark."\n".$links."\n".$sub;}
+function jdate($format,$stamp){return 'DATE:'.$stamp;}
+function bot(...$args){return (object)['result'=>(object)['first_name'=>'Fixture']];}
+function alert(...$args){$GLOBALS['events'][]=['alert'=>$args[0]];}
+function editText(...$args){$GLOBALS['events'][]=['edit'=>$args[1],'keyboard'=>$args[2]??null];}
+function sendMessage(...$args){$GLOBALS['events'][]=['message'=>$args[0],'keyboard'=>$args[1]??null];return (object)['ok'=>true];}
+function delMessage(...$args){}
+function setUser(...$args){throw new RuntimeException('unexpected_state_write');}
+try {
+ switch($spec['op']) {
+ case 'admission':
+  function achbotManualEnabled($method){return in_array($method,$GLOBALS['spec']['manual']??[],true);}
+  function achbotManualCryptoEnabled($actor=null){return (bool)array_intersect($GLOBALS['spec']['manual']??[],['manual_usdt','manual_trx']);}
+  function achbotPayUxAudienceAllowed($db,$method,$actor,...$rest){return !in_array($method,$GLOBALS['spec']['denied']??[],true);}
+  function achbotUsdtRateForUser($db,$actor){return $GLOBALS['spec']['rate']??null;}
+  require $root.'/src/Purchase/EntryAndBulk.php';
+  $out=achbotCustomerHasPaymentMethod($connection,$from_id,$spec['state']??[]);break;
+ case 'catalogue':
+  require $root.'/src/Purchase/Catalogue.php';$out=$GLOBALS['events'];break;
+ case 'trial':
+  require $root.'/src/Purchase/TrialCatalogue.php';$out=$GLOBALS['events'];break;
+ default:
+  require $root.'/src/Subscription/AccountDetails.php';
+  $out=match($spec['op']){
+   'traffic'=>\AchBot\Subscription\AccountDetails\getOrderTrafficInfo($spec['provider'],2,'fixture_user','fixture',0),
+   'admin'=>\AchBot\Subscription\AccountDetails\getUserOrderDetailKeys(91),
+   default=>\AchBot\Subscription\AccountDetails\getOrderDetailKeys(1001,91)
+  };
+ }
+ $GLOBALS['response_emitted']=true;echo json_encode(['out'=>$out,'reads'=>$GLOBALS['reads'],'presentations'=>$GLOBALS['presentations']],JSON_THROW_ON_ERROR);
+} catch(Throwable $error){fwrite(STDERR,get_class($error).':'.$error->getMessage());exit(1);}
+'''
 
-ORDER_PHP="<?php\nerror_reporting(E_ALL);\nset_error_handler(static function($n,$m){if($n===E_DEPRECATED)return true;throw new ErrorException($m,0,$n);});\n$_SERVER['SCRIPT_FILENAME']=__FILE__;\n$spec=json_decode($argv[4],true);$root=$argv[1];\nrequire $root.'/settings/values.php';\nclass OrderQueryTrace extends mysqli {\n public function prepare(string $sql): mysqli_stmt|false {\n  if(preg_match('/^\\s*SELECT\\b.*\\borders_list\\b/is',$sql))++$GLOBALS['order_queries'];\n  return parent::prepare($sql);\n }\n}\n$GLOBALS['order_queries']=0;$GLOBALS['events']=[];$GLOBALS['response_emitted']=false;\nregister_shutdown_function(static function(){if(!$GLOBALS['response_emitted'])echo json_encode(['events'=>$GLOBALS['events'],'order_queries'=>$GLOBALS['order_queries']],JSON_THROW_ON_ERROR);});\n$connection=new OrderQueryTrace('localhost','root','',$argv[3],0,$argv[2]);$connection->set_charset('utf8mb4');\n$from_id=(int)($spec['actor']??9001);$admin=9001;$botUrl='https://bot.example.invalid/';\n$q=$connection->prepare('SELECT * FROM users WHERE userid=?');$q->bind_param('i',$from_id);$q->execute();$userInfo=$q->get_result()->fetch_assoc()??['step'=>'none','isAdmin'=>0];$q->close();\nif(!empty($spec['cached_admin']))$userInfo['isAdmin']=1;\n$data=$spec['data']??'';$text=$spec['text']??'';$message_id=1;$cancelKey='{}';$removeKeyboard='REMOVE_KEYBOARD';$botState=['rewardChannel'=>''];$callback_query=['message'=>['chat'=>['id'=>$from_id]]];\nfunction alert(...$args){$GLOBALS['events'][]=['alert'=>$args[0]];}\nfunction editText(...$args){$GLOBALS['events'][]=['edit'=>$args[1],'keyboard'=>$args[2]??null];}\nfunction sendMessage(...$args){$GLOBALS['events'][]=['message'=>$args[0],'keyboard'=>$args[1]??null];return(object)['ok'=>true];}\nfunction jdate($format,$stamp){return 'DATE:'.$stamp;}\nfunction delMessage(...$args){}\nfunction getAdminKeys(){return 'ADMIN_KEYS';}\nfunction getUserInfoKeys(...$args){throw new RuntimeException('unexpected_privileged_subscription_read');}\nfunction setUser($value=null,$field='step'){\n global $connection,$from_id,$userInfo;\n if($field!=='step')throw new RuntimeException('fixture_step_only');\n $step=$value??'none';$q=$connection->prepare('UPDATE users SET step=? WHERE userid=?');$q->bind_param('si',$step,$from_id);$q->execute();$q->close();$userInfo['step']=$step;\n}\ntry{\n require $root.'/src/Subscription/OrderManagement.php';\n if(!empty($spec['direct'])) {\n  $q=$connection->query('SELECT * FROM orders_list WHERE id=91');$order=$q->fetch_assoc();showOrderManagementPanel($order);\n }\n $GLOBALS['response_emitted']=true;echo json_encode(['events'=>$GLOBALS['events'],'order_queries'=>$GLOBALS['order_queries']],JSON_THROW_ON_ERROR);\n}catch(Throwable$error){fwrite(STDERR,get_class($error).':'.$error->getMessage());exit(1);}\n"
+ORDER_PHP=r'''<?php
+error_reporting(E_ALL);
+set_error_handler(static function($n,$m){if($n===E_DEPRECATED)return true;throw new ErrorException($m,0,$n);});
+$_SERVER['SCRIPT_FILENAME']=__FILE__;
+$spec=json_decode($argv[4],true);$root=$argv[1];
+require_once $root.'/messages/loader.php';
+$mainValues=achbotMessages('legacy_messages');
+$buttonValues=achbotMessages('legacy_buttons');
+class OrderQueryTrace extends mysqli {
+ public function prepare(string $sql): mysqli_stmt|false {
+  if(preg_match('/^\s*SELECT\b.*\borders_list\b/is',$sql))++$GLOBALS['order_queries'];
+  return parent::prepare($sql);
+ }
+}
+$GLOBALS['order_queries']=0;$GLOBALS['events']=[];$GLOBALS['response_emitted']=false;
+register_shutdown_function(static function(){if(!$GLOBALS['response_emitted'])echo json_encode(['events'=>$GLOBALS['events'],'order_queries'=>$GLOBALS['order_queries']],JSON_THROW_ON_ERROR);});
+$connection=new OrderQueryTrace('localhost','root','',$argv[3],0,$argv[2]);$connection->set_charset('utf8mb4');
+$from_id=(int)($spec['actor']??9001);$admin=9001;$botUrl='https://bot.example.invalid/';
+$q=$connection->prepare('SELECT * FROM users WHERE userid=?');$q->bind_param('i',$from_id);$q->execute();$userInfo=$q->get_result()->fetch_assoc()??['step'=>'none','isAdmin'=>0];$q->close();
+if(!empty($spec['cached_admin']))$userInfo['isAdmin']=1;
+$data=$spec['data']??'';$text=$spec['text']??'';$message_id=1;$cancelKey='{}';$removeKeyboard='REMOVE_KEYBOARD';$botState=['rewardChannel'=>''];$callback_query=['message'=>['chat'=>['id'=>$from_id]]];
+function alert(...$args){$GLOBALS['events'][]=['alert'=>$args[0]];}
+function editText(...$args){$GLOBALS['events'][]=['edit'=>$args[1],'keyboard'=>$args[2]??null];}
+function sendMessage(...$args){$GLOBALS['events'][]=['message'=>$args[0],'keyboard'=>$args[1]??null];return(object)['ok'=>true];}
+function jdate($format,$stamp){return 'DATE:'.$stamp;}
+function delMessage(...$args){}
+function getAdminKeys(){return 'ADMIN_KEYS';}
+function getUserInfoKeys(...$args){throw new RuntimeException('unexpected_privileged_subscription_read');}
+function setUser($value=null,$field='step'){
+ global $connection,$from_id,$userInfo;
+ if($field!=='step')throw new RuntimeException('fixture_step_only');
+ $step=$value??'none';$q=$connection->prepare('UPDATE users SET step=? WHERE userid=?');$q->bind_param('si',$step,$from_id);$q->execute();$q->close();$userInfo['step']=$step;
+}
+try{
+ require $root.'/src/Subscription/OrderManagement.php';
+ if(!empty($spec['direct'])) {
+  $q=$connection->query('SELECT * FROM orders_list WHERE id=91');$order=$q->fetch_assoc();showOrderManagementPanel($order);
+ }
+ $GLOBALS['response_emitted']=true;echo json_encode(['events'=>$GLOBALS['events'],'order_queries'=>$GLOBALS['order_queries']],JSON_THROW_ON_ERROR);
+}catch(Throwable$error){fwrite(STDERR,get_class($error).':'.$error->getMessage());exit(1);}
+'''
+
+ARCHIVE_PHP=r'''<?php
+error_reporting(E_ALL);
+set_error_handler(static function($n,$m){if($n===E_DEPRECATED)return true;throw new ErrorException($m,0,$n);});
+$spec=json_decode($argv[4],true);$connection=new mysqli('localhost','root','',$argv[3],0,$argv[2]);$connection->set_charset('utf8mb4');
+$data='toggleNotif_91';$message_id=1;
+function showOrderManagementPanel(...$args){}
+'''
 
 def main():
  p=argparse.ArgumentParser();p.add_argument('--run-disposable',action='store_true',required=True);p.add_argument('--report',type=Path);a=p.parse_args()
@@ -85,7 +192,7 @@ def main():
    return json.loads(r.stdout)
   # Neither cached administrative flags nor forged old buttons confer a role.
   sql("UPDATE users SET isAdmin=0,step='none' WHERE userid IN(1002,9002)")
-  protected=['returnToPanel_91','toggleAgent_91','toggleNotif_91','changeExpireDate_91',
+  protected=['returnToPanel_91','toggleAgent_91','toggleNotif_91','orderWarningStatus_91','changeExpireDate_91',
    'changeToken_91','changeUUID_91','changeServerId_91','selectServerId_91_2',
    'changeFileId_91_2','selectFileId_91_7','deleteOrder_91','confirmDeleteOrder_91',
    'showUserSubscriptions1001','quickUserOrderDetails_91','manageorderdatabase']
@@ -118,6 +225,45 @@ def main():
    sql("UPDATE orders_list SET expire_date=1900000000 WHERE id=91;UPDATE users SET step='awaitingToken_91',temp='owned-draft' WHERE userid=9001")
    out=order_call(actor=9001,text='❌ لغو عملیات');shown=json.dumps(out,ensure_ascii=False)
    yes(sql("SELECT step,IFNULL(temp,'NULL') FROM users WHERE userid=9001").strip()=='none\tNULL' and 'REMOVE_KEYBOARD' in shown and 'order_context' not in shown and 'deleteOrder_91' in shown,provider+'_order_cancel_once_returns_context')
+  # Execute the exact released toggle body against the owned DB as a RED
+  # control: it wrote processing markers and erased existing grace deadlines.
+  archived_ref='2c0e728dcd71c38e20d176fe2577bc264d3faa1a'
+  archived=subprocess.check_output(['git','show',archived_ref+':src/Subscription/OrderManagement.php'],cwd=ROOT).decode()
+  start=archived.index("if (preg_match('/^toggleNotif_")
+  stop=archived.index("if (preg_match('/^changeExpireDate_",start)
+  archived_toggle=archived[start:stop]
+  archived_script=work/'released-warning-toggle.php';archived_script.write_text(ARCHIVE_PHP+archived_toggle)
+  baseline_red=0
+  for original,changed in [(0,-1),(int(time.time())+864000,0)]:
+   sql('UPDATE orders_list SET notif='+str(original)+' WHERE id=91')
+   r=subprocess.run(['php','-d','disable_functions=curl_exec','-d','display_errors=0','-d','log_errors=0',str(archived_script),str(ROOT),str(work/'mysql.sock'),db,'{}'],capture_output=True,text=True,timeout=10)
+   yes(r.returncode==0 and not r.stdout and not r.stderr,'archived_toggle_real_php_executed_'+str(original))
+   observed=int(sql('SELECT notif FROM orders_list WHERE id=91').strip())
+   yes(observed==changed and observed!=original,'archived_toggle_actual_lifecycle_mutation_RED_'+str(original))
+   baseline_red+=1
+
+  warning_cases=[
+   (0,'1700000000','ثبت نشده'),
+   (-1,'1700000000','پردازش شده'),
+   (-2,'1700000000','ارسال مجدد'),
+   (int(time.time())+864000,'1700000000','مهلت نگهداری'),
+   (1,'1700000000','نیازمند بررسی'),
+   (-7,'1700000000','نیازمند بررسی'),
+   (int(time.time())+864000,'synthetic','نیازمند بررسی'),
+   (1700000000,'1700000000','نیازمند بررسی'),
+  ]
+  for provider in ['marzban','pasarguard']:
+   sql("UPDATE server_config SET type='"+provider+"' WHERE id=2;UPDATE users SET step='none' WHERE userid=9001")
+   for value,created,label in warning_cases:
+    sql("UPDATE orders_list SET notif="+str(value)+",date='"+created+"' WHERE id=91")
+    for callback in ['orderWarningStatus_91','toggleNotif_91']:
+     before=snapshot();out=order_call(actor=9001,data=callback);shown=json.dumps(out,ensure_ascii=False)
+     yes(snapshot()==before,provider+'_'+callback+'_'+str(value)+'_read_only_warning_state')
+     yes(label in shown and 'کلید روشن یا خاموش نیست' in shown and 'تضمین تحویل پیام نیست' in shown and 'orderWarningStatus_91' in shown,provider+'_'+callback+'_'+str(value)+'_clear_lifecycle_copy')
+   sql("UPDATE orders_list SET notif=0,date='1700000000' WHERE id=91")
+   panel=order_call(actor=9001,direct=True);shown=json.dumps(panel,ensure_ascii=False)
+   yes('orderWarningStatus_91' in shown and 'toggleNotif_91' not in shown,provider+'_new_order_panel_has_no_mutating_notification_toggle')
+  sql("UPDATE server_config SET type='marzban' WHERE id=2")
   cases=[
    ('no_method',{},[],[],None,False),
    ('hosted_nowpayments',{'nowPaymentOther':'on'},[],[],270000,True),
@@ -133,7 +279,7 @@ def main():
   for name,state,manual,denied,rate,expected in cases:
    out=call('admission',state=state,manual=manual,denied=denied,rate=rate)
    yes(out['out'] is expected,name+'_same_checkout_menu_admission')
- result={'complete':True,'cases':len(checks),'checks':checks,'actual_php':True,'native_disposable_mariadb':True,'external_provider_calls':0,'production_mutations':0}
+ result={'complete':True,'cases':len(checks),'checks':checks,'actual_php':True,'native_disposable_mariadb':True,'canonical_catalog_bindings':True,'archived_warning_toggle_RED':baseline_red,'archived_warning_toggle_ref':archived_ref,'archived_warning_toggle_sha256':hashlib.sha256(archived_toggle.encode()).hexdigest(),'external_provider_calls':0,'production_mutations':0}
  if a.report:a.report.write_text(json.dumps(result,ensure_ascii=False,indent=2)+'\n')
  print(json.dumps(result,ensure_ascii=False))
 if __name__=='__main__':main()

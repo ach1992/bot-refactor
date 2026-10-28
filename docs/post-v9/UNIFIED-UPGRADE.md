@@ -29,7 +29,7 @@ If an installation independently scheduled one of the removed old worker files, 
 
 Preserve the real `baseInfo.php`, all credentials, local runtime state, customer/payment/effect/identity data, wallet balances and existing display/rate settings. No new provider/server/order table is introduced. The six obsolete private display/rate assignments were already retired before RC13; this upgrade performs no additional private-settings migration.
 
-The new warning and renewal keyset cursors use ordinary `setting` rows; obsolete cursor rows may remain inert. Existing switches and 36-hour/0.5-GiB warnings, 2-hour/0.2-GiB renewals and 10-day deletion grace retain their policy. Unverified, disabled or on-hold observations cannot authorize charging/deletion. Pending financial work, changed targets or an ambiguous destructive result require reconciliation rather than a blind retry.
+The new warning and renewal keyset cursors use ordinary `setting` rows; obsolete cursor rows may remain inert. Pending notification retries use the existing signed notif=-2 state; delivery failures do not suppress protected renewal or the expiry grace. Invalid/pre-order deletion deadlines are held for operator review. Existing switches and 36-hour/0.5-GiB warnings, 2-hour/0.2-GiB renewals and 10-day deletion grace retain their policy. Unverified, disabled or on-hold observations cannot authorize charging/deletion. Pending financial work, changed targets or an ambiguous destructive result require reconciliation rather than a blind retry.
 
 Old in-progress management drafts are canceled or safely restarted without deleting another administrator's plan rows. New drafts are per actor and are saved only after final confirmation. Existing native provider identities and per-server configuration display choices are retained.
 
@@ -37,10 +37,12 @@ Outside-bot PasarGuard account adoption is a separate unresolved ownership/ident
 
 ## Rollout and verification
 
-Complete the required exact-candidate PHP 8.1/8.4 CI and independent review before the separately approved rollout. Quiesce authenticated requests and scheduled effects using the installation's existing maintenance/lease mechanism, verify the prior source inventory, reconcile exact retired members, and replace the source in the already approved bot directory. Do not create another deployment directory or overwrite private state.
+Complete the required exact-candidate PHP 8.1/8.4 CI and independent review before the separately approved rollout. Quiesce authenticated requests and scheduled effects using the installation's existing maintenance/lease mechanism, verify the prior source inventory, invalidate cached retired scripts while they still exist under maintenance, reconcile exact retired members, and replace the source in the already approved bot directory. Do not create another deployment directory or overwrite private state.
 
 Verify every current member against the trusted manifest, absence of all retired paths, PHP syntax, scoped OPcache refresh and the read-only readiness report before ending maintenance. The readiness tool blocks retired compatibility files even when all new members match.
 
 Operator acceptance should cover both native server/plan wizards, back/cancel from old and new messages, existing service views, native entitlements/display, order actions, add-on options and payment/status pages. Any real purchase, provider mutation or scheduled-effect test needs its own authorized test context; a successful unauthorized-webhook rejection is not an end-to-end purchase.
+
+RC13 does not retry the new -2 notification state. Before a code rollback, plan its separately approved notification-state reconciliation while preserving consent, cycles and all financial journals; never blanket-clear holds or infer a financial failure from a missing message.
 
 A code rollback restores the exact RC13 source inventory and removes candidate-only public files while preserving current database/private state. It does not undo completed payments or remote actions, release uncertain holds, or justify replaying an effect. Reconcile those outcomes from the existing journals.

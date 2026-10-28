@@ -245,6 +245,12 @@ def seed(w,e,name,amount=100000,wallet=500000):
           "remark,uuid,protocol,expire_date,link,amount,status,date,notif,autoRenew) VALUES "
           f"(1001,'t-{name}','',7,2,0,'{name}','uuid','vless',{exp},'[]',{amount},1,'synthetic',1,'on')")
     return int(sql(w,e,f"SELECT MAX(id) FROM orders_list WHERE remark='{name}'"))
+def due_grace(w,e,oid):
+    # These scheduled-deletion scenarios need a real chronology, not the
+    # synthetic date/notif=1 markers used only for reservation tests.
+    deadline=int(time.time())-1
+    sql(w,e,f"UPDATE orders_list SET date='1700000000',notif={deadline} WHERE id={oid}")
+
 def count(w,e,table,where='1=1'):
     return int(sql(w,e,f"SELECT COUNT(*) FROM {table} WHERE {where}"))
 def wallet(w,e):
@@ -918,6 +924,7 @@ def main():
         # The actual expiry Cron cleanup must refuse a journal under review
         # before deleting the associated remote account.
         sql(w,e,f"UPDATE orders_list SET status=0 WHERE id<>{failed}")
+        due_grace(w,e,failed)
         pendingCron=run(w,e,{'action':'real_warning_cleanup','order_id':failed,
                              'expire_delta':-100})
         assert any(x['type']=='warnings_finished' for x in pendingCron),pendingCron
@@ -926,6 +933,7 @@ def main():
         cases.append('f1_real_expiry_cron_cleanup_blocks_unresolved_journal')
         sql(w,e,f"UPDATE orders_list SET status=0 WHERE id={failed}")
         expired=seed(w,e,'expiry-cron-target')
+        due_grace(w,e,expired)
         cron=run(w,e,{'action':'real_warning_cleanup','order_id':expired,
                         'expire_delta':-100})
         assert sum(x['type']=='remote_delete' for x in cron)==1,cron
@@ -934,6 +942,7 @@ def main():
         cases.append('f1_real_expired_cron_cleanup_single_verified_delete')
 
         failedCron=seed(w,e,'expiry-cron-unconfirmed')
+        due_grace(w,e,failedCron)
         cron=run(w,e,{'action':'real_warning_cleanup','order_id':failedCron,
                         'expire_delta':-100,'remote_delete_ok':False})
         assert sum(x['type']=='remote_delete' for x in cron)==1,cron
@@ -1129,7 +1138,7 @@ echo json_encode(['success'=>$out->success??false,
             run(w,e,{'order_id':cron_id,'enabled':'on'})
             # Notif=0 after paid renewal: simulate the independently due
             # expired-order warning without changing financial history.
-            sql(w,e,f"UPDATE orders_list SET notif=1 WHERE id={cron_id}")
+            due_grace(w,e,cron_id)
             before_wallet=wallet(w,e)
             first=len(server.delete_calls)
             res=run(w,e,{'order_id':cron_id,'action':'real_warning_cleanup',

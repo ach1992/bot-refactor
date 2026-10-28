@@ -8,10 +8,11 @@ require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
 
 require_once __DIR__ . '/../Finance/ReceiptHelpers.php';
 require_once __DIR__.'/AccountDetails.php';
+require_once __DIR__.'/../Panel/ServiceLifecycle.php';
 // Every local-record management callback is privileged. A forged old button
 // or stale cached role must not disclose or mutate another customer's order.
 $achbotOrderAdminRoute=is_string($data??null) &&
-    ($data==='manageorderdatabase' || preg_match('/^(?:showUserSubscriptions|selectOrderByRemark_userid_|returnToPanel_|deleteOrder_|confirmDeleteOrder_|toggleAgent_|toggleNotif_|changeExpireDate_|changeToken_|changeUUID_|changeServerId_|selectServerId_|changeFileId_|selectFileId_|quickUserOrderDetails_)/D',$data));
+    ($data==='manageorderdatabase' || preg_match('/^(?:showUserSubscriptions|selectOrderByRemark_userid_|returnToPanel_|deleteOrder_|confirmDeleteOrder_|toggleAgent_|toggleNotif_|orderWarningStatus_|changeExpireDate_|changeToken_|changeUUID_|changeServerId_|selectServerId_|changeFileId_|selectFileId_|quickUserOrderDetails_)/D',$data));
 $achbotOrderAdminStep=preg_match('/^(?:awaitingOrderRemarkOnly$|awaitingUserIdSelection_|manageOrderById_|awaitingExpireChange_|awaitingToken_|awaitingUUID_)/D',(string)($userInfo['step']??''));
 if (($achbotOrderAdminRoute || $achbotOrderAdminStep) &&
     !\AchBot\Subscription\AccountDetails\canReadAdminOrderDetails()) {
@@ -191,7 +192,31 @@ function achbotManagementIdentityProvider(mysqli $db,int $id): string {
     return (string)($row['type']??'');
 }
 
-function showOrderManagementPanel($order, $msgId = null){
+/** Warning processing and the deletion grace are lifecycle state, never an ON/OFF preference. */
+function achbotOrderWarningPresentation(array $order): array {
+    $value=(int)$order['notif'];
+    if ($value===0) {
+        $label=\achbotMessage('admin_settings.management.warning_unprocessed');
+        $detail=$label;
+    } elseif ($value===-1) {
+        $label=\achbotMessage('admin_settings.management.warning_processed');
+        $detail=$label;
+    } elseif ($value===-2) {
+        $label=\achbotMessage('admin_settings.management.warning_retry');
+        $detail=$label;
+    } elseif (achbotServiceGraceValid($order)) {
+        $label=\achbotMessage('admin_settings.management.warning_grace_state');
+        $detail=\achbotMessage('admin_settings.management.warning_grace',[
+            'date'=>jdate('Y-m-d H:i',$value)]);
+    } else {
+        $label=\achbotMessage('admin_settings.management.warning_unknown');
+        $detail=$label;
+    }
+    return ['label'=>$label,'detail'=>$detail."\n\n".
+        \achbotMessage('admin_settings.management.warning_explanation')];
+}
+
+function showOrderManagementPanel($order, $msgId = null,string $notice=''){
     if (!\AchBot\Subscription\AccountDetails\canReadAdminOrderDetails()) {
         alert(\achbotMessage('subscription.order_management.show_order_management_panel.alert.057ec5448c'),true);
         return;
@@ -199,7 +224,7 @@ function showOrderManagementPanel($order, $msgId = null){
     $provider=achbotProviderType($GLOBALS['connection'],(int)$order['server_id']);
 
 	
-    $notifStatus = $order['notif'] == 0 ? \achbotMessage('subscription.order_management.show_order_management_panel.text.06915a0abe') : \achbotMessage('subscription.order_management.show_order_management_panel.text.159100fdd2');
+    $warning=achbotOrderWarningPresentation($order);
 	$agentStatus = $order['agent_bought'] == 0 ? \achbotMessage('subscription.order_management.show_order_management_panel.text.44f1a0048c') : \achbotMessage('subscription.order_management.show_order_management_panel.text.e0b20b49a2');
 
     $keyboard = [
@@ -210,7 +235,7 @@ function showOrderManagementPanel($order, $msgId = null){
         [["text" => \achbotMessage('admin_settings.management.local_plan'), "callback_data" => "changeFileId_{$order['id']}_{$order['server_id']}"]],
         [["text" => \achbotMessage('subscription.order_management.show_order_management_panel.button.8851b5ce4f'), "callback_data" => "changeUUID_{$order['id']}"]],
 		[["text" => \achbotMessage('subscription.order_management.show_order_management_panel.button.72e5322e9a', ['agentStatus' => $agentStatus]), "callback_data" => "toggleAgent_{$order['id']}"]],
-        [["text" => \achbotMessage('subscription.order_management.show_order_management_panel.button.8c85c7815c', ['notifStatus' => $notifStatus]), "callback_data" => "toggleNotif_{$order['id']}"]],
+        [["text"=>$warning['label'],"callback_data"=>"orderWarningStatus_{$order['id']}"]],
 		[["text" => \achbotMessage('subscription.order_management.show_order_management_panel.button.bf169ddbf3'), "callback_data" => "quickUserOrderDetails_{$order['id']}"]],
         [["text" => \achbotMessage('subscription.order_management.show_order_management_panel.button.087a5a43b1'), "callback_data" => "managePanel"]],
     ];
@@ -234,6 +259,8 @@ function showOrderManagementPanel($order, $msgId = null){
         'plan'=>$escape($context['plan_title']??$order['fileid']),
         'recorded_expiry'=>(int)$order['expire_date']>0?jdate('Y-m-d H:i',(int)$order['expire_date']):\achbotMessage('subscription.account_deletion.no_dont_delete.text.5e6ee5eaa1')
     ]);
+
+    if ($notice!=='') $msg.="\n\n".$notice;
 
     if ($msgId) {
         editText($msgId, $msg, json_encode(['inline_keyboard' => $keyboard]), "html");
@@ -356,32 +383,19 @@ if (preg_match('/^toggleAgent_(\\d+)/', $data, $match)) {
     }
 }
 
-if (preg_match('/^toggleNotif_(\\d+)/', $data, $match)) {
-    $id = intval($match[1]);
-    $stmt = $connection->prepare("SELECT `notif` FROM `orders_list` WHERE `id` = ?");
-    $stmt->bind_param("i", $id);
-    $stmt->execute();
-    $result = $stmt->get_result();
-    $stmt->close();
-
-    if ($result->num_rows > 0) {
-        $row = $result->fetch_assoc();
-        $newNotif = $row['notif'] == 0 ? -1 : 0;
-        $stmt = $connection->prepare("UPDATE `orders_list` SET `notif` = ? WHERE `id` = ?");
-        $stmt->bind_param("ii", $newNotif, $id);
-        $stmt->execute();
-        $stmt->close();
-
-        $stmt = $connection->prepare("SELECT * FROM `orders_list` WHERE `id` = ?");
-        $stmt->bind_param("i", $id);
-        $stmt->execute();
-        $result = $stmt->get_result();
-        $stmt->close();
-        if ($result->num_rows > 0) {
-            $order = $result->fetch_assoc();
-            showOrderManagementPanel($order, $message_id);
-        }
+// Previously sent toggle buttons now observe the current lifecycle state.
+// Neither new nor legacy callbacks may reset a grace deadline or mark a warning.
+if (preg_match('/^(?:orderWarningStatus_|toggleNotif_)([1-9][0-9]*)$/D',(string)$data,$match)) {
+    $id=(int)$match[1];
+    $stmt=$connection->prepare('SELECT * FROM orders_list WHERE id=?');
+    $stmt->bind_param('i',$id);$stmt->execute();$order=$stmt->get_result()->fetch_assoc();$stmt->close();
+    if (!$order) {
+        alert(\achbotMessage('subscription.order_management.show_order_management_panel.alert.0ffc3a1ad2'),true);
+        return;
     }
+    $warning=achbotOrderWarningPresentation($order);
+    showOrderManagementPanel($order,$message_id,$warning['detail']);
+    return;
 }
 
 if (preg_match('/^changeExpireDate_(\\d+)/', $data, $match)) {

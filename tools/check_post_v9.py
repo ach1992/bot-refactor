@@ -134,10 +134,10 @@ def main():
                 {'actual_php':True,'owned_socket_mariadb':True,'loopback_provider_http':True,'provider_mutations':0,'production_mutations':0,'actual_rc13_cancel_RED':True}),
             ('management_menus','test_unified_management_menus.py','checks',322,
                 {'database':'owned socket MariaDB','network_calls':0,'optional_011_missing_cancel_proven':True}),
-            ('customer_services','test_unified_customer_services.py','cases',256,
+            ('customer_services','test_unified_customer_services.py','cases',328,
                 {'actual_php':True,'native_disposable_mariadb':True,'external_provider_calls':0,'production_mutations':0}),
-            ('service_lifecycle','test_unified_service_lifecycle.py','cases',43,
-                {'native_php':True,'disposable_mariadb':True,'actual_delete_transports':True,'production_mutations':0,'external_provider_calls':0}),
+            ('service_lifecycle','test_unified_service_lifecycle.py','cases',68,
+                {'native_php':True,'disposable_mariadb':True,'actual_delete_transports':True,'production_mutations':0,'external_provider_calls':0,'notification_delivery_regression_red':True,'grace_integrity':True}),
             ('runtime_cleanup','test_unified_runtime_cleanup.py','assertions',121,
                 {'actual_php':True,'owned_socket_mariadb':True,'provider_mutations':0,'production_mutations':0}),
             ('provider_registry','test_unified_provider_registry.py','cases',52,
@@ -572,11 +572,11 @@ def main():
                 and text_catalog.get("retired_parser_tokens")==23
                 and text_catalog.get("relocation_source_ref")=="ecd30ba9192ed374703118a6c131be8809cc7b06"
                 and text_catalog.get("native",{}).get("current_retired_feature_keys")==3
-                and text_catalog.get("catalog_keys")==2616
+                and text_catalog.get("catalog_keys")==2623
                 and text_catalog.get("native",{}).get("editable_catalog_files")==2
                 and text_catalog.get("native",{}).get("logical_topics")==25
-                and text_catalog.get("native",{}).get("current_catalog_keys")==2616
-                and text_catalog.get("native",{}).get("current_management_added_keys")==93
+                and text_catalog.get("native",{}).get("current_catalog_keys")==2623
+                and text_catalog.get("native",{}).get("current_management_added_keys")==100
                 and text_catalog.get("native",{}).get("current_catalog_binding_paths")==2
                 and text_catalog.get("native",{}).get("current_catalog_binding_entries")==4
                 and text_catalog.get("native",{}).get("current_catalog_binding_negative_controls")==4
@@ -589,14 +589,14 @@ def main():
                 and text_catalog["native"]["current_byte_preserved_keys"]
                     +text_catalog["native"]["current_style_changes"]
                     +text_catalog["native"]["current_added_admin_keys"]==2523
-                and text_catalog.get("native",{}).get("current_native_template_assertions")==3861
-                and text_catalog.get("native",{}).get("current_object_conversion_templates")==249
+                and text_catalog.get("native",{}).get("current_native_template_assertions")==3873
+                and text_catalog.get("native",{}).get("current_object_conversion_templates")==250
                 and text_catalog.get("native",{}).get("current_shared_multi_parameter_templates")==60
-                and text_catalog.get("native",{}).get("current_one_pass_templates")==249
+                and text_catalog.get("native",{}).get("current_one_pass_templates")==250
                 and text_catalog.get("native",{}).get("current_non_ascii_digit_templates")==0
                 and text_catalog.get("presentation",{}).get("status")=="PASS"
                 and text_catalog.get("presentation",{}).get("editable_files")==2
-                and text_catalog.get("presentation",{}).get("current_keys")==2616
+                and text_catalog.get("presentation",{}).get("current_keys")==2623
                 and text_catalog.get("presentation",{}).get("numeric_template_changes")==23
                 and text_catalog.get("presentation",{}).get("adjacent_emoji_violations")==0
                 and text_catalog.get("presentation",{}).get("parameter_exception_count")==3

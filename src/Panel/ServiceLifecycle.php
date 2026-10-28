@@ -33,6 +33,13 @@ function achbotServiceObserve(int $serverId,string $username): array {
     catch (Throwable $error) {$remote=null;}
     return achbotServiceObservation($remote,$username);
 }
+/** A deletion deadline must be a canonical timestamp after this order existed. */
+function achbotServiceGraceValid(array $order): bool {
+    $created=achbotServiceNonnegative($order['date']??null);
+    $deadline=achbotServiceNonnegative($order['notif']??null);
+    return $created!==null && $created>0 && $deadline!==null && $deadline>$created;
+}
+
 /** Existing product thresholds, independent of panel implementation. */
 function achbotServiceLifecycle(array $observation,int $now): array {
     $out=['warning'=>'','renew'=>false,'ended'=>false];

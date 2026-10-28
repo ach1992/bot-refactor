@@ -9,7 +9,7 @@ $time=time();$limit=100;
 $stmt=$connection->prepare("SELECT value FROM setting WHERE type='warnLastOrderId' LIMIT 1");
 $stmt->execute();$cursorRow=$stmt->get_result()->fetch_assoc();$stmt->close();
 $cursor=max(0,(int)($cursorRow['value']??0));
-$stmt=$connection->prepare('SELECT * FROM orders_list WHERE status=1 AND (notif=0 OR notif=-1) AND id>? ORDER BY id LIMIT ?');
+$stmt=$connection->prepare('SELECT * FROM orders_list WHERE status=1 AND notif IN(0,-1,-2) AND id>? ORDER BY id LIMIT ?');
 $stmt->bind_param('ii',$cursor,$limit);$stmt->execute();$batch=$stmt->get_result()->fetch_all(MYSQLI_ASSOC);$stmt->close();
 foreach ($batch as $order) {
     $id=(int)$order['id'];$serverId=(int)$order['server_id'];$remark=(string)$order['remark'];
@@ -17,24 +17,27 @@ foreach ($batch as $order) {
     $observation=achbotServiceObserve($serverId,$remark);$policy=achbotServiceLifecycle($observation,$time);
     if (!$observation['verified']) continue;
     $next=(int)$order['notif'];
-    if ($next===0 && $policy['warning']!=='') {
+    if (in_array($next,[0,-2],true) && $policy['warning']!=='') {
+        $delivered=true;
         if ((int)$order['amount']!==0) {
             $reason=$policy['warning']==='time'?
                 achbotMessage('notifications.warnings.send.1e5349d9b2'):
                 achbotMessage('notifications.warnings.send.0458ad0612');
             $msg=achbotMessage('notifications.warnings.msg.804056ecc4',['remark'=>htmlspecialchars($remark,ENT_QUOTES,'UTF-8'),'send'=>$reason]);
             try {
-            $response=sendMessage($msg,json_encode(['inline_keyboard'=>[[
-                ['text'=>$buttonValues['my_subscriptions'],'callback_data'=>'mySubscriptions'],
-                ['text'=>$buttonValues['sharj'],'callback_data'=>'increaseMyWallet']
-            ]]]),'HTML',(int)$order['userid']);
+                $response=sendMessage($msg,json_encode(['inline_keyboard'=>[[
+                    ['text'=>$buttonValues['my_subscriptions'],'callback_data'=>'mySubscriptions'],
+                    ['text'=>$buttonValues['sharj'],'callback_data'=>'increaseMyWallet']
+                ]]]),'HTML',(int)$order['userid']);
             } catch (Throwable $error) {$response=null;}
-            // Failed notifications remain eligible; they are not marked delivered.
-            if (!is_object($response) || ($response->ok??false)!==true) continue;
+            $delivered=is_object($response) && ($response->ok??false)===true;
         }
-        $next=-1;
+        // -2 means pending notification retry, never a delivery claim. It is
+        // nonzero so the existing strict auto-renewal eligibility is retained.
+        $next=$delivered?-1:-2;
     }
-    // Disabled/on-hold states do not start an expiry deletion timer.
+    // Confirmed expiry/exhaustion starts the full grace independently of
+    // Telegram delivery. Disabled/on-hold states never start this timer.
     if ($policy['ended']) $next=$time+10*86400;
     if ($next!==(int)$order['notif']) {
         $old=(int)$order['notif'];$cycle=(int)$order['expire_date'];
@@ -52,6 +55,9 @@ $stmt=$connection->prepare('SELECT * FROM orders_list WHERE status=1 AND notif>0
 $stmt->bind_param('i',$time);$stmt->execute();$deletions=$stmt->get_result()->fetch_all(MYSQLI_ASSOC);$stmt->close();
 foreach ($deletions as $order) {
     $id=(int)$order['id'];$serverId=(int)$order['server_id'];$remark=(string)$order['remark'];
+    if (!achbotServiceGraceValid($order)) {
+        error_log('achbot_warning_delete_grace_unverified order_id='.$id);continue;
+    }
     if (!achbotSupportsOrder($connection,$id)) continue;
     try {$target=achbotProviderDeletionTarget($connection,$serverId,$remark);}
     catch (Throwable $error) {continue;}

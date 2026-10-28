@@ -913,6 +913,74 @@
         "src/Admin/ManagementFlow.php"
       ]
     },
+    "admin_settings.management.warning_explanation": {
+      "audience": "admin",
+      "entry": "ℹ️ این بخش وضعیت پردازش هشدار را نشان می‌دهد و کلید روشن یا خاموش نیست. «پردازش شده» به معنی تضمین تحویل پیام نیست. پایان مهلت نگهداری فقط زمان بررسی برای حذف سرویسی است که همچنان تمام شده است.",
+      "facade": false,
+      "reason": "Read-only actual warning lifecycle state replaces a misleading boolean control; processed state does not guarantee Telegram delivery.",
+      "source_paths": [
+        "src/Subscription/OrderManagement.php"
+      ]
+    },
+    "admin_settings.management.warning_grace": {
+      "audience": "admin",
+      "entry": {
+        "text": "⏳ مهلت نگهداری تا {date}",
+        "parameters": [
+          "date"
+        ]
+      },
+      "facade": false,
+      "reason": "Read-only actual warning lifecycle state replaces a misleading boolean control; processed state does not guarantee Telegram delivery.",
+      "source_paths": [
+        "src/Subscription/OrderManagement.php"
+      ]
+    },
+    "admin_settings.management.warning_grace_state": {
+      "audience": "admin",
+      "entry": "⏳ مهلت نگهداری",
+      "facade": false,
+      "reason": "Read-only actual warning lifecycle state replaces a misleading boolean control; processed state does not guarantee Telegram delivery.",
+      "source_paths": [
+        "src/Subscription/OrderManagement.php"
+      ]
+    },
+    "admin_settings.management.warning_processed": {
+      "audience": "admin",
+      "entry": "🔔 هشدار: پردازش شده",
+      "facade": false,
+      "reason": "Read-only actual warning lifecycle state replaces a misleading boolean control; processed state does not guarantee Telegram delivery.",
+      "source_paths": [
+        "src/Subscription/OrderManagement.php"
+      ]
+    },
+    "admin_settings.management.warning_retry": {
+      "audience": "admin",
+      "entry": "🔔 هشدار: در انتظار ارسال مجدد",
+      "facade": false,
+      "reason": "Read-only actual warning lifecycle state replaces a misleading boolean control; processed state does not guarantee Telegram delivery.",
+      "source_paths": [
+        "src/Subscription/OrderManagement.php"
+      ]
+    },
+    "admin_settings.management.warning_unknown": {
+      "audience": "admin",
+      "entry": "⚠️ وضعیت هشدار نیازمند بررسی",
+      "facade": false,
+      "reason": "Read-only actual warning lifecycle state replaces a misleading boolean control; processed state does not guarantee Telegram delivery.",
+      "source_paths": [
+        "src/Subscription/OrderManagement.php"
+      ]
+    },
+    "admin_settings.management.warning_unprocessed": {
+      "audience": "admin",
+      "entry": "🔔 هشدار: ثبت نشده",
+      "facade": false,
+      "reason": "Read-only actual warning lifecycle state replaces a misleading boolean control; processed state does not guarantee Telegram delivery.",
+      "source_paths": [
+        "src/Subscription/OrderManagement.php"
+      ]
+    },
     "subscription.account_details.status_on_hold": {
       "audience": "user",
       "entry": "⏸ در انتظار فعال‌سازی",
@@ -1466,6 +1534,18 @@
         "src/Subscription/OrderManagement.php"
       ]
     },
+    "subscription.order_management.show_order_management_panel.button.8c85c7815c": {
+      "entry": {
+        "text": "🔔 وضعیت Notif ←  {notifStatus}",
+        "parameters": [
+          "notifStatus"
+        ]
+      },
+      "reason": "Unchanged pre-management copy retained as explicit legacy catalog compatibility evidence; the new management journey no longer offers this old control/form.",
+      "previous_source_paths": [
+        "src/Subscription/OrderManagement.php"
+      ]
+    },
     "subscription.order_management.show_order_management_panel.button.fb28941abf": {
       "entry": "📦 تغییر Plan",
       "reason": "Unchanged pre-management copy retained as explicit legacy catalog compatibility evidence; the new management journey no longer offers this old control/form.",
@@ -1482,6 +1562,20 @@
     },
     "subscription.order_management.show_order_management_panel.message.27a65c7f2c": {
       "entry": "🔁 لطفا تعداد روزی که می‌خواهید به تاریخ انقضا اضافه یا کم شود را وارد کنید.\n\nمثال: `+10` یا `-5`",
+      "reason": "Unchanged pre-management copy retained as explicit legacy catalog compatibility evidence; the new management journey no longer offers this old control/form.",
+      "previous_source_paths": [
+        "src/Subscription/OrderManagement.php"
+      ]
+    },
+    "subscription.order_management.show_order_management_panel.text.06915a0abe": {
+      "entry": "🔘 ارسال نشده",
+      "reason": "Unchanged pre-management copy retained as explicit legacy catalog compatibility evidence; the new management journey no longer offers this old control/form.",
+      "previous_source_paths": [
+        "src/Subscription/OrderManagement.php"
+      ]
+    },
+    "subscription.order_management.show_order_management_panel.text.159100fdd2": {
+      "entry": "✅ ارسال شده",
       "reason": "Unchanged pre-management copy retained as explicit legacy catalog compatibility evidence; the new management journey no longer offers this old control/form.",
       "previous_source_paths": [
         "src/Subscription/OrderManagement.php"

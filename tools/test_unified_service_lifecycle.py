@@ -19,6 +19,7 @@ import test_post_v9_pasarguard_client as pg
 
 ROOT=Path(__file__).resolve().parents[1]
 BASE='2c0e728dcd71c38e20d176fe2577bc264d3faa1a'
+NOTIFICATION_REGRESSION='72bf5ae48b7d283da995b0a13bc9804827c5900a'
 DB=purchase.SIDE[1]
 
 class MarzbanHandler(BaseHTTPRequestHandler):
@@ -85,6 +86,8 @@ if ($action==='policy') {
  $remote=json_decode(json_encode($spec['remote']));
  $o=achbotServiceObservation($remote,$spec['username']??'fixture_user');
  $out=['observation'=>$o,'policy'=>achbotServiceLifecycle($o,$spec['now'])];
+} elseif ($action==='grace') {
+ $out=achbotServiceGraceValid($spec['order']);
 } elseif ($action==='observe') {
  $o=achbotServiceObserve((int)$spec['server'],$spec['username']);
  $out=['observation'=>$o,'policy'=>achbotServiceLifecycle($o,time())];
@@ -94,8 +97,12 @@ if ($action==='policy') {
  $row=$connection->query('SELECT * FROM orders_list WHERE id='.(int)$spec['order'])->fetch_assoc();
  if (!empty($spec['change_cycle'])) $connection->query('UPDATE orders_list SET expire_date=expire_date+1 WHERE id='.(int)$spec['order']);
  $out=achbotAutoRenewPrepareDeletion($connection,(int)$spec['order'],$row);
-} elseif ($action==='warnings' || $action==='baseline') {
- require ($action==='warnings'?$root.'/src/Notifications/Warnings.php':__DIR__.'/warnings-baseline.php');
+} elseif (in_array($action,['warnings','baseline','notification_baseline'],true)) {
+ require match($action) {
+  'warnings'=>$root.'/src/Notifications/Warnings.php',
+  'baseline'=>__DIR__.'/warnings-baseline.php',
+  'notification_baseline'=>__DIR__.'/warnings-notification-regression.php'
+ };
  $out=$events;
 } else throw new RuntimeException('owned_action_missing');
 echo json_encode($out,JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE);
@@ -120,6 +127,9 @@ def main():
         old=subprocess.check_output(['git','show',BASE+':src/Notifications/Warnings.php'],cwd=ROOT)
         old=old.replace(b'__DIR__',repr(str(ROOT/'src/Notifications')).encode())
         (work/'warnings-baseline.php').write_bytes(old)
+        regression=subprocess.check_output(['git','show',NOTIFICATION_REGRESSION+':src/Notifications/Warnings.php'],cwd=ROOT)
+        regression=regression.replace(b'__DIR__',repr(str(ROOT/'src/Notifications')).encode())
+        (work/'warnings-notification-regression.php').write_bytes(regression)
         def sql(s):return native.sql(work,env,s,DB).strip()
         def call(action,**spec):
             proc=subprocess.run(['php','-d','display_errors=0','-d','log_errors=1',
@@ -128,7 +138,8 @@ def main():
             allowed=('achbot_warning_delete_observation_changed order_id=',
                      'achbot_warning_remote_delete_deferred order_id=',
                      'achbot_warning_local_delete_deferred order_id=',
-                     'achbot_warning_delete_target_changed order_id=')
+                     'achbot_warning_delete_target_changed order_id=',
+                     'achbot_warning_delete_grace_unverified order_id=')
             unexpected=[s for s in proc.stderr.splitlines() if not s.startswith(allowed)]
             if proc.returncode or unexpected:raise AssertionError((proc.returncode,proc.stdout,unexpected))
             return json.loads(proc.stdout)
@@ -146,7 +157,7 @@ def main():
             expiry=int(time.time())+864000 if expiry is None else expiry
             plan=7 if server==2 else 8
             sql("INSERT INTO orders_list(id,userid,token,transid,fileid,server_id,inbound_id,remark,uuid,protocol,expire_date,link,amount,status,date,notif,autoRenew)"
-                f" VALUES({oid},1001,'','',{plan},{server},0,'{remark}','shared-fixture-uuid','vless',{expiry},'[]',100,1,'fixture',{notif},'on')")
+                f" VALUES({oid},1001,'','',{plan},{server},0,'{remark}','shared-fixture-uuid','vless',{expiry},'[]',100,1,'1700000000',{notif},'on')")
         def retire():
             sql("UPDATE orders_list SET status=0;DELETE FROM setting WHERE type IN('warnLastOrderId','AutoRenewLastOrderId');")
             mb.reads={};mb.on_read=None;mb.on_auth=None;mb.status=200;mb.delete_status=200
@@ -184,6 +195,17 @@ def main():
         for name,change,expected,verified in matrix:
             out=call('policy',remote=dict(base,**change),now=now)
             yes(out['policy']==expected and out['observation']['verified']==verified,'policy_'+name)
+        grace_matrix=[
+            ('canonical_after_creation',{'date':'1700000000','notif':'1700000001'},True),
+            ('positive_early_epoch_without_arbitrary_year',{'date':1,'notif':2},True),
+            ('zero_creation',{'date':'0','notif':'1700000001'},False),
+            ('missing_creation',{'notif':'1700000001'},False),
+            ('noncanonical_creation',{'date':'01700000000','notif':'1700000001'},False),
+            ('deadline_at_creation',{'date':'1700000000','notif':'1700000000'},False),
+            ('invalid_deadline',{'date':'1700000000','notif':'unknown'},False),
+        ]
+        for name,order,expected in grace_matrix:
+            yes(call('grace',order=order) is expected,'grace_integrity_'+name)
         seed();seed(102,3,'fixture_user');pg_identity()
         for provider,sid,remark in [('marzban',2,'mb_user'),('pasarguard',3,'fixture_user')]:
             if provider=='marzban':mb.user.update(expire=None,data_limit=1073741824,used_traffic=1000000000,status='active')
@@ -215,8 +237,56 @@ def main():
             'pasarguard_quota_only_same_warning')
         retire();seed(103,notif=0)
         result=call('warnings',telegram_ok=False)
-        yes(sql('SELECT notif FROM orders_list WHERE id=103')=='0' and len(result)==1,
-            'failed_telegram_not_marked_delivered')
+        yes(sql('SELECT notif FROM orders_list WHERE id=103')=='-2' and len(result)==1,
+            'failed_telegram_pending_retry_not_marked_delivered')
+        result=call('warnings')
+        yes(sql('SELECT notif FROM orders_list WHERE id=103')=='-1' and len(result)==1,
+            'pending_warning_retry_success_marks_delivered')
+        for provider,sid,oid,remark in [('marzban',2,101,'mb_user'),('pasarguard',3,102,'fixture_user')]:
+            retire();sql('UPDATE orders_list SET status=1,notif=0 WHERE id='+str(oid))
+            remote=mb.user if sid==2 else pguard.user
+            remote.update(status='active',expire=int(time.time())+1800,data_limit=None,used_traffic=0)
+            before_delete=deletes(mb)+deletes(pguard)
+            result=call('warnings',telegram_ok=False)
+            yes(sql('SELECT notif FROM orders_list WHERE id='+str(oid))=='-2' and len(result)==1 and
+                deletes(mb)+deletes(pguard)==before_delete,
+                provider+'_failed_near_end_warning_retains_pending_retry')
+            disabled=call('sweep',enabled='off')
+            yes(disabled==[] and sql('SELECT notif FROM orders_list WHERE id='+str(oid))=='-2',
+                provider+'_pending_warning_preserves_auto_renew_consent_off')
+            wallet_before=sql('SELECT wallet FROM users WHERE userid=1001')
+            dispatched=call('sweep')
+            yes(dispatched==[{'type':'renew_dispatch_spy','order':oid}] and
+                sql('SELECT wallet FROM users WHERE userid=1001')==wallet_before and
+                deletes(mb)+deletes(pguard)==before_delete,
+                provider+'_pending_warning_does_not_suppress_strict_auto_renew_dispatch')
+        for provider,sid,oid in [('marzban',2,101),('pasarguard',3,102)]:
+            for ended_reason in ['expired','exhausted']:
+                retire()
+                initial=-2 if ended_reason=='exhausted' else 0
+                sql('UPDATE orders_list SET status=1,notif='+str(initial)+' WHERE id='+str(oid))
+                remote=mb.user if sid==2 else pguard.user
+                remote.update(status='expired' if ended_reason=='expired' else 'limited',
+                    expire=int(time.time())-100 if ended_reason=='expired' else None,
+                    data_limit=None if ended_reason=='expired' else 1073741824,
+                    used_traffic=0 if ended_reason=='expired' else 1073741824)
+                before_delete=deletes(mb)+deletes(pguard)
+                if provider=='marzban' and ended_reason=='expired':
+                    regression=call('notification_baseline',telegram_ok=False)
+                    yes(sql('SELECT notif FROM orders_list WHERE id='+str(oid))=='0' and len(regression)==1 and
+                        deletes(mb)+deletes(pguard)==before_delete,
+                        'notification_delivery_regression_RED_expired_service_never_queued')
+                started=int(time.time());result=call('warnings',telegram_ok=False);finished=int(time.time())
+                deadline=int(sql('SELECT notif FROM orders_list WHERE id='+str(oid)))
+                yes(started+10*86400<=deadline<=finished+10*86400 and len(result)==1 and
+                    sql('SELECT status FROM orders_list WHERE id='+str(oid))=='1' and
+                    deletes(mb)+deletes(pguard)==before_delete,
+                    provider+'_failed_'+ended_reason+'_warning_starts_full_ten_day_grace')
+                result=call('warnings',telegram_ok=False)
+                yes(result==[] and sql('SELECT notif FROM orders_list WHERE id='+str(oid))==str(deadline) and
+                    sql('SELECT status FROM orders_list WHERE id='+str(oid))=='1' and
+                    deletes(mb)+deletes(pguard)==before_delete,
+                    provider+'_failed_'+ended_reason+'_warning_cannot_reset_grace_or_delete_early')
         retire();seed(104,notif=0)
         mb.user.update(expire=int(time.time())-100,status='expired',data_limit=None,used_traffic=0)
         call('warnings')
@@ -229,6 +299,30 @@ def main():
             call('warnings')
             yes(sql('SELECT notif FROM orders_list WHERE id=' + str(105 if status=='disabled' else 106))=='0',
                 status+'_does_not_start_delete_grace')
+        # Unknown legacy/pre-order deadlines are not repaired or interpreted
+        # as permission to delete. Both actual adapters remain uncalled and
+        # the target's complete order/identity/financial state is unchanged.
+        for provider,oid,created,deadline in [
+            ('marzban',101,'1700000000',1),
+            ('pasarguard',102,'unknown-created-at',int(time.time())-1),
+        ]:
+            retire()
+            sql("UPDATE orders_list SET status=1,date='"+created+"',notif="+str(deadline)+" WHERE id="+str(oid))
+            sql("INSERT INTO setting(type,value) VALUES('warnLastOrderId','0')")
+            mb.user.update(status='expired',expire=int(time.time())-100,data_limit=None,used_traffic=0)
+            pguard.user.update(status='expired',expire=int(time.time())-100,data_limit=None,used_traffic=0)
+            def grace_snapshot():
+                return sql('SELECT * FROM orders_list WHERE id='+str(oid)+
+                    ';SELECT * FROM provider_accounts WHERE order_id='+str(oid)+
+                    ';SELECT userid,wallet FROM users ORDER BY userid;SELECT * FROM pays ORDER BY id'+
+                    ";SELECT * FROM setting WHERE type='warnLastOrderId'")
+            before=grace_snapshot();requests=(len(mb.trace),len(pguard.trace));before_delete=deletes(mb)+deletes(pguard)
+            result=call('warnings')
+            yes(result==[] and grace_snapshot()==before and requests==(len(mb.trace),len(pguard.trace)) and
+                deletes(mb)+deletes(pguard)==before_delete,
+                provider+('_pre_order_deadline' if deadline==1 else '_unknown_creation')+'_defers_without_remote_or_data_mutation')
+            # Reset only this disposable fixture for later valid-deadline cases.
+            sql("UPDATE orders_list SET date='1700000000' WHERE id="+str(oid))
         # All warning updates target one order, even when legacy UUIDs alias.
         retire()
         for i in range(200,301):seed(i,remark='page_'+str(i))
@@ -251,13 +345,13 @@ def main():
         yes(len(results)==101 and len({e['order'] for e in results})==101 and
             sql('SELECT COUNT(*) FROM orders_list WHERE status=1 AND notif<>0')=='0',
             'auto_renew_keyset_no_skipped_fulfilled_rows')
-        retire();seed(107,notif=1)
+        retire();seed(107,notif=int(time.time())-1)
         before=deletes(mb);mb.user.update(status='expired',expire=int(time.time())-100,data_limit=None,used_traffic=0)
         mb.on_read=lambda remark,count:sql('UPDATE orders_list SET expire_date=expire_date+1 WHERE id=107') if remark=='mb_user' and count==1 else None
         call('warnings')
         yes(sql('SELECT status FROM orders_list WHERE id=107')=='1' and deletes(mb)==before,
             'concurrent_local_renewal_cycle_blocks_delete_reservation')
-        retire();seed(108,notif=1)
+        retire();seed(108,notif=int(time.time())-1)
         before=deletes(mb)
         def renewed_after_fence(remark,count):
             if count==2:mb.user.update(expire=int(time.time())+86400*30)
@@ -269,7 +363,7 @@ def main():
         # Capture the original physical target before observation and refuse a
         # changed endpoint before reservation, after the fence, and after auth.
         for phase,oid in [('before_fence',113),('after_fence',114),('during_delete_auth',115)]:
-            retire();seed(oid,remark='swap_'+phase,notif=1)
+            retire();seed(oid,remark='swap_'+phase,notif=int(time.time())-1)
             mb.user.update(status='expired',expire=int(time.time())-100,data_limit=None,used_traffic=0)
             prior_a=deletes(mb);prior_b=deletes(other)
             swap=lambda:sql("UPDATE server_config SET panel_url='"+other_url+"' WHERE id=2")
@@ -285,13 +379,13 @@ def main():
                 sql('SELECT status FROM orders_list WHERE id='+str(oid))==('1' if phase=='before_fence' else '0'),
                 'endpoint_swap_'+phase+'_never_deletes_other_panel')
             sql("UPDATE server_config SET panel_url='"+mb_url+"' WHERE id=2")
-        retire();seed(109,notif=1)
+        retire();seed(109,notif=int(time.time())-1)
         mb.user.update(status='expired',expire=int(time.time())-100)
         sql("INSERT INTO pays(hash_id,user_id,type,order_id,state,price,request_date) VALUES('pending-fixture',1001,'RENEW_ACCOUNT',109,'processing_wallet',100,1700000000)")
         before=deletes(mb);call('warnings')
         yes(sql('SELECT status FROM orders_list WHERE id=109')=='1' and deletes(mb)==before,
             'inflight_wallet_effect_blocks_scheduled_delete')
-        retire();seed(110,notif=1)
+        retire();seed(110,notif=int(time.time())-1)
         sql("INSERT INTO service_effects(source_kind,source_ref,actor_userid,ordinal,operation_id,target_server_id,target_key,endpoint_sha256,"
             "plan_id,remote_username,requested_expire,requested_bytes,request_sha256,state)"
             " VALUES('admin_bulk','bulk:9001:2',9001,1,REPEAT('d',32),2,'server:2',REPEAT('e',64),7,'mb_user',2000000000,1073741824,REPEAT('f',64),'dispatching')")
@@ -301,8 +395,8 @@ def main():
         sql("UPDATE service_effects SET state='local_recorded' WHERE source_ref='bulk:9001:2'")
         for sid,oid,remark in [(2,111,'delete_mb'),(3,102,'fixture_user')]:
             retire()
-            if oid==102:sql('UPDATE orders_list SET status=1,notif=1 WHERE id=102')
-            else:seed(oid,server=sid,remark=remark,notif=1)
+            if oid==102:sql('UPDATE orders_list SET status=1,notif='+str(int(time.time())-1)+' WHERE id=102')
+            else:seed(oid,server=sid,remark=remark,notif=int(time.time())-1)
             mb.user.update(status='expired',expire=int(time.time())-100,data_limit=None,used_traffic=0)
             pguard.user.update(status='expired',expire=int(time.time())-100,data_limit=None,used_traffic=0)
             server=mb if sid==2 else pguard;before=deletes(server)
@@ -311,12 +405,12 @@ def main():
                 ('marzban' if sid==2 else 'pasarguard')+'_real_native_delete_once_after_common_grace')
             call('warnings')
             yes(deletes(server)==before+1,'native_delete_replay_inert_'+str(sid))
-        retire();seed(112,remark='delete_unknown',notif=1);mb.delete_status=500
+        retire();seed(112,remark='delete_unknown',notif=int(time.time())-1);mb.delete_status=500
         before=deletes(mb);call('warnings');call('warnings')
         yes(deletes(mb)==before+1 and sql('SELECT status FROM orders_list WHERE id=112')=='0',
             'uncertain_native_delete_never_retried_automatically')
         yes(sql('SELECT wallet FROM users WHERE userid=1001')==before_wallet,'lifecycle_suite_no_wallet_mutations')
-        report={'complete':True,'cases':len(checks),'scenarios':checks,'baseline_red':True,
+        report={'complete':True,'cases':len(checks),'scenarios':checks,'baseline_red':True,'notification_delivery_regression_red':True,'grace_integrity':True,
             'native_php':True,'disposable_mariadb':True,'loopback_adapters':['marzban','pasarguard'],
             'actual_delete_transports':True,'financial_dispatch':'spy_only_existing_finance_suite_separate',
             'production_mutations':0,'external_provider_calls':0}
