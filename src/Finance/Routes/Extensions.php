@@ -25,6 +25,11 @@ if(preg_match('/increaseADay(.*)/', $data, $match)){
         return;
     }
 
+    if (!achbotOrderAddonEligibility($connection,$orderInfo,'day')['eligible']) {
+        alert(\achbotMessage('payment.pre_payment.alert.fa55f5201f'),true);
+        return;
+    }
+
     $agentBought = $orderInfo['agent_bought'];
 
     if($res->num_rows == 0){
@@ -72,6 +77,11 @@ if(preg_match('/selectPlanDayIncrease(?<orderId>.+)_(?<dayId>.+)/',$data,$match)
     $stmt->close();
     if (!$orderInfo || (int)$orderInfo['userid']!==(int)$from_id || !achbotSupportsOrder($connection, (int)$orderInfo['id'])) {
         alert(\achbotMessage('renewal.extensions.alert.d0779ad27d'), true);
+        return;
+    }
+
+    if (!achbotOrderAddonEligibility($connection,$orderInfo,'day')['eligible']) {
+        alert(\achbotMessage('payment.pre_payment.alert.fa55f5201f'),true);
         return;
     }
 
@@ -819,20 +829,11 @@ if (preg_match('/^increaseAVolume([1-9][0-9]{0,9})$/D', $data, $match)) {
 
 
     $agentBought = (bool)$orderInfo['agent_bought'];
-    $expireDate = (int) $orderInfo['expire_date']; // تبدیل به عدد صحیح
-    $currentDate = time();
-
-    // A legacy zero is unlimited time, not an expired date. This relative
-    // add-on still requires a finite baseline; do not create a payable draft.
-    if ($expireDate<=0) {
-        alert(\achbotMessage('payment.pre_payment.alert.fa55f5201f'),true);
+    $eligibility=achbotOrderAddonEligibility($connection,$orderInfo,'volume');
+    if (!$eligibility['eligible']) {
+        alert(\achbotMessage($eligibility['reason']==='expired'
+            ? 'renewal.extensions.alert.96762b5a42' : 'payment.pre_payment.alert.fa55f5201f'),true);
         return;
-    }
-	
-    // اگر تاریخ انقضا کمتر از تاریخ و ساعت فعلی باشد
-    if ($expireDate <= $currentDate) {
-        alert(\achbotMessage('renewal.extensions.alert.96762b5a42'));
-        exit;
     }
 
     $stmt = $connection->prepare("SELECT * FROM `increase_plan`");
@@ -897,12 +898,10 @@ if(preg_match('/^increaseVolumePlan(?<orderId>[1-9][0-9]{0,9})_(?<volumeId>[1-9]
         return;
     }
 
-    if ((int)$orderInfo['expire_date']<=0) {
-        alert(\achbotMessage('payment.pre_payment.alert.fa55f5201f'),true);
-        return;
-    }
-    if ((int)$orderInfo['expire_date']<=time()) {
-        alert(\achbotMessage('renewal.extensions.alert.f5aab191db'),true);
+    $eligibility=achbotOrderAddonEligibility($connection,$orderInfo,'volume');
+    if (!$eligibility['eligible']) {
+        alert(\achbotMessage($eligibility['reason']==='expired'
+            ? 'renewal.extensions.alert.f5aab191db' : 'payment.pre_payment.alert.fa55f5201f'),true);
         return;
     }
     $agentBought = $orderInfo['agent_bought'];

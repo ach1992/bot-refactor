@@ -35,6 +35,13 @@ $events=[];
 require_once $root.'/src/Purchase/Core.php';
 function getMarzbanUser($id,$remark) {
     $GLOBALS['events'][]=['type'=>'read'];
+    $file=__DIR__.'/native-'.hash('sha256',$remark).'.json';
+    if (file_exists($file)) {
+        $native=json_decode(file_get_contents($file));
+        if (array_key_exists('expire_delta',$GLOBALS['spec']))
+            $native->expire=time()+$GLOBALS['spec']['expire_delta'];
+        return $native;
+    }
     return (object)['username'=>$remark,
                     'expire'=>time()+($GLOBALS['spec']['expire_delta']??1000),
                     'data_limit'=>1073741824,'used_traffic'=>1060000000,
@@ -54,10 +61,14 @@ function editMarzbanConfig($id,$info) {
         $stmt->bind_param('i',$oid);$stmt->execute();$stmt->close();
     }
     if(!empty($GLOBALS['spec']['throw']))throw new RuntimeException('mock ambiguous timeout');
-    return (object)['success'=>$GLOBALS['spec']['remote_success']??true,
+    $reply=(object)['success'=>$GLOBALS['spec']['remote_success']??true,
                     'verified'=>$GLOBALS['spec']['remote_success']??true,
                     'applied_expire'=>$GLOBALS['spec']['applied_expire']??(time()+30*86400),
                     'applied_bytes'=>10*1073741824];
+    if ($reply->success) file_put_contents(__DIR__.'/native-'.hash('sha256',$info['remark']).'.json',
+        json_encode(['username'=>$info['remark'],'expire'=>$reply->applied_expire,
+            'data_limit'=>$reply->applied_bytes,'used_traffic'=>0,'status'=>'active'],JSON_THROW_ON_ERROR));
+    return $reply;
 }
 function sendMessage($message,$keys=null,$parse=null,$id=null) {
     $GLOBALS['events'][]=['type'=>'send','to'=>$id];
@@ -238,6 +249,7 @@ def run(w,e,s):
         raise RuntimeError(repr((p.returncode,unexpected[-8:],p.stdout[-400:])))
     return json.loads(p.stdout)
 def seed(w,e,name,amount=100000,wallet=500000):
+    (w/('native-'+__import__('hashlib').sha256(name.encode()).hexdigest()+'.json')).unlink(missing_ok=True)
     sql(w,e,f"UPDATE users SET wallet={wallet} WHERE userid=1001")
     sql(w,e,f"UPDATE server_plans SET price={amount},days=30,volume=2,active=1 WHERE id=7")
     exp=int(time.time())+1000
@@ -539,7 +551,7 @@ def main():
                 owned_trigger(w,e,trigger)
                 observed=run(w,e,{'action':'remote_mark',
                                    'order_id':held,'enabled':'on'})
-                assert observed==[{'type':'reserve','status':'reserved'},
+                assert observed==[{'type':'read'},{'type':'reserve','status':'reserved'},
                                   {'type':'mark','ok':False}],(mode,observed)
                 assert int(sql(w,e,'SELECT n FROM achbot_owned_mark_counter')
                            )==expected_attempts,(mode,expected_attempts)
@@ -596,7 +608,8 @@ def main():
         cases.append('telegram_failure_after_commit_does_not_revert_payment')
 
         # F2: different references may share one native account. One consenting
-        # claimant pays, and verified completion updates both reference cycles.
+        # claimant pays; the other reference is unchanged and native state
+        # prevents another automatic charge for the completed cycle.
         first=seed(w,e,'duplicate-account',wallet=500000)
         second=seed(w,e,'duplicate-account',wallet=500000)
         assert first!=second
@@ -615,7 +628,7 @@ def main():
         assert wallet(w,e)==400000
         assert count(w,e,'automatic_renewal_attempts',f'order_id IN ({first},{second})')==1
         assert count(w,e,'pays',f"order_id IN ({first},{second}) AND description='automatic_renewal'")==1
-        assert sql(w,e,f'SELECT COUNT(DISTINCT expire_date),SUM(notif) FROM orders_list WHERE id IN ({first},{second})').strip()=='1\t0'
+        assert sql(w,e,f'SELECT COUNT(DISTINCT expire_date),SUM(notif) FROM orders_list WHERE id IN ({first},{second})').strip()=='2\t1'
         cases.append('f2_distinct_active_references_same_account_two_workers_one_debit')
         assert run(w,e,{'action':'deletion_guard','order_id':first})==[
             {'type':'delete_guard','allowed':True}]

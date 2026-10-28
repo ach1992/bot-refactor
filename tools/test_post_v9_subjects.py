@@ -18,7 +18,11 @@ PHP = r'''
 $_SERVER['SCRIPT_FILENAME']='owned-synthetic-subject-test.php';
 require $argv[1];
 $db=new mysqli('localhost','root','',$argv[2],0,$argv[3]);
-$db->set_charset('utf8mb4');
+$db->set_charset('utf8mb4');$connection=$db;
+// Isolate SQL subject validation from HTTP. Full native freshness is covered
+// separately by test_financial_live_state with both real loopback adapters.
+function getMarzbanUser($serverId,$remark){return(object)['username'=>$remark,
+ 'expire'=>2000000000,'data_limit'=>2147483648,'used_traffic'=>0,'status'=>'active'];}
 $subject=json_decode($argv[4],true,512,JSON_THROW_ON_ERROR);
 $lock=($argv[5]??'0')==='1';
 if ($lock) $db->begin_transaction();
