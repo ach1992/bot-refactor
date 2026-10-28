@@ -512,9 +512,7 @@ def main():
         yes(all_state()==before,'role_denial_after_initial_claim_rolls_back_all_entity_and_actor_changes')
         yes(not any('PRIVATE-ROLE-DENIAL-DRAFT'in str(e.get('body',''))for e in denied['events']),'role_denial_after_initial_claim_never_recovers_private_draft')
         cancel(r,actor=9002)
-        # Removing a server cannot strand orders/plans/payment evidence; a pristine server can be removed locally.
-        before=rows();r=call(callback='yesDeleteServer'+str(pg_id),field=True)
-        yes(rows()==before,'referenced_server_delete_is_blocked')
+        # A confirmed removal may have dependencies; their records are retained.
         clean_id=int(sql('SELECT MAX(id) FROM server_info').strip());before=rows()
         # A stale delete confirmation may not hide an active editor or financial draft.
         r=call(callback='editServerName'+str(clean_id),field=True);before_busy=all_state()
@@ -537,6 +535,14 @@ def main():
         r=call(callback='yesDeleteServer'+str(clean_id),field=True)
         yes(sql('SELECT COUNT(*) FROM server_info WHERE id='+str(clean_id)).strip()=='0' and sql('SELECT COUNT(*) FROM server_config WHERE id='+str(clean_id)).strip()=='0','unreferenced_server_delete_is_atomic')
         yes(sql('SELECT COUNT(*) FROM provider_panels')==panels_before,'shared_provider_identity_retained_on_server_delete')
+        # Remove a populated server after its wizard has completed; only connection rows disappear.
+        dependent_before=sql('SELECT * FROM server_plans ORDER BY id;SELECT * FROM orders_list ORDER BY id;SELECT * FROM pays ORDER BY id;SELECT * FROM service_effects ORDER BY id')
+        r=call(callback='yesDeleteServer'+str(pg_id),field=True,message_id=575)
+        yes(sql('SELECT COUNT(*) FROM server_info WHERE id='+str(pg_id)).strip()=='0' and sql('SELECT COUNT(*) FROM server_config WHERE id='+str(pg_id)).strip()=='0','confirmed_referenced_server_is_removed')
+        yes(sql('SELECT * FROM server_plans ORDER BY id;SELECT * FROM orders_list ORDER BY id;SELECT * FROM pays ORDER BY id;SELECT * FROM service_effects ORDER BY id')==dependent_before,'confirmed_server_removal_preserves_dependent_records')
+        edits=[e for e in r['events']if e.get('method')=='editMessageText']
+        yes(len(edits)==1 and edits[0]['edited_message']==575 and 'yesDeleteServer' not in str(edits[0].get('keys')),'confirmed_server_removal_consumes_original_confirmation')
+        yes(not any(e.get('method')=='sendMessage'for e in r['events']),'confirmed_server_removal_has_no_duplicate_new_prompts')
         # Actual RC13 source reproduces the reported double-cancel cause; current handler consumes it once.
         old_provider=subprocess.check_output(['git','show','2c0e728dcd71c38e20d176fe2577bc264d3faa1a:src/Panel/ProviderAdmin.php'],cwd=ROOT)
         old_path=work/'rc13-provider-admin.php'

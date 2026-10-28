@@ -410,12 +410,10 @@ if (
                     $o['inbound_id'],
                     $o['remark'],
                     $o['uniqid'],
-                    $o['protocol'],
                     $o['expire_date'],
                     $o['vray_link'],
                     $o['amount'],
                     $o['date'],
-                    $o['rahgozar'],
                     $o['agent_bought'],
                     true
                 );

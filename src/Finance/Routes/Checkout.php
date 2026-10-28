@@ -126,8 +126,8 @@ if (is_string($data) && strlen($data) <= 64 && preg_match('/\ApayCustomWithWalle
         try {
             $orderId=insertOrder(
                 $connection,$uid,$token,$fid,$server_id,$inbound_id,
-                $remark,$uniqid,$protocol,$expire_date,$vray_link,
-                $price,$date,$rahgozar,$agentBought,true);
+                $remark,$uniqid,$expire_date,$vray_link,
+                $price,$date,$agentBought,true);
             achbotLinkPaidAccountEffect($connection,$effectId,$orderId);
             if ($connection->commit()!==true)
                 throw new RuntimeException('custom_wallet_order_commit_unknown');
@@ -600,8 +600,8 @@ if (preg_match('/^accCustom(.+)$/D', $data, $match) && $text != $buttonValues['c
         try {
             $orderId=insertOrder(
                 $connection,$uid,$token,$fid,$server_id,$inbound_id,
-                $remark,$uniqid,$protocol,$expire_date,$vray_link,
-                $price,$date,$rahgozar,$agentBought,true);
+                $remark,$uniqid,$expire_date,$vray_link,
+                $price,$date,$agentBought,true);
             achbotLinkPaidAccountEffect($connection,$effectId,$orderId);
             $fin=$connection->prepare("UPDATE pays SET state='approved'
                 WHERE id=? AND type='BUY_SUB' AND state='processing' AND approved_by=?");
@@ -936,10 +936,10 @@ if (is_string($data) && strlen($data) <= 64 && preg_match('/\ApayBuyWithWallet([
                 try {
                     $orderId=insertOrder(
                         $connection,$uid,$token,$fid,$server_id,$inbound_id,
-                        $remark,$uniqid2?:$uniqid,$protocol,$expire_date,
+                        $remark,$uniqid2?:$uniqid,$expire_date,
                         $vray_link,
                         achbotAllocateOrderAmount((int)$price,$accountCount,$i),
-                        $date,$rahgozar,$agent_bought,true);
+                        $date,$agent_bought,true);
                     achbotLinkPaidAccountEffect($connection,$effectId,$orderId);
                     if ($connection->commit()!==true)
                         throw new RuntimeException('wallet_buy_order_commit_unknown');

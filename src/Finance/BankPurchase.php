@@ -106,11 +106,10 @@ function achbotAutoBankFinishBuySub(mysqli $db, array $pay, array $lines): bool 
         foreach ($lines as $index=>$line) {
             $n=$index+1; $e=$effects[$n];
             $orderId=insertOrder($db,$owner,(string)$line['token'],$planId,
-                $server,0,(string)$line['remark'],(string)$line['uniqid'],
-                (string)$line['protocol'],(int)$e['requested_expire'],
+                $server,0,(string)$line['remark'],(string)$line['uniqid'],(int)$e['requested_expire'],
                 (string)$line['vray_link'],
                 achbotAllocateOrderAmount($price,$count,$n),
-                (int)$line['date'],(int)$line['rahgozar'],
+                (int)$line['date'],
                 (int)$line['agent_bought'],true);
             achbotLinkPaidAccountEffect($db,(int)$e['id'],(int)$orderId);
         }

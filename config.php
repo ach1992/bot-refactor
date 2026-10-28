@@ -3430,9 +3430,9 @@ function getServerConfigById($server_id) {
     require_once __DIR__ . '/src/Subscription/AccountDetails.php';
     return \AchBot\Subscription\AccountDetails\getServerConfigById($server_id);
 }
-function getOrderTrafficInfo($serverType, $server_id, $remark, $uuid, $inbound_id, $rahgozar=false) {
+function getOrderTrafficInfo($serverType, $server_id, $remark, $uuid, $inbound_id) {
     require_once __DIR__ . '/src/Subscription/AccountDetails.php';
-    return \AchBot\Subscription\AccountDetails\getOrderTrafficInfo($serverType, $server_id, $remark, $uuid, $inbound_id, $rahgozar);
+    return \AchBot\Subscription\AccountDetails\getOrderTrafficInfo($serverType, $server_id, $remark, $uuid, $inbound_id);
 }
 function buildSubscriptionPresentation($provider, $native, $botState, $options = [], $context = 'view', $serverId = 0) {
     global $connection;
@@ -3466,18 +3466,6 @@ function buildConfigMessage($enableText, $remark, $configLinks, $subLink, $backu
     );
 }
 
-function getProtocolNamesRow($protocol, $netType, $security, $rahgozar, $inbound_id) {
-    require_once __DIR__ . '/src/Subscription/AccountDetails.php';
-    return \AchBot\Subscription\AccountDetails\getProtocolNamesRow($protocol, $netType, $security, $rahgozar, $inbound_id);
-}
-function buildAdminProtocolButtons($protocol, $netType, $security, $rahgozar, $inbound_id) {
-    require_once __DIR__ . '/src/Subscription/AccountDetails.php';
-    return \AchBot\Subscription\AccountDetails\buildAdminProtocolButtons($protocol, $netType, $security, $rahgozar, $inbound_id);
-}
-function buildUserProtocolButtons($protocol, $netType, $security, $rahgozar, $inbound_id, $serverType, $botState, $fid, $id) {
-    require_once __DIR__ . '/src/Subscription/AccountDetails.php';
-    return \AchBot\Subscription\AccountDetails\buildUserProtocolButtons($protocol, $netType, $security, $rahgozar, $inbound_id, $serverType, $botState, $fid, $id);
-}
 function getUserOrderDetailKeys($id, $offset = 0) {
     require_once __DIR__ . '/src/Subscription/AccountDetails.php';
     return \AchBot\Subscription\AccountDetails\getUserOrderDetailKeys($id, $offset);

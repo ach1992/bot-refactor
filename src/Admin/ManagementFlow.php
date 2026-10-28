@@ -341,16 +341,16 @@ function achbotHandleManagementFields(): bool {
             $entity=(int)$deletion[1];
             $server=achbotManagementRow($connection,'SELECT i.id,c.type FROM server_info i JOIN server_config c ON c.id=i.id WHERE i.id=? FOR UPDATE','i',[$entity]);
             if (!$server || !achbotSupportsAccount($server['type'],0)) throw new RuntimeException('management_targets');
-            // Keep live services and historical payment/fulfillment references recoverable.
-            foreach (['SELECT id FROM orders_list WHERE server_id=? LIMIT 1 FOR UPDATE',
-                'SELECT id FROM server_plans WHERE server_id=? LIMIT 1 FOR UPDATE',
-                'SELECT id FROM pays WHERE server_id=? LIMIT 1 FOR UPDATE',
-                'SELECT id FROM service_effects WHERE target_server_id=? LIMIT 1 FOR UPDATE'] as $sql)
-                if (achbotManagementRow($connection,$sql,'i',[$entity])) throw new RuntimeException('server_referenced');
+            // Explicit administrator confirmation removes this connection only.
+            // Dependent orders/plans and financial/effect history remain intact.
             achbotManagementSql($connection,'DELETE FROM server_config WHERE id=?','i',[$entity])->close();
             achbotManagementSql($connection,'DELETE FROM server_info WHERE id=?','i',[$entity])->close();
             if (!achbotManagementCommit($connection)) throw new RuntimeException('management_commit_unknown');$begun=false;
-            achbotManagementHome('server',null,achbotManagementText('server_removed'));return true;
+            $keys=getServerListKeys();
+            editText((int)$update->callback_query->message->message_id,
+                achbotManagementText('server_removed')."\n\n".achbotManagementText('server_list'),
+                $keys??json_encode(['inline_keyboard'=>[]]),'HTML');
+            return true;
         }
         if ($legacyCancel) {
             if ($u['step']!==$step) throw new RuntimeException('management_stale');

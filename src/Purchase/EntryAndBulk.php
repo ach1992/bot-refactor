@@ -309,9 +309,8 @@ if (
         try {
             $orderId=insertOrder(
                 $connection,$uid,$token,$fidFromStep,$server_id,
-                $inbound_id,$remark,$uniqidReturned?:$uniqid,
-                $protocol,$expire_date,$vray_link,$price,
-                $date,$rahgozar,0,true);
+                $inbound_id,$remark,$uniqidReturned?:$uniqid,$expire_date,$vray_link,$price,
+                $date,0,true);
             achbotLinkNonPaymentAccountEffect($connection,$effectId,$orderId);
             if ($connection->commit()!==true)
                 throw new RuntimeException('admin_bulk_order_commit_unknown');

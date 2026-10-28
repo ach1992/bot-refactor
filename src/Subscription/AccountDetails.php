@@ -63,7 +63,7 @@ function getServerConfigById($server_id) {
 }
 
 
-function getOrderTrafficInfo($serverType, $server_id, $remark, $uuid, $inbound_id, $rahgozar=false, ?object $provenRemote=null) {
+function getOrderTrafficInfo($serverType, $server_id, $remark, $uuid, $inbound_id, ?object $provenRemote=null) {
     require_once __DIR__.'/../Panel/ServiceLifecycle.php';
     $result = [
         'found'=>false,'enable'=>false,
@@ -99,71 +99,6 @@ function getOrderStatusText(array $traffic,string $serverType,array $buttons,?st
         default=>\achbotMessage('subscription.account_details.get_order_status_text.label.ff02acf7a2')
     };
 }
-
-function getProtocolNamesRow($protocol, $netType, $security, $rahgozar, $inbound_id) {
-
-    if ($inbound_id != 0) {
-        return [$protocol];
-    }
-
-    if ($protocol == 'trojan') {
-        if ($security == "xtls") {
-            return ['trojan', 'vless'];
-        }
-        return ['trojan', 'vmess', 'vless'];
-    }
-
-    if ($netType == "grpc") {
-        return ['vmess', 'vless'];
-    }
-
-    if ($netType == "tcp" && $security == "xtls") {
-        return ['trojan', 'vless'];
-    }
-
-    if ($rahgozar) {
-        return ['vmess', 'vless'];
-    }
-
-    return ['trojan', 'vmess', 'vless'];
-}
-
-
-function buildAdminProtocolButtons($protocol, $netType, $security, $rahgozar, $inbound_id) {
-    $names = getProtocolNamesRow($protocol, $netType, $security, $rahgozar, $inbound_id);
-
-    $row = [];
-    foreach ($names as $name) {
-        $row[] = [
-            'text' => ($protocol == $name ? \achbotMessage('subscription.account_details.build_admin_protocol_buttons.name.177d6f2a4e', ['name' => $name]) : $name),
-            'callback_data' => "wizwizch"
-        ];
-    }
-
-    return [$row];
-}
-
-
-function buildUserProtocolButtons($protocol, $netType, $security, $rahgozar, $inbound_id, $serverType, $botState, $fid, $id) {
-    if (achbotSupportsAccount($serverType,$inbound_id)) return [];
-
-    $names = getProtocolNamesRow($protocol, $netType, $security, $rahgozar, $inbound_id);
-
-    $row = [];
-    foreach ($names as $name) {
-        $cb = ($botState['changeProtocolState']=="on")
-            ? "changeAccProtocol{$fid}_{$id}_{$name}"
-            : "changeProtocolIsDisable";
-
-        $row[] = [
-            'text' => ($protocol == $name ? \achbotMessage('subscription.account_details.build_admin_protocol_buttons.name.177d6f2a4e', ['name' => $name]) : $name),
-            'callback_data' => $cb
-        ];
-    }
-
-    return [$row];
-}
-
 
 /** Resolve the current actor from persisted roles before disclosing account secrets. */
 function currentOrderDetailActor(): ?array {
@@ -254,11 +189,9 @@ function getUserOrderDetailKeys($id, $offset = 0){
     $remark      = $order['remark'];
     $uuid        = $order['uuid'] ?? "0";
     $acc_link    = json_decode($order['link'], true);
-    $protocol    = $order['protocol'];
     $token       = $order['token'];
     $server_id   = $order['server_id'];
     $inbound_id  = $order['inbound_id'];
-    $rahgozar    = $order['rahgozar'];
     $agentBought = $order['agent_bought'];
     $autoRenew   = $order['autoRenew'] ?? "off";
     $planActions=orderPlanActions($GLOBALS['connection'],$order);
@@ -270,7 +203,7 @@ function getUserOrderDetailKeys($id, $offset = 0){
 
     $renderRemote=achbotSupportsAccount($serverType,$inbound_id)?
         achbotProviderRenderPacket($GLOBALS['connection'],(int)$server_id,(string)$remark):null;
-    $traffic     = getOrderTrafficInfo($serverType, $server_id, $remark, $uuid, $inbound_id, $rahgozar,$renderRemote);
+    $traffic     = getOrderTrafficInfo($serverType, $server_id, $remark, $uuid, $inbound_id,$renderRemote);
 
     $leftgb      = $traffic['leftgb'] ?? \achbotMessage('subscription.account_details.get_order_traffic_info.text.f07ac0638d');
     $enableBool  = $traffic['enable'] ?? false;
@@ -346,16 +279,6 @@ function getUserOrderDetailKeys($id, $offset = 0){
         ]];
     }
 
-    // protocol label
-    /*$keyboard[] = [
-        ['text' => $buttonValues['selected_protocol'], 'callback_data' => "wizwizch"],
-    ];
-
-    // protocol rows
-    foreach (buildAdminProtocolButtons($protocol, $traffic['netType'], $traffic['security'], $rahgozar, $inbound_id) as $row) {
-        $keyboard[] = $row;
-    }*/
-
     // enable/disable + delete
     if (!$uncertain && $actionable) {
         $stateActions=[];
@@ -397,11 +320,9 @@ function getOrderDetailKeys($from_id, $id, $offset = 0){
     $remark      = $order['remark'];
     $uuid        = $order['uuid'] ?? "0";
     $acc_link    = json_decode($order['link'], true);
-    $protocol    = $order['protocol'];
     $token       = $order['token'];
     $server_id   = $order['server_id'];
     $inbound_id  = $order['inbound_id'];
-    $rahgozar    = $order['rahgozar'];
     $agentBought = $order['agent_bought'];
     $autoRenew   = $order['autoRenew'] ?? "off";
     $planActions=orderPlanActions($GLOBALS['connection'],$order);
@@ -414,7 +335,7 @@ function getOrderDetailKeys($from_id, $id, $offset = 0){
 
     $renderRemote=achbotSupportsAccount($serverType,$inbound_id)?
         achbotProviderRenderPacket($GLOBALS['connection'],(int)$server_id,(string)$remark):null;
-    $traffic = getOrderTrafficInfo($serverType, $server_id, $remark, $uuid, $inbound_id, $rahgozar,$renderRemote);
+    $traffic = getOrderTrafficInfo($serverType, $server_id, $remark, $uuid, $inbound_id,$renderRemote);
 
     $found      = $traffic['found'] ?? false;
     $enableBool = $traffic['enable'] ?? false;
@@ -466,13 +387,6 @@ function getOrderDetailKeys($from_id, $id, $offset = 0){
         ['text' => $buttonValues['volume_left'], 'callback_data' => "wizwizch"],
     ];
 
-    // protocol label
-    if (!achbotSupportsAccount($serverType,$inbound_id)) {
-        $keyboard[] = [
-            ['text' => $buttonValues['selected_protocol'], 'callback_data' => "wizwizch"],
-        ];
-    }
-
     // Existing consent can always be withdrawn from an active local order.
     // The original eligibility checks still control offering new consent.
     if ((int)($order['status']??0)===1 && ($autoRenew==='on' ||
@@ -481,20 +395,6 @@ function getOrderDetailKeys($from_id, $id, $offset = 0){
             'text' => (($autoRenew ?? 'off') == "on" ? \achbotMessage('subscription.account_details.get_user_order_detail_keys.text.ed76444585') : \achbotMessage('subscription.account_details.get_user_order_detail_keys.text.fb6d00ad8d')),
             'callback_data' => "toggleAutoRenew{$id}"
         ]];
-    }
-
-    if ($found && $actionable) foreach (buildUserProtocolButtons(
-        $protocol,
-        $traffic['netType'],
-        $traffic['security'],
-        $rahgozar,
-        $inbound_id,
-        $serverType,
-        $botState,
-        $fid,
-        $id
-    ) as $row) {
-        $keyboard[] = $row;
     }
 
     // ---- Renewal + SwitchLocation
@@ -509,7 +409,7 @@ function getOrderDetailKeys($from_id, $id, $offset = 0){
             $temp[] = ['text' => $buttonValues['renew_config'], 'callback_data' => "renewAccountAsk{$id}"];
         }
 
-        if (($botState['switchLocationState'] ?? 'off') === 'on' &&
+        if (canReadAdminOrderDetails() && ($botState['switchLocationState'] ?? 'off') === 'on' &&
             achbotSupportsAccount($serverType,$inbound_id) &&
             achbotProviderRelocationTargets($GLOBALS['connection'],(int)$server_id)!==[]) {
             // The callback carries the old shape but never grants authority.

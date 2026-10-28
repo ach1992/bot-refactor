@@ -192,6 +192,10 @@ echo json_encode($out,JSON_THROW_ON_ERROR);
 ''')
   def sql(s):return native.sql(work,env,s,db)
   sql("INSERT INTO orders_list(id,userid,token,transid,fileid,server_id,inbound_id,remark,uuid,protocol,expire_date,link,amount,status,date) VALUES(91,1001,'fixture','','7',2,0,'fixture_user','fixture','vless',1900000000,'[]',100,1,'1700000000');INSERT INTO users(userid,name,username,refcode,wallet,date,isAdmin,first_start,is_agent) VALUES(1002,'Foreign','foreign','0',0,'1700000000',0,'sent',1)")
+  before_order=sql('SELECT id,userid,remark,expire_date,amount FROM orders_list ORDER BY id')
+  sql((ROOT/'migrations/post-v9/013_remove_obsolete_order_columns.sql').read_text())
+  yes(not sql("SHOW COLUMNS FROM orders_list WHERE Field IN ('protocol','rahgozar')").strip(),'obsolete_order_columns_removed_from_actual_render_database')
+  yes(sql('SELECT id,userid,remark,expire_date,amount FROM orders_list ORDER BY id')==before_order,'obsolete_column_removal_preserves_order_identity_expiry_and_amount')
   def snapshot():return sql("SELECT * FROM users ORDER BY id;SELECT * FROM orders_list ORDER BY id;SELECT * FROM pays ORDER BY id;SELECT * FROM server_info ORDER BY id;SELECT * FROM server_plans ORDER BY id;SELECT * FROM setting ORDER BY id")
   def call(op,**kw):
    before=snapshot()
@@ -291,7 +295,7 @@ echo json_encode($out,JSON_THROW_ON_ERROR);
    hidden=call('view',remote=finite,hidden_links=True)['out']['keyboard']
    yes('showQrConfig91' not in hidden and 'showQrSub91' not in hidden,provider+'_hidden_data_no_dead_QR')
    no_targets=call('view',remote=finite)['out']['keyboard'];yes('switchLocation91' not in no_targets,provider+'_no_relocation_no_dead_button')
-   targets=call('view',remote=finite,relocations=[{'id':3}])['out']['keyboard'];yes('switchLocation91' in targets,provider+'_eligible_relocation_button')
+   targets=call('view',remote=finite,relocations=[{'id':3}])['out']['keyboard'];yes('switchLocation91' not in targets,provider+'_ordinary_customer_never_sees_relocation_button')
    sql("UPDATE users SET is_agent=1 WHERE userid=1001;UPDATE orders_list SET agent_bought=0 WHERE id=91")
    no_agent=call('view',remote=finite)['out']['keyboard'];yes('agentChangeUserConfigState91' not in no_agent,provider+'_agent_cannot_toggle_non_agent_purchase')
    sql("UPDATE orders_list SET agent_bought=1 WHERE id=91")
@@ -420,7 +424,7 @@ echo json_encode($out,JSON_THROW_ON_ERROR);
   for name,state,manual,denied,rate,expected in cases:
    out=call('admission',state=state,manual=manual,denied=denied,rate=rate)
    yes(out['out'] is expected,name+'_same_checkout_menu_admission')
- result={'complete':True,'cases':len(checks),'checks':checks,'actual_php':True,'native_disposable_mariadb':True,'canonical_catalog_bindings':True,'real_JDF_no_date_stubs':True,'fresh_each_render_same_process':True,'same_packet_observation_and_presentation':True,'imported_actions_hide_ineligible_autorenew':True,'existing_consent_withdrawal_visible_when_plan_global_or_observation_unavailable':True,'genuine_import_origin_writer_fixture':True,'actual_service_unit_helpers':True,'native_plan_admission_seam':'controlled_read_only_SQL_fixture','actual_native_plan_eligibility_checked_here':False,'actual_URL_import_checked_here':False,'unlimited_actions_hide_unsupported_relative_changes':True,'native_HTTP_count_checked_here':False,'actual_composed_ASCII_Jalali_Tehran_proofs':date_proofs,'baseline_date_ref':date_baseline_ref,'baseline_date_jdf_sha256':hashlib.sha256(archived_jdf).hexdigest(),'baseline_dates_already_ASCII':True,'baseline_date_RED':False,'archived_warning_toggle_RED':baseline_red,'archived_warning_toggle_ref':archived_ref,'archived_warning_toggle_sha256':hashlib.sha256(archived_toggle.encode()).hexdigest(),'external_provider_calls':0,'production_mutations':0}
+ result={'complete':True,'cases':len(checks),'checks':checks,'actual_php':True,'obsolete_order_columns_absent':True,'native_disposable_mariadb':True,'canonical_catalog_bindings':True,'real_JDF_no_date_stubs':True,'fresh_each_render_same_process':True,'same_packet_observation_and_presentation':True,'imported_actions_hide_ineligible_autorenew':True,'existing_consent_withdrawal_visible_when_plan_global_or_observation_unavailable':True,'genuine_import_origin_writer_fixture':True,'actual_service_unit_helpers':True,'native_plan_admission_seam':'controlled_read_only_SQL_fixture','actual_native_plan_eligibility_checked_here':False,'actual_URL_import_checked_here':False,'unlimited_actions_hide_unsupported_relative_changes':True,'native_HTTP_count_checked_here':False,'actual_composed_ASCII_Jalali_Tehran_proofs':date_proofs,'baseline_date_ref':date_baseline_ref,'baseline_date_jdf_sha256':hashlib.sha256(archived_jdf).hexdigest(),'baseline_dates_already_ASCII':True,'baseline_date_RED':False,'archived_warning_toggle_RED':baseline_red,'archived_warning_toggle_ref':archived_ref,'archived_warning_toggle_sha256':hashlib.sha256(archived_toggle.encode()).hexdigest(),'external_provider_calls':0,'production_mutations':0}
  if a.report:a.report.write_text(json.dumps(result,ensure_ascii=False,indent=2)+'\n')
  print(json.dumps(result,ensure_ascii=False))
 if __name__=='__main__':main()

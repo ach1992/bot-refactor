@@ -1401,12 +1401,10 @@ function achbotPerformPaymentEffect($payRowId, $gateType, &$effectStage = null) 
                     $inbound_id,
                     $remark,
                     $uniqid,
-                    $protocol,
                     $expire_date,
                     $vray_link,
                     achbotAllocateOrderAmount((int)$amount,$accountCount,$i),
                     time(),
-                    $rahgozar,
                     $agentBought,
                     true
                 );
