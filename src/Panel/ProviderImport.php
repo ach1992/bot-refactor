@@ -242,17 +242,20 @@ function achbotProviderAdoptExistingLocked(mysqli $db,int $serverId,object $remo
 }
 function achbotMarzbanAdoptExistingLocked(mysqli $db,int $serverId,object $remote,array $proof,
     int $finalUserId,int $orderId,int $actorId,int $primary): void {
-    // Original installations without 007 retain their established planless import.
+    require_once __DIR__.'/ProviderStorage.php';
+    require_once __DIR__.'/../Purchase/OrderWrites.php';
+    // Every attachment records its nonfinancial origin, including pre-007 installations.
     $s=$db->query("SELECT TABLE_TYPE,ENGINE FROM information_schema.TABLES
         WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='service_effects'");
     if (!($s instanceof mysqli_result)) throw new RuntimeException('import_effect_schema_unavailable');
     $table=$s->fetch_assoc();$s->free();
-    if ($table===null) return;
-    if ($table['TABLE_TYPE']!=='BASE TABLE' || strcasecmp((string)$table['ENGINE'],'InnoDB')!==0)
-        throw new RuntimeException('import_effect_schema_invalid');
-    require_once __DIR__.'/ProviderStorage.php';
-    require_once __DIR__.'/../Finance/ServiceEffects.php';
-    achbotEffectRequireUniqueLine($db);
+    $hasEffects=$table!==null;
+    if ($hasEffects) {
+        if ($table['TABLE_TYPE']!=='BASE TABLE' || strcasecmp((string)$table['ENGINE'],'InnoDB')!==0)
+            throw new RuntimeException('import_effect_schema_invalid');
+        require_once __DIR__.'/../Finance/ServiceEffects.php';
+        achbotEffectRequireUniqueLine($db);
+    }
     $tx=achbotProviderRow($db,'SELECT @@in_transaction AS tx');
     if ((int)($tx['tx']??0)!==1 || min($serverId,$finalUserId,$orderId,$actorId)<=0 ||
         ($proof['verified']??null)!==true || ($proof['provider']??null)!=='marzban' ||
@@ -284,14 +287,18 @@ function achbotMarzbanAdoptExistingLocked(mysqli $db,int $serverId,object $remot
     $credential=achbotProviderRow($db,'SELECT token FROM add_link WHERE added_by=? AND remark=? AND BINARY token=BINARY ?
         LIMIT 1 FOR UPDATE','iss',[$actorId,$remote->username,$confirmed['token']]);
     if (!$credential) throw new RuntimeException('import_credential_missing');
-    $binding=achbotProviderRow($db,"SELECT i.panel_group_id,g.value AS group_name FROM server_info i
-        LEFT JOIN setting g ON g.id=i.panel_group_id AND g.type='ACHBOT_MARZBAN_PANEL_GROUP'
-        WHERE i.id=? FOR UPDATE",'i',[$serverId]);
-    if (!$binding || ($binding['panel_group_id']!==null &&
-        (!is_string($binding['group_name']) || !achbotMarzbanGroupValid($binding['group_name']))))
-        throw new RuntimeException('import_group_invalid');
-    $group=$binding['panel_group_id']===null?null:(int)$binding['panel_group_id'];
-    $key=$group===null?'server:'.$serverId:'group:'.$group;
+    $group=null;
+    if ($hasEffects) {
+        $binding=achbotProviderRow($db,"SELECT i.panel_group_id,g.value AS group_name FROM server_info i
+            LEFT JOIN setting g ON g.id=i.panel_group_id AND g.type='ACHBOT_MARZBAN_PANEL_GROUP'
+            WHERE i.id=? FOR UPDATE",'i',[$serverId]);
+        if (!$binding || ($binding['panel_group_id']!==null &&
+            (!is_string($binding['group_name']) || !achbotMarzbanGroupValid($binding['group_name']))))
+            throw new RuntimeException('import_group_invalid');
+        $group=$binding['panel_group_id']===null?null:(int)$binding['panel_group_id'];
+    }
+    // This journal records a local attachment, not a second physical CREATE.
+    $key='attachment:'.$orderId;
     $observation=$confirmed['expiry']??0;$expiry=$observation;
     if ((string)$order['expire_date']!==(string)$expiry) {
         $s=achbotProviderStatement($db,'UPDATE orders_list SET expire_date=? WHERE id=?','ii',[$expiry,$orderId]);
@@ -301,8 +308,11 @@ function achbotMarzbanAdoptExistingLocked(mysqli $db,int $serverId,object $remot
         'identity'=>$confirmed['identity'],'native_user'=>$confirmed['native_user'],
         'order_id'=>$orderId,'owner_userid'=>$finalUserId,'actor_userid'=>$actorId,
         'input_sha256'=>$confirmed['input_sha256'],'token_sha256'=>hash('sha256',$confirmed['token'])];
-    $hash=hash('sha256',json_encode($snapshot,JSON_THROW_ON_ERROR));$operation=bin2hex(random_bytes(16));
-    $bytes=$fresh->data_limit??0;
+    $hash=hash('sha256',json_encode($snapshot,JSON_THROW_ON_ERROR));
+    achbotRecordImportedOrderOriginLocked($db,$orderId,$finalUserId,$actorId,'marzban',$serverId,
+        $remote->username,$hash,$confirmed['identity']);
+    if (!$hasEffects) return;
+    $operation=bin2hex(random_bytes(16));$bytes=$fresh->data_limit??0;
     $s=achbotProviderStatement($db,"INSERT INTO service_effects
         (pay_row_id,source_kind,source_ref,actor_userid,ordinal,reserved_count,operation_id,effect_kind,
          target_server_id,target_group_id,target_key,endpoint_sha256,plan_id,remote_username,

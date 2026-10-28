@@ -274,40 +274,26 @@ if(preg_match('/updateConfigConnectionLink(\d+)/', $data,$match)){
     $order = $stmt->get_result()->fetch_assoc();
     $stmt->close();
 
-    if (!$order || !achbotSupportsOrder($connection, (int)$oid, null, ((int)$from_id===(int)$admin || !empty($userInfo['isAdmin']))?null:(int)$from_id)) {
+    if (!$order || !achbotSupportsOrder($connection, (int)$oid, null, \AchBot\Subscription\AccountDetails\canReadAdminOrderDetails()?null:(int)$from_id)) {
         alert(\achbotMessage('subscription.customer_routes.cancel_search_keyboard.alert.724ff90245'), true);
         return;
     }
     $remark = $order['remark'];
-    $uuid = $order['uuid']??"0";
-    $inboundId = $order['inbound_id'];
-    $server_id = $order['server_id'];
-    $file_id = $order['fileid'];
-    
-    $stmt = $connection->prepare("SELECT * FROM `server_plans` WHERE `id`=?");
-    $stmt->bind_param("i", $file_id);
-    $stmt->execute();
-    $file_detail = $stmt->get_result()->fetch_assoc();
+    $inboundId=$order['inbound_id'];
+    $server_id=$order['server_id'];
 
-    $rahgozar = $order['rahgozar'];
-    $customPath = $file_detail['custom_path'];
-    $customPort = $file_detail['custom_port'];
-    $customSni = $file_detail['custom_sni'];
-    
     $stmt = $connection->prepare("SELECT * FROM `server_config` WHERE `id`=?");
     $stmt->bind_param("i", $server_id);
     $stmt->execute();
     $server_config = $stmt->get_result()->fetch_assoc();
-    $serverType = $server_config['type'];
-    $netType = $file_detail['type'];
-    $protocol = $file_detail['protocol'];
-    $security = $server_config['security'];
+    $stmt->close();
+    $serverType=$server_config['type']??'';
     
     $success = false; // Flag برای موفقیت آمیز بودن عملیات
     
     if (achbotSupportsAccount($serverType, $inboundId)) {
-        $info = achbotProviderUser($server_id, $remark);
-        if(isset($info->links) && !empty($info->links)) {
+        $info=achbotProviderRenderPacket($connection,(int)$server_id,(string)$remark);
+        if (is_array($info->links??null) && $info->links!==[]) {
             $vraylink = $info->links;
             $success = true;
         } else {
@@ -348,8 +334,12 @@ if(preg_match('/updateConfigConnectionLink(\d+)/', $data,$match)){
         sendMessage($errorMessage, null, "HTML");
     }
     
-    $keys = getOrderDetailKeys($from_id, $oid);
-    editText($message_id, $keys['msg'], $keys['keyboard'], "HTML");
+    $keys=(int)$order['userid']===(int)$from_id?getOrderDetailKeys($from_id,$oid):
+        \AchBot\Subscription\AccountDetails\getUserOrderDetailKeys($oid);
+    if (!is_array($keys)) {
+        alert(\achbotMessage('subscription.customer_routes.cancel_search_keyboard.alert.001c06ff23'),true);return;
+    }
+    editText($message_id,$keys['msg'],$keys['keyboard'],'HTML');
 }
 
 if(preg_match('/changAccountConnectionLink(\d+)/', $data,$match)){ 

@@ -2,6 +2,7 @@
 /** AChBot V6: exact V5 internal src/Subscription/AccountDetails.php bodies; keep legacy effects. */
 namespace AchBot\Subscription\AccountDetails;
 require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
+require_once __DIR__.'/../Purchase/OrderWrites.php';
 
 
 if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
@@ -170,7 +171,7 @@ function currentOrderDetailActor(): ?array {
     $actor=(int)($from_id??0);
     if (!($connection instanceof \mysqli) || $actor<=0) return null;
     try {
-        $stmt=$connection->prepare('SELECT userid,isAdmin,step FROM users WHERE userid=? LIMIT 2');
+        $stmt=$connection->prepare('SELECT id,userid,isAdmin,step FROM users WHERE userid=? LIMIT 2');
         $stmt->bind_param('i',$actor);$stmt->execute();
         $rows=$stmt->get_result()->fetch_all(MYSQLI_ASSOC);$stmt->close();
         if (count($rows)!==1 || (string)$rows[0]['step']==='banned') return null;
@@ -181,6 +182,49 @@ function canReadAdminOrderDetails(): bool {
     global $admin;
     $actor=currentOrderDetailActor();
     return $actor!==null && ((int)$actor['userid']===(int)($admin??0) || (int)$actor['isAdmin']===1);
+}
+
+/**
+ * A selected plan authorizes future paid operations, never retroactive payment.
+ * New selections require the same logical server. Existing relocated services
+ * retain their original plan only within the already verified physical panel.
+ */
+function paidPlanForOrder(\mysqli $db,array $order,int $planId,bool $lock=false,
+    bool $sameLogicalServer=true): ?array {
+    if ($planId<=0 || (int)($order['status']??0)!==1 ||
+        !achbotOrderMayUsePaidPlan($db,$order,$lock)) return null;
+    $stmt=$db->prepare('SELECT p.*,c.type AS provider_type,i.active AS server_active
+        FROM server_plans p JOIN server_info i ON i.id=p.server_id
+        JOIN server_config c ON c.id=p.server_id
+        WHERE p.id=? AND p.active=1 AND p.price>0'.($lock?' FOR UPDATE':''));
+    $stmt->bind_param('i',$planId);$stmt->execute();$plan=$stmt->get_result()->fetch_assoc();$stmt->close();
+    if (!$plan || (int)$plan['server_active']!==1 ||
+        !achbotSupportsAccount($plan['provider_type'], $plan['inbound_id']) ||
+        achbotWholeServiceUnits($plan['days'],36500)===null ||
+        achbotWholeServiceUnits($plan['volume'],achbotServiceVolumeMax())===null ||
+        !achbotSupportsPlan($db,$planId,0,(int)$plan['server_id'],$lock))
+        return null;
+    $orderServer=(int)($order['server_id']??0);$planServer=(int)$plan['server_id'];
+    if ($orderServer!==$planServer &&
+        ($sameLogicalServer || !achbotSameProviderPanel($db,$orderServer,$planServer))) return null;
+    $stmt=$db->prepare('SELECT i.active,c.type FROM server_info i JOIN server_config c ON c.id=i.id WHERE i.id=?'.($lock?' FOR UPDATE':''));
+    $stmt->bind_param('i',$orderServer);$stmt->execute();$server=$stmt->get_result()->fetch_assoc();$stmt->close();
+    if (!$server || (int)$server['active']!==1 ||
+        !achbotSupportsAccount($server['type'],$order['inbound_id']??null)) return null;
+    return $plan;
+}
+function selectedPaidPlan(\mysqli $db,array $order,bool $lock=false): ?array {
+    return paidPlanForOrder($db,$order,(int)($order['fileid']??0),$lock,false);
+}
+/** Missing/malformed origin evidence is not a free-trial inference. */
+function orderPlanActions(\mysqli $db,array $order): array {
+    try {
+        $mayChoose=(int)($order['status']??0)===1 && achbotOrderMayUsePaidPlan($db,$order);
+        return ['certain'=>true,'choose'=>$mayChoose,'paid'=>$mayChoose?selectedPaidPlan($db,$order):null];
+    } catch (\Throwable $error) {
+        error_log('achbot_order_plan_actions_unverified order_id='.(int)($order['id']??0));
+        return ['certain'=>false,'choose'=>false,'paid'=>null];
+    }
 }
 
 function getUserOrderDetailKeys($id, $offset = 0){
@@ -206,6 +250,7 @@ function getUserOrderDetailKeys($id, $offset = 0){
     $rahgozar    = $order['rahgozar'];
     $agentBought = $order['agent_bought'];
     $autoRenew   = $order['autoRenew'] ?? "off";
+    $planActions=orderPlanActions($GLOBALS['connection'],$order);
 
     $server      = getServerConfigById($server_id);
     $serverType  = $server['type'] ?? '';
@@ -234,6 +279,7 @@ function getUserOrderDetailKeys($id, $offset = 0){
     $msg = buildConfigMessage($enableText, $remark, $configLinks, $subLink, $backup, $serverType);
     if ($presentation['notice_html'] !== '') $msg .= "\n\n" . $presentation['notice_html'];
     if ($uncertain && !str_contains($msg,$enableText)) $msg.="\n\n".$enableText;
+    if (!$planActions['certain']) $msg.="\n\n".\achbotMessage('subscription.account_details.get_order_status_text.label.ff02acf7a2');
 
     // ---- Admin Keyboard ----
     $keyboard = [];
@@ -279,7 +325,7 @@ function getUserOrderDetailKeys($id, $offset = 0){
         ['text' => $buttonValues['change_plan'], 'callback_data' => "changePlan_{$id}"],
     ];
 
-    if (!$uncertain && $actionable && (int)$order['amount']>0 && (int)$order['fileid']>0 && ($botState['renewAutoState'] ?? "off") == "on") {
+    if (!$uncertain && $actionable && $planActions['paid']!==null && ($botState['renewAutoState'] ?? "off") == "on") {
         $keyboard[] = [[
             'text' => (($autoRenew ?? 'off') == "on" ? \achbotMessage('subscription.account_details.get_user_order_detail_keys.text.ed76444585') : \achbotMessage('subscription.account_details.get_user_order_detail_keys.text.fb6d00ad8d')),
             'callback_data' => "adminToggleAutoRenew{$order['id']}"
@@ -344,6 +390,7 @@ function getOrderDetailKeys($from_id, $id, $offset = 0){
     $rahgozar    = $order['rahgozar'];
     $agentBought = $order['agent_bought'];
     $autoRenew   = $order['autoRenew'] ?? "off";
+    $planActions=orderPlanActions($GLOBALS['connection'],$order);
     $price       = $order['amount'];
 
     $server      = getServerConfigById($server_id);
@@ -378,6 +425,7 @@ function getOrderDetailKeys($from_id, $id, $offset = 0){
     $msg = buildConfigMessage($enableText, $remark, $configLinks, $subLink, $backup, $serverType);
     if ($presentation['notice_html'] !== '') $msg .= "\n\n" . $presentation['notice_html'];
     if ($uncertain && !str_contains($msg,$enableText)) $msg.="\n\n".$enableText;
+    if (!$planActions['certain']) $msg.="\n\n".\achbotMessage('subscription.account_details.get_order_status_text.label.ff02acf7a2');
 
     // ---- User Keyboard ----
     $keyboard = [];
@@ -411,7 +459,7 @@ function getOrderDetailKeys($from_id, $id, $offset = 0){
         ];
     }
 
-    if (!$uncertain && $actionable && (int)$order['amount']>0 && (int)$order['fileid']>0 && ($botState['renewAutoState'] ?? "off") == "on") {
+    if (!$uncertain && $actionable && $planActions['paid']!==null && ($botState['renewAutoState'] ?? "off") == "on") {
         $keyboard[] = [[
             'text' => (($autoRenew ?? 'off') == "on" ? \achbotMessage('subscription.account_details.get_user_order_detail_keys.text.ed76444585') : \achbotMessage('subscription.account_details.get_user_order_detail_keys.text.fb6d00ad8d')),
             'callback_data' => "toggleAutoRenew{$id}"
@@ -438,7 +486,7 @@ function getOrderDetailKeys($from_id, $id, $offset = 0){
 
         if (
             ($botState['sellState'] ?? "off") == "on" &&
-            ($price != 0 || $agentBought == true) &&
+            $planActions['paid']!==null &&
             ($botState['renewAccountState'] ?? "off") == "on"
         ) {
             $temp[] = ['text' => $buttonValues['renew_config'], 'callback_data' => "renewAccountAsk{$id}"];
@@ -466,7 +514,7 @@ function getOrderDetailKeys($from_id, $id, $offset = 0){
             ($botState['sellState'] ?? "off") == "on" &&
             ($botState['increaseVolumeState'] ?? "off") == "on" &&
             $canExtendVolume &&
-            ($price != 0 || $agentBought)
+            $planActions['paid']!==null
         ) {
             $flatButtons[] = ['text' => $buttonValues['increase_config_volume'], 'callback_data' => "increaseAVolume{$id}"];
         }
@@ -475,7 +523,7 @@ function getOrderDetailKeys($from_id, $id, $offset = 0){
             ($botState['sellState'] ?? "off") == "on" &&
             ($botState['increaseTimeState'] ?? "off") == "on" &&
             $canExtendTime &&
-            ($price != 0 || $agentBought)
+            $planActions['paid']!==null
         ) {
             $flatButtons[] = ['text' => $buttonValues['increase_config_days'], 'callback_data' => "increaseADay{$id}"];
         }
@@ -486,7 +534,7 @@ function getOrderDetailKeys($from_id, $id, $offset = 0){
         if (($botState['updateConfigLinkState'] ?? "off") == "on")
             $flatButtons[] = ['text' => $buttonValues['update_config_connection'], 'callback_data' => "updateConfigConnectionLink{$id}"];
 
-        $flatButtons[] = ['text' => $buttonValues['change_plan'], 'callback_data' => "changePlan_{$id}"];
+        if ($planActions['choose']) $flatButtons[] = ['text' => $buttonValues['change_plan'], 'callback_data' => "changePlan_{$id}"];
 
         if (($botState['qrConfigState'] ?? "off") == "on" && !empty($presentation['qr_config_links']))
             $flatButtons[] = ['text' => $buttonValues['qr_config'], 'callback_data' => "showQrConfig{$id}"];

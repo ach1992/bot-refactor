@@ -8,6 +8,7 @@ No real tenant, credentials, Telegram or non-loopback network is used.
 """
 from __future__ import annotations
 import argparse,base64,contextlib,copy,hashlib,hmac,json,re,shutil,socket,subprocess,threading,time,urllib.error,urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime,timezone
 from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
 from pathlib import Path
@@ -122,10 +123,11 @@ class ExistingHandler(BaseHTTPRequestHandler):
    if path.endswith('/reset'):user['used_traffic']=0
    elif path.endswith('/revoke_sub'):
     user['proxy_settings']={'vless':{'id':'revoked-owned-proxy'}}
+    s.link_labels[uid]='revoked-owned-proxy'
     s.revoked[uid]=int(time.time())+1
    else:s.violations.append('unexpected_post');self.reply(400,{});return
   if '/subscription/'in path:
-   self.reply(200,f'vless://existing-native-{uid}@host.invalid:443?type=grpc#Owned','text/plain');return
+   self.reply(200,f'vless://{s.link_labels.get(uid,"existing-native-"+str(uid))}@host.invalid:443?type=grpc#Owned','text/plain');return
   value=copy.deepcopy(user);s.sequence+=1
   value['subscription_url']=s.url+'/native-subscriptions/'+mint(uid,int(time.time())+s.sequence)
   s.returned_tokens.append(value['subscription_url'].rsplit('/',1)[1])
@@ -135,7 +137,7 @@ class ExistingHandler(BaseHTTPRequestHandler):
 def existing_panel(trap=False):
  s=ThreadingHTTPServer(('127.0.0.1',0),ExistingHandler)
  s.url='http://127.0.0.1:'+str(s.server_address[1]);s.trap=trap;s.trace=[];s.users={};s.revoked={}
- s.sequence=0;s.info_mode='';s.violations=[];s.public_credentials=[];s.returned_tokens=[];s.on_read=None
+ s.sequence=0;s.info_mode='';s.violations=[];s.public_credentials=[];s.returned_tokens=[];s.on_read=None;s.link_labels={}
  for uid in [41,42,43,44]:
   user=copy.deepcopy(pg.USER)
   user.update(id=uid,username='existing_user_'+str(uid),note='PRIVATE_EXISTING_NOTE_'+str(uid),
@@ -217,6 +219,9 @@ $botState=array_fill_keys(['searchState','renewAutoState','sellState','renewAcco
  'increaseVolumeState','increaseTimeState','renewConfigLinkState','updateConfigLinkState',
  'qrConfigState','qrSubState','subLinkState','configLinkState'],'on');
 $botState['rewardChannel']='';
+$botState+=['walletState'=>'on','nowPaymentOther'=>'off','zarinpal'=>'off','nextpay'=>'off',
+ 'cartToCartState'=>'off','giftCardState'=>'off','manualUsdtState'=>'off','agencyPlanDiscount'=>'off'];
+$paymentKeys=[];$GLOBALS['owned_message_id']=(int)$spec['source']*10;
 $from_id=(int)($spec['actor']??1001);$data=$spec['data']??'';$text=$spec['text']??'';
 $source=(int)$spec['source'];$message_id=$source;$chat_id=$from_id;$cancelKey='{"keyboard":[]}';$removeKeyboard='{"remove_keyboard":true}';
 $sender=['id'=>$from_id,'username'=>'owned_actor','first_name'=>'Owned'];
@@ -228,10 +233,15 @@ $update=json_decode(json_encode(['update_id'=>$source]+$frame));
 require $root.'/src/Telegram/UpdateBindings.php';
 $q=$connection->prepare('SELECT * FROM users WHERE userid=? LIMIT 1');$q->bind_param('i',$from_id);$q->execute();$userInfo=$q->get_result()->fetch_assoc();$q->close();
 if(!empty($spec['cached_admin']))$userInfo['isAdmin']=1;
-function sendMessage($text,$keyboard=null,$parse=null,$to=null){$GLOBALS['events'][]=['kind'=>'send','text'=>$text,'keyboard'=>$keyboard,'to'=>$to];return(object)['ok'=>true];}
+function sendMessage($text,$keyboard=null,$parse=null,$to=null){
+ $GLOBALS['events'][]=['kind'=>'send','text'=>$text,'keyboard'=>$keyboard,'to'=>$to];
+ return(object)['ok'=>true,'result'=>(object)['message_id'=>++$GLOBALS['owned_message_id'],
+  'chat'=>(object)['id'=>$to??$GLOBALS['from_id']]]];
+}
 function alert($text,$modal=false){$GLOBALS['events'][]=['kind'=>'alert','text'=>$text,'modal'=>$modal];}
 function editText($id,$text,$keyboard=null,...$rest){$GLOBALS['events'][]=['kind'=>'edit','text'=>$text,'keyboard'=>$keyboard];return(object)['ok'=>true];}
 function delMessage(...$a){$GLOBALS['events'][]=['kind'=>'delete'];}
+function answerCallbackQuery($id,$text=null,...$rest){$GLOBALS['events'][]=['kind'=>'answer','text'=>$text];}
 function bot(...$a){return(object)['ok'=>true,'result'=>(object)['first_name'=>'Owned']];}
 function achbotSupportsPanel($type){return achbotSupportsProviderType($type);}
 function getMarzbanUser(...$a){return \AchBot\Panel\Accounts\getMarzbanUser(...$a);}
@@ -244,6 +254,20 @@ try {
  elseif($op==='manual'){
   require $root.'/src/Subscription/ExternalAccounts.php';
   require $root.'/src/Subscription/ManualAccounts.php';
+ } elseif($op==='pay_pipeline'){
+  require_once $root.'/src/Finance/ReceiptHelpers.php';
+  require $root.'/src/Finance/Routes/PrePayment.php';
+  require $root.'/src/Finance/Routes/RenewalCheckout.php';
+ } elseif($op==='consent'){
+  require __DIR__.'/consent.php';
+ } elseif($op==='sweep'){
+  $botState['renewAutoState']='off';
+  require_once $root.'/src/Finance/AutomaticRenewal.php';
+  $botState['renewAutoState']=$spec['enabled']??'on';
+  achbotAutoRenewSweep($connection,$botState);
+ } elseif($op==='renewal'){
+  require_once $root.'/src/Finance/ReceiptHelpers.php';
+  require $root.'/src/Finance/Routes/RenewalCheckout.php';
  } elseif($op==='extensions'){
   require $root.'/src/Finance/Routes/Extensions.php';
  } elseif($op==='copy'){
@@ -316,8 +340,8 @@ def main():
        excluded_inbounds={},next_plan=None,auto_delete_in_days=None,on_hold_expire_duration=None,on_hold_timeout=None)
    legacy_panel.edit_put_count=0;legacy_panel.edit_reset_count=0
    facade=bodies.function_bodies((ROOT/'config.php').read_bytes(),[
-       'buildSubscriptionPresentation','buildConfigMessage','setUser','sumerize','getOrderDetailKeys',
-       'renewMarzbanUUID','deleteMarzban','changeMarzbanState','getMarzbanToken'])
+       'buildSubscriptionPresentation','buildConfigMessage','setUser','sumerize','getOrderDetailKeys','getUserOrderDetailKeys',
+       'renewMarzbanUUID','deleteMarzban','changeMarzbanState','getMarzbanToken','RandomString'])
    (legacy_work/'facades.php').write_bytes(facade.replace(b'__DIR__',repr(str(ROOT)).encode()))
    driver=legacy_work/'existing.php';driver.write_text(PHP)
    event_id=100000;actor=9001 if with_007 else 1001
@@ -376,6 +400,232 @@ def main():
     yes(db('SELECT token FROM orders_list')==input_token and input_token.startswith('eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.'),
         'actual_original23_Marzban_native_legacy_JWT_proves_URL_alone_import_without011')
 
+ def shared_registration_and_paid_journey(provider):
+  fixture=existing_panel if provider=='pasarguard'else existing_marzban
+  with owned.owned_database()as(shared_work,shared_env),fixture()as(vendor,vendor_url):
+   purchase.init(shared_work,shared_env,vendor_url)
+   def db(query):return native.sql(shared_work,shared_env,query,DB).strip()
+   for migration in ['001_marzban_panel_group_id.sql','003_payment_attempts.sql',
+       '004_automatic_renewal_attempts.sql','006_payment_message_refs.sql',
+       '007_service_effects.sql','011_provider_identity.sql']:
+    db((ROOT/'migrations/post-v9'/migration).read_text())
+   for actor in [1002,1003]:
+    db("INSERT INTO users(userid,name,username,refcode,wallet,date,isAdmin,first_start,is_agent,step)"
+       f" VALUES({actor},'Shared','shared','0',50000,'1700000000',0,'sent',0,'none')")
+   db("UPDATE server_plans SET price=137,days=30,volume=3 WHERE id=7;"
+      "DELETE FROM setting WHERE type='BOT_STATES';"
+      "INSERT INTO setting(type,value)VALUES(\'BOT_STATES\',CONVERT(UNHEX(\'7b2277616c6c65745374617465223a226f6e222c226761746577617941756469656e6365223a7b2277616c6c6574223a22616c6c227d7d\') USING utf8mb4))")
+   if provider=='pasarguard':
+    db("UPDATE server_config SET type='pasarguard' WHERE id=2;"
+       "UPDATE server_info SET provider_panel_id=1,provider_group_ids='[2,5]' WHERE id=2;"
+       "INSERT INTO provider_panels(id,provider,instance_key,name,api_url,api_key,version)"
+       " VALUES(1,'pasarguard',REPEAT('b',32),'Shared fixture','"+vendor_url+"','fixture-private-key','5.5.1')")
+    remark='existing_user_41';credential=vendor.users[41]['subscription_url']
+    # Native scheduling is allowed for import/read; only existing mutation
+    # eligibility is restricted, and must be checked before money/fence claims.
+    vendor.users[41]['auto_delete_in_days']=3
+    raw=lambda:vendor.users[41]
+    def remote_writes():return [r for r in vendor.trace if r[0]!='GET']
+   else:
+    vendor.mode='edit-reset-verified';vendor.edit_put_count=0;vendor.edit_reset_count=0
+    vendor.edit_account=copy.deepcopy(mb.INITIAL)
+    remark='shared_native_user';token=mb_mint(remark,int(time.time())-60)
+    vendor.edit_account.update(username=remark,created_at='2026-10-26T05:00:00.123456',
+       subscription_url='/sub/'+token,proxies={'vless':{'id':'aaaaaaaa-1111-4111-8111-111111111111','flow':'xtls-rprx-vision'}},
+       links=['vless://aaaaaaaa-1111-4111-8111-111111111111@host.invalid:443'],
+       excluded_inbounds={},next_plan=None,auto_delete_in_days=None,on_hold_expire_duration=None,on_hold_timeout=None)
+    credential=vendor_url+'/sub/'+token;raw=lambda:vendor.edit_account
+    def remote_writes():
+     return [r for r in vendor.trace if r['method']in('PUT','DELETE')or
+         (r['method']=='POST'and not r['path'].endswith('/api/admin/token'))]
+   facade=bodies.function_bodies((ROOT/'config.php').read_bytes(),[
+       'buildSubscriptionPresentation','buildConfigMessage','setUser','sumerize',
+       'getOrderDetailKeys','getUserOrderDetailKeys','renewMarzbanUUID','deleteMarzban',
+       'changeMarzbanState','getMarzbanToken','RandomString'])
+   (shared_work/'facades.php').write_bytes(facade.replace(b'__DIR__',repr(str(ROOT)).encode()))
+   config_source=(ROOT/'config.php').read_text()
+   consent_start=config_source.index("if (preg_match('/^(toggleAutoRenew|adminToggleAutoRenew)")
+   consent_end=config_source.index('// END create user and admin get order detail',consent_start)
+   (shared_work/'consent.php').write_text('<?php\n'+config_source[consent_start:consent_end].replace('__DIR__',repr(str(ROOT))))
+   script=shared_work/'existing.php';script.write_text(PHP);event_id=200000;event_lock=threading.Lock()
+   def invoke(op,**spec):
+    nonlocal event_id
+    with event_lock:
+     event_id+=1;current_source=event_id
+    process=subprocess.run(['php','-d','display_errors=0','-d','log_errors=0',str(script),
+       str(ROOT),str(shared_work/'mysql.sock'),DB,json.dumps(dict(op=op,source=current_source,**({'actor':1001}|spec)))],
+       env=shared_env,cwd=shared_work,capture_output=True,text=True,timeout=25)
+    allowed=all(line=='achbot_auto_renew_reservation_deferred'or
+        line.startswith(('achbot_existing_subscription_import_deferred reason=',
+        'achbot_existing_subscription_lookup_deferred','achbot_customer_draft_creation_deferred',
+        'achbot_server_display_unavailable'))for line in process.stderr.splitlines())
+    if process.returncode or not allowed:raise AssertionError((provider,'shared_native_child',process.returncode,process.stdout,process.stderr))
+    result=json.loads(process.stdout)
+    if 'fixture_error'in result:raise AssertionError((provider,result))
+    return result
+   def finance():return db('SELECT userid,wallet FROM users ORDER BY id;SELECT * FROM pays ORDER BY id;SELECT id,ucount FROM server_info ORDER BY id')
+   def attach(actor,target=None):
+    invoke('external',actor=actor,data='showUUIDLeft')
+    invoke('external',actor=actor,text=credential)
+    if target is not None:
+     invoke('manual',actor=actor,data='addSubscriptionToCustomer2')
+     invoke('manual',actor=actor,text=str(target))
+    return invoke('manual',actor=actor,data='addToOrders2')
+   baseline=finance();native_before=copy.deepcopy(raw())
+   attach(1001)
+   first_physical=db('SELECT * FROM provider_accounts ORDER BY id')
+   first_effect=db('SELECT * FROM service_effects ORDER BY id LIMIT 1')
+   attach(1002);attach(9001,1003)
+   yes(db('SELECT * FROM provider_accounts ORDER BY id')==first_physical and
+       db('SELECT * FROM service_effects ORDER BY id LIMIT 1')==first_effect,
+       provider+'_later_shared_attachments_preserve_original_physical_anchor_and_history')
+   rows=db("SELECT userid,id FROM orders_list WHERE remark='"+remark+"' ORDER BY userid")
+   links={int(user):int(oid)for user,oid in(line.split('\t')for line in rows.splitlines())}
+   yes(set(links)=={1001,1002,1003}and len(set(links.values()))==3,
+       provider+'_same_native_subscription_registers_for_A_B_and_admin_selected_C_without_transfer')
+   yes(finance()==baseline and raw()==native_before and not remote_writes(),
+       provider+'_multiple_registration_is_local_only_without_wallet_pay_capacity_or_native_claim')
+   before=db('SELECT * FROM orders_list ORDER BY id;SELECT * FROM service_effects ORDER BY id')
+   invoke('manual',actor=1002,data='addToOrders2')
+   invoke('manual',actor=9001,data='addToOrders2')
+   yes(db('SELECT * FROM orders_list ORDER BY id;SELECT * FROM service_effects ORDER BY id')==before,
+       provider+'_registration_request_replay_does_not_duplicate_shared_references')
+   for actor,oid in links.items():
+    visible=invoke('view',actor=actor,owner=actor,order=oid)['out']
+    yes(visible is not None and ('vless://'in json.dumps(visible))and remark in json.dumps(visible),
+        provider+'_shared_reference_'+str(actor)+'_has_a_real_owner_scoped_native_view')
+
+   origin_rows=db("SELECT value FROM setting WHERE type LIKE 'ACHBOT_SERVICE_ORIGIN:%' ORDER BY id")
+   origins=[json.loads(row)for row in origin_rows.splitlines()]
+   yes(len(origins)==3 and {row['owner_userid']for row in origins}=={1001,1002,1003}and
+       {row['actor_userid']for row in origins}=={1001,1002,9001}and
+       all(row['capacity_reserved']is False for row in origins)and
+       (provider!='pasarguard'or len({row['provider_account_id']for row in origins})==1),
+       provider+'_three_genuine_nonfinancial_origins_reference_one_native_identity_with_actual_actors')
+
+   if provider=='pasarguard':
+    yes(raw()['auto_delete_in_days']==3 and db("SELECT COUNT(*) FROM provider_accounts WHERE state='linked'AND mutation_key IS NULL")=='1',
+        'scheduled_native_import_still_registers_and_renders_for_all_three_users_without_claiming_mutation')
+    raw()['auto_delete_in_days']=None
+
+   # Follow the actual sequential UI into a real positive priced renewal;
+   # imported amount0 remains honest until the actual payment is made.
+   current=links[1001];writes=len(remote_writes());before=finance()
+   offered=invoke('extensions',data='changePlan_'+str(current))
+   yes('confirmChangePlan_'+str(current)+'_7'in json.dumps(offered),
+       provider+'_genuine_import_can_open_real_change_plan_menu_without_trial_misclassification')
+   invoke('extensions',data='confirmChangePlan_'+str(current)+'_7')
+   yes(db(f'SELECT fileid,amount FROM orders_list WHERE id={current}')=='7\t0'and
+       finance()==before and len(remote_writes())==writes,
+       provider+'_actual_plan_confirmation_assigns_real_catalogue_plan_without_faking_purchase_or_amount')
+   visible=invoke('view',owner=1001,order=current)['out']
+   yes('renewAccountAsk'+str(current)in json.dumps(visible),
+       provider+'_assigned_import_exposes_actual_paid_renewal_entry')
+   invoke('renewal',data='renewAccountAsk'+str(current))
+   invoice=invoke('renewal',data='renewAccount'+str(current))
+   pay=db(f"SELECT hash_id,price,user_id,state FROM pays WHERE order_id={current} ORDER BY id DESC LIMIT 1").split('\t')
+   yes(len(pay)==4 and pay[1:]==['137','1001','pending']and
+       'prePayCheck_Renew_Wallet_'+pay[0]in json.dumps(invoice),
+       provider+'_real_renewal_controller_issues_owned_wallet_quote_from_assigned_plan')
+   before=db('SELECT userid,wallet FROM users ORDER BY id;SELECT * FROM pays ORDER BY id');writes=len(remote_writes())
+   invoke('renewal',actor=1002,data='payRenewWithWallet'+pay[0])
+   yes(db('SELECT userid,wallet FROM users ORDER BY id;SELECT * FROM pays ORDER BY id')==before and len(remote_writes())==writes,
+       provider+'_another_shared_reference_cannot_consume_the_request_owners_payment')
+   if provider=='pasarguard':
+    raw()['auto_delete_in_days']=3
+    blocked_finance=finance();blocked_native=copy.deepcopy(raw());blocked_writes=len(remote_writes())
+    blocked_identity=db('SELECT * FROM provider_accounts ORDER BY id;SELECT * FROM service_effects ORDER BY id')
+    invoke('pay_pipeline',data='prePayCheck_Renew_Wallet_'+pay[0])
+    yes(finance()==blocked_finance and raw()==blocked_native and len(remote_writes())==blocked_writes and
+        db('SELECT * FROM provider_accounts ORDER BY id;SELECT * FROM service_effects ORDER BY id')==blocked_identity,
+        'known_native_schedule_refuses_actual_wallet_payment_before_debit_reset_PUT_or_physical_claim')
+    for action in ['revoke','toggle','reset','delete']:
+     refused=invoke('action',order=current,action=action)['out']
+     yes(refused.get('success')is False and finance()==blocked_finance and raw()==blocked_native and
+         len(remote_writes())==blocked_writes and
+         db('SELECT * FROM provider_accounts ORDER BY id;SELECT * FROM service_effects ORDER BY id')==blocked_identity,
+         'known_native_schedule_refuses_direct_'+action+'_without_poisoning_physical_mutation_or_history')
+    refused=invoke('edit',order=current,operation='fixture:known-scheduling-refusal',change={'days':30,'volume':3})['out']
+    yes(refused.get('success')is False and finance()==blocked_finance and raw()==blocked_native and
+        len(remote_writes())==blocked_writes and
+        db('SELECT * FROM provider_accounts ORDER BY id;SELECT * FROM service_effects ORDER BY id')==blocked_identity,
+        'known_native_schedule_refuses_direct_full_edit_before_mutation_key_or_reset_PUT')
+    raw()['auto_delete_in_days']=None;old_status=raw()['status'];raw()['status']='limited'
+    refused=invoke('action',order=current,action='toggle')['out']
+    yes(refused.get('success')is False and raw()['status']=='limited'and finance()==blocked_finance and
+        len(remote_writes())==blocked_writes and
+        db('SELECT * FROM provider_accounts ORDER BY id;SELECT * FROM service_effects ORDER BY id')==blocked_identity,
+        'known_restricted_native_status_refuses_toggle_before_physical_mutation_claim')
+    raw()['status']=old_status
+   capacity=db('SELECT id,ucount FROM server_info ORDER BY id')
+   started=int(time.time());paid=invoke('pay_pipeline',data='prePayCheck_Renew_Wallet_'+pay[0]);ended=int(time.time())
+   expiry=raw()['expire']
+   if isinstance(expiry,str):expiry=int(datetime.fromisoformat(expiry.replace('Z','+00:00')).timestamp())
+   yes(db("SELECT state FROM pays WHERE hash_id='"+pay[0]+"'")=='paid_with_wallet'and
+       db('SELECT wallet FROM users WHERE userid=1001')=='49863'and
+       db('SELECT wallet FROM users WHERE userid IN(1002,1003)ORDER BY userid')=='50000\n50000'and
+       raw()['data_limit']==3*GIB and raw()['used_traffic']==0 and started+30*86400<=expiry<=ended+30*86400,
+       provider+'_actual_wallet_pipeline_debits_only_A_once_and_verifies_shared_native_full_renewal')
+   yes(db('SELECT COUNT(*),MIN(amount),MAX(amount)FROM increase_order')=='1\t137\t137'and
+       db('SELECT id,ucount FROM server_info ORDER BY id')==capacity,
+       provider+'_real_paid_renewal_keeps_one_accounting_record_and_no_CREATE_capacity_effect')
+   before=db('SELECT userid,wallet FROM users ORDER BY id;SELECT * FROM pays ORDER BY id;SELECT * FROM increase_order ORDER BY id')
+   writes=len(remote_writes());invoke('renewal',data='payRenewWithWallet'+pay[0])
+   yes(db('SELECT userid,wallet FROM users ORDER BY id;SELECT * FROM pays ORDER BY id;SELECT * FROM increase_order ORDER BY id')==before and len(remote_writes())==writes,
+       provider+'_same_paid_request_replay_has_no_second_wallet_debit_or_native_reset')
+   expected=invoke('date',expiry=expiry)['out']
+   for actor in [1002,1003]:
+    visible=invoke('view',actor=actor,owner=actor,order=links[actor])['out']
+    actual_date=json.loads(visible['keyboard'])['inline_keyboard'][1][0]['text']
+    yes(actual_date==expected,
+        provider+'_shared_reference_'+str(actor)+'_immediately_observes_A_native_renewal_expiry')
+
+   # Both people explicitly select a priced plan and opt in through actual UI.
+   # Native usage changes externally; the existing warning flag is a fixture
+   # prerequisite for the real scheduled sweep, not a payment or consent bypass.
+   invoke('extensions',actor=1002,data='changePlan_'+str(links[1002]))
+   invoke('extensions',actor=1002,data='confirmChangePlan_'+str(links[1002])+'_7')
+   before=finance();writes=len(remote_writes())
+   for actor in [1001,1002]:
+    invoke('consent',actor=actor,data='toggleAutoRenew'+str(links[actor]))
+   yes(db('SELECT autoRenew FROM orders_list WHERE userid IN(1001,1002) ORDER BY userid')=='on\non'and
+       finance()==before and len(remote_writes())==writes,
+       provider+'_both_users_choose_real_paid_plans_and_explicitly_enable_actual_auto_renew_consent')
+   raw()['used_traffic']=raw()['data_limit']-100000000
+   db('UPDATE orders_list SET notif=1 WHERE id IN('+','.join(map(str,links.values()))+')')
+   before_pays=int(db('SELECT COUNT(*) FROM pays'));writes=len(remote_writes())
+   barrier=threading.Barrier(2)
+   def concurrent_sweep():
+    barrier.wait(timeout=10)
+    return invoke('sweep')
+   with ThreadPoolExecutor(max_workers=2)as pool:
+    futures=[pool.submit(concurrent_sweep)for _ in range(2)]
+    for future in futures:future.result(timeout=35)
+   wallets=list(map(int,db('SELECT wallet FROM users WHERE userid IN(1001,1002,1003) ORDER BY userid').splitlines()))
+   yes(wallets in ([49726,50000,50000],[49863,49863,50000])and
+       int(db('SELECT COUNT(*) FROM pays'))==before_pays+1 and
+       db('SELECT COUNT(*),MIN(stage),MAX(stage) FROM automatic_renewal_attempts')=='1\tdone\tdone'and
+       raw()['used_traffic']==0 and raw()['data_limit']==3*GIB and
+       len(remote_writes())==writes+2,
+       provider+'_two_concurrent_actual_shared_sweeps_have_one_payer_one_reset_and_one_native_full_renewal')
+   yes(db('SELECT COUNT(DISTINCT expire_date),MIN(notif),MAX(notif) FROM orders_list WHERE id IN('+
+       ','.join(map(str,links.values()))+')')=='1\t0\t0',
+       provider+'_one_verified_auto_renewal_synchronizes_every_shared_reference_expiry_and_warning')
+   before=finance();writes=len(remote_writes());invoke('sweep')
+   yes(finance()==before and len(remote_writes())==writes and
+       db('SELECT COUNT(*) FROM automatic_renewal_attempts')=='1',
+       provider+'_second_shared_sweep_cannot_charge_the_other_user_for_the_same_cycle')
+   # Regeneration changes the physical service once; every reference must
+   # immediately render the same new native configs, without a local transfer.
+   before=finance();writes=len(remote_writes())
+   invoke('customer',data='changAccountConnectionLink'+str(current))
+   yes(finance()==before and len(remote_writes())==writes+1,
+       provider+'_shared_actual_regenerate_has_one_native_action_and_no_financial_or_capacity_effect')
+   expected_link=raw()['links'][0]if provider=='marzban'else'vless://revoked-owned-proxy@host.invalid:443'
+   for actor in [1002,1003]:
+    viewed=invoke('view',actor=actor,owner=actor,order=links[actor])['out']
+    yes(expected_link in json.dumps(viewed),
+        provider+'_shared_reference_'+str(actor)+'_sees_current_physical_configs_after_A_regenerates')
  legacy_migration_boundary(False)
  legacy_migration_boundary(True)
  with owned.owned_database()as(work,env),existing_panel()as(panel,url),existing_panel(True)as(foreign,foreign_url),existing_marzban()as(marzban,mb_url):
@@ -433,7 +683,7 @@ echo json_encode(['required'=>count(achbotProviderRequiredOperations()),
       links=['vless://aaaaaaaa-1111-4111-8111-111111111111@host.invalid:443'],
       next_plan=None,auto_delete_in_days=None,on_hold_expire_duration=None,on_hold_timeout=None)
   marzban.edit_put_count=0;marzban.edit_reset_count=0
-  facades=bodies.function_bodies((ROOT/'config.php').read_bytes(),['buildSubscriptionPresentation','buildConfigMessage','setUser','sumerize','getOrderDetailKeys','renewMarzbanUUID','deleteMarzban','changeMarzbanState','getMarzbanToken'])
+  facades=bodies.function_bodies((ROOT/'config.php').read_bytes(),['buildSubscriptionPresentation','buildConfigMessage','setUser','sumerize','getOrderDetailKeys','getUserOrderDetailKeys','renewMarzbanUUID','deleteMarzban','changeMarzbanState','getMarzbanToken','RandomString'])
   (work/'facades.php').write_bytes(facades.replace(b'__DIR__',repr(str(ROOT)).encode()))
   driver=work/'existing.php';driver.write_text(PHP);source=900000;customer_outputs=[]
   def call(op,**spec):
@@ -640,6 +890,28 @@ echo json_encode(['required'=>count(achbotProviderRequiredOperations()),
   shown=call('view',actor=1002,owner=1001,order=order)
   yes(shown['out']is None,'foreign_actor_cannot_read_imported_customer_details')
   yes(financial()==before,'imported_detail_views_are_financially_read_only')
+  # The visible refresh callback is a real planless controller journey.
+  # Native link changes are fixture setup, not provider writes by the bot.
+  panel.link_labels[41]='refreshed-native-41'
+  marzban.edit_account['links']=['vless://refreshed-native-mb@host.invalid:443']
+  finance=financial();writes_before=len(mutations())
+  refreshed=call('customer',actor=1001,data='updateConfigConnectionLink'+str(order))
+  yes('refreshed-native-41'in sql(f'SELECT link FROM orders_list WHERE id={order}')and
+      financial()==finance and len(mutations())==writes_before,
+      'actual_planless_PasarGuard_update_link_controller_reads_native_links_without_remote_or_financial_write')
+  mb_writes=len([r for r in marzban.trace if r['method']in('PUT','DELETE')or(r['method']=='POST'and not r['path'].endswith('/api/admin/token'))])
+  refreshed=call('customer',actor=1002,data='updateConfigConnectionLink'+str(mb_order))
+  yes('refreshed-native-mb'in sql(f'SELECT link FROM orders_list WHERE id={mb_order}')and
+      financial()==finance and mb_writes==len([r for r in marzban.trace if r['method']in('PUT','DELETE')or(r['method']=='POST'and not r['path'].endswith('/api/admin/token'))]),
+      'actual_planless_Marzban_update_link_controller_has_no_plan_dereference_or_native_mutation')
+  before=entities();requests=len(panel.trace)
+  call('customer',actor=1004,cached_admin=True,data='updateConfigConnectionLink'+str(order))
+  yes(entities()==before and len(panel.trace)==requests,
+      'update_link_callback_rechecks_fresh_role_and_denies_cached_revoked_admin')
+  refreshed=call('customer',actor=9001,data='updateConfigConnectionLink'+str(order))
+  yes(any(e['kind']=='edit'for e in refreshed['events'])and financial()==finance,
+      'authorized_admin_refresh_of_foreign_import_uses_real_admin_details_redraw')
+
   before_note=panel.users[41]['note'];before_groups=copy.deepcopy(panel.users[41]['group_ids'])
   old_expiry=int(datetime.fromisoformat(panel.users[41]['expire'].replace('Z','+00:00')).timestamp())
   result=call('edit',order=order,operation='fixture:adopt-volume',change={'plus_volume':1})['out']
@@ -782,6 +1054,7 @@ echo json_encode(['required'=>count(achbotProviderRequiredOperations()),
       exact_native_page_request_count=True,external_native_expiry_refresh=True,
       legacy_native_token_forms=True,marzban_legacy_JWT_native_signature_verified=True,adoption_rollback_atomic=True,
       actual_planless_customer_regenerate_and_delete=True,
+      actual_planless_update_link_controller_verified=True,
       verified_marzban_revoke_credential_negatives=True,
       unlimited_addon_entry_neutral_and_effect_free=True,
       adopted_capacity_origin_preserved=True,delete_replay_safe=True,
@@ -789,6 +1062,12 @@ echo json_encode(['required'=>count(achbotProviderRequiredOperations()),
       initial_import_controls_match_supported_actions=True,
       native_origin_alias_and_ambiguity_verified=True,created_marker_policy_preserved=True,
       external_requests=0,production_mutations=0)
+ shared_registration_and_paid_journey('marzban')
+ shared_registration_and_paid_journey('pasarguard')
+ report.update(cases=len(checks),shared_native_registration_for_multiple_users=True,
+     genuine_import_plan_confirm_paid_renewal=True,shared_native_auto_renew_debits_once=True,concurrent_shared_native_auto_renew_verified=True,shared_payment_owner_and_replay_verified=True,
+     shared_native_views_coherent=True,shared_physical_anchor_history_preserved=True,
+     shared_native_action_views_coherent=True,known_native_guard_preclaim_no_poison=True)
  if args.report:args.report.write_text(json.dumps(report,indent=2)+'\n')
  print(json.dumps(report))
 if __name__=='__main__':main()

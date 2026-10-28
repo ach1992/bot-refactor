@@ -293,6 +293,11 @@ function achbotPasarGuardActionAdapter($serverId,$remark,string $action,?array $
         if (!in_array($action,['delete','revoke','reset','toggle'],true)) return achbotProviderFailure('unsupported_action',false);
         $ctx=achbotPgRemarkContext($connection,(int)$serverId,(string)$remark);
         $panel=$ctx['panel'];$identity=$ctx['identity'];
+        $preflight=achbotPgRead($panel,$identity);
+        if (($preflight['success']??false)!==true) return achbotProviderFailure('pg_action_read_unverified',false);
+        if (!achbotPgManaged($preflight['user'])) return achbotProviderFailure('pg_native_schedule_conflict',false);
+        if ($action==='toggle' && !in_array($preflight['user']['status'],['active','disabled'],true))
+            return achbotProviderFailure('pg_status_restricted',false);
         $key=$action==='delete'?'delete:'.(int)$ctx['account']['id']:achbotPgOperationKey($action);
         $intent=achbotPgBeginMutation($connection,$ctx,$key,$action,['phase'=>'claimed']);
         $read=achbotPgRead($panel,$identity);
@@ -343,21 +348,30 @@ function achbotPgPlanSnapshot(mysqli $db,int $serverId,int $planId,bool $lock=fa
 }
 function achbotPgOrderContext(mysqli $db,int $orderId,bool $lock=false): array {
     achbotPgLoad();
-    $a=achbotProviderAccountByOrder($db,$orderId);
-    if (!$a || !in_array($a['state'],['verified','linked'],true) || (int)$a['remote_user_id']<=0 || empty($a['remote_created_at'])) throw new RuntimeException('pg_account_not_verified');
-    $s=$db->prepare('SELECT o.server_id,o.remark,c.type FROM orders_list o JOIN server_config c ON c.id=o.server_id WHERE o.id=?'.($lock?' FOR UPDATE':''));
+    $s=$db->prepare('SELECT o.*,c.type AS provider_type FROM orders_list o JOIN server_config c ON c.id=o.server_id WHERE o.id=?'.($lock?' FOR UPDATE':''));
     $s->bind_param('i',$orderId);$s->execute();$o=$s->get_result()->fetch_assoc();$s->close();
-    if (!$o || $o['type']!=='pasarguard' || $o['remark']!==$a['remote_username']) throw new RuntimeException('pg_order_identity_changed');
+    if (!$o || $o['provider_type']!=='pasarguard') throw new RuntimeException('pg_order_identity_changed');
+    $a=achbotProviderAccountByOrder($db,$orderId,$lock);
+    if (!$a || !in_array($a['state'],['verified','linked'],true) || (int)$a['remote_user_id']<=0 || empty($a['remote_created_at'])) throw new RuntimeException('pg_account_not_verified');
+    if ($o['remark']!==$a['remote_username']) throw new RuntimeException('pg_order_identity_changed');
     $panel=achbotPgServerPanel($db,(int)$o['server_id']);
     if ((int)$panel['id']!==(int)$a['panel_id'] || $panel['instance_key']!==$a['instance_key'] || hash('sha256',rtrim($panel['api_url'],'/'))!==$a['endpoint_sha256']) throw new RuntimeException('pg_account_panel_changed');
-    return ['order_server_id'=>(int)$o['server_id'],'account'=>$a,'panel'=>$panel,'identity'=>achbotProviderAccountIdentity($db,$a)];
+    return ['order_id'=>$orderId,'order'=>$o,'order_server_id'=>(int)$o['server_id'],'account'=>$a,'panel'=>$panel,'identity'=>achbotProviderAccountIdentity($db,$a,$lock)];
 }
 function achbotPgRemarkContext(mysqli $db,int $serverId,string $remark): array {
-    // Exact local ownership lookup only. Never list/search vendor users by a partial name.
-    $s=$db->prepare('SELECT o.id FROM orders_list o JOIN provider_accounts a ON a.order_id=o.id WHERE o.server_id=? AND o.remark=? LIMIT 2');
+    // Multiple authorized local references may name the same exact physical
+    // identity. Every selected reference must prove that same identity.
+    $s=$db->prepare('SELECT id FROM orders_list WHERE server_id=? AND BINARY remark=BINARY ? ORDER BY id');
     $s->bind_param('is',$serverId,$remark);$s->execute();$rows=$s->get_result()->fetch_all(MYSQLI_ASSOC);$s->close();
-    if (count($rows)!==1) throw new RuntimeException('pg_local_account_ambiguous');
-    return achbotPgOrderContext($db,(int)$rows[0]['id']);
+    if (!$rows) throw new RuntimeException('pg_local_account_ambiguous');
+    $context=null;
+    foreach ($rows as $row) {
+        $candidate=achbotPgOrderContext($db,(int)$row['id']);
+        if ($context!==null && ($candidate['account']['id']!==$context['account']['id'] ||
+            $candidate['identity']!==$context['identity'])) throw new RuntimeException('pg_local_account_ambiguous');
+        $context=$candidate;
+    }
+    return $context;
 }
 function achbotPgPinPayment(mysqli $db,int $payId): void {
     $s=$db->prepare('SELECT * FROM pays WHERE id=?');$s->bind_param('i',$payId);$s->execute();$p=$s->get_result()->fetch_assoc();$s->close();
@@ -398,6 +412,11 @@ function achbotPgQuote(mysqli $db,int $payId): array {
         $ctx=achbotPgOrderContext($db,$oid);
         foreach ($ctx['identity'] as $key=>$identityValue)
             if ((string)($snap[$key]??'')!==(string)$identityValue) throw new RuntimeException('pg_quote_account_changed');
+        // The same existing native eligibility guard runs before a wallet claim,
+        // while the native mutation still reobserves after its durable fence.
+        $preflight=achbotPgRead($ctx['panel'],$ctx['identity']);
+        if (($preflight['success']??false)!==true) throw new RuntimeException('pg_quote_read_unverified');
+        if (!achbotPgManaged($preflight['user'])) throw new RuntimeException('pg_native_schedule_conflict');
     }
     return $snap;
 }
@@ -655,13 +674,33 @@ function achbotPgEditChanges(array $user,array $change,?int $clock=null): array 
 function achbotPgServiceEdit(mysqli $db,int $serverId,array $change,?array $giftTarget=null): object {
     try {
         $requestUnits=achbotPgEditInputUnits($change);
-        $ctx=achbotPgRemarkContext($db,$serverId,$change['remark']);
+        $referenceOrder=(int)($change['order_id']??0);
+        if ((int)($change['pay_id']??0)>0) {
+            $payId=(int)$change['pay_id'];
+            $s=$db->prepare('SELECT order_id,type FROM pays WHERE id=?');
+            $s->bind_param('i',$payId);$s->execute();$payment=$s->get_result()->fetch_assoc();$s->close();
+            if (!$payment) throw new RuntimeException('pg_edit_payment_missing');
+            $referenceOrder=(int)$payment['order_id'];
+            if ($referenceOrder<=0 && preg_match('/^INCREASE_(?:DAY|VOLUME)_([1-9][0-9]*)_/',(string)$payment['type'],$m))
+                $referenceOrder=(int)$m[1];
+            if ($referenceOrder<=0) throw new RuntimeException('pg_edit_payment_reference_missing');
+        }
+        $ctx=$referenceOrder>0?achbotPgOrderContext($db,$referenceOrder):
+            achbotPgRemarkContext($db,$serverId,$change['remark']);
+        if ($ctx['order_server_id']!==$serverId || $ctx['order']['remark']!==$change['remark'])
+            throw new RuntimeException('pg_edit_reference_changed');
         if ($giftTarget!==null && !achbotGiftTargetMatches($db,$serverId,$giftTarget))
             throw new RuntimeException('pg_gift_target_changed');
         if ((int)($change['pay_id']??0)>0) achbotPgQuote($db,(int)$change['pay_id']);
+        else {
+            $preflight=achbotPgRead($ctx['panel'],$ctx['identity']);
+            if (($preflight['success']??false)!==true) throw new RuntimeException('pg_edit_read_unverified');
+            if (!achbotPgManaged($preflight['user'])) throw new RuntimeException('pg_native_schedule_conflict');
+        }
         $key=achbotPgOperationKey('edit',$change);
-        // Own the durable account fence BEFORE observing limits. A competing
-        // completed edit is then included in this request's absolute arithmetic.
+        // Own the durable account fence BEFORE calculating limits. Eligibility
+        // preflight is not used for arithmetic; a completed competing edit is
+        // included by the fresh observation below.
         $intent=achbotPgBeginMutation($db,$ctx,$key,'edit',['phase'=>'claimed','requested_units'=>$requestUnits]);
         $read=achbotPgRead($ctx['panel'],$ctx['identity']);
         if (($read['success']??false)!==true) throw new RuntimeException('pg_edit_read_unverified');
@@ -726,11 +765,16 @@ function achbotProviderGiftUsers(mysqli $db,int $serverId,array $target): object
     if (achbotProviderType($db,$serverId)==='marzban') return getMarzbanJson($serverId,null,$target);
     try {
         if (!achbotGiftTargetMatches($db,$serverId,$target)) throw new RuntimeException('pg_gift_target_changed');
-        $s=$db->prepare("SELECT o.id,o.remark,a.state FROM orders_list o LEFT JOIN provider_accounts a ON a.order_id=o.id WHERE o.server_id=? AND o.status=1 ORDER BY o.id");
+        $s=$db->prepare("SELECT id,remark FROM orders_list WHERE server_id=? AND status=1 ORDER BY id");
         $s->bind_param('i',$serverId);$s->execute();$rows=$s->get_result()->fetch_all(MYSQLI_ASSOC);$s->close();
-        foreach ($rows as $row) if (($row['state']??null)!=='linked') throw new RuntimeException('pg_gift_roster_account_requires_review');
-        $users=[];foreach ($rows as $row) {
-            $ctx=achbotPgOrderContext($db,(int)$row['id']);$r=achbotPgRead($ctx['panel'],$ctx['identity']);
+        $contexts=[];
+        foreach ($rows as $row) {
+            $ctx=achbotPgOrderContext($db,(int)$row['id']);
+            if ($ctx['account']['state']!=='linked') throw new RuntimeException('pg_gift_roster_account_requires_review');
+            $contexts[$ctx['account']['id']]=$ctx;
+        }
+        $users=[];foreach ($contexts as $ctx) {
+            $r=achbotPgRead($ctx['panel'],$ctx['identity']);
             if (($r['success']??false)!==true) throw new RuntimeException('pg_gift_list_unverified');
             $users[]=(object)$r['user'];
         }

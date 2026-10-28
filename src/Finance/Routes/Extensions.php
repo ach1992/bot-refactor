@@ -710,100 +710,99 @@ if(is_string($data) && strlen($data) <= 64 && preg_match('/\ApayIncreaseDayWithW
     }
 }
 
-if (preg_match('/^changePlan_(\d+)/', $data, $match)) {
-    $orderId = $match[1];
-
-    $stmt = $connection->prepare("SELECT * FROM `orders_list` WHERE `id` = ?");
-    $stmt->bind_param("i", $orderId);
-    $stmt->execute();
-    $orderInfo = $stmt->get_result()->fetch_assoc();
-    $stmt->close();
-    if (!$orderInfo || !achbotSupportsOrder($connection, (int)$orderInfo['id'])) {
-        alert(\achbotMessage('renewal.extensions.alert.d0779ad27d'), true);
-        return;
+if (is_string($data) && preg_match('/^changePlan_([1-9][0-9]{0,9})$/D', $data, $match)) {
+    require_once __DIR__.'/../../Subscription/AccountDetails.php';
+    $orderId=(int)$match[1];
+    try {
+        $actor=\AchBot\Subscription\AccountDetails\currentOrderDetailActor();
+        if ($actor===null || $orderId>2147483647) throw new RuntimeException('plan_actor_unavailable');
+        $actorId=(int)$actor['userid'];
+        $isAdmin=$actorId===(int)$admin || (int)$actor['isAdmin']===1;
+        $stmt=$connection->prepare('SELECT * FROM orders_list WHERE id=? AND status=1');
+        $stmt->bind_param('i',$orderId);$stmt->execute();
+        $orderInfo=$stmt->get_result()->fetch_assoc();$stmt->close();
+        if (!$orderInfo || (!$isAdmin && (int)$orderInfo['userid']!==$actorId) ||
+            !achbotSupportsOrder($connection,$orderId,null,(int)$orderInfo['userid']))
+            throw new RuntimeException('plan_order_unavailable');
+        if (!achbotOrderMayUsePaidPlan($connection,$orderInfo)) {
+            alert(\achbotMessage('renewal.extensions.alert.65fc393064'),true);return;
+        }
+        $serverId=(int)$orderInfo['server_id'];
+        $stmt=$connection->prepare('SELECT id,title FROM server_plans WHERE server_id=? AND active=1 AND price>0 AND inbound_id=0 ORDER BY id');
+        $stmt->bind_param('i',$serverId);$stmt->execute();$plans=$stmt->get_result()->fetch_all(MYSQLI_ASSOC);$stmt->close();
+        $buttons=[];
+        foreach ($plans as $plan) {
+            $planId=(int)$plan['id'];
+            if (\AchBot\Subscription\AccountDetails\paidPlanForOrder($connection,$orderInfo,$planId)===null) continue;
+            $buttons[]=[['text'=>$plan['title'],'callback_data'=>'confirmChangePlan_'.$orderId.'_'.$planId]];
+        }
+        $buttons[]=[['text'=>$buttonValues['back_button'],'callback_data'=>'mainMenu']];
+        if (count($buttons)===1) sendMessage(\achbotMessage('renewal.extensions.message.655234a584'));
+        else sendMessage(\achbotMessage('renewal.extensions.message.143c7f81f1'),json_encode(['inline_keyboard'=>$buttons]),'HTML');
+    } catch (Throwable $error) {
+        error_log('achbot_plan_selection_unavailable order_id='.$orderId);
+        alert(\achbotMessage('renewal.extensions.plan_selection_unavailable'),true);
     }
-
-	
-	if ((int)$orderInfo['amount'] === 0) {
-		alert(\achbotMessage('renewal.extensions.alert.65fc393064'), true);
-		return;
-	}
-
-    $remark = $orderInfo['remark'];
-    $serverId = $orderInfo['server_id'];
-
-	$stmt = $connection->prepare("SELECT * FROM `server_plans` WHERE `server_id` = ? AND `price` > 0 ORDER BY `id` ASC");
-    $stmt->bind_param("i", $serverId);
-    $stmt->execute();
-    $plans = $stmt->get_result();
-    $stmt->close();
-
-    $buttons = [];
-    while ($plan = $plans->fetch_assoc()) {
-        $buttons[] = [['text' => $plan['title'], 'callback_data' => "confirmChangePlan_" . $orderId . "_" . $plan['id']]];
-    }
-
-    $buttons[] = [['text' => $buttonValues['back_button'], 'callback_data' => "mainMenu"]];
-
-    if (count($buttons) === 1) {
-        sendMessage(\achbotMessage('renewal.extensions.message.655234a584'));
-    } else {
-        sendMessage(\achbotMessage('renewal.extensions.message.143c7f81f1'), json_encode(['inline_keyboard' => $buttons]), "html");
-    }
-
-    exit;
+    return;
 }
 
-if (preg_match('/^confirmChangePlan_(\d+)_(\d+)/', $data, $match)) {
-    $orderId = $match[1];
-    $newPlanId = $match[2];
-
-    // Get current order info
-    $stmt = $connection->prepare("SELECT * FROM `orders_list` WHERE `id` = ?");
-    $stmt->bind_param("i", $orderId);
-    $stmt->execute();
-    $orderInfo = $stmt->get_result()->fetch_assoc();
-    $stmt->close();
-    if (!$orderInfo || !achbotSupportsOrder($connection, (int)$orderInfo['id'])) {
-        alert(\achbotMessage('renewal.extensions.alert.d0779ad27d'), true);
+if (is_string($data) && preg_match('/^confirmChangePlan_([1-9][0-9]{0,9})_([1-9][0-9]{0,9})$/D', $data, $match)) {
+    require_once __DIR__.'/../../Subscription/AccountDetails.php';
+    $orderId=(int)$match[1];$newPlanId=(int)$match[2];$begun=false;$commitAttempted=false;
+    try {
+        $actor=\AchBot\Subscription\AccountDetails\currentOrderDetailActor();
+        if ($actor===null || $orderId>2147483647 || $newPlanId>2147483647)
+            throw new RuntimeException('plan_actor_unavailable');
+        $actorId=(int)$actor['userid'];$actorPk=(int)$actor['id'];
+        if (!$connection->begin_transaction()) throw new RuntimeException('plan_begin_failed');
+        $begun=true;
+        $stmt=$connection->prepare('SELECT * FROM orders_list WHERE id=? AND status=1 FOR UPDATE');
+        $stmt->bind_param('i',$orderId);$stmt->execute();
+        $orderInfo=$stmt->get_result()->fetch_assoc();$stmt->close();
+        $stmt=$connection->prepare('SELECT id,userid,isAdmin,step FROM users WHERE id=? AND userid=? FOR UPDATE');
+        $stmt->bind_param('ii',$actorPk,$actorId);$stmt->execute();$freshActor=$stmt->get_result()->fetch_assoc();$stmt->close();
+        $isAdmin=$freshActor!==null && ($actorId===(int)$admin || (int)$freshActor['isAdmin']===1);
+        if (!$freshActor || $freshActor['step']==='banned' || !$orderInfo ||
+            (!$isAdmin && (int)$orderInfo['userid']!==$actorId) ||
+            !achbotSupportsOrder($connection,$orderId,null,(int)$orderInfo['userid'],true))
+            throw new RuntimeException('plan_order_unavailable');
+        if (!achbotOrderMayUsePaidPlan($connection,$orderInfo,true)) {
+            $connection->rollback();$begun=false;
+            alert(\achbotMessage('renewal.extensions.alert.65fc393064'),true);return;
+        }
+        $plan=\AchBot\Subscription\AccountDetails\paidPlanForOrder($connection,$orderInfo,$newPlanId,true);
+        if ($plan===null) throw new RuntimeException('plan_target_unavailable');
+        if ((int)$orderInfo['fileid']===$newPlanId) {
+            $connection->rollback();$begun=false;
+            sendMessage(\achbotMessage('renewal.extensions.message.dee2da49f3'));return;
+        }
+        // Choosing a future renewal product changes only local fileid. It is
+        // not a purchase, remote entitlement change, debit or paid receipt.
+        $oldPlan=(int)$orderInfo['fileid'];$serverId=(int)$orderInfo['server_id'];$ownerId=(int)$orderInfo['userid'];
+        $stmt=$connection->prepare('UPDATE orders_list SET fileid=? WHERE id=? AND userid=? AND server_id=? AND fileid=? AND status=1');
+        $stmt->bind_param('iiiii',$newPlanId,$orderId,$ownerId,$serverId,$oldPlan);
+        if (!$stmt->execute() || $stmt->affected_rows!==1) {$stmt->close();throw new RuntimeException('plan_update_unconfirmed');}
+        $stmt->close();$commitAttempted=true;
+        if (!$connection->commit()) throw new RuntimeException('plan_commit_unknown');
+        $begun=false;
+    } catch (Throwable $error) {
+        if ($begun) {try {$connection->rollback();}catch(Throwable $ignored) {}}
+        error_log('achbot_plan_selection_unverified order_id='.$orderId);
+        alert($commitAttempted?\achbotMessage('renewal.extensions.plan_selection_review'):
+            \achbotMessage('renewal.extensions.plan_selection_unavailable'),true);
         return;
     }
-
-
-    if ($orderInfo['fileid'] == $newPlanId) {
-        sendMessage(\achbotMessage('renewal.extensions.message.dee2da49f3'));
-        exit;
-    }
-
-    // Update plan in orders_list
-    $stmt = $connection->prepare("UPDATE `orders_list` SET `fileid` = ? WHERE `id` = ?");
-    $stmt->bind_param("ii", $newPlanId, $orderId);
-    $stmt->execute();
-    $stmt->close();
-
-    editText($message_id, \achbotMessage('renewal.extensions.message.3067ddba76'));
-
-    // Get new plan title
-    $stmt = $connection->prepare("SELECT title FROM `server_plans` WHERE `id` = ?");
-    $stmt->bind_param("i", $newPlanId);
-    $stmt->execute();
-    $result = $stmt->get_result();
-    $planInfo = $result->fetch_assoc();
-    $stmt->close();
-
-    $planTitle = $planInfo['title'];
-
-    $channelMessage = \achbotMessage('renewal.extensions.channel_message.f9e3ed8281', ['orderInfo_userid' => $orderInfo['userid'], 'first_name' => $first_name, 'username' => $username, 'orderInfo_remark' => $orderInfo['remark'], 'planTitle' => $planTitle, 'newPlanId' => $newPlanId]);
-
-    sendMessage($channelMessage, null, "html", $admin);
-    //sendToAllAdmins('sendMessage', ['text' => $channelMessage,'parse_mode' => "html"]);
-	
-	// ارسال پیام به کانال گزارشات
-	$rewardChannel = $botState['rewardChannel'];
-		if (!empty($rewardChannel)) {
-		sendMessage($channelMessage, null, "html", $rewardChannel);
-	}
-    exit;
+    // Failed notifications cannot change a committed product selection.
+    editText($message_id,\achbotMessage('renewal.extensions.message.3067ddba76'));
+    $escape=static fn($value)=>htmlspecialchars((string)$value,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8');
+    $channelMessage=\achbotMessage('renewal.extensions.channel_message.f9e3ed8281',[
+        'orderInfo_userid'=>$orderInfo['userid'],'first_name'=>$escape($first_name),
+        'username'=>$escape($username),'orderInfo_remark'=>$escape($orderInfo['remark']),
+        'planTitle'=>$escape($plan['title']),'newPlanId'=>$newPlanId]);
+    sendMessage($channelMessage,null,'HTML',$admin);
+    $rewardChannel=$botState['rewardChannel']??'';
+    if ($rewardChannel!=='') sendMessage($channelMessage,null,'HTML',$rewardChannel);
+    return;
 }
 if (preg_match('/^increaseAVolume([1-9][0-9]{0,9})$/D', $data, $match)) {
     // بررسی تاریخ انقضا

@@ -1017,6 +1017,24 @@
         "src/Subscription/OrderManagement.php"
       ]
     },
+    "renewal.extensions.plan_selection_review": {
+      "audience": "user",
+      "entry": "⚠️ نتیجه تغییر پلن هنوز قابل تأیید نیست. صفحه اشتراک را بررسی کنید.",
+      "facade": false,
+      "reason": "Owner-authorized existing-subscription plan selection reports unavailable or unverified selection outcomes accurately while preserving the separate free-trial refusal.",
+      "source_paths": [
+        "src/Finance/Routes/Extensions.php"
+      ]
+    },
+    "renewal.extensions.plan_selection_unavailable": {
+      "audience": "user",
+      "entry": "⚠️ تغییر پلن این اشتراک در حال حاضر ممکن نیست. از صفحه اشتراک دوباره وارد شوید.",
+      "facade": false,
+      "reason": "Owner-authorized existing-subscription plan selection reports unavailable or unverified selection outcomes accurately while preserving the separate free-trial refusal.",
+      "source_paths": [
+        "src/Finance/Routes/Extensions.php"
+      ]
+    },
     "subscription.account_deletion.report": {
       "audience": "admin",
       "entry": {
@@ -1034,6 +1052,24 @@
       "reason": "Deletion operator reports render complete volume/day labels so explicit unlimited remains نامحدود without finite unit suffixes and missing plan metadata remains نامشخص.",
       "source_paths": [
         "src/Subscription/AccountDeletion.php"
+      ]
+    },
+    "subscription.account_deletion.shared_effect_notice": {
+      "audience": "user",
+      "entry": "⚠️ با تأیید، خود اشتراک برای همیشه حذف می‌شود و دسترسی همه افرادی که از آن استفاده می‌کنند قطع خواهد شد.",
+      "facade": false,
+      "reason": "Owner-approved shared registration keeps actual native deletion; the existing customer and administrator Yes/No confirmations share one paragraph explaining access ends for everyone using that subscription. No extra step or identities are exposed.",
+      "source_paths": [
+        "src/Subscription/AccountDeletion.php"
+      ]
+    },
+    "subscription.account_details.auto_renew_update_unverified": {
+      "audience": "user",
+      "entry": "⚠️ تغییر وضعیت تمدید خودکار تأیید نشد. صفحهٔ اشتراک را دوباره باز کنید.",
+      "facade": false,
+      "reason": "The owner-approved auto-renewal consent catch reports an unverified status update for failed or unknown acknowledgements without falsely reporting ownership denial; actual permission checks remain separate.",
+      "source_paths": [
+        "config.php"
       ]
     },
     "subscription.account_details.status_on_hold": {
@@ -1089,6 +1125,41 @@
     }
   },
   "retained_legacy_keys": {
+    "admin_settings.config.get_order_detail_keys.alert.1bd8f019af": {
+      "entry": "⚠️ شما اجازه تغییر این سفارش را ندارید.",
+      "reason": "Unchanged pre-management ownership-denial copy retained as baseline-only evidence after the current consent catch reports unverified updates accurately instead of treating database/origin failures as ownership denial.",
+      "previous_source_paths": [
+        "config.php"
+      ]
+    },
+    "admin_settings.config.get_order_detail_keys.alert.2871efbc4d": {
+      "entry": "❌ سفارش مورد نظر یافت نشد.",
+      "reason": "Unchanged pre-management copy retained as baseline-only evidence after the current locked automatic-renewal consent handler adopted shared role/order/plan unavailable handling.",
+      "previous_source_paths": [
+        "config.php"
+      ]
+    },
+    "admin_settings.config.get_order_detail_keys.alert.4f0ac830c9": {
+      "entry": "⚠️ پلن مربوط به این سفارش پیدا نشد؛ برای بررسی با پشتیبانی تماس بگیرید.",
+      "reason": "Unchanged pre-management copy retained as baseline-only evidence after the current locked automatic-renewal consent handler adopted shared role/order/plan unavailable handling.",
+      "previous_source_paths": [
+        "config.php"
+      ]
+    },
+    "admin_settings.config.get_order_detail_keys.alert.7e78156592": {
+      "entry": "⚠️ دسترسی ادمین ندارید.",
+      "reason": "Unchanged pre-management copy retained as baseline-only evidence after the current locked automatic-renewal consent handler adopted shared role/order/plan unavailable handling.",
+      "previous_source_paths": [
+        "config.php"
+      ]
+    },
+    "admin_settings.config.get_order_detail_keys.alert.fb223619e1": {
+      "entry": "⚠️ پلن این سفارش مشخص نیست؛ برای بررسی با پشتیبانی تماس بگیرید.",
+      "reason": "Unchanged pre-management copy retained as baseline-only evidence after the current locked automatic-renewal consent handler adopted shared role/order/plan unavailable handling.",
+      "previous_source_paths": [
+        "config.php"
+      ]
+    },
     "admin_settings.config.get_plan_details_keys.button.0c7b1a3966": {
       "entry": "⚙️ پورت دلخواه",
       "reason": "Unchanged pre-management copy retained as explicit legacy catalog compatibility evidence; the new management journey no longer offers this old control/form.",

@@ -40,11 +40,11 @@ function achbotAutoRenewReserve(mysqli $db, int $orderId, int $userId): array {
             !achbotSupportsOrder($db,$orderId,(int)$order['fileid'],$userId)) {
             $db->rollback(); return ['status'=>'ineligible'];
         }
-        // Distinct orders can alias the SAME physical Marzban account.
-        // Lock matching active orders and fail closed before reserving money.
+        // Multiple users may reference one physical service. Lock its references
+        // and refuse only actual in-flight work before reserving one payer.
         if (!achbotAutoRenewAccountExclusiveLocked($db,$orderId,
-            (int)$order['server_id'],(string)$order['remark'])) {
-            $db->rollback(); return ['status'=>'ambiguous_account'];
+            (int)$order['server_id'],(string)$order['remark'],$peerOrders)) {
+            $db->rollback(); return ['status'=>'account_busy'];
         }
 
         // Mandatory durable schema: never bypass a missing or damaged journal.
@@ -219,6 +219,10 @@ function achbotAutoRenewFinalize(mysqli $db, array $claim,
     $attemptId=(int)$claim['id'];
     try {
         $db->begin_transaction();
+        $peers=achbotSharedAccountReferencesLocked($db,$orderId,(int)$claim['server_id'],(string)$claim['remark']);
+        if (!achbotSharedAccountWorkSettledLocked($db,$peers,$attemptId,(int)$claim['pay_id'])) {
+            $db->rollback();return false;
+        }
         $stmt=$db->prepare("SELECT expire_date,userid FROM orders_list
             WHERE id=? FOR UPDATE");
         $stmt->bind_param('i',$orderId);
@@ -285,6 +289,18 @@ function achbotAutoRenewFinalize(mysqli $db, array $claim,
         if (!$stored || (int)$stored['expire_date']!==$applied) {
             $db->rollback();return false;
         }
+        // One verified physical renewal updates the same native observation
+        // for every reference. A stale parallel sweep now reloads notif=0;
+        // it cannot charge another consenting user for the completed cycle.
+        $peerIds=implode(',',array_map(static fn(array $row):int=>(int)$row['id'],$peers));
+        $stmt=$db->prepare("UPDATE orders_list SET expire_date=?,notif=0 WHERE id IN ($peerIds) AND status=1");
+        $stmt->bind_param('i',$applied);
+        if (!$stmt->execute()) {$stmt->close();$db->rollback();return false;}$stmt->close();
+        $stmt=$db->prepare("SELECT id,expire_date,notif FROM orders_list WHERE id IN ($peerIds) FOR UPDATE");
+        $stmt->execute();$updatedPeers=$stmt->get_result()->fetch_all(MYSQLI_ASSOC);$stmt->close();
+        if (count($updatedPeers)!==count($peers)) {$db->rollback();return false;}
+        foreach ($updatedPeers as $peer)
+            if ((int)$peer['expire_date']!==$applied || (int)$peer['notif']!==0) {$db->rollback();return false;}
         $stmt=$db->prepare("UPDATE automatic_renewal_attempts SET stage='done'
             WHERE id=? AND stage='remote_started'");
         $stmt->bind_param('i',$attemptId);

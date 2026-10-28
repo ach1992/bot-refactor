@@ -254,9 +254,9 @@ if (($management['version']??null)!==1||($management['baseline_commit']??null)!=
     throw new RuntimeException('management_catalog_identity_drift');
 $managementAdded=$management['added_keys']??[];
 foreach ($managementAdded as $key=>$record) {
-    if (!str_starts_with($key,'admin_settings.management.')&&!in_array($key,['subscription.account_details.status_on_hold','subscription.manual_accounts.import_unverified','subscription.manual_accounts.import_under_review','subscription.manual_accounts.import_completed','subscription.manual_accounts.customer_not_found','subscription.account_deletion.report'],true))
+    if (!str_starts_with($key,'admin_settings.management.')&&!in_array($key,['subscription.account_details.auto_renew_update_unverified','subscription.account_deletion.shared_effect_notice','subscription.account_details.status_on_hold','subscription.manual_accounts.import_unverified','subscription.manual_accounts.import_under_review','subscription.manual_accounts.import_completed','renewal.extensions.plan_selection_unavailable','renewal.extensions.plan_selection_review','subscription.manual_accounts.customer_not_found','subscription.account_deletion.report'],true))
         throw new RuntimeException('management_catalog_addition_scope_drift');
-    $audience=in_array($key,['subscription.account_details.status_on_hold','subscription.manual_accounts.import_unverified','subscription.manual_accounts.import_under_review','subscription.manual_accounts.import_completed'],true)?'user':'admin';
+    $audience=in_array($key,['subscription.account_details.auto_renew_update_unverified','subscription.account_deletion.shared_effect_notice','subscription.account_details.status_on_hold','subscription.manual_accounts.import_unverified','subscription.manual_accounts.import_under_review','subscription.manual_accounts.import_completed','renewal.extensions.plan_selection_unavailable','renewal.extensions.plan_selection_review'],true)?'user':'admin';
     $sides=require dirname(__DIR__).'/messages/fa/'.$audience.'.php';
     [$topic,$name]=explode('.',$key,2);
     if (($record['audience']??null)!==$audience||($sides[$topic][$name]??null)!==($record['entry']??null)||empty($record['reason']))

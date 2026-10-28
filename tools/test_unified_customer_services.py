@@ -25,6 +25,17 @@ $data=$spec['data']??'';$text='';$message_id=1;$cancelKey='{}';$removeKeyboard='
 $GLOBALS['response_emitted']=false;register_shutdown_function(static function(){if(!$GLOBALS['response_emitted'])echo json_encode(['out'=>$GLOBALS['out']??$GLOBALS['events'],'reads'=>$GLOBALS['reads'],'presentations'=>$GLOBALS['presentations']],JSON_THROW_ON_ERROR);});
 $GLOBALS['reads']=0;$GLOBALS['presentations']=0;$GLOBALS['events']=[];
 function achbotSupportsAccount($type,$inbound){return in_array($type,['marzban','pasarguard'],true)&&(int)$inbound===0;}
+// This composition harness controls native packets and the plan-admission
+// seam. Actual adapter eligibility/import/payment are tested separately by
+// test_imported_plan_selection.py and the native existing-subscription suite.
+function achbotSupportsPlan($db,$id,$inbound=0,$server=null,$lock=false) {
+ $q=$db->prepare('SELECT p.server_id,p.inbound_id,p.active,c.type FROM server_plans p JOIN server_config c ON c.id=p.server_id WHERE p.id=?');
+ $id=(int)$id;$q->bind_param('i',$id);$q->execute();$row=$q->get_result()->fetch_assoc();$q->close();
+ return $row && (int)$row['active']===1 && achbotSupportsAccount($row['type'],$row['inbound_id']) &&
+  (int)$inbound===0 && ($server===null || (int)$server===(int)$row['server_id']);
+}
+function achbotSameProviderPanel($db,$first,$second){return (int)$first===(int)$second;}
+require __DIR__.'/actual-service-unit-helpers.php';
 function achbotProviderSqlTypes(){return "'marzban','pasarguard'";}
 function achbotProviderUser($server,$remark,$withLinks=true){++$GLOBALS['reads'];if($withLinks)throw new RuntimeException('unexpected_link_read');return json_decode(json_encode($GLOBALS['spec']['remote']??null));}
 function achbotProviderRelocationTargets($db,$server){return $GLOBALS['spec']['relocations']??[];}
@@ -159,9 +170,28 @@ def main():
   yes(all(baseline_dates[str(ts)]==[expected,expected] for ts,expected in dates.items()),'baseline240_actual_JDF_default_and_explicit_already_ASCII_Jalali_no_date_RED')
   purchase.init(work,env,'http://127.0.0.1:9')
   db=purchase.SIDE[1];script=work/'customer-unified.php';script.write_text(PHP)
+  provider_source=(ROOT/'src/Panel/ProviderRuntime.php').read_bytes()
+  unit_start=provider_source.index(b'function achbotWholeServiceUnits(')
+  unit_end=provider_source.index(b'function achbotPinnedAddonUnits(',unit_start)
+  units=b'<?php\n'+provider_source[unit_start:unit_end]
+  (work/'actual-service-unit-helpers.php').write_bytes(units)
+  origin_seed=work/'origin-fixture.php'
+  origin_seed.write_text(r'''<?php
+$connection=new mysqli('localhost','root','',$argv[3],0,$argv[2]);
+$connection->set_charset('utf8mb4');
+require $argv[1].'/src/Purchase/OrderWrites.php';
+function achbotSupportsProviderType($provider){return in_array($provider,['marzban','pasarguard'],true);}
+$connection->begin_transaction();
+$identity=['remote_created_at'=>'2026-10-26T05:00:00.123456Z','remote_username'=>'fixture_user'];
+if($argv[4]==='pasarguard')$identity['remote_user_id']=41;
+$out=achbotRecordImportedOrderOriginLocked($connection,91,1001,1001,$argv[4],2,'fixture_user',
+    str_repeat('a',64),$identity,$argv[4]==='pasarguard'?41:null);
+$connection->commit();
+echo json_encode($out,JSON_THROW_ON_ERROR);
+''')
   def sql(s):return native.sql(work,env,s,db)
   sql("INSERT INTO orders_list(id,userid,token,transid,fileid,server_id,inbound_id,remark,uuid,protocol,expire_date,link,amount,status,date) VALUES(91,1001,'fixture','','7',2,0,'fixture_user','fixture','vless',1900000000,'[]',100,1,'1700000000');INSERT INTO users(userid,name,username,refcode,wallet,date,isAdmin,first_start,is_agent) VALUES(1002,'Foreign','foreign','0',0,'1700000000',0,'sent',1)")
-  def snapshot():return sql("SELECT * FROM users ORDER BY id;SELECT * FROM orders_list ORDER BY id;SELECT * FROM pays ORDER BY id;SELECT * FROM server_info ORDER BY id;SELECT * FROM server_plans ORDER BY id")
+  def snapshot():return sql("SELECT * FROM users ORDER BY id;SELECT * FROM orders_list ORDER BY id;SELECT * FROM pays ORDER BY id;SELECT * FROM server_info ORDER BY id;SELECT * FROM server_plans ORDER BY id;SELECT * FROM setting ORDER BY id")
   def call(op,**kw):
    before=snapshot()
    r=subprocess.run(['php','-d','display_errors=0','-d','log_errors=0',str(script),str(ROOT),str(work/'mysql.sock'),db,json.dumps(dict(op=op,**kw))],capture_output=True,text=True,timeout=12)
@@ -210,13 +240,27 @@ def main():
       has_time=valid and expiry!='نامحدود'
       has_quota=valid and quota!='نامحدود'
       yes(('increaseADay91' in rendered['keyboard'])==has_time and ('increaseAVolume91' in rendered['keyboard'])==(has_time and has_quota),provider+'_same_process_render_'+str(index)+'_relative_actions_match_finite_expiry_and_total_quota_including_zero_remaining')
-   for fileid,amount in [(0,0),(0,100),(7,0),(7,100)]:
-    sql('UPDATE orders_list SET fileid='+str(fileid)+',amount='+str(amount)+' WHERE id=91')
-    for op in ['view','admin']:
-     keys=call(op,actor=9001 if op=='admin' else 1001,remote=finite)['out']['keyboard']
-     toggle='adminToggleAutoRenew91' if op=='admin' else 'toggleAutoRenew91'
-     yes((toggle in keys)==(fileid>0 and amount>0) and 'changePlan_91' in keys,provider+'_'+op+'_file'+str(fileid)+'_amount'+str(amount)+'_automatic_renewal_existing_eligibility_and_familiar_change_plan')
-   sql('UPDATE orders_list SET fileid=7,amount=100 WHERE id=91')
+   for imported in [False,True]:
+    sql("DELETE FROM setting WHERE type='ACHBOT_SERVICE_ORIGIN:91';UPDATE orders_list SET fileid=0,amount=0,autoRenew='off' WHERE id=91")
+    if imported:
+     seeded=subprocess.run(['php',str(origin_seed),str(ROOT),str(work/'mysql.sock'),db,provider],
+         capture_output=True,text=True,timeout=12)
+     if seeded.returncode or seeded.stderr:raise RuntimeError(('origin_fixture',seeded.returncode,seeded.stdout,seeded.stderr))
+     origin=json.loads(seeded.stdout)
+     yes(origin['kind']=='external_import' and origin['owner_userid']==1001 and origin['order_id']==91 and
+         sql('SELECT amount FROM orders_list WHERE id=91').strip()=='0',
+         provider+'_genuine_import_origin_fixture_uses_actual_writer_without_fake_paid_amount')
+    for fileid,amount in [(0,0),(0,100),(7,0),(7,100)]:
+     sql('UPDATE orders_list SET fileid='+str(fileid)+',amount='+str(amount)+' WHERE id=91')
+     for op in ['view','admin']:
+      keys=call(op,actor=9001 if op=='admin' else 1001,remote=finite)['out']['keyboard']
+      toggle='adminToggleAutoRenew91' if op=='admin' else 'toggleAutoRenew91'
+      plan_callback='changePlan_91'
+      eligible=amount>0 or imported
+      yes((toggle in keys)==(fileid>0 and eligible) and (plan_callback in keys)==(op=='admin' or eligible),
+          provider+'_'+op+'_file'+str(fileid)+'_amount'+str(amount)+'_import'+str(imported)+'_automatic_renewal_and_familiar_plan_action_policy')
+      if op=='admin':yes('changePlan_91'in keys and 'changeFileId_91_2'not in keys,provider+'_admin_preserves_familiar_common_plan_selector_'+str(fileid)+'_'+str(amount)+'_'+str(imported))
+   sql("DELETE FROM setting WHERE type='ACHBOT_SERVICE_ORIGIN:91';UPDATE orders_list SET fileid=7,amount=100 WHERE id=91")
    for unlimited in [None,0]:
     remote=dict(finite,data_limit=unlimited,expire=unlimited)
     rendered=call('view',remote=remote)['out']
@@ -356,7 +400,7 @@ def main():
   for name,state,manual,denied,rate,expected in cases:
    out=call('admission',state=state,manual=manual,denied=denied,rate=rate)
    yes(out['out'] is expected,name+'_same_checkout_menu_admission')
- result={'complete':True,'cases':len(checks),'checks':checks,'actual_php':True,'native_disposable_mariadb':True,'canonical_catalog_bindings':True,'real_JDF_no_date_stubs':True,'fresh_each_render_same_process':True,'same_packet_observation_and_presentation':True,'imported_actions_hide_ineligible_autorenew':True,'unlimited_actions_hide_unsupported_relative_changes':True,'native_HTTP_count_checked_here':False,'actual_composed_ASCII_Jalali_Tehran_proofs':date_proofs,'baseline_date_ref':date_baseline_ref,'baseline_date_jdf_sha256':hashlib.sha256(archived_jdf).hexdigest(),'baseline_dates_already_ASCII':True,'baseline_date_RED':False,'archived_warning_toggle_RED':baseline_red,'archived_warning_toggle_ref':archived_ref,'archived_warning_toggle_sha256':hashlib.sha256(archived_toggle.encode()).hexdigest(),'external_provider_calls':0,'production_mutations':0}
+ result={'complete':True,'cases':len(checks),'checks':checks,'actual_php':True,'native_disposable_mariadb':True,'canonical_catalog_bindings':True,'real_JDF_no_date_stubs':True,'fresh_each_render_same_process':True,'same_packet_observation_and_presentation':True,'imported_actions_hide_ineligible_autorenew':True,'genuine_import_origin_writer_fixture':True,'actual_service_unit_helpers':True,'native_plan_admission_seam':'controlled_read_only_SQL_fixture','actual_native_plan_eligibility_checked_here':False,'actual_URL_import_checked_here':False,'unlimited_actions_hide_unsupported_relative_changes':True,'native_HTTP_count_checked_here':False,'actual_composed_ASCII_Jalali_Tehran_proofs':date_proofs,'baseline_date_ref':date_baseline_ref,'baseline_date_jdf_sha256':hashlib.sha256(archived_jdf).hexdigest(),'baseline_dates_already_ASCII':True,'baseline_date_RED':False,'archived_warning_toggle_RED':baseline_red,'archived_warning_toggle_ref':archived_ref,'archived_warning_toggle_sha256':hashlib.sha256(archived_toggle.encode()).hexdigest(),'external_provider_calls':0,'production_mutations':0}
  if a.report:a.report.write_text(json.dumps(result,ensure_ascii=False,indent=2)+'\n')
  print(json.dumps(result,ensure_ascii=False))
 if __name__=='__main__':main()

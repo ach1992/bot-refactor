@@ -158,7 +158,10 @@ def main():
             "UPDATE server_plans SET server_id=3 WHERE id=8;"
             "INSERT INTO provider_panels(id,provider,instance_key,name,api_url,api_key,version)"
             " VALUES(1,'pasarguard',REPEAT('b',32),'Native fixture','"+pg_url+"','fixture-private-key','5.5.1');")
-        def seed(oid=101,server=2,remark='mb_user',notif=0,expiry=None):
+        def seed(oid=101,server=2,remark=None,notif=0,expiry=None):
+            # Independent scenarios must not reuse a physical native account:
+            # status=0 retired references intentionally retain review fences.
+            remark='mb_user_'+str(oid) if remark is None else remark
             expiry=int(time.time())+864000 if expiry is None else expiry
             plan=7 if server==2 else 8
             sql("INSERT INTO orders_list(id,userid,token,transid,fileid,server_id,inbound_id,remark,uuid,protocol,expire_date,link,amount,status,date,notif,autoRenew)"
@@ -211,7 +214,7 @@ def main():
         ]
         for name,order,expected in grace_matrix:
             yes(call('grace',order=order) is expected,'grace_integrity_'+name)
-        seed();seed(102,3,'fixture_user');pg_identity()
+        seed(remark='mb_user');seed(102,3,'fixture_user');pg_identity()
         for provider,sid,remark in [('marzban',2,'mb_user'),('pasarguard',3,'fixture_user')]:
             if provider=='marzban':mb.user.update(expire=None,data_limit=1073741824,used_traffic=1000000000,status='active')
             else:pguard.user.update(expire=None,data_limit=1073741824,used_traffic=1000000000,status='active')
@@ -352,7 +355,7 @@ def main():
             'auto_renew_keyset_no_skipped_fulfilled_rows')
         retire();seed(107,notif=int(time.time())-1)
         before=deletes(mb);mb.user.update(status='expired',expire=int(time.time())-100,data_limit=None,used_traffic=0)
-        mb.on_read=lambda remark,count:sql('UPDATE orders_list SET expire_date=expire_date+1 WHERE id=107') if remark=='mb_user' and count==1 else None
+        mb.on_read=lambda remark,count:sql('UPDATE orders_list SET expire_date=expire_date+1 WHERE id=107') if remark=='mb_user_107' and count==1 else None
         call('warnings')
         yes(sql('SELECT status FROM orders_list WHERE id=107')=='1' and deletes(mb)==before,
             'concurrent_local_renewal_cycle_blocks_delete_reservation')
@@ -393,7 +396,7 @@ def main():
         retire();seed(110,notif=int(time.time())-1)
         sql("INSERT INTO service_effects(source_kind,source_ref,actor_userid,ordinal,operation_id,target_server_id,target_key,endpoint_sha256,"
             "plan_id,remote_username,requested_expire,requested_bytes,request_sha256,state)"
-            " VALUES('admin_bulk','bulk:9001:2',9001,1,REPEAT('d',32),2,'server:2',REPEAT('e',64),7,'mb_user',2000000000,1073741824,REPEAT('f',64),'dispatching')")
+            " VALUES('admin_bulk','bulk:9001:2',9001,1,REPEAT('d',32),2,'server:2',REPEAT('e',64),7,'mb_user_110',2000000000,1073741824,REPEAT('f',64),'dispatching')")
         before=deletes(mb);call('warnings')
         yes(sql('SELECT status FROM orders_list WHERE id=110')=='1' and deletes(mb)==before,
             'unresolved_create_effect_same_account_blocks_scheduled_delete')

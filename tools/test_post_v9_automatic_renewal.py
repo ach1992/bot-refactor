@@ -595,8 +595,8 @@ def main():
         assert wallet(w,e)==400000 and count(w,e,'increase_order',"remark='notification'")==1
         cases.append('telegram_failure_after_commit_does_not_revert_payment')
 
-        # F2: two independent order IDs for the same remote user. Even with
-        # enough wallet money, neither can claim an exclusive remote account.
+        # F2: different references may share one native account. One consenting
+        # claimant pays, and verified completion updates both reference cycles.
         first=seed(w,e,'duplicate-account',wallet=500000)
         second=seed(w,e,'duplicate-account',wallet=500000)
         assert first!=second
@@ -611,13 +611,14 @@ def main():
             allowed={b'achbot_auto_renew_reservation_deferred'}
             assert proc.returncode==0 and all(x in allowed for x in err.splitlines()),(err,out)
             outputs.append(json.loads(out))
-        assert all(not any(v['type']=='remote' for v in vals) for vals in outputs),outputs
-        assert wallet(w,e)==500000
-        assert count(w,e,'automatic_renewal_attempts',f'order_id IN ({first},{second})')==0
-        assert count(w,e,'pays',f"order_id IN ({first},{second}) AND description='automatic_renewal'")==0
-        cases.append('f2_distinct_active_orders_same_account_two_workers_no_debit')
+        assert sum(v['type']=='remote' for vals in outputs for v in vals)==1,outputs
+        assert wallet(w,e)==400000
+        assert count(w,e,'automatic_renewal_attempts',f'order_id IN ({first},{second})')==1
+        assert count(w,e,'pays',f"order_id IN ({first},{second}) AND description='automatic_renewal'")==1
+        assert sql(w,e,f'SELECT COUNT(DISTINCT expire_date),SUM(notif) FROM orders_list WHERE id IN ({first},{second})').strip()=='1\t0'
+        cases.append('f2_distinct_active_references_same_account_two_workers_one_debit')
         assert run(w,e,{'action':'deletion_guard','order_id':first})==[
-            {'type':'delete_guard','allowed':False}]
+            {'type':'delete_guard','allowed':True}]
         sql(w,e,f"UPDATE orders_list SET status=0 WHERE id IN ({first},{second})")
 
         # Explicit administrator-assigned panel groups, not URL equality,
@@ -642,13 +643,13 @@ def main():
         aliasA=seed(w,e,'aliased-remote',wallet=500000)
         aliasB=seed(w,e,'aliased-remote',wallet=500000)
         sql(w,e,f"UPDATE orders_list SET server_id=88 WHERE id={aliasB}")
-        assert_no_remote(run(w,e,{'order_id':aliasA,'enabled':'on'}))
+        assert sum(x['type']=='remote' for x in run(w,e,{'order_id':aliasA,'enabled':'on'}))==1
         assert_no_remote(run(w,e,{'order_id':aliasB,'enabled':'on'}))
-        assert wallet(w,e)==500000
-        assert count(w,e,'automatic_renewal_attempts',f'order_id IN ({aliasA},{aliasB})')==0
-        cases.append('f2_explicit_same_panel_server_alias_duplicate_refused')
-        # Same-panel alias *concurrent* workers use different server IDs and
-        # different order IDs but must also be completely non-chargeable.
+        assert wallet(w,e)==400000
+        assert count(w,e,'automatic_renewal_attempts',f'order_id IN ({aliasA},{aliasB})')==1
+        cases.append('f2_explicit_same_panel_references_share_one_renewal_cycle')
+        # Stale concurrent callbacks after verified completion cannot charge
+        # the second reference for the same already completed native cycle.
         concurrent=[]
         for target in (aliasA,aliasB):
             concurrent.append(subprocess.Popen(
@@ -659,10 +660,10 @@ def main():
             allowed={b'achbot_auto_renew_reservation_deferred'}
             assert child.returncode==0 and all(x in allowed for x in err.splitlines()),(err,out)
             assert not any(x['type']=='remote' for x in json.loads(out)),out
-        assert wallet(w,e)==500000
+        assert wallet(w,e)==400000
         assert count(w,e,'automatic_renewal_attempts',
-                     f'order_id IN ({aliasA},{aliasB})')==0
-        cases.append('f2_two_alias_workers_no_double_debit_even_under_race')
+                     f'order_id IN ({aliasA},{aliasB})')==1
+        cases.append('f2_shared_alias_stale_workers_no_second_debit')
         sql(w,e,f"UPDATE orders_list SET status=0 WHERE id IN ({aliasA},{aliasB})")
         validA=seed(w,e,'distinct-real-one',wallet=500000)
         validB=seed(w,e,'distinct-real-two',wallet=500000)

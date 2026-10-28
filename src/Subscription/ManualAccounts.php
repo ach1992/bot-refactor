@@ -253,7 +253,7 @@ if (preg_match('/^addToOrders([1-9][0-9]*)$/D',(string)$data,$match)) {
         if (!$current || (int)$current['userid']!==$actor || $current['step']!==$actors[0]['step'] ||
             $current['temp']!==$actors[0]['temp'] || ($finalUserId!==$actor && $actor!==(int)$admin && (int)$current['isAdmin']!==1))
             throw new RuntimeException('import_stale');
-        $q=$connection->prepare('SELECT id FROM users WHERE userid=? LIMIT 2');
+        $q=$connection->prepare('SELECT id FROM users WHERE userid=? LIMIT 2 FOR UPDATE');
         $q->bind_param('i',$finalUserId);$q->execute();$targetCount=$q->get_result()->num_rows;$q->close();
         if ($targetCount!==1) throw new RuntimeException('import_target_missing');
         $q=$connection->prepare("SELECT c.* FROM server_config c JOIN server_info i ON i.id=c.id WHERE c.id=? AND i.active=1 AND c.type IN (".achbotProviderSqlTypes().") FOR UPDATE");
@@ -261,8 +261,8 @@ if (preg_match('/^addToOrders([1-9][0-9]*)$/D',(string)$data,$match)) {
         if (!$currentServer || $currentServer['type']!==$server['type'] || $currentServer['panel_url']!==$server['panel_url'] ||
             $currentServer['username']!==$server['username'] || $currentServer['password']!==$server['password'] ||
             (string)($currentServer['sub_links']??'')!==(string)($server['sub_links']??'')) throw new RuntimeException('import_server_changed');
-        $q=$connection->prepare('SELECT id FROM orders_list WHERE server_id=? AND remark=? LIMIT 1 FOR UPDATE');
-        $q->bind_param('is',$serverId,$remark);$q->execute();$exists=$q->get_result()->num_rows>0;$q->close();
+        $q=$connection->prepare('SELECT id FROM orders_list WHERE server_id=? AND remark=? AND userid=? LIMIT 1 FOR UPDATE');
+        $q->bind_param('isi',$serverId,$remark,$finalUserId);$q->execute();$exists=$q->get_result()->num_rows>0;$q->close();
         if ($exists) throw new RuntimeException('import_already_attached');
         $q=$connection->prepare('SELECT token FROM add_link WHERE added_by=? AND remark=? AND BINARY token=BINARY ? LIMIT 1 FOR UPDATE');
         $token=$proof['token'];$q->bind_param('iss',$actor,$remark,$token);$q->execute();$credential=$q->get_result()->fetch_assoc();$q->close();

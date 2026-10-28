@@ -33,7 +33,7 @@ if(preg_match('/^deleteMyConfig(\d+)/', $data, $match)){
     $remark = $order['remark'];
 
     editText($message_id,
-        \achbotMessage('subscription.account_deletion.message.acb79596be', ['remark' => $remark]),
+        \achbotMessage('subscription.account_deletion.message.acb79596be', ['remark' => $remark]) . "\n\n" . \achbotMessage('subscription.account_deletion.shared_effect_notice'),
         json_encode([
             'inline_keyboard' => [
                 [['text'=>\achbotMessage('subscription.account_deletion.button.13159f8c74'),'callback_data'=>"yesDeleteConfig" . $match[1]],['text'=>\achbotMessage('subscription.account_deletion.button.5f5c4c72bd'),'callback_data'=>"noDontDelete"]]
@@ -164,7 +164,7 @@ elseif(preg_match('/^delUserConfig(\d+)/',$data,$match) && ($from_id == $admin |
     if (!$order) {alert(\achbotMessage('subscription.account_deletion.no_dont_delete.alert.bd8e953385'),true);exit;}
     $remark = $order['remark'];
 
-    editText($message_id, \achbotMessage('subscription.account_deletion.no_dont_delete.message.2ddfbc22e4', ['remark' => $remark]),json_encode([
+    editText($message_id, \achbotMessage('subscription.account_deletion.no_dont_delete.message.2ddfbc22e4', ['remark' => $remark]) . "\n\n" . \achbotMessage('subscription.account_deletion.shared_effect_notice'),json_encode([
         'inline_keyboard' => [
             [['text'=>\achbotMessage('subscription.account_deletion.button.13159f8c74'),'callback_data'=>"yesDeleteUserConfig" . $match[1]],['text'=>\achbotMessage('subscription.account_deletion.button.5f5c4c72bd'),'callback_data'=>"noDontDelete"]]
             ]

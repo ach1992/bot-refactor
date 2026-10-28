@@ -337,6 +337,7 @@ return [
 
         'manual_accounts.import_unverified' => "⚠️ امکان تأیید این اشتراک وجود ندارد. لینک اصلی اشتراک را از فروشنده بگیرید یا با پشتیبانی تماس بگیرید.",
 
+        'account_details.auto_renew_update_unverified' => "⚠️ تغییر وضعیت تمدید خودکار تأیید نشد. صفحهٔ اشتراک را دوباره باز کنید.",
         'account_details.status_on_hold' => '⏸ در انتظار فعال‌سازی',
 
         // buy_helpers.build_links_and_send_qr
@@ -346,6 +347,7 @@ return [
         'buy_helpers.build_links_and_send_qr.acc_text.a2bb8da6b7' => '' . "\n" . '' . "\n" . '💡 همیشه اکانت را با لینک اشتراک وارد کنید تا به همه کانفیگ ها دسترسی داشته باشد.',
         'buy_helpers.build_links_and_send_qr.acc_text.d5f471a600' => '' . "\n" . '⚠️ در صورتی که لینک اصلی اشتراک کار نکرد از لینک کمکی اشتراک استفاده کنید.',
         'buy_helpers.build_links_and_send_qr.start.e4bb9f1ece' => 'Start',
+        'account_deletion.shared_effect_notice' => "⚠️ با تأیید، خود اشتراک برای همیشه حذف می‌شود و دسترسی همه افرادی که از آن استفاده می‌کنند قطع خواهد شد.",
         // account_deletion.alert
         'account_deletion.alert.a370755120' => '⛔️ این اشتراک متعلق به حساب شما نیست.',
         // account_deletion.message
@@ -459,6 +461,8 @@ return [
 
     // ── تمدید و افزایش حجم یا زمان ──
     'renewal' => [
+        'extensions.plan_selection_unavailable' => "⚠️ تغییر پلن این اشتراک در حال حاضر ممکن نیست. از صفحه اشتراک دوباره وارد شوید.",
+        'extensions.plan_selection_review' => "⚠️ نتیجه تغییر پلن هنوز قابل تأیید نیست. صفحه اشتراک را بررسی کنید.",
         // automatic_renewal.handle_auto_renew_callback
         'automatic_renewal.handle_auto_renew_callback.message.30ad9ebf7b' => '❌ موجودی کیف پول برای تمدید خودکار کافی نیست؛ تمدید خودکار این اشتراک غیرفعال شد. لطفاً موجودی را افزایش دهید و سپس آن را دوباره فعال کنید.',
         'automatic_renewal.handle_auto_renew_callback.message.cab5f13fd1' => '✅ تمدید خودکار اشتراک انجام شد؛ مبلغ ',

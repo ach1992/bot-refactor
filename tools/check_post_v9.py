@@ -134,15 +134,15 @@ def main():
                 {'actual_php':True,'owned_socket_mariadb':True,'loopback_provider_http':True,'provider_mutations':0,'production_mutations':0,'actual_rc13_cancel_RED':True,'older_same_flow_cancel':True,'unique_actor_primary_writes':True,'busy_delete_preserves_editor':True}),
             ('management_menus','test_unified_management_menus.py','checks',322,
                 {'database':'owned socket MariaDB','network_calls':0,'optional_011_missing_cancel_proven':True}),
-            ('customer_services','test_unified_customer_services.py','cases',472,
-                {'actual_php':True,'native_disposable_mariadb':True,'external_provider_calls':0,'production_mutations':0,'real_JDF_no_date_stubs':True,'fresh_each_render_same_process':True,'same_packet_observation_and_presentation':True,'imported_actions_hide_ineligible_autorenew':True,'unlimited_actions_hide_unsupported_relative_changes':True,'native_HTTP_count_checked_here':False,'actual_composed_ASCII_Jalali_Tehran_proofs':{key:['marzban','pasarguard'] for key in ['customer_remote_expiry','admin_remote_expiry','admin_recorded_expiry','admin_warning_grace']},'baseline_date_ref':'2408982797af15bc99e1df2909c13be3976cb1f4','baseline_date_jdf_sha256':'e32da43aafb6548fa746492a9d3181ef796083fa618af2c84f6a7bb4e857337d','baseline_dates_already_ASCII':True,'baseline_date_RED':False,'archived_warning_toggle_RED':2}),
+            ('customer_services','test_unified_customer_services.py','cases',522,
+                {'actual_php':True,'native_disposable_mariadb':True,'external_provider_calls':0,'production_mutations':0,'real_JDF_no_date_stubs':True,'fresh_each_render_same_process':True,'same_packet_observation_and_presentation':True,'genuine_import_origin_writer_fixture':True,'actual_service_unit_helpers':True,'native_plan_admission_seam':'controlled_read_only_SQL_fixture','actual_native_plan_eligibility_checked_here':False,'actual_URL_import_checked_here':False,'imported_actions_hide_ineligible_autorenew':True,'unlimited_actions_hide_unsupported_relative_changes':True,'native_HTTP_count_checked_here':False,'actual_composed_ASCII_Jalali_Tehran_proofs':{key:['marzban','pasarguard'] for key in ['customer_remote_expiry','admin_remote_expiry','admin_recorded_expiry','admin_warning_grace']},'baseline_date_ref':'2408982797af15bc99e1df2909c13be3976cb1f4','baseline_date_jdf_sha256':'e32da43aafb6548fa746492a9d3181ef796083fa618af2c84f6a7bb4e857337d','baseline_dates_already_ASCII':True,'baseline_date_RED':False,'archived_warning_toggle_RED':2}),
             ('service_lifecycle','test_unified_service_lifecycle.py','cases',76,
                 {'native_php':True,'disposable_mariadb':True,'actual_delete_transports':True,'production_mutations':0,'external_provider_calls':0,'notification_delivery_regression_red':True,'grace_integrity':True,'deletion_fairness_red':True,'deletion_fairness_source':'5568e5e24ecc595c371c4710bf41db51bb78125d','scheduled_deletion_cursor':'deleteLastOrderId','deletion_fairness_deferred_batch':50,'deletion_fairness_cross_provider_directions':2,'deletion_fairness_financial_hold':True}),
             ('runtime_cleanup','test_unified_runtime_cleanup.py','assertions',140,
                 {'actual_php':True,'owned_socket_mariadb':True,'provider_mutations':0,'production_mutations':0}),
             ('provider_registry','test_unified_provider_registry.py','cases',76,
                 {'actual_php':True,'owned_socket_mariadb':True,'closed_native_adapters':2,'fixture_adapter_only':True,'external_requests':0,'production_mutations':0,'new_schema':False,'authoritative_subject_resolution':True,'sid_only_dispatch_RED':True,'explicit_subject_server_mismatch_rejected':True,'pasarguard_native_quote_pins_preserved':True,'subject_preflight_readonly':True,'network_functions_disabled':True}),
-            ('existing_subscriptions','test_unified_existing_subscriptions.py','cases',93,
+            ('existing_subscriptions','test_unified_existing_subscriptions.py','cases',155,
                 {'actual_php':True,'owned_socket_mariadb':True,'loopback_native_pasar_guard':True,
                  'real_telegram_tested':False,'real_provider_tested':False,
                  'official_source_pin':'eba70d68eaa5a89e34ffebb47c8fd5ce054d0e43',
@@ -160,7 +160,22 @@ def main():
                  'unlimited_addon_entry_neutral_and_effect_free':True,'adopted_capacity_origin_preserved':True,
                  'delete_replay_safe':True,'native_origin_alias_and_ambiguity_verified':True,
                  'created_marker_policy_preserved':True,'malformed_capacity_ledger_reconciliation_hold':True,
-                 'marzban_legacy_JWT_native_signature_verified':True,'initial_import_controls_match_supported_actions':True,'external_requests':0,'production_mutations':0}),
+                 'marzban_legacy_JWT_native_signature_verified':True,'initial_import_controls_match_supported_actions':True,'actual_planless_update_link_controller_verified':True,'shared_native_registration_for_multiple_users':True,'genuine_import_plan_confirm_paid_renewal':True,'shared_native_auto_renew_debits_once':True,'concurrent_shared_native_auto_renew_verified':True,'shared_payment_owner_and_replay_verified':True,'shared_native_views_coherent':True,'shared_physical_anchor_history_preserved':True,'shared_native_action_views_coherent':True,'known_native_guard_preclaim_no_poison':True,'external_requests':0,'production_mutations':0}),
+            ('service_origin','test_service_order_origin.py','cases',46,
+                {'actual_php':True,'owned_socket_mariadb':True,'original23':True,'no_new_schema':True,
+                 'no_provider_or_telegram_calls':True,'shared_reference_metadata':True,
+                 'malformed_origin_never_legacy':True,'atomic_order_origin_rollback':True,
+                 'locked_origin_current_read':True,'payment_wallet_capacity_mutations':0,'production_mutations':0}),
+            ('imported_plan_selection','test_imported_plan_selection.py','cases',78,
+                {'actual_imports':True,'actual_change_plan_controller':True,
+                 'actual_config_consent_controller':True,'actual_native_provider_eligibility':True,
+                 'amount0_preserved_before_payment':True,'shared_native_different_bot_owners':True,
+                 'production_mutations':0,'live_provider_calls':0}),
+            ('shared_account_lifecycle','test_shared_account_lifecycle.py','cases',23,
+                {'actual_php':True,'owned_socket_mariadb':True,'two_distinct_users':True,
+                 'concurrent_workers':2,'shared_cycle_one_payer':True,'stale_callback_safe':True,
+                 'pending_peer_work_held':True,'explicit_panel_group_authority':True,
+                 'native_provider_HTTP':False,'external_requests':0,'production_mutations':0,'new_schema':False}),
             ('allowance_admin','test_unified_allowance_admin.py','cases',89,
                 {'actual_plan_screen':True,'actual_admin_subscription_report':True,'actual_order_management_screen':True,'real_disposable_mariadb':True,'real_JDF':True,'finite_remaining_zero_not_unlimited':True,'read_only_screens':True,'archived_current_baseline_RED':3,'network_calls':0,'production_mutations':0,'display_baseline':'f4731de2922adb96d005e523f75ec067907b2e05'}),
             ('canonical_checkout','test_canonical_checkout.py','cases',143,
@@ -655,11 +670,11 @@ def main():
                 and text_catalog.get("retired_parser_tokens")==23
                 and text_catalog.get("relocation_source_ref")=="ecd30ba9192ed374703118a6c131be8809cc7b06"
                 and text_catalog.get("native",{}).get("current_retired_feature_keys")==3
-                and text_catalog.get("catalog_keys")==2629
+                and text_catalog.get("catalog_keys")==2633
                 and text_catalog.get("native",{}).get("editable_catalog_files")==2
                 and text_catalog.get("native",{}).get("logical_topics")==25
-                and text_catalog.get("native",{}).get("current_catalog_keys")==2629
-                and text_catalog.get("native",{}).get("current_management_added_keys")==106
+                and text_catalog.get("native",{}).get("current_catalog_keys")==2633
+                and text_catalog.get("native",{}).get("current_management_added_keys")==110
                 and text_catalog.get("native",{}).get("current_catalog_binding_paths")==2
                 and text_catalog.get("native",{}).get("current_catalog_binding_entries")==4
                 and text_catalog.get("native",{}).get("current_catalog_binding_negative_controls")==4
@@ -672,14 +687,14 @@ def main():
                 and text_catalog["native"]["current_byte_preserved_keys"]
                     +text_catalog["native"]["current_style_changes"]
                     +text_catalog["native"]["current_added_admin_keys"]==2523
-                and text_catalog.get("native",{}).get("current_native_template_assertions")==3884
+                and text_catalog.get("native",{}).get("current_native_template_assertions")==3888
                 and text_catalog.get("native",{}).get("current_object_conversion_templates")==251
                 and text_catalog.get("native",{}).get("current_shared_multi_parameter_templates")==61
                 and text_catalog.get("native",{}).get("current_one_pass_templates")==251
                 and text_catalog.get("native",{}).get("current_non_ascii_digit_templates")==0
                 and text_catalog.get("presentation",{}).get("status")=="PASS"
                 and text_catalog.get("presentation",{}).get("editable_files")==2
-                and text_catalog.get("presentation",{}).get("current_keys")==2629
+                and text_catalog.get("presentation",{}).get("current_keys")==2633
                 and text_catalog.get("presentation",{}).get("numeric_template_changes")==23
                 and text_catalog.get("presentation",{}).get("adjacent_emoji_violations")==0
                 and text_catalog.get("presentation",{}).get("parameter_exception_count")==3
@@ -1629,9 +1644,9 @@ def main():
             "f1_real_guarded_customer_error_and_unexpected_200_fenced",
             "o1_user_delete_preview_ownership_and_privacy",
             # Independent reviewer F2: same remote user with two local IDs.
-            "f2_distinct_active_orders_same_account_two_workers_no_debit",
-            "f2_explicit_same_panel_server_alias_duplicate_refused",
-            "f2_two_alias_workers_no_double_debit_even_under_race",
+            "f2_distinct_active_references_same_account_two_workers_one_debit",
+            "f2_explicit_same_panel_references_share_one_renewal_cycle",
+            "f2_shared_alias_stale_workers_no_second_debit",
             "f2_distinct_remote_accounts_remain_renewable",
             # Independent reviewer F3: exact transactional schema preflight.
             "incompatible_004_missing_alert_field_blocks_debit_and_delete",

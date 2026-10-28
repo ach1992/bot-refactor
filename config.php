@@ -3478,100 +3478,62 @@ function getOrderDetailKeys($from_id, $id, $offset = 0) {
     return \AchBot\Subscription\AccountDetails\getOrderDetailKeys($from_id, $id, $offset);
 }
 if (preg_match('/^(toggleAutoRenew|adminToggleAutoRenew)(\d+)$/', $data, $match)) {
-
-    global $connection, $admin, $userInfo;
-
-    $mode    = $match[1];
-    $orderId = (int)$match[2];
-
-    // گرفتن سفارش
-    $stmt = $connection->prepare("SELECT * FROM `orders_list` WHERE `id`=?");
-    $stmt->bind_param("i", $orderId);
-    $stmt->execute();
-    $order = $stmt->get_result()->fetch_assoc();
-    $stmt->close();
-
-    if (!$order) {
-        alert(\achbotMessage('admin_settings.config.get_order_detail_keys.alert.2871efbc4d'), true);
+    require_once __DIR__.'/src/Subscription/AccountDetails.php';
+    $mode=$match[1];$orderId=(int)$match[2];$begun=false;$commitAttempted=false;
+    try {
+        $actor=\AchBot\Subscription\AccountDetails\currentOrderDetailActor();
+        $callback=$update->callback_query??null;$actorId=(int)($actor['userid']??0);
+        if ($actor===null || $orderId<=0 || $orderId>2147483647 || strlen($data)>64 ||
+            !is_object($callback) || ($callback->data??null)!==$data ||
+            (int)($callback->from->id??0)!==$actorId ||
+            (int)($callback->message->chat->id??0)!==$actorId ||
+            ($callback->message->chat->type??'')!=='private')
+            throw new RuntimeException('renew_consent_actor_unavailable');
+        $actorPk=(int)$actor['id'];
+        if (!$connection->begin_transaction()) throw new RuntimeException('renew_consent_begin_failed');
+        $begun=true;
+        $stmt=$connection->prepare('SELECT * FROM orders_list WHERE id=? FOR UPDATE');
+        $stmt->bind_param('i',$orderId);$stmt->execute();$order=$stmt->get_result()->fetch_assoc();$stmt->close();
+        $stmt=$connection->prepare('SELECT id,userid,isAdmin,step FROM users WHERE id=? AND userid=? FOR UPDATE');
+        $stmt->bind_param('ii',$actorPk,$actorId);$stmt->execute();$freshActor=$stmt->get_result()->fetch_assoc();$stmt->close();
+        if (!$order || (int)$order['status']!==1 || !$freshActor || $freshActor['step']==='banned' ||
+            ($mode==='toggleAutoRenew' && (int)$order['userid']!==$actorId) ||
+            ($mode==='adminToggleAutoRenew' && $actorId!==(int)$admin && (int)$freshActor['isAdmin']!==1))
+            throw new RuntimeException('renew_consent_forbidden');
+        $current=(string)($order['autoRenew']??'off');
+        if (!in_array($current,['on','off'],true)) throw new RuntimeException('renew_consent_state_unverified');
+        $new=$current==='on'?'off':'on';
+        // Disabling consent remains possible even if a former product is no
+        // longer available. Enabling requires real origin and a valid paid plan.
+        if ($new==='on' && (($botState['renewAutoState']??'off')!=='on' ||
+            \AchBot\Subscription\AccountDetails\selectedPaidPlan($connection,$order,true)===null ||
+            !achbotSupportsOrder($connection,$orderId,(int)$order['fileid'],(int)$order['userid'],true))) {
+            $connection->rollback();$begun=false;
+            alert(\achbotMessage('admin_settings.config.get_order_detail_keys.alert.8338c921ca'),true);return;
+        }
+        $owner=(int)$order['userid'];
+        $stmt=$connection->prepare('UPDATE orders_list SET autoRenew=? WHERE id=? AND userid=? AND autoRenew=? AND status=1');
+        $stmt->bind_param('siis',$new,$orderId,$owner,$current);
+        if (!$stmt->execute() || $stmt->affected_rows!==1) {$stmt->close();throw new RuntimeException('renew_consent_update_unconfirmed');}
+        $stmt->close();$commitAttempted=true;
+        if (!$connection->commit()) throw new RuntimeException('renew_consent_commit_unknown');
+        $begun=false;
+    } catch (Throwable $error) {
+        if ($begun) {try {$connection->rollback();}catch(Throwable $ignored) {}}
+        error_log('achbot_renew_consent_unverified order_id='.$orderId);
+        alert(\achbotMessage('subscription.account_details.auto_renew_update_unverified'),true);
         return;
     }
-
-    if ((int)$order['amount'] === 0) {
-        alert(\achbotMessage('admin_settings.config.get_order_detail_keys.alert.8338c921ca'), true);
-        return;
-    }
-
-    $isAdmin = (
-        (int)$from_id === (int)$admin ||
-        (!empty($userInfo['isAdmin']) && $userInfo['isAdmin'] == true)
-    );
-
-    // کنترل دسترسی
-    if ($mode === "toggleAutoRenew") {
-        if ((int)$order['userid'] !== (int)$from_id) {
-            alert(\achbotMessage('admin_settings.config.get_order_detail_keys.alert.1bd8f019af'), true);
-            return;
-        }
-    } else {
-        if (!$isAdmin) {
-            alert(\achbotMessage('admin_settings.config.get_order_detail_keys.alert.7e78156592'), true);
-            return;
-        }
-    }
-
-    // تغییر وضعیت
-    $current = $order['autoRenew'] ?? 'off';
-    $new     = ($current === 'on') ? 'off' : 'on';
-
-    if ($new === 'on') {
-
-        $fileId = (int)($order['fileid'] ?? 0);
-        if ($fileId <= 0) {
-            alert(\achbotMessage('admin_settings.config.get_order_detail_keys.alert.fb223619e1'), true);
-            return;
-        }
-
-        $stmt = $connection->prepare("SELECT `price` FROM `server_plans` WHERE `id`=? LIMIT 1");
-        $stmt->bind_param("i", $fileId);
-        $stmt->execute();
-        $plan = $stmt->get_result()->fetch_assoc();
-        $stmt->close();
-
-        if (!$plan) {
-            alert(\achbotMessage('admin_settings.config.get_order_detail_keys.alert.4f0ac830c9'), true);
-            return;
-        }
-
-        if ((float)$plan['price'] <= 0) {
-            alert(\achbotMessage('admin_settings.config.get_order_detail_keys.alert.8338c921ca'), true);
-            return;
-        }
-    }
-
-    $stmt = $connection->prepare("UPDATE `orders_list` SET `autoRenew`=? WHERE `id`=?");
-    $stmt->bind_param("si", $new, $orderId);
-    $stmt->execute();
-    $stmt->close();
-
-    if ($mode === "adminToggleAutoRenew") {
-        $keys = getUserOrderDetailKeys($orderId);
-    } else {
-        $keys = getOrderDetailKeys($order['userid'], $orderId);
-    }
-
+    $keys=$mode==='adminToggleAutoRenew'?getUserOrderDetailKeys($orderId):getOrderDetailKeys($owner,$orderId);
     if (!$keys || empty($keys['msg']) || empty($keys['keyboard'])) {
-        alert(\achbotMessage('admin_settings.config.get_order_detail_keys.alert.50f82fc4e9'), true);
-        return;
+        alert(\achbotMessage('admin_settings.config.get_order_detail_keys.alert.50f82fc4e9'),true);return;
     }
-
-    editText($message_id, $keys['msg'], $keys['keyboard'], "HTML");
-
-    alert(
-        \achbotMessage('admin_settings.config.get_order_detail_keys.alert.d0438c36e0', ['order_remark' => $order['remark']]) .
-        ($new === 'on' ? \achbotMessage('admin_settings.config.get_order_detail_keys.alert.be9fd3bd1b') : \achbotMessage('admin_settings.config.get_order_detail_keys.alert.841b8cb341')) .
-        \achbotMessage('admin_settings.config.get_order_detail_keys.alert.c826d2d1f7'),
-        true
-    );
+    editText($message_id,$keys['msg'],$keys['keyboard'],'HTML');
+    alert(\achbotMessage('admin_settings.config.get_order_detail_keys.alert.d0438c36e0',[
+        'order_remark'=>$order['remark']]).
+        ($new==='on'?\achbotMessage('admin_settings.config.get_order_detail_keys.alert.be9fd3bd1b'):
+            \achbotMessage('admin_settings.config.get_order_detail_keys.alert.841b8cb341')).
+        \achbotMessage('admin_settings.config.get_order_detail_keys.alert.c826d2d1f7'),true);
 }
 // END create user and admin get order detail
 

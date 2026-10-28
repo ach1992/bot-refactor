@@ -55,6 +55,9 @@ def prepare(work: Path, stage: Path, candidate: bool) -> None:
         # Current dispatch includes its provider registry/lifecycle dependencies;
         # the immutable historical staging remains unchanged.
         shutil.copytree(ROOT/'src/Panel',stage/'src/Panel',dirs_exist_ok=True)
+        order_writes=stage/'src/Purchase/OrderWrites.php'
+        order_writes.parent.mkdir(parents=True,exist_ok=True)
+        order_writes.write_bytes((ROOT/'src/Purchase/OrderWrites.php').read_bytes())
         with (stage/'functions-under-test.php').open('ab') as stream:
             stream.write(b"\nrequire_once __DIR__.'/src/Panel/ProviderRuntime.php';\n")
     (stage / "native.php").write_bytes((ROOT / "tests/v6/native.php").read_bytes())
