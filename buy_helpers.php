@@ -77,7 +77,7 @@ if (!function_exists('buildLinksAndSendQr')) {
             }
         } elseif ($serverType === 'pasarguard') {
             // Native URL is opaque. Never invent a Marzban token or rebuild a
-            // vendor config; provider identity belongs to provider_accounts.
+            // vendor config; provider identity is retained in existing service-effect evidence.
             $token = '';
             $mainSubLink = $response['subscription_url'] ?? '';
         } else {
