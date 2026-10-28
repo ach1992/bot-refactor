@@ -98,6 +98,21 @@ if ($action==='policy') {
  $row=$connection->query('SELECT * FROM orders_list WHERE id='.(int)$spec['order'])->fetch_assoc();
  if (!empty($spec['change_cycle'])) $connection->query('UPDATE orders_list SET expire_date=expire_date+1 WHERE id='.(int)$spec['order']);
  $out=achbotAutoRenewPrepareDeletion($connection,(int)$spec['order'],$row);
+} elseif ($action==='record_import_origin') {
+ $connection->begin_transaction();
+ $id=(int)$spec['order'];
+ $row=$connection->query('SELECT * FROM orders_list WHERE id='.$id.' FOR UPDATE')->fetch_assoc();
+ $provider=achbotProviderType($connection,(int)$row['server_id']);
+ $identity=['remote_created_at'=>'2026-10-26T05:00:00.123456Z','remote_username'=>$row['remark']];$accountId=null;
+ if ($provider==='pasarguard') {
+  achbotPgLoad();$account=achbotProviderAccountByOrder($connection,$id,true);
+  $accountId=(int)$account['id'];
+  $identity=['remote_created_at'=>$account['remote_created_at'],'remote_username'=>$row['remark'],
+   'remote_user_id'=>(int)$account['remote_user_id']];
+ }
+ $out=achbotRecordImportedOrderOriginLocked($connection,$id,(int)$row['userid'],9001,$provider,
+  (int)$row['server_id'],$row['remark'],hash('sha256','owned-import-proof:'.$id),$identity,$accountId);
+ $connection->commit();
 } elseif (in_array($action,['warnings','baseline','notification_baseline','deletion_baseline'],true)) {
  require match($action) {
   'warnings'=>$root.'/src/Notifications/Warnings.php',
@@ -144,7 +159,8 @@ def main():
                      'achbot_warning_remote_delete_deferred order_id=',
                      'achbot_warning_local_delete_deferred order_id=',
                      'achbot_warning_delete_target_changed order_id=',
-                     'achbot_warning_delete_grace_unverified order_id=')
+                     'achbot_warning_delete_grace_unverified order_id=',
+                     'achbot_warning_origin_unverified order_id=')
             unexpected=[s for s in proc.stderr.splitlines() if not s.startswith(allowed)]
             if proc.returncode or unexpected:raise AssertionError((proc.returncode,proc.stdout,unexpected))
             return json.loads(proc.stdout)
@@ -515,10 +531,86 @@ def main():
             sql('SELECT COUNT(*) FROM orders_list WHERE id=1300')=='0' and
             deletes(mb)==before_delete[0] and deletes(pguard)==before_delete[1]+1,
             'deletion_fairness_financial_hold_batch_cannot_starve_next_native_provider')
+        # Genuine nonfinancial imports remain ordinary notification recipients
+        # before and after plan selection. Use the real bounded origin writer;
+        # actual URL/controller adoption is covered by the shared import suite.
+        retire();seed(2000)
+        fair_pg_target(2001,52,1402,'3')
+        for provider,oid in [('marzban',2000),('pasarguard',2001)]:
+            sql("UPDATE orders_list SET amount=0,fileid=0,autoRenew='off',notif=0 WHERE id="+str(oid))
+            origin=call('record_import_origin',order=oid)
+            yes(origin['kind']=='external_import' and origin['capacity_reserved'] is False,
+                provider+'_warning_fixture_uses_real_import_origin_writer')
+        def warning_financial_snapshot():
+            return sql('SELECT * FROM users ORDER BY id;SELECT * FROM pays ORDER BY id;'+
+                'SELECT * FROM automatic_renewal_attempts ORDER BY id;'+
+                'SELECT * FROM service_effects ORDER BY id;SELECT * FROM provider_accounts ORDER BY id;'+
+                'SELECT id,ucount FROM server_info ORDER BY id')
+        finance=warning_financial_snapshot()
+        traces=(len(mb.trace),len(pguard.trace))
+        for provider,sid,oid in [('marzban',2,2000),('pasarguard',3,2001)]:
+            remote=mb.user if sid==2 else pguard.user
+            for selection in ['planless','assigned_plan']:
+                plan=0 if selection=='planless' else (7 if sid==2 else 8)
+                for reason in ['time','quota']:
+                    retire()
+                    sql('UPDATE orders_list SET status=1,fileid='+str(plan)+',notif=0 WHERE id='+str(oid))
+                    remote.update(status='active',expire=int(time.time())+1800 if reason=='time' else None,
+                        data_limit=None if reason=='time' else 1073741824,
+                        used_traffic=0 if reason=='time' else 1000000000)
+                    native_before=copy.deepcopy(remote)
+                    failed=call('warnings',telegram_ok=False)
+                    yes(len(failed)==1 and sql('SELECT notif FROM orders_list WHERE id='+str(oid))=='-2' and
+                        sql('SELECT amount FROM orders_list WHERE id='+str(oid))=='0',
+                        provider+'_import_'+selection+'_'+reason+'_failed_warning_retries_without_paid_amount')
+                    delivered=call('warnings')
+                    yes(len(delivered)==1 and sql('SELECT notif FROM orders_list WHERE id='+str(oid))=='-1',
+                        provider+'_import_'+selection+'_'+reason+'_retry_delivers_once')
+                    yes(call('warnings')==[] and remote==native_before,
+                        provider+'_import_'+selection+'_'+reason+'_delivered_warning_is_not_repeated_or_native_mutated')
+        yes(warning_financial_snapshot()==finance,
+            'import_warning_retry_never_writes_wallet_payment_journal_capacity_or_native_identity')
+        # An amount0 account without import evidence keeps the original silent
+        # trial policy. Malformed present evidence holds its row, never becoming
+        # a trial marker or aborting a later valid warning in the same batch.
+        retire();seed(2002)
+        fair_pg_target(2003,53,1403,'4')
+        finance=warning_financial_snapshot()
+        for provider,sid,oid in [('marzban',2,2002),('pasarguard',3,2003)]:
+            remote=mb.user if sid==2 else pguard.user
+            for reason in ['time','quota']:
+                retire();sql('UPDATE orders_list SET status=1,amount=0,notif=0 WHERE id='+str(oid))
+                remote.update(status='active',expire=int(time.time())+1800 if reason=='time' else None,
+                    data_limit=None if reason=='time' else 1073741824,
+                    used_traffic=0 if reason=='time' else 1000000000)
+                yes(call('warnings')==[] and sql('SELECT notif FROM orders_list WHERE id='+str(oid))=='-1' and
+                    sql("SELECT COUNT(*) FROM setting WHERE type='ACHBOT_SERVICE_ORIGIN:"+str(oid)+"'")=='0',
+                    provider+'_amount0_trial_'+reason+'_retains_original_no_warning_policy')
+        # Malformed evidence must not touch immutable finance/native state.
+        for provider,sid,oid in [('marzban',2,2002),('pasarguard',3,2003)]:
+            remote=mb.user if sid==2 else pguard.user
+            remote.update(status='active',expire=int(time.time())+1800,data_limit=None,used_traffic=0)
+            for amount in [0,100]:
+                retire()
+                sql('UPDATE orders_list SET status=1,amount='+str(amount)+',notif=0 WHERE id='+str(oid))
+                key='ACHBOT_SERVICE_ORIGIN:'+str(oid)
+                sql("INSERT INTO setting(type,value) VALUES('"+key+"','{invalid-owned-origin')")
+                seed(2100+oid+amount,remark='healthy_after_bad_'+str(oid)+'_'+str(amount))
+                healthy=call('warnings')
+                yes(len(healthy)==1 and 'healthy_after_bad_'+str(oid)+'_'+str(amount) in healthy[0]['message'] and
+                    sql('SELECT notif FROM orders_list WHERE id='+str(oid))=='0',
+                    provider+'_malformed_origin_amount'+str(amount)+'_holds_only_its_row_and_batch_continues')
+                sql("DELETE FROM setting WHERE type='"+key+"'")
+        yes(warning_financial_snapshot()==finance and
+            not any(t[0] in ['PUT','PATCH','DELETE'] for t in mb.trace[traces[0]:]) and
+            not any(t[0] in ['POST','PUT','PATCH','DELETE'] for t in pguard.trace[traces[1]:]),
+            'import_and_trial_warning_paths_do_not_write_wallet_payment_journal_capacity_or_native_accounts')
         report={'complete':True,'cases':len(checks),'scenarios':checks,'baseline_red':True,'notification_delivery_regression_red':True,'grace_integrity':True,
             'deletion_fairness_red':True,'deletion_fairness_source':DELETION_FAIRNESS_REGRESSION,
             'scheduled_deletion_cursor':'deleteLastOrderId','deletion_fairness_deferred_batch':50,
             'deletion_fairness_cross_provider_directions':2,'deletion_fairness_financial_hold':True,
+             'import_warning_planless_and_assigned':True,'import_warning_retry_once':True,
+             'amount0_trial_warning_policy_preserved':True,'malformed_origin_warning_row_isolated':True,
             'native_php':True,'disposable_mariadb':True,'loopback_adapters':['marzban','pasarguard'],
             'actual_delete_transports':True,'financial_dispatch':'spy_only_existing_finance_suite_separate',
             'production_mutations':0,'external_provider_calls':0}

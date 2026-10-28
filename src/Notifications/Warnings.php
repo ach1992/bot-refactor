@@ -3,6 +3,7 @@
 if (realpath($_SERVER['SCRIPT_FILENAME']??'')===__FILE__) {http_response_code(404);exit;}
 require_once __DIR__.'/../../messages/loader.php';
 require_once __DIR__.'/../Panel/ServiceLifecycle.php';
+require_once __DIR__.'/../Purchase/OrderWrites.php';
 
 $time=time();$limit=100;
 // Keyset traversal stays complete when warning updates remove rows from the set.
@@ -13,13 +14,17 @@ $stmt=$connection->prepare('SELECT * FROM orders_list WHERE status=1 AND notif I
 $stmt->bind_param('ii',$cursor,$limit);$stmt->execute();$batch=$stmt->get_result()->fetch_all(MYSQLI_ASSOC);$stmt->close();
 foreach ($batch as $order) {
     $id=(int)$order['id'];$serverId=(int)$order['server_id'];$remark=(string)$order['remark'];
+    try {$imported=achbotOrderIsImported($connection,$order);}
+    catch (Throwable $error) {
+        error_log('achbot_warning_origin_unverified order_id='.$id);continue;
+    }
     if (!achbotSupportsOrder($connection,$id)) continue;
     $observation=achbotServiceObserve($serverId,$remark);$policy=achbotServiceLifecycle($observation,$time);
     if (!$observation['verified']) continue;
     $next=(int)$order['notif'];
     if (in_array($next,[0,-2],true) && $policy['warning']!=='') {
         $delivered=true;
-        if ((int)$order['amount']!==0) {
+        if ((int)$order['amount']!==0 || $imported) {
             $reason=$policy['warning']==='time'?
                 achbotMessage('notifications.warnings.send.1e5349d9b2'):
                 achbotMessage('notifications.warnings.send.0458ad0612');

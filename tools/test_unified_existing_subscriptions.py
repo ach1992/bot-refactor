@@ -235,7 +235,8 @@ $q=$connection->prepare('SELECT * FROM users WHERE userid=? LIMIT 1');$q->bind_p
 if(!empty($spec['cached_admin']))$userInfo['isAdmin']=1;
 function sendMessage($text,$keyboard=null,$parse=null,$to=null){
  $GLOBALS['events'][]=['kind'=>'send','text'=>$text,'keyboard'=>$keyboard,'to'=>$to];
- return(object)['ok'=>true,'result'=>(object)['message_id'=>++$GLOBALS['owned_message_id'],
+ return(object)['ok'=>$GLOBALS['spec']['telegram_ok']??true,
+  'result'=>(object)['message_id'=>++$GLOBALS['owned_message_id'],
   'chat'=>(object)['id'=>$to??$GLOBALS['from_id']]]];
 }
 function alert($text,$modal=false){$GLOBALS['events'][]=['kind'=>'alert','text'=>$text,'modal'=>$modal];}
@@ -258,6 +259,9 @@ try {
   require_once $root.'/src/Finance/ReceiptHelpers.php';
   require $root.'/src/Finance/Routes/PrePayment.php';
   require $root.'/src/Finance/Routes/RenewalCheckout.php';
+ } elseif($op==='warnings'){
+  require_once $root.'/src/Finance/ReceiptHelpers.php';
+  require $root.'/src/Notifications/Warnings.php';
  } elseif($op==='consent'){
   require __DIR__.'/consent.php';
  } elseif($op==='sweep'){
@@ -503,6 +507,29 @@ def main():
        (provider!='pasarguard'or len({row['provider_account_id']for row in origins})==1),
        provider+'_three_genuine_nonfinancial_origins_reference_one_native_identity_with_actual_actors')
 
+   # Planless imports retain amount0; delivery failure must remain a
+   # real pending warning and retry through the actual native read pipeline.
+   def warning_sends(result):
+    return [event for event in result['events']if event['kind']=='send']
+   preserved_used=raw()['used_traffic'];raw()['used_traffic']=raw()['data_limit']-100000000
+   warning_native=copy.deepcopy(raw());warning_finance=finance();warning_writes=len(remote_writes())
+   warning_evidence=db('SELECT * FROM provider_accounts ORDER BY id;SELECT * FROM service_effects ORDER BY id')
+   failed=warning_sends(invoke('warnings',telegram_ok=False))
+   yes({event['to']for event in failed}=={1001,1002,1003}and len(failed)==3 and
+       db('SELECT DISTINCT fileid,amount,notif FROM orders_list')=='0\t0\t-2'and
+       all(remark in event['text']and'mySubscriptions'in event['keyboard']for event in failed),
+       provider+'_actual_URL_import_planless_zero_amount_quota_warning_records_delivery_failure_for_retry')
+   retried=warning_sends(invoke('warnings',telegram_ok=True))
+   yes({event['to']for event in retried}=={1001,1002,1003}and len(retried)==3 and
+       db('SELECT DISTINCT notif FROM orders_list')=='-1',
+       provider+'_actual_planless_import_warning_retries_each_recipient_and_marks_only_acknowledged_delivery')
+   yes(not warning_sends(invoke('warnings')),
+       provider+'_acknowledged_planless_import_warning_is_not_repeated_on_next_native_tick')
+   yes(finance()==warning_finance and raw()==warning_native and len(remote_writes())==warning_writes and
+       db('SELECT * FROM provider_accounts ORDER BY id;SELECT * FROM service_effects ORDER BY id')==warning_evidence,
+       provider+'_actual_planless_warning_and_retry_have_no_wallet_pay_capacity_native_or_mutation_effect')
+   raw()['used_traffic']=preserved_used
+
    if provider=='pasarguard':
     yes(raw()['auto_delete_in_days']==3 and db("SELECT COUNT(*) FROM provider_accounts WHERE state='linked'AND mutation_key IS NULL")=='1',
         'scheduled_native_import_still_registers_and_renders_for_all_three_users_without_claiming_mutation')
@@ -579,6 +606,28 @@ def main():
     actual_date=json.loads(visible['keyboard'])['inline_keyboard'][1][0]['text']
     yes(actual_date==expected,
         provider+'_shared_reference_'+str(actor)+'_immediately_observes_A_native_renewal_expiry')
+
+   # Real paid renewal reset A's warning cycle. The same honest amount0
+   # imported reference now has its actually selected plan; external native
+   # expiry is observed by the same warning include without a panel edit.
+   preserved_expiry=raw()['expire'];warning_expiry=int(time.time())+86400
+   raw()['expire']=datetime.fromtimestamp(warning_expiry,timezone.utc).isoformat()if provider=='pasarguard'else warning_expiry
+   warning_native=copy.deepcopy(raw());warning_finance=finance();warning_writes=len(remote_writes())
+   warning_evidence=db('SELECT * FROM provider_accounts ORDER BY id;SELECT * FROM service_effects ORDER BY id')
+   failed=warning_sends(invoke('warnings',telegram_ok=False))
+   yes(len(failed)==1 and failed[0]['to']==1001 and remark in failed[0]['text']and
+       db(f'SELECT fileid,amount,notif FROM orders_list WHERE id={current}')=='7\t0\t-2',
+       provider+'_actual_selected_plan_zero_amount_import_gets_native_time_warning_with_failed_delivery_pending')
+   retried=warning_sends(invoke('warnings',telegram_ok=True))
+   yes(len(retried)==1 and retried[0]['to']==1001 and
+       db(f'SELECT notif FROM orders_list WHERE id={current}')=='-1',
+       provider+'_actual_selected_plan_import_time_warning_retry_records_real_Telegram_ack')
+   yes(not warning_sends(invoke('warnings')),
+       provider+'_acknowledged_selected_plan_import_time_warning_is_not_resent')
+   yes(finance()==warning_finance and raw()==warning_native and len(remote_writes())==warning_writes and
+       db('SELECT * FROM provider_accounts ORDER BY id;SELECT * FROM service_effects ORDER BY id')==warning_evidence,
+       provider+'_selected_plan_warning_retry_preserves_money_capacity_and_native_mutation_history')
+   raw()['expire']=preserved_expiry
 
    # Both people explicitly select a priced plan and opt in through actual UI.
    # Native usage changes externally; the existing warning flag is a fixture
@@ -1067,7 +1116,9 @@ echo json_encode(['required'=>count(achbotProviderRequiredOperations()),
  report.update(cases=len(checks),shared_native_registration_for_multiple_users=True,
      genuine_import_plan_confirm_paid_renewal=True,shared_native_auto_renew_debits_once=True,concurrent_shared_native_auto_renew_verified=True,shared_payment_owner_and_replay_verified=True,
      shared_native_views_coherent=True,shared_physical_anchor_history_preserved=True,
-     shared_native_action_views_coherent=True,known_native_guard_preclaim_no_poison=True)
+     shared_native_action_views_coherent=True,known_native_guard_preclaim_no_poison=True,
+     actual_native_URL_import_warnings=True,zero_amount_import_warning_delivery_retry=True,
+     planless_and_selected_plan_native_warning_verified=True)
  if args.report:args.report.write_text(json.dumps(report,indent=2)+'\n')
  print(json.dumps(report))
 if __name__=='__main__':main()
