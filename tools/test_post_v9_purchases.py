@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Current Marzban-only purchase flow vs immutable V9 on owned PHP + MariaDB."""
+"""Current purchase routes vs immutable V9, with an explicit actor-owned plan-draft amendment."""
 from __future__ import annotations
 import argparse
 import copy
@@ -262,6 +262,13 @@ def stage_source(stage:Path,current:bool)->dict:
     fixture=fixture.replace(bank_anchor, "$botUrl='http://localhost.invalid/';"
         "$botUsername='';$paymentKeys=['bankAccount'=>'fixture-bank-account',"
         "'holderName'=>'fixture-bank-holder'];")
+    if current:
+        # The actual interval route now verifies a fresh private Telegram
+        # callback and the persisted administrator. Supply that context ONLY
+        # in this candidate fixture; the archived V7 driver stays untouched.
+        interval_anchor='$linkIndices=[0];$hideConfigIfMany=false;$permissions=[];$update=[];'
+        assert fixture.count(interval_anchor)==1
+        fixture=fixture.replace(interval_anchor,interval_anchor+'''\nif (in_array((string)($spec['data']??''),['dayPlanSettings','volumePlanSettings'],true)) {\n    $update=json_decode(json_encode(['update_id'=>710001,'callback_query'=>[\n        'id'=>'fixture-current-interval','data'=>$data,'from'=>['id'=>$from_id,'is_bot'=>false],\n        'message'=>['message_id'=>$message_id,'chat'=>['id'=>$from_id,'type'=>'private']]\n    ]]));\n}\n''',1)
     needle='function getConnectionLink(...$args)'
     assert fixture.count(needle)==1
     fixture=fixture.replace(needle,"function achbotSupportsPanel($type) { return $type === 'marzban'; }\n"+needle)
@@ -279,6 +286,99 @@ def ddl(work:Path,env:dict,db:str,tables:list[str])->list[str]:
             for t in tables]
 
 
+# Current-only request driver. The frozen V7 driver and V9 modules remain intact.
+PLAN_DRAFT_PHP=r'''<?php
+error_reporting(E_ALL);
+set_error_handler(static function($n,$m){if($n===E_DEPRECATED)return true;throw new ErrorException($m,0,$n);});
+$_SERVER['SCRIPT_FILENAME']=__FILE__;
+require $argv[1].'/src/Purchase/Core.php';
+require $argv[1].'/src/Admin/ManagementFlow.php';
+$connection=new mysqli('localhost','root','',$argv[3],0,$argv[2]);$connection->set_charset('utf8mb4');
+$spec=json_decode($argv[4],true,64,JSON_THROW_ON_ERROR);
+$from_id=$admin=$chat_id=9001;$message_id=71;$data=$spec['data']??'';$text=$spec['text']??null;
+$buttonValues=['cancel'=>'fixture-cancel'];$cancelKey='{"keyboard":[["fixture-cancel"]]}';$removeKeyboard='{"remove_keyboard":true}';
+$sender=['id'=>9001];$message=['message_id'=>71,'chat'=>['id'=>9001,'type'=>'private'],'from'=>$sender,'text'=>$text??'old-bot-message'];
+$frame=['update_id'=>$spec['source']];
+if($data!=='')$frame['callback_query']=['id'=>'fixture-inline','from'=>$sender,'data'=>$data,'message'=>$message];
+else$frame['message']=$message;
+$update=json_decode(json_encode($frame));$userInfo=$connection->query('SELECT * FROM users WHERE userid=9001')->fetch_assoc();
+$events=[];
+function sendMessage(...$args){$GLOBALS['events'][]=['name'=>'sendMessage','args'=>$args];return(object)['ok'=>true];}
+function delMessage(...$args){$GLOBALS['events'][]=['name'=>'delMessage','args'=>$args];}
+try {
+ $handled=achbotHandleManagement();
+ $row=$connection->query('SELECT id,userid,step,temp FROM users WHERE userid=9001')->fetch_assoc();
+ echo json_encode(['handled'=>$handled,'events'=>$events,'row'=>$row,'labels'=>[
+  'intro'=>achbotManagementText('intro'),'title'=>achbotManagementText('plan_title'),'price'=>achbotManagementText('plan_price')
+ ]],JSON_THROW_ON_ERROR);
+}catch(Throwable$error){echo json_encode(['exception'=>$error->getMessage()],JSON_THROW_ON_ERROR);}
+'''
+
+def characterize_actor_plan_draft(work,env,old,current,provider,steps,records):
+    old_db,new_db=purchase.SIDE
+    frozen=(ROOT/'tests/v7/native-purchase.php').read_bytes()
+    if frozen!=subprocess.check_output(['git','-C',str(ROOT),'show',HISTORY+':tests/v7/native-purchase.php']):
+        raise RuntimeError('Frozen V7 native driver was changed')
+    # Preserve the old Marzban scenario over the actual immutable V9 module.
+    historical=[]
+    for i,(kind,spec) in enumerate(steps):
+        provider.trace.clear()
+        result=purchase.run(work,env,old,old_db,kind,spec,modern=True)
+        if provider.trace:raise RuntimeError('Historical plan draft called provider')
+        historical.append(result)
+        count=native.sql(work,env,'SELECT COUNT(*) FROM server_plans WHERE active=0',old_db).strip()
+        if count!='1':raise RuntimeError('Historical global inactive-plan draft was not reproduced')
+    if native.sql(work,env,'SELECT title FROM server_plans WHERE active=0',old_db).strip()!='Sample plan':
+        raise RuntimeError('Historical plan title progression was not reproduced')
+    # Current drafts must preserve both another administrator and an unrelated
+    # inactive plan. Neither is deleted or used as a global shared scratch row.
+    native.sql(work,env,"INSERT INTO server_plans(id,fileid,catid,server_id,inbound_id,acount,limitip,title,protocol,days,volume,type,price,descr,pic,active,step,date) VALUES(999,'other-draft',1,2,0,0,1,'OTHER ADMIN INACTIVE PLAN','',30,1,'ws',1,'preserved','',0,4,'fixture');UPDATE users SET step='other-admin-draft',temp='OTHER-ADMIN-PRIVATE-DRAFT' WHERE userid=9002",new_db)
+    plans_before=native.sql(work,env,'SELECT * FROM server_plans ORDER BY id',new_db)
+    others_before=native.sql(work,env,'SELECT * FROM users WHERE userid<>9001 ORDER BY id',new_db)
+    financial_query='SELECT id,userid,wallet FROM users ORDER BY id;SELECT * FROM pays ORDER BY id;SELECT * FROM orders_list ORDER BY id;SELECT * FROM server_info ORDER BY id'
+    financial_before=native.sql(work,env,financial_query,new_db)
+    driver=work/'actual-plan-draft.php';driver.write_text(PLAN_DRAFT_PHP)
+    nonce=None
+    for i,(kind,spec) in enumerate(steps):
+        request=dict(spec,source=700000+i)
+        provider.trace.clear()
+        run=subprocess.run(['php','-n','-d','extension=mysqlnd','-d','extension=mysqli','-d','extension=mbstring',
+            '-d','open_basedir='+str(current)+':'+str(work),'-d','allow_url_fopen=0',
+            '-d','display_errors=0','-d','log_errors=0',str(driver),str(current),str(work/'mysql.sock'),new_db,json.dumps(request)],
+            cwd=current,env=env,capture_output=True,text=True,timeout=15)
+        if run.returncode or run.stderr:raise RuntimeError('Current plan entry PHP failed: '+repr((run.returncode,run.stderr)))
+        result=json.loads(run.stdout)
+        if 'exception'in result or result.get('handled')is not True:
+            raise RuntimeError('Current plan entry bypassed the real dispatcher: '+repr(result))
+        draft=json.loads(result['row']['temp']);expected='title'if i==0 else'price'
+        if draft['kind']!='plan'or draft['stage']!=expected or draft['source']!=request['source']or not re.fullmatch(r'[a-f0-9]{12}',draft['nonce']):
+            raise RuntimeError('Current actor plan draft did not advance correctly')
+        if nonce is not None and draft['nonce']!=nonce:raise RuntimeError('Current plan request lost its actor-owned nonce')
+        nonce=draft['nonce']
+        if i==1 and draft['values'].get('title')!='Sample plan':raise RuntimeError('Current actor-owned draft title missing')
+        if result['row']['step']!='achbotManage|'+nonce+'|'+str(draft['rev']):
+            raise RuntimeError('Current plan step is not bound to its own draft')
+        messages=[event['args'][0]for event in result['events']if event['name']=='sendMessage']
+        if result['labels'][expected]not in messages or(i==0 and result['labels']['intro']not in messages):
+            raise RuntimeError('Current plan prompt not shown in the private journey')
+        if native.sql(work,env,'SELECT * FROM server_plans ORDER BY id',new_db)!=plans_before:
+            raise RuntimeError('Current per-actor draft mutated server_plans')
+        if native.sql(work,env,'SELECT * FROM users WHERE userid<>9001 ORDER BY id',new_db)!=others_before:
+            raise RuntimeError('Current per-actor draft changed another administrator')
+        if native.sql(work,env,financial_query,new_db)!=financial_before or provider.trace:
+            raise RuntimeError('Plan onboarding performed a financial or provider effect')
+        records.append({'case':'admin_plan_create_draft','step':i,'kind':kind,
+            'intentional_behavior_amendment':'actor_owned_plan_draft','historical_global_draft_executed':True,
+            'current_private_frame_executed':True,'current_draft_stage':expected,
+            'server_plans_unchanged':True,'other_admin_unchanged':True,'fake_provider_calls':0})
+    return {'case':'admin_plan_create_draft','historical_v9_executed':True,
+        'historical_global_inactive_draft_reproduced':True,'frozen_driver_unchanged':True,
+        'frozen_driver_sha256':hashlib.sha256(frozen).hexdigest(),'actual_candidate_dispatcher':True,
+        'candidate_private_fresh_frame':True,'actor_owned_draft_persisted':True,
+        'no_candidate_server_plans_mutation':True,'unrelated_inactive_plan_preserved':True,
+        'unrelated_admin_state_preserved':True,'financial_snapshot_unchanged':True,'provider_calls':0}
+
+
 def main():
     ap=argparse.ArgumentParser()
     ap.add_argument('--run-disposable',action='store_true',required=True)
@@ -286,7 +386,7 @@ def main():
     args=ap.parse_args()
     if subprocess.check_output(['git','-C',str(ROOT),'rev-parse',HISTORY+'^{tree}'],text=True).strip()!='7da17725c1e7f0448119b7e41c8b11b21f3e093d':
         raise RuntimeError('Original V9 TREE drift')
-    records=[];authorized_fields=[]
+    records=[];authorized_fields=[];behavior_amendments=[]
     pairs=authorized_ui_pairs()
     projection_controls=ui_projection_negative_controls(pairs)
     with owned.owned_database() as (work,env),native.owned_provider() as (provider,url):
@@ -315,7 +415,8 @@ def main():
             if label=='admin_plan_create_draft':
                 steps=[(kind,{**spec,'data':'addNewMarzbanPlan'} if spec.get('data')=='addNewPlan' else spec)
                        for kind,spec in steps]
-            for i,(kind,spec) in enumerate(steps):
+                behavior_amendments.append(characterize_actor_plan_draft(work,env,old,current,provider,steps,records))
+            for i,(kind,spec) in enumerate([] if label=='admin_plan_create_draft' else steps):
                 observations=[];wires=[];states=[]
                 for stage,db in ((old,purchase.SIDE[0]),(current,purchase.SIDE[1])):
                     provider.trace.clear()
@@ -342,7 +443,7 @@ def main():
                                 'fake_provider_calls':len(wires[0]),
                                 'sql_sha256':hashlib.sha256(
                                     json.dumps(states[0],sort_keys=True).encode()).hexdigest()})
-            purchase.assert_outcome(work,env,label)
+            if label!='admin_plan_create_draft':purchase.assert_outcome(work,env,label)
             for db in purchase.SIDE:
                 if ddl(work,env,db,tables)!=initial[db]:
                     raise RuntimeError('Schema changed during '+label)
@@ -352,9 +453,14 @@ def main():
                     raise RuntimeError('Private synthetic file changed')
     report={'complete':True,'historical_v9':HISTORY,'scenarios':len(CASES),
             'steps':len(records),'schema_tables':23,'mysql_socket_only':True,
-            'php_sql_telegram_fake_provider_parity':True,
-            'telegram_comparison':'exact_except_explicit_authorized_ui_text_fields',
-            'sql_provider_wire_exact':True,
+            'php_sql_telegram_fake_provider_parity':False,
+            'telegram_comparison':'seven_exact_style_scoped_cases_and_one_explicit_actor_draft_amendment',
+            'sql_provider_wire_exact':False,
+            'unchanged_differential_scenarios':len(CASES)-len(behavior_amendments),
+            'unchanged_differential_sql_provider_wire_exact':True,
+            'unchanged_differential_telegram_comparison':'exact_except_explicit_authorized_ui_text_fields',
+            'intentional_behavior_amendments':behavior_amendments,
+            'actor_owned_plan_draft_entry_verified':len(behavior_amendments)==1,
             'ui_projection_baseline':STYLE_BASELINE,
             'verified_literal_style_pairs':len(pairs),
             'authorized_ui_field_differences':len(authorized_fields),

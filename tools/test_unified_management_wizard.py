@@ -75,6 +75,19 @@ function setUser($value=null,$field='step'){
 }
 class FixtureDb extends mysqli {
  public bool $breakCommit=false;
+ public bool $revokeSecondActorLookup=false;
+ public int $actorLookups=0;
+ public int $testActor=0;
+ public array $actorWrites=[];
+ public function prepare(string $query): mysqli_stmt|false {
+  if(str_starts_with($query,'SELECT id,userid,isAdmin,step,temp FROM users FORCE INDEX')) {
+   ++$this->actorLookups;
+   if($this->revokeSecondActorLookup && $this->actorLookups===2)
+    $this->query('UPDATE users SET isAdmin=0 WHERE userid='.$this->testActor);
+  }
+  if(str_starts_with($query,'UPDATE users SET step='))$this->actorWrites[]=$query;
+  return parent::prepare($query);
+ }
  public function commit(int $flags=0,?string $name=null): bool {
   if($this->breakCommit) {parent::commit($flags,$name);throw new RuntimeException('fixture_commit_ack_lost');}
   return parent::commit($flags,$name);
@@ -96,11 +109,12 @@ $userInfo=$s->get_result()->fetch_assoc()??['step'=>'none'];$s->close();
 if(!empty($spec['cached_admin']))$userInfo['isAdmin']=1;
 $buttonValues=['cancel'=>'fixture-cancel','back_button'=>'fixture-back'];$cancelKey='{"keyboard":[["fixture-cancel"]],"resize_keyboard":true}';
 $removeKeyboard='{"remove_keyboard":true}';$connection->breakCommit=!empty($spec['commit_ack_lost']);
+$connection->revokeSecondActorLookup=!empty($spec['revoke_second_actor_lookup']);$connection->testActor=$from_id;
 try {
  $handled=!empty($spec['field'])?achbotHandleManagementFields():achbotHandleManagement();
  $s=$connection->prepare('SELECT step,temp FROM users WHERE userid=?');$s->bind_param('i',$from_id);$s->execute();
  $state=$s->get_result()->fetch_assoc();$s->close();
- echo json_encode(['handled'=>$handled,'events'=>$GLOBALS['events'],'state'=>$state,'cached_step'=>$userInfo['step']??null,'review_label'=>achbotManagementText('review_required')],JSON_THROW_ON_ERROR);
+ echo json_encode(['handled'=>$handled,'events'=>$GLOBALS['events'],'state'=>$state,'cached_step'=>$userInfo['step']??null,'review_label'=>achbotManagementText('review_required'),'actor_writes'=>$connection->actorWrites],JSON_THROW_ON_ERROR);
 } catch(Throwable $error){echo json_encode(['exception'=>$error->getMessage()],JSON_THROW_ON_ERROR);}
 '''
 
@@ -128,7 +142,7 @@ def main():
     p=argparse.ArgumentParser()
     p.add_argument('--run-disposable',action='store_true',required=True)
     p.add_argument('--report',type=Path)
-    a=p.parse_args();checks=[];sequence=100
+    a=p.parse_args();checks=[];sequence=100;actor_writes=[]
     def yes(condition,name,detail=None):
         if not condition:raise AssertionError((name,detail))
         checks.append(name)
@@ -147,6 +161,7 @@ def main():
             if result.returncode or any(not re.fullmatch(r'achbot_management(?:_field)?_deferred reason=[a-z_]+',line) for line in result.stderr.splitlines()):raise AssertionError(('php-child',result.returncode,result.stderr[:1200]))
             data=json.loads(result.stdout)
             if 'exception'in data:raise AssertionError(data)
+            actor_writes.extend(data.get('actor_writes',[]))
             return data
         def draft(result):
             state=result['state'];return json.loads(state['temp']) if state and state['step'].startswith('achbotManage|') else None
@@ -199,6 +214,16 @@ def main():
             no_secrets(r)
             if provider=='marzban':mb_id=server_id
             else:pg_id=server_id
+        # Inline cancel from an older prompt owns the same nonce and completes once.
+        r=call(callback='addManagedServer');old_cancel='am|'+draft(r)['nonce']+'|0|cancel|0'
+        r=action(r,'provider','pasarguard');r=text(r,'Older cancel fixture')
+        canceled=call(callback=old_cancel)
+        yes(canceled['state']['step']=='none'and canceled['state']['temp']is None,'older_revision_same_nonce_inline_cancel_completes_once')
+        yes(any(e.get('keys')=='{"remove_keyboard":true}'for e in canceled['events']),'older_inline_cancel_removes_reply_keyboard')
+        r=call(callback='addManagedServer');current_draft=draft(r)
+        stale_nonce=call(callback=old_cancel)
+        yes(draft(stale_nonce)==current_draft,'old_flow_cancel_cannot_clear_new_nonce')
+        cancel(r)
         # Input, actor, callback revision, request-order, Back.
         r=call(callback='addManagedServer');r=action(r,'provider','pasarguard');r=text(r,'Another')
         stage(r,'capacity');old=draft(r);before=counts()
@@ -370,10 +395,55 @@ def main():
             r=server_to_stage(provider,target);before=counts();r=text(r,secret)
             yes(draft(r)['stage']==target and counts()==before and any(e.get('deleted')for e in r['events']),'invalid_secret_deleted_'+provider)
             cancel(r)
+        # Duplicate historical userid rows cannot authorize or fan out any state write.
+        def all_state():
+            return sql('SELECT * FROM users ORDER BY id;SELECT * FROM server_info ORDER BY id;SELECT * FROM server_config ORDER BY id;SELECT * FROM server_plans ORDER BY id;SELECT * FROM pays ORDER BY id;SELECT * FROM orders_list ORDER BY id')
+        def duplicate_actor():
+            sql("INSERT INTO users(userid,name,username,refcode,wallet,date,isAdmin,first_start) VALUES(9001,'Duplicate actor','duplicate','0',0,'1700000000',1,'sent')")
+            return int(sql('SELECT MAX(id) FROM users').strip())
+        r=call(callback='addManagedServer');r=action(r,'provider','pasarguard');r=text(r,'PRIVATE-DUPLICATE-DRAFT')
+        duplicate_id=duplicate_actor();before=all_state()
+        for spec in [dict(text='fixture-cancel'),dict(callback='addManagedPlan')]:
+            denied=call(**spec)
+            yes(all_state()==before,'duplicate_actor_main_request_has_no_state_or_entity_write')
+            yes(not any('PRIVATE-DUPLICATE-DRAFT'in str(e.get('body',''))or e.get('keys')=='{"remove_keyboard":true}'for e in denied['events']),'duplicate_actor_main_never_recovers_or_hides_editor')
+        sql('DELETE FROM users WHERE id='+str(duplicate_id));cancel(r)
+        r=call(callback='editServerName'+str(mb_id),field=True)
+        duplicate_id=duplicate_actor();before=all_state()
+        denied=call(text='DUPLICATE-MUST-NOT-SAVE',field=True)
+        yes(all_state()==before,'duplicate_actor_field_request_has_no_state_or_entity_write')
+        yes(not any(e.get('keys')=='{"remove_keyboard":true}'for e in denied['events']),'duplicate_actor_field_never_hides_editor')
+        sql('DELETE FROM users WHERE id='+str(duplicate_id));call(text='fixture-cancel',field=True)
+        # A later role denial, even after initial authorization, never recovers a draft.
+        # Create the delegated administrator's own form with normal requests.
+        r=call(callback='pgAddConnection',actor=9002)
+        for value in ['PRIVATE-ROLE-DENIAL-DRAFT','10','denialfixture','FIXTURE',url,'fixture-private-key']:
+            r=call(text=value,actor=9002)
+        r=action(r,'pick','0',actor=9002);r=action(r,'done',actor=9002)
+        before=all_state()
+        denied=action(r,'save',actor=9002,revoke_second_actor_lookup=True)
+        yes(all_state()==before,'role_denial_after_initial_claim_rolls_back_all_entity_and_actor_changes')
+        yes(not any('PRIVATE-ROLE-DENIAL-DRAFT'in str(e.get('body',''))for e in denied['events']),'role_denial_after_initial_claim_never_recovers_private_draft')
+        cancel(r,actor=9002)
         # Removing a server cannot strand orders/plans/payment evidence; a pristine server can be removed locally.
         before=rows();r=call(callback='yesDeleteServer'+str(pg_id),field=True)
         yes(rows()==before,'referenced_server_delete_is_blocked')
         clean_id=int(sql('SELECT MAX(id) FROM server_info').strip());before=rows()
+        # A stale delete confirmation may not hide an active editor or financial draft.
+        r=call(callback='editServerName'+str(clean_id),field=True);before_busy=all_state()
+        refused=call(callback='yesDeleteServer'+str(clean_id),field=True)
+        yes(all_state()==before_busy and not any(e.get('keys')=='{"remove_keyboard":true}'for e in refused['events']),'busy_field_editor_blocks_server_delete_without_hiding_editor')
+        call(text='fixture-cancel',field=True)
+        r=call(callback='addManagedPlan');before_busy=all_state()
+        refused=call(callback='yesDeleteServer'+str(clean_id))
+        yes(all_state()==before_busy,'busy_plan_wizard_blocks_server_delete')
+        cancel(r)
+        for pending in ['achbotWalletAmount|fixture','addNewMarzbanPlan']:
+            sql("UPDATE users SET step='"+pending+"',temp='PRIVATE-FINANCIAL-DRAFT' WHERE userid=9001")
+            before_busy=all_state()
+            refused=call(callback='yesDeleteServer'+str(clean_id),field=pending!='addNewMarzbanPlan')
+            yes(all_state()==before_busy and not any(e.get('keys')=='{"remove_keyboard":true}'for e in refused['events']),'busy_'+pending.split('|')[0]+'_delete_has_no_user_or_entity_mutation')
+            sql("UPDATE users SET step='none',temp=NULL WHERE userid=9001")
         r=call(callback='yesDeleteServer'+str(clean_id),actor=9002,field=True)
         yes(rows()==before,'delegate_without_server_permission_cannot_delete')
         panels_before=sql('SELECT COUNT(*) FROM provider_panels')
@@ -392,6 +462,7 @@ def main():
         old=legacy(old_path);new=legacy(ROOT/'src/Panel/ProviderAdmin.php')
         yes(old=={'handled':False,'fallback':False,'events':0,'step':'none'},'actual_rc13_cancel_RED_stale_cache_prevents_navigation')
         yes(new['handled']is True and new['fallback']is None and new['events']>=2 and new['step']=='none','current_pg_cancel_GREEN_consumes_request_and_navigates')
+        yes(bool(actor_writes)and all('WHERE id=? AND userid=?'in query for query in actor_writes),'all_management_actor_state_writes_target_validated_primary_id_and_userid')
         # Assert the complete native HTTP trace contains no provider user mutation.
         trace=server.trace
         yes(all(method=='GET'or (method=='POST'and urlsplit(path).path=='/mb/api/admin/token')for method,path,_ in trace),'only_read_admission_and_auth_http')
@@ -399,7 +470,7 @@ def main():
         yes(server.write_count==0,'no_provider_mutation')
         report={'complete':True,'cases':len(checks),'checks':checks,'actual_php':True,'owned_socket_mariadb':True,
             'loopback_provider_http':True,'provider_requests':len(trace),'provider_mutations':0,'production_mutations':0,
-            'real_telegram_tested':False,'real_provider_tested':False,'actual_rc13_cancel_RED':True}
+            'real_telegram_tested':False,'real_provider_tested':False,'actual_rc13_cancel_RED':True,'older_same_flow_cancel':True,'unique_actor_primary_writes':True,'busy_delete_preserves_editor':True}
     if a.report:a.report.write_text(json.dumps(report,ensure_ascii=False,indent=2)+'\n')
     print(json.dumps(report,ensure_ascii=False))
 if __name__=='__main__':main()

@@ -18,6 +18,8 @@ This audit covers the current source candidate based on RC13/main `2c0e728`. It 
 | `pay/checkout.php` | KEEP, canonical controller | Contains the actual GET-only public bootstrap, gateway initiation and protected attempt reservation, rather than another forwarding wrapper. |
 | `pay/back.php` | KEEP, unchanged | This is the active Zarinpal/NextPay browser return plus NOWPayments return and authenticated IPN entrypoint. Removing it would break already issued callback URLs and settlement evidence. |
 
+A runtime-wide facade check found no additional application file retained solely as a moved-body alias. In particular, `buy_helpers.php` still implements delivery, diagnostic filtering and increase-order persistence; `bot.php`/`config.php` remain real request/bootstrap compositions. The small `phpqrcode/qrlib.php` is the third-party library entrypoint, not a compatibility alias introduced by this refactor.
+
 The already retired automatic TRON/WeSwap files stay absent. Four business jobs retain their original order: gifts, broadcasts, reports/payment reconciliation, service maintenance. No installed Cron registration changes in this source batch.
 
 The two remaining actual standalone workers (`gift2all.php`, `rewardReport.php`) reject HTTP before configuration or private bootstrap; their business implementations remain.

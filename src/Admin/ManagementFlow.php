@@ -141,12 +141,29 @@ function achbotManagementDraft(array $user): ?array {
         throw new RuntimeException('management_draft_invalid');
     return $d;
 }
-function achbotManagementStore(mysqli $db,int $actor,?array $draft): void {
+/** Resolve exactly one persisted actor; userid is deliberately NOT a unique key. */
+function achbotManagementActor(mysqli $db,int $actor,int $primary,bool $lock=true): array {
+    $rows=achbotManagementRows($db,'SELECT id,userid,isAdmin,step,temp FROM users FORCE INDEX (idx_users_userid_v1) WHERE userid=? LIMIT 2'.($lock?' FOR UPDATE':''),'i',[$actor]);
+    if (count($rows)!==1 || (int)$rows[0]['id']<=0 || (int)$rows[0]['userid']!==$actor ||
+        ($actor!==$primary && (int)$rows[0]['isAdmin']!==1))
+        throw new RuntimeException('management_admin_required');
+    return $rows[0];
+}
+function achbotManagementWriteActorState(mysqli $db,int $actor,int $actorRowId,string $step,?string $temp): void {
+    // Recheck even under READ COMMITTED before a write, and target the exact
+    // validated primary row rather than every historical userid duplicate.
+    $user=achbotManagementActor($db,$actor,(int)($GLOBALS['admin']??0));
+    if ((int)$user['id']!==$actorRowId) throw new RuntimeException('management_admin_required');
+    $s=achbotManagementSql($db,'UPDATE users SET step=?,temp=? WHERE id=? AND userid=?','ssii',[$step,$temp,$actorRowId,$actor]);
+    $changed=$s->affected_rows;$s->close();
+    if ($changed!==1) throw new RuntimeException('management_storage');
+    $GLOBALS['userInfo']['id']=$actorRowId;$GLOBALS['userInfo']['userid']=$actor;
+    $GLOBALS['userInfo']['step']=$step;$GLOBALS['userInfo']['temp']=$temp;
+}
+function achbotManagementStore(mysqli $db,int $actor,int $actorRowId,?array $draft): void {
     $step=$draft===null?'none':'achbotManage|'.$draft['nonce'].'|'.$draft['rev'];
     $temp=$draft===null?null:json_encode($draft,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
-    $s=achbotManagementSql($db,'UPDATE users SET step=?,temp=? WHERE userid=?','ssi',[$step,$temp,$actor]);$s->close();
-    // No later legacy handler may act on the cached pre-transition step.
-    $GLOBALS['userInfo']['step']=$step;$GLOBALS['userInfo']['temp']=$temp;
+    achbotManagementWriteActorState($db,$actor,$actorRowId,$step,$temp);
 }
 function achbotManagementRender(mysqli $db,array $draft,string $prefix=''): void {
     [$body,$keys]=$draft['kind']==='server'?achbotServerWizardView($db,$draft):achbotPlanWizardView($db,$draft);
@@ -179,14 +196,16 @@ function achbotHandleManagement(): bool {
         $actor=(int)$from_id;$source=achbotManagementFrame($update,$actor,$data,$text);
         if (!$connection->begin_transaction()) throw new RuntimeException('management_begin');
         $begun=true;
-        $user=achbotManagementRow($connection,'SELECT userid,isAdmin,step,temp FROM users WHERE userid=? FOR UPDATE','i',[$actor]);
-        if (!$user || ($actor!==(int)$admin && (int)$user['isAdmin']!==1))
-            throw new RuntimeException('management_admin_required');
+        $user=achbotManagementActor($connection,$actor,(int)$admin);
+        $actorRowId=(int)$user['id'];
         $canRecover=true;
+        if (preg_match('/^yesDeleteServer[1-9][0-9]*$/D',$data) &&
+            !in_array((string)$user['step'],['none',''],true))
+            throw new RuntimeException('management_other_flow');
         $draft=achbotManagementDraft($user);
         if ($legacy && $user['step']===(string)($userInfo['step']??'')) {
             if (str_starts_with($user['step'],'addServerPanePassword')) delMessage($message_id,$chat_id);
-            achbotManagementStore($connection,$actor,null);
+            achbotManagementStore($connection,$actor,$actorRowId,null);
             if (!achbotManagementCommit($connection)) throw new RuntimeException('management_commit_unknown');$begun=false;
             achbotManagementHome($user['step']==='addNewMarzbanPlan'?'plan':'server',null,achbotManagementText('restart'));return true;
         }
@@ -209,25 +228,26 @@ function achbotHandleManagement(): bool {
                 $draft['values']['preferred_server']=(int)$m[1];
             if ($draft['kind']==='server') achbotServerWizardPrepare($connection,$draft);
             else achbotPlanWizardPrepare($connection,$draft);
-            achbotManagementStore($connection,$actor,$draft);
+            achbotManagementStore($connection,$actor,$actorRowId,$draft);
         } else {
             if ($draft===null || $source<=$draft['source']) throw new RuntimeException('management_stale');
             $action='text';$value=$text??'';
             if ($callback) {
                 if (!preg_match('/^am\|([a-f0-9]{12})\|(0|[1-9][0-9]*)\|([a-z]+)\|([a-zA-Z0-9_-]{1,20})$/D',$data,$m) ||
-                    !hash_equals($draft['nonce'],$m[1]) || (int)$m[2]!==$draft['rev'])
+                    !hash_equals($draft['nonce'],$m[1]) ||
+                    ($m[3]==='cancel' ? (int)$m[2]>$draft['rev'] : (int)$m[2]!==$draft['rev']))
                     throw new RuntimeException('management_stale');
                 $action=$m[3];$value=$m[4];
             } elseif ($data!=='') throw new RuntimeException('management_other_action');
             if (!$callback && $text===($buttonValues['cancel']??null)) $action='cancel';
             if ($action==='cancel') {
-                $kind=$draft['kind'];achbotManagementStore($connection,$actor,null);
+                $kind=$draft['kind'];achbotManagementStore($connection,$actor,$actorRowId,null);
                 if (!achbotManagementCommit($connection)) throw new RuntimeException('management_commit_unknown');$begun=false;
                 achbotManagementHome($kind);return true;
             }
             if ($action==='back') {
                 if (!$draft['history']) {
-                    $kind=$draft['kind'];achbotManagementStore($connection,$actor,null);
+                    $kind=$draft['kind'];achbotManagementStore($connection,$actor,$actorRowId,null);
                     if (!achbotManagementCommit($connection)) throw new RuntimeException('management_commit_unknown');$begun=false;
                     achbotManagementHome($kind);return true;
                 }
@@ -238,7 +258,7 @@ function achbotHandleManagement(): bool {
                     achbotServerWizardAdvance($connection,$draft,$action,$value):
                     achbotPlanWizardAdvance($connection,$draft,$action,$value);
                 if (is_int($saved) && $saved>0) {
-                    $kind=$draft['kind'];achbotManagementStore($connection,$actor,null);
+                    $kind=$draft['kind'];achbotManagementStore($connection,$actor,$actorRowId,null);
                     if (!achbotManagementCommit($connection)) throw new RuntimeException('management_commit_unknown');$begun=false;
                     achbotManagementHome($kind,$saved,achbotManagementText($kind.'_saved'));return true;
                 }
@@ -247,7 +267,7 @@ function achbotHandleManagement(): bool {
             $draft['source']=$source;++$draft['rev'];
             if ($draft['kind']==='server') achbotServerWizardPrepare($connection,$draft);
             else achbotPlanWizardPrepare($connection,$draft);
-            achbotManagementStore($connection,$actor,$draft);
+            achbotManagementStore($connection,$actor,$actorRowId,$draft);
         }
         if (!achbotManagementCommit($connection)) throw new RuntimeException('management_commit_unknown');$begun=false;
         if ($starts) sendMessage(achbotManagementText('intro'),$cancelKey);
@@ -265,10 +285,10 @@ function achbotHandleManagement(): bool {
         if (in_array($reason,['management_frame','management_private_required'],true)) return true;
         sendMessage(achbotManagementText($public));
         // Only a verified private, currently authorized actor may recover a draft.
-        if (!$canRecover) return true;
+        if (!$canRecover || $reason==='management_admin_required') return true;
         // Recover the committed draft, never render a partially changed local copy.
         try {
-            $current=achbotManagementRow($connection,'SELECT step,temp FROM users WHERE userid=?','i',[(int)$from_id]);
+            $current=achbotManagementActor($connection,(int)$from_id,(int)$admin,false);
             $saved=$current?achbotManagementDraft($current):null;
             if ($saved!==null) achbotManagementRender($connection,$saved);
         } catch (Throwable $ignored) {}
@@ -300,8 +320,10 @@ function achbotHandleManagementFields(): bool {
     try {
         $actor=(int)$from_id;$source=achbotManagementFrame($update,$actor,$cb,is_string($text??null)?$text:null);
         if (!$connection->begin_transaction()) throw new RuntimeException('management_begin');$begun=true;
-        $u=achbotManagementRow($connection,'SELECT userid,isAdmin,step,temp FROM users WHERE userid=? FOR UPDATE','i',[$actor]);
-        if (!$u || ($actor!==(int)$admin && (int)$u['isAdmin']!==1)) throw new RuntimeException('management_admin_required');
+        $u=achbotManagementActor($connection,$actor,(int)$admin);
+        $actorRowId=(int)$u['id'];
+        if ($delete && !in_array((string)$u['step'],['none',''],true))
+            throw new RuntimeException('management_other_flow');
         $d=str_starts_with($u['step'],'achbotField|')?json_decode((string)$u['temp'],true):null;
         if ($active && (!is_array($d) || $u['step']!=='achbotField|'.($d['nonce']??'') ||
             $source<=(int)($d['source']??PHP_INT_MAX))) throw new RuntimeException('management_stale');
@@ -324,7 +346,7 @@ function achbotHandleManagementFields(): bool {
         if ($legacyCancel) {
             if ($u['step']!==$step) throw new RuntimeException('management_stale');
             $context=str_starts_with($step,'plan')?'plan':'server';$entity=(int)$old[1];
-            achbotManagementStore($connection,$actor,null);
+            achbotManagementStore($connection,$actor,$actorRowId,null);
             if (!achbotManagementCommit($connection)) throw new RuntimeException('management_commit_unknown');$begun=false;
             achbotManagementHome($context,$entity);return true;
         }
@@ -343,7 +365,7 @@ function achbotHandleManagementFields(): bool {
         } else {
             $context=$d['context'];$entity=(int)$d['id'];
             if (is_string($text??null) && $text===($buttonValues['cancel']??null)) {
-                achbotManagementStore($connection,$actor,null);
+                achbotManagementStore($connection,$actor,$actorRowId,null);
                 if (!achbotManagementCommit($connection)) throw new RuntimeException('management_commit_unknown');$begun=false;
                 achbotManagementHome($context,$entity);return true;
             }
@@ -376,15 +398,14 @@ function achbotHandleManagementFields(): bool {
                     $table=$context==='plan'?'server_plans':'server_info';
                     achbotManagementSql($connection,"UPDATE $table SET $column=? WHERE id=?",'si',[(string)$input,$entity])->close();
                 }
-                achbotManagementStore($connection,$actor,null);
+                achbotManagementStore($connection,$actor,$actorRowId,null);
                 if (!achbotManagementCommit($connection)) throw new RuntimeException('management_commit_unknown');$begun=false;
                 achbotManagementHome($context,$entity,achbotManagementText($context==='plan'?'plan_updated':'settings_saved'));return true;
             }
             $d['source']=$source;
         }
         $next='achbotField|'.$d['nonce'];$payload=json_encode($d,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
-        achbotManagementSql($connection,'UPDATE users SET step=?,temp=? WHERE userid=?','ssi',[$next,$payload,$actor])->close();
-        $userInfo['step']=$next;$userInfo['temp']=$payload;
+        achbotManagementWriteActorState($connection,$actor,$actorRowId,$next,$payload);
         if (!achbotManagementCommit($connection)) throw new RuntimeException('management_commit_unknown');$begun=false;
         $prompt=match($d['stage']) {
             'days'=>'plan_days_prompt','volume'=>'plan_volume_prompt',

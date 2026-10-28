@@ -130,8 +130,8 @@ def main():
     with tempfile.TemporaryDirectory(prefix="achbot-post-v9-acceptance-") as tmp:
         unified={}
         suites=[
-            ('management_wizard','test_unified_management_wizard.py','cases',270,
-                {'actual_php':True,'owned_socket_mariadb':True,'loopback_provider_http':True,'provider_mutations':0,'production_mutations':0,'actual_rc13_cancel_RED':True}),
+            ('management_wizard','test_unified_management_wizard.py','cases',294,
+                {'actual_php':True,'owned_socket_mariadb':True,'loopback_provider_http':True,'provider_mutations':0,'production_mutations':0,'actual_rc13_cancel_RED':True,'older_same_flow_cancel':True,'unique_actor_primary_writes':True,'busy_delete_preserves_editor':True}),
             ('management_menus','test_unified_management_menus.py','checks',322,
                 {'database':'owned socket MariaDB','network_calls':0,'optional_011_missing_cancel_proven':True}),
             ('customer_services','test_unified_customer_services.py','cases',328,
@@ -300,10 +300,30 @@ def main():
                         "--run-disposable","--report",str(purchase_path)],
                        cwd=ROOT,check=True,timeout=300,capture_output=True)
         purchases=json.loads(purchase_path.read_text())
+        # Seven unchanged scenarios retain exact financial/provider parity.
+        # The owner-requested actor draft replaces the old global scratch row;
+        # require its actual historical/current proof instead of claiming parity.
+        draft_amendments=purchases.get("intentional_behavior_amendments",[])
+        draft_proof={
+            "case":"admin_plan_create_draft","historical_v9_executed":True,
+            "historical_global_inactive_draft_reproduced":True,"frozen_driver_unchanged":True,
+            "frozen_driver_sha256":"09f6618ec2e2e130c446997604475e08de721df9a9a709cb568e155f8858829c",
+            "actual_candidate_dispatcher":True,"candidate_private_fresh_frame":True,
+            "actor_owned_draft_persisted":True,"no_candidate_server_plans_mutation":True,
+            "unrelated_inactive_plan_preserved":True,"unrelated_admin_state_preserved":True,
+            "financial_snapshot_unchanged":True,"provider_calls":0,
+        }
         if not (purchases.get("complete") and purchases.get("scenarios")==8 and
-                purchases.get("php_sql_telegram_fake_provider_parity") and
-                purchases.get("sql_provider_wire_exact") is True and
-                purchases.get("telegram_comparison")=="exact_except_explicit_authorized_ui_text_fields" and
+                purchases.get("historical_v9")=="7eb077fd8e6d0a303421626d1500f69e295a6664" and
+                purchases.get("schema_tables")==23 and purchases.get("mysql_socket_only") is True and
+                purchases.get("php_sql_telegram_fake_provider_parity") is False and
+                purchases.get("sql_provider_wire_exact") is False and
+                purchases.get("unchanged_differential_scenarios")==7 and
+                purchases.get("unchanged_differential_sql_provider_wire_exact") is True and
+                purchases.get("unchanged_differential_telegram_comparison")=="exact_except_explicit_authorized_ui_text_fields" and
+                purchases.get("telegram_comparison")=="seven_exact_style_scoped_cases_and_one_explicit_actor_draft_amendment" and
+                purchases.get("actor_owned_plan_draft_entry_verified") is True and
+                draft_amendments==[draft_proof] and
                 purchases.get("ui_projection_baseline")=="7faac9b067f8a171e5e26d6aea5aaf9f4088a3e7" and
                 purchases.get("verified_literal_style_pairs")==487 and
                 purchases.get("authorized_ui_field_differences")==3 and
