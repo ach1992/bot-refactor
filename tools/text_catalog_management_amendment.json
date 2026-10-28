@@ -1122,6 +1122,25 @@
         "src/Subscription/ExternalAccounts.php",
         "src/Subscription/ManualAccounts.php"
       ]
+    },
+    "subscription.presentation.config_qr_delivery_unconfirmed": {
+      "audience": "user",
+      "entry": "⚠️ ارسال کامل QR یا متن کانفیگ تأیید نشد. پیام‌های دریافت‌شده را بررسی کنید و در صورت نیاز دوباره دکمهٔ QR کانفیگ را بزنید.",
+      "facade": false,
+      "reason": "Owner-approved truthful partial/uncertain config QR delivery feedback, 2026-10-28; no account or payment failure claim and no automatic replay.",
+      "source_paths": [
+        "src/Finance/Routes/Checkout.php",
+        "src/Subscription/ConfigRefresh.php"
+      ]
+    },
+    "subscription.presentation.config_qr_name_suffix": {
+      "audience": "user",
+      "entry": "…",
+      "facade": false,
+      "reason": "Owner-approved editable native config-name truncation marker, 2026-10-28; preserves the exact rendered QR caption and two-catalog boundary.",
+      "source_paths": [
+        "src/Subscription/Presentation.php"
+      ]
     }
   },
   "retained_legacy_keys": {
@@ -1757,6 +1776,20 @@
       "reason": "Original copy retained as historical catalog evidence after obsolete per-order protocol controls were removed; no compatibility runtime is retained.",
       "previous_source_paths": [
         "src/Subscription/AccountDetails.php"
+      ]
+    },
+    "renewal.extensions.alert.96762b5a42": {
+      "entry": "📆 اشتراک شما منقضی شده است. لطفاً آن را تمدید کنید تا بتوانید افزایش حجم دهید.",
+      "reason": "Original wording retained as catalog history after obsolete stored-expiry admission checks were replaced by fresh panel observation.",
+      "previous_source_paths": [
+        "src/Finance/Routes/Extensions.php"
+      ]
+    },
+    "renewal.extensions.alert.f5aab191db": {
+      "entry": "📆 اشتراک شما منقضی شده است. ابتدا آن را تمدید کنید.",
+      "reason": "Original wording retained as catalog history after obsolete stored-expiry admission checks were replaced by fresh panel observation.",
+      "previous_source_paths": [
+        "src/Finance/Routes/Extensions.php"
       ]
     }
   }
