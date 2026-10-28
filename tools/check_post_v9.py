@@ -132,8 +132,8 @@ def main():
         suites=[
             ('management_wizard','test_unified_management_wizard.py','cases',362,
                 {'actual_php':True,'owned_socket_mariadb':True,'loopback_provider_http':True,'provider_mutations':0,'production_mutations':0,'actual_rc13_cancel_RED':True,'older_same_flow_cancel':True,'unique_actor_primary_writes':True,'busy_delete_preserves_editor':True,'administrator_input_history_preserved':True,'same_message_group_selection':True,'actual_rc14_group_message_flood_RED':True,'actual_rc14_admin_input_deletion_RED':True}),
-            ('financial_live_state','test_financial_live_state.py','cases',72,
-                {'native_two_provider': True, 'agent_discount': True, 'own_order_only': True, 'fresh_addon_eligibility': True, 'statistics_compatibility': True, 'external_requests': 0, 'production_mutations': 0}),
+            ('financial_live_state','test_financial_live_state.py','cases',86,
+                {'native_two_provider': True, 'agent_discount': True, 'absent_agent_discount_configuration_compatible': True, 'explicit_invalid_agent_discount_rejected': True, 'own_order_only': True, 'fresh_addon_eligibility': True, 'statistics_compatibility': True, 'external_requests': 0, 'production_mutations': 0}),
             ('config_qr_delivery','test_config_qr_delivery.py','cases',17,
                 {'actual_php': True, 'owned_socket_mariadb': True, 'actual_Checkout_dispatch': True, 'actual_sendQrFromLink': True, 'provider_neutral_native_names_both': True, 'actual_PasarGuard_identity_HTTP_here': False, 'archived_route_RED': True, 'unchanged_URI_bytes': True, 'temp_cleanup': True, 'financial_mutations': 0, 'external_requests': 0, 'production_mutations': 0, 'real_telegram_rendering_tested': False}),
             ('shared_provider_storage','test_post_v9_shared_provider_storage.py','cases',91,
