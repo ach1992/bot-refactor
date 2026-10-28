@@ -1870,6 +1870,7 @@ def main():
             'r7_hosted_day_sql_permissive_atomic_remote_absolute_no_replay',
             'r7_hosted_day_concurrent_order_drift_atomic_remote_absolute_no_replay',
         })
+        mandatory_finance.add("fresh_addon_unknown_native_refused_before_claim_or_effect")
         cases_finance = {case.get("case") for case in finance.get("scenarios",[])
                          if case.get("pass_")}
         if not (finance.get("complete") and finance.get("cases")>=153 and
@@ -1877,6 +1878,8 @@ def main():
                 finance.get("schema_tables")==23 and
                 finance.get("current_schema_tables")==26 and
                 finance.get("shared_payment_attempt_ledger_tested") and
+                finance.get("fresh_addon_existing_native_source") is True and
+                finance.get("unknown_native_addon_admission_refused") is True and
                 finance.get("original_mariadb_socket_only") and
                 finance.get("synthetic_payment_spy") and
                 finance.get("real_provider_requests")==0):
