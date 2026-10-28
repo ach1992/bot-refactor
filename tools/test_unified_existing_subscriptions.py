@@ -428,6 +428,9 @@ def main():
     # Native scheduling is allowed for import/read; only existing mutation
     # eligibility is restricted, and must be checked before money/fence claims.
     vendor.users[41]['auto_delete_in_days']=3
+    # This existing native incarnation predates the later aged local grace
+    # fixture; its actual lookup/info proof remains unchanged after import.
+    vendor.users[41]['created_at']='2026-10-01T05:00:00.123456+00:00'
     raw=lambda:vendor.users[41]
     def remote_writes():return [r for r in vendor.trace if r[0]!='GET']
    else:
@@ -460,6 +463,7 @@ def main():
        str(ROOT),str(shared_work/'mysql.sock'),DB,json.dumps(dict(op=op,source=current_source,**({'actor':1001}|spec)))],
        env=shared_env,cwd=shared_work,capture_output=True,text=True,timeout=25)
     allowed=all(line=='achbot_auto_renew_reservation_deferred'or
+        (op=='delete'and re.fullmatch(r'achbot_(?:account|admin)_delete_observation_deferred order_id=[0-9]+',line)is not None)or
         line.startswith(('achbot_existing_subscription_import_deferred reason=',
         'achbot_existing_subscription_lookup_deferred','achbot_customer_draft_creation_deferred',
         'achbot_server_display_unavailable'))for line in process.stderr.splitlines())
@@ -642,6 +646,72 @@ def main():
        provider+'_both_users_choose_real_paid_plans_and_explicitly_enable_actual_auto_renew_consent')
    raw()['used_traffic']=raw()['data_limit']-100000000
    db('UPDATE orders_list SET notif=1 WHERE id IN('+','.join(map(str,links.values()))+')')
+   if provider=='pasarguard':
+    # These are actual entrypoints using real imported origins, selected plans
+    # and explicit user consent. Only the owned fixture's existing replay
+    # authority is corrupted/exhausted; no successful financial row is forged.
+    account_id=int(db('SELECT id FROM provider_accounts'))
+    saved_history=db('SELECT IFNULL(HEX(mutation_key),"NULL"),IFNULL(HEX(mutation_snapshot),"NULL") FROM provider_accounts').split('\t')
+    def sql_text(value):
+     return 'NULL'if value is None else"CONVERT(X'"+value.encode().hex()+"' USING utf8mb4)"
+    def restore_history():
+     values=['NULL'if value=='NULL'else"CONVERT(X'"+value+"' USING utf8mb4)"for value in saved_history]
+     db('UPDATE provider_accounts SET mutation_key='+values[0]+',mutation_snapshot='+values[1]+' WHERE id='+str(account_id))
+    def configure_refusal(mode):
+     restore_history();raw()['auto_delete_in_days']=None
+     if mode=='schedule':
+      raw()['auto_delete_in_days']=3;return
+     last='fixture:history'
+     if mode=='malformed':
+      snapshot='{'
+     elif mode=='exhausted':
+      last='fixture:4095'
+      snapshot=json.dumps({'version':1,'key':last,'consumed_keys':['fixture:'+str(i)for i in range(4096)]})
+     elif mode=='replayed_delete':
+      last='delete:'+str(account_id)
+      snapshot=json.dumps({'version':1,'key':last,'consumed_keys':[last]})
+     else:raise AssertionError('fixture_refusal_mode_missing')
+     db('UPDATE provider_accounts SET mutation_key='+sql_text(last)+',mutation_snapshot='+sql_text(snapshot)+' WHERE id='+str(account_id))
+    def guard_snapshot():
+     return db('SELECT userid,wallet FROM users ORDER BY id;SELECT * FROM orders_list ORDER BY id;'
+       'SELECT * FROM pays ORDER BY id;SELECT * FROM automatic_renewal_attempts ORDER BY id;'
+       'SELECT * FROM increase_order ORDER BY id;SELECT * FROM provider_accounts ORDER BY id;'
+       'SELECT * FROM service_effects ORDER BY id;SELECT id,ucount FROM server_info ORDER BY id;'
+       "SELECT * FROM setting WHERE type LIKE 'ACHBOT_SERVICE_ORIGIN:%' ORDER BY id")
+    for mode in ['schedule','malformed','exhausted']:
+     configure_refusal(mode);before=guard_snapshot();native_before=copy.deepcopy(raw());writes=len(remote_writes())
+     invoke('sweep')
+     yes(guard_snapshot()==before and raw()==native_before and len(remote_writes())==writes and
+         db('SELECT COUNT(*) FROM automatic_renewal_attempts')=='0',
+         'actual_native_auto_sweep_'+mode+'_refuses_before_committed_wallet_pay_journal_or_physical_claim')
+    for mode in ['schedule','malformed','exhausted','replayed_delete']:
+     configure_refusal(mode);before=guard_snapshot();native_before=copy.deepcopy(raw());writes=len(remote_writes())
+     for actor,prefix in [(1001,'yesDeleteConfig'),(9001,'yesDeleteUserConfig')]:
+      requests=len(vendor.trace)
+      invoke('delete',actor=actor,data=prefix+str(current))
+      yes(guard_snapshot()==before and raw()==native_before and len(remote_writes())==writes and
+          (mode=='schedule'or len(vendor.trace)==requests),
+          'actual_'+('customer'if actor==1001 else'admin')+'_delete_'+mode+'_refuses_before_local_fence_and_native_effect')
+
+    # A real aged imported reference has reached a due grace. Peers are still
+    # inside their own grace windows, so this actual scheduled entrypoint only
+    # evaluates A. Refusal must preserve its active record and explicit consent.
+    dated=[tuple(map(int,row.split('\t')))for row in db('SELECT id,date,notif FROM orders_list ORDER BY id').splitlines()]
+    expiry_before=raw()['expire'];status_before=raw()['status']
+    raw()['expire']=datetime.fromtimestamp(int(time.time())-20,timezone.utc).isoformat();raw()['status']='expired'
+    for oid,created,notif in dated:
+     db(f'UPDATE orders_list SET date={int(time.time())-11*86400 if oid==current else created},notif={int(time.time())-1 if oid==current else int(time.time())+10*86400} WHERE id={oid}')
+    for mode in ['schedule','malformed','exhausted','replayed_delete']:
+     configure_refusal(mode);before=guard_snapshot();native_before=copy.deepcopy(raw())
+     writes=len(remote_writes());requests=len(vendor.trace)
+     invoke('warnings')
+     yes(guard_snapshot()==before and raw()==native_before and len(remote_writes())==writes and
+         (mode=='schedule'or len(vendor.trace)==requests),
+         'actual_due_grace_scheduled_delete_'+mode+'_preserves_status_consent_and_evidence_before_HTTP_or_fence')
+    restore_history();raw()['auto_delete_in_days']=None;raw()['expire']=expiry_before;raw()['status']=status_before
+    for oid,created,notif in dated:
+     db(f'UPDATE orders_list SET date={created},notif={notif} WHERE id={oid}')
+
    before_pays=int(db('SELECT COUNT(*) FROM pays'));writes=len(remote_writes())
    barrier=threading.Barrier(2)
    def concurrent_sweep():
@@ -708,8 +778,8 @@ echo json_encode(['required'=>count(achbotProviderRequiredOperations()),
   raw=raw.replace("            'import_lookup'=>'achbotMarzbanExistingUser','import_adopt'=>'achbotMarzbanAdoptExistingLocked'",'')
   target.write_text(raw)
   optional=probe_call(staged)
-  yes(optional['required']==14 and optional['none'] and optional['plan'] and
-      optional['lookup']['success']is False,'missing_optional_import_capability_preserves_required14_and_Marzban_without011')
+  yes(optional['required']==15 and optional['none'] and optional['plan'] and
+      optional['lookup']['success']is False,'missing_optional_import_capability_preserves_required15_and_Marzban_without011')
   optional=probe_call(ROOT)
   yes(optional['full']and optional['none']and not optional['one']and not optional['bad']and optional['plan'],
       'optional_import_pair_is_callable_all_or_none')
@@ -1118,7 +1188,11 @@ echo json_encode(['required'=>count(achbotProviderRequiredOperations()),
      shared_native_views_coherent=True,shared_physical_anchor_history_preserved=True,
      shared_native_action_views_coherent=True,known_native_guard_preclaim_no_poison=True,
      actual_native_URL_import_warnings=True,zero_amount_import_warning_delivery_retry=True,
-     planless_and_selected_plan_native_warning_verified=True)
+     planless_and_selected_plan_native_warning_verified=True,
+     actual_native_auto_renew_refusal_before_reservation=True,
+     actual_native_delete_controllers_refuse_before_local_fence=True,
+     actual_scheduled_native_delete_refusal_before_local_fence=True,
+     malformed_replay_exhausted_history_no_HTTP_or_claim=True)
  if args.report:args.report.write_text(json.dumps(report,indent=2)+'\n')
  print(json.dumps(report))
 if __name__=='__main__':main()

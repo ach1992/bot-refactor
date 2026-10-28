@@ -72,6 +72,7 @@ foreach ($deletions as $order) {
     if (!achbotSupportsOrder($connection,$id)) continue;
     try {$target=achbotProviderDeletionTarget($connection,$serverId,$remark);}
     catch (Throwable $error) {continue;}
+    if (!achbotProviderActionEligible($connection,$serverId,$remark,'delete',$target)) continue;
     $observation=achbotServiceObserve($serverId,$remark);
     if (!$observation['verified']) continue;
     $policy=achbotServiceLifecycle($observation,$time);

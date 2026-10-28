@@ -151,7 +151,9 @@ function achbotMarzbanDeletionTargetAdapter(mysqli $db,int $serverId,string $rem
     ];
 }
 function achbotPasarGuardDeletionTargetAdapter(mysqli $db,int $serverId,string $remark,array $row): array {
-    $ctx=achbotPgRemarkContext($db,$serverId,$remark);
+    return achbotPgDeletionContextTarget(achbotPgRemarkContext($db,$serverId,$remark),$serverId,$remark);
+}
+function achbotPgDeletionContextTarget(array $ctx,int $serverId,string $remark): array {
     return ['provider'=>'pasarguard','server_id'=>$serverId,'remark'=>$remark,
         'panel_id'=>(int)$ctx['panel']['id'],'instance_key'=>$ctx['panel']['instance_key'],
         'endpoint_sha256'=>hash('sha256',rtrim($ctx['panel']['api_url'],'/')),
@@ -163,6 +165,40 @@ function achbotProviderDeletionTargetMatches(mysqli $db,int $serverId,string $re
         return hash_equals(json_encode($expected,JSON_THROW_ON_ERROR),
             json_encode(achbotProviderDeletionTarget($db,$serverId,$remark),JSON_THROW_ON_ERROR));
     } catch (Throwable $error) {return false;}
+}
+
+/** Read-only admission before a caller commits its own local effect fence. */
+function achbotProviderActionEligible(mysqli $db,int $serverId,string $remark,string $action,?array $expectedTarget=null): bool {
+    try {
+        $adapter=achbotProviderDefinition(achbotProviderType($db,$serverId));
+        if ($adapter===null || $serverId<=0 || $remark==='' ||
+            ($expectedTarget!==null && ($action!=='delete' ||
+             !achbotProviderDeletionTargetMatches($db,$serverId,$remark,$expectedTarget)))) return false;
+        if (($adapter['action_preflight'])($db,$serverId,$remark,$action,$expectedTarget)!==true) return false;
+        return $expectedTarget===null || achbotProviderDeletionTargetMatches($db,$serverId,$remark,$expectedTarget);
+    } catch (Throwable $error) {return false;}
+}
+function achbotMarzbanActionPreflightAdapter(mysqli $db,int $serverId,string $remark,string $action,?array $expectedTarget=null): bool {
+    // Marzban retains its existing native action eligibility and target proof.
+    return in_array($action,['delete','revoke','toggle'],true);
+}
+/** Shared by outer read-only admission and the native adapter before its claim. */
+function achbotPgActionPreflight(mysqli $db,int $serverId,string $remark,string $action,?array $expectedTarget=null): array {
+    if (!in_array($action,['delete','revoke','reset','toggle'],true)) throw new RuntimeException('unsupported_action');
+    $ctx=achbotPgRemarkContext($db,$serverId,$remark,true);
+    $key=$action==='delete'?'delete:'.(int)$ctx['account']['id']:achbotPgOperationKey($action);
+    achbotPgMutationAdmission($ctx['account'],$key);
+    if ($expectedTarget!==null && $expectedTarget!==achbotPgDeletionContextTarget($ctx,$serverId,$remark))
+        throw new RuntimeException('delete_target_changed');
+    $preflight=achbotPgRead($ctx['panel'],$ctx['identity']);
+    if (($preflight['success']??false)!==true) throw new RuntimeException('pg_action_read_unverified');
+    if (!achbotPgManaged($preflight['user'])) throw new RuntimeException('pg_native_schedule_conflict');
+    if ($action==='toggle' && !in_array($preflight['user']['status'],['active','disabled'],true))
+        throw new RuntimeException('pg_status_restricted');
+    return ['context'=>$ctx,'key'=>$key];
+}
+function achbotPasarGuardActionPreflightAdapter(mysqli $db,int $serverId,string $remark,string $action,?array $expectedTarget=null): bool {
+    achbotPgActionPreflight($db,$serverId,$remark,$action,$expectedTarget);return true;
 }
 
 function achbotProviderAction($serverId,$remark,string $action,?array $expectedTarget=null): object {
@@ -290,16 +326,9 @@ function achbotMarzbanActionAdapter($serverId,$remark,string $action,?array $exp
 function achbotPasarGuardActionAdapter($serverId,$remark,string $action,?array $expectedTarget=null): object {
     global $connection;
     try {
-        if (!in_array($action,['delete','revoke','reset','toggle'],true)) return achbotProviderFailure('unsupported_action',false);
-        $ctx=achbotPgRemarkContext($connection,(int)$serverId,(string)$remark);
+        $admission=achbotPgActionPreflight($connection,(int)$serverId,(string)$remark,$action,$expectedTarget);
+        $ctx=$admission['context'];$key=$admission['key'];
         $panel=$ctx['panel'];$identity=$ctx['identity'];
-        $key=$action==='delete'?'delete:'.(int)$ctx['account']['id']:achbotPgOperationKey($action);
-        achbotPgMutationAdmission($ctx['account'],$key);
-        $preflight=achbotPgRead($panel,$identity);
-        if (($preflight['success']??false)!==true) return achbotProviderFailure('pg_action_read_unverified',false);
-        if (!achbotPgManaged($preflight['user'])) return achbotProviderFailure('pg_native_schedule_conflict',false);
-        if ($action==='toggle' && !in_array($preflight['user']['status'],['active','disabled'],true))
-            return achbotProviderFailure('pg_status_restricted',false);
         $intent=achbotPgBeginMutation($connection,$ctx,$key,$action,['phase'=>'claimed']);
         $read=achbotPgRead($panel,$identity);
         if (($read['success']??false)!==true) throw new RuntimeException('pg_action_read_unverified');
@@ -359,15 +388,15 @@ function achbotPgOrderContext(mysqli $db,int $orderId,bool $lock=false): array {
     if ((int)$panel['id']!==(int)$a['panel_id'] || $panel['instance_key']!==$a['instance_key'] || hash('sha256',rtrim($panel['api_url'],'/'))!==$a['endpoint_sha256']) throw new RuntimeException('pg_account_panel_changed');
     return ['order_id'=>$orderId,'order'=>$o,'order_server_id'=>(int)$o['server_id'],'account'=>$a,'panel'=>$panel,'identity'=>achbotProviderAccountIdentity($db,$a,$lock)];
 }
-function achbotPgRemarkContext(mysqli $db,int $serverId,string $remark): array {
+function achbotPgRemarkContext(mysqli $db,int $serverId,string $remark,bool $lock=false): array {
     // Multiple authorized local references may name the same exact physical
     // identity. Every selected reference must prove that same identity.
-    $s=$db->prepare('SELECT id FROM orders_list WHERE server_id=? AND BINARY remark=BINARY ? ORDER BY id');
+    $s=$db->prepare('SELECT id FROM orders_list WHERE server_id=? AND BINARY remark=BINARY ? ORDER BY id'.($lock?' LOCK IN SHARE MODE':''));
     $s->bind_param('is',$serverId,$remark);$s->execute();$rows=$s->get_result()->fetch_all(MYSQLI_ASSOC);$s->close();
     if (!$rows) throw new RuntimeException('pg_local_account_ambiguous');
     $context=null;
     foreach ($rows as $row) {
-        $candidate=achbotPgOrderContext($db,(int)$row['id']);
+        $candidate=achbotPgOrderContext($db,(int)$row['id'],$lock);
         if ($context!==null && ($candidate['account']['id']!==$context['account']['id'] ||
             $candidate['identity']!==$context['identity'])) throw new RuntimeException('pg_local_account_ambiguous');
         $context=$candidate;
@@ -400,9 +429,9 @@ function achbotPgPinPayment(mysqli $db,int $payId): void {
     $s->bind_param('si',$json,$payId);
     if (!$s->execute() || $s->affected_rows!==1) throw new RuntimeException('pg_quote_pin_unconfirmed');$s->close();
 }
-function achbotPgQuote(mysqli $db,int $payId): array {
+function achbotPgQuote(mysqli $db,int $payId,bool $lock=false): array {
     achbotPgLoad();
-    $s=$db->prepare('SELECT provider_snapshot,server_id,plan_id,type,order_id FROM pays WHERE id=?');$s->bind_param('i',$payId);$s->execute();$p=$s->get_result()->fetch_assoc();$s->close();
+    $s=$db->prepare('SELECT provider_snapshot,server_id,plan_id,type,order_id FROM pays WHERE id=?'.($lock?' FOR UPDATE':''));$s->bind_param('i',$payId);$s->execute();$p=$s->get_result()->fetch_assoc();$s->close();
     $snap=json_decode((string)($p['provider_snapshot']??''),true,64,JSON_THROW_ON_ERROR);
     if (!is_array($snap) || ($snap['provider']??'')!=='pasarguard') throw new RuntimeException('pg_quote_snapshot_missing');
     $panel=achbotProviderPanelForSnapshot($db,$snap);$current=achbotPgServerPanel($db,(int)$p['server_id']);
@@ -410,7 +439,7 @@ function achbotPgQuote(mysqli $db,int $payId): array {
     if ($p['type']!=='BUY_SUB') {
         $oid=(int)$p['order_id'];
         if ($oid<=0 && preg_match('/^INCREASE_(?:DAY|VOLUME)_([1-9][0-9]*)_/',(string)$p['type'],$m)) $oid=(int)$m[1];
-        $ctx=achbotPgOrderContext($db,$oid);
+        $ctx=achbotPgOrderContext($db,$oid,$lock);
         foreach ($ctx['identity'] as $key=>$identityValue)
             if ((string)($snap[$key]??'')!==(string)$identityValue) throw new RuntimeException('pg_quote_account_changed');
         $history=achbotPgMutationHistory($ctx['account']);
@@ -858,7 +887,7 @@ function achbotOrderPresentation(mysqli $db,array $order,array $server,array $st
  * for a sale, wallet reservation or remote effect. No runtime plugin loading.
  */
 function achbotProviderRequiredOperations(): array {
-    return ['plan','order','same_panel','user','user_info','deletion_target','action',
+    return ['plan','order','same_panel','user','user_info','deletion_target','action_preflight','action',
         'edit','pin_payment','quote','target','reserve','dispatch','link'];
 }
 function achbotProviderRegistry(): array {
@@ -868,6 +897,7 @@ function achbotProviderRegistry(): array {
             'plan'=>'achbotMarzbanPlanAdapter','order'=>'achbotMarzbanOrderAdapter',
             'same_panel'=>'achbotMarzbanSamePanelAdapter','user'=>'achbotMarzbanUserAdapter',
             'user_info'=>'achbotMarzbanUserInfoAdapter','deletion_target'=>'achbotMarzbanDeletionTargetAdapter',
+            'action_preflight'=>'achbotMarzbanActionPreflightAdapter',
             'action'=>'achbotMarzbanActionAdapter','edit'=>'achbotMarzbanServiceEditAdapter',
             'pin_payment'=>'achbotMarzbanPinPaymentAdapter','quote'=>'achbotMarzbanQuoteAdapter',
             'target'=>'achbotMarzbanEffectTargetAdapter','reserve'=>'achbotMarzbanReserveEffectAdapter',
@@ -879,6 +909,7 @@ function achbotProviderRegistry(): array {
             'plan'=>'achbotPasarGuardSupportsPlan','order'=>'achbotPasarGuardSupportsOrder',
             'same_panel'=>'achbotPasarGuardSamePanelAdapter','user'=>'achbotPasarGuardUserAdapter',
             'user_info'=>'achbotPasarGuardUserInfoAdapter','deletion_target'=>'achbotPasarGuardDeletionTargetAdapter',
+            'action_preflight'=>'achbotPasarGuardActionPreflightAdapter',
             'action'=>'achbotPasarGuardActionAdapter','edit'=>'achbotPasarGuardServiceEditAdapter',
             'pin_payment'=>'achbotPgPinPayment','quote'=>'achbotPasarGuardQuoteAdapter',
             'target'=>'achbotPasarGuardEffectTargetAdapter','reserve'=>'achbotPasarGuardReserveEffectAdapter',
@@ -994,17 +1025,17 @@ function achbotProviderQuoteEligible(mysqli $db,array $pay,bool $lock=false): bo
         if ($sid===null) return false;
         $adapter=achbotProviderDefinition(achbotProviderType($db,$sid));
         $pay['server_id']=$sid;
-        return $adapter!==null && ($adapter['quote'])($db,$pay)===true;
+        return $adapter!==null && ($adapter['quote'])($db,$pay,$lock)===true;
     } catch (Throwable $error) {return false;}
 }
 function achbotMarzbanPinPaymentAdapter(mysqli $db,int $payId): void {
     // Existing Marzban quotes are pinned by their original ledger/effect fields.
 }
-function achbotMarzbanQuoteAdapter(mysqli $db,array $pay): bool {
+function achbotMarzbanQuoteAdapter(mysqli $db,array $pay,bool $lock=false): bool {
     return true; // Plan/order/physical identity guards remain in the common caller.
 }
-function achbotPasarGuardQuoteAdapter(mysqli $db,array $pay): bool {
-    achbotPgQuote($db,(int)($pay['id']??0));return true;
+function achbotPasarGuardQuoteAdapter(mysqli $db,array $pay,bool $lock=false): bool {
+    achbotPgQuote($db,(int)($pay['id']??0),$lock);return true;
 }
 function achbotProviderReserveEffect(mysqli $db,int $effectId,array $target,string $remark,string $operation,int $expire,int $bytes): void {
     $adapter=achbotProviderDefinition($target['provider']??null);

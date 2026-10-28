@@ -185,14 +185,13 @@ function canReadAdminOrderDetails(): bool {
 }
 
 /**
- * A selected plan authorizes future paid operations, never retroactive payment.
+ * Validate the selected product separately from the action admission policy.
  * New selections require the same logical server. Existing relocated services
  * retain their original plan only within the already verified physical panel.
  */
-function paidPlanForOrder(\mysqli $db,array $order,int $planId,bool $lock=false,
+function validPlanForOrder(\mysqli $db,array $order,int $planId,bool $lock=false,
     bool $sameLogicalServer=true): ?array {
-    if ($planId<=0 || (int)($order['status']??0)!==1 ||
-        !achbotOrderMayUsePaidPlan($db,$order,$lock)) return null;
+    if ($planId<=0 || (int)($order['status']??0)!==1) return null;
     $stmt=$db->prepare('SELECT p.*,c.type AS provider_type,i.active AS server_active
         FROM server_plans p JOIN server_info i ON i.id=p.server_id
         JOIN server_config c ON c.id=p.server_id
@@ -213,6 +212,12 @@ function paidPlanForOrder(\mysqli $db,array $order,int $planId,bool $lock=false,
         !achbotSupportsAccount($server['type'],$order['inbound_id']??null)) return null;
     return $plan;
 }
+function paidPlanForOrder(\mysqli $db,array $order,int $planId,bool $lock=false,
+    bool $sameLogicalServer=true): ?array {
+    if ($planId<=0 || (int)($order['status']??0)!==1 ||
+        !achbotOrderMayUsePaidPlan($db,$order,$lock)) return null;
+    return validPlanForOrder($db,$order,$planId,$lock,$sameLogicalServer);
+}
 function selectedPaidPlan(\mysqli $db,array $order,bool $lock=false): ?array {
     return paidPlanForOrder($db,$order,(int)($order['fileid']??0),$lock,false);
 }
@@ -220,10 +225,16 @@ function selectedPaidPlan(\mysqli $db,array $order,bool $lock=false): ?array {
 function orderPlanActions(\mysqli $db,array $order): array {
     try {
         $mayChoose=(int)($order['status']??0)===1 && achbotOrderMayUsePaidPlan($db,$order);
-        return ['certain'=>true,'choose'=>$mayChoose,'paid'=>$mayChoose?selectedPaidPlan($db,$order):null];
+        $paid=$mayChoose?selectedPaidPlan($db,$order):null;
+        // A fully discounted agent purchase keeps its established manual
+        // renewal/add-on path, without becoming an import or new consent.
+        $manual=$paid;
+        if (!$mayChoose && (int)($order['agent_bought']??0)===1)
+            $manual=validPlanForOrder($db,$order,(int)($order['fileid']??0),false,false);
+        return ['certain'=>true,'choose'=>$mayChoose,'paid'=>$paid,'manual'=>$manual];
     } catch (\Throwable $error) {
         error_log('achbot_order_plan_actions_unverified order_id='.(int)($order['id']??0));
-        return ['certain'=>false,'choose'=>false,'paid'=>null];
+        return ['certain'=>false,'choose'=>false,'paid'=>null,'manual'=>null];
     }
 }
 
@@ -492,7 +503,7 @@ function getOrderDetailKeys($from_id, $id, $offset = 0){
 
         if (
             ($botState['sellState'] ?? "off") == "on" &&
-            $planActions['paid']!==null &&
+            $planActions['manual']!==null &&
             ($botState['renewAccountState'] ?? "off") == "on"
         ) {
             $temp[] = ['text' => $buttonValues['renew_config'], 'callback_data' => "renewAccountAsk{$id}"];
@@ -520,7 +531,7 @@ function getOrderDetailKeys($from_id, $id, $offset = 0){
             ($botState['sellState'] ?? "off") == "on" &&
             ($botState['increaseVolumeState'] ?? "off") == "on" &&
             $canExtendVolume &&
-            $planActions['paid']!==null
+            $planActions['manual']!==null
         ) {
             $flatButtons[] = ['text' => $buttonValues['increase_config_volume'], 'callback_data' => "increaseAVolume{$id}"];
         }
@@ -529,7 +540,7 @@ function getOrderDetailKeys($from_id, $id, $offset = 0){
             ($botState['sellState'] ?? "off") == "on" &&
             ($botState['increaseTimeState'] ?? "off") == "on" &&
             $canExtendTime &&
-            $planActions['paid']!==null
+            $planActions['manual']!==null
         ) {
             $flatButtons[] = ['text' => $buttonValues['increase_config_days'], 'callback_data' => "increaseADay{$id}"];
         }

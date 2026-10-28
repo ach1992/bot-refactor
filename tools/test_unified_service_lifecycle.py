@@ -98,6 +98,9 @@ if ($action==='policy') {
  $row=$connection->query('SELECT * FROM orders_list WHERE id='.(int)$spec['order'])->fetch_assoc();
  if (!empty($spec['change_cycle'])) $connection->query('UPDATE orders_list SET expire_date=expire_date+1 WHERE id='.(int)$spec['order']);
  $out=achbotAutoRenewPrepareDeletion($connection,(int)$spec['order'],$row);
+} elseif ($action==='auto_reserve') {
+ require_once __DIR__.'/reserve-under-test.php';
+ $out=achbotAutoRenewReserve($connection,(int)$spec['order'],1001);
 } elseif ($action==='record_import_origin') {
  $connection->begin_transaction();
  $id=(int)$spec['order'];
@@ -141,6 +144,8 @@ def main():
         source=(ROOT/'src/Finance/AutomaticRenewal.php').read_bytes()
         first=source.index(b'function achbotAutoRenewSweep(');last=source.index(b'\n}\n',first)+3
         (work/'sweep-under-test.php').write_bytes(b'<?php\n'+source[first:last])
+        first=source.index(b'function achbotAutoRenewReserve(');last=source.index(b'\n}\n',first)+3
+        (work/'reserve-under-test.php').write_bytes(b'<?php\n'+source[first:last])
         old=subprocess.check_output(['git','show',BASE+':src/Notifications/Warnings.php'],cwd=ROOT)
         old=old.replace(b'__DIR__',repr(str(ROOT/'src/Notifications')).encode())
         (work/'warnings-baseline.php').write_bytes(old)
@@ -605,12 +610,52 @@ def main():
             not any(t[0] in ['PUT','PATCH','DELETE'] for t in mb.trace[traces[0]:]) and
             not any(t[0] in ['POST','PUT','PATCH','DELETE'] for t in pguard.trace[traces[1]:]),
             'import_and_trial_warning_paths_do_not_write_wallet_payment_journal_capacity_or_native_accounts')
+        # Real automatic reservation must reject a known native/action refusal
+        # before committing a payment, debit, renewal journal or physical claim.
+        retire();fair_pg_target(2006,54,1404,'5')
+        sql('UPDATE server_plans SET price=137,days=30,volume=2,active=1 WHERE id=8')
+        def known_refusal_snapshot():
+            return sql('SELECT * FROM orders_list WHERE id=2006;'+
+                'SELECT * FROM users ORDER BY id;SELECT * FROM pays ORDER BY id;'+
+                'SELECT * FROM automatic_renewal_attempts ORDER BY id;'+
+                'SELECT * FROM payment_attempts ORDER BY id;'+
+                'SELECT * FROM service_effects ORDER BY id;SELECT * FROM provider_accounts ORDER BY id;'+
+                'SELECT id,ucount FROM server_info ORDER BY id')
+        for refusal in ['native_schedule','malformed_linked_history','exhausted_linked_history']:
+            keys=['owned:'+str(i) for i in range(4096)]
+            history=None if refusal=='native_schedule' else dict(version=1,
+                key='owned:history' if refusal=='malformed_linked_history' else keys[-1],
+                consumed_keys=False if refusal=='malformed_linked_history' else keys)
+            history_sql='NULL' if history is None else "'"+json.dumps(history,separators=(',',':'))+"'"
+            key_sql='NULL' if history is None else "'"+history['key']+"'"
+            sql('UPDATE provider_accounts SET mutation_key='+key_sql+',mutation_snapshot='+history_sql+
+                " WHERE order_id=2006;UPDATE orders_list SET status=1,autoRenew='on',notif=-1 WHERE id=2006")
+            pguard.user.update(status='active',expire=int(time.time())+1800,
+                data_limit=1073741824,used_traffic=1000000000,
+                auto_delete_in_days=3 if refusal=='native_schedule' else None)
+            before=known_refusal_snapshot();native_before=copy.deepcopy(pguard.user);prior=len(pguard.trace)
+            result=call('auto_reserve',order=2006)
+            yes(result=={'status':'ineligible'} and known_refusal_snapshot()==before and
+                pguard.user==native_before and all(t[0]=='GET' for t in pguard.trace[prior:]) and
+                (refusal!='native_schedule' or len(pguard.trace[prior:])>0),
+                'pasarguard_auto_'+refusal+'_rejects_before_any_committed_payment_debit_journal_or_physical_claim')
+            # A known refusal is also detected before the scheduled local fence.
+            # Its due grace and consent remain intact for an operator to resolve.
+            retire();sql("UPDATE orders_list SET status=1,autoRenew='on',notif="+str(int(time.time())-1)+' WHERE id=2006')
+            pguard.user.update(status='expired',expire=int(time.time())-100,data_limit=None,used_traffic=0)
+            before=known_refusal_snapshot();native_before=copy.deepcopy(pguard.user);prior=len(pguard.trace)
+            result=call('warnings')
+            yes(result==[] and known_refusal_snapshot()==before and pguard.user==native_before and
+                all(t[0]=='GET' for t in pguard.trace[prior:]) and
+                (refusal=='native_schedule' or pguard.trace[prior:]==[]),
+                'pasarguard_scheduled_delete_'+refusal+'_preserves_live_reference_consent_and_all_evidence_before_fence')
         report={'complete':True,'cases':len(checks),'scenarios':checks,'baseline_red':True,'notification_delivery_regression_red':True,'grace_integrity':True,
             'deletion_fairness_red':True,'deletion_fairness_source':DELETION_FAIRNESS_REGRESSION,
             'scheduled_deletion_cursor':'deleteLastOrderId','deletion_fairness_deferred_batch':50,
             'deletion_fairness_cross_provider_directions':2,'deletion_fairness_financial_hold':True,
              'import_warning_planless_and_assigned':True,'import_warning_retry_once':True,
              'amount0_trial_warning_policy_preserved':True,'malformed_origin_warning_row_isolated':True,
+             'automatic_known_refusal_predebit':True,'scheduled_known_refusal_prefence':True,
             'native_php':True,'disposable_mariadb':True,'loopback_adapters':['marzban','pasarguard'],
             'actual_delete_transports':True,'financial_dispatch':'spy_only_existing_finance_suite_separate',
             'production_mutations':0,'external_provider_calls':0}

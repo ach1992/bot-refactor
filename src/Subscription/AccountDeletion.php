@@ -99,6 +99,9 @@ elseif(preg_match('/^yesDeleteConfig(\d+)/',$data,$match)){
     }
     // An unavailable observation must not claim or hide a still-active order.
     try {
+        $deleteTarget=achbotProviderDeletionTarget($connection,(int)$server_id,(string)$remark);
+        if (!achbotProviderActionEligible($connection,(int)$server_id,(string)$remark,'delete',$deleteTarget))
+            throw new RuntimeException('delete_action_ineligible');
         $configInfo=achbotProviderUser($server_id,$remark,false);
         $observation=achbotServiceObservation($configInfo,(string)$remark);
         if (!$observation['verified']) throw new RuntimeException('delete_observation_unverified');
@@ -108,12 +111,13 @@ elseif(preg_match('/^yesDeleteConfig(\d+)/',$data,$match)){
         exit;
     }
     // Fence the original order before the remote, non-idempotent DELETE.
-    if (!achbotAutoRenewPrepareDeletion($connection,(int)$oid)) {
+    if (!achbotProviderDeletionTargetMatches($connection,(int)$server_id,(string)$remark,$deleteTarget) ||
+        !achbotAutoRenewPrepareDeletion($connection,(int)$oid)) {
         alert(\achbotMessage('subscription.account_deletion.no_dont_delete.alert.fc1b571950'), true);
         exit;
     }
     try {
-        $deleted = achbotProviderDelete($server_id, $remark);
+        $deleted = achbotProviderDelete($server_id, $remark,$deleteTarget);
         if (!is_object($deleted) || ($deleted->success??false)!==true)
             throw new RuntimeException('delete_remote_unconfirmed');
     } catch (Throwable $error) {
@@ -196,12 +200,22 @@ elseif(preg_match('/^yesDeleteUserConfig(\d+)/',$data,$match) && ($from_id == $a
         alert(\achbotMessage('subscription.account_deletion.no_dont_delete.alert.739703d8ae'), true);
         exit;
     }
-    if (!achbotAutoRenewPrepareDeletion($connection,(int)$oid)) {
+    try {
+        $deleteTarget=achbotProviderDeletionTarget($connection,(int)$server_id,(string)$remark);
+        if (!achbotProviderActionEligible($connection,(int)$server_id,(string)$remark,'delete',$deleteTarget))
+            throw new RuntimeException('admin_delete_action_ineligible');
+    } catch (Throwable $error) {
+        error_log('achbot_admin_delete_observation_deferred order_id='.(int)$oid);
+        alert(\achbotMessage('subscription.account_deletion.no_dont_delete.alert.3c93240b6e'),true);
+        exit;
+    }
+    if (!achbotProviderDeletionTargetMatches($connection,(int)$server_id,(string)$remark,$deleteTarget) ||
+        !achbotAutoRenewPrepareDeletion($connection,(int)$oid)) {
         alert(\achbotMessage('subscription.account_deletion.no_dont_delete.alert.1186ae9204'), true);
         exit;
     }
     try {
-        $res = achbotProviderDelete($server_id, $remark);
+        $res = achbotProviderDelete($server_id, $remark,$deleteTarget);
         if (!is_object($res) || ($res->success??false)!==true)
             throw new RuntimeException('admin_delete_remote_unconfirmed');
     } catch (Throwable $error) {

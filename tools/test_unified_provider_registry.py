@@ -39,6 +39,7 @@ function fixtureSame(...$a){return true;}
 function fixtureUser($sid,$remark,$links=true){$GLOBALS['events'][]='fixture_user';return(object)['username'=>$remark,'expire'=>2000000000,'data_limit'=>2147483648,'used_traffic'=>0,'status'=>'active'];}
 function fixtureInfo(...$a){return fixtureUser(...$a);}
 function fixtureDeleteTarget($db,$sid,$remark,$row){return['provider'=>'fixture_native','server_id'=>$sid,'remark'=>$remark,'identity'=>'test-only'];}
+function fixtureActionPreflight(...$a){$GLOBALS['events'][]='fixture_action_preflight';return true;}
 function fixtureAction(...$a){$GLOBALS['events'][]='fixture_action';return(object)['success'=>true,'verified'=>true];}
 function fixtureEdit(...$a){$GLOBALS['events'][]=['fixture_edit'=>$a[2]];return(object)['success'=>true,'verified'=>true,'applied_expire'=>2000000000,'applied_bytes'=>2147483648];}
 function fixturePin(...$a){$GLOBALS['events'][]='fixture_pin';}
@@ -69,6 +70,28 @@ try{
    'quote'=>achbotProviderQuoteEligible($connection,$pay,$lock),
    'subject'=>achbotSupportsPaymentSubject($connection,$pay,$lock),'caller_unchanged'=>$original===$pay];
   if($lock)$connection->rollback();
+ } elseif($spec['op']==='action_preflight'){
+  $update=(object)['update_id'=>54321];
+  $target=achbotProviderDeletionTarget($connection,2,'fixture_user');
+  if(!empty($spec['change_target']))$target['server_id']=999;
+  $out=['eligible'=>achbotProviderActionEligible($connection,2,'fixture_user',$spec['action']??'delete',$target)];
+ } elseif($spec['op']==='rr_quote'){
+  $connection->begin_transaction();
+  // Establish an earlier RR snapshot before another connection changes the journal.
+  $connection->query('SELECT mutation_snapshot FROM provider_accounts WHERE order_id=91')->fetch_assoc();
+  $other=new mysqli('localhost','root','',$argv[3],0,$argv[2]);$other->set_charset('utf8mb4');
+  $old=$other->query('SELECT mutation_key,mutation_snapshot,updated_at FROM provider_accounts WHERE order_id=91')->fetch_assoc();
+  try{
+   $key=$spec['key'];$snapshot=$spec['snapshot'];
+   $q=$other->prepare('UPDATE provider_accounts SET mutation_key=?,mutation_snapshot=? WHERE order_id=91');
+   $q->bind_param('ss',$key,$snapshot);$q->execute();$q->close();
+   $pay=$connection->query('SELECT * FROM pays WHERE id=2')->fetch_assoc();
+   $out=['eligible'=>achbotProviderQuoteEligible($connection,$pay,true)];
+  }finally{
+   $connection->rollback();
+   $q=$other->prepare('UPDATE provider_accounts SET mutation_key=?,mutation_snapshot=?,updated_at=? WHERE order_id=91');
+   $q->bind_param('sss',$old['mutation_key'],$old['mutation_snapshot'],$old['updated_at']);$q->execute();$q->close();$other->close();
+  }
  } elseif($spec['op']==='pin'){
   $connection->begin_transaction();achbotProviderPinPayment($connection,(int)$spec['pay_id']);$connection->commit();
   $out=['native_pin'=>achbotPgQuote($connection,(int)$spec['pay_id'])];
@@ -76,6 +99,7 @@ try{
   $pay=$connection->query('SELECT * FROM pays WHERE id=1')->fetch_assoc();$type=achbotProviderType($connection,2);
   $out=['account'=>achbotSupportsAccount($type,0),'plan'=>achbotSupportsPlan($connection,7),'order'=>achbotSupportsOrder($connection,91),
    'subject'=>achbotSupportsPaymentSubject($connection,$pay),'quote'=>achbotProviderQuoteEligible($connection,$pay),
+   'action_eligible'=>achbotProviderActionEligible($connection,2,'fixture_user','delete'),
    'user'=>achbotProviderUser(2,'fixture_user',false),'action'=>achbotProviderDelete(2,'fixture_user'),
    'edit'=>achbotApplyServiceEdit($connection,2,['remark'=>'fixture_user','plus_day'=>1])];
   try{$out['target']=achbotEffectTargetIdentity($connection,2,7,1,['type'=>$type,'panel_group_id'=>null,'panel_url'=>'https://fixture.invalid','username'=>'fixture','password'=>'fixture']);}
@@ -97,6 +121,7 @@ try{
   $out['plus_day']=achbotApplyServiceEdit($connection,2,['remark'=>'fixture_user','plus_day'=>3]);
   $out['plus_volume']=achbotApplyServiceEdit($connection,2,['remark'=>'fixture_user','plus_volume'=>7]);
   $out['read']=achbotProviderUser(2,'fixture_user',false);
+  $out['action_eligible']=achbotProviderActionEligible($connection,2,'fixture_user','delete');
   $out['target']=achbotEffectTargetIdentity($connection,2,7,1,['type'=>'fixture_native']);
   achbotProviderReserveEffect($connection,1,$out['target'],'fixture_user',str_repeat('c',32),2000000000,2147483648);
   $out['dispatch']=achbotEffectDispatchReservedAccount($connection,111,2,null,str_repeat('a',64),'fixture_user',2,30,7,str_repeat('c',32),2000000000,2147483648,[],str_repeat('b',64));
@@ -203,6 +228,52 @@ def main():
   subject_case('pasarguard_order_resolution_keeps_native_endpoint_pin',native_renew,False)
   sql("UPDATE provider_panels SET api_url='"+panel_url+"' WHERE id=1")
   subject_case('pasarguard_valid_quote_restored_after_negative_controls',native_renew,True)
+  # The outer deletion fence must be preceded by the same read-only admission.
+  # Immutable target capture deliberately remains independent of mutable history.
+  start=len(panel.trace);before=snapshot()
+  action=run(ROOT,'action_preflight',native_read=True)['out']
+  yes(action['eligible'] and before==snapshot() and panel.trace[start:]==[('GET','/api/user/by-id/17',None)]
+      and panel.write_count==0,'native_action_preflight_accepts_verified_delete_without_claim_or_native_write')
+  panel.user['auto_delete_in_days']=1
+  start=len(panel.trace);before=snapshot()
+  action=run(ROOT,'action_preflight',native_read=True)['out']
+  yes(not action['eligible'] and before==snapshot() and panel.trace[start:]==[('GET','/api/user/by-id/17',None)]
+      and panel.write_count==0,'native_action_preflight_refuses_schedule_before_local_fence')
+  panel.user['auto_delete_in_days']=None
+  full_keys=['history:'+str(i)for i in range(4096)]
+  exhausted=json.dumps(dict(version=1,key=full_keys[-1],consumed_keys=full_keys),separators=(',',':'))
+  histories=[('malformed','history:bad','{'),
+             ('exhausted',full_keys[-1],exhausted),
+             ('replayed','delete:1',json.dumps(dict(version=1,key='delete:1',consumed_keys=['delete:1'])))]
+  for name,key,history in histories:
+   sql("UPDATE provider_accounts SET mutation_key='"+key+"',mutation_snapshot=CONVERT(UNHEX('"+history.encode().hex()+"') USING utf8mb4) WHERE order_id=91")
+   start=len(panel.trace);before=snapshot()
+   action=run(ROOT,'action_preflight')['out']
+   yes(not action['eligible'] and before==snapshot() and panel.trace[start:]==[] and panel.write_count==0,
+       'native_action_preflight_'+name+'_history_refuses_without_HTTP_or_claim')
+  sql('UPDATE provider_accounts SET mutation_key=NULL,mutation_snapshot=NULL WHERE order_id=91')
+  start=len(panel.trace);before=snapshot()
+  action=run(ROOT,'action_preflight',change_target=True)['out']
+  yes(not action['eligible'] and before==snapshot() and panel.trace[start:]==[],
+      'native_action_preflight_keeps_exact_immutable_target_pin')
+  # The lock flag must reach native account/history reads, not just the local
+  # order. Each concurrent UPDATE commits after a stale RR snapshot exists.
+  stale_lock=stage('quote-drops-current-read')
+  path=stale_lock/'src/Panel/ProviderRuntime.php';raw=path.read_text()
+  needle="($adapter['quote'])($db,$pay,$lock)===true"
+  yes(raw.count(needle)==1,'quote_current_read_RED_control_changes_only_lock_forwarding')
+  path.write_text(raw.replace(needle,"($adapter['quote'])($db,$pay,false)===true",1))
+  for name,key,history in histories[:2]:
+   start=len(panel.trace);before=snapshot()
+   observed=run(ROOT,'rr_quote',key=key,snapshot=history);quote=observed['out']
+   yes(not quote['eligible'] and before==snapshot() and not observed['events']
+       and panel.trace[start:]==[] and panel.write_count==0,
+       'locked_quote_observes_committed_'+name+'_history_after_RR_snapshot_without_HTTP')
+   start=len(panel.trace);before=snapshot()
+   stale=run(stale_lock,'rr_quote',native_read=True,key=key,snapshot=history)
+   yes(stale['out']['eligible'] and before==snapshot() and not stale['events']
+       and panel.trace[start:]==[('GET','/api/user/by-id/17',None)] and panel.write_count==0,
+       'actual_dropped_lock_RED_would_accept_'+name+'_journal_from_stale_RR_snapshot')
   sql("UPDATE server_config SET type='marzban',panel_url=CONVERT(UNHEX('"+original_config+"') USING utf8mb4) WHERE id=2")
   partial=stage('partial-adapter')
   path=partial/'src/Panel/ProviderRuntime.php';raw=path.read_text();needle="'edit'=>'achbotMarzbanServiceEditAdapter',"
@@ -214,7 +285,7 @@ def main():
    yes(before==snapshot(),label+'_provider_cannot_change_balance_capacity_payment_order_or_effect')
    yes(not out['events'],label+'_provider_cannot_call_any_transport')
    d=out['out']
-   yes(not any(d[key]for key in ['account','plan','order','subject','quote']),label+'_provider_is_ineligible_before_reservation')
+   yes(not any(d[key]for key in ['account','plan','order','subject','quote','action_eligible']),label+'_provider_is_ineligible_before_reservation')
    yes(d['user']['success']is False and d['action']['success']is False and d['edit']['success']is False,label+'_read_delete_and_edit_fail_closed')
    yes(d.get('target_error')=='unsupported_effect_provider',label+'_cannot_fall_back_to_Marzban_target_identity')
    yes(d.get('reserve_error')=='unsupported_effect_provider'and'create_error'in d,label+'_no_account_reservation_or_CREATE')
@@ -226,7 +297,7 @@ def main():
   # A temporary non-production adapter proves generic dispatch without editing shared flow files.
   fixture=stage('fixture-adapter');path=fixture/'src/Panel/ProviderRuntime.php';raw=path.read_text()
   callbacks=dict(label='admin_settings.management.marzban',plan='fixturePlan',order='fixtureOrder',same_panel='fixtureSame',
-   user='fixtureUser',user_info='fixtureInfo',deletion_target='fixtureDeleteTarget',action='fixtureAction',edit='fixtureEdit',
+   user='fixtureUser',user_info='fixtureInfo',deletion_target='fixtureDeleteTarget',action_preflight='fixtureActionPreflight',action='fixtureAction',edit='fixtureEdit',
    pin_payment='fixturePin',quote='fixtureQuote',target='fixtureTarget',reserve='fixtureReserve',dispatch='fixtureDispatch',link='fixtureLink')
   literal="'fixture_native'=>["+",".join("'"+key+"'=>'"+value+"'"for key,value in callbacks.items())+"],\n        "
   needle="        'marzban'=>[";yes(raw.count(needle)==1,'fixture_registry_entry_has_one_source_insertion')
@@ -237,6 +308,7 @@ def main():
   before=snapshot();out=run(fixture,'fixture');d=out['out'];events=out['events']
   yes(before==snapshot(),'temporary_dispatch_probe_does_not_mutate_business_state')
   yes(d['account']and d['plan']and d['order']and d['display'],'registered_fixture_uses_common_eligibility_and_native_display')
+  yes(d['action_eligible'] and events.count('fixture_action_preflight')==1,'registered_fixture_supplies_readonly_action_admission_without_provider_branch')
   yes(d['types']==['fixture_native','marzban','pasarguard']and d['sql']=="'fixture_native','marzban','pasarguard'",'registered_fixture_automatically_enters_shared_SQL_filter')
   yes(d['plus_day']['verified']and d['plus_volume']['verified'],'time_and_volume_use_same_verified_edit_contract')
   yes([e['fixture_edit']for e in events if isinstance(e,dict)and'fixture_edit'in e]==[
@@ -254,7 +326,8 @@ def main():
    'closed_native_adapters':2,'fixture_adapter_only':True,'external_requests':0,'production_mutations':0,'new_schema':False,
    'authoritative_subject_resolution':True,'sid_only_dispatch_RED':True,
    'explicit_subject_server_mismatch_rejected':True,'pasarguard_native_quote_pins_preserved':True,
-   'subject_preflight_readonly':True,'network_functions_disabled':False,
+   'subject_preflight_readonly':True,'action_preflight_readonly':True,'quote_current_read_after_RR_snapshot':True,'quote_lock_forwarding_RED':True,
+   'network_functions_disabled':False,
    'uncontrolled_network_functions_disabled':True,'native_quote_loopback_readonly':True,
    'native_quote_read_requests':len(panel.trace),'native_quote_write_requests':panel.write_count}
  if a.report:a.report.write_text(json.dumps(report,ensure_ascii=False,indent=2)+'\n')

@@ -120,6 +120,12 @@ function achbotAutoRenewReserve(mysqli $db, int $orderId, int $userId): array {
         $stmt->close();
         if ($payId<=0) throw new RuntimeException('renewal_pay_claim_failed');
         achbotProviderPinPayment($db,$payId);
+        $stmt=$db->prepare('SELECT * FROM pays WHERE id=? FOR UPDATE');
+        $stmt->bind_param('i',$payId);$stmt->execute();
+        $payment=$stmt->get_result()->fetch_assoc();$stmt->close();
+        if (!$payment || !achbotProviderQuoteEligible($db,$payment,true)) {
+            $db->rollback();return ['status'=>'ineligible'];
+        }
         $stmt=$db->prepare("INSERT INTO automatic_renewal_attempts
             (order_id,cycle_expire,pay_row_id,user_id,plan_id,server_id,
              account_remark,price_toman,duration_days,volume_gb,new_expire,stage)
