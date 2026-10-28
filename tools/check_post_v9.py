@@ -662,6 +662,9 @@ def main():
         if not (text_catalog.get("status")=="PASS"
                 and text_catalog.get("source_files")==78
                 and text_catalog.get("pre_style_source_equivalent_occurrences")==3202
+                and text_catalog.get("presentation",{}).get("owner_followup_changes")==7
+                and text_catalog.get("presentation",{}).get("owner_followup_negative_controls")==7
+                and text_catalog.get("native",{}).get("current_owner_followup_changes")==7
                 and text_catalog.get("static_ui_violations")==0
                 and text_catalog.get("ascii_ui_violations")==0
                 and text_catalog.get("ascii_audit_negative_controls")==8
@@ -684,11 +687,11 @@ def main():
                 and text_catalog.get("retired_parser_tokens")==23
                 and text_catalog.get("relocation_source_ref")=="ecd30ba9192ed374703118a6c131be8809cc7b06"
                 and text_catalog.get("native",{}).get("current_retired_feature_keys")==3
-                and text_catalog.get("catalog_keys")==2633
+                and text_catalog.get("catalog_keys")==2635
                 and text_catalog.get("native",{}).get("editable_catalog_files")==2
                 and text_catalog.get("native",{}).get("logical_topics")==25
-                and text_catalog.get("native",{}).get("current_catalog_keys")==2633
-                and text_catalog.get("native",{}).get("current_management_added_keys")==110
+                and text_catalog.get("native",{}).get("current_catalog_keys")==2635
+                and text_catalog.get("native",{}).get("current_management_added_keys")==112
                 and text_catalog.get("native",{}).get("current_catalog_binding_paths")==2
                 and text_catalog.get("native",{}).get("current_catalog_binding_entries")==4
                 and text_catalog.get("native",{}).get("current_catalog_binding_negative_controls")==4
@@ -701,7 +704,7 @@ def main():
                 and text_catalog["native"]["current_byte_preserved_keys"]
                     +text_catalog["native"]["current_style_changes"]
                     +text_catalog["native"]["current_added_admin_keys"]==2523
-                and text_catalog.get("native",{}).get("current_native_template_assertions")==3888
+                and text_catalog.get("native",{}).get("current_native_template_assertions")==3890
                 and text_catalog.get("native",{}).get("current_object_conversion_templates")==251
                 and text_catalog.get("native",{}).get("current_shared_multi_parameter_templates")==61
                 and text_catalog.get("native",{}).get("current_one_pass_templates")==251
