@@ -93,7 +93,16 @@ function editText($msgId, $txt, $key = null, $parse = 'HTML', $ci = null) {
 }
 
 function delMessage($msg = null, $chat_id = null){
-    global $from_id, $message_id;
+    global $from_id, $message_id, $update, $admin, $userInfo;
+    // AChBot keeps administrator-authored input in the conversation. A callback
+    // refers to a bot message; its normal menu cleanup is a different target.
+    $incoming=$update->message??null;
+    if (is_object($incoming) && empty($incoming->from->is_bot) &&
+        isset($incoming->from->id,$incoming->chat->id,$incoming->message_id) &&
+        (string)$incoming->from->id===(string)$from_id &&
+        (($admin!==null && $from_id==$admin) || !empty($userInfo['isAdmin'])) &&
+        (string)($chat_id??$from_id)===(string)$incoming->chat->id &&
+        (string)($msg??$message_id)===(string)$incoming->message_id) return null;
     require_once __DIR__ . '/src/Telegram/Messages.php';
     return \AchBot\Telegram\Messages\deleteMessage('bot', $from_id, $message_id, $msg, $chat_id);
 }
@@ -2075,7 +2084,7 @@ function getBotReportKeys($data = null) {
 		$totalPaidWithWalletSum = fetchData("SELECT SUM(price) as total FROM pays WHERE state = 'paid_with_wallet'")->fetch_assoc()['total'] ?? 0;
 
         // خریدهای نهایی نشده
-		$unfinishedPurchases = fetchData("SELECT COUNT(DISTINCT user_id) as total FROM pays WHERE state = 'expired_pending' AND user_id NOT IN (SELECT user_id FROM pays WHERE state IN ('paid', 'approved', 'auto_cart_approved', 'paid_with_wallet'))")->fetch_assoc()['total'] ?? 0;
+		$unfinishedPurchases = fetchData("SELECT COUNT(DISTINCT user_id) as total FROM pays WHERE state IN ('expired_pending', 'expired') AND user_id NOT IN (SELECT user_id FROM pays WHERE state IN ('paid', 'approved', 'auto_cart_approved', 'paid_with_wallet'))")->fetch_assoc()['total'] ?? 0;
 
 
         return json_encode([
@@ -3421,9 +3430,9 @@ function getServerConfigById($server_id) {
     require_once __DIR__ . '/src/Subscription/AccountDetails.php';
     return \AchBot\Subscription\AccountDetails\getServerConfigById($server_id);
 }
-function getOrderTrafficInfo($serverType, $server_id, $remark, $uuid, $inbound_id, $rahgozar=false) {
+function getOrderTrafficInfo($serverType, $server_id, $remark, $uuid, $inbound_id) {
     require_once __DIR__ . '/src/Subscription/AccountDetails.php';
-    return \AchBot\Subscription\AccountDetails\getOrderTrafficInfo($serverType, $server_id, $remark, $uuid, $inbound_id, $rahgozar);
+    return \AchBot\Subscription\AccountDetails\getOrderTrafficInfo($serverType, $server_id, $remark, $uuid, $inbound_id);
 }
 function buildSubscriptionPresentation($provider, $native, $botState, $options = [], $context = 'view', $serverId = 0) {
     global $connection;
@@ -3457,18 +3466,6 @@ function buildConfigMessage($enableText, $remark, $configLinks, $subLink, $backu
     );
 }
 
-function getProtocolNamesRow($protocol, $netType, $security, $rahgozar, $inbound_id) {
-    require_once __DIR__ . '/src/Subscription/AccountDetails.php';
-    return \AchBot\Subscription\AccountDetails\getProtocolNamesRow($protocol, $netType, $security, $rahgozar, $inbound_id);
-}
-function buildAdminProtocolButtons($protocol, $netType, $security, $rahgozar, $inbound_id) {
-    require_once __DIR__ . '/src/Subscription/AccountDetails.php';
-    return \AchBot\Subscription\AccountDetails\buildAdminProtocolButtons($protocol, $netType, $security, $rahgozar, $inbound_id);
-}
-function buildUserProtocolButtons($protocol, $netType, $security, $rahgozar, $inbound_id, $serverType, $botState, $fid, $id) {
-    require_once __DIR__ . '/src/Subscription/AccountDetails.php';
-    return \AchBot\Subscription\AccountDetails\buildUserProtocolButtons($protocol, $netType, $security, $rahgozar, $inbound_id, $serverType, $botState, $fid, $id);
-}
 function getUserOrderDetailKeys($id, $offset = 0) {
     require_once __DIR__ . '/src/Subscription/AccountDetails.php';
     return \AchBot\Subscription\AccountDetails\getUserOrderDetailKeys($id, $offset);

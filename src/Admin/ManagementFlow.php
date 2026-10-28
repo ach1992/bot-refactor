@@ -124,6 +124,7 @@ function achbotManagementFrame($update,int $actor,string $data,?string $text): i
     $sender=$q?($q->from??null):($m->from??null);
     if (!is_object($m) || ($m->chat->type??'')!=='private' ||
         (int)($m->chat->id??0)!==$actor || (int)($sender->id??0)!==$actor ||
+        !is_int($m->message_id??null) || $m->message_id<=0 ||
         ($q && ($q->data??null)!==$data) ||
         (!$q && (!is_string($text) || ($m->text??null)!==$text)))
         throw new RuntimeException('management_private_required');
@@ -165,12 +166,17 @@ function achbotManagementStore(mysqli $db,int $actor,int $actorRowId,?array $dra
     $temp=$draft===null?null:json_encode($draft,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
     achbotManagementWriteActorState($db,$actor,$actorRowId,$step,$temp);
 }
-function achbotManagementRender(mysqli $db,array $draft,string $prefix=''): void {
+function achbotManagementRender(mysqli $db,array $draft,string $prefix='',?int $messageId=null): void {
     [$body,$keys]=$draft['kind']==='server'?achbotServerWizardView($db,$draft):achbotPlanWizardView($db,$draft);
     if ($draft['stage']!=='provider') $keys[]=[[
         'text'=>achbotManagementText('back'),'callback_data'=>achbotManagementButton($draft,'back')]];
     $keys[]=[['text'=>achbotManagementText('cancel'),'callback_data'=>achbotManagementButton($draft,'cancel')]];
-    sendMessage($prefix.$body,json_encode(['inline_keyboard'=>$keys],JSON_UNESCAPED_UNICODE),'HTML');
+    $markup=json_encode(['inline_keyboard'=>$keys],JSON_UNESCAPED_UNICODE);
+    if ($messageId!==null) {
+        editText($messageId,$prefix.$body,$markup,'HTML');
+        return;
+    }
+    sendMessage($prefix.$body,$markup,'HTML');
 }
 function achbotManagementHome(string $kind,?int $id=null,string $prefix=''): void {
     global $removeKeyboard;
@@ -204,7 +210,6 @@ function achbotHandleManagement(): bool {
             throw new RuntimeException('management_other_flow');
         $draft=achbotManagementDraft($user);
         if ($legacy && $user['step']===(string)($userInfo['step']??'')) {
-            if (str_starts_with($user['step'],'addServerPanePassword')) delMessage($message_id,$chat_id);
             achbotManagementStore($connection,$actor,$actorRowId,null);
             if (!achbotManagementCommit($connection)) throw new RuntimeException('management_commit_unknown');$begun=false;
             achbotManagementHome($user['step']==='addNewMarzbanPlan'?'plan':'server',null,achbotManagementText('restart'));return true;
@@ -271,7 +276,11 @@ function achbotHandleManagement(): bool {
         }
         if (!achbotManagementCommit($connection)) throw new RuntimeException('management_commit_unknown');$begun=false;
         if ($starts) sendMessage(achbotManagementText('intro'),$cancelKey);
-        achbotManagementRender($connection,$draft);
+        // A selection changes this keyboard, not the conversation history.
+        $messageId=(!$starts && $callback && in_array($action,['pick','page'],true) &&
+            in_array($draft['stage'],['groups','targets'],true))?
+            $update->callback_query->message->message_id:null;
+        achbotManagementRender($connection,$draft,'',$messageId);
     } catch (Throwable $error) {
         if ($begun) {try {$connection->rollback();} catch (Throwable $ignored) {}}
         $reason=$error instanceof RuntimeException?$error->getMessage():'management_unavailable';
@@ -332,16 +341,16 @@ function achbotHandleManagementFields(): bool {
             $entity=(int)$deletion[1];
             $server=achbotManagementRow($connection,'SELECT i.id,c.type FROM server_info i JOIN server_config c ON c.id=i.id WHERE i.id=? FOR UPDATE','i',[$entity]);
             if (!$server || !achbotSupportsAccount($server['type'],0)) throw new RuntimeException('management_targets');
-            // Keep live services and historical payment/fulfillment references recoverable.
-            foreach (['SELECT id FROM orders_list WHERE server_id=? LIMIT 1 FOR UPDATE',
-                'SELECT id FROM server_plans WHERE server_id=? LIMIT 1 FOR UPDATE',
-                'SELECT id FROM pays WHERE server_id=? LIMIT 1 FOR UPDATE',
-                'SELECT id FROM service_effects WHERE target_server_id=? LIMIT 1 FOR UPDATE'] as $sql)
-                if (achbotManagementRow($connection,$sql,'i',[$entity])) throw new RuntimeException('server_referenced');
+            // Explicit administrator confirmation removes this connection only.
+            // Dependent orders/plans and financial/effect history remain intact.
             achbotManagementSql($connection,'DELETE FROM server_config WHERE id=?','i',[$entity])->close();
             achbotManagementSql($connection,'DELETE FROM server_info WHERE id=?','i',[$entity])->close();
             if (!achbotManagementCommit($connection)) throw new RuntimeException('management_commit_unknown');$begun=false;
-            achbotManagementHome('server',null,achbotManagementText('server_removed'));return true;
+            $keys=getServerListKeys();
+            editText((int)$update->callback_query->message->message_id,
+                achbotManagementText('server_removed')."\n\n".achbotManagementText('server_list'),
+                $keys??json_encode(['inline_keyboard'=>[]]),'HTML');
+            return true;
         }
         if ($legacyCancel) {
             if ($u['step']!==$step) throw new RuntimeException('management_stale');
@@ -372,7 +381,6 @@ function achbotHandleManagementFields(): bool {
             if ($cb!=='' || !is_string($text)) throw new RuntimeException('management_other_action');
             $field=$d['field'];$input=trim($text);$save=true;
             if ($field==='login') {
-                if ($d['stage']==='password') delMessage($message_id,$chat_id);
                 if ($d['stage']==='url') {$d['values']['url']=achbotManagementUrl($input);$d['stage']='username';$save=false;}
                 elseif ($d['stage']==='username') {
                     if ($input==='' || mb_strlen($input)>100) throw new RuntimeException('management_input');

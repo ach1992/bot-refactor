@@ -431,28 +431,31 @@ try {
         $report['schema'][$migration] = $code;
         finding('schema_' . $migration, $isPresent ? 'PASS' : 'BLOCK', $code);
     }
-    // 011 is optional for an existing Marzban-only installation. A partial
-    // schema, or any configured PasarGuard server without it, fails closed.
+    // Shared native storage (012) is optional for Marzban-only installations.
+    // An older 011 or partial consolidation is never accepted for native dispatch.
     $pgConfigured = isset($tables['server_config']) &&
         $db->query("SELECT id FROM server_config WHERE type='pasarguard' LIMIT 1")->num_rows > 0;
     $pgPresent = isset($tables['provider_panels']) || isset($tables['provider_accounts']) ||
+        isset($columns['server_config']['provider_connection_id']) ||
         isset($columns['server_info']['provider_panel_id']) ||
         isset($columns['server_info']['provider_group_ids']) ||
         isset($columns['server_plans']['provider_group_ids']) ||
         isset($columns['pays']['provider_snapshot']) ||
         isset($columns['service_effects']['provider_snapshot']);
     if (!$pgPresent) {
-        $report['schema']['011'] = $pgConfigured ? 'pasarguard_schema_required' : 'optional_pasarguard_not_configured';
-        finding('schema_011', $pgConfigured ? 'BLOCK' : 'INFO', $report['schema']['011']);
+        $report['schema']['012'] = $pgConfigured ? 'pasarguard_schema_required' : 'optional_pasarguard_not_configured';
+        finding('schema_012', $pgConfigured ? 'BLOCK' : 'INFO', $report['schema']['012']);
     } else {
         try {
+            if (isset($tables['provider_panels']) || isset($tables['provider_accounts']))
+                throw new RuntimeException('provider_consolidation_incomplete');
             require_once dirname(__DIR__) . '/src/Panel/ProviderStorage.php';
             achbotProviderRequireSchema($db);
-            $report['schema']['011'] = 'provider_identity_schema_detected_not_ddl_certified';
-            finding('schema_011', 'PASS', $report['schema']['011']);
+            $report['schema']['012'] = 'shared_native_storage_detected_not_ddl_certified';
+            finding('schema_012', 'PASS', $report['schema']['012']);
         } catch (Throwable $ignored) {
-            $report['schema']['011'] = 'partial_or_incompatible_provider_schema_requires_audit';
-            finding('schema_011', 'BLOCK', $report['schema']['011']);
+            $report['schema']['012'] = 'partial_or_incompatible_provider_schema_requires_audit';
+            finding('schema_012', 'BLOCK', $report['schema']['012']);
         }
     }
     require_once dirname(__DIR__) . '/src/Finance/WalletTransferFlow.php';

@@ -361,7 +361,6 @@ if(preg_match('/changAccountConnectionLink(\d+)/', $data,$match)){
     $inboundId = $order['inbound_id']; 
     $acc_link = $order['link']; 
     $server_id = $order['server_id']; 
-    $rahgozar = $order['rahgozar']; 
      
     $stmt = $connection->prepare("SELECT * FROM server_config WHERE id=?"); 
     $stmt->bind_param("i", $server_id); 

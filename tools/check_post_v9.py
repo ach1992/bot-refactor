@@ -130,23 +130,31 @@ def main():
     with tempfile.TemporaryDirectory(prefix="achbot-post-v9-acceptance-") as tmp:
         unified={}
         suites=[
-            ('management_wizard','test_unified_management_wizard.py','cases',294,
-                {'actual_php':True,'owned_socket_mariadb':True,'loopback_provider_http':True,'provider_mutations':0,'production_mutations':0,'actual_rc13_cancel_RED':True,'older_same_flow_cancel':True,'unique_actor_primary_writes':True,'busy_delete_preserves_editor':True}),
+            ('management_wizard','test_unified_management_wizard.py','cases',362,
+                {'actual_php':True,'owned_socket_mariadb':True,'loopback_provider_http':True,'provider_mutations':0,'production_mutations':0,'actual_rc13_cancel_RED':True,'older_same_flow_cancel':True,'unique_actor_primary_writes':True,'busy_delete_preserves_editor':True,'administrator_input_history_preserved':True,'same_message_group_selection':True,'actual_rc14_group_message_flood_RED':True,'actual_rc14_admin_input_deletion_RED':True}),
+            ('financial_live_state','test_financial_live_state.py','cases',86,
+                {'native_two_provider': True, 'agent_discount': True, 'absent_agent_discount_configuration_compatible': True, 'explicit_invalid_agent_discount_rejected': True, 'own_order_only': True, 'fresh_addon_eligibility': True, 'statistics_compatibility': True, 'external_requests': 0, 'production_mutations': 0}),
+            ('config_qr_delivery','test_config_qr_delivery.py','cases',17,
+                {'actual_php': True, 'owned_socket_mariadb': True, 'actual_Checkout_dispatch': True, 'actual_sendQrFromLink': True, 'provider_neutral_native_names_both': True, 'actual_PasarGuard_identity_HTTP_here': False, 'archived_route_RED': True, 'unchanged_URI_bytes': True, 'temp_cleanup': True, 'financial_mutations': 0, 'external_requests': 0, 'production_mutations': 0, 'real_telegram_rendering_tested': False}),
+            ('shared_provider_storage','test_post_v9_shared_provider_storage.py','cases',91,
+                {'populated_migration':True,'actual_backup_restore':True,'disposable_socket_mariadb':True,'native_runtime':True,'real_provider_calls':0,'tenant_mutation':False}),
+            ('order_schema','test_order_schema_simplification.py','cases',10,
+                {'actual_php':True,'owned_socket_mariadb':True,'populated_migration':True,'previous_writer_RED':True,'production_mutations':0,'external_calls':0}),
             ('management_menus','test_unified_management_menus.py','checks',322,
                 {'database':'owned socket MariaDB','network_calls':0,'optional_011_missing_cancel_proven':True}),
-            ('customer_services','test_unified_customer_services.py','cases',590,
-                {'actual_php':True,'native_disposable_mariadb':True,'external_provider_calls':0,'production_mutations':0,'real_JDF_no_date_stubs':True,'fresh_each_render_same_process':True,'same_packet_observation_and_presentation':True,'genuine_import_origin_writer_fixture':True,'actual_service_unit_helpers':True,'native_plan_admission_seam':'controlled_read_only_SQL_fixture','actual_native_plan_eligibility_checked_here':False,'actual_URL_import_checked_here':False,'imported_actions_hide_ineligible_autorenew':True,'existing_consent_withdrawal_visible_when_plan_global_or_observation_unavailable':True,'unlimited_actions_hide_unsupported_relative_changes':True,'native_HTTP_count_checked_here':False,'actual_composed_ASCII_Jalali_Tehran_proofs':{key:['marzban','pasarguard'] for key in ['customer_remote_expiry','admin_remote_expiry','admin_recorded_expiry','admin_warning_grace']},'baseline_date_ref':'2408982797af15bc99e1df2909c13be3976cb1f4','baseline_date_jdf_sha256':'e32da43aafb6548fa746492a9d3181ef796083fa618af2c84f6a7bb4e857337d','baseline_dates_already_ASCII':True,'baseline_date_RED':False,'archived_warning_toggle_RED':2}),
+            ('customer_services','test_unified_customer_services.py','cases',592,
+                {'actual_php':True,'obsolete_order_columns_absent':True,'native_disposable_mariadb':True,'external_provider_calls':0,'production_mutations':0,'real_JDF_no_date_stubs':True,'fresh_each_render_same_process':True,'same_packet_observation_and_presentation':True,'genuine_import_origin_writer_fixture':True,'actual_service_unit_helpers':True,'native_plan_admission_seam':'controlled_read_only_SQL_fixture','actual_native_plan_eligibility_checked_here':False,'actual_URL_import_checked_here':False,'imported_actions_hide_ineligible_autorenew':True,'existing_consent_withdrawal_visible_when_plan_global_or_observation_unavailable':True,'unlimited_actions_hide_unsupported_relative_changes':True,'native_HTTP_count_checked_here':False,'actual_composed_ASCII_Jalali_Tehran_proofs':{key:['marzban','pasarguard'] for key in ['customer_remote_expiry','admin_remote_expiry','admin_recorded_expiry','admin_warning_grace']},'baseline_date_ref':'2408982797af15bc99e1df2909c13be3976cb1f4','baseline_date_jdf_sha256':'e32da43aafb6548fa746492a9d3181ef796083fa618af2c84f6a7bb4e857337d','baseline_dates_already_ASCII':True,'baseline_date_RED':False,'archived_warning_toggle_RED':2}),
             ('service_lifecycle','test_unified_service_lifecycle.py','cases',118,
                 {'native_php':True,'disposable_mariadb':True,'actual_delete_transports':True,'import_warning_planless_and_assigned':True,'import_warning_retry_once':True,'amount0_trial_warning_policy_preserved':True,'malformed_origin_warning_row_isolated':True,'automatic_known_refusal_predebit':True,'scheduled_known_refusal_prefence':True,'production_mutations':0,'external_provider_calls':0,'notification_delivery_regression_red':True,'grace_integrity':True,'deletion_fairness_red':True,'deletion_fairness_source':'5568e5e24ecc595c371c4710bf41db51bb78125d','scheduled_deletion_cursor':'deleteLastOrderId','deletion_fairness_deferred_batch':50,'deletion_fairness_cross_provider_directions':2,'deletion_fairness_financial_hold':True}),
-            ('runtime_cleanup','test_unified_runtime_cleanup.py','assertions',140,
-                {'actual_php':True,'owned_socket_mariadb':True,'provider_mutations':0,'production_mutations':0}),
+            ('runtime_cleanup','test_unified_runtime_cleanup.py','assertions',143,
+                {'actual_php':True,'owned_socket_mariadb':True,'provider_mutations':0,'production_mutations':0,'composed_native_reader_unique':True,'domain_independent_verified_token_import':True}),
             ('provider_registry','test_unified_provider_registry.py','cases',89,
-                {'actual_php':True,'owned_socket_mariadb':True,'closed_native_adapters':2,'fixture_adapter_only':True,'external_requests':0,'production_mutations':0,'new_schema':False,'authoritative_subject_resolution':True,'sid_only_dispatch_RED':True,'explicit_subject_server_mismatch_rejected':True,'pasarguard_native_quote_pins_preserved':True,'subject_preflight_readonly':True,'action_preflight_readonly':True,'quote_current_read_after_RR_snapshot':True,'quote_lock_forwarding_RED':True,'network_functions_disabled':False,'uncontrolled_network_functions_disabled':True,'native_quote_loopback_readonly':True,'native_quote_read_requests':16,'native_quote_write_requests':0}),
-            ('existing_subscriptions','test_unified_existing_subscriptions.py','cases',186,
+                {'actual_php':True,'owned_socket_mariadb':True,'closed_native_adapters':2,'fixture_adapter_only':True,'external_requests':0,'production_mutations':0,'new_schema':False,'authoritative_subject_resolution':True,'sid_only_dispatch_RED':True,'explicit_subject_server_mismatch_rejected':True,'pasarguard_native_quote_pins_preserved':True,'subject_preflight_readonly':True,'action_preflight_readonly':True,'quote_current_read_after_RR_snapshot':True,'quote_lock_forwarding_RED':True,'network_functions_disabled':False,'uncontrolled_network_functions_disabled':True,'native_quote_loopback_readonly':True,'native_quote_read_requests':17,'native_quote_write_requests':0}),
+            ('existing_subscriptions','test_unified_existing_subscriptions.py','cases',202,
                 {'actual_php':True,'owned_socket_mariadb':True,'loopback_native_pasar_guard':True,
                  'real_telegram_tested':False,'real_provider_tested':False,
                  'official_source_pin':'eba70d68eaa5a89e34ffebb47c8fd5ce054d0e43',
-                 'URL_only_common_admin_and_customer':True,'rotating_native_token_verified':True,
+                 'URL_only_common_admin_and_customer':True,'unconfigured_alias_domain_and_prefix_both_providers':True,'arbitrary_input_host_never_fetched':True,'actual_common_import_dispatcher_both_providers':True,'broken_dispatcher_177605_RED':True,'rotating_native_token_verified':True,
                  'genuine_local_adoption':True,'import_remote_mutations':0,'import_financial_mutations':0,
                  'no_new_schema':True,'optional_import_pair_all_or_none':True,
                  'missing_import_capability_preserves_core':True,'marzban_usable_without011':True,
@@ -160,7 +168,7 @@ def main():
                  'unlimited_addon_entry_neutral_and_effect_free':True,'adopted_capacity_origin_preserved':True,
                  'delete_replay_safe':True,'native_origin_alias_and_ambiguity_verified':True,
                  'created_marker_policy_preserved':True,'malformed_capacity_ledger_reconciliation_hold':True,
-                 'marzban_legacy_JWT_native_signature_verified':True,'initial_import_controls_match_supported_actions':True,'actual_planless_update_link_controller_verified':True,'shared_native_registration_for_multiple_users':True,'genuine_import_plan_confirm_paid_renewal':True,'shared_native_auto_renew_debits_once':True,'concurrent_shared_native_auto_renew_verified':True,'shared_payment_owner_and_replay_verified':True,'shared_native_views_coherent':True,'shared_physical_anchor_history_preserved':True,'shared_native_action_views_coherent':True,'known_native_guard_preclaim_no_poison':True,'actual_native_URL_import_warnings':True,'zero_amount_import_warning_delivery_retry':True,'planless_and_selected_plan_native_warning_verified':True,'actual_native_auto_renew_refusal_before_reservation':True,'actual_native_delete_controllers_refuse_before_local_fence':True,'actual_scheduled_native_delete_refusal_before_local_fence':True,'malformed_replay_exhausted_history_no_HTTP_or_claim':True,'external_requests':0,'production_mutations':0}),
+                 'marzban_legacy_JWT_native_signature_verified':True,'initial_import_controls_match_supported_actions':True,'actual_planless_update_link_controller_verified':True,'shared_native_registration_for_multiple_users':True,'genuine_import_plan_confirm_paid_renewal':True,'shared_native_auto_renew_debits_once':True,'concurrent_shared_native_auto_renew_verified':True,'shared_payment_owner_and_replay_verified':True,'shared_native_views_coherent':True,'automatic_renewal_updates_only_paying_order':True,'fresh_shared_views_without_peer_sync':True,'shared_physical_anchor_history_preserved':True,'shared_native_action_views_coherent':True,'known_native_guard_preclaim_no_poison':True,'actual_native_URL_import_warnings':True,'zero_amount_import_warning_delivery_retry':True,'planless_and_selected_plan_native_warning_verified':True,'actual_native_auto_renew_refusal_before_reservation':True,'actual_native_delete_controllers_refuse_before_local_fence':True,'actual_scheduled_native_delete_refusal_before_local_fence':True,'malformed_replay_exhausted_history_no_HTTP_or_claim':True,'external_requests':0,'production_mutations':0}),
             ('service_origin','test_service_order_origin.py','cases',46,
                 {'actual_php':True,'owned_socket_mariadb':True,'original23':True,'no_new_schema':True,
                  'no_provider_or_telegram_calls':True,'shared_reference_metadata':True,
@@ -179,9 +187,9 @@ def main():
                  'archived_renderer_sha256':'4a34ed56370842e75ddb16563908c7c0497736851bbbc0da81c17b686e29fb9c',
                  'actual_archived_renderer_RED':['marzban','pasarguard'],'synthetic_Telegram_delivery':True,
                  'production_mutations':0,'live_provider_calls':0}),
-            ('shared_account_lifecycle','test_shared_account_lifecycle.py','cases',23,
+            ('shared_account_lifecycle','test_shared_account_lifecycle.py','cases',24,
                 {'actual_php':True,'owned_socket_mariadb':True,'two_distinct_users':True,
-                 'concurrent_workers':2,'shared_cycle_one_payer':True,'stale_callback_safe':True,
+                 'concurrent_workers':2,'shared_cycle_one_payer':True,'paying_order_only':True,'full_peer_row_unchanged':True,'fresh_native_shared_cycle_refusal':True,'stale_callback_safe':True,
                  'pending_peer_work_held':True,'explicit_panel_group_authority':True,
                  'native_provider_HTTP':False,'external_requests':0,'production_mutations':0,'new_schema':False}),
             ('allowance_admin','test_unified_allowance_admin.py','cases',89,
@@ -458,7 +466,9 @@ def main():
                         "--run-disposable","--report",str(privacy_path)],
                        cwd=ROOT,check=True,timeout=180,capture_output=True)
         finance_privacy=json.loads(privacy_path.read_text())
-        if not (finance_privacy.get("complete") and finance_privacy.get("cases")==25
+        if not (finance_privacy.get("complete") and finance_privacy.get("cases")==29
+                and finance_privacy.get("fresh_native_addon_admission") is True
+                and finance_privacy.get("unknown_native_refuses_preclaim") is True
                 and finance_privacy.get("mutant_privacy_failures_proved")==2
                 and finance_privacy.get("external_requests")==0):
             raise RuntimeError("Executed finance error privacy/uncertain-effects proof incomplete")
@@ -647,7 +657,9 @@ def main():
                         "--run-disposable","--report",str(next_payment_path)],
                        cwd=ROOT,check=True,timeout=180,capture_output=True)
         next_payment=json.loads(next_payment_path.read_text())
-        if not (next_payment.get("complete") is True and next_payment.get("cases")==11):
+        if not (next_payment.get("complete") is True and next_payment.get("cases")==13
+                and next_payment.get("fresh_native_addon_admission") is True
+                and next_payment.get("unknown_native_refuses_without_draft") is True):
             raise RuntimeError("Durable payment messages, volume entry and attention proof incomplete")
         catalog_output=subprocess.run(
             ["python3",str(ROOT/"tools/test_next_text_catalog.py")],
@@ -656,6 +668,9 @@ def main():
         if not (text_catalog.get("status")=="PASS"
                 and text_catalog.get("source_files")==78
                 and text_catalog.get("pre_style_source_equivalent_occurrences")==3202
+                and text_catalog.get("presentation",{}).get("owner_followup_changes")==7
+                and text_catalog.get("presentation",{}).get("owner_followup_negative_controls")==7
+                and text_catalog.get("native",{}).get("current_owner_followup_changes")==7
                 and text_catalog.get("static_ui_violations")==0
                 and text_catalog.get("ascii_ui_violations")==0
                 and text_catalog.get("ascii_audit_negative_controls")==8
@@ -678,11 +693,11 @@ def main():
                 and text_catalog.get("retired_parser_tokens")==23
                 and text_catalog.get("relocation_source_ref")=="ecd30ba9192ed374703118a6c131be8809cc7b06"
                 and text_catalog.get("native",{}).get("current_retired_feature_keys")==3
-                and text_catalog.get("catalog_keys")==2633
+                and text_catalog.get("catalog_keys")==2635
                 and text_catalog.get("native",{}).get("editable_catalog_files")==2
                 and text_catalog.get("native",{}).get("logical_topics")==25
-                and text_catalog.get("native",{}).get("current_catalog_keys")==2633
-                and text_catalog.get("native",{}).get("current_management_added_keys")==110
+                and text_catalog.get("native",{}).get("current_catalog_keys")==2635
+                and text_catalog.get("native",{}).get("current_management_added_keys")==112
                 and text_catalog.get("native",{}).get("current_catalog_binding_paths")==2
                 and text_catalog.get("native",{}).get("current_catalog_binding_entries")==4
                 and text_catalog.get("native",{}).get("current_catalog_binding_negative_controls")==4
@@ -695,14 +710,14 @@ def main():
                 and text_catalog["native"]["current_byte_preserved_keys"]
                     +text_catalog["native"]["current_style_changes"]
                     +text_catalog["native"]["current_added_admin_keys"]==2523
-                and text_catalog.get("native",{}).get("current_native_template_assertions")==3888
+                and text_catalog.get("native",{}).get("current_native_template_assertions")==3890
                 and text_catalog.get("native",{}).get("current_object_conversion_templates")==251
                 and text_catalog.get("native",{}).get("current_shared_multi_parameter_templates")==61
                 and text_catalog.get("native",{}).get("current_one_pass_templates")==251
                 and text_catalog.get("native",{}).get("current_non_ascii_digit_templates")==0
                 and text_catalog.get("presentation",{}).get("status")=="PASS"
                 and text_catalog.get("presentation",{}).get("editable_files")==2
-                and text_catalog.get("presentation",{}).get("current_keys")==2633
+                and text_catalog.get("presentation",{}).get("current_keys")==2635
                 and text_catalog.get("presentation",{}).get("numeric_template_changes")==23
                 and text_catalog.get("presentation",{}).get("adjacent_emoji_violations")==0
                 and text_catalog.get("presentation",{}).get("parameter_exception_count")==3
@@ -810,17 +825,17 @@ def main():
         native_renewal_complete=all(isinstance(proof,dict) and all(
             proof.get(key)==value for key,value in native_renewal_common.items())
             for proof in native_renewal_proofs)
-        if not (provider_integration.get("complete") is True and provider_integration.get("cases",0)>=282
+        if not (provider_integration.get("complete") is True and provider_integration.get("cases",0)>=283
                 and provider_integration.get("actual_php_curl") is True
                 and provider_integration.get("owned_socket_mariadb") is True
                 and provider_integration.get("real_provider_tested") is False
-                and provider_integration.get("lifecycle_cases")==242
+                and provider_integration.get("lifecycle_cases")==243
                 and provider_integration.get("admin_read_authorization_cases")==40
                 and provider_integration.get("forbidden_order_queries")==0
                 and provider_integration.get("forbidden_provider_requests")==0
                 and provider_integration.get("baseline_red") is True
                 and provider_integration.get("baseline_red_source")=="fb138eacdc5817922cc1e1c9c200323d24c79838"
-                and provider_integration.get("original_provider_integration_cases")==219
+                and provider_integration.get("original_provider_integration_cases")==220
                 and native_renewal_complete
                 and [proof.get('cases') for proof in native_renewal_proofs]==[43,20,63]
                 and native_renewal_proofs[0].get('loopback_native_pasar_guard') is True
@@ -1150,6 +1165,7 @@ def main():
                     'f1_'+route+'_'+iso+'_new_green',
                     'f1_'+route+'_'+iso+'_wallet_first_draft_waits',
                 })
+        required_legacy_wallet.add("f1_unknown_native_refuses_before_wallet_claim_or_effect")
         required_hosted_audience=set()
         for provider in ('nowpayment','zarinpal','nextpay'):
             for mode in ('policy','cohort'):
@@ -1207,6 +1223,7 @@ def main():
         f1_f4_suites=(
             ('legacy_wallet_races','test_post_v9_legacy_wallet_races.py',
              required_legacy_wallet,('reviewed_source_red','current_source_green',
+                                     'explicit_existing_native_baseline','unknown_native_refuses_preclaim',
                                      'real_php_mysqli','owned_mariadb_only')),
             ('hosted_audience_races','test_post_v9_hosted_audience_races.py',
              required_hosted_audience,('old_source_red','current_source_green',
@@ -1859,6 +1876,7 @@ def main():
             'r7_hosted_day_sql_permissive_atomic_remote_absolute_no_replay',
             'r7_hosted_day_concurrent_order_drift_atomic_remote_absolute_no_replay',
         })
+        mandatory_finance.add("fresh_addon_unknown_native_refused_before_claim_or_effect")
         cases_finance = {case.get("case") for case in finance.get("scenarios",[])
                          if case.get("pass_")}
         if not (finance.get("complete") and finance.get("cases")>=153 and
@@ -1866,6 +1884,8 @@ def main():
                 finance.get("schema_tables")==23 and
                 finance.get("current_schema_tables")==26 and
                 finance.get("shared_payment_attempt_ledger_tested") and
+                finance.get("fresh_addon_existing_native_source") is True and
+                finance.get("unknown_native_addon_admission_refused") is True and
                 finance.get("original_mariadb_socket_only") and
                 finance.get("synthetic_payment_spy") and
                 finance.get("real_provider_requests")==0):
@@ -1963,6 +1983,7 @@ def main():
                 and all(r.get("pass") is True for r in locking_cases)
                 and verification_locking.get("native_php_mysqli") is True
                 and verification_locking.get("native_pk_lock_witness") is True
+                and verification_locking.get("atomic_ready_marker_publication") is True
                 and verification_locking.get("owned_socket_only") is True
                 and verification_locking.get("isolation_changed") is False
                 and verification_locking.get("live_provider_requests")==0
@@ -2961,11 +2982,17 @@ def main():
             'review_r7_manual_manualdaysqlstrict_atomic_expiry_and_no_replay',
             'review_r7_manual_manualdaysqlpermissive_atomic_expiry_and_no_replay',
         })
+        required_manual.update({"pinned_addon_unknown_native_refuses_before_claim_or_effect",
+            "bank_scheduler_unknown_native_refuses_before_claim_or_effect"})
         if not (manual.get("complete") and manual.get("cases")>=len(required_manual)
                 and required_manual.issubset(manual.get("scenarios",[]))
                 and manual.get("database")=="owned_socket_only"
                 and manual.get("live_provider_calls")==0
-                and manual.get("production_data_modified") is False):
+                and manual.get("production_data_modified") is False
+                and all(manual.get(flag) is True for flag in (
+                    "current_order_writer_argument_contract", "pinned_addon_fresh_native_baseline",
+                    "unknown_native_pinned_addon_refused", "bank_addon_fresh_native_baseline",
+                    "unknown_native_bank_addon_refused"))):
             raise RuntimeError("Four-network manual crypto payment isolation incomplete")
         # PR #66 independent reviewer R1–R6: actual financial/purchase PHP
         # helpers and original MariaDB, not author-only approval route doubles.
@@ -3163,7 +3190,8 @@ def main():
             error=(exc.stderr or b'').decode(errors='replace')[-6000:]
             raise RuntimeError("Marzban logical-group regression failed:\n"+error) from exc
         logical=json.loads(logical_path.read_text())
-        if not (logical.get("complete") and logical.get("cases")>=43
+        if not (logical.get("complete") and logical.get("cases")>=45
+                and logical.get("administrator_only_switching") is True
                 and logical.get("schema_tables")==23
                 and logical.get("additive_server_info_column_verified")
                 and logical.get("original_historical_schema_file_unchanged")

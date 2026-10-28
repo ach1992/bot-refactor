@@ -7,6 +7,7 @@ reservation/debit/remote/finalization correctness. Warnings exercise real reads,
 deletion fences and native delete transports against task-owned fixtures.
 """
 from __future__ import annotations
+import provider_storage_fixture as shared_storage
 import argparse, contextlib, copy, hashlib, json, subprocess, threading, time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -170,15 +171,13 @@ def main():
             if proc.returncode or unexpected:raise AssertionError((proc.returncode,proc.stdout,unexpected))
             return json.loads(proc.stdout)
         for name in ['001_marzban_panel_group_id.sql','003_payment_attempts.sql',
-                     '004_automatic_renewal_attempts.sql','007_service_effects.sql','011_provider_identity.sql']:
+                     '004_automatic_renewal_attempts.sql','007_service_effects.sql','011_provider_identity.sql','012_shared_provider_storage.sql']:
             sql((ROOT/'migrations/post-v9'/name).read_text())
-        sql("DELETE FROM server_config WHERE id=3;INSERT INTO server_info(id,title,ucount,remark,flag,active,state,provider_panel_id,provider_group_ids)"
-            " VALUES(3,'Native fixture',1000,'native','',1,1,1,'[2,5]');"
+        sql("DELETE FROM server_config WHERE id=3;INSERT INTO server_info(id,title,ucount,remark,flag,active,state,provider_group_ids)"
+            " VALUES(3,'Native fixture',1000,'native','',1,1,'[2,5]');"
             "INSERT INTO server_config(id,panel_url,ip,sni,header_type,request_header,response_header,security,tlsSettings,username,password,type)"
             " VALUES(3,'"+pg_url+"','','','none','','','none','','','','pasarguard');"
-            "UPDATE server_plans SET server_id=3 WHERE id=8;"
-            "INSERT INTO provider_panels(id,provider,instance_key,name,api_url,api_key,version)"
-            " VALUES(1,'pasarguard',REPEAT('b',32),'Native fixture','"+pg_url+"','fixture-private-key','5.5.1');")
+            "UPDATE server_plans SET server_id=3 WHERE id=8;"+shared_storage.connection(3,1,pg_url))
         def seed(oid=101,server=2,remark=None,notif=0,expiry=None):
             # Independent scenarios must not reuse a physical native account:
             # status=0 retired references intentionally retain review fences.
@@ -198,8 +197,7 @@ def main():
             sql("INSERT INTO service_effects(id,source_kind,source_ref,actor_userid,ordinal,operation_id,target_server_id,target_key,endpoint_sha256,"
                 "plan_id,remote_username,requested_expire,requested_bytes,request_sha256,state,order_id,provider_snapshot)"
                 " VALUES(800,'admin_bulk','bulk:9001:1',9001,1,REPEAT('a',32),3,'pg:fixture','"+endpoint+"',8,'fixture_user',2000000000,2147483648,REPEAT('c',64),'local_recorded',102,'"+snapshot+"');"
-                "INSERT INTO provider_accounts(effect_id,order_id,provider,panel_id,instance_key,endpoint_sha256,remote_user_id,remote_created_at,remote_username,operation_marker,entitlement_snapshot,state)"
-                " VALUES(800,102,'pasarguard',1,REPEAT('b',32),'"+endpoint+"',17,'2026-10-26T05:00:00.123456Z','fixture_user','"+pg.MARKER+"','"+entitlement+"','linked')")
+                +shared_storage.identity(800,102,1,pg_url,17,'2026-10-26T05:00:00.123456Z','fixture_user',pg.MARKER,entitlement,server_id=3,plan_id=8,existing=True))
         # Pure policy boundaries include independent unlimited dimensions and
         # reject ambiguous types, usernames or state before any side effect.
         now=1900000000
@@ -342,7 +340,7 @@ def main():
             pguard.user.update(status='expired',expire=int(time.time())-100,data_limit=None,used_traffic=0)
             def grace_snapshot():
                 return sql('SELECT * FROM orders_list WHERE id='+str(oid)+
-                    ';SELECT * FROM provider_accounts WHERE order_id='+str(oid)+
+                    ';SELECT * FROM service_effects WHERE provider_reference_id IS NOT NULL AND order_id='+str(oid)+
                     ';SELECT userid,wallet FROM users ORDER BY userid;SELECT * FROM pays ORDER BY id'+
                     ";SELECT * FROM setting WHERE type='warnLastOrderId'")
             before=grace_snapshot();requests=(len(mb.trace),len(pguard.trace));before_delete=deletes(mb)+deletes(pguard)
@@ -447,7 +445,7 @@ def main():
             return int(sql("SELECT value FROM setting WHERE type='deleteLastOrderId' LIMIT 1") or '0')
         def deferred_snapshot(first,last):
             return sql('SELECT * FROM orders_list WHERE id BETWEEN '+str(first)+' AND '+str(last)+' ORDER BY id;'+
-                'SELECT * FROM provider_accounts WHERE order_id BETWEEN '+str(first)+' AND '+str(last)+' ORDER BY id;'+
+                'SELECT * FROM service_effects WHERE provider_reference_id IS NOT NULL AND order_id BETWEEN '+str(first)+' AND '+str(last)+' ORDER BY id;'+
                 'SELECT * FROM service_effects WHERE order_id BETWEEN '+str(first)+' AND '+str(last)+' ORDER BY id;'+
                 'SELECT * FROM pays WHERE order_id BETWEEN '+str(first)+' AND '+str(last)+' ORDER BY id;'+
                 'SELECT userid,wallet FROM users ORDER BY userid')
@@ -465,24 +463,21 @@ def main():
                 "plan_id,remote_username,requested_expire,requested_bytes,request_sha256,state,order_id,provider_snapshot)"
                 f" VALUES({effect_id},'admin_bulk','bulk:9001:{oid}',9001,1,'{marker}',3,'pg:fixture','{endpoint}',8,'{remark}',2000000000,2147483648,"
                 f"REPEAT('c',64),'local_recorded',{oid},'{snapshot}');"
-                "INSERT INTO provider_accounts(effect_id,order_id,provider,panel_id,instance_key,endpoint_sha256,remote_user_id,remote_created_at,"
-                "remote_username,operation_marker,entitlement_snapshot,state)"
-                f" VALUES({effect_id},{oid},'pasarguard',1,REPEAT('b',32),'{endpoint}',{remote_id},'2026-10-26T05:00:00.123456Z',"
-                f"'{remark}','achbot:v1:{marker}','{entitlement}','linked')")
+                +shared_storage.identity(effect_id,oid,1,pg_url,remote_id,'2026-10-26T05:00:00.123456Z',remark,'achbot:v1:'+marker,entitlement,server_id=3,plan_id=8,existing=True))
         retire()
         for oid in range(400,450):seed(oid,remark='fair_mb_wait_'+str(oid),notif=1)
         fair_pg_target(500,50,1400,'1')
         held=deferred_snapshot(400,449)
-        target=sql('SELECT * FROM orders_list WHERE id=500;SELECT * FROM provider_accounts WHERE order_id=500')
+        target=sql('SELECT * FROM orders_list WHERE id=500;SELECT * FROM service_effects WHERE provider_reference_id IS NOT NULL AND order_id=500')
         requests=(len(mb.trace),len(pguard.trace));before_delete=(deletes(mb),deletes(pguard))
         first=call('deletion_baseline');second=call('deletion_baseline')
         yes(first==[] and second==[] and deferred_snapshot(400,449)==held and
-            sql('SELECT * FROM orders_list WHERE id=500;SELECT * FROM provider_accounts WHERE order_id=500')==target and
+            sql('SELECT * FROM orders_list WHERE id=500;SELECT * FROM service_effects WHERE provider_reference_id IS NOT NULL AND order_id=500')==target and
             requests==(len(mb.trace),len(pguard.trace)) and before_delete==(deletes(mb),deletes(pguard)),
             'deletion_fairness_5568_RED_same_fifty_deferred_rows_starve_valid_native_target')
         first=call('warnings')
         yes(first==[] and delete_cursor()==449 and deferred_snapshot(400,449)==held and
-            sql('SELECT * FROM orders_list WHERE id=500;SELECT * FROM provider_accounts WHERE order_id=500')==target and
+            sql('SELECT * FROM orders_list WHERE id=500;SELECT * FROM service_effects WHERE provider_reference_id IS NOT NULL AND order_id=500')==target and
             requests==(len(mb.trace),len(pguard.trace)) and before_delete==(deletes(mb),deletes(pguard)),
             'deletion_fairness_marzban_deferred_batch_advances_without_target_or_payment_changes')
         call('warnings')
@@ -549,7 +544,7 @@ def main():
         def warning_financial_snapshot():
             return sql('SELECT * FROM users ORDER BY id;SELECT * FROM pays ORDER BY id;'+
                 'SELECT * FROM automatic_renewal_attempts ORDER BY id;'+
-                'SELECT * FROM service_effects ORDER BY id;SELECT * FROM provider_accounts ORDER BY id;'+
+                'SELECT * FROM service_effects ORDER BY id;SELECT * FROM service_effects WHERE provider_reference_id IS NOT NULL ORDER BY id;'+
                 'SELECT id,ucount FROM server_info ORDER BY id')
         finance=warning_financial_snapshot()
         traces=(len(mb.trace),len(pguard.trace))
@@ -619,7 +614,7 @@ def main():
                 'SELECT * FROM users ORDER BY id;SELECT * FROM pays ORDER BY id;'+
                 'SELECT * FROM automatic_renewal_attempts ORDER BY id;'+
                 'SELECT * FROM payment_attempts ORDER BY id;'+
-                'SELECT * FROM service_effects ORDER BY id;SELECT * FROM provider_accounts ORDER BY id;'+
+                'SELECT * FROM service_effects ORDER BY id;SELECT * FROM service_effects WHERE provider_reference_id IS NOT NULL ORDER BY id;'+
                 'SELECT id,ucount FROM server_info ORDER BY id')
         for refusal in ['native_schedule','malformed_linked_history','exhausted_linked_history']:
             keys=['owned:'+str(i) for i in range(4096)]
@@ -628,7 +623,7 @@ def main():
                 consumed_keys=False if refusal=='malformed_linked_history' else keys)
             history_sql='NULL' if history is None else "'"+json.dumps(history,separators=(',',':'))+"'"
             key_sql='NULL' if history is None else "'"+history['key']+"'"
-            sql('UPDATE provider_accounts SET mutation_key='+key_sql+',mutation_snapshot='+history_sql+
+            sql('UPDATE service_effects SET provider_mutation_key='+key_sql+',provider_mutation_snapshot='+history_sql+
                 " WHERE order_id=2006;UPDATE orders_list SET status=1,autoRenew='on',notif=-1 WHERE id=2006")
             pguard.user.update(status='active',expire=int(time.time())+1800,
                 data_limit=1073741824,used_traffic=1000000000,

@@ -164,7 +164,8 @@ achEvent('probe',[
 """
             return prev(kind,modern)
         purchase.block=block
-        def do(kind,data='',actor=1001,**extra):
+        def do(kind,data='',actor=None,**extra):
+            actor=(9001 if kind=='transfer' else 1001) if actor is None else actor
             panel.trace.clear()
             z=purchase.run(work,env,stage,DB,kind,
                 {'actor':actor,'data':data,**extra},modern=True)
@@ -175,7 +176,7 @@ achEvent('probe',[
                 raise RuntimeError('Unapproved Marzban API call during logical group flow')
             return z
         def has(z,needle):return needle in json.dumps(z['events'],ensure_ascii=False)
-        def refuse(tag,kind,data,actor=1001):
+        def refuse(tag,kind,data,actor=None):
             before=snapshot(work,env)
             z=do(kind,data,actor)
             if snapshot(work,env)!=before:raise RuntimeError(tag+' changed SQL')
@@ -297,13 +298,16 @@ achEvent('probe',[
             for sid,tag in [(4,'cross_panel_blocked'),(5,'same_api_different_group_blocked'),
                             (6,'retired_provider_blocked')]:
                 refuse(tag,'transfer',f'switchServer{sid}_{oid}')
-            refuse('nonowner_cannot_switch','transfer',f'switchServer3_{oid}',actor=9002)
+            sql(work,env,'UPDATE users SET isAdmin=0 WHERE userid=9002')
+            refuse('ordinary_owner_cannot_switch','transfer',f'switchServer3_{oid}',actor=1001)
+            refuse('ordinary_owner_cannot_open_switch_menu','transfer',f'switchLocation{oid}_2_0_0',actor=1001)
+            refuse('nonadmin_nonowner_cannot_switch','transfer',f'switchServer3_{oid}',actor=9002)
             refuse('admin_cannot_cross_panel','admin_transfer',f'selectServerId_{oid}_4',actor=9001)
             refuse('forged_admin_callback_denied','admin_transfer',f'selectServerId_{oid}_3',actor=1001)
             before=snapshot(work,env)
             fields=sql(work,env,f'SELECT fileid,token,remark,uuid,link,amount,status FROM orders_list WHERE id={oid}')
             z=do('transfer',f'switchServer3_{oid}')
-            if getid()!=3 or not has(z,'editText'):raise RuntimeError('User remapping failed')
+            if getid()!=3 or not has(z,'editText'):raise RuntimeError('Administrator remapping failed')
             if fields!=sql(work,env,
                 f'SELECT fileid,token,remark,uuid,link,amount,status FROM orders_list WHERE id={oid}'):
                 raise RuntimeError('Logical transfer modified physical account or payment')
@@ -314,7 +318,7 @@ achEvent('probe',[
             z=do('probe',oid=oid)
             if not has(z,'[true, true]'):raise RuntimeError('Renewal blocked after group move: '+str(z))
             passed('original_plan_renewal_still_valid')
-            refuse('replayed_user_callback','transfer',f'switchServer3_{oid}')
+            refuse('replayed_admin_callback','transfer',f'switchServer3_{oid}')
             reject=assign(3,g2,False)
             if not has(reject,'group_change_would_strand_order'):
                 raise RuntimeError('Group edit stranded existing order')
@@ -493,7 +497,7 @@ achEvent('probe',[
             'concurrent_two_admin_group_creation_verified':True,
             'pinned_v9_source_on_migrated_schema_verified':True,
             'unicode_group_name_contract_verified':True,
-            'no_real_provider_or_payment_calls':True,
+            'no_real_provider_or_payment_calls':True,'administrator_only_switching':True,
             'current_unified_onboarding':onboarding_proof,'scenarios':checks}
     if args.report:args.report.write_text(json.dumps(report,indent=2,ensure_ascii=False)+'\n')
     print(json.dumps({k:v for k,v in report.items() if k!='scenarios'},ensure_ascii=False))

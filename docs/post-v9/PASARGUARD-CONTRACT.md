@@ -43,20 +43,21 @@ presentation never constructs protocol/SNI/transports.
 
 ## Persistence
 
-Migration011 is additive SOURCE ONLY. Missing011 must leave existing Marzban
-usable but fail closed for PasarGuard setup/financial dispatch.
+The current source requires shared-storage consolidation012 for PasarGuard;
+missing/incomplete012 leaves original-schema Marzban usable but fails closed for
+PasarGuard setup/dispatch. Historical011 is the migration input, not the current
+storage model. See [shared storage and recovery](SHARED-PROVIDER-STORAGE.md).
 
-- provider_panels: physical connection; immutable random instance_key, private
-  api_key. Logical profiles reference this shared identity.
-- server_info.provider_panel_id + provider_group_ids: default native Groups.
-- server_plans.provider_group_ids: NULL inherits, explicit list replaces.
-- pays.provider_snapshot and service_effects.provider_snapshot: nullable JSON
-  {provider,panel_id,instance_key,endpoint_sha256,group_ids}. Resolve at quote,
-  copy paid snapshot before HTTP; never overwrite from mutable defaults.
-- provider_accounts: effect_id unique reserved BEFORE HTTP, order_id nullable
-  until linking; remote ID/incarnation NULL until verified. Stores endpoint
-  digest, original marker, username and entitlement_snapshot. No credentials
-  in journals; no deletion cascade to orders/effects; unknown cannot reissue.
+- server_config: actual endpoint/API key in panel_url/password, stable connection
+  identity/version/enabled fields; logical aliases retain their same instance.
+- server_info.provider_group_ids: server's native access selection.
+- server_plans.provider_group_ids: NULL inherits, explicit existing list replaces.
+- pays.provider_snapshot and service_effects.provider_snapshot: immutable quote
+  target/entitlement evidence, preserved byte-for-byte during consolidation.
+- orders_list: originating provider effect plus native ID/creation time.
+- service_effects: pre-order reservation, verified identity and nullable durable
+  provider mutation/replay evidence on the actual create/adopt effect. No separate
+  account/connection table or deletion cascade. Unknown outcomes cannot reissue.
 
 Global storage functions in src/Panel/ProviderStorage.php:
 
@@ -72,13 +73,13 @@ Global storage functions in src/Panel/ProviderStorage.php:
 Storage errors throw private reason-only RuntimeException. Reservation uses the
 caller's SQL transaction; caller MUST commit it before HTTP. It is idempotent
 only for the exact same existing reservation; returned state never authorizes a
-second dispatch. The returned row includes newly_reserved=true only on INSERT;
+second dispatch. The returned row includes newly_reserved=true only on the first guarded reservation;
 exact existing reservations return newly_reserved=false. Reserve requires an
 open caller transaction and validates the shared effect operation/username,
 endpoint and pinned snapshot. Trials use genuine nonpaid shared effect rows. Shared service_effects owns financial/replay state. Pure
-existing Marzban does not load/use provider tables.
-Source-only revision2 adds nullable provider_accounts.mutation_key (VARCHAR100)
-and mutation_snapshot (LONGTEXT) for durable action/absolute-intent fencing.
+existing Marzban does not require shared native storage. Nullable existing-effect
+provider_mutation_key (VARCHAR100) and provider_mutation_snapshot (LONGTEXT) retain
+durable action/absolute-intent fencing.
 The runtime commits linked -> mutating with intent before HTTP; unconfirmed
 writes remain mutating/review and cannot authorize replay. The purchased
 entitlement_snapshot remains intact. No production migration is implied.

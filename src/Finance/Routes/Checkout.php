@@ -126,8 +126,8 @@ if (is_string($data) && strlen($data) <= 64 && preg_match('/\ApayCustomWithWalle
         try {
             $orderId=insertOrder(
                 $connection,$uid,$token,$fid,$server_id,$inbound_id,
-                $remark,$uniqid,$protocol,$expire_date,$vray_link,
-                $price,$date,$rahgozar,$agentBought,true);
+                $remark,$uniqid,$expire_date,$vray_link,
+                $price,$date,$agentBought,true);
             achbotLinkPaidAccountEffect($connection,$effectId,$orderId);
             if ($connection->commit()!==true)
                 throw new RuntimeException('custom_wallet_order_commit_unknown');
@@ -245,23 +245,18 @@ if (preg_match('/^showQr(Sub|Config)(\d+)/', $data, $match)) {
         $vraylink = $presentation['qr_config_links'];
         if (!$vraylink) {alert(\achbotMessage('payment.checkout.alert.baff5f2488'),true);return;}
 
+        $complete = true;
         foreach ($vraylink as $vray_link) {
-            $file = RandomString() . ".png";
-            $ecc = 'L';
-            $pixel_Size = 11;
-            $frame_Size = 4;
-
-            QRcode::png($vray_link, $file, $ecc, $pixel_Size, $frame_Size);
-
-            sendPhoto(
-                $botUrl . $file,
-                ($acc_text ?? ''),
-                json_encode(['inline_keyboard' => [[['text' => $buttonValues['back_to_main'], 'callback_data' => "mainMenu"]]]]),
-                "HTML",
-                $from_id
+            $sent = sendQrFromLink(
+                $vray_link,
+                \AchBot\Subscription\Presentation\configQrText($vray_link),
+                '{}', (string)$botUrl, (int)$from_id, '', null,
+                \AchBot\Subscription\Presentation\configQrCaption($vray_link, $presentation)
             );
-            unlink($file);
+            $complete = $sent && $complete;
         }
+        if (!$complete) alert(\achbotMessage('subscription.presentation.config_qr_delivery_unconfirmed'), true);
+        if (($presentation['notice_html'] ?? '') !== '') sendMessage($presentation['notice_html'], null, 'HTML');
     }
 }
 
@@ -600,8 +595,8 @@ if (preg_match('/^accCustom(.+)$/D', $data, $match) && $text != $buttonValues['c
         try {
             $orderId=insertOrder(
                 $connection,$uid,$token,$fid,$server_id,$inbound_id,
-                $remark,$uniqid,$protocol,$expire_date,$vray_link,
-                $price,$date,$rahgozar,$agentBought,true);
+                $remark,$uniqid,$expire_date,$vray_link,
+                $price,$date,$agentBought,true);
             achbotLinkPaidAccountEffect($connection,$effectId,$orderId);
             $fin=$connection->prepare("UPDATE pays SET state='approved'
                 WHERE id=? AND type='BUY_SUB' AND state='processing' AND approved_by=?");
@@ -936,10 +931,10 @@ if (is_string($data) && strlen($data) <= 64 && preg_match('/\ApayBuyWithWallet([
                 try {
                     $orderId=insertOrder(
                         $connection,$uid,$token,$fid,$server_id,$inbound_id,
-                        $remark,$uniqid2?:$uniqid,$protocol,$expire_date,
+                        $remark,$uniqid2?:$uniqid,$expire_date,
                         $vray_link,
                         achbotAllocateOrderAmount((int)$price,$accountCount,$i),
-                        $date,$rahgozar,$agent_bought,true);
+                        $date,$agent_bought,true);
                     achbotLinkPaidAccountEffect($connection,$effectId,$orderId);
                     if ($connection->commit()!==true)
                         throw new RuntimeException('wallet_buy_order_commit_unknown');

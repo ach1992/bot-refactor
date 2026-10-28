@@ -97,6 +97,21 @@ def driver_source():
     old="function achbotSupportsPaymentSubject(...$args){return true;}"
     assert driver.count(old)==1
     driver=driver.replace(old,"require_once $root.'/src/Purchase/Core.php';")
+    old="""function getMarzbanUser($serverId,$remark){
+    $GLOBALS['events'][]=['name'=>'remote_get','username'=>$remark];
+    $found=$GLOBALS['remote_accounts'][$remark]??null;
+    return $found ? (object)$found : null;
+}"""
+    assert driver.count(old)==1
+    driver=driver.replace(old,"""function getMarzbanUser($serverId,$remark){
+    $GLOBALS['events'][]=['name'=>'remote_get','username'=>$remark];
+    $found=$GLOBALS['remote_accounts'][$remark]??null;
+    if($found)return(object)$found;
+    $existing=$GLOBALS['spec']['existing_native']??null;
+    if(!is_array($existing) || (int)$serverId!==(int)$existing['server_id'] ||
+       $remark!==$existing['username'])return null;
+    return(object)$existing;
+}""")
     old="$GLOBALS['spec']=$spec;"
     assert driver.count(old)==1
     driver=driver.replace(old,"""$mainValues=['renew_account_request_message'=>
@@ -118,10 +133,15 @@ if (($spec['isolation']??'')==='READ-COMMITTED')
 """)
     return driver
 
-def customer_action(w,e,stage,driver,route,hash_,actor,iso,dir_):
+def existing_native(n):
+    return dict(server_id=2,username='f1serv'+str(n),expire=2000000000,
+                data_limit=10*1073741824,used_traffic=1073741824,status='active')
+
+def customer_action(w,e,stage,driver,route,hash_,actor,iso,dir_,n,include_native=True):
     spec=dict(data=route[1]+hash_,step='none',actor=actor,
         route='renewal' if route[0]=='renewal' else 'extension',
         remote_mode='success',isolation=iso,
+        existing_native=existing_native(n) if include_native else None,
         f1_pause=True,f1_ready=str(dir_/'action-ready'),
         f1_release=str(dir_/'action-release'))
     return subprocess.Popen(['php','-n','-d','extension=mysqlnd','-d','extension=mysqli',
@@ -165,7 +185,7 @@ def run_case(w,e,stage,driver,writer,route,n,previous=False,iso='READ-COMMITTED'
     actor=11800+n
     hash_,typ,oid=setup_case(w,e,route,actor,n)
     dir_=w/('f1-case-'+str(n));dir_.mkdir()
-    action=customer_action(w,e,stage,driver,route,hash_,actor,iso,dir_)
+    action=customer_action(w,e,stage,driver,route,hash_,actor,iso,dir_,n)
     try:
         wait(dir_/'action-ready',action)
         before=sql(w,e,f'SELECT wallet FROM users WHERE userid={actor}')
@@ -201,7 +221,7 @@ def run_a_first(w,e,stage,driver,writer,route,n,iso):
     dir_=w/('f1-case-'+str(n));dir_.mkdir()
     spec=dict(data=route[1]+hash_,step='none',actor=actor,
         route='renewal' if route[0]=='renewal' else 'extension',
-        remote_mode='success',isolation=iso,
+        remote_mode='success',isolation=iso,existing_native=existing_native(n),
         f1_after_owner=True, f1_after_ready=str(dir_/'a-ready'),
         f1_after_release=str(dir_/'a-release'))
     action=subprocess.Popen(['php','-n','-d','extension=mysqlnd','-d',
@@ -267,9 +287,23 @@ def main():
                 n+=1
                 scenarios.append(run_a_first(w,e,current,driver,writer,route,n,iso))
                 n+=1
+        route=ROUTES[2];n=99;actor=11800+n
+        hash_,typ,oid=setup_case(w,e,route,actor,n)
+        dir_=w/'f1-unknown-native';dir_.mkdir()
+        (dir_/'action-release').write_text('no-pause')
+        before=purchase.snapshot(w,e,DB)
+        action=customer_action(w,e,current,driver,route,hash_,actor,'READ-COMMITTED',dir_,n,False)
+        out,err=action.communicate(timeout=15)
+        assert action.returncode==0 and not err,(out,err)
+        response=json.loads(out)
+        assert response['fatal'] is None and any(v['name']=='remote_get'for v in response['events']),response
+        assert not any(v['name']=='remote_edit'for v in response['events']),response
+        assert purchase.snapshot(w,e,DB)==before
+        scenarios.append('f1_unknown_native_refuses_before_wallet_claim_or_effect')
     result={'complete':True,'cases':len(scenarios),'scenarios':scenarios,
             'reviewed_source_red':True,'current_source_green':True,
-            'real_php_mysqli':True,'owned_mariadb_only':True,'live_effects':0}
+            'real_php_mysqli':True,'owned_mariadb_only':True,'live_effects':0,
+            'explicit_existing_native_baseline':True,'unknown_native_refuses_preclaim':True}
     if args.report:args.report.write_text(json.dumps(result,indent=2)+'\n')
     print(json.dumps(result))
 if __name__=='__main__':main()

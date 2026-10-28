@@ -26,16 +26,6 @@ function achbotProviderImportBase(string $base,string $prefix): ?array {
     $origin=$p['scheme'].'://'.$p['host'].(isset($p['port'])?':'.$p['port']:'');
     return achbotProviderImportParts($origin.$suffix.'/probe');
 }
-function achbotProviderImportOriginAllowed(string $supplied,string $trusted): bool {
-    if ($supplied===$trusted) return true;
-    $a=parse_url($supplied);$b=parse_url($trusted);
-    $host=strtolower((string)($b['host']??''));
-    if (!$a || !$b || !str_starts_with($host,'*.') ||
-        !preg_match('/^\*\.[a-z0-9-]+(?:\.[a-z0-9-]+)+$/D',$host)) return false;
-    $suffix=substr($host,1);$actual=strtolower((string)($a['host']??''));
-    return $a['scheme']===$b['scheme'] && ($a['port']??null)===($b['port']??null) &&
-        strlen($actual)>strlen($suffix) && str_ends_with($actual,$suffix);
-}
 function achbotProviderImportServer(mysqli $db,int $serverId,bool $lock=false): array {
     $s=$db->prepare('SELECT c.* FROM server_config c JOIN server_info i ON i.id=c.id
         WHERE c.id=? AND i.active=1'.($lock?' FOR UPDATE':''));
@@ -86,25 +76,6 @@ function achbotProviderImportDate(string $value): string {
         throw new RuntimeException('import_created_at_invalid');
     return $date->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d\TH:i:s.u\Z');
 }
-function achbotProviderImportTrusted(array $supplied,array $native,array $server): bool {
-    $allowed=[[$native['origin'],$native['prefix']]];
-    foreach (array_merge([(string)$server['panel_url']],
-        array_filter(array_map('trim',explode(',',(string)($server['sub_links']??''))))) as $base) {
-        $b=achbotProviderImportBase($base,$native['prefix']);
-        if ($b) $allowed[]=[$b['origin'],$b['prefix']];
-        $direct=achbotProviderImportParts(rtrim($base,'/').'/probe');
-        if ($direct && $direct['prefix']!=='') $allowed[]=[$direct['origin'],$direct['prefix']];
-        $p=parse_url($base);
-        if ($p && !empty($p['host'])) {
-            $origin=$p['scheme'].'://'.$p['host'].(isset($p['port'])?':'.$p['port']:'');
-            $root=achbotProviderImportBase($origin,$native['prefix']);
-            if ($root) $allowed[]=[$root['origin'],$root['prefix']];
-        }
-    }
-    foreach ($allowed as [$origin,$prefix])
-        if ($supplied['prefix']===$prefix && achbotProviderImportOriginAllowed($supplied['origin'],$origin)) return true;
-    return false;
-}
 function achbotMarzbanImportTarget(array $target): array {
     return ['provider'=>'marzban','server_id'=>(int)$target['server_id'],'panel_url'=>$target['panel_url'],
         'credentials_sha256'=>hash('sha256',json_encode([$target['username'],$target['password']],JSON_THROW_ON_ERROR))];
@@ -128,7 +99,7 @@ function achbotMarzbanExistingUser(mysqli $db,int $serverId,string $input,?strin
         }
         if (!$supplied || !is_string($usernameHint) || !preg_match('/^[a-zA-Z0-9_@.-]{1,100}$/D',$usernameHint))
             throw new RuntimeException('import_identity_unverified');
-        $server=achbotProviderImportServer($db,$serverId);
+        achbotProviderImportServer($db,$serverId);
         $pin=achbotProviderDeletionTarget($db,$serverId,$usernameHint);
         if (($pin['provider']??null)!=='marzban') throw new RuntimeException('import_target_invalid');
         $r=getMarzbanUser($serverId,$usernameHint,null,true,$pin['panel_url'],$pin);
@@ -142,8 +113,9 @@ function achbotMarzbanExistingUser(mysqli $db,int $serverId,string $input,?strin
         $url=$r->subscription_url;
         if (str_starts_with($url,'/')) $url=rtrim($pin['panel_url'],'/').$url;
         $native=achbotProviderImportParts($url);
-        if (!$native || !achbotProviderImportTrusted($supplied,$native,$server))
-            throw new RuntimeException('import_origin_untrusted');
+        if (!$native) throw new RuntimeException('import_native_url_invalid');
+        // The submitted domain/path may be any subscription alias. Only the
+        // native token/account proof below authorizes this local attachment.
         if (!hash_equals($native['token'],$supplied['token'])) {
             $info=achbotProviderSubscriptionInfo($native['origin'].$native['prefix'].'/'.
                 rawurlencode($supplied['token']).'/info',true);
@@ -198,7 +170,7 @@ function achbotPgImportTarget(array $panel): array {
 /** Native subscriptions rotate on read. Validate the supplied older token at a trusted /info route. */
 function achbotPasarGuardExistingUser(mysqli $db,int $serverId,string $input,?string $usernameHint=null): object {
     try {
-        achbotPgLoad();$server=achbotProviderImportServer($db,$serverId);
+        achbotPgLoad();achbotProviderImportServer($db,$serverId);
         $panel=achbotPgServerPanel($db,$serverId);$supplied=achbotProviderImportParts($input);
         if (!$supplied) throw new RuntimeException('import_url_invalid');
         $hint=achbotPgImportHint($supplied['token']);
@@ -211,7 +183,8 @@ function achbotPasarGuardExistingUser(mysqli $db,int $serverId,string $input,?st
             (isset($hint['username']) && $hint['username']!==$u['username'])) throw new RuntimeException('import_hint_mismatch');
         $native=achbotProviderImportParts($u['subscription_url']);
         if (!$native) throw new RuntimeException('import_native_url_invalid');
-        if (!achbotProviderImportTrusted($supplied,$native,$server)) throw new RuntimeException('import_origin_untrusted');
+        // Verify the submitted bearer at the trusted native endpoint; never
+        // fetch or require registration of the submitted alias domain/path.
         $info=achbotPgSubscriptionInfo($panel,$native['origin'].$native['prefix'].'/'.
             rawurlencode($supplied['token']).'/info');
         if (($info['success']??false)!==true) throw new RuntimeException('import_token_unverified');
@@ -335,14 +308,11 @@ function achbotPasarGuardAdoptExistingLocked(mysqli $db,int $serverId,object $re
         throw new RuntimeException('import_proof_invalid');
     // Lock current configuration before the final native proof; no remote mutation is performed.
     $server=achbotProviderImportServer($db,$serverId,true);
-    $binding=achbotProviderRow($db,'SELECT i.provider_panel_id,c.type,c.panel_url FROM server_info i
+    $binding=achbotProviderRow($db,'SELECT c.provider_connection_id,c.type,c.panel_url FROM server_info i
         JOIN server_config c ON c.id=i.id WHERE i.id=? FOR UPDATE','i',[$serverId]);
-    $panelId=achbotProviderPositiveInt($binding['provider_panel_id']??null);
-    $locked=achbotProviderRow($db,'SELECT * FROM provider_panels WHERE id=? FOR UPDATE','i',[$panelId]);
-    if (!$locked) throw new RuntimeException('import_target_changed');
-    $locked['id']=(int)$locked['id'];$locked['enabled']=(int)$locked['enabled'];
-    if ($binding['type']!=='pasarguard' || $locked['provider']!=='pasarguard' || $locked['enabled']!==1 ||
-        !achbotPgPanelValid($locked) || rtrim($binding['panel_url'],'/')!==rtrim($locked['api_url'],'/') ||
+    $panelId=achbotProviderPositiveInt($binding['provider_connection_id']??null);
+    $locked=achbotProviderPanel($db,$panelId,true);
+    if ($binding['type']!=='pasarguard' || rtrim($binding['panel_url'],'/')!==rtrim($locked['api_url'],'/') ||
         achbotPgImportTarget($locked)!==($proof['target']??null)) throw new RuntimeException('import_target_changed');
     $fresh=achbotPasarGuardExistingUser($db,$serverId,$proof['input_url']);
     $confirmed=$fresh->provider_import_proof??null;

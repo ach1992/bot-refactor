@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """AChBot provider integration: actual PHP, owned socket MariaDB and native HTTP fixtures."""
 import argparse,copy,io,json,shutil,subprocess,sys,tarfile,tempfile,threading
+import provider_storage_fixture as shared_storage
 from urllib.parse import urlsplit
 from pathlib import Path
 import test_post_v9_pasarguard_client as pg
@@ -19,6 +20,10 @@ require $argv[1].'/src/Finance/ServiceEffects.php';
 require $argv[1].'/src/Finance/PaymentLifecycle.php';
 require $argv[1].'/src/Panel/ProviderAdmin.php';
 require __DIR__.'/presentation-under-test.php';
+$qrSource=file_get_contents($argv[1].'/buy_helpers.php');
+$qrStart=strpos($qrSource,"if (!function_exists('sendQrFromLink'))");
+$qrEnd=strpos($qrSource,"require_once __DIR__ . '/src/Purchase/OrderWrites.php'",$qrStart);
+eval(str_replace('__DIR__',var_export($argv[1],true),substr($qrSource,$qrStart,$qrEnd-$qrStart)));
 chdir(__DIR__);set_include_path(__DIR__);
 function achbotSupportsPanel($type){return in_array($type,['marzban','pasarguard'],true);}
 $GLOBALS['order_reads']=0;$GLOBALS['chat_reads']=0;
@@ -44,7 +49,7 @@ function setUser($value=null,$field='step'){
 function delMessage(...$args){$GLOBALS['events'][]=['delete_message'=>true];}
 function jdate(...$args){return 'fixture-date';}
 function RandomString(){return 'ownedqr';}
-function sendPhoto(...$args){$GLOBALS['events'][]=['photo'=>(string)($args[0]??'')];return (object)['ok'=>true];}
+function sendPhoto(...$args){$photo=$args[0]??'';$GLOBALS['events'][]=['photo'=>$photo instanceof CURLFile?$photo->getFilename():(string)$photo,'caption'=>$args[1]??null];return (object)['ok'=>true];}
 function bot(...$args){if (($args[0]??'')==='getChat') ++$GLOBALS['chat_reads'];return (object)['ok'=>true,'result'=>(object)['first_name'=>'Fixture']];}
 function getUserOrderDetailKeys(...$args){
  global $argv;require_once $argv[1].'/src/Subscription/AccountDetails.php';return \AchBot\Subscription\AccountDetails\getUserOrderDetailKeys(...$args);
@@ -176,7 +181,7 @@ $GLOBALS['update']=(object)['update_id'=>$spec['source']];
 $out=achbotProviderAction(2,'fixture_user',$spec['action']);break;
 case 'switch':
 $GLOBALS['update']=(object)['update_id'=>$spec['source']];
-$out=achbotReassignLogicalServer($db,91,3,1001);break;
+$admin=9001;$out=achbotReassignLogicalServer($db,91,3,(int)($spec['actor']??9001),($spec['admin_allowed']??true)===true);break;
 case 'groups':achbotPgLoad();$out=achbotPgAdminGroupIds($spec['groups'],achbotProviderPanel($db,1));break;
 default:throw new RuntimeException('fixture_op_missing');
 }
@@ -225,20 +230,30 @@ def main():
   (work/'phpqrcode').mkdir()
   (work/'phpqrcode/qrlib.php').write_text("<?php class QRcode {public static function png($payload,$file,...$rest){$GLOBALS['qr_payloads'][]=$payload;file_put_contents($file,'owned-png-placeholder');}}")
   buttons=['back_to_main']+sorted(set(re.findall(r"\$buttonValues\['([^']+)'\]",(ROOT/'src/Subscription/AccountDetails.php').read_text())))
-  def call(op,**spec):
+  def call(op,expected_stderr="",**spec):
    if op=='route':spec.setdefault('buttons',buttons)
    out=subprocess.run(['php','-d','display_errors=0','-d','log_errors=0',str(script),str(ROOT),str(work/'mysql.sock'),db,json.dumps(dict(op=op,**spec))],capture_output=True,text=True,timeout=25)
-   if out.returncode or out.stderr:raise AssertionError((out.returncode,out.stderr))
+   if out.returncode or out.stderr!=expected_stderr:raise AssertionError((out.returncode,out.stderr))
    return json.loads(out.stdout)
   def sql(s):return native.sql(work,env,s,db)
-  def yes(condition,name):
-   assert condition,name;checks.append(name)
+  def yes(condition,name,detail=None):
+   assert condition,(name,detail);checks.append(name)
   yes(call('gate')['out']=={'plan':True,'marzban':True},'marzban_works_without_011')
   sql("UPDATE server_config SET type='pasarguard' WHERE id=2")
   yes(call('gate')['out']=={'plan':False,'marzban':False},'pasarguard_fails_closed_without_011')
-  for name in ['001_marzban_panel_group_id.sql','004_automatic_renewal_attempts.sql','007_service_effects.sql','011_provider_identity.sql']:
-   sql((ROOT/'migrations/post-v9'/name).read_text())
-  sql("INSERT INTO provider_panels(id,provider,instance_key,name,api_url,api_key,version) VALUES(1,'pasarguard',REPEAT('b',32),'Fixture','"+url+"','fixture-private-key','5.5.1');UPDATE server_info SET provider_panel_id=1,provider_group_ids='[2,5]' WHERE id=2;")
+  sql("UPDATE server_config SET type='marzban' WHERE id=2")
+  migrations=['001_marzban_panel_group_id.sql','004_automatic_renewal_attempts.sql','007_service_effects.sql','011_provider_identity.sql']
+  shared_native_storage=(ROOT/'migrations/post-v9/012_shared_provider_storage.sql').exists()
+  if shared_native_storage:migrations.append('012_shared_provider_storage.sql')
+  for name in migrations:sql((ROOT/'migrations/post-v9'/name).read_text())
+  if shared_native_storage:
+   sql(shared_storage.connection(2,1,url)+"UPDATE server_info SET provider_group_ids='[2,5]' WHERE id=2;")
+  else:
+   # The pinned authorization RED executes its actual historical schema/runtime.
+   sql("INSERT INTO provider_panels(id,provider,instance_key,name,api_url,api_key,version)"
+       " VALUES(1,'pasarguard',REPEAT('b',32),'Fixture','"+url+"','fixture-private-key','5.5.1');"
+       "UPDATE server_config SET type='pasarguard',panel_url='"+url+"' WHERE id=2;"
+       "UPDATE server_info SET provider_panel_id=1,provider_group_ids='[2,5]' WHERE id=2;")
   sql("INSERT INTO pays(id,hash_id,user_id,plan_id,server_id,type,state,price,request_date) VALUES(1,'pgbuy',1001,7,2,'BUY_SUB','paid',100,1700000000)")
   snap=call('pin',pay=1)['out'];yes(snap['group_ids']==[2,5],'quote_pins_native_groups')
   sql("UPDATE server_info SET provider_group_ids='[5]' WHERE id=2;UPDATE server_plans SET provider_group_ids='[5]' WHERE id=7")
@@ -248,7 +263,8 @@ def main():
   sql("INSERT INTO orders_list(id,userid,token,transid,fileid,server_id,inbound_id,remark,uuid,protocol,expire_date,link,amount,status,date) VALUES(91,1001,'','',7,2,0,'fixture_user','native-placeholder','vless',"+str(expire)+",'[]',100,1,'fixture')")
   r=call('link',effect=effect);yes(r['out']['id']==17 and r['out']['provider']=='pasarguard','verified_account_links_order_by_native_id')
   sql("INSERT INTO users(userid,name,username,refcode,wallet,date,isAdmin,first_start,is_agent) VALUES(1011,'Foreign','foreign','0',50000,'1700000000',0,'sent',0),(1012,'Agent','agent','0',50000,'1700000000',0,'sent',1),(1013,'CurrentAdmin','currentadmin','0',50000,'1700000000',1,'sent',0),(1014,'RevokedAdmin','revokedadmin','0',50000,'1700000000',0,'sent',0)")
-  def read_snapshot():return sql("SELECT * FROM users ORDER BY id;SELECT * FROM orders_list ORDER BY id;SELECT * FROM provider_accounts ORDER BY id")
+  native_rows="service_effects WHERE provider_reference_id IS NOT NULL"if shared_native_storage else"provider_accounts"
+  def read_snapshot():return sql("SELECT * FROM users ORDER BY id;SELECT * FROM orders_list ORDER BY id;SELECT * FROM "+native_rows+" ORDER BY id")
   def read_call(actor,mode,**spec):return call('detailread',actor=actor,mode=mode,source=7000,buttons=buttons,**spec)['out']
   denied=[('directadmin',{}),('directowner',{'owner':1001}),('route',{'callback':'userOrderDetails91_0'}),
    ('quick',{'callback':'quickUserOrderDetails_91'}),('route',{'callback':'searchUsersConfig'}),
@@ -267,10 +283,10 @@ def main():
   for actor in [9001,1013]:
    for mode,spec in [('directadmin',{}),('route',{'callback':'userOrderDetails91_0'}),('quick',{'callback':'quickUserOrderDetails_91'}),('route',{'text':'fixture_user'})]:
     sql("UPDATE users SET step='"+('searchUsersConfig' if 'text' in spec else 'none')+"' WHERE userid="+str(actor))
-    requests=len(server.trace);writes=server.write_count;account_before=sql('SELECT * FROM provider_accounts WHERE order_id=91')
+    requests=len(server.trace);writes=server.write_count;account_before=sql('SELECT * FROM service_effects WHERE provider_reference_id IS NOT NULL AND order_id=91')
     result=read_call(actor,mode,**spec);shown=json.dumps(result,ensure_ascii=False)
     assert result['error'] is None and result['detail'] is not None if mode=='directadmin' else result['error'] is None,(actor,mode,result)
-    yes(result['error'] is None and result['order_reads']>0 and result['chat_reads']==1 and len(server.trace)>requests and server.write_count==writes and sql('SELECT * FROM provider_accounts WHERE order_id=91')==account_before and 'https://sub.example.invalid/token' in shown and 'vless://native-identity' in shown,'read_auth_current_'+str(actor)+'_'+mode+'_'+('searchtext' if 'text' in spec else spec.get('callback','direct'))+'_real_native_detail')
+    yes(result['error'] is None and result['order_reads']>0 and result['chat_reads']==1 and len(server.trace)>requests and server.write_count==writes and sql('SELECT * FROM service_effects WHERE provider_reference_id IS NOT NULL AND order_id=91')==account_before and 'https://sub.example.invalid/token' in shown and 'vless://native-identity' in shown,'read_auth_current_'+str(actor)+'_'+mode+'_'+('searchtext' if 'text' in spec else spec.get('callback','direct'))+'_real_native_detail')
    sql("UPDATE users SET step='none' WHERE userid="+str(actor))
   sql('UPDATE users SET isAdmin='+primary_role+' WHERE userid=9001')
   for agent in [0,1]:
@@ -293,15 +309,16 @@ def main():
    ('both_volume',1),('both_days',1)]
   for index,(field,value) in enumerate(invalid_units):
    requests=len(server.trace);writes=server.write_count
-   before=sql("SELECT * FROM provider_accounts WHERE order_id=91;SELECT userid,wallet FROM users ORDER BY userid;SELECT id,state,price FROM pays ORDER BY id")
+   before=sql("SELECT * FROM service_effects WHERE provider_reference_id IS NOT NULL AND order_id=91;SELECT userid,wallet FROM users ORDER BY userid;SELECT id,state,price FROM pays ORDER BY id")
    result=call('rawedit',source=5000+index,field=field,value=value)
-   yes(result['out']['success'] is False and len(server.trace)==requests and server.write_count==writes and sql("SELECT * FROM provider_accounts WHERE order_id=91;SELECT userid,wallet FROM users ORDER BY userid;SELECT id,state,price FROM pays ORDER BY id")==before,'invalid_unit_'+str(index)+'_rejects_before_native_GET_claim_or_money_change')
+   yes(result['out']['success'] is False and len(server.trace)==requests and server.write_count==writes and sql("SELECT * FROM service_effects WHERE provider_reference_id IS NOT NULL AND order_id=91;SELECT userid,wallet FROM users ORDER BY userid;SELECT id,state,price FROM pays ORDER BY id")==before,'invalid_unit_'+str(index)+'_rejects_before_native_GET_claim_or_money_change')
   # A relocation action is shown only when a real eligible destination exists.
-  sql("INSERT INTO server_info(id,title,ucount,remark,flag,active,state,provider_panel_id,provider_group_ids) VALUES(3,'Destination',10,'pgdst','',1,1,1,'[5]');REPLACE INTO server_config SELECT 3,panel_url,ip,sni,header_type,request_header,response_header,security,tlsSettings,type,username,password,port_type,reality,sub_links FROM server_config WHERE id=2")
+  sql("INSERT INTO server_info(id,title,ucount,remark,flag,active,state,provider_group_ids) VALUES(3,'Destination',10,'pgdst','',1,1,'[5]');DELETE FROM server_config WHERE id=3;"+shared_storage.clone(3,2))
   view=call('view',buttons=buttons)['out'];keys=view['keyboard']
   yes('https://sub.example.invalid/token' in view['msg'] and 'vless://native-identity' in view['msg'],'actual_pg_view_uses_native_subscription_and_links')
-  for callback in ['renewAccountAsk91','increaseAVolume91','increaseADay91','switchLocation91','changAccountConnectionLink91','showQrConfig91','showQrSub91']:
+  for callback in ['renewAccountAsk91','increaseAVolume91','increaseADay91','changAccountConnectionLink91','showQrConfig91','showQrSub91']:
    yes(callback in keys,'actual_pg_view_exposes_'+callback)
+  yes('switchLocation91'not in keys,'ordinary_customer_has_no_server_switch_control')
   r=call('qr',callback='showQrSub91',buttons=buttons);assert 'out' in r,r;qr=r['out']
   yes(qr['qr_payloads']==['https://sub.example.invalid/token'],'actual_pg_subscription_QR_uses_native_url')
   qr=call('qr',callback='showQrConfig91',buttons=buttons)['out']
@@ -317,30 +334,30 @@ def main():
    traffic=call('traffic',buttons=buttons)['out']
    yes(traffic['uncertain'] is False and traffic['found'] is True and traffic['status']==status,'confirmed_native_'+status+'_traffic_semantics')
    for audience in ['view','adminview']:
-    state_before=sql("SELECT * FROM provider_accounts WHERE order_id=91;SELECT * FROM orders_list WHERE id=91")
+    state_before=sql("SELECT * FROM service_effects WHERE provider_reference_id IS NOT NULL AND order_id=91;SELECT * FROM orders_list WHERE id=91")
     writes=server.write_count
     result=call(audience,buttons=buttons)['out']
     yes(label in result['msg'],'confirmed_native_'+status+'_'+audience+'_status_copy')
     callback='agentChangeUserConfigState91' if audience=='view' else 'changeUserConfigState91'
-    yes((callback in result['keyboard'])==(status in ['active','disabled']) and server.write_count==writes and sql("SELECT * FROM provider_accounts WHERE order_id=91;SELECT * FROM orders_list WHERE id=91")==state_before,'confirmed_native_'+status+'_'+audience+'_eligible_controls_without_writes')
+    yes((callback in result['keyboard'])==(status in ['active','disabled']) and server.write_count==writes and sql("SELECT * FROM service_effects WHERE provider_reference_id IS NOT NULL AND order_id=91;SELECT * FROM orders_list WHERE id=91")==state_before,'confirmed_native_'+status+'_'+audience+'_eligible_controls_without_writes')
   server.user['status']=original_status
-  dangerous=['renewAccountAsk91','increaseAVolume91','increaseADay91','switchLocation91','changePlan_91',
+  dangerous=['renewAccountAsk91','increaseAVolume91','increaseADay91','changePlan_91',
    'changAccountConnectionLink91','updateConfigConnectionLink91','showQrConfig91','showQrSub91',
    'deleteMyConfig91','changeUserConfigState91','agentChangeUserConfigState91','delUserConfig91',
    'toggleAutoRenew91','adminToggleAutoRenew91']
   for mode in ['read_timeout','foreign_created','held_mutating','http_404']:
    server.mode='ok' if mode=='held_mutating' else mode
-   if mode=='held_mutating':sql("UPDATE provider_accounts SET state='mutating' WHERE order_id=91")
+   if mode=='held_mutating':sql("UPDATE service_effects SET provider_state='mutating' WHERE order_id=91")
    traffic=call('traffic',buttons=buttons)['out']
    yes(traffic['uncertain'] is True and traffic['found'] is False,mode+'_traffic_reports_uncertainty')
    for audience in ['view','adminview']:
-    state_before=sql("SELECT * FROM provider_accounts WHERE order_id=91;SELECT * FROM orders_list WHERE id=91")
+    state_before=sql("SELECT * FROM service_effects WHERE provider_reference_id IS NOT NULL AND order_id=91;SELECT * FROM orders_list WHERE id=91")
     writes=server.write_count;requests=len(server.trace)
     result=call(audience,buttons=buttons)['out'];shown=result['msg']+result['keyboard']
     yes('قابل تأیید نیست' in result['msg'] and 'در حال بررسی' in result['msg'] and 'missing' not in shown and 'CONFIRMED_' not in shown and 'pg_' not in shown and 'pasarguard' not in shown.lower(),mode+'_'+audience+'_truthful_private_copy')
     yes(not any(action in result['keyboard'] for action in dangerous),mode+'_'+audience+'_no_unconfirmed_actions')
-    yes(server.write_count==writes and sql("SELECT * FROM provider_accounts WHERE order_id=91;SELECT * FROM orders_list WHERE id=91")==state_before and (mode!='held_mutating' or len(server.trace)==requests),mode+'_'+audience+'_preserves_rows_and_no_external_writes')
-   if mode=='held_mutating':sql("UPDATE provider_accounts SET state='linked' WHERE order_id=91")
+    yes(server.write_count==writes and sql("SELECT * FROM service_effects WHERE provider_reference_id IS NOT NULL AND order_id=91;SELECT * FROM orders_list WHERE id=91")==state_before and (mode!='held_mutating' or len(server.trace)==requests),mode+'_'+audience+'_preserves_rows_and_no_external_writes')
+   if mode=='held_mutating':sql("UPDATE service_effects SET provider_state='linked' WHERE order_id=91")
   server.mode='foreign_created'
   for audience in ['view','adminview']:
    result=call(audience,buttons=buttons,omit_status_template=True)['out']
@@ -356,7 +373,7 @@ def main():
   # Only the actual initial both-NULL state may have no consumed history.
   # Each corrupted fixture must survive rejection unchanged, with no new claim
   # and no provider GET/write. Restoring this still-initial fixture is test-only.
-  initial_history=sql("SELECT IFNULL(HEX(mutation_key),'NULL'),IFNULL(HEX(mutation_snapshot),'NULL'),state FROM provider_accounts WHERE order_id=91").strip()
+  initial_history=sql("SELECT IFNULL(HEX(provider_mutation_key),'NULL'),IFNULL(HEX(provider_mutation_snapshot),'NULL'),provider_state FROM service_effects WHERE order_id=91").strip()
   yes(initial_history=='NULL\tNULL\tlinked','initial_linked_account_has_both_history_fields_null')
   valid_history={'version':1,'key':'history:old','consumed_keys':['history:old']}
   bad_histories=[
@@ -386,13 +403,13 @@ def main():
   def text_sql(value):
    return 'NULL' if value is None else "CONVERT(X'"+value.encode().hex()+"' USING utf8mb4)"
   for index,(name,last,snapshot) in enumerate(bad_histories):
-   sql("UPDATE provider_accounts SET mutation_key="+text_sql(last)+",mutation_snapshot="+text_sql(snapshot)+" WHERE order_id=91")
-   before=sql("SELECT IFNULL(HEX(mutation_key),'NULL'),IFNULL(HEX(mutation_snapshot),'NULL'),state FROM provider_accounts WHERE order_id=91").strip()
+   sql("UPDATE service_effects SET provider_mutation_key="+text_sql(last)+",provider_mutation_snapshot="+text_sql(snapshot)+" WHERE order_id=91")
+   before=sql("SELECT IFNULL(HEX(provider_mutation_key),'NULL'),IFNULL(HEX(provider_mutation_snapshot),'NULL'),provider_state FROM service_effects WHERE order_id=91").strip()
    requests=len(server.trace);writes=server.write_count
    result=call('action',action='toggle',source=250+index)
-   after=sql("SELECT IFNULL(HEX(mutation_key),'NULL'),IFNULL(HEX(mutation_snapshot),'NULL'),state FROM provider_accounts WHERE order_id=91").strip()
+   after=sql("SELECT IFNULL(HEX(provider_mutation_key),'NULL'),IFNULL(HEX(provider_mutation_snapshot),'NULL'),provider_state FROM service_effects WHERE order_id=91").strip()
    yes(result['out']['success'] is False and len(server.trace)==requests and server.write_count==writes and after==before,'history_'+name+'_rejects_without_HTTP_or_new_claim')
-  sql("UPDATE provider_accounts SET mutation_key=NULL,mutation_snapshot=NULL WHERE order_id=91")
+  sql("UPDATE service_effects SET provider_mutation_key=NULL,provider_mutation_snapshot=NULL WHERE order_id=91")
   sql("UPDATE users SET is_agent=0 WHERE userid=1001;UPDATE orders_list SET agent_bought=1 WHERE id=91")
   before=len(server.trace)
   r=call('route',actor=1001,source=201,callback='agentChangeUserConfigState91')
@@ -410,7 +427,7 @@ def main():
   r=call('route',actor=1001,source=205,callback='changeUserConfigState91')
   text=json.dumps(r,ensure_ascii=False)
   yes('pg_' not in text and 'pasarguard' not in text.lower() and ('نیاز' in text or 'قطعی' in text),'customer_action_error_hides_provider_diagnostics')
-  server.mode='ok';sql("UPDATE provider_accounts SET state='linked' WHERE order_id=91");server.user['status']='active'
+  server.mode='ok';sql("UPDATE service_effects SET provider_state='linked' WHERE order_id=91");server.user['status']='active'
   posts=sum(t[0]=='POST' and t[1]=='/api/user' for t in server.trace)
   yes('error' in call('create') and sum(t[0]=='POST' and t[1]=='/api/user' for t in server.trace)==posts,'duplicate_create_never_dispatches')
   yes(call('gate')['out']=={'plan':True,'marzban':False},'neutral_gate_admits_pg_without_marzban_alias')
@@ -420,7 +437,10 @@ def main():
   writes=server.write_count
   yes(call('edit',pay=2,change={'plus_day':3})['out']['success'] is False and server.write_count==writes,'same_mutation_key_cannot_repeat')
   # Group switch verifies native PUT before SQL routing changes.
-  sql("UPDATE server_info SET provider_panel_id=1,provider_group_ids='[5]',active=1,state=1,ucount=10 WHERE id=3")
+  sql("UPDATE server_info SET provider_group_ids='[5]',active=1,state=1,ucount=10 WHERE id=3")
+  before_switch=sql('SELECT * FROM orders_list WHERE id=91');writes_before_switch=server.write_count
+  denied_switch=call('switch',source=99,actor=1001,admin_allowed=True)
+  yes(denied_switch['out']is None and sql('SELECT * FROM orders_list WHERE id=91')==before_switch and server.write_count==writes_before_switch,'forged_admin_flag_never_grants_customer_server_switch')
   r=call('switch',source=100);yes(r['out']['target_id']==3 and server.user['group_ids']==[5],'explicit_switch_updates_groups_then_local_route')
   # Switch back for remaining exact local-context checks.
   sql("UPDATE orders_list SET server_id=2 WHERE id=91")
@@ -440,31 +460,31 @@ def main():
   b=subprocess.Popen(args,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
   try:
    assert server.stale_captured.wait(10),'B did not capture its post-preflight arithmetic observation'
-   fence=sql("SELECT CONCAT(state,':',mutation_key) FROM provider_accounts WHERE order_id=91").strip()
-   before_claim=sql("SELECT * FROM provider_accounts WHERE order_id=91")
+   fence=sql("SELECT CONCAT(provider_state,':',provider_mutation_key) FROM service_effects WHERE order_id=91").strip()
+   before_claim=sql("SELECT * FROM service_effects WHERE provider_reference_id IS NOT NULL AND order_id=91")
    requests=len(server.trace)
    result_a=call('edit',pay=4,change={'plus_volume':1})
    yes(fence=='mutating:pay:5' and result_a['out']['success'] is False
        and len(server.trace)==requests and server.write_count==before_writes
-       and sql("SELECT * FROM provider_accounts WHERE order_id=91")==before_claim,
+       and sql("SELECT * FROM service_effects WHERE provider_reference_id IS NOT NULL AND order_id=91")==before_claim,
        'account_fence_owned_before_arithmetic_GET_blocks_competing_A')
   finally:server.release_stale.set()
   out,err=b.communicate(timeout=20);assert not err and b.returncode==0,(out,err)
   result_b=json.loads(out)
   yes(result_b['out']['success'] is True and server.write_count==before_writes+1,'only_fence_owner_B_dispatches_absolute_change')
-  sql("UPDATE provider_accounts SET state='linked',mutation_snapshot=JSON_SET(mutation_snapshot,'$.result','verified','$.current_group_ids',JSON_ARRAY(5)) WHERE order_id=91")
+  sql("UPDATE service_effects SET provider_state='linked',provider_mutation_snapshot=JSON_SET(provider_mutation_snapshot,'$.result','verified','$.current_group_ids',JSON_ARRAY(5)) WHERE order_id=91")
   prior_quota=server.user['data_limit']
   yes(call('edit',pay=4,change={'plus_volume':1})['out']['success'] is True and server.user['data_limit']==prior_quota+1073741824,'later_edit_observes_completed_prior_quota')
 
   sql("INSERT INTO pays(id,hash_id,user_id,plan_id,server_id,order_id,type,state,price,request_date) VALUES(3,'pgvolume',1001,7,2,91,'INCREASE_VOLUME_91_1','processing',100,1700000000)")
   sql("UPDATE pays SET volume=1,day=0 WHERE id=3")
   call('pin',pay=3)
-  before=sql("SELECT * FROM provider_accounts WHERE order_id=91");requests=len(server.trace)
+  before=sql("SELECT * FROM service_effects WHERE provider_reference_id IS NOT NULL AND order_id=91");requests=len(server.trace)
   mismatch=call('edit',pay=3,change={'plus_volume':2})
-  yes(mismatch['out']['success'] is False and len(server.trace)==requests and sql("SELECT * FROM provider_accounts WHERE order_id=91")==before,'paid_addon_mismatched_quantity_refused_before_native_claim')
+  yes(mismatch['out']['success'] is False and len(server.trace)==requests and sql("SELECT * FROM service_effects WHERE provider_reference_id IS NOT NULL AND order_id=91")==before,'paid_addon_mismatched_quantity_refused_before_native_claim')
   sql("UPDATE pays SET volume=0 WHERE id=3")
   legacy=call('edit',pay=3,change={'plus_volume':1})
-  yes(legacy['out']['success'] is False and len(server.trace)==requests and sql("SELECT * FROM provider_accounts WHERE order_id=91")==before,'paid_legacy_zero_addon_refused_before_native_claim')
+  yes(legacy['out']['success'] is False and len(server.trace)==requests and sql("SELECT * FROM service_effects WHERE provider_reference_id IS NOT NULL AND order_id=91")==before,'paid_legacy_zero_addon_refused_before_native_claim')
   sql("UPDATE pays SET volume=1 WHERE id=3")
   sql("INSERT INTO pays(id,hash_id,user_id,plan_id,server_id,order_id,type,state,price,request_date,volume,day) VALUES(10,'pgpinnedvol',1001,7,2,91,'INCREASE_VOLUME_91_81','processing_wallet',100,1700000000,2,0),(11,'pgpinnedday',1001,7,2,91,'INCREASE_DAY_91_82','processing',200,1700000000,0,2)")
   call('pin',pay=10);call('pin',pay=11)
@@ -480,18 +500,18 @@ def main():
   writes=server.write_count;server.mode='ok'
   r=call('edit',pay=3,change={'plus_volume':1});yes(r['out']['success'] is False and server.write_count==writes,'unknown_mutation_fence_prevents_retry')
   # Explicit operator reconciliation fixture releases fence; runtime never does this automatically.
-  sql("UPDATE provider_accounts SET state='linked' WHERE order_id=91")
+  sql("UPDATE service_effects SET provider_state='linked' WHERE order_id=91")
   yes(call('action',action='toggle',source=101)['out']['success'] is True and server.user['status']=='disabled','native_disable_verified')
   yes(call('action',action='toggle',source=102)['out']['success'] is True and server.user['status']=='active','native_enable_verified')
   server.mode='write_lost'
   r=call('action',action='toggle',source=106)
   yes(r['out']['success'] is False,'lost_toggle_is_uncertain')
-  intent=json.loads(sql("SELECT mutation_snapshot FROM provider_accounts WHERE order_id=91").strip())
+  intent=json.loads(sql("SELECT provider_mutation_snapshot FROM service_effects WHERE order_id=91").strip())
   yes(intent['changes']['expected']['status']=='disabled' and intent['changes']['before_status']=='active','lost_toggle_retains_durable_absolute_target')
   server.mode='ok'
   writes=server.write_count
   yes(call('action',action='toggle',source=107)['out']['success'] is False and server.write_count==writes,'unknown_toggle_blocks_new_source')
-  sql("UPDATE provider_accounts SET state='linked' WHERE order_id=91")
+  sql("UPDATE service_effects SET provider_state='linked' WHERE order_id=91")
 
   yes(call('action',action='reset',source=103)['out']['success'] is True and server.user['used_traffic']==0,'native_reset_verified')
   yes(call('action',action='revoke',source=104)['out']['success'] is True,'native_revoke_checks_proxy_identity')
@@ -507,30 +527,29 @@ def main():
   writes=server.write_count
   result=call('rawedit',source=5102,field='plus_volume',value=1)
   yes(result['out']['success'] is False and server.write_count==writes and server.user['data_limit']==0,'current_unlimited_addon_refuses_before_first_write')
-  sql("UPDATE provider_accounts SET state='linked' WHERE order_id=91")
+  sql("UPDATE service_effects SET provider_state='linked' WHERE order_id=91")
   result=call('rawedit',source=5103,field='volume',value=2)
   yes(result['out']['success'] is True and server.user['data_limit']==2147483648 and server.user['group_ids']==before_groups,'whole_replacement_from_unlimited_still_verified')
   server.user['data_limit']=9223372036854775807;writes=server.write_count
   result=call('rawedit',source=5104,field='plus_volume',value=1)
   yes(result['out']['success'] is False and server.write_count==writes and server.user['data_limit']==9223372036854775807,'integer_native_addition_overflow_refused_before_first_write')
   server.user['data_limit']=2147483648
-  sql("UPDATE provider_accounts SET state='linked' WHERE order_id=91")
+  sql("UPDATE service_effects SET provider_state='linked' WHERE order_id=91")
   yes(call('action',action='delete',source=105)['out']['success'] is True and server.user is None,'native_delete_requires_by_id_404')
   writes=server.write_count;yes(call('action',action='delete',source=105)['out']['success'] is False and server.write_count==writes,'deleted_identity_cannot_repeat')
   r=call('groups',groups='2,5,2');assert 'out' in r,r;yes(r['out']==[2,5],'admin_groups_are_native_validated')
   yes('error' in call('groups',groups='999'),'admin_unknown_group_denied')
+  before_legacy_connection=sql("SELECT * FROM server_info ORDER BY id;SELECT * FROM server_config ORDER BY id");before_legacy_requests=len(server.trace)
   sql("UPDATE users SET step='pg:connection' WHERE userid=9001")
-  r=call('admin',source=2000,text='Fixture connection two\n'+url+'\nfixture-private-key')
-  yes(r['out']['handled'] is True and 'fixture-private-key' not in json.dumps(r),'actual_admin_connection_setup_hides_key')
-  panel2=int(sql("SELECT id FROM provider_panels WHERE name='Fixture connection two'").strip())
-  sql("UPDATE users SET step='pg:server:"+str(panel2)+"' WHERE userid=9001")
-  r=call('admin',source=2001,text='Fixture logical server\n10\npgnew\nFlag\n2,5')
-  server_new=sql("SELECT i.id FROM server_info i JOIN server_config c ON c.id=i.id WHERE i.provider_panel_id="+str(panel2)+" AND c.type='pasarguard'").strip()
-  yes(server_new.isdigit(),'actual_admin_logical_server_native_groups_setup')
+  r=call('admin',source=2000,text='Fixture retired connection\n'+url+'\nfixture-private-key',
+      expected_stderr='achbot_pg_admin_action_deferred class=RuntimeException\n')
+  yes(r['out']['handled'] is True and 'fixture-private-key' not in json.dumps(r),'retired_separate_connection_input_never_echoes_credentials')
+  yes(sql("SELECT * FROM server_info ORDER BY id;SELECT * FROM server_config ORDER BY id")==before_legacy_connection and len(server.trace)==before_legacy_requests,
+      'retired_separate_connection_flow_cannot_create_orphan_connection')
   server.allow_rotated=True
-  sql("UPDATE users SET step='pg:key:"+str(panel2)+"' WHERE userid=9001")
+  sql("UPDATE users SET step='pg:key:1:2' WHERE userid=9001")
   r=call('admin',source=2002,text='fixture-rotated-key')
-  yes(sql("SELECT api_key FROM provider_panels WHERE id="+str(panel2)).strip()=='fixture-rotated-key' and 'fixture-rotated-key' not in json.dumps(r),'actual_admin_key_rotation_validated_without_echo')
+  yes(sql("SELECT COUNT(*) FROM server_config WHERE provider_connection_id=1 AND BINARY password<>BINARY 'fixture-rotated-key'").strip()=='0' and 'fixture-rotated-key' not in json.dumps(r),'actual_admin_shared_server_key_rotation_validated_without_echo')
   sql("UPDATE users SET step='pg:groups:server:2' WHERE userid=9001")
   call('admin',source=2003,text='2,5')
   yes(sql("SELECT provider_group_ids FROM server_info WHERE id=2").strip()=='[2,5]','actual_admin_server_default_groups')
@@ -541,7 +560,7 @@ def main():
   call('admin',source=2005,text='5')
   yes(sql("SELECT provider_group_ids FROM server_plans WHERE id=7").strip()=='[5]','actual_admin_plan_groups_replace')
   before=len(server.trace)
-  r=call('admin',actor=1002,source=2006,text='none',callback='pgAddConnection')
+  r=call('admin',actor=1002,source=2006,text='none',callback='pgServerGroups2')
   yes(len(server.trace)==before and r['out']['handled'] is True,'actual_admin_nonprivileged_callback_denied')
   pg.USER['id']=18
   r=call('trial');yes('error' not in r,'trial_uses_same_durable_native_create')
@@ -553,18 +572,20 @@ def main():
   r=call('gift');yes(r['out']['success'] is True,'direct_gift_preserves_native_identity_and_groups')
   writes=server.write_count
   yes(call('gift')['out']['success'] is False and server.write_count==writes,'gift_source_cannot_repeat')
-  sql("UPDATE server_plans SET price=100 WHERE id=8;UPDATE orders_list SET autoRenew='on',notif=1,expire_date=1700000000 WHERE id=92")
-  r=call('autoreserve');yes(r['out']['status']=='reserved','auto_renew_claim_pins_native_snapshot_before_wallet_commit')
+  sql("UPDATE users SET is_agent=0 WHERE userid=1001;UPDATE server_plans SET price=100 WHERE id=8;UPDATE orders_list SET autoRenew='on',notif=1,expire_date=1700000000 WHERE id=92")
+  # Automatic renewal is triggered by the fresh native quota, never the stale local date.
+  server.user['used_traffic']=server.user['data_limit']-1
+  r=call('autoreserve');yes(r['out']['status']=='reserved','auto_renew_claim_pins_native_snapshot_before_wallet_commit',r)
   claim=r['out'];r=call('autoedit',pay=claim['pay_id'],attempt=claim['id'])
   yes(r['out']['success'] is True and server.user['used_traffic']==0,'auto_renew_native_reset_and_absolute_limits_verified')
   yes(call('autoreserve')['out']['status']=='already_claimed','auto_renew_source_never_redebits')
   sql("UPDATE orders_list SET status=0 WHERE id=91")
   r=call('giftlist')
   yes(r['out']['total']==1 and r['out']['users'][0]['id']==18,'native_gift_roster_enumerates_exact_owned_by_id')
-  sql("UPDATE provider_accounts SET state='mutating' WHERE order_id=92")
+  sql("UPDATE service_effects SET provider_state='mutating' WHERE order_id=92")
   before=len(server.trace);r=call('giftlist')
   yes(r['out']['success'] is False and len(server.trace)==before,'native_gift_roster_never_silently_omits_unknown_account')
-  sql("UPDATE provider_accounts SET state='linked' WHERE order_id=92")
+  sql("UPDATE service_effects SET provider_state='linked' WHERE order_id=92")
 
 
   for line,remote in [(1,19),(2,20)]:
@@ -582,6 +603,8 @@ def main():
   source=subprocess.check_output(['git','-C',str(ROOT),'archive',baseline])
   with tarfile.open(fileobj=io.BytesIO(source)) as archive:archive.extractall(root,filter='data')
   shutil.copyfile(Path(__file__),root/'tools/test_post_v9_provider_integration.py')
+  # Test fixture code may be current; all archived runtime files remain byte-exact.
+  shutil.copyfile(Path(__file__).with_name('provider_storage_fixture.py'),root/'tools/provider_storage_fixture.py')
   red=subprocess.run([sys.executable,str(root/'tools/test_post_v9_provider_integration.py'),'--run-disposable'],capture_output=True,text=True,timeout=60)
   baseline_red=red.returncode!=0 and 'read_auth_1011_directadmin_direct_no_privileged_query_or_disclosure' in red.stderr
   assert baseline_red,('admin_read_baseline_did_not_reproduce',red.returncode,red.stdout,red.stderr)

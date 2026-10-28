@@ -254,14 +254,53 @@ if (($management['version']??null)!==1||($management['baseline_commit']??null)!=
     throw new RuntimeException('management_catalog_identity_drift');
 $managementAdded=$management['added_keys']??[];
 foreach ($managementAdded as $key=>$record) {
-    if (!str_starts_with($key,'admin_settings.management.')&&!in_array($key,['subscription.account_details.auto_renew_update_unverified','subscription.account_deletion.shared_effect_notice','subscription.account_details.status_on_hold','subscription.manual_accounts.import_unverified','subscription.manual_accounts.import_under_review','subscription.manual_accounts.import_completed','renewal.extensions.plan_selection_unavailable','renewal.extensions.plan_selection_review','subscription.manual_accounts.customer_not_found','subscription.account_deletion.report'],true))
+    if (!str_starts_with($key,'admin_settings.management.')&&!in_array($key,['subscription.account_details.auto_renew_update_unverified','subscription.account_deletion.shared_effect_notice','subscription.account_details.status_on_hold','subscription.manual_accounts.import_unverified','subscription.manual_accounts.import_under_review','subscription.manual_accounts.import_completed','renewal.extensions.plan_selection_unavailable','renewal.extensions.plan_selection_review','subscription.presentation.config_qr_delivery_unconfirmed','subscription.presentation.config_qr_name_suffix','subscription.manual_accounts.customer_not_found','subscription.account_deletion.report'],true))
         throw new RuntimeException('management_catalog_addition_scope_drift');
-    $audience=in_array($key,['subscription.account_details.auto_renew_update_unverified','subscription.account_deletion.shared_effect_notice','subscription.account_details.status_on_hold','subscription.manual_accounts.import_unverified','subscription.manual_accounts.import_under_review','subscription.manual_accounts.import_completed','renewal.extensions.plan_selection_unavailable','renewal.extensions.plan_selection_review'],true)?'user':'admin';
+    $audience=in_array($key,['subscription.account_details.auto_renew_update_unverified','subscription.account_deletion.shared_effect_notice','subscription.account_details.status_on_hold','subscription.manual_accounts.import_unverified','subscription.manual_accounts.import_under_review','subscription.manual_accounts.import_completed','renewal.extensions.plan_selection_unavailable','renewal.extensions.plan_selection_review','subscription.presentation.config_qr_delivery_unconfirmed','subscription.presentation.config_qr_name_suffix'],true)?'user':'admin';
     $sides=require dirname(__DIR__).'/messages/fa/'.$audience.'.php';
     [$topic,$name]=explode('.',$key,2);
     if (($record['audience']??null)!==$audience||($sides[$topic][$name]??null)!==($record['entry']??null)||empty($record['reason']))
         throw new RuntimeException('management_catalog_recipient_or_payload_drift:'.$key);
 }
+
+// Owner follow-up is an exact immutable before/after amendment, independent
+// of the preserved historical style proof. Every actual final template below
+// still executes through the real shipping loader.
+$owner=json_decode(file_get_contents(__DIR__.'/text_catalog_owner_followup.json'),true,512,JSON_THROW_ON_ERROR);
+if (($owner['version']??null)!==1||($owner['baseline_commit']??null)!=='c9959811e264b5a8728f6a44376cb69c9a89b7f4'||
+    ($owner['result_commit']??null)!=='faa9aa6502a4e24152f1fa6faad7f0ab7921652e'||
+    ($owner['authorization']??null)!=='docs/post-v9/UNIFIED-SERVICE-MANAGEMENT.md')
+    throw new RuntimeException('owner_followup_identity_drift');
+$ownerSides=[];
+foreach (['baseline_commit','result_commit']as$side) {
+    $ownerSides[$side]=[];
+    foreach (['user','admin']as$audience) {
+        $source=shell_exec('git -C '.escapeshellarg(dirname(__DIR__)).' show '.escapeshellarg($owner[$side].':messages/fa/'.$audience.'.php'));
+        $begin=is_string($source)?strpos($source,'return ['):false;
+        if ($begin===false)throw new RuntimeException('owner_followup_immutable_source_missing');
+        $entries=eval(substr($source,$begin));
+        foreach ($entries as$topic=>$definitions)foreach($definitions as$name=>$entry)
+            $ownerSides[$side][$topic.'.'.$name]=['audience'=>$audience,'entry'=>$entry];
+    }
+}
+$ownerChanges=$owner['changes']??[];$ownerExpected=[];
+foreach ($ownerSides['baseline_commit']as$key=>$record) {
+    $expected=$ownerSides['result_commit'][$key]??null;
+    if (!is_array($expected)||$record['audience']!==$expected['audience']||($current[$key]??null)!==$expected['entry'])
+        throw new RuntimeException('owner_followup_actual_result_drift:'.$key);
+    if($record['entry']!==$expected['entry']) {
+        $ownerExpected[]=$key;$change=$ownerChanges[$key]??null;
+        if(!is_array($change)||($change['before']??null)!==$record['entry']||($change['after']??null)!==$expected['entry']||
+            ($change['audience']??null)!==$record['audience']||empty($change['reason']))
+            throw new RuntimeException('owner_followup_exact_definition_drift:'.$key);
+        $declared=require dirname(__DIR__).'/messages/fa/'.$record['audience'].'.php';
+        [$topic,$name]=explode('.',$key,2);
+        if(($declared[$topic][$name]??null)!==$expected['entry'])
+            throw new RuntimeException('owner_followup_recipient_drift:'.$key);
+    }
+}
+$ownerKeys=array_keys($ownerChanges);sort($ownerKeys);sort($ownerExpected);
+if(count($ownerExpected)!==7||$ownerKeys!==$ownerExpected)throw new RuntimeException('owner_followup_scope_drift');
 
 $changes=$style['changes']??[];
 $retired=$style['retired_keys']??[];
@@ -316,12 +355,14 @@ foreach ($current as $key=>$entry) {
             $parameters!==['title','inbound_id']||empty($record['reasons']))
             throw new RuntimeException('admin_diagnostic_definition_mismatch');
     } else {
+        $styleEntry=$ownerChanges[$key]['before']??$entry;
+        $styleText=is_array($styleEntry)?$styleEntry['text']:$styleEntry;
         $beforeEntry=$baseline[$key];$before=is_array($beforeEntry)?$beforeEntry['text']:$beforeEntry;
         $beforeParameters=is_array($beforeEntry)?$beforeEntry['parameters']:[];
         if (isset($changes[$key])) {
             $record=$changes[$key];
-            if (($record['before']??null)!==$before||($record['after']??null)!==$text||
-                ($record['parameters']??null)!==$parameters||empty($record['reasons'])||$before===$text&&$beforeParameters===$parameters)
+            if (($record['before']??null)!==$before||($record['after']??null)!==$styleText||
+                ($record['parameters']??null)!==$parameters||empty($record['reasons'])||$before===$styleText&&$beforeParameters===$parameters)
                 throw new RuntimeException('style_definition_mismatch:'.$key);
             if ($parameters!==$beforeParameters) {
                 if (!array_key_exists($key,$parameterExceptions)||$parameters!==$parameterExceptions[$key]||
@@ -333,7 +374,7 @@ foreach ($current as $key=>$entry) {
             }
             $seenChanges[$key]=true;
         } else {
-            if ($entry!==$beforeEntry) throw new RuntimeException('unrecorded_current_copy_change:'.$key);
+            if ($styleEntry!==$beforeEntry) throw new RuntimeException('unrecorded_current_copy_change:'.$key);
             $preserved++;
         }
     }
@@ -383,7 +424,7 @@ echo json_encode(['status'=>'PASS',
     'editable_catalog_files'=>count($files),'logical_topics'=>count(achbotMessageTopics()),
     'current_catalog_keys'=>count($current),'current_byte_preserved_keys'=>$preserved,
     'current_style_changes'=>count($changes),'current_retired_implementation_keys'=>count($retired),'current_retired_feature_keys'=>count($featureRetired),
-    'current_added_admin_keys'=>count($added),'current_management_added_keys'=>count($managementAdded),'current_parameter_privacy_changes'=>$parameterChanges,
+    'current_added_admin_keys'=>count($added),'current_management_added_keys'=>count($managementAdded),'current_owner_followup_changes'=>count($ownerChanges),'current_parameter_privacy_changes'=>$parameterChanges,
     'current_native_template_assertions'=>$currentChecks,'current_non_ascii_digit_templates'=>0,
     'current_object_conversion_templates'=>$currentObjectTemplates,
     'current_shared_multi_parameter_templates'=>$currentMultiParameterObjects,

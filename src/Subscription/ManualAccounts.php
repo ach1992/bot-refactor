@@ -276,7 +276,7 @@ if (preg_match('/^addToOrders([1-9][0-9]*)$/D',(string)$data,$match)) {
         foreach (is_array($remote->links??null)?$remote->links:[] as $uri) if (is_string($uri)) $links[]=$uri;
         $link=json_encode($links,JSON_THROW_ON_ERROR);$expiry=$proof['expiry']??0;$now=time();
         // Existing services have no paid plan or monetary credit attached.
-        $q=$connection->prepare("INSERT INTO orders_list(userid,token,transid,fileid,server_id,inbound_id,remark,uuid,protocol,expire_date,link,amount,status,date,notif,rahgozar,agent_bought,autoRenew) VALUES(?,?,'',0,?,0,?,?,'',?,?,0,1,?,0,0,0,'off')");
+        $q=$connection->prepare("INSERT INTO orders_list(userid,token,transid,fileid,server_id,inbound_id,remark,uuid,expire_date,link,amount,status,date,notif,agent_bought,autoRenew) VALUES(?,?,'',0,?,0,?,?,?,?,0,1,?,0,0,'off')");
         $user=(string)$finalUserId;
         $q->bind_param('ssissisi',$user,$token,$serverId,$remark,$uuid,$expiry,$link,$now);
         if (!$q->execute() || $q->affected_rows!==1) throw new RuntimeException('import_insert');

@@ -32,6 +32,10 @@ function setUser($value=null,$field='step'){global $connection,$from_id;$value=$
 function delMessage(...$args){}
 function RandomString(){return 'units_'.bin2hex(random_bytes(8));}
 function achbotSupportsPanel($type){return in_array($type,['marzban','pasarguard'],true);}
+// Whole-unit tests isolate remote state; real native-state admission has its
+// own both-provider fixture in test_financial_live_state.py.
+function getMarzbanUser($serverId,$remark){return(object)['username'=>$remark,
+ 'expire'=>time()+86400,'data_limit'=>2147483648,'used_traffic'=>0,'status'=>'active'];}
 function achbotApplyServiceEdit(...$args){++$GLOBALS['writes'];throw new RuntimeException('forbidden_provider_effect');}
 require_once $root.'/src/Purchase/Core.php';require_once $root.'/src/Finance/ReceiptHelpers.php';require_once $root.'/src/Finance/PaymentLifecycle.php';
 if (($spec['route']??'extensions')==='claim') {

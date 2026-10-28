@@ -10,7 +10,12 @@ import test_post_v9_service_unit_guards as units
 ROOT=Path(__file__).resolve().parents[1]
 DB=purchase.SIDE[1]
 PHP=units.PHP.replace("$GLOBALS['events']=[];","$GLOBALS['spec']=$spec;$GLOBALS['events']=[];").replace("$buttonValues=['cancel'=>'Cancel','back_to_main'=>'Home','pay_with_wallet'=>'Wallet'];","$buttonValues=['cancel'=>'Cancel','back_to_main'=>'Home','back_button'=>'Back','my_subscriptions'=>'My services','pay_with_wallet'=>'Wallet'];")
-PHP=PHP.replace("function achbotSupportsPanel($type)","function getMarzbanUser(...$args){++$GLOBALS['provider_reads'];return json_decode(json_encode($GLOBALS['spec']['remote']??null));}\n$GLOBALS['provider_reads']=0;\nfunction achbotSupportsPanel($type)")
+# Replace the inherited controlled native reader rather than declaring a second
+# function in the composed PHP program. Fail visibly if the parent seam moves.
+INHERITED_READER="""function getMarzbanUser($serverId,$remark){return(object)['username'=>$remark,
+ 'expire'=>time()+86400,'data_limit'=>2147483648,'used_traffic'=>0,'status'=>'active'];}"""
+assert PHP.count(INHERITED_READER)==1, 'inherited native reader changed'
+PHP=PHP.replace(INHERITED_READER,"function getMarzbanUser(...$args){++$GLOBALS['provider_reads'];return json_decode(json_encode($GLOBALS['spec']['remote']??null));}\n$GLOBALS['provider_reads']=0;")
 PHP=PHP.replace("if (($spec['route']??'extensions')==='claim') {",r"""if (isset($spec['frame'])) $update=json_decode(json_encode($spec['frame']));
 if (($spec['route']??'')==='proof') {
  require $root.'/src/Subscription/ExternalAccounts.php';
@@ -28,6 +33,7 @@ def main():
  def yes(value,label):
   if not value:raise AssertionError(label)
   checks.append(label)
+ yes(PHP.count('function getMarzbanUser(')==1,'composed_fixture_contains_one_native_reader')
  retired=['settings/subLink.php','settings/values.php','settings/messagewizwiz.php','settings/warnusers.php','pay/index.php','src/Finance/GatewayInitiation.php']
  for rel in retired:yes(not (ROOT/rel).exists(),'obsolete_alias_removed_'+rel)
  settings={'cronRunner.php','gift2all.php','jdf.php','rewardReport.php'}
@@ -88,10 +94,10 @@ def main():
   server={'type':'marzban','panel_url':'https://panel.example.invalid','sub_links':'https://sub.example.invalid'}
   expires=int(time.time())+86400*23
   remote={'username':'fixture_import','created_at':'2023-11-14T22:13:20Z','status':'active','used_traffic':10,'data_limit':10737418240,'expire':expires,'subscription_url':'https://panel.example.invalid/sub/native-secret','links':['vless://fixture-secret@node.example.invalid:443#Fixture'],'proxies':{'vless':{'id':'fixture-native-uuid'}}}
-  for inp,kind in [('https://panel.example.invalid/sub/native-secret','native_origin'),('https://sub.example.invalid/sub/native-secret','explicit_sub_alias')]:
+  for inp,kind in [('https://panel.example.invalid/sub/native-secret','native_origin'),('https://sub.example.invalid/sub/native-secret','explicit_sub_alias'),('https://foreign.example.invalid/sub/native-secret','unconfigured_alias'),('https://panel.example.invalid.evil.invalid/sub/native-secret','unconfigured_suffix_alias'),('https://foreign.example.invalid/another-prefix/native-subscriptions/native-secret','unconfigured_alias_and_prefix')]:
    out=call(route='proof',server=server,remote=remote,input=inp)
    yes(out['events'][-1]['value']['expiry']==expires,'import_proof_'+kind)
-  for inp,label in [('https://panel.example.invalid/sub/wrong','wrong_token'),('https://foreign.example.invalid/sub/native-secret','wrong_origin'),('https://panel.example.invalid.evil.invalid/sub/native-secret','host_suffix'),('https://name:password@panel.example.invalid/sub/native-secret','url_credentials')]:
+  for inp,label in [('https://panel.example.invalid/sub/wrong','wrong_token'),('https://name:password@panel.example.invalid/sub/native-secret','url_credentials')]:
    out=call(route='proof',server=server,remote=remote,input=inp)
    yes(out['events'][-1]['value'] is None,'import_rejects_'+label)
   hint_token=base64.urlsafe_b64encode(b'fixture_import,1700000000').decode().rstrip('=')
@@ -112,18 +118,18 @@ def main():
    sql("UPDATE users SET step='none',temp='"+value+"' WHERE userid="+str(user))
   sql("INSERT INTO add_link(remark,token,added_by) VALUES('fixture_import','native-secret',1001),('fixture_import','native-secret',9001)")
   before_pays=sql('SELECT * FROM pays ORDER BY id;SELECT userid,wallet FROM users ORDER BY userid')
-  draft(link='https://foreign.example.invalid/sub/native-secret')
+  draft(link='https://foreign.example.invalid/sub/wrong')
   call(route='import',data='addToOrders2',remote=remote)
-  yes(sql("SELECT COUNT(*) FROM orders_list WHERE remark='fixture_import'")=='0','bad_import_origin_creates_no_order')
+  yes(sql("SELECT COUNT(*) FROM orders_list WHERE remark='fixture_import'")=='0','wrong_bearer_token_creates_no_order_even_on_unconfigured_alias')
   draft(custom=9001)
   call(route='import',data='addToOrders2',remote=remote)
   yes(sql("SELECT COUNT(*) FROM orders_list WHERE remark='fixture_import'")=='0','ordinary_customer_cannot_import_for_another_user')
   draft()
   call(route='import',data='addToOrders3',remote=remote)
   yes(sql("SELECT COUNT(*) FROM orders_list WHERE remark='fixture_import'")=='0','forged_import_server_callback_cannot_fallback_by_prefix')
-  draft()
+  draft(link='https://foreign.example.invalid/another-prefix/native-subscriptions/native-secret')
   observed=call(route='import',data='addToOrders2',remote=remote)
-  yes(sql("SELECT COUNT(*) FROM orders_list WHERE remark='fixture_import' AND server_id=2 AND userid=1001 AND expire_date="+str(expires))=='1','exact_proven_existing_account_import_uses_native_expiry')
+  yes(sql("SELECT COUNT(*) FROM orders_list WHERE remark='fixture_import' AND server_id=2 AND userid=1001 AND expire_date="+str(expires))=='1','exact_proven_existing_account_import_on_unconfigured_alias_uses_native_expiry')
   yes(sql("SELECT token FROM orders_list WHERE remark='fixture_import'")=='native-secret','import_uses_native_credential_not_old_temp_hint')
   yes(sql("SELECT CONCAT(fileid,':',amount,':',autoRenew) FROM orders_list WHERE remark='fixture_import'")=='0:0:off','import_never_invents_paid_plan_amount_or_automatic_renewal_consent')
   yes(sql("SELECT step FROM users WHERE userid=1001")=='none' and sql("SELECT IF(temp IS NULL,1,0) FROM users WHERE userid=1001")=='1','successful_import_consumes_owned_draft')
@@ -131,7 +137,7 @@ def main():
   yes(sql("SELECT COUNT(*) FROM orders_list WHERE remark='fixture_import'")=='1','import_replay_creates_no_duplicate')
   draft(user=9001,custom=1001)
   call(route='import',actor=9001,data='addToOrders2',remote=remote)
-  yes(sql("SELECT COUNT(*) FROM orders_list WHERE remark='fixture_import'")=='1','second_actor_cannot_alias_existing_same_server_account')
+  yes(sql("SELECT COUNT(*) FROM orders_list WHERE remark='fixture_import'")=='1','administrator_same_target_user_and_server_duplicate_not_reinserted')
   unlimited_remote=dict(remote,username='fixture_unlimited',expire=None,data_limit=None,subscription_url='https://panel.example.invalid/sub/native-unlimited')
   unlimited_draft=json.dumps({'remark':'fixture_unlimited','server_id':2,'import_url':unlimited_remote['subscription_url']}).replace("'","''")
   sql("INSERT INTO add_link(remark,token,added_by) VALUES('fixture_unlimited','native-unlimited',1001);UPDATE users SET step='none',temp='"+unlimited_draft+"' WHERE userid=1001")
@@ -140,7 +146,7 @@ def main():
   call(route='import',data='addToOrders2',remote=unlimited_remote)
   yes(sql("SELECT CONCAT(expire_date,':',fileid,':',amount,':',autoRenew) FROM orders_list WHERE remark='fixture_unlimited'")=='0:0:0:off','native_unlimited_Marzban_import_uses_original_NOT_NULL_zero_sentinel_without_fake_expiry_or_paid_plan')
   yes(sql('SELECT * FROM pays ORDER BY id;SELECT userid,wallet FROM users ORDER BY userid')==before_pays,'import_has_no_payment_wallet_or_credit_effect')
- report={'complete':True,'assertions':len(checks),'checks':checks,'actual_php':True,'owned_socket_mariadb':True,'loopback_or_injected_provider_reads_only':True,'provider_mutations':0,'production_mutations':0,'removed_runtime_files':retired,'retained_pay_files':['pay/checkout.php','pay/back.php'],'external_pg_adoption':'native_identity_proof_required_by_shared_import_seam'}
+ report={'complete':True,'assertions':len(checks),'checks':checks,'actual_php':True,'owned_socket_mariadb':True,'loopback_or_injected_provider_reads_only':True,'provider_mutations':0,'production_mutations':0,'composed_native_reader_unique':True,'domain_independent_verified_token_import':True,'removed_runtime_files':retired,'retained_pay_files':['pay/checkout.php','pay/back.php'],'external_pg_adoption':'native_identity_proof_required_by_shared_import_seam'}
  if a.report:a.report.write_text(json.dumps(report,indent=2)+'\n')
  print(json.dumps(report))
 if __name__=='__main__':main()

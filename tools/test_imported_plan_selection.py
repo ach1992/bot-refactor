@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Actual imported-origin plan selection and consent controllers, with native loopback providers."""
 from __future__ import annotations
+import provider_storage_fixture as shared_storage
 import argparse,copy,json,subprocess,time
 from pathlib import Path
 import test_access_state as owned
@@ -32,7 +33,7 @@ def main():
             def db(query):return native.sql(work,env,query,DB).strip()
             for migration in ['001_marzban_panel_group_id.sql','003_payment_attempts.sql',
                 '004_automatic_renewal_attempts.sql','006_payment_message_refs.sql',
-                '007_service_effects.sql','011_provider_identity.sql']:
+                '007_service_effects.sql','011_provider_identity.sql','012_shared_provider_storage.sql']:
                 db((ROOT/'migrations/post-v9'/migration).read_text())
             db("INSERT INTO users(userid,name,username,refcode,wallet,date,isAdmin,first_start,step)"
                " VALUES(1002,'Foreign','foreign','0',50000,'1700000000',0,'sent','none');"
@@ -40,10 +41,7 @@ def main():
                "DELETE FROM setting WHERE type='BOT_STATES';"
                "INSERT INTO setting(type,value)VALUES('BOT_STATES','{\"walletState\":\"on\",\"gatewayAudience\":{\"wallet\":\"all\"}}')")
             if provider=='pasarguard':
-                db("UPDATE server_config SET type='pasarguard' WHERE id=2;"
-                   "UPDATE server_info SET provider_panel_id=1,provider_group_ids='[2,5]' WHERE id=2;"
-                   "INSERT INTO provider_panels(id,provider,instance_key,name,api_url,api_key,version)"
-                   " VALUES(1,'pasarguard',REPEAT('b',32),'Fixture','"+url+"','fixture-private-key','5.5.1')")
+                db("UPDATE server_info SET provider_group_ids='[2,5]' WHERE id=2;"+shared_storage.connection(2,1,url))
                 remark='existing_user_41';credential=vendor.users[41]['subscription_url']
                 def writes():return [r for r in vendor.trace if r[0]!='GET']
             else:
@@ -90,7 +88,7 @@ def main():
                 return db('SELECT * FROM users ORDER BY id;SELECT * FROM orders_list ORDER BY id;'
                     'SELECT * FROM pays ORDER BY id;SELECT * FROM setting ORDER BY id;'
                     'SELECT * FROM server_info ORDER BY id;SELECT * FROM service_effects ORDER BY id;'
-                    'SELECT * FROM provider_accounts ORDER BY id')
+                    'SELECT * FROM service_effects WHERE provider_reference_id IS NOT NULL ORDER BY id')
             def finances():
                 return db('SELECT userid,wallet FROM users ORDER BY id;SELECT * FROM pays ORDER BY id;'
                     'SELECT id,ucount FROM server_info ORDER BY id')
@@ -108,8 +106,8 @@ def main():
             # Current destination catalog: only same logical server, active, priced,
             # supported native profile and positive whole service units are eligible.
             db("INSERT INTO server_info(id,title,ucount,remark,flag,active,state) VALUES(5,'Other',10,'other','',1,1);"
-               "INSERT INTO server_config SELECT 5,panel_url,ip,sni,header_type,request_header,response_header,security,tlsSettings,type,username,password,port_type,reality,sub_links FROM server_config WHERE id=2")
-            if provider=='pasarguard':db("UPDATE server_info SET provider_panel_id=1,provider_group_ids='[2,5]' WHERE id=5")
+               +shared_storage.clone(5,2))
+            if provider=='pasarguard':db("UPDATE server_info SET provider_group_ids='[2,5]' WHERE id=5")
             for pid in range(110,118):
                 db("INSERT INTO server_plans(id,fileid,catid,server_id,inbound_id,acount,limitip,title,protocol,days,volume,type,price,descr,pic,active,step,date,custom_sni,provider_group_ids)"
                    f" SELECT {pid},fileid,catid,server_id,inbound_id,acount,limitip,'Plan{pid}',protocol,days,volume,type,price,descr,pic,active,step,date,custom_sni,provider_group_ids FROM server_plans WHERE id=7")

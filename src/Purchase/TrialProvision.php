@@ -144,8 +144,8 @@ if (preg_match('/freeTrial(\d+)_(?<buyType>\w+)/', $data, $match)) {
     try {
         $orderId=insertOrder(
             $connection,$from_id,$token,$planId,$server_id,$inbound_id,
-            $remark,$uniqid,$protocol,$expire_date,$vray_link,
-            $price,$date,$rahgozar,$agentBought?1:0,true);
+            $remark,$uniqid,$expire_date,$vray_link,
+            $price,$date,$agentBought?1:0,true);
         achbotLinkNonPaymentAccountEffect($connection,$effectId,$orderId);
         if ($connection->commit()!==true)
             throw new RuntimeException('trial_order_commit_unknown');

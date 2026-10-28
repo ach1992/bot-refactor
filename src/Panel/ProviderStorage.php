@@ -1,5 +1,5 @@
 <?php
-/** AChBot provider identity storage. Migration 011 is never applied at runtime. */
+/** AChBot native identity and operation evidence in shared tables. Migration 012 is operator-only. */
 if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) { http_response_code(404); exit; }
 require_once __DIR__.'/PasarGuard.php';
 
@@ -18,72 +18,53 @@ function achbotProviderRow(mysqli $db,string $sql,string $types='',array $values
     catch (Throwable $e) { throw new RuntimeException('provider_storage_unavailable'); }
     finally { $s->close(); }
 }
-/** Validate the persistence invariants, including indexes, before any provider dispatch. */
+/** Native connection/operation evidence lives in the existing shared tables (012). */
 function achbotProviderRequireSchema(mysqli $db): void {
     $shape=[
-        'provider_panels'=>[
-            'id'=>['int',false],'provider'=>['varchar(24)',false],
-            'instance_key'=>['char(32)',false],'name'=>['varchar(100)',false],
-            'api_url'=>['varchar(1000)',false],'api_key'=>['text',false],
-            'version'=>['varchar(32)',false],'enabled'=>['tinyint unsigned',false]
-        ],
-        'provider_accounts'=>[
-            'id'=>['bigint unsigned',false],'effect_id'=>['bigint unsigned',false],
-            'order_id'=>['int',true],'provider'=>['varchar(24)',false],
-            'panel_id'=>['int',false],'instance_key'=>['char(32)',false],
-            'endpoint_sha256'=>['char(64)',false],'remote_user_id'=>['bigint unsigned',true],
-            'remote_created_at'=>['varchar(40)',true],'remote_username'=>['varchar(100)',false],
-            'operation_marker'=>['varchar(64)',false],'entitlement_snapshot'=>['longtext',false],
-            'mutation_key'=>['varchar(100)',true],'mutation_snapshot'=>['longtext',true],
-            'state'=>['varchar(24)',false],'verified_at'=>['datetime',true],
-            'created_at'=>['datetime',false],'updated_at'=>['datetime',false]
-        ],
-        'server_info'=>['provider_panel_id'=>['int',true],'provider_group_ids'=>['text',true]],
+        'server_config'=>['panel_url'=>['varchar(1000)',false],'password'=>['text',false],
+            'provider_connection_id'=>['int',true],'provider_instance_key'=>['char(32)',true],
+            'provider_version'=>['varchar(32)',true],'provider_enabled'=>['tinyint unsigned',false]],
+        'orders_list'=>['provider_effect_id'=>['bigint unsigned',true],
+            'provider_remote_user_id'=>['bigint unsigned',true],'provider_remote_created_at'=>['varchar(40)',true]],
+        'server_info'=>['provider_group_ids'=>['text',true]],
         'server_plans'=>['provider_group_ids'=>['text',true]],
         'pays'=>['provider_snapshot'=>['longtext',true]],
-        'service_effects'=>['provider_snapshot'=>['longtext',true]]
+        'service_effects'=>['provider_snapshot'=>['longtext',true],
+            'provider_reference_id'=>['bigint unsigned',true],'provider_connection_id'=>['int',true],
+            'provider_remote_user_id'=>['bigint unsigned',true],'provider_remote_created_at'=>['varchar(40)',true],
+            'provider_operation_marker'=>['varchar(64)',true],'provider_entitlement_snapshot'=>['longtext',true],
+            'provider_mutation_key'=>['varchar(100)',true],'provider_mutation_snapshot'=>['longtext',true],
+            'provider_state'=>['varchar(24)',true],'provider_verified_at'=>['datetime',true],
+            'provider_evidence_created_at'=>['datetime',true],'provider_evidence_updated_at'=>['datetime',true]]
     ];
     $s=achbotProviderStatement($db,"SELECT TABLE_NAME,COLUMN_NAME,COLUMN_TYPE,IS_NULLABLE
         FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE()
-        AND TABLE_NAME IN ('provider_panels','provider_accounts','server_info','server_plans','pays','service_effects')");
+        AND TABLE_NAME IN ('server_config','orders_list','server_info','server_plans','pays','service_effects')");
     $found=[];
-    try {
-        $r=$s->get_result();
-        while ($v=$r->fetch_assoc()) $found[$v['TABLE_NAME']][$v['COLUMN_NAME']]=$v;
-    } finally { $s->close(); }
+    try {$r=$s->get_result();while ($v=$r->fetch_assoc()) $found[$v['TABLE_NAME']][$v['COLUMN_NAME']]=$v;}
+    finally {$s->close();}
     foreach ($shape as $table=>$columns) foreach ($columns as $name=>[$type,$nullable]) {
         $v=$found[$table][$name]??null;
-        // MariaDB display widths are not semantic integer widths.
         $actual=preg_replace('/\b(tinyint|int|bigint)\(\d+\)/','$1',strtolower((string)($v['COLUMN_TYPE']??'')));
         if (!$v || $actual!==$type || ($v['IS_NULLABLE']==='YES')!==$nullable)
             throw new RuntimeException('provider_schema_missing_or_invalid');
     }
     $s=achbotProviderStatement($db,"SELECT TABLE_NAME,ENGINE FROM information_schema.TABLES
-        WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME IN ('provider_panels','provider_accounts','service_effects',
-        'users','pays','orders_list','server_info','server_plans','server_config','setting')");
+        WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME IN ('service_effects','users','pays','orders_list',
+        'server_info','server_plans','server_config','setting')");
     $engines=[];
-    try { $r=$s->get_result(); while ($v=$r->fetch_assoc()) $engines[$v['TABLE_NAME']]=$v['ENGINE']; }
-    finally { $s->close(); }
-    foreach (['provider_panels','provider_accounts','service_effects',
-              'users','pays','orders_list','server_info','server_plans','server_config','setting'] as $table)
-        if (strcasecmp($engines[$table]??'','InnoDB')!==0)
-            throw new RuntimeException('provider_schema_missing_or_invalid');
-    foreach ([
-        'provider_panels'=>['PRIMARY'=>['id'],'uq_provider_instance'=>['instance_key']],
-        'provider_accounts'=>['PRIMARY'=>['id'],'uq_provider_effect'=>['effect_id'],
-            'uq_provider_order'=>['order_id'],'uq_provider_remote'=>['panel_id','remote_user_id'],
-            'uq_provider_marker'=>['instance_key','operation_marker']]
-    ] as $table=>$indexes) {
-        $s=achbotProviderStatement($db,'SHOW INDEX FROM '.$table);$found=[];
-        try {
-            $r=$s->get_result();
-            while ($v=$r->fetch_assoc()) if ((int)$v['Non_unique']===0 && $v['Sub_part']===null)
-                $found[$v['Key_name']][(int)$v['Seq_in_index']]=$v['Column_name'];
-        } finally { $s->close(); }
-        foreach ($indexes as $name=>$columns) {
-            $actual=$found[$name]??[];ksort($actual);
-            if (array_values($actual)!==$columns) throw new RuntimeException('provider_unique_index_invalid');
-        }
+    try {$r=$s->get_result();while ($v=$r->fetch_assoc()) $engines[$v['TABLE_NAME']]=$v['ENGINE'];}
+    finally {$s->close();}
+    foreach (['service_effects','users','pays','orders_list','server_info','server_plans','server_config','setting'] as $table)
+        if (strcasecmp($engines[$table]??'','InnoDB')!==0) throw new RuntimeException('provider_schema_missing_or_invalid');
+    $s=achbotProviderStatement($db,'SHOW INDEX FROM service_effects');$indexes=[];
+    try {$r=$s->get_result();while ($v=$r->fetch_assoc()) if ((int)$v['Non_unique']===0 && $v['Sub_part']===null)
+        $indexes[$v['Key_name']][(int)$v['Seq_in_index']]=$v['Column_name'];}
+    finally {$s->close();}
+    foreach (['PRIMARY'=>['id'],'uq_effect_provider_reference'=>['provider_reference_id'],
+        'uq_effect_provider_remote'=>['provider_connection_id','provider_remote_user_id']] as $key=>$columns) {
+        $actual=$indexes[$key]??[];ksort($actual);
+        if (array_values($actual)!==$columns) throw new RuntimeException('provider_unique_index_invalid');
     }
 }
 function achbotProviderPositiveInt($value): int {
@@ -103,7 +84,7 @@ function achbotProviderGroups($value): array {
         return $groups;
     } catch (Throwable $e) { throw new RuntimeException('provider_groups_invalid'); }
 }
-function achbotProviderCanonicalSnapshot(array $snapshot): array {
+function achbotProviderCanonicalTarget(array $snapshot): array {
     try {
         if (($snapshot['provider']??'')!=='pasarguard' ||
             !is_int($snapshot['panel_id']??null) || $snapshot['panel_id']<=0 ||
@@ -113,27 +94,45 @@ function achbotProviderCanonicalSnapshot(array $snapshot): array {
             !preg_match('/^[a-f0-9]{64}$/D',$snapshot['endpoint_sha256']))
             throw new RuntimeException();
         return ['provider'=>'pasarguard','panel_id'=>$snapshot['panel_id'],
-            'instance_key'=>$snapshot['instance_key'],'endpoint_sha256'=>$snapshot['endpoint_sha256'],
-            'group_ids'=>achbotProviderGroups($snapshot['group_ids']??null)];
+            'instance_key'=>$snapshot['instance_key'],'endpoint_sha256'=>$snapshot['endpoint_sha256']];
     } catch (Throwable $e) { throw new RuntimeException('provider_snapshot_invalid'); }
 }
-function achbotProviderPanel(mysqli $db,int $panelId): array {
+/** Resolve one shared connection from the actual server connection rows. */
+function achbotProviderCanonicalSnapshot(array $snapshot): array {
+    return achbotProviderCanonicalTarget($snapshot)+['group_ids'=>achbotProviderGroups($snapshot['group_ids']??null)];
+}
+function achbotProviderPanel(mysqli $db,int $panelId,bool $lock=false): array {
     achbotProviderRequireSchema($db);
-    $p=achbotProviderRow($db,'SELECT * FROM provider_panels WHERE id=?','i',[$panelId]);
-    if (!$p || $p['provider']!=='pasarguard' || (int)$p['enabled']!==1)
-        throw new RuntimeException('provider_panel_unavailable');
-    $p['id']=achbotProviderPositiveInt($p['id']);
-    $p['enabled']=(int)$p['enabled'];
-    if (!achbotPgPanelValid($p)) throw new RuntimeException('provider_panel_invalid');
-    return $p;
+    $s=achbotProviderStatement($db,"SELECT c.*,i.title FROM server_config c JOIN server_info i ON i.id=c.id
+        WHERE c.type='pasarguard' AND c.provider_connection_id=? ORDER BY c.id".($lock?' FOR UPDATE':''),'i',[$panelId]);
+    $rows=$s->get_result()->fetch_all(MYSQLI_ASSOC);$s->close();$panel=null;
+    foreach ($rows as $r) {
+        $p=['id'=>achbotProviderPositiveInt($r['provider_connection_id']),'provider'=>'pasarguard',
+            'instance_key'=>$r['provider_instance_key'],'name'=>$r['title'],
+            'api_url'=>$r['panel_url'],'api_key'=>$r['password'],'version'=>$r['provider_version'],
+            'enabled'=>(int)$r['provider_enabled']];
+        if ($p['enabled']!==1 || !achbotPgPanelValid($p)) throw new RuntimeException('provider_panel_invalid');
+        if ($panel!==null) foreach (['instance_key','api_url','api_key','version','enabled'] as $field)
+            if ($panel[$field]!==$p[$field]) throw new RuntimeException('provider_connection_ambiguous');
+        $panel=$panel??$p;
+    }
+    if ($panel===null) throw new RuntimeException('provider_panel_unavailable');
+    return $panel;
+}
+function achbotProviderConnections(mysqli $db): array {
+    achbotProviderRequireSchema($db);
+    $s=achbotProviderStatement($db,"SELECT c.provider_connection_id AS id,MIN(i.title) AS name
+        FROM server_config c JOIN server_info i ON i.id=c.id
+        WHERE c.type='pasarguard' AND c.provider_enabled=1 GROUP BY c.provider_connection_id ORDER BY id LIMIT 30");
+    $rows=$s->get_result()->fetch_all(MYSQLI_ASSOC);$s->close();return $rows;
 }
 function achbotProviderSnapshot(mysqli $db,int $serverId,?int $planId=null): array {
     achbotProviderRequireSchema($db);
-    $r=achbotProviderRow($db,'SELECT i.provider_panel_id,i.provider_group_ids,c.type,c.panel_url
+    $r=achbotProviderRow($db,'SELECT c.provider_connection_id,i.provider_group_ids,c.type,c.panel_url
         FROM server_info i JOIN server_config c ON c.id=i.id WHERE i.id=?','i',[$serverId]);
-    if (!$r || $r['type']!=='pasarguard' || $r['provider_panel_id']===null)
+    if (!$r || $r['type']!=='pasarguard' || $r['provider_connection_id']===null)
         throw new RuntimeException('provider_server_invalid');
-    $panel=achbotProviderPanel($db,achbotProviderPositiveInt($r['provider_panel_id']));
+    $panel=achbotProviderPanel($db,achbotProviderPositiveInt($r['provider_connection_id']));
     if (rtrim((string)$r['panel_url'],'/')!==rtrim($panel['api_url'],'/'))
         throw new RuntimeException('provider_endpoint_changed');
     $groups=$r['provider_group_ids'];
@@ -155,35 +154,56 @@ function achbotProviderPanelForSnapshot(mysqli $db,array $snapshot): array {
         throw new RuntimeException('provider_snapshot_target_changed');
     return $p;
 }
+/** Materialize native operation evidence; this is an originating service-effect row. */
 function achbotProviderAccountRow(?array $r): ?array {
-    if ($r===null) return null;
+    if ($r===null || $r['provider_reference_id']===null) return null;
+    try {$snapshot=achbotProviderCanonicalTarget(json_decode((string)$r['provider_snapshot'],true,64,JSON_THROW_ON_ERROR));}
+    catch (Throwable $e) {throw new RuntimeException('provider_effect_snapshot_missing');}
+    $a=['id'=>$r['provider_reference_id'],'effect_id'=>$r['id'],'order_id'=>$r['order_id'],
+        'provider'=>'pasarguard','panel_id'=>$r['provider_connection_id'],'instance_key'=>$snapshot['instance_key'],
+        'endpoint_sha256'=>$r['endpoint_sha256'],'remote_user_id'=>$r['provider_remote_user_id'],
+        'remote_created_at'=>$r['provider_remote_created_at'],'remote_username'=>$r['remote_username'],
+        'operation_marker'=>$r['provider_operation_marker'],'entitlement_snapshot'=>$r['provider_entitlement_snapshot'],
+        'mutation_key'=>$r['provider_mutation_key'],'mutation_snapshot'=>$r['provider_mutation_snapshot'],
+        'state'=>$r['provider_state'],'verified_at'=>$r['provider_verified_at'],
+        'created_at'=>$r['provider_evidence_created_at'],'updated_at'=>$r['provider_evidence_updated_at']];
     foreach (['id','effect_id','panel_id','order_id','remote_user_id'] as $key)
-        if ($r[$key]!==null) $r[$key]=achbotProviderPositiveInt($r[$key]);
-    return $r;
+        if ($a[$key]!==null) $a[$key]=achbotProviderPositiveInt($a[$key]);
+    if ($a['panel_id']!==$snapshot['panel_id'] || $a['endpoint_sha256']!==$snapshot['endpoint_sha256'])
+        throw new RuntimeException('provider_effect_identity_invalid');
+    return $a;
 }
 function achbotProviderAccountByOrder(mysqli $db,int $orderId,bool $lock=false): ?array {
     achbotProviderRequireSchema($db);
-    $anchor=achbotProviderAccountRow(achbotProviderRow($db,'SELECT * FROM provider_accounts WHERE order_id=?'.($lock?' LOCK IN SHARE MODE':''),'i',[$orderId]));
-    $order=achbotProviderRow($db,'SELECT id,userid,remark FROM orders_list WHERE id=?'.($lock?' FOR UPDATE':''),'i',[$orderId]);
-    if (!$order) return $anchor;
+    $order=achbotProviderRow($db,'SELECT id,userid,remark,provider_effect_id,provider_remote_user_id,provider_remote_created_at
+        FROM orders_list WHERE id=?'.($lock?' FOR UPDATE':''),'i',[$orderId]);
+    if (!$order || $order['provider_effect_id']===null) return null;
+    $anchor=achbotProviderAccountRow(achbotProviderRow($db,'SELECT * FROM service_effects WHERE id=?'.($lock?' LOCK IN SHARE MODE':''),
+        'i',[(int)$order['provider_effect_id']]));
+    if (!$anchor || $anchor['remote_username']!==$order['remark'] ||
+        $anchor['remote_user_id']!==(int)$order['provider_remote_user_id'] ||
+        $anchor['remote_created_at']!==$order['provider_remote_created_at']) throw new RuntimeException('provider_order_identity_invalid');
     require_once __DIR__.'/../Purchase/OrderWrites.php';
     $origin=achbotOrderImportOrigin($db,$order,$lock);
-    if ($origin===null) return $anchor;
-    if ($origin['provider']!=='pasarguard' || !is_int($origin['provider_account_id']??null))
-        throw new RuntimeException('provider_order_origin_invalid');
-    $reference=achbotProviderAccountRow(achbotProviderRow($db,'SELECT * FROM provider_accounts WHERE id=?'.($lock?' LOCK IN SHARE MODE':''),
-        'i',[$origin['provider_account_id']]));
-    if (!$reference || $reference['provider']!=='pasarguard' ||
-        ($anchor!==null && $anchor['id']!==$reference['id']))
-        throw new RuntimeException('provider_order_origin_identity_invalid');
-    foreach (['remote_user_id','remote_created_at','remote_username'] as $field)
-        if (($origin['native_identity'][$field]??null)!==$reference[$field])
-            throw new RuntimeException('provider_order_origin_identity_invalid');
-    return $reference;
+    if ($origin!==null) {
+        if ($origin['provider']!=='pasarguard' || ($origin['provider_account_id']??null)!==$anchor['id'])
+            throw new RuntimeException('provider_order_origin_invalid');
+        foreach (['remote_user_id','remote_created_at','remote_username'] as $field)
+            if (($origin['native_identity'][$field]??null)!==$anchor[$field]) throw new RuntimeException('provider_order_origin_identity_invalid');
+    } elseif ($anchor['order_id']!==$orderId) throw new RuntimeException('provider_order_origin_invalid');
+    return $anchor;
 }
 function achbotProviderAccountByEffect(mysqli $db,int $effectId): ?array {
     achbotProviderRequireSchema($db);
-    return achbotProviderAccountRow(achbotProviderRow($db,'SELECT * FROM provider_accounts WHERE effect_id=?','i',[$effectId]));
+    return achbotProviderAccountRow(achbotProviderRow($db,'SELECT * FROM service_effects WHERE id=?','i',[$effectId]));
+}
+function achbotProviderBindOrder(mysqli $db,array $account,int $orderId): void {
+    $s=achbotProviderStatement($db,'UPDATE orders_list SET provider_effect_id=?,provider_remote_user_id=?,provider_remote_created_at=?
+        WHERE id=? AND (provider_effect_id IS NULL OR provider_effect_id=?)','iisii',
+        [$account['effect_id'],$account['remote_user_id'],$account['remote_created_at'],$orderId,$account['effect_id']]);$s->close();
+    $o=achbotProviderRow($db,'SELECT provider_effect_id,provider_remote_user_id,provider_remote_created_at FROM orders_list WHERE id=?','i',[$orderId]);
+    if (!$o || (int)$o['provider_effect_id']!==$account['effect_id'] || (int)$o['provider_remote_user_id']!==$account['remote_user_id'] ||
+        $o['provider_remote_created_at']!==$account['remote_created_at']) throw new RuntimeException('provider_order_link_unconfirmed');
 }
 function achbotProviderEntitlement(array $value): array {
     if (array_diff(array_keys($value),['data_limit','expire','group_ids','status']) ||
@@ -225,7 +245,7 @@ function achbotProviderReserveAccount(mysqli $db,int $effectId,array $snapshot,s
     // Locking current read is required after waiting for a competing effect
     // lock: an earlier repeatable-read snapshot may predate its committed row.
     $old=achbotProviderAccountRow(achbotProviderRow($db,
-        'SELECT * FROM provider_accounts WHERE effect_id=? FOR UPDATE','i',[$effectId]));
+        'SELECT * FROM service_effects WHERE id=? FOR UPDATE','i',[$effectId]));
     if ($old!==null) {
         foreach (['provider','panel_id','instance_key','endpoint_sha256'] as $k)
             if ($old[$k]!==$snapshot[$k]) throw new RuntimeException('provider_reservation_conflict');
@@ -233,11 +253,11 @@ function achbotProviderReserveAccount(mysqli $db,int $effectId,array $snapshot,s
             $old['entitlement_snapshot']!==$json) throw new RuntimeException('provider_reservation_conflict');
         return $old+['newly_reserved'=>false];
     }
-    $s=achbotProviderStatement($db,"INSERT INTO provider_accounts
-        (effect_id,provider,panel_id,instance_key,endpoint_sha256,remote_username,operation_marker,entitlement_snapshot,state)
-        VALUES (?,'pasarguard',?,?,?,?,?,?,'reserved')",'iisssss',
-        [$effectId,$snapshot['panel_id'],$snapshot['instance_key'],$snapshot['endpoint_sha256'],$username,$marker,$json]);
-    $s->close();
+    $s=achbotProviderStatement($db,"UPDATE service_effects SET provider_reference_id=id,
+        provider_connection_id=?,provider_operation_marker=?,provider_entitlement_snapshot=?,provider_state='reserved',
+        provider_evidence_created_at=UTC_TIMESTAMP(),provider_evidence_updated_at=UTC_TIMESTAMP(),updated_at=updated_at
+        WHERE id=? AND provider_reference_id IS NULL",'issi',[$snapshot['panel_id'],$marker,$json,$effectId]);
+    if ($s->affected_rows!==1) {$s->close();throw new RuntimeException('provider_reservation_unconfirmed');}$s->close();
     $r=achbotProviderAccountByEffect($db,$effectId);
     if (!$r) throw new RuntimeException('provider_reservation_unconfirmed');
     return $r+['newly_reserved'=>true];
@@ -263,9 +283,9 @@ function achbotProviderVerifyAccount(mysqli $db,int $effectId,array $user): void
         return;
     }
     if (!in_array($r['state'],['reserved','dispatching'],true)) throw new RuntimeException('provider_account_state_invalid');
-    $s=achbotProviderStatement($db,"UPDATE provider_accounts SET remote_user_id=?,remote_created_at=?,
-        state='verified',verified_at=UTC_TIMESTAMP() WHERE effect_id=? AND state IN ('reserved','dispatching')
-        AND remote_user_id IS NULL AND remote_created_at IS NULL",'isi',[$user['id'],$created,$effectId]);
+    $s=achbotProviderStatement($db,"UPDATE service_effects SET provider_remote_user_id=?,provider_remote_created_at=?,
+        provider_state='verified',provider_verified_at=UTC_TIMESTAMP(),provider_evidence_updated_at=UTC_TIMESTAMP(),updated_at=updated_at WHERE id=? AND provider_state IN ('reserved','dispatching')
+        AND provider_remote_user_id IS NULL AND provider_remote_created_at IS NULL",'isi',[$user['id'],$created,$effectId]);
     $changed=$s->affected_rows;$s->close();
     if ($changed!==1) throw new RuntimeException('provider_account_verification_unconfirmed');
 }
@@ -276,20 +296,18 @@ function achbotProviderLinkAccount(mysqli $db,int $effectId,int $orderId): void 
     if (!$r || $r['remote_user_id']===null || $r['remote_created_at']===null ||
         !in_array($r['state'],['verified','linked'],true))
         throw new RuntimeException('provider_account_not_verified');
-    $o=achbotProviderRow($db,'SELECT o.remark,i.provider_panel_id,c.type
+    $o=achbotProviderRow($db,'SELECT o.remark,c.provider_connection_id,c.type
         FROM orders_list o JOIN server_info i ON i.id=o.server_id
         JOIN server_config c ON c.id=i.id WHERE o.id=?','i',[$orderId]);
     if (!$o || $o['remark']!==$r['remote_username'] || $o['type']!=='pasarguard' ||
-        (int)$o['provider_panel_id']!==$r['panel_id'])
+        (int)$o['provider_connection_id']!==$r['panel_id'])
         throw new RuntimeException('provider_order_identity_mismatch');
-    if ($r['order_id']!==null) {
-        if ($r['order_id']!==$orderId) throw new RuntimeException('provider_order_link_conflict');
-        return;
-    }
-    $s=achbotProviderStatement($db,"UPDATE provider_accounts SET order_id=?,state='linked'
-        WHERE effect_id=? AND order_id IS NULL AND state='verified'",'ii',[$orderId,$effectId]);
-    $changed=$s->affected_rows;$s->close();
-    if ($changed!==1) throw new RuntimeException('provider_order_link_unconfirmed');
+    if ($r['order_id']!==null && $r['order_id']!==$orderId) throw new RuntimeException('provider_order_link_conflict');
+    $s=achbotProviderStatement($db,"UPDATE service_effects SET order_id=?,provider_state='linked',provider_evidence_updated_at=UTC_TIMESTAMP(),updated_at=updated_at
+        WHERE id=? AND (order_id IS NULL OR order_id=?) AND provider_state IN ('verified','linked')",'iii',[$orderId,$effectId,$orderId]);$s->close();
+    $confirmed=achbotProviderAccountByEffect($db,$effectId);
+    if (!$confirmed || $confirmed['order_id']!==$orderId || $confirmed['state']!=='linked') throw new RuntimeException('provider_order_link_unconfirmed');
+    achbotProviderBindOrder($db,$confirmed,$orderId);
 }
 
 /** Immutable local adoption evidence is distinct from a remote CREATE marker. */
@@ -373,7 +391,7 @@ function achbotProviderAdoptAccount(mysqli $db,int $serverId,array $native,array
         LIMIT 1 FOR UPDATE','iss',[$actor,$native['username'],$proof['token']]);
     if (!$credential) throw new RuntimeException('provider_adoption_credential_missing');
     $physical=achbotProviderAccountRow(achbotProviderRow($db,
-        'SELECT * FROM provider_accounts WHERE panel_id=? AND remote_user_id=? LIMIT 1 LOCK IN SHARE MODE',
+        'SELECT * FROM service_effects WHERE provider_connection_id=? AND provider_remote_user_id=? LIMIT 1 LOCK IN SHARE MODE',
         'ii',[$panel['id'],$native['id']]));
     $physicalIdentity=null;
     if ($physical!==null) {
@@ -410,13 +428,12 @@ function achbotProviderAdoptAccount(mysqli $db,int $serverId,array $native,array
     $effect=(int)$s->insert_id;$s->close();
     if ($physical===null) {
         $entitlement=json_encode($native,JSON_THROW_ON_ERROR);
-        $s=achbotProviderStatement($db,"INSERT INTO provider_accounts
-            (effect_id,order_id,provider,panel_id,instance_key,endpoint_sha256,remote_user_id,remote_created_at,
-             remote_username,operation_marker,entitlement_snapshot,state,verified_at)
-            VALUES (?,?,'pasarguard',?,?,?,?,?,?,?,?,'linked',UTC_TIMESTAMP())",
-            'iiississss',[$effect,$orderId,$panel['id'],$panel['instance_key'],$snapshot['endpoint_sha256'],
-                $native['id'],$native['created_at'],$native['username'],$marker,$entitlement]);
-        $s->close();
+        $s=achbotProviderStatement($db,"UPDATE service_effects SET provider_reference_id=id,provider_connection_id=?,
+            provider_remote_user_id=?,provider_remote_created_at=?,provider_operation_marker=?,provider_entitlement_snapshot=?,
+            provider_state='linked',provider_verified_at=UTC_TIMESTAMP(),provider_evidence_created_at=UTC_TIMESTAMP(),
+            provider_evidence_updated_at=UTC_TIMESTAMP(),updated_at=updated_at WHERE id=? AND provider_reference_id IS NULL",
+            'iisssi',[$panel['id'],$native['id'],$native['created_at'],$marker,$entitlement,$effect]);
+        if ($s->affected_rows!==1) {$s->close();throw new RuntimeException('provider_adoption_unconfirmed');}$s->close();
         $physical=achbotProviderAccountByEffect($db,$effect);
     }
     if ($physical!==null && $physicalIdentity===null) $physicalIdentity=achbotProviderAccountIdentity($db,$physical,true);
@@ -426,6 +443,7 @@ function achbotProviderAdoptAccount(mysqli $db,int $serverId,array $native,array
     achbotRecordImportedOrderOriginLocked($db,$orderId,$owner,$actor,'pasarguard',$serverId,$native['username'],$hash,
         ['remote_user_id'=>$native['id'],'remote_created_at'=>$native['created_at'],'remote_username'=>$native['username']],
         $physical['id']);
+    achbotProviderBindOrder($db,$physical,$orderId);
     $resolved=achbotProviderAccountByOrder($db,$orderId,true);
     if (!$resolved || $resolved['id']!==$physical['id']) throw new RuntimeException('provider_adoption_reference_unconfirmed');
 }

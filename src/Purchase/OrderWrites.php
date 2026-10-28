@@ -1,5 +1,5 @@
 <?php
-/** AChBot V7: immutable V6.1 purchase helper definitions. */
+/** AChBot shared order persistence and capacity provenance. */
 if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     http_response_code(404);
     exit;
@@ -29,20 +29,18 @@ if (!function_exists('insertOrder')) {
         $inbound_id,
         $remark,
         $uniqid,
-        $protocol,
         $expire_date,
         $vray_link,
         $amount,
         $date,
-        $rahgozar,
         $agent_bought,
         $requireConfirmed = false
     ) {
-        $stmt = $connection->prepare("INSERT INTO `orders_list`  
-            (`userid`, `token`, `transid`, `fileid`, `server_id`, `inbound_id`, `remark`, `uuid`, `protocol`, `expire_date`, `link`, `amount`, `status`, `date`, `notif`, `rahgozar`, `agent_bought`) 
-            VALUES (?, ?, '', ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, 0, ?, ?);");
+        $stmt = $connection->prepare("INSERT INTO `orders_list`
+            (`userid`, `token`, `transid`, `fileid`, `server_id`, `inbound_id`, `remark`, `uuid`, `expire_date`, `link`, `amount`, `status`, `date`, `notif`, `agent_bought`)
+            VALUES (?, ?, '', ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, 0, ?);");
         $stmt->bind_param(
-            "ssiiisssisiiii",
+            "ssiiissisiii",
             $uid,
             $token,
             $fid,
@@ -50,12 +48,10 @@ if (!function_exists('insertOrder')) {
             $inbound_id,
             $remark,
             $uniqid,
-            $protocol,
             $expire_date,
             $vray_link,
             $amount,
             $date,
-            $rahgozar,
             $agent_bought
         );
         $saved=$stmt->execute();
