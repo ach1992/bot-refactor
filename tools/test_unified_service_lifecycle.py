@@ -20,6 +20,7 @@ import test_post_v9_pasarguard_client as pg
 ROOT=Path(__file__).resolve().parents[1]
 BASE='2c0e728dcd71c38e20d176fe2577bc264d3faa1a'
 NOTIFICATION_REGRESSION='72bf5ae48b7d283da995b0a13bc9804827c5900a'
+DELETION_FAIRNESS_REGRESSION='5568e5e24ecc595c371c4710bf41db51bb78125d'
 DB=purchase.SIDE[1]
 
 class MarzbanHandler(BaseHTTPRequestHandler):
@@ -97,11 +98,12 @@ if ($action==='policy') {
  $row=$connection->query('SELECT * FROM orders_list WHERE id='.(int)$spec['order'])->fetch_assoc();
  if (!empty($spec['change_cycle'])) $connection->query('UPDATE orders_list SET expire_date=expire_date+1 WHERE id='.(int)$spec['order']);
  $out=achbotAutoRenewPrepareDeletion($connection,(int)$spec['order'],$row);
-} elseif (in_array($action,['warnings','baseline','notification_baseline'],true)) {
+} elseif (in_array($action,['warnings','baseline','notification_baseline','deletion_baseline'],true)) {
  require match($action) {
   'warnings'=>$root.'/src/Notifications/Warnings.php',
   'baseline'=>__DIR__.'/warnings-baseline.php',
-  'notification_baseline'=>__DIR__.'/warnings-notification-regression.php'
+  'notification_baseline'=>__DIR__.'/warnings-notification-regression.php',
+  'deletion_baseline'=>__DIR__.'/warnings-deletion-fairness-regression.php'
  };
  $out=$events;
 } else throw new RuntimeException('owned_action_missing');
@@ -130,6 +132,9 @@ def main():
         regression=subprocess.check_output(['git','show',NOTIFICATION_REGRESSION+':src/Notifications/Warnings.php'],cwd=ROOT)
         regression=regression.replace(b'__DIR__',repr(str(ROOT/'src/Notifications')).encode())
         (work/'warnings-notification-regression.php').write_bytes(regression)
+        fairness=subprocess.check_output(['git','show',DELETION_FAIRNESS_REGRESSION+':src/Notifications/Warnings.php'],cwd=ROOT)
+        fairness=fairness.replace(b'__DIR__',repr(str(ROOT/'src/Notifications')).encode())
+        (work/'warnings-deletion-fairness-regression.php').write_bytes(fairness)
         def sql(s):return native.sql(work,env,s,DB).strip()
         def call(action,**spec):
             proc=subprocess.run(['php','-d','display_errors=0','-d','log_errors=1',
@@ -159,7 +164,7 @@ def main():
             sql("INSERT INTO orders_list(id,userid,token,transid,fileid,server_id,inbound_id,remark,uuid,protocol,expire_date,link,amount,status,date,notif,autoRenew)"
                 f" VALUES({oid},1001,'','',{plan},{server},0,'{remark}','shared-fixture-uuid','vless',{expiry},'[]',100,1,'1700000000',{notif},'on')")
         def retire():
-            sql("UPDATE orders_list SET status=0;DELETE FROM setting WHERE type IN('warnLastOrderId','AutoRenewLastOrderId');")
+            sql("UPDATE orders_list SET status=0;DELETE FROM setting WHERE type IN('warnLastOrderId','AutoRenewLastOrderId','deleteLastOrderId');")
             mb.reads={};mb.on_read=None;mb.on_auth=None;mb.status=200;mb.delete_status=200
         def deletes(server):return sum(t[0]=='DELETE' for t in server.trace)
         def pg_identity():
@@ -410,7 +415,107 @@ def main():
         yes(deletes(mb)==before+1 and sql('SELECT status FROM orders_list WHERE id=112')=='0',
             'uncertain_native_delete_never_retried_automatically')
         yes(sql('SELECT wallet FROM users WHERE userid=1001')==before_wallet,'lifecycle_suite_no_wallet_mutations')
+        # Source-bound RED: the previous oldest-first LIMIT50 repeatedly
+        # selects the same deferred rows and never reaches a later valid target.
+        # Cursor updates are permitted metadata; protected service/payment rows
+        # and provider identities must remain unchanged while a row defers.
+        def delete_cursor():
+            return int(sql("SELECT value FROM setting WHERE type='deleteLastOrderId' LIMIT 1") or '0')
+        def deferred_snapshot(first,last):
+            return sql('SELECT * FROM orders_list WHERE id BETWEEN '+str(first)+' AND '+str(last)+' ORDER BY id;'+
+                'SELECT * FROM provider_accounts WHERE order_id BETWEEN '+str(first)+' AND '+str(last)+' ORDER BY id;'+
+                'SELECT * FROM service_effects WHERE order_id BETWEEN '+str(first)+' AND '+str(last)+' ORDER BY id;'+
+                'SELECT * FROM pays WHERE order_id BETWEEN '+str(first)+' AND '+str(last)+' ORDER BY id;'+
+                'SELECT userid,wallet FROM users ORDER BY userid')
+        def fair_pg_target(oid,remote_id,effect_id,hex_digit):
+            remark='fair_pg_'+str(oid);marker=hex_digit*32
+            seed(oid,server=3,remark=remark,notif=int(time.time())-1)
+            pguard.user=copy.deepcopy(pg.USER)
+            pguard.user.update(id=remote_id,username=remark,note='achbot:v1:'+marker,
+                status='expired',expire=int(time.time())-100,data_limit=None,used_traffic=0)
+            pguard.mode='ok'
+            endpoint=hashlib.sha256(pg_url.encode()).hexdigest()
+            entitlement=json.dumps(dict(data_limit=2147483648,expire=2000000000,group_ids=[2,5],status='active'),separators=(',',':'))
+            snapshot=json.dumps(dict(provider='pasarguard',panel_id=1,instance_key='b'*32,endpoint_sha256=endpoint,group_ids=[2,5]),separators=(',',':'))
+            sql("INSERT INTO service_effects(id,source_kind,source_ref,actor_userid,ordinal,operation_id,target_server_id,target_key,endpoint_sha256,"
+                "plan_id,remote_username,requested_expire,requested_bytes,request_sha256,state,order_id,provider_snapshot)"
+                f" VALUES({effect_id},'admin_bulk','bulk:9001:{oid}',9001,1,'{marker}',3,'pg:fixture','{endpoint}',8,'{remark}',2000000000,2147483648,"
+                f"REPEAT('c',64),'local_recorded',{oid},'{snapshot}');"
+                "INSERT INTO provider_accounts(effect_id,order_id,provider,panel_id,instance_key,endpoint_sha256,remote_user_id,remote_created_at,"
+                "remote_username,operation_marker,entitlement_snapshot,state)"
+                f" VALUES({effect_id},{oid},'pasarguard',1,REPEAT('b',32),'{endpoint}',{remote_id},'2026-10-26T05:00:00.123456Z',"
+                f"'{remark}','achbot:v1:{marker}','{entitlement}','linked')")
+        retire()
+        for oid in range(400,450):seed(oid,remark='fair_mb_wait_'+str(oid),notif=1)
+        fair_pg_target(500,50,1400,'1')
+        held=deferred_snapshot(400,449)
+        target=sql('SELECT * FROM orders_list WHERE id=500;SELECT * FROM provider_accounts WHERE order_id=500')
+        requests=(len(mb.trace),len(pguard.trace));before_delete=(deletes(mb),deletes(pguard))
+        first=call('deletion_baseline');second=call('deletion_baseline')
+        yes(first==[] and second==[] and deferred_snapshot(400,449)==held and
+            sql('SELECT * FROM orders_list WHERE id=500;SELECT * FROM provider_accounts WHERE order_id=500')==target and
+            requests==(len(mb.trace),len(pguard.trace)) and before_delete==(deletes(mb),deletes(pguard)),
+            'deletion_fairness_5568_RED_same_fifty_deferred_rows_starve_valid_native_target')
+        first=call('warnings')
+        yes(first==[] and delete_cursor()==449 and deferred_snapshot(400,449)==held and
+            sql('SELECT * FROM orders_list WHERE id=500;SELECT * FROM provider_accounts WHERE order_id=500')==target and
+            requests==(len(mb.trace),len(pguard.trace)) and before_delete==(deletes(mb),deletes(pguard)),
+            'deletion_fairness_marzban_deferred_batch_advances_without_target_or_payment_changes')
+        call('warnings')
+        yes(delete_cursor()==0 and deferred_snapshot(400,449)==held and
+            sql('SELECT COUNT(*) FROM orders_list WHERE id=500')=='0' and
+            deletes(mb)==before_delete[0] and deletes(pguard)==before_delete[1]+1,
+            'deletion_fairness_next_tick_reaches_native_pasarguard_after_fifty_marzban_deferrals')
+        requests=(len(mb.trace),len(pguard.trace));before_delete=(deletes(mb),deletes(pguard))
+        call('warnings')
+        yes(delete_cursor()==449 and deferred_snapshot(400,449)==held and
+            requests==(len(mb.trace),len(pguard.trace)) and before_delete==(deletes(mb),deletes(pguard)),
+            'deletion_fairness_wrap_revisits_deferred_rows_without_unsafe_effect')
+        # Reverse direction: fifty PasarGuard rows with unknown creation dates
+        # must not hide a later eligible Marzban account. Invalid grace means
+        # neither adapter is called for those deferred records.
+        retire()
+        for oid in range(900,950):seed(oid,server=3,remark='fair_pg_wait_'+str(oid),notif=int(time.time())-1)
+        sql("UPDATE orders_list SET date='unknown-created-at' WHERE id BETWEEN 900 AND 949")
+        seed(1050,remark='fair_mb_1050',notif=int(time.time())-1)
+        mb.user.update(status='expired',expire=int(time.time())-100,data_limit=None,used_traffic=0)
+        held=deferred_snapshot(900,949);requests=(len(mb.trace),len(pguard.trace));before_delete=(deletes(mb),deletes(pguard))
+        first=call('warnings')
+        yes(first==[] and delete_cursor()==949 and deferred_snapshot(900,949)==held and
+            sql('SELECT COUNT(*) FROM orders_list WHERE id=1050')=='1' and
+            requests==(len(mb.trace),len(pguard.trace)) and before_delete==(deletes(mb),deletes(pguard)),
+            'deletion_fairness_pasarguard_deferred_batch_advances_without_provider_calls')
+        call('warnings')
+        yes(delete_cursor()==0 and deferred_snapshot(900,949)==held and
+            sql('SELECT COUNT(*) FROM orders_list WHERE id=1050')=='0' and
+            deletes(mb)==before_delete[0]+1 and deletes(pguard)==before_delete[1],
+            'deletion_fairness_next_tick_reaches_native_marzban_after_fifty_pasarguard_deferrals')
+        # A real, valid-grace financial hold also remains untouched yet cannot
+        # monopolize the queue. These rows reach the native GET and actual
+        # pending-payment deletion guard, unlike the invalid-grace controls.
+        retire()
+        for oid in range(1200,1250):
+            seed(oid,remark='fair_pending_'+str(oid),notif=int(time.time())-1)
+            sql("INSERT INTO pays(hash_id,user_id,type,order_id,state,price,request_date)"
+                f" VALUES('fairpending{oid}',1001,'RENEW_ACCOUNT',{oid},'processing_wallet',100,1700000000)")
+        fair_pg_target(1300,51,1401,'2')
+        mb.user.update(status='expired',expire=int(time.time())-100,data_limit=None,used_traffic=0)
+        held=deferred_snapshot(1200,1249);before_delete=(deletes(mb),deletes(pguard))
+        mb_gets=sum(t[0]=='GET' for t in mb.trace);pg_requests=len(pguard.trace)
+        first=call('warnings')
+        yes(first==[] and delete_cursor()==1249 and deferred_snapshot(1200,1249)==held and
+            sql('SELECT COUNT(*) FROM orders_list WHERE id=1300')=='1' and len(pguard.trace)==pg_requests and
+            sum(t[0]=='GET' for t in mb.trace)==mb_gets+50 and before_delete==(deletes(mb),deletes(pguard)),
+            'deletion_fairness_fifty_actual_financial_deferrals_preserve_all_held_data_and_advance')
+        call('warnings')
+        yes(delete_cursor()==0 and deferred_snapshot(1200,1249)==held and
+            sql('SELECT COUNT(*) FROM orders_list WHERE id=1300')=='0' and
+            deletes(mb)==before_delete[0] and deletes(pguard)==before_delete[1]+1,
+            'deletion_fairness_financial_hold_batch_cannot_starve_next_native_provider')
         report={'complete':True,'cases':len(checks),'scenarios':checks,'baseline_red':True,'notification_delivery_regression_red':True,'grace_integrity':True,
+            'deletion_fairness_red':True,'deletion_fairness_source':DELETION_FAIRNESS_REGRESSION,
+            'scheduled_deletion_cursor':'deleteLastOrderId','deletion_fairness_deferred_batch':50,
+            'deletion_fairness_cross_provider_directions':2,'deletion_fairness_financial_hold':True,
             'native_php':True,'disposable_mariadb':True,'loopback_adapters':['marzban','pasarguard'],
             'actual_delete_transports':True,'financial_dispatch':'spy_only_existing_finance_suite_separate',
             'production_mutations':0,'external_provider_calls':0}

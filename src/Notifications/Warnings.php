@@ -51,8 +51,14 @@ if ($cursorRow) $stmt=$connection->prepare("UPDATE setting SET value=? WHERE typ
 else $stmt=$connection->prepare("INSERT INTO setting(type,value) VALUES('warnLastOrderId',?)");
 $stmt->bind_param('s',$value);$stmt->execute();$stmt->close();
 
-$stmt=$connection->prepare('SELECT * FROM orders_list WHERE status=1 AND notif>0 AND notif<? ORDER BY notif,id LIMIT 50');
-$stmt->bind_param('i',$time);$stmt->execute();$deletions=$stmt->get_result()->fetch_all(MYSQLI_ASSOC);$stmt->close();
+// A deferred oldest row must not permanently hide later eligible services.
+// Scan due rows fairly by identity and advance even when every row defers.
+$stmt=$connection->prepare("SELECT value FROM setting WHERE type='deleteLastOrderId' LIMIT 1");
+$stmt->execute();$deleteCursorRow=$stmt->get_result()->fetch_assoc();$stmt->close();
+$deleteCursor=max(0,(int)($deleteCursorRow['value']??0));$deleteLimit=50;
+$stmt=$connection->prepare('SELECT * FROM orders_list WHERE status=1 AND notif>0 AND notif<? AND id>? ORDER BY id LIMIT ?');
+$stmt->bind_param('iii',$time,$deleteCursor,$deleteLimit);
+$stmt->execute();$deletions=$stmt->get_result()->fetch_all(MYSQLI_ASSOC);$stmt->close();
 foreach ($deletions as $order) {
     $id=(int)$order['id'];$serverId=(int)$order['server_id'];$remark=(string)$order['remark'];
     if (!achbotServiceGraceValid($order)) {
@@ -98,3 +104,11 @@ foreach ($deletions as $order) {
     if ($channel!=='') sendMessage(achbotMessage('notifications.warnings.channel_message.5e59a4a33e',[
         'from_id'=>(int)$order['userid'],'remark'=>htmlspecialchars($remark,ENT_QUOTES,'UTF-8')]),null,'HTML',$channel);
 }
+
+// This is traversal metadata only: a cursor never authorizes a deletion.
+// Wrap after exhaustion so deferred rows and newly due earlier IDs are revisited.
+$nextDeleteCursor=count($deletions)===$deleteLimit?(int)$deletions[count($deletions)-1]['id']:0;
+$value=(string)$nextDeleteCursor;
+if ($deleteCursorRow) $stmt=$connection->prepare("UPDATE setting SET value=? WHERE type='deleteLastOrderId'");
+else $stmt=$connection->prepare("INSERT INTO setting(type,value) VALUES('deleteLastOrderId',?)");
+$stmt->bind_param('s',$value);$stmt->execute();$stmt->close();
