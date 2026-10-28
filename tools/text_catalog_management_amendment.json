@@ -1791,6 +1791,62 @@
       "previous_source_paths": [
         "src/Finance/Routes/Extensions.php"
       ]
+    },
+    "provider.provider_admin.handle_provider_admin.button.13bae1ab18": {
+      "entry": "➕ اتصال PasarGuard",
+      "reason": "Historical standalone provider-connection/server form copy retained after its runtime branch was removed by shared server storage consolidation. The unified server wizard owns creation; no legacy runtime wrapper is retained.",
+      "previous_source_paths": [
+        "src/Panel/ProviderAdmin.php"
+      ]
+    },
+    "provider.provider_admin.handle_provider_admin.button.c672a35381": {
+      "entry": "🔑 تعویض API key",
+      "reason": "Historical standalone provider-connection/server form copy retained after its runtime branch was removed by shared server storage consolidation. The unified server wizard owns creation; no legacy runtime wrapper is retained.",
+      "previous_source_paths": [
+        "src/Panel/ProviderAdmin.php"
+      ]
+    },
+    "provider.provider_admin.handle_provider_admin.message.230010849c": {
+      "entry": "✅ سرور منطقی ثبت شد. پلن جدید را از بخش پلن‌ها بسازید.",
+      "reason": "Historical standalone provider-connection/server form copy retained after its runtime branch was removed by shared server storage consolidation. The unified server wizard owns creation; no legacy runtime wrapper is retained.",
+      "previous_source_paths": [
+        "src/Panel/ProviderAdmin.php"
+      ]
+    },
+    "provider.provider_admin.handle_provider_admin.message.339107229c": {
+      "entry": "پنج خط بفرستید:\nنام سرور\nظرفیت عددی\nریمـارک ASCII\nپرچم\nشناسه Groups با کاما\n",
+      "reason": "Historical standalone provider-connection/server form copy retained after its runtime branch was removed by shared server storage consolidation. The unified server wizard owns creation; no legacy runtime wrapper is retained.",
+      "previous_source_paths": [
+        "src/Panel/ProviderAdmin.php"
+      ]
+    },
+    "provider.provider_admin.handle_provider_admin.message.601077bd6d": {
+      "entry": "⚙️ اتصال فیزیکی را انتخاب کنید تا سرور منطقی با Groups مستقل بسازید.",
+      "reason": "Historical standalone provider-connection/server form copy retained after its runtime branch was removed by shared server storage consolidation. The unified server wizard owns creation; no legacy runtime wrapper is retained.",
+      "previous_source_paths": [
+        "src/Panel/ProviderAdmin.php"
+      ]
+    },
+    "provider.provider_admin.handle_provider_admin.message.84166ad032": {
+      "entry": "✅ اتصال تأیید و ذخیره شد. از فهرست اتصال‌ها سرور منطقی بسازید.",
+      "reason": "Historical standalone provider-connection/server form copy retained after its runtime branch was removed by shared server storage consolidation. The unified server wizard owns creation; no legacy runtime wrapper is retained.",
+      "previous_source_paths": [
+        "src/Panel/ProviderAdmin.php"
+      ]
+    },
+    "provider.provider_admin.handle_provider_admin.message.d0e9e358ec": {
+      "entry": "📝 سه خط بفرستید:\nنام اتصال\nآدرس پایه PasarGuard\nAPI key دارای دسترسی کاربران و Groups\nنسخه پشتیبانی‌شده 5.5.1 است.",
+      "reason": "Historical standalone provider-connection/server form copy retained after its runtime branch was removed by shared server storage consolidation. The unified server wizard owns creation; no legacy runtime wrapper is retained.",
+      "previous_source_paths": [
+        "src/Panel/ProviderAdmin.php"
+      ]
+    },
+    "provider.provider_admin.pg_server_admin_keys.button.b233883d0d": {
+      "entry": "🔙 بازگشت",
+      "reason": "Historical standalone provider-connection/server form copy retained after its runtime branch was removed by shared server storage consolidation. The unified server wizard owns creation; no legacy runtime wrapper is retained.",
+      "previous_source_paths": [
+        "src/Panel/ProviderAdmin.php"
+      ]
     }
   }
 }
