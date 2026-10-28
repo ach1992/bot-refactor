@@ -335,14 +335,11 @@ function achbotPasarGuardAdoptExistingLocked(mysqli $db,int $serverId,object $re
         throw new RuntimeException('import_proof_invalid');
     // Lock current configuration before the final native proof; no remote mutation is performed.
     $server=achbotProviderImportServer($db,$serverId,true);
-    $binding=achbotProviderRow($db,'SELECT i.provider_panel_id,c.type,c.panel_url FROM server_info i
+    $binding=achbotProviderRow($db,'SELECT c.provider_connection_id,c.type,c.panel_url FROM server_info i
         JOIN server_config c ON c.id=i.id WHERE i.id=? FOR UPDATE','i',[$serverId]);
-    $panelId=achbotProviderPositiveInt($binding['provider_panel_id']??null);
-    $locked=achbotProviderRow($db,'SELECT * FROM provider_panels WHERE id=? FOR UPDATE','i',[$panelId]);
-    if (!$locked) throw new RuntimeException('import_target_changed');
-    $locked['id']=(int)$locked['id'];$locked['enabled']=(int)$locked['enabled'];
-    if ($binding['type']!=='pasarguard' || $locked['provider']!=='pasarguard' || $locked['enabled']!==1 ||
-        !achbotPgPanelValid($locked) || rtrim($binding['panel_url'],'/')!==rtrim($locked['api_url'],'/') ||
+    $panelId=achbotProviderPositiveInt($binding['provider_connection_id']??null);
+    $locked=achbotProviderPanel($db,$panelId,true);
+    if ($binding['type']!=='pasarguard' || rtrim($binding['panel_url'],'/')!==rtrim($locked['api_url'],'/') ||
         achbotPgImportTarget($locked)!==($proof['target']??null)) throw new RuntimeException('import_target_changed');
     $fresh=achbotPasarGuardExistingUser($db,$serverId,$proof['input_url']);
     $confirmed=$fresh->provider_import_proof??null;

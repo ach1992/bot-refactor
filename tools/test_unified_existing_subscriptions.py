@@ -7,6 +7,7 @@ dfb8b70..., operation/user.py fbdb410..., operation/__init__.py 813cb4d....
 No real tenant, credentials, Telegram or non-loopback network is used.
 """
 from __future__ import annotations
+import provider_storage_fixture as shared_storage
 import argparse,base64,contextlib,copy,hashlib,hmac,json,re,shutil,socket,subprocess,threading,time,urllib.error,urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime,timezone
@@ -314,7 +315,9 @@ try {
   $pay=$connection->query('SELECT * FROM pays WHERE id='.(int)$spec['pay'])->fetch_assoc();
   $out=['eligible'=>achbotSupportsPaymentSubject($connection,$pay),'snapshot'=>json_decode($pay['provider_snapshot'],true)];
  } elseif($op==='lookup'){
-  $out=achbotProviderExistingUser($connection,(int)$spec['server'],$spec['url'],$spec['hint']??null);
+  if(isset($spec['archived_dispatcher']))require $spec['archived_dispatcher'];
+  $lookup=isset($spec['archived_dispatcher'])?'achbotArchivedProviderExistingUser':'achbotProviderExistingUser';
+  $out=$lookup($connection,(int)$spec['server'],$spec['url'],$spec['hint']??null);
  } else throw new RuntimeException('fixture_op_missing');
  $emitted=true;echo json_encode(['events'=>$events,'out'=>$out],JSON_THROW_ON_ERROR);
 }catch(Throwable$error){$emitted=true;echo json_encode(['fixture_error'=>get_class($error).':'.$error->getMessage(),'events'=>$events],JSON_THROW_ON_ERROR);}
@@ -411,7 +414,7 @@ def main():
    def db(query):return native.sql(shared_work,shared_env,query,DB).strip()
    for migration in ['001_marzban_panel_group_id.sql','003_payment_attempts.sql',
        '004_automatic_renewal_attempts.sql','006_payment_message_refs.sql',
-       '007_service_effects.sql','011_provider_identity.sql']:
+       '007_service_effects.sql','011_provider_identity.sql','012_shared_provider_storage.sql']:
     db((ROOT/'migrations/post-v9'/migration).read_text())
    for actor in [1002,1003]:
     db("INSERT INTO users(userid,name,username,refcode,wallet,date,isAdmin,first_start,is_agent,step)"
@@ -420,10 +423,7 @@ def main():
       "DELETE FROM setting WHERE type='BOT_STATES';"
       "INSERT INTO setting(type,value)VALUES(\'BOT_STATES\',CONVERT(UNHEX(\'7b2277616c6c65745374617465223a226f6e222c226761746577617941756469656e6365223a7b2277616c6c6574223a22616c6c227d7d\') USING utf8mb4))")
    if provider=='pasarguard':
-    db("UPDATE server_config SET type='pasarguard' WHERE id=2;"
-       "UPDATE server_info SET provider_panel_id=1,provider_group_ids='[2,5]' WHERE id=2;"
-       "INSERT INTO provider_panels(id,provider,instance_key,name,api_url,api_key,version)"
-       " VALUES(1,'pasarguard',REPEAT('b',32),'Shared fixture','"+vendor_url+"','fixture-private-key','5.5.1')")
+    db("UPDATE server_info SET provider_group_ids='[2,5]' WHERE id=2;"+shared_storage.connection(2,1,vendor_url))
     remark='existing_user_41';credential=vendor.users[41]['subscription_url']
     # Native scheduling is allowed for import/read; only existing mutation
     # eligibility is restricted, and must be checked before money/fence claims.
@@ -481,10 +481,10 @@ def main():
     return invoke('manual',actor=actor,data='addToOrders2')
    baseline=finance();native_before=copy.deepcopy(raw())
    attach(1001)
-   first_physical=db('SELECT * FROM provider_accounts ORDER BY id')
+   first_physical=db('SELECT * FROM service_effects WHERE provider_reference_id IS NOT NULL ORDER BY id')
    first_effect=db('SELECT * FROM service_effects ORDER BY id LIMIT 1')
    attach(1002);attach(9001,1003)
-   yes(db('SELECT * FROM provider_accounts ORDER BY id')==first_physical and
+   yes(db('SELECT * FROM service_effects WHERE provider_reference_id IS NOT NULL ORDER BY id')==first_physical and
        db('SELECT * FROM service_effects ORDER BY id LIMIT 1')==first_effect,
        provider+'_later_shared_attachments_preserve_original_physical_anchor_and_history')
    rows=db("SELECT userid,id FROM orders_list WHERE remark='"+remark+"' ORDER BY userid")
@@ -517,7 +517,7 @@ def main():
     return [event for event in result['events']if event['kind']=='send']
    preserved_used=raw()['used_traffic'];raw()['used_traffic']=raw()['data_limit']-100000000
    warning_native=copy.deepcopy(raw());warning_finance=finance();warning_writes=len(remote_writes())
-   warning_evidence=db('SELECT * FROM provider_accounts ORDER BY id;SELECT * FROM service_effects ORDER BY id')
+   warning_evidence=db('SELECT * FROM service_effects WHERE provider_reference_id IS NOT NULL ORDER BY id;SELECT * FROM service_effects ORDER BY id')
    failed=warning_sends(invoke('warnings',telegram_ok=False))
    yes({event['to']for event in failed}=={1001,1002,1003}and len(failed)==3 and
        db('SELECT DISTINCT fileid,amount,notif FROM orders_list')=='0\t0\t-2'and
@@ -530,12 +530,12 @@ def main():
    yes(not warning_sends(invoke('warnings')),
        provider+'_acknowledged_planless_import_warning_is_not_repeated_on_next_native_tick')
    yes(finance()==warning_finance and raw()==warning_native and len(remote_writes())==warning_writes and
-       db('SELECT * FROM provider_accounts ORDER BY id;SELECT * FROM service_effects ORDER BY id')==warning_evidence,
+       db('SELECT * FROM service_effects WHERE provider_reference_id IS NOT NULL ORDER BY id;SELECT * FROM service_effects ORDER BY id')==warning_evidence,
        provider+'_actual_planless_warning_and_retry_have_no_wallet_pay_capacity_native_or_mutation_effect')
    raw()['used_traffic']=preserved_used
 
    if provider=='pasarguard':
-    yes(raw()['auto_delete_in_days']==3 and db("SELECT COUNT(*) FROM provider_accounts WHERE state='linked'AND mutation_key IS NULL")=='1',
+    yes(raw()['auto_delete_in_days']==3 and db("SELECT COUNT(*) FROM service_effects WHERE provider_reference_id IS NOT NULL AND provider_state='linked'AND provider_mutation_key IS NULL")=='1',
         'scheduled_native_import_still_registers_and_renders_for_all_three_users_without_claiming_mutation')
     raw()['auto_delete_in_days']=None
 
@@ -565,27 +565,27 @@ def main():
    if provider=='pasarguard':
     raw()['auto_delete_in_days']=3
     blocked_finance=finance();blocked_native=copy.deepcopy(raw());blocked_writes=len(remote_writes())
-    blocked_identity=db('SELECT * FROM provider_accounts ORDER BY id;SELECT * FROM service_effects ORDER BY id')
+    blocked_identity=db('SELECT * FROM service_effects WHERE provider_reference_id IS NOT NULL ORDER BY id;SELECT * FROM service_effects ORDER BY id')
     invoke('pay_pipeline',data='prePayCheck_Renew_Wallet_'+pay[0])
     yes(finance()==blocked_finance and raw()==blocked_native and len(remote_writes())==blocked_writes and
-        db('SELECT * FROM provider_accounts ORDER BY id;SELECT * FROM service_effects ORDER BY id')==blocked_identity,
+        db('SELECT * FROM service_effects WHERE provider_reference_id IS NOT NULL ORDER BY id;SELECT * FROM service_effects ORDER BY id')==blocked_identity,
         'known_native_schedule_refuses_actual_wallet_payment_before_debit_reset_PUT_or_physical_claim')
     for action in ['revoke','toggle','reset','delete']:
      refused=invoke('action',order=current,action=action)['out']
      yes(refused.get('success')is False and finance()==blocked_finance and raw()==blocked_native and
          len(remote_writes())==blocked_writes and
-         db('SELECT * FROM provider_accounts ORDER BY id;SELECT * FROM service_effects ORDER BY id')==blocked_identity,
+         db('SELECT * FROM service_effects WHERE provider_reference_id IS NOT NULL ORDER BY id;SELECT * FROM service_effects ORDER BY id')==blocked_identity,
          'known_native_schedule_refuses_direct_'+action+'_without_poisoning_physical_mutation_or_history')
     refused=invoke('edit',order=current,operation='fixture:known-scheduling-refusal',change={'days':30,'volume':3})['out']
     yes(refused.get('success')is False and finance()==blocked_finance and raw()==blocked_native and
         len(remote_writes())==blocked_writes and
-        db('SELECT * FROM provider_accounts ORDER BY id;SELECT * FROM service_effects ORDER BY id')==blocked_identity,
+        db('SELECT * FROM service_effects WHERE provider_reference_id IS NOT NULL ORDER BY id;SELECT * FROM service_effects ORDER BY id')==blocked_identity,
         'known_native_schedule_refuses_direct_full_edit_before_mutation_key_or_reset_PUT')
     raw()['auto_delete_in_days']=None;old_status=raw()['status'];raw()['status']='limited'
     refused=invoke('action',order=current,action='toggle')['out']
     yes(refused.get('success')is False and raw()['status']=='limited'and finance()==blocked_finance and
         len(remote_writes())==blocked_writes and
-        db('SELECT * FROM provider_accounts ORDER BY id;SELECT * FROM service_effects ORDER BY id')==blocked_identity,
+        db('SELECT * FROM service_effects WHERE provider_reference_id IS NOT NULL ORDER BY id;SELECT * FROM service_effects ORDER BY id')==blocked_identity,
         'known_restricted_native_status_refuses_toggle_before_physical_mutation_claim')
     raw()['status']=old_status
    capacity=db('SELECT id,ucount FROM server_info ORDER BY id')
@@ -617,7 +617,7 @@ def main():
    preserved_expiry=raw()['expire'];warning_expiry=int(time.time())+86400
    raw()['expire']=datetime.fromtimestamp(warning_expiry,timezone.utc).isoformat()if provider=='pasarguard'else warning_expiry
    warning_native=copy.deepcopy(raw());warning_finance=finance();warning_writes=len(remote_writes())
-   warning_evidence=db('SELECT * FROM provider_accounts ORDER BY id;SELECT * FROM service_effects ORDER BY id')
+   warning_evidence=db('SELECT * FROM service_effects WHERE provider_reference_id IS NOT NULL ORDER BY id;SELECT * FROM service_effects ORDER BY id')
    failed=warning_sends(invoke('warnings',telegram_ok=False))
    yes(len(failed)==1 and failed[0]['to']==1001 and remark in failed[0]['text']and
        db(f'SELECT fileid,amount,notif FROM orders_list WHERE id={current}')=='7\t0\t-2',
@@ -629,7 +629,7 @@ def main():
    yes(not warning_sends(invoke('warnings')),
        provider+'_acknowledged_selected_plan_import_time_warning_is_not_resent')
    yes(finance()==warning_finance and raw()==warning_native and len(remote_writes())==warning_writes and
-       db('SELECT * FROM provider_accounts ORDER BY id;SELECT * FROM service_effects ORDER BY id')==warning_evidence,
+       db('SELECT * FROM service_effects WHERE provider_reference_id IS NOT NULL ORDER BY id;SELECT * FROM service_effects ORDER BY id')==warning_evidence,
        provider+'_selected_plan_warning_retry_preserves_money_capacity_and_native_mutation_history')
    raw()['expire']=preserved_expiry
 
@@ -650,13 +650,13 @@ def main():
     # These are actual entrypoints using real imported origins, selected plans
     # and explicit user consent. Only the owned fixture's existing replay
     # authority is corrupted/exhausted; no successful financial row is forged.
-    account_id=int(db('SELECT id FROM provider_accounts'))
-    saved_history=db('SELECT IFNULL(HEX(mutation_key),"NULL"),IFNULL(HEX(mutation_snapshot),"NULL") FROM provider_accounts').split('\t')
+    account_id=int(db('SELECT provider_reference_id FROM service_effects WHERE provider_reference_id IS NOT NULL'))
+    saved_history=db('SELECT IFNULL(HEX(provider_mutation_key),"NULL"),IFNULL(HEX(provider_mutation_snapshot),"NULL") FROM service_effects WHERE provider_reference_id IS NOT NULL').split('\t')
     def sql_text(value):
      return 'NULL'if value is None else"CONVERT(X'"+value.encode().hex()+"' USING utf8mb4)"
     def restore_history():
      values=['NULL'if value=='NULL'else"CONVERT(X'"+value+"' USING utf8mb4)"for value in saved_history]
-     db('UPDATE provider_accounts SET mutation_key='+values[0]+',mutation_snapshot='+values[1]+' WHERE id='+str(account_id))
+     db('UPDATE service_effects SET provider_mutation_key='+values[0]+',provider_mutation_snapshot='+values[1]+' WHERE provider_reference_id='+str(account_id))
     def configure_refusal(mode):
      restore_history();raw()['auto_delete_in_days']=None
      if mode=='schedule':
@@ -671,11 +671,11 @@ def main():
       last='delete:'+str(account_id)
       snapshot=json.dumps({'version':1,'key':last,'consumed_keys':[last]})
      else:raise AssertionError('fixture_refusal_mode_missing')
-     db('UPDATE provider_accounts SET mutation_key='+sql_text(last)+',mutation_snapshot='+sql_text(snapshot)+' WHERE id='+str(account_id))
+     db('UPDATE service_effects SET provider_mutation_key='+sql_text(last)+',provider_mutation_snapshot='+sql_text(snapshot)+' WHERE provider_reference_id='+str(account_id))
     def guard_snapshot():
      return db('SELECT userid,wallet FROM users ORDER BY id;SELECT * FROM orders_list ORDER BY id;'
        'SELECT * FROM pays ORDER BY id;SELECT * FROM automatic_renewal_attempts ORDER BY id;'
-       'SELECT * FROM increase_order ORDER BY id;SELECT * FROM provider_accounts ORDER BY id;'
+       'SELECT * FROM increase_order ORDER BY id;SELECT * FROM service_effects WHERE provider_reference_id IS NOT NULL ORDER BY id;'
        'SELECT * FROM service_effects ORDER BY id;SELECT id,ucount FROM server_info ORDER BY id;'
        "SELECT * FROM setting WHERE type LIKE 'ACHBOT_SERVICE_ORIGIN:%' ORDER BY id")
     for mode in ['schedule','malformed','exhausted']:
@@ -783,14 +783,12 @@ echo json_encode(['required'=>count(achbotProviderRequiredOperations()),
   optional=probe_call(ROOT)
   yes(optional['full']and optional['none']and not optional['one']and not optional['bad']and optional['plan'],
       'optional_import_pair_is_callable_all_or_none')
-  for migration in ['001_marzban_panel_group_id.sql','004_automatic_renewal_attempts.sql','007_service_effects.sql','011_provider_identity.sql']:
+  for migration in ['001_marzban_panel_group_id.sql','004_automatic_renewal_attempts.sql','007_service_effects.sql','011_provider_identity.sql','012_shared_provider_storage.sql']:
    sql((ROOT/'migrations/post-v9'/migration).read_text())
-  sql("DELETE FROM server_config WHERE id IN(3,4);INSERT INTO provider_panels(id,provider,instance_key,name,api_url,api_key,version)"
-      " VALUES(1,'pasarguard',REPEAT('b',32),'Import fixture','"+url+"','fixture-private-key','5.5.1');"
-      "INSERT INTO server_info(id,title,ucount,remark,flag,active,state,provider_panel_id,provider_group_ids)"
-      " VALUES(3,'Native service',20,'existing','',1,1,1,'[2,5]'),(4,'Logical alias',20,'alias','',1,1,1,'[2,5]');"
-      "INSERT INTO server_config SELECT 3,'"+url+"',ip,sni,header_type,request_header,response_header,security,tlsSettings,'pasarguard','','',port_type,reality,sub_links FROM server_config WHERE id=2;"
-      "INSERT INTO server_config SELECT 4,'"+url+"',ip,sni,header_type,request_header,response_header,security,tlsSettings,'pasarguard','','',port_type,reality,sub_links FROM server_config WHERE id=2;")
+  sql("DELETE FROM server_config WHERE id IN(3,4);"
+      "INSERT INTO server_info(id,title,ucount,remark,flag,active,state,provider_group_ids)"
+      " VALUES(3,'Native service',20,'existing','',1,1,'[2,5]'),(4,'Logical alias',20,'alias','',1,1,'[2,5]');"+
+      shared_storage.clone(3,2)+shared_storage.connection(3,1,url)+shared_storage.clone(4,3))
   for actor in [1002,1003,1004]:
    sql("INSERT INTO users(userid,name,username,refcode,wallet,date,isAdmin,first_start,is_agent,step)"
        f" VALUES({actor},'Owned','owned','0',50000,'1700000000',0,'sent',0,'none')")
@@ -824,7 +822,7 @@ echo json_encode(['required'=>count(achbotProviderRequiredOperations()),
     customer_outputs.append(json.dumps(out,ensure_ascii=False))
    return out
   def financial():return sql("SELECT userid,wallet FROM users ORDER BY id;SELECT * FROM pays ORDER BY id;SELECT id,ucount FROM server_info ORDER BY id")
-  def entities():return sql('SELECT * FROM orders_list ORDER BY id;SELECT * FROM service_effects ORDER BY id;SELECT * FROM provider_accounts ORDER BY id')
+  def entities():return sql('SELECT * FROM orders_list ORDER BY id;SELECT * FROM service_effects ORDER BY id;SELECT * FROM service_effects WHERE provider_reference_id IS NOT NULL ORDER BY id')
   def state(actor):
    raw=sql(f'SELECT step,IFNULL(HEX(temp),"NULL") FROM users WHERE userid={actor}')
    step,encoded=raw.split('\t')
@@ -840,7 +838,7 @@ echo json_encode(['required'=>count(achbotProviderRequiredOperations()),
   yes('addToOrders3'in json.dumps(shown)and token not in panel.returned_tokens and panel.returned_tokens,
       'older_valid_v3_token_succeeds_while_authenticated_native_GET_tokens_rotate')
   yes(financial()==base_finance and sql('SELECT COUNT(*) FROM orders_list')=='0'and
-      sql('SELECT COUNT(*) FROM provider_accounts')=='0'and sql('SELECT COUNT(*) FROM service_effects')=='0',
+      sql('SELECT COUNT(*) FROM service_effects WHERE provider_reference_id IS NOT NULL')=='0'and sql('SELECT COUNT(*) FROM service_effects')=='0',
       'preview_never_creates_order_adoption_or_financial_effect')
   before=entities();call('manual',actor=1002,data='addToOrders3')
   yes(entities()==before,'cross_actor_callback_cannot_use_foreign_preview')
@@ -853,8 +851,8 @@ echo json_encode(['required'=>count(achbotProviderRequiredOperations()),
   order=int(sql("SELECT id FROM orders_list WHERE remark='existing_user_41'"))
   yes(sql('SELECT source_kind,effect_kind,IFNULL(pay_row_id,"NULL"),reserved_count,state FROM service_effects')==
       'external_import\tadopt\tNULL\t0\tlocal_recorded','genuine_adopt_effect_is_distinct_from_CREATE_or_financial_capacity_reservation')
-  yes(sql('SELECT remote_user_id,state FROM provider_accounts')=='41\tlinked'and
-      sql('SELECT operation_marker FROM provider_accounts').startswith('achbot:adopt:'),
+  yes(sql('SELECT provider_remote_user_id,provider_state FROM service_effects WHERE provider_reference_id IS NOT NULL')=='41\tlinked'and
+      sql('SELECT provider_operation_marker FROM service_effects WHERE provider_reference_id IS NOT NULL').startswith('achbot:adopt:'),
       'adoption_persists_exact_native_id_and_linked_import_identity')
   yes(financial()==base_finance and panel.users==remote_before and not mutations(),
       'import_leaves_wallet_pays_capacity_native_note_limits_groups_proxy_and_tokens_untouched')
@@ -880,7 +878,7 @@ echo json_encode(['required'=>count(achbotProviderRequiredOperations()),
       'admin_assignment_is_local_only_and_preserves_native_service')
   unlimited_order=int(sql("SELECT id FROM orders_list WHERE remark='existing_user_42'"))
   yes(sql(f'SELECT expire_date FROM orders_list WHERE id={unlimited_order}')=='0'and
-      json.loads(sql(f'SELECT entitlement_snapshot FROM provider_accounts WHERE order_id={unlimited_order}'))['expire']is None,
+      json.loads(sql(f'SELECT provider_entitlement_snapshot FROM service_effects WHERE order_id={unlimited_order}'))['expire']is None,
       'native_NULL_expiry_uses_only_original_schema_zero_storage_sentinel_with_NULL_provenance')
   displayed=call('view',actor=1003,owner=1003,order=unlimited_order)['out']
   unlimited_controls=[displayed['keyboard']]
@@ -915,25 +913,59 @@ echo json_encode(['required'=>count(achbotProviderRequiredOperations()),
        'native_legacy_username_token_'+('padded'if padded else'unpadded')+'_uses_exact_lookup_and_signature_proof')
   shown=preview(1004,url+'/native-subscriptions/'+jwt_token('12345',int(time.time())-30))
   yes(state(1004)[1]['username']=='12345','native_legacy_JWT_numeric_username_is_not_mistaken_for_remote_ID')
-  # A configured alias authorizes the input URL but never becomes a fetch
-  # destination. The native endpoint remains the only token verifier.
+  # Subscription aliases, including unconfigured domains and reverse-proxy
+  # prefixes, never become fetch destinations. Native bearer proof authorizes
+  # the account independently of the supplied URL's origin/path.
   sql("UPDATE server_config SET sub_links='"+foreign_url+"' WHERE id=3")
   shown=preview(1004,foreign_url+'/native-subscriptions/'+panel.users[43]['subscription_url'].rsplit('/',1)[1])
   yes(state(1004)[1]['username']=='existing_user_43'and not foreign.trace,
       'explicit_subscription_origin_alias_is_proved_only_at_native_endpoint')
   sql("UPDATE server_config SET sub_links='' WHERE id=3")
+  for label,alias in [
+      ('unconfigured_PasarGuard_domain',foreign_url+'/native-subscriptions/'+token),
+      ('unconfigured_PasarGuard_domain_and_prefix',foreign_url+'/other/subscription/path/'+token),
+      ('unconfigured_Marzban_domain_and_prefix',foreign_url+'/other/subscription/path/'+mb_token),
+  ]:
+   before=financial();writes=len(mutations())
+   shown=preview(1004,alias);step,proof=state(1004)
+   yes(step=='none'and proof is not None and proof['import_url']==alias and
+       financial()==before and len(mutations())==writes and not foreign.trace,
+       label+'_accepted_only_after_native_bearer_proof_without_alias_fetch')
+  # Exercise the real common dispatcher directly, in addition to the visible
+  # preview route. The earlier final cleanup accidentally discarded its server
+  # binding; archive that exact broken function as a discriminating RED control.
+  for provider,server_id,hint,credential in [
+      ('PasarGuard',3,None,token),('Marzban',2,'existing_mb_user',mb_token)]:
+   alias=foreign_url+'/unregistered/proxy/subscription/'+credential
+   before=financial();records=entities();writes=len(mutations())
+   result=call('lookup',server=server_id,url=alias,hint=hint)['out']
+   yes(result.get('provider_import_proof',{}).get('verified')is True and
+       financial()==before and entities()==records and len(mutations())==writes and not foreign.trace,
+       provider+'_actual_common_dispatcher_unconfigured_alias_native_bearer_success')
+   invalid=alias[:-1]+('a'if alias[-1]!='a'else'b')
+   result=call('lookup',server=server_id,url=invalid,hint=hint)['out']
+   yes(result.get('success')is False and 'provider_import_proof'not in result and
+       financial()==before and entities()==records and len(mutations())==writes and not foreign.trace,
+       provider+'_actual_common_dispatcher_invalid_alias_bearer_denied_without_mutation')
+  broken_ref='177605ee1bb3faaf5d9ed2ccfcadf11718c0d2ec'
+  archived=subprocess.check_output(['git','show',broken_ref+':src/Panel/ProviderImport.php'],cwd=ROOT).decode()
+  archived_start=archived.index('function achbotProviderExistingUser(')
+  archived_end=archived.index('\n}\n',archived_start)+3
+  broken=archived[archived_start:archived_end].replace('function achbotProviderExistingUser(','function achbotArchivedProviderExistingUser(',1)
+  archived_dispatcher=work/'broken-dispatcher.php';archived_dispatcher.write_text('<?php\n'+broken)
+  result=call('lookup',server=3,url=foreign_url+'/proxy/'+token,archived_dispatcher=str(archived_dispatcher))['out']
+  yes(result.get('success')is False and 'provider_import_proof'not in result,
+      'archived_177605_actual_common_dispatcher_missing_server_binding_RED')
   # Same URL and remote ID under a DIFFERENT configured physical instance is
   # ambiguity, not authority to select the first server.
-  sql("INSERT INTO provider_panels(id,provider,instance_key,name,api_url,api_key,version)"
-      " VALUES(2,'pasarguard',REPEAT('c',32),'Ambiguous physical fixture','"+url+"','fixture-private-key','5.5.1');"
-      "INSERT INTO server_info(id,title,ucount,remark,flag,active,state,provider_panel_id,provider_group_ids)"
-      " VALUES(5,'Ambiguous physical',20,'ambiguous','',1,1,2,'[2,5]');"
-      "INSERT INTO server_config SELECT 5,panel_url,ip,sni,header_type,request_header,response_header,security,tlsSettings,type,username,password,port_type,reality,sub_links FROM server_config WHERE id=3")
+  sql("INSERT INTO server_info(id,title,ucount,remark,flag,active,state,provider_group_ids)"
+      " VALUES(5,'Ambiguous physical',20,'ambiguous','',1,1,'[2,5]');"+
+      shared_storage.clone(5,3)+shared_storage.connection(5,2,url,instance='c'*32))
   audit=sql('SELECT COUNT(*) FROM add_link');before=entities()
   preview(1004,panel.users[43]['subscription_url'])
   yes(entities()==before and sql('SELECT COUNT(*) FROM add_link')==audit,
       'distinct_physical_panel_matches_are_ambiguous_even_when_URL_and_ID_equal')
-  sql('DELETE FROM server_config WHERE id=5;DELETE FROM server_info WHERE id=5;DELETE FROM provider_panels WHERE id=2')
+  sql('DELETE FROM server_config WHERE id=5;DELETE FROM server_info WHERE id=5')
   sql('INSERT INTO increase_plan(id,volume,price) VALUES(9979,1,100)')
   neutral=call('copy',key='payment.pre_payment.alert.fa55f5201f')['out']
   for target,actor,provider in [(unlimited_order,1003,'PasarGuard'),(mb_order,1002,'Marzban')]:
@@ -952,7 +984,7 @@ echo json_encode(['required'=>count(achbotProviderRequiredOperations()),
 
   for label,wrong in [
       ('signature',supplied[:-1]+('a'if supplied[-1]!='a'else'b')),
-      ('foreign_origin',foreign_url+'/native-subscriptions/'+token),
+      ('invalid_alias_token',foreign_url+'/other/subscription/'+token[:-1]+('a'if token[-1]!='a'else'b')),
       ('unknown_id',url+'/native-subscriptions/'+mint(999,int(time.time()))),
   ]:
    before=entities();audit=sql('SELECT COUNT(*) FROM add_link')
@@ -984,7 +1016,9 @@ echo json_encode(['required'=>count(achbotProviderRequiredOperations()),
   # Local INSERT failure rolls the order and both adopt evidence rows
   # back together; a retry observes no orphan identity or fake CREATE.
   preview(1004,panel.users[43]['subscription_url']);before=entities()
-  sql("CREATE TRIGGER owned_import_reject BEFORE INSERT ON provider_accounts FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='owned_fixture_reject'")
+  sql("DELIMITER //\nCREATE TRIGGER owned_import_reject BEFORE UPDATE ON service_effects FOR EACH ROW BEGIN "
+      "IF OLD.provider_reference_id IS NULL AND NEW.provider_reference_id IS NOT NULL THEN "
+      "SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='owned_fixture_reject'; END IF; END//\nDELIMITER ;")
   call('manual',actor=1004,data='addToOrders3')
   yes(entities()==before and not mutations(),'failed_adopt_account_insert_rolls_back_order_and_effect_atomically')
   sql('DROP TRIGGER owned_import_reject')
@@ -1112,7 +1146,7 @@ echo json_encode(['required'=>count(achbotProviderRequiredOperations()),
    yes(deletes==(len([r for r in panel.trace if r[0]=='DELETE'])if provider=='PasarGuard'else len([r for r in marzban.trace if r['method']=='DELETE'])),
        'actual_customer_'+provider+'_delete_replay_has_no_second_native_DELETE')
   yes(42 not in panel.users and marzban.deleted and
-      sql(f'SELECT state FROM provider_accounts WHERE order_id={unlimited_order}')=='deleted',
+      sql(f'SELECT provider_state FROM service_effects WHERE order_id={unlimited_order}')=='deleted',
       'actual_customer_deletion_retains_native_import_identity_and_audit_evidence')
   # Later plan assignment cannot turn adoption provenance into CREATE capacity.
   assigned=int(sql("SELECT id FROM orders_list WHERE remark='existing_user_43'"))
@@ -1180,6 +1214,8 @@ echo json_encode(['required'=>count(achbotProviderRequiredOperations()),
       malformed_capacity_ledger_reconciliation_hold=True,
       initial_import_controls_match_supported_actions=True,
       native_origin_alias_and_ambiguity_verified=True,created_marker_policy_preserved=True,
+      unconfigured_alias_domain_and_prefix_both_providers=True,arbitrary_input_host_never_fetched=True,
+      actual_common_import_dispatcher_both_providers=True,broken_dispatcher_177605_RED=True,
       external_requests=0,production_mutations=0)
  shared_registration_and_paid_journey('marzban')
  shared_registration_and_paid_journey('pasarguard')

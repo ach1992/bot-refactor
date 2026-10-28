@@ -2,9 +2,9 @@
 /** AChBot sequential server onboarding for both current providers. */
 if (realpath($_SERVER['SCRIPT_FILENAME']??'')===__FILE__) {http_response_code(404);exit;}
 
-function achbotManagementUrl(string $input): string {
+function achbotManagementUrl(string $input,int $max=254): string {
     $value=rtrim(trim($input),'/');$p=parse_url($value);
-    if (strlen($value)>254 || !$p || empty($p['host']) ||
+    if (strlen($value)>$max || !$p || empty($p['host']) ||
         !in_array($p['scheme']??'',['http','https'],true) ||
         isset($p['user']) || isset($p['pass']) || isset($p['query']) || isset($p['fragment']) ||
         preg_match('/[\x00-\x20\x7f]/',$value)) throw new RuntimeException('management_input');
@@ -80,7 +80,7 @@ function achbotServerWizardView(mysqli $db,array $d): array {
         // Saved connections are an optional shortcut INSIDE add-server, not a separate catalog.
         try {
             achbotPgLoad();achbotProviderRequireSchema($db);
-            foreach (achbotManagementRows($db,"SELECT id,name FROM provider_panels WHERE provider='pasarguard' AND enabled=1 ORDER BY id LIMIT 30") as $p)
+            foreach (achbotProviderConnections($db) as $p)
                 $keys[]=[['text'=>achbotManagementText('reuse_connection',['name'=>$p['name']]),
                     'callback_data'=>achbotManagementButton($d,'panel',(string)$p['id'])]];
         } catch (Throwable $ignored) {}
@@ -118,7 +118,7 @@ function achbotServerWizardAdvance(mysqli $db,array &$d,string $action,string $i
         $input=$stage==='password'?$input:trim($input);
         if ($stage==='capacity') $v['capacity']=achbotManagementInteger($input,1,100000000);
         elseif ($stage==='url') {
-            $v['url']=achbotManagementUrl($input);unset($v['panel_id'],$v['api_key'],$v['password'],$v['username'],$v['groups'],$v['panel_fingerprint'],$d['choices'],$d['page']);
+            $v['url']=achbotManagementUrl($input,$v['provider']==='pasarguard'?1000:254);unset($v['panel_id'],$v['api_key'],$v['password'],$v['username'],$v['groups'],$v['panel_fingerprint'],$d['choices'],$d['page']);
         } elseif ($stage==='remark') {
             if (preg_match('/^[a-zA-Z0-9_-]{1,60}$/D',$input)!==1) throw new RuntimeException('management_input');
             $v['remark']=$input;
@@ -172,27 +172,32 @@ function achbotServerWizardAdvance(mysqli $db,array &$d,string $action,string $i
         if (!empty($v['panel_id'])) {
             $pid=(int)$v['panel_id'];
             // Pin the exact credential/instance row against concurrent rotation.
-            $locked=achbotManagementRow($db,"SELECT * FROM provider_panels WHERE id=? AND enabled=1 FOR UPDATE",'i',[$pid]);
-            if (!$locked || $locked['instance_key']!==$p['instance_key'] || $locked['api_key']!==$p['api_key'] ||
+            $locked=achbotProviderPanel($db,$pid,true);
+            if ($locked['instance_key']!==$p['instance_key'] || $locked['api_key']!==$p['api_key'] ||
                 $locked['api_url']!==$p['api_url']) throw new RuntimeException('management_connection');
-        } else {
-            $s=achbotManagementSql($db,"INSERT INTO provider_panels(provider,instance_key,name,api_url,api_key,version) VALUES('pasarguard',?,?,?,?, '5.5.1')",
-                'ssss',[$v['instance_key'],$v['title'],$v['url'],$v['api_key']]);
-            $pid=(int)$s->insert_id;$s->close();
         }
     } elseif ($provider==='marzban') achbotManagementMarzbanCheck($v);
     else throw new RuntimeException('management_input');
     if ($provider==='pasarguard') {
-        $s=achbotManagementSql($db,'INSERT INTO server_info(title,ucount,remark,flag,active,provider_panel_id,provider_group_ids) VALUES(?,?,?,?,1,?,?)',
-            'sissis',[$v['title'],$v['capacity'],$v['remark'],$v['flag'],$pid,$groupJson]);
+        $s=achbotManagementSql($db,'INSERT INTO server_info(title,ucount,remark,flag,active,provider_group_ids) VALUES(?,?,?,?,1,?)',
+            'sisss',[$v['title'],$v['capacity'],$v['remark'],$v['flag'],$groupJson]);
     } else {
         // Marzban onboarding remains usable without migration 011.
         $s=achbotManagementSql($db,'INSERT INTO server_info(title,ucount,remark,flag,active) VALUES(?,?,?,?,1)',
             'siss',[$v['title'],$v['capacity'],$v['remark'],$v['flag']]);
     }
     $id=(int)$s->insert_id;$s->close();
-    $s=achbotManagementSql($db,"INSERT INTO server_config(id,panel_url,ip,sni,header_type,request_header,response_header,security,tlsSettings,username,password,type) VALUES(?,?,'','','none','','','none','',?,?,?)",
-        'issss',[$id,$v['url'],$v['username']??'',$v['password']??'',$provider]);$s->close();
+    if ($provider==='pasarguard') {
+        // Each logical server owns its connection; reused aliases keep the same stable instance.
+        $pid=$pid??$id;
+        $s=achbotManagementSql($db,"INSERT INTO server_config(id,panel_url,ip,sni,header_type,request_header,response_header,security,tlsSettings,username,password,type,
+            provider_connection_id,provider_instance_key,provider_version,provider_enabled)
+            VALUES(?,?,'','','none','','','none','','',?,'pasarguard',?,?,?,1)",
+            'ississ',[$id,$v['url'],$p['api_key'],$pid,$p['instance_key'],$p['version']]);$s->close();
+    } else {
+        $s=achbotManagementSql($db,"INSERT INTO server_config(id,panel_url,ip,sni,header_type,request_header,response_header,security,tlsSettings,username,password,type)
+            VALUES(?,?,'','','none','','','none','',?,?,?)",'issss',[$id,$v['url'],$v['username']??'',$v['password']??'',$provider]);$s->close();
+    }
     if ($provider==='marzban') achbotSetMarzbanGroup($db,$id,(int)$v['panel_group_id']);
     return $id;
 }

@@ -242,9 +242,9 @@ try {
    $db->query("UPDATE server_info SET provider_group_ids='[8]' WHERE id=2");
    ok($snap['group_ids']===[2,5],'quoted_snapshot_immutable');
    ok(achbotProviderPanelForSnapshot($db,$snap)['id']===1,'quoted_groups_do_not_reinherit');
-   $db->query("UPDATE provider_panels SET api_url='https://changed.invalid' WHERE id=1");
+   $db->query("UPDATE server_config SET panel_url='https://changed.invalid' WHERE id=2");
    denied(fn()=>achbotProviderPanelForSnapshot($db,$snap),'provider_snapshot_target_changed');
-   $db->query("UPDATE provider_panels SET api_url='https://panel.example.invalid' WHERE id=1");
+   $db->query("UPDATE server_config SET panel_url='https://panel.example.invalid' WHERE id=2");
    $ent=['data_limit'=>2147483648,'expire'=>2000000000,'group_ids'=>[2,5],'status'=>'active'];
    $marker='achbot:v1:'.str_repeat('a',32);
    denied(fn()=>achbotProviderReserveAccount($db,1,$snap,'fixture_user',$marker,$ent),'provider_reservation_requires_transaction');
@@ -252,9 +252,9 @@ try {
    $new=achbotProviderReserveAccount($db,1,$snap,'fixture_user',$marker,$ent);
    ok($new['newly_reserved']===true,'new_reservation_only_once');
    $observer=new mysqli('localhost','root','',$argv[3],0,$argv[2]);
-   ok((int)$observer->query('SELECT COUNT(*) FROM provider_accounts')->fetch_row()[0]===0,'uncommitted_reservation_invisible');
+   ok((int)$observer->query('SELECT COUNT(*) FROM service_effects WHERE provider_reference_id IS NOT NULL')->fetch_row()[0]===0,'uncommitted_reservation_invisible');
    $db->commit();
-   ok((int)$observer->query('SELECT COUNT(*) FROM provider_accounts')->fetch_row()[0]===1,'committed_reservation_visible');
+   ok((int)$observer->query('SELECT COUNT(*) FROM service_effects WHERE provider_reference_id IS NOT NULL')->fetch_row()[0]===1,'committed_reservation_visible');
    $db->begin_transaction();
    $again=achbotProviderReserveAccount($db,1,$snap,'fixture_user',$marker,$ent);
    ok($again['newly_reserved']===false,'existing_reservation_no_dispatch');
@@ -268,17 +268,17 @@ try {
    denied(fn()=>achbotProviderVerifyAccount($db,1,array_replace($user,['id'=>18])),'provider_account_identity_conflict');
    achbotProviderLinkAccount($db,1,91);achbotProviderLinkAccount($db,1,91);
    ok(achbotProviderAccountByOrder($db,91)['state']==='linked','verified_order_link_idempotent');
-   $db->query("UPDATE provider_accounts SET state='review',mutation_key='fixture:mutation',
-       mutation_snapshot=JSON_OBJECT('action','reset') WHERE effect_id=1");
+   $db->query("UPDATE service_effects SET provider_state='review',provider_mutation_key='fixture:mutation',
+       provider_mutation_snapshot=JSON_OBJECT('action','reset') WHERE id=1");
    $db->begin_transaction();$held=achbotProviderReserveAccount($db,1,$snap,'fixture_user',$marker,$ent);$db->commit();
    ok($held['newly_reserved']===false && $held['state']==='review','unknown_account_never_reauthorizes_create');
    ok($held['entitlement_snapshot']===json_encode($ent),'mutation_preserves_purchased_entitlement');
-   $db->query("ALTER TABLE provider_accounts DROP INDEX uq_provider_effect");
+   $db->query("ALTER TABLE service_effects DROP INDEX uq_effect_provider_reference");
    denied(fn()=>achbotProviderPanel($db,1),'provider_unique_index_invalid');
  }
  echo json_encode(['complete'=>true,'cases'=>$cases],JSON_THROW_ON_ERROR);
 }catch(Throwable $e){
- if($spec['op']==='reserve_race' && $e->getMessage()==='provider_storage_unavailable') {
+ if($spec['op']==='reserve_race' && in_array($e->getMessage(),['provider_storage_unavailable','provider_reservation_unconfirmed'],true)) {
    echo json_encode(['reservation_rejected'=>true]);
  }else echo json_encode(['fixture_exception'=>$e->getMessage(),'cases'=>$cases]);
 }
@@ -289,16 +289,15 @@ def storage_checks(work,env):
     purchase.init(work,env,'https://panel.example.invalid')
     cases=[]
     r=php(script,ROOT,work/'mysql.sock',db,json.dumps({'op':'missing'}));cases+=r['cases']
-    for name in ['001_marzban_panel_group_id.sql','007_service_effects.sql','011_provider_identity.sql']:
+    for name in ['001_marzban_panel_group_id.sql','007_service_effects.sql','011_provider_identity.sql','012_shared_provider_storage.sql']:
         native.sql(work,env,(ROOT/'migrations/post-v9'/name).read_text(),db)
     snap=dict(provider='pasarguard',panel_id=1,instance_key='b'*32,
         endpoint_sha256=__import__('hashlib').sha256(b'https://panel.example.invalid').hexdigest(),group_ids=[2,5])
     quoted=json.dumps(snap,separators=(',',':'))
     native.sql(work,env,"""
-INSERT INTO provider_panels(id,provider,instance_key,name,api_url,api_key,version) VALUES
-(1,'pasarguard',REPEAT('b',32),'Fixture','https://panel.example.invalid','fixture-private-key','5.5.1');
-UPDATE server_config SET type='pasarguard',panel_url='https://panel.example.invalid' WHERE id=2;
-UPDATE server_info SET provider_panel_id=1,provider_group_ids='[5,2,2]' WHERE id=2;
+UPDATE server_config SET type='pasarguard',panel_url='https://panel.example.invalid',password='fixture-private-key',
+ provider_connection_id=1,provider_instance_key=REPEAT('b',32),provider_version='5.5.1' WHERE id=2;
+UPDATE server_info SET provider_group_ids='[5,2,2]' WHERE id=2;
 INSERT INTO service_effects (id,source_kind,source_ref,actor_userid,ordinal,operation_id,
  target_server_id,target_key,endpoint_sha256,plan_id,remote_username,requested_expire,
  requested_bytes,request_sha256,provider_snapshot)
@@ -312,7 +311,7 @@ INSERT INTO orders_list(id,userid,token,transid,fileid,server_id,inbound_id,rema
     # Deliberately construct incompatible storage in this disposable DB only;
     # the real FK otherwise prevents converting the payment/effect pair.
     native.sql(work,env,'ALTER TABLE service_effects DROP FOREIGN KEY fk_effect_pay',db)
-    for table in ['provider_panels','provider_accounts','service_effects','users','pays',
+    for table in ['service_effects','users','pays',
                   'orders_list','server_info','server_plans','server_config','setting']:
         before=native.sql(work,env,'SELECT COUNT(*) FROM '+table,db)
         native.sql(work,env,'ALTER TABLE '+table+' ENGINE=Aria TRANSACTIONAL=0',db)
@@ -324,8 +323,23 @@ INSERT INTO orders_list(id,userid,token,transid,fileid,server_id,inbound_id,rema
         finally:
             native.sql(work,env,'ALTER TABLE '+table+' ENGINE=InnoDB',db)
     native.sql(work,env,'ALTER TABLE service_effects ADD CONSTRAINT fk_effect_pay FOREIGN KEY(pay_row_id) REFERENCES pays(id) ON DELETE RESTRICT ON UPDATE RESTRICT',db)
+    # Replace the two retired-table engine cases with actual shared-storage
+    # shape refusal at the same no-dispatch boundary.
+    for broken,restore,label in [
+        ('ALTER TABLE orders_list MODIFY provider_remote_created_at VARCHAR(39) COLLATE utf8mb4_bin DEFAULT NULL',
+         'ALTER TABLE orders_list MODIFY provider_remote_created_at VARCHAR(40) COLLATE utf8mb4_bin DEFAULT NULL',
+         'incompatible_current_native_order_identity_storage_blocks'),
+        ('ALTER TABLE server_config MODIFY password VARCHAR(100) COLLATE utf8mb4_bin NOT NULL',
+         'ALTER TABLE server_config MODIFY password TEXT COLLATE utf8mb4_bin NOT NULL',
+         'incompatible_current_native_key_storage_blocks')]:
+        native.sql(work,env,broken,db)
+        try:
+            r=php(script,ROOT,work/'mysql.sock',db,json.dumps({'op':'engine'}))
+            assert r.get('complete') is True and len(r['cases'])==1,r
+            cases.append(label)
+        finally:native.sql(work,env,restore,db)
     r=php(script,ROOT,work/'mysql.sock',db,json.dumps({'op':'all','user':USER}));cases+=r['cases']
-    native.sql(work,env,"ALTER TABLE provider_accounts ADD UNIQUE KEY uq_provider_effect(effect_id);",db)
+    native.sql(work,env,"ALTER TABLE service_effects ADD UNIQUE KEY uq_effect_provider_reference(provider_reference_id);",db)
     snap['group_ids']=[8]
     race_snapshot=json.dumps(snap,separators=(',',':'))
     native.sql(work,env,"""INSERT INTO service_effects (id,source_kind,source_ref,actor_userid,ordinal,operation_id,
@@ -340,22 +354,22 @@ INSERT INTO orders_list(id,userid,token,transid,fileid,server_id,inbound_id,rema
     # expose a row created after its read view. Both outcomes forbid dispatch.
     assert sum(r.get('newly_reserved') is True for r in results)==1,results
     assert all(r.get('newly_reserved') in [False,True] if 'newly_reserved' in r else r=={'reservation_rejected':True} for r in results),results
-    assert native.sql(work,env,'SELECT COUNT(*) FROM provider_accounts WHERE effect_id=2',db).strip()=='1'
+    assert native.sql(work,env,'SELECT COUNT(*) FROM service_effects WHERE provider_reference_id IS NOT NULL AND id=2',db).strip()=='1'
     cases.append('concurrent_default_snapshot_single_reservation_safe_loser')
-    native.sql(work,env,'DELETE FROM provider_accounts WHERE effect_id=2',db)
+    native.sql(work,env,"UPDATE service_effects SET provider_reference_id=NULL,provider_connection_id=NULL,provider_operation_marker=NULL,provider_entitlement_snapshot=NULL,provider_state=NULL WHERE id=2",db)
     with ThreadPoolExecutor(max_workers=2) as pool:
         results=list(pool.map(lambda _:php(script,ROOT,work/'mysql.sock',db,json.dumps({'op':'reserve_race','snapshot_compat':True})),range(2)))
     assert sorted(r.get('newly_reserved') for r in results)==[False,True],results
     cases.append('concurrent_compat_snapshot_current_read_single_dispatch')
     # RED control: a nonlocking reservation read sees the stale repeatable-read
     # snapshot and attempts an INSERT rejected by the unique effect fence.
-    native.sql(work,env,'DELETE FROM provider_accounts WHERE effect_id=2',db)
+    native.sql(work,env,"UPDATE service_effects SET provider_reference_id=NULL,provider_connection_id=NULL,provider_operation_marker=NULL,provider_entitlement_snapshot=NULL,provider_state=NULL WHERE id=2",db)
     negative=work/'negative-source';(negative/'src/Panel').mkdir(parents=True)
     (negative/'src/Panel/PasarGuard.php').write_bytes((ROOT/'src/Panel/PasarGuard.php').read_bytes())
     text=(ROOT/'src/Panel/ProviderStorage.php').read_text()
-    old="'SELECT * FROM provider_accounts WHERE effect_id=? FOR UPDATE','i',[$effectId]"
+    old="'SELECT * FROM service_effects WHERE id=? FOR UPDATE','i',[$effectId]"
     assert text.count(old)==1
-    (negative/'src/Panel/ProviderStorage.php').write_text(text.replace(old,"'SELECT * FROM provider_accounts WHERE effect_id=?','i',[$effectId]"))
+    (negative/'src/Panel/ProviderStorage.php').write_text(text.replace(old,"'SELECT * FROM service_effects WHERE id=?','i',[$effectId]"))
     with ThreadPoolExecutor(max_workers=2) as pool:
         results=list(pool.map(lambda _:php(script,negative,work/'mysql.sock',db,json.dumps({'op':'reserve_race','snapshot_compat':True})),range(2)))
     assert sum(r.get('newly_reserved') is True for r in results)==1 and any(r.get('reservation_rejected') for r in results),results

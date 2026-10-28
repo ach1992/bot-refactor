@@ -5,6 +5,7 @@ Exercises current PHP controllers, persisted drafts, actual cURL admission and
 transactional inserts. No production configuration or external service is used.
 """
 from __future__ import annotations
+import provider_storage_fixture as shared_storage
 import argparse, contextlib, copy, json, os, re, subprocess, threading
 from concurrent.futures import ThreadPoolExecutor
 from http.server import ThreadingHTTPServer
@@ -171,7 +172,7 @@ def main():
     with owned.owned_database() as (work,env),panels() as (server,url):
         purchase.init(work,env,url+'/mb')
         def sql(query):return native.sql(work,env,query,DB)
-        for name in ['001_marzban_panel_group_id.sql','004_automatic_renewal_attempts.sql','007_service_effects.sql','011_provider_identity.sql']:
+        for name in ['001_marzban_panel_group_id.sql','004_automatic_renewal_attempts.sql','007_service_effects.sql','011_provider_identity.sql','012_shared_provider_storage.sql']:
             sql((ROOT/'migrations/post-v9'/name).read_text())
         # A historical inactive draft belongs to nobody in the new workflow.
         sql("INSERT INTO server_plans(fileid,catid,server_id,inbound_id,acount,title,protocol,days,volume,type,price,descr,pic,active,step,date) VALUES('orphan',1,2,0,0,'SENTINEL-INACTIVE','',30,1,'ws',1,'sentinel','',0,4,'fixture')")
@@ -201,8 +202,8 @@ def main():
             yes(r['handled'] and draft(r)is None and r['state']['step']=='none' and r['state']['temp']is None,'one_press_cancel')
             yes(any(e.get('keys')=='{"remove_keyboard":true}' for e in r['events']),'cancel_removes_reply_keyboard')
             return r
-        def counts():return sql("SELECT (SELECT COUNT(*) FROM server_info),(SELECT COUNT(*) FROM server_config),(SELECT COUNT(*) FROM server_plans),(SELECT COUNT(*) FROM provider_panels)")
-        def rows():return sql("SELECT id,title,ucount,remark,flag,active,provider_panel_id,provider_group_ids FROM server_info ORDER BY id;SELECT id,type,panel_url FROM server_config ORDER BY id;SELECT id,server_id,title,active,custom_sni,provider_group_ids FROM server_plans ORDER BY id")
+        def counts():return sql("SELECT (SELECT COUNT(*) FROM server_info),(SELECT COUNT(*) FROM server_config),(SELECT COUNT(*) FROM server_plans),(SELECT COUNT(DISTINCT provider_connection_id) FROM server_config WHERE type='pasarguard')")
+        def rows():return sql("SELECT id,title,ucount,remark,flag,active,provider_group_ids FROM server_info ORDER BY id;SELECT id,type,panel_url FROM server_config ORDER BY id;SELECT id,server_id,title,active,custom_sni,provider_group_ids FROM server_plans ORDER BY id")
         def no_secrets(r):
             shown=json.dumps(r['events'],ensure_ascii=False)
             yes('fixture-password'not in shown and 'fixture-private-key'not in shown,'credentials_not_echoed')
@@ -448,10 +449,10 @@ def main():
         # Saved connection shortcut still creates only a logical server on final confirmation.
         r=call(callback='addManagedServer');r=action(r,'provider','pasarguard')
         for value in ['Reuse fixture','10','reusefixture','FIXTURE']:r=text(r,value)
-        stage(r,'url');panel_id=int(sql('SELECT MIN(id) FROM provider_panels').strip())
+        stage(r,'url');panel_id=int(sql("SELECT MIN(provider_connection_id) FROM server_config WHERE type='pasarguard'").strip())
         r=action(r,'panel',str(panel_id));stage(r,'groups');r=action(action(r,'pick','0'),'done')
-        before=int(sql('SELECT COUNT(*) FROM provider_panels').strip());r=action(r,'save')
-        yes(r['state']['step']=='none'and int(sql('SELECT COUNT(*) FROM provider_panels').strip())==before,'saved_connection_reused_without_duplicate_panel')
+        before=int(sql("SELECT COUNT(DISTINCT provider_connection_id) FROM server_config WHERE type='pasarguard'").strip());r=action(r,'save')
+        yes(r['state']['step']=='none'and int(sql("SELECT COUNT(DISTINCT provider_connection_id) FROM server_config WHERE type='pasarguard'").strip())==before,'saved_connection_reused_without_duplicate_panel')
         # COMMIT can succeed while its acknowledgment is lost; surface uncertainty and make replay inert.
         r=plan_to_targets('pasarguard',pg_id);r=action(r,'inherit');stage(r,'review')
         save='am|'+draft(r)['nonce']+'|'+str(draft(r)['rev'])+'|save|0'
@@ -512,9 +513,7 @@ def main():
         yes(all_state()==before,'role_denial_after_initial_claim_rolls_back_all_entity_and_actor_changes')
         yes(not any('PRIVATE-ROLE-DENIAL-DRAFT'in str(e.get('body',''))for e in denied['events']),'role_denial_after_initial_claim_never_recovers_private_draft')
         cancel(r,actor=9002)
-        # Removing a server cannot strand orders/plans/payment evidence; a pristine server can be removed locally.
-        before=rows();r=call(callback='yesDeleteServer'+str(pg_id),field=True)
-        yes(rows()==before,'referenced_server_delete_is_blocked')
+        # A confirmed removal may have dependencies; their records are retained.
         clean_id=int(sql('SELECT MAX(id) FROM server_info').strip());before=rows()
         # A stale delete confirmation may not hide an active editor or financial draft.
         r=call(callback='editServerName'+str(clean_id),field=True);before_busy=all_state()
@@ -533,10 +532,18 @@ def main():
             sql("UPDATE users SET step='none',temp=NULL WHERE userid=9001")
         r=call(callback='yesDeleteServer'+str(clean_id),actor=9002,field=True)
         yes(rows()==before,'delegate_without_server_permission_cannot_delete')
-        panels_before=sql('SELECT COUNT(*) FROM provider_panels')
+        effects_before=sql("SELECT COUNT(*) FROM service_effects")
         r=call(callback='yesDeleteServer'+str(clean_id),field=True)
         yes(sql('SELECT COUNT(*) FROM server_info WHERE id='+str(clean_id)).strip()=='0' and sql('SELECT COUNT(*) FROM server_config WHERE id='+str(clean_id)).strip()=='0','unreferenced_server_delete_is_atomic')
-        yes(sql('SELECT COUNT(*) FROM provider_panels')==panels_before,'shared_provider_identity_retained_on_server_delete')
+        yes(sql("SELECT COUNT(*) FROM service_effects")==effects_before,'historical_provider_effects_retained_on_server_delete')
+        # Remove a populated server after its wizard has completed; only connection rows disappear.
+        dependent_before=sql('SELECT * FROM server_plans ORDER BY id;SELECT * FROM orders_list ORDER BY id;SELECT * FROM pays ORDER BY id;SELECT * FROM service_effects ORDER BY id')
+        r=call(callback='yesDeleteServer'+str(pg_id),field=True,message_id=575)
+        yes(sql('SELECT COUNT(*) FROM server_info WHERE id='+str(pg_id)).strip()=='0' and sql('SELECT COUNT(*) FROM server_config WHERE id='+str(pg_id)).strip()=='0','confirmed_referenced_server_is_removed')
+        yes(sql('SELECT * FROM server_plans ORDER BY id;SELECT * FROM orders_list ORDER BY id;SELECT * FROM pays ORDER BY id;SELECT * FROM service_effects ORDER BY id')==dependent_before,'confirmed_server_removal_preserves_dependent_records')
+        edits=[e for e in r['events']if e.get('method')=='editMessageText']
+        yes(len(edits)==1 and edits[0]['edited_message']==575 and 'yesDeleteServer' not in str(edits[0].get('keys')),'confirmed_server_removal_consumes_original_confirmation')
+        yes(not any(e.get('method')=='sendMessage'for e in r['events']),'confirmed_server_removal_has_no_duplicate_new_prompts')
         # Actual RC13 source reproduces the reported double-cancel cause; current handler consumes it once.
         old_provider=subprocess.check_output(['git','show','2c0e728dcd71c38e20d176fe2577bc264d3faa1a:src/Panel/ProviderAdmin.php'],cwd=ROOT)
         old_path=work/'rc13-provider-admin.php'

@@ -5,6 +5,7 @@ Only synthetic values, task-owned source copies and socket MariaDB are used.
 The temporary fixture adapter proves dispatch, not support for another panel.
 """
 from __future__ import annotations
+import provider_storage_fixture as shared_storage
 import argparse,json,shutil,subprocess
 import test_post_v9_pasarguard_client as pg
 from pathlib import Path
@@ -78,18 +79,18 @@ try{
  } elseif($spec['op']==='rr_quote'){
   $connection->begin_transaction();
   // Establish an earlier RR snapshot before another connection changes the journal.
-  $connection->query('SELECT mutation_snapshot FROM provider_accounts WHERE order_id=91')->fetch_assoc();
+  $connection->query('SELECT provider_mutation_snapshot FROM service_effects WHERE order_id=91')->fetch_assoc();
   $other=new mysqli('localhost','root','',$argv[3],0,$argv[2]);$other->set_charset('utf8mb4');
-  $old=$other->query('SELECT mutation_key,mutation_snapshot,updated_at FROM provider_accounts WHERE order_id=91')->fetch_assoc();
+  $old=$other->query('SELECT provider_mutation_key AS mutation_key,provider_mutation_snapshot AS mutation_snapshot,updated_at FROM service_effects WHERE order_id=91')->fetch_assoc();
   try{
    $key=$spec['key'];$snapshot=$spec['snapshot'];
-   $q=$other->prepare('UPDATE provider_accounts SET mutation_key=?,mutation_snapshot=? WHERE order_id=91');
+   $q=$other->prepare('UPDATE service_effects SET provider_mutation_key=?,provider_mutation_snapshot=? WHERE order_id=91');
    $q->bind_param('ss',$key,$snapshot);$q->execute();$q->close();
    $pay=$connection->query('SELECT * FROM pays WHERE id=2')->fetch_assoc();
    $out=['eligible'=>achbotProviderQuoteEligible($connection,$pay,true)];
   }finally{
    $connection->rollback();
-   $q=$other->prepare('UPDATE provider_accounts SET mutation_key=?,mutation_snapshot=?,updated_at=? WHERE order_id=91');
+   $q=$other->prepare('UPDATE service_effects SET provider_mutation_key=?,provider_mutation_snapshot=?,updated_at=? WHERE order_id=91');
    $q->bind_param('sss',$old['mutation_key'],$old['mutation_snapshot'],$old['updated_at']);$q->execute();$q->close();$other->close();
   }
  } elseif($spec['op']==='pin'){
@@ -141,7 +142,7 @@ def main():
   panel.user.update(created_at='2026-01-01T00:00:00Z',note='achbot:v1:'+'c'*32)
   purchase.init(work,env,'http://127.0.0.1:9')
   def sql(q):return native.sql(work,env,q,DB)
-  for name in ['001_marzban_panel_group_id.sql','004_automatic_renewal_attempts.sql','007_service_effects.sql','011_provider_identity.sql']:
+  for name in ['001_marzban_panel_group_id.sql','004_automatic_renewal_attempts.sql','007_service_effects.sql','011_provider_identity.sql','012_shared_provider_storage.sql']:
    sql((ROOT/'migrations/post-v9'/name).read_text())
   if not sql("SHOW INDEX FROM users WHERE Key_name='idx_users_userid_v1'").strip():sql('ALTER TABLE users ADD INDEX idx_users_userid_v1(userid)')
   sql("INSERT INTO pays(id,hash_id,user_id,type,plan_id,server_id,volume,day,price,request_date,state) VALUES(1,'registry_paid',1001,'BUY_SUB',7,2,0,0,100,1700000000,'processing')")
@@ -155,7 +156,7 @@ def main():
    data=json.loads(result.stdout)
    if 'exception'in data:raise AssertionError(data)
    return data
-  def snapshot():return sql('SELECT * FROM users ORDER BY id;SELECT * FROM pays ORDER BY id;SELECT * FROM orders_list ORDER BY id;SELECT * FROM server_info ORDER BY id;SELECT * FROM service_effects ORDER BY id;SELECT * FROM automatic_renewal_attempts ORDER BY id;SELECT * FROM provider_panels ORDER BY id;SELECT * FROM provider_accounts ORDER BY id')
+  def snapshot():return sql('SELECT * FROM users ORDER BY id;SELECT * FROM pays ORDER BY id;SELECT * FROM orders_list ORDER BY id;SELECT * FROM server_info ORDER BY id;SELECT * FROM service_effects ORDER BY id;SELECT * FROM automatic_renewal_attempts ORDER BY id;SELECT * FROM server_config ORDER BY id;SELECT * FROM service_effects WHERE provider_reference_id IS NOT NULL ORDER BY id')
   r=run(ROOT,'registry')['out']
   yes(r['valid']and r['types']==['marzban','pasarguard'],'production_registry_has_exact_two_native_adapters')
   yes(r['sql']=="'marzban','pasarguard'",'SQL_list_comes_from_registered_source_keys')
@@ -188,9 +189,9 @@ def main():
   # claim. Only valid native probes enable cURL against this owned loopback
   # fixture; invalid/unknown dispatch probes keep network functions disabled.
   original_config=sql('SELECT HEX(panel_url) FROM server_config WHERE id=2').strip()
-  sql("INSERT INTO provider_panels(id,provider,instance_key,name,api_url,api_key,version) VALUES(1,'pasarguard',REPEAT('b',32),'Quote fixture','"+panel_url+"','fixture-private-key','5.5.1')")
-  sql("UPDATE server_config SET type='pasarguard',panel_url='"+panel_url+"' WHERE id=2;UPDATE server_info SET provider_panel_id=1,provider_group_ids='[2,5]' WHERE id=2")
-  sql("INSERT INTO provider_accounts(effect_id,order_id,provider,panel_id,instance_key,endpoint_sha256,remote_user_id,remote_created_at,remote_username,operation_marker,entitlement_snapshot,state) VALUES(987,91,'pasarguard',1,REPEAT('b',32),SHA2('"+panel_url+"',256),17,'2026-01-01T00:00:00.000000Z','fixture_user',CONCAT('achbot:v1:',REPEAT('c',32)),'{\\\"group_ids\\\":[2,5]}','linked')")
+  sql(shared_storage.connection(2,1,panel_url)+"UPDATE server_info SET provider_group_ids='[2,5]' WHERE id=2")
+  sql(shared_storage.identity(987,91,1,panel_url,17,'2026-01-01T00:00:00.000000Z','fixture_user','achbot:v1:'+'c'*32,
+      dict(group_ids=[2,5],data_limit=2147483648,expire=2000000000,status='active')))
   sql("INSERT INTO pays(id,hash_id,user_id,type,plan_id,server_id,order_id,volume,day,price,request_date,state) VALUES(2,'registry_renew',1001,'RENEW_ACCOUNT',7,2,91,0,0,100,1700000000,'pending'),(3,'registry_day',1001,'INCREASE_DAY_91_9970',7,2,91,0,7,100,1700000000,'pending')")
   def subject_case(name,pay,want,expected_server=2,lock=False):
    before=snapshot();start=len(panel.trace)
@@ -222,11 +223,11 @@ def main():
   native_day=dict(type='INCREASE_DAY_91_9970',id=3,plan_id=7,order_id=91,user_id=1001,day=7,volume=0)
   subject_case('pasarguard_pinned_addon_omitted_server_accepted',native_day,True)
   subject_case('pasarguard_pinned_addon_conflicting_server_rejected',dict(native_day,server_id=999),False,None)
-  sql("UPDATE provider_accounts SET remote_created_at='2026-02-01T00:00:00.000000Z' WHERE order_id=91")
+  sql("UPDATE service_effects SET provider_remote_created_at='2026-02-01T00:00:00.000000Z' WHERE order_id=91")
   subject_case('pasarguard_order_resolution_keeps_native_account_generation_pin',native_renew,False)
-  sql("UPDATE provider_accounts SET remote_created_at='2026-01-01T00:00:00.000000Z' WHERE order_id=91;UPDATE provider_panels SET api_url='https://changed.example.invalid' WHERE id=1")
+  sql("UPDATE service_effects SET provider_remote_created_at='2026-01-01T00:00:00.000000Z' WHERE order_id=91;UPDATE server_config SET panel_url='https://changed.example.invalid' WHERE provider_connection_id=1")
   subject_case('pasarguard_order_resolution_keeps_native_endpoint_pin',native_renew,False)
-  sql("UPDATE provider_panels SET api_url='"+panel_url+"' WHERE id=1")
+  sql("UPDATE server_config SET panel_url='"+panel_url+"' WHERE provider_connection_id=1")
   subject_case('pasarguard_valid_quote_restored_after_negative_controls',native_renew,True)
   # The outer deletion fence must be preceded by the same read-only admission.
   # Immutable target capture deliberately remains independent of mutable history.
@@ -246,12 +247,12 @@ def main():
              ('exhausted',full_keys[-1],exhausted),
              ('replayed','delete:1',json.dumps(dict(version=1,key='delete:1',consumed_keys=['delete:1'])))]
   for name,key,history in histories:
-   sql("UPDATE provider_accounts SET mutation_key='"+key+"',mutation_snapshot=CONVERT(UNHEX('"+history.encode().hex()+"') USING utf8mb4) WHERE order_id=91")
+   sql("UPDATE service_effects SET provider_mutation_key='"+key+"',provider_mutation_snapshot=CONVERT(UNHEX('"+history.encode().hex()+"') USING utf8mb4) WHERE order_id=91")
    start=len(panel.trace);before=snapshot()
    action=run(ROOT,'action_preflight')['out']
    yes(not action['eligible'] and before==snapshot() and panel.trace[start:]==[] and panel.write_count==0,
        'native_action_preflight_'+name+'_history_refuses_without_HTTP_or_claim')
-  sql('UPDATE provider_accounts SET mutation_key=NULL,mutation_snapshot=NULL WHERE order_id=91')
+  sql('UPDATE service_effects SET provider_mutation_key=NULL,provider_mutation_snapshot=NULL WHERE order_id=91')
   start=len(panel.trace);before=snapshot()
   action=run(ROOT,'action_preflight',change_target=True)['out']
   yes(not action['eligible'] and before==snapshot() and panel.trace[start:]==[],
