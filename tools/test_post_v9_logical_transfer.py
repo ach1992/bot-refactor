@@ -497,7 +497,7 @@ achEvent('probe',[
             'concurrent_two_admin_group_creation_verified':True,
             'pinned_v9_source_on_migrated_schema_verified':True,
             'unicode_group_name_contract_verified':True,
-            'no_real_provider_or_payment_calls':True,
+            'no_real_provider_or_payment_calls':True,'administrator_only_switching':True,
             'current_unified_onboarding':onboarding_proof,'scenarios':checks}
     if args.report:args.report.write_text(json.dumps(report,indent=2,ensure_ascii=False)+'\n')
     print(json.dumps({k:v for k,v in report.items() if k!='scenarios'},ensure_ascii=False))

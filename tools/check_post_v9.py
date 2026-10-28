@@ -130,23 +130,29 @@ def main():
     with tempfile.TemporaryDirectory(prefix="achbot-post-v9-acceptance-") as tmp:
         unified={}
         suites=[
-            ('management_wizard','test_unified_management_wizard.py','cases',359,
+            ('management_wizard','test_unified_management_wizard.py','cases',362,
                 {'actual_php':True,'owned_socket_mariadb':True,'loopback_provider_http':True,'provider_mutations':0,'production_mutations':0,'actual_rc13_cancel_RED':True,'older_same_flow_cancel':True,'unique_actor_primary_writes':True,'busy_delete_preserves_editor':True,'administrator_input_history_preserved':True,'same_message_group_selection':True,'actual_rc14_group_message_flood_RED':True,'actual_rc14_admin_input_deletion_RED':True}),
+            ('financial_live_state','test_financial_live_state.py','cases',72,
+                {'native_two_provider': True, 'agent_discount': True, 'own_order_only': True, 'fresh_addon_eligibility': True, 'statistics_compatibility': True, 'external_requests': 0, 'production_mutations': 0}),
+            ('config_qr_delivery','test_config_qr_delivery.py','cases',17,
+                {'actual_php': True, 'owned_socket_mariadb': True, 'actual_Checkout_dispatch': True, 'actual_sendQrFromLink': True, 'provider_neutral_native_names_both': True, 'actual_PasarGuard_identity_HTTP_here': False, 'archived_route_RED': True, 'unchanged_URI_bytes': True, 'temp_cleanup': True, 'financial_mutations': 0, 'external_requests': 0, 'production_mutations': 0, 'real_telegram_rendering_tested': False}),
+            ('order_schema','test_order_schema_simplification.py','cases',10,
+                {'actual_php':True,'owned_socket_mariadb':True,'populated_migration':True,'previous_writer_RED':True,'production_mutations':0,'external_calls':0}),
             ('management_menus','test_unified_management_menus.py','checks',322,
                 {'database':'owned socket MariaDB','network_calls':0,'optional_011_missing_cancel_proven':True}),
-            ('customer_services','test_unified_customer_services.py','cases',590,
-                {'actual_php':True,'native_disposable_mariadb':True,'external_provider_calls':0,'production_mutations':0,'real_JDF_no_date_stubs':True,'fresh_each_render_same_process':True,'same_packet_observation_and_presentation':True,'genuine_import_origin_writer_fixture':True,'actual_service_unit_helpers':True,'native_plan_admission_seam':'controlled_read_only_SQL_fixture','actual_native_plan_eligibility_checked_here':False,'actual_URL_import_checked_here':False,'imported_actions_hide_ineligible_autorenew':True,'existing_consent_withdrawal_visible_when_plan_global_or_observation_unavailable':True,'unlimited_actions_hide_unsupported_relative_changes':True,'native_HTTP_count_checked_here':False,'actual_composed_ASCII_Jalali_Tehran_proofs':{key:['marzban','pasarguard'] for key in ['customer_remote_expiry','admin_remote_expiry','admin_recorded_expiry','admin_warning_grace']},'baseline_date_ref':'2408982797af15bc99e1df2909c13be3976cb1f4','baseline_date_jdf_sha256':'e32da43aafb6548fa746492a9d3181ef796083fa618af2c84f6a7bb4e857337d','baseline_dates_already_ASCII':True,'baseline_date_RED':False,'archived_warning_toggle_RED':2}),
+            ('customer_services','test_unified_customer_services.py','cases',592,
+                {'actual_php':True,'obsolete_order_columns_absent':True,'native_disposable_mariadb':True,'external_provider_calls':0,'production_mutations':0,'real_JDF_no_date_stubs':True,'fresh_each_render_same_process':True,'same_packet_observation_and_presentation':True,'genuine_import_origin_writer_fixture':True,'actual_service_unit_helpers':True,'native_plan_admission_seam':'controlled_read_only_SQL_fixture','actual_native_plan_eligibility_checked_here':False,'actual_URL_import_checked_here':False,'imported_actions_hide_ineligible_autorenew':True,'existing_consent_withdrawal_visible_when_plan_global_or_observation_unavailable':True,'unlimited_actions_hide_unsupported_relative_changes':True,'native_HTTP_count_checked_here':False,'actual_composed_ASCII_Jalali_Tehran_proofs':{key:['marzban','pasarguard'] for key in ['customer_remote_expiry','admin_remote_expiry','admin_recorded_expiry','admin_warning_grace']},'baseline_date_ref':'2408982797af15bc99e1df2909c13be3976cb1f4','baseline_date_jdf_sha256':'e32da43aafb6548fa746492a9d3181ef796083fa618af2c84f6a7bb4e857337d','baseline_dates_already_ASCII':True,'baseline_date_RED':False,'archived_warning_toggle_RED':2}),
             ('service_lifecycle','test_unified_service_lifecycle.py','cases',118,
                 {'native_php':True,'disposable_mariadb':True,'actual_delete_transports':True,'import_warning_planless_and_assigned':True,'import_warning_retry_once':True,'amount0_trial_warning_policy_preserved':True,'malformed_origin_warning_row_isolated':True,'automatic_known_refusal_predebit':True,'scheduled_known_refusal_prefence':True,'production_mutations':0,'external_provider_calls':0,'notification_delivery_regression_red':True,'grace_integrity':True,'deletion_fairness_red':True,'deletion_fairness_source':'5568e5e24ecc595c371c4710bf41db51bb78125d','scheduled_deletion_cursor':'deleteLastOrderId','deletion_fairness_deferred_batch':50,'deletion_fairness_cross_provider_directions':2,'deletion_fairness_financial_hold':True}),
             ('runtime_cleanup','test_unified_runtime_cleanup.py','assertions',140,
                 {'actual_php':True,'owned_socket_mariadb':True,'provider_mutations':0,'production_mutations':0}),
             ('provider_registry','test_unified_provider_registry.py','cases',89,
                 {'actual_php':True,'owned_socket_mariadb':True,'closed_native_adapters':2,'fixture_adapter_only':True,'external_requests':0,'production_mutations':0,'new_schema':False,'authoritative_subject_resolution':True,'sid_only_dispatch_RED':True,'explicit_subject_server_mismatch_rejected':True,'pasarguard_native_quote_pins_preserved':True,'subject_preflight_readonly':True,'action_preflight_readonly':True,'quote_current_read_after_RR_snapshot':True,'quote_lock_forwarding_RED':True,'network_functions_disabled':False,'uncontrolled_network_functions_disabled':True,'native_quote_loopback_readonly':True,'native_quote_read_requests':16,'native_quote_write_requests':0}),
-            ('existing_subscriptions','test_unified_existing_subscriptions.py','cases',186,
+            ('existing_subscriptions','test_unified_existing_subscriptions.py','cases',194,
                 {'actual_php':True,'owned_socket_mariadb':True,'loopback_native_pasar_guard':True,
                  'real_telegram_tested':False,'real_provider_tested':False,
                  'official_source_pin':'eba70d68eaa5a89e34ffebb47c8fd5ce054d0e43',
-                 'URL_only_common_admin_and_customer':True,'rotating_native_token_verified':True,
+                 'URL_only_common_admin_and_customer':True,'unconfigured_alias_domain_and_prefix_both_providers':True,'arbitrary_input_host_never_fetched':True,'actual_common_import_dispatcher_both_providers':True,'broken_dispatcher_177605_RED':True,'rotating_native_token_verified':True,
                  'genuine_local_adoption':True,'import_remote_mutations':0,'import_financial_mutations':0,
                  'no_new_schema':True,'optional_import_pair_all_or_none':True,
                  'missing_import_capability_preserves_core':True,'marzban_usable_without011':True,
@@ -3163,7 +3169,8 @@ def main():
             error=(exc.stderr or b'').decode(errors='replace')[-6000:]
             raise RuntimeError("Marzban logical-group regression failed:\n"+error) from exc
         logical=json.loads(logical_path.read_text())
-        if not (logical.get("complete") and logical.get("cases")>=43
+        if not (logical.get("complete") and logical.get("cases")>=45
+                and logical.get("administrator_only_switching") is True
                 and logical.get("schema_tables")==23
                 and logical.get("additive_server_info_column_verified")
                 and logical.get("original_historical_schema_file_unchanged")
