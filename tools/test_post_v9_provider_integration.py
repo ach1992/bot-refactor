@@ -183,8 +183,9 @@ default:throw new RuntimeException('fixture_op_missing');
 echo json_encode(['out'=>$out],JSON_THROW_ON_ERROR);
 }catch(Throwable $e){try{$db->rollback();}catch(Throwable $ignored){}echo json_encode(['error'=>$e->getMessage()]);}
 '''
-# Hold B's first observation while A attempts to enter. B must already own
-# the durable fence; an old read-before-claim implementation would admit A.
+# Let B's read-only eligibility preflight finish, then hold its arithmetic
+# observation while A attempts to enter. Its durable fence must already be
+# persisted; calculating limits before that claim would admit a competing A.
 ORIGINAL_HANDLE=pg.Handler.handle_request
 def stale_observation(self):
  server=self.server
@@ -196,6 +197,10 @@ def stale_observation(self):
   self.close_connection=True
   return
  if self.command=='GET' and urlsplit(self.path).path=='/api/user/by-id/17' and getattr(server,'capture_stale_once',False):
+  if getattr(server,'capture_stale_skip',0):
+   server.capture_stale_skip-=1
+   ORIGINAL_HANDLE(self)
+   return
   server.capture_stale_once=False
   value=copy.deepcopy(server.user)
   server.trace.append(('GET',self.path,None))
@@ -429,14 +434,20 @@ def main():
   sql("INSERT INTO pays(id,hash_id,user_id,plan_id,server_id,order_id,type,state,price,request_date) VALUES(4,'pgparallelA',1001,7,2,91,'INCREASE_VOLUME_91_1','processing',100,1700000000),(5,'pgparallelB',1001,7,2,91,'INCREASE_VOLUME_91_1','processing',100,1700000000)")
   sql("UPDATE pays SET volume=1,day=0 WHERE id IN (4,5)")
   call('pin',pay=4);call('pin',pay=5)
-  server.capture_stale_once=True;server.stale_captured=threading.Event();server.release_stale=threading.Event()
+  server.capture_stale_once=True;server.capture_stale_skip=1;server.stale_captured=threading.Event();server.release_stale=threading.Event()
   args=['php','-d','display_errors=0','-d','log_errors=0',str(script),str(ROOT),str(work/'mysql.sock'),db,json.dumps(dict(op='edit',pay=5,change={'plus_volume':1}))]
   before_writes=server.write_count
   b=subprocess.Popen(args,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
   try:
-   assert server.stale_captured.wait(10),'B did not capture its initial observation'
+   assert server.stale_captured.wait(10),'B did not capture its post-preflight arithmetic observation'
+   fence=sql("SELECT CONCAT(state,':',mutation_key) FROM provider_accounts WHERE order_id=91").strip()
+   before_claim=sql("SELECT * FROM provider_accounts WHERE order_id=91")
+   requests=len(server.trace)
    result_a=call('edit',pay=4,change={'plus_volume':1})
-   yes(result_a['out']['success'] is False,'account_fence_owned_before_initial_GET_blocks_competing_A')
+   yes(fence=='mutating:pay:5' and result_a['out']['success'] is False
+       and len(server.trace)==requests and server.write_count==before_writes
+       and sql("SELECT * FROM provider_accounts WHERE order_id=91")==before_claim,
+       'account_fence_owned_before_arithmetic_GET_blocks_competing_A')
   finally:server.release_stale.set()
   out,err=b.communicate(timeout=20);assert not err and b.returncode==0,(out,err)
   result_b=json.loads(out)

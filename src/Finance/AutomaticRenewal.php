@@ -40,13 +40,6 @@ function achbotAutoRenewReserve(mysqli $db, int $orderId, int $userId): array {
             !achbotSupportsOrder($db,$orderId,(int)$order['fileid'],$userId)) {
             $db->rollback(); return ['status'=>'ineligible'];
         }
-        // Multiple users may reference one physical service. Lock its references
-        // and refuse only actual in-flight work before reserving one payer.
-        if (!achbotAutoRenewAccountExclusiveLocked($db,$orderId,
-            (int)$order['server_id'],(string)$order['remark'],$peerOrders)) {
-            $db->rollback(); return ['status'=>'account_busy'];
-        }
-
         // Mandatory durable schema: never bypass a missing or damaged journal.
         $stmt=$db->prepare("SELECT id FROM automatic_renewal_attempts
             WHERE order_id=? AND stage<>'done' LIMIT 2 FOR UPDATE");
@@ -57,6 +50,14 @@ function achbotAutoRenewReserve(mysqli $db, int $orderId, int $userId): array {
         if ($pending) {
             $db->rollback(); return ['status'=>'already_claimed'];
         }
+        // Preserve the same-order replay result before considering a new claim.
+        // Multiple users may reference one physical service. Lock its references
+        // and refuse only actual in-flight work before reserving one payer.
+        if (!achbotAutoRenewAccountExclusiveLocked($db,$orderId,
+            (int)$order['server_id'],(string)$order['remark'],$peerOrders)) {
+            $db->rollback(); return ['status'=>'account_busy'];
+        }
+
         $planId=(int)$order['fileid'];
         $stmt=$db->prepare("SELECT price,days,volume,server_id,inbound_id
             FROM server_plans WHERE id=? AND active=1 LIMIT 1");

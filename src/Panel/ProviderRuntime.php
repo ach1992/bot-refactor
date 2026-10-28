@@ -293,12 +293,13 @@ function achbotPasarGuardActionAdapter($serverId,$remark,string $action,?array $
         if (!in_array($action,['delete','revoke','reset','toggle'],true)) return achbotProviderFailure('unsupported_action',false);
         $ctx=achbotPgRemarkContext($connection,(int)$serverId,(string)$remark);
         $panel=$ctx['panel'];$identity=$ctx['identity'];
+        $key=$action==='delete'?'delete:'.(int)$ctx['account']['id']:achbotPgOperationKey($action);
+        achbotPgMutationAdmission($ctx['account'],$key);
         $preflight=achbotPgRead($panel,$identity);
         if (($preflight['success']??false)!==true) return achbotProviderFailure('pg_action_read_unverified',false);
         if (!achbotPgManaged($preflight['user'])) return achbotProviderFailure('pg_native_schedule_conflict',false);
         if ($action==='toggle' && !in_array($preflight['user']['status'],['active','disabled'],true))
             return achbotProviderFailure('pg_status_restricted',false);
-        $key=$action==='delete'?'delete:'.(int)$ctx['account']['id']:achbotPgOperationKey($action);
         $intent=achbotPgBeginMutation($connection,$ctx,$key,$action,['phase'=>'claimed']);
         $read=achbotPgRead($panel,$identity);
         if (($read['success']??false)!==true) throw new RuntimeException('pg_action_read_unverified');
@@ -412,6 +413,11 @@ function achbotPgQuote(mysqli $db,int $payId): array {
         $ctx=achbotPgOrderContext($db,$oid);
         foreach ($ctx['identity'] as $key=>$identityValue)
             if ((string)($snap[$key]??'')!==(string)$identityValue) throw new RuntimeException('pg_quote_account_changed');
+        $history=achbotPgMutationHistory($ctx['account']);
+        // A quote may still describe an already consumed payment; only a new
+        // mutation must append a key, and admission below the claim remains final.
+        if (count($history['consumed_keys'])>=4096 && !in_array('pay:'.$payId,$history['consumed_keys'],true))
+            throw new RuntimeException('pg_account_mutation_requires_review');
         // The same existing native eligibility guard runs before a wallet claim,
         // while the native mutation still reobserves after its durable fence.
         $preflight=achbotPgRead($ctx['panel'],$ctx['identity']);
@@ -532,6 +538,44 @@ function achbotPgOperationKey(string $action,array $change=[]): string {
         return 'telegram:'.$update->update_id.':'.$action;
     throw new RuntimeException('pg_mutation_source_missing');
 }
+/** Decode the existing replay authority without repairing malformed history. */
+function achbotPgMutationHistory(array $account): array {
+    if (($account['state']??null)!=='linked') throw new RuntimeException('pg_account_mutation_requires_review');
+    if (!array_key_exists('mutation_key',$account) || !array_key_exists('mutation_snapshot',$account))
+        throw new RuntimeException('pg_mutation_history_invalid');
+    $lastKey=$account['mutation_key'];$snapshot=$account['mutation_snapshot'];$consumed=[];
+    if ($lastKey!==null || $snapshot!==null) {
+        if (!achbotPgValidMutationKey($lastKey) || !is_string($snapshot))
+            throw new RuntimeException('pg_mutation_history_invalid');
+        try {$decoded=json_decode($snapshot,false,64,JSON_THROW_ON_ERROR);}
+        catch (Throwable $error) {throw new RuntimeException('pg_mutation_history_invalid');}
+        if (!($decoded instanceof stdClass)) throw new RuntimeException('pg_mutation_history_invalid');
+        $prior=(array)$decoded;
+        if (($prior['version']??null)!==1 ||
+            ($prior['key']??null)!==$lastKey || !is_array($prior['consumed_keys']??null) ||
+            !array_is_list($prior['consumed_keys']) || count($prior['consumed_keys'])<1 ||
+            count($prior['consumed_keys'])>4096)
+            throw new RuntimeException('pg_mutation_history_invalid');
+        $seen=[];
+        foreach ($prior['consumed_keys'] as $consumedKey) {
+            if (!achbotPgValidMutationKey($consumedKey) || isset($seen[$consumedKey]))
+                throw new RuntimeException('pg_mutation_history_invalid');
+            $seen[$consumedKey]=true;
+        }
+        if (!isset($seen[$lastKey])) throw new RuntimeException('pg_mutation_history_invalid');
+        $consumed=$prior['consumed_keys'];
+    }
+    return ['last_key'=>$lastKey,'consumed_keys'=>$consumed];
+}
+/** The same admission check runs before HTTP and again under the exclusive claim lock. */
+function achbotPgMutationAdmission(array $account,string $key): array {
+    if (!achbotPgValidMutationKey($key)) throw new RuntimeException('pg_mutation_source_invalid');
+    $history=achbotPgMutationHistory($account);$consumed=$history['consumed_keys'];
+    if ($history['last_key']===$key || in_array($key,$consumed,true) || count($consumed)>=4096)
+        throw new RuntimeException('pg_account_mutation_requires_review');
+    return $consumed;
+}
+
 /** One durable account fence spans reset+modify and survives lost responses. */
 function achbotPgBeginMutation(mysqli $db,array $ctx,string $key,string $action,array $changes): array {
     if (!achbotPgValidMutationKey($key)) throw new RuntimeException('pg_mutation_source_invalid');
@@ -542,34 +586,8 @@ function achbotPgBeginMutation(mysqli $db,array $ctx,string $key,string $action,
         $id=(int)$ctx['account']['id'];
         $s=$db->prepare('SELECT state,mutation_key,mutation_snapshot FROM provider_accounts WHERE id=? FOR UPDATE');
         $s->bind_param('i',$id);$s->execute();$a=$s->get_result()->fetch_assoc();$s->close();
-        if (!$a || $a['state']!=='linked') throw new RuntimeException('pg_account_mutation_requires_review');
-        // Empty replay authority exists only before the first mutation.
-        // Malformed or partial persisted history must never become [].
-        $lastKey=$a['mutation_key'];$snapshot=$a['mutation_snapshot'];
-        $consumed=[];
-        if ($lastKey!==null || $snapshot!==null) {
-            if (!achbotPgValidMutationKey($lastKey) || !is_string($snapshot))
-                throw new RuntimeException('pg_mutation_history_invalid');
-            try {$decoded=json_decode($snapshot,false,64,JSON_THROW_ON_ERROR);}
-            catch (Throwable $error) {throw new RuntimeException('pg_mutation_history_invalid');}
-            if (!($decoded instanceof stdClass)) throw new RuntimeException('pg_mutation_history_invalid');
-            $prior=(array)$decoded;
-            if (($prior['version']??null)!==1 ||
-                ($prior['key']??null)!==$lastKey || !is_array($prior['consumed_keys']??null) ||
-                !array_is_list($prior['consumed_keys']) || count($prior['consumed_keys'])<1 ||
-                count($prior['consumed_keys'])>4096)
-                throw new RuntimeException('pg_mutation_history_invalid');
-            $seen=[];
-            foreach ($prior['consumed_keys'] as $consumedKey) {
-                if (!achbotPgValidMutationKey($consumedKey) || isset($seen[$consumedKey]))
-                    throw new RuntimeException('pg_mutation_history_invalid');
-                $seen[$consumedKey]=true;
-            }
-            if (!isset($seen[$lastKey])) throw new RuntimeException('pg_mutation_history_invalid');
-            $consumed=$prior['consumed_keys'];
-        }
-        if ($lastKey===$key || in_array($key,$consumed,true) || count($consumed)>=4096)
-            throw new RuntimeException('pg_account_mutation_requires_review');
+        if (!$a) throw new RuntimeException('pg_account_mutation_requires_review');
+        $consumed=achbotPgMutationAdmission($a,$key);
         $consumed[]=$key;
         $intent=['version'=>1,'key'=>$key,'consumed_keys'=>$consumed,'action'=>$action,'changes'=>$changes,'identity'=>$ctx['identity'],
             'requested_at'=>gmdate('c')];
@@ -691,13 +709,14 @@ function achbotPgServiceEdit(mysqli $db,int $serverId,array $change,?array $gift
             throw new RuntimeException('pg_edit_reference_changed');
         if ($giftTarget!==null && !achbotGiftTargetMatches($db,$serverId,$giftTarget))
             throw new RuntimeException('pg_gift_target_changed');
+        $key=achbotPgOperationKey('edit',$change);
+        achbotPgMutationAdmission($ctx['account'],$key);
         if ((int)($change['pay_id']??0)>0) achbotPgQuote($db,(int)$change['pay_id']);
         else {
             $preflight=achbotPgRead($ctx['panel'],$ctx['identity']);
             if (($preflight['success']??false)!==true) throw new RuntimeException('pg_edit_read_unverified');
             if (!achbotPgManaged($preflight['user'])) throw new RuntimeException('pg_native_schedule_conflict');
         }
-        $key=achbotPgOperationKey('edit',$change);
         // Own the durable account fence BEFORE calculating limits. Eligibility
         // preflight is not used for arithmetic; a completed competing edit is
         // included by the fresh observation below.
