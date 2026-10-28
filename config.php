@@ -2084,7 +2084,7 @@ function getBotReportKeys($data = null) {
 		$totalPaidWithWalletSum = fetchData("SELECT SUM(price) as total FROM pays WHERE state = 'paid_with_wallet'")->fetch_assoc()['total'] ?? 0;
 
         // خریدهای نهایی نشده
-		$unfinishedPurchases = fetchData("SELECT COUNT(DISTINCT user_id) as total FROM pays WHERE state = 'expired_pending' AND user_id NOT IN (SELECT user_id FROM pays WHERE state IN ('paid', 'approved', 'auto_cart_approved', 'paid_with_wallet'))")->fetch_assoc()['total'] ?? 0;
+		$unfinishedPurchases = fetchData("SELECT COUNT(DISTINCT user_id) as total FROM pays WHERE state IN ('expired_pending', 'expired') AND user_id NOT IN (SELECT user_id FROM pays WHERE state IN ('paid', 'approved', 'auto_cart_approved', 'paid_with_wallet'))")->fetch_assoc()['total'] ?? 0;
 
 
         return json_encode([

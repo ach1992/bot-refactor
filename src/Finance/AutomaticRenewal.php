@@ -20,6 +20,7 @@ require_once __DIR__.'/../Panel/ServiceLifecycle.php';
  * - The 004 migration is mandatory; its absence fails closed without a debit.
  */
 function achbotAutoRenewReserve(mysqli $db, int $orderId, int $userId): array {
+    global $botState;
     $outcome=['status'=>'review'];
     if ($orderId<=0 || $userId<=0) return $outcome;
     // The direct helper is also callable outside the Cron entrypoint.
@@ -69,18 +70,26 @@ function achbotAutoRenewReserve(mysqli $db, int $orderId, int $userId): array {
             (string)$order['remark']==='') {
             $db->rollback(); return ['status'=>'ineligible'];
         }
-        $amount=(int)$plan['price'];
+        $baseAmount=(int)$plan['price'];
         $days=(int)$plan['days'];
         $volume=(int)$plan['volume'];
         $now=time();
-        if ($amount<=0 || $days<=0 || $days>3650 || $volume<0 ||
+        if ($baseAmount<=0 || $baseAmount>2147483647 || $days<=0 || $days>3650 || $volume<0 ||
             $volume>intdiv(PHP_INT_MAX,1073741824) ||
             $now>2147483647-$days*86400) {
             $db->rollback(); return ['status'=>'invalid_plan'];
         }
 
+        // Another local reference may already have renewed this physical
+        // service. Only a fresh panel observation under the shared-work lock
+        // authorizes this automatic cycle; peer order dates are not authority.
+        $observation=achbotServiceObserve((int)$order['server_id'],(string)$order['remark']);
+        if (!achbotServiceLifecycle($observation,time())['renew']) {
+            $db->rollback(); return ['status'=>'ineligible'];
+        }
+
         // The legacy userid index is not unique. Never debit an ambiguous ID.
-        $stmt=$db->prepare('SELECT id,wallet FROM users WHERE userid=? FOR UPDATE');
+        $stmt=$db->prepare('SELECT id,wallet,is_agent,discount_percent FROM users WHERE userid=? FOR UPDATE');
         $stmt->bind_param('i',$userId);
         $stmt->execute();
         $users=$stmt->get_result()->fetch_all(MYSQLI_ASSOC);
@@ -88,8 +97,26 @@ function achbotAutoRenewReserve(mysqli $db, int $orderId, int $userId): array {
         if (count($users)!==1) {
             $db->rollback(); return ['status'=>'identity_unverified'];
         }
+        $amount=$baseAmount;
+        if ((int)$users[0]['is_agent']===1) {
+            $discounts=json_decode((string)$users[0]['discount_percent'],true);
+            if (!is_array($discounts)) {
+                $db->rollback(); return ['status'=>'invalid_discount'];
+            }
+            $normal=$discounts['normal']??0;
+            $discount=($botState['agencyPlanDiscount']??'off')==='on'
+                ? ($discounts['plans'][$planId]??$normal)
+                : ($discounts['servers'][(int)$order['server_id']]??$normal);
+            $discount=achbotServiceNonnegative($discount);
+            if ($discount===null || $discount>100) {
+                $db->rollback(); return ['status'=>'invalid_discount'];
+            }
+            // Match the existing base - floor(base * percent / 100) rule,
+            // using whole Toman arithmetic throughout the durable claim.
+            $amount=$baseAmount-intdiv($baseAmount*$discount,100);
+        }
         $wallet=(int)$users[0]['wallet'];
-        if ($wallet<$amount) {
+        if ($amount>0 && $wallet<$amount) {
             $stmt=$db->prepare("UPDATE orders_list SET autoRenew='off'
                 WHERE id=? AND userid=? AND autoRenew='on'");
             $stmt->bind_param('ii',$orderId,$userId);
@@ -136,14 +163,19 @@ function achbotAutoRenewReserve(mysqli $db, int $orderId, int $userId): array {
         $attemptId=(int)$db->insert_id;
         $stmt->close();
         if ($attemptId<=0) throw new RuntimeException('renewal_journal_claim_failed');
-        $userPk=(int)$users[0]['id'];
-        $stmt=$db->prepare("UPDATE users SET wallet=wallet-?
-            WHERE id=? AND userid=? AND wallet>=?");
-        $stmt->bind_param('iiii',$amount,$userPk,$userId,$amount);
-        $stmt->execute();
-        $changed=$stmt->affected_rows;
-        $stmt->close();
-        if ($changed!==1 || $db->commit()!==true)
+        if ($amount>0) {
+            $userPk=(int)$users[0]['id'];
+            $stmt=$db->prepare("UPDATE users SET wallet=wallet-?
+                WHERE id=? AND userid=? AND wallet>=?");
+            $stmt->bind_param('iiii',$amount,$userPk,$userId,$amount);
+            $stmt->execute();
+            $changed=$stmt->affected_rows;
+            $stmt->close();
+            if ($changed!==1) throw new RuntimeException('renewal_funds_reservation_unconfirmed');
+        }
+        // A verified 100% agent discount still records one ordinary renewal,
+        // with zero charged amount and no wallet write (including existing debt).
+        if ($db->commit()!==true)
             throw new RuntimeException('renewal_funds_reservation_unconfirmed');
         return ['status'=>'reserved','id'=>$attemptId,'pay_id'=>$payId,
             'ref'=>$ref,'order_id'=>$orderId,'cycle_expire'=>$cycle,
@@ -296,18 +328,8 @@ function achbotAutoRenewFinalize(mysqli $db, array $claim,
         if (!$stored || (int)$stored['expire_date']!==$applied) {
             $db->rollback();return false;
         }
-        // One verified physical renewal updates the same native observation
-        // for every reference. A stale parallel sweep now reloads notif=0;
-        // it cannot charge another consenting user for the completed cycle.
-        $peerIds=implode(',',array_map(static fn(array $row):int=>(int)$row['id'],$peers));
-        $stmt=$db->prepare("UPDATE orders_list SET expire_date=?,notif=0 WHERE id IN ($peerIds) AND status=1");
-        $stmt->bind_param('i',$applied);
-        if (!$stmt->execute()) {$stmt->close();$db->rollback();return false;}$stmt->close();
-        $stmt=$db->prepare("SELECT id,expire_date,notif FROM orders_list WHERE id IN ($peerIds) FOR UPDATE");
-        $stmt->execute();$updatedPeers=$stmt->get_result()->fetch_all(MYSQLI_ASSOC);$stmt->close();
-        if (count($updatedPeers)!==count($peers)) {$db->rollback();return false;}
-        foreach ($updatedPeers as $peer)
-            if ((int)$peer['expire_date']!==$applied || (int)$peer['notif']!==0) {$db->rollback();return false;}
+        // Other customers' references remain untouched. Their next action or
+        // scheduled pass reads the renewed native state before making a claim.
         $stmt=$db->prepare("UPDATE automatic_renewal_attempts SET stage='done'
             WHERE id=? AND stage='remote_started'");
         $stmt->bind_param('i',$attemptId);

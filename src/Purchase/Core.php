@@ -453,6 +453,25 @@ if (!function_exists('achbotSupportsMarzbanOrder')) {
     }
 }
 
+/** Fresh native baseline shared by add-on selection and pre-payment checks. */
+if (!function_exists('achbotOrderAddonEligibility')) {
+function achbotOrderAddonEligibility($connection,array $order,string $kind): array {
+    $out=['eligible'=>false,'reason'=>'unknown'];
+    if (!($connection instanceof mysqli) || !in_array($kind,['day','volume'],true) ||
+        (int)($order['id']??0)<=0 || (int)($order['server_id']??0)<=0 ||
+        !is_string($order['remark']??null) || $order['remark']==='') return $out;
+    require_once __DIR__.'/../Panel/ServiceLifecycle.php';
+    $native=achbotServiceObserve((int)$order['server_id'],$order['remark']);
+    if (!$native['verified'] || !in_array($native['status'],['active','disabled','expired','limited'],true)) return $out;
+    if ($native['expire']===null) return ['eligible'=>false,'reason'=>'unlimited_time'];
+    // Existing day extensions may revive an expired finite account. Volume
+    // extensions preserve its date and therefore require a still-valid date.
+    if ($kind==='volume' && $native['expire']<=time()) return ['eligible'=>false,'reason'=>'expired'];
+    if ($kind==='volume' && $native['quota']===null) return ['eligible'=>false,'reason'=>'unlimited_volume'];
+    return ['eligible'=>true,'reason'=>''];
+}
+}
+
 if (!function_exists('achbotSupportsPaymentSubject')) {
     function achbotSupportsPaymentSubject($connection, $pay, bool $lock = false)
     {
@@ -494,7 +513,10 @@ if (!function_exists('achbotSupportsPaymentSubject')) {
                 $connection, $oid, $pid > 0 ? $pid : null, $uid > 0 ? $uid : null, $lock
             )) return false;
             if (!empty($pay['order_id']) && (int)$pay['order_id'] !== $oid) return false;
-            return achbotPinnedAddonUnits($pay)!==null;
+            if (achbotPinnedAddonUnits($pay)===null) return false;
+            $stmt=$connection->prepare('SELECT id,server_id,remark FROM orders_list WHERE id=?'.($lock?' FOR UPDATE':''));
+            $stmt->bind_param('i',$oid);$stmt->execute();$order=$stmt->get_result()->fetch_assoc();$stmt->close();
+            return $order && achbotOrderAddonEligibility($connection,$order,strtolower($match[1]))['eligible'];
         }
         return false;
     }
