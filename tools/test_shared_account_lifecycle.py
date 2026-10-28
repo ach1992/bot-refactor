@@ -6,7 +6,7 @@ shared import and paid consent journeys are covered by the separate import
 suite; these checks target concurrent reservations and held peer evidence.
 """
 from __future__ import annotations
-import argparse,json,subprocess,time
+import argparse,hashlib,json,subprocess,time
 from pathlib import Path
 import test_access_state as owned
 import test_v8_native as purchase
@@ -23,6 +23,14 @@ def main():
   purchase.init(w,e,'http://127.0.0.1:9')
   driver=renew.PHP.replace('achbotAutoRenewPrepareDeletion($connection,$oid)];',
       'achbotAutoRenewPrepareDeletion($connection,$oid,$spec[\'expected\']??null)];')
+  # The synthetic provider normally shares state for the same account name.
+  # Explicitly distinct panel fixtures may use separate controlled state even
+  # when their URLs and account names happen to match; runtime still decides
+  # account equivalence solely from the real administrator-assigned group.
+  driver=driver.replace("hash('sha256',$remark)",
+      "hash('sha256',($GLOBALS['spec']['native_fixture_scope']??'').$remark)")
+  driver=driver.replace("hash('sha256',$info['remark'])",
+      "hash('sha256',($GLOBALS['spec']['native_fixture_scope']??'').$info['remark'])")
   (w/'owned-renew-php.php').write_text(driver)
   def q(sql):return renew.sql(w,e,sql).strip()
   for name in ['001_marzban_panel_group_id.sql','003_payment_attempts.sql','004_automatic_renewal_attempts.sql','007_service_effects.sql']:
@@ -45,22 +53,34 @@ def main():
     out+=json.loads(stdout)
    return out
   x,y=pair('shared-distinct-users')
+  original_rows={oid:q(f'SELECT * FROM orders_list WHERE id={oid}')for oid in (x,y)}
   out=concurrent((x,y))
   yes(sum(v['type']=='remote'for v in out)==1 and journal((x,y))==1 and
       q('SELECT SUM(wallet)FROM users WHERE userid IN(1001,1002)')=='900000',
       'two_consented_users_one_native_cycle_has_one_debit_and_effect')
-  yes(q(f'SELECT COUNT(DISTINCT expire_date),SUM(notif)FROM orders_list WHERE id IN({x},{y})')=='1\t0',
-      'verified_completion_synchronizes_both_reference_expiry_and_notification_cycle')
+  payer=int(q(f'SELECT order_id FROM automatic_renewal_attempts WHERE order_id IN({x},{y})'))
+  yes(payer in (x,y),'completed_shared_cycle_journal_identifies_the_actual_paying_order')
+  peer=y if payer==x else x
+  native=json.loads((w/('native-'+hashlib.sha256(b'shared-distinct-users').hexdigest()+'.json')).read_text())
+  yes(q(f'SELECT * FROM orders_list WHERE id={peer}')==original_rows[peer] and
+      q(f'SELECT * FROM orders_list WHERE id={payer}')!=original_rows[payer] and
+      q(f'SELECT expire_date,notif FROM orders_list WHERE id={payer}')==str(native['expire'])+'\t0' and
+      q(f'SELECT COUNT(DISTINCT expire_date),SUM(notif)FROM orders_list WHERE id IN({x},{y})')=='2\t1',
+      'verified_completion_updates_only_actual_paying_order_and_preserves_full_peer_row')
   before=wallets();out=run(x,1001)+run(y,1002)
-  yes(wallets()==before and journal((x,y))==1 and not any(v['type']=='remote'for v in out),
-      'stale_callbacks_on_either_reference_cannot_charge_completed_cycle_again')
+  yes(wallets()==before and journal((x,y))==1 and any(v['type']=='read'for v in out) and
+      not any(v['type']=='remote'for v in out) and
+      q(f'SELECT * FROM orders_list WHERE id={peer}')==original_rows[peer],
+      'stale_callbacks_read_native_completed_cycle_without_second_debit_or_peer_write')
   # Merely sharing is not a deletion restriction once evidence is completed.
   yes(run(x,1001,action='deletion_guard')==[{'type':'delete_guard','allowed':True}],
       'completed_shared_references_do_not_permanently_disable_native_delete_guard')
 
   x,y=pair('shared-held-reservation')
-  yes(run(y,1002,action='reserve')==[{'type':'reserve','status':'reserved'}],
-      'one_user_can_reserve_existing_cycle_without_native_dispatch')
+  reserved=run(y,1002,action='reserve')
+  yes([v for v in reserved if v['type']!='read']==[{'type':'reserve','status':'reserved'}] and
+      any(v['type']=='read'for v in reserved),
+      'one_user_can_reserve_native_verified_existing_cycle_without_native_dispatch')
   before=wallets();out=run(x,1001)
   yes(wallets()==before and journal((x,y))==1 and not any(v['type']=='remote'for v in out),
       'another_reference_cannot_debit_while_peer_reservation_is_in_flight')
@@ -124,11 +144,12 @@ def main():
   q('UPDATE server_info SET panel_group_id=NULL WHERE id IN(2,88)')
   x,y=pair('shared-unassigned-same-url')
   q(f'UPDATE server_plans SET server_id=88,price=100000,days=30,volume=2,active=1 WHERE id=8;UPDATE orders_list SET server_id=88,fileid=8 WHERE id={y}')
-  out=run(x,1001)+run(y,1002)
+  out=run(x,1001,native_fixture_scope='panel-2:')+run(y,1002,native_fixture_scope='panel-88:')
   yes(sum(v['type']=='remote'for v in out)==2 and journal((x,y))==2,
       'equal_endpoint_without_explicit_group_is_not_inferred_physical_identity')
  report=dict(complete=True,cases=len(checks),checks=checks,actual_php=True,owned_socket_mariadb=True,
     two_distinct_users=True,concurrent_workers=2,shared_cycle_one_payer=True,
+    paying_order_only=True,full_peer_row_unchanged=True,fresh_native_shared_cycle_refusal=True,
     stale_callback_safe=True,pending_peer_work_held=True,explicit_panel_group_authority=True,
     native_provider_HTTP=False,external_requests=0,production_mutations=0,new_schema=False)
  if a.report:a.report.write_text(json.dumps(report,ensure_ascii=False,indent=2)+'\n')
