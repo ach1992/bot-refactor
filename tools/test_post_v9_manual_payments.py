@@ -336,7 +336,12 @@ function insertOrder(...$args){
          str_starts_with((string)($GLOBALS['spec']['data']??''),'accCustom'))) {
         global $connection;
         $uid=(int)$args[1];$fid=(int)$args[3];$srv=(int)$args[4];$inbound=(int)$args[5];
-        $amount=(int)$args[11];
+        // Current OrderWrites.php callers omit obsolete protocol/rahgozar
+        // arguments. These standard/custom cases execute current source;
+        // reject unexpected signatures instead of guessing an amount slot.
+        if (count($args)!==14 || $args[13]!==true)
+            throw new RuntimeException('fixture_current_order_writer_signature_changed');
+        $amount=(int)$args[10];
         $remark=$connection->real_escape_string((string)$args[6]);
         $uuid=$connection->real_escape_string((string)$args[7]);
         $connection->query("INSERT INTO orders_list
@@ -441,7 +446,8 @@ def run_route(work,env,driver,data='',step='none',actor=1001,update=None,route='
               photo_mode='success',remote_mode='success',qr_transport='',text='',
               keys=None,states=None,bot_reply_message_id=None,message_transport='',message_edit_transport='',
               pause_before_insert_ms=0,expected_review=False,expected_warning=None,
-              mysqli_report_off=False,service_applied_expire=None,edit_order_id=None):
+              mysqli_report_off=False,service_applied_expire=None,edit_order_id=None,
+              existing_native=None):
     spec={'data':data,'step':step,'actor':actor,'route':route,
           'photo_mode':photo_mode,'remote_mode':remote_mode,'qr_transport':qr_transport,'text':text,
           'message_transport':message_transport,'message_edit_transport':message_edit_transport,
@@ -449,6 +455,7 @@ def run_route(work,env,driver,data='',step='none',actor=1001,update=None,route='
           'mysqli_report_off':mysqli_report_off}
     if service_applied_expire is not None: spec['service_applied_expire']=service_applied_expire
     if edit_order_id is not None: spec['edit_order_id']=edit_order_id
+    if existing_native is not None: spec['existing_native']=existing_native
     if bot_reply_message_id is not None:
         spec['bot_reply_message_id']=bot_reply_message_id
     elif route=='topup':
@@ -505,6 +512,29 @@ def run_route(work,env,driver,data='',step='none',actor=1001,update=None,route='
         return report['events']
     except (json.JSONDecodeError,KeyError) as exc:
         raise RuntimeError('invalid wallet payment route output: '+repr(p.stdout)) from exc
+
+def with_existing_native_reader(php):
+    """Opt in only exact pre-existing accounts seeded by a real-Core fixture."""
+    created_reader="""function getMarzbanUser($serverId,$remark){
+    $GLOBALS['events'][]=['name'=>'remote_get','username'=>$remark];
+    $found=$GLOBALS['remote_accounts'][$remark]??null;
+    return $found ? (object)$found : null;
+}"""
+    existing_reader="""function getMarzbanUser($serverId,$remark){
+    if(isset($GLOBALS['events']))$GLOBALS['events'][]=['name'=>'remote_get','username'=>$remark];
+    $found=$GLOBALS['remote_accounts'][$remark]??null;
+    if($found)return(object)$found;
+    $existing=$GLOBALS['spec']['existing_native']??null;
+    if(!is_array($existing) || (int)$serverId!==(int)$existing['server_id'] ||
+       $remark!==$existing['username'])return null;
+    return(object)$existing;
+}"""
+    if created_reader in php:
+        assert php.count(created_reader)==1
+        return php.replace(created_reader,existing_reader)
+    assert 'function getMarzbanUser(' not in php
+    assert php.startswith('<?php')
+    return php.replace('<?php','<?php\n'+existing_reader,1)
 
 def query(work,env,sql:str)->str:
     return native.sql(work,env,sql,DB).strip()
@@ -1378,6 +1408,7 @@ def check():
             "require_once $root.'/src/Purchase/Core.php';")
         alias_php=alias_php.replace(
             "function achbotSupportsMarzbanOrder(...$args){return true;}","")
+        alias_php=with_existing_native_reader(alias_php)
         alias_driver=work/'real-core-panel-alias-route.php'
         alias_driver.write_text(alias_php)
         # The source-real Core validator permits explicitly grouped physical
@@ -1496,6 +1527,15 @@ def check():
                     audit_before=int(query(work,env,'SELECT COUNT(*) FROM increase_order'))
                     args=dict(data=(approve if method=='manual' else prefix)+key,route='extension',
                               actor=9001 if method=='manual' else 1001,edit_order_id=oid)
+                    if method=='wallet' and kind=='day' and change=='changed':
+                        before=purchase.snapshot(work,env,DB)
+                        missing=run_route(work,env,alias_driver,**args)
+                        assert any(e['name']=='remote_get'for e in missing),missing
+                        assert not any(e['name'] in ('remote_edit','order_insert')for e in missing),missing
+                        assert purchase.snapshot(work,env,DB)==before
+                        cases.append('pinned_addon_unknown_native_refuses_before_claim_or_effect')
+                    args['existing_native']=dict(server_id=2,username=key,expire=2000000000,
+                        data_limit=10*1073741824,used_traffic=1073741824,status='active')
                     events=run_route(work,env,alias_driver,**args)
                     edits=[e for e in events if e['name']=='remote_edit']
                     assert len(edits)==1 and edits[0]['change']['plus_'+kind]==units,(key,events)
@@ -2169,6 +2209,7 @@ def check():
             'function achbotSupportsMarzbanOrder(...$args) {return true;}', '')
         assert real_bank_php!=PHP
         assert 'function achbotSupportsMarzbanOrder(...$args) {return true;}' not in real_bank_php
+        real_bank_php=with_existing_native_reader(real_bank_php)
         real_bank_driver=work/'real-core-bank-alias.php'
         real_bank_driver.write_text(real_bank_php)
         query(work,env,"INSERT INTO setting(id,type,value) VALUES "
@@ -2181,6 +2222,7 @@ def check():
         query(work,env,"UPDATE pays SET request_date=UNIX_TIMESTAMP() "
               "WHERE state='have_sent'")
 
+        bank_native={}
         def alias_bank_case(key,kind):
             oid=day_order(key,expiry=1800000100)
             query(work,env,f"UPDATE orders_list SET fileid=1,notif=1 WHERE id={oid}")
@@ -2194,11 +2236,21 @@ def check():
                   f"server_id=2,plan_id=1,order_id={oid},price=100,"
                   "request_date=UNIX_TIMESTAMP()-120,message_id=550,chat_id=9001 "
                   f"WHERE hash_id='{key}'")
+            bank_native[key]=dict(server_id=2,username=key,expire=1800000100,
+                data_limit=10*1073741824,used_traffic=1073741824,status='active')
             return oid,{'edit_kind':kind,'server_id':2,'order_id':oid,
                         'remark':key,'units':units}
 
         def real_bank(key,op,**kw):
+            kw.setdefault('existing_native',bank_native.get(key))
             return run_php(work,env,real_bank_driver,key,op,**kw)
+
+        key='bankunknownnative'
+        alias_bank_case(key,'day')
+        before=purchase.snapshot(work,env,DB)
+        assert real_bank(key,'auto_probe',existing_native=None)=={'remote_calls':0}
+        assert purchase.snapshot(work,env,DB)==before
+        cases.append('bank_scheduler_unknown_native_refuses_before_claim_or_effect')
 
         # Three positive flows exercise the scheduler (not only a standalone
         # helper). Valid aliases use the order's CURRENT target server while
@@ -3085,7 +3137,10 @@ def check():
 
     return {'complete':True,'cases':len(cases),'scenarios':cases,
             'php_runtime':'native','database':'owned_socket_only',
-            'live_provider_calls':0,'production_data_modified':False}
+            'live_provider_calls':0,'production_data_modified':False,
+            'current_order_writer_argument_contract':True,
+            'pinned_addon_fresh_native_baseline':True,'unknown_native_pinned_addon_refused':True,
+            'bank_addon_fresh_native_baseline':True,'unknown_native_bank_addon_refused':True}
 
 def main():
     p=argparse.ArgumentParser()
