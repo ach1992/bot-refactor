@@ -2057,6 +2057,7 @@ def main():
             'global_cancel_stale_cached_legacy_preserves_day',
             'global_cancel_stale_cached_legacy_preserves_volume',
             'global_cancel_fresh_legacy_flow_unchanged',
+            'global_cancel_preserves_unrelated_inactive_plan_without_plan_writes',
             'global_cancel_stale_revoked_delegate_does_not_clobber',
             'global_cancel_stale_legacy_setuser_cannot_clobber',
             'global_cancel_unknown_ack_replay_preserves_new_gift',
@@ -2146,10 +2147,12 @@ def main():
             'r3_newer_verified_moderation_outorders_legacy_ban',
         }
         if not (direct_gift.get('complete') is True and
-                direct_gift.get('cases')>=152 and
+                direct_gift.get('cases')>=153 and
                 required_direct_gift.issubset(set(direct_gift.get('scenarios',[]))) and
                 direct_gift.get('real_bot_php_route') is True and
                 direct_gift.get('actual_global_cancel_fallback') is True and
+                direct_gift.get('global_cancel_preserves_unrelated_inactive_plan') is True and
+                direct_gift.get('global_cancel_plan_mutation_trace') is True and
                 direct_gift.get('actual_config_set_user') is True and
                 direct_gift.get('actual_webhook_pre_config_auth') is True and
                 direct_gift.get('actual_config_moderation') is True and
@@ -3046,7 +3049,7 @@ def main():
             error=(exc.stderr or b'').decode(errors='replace')[-6000:]
             raise RuntimeError("Marzban logical-group regression failed:\n"+error) from exc
         logical=json.loads(logical_path.read_text())
-        if not (logical.get("complete") and logical.get("cases")>=38
+        if not (logical.get("complete") and logical.get("cases")>=43
                 and logical.get("schema_tables")==23
                 and logical.get("additive_server_info_column_verified")
                 and logical.get("original_historical_schema_file_unchanged")
@@ -3054,7 +3057,13 @@ def main():
                 and logical.get("concurrent_two_admin_group_creation_verified")
                 and logical.get("pinned_v9_source_on_migrated_schema_verified")
                 and logical.get("unicode_group_name_contract_verified")
-                and logical.get("no_real_provider_or_payment_calls")):
+                and logical.get("no_real_provider_or_payment_calls")
+                and logical.get("current_unified_onboarding")=={
+                    "actual_management_entry":True,"private_fresh_frames":True,
+                    "nonce_revision_group_callback":True,"unknown_group_refused_without_writes":True,
+                    "invalid_frame_and_stale_input_refused_without_writes":True,
+                    "explicit_confirmation_required":True,"provider_admission_calls":2,
+                    "remote_account_writes":0}):
             raise RuntimeError("Same-Marzban-panel logical reassignment contract incomplete")
         overlay_report=Path(tmp)/"source-overlay.json"
         subprocess.run(["python3",str(ROOT/"tools/test_post_v9_swap.py"),

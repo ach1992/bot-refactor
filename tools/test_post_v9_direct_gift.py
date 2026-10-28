@@ -9,6 +9,7 @@ import argparse
 import concurrent.futures
 import json
 import os
+import re
 import shutil
 import subprocess
 import time
@@ -29,7 +30,20 @@ error_reporting(E_ALL & ~E_DEPRECATED);
 set_error_handler(static function($n,$m) {throw new ErrorException($m,0,$n);});
 $spec=json_decode($argv[1],true,512,JSON_THROW_ON_ERROR);
 $GLOBALS['spec']=$spec;
+$GLOBALS['plan_mutations']=[];
 class DirectGiftMysqli extends mysqli {
+    private function recordPlanMutation(string $sql): void {
+        if (preg_match('/^\s*(?:DELETE\s+FROM|UPDATE|INSERT\s+INTO|REPLACE\s+INTO)\s+\x60?server_plans\x60?(?:\s|$)/i',$sql))
+            $GLOBALS['plan_mutations'][]=$sql;
+    }
+    public function prepare(string $query): mysqli_stmt|false {
+        $this->recordPlanMutation($query);
+        return parent::prepare($query);
+    }
+    public function query(string $query,int $result_mode=MYSQLI_STORE_RESULT): mysqli_result|bool {
+        $this->recordPlanMutation($query);
+        return parent::query($query,$result_mode);
+    }
     private function fixtureGate(string $announce,string $release): void {
         file_put_contents($GLOBALS['spec'][$announce],'ready');
         $deadline=microtime(true)+25;
@@ -140,7 +154,7 @@ $GLOBALS['events']=[];
 $GLOBALS['fixture_printed']=false;
 register_shutdown_function(static function() {
     if (!$GLOBALS['fixture_printed'])
-        echo json_encode(['events'=>$GLOBALS['events']],JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE);
+        echo json_encode(['events'=>$GLOBALS['events'],'plan_mutations'=>$GLOBALS['plan_mutations']],JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE);
 });
 function bot($method,$args=[]) {
     if ($method==='editMessageReplyMarkup') $GLOBALS['events'][]='MOD_NOTICE';
@@ -234,7 +248,7 @@ if (!achbotWebhookIngressAuthenticated()) {
     require __DIR__.'/gift-route.php';
 }
 $GLOBALS['fixture_printed']=true;
-echo json_encode(['events'=>$GLOBALS['events']],JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE);
+echo json_encode(['events'=>$GLOBALS['events'],'plan_mutations'=>$GLOBALS['plan_mutations']],JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE);
 '''
 
 def ensure(ok: bool, why: str) -> None:
@@ -272,13 +286,17 @@ def setup(work: Path, env: dict) -> Path:
     # Execute the *actual* final global CANCEL fallback after the protected
     # route; otherwise an obsolete config.php userInfo snapshot can bypass it.
     legacy_start=bot.rfind("if ($text == $buttonValues['cancel']) {")
-    ensure(legacy_start>end and
-           bot[legacy_start:].count('DELETE FROM `server_plans`')==1,
+    ensure(legacy_start>end,
            'Actual final legacy CANCEL fallback unavailable or unexpected')
     legacy_end=bot.index('\n?>',legacy_start)
     fallback=bot[legacy_start:legacy_end]
-    ensure('DELETE FROM `server_plans`' in fallback,
-           'Legacy CANCEL cleanup contract unexpectedly changed')
+    ensure(fallback.count('achbotDirectGiftGuardLegacyCancel(')==1 and
+           fallback.index('achbotDirectGiftGuardLegacyCancel(') <
+               fallback.index("sendMessage($mainValues['waiting_message']"),
+           'Actual final CANCEL no longer guards persisted actor/step before feedback')
+    ensure(re.search(r'\bDELETE\s+FROM\s+\x60?server_plans\x60?(?:\s|$)',
+                     fallback,re.I) is None,
+           'Global CANCEL must not delete another administrator\'s inactive plans')
     config=(ROOT/'config.php').read_text()
     set_start=config.index("function setUser($value = 'none', $field = 'step'){")
     set_end=config.index('function generateRandomString(',set_start)
@@ -327,7 +345,6 @@ def setup(work: Path, env: dict) -> Path:
     (stage/'legacy-receipt-ban.php').write_text(
         '<?php\n'+receipt[receipt_start:receipt_end])
     broadcast=(ROOT/'src/Jobs/BroadcastSend.php').read_text()
-    import re
     blocked=re.search(r'\$u = \$connection->prepare\("UPDATE `users`[^\"]+"\);\s*if \(\$u\) \{.*?\$u->close\(\);\s*\}',broadcast,re.S)
     ensure(blocked is not None and "NOT LIKE 'achbotDirectGift%'" in blocked.group(),
            'Automated broadcast-source step guard absent')
@@ -599,13 +616,20 @@ def verify_global_cancel_stale_cache(work: Path, env: dict, stage: Path,
     reset(work,env);stage.joinpath('effects.jsonl').unlink(missing_ok=True)
     q(work,env,"UPDATE users SET step='giftServerDay2' WHERE userid=9001")
     seed_inactive_legacy_plan(work,env)
+    # This unrelated original-schema inactive row is not the canceling actor's
+    # draft. Current management drafts are actor-owned users.step/temp state;
+    # generic cancellation has no authority to remove any server_plans row.
+    unrelated_plan=q(work,env,'SELECT * FROM server_plans WHERE id=987')
     fresh=call(work,env,stage,kind='message',actor=9001,
                update_id=650,message_id=65,text='CANCEL')
     ensure(q(work,env,'SELECT step FROM users WHERE userid=9001')=='none' and
-           q(work,env,"SELECT COUNT(*) FROM server_plans WHERE id=987")=='0' and
            'WAIT' in fresh['events'] and 'MAIN' in fresh['events'],
-           'Fresh legacy CANCEL did not preserve existing step/cleanup UX')
+           'Fresh legacy CANCEL did not preserve existing step/menu UX')
     passed.append('global_cancel_fresh_legacy_flow_unchanged')
+    ensure(q(work,env,'SELECT * FROM server_plans WHERE id=987')==unrelated_plan and
+           fresh['plan_mutations']==[] and not effects(stage),
+           'Fresh global CANCEL mutated another administrator\'s inactive plan or dispatched an effect')
+    passed.append('global_cancel_preserves_unrelated_inactive_plan_without_plan_writes')
 
     # Revocation cannot allow an older cached fallback to clear an already
     # committed delegated-admin gift; the guarded direct route rejects fresh
@@ -1993,6 +2017,8 @@ def main() -> None:
         'complete':True,'cases':len(passed),'scenarios':passed,
         'real_bot_php_route':True,'real_mysqli_original_schema':True,
         'actual_global_cancel_fallback':True,'actual_config_set_user':True,
+        'global_cancel_preserves_unrelated_inactive_plan':True,
+        'global_cancel_plan_mutation_trace':True,
         'actual_webhook_pre_config_auth':True,
         'actual_config_moderation':True,
         'actual_manual_account_handler':True,
