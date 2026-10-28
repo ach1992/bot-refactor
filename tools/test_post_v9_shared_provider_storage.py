@@ -33,6 +33,7 @@ def reset(work,env):
  native.sql(work,env,"INSERT INTO server_config(id,panel_url,ip,sni,header_type,request_header,response_header,security,tlsSettings,username,password,type) VALUES"
   "(2,'"+URL+"','','','none','','','none','','','','pasarguard'),"
   "(3,'"+URL+"','','','none','','','none','','','','pasarguard');",DB)
+ native.sql(work,env,"INSERT INTO server_config(id,panel_url,ip,sni,header_type,request_header,response_header,security,tlsSettings,username,password,type) VALUES(800,'https://retired-config.invalid','','','none','','','none','','fixture','fixture','marzban');",DB)
  for name in ['001_marzban_panel_group_id.sql','007_service_effects.sql','011_provider_identity.sql']:
   native.sql(work,env,(ROOT/'migrations/post-v9'/name).read_text(),DB)
  native.sql(work,env,"INSERT INTO provider_panels(id,provider,instance_key,name,api_url,api_key,version) VALUES"
@@ -54,6 +55,7 @@ def reset(work,env):
   "INSERT INTO setting(type,value) VALUES('ACHBOT_SERVICE_ORIGIN:92',"+wire(ORIGIN)+");"
   "INSERT INTO pays(id,hash_id,user_id,type,plan_id,server_id,price,state,request_date,provider_snapshot) VALUES"
   "(77,'old-quote',1001,'BUY_SUB',7,2,100,'paid_with_wallet',1700000000,"+wire(SNAP)+");",DB)
+ native.sql(work,env,'ALTER TABLE server_info AUTO_INCREMENT=500;ALTER TABLE service_effects AUTO_INCREMENT=600;ALTER TABLE provider_panels AUTO_INCREMENT=700;ALTER TABLE provider_accounts AUTO_INCREMENT=5000;',DB)
 
 def preserved(work,env):
  return dict(
@@ -107,6 +109,9 @@ def run(work,env):
  ok(preserved(work,env)==before,'mutation_evidence_does_not_change_order_payment_or_wallet')
  ok(int(native.sql(work,env,"SELECT AUTO_INCREMENT FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='service_effects'",DB).splitlines()[-1])>75,'new_effect_ids_cannot_collide_with_legacy_reference_ids')
  ok(int(native.sql(work,env,"SELECT AUTO_INCREMENT FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='server_info'",DB).splitlines()[-1])>41,'new_server_ids_cannot_collide_with_legacy_panel_ids')
+ ok(int(native.sql(work,env,"SELECT AUTO_INCREMENT FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='server_info'",DB).strip())>800,'orphan_non_native_config_id_never_reused')
+ ok(int(native.sql(work,env,"SELECT AUTO_INCREMENT FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='service_effects'",DB).strip())>=5000,'legacy_account_allocated_counter_preserved')
+
  # Actual isolated rollback: restore the pre-migration full dump, not a guessed reverse ALTER.
  native.sql(work,env,'DROP DATABASE '+DB+';CREATE DATABASE '+DB+' CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci')
  native.sql(work,env,backup.decode(),DB)
@@ -115,6 +120,17 @@ def run(work,env):
  ok(native.sql(work,env,'SELECT * FROM provider_panels ORDER BY id',DB)==old_connections,'restore_preserves_all_original_connection_fields')
  ok(native.sql(work,env,'SELECT * FROM provider_accounts ORDER BY id',DB)==old_accounts,'restore_preserves_all_original_native_evidence_fields')
  ok(native.sql(work,env,"SELECT TABLE_NAME,COLUMN_NAME,COLUMN_TYPE,IS_NULLABLE FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() ORDER BY TABLE_NAME,ORDINAL_POSITION",DB)==old_schema,'restore_reinstates_complete_original_column_schema')
+ # Preserve current and legacy allocated counters even when no live row has that ID.
+ reset(work,env)
+ native.sql(work,env,'ALTER TABLE server_info AUTO_INCREMENT=9000;ALTER TABLE service_effects AUTO_INCREMENT=9000;',DB)
+ native.sql(work,env,sql,DB)
+ ok(int(native.sql(work,env,"SELECT AUTO_INCREMENT FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='server_info'",DB).strip())>=9000,'existing_server_allocated_counter_never_lowered')
+ ok(int(native.sql(work,env,"SELECT AUTO_INCREMENT FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='service_effects'",DB).strip())>=9000,'existing_effect_allocated_counter_never_lowered')
+ reset(work,env)
+ native.sql(work,env,'ALTER TABLE provider_panels AUTO_INCREMENT=11000;ALTER TABLE provider_accounts AUTO_INCREMENT=12000;',DB)
+ native.sql(work,env,sql,DB)
+ ok(int(native.sql(work,env,"SELECT AUTO_INCREMENT FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='server_info'",DB).strip())>=11000,'legacy_panel_allocated_counter_preserved')
+ ok(int(native.sql(work,env,"SELECT AUTO_INCREMENT FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='service_effects'",DB).strip())>=12000,'legacy_account_high_allocated_counter_preserved')
  negatives={
   'orphan_connection':"INSERT INTO provider_panels(provider,instance_key,name,api_url,api_key,version) VALUES('pasarguard',REPEAT('f',32),'orphan','https://orphan.invalid','key','5.5.1')",
   'unmapped_order':"INSERT INTO orders_list(userid,token,transid,fileid,server_id,inbound_id,remark,uuid,protocol,expire_date,link,amount,status,date) VALUES(1001,'x','',0,2,0,'unknown','','',2000000000,'[]',0,1,'1700000000')",

@@ -8,6 +8,20 @@ DELIMITER //
 CREATE PROCEDURE achbot_consolidate_provider_012()
 BEGIN
  DECLARE failures BIGINT DEFAULT 0;
+ DECLARE current_server_next BIGINT UNSIGNED DEFAULT 1;
+ DECLARE current_effect_next BIGINT UNSIGNED DEFAULT 1;
+ DECLARE legacy_panel_next BIGINT UNSIGNED DEFAULT 1;
+ DECLARE legacy_account_next BIGINT UNSIGNED DEFAULT 1;
+ -- Preserve allocated history, including deleted rows and orphan legacy configs.
+ -- Capture counters before any ALTER can rebuild an InnoDB table.
+ SELECT COALESCE(AUTO_INCREMENT,1) INTO current_server_next FROM information_schema.TABLES
+  WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='server_info';
+ SELECT COALESCE(AUTO_INCREMENT,1) INTO current_effect_next FROM information_schema.TABLES
+  WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='service_effects';
+ SELECT COALESCE(AUTO_INCREMENT,1) INTO legacy_panel_next FROM information_schema.TABLES
+  WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='provider_panels';
+ SELECT COALESCE(AUTO_INCREMENT,1) INTO legacy_account_next FROM information_schema.TABLES
+  WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='provider_accounts';
  SELECT COUNT(*) INTO failures FROM information_schema.COLUMNS
   WHERE TABLE_SCHEMA=DATABASE() AND ((TABLE_NAME='server_config' AND COLUMN_NAME='provider_connection_id')
    OR (TABLE_NAME='service_effects' AND COLUMN_NAME='provider_reference_id')
@@ -162,10 +176,13 @@ BEGIN
     OR NOT(BINARY o.provider_remote_created_at<=>BINARY e.provider_remote_created_at));
  IF failures<>0 THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='012 order transfer unconfirmed: sources retained'; END IF;
  -- Reserve numeric space above immutable legacy snapshot IDs for new server/effect IDs.
- SELECT GREATEST(COALESCE(MAX(id),0)+1,(SELECT COALESCE(MAX(id),0)+1 FROM provider_panels)) INTO @achbot012_server_next FROM server_info;
+ SELECT GREATEST(current_server_next,legacy_panel_next,COALESCE(MAX(id),0)+1,
+  (SELECT COALESCE(MAX(id),0)+1 FROM provider_panels),
+  (SELECT COALESCE(MAX(id),0)+1 FROM server_config)) INTO @achbot012_server_next FROM server_info;
  SET @achbot012_sql=CONCAT('ALTER TABLE server_info AUTO_INCREMENT=',@achbot012_server_next);
  PREPARE achbot012_stmt FROM @achbot012_sql;EXECUTE achbot012_stmt;DEALLOCATE PREPARE achbot012_stmt;
- SELECT GREATEST(COALESCE(MAX(id),0)+1,(SELECT COALESCE(MAX(id),0)+1 FROM provider_accounts)) INTO @achbot012_effect_next FROM service_effects;
+ SELECT GREATEST(current_effect_next,legacy_account_next,COALESCE(MAX(id),0)+1,
+  (SELECT COALESCE(MAX(id),0)+1 FROM provider_accounts)) INTO @achbot012_effect_next FROM service_effects;
  SET @achbot012_sql=CONCAT('ALTER TABLE service_effects AUTO_INCREMENT=',@achbot012_effect_next);
  PREPARE achbot012_stmt FROM @achbot012_sql;EXECUTE achbot012_stmt;DEALLOCATE PREPARE achbot012_stmt;
  ALTER TABLE server_info DROP KEY idx_server_provider_panel,DROP COLUMN provider_panel_id;

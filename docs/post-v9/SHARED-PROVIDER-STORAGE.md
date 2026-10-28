@@ -15,7 +15,9 @@ the panel. There is no second subscription registry or connection table.
 `provider_reference_id` and `provider_connection_id` retain the numbers already
 serialized into historical quotes/adoption evidence. New originating effects use
 their own effect ID and new connections use their actual server ID. Migration012
-advances both existing sequences above old serialized numbers before dropping the
+preserves both current and retired-table allocated sequences, and advances them
+above all existing connection IDs (including orphan legacy config rows) and old
+serialized numbers before dropping the
 source tables. These are evidence identifiers, not another registry. Shared
 customer references point to the same proven origin effect and native ID/creation
 time. They retain independent order/payment ownership.

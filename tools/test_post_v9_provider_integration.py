@@ -230,21 +230,30 @@ def main():
   (work/'phpqrcode').mkdir()
   (work/'phpqrcode/qrlib.php').write_text("<?php class QRcode {public static function png($payload,$file,...$rest){$GLOBALS['qr_payloads'][]=$payload;file_put_contents($file,'owned-png-placeholder');}}")
   buttons=['back_to_main']+sorted(set(re.findall(r"\$buttonValues\['([^']+)'\]",(ROOT/'src/Subscription/AccountDetails.php').read_text())))
-  def call(op,**spec):
+  def call(op,expected_stderr="",**spec):
    if op=='route':spec.setdefault('buttons',buttons)
    out=subprocess.run(['php','-d','display_errors=0','-d','log_errors=0',str(script),str(ROOT),str(work/'mysql.sock'),db,json.dumps(dict(op=op,**spec))],capture_output=True,text=True,timeout=25)
-   if out.returncode or out.stderr:raise AssertionError((out.returncode,out.stderr))
+   if out.returncode or out.stderr!=expected_stderr:raise AssertionError((out.returncode,out.stderr))
    return json.loads(out.stdout)
   def sql(s):return native.sql(work,env,s,db)
-  def yes(condition,name):
-   assert condition,name;checks.append(name)
+  def yes(condition,name,detail=None):
+   assert condition,(name,detail);checks.append(name)
   yes(call('gate')['out']=={'plan':True,'marzban':True},'marzban_works_without_011')
   sql("UPDATE server_config SET type='pasarguard' WHERE id=2")
   yes(call('gate')['out']=={'plan':False,'marzban':False},'pasarguard_fails_closed_without_011')
   sql("UPDATE server_config SET type='marzban' WHERE id=2")
-  for name in ['001_marzban_panel_group_id.sql','004_automatic_renewal_attempts.sql','007_service_effects.sql','011_provider_identity.sql','012_shared_provider_storage.sql']:
-   sql((ROOT/'migrations/post-v9'/name).read_text())
-  sql(shared_storage.connection(2,1,url)+"UPDATE server_info SET provider_group_ids='[2,5]' WHERE id=2;")
+  migrations=['001_marzban_panel_group_id.sql','004_automatic_renewal_attempts.sql','007_service_effects.sql','011_provider_identity.sql']
+  shared_native_storage=(ROOT/'migrations/post-v9/012_shared_provider_storage.sql').exists()
+  if shared_native_storage:migrations.append('012_shared_provider_storage.sql')
+  for name in migrations:sql((ROOT/'migrations/post-v9'/name).read_text())
+  if shared_native_storage:
+   sql(shared_storage.connection(2,1,url)+"UPDATE server_info SET provider_group_ids='[2,5]' WHERE id=2;")
+  else:
+   # The pinned authorization RED executes its actual historical schema/runtime.
+   sql("INSERT INTO provider_panels(id,provider,instance_key,name,api_url,api_key,version)"
+       " VALUES(1,'pasarguard',REPEAT('b',32),'Fixture','"+url+"','fixture-private-key','5.5.1');"
+       "UPDATE server_config SET type='pasarguard',panel_url='"+url+"' WHERE id=2;"
+       "UPDATE server_info SET provider_panel_id=1,provider_group_ids='[2,5]' WHERE id=2;")
   sql("INSERT INTO pays(id,hash_id,user_id,plan_id,server_id,type,state,price,request_date) VALUES(1,'pgbuy',1001,7,2,'BUY_SUB','paid',100,1700000000)")
   snap=call('pin',pay=1)['out'];yes(snap['group_ids']==[2,5],'quote_pins_native_groups')
   sql("UPDATE server_info SET provider_group_ids='[5]' WHERE id=2;UPDATE server_plans SET provider_group_ids='[5]' WHERE id=7")
@@ -254,7 +263,8 @@ def main():
   sql("INSERT INTO orders_list(id,userid,token,transid,fileid,server_id,inbound_id,remark,uuid,protocol,expire_date,link,amount,status,date) VALUES(91,1001,'','',7,2,0,'fixture_user','native-placeholder','vless',"+str(expire)+",'[]',100,1,'fixture')")
   r=call('link',effect=effect);yes(r['out']['id']==17 and r['out']['provider']=='pasarguard','verified_account_links_order_by_native_id')
   sql("INSERT INTO users(userid,name,username,refcode,wallet,date,isAdmin,first_start,is_agent) VALUES(1011,'Foreign','foreign','0',50000,'1700000000',0,'sent',0),(1012,'Agent','agent','0',50000,'1700000000',0,'sent',1),(1013,'CurrentAdmin','currentadmin','0',50000,'1700000000',1,'sent',0),(1014,'RevokedAdmin','revokedadmin','0',50000,'1700000000',0,'sent',0)")
-  def read_snapshot():return sql("SELECT * FROM users ORDER BY id;SELECT * FROM orders_list ORDER BY id;SELECT * FROM service_effects WHERE provider_reference_id IS NOT NULL ORDER BY id")
+  native_rows="service_effects WHERE provider_reference_id IS NOT NULL"if shared_native_storage else"provider_accounts"
+  def read_snapshot():return sql("SELECT * FROM users ORDER BY id;SELECT * FROM orders_list ORDER BY id;SELECT * FROM "+native_rows+" ORDER BY id")
   def read_call(actor,mode,**spec):return call('detailread',actor=actor,mode=mode,source=7000,buttons=buttons,**spec)['out']
   denied=[('directadmin',{}),('directowner',{'owner':1001}),('route',{'callback':'userOrderDetails91_0'}),
    ('quick',{'callback':'quickUserOrderDetails_91'}),('route',{'callback':'searchUsersConfig'}),
@@ -529,11 +539,12 @@ def main():
   writes=server.write_count;yes(call('action',action='delete',source=105)['out']['success'] is False and server.write_count==writes,'deleted_identity_cannot_repeat')
   r=call('groups',groups='2,5,2');assert 'out' in r,r;yes(r['out']==[2,5],'admin_groups_are_native_validated')
   yes('error' in call('groups',groups='999'),'admin_unknown_group_denied')
-  before_legacy_connection=sql("SELECT * FROM server_info ORDER BY id;SELECT * FROM server_config ORDER BY id")
+  before_legacy_connection=sql("SELECT * FROM server_info ORDER BY id;SELECT * FROM server_config ORDER BY id");before_legacy_requests=len(server.trace)
   sql("UPDATE users SET step='pg:connection' WHERE userid=9001")
-  r=call('admin',source=2000,text='Fixture retired connection\n'+url+'\nfixture-private-key')
+  r=call('admin',source=2000,text='Fixture retired connection\n'+url+'\nfixture-private-key',
+      expected_stderr='achbot_pg_admin_action_deferred class=RuntimeException\n')
   yes(r['out']['handled'] is True and 'fixture-private-key' not in json.dumps(r),'retired_separate_connection_input_never_echoes_credentials')
-  yes(sql("SELECT * FROM server_info ORDER BY id;SELECT * FROM server_config ORDER BY id")==before_legacy_connection,
+  yes(sql("SELECT * FROM server_info ORDER BY id;SELECT * FROM server_config ORDER BY id")==before_legacy_connection and len(server.trace)==before_legacy_requests,
       'retired_separate_connection_flow_cannot_create_orphan_connection')
   server.allow_rotated=True
   sql("UPDATE users SET step='pg:key:1:2' WHERE userid=9001")
@@ -549,7 +560,7 @@ def main():
   call('admin',source=2005,text='5')
   yes(sql("SELECT provider_group_ids FROM server_plans WHERE id=7").strip()=='[5]','actual_admin_plan_groups_replace')
   before=len(server.trace)
-  r=call('admin',actor=1002,source=2006,text='none',callback='pgAddConnection')
+  r=call('admin',actor=1002,source=2006,text='none',callback='pgServerGroups2')
   yes(len(server.trace)==before and r['out']['handled'] is True,'actual_admin_nonprivileged_callback_denied')
   pg.USER['id']=18
   r=call('trial');yes('error' not in r,'trial_uses_same_durable_native_create')
@@ -561,8 +572,10 @@ def main():
   r=call('gift');yes(r['out']['success'] is True,'direct_gift_preserves_native_identity_and_groups')
   writes=server.write_count
   yes(call('gift')['out']['success'] is False and server.write_count==writes,'gift_source_cannot_repeat')
-  sql("UPDATE server_plans SET price=100 WHERE id=8;UPDATE orders_list SET autoRenew='on',notif=1,expire_date=1700000000 WHERE id=92")
-  r=call('autoreserve');yes(r['out']['status']=='reserved','auto_renew_claim_pins_native_snapshot_before_wallet_commit')
+  sql("UPDATE users SET is_agent=0 WHERE userid=1001;UPDATE server_plans SET price=100 WHERE id=8;UPDATE orders_list SET autoRenew='on',notif=1,expire_date=1700000000 WHERE id=92")
+  # Automatic renewal is triggered by the fresh native quota, never the stale local date.
+  server.user['used_traffic']=server.user['data_limit']-1
+  r=call('autoreserve');yes(r['out']['status']=='reserved','auto_renew_claim_pins_native_snapshot_before_wallet_commit',r)
   claim=r['out'];r=call('autoedit',pay=claim['pay_id'],attempt=claim['id'])
   yes(r['out']['success'] is True and server.user['used_traffic']==0,'auto_renew_native_reset_and_absolute_limits_verified')
   yes(call('autoreserve')['out']['status']=='already_claimed','auto_renew_source_never_redebits')
@@ -590,6 +603,8 @@ def main():
   source=subprocess.check_output(['git','-C',str(ROOT),'archive',baseline])
   with tarfile.open(fileobj=io.BytesIO(source)) as archive:archive.extractall(root,filter='data')
   shutil.copyfile(Path(__file__),root/'tools/test_post_v9_provider_integration.py')
+  # Test fixture code may be current; all archived runtime files remain byte-exact.
+  shutil.copyfile(Path(__file__).with_name('provider_storage_fixture.py'),root/'tools/provider_storage_fixture.py')
   red=subprocess.run([sys.executable,str(root/'tools/test_post_v9_provider_integration.py'),'--run-disposable'],capture_output=True,text=True,timeout=60)
   baseline_red=red.returncode!=0 and 'read_auth_1011_directadmin_direct_no_privileged_query_or_disclosure' in red.stderr
   assert baseline_red,('admin_read_baseline_did_not_reproduce',red.returncode,red.stdout,red.stderr)
