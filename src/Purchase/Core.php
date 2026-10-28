@@ -460,7 +460,7 @@ if (!function_exists('achbotSupportsPaymentSubject')) {
         $type = (string)($pay['type'] ?? '');
         // Wallet top-ups are deliberately not tied to VPN providers.
         if ($type === 'INCREASE_WALLET') return true;
-        if (!achbotProviderQuoteEligible($connection,$pay)) return false;
+        if (!achbotProviderQuoteEligible($connection,$pay,$lock)) return false;
         $pid = (int)($pay['plan_id'] ?? 0);
         $uid = (int)($pay['user_id'] ?? 0);
         if ($type === 'BUY_SUB') {

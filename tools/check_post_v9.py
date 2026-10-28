@@ -140,8 +140,8 @@ def main():
                 {'native_php':True,'disposable_mariadb':True,'actual_delete_transports':True,'production_mutations':0,'external_provider_calls':0,'notification_delivery_regression_red':True,'grace_integrity':True}),
             ('runtime_cleanup','test_unified_runtime_cleanup.py','assertions',121,
                 {'actual_php':True,'owned_socket_mariadb':True,'provider_mutations':0,'production_mutations':0}),
-            ('provider_registry','test_unified_provider_registry.py','cases',52,
-                {'actual_php':True,'owned_socket_mariadb':True,'closed_native_adapters':2,'fixture_adapter_only':True,'external_requests':0,'production_mutations':0,'new_schema':False}),
+            ('provider_registry','test_unified_provider_registry.py','cases',76,
+                {'actual_php':True,'owned_socket_mariadb':True,'closed_native_adapters':2,'fixture_adapter_only':True,'external_requests':0,'production_mutations':0,'new_schema':False,'authoritative_subject_resolution':True,'sid_only_dispatch_RED':True,'explicit_subject_server_mismatch_rejected':True,'pasarguard_native_quote_pins_preserved':True,'subject_preflight_readonly':True,'network_functions_disabled':True}),
             ('canonical_checkout','test_canonical_checkout.py','cases',143,
                 {'native_http':True,'actual_public_controller':True,'owned_socket_mariadb':True,'complete_issuance_body_preserved':True,'pay_back_bytes_unchanged':True,'retired_routes_absent':True,'GET_only':True,'no_database_failure_private':True,'indirect_include_preserved':True,'external_requests':0,'production_mutations':0}),
         ]
@@ -762,19 +762,28 @@ def main():
                         "--run-disposable","--report",str(subject_path)],
                        cwd=ROOT,check=True,timeout=180,capture_output=True)
         subject=json.loads(subject_path.read_text())
-        if not (subject.get("complete") and subject.get("cases")>=23
+        if not (subject.get("complete") and subject.get("cases")>=67
                 and subject.get("schema_tables")==23
                 and subject.get("financial_sql_mutations")==0
-                and subject.get("payment_provider_requests")==0):
+                and subject.get("payment_provider_requests")==0
+                and subject.get("vpn_provider_requests")==0
+                and subject.get("omitted_server_identity_verified") is True
+                and subject.get("explicit_server_mismatch_rejected") is True
+                and subject.get("locked_subject_resolution_readonly") is True):
             raise RuntimeError("Actual original-schema payment subject preflight proof incomplete")
         catalogue_path=Path(tmp)/"catalogue-and-qr.json"
         subprocess.run(["python3",str(ROOT/"tools/test_post_v9_catalogue_qr.py"),
                         "--run-disposable","--report",str(catalogue_path)],
                        cwd=ROOT,check=True,timeout=180,capture_output=True)
         catalogue=json.loads(catalogue_path.read_text())
-        if not (catalogue.get("complete") and catalogue.get("cases")>=11
+        if not (catalogue.get("complete") and catalogue.get("cases")>=15
                 and catalogue.get("original_schema_tables")==23
-                and catalogue.get("financial_mutations")==0):
+                and catalogue.get("financial_mutations")==0
+                and catalogue.get("real_current_audience_helper") is True
+                and catalogue.get("actual_private_update_bindings") is True
+                and catalogue.get("persisted_audience_role_cases")==4
+                and catalogue.get("frozen_driver_unchanged") is True
+                and catalogue.get("frozen_driver_sha256")=="09f6618ec2e2e130c446997604475e08de721df9a9a709cb568e155f8858829c"):
             raise RuntimeError("Marzban-only catalogue, forged callback or QR proof incomplete")
         # Issue #51: source-real bot message/guarded-link lifecycle on
         # disposable original-schema MariaDB plus optional 003/006 overlays.

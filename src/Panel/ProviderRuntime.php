@@ -727,9 +727,43 @@ function achbotProviderPinPayment(mysqli $db,int $payId): void {
     if ($adapter===null) throw new RuntimeException('unsupported_payment_provider');
     ($adapter['pin_payment'])($db,$payId);
 }
-function achbotProviderQuoteEligible(mysqli $db,array $pay): bool {
+/**
+ * Resolve the service named by the payment, rather than a redundant server
+ * hint. Read-only subject checks may omit server_id; a present hint must
+ * still identify the exact order/plan server and is never silently replaced.
+ */
+function achbotProviderPaymentSubjectServer(mysqli $db,array $pay,bool $lock=false): ?int {
+    $type=(string)($pay['type']??'');
+    $pid=(int)($pay['plan_id']??0);
+    $uid=(int)($pay['user_id']??0);
+    if ($type==='RENEW_ACCOUNT' ||
+        preg_match('/^INCREASE_(DAY|VOLUME)_([1-9][0-9]*)_([1-9][0-9]*)$/D',$type,$match)) {
+        $oid=$type==='RENEW_ACCOUNT'?(int)($pay['order_id']??0):(int)$match[2];
+        if ($oid<=0 || ($type==='RENEW_ACCOUNT' && $pid<=0) ||
+            (!empty($pay['order_id']) && (int)$pay['order_id']!==$oid)) return null;
+        $s=$db->prepare('SELECT server_id,fileid,userid FROM orders_list WHERE id=?'.($lock?' FOR UPDATE':''));
+        $s->bind_param('i',$oid);$s->execute();$subject=$s->get_result()->fetch_assoc();$s->close();
+        if (!$subject || ($pid>0 && (int)$subject['fileid']!==$pid) ||
+            ($uid>0 && (int)$subject['userid']!==$uid)) return null;
+    } elseif ($type==='BUY_SUB' || $type==='RENEW_SCONFIG') {
+        if ($pid<=0) return null;
+        $s=$db->prepare('SELECT server_id FROM server_plans WHERE id=?'.($lock?' FOR UPDATE':''));
+        $s->bind_param('i',$pid);$s->execute();$subject=$s->get_result()->fetch_assoc();$s->close();
+        if (!$subject) return null;
+    } else return null;
+    $sid=(int)$subject['server_id'];
+    if ($sid<=0) return null;
+    if (array_key_exists('server_id',$pay) &&
+        ((!is_int($pay['server_id']) && !is_string($pay['server_id'])) ||
+         (string)$pay['server_id']!==(string)$sid)) return null;
+    return $sid;
+}
+function achbotProviderQuoteEligible(mysqli $db,array $pay,bool $lock=false): bool {
     try {
-        $adapter=achbotProviderDefinition(achbotProviderType($db,(int)($pay['server_id']??0)));
+        $sid=achbotProviderPaymentSubjectServer($db,$pay,$lock);
+        if ($sid===null) return false;
+        $adapter=achbotProviderDefinition(achbotProviderType($db,$sid));
+        $pay['server_id']=$sid;
         return $adapter!==null && ($adapter['quote'])($db,$pay)===true;
     } catch (Throwable $error) {return false;}
 }

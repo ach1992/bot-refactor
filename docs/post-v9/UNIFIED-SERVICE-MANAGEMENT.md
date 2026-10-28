@@ -38,6 +38,8 @@ The current closed registry has exactly Marzban and PasarGuard. Its 14 required 
 
 Management identity must resolve exactly one persisted actor under lock; draft writes target its primary id and Telegram userid together. A fresh cancel from an older revision of the same flow closes that flow once, while a previous flow nonce or future revision cannot cancel a new draft. Server deletion is refused while any financial/editor/wizard step owns the actor state.
 
+The common financial-subject preflight resolves the referenced order or plan before choosing its provider. Read-only callers may omit the redundant server hint; any explicit conflicting or malformed server hint is rejected. Native PasarGuard durable quote/account/endpoint pins remain mandatory. Existing payment/owner/plan/effect guards retain their authority.
+
 ## Verification boundary
 New native suites cover server/plan wizard state, one-action cancel/back, exact actor/role framing, concurrency/replay/unknown commit results, shared menus and customer/order actions, quota/time lifecycle, endpoint-change deletion safety, runtime-file/import/add-on validation and the provider contract. Existing current financial and immutable historical suites remain required. Isolated source/native results do not certify a real Telegram client rendering, live merchant settlement or a production panel operation.
 

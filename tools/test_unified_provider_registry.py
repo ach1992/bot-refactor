@@ -55,6 +55,17 @@ try{
   $out=['valid'=>achbotProviderRegistryValid($map),'types'=>achbotProviderTypes(),'sql'=>achbotProviderSqlTypes(),'missing'=>$missing,
    'unsafe_key'=>achbotProviderRegistryValid($bad),'unsupported'=>array_map('achbotSupportsProviderType',['unknown','Marzban','',null,0,true,[]]),
    'current_callbacks'=>array_map(static fn($p)=>array_keys($p),$map)];
+ } elseif($spec['op']==='subject'){
+  $pay=$spec['pay'];$lock=($spec['lock']??false)===true;
+  if($lock)$connection->begin_transaction();
+  $original=$pay;
+  $out=['server'=>achbotProviderPaymentSubjectServer($connection,$pay,$lock),
+   'quote'=>achbotProviderQuoteEligible($connection,$pay,$lock),
+   'subject'=>achbotSupportsPaymentSubject($connection,$pay,$lock),'caller_unchanged'=>$original===$pay];
+  if($lock)$connection->rollback();
+ } elseif($spec['op']==='pin'){
+  $connection->begin_transaction();achbotProviderPinPayment($connection,(int)$spec['pay_id']);$connection->commit();
+  $out=['native_pin'=>achbotPgQuote($connection,(int)$spec['pay_id'])];
  } elseif($spec['op']==='denied'){
   $pay=$connection->query('SELECT * FROM pays WHERE id=1')->fetch_assoc();$type=achbotProviderType($connection,2);
   $out=['account'=>achbotSupportsAccount($type,0),'plan'=>achbotSupportsPlan($connection,7),'order'=>achbotSupportsOrder($connection,91),
@@ -105,12 +116,12 @@ def main():
   sql("INSERT INTO orders_list(id,userid,token,transid,fileid,server_id,inbound_id,remark,uuid,protocol,expire_date,link,amount,status,date,autoRenew,notif) VALUES(91,1001,'fixture','',7,2,0,'fixture_user','fixture','vless',1900000000,'[]',100,1,'1700000000','on',-1)")
   driver=work/'registry.php';driver.write_text(PHP)
   def run(root,op,**extra):
-   result=subprocess.run(['php','-d','display_errors=0','-d','log_errors=0',str(driver),str(root),str(work/'mysql.sock'),DB,json.dumps(dict(op=op,**extra))],capture_output=True,text=True,timeout=15)
+   result=subprocess.run(['php','-d','display_errors=0','-d','log_errors=0','-d','allow_url_fopen=0','-d','disable_functions=curl_init,fsockopen,pfsockopen,stream_socket_client',str(driver),str(root),str(work/'mysql.sock'),DB,json.dumps(dict(op=op,**extra))],capture_output=True,text=True,timeout=15)
    if result.returncode or any(line!='achbot_customer_draft_creation_deferred'for line in result.stderr.splitlines()):raise AssertionError(('php-registry-child',result.returncode,result.stderr[:1000]))
    data=json.loads(result.stdout)
    if 'exception'in data:raise AssertionError(data)
    return data
-  def snapshot():return sql('SELECT * FROM users ORDER BY id;SELECT * FROM pays ORDER BY id;SELECT * FROM orders_list ORDER BY id;SELECT * FROM server_info ORDER BY id;SELECT * FROM service_effects ORDER BY id;SELECT * FROM automatic_renewal_attempts ORDER BY id')
+  def snapshot():return sql('SELECT * FROM users ORDER BY id;SELECT * FROM pays ORDER BY id;SELECT * FROM orders_list ORDER BY id;SELECT * FROM server_info ORDER BY id;SELECT * FROM service_effects ORDER BY id;SELECT * FROM automatic_renewal_attempts ORDER BY id;SELECT * FROM provider_panels ORDER BY id;SELECT * FROM provider_accounts ORDER BY id')
   r=run(ROOT,'registry')['out']
   yes(r['valid']and r['types']==['marzban','pasarguard'],'production_registry_has_exact_two_native_adapters')
   yes(r['sql']=="'marzban','pasarguard'",'SQL_list_comes_from_registered_source_keys')
@@ -127,6 +138,55 @@ def main():
    for member in package.members():
     path=destination/member;path.parent.mkdir(parents=True,exist_ok=True);shutil.copyfile(ROOT/member,path)
    return destination
+  # The original SID-only dispatch must remain a meaningful RED control.
+  sid_only=stage('sid-only-quote')
+  path=sid_only/'src/Panel/ProviderRuntime.php';raw=path.read_text()
+  needle='$sid=achbotProviderPaymentSubjectServer($db,$pay,$lock);'
+  yes(raw.count(needle)==1,'omitted_server_negative_control_changes_only_quote_dispatch')
+  path.write_text(raw.replace(needle,"$sid=(int)($pay['server_id']??0);",1))
+  renew=dict(type='RENEW_ACCOUNT',plan_id=7,order_id=91,user_id=1001)
+  before=snapshot();bad=run(sid_only,'subject',pay=renew);good=run(ROOT,'subject',pay=renew)
+  yes(not bad['out']['subject'] and not bad['out']['quote'] and good['out']['subject'] and good['out']['quote']
+      and before==snapshot() and not bad['events'] and not good['events'],
+      'actual_sid_only_dispatch_RED_and_authoritative_order_resolution_GREEN')
+
+  # Pure SQL native PasarGuard boundary: the helper resolves identity, but
+  # cannot replace an actually pinned pays snapshot. Network APIs are disabled.
+  original_config=sql('SELECT HEX(panel_url) FROM server_config WHERE id=2').strip()
+  sql("INSERT INTO provider_panels(id,provider,instance_key,name,api_url,api_key,version) VALUES(1,'pasarguard',REPEAT('b',32),'Quote fixture','https://provider.example.invalid','fixture-private-key','5.5.1')")
+  sql("UPDATE server_config SET type='pasarguard',panel_url='https://provider.example.invalid' WHERE id=2;UPDATE server_info SET provider_panel_id=1,provider_group_ids='[2,5]' WHERE id=2")
+  sql("INSERT INTO provider_accounts(effect_id,order_id,provider,panel_id,instance_key,endpoint_sha256,remote_user_id,remote_created_at,remote_username,operation_marker,entitlement_snapshot,state) VALUES(987,91,'pasarguard',1,REPEAT('b',32),SHA2('https://provider.example.invalid',256),17,'2026-01-01T00:00:00.000000Z','fixture_user',CONCAT('achbot:v1:',REPEAT('c',32)),'{\\\"group_ids\\\":[2,5]}','linked')")
+  sql("INSERT INTO pays(id,hash_id,user_id,type,plan_id,server_id,order_id,volume,day,price,request_date,state) VALUES(2,'registry_renew',1001,'RENEW_ACCOUNT',7,2,91,0,0,100,1700000000,'pending'),(3,'registry_day',1001,'INCREASE_DAY_91_9970',7,2,91,0,7,100,1700000000,'pending')")
+  def subject_case(name,pay,want,expected_server=2,lock=False):
+   before=snapshot();observed=run(ROOT,'subject',pay=pay,lock=lock)
+   out=observed['out']
+   yes(out['subject']is want and out['quote']is want and out['server']==expected_server
+       and out['caller_unchanged'] and before==snapshot() and not observed['events'],name)
+  native_renew=dict(renew,id=2)
+  subject_case('pasarguard_order_resolution_does_not_bypass_missing_native_quote_pin',native_renew,False)
+  for pay_id in [1,2,3]:
+   pin=run(ROOT,'pin',pay_id=pay_id)['out']['native_pin']
+   yes(pin['provider']=='pasarguard' and pin['group_ids']==[2,5],
+       'actual_pasarguard_native_quote_pinned_'+str(pay_id))
+  subject_case('pasarguard_pinned_renew_omitted_server_accepted',native_renew,True)
+  subject_case('pasarguard_pinned_renew_explicit_server_accepted',dict(native_renew,server_id=2),True)
+  subject_case('pasarguard_pinned_renew_locked_read_only',native_renew,True,lock=True)
+  subject_case('pasarguard_pinned_renew_conflicting_server_rejected',dict(native_renew,server_id=999),False,None)
+  subject_case('pasarguard_pinned_renew_missing_payment_id_rejected',renew,False)
+  subject_case('pasarguard_pinned_renew_unknown_payment_id_rejected',dict(renew,id=999),False)
+  subject_case('pasarguard_callers_snapshot_cannot_substitute_native_pays_pin',dict(renew,provider_snapshot=pin),False)
+  subject_case('pasarguard_pinned_purchase_omitted_server_accepted',dict(type='BUY_SUB',id=1,plan_id=7),True)
+  subject_case('pasarguard_pinned_purchase_conflicting_server_rejected',dict(type='BUY_SUB',id=1,plan_id=7,server_id=999),False,None)
+  native_day=dict(type='INCREASE_DAY_91_9970',id=3,plan_id=7,order_id=91,user_id=1001,day=7,volume=0)
+  subject_case('pasarguard_pinned_addon_omitted_server_accepted',native_day,True)
+  subject_case('pasarguard_pinned_addon_conflicting_server_rejected',dict(native_day,server_id=999),False,None)
+  sql("UPDATE provider_accounts SET remote_created_at='2026-02-01T00:00:00.000000Z' WHERE order_id=91")
+  subject_case('pasarguard_order_resolution_keeps_native_account_generation_pin',native_renew,False)
+  sql("UPDATE provider_accounts SET remote_created_at='2026-01-01T00:00:00.000000Z' WHERE order_id=91;UPDATE provider_panels SET api_url='https://changed.example.invalid' WHERE id=1")
+  subject_case('pasarguard_order_resolution_keeps_native_endpoint_pin',native_renew,False)
+  sql("UPDATE provider_panels SET api_url='https://provider.example.invalid' WHERE id=1")
+  subject_case('pasarguard_valid_quote_restored_after_negative_controls',native_renew,True)
+  sql("UPDATE server_config SET type='marzban',panel_url=CONVERT(UNHEX('"+original_config+"') USING utf8mb4) WHERE id=2")
   partial=stage('partial-adapter')
   path=partial/'src/Panel/ProviderRuntime.php';raw=path.read_text();needle="'edit'=>'achbotMarzbanServiceEditAdapter',"
   yes(raw.count(needle)==1,'partial_negative_control_exact_registry_callback')
@@ -142,6 +202,10 @@ def main():
    yes(d.get('target_error')=='unsupported_effect_provider',label+'_cannot_fall_back_to_Marzban_target_identity')
    yes(d.get('reserve_error')=='unsupported_effect_provider'and'create_error'in d,label+'_no_account_reservation_or_CREATE')
    yes(d['auto']['status']=='ineligible'and d['draft']==0,label+'_auto_renew_and_payment_draft_leave_no_debit_or_invoice')
+   for pay in [renew,dict(type='BUY_SUB',plan_id=7)]:
+    before=snapshot();probe=run(root,'subject',pay=pay)['out']
+    yes(probe['server']==2 and not probe['subject'] and not probe['quote'] and before==snapshot(),
+        label+'_provider_with_omitted_server_cannot_enter_'+pay['type'])
   # A temporary non-production adapter proves generic dispatch without editing shared flow files.
   fixture=stage('fixture-adapter');path=fixture/'src/Panel/ProviderRuntime.php';raw=path.read_text()
   callbacks=dict(label='admin_settings.management.marzban',plan='fixturePlan',order='fixtureOrder',same_panel='fixtureSame',
@@ -170,7 +234,10 @@ def main():
    raw=(ROOT/rel).read_text()
    yes(not any(name in raw for name in ['achbotPgPinPayment(','achbotPgReserveEffect(','achbotPgDispatchReserved(','achbotPgLinkEffect(']),'shared_'+Path(rel).stem+'_contains_no_PasarGuard_effect_branch')
   report={'complete':True,'cases':len(checks),'checks':checks,'actual_php':True,'owned_socket_mariadb':True,
-   'closed_native_adapters':2,'fixture_adapter_only':True,'external_requests':0,'production_mutations':0,'new_schema':False}
+   'closed_native_adapters':2,'fixture_adapter_only':True,'external_requests':0,'production_mutations':0,'new_schema':False,
+   'authoritative_subject_resolution':True,'sid_only_dispatch_RED':True,
+   'explicit_subject_server_mismatch_rejected':True,'pasarguard_native_quote_pins_preserved':True,
+   'subject_preflight_readonly':True,'network_functions_disabled':True}
  if a.report:a.report.write_text(json.dumps(report,ensure_ascii=False,indent=2)+'\n')
  print(json.dumps(report,ensure_ascii=False))
 if __name__=='__main__':main()

@@ -69,7 +69,7 @@ function verifyManifest(string $manifestPath, string $runtimePath): bool {
         if ($json === false || strlen($json) > 500000) return false;
         $manifest = json_decode($json, true, 512, JSON_THROW_ON_ERROR);
         if (!is_array($manifest) || !isset($manifest['files']) ||
-            !is_array($manifest['files']) || count($manifest['files']) !== 112 ||
+            !is_array($manifest['files']) || count($manifest['files']) !== 111 ||
             ($manifest['file_count'] ?? null) !== count($manifest['files']) ||
             ($manifest['schema_migration_included'] ?? null) !== false ||
             ($manifest['private_config_included'] ?? null) !== false ||
@@ -77,10 +77,11 @@ function verifyManifest(string $manifestPath, string $runtimePath): bool {
         // The expected current runtime inventory is pinned independently of
         // supplied manifest bytes. Without this guard an attacker-controlled
         // file list could request hashes of an installed private file.
+        // Canonical-path cleanup inventory: 111 explicit runtime paths.
         // SHA-256 of newline-joined sorted package_post_v9.members() paths.
         $members = array_keys($manifest['files']);
         sort($members, SORT_STRING);
-        if (!hash_equals('550e180a14533ba85ebf7875ef8211f5e3c0e0d3f15cec770c0a87372db5b128',
+        if (!hash_equals('bb5e9bd5722cffa324bc87f2308099d3d8135e7b0b24d5f25dea77858ecab552',
                          hash('sha256', implode("\n", $members))) ||
             in_array('baseInfo.php', $members, true)) return false;
         // All tool-side runtime source is bound before any helper executes.
