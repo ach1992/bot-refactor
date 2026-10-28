@@ -32,7 +32,7 @@ function configQrCaption(string $uri, array $presentation = []): string {
     // Keep the photo caption small even when an encoded URI fragment is long.
     // Do not shorten, decode or reconstruct the separate copyable URI.
     if (preg_match('/^.{0,200}/us', $name, $match) === 1) {
-        $name = $match[0] . ($match[0] !== $name ? '…' : '');
+        $name = $match[0] . ($match[0] !== $name ? \achbotMessage('subscription.presentation.config_qr_name_suffix') : '');
     } else $name = strtoupper($record['protocol'] ?? '');
     return escape($name);
 }
