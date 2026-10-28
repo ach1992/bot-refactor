@@ -31,6 +31,8 @@ Preserve the real `baseInfo.php`, all credentials, local runtime state, customer
 
 The new warning, renewal and deletion keyset cursors use ordinary `setting` rows; obsolete cursor rows may remain inert. Pending notification retries use the existing signed notif=-2 state; delivery failures do not suppress protected renewal or the expiry grace. Invalid/pre-order deletion deadlines are held for operator review. Existing switches and 36-hour/0.5-GiB warnings, 2-hour/0.2-GiB renewals and 10-day deletion grace retain their policy. Unverified, disabled or on-hold observations cannot authorize charging/deletion. Pending financial work, changed targets or an ambiguous destructive result require reconciliation rather than a blind retry.
 
+Full plan renewal can replace a verified native unlimited-time baseline with the selected positive finite duration for both providers. Existing consent and durable payment/account claims govern the effect; missing/invalid expiry and unsupported relative operations remain fail-closed. No historical held payment or remote account is automatically reconciled by this source update.
+
 Old in-progress management drafts are canceled or safely restarted without deleting another administrator's plan rows. New drafts are per actor and are saved only after final confirmation. Existing native provider identities and per-server configuration display choices are retained.
 
 Outside-bot PasarGuard account adoption is a separate unresolved ownership/identity contract. Fresh purchases, trials, administrator gifts, renewals and volume/time extensions use the common native-provider pipeline.

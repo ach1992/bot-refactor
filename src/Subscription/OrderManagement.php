@@ -207,7 +207,7 @@ function achbotOrderWarningPresentation(array $order): array {
     } elseif (achbotServiceGraceValid($order)) {
         $label=\achbotMessage('admin_settings.management.warning_grace_state');
         $detail=\achbotMessage('admin_settings.management.warning_grace',[
-            'date'=>jdate('Y-m-d H:i',$value)]);
+            'date'=>jdate('Y-m-d H:i',$value,'','Asia/Tehran','en')]);
     } else {
         $label=\achbotMessage('admin_settings.management.warning_unknown');
         $detail=$label;
@@ -257,7 +257,7 @@ function showOrderManagementPanel($order, $msgId = null,string $notice=''){
         'order_id'=>(string)$orderId,
         'server'=>$escape($context['server_title']??$order['server_id']),
         'plan'=>$escape($context['plan_title']??$order['fileid']),
-        'recorded_expiry'=>(int)$order['expire_date']>0?jdate('Y-m-d H:i',(int)$order['expire_date']):\achbotMessage('subscription.account_deletion.no_dont_delete.text.5e6ee5eaa1')
+        'recorded_expiry'=>(int)$order['expire_date']>0?jdate('Y-m-d H:i',(int)$order['expire_date'],'','Asia/Tehran','en'):\achbotMessage('subscription.account_deletion.no_dont_delete.text.5e6ee5eaa1')
     ]);
 
     if ($notice!=='') $msg.="\n\n".$notice;

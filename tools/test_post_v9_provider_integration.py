@@ -574,11 +574,22 @@ def main():
   red=subprocess.run([sys.executable,str(root/'tools/test_post_v9_provider_integration.py'),'--run-disposable'],capture_output=True,text=True,timeout=60)
   baseline_red=red.returncode!=0 and 'read_auth_1011_directadmin_direct_no_privileged_query_or_disclosure' in red.stderr
   assert baseline_red,('admin_read_baseline_did_not_reproduce',red.returncode,red.stdout,red.stderr)
+ # Preserve every existing integration assertion, then cover the common
+ # sweep through its real native wallet/effect/finalization path on a fresh
+ # synthetic account. Historical authorization RED runs fail above this point.
+ original_provider_integration_cases=len(checks)
+ from test_unified_unlimited_renewal import acceptance as native_unlimited_renewal
+ unlimited_renewal=native_unlimited_renewal(ROOT)
+ checks.extend('native_unlimited_renewal_'+name for name in unlimited_renewal['checks'])
  auth_cases=sum(name.startswith('read_auth_') for name in checks)
  report={'complete':True,'cases':len(checks),'checks':checks,'actual_php_curl':True,'owned_socket_mariadb':True,'real_provider_tested':False,
   'lifecycle_cases':len(checks)-auth_cases,'admin_read_authorization_cases':auth_cases,
   'forbidden_order_queries':forbidden_order_queries,'forbidden_provider_requests':forbidden_provider_requests,
-  'baseline_red':baseline_red,'baseline_red_source':baseline}
+  'baseline_red':baseline_red,'baseline_red_source':baseline,
+  'original_provider_integration_cases':original_provider_integration_cases,
+  'native_unlimited_renewal':unlimited_renewal['providers']['pasarguard'],
+  'native_unlimited_renewal_marzban':unlimited_renewal['providers']['marzban'],
+  'native_unlimited_renewal_both_providers':{key:value for key,value in unlimited_renewal.items() if key not in ('checks','providers')}}
  if a.report:a.report.write_text(json.dumps(report,indent=2)+'\n')
  print(json.dumps(report))
 if __name__=='__main__':main()

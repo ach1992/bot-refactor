@@ -219,7 +219,7 @@ function getUserOrderDetailKeys($id, $offset = 0){
     $uncertain=($traffic['uncertain']??true)===true;
     $actionable=($traffic['actionable']??false)===true;
     $expire_date=$uncertain?\achbotMessage('subscription.account_details.get_order_traffic_info.text.f07ac0638d'):
-        ($traffic['expire']===null?\achbotMessage('subscription.account_deletion.no_dont_delete.text.5e6ee5eaa1'):jdate('Y-m-d H:i',$traffic['expire']));
+        ($traffic['expire']===null?\achbotMessage('subscription.account_deletion.no_dont_delete.text.5e6ee5eaa1'):jdate('Y-m-d H:i',$traffic['expire'],'','Asia/Tehran','en'));
     $canToggle=in_array($traffic['status']??null,['active','disabled'],true);
     $enableText=getOrderStatusText($traffic,$serverType,$buttonValues);
 
@@ -359,7 +359,7 @@ function getOrderDetailKeys($from_id, $id, $offset = 0){
     $uncertain=($traffic['uncertain']??true)===true;
     $actionable=($traffic['actionable']??false)===true;
     $expire_date=$uncertain?\achbotMessage('subscription.account_details.get_order_traffic_info.text.f07ac0638d'):
-        ($traffic['expire']===null?\achbotMessage('subscription.account_deletion.no_dont_delete.text.5e6ee5eaa1'):jdate('Y-m-d H:i',$traffic['expire']));
+        ($traffic['expire']===null?\achbotMessage('subscription.account_deletion.no_dont_delete.text.5e6ee5eaa1'):jdate('Y-m-d H:i',$traffic['expire'],'','Asia/Tehran','en'));
     $canToggle=in_array($traffic['status']??null,['active','disabled'],true);
     $enableText=getOrderStatusText($traffic,$serverType,$buttonValues,$mainValues['config_doesnt_exist']);
 

@@ -36,7 +36,7 @@ function achbotOrderPresentation(...$args){
   'qr_config_links'=>$hide?[]:['vless://fixture-config']];
 }
 function buildConfigMessage($state,$remark,$links,$sub,$backup,$type){return $state."\n".$remark."\n".$links."\n".$sub;}
-function jdate($format,$stamp){return 'DATE:'.$stamp;}
+require_once $root.'/settings/jdf.php';
 function bot(...$args){return (object)['result'=>(object)['first_name'=>'Fixture']];}
 function alert(...$args){$GLOBALS['events'][]=['alert'=>$args[0]];}
 function editText(...$args){$GLOBALS['events'][]=['edit'=>$args[1],'keyboard'=>$args[2]??null];}
@@ -92,7 +92,7 @@ $data=$spec['data']??'';$text=$spec['text']??'';$message_id=1;$cancelKey='{}';$r
 function alert(...$args){$GLOBALS['events'][]=['alert'=>$args[0]];}
 function editText(...$args){$GLOBALS['events'][]=['edit'=>$args[1],'keyboard'=>$args[2]??null];}
 function sendMessage(...$args){$GLOBALS['events'][]=['message'=>$args[0],'keyboard'=>$args[1]??null];return(object)['ok'=>true];}
-function jdate($format,$stamp){return 'DATE:'.$stamp;}
+require_once $root.'/settings/jdf.php';
 function delMessage(...$args){}
 function getAdminKeys(){return 'ADMIN_KEYS';}
 function getUserInfoKeys(...$args){throw new RuntimeException('unexpected_privileged_subscription_read');}
@@ -121,10 +121,26 @@ function showOrderManagementPanel(...$args){}
 def main():
  p=argparse.ArgumentParser();p.add_argument('--run-disposable',action='store_true',required=True);p.add_argument('--report',type=Path);a=p.parse_args()
  checks=[]
+ date_proofs={'customer_remote_expiry':[],'admin_remote_expiry':[],'admin_recorded_expiry':[],'admin_warning_grace':[]}
+ # Fixed Jalali dates from the actual Tehran JDF runtime, not a DATE: stub.
+ dates={1700000000:'1402-08-24 01:43',1800000000:'1405-10-25 11:30',1800003600:'1405-10-25 12:30',1900000000:'1408-12-27 21:16'}
+ def ascii_date(value,expected):
+  return value==expected and re.fullmatch(r'[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}',value) is not None
  def yes(ok,name):
   if not ok:raise AssertionError(name)
   checks.append(name)
  with owned.owned_database() as (work,env):
+  # The review baseline already maps both JDF digit modes to ASCII. Pin that
+  # actual source/output instead of claiming a Persian-digit RED it cannot show.
+  date_baseline_ref='2408982797af15bc99e1df2909c13be3976cb1f4'
+  archived_jdf=subprocess.check_output(['git','show',date_baseline_ref+':settings/jdf.php'],cwd=ROOT)
+  baseline_root=work/'date-baseline';(baseline_root/'settings').mkdir(parents=True)
+  (baseline_root/'messages').symlink_to(ROOT/'messages',target_is_directory=True)
+  (baseline_root/'settings/jdf.php').write_bytes(archived_jdf)
+  probe="require $argv[1];$out=[];foreach([1700000000,1800000000,1800003600,1900000000] as $ts)$out[$ts]=[jdate('Y-m-d H:i',$ts),jdate('Y-m-d H:i',$ts,'','Asia/Tehran','en')];echo json_encode($out,JSON_THROW_ON_ERROR);"
+  baseline_dates=json.loads(subprocess.check_output(['php','-r',probe,str(baseline_root/'settings/jdf.php')],text=True))
+  yes(archived_jdf==(ROOT/'settings/jdf.php').read_bytes(),'baseline240_actual_JDF_source_unchanged_no_global_digit_change')
+  yes(all(baseline_dates[str(ts)]==[expected,expected] for ts,expected in dates.items()),'baseline240_actual_JDF_default_and_explicit_already_ASCII_Jalali_no_date_RED')
   purchase.init(work,env,'http://127.0.0.1:9')
   db=purchase.SIDE[1];script=work/'customer-unified.php';script.write_text(PHP)
   def sql(s):return native.sql(work,env,s,db)
@@ -147,7 +163,12 @@ def main():
     for op in ['view','admin']:
      rendered=call(op,actor=9001 if op=='admin' else 1001,remote=remote)['out'];keys=rendered['keyboard']
      yes(labels[status] in rendered['msg'],provider+'_'+status+'_'+op+'_confirmed_status')
-     yes('DATE:1800000000' in keys and 'DATE:1900000000' not in keys,provider+'_'+op+'_remote_expiry')
+     yes('1405-10-25 11:30' in keys and '1408-12-27 21:16' not in keys,provider+'_'+op+'_remote_expiry')
+     if status=='active':
+      expiry_row=next(row for row in json.loads(keys)['inline_keyboard'] if len(row)==2 and row[1].get('text')=='📅 تاریخ انقضاء:')
+      proof='admin_remote_expiry' if op=='admin' else 'customer_remote_expiry'
+      yes(ascii_date(expiry_row[0]['text'],dates[1800000000]),provider+'_actual_JDF_'+proof+'_ASCII_Jalali_Tehran')
+      date_proofs[proof].append(provider)
      yes(('changeUserConfigState91' in keys)==(op=='admin' and status in ['active','disabled']),provider+'_'+status+'_'+op+'_toggle_capability')
      if status=='on_hold':yes('renewAccountAsk91' not in keys and 'changePlan_91' not in keys and 'delUserConfig91' not in keys,provider+'_'+op+'_on_hold_no_unsupported_actions')
    for unlimited in [None,0]:
@@ -209,6 +230,10 @@ def main():
    sql("UPDATE server_config SET type='"+provider+"' WHERE id=2;UPDATE users SET step='none' WHERE userid=9001")
    before=snapshot();out=order_call(actor=9001,direct=True);shown=json.dumps(out,ensure_ascii=False)
    yes(snapshot()==before and 'Fixture purchase server' in shown and 'اصلاح' in shown and 'اعتبار یا حجم سرویس' in shown,provider+'_order_context_read_only_clear_local_semantics')
+   recorded=next(e.get('message',e.get('edit','')) for e in out['events'] if 'deleteOrder_91' in str(e.get('keyboard','')))
+   recorded_date=recorded.split('تاریخ ثبت‌شده: ',1)[1].split('\n',1)[0]
+   yes(ascii_date(recorded_date,dates[1900000000]),provider+'_actual_JDF_admin_recorded_expiry_ASCII_Jalali_Tehran')
+   date_proofs['admin_recorded_expiry'].append(provider)
    yes(('changeToken_91' in shown)==(provider=='marzban') and ('changeUUID_91' in shown)==(provider=='marzban'),provider+'_order_native_identity_controls')
    yes('deleteOrder_91' in shown and 'confirmDeleteOrder_91' not in shown,provider+'_order_initial_delete_is_confirmation_only')
    before=snapshot();out=order_call(actor=9001,data='deleteOrder_91');shown=json.dumps(out,ensure_ascii=False)
@@ -260,6 +285,12 @@ def main():
      before=snapshot();out=order_call(actor=9001,data=callback);shown=json.dumps(out,ensure_ascii=False)
      yes(snapshot()==before,provider+'_'+callback+'_'+str(value)+'_read_only_warning_state')
      yes(label in shown and 'کلید روشن یا خاموش نیست' in shown and 'تضمین تحویل پیام نیست' in shown and 'orderWarningStatus_91' in shown,provider+'_'+callback+'_'+str(value)+'_clear_lifecycle_copy')
+   sql("UPDATE orders_list SET notif=1800003600,date='1700000000' WHERE id=91")
+   before=snapshot();grace=order_call(actor=9001,data='orderWarningStatus_91')
+   grace_message=next(e['edit'] for e in grace['events'] if 'edit' in e)
+   grace_date=grace_message.split('مهلت نگهداری تا ',1)[1].split('\n',1)[0]
+   yes(snapshot()==before and ascii_date(grace_date,dates[1800003600]),provider+'_actual_JDF_admin_warning_grace_ASCII_Jalali_Tehran_read_only')
+   date_proofs['admin_warning_grace'].append(provider)
    sql("UPDATE orders_list SET notif=0,date='1700000000' WHERE id=91")
    panel=order_call(actor=9001,direct=True);shown=json.dumps(panel,ensure_ascii=False)
    yes('orderWarningStatus_91' in shown and 'toggleNotif_91' not in shown,provider+'_new_order_panel_has_no_mutating_notification_toggle')
@@ -279,7 +310,7 @@ def main():
   for name,state,manual,denied,rate,expected in cases:
    out=call('admission',state=state,manual=manual,denied=denied,rate=rate)
    yes(out['out'] is expected,name+'_same_checkout_menu_admission')
- result={'complete':True,'cases':len(checks),'checks':checks,'actual_php':True,'native_disposable_mariadb':True,'canonical_catalog_bindings':True,'archived_warning_toggle_RED':baseline_red,'archived_warning_toggle_ref':archived_ref,'archived_warning_toggle_sha256':hashlib.sha256(archived_toggle.encode()).hexdigest(),'external_provider_calls':0,'production_mutations':0}
+ result={'complete':True,'cases':len(checks),'checks':checks,'actual_php':True,'native_disposable_mariadb':True,'canonical_catalog_bindings':True,'real_JDF_no_date_stubs':True,'actual_composed_ASCII_Jalali_Tehran_proofs':date_proofs,'baseline_date_ref':date_baseline_ref,'baseline_date_jdf_sha256':hashlib.sha256(archived_jdf).hexdigest(),'baseline_dates_already_ASCII':True,'baseline_date_RED':False,'archived_warning_toggle_RED':baseline_red,'archived_warning_toggle_ref':archived_ref,'archived_warning_toggle_sha256':hashlib.sha256(archived_toggle.encode()).hexdigest(),'external_provider_calls':0,'production_mutations':0}
  if a.report:a.report.write_text(json.dumps(result,ensure_ascii=False,indent=2)+'\n')
  print(json.dumps(result,ensure_ascii=False))
 if __name__=='__main__':main()

@@ -501,9 +501,14 @@ function achbotPgEditInputUnits(array $change): array {
 /** Pure absolute entitlement calculation; provider Groups are never replaced on renewal. */
 function achbotPgEditChanges(array $user,array $change,?int $clock=null): array {
     $now=$clock??time();$expire=$user['expire'];$bytes=$user['data_limit'];
-    if (!is_int($expire) || $expire<=0 || !is_int($bytes) || $bytes<0)
-        throw new RuntimeException('pg_entitlement_not_finite');
     $units=achbotPgEditInputUnits($change);
+    // A full positive-days replacement establishes a finite new expiry even
+    // when the current native account has unlimited time. Extensions still
+    // require an existing finite expiry; malformed/zero expiry is not NULL.
+    if (($expire===null && !isset($units['days'])) ||
+        ($expire!==null && (!is_int($expire) || $expire<=0)) ||
+        !is_int($bytes) || $bytes<0)
+        throw new RuntimeException('pg_entitlement_not_finite');
     $out=[];
     if (isset($change['days'])) $out['expire']=$now+86400*$units['days'];
     elseif (isset($change['plus_day'])) $out['expire']=max($expire,$now)+86400*$units['plus_day'];

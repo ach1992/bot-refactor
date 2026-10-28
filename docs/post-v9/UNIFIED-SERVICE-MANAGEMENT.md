@@ -40,6 +40,13 @@ Management identity must resolve exactly one persisted actor under lock; draft w
 
 The common financial-subject preflight resolves the referenced order or plan before choosing its provider. Read-only callers may omit the redundant server hint; any explicit conflicting or malformed server hint is rejected. Native PasarGuard durable quote/account/endpoint pins remain mandatory. Existing payment/owner/plan/effect guards retain their authority.
 
+## Native full renewal from unlimited time
+A verified native account may have an explicitly unlimited expiry while its finite quota needs renewal. Both adapters accept that NULL baseline only for a validated positive whole-days replacement that establishes a finite new expiry. Existing account identity, target/configuration, group, usage-reset/readback, consent, wallet, journal and finalization guards remain authoritative. Relative extensions and requests without a full-days replacement retain their previous expiry restrictions. Missing, malformed and changed observations cannot authorize a partial reset or PUT.
+
+Actual native financial sweeps reproduce the prior 2408982 failure for both providers and verify one debit, one native reset/absolute update, preserved native configuration, completed payment/attempt/order, and no replay. Pure/native edit negatives preserve zero semantics and reject invalid or drifting expiry before effects.
+
+Customer/admin date coverage composes the affected expiry/grace views with the real Jalali calendar in Tehran. The four touched calls select English digits explicitly. The pinned baseline calendar already produced ASCII digits; this is an explicit-format and coverage refinement, not a claimed Persian-digit regression.
+
 ## Verification boundary
 New native suites cover server/plan wizard state, one-action cancel/back, exact actor/role framing, concurrency/replay/unknown commit results, shared menus and customer/order actions, quota/time lifecycle, endpoint-change deletion safety, runtime-file/import/add-on validation and the provider contract. Existing current financial and immutable historical suites remain required. Isolated source/native results do not certify a real Telegram client rendering, live merchant settlement or a production panel operation.
 

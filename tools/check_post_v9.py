@@ -134,8 +134,8 @@ def main():
                 {'actual_php':True,'owned_socket_mariadb':True,'loopback_provider_http':True,'provider_mutations':0,'production_mutations':0,'actual_rc13_cancel_RED':True,'older_same_flow_cancel':True,'unique_actor_primary_writes':True,'busy_delete_preserves_editor':True}),
             ('management_menus','test_unified_management_menus.py','checks',322,
                 {'database':'owned socket MariaDB','network_calls':0,'optional_011_missing_cancel_proven':True}),
-            ('customer_services','test_unified_customer_services.py','cases',328,
-                {'actual_php':True,'native_disposable_mariadb':True,'external_provider_calls':0,'production_mutations':0}),
+            ('customer_services','test_unified_customer_services.py','cases',338,
+                {'actual_php':True,'native_disposable_mariadb':True,'external_provider_calls':0,'production_mutations':0,'real_JDF_no_date_stubs':True,'actual_composed_ASCII_Jalali_Tehran_proofs':{key:['marzban','pasarguard'] for key in ['customer_remote_expiry','admin_remote_expiry','admin_recorded_expiry','admin_warning_grace']},'baseline_date_ref':'2408982797af15bc99e1df2909c13be3976cb1f4','baseline_date_jdf_sha256':'e32da43aafb6548fa746492a9d3181ef796083fa618af2c84f6a7bb4e857337d','baseline_dates_already_ASCII':True,'baseline_date_RED':False,'archived_warning_toggle_RED':2}),
             ('service_lifecycle','test_unified_service_lifecycle.py','cases',76,
                 {'native_php':True,'disposable_mariadb':True,'actual_delete_transports':True,'production_mutations':0,'external_provider_calls':0,'notification_delivery_regression_red':True,'grace_integrity':True,'deletion_fairness_red':True,'deletion_fairness_source':'5568e5e24ecc595c371c4710bf41db51bb78125d','scheduled_deletion_cursor':'deleteLastOrderId','deletion_fairness_deferred_batch':50,'deletion_fairness_cross_provider_directions':2,'deletion_fairness_financial_hold':True}),
             ('runtime_cleanup','test_unified_runtime_cleanup.py','assertions',121,
@@ -289,11 +289,53 @@ def main():
             'review_r6_invalid_malformed_no_remote_effect',
             'review_r6_invalid_overflow_no_remote_effect',
         }
+        # Explicit nullable-expiry full-renewal proof; all prior 68 cases remain.
+        required_edits.update({
+            'null_expiry_boolean_days_rejected_without_partial_remote_effect',
+            'null_expiry_boolean_expiry_rejected_without_partial_remote_effect',
+            'null_expiry_exact_240_adapter_RED_full_renewal_rejected_before_reset_or_put',
+            'null_expiry_existing_zero_api_semantics_preserved_against_exact_240',
+            'null_expiry_exponent_expiry_rejected_without_partial_remote_effect',
+            'null_expiry_fractional_days_rejected_without_partial_remote_effect',
+            'null_expiry_fractional_expiry_rejected_without_partial_remote_effect',
+            'null_expiry_fractional_volume_rejected_without_partial_remote_effect',
+            'null_expiry_invalid_relative_precedence_rejected_without_partial_remote_effect',
+            'null_expiry_malformed_expiry_rejected_without_partial_remote_effect',
+            'null_expiry_missing_expiry_rejected_without_partial_remote_effect',
+            'null_expiry_negative_days_rejected_without_partial_remote_effect',
+            'null_expiry_negative_expiry_rejected_without_partial_remote_effect',
+            'null_expiry_null_days_rejected_without_partial_remote_effect',
+            'null_expiry_overflow_expiry_rejected_without_partial_remote_effect',
+            'null_expiry_overflow_local_days_rejected_without_partial_remote_effect',
+            'null_expiry_positive_whole_days_bounded_original_NULL_correction_finite_verified_without_unrelated_changes',
+            'null_expiry_positive_whole_days_days_replacement_only_finite_verified_without_unrelated_changes',
+            'null_expiry_positive_whole_days_full_active_finite_verified_without_unrelated_changes',
+            'null_expiry_positive_whole_days_full_limited_finite_verified_without_unrelated_changes',
+            'null_expiry_positive_whole_days_no_effective_plus_day_finite_verified_without_unrelated_changes',
+            'null_expiry_post_reset_missing_drift_never_puts_or_repeats_reset',
+            'null_expiry_post_reset_zero_drift_never_puts_or_repeats_reset',
+            'null_expiry_pre_effect_finite_drift_blocks_first_remote_effect',
+            'null_expiry_pre_effect_fractional_drift_blocks_first_remote_effect',
+            'null_expiry_pre_effect_missing_drift_blocks_first_remote_effect',
+            'null_expiry_pre_effect_zero_drift_blocks_first_remote_effect',
+            'null_expiry_relative_day_only_rejected_without_partial_remote_effect',
+            'null_expiry_relative_day_precedence_rejected_without_partial_remote_effect',
+            'null_expiry_unsupported_field_rejected_without_partial_remote_effect',
+            'null_expiry_volume_delta_only_rejected_without_partial_remote_effect',
+            'null_expiry_volume_only_rejected_without_partial_remote_effect',
+            'null_expiry_zero_days_rejected_without_partial_remote_effect',
+        })
         if not (edits.get('complete') and edits.get('cases')==len(required_edits)
                 and required_edits.issubset(edits.get('scenarios',[]))
                 and edits.get('actual_php_mysqli_curl')
                 and edits.get('real_provider_requests')==0
-                and edits.get('absolute_correction_not_relative_replay')):
+                and edits.get('absolute_correction_not_relative_replay')
+                and edits.get('null_expiry_full_replacement_verified') is True
+                and edits.get('null_expiry_baseline_red') is True
+                and edits.get('null_expiry_baseline_source')=='2408982797af15bc99e1df2909c13be3976cb1f4'
+                and edits.get('null_expiry_baseline_adapter_sha256')=='a4fedde0b77ffb6a18995eda0b9309364fb9ee853a1cc951ee3e55d79d86c188'
+                and edits.get('null_expiry_invalid_no_partial_effect') is True
+                and edits.get('null_expiry_zero_semantics_preserved') is True):
             raise RuntimeError('Provider-neutral service edit native assurance incomplete')
         purchase_path=Path(tmp)/"marzban-purchase.json"
         subprocess.run(["python3",str(ROOT/"tools/test_post_v9_purchases.py"),
@@ -709,16 +751,40 @@ def main():
                         "--run-disposable","--report",str(provider_path)],
                        cwd=ROOT,check=True,timeout=240,capture_output=True)
         provider_integration=json.loads(provider_path.read_text())
-        if not (provider_integration.get("complete") is True and provider_integration.get("cases",0)>=219
+        native_renewal_common={
+            'complete':True,'actual_php':True,'owned_socket_mariadb':True,
+            'actual_financial_dispatch':True,'baseline_red':True,
+            'baseline_source':'2408982797af15bc99e1df2909c13be3976cb1f4',
+            'current_green':True,'null_expiry_native_renewal_verified':True,
+            'consent_off_verified':True,'wallet_debit_once':True,
+            'completed_payment_attempt_and_order':True,'no_tick_replay':True,
+            'external_requests':0,'production_mutations':0,
+        }
+        native_renewal_proofs=[provider_integration.get(key,{}) for key in [
+            'native_unlimited_renewal','native_unlimited_renewal_marzban',
+            'native_unlimited_renewal_both_providers']]
+        native_renewal_complete=all(isinstance(proof,dict) and all(
+            proof.get(key)==value for key,value in native_renewal_common.items())
+            for proof in native_renewal_proofs)
+        if not (provider_integration.get("complete") is True and provider_integration.get("cases",0)>=282
                 and provider_integration.get("actual_php_curl") is True
                 and provider_integration.get("owned_socket_mariadb") is True
                 and provider_integration.get("real_provider_tested") is False
-                and provider_integration.get("lifecycle_cases")==179
+                and provider_integration.get("lifecycle_cases")==242
                 and provider_integration.get("admin_read_authorization_cases")==40
                 and provider_integration.get("forbidden_order_queries")==0
                 and provider_integration.get("forbidden_provider_requests")==0
                 and provider_integration.get("baseline_red") is True
-                and provider_integration.get("baseline_red_source")=="fb138eacdc5817922cc1e1c9c200323d24c79838"):
+                and provider_integration.get("baseline_red_source")=="fb138eacdc5817922cc1e1c9c200323d24c79838"
+                and provider_integration.get("original_provider_integration_cases")==219
+                and native_renewal_complete
+                and [proof.get('cases') for proof in native_renewal_proofs]==[43,20,63]
+                and native_renewal_proofs[0].get('loopback_native_pasar_guard') is True
+                and native_renewal_proofs[0].get('null_expiry_extension_scope_preserved') is True
+                and native_renewal_proofs[0].get('native_identity_groups_and_quote_pins_preserved') is True
+                and native_renewal_proofs[1].get('loopback_native_marzban') is True
+                and native_renewal_proofs[1].get('native_configuration_preserved') is True
+                and native_renewal_proofs[2].get('both_adapters_verified') is True):
             raise RuntimeError("Native provider lifecycle and durable intent proof incomplete")
         currency_path=Path(tmp)/"currency-settings.json"
         subprocess.run(["python3",str(ROOT/"tools/test_next_currency_settings.py"),
