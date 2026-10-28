@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Owner revision4: two editable audiences; bounded style and native copy proof."""
 from __future__ import annotations
-import collections, io, json, pathlib, re, socket, subprocess, tarfile, tempfile, time, urllib.error, urllib.request
+import collections, copy, io, json, pathlib, re, socket, subprocess, tarfile, tempfile, time, urllib.error, urllib.request
 ROOT=pathlib.Path(__file__).resolve().parents[1]
 BASE='7faac9b067f8a171e5e26d6aea5aaf9f4088a3e7'
 DIGITS=str.maketrans('\u06f0\u06f1\u06f2\u06f3\u06f4\u06f5\u06f6\u06f7\u06f8\u06f9\u0660\u0661\u0662\u0663\u0664\u0665\u0666\u0667\u0668\u0669','01234567890123456789')
@@ -113,6 +113,141 @@ def reviewed_context_proof(sides,merged,manifest):
             'recipient_placement_cases':len(expected),'archived_recipient_placement_RED':role_red,
             'recipient_payloads_byte_unchanged':True,'recipient_source_files':len(sources)}
 
+MANAGEMENT_BASE='2c0e728dcd71c38e20d176fe2577bc264d3faa1a'
+MANAGEMENT_CONTRACT='docs/post-v9/UNIFIED-SERVICE-MANAGEMENT.md'
+MANAGEMENT_USER_KEYS={'subscription.account_details.status_on_hold','subscription.manual_accounts.import_unverified','subscription.manual_accounts.import_under_review','subscription.manual_accounts.import_completed'}
+def management_runtime_paths():
+    # The package is the shipping source authority, including new draft modules
+    # before the first candidate commit. No arbitrary worktree PHP is accepted.
+    import package_post_v9
+    return [p for p in package_post_v9.members()
+            if p.endswith('.php') and not p.startswith(('phpqrcode/','messages/'))]
+def management_runtime_refs():
+    refs=set()
+    for path in management_runtime_paths():
+        refs.update(re.findall(r"\\?achbotMessage(?:Html)?\('([^']+)'",(ROOT/path).read_text()))
+    return refs
+def management_baseline_sides():
+    decode='$s=stream_get_contents(STDIN);$p=strpos($s,"return [");if($p===false)throw new RuntimeException("array_missing");echo json_encode(eval(substr($s,$p)),JSON_THROW_ON_ERROR);'
+    return {audience:flatten(json.loads(command('php','-r',decode,input=command(
+        'git','show',MANAGEMENT_BASE+':messages/fa/'+audience+'.php'))))
+        for audience in ['user','admin']}
+def management_amendment(sides,merged,amendment=None):
+    if amendment is None:amendment=json.loads((ROOT/'tools/text_catalog_management_amendment.json').read_text())
+    check(amendment.get('version')==1 and amendment.get('baseline_commit')==MANAGEMENT_BASE
+          and amendment.get('authorization')==MANAGEMENT_CONTRACT,
+          'management amendment identity drift')
+    check((ROOT/MANAGEMENT_CONTRACT).is_file(),'management accepted contract missing')
+    archived=management_baseline_sides();before={**archived['user'],**archived['admin']}
+    check(len(before)==2523,'management baseline key identity drift')
+    additions=amendment.get('added_keys',{})
+    check(additions and all(key.startswith('admin_settings.management.') or
+          key in MANAGEMENT_USER_KEYS for key in additions),
+          'management addition scope drift')
+    check(set(merged)==set(before)|set(additions),'management catalog extension drift')
+    for key,entry in before.items():
+        check(merged[key]==entry,'pre-management copy changed:'+key)
+        audience='user'if key in archived['user']else'admin'
+        check(key in sides[audience],'pre-management recipient changed:'+key)
+    runtime_sources={path:(ROOT/path).read_text()for path in management_runtime_paths()}
+    facade_source=runtime_sources['src/Admin/ManagementFlow.php'];facade_source=facade_source[facade_source.index('function achbotManagementText('):facade_source.index('function achbotManagementEscape(')]
+    facade_keys=set(re.findall(r"achbotMessage\('([^']+)'",facade_source))
+    check(facade_keys=={key for key,record in additions.items()if record.get('facade')is True},'management facade mapping scope drift')
+    refs=set()
+    for source in runtime_sources.values():refs.update(re.findall(r"\\?achbotMessage(?:Html)?\('([^']+)'",source))
+    for key,record in additions.items():
+        audience=record.get('audience')
+        check(audience==('user'if key in MANAGEMENT_USER_KEYS else'admin'),
+              'management addition recipient drift:'+key)
+        check(key in sides[audience] and merged[key]==record.get('entry'),
+              'management added value/parameters drift:'+key)
+        check(record.get('reason') and key in refs,'management addition is not source-backed:'+key)
+        paths=record.get('source_paths',[])
+        check(paths and all(path in runtime_sources and key in runtime_sources[path]
+              for path in paths),'management added source identity drift:'+key)
+        value=text(merged[key]);params=parameters(merged[key])
+        check(isinstance(value,str) and isinstance(params,list) and len(params)==len(set(params)),
+              'management template invalid:'+key)
+        check(not re.search(r'[\u06f0-\u06f9\u0660-\u0669]',value),'management digits not ASCII:'+key)
+        check(set(re.findall(r'\{([a-zA-Z_][a-zA-Z0-9_]*)\}',value))==set(params),
+              'management template parameters invalid:'+key)
+        check(not re.search(r'<(?!/?(?:b|code)(?:>|\s))',value),'management unsupported markup:'+key)
+    retained=amendment.get('retained_legacy_keys',{})
+    orphan={key for key in set(merged)-refs if not key.startswith(('legacy_messages.','legacy_buttons.'))}
+    check(orphan==set(retained),'unrecorded/obsolete management legacy copy: '+str(sorted(orphan^set(retained))))
+    previous_sources={}
+    for key,record in retained.items():
+        check(key in before and record.get('entry')==before[key] and record.get('reason'),
+              'retained management legacy baseline drift:'+key)
+        paths=record.get('previous_source_paths',[])
+        for path in paths:
+            if path not in previous_sources:previous_sources[path]=command('git','show',MANAGEMENT_BASE+':'+path).decode()
+        check(paths and all(key in previous_sources[path]for path in paths),
+              'retained management legacy source missing:'+key)
+    return {'added_keys':additions,'retained_legacy_keys':retained,
+            'baseline_keys':len(before),'current_keys':len(merged)}
+
+def management_facade_proof(additions):
+    # Execute only definition-only modules, never bootstrap, DB, Telegram or a
+    # provider. The UI scanner may therefore treat this exact facade's key
+    # arguments as technical tokens, just like achbotMessage itself.
+    code=r"""require 'src/Admin/ManagementFlow.php';
+$records=json_decode(stream_get_contents(STDIN),true,512,JSON_THROW_ON_ERROR);$count=0;
+foreach($records as$key=>$record){
+ if(empty($record['facade']))continue;
+ $entry=$record['entry'];$parameters=is_array($entry)?$entry['parameters']:[];
+ $values=[];foreach($parameters as$name)$values[$name]='fixture <&> {'.$name.'}';
+ $short=substr($key,strlen('admin_settings.management.'));
+ if(achbotManagementText($short,$values)!==achbotMessage($key,$values))
+  throw new RuntimeException('management_facade_payload_drift:'.$key);
+ ++$count;
+}
+echo json_encode(['cases'=>$count],JSON_THROW_ON_ERROR);"""
+    result=json.loads(command('php','-n','-d','allow_url_fopen=0','-r',code,
+        input=json.dumps(additions,ensure_ascii=False).encode()))
+    check(result['cases']==sum(record.get('facade')is True for record in additions.values()),
+          'management facade coverage missing')
+    return result['cases']
+
+def management_provider_labels():
+    code=r"""require 'messages/loader.php';require 'src/Panel/ProviderRuntime.php';
+$expected=['marzban'=>'admin_settings.management.marzban','pasarguard'=>'admin_settings.management.pasarguard'];$count=0;
+foreach($expected as$type=>$key){
+ if(achbotProviderLabel($type)!==achbotMessage($key))throw new RuntimeException('provider_label_catalog_mismatch');
+ ++$count;
+}
+foreach(['unknown','Marzban','pasarguard ','admin_settings.management.marzban','',null,0,true,[]]as$type){
+ if(achbotProviderLabel($type)!=='')throw new RuntimeException('unknown_provider_became_label');
+ ++$count;
+}
+echo json_encode(['cases'=>$count],JSON_THROW_ON_ERROR);"""
+    result=json.loads(command('php','-n','-d','allow_url_fopen=0','-r',code))
+    check(result['cases']==11,'native provider-label boundary missing')
+    return result['cases']
+
+def management_negative_controls(sides,merged,record):
+    amendment=json.loads((ROOT/'tools/text_catalog_management_amendment.json').read_text())
+    admin_key=next(key for key,value in record['added_keys'].items()if value['audience']=='admin')
+    controls=[]
+    wrong=copy.deepcopy(sides);wrong['user'][admin_key]=wrong['admin'].pop(admin_key)
+    controls.append((wrong,merged,amendment))
+    wrong=copy.deepcopy(sides);wrong['admin'][admin_key]='Unrecorded copy change'
+    controls.append((wrong,{**wrong['user'],**wrong['admin']},amendment))
+    wrong=dict(merged);wrong.pop('legacy_messages.banned')
+    controls.append((sides,wrong,amendment))
+    wrong=dict(merged);wrong['admin_settings.management.unaccepted']='Unaccepted key'
+    controls.append((sides,wrong,amendment))
+    wrong=copy.deepcopy(amendment)
+    baseline=management_baseline_sides()
+    key=next(k for k in baseline['admin']if k not in wrong['retained_legacy_keys'])
+    wrong['retained_legacy_keys'][key]={'entry':baseline['admin'][key],'reason':'unaccepted','previous_source_paths':['config.php']}
+    controls.append((sides,merged,wrong))
+    for no,(candidate_sides,candidate_merged,candidate_amendment)in enumerate(controls,1):
+        try:management_amendment(candidate_sides,candidate_merged,candidate_amendment)
+        except AssertionError:continue
+        raise AssertionError('management amendment negative control missed:'+str(no))
+    return len(controls)
+
 def main():
     files=sorted(p.relative_to(ROOT).as_posix()for p in(ROOT/'messages/fa').glob('*.php'))
     check(files==['messages/fa/admin.php','messages/fa/user.php'],'editable copy must be exactly user.php/admin.php')
@@ -122,7 +257,11 @@ def main():
     current=json.loads(command('php','-r','$r=[];foreach(["user","admin"]as$a)$r[$a]=require "messages/fa/".$a.".php";echo json_encode($r,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);'))
     sides={a:flatten(v)for a,v in current.items()}
     check(not set(sides['user'])&set(sides['admin']),'duplicate key across audiences')
-    merged={**sides['user'],**sides['admin']};old=baseline()
+    merged={**sides['user'],**sides['admin']};management=management_amendment(sides,merged)
+    management_controls=management_negative_controls(sides,merged,management)
+    management_facades=management_facade_proof(management['added_keys'])
+    provider_labels=management_provider_labels()
+    all_merged=merged;merged={k:v for k,v in merged.items()if k not in management['added_keys']};old=baseline()
     chars=sorted({c for entry in[*old.values(),*merged.values()]for c in text(entry)if c.isalpha()})
     glyphs='$r=[];foreach(json_decode(file_get_contents("php://stdin"),true)as$c)if(preg_match("/\\\\p{Extended_Pictographic}/u",$c))$r[]=$c;echo json_encode($r,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);'
     EMOJI_LETTERS.update(json.loads(command('php','-r',glyphs,input=json.dumps(chars).encode())))
@@ -232,7 +371,7 @@ $sample=achbotMessage('purchase.order_writes.ensure_account_creation_succeeded.a
 if(!str_contains($sample,'inbound_not_found')||!str_contains($sample,'Inbound ID: 123'))throw new RuntimeException('administrator_diagnostic_incomplete');
 $private=achbotMessage('purchase.order_writes.ensure_account_creation_succeeded.user_message.7a64d65208');
 if(str_contains($private,'123')||str_contains($private,'inbound'))throw new RuntimeException('customer_inbound_disclosure');
-require 'settings/values.php';if($mainValues!==achbotMessages('legacy_messages')||$buttonValues!==achbotMessages('legacy_buttons'))throw new RuntimeException('legacy_facade_drift');
+require 'tools/catalog_bindings.php';$bindingProof=catalogAssertCurrentBindings(__DIR__);$bindingNegatives=catalogBindingNegativeControls();$mainValues=$bindingProof['main'];$buttonValues=$bindingProof['buttons'];
 // Exercise the original legacy user quote/admin request compositions. These
 // assertions fail for their old battery/name/ID/money/date marker mix.
 $userQuote=str_replace(['PLAN-NAME','VOLUME','DAYS','PRICE','DESCRIPTION'],['Fixture plan','10','30','100000','Fixture description'],$mainValues['buy_custom_subscription_detail']);
@@ -257,7 +396,7 @@ foreach(['config.get_gate_ways_keys.button.26003a476f','config.get_gate_ways_key
 foreach([$buttonValues['renew_config'],achbotMessage('admin_settings.config.get_bot_setting_keys.button.df1c62b99e'),achbotMessage('admin_settings.config.get_bot_setting_keys.button.f9a77f614a')]as$value){if(!str_starts_with($value,'♻️ '))throw new RuntimeException('renew_action_marker_mismatch');$contexts++;}
 foreach([[$buttonValues['back_to_main'],'🔙 '],[$buttonValues['back_button'],'🔙 '],[achbotMessage('manual_payment.manual_crypto.button.1121ffbf88'),'🏠 ']]as[$value,$icon]){if(!str_starts_with($value,$icon))throw new RuntimeException('navigation_marker_mismatch');$contexts++;}
 if(!str_starts_with(achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.message.6924ce253f'),'⚠️ '))throw new RuntimeException('unknown_transfer_misleading_failure_marker');
-echo json_encode(['violations'=>$violations,'topics'=>count(achbotMessageTopics()),'native_compositions'=>6,'emoji_negative_controls'=>7,'semantic_label_icon_cases'=>count($fields),'semantic_context_icon_cases'=>$contexts],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);'''
+echo json_encode(['violations'=>$violations,'topics'=>count(achbotMessageTopics()),'native_compositions'=>6,'emoji_negative_controls'=>7,'semantic_label_icon_cases'=>count($fields),'semantic_context_icon_cases'=>$contexts,'canonical_binding_paths'=>count($bindingProof['paths']),'canonical_binding_entries'=>$bindingProof['entries'],'canonical_binding_negative_controls'=>$bindingNegatives],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);'''
     native=json.loads(command('php','-r',php))
     check(not native['violations'],'adjacent emoji: '+str(native['violations']))
     check(native['topics']==25,'logical topics changed')
@@ -292,5 +431,5 @@ echo json_encode(['violations'=>$violations,'topics'=>count(achbotMessageTopics(
             except urllib.error.HTTPError as error:status=error.code;body=error.read()
             check(status==404 and not body,'direct copy source leaked '+file)
     finally:listener.terminate();listener.wait(timeout=5)
-    print(json.dumps({'status':'PASS','editable_files':2,'current_keys':len(merged),'logical_topics':native['topics'],'style_changes':len(changes),'numeric_template_changes':sum('ascii_digits'in v['reasons']for v in changes.values()),'retired_keys':len(retired),'retired_feature_keys':len(feature_retired),'added_keys':len(added),'current_entry_assertions':assertions,'parameter_exception_count':len(param_keys),'adjacent_emoji_violations':0,'emoji_negative_controls':native['emoji_negative_controls'],'audience_admin_diagnostic_cases':len(admin_cases),'audience_customer_cases':len(user_cases),'preserved_shared_fragments':len(fragments),'native_compositions':native['native_compositions'],'semantic_label_icon_cases':native['semantic_label_icon_cases'],'semantic_context_icon_cases':native['semantic_context_icon_cases'],'direct_http_guards':len(guarded),'loader_negative_controls':2,**reviewed},ensure_ascii=False))
+    print(json.dumps({'status':'PASS','editable_files':2,'current_keys':len(all_merged),'management_added_keys':len(management['added_keys']),'management_retained_legacy_keys':len(management['retained_legacy_keys']),'management_baseline_keys':management['baseline_keys'],'management_negative_controls':management_controls,'management_facade_cases':management_facades,'management_provider_label_cases':provider_labels,'logical_topics':native['topics'],'canonical_binding_paths':native['canonical_binding_paths'],'canonical_binding_entries':native['canonical_binding_entries'],'canonical_binding_negative_controls':native['canonical_binding_negative_controls'],'style_changes':len(changes),'numeric_template_changes':sum('ascii_digits'in v['reasons']for v in changes.values()),'retired_keys':len(retired),'retired_feature_keys':len(feature_retired),'added_keys':len(added),'current_entry_assertions':assertions,'parameter_exception_count':len(param_keys),'adjacent_emoji_violations':0,'emoji_negative_controls':native['emoji_negative_controls'],'audience_admin_diagnostic_cases':len(admin_cases),'audience_customer_cases':len(user_cases),'preserved_shared_fragments':len(fragments),'native_compositions':native['native_compositions'],'semantic_label_icon_cases':native['semantic_label_icon_cases'],'semantic_context_icon_cases':native['semantic_context_icon_cases'],'direct_http_guards':len(guarded),'loader_negative_controls':2,**reviewed},ensure_ascii=False))
 if __name__=='__main__':main()

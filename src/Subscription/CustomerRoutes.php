@@ -458,6 +458,12 @@ if(preg_match('/changeUserConfigState(\d+)/', $data,$match)){
         alert(\achbotMessage('subscription.customer_routes.cancel_search_keyboard.alert.724ff90245'), true);
         return;
     }
+    require_once __DIR__.'/../Panel/ServiceLifecycle.php';
+    $observed=achbotServiceObserve((int)$server_id,(string)$remark);
+    if (!$observed['verified'] || !in_array($observed['status'],['active','disabled'],true)) {
+        alert(\achbotMessage('subscription.customer_routes.cancel_search_keyboard.alert.724ff90245'),true);
+        return;
+    }
     $update_response = achbotProviderToggle($server_id, $remark);
     
     if($update_response->success){
@@ -511,6 +517,12 @@ if (preg_match('/agentChangeUserConfigState(\d+)/', $data, $match)) {
     // different panel/account by guesswork.
     if (!achbotSupportsPanel($serverType) || (int)$inboundId !== 0) {
         alert(\achbotMessage('subscription.customer_routes.cancel_search_keyboard.alert.724ff90245'), true);
+        return;
+    }
+    require_once __DIR__.'/../Panel/ServiceLifecycle.php';
+    $observed=achbotServiceObserve((int)$server_id,(string)$remark);
+    if (!$observed['verified'] || !in_array($observed['status'],['active','disabled'],true)) {
+        alert(\achbotMessage('subscription.customer_routes.cancel_search_keyboard.alert.724ff90245'),true);
         return;
     }
     $update_response = achbotProviderToggle($server_id, $remark);

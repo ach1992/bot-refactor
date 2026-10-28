@@ -52,7 +52,10 @@ def main():
         work=Path(directory)
         shutil.copytree(ROOT/'messages',work/'messages')
         (work/'settings').mkdir()
-        for name in ['values.php','jdf.php']:shutil.copyfile(ROOT/'settings'/name,work/'settings'/name)
+        shutil.copyfile(ROOT/'settings/jdf.php',work/'settings/jdf.php')
+        # Only the archived RED bootstrap consumes its own pinned facade.
+        (work/'settings/values.php').write_bytes(subprocess.check_output(
+            ['git','show',BASE+':settings/values.php'],cwd=ROOT))
         (work/'baseInfo.php').write_text("<?php $dbUserName='fixture_user';$dbPassword='"+CANARY+"';$dbName='fixture_db';")
         (work/'driver.php').write_text(DRIVER)
         file=work/'config-prefix.php';file.write_text(prefix(old))

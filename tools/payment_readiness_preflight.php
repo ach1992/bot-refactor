@@ -110,7 +110,10 @@ function verifyManifest(string $manifestPath, string $runtimePath): bool {
                 !hash_equals($expected['sha256'], (string)hash_file('sha256', $path))) return false;
         }
         foreach (['settings/tronChecker.php', 'src/Finance/CryptoChecker.php',
-                   'src/Finance/Routes/CryptoAndExchange.php'] as $retired) {
+                   'src/Finance/Routes/CryptoAndExchange.php',
+                   'settings/subLink.php','settings/values.php',
+                   'settings/messagewizwiz.php','settings/warnusers.php',
+                   'pay/index.php','src/Finance/GatewayInitiation.php'] as $retired) {
             if (file_exists($root . DIRECTORY_SEPARATOR . $retired) ||
                 is_link($root . DIRECTORY_SEPARATOR . $retired)) return false;
         }

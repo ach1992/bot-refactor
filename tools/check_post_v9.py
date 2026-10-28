@@ -83,7 +83,7 @@ def source_checks():
     support = re.search(r"function achbotSupportsPanel\(\$type\)\s*\{([^}]+)\}", check)
     if support is None:
         raise RuntimeError("Missing supported-provider predicate")
-    probe = "function achbotSupportsPanel($type){" + support.group(1) + "}"
+    probe = "require "+json.dumps(str(ROOT/"src/Panel/ProviderRuntime.php"))+";function achbotSupportsPanel($type){" + support.group(1) + "}"
     probe += "echo json_encode(array_map('achbotSupportsPanel', ['marzban','pasarguard','xui','sanaei','alireza','normal','',null,0,true,[], 'Marzban']));"
     supported = json.loads(subprocess.check_output(['php','-r',probe],text=True))
     if supported != [True,True] + [False]*10:
@@ -98,9 +98,8 @@ def source_checks():
         raise RuntimeError("Marzban setup or plan creation disappeared")
     if "/xui/inbound/" in module or "/panel/inbound/" in module or "/login" in module:
         raise RuntimeError("Obsolete XUI provider HTTP transport retained")
-    old_link=(ROOT/"settings/subLink.php").read_text()
-    if any(x in old_link for x in ("baseInfo.php","config.php","mysqli","curl_","getJson(")):
-        raise RuntimeError("Retired old-panel subscription link still accesses real state")
+    if (ROOT/'settings/subLink.php').exists() or 'settings/subLink.php' in files:
+        raise RuntimeError('Unused retired XUI subscription stub retained')
     return {"source_files":len(files),"php_lint":len(php_files),
             "original_historical_schema_file_unchanged":True,
             "current_additive_migration_separately_tested":True,
@@ -129,6 +128,32 @@ def main():
         raise RuntimeError("Payment capability randomness/bounds incomplete")
     audience=customer_errors.verify(ROOT)
     with tempfile.TemporaryDirectory(prefix="achbot-post-v9-acceptance-") as tmp:
+        unified={}
+        suites=[
+            ('management_wizard','test_unified_management_wizard.py','cases',270,
+                {'actual_php':True,'owned_socket_mariadb':True,'loopback_provider_http':True,'provider_mutations':0,'production_mutations':0,'actual_rc13_cancel_RED':True}),
+            ('management_menus','test_unified_management_menus.py','checks',322,
+                {'database':'owned socket MariaDB','network_calls':0,'optional_011_missing_cancel_proven':True}),
+            ('customer_services','test_unified_customer_services.py','cases',256,
+                {'actual_php':True,'native_disposable_mariadb':True,'external_provider_calls':0,'production_mutations':0}),
+            ('service_lifecycle','test_unified_service_lifecycle.py','cases',43,
+                {'native_php':True,'disposable_mariadb':True,'actual_delete_transports':True,'production_mutations':0,'external_provider_calls':0}),
+            ('runtime_cleanup','test_unified_runtime_cleanup.py','assertions',121,
+                {'actual_php':True,'owned_socket_mariadb':True,'provider_mutations':0,'production_mutations':0}),
+            ('provider_registry','test_unified_provider_registry.py','cases',52,
+                {'actual_php':True,'owned_socket_mariadb':True,'closed_native_adapters':2,'fixture_adapter_only':True,'external_requests':0,'production_mutations':0,'new_schema':False}),
+            ('canonical_checkout','test_canonical_checkout.py','cases',143,
+                {'native_http':True,'actual_public_controller':True,'owned_socket_mariadb':True,'complete_issuance_body_preserved':True,'pay_back_bytes_unchanged':True,'retired_routes_absent':True,'GET_only':True,'no_database_failure_private':True,'indirect_include_preserved':True,'external_requests':0,'production_mutations':0}),
+        ]
+        for name,script,counter,minimum,proofs in suites:
+            path=Path(tmp)/(name+'.json')
+            subprocess.run(['python3',str(ROOT/'tools'/script),'--run-disposable','--report',str(path)],
+                cwd=ROOT,check=True,timeout=300,capture_output=True)
+            evidence=json.loads(path.read_text())
+            if evidence.get('complete') is not True or evidence.get(counter,0)<minimum or any(evidence.get(k)!=v for k,v in proofs.items()):
+                raise RuntimeError('Unified service-management evidence incomplete: '+name)
+            unified[name]=evidence
+        result['unified_service_management']=unified
         webhook_path=Path(tmp)/"webhook-file-config.json"
         subprocess.run(["python3",str(ROOT/"tools/test_post_v9_webhook_config.py"),
                         "--run-disposable","--report",str(webhook_path)],
@@ -172,7 +197,7 @@ def main():
             "permissive_lock_file_fails_closed",
             "unavailable_php_flock_fails_closed",
         }
-        if not (cron.get("complete") and cron.get("cases")>=35
+        if not (cron.get("complete") and cron.get("cases")>=50
                 and required_cron_cases.issubset(cron.get("scenarios", []))
                 and cron.get("actual_current_runner_executed")
                 and cron.get("isolated_child_php_processes")
@@ -528,6 +553,8 @@ def main():
                 and text_catalog.get("static_ui_violations")==0
                 and text_catalog.get("ascii_ui_violations")==0
                 and text_catalog.get("ascii_audit_negative_controls")==8
+                and text_catalog.get("management_ascii_audit_controls")==2
+                and text_catalog.get("presentation",{}).get("management_provider_label_cases")==11
                 and text_catalog.get("migrated_machine_fields_or_sql_arguments")==0
                 and text_catalog.get("direct_http_guards")==4
                 and text_catalog.get("native",{}).get("pre_style_templates")==3066
@@ -545,10 +572,16 @@ def main():
                 and text_catalog.get("retired_parser_tokens")==23
                 and text_catalog.get("relocation_source_ref")=="ecd30ba9192ed374703118a6c131be8809cc7b06"
                 and text_catalog.get("native",{}).get("current_retired_feature_keys")==3
-                and text_catalog.get("catalog_keys")==2523
+                and text_catalog.get("catalog_keys")==2616
                 and text_catalog.get("native",{}).get("editable_catalog_files")==2
                 and text_catalog.get("native",{}).get("logical_topics")==25
-                and text_catalog.get("native",{}).get("current_catalog_keys")==2523
+                and text_catalog.get("native",{}).get("current_catalog_keys")==2616
+                and text_catalog.get("native",{}).get("current_management_added_keys")==93
+                and text_catalog.get("native",{}).get("current_catalog_binding_paths")==2
+                and text_catalog.get("native",{}).get("current_catalog_binding_entries")==4
+                and text_catalog.get("native",{}).get("current_catalog_binding_negative_controls")==4
+                and text_catalog.get("native",{}).get("retired_current_facade_absent") is True
+                and text_catalog.get("native",{}).get("current_traffic_shared_observation_cases")==28
                 and text_catalog.get("native",{}).get("current_retired_implementation_keys")==23
                 and text_catalog.get("native",{}).get("current_added_admin_keys")==1
                 and text_catalog.get("native",{}).get("current_parameter_privacy_changes")==3
@@ -556,14 +589,14 @@ def main():
                 and text_catalog["native"]["current_byte_preserved_keys"]
                     +text_catalog["native"]["current_style_changes"]
                     +text_catalog["native"]["current_added_admin_keys"]==2523
-                and text_catalog.get("native",{}).get("current_native_template_assertions")==3708
-                and text_catalog.get("native",{}).get("current_object_conversion_templates")==237
-                and text_catalog.get("native",{}).get("current_shared_multi_parameter_templates")==55
-                and text_catalog.get("native",{}).get("current_one_pass_templates")==237
+                and text_catalog.get("native",{}).get("current_native_template_assertions")==3861
+                and text_catalog.get("native",{}).get("current_object_conversion_templates")==249
+                and text_catalog.get("native",{}).get("current_shared_multi_parameter_templates")==60
+                and text_catalog.get("native",{}).get("current_one_pass_templates")==249
                 and text_catalog.get("native",{}).get("current_non_ascii_digit_templates")==0
                 and text_catalog.get("presentation",{}).get("status")=="PASS"
                 and text_catalog.get("presentation",{}).get("editable_files")==2
-                and text_catalog.get("presentation",{}).get("current_keys")==2523
+                and text_catalog.get("presentation",{}).get("current_keys")==2616
                 and text_catalog.get("presentation",{}).get("numeric_template_changes")==23
                 and text_catalog.get("presentation",{}).get("adjacent_emoji_violations")==0
                 and text_catalog.get("presentation",{}).get("parameter_exception_count")==3
@@ -621,7 +654,7 @@ def main():
                         "--run-disposable","--report",str(unit_path)],
                        cwd=ROOT,check=True,timeout=180,capture_output=True)
         unit_guards=json.loads(unit_path.read_text())
-        if not (unit_guards.get("complete") is True and unit_guards.get("cases")==26
+        if not (unit_guards.get("complete") is True and unit_guards.get("cases")==29
                 and unit_guards.get("actual_php_mysqli") is True
                 and unit_guards.get("owned_socket_mariadb") is True
                 and unit_guards.get("provider_requests")==0
@@ -1333,6 +1366,7 @@ def main():
             'unverified_source_identity_blocks',
             'runtime_byte_drift_blocks',
             'retired_runtime_member_blocks',
+            *('retired_runtime_member_blocks__'+name.replace('/','_').replace('.','_') for name in package.RETIRED_RUNTIME_MEMBERS-{'settings/tronChecker.php'}),
             'partial_003_unique_index_missing_blocks',
             'wallet_telegram_event_key_missing_blocks',
             'wallet_telegram_event_key_nonunique_blocks',

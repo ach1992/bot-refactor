@@ -31,6 +31,10 @@ define('ACHBOT_VERIFIED_WEBHOOK_ENTRYPOINT', true);
 require_once 'config.php';
 require_once 'buy_helpers.php';
 check();
+require_once __DIR__.'/src/Panel/ProviderAdmin.php';
+require_once __DIR__.'/src/Admin/ManagementFlow.php';
+if (achbotHandleManagement()) return;
+if (achbotHandleManagementFields()) return;
 require_once __DIR__.'/src/Subscription/ServerDisplaySettings.php';
 if (achbotHandleServerDisplayAdmin()) return;
 require_once __DIR__.'/src/Panel/ProviderAdmin.php';
@@ -1864,7 +1868,9 @@ if(preg_match('/^toggleServerState(\d+)_(\d+)/',$data,$match) && ($from_id == $a
 }
 if(preg_match('/^showServerSettings(\d+)_(\d+)/',$data,$match) and ($from_id == $admin || $userInfo['isAdmin'] == true)){
     $keys = getServerConfigKeys($match[1], $match[2]);
-    editText($message_id,\achbotMessage('bot.bot.servers_setting.message.ac9cd6d52a', ['cname' => $cname]),$keys);
+    $serverPage=achbotManagementRow($connection,'SELECT title FROM server_info WHERE id=?','i',[(int)$match[1]]);
+    $cname=(string)($serverPage['title']??'');
+    editText($message_id,\achbotMessageHtml('bot.bot.servers_setting.message.ac9cd6d52a', ['cname' => $cname]),$keys,'HTML');
 }
 if(preg_match('/^changesServerIp(\d+)/',$data,$match) && ($from_id == $admin || $userInfo['isAdmin'] == true)){
     $stmt = $connection->prepare("SELECT * FROM `server_config` WHERE `id`=?");
@@ -1970,192 +1976,7 @@ if (preg_match('/^deleteMarzbanPanelGroup_(\d+)$/D', (string)($data ?? ''), $gro
     editText($message_id, \achbotMessage('bot.bot.add_marzban_panel_group.message.def9f141f2'), getMarzbanPanelGroupsManagementKeys());
     return;
 }
-if($data == "addNewMarzbanPanel" and ($from_id == $admin || $userInfo['isAdmin'] == true)){
-    delMessage();
-    setUser($data, 'temp');
-    setUser('addserverName');
-    sendMessage(\achbotMessage('bot.bot.add_new_marzban_panel.message.2dcf34731e'),$cancelKey);
-    exit();
-}
-if($userInfo['step'] == 'addserverName' and $text != $buttonValues['cancel'] && ($from_id == $admin || $userInfo['isAdmin'] == true)) {
-	sendMessage(\achbotMessage('bot.bot.addserver_name.message.3dd8c855bc'));
-    $data = array();
-    $data['title'] = $text;
-
-    setUser('addServerUCount' . json_encode($data,JSON_UNESCAPED_UNICODE));
-    exit();
-}
-if(preg_match('/^addServerUCount(.*)/',$userInfo['step'],$match) and $text != $buttonValues['cancel'] && ($from_id == $admin || $userInfo['isAdmin'] == true)) {
-    $data = json_decode($match[1],true);
-    $data['ucount'] = $text;
-
-    sendMessage(\achbotMessage('bot.bot.addserver_name.message.ae25347c18'));
-    setUser('addServerRemark' . json_encode($data,JSON_UNESCAPED_UNICODE));
-    exit();
-}
-if(preg_match('/^addServerRemark(.*)/',$userInfo['step'], $match) and $text != $buttonValues['cancel'] && ($from_id == $admin || $userInfo['isAdmin'] == true)) {
-    $data = json_decode($match[1], true);
-    $data['remark'] = $text;
-
-    sendMessage(\achbotMessage('bot.bot.addserver_name.message.ba9445a606'));
-    setUser('addServerFlag' . json_encode($data,JSON_UNESCAPED_UNICODE));
-    exit();
-}
-if(preg_match('/^addServerFlag(.*)/',$userInfo['step'], $match) and $text != $buttonValues['cancel'] && ($from_id == $admin || $userInfo['isAdmin'] == true)) {
-    $data = json_decode($match[1],true);
-    $data['flag'] = $text;
-    sendMessage(\achbotMessage('bot.bot.addserver_name.message.63c645dbbd'));
-    setUser('addServerPanelUrl' . json_encode($data,JSON_UNESCAPED_UNICODE));
-    exit();
-}
-if(preg_match('/^addServerPanelUrl(.*)/',$userInfo['step'],$match) and $text != $buttonValues['cancel'] && ($from_id == $admin || $userInfo['isAdmin'] == true)) {
-    $data = json_decode($match[1],true);
-    $data['panel_url'] = $text;
-    if(($userInfo['temp'] ?? '') !== "addNewMarzbanPanel"){
-        alert(\achbotMessage('bot.bot.addserver_name.alert.f1fb84ec27'), true);
-        return;
-    }
-    $data['panel_ip'] = "/empty";
-    $data['sni'] = "/empty";
-    $data['header_type'] = "/empty";
-    $data['response_header'] = "/empty";
-    $data['request_header'] = "/empty";
-    $data['security'] = "/empty";
-    $data['tls_setting'] = "/empty";
-
-    setUser('addServerPanelGroup' . json_encode($data, JSON_UNESCAPED_UNICODE));
-    sendMessage(\achbotMessage('bot.bot.addserver_name.message.8da737cc0d')
-        . \achbotMessage('bot.bot.addserver_name.message.3de3b9cb9e')
-        . \achbotMessage('bot.bot.addserver_name.message.9a519033ca')
-        . \achbotMessage('bot.bot.addserver_name.text.395b086745'),
-        getMarzbanPanelGroupKeys('add'));
-    exit();
-}
-if (preg_match('/^selectNewPanelGroup_(\d+)$/D', (string)($data ?? ''), $select) &&
-    ($from_id == $admin || ($userInfo['isAdmin'] ?? false))) {
-    if (!preg_match('/^addServerPanelGroup(.*)$/s', (string)($userInfo['step'] ?? ''), $match) ||
-        ($userInfo['temp'] ?? '') !== 'addNewMarzbanPanel') {
-        alert(\achbotMessage('bot.bot.addserver_name.alert.f07dd5dcd6'), true);
-        return;
-    }
-    $wizard = json_decode($match[1], true);
-    $groupId = (int)$select[1];
-    $found = $groupId === 0;
-    foreach (achbotMarzbanPanelGroups($connection) as $group) {
-        if ((int)$group['id'] === $groupId) $found = true;
-    }
-    if (!is_array($wizard) || !$found) {
-        alert(\achbotMessage('bot.bot.addserver_name.alert.55b6ebf4b1'), true);
-        return;
-    }
-    $wizard['panel_group_id'] = $groupId;
-    setUser('addServerPanelUser' . json_encode($wizard, JSON_UNESCAPED_UNICODE));
-    sendMessage(\achbotMessage('bot.bot.addserver_name.message.cd5fbb01df'));
-    return;
-}
-if(preg_match('/^addServerPanelUser(.*)/',$userInfo['step'],$match) and $text != $buttonValues['cancel'] && ($from_id == $admin || $userInfo['isAdmin'] == true)) {
-    $data = json_decode($match[1],true);
-    $data['panel_user'] = $text;
-    setUser('addServerPanePassword' . json_encode($data, JSON_UNESCAPED_UNICODE));
-    sendMessage( \achbotMessage('bot.bot.addserver_name.message.cf8b6b8420'));
-exit();
-}
-if(preg_match('/^addServerPanePassword(.*)/',$userInfo['step'],$match) and $text != $buttonValues['cancel'] && ($from_id == $admin || $userInfo['isAdmin'] == true)){
-    sendMessage(\achbotMessage('bot.bot.addserver_name.message.4a29ff45e6'));
-    $data = json_decode($match[1],true);
-    $title = $data['title'];
-    $ucount = $data['ucount'];
-    $remark = $data['remark'];
-    $flag = $data['flag'];
-
-    $panel_url = $data['panel_url'];
-    $ip = $data['panel_ip']!="/empty"?$data['panel_ip']:"";
-    $sni = $data['sni']!="/empty"?$data['sni']:"";
-    $header_type = $data['header_type']!="/empty"?$data['header_type']:"none";
-    $request_header = $data['request_header']!="/empty"?$data['request_header']:"";
-    $response_header = $data['response_header']!="/empty"?$data['response_header']:"";
-    $security = $data['security']!="/empty"?$data['security']:"none";
-    $tlsSettings = $data['tls_setting']!="/empty"?$data['tls_setting']:"";
-    $serverName = $data['panel_user'];
-    $serverPass = $text;
-    $panelGroupId = (int)($data['panel_group_id'] ?? 0);
-    if ($panelGroupId < 0) {
-        alert(\achbotMessage('bot.bot.addserver_name.alert.6558e924a9'), true);
-        return;
-    }
-
-    $loginResponse['success'] = false;
-    if(($userInfo['temp'] ?? '') !== 'addNewMarzbanPanel'){
-        alert(\achbotMessage('bot.bot.addserver_name.alert.f1fb84ec27'), true);
-        return;
-    }
-    $loginResponse['success'] = false;
-
-        $loginUrl = $panel_url .'/api/admin/token';
-        $postFields = array(
-            'username' => $serverName,
-            'password' => $serverPass
-        );
-
-        $curl = curl_init();
-        curl_setopt($curl, CURLOPT_URL, $loginUrl);
-        curl_setopt($curl, CURLOPT_FOLLOWLOCATION, 1);
-        curl_setopt($curl, CURLOPT_RETURNTRANSFER, 1);
-        curl_setopt($curl, CURLOPT_POST, 1);
-        curl_setopt($curl, CURLOPT_CONNECTTIMEOUT, 3);
-        curl_setopt($curl, CURLOPT_TIMEOUT, 3);
-        curl_setopt($curl, CURLOPT_POSTFIELDS, http_build_query($postFields));
-        curl_setopt($curl, CURLOPT_HTTPHEADER, array(
-                'Content-Type: application/x-www-form-urlencoded',
-                'accept: application/json'
-            ));
-        $response = json_decode(curl_exec($curl),true);
-
-        if(curl_error($curl)){
-            $loginResponse = ['success' => false, 'error'=>curl_error($curl)];
-        }
-        curl_close($curl);
-
-        if(isset($response['access_token'])){
-            $loginResponse['success'] = true;
-        }
-
-    if(!$loginResponse['success']){
-        setUser('addServerPanelUser' . json_encode($data, JSON_UNESCAPED_UNICODE));
-        sendMessage( \achbotMessage('bot.bot.addserver_name.message.aaacd0e81b'));
-        exit();
-    }
-    // One atomic original-schema write: a failed group setting cannot
-    // leave an orphan logical server with uncertain panel identity.
-    $connection->begin_transaction();
-    try {
-        $stmt = $connection->prepare("INSERT INTO `server_info` (`title`, `ucount`, `remark`, `flag`, `active`)
-                                                        VALUES (?,?,?,?,1)");
-        $stmt->bind_param("siss", $title, $ucount, $remark, $flag);
-        $stmt->execute();
-        $rowId = $stmt->insert_id;
-        $stmt->close();
-
-        $stmt = $connection->prepare("INSERT INTO `server_config` (`id`, `panel_url`, `ip`, `sni`, `header_type`, `request_header`, `response_header`, `security`, `tlsSettings`, `username`, `password`, `type`)
-                                               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'marzban')");
-        $stmt->bind_param("issssssssss", $rowId, $panel_url, $ip, $sni, $header_type, $request_header, $response_header, $security, $tlsSettings, $serverName, $serverPass);
-        $stmt->execute();
-        $stmt->close();
-        achbotSetMarzbanGroup($connection, $rowId, $panelGroupId);
-        $connection->commit();
-    } catch (\Throwable $e) {
-        $connection->rollback();
-        sendMessage(\achbotMessage('bot.bot.addserver_name.message.b1a72d260a'));
-        return;
-    }
-
-    sendMessage(\achbotMessage('bot.bot.addserver_name.message.8e97362beb'),$removeKeyboard);
-    $keys = getServerListKeys();
-    sendMessage(\achbotMessage('bot.bot.addserver_name.message.c93e2f0866'),$keys);
-
-    setUser();
-    exit();
-}
+// addNewMarzbanPanel and addManagedServer use the actor-owned management wizard above.
 // Admin server settings: select an EXISTING panel group, never a
 // free-text value or automatic URL/username-based identity.
 if (preg_match('/^editMarzbanGroup(\d+)$/D', (string)($data ?? ''), $groupMatch) &&
@@ -2304,7 +2125,7 @@ if(preg_match('/^editServerPanePassword(.*)/',$userInfo['step'],$match) and $tex
 if ((require __DIR__ . '/src/Subscription/SubLinkSettings.php') === null) return;
 
 if(preg_match('/^wizwizdeleteserver(\d+)/',$data,$match) and ($from_id == $admin || ($userInfo['isAdmin'] == true && $permissions['servers']))){
-    editText($message_id,\achbotMessage('bot.bot.addserver_name.message.ead7addb70'),json_encode(['inline_keyboard'=>[
+    editText($message_id,\achbotMessage('admin_settings.management.server_delete_confirm'),json_encode(['inline_keyboard'=>[
         [['text'=>\achbotMessage('bot.bot.addserver_name.button.13159f8c74'),'callback_data'=>"yesDeleteServer" . $match[1]],['text'=>\achbotMessage('bot.bot.addserver_name.button.f47dddc181'),'callback_data'=>"showServerSettings" . $match[1] . "_0"]]
         ]]));
 }
@@ -2534,10 +2355,7 @@ if ($text == $buttonValues['cancel']) {
         error_log('legacy_cancel_stale_cached_step');
         return;
     }
-    $stmt = $connection->prepare("DELETE FROM `server_plans` WHERE `active`=0");
-    $stmt->execute();
-    $stmt->close();
-
+    // Cancellation never deletes other administrators' plan rows.
     sendMessage($mainValues['waiting_message'], $removeKeyboard);
     sendMessage($mainValues['reached_main_menu'],getMainKeys());
 }

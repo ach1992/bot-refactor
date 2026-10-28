@@ -12,7 +12,7 @@ if($data=="getTestAccount"){
         alert(\achbotMessage('purchase.trial_catalogue.get_test_account.alert.0143c681c4'));
         exit();
     }
-    $stmt = $connection->prepare("SELECT p.* FROM `server_plans` p INNER JOIN `server_config` sc ON sc.`id`=p.`server_id` AND sc.`type` IN ('marzban','pasarguard') WHERE p.`price`=0 AND p.`active`=1 AND p.`inbound_id`=0");
+    $stmt = $connection->prepare("SELECT p.* FROM `server_plans` p INNER JOIN `server_config` sc ON sc.`id`=p.`server_id` AND sc.`type` IN (".achbotProviderSqlTypes().") INNER JOIN `server_info` si ON si.`id`=p.`server_id` AND si.`active`=1 AND si.`state`=1 AND si.`ucount`>0 WHERE p.`price`=0 AND p.`active`=1 AND p.`inbound_id`=0");
     $stmt->execute();
     $respd = $stmt->get_result();
     $stmt->close();

@@ -1,4 +1,6 @@
 <?php
+// Real scheduled worker, never an anonymous HTTP trigger.
+if (PHP_SAPI!=='cli') {http_response_code(404);exit;}
 require_once __DIR__ . '/../messages/loader.php'; // ACHBOT_TEXT_CATALOG
 
 

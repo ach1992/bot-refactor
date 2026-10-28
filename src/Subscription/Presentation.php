@@ -2,6 +2,7 @@
 /** AChBot pure subscription presentation; no bootstrap, database or network. */
 namespace AchBot\Subscription\Presentation;
 require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
+require_once __DIR__.'/../Panel/ProviderRuntime.php';
 
 
 function escape($value): string {
@@ -130,7 +131,7 @@ function present(string $provider, array $native, array $botState, array $option
         'selection_missing' => false, 'reason' => '',
         'notice_html' => '', 'limited' => false,
     ];
-    if (!in_array($provider, ['marzban', 'pasarguard'], true)) {
+    if (!\achbotSupportsProviderType($provider)) {
         $result['reason'] = 'unsupported_provider';
         return $result;
     }

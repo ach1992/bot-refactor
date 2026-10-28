@@ -1,10 +1,30 @@
 <?php
-/** AChBot V8: source-pinned financial compatibility module. */
+/** AChBot canonical public checkout controller and directly includable initiation implementation. */
+require_once __DIR__ . '/../messages/loader.php'; // ACHBOT_TEXT_CATALOG
+
+// Browser initiation is GET-only. In particular, HEAD must never create an
+// invoice, and payment-provider POST/IPN remains owned by pay/back.php.
+// Indirect library/test includes already supply their authenticated context.
 if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
-    http_response_code(404);
-    exit;
+    if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'GET') {
+        http_response_code(405);
+        header('Allow: GET');
+        header('Cache-Control: private, no-store, max-age=0');
+        exit;
+    }
+    $checkoutRoot=dirname(__DIR__);
+    if (!is_file($checkoutRoot.'/baseInfo.php') || !is_readable($checkoutRoot.'/baseInfo.php') ||
+        !is_file($checkoutRoot.'/config.php') || !is_readable($checkoutRoot.'/config.php')) {
+        http_response_code(503);
+        header('Content-Type: text/plain; charset=utf-8');
+        header('Cache-Control: private, no-store, max-age=0');
+        echo \achbotMessage('bot.bootstrap.unavailable');
+        exit;
+    }
+    include_once $checkoutRoot.'/baseInfo.php';
+    include_once $checkoutRoot.'/config.php';
+    unset($checkoutRoot);
 }
-require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
 
 
 /**
@@ -140,7 +160,7 @@ function achbotMarkCheckoutUncertain(mysqli $db, int $orderId, string $provider)
     }
 }
 
-require_once __DIR__ . '/PaymentLifecycle.php';
+require_once __DIR__ . '/../src/Finance/PaymentLifecycle.php';
 
 //====================//  Get  //==============================
 $hash_id = (string)($_GET['hash_id'] ?? '');
@@ -352,7 +372,7 @@ if(mysqli_num_rows($payInfo)==0){
             showForm(\achbotMessage('gateway.gateway_initiation.mark_checkout_uncertain.message.c4414cfacc'));
             exit;
         }
-        require_once __DIR__.'/ReceiptHelpers.php';
+        require_once __DIR__.'/../src/Finance/ReceiptHelpers.php';
         $userId=(int)($payParam['user_id']??0);
         $dollarPrice=achbotUsdtRateForUser($connection,$userId);
         if ($dollarPrice===null) {
@@ -566,7 +586,7 @@ if(mysqli_num_rows($payInfo)==0){
         if ($userId > 0) {
             $keyboard = json_encode(['inline_keyboard'=>[
                 [['text'=>\achbotMessage('gateway.gateway_initiation.mark_checkout_uncertain.button.f81a8cfcdd'),
-                  'url'=>$botUrl.'pay/?nowpayment&hash_id='.urlencode($hash_id)]],
+                  'url'=>$botUrl.'pay/checkout.php?nowpayment&hash_id='.urlencode($hash_id)]],
                 [['text'=>\achbotMessage('gateway.gateway_initiation.mark_checkout_uncertain.button.f0137e1007'),'callback_data'=>'ps_'.$hash_id]]
             ]], JSON_UNESCAPED_UNICODE);
             try {
@@ -674,6 +694,6 @@ if(mysqli_num_rows($payInfo)==0){
 // The controller alone can supply the payment disposition. Free-form
 // customer text and failed checkout attempts cannot prove failed settlement.
 function showForm($msg, $presentation = null){
-    require_once __DIR__ . '/PaymentPage.php';
+    require_once __DIR__ . '/../src/Finance/PaymentPage.php';
     achbotRenderPaymentPage($msg, '', false, $presentation);
 }

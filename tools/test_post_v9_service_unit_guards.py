@@ -17,6 +17,9 @@ $from_id=(int)($spec['actor']??1001);$admin=9001;$chat_id=$from_id;$message_id=7
 $data=$spec['data']??'';$text=$spec['text']??'';$time=time();$first_name='Fixture';$username='fixture';$agentBought=false;
 $botState=['walletState'=>'on','nowPaymentOther'=>'off','zarinpal'=>'off','nextpay'=>'off','agencyPlanDiscount'=>'on'];
 $buttonValues=['cancel'=>'Cancel','back_to_main'=>'Home','pay_with_wallet'=>'Wallet'];$mainValues=['reached_main_menu'=>'fixture-home'];$paymentKeys=[];$botUrl='https://bot.example.invalid/';
+$update=json_decode(json_encode($spec['frame']??($data!==''?
+ ['update_id'=>801,'callback_query'=>['id'=>'fixture','data'=>$data,'from'=>['id'=>$from_id],'message'=>['message_id'=>$message_id,'chat'=>['id'=>$from_id,'type'=>'private']]]]:
+ ['update_id'=>801,'message'=>['message_id'=>$message_id,'text'=>$text,'from'=>['id'=>$from_id],'chat'=>['id'=>$from_id,'type'=>'private']]])));
 $cancelKey='{}';$removeKeyboard='{}';$q=$connection->prepare('SELECT * FROM users WHERE userid=?');$q->bind_param('i',$from_id);$q->execute();$userInfo=$q->get_result()->fetch_assoc();$q->close();
 $GLOBALS['events']=[];$GLOBALS['writes']=0;
 register_shutdown_function(static function(){echo json_encode(['events'=>$GLOBALS['events'],'provider_writes'=>$GLOBALS['writes']],JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE);});
@@ -118,6 +121,15 @@ def main():
   sql("UPDATE users SET step='changeVolumePlanVolume52' WHERE userid=9001")
   before=snapshot();r=call(route='admin',actor=9001,text='1.5',data='')
   yes(snapshot()==before and sql('SELECT volume FROM increase_plan WHERE id=52')=='0.5','admin_fractional_edit_does_not_rewrite_existing_row')
+  sql("UPDATE users SET step='changeDayPlanPrice61',temp=NULL WHERE userid=9001")
+  frames=[
+   ('group',{'update_id':802,'message':{'message_id':702,'text':'100','from':{'id':9001},'chat':{'id':-123,'type':'group'}}}),
+   ('foreign_sender',{'update_id':802,'message':{'message_id':702,'text':'100','from':{'id':1001},'chat':{'id':9001,'type':'private'}}}),
+   ('edited_message',{'update_id':802,'edited_message':{'message_id':702,'text':'100','from':{'id':9001},'chat':{'id':9001,'type':'private'}}}),
+  ]
+  for label,frame in frames:
+   before=snapshot();out=call(route='admin',actor=9001,text='100',data='',frame=frame)
+   yes(snapshot()==before and not out['events'] and out['provider_writes']==0,'admin_addon_rejects_'+label+'_frame')
  report={'complete':True,'cases':len(checks),'checks':checks,'actual_php_mysqli':True,'owned_socket_mariadb':True,'provider_requests':0,'production_mutations':0}
  if a.report:a.report.write_text(json.dumps(report,indent=2)+'\n')
  print(json.dumps(report))

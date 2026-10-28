@@ -151,11 +151,11 @@ function startWalletPayment(mysqli $connection, $botState, $buttonValues, $botUr
     if (achbotManualCryptoEnabled((int)$actor) && (achbotPayUxAudienceAllowed($connection,'manual_usdt',(int)$actor) || achbotPayUxAudienceAllowed($connection,'manual_trx',(int)$actor)))
         $keyboard[] = [['text' => \achbotMessage('wallet.wallet_start.start_wallet_payment.button.e729457ba2'), 'callback_data' => "mcm_$hash_id"]];
     if (($botState['nowPaymentWallet'] == 'on' && achbotPayUxAudienceAllowed($connection,'nowpayments',(int)$actor) && achbotUsdtRateForUser($connection,(int)$actor)!==null))
-        $keyboard[] = [['text' => $buttonValues['now_payment_gateway'], 'url' => $botUrl . 'pay/?nowpayment&hash_id=' . $hash_id]];
+        $keyboard[] = [['text' => $buttonValues['now_payment_gateway'], 'url' => $botUrl . 'pay/checkout.php?nowpayment&hash_id=' . $hash_id]];
     if (($botState['zarinpal'] == 'on' && achbotPayUxAudienceAllowed($connection,'zarinpal',(int)$actor)))
-        $keyboard[] = [['text' => $buttonValues['zarinpal_gateway'], 'url' => $botUrl . 'pay/?zarinpal&hash_id=' . $hash_id]];
+        $keyboard[] = [['text' => $buttonValues['zarinpal_gateway'], 'url' => $botUrl . 'pay/checkout.php?zarinpal&hash_id=' . $hash_id]];
     if (($botState['nextpay'] == 'on' && achbotPayUxAudienceAllowed($connection,'nextpay',(int)$actor)))
-        $keyboard[] = [['text' => $buttonValues['nextpay_gateway'], 'url' => $botUrl . 'pay/?nextpay&hash_id=' . $hash_id]];
+        $keyboard[] = [['text' => $buttonValues['nextpay_gateway'], 'url' => $botUrl . 'pay/checkout.php?nextpay&hash_id=' . $hash_id]];
     $keyboard[] = [['text' => $buttonValues['cancel'], 'callback_data' => 'mainMenu']];
     $keys = json_encode(['inline_keyboard' => $keyboard], JSON_UNESCAPED_UNICODE);
     try {

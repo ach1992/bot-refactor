@@ -331,6 +331,14 @@ return [
 
     // ── اطلاعات و مدیریت اشتراک ──
     'subscription' => [
+        'manual_accounts.import_completed' => ['text'=>"✅ اشتراک <code>{remark}</code> به فهرست اشتراک‌های شما اضافه شد.\nبرای مشاهده و مدیریت آن، «اشتراک‌های من» را باز کنید. برای تمدید، ابتدا از صفحه اشتراک «تغییر پلن» را بزنید و پلن مناسب را انتخاب کنید؛ سپس تمدید را انجام دهید.",'parameters'=>["remark"]],
+
+        'manual_accounts.import_under_review' => "⏳ نتیجه افزودن اشتراک در حال بررسی است. ابتدا فهرست اشتراک‌ها را بررسی کنید و تا مشخص شدن نتیجه، دوباره ثبت نکنید.",
+
+        'manual_accounts.import_unverified' => "⚠️ امکان تأیید این اشتراک وجود ندارد. لینک اصلی اشتراک را از فروشنده بگیرید یا با پشتیبانی تماس بگیرید.",
+
+        'account_details.status_on_hold' => '⏸ در انتظار فعال‌سازی',
+
         // buy_helpers.build_links_and_send_qr
         'buy_helpers.build_links_and_send_qr.acc_text.698f512161' => ['text' => '' . "\r" . '' . "\n" . '🛍 <b>اطلاعات اشتراک جدید شما</b>' . "\r" . '' . "\n" . '' . "\r" . '' . "\n" . '🎈 نام کاربری اشتراک:' . "\r" . '' . "\n" . '<code>{safeRemark}</code>' . "\n" . '📦 حجم اشتراک: {safeVolume} گیگ' . "\n" . '📅 مدت اشتراک: {safeDays} روز' . "\n" . '' . "\n" . '', 'parameters' => ['safeRemark', 'safeVolume', 'safeDays']],
         'buy_helpers.build_links_and_send_qr.acc_text.2f530a8e37' => '🔌 لینک تکی کانفیگ:' . "\n" . '',

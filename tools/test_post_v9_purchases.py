@@ -251,7 +251,9 @@ def stage_source(stage:Path,current:bool)->dict:
     fixture=(ROOT/'tests/v7/native-purchase.php').read_text()
     if current:
         (stage/'presentation-under-test.php').write_bytes(panel_functions.function_bodies((ROOT/'config.php').read_bytes(),['buildSubscriptionPresentation']))
-        fixture=fixture.replace('<?php','<?php\nrequire_once __DIR__ . "/presentation-under-test.php";',1)
+        # Production config loads the real Jalali/date helpers before admin redraws.
+        # Bootstrap that candidate dependency here; the frozen V7 driver stays byte-identical.
+        fixture=fixture.replace('<?php','<?php\nrequire_once __DIR__ . "/settings/jdf.php";\nrequire_once __DIR__ . "/presentation-under-test.php";',1)
     # Stage the same explicitly configured, synthetic bank destination for
     # immutable V9 and current source. Real manual checkout now requires it;
     # do not modify the pinned historical fixture or waive event parity.

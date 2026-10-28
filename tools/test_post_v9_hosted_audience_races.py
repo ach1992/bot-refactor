@@ -48,7 +48,9 @@ def stages_for(w,old,baseline=HEAD):
     stage=w/('hosted-n1-old' if old and baseline!=HEAD else
              ('hosted-old' if old else 'hosted-current'))
     stages.stage_source(stage,True)
-    p=stage/'src/Finance/GatewayInitiation.php'
+    # The archived PHP driver keeps its original include path and bytes.
+    # This old file exists ONLY in the owned RED fixture, never the runtime.
+    p=stage/('src/Finance/GatewayInitiation.php' if old else 'pay/checkout.php')
     source=(subprocess.check_output(['git','show',baseline+':src/Finance/GatewayInitiation.php'],
              cwd=ROOT) if old else p.read_bytes())
     if old:

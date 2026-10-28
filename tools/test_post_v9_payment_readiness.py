@@ -619,6 +619,17 @@ def main() -> dict:
         old.unlink()
         cases.append('retired_runtime_member_blocks')
 
+        # Every retired compatibility path must be absent, even when all new
+        # manifest members match. Extra callable PHP cannot survive extraction.
+        for name in sorted(package.RETIRED_RUNTIME_MEMBERS-{'settings/tronChecker.php'}):
+            old=runtime/name
+            old.parent.mkdir(parents=True,exist_ok=True)
+            old.write_text('<?php // synthetic retired compatibility member\n')
+            code,result,_=report_run(d)
+            require(code==2 and has(result,'source_identity','BLOCK'),'retired_path_'+name)
+            old.unlink()
+            cases.append('retired_runtime_member_blocks__'+name.replace('/','_').replace('.','_'))
+
         # Current final payment/cohort SQL explicitly FORCE INDEXes these
         # original-schema keys. No safe smoke can ignore a missing name.
         statement(d, 'ALTER TABLE users DROP INDEX idx_users_userid_v1')

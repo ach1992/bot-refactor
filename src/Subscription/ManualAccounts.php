@@ -9,32 +9,36 @@ require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
 
 //Added by ACh
 
-if (preg_match("/^addSubscriptionToCustomer(\d+)/", $data, $match)) {
-    $serverId = intval($match[1]);
-    $tempData = json_decode($userInfo['temp'], true) ?: [];
-    
-    if ($from_id != $admin && $userInfo['isAdmin'] != true) {
-        alert(\achbotMessage('subscription.manual_accounts.alert.03aea25611'));
-        exit();
+if (preg_match('/^addSubscriptionToCustomer([1-9][0-9]*)$/D',(string)$data,$match)) {
+    $serverId=(int)$match[1];$actor=(int)$from_id;
+    if (!function_exists('achbotExternalImportFrame') || !achbotExternalImportFrame($update,$actor,(string)$data)) return;
+    $tempData=json_decode((string)($userInfo['temp']??''),true)?:[];
+    if ((int)($tempData['server_id']??0)!==$serverId || empty($tempData['import_url'])) {
+        alert(\achbotMessage('subscription.manual_accounts.import_unverified'),true);return;
     }
-
-    $tempData['awaiting_userid_for_add'] = true;
-    $tempData['selected_server_id'] = $serverId;
-    $tempData['addToCustomerClicked'] = true;
-
-    $stmt = $connection->prepare("UPDATE `users` SET `temp` = ? WHERE `userid` = ?");
-    $tempJson = json_encode($tempData, JSON_UNESCAPED_UNICODE);
-    $stmt->bind_param("si", $tempJson, $from_id);
-    $stmt->execute();
-    $stmt->close();
-
+    try {
+        if (!$connection->begin_transaction()) throw new RuntimeException('import_select_begin');
+        $q=$connection->prepare('SELECT id,userid,isAdmin,step,temp FROM users WHERE userid=? LIMIT 2 FOR UPDATE');
+        $q->bind_param('i',$actor);$q->execute();$rows=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
+        if (count($rows)!==1 || $rows[0]['step']==='banned' || $rows[0]['temp']!==($userInfo['temp']??null) ||
+            ($actor!==(int)$admin && (int)$rows[0]['isAdmin']!==1)) {
+            $connection->rollback();alert(\achbotMessage('subscription.manual_accounts.alert.03aea25611'),true);return;
+        }
+        $tempData['awaiting_userid_for_add']=true;$tempData['selected_server_id']=$serverId;$tempData['addToCustomerClicked']=true;
+        $tempJson=json_encode($tempData,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);$id=(int)$rows[0]['id'];
+        $q=$connection->prepare("UPDATE users SET temp=?,step='awaiting_userid_input' WHERE id=? AND userid=?");
+        $q->bind_param('sii',$tempJson,$id,$actor);$q->execute();$q->close();
+        if (!$connection->commit()) throw new RuntimeException('import_select_commit_unknown');
+    } catch (Throwable $error) {
+        try {$connection->rollback();} catch (Throwable $ignored) {}
+        error_log('achbot_import_customer_selection_deferred');return;
+    }
     $msg = \achbotMessage('subscription.manual_accounts.msg.a88437a461');
     $keyboard = [
         [['text' => $buttonValues['back_to_main'], 'callback_data' => 'mainMenu']]
     ];
 
     sendMessage($msg, json_encode(['inline_keyboard' => $keyboard]), "html", $from_id);
-    setUser("awaiting_userid_input", "step");
     exit();
 }
 
@@ -200,166 +204,96 @@ function detectServerIdFromRemark($connection, $remark, $defaultServerId = 0) {
     return $defaultServerId;
 }
 
-if (preg_match("/^addToOrders(\d+)/", $data, $match)) {
-    $tempData = json_decode($userInfo['temp'], true) ?: [];
 
-    $uuid = trim($tempData['uuid'] ?? '');
-    $remark = trim($tempData['remark'] ?? '');
-    $serverIdFromTemp = intval($tempData['server_id'] ?? 0);
-
-    $finalUserId = !empty($tempData['custom_userid']) ? intval($tempData['custom_userid']) : $from_id;
-
-    if (empty($remark)) {
-        alert(\achbotMessage('subscription.manual_accounts.detect_server_id_from_remark.alert.0e59a3d9a8'));
-        exit();
-    }
-
-    $serverId = detectServerIdFromRemark(
-        $connection,
-        $remark,
-        $serverIdFromTemp > 0 ? $serverIdFromTemp : 2
-    );
-
-    $stmt = $connection->prepare("SELECT `id` FROM `orders_list` WHERE `userid` = ? AND `remark` = ? LIMIT 1");
-    $stmt->bind_param("is", $finalUserId, $remark);
-    $stmt->execute();
-    $exists = $stmt->get_result()->num_rows > 0;
-    $stmt->close();
-
-    if ($exists) {
-        alert(\achbotMessage('subscription.manual_accounts.detect_server_id_from_remark.alert.4c5aeb77e7'));
-        exit();
-    }
-
-    $stmt = $connection->prepare("
-        SELECT `token`
-        FROM `add_link`
-        WHERE `added_by` = ? AND `remark` = ?
-        ORDER BY `created_at` DESC
-        LIMIT 1
-    ");
-    $stmt->bind_param("is", $from_id, $remark);
-    $stmt->execute();
-    $result = $stmt->get_result();
-
-    $token = '';
-    if ($result->num_rows > 0) {
-        $row = $result->fetch_assoc();
-        $token = $row['token'];
-    }
-    $stmt->close();
-
-    if (empty($token)) {
-        alert(\achbotMessage('subscription.manual_accounts.detect_server_id_from_remark.alert.eade9d3428'));
-        exit();
-    }
-
-    $connection->begin_transaction();
-
+if (preg_match('/^addToOrders([1-9][0-9]*)$/D',(string)$data,$match)) {
+    $actor=(int)$from_id;$serverId=(int)$match[1];$begun=false;$committed=false;
     try {
-        $now = time();
-        $expire_date = ($serverId == 3) ? $now + (5 * 365 * 86400) : $now + (30 * 86400);
-
-        $userid = strval($finalUserId);
-        $transid = "";
-        $fileid = 0;
-        $inbound_id = 0;
-        $protocol = "";
-        $link = '[""]';
-        $amount = 100;
-        $status = 1;
-        $date = time() - (1 * 30 * 86400);
-        $notif = 0;
-        $rahgozar = 0;
-        $agent_bought = 0;
-
-        $stmt = $connection->prepare("
-            INSERT INTO `orders_list`
-            (`userid`, `token`, `transid`, `fileid`, `server_id`, `inbound_id`, `remark`, `uuid`, `protocol`, `expire_date`, `link`, `amount`, `status`, `date`, `notif`, `rahgozar`, `agent_bought`)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ");
-
-        $stmt->bind_param(
-            "sssisississsiiiii",
-            $userid,
-            $token,
-            $transid,
-            $fileid,
-            $serverId,
-            $inbound_id,
-            $remark,
-            $uuid,
-            $protocol,
-            $expire_date,
-            $link,
-            $amount,
-            $status,
-            $date,
-            $notif,
-            $rahgozar,
-            $agent_bought
-        );
-
-        $stmt->execute();
-        $stmt->close();
-
-        $connection->commit();
-
-        alert(\achbotMessage('subscription.manual_accounts.detect_server_id_from_remark.alert.ecf2df32d7'));
-
-        $msg = \achbotMessage('subscription.manual_accounts.detect_server_id_from_remark.msg.10aa1e12ec', ['remark' => $remark]);
-
-        $keyboard = [
-            [
-                ['text' => $buttonValues['my_subscriptions'], 'callback_data' => 'mySubscriptions'],
-                ['text' => $buttonValues['back_to_main'], 'callback_data' => 'mainMenu']
-            ]
-        ];
-
-        sendMessage($msg, json_encode(['inline_keyboard' => $keyboard]), "html", $finalUserId);
-
-        $stmt = $connection->prepare("SELECT `id` FROM `orders_list` WHERE `userid` = ? AND `remark` = ? ORDER BY `id` DESC LIMIT 1");
-        $stmt->bind_param("is", $finalUserId, $remark);
-        $stmt->execute();
-        $result = $stmt->get_result();
-        $orderRow = $result->fetch_assoc();
-        $orderId = $orderRow['id'] ?? 0;
-        $stmt->close();
-
-        if ($orderId > 0) {
-            $inlineKeyboard = json_encode([
-                'inline_keyboard' => [
-                    [['text' => \achbotMessage('subscription.manual_accounts.detect_server_id_from_remark.button.48f23552b7'), 'callback_data' => "quickUserOrderDetails_{$orderId}"]]
-                ]
-            ]);
-
-            $adminMessage = \achbotMessage('subscription.manual_accounts.detect_server_id_from_remark.admin_message.7e7a367cc0', ['finalUserId' => $finalUserId, 'first_name' => $first_name, 'username' => $username, 'remark' => $remark]);
-
-            sendMessage($adminMessage, $inlineKeyboard, "html", $admin);
-            sendToAllAdmins('sendMessage', [
-                'text' => $adminMessage,
-                'parse_mode' => "html",
-                'reply_markup' => $inlineKeyboard
-            ]);
+        if (!function_exists('achbotExternalImportFrame') ||
+            !achbotExternalImportFrame($update,$actor,(string)$data)) return;
+        $tempData=json_decode((string)($userInfo['temp']??''),true)?:[];
+        $remark=trim((string)($tempData['remark']??''));
+        $input=(string)($tempData['import_url']??'');
+        if ($remark==='' || $input==='' || (int)($tempData['server_id']??0)!==$serverId ||
+            (isset($tempData['selected_server_id']) && (int)$tempData['selected_server_id']!==$serverId))
+            throw new RuntimeException('import_identity_missing');
+        $role=$connection->prepare('SELECT id,userid,isAdmin,step,temp FROM users WHERE userid=? LIMIT 2');
+        $role->bind_param('i',$actor);$role->execute();$actors=$role->get_result()->fetch_all(MYSQLI_ASSOC);$role->close();
+        if (count($actors)!==1 || $actors[0]['step']==='banned' ||
+            $actors[0]['temp']!==($userInfo['temp']??null)) throw new RuntimeException('import_stale');
+        $adminActor=$actor===(int)$admin || (int)$actors[0]['isAdmin']===1;
+        $finalUserId=isset($tempData['custom_userid'])?(int)$tempData['custom_userid']:$actor;
+        if ($finalUserId<=0 || ($finalUserId!==$actor && !$adminActor)) throw new RuntimeException('import_actor');
+        $q=$connection->prepare("SELECT c.* FROM server_config c JOIN server_info i ON i.id=c.id WHERE c.id=? AND i.active=1 AND c.type='marzban'");
+        $q->bind_param('i',$serverId);$q->execute();$server=$q->get_result()->fetch_assoc();$q->close();
+        if (!$server) throw new RuntimeException('import_provider_identity');
+        $remote=achbotProviderUser($serverId,$remark,false);
+        $proof=is_object($remote) && ($remote->username??null)===$remark?achbotExternalImportProof($server,$remote,$input):null;
+        if (!$proof) throw new RuntimeException('import_proof');
+        // Exact token/endpoint proof is rechecked at import; prefixes and default
+        // server IDs are never identity, and native expiry is never invented.
+        if (!$connection->begin_transaction()) throw new RuntimeException('import_begin');$begun=true;
+        $q=$connection->prepare('SELECT id,userid,isAdmin,step,temp FROM users WHERE id=? FOR UPDATE');
+        $id=(int)$actors[0]['id'];$q->bind_param('i',$id);$q->execute();$current=$q->get_result()->fetch_assoc();$q->close();
+        if (!$current || (int)$current['userid']!==$actor || $current['step']!==$actors[0]['step'] ||
+            $current['temp']!==$actors[0]['temp'] || ($finalUserId!==$actor && $actor!==(int)$admin && (int)$current['isAdmin']!==1))
+            throw new RuntimeException('import_stale');
+        $q=$connection->prepare('SELECT id FROM users WHERE userid=? LIMIT 2');
+        $q->bind_param('i',$finalUserId);$q->execute();$targetCount=$q->get_result()->num_rows;$q->close();
+        if ($targetCount!==1) throw new RuntimeException('import_target_missing');
+        $q=$connection->prepare("SELECT c.* FROM server_config c JOIN server_info i ON i.id=c.id WHERE c.id=? AND i.active=1 AND c.type='marzban' FOR UPDATE");
+        $q->bind_param('i',$serverId);$q->execute();$currentServer=$q->get_result()->fetch_assoc();$q->close();
+        if (!$currentServer || $currentServer['panel_url']!==$server['panel_url'] ||
+            $currentServer['username']!==$server['username'] || $currentServer['password']!==$server['password'] ||
+            (string)($currentServer['sub_links']??'')!==(string)($server['sub_links']??'')) throw new RuntimeException('import_server_changed');
+        $q=$connection->prepare('SELECT id FROM orders_list WHERE server_id=? AND remark=? LIMIT 1 FOR UPDATE');
+        $q->bind_param('is',$serverId,$remark);$q->execute();$exists=$q->get_result()->num_rows>0;$q->close();
+        if ($exists) throw new RuntimeException('import_already_attached');
+        $q=$connection->prepare('SELECT token FROM add_link WHERE added_by=? AND remark=? AND BINARY token=BINARY ? LIMIT 1 FOR UPDATE');
+        $token=$proof['token'];$q->bind_param('iss',$actor,$remark,$token);$q->execute();$credential=$q->get_result()->fetch_assoc();$q->close();
+        if (!$credential) throw new RuntimeException('import_credential_missing');
+        $uuid='';
+        if (is_object($remote->proxies??null)) {
+            foreach (['vmess'=>'id','vless'=>'id','trojan'=>'password'] as $protocol=>$key)
+                if (is_string($remote->proxies->{$protocol}->{$key}??null)) {$uuid=$remote->proxies->{$protocol}->{$key};break;}
         }
-
-        unset($tempData['custom_userid']);
-        unset($tempData['awaiting_userid_for_add']);
-        unset($tempData['selected_server_id']);
-        unset($tempData['addToCustomerClicked']);
-
-        $stmt = $connection->prepare("UPDATE `users` SET `temp` = ? WHERE `userid` = ?");
-        $tempJson = json_encode($tempData, JSON_UNESCAPED_UNICODE);
-        $stmt->bind_param("si", $tempJson, $from_id);
-        $stmt->execute();
-        $stmt->close();
-
-    } catch (Exception $e) {
-        $connection->rollback();
-        alert(\achbotMessage('subscription.manual_accounts.detect_server_id_from_remark.alert.6b70d2424a'));
-        exit();
+        $links=[];
+        foreach (is_array($remote->links??null)?$remote->links:[] as $uri) if (is_string($uri)) $links[]=$uri;
+        $link=json_encode($links,JSON_THROW_ON_ERROR);$expiry=(int)$proof['expiry'];$now=time();
+        // Preserve the existing imported-service UI classification; this is
+        // neither a pays record nor a financial credit/debit.
+        $q=$connection->prepare("INSERT INTO orders_list(userid,token,transid,fileid,server_id,inbound_id,remark,uuid,protocol,expire_date,link,amount,status,date,notif,rahgozar,agent_bought) VALUES(?,?,'',0,?,0,?,?,'',?,?,100,1,?,0,0,0)");
+        $user=(string)$finalUserId;
+        $q->bind_param('ssissisi',$user,$token,$serverId,$remark,$uuid,$expiry,$link,$now);
+        if (!$q->execute() || $q->affected_rows!==1) throw new RuntimeException('import_insert');
+        $orderId=(int)$q->insert_id;$q->close();
+        $q=$connection->prepare("UPDATE users SET temp=NULL,step='none' WHERE id=? AND userid=?");
+        $q->bind_param('ii',$id,$actor);$q->execute();$q->close();
+        try {if (!$connection->commit()) throw new RuntimeException('import_commit_unknown');}
+        catch (Throwable $error) {throw new RuntimeException('import_commit_unknown');}
+        $begun=false;$committed=true;
+        alert(\achbotMessage('subscription.manual_accounts.detect_server_id_from_remark.alert.ecf2df32d7'));
+        $msg=\achbotMessage('subscription.manual_accounts.import_completed',[
+            'remark'=>htmlspecialchars($remark,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8')]);
+        $keys=json_encode(['inline_keyboard'=>[[
+            ['text'=>$buttonValues['my_subscriptions'],'callback_data'=>'mySubscriptions'],
+            ['text'=>$buttonValues['back_to_main'],'callback_data'=>'mainMenu']
+        ]]]);
+        sendMessage($msg,$keys,'HTML',$finalUserId);
+        if ($adminActor) {
+            $keys=json_encode(['inline_keyboard'=>[[['text'=>\achbotMessage('subscription.manual_accounts.detect_server_id_from_remark.button.48f23552b7'),'callback_data'=>'quickUserOrderDetails_'.$orderId]]]]);
+            $adminMessage=\achbotMessage('subscription.manual_accounts.detect_server_id_from_remark.admin_message.7e7a367cc0',[
+                'finalUserId'=>$finalUserId,'first_name'=>htmlspecialchars((string)$first_name,ENT_QUOTES,'UTF-8'),
+                'username'=>htmlspecialchars((string)$username,ENT_QUOTES,'UTF-8'),'remark'=>htmlspecialchars($remark,ENT_QUOTES,'UTF-8')]);
+            sendMessage($adminMessage,$keys,'HTML',$admin);
+        }
+    } catch (Throwable $error) {
+        if ($begun) {try {$connection->rollback();} catch (Throwable $ignored) {}}
+        $reason=$error instanceof RuntimeException && in_array($error->getMessage(),['import_identity_missing','import_stale','import_actor','import_provider_identity','import_proof','import_begin','import_target_missing','import_server_changed','import_already_attached','import_credential_missing','import_insert','import_commit_unknown'],true)?$error->getMessage():'import_unavailable';
+        error_log('achbot_existing_subscription_import_deferred reason='.$reason.' class='.get_class($error).' line='.$error->getLine());
+        if ($committed) return;
+        if ($error instanceof RuntimeException && $error->getMessage()==='import_commit_unknown')
+            sendMessage(\achbotMessage('subscription.manual_accounts.import_under_review'));
+        else alert(\achbotMessage('subscription.manual_accounts.import_unverified'),true);
     }
-
-    exit();
+    return;
 }
-

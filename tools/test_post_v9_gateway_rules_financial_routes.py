@@ -117,7 +117,7 @@ PAUSE=r"""
 """
 def hosted_stage(w):
     stage=w/'r1-hosted-stage';stages.stage_source(stage,True)
-    p=stage/'src/Finance/GatewayInitiation.php';src=p.read_text()
+    p=stage/'pay/checkout.php';src=p.read_text()
     anchor='        achbotPayUxLockDraftOwner($db,$ownerId);'
     assert src.count(anchor)==1
     p.write_text(src.replace(anchor,PAUSE+anchor,1))

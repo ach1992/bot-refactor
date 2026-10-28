@@ -2223,20 +2223,80 @@ function achbotAutoRenewAccountExclusiveLocked(
     return $found;
 }
 
+/**
+ * Scheduled deletion must not race an unfinished local payment/effect.
+ * Existing completed payment evidence remains untouched. Called only while the
+ * exact order row and cycle are locked by the scheduled-deletion reservation.
+ */
+function achbotScheduledDeletionEffectsSettled(mysqli $db,array $order): bool {
+    $mode=achbotManualLedgerMode($db);
+    if ($mode==='invalid') return false;
+    $id=(int)$order['id'];
+    $pattern='^INCREASE_(DAY|VOLUME)_'.$id.'_';
+    $stmt=$db->prepare("SELECT id,state FROM pays WHERE (order_id=? OR type REGEXP ?) AND state NOT IN ('approved','paid_with_wallet') ORDER BY id FOR UPDATE");
+    if (!$stmt) return false;
+    $stmt->bind_param('is',$id,$pattern);
+    if (!$stmt->execute()) {$stmt->close();return false;}
+    $payments=$stmt->get_result()->fetch_all(MYSQLI_ASSOC);$stmt->close();
+    foreach ($payments as $payment) {
+        // These states are committed only with the verified local effect.
+        // A manual receipt's attempt can legitimately remain stage=review.
+        if (in_array($payment['state'],['approved','paid_with_wallet'],true)) continue;
+        $attempt=null;
+        if ($mode==='current') {
+            $payId=(int)$payment['id'];
+            $stmt=$db->prepare('SELECT stage FROM payment_attempts WHERE pay_row_id=? FOR UPDATE');
+            if (!$stmt) return false;
+            $stmt->bind_param('i',$payId);
+            if (!$stmt->execute()) {$stmt->close();return false;}
+            $attempt=$stmt->get_result()->fetch_assoc();$stmt->close();
+        }
+        if ($payment['state']==='paid' && ($attempt['stage']??null)==='done') continue;
+        if (in_array($payment['state'],['canceled','cancelled','rejected','expired'],true) &&
+            ($attempt===null || in_array($attempt['stage'],['expired','done'],true))) continue;
+        // Pending quotes, receipt review, processing and uncertain outcomes
+        // retain the service until their owner resolves the payment.
+        return false;
+    }
+    $result=$db->query("SELECT TABLE_TYPE,ENGINE FROM information_schema.TABLES
+        WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='service_effects'");
+    if (!($result instanceof mysqli_result)) return false;
+    $table=$result->fetch_assoc();
+    if ($table!==null) {
+        if ($result->num_rows!==1 || $table['TABLE_TYPE']!=='BASE TABLE' ||
+            strcasecmp((string)$table['ENGINE'],'InnoDB')!==0) return false;
+        $remark=(string)$order['remark'];
+        $stmt=$db->prepare("SELECT target_server_id FROM service_effects
+            WHERE remote_username=? AND state<>'local_recorded' FOR UPDATE");
+        if (!$stmt) return false;
+        $stmt->bind_param('s',$remark);
+        if (!$stmt->execute()) {$stmt->close();return false;}
+        $effects=$stmt->get_result()->fetch_all(MYSQLI_ASSOC);$stmt->close();
+        foreach ($effects as $effect)
+            if (achbotAutoRenewSameAccount($db,(int)$order['server_id'],(int)$effect['target_server_id']))
+                return false;
+    }
+    return true;
+}
+
 /** Legacy order deletion gate: lock + flag OFF before remote destructive call. */
-function achbotAutoRenewPrepareDeletion(mysqli $db, int $orderId): bool {
+function achbotAutoRenewPrepareDeletion(mysqli $db, int $orderId,?array $expected=null): bool {
     if ($orderId<=0) return false;
     $schema=achbotAutoRenewSchemaState($db);
     if ($schema==='incompatible') return false;
     try {
         $db->begin_transaction();
-        $stmt=$db->prepare("SELECT id,server_id,remark,status FROM orders_list
+        $stmt=$db->prepare("SELECT id,server_id,remark,status,notif,expire_date FROM orders_list
             WHERE id=? FOR UPDATE");
         $stmt->bind_param('i',$orderId);
         $stmt->execute();
         $order=$stmt->get_result()->fetch_assoc();
         $stmt->close();
         if (!$order || (int)$order['status']!==1 ||
+            ($expected!==null && ((int)$order['expire_date']!==(int)$expected['expire_date'] ||
+                (int)$order['notif']!==(int)$expected['notif'] ||
+                (int)$order['server_id']!==(int)$expected['server_id'] ||
+                $order['remark']!==$expected['remark'])) ||
             !achbotAutoRenewAccountExclusiveLocked($db,$orderId,
             (int)$order['server_id'],(string)$order['remark'])) {
             $db->rollback(); return false;
@@ -2249,6 +2309,9 @@ function achbotAutoRenewPrepareDeletion(mysqli $db, int $orderId): bool {
             $pending=$stmt->get_result()->fetch_assoc();
             $stmt->close();
             if ($pending) { $db->rollback(); return false; }
+        }
+        if ($expected!==null && !achbotScheduledDeletionEffectsSettled($db,$order)) {
+            $db->rollback();return false;
         }
         // Durable deletion fence before remote DELETE. Any uncertain remote
         // result cannot cause an unattended repeated delete or new renewal.

@@ -460,10 +460,7 @@ if (!function_exists('achbotSupportsPaymentSubject')) {
         $type = (string)($pay['type'] ?? '');
         // Wallet top-ups are deliberately not tied to VPN providers.
         if ($type === 'INCREASE_WALLET') return true;
-        if (achbotProviderType($connection,(int)($pay['server_id']??0))==='pasarguard') {
-            try {achbotPgQuote($connection,(int)($pay['id']??0));}
-            catch (Throwable $error) {return false;}
-        }
+        if (!achbotProviderQuoteEligible($connection,$pay)) return false;
         $pid = (int)($pay['plan_id'] ?? 0);
         $uid = (int)($pay['user_id'] ?? 0);
         if ($type === 'BUY_SUB') {
@@ -541,19 +538,14 @@ if (!function_exists('achbotApplyServiceEdit')) {
         $type=(string)($panel['type']??'');
         if ($giftTarget!==null) {
             require_once __DIR__ . '/../Subscription/GiftBatch.php';
-            if (!in_array($type,['marzban','pasarguard'],true) ||
+            if (!achbotSupportsAccount($type,0) ||
                 !achbotGiftTargetMatches($db,$serverId,$giftTarget))
                 return (object)['success'=>false,'uncertain'=>true,
                                 'msg'=>'gift_service_target_changed'];
         }
         // The transport-specific code only exists inside its own adapter.
         // No speculative fallback or implicit behavior for future panels.
-        $outcome=match($type) {
-            'marzban'=>editMarzbanConfig($serverId,$change,$giftTarget),
-            'pasarguard'=>achbotPgServiceEdit($db,$serverId,$change,$giftTarget),
-            default=>(object)['success'=>false,'uncertain'=>false,
-                              'msg'=>'unsupported_service_adapter'],
-        };
+        $outcome=achbotProviderServiceEdit($db,$type,$serverId,$change,$giftTarget);
         if (!is_object($outcome) && !is_array($outcome))
             return (object)['success'=>false,'uncertain'=>true,
                             'msg'=>'service_edit_invalid_outcome'];

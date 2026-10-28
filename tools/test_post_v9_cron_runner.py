@@ -26,9 +26,9 @@ ROOT = Path(__file__).resolve().parents[1]
 RUNNER = ROOT / "settings" / "cronRunner.php"
 JOBS = (
     "gift2all.php",
-    "messagewizwiz.php",
+    "broadcast",
     "rewardReport.php",
-    "warnusers.php",
+    "services",
 )
 
 # This is deliberately the ACTUAL coordinator source, not a copy of its logic.
@@ -37,7 +37,7 @@ JOBS = (
 PHP_CLI_OPTS = ("-n", "-d", "extension=posix")
 CHILD_PHP = r"""<?php
 $name = basename(__FILE__);
-$line = $name . "|" . getcwd() . "|" . PHP_BINARY . "\n";
+$line = $name . "|" . getcwd() . "|" . PHP_BINARY . "|" . getmypid() . "\n";
 file_put_contents(getenv('ACHBOT_TEST_ONLY_TRACE'), $line, FILE_APPEND | LOCK_EX);
 if ($name === getenv('ACHBOT_TEST_ONLY_PAUSE')) {
     $release = getenv('ACHBOT_TEST_ONLY_RELEASE');
@@ -78,13 +78,26 @@ def setup(root: Path) -> tuple[Path, Path]:
     entrypoint = settings / RUNNER.name
     entrypoint.write_bytes(RUNNER.read_bytes())
     for name in JOBS:
-        (settings / name).write_text(CHILD_PHP, encoding="utf-8")
+        if name.endswith('.php'):
+            (settings/name).write_text(CHILD_PHP,encoding='utf-8')
+    (root/'baseInfo.php').write_text('<?php /* owned fixture */')
+    (root/'config.php').write_text("<?php $buttonValues=['start_bot'=>'Fixture'];$botUsername='fixture';$connection=null;")
+    (settings/'jdf.php').write_text('<?php /* owned fixture */')
+    for rel in ['src/Jobs','src/Notifications','src/Finance']:
+        (root/rel).mkdir(parents=True,exist_ok=True)
+    (root/'src/Jobs/Checkpoint.php').write_text('<?php /* owned fixture */')
+    (root/'src/Jobs/MessageActions.php').write_text(CHILD_PHP.replace('$name = basename(__FILE__);',"$name = 'broadcast';"))
+    (root/'src/Jobs/BroadcastSend.php').write_text('<?php /* owned fixture */')
+    (root/'src/Notifications/Warnings.php').write_text(CHILD_PHP.replace('$name = basename(__FILE__);',"$name = 'services';"))
+    (root/'src/Finance/AutomaticRenewal.php').write_text('<?php /* owned fixture */')
+    (root/'src/Finance/PaymentLifecycle.php').write_text('<?php function achbotPayUxMaintain($db) {}')
+
     work = root / "owned-cwd"
     work.mkdir()
     return entrypoint, work
 
 
-def http_rejection(php: str, root: Path, env: dict[str, str]) -> bool:
+def http_rejection(php: str, root: Path, env: dict[str, str],path: str="settings/cronRunner.php") -> bool:
     sock = socket.socket()
     sock.bind(("127.0.0.1", 0))
     port = sock.getsockname()[1]
@@ -107,7 +120,7 @@ def http_rejection(php: str, root: Path, env: dict[str, str]) -> bool:
                 raise RuntimeError("Owned PHP HTTP server not ready")
             try:
                 with urllib.request.urlopen(
-                    f"http://127.0.0.1:{port}/settings/cronRunner.php", timeout=5
+                    f"http://127.0.0.1:{port}/{path}", timeout=5
                 ) as response:
                     status = response.status
             except urllib.error.HTTPError as error:
@@ -319,6 +332,57 @@ def main() -> None:
                 crashed.wait(timeout=3)
         trace.unlink()
 
+        # Simulate a hard coordinator crash DURING a financial worker. The
+        # orphan child must retain fd 3's kernel lease until that child exits.
+        crash_release = root / "release-canonical-orphan"
+        crash_env = {**env, "ACHBOT_TEST_ONLY_PAUSE": JOBS[1],
+                     "ACHBOT_TEST_ONLY_RELEASE": str(crash_release)}
+        crashed = subprocess.Popen(
+            [php, *PHP_CLI_OPTS, str(entrypoint)],
+            cwd=work, env=crash_env, stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        try:
+            for _ in range(200):
+                if trace.exists() and len(trace.read_text().splitlines()) >= 2:
+                    break
+                if crashed.poll() is not None:
+                    raise RuntimeError("Coordinator died before crash simulation")
+                time.sleep(0.02)
+            else:
+                raise RuntimeError("Worker never reached crash simulation")
+            crashed.kill()
+            crashed.wait(timeout=3)
+            in_flight = cmd(php, entrypoint, work, env)
+            check("orphaned_canonical_worker_retains_lock_after_parent_kill",
+                  in_flight.returncode == 0
+                  and "previous invocation active; skipping" in in_flight.stderr
+                  and len(trace.read_text().splitlines()) == 2)
+            crash_release.touch()
+            # Wait for the orphaned fixture to exit and release its kernel fd.
+            for _ in range(200):
+                with lock_file.open("rb") as h:
+                    try:
+                        fcntl.flock(h.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    except BlockingIOError:
+                        time.sleep(0.02)
+                    else:
+                        fcntl.flock(h.fileno(), fcntl.LOCK_UN)
+                        break
+            else:
+                raise RuntimeError("Orphan worker did not release lock")
+            trace.unlink()
+            recovered = cmd(php, entrypoint, work, env)
+            check("new_run_recovers_after_orphan_canonical_worker_exit",
+                  recovered.returncode == 0
+                  and len(trace.read_text().splitlines()) == len(JOBS))
+        finally:
+            crash_release.touch()
+            if crashed.poll() is None:
+                crashed.kill()
+                crashed.wait(timeout=3)
+        trace.unlink()
+
         web_lock_dir = root / "web-exposed-locks"
         web_lock_dir.mkdir(mode=0o700)
         web_env = {**env, "ACHBOT_CRON_LOCK_DIR": str(web_lock_dir)}
@@ -432,6 +496,52 @@ def main() -> None:
               disabled_flock.returncode == 78
               and "no tasks started" in disabled_flock.stderr
               and not trace.exists())
+        direct=cmd(php,entrypoint,work,env,'--job=broadcast')
+        check('direct_child_without_inherited_lease_denied',
+              direct.returncode==78 and not trace.exists())
+        wrong=cmd(php,entrypoint,work,env,'--job=unknown')
+        check('unknown_child_mode_denied',wrong.returncode==64 and not trace.exists())
+        def child_with_fd(fd,job='broadcast',php_options=()):
+            return subprocess.run([php,*PHP_CLI_OPTS,*php_options,str(entrypoint),'--job='+job],
+                cwd=work,env=env,capture_output=True,text=True,timeout=18,
+                pass_fds=(fd,),preexec_fn=lambda:os.dup2(fd,3,inheritable=True))
+        lock_file.write_text('');lock_file.chmod(0o600)
+        with lock_file.open('rb') as independent_fd:
+            unheld=child_with_fd(independent_fd.fileno())
+            check('independent_unlocked_fd_is_not_child_admission',
+                  unheld.returncode==78 and not trace.exists())
+            fcntl.flock(independent_fd.fileno(),fcntl.LOCK_SH)
+            read_only_lease=child_with_fd(independent_fd.fileno())
+            check('shared_read_flock_is_not_exclusive_worker_lease',
+                  read_only_lease.returncode==78 and not trace.exists())
+            fcntl.flock(independent_fd.fileno(),fcntl.LOCK_UN)
+        unrelated=lock_dir/'unrelated-held-file'
+        unrelated.write_text('');unrelated.chmod(0o600)
+        with unrelated.open('rb') as wrong_fd:
+            fcntl.flock(wrong_fd.fileno(),fcntl.LOCK_EX)
+            wrong_inode=child_with_fd(wrong_fd.fileno())
+            check('different_exclusively_locked_inode_denied',
+                  wrong_inode.returncode==78 and not trace.exists())
+        with lock_file.open('rb') as held_fd:
+            fcntl.flock(held_fd.fileno(),fcntl.LOCK_EX)
+            no_fdinfo=child_with_fd(held_fd.fileno(),php_options=('-d','disable_functions=file_get_contents'))
+            check('missing_kernel_fdinfo_capability_denies_child',
+                  no_fdinfo.returncode==78 and not trace.exists())
+            admitted=child_with_fd(held_fd.fileno())
+            check('canonical_broadcast_child_runs_only_under_inherited_lease',
+                  admitted.returncode==0 and len(trace.read_text().splitlines())==1 and
+                  trace.read_text().split('|')[0]=='broadcast')
+            with lock_file.open('rb') as probe:
+                retained=False
+                try:fcntl.flock(probe.fileno(),fcntl.LOCK_EX|fcntl.LOCK_NB)
+                except BlockingIOError:retained=True
+                check('canonical_child_never_unlocks_parent_open_file_description',retained)
+            fcntl.flock(held_fd.fileno(),fcntl.LOCK_UN)
+        trace.unlink()
+        check('retired_worker_wrappers_and_values_are_not_staged',
+              all(not (entrypoint.parent/name).exists() for name in ['messagewizwiz.php','warnusers.php','values.php']))
+        missing_proc=cmd(php,entrypoint,work,env,'--job=services',disable_proc=True)
+        check('child_mode_missing_process_capability_denied',missing_proc.returncode==78 and not trace.exists())
         env["ACHBOT_TEST_ONLY_FAIL"] = JOBS[1]
         failing = cmd(php, entrypoint, work, env)
         lines = trace.read_text().splitlines()
@@ -474,17 +584,48 @@ def main() -> None:
               http_rejection(php, root, env) and not trace.exists())
 
         text = RUNNER.read_text()
+        pattern_start=text.index(chr(39)+'/^lock:')+1
+        lock_pattern=text[pattern_start:text.index(chr(39)+',',pattern_start)]
+        records=[
+            ("lock:\\t1: FLOCK  ADVISORY  WRITE 282947 00:26:4990488 0 EOF\\n",True),
+            ("lock: 123: FLOCK ADVISORY WRITE 1 1a:0F:999999999 0 EOF\\n",True),
+            ("lock: 1: FLOCK ADVISORY READ 12 00:26:4990488 0 EOF\\n",False),
+            ("lock: 1: POSIX ADVISORY WRITE 12 00:26:4990488 0 EOF\\n",False),
+            ("lock: 1: FLOCK ADVISORY WRITE 12 00:26:4990488 1 EOF\\n",False),
+            ("lock: 1: FLOCK ADVISORY WRITE 12 00:26:4990488 0 100\\n",False),
+            ("lock: 1: FLOCK ADVISORY WRITE 12 00:26:4990488 0 EOF trailing\\n",False),
+            ("ino: 4990488\\n",False),
+        ]
+        records=[(v.replace(chr(92)+'t',chr(9)).replace(chr(92)+'n',chr(10)),ok)for v,ok in records]
+        # Python strings above are transmitted as data; PHP executes the exact
+        # regex extracted from the actual coordinator, never an imitation.
+        probe=r'$s=json_decode(stream_get_contents(STDIN),true);$out=[];foreach($s["records"]as$r)$out[]=preg_match($s["pattern"],$r[0])===1;echo json_encode($out);'
+        parsed=json.loads(subprocess.check_output([php,'-r',probe],
+            input=json.dumps({'pattern':lock_pattern,'records':records}).encode()))
+        check('inherited_lease_fdinfo_parser_native_spaces_and_negative_controls',
+              parsed==[ok for _,ok in records])
         check("observed_chili_order_bounded_and_explicit",
-              all(text.count("'" + x + "'") == 1 for x in JOBS)
-              and text.index("'" + JOBS[0] + "'") <
-                  text.index("'" + JOBS[1] + "'") <
-                  text.index("'" + JOBS[2] + "'")
-                  and len(JOBS) == 4
-                  and "tronChecker.php" not in text)
+              all(text[text.index('$jobs=['):].count("'name'=>'"+x+"'")==1 for x in JOBS)
+              and text.index("'name'=>'"+JOBS[0]+"'") < text.index("'name'=>'"+JOBS[1]+"'") <
+                  text.index("'name'=>'"+JOBS[2]+"'") < text.index("'name'=>'"+JOBS[3]+"'")
+              and len(JOBS)==4 and "tronChecker.php" not in text)
+        for real_worker in ['gift2all.php','rewardReport.php']:
+            staged=entrypoint.parent/real_worker;original=staged.read_bytes()
+            bootstrap_trace=root/'http-bootstrap-must-not-run'
+            original_config=(root/'config.php').read_bytes()
+            (root/'config.php').write_text('<?php file_put_contents('+json.dumps(str(bootstrap_trace))+',"unexpected bootstrap");')
+            try:
+                staged.write_bytes((ROOT/'settings'/real_worker).read_bytes())
+                check('real_'+real_worker+'_http_denied_before_bootstrap',
+                      http_rejection(php,root,env,'settings/'+real_worker) and
+                      not bootstrap_trace.exists() and not trace.exists())
+            finally:
+                staged.write_bytes(original);(root/'config.php').write_bytes(original_config)
+        parent_prefix=text.split('if ($workerMode!==null)',1)[0]
         check("source_has_no_database_or_provider_bootstrap",
-              not re.search(r"\b(?:mysqli|PDO|curl_init|file_get_contents)\s*\(", text)
-              and "baseInfo.php" not in text
-              and "config.php" not in text)
+              not re.search(r"\b(?:mysqli|PDO|curl_init|file_get_contents)\s*\(",parent_prefix)
+              and "baseInfo.php" not in parent_prefix and "config.php" not in parent_prefix)
+
 
     report = {
         "complete": True,

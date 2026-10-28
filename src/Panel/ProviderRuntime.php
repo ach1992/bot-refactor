@@ -10,10 +10,18 @@ function achbotProviderType(mysqli $db,int $serverId): string {
     return (string)($r['type']??'');
 }
 function achbotSupportsAccount($type,$inbound): bool {
-    return in_array($type,['marzban','pasarguard'],true) && (int)$inbound===0;
+    return achbotSupportsProviderType($type) && (int)$inbound===0;
 }
 function achbotSupportsPlan($db,$planId,$inbound=0,$serverId=null,bool $lock=false): bool {
-    if (achbotSupportsMarzbanPlan($db,$planId,$inbound,$serverId,$lock)) return true;
+    if (!($db instanceof mysqli) || (int)$planId<=0 || (int)$inbound!==0) return false;
+    try {
+        $s=$db->prepare('SELECT c.type FROM server_plans p JOIN server_config c ON c.id=p.server_id WHERE p.id=?');
+        $s->bind_param('i',$planId);$s->execute();$row=$s->get_result()->fetch_assoc();$s->close();
+        $adapter=achbotProviderDefinition($row['type']??null);
+        return $adapter!==null && ($adapter['plan'])($db,$planId,$inbound,$serverId,$lock)===true;
+    } catch (Throwable $error) {return false;}
+}
+function achbotPasarGuardSupportsPlan($db,$planId,$inbound=0,$serverId=null,bool $lock=false): bool {
     if ((int)$planId<=0 || (int)$inbound!==0) return false;
     try {
         $s=$db->prepare('SELECT p.server_id,p.inbound_id,c.type FROM server_plans p JOIN server_config c ON c.id=p.server_id WHERE p.id=? AND p.active=1'.($lock?' FOR UPDATE':''));
@@ -25,7 +33,15 @@ function achbotSupportsPlan($db,$planId,$inbound=0,$serverId=null,bool $lock=fal
     } catch (Throwable $e) { return false; }
 }
 function achbotSupportsOrder($db,$orderId,$planId=null,$userId=null,bool $lock=false): bool {
-    if (achbotSupportsMarzbanOrder($db,$orderId,$planId,$userId,$lock)) return true;
+    if (!($db instanceof mysqli) || (int)$orderId<=0) return false;
+    try {
+        $s=$db->prepare('SELECT c.type FROM orders_list o JOIN server_config c ON c.id=o.server_id WHERE o.id=?');
+        $s->bind_param('i',$orderId);$s->execute();$row=$s->get_result()->fetch_assoc();$s->close();
+        $adapter=achbotProviderDefinition($row['type']??null);
+        return $adapter!==null && ($adapter['order'])($db,$orderId,$planId,$userId,$lock)===true;
+    } catch (Throwable $error) {return false;}
+}
+function achbotPasarGuardSupportsOrder($db,$orderId,$planId=null,$userId=null,bool $lock=false): bool {
     try {
         $s=$db->prepare('SELECT o.*,c.type,p.server_id AS plan_server,p.inbound_id AS plan_inbound FROM orders_list o JOIN server_config c ON c.id=o.server_id LEFT JOIN server_plans p ON p.id=o.fileid WHERE o.id=?'.($lock?' FOR UPDATE':''));
         $s->bind_param('i',$orderId);$s->execute();$r=$s->get_result()->fetch_assoc();$s->close();
@@ -38,23 +54,36 @@ function achbotSupportsOrder($db,$orderId,$planId=null,$userId=null,bool $lock=f
     } catch (Throwable $e) { return false; }
 }
 function achbotSameProviderPanel(mysqli $db,int $a,int $b): bool {
-    $ta=achbotProviderType($db,$a);$tb=achbotProviderType($db,$b);
-    if ($ta!==$tb) return false;
-    if ($ta==='marzban') return $a===$b || achbotSameMarzbanPanel($db,$a,$b);
-    if ($ta!=='pasarguard') return false;
+    try {
+        $type=achbotProviderType($db,$a);
+        if ($type!==achbotProviderType($db,$b)) return false;
+        $adapter=achbotProviderDefinition($type);
+        return $adapter!==null && ($adapter['same_panel'])($db,$a,$b)===true;
+    } catch (Throwable $error) {return false;}
+}
+function achbotMarzbanSamePanelAdapter(mysqli $db,int $a,int $b): bool {
+    return $a===$b || achbotSameMarzbanPanel($db,$a,$b);
+}
+function achbotPasarGuardSamePanelAdapter(mysqli $db,int $a,int $b): bool {
     try {
         $pa=achbotPgServerPanel($db,$a);$pb=achbotPgServerPanel($db,$b);
         return $pa['id']===$pb['id'] && $pa['instance_key']===$pb['instance_key'] && $pa['api_url']===$pb['api_url'];
-    } catch (Throwable $e) { return false; }
+    } catch (Throwable $error) {return false;}
 }
 function achbotProviderFailure(string $reason,bool $uncertain=true): object {
     return (object)['success'=>false,'uncertain'=>$uncertain,'msg'=>$reason];
 }
 function achbotProviderUser($serverId,$remark,bool $withLinks=true): object {
     global $connection;
-    $type=achbotProviderType($connection,(int)$serverId);
-    if ($type==='marzban') return getMarzbanUser($serverId,$remark);
-    if ($type!=='pasarguard') return achbotProviderFailure('unsupported_provider',false);
+    $adapter=achbotProviderDefinition(achbotProviderType($connection,(int)$serverId));
+    if ($adapter===null) return achbotProviderFailure('unsupported_provider',false);
+    return ($adapter['user'])($serverId,$remark,$withLinks);
+}
+function achbotMarzbanUserAdapter($serverId,$remark,bool $withLinks=true): object {
+    return getMarzbanUser($serverId,$remark,null,!$withLinks);
+}
+function achbotPasarGuardUserAdapter($serverId,$remark,bool $withLinks=true): object {
+    global $connection;
     try {
         $ctx=achbotPgRemarkContext($connection,(int)$serverId,(string)$remark);
         $r=achbotPgRead($ctx['panel'],$ctx['identity']);
@@ -70,17 +99,70 @@ function achbotProviderUser($serverId,$remark,bool $withLinks=true): object {
 }
 function achbotProviderUserInfo($serverId,$remark): object {
     global $connection;
-    return achbotProviderType($connection,(int)$serverId)==='marzban'?
-        getMarzbanUserInfo($serverId,$remark):achbotProviderUser($serverId,$remark);
+    $adapter=achbotProviderDefinition(achbotProviderType($connection,(int)$serverId));
+    return $adapter===null?achbotProviderFailure('unsupported_provider',false):
+        ($adapter['user_info'])($serverId,$remark);
 }
-function achbotProviderAction($serverId,$remark,string $action): object {
+function achbotMarzbanUserInfoAdapter($serverId,$remark): object {
+    return getMarzbanUserInfo($serverId,$remark);
+}
+function achbotPasarGuardUserInfoAdapter($serverId,$remark): object {
+    return achbotPasarGuardUserAdapter($serverId,$remark);
+}
+/**
+ * Private in-memory deletion target. Never persist or log these credentials.
+ * Scheduled consumers capture it before reading the remote account; adapters
+ * must refuse a changed target instead of silently reading a new endpoint.
+ */
+function achbotProviderDeletionTarget(mysqli $db,int $serverId,string $remark): array {
+    $s=$db->prepare('SELECT type,panel_url,username,password FROM server_config WHERE id=?');
+    $s->bind_param('i',$serverId);$s->execute();$row=$s->get_result()->fetch_assoc();$s->close();
+    if (!$row || $serverId<=0 || $remark==='') throw new RuntimeException('delete_target_unverified');
+    $adapter=achbotProviderDefinition($row['type']);
+    if ($adapter===null) throw new RuntimeException('delete_target_unsupported');
+    return ($adapter['deletion_target'])($db,$serverId,$remark,$row);
+}
+function achbotMarzbanDeletionTargetAdapter(mysqli $db,int $serverId,string $remark,array $row): array {
+    return [
+        'provider'=>'marzban','server_id'=>$serverId,'remark'=>$remark,
+        'panel_url'=>rtrim((string)$row['panel_url'],'/'),
+        'username'=>(string)$row['username'],'password'=>(string)$row['password']
+    ];
+}
+function achbotPasarGuardDeletionTargetAdapter(mysqli $db,int $serverId,string $remark,array $row): array {
+    $ctx=achbotPgRemarkContext($db,$serverId,$remark);
+    return ['provider'=>'pasarguard','server_id'=>$serverId,'remark'=>$remark,
+        'panel_id'=>(int)$ctx['panel']['id'],'instance_key'=>$ctx['panel']['instance_key'],
+        'endpoint_sha256'=>hash('sha256',rtrim($ctx['panel']['api_url'],'/')),
+        'credentials_sha256'=>hash('sha256',$ctx['panel']['api_key']),
+        'provider_account_id'=>(int)$ctx['account']['id'],'identity'=>$ctx['identity']];
+}
+function achbotProviderDeletionTargetMatches(mysqli $db,int $serverId,string $remark,array $expected): bool {
+    try {
+        return hash_equals(json_encode($expected,JSON_THROW_ON_ERROR),
+            json_encode(achbotProviderDeletionTarget($db,$serverId,$remark),JSON_THROW_ON_ERROR));
+    } catch (Throwable $error) {return false;}
+}
+
+function achbotProviderAction($serverId,$remark,string $action,?array $expectedTarget=null): object {
     global $connection;
-    $type=achbotProviderType($connection,(int)$serverId);
-    if ($type==='marzban') return match($action) {
-        'delete'=>deleteMarzban($serverId,$remark), 'revoke'=>renewMarzbanUUID($serverId,$remark),
-        'toggle'=>changeMarzbanState($serverId,$remark),default=>achbotProviderFailure('unsupported_action',false)
+    $adapter=achbotProviderDefinition(achbotProviderType($connection,(int)$serverId));
+    if ($adapter===null) return achbotProviderFailure('unsupported_provider',false);
+    if ($expectedTarget!==null && ($action!=='delete' ||
+        !achbotProviderDeletionTargetMatches($connection,(int)$serverId,(string)$remark,$expectedTarget)))
+        return achbotProviderFailure('delete_target_changed');
+    return ($adapter['action'])($serverId,$remark,$action,$expectedTarget);
+}
+function achbotMarzbanActionAdapter($serverId,$remark,string $action,?array $expectedTarget=null): object {
+    return match($action) {
+        'delete'=>deleteMarzban($serverId,$remark,$expectedTarget),
+        'revoke'=>renewMarzbanUUID($serverId,$remark),
+        'toggle'=>changeMarzbanState($serverId,$remark),
+        default=>achbotProviderFailure('unsupported_action',false)
     };
-    if ($type!=='pasarguard') return achbotProviderFailure('unsupported_provider',false);
+}
+function achbotPasarGuardActionAdapter($serverId,$remark,string $action,?array $expectedTarget=null): object {
+    global $connection;
     try {
         if (!in_array($action,['delete','revoke','reset','toggle'],true)) return achbotProviderFailure('unsupported_action',false);
         $ctx=achbotPgRemarkContext($connection,(int)$serverId,(string)$remark);
@@ -112,7 +194,7 @@ function achbotProviderAction($serverId,$remark,string $action): object {
     } catch (Throwable $e) { return achbotProviderFailure('pg_action_requires_review'); }
 }
 
-function achbotProviderDelete($serverId,$remark): object { return achbotProviderAction($serverId,$remark,'delete'); }
+function achbotProviderDelete($serverId,$remark,?array $expectedTarget=null): object { return achbotProviderAction($serverId,$remark,'delete',$expectedTarget); }
 function achbotProviderRevoke($serverId,$remark): object { return achbotProviderAction($serverId,$remark,'revoke'); }
 function achbotProviderToggle($serverId,$remark): object { return achbotProviderAction($serverId,$remark,'toggle'); }
 
@@ -193,12 +275,28 @@ function achbotPgQuote(mysqli $db,int $payId): array {
     return $snap;
 }
 function achbotEffectTargetIdentity(mysqli $db,int $serverId,?int $planId,?int $payId,array $row): array {
-    if (($row['panel_type']??$row['type']??'')!=='pasarguard') return [
+    $type=$row['panel_type']??$row['type']??null;
+    $adapter=achbotProviderDefinition($type);
+    if ($adapter===null) throw new RuntimeException('unsupported_effect_provider');
+    $target=($adapter['target'])($db,$serverId,$planId,$payId,$row);
+    if (!is_array($target) || !array_key_exists('group',$target) ||
+        ($target['group']!==null && (!is_int($target['group']) || $target['group']<=0)) ||
+        !is_string($target['endpoint']??null) || !preg_match('/^[a-f0-9]{64}$/D',$target['endpoint']) ||
+        !is_string($target['credentials']??null) || !preg_match('/^[a-f0-9]{64}$/D',$target['credentials']) ||
+        !is_string($target['key']??null) || $target['key']==='')
+        throw new RuntimeException('effect_adapter_identity_invalid');
+    $target['provider']=$type;
+    return $target;
+}
+function achbotMarzbanEffectTargetAdapter(mysqli $db,int $serverId,?int $planId,?int $payId,array $row): array {
+    return [
         'group'=>$row['panel_group_id']===null?null:(int)$row['panel_group_id'],
         'endpoint'=>hash('sha256',rtrim($row['panel_url'],'/')),
         'credentials'=>hash('sha256',json_encode([(string)($row['panel_username']??$row['username']??''),(string)($row['panel_password']??$row['password']??'')],JSON_THROW_ON_ERROR)),
         'key'=>$row['panel_group_id']===null?'server:'.$serverId:'group:'.(int)$row['panel_group_id']
     ];
+}
+function achbotPasarGuardEffectTargetAdapter(mysqli $db,int $serverId,?int $planId,?int $payId,array $row): array {
     $snap=$payId===null?achbotPgPlanSnapshot($db,$serverId,(int)$planId):achbotPgQuote($db,$payId);
     $panel=achbotProviderPanelForSnapshot($db,$snap);
     return ['group'=>null,'endpoint'=>$snap['endpoint_sha256'],'credentials'=>hash('sha256',$panel['api_key']),'key'=>'pg:'.$snap['instance_key'],'snapshot'=>$snap];
@@ -528,4 +626,174 @@ function achbotOrderPresentation(mysqli $db,array $order,array $server,array $st
         } catch (Throwable $error) {}
     }
     return buildSubscriptionPresentation($type,$native,$state,[],'view',(int)$order['server_id']);
+}
+
+/**
+ * Closed, source-owned provider contract. Adding a native adapter registers all
+ * real operations here; an unknown or partial implementation is never eligible
+ * for a sale, wallet reservation or remote effect. No runtime plugin loading.
+ */
+function achbotProviderRequiredOperations(): array {
+    return ['plan','order','same_panel','user','user_info','deletion_target','action',
+        'edit','pin_payment','quote','target','reserve','dispatch','link'];
+}
+function achbotProviderRegistry(): array {
+    return [
+        'marzban'=>[
+            'label'=>'admin_settings.management.marzban',
+            'plan'=>'achbotMarzbanPlanAdapter','order'=>'achbotMarzbanOrderAdapter',
+            'same_panel'=>'achbotMarzbanSamePanelAdapter','user'=>'achbotMarzbanUserAdapter',
+            'user_info'=>'achbotMarzbanUserInfoAdapter','deletion_target'=>'achbotMarzbanDeletionTargetAdapter',
+            'action'=>'achbotMarzbanActionAdapter','edit'=>'achbotMarzbanServiceEditAdapter',
+            'pin_payment'=>'achbotMarzbanPinPaymentAdapter','quote'=>'achbotMarzbanQuoteAdapter',
+            'target'=>'achbotMarzbanEffectTargetAdapter','reserve'=>'achbotMarzbanReserveEffectAdapter',
+            'dispatch'=>'achbotMarzbanDispatchEffectAdapter','link'=>'achbotMarzbanLinkEffectAdapter'
+        ],
+        'pasarguard'=>[
+            'label'=>'admin_settings.management.pasarguard',
+            'plan'=>'achbotPasarGuardSupportsPlan','order'=>'achbotPasarGuardSupportsOrder',
+            'same_panel'=>'achbotPasarGuardSamePanelAdapter','user'=>'achbotPasarGuardUserAdapter',
+            'user_info'=>'achbotPasarGuardUserInfoAdapter','deletion_target'=>'achbotPasarGuardDeletionTargetAdapter',
+            'action'=>'achbotPasarGuardActionAdapter','edit'=>'achbotPasarGuardServiceEditAdapter',
+            'pin_payment'=>'achbotPgPinPayment','quote'=>'achbotPasarGuardQuoteAdapter',
+            'target'=>'achbotPasarGuardEffectTargetAdapter','reserve'=>'achbotPasarGuardReserveEffectAdapter',
+            'dispatch'=>'achbotPasarGuardDispatchEffectAdapter','link'=>'achbotPasarGuardLinkEffectAdapter'
+        ]
+    ];
+}
+function achbotProviderRegistryEntryValid($type,$adapter): bool {
+    if (!is_string($type) || preg_match('/^[a-z][a-z0-9_]{0,23}$/D',$type)!==1 ||
+        !is_array($adapter) || !is_string($adapter['label']??null) ||
+        preg_match('/^[a-z][a-z0-9_.]+$/D',$adapter['label'])!==1) return false;
+    $required=achbotProviderRequiredOperations();
+    if (array_diff(array_keys($adapter),array_merge(['label'],$required))) return false;
+    foreach ($required as $operation)
+        if (!is_string($adapter[$operation]??null) || !is_callable($adapter[$operation]))
+            return false;
+    return true;
+}
+function achbotProviderRegistryValid(array $registry): bool {
+    if (!$registry) return false;
+    foreach ($registry as $type=>$adapter) if (!achbotProviderRegistryEntryValid($type,$adapter)) return false;
+    return true;
+}
+function achbotProviderDefinition($type): ?array {
+    if (!is_string($type)) return null;
+    $adapter=achbotProviderRegistry()[$type]??null;
+    return achbotProviderRegistryEntryValid($type,$adapter)?$adapter:null;
+}
+function achbotSupportsProviderType($type): bool {
+    return achbotProviderDefinition($type)!==null;
+}
+function achbotProviderTypes(): array {
+    $types=[];
+    foreach (achbotProviderRegistry() as $type=>$adapter)
+        if (achbotProviderRegistryEntryValid($type,$adapter)) $types[]=$type;
+    return $types;
+}
+/** SQL contains only validated source-owned keys, never a callback or customer value. */
+function achbotProviderSqlTypes(): string {
+    $types=achbotProviderTypes();
+    if (!$types) throw new RuntimeException('provider_registry_empty');
+    return "'".implode("','",$types)."'";
+}
+function achbotProviderLabel($type): string {
+    $adapter=achbotProviderDefinition($type);
+    return $adapter===null?'':achbotMessage($adapter['label']);
+}
+function achbotMarzbanPlanAdapter($db,$planId,$inbound=0,$serverId=null,bool $lock=false): bool {
+    return achbotSupportsMarzbanPlan($db,$planId,$inbound,$serverId,$lock);
+}
+function achbotMarzbanOrderAdapter($db,$orderId,$planId=null,$userId=null,bool $lock=false): bool {
+    return achbotSupportsMarzbanOrder($db,$orderId,$planId,$userId,$lock);
+}
+function achbotProviderServiceEdit(mysqli $db,string $type,int $serverId,array $change,?array $giftTarget=null) {
+    $adapter=achbotProviderDefinition($type);
+    return $adapter===null?achbotProviderFailure('unsupported_service_adapter',false):
+        ($adapter['edit'])($db,$serverId,$change,$giftTarget);
+}
+function achbotMarzbanServiceEditAdapter(mysqli $db,int $serverId,array $change,?array $giftTarget=null) {
+    return editMarzbanConfig($serverId,$change,$giftTarget);
+}
+function achbotPasarGuardServiceEditAdapter(mysqli $db,int $serverId,array $change,?array $giftTarget=null) {
+    return achbotPgServiceEdit($db,$serverId,$change,$giftTarget);
+}
+function achbotProviderPinPayment(mysqli $db,int $payId): void {
+    $s=$db->prepare('SELECT type,server_id FROM pays WHERE id=?');
+    $s->bind_param('i',$payId);$s->execute();$pay=$s->get_result()->fetch_assoc();$s->close();
+    if (!$pay) throw new RuntimeException('provider_payment_missing');
+    if ($pay['type']==='INCREASE_WALLET') return;
+    $adapter=achbotProviderDefinition(achbotProviderType($db,(int)$pay['server_id']));
+    if ($adapter===null) throw new RuntimeException('unsupported_payment_provider');
+    ($adapter['pin_payment'])($db,$payId);
+}
+function achbotProviderQuoteEligible(mysqli $db,array $pay): bool {
+    try {
+        $adapter=achbotProviderDefinition(achbotProviderType($db,(int)($pay['server_id']??0)));
+        return $adapter!==null && ($adapter['quote'])($db,$pay)===true;
+    } catch (Throwable $error) {return false;}
+}
+function achbotMarzbanPinPaymentAdapter(mysqli $db,int $payId): void {
+    // Existing Marzban quotes are pinned by their original ledger/effect fields.
+}
+function achbotMarzbanQuoteAdapter(mysqli $db,array $pay): bool {
+    return true; // Plan/order/physical identity guards remain in the common caller.
+}
+function achbotPasarGuardQuoteAdapter(mysqli $db,array $pay): bool {
+    achbotPgQuote($db,(int)($pay['id']??0));return true;
+}
+function achbotProviderReserveEffect(mysqli $db,int $effectId,array $target,string $remark,string $operation,int $expire,int $bytes): void {
+    $adapter=achbotProviderDefinition($target['provider']??null);
+    if ($adapter===null) throw new RuntimeException('unsupported_effect_provider');
+    ($adapter['reserve'])($db,$effectId,$target,$remark,$operation,$expire,$bytes);
+}
+function achbotMarzbanReserveEffectAdapter(mysqli $db,int $effectId,array $target,string $remark,string $operation,int $expire,int $bytes): void {
+    if (isset($target['snapshot'])) throw new RuntimeException('marzban_effect_identity_invalid');
+    // Original Marzban reservation is already durably stored by ServiceEffects.
+}
+function achbotPasarGuardReserveEffectAdapter(mysqli $db,int $effectId,array $target,string $remark,string $operation,int $expire,int $bytes): void {
+    if (($target['snapshot']['provider']??null)!=='pasarguard') throw new RuntimeException('pg_effect_identity_invalid');
+    achbotPgReserveEffect($db,$effectId,$target,$remark,$operation,$expire,$bytes);
+}
+function achbotProviderDispatchReservedAccount(
+    mysqli $db,int $effectId,int $serverId,?int $group,string $endpoint,string $remark,
+    int $volume,int $days,int $planId,string $operation,int $expiry,int $bytes,array $p,string $credentials
+): array {
+    $type=achbotProviderType($db,$serverId);
+    // The common reservation captured this provider before COMMIT. A later
+    // edit must not select another adapter for the already-owned operation.
+    if (array_key_exists('server_type',$p) &&
+        (!is_string($p['server_type']) || $p['server_type']!==$type))
+        throw new RuntimeException('effect_provider_changed_pre_dispatch');
+    $adapter=achbotProviderDefinition($type);
+    if ($adapter===null) throw new RuntimeException('unsupported_effect_provider');
+    return ($adapter['dispatch'])($db,$effectId,$serverId,$group,$endpoint,$remark,$volume,$days,$planId,$operation,$expiry,$bytes,$p,$credentials);
+}
+function achbotMarzbanDispatchEffectAdapter(
+    mysqli $db,int $effectId,int $serverId,?int $group,string $endpoint,string $remark,
+    int $volume,int $days,int $planId,string $operation,int $expiry,int $bytes,array $p,string $credentials
+): array {
+    require_once __DIR__.'/../Finance/ServiceEffects.php';
+    return achbotMarzbanEffectDispatchReservedAccount($db,$effectId,$serverId,$group,$endpoint,$remark,$volume,$days,$planId,$operation,$expiry,$bytes,$p,$credentials);
+}
+function achbotPasarGuardDispatchEffectAdapter(
+    mysqli $db,int $effectId,int $serverId,?int $group,string $endpoint,string $remark,
+    int $volume,int $days,int $planId,string $operation,int $expiry,int $bytes,array $p,string $credentials
+): array {
+    return achbotPgDispatchReserved($db,$effectId,$serverId,$remark,$operation,$expiry,$bytes,$p,$credentials);
+}
+function achbotProviderLinkEffect(mysqli $db,int $effectId,int $orderId,bool $paid): void {
+    $s=$db->prepare('SELECT c.type FROM service_effects e JOIN server_config c ON c.id=e.target_server_id WHERE e.id=?');
+    $s->bind_param('i',$effectId);$s->execute();$row=$s->get_result()->fetch_assoc();$s->close();
+    $adapter=achbotProviderDefinition($row['type']??null);
+    if ($adapter===null) throw new RuntimeException('unsupported_effect_provider');
+    ($adapter['link'])($db,$effectId,$orderId,$paid);
+}
+function achbotMarzbanLinkEffectAdapter(mysqli $db,int $effectId,int $orderId,bool $paid): void {
+    require_once __DIR__.'/../Finance/ServiceEffects.php';
+    if ($paid) achbotMarzbanLinkPaidAccountEffect($db,$effectId,$orderId);
+    else achbotMarzbanLinkNonPaymentAccountEffect($db,$effectId,$orderId);
+}
+function achbotPasarGuardLinkEffectAdapter(mysqli $db,int $effectId,int $orderId,bool $paid): void {
+    if (!achbotPgLinkEffect($db,$effectId,$orderId)) throw new RuntimeException('pg_effect_link_unverified');
 }

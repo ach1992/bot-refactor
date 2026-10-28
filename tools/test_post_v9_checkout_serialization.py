@@ -574,7 +574,7 @@ def main():
             old=subprocess.check_output(['git','show',
                 'bfd9da7d9198e866014519bcc01491e6dfd5fca4:src/Finance/GatewayInitiation.php'],
                 cwd=ROOT)
-            (stage/'src/Finance/GatewayInitiation.php').write_bytes(old)
+            (stage/'pay/checkout.php').write_bytes(finance.checkout_source_at_current_path(old))
             old_life=subprocess.check_output(['git','show',
                 'bfd9da7d9198e866014519bcc01491e6dfd5fca4:src/Finance/PaymentLifecycle.php'],
                 cwd=ROOT)

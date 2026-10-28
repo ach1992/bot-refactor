@@ -255,6 +255,11 @@ function getMarzbanHosts($server_id){
     $curl = curl_init();
     curl_setopt($curl, CURLOPT_URL, $panel_url);
     curl_setopt($curl, CURLOPT_HTTPGET, true);
+    curl_setopt($curl, CURLOPT_FOLLOWLOCATION, false);
+    curl_setopt($curl, CURLOPT_CONNECTTIMEOUT, 3);
+    curl_setopt($curl, CURLOPT_TIMEOUT, 10);
+    curl_setopt($curl, CURLOPT_SSL_VERIFYPEER, true);
+    curl_setopt($curl, CURLOPT_SSL_VERIFYHOST, 2);
     curl_setopt($curl, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($curl, CURLOPT_HTTPHEADER, array(
         'Accept: application/json',
@@ -894,11 +899,11 @@ function renewMarzbanUUID($server_id,$remark){
 }
 
 
-function deleteMarzban($server_id,$remark){
+function deleteMarzban($server_id,$remark,?array $expectedTarget=null){
     global $connection;
     // Never treat an empty/failed cURL response or an HTTP 4xx/5xx as
     // proof that a destructive remote DELETE was completed.
-    $stmt=$connection->prepare("SELECT panel_url,type FROM server_config WHERE id=?");
+    $stmt=$connection->prepare("SELECT panel_url,type,username,password FROM server_config WHERE id=?");
     $stmt->bind_param('i',$server_id);
     $stmt->execute();
     $server=$stmt->get_result()->fetch_assoc();
@@ -908,13 +913,25 @@ function deleteMarzban($server_id,$remark){
         return (object)['success'=>false,'uncertain'=>false,
                         'msg'=>'unsupported_remote_delete'];
     }
-    $token=getMarzbanToken($server_id);
+    if ($expectedTarget!==null && (
+        ($expectedTarget['provider']??null)!=='marzban' ||
+        ($expectedTarget['server_id']??null)!==(int)$server_id ||
+        ($expectedTarget['remark']??null)!==$remark ||
+        ($expectedTarget['panel_url']??null)!==rtrim((string)$server['panel_url'],'/') ||
+        ($expectedTarget['username']??null)!==(string)$server['username'] ||
+        ($expectedTarget['password']??null)!==(string)$server['password']))
+        return (object)['success'=>false,'uncertain'=>true,'msg'=>'delete_target_changed'];
+    $pinnedUrl=$expectedTarget['panel_url']??null;
+    $token=getMarzbanToken($server_id,$pinnedUrl,$expectedTarget);
     if (!is_object($token) || empty($token->access_token)) {
         return (object)['success'=>false,'uncertain'=>true,
                         'msg'=>'remote_delete_auth_unconfirmed'];
     }
+    if ($expectedTarget!==null && !\achbotProviderDeletionTargetMatches(
+        $connection,(int)$server_id,$remark,$expectedTarget))
+        return (object)['success'=>false,'uncertain'=>true,'msg'=>'delete_target_changed'];
     $curl=curl_init();
-    curl_setopt($curl,CURLOPT_URL,rtrim((string)$server['panel_url'],'/').
+    curl_setopt($curl,CURLOPT_URL,($pinnedUrl??rtrim((string)$server['panel_url'],'/')).
                 '/api/user/'.rawurlencode($remark));
     curl_setopt($curl,CURLOPT_CUSTOMREQUEST,'DELETE');
     curl_setopt($curl,CURLOPT_RETURNTRANSFER,true);

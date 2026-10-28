@@ -5,6 +5,8 @@
 
 **RC13 amendment (2026-10-28):** [v0.10.0-rc.13](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.13) uses one shared USDT rate for every account and removes the optional agent override. See [USDT settings](post-v9/USDT-RATE-SETTINGS.md) and [RC12 → RC13](post-v9/RC12-TO-RC13.md). The code was independently approved at `a9175a2`; publication documentation changes no runtime files. Published RC12 retains its reviewed behavior; source publication is not an installed rollout.
 
+**2026-10-28 unified management amendment:** the accepted server/plan onboarding and admin/customer interaction changes, plus provider-neutral scheduled lifecycle, are specified in [Unified Service Management](post-v9/UNIFIED-SERVICE-MANAGEMENT.md). This supersedes the separate connection-first PasarGuard UI; existing financial, remote-identity, privacy and frozen-history constraints remain.
+
 ## Earlier post-V9 decisions — historical where superseded, Owner-confirmed 2026-10-14
 
 **Authoritative contract:** [Issue #31](https://github.com/ach1992/bot-refactor/issues/31) owns the post-V9 Marzban-only acceptance, and [Issue #29](https://github.com/ach1992/bot-refactor/issues/29) defines the remaining roadmap. The intentionally changed post-V9 implementation is integrated into `main` by [PR #32](https://github.com/ach1992/bot-refactor/pull/32); the frozen published V9 source and its historical evidence remain separate. **Source integration, public release, installed behavior, real MariaDB migration and operator approval are different gates.** The current post-V9 contract must never be misrepresented as a completed production rollout.

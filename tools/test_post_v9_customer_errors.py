@@ -16,7 +16,7 @@ import catalog_source
 
 ROOT = Path(__file__).resolve().parents[1]
 CUSTOMER_SURFACES = (
-    "src/Finance/GatewayInitiation.php",
+    "pay/checkout.php",
     "src/Finance/Routes/PrePayment.php",
     "src/Finance/Routes/RenewalSelection.php",
     "src/Finance/Routes/RenewalPlan.php",
@@ -49,7 +49,7 @@ def verify(root: Path = ROOT, catalog: dict | None = None) -> dict:
             payload = match.group(2)
             leaking = [term for term in SENSITIVE_TERMS
                        if term.casefold() in payload.casefold()]
-            if rel=='src/Finance/GatewayInitiation.php':
+            if rel=='pay/checkout.php':
                 leaking += [term for term in ('NOWPayments','کلید امن','کلید درگاه','signing','merchant key')
                             if term.casefold() in payload.casefold()]
             if leaking:

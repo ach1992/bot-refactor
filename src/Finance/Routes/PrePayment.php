@@ -275,7 +275,7 @@ if (is_string($data) && str_starts_with($data, 'prePayCheck_')) {
             function_exists('achbotNpValidInvoiceUrl') &&
             achbotNpValidInvoiceUrl($invoiceUrl)) {
             $keyboard=json_encode(['inline_keyboard'=>[[
-                ['text'=>\achbotMessage('payment.pre_payment.button.9638a59ddc'),'url'=>$botUrl.'pay/?nowpayment&hash_id='.urlencode($hash_id)]
+                ['text'=>\achbotMessage('payment.pre_payment.button.9638a59ddc'),'url'=>$botUrl.'pay/checkout.php?nowpayment&hash_id='.urlencode($hash_id)]
             ]]],JSON_UNESCAPED_UNICODE);
             sendMessage(\achbotMessage('payment.pre_payment.message.08a2b0a6f6'),
                         $keyboard,"html",$from_id);
@@ -297,7 +297,7 @@ if (is_string($data) && str_starts_with($data, 'prePayCheck_')) {
 
     // اگر روش پرداخت ریدایرکتی بود
 	if (in_array($payMethod, ["zarinpal", "nowpayment", "nextpay"])) {
-		$redirectUrl = $botUrl . "pay/?$payMethod&hash_id=$hash_id";
+		$redirectUrl = $botUrl . "pay/checkout.php?$payMethod&hash_id=$hash_id";
 
 		// دکمه با لینک مستقیم به درگاه
         $button = [

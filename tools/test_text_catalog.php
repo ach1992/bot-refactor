@@ -3,6 +3,7 @@
 require_once dirname(__DIR__).'/messages/loader.php';
 $inventory=json_decode(file_get_contents(__DIR__.'/text_catalog_inventory.json'),true,512,JSON_THROW_ON_ERROR);
 const CATALOG_STYLE_BASELINE='7faac9b067f8a171e5e26d6aea5aaf9f4088a3e7';
+const CATALOG_MANAGEMENT_BASE='2c0e728dcd71c38e20d176fe2577bc264d3faa1a';
 function catalogImmutableTopics(): array {
     static $topics=null;
     if ($topics!==null) return $topics;
@@ -101,8 +102,8 @@ if (count($approvedSeen)!==3 || count($amendments['approved_copy'])!==3)
 // Execute the actual traffic helper against the immutable pre-followup helper.
 // Only its provider-read SPI is synthetic; every returned field must match.
 function achbotSupportsAccount($type,$inbound): bool {return in_array($type,['marzban','pasarguard'],true)&&$inbound===0;}
-function achbotProviderUser($server,$remark) {
-    $GLOBALS['catalogTrafficReads']++;
+function achbotProviderUser($server,$remark,$withLinks=true) {
+    $GLOBALS['catalogTrafficReads']++;$GLOBALS['catalogTrafficWithLinks']=$withLinks;
     return $GLOBALS['catalogTrafficInfo'];
 }
 require_once dirname(__DIR__).'/src/Subscription/AccountDetails.php';
@@ -114,6 +115,15 @@ $originalHelper=substr($trafficSource,$begin,$end-$begin);
 if (substr_count($originalHelper,'round(($total - $used) / 1073741824, 2)')!==1)
     throw new RuntimeException('traffic_round_expression_drift');
 eval('namespace CatalogTrafficBaseline;'.$originalHelper);
+// The old relocation proof still compares the actual two immutable source
+// versions. The current helper deliberately has a new lifecycle contract.
+$relocatedSource=shell_exec('git -C '.escapeshellarg(dirname(__DIR__)).' show '.
+    escapeshellarg(CATALOG_MANAGEMENT_BASE.':src/Subscription/AccountDetails.php'));
+$begin=strpos($relocatedSource,'function getOrderTrafficInfo(');
+$end=strpos($relocatedSource,'function getOrderStatusText(',$begin);
+if ($begin===false||$end===false) throw new RuntimeException('relocated_traffic_boundary_drift');
+eval('namespace CatalogTrafficRelocated;'.substr($relocatedSource,$begin,$end-$begin));
+
 $trafficCases=0;
 foreach (['marzban','pasarguard'] as $provider) {
     foreach ([
@@ -129,12 +139,62 @@ foreach (['marzban','pasarguard'] as $provider) {
     ] as $info) {
         $GLOBALS['catalogTrafficInfo']=$info;$GLOBALS['catalogTrafficReads']=0;
         $expected=\CatalogTrafficBaseline\getOrderTrafficInfo($provider,2,'fixture','',0);
-        $actual=\AchBot\Subscription\AccountDetails\getOrderTrafficInfo($provider,2,'fixture','',0);
+        $actual=\CatalogTrafficRelocated\getOrderTrafficInfo($provider,2,'fixture','',0);
         if ($actual!==$expected||$GLOBALS['catalogTrafficReads']!==2)
             throw new RuntimeException('traffic_full_helper_byte_parity_failed');
         $trafficCases++;$checks++;
     }
 }
+// Current customer presentation uses the same confirmed observation for both
+// providers. These fixtures are independent of the old byte-parity contract.
+$currentTrafficCases=0;$providerTraffic=[];
+$finite=(object)['username'=>'fixture','status'=>'active','data_limit'=>10*1073741824,
+    'used_traffic'=>3*1073741824,'expire'=>1800000000];
+$cases=[
+ ['user'=>$finite,'found'=>true,'status'=>'active','remaining'=>7,'actionable'=>true],
+ ['user'=>(object)['username'=>'fixture','status'=>'disabled','data_limit'=>1073741824,'used_traffic'=>123456789,'expire'=>0],
+  'found'=>true,'status'=>'disabled','remaining'=>round((1073741824-123456789)/1073741824,2),'actionable'=>true],
+ ['user'=>(object)['username'=>'fixture','status'=>'limited','data_limit'=>1073741824,'used_traffic'=>2*1073741824,'expire'=>1800000000],
+  'found'=>true,'status'=>'limited','remaining'=>0,'actionable'=>true],
+ ['user'=>(object)['username'=>'fixture','status'=>'expired','data_limit'=>0,'used_traffic'=>0,'expire'=>1],
+  'found'=>true,'status'=>'expired','remaining'=>null,'actionable'=>true],
+ ['user'=>(object)['username'=>'fixture','status'=>'active','data_limit'=>null,'used_traffic'=>123,'expire'=>null],
+  'found'=>true,'status'=>'active','remaining'=>null,'actionable'=>true],
+ ['user'=>(object)['username'=>'fixture','status'=>'on_hold','data_limit'=>0,'used_traffic'=>0,'expire'=>null],
+  'found'=>true,'status'=>'on_hold','remaining'=>null,'actionable'=>false],
+ ['user'=>(object)array_merge((array)$finite,['username'=>'different']),'found'=>false],
+ ['user'=>(object)array_merge((array)$finite,['status'=>'unknown']),'found'=>false],
+ ['user'=>(object)['username'=>'fixture','status'=>'active','data_limit'=>0,'used_traffic'=>0],'found'=>false],
+ ['user'=>(object)array_merge((array)$finite,['used_traffic'=>-1]),'found'=>false],
+ ['user'=>(object)array_merge((array)$finite,['data_limit'=>0.005*1073741824]),'found'=>false],
+ ['user'=>(object)['username'=>'fixture','status'=>'active','data_limit'=>0,'expire'=>0],'found'=>false],
+ ['user'=>(object)array_merge((array)$finite,['expire'=>-1]),'found'=>false],
+ ['user'=>null,'found'=>false],
+];
+foreach (['marzban','pasarguard']as$provider) {
+    foreach ($cases as $index=>$case) {
+        $GLOBALS['catalogTrafficInfo']=$case['user'];$GLOBALS['catalogTrafficReads']=0;
+        $actual=\AchBot\Subscription\AccountDetails\getOrderTrafficInfo($provider,2,'fixture','',0);
+        if ($GLOBALS['catalogTrafficReads']!==1||$GLOBALS['catalogTrafficWithLinks']!==false||
+            $actual['found']!==$case['found']||$actual['uncertain']!==!$case['found'])
+            throw new RuntimeException('current_traffic_observation_boundary_failed:'.$provider.':'.$index);
+        if ($case['found']) {
+            $left=$case['remaining']===null?achbotMessage('subscription.account_deletion.no_dont_delete.text.5e6ee5eaa1'):
+                achbotMessage('subscription.account_details.remaining_traffic',['remaining_gib'=>$case['remaining']]);
+            if ($actual['leftgb']!==$left||$actual['status']!==$case['status']||
+                $actual['enable']!==($case['status']==='active')||$actual['actionable']!==$case['actionable'])
+                throw new RuntimeException('current_traffic_confirmed_presentation_failed:'.$provider.':'.$index);
+            $status=\AchBot\Subscription\AccountDetails\getOrderStatusText($actual,$provider,['active'=>'ACTIVE','deactive'=>'DISABLED']);
+            if ($case['status']==='on_hold'&&$status!==achbotMessage('subscription.account_details.status_on_hold'))
+                throw new RuntimeException('current_traffic_on_hold_presentation_failed');
+        } elseif ($actual['leftgb']!==achbotMessage('subscription.account_details.get_order_traffic_info.text.f07ac0638d')||
+            $actual['actionable']!==false||$actual['status']!==null)
+            throw new RuntimeException('current_traffic_unknown_presentation_failed');
+        $providerTraffic[$provider][$index]=$actual;$currentTrafficCases++;
+    }
+}
+if ($providerTraffic['marzban']!==$providerTraffic['pasarguard'])
+    throw new RuntimeException('current_traffic_provider_presentation_diverged');
 $templates++;$interpolated++;
 $dynamic=null;
 foreach(achbotMessageTopics() as $topic) {
@@ -159,9 +219,16 @@ foreach(['../secret.key','unknown','unknown.key'] as $bad) {
     try {achbotMessage($bad);throw new RuntimeException('key_validation_missing');}
     catch(InvalidArgumentException|OutOfBoundsException $expected) {$checks++;}
 }
-require dirname(__DIR__).'/settings/values.php';
-if ($mainValues!==achbotMessages('legacy_messages')||$buttonValues!==achbotMessages('legacy_buttons'))
-    throw new RuntimeException('current_facade_mismatch');
+require_once __DIR__.'/catalog_bindings.php';
+$currentBindingProof=catalogAssertCurrentBindings(dirname(__DIR__));
+$currentBindingNegatives=catalogBindingNegativeControls();
+$mainValues=$currentBindingProof['main'];$buttonValues=$currentBindingProof['buttons'];
+// The deleted RC13 facade remains immutable historical source evidence.
+$facadeSource=shell_exec('git -C '.escapeshellarg(dirname(__DIR__)).' show '.
+    escapeshellarg(CATALOG_MANAGEMENT_BASE.':settings/values.php'));
+$archivedFacade=catalogBindingValues($facadeSource,'/../messages/loader.php');
+if ($archivedFacade['main']!==$mainValues||$archivedFacade['buttons']!==$buttonValues)
+    throw new RuntimeException('archived_facade_payload_mismatch');
 $main=catalogImmutableTopics()['legacy_messages'];
 $buttons=catalogImmutableTopics()['legacy_buttons'];
 $legacy=shell_exec('git -C '.escapeshellarg(dirname(__DIR__)).' show '.escapeshellarg($inventory['baseline'].':settings/values.php'));
@@ -181,6 +248,21 @@ foreach (catalogImmutableTopics() as $topic=>$entries)
 $current=[];
 foreach (achbotMessageTopics() as $topic)
     foreach (achbotMessages($topic) as $key=>$entry) $current[$topic.'.'.$key]=$entry;
+$management=json_decode(file_get_contents(__DIR__.'/text_catalog_management_amendment.json'),true,512,JSON_THROW_ON_ERROR);
+if (($management['version']??null)!==1||($management['baseline_commit']??null)!==CATALOG_MANAGEMENT_BASE||
+    ($management['authorization']??null)!=='docs/post-v9/UNIFIED-SERVICE-MANAGEMENT.md')
+    throw new RuntimeException('management_catalog_identity_drift');
+$managementAdded=$management['added_keys']??[];
+foreach ($managementAdded as $key=>$record) {
+    if (!str_starts_with($key,'admin_settings.management.')&&!in_array($key,['subscription.account_details.status_on_hold','subscription.manual_accounts.import_unverified','subscription.manual_accounts.import_under_review','subscription.manual_accounts.import_completed'],true))
+        throw new RuntimeException('management_catalog_addition_scope_drift');
+    $audience=str_starts_with($key,'subscription.')?'user':'admin';
+    $sides=require dirname(__DIR__).'/messages/fa/'.$audience.'.php';
+    [$topic,$name]=explode('.',$key,2);
+    if (($record['audience']??null)!==$audience||($sides[$topic][$name]??null)!==($record['entry']??null)||empty($record['reason']))
+        throw new RuntimeException('management_catalog_recipient_or_payload_drift:'.$key);
+}
+
 $changes=$style['changes']??[];
 $retired=$style['retired_keys']??[];
 $added=$style['added_keys']??[];
@@ -207,7 +289,7 @@ foreach ($featureRetired as $key=>$record) {
         throw new RuntimeException('feature_retirement_baseline_mismatch:'.$key);
 }
 $expectedKeys=array_values(array_diff(array_keys($baseline),$retiredKeys,$expectedFeatureRetired));
-$expectedKeys[]=$approvedAdded;sort($expectedKeys);$actualKeys=array_keys($current);sort($actualKeys);
+$expectedKeys[]=$approvedAdded;$expectedKeys=array_merge($expectedKeys,array_keys($managementAdded));sort($expectedKeys);$actualKeys=array_keys($current);sort($actualKeys);
 if ($actualKeys!==$expectedKeys) throw new RuntimeException('current_catalog_key_scope_drift');
 foreach ($retired as $key=>$record) {
     if (($record['before']??null)!==$baseline[$key]||empty($record['reason']))
@@ -225,7 +307,10 @@ foreach ($current as $key=>$entry) {
     $parameters=is_array($entry)?$entry['parameters']:[];
     if (!is_string($text)||!is_array($parameters)||preg_match('/[۰-۹٠-٩]/u',$text))
         throw new RuntimeException('current_template_or_digits_invalid:'.$key);
-    if (isset($added[$key])) {
+    if (isset($managementAdded[$key])) {
+        if ($entry!==$managementAdded[$key]['entry'])
+            throw new RuntimeException('management_catalog_definition_drift:'.$key);
+    } elseif (isset($added[$key])) {
         $record=$added[$key];
         if ($text!==($record['after']??null)||$parameters!==($record['parameters']??null)||
             $parameters!==['title','inbound_id']||empty($record['reasons']))
@@ -291,11 +376,14 @@ echo json_encode(['status'=>'PASS',
     'pre_style_byte_assertions'=>$checks,'pre_style_byte_preserved_templates'=>$templates-count($approvedSeen),
     'pre_style_privacy_corrections'=>count($approvedSeen),
     'html_escaping'=>'PASS','one_pass_substitution'=>'PASS','legacy_facades'=>'PASS',
+    'archived_facade_source_ref'=>CATALOG_MANAGEMENT_BASE,'current_catalog_binding_paths'=>count($currentBindingProof['paths']),
+    'current_catalog_binding_entries'=>$currentBindingProof['entries'],'current_catalog_binding_negative_controls'=>$currentBindingNegatives,'retired_current_facade_absent'=>$currentBindingProof['retired_facade_absent'],
     'repeated_interpolation_string_conversion'=>'PASS','actual_traffic_helper_parity_cases'=>$trafficCases,
+    'traffic_relocation_source_ref'=>CATALOG_MANAGEMENT_BASE,'current_traffic_shared_observation_cases'=>$currentTrafficCases,
     'editable_catalog_files'=>count($files),'logical_topics'=>count(achbotMessageTopics()),
     'current_catalog_keys'=>count($current),'current_byte_preserved_keys'=>$preserved,
     'current_style_changes'=>count($changes),'current_retired_implementation_keys'=>count($retired),'current_retired_feature_keys'=>count($featureRetired),
-    'current_added_admin_keys'=>count($added),'current_parameter_privacy_changes'=>$parameterChanges,
+    'current_added_admin_keys'=>count($added),'current_management_added_keys'=>count($managementAdded),'current_parameter_privacy_changes'=>$parameterChanges,
     'current_native_template_assertions'=>$currentChecks,'current_non_ascii_digit_templates'=>0,
     'current_object_conversion_templates'=>$currentObjectTemplates,
     'current_shared_multi_parameter_templates'=>$currentMultiParameterObjects,

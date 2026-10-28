@@ -52,7 +52,8 @@ function achbotApplyServiceEdit($db,$server,$change) {
                     'applied_bytes'=>3221225472];
 }
 
-require $root.'/settings/values.php';
+require_once $root.'/messages/loader.php';
+$mainValues=achbotMessages('legacy_messages');$buttonValues=achbotMessages('legacy_buttons');
 $stmt=$connection->prepare('SELECT * FROM pays WHERE hash_id=? LIMIT 1');
 $stmt->bind_param('s',$hash);$stmt->execute();
 $payInfo=$stmt->get_result()->fetch_assoc();$stmt->close();
@@ -179,7 +180,8 @@ $paymentKeys=$spec['keys']??[
     'manualUsdtWallet'=>'0x1111111111111111111111111111111111111111',
     'manualUsdtNetwork'=>'BEP20','manualUsdtRateToman'=>'100000',
 ];
-require $root.'/settings/values.php';
+require_once $root.'/messages/loader.php';
+$mainValues=achbotMessages('legacy_messages');$buttonValues=achbotMessages('legacy_buttons');
 require $root.'/src/Finance/ReceiptHelpers.php';
 function achbotSupportsPaymentSubject(...$args){return true;}
 function achbotFinanceDiagnosticReason(Throwable $e){return get_class($e);}
