@@ -1,4 +1,12 @@
-# RC13 release scope and delivery contract
+# Pending shared-order simplification after RC14
+
+The current source follow-up in [PR92](https://github.com/ach1992/bot-refactor/pull/92) keeps the familiar shared order flows while consolidating PasarGuard connection/native-operation evidence into existing tables. It also removes obsolete `orders_list.protocol` and `orders_list.rahgozar`. This follow-up is not yet a published or installed release.
+
+This version requires reviewed database preparation: [012_shared_provider_storage.sql](../../migrations/post-v9/012_shared_provider_storage.sql) transfers and verifies populated native evidence before removing the two provider tables; [013_remove_obsolete_order_columns.sql](../../migrations/post-v9/013_remove_obsolete_order_columns.sql) removes the two unused order columns. The runtime ZIP does not execute SQL. Read the [shared-storage migration and recovery contract](SHARED-PROVIDER-STORAGE.md) and [accepted workflow decisions](UNIFIED-SERVICE-MANAGEMENT.md#owner-simplification-follow-up-2026-10-28-revision-2) before rollout. Quiesce matching writers, verify a restorable full backup and use the paired source/schema. After012, reverting only runtime to RC14 is unsupported; recovery must restore the paired database/runtime or use an audited roll-forward. No tenant migration, release, or installation is implied by source acceptance.
+
+The RC13/RC12 scope below is historical release context. Its no-new-SQL and011-only descriptions do not apply to this pending follow-up.
+
+## Previous RC13 release scope and delivery contract
 
 [RC13](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.13) removes the separate agent USDT rate. Every new manual USDT and hosted NOWPayments quote uses only `manualUsdtRateToman`, including agent accounts; old issued quotes retain their pinned rate and amount. The [Owner decision](https://github.com/ach1992/bot-refactor/issues/26#issuecomment-6453867569), [PR89](https://github.com/ach1992/bot-refactor/pull/89), exact PHP8.1/8.4 CI and independent APPROVE cover runtime source `a9175a2`. Publication documentation introduces no runtime changes. Read [RC12 → RC13](RC12-TO-RC13.md) or the [Persian guide](RC12-TO-RC13.fa.md). A compatible RC12 installation needs no new SQL; earlier migration and operator gates remain separate.
 
