@@ -22,6 +22,19 @@ import test_post_v9_purchases as stages
 ROOT = Path(__file__).resolve().parents[1]
 DB = purchase.SIDE[1]
 
+
+def checkout_source_at_current_path(raw: bytes) -> bytes:
+    # The archived Git object remains unchanged. Only include paths and the
+    # intentionally retired browser-initiation URL are rebased in the fixture.
+    for old, new in [
+        (b"__DIR__ . '/../../messages/loader.php'", b"__DIR__ . '/../messages/loader.php'"),
+        (b"__DIR__ . '/PaymentLifecycle.php'", b"__DIR__ . '/../src/Finance/PaymentLifecycle.php'"),
+        (b"__DIR__.'/ReceiptHelpers.php'", b"__DIR__.'/../src/Finance/ReceiptHelpers.php'"),
+        (b"__DIR__ . '/PaymentPage.php'", b"__DIR__ . '/../src/Finance/PaymentPage.php'"),
+    ]:
+        raw=raw.replace(old,new)
+    return raw.replace(b'pay/?',b'pay/checkout.php?')
+
 PHP_DRIVER = r"""<?php
 error_reporting(E_ALL & ~E_DEPRECATED);
 ini_set('display_errors', '0');
@@ -697,7 +710,7 @@ try {
     } elseif ($spec['route'] === 'return') {
         require $root . '/src/Finance/GatewayReturn.php';
     } elseif ($spec['route'] === 'initiate') {
-        require $root . '/src/Finance/GatewayInitiation.php';
+        require $root . '/pay/checkout.php';
     } else {
         throw new RuntimeException('unknown route');
     }
@@ -3348,7 +3361,7 @@ def main():
                     continue
                 guard_urls.extend(btn['url'] for row in keyboard.get('inline_keyboard',[])
                                   for btn in row if 'url' in btn)
-            if not any(url.endswith('/pay/?nowpayment&hash_id=staleinvoice')
+            if not any(url.endswith('/pay/checkout.php?nowpayment&hash_id=staleinvoice')
                        for url in guard_urls) or any(
                        'nowpayments.io/pay/' in url for url in guard_urls):
                 raise RuntimeError('Stale gateway did not retain guarded invoice/status route')
@@ -3403,7 +3416,7 @@ def main():
                 callback_data='prePayCheck_RENEWACCOUNT_nextpay_'+name))
             verify_unchanged(work,env,before,'renewal_terminal_stale_'+status)
             if stale['network_calls'] or any(
-               'pay/?' in str(e) for e in stale['events']):
+               'pay/checkout.php?' in str(e) for e in stale['events']):
                 raise RuntimeError('Terminal renewal offered competing checkout '+status)
             if not any(e['name']=='callback' for e in stale['events']):
                 raise RuntimeError('Terminal renewal lacked early-state guard '+status)
@@ -3466,7 +3479,7 @@ def main():
                 "FROM payment_attempts WHERE order_hash='rnnpclaimed'").strip()!=np_identity:
                 raise RuntimeError('Existing NOWPayments invoice/child evidence modified')
             if retained['network_calls'] or any(
-               'pay/?' in str(e) or 'https://nowpayments.io/pay/' in str(e)
+               'pay/checkout.php?' in str(e) or 'https://nowpayments.io/pay/' in str(e)
                for e in retained['events']):
                 raise RuntimeError('Mismatched renewal offered an unsafe payable invoice')
             records.append(dict(case='prepayment_renewal_np_invoice_'+gateway+'_preserved',
@@ -3482,7 +3495,7 @@ def main():
             json.loads(e['args'][1]) for e in ready['events']
             if e['name']=='sendMessage' and len(e['args'])>1
             and isinstance(e['args'][1],str)]
-        if not any('pay/?zarinpal' in json.dumps(markup,ensure_ascii=False)
+        if not any('pay/checkout.php?zarinpal' in json.dumps(markup,ensure_ascii=False)
                    for markup in redirect_markup) or ready['network_calls']:
             raise RuntimeError('Valid renewal callback lost checkout compatibility')
         if sql(work,env,"SELECT state FROM pays WHERE hash_id='rnstillvalid'").strip()!='pending':
@@ -3576,7 +3589,7 @@ def main():
                 if e['name']=='sendMessage' and len(e['args'])>1
                 and isinstance(e['args'][1],str)]
             if valid['network_calls'] or not any(
-                'pay/?zarinpal' in json.dumps(markup,ensure_ascii=False)
+                'pay/checkout.php?zarinpal' in json.dumps(markup,ensure_ascii=False)
                 for markup in valid_markup):
                 raise RuntimeError('Valid 64-byte callback lost owned checkout action')
             # The payable CTA is a synthetic URL; no provider has been called.

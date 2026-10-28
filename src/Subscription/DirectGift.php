@@ -286,7 +286,7 @@ function achbotDirectGiftStart(mysqli $db,array $source,int $serverId,int $prima
             throw new RuntimeException('direct_gift_stale_start');
         $stmt=$db->prepare("SELECT i.id FROM server_info i
             JOIN server_config c ON c.id=i.id
-            WHERE i.id=? AND i.active=1 AND i.state=1 AND c.type IN ('marzban','pasarguard')");
+            WHERE i.id=? AND i.active=1 AND i.state=1 AND c.type IN (".achbotProviderSqlTypes().")");
         if (!$stmt) throw new RuntimeException('direct_gift_server_prepare');
         $stmt->bind_param('i',$serverId);
         $ok=$stmt->execute();$server=$ok?$stmt->get_result()->fetch_assoc():null;

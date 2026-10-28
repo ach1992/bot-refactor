@@ -8,13 +8,16 @@ from __future__ import annotations
 import argparse
 import concurrent.futures
 import json
+import re
 import shutil
+import subprocess
 import time
 from pathlib import Path
 import test_access_state as owned
 import test_v6_native as native
 import test_v8_native as purchase
 import test_post_v9_purchases as stages
+import test_unified_management_wizard as management
 
 ROOT=Path(__file__).resolve().parents[1]
 DB=purchase.SIDE[1]
@@ -350,23 +353,126 @@ achEvent('probe',[
                 raise RuntimeError('Admin unset group failed')
             passed('admin_can_choose_no_group')
 
+            # Current onboarding is owned above the retained inline group
+            # catalogue. Execute that real controller with private, fresh frames;
+            # the old selectNewPanelGroup callback is no longer its protocol.
+            entry="require_once __DIR__.'/src/Admin/ManagementFlow.php';\nif (achbotHandleManagement()) return;"
+            if source.count(entry)!=1 or source.index(entry)>=a:
+                raise RuntimeError('Current management owner is not the earlier bot entry')
+            driver=work/'logical-current-onboarding.php'
+            php=management.PHP
+            label="'review_label'=>achbotManagementText('review_required'),"
+            if php.count(label)!=1:
+                raise RuntimeError('Current management fixture label anchor drift')
+            php=php.replace(label,label+
+                "'targets_label'=>achbotManagementText('management_targets'),"+
+                "'saved_label'=>achbotManagementText('server_saved'),")
+            driver.write_text(php)
+            # Begin a separate onboarding journey after the preceding catalogue
+            # editor scenarios; no prior unrelated editor draft is silently used.
+            sql(work,env,"UPDATE users SET step='none',temp=NULL WHERE userid=9001")
+            sequence=800000
+            auth_calls=[]
+            def current_call(**spec):
+                nonlocal sequence
+                sequence+=1
+                spec.setdefault('source',sequence)
+                spec.setdefault('actor',9001)
+                panel.trace.clear()
+                proc=subprocess.run(
+                    ['php','-d','display_errors=0','-d','log_errors=0',
+                     '-d','open_basedir='+str(stage)+':'+str(work),
+                     str(driver),str(stage),str(work/'mysql.sock'),DB,
+                     json.dumps(spec,ensure_ascii=False)],
+                    cwd=stage,env=env,capture_output=True,text=True,timeout=30)
+                if proc.returncode or any(not re.fullmatch(
+                    r'achbot_management(?:_field)?_deferred reason=[a-z_]+',line)
+                    for line in proc.stderr.splitlines()):
+                    raise RuntimeError('Current onboarding PHP child failed: '+
+                                       repr((proc.returncode,proc.stderr))[:1200])
+                result=json.loads(proc.stdout)
+                if 'exception' in result or result.get('handled') is not True:
+                    raise RuntimeError('Actual current onboarding not handled: '+repr(result)[:1200])
+                if any('/api/admin/token' not in str(hit) for hit in panel.trace):
+                    raise RuntimeError('Current onboarding performed a non-admission provider call')
+                auth_calls.extend(panel.trace)
+                return result
+            def current_draft(result,expected):
+                state=result['state']
+                draft=json.loads(state['temp']) if state and state['temp'] else None
+                if (not draft or draft['kind']!='server' or draft['stage']!=expected or
+                    state['step']!='achbotManage|'+draft['nonce']+'|'+str(draft['rev'])):
+                    raise RuntimeError('Wrong current onboarding stage: '+repr((expected,state)))
+                return draft
+            def group_callback(draft,value):
+                return 'am|'+draft['nonce']+'|'+str(draft['rev'])+'|group|'+str(value)
+            protected_query=(
+                'SELECT * FROM server_info ORDER BY id;'
+                'SELECT * FROM server_config ORDER BY id;'
+                'SELECT * FROM orders_list ORDER BY id;SELECT * FROM pays ORDER BY id;'
+                'SELECT * FROM server_plans ORDER BY id;SELECT * FROM setting ORDER BY id;'
+                'SELECT * FROM users WHERE userid<>9001 ORDER BY id;'
+                'SELECT userid,wallet FROM users ORDER BY id')
+            protected_before=sql(work,env,protected_query)
             username,password=sql(work,env,
                 'SELECT username,password FROM server_config WHERE id=2').strip().split('\t',1)
-            for step in [{'data':'addNewMarzbanPanel'},{'text':'Grouped wizard server'},
-                         {'text':'8'},{'text':'grouped-remark'},{'text':'🇮🇷'},{'text':url}]:
-                do('wizard',actor=9001,**step)
-            refuse('forged_onboarding_group_id','wizard','selectNewPanelGroup_999999',actor=9001)
-            chosen=do('wizard',data=f'selectNewPanelGroup_{g1}',actor=9001)
-            if not has(chosen,'مرحله هفتم'):raise RuntimeError('Onboarding group picker failed')
-            do('wizard',text=username,actor=9001)
-            created=do('wizard',text=password,actor=9001)
-            if not has(created,'تبریک'):raise RuntimeError('Marzban server registration failed')
+            result=current_call(callback='addNewMarzbanPanel')
+            draft=current_draft(result,'title')
+            nonce=draft['nonce']
+            for value,expected in [
+                ('Grouped wizard server','capacity'),('8','remark'),
+                ('grouped-remark','flag'),('🇮🇷','url'),(url,'username'),
+                (username,'password'),(password,'panelgroup')]:
+                result=current_call(text=value)
+                draft=current_draft(result,expected)
+                if draft['nonce']!=nonce or draft['source']!=sequence:
+                    raise RuntimeError('Current onboarding lost its fresh actor-owned draft')
+                if sql(work,env,protected_query)!=protected_before:
+                    raise RuntimeError('Current onboarding wrote business rows before confirmation')
+            passed('unified_onboarding_private_fresh_actor_draft')
+            for tag,override,silent in [
+                ('nonprivate_onboarding_group_refused_without_writes',{'chat_type':'group'},True),
+                ('forged_sender_onboarding_group_refused_without_writes',{'sender':9002},True),
+                ('stale_onboarding_group_refused_without_writes',{'source':draft['source']},False)]:
+                before=snapshot(work,env)
+                denied=current_call(callback=group_callback(draft,g1),**override)
+                if snapshot(work,env)!=before or panel.trace:
+                    raise RuntimeError(tag+' changed SQL or called provider')
+                if silent and denied['events']:
+                    raise RuntimeError(tag+' exposed the private draft')
+                if not silent and not denied['events']:
+                    raise RuntimeError(tag+' lacked stale-action feedback')
+                passed(tag)
+            before=snapshot(work,env)
+            denied=current_call(callback=group_callback(draft,999999))
+            if (snapshot(work,env)!=before or panel.trace or
+                denied['targets_label'] not in [e.get('body') for e in denied['events']]):
+                raise RuntimeError('Forged current onboarding group was not refused without writes')
+            current_draft(denied,'panelgroup')
+            passed('forged_onboarding_group_id')
+            chosen=current_call(callback=group_callback(draft,g1))
+            review=current_draft(chosen,'review')
+            if (review['values']['panel_group_id']!=g1 or
+                sql(work,env,protected_query)!=protected_before):
+                raise RuntimeError('Current group selection did not remain an unsaved review')
+            passed('valid_onboarding_group_requires_explicit_confirmation')
+            created=current_call(callback='am|'+review['nonce']+'|'+str(review['rev'])+'|save|0')
+            if (created['state']!={'step':'none','temp':None} or
+                created['saved_label'] not in [e.get('body') for e in created['events']]):
+                raise RuntimeError('Current Marzban server confirmation did not complete')
             new_id=int(sql(work,env,
                 "SELECT id FROM server_info WHERE title='Grouped wizard server'").strip())
             if sql(work,env,
                 f'SELECT panel_group_id FROM server_info WHERE id={new_id}').strip()!=str(g1):
                 raise RuntimeError('New logical server lost group field')
+            if len(auth_calls)!=2:
+                raise RuntimeError('Current onboarding must authenticate at password and final save only')
             passed('native_marzban_onboarding_selects_catalog_group')
+            onboarding_proof={'actual_management_entry':True,'private_fresh_frames':True,
+                'nonce_revision_group_callback':True,'unknown_group_refused_without_writes':True,
+                'invalid_frame_and_stale_input_refused_without_writes':True,
+                'explicit_confirmation_required':True,'provider_admission_calls':len(auth_calls),
+                'remote_account_writes':0}
             denied=do('wizard',data=f'deleteMarzbanPanelGroup_{g1}',actor=9001)
             if not has(denied,'هنوز'):raise RuntimeError('Assigned group was deleted')
             passed('assigned_group_delete_refused')
@@ -387,7 +493,8 @@ achEvent('probe',[
             'concurrent_two_admin_group_creation_verified':True,
             'pinned_v9_source_on_migrated_schema_verified':True,
             'unicode_group_name_contract_verified':True,
-            'no_real_provider_or_payment_calls':True,'scenarios':checks}
+            'no_real_provider_or_payment_calls':True,
+            'current_unified_onboarding':onboarding_proof,'scenarios':checks}
     if args.report:args.report.write_text(json.dumps(report,indent=2,ensure_ascii=False)+'\n')
     print(json.dumps({k:v for k,v in report.items() if k!='scenarios'},ensure_ascii=False))
 if __name__=='__main__':main()

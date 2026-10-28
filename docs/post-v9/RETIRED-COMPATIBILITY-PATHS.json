@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "baseline_commit": "2c0e728dcd71c38e20d176fe2577bc264d3faa1a",
+  "authorization": "docs/post-v9/UNIFIED-SERVICE-MANAGEMENT.md",
+  "retired_files": {
+    "settings/subLink.php": {
+      "bytes": 871,
+      "sha256": "de664fca18ed83849612ed9e15adbbd7cf358b4dbf3d72ba3e8585d7dfe1ba2c"
+    },
+    "settings/values.php": {
+      "bytes": 242,
+      "sha256": "1277a7f9b8c92a002ed54a99abd5a3618fcfa2f94207ff9fa265cdfa0c72c983"
+    },
+    "settings/messagewizwiz.php": {
+      "bytes": 566,
+      "sha256": "836e050a6c71c8d9e8c4efde94a1e606b78e307742bd132407d36cf5841ea056"
+    },
+    "settings/warnusers.php": {
+      "bytes": 897,
+      "sha256": "d2e673f5a9c13641c7725e2956735c288074d2b06fdf59cf167c870f31d4dfe0"
+    },
+    "pay/index.php": {
+      "bytes": 204,
+      "sha256": "3e80769cefd473f2d5cd446cb57db9028573a018cf0fad92fc9781746aa2b487"
+    },
+    "src/Finance/GatewayInitiation.php": {
+      "bytes": 33923,
+      "sha256": "fb800b91e8bea99f314a52522c4c6aba90a995e9c4a12dc5f458e1dbba7fb24f"
+    }
+  }
+}

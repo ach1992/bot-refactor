@@ -83,7 +83,7 @@ def source_checks():
     support = re.search(r"function achbotSupportsPanel\(\$type\)\s*\{([^}]+)\}", check)
     if support is None:
         raise RuntimeError("Missing supported-provider predicate")
-    probe = "function achbotSupportsPanel($type){" + support.group(1) + "}"
+    probe = "require "+json.dumps(str(ROOT/"src/Panel/ProviderRuntime.php"))+";function achbotSupportsPanel($type){" + support.group(1) + "}"
     probe += "echo json_encode(array_map('achbotSupportsPanel', ['marzban','pasarguard','xui','sanaei','alireza','normal','',null,0,true,[], 'Marzban']));"
     supported = json.loads(subprocess.check_output(['php','-r',probe],text=True))
     if supported != [True,True] + [False]*10:
@@ -98,9 +98,8 @@ def source_checks():
         raise RuntimeError("Marzban setup or plan creation disappeared")
     if "/xui/inbound/" in module or "/panel/inbound/" in module or "/login" in module:
         raise RuntimeError("Obsolete XUI provider HTTP transport retained")
-    old_link=(ROOT/"settings/subLink.php").read_text()
-    if any(x in old_link for x in ("baseInfo.php","config.php","mysqli","curl_","getJson(")):
-        raise RuntimeError("Retired old-panel subscription link still accesses real state")
+    if (ROOT/'settings/subLink.php').exists() or 'settings/subLink.php' in files:
+        raise RuntimeError('Unused retired XUI subscription stub retained')
     return {"source_files":len(files),"php_lint":len(php_files),
             "original_historical_schema_file_unchanged":True,
             "current_additive_migration_separately_tested":True,
@@ -129,6 +128,76 @@ def main():
         raise RuntimeError("Payment capability randomness/bounds incomplete")
     audience=customer_errors.verify(ROOT)
     with tempfile.TemporaryDirectory(prefix="achbot-post-v9-acceptance-") as tmp:
+        unified={}
+        suites=[
+            ('management_wizard','test_unified_management_wizard.py','cases',294,
+                {'actual_php':True,'owned_socket_mariadb':True,'loopback_provider_http':True,'provider_mutations':0,'production_mutations':0,'actual_rc13_cancel_RED':True,'older_same_flow_cancel':True,'unique_actor_primary_writes':True,'busy_delete_preserves_editor':True}),
+            ('management_menus','test_unified_management_menus.py','checks',322,
+                {'database':'owned socket MariaDB','network_calls':0,'optional_011_missing_cancel_proven':True}),
+            ('customer_services','test_unified_customer_services.py','cases',590,
+                {'actual_php':True,'native_disposable_mariadb':True,'external_provider_calls':0,'production_mutations':0,'real_JDF_no_date_stubs':True,'fresh_each_render_same_process':True,'same_packet_observation_and_presentation':True,'genuine_import_origin_writer_fixture':True,'actual_service_unit_helpers':True,'native_plan_admission_seam':'controlled_read_only_SQL_fixture','actual_native_plan_eligibility_checked_here':False,'actual_URL_import_checked_here':False,'imported_actions_hide_ineligible_autorenew':True,'existing_consent_withdrawal_visible_when_plan_global_or_observation_unavailable':True,'unlimited_actions_hide_unsupported_relative_changes':True,'native_HTTP_count_checked_here':False,'actual_composed_ASCII_Jalali_Tehran_proofs':{key:['marzban','pasarguard'] for key in ['customer_remote_expiry','admin_remote_expiry','admin_recorded_expiry','admin_warning_grace']},'baseline_date_ref':'2408982797af15bc99e1df2909c13be3976cb1f4','baseline_date_jdf_sha256':'e32da43aafb6548fa746492a9d3181ef796083fa618af2c84f6a7bb4e857337d','baseline_dates_already_ASCII':True,'baseline_date_RED':False,'archived_warning_toggle_RED':2}),
+            ('service_lifecycle','test_unified_service_lifecycle.py','cases',118,
+                {'native_php':True,'disposable_mariadb':True,'actual_delete_transports':True,'import_warning_planless_and_assigned':True,'import_warning_retry_once':True,'amount0_trial_warning_policy_preserved':True,'malformed_origin_warning_row_isolated':True,'automatic_known_refusal_predebit':True,'scheduled_known_refusal_prefence':True,'production_mutations':0,'external_provider_calls':0,'notification_delivery_regression_red':True,'grace_integrity':True,'deletion_fairness_red':True,'deletion_fairness_source':'5568e5e24ecc595c371c4710bf41db51bb78125d','scheduled_deletion_cursor':'deleteLastOrderId','deletion_fairness_deferred_batch':50,'deletion_fairness_cross_provider_directions':2,'deletion_fairness_financial_hold':True}),
+            ('runtime_cleanup','test_unified_runtime_cleanup.py','assertions',140,
+                {'actual_php':True,'owned_socket_mariadb':True,'provider_mutations':0,'production_mutations':0}),
+            ('provider_registry','test_unified_provider_registry.py','cases',89,
+                {'actual_php':True,'owned_socket_mariadb':True,'closed_native_adapters':2,'fixture_adapter_only':True,'external_requests':0,'production_mutations':0,'new_schema':False,'authoritative_subject_resolution':True,'sid_only_dispatch_RED':True,'explicit_subject_server_mismatch_rejected':True,'pasarguard_native_quote_pins_preserved':True,'subject_preflight_readonly':True,'action_preflight_readonly':True,'quote_current_read_after_RR_snapshot':True,'quote_lock_forwarding_RED':True,'network_functions_disabled':False,'uncontrolled_network_functions_disabled':True,'native_quote_loopback_readonly':True,'native_quote_read_requests':16,'native_quote_write_requests':0}),
+            ('existing_subscriptions','test_unified_existing_subscriptions.py','cases',186,
+                {'actual_php':True,'owned_socket_mariadb':True,'loopback_native_pasar_guard':True,
+                 'real_telegram_tested':False,'real_provider_tested':False,
+                 'official_source_pin':'eba70d68eaa5a89e34ffebb47c8fd5ce054d0e43',
+                 'URL_only_common_admin_and_customer':True,'rotating_native_token_verified':True,
+                 'genuine_local_adoption':True,'import_remote_mutations':0,'import_financial_mutations':0,
+                 'no_new_schema':True,'optional_import_pair_all_or_none':True,
+                 'missing_import_capability_preserves_core':True,'marzban_usable_without011':True,
+                 'direct_module_http404':True,'original23_marzban_import_verified':True,
+                 'marzban007_without011_adoption_verified':True,'marzban_adopt_assigned_plan_capacity_preserved':True,
+                 'native_quote_and_delete_identity':True,'both_provider_unlimited_preview_and_view':True,
+                 'exact_native_page_request_count':True,'external_native_expiry_refresh':True,
+                 'legacy_native_token_forms':True,'adoption_rollback_atomic':True,
+                 'actual_planless_customer_regenerate_and_delete':True,
+                 'verified_marzban_revoke_credential_negatives':True,
+                 'unlimited_addon_entry_neutral_and_effect_free':True,'adopted_capacity_origin_preserved':True,
+                 'delete_replay_safe':True,'native_origin_alias_and_ambiguity_verified':True,
+                 'created_marker_policy_preserved':True,'malformed_capacity_ledger_reconciliation_hold':True,
+                 'marzban_legacy_JWT_native_signature_verified':True,'initial_import_controls_match_supported_actions':True,'actual_planless_update_link_controller_verified':True,'shared_native_registration_for_multiple_users':True,'genuine_import_plan_confirm_paid_renewal':True,'shared_native_auto_renew_debits_once':True,'concurrent_shared_native_auto_renew_verified':True,'shared_payment_owner_and_replay_verified':True,'shared_native_views_coherent':True,'shared_physical_anchor_history_preserved':True,'shared_native_action_views_coherent':True,'known_native_guard_preclaim_no_poison':True,'actual_native_URL_import_warnings':True,'zero_amount_import_warning_delivery_retry':True,'planless_and_selected_plan_native_warning_verified':True,'actual_native_auto_renew_refusal_before_reservation':True,'actual_native_delete_controllers_refuse_before_local_fence':True,'actual_scheduled_native_delete_refusal_before_local_fence':True,'malformed_replay_exhausted_history_no_HTTP_or_claim':True,'external_requests':0,'production_mutations':0}),
+            ('service_origin','test_service_order_origin.py','cases',46,
+                {'actual_php':True,'owned_socket_mariadb':True,'original23':True,'no_new_schema':True,
+                 'no_provider_or_telegram_calls':True,'shared_reference_metadata':True,
+                 'malformed_origin_never_legacy':True,'atomic_order_origin_rollback':True,
+                 'locked_origin_current_read':True,'payment_wallet_capacity_mutations':0,'production_mutations':0}),
+            ('imported_plan_selection','test_imported_plan_selection.py','cases',94,
+                {'actual_imports':True,'actual_change_plan_controller':True,
+                 'actual_config_consent_controller':True,'actual_native_provider_eligibility':True,'existing_consent_withdrawal_visible_and_controller_checked':True,
+                 'amount0_preserved_before_payment':True,'shared_native_different_bot_owners':True,
+                 'production_mutations':0,'live_provider_calls':0}),
+            ('agent_zero_amount_manual_actions','test_agent_zero_amount_manual_actions.py','cases',42,
+                {'actual_SelectPlan_TrialProvision':True,'actual_agent_pricing':True,
+                 'actual_native_CREATE_and_readback':True,'actual_renderer':True,
+                 'actual_manual_renewal_day_volume_quotes':True,'zero_amount_agent_not_import_or_new_consent':True,
+                 'regression_ref':'4458f3d9f7b7f1e8a7e9e09bca4b97300650eb5f',
+                 'archived_renderer_sha256':'4a34ed56370842e75ddb16563908c7c0497736851bbbc0da81c17b686e29fb9c',
+                 'actual_archived_renderer_RED':['marzban','pasarguard'],'synthetic_Telegram_delivery':True,
+                 'production_mutations':0,'live_provider_calls':0}),
+            ('shared_account_lifecycle','test_shared_account_lifecycle.py','cases',23,
+                {'actual_php':True,'owned_socket_mariadb':True,'two_distinct_users':True,
+                 'concurrent_workers':2,'shared_cycle_one_payer':True,'stale_callback_safe':True,
+                 'pending_peer_work_held':True,'explicit_panel_group_authority':True,
+                 'native_provider_HTTP':False,'external_requests':0,'production_mutations':0,'new_schema':False}),
+            ('allowance_admin','test_unified_allowance_admin.py','cases',89,
+                {'actual_plan_screen':True,'actual_admin_subscription_report':True,'actual_order_management_screen':True,'real_disposable_mariadb':True,'real_JDF':True,'finite_remaining_zero_not_unlimited':True,'read_only_screens':True,'archived_current_baseline_RED':3,'network_calls':0,'production_mutations':0,'display_baseline':'f4731de2922adb96d005e523f75ec067907b2e05'}),
+            ('canonical_checkout','test_canonical_checkout.py','cases',143,
+                {'native_http':True,'actual_public_controller':True,'owned_socket_mariadb':True,'complete_issuance_body_preserved':True,'pay_back_bytes_unchanged':True,'retired_routes_absent':True,'GET_only':True,'no_database_failure_private':True,'indirect_include_preserved':True,'external_requests':0,'production_mutations':0}),
+        ]
+        for name,script,counter,minimum,proofs in suites:
+            path=Path(tmp)/(name+'.json')
+            subprocess.run(['python3',str(ROOT/'tools'/script),'--run-disposable','--report',str(path)],
+                cwd=ROOT,check=True,timeout=300,capture_output=True)
+            evidence=json.loads(path.read_text())
+            if evidence.get('complete') is not True or evidence.get(counter,0)<minimum or any(evidence.get(k)!=v for k,v in proofs.items()):
+                raise RuntimeError('Unified service-management evidence incomplete: '+name)
+            unified[name]=evidence
+        result['unified_service_management']=unified
         webhook_path=Path(tmp)/"webhook-file-config.json"
         subprocess.run(["python3",str(ROOT/"tools/test_post_v9_webhook_config.py"),
                         "--run-disposable","--report",str(webhook_path)],
@@ -172,7 +241,7 @@ def main():
             "permissive_lock_file_fails_closed",
             "unavailable_php_flock_fails_closed",
         }
-        if not (cron.get("complete") and cron.get("cases")>=35
+        if not (cron.get("complete") and cron.get("cases")>=50
                 and required_cron_cases.issubset(cron.get("scenarios", []))
                 and cron.get("actual_current_runner_executed")
                 and cron.get("isolated_child_php_processes")
@@ -264,21 +333,83 @@ def main():
             'review_r6_invalid_malformed_no_remote_effect',
             'review_r6_invalid_overflow_no_remote_effect',
         }
+        # Explicit nullable-expiry full-renewal proof; all prior 68 cases remain.
+        required_edits.update({
+            'null_expiry_boolean_days_rejected_without_partial_remote_effect',
+            'null_expiry_boolean_expiry_rejected_without_partial_remote_effect',
+            'null_expiry_exact_240_adapter_RED_full_renewal_rejected_before_reset_or_put',
+            'null_expiry_existing_zero_api_semantics_preserved_against_exact_240',
+            'null_expiry_exponent_expiry_rejected_without_partial_remote_effect',
+            'null_expiry_fractional_days_rejected_without_partial_remote_effect',
+            'null_expiry_fractional_expiry_rejected_without_partial_remote_effect',
+            'null_expiry_fractional_volume_rejected_without_partial_remote_effect',
+            'null_expiry_invalid_relative_precedence_rejected_without_partial_remote_effect',
+            'null_expiry_malformed_expiry_rejected_without_partial_remote_effect',
+            'null_expiry_missing_expiry_rejected_without_partial_remote_effect',
+            'null_expiry_negative_days_rejected_without_partial_remote_effect',
+            'null_expiry_negative_expiry_rejected_without_partial_remote_effect',
+            'null_expiry_null_days_rejected_without_partial_remote_effect',
+            'null_expiry_overflow_expiry_rejected_without_partial_remote_effect',
+            'null_expiry_overflow_local_days_rejected_without_partial_remote_effect',
+            'null_expiry_positive_whole_days_bounded_original_NULL_correction_finite_verified_without_unrelated_changes',
+            'null_expiry_positive_whole_days_days_replacement_only_finite_verified_without_unrelated_changes',
+            'null_expiry_positive_whole_days_full_active_finite_verified_without_unrelated_changes',
+            'null_expiry_positive_whole_days_full_limited_finite_verified_without_unrelated_changes',
+            'null_expiry_positive_whole_days_no_effective_plus_day_finite_verified_without_unrelated_changes',
+            'null_expiry_post_reset_missing_drift_never_puts_or_repeats_reset',
+            'null_expiry_post_reset_zero_drift_never_puts_or_repeats_reset',
+            'null_expiry_pre_effect_finite_drift_blocks_first_remote_effect',
+            'null_expiry_pre_effect_fractional_drift_blocks_first_remote_effect',
+            'null_expiry_pre_effect_missing_drift_blocks_first_remote_effect',
+            'null_expiry_pre_effect_zero_drift_blocks_first_remote_effect',
+            'null_expiry_relative_day_only_rejected_without_partial_remote_effect',
+            'null_expiry_relative_day_precedence_rejected_without_partial_remote_effect',
+            'null_expiry_unsupported_field_rejected_without_partial_remote_effect',
+            'null_expiry_volume_delta_only_rejected_without_partial_remote_effect',
+            'null_expiry_volume_only_rejected_without_partial_remote_effect',
+            'null_expiry_zero_days_rejected_without_partial_remote_effect',
+        })
         if not (edits.get('complete') and edits.get('cases')==len(required_edits)
                 and required_edits.issubset(edits.get('scenarios',[]))
                 and edits.get('actual_php_mysqli_curl')
                 and edits.get('real_provider_requests')==0
-                and edits.get('absolute_correction_not_relative_replay')):
+                and edits.get('absolute_correction_not_relative_replay')
+                and edits.get('null_expiry_full_replacement_verified') is True
+                and edits.get('null_expiry_baseline_red') is True
+                and edits.get('null_expiry_baseline_source')=='2408982797af15bc99e1df2909c13be3976cb1f4'
+                and edits.get('null_expiry_baseline_adapter_sha256')=='a4fedde0b77ffb6a18995eda0b9309364fb9ee853a1cc951ee3e55d79d86c188'
+                and edits.get('null_expiry_invalid_no_partial_effect') is True
+                and edits.get('null_expiry_zero_semantics_preserved') is True):
             raise RuntimeError('Provider-neutral service edit native assurance incomplete')
         purchase_path=Path(tmp)/"marzban-purchase.json"
         subprocess.run(["python3",str(ROOT/"tools/test_post_v9_purchases.py"),
                         "--run-disposable","--report",str(purchase_path)],
                        cwd=ROOT,check=True,timeout=300,capture_output=True)
         purchases=json.loads(purchase_path.read_text())
+        # Seven unchanged scenarios retain exact financial/provider parity.
+        # The owner-requested actor draft replaces the old global scratch row;
+        # require its actual historical/current proof instead of claiming parity.
+        draft_amendments=purchases.get("intentional_behavior_amendments",[])
+        draft_proof={
+            "case":"admin_plan_create_draft","historical_v9_executed":True,
+            "historical_global_inactive_draft_reproduced":True,"frozen_driver_unchanged":True,
+            "frozen_driver_sha256":"09f6618ec2e2e130c446997604475e08de721df9a9a709cb568e155f8858829c",
+            "actual_candidate_dispatcher":True,"candidate_private_fresh_frame":True,
+            "actor_owned_draft_persisted":True,"no_candidate_server_plans_mutation":True,
+            "unrelated_inactive_plan_preserved":True,"unrelated_admin_state_preserved":True,
+            "financial_snapshot_unchanged":True,"provider_calls":0,
+        }
         if not (purchases.get("complete") and purchases.get("scenarios")==8 and
-                purchases.get("php_sql_telegram_fake_provider_parity") and
-                purchases.get("sql_provider_wire_exact") is True and
-                purchases.get("telegram_comparison")=="exact_except_explicit_authorized_ui_text_fields" and
+                purchases.get("historical_v9")=="7eb077fd8e6d0a303421626d1500f69e295a6664" and
+                purchases.get("schema_tables")==23 and purchases.get("mysql_socket_only") is True and
+                purchases.get("php_sql_telegram_fake_provider_parity") is False and
+                purchases.get("sql_provider_wire_exact") is False and
+                purchases.get("unchanged_differential_scenarios")==7 and
+                purchases.get("unchanged_differential_sql_provider_wire_exact") is True and
+                purchases.get("unchanged_differential_telegram_comparison")=="exact_except_explicit_authorized_ui_text_fields" and
+                purchases.get("telegram_comparison")=="seven_exact_style_scoped_cases_and_one_explicit_actor_draft_amendment" and
+                purchases.get("actor_owned_plan_draft_entry_verified") is True and
+                draft_amendments==[draft_proof] and
                 purchases.get("ui_projection_baseline")=="7faac9b067f8a171e5e26d6aea5aaf9f4088a3e7" and
                 purchases.get("verified_literal_style_pairs")==487 and
                 purchases.get("authorized_ui_field_differences")==3 and
@@ -528,6 +659,8 @@ def main():
                 and text_catalog.get("static_ui_violations")==0
                 and text_catalog.get("ascii_ui_violations")==0
                 and text_catalog.get("ascii_audit_negative_controls")==8
+                and text_catalog.get("management_ascii_audit_controls")==2
+                and text_catalog.get("presentation",{}).get("management_provider_label_cases")==11
                 and text_catalog.get("migrated_machine_fields_or_sql_arguments")==0
                 and text_catalog.get("direct_http_guards")==4
                 and text_catalog.get("native",{}).get("pre_style_templates")==3066
@@ -545,10 +678,16 @@ def main():
                 and text_catalog.get("retired_parser_tokens")==23
                 and text_catalog.get("relocation_source_ref")=="ecd30ba9192ed374703118a6c131be8809cc7b06"
                 and text_catalog.get("native",{}).get("current_retired_feature_keys")==3
-                and text_catalog.get("catalog_keys")==2523
+                and text_catalog.get("catalog_keys")==2633
                 and text_catalog.get("native",{}).get("editable_catalog_files")==2
                 and text_catalog.get("native",{}).get("logical_topics")==25
-                and text_catalog.get("native",{}).get("current_catalog_keys")==2523
+                and text_catalog.get("native",{}).get("current_catalog_keys")==2633
+                and text_catalog.get("native",{}).get("current_management_added_keys")==110
+                and text_catalog.get("native",{}).get("current_catalog_binding_paths")==2
+                and text_catalog.get("native",{}).get("current_catalog_binding_entries")==4
+                and text_catalog.get("native",{}).get("current_catalog_binding_negative_controls")==4
+                and text_catalog.get("native",{}).get("retired_current_facade_absent") is True
+                and text_catalog.get("native",{}).get("current_traffic_shared_observation_cases")==28
                 and text_catalog.get("native",{}).get("current_retired_implementation_keys")==23
                 and text_catalog.get("native",{}).get("current_added_admin_keys")==1
                 and text_catalog.get("native",{}).get("current_parameter_privacy_changes")==3
@@ -556,14 +695,14 @@ def main():
                 and text_catalog["native"]["current_byte_preserved_keys"]
                     +text_catalog["native"]["current_style_changes"]
                     +text_catalog["native"]["current_added_admin_keys"]==2523
-                and text_catalog.get("native",{}).get("current_native_template_assertions")==3708
-                and text_catalog.get("native",{}).get("current_object_conversion_templates")==237
-                and text_catalog.get("native",{}).get("current_shared_multi_parameter_templates")==55
-                and text_catalog.get("native",{}).get("current_one_pass_templates")==237
+                and text_catalog.get("native",{}).get("current_native_template_assertions")==3888
+                and text_catalog.get("native",{}).get("current_object_conversion_templates")==251
+                and text_catalog.get("native",{}).get("current_shared_multi_parameter_templates")==61
+                and text_catalog.get("native",{}).get("current_one_pass_templates")==251
                 and text_catalog.get("native",{}).get("current_non_ascii_digit_templates")==0
                 and text_catalog.get("presentation",{}).get("status")=="PASS"
                 and text_catalog.get("presentation",{}).get("editable_files")==2
-                and text_catalog.get("presentation",{}).get("current_keys")==2523
+                and text_catalog.get("presentation",{}).get("current_keys")==2633
                 and text_catalog.get("presentation",{}).get("numeric_template_changes")==23
                 and text_catalog.get("presentation",{}).get("adjacent_emoji_violations")==0
                 and text_catalog.get("presentation",{}).get("parameter_exception_count")==3
@@ -621,7 +760,7 @@ def main():
                         "--run-disposable","--report",str(unit_path)],
                        cwd=ROOT,check=True,timeout=180,capture_output=True)
         unit_guards=json.loads(unit_path.read_text())
-        if not (unit_guards.get("complete") is True and unit_guards.get("cases")==26
+        if not (unit_guards.get("complete") is True and unit_guards.get("cases")==29
                 and unit_guards.get("actual_php_mysqli") is True
                 and unit_guards.get("owned_socket_mariadb") is True
                 and unit_guards.get("provider_requests")==0
@@ -656,16 +795,40 @@ def main():
                         "--run-disposable","--report",str(provider_path)],
                        cwd=ROOT,check=True,timeout=240,capture_output=True)
         provider_integration=json.loads(provider_path.read_text())
-        if not (provider_integration.get("complete") is True and provider_integration.get("cases",0)>=219
+        native_renewal_common={
+            'complete':True,'actual_php':True,'owned_socket_mariadb':True,
+            'actual_financial_dispatch':True,'baseline_red':True,
+            'baseline_source':'2408982797af15bc99e1df2909c13be3976cb1f4',
+            'current_green':True,'null_expiry_native_renewal_verified':True,
+            'consent_off_verified':True,'wallet_debit_once':True,
+            'completed_payment_attempt_and_order':True,'no_tick_replay':True,
+            'external_requests':0,'production_mutations':0,
+        }
+        native_renewal_proofs=[provider_integration.get(key,{}) for key in [
+            'native_unlimited_renewal','native_unlimited_renewal_marzban',
+            'native_unlimited_renewal_both_providers']]
+        native_renewal_complete=all(isinstance(proof,dict) and all(
+            proof.get(key)==value for key,value in native_renewal_common.items())
+            for proof in native_renewal_proofs)
+        if not (provider_integration.get("complete") is True and provider_integration.get("cases",0)>=282
                 and provider_integration.get("actual_php_curl") is True
                 and provider_integration.get("owned_socket_mariadb") is True
                 and provider_integration.get("real_provider_tested") is False
-                and provider_integration.get("lifecycle_cases")==179
+                and provider_integration.get("lifecycle_cases")==242
                 and provider_integration.get("admin_read_authorization_cases")==40
                 and provider_integration.get("forbidden_order_queries")==0
                 and provider_integration.get("forbidden_provider_requests")==0
                 and provider_integration.get("baseline_red") is True
-                and provider_integration.get("baseline_red_source")=="fb138eacdc5817922cc1e1c9c200323d24c79838"):
+                and provider_integration.get("baseline_red_source")=="fb138eacdc5817922cc1e1c9c200323d24c79838"
+                and provider_integration.get("original_provider_integration_cases")==219
+                and native_renewal_complete
+                and [proof.get('cases') for proof in native_renewal_proofs]==[43,20,63]
+                and native_renewal_proofs[0].get('loopback_native_pasar_guard') is True
+                and native_renewal_proofs[0].get('null_expiry_extension_scope_preserved') is True
+                and native_renewal_proofs[0].get('native_identity_groups_and_quote_pins_preserved') is True
+                and native_renewal_proofs[1].get('loopback_native_marzban') is True
+                and native_renewal_proofs[1].get('native_configuration_preserved') is True
+                and native_renewal_proofs[2].get('both_adapters_verified') is True):
             raise RuntimeError("Native provider lifecycle and durable intent proof incomplete")
         currency_path=Path(tmp)/"currency-settings.json"
         subprocess.run(["python3",str(ROOT/"tools/test_next_currency_settings.py"),
@@ -709,19 +872,28 @@ def main():
                         "--run-disposable","--report",str(subject_path)],
                        cwd=ROOT,check=True,timeout=180,capture_output=True)
         subject=json.loads(subject_path.read_text())
-        if not (subject.get("complete") and subject.get("cases")>=23
+        if not (subject.get("complete") and subject.get("cases")>=67
                 and subject.get("schema_tables")==23
                 and subject.get("financial_sql_mutations")==0
-                and subject.get("payment_provider_requests")==0):
+                and subject.get("payment_provider_requests")==0
+                and subject.get("vpn_provider_requests")==0
+                and subject.get("omitted_server_identity_verified") is True
+                and subject.get("explicit_server_mismatch_rejected") is True
+                and subject.get("locked_subject_resolution_readonly") is True):
             raise RuntimeError("Actual original-schema payment subject preflight proof incomplete")
         catalogue_path=Path(tmp)/"catalogue-and-qr.json"
         subprocess.run(["python3",str(ROOT/"tools/test_post_v9_catalogue_qr.py"),
                         "--run-disposable","--report",str(catalogue_path)],
                        cwd=ROOT,check=True,timeout=180,capture_output=True)
         catalogue=json.loads(catalogue_path.read_text())
-        if not (catalogue.get("complete") and catalogue.get("cases")>=11
+        if not (catalogue.get("complete") and catalogue.get("cases")>=15
                 and catalogue.get("original_schema_tables")==23
-                and catalogue.get("financial_mutations")==0):
+                and catalogue.get("financial_mutations")==0
+                and catalogue.get("real_current_audience_helper") is True
+                and catalogue.get("actual_private_update_bindings") is True
+                and catalogue.get("persisted_audience_role_cases")==4
+                and catalogue.get("frozen_driver_unchanged") is True
+                and catalogue.get("frozen_driver_sha256")=="09f6618ec2e2e130c446997604475e08de721df9a9a709cb568e155f8858829c"):
             raise RuntimeError("Marzban-only catalogue, forged callback or QR proof incomplete")
         # Issue #51: source-real bot message/guarded-link lifecycle on
         # disposable original-schema MariaDB plus optional 003/006 overlays.
@@ -1082,6 +1254,10 @@ def main():
                  'new_category_has_active_order',
                  'new_category_no_active_order',
                  'new_active_order_positive_and_inverse',
+                 'unlimited_local_order_category_unlimited_preview_and_locked_final',
+                 'unlimited_local_order_category_disabled_unlimited_preview_and_locked_final',
+                 'unlimited_local_order_category_expired_preview_and_locked_final',
+                 'unlimited_local_order_category_negative_preview_and_locked_final',
                  'metric_dynamic_buy',
                  'metric_dynamic_renew',
                  'metric_dynamic_volume',
@@ -1333,6 +1509,7 @@ def main():
             'unverified_source_identity_blocks',
             'runtime_byte_drift_blocks',
             'retired_runtime_member_blocks',
+            *('retired_runtime_member_blocks__'+name.replace('/','_').replace('.','_') for name in package.RETIRED_RUNTIME_MEMBERS-{'settings/tronChecker.php'}),
             'partial_003_unique_index_missing_blocks',
             'wallet_telegram_event_key_missing_blocks',
             'wallet_telegram_event_key_nonunique_blocks',
@@ -1475,9 +1652,9 @@ def main():
             "f1_real_guarded_customer_error_and_unexpected_200_fenced",
             "o1_user_delete_preview_ownership_and_privacy",
             # Independent reviewer F2: same remote user with two local IDs.
-            "f2_distinct_active_orders_same_account_two_workers_no_debit",
-            "f2_explicit_same_panel_server_alias_duplicate_refused",
-            "f2_two_alias_workers_no_double_debit_even_under_race",
+            "f2_distinct_active_references_same_account_two_workers_one_debit",
+            "f2_explicit_same_panel_references_share_one_renewal_cycle",
+            "f2_shared_alias_stale_workers_no_second_debit",
             "f2_distinct_remote_accounts_remain_renewable",
             # Independent reviewer F3: exact transactional schema preflight.
             "incompatible_004_missing_alert_field_blocks_debit_and_delete",
@@ -1994,6 +2171,7 @@ def main():
             'global_cancel_stale_cached_legacy_preserves_day',
             'global_cancel_stale_cached_legacy_preserves_volume',
             'global_cancel_fresh_legacy_flow_unchanged',
+            'global_cancel_preserves_unrelated_inactive_plan_without_plan_writes',
             'global_cancel_stale_revoked_delegate_does_not_clobber',
             'global_cancel_stale_legacy_setuser_cannot_clobber',
             'global_cancel_unknown_ack_replay_preserves_new_gift',
@@ -2083,10 +2261,12 @@ def main():
             'r3_newer_verified_moderation_outorders_legacy_ban',
         }
         if not (direct_gift.get('complete') is True and
-                direct_gift.get('cases')>=152 and
+                direct_gift.get('cases')>=153 and
                 required_direct_gift.issubset(set(direct_gift.get('scenarios',[]))) and
                 direct_gift.get('real_bot_php_route') is True and
                 direct_gift.get('actual_global_cancel_fallback') is True and
+                direct_gift.get('global_cancel_preserves_unrelated_inactive_plan') is True and
+                direct_gift.get('global_cancel_plan_mutation_trace') is True and
                 direct_gift.get('actual_config_set_user') is True and
                 direct_gift.get('actual_webhook_pre_config_auth') is True and
                 direct_gift.get('actual_config_moderation') is True and
@@ -2983,7 +3163,7 @@ def main():
             error=(exc.stderr or b'').decode(errors='replace')[-6000:]
             raise RuntimeError("Marzban logical-group regression failed:\n"+error) from exc
         logical=json.loads(logical_path.read_text())
-        if not (logical.get("complete") and logical.get("cases")>=38
+        if not (logical.get("complete") and logical.get("cases")>=43
                 and logical.get("schema_tables")==23
                 and logical.get("additive_server_info_column_verified")
                 and logical.get("original_historical_schema_file_unchanged")
@@ -2991,7 +3171,13 @@ def main():
                 and logical.get("concurrent_two_admin_group_creation_verified")
                 and logical.get("pinned_v9_source_on_migrated_schema_verified")
                 and logical.get("unicode_group_name_contract_verified")
-                and logical.get("no_real_provider_or_payment_calls")):
+                and logical.get("no_real_provider_or_payment_calls")
+                and logical.get("current_unified_onboarding")=={
+                    "actual_management_entry":True,"private_fresh_frames":True,
+                    "nonce_revision_group_callback":True,"unknown_group_refused_without_writes":True,
+                    "invalid_frame_and_stale_input_refused_without_writes":True,
+                    "explicit_confirmation_required":True,"provider_admission_calls":2,
+                    "remote_account_writes":0}):
             raise RuntimeError("Same-Marzban-panel logical reassignment contract incomplete")
         overlay_report=Path(tmp)/"source-overlay.json"
         subprocess.run(["python3",str(ROOT/"tools/test_post_v9_swap.py"),

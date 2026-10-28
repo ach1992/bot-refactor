@@ -3,13 +3,13 @@
 from __future__ import annotations
 import hashlib, json, pathlib, re, socket, subprocess, sys, tempfile, time, urllib.error, urllib.request
 import catalog_ui
+import test_text_catalog_style as management_catalog
 ROOT=pathlib.Path(__file__).resolve().parents[1]
 def command(*args,**kw):return subprocess.check_output(args,cwd=ROOT,**kw)
 def check(ok,message):
     if not ok:raise AssertionError(message)
 def runtime_paths():
-    paths=command('git','ls-files','*.php').decode().splitlines()
-    return [p for p in paths if not p.startswith(('tools/','tests/','phpqrcode/','messages/')) and p!='baseInfo.example.php']
+    return management_catalog.management_runtime_paths()
 STYLE_BASELINE='7faac9b067f8a171e5e26d6aea5aaf9f4088a3e7'
 RELOCATION_SOURCE='ecd30ba9192ed374703118a6c131be8809cc7b06'
 def relocation_source(path):
@@ -115,7 +115,8 @@ def main():
     check(len(entries)==len(catalog),'duplicate catalog keys')
     check(refs<=entries,'unknown catalog references: '+str(refs-entries))
     unused={k for k in entries-refs if not k.startswith(('legacy_messages.','legacy_buttons.'))}
-    check(not unused,'orphan copy entries: '+str(unused))
+    management=json.loads((ROOT/'tools/text_catalog_management_amendment.json').read_text())
+    check(unused==set(management['retained_legacy_keys']),'unrecorded legacy/orphan copy entries: '+str(unused^set(management['retained_legacy_keys'])))
     with tempfile.TemporaryDirectory(prefix='achbot-catalog-audit-') as scratch:
         fixture=pathlib.Path(scratch)/'fixture.php'
         fixture.write_text("<?php $message='Receipt accepted'; $message.=' Reference: '.$id; sendMessage($message); $keys=[['text'=>'Continue','callback_data'=>'keep_protocol']]; sendPhoto('file.png','Visible caption'); ?><p>Visible page title</p>")
@@ -129,6 +130,15 @@ def main():
         fixture.write_bytes(command('git','show',amendments['assignment_base']+':src/Subscription/AccountDetails.php'))
         found={t['raw'] for t in catalog_ui.ui_candidates(ROOT,[str(fixture)])}
         check(found=={"' GB'"},'actual remaining-traffic audit negative control failed: '+str(found))
+        # Dynamic catalog keys are machine state; indirect visible parameter
+        # values still receive the same return/value tracing as ordinary UI.
+        fixture.write_text("<?php function stageKey(){return 'MachineOnlyKey';} function label(){return 'Visible Parameter';} sendMessage(achbotManagementText(stageKey(),['value'=>label()]));")
+        found={t['raw']for t in catalog_ui.ui_candidates(ROOT,[str(fixture)])}
+        check(found=={"'Visible Parameter'"},'management catalog key/parameter audit boundary failed:'+str(found))
+        fixture.write_text("<?php $draft=['stage'=>'url'];$prompt=match($draft['stage']){'url'=>'server_url',default=>'error'};sendMessage(achbotManagementText($prompt));")
+        found={t['raw']for t in catalog_ui.ui_candidates(ROOT,[str(fixture)])}
+        check(not found,'management lookup state misclassified as UI copy:'+str(found))
+
     import test_post_v9_customer_errors as privacy
     import catalog_source
     copy=catalog_source.templates(ROOT)
@@ -140,10 +150,19 @@ def main():
     except RuntimeError as error:check('exposes infrastructure' in str(error),'catalog privacy negative control failed for wrong reason')
     else:raise AssertionError('catalog privacy negative control missed infrastructure copy')
     native=json.loads(command('php','tools/test_text_catalog.php'))
-    check(native['status']=='PASS','pre-style byte and current exact-presentation acceptance')
+    check(native['status']=='PASS'and native.get('current_catalog_binding_paths')==2
+          and native.get('current_catalog_binding_entries')==4 and native.get('current_catalog_binding_negative_controls')==4
+          and native.get('retired_current_facade_absent')is True,
+          'pre-style byte and canonical current catalog bindings acceptance')
     presentation=json.loads(command('python3','tools/test_text_catalog_style.py'))
     check(presentation.get('status')=='PASS' and presentation.get('editable_files')==2
-          and presentation.get('current_keys')==2523 and presentation.get('retired_keys')==23
+          and presentation.get('canonical_binding_paths')==2 and presentation.get('canonical_binding_entries')==4 and presentation.get('canonical_binding_negative_controls')==4
+          and presentation.get('current_keys')==2523+len(management['added_keys'])
+          and presentation.get('management_added_keys')==len(management['added_keys'])
+          and presentation.get('management_baseline_keys')==2523
+          and presentation.get('management_negative_controls')==5
+          and presentation.get('management_provider_label_cases')==11
+          and presentation.get('management_facade_cases')==sum(record.get('facade')is True for record in management['added_keys'].values()) and presentation.get('retired_keys')==23
           and presentation.get('added_keys')==1 and presentation.get('logical_topics')==25
           and presentation.get('numeric_template_changes')==23
           and presentation.get('adjacent_emoji_violations')==0
@@ -178,7 +197,7 @@ def main():
     finally:
         process.terminate();process.wait(timeout=5)
     print(json.dumps({'status':'PASS','pre_style_source_equivalent_occurrences':reverse,'source_files':len(inventory['files']),
-      'catalog_keys':len(entries),'runtime_references':len(refs),'static_ui_violations':len(violations),'ascii_ui_violations':len(ascii_ui),'ascii_audit_negative_controls':8,'migrated_machine_fields_or_sql_arguments':0,
+      'catalog_keys':len(entries),'management_added_keys':len(management['added_keys']),'management_retained_legacy_keys':len(management['retained_legacy_keys']),'runtime_references':len(refs),'static_ui_violations':len(violations),'ascii_ui_violations':len(ascii_ui),'ascii_audit_negative_controls':8,'management_ascii_audit_controls':2,'migrated_machine_fields_or_sql_arguments':0,
       'authorized_source_dependency_files':len(amendments['source_dependencies']),'authorized_bootstrap_flow_changes':1,'approved_public_copy_corrections':len(amendments['approved_copy']),
       'direct_http_guards':len(guarded),'editable_catalog_files':2,'logical_topics':25,
       'current_authorized_source_edits':len(style_source['edits']),'retired_parser_tokens':len(style_source['retired_keys']),'relocation_source_ref':RELOCATION_SOURCE,'presentation':presentation,'native':native},ensure_ascii=False))

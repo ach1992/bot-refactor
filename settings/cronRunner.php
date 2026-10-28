@@ -2,7 +2,8 @@
 /**
  * AChBot CLI Cron coordinator.
  *
- * Optional post-V9 replacement for the remaining four aaPanel scheduled jobs.
+ * Executes the four current jobs in isolated CLI processes, including admitted
+ * canonical dispatch modes for broadcast and service maintenance.
  * Do not enable this while those commands are still scheduled: that would run
  * every worker twice. Keep the aaPanel one-minute cadence. This entrypoint
  * owns its per-installation nonblocking flock (aaPanel's saved flock flag
@@ -23,7 +24,10 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') !== __FILE__) {
     return; // Never start scheduled tasks merely because another CLI file includes us.
 }
 
-if ($argc !== 1) {
+$workerMode=null;
+if ($argc===2 && in_array($argv[1],['--job=broadcast','--job=services'],true))
+    $workerMode=substr($argv[1],6);
+elseif ($argc!==1) {
     fwrite(STDERR, "AChBot Cron: unexpected CLI arguments; no tasks started\n");
     exit(64);
 }
@@ -100,6 +104,87 @@ $lockFile = $lockDirectory . DIRECTORY_SEPARATOR . 'achbot-cron-'
 // Reuse opens only an already validated regular file in the private directory,
 // with "rn": read-only, no creation, and O_NONBLOCK even if the inode changes.
 // A bounded exclusive-create race falls through to the existing-file path.
+
+// Child jobs may only use the SAME trusted open-file-description lease passed
+// on fd 3 by the coordinator. An independently opened file is not admission.
+// Linux fdinfo reports locks attached to this descriptor's file description;
+// reading it never acquires/converts/unlocks the parent's flock.
+if ($workerMode!==null) {
+    $lease=@fopen('php://fd/3','r');
+    $leaseStat=is_resource($lease)?@fstat($lease):false;
+    $pathStat=@lstat($lockFile);
+    $info=function_exists('file_get_contents')?@file_get_contents('/proc/self/fdinfo/3'):false;
+    $matched=is_string($info) && preg_match(
+        '/^lock:\s+[0-9]+:\s+FLOCK\s+ADVISORY\s+WRITE\s+-?[0-9]+\s+[0-9a-fA-F]+:[0-9a-fA-F]+:([0-9]+)\s+0\s+EOF\s*$/mD',
+        $info,$leaseMatch)===1;
+    if (!$leaseStat || !$pathStat ||
+        $leaseStat['dev']!==$pathStat['dev'] || $leaseStat['ino']!==$pathStat['ino'] ||
+        ($leaseStat['mode']&0170000)!==0100000 || ($pathStat['mode']&0170000)!==0100000 ||
+        $leaseStat['uid']!==$effectiveUid || ($leaseStat['mode']&0077)!==0 ||
+        $leaseStat['nlink']!==1 || !$matched ||
+        (string)$leaseMatch[1]!==(string)$leaseStat['ino']) {
+        fwrite(STDERR,"AChBot Cron: trusted inherited worker lease unavailable; no tasks started\n");
+        exit(78);
+    }
+    // No LOCK_UN here or in a child finally block. Closing one inherited
+    // reference must leave the coordinator (or an orphan child) holding it.
+    if ($workerMode==='broadcast') {
+
+include_once __DIR__ . '/../baseInfo.php';
+include_once __DIR__ . '/../config.php';
+include_once __DIR__ . '/jdf.php';
+
+@ignore_user_abort(true);
+@set_time_limit(0);
+
+require __DIR__ . '/../src/Jobs/Checkpoint.php';
+
+$inlineStartKey = json_encode([
+    'inline_keyboard' => [
+        [[
+            'text' => $buttonValues['start_bot'],
+            'url'  => "https://t.me/$botUsername?start=mainMenu"
+        ]]
+    ]
+], JSON_UNESCAPED_UNICODE);
+
+require __DIR__ . '/../src/Jobs/MessageActions.php';
+
+
+require __DIR__ . '/../src/Jobs/BroadcastSend.php';
+        exit(0);
+    }
+    if ($workerMode==='services') {
+
+
+include_once __DIR__ . '/../baseInfo.php';
+include_once __DIR__ . '/../config.php';
+
+// A single expired-account cleanup must not abort reconciliation alerts for
+// unrelated reserved/uncertain paid renewals in this same Cron invocation.
+try {
+    require __DIR__ . '/../src/Notifications/Warnings.php';
+} catch (Throwable $error) {
+    error_log('achbot_warning_cleanup_deferred');
+} finally {
+    // Financial renewal/reconciliation has priority over optional Telegram
+    // edits. Preserve the existing four-worker, one-minute Cron schedule.
+    try {
+        require __DIR__ . '/../src/Finance/AutomaticRenewal.php';
+    } finally {
+        try {
+            require_once __DIR__ . '/../src/Finance/PaymentLifecycle.php';
+            achbotPayUxMaintain($connection);
+        } catch (Throwable $ignored) {
+            error_log('achbot_payment_lifecycle_deferred');
+        }
+    }
+}
+        exit(0);
+    }
+    exit(64);
+}
+
 $lockHandle = false;
 $existing = @lstat($lockFile);
 if ($existing === false) {
@@ -155,53 +240,41 @@ if (!@flock($lockHandle, LOCK_EX | LOCK_NB, $wouldBlock)) {
     exit(78);
 }
 
-// Exact observed one-minute aaPanel Chili order, 2026-10-17.
-// Names/paths remain stable for independently callable legacy entrypoints.
-$jobs = [
-    'gift2all.php',
-    'messagewizwiz.php',
-    'rewardReport.php',
-    'warnusers.php',
+
+// These are the same four business jobs in the observed Chili order.
+// Relocated compositions run as admitted modes of this actual coordinator;
+// no old-filename wrapper or replacement thin worker alias is retained.
+$jobs=[
+    ['name'=>'gift2all.php','file'=>__DIR__.'/gift2all.php','arguments'=>[]],
+    ['name'=>'broadcast','file'=>__FILE__,'arguments'=>['--job=broadcast']],
+    ['name'=>'rewardReport.php','file'=>__DIR__.'/rewardReport.php','arguments'=>[]],
+    ['name'=>'services','file'=>__FILE__,'arguments'=>['--job=services']],
 ];
 
-$failures = 0;
+$failures=0;
 foreach ($jobs as $job) {
-    $file = __DIR__ . DIRECTORY_SEPARATOR . $job;
+    $file=$job['file'];
     if (!is_file($file) || is_link($file)) {
-        fwrite(STDERR, "AChBot Cron: missing or invalid worker: {$job}\n");
-        ++$failures;
-        continue;
+        fwrite(STDERR,"AChBot Cron: missing or invalid worker: {$job['name']}\n");
+        ++$failures;continue;
     }
-
-    // Use argv array: no shell expansion, quoting ambiguity or command injection.
-    // Preserve original worker stdout/stderr in the existing aaPanel Cron log.
-    // Inherit the scheduler's working directory; do NOT chdir to the bot root.
-    // Explicit fd 3 keeps the SAME open-file-description lock in each child.
-    // If the parent is killed mid-worker, that worker retains the lock until
-    // its process exits; do not release it while financial effects may run.
+    // Preserve argv execution, CWD/environment and independent PHP processes.
+    // Inherited fd 3 keeps the SAME lease through parent death; never unlink it.
     try {
-        $process = proc_open(
-            [PHP_BINARY, $file],
-            [0 => ['file', '/dev/null', 'r'], 1 => STDOUT, 2 => STDERR,
-             3 => $lockHandle],
+        $process=proc_open(
+            array_merge([PHP_BINARY,$file],$job['arguments']),
+            [0=>['file','/dev/null','r'],1=>STDOUT,2=>STDERR,3=>$lockHandle],
             $pipes
         );
-    } catch (Throwable $exception) {
-        // Do not log child exceptions, private values, commands or environment.
-        $process = false;
-    }
-
+    } catch (Throwable $exception) {$process=false;}
     if (!is_resource($process)) {
-        fwrite(STDERR, "AChBot Cron: could not start worker: {$job}\n");
-        ++$failures;
-        continue;
+        fwrite(STDERR,"AChBot Cron: could not start worker: {$job['name']}\n");
+        ++$failures;continue;
     }
-
-    $status = proc_close($process);
-    if ($status !== 0) {
-        fwrite(STDERR, "AChBot Cron: worker {$job} exited with status {$status}\n");
+    $status=proc_close($process);
+    if ($status!==0) {
+        fwrite(STDERR,"AChBot Cron: worker {$job['name']} exited with status {$status}\n");
         ++$failures;
     }
 }
-
-exit($failures === 0 ? 0 : 1);
+exit($failures===0?0:1);

@@ -1,233 +1,120 @@
 <?php
-/** AChBot V5: expiry and status notifications; legacy caller scope and side effects are intentional. */
-if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
-    http_response_code(404);
-    exit;
-}
-require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
+/** AChBot common warning/grace/deletion lifecycle for every supported provider. */
+if (realpath($_SERVER['SCRIPT_FILENAME']??'')===__FILE__) {http_response_code(404);exit;}
+require_once __DIR__.'/../../messages/loader.php';
+require_once __DIR__.'/../Panel/ServiceLifecycle.php';
+require_once __DIR__.'/../Purchase/OrderWrites.php';
 
-
-$time = time(); 
-
-// خواندن مقدار warnOffset از جدول setting
-$stmt = $connection->prepare("SELECT `value` FROM `setting` WHERE `type` = 'warnOffset'");
-$stmt->execute();
-$result = $stmt->get_result();
-$stmt->close();
-
-if ($result && $result->num_rows > 0) {
-    $warnOffset = $result->fetch_assoc()['value'];
-} else {
-    $warnOffset = 0;
-    $stmt = $connection->prepare("INSERT INTO `setting` (`type`, `value`) VALUES ('warnOffset', ?)");
-    $stmt->bind_param("i", $warnOffset);
-    $stmt->execute();
-    $stmt->close();
-}
-
-$limit = 100;
-
-$stmt = $connection->prepare("SELECT * FROM `orders_list` WHERE `status`=1 AND (`notif`=0 OR `notif` = -1) ORDER BY `id` ASC LIMIT ? OFFSET ?");
-$stmt->bind_param("ii", $limit, $warnOffset);
-$stmt->execute();
-$orders = $stmt->get_result();
-$stmt->close();
-
-if ($orders && $orders->num_rows > 0) { 
-    while ($order = $orders->fetch_assoc()) { 
-        $from_id = $order['userid']; 
-        $remark = $order['remark']; 
-        $uuid = $order['uuid'] ?? "0"; 
-        $server_id = $order['server_id']; 
-        $inbound_id = $order['inbound_id']; 
-        $notif = $order['notif']; 
-        $expiryTime = ""; 
-        $found = false; 
-        $enable = false; 
-
-        $stmt = $connection->prepare("SELECT * FROM `server_config` WHERE `id` = ?");
-        $stmt->bind_param('i', $server_id);
-        $stmt->execute();
-        $serverConfig = $stmt->get_result()->fetch_assoc();
-        $stmt->close();
-        $serverType = $serverConfig['type'];
-
-        if (achbotSupportsAccount($serverType, $inbound_id)) {
-            $info = achbotProviderUser($server_id, $remark);
-            if (isset($info->username)) {
-                $found = true;
-                $total = $info->data_limit;
-                $totalLeft = $total - $info->used_traffic;
-                $expiryTime = $info->expire;
-                $enable = $info->status == "active";
-            }
-        } else {
-                continue; // Retired panel; do not notify/delete a different account.
-            }
-
-        if (!$found) continue;
-
-        $leftgb = round($totalLeft / 1073741824, 2);
-
-        // تبدیل تاریخ به timestamp در صورت نیاز
-        if (!is_numeric($expiryTime)) {
-            $expiryTime = strtotime($expiryTime);
-        }
-
-        if ($expiryTime && $notif == 0) {
-            $send = "";
-            if ($expiryTime < time() + 129600) {
-                $send = \achbotMessage('notifications.warnings.send.1e5349d9b2');
-            }
-            elseif ($leftgb < 0.5 && $total != null && $total > 0) {
-                $send = \achbotMessage('notifications.warnings.send.0458ad0612');
-            }
-
-            if ($send !== "") {
-				if ((int)$order['amount'] !== 0) {
-					$msg = \achbotMessage('notifications.warnings.msg.804056ecc4', ['remark' => $remark, 'send' => $send]);
-					$keyboard = [ 
-						[ 
-							['text' => $buttonValues['my_subscriptions'], 'callback_data' => 'mySubscriptions'], 
-							['text' => $buttonValues['sharj'], 'callback_data' => 'increaseMyWallet'] 
-						] 
-					];
-
-					sendMessage($msg, json_encode(['inline_keyboard' => $keyboard]), "html", $from_id);
-				}
-
-                $stmt = $connection->prepare("UPDATE `orders_list` SET `notif`= -1 WHERE `uuid`=?");
-                $stmt->bind_param("s", $uuid);
-                $stmt->execute();
-                $stmt->close();
-            }
-        } elseif (!$enable) {
-            $newTIme = $time + 86400 * 10;
-            $stmt = $connection->prepare("UPDATE `orders_list` SET `notif`= ? WHERE `uuid`=?");
-            $stmt->bind_param("is", $newTIme, $uuid);
-            $stmt->execute();
-            $stmt->close();
-        }
+$time=time();$limit=100;
+// Keyset traversal stays complete when warning updates remove rows from the set.
+$stmt=$connection->prepare("SELECT value FROM setting WHERE type='warnLastOrderId' LIMIT 1");
+$stmt->execute();$cursorRow=$stmt->get_result()->fetch_assoc();$stmt->close();
+$cursor=max(0,(int)($cursorRow['value']??0));
+$stmt=$connection->prepare('SELECT * FROM orders_list WHERE status=1 AND notif IN(0,-1,-2) AND id>? ORDER BY id LIMIT ?');
+$stmt->bind_param('ii',$cursor,$limit);$stmt->execute();$batch=$stmt->get_result()->fetch_all(MYSQLI_ASSOC);$stmt->close();
+foreach ($batch as $order) {
+    $id=(int)$order['id'];$serverId=(int)$order['server_id'];$remark=(string)$order['remark'];
+    try {$imported=achbotOrderIsImported($connection,$order);}
+    catch (Throwable $error) {
+        error_log('achbot_warning_origin_unverified order_id='.$id);continue;
     }
-
-	$totalOrdersQuery = "SELECT COUNT(*) FROM `orders_list` WHERE `status` = 1 AND (`notif` = 0 OR `notif` = -1)";
-	$result = $connection->query($totalOrdersQuery);
-	$totalOrders = $result->fetch_row()[0];
-
-	if ($orders->num_rows < $limit || $totalOrders - $warnOffset <= $limit) {
-		$newWarnOffset = 0;
-	} else {
-		$newWarnOffset = $warnOffset + $limit;
-	}
-
-	// به روز رسانی warnOffset در دیتابیس
-	$stmt = $connection->prepare("UPDATE `setting` SET `value` = ? WHERE `type` = 'warnOffset'");
-	$stmt->bind_param('i', $newWarnOffset);
-	$stmt->execute();
-	$stmt->close();
-}
-
-$stmt = $connection->prepare("SELECT * FROM `orders_list` WHERE `status`=1 AND `notif` > 0 AND `notif` < ? LIMIT 50");
-$stmt->bind_param("i", $time);
-$stmt->execute();
-$orders = $stmt->get_result();
-$stmt->close();
-
-if ($orders) {
-    if ($orders->num_rows > 0) {
-        while ($order = $orders->fetch_assoc()) {
-            $send = false;
-            $from_id = $order['userid'];
-            $token = $order['token'];
-            $remark = $order['remark'];
-            $uuid = $order['uuid'] ?? "0";
-            $server_id = $order['server_id'];
-            $inbound_id = $order['inbound_id'];
-            $links_list = $order['link'];
-            $notif = $order['notif'];
-
-            $stmt = $connection->prepare("SELECT * FROM `server_config` WHERE `id` = ?");
-            $stmt->bind_param('i', $server_id);
-            $stmt->execute();
-            $serverConfig = $stmt->get_result()->fetch_assoc();
-            $stmt->close();
-            $serverType = $serverConfig['type'];
-            $panel_url = $serverConfig['panel_url'];
-
-            $found = false;
-            $logedIn = false;
-
-            if (achbotSupportsAccount($serverType, $inbound_id)) {
-                $info = achbotProviderUser($server_id, $remark);
-                if (isset($info->username)) {
-                    $found = true;
-                    $logedIn = true;
-                    $total = $info->data_limit;
-                    $totalLeft = $total - $info->used_traffic;
-                    $expiryTime = $info->expire;
-                    $enable = $info->status == "active" ? true : false;
-                } elseif (isset($info->detail)) {
-                    if ($info->detail == "User not found") $logedIn = true;
-                }
-            } else {
-                continue; // Retired panel; do not notify/delete a different account.
-            }
-
-            if (!$found && !$logedIn) continue;
-
-            $leftgb = round(($totalLeft) / 1073741824, 2);
-            if ($serverType==='pasarguard') {
-                $send=($expiryTime!==null && $expiryTime>0 && $expiryTime<=time()) || ($total>0 && $totalLeft<=0);
-            } else {
-                if ($expiryTime <= time()) $send = true;
-                elseif ($leftgb <= 0) $send = true;
-            }
-
-            if ($send) {
-                if (!achbotSupportsPanel($serverType)) continue;
-                // Deletion reservation atomically blocks new renewal and
-                // rejects unresolved payment effects BEFORE any remote call.
-                if (!achbotAutoRenewPrepareDeletion($connection,(int)$order['id']))
-                    continue;
-                try {
-                    $res = achbotProviderDelete($server_id, $remark);
-                } catch (Throwable $error) {
-                    error_log('achbot_warning_remote_delete_deferred order_id='.(int)$order['id']);
-                    continue;
-                }
-                if (is_object($res) && ($res->success??false)===true &&
-                    achbotAutoRenewFinalizeDeletion(
-                        $connection,(int)$order['id'],(int)$server_id,false)) {
-                    $msg = \achbotMessage('notifications.warnings.msg.c7907b6342', ['remark' => $remark]);
-                    $keyboard = [
-                        [['text' => $buttonValues['back_to_main'], 'callback_data' => 'mainMenu']]
-                    ];
-                    sendMessage($msg, json_encode(['inline_keyboard' => $keyboard]), "html", $from_id);
-
-                    // ارسال پیام به ادمین
-                    $channelMessage = \achbotMessage('notifications.warnings.channel_message.5e59a4a33e', ['from_id' => $from_id, 'remark' => $remark]);
-                    //sendMessage($channelMessage, null, "html", $admin);
-                    //sendToAllAdmins('sendMessage', ['text' => $channelMessage, 'parse_mode' => "html"]);
-					
-					// ارسال پیام به کانال گزارشات
-					$rewardChannel = $botState['rewardChannel'];
-					if (!empty($rewardChannel)) {
-						sendMessage($channelMessage, null, "html", $rewardChannel);
-					}
-
-                    continue;
-                }
-                error_log('achbot_warning_local_delete_deferred order_id='.(int)$order['id']);
-                // status=0 retains an operator-recoverable local record:
-                // a later Cron tick never blindly repeats the remote DELETE.
-                continue;
-            } else {
-                $stmt = $connection->prepare("UPDATE `orders_list` SET `notif`= 0 WHERE `uuid`=?");
-                $stmt->bind_param("s", $uuid);
-                $stmt->execute();
-                $stmt->close();
-            }
+    if (!achbotSupportsOrder($connection,$id)) continue;
+    $observation=achbotServiceObserve($serverId,$remark);$policy=achbotServiceLifecycle($observation,$time);
+    if (!$observation['verified']) continue;
+    $next=(int)$order['notif'];
+    if (in_array($next,[0,-2],true) && $policy['warning']!=='') {
+        $delivered=true;
+        if ((int)$order['amount']!==0 || $imported) {
+            $reason=$policy['warning']==='time'?
+                achbotMessage('notifications.warnings.send.1e5349d9b2'):
+                achbotMessage('notifications.warnings.send.0458ad0612');
+            $msg=achbotMessage('notifications.warnings.msg.804056ecc4',['remark'=>htmlspecialchars($remark,ENT_QUOTES,'UTF-8'),'send'=>$reason]);
+            try {
+                $response=sendMessage($msg,json_encode(['inline_keyboard'=>[[
+                    ['text'=>$buttonValues['my_subscriptions'],'callback_data'=>'mySubscriptions'],
+                    ['text'=>$buttonValues['sharj'],'callback_data'=>'increaseMyWallet']
+                ]]]),'HTML',(int)$order['userid']);
+            } catch (Throwable $error) {$response=null;}
+            $delivered=is_object($response) && ($response->ok??false)===true;
         }
+        // -2 means pending notification retry, never a delivery claim. It is
+        // nonzero so the existing strict auto-renewal eligibility is retained.
+        $next=$delivered?-1:-2;
+    }
+    // Confirmed expiry/exhaustion starts the full grace independently of
+    // Telegram delivery. Disabled/on-hold states never start this timer.
+    if ($policy['ended']) $next=$time+10*86400;
+    if ($next!==(int)$order['notif']) {
+        $old=(int)$order['notif'];$cycle=(int)$order['expire_date'];
+        $stmt=$connection->prepare('UPDATE orders_list SET notif=? WHERE id=? AND status=1 AND notif=? AND expire_date=?');
+        $stmt->bind_param('iiii',$next,$id,$old,$cycle);$stmt->execute();$stmt->close();
     }
 }
+$nextCursor=count($batch)===$limit?(int)$batch[count($batch)-1]['id']:0;
+$value=(string)$nextCursor;
+if ($cursorRow) $stmt=$connection->prepare("UPDATE setting SET value=? WHERE type='warnLastOrderId'");
+else $stmt=$connection->prepare("INSERT INTO setting(type,value) VALUES('warnLastOrderId',?)");
+$stmt->bind_param('s',$value);$stmt->execute();$stmt->close();
 
+// A deferred oldest row must not permanently hide later eligible services.
+// Scan due rows fairly by identity and advance even when every row defers.
+$stmt=$connection->prepare("SELECT value FROM setting WHERE type='deleteLastOrderId' LIMIT 1");
+$stmt->execute();$deleteCursorRow=$stmt->get_result()->fetch_assoc();$stmt->close();
+$deleteCursor=max(0,(int)($deleteCursorRow['value']??0));$deleteLimit=50;
+$stmt=$connection->prepare('SELECT * FROM orders_list WHERE status=1 AND notif>0 AND notif<? AND id>? ORDER BY id LIMIT ?');
+$stmt->bind_param('iii',$time,$deleteCursor,$deleteLimit);
+$stmt->execute();$deletions=$stmt->get_result()->fetch_all(MYSQLI_ASSOC);$stmt->close();
+foreach ($deletions as $order) {
+    $id=(int)$order['id'];$serverId=(int)$order['server_id'];$remark=(string)$order['remark'];
+    if (!achbotServiceGraceValid($order)) {
+        error_log('achbot_warning_delete_grace_unverified order_id='.$id);continue;
+    }
+    if (!achbotSupportsOrder($connection,$id)) continue;
+    try {$target=achbotProviderDeletionTarget($connection,$serverId,$remark);}
+    catch (Throwable $error) {continue;}
+    if (!achbotProviderActionEligible($connection,$serverId,$remark,'delete',$target)) continue;
+    $observation=achbotServiceObserve($serverId,$remark);
+    if (!$observation['verified']) continue;
+    $policy=achbotServiceLifecycle($observation,$time);
+    if (!$policy['ended']) {
+        $old=(int)$order['notif'];$cycle=(int)$order['expire_date'];
+        $stmt=$connection->prepare('UPDATE orders_list SET notif=0 WHERE id=? AND status=1 AND notif=? AND expire_date=?');
+        $stmt->bind_param('iii',$id,$old,$cycle);$stmt->execute();$stmt->close();
+        continue;
+    }
+    // Existing durable fence blocks renewal/payment effects. Bind it to the
+    // observed local cycle, then read again before the destructive provider call.
+    if (!achbotProviderDeletionTargetMatches($connection,$serverId,$remark,$target) ||
+        !achbotAutoRenewPrepareDeletion($connection,$id,$order)) continue;
+    $latest=achbotServiceObserve($serverId,$remark);
+    if (!achbotServiceLifecycle($latest,time())['ended']) {
+        error_log('achbot_warning_delete_observation_changed order_id='.$id);
+        continue; // Retain the fence for operator reconciliation; never guess a rollback.
+    }
+    if (!achbotProviderDeletionTargetMatches($connection,$serverId,$remark,$target)) {
+        error_log('achbot_warning_delete_target_changed order_id='.$id);continue;
+    }
+    try {$result=achbotProviderDelete($serverId,$remark,$target);}
+    catch (Throwable $error) {
+        error_log('achbot_warning_remote_delete_deferred order_id='.$id);continue;
+    }
+    if (!is_object($result) || ($result->success??false)!==true ||
+        !achbotAutoRenewFinalizeDeletion($connection,$id,$serverId,false)) {
+        error_log('achbot_warning_local_delete_deferred order_id='.$id);continue;
+    }
+    $msg=achbotMessage('notifications.warnings.msg.c7907b6342',['remark'=>htmlspecialchars($remark,ENT_QUOTES,'UTF-8')]);
+    sendMessage($msg,json_encode(['inline_keyboard'=>[[[
+        'text'=>$buttonValues['back_to_main'],'callback_data'=>'mainMenu'
+    ]]]]),'HTML',(int)$order['userid']);
+    $channel=$botState['rewardChannel']??'';
+    if ($channel!=='') sendMessage(achbotMessage('notifications.warnings.channel_message.5e59a4a33e',[
+        'from_id'=>(int)$order['userid'],'remark'=>htmlspecialchars($remark,ENT_QUOTES,'UTF-8')]),null,'HTML',$channel);
+}
+
+// This is traversal metadata only: a cursor never authorizes a deletion.
+// Wrap after exhaustion so deferred rows and newly due earlier IDs are revisited.
+$nextDeleteCursor=count($deletions)===$deleteLimit?(int)$deletions[count($deletions)-1]['id']:0;
+$value=(string)$nextDeleteCursor;
+if ($deleteCursorRow) $stmt=$connection->prepare("UPDATE setting SET value=? WHERE type='deleteLastOrderId'");
+else $stmt=$connection->prepare("INSERT INTO setting(type,value) VALUES('deleteLastOrderId',?)");
+$stmt->bind_param('s',$value);$stmt->execute();$stmt->close();

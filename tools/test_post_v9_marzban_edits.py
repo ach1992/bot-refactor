@@ -14,6 +14,8 @@ import contextlib
 import io
 import time
 import threading
+import subprocess
+import hashlib
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
@@ -24,6 +26,7 @@ import test_post_v9_marzban as marzban
 
 ROOT=Path(__file__).resolve().parents[1]
 GIB=1073741824
+NULL_EXPIRY_BASELINE="2408982797af15bc99e1df2909c13be3976cb1f4"
 
 # Post-V9-only provider fault injection. The immutable historical V6 native
 # fixture must not be changed to bless a new candidate.
@@ -38,6 +41,14 @@ class EditProviderHandler(native.Handler):
                 server.foreign_before_put=None
             pre_put=copy.deepcopy(server.edit_account)
         if '/api/user/' in self.path:
+            if self.command=='GET' and getattr(server,'expiry_change_on_get',None) is not None:
+                server.expiry_get_count=getattr(server,'expiry_get_count',0)+1
+                if server.expiry_get_count==server.expiry_change_on_get:
+                    changed=server.expiry_changed_value
+                    if changed=='<ABSENT>':server.edit_account.pop('expire',None)
+                    else:server.edit_account['expire']=changed
+                    server.expiry_change_on_get=None
+
             if self.command=='GET' and getattr(server,'next_plan_on_get_n',None) is not None:
                 n=getattr(server,'edit_get_count',0)+1
                 server.edit_get_count=n
@@ -219,6 +230,109 @@ def main():
                 if panel.edit_account['data_limit']!=expected_volume:
                     raise RuntimeError('Remote quota did not really change: '+mode)
             cases.append(mode+'_source_native_'+want)
+
+        # Exact 240 adapter control: a present JSON NULL expiry previously
+        # blocked even a complete positive-days renewal before RESET/PUT.
+        baseline=work/'nullable-expiry-baseline-240'
+        shutil.copytree(source,baseline)
+        old_adapter=subprocess.check_output(['git','show',NULL_EXPIRY_BASELINE+':src/Panel/Accounts.php'],cwd=ROOT)
+        (baseline/'src/Panel/Accounts.php').write_bytes(old_adapter)
+        def financial_snapshot():
+            return native.sql(work,env,'SELECT * FROM users ORDER BY id;SELECT * FROM pays ORDER BY id;'
+                'SELECT * FROM orders_list ORDER BY id;SELECT * FROM increase_order ORDER BY id',native.DBS[1])
+        def nullable_edit(stage,change,expiry=None,status='active',mode='edit-reset-verified',missing=False,
+                          change_on_get=None,observed=None):
+            panel.mode=mode;panel.trace.clear();panel.edit_account=copy.deepcopy(INITIAL)
+            panel.edit_account.update(expire=expiry,status=status,
+                inbounds={'vless':['fixture-inbound']},
+                proxies={'vless':{'id':'fixture-id','flow':'fixture-flow'}})
+            if missing:panel.edit_account.pop('expire')
+            panel.edit_put_count=0;panel.edit_reset_count=0;panel.expiry_get_count=0
+            panel.expiry_change_on_get=change_on_get;panel.expiry_changed_value=observed
+            before=financial_snapshot()
+            outcome=native.run(work,env,stage,native.DBS[1],{
+                'function':'editMarzbanConfig','args':[2,{'remark':'fixture-user',**change}]})
+            assert outcome['exception'] is None and not outcome['warnings'] and not outcome['stdout'],outcome
+            assert financial_snapshot()==before,'direct adapter changed local financial records'
+            return outcome['result']
+        red=nullable_edit(baseline,{'days':30,'volume':3})
+        assert red['success'] is False and red['uncertain'] is True and red['msg']=='marzban_account_unverified',red
+        assert panel.edit_put_count==0 and panel.edit_reset_count==0 and panel.edit_account['expire'] is None,panel.trace
+        cases.append('null_expiry_exact_240_adapter_RED_full_renewal_rejected_before_reset_or_put')
+        for label,change,status,mode,puts,resets in (
+            ('full_active',{'days':30,'volume':3},'active','edit-reset-verified',1,1),
+            ('full_limited',{'days':30,'volume':3},'limited','edit-reset-verified',1,1),
+            ('days_replacement_only',{'days':30},'active','edit-verified',1,0),
+            ('no_effective_plus_day',{'days':30,'volume':3,'plus_day':None},'active','edit-reset-verified',1,1),
+            ('bounded_original_NULL_correction',{'days':30,'volume':3},'active','edit-repair',2,1),
+        ):
+            started=int(time.time());result=nullable_edit(source,change,status=status,mode=mode);finished=int(time.time())
+            assert result['success'] is True and result['verified'] is True,(label,result)
+            assert isinstance(result['applied_expire'],int) and started+30*86400<=result['applied_expire']<=finished+30*86400,(label,result)
+            expected_bytes=(3 if 'volume' in change else 2)*GIB
+            assert result['applied_bytes']==expected_bytes and panel.edit_account['data_limit']==expected_bytes,(label,result)
+            assert panel.edit_account['expire']==result['applied_expire'] and panel.edit_account['status']=='active',(label,result)
+            assert panel.edit_account['inbounds']=={'vless':['fixture-inbound']} and panel.edit_account['proxies']=={'vless':{'id':'fixture-id','flow':'fixture-flow'}},panel.edit_account
+            assert panel.edit_account['note']=='fixture' and panel.edit_account['data_limit_reset_strategy']=='no_reset',panel.edit_account
+            payloads=[json.loads(item['body']) for item in panel.trace if item['method']=='PUT']
+            assert len(payloads)==puts and panel.edit_put_count==puts and panel.edit_reset_count==resets,(label,panel.trace)
+            assert all(set(body)==({'expire','data_limit'} if 'volume' in change else {'expire'}) for body in payloads),(label,payloads)
+            assert all(body==payloads[0] for body in payloads),(label,payloads)
+            if puts==2:assert result['repaired'] is True,(label,result)
+            cases.append('null_expiry_positive_whole_days_'+label+'_finite_verified_without_unrelated_changes')
+        # A literal NULL does not become permission for a volume-only delta,
+        # a relative extension, malformed quotes, or missing/invalid expiry.
+        for label,change,expiry,missing in (
+            ('volume_only',{'volume':3},None,False),
+            ('volume_delta_only',{'plus_volume':1},None,False),
+            ('relative_day_only',{'plus_day':1},None,False),
+            ('relative_day_precedence',{'days':30,'volume':3,'plus_day':1},None,False),
+            ('invalid_relative_precedence',{'days':30,'volume':3,'plus_day':0},None,False),
+            ('zero_days',{'days':0,'volume':3},None,False),
+            ('negative_days',{'days':-1,'volume':3},None,False),
+            ('fractional_days',{'days':1.5,'volume':3},None,False),
+            ('null_days',{'days':None,'volume':3},None,False),
+            ('boolean_days',{'days':True,'volume':3},None,False),
+            ('overflow_local_days',{'days':36500,'volume':3},None,False),
+            ('fractional_volume',{'days':30,'volume':1.5},None,False),
+            ('unsupported_field',{'expire':2000000000},None,False),
+            ('missing_expiry',{'days':30,'volume':3},None,True),
+            ('fractional_expiry',{'days':30,'volume':3},1.5,False),
+            ('negative_expiry',{'days':30,'volume':3},-1,False),
+            ('exponent_expiry',{'days':30,'volume':3},'0e0',False),
+            ('malformed_expiry',{'days':30,'volume':3},'null',False),
+            ('boolean_expiry',{'days':30,'volume':3},False,False),
+            ('overflow_expiry',{'days':30,'volume':3},'9223372036854775808',False),
+        ):
+            result=nullable_edit(source,change,expiry=expiry,missing=missing)
+            assert result['success'] is False,(label,result)
+            assert panel.edit_reset_count==0 and panel.edit_put_count==0,(label,panel.trace)
+            assert not any(item['method'] in ('PUT','DELETE') or item['path'].endswith('/reset') for item in panel.trace),(label,panel.trace)
+            cases.append('null_expiry_'+label+'_rejected_without_partial_remote_effect')
+        # The accessor is shared by initial reads, pre-effect observations,
+        # post-reset observations and corrective-readback matching. NULL and
+        # numeric zero remain distinct baseline identities.
+        for label,changed in (
+            ('missing','<ABSENT>'),('fractional',0.5),('zero',0),('finite',1800000100),
+        ):
+            result=nullable_edit(source,{'days':30,'volume':3},change_on_get=2,observed=changed)
+            assert result['success'] is False and result['uncertain'] is True,(label,result)
+            assert panel.edit_reset_count==0 and panel.edit_put_count==0,(label,panel.trace)
+            cases.append('null_expiry_pre_effect_'+label+'_drift_blocks_first_remote_effect')
+        for label,changed in (('missing','<ABSENT>'),('zero',0)):
+            result=nullable_edit(source,{'days':30,'volume':3},change_on_get=3,observed=changed)
+            assert result['success'] is False and result['uncertain'] is True,(label,result)
+            assert result['msg']=='marzban_reset_readback_unverified',(label,result)
+            assert panel.edit_reset_count==1 and panel.edit_put_count==0,(label,panel.trace)
+            cases.append('null_expiry_post_reset_'+label+'_drift_never_puts_or_repeats_reset')
+        # Existing explicit numeric zero is not reclassified as NULL. Preserve
+        # the old adapter's exact volume-only result/remote request semantics.
+        old_zero=nullable_edit(baseline,{'volume':3},expiry=0)
+        current_zero=nullable_edit(source,{'volume':3},expiry=0)
+        assert old_zero==current_zero and current_zero['success'] is True and current_zero['applied_expire']==0,(old_zero,current_zero)
+        assert panel.edit_reset_count==1 and panel.edit_put_count==1,panel.trace
+        cases.append('null_expiry_existing_zero_api_semantics_preserved_against_exact_240')
+        panel.expiry_change_on_get=None
 
         # Provider quota null/zero both mean unlimited; absence, bad numbers
         # and malformed quoted fields must fail closed BEFORE remote effects.
@@ -727,7 +841,11 @@ def main():
     report={'complete':True,'cases':len(cases),'scenarios':cases,
         'actual_php_mysqli_curl':True,'real_provider_requests':0,
         'owned_mariadb_only':True,'production_effects':0,
-        'absolute_correction_not_relative_replay':True}
+        'absolute_correction_not_relative_replay':True,
+        'null_expiry_full_replacement_verified':True,'null_expiry_baseline_red':True,
+        'null_expiry_baseline_source':NULL_EXPIRY_BASELINE,
+        'null_expiry_baseline_adapter_sha256':hashlib.sha256(old_adapter).hexdigest(),
+        'null_expiry_invalid_no_partial_effect':True,'null_expiry_zero_semantics_preserved':True}
     if args.report:
         args.report.parent.mkdir(parents=True,exist_ok=True)
         args.report.write_text(json.dumps(report,indent=2)+'\n')

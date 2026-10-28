@@ -220,6 +220,7 @@ def source_failure_regressions(d: Path) -> list[dict]:
 
 def main() -> dict:
     cases = []
+    retired_path_cases = []
     with fixture.owned_database() as (d, _env):
         runtime = d/'runtime'
         runtime.mkdir()
@@ -619,6 +620,17 @@ def main() -> dict:
         old.unlink()
         cases.append('retired_runtime_member_blocks')
 
+        # Every retired compatibility path must be absent, even when all new
+        # manifest members match. Extra callable PHP cannot survive extraction.
+        for name in sorted(package.RETIRED_RUNTIME_MEMBERS-{'settings/tronChecker.php'}):
+            old=runtime/name
+            old.parent.mkdir(parents=True,exist_ok=True)
+            old.write_text('<?php // synthetic retired compatibility member\n')
+            code,result,_=report_run(d)
+            require(code==2 and has(result,'source_identity','BLOCK'),'retired_path_'+name)
+            old.unlink()
+            retired_path_cases.append('retired_runtime_member_blocks__'+name.replace('/','_').replace('.','_'))
+
         # Current final payment/cohort SQL explicitly FORCE INDEXes these
         # original-schema keys. No safe smoke can ignore a missing name.
         statement(d, 'ALTER TABLE users DROP INDEX idx_users_userid_v1')
@@ -675,9 +687,16 @@ def main() -> dict:
         require(len(cases)==54,'original_54_cases_preserved')
         source_failures=source_failure_regressions(d)
         cases.extend(r['case'] for r in source_failures)
+        # Keep the original 54-case assertion independent of canonical-path
+        # additions, while reporting every executed retirement negative.
+        require(len(retired_path_cases)==len(package.RETIRED_RUNTIME_MEMBERS)-1,
+                'all_retired_compatibility_paths_exercised')
+        cases.extend(retired_path_cases)
     return {
         'complete':True, 'cases':len(cases), 'details':cases,
         'original_cases_preserved':54,
+        'retired_runtime_paths_checked':sorted(package.RETIRED_RUNTIME_MEMBERS),
+        'retired_runtime_extension_cases':len(retired_path_cases),
         'source_failure_reference':SOURCE_FAILURE_REFERENCE,
         'source_failure_regressions':source_failures,
         'archived_source_failure_fallthrough_red':all(r['archived_red'] for r in source_failures),

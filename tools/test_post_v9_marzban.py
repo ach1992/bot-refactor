@@ -52,9 +52,12 @@ def prepare(work: Path, stage: Path, candidate: bool) -> None:
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_bytes(get_bytes(name))
     if candidate:
-        dest=stage/'src/Panel/ProviderRuntime.php'
-        dest.parent.mkdir(parents=True,exist_ok=True)
-        dest.write_bytes((ROOT/'src/Panel/ProviderRuntime.php').read_bytes())
+        # Current dispatch includes its provider registry/lifecycle dependencies;
+        # the immutable historical staging remains unchanged.
+        shutil.copytree(ROOT/'src/Panel',stage/'src/Panel',dirs_exist_ok=True)
+        order_writes=stage/'src/Purchase/OrderWrites.php'
+        order_writes.parent.mkdir(parents=True,exist_ok=True)
+        order_writes.write_bytes((ROOT/'src/Purchase/OrderWrites.php').read_bytes())
         with (stage/'functions-under-test.php').open('ab') as stream:
             stream.write(b"\nrequire_once __DIR__.'/src/Panel/ProviderRuntime.php';\n")
     (stage / "native.php").write_bytes((ROOT / "tests/v6/native.php").read_bytes())
@@ -106,62 +109,89 @@ def safe_core_negatives() -> dict:
 
 
 def retired_sub_link(work: Path) -> dict:
-    stage = work / "retired-sub-link"
-    (stage / "settings").mkdir(parents=True, exist_ok=False)
-    shutil.copytree(ROOT / "messages", stage / "messages")
-    (stage / "settings/subLink.php").write_bytes((ROOT / "settings/subLink.php").read_bytes())
-    # Use a loopback socket without any source/DB/private credentials available.
-    sock = socket.socket()
-    sock.bind(("127.0.0.1", 0))
-    host, port = sock.getsockname()
-    sock.close()
-    log = work / "retired-sub-link-server.log"
-    with log.open("wb") as output:
-        env = {**os.environ, "http_proxy": "http://127.0.0.1:9",
-               "https_proxy": "http://127.0.0.1:9", "all_proxy": "http://127.0.0.1:9",
-               "no_proxy": "127.0.0.1,localhost"}
-        process = subprocess.Popen(
-            ["php", "-n", "-d", "allow_url_fopen=0",
-             "-d", "open_basedir=" + str(stage),
-             "-S", host+":"+str(port), "-t", str(stage)],
-            cwd=stage, env=env, stdout=output, stderr=output)
-        try:
-            for i in range(100):
-                if process.poll() is not None:
-                    raise RuntimeError("Retired link HTTP server exited")
-                try:
-                    with socket.create_connection((host, port), timeout=.25):
-                        break
-                except OSError:
-                    time.sleep(.05)
-            else:
-                raise RuntimeError("PHP built-in HTTP server not ready")
-            samples = [
-                ("GET", "/settings/subLink.php", 200, "Wrong token"),
-                ("GET", "/settings/subLink.php?token=short", 200, "Wrong token"),
-                ("GET", "/settings/subLink.php?token=" + "a"*30, 410,
-                 "Legacy subscription link retired; use the current subscription URL."),
-                ("POST", "/settings/subLink.php?token=" + "a"*30, 405, "Method not allowed"),
-            ]
-            for method, path, status, expected in samples:
-                req = urllib.request.Request(f"http://{host}:{port}{path}", method=method)
-                try:
-                    with urllib.request.urlopen(req, timeout=5) as response:
-                        got_status = response.status
-                        body = response.read().decode()
-                except urllib.error.HTTPError as response:
-                    got_status = response.code
-                    body = response.read().decode()
-                if (got_status, body) != (status, expected):
-                    raise RuntimeError("Retired link unexpectedly altered: " +
-                                       repr((method, path,got_status,body)))
-        finally:
-            process.terminate()
+    # The retired route is absent from the new package; preserve the immutable
+    # RC13 behavior as history rather than making an absent file look deployed.
+    if (ROOT / "settings/subLink.php").exists():
+        raise RuntimeError("Retired subscription PHP still exists in current runtime")
+    archived_ref = "2c0e728dcd71c38e20d176fe2577bc264d3faa1a"
+    current = work / "retired-sub-link-current"
+    (current / "settings").mkdir(parents=True, exist_ok=False)
+    historical = work / "retired-sub-link-rc13"
+    (historical / "settings").mkdir(parents=True, exist_ok=False)
+    old_source = git("show", archived_ref + ":settings/subLink.php")
+    (historical / "settings/subLink.php").write_bytes(old_source)
+    # Source-pinned old catalogs are required for the old 410 text. Current
+    # catalogs may correctly retire the now unreachable legacy copy.
+    import io, tarfile
+    with tarfile.open(fileobj=io.BytesIO(git("archive", archived_ref, "messages"))) as archive:
+        for member in archive.getmembers():
+            path = Path(member.name)
+            if path.is_absolute() or ".." in path.parts or member.issym() or member.islnk():
+                raise RuntimeError("Unsafe archived message member")
+            if member.isfile():
+                dest = historical / path
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                dest.write_bytes(archive.extractfile(member).read())
+    current_cases = 0
+    archived_cases = 0
+    for stage, archived in [(current, False), (historical, True)]:
+        sock = socket.socket()
+        sock.bind(("127.0.0.1", 0))
+        host, port = sock.getsockname()
+        sock.close()
+        log = work / ("retired-sub-link-" + ("rc13" if archived else "current") + ".log")
+        with log.open("wb") as output:
+            env = {**os.environ, "http_proxy": "http://127.0.0.1:9",
+                   "https_proxy": "http://127.0.0.1:9", "all_proxy": "http://127.0.0.1:9",
+                   "no_proxy": "127.0.0.1,localhost"}
+            process = subprocess.Popen(
+                ["php", "-n", "-d", "allow_url_fopen=0",
+                 "-d", "open_basedir=" + str(stage),
+                 "-S", host+":"+str(port), "-t", str(stage)],
+                cwd=stage, env=env, stdout=output, stderr=output)
             try:
-                process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                process.kill();process.wait(timeout=3)
-    return {"http_cases":len(samples), "old_valid_token_http":410,"result":"PASS"}
+                for _ in range(100):
+                    if process.poll() is not None:
+                        raise RuntimeError("Retired link HTTP server exited")
+                    try:
+                        with socket.create_connection((host, port), timeout=.25):
+                            break
+                    except OSError:
+                        time.sleep(.05)
+                else:
+                    raise RuntimeError("PHP built-in HTTP server not ready")
+                samples = [
+                    ("GET", "/settings/subLink.php", 200, "Wrong token"),
+                    ("GET", "/settings/subLink.php?token=short", 200, "Wrong token"),
+                    ("GET", "/settings/subLink.php?token=" + "a"*30, 410,
+                     "Legacy subscription link retired; use the current subscription URL."),
+                    ("POST", "/settings/subLink.php?token=" + "a"*30, 405, "Method not allowed"),
+                ]
+                for method, path, status, expected in samples:
+                    req = urllib.request.Request(f"http://{host}:{port}{path}", method=method)
+                    try:
+                        with urllib.request.urlopen(req, timeout=5) as response:
+                            got_status, body = response.status, response.read().decode()
+                    except urllib.error.HTTPError as response:
+                        got_status, body = response.code, response.read().decode()
+                    if archived:
+                        if (got_status, body) != (status, expected):
+                            raise RuntimeError("Archived RC13 retired route changed: " + repr((method, path, got_status, body)))
+                        archived_cases += 1
+                    else:
+                        if got_status != 404 or any(token in body for token in ["Wrong token", "Legacy subscription link retired", "baseInfo.php", "mysqli"]):
+                            raise RuntimeError("Absent legacy route unexpectedly executed: " + repr((method, got_status, body)))
+                        current_cases += 1
+            finally:
+                process.terminate()
+                try:
+                    process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    process.kill(); process.wait(timeout=3)
+    return {"http_cases": current_cases, "current_route_absent_http": 404,
+            "archived_rc13_http_cases": archived_cases, "archived_rc13_valid_token_http": 410,
+            "archived_rc13_ref": archived_ref, "archived_route_sha256": hashlib.sha256(old_source).hexdigest(),
+            "result": "PASS"}
 
 
 def main():
@@ -258,11 +288,17 @@ def main():
                     traces[1][-2]==first_put and
                     traces[1][-1]==preflight_get)
             extra_edit_readback=edit_wire
+            # The accepted common view now carries confirmed state and expiry
+            # for both providers; retain every old field and exact wire bytes.
+            intentional_traffic_enrichment=(name=='marzban.traffic' and
+                results[0]['result']=={'found':True,'enable':True,'leftgb':'1 GB','netType':None,'security':None} and
+                results[1]=={**results[0],'result':{**results[0]['result'],
+                    'uncertain':False,'status':'active','expire':1800000100,'actionable':True}})
             if name=='marzban.update':
                 minimal_edit_wire_verified=edit_wire
             if (traces[0]!=traces[1] and not extra_edit_readback) or (
                 results[0]!=results[1] and not
-                (intentional_fail_closed or intentional_delete_fail_closed)):
+                (intentional_fail_closed or intentional_delete_fail_closed or intentional_traffic_enrichment)):
                 raise RuntimeError("Marzban differential mismatch: "+name+
                                    "\n"+json.dumps({"historical":results[0],
                                                     "candidate":results[1],

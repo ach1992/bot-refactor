@@ -1,0 +1,1751 @@
+{
+  "version": 1,
+  "baseline_commit": "2c0e728dcd71c38e20d176fe2577bc264d3faa1a",
+  "authorization": "docs/post-v9/UNIFIED-SERVICE-MANAGEMENT.md",
+  "added_keys": {
+    "admin_settings.management.add_plan": {
+      "audience": "admin",
+      "entry": "➕ افزودن پلن",
+      "facade": true,
+      "reason": "Owner-authorized unified server/plan management and shared service-state UI, 2026-10-28.",
+      "source_paths": [
+        "config.php",
+        "src/Plans/Administration.php",
+        "src/Panel/ProviderAdmin.php",
+        "src/Admin/ManagementFlow.php"
+      ]
+    },
+    "admin_settings.management.add_server": {
+      "audience": "admin",
+      "entry": "➕ افزودن سرور",
+      "facade": true,
+      "reason": "Owner-authorized unified server/plan management and shared service-state UI, 2026-10-28.",
+      "source_paths": [
+        "config.php",
+        "src/Admin/ManagementFlow.php"
+      ]
+    },
+    "admin_settings.management.back": {
+      "audience": "admin",
+      "entry": "🔙 مرحله قبل",
+      "facade": true,
+      "reason": "Owner-authorized unified server/plan management and shared service-state UI, 2026-10-28.",
+      "source_paths": [
+        "src/Admin/ManagementFlow.php"
+      ]
+    },
+    "admin_settings.management.cancel": {
+      "audience": "admin",
+      "entry": "❌ لغو عملیات",
+      "facade": true,
+      "reason": "Owner-authorized unified server/plan management and shared service-state UI, 2026-10-28.",
+      "source_paths": [
+        "src/Plans/Intervals.php",
+        "src/Subscription/OrderManagement.php",
+        "src/Panel/ProviderAdmin.php",
+        "src/Admin/ManagementFlow.php"
+      ]
+    },
+    "admin_settings.management.canceled": {
+      "audience": "admin",
+      "entry": "✅ عملیات لغو شد.",
+      "facade": true,
+      "reason": "Owner-authorized unified server/plan management and shared service-state UI, 2026-10-28.",
+      "source_paths": [
+        "src/Plans/Intervals.php",
+        "src/Subscription/OrderManagement.php",
+        "src/Panel/ProviderAdmin.php",
+        "src/Admin/ManagementFlow.php"
+      ]
+    },
+    "admin_settings.management.capacity": {
+      "audience": "admin",
+      "entry": {
+        "text": "👥 ظرفیت: {value}",
+        "parameters": [
+          "value"
+        ]
+      },
+      "facade": true,
+      "reason": "Owner-authorized unified server/plan management and shared service-state UI, 2026-10-28.",
+      "source_paths": [
+        "config.php",
+        "src/Panel/ProviderAdmin.php",
+        "src/Admin/ManagementFlow.php"
+      ]
+    },
+    "admin_settings.management.confirm_local_delete": {
+      "audience": "admin",
+      "entry": "🗑 تأیید حذف رکورد",
+      "facade": false,
+      "reason": "Owner-authorized unified server/plan management and shared service-state UI, 2026-10-28.",
+      "source_paths": [
+        "src/Subscription/OrderManagement.php"
+      ]
+    },
+    "admin_settings.management.confirm_plan": {
+      "audience": "admin",
+      "entry": "✅ ثبت پلن",
+      "facade": true,
+      "reason": "Owner-authorized unified server/plan management and shared service-state UI, 2026-10-28.",
+      "source_paths": [
+        "src/Admin/ManagementFlow.php"
+      ]
+    },
+    "admin_settings.management.confirm_server": {
+      "audience": "admin",
+      "entry": "✅ ثبت سرور",
+      "facade": true,
+      "reason": "Owner-authorized unified server/plan management and shared service-state UI, 2026-10-28.",
+      "source_paths": [
+        "src/Admin/ManagementFlow.php"
+      ]
+    },
+    "admin_settings.management.connection": {
+      "audience": "admin",
+      "entry": "🔑 اطلاعات اتصال",
+      "facade": true,
+      "reason": "Owner-authorized unified server/plan management and shared service-state UI, 2026-10-28.",
+      "source_paths": [
+        "config.php",
+        "src/Admin/ManagementFlow.php"
+      ]
+    },
+    "admin_settings.management.display": {
+      "audience": "admin",
+      "entry": "🔗 نمایش کانفیگ‌ها و لینک اشتراک",
+      "facade": true,
+      "reason": "Owner-authorized unified server/plan management and shared service-state UI, 2026-10-28.",
+      "source_paths": [
+        "config.php",
+        "src/Panel/ProviderAdmin.php",
+        "src/Subscription/ServerDisplaySettings.php",
+        "src/Admin/ManagementFlow.php"
+      ]
+    },
+    "admin_settings.management.display_canceled": {
+      "audience": "admin",
+      "entry": "✅ ویرایش لغو شد.",
+      "facade": true,
+      "reason": "Owner-authorized unified server/plan management and shared service-state UI, 2026-10-28.",
+      "source_paths": [
+        "src/Subscription/ServerDisplaySettings.php",
+        "src/Admin/ManagementFlow.php"
+      ]
+    },
+    "admin_settings.management.display_context": {
+      "audience": "admin",
+      "entry": {
+        "text": "🔗 تنظیمات نمایش سرور «{title}»\n",
+        "parameters": [
+          "title"
+        ]
+      },
+      "facade": true,
+      "reason": "Owner-authorized unified server/plan management and shared service-state UI, 2026-10-28.",
+      "source_paths": [
+        "src/Subscription/ServerDisplaySettings.php",
+        "src/Admin/ManagementFlow.php"
+      ]
+    },
+    "admin_settings.management.groups": {
+      "audience": "admin",
+      "entry": "🗂 گروه‌های دسترسی",
+      "facade": true,
+      "reason": "Owner-authorized unified server/plan management and shared service-state UI, 2026-10-28.",
+      "source_paths": [
+        "src/Panel/ProviderAdmin.php",
+        "src/Admin/ManagementFlow.php"
+      ]
+    },
+    "admin_settings.management.inherit_groups": {
+      "audience": "admin",
+      "entry": "🔗 استفاده از گروه‌های پیش‌فرض سرور",
+      "facade": true,
+      "reason": "Owner-authorized unified server/plan management and shared service-state UI, 2026-10-28.",
+      "source_paths": [
+        "src/Admin/ManagementFlow.php"
+      ]
+    },
+    "admin_settings.management.interval_input": {
+      "audience": "admin",
+      "entry": "⚠️ مقدار و قیمت را با عدد صحیح وارد کنید. مقدار باید بیشتر از 0 و قیمت بین 0 تا 2147483647 تومان باشد؛ مثال: 10-50000 یعنی 10 روز یا 10 گیگابایت با قیمت 50000 تومان.",
+      "facade": false,
+      "reason": "Owner-authorized unified server/plan management and shared service-state UI, 2026-10-28.",
+      "source_paths": [
+        "src/Plans/Intervals.php"
+      ]
+    },
+    "admin_settings.management.interval_price": {
+      "audience": "admin",
+      "entry": "⚠️ قیمت را به تومان، با عدد صحیح بین 0 تا 2147483647 وارد کنید؛ مثال: 50000.",
+      "facade": false,
+      "reason": "Owner-authorized unified server/plan management and shared service-state UI, 2026-10-28.",
+      "source_paths": [
+        "src/Plans/Intervals.php"
+      ]
+    },
+    "admin_settings.management.intro": {
+      "audience": "admin",
+      "entry": "📝 اطلاعات را مرحله‌به‌مرحله وارد کنید. تا تأیید نهایی چیزی ثبت نمی‌شود؛ هر زمان می‌توانید برگردید یا لغو کنید.",
+      "facade": true,
+      "reason": "Owner-authorized unified server/plan management and shared service-state UI, 2026-10-28.",
+      "source_paths": [
+        "src/Admin/ManagementFlow.php"
+      ]
+    },
+    "admin_settings.management.local_delete": {
+      "audience": "admin",
+      "entry": "🗑 حذف رکورد سفارش",
+      "facade": false,
+      "reason": "Owner-authorized unified server/plan management and shared service-state UI, 2026-10-28.",
+      "source_paths": [
+        "src/Subscription/OrderManagement.php"
+      ]
+    },
+    "admin_settings.management.local_delete_confirm": {
+      "audience": "admin",
+      "entry": "⚠️ فقط رکورد این سفارش از ربات حذف می‌شود؛ سرویس از پنل حذف نمی‌شود و مبلغی برگردانده نمی‌شود. پس از حذف، مدیریت این سفارش از این صفحه ممکن نیست. ادامه می‌دهید؟",
+      "facade": false,
+      "reason": "Owner-authorized unified server/plan management and shared service-state UI, 2026-10-28.",
+      "source_paths": [
+        "src/Subscription/OrderManagement.php"
+      ]
+    },
+    "admin_settings.management.local_expiry": {
+      "audience": "admin",
+      "entry": "🗓 اصلاح تاریخ ثبت‌شده",
+      "facade": false,
+      "reason": "Owner-authorized unified server/plan management and shared service-state UI, 2026-10-28.",
+      "source_paths": [
+        "src/Subscription/OrderManagement.php"
+      ]
+    },
+    "admin_settings.management.local_expiry_prompt": {
+      "audience": "admin",
+      "entry": "🗓 تعداد روز برای اصلاح تاریخ ثبت‌شده سفارش را با عدد صحیح وارد کنید؛ مثبت برای افزایش و منفی برای کاهش. این کار اعتبار سرویس را تغییر نمی‌دهد.",
+      "facade": false,
+      "reason": "Owner-authorized unified server/plan management and shared service-state UI, 2026-10-28.",
+      "source_paths": [
+        "src/Subscription/OrderManagement.php"
+      ]
+    },
+    "admin_settings.management.local_plan": {
+      "audience": "admin",
+      "entry": "📋 اصلاح پلن ثبت‌شده",
+      "facade": false,
+      "reason": "Owner-authorized unified server/plan management and shared service-state UI, 2026-10-28.",
+      "source_paths": [
+        "src/Subscription/OrderManagement.php"
+      ]
+    },
+    "admin_settings.management.management_admin_required": {
+      "audience": "admin",
+      "entry": "⛔️ این بخش فقط برای مدیران در دسترس است.",
+      "facade": true,
+      "reason": "Owner-authorized unified server/plan management and shared service-state UI, 2026-10-28.",
+      "source_paths": [
+        "src/Admin/ManagementFlow.php"
+      ]
+    },
+    "admin_settings.management.management_connection": {
+      "audience": "admin",
+      "entry": "⚠️ اتصال تأیید نشد. آدرس، اطلاعات ورود، نسخه و دسترسی‌های پنل را بررسی کنید. برای اصلاح اطلاعات، به مرحله قبل برگردید.",
+      "facade": true,
+      "reason": "Owner-authorized unified server/plan management and shared service-state UI, 2026-10-28.",
+      "source_paths": [
+        "src/Admin/ManagementFlow.php"
+      ]
+    },
+    "admin_settings.management.management_input": {
+      "audience": "admin",
+      "entry": "⚠️ ورودی معتبر نیست. راهنمای همین مرحله را بررسی و دوباره وارد کنید.",
+      "facade": true,
+      "reason": "Owner-authorized unified server/plan management and shared service-state UI, 2026-10-28.",
+      "source_paths": [
+        "src/Admin/ManagementFlow.php"
+      ]
+    },
+    "admin_settings.management.management_other_action": {
+      "audience": "admin",
+      "entry": "ℹ️ ابتدا این عملیات را تمام یا لغو کنید؛ سپس بخش دیگری را باز کنید.",
+      "facade": true,
+      "reason": "Owner-authorized unified server/plan management and shared service-state UI, 2026-10-28.",
+      "source_paths": [
+        "src/Admin/ManagementFlow.php"
+      ]
+    },
+    "admin_settings.management.management_other_flow": {
+      "audience": "admin",
+      "entry": "⚠️ یک عملیات دیگر باز است. ابتدا همان عملیات را تمام یا لغو کنید.",
+      "facade": true,
+      "reason": "Owner-authorized unified server/plan management and shared service-state UI, 2026-10-28.",
+      "source_paths": [
+        "src/Admin/ManagementFlow.php"
+      ]
+    },
+    "admin_settings.management.management_stale": {
+      "audience": "admin",
+      "entry": "⚠️ این دکمه مربوط به مرحله قبلی است. از آخرین پیام استفاده کنید.",
+      "facade": true,
+      "reason": "Owner-authorized unified server/plan management and shared service-state UI, 2026-10-28.",
+      "source_paths": [
+        "src/Admin/ManagementFlow.php"
+      ]
+    },
+    "admin_settings.management.management_targets": {
+      "audience": "admin",
+      "entry": "⚠️ گزینه‌های دسترسی تغییر کرده‌اند یا در دسترس نیستند. به مرحله انتخاب برگردید و دوباره انتخاب کنید.",
+      "facade": true,
+      "reason": "Owner-authorized unified server/plan management and shared service-state UI, 2026-10-28.",
+      "source_paths": [
+        "src/Admin/ManagementFlow.php"
+      ]
+    },
+    "admin_settings.management.management_unavailable": {
+      "audience": "admin",
+      "entry": "⚠️ ذخیره یا نمایش این مرحله ممکن نشد. وضعیت را بررسی کنید و دوباره از بخش مدیریت وارد شوید.",
+      "facade": true,
+      "reason": "Owner-authorized unified server/plan management and shared service-state UI, 2026-10-28.",
+      "source_paths": [
+        "src/Admin/ManagementFlow.php"
+      ]
+    },
+    "admin_settings.management.marzban": {
+      "audience": "admin",
+      "entry": "مرزبان",
+      "facade": true,
+      "reason": "Owner-authorized unified server/plan management and shared service-state UI, 2026-10-28.",
+      "source_paths": [
+        "src/Admin/ManagementFlow.php"
+      ]
+    },
+    "admin_settings.management.next_page": {
+      "audience": "admin",
+      "entry": "▶️ بعدی",
+      "facade": true,
+      "reason": "Owner-authorized unified server/plan management and shared service-state UI, 2026-10-28.",
+      "source_paths": [
+        "src/Admin/ManagementFlow.php"
+      ]
+    },
+    "admin_settings.management.no_categories": {
+      "audience": "admin",
+      "entry": "ℹ️ هنوز دسته‌بندی فعالی وجود ندارد. ابتدا از مدیریت دسته‌ها یک دسته بسازید.",
+      "facade": true,
+      "reason": "Owner-authorized unified server/plan management and shared service-state UI, 2026-10-28.",
+      "source_paths": [
+        "src/Admin/ManagementFlow.php"
+      ]
+    },
+    "admin_settings.management.no_servers": {
+      "audience": "admin",
+      "entry": "ℹ️ هنوز سرور فعالی ثبت نشده است. ابتدا یک سرور اضافه کنید.",
+      "facade": true,
+      "reason": "Owner-authorized unified server/plan management and shared service-state UI, 2026-10-28.",
+      "source_paths": [
+        "src/Admin/ManagementFlow.php"
+      ]
+    },
+    "admin_settings.management.no_shared_group": {
+      "audience": "admin",
+      "entry": "بدون گروه پنل مشترک",
+      "facade": true,
+      "reason": "Owner-authorized unified server/plan management and shared service-state UI, 2026-10-28.",
+      "source_paths": [
+        "src/Admin/ManagementFlow.php"
+      ]
+    },
+    "admin_settings.management.open_plans": {
+      "audience": "admin",
+      "entry": "📋 فهرست پلن‌ها",
+      "facade": true,
+      "reason": "Owner-authorized unified server/plan management and shared service-state UI, 2026-10-28.",
+      "source_paths": [
+        "src/Admin/ManagementFlow.php"
+      ]
+    },
+    "admin_settings.management.order_context": {
+      "audience": "admin",
+      "entry": {
+        "text": "\n\n📋 سفارش {order_id}\nسرور: {server}\nپلن ثبت‌شده: {plan}\nتاریخ ثبت‌شده: {recorded_expiry}\n\n📝 این بخش مشخصات ثبت‌شده سفارش را اصلاح می‌کند؛ تغییر این اطلاعات به‌تنهایی اعتبار یا حجم سرویس را تغییر نمی‌دهد.",
+        "parameters": [
+          "order_id",
+          "server",
+          "plan",
+          "recorded_expiry"
+        ]
+      },
+      "facade": false,
+      "reason": "Owner-authorized unified server/plan management and shared service-state UI, 2026-10-28.",
+      "source_paths": [
+        "src/Subscription/OrderManagement.php"
+      ]
+    },
+    "admin_settings.management.pasarguard": {
+      "audience": "admin",
+      "entry": "پاسارگارد",
+      "facade": true,
+      "reason": "Owner-authorized unified server/plan management and shared service-state UI, 2026-10-28.",
+      "source_paths": [
+        "src/Admin/ManagementFlow.php"
+      ]
+    },
+    "admin_settings.management.plan_category": {
+      "audience": "admin",
+      "entry": "🗂 دسته‌بندی پلن را انتخاب کنید:",
+      "facade": true,
+      "reason": "Owner-authorized unified server/plan management and shared service-state UI, 2026-10-28.",
+      "source_paths": [
+        "src/Admin/ManagementFlow.php"
+      ]
+    },
+    "admin_settings.management.plan_days": {
+      "audience": "admin",
+      "entry": "📅 مدت اعتبار را به روز و با یک عدد صحیح مثبت وارد کنید:",
+      "facade": true,
+      "reason": "Owner-authorized unified server/plan management and shared service-state UI, 2026-10-28.",
+      "source_paths": [
+        "config.php",
+        "src/Admin/ManagementFlow.php"
+      ]
+    },
+    "admin_settings.management.plan_days_label": {
+      "audience": "admin",
+      "entry": {
+        "text": "📅 مدت: {value} روز",
+        "parameters": [
+          "value"
+        ]
+      },
+      "facade": true,
+      "reason": "Owner-authorized unified server/plan management and shared service-state UI, 2026-10-28.",
+      "source_paths": [
+        "config.php",
+        "src/Admin/ManagementFlow.php"
+      ]
+    },
+    "admin_settings.management.plan_days_prompt": {
+      "audience": "admin",
+      "entry": "📅 مدت جدید پلن را با یک عدد صحیح مثبت به روز وارد کنید:",
+      "facade": true,
+      "reason": "Owner-authorized unified server/plan management and shared service-state UI, 2026-10-28.",
+      "source_paths": [
+        "src/Admin/ManagementFlow.php"
+      ]
+    },
+    "admin_settings.management.plan_days_unknown": {
+      "audience": "admin",
+      "entry": "📅 مدت: نامشخص",
+      "facade": false,
+      "reason": "Existing unlimited plan metadata displays نامحدود without a finite unit suffix; missing or invalid metadata remains نامشخص. This display change does not permit free/unlimited plan creation.",
+      "source_paths": [
+        "config.php"
+      ]
+    },
+    "admin_settings.management.plan_days_unlimited": {
+      "audience": "admin",
+      "entry": "📅 مدت: نامحدود",
+      "facade": false,
+      "reason": "Existing unlimited plan metadata displays نامحدود without a finite unit suffix; missing or invalid metadata remains نامشخص. This display change does not permit free/unlimited plan creation.",
+      "source_paths": [
+        "config.php"
+      ]
+    },
+    "admin_settings.management.plan_description": {
+      "audience": "admin",
+      "entry": "📝 توضیح قابل نمایش به خریدار را وارد کنید:",
+      "facade": true,
+      "reason": "Owner-authorized unified server/plan management and shared service-state UI, 2026-10-28.",
+      "source_paths": [
+        "src/Admin/ManagementFlow.php"
+      ]
+    },
+    "admin_settings.management.plan_groups": {
+      "audience": "admin",
+      "entry": "🗂 گروه‌های دسترسی پلن را انتخاب کنید یا از گروه‌های پیش‌فرض سرور استفاده کنید. سپس انتخاب‌ها را تأیید کنید:",
+      "facade": true,
+      "reason": "Owner-authorized unified server/plan management and shared service-state UI, 2026-10-28.",
+      "source_paths": [
+        "src/Admin/ManagementFlow.php"
+      ]
+    },
+    "admin_settings.management.plan_inbounds": {
+      "audience": "admin",
+      "entry": "🗂 اینباندهای مرزبان برای این پلن را انتخاب کنید؛ سپس انتخاب‌ها را تأیید کنید:",
+      "facade": true,
+      "reason": "Owner-authorized unified server/plan management and shared service-state UI, 2026-10-28.",
+      "source_paths": [
+        "src/Admin/ManagementFlow.php"
+      ]
+    },
+    "admin_settings.management.plan_list": {
+      "audience": "admin",
+      "entry": "📋 مدیریت پلن‌ها",
+      "facade": true,
+      "reason": "Owner-authorized unified server/plan management and shared service-state UI, 2026-10-28.",
+      "source_paths": [
+        "src/Panel/ProviderAdmin.php",
+        "src/Admin/ManagementFlow.php"
+      ]
+    },
+    "admin_settings.management.plan_price": {
+      "audience": "admin",
+      "entry": "💰 قیمت پلن را به تومان و با عدد صحیح وارد کنید؛ برای پلن آزمایشی 0 بفرستید:",
+      "facade": true,
+      "reason": "Owner-authorized unified server/plan management and shared service-state UI, 2026-10-28.",
+      "source_paths": [
+        "src/Admin/ManagementFlow.php"
+      ]
+    },
+    "admin_settings.management.plan_review": {
+      "audience": "admin",
+      "entry": {
+        "text": "📋 تأیید نهایی پلن\n\nنام: {title}\nقیمت: {price} تومان\nدسته: {category}\nسرور: {server}\nاعتبار: {days} روز\nحجم: {volume} گیگابایت\nدسترسی: {access}\nتوضیح: {description}",
+        "parameters": [
+          "title",
+          "price",
+          "category",
+          "server",
+          "days",
+          "volume",
+          "access",
+          "description"
+        ]
+      },
+      "facade": true,
+      "reason": "Owner-authorized unified server/plan management and shared service-state UI, 2026-10-28.",
+      "source_paths": [
+        "src/Admin/ManagementFlow.php"
+      ]
+    },
+    "admin_settings.management.plan_saved": {
+      "audience": "admin",
+      "entry": "✅ پلن ثبت شد و آماده مدیریت است.",
+      "facade": true,
+      "reason": "Owner-authorized unified server/plan management and shared service-state UI, 2026-10-28.",
+      "source_paths": [
+        "src/Admin/ManagementFlow.php"
+      ]
+    },
+    "admin_settings.management.plan_server": {
+      "audience": "admin",
+      "entry": "🌐 سرور این پلن را انتخاب کنید:",
+      "facade": true,
+      "reason": "Owner-authorized unified server/plan management and shared service-state UI, 2026-10-28.",
+      "source_paths": [
+        "src/Admin/ManagementFlow.php"
+      ]
+    },
+    "admin_settings.management.plan_title": {
+      "audience": "admin",
+      "entry": "📝 نام پلن را وارد کنید:",
+      "facade": true,
+      "reason": "Owner-authorized unified server/plan management and shared service-state UI, 2026-10-28.",
+      "source_paths": [
+        "src/Admin/ManagementFlow.php"
+      ]
+    },
+    "admin_settings.management.plan_updated": {
+      "audience": "admin",
+      "entry": "✅ پلن به‌روزرسانی شد.",
+      "facade": true,
+      "reason": "Owner-authorized unified server/plan management and shared service-state UI, 2026-10-28.",
+      "source_paths": [
+        "src/Admin/ManagementFlow.php"
+      ]
+    },
+    "admin_settings.management.plan_volume": {
+      "audience": "admin",
+      "entry": "📦 حجم پلن را به گیگابایت و با یک عدد صحیح مثبت وارد کنید:",
+      "facade": true,
+      "reason": "Owner-authorized unified server/plan management and shared service-state UI, 2026-10-28.",
+      "source_paths": [
+        "config.php",
+        "src/Admin/ManagementFlow.php"
+      ]
+    },
+    "admin_settings.management.plan_volume_label": {
+      "audience": "admin",
+      "entry": {
+        "text": "📦 حجم: {value} گیگابایت",
+        "parameters": [
+          "value"
+        ]
+      },
+      "facade": true,
+      "reason": "Owner-authorized unified server/plan management and shared service-state UI, 2026-10-28.",
+      "source_paths": [
+        "config.php",
+        "src/Admin/ManagementFlow.php"
+      ]
+    },
+    "admin_settings.management.plan_volume_prompt": {
+      "audience": "admin",
+      "entry": "📦 حجم جدید پلن را با یک عدد صحیح مثبت به گیگابایت وارد کنید:",
+      "facade": true,
+      "reason": "Owner-authorized unified server/plan management and shared service-state UI, 2026-10-28.",
+      "source_paths": [
+        "src/Admin/ManagementFlow.php"
+      ]
+    },
+    "admin_settings.management.plan_volume_unknown": {
+      "audience": "admin",
+      "entry": "📦 حجم: نامشخص",
+      "facade": false,
+      "reason": "Existing unlimited plan metadata displays نامحدود without a finite unit suffix; missing or invalid metadata remains نامشخص. This display change does not permit free/unlimited plan creation.",
+      "source_paths": [
+        "config.php"
+      ]
+    },
+    "admin_settings.management.plan_volume_unlimited": {
+      "audience": "admin",
+      "entry": "📦 حجم: نامحدود",
+      "facade": false,
+      "reason": "Existing unlimited plan metadata displays نامحدود without a finite unit suffix; missing or invalid metadata remains نامشخص. This display change does not permit free/unlimited plan creation.",
+      "source_paths": [
+        "config.php"
+      ]
+    },
+    "admin_settings.management.plans": {
+      "audience": "admin",
+      "entry": "📋 پلن‌های این سرور",
+      "facade": true,
+      "reason": "Owner-authorized unified server/plan management and shared service-state UI, 2026-10-28.",
+      "source_paths": [
+        "config.php",
+        "src/Panel/ProviderAdmin.php",
+        "src/Admin/ManagementFlow.php"
+      ]
+    },
+    "admin_settings.management.previous_page": {
+      "audience": "admin",
+      "entry": "◀️ قبلی",
+      "facade": true,
+      "reason": "Owner-authorized unified server/plan management and shared service-state UI, 2026-10-28.",
+      "source_paths": [
+        "src/Admin/ManagementFlow.php"
+      ]
+    },
+    "admin_settings.management.remark": {
+      "audience": "admin",
+      "entry": {
+        "text": "🏷 پیشوند: {value}",
+        "parameters": [
+          "value"
+        ]
+      },
+      "facade": true,
+      "reason": "Owner-authorized unified server/plan management and shared service-state UI, 2026-10-28.",
+      "source_paths": [
+        "config.php",
+        "src/Panel/ProviderAdmin.php",
+        "src/Admin/ManagementFlow.php"
+      ]
+    },
+    "admin_settings.management.restart": {
+      "audience": "admin",
+      "entry": "ℹ️ فرم قبلی پایان یافت. برای ادامه از «افزودن سرور» یا «افزودن پلن» استفاده کنید.",
+      "facade": true,
+      "reason": "Owner-authorized unified server/plan management and shared service-state UI, 2026-10-28.",
+      "source_paths": [
+        "src/Admin/ManagementFlow.php"
+      ]
+    },
+    "admin_settings.management.reuse_connection": {
+      "audience": "admin",
+      "entry": {
+        "text": "🔗 استفاده از اتصال {name}",
+        "parameters": [
+          "name"
+        ]
+      },
+      "facade": true,
+      "reason": "Owner-authorized unified server/plan management and shared service-state UI, 2026-10-28.",
+      "source_paths": [
+        "src/Admin/ManagementFlow.php"
+      ]
+    },
+    "admin_settings.management.review_required": {
+      "audience": "admin",
+      "entry": "⚠️ نتیجه ذخیره هنوز مشخص نیست. ابتدا فهرست را بررسی کنید؛ از ثبت دوباره تا بررسی نتیجه خودداری کنید.",
+      "facade": true,
+      "reason": "Owner-authorized unified server/plan management and shared service-state UI, 2026-10-28.",
+      "source_paths": [
+        "src/Admin/ManagementFlow.php"
+      ]
+    },
+    "admin_settings.management.selected": {
+      "audience": "admin",
+      "entry": "✅ ",
+      "facade": true,
+      "reason": "Owner-authorized unified server/plan management and shared service-state UI, 2026-10-28.",
+      "source_paths": [
+        "src/Admin/ManagementFlow.php"
+      ]
+    },
+    "admin_settings.management.selection_done": {
+      "audience": "admin",
+      "entry": "✅ تأیید انتخاب‌ها",
+      "facade": true,
+      "reason": "Owner-authorized unified server/plan management and shared service-state UI, 2026-10-28.",
+      "source_paths": [
+        "src/Admin/ManagementFlow.php"
+      ]
+    },
+    "admin_settings.management.selection_summary": {
+      "audience": "admin",
+      "entry": {
+        "text": "تعداد انتخاب‌ها: {count}؛ نمایش حداکثر 8 مورد: {items}",
+        "parameters": [
+          "count",
+          "items"
+        ]
+      },
+      "facade": true,
+      "reason": "Owner-authorized unified server/plan management and shared service-state UI, 2026-10-28.",
+      "source_paths": [
+        "src/Admin/ManagementFlow.php"
+      ]
+    },
+    "admin_settings.management.server_api_key": {
+      "audience": "admin",
+      "entry": "🔑 API key پاسارگارد را وارد کنید؛ فقط خود کلید، بدون Bearer یا X-Api-Key.\nنسخه پشتیبانی‌شده 5.5.1 است. کلید باید دسترسی مدیریت کاربران و خواندن Groups داشته باشد. پیام کلید پس از دریافت حذف می‌شود:",
+      "facade": true,
+      "reason": "Owner-authorized unified server/plan management and shared service-state UI, 2026-10-28.",
+      "source_paths": [
+        "src/Admin/ManagementFlow.php"
+      ]
+    },
+    "admin_settings.management.server_back": {
+      "audience": "admin",
+      "entry": "🔙 فهرست سرورها",
+      "facade": true,
+      "reason": "Owner-authorized unified server/plan management and shared service-state UI, 2026-10-28.",
+      "source_paths": [
+        "src/Admin/ManagementFlow.php"
+      ]
+    },
+    "admin_settings.management.server_capacity": {
+      "audience": "admin",
+      "entry": "👥 ظرفیت فروش سرور را با یک عدد صحیح مثبت وارد کنید:",
+      "facade": true,
+      "reason": "Owner-authorized unified server/plan management and shared service-state UI, 2026-10-28.",
+      "source_paths": [
+        "src/Admin/ManagementFlow.php"
+      ]
+    },
+    "admin_settings.management.server_choice": {
+      "audience": "admin",
+      "entry": {
+        "text": "{title} ({provider})",
+        "parameters": [
+          "title",
+          "provider"
+        ]
+      },
+      "facade": true,
+      "reason": "Owner-authorized unified server/plan management and shared service-state UI, 2026-10-28.",
+      "source_paths": [
+        "src/Admin/ManagementFlow.php"
+      ]
+    },
+    "admin_settings.management.server_delete": {
+      "audience": "admin",
+      "entry": "🗑 حذف سرور",
+      "facade": true,
+      "reason": "Owner-authorized unified server/plan management and shared service-state UI, 2026-10-28.",
+      "source_paths": [
+        "bot.php",
+        "config.php",
+        "src/Panel/ProviderAdmin.php",
+        "src/Admin/ManagementFlow.php"
+      ]
+    },
+    "admin_settings.management.server_delete_confirm": {
+      "audience": "admin",
+      "entry": "🗑 این سرور از فهرست حذف شود؟ فقط سروری که هیچ پلن، سفارش یا سابقه پرداخت وابسته ندارد حذف می‌شود. این کار حسابی را در پنل حذف نمی‌کند.",
+      "facade": true,
+      "reason": "Owner-authorized unified server/plan management and shared service-state UI, 2026-10-28.",
+      "source_paths": [
+        "bot.php",
+        "src/Admin/ManagementFlow.php"
+      ]
+    },
+    "admin_settings.management.server_flag": {
+      "audience": "admin",
+      "entry": "🏳️ پرچم یا نشانه سرور را ارسال کنید:",
+      "facade": true,
+      "reason": "Owner-authorized unified server/plan management and shared service-state UI, 2026-10-28.",
+      "source_paths": [
+        "src/Admin/ManagementFlow.php"
+      ]
+    },
+    "admin_settings.management.server_flag_label": {
+      "audience": "admin",
+      "entry": "🏳️ نشانه سرور",
+      "facade": true,
+      "reason": "Owner-authorized unified server/plan management and shared service-state UI, 2026-10-28.",
+      "source_paths": [
+        "src/Admin/ManagementFlow.php"
+      ]
+    },
+    "admin_settings.management.server_groups": {
+      "audience": "admin",
+      "entry": "🗂 گروه‌های دسترسی این سرور را انتخاب کنید. انتخاب چند گروه ممکن است؛ سپس «تأیید انتخاب‌ها» را بزنید:",
+      "facade": true,
+      "reason": "Owner-authorized unified server/plan management and shared service-state UI, 2026-10-28.",
+      "source_paths": [
+        "src/Admin/ManagementFlow.php"
+      ]
+    },
+    "admin_settings.management.server_list": {
+      "audience": "admin",
+      "entry": "🌐 مدیریت سرورها",
+      "facade": true,
+      "reason": "Owner-authorized unified server/plan management and shared service-state UI, 2026-10-28.",
+      "source_paths": [
+        "src/Panel/ProviderAdmin.php",
+        "src/Subscription/ServerDisplaySettings.php",
+        "src/Admin/ManagementFlow.php"
+      ]
+    },
+    "admin_settings.management.server_panelgroup": {
+      "audience": "admin",
+      "entry": "🗂 در صورت اشتراک چند سرور منطقی در یک پنل مرزبان، گروه پنل مشترک را انتخاب کنید. اگر گروهی تعیین نکنید، جابه‌جایی سرویس بین سرورها غیرفعال می‌ماند:",
+      "facade": true,
+      "reason": "Owner-authorized unified server/plan management and shared service-state UI, 2026-10-28.",
+      "source_paths": [
+        "src/Admin/ManagementFlow.php"
+      ]
+    },
+    "admin_settings.management.server_password": {
+      "audience": "admin",
+      "entry": "🔑 رمز عبور مدیر پنل را وارد کنید. پیام رمز پس از دریافت حذف می‌شود:",
+      "facade": true,
+      "reason": "Owner-authorized unified server/plan management and shared service-state UI, 2026-10-28.",
+      "source_paths": [
+        "src/Admin/ManagementFlow.php"
+      ]
+    },
+    "admin_settings.management.server_provider": {
+      "audience": "admin",
+      "entry": "🌐 افزودن سرور\nنوع پنل این سرور را انتخاب کنید:",
+      "facade": true,
+      "reason": "Owner-authorized unified server/plan management and shared service-state UI, 2026-10-28.",
+      "source_paths": [
+        "src/Admin/ManagementFlow.php"
+      ]
+    },
+    "admin_settings.management.server_referenced": {
+      "audience": "admin",
+      "entry": "⚠️ این سرور پلن، سرویس یا سابقه پرداخت دارد و حذف نمی‌شود. برای توقف فروش، وضعیت سرور را غیرفعال کنید.",
+      "facade": true,
+      "reason": "Owner-authorized unified server/plan management and shared service-state UI, 2026-10-28.",
+      "source_paths": [
+        "src/Admin/ManagementFlow.php"
+      ]
+    },
+    "admin_settings.management.server_remark": {
+      "audience": "admin",
+      "entry": "🏷 پیشوند نام سرویس‌ها را وارد کنید؛ فقط حروف انگلیسی، عدد، خط تیره یا زیرخط و حداکثر 60 کاراکتر:",
+      "facade": true,
+      "reason": "Owner-authorized unified server/plan management and shared service-state UI, 2026-10-28.",
+      "source_paths": [
+        "src/Admin/ManagementFlow.php"
+      ]
+    },
+    "admin_settings.management.server_removed": {
+      "audience": "admin",
+      "entry": "✅ سرور بدون سابقه وابسته از فهرست حذف شد.",
+      "facade": true,
+      "reason": "Owner-authorized unified server/plan management and shared service-state UI, 2026-10-28.",
+      "source_paths": [
+        "src/Admin/ManagementFlow.php"
+      ]
+    },
+    "admin_settings.management.server_review": {
+      "audience": "admin",
+      "entry": {
+        "text": "🌐 تأیید نهایی سرور\n\nنام: {title}\nنوع پنل: {provider}\nظرفیت: {capacity}\nپیشوند: {remark}\nنشانه: {flag}\nآدرس: <code>{url}</code>\nگروه‌ها: {access}\n\nاطلاعات ورود در این خلاصه نمایش داده نمی‌شود.",
+        "parameters": [
+          "title",
+          "provider",
+          "capacity",
+          "remark",
+          "flag",
+          "url",
+          "access"
+        ]
+      },
+      "facade": true,
+      "reason": "Owner-authorized unified server/plan management and shared service-state UI, 2026-10-28.",
+      "source_paths": [
+        "src/Admin/ManagementFlow.php"
+      ]
+    },
+    "admin_settings.management.server_saved": {
+      "audience": "admin",
+      "entry": "✅ سرور ثبت شد و در فهرست سرورها قابل مدیریت است.",
+      "facade": true,
+      "reason": "Owner-authorized unified server/plan management and shared service-state UI, 2026-10-28.",
+      "source_paths": [
+        "src/Admin/ManagementFlow.php"
+      ]
+    },
+    "admin_settings.management.server_title": {
+      "audience": "admin",
+      "entry": "📝 نام سرور را وارد کنید؛ این نام در فهرست خرید به کاربر نمایش داده می‌شود:",
+      "facade": true,
+      "reason": "Owner-authorized unified server/plan management and shared service-state UI, 2026-10-28.",
+      "source_paths": [
+        "src/Admin/ManagementFlow.php"
+      ]
+    },
+    "admin_settings.management.server_url": {
+      "audience": "admin",
+      "entry": "🔗 آدرس پایه پنل را بفرستید، مانند:\n<code>https://panel.example.com</code>\nآدرس صفحه dashboard یا مسیر api را وارد نکنید. برای پاسارگارد می‌توانید یکی از اتصال‌های ذخیره‌شده زیر را هم انتخاب کنید.",
+      "facade": true,
+      "reason": "Owner-authorized unified server/plan management and shared service-state UI, 2026-10-28.",
+      "source_paths": [
+        "src/Admin/ManagementFlow.php"
+      ]
+    },
+    "admin_settings.management.server_username": {
+      "audience": "admin",
+      "entry": "👤 نام کاربری مدیر پنل را وارد کنید:",
+      "facade": true,
+      "reason": "Owner-authorized unified server/plan management and shared service-state UI, 2026-10-28.",
+      "source_paths": [
+        "src/Admin/ManagementFlow.php"
+      ]
+    },
+    "admin_settings.management.settings_saved": {
+      "audience": "admin",
+      "entry": "✅ تنظیمات سرور ذخیره شد.",
+      "facade": true,
+      "reason": "Owner-authorized unified server/plan management and shared service-state UI, 2026-10-28.",
+      "source_paths": [
+        "src/Admin/ManagementFlow.php"
+      ]
+    },
+    "admin_settings.management.shared_key": {
+      "audience": "admin",
+      "entry": "🔑 API key مشترک پنل",
+      "facade": true,
+      "reason": "Owner-authorized unified server/plan management and shared service-state UI, 2026-10-28.",
+      "source_paths": [
+        "src/Panel/ProviderAdmin.php",
+        "src/Admin/ManagementFlow.php"
+      ]
+    },
+    "admin_settings.management.shared_key_notice": {
+      "audience": "admin",
+      "entry": "🔑 کلید جدید را ارسال کنید. این تغییر روی همه سرورهای متصل به همین پنل اعمال می‌شود؛ پیام کلید پس از دریافت حذف می‌شود.",
+      "facade": true,
+      "reason": "Owner-authorized unified server/plan management and shared service-state UI, 2026-10-28.",
+      "source_paths": [
+        "src/Panel/ProviderAdmin.php",
+        "src/Admin/ManagementFlow.php"
+      ]
+    },
+    "admin_settings.management.warning_explanation": {
+      "audience": "admin",
+      "entry": "ℹ️ این بخش وضعیت پردازش هشدار را نشان می‌دهد و کلید روشن یا خاموش نیست. «پردازش شده» به معنی تضمین تحویل پیام نیست. پایان مهلت نگهداری فقط زمان بررسی برای حذف سرویسی است که همچنان تمام شده است.",
+      "facade": false,
+      "reason": "Read-only actual warning lifecycle state replaces a misleading boolean control; processed state does not guarantee Telegram delivery.",
+      "source_paths": [
+        "src/Subscription/OrderManagement.php"
+      ]
+    },
+    "admin_settings.management.warning_grace": {
+      "audience": "admin",
+      "entry": {
+        "text": "⏳ مهلت نگهداری تا {date}",
+        "parameters": [
+          "date"
+        ]
+      },
+      "facade": false,
+      "reason": "Read-only actual warning lifecycle state replaces a misleading boolean control; processed state does not guarantee Telegram delivery.",
+      "source_paths": [
+        "src/Subscription/OrderManagement.php"
+      ]
+    },
+    "admin_settings.management.warning_grace_state": {
+      "audience": "admin",
+      "entry": "⏳ مهلت نگهداری",
+      "facade": false,
+      "reason": "Read-only actual warning lifecycle state replaces a misleading boolean control; processed state does not guarantee Telegram delivery.",
+      "source_paths": [
+        "src/Subscription/OrderManagement.php"
+      ]
+    },
+    "admin_settings.management.warning_processed": {
+      "audience": "admin",
+      "entry": "🔔 هشدار: پردازش شده",
+      "facade": false,
+      "reason": "Read-only actual warning lifecycle state replaces a misleading boolean control; processed state does not guarantee Telegram delivery.",
+      "source_paths": [
+        "src/Subscription/OrderManagement.php"
+      ]
+    },
+    "admin_settings.management.warning_retry": {
+      "audience": "admin",
+      "entry": "🔔 هشدار: در انتظار ارسال مجدد",
+      "facade": false,
+      "reason": "Read-only actual warning lifecycle state replaces a misleading boolean control; processed state does not guarantee Telegram delivery.",
+      "source_paths": [
+        "src/Subscription/OrderManagement.php"
+      ]
+    },
+    "admin_settings.management.warning_unknown": {
+      "audience": "admin",
+      "entry": "⚠️ وضعیت هشدار نیازمند بررسی",
+      "facade": false,
+      "reason": "Read-only actual warning lifecycle state replaces a misleading boolean control; processed state does not guarantee Telegram delivery.",
+      "source_paths": [
+        "src/Subscription/OrderManagement.php"
+      ]
+    },
+    "admin_settings.management.warning_unprocessed": {
+      "audience": "admin",
+      "entry": "🔔 هشدار: ثبت نشده",
+      "facade": false,
+      "reason": "Read-only actual warning lifecycle state replaces a misleading boolean control; processed state does not guarantee Telegram delivery.",
+      "source_paths": [
+        "src/Subscription/OrderManagement.php"
+      ]
+    },
+    "renewal.extensions.plan_selection_review": {
+      "audience": "user",
+      "entry": "⚠️ نتیجه تغییر پلن هنوز قابل تأیید نیست. صفحه اشتراک را بررسی کنید.",
+      "facade": false,
+      "reason": "Owner-authorized existing-subscription plan selection reports unavailable or unverified selection outcomes accurately while preserving the separate free-trial refusal.",
+      "source_paths": [
+        "src/Finance/Routes/Extensions.php"
+      ]
+    },
+    "renewal.extensions.plan_selection_unavailable": {
+      "audience": "user",
+      "entry": "⚠️ تغییر پلن این اشتراک در حال حاضر ممکن نیست. از صفحه اشتراک دوباره وارد شوید.",
+      "facade": false,
+      "reason": "Owner-authorized existing-subscription plan selection reports unavailable or unverified selection outcomes accurately while preserving the separate free-trial refusal.",
+      "source_paths": [
+        "src/Finance/Routes/Extensions.php"
+      ]
+    },
+    "subscription.account_deletion.report": {
+      "audience": "admin",
+      "entry": {
+        "text": "🔋 حذف اشتراک توسط کاربر\n\n🆔 شناسه عددی: <code>{from_id}</code>\n👤 اسم کاربر: {first_name}\n👤 نام کاربری: @{username}\n🎈 نام کاربری اشتراک: {remark}\n📦 حجم اولیه اشتراک: {volumeDisplay}\n📅 مدت اشتراک: {daysDisplay}\n",
+        "parameters": [
+          "from_id",
+          "first_name",
+          "username",
+          "remark",
+          "volumeDisplay",
+          "daysDisplay"
+        ]
+      },
+      "facade": false,
+      "reason": "Deletion operator reports render complete volume/day labels so explicit unlimited remains نامحدود without finite unit suffixes and missing plan metadata remains نامشخص.",
+      "source_paths": [
+        "src/Subscription/AccountDeletion.php"
+      ]
+    },
+    "subscription.account_deletion.shared_effect_notice": {
+      "audience": "user",
+      "entry": "⚠️ با تأیید، خود اشتراک برای همیشه حذف می‌شود و دسترسی همه افرادی که از آن استفاده می‌کنند قطع خواهد شد.",
+      "facade": false,
+      "reason": "Owner-approved shared registration keeps actual native deletion; the existing customer and administrator Yes/No confirmations share one paragraph explaining access ends for everyone using that subscription. No extra step or identities are exposed.",
+      "source_paths": [
+        "src/Subscription/AccountDeletion.php"
+      ]
+    },
+    "subscription.account_details.auto_renew_update_unverified": {
+      "audience": "user",
+      "entry": "⚠️ تغییر وضعیت تمدید خودکار تأیید نشد. صفحهٔ اشتراک را دوباره باز کنید.",
+      "facade": false,
+      "reason": "The owner-approved auto-renewal consent catch reports an unverified status update for failed or unknown acknowledgements without falsely reporting ownership denial; actual permission checks remain separate.",
+      "source_paths": [
+        "config.php"
+      ]
+    },
+    "subscription.account_details.status_on_hold": {
+      "audience": "user",
+      "entry": "⏸ در انتظار فعال‌سازی",
+      "facade": false,
+      "reason": "Owner-authorized unified server/plan management and shared service-state UI, 2026-10-28.",
+      "source_paths": [
+        "src/Subscription/AccountDetails.php"
+      ]
+    },
+    "subscription.manual_accounts.customer_not_found": {
+      "audience": "admin",
+      "entry": "❌ کاربر پیدا نشد. شناسه عددی کاربری را بفرستید که قبلاً ربات را شروع کرده است.",
+      "facade": false,
+      "reason": "Existing-subscription import for either provider validates the selected customer before confirming their numeric ID; invalid/missing/ambiguous targets stay in the same input step.",
+      "source_paths": [
+        "src/Subscription/ManualAccounts.php"
+      ]
+    },
+    "subscription.manual_accounts.import_completed": {
+      "audience": "user",
+      "entry": {
+        "text": "✅ اشتراک <code>{remark}</code> به فهرست اشتراک‌های شما اضافه شد.\nبرای مشاهده و مدیریت آن، «اشتراک‌های من» را باز کنید. برای تمدید، ابتدا از صفحه اشتراک «تغییر پلن» را بزنید و پلن مناسب را انتخاب کنید؛ سپس تمدید را انجام دهید.",
+        "parameters": [
+          "remark"
+        ]
+      },
+      "facade": false,
+      "reason": "Verified external-account import now directs the owner to select a plan before renewal, instead of promising immediate card-to-card renewal.",
+      "source_paths": [
+        "src/Subscription/ManualAccounts.php"
+      ]
+    },
+    "subscription.manual_accounts.import_under_review": {
+      "audience": "user",
+      "entry": "⏳ نتیجه افزودن اشتراک در حال بررسی است. ابتدا فهرست اشتراک‌ها را بررسی کنید و تا مشخص شدن نتیجه، دوباره ثبت نکنید.",
+      "facade": false,
+      "reason": "Owner-authorized unified server/plan management and shared service-state UI, 2026-10-28.",
+      "source_paths": [
+        "src/Subscription/ManualAccounts.php"
+      ]
+    },
+    "subscription.manual_accounts.import_unverified": {
+      "audience": "user",
+      "entry": "⚠️ امکان تأیید این اشتراک وجود ندارد. لینک اصلی اشتراک را از فروشنده بگیرید یا با پشتیبانی تماس بگیرید.",
+      "facade": false,
+      "reason": "Owner-authorized unified server/plan management and shared service-state UI, 2026-10-28.",
+      "source_paths": [
+        "src/Subscription/ExternalAccounts.php",
+        "src/Subscription/ManualAccounts.php"
+      ]
+    }
+  },
+  "retained_legacy_keys": {
+    "admin_settings.config.get_order_detail_keys.alert.1bd8f019af": {
+      "entry": "⚠️ شما اجازه تغییر این سفارش را ندارید.",
+      "reason": "Unchanged pre-management ownership-denial copy retained as baseline-only evidence after the current consent catch reports unverified updates accurately instead of treating database/origin failures as ownership denial.",
+      "previous_source_paths": [
+        "config.php"
+      ]
+    },
+    "admin_settings.config.get_order_detail_keys.alert.2871efbc4d": {
+      "entry": "❌ سفارش مورد نظر یافت نشد.",
+      "reason": "Unchanged pre-management copy retained as baseline-only evidence after the current locked automatic-renewal consent handler adopted shared role/order/plan unavailable handling.",
+      "previous_source_paths": [
+        "config.php"
+      ]
+    },
+    "admin_settings.config.get_order_detail_keys.alert.4f0ac830c9": {
+      "entry": "⚠️ پلن مربوط به این سفارش پیدا نشد؛ برای بررسی با پشتیبانی تماس بگیرید.",
+      "reason": "Unchanged pre-management copy retained as baseline-only evidence after the current locked automatic-renewal consent handler adopted shared role/order/plan unavailable handling.",
+      "previous_source_paths": [
+        "config.php"
+      ]
+    },
+    "admin_settings.config.get_order_detail_keys.alert.7e78156592": {
+      "entry": "⚠️ دسترسی ادمین ندارید.",
+      "reason": "Unchanged pre-management copy retained as baseline-only evidence after the current locked automatic-renewal consent handler adopted shared role/order/plan unavailable handling.",
+      "previous_source_paths": [
+        "config.php"
+      ]
+    },
+    "admin_settings.config.get_order_detail_keys.alert.fb223619e1": {
+      "entry": "⚠️ پلن این سفارش مشخص نیست؛ برای بررسی با پشتیبانی تماس بگیرید.",
+      "reason": "Unchanged pre-management copy retained as baseline-only evidence after the current locked automatic-renewal consent handler adopted shared role/order/plan unavailable handling.",
+      "previous_source_paths": [
+        "config.php"
+      ]
+    },
+    "admin_settings.config.get_plan_details_keys.button.0c7b1a3966": {
+      "entry": "⚙️ پورت دلخواه",
+      "reason": "Unchanged pre-management copy retained as explicit legacy catalog compatibility evidence; the new management journey no longer offers this old control/form.",
+      "previous_source_paths": [
+        "config.php"
+      ]
+    },
+    "admin_settings.config.get_plan_details_keys.button.82572df158": {
+      "entry": "🚪 تغییر ظرفیت کانفیگ",
+      "reason": "Unchanged pre-management copy retained as explicit legacy catalog compatibility evidence; the new management journey no longer offers this old control/form.",
+      "previous_source_paths": [
+        "config.php"
+      ]
+    },
+    "admin_settings.config.get_plan_details_keys.button.b149ed3392": {
+      "entry": "🚪 سطر کانفیگ",
+      "reason": "Unchanged pre-management copy retained as explicit legacy catalog compatibility evidence; the new management journey no longer offers this old control/form.",
+      "previous_source_paths": [
+        "config.php"
+      ]
+    },
+    "admin_settings.config.get_plan_details_keys.button.de357139be": {
+      "entry": "* نوع پلن: رهگذر *",
+      "reason": "Unchanged pre-management copy retained as explicit legacy catalog compatibility evidence; the new management journey no longer offers this old control/form.",
+      "previous_source_paths": [
+        "config.php"
+      ]
+    },
+    "admin_settings.config.get_plan_details_keys.button.ef806d47e3": {
+      "entry": "⚙️ sni دلخواه",
+      "reason": "Unchanged pre-management copy retained as explicit legacy catalog compatibility evidence; the new management journey no longer offers this old control/form.",
+      "previous_source_paths": [
+        "config.php"
+      ]
+    },
+    "admin_settings.config.get_plan_details_keys.dest.1d5e6a1edd": {
+      "entry": "dest",
+      "reason": "Unchanged pre-management copy retained as explicit legacy catalog compatibility evidence; the new management journey no longer offers this old control/form.",
+      "previous_source_paths": [
+        "config.php"
+      ]
+    },
+    "admin_settings.config.get_plan_details_keys.flow.3b21278178": {
+      "entry": "flow",
+      "reason": "Unchanged pre-management copy retained as explicit legacy catalog compatibility evidence; the new management journey no longer offers this old control/form.",
+      "previous_source_paths": [
+        "config.php"
+      ]
+    },
+    "admin_settings.config.get_plan_details_keys.path__custom.1ff5a72ea5": {
+      "entry": "Path Custom",
+      "reason": "Unchanged pre-management copy retained as explicit legacy catalog compatibility evidence; the new management journey no longer offers this old control/form.",
+      "previous_source_paths": [
+        "config.php"
+      ]
+    },
+    "admin_settings.config.get_plan_details_keys.server_names.649d37195b": {
+      "entry": "serverNames",
+      "reason": "Unchanged pre-management copy retained as explicit legacy catalog compatibility evidence; the new management journey no longer offers this old control/form.",
+      "previous_source_paths": [
+        "config.php"
+      ]
+    },
+    "admin_settings.config.get_plan_details_keys.spider_x.3bb7e32507": {
+      "entry": "spiderX",
+      "reason": "Unchanged pre-management copy retained as explicit legacy catalog compatibility evidence; the new management journey no longer offers this old control/form.",
+      "previous_source_paths": [
+        "config.php"
+      ]
+    },
+    "admin_settings.config.get_server_config_keys.button.28724e896c": {
+      "entry": "⚙️ نوع سرور",
+      "reason": "Unchanged pre-management copy retained as explicit legacy catalog compatibility evidence; the new management journey no longer offers this old control/form.",
+      "previous_source_paths": [
+        "config.php"
+      ]
+    },
+    "admin_settings.config.get_server_config_keys.button.3a95407812": {
+      "entry": "⚙️ نمایش لینک و QR",
+      "reason": "Unchanged pre-management copy retained as explicit legacy catalog compatibility evidence; the new management journey no longer offers this old control/form.",
+      "previous_source_paths": [
+        "config.php"
+      ]
+    },
+    "admin_settings.config.get_server_config_keys.button.afaaf8dedd": {
+      "entry": "📣 ریمارک سرور",
+      "reason": "Unchanged pre-management copy retained as explicit legacy catalog compatibility evidence; the new management journey no longer offers this old control/form.",
+      "previous_source_paths": [
+        "config.php"
+      ]
+    },
+    "admin_settings.config.get_server_config_keys.button.b1501587df": {
+      "entry": "مرزبان",
+      "reason": "Unchanged pre-management copy retained as explicit legacy catalog compatibility evidence; the new management journey no longer offers this old control/form.",
+      "previous_source_paths": [
+        "config.php"
+      ]
+    },
+    "admin_settings.config.get_server_config_keys.button.c7349637fa": {
+      "entry": "🔅 تغییر اطلاعات ورود",
+      "reason": "Unchanged pre-management copy retained as explicit legacy catalog compatibility evidence; the new management journey no longer offers this old control/form.",
+      "previous_source_paths": [
+        "config.php"
+      ]
+    },
+    "admin_settings.config.get_server_config_keys.button.f86cfd6077": {
+      "entry": "⚠️ ظرفیت سرور",
+      "reason": "Unchanged pre-management copy retained as explicit legacy catalog compatibility evidence; the new management journey no longer offers this old control/form.",
+      "previous_source_paths": [
+        "config.php"
+      ]
+    },
+    "admin_settings.config.get_server_config_keys.button.fed5753818": {
+      "entry": "✂️ حذف سرور",
+      "reason": "Unchanged pre-management copy retained as explicit legacy catalog compatibility evidence; the new management journey no longer offers this old control/form.",
+      "previous_source_paths": [
+        "config.php"
+      ]
+    },
+    "admin_settings.config.get_server_list_keys.button.a4f3f3f06a": {
+      "entry": "➕ ثبت سرور مرزبان",
+      "reason": "Unchanged pre-management copy retained as explicit legacy catalog compatibility evidence; the new management journey no longer offers this old control/form.",
+      "previous_source_paths": [
+        "config.php"
+      ]
+    },
+    "admin_settings.config.get_server_list_keys.button.a600a38b6f": {
+      "entry": "➕ اتصال و سرور PasarGuard",
+      "reason": "Unchanged pre-management copy retained as explicit legacy catalog compatibility evidence; the new management journey no longer offers this old control/form.",
+      "previous_source_paths": [
+        "config.php"
+      ]
+    },
+    "admin_settings.config.get_server_list_keys.pasar_guard.9841f310c8": {
+      "entry": "PasarGuard",
+      "reason": "Unchanged pre-management copy retained as explicit legacy catalog compatibility evidence; the new management journey no longer offers this old control/form.",
+      "previous_source_paths": [
+        "config.php"
+      ]
+    },
+    "bot.bot.add_new_marzban_panel.message.2dcf34731e": {
+      "entry": "📝 مرحله اول:\n▪️ یه اسم برا سرورت انتخاب کن:",
+      "reason": "Unchanged pre-management copy retained as explicit legacy catalog compatibility evidence; the new management journey no longer offers this old control/form.",
+      "previous_source_paths": [
+        "bot.php"
+      ]
+    },
+    "bot.bot.addserver_name.alert.55b6ebf4b1": {
+      "entry": "⚠️ گروه انتخابی وجود ندارد؛ لطفاً دوباره انتخاب کنید.",
+      "reason": "Unchanged pre-management copy retained as explicit legacy catalog compatibility evidence; the new management journey no longer offers this old control/form.",
+      "previous_source_paths": [
+        "bot.php"
+      ]
+    },
+    "bot.bot.addserver_name.alert.6558e924a9": {
+      "entry": "⚠️ شناسه گروه پنل معتبر نیست.",
+      "reason": "Unchanged pre-management copy retained as explicit legacy catalog compatibility evidence; the new management journey no longer offers this old control/form.",
+      "previous_source_paths": [
+        "bot.php"
+      ]
+    },
+    "bot.bot.addserver_name.alert.f07dd5dcd6": {
+      "entry": "⚠️ مراحل ثبت سرور منقضی شده است.",
+      "reason": "Unchanged pre-management copy retained as explicit legacy catalog compatibility evidence; the new management journey no longer offers this old control/form.",
+      "previous_source_paths": [
+        "bot.php"
+      ]
+    },
+    "bot.bot.addserver_name.message.3dd8c855bc": {
+      "entry": "مرحله دوم:\n▪️ ظرفیت تعداد ساخت اشتراک رو برای سرورت مشخص کن ( عدد باشه )",
+      "reason": "Unchanged pre-management copy retained as explicit legacy catalog compatibility evidence; the new management journey no longer offers this old control/form.",
+      "previous_source_paths": [
+        "bot.php"
+      ]
+    },
+    "bot.bot.addserver_name.message.3de3b9cb9e": {
+      "entry": "این گروه فقط برای سرورهایی یکسان باشد که واقعاً یک پنل مرزبان هستند؛",
+      "reason": "Unchanged pre-management copy retained as explicit legacy catalog compatibility evidence; the new management journey no longer offers this old control/form.",
+      "previous_source_paths": [
+        "bot.php"
+      ]
+    },
+    "bot.bot.addserver_name.message.63c645dbbd": {
+      "entry": "مرحله پنجم:\n\n▪️ لطفا آدرس پنل مرزبان رو به صورت مثال زیر وارد کن:\n\n❕https://yourdomain.com:54321\n❕https://yourdomain.com:54321/path\n❗️http://125.12.12.36:54321\n❗️http://125.12.12.36:54321/path\n\nاگر سرور مورد نظر با دامنه و ssl هست از مثال ( ❕) استفاده کنید.\nاگر سرور مورد نظر با ip و بدون ssl هست از مثال ( ❗️) استفاده کنید.\n⁮⁮ ⁮⁮ ⁮⁮ ⁮⁮\n",
+      "reason": "Unchanged pre-management copy retained as explicit legacy catalog compatibility evidence; the new management journey no longer offers this old control/form.",
+      "previous_source_paths": [
+        "bot.php"
+      ]
+    },
+    "bot.bot.addserver_name.message.8da737cc0d": {
+      "entry": "مرحله ششم: 🏷 گروه پنل واقعی را انتخاب کنید.\n",
+      "reason": "Unchanged pre-management copy retained as explicit legacy catalog compatibility evidence; the new management journey no longer offers this old control/form.",
+      "previous_source_paths": [
+        "bot.php"
+      ]
+    },
+    "bot.bot.addserver_name.message.8e97362beb": {
+      "entry": " تبریک، سرورت رو ثبت کردی 🥹",
+      "reason": "Unchanged pre-management copy retained as explicit legacy catalog compatibility evidence; the new management journey no longer offers this old control/form.",
+      "previous_source_paths": [
+        "bot.php"
+      ]
+    },
+    "bot.bot.addserver_name.message.9a519033ca": {
+      "entry": " حتی اگر آدرس API و نام کاربری مدیریتی آنها متفاوت باشد.\n",
+      "reason": "Unchanged pre-management copy retained as explicit legacy catalog compatibility evidence; the new management journey no longer offers this old control/form.",
+      "previous_source_paths": [
+        "bot.php"
+      ]
+    },
+    "bot.bot.addserver_name.message.aaacd0e81b": {
+      "entry": "\n⚠️ با خطا مواجه شدی!\n\nبرای رفع این مشکل روی لینک زیر بزن و ویس رو با دقت گوش کن 👇\n\n⛔️ https://t.me/wizwizch/186\n\nمجدد نام کاربری پنل را وارد کنید:\n⁮⁮ ⁮⁮\n        ",
+      "reason": "Unchanged pre-management copy retained as explicit legacy catalog compatibility evidence; the new management journey no longer offers this old control/form.",
+      "previous_source_paths": [
+        "bot.php"
+      ]
+    },
+    "bot.bot.addserver_name.message.ae25347c18": {
+      "entry": "مرحله سوم:\n▪️ یه اسم (نام کاربری) برای اشتراک انتخاب کن:\n ( به صورت انگیلیسی و بدون فاصله )\n",
+      "reason": "Unchanged pre-management copy retained as explicit legacy catalog compatibility evidence; the new management journey no longer offers this old control/form.",
+      "previous_source_paths": [
+        "bot.php"
+      ]
+    },
+    "bot.bot.addserver_name.message.b1a72d260a": {
+      "entry": "⚠️ ثبت سرور انجام نشد؛ هیچ سرور ناقصی در دیتابیس ذخیره نشد.",
+      "reason": "Unchanged pre-management copy retained as explicit legacy catalog compatibility evidence; the new management journey no longer offers this old control/form.",
+      "previous_source_paths": [
+        "bot.php"
+      ]
+    },
+    "bot.bot.addserver_name.message.ba9445a606": {
+      "entry": "📝 مرحله چهارم:\n▪️ لطفا یه ( ایموجی پرچم 🇮🇷 ) برا سرورت انتخاب کن:",
+      "reason": "Unchanged pre-management copy retained as explicit legacy catalog compatibility evidence; the new management journey no longer offers this old control/form.",
+      "previous_source_paths": [
+        "bot.php"
+      ]
+    },
+    "bot.bot.addserver_name.message.c93e2f0866": {
+      "entry": "☑️ مدیریت سرور ها",
+      "reason": "Unchanged pre-management copy retained as explicit legacy catalog compatibility evidence; the new management journey no longer offers this old control/form.",
+      "previous_source_paths": [
+        "bot.php"
+      ]
+    },
+    "bot.bot.addserver_name.message.cd5fbb01df": {
+      "entry": "📝 مرحله هفتم: ▪️ لطفا نام کاربری پنل مرزبان را وارد کنید:",
+      "reason": "Unchanged pre-management copy retained as explicit legacy catalog compatibility evidence; the new management journey no longer offers this old control/form.",
+      "previous_source_paths": [
+        "bot.php"
+      ]
+    },
+    "bot.bot.addserver_name.message.cf8b6b8420": {
+      "entry": "📝 مرحله هشتم:\n▪️لطفا پسورد پنل را وارد کنید:",
+      "reason": "Unchanged pre-management copy retained as explicit legacy catalog compatibility evidence; the new management journey no longer offers this old control/form.",
+      "previous_source_paths": [
+        "bot.php"
+      ]
+    },
+    "bot.bot.addserver_name.message.ead7addb70": {
+      "entry": "از حذف سرور مطمئنی؟",
+      "reason": "Unchanged pre-management copy retained as explicit legacy catalog compatibility evidence; the new management journey no longer offers this old control/form.",
+      "previous_source_paths": [
+        "bot.php"
+      ]
+    },
+    "bot.bot.addserver_name.text.395b086745": {
+      "entry": "برای تعریف گروه جدید از «مدیریت گروه‌های پنل» در تنظیمات سرورها استفاده کنید.",
+      "reason": "Unchanged pre-management copy retained as explicit legacy catalog compatibility evidence; the new management journey no longer offers this old control/form.",
+      "previous_source_paths": [
+        "bot.php"
+      ]
+    },
+    "jobs.sub_link.legacy_subscription_link_retired_use.6e4eb03e96": {
+      "entry": "Legacy subscription link retired; use the current subscription URL.",
+      "reason": "Unchanged pre-management copy retained as explicit legacy catalog compatibility evidence; the new management journey no longer offers this old control/form.",
+      "previous_source_paths": [
+        "settings/subLink.php"
+      ]
+    },
+    "jobs.sub_link.method_not_allowed.371b26886b": {
+      "entry": "Method not allowed",
+      "reason": "Unchanged pre-management copy retained as explicit legacy catalog compatibility evidence; the new management journey no longer offers this old control/form.",
+      "previous_source_paths": [
+        "settings/subLink.php"
+      ]
+    },
+    "jobs.sub_link.wrong_token.9730d4c268": {
+      "entry": "Wrong token",
+      "reason": "Unchanged pre-management copy retained as explicit legacy catalog compatibility evidence; the new management journey no longer offers this old control/form.",
+      "previous_source_paths": [
+        "settings/subLink.php"
+      ]
+    },
+    "plans.administration.add_new_marzban_plan.message.07a98a2748": {
+      "entry": "📅 لطفا تعداد روز های اعتبار این پلن را وارد کنید:",
+      "reason": "Unchanged pre-management copy retained as explicit legacy catalog compatibility evidence; the new management journey no longer offers this old control/form.",
+      "previous_source_paths": [
+        "src/Plans/Administration.php"
+      ]
+    },
+    "plans.administration.add_new_marzban_plan.message.2c4ec0c4cc": {
+      "entry": "📝 لطفا نوع شبکه های این پلن را انتخاب کنید.",
+      "reason": "Unchanged pre-management copy retained as explicit legacy catalog compatibility evidence; the new management journey no longer offers this old control/form.",
+      "previous_source_paths": [
+        "src/Plans/Administration.php"
+      ]
+    },
+    "plans.administration.add_new_marzban_plan.message.323da64e58": {
+      "entry": "🔻یه توضیح برای پلن مورد نظرت بنویس:",
+      "reason": "Unchanged pre-management copy retained as explicit legacy catalog compatibility evidence; the new management journey no longer offers this old control/form.",
+      "previous_source_paths": [
+        "src/Plans/Administration.php"
+      ]
+    },
+    "plans.administration.add_new_marzban_plan.message.7c72687cf5": {
+      "entry": "⛔️ هیچ سرور مرزبان فعالی برای ثبت پلن موجود نیست.",
+      "reason": "Unchanged pre-management copy retained as explicit legacy catalog compatibility evidence; the new management journey no longer offers this old control/form.",
+      "previous_source_paths": [
+        "src/Plans/Administration.php"
+      ]
+    },
+    "plans.administration.add_new_marzban_plan.message.80b8a92b1d": {
+      "entry": "لطفا یکی از سرورها رو انتخاب کن 👇 ",
+      "reason": "Unchanged pre-management copy retained as explicit legacy catalog compatibility evidence; the new management journey no longer offers this old control/form.",
+      "previous_source_paths": [
+        "src/Plans/Administration.php"
+      ]
+    },
+    "plans.administration.add_new_marzban_plan.message.ad385328ac": {
+      "entry": "🔋 لطفا مقدار حجم به GB این پلن را وارد کنید:",
+      "reason": "Unchanged pre-management copy retained as explicit legacy catalog compatibility evidence; the new management journey no longer offers this old control/form.",
+      "previous_source_paths": [
+        "src/Plans/Administration.php"
+      ]
+    },
+    "plans.administration.add_new_marzban_plan.msg.061cc2cc53": {
+      "entry": "🔰 لطفا قیمت پلن رو به تومان وارد کنید!",
+      "reason": "Unchanged pre-management copy retained as explicit legacy catalog compatibility evidence; the new management journey no longer offers this old control/form.",
+      "previous_source_paths": [
+        "src/Plans/Administration.php"
+      ]
+    },
+    "plans.administration.add_new_marzban_plan.msg.78dabb5a74": {
+      "entry": "‼️ لطفا یک مقدار عددی وارد کنید.",
+      "reason": "Unchanged pre-management copy retained as explicit legacy catalog compatibility evidence; the new management journey no longer offers this old control/form.",
+      "previous_source_paths": [
+        "src/Plans/Administration.php"
+      ]
+    },
+    "plans.administration.add_new_marzban_plan.msg.8410eb0e5a": {
+      "entry": "‼️ لطفا فقط یکی از گزینه های پیشنهادی زیر را انتخاب کنید.",
+      "reason": "Unchanged pre-management copy retained as explicit legacy catalog compatibility evidence; the new management journey no longer offers this old control/form.",
+      "previous_source_paths": [
+        "src/Plans/Administration.php"
+      ]
+    },
+    "plans.administration.add_new_marzban_plan.msg.b2ff03bdc3": {
+      "entry": "🔰 لطفا یه دسته از لیست زیر برا پلن انتخاب کن ",
+      "reason": "Unchanged pre-management copy retained as explicit legacy catalog compatibility evidence; the new management journey no longer offers this old control/form.",
+      "previous_source_paths": [
+        "src/Plans/Administration.php"
+      ]
+    },
+    "plans.administration.add_new_marzban_plan.msg.ead3145756": {
+      "entry": "❗️یه عنوان برا پلن انتخاب کن:",
+      "reason": "Unchanged pre-management copy retained as explicit legacy catalog compatibility evidence; the new management journey no longer offers this old control/form.",
+      "previous_source_paths": [
+        "src/Plans/Administration.php"
+      ]
+    },
+    "plans.administration.add_new_marzban_plan.save_btn.b3a82cd642": {
+      "entry": "ذخیره ✅",
+      "reason": "Unchanged pre-management copy retained as explicit legacy catalog compatibility evidence; the new management journey no longer offers this old control/form.",
+      "previous_source_paths": [
+        "src/Plans/Administration.php"
+      ]
+    },
+    "plans.administration.add_new_marzban_plan.text.1d456424c3": {
+      "entry": "✅",
+      "reason": "Unchanged pre-management copy retained as explicit legacy catalog compatibility evidence; the new management journey no longer offers this old control/form.",
+      "previous_source_paths": [
+        "src/Plans/Administration.php"
+      ]
+    },
+    "plans.administration.add_new_marzban_plan.text.64554c955e": {
+      "entry": " ✅",
+      "reason": "Unchanged pre-management copy retained as explicit legacy catalog compatibility evidence; the new management journey no longer offers this old control/form.",
+      "previous_source_paths": [
+        "src/Plans/Administration.php"
+      ]
+    },
+    "plans.administration.backplan.button.89eacb5309": {
+      "entry": "➕ افزودن پلن مرزبان",
+      "reason": "Unchanged pre-management copy retained as explicit legacy catalog compatibility evidence; the new management journey no longer offers this old control/form.",
+      "previous_source_paths": [
+        "src/Plans/Administration.php"
+      ]
+    },
+    "plans.administration.save_plan_network_type.imgtxt.057d44c004": {
+      "entry": "☑️ پنل با موفقیت ثبت و ایجاد شد.",
+      "reason": "Unchanged pre-management copy retained as explicit legacy catalog compatibility evidence; the new management journey no longer offers this old control/form.",
+      "previous_source_paths": [
+        "src/Plans/Administration.php"
+      ]
+    },
+    "plans.intervals.add_new_day_plan.message.a7db47ad08": {
+      "entry": "🔢 یک مقدار عددی و صحیح وارد کنید",
+      "reason": "Unchanged pre-management copy retained as explicit legacy catalog compatibility evidence; the new management journey no longer offers this old control/form.",
+      "previous_source_paths": [
+        "src/Plans/Intervals.php"
+      ]
+    },
+    "provider.provider_admin.pg_server_admin_keys.button.3a95407812": {
+      "entry": "⚙️ نمایش لینک و QR",
+      "reason": "Unchanged pre-management copy retained as explicit legacy catalog compatibility evidence; the new management journey no longer offers this old control/form.",
+      "previous_source_paths": [
+        "src/Panel/ProviderAdmin.php"
+      ]
+    },
+    "provider.provider_admin.pg_server_admin_keys.button.93b4ef5cbb": {
+      "entry": "ظرفیت: ",
+      "reason": "Unchanged pre-management copy retained as explicit legacy catalog compatibility evidence; the new management journey no longer offers this old control/form.",
+      "previous_source_paths": [
+        "src/Panel/ProviderAdmin.php"
+      ]
+    },
+    "provider.provider_admin.pg_server_admin_keys.button.9dee35a276": {
+      "entry": "ریمـارک: ",
+      "reason": "Unchanged pre-management copy retained as explicit legacy catalog compatibility evidence; the new management journey no longer offers this old control/form.",
+      "previous_source_paths": [
+        "src/Panel/ProviderAdmin.php"
+      ]
+    },
+    "provider.provider_admin.pg_server_admin_keys.button.c84bd01998": {
+      "entry": "⚙️ Groups پیش‌فرض",
+      "reason": "Unchanged pre-management copy retained as explicit legacy catalog compatibility evidence; the new management journey no longer offers this old control/form.",
+      "previous_source_paths": [
+        "src/Panel/ProviderAdmin.php"
+      ]
+    },
+    "provider.provider_admin.pg_server_admin_keys.button.e2e7e28899": {
+      "entry": "🔑 اتصال و API key",
+      "reason": "Unchanged pre-management copy retained as explicit legacy catalog compatibility evidence; the new management journey no longer offers this old control/form.",
+      "previous_source_paths": [
+        "src/Panel/ProviderAdmin.php"
+      ]
+    },
+    "provider.provider_admin.pg_server_admin_keys.pasar_guard.c8a922f551": {
+      "entry": "PasarGuard 5.5.1",
+      "reason": "Unchanged pre-management copy retained as explicit legacy catalog compatibility evidence; the new management journey no longer offers this old control/form.",
+      "previous_source_paths": [
+        "src/Panel/ProviderAdmin.php"
+      ]
+    },
+    "renewal.extensions.alert.0340c363d2": {
+      "entry": "📆 تاریخ انقضا برای این سفارش نامعتبر است.",
+      "reason": "Unchanged pre-management copy retained as explicit legacy catalog compatibility evidence; the new management journey no longer offers this old control/form.",
+      "previous_source_paths": [
+        "src/Finance/Routes/Extensions.php"
+      ]
+    },
+    "subscription.account_deletion.no_dont_delete.channel_message.f5930d6ccb": {
+      "entry": {
+        "text": "🔋 حذف اشتراک توسط کاربر\n\n🆔 شناسه عددی: <code>{from_id}</code>\n👤 اسم کاربر: {first_name}\n👤 نام کاربری: @{username}\n🎈 نام کاربری اشتراک: {remark}\n📦 حجم اولیه اشتراک: {volume} گیگ\n📅 مدت اشتراک: {days} روز\n",
+        "parameters": [
+          "from_id",
+          "first_name",
+          "username",
+          "remark",
+          "volume",
+          "days"
+        ]
+      },
+      "reason": "Unchanged pre-management copy retained as explicit legacy catalog compatibility evidence; the new management journey no longer offers this old control/form.",
+      "previous_source_paths": [
+        "src/Subscription/AccountDeletion.php"
+      ]
+    },
+    "subscription.external_accounts.extract_username_from_link.message.bb8dfc256d": {
+      "entry": "❌ اشتراک موردنظر پیدا نشد. اگر اعتبار آن تمام شده و بیش از 15 روز گذشته باشد، ممکن است حذف شده باشد.",
+      "reason": "Unchanged pre-management copy retained as explicit legacy catalog compatibility evidence; the new management journey no longer offers this old control/form.",
+      "previous_source_paths": [
+        "src/Subscription/ExternalAccounts.php"
+      ]
+    },
+    "subscription.manual_accounts.detect_server_id_from_remark.alert.0e59a3d9a8": {
+      "entry": "❌ اطلاعات اشتراک یافت نشد.",
+      "reason": "Unchanged pre-management copy retained as explicit legacy catalog compatibility evidence; the new management journey no longer offers this old control/form.",
+      "previous_source_paths": [
+        "src/Subscription/ManualAccounts.php"
+      ]
+    },
+    "subscription.manual_accounts.detect_server_id_from_remark.alert.4c5aeb77e7": {
+      "entry": "✅ این اشتراک قبلاً اضافه شده است.",
+      "reason": "Unchanged pre-management copy retained as explicit legacy catalog compatibility evidence; the new management journey no longer offers this old control/form.",
+      "previous_source_paths": [
+        "src/Subscription/ManualAccounts.php"
+      ]
+    },
+    "subscription.manual_accounts.detect_server_id_from_remark.alert.6b70d2424a": {
+      "entry": "❌ ثبت اشتراک با خطا مواجه شد.",
+      "reason": "Unchanged pre-management copy retained as explicit legacy catalog compatibility evidence; the new management journey no longer offers this old control/form.",
+      "previous_source_paths": [
+        "src/Subscription/ManualAccounts.php"
+      ]
+    },
+    "subscription.manual_accounts.detect_server_id_from_remark.alert.eade9d3428": {
+      "entry": "❌ توکن یافت نشد.",
+      "reason": "Unchanged pre-management copy retained as explicit legacy catalog compatibility evidence; the new management journey no longer offers this old control/form.",
+      "previous_source_paths": [
+        "src/Subscription/ManualAccounts.php"
+      ]
+    },
+    "subscription.manual_accounts.detect_server_id_from_remark.msg.10aa1e12ec": {
+      "entry": {
+        "text": "⚠️ اشتراک  <code>{remark}</code>  با موفقیت برای شما در ربات ثبت شد. از پایین بزنید روی دکمه:\n\n ← 🔄 <b>مشاهده اشتراک ها</b> \n\n🔰 از لیست اشتراک خودتان را انتخاب کنید و در صفحه بعد اگر قصد تمدید دارید بزنید روی دکمه: \n\n← ♻️ <b>تمدید اشتراک</b>\n\n💰 وقتی مبلغ نمایش داده شد روی دکمه زیر بزنید:\n\n← 💳 <b>کارت به کارت</b>\n\n⬆️ حالا بروید <b>مبلغ را کارت به کارت کنید</b> و بیایید رسید آن را در داخل ربات بفرستید.",
+        "parameters": [
+          "remark"
+        ]
+      },
+      "reason": "Unchanged pre-management copy retained as explicit legacy catalog compatibility evidence; the new management journey no longer offers this old control/form.",
+      "previous_source_paths": [
+        "src/Subscription/ManualAccounts.php"
+      ]
+    },
+    "subscription.order_management.show_order_management_panel.button.76ac22f123": {
+      "entry": "🗑 حذف سفارش",
+      "reason": "Unchanged pre-management copy retained as explicit legacy catalog compatibility evidence; the new management journey no longer offers this old control/form.",
+      "previous_source_paths": [
+        "src/Subscription/OrderManagement.php"
+      ]
+    },
+    "subscription.order_management.show_order_management_panel.button.8c85c7815c": {
+      "entry": {
+        "text": "🔔 وضعیت Notif ←  {notifStatus}",
+        "parameters": [
+          "notifStatus"
+        ]
+      },
+      "reason": "Unchanged pre-management copy retained as explicit legacy catalog compatibility evidence; the new management journey no longer offers this old control/form.",
+      "previous_source_paths": [
+        "src/Subscription/OrderManagement.php"
+      ]
+    },
+    "subscription.order_management.show_order_management_panel.button.fb28941abf": {
+      "entry": "📦 تغییر Plan",
+      "reason": "Unchanged pre-management copy retained as explicit legacy catalog compatibility evidence; the new management journey no longer offers this old control/form.",
+      "previous_source_paths": [
+        "src/Subscription/OrderManagement.php"
+      ]
+    },
+    "subscription.order_management.show_order_management_panel.button.febe263cbd": {
+      "entry": "📅 تغییر تاریخ انقضا",
+      "reason": "Unchanged pre-management copy retained as explicit legacy catalog compatibility evidence; the new management journey no longer offers this old control/form.",
+      "previous_source_paths": [
+        "src/Subscription/OrderManagement.php"
+      ]
+    },
+    "subscription.order_management.show_order_management_panel.message.27a65c7f2c": {
+      "entry": "🔁 لطفا تعداد روزی که می‌خواهید به تاریخ انقضا اضافه یا کم شود را وارد کنید.\n\nمثال: `+10` یا `-5`",
+      "reason": "Unchanged pre-management copy retained as explicit legacy catalog compatibility evidence; the new management journey no longer offers this old control/form.",
+      "previous_source_paths": [
+        "src/Subscription/OrderManagement.php"
+      ]
+    },
+    "subscription.order_management.show_order_management_panel.text.06915a0abe": {
+      "entry": "🔘 ارسال نشده",
+      "reason": "Unchanged pre-management copy retained as explicit legacy catalog compatibility evidence; the new management journey no longer offers this old control/form.",
+      "previous_source_paths": [
+        "src/Subscription/OrderManagement.php"
+      ]
+    },
+    "subscription.order_management.show_order_management_panel.text.159100fdd2": {
+      "entry": "✅ ارسال شده",
+      "reason": "Unchanged pre-management copy retained as explicit legacy catalog compatibility evidence; the new management journey no longer offers this old control/form.",
+      "previous_source_paths": [
+        "src/Subscription/OrderManagement.php"
+      ]
+    },
+    "subscription.server_display_settings.handle_server_display_admin.text.147f04122e": {
+      "entry": "ویرایش لغو شد.\n",
+      "reason": "Unchanged pre-management copy retained as explicit legacy catalog compatibility evidence; the new management journey no longer offers this old control/form.",
+      "previous_source_paths": [
+        "src/Subscription/ServerDisplaySettings.php"
+      ]
+    }
+  }
+}

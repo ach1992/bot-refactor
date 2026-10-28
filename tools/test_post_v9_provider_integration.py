@@ -183,8 +183,9 @@ default:throw new RuntimeException('fixture_op_missing');
 echo json_encode(['out'=>$out],JSON_THROW_ON_ERROR);
 }catch(Throwable $e){try{$db->rollback();}catch(Throwable $ignored){}echo json_encode(['error'=>$e->getMessage()]);}
 '''
-# Hold B's first observation while A attempts to enter. B must already own
-# the durable fence; an old read-before-claim implementation would admit A.
+# Let B's read-only eligibility preflight finish, then hold its arithmetic
+# observation while A attempts to enter. Its durable fence must already be
+# persisted; calculating limits before that claim would admit a competing A.
 ORIGINAL_HANDLE=pg.Handler.handle_request
 def stale_observation(self):
  server=self.server
@@ -196,6 +197,10 @@ def stale_observation(self):
   self.close_connection=True
   return
  if self.command=='GET' and urlsplit(self.path).path=='/api/user/by-id/17' and getattr(server,'capture_stale_once',False):
+  if getattr(server,'capture_stale_skip',0):
+   server.capture_stale_skip-=1
+   ORIGINAL_HANDLE(self)
+   return
   server.capture_stale_once=False
   value=copy.deepcopy(server.user)
   server.trace.append(('GET',self.path,None))
@@ -291,6 +296,8 @@ def main():
    before=sql("SELECT * FROM provider_accounts WHERE order_id=91;SELECT userid,wallet FROM users ORDER BY userid;SELECT id,state,price FROM pays ORDER BY id")
    result=call('rawedit',source=5000+index,field=field,value=value)
    yes(result['out']['success'] is False and len(server.trace)==requests and server.write_count==writes and sql("SELECT * FROM provider_accounts WHERE order_id=91;SELECT userid,wallet FROM users ORDER BY userid;SELECT id,state,price FROM pays ORDER BY id")==before,'invalid_unit_'+str(index)+'_rejects_before_native_GET_claim_or_money_change')
+  # A relocation action is shown only when a real eligible destination exists.
+  sql("INSERT INTO server_info(id,title,ucount,remark,flag,active,state,provider_panel_id,provider_group_ids) VALUES(3,'Destination',10,'pgdst','',1,1,1,'[5]');REPLACE INTO server_config SELECT 3,panel_url,ip,sni,header_type,request_header,response_header,security,tlsSettings,type,username,password,port_type,reality,sub_links FROM server_config WHERE id=2")
   view=call('view',buttons=buttons)['out'];keys=view['keyboard']
   yes('https://sub.example.invalid/token' in view['msg'] and 'vless://native-identity' in view['msg'],'actual_pg_view_uses_native_subscription_and_links')
   for callback in ['renewAccountAsk91','increaseAVolume91','increaseADay91','switchLocation91','changAccountConnectionLink91','showQrConfig91','showQrSub91']:
@@ -413,7 +420,7 @@ def main():
   writes=server.write_count
   yes(call('edit',pay=2,change={'plus_day':3})['out']['success'] is False and server.write_count==writes,'same_mutation_key_cannot_repeat')
   # Group switch verifies native PUT before SQL routing changes.
-  sql("INSERT INTO server_info(id,title,ucount,remark,flag,active,state,provider_panel_id,provider_group_ids) VALUES(3,'Destination',10,'pgdst','',1,1,1,'[5]');REPLACE INTO server_config SELECT 3,panel_url,ip,sni,header_type,request_header,response_header,security,tlsSettings,type,username,password,port_type,reality,sub_links FROM server_config WHERE id=2")
+  sql("UPDATE server_info SET provider_panel_id=1,provider_group_ids='[5]',active=1,state=1,ucount=10 WHERE id=3")
   r=call('switch',source=100);yes(r['out']['target_id']==3 and server.user['group_ids']==[5],'explicit_switch_updates_groups_then_local_route')
   # Switch back for remaining exact local-context checks.
   sql("UPDATE orders_list SET server_id=2 WHERE id=91")
@@ -427,14 +434,20 @@ def main():
   sql("INSERT INTO pays(id,hash_id,user_id,plan_id,server_id,order_id,type,state,price,request_date) VALUES(4,'pgparallelA',1001,7,2,91,'INCREASE_VOLUME_91_1','processing',100,1700000000),(5,'pgparallelB',1001,7,2,91,'INCREASE_VOLUME_91_1','processing',100,1700000000)")
   sql("UPDATE pays SET volume=1,day=0 WHERE id IN (4,5)")
   call('pin',pay=4);call('pin',pay=5)
-  server.capture_stale_once=True;server.stale_captured=threading.Event();server.release_stale=threading.Event()
+  server.capture_stale_once=True;server.capture_stale_skip=1;server.stale_captured=threading.Event();server.release_stale=threading.Event()
   args=['php','-d','display_errors=0','-d','log_errors=0',str(script),str(ROOT),str(work/'mysql.sock'),db,json.dumps(dict(op='edit',pay=5,change={'plus_volume':1}))]
   before_writes=server.write_count
   b=subprocess.Popen(args,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
   try:
-   assert server.stale_captured.wait(10),'B did not capture its initial observation'
+   assert server.stale_captured.wait(10),'B did not capture its post-preflight arithmetic observation'
+   fence=sql("SELECT CONCAT(state,':',mutation_key) FROM provider_accounts WHERE order_id=91").strip()
+   before_claim=sql("SELECT * FROM provider_accounts WHERE order_id=91")
+   requests=len(server.trace)
    result_a=call('edit',pay=4,change={'plus_volume':1})
-   yes(result_a['out']['success'] is False,'account_fence_owned_before_initial_GET_blocks_competing_A')
+   yes(fence=='mutating:pay:5' and result_a['out']['success'] is False
+       and len(server.trace)==requests and server.write_count==before_writes
+       and sql("SELECT * FROM provider_accounts WHERE order_id=91")==before_claim,
+       'account_fence_owned_before_arithmetic_GET_blocks_competing_A')
   finally:server.release_stale.set()
   out,err=b.communicate(timeout=20);assert not err and b.returncode==0,(out,err)
   result_b=json.loads(out)
@@ -572,11 +585,22 @@ def main():
   red=subprocess.run([sys.executable,str(root/'tools/test_post_v9_provider_integration.py'),'--run-disposable'],capture_output=True,text=True,timeout=60)
   baseline_red=red.returncode!=0 and 'read_auth_1011_directadmin_direct_no_privileged_query_or_disclosure' in red.stderr
   assert baseline_red,('admin_read_baseline_did_not_reproduce',red.returncode,red.stdout,red.stderr)
+ # Preserve every existing integration assertion, then cover the common
+ # sweep through its real native wallet/effect/finalization path on a fresh
+ # synthetic account. Historical authorization RED runs fail above this point.
+ original_provider_integration_cases=len(checks)
+ from test_unified_unlimited_renewal import acceptance as native_unlimited_renewal
+ unlimited_renewal=native_unlimited_renewal(ROOT)
+ checks.extend('native_unlimited_renewal_'+name for name in unlimited_renewal['checks'])
  auth_cases=sum(name.startswith('read_auth_') for name in checks)
  report={'complete':True,'cases':len(checks),'checks':checks,'actual_php_curl':True,'owned_socket_mariadb':True,'real_provider_tested':False,
   'lifecycle_cases':len(checks)-auth_cases,'admin_read_authorization_cases':auth_cases,
   'forbidden_order_queries':forbidden_order_queries,'forbidden_provider_requests':forbidden_provider_requests,
-  'baseline_red':baseline_red,'baseline_red_source':baseline}
+  'baseline_red':baseline_red,'baseline_red_source':baseline,
+  'original_provider_integration_cases':original_provider_integration_cases,
+  'native_unlimited_renewal':unlimited_renewal['providers']['pasarguard'],
+  'native_unlimited_renewal_marzban':unlimited_renewal['providers']['marzban'],
+  'native_unlimited_renewal_both_providers':{key:value for key,value in unlimited_renewal.items() if key not in ('checks','providers')}}
  if a.report:a.report.write_text(json.dumps(report,indent=2)+'\n')
  print(json.dumps(report))
 if __name__=='__main__':main()

@@ -1,6 +1,6 @@
 <?php
 /**
- * Issue #26: one durable identity for each paid Marzban account creation.
+ * Issue #26: one durable identity for each paid service account creation.
  *
  * This file does not perform financial settlement, migration, retries or
  * operator reconciliation. A stored dispatch is never repeated blindly.
@@ -327,7 +327,7 @@ function achbotCreatePaidAccount(mysqli $db, int $payId, int $ordinal, array $p)
             throw new RuntimeException('effect_reserve_unconfirmed');
         $effectId=(int)$stmt->insert_id;$stmt->close();
         if ($effectId<=0) throw new RuntimeException('effect_reserve_id_missing');
-        achbotPgReserveEffect($db,$effectId,$targetIdentity,$remark,$operation,$expiry,$bytes);
+        achbotProviderReserveEffect($db,$effectId,$targetIdentity,$remark,$operation,$expiry,$bytes);
         if ($db->commit()!==true) {
             throw new RuntimeException('effect_reserve_commit_unconfirmed');
         }
@@ -458,8 +458,17 @@ function achbotEffectDispatchReservedAccount(
     int $planId, string $operation, int $expiry, int $bytes, array $p,
     string $credentials
 ): array {
-    if (achbotProviderType($db,$serverId)==='pasarguard')
-        return achbotPgDispatchReserved($db,$effectId,$serverId,$remark,$operation,$expiry,$bytes,$p,$credentials);
+    return achbotProviderDispatchReservedAccount($db,$effectId,$serverId,$group,
+        $endpoint,$remark,$volume,$days,$planId,$operation,$expiry,$bytes,$p,$credentials);
+}
+
+/** Marzban adapter implementation; shared financial ordering remains above. */
+function achbotMarzbanEffectDispatchReservedAccount(
+    mysqli $db, int $effectId, int $serverId, ?int $group,
+    string $endpoint, string $remark, int $volume, int $days,
+    int $planId, string $operation, int $expiry, int $bytes, array $p,
+    string $credentials
+): array {
     // Anything after this point may have reached Marzban, even if the reply
     // is lost. No SQL rollback or failed GET may unlock another CREATE.
     try {
@@ -471,7 +480,7 @@ function achbotEffectDispatchReservedAccount(
         $check->bind_param('i',$serverId);
         if (!$check->execute()) throw new RuntimeException('effect_target_check_failed');
         $target=$check->get_result()->fetch_assoc();$check->close();
-        if (!$target || !achbotSupportsAccount($target['type'],0) ||
+        if (!$target || ($target['type']??'')!=='marzban' ||
             ($target['panel_group_id']===null?null:(int)$target['panel_group_id'])!==$group ||
             hash('sha256',rtrim((string)$target['panel_url'],'/'))!==$endpoint ||
             hash('sha256',json_encode([
@@ -532,7 +541,10 @@ function achbotEffectDispatchReservedAccount(
 
 /** Join exact order identity inside the caller's local order transaction. */
 function achbotLinkPaidAccountEffect(mysqli $db, int $effectId, int $orderId): void {
-    if (achbotPgLinkEffect($db,$effectId,$orderId)) return;
+    achbotProviderLinkEffect($db,$effectId,$orderId,true);
+}
+
+function achbotMarzbanLinkPaidAccountEffect(mysqli $db, int $effectId, int $orderId): void {
     if ($effectId<=0 || $orderId<=0) throw new RuntimeException('effect_order_id_unconfirmed');
     [$lockedServerId,$lockedPayId]=achbotEffectLockLinkRows($db,$effectId,true);
     $stmt=$db->prepare("UPDATE service_effects e
@@ -728,7 +740,7 @@ function achbotCreateNonPaymentAccount(
             throw new RuntimeException('nonpaid_effect_insert_unconfirmed');
         $effectId=(int)$stmt->insert_id;$stmt->close();
         if ($effectId<=0) throw new RuntimeException('nonpaid_effect_id_missing');
-        achbotPgReserveEffect($db,$effectId,$targetIdentity,$remark,$operation,$expiry,$bytes);
+        achbotProviderReserveEffect($db,$effectId,$targetIdentity,$remark,$operation,$expiry,$bytes);
         if ($db->commit()!==true)
             throw new RuntimeException('nonpaid_effect_commit_unconfirmed');
     } catch (Throwable $e) {
@@ -742,7 +754,10 @@ function achbotCreateNonPaymentAccount(
 
 /** Bind the exact verified source/account to its local order in a short txn. */
 function achbotLinkNonPaymentAccountEffect(mysqli $db, int $effectId, int $orderId): void {
-    if (achbotPgLinkEffect($db,$effectId,$orderId)) return;
+    achbotProviderLinkEffect($db,$effectId,$orderId,false);
+}
+
+function achbotMarzbanLinkNonPaymentAccountEffect(mysqli $db, int $effectId, int $orderId): void {
     if ($effectId<=0 || $orderId<=0) throw new RuntimeException('nonpaid_effect_order_invalid');
     [$lockedServerId]=achbotEffectLockLinkRows($db,$effectId,false);
     $stmt=$db->prepare("UPDATE service_effects e

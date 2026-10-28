@@ -7,6 +7,7 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
 require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
 
 require_once __DIR__ . '/ReceiptHelpers.php';
+require_once __DIR__.'/../Panel/ServiceLifecycle.php';
 
 /**
  * Atomic local reservation BEFORE the first non-idempotent Marzban operation.
@@ -39,13 +40,6 @@ function achbotAutoRenewReserve(mysqli $db, int $orderId, int $userId): array {
             !achbotSupportsOrder($db,$orderId,(int)$order['fileid'],$userId)) {
             $db->rollback(); return ['status'=>'ineligible'];
         }
-        // Distinct orders can alias the SAME physical Marzban account.
-        // Lock matching active orders and fail closed before reserving money.
-        if (!achbotAutoRenewAccountExclusiveLocked($db,$orderId,
-            (int)$order['server_id'],(string)$order['remark'])) {
-            $db->rollback(); return ['status'=>'ambiguous_account'];
-        }
-
         // Mandatory durable schema: never bypass a missing or damaged journal.
         $stmt=$db->prepare("SELECT id FROM automatic_renewal_attempts
             WHERE order_id=? AND stage<>'done' LIMIT 2 FOR UPDATE");
@@ -56,6 +50,14 @@ function achbotAutoRenewReserve(mysqli $db, int $orderId, int $userId): array {
         if ($pending) {
             $db->rollback(); return ['status'=>'already_claimed'];
         }
+        // Preserve the same-order replay result before considering a new claim.
+        // Multiple users may reference one physical service. Lock its references
+        // and refuse only actual in-flight work before reserving one payer.
+        if (!achbotAutoRenewAccountExclusiveLocked($db,$orderId,
+            (int)$order['server_id'],(string)$order['remark'],$peerOrders)) {
+            $db->rollback(); return ['status'=>'account_busy'];
+        }
+
         $planId=(int)$order['fileid'];
         $stmt=$db->prepare("SELECT price,days,volume,server_id,inbound_id
             FROM server_plans WHERE id=? AND active=1 LIMIT 1");
@@ -117,7 +119,13 @@ function achbotAutoRenewReserve(mysqli $db, int $orderId, int $userId): array {
         $payId=(int)$db->insert_id;
         $stmt->close();
         if ($payId<=0) throw new RuntimeException('renewal_pay_claim_failed');
-        achbotPgPinPayment($db,$payId);
+        achbotProviderPinPayment($db,$payId);
+        $stmt=$db->prepare('SELECT * FROM pays WHERE id=? FOR UPDATE');
+        $stmt->bind_param('i',$payId);$stmt->execute();
+        $payment=$stmt->get_result()->fetch_assoc();$stmt->close();
+        if (!$payment || !achbotProviderQuoteEligible($db,$payment,true)) {
+            $db->rollback();return ['status'=>'ineligible'];
+        }
         $stmt=$db->prepare("INSERT INTO automatic_renewal_attempts
             (order_id,cycle_expire,pay_row_id,user_id,plan_id,server_id,
              account_remark,price_toman,duration_days,volume_gb,new_expire,stage)
@@ -218,6 +226,10 @@ function achbotAutoRenewFinalize(mysqli $db, array $claim,
     $attemptId=(int)$claim['id'];
     try {
         $db->begin_transaction();
+        $peers=achbotSharedAccountReferencesLocked($db,$orderId,(int)$claim['server_id'],(string)$claim['remark']);
+        if (!achbotSharedAccountWorkSettledLocked($db,$peers,$attemptId,(int)$claim['pay_id'])) {
+            $db->rollback();return false;
+        }
         $stmt=$db->prepare("SELECT expire_date,userid FROM orders_list
             WHERE id=? FOR UPDATE");
         $stmt->bind_param('i',$orderId);
@@ -284,6 +296,18 @@ function achbotAutoRenewFinalize(mysqli $db, array $claim,
         if (!$stored || (int)$stored['expire_date']!==$applied) {
             $db->rollback();return false;
         }
+        // One verified physical renewal updates the same native observation
+        // for every reference. A stale parallel sweep now reloads notif=0;
+        // it cannot charge another consenting user for the completed cycle.
+        $peerIds=implode(',',array_map(static fn(array $row):int=>(int)$row['id'],$peers));
+        $stmt=$db->prepare("UPDATE orders_list SET expire_date=?,notif=0 WHERE id IN ($peerIds) AND status=1");
+        $stmt->bind_param('i',$applied);
+        if (!$stmt->execute()) {$stmt->close();$db->rollback();return false;}$stmt->close();
+        $stmt=$db->prepare("SELECT id,expire_date,notif FROM orders_list WHERE id IN ($peerIds) FOR UPDATE");
+        $stmt->execute();$updatedPeers=$stmt->get_result()->fetch_all(MYSQLI_ASSOC);$stmt->close();
+        if (count($updatedPeers)!==count($peers)) {$db->rollback();return false;}
+        foreach ($updatedPeers as $peer)
+            if ((int)$peer['expire_date']!==$applied || (int)$peer['notif']!==0) {$db->rollback();return false;}
         $stmt=$db->prepare("UPDATE automatic_renewal_attempts SET stage='done'
             WHERE id=? AND stage='remote_started'");
         $stmt->bind_param('i',$attemptId);
@@ -405,54 +429,43 @@ function achbotAutoRenewAlertReview(mysqli $db, $adminChatId): void {
 }
 
 /**
- * The preexisting offset is a pagination cursor, not a success count: advance
- * it for *every* examined row, including unavailable/retired accounts.
+ * The keyset cursor advances for every examined row, including unavailable
+ * accounts, and stays complete when renewed rows leave the candidate set.
  */
 function achbotAutoRenewSweep(mysqli $db, array $botState): void {
     if (($botState['renewAutoState']??'off')!=='on' ||
         achbotAutoRenewSchemaState($db)!=='ready') return;
-    $stmt=$db->prepare("SELECT value FROM setting WHERE type='AutoRenewCheck' LIMIT 1");
+    $stmt=$db->prepare("SELECT value FROM setting WHERE type='AutoRenewLastOrderId' LIMIT 1");
     $stmt->execute();
     $row=$stmt->get_result()->fetch_assoc();
     $stmt->close();
-    $offset=max(0,(int)($row['value']??0));
+    $cursor=max(0,(int)($row['value']??0));
     $stmt=$db->prepare("SELECT id,userid,server_id,remark
-        FROM orders_list WHERE status=1 AND notif<>0 AND autoRenew='on'
-        ORDER BY id ASC LIMIT 50 OFFSET ?");
-    $stmt->bind_param('i',$offset);
+        FROM orders_list WHERE status=1 AND notif<>0 AND autoRenew='on' AND id>?
+        ORDER BY id ASC LIMIT 50");
+    $stmt->bind_param('i',$cursor);
     $stmt->execute();
     $orders=$stmt->get_result()->fetch_all(MYSQLI_ASSOC);
     $stmt->close();
     foreach ($orders as $order) {
         $orderId=(int)$order['id'];
         if (!achbotSupportsOrder($db,$orderId)) continue;
-        $remote=achbotProviderUser((int)$order['server_id'],(string)$order['remark']);
-        if (!is_object($remote) || !isset($remote->username,$remote->expire,
-            $remote->used_traffic) || !property_exists($remote,'data_limit') ||
-            (string)$remote->username!==(string)$order['remark'] ||
-            !is_numeric($remote->expire) || !is_numeric($remote->used_traffic)) continue;
-        // Null is the provider's documented unlimited quota. Reject other
-        // malformed or negative values rather than treating them as zero.
-        $quota=$remote->data_limit===null ? 0 : filter_var(
-            $remote->data_limit,FILTER_VALIDATE_INT,['options'=>['min_range'=>0]]);
-        if ($quota===false) continue;
-        $expires=(int)$remote->expire;
-        $remaining=(float)$quota-(float)$remote->used_traffic;
-        if ($expires>0 && ($expires<time()+7200 ||
-            ($quota>0 && $remaining<0.2*1073741824))) {
+        $observation=achbotServiceObserve((int)$order['server_id'],(string)$order['remark']);
+        if (achbotServiceLifecycle($observation,time())['renew']) {
             handleAutoRenewCallback('renewAuto_with_wallet|'.$order['userid'].'|'.$orderId);
         }
     }
-    // Reproduce the preexisting offset contract with correct row counting.
-    $next=count($orders)<50 ? 0 : $offset+count($orders);
+    // A fulfilled row leaves this set. A keyset cursor cannot skip the next
+    // eligible service when a successful renewal resets notif to zero.
+    $next=count($orders)<50 ? 0 : (int)$orders[count($orders)-1]['id'];
     $stringNext=(string)$next;
     if ($row) {
         $stmt=$db->prepare("UPDATE setting SET value=?
-            WHERE type='AutoRenewCheck'");
+            WHERE type='AutoRenewLastOrderId'");
         $stmt->bind_param('s',$stringNext);
     } else {
         $stmt=$db->prepare("INSERT INTO setting (type,value)
-            VALUES ('AutoRenewCheck',?)");
+            VALUES ('AutoRenewLastOrderId',?)");
         $stmt->bind_param('s',$stringNext);
     }
     $stmt->execute();

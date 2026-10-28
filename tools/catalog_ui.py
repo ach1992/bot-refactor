@@ -11,7 +11,7 @@ SINKS={'sendMessage':(0,),'editText':(1,),'alert':(0,),
        'achbotRenderPaymentPage':(0,1),'sendDocument':(1,),
        'sendPhoto':(1,),'sendWithStartButton':(0,1),
        'notifyAllAdminsSimple':(0,)}
-TECHNICAL_CALLS={'achbotMessage','achbotMessageHtml','achbotMessages','date','jdate',
+TECHNICAL_CALLS={'achbotMessage','achbotMessageHtml','achbotMessages','achbotManagementText','date','jdate',
  'strftime','strtotime','preg_match','preg_replace','preg_quote','str_replace',
  'str_contains','str_starts_with','str_ends_with','in_array','array_key_exists',
  'method_exists','function_exists','class_exists','hash','hash_equals',
@@ -79,7 +79,7 @@ def ui_candidates(root,paths):
                 name=t['raw'].split('\\')[-1];spans=args(i+1)
                 end=matching.get(i+1,i+1);calls.append((i,end,name,spans))
                 positions=SINKS.get(name,())
-                if name=='showForm' and path.endswith('GatewayInitiation.php'):positions=(0,)
+                if name=='showForm' and (path=='pay/checkout.php' or path.endswith('GatewayInitiation.php')):positions=(0,)
                 if '\\Telegram\\Messages\\' in t['raw']:
                     positions={'sendMessage':(2,),'editText':(3,),'alert':(2,),
                                'answerCallbackQuery':(3,),'sendDocument':(3,),'sendPhoto':(3,)}.get(name,())
@@ -93,6 +93,14 @@ def ui_candidates(root,paths):
                     assignments[target].append((i,j+1,expression_end(j+1),tokens[j]['kind']))
             if t['kind']=='T_RETURN':
                 returns[scope(i)].append((i+1,expression_end(i+1)))
+        # Catalog keys are implementation tokens. Do not trace the first
+        # argument into lookup-control state; other data flow retains the
+        # existing UI-audit rules.
+        # The management facade's complete mapping has native acceptance proof.
+        catalog_keys=[spans[0]for _,_,name,spans in calls if spans and name in {
+            'achbotMessage','achbotMessageHtml','achbotMessages','achbotManagementText'}]
+        def catalog_key_argument(index):
+            return next(((a,b)for a,b in catalog_keys if a<=index<b),None)
         # A demand keeps its selected record field through assignments and
         # same-file named function returns. Other record fields stay machine data.
         queue=[(a,b,origin,()) for a,b,origin in ranges];seen=set(queue)
@@ -112,7 +120,7 @@ def ui_candidates(root,paths):
                         key=tokens[start]['raw'].strip("'\"")
                         if key==selected[0]:enqueue(start+2,end,'array_field',selected[1:])
                 continue
-            known=[c for c in calls if a<=c[0]<b and c[2] in functions]
+            known=[c for c in calls if a<=c[0]<b and c[2] in functions and catalog_key_argument(c[0])is None]
             for start,end,name,_ in known:
                 # Ambiguous duplicate/anonymous definitions are not guessed.
                 if len(functions[name])==1:
@@ -121,6 +129,8 @@ def ui_candidates(root,paths):
             references=[]
             i=a
             while i<b:
+                key_span=catalog_key_argument(i)
+                if key_span is not None:i=key_span[1];continue
                 if tokens[i]['kind']=='T_VARIABLE':
                     key,j=access(i,b);references.append(key+selected);i=j
                 else:

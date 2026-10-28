@@ -251,6 +251,16 @@ def main():
             "'rules-active-uuid','vless',2000000000,'[]',100,1,'synthetic')"))
         assert allowed(policy('wallet',[blank('has_active_order')]))
         assert not allowed(policy('wallet',[blank('no_active_order')]))
+        for shape,expiry,status,expected in [('unlimited',0,1,True),('disabled_unlimited',0,0,False),
+                ('expired',now-60,1,False),('negative',-1,1,False)]:
+            sql(w,e,f"UPDATE orders_list SET expire_date={expiry},status={status} WHERE remark='rules-active-order'")
+            for style in ['legacy','dynamic']:
+                for final in [False,True]:
+                    for category,wanted in [('has_active_order',expected),('no_active_order',not expected)]:
+                        configured=({**initial,'gatewayAudience':{'wallet':category}} if style=='legacy'
+                            else policy('wallet',[blank(category)]))
+                        assert allowed(configured,final=final) is wanted,(shape,style,final,category)
+            cases.append('unlimited_local_order_category_'+shape+'_preview_and_locked_final')
         sql(w,e,"DELETE FROM orders_list WHERE remark='rules-active-order'")
         cases.append('new_active_order_positive_and_inverse')
         for metric in ['buy','renew','volume','time','topup']:

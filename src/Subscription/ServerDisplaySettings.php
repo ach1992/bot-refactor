@@ -9,7 +9,7 @@ function achbotServerDisplayDefault(): array {
     return ['mode'=>'native','policy'=>['max_links'=>10]];
 }
 function achbotServerDisplayValid(array $document,string $provider): bool {
-    if (!in_array($provider,['marzban','pasarguard'],true) ||
+    if (!achbotSupportsProviderType($provider) ||
         array_diff(array_keys($document),['mode','policy','legacy']) ||
         !in_array($document['mode']??null,['native','marzban_legacy'],true) ||
         !is_array($document['policy']??null) ||
@@ -39,11 +39,11 @@ function achbotServerDisplayType(int $serverId): string {
     return 'ACHBOT_SERVER_DISPLAY_'.$serverId;
 }
 function achbotServerDisplayServer(mysqli $db,int $serverId,bool $lock=false): array {
-    $s=$db->prepare('SELECT s.id,c.type FROM server_info s JOIN server_config c ON c.id=s.id
+    $s=$db->prepare('SELECT s.id,s.title,c.type FROM server_info s JOIN server_config c ON c.id=s.id
         WHERE s.id=? AND s.active=1'.($lock?' FOR UPDATE':''));
     $s->bind_param('i',$serverId);$s->execute();
     $rows=$s->get_result()->fetch_all(MYSQLI_ASSOC);$s->close();
-    if (count($rows)!==1 || !in_array($rows[0]['type'],['marzban','pasarguard'],true))
+    if (count($rows)!==1 || !achbotSupportsProviderType($rows[0]['type']))
         throw new RuntimeException('display_server_unavailable');
     return $rows[0];
 }
@@ -333,7 +333,7 @@ function achbotServerDisplayShow(mysqli $db,int $serverId,string $prefix=''): vo
         $body=\achbotMessage('subscription.server_display_settings.server_display_show.body.e2f9302913');
         $keys=achbotServerDisplayKeys($serverId);
     }
-    sendMessage($prefix.$body,$keys);
+    sendMessage($prefix.\achbotMessage('admin_settings.management.display_context',['title'=>htmlspecialchars((string)$server['title'],ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8')]).$body,$keys,'HTML');
 }
 function achbotServerDisplayPrompt(string $field): string {
     return [
@@ -424,7 +424,11 @@ function achbotHandleServerDisplayAdmin(): bool {
             $source=achbotServerDisplayFrame($update,(int)$from_id,(int)$chat_id,(int)$message_id,$text,'message');
             $kind=$text===($buttonValues['cancel']??null)?'cancel':'save';
             achbotServerDisplayEdit($connection,$sid,(int)$from_id,(int)$admin,$source,$kind,$text);
-            achbotServerDisplayShow($connection,$sid,$kind==='save'?\achbotMessage('subscription.server_display_settings.handle_server_display_admin.text.ed95738546'):\achbotMessage('subscription.server_display_settings.handle_server_display_admin.text.147f04122e'));
+            sendMessage($kind==='save'?\achbotMessage('subscription.server_display_settings.handle_server_display_admin.text.ed95738546'):\achbotMessage('admin_settings.management.display_canceled'),
+                $GLOBALS['removeKeyboard']??json_encode(['remove_keyboard'=>true]));
+            if ($kind==='cancel' && function_exists('getServerConfigKeys'))
+                sendMessage(\achbotMessage('admin_settings.management.server_list'),getServerConfigKeys($sid));
+            else achbotServerDisplayShow($connection,$sid);
         }
     } catch (Throwable $error) {
         error_log('achbot_server_display_admin_deferred');

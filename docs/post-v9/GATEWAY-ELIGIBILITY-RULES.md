@@ -36,6 +36,8 @@ historical backfill**.
   user or failed authoritative read fails closed. A newly added rule for a
   previously `off` method requires an explicit administrator action.
 
+A local active-order category requires status=1 and either a future finite expiry or the established zero unlimited-time sentinel. Disabled, negative and expired records do not qualify. Both legacy category settings and dynamic rules use this same local classification in preview and locked final checks; it does not replace fresh native financial/effect verification.
+
 ## Exact meanings of dates and counts
 
 The five history dimensions query **one row per successful pays transaction**:

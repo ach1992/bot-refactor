@@ -78,6 +78,11 @@ function alert($message,$modal=false) {
 }
 function editText($id,$message,$keyboard=null,$parse=null) {
     $GLOBALS['events'][]=['type'=>'editText','to'=>$id];
+    $keys=is_string($keyboard)?json_decode($keyboard,true):$keyboard;
+    foreach (($keys['inline_keyboard']??[]) as $row) foreach ($row as $button) {
+        if (preg_match('/^confirmDeleteOrder_([1-9][0-9]*)$/D',(string)($button['callback_data']??''),$m))
+            $GLOBALS['events'][]=['type'=>'local_delete_confirmation','order_id'=>(int)$m[1]];
+    }
 }
 function sendToAllAdmins($type,$data) {
     $GLOBALS['events'][]=['type'=>'notify_admins'];
@@ -124,7 +129,7 @@ if ($action==='real_warning_cleanup') {
                'flag'=>$userInfo['isAdmin']??null];
     $data=($action==='real_user_delete'?'yesDeleteConfig':
           ($action==='real_user_preview_nonadmin'?'deleteMyConfig':
-          ($action==='real_admin_delete'?'yesDeleteUserConfig':'deleteOrder_'))).$oid;
+          ($action==='real_admin_delete'?'yesDeleteUserConfig':(!empty($spec['confirm'])?'confirmDeleteOrder_':'deleteOrder_')))).$oid;
     $text='';
     $message_id=53;
     $first_name='Owned synthetic';
@@ -240,6 +245,12 @@ def seed(w,e,name,amount=100000,wallet=500000):
           "remark,uuid,protocol,expire_date,link,amount,status,date,notif,autoRenew) VALUES "
           f"(1001,'t-{name}','',7,2,0,'{name}','uuid','vless',{exp},'[]',{amount},1,'synthetic',1,'on')")
     return int(sql(w,e,f"SELECT MAX(id) FROM orders_list WHERE remark='{name}'"))
+def due_grace(w,e,oid):
+    # These scheduled-deletion scenarios need a real chronology, not the
+    # synthetic date/notif=1 markers used only for reservation tests.
+    deadline=int(time.time())-1
+    sql(w,e,f"UPDATE orders_list SET date='1700000000',notif={deadline} WHERE id={oid}")
+
 def count(w,e,table,where='1=1'):
     return int(sql(w,e,f"SELECT COUNT(*) FROM {table} WHERE {where}"))
 def wallet(w,e):
@@ -584,8 +595,8 @@ def main():
         assert wallet(w,e)==400000 and count(w,e,'increase_order',"remark='notification'")==1
         cases.append('telegram_failure_after_commit_does_not_revert_payment')
 
-        # F2: two independent order IDs for the same remote user. Even with
-        # enough wallet money, neither can claim an exclusive remote account.
+        # F2: different references may share one native account. One consenting
+        # claimant pays, and verified completion updates both reference cycles.
         first=seed(w,e,'duplicate-account',wallet=500000)
         second=seed(w,e,'duplicate-account',wallet=500000)
         assert first!=second
@@ -600,13 +611,14 @@ def main():
             allowed={b'achbot_auto_renew_reservation_deferred'}
             assert proc.returncode==0 and all(x in allowed for x in err.splitlines()),(err,out)
             outputs.append(json.loads(out))
-        assert all(not any(v['type']=='remote' for v in vals) for vals in outputs),outputs
-        assert wallet(w,e)==500000
-        assert count(w,e,'automatic_renewal_attempts',f'order_id IN ({first},{second})')==0
-        assert count(w,e,'pays',f"order_id IN ({first},{second}) AND description='automatic_renewal'")==0
-        cases.append('f2_distinct_active_orders_same_account_two_workers_no_debit')
+        assert sum(v['type']=='remote' for vals in outputs for v in vals)==1,outputs
+        assert wallet(w,e)==400000
+        assert count(w,e,'automatic_renewal_attempts',f'order_id IN ({first},{second})')==1
+        assert count(w,e,'pays',f"order_id IN ({first},{second}) AND description='automatic_renewal'")==1
+        assert sql(w,e,f'SELECT COUNT(DISTINCT expire_date),SUM(notif) FROM orders_list WHERE id IN ({first},{second})').strip()=='1\t0'
+        cases.append('f2_distinct_active_references_same_account_two_workers_one_debit')
         assert run(w,e,{'action':'deletion_guard','order_id':first})==[
-            {'type':'delete_guard','allowed':False}]
+            {'type':'delete_guard','allowed':True}]
         sql(w,e,f"UPDATE orders_list SET status=0 WHERE id IN ({first},{second})")
 
         # Explicit administrator-assigned panel groups, not URL equality,
@@ -631,13 +643,13 @@ def main():
         aliasA=seed(w,e,'aliased-remote',wallet=500000)
         aliasB=seed(w,e,'aliased-remote',wallet=500000)
         sql(w,e,f"UPDATE orders_list SET server_id=88 WHERE id={aliasB}")
-        assert_no_remote(run(w,e,{'order_id':aliasA,'enabled':'on'}))
+        assert sum(x['type']=='remote' for x in run(w,e,{'order_id':aliasA,'enabled':'on'}))==1
         assert_no_remote(run(w,e,{'order_id':aliasB,'enabled':'on'}))
-        assert wallet(w,e)==500000
-        assert count(w,e,'automatic_renewal_attempts',f'order_id IN ({aliasA},{aliasB})')==0
-        cases.append('f2_explicit_same_panel_server_alias_duplicate_refused')
-        # Same-panel alias *concurrent* workers use different server IDs and
-        # different order IDs but must also be completely non-chargeable.
+        assert wallet(w,e)==400000
+        assert count(w,e,'automatic_renewal_attempts',f'order_id IN ({aliasA},{aliasB})')==1
+        cases.append('f2_explicit_same_panel_references_share_one_renewal_cycle')
+        # Stale concurrent callbacks after verified completion cannot charge
+        # the second reference for the same already completed native cycle.
         concurrent=[]
         for target in (aliasA,aliasB):
             concurrent.append(subprocess.Popen(
@@ -648,10 +660,10 @@ def main():
             allowed={b'achbot_auto_renew_reservation_deferred'}
             assert child.returncode==0 and all(x in allowed for x in err.splitlines()),(err,out)
             assert not any(x['type']=='remote' for x in json.loads(out)),out
-        assert wallet(w,e)==500000
+        assert wallet(w,e)==400000
         assert count(w,e,'automatic_renewal_attempts',
-                     f'order_id IN ({aliasA},{aliasB})')==0
-        cases.append('f2_two_alias_workers_no_double_debit_even_under_race')
+                     f'order_id IN ({aliasA},{aliasB})')==1
+        cases.append('f2_shared_alias_stale_workers_no_second_debit')
         sql(w,e,f"UPDATE orders_list SET status=0 WHERE id IN ({aliasA},{aliasB})")
         validA=seed(w,e,'distinct-real-one',wallet=500000)
         validB=seed(w,e,'distinct-real-two',wallet=500000)
@@ -762,7 +774,15 @@ def main():
 
         localOnly=seed(w,e,'operator-only',wallet=500000)
         run(w,e,{'order_id':localOnly,'enabled':'on'})
-        op=run(w,e,{'order_id':localOnly,'action':'real_order_delete'})
+        local_wallet=wallet(w,e)
+        local_evidence=sql(w,e,f'SELECT * FROM automatic_renewal_attempts WHERE order_id={localOnly};SELECT * FROM pays WHERE order_id={localOnly};SELECT * FROM orders_list WHERE id={localOnly}')
+        preview=run(w,e,{'order_id':localOnly,'action':'real_order_delete'})
+        assert not any(x['type']=='remote_delete' for x in preview),preview
+        assert any(x=={'type':'local_delete_confirmation','order_id':localOnly} for x in preview),preview
+        assert sql(w,e,f'SELECT * FROM automatic_renewal_attempts WHERE order_id={localOnly};SELECT * FROM pays WHERE order_id={localOnly};SELECT * FROM orders_list WHERE id={localOnly}')==local_evidence
+        assert wallet(w,e)==local_wallet
+        cases.append('f1_primary_local_delete_preview_is_read_only_and_requires_matching_confirmation')
+        op=run(w,e,{'order_id':localOnly,'action':'real_order_delete','confirm':True})
         assert not any(x['type']=='remote_delete' for x in op),op
         assert count(w,e,'orders_list',f'id={localOnly}')==0,op
         assert count(w,e,'automatic_renewal_attempts',
@@ -782,8 +802,15 @@ def main():
         delegated_wallet=wallet(w,e)
         delegated_pays=count(w,e,'pays',f'order_id={delegated}')
         delegated_journal=count(w,e,'automatic_renewal_attempts',f'order_id={delegated}')
+        delegated_evidence=sql(w,e,f'SELECT * FROM automatic_renewal_attempts WHERE order_id={delegated};SELECT * FROM pays WHERE order_id={delegated};SELECT * FROM orders_list WHERE id={delegated}')
+        delegated_preview=run(w,e,{'order_id':delegated,'action':'real_order_delete_delegate'})
+        assert any(x=={'type':'local_delete_confirmation','order_id':delegated} for x in delegated_preview),delegated_preview
+        assert not any(x['type']=='remote_delete' for x in delegated_preview),delegated_preview
+        assert sql(w,e,f'SELECT * FROM automatic_renewal_attempts WHERE order_id={delegated};SELECT * FROM pays WHERE order_id={delegated};SELECT * FROM orders_list WHERE id={delegated}')==delegated_evidence
+        assert wallet(w,e)==delegated_wallet
+        cases.append('f5_db_backed_delegate_local_delete_preview_is_read_only')
         delegated_delete=run(w,e,{'order_id':delegated,
-                                  'action':'real_order_delete_delegate'})
+                                  'action':'real_order_delete_delegate','confirm':True})
         assert any(x['type']=='db_actor_role' and x['actor']==9002 and
                    str(x['flag'])=='1' for x in delegated_delete),delegated_delete
         assert any(x['type']=='alert' and not x['modal'] for x in delegated_delete),delegated_delete
@@ -807,7 +834,7 @@ def main():
                 "SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='synthetic delegated local delete failure'")
         try:
             held_result=run(w,e,{'order_id':held,
-                                 'action':'real_order_delete_delegate'})
+                                 'action':'real_order_delete_delegate','confirm':True})
         finally:
             sql(w,e,"DROP TRIGGER achbot_owned_delegate_delete_fail")
         assert not any(x['type']=='remote_delete' for x in held_result),held_result
@@ -817,7 +844,7 @@ def main():
         assert count(w,e,'pays',
                      f"order_id={held} AND state='paid_with_wallet'")==1
         assert state(w,e,held)=='done' and wallet(w,e)==held_wallet
-        replay=run(w,e,{'order_id':held,'action':'real_order_delete_delegate'})
+        replay=run(w,e,{'order_id':held,'action':'real_order_delete_delegate','confirm':True})
         assert not any(x['type']=='remote_delete' for x in replay),replay
         assert count(w,e,'orders_list',f'id={held} AND status=0')==1
         cases.append('f5_delegated_delete_failure_persists_inactive_fence_without_remote_replay')
@@ -843,6 +870,46 @@ def main():
         assert not any(x['type']=='remote_delete'
                        for x in missing_result),missing_result
         cases.append('f5_missing_actor_role_cannot_forge_local_delete_callback')
+        for actor_action,target,label in [
+            ('real_order_delete_nonadmin',forbidden,'nonadmin'),
+            ('real_order_delete_missing_user',missing,'missing_actor')]:
+            before=sql(w,e,f'SELECT * FROM orders_list WHERE id={target};SELECT * FROM pays WHERE order_id={target};SELECT * FROM automatic_renewal_attempts WHERE order_id={target}')
+            before_wallet=wallet(w,e)
+            denied_confirm=run(w,e,{'order_id':target,'action':actor_action,'confirm':True})
+            assert any(x['type']=='alert' and x['modal'] for x in denied_confirm),denied_confirm
+            assert not any(x['type'] in ('remote_delete','local_delete_confirmation') for x in denied_confirm),denied_confirm
+            assert sql(w,e,f'SELECT * FROM orders_list WHERE id={target};SELECT * FROM pays WHERE order_id={target};SELECT * FROM automatic_renewal_attempts WHERE order_id={target}')==before
+            assert wallet(w,e)==before_wallet
+            cases.append('f5_'+label+'_cannot_forge_local_delete_confirmation')
+
+        # A valid preview is never durable authorization after role revocation.
+        sql(w,e,"UPDATE users SET isAdmin=1 WHERE userid=9002")
+        revoked=seed(w,e,'delegated-role-revoked',wallet=500000)
+        assert sum(x['type']=='remote' for x in run(w,e,{'order_id':revoked,'enabled':'on'}))==1
+        preview=run(w,e,{'order_id':revoked,'action':'real_order_delete_delegate'})
+        assert any(x=={'type':'local_delete_confirmation','order_id':revoked} for x in preview),preview
+        sql(w,e,"UPDATE users SET isAdmin=0 WHERE userid=9002")
+        before=sql(w,e,f'SELECT * FROM orders_list WHERE id={revoked};SELECT * FROM pays WHERE order_id={revoked};SELECT * FROM automatic_renewal_attempts WHERE order_id={revoked}')
+        before_wallet=wallet(w,e)
+        denied=run(w,e,{'order_id':revoked,'action':'real_order_delete_delegate','confirm':True})
+        assert any(x['type']=='alert' and x['modal'] for x in denied),denied
+        assert not any(x['type']=='remote_delete' for x in denied),denied
+        assert sql(w,e,f'SELECT * FROM orders_list WHERE id={revoked};SELECT * FROM pays WHERE order_id={revoked};SELECT * FROM automatic_renewal_attempts WHERE order_id={revoked}')==before
+        assert wallet(w,e)==before_wallet
+        cases.append('f5_local_delete_confirmation_rechecks_revoked_delegate_role')
+
+        # Confirmation does not override an unresolved renewal/payment fence.
+        pending_before=sql(w,e,f'SELECT * FROM orders_list WHERE id={failed};SELECT * FROM pays WHERE order_id={failed};SELECT * FROM automatic_renewal_attempts WHERE order_id={failed}')
+        pending_wallet=wallet(w,e)
+        pending_preview=run(w,e,{'order_id':failed,'action':'real_order_delete'})
+        assert any(x=={'type':'local_delete_confirmation','order_id':failed} for x in pending_preview),pending_preview
+        pending_confirm=run(w,e,{'order_id':failed,'action':'real_order_delete','confirm':True})
+        assert any(x['type']=='alert' and x['modal'] for x in pending_confirm),pending_confirm
+        assert not any(x['type']=='remote_delete' for x in pending_preview+pending_confirm),pending_confirm
+        assert sql(w,e,f'SELECT * FROM orders_list WHERE id={failed};SELECT * FROM pays WHERE order_id={failed};SELECT * FROM automatic_renewal_attempts WHERE order_id={failed}')==pending_before
+        assert wallet(w,e)==pending_wallet
+        cases.append('f1_local_delete_confirmation_cannot_override_unresolved_renewal')
+
 
         remoteUncertain=seed(w,e,'customer-delete-timeout')
         result=run(w,e,{'order_id':remoteUncertain,'action':'real_user_delete',
@@ -858,6 +925,7 @@ def main():
         # The actual expiry Cron cleanup must refuse a journal under review
         # before deleting the associated remote account.
         sql(w,e,f"UPDATE orders_list SET status=0 WHERE id<>{failed}")
+        due_grace(w,e,failed)
         pendingCron=run(w,e,{'action':'real_warning_cleanup','order_id':failed,
                              'expire_delta':-100})
         assert any(x['type']=='warnings_finished' for x in pendingCron),pendingCron
@@ -866,6 +934,7 @@ def main():
         cases.append('f1_real_expiry_cron_cleanup_blocks_unresolved_journal')
         sql(w,e,f"UPDATE orders_list SET status=0 WHERE id={failed}")
         expired=seed(w,e,'expiry-cron-target')
+        due_grace(w,e,expired)
         cron=run(w,e,{'action':'real_warning_cleanup','order_id':expired,
                         'expire_delta':-100})
         assert sum(x['type']=='remote_delete' for x in cron)==1,cron
@@ -874,6 +943,7 @@ def main():
         cases.append('f1_real_expired_cron_cleanup_single_verified_delete')
 
         failedCron=seed(w,e,'expiry-cron-unconfirmed')
+        due_grace(w,e,failedCron)
         cron=run(w,e,{'action':'real_warning_cleanup','order_id':failedCron,
                         'expire_delta':-100,'remote_delete_ok':False})
         assert sum(x['type']=='remote_delete' for x in cron)==1,cron
@@ -887,21 +957,35 @@ def main():
         # The actual Cron entrypoint must dispatch reconciliation even when
         # its earlier warning cleanup throws. Stage ONLY an isolated fake
         # include root: production config/bot/private credentials untouched.
-        from shutil import copyfile
-        wrapper=w/'cron-fault-staging'
-        for directory in ('settings','src/Notifications','src/Finance'):
-            (wrapper/directory).mkdir(parents=True,exist_ok=True)
-        copyfile(ROOT/'settings/warnusers.php',wrapper/'settings/warnusers.php')
-        (wrapper/'baseInfo.php').write_text('<?php /* synthetic no secrets */')
-        (wrapper/'config.php').write_text('<?php /* synthetic no DB */')
+        import os,fcntl,hashlib,sys
+        import test_post_v9_cron_runner as canonical_cron
+        wrapper=w/'cron-fault-staging';wrapper.mkdir()
+        entrypoint,cron_cwd=canonical_cron.setup(wrapper)
         (wrapper/'src/Notifications/Warnings.php').write_text(
             '<?php throw new RuntimeException("synthetic warning failure");')
-        (wrapper/'src/Finance/PaymentLifecycle.php').write_text('<?php /* synthetic owned */')
         (wrapper/'src/Finance/AutomaticRenewal.php').write_text(
             '<?php echo "RECONCILIATION_EXECUTED";')
-        proc=subprocess.run(['php','-n',str(wrapper/'settings/warnusers.php')],
-                            cwd=wrapper,capture_output=True,timeout=10)
-        assert proc.returncode==0 and proc.stdout==b'RECONCILIATION_EXECUTED',(
+        (wrapper/'src/Finance/PaymentLifecycle.php').write_text(
+            '<?php function achbotPayUxMaintain($db){echo "PAYMENT_MAINTENANCE_EXECUTED";}')
+        lock_dir=w/'canonical-cron-private-locks';lock_dir.mkdir(mode=0o700)
+        lock_path=lock_dir/('achbot-cron-'+hashlib.sha256(str(wrapper.resolve()).encode()).hexdigest()[:24]+'.lock')
+        with lock_path.open('x+b') as lease:
+            lock_path.chmod(0o600);fcntl.flock(lease.fileno(),fcntl.LOCK_EX)
+            # Force a non-3 descriptor, as in the full MariaDB/HTTP suite.
+            # subprocess may close fd3 after preexec_fn; perform the mapping
+            # after the handoff interpreter starts, immediately before execPHP.
+            inherited_fd=fcntl.fcntl(lease.fileno(),fcntl.F_DUPFD_CLOEXEC,4)
+            with os.fdopen(inherited_fd,'rb') as inherited:
+                assert inherited.fileno()!=3
+                handoff=('import os,sys; fd=int(sys.argv[1]); '
+                    'os.dup2(fd,3,inheritable=True); os.set_inheritable(3,True); '
+                    'os.close(fd) if fd!=3 else None; '
+                    'os.execvp(sys.argv[2],sys.argv[2:])')
+                proc=subprocess.run([sys.executable,'-c',handoff,str(inherited.fileno()),
+                        'php',*canonical_cron.PHP_CLI_OPTS,str(entrypoint),'--job=services'],
+                    cwd=cron_cwd,env={**os.environ,'ACHBOT_CRON_LOCK_DIR':str(lock_dir)},
+                    pass_fds=(inherited.fileno(),),capture_output=True,timeout=10)
+        assert proc.returncode==0 and proc.stdout==b'RECONCILIATION_EXECUTEDPAYMENT_MAINTENANCE_EXECUTED',(
             proc.returncode,proc.stdout,proc.stderr)
         assert b'achbot_warning_cleanup_deferred' in proc.stderr
         cases.append('f1_real_cron_entrypoint_warning_exception_cannot_skip_renewal_alert')
@@ -1055,7 +1139,7 @@ echo json_encode(['success'=>$out->success??false,
             run(w,e,{'order_id':cron_id,'enabled':'on'})
             # Notif=0 after paid renewal: simulate the independently due
             # expired-order warning without changing financial history.
-            sql(w,e,f"UPDATE orders_list SET notif=1 WHERE id={cron_id}")
+            due_grace(w,e,cron_id)
             before_wallet=wallet(w,e)
             first=len(server.delete_calls)
             res=run(w,e,{'order_id':cron_id,'action':'real_warning_cleanup',

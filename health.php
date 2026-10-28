@@ -1,5 +1,7 @@
 <?php
-require_once __DIR__.'/settings/values.php';
+require_once __DIR__.'/messages/loader.php';
+$mainValues=achbotMessages('legacy_messages');
+$buttonValues=achbotMessages('legacy_buttons');
 require_once __DIR__.'/baseInfo.php';
 
 header('Content-Type: application/json; charset=utf-8');

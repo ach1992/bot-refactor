@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Actual pay/index + initiation/page source; socket-only DB and loopback HTTP."""
+"""Actual canonical checkout + initiation/page source; socket-only DB and loopback HTTP."""
 from __future__ import annotations
 import argparse,json,socket,subprocess,time,urllib.error,urllib.parse,urllib.request
 from pathlib import Path
@@ -30,12 +30,12 @@ def main():
     parser=argparse.ArgumentParser();parser.add_argument('--run-disposable',required=True,action='store_true');parser.parse_args()
     amendment=json.loads((ROOT/'tools/text_catalog_amendments.json').read_text())
     corrections=amendment['approved_copy'];copy=catalog_source.templates(ROOT);checks=0
-    check('src/Finance/GatewayInitiation.php' in privacy.CUSTOMER_SURFACES,'public initiation omitted from audience guard')
+    check('pay/checkout.php' in privacy.CUSTOMER_SURFACES,'public initiation omitted from audience guard')
     privacy.verify(ROOT,copy)
     for key,entry in corrections.items():
         poisoned=copy|{key:entry['before']}
         try:privacy.verify(ROOT,poisoned)
-        except RuntimeError as error:check('GatewayInitiation.php' in str(error),'public audience negative rejected wrong surface')
+        except RuntimeError as error:check('checkout.php' in str(error),'public audience negative rejected wrong surface')
         else:raise AssertionError('public audience negative missed unsafe original: '+key)
         checks+=1
     with owned.owned_database() as (w,e):
@@ -67,7 +67,7 @@ require_once __DIR__.'/src/Finance/GatewayClient.php';
 """
         (app/'baseInfo.php').write_text('<?php // Synthetic source-only instance.\n')
         (app/'config.php').write_text(bootstrap)
-        (w/'driver.php').write_text('<?php parse_str($argv[1],$_GET);require '+json.dumps(str(app/'pay/index.php'))+';')
+        (w/'driver.php').write_text('<?php parse_str($argv[1],$_GET);$_SERVER["REQUEST_METHOD"]="GET";$_SERVER["SCRIPT_FILENAME"]='+json.dumps(str(app/'pay/checkout.php'))+';require '+json.dumps(str(app/'pay/checkout.php'))+';')
         # Keep the shipping two-file layout. Transplant only the three real
         # unsafe values from the immutable old Git object for the RED control.
         # Restore exact shipping bytes before every current GREEN path.
@@ -120,7 +120,7 @@ require_once __DIR__.'/src/Finance/GatewayClient.php';
                         check(time.monotonic()<deadline,'owned HTTP listener unavailable');time.sleep(.03)
                 for case,actor,kind,suffix in CASES:
                     query=urllib.parse.urlencode({'nowpayment':'','hash_id':'privacy-'+case,'fixture':case})
-                    with urllib.request.urlopen('http://127.0.0.1:'+str(port)+'/pay/index.php?'+query,timeout=10) as response:
+                    with urllib.request.urlopen('http://127.0.0.1:'+str(port)+'/pay/checkout.php?'+query,timeout=10) as response:
                         check(response.status==200 and response.headers['Cache-Control']=='private, no-store, max-age=0','public payment response contract')
                         verify(response.read().decode(),case,suffix)
                     checks+=1

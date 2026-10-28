@@ -8,6 +8,7 @@ require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
 
 
 require_once __DIR__.'/../Panel/ProviderRuntime.php';
+require_once __DIR__.'/../Purchase/OrderWrites.php';
 
 if (!function_exists('payTypeToDescription')) {
     function payTypeToDescription($payType)
@@ -2199,46 +2200,176 @@ function achbotAutoRenewSameAccount(mysqli $db, int $serverA, int $serverB): boo
         ($serverA===$serverB || achbotSameProviderPanel($db,$serverA,$serverB));
 }
 
-/**
- * Must run INSIDE the selected-order transaction before a wallet debit.
- * Lock all active candidate rows, including different order IDs, so parallel
- * workers cannot independently charge the same physical Marzban account.
- */
-function achbotAutoRenewAccountExclusiveLocked(
-    mysqli $db, int $orderId, int $serverId, string $remark
-): bool {
-    if ($orderId<=0 || $serverId<=0 || $remark==='') return false;
-    $stmt=$db->prepare("SELECT id,server_id FROM orders_list
-        WHERE status=1 AND remark=? FOR UPDATE");
-    $stmt->bind_param('s',$remark);
-    $stmt->execute();
-    $rows=$stmt->get_result()->fetch_all(MYSQLI_ASSOC);
-    $stmt->close();
-    $found=false;
-    foreach ($rows as $r) {
-        if ((int)$r['id']===$orderId) $found=true;
-        elseif (achbotAutoRenewSameAccount($db,$serverId,(int)$r['server_id']))
-            return false;
+/** Current locking reads identify references; their mere presence never denies service. */
+function achbotSharedAccountReferencesLocked(mysqli $db,int $orderId,int $serverId,string $remark): array {
+    if ($orderId<=0 || $serverId<=0 || $remark==='') throw new RuntimeException('shared_account_identity_invalid');
+    $q=$db->prepare('SELECT * FROM orders_list WHERE BINARY remark=BINARY ? ORDER BY id FOR UPDATE');
+    $q->bind_param('s',$remark);$q->execute();$rows=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
+    $selected=null;
+    foreach ($rows as $row) if ((int)$row['id']===$orderId && (int)$row['server_id']===$serverId) $selected=$row;
+    if ($selected===null) throw new RuntimeException('shared_account_reference_missing');
+    $type=achbotProviderType($db,$serverId);$physical=null;
+    if ($type==='pasarguard') {
+        achbotPgLoad();$physical=achbotProviderAccountByOrder($db,$orderId,true);
+        if (!$physical) throw new RuntimeException('shared_account_identity_unverified');
     }
-    return $found;
+    $peers=[];
+    foreach ($rows as $row) {
+        if (!achbotAutoRenewSameAccount($db,$serverId,(int)$row['server_id'])) continue;
+        if ($type==='pasarguard') {
+            $candidate=achbotProviderAccountByOrder($db,(int)$row['id'],true);
+            if (!$candidate) throw new RuntimeException('shared_account_identity_unverified');
+            if ((int)$candidate['id']!==(int)$physical['id']) continue;
+        } else {
+            // Present invalid origin is never silently treated as a legacy paid reference.
+            achbotOrderImportOrigin($db,$row,true);
+        }
+        $peers[]=$row;
+    }
+    if (!$peers) throw new RuntimeException('shared_account_reference_missing');
+    return $peers;
+}
+
+/** Pending claims serialize a shared account; completed references are not an ownership restriction. */
+function achbotSharedAccountWorkSettledLocked(mysqli $db,array $peers,int $ownAttempt=0,
+    int $ownPay=0,bool $blockUnclaimedQuotes=false): bool {
+    $ids=[];
+    foreach ($peers as $row) {
+        if ((int)($row['id']??0)<=0 || (int)($row['status']??0)!==1) return false;
+        $ids[]=(int)$row['id'];
+    }
+    if (!$ids) return false;
+    $list=implode(',',array_values(array_unique($ids)));
+    $schema=achbotAutoRenewSchemaState($db);
+    if ($schema==='incompatible') return false;
+    if ($schema==='ready') {
+        $q=$db->prepare("SELECT id FROM automatic_renewal_attempts WHERE order_id IN ($list)
+            AND stage<>'done' AND id<>? LIMIT 1 FOR UPDATE");
+        $q->bind_param('i',$ownAttempt);$q->execute();$pending=$q->get_result()->fetch_assoc();$q->close();
+        if ($pending) return false;
+    }
+    $mode=achbotManualLedgerMode($db);
+    if ($mode==='invalid') return false;
+    $pattern='^INCREASE_(DAY|VOLUME)_('.implode('|',$ids).')_';
+    $q=$db->prepare("SELECT id,state FROM pays WHERE id<>? AND
+        (order_id IN ($list) OR type REGEXP ?) ORDER BY id FOR UPDATE");
+    $q->bind_param('is',$ownPay,$pattern);$q->execute();$payments=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
+    foreach ($payments as $payment) {
+        if (in_array($payment['state'],['approved','paid_with_wallet'],true)) continue;
+        $attempt=null;
+        if ($mode==='current') {
+            $id=(int)$payment['id'];
+            $q=$db->prepare('SELECT stage FROM payment_attempts WHERE pay_row_id=? FOR UPDATE');
+            $q->bind_param('i',$id);$q->execute();$attempt=$q->get_result()->fetch_assoc();$q->close();
+        }
+        if ($payment['state']==='paid' && ($attempt['stage']??null)==='done') continue;
+        if (in_array($payment['state'],['canceled','cancelled','rejected','expired'],true) &&
+            ($attempt===null || in_array($attempt['stage'],['expired','done'],true))) continue;
+        // An unclaimed bot quote has no money/native effect. A chosen/issued
+        // attempt may still settle and therefore retains the account fence.
+        if (!$blockUnclaimedQuotes && $payment['state']==='pending' && $attempt===null) continue;
+        return false;
+    }
+    $result=$db->query("SELECT TABLE_TYPE,ENGINE FROM information_schema.TABLES
+        WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='service_effects'");
+    if (!($result instanceof mysqli_result)) return false;
+    $table=$result->fetch_assoc();
+    if ($table!==null) {
+        if ($result->num_rows!==1 || $table['TABLE_TYPE']!=='BASE TABLE' ||
+            strcasecmp((string)$table['ENGINE'],'InnoDB')!==0) return false;
+        $remark=(string)$peers[0]['remark'];
+        $q=$db->prepare("SELECT target_server_id FROM service_effects
+            WHERE BINARY remote_username=BINARY ? AND state<>'local_recorded' FOR UPDATE");
+        $q->bind_param('s',$remark);$q->execute();$effects=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
+        foreach ($effects as $effect)
+            if (achbotAutoRenewSameAccount($db,(int)$peers[0]['server_id'],(int)$effect['target_server_id'])) return false;
+    }
+    return true;
+}
+
+/** Compatibility entrypoint now fences actual work, not multiple registrations. */
+function achbotAutoRenewAccountExclusiveLocked(mysqli $db,int $orderId,int $serverId,string $remark,
+    ?array &$peers=null,bool $blockUnclaimedQuotes=false): bool {
+    $peers=achbotSharedAccountReferencesLocked($db,$orderId,$serverId,$remark);
+    return achbotSharedAccountWorkSettledLocked($db,$peers,0,0,$blockUnclaimedQuotes);
+}
+
+/**
+ * Scheduled deletion must not race an unfinished local payment/effect.
+ * Existing completed payment evidence remains untouched. Called only while the
+ * exact order row and cycle are locked by the scheduled-deletion reservation.
+ */
+function achbotScheduledDeletionEffectsSettled(mysqli $db,array $order): bool {
+    $mode=achbotManualLedgerMode($db);
+    if ($mode==='invalid') return false;
+    $id=(int)$order['id'];
+    $pattern='^INCREASE_(DAY|VOLUME)_'.$id.'_';
+    $stmt=$db->prepare("SELECT id,state FROM pays WHERE (order_id=? OR type REGEXP ?) AND state NOT IN ('approved','paid_with_wallet') ORDER BY id FOR UPDATE");
+    if (!$stmt) return false;
+    $stmt->bind_param('is',$id,$pattern);
+    if (!$stmt->execute()) {$stmt->close();return false;}
+    $payments=$stmt->get_result()->fetch_all(MYSQLI_ASSOC);$stmt->close();
+    foreach ($payments as $payment) {
+        // These states are committed only with the verified local effect.
+        // A manual receipt's attempt can legitimately remain stage=review.
+        if (in_array($payment['state'],['approved','paid_with_wallet'],true)) continue;
+        $attempt=null;
+        if ($mode==='current') {
+            $payId=(int)$payment['id'];
+            $stmt=$db->prepare('SELECT stage FROM payment_attempts WHERE pay_row_id=? FOR UPDATE');
+            if (!$stmt) return false;
+            $stmt->bind_param('i',$payId);
+            if (!$stmt->execute()) {$stmt->close();return false;}
+            $attempt=$stmt->get_result()->fetch_assoc();$stmt->close();
+        }
+        if ($payment['state']==='paid' && ($attempt['stage']??null)==='done') continue;
+        if (in_array($payment['state'],['canceled','cancelled','rejected','expired'],true) &&
+            ($attempt===null || in_array($attempt['stage'],['expired','done'],true))) continue;
+        // Pending quotes, receipt review, processing and uncertain outcomes
+        // retain the service until their owner resolves the payment.
+        return false;
+    }
+    $result=$db->query("SELECT TABLE_TYPE,ENGINE FROM information_schema.TABLES
+        WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='service_effects'");
+    if (!($result instanceof mysqli_result)) return false;
+    $table=$result->fetch_assoc();
+    if ($table!==null) {
+        if ($result->num_rows!==1 || $table['TABLE_TYPE']!=='BASE TABLE' ||
+            strcasecmp((string)$table['ENGINE'],'InnoDB')!==0) return false;
+        $remark=(string)$order['remark'];
+        $stmt=$db->prepare("SELECT target_server_id FROM service_effects
+            WHERE remote_username=? AND state<>'local_recorded' FOR UPDATE");
+        if (!$stmt) return false;
+        $stmt->bind_param('s',$remark);
+        if (!$stmt->execute()) {$stmt->close();return false;}
+        $effects=$stmt->get_result()->fetch_all(MYSQLI_ASSOC);$stmt->close();
+        foreach ($effects as $effect)
+            if (achbotAutoRenewSameAccount($db,(int)$order['server_id'],(int)$effect['target_server_id']))
+                return false;
+    }
+    return true;
 }
 
 /** Legacy order deletion gate: lock + flag OFF before remote destructive call. */
-function achbotAutoRenewPrepareDeletion(mysqli $db, int $orderId): bool {
+function achbotAutoRenewPrepareDeletion(mysqli $db, int $orderId,?array $expected=null): bool {
     if ($orderId<=0) return false;
     $schema=achbotAutoRenewSchemaState($db);
     if ($schema==='incompatible') return false;
     try {
         $db->begin_transaction();
-        $stmt=$db->prepare("SELECT id,server_id,remark,status FROM orders_list
+        $stmt=$db->prepare("SELECT id,server_id,remark,status,notif,expire_date FROM orders_list
             WHERE id=? FOR UPDATE");
         $stmt->bind_param('i',$orderId);
         $stmt->execute();
         $order=$stmt->get_result()->fetch_assoc();
         $stmt->close();
         if (!$order || (int)$order['status']!==1 ||
+            ($expected!==null && ((int)$order['expire_date']!==(int)$expected['expire_date'] ||
+                (int)$order['notif']!==(int)$expected['notif'] ||
+                (int)$order['server_id']!==(int)$expected['server_id'] ||
+                $order['remark']!==$expected['remark'])) ||
             !achbotAutoRenewAccountExclusiveLocked($db,$orderId,
-            (int)$order['server_id'],(string)$order['remark'])) {
+            (int)$order['server_id'],(string)$order['remark'],$peerOrders,$expected!==null)) {
             $db->rollback(); return false;
         }
         if ($schema==='ready') {
@@ -2249,6 +2380,9 @@ function achbotAutoRenewPrepareDeletion(mysqli $db, int $orderId): bool {
             $pending=$stmt->get_result()->fetch_assoc();
             $stmt->close();
             if ($pending) { $db->rollback(); return false; }
+        }
+        if ($expected!==null && !achbotScheduledDeletionEffectsSettled($db,$order)) {
+            $db->rollback();return false;
         }
         // Durable deletion fence before remote DELETE. Any uncertain remote
         // result cannot cause an unattended repeated delete or new renewal.
@@ -2267,6 +2401,43 @@ function achbotAutoRenewPrepareDeletion(mysqli $db, int $orderId): bool {
     }
 }
 
+/** Imported accounts never held a bot capacity slot, even after a later plan assignment. */
+function achbotOrderRestoresCapacity(mysqli $db,array $order): bool {
+    if ((int)($order['id']??0)<=0) return false;
+    // Explicit nonfinancial origin survives plan assignment even without007.
+    $origin=achbotOrderImportOrigin($db,$order,true);
+    $positivePlan=(int)($order['fileid']??0)>0;
+    try {
+        $r=$db->query("SELECT TABLE_TYPE,ENGINE FROM information_schema.TABLES
+            WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='service_effects'");
+        if (!($r instanceof mysqli_result)) throw new RuntimeException('deletion_capacity_schema_unavailable');
+        $table=$r->fetch_assoc();
+        // Original-schema positive-plan history keeps its established behavior;
+        // new imported references have explicit no-reservation provenance.
+        if ($table===null) return $origin===null && $positivePlan;
+        if ($r->num_rows!==1 || $table['TABLE_TYPE']!=='BASE TABLE' ||
+            strcasecmp((string)$table['ENGINE'],'InnoDB')!==0) throw new RuntimeException('deletion_capacity_schema_invalid');
+        $id=(int)$order['id'];
+        $q=$db->prepare("SELECT effect_kind,source_kind,pay_row_id,reserved_count,state
+            FROM service_effects WHERE order_id=? LIMIT 2");
+        if (!$q) throw new RuntimeException('deletion_capacity_read_unavailable');
+        $q->bind_param('i',$id);
+        if (!$q->execute()) {$q->close();throw new RuntimeException('deletion_capacity_read_unavailable');}
+        $rows=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
+        if (!$rows) return $origin===null && $positivePlan;
+        if (count($rows)!==1) throw new RuntimeException('deletion_capacity_identity_ambiguous');
+        $effect=$rows[0];
+        if ($effect['state']!=='local_recorded') throw new RuntimeException('deletion_capacity_effect_unconfirmed');
+        if ($effect['effect_kind']==='adopt' && $effect['source_kind']==='external_import' &&
+            $effect['pay_row_id']===null && (int)$effect['reserved_count']===0) return false;
+        if ($effect['effect_kind']==='create' && $effect['source_kind']!=='external_import' && $origin===null)
+            return $positivePlan;
+        throw new RuntimeException('deletion_capacity_effect_invalid');
+    } catch (Throwable $error) {
+        throw new RuntimeException('deletion_capacity_provenance_unavailable');
+    }
+}
+
 /**
  * Complete an already-authorized remote deletion atomically in local SQL.
  * A failure leaves the order status=0 for operator reconciliation, never
@@ -2279,7 +2450,7 @@ function achbotAutoRenewFinalizeDeletion(
         achbotAutoRenewSchemaState($db)==='incompatible') return false;
     try {
         $db->begin_transaction();
-        $stmt=$db->prepare("SELECT status,server_id FROM orders_list
+        $stmt=$db->prepare("SELECT id,userid,remark,fileid,status,server_id FROM orders_list
             WHERE id=? FOR UPDATE");
         $stmt->bind_param('i',$orderId);
         $stmt->execute();
@@ -2289,13 +2460,14 @@ function achbotAutoRenewFinalizeDeletion(
             (int)$row['server_id']!==$serverId) {
             $db->rollback(); return false;
         }
+        $restoreSlot=$restoreCapacity && achbotOrderRestoresCapacity($db,$row);
         $stmt=$db->prepare("DELETE FROM orders_list WHERE id=? AND status=0");
         $stmt->bind_param('i',$orderId);
         $stmt->execute();
         $removed=$stmt->affected_rows;
         $stmt->close();
         if ($removed!==1) { $db->rollback(); return false; }
-        if ($restoreCapacity) {
+        if ($restoreSlot) {
             $stmt=$db->prepare("UPDATE server_info SET ucount=ucount+1
                 WHERE id=? AND ucount<2147483647");
             $stmt->bind_param('i',$serverId);

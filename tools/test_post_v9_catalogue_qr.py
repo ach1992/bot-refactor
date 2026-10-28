@@ -6,6 +6,8 @@ Marzban subscription QR use only synthetic information. No live credentials.
 """
 import argparse
 import json
+import hashlib
+import itertools
 from pathlib import Path
 import test_access_state as owned
 import test_v6_native as native
@@ -13,17 +15,67 @@ import test_v8_native as purchase
 import test_post_v9_purchases as src
 
 ROOT=Path(__file__).resolve().parents[1]
+REQUEST_SOURCES=itertools.count(810001)
+
+def bootstrap_current_catalogue(stage: Path) -> None:
+    """Supply real current bootstrap dependencies to the owned V7-derived driver.
+
+    Production config.php loads PaymentLifecycle before these routes. The
+    frozen V7 driver is intentionally unchanged and knows no such dependency.
+    This generated candidate copy derives its private callback actor through
+    the real UpdateBindings include before the existing persisted-user query.
+    """
+    driver=stage/'native-purchase.php'
+    source=driver.read_text()
+    request_anchor='$linkIndices=[0];$hideConfigIfMany=false;$permissions=[];$update=[];'
+    if source.count(request_anchor)!=1:
+        raise RuntimeError('Current catalogue request fixture anchor changed')
+    request_context=r"""
+$sender=['id'=>$from_id,'is_bot'=>false,'username'=>'fixture','first_name'=>'Fixture'];
+$update=json_decode(json_encode(['update_id'=>(int)($spec['source']??810001),
+    'callback_query'=>['id'=>'current-catalogue-fixture','data'=>$data,'from'=>$sender,
+        'message'=>['message_id'=>$message_id,'text'=>'fixture bot message',
+            'from'=>['id'=>777001,'is_bot'=>true],
+            'chat'=>['id'=>$from_id,'type'=>'private'],
+            'reply_markup'=>['inline_keyboard'=>[]]]]]));
+require __DIR__.'/src/Telegram/UpdateBindings.php';
+"""
+    source=source.replace(request_anchor,request_anchor+request_context,1)
+    route_anchor="try {require __DIR__.'/access-sequence.php';$ach_return=true;}"
+    if source.count(route_anchor)!=1:
+        raise RuntimeError('Current catalogue dispatch fixture anchor changed')
+    context=r"""
+// Actual current helper; no audience approval spy or duplicate implementation.
+require_once __DIR__.'/src/Finance/PaymentLifecycle.php';
+$actualRole=$userInfo['is_agent']??null;
+if (!empty($spec['fake_cached_agent'])) $userInfo['is_agent']=1;
+if (isset($spec['states'])) $botState=array_replace($botState,$spec['states']);
+achEvent('current_catalogue_context',[
+    'actor'=>(int)$from_id,'chat'=>(int)$chat_id,'private'=>($chat_type??'')==='private',
+    'source'=>(int)$update->update_id,'db_is_agent'=>$actualRole,
+    'cached_is_agent'=>$userInfo['is_agent']??null
+]);
+"""
+    source=source.replace(route_anchor,context+route_anchor,1)
+    driver.write_text(source)
 
 def check_no_effects(work,env,panel,stage,db,kind,spec,tag):
     before=purchase.snapshot(work,env,db)
     panel.trace.clear()
+    spec=dict(spec,source=next(REQUEST_SOURCES))
     result=purchase.run(work,env,stage,db,kind,spec,modern=True)
     after=purchase.snapshot(work,env,db)
     if panel.trace:
         raise RuntimeError('Unexpected panel API on '+tag)
     if result['exception'] or result['warnings']:
         raise RuntimeError('PHP warnings/errors on '+tag+':'+repr(result)[:600])
-    for key in ('payments','orders','capacity'):
+    contexts=[event['args'] for event in result['events']
+              if event['name']=='current_catalogue_context']
+    if (len(contexts)!=1 or contexts[0]['actor']!=spec.get('actor',1001) or
+        contexts[0]['chat']!=spec.get('actor',1001) or
+        contexts[0]['private'] is not True or contexts[0]['source']!=spec['source']):
+        raise RuntimeError('Current private callback context not exercised: '+tag)
+    for key in ('users','payments','orders','capacity','plans','categories'):
         if before[key]!=after[key]:
             raise RuntimeError('Unsupported or display-only request changed '+key+' on '+tag)
     return result
@@ -36,7 +88,9 @@ def main():
     records=[]
     with owned.owned_database() as (work,env), native.owned_provider() as (panel,url):
         stage=work/'post-v9'
+        frozen_driver=(ROOT/'tests/v7/native-purchase.php').read_bytes()
         src.stage_source(stage,True)
+        bootstrap_current_catalogue(stage)
         db=purchase.SIDE[1]
         purchase.init(work,env,url)
         # Copy synthetically another server/config/plan. No deployed records.
@@ -80,6 +134,40 @@ SELECT 10,'10',catid,2,7,6,'Obsolete inbound','vless',30,2,'normal',
                 if not any(event['name']=='alert' for event in obs['events']):
                     raise RuntimeError('Forged callback not given bounded message: '+tag)
             records.append({'case':tag,'pass':True,'sql_payment_order_mutations':0,'provider_calls':0})
+        # Real audience eligibility uses the actor currently stored in MariaDB.
+        # Bank transfer is the only enabled/configured option in these cases.
+        state={'walletState':'off','cartToCartState':'on','giftCardState':'off',
+               'manualUsdtState':'off','nowPaymentOther':'off','zarinpal':'off',
+               'nextpay':'off','gatewayAudience':{'bank_transfer':'agents'}}
+        for actor,expected,tag,spoof in [
+            (1001,False,'audience_nonagent_denied',False),
+            (9002,True,'audience_persisted_agent_admitted',False),
+            (1001,False,'audience_forged_cached_agent_denied',True)]:
+            obs=check_no_effects(work,env,panel,stage,db,'entryandbulk',
+                dict(data='buySubscription',actor=actor,states=state,fake_cached_agent=spoof),tag)
+            shown=json.dumps(obs['events'],ensure_ascii=False)
+            if ('selectServer2_' in shown)!=expected:
+                raise RuntimeError('Real audience helper did not enforce persisted role: '+tag)
+            if not expected and not any(e['name']=='alert' for e in obs['events']):
+                raise RuntimeError('Audience denial had no bounded feedback: '+tag)
+            context=next(e['args'] for e in obs['events'] if e['name']=='current_catalogue_context')
+            if str(context['db_is_agent'])!=('1' if actor==9002 else '0'):
+                raise RuntimeError('Persisted role was replaced by fixture approval: '+tag)
+            if spoof and str(context['cached_is_agent'])!='1':
+                raise RuntimeError('Stale cached role negative was not exercised')
+            records.append({'case':tag,'pass':True,'sql_payment_order_mutations':0,'provider_calls':0})
+        native.sql(work,env,'UPDATE users SET is_agent=0 WHERE userid=9002',db)
+        obs=check_no_effects(work,env,panel,stage,db,'entryandbulk',
+            dict(data='buySubscription',actor=9002,states=state,fake_cached_agent=True),
+            'audience_revoked_agent_denied')
+        if 'selectServer2_' in json.dumps(obs['events'],ensure_ascii=False):
+            raise RuntimeError('Revoked current role retained catalogue access')
+        records.append({'case':'audience_revoked_agent_denied','pass':True,
+                        'sql_payment_order_mutations':0,'provider_calls':0})
+        native.sql(work,env,'UPDATE users SET is_agent=1 WHERE userid=9002',db)
+        if (ROOT/'tests/v7/native-purchase.php').read_bytes()!=frozen_driver:
+            raise RuntimeError('Frozen V7 native driver was modified')
+
         # Build one valid owned order and load the actual Checkout PHP route.
         native.sql(work,env,'''INSERT INTO orders_list
             (userid,token,transid,fileid,server_id,inbound_id,remark,uuid,
@@ -118,7 +206,10 @@ class QRcode {
         records.append({'case':'marzban_qr','pass':True,'correct_provider_url':True,
                         'sql_payment_order_mutations':0,'provider_calls':0})
     report={'complete':True,'cases':len(records),'original_schema_tables':23,
-            'financial_mutations':0,'real_payment_or_telegram_tested':False,
+            'financial_mutations':0,'real_current_audience_helper':True,'actual_private_update_bindings':True,
+            'persisted_audience_role_cases':4,'frozen_driver_unchanged':True,
+            'frozen_driver_sha256':hashlib.sha256(frozen_driver).hexdigest(),
+            'real_payment_or_telegram_tested':False,
             'scenarios':records}
     if a.report:a.report.write_text(json.dumps(report,indent=2)+'\n')
     print(json.dumps({k:v for k,v in report.items() if k!='scenarios'}))

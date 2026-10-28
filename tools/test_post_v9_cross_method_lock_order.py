@@ -75,7 +75,7 @@ def stage(w,mutant):
     assert src.count(anchor)==1
     src=src.replace(anchor,WAIT.encode()+anchor)
     a.write_bytes(src)
-    b=folder/'src/Finance/GatewayInitiation.php'
+    b=folder/'pay/checkout.php'
     data=b.read_bytes()
     anchor=b"            !achbotSupportsPaymentSubject($db,$row,true) ||"
     assert data.count(anchor)==1

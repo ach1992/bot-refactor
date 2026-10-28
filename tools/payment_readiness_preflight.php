@@ -77,10 +77,11 @@ function verifyManifest(string $manifestPath, string $runtimePath): bool {
         // The expected current runtime inventory is pinned independently of
         // supplied manifest bytes. Without this guard an attacker-controlled
         // file list could request hashes of an installed private file.
+        // Canonical-path cleanup inventory: 112 explicit runtime paths.
         // SHA-256 of newline-joined sorted package_post_v9.members() paths.
         $members = array_keys($manifest['files']);
         sort($members, SORT_STRING);
-        if (!hash_equals('550e180a14533ba85ebf7875ef8211f5e3c0e0d3f15cec770c0a87372db5b128',
+        if (!hash_equals('cf4a27dbf7b28c28285893a9457b18024613dd7a4052ebe3f472ecb5168debac',
                          hash('sha256', implode("\n", $members))) ||
             in_array('baseInfo.php', $members, true)) return false;
         // All tool-side runtime source is bound before any helper executes.
@@ -110,7 +111,10 @@ function verifyManifest(string $manifestPath, string $runtimePath): bool {
                 !hash_equals($expected['sha256'], (string)hash_file('sha256', $path))) return false;
         }
         foreach (['settings/tronChecker.php', 'src/Finance/CryptoChecker.php',
-                   'src/Finance/Routes/CryptoAndExchange.php'] as $retired) {
+                   'src/Finance/Routes/CryptoAndExchange.php',
+                   'settings/subLink.php','settings/values.php',
+                   'settings/messagewizwiz.php','settings/warnusers.php',
+                   'pay/index.php','src/Finance/GatewayInitiation.php'] as $retired) {
             if (file_exists($root . DIRECTORY_SEPARATOR . $retired) ||
                 is_link($root . DIRECTORY_SEPARATOR . $retired)) return false;
         }

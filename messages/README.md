@@ -5,7 +5,7 @@ Only **two files contain editable bot/PHP payment-page copy**:
 - `fa/user.php`: customer and agent messages, customer buttons and harmless shared labels/date words.
 - `fa/admin.php`: administrator controls, operational reports and administrator-only diagnostics.
 
-Both files have named topic sections. Search for the current sentence, then edit its value in place. Keep the stable key, parameter names and placeholders unchanged. For example, keep `{amount}`, `USER-ID`, `PRICE-TOMAN` or `CONNECT-LINK` exactly as written. `settings/values.php` is a compatibility facade; it contains no separate copy to maintain. `loader.php` is loading/substitution code, not a third text file.
+Both files have named topic sections. Search for the current sentence, then edit its value in place. Keep the stable key, parameter names and placeholders unchanged. For example, keep `{amount}`, `USER-ID`, `PRICE-TOMAN` or `CONNECT-LINK` exactly as written. `config.php` and `health.php` initialize the existing `$mainValues` and `$buttonValues` bindings directly through `messages/loader.php`. The old `settings/values.php` facade is removed. `loader.php` is loading/substitution code, not a third text file.
 
 Classify editing placement from the actual recipient, including forwarded support reports and shared controls; a route filename alone is not an audience. Choose status/action emoji from the complete outcome and action, not an isolated word such as success, unsuccessful, delete or duplicate.
 
@@ -19,7 +19,7 @@ File placement does not authorize a recipient. Existing actor/owner checks and e
 - Preserve the caller's parse mode. Buttons and callback alerts are plain text. Use `<b>` for headings/important amounts and `<code>` for copyable IDs/addresses only in messages whose caller explicitly uses HTML. Markdown and plain messages must not receive HTML tags. Many entries are fragments; do not add or close a formatting tag without checking the complete message.
 - Keep existing wording unless clarity/privacy requires a reviewed correction. A payment or delivery with an unknown result remains under review; never imply confirmed success, rollback or refund without evidence.
 
-## Runtime API and compatibility
+## Runtime API and evidence
 
 Require `messages/loader.php` once. It needs no private config, database or bootstrap. It loads only the two fixed audience files, rejects duplicate cross-file keys and retains the existing logical `topic.stable_key` API:
 
@@ -36,3 +36,5 @@ The original relocation inventory remains immutable evidence. Owner revision 4 p
 Run `python3 tools/test_text_catalog_style.py` for focused two-file, stable-key, digits, emoji, markup, parameter, audience and native composition checks. The full catalog/source/financial acceptance remains a separate required gate; source checks do not certify a live Telegram rendering or installed operator behavior.
 
 The retained relocation/source proof is pinned to released RC12 `ecd30ba`; current source still receives live unknown-key/orphan, UI-literal, audience, digits and parameter checks. The shared-USDT-rate Owner amendment retires exactly three obsolete agent-rate help/label/fallback entries, recorded separately in `retired_feature_keys`; the 23 historical parser retirements and original relocation inventory remain unchanged.
+
+The unified-management amendment pins the additional admin/customer templates against RC13 in `tools/text_catalog_management_amendment.json`; prior catalog values remain unchanged. Current binding checks parse and execute only the two declarative catalog assignments in `config.php` and `health.php`, without application bootstrap, private configuration, database or network access. The deleted RC13 facade and relocated runtime source paths are exercised only from their immutable Git versions.

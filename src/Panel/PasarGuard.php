@@ -44,8 +44,9 @@ function achbotPgPanelValid(array $panel): bool {
 function achbotPgRequest(array $panel,string $method,string $path,?array $payload=null,
                          bool $text=false): array {
     $write=$method!=='GET';
-    if (!achbotPgPanelValid($panel) || !preg_match('#^/api/[a-zA-Z0-9_/?=&.-]+$#D',$path))
-        return achbotPgFailure('pg_panel_config_invalid');
+    $validPath=preg_match('#^/api/[a-zA-Z0-9_/?=&.-]+$#D',$path) ||
+        preg_match('#^/api/user/by-username/(?:[a-zA-Z0-9_.-]|%40)+$#D',$path);
+    if (!achbotPgPanelValid($panel) || !$validPath) return achbotPgFailure('pg_panel_config_invalid');
     $body=null;
     try { if ($payload!==null) $body=json_encode($payload,JSON_THROW_ON_ERROR); }
     catch (Throwable $e) { return achbotPgFailure('pg_request_invalid'); }
@@ -128,15 +129,25 @@ function achbotPgUserResult(array $result,bool $write=false): array {
     return ['success'=>true,'uncertain'=>false,'reason'=>'','http'=>$result['http'],'user'=>$user];
 }
 function achbotPgIdentityValid(array $identity): bool {
-    return is_int($identity['remote_user_id']??null) && $identity['remote_user_id']>0 &&
-        is_string($identity['remote_created_at']??null) &&
+    if (!is_int($identity['remote_user_id']??null) || $identity['remote_user_id']<=0 ||
+        !is_string($identity['remote_created_at']??null)) return false;
+    if (($identity['identity_mode']??null)==='adopted')
+        return preg_match('/^achbot:adopt:[a-f0-9]{32}$/D',(string)($identity['operation_marker']??''))===1 &&
+            is_string($identity['remote_username']??null) && $identity['remote_username']!=='' &&
+            preg_match('/^[a-f0-9]{64}$/D',(string)($identity['adoption_sha256']??''))===1;
+    return !isset($identity['identity_mode']) &&
         preg_match('/^achbot:v1:[a-f0-9]{32}$/D',(string)($identity['operation_marker']??''))===1;
 }
 function achbotPgIdentityMatches(array $user,array $identity): bool {
-    try {return achbotPgIdentityValid($identity) && $user['id']===$identity['remote_user_id'] &&
-        $user['created_at']===achbotPgDate($identity['remote_created_at']) &&
-        hash_equals($identity['operation_marker'],$user['note']);}
-    catch (Throwable $e) {return false;}
+    try {
+        if (!achbotPgIdentityValid($identity) || $user['id']!==$identity['remote_user_id'] ||
+            $user['created_at']!==achbotPgDate($identity['remote_created_at'])) return false;
+        // Adopted mode is constructed only by the persisted adoption provenance validator.
+        // Native notes stay untouched. Created identities retain their exact marker requirement.
+        return ($identity['identity_mode']??null)==='adopted'?
+            ($user['username']??null)===$identity['remote_username']:
+            hash_equals($identity['operation_marker'],$user['note']);
+    } catch (Throwable $e) {return false;}
 }
 function achbotPgRead(array $panel,array $identity): array {
     if (!achbotPgIdentityValid($identity)) return achbotPgFailure('pg_identity_invalid');
@@ -281,7 +292,7 @@ function achbotPgLinks(array $panel,array $identity,string $format='links'): arr
     if (!$after['success'] || $after['user']['proxy_settings']!==$read['user']['proxy_settings'])
         return achbotPgFailure('pg_links_identity_unconfirmed',false,$after['http']);
     return ['success'=>true,'uncertain'=>false,'reason'=>'','http'=>$r['http'],
-        'links'=>$links,'subscription_url'=>$read['user']['subscription_url'],'user'=>$read['user']];
+        'links'=>$links,'subscription_url'=>$after['user']['subscription_url'],'user'=>$after['user']];
 }
 function achbotPgGroups(array $panel): array {
     $groups=[];$total=null;
@@ -334,4 +345,11 @@ function achbotPgCheck(array $panel): array {
     return ['success'=>true,'uncertain'=>false,'reason'=>'','http'=>200,
         'version'=>'5.5.1','groups'=>$groups['groups'],
         'allowed_group_ids'=>$role['access']['allowed_group_ids']??null];
+}
+
+/** Native signature proof shares only the bounded credential-free transport. */
+function achbotPgSubscriptionInfo(array $panel,string $trustedUrl): array {
+    if (!achbotPgPanelValid($panel)) return achbotPgFailure('pg_panel_config_invalid');
+    require_once __DIR__.'/ProviderImport.php';
+    return achbotProviderSubscriptionInfo($trustedUrl);
 }

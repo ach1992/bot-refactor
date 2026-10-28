@@ -20,19 +20,22 @@ require $argv[1];
 $db=new mysqli('localhost','root','',$argv[2],0,$argv[3]);
 $db->set_charset('utf8mb4');
 $subject=json_decode($argv[4],true,512,JSON_THROW_ON_ERROR);
-echo achbotSupportsPaymentSubject($db,$subject)?'SUPPORTED':'BLOCKED';
+$lock=($argv[5]??'0')==='1';
+if ($lock) $db->begin_transaction();
+echo achbotSupportsPaymentSubject($db,$subject,$lock)?'SUPPORTED':'BLOCKED';
+if ($lock) $db->rollback();
 $db->close();
 '''
 
 def sql(work, env, query):
     return native.sql(work,env,query,purchase.SIDE[1])
 
-def evaluate(work, env, pay):
+def evaluate(work, env, pay, lock=False):
     cmd=['php','-n','-d','extension=mysqlnd','-d','extension=mysqli',
          '-d','allow_url_fopen=0',
          '-d','disable_functions=exec,shell_exec,system,passthru,popen,proc_open,mail',
          '-r', PHP, str(ROOT/'src/Purchase/Core.php'),
-         purchase.SIDE[1],str(work/'mysql.sock'),json.dumps(pay)]
+         purchase.SIDE[1],str(work/'mysql.sock'),json.dumps(pay),'1' if lock else '0']
     run=subprocess.run(cmd,env=env,cwd=work,capture_output=True,timeout=15)
     if run.returncode or run.stderr or run.stdout not in (b'SUPPORTED',b'BLOCKED'):
         raise RuntimeError('Guard PHP execution failed '+repr((run.returncode,run.stdout,run.stderr[:300])))
@@ -90,6 +93,20 @@ def main():
             ('missing_extension',dict(type='INCREASE_VOLUME_999_999',plan_id=7,order_id=999),False),
             ('unknown_payment_type',dict(type='OTHER_PANEL',plan_id=7),False),
         ]
+        # A read-only subject may omit the redundant server hint. A present
+        # hint must agree with the authoritative referenced plan/order.
+        subjects.extend([
+            ('marzban_purchase_omitted_server',dict(type='BUY_SUB',plan_id=7),True),
+            ('marzban_renew_explicit_matching_server',dict(type='RENEW_ACCOUNT',
+                 plan_id=7,order_id=oid,user_id=1001,server_id=2),True),
+            ('marzban_renew_explicit_conflicting_server',dict(type='RENEW_ACCOUNT',
+                 plan_id=7,order_id=oid,user_id=1001,server_id=999),False),
+        ])
+        for label,sid in [('zero',0),('null',None),('bool',True),
+                          ('fractional',2.5),('malformed','2suffix')]:
+            subjects.append(('marzban_renew_explicit_'+label+'_server',
+                 dict(type='RENEW_ACCOUNT',plan_id=7,order_id=oid,
+                      user_id=1001,server_id=sid),False))
         pinned=[]
         for kind,sku,field,other,units,limit in (
             ('DAY',addon_day,'day','volume',7,36500),
@@ -100,6 +117,18 @@ def main():
                        **{field:units,other:0})
             pinned.append((kind,sku,quote))
             subjects.append(('marzban_'+kind.lower()+'_extension',quote,True))
+            omitted={k:v for k,v in quote.items() if k!='server_id'}
+            subjects.extend([
+                ('marzban_'+kind.lower()+'_extension_omitted_server',omitted,True),
+                ('marzban_'+kind.lower()+'_extension_conflicting_server',
+                 dict(quote,server_id=999),False),
+                ('marzban_'+kind.lower()+'_extension_order_mismatch',
+                 dict(omitted,order_id=999),False),
+                ('marzban_'+kind.lower()+'_extension_owner_mismatch',
+                 dict(omitted,user_id=9002),False),
+                ('marzban_'+kind.lower()+'_extension_plan_mismatch',
+                 dict(omitted,plan_id=8),False),
+            ])
             # Legacy zero/NULL/missing or inconsistent quantities cannot be
             # inferred from a mutable SKU, even when the SKU is valid today.
             for label,values in (
@@ -120,6 +149,17 @@ def main():
             if got!=want:raise RuntimeError(f'{name} got={got},expected={want}')
             if purchase.snapshot(work,env,purchase.SIDE[1])!=baseline:
                 raise RuntimeError('Payment preflight mutated DB: '+name)
+            observations.append({'case':name,'expected_supported':want,'pass':True})
+        for name,pay,want in [
+            ('locked_renew_omitted_server',dict(type='RENEW_ACCOUNT',
+                 plan_id=7,order_id=oid,user_id=1001),True),
+            ('locked_renew_conflicting_server',dict(type='RENEW_ACCOUNT',
+                 plan_id=7,order_id=oid,user_id=1001,server_id=999),False),
+        ]:
+            if evaluate(work,env,pay,lock=True)!=want:
+                raise RuntimeError('Locked payment subject admission failed '+name)
+            if purchase.snapshot(work,env,purchase.SIDE[1])!=baseline:
+                raise RuntimeError('Locked payment preflight mutated SQL')
             observations.append({'case':name,'expected_supported':want,'pass':True})
         # Issued pays units stay authoritative after administrator SKU
         # edits/deletion; no current catalog value can rewrite the quote.
@@ -160,7 +200,10 @@ def main():
     report={'complete':True,'cases':len(observations),'schema_tables':23,
             'original_mariadb_socket_only':True,'financial_sql_mutations':0,
             'payment_provider_requests':0,'vpn_provider_requests':0,
-            'live_payment_tested':False,'cases_detail':observations}
+            'live_payment_tested':False,
+            'omitted_server_identity_verified':True,
+            'explicit_server_mismatch_rejected':True,
+            'locked_subject_resolution_readonly':True,'cases_detail':observations}
     if args.report:args.report.write_text(json.dumps(report,indent=2)+'\n')
     print(json.dumps({k:v for k,v in report.items() if k!='cases_detail'}))
 if __name__=='__main__':

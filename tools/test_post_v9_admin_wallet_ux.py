@@ -127,7 +127,13 @@ def check_notice(result,kind,amount,before,after,uid,target=1001):
 
 def admin_menu(source):
     code=r'''require $argv[1].'/tools/source_scan.php';
-require $argv[2].'/settings/values.php';
+if (realpath($argv[2])===realpath($argv[1])) {
+ require_once $argv[2].'/messages/loader.php';
+ $mainValues=achbotMessages('legacy_messages');$buttonValues=achbotMessages('legacy_buttons');
+} else {
+ // The pinned archived RC11 baseline retains its original facade unchanged.
+ require $argv[2].'/settings/values.php';
+}
 $from_id=9001;$admin=9001;
 function canSeeButton(...$args){return true;}
 eval(achbotExtractFunction($argv[2].'/config.php','getAdminKeys'));

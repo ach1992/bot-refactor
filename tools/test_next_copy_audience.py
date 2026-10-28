@@ -5,6 +5,7 @@ import io,json,re,subprocess,tarfile,tempfile
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
 BASE='7faac9b067f8a171e5e26d6aea5aaf9f4088a3e7'
+MANAGEMENT_BASE='2c0e728dcd71c38e20d176fe2577bc264d3faa1a'
 INBOUND='INBOUND_PRIVATE_CANARY_987'
 TITLE='PRIVATE_PANEL_TITLE_CANARY'
 def check(ok,label):
@@ -90,7 +91,24 @@ def main():
         dates=php(ROOT,"require 'settings/jdf.php';echo json_encode([jdate('Y-m-d H:i:s',1800000000),jstrftime('%Y-%m-%d %H:%M:%S',1800000000),jgetdate(1800000000)],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);")
         old_dates=php(old,"require 'settings/jdf.php';echo json_encode([jdate('Y-m-d H:i:s',1800000000),jstrftime('%Y-%m-%d %H:%M:%S',1800000000),jgetdate(1800000000)],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);")
         require(dates==old_dates and not re.search('[\u0660-\u0669\u06f0-\u06f9]',json.dumps(dates,ensure_ascii=False)),'actual_jdf_ascii_dates_and_calendar_unchanged')
-        retired=public_retirement(ROOT)
-        require(retired['status']==410 and 'Marzban' not in retired['body'] and '<b>' not in retired['body'],'actual_public_retirement_safe_plaintext')
-    print(json.dumps({'complete':True,'cases':len(checks),'scenarios':checks,'archived_disclosure_RED':2,'actual_customer_admin_separation':True,'actual_stats_parser_equivalence':True,'actual_ascii_date_output':True,'database_provider_network_calls':0,'presentation_only':True},ensure_ascii=False))
+        # Preserve the last shipped retirement response as immutable evidence;
+        # the fully retired X-UI-only endpoint no longer belongs in runtime.
+        archived=old/'retirement-proof';archived.mkdir()
+        raw=subprocess.check_output(['git','archive',MANAGEMENT_BASE,'messages','settings/subLink.php'],cwd=ROOT)
+        with tarfile.open(fileobj=io.BytesIO(raw))as archive:
+            for member in archive.getmembers():
+                check(not member.name.startswith('/')and'..'not in Path(member.name).parts and not(member.issym()or member.islnk()),'unsafe retirement proof member')
+            archive.extractall(archived,filter='data')
+        retired=public_retirement(archived)
+        import package_post_v9
+        active_includes=[]
+        for path in package_post_v9.members():
+            if not path.endswith('.php'):continue
+            source=(ROOT/path).read_text()
+            if re.search(r'''(?:require|include)(?:_once)?\s*(?:\([^;]*)?['"][^'"]*subLink\.php['"]''',source):
+                active_includes.append(path)
+        require(retired['status']==410 and 'Marzban'not in retired['body']and'<b>'not in retired['body']
+                and not(ROOT/'settings/subLink.php').exists()and'settings/subLink.php'not in package_post_v9.members()
+                and not active_includes,'archived_public_retirement_safe_and_current_endpoint_absent')
+    print(json.dumps({'complete':True,'cases':len(checks),'scenarios':checks,'archived_disclosure_RED':2,'actual_customer_admin_separation':True,'actual_stats_parser_equivalence':True,'actual_ascii_date_output':True,'database_provider_network_calls':0,'presentation_only':True,'retired_public_stub_archived_reference':MANAGEMENT_BASE,'retired_public_stub_current_absent':True},ensure_ascii=False))
 if __name__=='__main__':main()
