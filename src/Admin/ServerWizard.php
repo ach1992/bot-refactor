@@ -115,7 +115,6 @@ function achbotServerWizardAdvance(mysqli $db,array &$d,string $action,string $i
             unset($d['choices']);return null;
         }
         if ($action!=='text') throw new RuntimeException('management_input');
-        if (in_array($stage,['password','api_key'],true)) delMessage($GLOBALS['message_id'],$GLOBALS['chat_id']);
         $input=$stage==='password'?$input:trim($input);
         if ($stage==='capacity') $v['capacity']=achbotManagementInteger($input,1,100000000);
         elseif ($stage==='url') {
@@ -133,7 +132,6 @@ function achbotServerWizardAdvance(mysqli $db,array &$d,string $action,string $i
             'url'=>$v['provider']==='pasarguard'?'api_key':'username','username'=>'password',
             'password'=>'panelgroup','api_key'=>'groups'];
         if (in_array($stage,['password','api_key'],true)) {
-            // Delete secret-bearing private input regardless of admission result.
             if ($stage==='password') achbotManagementMarzbanCheck($v);
             else { $v['instance_key']=bin2hex(random_bytes(16));unset($d['choices'],$v['groups'],$v['panel_fingerprint']); }
         }

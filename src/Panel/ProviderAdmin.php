@@ -174,7 +174,6 @@ function achbotHandleProviderAdmin(): bool {
             (int)($msg->from->id??0)!==(int)$from_id || (int)($msg->chat->id??0)!==(int)$from_id ||
             !is_string($msg->text??null) || $msg->text!==$text) throw new RuntimeException('pg_setup_private_message_required');
         if ($step==='pg:connection') {
-            delMessage($message_id,$chat_id);
             $parts=explode("\n",trim($text));
             if (count($parts)!==3 || trim($parts[0])==='' || mb_strlen(trim($parts[0]))>100)
                 throw new RuntimeException('pg_connection_input_invalid');
@@ -193,7 +192,7 @@ function achbotHandleProviderAdmin(): bool {
             sendMessage(\achbotMessage('provider.provider_admin.handle_provider_admin.message.84166ad032'),getServerListKeys());return true;
         }
         if (preg_match('/^pg:key:([1-9][0-9]*)(?::([1-9][0-9]*))?$/D',$step,$m)) {
-            delMessage($message_id,$chat_id);$id=(int)$m[1];$p=achbotProviderPanel($connection,$id);
+            $id=(int)$m[1];$p=achbotProviderPanel($connection,$id);
             $before=$p['api_key'];$p['api_key']=trim($text);$r=achbotPgCheck($p);
             if (($r['success']??false)!==true) throw new RuntimeException('pg_key_check_unverified');
             if (!$connection->begin_transaction()) throw new RuntimeException('pg_key_begin');

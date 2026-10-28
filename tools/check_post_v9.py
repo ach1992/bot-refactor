@@ -130,8 +130,8 @@ def main():
     with tempfile.TemporaryDirectory(prefix="achbot-post-v9-acceptance-") as tmp:
         unified={}
         suites=[
-            ('management_wizard','test_unified_management_wizard.py','cases',294,
-                {'actual_php':True,'owned_socket_mariadb':True,'loopback_provider_http':True,'provider_mutations':0,'production_mutations':0,'actual_rc13_cancel_RED':True,'older_same_flow_cancel':True,'unique_actor_primary_writes':True,'busy_delete_preserves_editor':True}),
+            ('management_wizard','test_unified_management_wizard.py','cases',359,
+                {'actual_php':True,'owned_socket_mariadb':True,'loopback_provider_http':True,'provider_mutations':0,'production_mutations':0,'actual_rc13_cancel_RED':True,'older_same_flow_cancel':True,'unique_actor_primary_writes':True,'busy_delete_preserves_editor':True,'administrator_input_history_preserved':True,'same_message_group_selection':True,'actual_rc14_group_message_flood_RED':True,'actual_rc14_admin_input_deletion_RED':True}),
             ('management_menus','test_unified_management_menus.py','checks',322,
                 {'database':'owned socket MariaDB','network_calls':0,'optional_011_missing_cancel_proven':True}),
             ('customer_services','test_unified_customer_services.py','cases',590,

@@ -93,7 +93,16 @@ function editText($msgId, $txt, $key = null, $parse = 'HTML', $ci = null) {
 }
 
 function delMessage($msg = null, $chat_id = null){
-    global $from_id, $message_id;
+    global $from_id, $message_id, $update, $admin, $userInfo;
+    // AChBot keeps administrator-authored input in the conversation. A callback
+    // refers to a bot message; its normal menu cleanup is a different target.
+    $incoming=$update->message??null;
+    if (is_object($incoming) && empty($incoming->from->is_bot) &&
+        isset($incoming->from->id,$incoming->chat->id,$incoming->message_id) &&
+        (string)$incoming->from->id===(string)$from_id &&
+        (($admin!==null && $from_id==$admin) || !empty($userInfo['isAdmin'])) &&
+        (string)($chat_id??$from_id)===(string)$incoming->chat->id &&
+        (string)($msg??$message_id)===(string)$incoming->message_id) return null;
     require_once __DIR__ . '/src/Telegram/Messages.php';
     return \AchBot\Telegram\Messages\deleteMessage('bot', $from_id, $message_id, $msg, $chat_id);
 }
