@@ -2314,7 +2314,8 @@ function getAdminsKeys(){
 // BEGIN By ACh
 
 function getUserInfoKeys($userId) { 
-    global $connection, $mainValues, $buttonValues; 
+    global $connection, $mainValues, $buttonValues;
+    require_once __DIR__.'/src/Presentation/Text.php';
  
     // گرفتن اطلاعات کاربر از جدول users 
     $stmt = $connection->prepare("SELECT * FROM users WHERE userid = ?"); 
@@ -2397,15 +2398,18 @@ function getUserInfoKeys($userId) {
         while ($remarkRow = $remarksResult->fetch_assoc()) { 
             $remark = $remarkRow['remark']; 
  
-            $stmt2 = $connection->prepare("SELECT expire_date FROM orders_list WHERE userid = ? AND remark = ?"); 
+            $stmt2 = $connection->prepare("SELECT o.expire_date,o.inbound_id,c.type FROM orders_list o LEFT JOIN server_config c ON c.id=o.server_id WHERE o.userid = ? AND o.remark = ?");
             $stmt2->bind_param("is", $userId, $remark); 
             $stmt2->execute(); 
             $expireResult = $stmt2->get_result(); 
             $stmt2->close(); 
  
             while ($expireRow = $expireResult->fetch_assoc()) { 
-                $expire_timestamp = $expireRow['expire_date']; 
-                $expire_date = date('Y-m-d H:i:s', $expire_timestamp); 
+                $expire_date=\AchBot\Presentation\Text\serviceExpiryLabel(
+                    $expireRow['expire_date'],static fn(int $timestamp)=>date('Y-m-d H:i:s',$timestamp),
+                    \achbotMessage('subscription.account_deletion.no_dont_delete.text.5e6ee5eaa1'),
+                    \achbotMessage('admin_settings.config.get_bot_report_keys.text.f07a81a062'),
+                    achbotSupportsAccount($expireRow['type']??'', $expireRow['inbound_id']));
                 $subscriptions[] = \achbotMessage('admin_settings.config.get_user_info_keys.text.609b681dab', ['remark' => $remark, 'expire_date' => $expire_date]);
             } 
  
@@ -3361,6 +3365,7 @@ function getMainMenuButtonsKeys(){
 }
 function getPlanDetailsKeys($planId){
     global $connection,$buttonValues;
+    require_once __DIR__.'/src/Presentation/Text.php';
     $planId=(int)$planId;
     $stmt=$connection->prepare("SELECT * FROM server_plans WHERE id=?");
     $stmt->bind_param('i',$planId);$stmt->execute();$plan=$stmt->get_result()->fetch_assoc();$stmt->close();
@@ -3371,13 +3376,25 @@ function getPlanDetailsKeys($planId){
     if (!achbotSupportsPanel($server['type']??null)) return null;
     $stmt=$connection->prepare("SELECT COUNT(*) AS total FROM orders_list WHERE status=1 AND fileid=?");
     $stmt->bind_param('i',$planId);$stmt->execute();$count=(int)$stmt->get_result()->fetch_assoc()['total'];$stmt->close();
+    $days=\AchBot\Presentation\Text\serviceAllowanceState($plan['days'],true);
+    $volume=\AchBot\Presentation\Text\serviceAllowanceState($plan['volume'],true);
+    $dayLabel=match($days['state']) {
+        'unlimited'=>\achbotMessage('admin_settings.management.plan_days_unlimited'),
+        'finite'=>\achbotMessage('admin_settings.management.plan_days_label',['value'=>$days['display']]),
+        default=>\achbotMessage('admin_settings.management.plan_days_unknown')
+    };
+    $volumeLabel=match($volume['state']) {
+        'unlimited'=>\achbotMessage('admin_settings.management.plan_volume_unlimited'),
+        'finite'=>\achbotMessage('admin_settings.management.plan_volume_label',['value'=>$volume['display']]),
+        default=>\achbotMessage('admin_settings.management.plan_volume_unknown')
+    };
     $keys=[
         [['text'=>$plan['title'],'callback_data'=>'wizwizplanname'.$planId],
          ['text'=>\achbotMessage('admin_settings.config.get_plan_details_keys.button.e1615aff08'),'callback_data'=>'wizwizch']],
         [['text'=>number_format($plan['price']).\achbotMessage('admin_settings.config.get_gate_ways_keys.text.2cc98f7f7c'),'callback_data'=>'wizwizplanrial'.$planId],
          ['text'=>\achbotMessage('admin_settings.config.get_plan_details_keys.button.433f647c69'),'callback_data'=>'wizwizch']],
-        [['text'=>\achbotMessage('admin_settings.management.plan_days_label',['value'=>(string)(int)$plan['days']]),'callback_data'=>'planDays'.$planId],
-         ['text'=>\achbotMessage('admin_settings.management.plan_volume_label',['value'=>(string)(float)$plan['volume']]),'callback_data'=>'planVolume'.$planId]],
+        [['text'=>$dayLabel,'callback_data'=>'planDays'.$planId],
+         ['text'=>$volumeLabel,'callback_data'=>'planVolume'.$planId]],
         [['text'=>\achbotMessage('admin_settings.config.get_plan_details_keys.button.f2662557fe'),'callback_data'=>'wizwizplaneditdes'.$planId]],
         [['text'=>$count,'callback_data'=>'wizwizch'],
          ['text'=>\achbotMessage('admin_settings.config.get_plan_details_keys.button.a3ec946c94'),'callback_data'=>'wizwizch']],

@@ -246,7 +246,7 @@ def stage_source(stage:Path,current:bool)->dict:
         dest.write_bytes(raw)
     if current:
         # Fragment fixture executes the real common provider seam too.
-        for rel in ['src/Panel/ProviderRuntime.php','src/Panel/ProviderAdmin.php','src/Panel/ProviderStorage.php','src/Panel/PasarGuard.php','src/Subscription/Presentation.php']:
+        for rel in ['src/Panel/ProviderRuntime.php','src/Panel/ProviderImport.php','src/Panel/ProviderAdmin.php','src/Panel/ProviderStorage.php','src/Panel/PasarGuard.php','src/Subscription/Presentation.php']:
             dest=stage/rel;dest.parent.mkdir(parents=True,exist_ok=True);dest.write_bytes((ROOT/rel).read_bytes())
     fixture=(ROOT/'tests/v7/native-purchase.php').read_text()
     if current:

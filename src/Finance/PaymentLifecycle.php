@@ -525,7 +525,7 @@ function achbotPayUxAudienceAllowed(mysqli $db, string $method, int $userId,
         $now=time();
         $ordersIndex=$final ? ' FORCE INDEX (idx_orders_userid_v1)' : '';
         $stmt=$db->prepare("SELECT id FROM orders_list".$ordersIndex." WHERE userid=?
-            AND status=1 AND expire_date>? LIMIT 1".($final?' FOR UPDATE':''));
+            AND status=1 AND (expire_date=0 OR expire_date>?) LIMIT 1".($final?' FOR UPDATE':''));
         if (!$stmt) throw new RuntimeException('audience_orders_prepare_failed');
         $stmt->bind_param('ii',$userId,$now);
         if (!$stmt->execute()) throw new RuntimeException('audience_orders_lookup');

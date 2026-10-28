@@ -7,6 +7,16 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
 require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
 
 require_once __DIR__ . '/../Finance/ReceiptHelpers.php';
+require_once __DIR__.'/AccountDetails.php';
+require_once __DIR__.'/../Panel/ServiceLifecycle.php';
+require_once __DIR__.'/../Presentation/Text.php';
+
+if (preg_match('/^(?:delUserConfig|yesDeleteUserConfig)/',(string)$data) &&
+    !\AchBot\Subscription\AccountDetails\canReadAdminOrderDetails()) {
+    alert(\achbotMessage('subscription.account_deletion.alert.a370755120'),true);
+    return;
+}
+
 
 if(preg_match('/^deleteMyConfig(\d+)/', $data, $match)){
     $oid = $match[1];
@@ -62,19 +72,39 @@ elseif(preg_match('/^yesDeleteConfig(\d+)/',$data,$match)){
     $stmt->execute();
     $planDetail = $stmt->get_result()->fetch_assoc();
     $stmt->close();
-	$volume = $planDetail['volume'];
-	$days = $planDetail['days'];
+    $volumeState=\AchBot\Presentation\Text\serviceAllowanceState($planDetail['volume']??null,true);
+    $daysState=\AchBot\Presentation\Text\serviceAllowanceState($planDetail['days']??null,true);
+    $volume=match($volumeState['state']) {
+        'finite'=>$volumeState['display'].\achbotMessage('subscription.presentation.format_traffic.text.2acc4ef207'),
+        'unlimited'=>\achbotMessage('subscription.account_deletion.no_dont_delete.text.5e6ee5eaa1'),
+        default=>\achbotMessage('payment.pre_payment.text.f07a81a062')
+    };
+    $days=match($daysState['state']) {
+        'finite'=>$daysState['display'].\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.text.69ff4a27e5'),
+        'unlimited'=>\achbotMessage('subscription.account_deletion.no_dont_delete.text.5e6ee5eaa1'),
+        default=>\achbotMessage('payment.pre_payment.text.f07a81a062')
+    };
 	
     $stmt = $connection->prepare("SELECT * FROM `server_config` WHERE `id` = ?");
     $stmt->bind_param('i', $server_id);
     $stmt->execute();
     $serverConfig = $stmt->get_result()->fetch_assoc();
     $stmt->close();
-    $serverType = $serverConfig['type'];
+    $serverType = $serverConfig['type']??'';
 
 	
     if (!achbotSupportsPanel($serverType) || (int)$inbound_id !== 0) {
         alert(\achbotMessage('subscription.account_deletion.no_dont_delete.alert.739703d8ae'), true);
+        exit;
+    }
+    // An unavailable observation must not claim or hide a still-active order.
+    try {
+        $configInfo=achbotProviderUser($server_id,$remark,false);
+        $observation=achbotServiceObservation($configInfo,(string)$remark);
+        if (!$observation['verified']) throw new RuntimeException('delete_observation_unverified');
+    } catch (Throwable $error) {
+        error_log('achbot_account_delete_observation_deferred order_id='.(int)$oid);
+        alert(\achbotMessage('subscription.account_deletion.no_dont_delete.alert.9347ccc8b0'),true);
         exit;
     }
     // Fence the original order before the remote, non-idempotent DELETE.
@@ -83,13 +113,9 @@ elseif(preg_match('/^yesDeleteConfig(\d+)/',$data,$match)){
         exit;
     }
     try {
-        $configInfo = achbotProviderUser($server_id, $remark);
         $deleted = achbotProviderDelete($server_id, $remark);
         if (!is_object($deleted) || ($deleted->success??false)!==true)
             throw new RuntimeException('delete_remote_unconfirmed');
-        $leftMb = sumerize($configInfo->data_limit - $configInfo->used_traffic);
-        $expiryDay = $configInfo->expire != 0?
-            floor(($configInfo->expire - time()) / 86400):\achbotMessage('subscription.account_deletion.no_dont_delete.text.5e6ee5eaa1');
     } catch (Throwable $error) {
         error_log('achbot_account_delete_remote_deferred order_id='.(int)$oid);
         alert(\achbotMessage('subscription.account_deletion.no_dont_delete.alert.9347ccc8b0'), true);
@@ -97,10 +123,6 @@ elseif(preg_match('/^yesDeleteConfig(\d+)/',$data,$match)){
     }
 
     
-    if(is_numeric($expiryDay)){
-        if($expiryDay<0) $expiryDay = 0;
-    }
-
     if (!achbotAutoRenewFinalizeDeletion($connection,(int)$oid,(int)$server_id,true)) {
         error_log('achbot_account_delete_local_deferred order_id='.(int)$oid);
         alert(\achbotMessage('subscription.account_deletion.no_dont_delete.alert.e2cbeb044b'), true);
@@ -113,7 +135,12 @@ elseif(preg_match('/^yesDeleteConfig(\d+)/',$data,$match)){
                 ]
         ]));
         
-$channelMessage = \achbotMessage('subscription.account_deletion.no_dont_delete.channel_message.f5930d6ccb', ['from_id' => $from_id, 'first_name' => $first_name, 'username' => $username, 'remark' => $remark, 'volume' => $volume, 'days' => $days]);
+$reportSender=$update->callback_query->from??null;
+$reportFirstName=is_string($reportSender->first_name??null)?$reportSender->first_name:
+    html_entity_decode((string)$first_name,ENT_QUOTES|ENT_HTML5,'UTF-8');
+$reportUsername=is_string($reportSender->username??null)?$reportSender->username:
+    html_entity_decode((string)$username,ENT_QUOTES|ENT_HTML5,'UTF-8');
+$channelMessage = \achbotMessageHtml('subscription.account_deletion.report', ['from_id' => $from_id, 'first_name' => $reportFirstName, 'username' => $reportUsername, 'remark' => $remark, 'volumeDisplay' => $volume, 'daysDisplay' => $days]);
 
 // ارسال پیام به ادمین خاص
 sendMessage($channelMessage, null, "html", $admin);
@@ -134,6 +161,7 @@ elseif(preg_match('/^delUserConfig(\d+)/',$data,$match) && ($from_id == $admin |
     $stmt->execute();
     $order = $stmt->get_result()->fetch_assoc();
     $stmt->close();
+    if (!$order) {alert(\achbotMessage('subscription.account_deletion.no_dont_delete.alert.bd8e953385'),true);exit;}
     $remark = $order['remark'];
 
     editText($message_id, \achbotMessage('subscription.account_deletion.no_dont_delete.message.2ddfbc22e4', ['remark' => $remark]),json_encode([
@@ -161,7 +189,7 @@ elseif(preg_match('/^yesDeleteUserConfig(\d+)/',$data,$match) && ($from_id == $a
     $stmt->execute();
     $serverConfig = $stmt->get_result()->fetch_assoc();
     $stmt->close();
-    $serverType = $serverConfig['type'];
+    $serverType = $serverConfig['type']??'';
     
 	
     if (!achbotSupportsPanel($serverType) || (int)$inbound_id !== 0) {

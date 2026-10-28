@@ -275,3 +275,120 @@ function achbotProviderLinkAccount(mysqli $db,int $effectId,int $orderId): void 
     $changed=$s->affected_rows;$s->close();
     if ($changed!==1) throw new RuntimeException('provider_order_link_unconfirmed');
 }
+
+/** Immutable local adoption evidence is distinct from a remote CREATE marker. */
+function achbotProviderAccountIdentity(mysqli $db,array $account): array {
+    $identity=['remote_user_id'=>(int)$account['remote_user_id'],
+        'remote_created_at'=>$account['remote_created_at'],'operation_marker'=>$account['operation_marker']];
+    if (preg_match('/^achbot:v1:[a-f0-9]{32}$/D',(string)$account['operation_marker'])) return $identity;
+    if (!preg_match('/^achbot:adopt:([a-f0-9]{32})$/D',(string)$account['operation_marker'],$m))
+        throw new RuntimeException('provider_account_provenance_invalid');
+    $e=achbotProviderRow($db,'SELECT * FROM service_effects WHERE id=?','i',[(int)$account['effect_id']]);
+    try {
+        $snap=json_decode((string)($e['provider_snapshot']??''),true,64,JSON_THROW_ON_ERROR);
+        $native=json_decode((string)$account['entitlement_snapshot'],true,64,JSON_THROW_ON_ERROR);
+        if (!is_array($snap) || !is_array($native) || ($snap['identity_mode']??null)!=='adopted' ||
+            ($snap['native_user']??null)!==$native || achbotPgNormalizeUser($native)!==$native ||
+            ($native['id']??null)!==$identity['remote_user_id'] ||
+            ($native['created_at']??null)!==$identity['remote_created_at'] ||
+            ($native['username']??null)!==$account['remote_username'] ||
+            ($snap['adoption']['version']??null)!==1 ||
+            ($snap['adoption']['order_id']??null)!==$account['order_id'] ||
+            !is_int($snap['adoption']['owner_userid']??null) || $snap['adoption']['owner_userid']<=0 ||
+            !is_int($snap['adoption']['actor_userid']??null) || $snap['adoption']['actor_userid']<=0 ||
+            !preg_match('/^[a-f0-9]{64}$/D',(string)($snap['adoption']['input_sha256']??'')) ||
+            !preg_match('/^[a-f0-9]{64}$/D',(string)($snap['adoption']['token_sha256']??'')))
+            throw new RuntimeException();
+        foreach (['provider','panel_id','instance_key','endpoint_sha256'] as $key)
+            if (($snap[$key]??null)!==$account[$key]) throw new RuntimeException();
+        $digest=hash('sha256',json_encode($snap,JSON_THROW_ON_ERROR));
+        if (!$e || $e['pay_row_id']!==null || $e['effect_kind']!=='adopt' ||
+            $e['source_kind']!=='external_import' || $e['source_ref']!=='order:'.$account['order_id'] ||
+            (int)$e['ordinal']!==1 || (int)$e['reserved_count']!==0 ||
+            $e['operation_id']!==$m[1] || $e['state']!=='local_recorded' ||
+            (int)$e['order_id']!==$account['order_id'] || (int)$e['plan_id']!==0 ||
+            (int)$e['actor_userid']!==$snap['adoption']['actor_userid'] ||
+            (int)$e['target_server_id']!==($snap['adoption']['server_id']??null) ||
+            $e['target_key']!=='pg:'.$account['instance_key'] ||
+            $e['endpoint_sha256']!==$account['endpoint_sha256'] ||
+            $e['remote_username']!==$account['remote_username'] ||
+            (string)$e['requested_expire']!==(string)($native['expire']??0) ||
+            (string)$e['requested_bytes']!==(string)$native['data_limit'] ||
+            !is_string($e['verified_at']) || !hash_equals($digest,(string)$e['request_sha256']))
+            throw new RuntimeException();
+    } catch (Throwable $error) {throw new RuntimeException('provider_account_provenance_invalid');}
+    return $identity+['identity_mode'=>'adopted','remote_username'=>$account['remote_username'],
+        'adoption_sha256'=>$digest];
+}
+/** Caller owns one transaction spanning the order, source credential and both evidence rows. */
+function achbotProviderAdoptAccount(mysqli $db,int $serverId,array $native,array $proof,
+    int $owner,int $orderId,int $actor,int $primary): void {
+    achbotProviderRequireSchema($db);
+    $tx=achbotProviderRow($db,'SELECT @@in_transaction AS tx');
+    if ((int)($tx['tx']??0)!==1 || min($serverId,$owner,$orderId,$actor)<=0)
+        throw new RuntimeException('provider_adoption_transaction_invalid');
+    $native=achbotPgNormalizeUser($native);
+    $panel=achbotPgServerPanel($db,$serverId);
+    if (achbotPgImportTarget($panel)!==($proof['target']??null))
+        throw new RuntimeException('provider_adoption_target_changed');
+    $s=achbotProviderStatement($db,'SELECT userid,isAdmin,step FROM users WHERE userid=? LIMIT 2 FOR UPDATE','i',[$actor]);
+    $rows=$s->get_result()->fetch_all(MYSQLI_ASSOC);$s->close();
+    if (count($rows)!==1 || $rows[0]['step']==='banned' ||
+        ($owner!==$actor && $actor!==$primary && (int)$rows[0]['isAdmin']!==1))
+        throw new RuntimeException('provider_adoption_actor_invalid');
+    $s=achbotProviderStatement($db,'SELECT userid FROM users WHERE userid=? LIMIT 2 FOR UPDATE','i',[$owner]);
+    $n=$s->get_result()->num_rows;$s->close();
+    if ($n!==1) throw new RuntimeException('provider_adoption_owner_invalid');
+    $o=achbotProviderRow($db,'SELECT * FROM orders_list WHERE id=? FOR UPDATE','i',[$orderId]);
+    if (!$o || (int)$o['userid']!==$owner || (int)$o['server_id']!==$serverId ||
+        (int)$o['fileid']!==0 || (int)$o['inbound_id']!==0 || $o['remark']!==$native['username'] ||
+        $o['token']!==$proof['token'] || (int)$o['status']!==1 || (int)$o['amount']!==0 ||
+        ($o['autoRenew']??null)!=='off')
+        throw new RuntimeException('provider_adoption_order_invalid');
+    // The original NOT NULL order column uses zero for unlimited; the native snapshot retains literal NULL.
+    $localExpiry=$native['expire']??0;
+    if ((string)$o['expire_date']!==(string)$localExpiry) {
+        $s=achbotProviderStatement($db,'UPDATE orders_list SET expire_date=? WHERE id=?','ii',[$localExpiry,$orderId]);
+        if ($s->affected_rows!==1) {$s->close();throw new RuntimeException('provider_adoption_order_unconfirmed');}
+        $s->close();
+    }
+    // Source credentials are owned by the initiating actor; another customer's preview is not authority.
+    $credential=achbotProviderRow($db,'SELECT token FROM add_link WHERE added_by=? AND remark=? AND BINARY token=BINARY ?
+        LIMIT 1 FOR UPDATE','iss',[$actor,$native['username'],$proof['token']]);
+    if (!$credential) throw new RuntimeException('provider_adoption_credential_missing');
+    $duplicate=achbotProviderRow($db,'SELECT id FROM provider_accounts WHERE panel_id=? AND remote_user_id=? LIMIT 1 FOR UPDATE',
+        'ii',[$panel['id'],$native['id']]);
+    if ($duplicate) throw new RuntimeException('provider_adoption_already_owned');
+    $duplicate=achbotProviderRow($db,'SELECT o.id FROM orders_list o JOIN server_info i ON i.id=o.server_id
+        JOIN server_config c ON c.id=i.id WHERE i.provider_panel_id=? AND c.type=\'pasarguard\'
+        AND BINARY o.remark=BINARY ? AND o.id<>? LIMIT 1 FOR UPDATE','isi',[$panel['id'],$native['username'],$orderId]);
+    if ($duplicate) throw new RuntimeException('provider_adoption_already_owned');
+    $operation=bin2hex(random_bytes(16));$marker='achbot:adopt:'.$operation;
+    $snapshot=['provider'=>'pasarguard','panel_id'=>$panel['id'],'instance_key'=>$panel['instance_key'],
+        'endpoint_sha256'=>hash('sha256',rtrim($panel['api_url'],'/')),'group_ids'=>$native['group_ids'],
+        'identity_mode'=>'adopted','native_user'=>$native,
+        'adoption'=>['version'=>1,'server_id'=>$serverId,'order_id'=>$orderId,'owner_userid'=>$owner,
+            'actor_userid'=>$actor,'input_sha256'=>$proof['input_sha256'],
+            'token_sha256'=>hash('sha256',$proof['token'])]];
+    $json=json_encode($snapshot,JSON_THROW_ON_ERROR);$hash=hash('sha256',$json);
+    $source='order:'.$orderId;$target='pg:'.$panel['instance_key'];$expiry=$native['expire']??0;
+    $s=achbotProviderStatement($db,"INSERT INTO service_effects
+        (pay_row_id,source_kind,source_ref,actor_userid,ordinal,reserved_count,operation_id,effect_kind,
+         target_server_id,target_group_id,target_key,endpoint_sha256,plan_id,remote_username,
+         requested_expire,requested_bytes,request_sha256,state,order_id,verified_at,provider_snapshot)
+        VALUES (NULL,'external_import',?,?,1,0,?,'adopt',?,NULL,?,?,0,?,?,?,?,'local_recorded',?,UTC_TIMESTAMP(),?)",
+        'sisisssiisis',[$source,$actor,$operation,$serverId,$target,$snapshot['endpoint_sha256'],
+            $native['username'],$expiry,$native['data_limit'],$hash,$orderId,$json]);
+    $effect=(int)$s->insert_id;$s->close();
+    $entitlement=json_encode($native,JSON_THROW_ON_ERROR);
+    $s=achbotProviderStatement($db,"INSERT INTO provider_accounts
+        (effect_id,order_id,provider,panel_id,instance_key,endpoint_sha256,remote_user_id,remote_created_at,
+         remote_username,operation_marker,entitlement_snapshot,state,verified_at)
+        VALUES (?,?,'pasarguard',?,?,?,?,?,?,?,?,'linked',UTC_TIMESTAMP())",
+        'iiississss',[$effect,$orderId,$panel['id'],$panel['instance_key'],$snapshot['endpoint_sha256'],
+            $native['id'],$native['created_at'],$native['username'],$marker,$entitlement]);
+    $s->close();
+    $account=achbotProviderAccountByOrder($db,$orderId);
+    if (!$account || !achbotPgIdentityMatches($native,achbotProviderAccountIdentity($db,$account)))
+        throw new RuntimeException('provider_adoption_unconfirmed');
+}

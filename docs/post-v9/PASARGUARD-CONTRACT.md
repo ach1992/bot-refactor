@@ -178,3 +178,11 @@ review. There is no automatic backfill, invoice rewrite, refund or replay.
 Operators must reconcile original evidence separately rather than reviving a
 legacy invoice by changing its SKU. New supported quotes can be issued only
 through the guarded current quote path.
+
+
+## Existing-subscription owner extension (2026-10-28)
+Existing accounts may be imported through the common URL/preview/confirmation path. GET /api/user/by-id/{id} or exact by-username is only an authenticated lookup. Version3 subscription tokens contain an untrusted id hint; native GET creates a fresh token, so old-versus-new token equality cannot establish possession. Verify the supplied token at the trusted native subscription /info route, with no API credentials, no redirect, and match id, username and created_at. Do not fetch an arbitrary supplied origin or overwrite the native note.
+
+A genuine adopt/external_import effect has no pay row and reserves zero capacity. Existing011 provider_accounts stores the exact native incarnation and complete normalized initial entitlement. Its adopted identity mode is constructed only from validated persisted adoption provenance; native created identities continue to require the exact achbot:v1 marker. Every later read, action, quote and deletion carries the explicit mode. Native NULL expiry remains NULL in snapshots and maps to the original order column zero sentinel. Adoption preserves schedules and status, with existing mutation eligibility restrictions unchanged.
+
+A service view reuses one request-local native packet for current usage, expiry, status and presentation. PasarGuard links still require before/after incarnation and proxy proof; the final read supplies the displayed observation. No cross-request cache authorizes an action or payment.

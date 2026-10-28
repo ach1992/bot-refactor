@@ -434,6 +434,24 @@
         "src/Admin/ManagementFlow.php"
       ]
     },
+    "admin_settings.management.plan_days_unknown": {
+      "audience": "admin",
+      "entry": "📅 مدت: نامشخص",
+      "facade": false,
+      "reason": "Existing unlimited plan metadata displays نامحدود without a finite unit suffix; missing or invalid metadata remains نامشخص. This display change does not permit free/unlimited plan creation.",
+      "source_paths": [
+        "config.php"
+      ]
+    },
+    "admin_settings.management.plan_days_unlimited": {
+      "audience": "admin",
+      "entry": "📅 مدت: نامحدود",
+      "facade": false,
+      "reason": "Existing unlimited plan metadata displays نامحدود without a finite unit suffix; missing or invalid metadata remains نامشخص. This display change does not permit free/unlimited plan creation.",
+      "source_paths": [
+        "config.php"
+      ]
+    },
     "admin_settings.management.plan_description": {
       "audience": "admin",
       "entry": "📝 توضیح قابل نمایش به خریدار را وارد کنید:",
@@ -569,6 +587,24 @@
       "reason": "Owner-authorized unified server/plan management and shared service-state UI, 2026-10-28.",
       "source_paths": [
         "src/Admin/ManagementFlow.php"
+      ]
+    },
+    "admin_settings.management.plan_volume_unknown": {
+      "audience": "admin",
+      "entry": "📦 حجم: نامشخص",
+      "facade": false,
+      "reason": "Existing unlimited plan metadata displays نامحدود without a finite unit suffix; missing or invalid metadata remains نامشخص. This display change does not permit free/unlimited plan creation.",
+      "source_paths": [
+        "config.php"
+      ]
+    },
+    "admin_settings.management.plan_volume_unlimited": {
+      "audience": "admin",
+      "entry": "📦 حجم: نامحدود",
+      "facade": false,
+      "reason": "Existing unlimited plan metadata displays نامحدود without a finite unit suffix; missing or invalid metadata remains نامشخص. This display change does not permit free/unlimited plan creation.",
+      "source_paths": [
+        "config.php"
       ]
     },
     "admin_settings.management.plans": {
@@ -981,6 +1017,25 @@
         "src/Subscription/OrderManagement.php"
       ]
     },
+    "subscription.account_deletion.report": {
+      "audience": "admin",
+      "entry": {
+        "text": "🔋 حذف اشتراک توسط کاربر\n\n🆔 شناسه عددی: <code>{from_id}</code>\n👤 اسم کاربر: {first_name}\n👤 نام کاربری: @{username}\n🎈 نام کاربری اشتراک: {remark}\n📦 حجم اولیه اشتراک: {volumeDisplay}\n📅 مدت اشتراک: {daysDisplay}\n",
+        "parameters": [
+          "from_id",
+          "first_name",
+          "username",
+          "remark",
+          "volumeDisplay",
+          "daysDisplay"
+        ]
+      },
+      "facade": false,
+      "reason": "Deletion operator reports render complete volume/day labels so explicit unlimited remains نامحدود without finite unit suffixes and missing plan metadata remains نامشخص.",
+      "source_paths": [
+        "src/Subscription/AccountDeletion.php"
+      ]
+    },
     "subscription.account_details.status_on_hold": {
       "audience": "user",
       "entry": "⏸ در انتظار فعال‌سازی",
@@ -988,6 +1043,15 @@
       "reason": "Owner-authorized unified server/plan management and shared service-state UI, 2026-10-28.",
       "source_paths": [
         "src/Subscription/AccountDetails.php"
+      ]
+    },
+    "subscription.manual_accounts.customer_not_found": {
+      "audience": "admin",
+      "entry": "❌ کاربر پیدا نشد. شناسه عددی کاربری را بفرستید که قبلاً ربات را شروع کرده است.",
+      "facade": false,
+      "reason": "Existing-subscription import for either provider validates the selected customer before confirming their numeric ID; invalid/missing/ambiguous targets stay in the same input step.",
+      "source_paths": [
+        "src/Subscription/ManualAccounts.php"
       ]
     },
     "subscription.manual_accounts.import_completed": {
@@ -1478,6 +1542,30 @@
       "reason": "Unchanged pre-management copy retained as explicit legacy catalog compatibility evidence; the new management journey no longer offers this old control/form.",
       "previous_source_paths": [
         "src/Panel/ProviderAdmin.php"
+      ]
+    },
+    "renewal.extensions.alert.0340c363d2": {
+      "entry": "📆 تاریخ انقضا برای این سفارش نامعتبر است.",
+      "reason": "Unchanged pre-management copy retained as explicit legacy catalog compatibility evidence; the new management journey no longer offers this old control/form.",
+      "previous_source_paths": [
+        "src/Finance/Routes/Extensions.php"
+      ]
+    },
+    "subscription.account_deletion.no_dont_delete.channel_message.f5930d6ccb": {
+      "entry": {
+        "text": "🔋 حذف اشتراک توسط کاربر\n\n🆔 شناسه عددی: <code>{from_id}</code>\n👤 اسم کاربر: {first_name}\n👤 نام کاربری: @{username}\n🎈 نام کاربری اشتراک: {remark}\n📦 حجم اولیه اشتراک: {volume} گیگ\n📅 مدت اشتراک: {days} روز\n",
+        "parameters": [
+          "from_id",
+          "first_name",
+          "username",
+          "remark",
+          "volume",
+          "days"
+        ]
+      },
+      "reason": "Unchanged pre-management copy retained as explicit legacy catalog compatibility evidence; the new management journey no longer offers this old control/form.",
+      "previous_source_paths": [
+        "src/Subscription/AccountDeletion.php"
       ]
     },
     "subscription.external_accounts.extract_username_from_link.message.bb8dfc256d": {

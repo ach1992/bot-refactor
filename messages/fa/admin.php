@@ -376,6 +376,10 @@ return [
 
     // ── اطلاعات و مدیریت اشتراک ──
     'subscription' => [
+        'account_deletion.report' => ['text'=>"🔋 حذف اشتراک توسط کاربر\n\n🆔 شناسه عددی: <code>{from_id}</code>\n👤 اسم کاربر: {first_name}\n👤 نام کاربری: @{username}\n🎈 نام کاربری اشتراک: {remark}\n📦 حجم اولیه اشتراک: {volumeDisplay}\n📅 مدت اشتراک: {daysDisplay}\n",'parameters'=>["from_id", "first_name", "username", "remark", "volumeDisplay", "daysDisplay"]],
+
+        'manual_accounts.customer_not_found' => "❌ کاربر پیدا نشد. شناسه عددی کاربری را بفرستید که قبلاً ربات را شروع کرده است.",
+
         // account_deletion.no_dont_delete
         'account_deletion.no_dont_delete.channel_message.f5930d6ccb' => ['text' => '🔋 حذف اشتراک توسط کاربر' . "\n" . '' . "\n" . '🆔 شناسه عددی: <code>{from_id}</code>' . "\n" . '👤 اسم کاربر: {first_name}' . "\n" . '👤 نام کاربری: @{username}' . "\n" . '🎈 نام کاربری اشتراک: {remark}' . "\n" . '📦 حجم اولیه اشتراک: {volume} گیگ' . "\n" . '📅 مدت اشتراک: {days} روز' . "\n" . '', 'parameters' => ['from_id', 'first_name', 'username', 'remark', 'volume', 'days']],
         'account_deletion.no_dont_delete.admin_message.53224aee55' => ['text' => '' . "\n" . '❌ اشتراک توسط ادمین حذف شد.' . "\n" . '' . "\n" . '🆔 شناسه عددی: {userId}' . "\n" . '🎈 نام کاربری اشتراک: {remark}' . "\n" . '', 'parameters' => ['userId', 'remark']],
@@ -1227,6 +1231,11 @@ return [
 
     // ── منوها و گزارش‌های مدیریت ──
     'admin_settings' => [
+        'management.plan_days_unlimited' => "📅 مدت: نامحدود",
+        'management.plan_volume_unlimited' => "📦 حجم: نامحدود",
+        'management.plan_days_unknown' => "📅 مدت: نامشخص",
+        'management.plan_volume_unknown' => "📦 حجم: نامشخص",
+
         'management.warning_unprocessed' => "🔔 هشدار: ثبت نشده",
         'management.warning_processed' => "🔔 هشدار: پردازش شده",
         'management.warning_retry' => "🔔 هشدار: در انتظار ارسال مجدد",

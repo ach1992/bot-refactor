@@ -4,7 +4,7 @@ This is source-candidate guidance, not evidence of a production rollout. Use the
 
 ## Runtime changes
 
-The current runtime has 111 files. Five files are new: the common management draft controller, server wizard, plan wizard, shared lifecycle policy and the full public `pay/checkout.php` implementation.
+The current runtime has 112 files. Six files are new: the common management draft controller, server wizard, plan wizard, shared lifecycle policy, the full public `pay/checkout.php` implementation and the guarded shared existing-subscription import module.
 
 Six RC13 files are removed. Their exact RC13 byte counts and SHA256 hashes are recorded in [RETIRED-COMPATIBILITY-PATHS.json](RETIRED-COMPATIBILITY-PATHS.json):
 
@@ -35,7 +35,7 @@ Full plan renewal can replace a verified native unlimited-time baseline with the
 
 Old in-progress management drafts are canceled or safely restarted without deleting another administrator's plan rows. New drafts are per actor and are saved only after final confirmation. Existing native provider identities and per-server configuration display choices are retained.
 
-Outside-bot PasarGuard account adoption is a separate unresolved ownership/identity contract. Fresh purchases, trials, administrator gifts, renewals and volume/time extensions use the common native-provider pipeline.
+Existing PasarGuard subscriptions use the same URL/preview/confirmation journey as Marzban, with native read-only bearer proof and nonfinancial adoption provenance in the existing tables. Native notes, limits, groups, expiry, status and schedules are preserved. Native unlimited expiry remains NULL in the provider snapshot and normalized observation; the original NOT NULL order column uses its existing zero sentinel. Imported orders start without a priced plan and with automatic renewal off, as in Marzban; import does not create a remote account, charge a wallet or reserve capacity. Fresh purchases, trials, administrator gifts, renewals and volume/time extensions retain the common native-provider pipeline.
 
 ## Rollout and verification
 

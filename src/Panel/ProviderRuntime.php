@@ -1,6 +1,7 @@
 <?php
 /** AChBot current provider dispatch. Native identities never use legacy UUID/inbound fields. */
 if (realpath($_SERVER['SCRIPT_FILENAME']??'')===__FILE__) { http_response_code(404); exit; }
+require_once __DIR__.'/ProviderImport.php';
 
 function achbotProviderType(mysqli $db,int $serverId): string {
     $s=$db->prepare('SELECT type FROM server_config WHERE id=?');
@@ -79,23 +80,43 @@ function achbotProviderUser($serverId,$remark,bool $withLinks=true): object {
     if ($adapter===null) return achbotProviderFailure('unsupported_provider',false);
     return ($adapter['user'])($serverId,$remark,$withLinks);
 }
-function achbotMarzbanUserAdapter($serverId,$remark,bool $withLinks=true): object {
-    return getMarzbanUser($serverId,$remark,null,!$withLinks);
+function achbotMarzbanUserAdapter($serverId,$remark,bool $withLinks=true,bool $strictRender=false): object {
+    return getMarzbanUser($serverId,$remark,null,!$withLinks || $strictRender);
 }
 function achbotPasarGuardUserAdapter($serverId,$remark,bool $withLinks=true): object {
     global $connection;
     try {
         $ctx=achbotPgRemarkContext($connection,(int)$serverId,(string)$remark);
-        $r=achbotPgRead($ctx['panel'],$ctx['identity']);
+        $links=$withLinks?achbotPgLinks($ctx['panel'],$ctx['identity']):null;
+        // A successful links proof already contains the final exact-identity read.
+        $r=$withLinks && ($links['success']??false)===true?$links:
+            achbotPgRead($ctx['panel'],$ctx['identity']);
         if (($r['success']??false)!==true) return achbotProviderFailure($r['reason']??'pg_read_unverified');
         $u=$r['user'];
         $u['provider']='pasarguard';$u['provider_account_id']=$ctx['account']['id'];
-        if ($withLinks) {
-            $links=achbotPgLinks($ctx['panel'],$ctx['identity']);
-            $u['links']=($links['success']??false)===true?($links['links']??[]):[];
-        }
+        if ($withLinks) $u['links']=($links['success']??false)===true?($links['links']??[]):[];
         return (object)$u;
     } catch (Throwable $e) { return achbotProviderFailure('pg_account_identity_unverified'); }
+}
+/** One request-local observation for a page. It never authorizes a financial or remote effect. */
+function achbotProviderRenderPacket(mysqli $db,int $serverId,string $username): object {
+    try {
+        $type=achbotProviderType($db,$serverId);$adapter=achbotProviderDefinition($type);
+        if ($adapter===null) throw new RuntimeException('render_provider_unavailable');
+        $remote=($adapter['user'])($serverId,$username,true,true);
+        require_once __DIR__.'/ServiceLifecycle.php';
+        if (!is_object($remote) || !achbotServiceObservation($remote,$username)['verified'])
+            throw new RuntimeException('render_observation_unverified');
+        $remote->provider_render_proof=['provider'=>$type,'server_id'=>$serverId,'username'=>$username];
+        return $remote;
+    } catch (Throwable $error) {return achbotProviderFailure('render_observation_unverified',false);}
+}
+function achbotProviderRenderProofValid(object $remote,array $order,string $type): bool {
+    require_once __DIR__.'/ServiceLifecycle.php';
+    $username=(string)($order['remark']??'');
+    return ($remote->provider_render_proof??null)===['provider'=>$type,
+        'server_id'=>(int)($order['server_id']??0),'username'=>$username] &&
+        achbotServiceObservation($remote,$username)['verified'];
 }
 function achbotProviderUserInfo($serverId,$remark): object {
     global $connection;
@@ -153,10 +174,115 @@ function achbotProviderAction($serverId,$remark,string $action,?array $expectedT
         return achbotProviderFailure('delete_target_changed');
     return ($adapter['action'])($serverId,$remark,$action,$expectedTarget);
 }
+
+/** Canonical JSON keeps native option order from becoming a false configuration change. */
+function achbotProviderCanonicalValue($value) {
+    if (is_object($value)) {$value=(array)$value;ksort($value,SORT_STRING);
+        foreach ($value as $k=>$v) $value[$k]=achbotProviderCanonicalValue($v);return $value;}
+    if (is_array($value)) {if (!array_is_list($value)) ksort($value,SORT_STRING);
+        foreach ($value as $k=>$v) $value[$k]=achbotProviderCanonicalValue($v);}
+    return $value;
+}
+function achbotMarzbanRevokeSnapshot(object $remote,string $remark,string $panelUrl): array {
+    require_once __DIR__.'/ServiceLifecycle.php';
+    if (!achbotServiceObservation($remote,$remark)['verified'] ||
+        !is_string($remote->created_at??null) ||
+        !preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}:\d{2})?$/D',$remote->created_at) ||
+        !is_object($remote->proxies??null) || !(is_array($remote->inbounds??null)||is_object($remote->inbounds??null)) ||
+        !is_string($remote->data_limit_reset_strategy??null) || !is_array($remote->links??null) ||
+        !is_string($remote->subscription_url??null)) throw new RuntimeException('marzban_revoke_schema_invalid');
+    $date=new DateTimeImmutable($remote->created_at,new DateTimeZone('UTC'));
+    $errors=DateTimeImmutable::getLastErrors();
+    if ($errors!==false && ($errors['warning_count'] || $errors['error_count']))
+        throw new RuntimeException('marzban_revoke_identity_invalid');
+    $url=$remote->subscription_url;
+    if (str_starts_with($url,'/')) $url=rtrim($panelUrl,'/').$url;
+    if (!achbotProviderImportParts($url)) throw new RuntimeException('marzban_revoke_subscription_invalid');
+    $identities=[];$options=[];$keys=['vmess'=>'id','vless'=>'id','trojan'=>'password','shadowsocks'=>'password'];
+    foreach ($remote->proxies as $protocol=>$settings) {
+        $key=$keys[$protocol]??null;
+        if ($key===null || !is_object($settings) || !is_string($settings->{$key}??null) ||
+            $settings->{$key}==='' || strlen($settings->{$key})>1024 ||
+            preg_match('/[\x00-\x20\x7f]/',$settings->{$key}))
+            throw new RuntimeException('marzban_revoke_proxy_invalid');
+        $credential=$settings->{$key};
+        if ($key==='id') {
+            if (!preg_match('/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/iD',$credential))
+                throw new RuntimeException('marzban_revoke_proxy_invalid');
+            $credential=strtolower($credential);
+        }
+        $identities[$protocol]=$credential;$option=(array)$settings;unset($option[$key]);
+        $options[$protocol]=achbotProviderCanonicalValue((object)$option);
+    }
+    if (!$identities) throw new RuntimeException('marzban_revoke_proxy_missing');
+    ksort($identities,SORT_STRING);ksort($options,SORT_STRING);
+    foreach ($remote->links as $uri)
+        if (!is_string($uri) || !preg_match('#^[a-z][a-z0-9+.-]*://[^\x00-\x20\x7f]+$#iD',$uri))
+            throw new RuntimeException('marzban_revoke_links_invalid');
+    $configuration=[];
+    foreach (['data_limit','expire','inbounds','data_limit_reset_strategy','note','next_plan',
+        'on_hold_expire_duration','on_hold_timeout'] as $field)
+        $configuration[$field]=achbotProviderCanonicalValue($remote->{$field}??null);
+    $configuration['status_class']=in_array($remote->status,['active','expired','limited'],true)?'eligible':$remote->status;
+    return ['created_at'=>$date->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d\TH:i:s.u\Z'),
+        'identities'=>$identities,'options'=>$options,'configuration'=>$configuration];
+}
+/** Current action contract: strict acknowledgement plus changed native credentials and exact readback. */
+function achbotMarzbanRevokeVerified(mysqli $db,int $serverId,string $remark): object {
+    $dispatched=false;
+    try {
+        $target=achbotProviderDeletionTarget($db,$serverId,$remark);
+        if (($target['provider']??null)!=='marzban' || !preg_match('/^[a-zA-Z0-9_@.-]{1,100}$/D',$remark))
+            throw new RuntimeException('marzban_revoke_target_invalid');
+        $url=$target['panel_url'];$token=getMarzbanToken($serverId,$url,$target);
+        if (!is_object($token) || !is_string($token->access_token??null) || $token->access_token==='' ||
+            strlen($token->access_token)>8192 || preg_match('/[\x00-\x20\x7f]/',$token->access_token))
+            throw new RuntimeException('marzban_revoke_auth_unverified');
+        $before=getMarzbanUser($serverId,$remark,$token,true,$url,$target);
+        if (!is_object($before)) throw new RuntimeException('marzban_revoke_read_unverified');
+        $baseline=achbotMarzbanRevokeSnapshot($before,$remark,$url);
+        if (!achbotProviderDeletionTargetMatches($db,$serverId,$remark,$target))
+            throw new RuntimeException('marzban_revoke_target_changed');
+        $ch=curl_init($url.'/api/user/'.rawurlencode($remark).'/revoke_sub');$wire='';$large=false;
+        curl_setopt_array($ch,[CURLOPT_POST=>true,CURLOPT_FOLLOWLOCATION=>false,
+            CURLOPT_CONNECTTIMEOUT=>5,CURLOPT_TIMEOUT=>20,CURLOPT_SSL_VERIFYPEER=>true,CURLOPT_SSL_VERIFYHOST=>2,
+            CURLOPT_PROTOCOLS=>CURLPROTO_HTTP|CURLPROTO_HTTPS,
+            CURLOPT_HTTPHEADER=>['Accept: application/json','Authorization: Bearer '.$token->access_token],
+            CURLOPT_WRITEFUNCTION=>static function($curl,string $chunk) use (&$wire,&$large):int {
+                if (strlen($wire)+strlen($chunk)>1048576) {$large=true;return 0;}
+                $wire.=$chunk;return strlen($chunk);
+            }]);
+        $dispatched=true;$ok=curl_exec($ch);$errno=curl_errno($ch);
+        $http=(int)curl_getinfo($ch,CURLINFO_HTTP_CODE);$content=(string)curl_getinfo($ch,CURLINFO_CONTENT_TYPE);curl_close($ch);
+        if ($ok===false || $errno!==0 || $large || $http!==200 ||
+            !preg_match('#^application/(?:[a-z0-9.+-]+\\+)?json(?:;|$)#i',$content))
+            throw new RuntimeException('marzban_revoke_ack_unverified');
+        $ack=json_decode($wire,false,64,JSON_THROW_ON_ERROR|JSON_BIGINT_AS_STRING);
+        if (!is_object($ack)) throw new RuntimeException('marzban_revoke_ack_invalid');
+        $acknowledged=achbotMarzbanRevokeSnapshot($ack,$remark,$url);
+        $after=getMarzbanUser($serverId,$remark,$token,true,$url,$target);
+        if (!is_object($after) || !achbotProviderDeletionTargetMatches($db,$serverId,$remark,$target))
+            throw new RuntimeException('marzban_revoke_readback_unverified');
+        $confirmed=achbotMarzbanRevokeSnapshot($after,$remark,$url);
+        foreach (['created_at','options','configuration'] as $field)
+            if ($baseline[$field]!==$acknowledged[$field] || $baseline[$field]!==$confirmed[$field])
+                throw new RuntimeException('marzban_revoke_account_changed');
+        if ($acknowledged['identities']!==$confirmed['identities'] ||
+            array_keys($baseline['identities'])!==array_keys($confirmed['identities']))
+            throw new RuntimeException('marzban_revoke_identity_unconfirmed');
+        foreach ($baseline['identities'] as $protocol=>$old)
+            if (hash_equals($old,$confirmed['identities'][$protocol]))
+                throw new RuntimeException('marzban_revoke_rotation_unconfirmed');
+        // Marzban issues username+ceil(now) tokens on every model read. Equal same-second
+        // tokens are legitimate; actual native proxy rotation and readback are the proof.
+        $after->success=true;$after->verified=true;return $after;
+    } catch (Throwable $error) {return achbotProviderFailure('marzban_revoke_unverified',$dispatched);}
+}
+
 function achbotMarzbanActionAdapter($serverId,$remark,string $action,?array $expectedTarget=null): object {
     return match($action) {
         'delete'=>deleteMarzban($serverId,$remark,$expectedTarget),
-        'revoke'=>renewMarzbanUUID($serverId,$remark),
+        'revoke'=>achbotMarzbanRevokeVerified($GLOBALS['connection'],(int)$serverId,(string)$remark),
         'toggle'=>changeMarzbanState($serverId,$remark),
         default=>achbotProviderFailure('unsupported_action',false)
     };
@@ -224,7 +350,7 @@ function achbotPgOrderContext(mysqli $db,int $orderId,bool $lock=false): array {
     if (!$o || $o['type']!=='pasarguard' || $o['remark']!==$a['remote_username']) throw new RuntimeException('pg_order_identity_changed');
     $panel=achbotPgServerPanel($db,(int)$o['server_id']);
     if ((int)$panel['id']!==(int)$a['panel_id'] || $panel['instance_key']!==$a['instance_key'] || hash('sha256',rtrim($panel['api_url'],'/'))!==$a['endpoint_sha256']) throw new RuntimeException('pg_account_panel_changed');
-    return ['order_server_id'=>(int)$o['server_id'],'account'=>$a,'panel'=>$panel,'identity'=>['remote_user_id'=>(int)$a['remote_user_id'],'remote_created_at'=>$a['remote_created_at'],'operation_marker'=>$a['operation_marker']]];
+    return ['order_server_id'=>(int)$o['server_id'],'account'=>$a,'panel'=>$panel,'identity'=>achbotProviderAccountIdentity($db,$a)];
 }
 function achbotPgRemarkContext(mysqli $db,int $serverId,string $remark): array {
     // Exact local ownership lookup only. Never list/search vendor users by a partial name.
@@ -252,6 +378,7 @@ function achbotPgPinPayment(mysqli $db,int $payId): void {
             'group_ids'=>$groups,'group_policy'=>'preserve_current','provider_account_id'=>(int)$ctx['account']['id'],
             'remote_user_id'=>(int)$ctx['account']['remote_user_id'],
             'remote_created_at'=>$ctx['account']['remote_created_at'],'operation_marker'=>$ctx['account']['operation_marker']];
+        $snapshot=array_merge($snapshot,$ctx['identity']);
     }
     $json=json_encode($snapshot,JSON_THROW_ON_ERROR);
     $s=$db->prepare('UPDATE pays SET provider_snapshot=? WHERE id=? AND provider_snapshot IS NULL');
@@ -269,8 +396,8 @@ function achbotPgQuote(mysqli $db,int $payId): array {
         $oid=(int)$p['order_id'];
         if ($oid<=0 && preg_match('/^INCREASE_(?:DAY|VOLUME)_([1-9][0-9]*)_/',(string)$p['type'],$m)) $oid=(int)$m[1];
         $ctx=achbotPgOrderContext($db,$oid);
-        foreach (['remote_user_id','remote_created_at','operation_marker'] as $key)
-            if ((string)($snap[$key]??'')!==(string)$ctx['identity'][$key]) throw new RuntimeException('pg_quote_account_changed');
+        foreach ($ctx['identity'] as $key=>$identityValue)
+            if ((string)($snap[$key]??'')!==(string)$identityValue) throw new RuntimeException('pg_quote_account_changed');
     }
     return $snap;
 }
@@ -352,7 +479,7 @@ function achbotPgDispatchReserved(mysqli $db,int $effectId,int $serverId,string 
         if (!$s->execute() || $s->affected_rows!==1) throw new RuntimeException('pg_effect_verification_unconfirmed');$s->close();
         if (!$db->commit()) throw new RuntimeException('pg_verify_commit_unknown');
     } catch (Throwable $error) {try{$db->rollback();}catch(Throwable $ignored){} throw $error;}
-    $identity=['remote_user_id'=>$r['user']['id'],'remote_created_at'=>$r['user']['created_at'],'operation_marker'=>'achbot:v1:'.$operation];
+    $identity=achbotProviderAccountIdentity($db,achbotProviderAccountByEffect($db,$effectId));
     $links=achbotPgLinks($panel,$identity);
     $user=$r['user'];$user['links']=($links['success']??false)===true?($links['links']??[]):[];
     $user['provider']='pasarguard';$user['success']=true;$user['verified']=true;
@@ -612,22 +739,51 @@ function achbotProviderGiftUsers(mysqli $db,int $serverId,array $target): object
 }
 
 /** The same native presentation policy is used for details and both QR routes. */
-function achbotOrderPresentation(mysqli $db,array $order,array $server,array $state): array {
+function achbotOrderPresentation(mysqli $db,array $order,array $server,array $state,?object $provenRemote=null): array {
     $type=(string)($server['type']??'');$native=['links'=>[],'subscription_url'=>'','backup_urls'=>[]];
     if ($type==='marzban') {
-        $native['links']=json_decode((string)$order['link'],true)?:[];
-        if ((string)$order['token']!=='')
-            $native['subscription_url']=rtrim((string)$server['panel_url'],'/').'/sub/'.$order['token'];
-        foreach (array_filter(array_map('trim',explode(',',(string)($server['sub_links']??'')))) as $domain)
-            $native['backup_urls'][]=rtrim($domain,'/').'/sub/'.$order['token'];
+        if ($provenRemote===null) {
+            $native['links']=json_decode((string)$order['link'],true)?:[];
+            if ((string)$order['token']!=='')
+                $native['subscription_url']=rtrim((string)$server['panel_url'],'/').'/sub/'.$order['token'];
+            foreach (array_filter(array_map('trim',explode(',',(string)($server['sub_links']??'')))) as $domain)
+                $native['backup_urls'][]=rtrim($domain,'/').'/sub/'.$order['token'];
+        } elseif (achbotProviderRenderProofValid($provenRemote,$order,$type) &&
+            is_string($provenRemote->subscription_url??null) && is_array($provenRemote->links??null)) {
+            $url=$provenRemote->subscription_url;
+            if (str_starts_with($url,'/')) $url=rtrim((string)$server['panel_url'],'/').$url;
+            $parts=achbotProviderImportParts($url);
+            if ($parts) {
+                $links=[];
+                foreach ($provenRemote->links as $uri)
+                    if (is_string($uri) && preg_match('#^[a-z][a-z0-9+.-]*://[^\x00-\x20\x7f]+$#iD',$uri))
+                        $links[]=$uri;
+                $native['links']=$links;$native['subscription_url']=$url;
+                foreach (array_filter(array_map('trim',explode(',',(string)($server['sub_links']??'')))) as $base) {
+                    $alias=achbotProviderImportBase($base,$parts['prefix']);
+                    if (!$alias || str_contains($alias['origin'],'*')) continue;
+                    $origin=$alias['origin'];
+                    if (str_starts_with($origin,'https://') && str_ends_with($origin,':443')) $origin=substr($origin,0,-4);
+                    if (str_starts_with($origin,'http://') && str_ends_with($origin,':80')) $origin=substr($origin,0,-3);
+                    $native['backup_urls'][]=$origin.$alias['prefix'].'/'.rawurlencode($parts['token']);
+                }
+            }
+        }
     } elseif ($type==='pasarguard') {
         try {
-            $ctx=achbotPgOrderContext($db,(int)$order['id']);
-            $r=achbotPgRead($ctx['panel'],$ctx['identity']);
-            if (($r['success']??false)!==true) throw new RuntimeException('pg_presentation_read_unverified');
-            $native['subscription_url']=$r['user']['subscription_url'];
-            $links=achbotPgLinks($ctx['panel'],$ctx['identity']);
-            if (($links['success']??false)===true) $native['links']=$links['links'];
+            if ($provenRemote!==null) {
+                if (!achbotProviderRenderProofValid($provenRemote,$order,$type))
+                    throw new RuntimeException('pg_presentation_packet_unverified');
+                $native['subscription_url']=(string)$provenRemote->subscription_url;
+                $native['links']=is_array($provenRemote->links??null)?$provenRemote->links:[];
+            } else {
+                $ctx=achbotPgOrderContext($db,(int)$order['id']);
+                $links=achbotPgLinks($ctx['panel'],$ctx['identity']);
+                $r=($links['success']??false)===true?$links:achbotPgRead($ctx['panel'],$ctx['identity']);
+                if (($r['success']??false)!==true) throw new RuntimeException('pg_presentation_read_unverified');
+                $native['subscription_url']=$r['user']['subscription_url'];
+                if (($links['success']??false)===true) $native['links']=$links['links'];
+            }
         } catch (Throwable $error) {}
     }
     return buildSubscriptionPresentation($type,$native,$state,[],'view',(int)$order['server_id']);
@@ -652,7 +808,8 @@ function achbotProviderRegistry(): array {
             'action'=>'achbotMarzbanActionAdapter','edit'=>'achbotMarzbanServiceEditAdapter',
             'pin_payment'=>'achbotMarzbanPinPaymentAdapter','quote'=>'achbotMarzbanQuoteAdapter',
             'target'=>'achbotMarzbanEffectTargetAdapter','reserve'=>'achbotMarzbanReserveEffectAdapter',
-            'dispatch'=>'achbotMarzbanDispatchEffectAdapter','link'=>'achbotMarzbanLinkEffectAdapter'
+            'dispatch'=>'achbotMarzbanDispatchEffectAdapter','link'=>'achbotMarzbanLinkEffectAdapter',
+            'import_lookup'=>'achbotMarzbanExistingUser','import_adopt'=>'achbotMarzbanAdoptExistingLocked'
         ],
         'pasarguard'=>[
             'label'=>'admin_settings.management.pasarguard',
@@ -662,7 +819,8 @@ function achbotProviderRegistry(): array {
             'action'=>'achbotPasarGuardActionAdapter','edit'=>'achbotPasarGuardServiceEditAdapter',
             'pin_payment'=>'achbotPgPinPayment','quote'=>'achbotPasarGuardQuoteAdapter',
             'target'=>'achbotPasarGuardEffectTargetAdapter','reserve'=>'achbotPasarGuardReserveEffectAdapter',
-            'dispatch'=>'achbotPasarGuardDispatchEffectAdapter','link'=>'achbotPasarGuardLinkEffectAdapter'
+            'dispatch'=>'achbotPasarGuardDispatchEffectAdapter','link'=>'achbotPasarGuardLinkEffectAdapter',
+            'import_lookup'=>'achbotPasarGuardExistingUser','import_adopt'=>'achbotPasarGuardAdoptExistingLocked'
         ]
     ];
 }
@@ -671,10 +829,14 @@ function achbotProviderRegistryEntryValid($type,$adapter): bool {
         !is_array($adapter) || !is_string($adapter['label']??null) ||
         preg_match('/^[a-z][a-z0-9_.]+$/D',$adapter['label'])!==1) return false;
     $required=achbotProviderRequiredOperations();
-    if (array_diff(array_keys($adapter),array_merge(['label'],$required))) return false;
+    if (array_diff(array_keys($adapter),array_merge(['label','import_lookup','import_adopt'],$required))) return false;
     foreach ($required as $operation)
         if (!is_string($adapter[$operation]??null) || !is_callable($adapter[$operation]))
             return false;
+    $lookup=array_key_exists('import_lookup',$adapter);$adopt=array_key_exists('import_adopt',$adapter);
+    if ($lookup!==$adopt) return false;
+    if ($lookup) foreach (['import_lookup','import_adopt'] as $operation)
+        if (!is_string($adapter[$operation]) || !is_callable($adapter[$operation])) return false;
     return true;
 }
 function achbotProviderRegistryValid(array $registry): bool {

@@ -112,7 +112,7 @@ function achbotManualAccountConsumeSelection(mysqli $db,int $actorId,
     }
 }
 
-if ($userInfo['step'] == "awaiting_userid_input" && is_numeric($text)) {
+if ($userInfo['step'] == "awaiting_userid_input" && $text !== $buttonValues['cancel']) {
     // Never treat old bot text embedded in a callback as a newly authored
     // numeric step, even when the current actor is still an administrator.
     try {
@@ -122,7 +122,23 @@ if ($userInfo['step'] == "awaiting_userid_input" && is_numeric($text)) {
         error_log('manual_account_source_unconfirmed');
         exit();
     }
-    $customUserId = intval($text);
+    $actor=(int)$from_id;
+    $q=$connection->prepare('SELECT id,isAdmin,step,temp FROM users WHERE userid=? LIMIT 2');
+    $q->bind_param('i',$actor);$q->execute();$actors=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
+    if (count($actors)!==1 || $actors[0]['step']!=='awaiting_userid_input' ||
+        $actors[0]['temp']!==($userInfo['temp']??null) ||
+        ($actor!==(int)$admin && (int)$actors[0]['isAdmin']!==1)) return;
+    $customUserId=preg_match('/^[1-9][0-9]{0,18}$/D',(string)$text)===1?
+        filter_var($text,FILTER_VALIDATE_INT,['options'=>['min_range'=>1]]):false;
+    $targets=[];
+    if ($customUserId!==false) {
+        $q=$connection->prepare('SELECT id FROM users WHERE userid=? LIMIT 2');
+        $q->bind_param('i',$customUserId);$q->execute();$targets=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
+    }
+    if (count($targets)!==1) {
+        sendMessage(\achbotMessage('subscription.manual_accounts.customer_not_found'),$cancelKey,'html');
+        return;
+    }
     $tempData = json_decode($userInfo['temp'], true) ?: [];
     $tempData['custom_userid'] = $customUserId;
     unset($tempData['awaiting_userid_for_add']);
@@ -223,10 +239,10 @@ if (preg_match('/^addToOrders([1-9][0-9]*)$/D',(string)$data,$match)) {
         $adminActor=$actor===(int)$admin || (int)$actors[0]['isAdmin']===1;
         $finalUserId=isset($tempData['custom_userid'])?(int)$tempData['custom_userid']:$actor;
         if ($finalUserId<=0 || ($finalUserId!==$actor && !$adminActor)) throw new RuntimeException('import_actor');
-        $q=$connection->prepare("SELECT c.* FROM server_config c JOIN server_info i ON i.id=c.id WHERE c.id=? AND i.active=1 AND c.type='marzban'");
+        $q=$connection->prepare("SELECT c.* FROM server_config c JOIN server_info i ON i.id=c.id WHERE c.id=? AND i.active=1 AND c.type IN (".achbotProviderSqlTypes().")");
         $q->bind_param('i',$serverId);$q->execute();$server=$q->get_result()->fetch_assoc();$q->close();
         if (!$server) throw new RuntimeException('import_provider_identity');
-        $remote=achbotProviderUser($serverId,$remark,false);
+        $remote=achbotProviderExistingUser($connection,$serverId,$input,$remark);
         $proof=is_object($remote) && ($remote->username??null)===$remark?achbotExternalImportProof($server,$remote,$input):null;
         if (!$proof) throw new RuntimeException('import_proof');
         // Exact token/endpoint proof is rechecked at import; prefixes and default
@@ -240,9 +256,9 @@ if (preg_match('/^addToOrders([1-9][0-9]*)$/D',(string)$data,$match)) {
         $q=$connection->prepare('SELECT id FROM users WHERE userid=? LIMIT 2');
         $q->bind_param('i',$finalUserId);$q->execute();$targetCount=$q->get_result()->num_rows;$q->close();
         if ($targetCount!==1) throw new RuntimeException('import_target_missing');
-        $q=$connection->prepare("SELECT c.* FROM server_config c JOIN server_info i ON i.id=c.id WHERE c.id=? AND i.active=1 AND c.type='marzban' FOR UPDATE");
+        $q=$connection->prepare("SELECT c.* FROM server_config c JOIN server_info i ON i.id=c.id WHERE c.id=? AND i.active=1 AND c.type IN (".achbotProviderSqlTypes().") FOR UPDATE");
         $q->bind_param('i',$serverId);$q->execute();$currentServer=$q->get_result()->fetch_assoc();$q->close();
-        if (!$currentServer || $currentServer['panel_url']!==$server['panel_url'] ||
+        if (!$currentServer || $currentServer['type']!==$server['type'] || $currentServer['panel_url']!==$server['panel_url'] ||
             $currentServer['username']!==$server['username'] || $currentServer['password']!==$server['password'] ||
             (string)($currentServer['sub_links']??'')!==(string)($server['sub_links']??'')) throw new RuntimeException('import_server_changed');
         $q=$connection->prepare('SELECT id FROM orders_list WHERE server_id=? AND remark=? LIMIT 1 FOR UPDATE');
@@ -258,14 +274,14 @@ if (preg_match('/^addToOrders([1-9][0-9]*)$/D',(string)$data,$match)) {
         }
         $links=[];
         foreach (is_array($remote->links??null)?$remote->links:[] as $uri) if (is_string($uri)) $links[]=$uri;
-        $link=json_encode($links,JSON_THROW_ON_ERROR);$expiry=(int)$proof['expiry'];$now=time();
-        // Preserve the existing imported-service UI classification; this is
-        // neither a pays record nor a financial credit/debit.
-        $q=$connection->prepare("INSERT INTO orders_list(userid,token,transid,fileid,server_id,inbound_id,remark,uuid,protocol,expire_date,link,amount,status,date,notif,rahgozar,agent_bought) VALUES(?,?,'',0,?,0,?,?,'',?,?,100,1,?,0,0,0)");
+        $link=json_encode($links,JSON_THROW_ON_ERROR);$expiry=$proof['expiry']??0;$now=time();
+        // Existing services have no paid plan or monetary credit attached.
+        $q=$connection->prepare("INSERT INTO orders_list(userid,token,transid,fileid,server_id,inbound_id,remark,uuid,protocol,expire_date,link,amount,status,date,notif,rahgozar,agent_bought,autoRenew) VALUES(?,?,'',0,?,0,?,?,'',?,?,0,1,?,0,0,0,'off')");
         $user=(string)$finalUserId;
         $q->bind_param('ssissisi',$user,$token,$serverId,$remark,$uuid,$expiry,$link,$now);
         if (!$q->execute() || $q->affected_rows!==1) throw new RuntimeException('import_insert');
         $orderId=(int)$q->insert_id;$q->close();
+        achbotProviderAdoptExistingLocked($connection,$serverId,$remote,$proof,$finalUserId,$orderId,$actor,(int)$admin);
         $q=$connection->prepare("UPDATE users SET temp=NULL,step='none' WHERE id=? AND userid=?");
         $q->bind_param('ii',$id,$actor);$q->execute();$q->close();
         try {if (!$connection->commit()) throw new RuntimeException('import_commit_unknown');}

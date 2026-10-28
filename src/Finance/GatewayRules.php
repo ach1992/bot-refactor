@@ -129,7 +129,7 @@ function achbotGatewayRuleMatchesUser(mysqli $db,int $userId,array $rule,
     if ($category==='has_active_order' || $category==='no_active_order') {
         $sql='SELECT id FROM orders_list'.
             ($final?' FORCE INDEX (idx_orders_userid_v1)':'').
-            ' WHERE userid=? AND status=1 AND expire_date>? LIMIT 1'.
+            ' WHERE userid=? AND status=1 AND (expire_date=0 OR expire_date>?) LIMIT 1'.
             ($final?' FOR UPDATE':'');
         $stmt=$db->prepare($sql);
         if (!$stmt) throw new RuntimeException('rule_order_prepare');

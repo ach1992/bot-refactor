@@ -48,17 +48,17 @@ A future provider needs an explicitly registered adapter/capabilities, native id
 
 Adding a **new** subscription already uses the common creation operation for administrators and customers. Importing an account that existed outside this bot is a different ownership/adoption operation.
 
-The legacy Marzban importer is hardened in this candidate:
+The common importer preserves the existing Marzban journey and now supports native PasarGuard adoption under the owner extension:
 
-- A decoded username is only a lookup hint. The submitted subscription token must exactly match the verified native token.
+- A decoded username is only a lookup hint. The submitted bearer must be verified by the actual native subscription info route. A freshly issued API token may differ from a valid supplied token.
 - The submitted origin/path prefix must match the native URL or an explicitly configured panel/subscription alias. A hostname suffix, credentials in a URL or an arbitrary outside origin is not proof.
-- Ambiguous matches across logical servers fail safely; remark prefixes, a first server or a hard-coded default server never select the account store.
+- Distinct physical matches fail safely; verified PasarGuard aliases for the same physical incarnation choose the first deterministic server. Remark prefixes, a first server or a hard-coded default server never select the account store.
 - Import rechecks the explicit server and current remote observation, copies the real native expiry (including unlimited), and serializes local attachment with the current actor/target and exact temporary state.
-- It does not create a payment, debit a wallet, provision a remote user, or fabricate a PasarGuard identity.
+- It does not create a payment, debit a wallet, provision a remote user, consume capacity or change the native note, limits, expiry, groups, status or schedules.
 - Replay or a second attachment of the same server/account cannot create another local order. Unknown COMMIT results remain under review.
 - The legacy imported-service UI classification is retained; it is not new financial evidence. An imported account initially has no paid plan assignment, so customer guidance explains choosing a plan before renewal.
 
-Native PasarGuard adoption of an outside-bot account remains **unsupported** until the owner accepts a stable ownership/adoption contract. The required `provider_accounts` marker/remote creation identity and effect relationship cannot be guessed from a username or Marzban token. This limitation does not affect fresh PasarGuard purchases, trials, gifts, renewals or volume/time extensions.
+PasarGuard uses the supplied bearer token at a trusted native read-only info route and matches the authenticated native id, username and creation time. A fresh API-generated token need not equal a valid older supplied token. The shared transaction stores a genuine nonfinancial adopt/external_import effect and linked provider identity in existing tables. Adopted identity mode is derived from validated persisted provenance; newly created accounts retain their strict remote marker requirement. This boundary needs no new SQL migration or additional user step.
 
 ## Add-on management corrections
 

@@ -165,7 +165,7 @@ def prepare(work):
     (stage/'settings').mkdir(parents=True)
     for filename in ['settings/gift2all.php','src/Subscription/GiftBatch.php',
                      'src/Panel/Accounts.php','src/Purchase/Core.php',
-                     'src/Panel/ProviderRuntime.php','src/Panel/ProviderStorage.php','src/Panel/PasarGuard.php']:
+                     'src/Panel/ProviderRuntime.php','src/Panel/ProviderImport.php','src/Panel/ProviderStorage.php','src/Panel/PasarGuard.php']:
         target=stage/filename
         target.parent.mkdir(parents=True,exist_ok=True)
         shutil.copyfile(ROOT/filename,target)

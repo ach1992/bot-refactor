@@ -2330,6 +2330,38 @@ function achbotAutoRenewPrepareDeletion(mysqli $db, int $orderId,?array $expecte
     }
 }
 
+/** Imported accounts never held a bot capacity slot, even after a later plan assignment. */
+function achbotOrderRestoresCapacity(mysqli $db,array $order): bool {
+    if ((int)($order['fileid']??0)<=0 || (int)($order['id']??0)<=0) return false;
+    try {
+        $r=$db->query("SELECT TABLE_TYPE,ENGINE FROM information_schema.TABLES
+            WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='service_effects'");
+        if (!($r instanceof mysqli_result)) throw new RuntimeException('deletion_capacity_schema_unavailable');
+        $table=$r->fetch_assoc();
+        // Original-schema Marzban orders have no journal; keep their established positive-plan behavior.
+        if ($table===null) return true;
+        if ($r->num_rows!==1 || $table['TABLE_TYPE']!=='BASE TABLE' ||
+            strcasecmp((string)$table['ENGINE'],'InnoDB')!==0) throw new RuntimeException('deletion_capacity_schema_invalid');
+        $id=(int)$order['id'];
+        $q=$db->prepare("SELECT effect_kind,source_kind,pay_row_id,reserved_count,state
+            FROM service_effects WHERE order_id=? LIMIT 2");
+        if (!$q) throw new RuntimeException('deletion_capacity_read_unavailable');
+        $q->bind_param('i',$id);
+        if (!$q->execute()) {$q->close();throw new RuntimeException('deletion_capacity_read_unavailable');}
+        $rows=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
+        if (!$rows) return true;
+        if (count($rows)!==1) throw new RuntimeException('deletion_capacity_identity_ambiguous');
+        $effect=$rows[0];
+        if ($effect['state']!=='local_recorded') throw new RuntimeException('deletion_capacity_effect_unconfirmed');
+        if ($effect['effect_kind']==='adopt' && $effect['source_kind']==='external_import' &&
+            $effect['pay_row_id']===null && (int)$effect['reserved_count']===0) return false;
+        if ($effect['effect_kind']==='create' && $effect['source_kind']!=='external_import') return true;
+        throw new RuntimeException('deletion_capacity_effect_invalid');
+    } catch (Throwable $error) {
+        throw new RuntimeException('deletion_capacity_provenance_unavailable');
+    }
+}
+
 /**
  * Complete an already-authorized remote deletion atomically in local SQL.
  * A failure leaves the order status=0 for operator reconciliation, never
@@ -2342,7 +2374,7 @@ function achbotAutoRenewFinalizeDeletion(
         achbotAutoRenewSchemaState($db)==='incompatible') return false;
     try {
         $db->begin_transaction();
-        $stmt=$db->prepare("SELECT status,server_id FROM orders_list
+        $stmt=$db->prepare("SELECT id,fileid,status,server_id FROM orders_list
             WHERE id=? FOR UPDATE");
         $stmt->bind_param('i',$orderId);
         $stmt->execute();
@@ -2352,13 +2384,14 @@ function achbotAutoRenewFinalizeDeletion(
             (int)$row['server_id']!==$serverId) {
             $db->rollback(); return false;
         }
+        $restoreSlot=$restoreCapacity && achbotOrderRestoresCapacity($db,$row);
         $stmt=$db->prepare("DELETE FROM orders_list WHERE id=? AND status=0");
         $stmt->bind_param('i',$orderId);
         $stmt->execute();
         $removed=$stmt->affected_rows;
         $stmt->close();
         if ($removed!==1) { $db->rollback(); return false; }
-        if ($restoreCapacity) {
+        if ($restoreSlot) {
             $stmt=$db->prepare("UPDATE server_info SET ucount=ucount+1
                 WHERE id=? AND ucount<2147483647");
             $stmt->bind_param('i',$serverId);

@@ -116,6 +116,7 @@ def reviewed_context_proof(sides,merged,manifest):
 MANAGEMENT_BASE='2c0e728dcd71c38e20d176fe2577bc264d3faa1a'
 MANAGEMENT_CONTRACT='docs/post-v9/UNIFIED-SERVICE-MANAGEMENT.md'
 MANAGEMENT_USER_KEYS={'subscription.account_details.status_on_hold','subscription.manual_accounts.import_unverified','subscription.manual_accounts.import_under_review','subscription.manual_accounts.import_completed'}
+MANAGEMENT_ADMIN_KEYS={'subscription.manual_accounts.customer_not_found','subscription.account_deletion.report'}
 def management_runtime_paths():
     # The package is the shipping source authority, including new draft modules
     # before the first candidate commit. No arbitrary worktree PHP is accepted.
@@ -142,7 +143,7 @@ def management_amendment(sides,merged,amendment=None):
     check(len(before)==2523,'management baseline key identity drift')
     additions=amendment.get('added_keys',{})
     check(additions and all(key.startswith('admin_settings.management.') or
-          key in MANAGEMENT_USER_KEYS for key in additions),
+          key in MANAGEMENT_USER_KEYS|MANAGEMENT_ADMIN_KEYS for key in additions),
           'management addition scope drift')
     check(set(merged)==set(before)|set(additions),'management catalog extension drift')
     for key,entry in before.items():

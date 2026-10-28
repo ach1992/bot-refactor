@@ -9,6 +9,7 @@ require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
 require_once __DIR__ . '/../Finance/ReceiptHelpers.php';
 require_once __DIR__.'/AccountDetails.php';
 require_once __DIR__.'/../Panel/ServiceLifecycle.php';
+require_once __DIR__.'/../Presentation/Text.php';
 // Every local-record management callback is privileged. A forged old button
 // or stale cached role must not disclose or mutate another customer's order.
 $achbotOrderAdminRoute=is_string($data??null) &&
@@ -257,7 +258,11 @@ function showOrderManagementPanel($order, $msgId = null,string $notice=''){
         'order_id'=>(string)$orderId,
         'server'=>$escape($context['server_title']??$order['server_id']),
         'plan'=>$escape($context['plan_title']??$order['fileid']),
-        'recorded_expiry'=>(int)$order['expire_date']>0?jdate('Y-m-d H:i',(int)$order['expire_date'],'','Asia/Tehran','en'):\achbotMessage('subscription.account_deletion.no_dont_delete.text.5e6ee5eaa1')
+        'recorded_expiry'=>\AchBot\Presentation\Text\serviceExpiryLabel(
+            $order['expire_date'],static fn(int $timestamp)=>jdate('Y-m-d H:i',$timestamp,'','Asia/Tehran','en'),
+            \achbotMessage('subscription.account_deletion.no_dont_delete.text.5e6ee5eaa1'),
+            \achbotMessage('admin_settings.config.get_bot_report_keys.text.f07a81a062'),
+            achbotSupportsAccount($provider,$order['inbound_id']))
     ]);
 
     if ($notice!=='') $msg.="\n\n".$notice;

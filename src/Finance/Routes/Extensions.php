@@ -823,10 +823,11 @@ if (preg_match('/^increaseAVolume([1-9][0-9]{0,9})$/D', $data, $match)) {
     $expireDate = (int) $orderInfo['expire_date']; // تبدیل به عدد صحیح
     $currentDate = time();
 
-    // بررسی اینکه آیا تاریخ معتبر است یا خیر
-    if ($expireDate === false) {
-        alert(\achbotMessage('renewal.extensions.alert.0340c363d2'));
-        exit;
+    // A legacy zero is unlimited time, not an expired date. This relative
+    // add-on still requires a finite baseline; do not create a payable draft.
+    if ($expireDate<=0) {
+        alert(\achbotMessage('payment.pre_payment.alert.fa55f5201f'),true);
+        return;
     }
 	
     // اگر تاریخ انقضا کمتر از تاریخ و ساعت فعلی باشد
@@ -897,6 +898,10 @@ if(preg_match('/^increaseVolumePlan(?<orderId>[1-9][0-9]{0,9})_(?<volumeId>[1-9]
         return;
     }
 
+    if ((int)$orderInfo['expire_date']<=0) {
+        alert(\achbotMessage('payment.pre_payment.alert.fa55f5201f'),true);
+        return;
+    }
     if ((int)$orderInfo['expire_date']<=time()) {
         alert(\achbotMessage('renewal.extensions.alert.f5aab191db'),true);
         return;

@@ -28,8 +28,15 @@ function achbotSupportsAccount($type,$inbound){return in_array($type,['marzban',
 function achbotProviderSqlTypes(){return "'marzban','pasarguard'";}
 function achbotProviderUser($server,$remark,$withLinks=true){++$GLOBALS['reads'];if($withLinks)throw new RuntimeException('unexpected_link_read');return json_decode(json_encode($GLOBALS['spec']['remote']??null));}
 function achbotProviderRelocationTargets($db,$server){return $GLOBALS['spec']['relocations']??[];}
+function achbotProviderRenderPacket($db,$server,$remark):object {
+ $remote=achbotProviderUser($server,$remark,false);
+ $GLOBALS['last_packet']=is_object($remote)?$remote:(object)[];
+ $GLOBALS['last_packet']->provider_render_proof=['provider'=>$GLOBALS['spec']['provider']??'fixture','server_id'=>(int)$server,'username'=>(string)$remark];
+ return $GLOBALS['last_packet'];
+}
 function achbotOrderPresentation(...$args){
  ++$GLOBALS['presentations'];
+ if (($args[4]??null)!==($GLOBALS['last_packet']??null))throw new RuntimeException('presentation_must_reuse_current_render_packet');
  $hide=$GLOBALS['spec']['hidden_links']??false;
  return ['config_html'=>$hide?'':'vless://fixture-config','subscription_html'=>$hide?'':'https://sub.example.invalid/fixture',
   'backup_html'=>'','notice_html'=>'','subscription_url'=>$hide?'':'https://sub.example.invalid/fixture',
@@ -58,7 +65,16 @@ try {
   require $root.'/src/Purchase/TrialCatalogue.php';$out=$GLOBALS['events'];break;
  default:
   require $root.'/src/Subscription/AccountDetails.php';
-  $out=match($spec['op']){
+  if ($spec['op']==='sequence') {
+   $out=[];
+   foreach ($spec['remote_sequence'] as $remote) {
+    $GLOBALS['spec']['remote']=$remote;$beforeRenderReads=$GLOBALS['reads'];$beforeRenderPresentations=$GLOBALS['presentations'];
+    $rendered=($spec['audience']??'customer')==='admin'?
+      \AchBot\Subscription\AccountDetails\getUserOrderDetailKeys(91):
+      \AchBot\Subscription\AccountDetails\getOrderDetailKeys(1001,91);
+    $out[]=['rendered'=>$rendered,'reads'=>$GLOBALS['reads']-$beforeRenderReads,'presentations'=>$GLOBALS['presentations']-$beforeRenderPresentations];
+   }
+  } else $out=match($spec['op']){
    'traffic'=>\AchBot\Subscription\AccountDetails\getOrderTrafficInfo($spec['provider'],2,'fixture_user','fixture',0),
    'admin'=>\AchBot\Subscription\AccountDetails\getUserOrderDetailKeys(91),
    default=>\AchBot\Subscription\AccountDetails\getOrderDetailKeys(1001,91)
@@ -171,6 +187,36 @@ def main():
       date_proofs[proof].append(provider)
      yes(('changeUserConfigState91' in keys)==(op=='admin' and status in ['active','disabled']),provider+'_'+status+'_'+op+'_toggle_capability')
      if status=='on_hold':yes('renewAccountAsk91' not in keys and 'changePlan_91' not in keys and 'delUserConfig91' not in keys,provider+'_'+op+'_on_hold_no_unsupported_actions')
+   sequence=[
+    (dict(finite),dates[1800000000],'1 GB','فعال'),
+    (dict(finite,expire=1800003600,data_limit=4294967296),dates[1800003600],'3 GB','فعال'),
+    (dict(finite,expire=None,data_limit=None),'نامحدود','نامحدود','فعال'),
+    (dict(finite,expire=0,data_limit=0),'نامحدود','نامحدود','فعال'),
+    (dict(finite,status='disabled',used_traffic=2147483648),dates[1800000000],'0 GB','غیرفعال'),
+    (None,None,None,'قابل تأیید نیست'),
+    (dict(finite,expire='malformed'),None,None,'قابل تأیید نیست'),
+   ]
+   for audience in ['customer','admin']:
+    rendered_sequence=call('sequence',actor=9001 if audience=='admin' else 1001,audience=audience,remote_sequence=[row[0] for row in sequence])['out']
+    for index,(result,(_,expiry,quota,status_label)) in enumerate(zip(rendered_sequence,sequence,strict=True)):
+     rendered=result['rendered'];rows=json.loads(rendered['keyboard'])['inline_keyboard']
+     expiry_text=next(row[0]['text'] for row in rows if len(row)==2 and row[1].get('text')=='📅 تاریخ انقضاء:')
+     quota_text=next(row[0]['text'] for row in rows if len(row)==2 and row[1].get('text')=='📦 حجم باقیمانده:')
+     valid=expiry is not None
+     yes(result['reads']==1 and result['presentations']==int(valid),provider+'_'+audience+'_same_process_render_'+str(index)+'_one_fresh_observation_and_shared_presentation')
+     yes(status_label in rendered['msg'] and (expiry_text==expiry and quota_text==quota if valid else expiry_text!='نامحدود' and quota_text!='نامحدود'),provider+'_'+audience+'_same_process_render_'+str(index)+'_current_expiry_quota_status_or_explicit_unknown')
+     yes((expiry_text=='نامحدود' or re.fullmatch(r'[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}',expiry_text)) if valid else '1408-12-27 21:16' not in expiry_text,provider+'_'+audience+'_same_process_render_'+str(index)+'_Jalali_Tehran_ASCII_or_unknown_never_stale_local_expiry')
+     if audience=='customer':
+      has_time=valid and expiry!='نامحدود'
+      has_quota=valid and quota!='نامحدود'
+      yes(('increaseADay91' in rendered['keyboard'])==has_time and ('increaseAVolume91' in rendered['keyboard'])==(has_time and has_quota),provider+'_same_process_render_'+str(index)+'_relative_actions_match_finite_expiry_and_total_quota_including_zero_remaining')
+   for fileid,amount in [(0,0),(0,100),(7,0),(7,100)]:
+    sql('UPDATE orders_list SET fileid='+str(fileid)+',amount='+str(amount)+' WHERE id=91')
+    for op in ['view','admin']:
+     keys=call(op,actor=9001 if op=='admin' else 1001,remote=finite)['out']['keyboard']
+     toggle='adminToggleAutoRenew91' if op=='admin' else 'toggleAutoRenew91'
+     yes((toggle in keys)==(fileid>0 and amount>0) and 'changePlan_91' in keys,provider+'_'+op+'_file'+str(fileid)+'_amount'+str(amount)+'_automatic_renewal_existing_eligibility_and_familiar_change_plan')
+   sql('UPDATE orders_list SET fileid=7,amount=100 WHERE id=91')
    for unlimited in [None,0]:
     remote=dict(finite,data_limit=unlimited,expire=unlimited)
     rendered=call('view',remote=remote)['out']
@@ -310,7 +356,7 @@ def main():
   for name,state,manual,denied,rate,expected in cases:
    out=call('admission',state=state,manual=manual,denied=denied,rate=rate)
    yes(out['out'] is expected,name+'_same_checkout_menu_admission')
- result={'complete':True,'cases':len(checks),'checks':checks,'actual_php':True,'native_disposable_mariadb':True,'canonical_catalog_bindings':True,'real_JDF_no_date_stubs':True,'actual_composed_ASCII_Jalali_Tehran_proofs':date_proofs,'baseline_date_ref':date_baseline_ref,'baseline_date_jdf_sha256':hashlib.sha256(archived_jdf).hexdigest(),'baseline_dates_already_ASCII':True,'baseline_date_RED':False,'archived_warning_toggle_RED':baseline_red,'archived_warning_toggle_ref':archived_ref,'archived_warning_toggle_sha256':hashlib.sha256(archived_toggle.encode()).hexdigest(),'external_provider_calls':0,'production_mutations':0}
+ result={'complete':True,'cases':len(checks),'checks':checks,'actual_php':True,'native_disposable_mariadb':True,'canonical_catalog_bindings':True,'real_JDF_no_date_stubs':True,'fresh_each_render_same_process':True,'same_packet_observation_and_presentation':True,'imported_actions_hide_ineligible_autorenew':True,'unlimited_actions_hide_unsupported_relative_changes':True,'native_HTTP_count_checked_here':False,'actual_composed_ASCII_Jalali_Tehran_proofs':date_proofs,'baseline_date_ref':date_baseline_ref,'baseline_date_jdf_sha256':hashlib.sha256(archived_jdf).hexdigest(),'baseline_dates_already_ASCII':True,'baseline_date_RED':False,'archived_warning_toggle_RED':baseline_red,'archived_warning_toggle_ref':archived_ref,'archived_warning_toggle_sha256':hashlib.sha256(archived_toggle.encode()).hexdigest(),'external_provider_calls':0,'production_mutations':0}
  if a.report:a.report.write_text(json.dumps(result,ensure_ascii=False,indent=2)+'\n')
  print(json.dumps(result,ensure_ascii=False))
 if __name__=='__main__':main()

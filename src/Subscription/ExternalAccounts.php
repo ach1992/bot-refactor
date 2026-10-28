@@ -14,7 +14,7 @@ function achbotExternalSubscriptionParts(string $url): ?array {
     if (!$p || !in_array($p['scheme']??'',['http','https'],true) || empty($p['host']) ||
         isset($p['user']) || isset($p['pass']) || preg_match('/[\x00-\x20\x7f]/',$url)) return null;
     $path=$p['path']??'';
-    if (!preg_match('~^(.*)/sub/([^/]+)$~D',$path,$m)) return null;
+    if (!preg_match('~^(.*)/([^/]+)/?$~D',$path,$m)) return null;
     $token=rawurldecode($m[2]);
     if ($token==='' || strlen($token)>255 || preg_match('~[\x00-\x20\x7f/?#]~',$token)) return null;
     $port=(int)($p['port']??($p['scheme']==='https'?443:80));
@@ -22,13 +22,28 @@ function achbotExternalSubscriptionParts(string $url): ?array {
         'prefix'=>$m[1],'token'=>$token];
 }
 function achbotExternalImportProof(array $server,object $remote,string $input): ?array {
-    if (($server['type']??null)!=='marzban' || !is_string($remote->username??null) ||
-        !is_string($remote->subscription_url??null)) return null;
+    if (!is_string($remote->username??null)) return null;
     require_once __DIR__.'/../Panel/ServiceLifecycle.php';
     $observation=achbotServiceObservation($remote,$remote->username);
-    if (!$observation['verified']) return null;
     $supplied=achbotExternalSubscriptionParts($input);
-    if (!$supplied) return null;
+    if (!$observation['verified'] || !$supplied) return null;
+    // Optional provider adapters supply an already verified native bearer
+    // proof. Rotating native tokens must never be compared to a newly issued URL.
+    $proof=$remote->provider_import_proof??null;
+    if (is_array($proof)) {
+        if (($proof['verified']??false)!==true ||
+            ($proof['provider']??null)!==($server['type']??null) ||
+            (int)($proof['server_id']??0)!==(int)($server['id']??0) ||
+            !is_string($proof['input_sha256']??null) ||
+            !hash_equals($proof['input_sha256'],hash('sha256',$input)) ||
+            !is_string($proof['token']??null) ||
+            !hash_equals($proof['token'],$supplied['token']) ||
+            !array_key_exists('expiry',$proof) || $proof['expiry']!==$observation['expire'] ||
+            ($proof['status']??null)!==$observation['status']) return null;
+        $proof['observation']=$observation;
+        return $proof;
+    }
+    if (($server['type']??null)!=='marzban' || !is_string($remote->subscription_url??null)) return null;
     $native=$remote->subscription_url;
     if (str_starts_with($native,'/')) $native=rtrim((string)$server['panel_url'],'/').$native;
     $known=achbotExternalSubscriptionParts($native);
@@ -39,8 +54,8 @@ function achbotExternalImportProof(array $server,object $remote,string $input): 
         if ($parts) $allowed[]=[$parts['origin'],$parts['prefix']];
     }
     if (!in_array([$supplied['origin'],$supplied['prefix']],$allowed,true)) return null;
-    return ['token'=>$known['token'],'expiry'=>$observation['expire']??0,
-        'status'=>$observation['status'],'subscription_url'=>$native];
+    return ['token'=>$known['token'],'expiry'=>$observation['expire'],
+        'status'=>$observation['status'],'subscription_url'=>$native,'observation'=>$observation];
 }
 function achbotExternalImportFrame($update,int $actor,string $callback): bool {
     $q=$update->callback_query??null;$m=$q->message??null;
@@ -50,21 +65,63 @@ function achbotExternalImportFrame($update,int $actor,string $callback): bool {
         ($m->chat->type??null)==='private' && (int)($m->chat->id??0)===$actor;
 }
 
+/** Persist only the fresh actor's preview; a later wizard/cancel wins. */
+function achbotExternalImportStorePreview(mysqli $db,int $actor,array $cached,array $preview,string $token): bool {
+    if (($cached['step']??null)!=='showAccount') return false;
+    if (!$db->begin_transaction()) throw new RuntimeException('import_preview_begin');
+    try {
+        $q=$db->prepare('SELECT id,userid,step,temp FROM users WHERE userid=? LIMIT 2 FOR UPDATE');
+        $q->bind_param('i',$actor);$q->execute();$rows=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
+        if (count($rows)!==1 || $rows[0]['step']!=='showAccount' ||
+            $rows[0]['temp']!==($cached['temp']??null)) {$db->rollback();return false;}
+        $remark=$preview['remark'];$created=date('Y-m-d H:i:s');
+        $q=$db->prepare('INSERT INTO add_link(remark,token,added_by,created_at) VALUES(?,?,?,?)');
+        $q->bind_param('ssis',$remark,$token,$actor,$created);$q->execute();$q->close();
+        $id=(int)$rows[0]['id'];$temp=json_encode($preview,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
+        $q=$db->prepare("UPDATE users SET step='none',temp=? WHERE id=? AND userid=?");
+        $q->bind_param('sii',$temp,$id,$actor);$q->execute();$q->close();
+        if (!$db->commit()) throw new RuntimeException('import_preview_commit_unknown');
+        return true;
+    } catch (Throwable $error) {
+        try {$db->rollback();} catch (Throwable $ignored) {}
+        throw $error;
+    }
+}
+
 // BEGIN Edit by ACh
-if($data == "showUUIDLeft" && ($botState['searchState'] == "on" || $from_id == $admin || $userInfo['isAdmin'] == true)){
+if ($data==='showUUIDLeft') {
+    $actor=(int)$from_id;
+    if (!achbotExternalImportFrame($update,$actor,$data)) return;
+    try {
+        if (!$connection->begin_transaction()) throw new RuntimeException('import_entry_begin');
+        $q=$connection->prepare('SELECT id,step,temp,isAdmin FROM users WHERE userid=? LIMIT 2 FOR UPDATE');
+        $q->bind_param('i',$actor);$q->execute();$rows=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
+        if (count($rows)!==1 || $rows[0]['step']==='banned' ||
+            $rows[0]['step']!==($userInfo['step']??null) || $rows[0]['temp']!==($userInfo['temp']??null) ||
+            str_starts_with((string)$rows[0]['step'],'achbotDirectGift') ||
+            str_starts_with((string)$rows[0]['step'],'achbotExempt:') ||
+            (($botState['searchState']??'off')!=='on' && $actor!==(int)$admin && (int)$rows[0]['isAdmin']!==1)) {
+            $connection->rollback();return;
+        }
+        $id=(int)$rows[0]['id'];
+        $q=$connection->prepare("UPDATE users SET step='showAccount',temp=NULL WHERE id=? AND userid=?");
+        $q->bind_param('ii',$id,$actor);$q->execute();$q->close();
+        if (!$connection->commit()) throw new RuntimeException('import_entry_commit_unknown');
+    } catch (Throwable $error) {
+        try {$connection->rollback();} catch (Throwable $ignored) {}
+        error_log('achbot_existing_subscription_entry_deferred');return;
+    }
     delMessage();
     sendMessage($mainValues['send_config_uuid'], $cancelKey);
-    setUser('showAccount');
+    return;
 }
 
 function extractUsernameFromLink($text) {
     $text = trim($text);
 
-    if (!preg_match('~^https?://[^/]+/sub/([^?#\s]+)~', $text, $match)) {
-        return null;
-    }
-
-    $token = rawurldecode(trim($match[1]));
+    $parts=achbotExternalSubscriptionParts($text);
+    if (!$parts) return null;
+    $token=$parts['token'];
     $token = strtr($token, '-_', '+/');
     $token = preg_replace('/\s+/', '', $token);
 
@@ -119,91 +176,55 @@ if ($userInfo['step'] == "showAccount" && $text != $buttonValues['cancel']) {
     date_default_timezone_set('Asia/Tehran');
 
     $originalLink = trim($text);
-    $addedBy = $from_id;
-    $currentTime = date('Y-m-d H:i:s');
-
     $username = extractUsernameFromLink($originalLink);
-    $token = null;
-
-    if (preg_match('~^https?://[^/]+/sub/([^?\s]+)~', $originalLink, $match)) {
-		$token = trim(explode('#', explode('?', $match[1])[0])[0]);
-	}
-
-    if (!$username || !$token) {
+    $parts=achbotExternalSubscriptionParts($originalLink);
+    if (!$parts) {
         sendMessage(\achbotMessage('subscription.external_accounts.extract_username_from_link.message.02e023c2c2'), $cancelKey);
-        exit();
+        return;
     }
-
-
     sendMessage(\achbotMessage('subscription.external_accounts.extract_username_from_link.message.4c80cbd8b8'), $removeKeyboard);
-
-    $stmt = $connection->prepare("SELECT c.* FROM server_config c JOIN server_info i ON i.id=c.id WHERE i.active=1 AND c.type='marzban'");
-    $stmt->execute();
-    $serversList = $stmt->get_result();
-    $stmt->close();
-
-    $found = false;
-    $config = null;
-    $serverId = 0;
+    $stmt = $connection->prepare("SELECT c.* FROM server_config c JOIN server_info i ON i.id=c.id WHERE i.active=1 AND c.type IN (".achbotProviderSqlTypes().") ORDER BY c.id");
+    $stmt->execute();$serversList=$stmt->get_result();$stmt->close();
     $matches=[];
-
-    while ($row = $serversList->fetch_assoc()) {
-        $currentServerId = (int)$row['id'];
-        $userData = achbotProviderUser($currentServerId, $username, false);
-
-        if (is_object($userData) && ($userData->username??null)===$username &&
-            achbotExternalImportProof($row,$userData,$originalLink)!==null) {
-            $matches[]=['server'=>$currentServerId,'remote'=>$userData];
+    while ($row=$serversList->fetch_assoc()) {
+        try {
+            $currentServerId=(int)$row['id'];
+            $userData=achbotProviderExistingUser($connection,$currentServerId,$originalLink,$username);
+            $proof=achbotExternalImportProof($row,$userData,$originalLink);
+            if ($proof!==null) {
+                // The backend may prove multiple logical entries are one
+                // physical account. Distinct or unproved targets stay ambiguous.
+                $identity=is_string($proof['identity_key']??null)?$proof['identity_key']:'server:'.$currentServerId;
+                $matches[$identity]??=['server'=>$currentServerId,'remote'=>$userData,'proof'=>$proof,'type'=>$row['type']];
+            }
+        } catch (Throwable $error) {
+            error_log('achbot_existing_subscription_lookup_deferred');
         }
     }
-
-    if (count($matches)===1) {
-        $found=true;$serverId=$matches[0]['server'];$config=$matches[0]['remote'];
+    $found=count($matches)===1;$config=null;$serverId=0;
+    if ($found) {
+        $match=array_values($matches)[0];$serverId=$match['server'];$config=$match['remote'];$proof=$match['proof'];
     }
     if (!$found || empty($config)) {
         sendMessage(\achbotMessage('subscription.manual_accounts.import_unverified'), $cancelKey);
         exit();
     }
 
-    $stmt = $connection->prepare("INSERT INTO add_link(remark,token,added_by,created_at) VALUES(?,?,?,?)");
-    $stmt->bind_param('ssis',$username,$token,$addedBy,$currentTime);$stmt->execute();$stmt->close();
-    $remark = $config->username ?? $username;
-    $state = (($config->status ?? '') == "active") ? $buttonValues['active'] : $buttonValues['deactive'];
-
-    $dataLimit = $config->data_limit ?? 0;
-    $usedTraffic = $config->used_traffic ?? 0;
-    $expire = $config->expire ?? 0;
-
-    $total = $dataLimit != 0 ? sumerize($dataLimit) : \achbotMessage('subscription.account_deletion.no_dont_delete.text.5e6ee5eaa1');
-    $totalUsed = sumerize($usedTraffic);
-    $leftMb = $dataLimit != 0 ? sumerize(max(0, $dataLimit - $usedTraffic)) : \achbotMessage('subscription.account_deletion.no_dont_delete.text.5e6ee5eaa1');
-    $expiryTime = $expire != 0 ? jdate("Y-m-d H:i:s", $expire) : \achbotMessage('subscription.account_deletion.no_dont_delete.text.5e6ee5eaa1');
-    $expiryDay = $expire != 0 ? floor(($expire - time()) / (60 * 60 * 24)) : \achbotMessage('subscription.account_deletion.no_dont_delete.text.5e6ee5eaa1');
-
-    if (is_numeric($expiryDay) && $expiryDay < 0) {
-        $expiryDay = 0;
-    }
-
-    // استخراج شناسه اتصال برای ذخیره موقت
-    $uuid = '';
-
-    if (!empty($config->proxies->vmess->id)) {
-        $uuid = $config->proxies->vmess->id;
-    } elseif (!empty($config->proxies->vless->id)) {
-        $uuid = $config->proxies->vless->id;
-    } elseif (!empty($config->proxies->trojan->password)) {
-        $uuid = $config->proxies->trojan->password;
-    } elseif (!empty($config->uuid)) {
-        $uuid = $config->uuid;
-    }
-
-    $configLocation = [
-        "remark" => $remark,
-        "uuid" => $uuid,
-        "username" => $remark,
-        "server_id" => $serverId,
-        "import_url" => $originalLink,
-        "marzban" => true
+    $remark=$config->username;
+    $token=$proof['token'];$observation=$proof['observation'];
+    require_once __DIR__.'/AccountDetails.php';
+    $state=\AchBot\Subscription\AccountDetails\getOrderStatusText(
+        $observation+['found'=>true,'uncertain'=>false],$match['type'],$buttonValues);
+    $unlimited=\achbotMessage('subscription.account_deletion.no_dont_delete.text.5e6ee5eaa1');
+    $total=$observation['quota']===null?$unlimited:sumerize($observation['quota']);
+    $totalUsed=sumerize($observation['used']);
+    $leftMb=$observation['remaining']===null?$unlimited:sumerize($observation['remaining']);
+    $expire=$observation['expire'];
+    $expiryTime=$expire===null?$unlimited:jdate('Y-m-d H:i:s',$expire,'','Asia/Tehran','en');
+    $expiryDay=$expire===null?$unlimited:max(0,(int)floor(($expire-time())/86400));
+    $configLocation=[
+        'remark'=>$remark,'username'=>$remark,'server_id'=>$serverId,
+        'import_url'=>$originalLink,'provider'=>$match['type']
     ];
 
     $keyboard = [
@@ -261,9 +282,14 @@ if ($userInfo['step'] == "showAccount" && $text != $buttonValues['cancel']) {
     $keyboard[] = [['text' => \achbotMessage('subscription.external_accounts.extract_username_from_link.button.a4ebab2a7b'), 'callback_data' => "mainMenu"]];
     $keys = json_encode(['inline_keyboard' => $keyboard]);
 
-    setUser();
-    setUser(json_encode($configLocation, JSON_UNESCAPED_UNICODE), "temp");
-    $userInfo['temp'] = json_encode($configLocation, JSON_UNESCAPED_UNICODE);
+    try {
+        if (!achbotExternalImportStorePreview($connection,(int)$from_id,$userInfo,$configLocation,$token)) return;
+    } catch (Throwable $error) {
+        error_log('achbot_existing_subscription_preview_deferred');
+        sendMessage(\achbotMessage('subscription.manual_accounts.import_under_review'));
+        return;
+    }
+    $userInfo['step']='none';$userInfo['temp']=json_encode($configLocation,JSON_UNESCAPED_UNICODE);
 
     sendMessage(\achbotMessage('subscription.external_accounts.extract_username_from_link.message.b2f5ea228c'), $keys, "HTML");
 }

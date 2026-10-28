@@ -266,6 +266,7 @@ def setup(work: Path, env: dict) -> Path:
         'src/Subscription/GiftBatch.php',
         'src/Purchase/Core.php',
         'src/Panel/ProviderRuntime.php',
+        'src/Panel/ProviderImport.php',
         'src/Panel/ProviderStorage.php',
         'src/Panel/PasarGuard.php',
         'src/Telegram/UpdateBindings.php'

@@ -62,7 +62,7 @@ function getServerConfigById($server_id) {
 }
 
 
-function getOrderTrafficInfo($serverType, $server_id, $remark, $uuid, $inbound_id, $rahgozar=false) {
+function getOrderTrafficInfo($serverType, $server_id, $remark, $uuid, $inbound_id, $rahgozar=false, ?object $provenRemote=null) {
     require_once __DIR__.'/../Panel/ServiceLifecycle.php';
     $result = [
         'found'=>false,'enable'=>false,
@@ -71,7 +71,8 @@ function getOrderTrafficInfo($serverType, $server_id, $remark, $uuid, $inbound_i
         'expire'=>null,'actionable'=>false,
     ];
     if (!achbotSupportsAccount($serverType,$inbound_id)) return $result;
-    $observed=achbotServiceObserve((int)$server_id,(string)$remark);
+    $observed=$provenRemote===null?achbotServiceObserve((int)$server_id,(string)$remark):
+        achbotServiceObservation($provenRemote,(string)$remark);
     if (!$observed['verified']) return $result;
     $result['found']=true;$result['uncertain']=false;
     $result['enable']=$observed['enabled'];$result['status']=$observed['status'];
@@ -194,7 +195,6 @@ function getUserOrderDetailKeys($id, $offset = 0){
     $name        = getPlanFullName($order['fileid'], $id);
 
     $date        = jdate("Y-m-d H:i", $order['date']);
-    $expire_date = jdate("Y-m-d H:i", $order['expire_date']);
 
     $remark      = $order['remark'];
     $uuid        = $order['uuid'] ?? "0";
@@ -212,7 +212,9 @@ function getUserOrderDetailKeys($id, $offset = 0){
     $panelUrl    = $server['panel_url'] ?? '';
     $subLinksRaw = $server['sub_links'] ?? '';
 
-    $traffic     = getOrderTrafficInfo($serverType, $server_id, $remark, $uuid, $inbound_id, $rahgozar);
+    $renderRemote=achbotSupportsAccount($serverType,$inbound_id)?
+        achbotProviderRenderPacket($GLOBALS['connection'],(int)$server_id,(string)$remark):null;
+    $traffic     = getOrderTrafficInfo($serverType, $server_id, $remark, $uuid, $inbound_id, $rahgozar,$renderRemote);
 
     $leftgb      = $traffic['leftgb'] ?? \achbotMessage('subscription.account_details.get_order_traffic_info.text.f07ac0638d');
     $enableBool  = $traffic['enable'] ?? false;
@@ -224,7 +226,7 @@ function getUserOrderDetailKeys($id, $offset = 0){
     $enableText=getOrderStatusText($traffic,$serverType,$buttonValues);
 
     $presentation=$uncertain?['config_html'=>'','subscription_html'=>'','backup_html'=>'','notice_html'=>'']:
-        achbotOrderPresentation($GLOBALS['connection'],$order,$server,$botState);
+        achbotOrderPresentation($GLOBALS['connection'],$order,$server,$botState,$renderRemote);
     $configLinks=$presentation['config_html'];
     $subLink=$presentation['subscription_html'];
     $backup=$presentation['backup_html'];
@@ -277,7 +279,7 @@ function getUserOrderDetailKeys($id, $offset = 0){
         ['text' => $buttonValues['change_plan'], 'callback_data' => "changePlan_{$id}"],
     ];
 
-    if (!$uncertain && $actionable && ($botState['renewAutoState'] ?? "off") == "on") {
+    if (!$uncertain && $actionable && (int)$order['amount']>0 && (int)$order['fileid']>0 && ($botState['renewAutoState'] ?? "off") == "on") {
         $keyboard[] = [[
             'text' => (($autoRenew ?? 'off') == "on" ? \achbotMessage('subscription.account_details.get_user_order_detail_keys.text.ed76444585') : \achbotMessage('subscription.account_details.get_user_order_detail_keys.text.fb6d00ad8d')),
             'callback_data' => "adminToggleAutoRenew{$order['id']}"
@@ -331,7 +333,6 @@ function getOrderDetailKeys($from_id, $id, $offset = 0){
     $fid         = $order['fileid'];
     $name        = getPlanFullName($fid, $id);
 
-    $expire_date = jdate("Y-m-d H:i", $order['expire_date']);
 
     $remark      = $order['remark'];
     $uuid        = $order['uuid'] ?? "0";
@@ -350,7 +351,9 @@ function getOrderDetailKeys($from_id, $id, $offset = 0){
     $panelUrl    = $server['panel_url'] ?? '';
     $subLinksRaw = $server['sub_links'] ?? '';
 
-    $traffic = getOrderTrafficInfo($serverType, $server_id, $remark, $uuid, $inbound_id, $rahgozar);
+    $renderRemote=achbotSupportsAccount($serverType,$inbound_id)?
+        achbotProviderRenderPacket($GLOBALS['connection'],(int)$server_id,(string)$remark):null;
+    $traffic = getOrderTrafficInfo($serverType, $server_id, $remark, $uuid, $inbound_id, $rahgozar,$renderRemote);
 
     $found      = $traffic['found'] ?? false;
     $enableBool = $traffic['enable'] ?? false;
@@ -361,10 +364,13 @@ function getOrderDetailKeys($from_id, $id, $offset = 0){
     $expire_date=$uncertain?\achbotMessage('subscription.account_details.get_order_traffic_info.text.f07ac0638d'):
         ($traffic['expire']===null?\achbotMessage('subscription.account_deletion.no_dont_delete.text.5e6ee5eaa1'):jdate('Y-m-d H:i',$traffic['expire'],'','Asia/Tehran','en'));
     $canToggle=in_array($traffic['status']??null,['active','disabled'],true);
+    $canExtendTime=!$uncertain && $traffic['expire']!==null;
+    // Use the verified total allowance, not the finite remaining balance.
+    $canExtendVolume=$canExtendTime && (int)($renderRemote->data_limit??0)>0;
     $enableText=getOrderStatusText($traffic,$serverType,$buttonValues,$mainValues['config_doesnt_exist']);
 
     $presentation=$uncertain?['config_html'=>'','subscription_html'=>'','backup_html'=>'','notice_html'=>'']:
-        achbotOrderPresentation($GLOBALS['connection'],$order,$server,$botState);
+        achbotOrderPresentation($GLOBALS['connection'],$order,$server,$botState,$renderRemote);
     $configLinks=$presentation['config_html'];
     $subLink=$presentation['subscription_html'];
     $backup=$presentation['backup_html'];
@@ -405,7 +411,7 @@ function getOrderDetailKeys($from_id, $id, $offset = 0){
         ];
     }
 
-    if (!$uncertain && $actionable && ($botState['renewAutoState'] ?? "off") == "on") {
+    if (!$uncertain && $actionable && (int)$order['amount']>0 && (int)$order['fileid']>0 && ($botState['renewAutoState'] ?? "off") == "on") {
         $keyboard[] = [[
             'text' => (($autoRenew ?? 'off') == "on" ? \achbotMessage('subscription.account_details.get_user_order_detail_keys.text.ed76444585') : \achbotMessage('subscription.account_details.get_user_order_detail_keys.text.fb6d00ad8d')),
             'callback_data' => "toggleAutoRenew{$id}"
@@ -459,6 +465,7 @@ function getOrderDetailKeys($from_id, $id, $offset = 0){
         if (
             ($botState['sellState'] ?? "off") == "on" &&
             ($botState['increaseVolumeState'] ?? "off") == "on" &&
+            $canExtendVolume &&
             ($price != 0 || $agentBought)
         ) {
             $flatButtons[] = ['text' => $buttonValues['increase_config_volume'], 'callback_data' => "increaseAVolume{$id}"];
@@ -467,6 +474,7 @@ function getOrderDetailKeys($from_id, $id, $offset = 0){
         if (
             ($botState['sellState'] ?? "off") == "on" &&
             ($botState['increaseTimeState'] ?? "off") == "on" &&
+            $canExtendTime &&
             ($price != 0 || $agentBought)
         ) {
             $flatButtons[] = ['text' => $buttonValues['increase_config_days'], 'callback_data' => "increaseADay{$id}"];

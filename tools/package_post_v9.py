@@ -79,7 +79,7 @@ NEW_RUNTIME_MEMBERS = ("pay/checkout.php", "settings/cronRunner.php", "src/Finan
                        "src/Finance/RecoveryTransport.php", "src/Finance/WalletAdjustments.php", "src/Finance/WalletTransferFlow.php",
                        "src/Subscription/GiftBatch.php", "src/Subscription/DirectGift.php",
                        "src/Panel/PasarGuard.php", "src/Panel/ProviderStorage.php",
-                       "src/Panel/ProviderRuntime.php", "src/Panel/ProviderAdmin.php",
+                       "src/Panel/ProviderRuntime.php", "src/Panel/ProviderImport.php", "src/Panel/ProviderAdmin.php",
                        "src/Subscription/ServerDisplaySettings.php",
                        "src/Admin/ManagementFlow.php", "src/Admin/ServerWizard.php",
                        "src/Plans/Wizard.php", "src/Panel/ServiceLifecycle.php",
