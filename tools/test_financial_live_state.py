@@ -16,11 +16,15 @@ import test_unified_unlimited_renewal as renewal
 ROOT=Path(__file__).resolve().parents[1]
 DB=purchase.SIDE[1]
 BASE='c9959811e264b5a8728f6a44376cb69c9a89b7f4'
+ABSENT_DISCOUNT_REGRESSION='88f8ebfb1c10cab9b30782f8a165fbde08c35ce2'
 DRIVER=renewal.PHP.replace("$botState=['renewAutoState'=>$spec['enabled']??'on'];",
     "$botState=['renewAutoState'=>$spec['enabled']??'on','agencyPlanDiscount'=>$spec['plan_discount']??'off'];")
 DRIVER=DRIVER.replace(" } elseif($spec['action']==='changes'){",r""" } elseif($spec['action']==='baseline_reserve'){
   require __DIR__.'/baseline-reserve.php';$botState['agencyPlanDiscount']='on';
   $out=achbotAutoRenewReserveBaseline($connection,731,1001);
+ } elseif($spec['action']==='baseline_absent_reserve'){
+  require __DIR__.'/baseline-absent-reserve.php';
+  $out=achbotAutoRenewReserveAbsentBaseline($connection,731,1001);
  } elseif($spec['action']==='peer_origin'){
   $connection->begin_transaction();$account=null;
   $identity=['remote_created_at'=>'2026-10-26T05:00:00.123456Z','remote_username'=>'unlimited_quota_user'];
@@ -93,6 +97,9 @@ def main():
    begin=old.index(b'function achbotAutoRenewReserve(');end=old.index(b'\n}\n',begin)+3
    part=b'<?php\n'+old[begin:end]
    (work/'baseline-reserve.php').write_bytes(part.replace(b'achbotAutoRenewReserve(',b'achbotAutoRenewReserveBaseline('))
+   absent_old=subprocess.check_output(['git','show',ABSENT_DISCOUNT_REGRESSION+':src/Finance/AutomaticRenewal.php'],cwd=ROOT)
+   begin=absent_old.index(b'function achbotAutoRenewReserve(');end=absent_old.index(b'\n}\n',begin)+3
+   (work/'baseline-absent-reserve.php').write_bytes(b'<?php\n'+absent_old[begin:end].replace(b'achbotAutoRenewReserve(',b'achbotAutoRenewReserveAbsentBaseline('))
    oldcore=subprocess.check_output(['git','show',BASE+':src/Purchase/Core.php'],cwd=ROOT)
    begin=oldcore.index(b'    function achbotSupportsPaymentSubject(');end=oldcore.index(b'\n    }\n}',begin)+6
    (work/'baseline-subject.php').write_bytes(b'<?php\n'+oldcore[begin:end].replace(b'achbotSupportsPaymentSubject(',b'achbotSupportsPaymentSubjectBaseline('))
@@ -143,15 +150,30 @@ def main():
         sql("SELECT price,state FROM pays ORDER BY id DESC LIMIT 1")==str(charged)+'\tpaid_with_wallet'and
         int(sql("SELECT COUNT(*) FROM pays"))==before+1,
         provider+'_native_discount_case_'+str(n)+'_exact_net_price_and_debt_preservation')
+   for index,(label,stored)in enumerate([('NULL','NULL'),('empty',"''")],20):
+    low();sql("UPDATE users SET wallet=1000,is_agent=1,discount_percent="+stored+
+       " WHERE userid=1001;UPDATE orders_list SET notif=1,autoRenew='on',expire_date="+str(1700000000+index)+" WHERE id=731")
+    before=money();start=len(writes());out=call('baseline_absent_reserve')
+    yes(out['status']=='invalid_discount'and money()==before and len(writes())==start,
+        provider+'_archived_absent_'+label+'_agent_configuration_RED_refuses_valid_base_price_renewal')
+    count_before=int(sql("SELECT COUNT(*) FROM pays"));call('sweep')
+    yes(sql("SELECT wallet FROM users WHERE userid=1001")=='863'and
+        sql("SELECT price,state FROM pays ORDER BY id DESC LIMIT 1")=='137\tpaid_with_wallet'and
+        sql("SELECT price_toman,stage FROM automatic_renewal_attempts ORDER BY id DESC LIMIT 1")=='137\tdone'and
+        sql("SELECT amount FROM increase_order ORDER BY id DESC LIMIT 1")=='137'and
+        int(sql("SELECT COUNT(*) FROM pays"))==count_before+1 and
+        sql("SELECT discount_percent IS NULL,CHAR_LENGTH(discount_percent) FROM users WHERE userid=1001")==('1\tNULL'if label=='NULL'else'0\t0'),
+        provider+'_actual_native_absent_'+label+'_agent_configuration_keeps_exact_base_price_and_one_debit')
    low();sql("UPDATE users SET wallet=102,is_agent=1,discount_percent='"+json.dumps(discount)+
        "' WHERE userid=1001;UPDATE orders_list SET notif=1,autoRenew='on',expire_date=1700000010 WHERE id=731")
    before=money();start=len(writes());call('sweep',plan_discount='off')
    yes(money()==before and len(writes())==start and sql("SELECT autoRenew FROM orders_list WHERE id=731")=='off',
        provider+'_discounted_insufficient_balance_no_claim_or_native_write')
-   low();sql("UPDATE users SET wallet=1000,is_agent=1,discount_percent='{\"normal\":101}' WHERE userid=1001;"
-       "UPDATE orders_list SET autoRenew='on' WHERE id=731")
-   before=money();start=len(writes());call('sweep')
-   yes(money()==before and len(writes())==start,provider+'_invalid_discount_no_overcharge_or_native_write')
+   for label,configured in [('above100','{\"normal\":101}'),('negative','{\"normal\":-1}'),('malformed','{'),('explicit_null','null')]:
+    low();sql("UPDATE users SET wallet=1000,is_agent=1,discount_percent='"+configured+"' WHERE userid=1001;"
+        "UPDATE orders_list SET autoRenew='on' WHERE id=731")
+    before=money();start=len(writes());call('sweep')
+    yes(money()==before and len(writes())==start,provider+'_invalid_discount_'+label+'_no_overcharge_or_native_write')
    # A second customer's ordinary imported reference: no exclusive-owner setup.
    sql("UPDATE users SET is_agent=0 WHERE userid=1001;"
        "INSERT INTO orders_list(id,userid,token,transid,fileid,server_id,inbound_id,remark,uuid,protocol,"
@@ -227,7 +249,8 @@ def main():
    yes(sql("SELECT SUM(price) FROM pays WHERE user_id=2001 AND state IN('paid','approved','auto_cart_approved')")=='100',
        provider+'_receipt_definition_preserved_without_wallet_spend_duplication')
  report=dict(complete=True,cases=len(checks),checks=checks,native_two_provider=True,
-    agent_discount=True,own_order_only=True,fresh_addon_eligibility=True,statistics_compatibility=True,
+    agent_discount=True,absent_agent_discount_configuration_compatible=True,
+    explicit_invalid_agent_discount_rejected=True,own_order_only=True,fresh_addon_eligibility=True,statistics_compatibility=True,
     external_requests=0,production_mutations=0)
  if args.report:args.report.write_text(json.dumps(report,indent=2)+'\n')
  print(json.dumps({k:v for k,v in report.items()if k!='checks'}))
