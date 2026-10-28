@@ -21,6 +21,7 @@ $from_id=(int)($spec['actor']??1001);$admin=9001;$botUrl='https://bot.example.in
 $q=$connection->prepare('SELECT * FROM users WHERE userid=?');$q->bind_param('i',$from_id);$q->execute();$userInfo=$q->get_result()->fetch_assoc()??['step'=>'none','isAdmin'=>0,'is_agent'=>0,'freetrial'=>null];$q->close();
 $botState=array_fill_keys(['renewAutoState','sellState','renewAccountState','switchLocationState','increaseVolumeState','increaseTimeState','renewConfigLinkState','updateConfigLinkState','qrConfigState','qrSubState','subLinkState','configLinkState'],'on');
 $botState['plandelkhahState']='off';$botState['agencyPlanDiscount']='off';
+$botState['renewAutoState']=$spec['renew_auto_state']??'on';
 $data=$spec['data']??'';$text='';$message_id=1;$cancelKey='{}';$removeKeyboard='{}';$time=time();
 $GLOBALS['response_emitted']=false;register_shutdown_function(static function(){if(!$GLOBALS['response_emitted'])echo json_encode(['out'=>$GLOBALS['out']??$GLOBALS['events'],'reads'=>$GLOBALS['reads'],'presentations'=>$GLOBALS['presentations']],JSON_THROW_ON_ERROR);});
 $GLOBALS['reads']=0;$GLOBALS['presentations']=0;$GLOBALS['events']=[];
@@ -260,7 +261,26 @@ echo json_encode($out,JSON_THROW_ON_ERROR);
       yes((toggle in keys)==(fileid>0 and eligible) and (plan_callback in keys)==(op=='admin' or eligible),
           provider+'_'+op+'_file'+str(fileid)+'_amount'+str(amount)+'_import'+str(imported)+'_automatic_renewal_and_familiar_plan_action_policy')
       if op=='admin':yes('changePlan_91'in keys and 'changeFileId_91_2'not in keys,provider+'_admin_preserves_familiar_common_plan_selector_'+str(fileid)+'_'+str(amount)+'_'+str(imported))
-   sql("DELETE FROM setting WHERE type='ACHBOT_SERVICE_ORIGIN:91';UPDATE orders_list SET fileid=7,amount=100 WHERE id=91")
+   sql("DELETE FROM setting WHERE type='ACHBOT_SERVICE_ORIGIN:91';UPDATE orders_list SET fileid=7,amount=100,autoRenew='on' WHERE id=91")
+   for op in ['view','admin']:
+    toggle='adminToggleAutoRenew91' if op=='admin' else 'toggleAutoRenew91'
+    enabled=call(op,actor=9001 if op=='admin' else 1001,remote=finite)['out']['keyboard']
+    original_label=next(button['text'] for row in json.loads(enabled)['inline_keyboard'] for button in row if button.get('callback_data')==toggle)
+    for label,active,global_state,remote in [
+     ('retired_plan',0,'on',finite),
+     ('global_off',1,'off',finite),
+     ('unavailable_observation',1,'on',None),
+     ('retired_global_off_unavailable',0,'off',None),
+    ]:
+     sql('UPDATE server_plans SET active='+str(active)+' WHERE id=7')
+     for consent in ['on','off']:
+      sql("UPDATE orders_list SET autoRenew='"+consent+"' WHERE id=91")
+      keys=call(op,actor=9001 if op=='admin' else 1001,remote=remote,renew_auto_state=global_state)['out']['keyboard']
+      buttons=[button for row in json.loads(keys)['inline_keyboard'] for button in row if button.get('callback_data')==toggle]
+      yes((len(buttons)==1 and buttons[0]['text']==original_label) if consent=='on' else buttons==[],
+          provider+'_'+op+'_'+label+'_'+consent+'_existing_consent_withdrawal_visible_without_enabling_ineligible_renewal')
+    sql("UPDATE server_plans SET active=1 WHERE id=7;UPDATE orders_list SET autoRenew='on' WHERE id=91")
+   sql("UPDATE orders_list SET autoRenew='off' WHERE id=91")
    for unlimited in [None,0]:
     remote=dict(finite,data_limit=unlimited,expire=unlimited)
     rendered=call('view',remote=remote)['out']
@@ -400,7 +420,7 @@ echo json_encode($out,JSON_THROW_ON_ERROR);
   for name,state,manual,denied,rate,expected in cases:
    out=call('admission',state=state,manual=manual,denied=denied,rate=rate)
    yes(out['out'] is expected,name+'_same_checkout_menu_admission')
- result={'complete':True,'cases':len(checks),'checks':checks,'actual_php':True,'native_disposable_mariadb':True,'canonical_catalog_bindings':True,'real_JDF_no_date_stubs':True,'fresh_each_render_same_process':True,'same_packet_observation_and_presentation':True,'imported_actions_hide_ineligible_autorenew':True,'genuine_import_origin_writer_fixture':True,'actual_service_unit_helpers':True,'native_plan_admission_seam':'controlled_read_only_SQL_fixture','actual_native_plan_eligibility_checked_here':False,'actual_URL_import_checked_here':False,'unlimited_actions_hide_unsupported_relative_changes':True,'native_HTTP_count_checked_here':False,'actual_composed_ASCII_Jalali_Tehran_proofs':date_proofs,'baseline_date_ref':date_baseline_ref,'baseline_date_jdf_sha256':hashlib.sha256(archived_jdf).hexdigest(),'baseline_dates_already_ASCII':True,'baseline_date_RED':False,'archived_warning_toggle_RED':baseline_red,'archived_warning_toggle_ref':archived_ref,'archived_warning_toggle_sha256':hashlib.sha256(archived_toggle.encode()).hexdigest(),'external_provider_calls':0,'production_mutations':0}
+ result={'complete':True,'cases':len(checks),'checks':checks,'actual_php':True,'native_disposable_mariadb':True,'canonical_catalog_bindings':True,'real_JDF_no_date_stubs':True,'fresh_each_render_same_process':True,'same_packet_observation_and_presentation':True,'imported_actions_hide_ineligible_autorenew':True,'existing_consent_withdrawal_visible_when_plan_global_or_observation_unavailable':True,'genuine_import_origin_writer_fixture':True,'actual_service_unit_helpers':True,'native_plan_admission_seam':'controlled_read_only_SQL_fixture','actual_native_plan_eligibility_checked_here':False,'actual_URL_import_checked_here':False,'unlimited_actions_hide_unsupported_relative_changes':True,'native_HTTP_count_checked_here':False,'actual_composed_ASCII_Jalali_Tehran_proofs':date_proofs,'baseline_date_ref':date_baseline_ref,'baseline_date_jdf_sha256':hashlib.sha256(archived_jdf).hexdigest(),'baseline_dates_already_ASCII':True,'baseline_date_RED':False,'archived_warning_toggle_RED':baseline_red,'archived_warning_toggle_ref':archived_ref,'archived_warning_toggle_sha256':hashlib.sha256(archived_toggle.encode()).hexdigest(),'external_provider_calls':0,'production_mutations':0}
  if a.report:a.report.write_text(json.dumps(result,ensure_ascii=False,indent=2)+'\n')
  print(json.dumps(result,ensure_ascii=False))
 if __name__=='__main__':main()

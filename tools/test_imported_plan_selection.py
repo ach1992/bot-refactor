@@ -12,7 +12,7 @@ import test_unified_existing_subscriptions as imports
 
 ROOT=Path(__file__).resolve().parents[1]
 DB=purchase.SIDE[1]
-DRIVER=imports.PHP.replace(" } elseif($op==='copy'){", """ } elseif($op==='toggle'){
+DRIVER=imports.PHP.replace("$botState['rewardChannel']='';", "$botState['rewardChannel']='';$botState['renewAutoState']=$spec['renew_auto_state']??'on';",1).replace(" } elseif($op==='copy'){", """ } elseif($op==='toggle'){
   require __DIR__.'/consent-source.php';
  } elseif($op==='admin_view'){
   require_once $root.'/src/Subscription/AccountDetails.php';
@@ -219,13 +219,46 @@ def main():
             call('toggle',data='toggleAutoRenew'+str(oid))
             yes(db(f'SELECT autoRenew,amount FROM orders_list WHERE id={oid}')=='on\t0' and
                 finances()==before and len(writes())==remote,provider+'_real_config_route_enables_import_consent_without_debit_or_paid_rewrite')
+            consent_labels={}
+            for op,actor,callback in [('view',1001,'toggleAutoRenew'),('admin_view',9001,'adminToggleAutoRenew')]:
+                screen=call(op,actor=actor,owner=1001,order=oid)['out']
+                consent_labels[op]=next(button['text']for row in json.loads(screen['keyboard'])['inline_keyboard']
+                    for button in row if button.get('callback_data')==callback+str(oid))
             db("UPDATE server_plans SET active=0 WHERE id=7")
+            for op,actor,callback in [('view',1001,'toggleAutoRenew'),('admin_view',9001,'adminToggleAutoRenew')]:
+                before=snapshot();remote=len(writes())
+                screen=call(op,actor=actor,owner=1001,order=oid)['out']
+                shown=[button for row in json.loads(screen['keyboard'])['inline_keyboard']
+                    for button in row if button.get('callback_data')==callback+str(oid)]
+                yes(len(shown)==1 and shown[0]['text']==consent_labels[op] and
+                    snapshot()==before and len(writes())==remote,
+                    provider+'_'+op+'_actual_retired_plan_screen_retains_same_consent_withdrawal_button')
+            before=finances();remote=len(writes())
             call('toggle',data='toggleAutoRenew'+str(oid))
-            yes(db(f'SELECT autoRenew FROM orders_list WHERE id={oid}')=='off',
+            yes(db(f'SELECT autoRenew FROM orders_list WHERE id={oid}')=='off' and
+                finances()==before and len(writes())==remote,
                 provider+'_owner_can_withdraw_consent_after_plan_is_retired')
             before=snapshot();call('toggle',data='toggleAutoRenew'+str(oid))
             yes(snapshot()==before,provider+'_retired_selected_plan_cannot_reenable_automatic_renewal')
             db("UPDATE server_plans SET active=1 WHERE id=7")
+            for op,actor,callback in [('view',1001,'toggleAutoRenew'),('admin_view',9001,'adminToggleAutoRenew')]:
+                call('toggle',actor=actor,data=callback+str(oid))
+                before=snapshot();remote=len(writes())
+                screen=call(op,actor=actor,owner=1001,order=oid,renew_auto_state='off')['out']
+                shown=[button for row in json.loads(screen['keyboard'])['inline_keyboard']
+                    for button in row if button.get('callback_data')==callback+str(oid)]
+                yes(db(f'SELECT autoRenew FROM orders_list WHERE id={oid}')=='on' and len(shown)==1 and
+                    shown[0]['text']==consent_labels[op] and snapshot()==before and len(writes())==remote,
+                    provider+'_'+op+'_actual_global_off_screen_retains_same_withdrawal_button')
+                before=finances();remote=len(writes())
+                call('toggle',actor=actor,data=callback+str(oid),renew_auto_state='off')
+                yes(db(f'SELECT autoRenew,amount FROM orders_list WHERE id={oid}')=='off\t0' and
+                    finances()==before and len(writes())==remote,
+                    provider+'_'+op+'_real_controller_withdraws_global_off_consent_without_financial_or_native_effect')
+                before=snapshot();remote=len(writes())
+                call('toggle',actor=actor,data=callback+str(oid),renew_auto_state='off')
+                yes(snapshot()==before and len(writes())==remote,
+                    provider+'_'+op+'_global_off_cannot_reenable_automatic_renewal')
             before=snapshot();remote=len(writes())
             db("CREATE TRIGGER owned_plan_update_reject BEFORE UPDATE ON orders_list FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='owned fixture rejection'")
             call('extensions',data='confirmChangePlan_'+str(foreign_oid)+'_7',actor=1002)
@@ -243,7 +276,7 @@ def main():
                 provider+'_actual_import_to_plan_confirmation_to_owned_priced_renewal_quote')
     result=dict(complete=True,cases=len(checks),checks=checks,actual_imports=True,
         actual_change_plan_controller=True,actual_config_consent_controller=True,
-        actual_native_provider_eligibility=True,amount0_preserved_before_payment=True,
+        actual_native_provider_eligibility=True,existing_consent_withdrawal_visible_and_controller_checked=True,amount0_preserved_before_payment=True,
         shared_native_different_bot_owners=True,fresh_administrator_common_plan_override=True,revoked_cached_admin_refused=True,production_mutations=0,live_provider_calls=0)
     if args.report:args.report.write_text(json.dumps(result,indent=2,ensure_ascii=False)+'\n')
     print(json.dumps({key:value for key,value in result.items()if key!='checks'}))

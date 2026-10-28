@@ -325,7 +325,10 @@ function getUserOrderDetailKeys($id, $offset = 0){
         ['text' => $buttonValues['change_plan'], 'callback_data' => "changePlan_{$id}"],
     ];
 
-    if (!$uncertain && $actionable && $planActions['paid']!==null && ($botState['renewAutoState'] ?? "off") == "on") {
+    // Existing consent can always be withdrawn from an active local order.
+    // The original eligibility checks still control offering new consent.
+    if ((int)($order['status']??0)===1 && ($autoRenew==='on' ||
+        (!$uncertain && $actionable && $planActions['paid']!==null && ($botState['renewAutoState'] ?? "off") == "on"))) {
         $keyboard[] = [[
             'text' => (($autoRenew ?? 'off') == "on" ? \achbotMessage('subscription.account_details.get_user_order_detail_keys.text.ed76444585') : \achbotMessage('subscription.account_details.get_user_order_detail_keys.text.fb6d00ad8d')),
             'callback_data' => "adminToggleAutoRenew{$order['id']}"
@@ -459,7 +462,10 @@ function getOrderDetailKeys($from_id, $id, $offset = 0){
         ];
     }
 
-    if (!$uncertain && $actionable && $planActions['paid']!==null && ($botState['renewAutoState'] ?? "off") == "on") {
+    // Existing consent can always be withdrawn from an active local order.
+    // The original eligibility checks still control offering new consent.
+    if ((int)($order['status']??0)===1 && ($autoRenew==='on' ||
+        (!$uncertain && $actionable && $planActions['paid']!==null && ($botState['renewAutoState'] ?? "off") == "on"))) {
         $keyboard[] = [[
             'text' => (($autoRenew ?? 'off') == "on" ? \achbotMessage('subscription.account_details.get_user_order_detail_keys.text.ed76444585') : \achbotMessage('subscription.account_details.get_user_order_detail_keys.text.fb6d00ad8d')),
             'callback_data' => "toggleAutoRenew{$id}"
