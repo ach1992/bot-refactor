@@ -136,6 +136,8 @@ def main():
                 {'native_two_provider': True, 'agent_discount': True, 'own_order_only': True, 'fresh_addon_eligibility': True, 'statistics_compatibility': True, 'external_requests': 0, 'production_mutations': 0}),
             ('config_qr_delivery','test_config_qr_delivery.py','cases',17,
                 {'actual_php': True, 'owned_socket_mariadb': True, 'actual_Checkout_dispatch': True, 'actual_sendQrFromLink': True, 'provider_neutral_native_names_both': True, 'actual_PasarGuard_identity_HTTP_here': False, 'archived_route_RED': True, 'unchanged_URI_bytes': True, 'temp_cleanup': True, 'financial_mutations': 0, 'external_requests': 0, 'production_mutations': 0, 'real_telegram_rendering_tested': False}),
+            ('shared_provider_storage','test_post_v9_shared_provider_storage.py','cases',85,
+                {'populated_migration':True,'actual_backup_restore':True,'disposable_socket_mariadb':True,'native_runtime':True,'real_provider_calls':0,'tenant_mutation':False}),
             ('order_schema','test_order_schema_simplification.py','cases',10,
                 {'actual_php':True,'owned_socket_mariadb':True,'populated_migration':True,'previous_writer_RED':True,'production_mutations':0,'external_calls':0}),
             ('management_menus','test_unified_management_menus.py','checks',322,
