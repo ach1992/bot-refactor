@@ -2982,11 +2982,17 @@ def main():
             'review_r7_manual_manualdaysqlstrict_atomic_expiry_and_no_replay',
             'review_r7_manual_manualdaysqlpermissive_atomic_expiry_and_no_replay',
         })
+        required_manual.update({"pinned_addon_unknown_native_refuses_before_claim_or_effect",
+            "bank_scheduler_unknown_native_refuses_before_claim_or_effect"})
         if not (manual.get("complete") and manual.get("cases")>=len(required_manual)
                 and required_manual.issubset(manual.get("scenarios",[]))
                 and manual.get("database")=="owned_socket_only"
                 and manual.get("live_provider_calls")==0
-                and manual.get("production_data_modified") is False):
+                and manual.get("production_data_modified") is False
+                and all(manual.get(flag) is True for flag in (
+                    "current_order_writer_argument_contract", "pinned_addon_fresh_native_baseline",
+                    "unknown_native_pinned_addon_refused", "bank_addon_fresh_native_baseline",
+                    "unknown_native_bank_addon_refused"))):
             raise RuntimeError("Four-network manual crypto payment isolation incomplete")
         # PR #66 independent reviewer R1–R6: actual financial/purchase PHP
         # helpers and original MariaDB, not author-only approval route doubles.
