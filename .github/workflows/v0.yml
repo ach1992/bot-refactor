@@ -104,8 +104,10 @@ jobs:
             cp "migrations/post-v9/${id}.sql" "$RUNNER_TEMP/achbot-current/${id}.sql"
             (cd "$RUNNER_TEMP/achbot-current" && sha256sum "${id}.sql" > "${id}.sha256")
           done
-          cp migrations/post-v9/011_provider_identity.sql "$RUNNER_TEMP/achbot-current/011_provider_identity.sql"
-          (cd "$RUNNER_TEMP/achbot-current" && sha256sum 011_provider_identity.sql > 011_provider_identity.sha256)
+          for id in 011_provider_identity 012_shared_provider_storage 013_remove_obsolete_order_columns; do
+            cp "migrations/post-v9/${id}.sql" "$RUNNER_TEMP/achbot-current/${id}.sql"
+            (cd "$RUNNER_TEMP/achbot-current" && sha256sum "${id}.sql" > "${id}.sha256")
+          done
           mkdir -p "$RUNNER_TEMP/achbot-current/optional-cleanup/tools" "$RUNNER_TEMP/achbot-current/optional-cleanup/migrations/post-v9"
           cp tools/cleanup_post_v9.php "$RUNNER_TEMP/achbot-current/optional-cleanup/tools/"
           cp migrations/post-v9/010_cleanup_manifest.json "$RUNNER_TEMP/achbot-current/optional-cleanup/migrations/post-v9/"
@@ -120,7 +122,7 @@ jobs:
           printf '## AChBot post-V9 current provider acceptance\n\n' >> "$GITHUB_STEP_SUMMARY"
           printf 'New candidate HEAD: `%s`\n\n' "$(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
           printf 'New candidate tree: `%s`\n\n' "$(git rev-parse HEAD^{tree})" >> "$GITHUB_STEP_SUMMARY"
-          printf 'The current exact-candidate runtime ZIP is separately reproducibly verified; source does not modify the frozen 23-table historical V9 schema. Optional 001, 003, 004, 005, 006, revised 007, 008 referral awards 009 bank invoice claim and optional provider011 SQL migrations are distinct checksum-shipped sidecars, never automatically installed. Cleanup010 is a guarded optional tool with its manifest, never an automatic SQL DROP. CI exercises proposed migrations only against isolated disposable MariaDB. Frozen historical V9 source/schema exercised independently at pinned commit 7eb077fd. Source ZIP does NOT apply SQL; separately shipped migrations require independent backup, Owner approval and operator proof. No financial/production deployment approval.\n\n' >> "$GITHUB_STEP_SUMMARY"
+          printf 'The current exact-candidate runtime ZIP is separately reproducibly verified; source does not modify the frozen 23-table historical V9 schema. Optional 001, 003, 004, 005, 006, revised 007, 008 referral awards 009 bank invoice claim provider011, shared-storage012 and obsolete-column013 SQL migrations are distinct checksum-shipped sidecars, never automatically installed. Cleanup010 is a guarded optional tool with its manifest, never an automatic SQL DROP. CI exercises proposed migrations only against isolated disposable MariaDB. Frozen historical V9 source/schema exercised independently at pinned commit 7eb077fd. Source ZIP does NOT apply SQL; separately shipped migrations require independent backup, Owner approval and operator proof. No financial/production deployment approval.\n\n' >> "$GITHUB_STEP_SUMMARY"
           printf '```json\n' >> "$GITHUB_STEP_SUMMARY"
           cat "$RUNNER_TEMP/post-v9-php84.json" >> "$GITHUB_STEP_SUMMARY"
           printf '\n```\n' >> "$GITHUB_STEP_SUMMARY"
