@@ -99,7 +99,11 @@ function achbotAutoRenewReserve(mysqli $db, int $orderId, int $userId): array {
         }
         $amount=$baseAmount;
         if ((int)$users[0]['is_agent']===1) {
-            $discounts=json_decode((string)$users[0]['discount_percent'],true);
+            // Historical agent rows can predate discount configuration. Match
+            // the existing no-configuration price policy without accepting an
+            // explicitly malformed or unsafe configured discount.
+            $rawDiscounts=trim((string)$users[0]['discount_percent']);
+            $discounts=$rawDiscounts===''?[]:json_decode($rawDiscounts,true);
             if (!is_array($discounts)) {
                 $db->rollback(); return ['status'=>'invalid_discount'];
             }
