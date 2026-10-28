@@ -34,9 +34,13 @@ if (is_string($data) && str_starts_with($data,'sConfigUpdate')) {
             \achbotMessage('subscription.config_refresh.message.1d7cb7b50c'));
         return;
     }
+    $complete = true;
     foreach ($presentation['qr_config_links'] as $uri) {
-        sendQrFromLink($uri,\AchBot\Subscription\Presentation\codeLinks([$uri]),
-            '{}',(string)$botUrl,(int)$from_id);
+        $sent = sendQrFromLink($uri,\AchBot\Subscription\Presentation\configQrText($uri),
+            '{}',(string)$botUrl,(int)$from_id,'',null,
+            \AchBot\Subscription\Presentation\configQrCaption($uri,$presentation));
+        $complete = $sent && $complete;
     }
+    if (!$complete) alert($mainValues['config_not_found'],true);
     if ($presentation['notice_html']!=='') sendMessage($presentation['notice_html']);
 }

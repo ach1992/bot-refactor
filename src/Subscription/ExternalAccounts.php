@@ -8,7 +8,7 @@ require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
 
 
 
-/** A subscription credential is proved by native token AND an explicit configured origin. */
+/** Parse a subscription alias; native bearer proof establishes the account. */
 function achbotExternalSubscriptionParts(string $url): ?array {
     $p=parse_url(trim($url));
     if (!$p || !in_array($p['scheme']??'',['http','https'],true) || empty($p['host']) ||
@@ -48,12 +48,6 @@ function achbotExternalImportProof(array $server,object $remote,string $input): 
     if (str_starts_with($native,'/')) $native=rtrim((string)$server['panel_url'],'/').$native;
     $known=achbotExternalSubscriptionParts($native);
     if (!$known || !hash_equals($known['token'],$supplied['token'])) return null;
-    $allowed=[[$known['origin'],$known['prefix']]];
-    foreach (array_merge([(string)$server['panel_url']],array_filter(array_map('trim',explode(',',(string)($server['sub_links']??''))))) as $base) {
-        $parts=achbotExternalSubscriptionParts(rtrim($base,'/').'/sub/'.rawurlencode($known['token']));
-        if ($parts) $allowed[]=[$parts['origin'],$parts['prefix']];
-    }
-    if (!in_array([$supplied['origin'],$supplied['prefix']],$allowed,true)) return null;
     return ['token'=>$known['token'],'expiry'=>$observation['expire'],
         'status'=>$observation['status'],'subscription_url'=>$native,'observation'=>$observation];
 }
