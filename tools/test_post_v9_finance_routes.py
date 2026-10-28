@@ -303,7 +303,16 @@ function createServerAccount(...$args) {
 function getMarzbanUser($serverId,$remark){
     $GLOBALS['events'][]=['name'=>'marzban_readback','username'=>$remark];
     $found=$GLOBALS['remote_accounts'][(string)$remark]??null;
-    return $found ? (object)$found : null;
+    if ($found) return (object)$found;
+    // Only explicitly seeded existing accounts delegate to the actual native
+    // reader and this fixture's controlled curl state. A failed/uncertain
+    // CREATE still has no account to read back and must remain unconfirmed.
+    if ((int)$serverId===2 && in_array((string)$remark,
+            $GLOBALS['spec']['existing_native_accounts']??[],true)) {
+        require_once $GLOBALS['root'].'/src/Panel/Accounts.php';
+        return \AchBot\Panel\Accounts\getMarzbanUser($serverId,$remark);
+    }
+    return null;
 }
 if (is_array($GLOBALS['scripted_marzban_creates'])) {
     function buildLinksAndSendQr(...$args) {
@@ -2733,6 +2742,19 @@ def main():
                 f"SELECT id FROM pays WHERE hash_id='{name}'").strip())
             wallet_before=sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip()
             audit_before=int(sql(work,env,'SELECT COUNT(*) FROM increase_order'))
+            if label=='verified':
+                # The creation-only seam must not invent a native account.
+                # Without an explicitly seeded existing-account baseline,
+                # fresh admission refuses before claim, HTTP or SQL effects.
+                before=snapshot(work,env)
+                unknown=run_php(work,env,stage,dict(route='do_action',get={},
+                    pay_row_id=payid,provider=provider))
+                assert [e['result'] for e in unknown['events'] if e['name']=='do_action_result']==[False]
+                assert not unknown['network_calls'],unknown
+                verify_unchanged(work,env,before,'unknown_native_addon_admission')
+                assert int(sql(work,env,'SELECT COUNT(*) FROM increase_order'))==audit_before
+                records.append(dict(case='fresh_addon_unknown_native_refused_before_claim_or_effect',
+                                    pass_=True,real_provider_requests=0))
             if mode=='sql_fault':
                 sql(work,env,"CREATE TRIGGER achbot_r7_hosted_fail BEFORE UPDATE "
                     "ON orders_list FOR EACH ROW SIGNAL SQLSTATE '45000' "
@@ -2741,6 +2763,7 @@ def main():
             try:
                 result=run_php(work,env,stage,dict(route='do_action',get={},
                     pay_row_id=payid,provider=provider,
+                    existing_native_accounts=['syntheticMarzban'],
                     marzban_edit_drift_order_id=order_id if mode=='stale' else 0,
                     mysqli_report_off=nonthrowing,
                     expect_local_error=not settles))
@@ -2748,6 +2771,7 @@ def main():
                 if mode=='sql_fault':
                     sql(work,env,'DROP TRIGGER achbot_r7_hosted_fail')
             completed=int(clock.time())
+            assert any('/api/user/syntheticMarzban' in url for url in result['network_calls']),result
             outcome=[e['result'] for e in result['events'] if e['name']=='do_action_result']
             expected_result='delivered' if settles else 'ambiguous'
             assert outcome==[expected_result],(name,outcome,result['events'])
@@ -4505,6 +4529,7 @@ def main():
                                 pass_=True,external_requests=0))
     report={'complete':True,'cases':len(records),'schema_tables':23, 'current_schema_tables':26,
        'shared_payment_attempt_ledger_tested':True,
+       'fresh_addon_existing_native_source':True,'unknown_native_addon_admission_refused':True,
        'original_mariadb_socket_only':True,'real_provider_requests':0,
        'synthetic_payment_spy':True,'operator_finance_acceptance':False,
        'scenarios':records}
