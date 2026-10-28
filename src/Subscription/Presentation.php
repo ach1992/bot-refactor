@@ -24,6 +24,23 @@ function codeLinks(array $links): string {
     }, $links));
 }
 
+/** A short native display name accompanies its QR; the URI remains unchanged. */
+function configQrCaption(string $uri, array $presentation = []): string {
+    $record = nativeLinks([$uri])[0] ?? [];
+    $name = $presentation['qr_config_names'][$uri] ?? ($record['name'] ?? '');
+    if (!is_string($name) || trim($name) === '') $name = strtoupper($record['protocol'] ?? '');
+    // Keep the photo caption small even when an encoded URI fragment is long.
+    // Do not shorten, decode or reconstruct the separate copyable URI.
+    if (preg_match('/^.{0,200}/us', $name, $match) === 1) {
+        $name = $match[0] . ($match[0] !== $name ? '…' : '');
+    } else $name = strtoupper($record['protocol'] ?? '');
+    return escape($name);
+}
+
+function configQrText(string $uri): string {
+    return '<pre><code>' . escape($uri) . '</code></pre>';
+}
+
 /** Parse native links/links_base64 without generating or rewriting a URI.
  * Tags exist only when an adapter supplies them; a display name is not a tag.
  */
@@ -127,7 +144,7 @@ function present(string $provider, array $native, array $botState, array $option
     $result = [
         'links' => [], 'config_html' => '', 'subscription_url' => '',
         'subscription_html' => '', 'backup_html' => '', 'qr_link' => '',
-        'qr_config_links' => [], 'missing_links' => false,
+        'qr_config_links' => [], 'qr_config_names' => [], 'missing_links' => false,
         'selection_missing' => false, 'reason' => '',
         'notice_html' => '', 'limited' => false,
     ];
@@ -243,6 +260,11 @@ function present(string $provider, array $native, array $botState, array $option
         elseif ($policy['qr'] === 'first_config') $result['qr_link'] = $configsVisible ? ($selected[0] ?? '') : '';
     }
     if (strlen($result['qr_link']) > 2048) { $result['qr_link'] = ''; $result['limited'] = true; }
+    foreach (nativeLinks($native['links'] ?? []) as $record) {
+        if (in_array($record['uri'], $result['qr_config_links'], true) && $record['name'] !== '' &&
+            !isset($result['qr_config_names'][$record['uri']]))
+            $result['qr_config_names'][$record['uri']] = $record['name'];
+    }
     $result['links'] = $configsVisible ? $selected : [];
     $result['config_html'] = codeLinks($result['links']);
     $result['subscription_url'] = $visibleUrl;

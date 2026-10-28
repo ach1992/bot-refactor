@@ -448,6 +448,7 @@ return [
         // presentation.present
         'presentation.present.text.d60293ba07' => '🔎 لینک‌های اتصال این اشتراک در حال حاضر در دسترس نیست؛ از بخش اشتراک‌های من دوباره بررسی کنید.',
         'presentation.present.text.3ff0456031' => '' . "\n" . '🔁 لینک کمکی اشتراک:' . "\n" . '',
+        'presentation.config_qr_delivery_unconfirmed' => '⚠️ ارسال کامل QR یا متن کانفیگ تأیید نشد. پیام‌های دریافت‌شده را بررسی کنید و در صورت نیاز دوباره دکمهٔ QR کانفیگ را بزنید.',
         'presentation.present.text.6b058a11c6' => 'ℹ️ تعداد یا طول لینک‌ها از ظرفیت نمایش بیشتر است؛ برای دریافت همه تنظیمات از لینک اشتراک استفاده کنید یا با پشتیبانی تماس بگیرید.',
         // presentation.config_message
         'presentation.config_message.text.2953f9a4ad' => '' . "\n" . '🔌 لینک تکی کانفیگ:' . "\n" . 'CONNECT-LINK' . "\n" . '',

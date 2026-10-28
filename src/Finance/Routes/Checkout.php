@@ -245,23 +245,18 @@ if (preg_match('/^showQr(Sub|Config)(\d+)/', $data, $match)) {
         $vraylink = $presentation['qr_config_links'];
         if (!$vraylink) {alert(\achbotMessage('payment.checkout.alert.baff5f2488'),true);return;}
 
+        $complete = true;
         foreach ($vraylink as $vray_link) {
-            $file = RandomString() . ".png";
-            $ecc = 'L';
-            $pixel_Size = 11;
-            $frame_Size = 4;
-
-            QRcode::png($vray_link, $file, $ecc, $pixel_Size, $frame_Size);
-
-            sendPhoto(
-                $botUrl . $file,
-                ($acc_text ?? ''),
-                json_encode(['inline_keyboard' => [[['text' => $buttonValues['back_to_main'], 'callback_data' => "mainMenu"]]]]),
-                "HTML",
-                $from_id
+            $sent = sendQrFromLink(
+                $vray_link,
+                \AchBot\Subscription\Presentation\configQrText($vray_link),
+                '{}', (string)$botUrl, (int)$from_id, '', null,
+                \AchBot\Subscription\Presentation\configQrCaption($vray_link, $presentation)
             );
-            unlink($file);
+            $complete = $sent && $complete;
         }
+        if (!$complete) alert(\achbotMessage('subscription.presentation.config_qr_delivery_unconfirmed'), true);
+        if (($presentation['notice_html'] ?? '') !== '') sendMessage($presentation['notice_html'], null, 'HTML');
     }
 }
 

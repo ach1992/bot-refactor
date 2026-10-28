@@ -161,7 +161,8 @@ if (!function_exists('sendQrFromLink')) {
         string $botUrl,
         int $uid,
         string $qrPublicPrefix = '',
-        ?string $qrFsDir = null
+        ?string $qrFsDir = null,
+        ?string $photoCaption = null
     ): bool {
         $qrlibCandidates = [
             __DIR__ . '/phpqrcode/qrlib.php',
@@ -194,7 +195,7 @@ if (!function_exists('sendQrFromLink')) {
                 $photo = class_exists('CURLFile')
                     ? new CURLFile($fsPath, 'image/png', $file)
                     : $fsPath;
-                $resPhoto = sendPhoto($photo, null, null, null, $uid);
+                $resPhoto = sendPhoto($photo, $photoCaption, null, $photoCaption === null ? null : 'HTML', $uid);
                 $photoConfirmed = is_object($resPhoto) && ($resPhoto->ok ?? false) === true;
             } catch (Throwable $error) {
                 // A network error says nothing about whether Telegram
