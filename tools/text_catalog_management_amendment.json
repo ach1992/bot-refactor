@@ -710,9 +710,9 @@
     },
     "admin_settings.management.server_api_key": {
       "audience": "admin",
-      "entry": "🔑 API key پاسارگارد را وارد کنید؛ فقط خود کلید، بدون Bearer یا X-Api-Key.\nنسخه پشتیبانی‌شده 5.5.1 است. کلید باید دسترسی مدیریت کاربران و خواندن Groups داشته باشد. پیام کلید پس از دریافت حذف می‌شود:",
+      "entry": "🔑 API key پاسارگارد را وارد کنید؛ فقط خود کلید، بدون Bearer یا X-Api-Key.\nنسخه پشتیبانی‌شده 5.5.1 است. کلید باید دسترسی مدیریت کاربران و خواندن Groups داشته باشد.",
       "facade": true,
-      "reason": "Owner-authorized unified server/plan management and shared service-state UI, 2026-10-28.",
+      "reason": "Owner decision 2026-10-28: preserve incoming administrator messages and allow confirmed server removal with dependencies; copy must describe the implemented behavior.",
       "source_paths": [
         "src/Admin/ManagementFlow.php"
       ]
@@ -764,9 +764,9 @@
     },
     "admin_settings.management.server_delete_confirm": {
       "audience": "admin",
-      "entry": "🗑 این سرور از فهرست حذف شود؟ فقط سروری که هیچ پلن، سفارش یا سابقه پرداخت وابسته ندارد حذف می‌شود. این کار حسابی را در پنل حذف نمی‌کند.",
+      "entry": "🗑 این سرور و اطلاعات اتصال آن از ربات حذف شود؟\nپلن‌ها، سفارش‌ها و سوابق پرداخت وابسته پاک نمی‌شوند، اما ربات دیگر از طریق این سرور به اشتراک‌های آن دسترسی نخواهد داشت. حساب‌های داخل پنل حذف نمی‌شوند.",
       "facade": true,
-      "reason": "Owner-authorized unified server/plan management and shared service-state UI, 2026-10-28.",
+      "reason": "Owner decision 2026-10-28: preserve incoming administrator messages and allow confirmed server removal with dependencies; copy must describe the implemented behavior.",
       "source_paths": [
         "bot.php",
         "src/Admin/ManagementFlow.php"
@@ -821,9 +821,9 @@
     },
     "admin_settings.management.server_password": {
       "audience": "admin",
-      "entry": "🔑 رمز عبور مدیر پنل را وارد کنید. پیام رمز پس از دریافت حذف می‌شود:",
+      "entry": "🔑 رمز عبور مدیر پنل را وارد کنید.",
       "facade": true,
-      "reason": "Owner-authorized unified server/plan management and shared service-state UI, 2026-10-28.",
+      "reason": "Owner decision 2026-10-28: preserve incoming administrator messages and allow confirmed server removal with dependencies; copy must describe the implemented behavior.",
       "source_paths": [
         "src/Admin/ManagementFlow.php"
       ]
@@ -857,9 +857,9 @@
     },
     "admin_settings.management.server_removed": {
       "audience": "admin",
-      "entry": "✅ سرور بدون سابقه وابسته از فهرست حذف شد.",
+      "entry": "✅ سرور از فهرست حذف شد.",
       "facade": true,
-      "reason": "Owner-authorized unified server/plan management and shared service-state UI, 2026-10-28.",
+      "reason": "Owner decision 2026-10-28: preserve incoming administrator messages and allow confirmed server removal with dependencies; copy must describe the implemented behavior.",
       "source_paths": [
         "src/Admin/ManagementFlow.php"
       ]
@@ -941,9 +941,9 @@
     },
     "admin_settings.management.shared_key_notice": {
       "audience": "admin",
-      "entry": "🔑 کلید جدید را ارسال کنید. این تغییر روی همه سرورهای متصل به همین پنل اعمال می‌شود؛ پیام کلید پس از دریافت حذف می‌شود.",
+      "entry": "🔑 کلید جدید را ارسال کنید. این تغییر روی همه سرورهای متصل به همین پنل اعمال می‌شود.",
       "facade": true,
-      "reason": "Owner-authorized unified server/plan management and shared service-state UI, 2026-10-28.",
+      "reason": "Owner decision 2026-10-28: preserve incoming administrator messages and allow confirmed server removal with dependencies; copy must describe the implemented behavior.",
       "source_paths": [
         "src/Panel/ProviderAdmin.php",
         "src/Admin/ManagementFlow.php"
@@ -1121,6 +1121,25 @@
       "source_paths": [
         "src/Subscription/ExternalAccounts.php",
         "src/Subscription/ManualAccounts.php"
+      ]
+    },
+    "subscription.presentation.config_qr_delivery_unconfirmed": {
+      "audience": "user",
+      "entry": "⚠️ ارسال کامل QR یا متن کانفیگ تأیید نشد. پیام‌های دریافت‌شده را بررسی کنید و در صورت نیاز دوباره دکمهٔ QR کانفیگ را بزنید.",
+      "facade": false,
+      "reason": "Owner-approved truthful partial/uncertain config QR delivery feedback, 2026-10-28; no account or payment failure claim and no automatic replay.",
+      "source_paths": [
+        "src/Finance/Routes/Checkout.php",
+        "src/Subscription/ConfigRefresh.php"
+      ]
+    },
+    "subscription.presentation.config_qr_name_suffix": {
+      "audience": "user",
+      "entry": "…",
+      "facade": false,
+      "reason": "Owner-approved editable native config-name truncation marker, 2026-10-28; preserves the exact rendered QR caption and two-catalog boundary.",
+      "source_paths": [
+        "src/Subscription/Presentation.php"
       ]
     }
   },
@@ -1745,6 +1764,32 @@
       "reason": "Unchanged pre-management copy retained as explicit legacy catalog compatibility evidence; the new management journey no longer offers this old control/form.",
       "previous_source_paths": [
         "src/Subscription/ServerDisplaySettings.php"
+      ]
+    },
+    "subscription.account_details.build_admin_protocol_buttons.name.177d6f2a4e": {
+      "entry": {
+        "text": "☑️ {name}",
+        "parameters": [
+          "name"
+        ]
+      },
+      "reason": "Original copy retained as historical catalog evidence after obsolete per-order protocol controls were removed; no compatibility runtime is retained.",
+      "previous_source_paths": [
+        "src/Subscription/AccountDetails.php"
+      ]
+    },
+    "renewal.extensions.alert.96762b5a42": {
+      "entry": "📆 اشتراک شما منقضی شده است. لطفاً آن را تمدید کنید تا بتوانید افزایش حجم دهید.",
+      "reason": "Original wording retained as catalog history after obsolete stored-expiry admission checks were replaced by fresh panel observation.",
+      "previous_source_paths": [
+        "src/Finance/Routes/Extensions.php"
+      ]
+    },
+    "renewal.extensions.alert.f5aab191db": {
+      "entry": "📆 اشتراک شما منقضی شده است. ابتدا آن را تمدید کنید.",
+      "reason": "Original wording retained as catalog history after obsolete stored-expiry admission checks were replaced by fresh panel observation.",
+      "previous_source_paths": [
+        "src/Finance/Routes/Extensions.php"
       ]
     }
   }

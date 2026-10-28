@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Owner revision4: two editable audiences; bounded style and native copy proof."""
 from __future__ import annotations
-import collections, copy, io, json, pathlib, re, socket, subprocess, tarfile, tempfile, time, urllib.error, urllib.request
+import collections, copy, functools, io, json, pathlib, re, socket, subprocess, tarfile, tempfile, time, urllib.error, urllib.request
 ROOT=pathlib.Path(__file__).resolve().parents[1]
 BASE='7faac9b067f8a171e5e26d6aea5aaf9f4088a3e7'
 DIGITS=str.maketrans('\u06f0\u06f1\u06f2\u06f3\u06f4\u06f5\u06f6\u06f7\u06f8\u06f9\u0660\u0661\u0662\u0663\u0664\u0665\u0666\u0667\u0668\u0669','01234567890123456789')
@@ -115,7 +115,7 @@ def reviewed_context_proof(sides,merged,manifest):
 
 MANAGEMENT_BASE='2c0e728dcd71c38e20d176fe2577bc264d3faa1a'
 MANAGEMENT_CONTRACT='docs/post-v9/UNIFIED-SERVICE-MANAGEMENT.md'
-MANAGEMENT_USER_KEYS={'subscription.account_details.auto_renew_update_unverified','subscription.account_deletion.shared_effect_notice','subscription.account_details.status_on_hold','subscription.manual_accounts.import_unverified','subscription.manual_accounts.import_under_review','subscription.manual_accounts.import_completed','renewal.extensions.plan_selection_unavailable','renewal.extensions.plan_selection_review'}
+MANAGEMENT_USER_KEYS={'subscription.account_details.auto_renew_update_unverified','subscription.account_deletion.shared_effect_notice','subscription.account_details.status_on_hold','subscription.manual_accounts.import_unverified','subscription.manual_accounts.import_under_review','subscription.manual_accounts.import_completed','renewal.extensions.plan_selection_unavailable','renewal.extensions.plan_selection_review','subscription.presentation.config_qr_delivery_unconfirmed','subscription.presentation.config_qr_name_suffix'}
 MANAGEMENT_ADMIN_KEYS={'subscription.manual_accounts.customer_not_found','subscription.account_deletion.report'}
 def management_runtime_paths():
     # The package is the shipping source authority, including new draft modules
@@ -133,12 +133,60 @@ def management_baseline_sides():
     return {audience:flatten(json.loads(command('php','-r',decode,input=command(
         'git','show',MANAGEMENT_BASE+':messages/fa/'+audience+'.php'))))
         for audience in ['user','admin']}
+OWNER_FOLLOWUP_BASE='c9959811e264b5a8728f6a44376cb69c9a89b7f4'
+OWNER_FOLLOWUP_RESULT='faa9aa6502a4e24152f1fa6faad7f0ab7921652e'
+@functools.lru_cache(maxsize=None)
+def owner_followup_sides(ref):
+    decode='$s=stream_get_contents(STDIN);$p=strpos($s,"return [");if($p===false)throw new RuntimeException("array_missing");echo json_encode(eval(substr($s,$p)),JSON_THROW_ON_ERROR);'
+    return {audience:flatten(json.loads(command('php','-r',decode,input=command(
+        'git','show',ref+':messages/fa/'+audience+'.php'))))for audience in ['user','admin']}
+def owner_followup(sides,merged,manifest=None):
+    if manifest is None:manifest=json.loads((ROOT/'tools/text_catalog_owner_followup.json').read_text())
+    check(manifest.get('version')==1 and manifest.get('baseline_commit')==OWNER_FOLLOWUP_BASE
+          and manifest.get('result_commit')==OWNER_FOLLOWUP_RESULT
+          and manifest.get('authorization')==MANAGEMENT_CONTRACT,'owner followup identity drift')
+    before_sides=owner_followup_sides(OWNER_FOLLOWUP_BASE);after_sides=owner_followup_sides(OWNER_FOLLOWUP_RESULT)
+    before={**before_sides['user'],**before_sides['admin']};after={**after_sides['user'],**after_sides['admin']}
+    changes=manifest.get('changes',{})
+    expected={key for key in before if before[key]!=after[key]}
+    check(len(expected)==7 and set(changes)==expected,'owner followup exact seven-entry scope drift')
+    for key,entry in before.items():
+        audience='user'if key in before_sides['user']else'admin'
+        check(key in sides[audience] and merged.get(key)==after[key],'owner followup result or audience drift:'+key)
+        if key in expected:
+            record=changes[key]
+            check(record.get('before')==entry and record.get('after')==after[key]
+                  and record.get('audience')==audience and record.get('reason'),'owner followup declaration drift:'+key)
+            check(parameters(entry)==parameters(after[key]),'owner followup template parameter drift:'+key)
+            check(not re.search(r'[\u06f0-\u06f9\u0660-\u0669]',text(after[key])),'owner followup numeric presentation drift:'+key)
+            check(re.findall(r'</?[A-Za-z][^>]*>',text(entry))==re.findall(r'</?[A-Za-z][^>]*>',text(after[key])),
+                  'owner followup markup drift:'+key)
+    return changes
+def owner_followup_negative_controls(sides,merged):
+    manifest=json.loads((ROOT/'tools/text_catalog_owner_followup.json').read_text())
+    key='provider.provider_admin.handle_provider_admin.message.bf4b28ea45';controls=[]
+    for bad in ['Unapproved rewrite','<b>Unapproved markup</b>',{'text':'Changed {extra}','parameters':['extra']}]:
+        wrong_sides=copy.deepcopy(sides);wrong_sides['admin'][key]=bad
+        wrong_manifest=copy.deepcopy(manifest);wrong_manifest['changes'][key]['after']=bad
+        controls.append((wrong_sides,{**wrong_sides['user'],**wrong_sides['admin']},wrong_manifest))
+    wrong_sides=copy.deepcopy(sides);wrong_sides['user'][key]=wrong_sides['admin'].pop(key)
+    controls.append((wrong_sides,merged,manifest))
+    wrong=copy.deepcopy(manifest);wrong['changes'][key]['before']='Forged old text';controls.append((sides,merged,wrong))
+    wrong=copy.deepcopy(manifest);wrong['changes'][key]['reason']='';controls.append((sides,merged,wrong))
+    wrong_sides=copy.deepcopy(sides);warning='notifications.warnings.msg.804056ecc4';wrong_sides['user'][warning]='Unapproved warning rewrite'
+    controls.append((wrong_sides,{**wrong_sides['user'],**wrong_sides['admin']},manifest))
+    for no,(candidate_sides,candidate_merged,candidate_manifest)in enumerate(controls,1):
+        try:owner_followup(candidate_sides,candidate_merged,candidate_manifest)
+        except AssertionError:continue
+        raise AssertionError('owner followup negative control missed:'+str(no))
+    return len(controls)
 def management_amendment(sides,merged,amendment=None):
     if amendment is None:amendment=json.loads((ROOT/'tools/text_catalog_management_amendment.json').read_text())
     check(amendment.get('version')==1 and amendment.get('baseline_commit')==MANAGEMENT_BASE
           and amendment.get('authorization')==MANAGEMENT_CONTRACT,
           'management amendment identity drift')
     check((ROOT/MANAGEMENT_CONTRACT).is_file(),'management accepted contract missing')
+    followups=owner_followup(sides,merged)
     archived=management_baseline_sides();before={**archived['user'],**archived['admin']}
     check(len(before)==2523,'management baseline key identity drift')
     additions=amendment.get('added_keys',{})
@@ -147,7 +195,7 @@ def management_amendment(sides,merged,amendment=None):
           'management addition scope drift')
     check(set(merged)==set(before)|set(additions),'management catalog extension drift')
     for key,entry in before.items():
-        check(merged[key]==entry,'pre-management copy changed:'+key)
+        check(merged[key]==followups.get(key,{}).get('after',entry),'pre-management copy changed:'+key)
         audience='user'if key in archived['user']else'admin'
         check(key in sides[audience],'pre-management recipient changed:'+key)
     runtime_sources={path:(ROOT/path).read_text()for path in management_runtime_paths()}
@@ -178,7 +226,7 @@ def management_amendment(sides,merged,amendment=None):
     check(orphan==set(retained),'unrecorded/obsolete management legacy copy: '+str(sorted(orphan^set(retained))))
     previous_sources={}
     for key,record in retained.items():
-        check(key in before and record.get('entry')==before[key] and record.get('reason'),
+        check(key in before and record.get('entry')==followups.get(key,{}).get('after',before[key]) and record.get('reason'),
               'retained management legacy baseline drift:'+key)
         paths=record.get('previous_source_paths',[])
         for path in paths:
@@ -260,9 +308,10 @@ def main():
     check(not set(sides['user'])&set(sides['admin']),'duplicate key across audiences')
     merged={**sides['user'],**sides['admin']};management=management_amendment(sides,merged)
     management_controls=management_negative_controls(sides,merged,management)
+    owner_changes=owner_followup(sides,merged);owner_controls=owner_followup_negative_controls(sides,merged)
     management_facades=management_facade_proof(management['added_keys'])
     provider_labels=management_provider_labels()
-    all_merged=merged;merged={k:v for k,v in merged.items()if k not in management['added_keys']};old=baseline()
+    all_merged=merged;merged={k:owner_changes.get(k,{}).get('before',v) for k,v in merged.items()if k not in management['added_keys']};old=baseline()
     chars=sorted({c for entry in[*old.values(),*merged.values()]for c in text(entry)if c.isalpha()})
     glyphs='$r=[];foreach(json_decode(file_get_contents("php://stdin"),true)as$c)if(preg_match("/\\\\p{Extended_Pictographic}/u",$c))$r[]=$c;echo json_encode($r,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);'
     EMOJI_LETTERS.update(json.loads(command('php','-r',glyphs,input=json.dumps(chars).encode())))
@@ -432,5 +481,5 @@ echo json_encode(['violations'=>$violations,'topics'=>count(achbotMessageTopics(
             except urllib.error.HTTPError as error:status=error.code;body=error.read()
             check(status==404 and not body,'direct copy source leaked '+file)
     finally:listener.terminate();listener.wait(timeout=5)
-    print(json.dumps({'status':'PASS','editable_files':2,'current_keys':len(all_merged),'management_added_keys':len(management['added_keys']),'management_retained_legacy_keys':len(management['retained_legacy_keys']),'management_baseline_keys':management['baseline_keys'],'management_negative_controls':management_controls,'management_facade_cases':management_facades,'management_provider_label_cases':provider_labels,'logical_topics':native['topics'],'canonical_binding_paths':native['canonical_binding_paths'],'canonical_binding_entries':native['canonical_binding_entries'],'canonical_binding_negative_controls':native['canonical_binding_negative_controls'],'style_changes':len(changes),'numeric_template_changes':sum('ascii_digits'in v['reasons']for v in changes.values()),'retired_keys':len(retired),'retired_feature_keys':len(feature_retired),'added_keys':len(added),'current_entry_assertions':assertions,'parameter_exception_count':len(param_keys),'adjacent_emoji_violations':0,'emoji_negative_controls':native['emoji_negative_controls'],'audience_admin_diagnostic_cases':len(admin_cases),'audience_customer_cases':len(user_cases),'preserved_shared_fragments':len(fragments),'native_compositions':native['native_compositions'],'semantic_label_icon_cases':native['semantic_label_icon_cases'],'semantic_context_icon_cases':native['semantic_context_icon_cases'],'direct_http_guards':len(guarded),'loader_negative_controls':2,**reviewed},ensure_ascii=False))
+    print(json.dumps({'status':'PASS','editable_files':2,'current_keys':len(all_merged),'management_added_keys':len(management['added_keys']),'management_retained_legacy_keys':len(management['retained_legacy_keys']),'management_baseline_keys':management['baseline_keys'],'management_negative_controls':management_controls,'owner_followup_changes':len(owner_changes),'owner_followup_negative_controls':owner_controls,'management_facade_cases':management_facades,'management_provider_label_cases':provider_labels,'logical_topics':native['topics'],'canonical_binding_paths':native['canonical_binding_paths'],'canonical_binding_entries':native['canonical_binding_entries'],'canonical_binding_negative_controls':native['canonical_binding_negative_controls'],'style_changes':len(changes),'numeric_template_changes':sum('ascii_digits'in v['reasons']for v in changes.values()),'retired_keys':len(retired),'retired_feature_keys':len(feature_retired),'added_keys':len(added),'current_entry_assertions':assertions,'parameter_exception_count':len(param_keys),'adjacent_emoji_violations':0,'emoji_negative_controls':native['emoji_negative_controls'],'audience_admin_diagnostic_cases':len(admin_cases),'audience_customer_cases':len(user_cases),'preserved_shared_fragments':len(fragments),'native_compositions':native['native_compositions'],'semantic_label_icon_cases':native['semantic_label_icon_cases'],'semantic_context_icon_cases':native['semantic_context_icon_cases'],'direct_http_guards':len(guarded),'loader_negative_controls':2,**reviewed},ensure_ascii=False))
 if __name__=='__main__':main()
