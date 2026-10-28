@@ -466,7 +466,9 @@ def main():
                         "--run-disposable","--report",str(privacy_path)],
                        cwd=ROOT,check=True,timeout=180,capture_output=True)
         finance_privacy=json.loads(privacy_path.read_text())
-        if not (finance_privacy.get("complete") and finance_privacy.get("cases")==25
+        if not (finance_privacy.get("complete") and finance_privacy.get("cases")==29
+                and finance_privacy.get("fresh_native_addon_admission") is True
+                and finance_privacy.get("unknown_native_refuses_preclaim") is True
                 and finance_privacy.get("mutant_privacy_failures_proved")==2
                 and finance_privacy.get("external_requests")==0):
             raise RuntimeError("Executed finance error privacy/uncertain-effects proof incomplete")
@@ -655,7 +657,9 @@ def main():
                         "--run-disposable","--report",str(next_payment_path)],
                        cwd=ROOT,check=True,timeout=180,capture_output=True)
         next_payment=json.loads(next_payment_path.read_text())
-        if not (next_payment.get("complete") is True and next_payment.get("cases")==11):
+        if not (next_payment.get("complete") is True and next_payment.get("cases")==13
+                and next_payment.get("fresh_native_addon_admission") is True
+                and next_payment.get("unknown_native_refuses_without_draft") is True):
             raise RuntimeError("Durable payment messages, volume entry and attention proof incomplete")
         catalog_output=subprocess.run(
             ["python3",str(ROOT/"tools/test_next_text_catalog.py")],
@@ -1161,6 +1165,7 @@ def main():
                     'f1_'+route+'_'+iso+'_new_green',
                     'f1_'+route+'_'+iso+'_wallet_first_draft_waits',
                 })
+        required_legacy_wallet.add("f1_unknown_native_refuses_before_wallet_claim_or_effect")
         required_hosted_audience=set()
         for provider in ('nowpayment','zarinpal','nextpay'):
             for mode in ('policy','cohort'):
@@ -1218,6 +1223,7 @@ def main():
         f1_f4_suites=(
             ('legacy_wallet_races','test_post_v9_legacy_wallet_races.py',
              required_legacy_wallet,('reviewed_source_red','current_source_green',
+                                     'explicit_existing_native_baseline','unknown_native_refuses_preclaim',
                                      'real_php_mysqli','owned_mariadb_only')),
             ('hosted_audience_races','test_post_v9_hosted_audience_races.py',
              required_hosted_audience,('old_source_red','current_source_green',
@@ -1977,6 +1983,7 @@ def main():
                 and all(r.get("pass") is True for r in locking_cases)
                 and verification_locking.get("native_php_mysqli") is True
                 and verification_locking.get("native_pk_lock_witness") is True
+                and verification_locking.get("atomic_ready_marker_publication") is True
                 and verification_locking.get("owned_socket_only") is True
                 and verification_locking.get("isolation_changed") is False
                 and verification_locking.get("live_provider_requests")==0
