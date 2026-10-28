@@ -38,6 +38,7 @@ $socket = $argv[3];
 $case = json_decode($argv[4], true, 512, JSON_THROW_ON_ERROR);
 $events = [];
 $remote_calls = 0;
+$native_reads = 0;
 $dispatch_snapshot = null;
 $GLOBALS['ownedPrivacyDb']=$db;
 $GLOBALS['ownedPrivacySocket']=$socket;
@@ -74,6 +75,15 @@ function editKeys(...$args) {
 }
 function getMainKeys() { return '{}'; }
 function achbotSupportsPanel($type) { return $type==='marzban'; }
+function getMarzbanUser($serverId,$remark) {
+    ++$GLOBALS['native_reads'];
+    // Only seed()'s explicit existing account has a controlled native state.
+    // Reads are separate from the poisoned mutation boundary below.
+    if ((int)$serverId!==2 || $remark!=='privacy-order' ||
+        !empty($GLOBALS['case']['native_unknown'])) return null;
+    return (object)['username'=>$remark,'expire'=>time()+86400,
+        'data_limit'=>10*1073741824,'used_traffic'=>1073741824,'status'=>'active'];
+}
 function privacyDispatchSnapshot(): void {
     $reader=new mysqli('localhost','root','',$GLOBALS['ownedPrivacyDb'],0,$GLOBALS['ownedPrivacySocket']);
     $row=$reader->query("SELECT p.state,u.wallet FROM pays p JOIN users u ON u.userid=p.user_id WHERE p.hash_id='privacyhash'")->fetch_assoc();
@@ -115,7 +125,7 @@ try {
 } catch (Throwable $e) {
     $uncaught = get_class($e) . ':' . $e->getMessage();
 }
-echo json_encode(['events' => $events, 'remote_calls' => $remote_calls,
+echo json_encode(['events' => $events, 'remote_calls' => $remote_calls, 'native_reads'=>$native_reads,
                   'uncaught' => $uncaught, 'dispatch_snapshot'=>$dispatch_snapshot], JSON_INVALID_UTF8_SUBSTITUTE |
                   JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
 """
@@ -185,6 +195,7 @@ def php(work, env, stage, case, expected_remote_calls=1):
         "provider": case["provider"],
         "audience": case["audience"],
         "data": case["data"],
+        "native_unknown": case.get("native_unknown",False),
     }
     args = ["php", "-n", "-d", "extension=mysqlnd", "-d", "extension=mysqli",
             "-d", "allow_url_fopen=0",
@@ -365,6 +376,19 @@ def main():
                 names.append(case['name']+'_preclaim_failure_rolls_back_without_dispatch')
             finally:sql(work,env,'DROP TRIGGER achbot_privacy_preclaim_failure')
 
+        # An unavailable native observation is an admission refusal, never
+        # permission to debit or call the mutation spy. Prove both audiences
+        # and both add-on kinds independently of the post-dispatch SQL cases.
+        for case in (route_cases()[0],route_cases()[1],route_cases()[3],route_cases()[4]):
+            seed(work,env,case)
+            before=purchase.snapshot(work,env,DB)
+            unknown=php(work,env,current,{**case,'provider':'success',
+                'native_unknown':True},expected_remote_calls=0)
+            if (unknown['native_reads']<1 or unknown['dispatch_snapshot'] is not None or
+                purchase.snapshot(work,env,DB)!=before):
+                raise RuntimeError('Unknown native admission changed financial state or dispatched')
+            names.append(case['name']+'_unknown_native_refuses_before_claim_or_dispatch')
+
         # Check that tests fail when a staged operator path uses untrusted
         # exception text, without ever changing the actual source tree.
         source = current / "src/Finance/Routes/Extensions.php"
@@ -407,7 +431,8 @@ def main():
 
     report = {"complete": True, "cases": len(names), "scenarios": names,
               "original_mariadb_socket_only": True, "external_requests": 0,
-              "mutant_privacy_failures_proved": 2}
+              "mutant_privacy_failures_proved": 2,
+              "fresh_native_addon_admission": True,"unknown_native_refuses_preclaim": True}
     if args.report:
         args.report.write_text(json.dumps(report, indent=2, ensure_ascii=False) + "\n")
     print(json.dumps(report, ensure_ascii=False))
