@@ -821,17 +821,17 @@ def main():
         native_renewal_complete=all(isinstance(proof,dict) and all(
             proof.get(key)==value for key,value in native_renewal_common.items())
             for proof in native_renewal_proofs)
-        if not (provider_integration.get("complete") is True and provider_integration.get("cases",0)>=282
+        if not (provider_integration.get("complete") is True and provider_integration.get("cases",0)>=283
                 and provider_integration.get("actual_php_curl") is True
                 and provider_integration.get("owned_socket_mariadb") is True
                 and provider_integration.get("real_provider_tested") is False
-                and provider_integration.get("lifecycle_cases")==242
+                and provider_integration.get("lifecycle_cases")==243
                 and provider_integration.get("admin_read_authorization_cases")==40
                 and provider_integration.get("forbidden_order_queries")==0
                 and provider_integration.get("forbidden_provider_requests")==0
                 and provider_integration.get("baseline_red") is True
                 and provider_integration.get("baseline_red_source")=="fb138eacdc5817922cc1e1c9c200323d24c79838"
-                and provider_integration.get("original_provider_integration_cases")==219
+                and provider_integration.get("original_provider_integration_cases")==220
                 and native_renewal_complete
                 and [proof.get('cases') for proof in native_renewal_proofs]==[43,20,63]
                 and native_renewal_proofs[0].get('loopback_native_pasar_guard') is True
