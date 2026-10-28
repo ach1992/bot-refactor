@@ -34,10 +34,20 @@ function ownedNoHttpTransaction(string $boundary): void {
     $GLOBALS['events'][]=['name'=>'HTTP_TRANSACTION','boundary'=>$boundary,'active'=>$tx];
     if ($tx!==0) throw new RuntimeException('owned_http_inside_transaction');
 }
-function ownedBarrier(string $ready,string $release): void {
+function ownedPublishReady(string $name): void {
     global $connection,$spec;
+    $path=(string)$spec['barrier_dir'].'/'.$name;
+    $temporary=$path.'.'.getmypid().'.tmp';
+    $pid=(string)$connection->thread_id;
+    // Publish only a complete PID; opening the final path before writing can
+    // expose an empty marker to the strict reader in another process.
+    if (file_put_contents($temporary,$pid)!==strlen($pid) || !rename($temporary,$path))
+        throw new RuntimeException('owned_ready_publication_failed');
+}
+function ownedBarrier(string $ready,string $release): void {
+    global $spec;
     $dir=(string)$spec['barrier_dir'];
-    file_put_contents($dir.'/'.$ready,(string)$connection->thread_id);
+    ownedPublishReady($ready);
     $until=microtime(true)+20;
     while (!is_file($dir.'/'.$release) && microtime(true)<$until) usleep(10000);
     if (!is_file($dir.'/'.$release)) throw new RuntimeException('owned_barrier_timeout');
@@ -71,7 +81,7 @@ if (($spec['role']??'')==='info_blocker') {
     $connection->rollback();exit;
 }
 if (($spec['role']??'')==='nonpaid') {
-    file_put_contents((string)$spec['barrier_dir'].'/contender-start',(string)$connection->thread_id);
+    ownedPublishReady('contender-start');
     try {
         achbotCreateNonPaymentAccount($connection,'admin_bulk','bulk:9001:777',9001,1,1,
             ['server_id'=>2,'plan_id'=>7,'server_type'=>'marzban','inbound_id'=>0,
@@ -86,7 +96,7 @@ if (($spec['role']??'')==='nonpaid') {
     exit;
 }
 if (($spec['role']??'')==='linker') {
-    file_put_contents((string)$spec['barrier_dir'].'/contender-start',(string)$connection->thread_id);
+    ownedPublishReady('contender-start');
     $id=(int)$spec['effect'];
     try {
         $connection->begin_transaction();
@@ -556,6 +566,7 @@ def main():
     report={'complete':True,'cases':len(records),'old_source':OLD,
             'current_head':subprocess.check_output(['git','-C',str(ROOT),'rev-parse','HEAD'],text=True).strip(),
             'native_php_mysqli':True,'owned_socket_only':True,'isolation_changed':False,
+            'atomic_ready_marker_publication':True,
             'native_pk_lock_witness':all(r['native_lock_witness']['config_conflict_errno']==1205 and
                 r['native_lock_witness']['config_before_verifier_release_errno']==1205 and
                 r['native_lock_witness']['probe_transactions_rolled_back_and_closed'] and
