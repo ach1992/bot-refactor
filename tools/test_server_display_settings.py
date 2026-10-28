@@ -215,7 +215,10 @@ foreach (['changeBotsubLinkState','changeBotconfigLinkState'] as $data) {
 // Load actual facade bodies without bootstrap/private configuration.
 $source=file_get_contents($root.'/config.php');
 $a=strpos($source,'function buildSubscriptionPresentation(');
-$b=strpos($source,'function getProtocolNamesRow(',$a);
+// Stop at the next retained facade group; obsolete protocol helpers are gone.
+$b=$a===false?false:strpos($source,'function getUserOrderDetailKeys(',$a);
+if ($a===false || $b===false || $b<=$a)
+    throw new RuntimeException('current_presentation_facade_boundary_missing');
 eval(str_replace('__DIR__',var_export($root,true),substr($source,$a,$b-$a)));
 $showIndexes=[99];$linkIndices=[99];$hideConfigIfMany=true;$hideConnectLinkForMarzban=true;
 $subscriptionPresentation=['marzban'=>['show_configs'=>false],'pasarguard'=>['show_configs'=>false]];
