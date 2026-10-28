@@ -717,7 +717,7 @@ def main():
                 and text_catalog.get("native",{}).get("current_non_ascii_digit_templates")==0
                 and text_catalog.get("presentation",{}).get("status")=="PASS"
                 and text_catalog.get("presentation",{}).get("editable_files")==2
-                and text_catalog.get("presentation",{}).get("current_keys")==2633
+                and text_catalog.get("presentation",{}).get("current_keys")==2635
                 and text_catalog.get("presentation",{}).get("numeric_template_changes")==23
                 and text_catalog.get("presentation",{}).get("adjacent_emoji_violations")==0
                 and text_catalog.get("presentation",{}).get("parameter_exception_count")==3
