@@ -5,6 +5,7 @@ Actual sweep/reservation/debit/native edit/readback/finalization are exercised.
 Only owned socket MariaDB, loopback HTTP and synthetic identities are used.
 """
 from __future__ import annotations
+import provider_storage_fixture as shared_storage
 import argparse,copy,hashlib,io,json,subprocess,tarfile,tempfile,time
 from pathlib import Path
 from datetime import datetime
@@ -71,6 +72,10 @@ def acceptance(root:Path=ROOT,baseline_only:bool=False,providers=('pasarguard','
    for migration in ['001_marzban_panel_group_id.sql','004_automatic_renewal_attempts.sql',
                      '007_service_effects.sql','011_provider_identity.sql']:
     sql((source/'migrations/post-v9'/migration).read_text())
+   if not baseline:sql((source/'migrations/post-v9/012_shared_provider_storage.sql').read_text())
+   native_table='provider_accounts' if baseline else 'service_effects'
+   native_state='state' if baseline else 'provider_state'
+   native_history='mutation_snapshot' if baseline else 'provider_mutation_snapshot'
    endpoint=hashlib.sha256(url.encode()).hexdigest()
    entitlement=json.dumps(dict(data_limit=2147483648,expire=None,group_ids=[2,5],status='active'),separators=(',',':'))
    sql("UPDATE server_config SET type='"+provider+"' WHERE id=2;"
@@ -81,13 +86,17 @@ def acceptance(root:Path=ROOT,baseline_only:bool=False,providers=('pasarguard','
        f" VALUES({ORDER},1001,'','',7,2,0,'unlimited_quota_user','native-unused','vless',0,'[]',137,1,'1700000000',1,'off');"
        "INSERT INTO setting(type,value) VALUES('AutoRenewLastOrderId','0')")
    if is_pg:
-    sql("UPDATE server_info SET provider_panel_id=1,provider_group_ids='[5]' WHERE id=2;"
-        "INSERT INTO provider_panels(id,provider,instance_key,name,api_url,api_key,version)"
-        " VALUES(1,'pasarguard',REPEAT('b',32),'Unlimited time fixture','"+url+"','fixture-private-key','5.5.1');"
-        "INSERT INTO provider_accounts(effect_id,order_id,provider,panel_id,instance_key,endpoint_sha256,"
-        "remote_user_id,remote_created_at,remote_username,operation_marker,entitlement_snapshot,state)"
-        f" VALUES(731,{ORDER},'pasarguard',1,REPEAT('b',32),'{endpoint}',{REMOTE},"
-        "'2026-10-26T05:00:00.123456Z','unlimited_quota_user','"+MARKER+"','"+entitlement+"','linked')")
+    if baseline:
+     sql("UPDATE server_info SET provider_panel_id=1,provider_group_ids='[5]' WHERE id=2;"
+         "INSERT INTO provider_panels(id,provider,instance_key,name,api_url,api_key,version)"
+         " VALUES(1,'pasarguard',REPEAT('b',32),'Unlimited time fixture','"+url+"','fixture-private-key','5.5.1');"
+         "INSERT INTO provider_accounts(effect_id,order_id,provider,panel_id,instance_key,endpoint_sha256,"
+         "remote_user_id,remote_created_at,remote_username,operation_marker,entitlement_snapshot,state)"
+         f" VALUES(731,{ORDER},'pasarguard',1,REPEAT('b',32),'{endpoint}',{REMOTE},"
+         "'2026-10-26T05:00:00.123456Z','unlimited_quota_user','"+MARKER+"','"+entitlement+"','linked')")
+    else:
+     sql("UPDATE server_info SET provider_group_ids='[5]' WHERE id=2;"+shared_storage.connection(2,1,url)+
+         shared_storage.identity(731,ORDER,1,url,REMOTE,'2026-10-26T05:00:00.123456Z','unlimited_quota_user',MARKER,entitlement))
     server.user=copy.deepcopy(pg.USER)
     server.user.update(id=REMOTE,username='unlimited_quota_user',note=MARKER,expire=None,
         data_limit=2147483648,used_traffic=2047483648,group_ids=[2,5])
@@ -113,7 +122,7 @@ def acceptance(root:Path=ROOT,baseline_only:bool=False,providers=('pasarguard','
    def financial():
     return sql("SELECT * FROM users ORDER BY id;SELECT * FROM orders_list ORDER BY id;"
       "SELECT * FROM pays ORDER BY id;SELECT * FROM automatic_renewal_attempts ORDER BY id;"
-      "SELECT * FROM provider_accounts ORDER BY id;SELECT * FROM increase_order ORDER BY id")
+      f"SELECT * FROM {native_table} ORDER BY id;SELECT * FROM increase_order ORDER BY id")
    def writes():
     if is_pg:return [item for item in server.trace if item[0]!='GET']
     return [(item['method'],item['path'],json.loads(item['body'])if item['body']else None)
@@ -140,7 +149,7 @@ def acceptance(root:Path=ROOT,baseline_only:bool=False,providers=('pasarguard','
    if baseline:
     yes(sql('SELECT state FROM pays')=='processing_wallet'
         and sql('SELECT stage,reason_code FROM automatic_renewal_attempts')=='review\tremote_unconfirmed'
-        and (not is_pg or sql(f'SELECT state FROM provider_accounts WHERE order_id={ORDER}')=='mutating')
+        and (not is_pg or sql(f'SELECT {native_state} FROM {native_table} WHERE order_id={ORDER}')=='mutating')
         and sql(f'SELECT expire_date,notif FROM orders_list WHERE id={ORDER}')=='0\t1'
         and not writes() and remote['expire']is None,
         'baseline_240_actual_native_sweep_RED_holds_debit_and_mutation_for_review_before_write')
@@ -167,12 +176,12 @@ def acceptance(root:Path=ROOT,baseline_only:bool=False,providers=('pasarguard','
    yes(sql('SELECT state,type,price,order_id FROM pays')==f'paid_with_wallet\tRENEW_ACCOUNT\t{PRICE}\t{ORDER}'
        and sql('SELECT stage FROM automatic_renewal_attempts')=='done'
        and sql(f'SELECT expire_date,notif FROM orders_list WHERE id={ORDER}')==f'{expiry}\t0'
-       and (not is_pg or sql(f'SELECT state FROM provider_accounts WHERE order_id={ORDER}')=='linked'),
+       and (not is_pg or sql(f'SELECT {native_state} FROM {native_table} WHERE order_id={ORDER}')=='linked'),
        'current_actual_finalize_commits_payment_attempt_order_and_account_completion')
    yes(sql('SELECT COUNT(*),MIN(amount),MAX(amount) FROM increase_order')==f'1\t{PRICE}\t{PRICE}',
        'current_actual_finalize_records_one_exact_accounting_row')
    if is_pg:
-    journal=json.loads(sql(f'SELECT mutation_snapshot FROM provider_accounts WHERE order_id={ORDER}'))
+    journal=json.loads(sql(f'SELECT {native_history} FROM {native_table} WHERE order_id={ORDER}'))
     yes(journal['result']=='verified' and journal['current_group_ids']==[2,5]
         and journal['changes']['before']['expire']is None
         and journal['changes']['absolute']['expire']==expiry

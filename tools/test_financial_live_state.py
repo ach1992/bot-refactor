@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Native two-provider renewal pricing, live add-on admission and statistics compatibility."""
 from __future__ import annotations
+import provider_storage_fixture as shared_storage
 import argparse,copy,hashlib,json,re,subprocess,time
 from datetime import datetime,timezone
 from pathlib import Path
@@ -27,6 +28,7 @@ DRIVER=DRIVER.replace(" } elseif($spec['action']==='changes'){",r""" } elseif($s
    achbotPgLoad();$account=achbotProviderAccountByOrder($connection,731,true);
    $identity['remote_user_id']=(int)$account['remote_user_id'];
   }
+  if($account!==null)achbotProviderBindOrder($connection,$account,732);
   $out=achbotRecordImportedOrderOriginLocked($connection,732,1002,9001,$spec['provider'],2,
    'unlimited_quota_user',str_repeat('c',64),$identity,$account===null?null:(int)$account['id']);
   $connection->commit();
@@ -55,7 +57,7 @@ def main():
    def sql(q):return native.sql(work,env,q,DB).strip()
    for name in ['001_marzban_panel_group_id.sql','003_payment_attempts.sql',
        '004_automatic_renewal_attempts.sql','006_payment_message_refs.sql',
-       '007_service_effects.sql','011_provider_identity.sql']:
+       '007_service_effects.sql','011_provider_identity.sql','012_shared_provider_storage.sql']:
     sql((ROOT/'migrations/post-v9'/name).read_text())
    endpoint=hashlib.sha256(url.encode()).hexdigest()
    ent=json.dumps(dict(data_limit=2147483648,expire=None,group_ids=[2,5],status='active'),separators=(',',':'))
@@ -71,13 +73,8 @@ def main():
        "INSERT INTO increase_day(id,volume,price)VALUES(92,3,37);"
        "INSERT INTO setting(type,value)VALUES('BOT_STATES','{\"walletState\":\"on\",\"gatewayAudience\":{\"wallet\":\"all\"}}')")
    if is_pg:
-    sql("UPDATE server_info SET provider_panel_id=1,provider_group_ids='[5]' WHERE id=2;"
-        "INSERT INTO provider_panels(id,provider,instance_key,name,api_url,api_key,version)"
-        " VALUES(1,'pasarguard',REPEAT('b',32),'Financial fixture','"+url+"','fixture-private-key','5.5.1');"
-        "INSERT INTO provider_accounts(effect_id,order_id,provider,panel_id,instance_key,endpoint_sha256,"
-        "remote_user_id,remote_created_at,remote_username,operation_marker,entitlement_snapshot,state)"
-        " VALUES(731,731,'pasarguard',1,REPEAT('b',32),'"+endpoint+"',73,"
-        "'2026-10-26T05:00:00.123456Z','unlimited_quota_user','"+renewal.MARKER+"','"+ent+"','linked')")
+    sql("UPDATE server_info SET provider_group_ids='[5]' WHERE id=2;"+shared_storage.connection(2,1,url)+
+        shared_storage.identity(731,731,1,url,73,'2026-10-26T05:00:00.123456Z','unlimited_quota_user',renewal.MARKER,ent))
     server.user=copy.deepcopy(pg.USER);server.user.update(id=73,username='unlimited_quota_user',
         note=renewal.MARKER,expire=None,group_ids=[2,5],data_limit=2147483648,used_traffic=2047483648)
     remote=server.user

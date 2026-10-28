@@ -87,7 +87,7 @@ function achbotPgAdminFinish(mysqli $db,string $step): void {
 function achbotHandleProviderAdmin(): bool {
     global $connection,$from_id,$admin,$userInfo,$data,$text,$cancelKey,$update,$message_id,$chat_id;
     $step=(string)($userInfo['step']??'');
-    $native=is_string($data??null) && preg_match('/^pg(?:Connections|AddConnection|NewServer|RotateServerKey|RotateKey|ServerGroups|PlanGroups|ResetAccount)/D',$data);
+    $native=is_string($data??null) && preg_match('/^pg(?:RotateServerKey|RotateKey|ServerGroups|PlanGroups|ResetAccount)/D',$data);
     if (!$native && !str_starts_with($step,'pg:')) return false;
     if (!((int)$from_id===(int)$admin || (int)($userInfo['isAdmin']??0)===1)) {
         alert(\achbotMessage('provider.provider_admin.handle_provider_admin.alert.057ec5448c'),true);return true;
@@ -126,36 +126,12 @@ function achbotHandleProviderAdmin(): bool {
             if (($r->success??false)!==true) throw new RuntimeException('pg_reset_requires_review');
             sendMessage(\achbotMessage('provider.provider_admin.handle_provider_admin.message.b3a3ec95dd'));return true;
         }
-        if ($data==='pgConnections') {
-            $rows=$connection->query("SELECT id,name FROM provider_panels WHERE provider='pasarguard' AND enabled=1 ORDER BY id");
-            $keys=[];
-            while ($row=$rows->fetch_assoc()) {
-                $id=(int)$row['id'];
-                $keys[]=[['text'=>$row['name'],'callback_data'=>'pgNewServer'.$id],
-                    ['text'=>\achbotMessage('provider.provider_admin.handle_provider_admin.button.c672a35381'),'callback_data'=>'pgRotateKey'.$id]];
-            }
-            $keys[]=[['text'=>\achbotMessage('provider.provider_admin.handle_provider_admin.button.13bae1ab18'),'callback_data'=>'pgAddConnection']];
-            $keys[]=[['text'=>\achbotMessage('provider.provider_admin.pg_server_admin_keys.button.b233883d0d'),'callback_data'=>'serversSetting']];
-            sendMessage(\achbotMessage('provider.provider_admin.handle_provider_admin.message.601077bd6d'),
-                json_encode(['inline_keyboard'=>$keys],JSON_UNESCAPED_UNICODE));return true;
-        }
-        if ($data==='pgAddConnection') {
-            setUser('pg:connection');
-            sendMessage(\achbotMessage('provider.provider_admin.handle_provider_admin.message.d0e9e358ec'),$cancelKey);return true;
-        }
-        if (preg_match('/^pg(NewServer|RotateServerKey|RotateKey|ServerGroups|PlanGroups)([1-9][0-9]*)$/D',(string)$data,$m)) {
+        if (preg_match('/^pg(RotateServerKey|RotateKey|ServerGroups|PlanGroups)([1-9][0-9]*)$/D',(string)$data,$m)) {
             $id=(int)$m[2];$mode=$m[1];
             if ($mode==='RotateServerKey') {
                 $panel=achbotPgServerPanel($connection,$id);
                 setUser('pg:key:'.(int)$panel['id'].':'.$id);
                 sendMessage(\achbotMessage('admin_settings.management.shared_key_notice'),$cancelKey);return true;
-            }
-            if ($mode==='NewServer') {
-                $p=achbotProviderPanel($connection,$id);$r=achbotPgCheck($p);
-                if (($r['success']??false)!==true) throw new RuntimeException('pg_setup_unverified');
-                $names=[];foreach ($r['groups'] as $g) if (!$g['is_disabled']) $names[]=$g['id'].' = '.$g['name'];
-                setUser('pg:server:'.$id);
-                sendMessage(\achbotMessage('provider.provider_admin.handle_provider_admin.message.339107229c').implode("\n",$names),$cancelKey);return true;
             }
             if ($mode==='RotateKey') {achbotProviderPanel($connection,$id);setUser('pg:key:'.$id);sendMessage(\achbotMessage('provider.provider_admin.handle_provider_admin.message.bf4b28ea45'),$cancelKey);return true;}
             $sid=$id;
@@ -173,24 +149,6 @@ function achbotHandleProviderAdmin(): bool {
         if (!is_object($msg) || ($msg->chat->type??'')!=='private' ||
             (int)($msg->from->id??0)!==(int)$from_id || (int)($msg->chat->id??0)!==(int)$from_id ||
             !is_string($msg->text??null) || $msg->text!==$text) throw new RuntimeException('pg_setup_private_message_required');
-        if ($step==='pg:connection') {
-            $parts=explode("\n",trim($text));
-            if (count($parts)!==3 || trim($parts[0])==='' || mb_strlen(trim($parts[0]))>100)
-                throw new RuntimeException('pg_connection_input_invalid');
-            $name=trim($parts[0]);$url=rtrim(trim($parts[1]),'/');$key=trim($parts[2]);
-            $instance=substr(hash('sha256','pg:'.(int)$from_id.':'.(int)$update->update_id),0,32);
-            $panel=['id'=>1,'instance_key'=>$instance,'api_url'=>$url,'api_key'=>$key,'version'=>'5.5.1'];
-            $r=achbotPgCheck($panel);if (($r['success']??false)!==true) throw new RuntimeException('pg_connection_check_unverified');
-            if (!$connection->begin_transaction()) throw new RuntimeException('pg_connection_begin');
-            try {
-                achbotPgAdminActor($connection,$step,true);
-                $s=$connection->prepare("INSERT INTO provider_panels(provider,instance_key,name,api_url,api_key,version) VALUES('pasarguard',?,?,?,?, '5.5.1')");
-                $s->bind_param('ssss',$instance,$name,$url,$key);
-                if (!$s->execute() || $s->affected_rows!==1) throw new RuntimeException('pg_connection_save_unconfirmed');$s->close();
-                achbotPgAdminFinish($connection,$step);
-            } catch (Throwable $error) {try{$connection->rollback();}catch(Throwable $ignored){}throw $error;}
-            sendMessage(\achbotMessage('provider.provider_admin.handle_provider_admin.message.84166ad032'),getServerListKeys());return true;
-        }
         if (preg_match('/^pg:key:([1-9][0-9]*)(?::([1-9][0-9]*))?$/D',$step,$m)) {
             $id=(int)$m[1];$p=achbotProviderPanel($connection,$id);
             $before=$p['api_key'];$p['api_key']=trim($text);$r=achbotPgCheck($p);
@@ -198,41 +156,18 @@ function achbotHandleProviderAdmin(): bool {
             if (!$connection->begin_transaction()) throw new RuntimeException('pg_key_begin');
             try {
                 achbotPgAdminActor($connection,$step,true);
-                $s=$connection->prepare("SELECT provider,instance_key,api_url,api_key,version,enabled FROM provider_panels WHERE id=? FOR UPDATE");
-                $s->bind_param('i',$id);$s->execute();$locked=$s->get_result()->fetch_assoc();$s->close();
-                if (!$locked || $locked['provider']!=='pasarguard' || (int)$locked['enabled']!==1 ||
-                    $locked['instance_key']!==$p['instance_key'] || $locked['api_url']!==$p['api_url'] ||
+                $locked=achbotProviderPanel($connection,$id,true);
+                if ($locked['instance_key']!==$p['instance_key'] || $locked['api_url']!==$p['api_url'] ||
                     $locked['version']!==$p['version'] || !hash_equals($before,$locked['api_key']))
                     throw new RuntimeException('pg_key_target_changed');
-                $s=$connection->prepare("UPDATE provider_panels SET api_key=? WHERE id=? AND provider='pasarguard' AND BINARY api_key=BINARY ?");
+                $s=$connection->prepare("UPDATE server_config SET password=? WHERE provider_connection_id=?
+                    AND type='pasarguard' AND BINARY password=BINARY ?");
                 $s->bind_param('sis',$p['api_key'],$id,$before);
-                if (!$s->execute() || ($s->affected_rows!==1 && $p['api_key']!==$before))
+                if (!$s->execute() || ($s->affected_rows<1 && $p['api_key']!==$before))
                     throw new RuntimeException('pg_key_save_unconfirmed');
                 $s->close();achbotPgAdminFinish($connection,$step);
             } catch (Throwable $error) {try{$connection->rollback();}catch(Throwable $ignored){}throw $error;}
             achbotPgAdminReturn($step,\achbotMessage('provider.provider_admin.handle_provider_admin.message.7a19204ab5'));return true;
-        }
-        if (preg_match('/^pg:server:([1-9][0-9]*)$/D',$step,$m)) {
-            $pid=(int)$m[1];$panel=achbotProviderPanel($connection,$pid);$parts=explode("\n",trim($text));
-            if (count($parts)!==5 || trim($parts[0])==='' || mb_strlen($parts[0])>100 ||
-                preg_match('/^[1-9][0-9]{0,8}$/D',trim($parts[1]))!==1 ||
-                preg_match('/^[a-zA-Z0-9_-]{1,60}$/D',trim($parts[2]))!==1)
-                throw new RuntimeException('pg_server_input_invalid');
-            $title=trim($parts[0]);$count=(int)$parts[1];$remark=trim($parts[2]);$flag=trim($parts[3]);
-            $groups=json_encode(achbotPgAdminGroupIds($parts[4],$panel),JSON_THROW_ON_ERROR);
-            if (!$connection->begin_transaction()) throw new RuntimeException('pg_server_begin');
-            try {
-                achbotPgAdminActor($connection,$step,true);
-                $s=$connection->prepare('INSERT INTO server_info(title,ucount,remark,flag,active,provider_panel_id,provider_group_ids) VALUES(?,?,?,?,1,?,?)');
-                $s->bind_param('sissis',$title,$count,$remark,$flag,$pid,$groups);
-                if (!$s->execute() || $s->affected_rows!==1) throw new RuntimeException('pg_server_insert_unconfirmed');
-                $id=(int)$s->insert_id;$s->close();$url=$panel['api_url'];
-                $s=$connection->prepare("INSERT INTO server_config(id,panel_url,ip,sni,header_type,request_header,response_header,security,tlsSettings,username,password,type) VALUES(?,?,'','','none','','','none','','','','pasarguard')");
-                $s->bind_param('is',$id,$url);
-                if (!$s->execute() || $s->affected_rows!==1) throw new RuntimeException('pg_server_config_unconfirmed');$s->close();
-                achbotPgAdminFinish($connection,$step);
-            } catch (Throwable $e) {try{$connection->rollback();}catch(Throwable $ignored){}throw $e;}
-            sendMessage(\achbotMessage('provider.provider_admin.handle_provider_admin.message.230010849c'),getServerListKeys());return true;
         }
         if (preg_match('/^pg:groups:(plan|server):([1-9][0-9]*)$/D',$step,$m)) {
             $id=(int)$m[2];$sid=$id;
@@ -260,10 +195,10 @@ function achbotHandleProviderAdmin(): bool {
                 if (!$target || $target['provider_group_ids']!==$beforeGroups ||
                     ($m[1]==='plan' && (int)$target['server_id']!==$sid))
                     throw new RuntimeException('pg_group_target_changed');
-                $s=$connection->prepare('SELECT i.provider_panel_id,c.type,c.panel_url FROM server_info i JOIN server_config c ON c.id=i.id WHERE i.id=? FOR UPDATE');
+                $s=$connection->prepare('SELECT c.provider_connection_id,c.type,c.panel_url FROM server_info i JOIN server_config c ON c.id=i.id WHERE i.id=? FOR UPDATE');
                 $s->bind_param('i',$sid);$s->execute();$logical=$s->get_result()->fetch_assoc();$s->close();
                 if (!$logical || $logical['type']!=='pasarguard' ||
-                    (int)$logical['provider_panel_id']!==(int)$panel['id'] ||
+                    (int)$logical['provider_connection_id']!==(int)$panel['id'] ||
                     rtrim($logical['panel_url'],'/')!==rtrim($panel['api_url'],'/'))
                     throw new RuntimeException('pg_group_panel_changed');
                 $fresh=achbotPgServerPanel($connection,$sid);

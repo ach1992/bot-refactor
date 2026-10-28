@@ -5,6 +5,7 @@ Task-owned socket MariaDB, loopback providers and synthetic Telegram delivery.
 No imported origin or positive historical amount is fabricated.
 """
 from __future__ import annotations
+import provider_storage_fixture as shared_storage
 import argparse,contextlib,copy,hashlib,json,subprocess,threading,time
 from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
 from pathlib import Path
@@ -82,7 +83,7 @@ def main():
             def db(query):return native.sql(work,env,query,DB).strip()
             for migration in ['001_marzban_panel_group_id.sql','003_payment_attempts.sql',
                 '004_automatic_renewal_attempts.sql','006_payment_message_refs.sql',
-                '007_service_effects.sql','011_provider_identity.sql']:
+                '007_service_effects.sql','011_provider_identity.sql','012_shared_provider_storage.sql']:
                 db((ROOT/'migrations/post-v9'/migration).read_text())
             db("UPDATE server_plans SET price=137,days=30,volume=3 WHERE id=7;"
                "UPDATE users SET is_agent=1,discount_percent='{\"normal\":100,\"plans\":{},\"servers\":{}}' WHERE userid=1001;"
@@ -93,10 +94,7 @@ def main():
                "INSERT INTO increase_day(id,volume,price)VALUES(21,2,31);"
                "INSERT INTO increase_plan(id,volume,price)VALUES(22,1,47)")
             if provider=='pasarguard':
-                db("UPDATE server_config SET type='pasarguard' WHERE id=2;"
-                   "UPDATE server_info SET provider_panel_id=1,provider_group_ids='[2,5]' WHERE id=2;"
-                   "INSERT INTO provider_panels(id,provider,instance_key,name,api_url,api_key,version)"
-                   "VALUES(1,'pasarguard',REPEAT('b',32),'Fixture','"+url+"','fixture-private-key','5.5.1')")
+                db("UPDATE server_info SET provider_group_ids='[2,5]' WHERE id=2;"+shared_storage.connection(2,1,url))
             facades=bodies.function_bodies((ROOT/'config.php').read_bytes(),[
                 'buildSubscriptionPresentation','buildConfigMessage','setUser','sumerize',
                 'getOrderDetailKeys','getUserOrderDetailKeys','getMarzbanToken','addMarzbanUser',
@@ -131,7 +129,7 @@ def main():
                 return parsed
             def native_writes():return len([row for row in panel.trace if row[0]!='GET' and row[1]!='/api/admin/token'])
             def stable():return db('SELECT * FROM users ORDER BY id;SELECT * FROM orders_list ORDER BY id;SELECT * FROM pays ORDER BY id;'
-                'SELECT * FROM server_info ORDER BY id;SELECT * FROM service_effects ORDER BY id;SELECT * FROM provider_accounts ORDER BY id;SELECT * FROM setting ORDER BY id')
+                'SELECT * FROM server_info ORDER BY id;SELECT * FROM service_effects ORDER BY id;SELECT * FROM service_effects WHERE provider_reference_id IS NOT NULL ORDER BY id;SELECT * FROM setting ORDER BY id')
             offered=call('select',data='selectPlan7_1_one')
             yes('freeTrial7_one'in json.dumps(offered)and db('SELECT COUNT(*) FROM pays')=='0'and native_writes()==0,
                 provider+'_actual_agent100_SelectPlan_offers_existing_freeTrial_route_without_invoice_or_native_write')

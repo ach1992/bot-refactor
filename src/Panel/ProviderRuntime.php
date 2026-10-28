@@ -365,10 +365,10 @@ function achbotPgLoad(): void {
 }
 function achbotPgServerPanel(mysqli $db,int $serverId): array {
     achbotPgLoad();
-    $s=$db->prepare('SELECT i.provider_panel_id,c.type,c.panel_url FROM server_info i JOIN server_config c ON c.id=i.id WHERE i.id=?');
+    $s=$db->prepare('SELECT c.provider_connection_id,c.type,c.panel_url FROM server_info i JOIN server_config c ON c.id=i.id WHERE i.id=?');
     $s->bind_param('i',$serverId);$s->execute();$r=$s->get_result()->fetch_assoc();$s->close();
     if (!$r || $r['type']!=='pasarguard') throw new RuntimeException('pg_server_identity_missing');
-    $p=achbotProviderPanel($db,(int)$r['provider_panel_id']);
+    $p=achbotProviderPanel($db,(int)$r['provider_connection_id']);
     if (rtrim($r['panel_url'],'/')!==rtrim($p['api_url'],'/')) throw new RuntimeException('pg_endpoint_changed');
     return $p;
 }
@@ -492,7 +492,7 @@ function achbotPgReserveEffect(mysqli $db,int $effectId,array $target,string $re
     if (($reservation['newly_reserved']??false)!==true) throw new RuntimeException('pg_account_already_reserved');
 }
 
-/** Read the immutable effect snapshot without requiring 011 for old providers. */
+/** Read the immutable effect snapshot without requiring provider storage for old providers. */
 function achbotPgEffect(mysqli $db,int $effectId): ?array {
     $s=$db->prepare('SELECT e.*,c.type AS panel_type FROM service_effects e JOIN server_config c ON c.id=e.target_server_id WHERE e.id=?');
     $s->bind_param('i',$effectId);$s->execute();$e=$s->get_result()->fetch_assoc();$s->close();
@@ -517,7 +517,7 @@ function achbotPgDispatchReserved(mysqli $db,int $effectId,int $serverId,string 
     if (!$a || $a['state']!=='reserved' || $a['remote_user_id']!==null)
         throw new RuntimeException('pg_dispatch_already_started');
     // This single guarded, committed transition is the dispatch authority.
-    $s=$db->prepare("UPDATE provider_accounts SET state='dispatching' WHERE id=? AND state='reserved' AND remote_user_id IS NULL");
+    $s=$db->prepare("UPDATE service_effects SET provider_state='dispatching',provider_evidence_updated_at=UTC_TIMESTAMP(),updated_at=updated_at WHERE provider_reference_id=? AND provider_state='reserved' AND provider_remote_user_id IS NULL");
     $aid=(int)$a['id'];$s->bind_param('i',$aid);
     if (!$s->execute() || $s->affected_rows!==1) throw new RuntimeException('pg_dispatch_claim_unconfirmed');$s->close();
     $r=achbotPgCreate($panel,['username'=>$remark,'data_limit'=>$bytes,'expire'=>$expiry,
@@ -550,10 +550,11 @@ function achbotPgLinkEffect(mysqli $db,int $effectId,int $orderId): bool {
         (int)$o['server_id']!==(int)$e['target_server_id'] || (int)$o['inbound_id']!==0 ||
         $o['remark']!==$e['remote_username']) throw new RuntimeException('pg_effect_order_mismatch');
     achbotProviderPanelForSnapshot($db,$e['provider_snapshot']);
-    achbotProviderLinkAccount($db,$effectId,$orderId);
     $s=$db->prepare("UPDATE service_effects SET order_id=?,state='local_recorded' WHERE id=? AND state='verified' AND order_id IS NULL");
     $s->bind_param('ii',$orderId,$effectId);
     if (!$s->execute() || $s->affected_rows!==1) throw new RuntimeException('pg_effect_link_unconfirmed');$s->close();
+    // Both the effect and its order identity are committed by the caller transaction.
+    achbotProviderLinkAccount($db,$effectId,$orderId);
     return true;
 }
 function achbotPgValidMutationKey($key): bool {
@@ -613,7 +614,7 @@ function achbotPgBeginMutation(mysqli $db,array $ctx,string $key,string $action,
     if (!$db->begin_transaction()) throw new RuntimeException('pg_mutation_begin');
     try {
         $id=(int)$ctx['account']['id'];
-        $s=$db->prepare('SELECT state,mutation_key,mutation_snapshot FROM provider_accounts WHERE id=? FOR UPDATE');
+        $s=$db->prepare('SELECT provider_state AS state,provider_mutation_key AS mutation_key,provider_mutation_snapshot AS mutation_snapshot FROM service_effects WHERE provider_reference_id=? FOR UPDATE');
         $s->bind_param('i',$id);$s->execute();$a=$s->get_result()->fetch_assoc();$s->close();
         if (!$a) throw new RuntimeException('pg_account_mutation_requires_review');
         $consumed=achbotPgMutationAdmission($a,$key);
@@ -621,7 +622,7 @@ function achbotPgBeginMutation(mysqli $db,array $ctx,string $key,string $action,
         $intent=['version'=>1,'key'=>$key,'consumed_keys'=>$consumed,'action'=>$action,'changes'=>$changes,'identity'=>$ctx['identity'],
             'requested_at'=>gmdate('c')];
         $json=json_encode($intent,JSON_THROW_ON_ERROR);
-        $s=$db->prepare("UPDATE provider_accounts SET state='mutating',mutation_key=?,mutation_snapshot=? WHERE id=? AND state='linked'");
+        $s=$db->prepare("UPDATE service_effects SET provider_state='mutating',provider_mutation_key=?,provider_mutation_snapshot=?,provider_evidence_updated_at=UTC_TIMESTAMP(),updated_at=updated_at WHERE provider_reference_id=? AND provider_state='linked'");
         $s->bind_param('ssi',$key,$json,$id);
         if (!$s->execute() || $s->affected_rows!==1) throw new RuntimeException('pg_mutation_claim_unconfirmed');$s->close();
         if (!$db->commit()) throw new RuntimeException('pg_mutation_commit_unknown');
@@ -631,7 +632,7 @@ function achbotPgBeginMutation(mysqli $db,array $ctx,string $key,string $action,
 function achbotPgPersistMutationIntent(mysqli $db,array $ctx,array $intent,array $changes): array {
     $intent['changes']=$changes;$intent['phase']='dispatching';
     $json=json_encode($intent,JSON_THROW_ON_ERROR);$id=(int)$ctx['account']['id'];$key=$intent['key'];
-    $s=$db->prepare("UPDATE provider_accounts SET mutation_snapshot=? WHERE id=? AND state='mutating' AND mutation_key=?");
+    $s=$db->prepare("UPDATE service_effects SET provider_mutation_snapshot=?,provider_evidence_updated_at=UTC_TIMESTAMP(),updated_at=updated_at WHERE provider_reference_id=? AND provider_state='mutating' AND provider_mutation_key=?");
     $s->bind_param('sis',$json,$id,$key);
     if (!$s->execute() || $s->affected_rows!==1) throw new RuntimeException('pg_mutation_intent_unconfirmed');$s->close();
     return $intent;
@@ -646,7 +647,7 @@ function achbotPgFinishMutation(mysqli $db,array $ctx,array $intent,array $resul
     $intent['verified_at']=gmdate('c');$intent['result']='verified';
     if (isset($result['user']['group_ids'])) $intent['current_group_ids']=$result['user']['group_ids'];
     $json=json_encode($intent,JSON_THROW_ON_ERROR);
-    $s=$db->prepare("UPDATE provider_accounts SET state=?,mutation_snapshot=? WHERE id=? AND state='mutating' AND mutation_key=?");
+    $s=$db->prepare("UPDATE service_effects SET provider_state=?,provider_mutation_snapshot=?,provider_evidence_updated_at=UTC_TIMESTAMP(),updated_at=updated_at WHERE provider_reference_id=? AND provider_state='mutating' AND provider_mutation_key=?");
     $s->bind_param('ssis',$state,$json,$id,$key);
     if (!$s->execute() || $s->affected_rows!==1) throw new RuntimeException('pg_mutation_finish_unknown');$s->close();
 }
@@ -772,12 +773,18 @@ function achbotProviderRelocationTargets(mysqli $db,int $sourceId): array {
     if (achbotProviderType($db,$sourceId)==='marzban') return achbotMarzbanRelocationTargets($db,$sourceId);
     try {
         $panel=achbotPgServerPanel($db,$sourceId);
-        $s=$db->prepare("SELECT i.id,i.title FROM server_info i JOIN server_config c ON c.id=i.id WHERE i.provider_panel_id=? AND i.id<>? AND c.type='pasarguard' AND i.active=1 AND i.state=1 AND i.ucount>0 ORDER BY i.id");
+        $s=$db->prepare("SELECT i.id,i.title FROM server_info i JOIN server_config c ON c.id=i.id WHERE c.provider_connection_id=? AND i.id<>? AND c.type='pasarguard' AND i.active=1 AND i.state=1 AND i.ucount>0 ORDER BY i.id");
         $pid=(int)$panel['id'];$s->bind_param('ii',$pid,$sourceId);$s->execute();$rows=$s->get_result()->fetch_all(MYSQLI_ASSOC);$s->close();
         return array_values(array_filter($rows,fn($r)=>achbotSameProviderPanel($db,$sourceId,(int)$r['id'])));
     } catch (Throwable $error) {return [];}
 }
 function achbotReassignLogicalServer(mysqli $db,int $orderId,int $targetId,int $actor,bool $adminAllowed=false): ?array {
+    // Server reassignment is a current administrator action, never customer consent.
+    if (!$adminAllowed || $actor<=0) return null;
+    $s=$db->prepare('SELECT userid,isAdmin,step FROM users WHERE userid=? LIMIT 2');
+    $s->bind_param('i',$actor);$s->execute();$actors=$s->get_result()->fetch_all(MYSQLI_ASSOC);$s->close();
+    if (count($actors)!==1 || $actors[0]['step']==='banned' ||
+        ($actor!==(int)($GLOBALS['admin']??0) && (int)$actors[0]['isAdmin']!==1)) return null;
     $s=$db->prepare('SELECT * FROM orders_list WHERE id=? AND status=1');$s->bind_param('i',$orderId);$s->execute();$o=$s->get_result()->fetch_assoc();$s->close();
     if (!$o || (!$adminAllowed && (int)$o['userid']!==$actor)) return null;
     if (achbotProviderType($db,(int)$o['server_id'])==='marzban')
