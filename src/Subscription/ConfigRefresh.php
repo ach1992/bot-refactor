@@ -41,6 +41,6 @@ if (is_string($data) && str_starts_with($data,'sConfigUpdate')) {
             \AchBot\Subscription\Presentation\configQrCaption($uri,$presentation));
         $complete = $sent && $complete;
     }
-    if (!$complete) alert($mainValues['config_not_found'],true);
+    if (!$complete) alert(\achbotMessage('subscription.presentation.config_qr_delivery_unconfirmed'),true);
     if ($presentation['notice_html']!=='') sendMessage($presentation['notice_html']);
 }

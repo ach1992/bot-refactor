@@ -314,7 +314,9 @@ try {
   $pay=$connection->query('SELECT * FROM pays WHERE id='.(int)$spec['pay'])->fetch_assoc();
   $out=['eligible'=>achbotSupportsPaymentSubject($connection,$pay),'snapshot'=>json_decode($pay['provider_snapshot'],true)];
  } elseif($op==='lookup'){
-  $out=achbotProviderExistingUser($connection,(int)$spec['server'],$spec['url'],$spec['hint']??null);
+  if(isset($spec['archived_dispatcher']))require $spec['archived_dispatcher'];
+  $lookup=isset($spec['archived_dispatcher'])?'achbotArchivedProviderExistingUser':'achbotProviderExistingUser';
+  $out=$lookup($connection,(int)$spec['server'],$spec['url'],$spec['hint']??null);
  } else throw new RuntimeException('fixture_op_missing');
  $emitted=true;echo json_encode(['events'=>$events,'out'=>$out],JSON_THROW_ON_ERROR);
 }catch(Throwable$error){$emitted=true;echo json_encode(['fixture_error'=>get_class($error).':'.$error->getMessage(),'events'=>$events],JSON_THROW_ON_ERROR);}
@@ -933,6 +935,31 @@ echo json_encode(['required'=>count(achbotProviderRequiredOperations()),
    yes(step=='none'and proof is not None and proof['import_url']==alias and
        financial()==before and len(mutations())==writes and not foreign.trace,
        label+'_accepted_only_after_native_bearer_proof_without_alias_fetch')
+  # Exercise the real common dispatcher directly, in addition to the visible
+  # preview route. The earlier final cleanup accidentally discarded its server
+  # binding; archive that exact broken function as a discriminating RED control.
+  for provider,server_id,hint,credential in [
+      ('PasarGuard',3,None,token),('Marzban',2,'existing_mb_user',mb_token)]:
+   alias=foreign_url+'/unregistered/proxy/subscription/'+credential
+   before=financial();records=entities();writes=len(mutations())
+   result=call('lookup',server=server_id,url=alias,hint=hint)['out']
+   yes(result.get('provider_import_proof',{}).get('verified')is True and
+       financial()==before and entities()==records and len(mutations())==writes and not foreign.trace,
+       provider+'_actual_common_dispatcher_unconfigured_alias_native_bearer_success')
+   invalid=alias[:-1]+('a'if alias[-1]!='a'else'b')
+   result=call('lookup',server=server_id,url=invalid,hint=hint)['out']
+   yes(result.get('success')is False and 'provider_import_proof'not in result and
+       financial()==before and entities()==records and len(mutations())==writes and not foreign.trace,
+       provider+'_actual_common_dispatcher_invalid_alias_bearer_denied_without_mutation')
+  broken_ref='177605ee1bb3faaf5d9ed2ccfcadf11718c0d2ec'
+  archived=subprocess.check_output(['git','show',broken_ref+':src/Panel/ProviderImport.php'],cwd=ROOT).decode()
+  archived_start=archived.index('function achbotProviderExistingUser(')
+  archived_end=archived.index('\n}\n',archived_start)+3
+  broken=archived[archived_start:archived_end].replace('function achbotProviderExistingUser(','function achbotArchivedProviderExistingUser(',1)
+  archived_dispatcher=work/'broken-dispatcher.php';archived_dispatcher.write_text('<?php\n'+broken)
+  result=call('lookup',server=3,url=foreign_url+'/proxy/'+token,archived_dispatcher=str(archived_dispatcher))['out']
+  yes(result.get('success')is False and 'provider_import_proof'not in result,
+      'archived_177605_actual_common_dispatcher_missing_server_binding_RED')
   # Same URL and remote ID under a DIFFERENT configured physical instance is
   # ambiguity, not authority to select the first server.
   sql("INSERT INTO provider_panels(id,provider,instance_key,name,api_url,api_key,version)"
@@ -1192,6 +1219,7 @@ echo json_encode(['required'=>count(achbotProviderRequiredOperations()),
       initial_import_controls_match_supported_actions=True,
       native_origin_alias_and_ambiguity_verified=True,created_marker_policy_preserved=True,
       unconfigured_alias_domain_and_prefix_both_providers=True,arbitrary_input_host_never_fetched=True,
+      actual_common_import_dispatcher_both_providers=True,broken_dispatcher_177605_RED=True,
       external_requests=0,production_mutations=0)
  shared_registration_and_paid_journey('marzban')
  shared_registration_and_paid_journey('pasarguard')

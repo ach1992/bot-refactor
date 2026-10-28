@@ -255,7 +255,7 @@ if (preg_match('/^showQr(Sub|Config)(\d+)/', $data, $match)) {
             );
             $complete = $sent && $complete;
         }
-        if (!$complete) alert($mainValues['config_not_found'], true);
+        if (!$complete) alert(\achbotMessage('subscription.presentation.config_qr_delivery_unconfirmed'), true);
         if (($presentation['notice_html'] ?? '') !== '') sendMessage($presentation['notice_html'], null, 'HTML');
     }
 }

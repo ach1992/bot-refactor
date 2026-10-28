@@ -115,12 +115,13 @@ def main():
   yes(len(html.unescape(out['caption']))==201 and html.unescape(out['text'][11:-13])==long_name,
       'long_caption_is_bounded_separately_without_modifying_config')
   seed([named,unnamed]);before=snapshot()
+  delivery_notice=subprocess.check_output(['php','-r',"require $argv[1].'/messages/loader.php';echo achbotMessage('subscription.presentation.config_qr_delivery_unconfirmed');",str(ROOT)],text=True)
   for target in ['photo','text']:
    for mode in ['false','null','throw']:
     out=call(**{target+'_mode':mode})
     yes(len(out['qr_payloads'])==2 and out['temp_files_remaining']==0 and
-        len([e for e in out['events']if e['kind']=='alert'])==1 and snapshot()==before,
-        target+'_'+mode+'_reported_once_without_automatic_retry_financial_write_or_temp_leak')
+        [e['text']for e in out['events']if e['kind']=='alert']==[delivery_notice] and snapshot()==before,
+        target+'_'+mode+'_truthful_delivery_notice_once_without_retry_financial_write_or_temp_leak')
  report=dict(complete=True,cases=len(checks),checks=checks,actual_php=True,owned_socket_mariadb=True,
   actual_Checkout_dispatch=True,actual_sendQrFromLink=True,provider_neutral_native_names_both=True,
   actual_PasarGuard_identity_HTTP_here=False,archived_route_RED=True,baseline=BASE,

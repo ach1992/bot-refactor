@@ -36,7 +36,7 @@ function achbotProviderImportServer(mysqli $db,int $serverId,bool $lock=false): 
 /** Optional source-owned capability; incomplete/unknown adapters fail import only. */
 function achbotProviderExistingUser(mysqli $db,int $serverId,string $input,?string $usernameHint=null): object {
     try {
-        achbotProviderImportServer($db,$serverId);
+        $server=achbotProviderImportServer($db,$serverId);
         $adapter=achbotProviderDefinition($server['type']);
         if (!isset($adapter['import_lookup'],$adapter['import_adopt'])) throw new RuntimeException('import_not_supported');
         return ($adapter['import_lookup'])($db,$serverId,$input,$usernameHint);
