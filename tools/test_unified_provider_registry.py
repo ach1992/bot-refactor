@@ -6,6 +6,7 @@ The temporary fixture adapter proves dispatch, not support for another panel.
 """
 from __future__ import annotations
 import argparse,json,shutil,subprocess
+import test_post_v9_pasarguard_client as pg
 from pathlib import Path
 import package_post_v9 as package
 import test_access_state as owned
@@ -16,8 +17,13 @@ DB=purchase.SIDE[1]
 PHP=r'''<?php
 error_reporting(E_ALL);set_error_handler(static function($n,$m){if($n===E_DEPRECATED)return true;throw new ErrorException($m,0,$n);});
 $_SERVER['SCRIPT_FILENAME']=__FILE__;
+define('ACHBOT_PG_TEST_LOOPBACK',true);
 $root=$argv[1];$spec=json_decode($argv[4],true,64,JSON_THROW_ON_ERROR);
 $GLOBALS['events']=[];
+// Preserve observable failure before any forbidden native network request.
+if(!function_exists('curl_init')){
+ function curl_init(...$args){$GLOBALS['events'][]='unexpected_native_transport';throw new RuntimeException('unexpected_transport');}
+}
 function getMarzbanUser(...$a){$GLOBALS['events'][]='marzban_read';throw new RuntimeException('unexpected_transport');}
 function getMarzbanUserInfo(...$a){$GLOBALS['events'][]='marzban_info';throw new RuntimeException('unexpected_transport');}
 function editMarzbanConfig(...$a){$GLOBALS['events'][]='marzban_edit';throw new RuntimeException('unexpected_transport');}
@@ -106,7 +112,8 @@ def main():
  def yes(ok,name):
   if not ok:raise AssertionError(name)
   checks.append(name)
- with owned.owned_database()as(work,env):
+ with owned.owned_database()as(work,env),pg.panel()as(panel,panel_url):
+  panel.user.update(created_at='2026-01-01T00:00:00Z',note='achbot:v1:'+'c'*32)
   purchase.init(work,env,'http://127.0.0.1:9')
   def sql(q):return native.sql(work,env,q,DB)
   for name in ['001_marzban_panel_group_id.sql','004_automatic_renewal_attempts.sql','007_service_effects.sql','011_provider_identity.sql']:
@@ -115,8 +122,10 @@ def main():
   sql("INSERT INTO pays(id,hash_id,user_id,type,plan_id,server_id,volume,day,price,request_date,state) VALUES(1,'registry_paid',1001,'BUY_SUB',7,2,0,0,100,1700000000,'processing')")
   sql("INSERT INTO orders_list(id,userid,token,transid,fileid,server_id,inbound_id,remark,uuid,protocol,expire_date,link,amount,status,date,autoRenew,notif) VALUES(91,1001,'fixture','',7,2,0,'fixture_user','fixture','vless',1900000000,'[]',100,1,'1700000000','on',-1)")
   driver=work/'registry.php';driver.write_text(PHP)
-  def run(root,op,**extra):
-   result=subprocess.run(['php','-d','display_errors=0','-d','log_errors=0','-d','allow_url_fopen=0','-d','disable_functions=curl_init,fsockopen,pfsockopen,stream_socket_client',str(driver),str(root),str(work/'mysql.sock'),DB,json.dumps(dict(op=op,**extra))],capture_output=True,text=True,timeout=15)
+  def run(root,op,native_read=False,**extra):
+   disabled='fsockopen,pfsockopen,stream_socket_client'
+   if not native_read:disabled='curl_init,'+disabled
+   result=subprocess.run(['php','-d','display_errors=0','-d','log_errors=0','-d','allow_url_fopen=0','-d','disable_functions='+disabled,str(driver),str(root),str(work/'mysql.sock'),DB,json.dumps(dict(op=op,**extra))],capture_output=True,text=True,timeout=15)
    if result.returncode or any(line!='achbot_customer_draft_creation_deferred'for line in result.stderr.splitlines()):raise AssertionError(('php-registry-child',result.returncode,result.stderr[:1000]))
    data=json.loads(result.stdout)
    if 'exception'in data:raise AssertionError(data)
@@ -150,23 +159,31 @@ def main():
       and before==snapshot() and not bad['events'] and not good['events'],
       'actual_sid_only_dispatch_RED_and_authoritative_order_resolution_GREEN')
 
-  # Pure SQL native PasarGuard boundary: the helper resolves identity, but
-  # cannot replace an actually pinned pays snapshot. Network APIs are disabled.
+  # Quote eligibility now performs the existing native guard before a wallet
+  # claim. Only valid native probes enable cURL against this owned loopback
+  # fixture; invalid/unknown dispatch probes keep network functions disabled.
   original_config=sql('SELECT HEX(panel_url) FROM server_config WHERE id=2').strip()
-  sql("INSERT INTO provider_panels(id,provider,instance_key,name,api_url,api_key,version) VALUES(1,'pasarguard',REPEAT('b',32),'Quote fixture','https://provider.example.invalid','fixture-private-key','5.5.1')")
-  sql("UPDATE server_config SET type='pasarguard',panel_url='https://provider.example.invalid' WHERE id=2;UPDATE server_info SET provider_panel_id=1,provider_group_ids='[2,5]' WHERE id=2")
-  sql("INSERT INTO provider_accounts(effect_id,order_id,provider,panel_id,instance_key,endpoint_sha256,remote_user_id,remote_created_at,remote_username,operation_marker,entitlement_snapshot,state) VALUES(987,91,'pasarguard',1,REPEAT('b',32),SHA2('https://provider.example.invalid',256),17,'2026-01-01T00:00:00.000000Z','fixture_user',CONCAT('achbot:v1:',REPEAT('c',32)),'{\\\"group_ids\\\":[2,5]}','linked')")
+  sql("INSERT INTO provider_panels(id,provider,instance_key,name,api_url,api_key,version) VALUES(1,'pasarguard',REPEAT('b',32),'Quote fixture','"+panel_url+"','fixture-private-key','5.5.1')")
+  sql("UPDATE server_config SET type='pasarguard',panel_url='"+panel_url+"' WHERE id=2;UPDATE server_info SET provider_panel_id=1,provider_group_ids='[2,5]' WHERE id=2")
+  sql("INSERT INTO provider_accounts(effect_id,order_id,provider,panel_id,instance_key,endpoint_sha256,remote_user_id,remote_created_at,remote_username,operation_marker,entitlement_snapshot,state) VALUES(987,91,'pasarguard',1,REPEAT('b',32),SHA2('"+panel_url+"',256),17,'2026-01-01T00:00:00.000000Z','fixture_user',CONCAT('achbot:v1:',REPEAT('c',32)),'{\\\"group_ids\\\":[2,5]}','linked')")
   sql("INSERT INTO pays(id,hash_id,user_id,type,plan_id,server_id,order_id,volume,day,price,request_date,state) VALUES(2,'registry_renew',1001,'RENEW_ACCOUNT',7,2,91,0,0,100,1700000000,'pending'),(3,'registry_day',1001,'INCREASE_DAY_91_9970',7,2,91,0,7,100,1700000000,'pending')")
   def subject_case(name,pay,want,expected_server=2,lock=False):
-   before=snapshot();observed=run(ROOT,'subject',pay=pay,lock=lock)
-   out=observed['out']
+   before=snapshot();start=len(panel.trace)
+   native_read=want and pay.get('type')!='BUY_SUB'
+   observed=run(ROOT,'subject',pay=pay,lock=lock,native_read=native_read)
+   out=observed['out'];trace=panel.trace[start:]
+   expected=[('GET','/api/user/by-id/17',None)]*(2 if native_read else 0)
    yes(out['subject']is want and out['quote']is want and out['server']==expected_server
-       and out['caller_unchanged'] and before==snapshot() and not observed['events'],name)
+       and out['caller_unchanged'] and before==snapshot() and not observed['events']
+       and trace==expected and panel.write_count==0,name)
   native_renew=dict(renew,id=2)
   subject_case('pasarguard_order_resolution_does_not_bypass_missing_native_quote_pin',native_renew,False)
   for pay_id in [1,2,3]:
-   pin=run(ROOT,'pin',pay_id=pay_id)['out']['native_pin']
-   yes(pin['provider']=='pasarguard' and pin['group_ids']==[2,5],
+   start=len(panel.trace)
+   pin=run(ROOT,'pin',pay_id=pay_id,native_read=pay_id!=1)['out']['native_pin']
+   expected=[('GET','/api/user/by-id/17',None)]*(0 if pay_id==1 else 1)
+   yes(pin['provider']=='pasarguard' and pin['group_ids']==[2,5]
+       and panel.trace[start:]==expected and panel.write_count==0,
        'actual_pasarguard_native_quote_pinned_'+str(pay_id))
   subject_case('pasarguard_pinned_renew_omitted_server_accepted',native_renew,True)
   subject_case('pasarguard_pinned_renew_explicit_server_accepted',dict(native_renew,server_id=2),True)
@@ -184,7 +201,7 @@ def main():
   subject_case('pasarguard_order_resolution_keeps_native_account_generation_pin',native_renew,False)
   sql("UPDATE provider_accounts SET remote_created_at='2026-01-01T00:00:00.000000Z' WHERE order_id=91;UPDATE provider_panels SET api_url='https://changed.example.invalid' WHERE id=1")
   subject_case('pasarguard_order_resolution_keeps_native_endpoint_pin',native_renew,False)
-  sql("UPDATE provider_panels SET api_url='https://provider.example.invalid' WHERE id=1")
+  sql("UPDATE provider_panels SET api_url='"+panel_url+"' WHERE id=1")
   subject_case('pasarguard_valid_quote_restored_after_negative_controls',native_renew,True)
   sql("UPDATE server_config SET type='marzban',panel_url=CONVERT(UNHEX('"+original_config+"') USING utf8mb4) WHERE id=2")
   partial=stage('partial-adapter')
@@ -237,7 +254,9 @@ def main():
    'closed_native_adapters':2,'fixture_adapter_only':True,'external_requests':0,'production_mutations':0,'new_schema':False,
    'authoritative_subject_resolution':True,'sid_only_dispatch_RED':True,
    'explicit_subject_server_mismatch_rejected':True,'pasarguard_native_quote_pins_preserved':True,
-   'subject_preflight_readonly':True,'network_functions_disabled':True}
+   'subject_preflight_readonly':True,'network_functions_disabled':False,
+   'uncontrolled_network_functions_disabled':True,'native_quote_loopback_readonly':True,
+   'native_quote_read_requests':len(panel.trace),'native_quote_write_requests':panel.write_count}
  if a.report:a.report.write_text(json.dumps(report,ensure_ascii=False,indent=2)+'\n')
  print(json.dumps(report,ensure_ascii=False))
 if __name__=='__main__':main()

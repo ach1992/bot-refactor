@@ -141,7 +141,7 @@ def main():
             ('runtime_cleanup','test_unified_runtime_cleanup.py','assertions',140,
                 {'actual_php':True,'owned_socket_mariadb':True,'provider_mutations':0,'production_mutations':0}),
             ('provider_registry','test_unified_provider_registry.py','cases',76,
-                {'actual_php':True,'owned_socket_mariadb':True,'closed_native_adapters':2,'fixture_adapter_only':True,'external_requests':0,'production_mutations':0,'new_schema':False,'authoritative_subject_resolution':True,'sid_only_dispatch_RED':True,'explicit_subject_server_mismatch_rejected':True,'pasarguard_native_quote_pins_preserved':True,'subject_preflight_readonly':True,'network_functions_disabled':True}),
+                {'actual_php':True,'owned_socket_mariadb':True,'closed_native_adapters':2,'fixture_adapter_only':True,'external_requests':0,'production_mutations':0,'new_schema':False,'authoritative_subject_resolution':True,'sid_only_dispatch_RED':True,'explicit_subject_server_mismatch_rejected':True,'pasarguard_native_quote_pins_preserved':True,'subject_preflight_readonly':True,'network_functions_disabled':False,'uncontrolled_network_functions_disabled':True,'native_quote_loopback_readonly':True,'native_quote_read_requests':12,'native_quote_write_requests':0}),
             ('existing_subscriptions','test_unified_existing_subscriptions.py','cases',155,
                 {'actual_php':True,'owned_socket_mariadb':True,'loopback_native_pasar_guard':True,
                  'real_telegram_tested':False,'real_provider_tested':False,
