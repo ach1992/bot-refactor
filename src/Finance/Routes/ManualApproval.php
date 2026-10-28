@@ -374,12 +374,10 @@ if (
                 'inbound_id'   => $inbound_id,
                 'remark'       => $remark,
                 'uniqid'       => $uniqid2 ?: $uniqid,
-                'protocol'     => $protocol,
                 'expire_date'  => $expire_date,
                 'vray_link'    => $vray_link,
                 'amount'       => achbotAllocateOrderAmount((int)$price,$accountCount,$i),
                 'date'         => $date,
-                'rahgozar'     => $rahgozar,
                 'agent_bought' => $agent_bought,
             ];
 

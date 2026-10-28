@@ -236,8 +236,7 @@ function achbotAutoBankProvisionBuySub(
             throw new RuntimeException('bank_buy_links_missing');
         $lines[]=['effect_id'=>$effectId,'remark'=>$remark,'volume'=>$volume,
             'days'=>$days,'token'=>$token,'uniqid'=>$uuid?:$uniqid,
-            'protocol'=>(string)$p['protocol'],'vray_link'=>$links,
-            'date'=>time(),'rahgozar'=>(int)$p['rahgozar'],
+            'vray_link'=>$links,'date'=>time(),
             'agent_bought'=>(int)$p['agent_bought']];
         $deliveries[]=['qr'=>$qr,'caption'=>$caption,'keys'=>$keys,'uid'=>$owner];
     }
