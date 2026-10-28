@@ -28,8 +28,8 @@ $botState=['requirePhone'=>'off','sellState'=>'on','agencyPlanDiscount'=>$spec['
 $paymentKeys=[];$botUrl='http://127.0.0.1:9/';$botUsername='fixture';
 $buttonValues=['back_to_main'=>'Home','cancel'=>'Cancel'];$mainValues=['start_message'=>'PERSONAL HOME'];
 $q=$connection->prepare('SELECT * FROM users WHERE userid=?');$q->bind_param('i',$from_id);$q->execute();$userInfo=$q->get_result()->fetch_assoc();$q->close();
-$GLOBALS['events']=[];
-register_shutdown_function(static function(){echo json_encode(['events'=>$GLOBALS['events']],JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE);});
+$GLOBALS['events']=[];$GLOBALS['native_reads']=0;
+register_shutdown_function(static function(){echo json_encode(['events'=>$GLOBALS['events'],'native_reads'=>$GLOBALS['native_reads']],JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE);});
 function sendMessage($text=null,$keys=null,$format=null,$to=null){$GLOBALS['events'][]=['event'=>'SEND','text'=>$text,'keys'=>json_decode($keys??'{}',true),'to'=>$to];return (object)['ok'=>true,'result'=>(object)['message_id'=>703,'chat'=>(object)['id'=>$GLOBALS['from_id']]]];}
 function editText($id,$text,$keys=null,...$args){$GLOBALS['events'][]=['event'=>'EDIT','text'=>$text,'keys'=>json_decode($keys??'{}',true)];return (object)['ok'=>true];}
 function alert(...$a){$GLOBALS['events'][]=['event'=>'ALERT','text'=>$a[0]??''];}
@@ -39,6 +39,13 @@ function getMainKeys(){return '{}';}
 function setUser($v='none',$field='step'){global $connection,$from_id;if (!in_array($field,['step','temp'],true)) throw new RuntimeException('unexpected_user_write');$q=$connection->prepare("UPDATE users SET `$field`=? WHERE userid=?");$q->bind_param('si',$v,$from_id);$q->execute();$q->close();}
 function RandomString(){return 'N'.bin2hex(random_bytes(9));}
 function achbotSupportsPanel($type){return $type==='marzban';}
+function getMarzbanUser($serverId,$remark){
+ ++$GLOBALS['native_reads'];
+ if((int)$serverId!==2 || !in_array($remark,['fixture41','fixture42'],true) ||
+    !empty($GLOBALS['spec']['native_unknown']))return null;
+ return(object)['username'=>$remark,'expire'=>$GLOBALS['spec']['native_expire']??(time()+30*86400),
+  'data_limit'=>10*1073741824,'used_traffic'=>1073741824,'status'=>'active'];
+}
 function check(){}
 function handleToggleCallbacks(...$a){return false;}
 function achbotHandleChannelExemption(...$a){return false;}
@@ -113,10 +120,20 @@ def check():
             assert event(call(w,e,app,route='volume',data=data),'ALERT')
         sql(w,e,"UPDATE server_config SET type='marzban' WHERE id=2")
         sql(w,e,'UPDATE orders_list SET expire_date=1 WHERE id=41')
-        for data in ['increaseAVolume41','increaseVolumePlan41_51']:
-            assert event(call(w,e,app,route='volume',data=data),'ALERT')
+        # A stale local expiry must not override the current native state.
+        live=call(w,e,app,route='volume',data='increaseAVolume41')
+        assert 'increaseVolumePlan41_51' in str(live) and live['native_reads']>0,live
+        checks.append('stale_local_expiry_does_not_block_live_native_volume_entry')
         sql(w,e,f'UPDATE orders_list SET expire_date={future} WHERE id=41')
+        for data in ['increaseAVolume41','increaseVolumePlan41_51']:
+            assert event(call(w,e,app,route='volume',data=data,native_expire=1),'ALERT')
         checks.append('retired_provider_and_expired_entry_and_selection_fail_closed')
+        before=purchase.snapshot(w,e,DB)
+        for data in ['increaseAVolume41','increaseVolumePlan41_51']:
+            unknown=call(w,e,app,route='volume',data=data,native_unknown=True)
+            assert unknown['native_reads']>0 and event(unknown,'ALERT') and not event(unknown,'SEND') and not event(unknown,'EDIT'),unknown
+        assert purchase.snapshot(w,e,DB)==before
+        checks.append('unknown_native_volume_entry_and_selection_refuse_without_draft_or_effect')
         r=call(w,e,app,route='volume',data='increaseVolumePlan42_51',actor=9002)
         assert event(r,'SEND') and sql(w,e,"SELECT price FROM pays WHERE user_id=9002 ORDER BY id DESC LIMIT 1")=='750'
         assert sql(w,e,"SELECT volume FROM pays WHERE user_id=9002 ORDER BY id DESC LIMIT 1")=='2'
@@ -188,7 +205,7 @@ def check():
         for case in [call(w,e,app,route='volume',data='increaseAVolume42'),call(w,e,app,route='status',data='ps_evidenceinvoice')]:
             assert not any(term.lower() in str(case).lower() for term in ['SQLSTATE','mysqli','Marzban','remote_unconfirmed','fulfillment_unconfirmed'])
         checks.append('customer_copy_redacts_diagnostics_while_authorized_admin_retains_reason')
-    return {'complete':True,'cases':len(checks),'scenarios':checks,'limits':['Fake Telegram transport; no installed/operator UI acceptance','No live tenant/provider/financial effects','PHP runtime reported by invocation; aggregate PHP matrix owned by Master']}
+    return {'complete':True,'cases':len(checks),'scenarios':checks,'fresh_native_addon_admission':True,'unknown_native_refuses_without_draft':True,'limits':['Fake Telegram transport; no installed/operator UI acceptance','No live tenant/provider/financial effects','PHP runtime reported by invocation; aggregate PHP matrix owned by Master']}
 
 if __name__=='__main__':
     p=argparse.ArgumentParser();p.add_argument('--run-disposable',required=True,action='store_true');p.add_argument('--report',type=Path);a=p.parse_args();r=check()
