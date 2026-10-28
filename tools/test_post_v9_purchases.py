@@ -69,6 +69,9 @@ echo json_encode(['old'=>$old,'current'=>achbotMessageCatalog()],JSON_THROW_ON_E
 """
     definitions=json.loads(subprocess.check_output(['php','-r',driver],cwd=ROOT,
         input=json.dumps(archived).encode()))
+    followups=json.loads((ROOT/'tools/text_catalog_owner_followup.json').read_text())
+    if followups.get('baseline_commit')!='c9959811e264b5a8728f6a44376cb69c9a89b7f4' or followups.get('result_commit')!='faa9aa6502a4e24152f1fa6faad7f0ab7921652e':
+        raise RuntimeError('Owner copy followup identity mismatch')
     pairs={}
     for key,record in literal.items():
         topic,name=key.split('.',1)
@@ -77,8 +80,14 @@ echo json_encode(['old'=>$old,'current'=>achbotMessageCatalog()],JSON_THROW_ON_E
         new_parameters=after.get('parameters',[]) if isinstance(after,dict) else []
         old_text=before['text'] if isinstance(before,dict) else before
         new_text=after['text'] if isinstance(after,dict) else after
+        followup=followups['changes'].get(key)
+        expected_after=record['after']
+        if followup:
+            if followup.get('before')!=expected_after or not followup.get('reason'):
+                raise RuntimeError('Owner literal followup lineage mismatch: '+key)
+            expected_after=followup['after']
         if (old_parameters or new_parameters or record['before']!=old_text
-                or record['after']!=new_text or old_text==new_text
+                or expected_after!=new_text or old_text==new_text
                 or not isinstance(old_text,str) or not isinstance(new_text,str)
                 or not record.get('reasons')):
             raise RuntimeError('Unverified literal UI parity pair: '+key)
