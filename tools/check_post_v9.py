@@ -131,7 +131,7 @@ def main():
         # Current Owner R5 uses real merged source; prior immutable stages remain separate.
         owner_r5={}
         r5_suites=[
-            ('roles','test_owner_r5_roles.py',206,
+            ('roles','test_owner_r5_roles.py',475,
              {'complete':True,'real_disposable_mariadb':True,'actual_admin_keyboard':True,
               'financial_boolean_preserved':True,'no_network':True,
               'actual_role_management_route':True,'actual_readonly_attention_hub':True,'baseline_red':True,
@@ -141,7 +141,16 @@ def main():
               'forbidden_financial_effects':{'financial_reads':0,'sql_writes':0,'transactions':0,'native_calls':0},
               'actual_positive_approval_levels':['manager','operator'],
               'actual_replay_protected_levels':['manager','operator'],
-              'approval_baseline_source':'a901006736a6a75fcac29a609efff3204e1edd6b'}),
+              'approval_baseline_source':'a901006736a6a75fcac29a609efff3204e1edd6b',
+              'actual_production_bot_ingress':True,'actual_config_bootstrap_ingress':True,
+              'actual_customer_app_downloads':True,'actual_customer_pagination_reply':True,
+              'actual_ticket_attachment_authorization':True,'public_callback_collision_baseline_red':True,
+              'public_collision_baseline_source':'86a1ea4c42d78389b0795700ad83764828b94844',
+              'public_customer_journey_families':['buy','bulk','trial','own_orders','import','renew','addon','wallet','status','support','agency','downloads'],
+              'public_pending_stage_families':['buy','bulk','own_orders','renew','addon','wallet','support'],
+              'actual_customer_wallet_draft_paths':['1001:increaseWallet_100000','1001:increaseWalletCustom','1002:increaseWallet_100000','1002:increaseWalletCustom'],
+              'actual_customer_ticket_actors':[1001,1002,9004],
+              'forbidden_admin_wallet_effects':{'financial_reads':0,'sql_writes':0,'transactions':0,'native_calls':0}}),
             ('instance_content','test_owner_instance_content.py',49,
              {'result':'PASS','source_real':True,'socket_only_original_schema':True,'no_external_calls':True}),
             ('user_info','test_owner_r5_user_info.py',46,
