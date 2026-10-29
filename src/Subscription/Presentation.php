@@ -305,6 +305,12 @@ function present(string $provider, array $native, array $botState, array $option
         $result['qr_config_links'] = $configsVisible ? $selected : [];
 
     }
+    // The inline count boundary also applies to retained positional policies.
+    // Preserve selection order/duplicates; explicit QR records remain independent.
+    if (count($selected) > 10) {
+        $selected = array_slice($selected, 0, 10);
+        $result['limited'] = true;
+    }
     // QR actions are explicit and independent from inline-text selection/budgets.
     // Every accepted native URI is sent separately by the authorized order action.
     $result['qr_config_links'] = array_column(nativeLinks($native['links'] ?? []), 'uri');

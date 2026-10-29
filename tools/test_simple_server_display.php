@@ -88,6 +88,27 @@ foreach(['delivery'=>'d','view'=>'v'] as $context=>$prefix){
     equal(present('marzban',$native,[],$on,$context)['links'],[$links[0]],'legacy_'.$context.'_explicit_ON_not_hidden');
     equal(present('marzban',$native,[],$on,$peerContext),$peer,'legacy_'.$context.'_ON_preserves_peer');
 }
+// Legacy positional compatibility shares the same inline count boundary.
+// Short configs prove that whole-message size alone cannot enforce ten.
+foreach (['delivery','view'] as $context) {
+    $indices=[10,1,10,0,2,3,4,5,6,7,8,9];
+    $old=['mode'=>'marzban_legacy','policy'=>[], 'legacy'=>[
+        'linkIndices'=>$indices,'showIndexes'=>range(1,12),
+        'hideConfigIfMany'=>false,'hideConnectLinkForMarzban'=>false]];
+    $unchanged=serialize($old);
+    $uncapped=$context==='delivery'?array_map(static fn($i)=>$links[$i],$indices):array_slice($links,0,12);
+    verify(textLength(AchBot\Subscription\Presentation\codeLinks($uncapped))<4096,
+        'legacy_'.$context.'_short_configs_do_not_trigger_size_limit');
+    $p=present('marzban',$native,[],$old,$context);
+    equal($p['links'],array_slice($uncapped,0,10),'legacy_'.$context.'_inline_maximum_ten_preserves_order_and_duplicates');
+    verify($p['limited'] && $p['reason']==='display_limit' && $p['notice_html']!=='',
+        'legacy_'.$context.'_count_limit_notice');
+    equal($p['qr_config_links'],$links,'legacy_'.$context.'_count_limit_keeps_all_forty_explicit_QRs');
+    equal(serialize($old),$unchanged,'legacy_'.$context.'_read_does_not_rewrite_peer_policy');
+    $text=fitMessage($p,static fn($p)=>$p['config_html']."\n".$p['subscription_html']."\n".$p['backup_html']."\n".$p['notice_html']);
+    verify(count($p['links'])===10 && textLength($text)<=4096,
+        'legacy_'.$context.'_complete_short_message_retains_exactly_ten');
+}
 // Complete-message budget, not a fragment-byte bound.
 $long=array_map(static fn($i)=>'vless://native.invalid/'.str_repeat(chr(97+$i),1600).'#'.$i,range(0,9));
 $p=present('pasarguard',['links'=>$long,'subscription_url'=>$sub,'backup_urls'=>[$backup]],[],

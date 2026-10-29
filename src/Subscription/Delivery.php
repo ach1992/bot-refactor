@@ -185,4 +185,3 @@ if (!function_exists('sendQrFromLink')) {
         return ($qrLink === '' || $photoConfirmed) && $textConfirmed;
     }
 }
-

@@ -1001,7 +1001,7 @@ def main():
         presentation={"complete":True,"checks":251,"retained_checks":93,"context_checks":158,"real_network":False}
         simple_display=json.loads(subprocess.check_output(
             ["php",str(ROOT/"tools/test_simple_server_display.php")],cwd=ROOT,text=True,timeout=30))
-        if simple_display!={"complete":True,"cases":145,"source_real":True,"two_native_providers":True,
+        if simple_display!={"complete":True,"cases":157,"source_real":True,"two_native_providers":True,
                 "whole_message_budget":True,"all_explicit_config_qrs":True,"production_effects":0}:
             raise RuntimeError("Simple display/context/complete-message boundary proof incomplete")
         # Reproduce the new behavioral RED against the unchanged RC18/main source.
