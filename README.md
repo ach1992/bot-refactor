@@ -2,11 +2,11 @@
 
 AChBot is a PHP Telegram bot for managing VPN subscriptions, customer/admin accounts, plans, support and scheduled operations. The current source release supports **Marzban and native PasarGuard 5.5.1**; the retired X-UI/Sanaei/Alireza/legacy normal adapters remain unsupported. See the [release contract](docs/post-v9/NEXT-RELEASE.md) for the released scope and migration boundaries.
 
-**Current release:** [v0.10.0-rc.15](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.15), with shared server/order/effect storage for Marzban and native PasarGuard, familiar workflows and one shared USDT rate for every account. This is a prerelease; source/release evidence and actual installed functional acceptance remain separate.
+**Current release:** [v0.10.0-rc.16](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.16), integrated through [PR #93](https://github.com/ach1992/bot-refactor/pull/93). RC16 adds four administrator levels, an independent staff-notification preference, settings-backed instance messages/destinations, clearer Persian Telegram text, receipt/profile improvements and PasarGuard auxiliary links. This is a source-only prerelease; publication and actual installed acceptance remain separate.
 
-Download the complete [runtime ZIP](https://github.com/ach1992/bot-refactor/releases/download/v0.10.0-rc.15/achbot-v0.10.0-rc.15-runtime.zip), [manifest](https://github.com/ach1992/bot-refactor/releases/download/v0.10.0-rc.15/achbot-v0.10.0-rc.15-runtime.zip.manifest.json) and [SHA256SUMS](https://github.com/ach1992/bot-refactor/releases/download/v0.10.0-rc.15/SHA256SUMS). Follow the release's RC14→RC15 guide and [shared-storage migration contract](docs/post-v9/SHARED-PROVIDER-STORAGE.md). The ZIP never applies SQL. Never rerun completed012/013 or restore old data after new writes without reconciliation.
+The complete package has **115 runtime members, including 114 PHP files**. Use the release's [runtime ZIP](https://github.com/ach1992/bot-refactor/releases/download/v0.10.0-rc.16/achbot-v0.10.0-rc.16-runtime.zip), [full manifest](https://github.com/ach1992/bot-refactor/releases/download/v0.10.0-rc.16/achbot-v0.10.0-rc.16-runtime.zip.manifest.json) and [SHA256SUMS](https://github.com/ach1992/bot-refactor/releases/download/v0.10.0-rc.16/SHA256SUMS) for this exact release. Follow [RC15 → RC16](docs/post-v9/RC15-TO-RC16.md) for the paired runtime/staff-configuration rollout and exact package identity. A compatible RC15 installation needs **no new SQL**; never rerun completed012/013. Earlier installations must first reconcile the [shared-storage migration contract](docs/post-v9/SHARED-PROVIDER-STORAGE.md). The ZIP never applies SQL.
 
-**Current source follow-up:** the [scope guide](docs/post-v9/NEXT-RELEASE.md) describes four administrator levels and settings-backed welcome/home messages, purchase notes and support/cooperation destinations. The existing administrator list manages non-owner levels; Bot Settings edits instance text. Static interface copy remains in the two audience catalogs. A compatible RC15 installation needs no new SQL for this follow-up. The full source package includes its complete manifest, not only changed files. Before downgrading to code that lacks the new role restrictions, reconcile staff access.
+The [current scope guide](docs/post-v9/NEXT-RELEASE.md) describes the four tiers and their common human-receipt workflow. Owner manages staff levels and notification preferences in the existing administrator list; Bot Settings edits instance text and support/help/cooperation destinations. Existing staff without an explicit level use Operator until Owner assigns a level. Actual obsolete private staff arrays may be removed only with the authorized new-runtime rollout, preserving primary `$admin` and every unrelated private setting. Before a source downgrade, reconcile staff access; older code does not enforce these tiers.
 
 Published RC10/RC11/RC12 and original V0–V9 history remain unchanged. Installed/operator and financial acceptance remain separate from source CI and publication.
 
@@ -14,7 +14,7 @@ Published RC10/RC11/RC12 and original V0–V9 history remain unchanged. Installe
 
 - PHP with the extensions used by the bot, including `mysqli`, `curl`, `zip` and `gd`. Automated compatibility checks run on **PHP 8.1 and 8.4**.
 - MariaDB with the chosen release's compatible current schema and retained application/journal data. The original 23-table V9 DDL is historical evidence; inspect the actual additive migration state instead of reimporting it.
-- A Telegram bot/webhook, a supported provider backend and an isolated test deployment. Choose Marzban or, for RC12, native PasarGuard **5.5.1** with the [provider prerequisites](docs/post-v9/PASARGUARD-CONTRACT.md). Other PasarGuard versions and retired panel adapters are not implied.
+- A Telegram bot/webhook, a supported provider backend and an isolated test deployment. Choose Marzban or native PasarGuard **5.5.1** with the [provider prerequisites](docs/post-v9/PASARGUARD-CONTRACT.md). Other PasarGuard versions and retired panel adapters are not implied.
 - **Per-install webhook configuration:** all `bot.php` Telegram webhooks require a valid `POST` and `X-Telegram-Bot-Api-Secret-Token` matching `$telegramWebhookSecret` in that bot's private `baseInfo.php` (16–256 ASCII letters, digits, hyphens or underscores) **before `config.php` initializes**. The shared PHP/OpenLiteSpeed environment is not used. Missing/invalid configuration fails closed for every bot update. The same value must be provisioned as Telegram `setWebhook.secret_token` in a separately authorized rollout. See the [RC9 upgrade guide](docs/post-v9/RC9-TO-RC11.md) and [Direct Gift policy](docs/post-v9/DIRECT-GIFT-RECOVERY.md).
 - Local deployment settings in `baseInfo.php`, based on [`baseInfo.example.php`](baseInfo.example.php). Never commit real credentials, tokens, customer records or backups.
 
@@ -131,7 +131,8 @@ provider operation or deployment.
 
 ## Documentation
 
-- [RC12 scope and delivery boundaries](docs/post-v9/NEXT-RELEASE.md)
+- [RC16 scope and delivery boundaries](docs/post-v9/NEXT-RELEASE.md)
+- [RC15 → RC16 paired runtime, staff settings and recovery](docs/post-v9/RC15-TO-RC16.md)
 - [RC11 → RC12 upgrade, settings and message editing map](docs/post-v9/RC11-TO-RC12.md)
 - [راهنمای فارسی آماده‌سازی ارتقای RC11 به RC12](docs/post-v9/RC11-TO-RC12.fa.md)
 - [Native PasarGuard 5.5.1 contract](docs/post-v9/PASARGUARD-CONTRACT.md)

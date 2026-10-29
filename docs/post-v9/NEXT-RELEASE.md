@@ -1,6 +1,8 @@
-# Pending administrator, instance-content and Telegram copy follow-up
+# RC16 administrator, instance-content and Telegram copy scope
 
-This source batch improves the existing bot without a new schema: four administrator tiers, settings-backed instance messages/destinations, clearer Persian Telegram text, receipt-review layout, user-info/profile updates and PasarGuard auxiliary links. A compatible RC15 installation retains its current schema, private configuration and financial/native evidence. Source acceptance does not authorize integration, publication or installation.
+[RC16](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.16) is the current published source-only prerelease, merged through [PR #93](https://github.com/ach1992/bot-refactor/pull/93). Verify the published assets before rollout. The package contains **115 runtime members / 114 PHP files**, including the complete two-file audience catalog and the new administrator, instance-content and profile helpers. Read [RC15 → RC16](RC15-TO-RC16.md) for exact source/package identity, paired private-staff configuration and recovery.
+
+This release improves the existing bot without a new schema: four administrator tiers, independent staff-notification preferences, settings-backed instance messages/destinations, clearer Persian Telegram text, receipt-review layout, user-info/profile updates and PasarGuard auxiliary links. A compatible RC15 installation needs **no new SQL**; do not rerun completed012/013. Preserve private configuration and financial/native evidence. Source merge/publication does not install the runtime or certify Telegram/provider/merchant/wallet/Cron acceptance.
 
 ## Administrator scope and downgrade boundary
 
