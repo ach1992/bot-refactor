@@ -36,10 +36,29 @@ source replacement must remove the retired installed file during an authorized
 rollout; no alias wrapper, new table, migration or live operation is introduced.
 Frozen V0–V9 evidence and published RC18 assets stay unchanged.
 
-This batch still needs exact-source PHP8.1/PHP8.4 full CI, fresh independent
-review and current action-specific merge/publication approvals. Deployment and
-actual Telegram/provider acceptance remain separate; no installed target
-inspection is authorized.
+Current implementation, exact-candidate CI, review and integration evidence
+are recorded in [PR98](https://github.com/ach1992/bot-refactor/pull/98) and
+[Issue37](https://github.com/ach1992/bot-refactor/issues/37). Exact-source full
+PHP8.1/PHP8.4 CI, author-separated review and action-specific approvals are
+required before their corresponding integration/publication actions. Deployment
+and actual Telegram/provider acceptance remain separate; source work does not
+authorize installed-target inspection.
+
+## Fresh installation and independent Cron locks
+
+Follow [fresh installation](FRESH-INSTALL.md) for a new bot: matching verified
+runtime/setup source, empty-database SQL order, private per-bot webhook secret,
+Owner configuration, one-minute CLI coordinator and readiness/acceptance. It is
+not an upgrade or automatic installer. Existing tenants use their exact release
+transition and never replay completed012/013.
+
+The private lock directory remains outside served/install paths. Its default is
+/var/lib/achbot/cron-locks; each canonical bot directory has a distinct hashed
+lock file. Same-UID Cron installations may share that directory; different UIDs
+need separately owned private0700 directories using ACHBOT_CRON_LOCK_DIR. The
+current runner's four processes are gift2all.php, admitted broadcast,
+rewardReport.php and admitted services; old standalone broadcast/warning paths
+are retired. Do not delete or replace an active lock inode.
 
 ## Inherited RC17 shared settings and native display selection
 
