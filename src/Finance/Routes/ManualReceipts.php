@@ -560,7 +560,7 @@ if (preg_match('/^approvePayment(.*)/', $data, $match) && achbotAdminCanFor($con
             if (
                 isset($msgInfo['chat_id'], $msgInfo['message_id']) &&
                 $msgInfo['chat_id'] != $payInfo['chat_id'] &&
-                achbotAdminRecipientAllowed($connection,$msgInfo['chat_id'],(int)$admin,'payments')
+                achbotAdminRecipientAllowed($connection,$msgInfo['chat_id'],(int)$admin)
             ) {
                 try {
                     editKeys($keys, $msgInfo['message_id'], $msgInfo['chat_id']);
@@ -573,7 +573,7 @@ if (preg_match('/^approvePayment(.*)/', $data, $match) && achbotAdminCanFor($con
 
     // ارسال پیام به ادمین‌ها
     $adminMessages = \achbotMessage('manual_payment.manual_receipts.admin_messages.31d90c5e69', ['methodName' => $methodName, 'userId' => $userId]) . number_format($currentWallet) . \achbotMessage('manual_payment.manual_receipts.text.c0780ce268') . number_format($newWallet) . \achbotMessage('manual_payment.manual_receipts.text.89a4910ebe', ['hash_id' => $hash_id]);
-    sendToAllAdmins('sendMessage', ['text' => $adminMessages, 'parse_mode' => "html"], null, ['capability'=>'payments']);
+    sendToAllAdmins('sendMessage', ['text' => $adminMessages, 'parse_mode' => "html"]);
     
     // ارسال پیام به ادمین خاص
     sendMessage($adminMessages, null, "html", $admin);
@@ -684,7 +684,7 @@ if (preg_match('/^declineActionReason_(.+)_(\d+)$/', $userInfo['step'], $match) 
             if (
                 isset($msgInfo['chat_id'], $msgInfo['message_id']) &&
                 $msgInfo['chat_id'] != $payInfo['chat_id'] &&
-                achbotAdminRecipientAllowed($connection,$msgInfo['chat_id'],(int)$admin,'payments')
+                achbotAdminRecipientAllowed($connection,$msgInfo['chat_id'],(int)$admin)
             ) {
                 editKeys($keys, $msgInfo['message_id'], $msgInfo['chat_id']);
             }

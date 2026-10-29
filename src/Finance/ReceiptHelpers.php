@@ -2054,7 +2054,7 @@ function sendReceiptToAdminsAndUpdatePay(
             'caption' => $caption,
             'reply_markup' => $adminKeyboard,
             'parse_mode' => 'HTML'
-        ], $hashId, ['capability'=>'payments']);
+        ], $hashId);
     } catch (Throwable $ignored) {
         // The primary operator message and protected DB transition succeeded.
     }

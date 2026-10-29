@@ -370,7 +370,7 @@ if($botState['cartToCartAutoAcceptState']=="on"){
 				if (
 					isset($msgInfo['chat_id'], $msgInfo['message_id']) &&
 					$msgInfo['chat_id'] != $payInfo['chat_id'] &&
-					achbotAdminRecipientAllowed($connection,$msgInfo['chat_id'],(int)$admin,'payments') // جلوگیری از تکرار برای ادمین اصلی
+					achbotAdminRecipientAllowed($connection,$msgInfo['chat_id'],(int)$admin) // جلوگیری از تکرار برای ادمین اصلی
 				) 	{
 					editKeys(json_encode(['inline_keyboard' => [[['text' => $autoServiceLabel, 'callback_data' => "wizwizch"]]]]),
                     $msgInfo['message_id'],
