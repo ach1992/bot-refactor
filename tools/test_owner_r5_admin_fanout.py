@@ -7,7 +7,7 @@ import test_access_state as owned
 ROOT=Path(__file__).resolve().parents[1]
 BASE='a070a47c5796e8244a3fe7fbca21e301977c3dcf'
 PRIVATE_BASE='4a28474fdba41e17ebadab29ece1c17d18038437'
-MAINTENANCE_BASE='4d89eb34827d213ffac0308c277daf421242adb9'
+MAINTENANCE_BASE='add6948fd0720c0fed454d5c2db2f06d1d5d8b24'
 FINANCE_FILES=['src/Finance/ReceiptHelpers.php','src/Finance/AutomaticReceipts.php',
     *['src/Finance/Routes/'+name for name in ['Checkout.php','RenewalCheckout.php','Extensions.php','ManualApproval.php','ManualReceipts.php','WalletRecharge.php']]]
 PHP=r'''<?php
