@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Owner revision4: two editable audiences; bounded style and native copy proof."""
 from __future__ import annotations
-import collections, copy, functools, io, json, pathlib, re, socket, subprocess, tarfile, tempfile, time, urllib.error, urllib.request
+import collections, copy, functools, hashlib, io, json, pathlib, re, socket, subprocess, tarfile, tempfile, time, urllib.error, urllib.request
 import catalog_owner_r5
 ROOT=pathlib.Path(__file__).resolve().parents[1]
 BASE='7faac9b067f8a171e5e26d6aea5aaf9f4088a3e7'
@@ -57,13 +57,46 @@ def recipient_side(sides,key,target):
 # immutable support-reply body. Recipient placement remains a separate proof.
 R5_ADMIN_REPLY_PREFACE="\nrequire_once __DIR__.'/../Admin/Access.php';\nif (!achbotAdminRequestAllowed(is_string($data??null)?$data:null,is_string($text??null)?$text:null,(string)($userInfo['step']??''))) {achbotAdminDeny();return;}\n"
 R5_ADMIN_REPLY_ANCHOR="require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG\n"
+# These two exact reviewed R5 variants repair ownership/canonical callbacks,
+# preserve configured Owner/actor IDs and scope customer ticket pagination.
+# They do not replace the original recipient-history reference.
+R5_TICKET_SOURCE_REF='e728ec50151df9ceb2ce66f79acc6c1d9c0a345c'
+R5_TICKET_SOURCE_LAYERS={
+ 'CustomerConversation.php':{
+  'before':'6268232024d842d61b23afdbd417e9630648e51dcd6c5b59101e43056d8539d8',
+  'after':'55d496ad3aae388b9d1f45ff64dc4239debcb08985aa9921cd5dddf62ae9d169',
+  'diff':'9488417483adcfce9e9e9c064a7966e25c8a58c487b27c29d6a77b6f7e21e929'},
+ 'QueueAndHistory.php':{
+  'before':'46cf7dcf45f05b040084e2c7b643f545897ec474b6fe9fd2922f3f4eecf6e5ef',
+  'after':'3d139f95217f95ce2d90de9a23676bea4398b62d91b3449596ab1ed02ee19689',
+  'diff':'76552cf70ecc1621756305efcf187f5bfc81b20039eab7d5468e1c016a385b59'},
+}
+@functools.lru_cache(maxsize=None)
+def recipient_ticket_variant(name,reference):
+    record=R5_TICKET_SOURCE_LAYERS[name];path='src/Support/'+name
+    check(hashlib.sha256(reference.encode()).hexdigest()==record['before'],'recipient ticket layer baseline drift:'+name)
+    accepted=command('git','show',R5_TICKET_SOURCE_REF+':'+path)
+    delta=command('git','diff',CONTEXT_REFERENCE,R5_TICKET_SOURCE_REF,'--',path)
+    check(hashlib.sha256(accepted).hexdigest()==record['after'] and hashlib.sha256(delta).hexdigest()==record['diff'],
+          'recipient ticket exact accepted source/delta drift:'+name)
+    return accepted.decode()
+R5_ADMIN_REPLY_STAFF_CONDITIONS=[["if(preg_match(\"/^reply_(.*)/\",$data,$match) and  ($from_id == $admin || $userInfo['isAdmin'] == true)){","if(preg_match(\"/^reply_(.*)/\",$data,$match) and  achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'operations')){"],["if(preg_match('/^answer_(.*)/', $userInfo['step'], $match) && ($from_id == $admin || $userInfo['isAdmin'] == true) && $text != $buttonValues['cancel']){","if(preg_match('/^answer_(.*)/', $userInfo['step'], $match) && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'operations') && $text != $buttonValues['cancel']){"]]
+def recipient_staff_variant(prefaced):
+    for before,after in R5_ADMIN_REPLY_STAFF_CONDITIONS:
+        check(prefaced.count(before)==1,'recipient exact staff condition anchor drift')
+        prefaced=prefaced.replace(before,after,1)
+    return prefaced
 def recipient_source_layer(name,source,reference):
     if source==reference:return 0
+    if name in R5_TICKET_SOURCE_LAYERS:
+        check(source==recipient_ticket_variant(name,reference),'recipient source changed:'+name)
+        return 1
     check(name=='AdminReply.php','recipient source changed:'+name)
     check(reference.count(R5_ADMIN_REPLY_ANCHOR)==1,'recipient role layer anchor drift')
     expected=reference.replace(R5_ADMIN_REPLY_ANCHOR,R5_ADMIN_REPLY_ANCHOR+R5_ADMIN_REPLY_PREFACE,1)
-    check(source==expected,'recipient source changed:'+name)
-    return 1
+    if source==expected:return 1
+    check(source==recipient_staff_variant(expected),'recipient source changed:'+name)
+    return 2
 def recipient_source_layer_negative_controls():
     reference=command('git','show',CONTEXT_REFERENCE+':src/Support/AdminReply.php').decode()
     allowed=reference.replace(R5_ADMIN_REPLY_ANCHOR,R5_ADMIN_REPLY_ANCHOR+R5_ADMIN_REPLY_PREFACE,1)
@@ -79,6 +112,49 @@ def recipient_source_layer_negative_controls():
             continue
         raise AssertionError('recipient role layer masked a recipient/body/policy mutation')
     return len(controls)
+def recipient_ticket_source_negative_controls():
+    edits={
+      'CustomerConversation.php':[
+        ('sendMessage($txt, $keys, "HTML", $admin)','sendMessage($txt, $keys, "HTML", $from_id)'),
+        ('support.customer_conversation.user_all_tickets.txt.54b5fecc08','support.customer_conversation.user_all_tickets.txt.changed'),
+        ('!achbotAdminTicketAllowed(','achbotAdminTicketAllowed(')],
+      'QueueAndHistory.php':[
+        ('sendMessage($output, null, "html")','sendMessage($output, null, "html", $admin)'),
+        ('support.queue_and_history.all_tickets.text.61cf036058','support.queue_and_history.all_tickets.text.changed'),
+        ('!achbotAdminTicketAllowed(','achbotAdminTicketAllowed('),
+        ("$ticketUserId = $row['user_id'];","$admin = $row['user_id'];")],
+    }
+    rejected=0
+    for name,changes in edits.items():
+        reference=command('git','show',CONTEXT_REFERENCE+':src/Support/'+name).decode()
+        accepted=recipient_ticket_variant(name,reference)
+        check(recipient_source_layer(name,accepted,reference)==1,'recipient ticket layer not accepted:'+name)
+        for old,new in changes:
+            check(old in accepted and old!=new,'recipient ticket mutation fixture boundary drift:'+name)
+            candidate=accepted.replace(old,new,1)
+            try:recipient_source_layer(name,candidate,reference)
+            except AssertionError as error:
+                check(str(error)=='recipient source changed:'+name,'recipient ticket mutation rejected wrong property')
+                rejected+=1
+            else:raise AssertionError('recipient ticket layer masked recipient/body/ownership mutation:'+name)
+    return rejected
+def recipient_staff_source_negative_controls():
+    reference=command('git','show',CONTEXT_REFERENCE+':src/Support/AdminReply.php').decode()
+    prefaced=reference.replace(R5_ADMIN_REPLY_ANCHOR,R5_ADMIN_REPLY_ANCHOR+R5_ADMIN_REPLY_PREFACE,1)
+    accepted=recipient_staff_variant(prefaced)
+    check(recipient_source_layer('AdminReply.php',accepted,reference)==2,'recipient staff layer not accepted')
+    rejected=0
+    for before,after in R5_ADMIN_REPLY_STAFF_CONDITIONS:
+        inverted=after.replace('achbotAdminCanFor(','!achbotAdminCanFor(',1)
+        for mutation in [before,inverted]:
+            candidate=accepted.replace(after,mutation,1)
+            check(candidate!=accepted,'recipient staff mutation fixture drift')
+            try:recipient_source_layer('AdminReply.php',candidate,reference)
+            except AssertionError as error:
+                check(str(error)=='recipient source changed:AdminReply.php','recipient staff mutation rejected wrong property')
+                rejected+=1
+            else:raise AssertionError('recipient staff layer masked restored/inverted capability guard')
+    return rejected
 def reviewed_context_proof(sides,merged,manifest):
     check(manifest.get('semantic_context_reference')==CONTEXT_REFERENCE,'context reference drift')
     archived={}
@@ -113,22 +189,30 @@ def reviewed_context_proof(sides,merged,manifest):
     # All three recipient bodies remain byte-pinned. Only AdminReply may
     # additionally carry the exact separately accepted R5 permission preface.
     sources={name:(ROOT/('src/Support/'+name)).read_text()for name in ['CustomerConversation.php','AdminReply.php','QueueAndHistory.php']}
-    role_layers=0
+    role_layers=ticket_layers=staff_conditions=0
     for name,source in sources.items():
         reference=command('git','show',CONTEXT_REFERENCE+':src/Support/'+name).decode()
-        role_layers+=recipient_source_layer(name,source,reference)
+        layer=recipient_source_layer(name,source,reference)
+        if name in R5_TICKET_SOURCE_LAYERS:ticket_layers+=layer
+        else:
+            role_layers+=int(layer>0)
+            if layer==2:staff_conditions+=2
     source_controls=recipient_source_layer_negative_controls()
+    ticket_controls=recipient_ticket_source_negative_controls()
+    staff_controls=recipient_staff_source_negative_controls()
     customer=sources['CustomerConversation.php'];admin=sources['AdminReply.php'];history=sources['QueueAndHistory.php']
     close=customer[customer.index("if(preg_match('/^closeTicket_"):customer.index("if(preg_match('/^replySupport_")]
     check(all(key in close for key in PRIVATE_SUPPORT if key.endswith(('2baf15e3c0','2dc9dcf8cd','c9b4331f4f','74190f4bb0')))
           and 'sendMessage(\\achbotMessage(\'support.customer_conversation.user_all_tickets.message.2baf15e3c0\'),$keys,"HTML",$admin)'in close
           and "sendToAllAdmins('sendMessage'"in close,'actual administrator closure recipients drift')
-    incoming=customer[customer.index("if(preg_match('/^sendMsg_"):customer.index('if(preg_match("/^rate_')]
+    rating_marker='if(preg_match("/^rate_' if 'if(preg_match("/^rate_' in customer else "if(preg_match('/^rate_"
+    check(customer.count(rating_marker)==1,'actual rating handler boundary drift')
+    incoming=customer[customer.index("if(preg_match('/^sendMsg_"):customer.index(rating_marker)]
     check(all(key in incoming for key in PRIVATE_SUPPORT if key.endswith(('54b5fecc08','a79a2fa69e','46d8580795')))
           and 'sendMessage($txt, $keys, "HTML", $admin)'in incoming
           and 'sendPhoto($fileid, $txt,$keys, "HTML", $admin)'in incoming
           and "'text' => $txt"in incoming and "'caption' => $txt"in incoming,'actual administrator incoming recipients drift')
-    rating=customer[customer.index('if(preg_match("/^rate_'):]
+    rating=customer[customer.index(rating_marker):]
     check(all(key in rating for key in PRIVATE_SUPPORT if key.endswith(('497743bb13','105e0409bc')))
           and 'sendMessage($text, $keys, "HTML", $admin)'in rating
           and "sendToAllAdmins('sendMessage'"in rating,'actual administrator rating recipients drift')
@@ -141,7 +225,7 @@ def reviewed_context_proof(sides,merged,manifest):
           and '"latestMsg_$rowId"'in listing,'actual customer shared history label drift')
     return {'reviewed_semantic_context_cases':len(CONTEXT_CUES),'archived_semantic_context_RED':rejected,
             'recipient_placement_cases':len(expected),'archived_recipient_placement_RED':role_red,
-            'recipient_payloads_byte_unchanged':True,'recipient_source_files':len(sources),'recipient_authorized_role_layers':role_layers,'recipient_source_layer_negative_controls':source_controls}
+            'recipient_payloads_byte_unchanged':True,'recipient_source_files':len(sources),'recipient_authorized_role_layers':role_layers,'recipient_source_layer_negative_controls':source_controls,'recipient_authorized_ticket_layers':ticket_layers,'recipient_ticket_layer_negative_controls':ticket_controls,'recipient_staff_capability_conditions':staff_conditions,'recipient_staff_layer_negative_controls':staff_controls,'recipient_total_source_layer_negative_controls':source_controls+ticket_controls+staff_controls}
 
 MANAGEMENT_BASE='2c0e728dcd71c38e20d176fe2577bc264d3faa1a'
 MANAGEMENT_CONTRACT='docs/post-v9/UNIFIED-SERVICE-MANAGEMENT.md'
