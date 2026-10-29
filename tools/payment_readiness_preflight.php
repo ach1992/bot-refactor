@@ -81,7 +81,7 @@ function verifyManifest(string $manifestPath, string $runtimePath): bool {
         // SHA-256 of newline-joined sorted package_post_v9.members() paths.
         $members = array_keys($manifest['files']);
         sort($members, SORT_STRING);
-        if (!hash_equals('a936ffd29fa352ec77e1f491e75015ece269d911cd91af4cfebbbe1505f2761d',
+        if (!hash_equals('67a54debaab1d272ee910e9e07d8603bca31916eddca6ce6b8145cb99ec8b7a7',
                          hash('sha256', implode("\n", $members))) ||
             in_array('baseInfo.php', $members, true)) return false;
         // All tool-side runtime source is bound before any helper executes.
@@ -110,7 +110,7 @@ function verifyManifest(string $manifestPath, string $runtimePath): bool {
                 filesize($path) !== $expected['size'] ||
                 !hash_equals($expected['sha256'], (string)hash_file('sha256', $path))) return false;
         }
-        foreach (['settings/tronChecker.php', 'src/Finance/CryptoChecker.php',
+        foreach (['buy_helpers.php','settings/tronChecker.php', 'src/Finance/CryptoChecker.php',
                    'src/Finance/Routes/CryptoAndExchange.php',
                    'settings/subLink.php','settings/values.php',
                    'settings/messagewizwiz.php','settings/warnusers.php',
