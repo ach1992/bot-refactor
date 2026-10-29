@@ -3746,11 +3746,11 @@ function changeMarzbanState($server_id,$remark) {
 // Added by ACh
 
 function sendToAllAdmins($method, $data, $pay_hash_id = null, $options = []){
-    global $admins_list, $admin, $connection;
+    global $admin, $connection;
 
     $adminMessages = [];
 
-    foreach ($admins_list as $adminId) {
+    foreach (achbotAdminRecipientCandidates($connection,(int)$admin) as $adminId) {
         if ($adminId != $admin &&
             achbotAdminRecipientAllowed($connection,$adminId,(int)$admin)) {
             $data['chat_id'] = $adminId;

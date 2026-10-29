@@ -18,11 +18,8 @@ function achbotAdminLevel(?int $actor=null,?mysqli $db=null,?int $primary=null,b
         $s->bind_param('s',$key);$s->execute();$roles=$s->get_result()->fetch_all(MYSQLI_ASSOC);$s->close();
         if (count($roles)>1) return 'none';
         if ($roles) return in_array($roles[0]['value'],['manager','operator','support'],true)?$roles[0]['value']:'none';
-        // Existing special admins keep their complete menus; ordinary legacy admins
-        // retain the operator menu they had before the explicit level setting.
-        $special=array_filter((array)($GLOBALS['special_admins']??[]),static fn($v)=>
-            (is_int($v) && $v>0) || (is_string($v) && preg_match('/^[1-9][0-9]*$/D',$v)));
-        return in_array($actor,array_map('intval',$special),true)?'manager':'operator';
+        // Legacy staff have Operator scope until Owner assigns a persisted level.
+        return 'operator';
     } catch (Throwable $ignored) {return 'none';}
 }
 function achbotAdminLevelCan(string $level,string $capability): bool {
@@ -55,8 +52,19 @@ function achbotAdminCan(string $capability,?int $actor=null): bool {
 function achbotAdminCanLocked(mysqli $db,int $actor,int $primary,string $capability): bool {
     return achbotAdminLevelCan(achbotAdminLevel($actor,$db,$primary,true),$capability);
 }
+/** Same persisted membership as the administrator list. The current read also
+ * sees newly added staff when a caller already has an older RR snapshot.
+ * No transaction is opened or committed around outbound delivery. */
+function achbotAdminRecipientCandidates(mysqli $db,int $primary): array {
+    if ($primary<=0) return [];
+    try {
+        $q=$db->prepare('SELECT userid FROM users WHERE isAdmin=1 AND userid<>? ORDER BY id FOR UPDATE');
+        $q->bind_param('i',$primary);$q->execute();$rows=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
+        return array_values(array_unique(array_column($rows,'userid'),SORT_STRING));
+    } catch (Throwable $ignored) {return [];}
+}
 /** Privileged outbound copies follow the recipient's current authority, never
- * a stale private-list entry or stored message reference. */
+ * a cached staff list or stored message reference. */
 function achbotAdminRecipientAllowed(mysqli $db,$recipient,int $primary): bool {
     if (is_int($recipient)) $actor=$recipient;
     elseif (is_string($recipient) && preg_match('/^[1-9][0-9]*$/D',$recipient))

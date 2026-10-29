@@ -6,9 +6,11 @@ This source batch improves the existing bot without a new schema: four administr
 
 Owner is the administrator configured in private baseInfo and appears in the existing administrator list. That list adds or changes Manager, Operator and Support. Manager has ordinary admin functions except administrator management; Operator additionally excludes statistics, servers, plans/categories, bot settings and gateway/channel settings; Support has only customer information, ban/unban and the order database editor. Menu visibility and actual requests agree. Payment review follows administrator-list placement and permits read-only inspection to the first three tiers; consequential owner-only reconciliation stays separate.
 
-Secondary ticket/receipt copies and updates to their stored message references require the recipient’s current operations authority. The configured private recipient list still selects secondary recipients; it does not grant authority. Demotion or revocation stops subsequent delivery while retaining historical message references. Confirmed new references append atomically; malformed historical metadata is preserved rather than repaired or discarded. Primary Owner delivery and financial evidence/replay remain separate and unchanged.
+Secondary ticket/receipt copies and updates to their stored message references require the recipient’s current operations authority. Secondary recipients come from the same current database staff membership used by the administrator list; private staff arrays do not select or authorize recipients. Demotion or revocation stops subsequent delivery while retaining historical message references. Confirmed new references append atomically; malformed historical metadata is preserved rather than repaired or discarded. Primary Owner delivery and financial evidence/replay remain separate and unchanged.
 
-The existing boolean admin marker remains for compatibility and the assigned level uses existing settings. Existing special administrators retain Manager scope; other existing staff receive Operator scope unless explicitly assigned a level. An old runtime does not understand new tier restrictions: after assigning tiers, do not roll back source blindly and assume the old code preserves them. Reconcile administrator access before any separately authorized downgrade.
+The existing boolean admin marker remains for compatibility and the assigned level uses existing settings. Existing staff without an explicit persisted level receive Operator scope. Valid persisted Manager, Operator and Support levels remain authoritative; Owner assigns Manager or changes levels through the existing administrator list. Only the primary `$admin` Owner identity belongs in private baseInfo among staff settings. Retained `$admins_list` or `$special_admins` variables are ignored, without importing them into the database or inferring Manager access. An old runtime does not understand new tier restrictions: after assigning tiers, do not roll back source blindly and assume the old code preserves them. Reconcile administrator access before any separately authorized downgrade.
+
+For a separately authorized upgrade to this new runtime, verify the database staff list and assign the required levels from the Owner account, then remove the obsolete `$admins_list` and `$special_admins` assignments as part of that paired runtime/private-config rollout. Keep the primary `$admin` setting. Installed RC15 still uses the old fields: do not remove them from an RC15 installation alone. This source change neither reads nor edits any actual private file and does not authorize a rollout.
 
 ## Bot Settings and copy
 
@@ -113,8 +115,10 @@ diagnostic codes remain implementation contracts.
 The actual private `baseInfo.php` remains untouched. The six obsolete globals
 `hideConnectLinkForMarzban`, `showIndexes`, `hideConfigIfMany`, `linkIndices`,
 `USDTPrice` and `USDTPriceagent` are ignored as runtime configuration sources,
-not imported. Only those six assignments are removed from the current synthetic
-example; secrets remain per installation.
+not imported. Those six assignments were removed from the synthetic example in
+the earlier release. The current staff follow-up additionally removes only
+`admins_list` and `special_admins` from that example; primary Owner and per-installation
+secrets remain. Actual private cleanup follows the paired-runtime boundary above.
 
 ## Schema and package boundaries
 
