@@ -3742,7 +3742,8 @@ function sendToAllAdmins($method, $data, $pay_hash_id = null, $options = []){
     $adminMessages = [];
 
     foreach ($admins_list as $adminId) {
-        if ($adminId != $admin) {
+        if ($adminId != $admin &&
+            achbotAdminRecipientAllowed($connection,$adminId,(int)$admin)) {
             $data['chat_id'] = $adminId;
 
             // اگر بخوایم پیام ریپلای باشه (اختیاری)
@@ -3757,13 +3758,14 @@ function sendToAllAdmins($method, $data, $pay_hash_id = null, $options = []){
                 }
             }
 
-            // ارسال پیام
+            // Options never redirect privileged content outside the checked recipient.
+            $data['chat_id'] = (int)$adminId;
             $res = bot($method, $data);
 
             // ذخیره پیام اگر نیاز باشه
             if ($pay_hash_id && $res && isset($res->result->message_id)) {
                 $adminMessages[] = [
-                    'chat_id' => $adminId,
+                    'chat_id' => $data['chat_id'],
                     'message_id' => $res->result->message_id
                 ];
             }
@@ -3773,8 +3775,16 @@ function sendToAllAdmins($method, $data, $pay_hash_id = null, $options = []){
     // ذخیره در دیتابیس اگر hash_id داده شده
     if ($pay_hash_id && !empty($adminMessages)) {
         $json = json_encode($adminMessages, JSON_UNESCAPED_UNICODE);
-        $stmt = $connection->prepare("UPDATE `pays` SET `admins_messages` = ? WHERE `hash_id` = ?");
-        $stmt->bind_param("ss", $json, $pay_hash_id);
+        // Keep prior delivery evidence, including refs to subsequently demoted staff.
+        // The existing UPDATE appends atomically; no transaction spans Telegram.
+        $stmt = $connection->prepare("UPDATE `pays` SET `admins_messages` = CASE
+            WHEN admins_messages IS NULL OR admins_messages='' THEN ?
+            WHEN JSON_VALID(admins_messages) THEN CASE
+                WHEN JSON_TYPE(admins_messages)='ARRAY'
+                THEN JSON_MERGE_PRESERVE(admins_messages,?)
+                ELSE admins_messages END
+            ELSE admins_messages END WHERE `hash_id` = ?");
+        $stmt->bind_param("sss", $json, $json, $pay_hash_id);
         $stmt->execute();
         $stmt->close();
     }

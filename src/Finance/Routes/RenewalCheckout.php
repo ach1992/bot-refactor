@@ -497,7 +497,8 @@ if(preg_match('/approveRenewAcc(.*)/',$data,$match) && achbotAdminCanFor($connec
         $adminMessages = json_decode($deferredAdminKeys['admins_messages'], true); 
         if (is_array($adminMessages)) { 
             foreach ($adminMessages as $msgInfo) { 
-                if (isset($msgInfo['chat_id'], $msgInfo['message_id']) && $msgInfo['chat_id'] != $deferredAdminKeys['chat_id']) { 
+                if (isset($msgInfo['chat_id'], $msgInfo['message_id']) && $msgInfo['chat_id'] != $deferredAdminKeys['chat_id'] &&
+                    achbotAdminRecipientAllowed($connection,$msgInfo['chat_id'],(int)$admin)) {
                     editKeys($deferredAdminKeys['keys'], $msgInfo['message_id'], $msgInfo['chat_id']); 
                 } 
             } 

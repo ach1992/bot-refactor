@@ -260,7 +260,8 @@ if (
             $adminMessages = json_decode($payInfo['admins_messages'], true);
             if (is_array($adminMessages)) {
                 foreach ($adminMessages as $msgInfo) {
-                    if (isset($msgInfo['chat_id'], $msgInfo['message_id']) && $msgInfo['chat_id'] != $payInfo['chat_id']) {
+                    if (isset($msgInfo['chat_id'], $msgInfo['message_id']) && $msgInfo['chat_id'] != $payInfo['chat_id'] &&
+                        achbotAdminRecipientAllowed($connection,$msgInfo['chat_id'],(int)$admin)) {
                         achbotManualStandardNotice(
                             static fn()=>editKeys($keys,$msgInfo['message_id'],$msgInfo['chat_id']),
                             'renewal_additional_operator_buttons',$payId,$deliveryIssues,0,
@@ -495,7 +496,8 @@ if (
         $adminMessages = json_decode($payInfo['admins_messages'], true);
         if (is_array($adminMessages)) {
             foreach ($adminMessages as $msgInfo) {
-                if (isset($msgInfo['chat_id'], $msgInfo['message_id']) && $msgInfo['chat_id'] != $payInfo['chat_id']) {
+                if (isset($msgInfo['chat_id'], $msgInfo['message_id']) && $msgInfo['chat_id'] != $payInfo['chat_id'] &&
+                    achbotAdminRecipientAllowed($connection,$msgInfo['chat_id'],(int)$admin)) {
                     achbotManualStandardNotice(
                         static fn()=>editKeys($keys,$msgInfo['message_id'],$msgInfo['chat_id']),
                         'purchase_additional_operator_buttons',$payId,$deliveryIssues,0,

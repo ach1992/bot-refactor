@@ -5,6 +5,7 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     exit;
 }
 require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
+require_once __DIR__.'/../Admin/Access.php';
 
 
 if($botState['cartToCartAutoAcceptState']=="on"){
@@ -368,7 +369,8 @@ if($botState['cartToCartAutoAcceptState']=="on"){
 			foreach ($adminMessages as $msgInfo) {
 				if (
 					isset($msgInfo['chat_id'], $msgInfo['message_id']) &&
-					$msgInfo['chat_id'] != $payInfo['chat_id'] // جلوگیری از تکرار برای ادمین اصلی
+					$msgInfo['chat_id'] != $payInfo['chat_id'] &&
+					achbotAdminRecipientAllowed($connection,$msgInfo['chat_id'],(int)$admin) // جلوگیری از تکرار برای ادمین اصلی
 				) 	{
 					editKeys(json_encode(['inline_keyboard' => [[['text' => $autoServiceLabel, 'callback_data' => "wizwizch"]]]]),
                     $msgInfo['message_id'],

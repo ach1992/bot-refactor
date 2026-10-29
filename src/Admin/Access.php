@@ -55,6 +55,16 @@ function achbotAdminCan(string $capability,?int $actor=null): bool {
 function achbotAdminCanLocked(mysqli $db,int $actor,int $primary,string $capability): bool {
     return achbotAdminLevelCan(achbotAdminLevel($actor,$db,$primary,true),$capability);
 }
+/** Privileged outbound copies follow the recipient's current authority, never
+ * a stale private-list entry or stored message reference. */
+function achbotAdminRecipientAllowed(mysqli $db,$recipient,int $primary): bool {
+    if (is_int($recipient)) $actor=$recipient;
+    elseif (is_string($recipient) && preg_match('/^[1-9][0-9]*$/D',$recipient))
+        $actor=filter_var($recipient,FILTER_VALIDATE_INT,['options'=>['min_range'=>1]]);
+    else return false;
+    return is_int($actor) && $actor>0 &&
+        achbotAdminCanLocked($db,$actor,$primary,'operations');
+}
 function achbotAdminButtonCapability(string $key): string {
     return match($key) {
         'bot_reports'=>'stats','server_settings'=>'servers',
