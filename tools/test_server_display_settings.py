@@ -231,9 +231,9 @@ equal(buildSubscriptionPresentation('marzban',$native,$on,[],'view',0)['reason']
 function achbotSupportsPanel($provider) {return in_array($provider,['marzban','pasarguard'],true);}
 function RandomString() {return bin2hex(random_bytes(7));}
 require_once $root.'/buy_helpers.php';
-function delivery($provider,$sid,$response) {
+function delivery($provider,$sid,$response,$backupBases='https://backup.invalid') {
     global $on;
-    return buildLinksAndSendQr($provider,['panel_url'=>'https://panel.invalid','sub_links'=>'https://backup.invalid'],
+    return buildLinksAndSendQr($provider,['panel_url'=>'https://panel.invalid','sub_links'=>$backupBases],
         $on,'',$sid,'stable-id','','fixture',0,'',0,'','','','',$response,1001,2,30,[],[99],true,'',null,false);
 }
 $pg=delivery('pasarguard',3,['links'=>[$one,$two],'subscription_url'=>$sub]);
@@ -241,7 +241,14 @@ equal([$pg[0],$pg[2],$pg[5]],['','stable-id',$one],'pg_delivery_native_identity_
 equal(json_decode($pg[1],true),[$one,$two],'pg_persisted_native_links_unmodified');
 verify(str_contains($pg[3],htmlspecialchars($one,ENT_QUOTES,'UTF-8')) &&
     !str_contains($pg[3],'trojan://') && !str_contains($pg[3],'https://panel.invalid') &&
-    !str_contains($pg[3],'https://backup.invalid'),'pg_delivery_selection_native_no_vendor_rewrite');
+    str_contains($pg[3],'https://backup.invalid/native?id=a&amp;b=c'),'pg_delivery_native_content_and_configured_auxiliary');
+verify(str_contains($pg[3],htmlspecialchars($sub,ENT_QUOTES,'UTF-8')),
+    'pg_delivery_primary_subscription_url_unchanged');
+verify(!str_contains(delivery('pasarguard',3,['links'=>[$one],'subscription_url'=>$sub],'')[3],
+    'https://backup.invalid'),'pg_delivery_unset_auxiliary_omitted');
+verify(!str_contains(delivery('pasarguard',3,['links'=>[$one],'subscription_url'=>$sub],
+    'javascript://bad.invalid, https://user:secret@bad.invalid, https://bad.invalid/?token=other')[3],
+    'bad.invalid'),'pg_delivery_invalid_auxiliary_bases_omitted');
 $m=delivery('marzban',1,(object)['vray_links'=>$all,'sub_link'=>'/sub/native-token']);
 equal([$m[0],$m[2],$m[5]],['native-token','native-token','https://panel.invalid/sub/native-token'],
     'marzban_delivery_preserves_native_token_and_managed_policy');
@@ -304,6 +311,38 @@ equal(achbotOrderPresentation($connection,$order,$server,$on)['links'],[$two,$fo
 removeSetting(2);settingRow(2,$policyB,'marzban',400);
 $order['server_id']=2;
 equal(achbotOrderPresentation($connection,$order,$server,$on)['links'],[$one],'actual_order_helper_uses_server_two_policy');
+// Both administrator and customer account details use this actual order presenter.
+// The request-local native proof is bound to this order; aliases never cause reads.
+$pgOrder=['id'=>1,'server_id'=>3,'remark'=>'fixture','link'=>'[]','token'=>''];
+$pgServer=['type'=>'pasarguard','panel_url'=>'https://panel.invalid','sub_links'=>'https://backup.invalid'];
+$opaque='https://native.invalid/deployment/sub/tok%2Den==?client=x%2By&mode=b#native';
+$proven=(object)['username'=>'fixture','status'=>'active','expire'=>null,'data_limit'=>0,'used_traffic'=>0,
+    'subscription_url'=>$opaque,'links'=>[$one,$two],
+    'provider_render_proof'=>['provider'=>'pasarguard','server_id'=>3,'username'=>'fixture']];
+$details=achbotOrderPresentation($connection,$pgOrder,$pgServer,$on,$proven);
+equal($details['subscription_url'],$opaque,'pg_details_native_subscription_unchanged');
+equal($details['links'],[$one,$two],'pg_details_native_configs_unchanged');
+verify(str_contains($details['backup_html'],
+    'https://backup.invalid/deployment/sub/tok%2Den==?client=x%2By&amp;mode=b#native'),
+    'pg_details_auxiliary_keeps_native_path_query_and_fragment');
+$pgServer['sub_links']='https://backup.invalid/deployment';
+verify(str_contains(achbotOrderPresentation($connection,$pgOrder,$pgServer,$on,$proven)['backup_html'],
+    'https://backup.invalid/deployment/sub/tok%2Den==?client=x%2By&amp;mode=b#native'),
+    'pg_details_configured_deployment_prefix_not_duplicated');
+$pgServer['sub_links']='';
+equal(achbotOrderPresentation($connection,$pgOrder,$pgServer,$on,$proven)['backup_html'],'',
+    'pg_details_unset_auxiliary_omitted');
+$pgServer['sub_links']='https://backup.invalid';
+$wrongProof=clone $proven;$wrongProof->provider_render_proof['server_id']=2;
+equal(achbotOrderPresentation($connection,$pgOrder,$pgServer,$on,$wrongProof)['backup_html'],'',
+    'pg_details_unverified_native_packet_has_no_alias');
+removeSetting(3);settingRow(3,['mode'=>'native','policy'=>['show_subscription'=>false]],'pasarguard',401);
+equal(achbotOrderPresentation($connection,$pgOrder,$pgServer,$on,$proven)['backup_html'],'',
+    'pg_details_hidden_subscription_hides_auxiliary');
+$hiddenDelivery=delivery('pasarguard',3,['links'=>[$one],'subscription_url'=>$opaque]);
+verify(!str_contains($hiddenDelivery[3],'https://backup.invalid') && !str_contains($hiddenDelivery[3],'https://native.invalid/deployment'),
+    'pg_delivery_hidden_subscription_hides_primary_and_auxiliary');
+removeSetting(3);settingRow(3,achbotServerDisplayDefault(),'pasarguard',402);
 // Current refresh and administrator account-list paths consume the same resolver.
 $a=strpos($cfg,'function getServerConfigById(');$b=strpos($cfg,'function getOrderTrafficInfo(',$a);
 eval(str_replace('__DIR__',var_export($root,true),substr($cfg,$a,$b-$a)));

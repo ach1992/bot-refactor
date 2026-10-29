@@ -839,6 +839,7 @@ function achbotProviderGiftUsers(mysqli $db,int $serverId,array $target): object
 
 /** The same native presentation policy is used for details and both QR routes. */
 function achbotOrderPresentation(mysqli $db,array $order,array $server,array $state,?object $provenRemote=null): array {
+    require_once __DIR__.'/../Subscription/Presentation.php';
     $type=(string)($server['type']??'');$native=['links'=>[],'subscription_url'=>'','backup_urls'=>[]];
     if ($type==='marzban') {
         if ($provenRemote===null) {
@@ -884,6 +885,8 @@ function achbotOrderPresentation(mysqli $db,array $order,array $server,array $st
                 if (($links['success']??false)===true) $native['links']=$links['links'];
             }
         } catch (Throwable $error) {}
+        $native['backup_urls']=\AchBot\Subscription\Presentation\subscriptionAliases(
+            $native['subscription_url'],$server['sub_links']??'');
     }
     return buildSubscriptionPresentation($type,$native,$state,[],'view',(int)$order['server_id']);
 }
