@@ -194,7 +194,7 @@ def main():
               'stored_receipt_maintenance_ignores_notification_preference':True,
               'stored_receipt_maintenance_requires_current_staff':True,
               'archived_notification_coupling_red':True,
-              'receipt_maintenance_baseline_source':'4d89eb34827d213ffac0308c277daf421242adb9',
+              'receipt_maintenance_baseline_source':'add6948fd0720c0fed454d5c2db2f06d1d5d8b24',
               'malformed_duplicate_notifications_denied':True,'support_receipt_approval_replay':True,
               'support_payment_followups':True,'support_operations_still_denied':True,
               'db_only_staff_authority':True,'legacy_roleless_operator':True,
