@@ -1218,7 +1218,6 @@ return [
         'roles.admins_list.message.191495d5fc' => '👥 لیست ادمین ها',
         // roles.add_new_admin
         'roles.add_new_admin.message.026acb2e69' => '🧑 شناسه عددی فردی که می خواهید ادمین شود را ارسال کنید.',
-        'roles.add_new_admin.message.2e675a6e17' => '✅ خب کاربر الان ادمین شد تبریک میگم',
         // unban.message
         'unban.message.b111983f26' => '✅ آزاد شدم خوشحالم ننه، ایشالا آزادی همه 😂',
         'unban.message.718eb73755' => '☑️ این کاربر از قبل مسدود نبود.',
@@ -1602,7 +1601,6 @@ return [
         'config.calculate_sales_between_dates.text.dd92eb2ae0' => '🧾 تعداد پرداخت‌های موفق در این بازه: <b>',
         'config.calculate_sales_between_dates.message.0108e71350' => '❌ عملیات لغو شد.',
         // config.get_admins_keys
-        'config.get_admins_keys.button.612ffac236' => '⚠️ لیست ادمین ها خالی است',
         'config.get_admins_keys.button.bc56086ddd' => '➕ افزودن ادمین',
         // config.get_user_info_keys
         'config.get_user_info_keys.text.e0b20b49a2' => '✅ هست',

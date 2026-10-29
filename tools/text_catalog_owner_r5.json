@@ -2707,6 +2707,16 @@
       "audience": "admin",
       "before": "</b>\nآدرس: <code>",
       "reason": "Owner revision5 removes the redundant receipt header/destination; underlying financial evidence remains."
+    },
+    "admin_settings.config.get_admins_keys.button.612ffac236": {
+      "audience": "admin",
+      "before": "⚠️ لیست ادمین ها خالی است",
+      "reason": "Owner revision5 existing admin-role workflow now uses the explicit level/save interface; this prior role label is no longer consumed."
+    },
+    "admin.roles.add_new_admin.message.2e675a6e17": {
+      "audience": "admin",
+      "before": "✅ خب کاربر الان ادمین شد تبریک میگم",
+      "reason": "Owner revision5 existing admin-role workflow now uses the explicit level/save interface; this prior role label is no longer consumed."
     }
   },
   "added_keys": {
