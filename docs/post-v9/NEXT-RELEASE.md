@@ -22,9 +22,10 @@ PAYMENT_KEYS.inviteReward using the existing authenticated, revision-bound
 payment-settings editor. Amounts are integer Toman from0 through999999999;
 0 or /clear disables future gifts. Unset/invalid/duplicate configuration uses0,
 never a retained private value. Existing invitation messages and gift behavior
-otherwise remain. Before a separately authorized rollout, deliberately configure
-the desired gift in the managed UI; the new runtime ignores the old private
-$inviteReward assignment and does not import it. Remove that private assignment
+otherwise remain. During a separately authorized rollout, configure the desired
+gift through the new managed UI before reopening public invitations. Until then,
+the new runtime uses0 and ignores the old private $inviteReward assignment;
+it does not import it. Remove that private assignment
 only as part of the paired new-runtime rollout; this source work touches only
 the synthetic example. Downgrading would revive the old private source, so
 reconcile gift settings deliberately before any approved recovery.
