@@ -9,9 +9,11 @@ The bot retains familiar customer, agent and administrator journeys for Marzban 
 | Owner | Configured in private baseInfo; all controls, including administrator management. Listed but immutable in the in-bot administrator editor. |
 | Manager | Ordinary administrator controls except adding/changing/removing administrators. |
 | Operator | Customer/service operations; excludes statistics, servers, plans/categories, bot settings and gateway/channel settings. |
-| Support | Customer information, ban/unban and the existing order database editor only. |
+| Support | Customer information, ban/unban and the existing order database editor; the common receipt workflow below also applies. |
 
-The existing administrator list assigns the three non-owner tiers. Actual callbacks and stored input stages enforce the same scope as the menu. Payment-review navigation follows the administrator-list position; Owner, Manager and Operator may inspect it, while consequential owner-only reconciliation remains distinct.
+The existing administrator list manages database staff membership and the three non-owner tiers. Actual managerial callbacks and stored input stages enforce the same scope as the menu. All genuine Owner, Manager, Operator and Support administrators retain the same receipt review, approval and rejection workflow. Payment-review navigation follows the administrator-list position; consequential owner-only reconciliation remains distinct.
+
+Owner separately controls receiving new message copies for each non-owner administrator. This preference changes neither receipt permissions nor completion of previously delivered receipt buttons; the primary Owner receipt/evidence path remains unchanged.
 
 Instance welcome/home messages and purchase notes containing brand or marketing/policy copy belong to Bot Settings, using existing persisted configuration and neutral setup guidance when unset. Static interface text remains in the two audience catalogs. Configurable support, help-channel, mandatory-channel join and cooperation-panel destinations replace hardcoded reseller contacts. A private channel keeps its numeric membership identity independently of its editable join URL; existing valid private-config join links remain a fallback. Source updates preserve legitimate per-instance content and protocol identifiers.
 
