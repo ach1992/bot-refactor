@@ -7,6 +7,7 @@ import test_access_state as owned
 ROOT=Path(__file__).resolve().parents[1]
 BASE='a070a47c5796e8244a3fe7fbca21e301977c3dcf'
 PRIVATE_BASE='4a28474fdba41e17ebadab29ece1c17d18038437'
+MAINTENANCE_BASE='4d89eb34827d213ffac0308c277daf421242adb9'
 FINANCE_FILES=['src/Finance/ReceiptHelpers.php','src/Finance/AutomaticReceipts.php',
     *['src/Finance/Routes/'+name for name in ['Checkout.php','RenewalCheckout.php','Extensions.php','ManualApproval.php','ManualReceipts.php','WalletRecharge.php']]]
 PHP=r'''<?php
@@ -217,6 +218,11 @@ yes(achbotManualBeginEvidence($connection,$pay,'bank_transfer',1001,'other-evide
 $GLOBALS['fail_targets']=[9002];$events=[];yes(sendReceiptToAdminsAndUpdatePay($connection,'same-evidence',$text,$markup,9001,'fanoutfailure',$retry),'secondary delivery failure cannot undo successful primary');
 $failure=dbFetchPayByHash($connection,'fanoutfailure');yes($failure['state']==='have_sent'&&array_column(json_decode($failure['admins_messages'],true),'chat_id')===[9003,9004],'only successful secondary receipt refs persisted');$GLOBALS['fail_targets']=[];
 
+// Receipt maintenance does not consult a notification preference, including
+// malformed preferences, and never treats a stored ref as staff membership.
+yes(achbotAdminStoredRecipientAllowed($connection,9013,9001)&&achbotAdminStoredRecipientAllowed($connection,9014,9001),'malformed or duplicate notification preference cannot strand genuine staff receipt keyboards');
+foreach([9007,9008,9009,9010,9011,9012,1001] as $invalidRecipient)yes(!achbotAdminStoredRecipientAllowed($connection,$invalidRecipient,9001),'receipt status ignores refs without current valid staff authority '.$invalidRecipient);
+require $argv[9];
 // Real retained-reference foreach blocks, not replacement routing stubs.
 $data='';$textInput='';$text='';$userInfo=['step'=>'none'];require $root.'/src/Finance/Routes/ManualApproval.php';
 function storedLoops(string $path):array{
@@ -226,7 +232,7 @@ function storedLoops(string $path):array{
  return $out;
 }
 $files=['Routes/Checkout.php','Routes/RenewalCheckout.php','Routes/Extensions.php','Routes/ManualApproval.php','Routes/ManualReceipts.php','AutomaticReceipts.php'];
-$loopCount=0;$historicalRefs=[['chat_id'=>9001,'message_id'=>100],['chat_id'=>9002,'message_id'=>101],['chat_id'=>9003,'message_id'=>102],['chat_id'=>9004,'message_id'=>103],['chat_id'=>9007,'message_id'=>104],['chat_id'=>9008,'message_id'=>105],['chat_id'=>9009,'message_id'=>106],['chat_id'=>9010,'message_id'=>107]];
+$loopCount=0;$historicalRefs=[['chat_id'=>9001,'message_id'=>100],['chat_id'=>9002,'message_id'=>101],['chat_id'=>9003,'message_id'=>102],['chat_id'=>9004,'message_id'=>103],['chat_id'=>9007,'message_id'=>104],['chat_id'=>9008,'message_id'=>105],['chat_id'=>9009,'message_id'=>106],['chat_id'=>9010,'message_id'=>107],['chat_id'=>9011,'message_id'=>108],['chat_id'=>9012,'message_id'=>109],['chat_id'=>1001,'message_id'=>110]];
 $connection->query("UPDATE pays SET admins_messages='".$connection->real_escape_string(json_encode($historicalRefs))."' WHERE hash_id='fanoutrefs'");
 $financialBefore=$connection->query('SELECT * FROM pays ORDER BY id')->fetch_all(MYSQLI_ASSOC);
 foreach($files as $file)foreach(storedLoops($root.'/src/Finance/'.$file) as $ordinal=>$body){
@@ -234,13 +240,16 @@ foreach($files as $file)foreach(storedLoops($root.'/src/Finance/'.$file) as $ord
  eval($body);yes($targets()===[9002,9003,9004],'actual stored-ref loop includes Support payments and excludes forbidden recipients '.$file.' '.$ordinal);
  $currentEvents=$events;$oldBodies=storedLoops($argv[5].'/'.$file);$events=[];eval($oldBodies[$ordinal]);$oldPermitted=array_values(array_filter($events,static fn($e)=>in_array((int)$e['data']['chat_id'],[9002,9003,9004],true)));yes($oldPermitted===$currentEvents,'allowed stored-ref raw markup unchanged from archived source '.$file.' '.$ordinal);$events=$currentEvents;
  foreach($events as $event)yes($event['in_transaction']===0,'stored-ref delivery introduces no transaction '.$file.' '.$ordinal.' '.$event['data']['chat_id']);
- yes(achbotAdminSetNotify($connection,9001,9001,9004,false),'disable Support notification before stored followup '.$file.' '.$ordinal);$events=[];eval($body);yes($targets()===[9002,9003]&&achbotAdminCan('payments',9004),'actual stored-ref update honors OFF without revoking payment authority '.$file.' '.$ordinal);yes(achbotAdminSetNotify($connection,9001,9001,9004,true),'restore Support notification after stored followup '.$file.' '.$ordinal);
+ yes(achbotAdminSetNotify($connection,9001,9001,9004,false),'disable Support notification before stored followup '.$file.' '.$ordinal);$events=[];eval($body);yes($targets()===[9002,9003,9004]&&achbotAdminCan('payments',9004),'actual prior receipt status remains current with notifications OFF '.$file.' '.$ordinal);
+ $oldMaintenanceBodies=storedLoops($argv[8].'/'.$file);$oldMaintenance=str_replace('achbotAdminRecipientAllowed','archivedNotifyAdminRecipientAllowed',$oldMaintenanceBodies[$ordinal]);$events=[];eval($oldMaintenance);yes($targets()===[9002,9003],'archived notification-coupled status RED strands OFF recipient '.$file.' '.$ordinal);
+ $events=[];sendToAllAdmins('sendPhoto',$photo);yes($targets()===[9002,9003],'notifications OFF still suppresses only new copies '.$file.' '.$ordinal);
+ yes(achbotAdminSetNotify($connection,9001,9001,9004,true),'restore Support notification after stored followup '.$file.' '.$ordinal);
  $connection->query("UPDATE users SET isAdmin=0 WHERE userid=9002");$events=[];eval($body);yes($targets()===[9003,9004],'stored-ref loop observes fresh revocation '.$file.' '.$ordinal);$connection->query('UPDATE users SET isAdmin=1 WHERE userid=9002');
 }
 yes($loopCount===9,'all nine actual stored-ref consumers covered');
 yes($connection->query('SELECT * FROM pays ORDER BY id')->fetch_all(MYSQLI_ASSOC)===$financialBefore,'role-filtered followups preserve every historical pay/ref row');
 $legacyLoops=storedLoops($argv[5].'/Routes/ManualReceipts.php');yes(count($legacyLoops)===2,'archived source has actual manual-receipt followups');$adminMessages=$historicalRefs;$payInfo=['chat_id'=>9001];$events=[];eval($legacyLoops[0]);yes(in_array(9007,$targets(),true)&&in_array(9008,$targets(),true),'archived a070 stored-ref RED sends new markup to revoked/ambiguous staff');
-echo json_encode(['complete'=>true,'cases'=>count($checks),'checks'=>$checks,'source_real'=>true,'owned_original_schema_mariadb'=>true,'network_calls'=>0,'recipient_matrix'=>true,'notification_recipient_matrix'=>true,'notifications_independent_of_role'=>true,'notification_default_on'=>true,'owner_only_notification_ui'=>true,'notification_preference_preserved'=>true,'uniform_receipt_authority_all_tiers'=>true,'notification_never_grants_or_revokes_actions'=>true,'notification_off_suppresses_copies_and_updates'=>true,'malformed_duplicate_notifications_denied'=>true,'support_receipt_approval_replay'=>true,'support_payment_followups'=>true,'support_operations_still_denied'=>true,'raw_text_photo_markup_preserved'=>true,'persisted_tiers_preserved'=>true,'db_only_staff_authority'=>true,'legacy_roleless_operator'=>true,'obsolete_staff_arrays_ignored'=>true,'explicit_manager_assignment'=>true,'actual_admin_ui_membership_delivery'=>true,'old_snapshot_membership_safe'=>true,'old_snapshot_membership_mode'=>$oldSnapshotMode,'next_normal_delivery_includes_added_staff'=>true,'no_private_bootstrap_import'=>true,'db_only_baseline_red'=>true,'primary_owner_once'=>true,'options_recipient_integrity'=>true,'recorded_refs_match_delivery'=>true,'fresh_role_changes'=>true,'repeatable_read_notification_off_denied'=>true,'no_new_transaction_across_delivery'=>true,'actual_primary_receipt_evidence'=>true,'original_evidence_retry_preserved'=>true,'approval_replay_preserved'=>true,'stored_followup_loops'=>$loopCount,'stored_followup_markup_preserved'=>true,'historical_refs_preserved'=>true,'atomic_history_append'=>true,'malformed_history_preserved'=>true,'archived_fanout_red'=>true,'archived_stored_refs_red'=>true],JSON_THROW_ON_ERROR);
+echo json_encode(['complete'=>true,'cases'=>count($checks),'checks'=>$checks,'source_real'=>true,'owned_original_schema_mariadb'=>true,'network_calls'=>0,'recipient_matrix'=>true,'notification_recipient_matrix'=>true,'notifications_independent_of_role'=>true,'notification_default_on'=>true,'owner_only_notification_ui'=>true,'notification_preference_preserved'=>true,'uniform_receipt_authority_all_tiers'=>true,'notification_never_grants_or_revokes_actions'=>true,'notification_off_suppresses_new_copies'=>true,'stored_receipt_maintenance_ignores_notification_preference'=>true,'stored_receipt_maintenance_requires_current_staff'=>true,'archived_notification_coupling_red'=>true,'malformed_duplicate_notifications_denied'=>true,'support_receipt_approval_replay'=>true,'support_payment_followups'=>true,'support_operations_still_denied'=>true,'raw_text_photo_markup_preserved'=>true,'persisted_tiers_preserved'=>true,'db_only_staff_authority'=>true,'legacy_roleless_operator'=>true,'obsolete_staff_arrays_ignored'=>true,'explicit_manager_assignment'=>true,'actual_admin_ui_membership_delivery'=>true,'old_snapshot_membership_safe'=>true,'old_snapshot_membership_mode'=>$oldSnapshotMode,'next_normal_delivery_includes_added_staff'=>true,'no_private_bootstrap_import'=>true,'db_only_baseline_red'=>true,'primary_owner_once'=>true,'options_recipient_integrity'=>true,'recorded_refs_match_delivery'=>true,'fresh_role_changes'=>true,'repeatable_read_notification_off_denied'=>true,'no_new_transaction_across_delivery'=>true,'actual_primary_receipt_evidence'=>true,'original_evidence_retry_preserved'=>true,'approval_replay_preserved'=>true,'stored_followup_loops'=>$loopCount,'stored_followup_markup_preserved'=>true,'historical_refs_preserved'=>true,'atomic_history_append'=>true,'malformed_history_preserved'=>true,'archived_fanout_red'=>true,'archived_stored_refs_red'=>true],JSON_THROW_ON_ERROR);
 '''
 
 PARALLEL=r'''<?php
@@ -293,10 +302,15 @@ def main():
         start=private_source.index('function sendToAllAdmins(');end=private_source.index('\n\n\n$buttons_only_for_special_admins',start)
         private_fanout=work/'archived-private-fanout.php';private_fanout.write_text('<?php\n'+private_source[start:end].replace('function sendToAllAdmins(','function archivedPrivateListSendToAllAdmins(',1).replace('achbotAdminRecipientAllowed','archivedStaffAdminRecipientAllowed'))
         private_access=work/'archived-private-access.php';private_access.write_text(subprocess.check_output(['git','show',PRIVATE_BASE+':src/Admin/Access.php'],cwd=ROOT,text=True).replace('achbotAdmin','archivedStaffAdmin'))
+        maintenance=work/'archived-muted-maintenance';maintenance.mkdir()
+        for name in ['Routes/Checkout.php','Routes/RenewalCheckout.php','Routes/Extensions.php','Routes/ManualApproval.php','Routes/ManualReceipts.php','AutomaticReceipts.php']:
+            file=maintenance/name;file.parent.mkdir(parents=True,exist_ok=True)
+            file.write_bytes(subprocess.check_output(['git','show',MAINTENANCE_BASE+':src/Finance/'+name],cwd=ROOT))
+        old_notify=work/'archived-notify-access.php';old_notify.write_text(subprocess.check_output(['git','show',MAINTENANCE_BASE+':src/Admin/Access.php'],cwd=ROOT,text=True).replace('achbotAdmin','archivedNotifyAdmin'))
         driver=work/'admin-fanout.php';driver.write_text(PHP)
-        r=subprocess.run(['php','-d','allow_url_fopen=0','-d','disable_functions=curl_init,curl_exec',str(driver),str(app),str(work/'mysql.sock'),owned.NAMES[1],str(old),str(follow),str(private_fanout),str(private_access)],env=env,capture_output=True,text=True,timeout=45)
+        r=subprocess.run(['php','-d','allow_url_fopen=0','-d','disable_functions=curl_init,curl_exec',str(driver),str(app),str(work/'mysql.sock'),owned.NAMES[1],str(old),str(follow),str(private_fanout),str(private_access),str(maintenance),str(old_notify)],env=env,capture_output=True,text=True,timeout=45)
         if r.returncode or r.stderr:raise RuntimeError(r.stdout[-1000:]+'\n'+r.stderr[-4000:])
-        report=json.loads(r.stdout);report['baseline_source']=BASE;report['private_staff_baseline_source']=PRIVATE_BASE;report['finance_source_ref']=a.finance_ref or 'current-source';report['catalog_source_ref']=a.catalog_ref or 'current-source'
+        report=json.loads(r.stdout);report['baseline_source']=BASE;report['private_staff_baseline_source']=PRIVATE_BASE;report['finance_source_ref']=a.finance_ref or 'current-source';report['catalog_source_ref']=a.catalog_ref or 'current-source';report['receipt_maintenance_baseline_source']=MAINTENANCE_BASE
         historical=[{'chat_id':9004,'message_id':1},{'chat_id':9007,'message_id':2}]
         sql="INSERT INTO pays(hash_id,user_id,type,price,request_date,state,admins_messages) VALUES('fanoutparallel',1001,'INCREASE_WALLET',100000,UNIX_TIMESTAMP(),'have_sent','"+json.dumps(historical)+"')"
         subprocess.run(client+['-e',sql],env=env,capture_output=True,check=True,timeout=5)
