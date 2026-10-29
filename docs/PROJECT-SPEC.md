@@ -1,5 +1,23 @@
 # AChBot — canonical product and historical refactor contract
 
+## Current administration and instance presentation
+
+The bot retains familiar customer, agent and administrator journeys for Marzban and native PasarGuard. Four staff tiers are intentionally simple:
+
+| Tier | Administration scope |
+| --- | --- |
+| Owner | Configured in private baseInfo; all controls, including administrator management. Listed but immutable in the in-bot administrator editor. |
+| Manager | Ordinary administrator controls except adding/changing/removing administrators. |
+| Operator | Customer/service operations; excludes statistics, servers, plans/categories, bot settings and gateway/channel settings. |
+| Support | Customer information, ban/unban and the existing order database editor only. |
+
+The existing administrator list assigns the three non-owner tiers. Actual callbacks and stored input stages enforce the same scope as the menu. Payment-review navigation follows the administrator-list position; Owner, Manager and Operator may inspect it, while consequential owner-only reconciliation remains distinct.
+
+Instance welcome/home messages and purchase notes containing brand or marketing/policy copy belong to Bot Settings, using existing persisted configuration and neutral setup guidance when unset. Static interface text remains in the two audience catalogs. Configurable support, help-channel and cooperation-panel destinations replace hardcoded reseller contacts. Source updates preserve legitimate per-instance content and protocol identifiers.
+
+Persian prose begins with a Persian label around Latin terms/numbers, uses understandable concise instructions, supported Telegram HTML/code formatting and distinct relevant heading icons. Numeric identity is called «شناسه عددی». Technical config/link bytes and implementation tokens remain unchanged. Receipt-review captions retain useful customer/service facts and pinned amount evidence without duplicated metadata; exact transfer amount follows paid amount. User-info statistics preserve incoming-payment and service-value meanings. A genuine private /start refreshes the name and a supplied nonempty username; no username value means retain the stored username. Per-server auxiliary subscription links apply to both supported providers without altering the native subscription/config URI.
+
+
 **Superseding current source contract (2026-10-27):** Issue #26 revisions3–4 add native PasarGuard5.5.1, managed per-server display policies, bot-managed exchange rates and exactly two editable audience catalogs (user/admin), with ASCII bot-owned digits and consistent meaningful emoji/formatting that preserves established wording. Parser matchers remain implementation data; shared display fragments are not decorated as whole messages. The earlier Marzban-only and private display/rate descriptions below are historical where superseded. Read [the RC12 source contract](post-v9/NEXT-RELEASE.md) for exact current boundaries; [RC12](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.12) publishes this source contract through PR #87; source publication is not a production rollout.
 
 

@@ -1,10 +1,30 @@
-# Pending shared-order simplification after RC14
+# Pending administrator, instance-content and Telegram copy follow-up
 
-The current source follow-up in [PR92](https://github.com/ach1992/bot-refactor/pull/92) keeps the familiar shared order flows while consolidating PasarGuard connection/native-operation evidence into existing tables. It also removes obsolete `orders_list.protocol` and `orders_list.rahgozar`. This follow-up is not yet a published or installed release.
+This source batch improves the existing bot without a new schema: four administrator tiers, settings-backed instance messages/destinations, clearer Persian Telegram text, receipt-review layout, user-info/profile updates and PasarGuard auxiliary links. A compatible RC15 installation retains its current schema, private configuration and financial/native evidence. Source acceptance does not authorize integration, publication or installation.
 
-This version requires reviewed database preparation: [012_shared_provider_storage.sql](../../migrations/post-v9/012_shared_provider_storage.sql) transfers and verifies populated native evidence before removing the two provider tables; [013_remove_obsolete_order_columns.sql](../../migrations/post-v9/013_remove_obsolete_order_columns.sql) removes the two unused order columns. The runtime ZIP does not execute SQL. Read the [shared-storage migration and recovery contract](SHARED-PROVIDER-STORAGE.md) and [accepted workflow decisions](UNIFIED-SERVICE-MANAGEMENT.md#owner-simplification-follow-up-2026-10-28-revision-2) before rollout. Quiesce matching writers, verify a restorable full backup and use the paired source/schema. After012, reverting only runtime to RC14 is unsupported; recovery must restore the paired database/runtime or use an audited roll-forward. No tenant migration, release, or installation is implied by source acceptance.
+## Administrator scope and downgrade boundary
 
-The RC13/RC12 scope below is historical release context. Its no-new-SQL and011-only descriptions do not apply to this pending follow-up.
+Owner is the administrator configured in private baseInfo and appears in the existing administrator list. That list adds or changes Manager, Operator and Support. Manager has ordinary admin functions except administrator management; Operator additionally excludes statistics, servers, plans/categories, bot settings and gateway/channel settings; Support has only customer information, ban/unban and the order database editor. Menu visibility and actual requests agree. Payment review follows administrator-list placement and permits read-only inspection to the first three tiers; consequential owner-only reconciliation stays separate.
+
+The existing boolean admin marker remains for compatibility and the assigned level uses existing settings. Existing special administrators retain Manager scope; other existing staff receive Operator scope unless explicitly assigned a level. An old runtime does not understand new tier restrictions: after assigning tiers, do not roll back source blindly and assume the old code preserves them. Reconcile administrator access before any separately authorized downgrade.
+
+## Bot Settings and copy
+
+Use Bot Settings to edit welcome/home messages and the shared purchase note. Unset content gives neutral setup guidance. Enter normal text or Telegram-formatted text; do not paste escaped HTML. Existing valid per-instance content and custom buttons are retained. Support, help-channel and cooperation-panel destinations are configurable; unset optional destinations do not create fabricated external links.
+
+Static interface copy remains in exactly two audience files, while instance marketing/message bodies are persisted configuration. Persian prose starts with Persian wording around Latin terms/numbers; raw copyable URLs, configs, code and parser tokens retain their bytes. The display-policy guide uses supported HTML/code presentation.
+
+## Receipts, profiles and links
+
+Administrator receipt captions retain useful customer/service facts, omit duplicated metadata, and place the pinned exact bank amount immediately after paid amount. Original payment/attempt evidence and guarded approval callbacks remain unchanged. User-info counters preserve incoming-payment and service-value meanings; agent percentage is next to agent status for permitted staff. A genuine private /start refreshes the name and a supplied nonempty username, retaining the previous username if absent. Configured auxiliary links are displayed for PasarGuard after purchase and in account details without modifying native subscription/config URIs.
+
+## Previous RC15 shared-order release and migration boundary
+
+[RC15](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.15) is published and PR92 is merged. It consolidated PasarGuard connection/native-operation evidence into existing tables and retired obsolete order columns. The rules below concern that release, not new SQL for this presentation/administration follow-up.
+
+RC15 requires reviewed database preparation: [012_shared_provider_storage.sql](../../migrations/post-v9/012_shared_provider_storage.sql) transfers and verifies populated native evidence before removing the two provider tables; [013_remove_obsolete_order_columns.sql](../../migrations/post-v9/013_remove_obsolete_order_columns.sql) removes the two unused order columns. The runtime ZIP does not execute SQL. Read the [shared-storage migration and recovery contract](SHARED-PROVIDER-STORAGE.md) and [accepted workflow decisions](UNIFIED-SERVICE-MANAGEMENT.md#owner-simplification-follow-up-2026-10-28-revision-2) before rollout. Quiesce matching writers, verify a restorable full backup and use the paired source/schema. After012, reverting only runtime to RC14 is unsupported; recovery must restore the paired database/runtime or use an audited roll-forward. No tenant migration, release, or installation is implied by source acceptance.
+
+The RC13/RC12 scope below is historical release context. Its no-new-SQL and011-only descriptions do not apply to RC15.
 
 ## Previous RC13 release scope and delivery contract
 

@@ -83,6 +83,8 @@ NEW_RUNTIME_MEMBERS = ("pay/checkout.php", "settings/cronRunner.php", "src/Finan
                        "src/Subscription/ServerDisplaySettings.php",
                        "src/Admin/ManagementFlow.php", "src/Admin/ServerWizard.php",
                        "src/Plans/Wizard.php", "src/Panel/ServiceLifecycle.php",
+                       "src/Admin/Access.php", "src/Admin/InstanceContent.php",
+                       "src/Telegram/UserProfile.php",
                        "messages/loader.php",
                        "messages/fa/admin.php",
                        "messages/fa/user.php")
