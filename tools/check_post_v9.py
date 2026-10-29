@@ -445,7 +445,7 @@ def main():
                         "--run-disposable","--report",str(purchase_path)],
                        cwd=ROOT,check=True,timeout=300,capture_output=True)
         purchases=json.loads(purchase_path.read_text())
-        # Seven unchanged scenarios retain exact financial/provider parity.
+        # Seven scenarios retain exact financial/provider parity; one has the explicit R5 denial notice.
         # The owner-requested actor draft replaces the old global scratch row;
         # require its actual historical/current proof instead of claiming parity.
         draft_amendments=purchases.get("intentional_behavior_amendments",[])
@@ -465,15 +465,23 @@ def main():
                 purchases.get("sql_provider_wire_exact") is False and
                 purchases.get("unchanged_differential_scenarios")==7 and
                 purchases.get("unchanged_differential_sql_provider_wire_exact") is True and
-                purchases.get("unchanged_differential_telegram_comparison")=="exact_except_explicit_authorized_ui_text_fields" and
-                purchases.get("telegram_comparison")=="seven_exact_style_scoped_cases_and_one_explicit_actor_draft_amendment" and
+                purchases.get("unchanged_differential_telegram_comparison")=="exact_except_authorized_literal_UI_and_one_actor_local_denial_notice" and
+                purchases.get("telegram_comparison")=="six_style_scoped_cases_one_actor_local_denial_notice_and_one_actor_draft_amendment" and
                 purchases.get("actor_owned_plan_draft_entry_verified") is True and
                 draft_amendments==[draft_proof] and
                 purchases.get("ui_projection_baseline")=="7faac9b067f8a171e5e26d6aea5aaf9f4088a3e7" and
-                purchases.get("verified_literal_style_pairs")==487 and
+                purchases.get("verified_literal_style_pairs")==579 and
                 purchases.get("authorized_ui_field_differences")==3 and
                 purchases.get("ui_projection_negative_controls")==17 and
                 len(purchases.get("rejected_projection_mutations",[]))==17 and
+                purchases.get("r5_ui_lineage_negative_controls")==5 and
+                purchases.get("r5_denial_notice_amendment_count")==1 and
+                purchases.get("r5_denial_notice_negative_controls")==12 and
+                purchases.get("r5_denial_notice_amendments")==[{
+                    "case":"nonadmin_bulk_denied","step":0,"route":"entryandbulk",
+                    "catalog_key":"admin.roles.denied",
+                    "delivery":"one_actor_local_sendMessage_null_keys_HTML",
+                    "archived_events_empty":True,"sql_provider_wire_exact":True}] and
                 {(f.get("case"),f.get("step"),f.get("event_name"),f.get("argument_index"),tuple(f.get("field_path",[])))
                  for f in purchases.get("authorized_ui_fields",[])}=={
                     ("admin_plan_price_edit",1,"sendMessage",0,()),
