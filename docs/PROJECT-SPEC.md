@@ -1,6 +1,6 @@
 # AChBot — canonical product and historical refactor contract
 
-**Current release line (2026-10-29):** [RC17](post-v9/RC16-TO-RC17.md) includes shared settings navigation and independent native delivery/order config selection through PR #95. See the [current release contract](post-v9/NEXT-RELEASE.md) and [README](../README.md); publication does not establish installed or live acceptance.
+**Current supported scope:** shared settings navigation, familiar paired gateway destination controls and independent native delivery/order config selection. See the [current release contract](post-v9/NEXT-RELEASE.md) and [README](../README.md) for release-specific details; publication does not establish installed or live acceptance.
 
 ## Current administration and instance presentation
 

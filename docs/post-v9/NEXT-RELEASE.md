@@ -1,6 +1,10 @@
-# RC17 shared settings and native display selection scope
+# RC18 gateway destination keyboard scope
 
-[RC17](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.17) is the current source-only release line, integrated through [PR #95](https://github.com/ach1992/bot-refactor/pull/95). Its package contains **115 runtime members / 114 PHP files**. Read [RC16 → RC17](RC16-TO-RC17.md) and verify the official assets before rollout. Source merge/publication does not install files or certify real Telegram/provider/merchant/wallet/Cron acceptance.
+[RC18](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.18) is the current source-only prerelease. [PR #96](https://github.com/ach1992/bot-refactor/pull/96) restores the established two-button rows for cooperation URL, help channel and private mandatory-membership invite URL. The status/edit button retains its existing callback; the adjacent localized label uses the same informational callback as neighboring settings. Existing validation, BOT_STATES persistence, permissions and save/clear/cancel navigation remain unchanged. No new table, schema, setting or management mechanism is introduced. Read [RC17 → RC18](RC17-TO-RC18.md).
+
+## Inherited RC17 shared settings and native display selection
+
+[RC17](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.17) delivered the following shared settings and native display behavior through [PR #95](https://github.com/ach1992/bot-refactor/pull/95); RC18 preserves it. Its package contains **115 runtime members / 114 PHP files**. Read [RC16 → RC17](RC16-TO-RC17.md) and verify the official assets before rollout. Source merge/publication does not install files or certify real Telegram/provider/merchant/wallet/Cron acceptance.
 
 The release consolidates destination editors in gateway/channel settings and keeps only four message bodies in Bot Settings. Native Marzban and PasarGuard share independent purchase-delivery/order-view config selection through the same renderer, editor and existing per-server JSON in setting. Existing choices/defaults remain until edited; managed Marzban positional compatibility is unchanged. A compatible RC16 installation needs **no new SQL**; do not rerun completed012/013. Inherited RC16 staff, receipt, profile, Persian-copy and private-configuration boundaries below remain.
 
