@@ -29,9 +29,10 @@ Logical servers sharing a physical panel have independent display documents.
 
 An absent setting defaults to native mode, visible configs and subscription,
 at most ten configs, and automatic QR selection. Defaults do not read/import
-old private globals or global bot display switches. The retired global display
-controls link administrators to server settings; old callbacks and persistence
-keys are rejected. Other bot/service/payment availability controls are unchanged.
+old private globals or global bot display switches. The source navigation
+follow-up after RC16 removes the Bot Settings shortcut: open the selected
+server's display menu directly. Retired global display callbacks and persistence
+keys remain rejected. Other bot/service/payment availability controls are unchanged.
 
 All fields in one selector must match; records are alternatives, processed in
 configured order with native order within a match. Protocol is case insensitive;

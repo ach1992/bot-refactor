@@ -20,6 +20,8 @@ On MariaDB snapshot-isolation conflicts, a caller holding an older repeatable-re
 
 ## Bot Settings and copy
 
+The source navigation follow-up after published RC16 keeps only the four message bodies in Bot Settings → متن‌های ربات. All support, report-channel, forced-membership, private invite, help and cooperation destinations are managed once in the existing gateway/channel settings; destination save/cancel returns there. This follow-up changes navigation without migrating stored values and has not changed the published RC16 assets.
+
 Use Bot Settings to edit welcome/home messages and the shared purchase note. Unset content gives neutral setup guidance. Enter normal text or Telegram-formatted text; do not paste escaped HTML. Existing valid per-instance content and custom buttons are retained. Support, help-channel, mandatory-channel join and cooperation-panel destinations are configurable; unset optional destinations do not create fabricated external links. For a private channel, keep its numeric membership identifier and edit the join/invite URL separately. Clearing that URL restores public-channel derivation or the existing valid private-config joinLink fallback.
 
 Destination values are encoded at each actual HTML, legacy Markdown or plain-text consumer. Stored settings and native keyboard URLs keep their original bytes. Current template substitution is a single pass so placeholder-like words inside a destination remain literal data.
