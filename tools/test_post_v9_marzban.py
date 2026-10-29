@@ -58,6 +58,7 @@ def prepare(work: Path, stage: Path, candidate: bool) -> None:
         order_writes=stage/'src/Purchase/OrderWrites.php'
         order_writes.parent.mkdir(parents=True,exist_ok=True)
         order_writes.write_bytes((ROOT/'src/Purchase/OrderWrites.php').read_bytes())
+        shutil.copyfile(ROOT/'src/Subscription/Presentation.php',stage/'src/Subscription/Presentation.php')
         with (stage/'functions-under-test.php').open('ab') as stream:
             stream.write(b"\nrequire_once __DIR__.'/src/Panel/ProviderRuntime.php';\n")
     (stage / "native.php").write_bytes((ROOT / "tests/v6/native.php").read_bytes())
