@@ -435,15 +435,15 @@ def check():
         cases.append('r3_three_accounts_second_text_failed_third_still_attempted_and_reward_credited')
 
         key=seed(work,env,'multiple_admin_edits',inviter=True)
-        # Current follow-up delivery requires valid staff with notifications enabled.
+        # Stored receipt follow-up requires current valid staff, independent of new copies.
         # The frozen seed has no user 9003; provide that intended secondary Operator
-        # and an active Support ref with delivery off, retained as historical evidence.
+        # and a revoked Support ref retained as history without maintenance authority.
         assert sql(work,env,'SELECT COUNT(*) FROM users WHERE userid IN(9003,9004)')=='0'
-        assert sql(work,env,"SELECT COUNT(*) FROM setting WHERE type IN('ADMIN_ROLE_9003','ADMIN_ROLE_9004','ADMIN_NOTIFY_9004')")=='0'
+        assert sql(work,env,"SELECT COUNT(*) FROM setting WHERE type IN('ADMIN_ROLE_9003','ADMIN_ROLE_9004')")=='0'
         sql(work,env,"INSERT INTO users(userid,name,username,refcode,wallet,date,isAdmin,step,first_start) VALUES "
             "(9003,'Fixture operator','fixture_operator','0',50000,'1700000000',1,'none','sent'),"
-            "(9004,'Fixture support','fixture_support','0',50000,'1700000000',1,'none','sent');"
-            "INSERT INTO setting(type,value) VALUES ('ADMIN_ROLE_9003','operator'),('ADMIN_ROLE_9004','support'),('ADMIN_NOTIFY_9004','off')")
+            "(9004,'Revoked fixture support','fixture_support','0',50000,'1700000000',0,'none','sent');"
+            "INSERT INTO setting(type,value) VALUES ('ADMIN_ROLE_9003','operator'),('ADMIN_ROLE_9004','support')")
         refs=json.dumps([{'chat_id':9002,'message_id':222},
                          {'chat_id':9003,'message_id':333},
                          {'chat_id':9004,'message_id':444}],separators=(',',':'))
@@ -476,10 +476,10 @@ def check():
                 sql(work,env,'SELECT * FROM referral_awards ORDER BY id'))==before_replay
             cases.append('r3_multiple_admin_refs_one_edit_fails_later_edit_still_attempted')
         finally:
-            sql(work,env,"DELETE FROM setting WHERE type IN('ADMIN_ROLE_9003','ADMIN_ROLE_9004','ADMIN_NOTIFY_9004');"
+            sql(work,env,"DELETE FROM setting WHERE type IN('ADMIN_ROLE_9003','ADMIN_ROLE_9004');"
                 "DELETE FROM users WHERE userid IN(9003,9004)")
         assert sql(work,env,'SELECT COUNT(*) FROM users WHERE userid IN(9003,9004)')=='0'
-        assert sql(work,env,"SELECT COUNT(*) FROM setting WHERE type IN('ADMIN_ROLE_9003','ADMIN_ROLE_9004','ADMIN_NOTIFY_9004')")=='0'
+        assert sql(work,env,"SELECT COUNT(*) FROM setting WHERE type IN('ADMIN_ROLE_9003','ADMIN_ROLE_9004')")=='0'
 
         key=seed(work,env,'reward_on_qr_failure',inviter=True)
         ev=call(key,telegram='qr_false')
