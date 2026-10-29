@@ -1659,10 +1659,10 @@ function achbotManualFinishEvidence(mysqli $connection, string $hashId, string $
 
 
 function achbotManualCaption(mysqli $connection, array $payInfo, string $caption): string {
+    // Compose the trusted template before substituting customer values.
+    // PRICE is the existing implementation token, never customer input.
     $method = achbotManualSelectedMethod($connection, $payInfo);
-    $label = $method === null ? \achbotMessage('manual_payment.receipt_helpers.manual_caption.text.9c641f40e0') : achbotManualLabel($method);
-    require_once __DIR__.'/PaymentLifecycle.php';
-    $header = achbotPayUxReference($payInfo).\achbotMessage('manual_payment.receipt_helpers.manual_caption.text.342127f41e') . $label . "</b>\n";
+    $quoteLine = '';
     if (in_array($method, ['manual_usdt','manual_trx','bank_transfer'], true)) {
         try {
             $stmt = $connection->prepare('SELECT provider,quote_amount,quote_currency,
@@ -1681,25 +1681,31 @@ function achbotManualCaption(mysqli $connection, array $payInfo, string $caption
                     ? $network === 'TRON' && achbotManualTronAddressValid($address)
                     : achbotManualUsdtWalletValid($address, $network);
                 if ($details['quote_currency'] === $asset && $valid) {
-                    $header .= \achbotMessage('manual_payment.receipt_helpers.manual_caption.header.cc6f426145') .
+                    $quoteLine = \achbotMessage('manual_payment.receipt_helpers.manual_caption.header.cc6f426145') .
                         htmlspecialchars((string)$details['quote_amount'], ENT_QUOTES, 'UTF-8') .
-                        ' ' . $asset . \achbotMessage('manual_payment.receipt_helpers.manual_caption.text.1c777cb98d') . htmlspecialchars($network, ENT_QUOTES, 'UTF-8') .
-                        \achbotMessage('manual_payment.receipt_helpers.manual_caption.text.cef75b4291') . htmlspecialchars($address, ENT_QUOTES, 'UTF-8') .
-                        "</code>\n";
+                        ' ' . $asset . \achbotMessage('manual_payment.receipt_helpers.manual_caption.text.1c777cb98d') .
+                        htmlspecialchars($network, ENT_QUOTES, 'UTF-8') . "</b>\n";
                 }
             } elseif ($intent && $method === 'bank_transfer' &&
                       $details['quote_currency'] === 'toman') {
-                $header .= \achbotMessage('manual_payment.receipt_helpers.manual_caption.header.12c0babe12') .
-                    number_format((int)$details['quote_amount']) . \achbotMessage('manual_payment.receipt_helpers.manual_caption.text.de6a1a6756');
-                $header .= \achbotMessage('manual_payment.receipt_helpers.manual_caption.header.559f60f115') .
-                    htmlspecialchars((string)($intent['account'] ?? ''), ENT_QUOTES, 'UTF-8') .
-                    '</code> | ' . htmlspecialchars((string)($intent['holder'] ?? ''), ENT_QUOTES, 'UTF-8') . "\n";
+                $quoteLine = \achbotMessage('manual_payment.receipt_helpers.manual_caption.header.12c0babe12') .
+                    number_format((int)$details['quote_amount']) .
+                    \achbotMessage('manual_payment.receipt_helpers.manual_caption.text.de6a1a6756');
             }
         } catch (Throwable $error) {
-            // A failed lookup must not produce a fabricated bank destination.
+            // Missing quote evidence must not fabricate an amount or destination.
         }
     }
-    return $header . $caption;
+    if ($quoteLine === '') return $caption;
+    $priceAt = strpos($caption, 'PRICE');
+    if ($priceAt !== false) {
+        $lineEnd = strpos($caption, "\n", $priceAt);
+        if ($lineEnd === false) return $caption . "\n" . $quoteLine;
+        return substr($caption, 0, $lineEnd + 1) . $quoteLine .
+            substr($caption, $lineEnd + 1);
+    }
+    // Preserve direct older callers that supply an already-rendered caption.
+    return $quoteLine . $caption;
 }
 
 function achbotManualReceiptPrompt(array $mainValues, string $method): string {

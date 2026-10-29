@@ -316,7 +316,7 @@ if (preg_match('/wait(?:RenewCart|RenewGift|RenewUsdt)Receipt(.*)/', $userInfo['
     $msg = str_replace(
         ['TYPE', "USER-ID", "USERNAME", "NAME", "PRICE", "REMARK", "VOLUME", "DAYS"],
         [achbotManualLabel($method), $from_id, $username, $first_name, $price, $remark, $volume, $days],
-        $mainValues['renew_account_request_message']
+        achbotManualCaption($connection, $receiptPay, $mainValues['renew_account_request_message'])
     );
 
     $adminKeyboard = buildAdminKeyboardWithStats(
@@ -329,7 +329,7 @@ if (preg_match('/wait(?:RenewCart|RenewGift|RenewUsdt)Receipt(.*)/', $userInfo['
     );
 
     if (sendReceiptToAdminsAndUpdatePay($connection, $fileid,
-        achbotManualCaption($connection, $receiptPay, $msg), $adminKeyboard, $admin, $match[1],
+        $msg, $adminKeyboard, $admin, $match[1],
         $deliveryToken)) {
         setUser();
         sendWithStartButton(achbotManualAcknowledgement($receiptPay, $method), $buttonValues['start_bot'], $botUsername, 'mainMenu', 'HTML', (string)$receiptPay['hash_id']);

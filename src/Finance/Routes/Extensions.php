@@ -274,7 +274,7 @@ if (preg_match('/wait(?:IncreaseDay|IncreaseDayGift|IncreaseDayUsdt)Receipt(.*)/
     $msg = str_replace(
         ['INCREASE', 'TYPE', "USER-ID", "USERNAME", "NAME", "PRICE", "REMARK"],
         [$volume, \achbotMessage('renewal.extensions.text.9699c34220'), $from_id, $username, $first_name, $price, $remark],
-        $mainValues['increase_account_request_message']
+        achbotManualCaption($connection, $receiptPay, $mainValues['increase_account_request_message'])
     );
 
     $adminKeyboard = buildAdminKeyboardWithStats(
@@ -287,7 +287,7 @@ if (preg_match('/wait(?:IncreaseDay|IncreaseDayGift|IncreaseDayUsdt)Receipt(.*)/
     );
 
     if (sendReceiptToAdminsAndUpdatePay($connection, $fileid,
-        achbotManualCaption($connection, $receiptPay, $msg), $adminKeyboard, $admin, $match[1],
+        $msg, $adminKeyboard, $admin, $match[1],
         $deliveryToken)) {
         setUser();
         sendWithStartButton(achbotManualAcknowledgement($receiptPay, $method), $buttonValues['start_bot'], $botUsername, 'mainMenu', 'HTML', (string)$receiptPay['hash_id']);
@@ -1096,7 +1096,7 @@ if (preg_match('/wait(?:IncreaseVolume|IncreaseVolumeGift|IncreaseVolumeUsdt)Rec
     $msg = str_replace(
         ['INCREASE', 'TYPE', "USER-ID", "USERNAME", "NAME", "PRICE", "REMARK"],
         [$volume, \achbotMessage('renewal.extensions.text.4123904480'), $from_id, $username, $first_name, $price, $remark],
-        $mainValues['increase_account_request_message']
+        achbotManualCaption($connection, $receiptPay, $mainValues['increase_account_request_message'])
     );
 
     $adminKeyboard = buildAdminKeyboardWithStats(
@@ -1109,7 +1109,7 @@ if (preg_match('/wait(?:IncreaseVolume|IncreaseVolumeGift|IncreaseVolumeUsdt)Rec
     );
 
     if (sendReceiptToAdminsAndUpdatePay($connection, $fileid,
-        achbotManualCaption($connection, $receiptPay, $msg), $adminKeyboard, $admin, $match[1],
+        $msg, $adminKeyboard, $admin, $match[1],
         $deliveryToken)) {
         setUser();
         sendWithStartButton(achbotManualAcknowledgement($receiptPay, $method), $buttonValues['start_bot'], $botUsername, 'mainMenu', 'HTML', (string)$receiptPay['hash_id']);
