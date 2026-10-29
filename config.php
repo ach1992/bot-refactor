@@ -1440,9 +1440,6 @@ function getBotSettingKeys(){
             ['text'=>\achbotMessage('admin_settings.config.get_bot_setting_keys.button.5a3a8ecb3c'),'callback_data'=>"wizwizch"]
         ],
         [
-            ['text'=>\achbotMessage('admin_settings.config.get_bot_setting_keys.button.ce5bb2416c'),'callback_data'=>'serversSetting']
-        ],
-        [
             ['text'=>$searchState,'callback_data'=>"changeBotsearchState"],
             ['text'=>\achbotMessage('admin_settings.config.get_bot_setting_keys.button.c56b392566'),'callback_data'=>"wizwizch"]
         ],
