@@ -261,21 +261,9 @@ def q(work: Path, env: dict, query: str) -> str:
 def setup(work: Path, env: dict) -> Path:
     native.seed(work, env, 'http://127.0.0.1:9')
     stage=work/'owned-direct-gift'
-    for rel in [
-        'src/Admin/Access.php',
-        'src/Subscription/DirectGift.php',
-        'src/Subscription/GiftBatch.php',
-        'src/Purchase/Core.php',
-        'src/Panel/ProviderRuntime.php',
-        'src/Panel/ProviderImport.php',
-        'src/Panel/ProviderStorage.php',
-        'src/Panel/PasarGuard.php',
-        'src/Telegram/UpdateBindings.php',
-        'src/Telegram/UserProfile.php'
-    ]:
-        dst=stage/rel
-        dst.parent.mkdir(parents=True,exist_ok=True)
-        dst.write_bytes((ROOT/rel).read_bytes())
+    # Use the complete actual common-bootstrap dependency tree in this owned
+    # fixture; route extraction, authority/effect spies and RED checks stay exact.
+    shutil.copytree(ROOT/'src',stage/'src')
     shutil.copytree(ROOT/'messages',stage/'messages')
     bot=(ROOT/'bot.php').read_text()
     begin=bot.index('// ACHBOT_DIRECT_GIFT_ROUTE_BEGIN')
