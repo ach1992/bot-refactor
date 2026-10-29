@@ -5,7 +5,6 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     exit;
 }
 require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
-require_once __DIR__.'/AccountDetails.php';
 
 require_once __DIR__ . '/../Finance/ReceiptHelpers.php';
 require_once __DIR__.'/AccountDetails.php';
