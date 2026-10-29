@@ -6,11 +6,15 @@ This source batch improves the existing bot without a new schema: four administr
 
 Owner is the administrator configured in private baseInfo and appears in the existing administrator list. That list adds or changes Manager, Operator and Support. Manager has ordinary admin functions except administrator management; Operator additionally excludes statistics, servers, plans/categories, bot settings and gateway/channel settings; Support has only customer information, ban/unban and the order database editor. Menu visibility and actual requests agree. Payment review follows administrator-list placement and permits read-only inspection to the first three tiers; consequential owner-only reconciliation stays separate.
 
+Secondary ticket/receipt copies and updates to their stored message references require the recipient’s current operations authority. The configured private recipient list still selects secondary recipients; it does not grant authority. Demotion or revocation stops subsequent delivery while retaining historical message references. Confirmed new references append atomically; malformed historical metadata is preserved rather than repaired or discarded. Primary Owner delivery and financial evidence/replay remain separate and unchanged.
+
 The existing boolean admin marker remains for compatibility and the assigned level uses existing settings. Existing special administrators retain Manager scope; other existing staff receive Operator scope unless explicitly assigned a level. An old runtime does not understand new tier restrictions: after assigning tiers, do not roll back source blindly and assume the old code preserves them. Reconcile administrator access before any separately authorized downgrade.
 
 ## Bot Settings and copy
 
 Use Bot Settings to edit welcome/home messages and the shared purchase note. Unset content gives neutral setup guidance. Enter normal text or Telegram-formatted text; do not paste escaped HTML. Existing valid per-instance content and custom buttons are retained. Support, help-channel, mandatory-channel join and cooperation-panel destinations are configurable; unset optional destinations do not create fabricated external links. For a private channel, keep its numeric membership identifier and edit the join/invite URL separately. Clearing that URL restores public-channel derivation or the existing valid private-config joinLink fallback.
+
+Destination values are encoded at each actual HTML, legacy Markdown or plain-text consumer. Stored settings and native keyboard URLs keep their original bytes. Current template substitution is a single pass so placeholder-like words inside a destination remain literal data.
 
 Static interface copy remains in exactly two audience files, while instance marketing/message bodies are persisted configuration. Persian prose starts with Persian wording around Latin terms/numbers; raw copyable URLs, configs, code and parser tokens retain their bytes. The display-policy guide uses supported HTML/code presentation.
 
