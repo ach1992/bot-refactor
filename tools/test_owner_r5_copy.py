@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Source-real Persian/readability and display-help transport regression for Owner R5."""
 from __future__ import annotations
-import copy,html,json,pathlib,re,subprocess
+import argparse,copy,html,json,pathlib,re,subprocess
 from html.parser import HTMLParser
 import catalog_owner_r5 as r5
+import test_owner_r5_compositions as compositions
 ROOT=pathlib.Path(__file__).resolve().parents[1]
 def check(ok,message):
     if not ok:raise AssertionError(message)
@@ -23,9 +24,11 @@ class GuideParser(HTMLParser):
     def handle_data(self,data):
         if self.in_pre:self.buffer.append(data)
 def main():
+    ap=argparse.ArgumentParser();ap.add_argument('--composition-source-root',type=pathlib.Path,default=ROOT,help='Read-only current source for the composed-message matrix; catalogs stay in this checkout.')
+    args=ap.parse_args()
     sides=current();old,counts=r5.verify_and_restore(sides);merged={**sides['user'],**sides['admin']}
     controls=r5.negative_controls(sides)
-    check(not any('🆔'in r5.text(e)or'شناسه تلگرام'in r5.text(e)for e in merged.values()),'obsolete_id_wording_or_marker')
+    check(not any('🆔'in r5.text(e)or compositions.numeric_id_variant(r5.text(e))for e in merged.values()),'obsolete_id_wording_or_marker')
     # Data-only code/URI/native labels and continuation fragments stay intact.
     # These four intentionally stable units are composed inside Persian sentences.
     expected_fragments=['notifications.warnings.send.1e5349d9b2','notifications.warnings.send.0458ad0612','jobs.gift2all.gift_text.8f714dee13','jobs.gift2all.text.b70363d685']
@@ -52,17 +55,10 @@ def main():
                 if m and value[m.start()]in'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789{'and re.search('[\u0600-\u06ff]',value):bad.append(key+':'+line)
             if '</pre>'in line:pre=False
     check(not bad,'non_persian_prose_start:'+str(bad))
-    duplicate_markers=[]
-    for key,entry in merged.items():
-        seen=set();pre=False
-        for line in r5.text(entry).splitlines():
-            if '<pre>'in line:pre=True
-            if not pre:
-                clean=re.sub(r'^\s*(?:<b>)?','',line);match=re.match(r'^(\S+)\s+',clean)
-                if match and any(ord(c)>9000 for c in match[1]):
-                    if match[1]in seen:duplicate_markers.append(key+':'+match[1])
-                    seen.add(match[1])
-            if '</pre>'in line:pre=False
+    # Global raw-template scan; separately test bounded actual compositions.
+    # Repeated identical field labels are deliberate in sender/recipient sections.
+    duplicate_markers=[key+':'+str(problem)for key,entry in merged.items()
+                       for problem in compositions.heading_collisions(r5.text(entry))]
     check(not duplicate_markers,'duplicate_heading_marker:'+str(duplicate_markers))
     native=r'''require 'src/Subscription/ServerDisplaySettings.php';require 'src/Telegram/Messages.php';
 $reports=[];foreach(['marzban','pasarguard']as$provider){
@@ -91,5 +87,6 @@ $reports=[];foreach(['marzban','pasarguard']as$provider){
         value=r5.text(merged['legacy_messages.'+name])
         check(sum('PRICE'in l for l in value.splitlines())==1,'receipt_PRICE_line_drift:'+name)
         check('MANUAL-QUOTE'not in value,'new_receipt_parser_token')
-    print(json.dumps({'status':'PASS',**counts,'r5_negative_controls':controls,'persian_prose_start_violations':0,'duplicate_heading_markers':0,'preserved_unit_fragments':len(expected_fragments),'guide_provider_cases':2,'guide_JSON_examples':blocks,'actual_HTML_transport_cases':2,'archived_wrong_parse_RED':True,'receipt_PRICE_template_cases':6,'real_Telegram_rendering':'NOT_TESTED'},ensure_ascii=False))
+    composed=compositions.audit(args.composition_source_root,ROOT)
+    print(json.dumps({'status':'PASS',**counts,**composed,'r5_negative_controls':controls,'persian_prose_start_violations':0,'duplicate_heading_markers':0,'preserved_unit_fragments':len(expected_fragments),'guide_provider_cases':2,'guide_JSON_examples':blocks,'actual_HTML_transport_cases':2,'archived_wrong_parse_RED':True,'receipt_PRICE_template_cases':6,'real_Telegram_rendering':'NOT_TESTED'},ensure_ascii=False))
 if __name__=='__main__':main()

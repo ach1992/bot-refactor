@@ -388,8 +388,8 @@
     "payment.payment_lifecycle.pay_ux_reference.text.d031212b3c": {
       "audience": "user",
       "before": "🆔 شناسهٔ تلگرام: <code>",
-      "after": "🎫 شناسهٔ تلگرام: <code>",
-      "reason": "Owner revision5: Persian-first readable Telegram copy, distinct semantic markers, correct terminology/formatting, and instance-content separation."
+      "after": "👤 شناسه عددی: <code>",
+      "reason": "Owner revision5: distinct relevant icons for different headings in actual source-linked composed messages; preserve financial meaning, parameters, markup and repeated identical labels. The uniform numeric-user-ID terminology also covers the original ezafe variant."
     },
     "payment.checkout.hash_id_local.09f20c4022": {
       "audience": "user",
@@ -516,12 +516,12 @@
         ]
       },
       "after": {
-        "text": " تومان</b> به کیف پول شما اضافه شد.\n\n<blockquote>\n⚠️ لطفا دقت کنید شما فقط کیف پول خودتان را شارژ کرده‌اید، برای خرید یا تمدید باید از دکمه های زیر استفاده کنید:\n🛒 <b>خرید اشتراک جدید</b>\nیا <b>🔄 تمدید یا مشاهده اشتراک ها</b>\nو در مرحله پرداخت روی دکمه زیر بزنید:\n💰 <b>پرداخت با موجودی</b>\n</blockquote>\n📨 پشتیبانی:\n💬 پشتیبانی: {supportID}",
+        "text": " تومان</b> به کیف پول شما اضافه شد.\n\n<blockquote>\n⚠️ لطفا دقت کنید شما فقط کیف پول خودتان را شارژ کرده‌اید، برای خرید یا تمدید باید از دکمه های زیر استفاده کنید:\n🛒 <b>خرید اشتراک جدید</b>\nیا <b>🔄 تمدید یا مشاهده اشتراک ها</b>\nو در مرحله پرداخت روی دکمه زیر بزنید:\n💳 <b>پرداخت با موجودی</b>\n</blockquote>\n📨 پشتیبانی:\n💬 پشتیبانی: {supportID}",
         "parameters": [
           "supportID"
         ]
       },
-      "reason": "Owner revision5: Persian-first readable Telegram copy, distinct semantic markers, correct terminology/formatting, and instance-content separation."
+      "reason": "Owner revision5: distinct relevant icons for different headings in actual source-linked composed messages; preserve financial meaning, parameters, markup and repeated identical labels."
     },
     "manual_payment.manual_receipts.message.df4f415ed5": {
       "audience": "user",
@@ -940,8 +940,8 @@
     "wallet.wallet_settlement.process_wallet_payment.external_effect_unverified_verify_before.10e2ccf8a3": {
       "audience": "admin",
       "before": "⚠️ External effect: unverified; verify before retry or compensation\n📄 Reason (sanitized): ",
-      "after": "⚠️ نتیجه عملیات سرویس تأیید نشده است؛ پیش از تکرار یا جبران، آن را بررسی کنید.\n📄 علت بررسی‌شده: ",
-      "reason": "Owner revision5: Persian-first readable Telegram copy, distinct semantic markers, correct terminology/formatting, and instance-content separation."
+      "after": "🔎 نتیجه عملیات سرویس تأیید نشده است؛ پیش از تکرار یا جبران، آن را بررسی کنید.\n📄 علت بررسی‌شده: ",
+      "reason": "Owner revision5: distinct relevant icons for different headings in actual source-linked composed messages; preserve financial meaning, parameters, markup and repeated identical labels."
     },
     "purchase.trial_provision.channel_message.d22e3c7448": {
       "audience": "admin",
@@ -1330,8 +1330,8 @@
     "renewal.extensions.external_effect_unverified_verify_before.10e2ccf8a3": {
       "audience": "admin",
       "before": "⚠️ External effect: unverified; verify before retry or compensation\n📄 Reason (sanitized): ",
-      "after": "⚠️ نتیجه عملیات سرویس تأیید نشده است؛ پیش از تکرار یا جبران، آن را بررسی کنید.\n📄 علت بررسی‌شده: ",
-      "reason": "Owner revision5: Persian-first readable Telegram copy, distinct semantic markers, correct terminology/formatting, and instance-content separation."
+      "after": "🔎 نتیجه عملیات سرویس تأیید نشده است؛ پیش از تکرار یا جبران، آن را بررسی کنید.\n📄 علت بررسی‌شده: ",
+      "reason": "Owner revision5: distinct relevant icons for different headings in actual source-linked composed messages; preserve financial meaning, parameters, markup and repeated identical labels."
     },
     "renewal.extensions.msg.bfc1b46322": {
       "audience": "admin",
@@ -1460,12 +1460,12 @@
         ]
       },
       "after": {
-        "text": "🎫 شناسه عددی: {uidForLog}\n",
+        "text": "👤 شناسه عددی: {uidForLog}\n",
         "parameters": [
           "uidForLog"
         ]
       },
-      "reason": "Owner revision5: Persian-first readable Telegram copy, distinct semantic markers, correct terminology/formatting, and instance-content separation."
+      "reason": "Owner revision5: distinct relevant icons for different headings in actual source-linked composed messages; preserve financial meaning, parameters, markup and repeated identical labels."
     },
     "manual_payment.automatic_receipts.text.ba58f1caaf": {
       "audience": "admin",
@@ -2670,6 +2670,192 @@
       "before": "🤗 لطفا آیدی پشتیبانی رو وارد کنید.",
       "after": "🔗 نشانی پشتیبانی را بفرستید؛ نام کاربری تلگرام یا نشانی کامل وب پذیرفته می‌شود.\nنمونهٔ تلگرام: @example_support\nنمونهٔ وب: https://example.com/support\nبرای پاک‌کردن نشانی، دستور /clear را بفرستید.",
       "reason": "Owner revision5 makes support destination configurable using validated web/Telegram input and explicit clear."
+    },
+    "wallet.wallet_transfer.wallet_transfer_restart.text.f7206f6d33": {
+      "audience": "user",
+      "before": {
+        "text": "🎫 <b>مقصد</b>: <code>{to_id}</code>\n",
+        "parameters": [
+          "to_id"
+        ]
+      },
+      "after": {
+        "text": "📥 <b>مقصد</b>: <code>{to_id}</code>\n",
+        "parameters": [
+          "to_id"
+        ]
+      },
+      "reason": "Owner revision5: distinct relevant icons for different headings in actual source-linked composed messages; preserve financial meaning, parameters, markup and repeated identical labels."
+    },
+    "payment.referral_reward.give_referral_reward.text.c0780ce268": {
+      "audience": "user",
+      "before": " تومان\n💰 موجودی جدید: ",
+      "after": " تومان\n💼 موجودی جدید: ",
+      "reason": "Owner revision5: distinct relevant icons for different headings in actual source-linked composed messages; preserve financial meaning, parameters, markup and repeated identical labels."
+    },
+    "subscription.account_deletion.shared_effect_notice": {
+      "audience": "user",
+      "before": "⚠️ با تأیید، خود اشتراک برای همیشه حذف می‌شود و دسترسی همه افرادی که از آن استفاده می‌کنند قطع خواهد شد.",
+      "after": "🚫 با تأیید، خود اشتراک برای همیشه حذف می‌شود و دسترسی همه افرادی که از آن استفاده می‌کنند قطع خواهد شد.",
+      "reason": "Owner revision5: distinct relevant icons for different headings in actual source-linked composed messages; preserve financial meaning, parameters, markup and repeated identical labels."
+    },
+    "wallet.wallet_transfer.wallet_transfer_restart.text.77d4a377ae": {
+      "audience": "admin",
+      "before": "💼 بعد: <b>",
+      "after": "🔄 بعد: <b>",
+      "reason": "Owner revision5: distinct relevant icons for different headings in actual source-linked composed messages; preserve financial meaning, parameters, markup and repeated identical labels."
+    },
+    "gateway.gateway_return.np_alert_operator.text.7d4d150298": {
+      "audience": "admin",
+      "before": "💰 <b>مبلغ فاکتور:</b> ",
+      "after": "💵 <b>مبلغ فاکتور:</b> ",
+      "reason": "Owner revision5: distinct relevant icons for different headings in actual source-linked composed messages; preserve financial meaning, parameters, markup and repeated identical labels."
+    },
+    "gateway.gateway_return.np_alert_operator.text.04d4b236f8": {
+      "audience": "admin",
+      "before": "⚠️ <b>علت:</b> ",
+      "after": "🔎 <b>علت:</b> ",
+      "reason": "Owner revision5: distinct relevant icons for different headings in actual source-linked composed messages; preserve financial meaning, parameters, markup and repeated identical labels."
+    },
+    "broadcast.routes.pm_noop.text.b59e6ba611": {
+      "audience": "admin",
+      "before": {
+        "text": "📌 نوع: {tp}\n",
+        "parameters": [
+          "tp"
+        ]
+      },
+      "after": {
+        "text": "📂 نوع: {tp}\n",
+        "parameters": [
+          "tp"
+        ]
+      },
+      "reason": "Owner revision5: distinct relevant icons for different headings in actual source-linked composed messages; preserve financial meaning, parameters, markup and repeated identical labels."
+    },
+    "manual_payment.manual_receipts.text.8ec86d6a5e": {
+      "audience": "admin",
+      "before": "💰 مبلغ فاکتور: ",
+      "after": "💵 مبلغ فاکتور: ",
+      "reason": "Owner revision5: distinct relevant icons for different headings in actual source-linked composed messages; preserve financial meaning, parameters, markup and repeated identical labels."
+    },
+    "manual_payment.manual_receipts.text.c0780ce268": {
+      "audience": "admin",
+      "before": " تومان\n💰 موجودی جدید: ",
+      "after": " تومان\n💼 موجودی جدید: ",
+      "reason": "Owner revision5: distinct relevant icons for different headings in actual source-linked composed messages; preserve financial meaning, parameters, markup and repeated identical labels."
+    },
+    "payment.discount_administration.add_discount_code.text.66fafb9fd4": {
+      "audience": "admin",
+      "before": {
+        "text": "▪️ مقدار تخفیف: <b>{amountText}</b>\n",
+        "parameters": [
+          "amountText"
+        ]
+      },
+      "after": {
+        "text": "🏷 مقدار تخفیف: <b>{amountText}</b>\n",
+        "parameters": [
+          "amountText"
+        ]
+      },
+      "reason": "Owner revision5: distinct relevant icons for different headings in actual source-linked composed messages; preserve financial meaning, parameters, markup and repeated identical labels."
+    },
+    "payment.discount_administration.add_discount_code.text.9cd9d5658f": {
+      "audience": "admin",
+      "before": {
+        "text": "▪️ تعداد کل قابل استفاده: <b>{countText}</b>\n",
+        "parameters": [
+          "countText"
+        ]
+      },
+      "after": {
+        "text": "🔢 تعداد کل قابل استفاده: <b>{countText}</b>\n",
+        "parameters": [
+          "countText"
+        ]
+      },
+      "reason": "Owner revision5: distinct relevant icons for different headings in actual source-linked composed messages; preserve financial meaning, parameters, markup and repeated identical labels."
+    },
+    "payment.discount_administration.add_discount_code.text.5919cd752d": {
+      "audience": "admin",
+      "before": {
+        "text": "▪️ محدودیت استفاده هر کاربر: <b>{canUseText}</b>\n",
+        "parameters": [
+          "canUseText"
+        ]
+      },
+      "after": {
+        "text": "👤 محدودیت استفاده هر کاربر: <b>{canUseText}</b>\n",
+        "parameters": [
+          "canUseText"
+        ]
+      },
+      "reason": "Owner revision5: distinct relevant icons for different headings in actual source-linked composed messages; preserve financial meaning, parameters, markup and repeated identical labels."
+    },
+    "payment.discount_administration.add_discount_code.text.b7cf332a32": {
+      "audience": "admin",
+      "before": {
+        "text": "▪️ گروه کاربران: <b>{audienceText}</b>\n",
+        "parameters": [
+          "audienceText"
+        ]
+      },
+      "after": {
+        "text": "👥 گروه کاربران: <b>{audienceText}</b>\n",
+        "parameters": [
+          "audienceText"
+        ]
+      },
+      "reason": "Owner revision5: distinct relevant icons for different headings in actual source-linked composed messages; preserve financial meaning, parameters, markup and repeated identical labels."
+    },
+    "payment.discount_administration.add_discount_code.text.77f1958ae0": {
+      "audience": "admin",
+      "before": {
+        "text": "▪️ هدف سرویس: <b>{targetText}</b>\n",
+        "parameters": [
+          "targetText"
+        ]
+      },
+      "after": {
+        "text": "🎯 هدف سرویس: <b>{targetText}</b>\n",
+        "parameters": [
+          "targetText"
+        ]
+      },
+      "reason": "Owner revision5: distinct relevant icons for different headings in actual source-linked composed messages; preserve financial meaning, parameters, markup and repeated identical labels."
+    },
+    "payment.discount_administration.add_discount_code.text.d2d2b624b9": {
+      "audience": "admin",
+      "before": {
+        "text": "▪️ حداقل مبلغ: <b>{minPriceText}</b>\n",
+        "parameters": [
+          "minPriceText"
+        ]
+      },
+      "after": {
+        "text": "💰 حداقل مبلغ: <b>{minPriceText}</b>\n",
+        "parameters": [
+          "minPriceText"
+        ]
+      },
+      "reason": "Owner revision5: distinct relevant icons for different headings in actual source-linked composed messages; preserve financial meaning, parameters, markup and repeated identical labels."
+    },
+    "payment.discount_administration.add_discount_code.text.0b9a6e5bc7": {
+      "audience": "admin",
+      "before": {
+        "text": "▪️ سقف تخفیف: <b>{maxDiscountText}</b>",
+        "parameters": [
+          "maxDiscountText"
+        ]
+      },
+      "after": {
+        "text": "💵 سقف تخفیف: <b>{maxDiscountText}</b>",
+        "parameters": [
+          "maxDiscountText"
+        ]
+      },
+      "reason": "Owner revision5: distinct relevant icons for different headings in actual source-linked composed messages; preserve financial meaning, parameters, markup and repeated identical labels."
     }
   },
   "retired_keys": {

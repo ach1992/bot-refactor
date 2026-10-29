@@ -347,7 +347,7 @@ return [
         'wallet_transfer.wallet_transfer_restart.text.d6da19205d' => '🧾 نام: <b>',
         'wallet_transfer.wallet_transfer_restart.text.0abd13e218' => '🔖 نام کاربری: <b>',
         'wallet_transfer.wallet_transfer_restart.text.3a7e183abf' => '💼 قبل: <b>',
-        'wallet_transfer.wallet_transfer_restart.text.77d4a377ae' => '💼 بعد: <b>',
+        'wallet_transfer.wallet_transfer_restart.text.77d4a377ae' => '🔄 بعد: <b>',
         'wallet_transfer.wallet_transfer_restart.a_ch_bot_wallet_transfer_notification_failure.9a285d7145' => '⚠️ <b>خطا در اطلاع‌رسانی انتقال کیف پول AChBot</b>' . "\n" . '',
         'wallet_transfer.wallet_transfer_restart.reference_notice_reference.f81164ea0b' => ['text' => 'شناسه پیگیری: <code>{noticeReference}</code>' . "\n" . '', 'parameters' => ['noticeReference']],
         'wallet_transfer.wallet_transfer_restart.reason_reason_code.a18553cad8' => ['text' => 'علت: <code>{reason_code}</code>' . "\n" . '', 'parameters' => ['reason_code']],
@@ -357,7 +357,7 @@ return [
         'wallet_settlement.process_wallet_payment.admin_err.51996ec850' => '⚠️ خطا در پرداخت با کیف پول' . "\n" . '' . "\n" . '',
         'wallet_settlement.process_wallet_payment.hash__i_d_hash_id.e73fee2172' => ['text' => '🎫 شناسه پیگیری: {hashId}' . "\n" . '', 'parameters' => ['hashId']],
         'wallet_settlement.process_wallet_payment.user_from_id.45aa9ea684' => ['text' => '👤 کاربر: {from_id}' . "\n" . '', 'parameters' => ['from_id']],
-        'wallet_settlement.process_wallet_payment.external_effect_unverified_verify_before.10e2ccf8a3' => '⚠️ نتیجه عملیات سرویس تأیید نشده است؛ پیش از تکرار یا جبران، آن را بررسی کنید.' . "\n" . '📄 علت بررسی‌شده: ',
+        'wallet_settlement.process_wallet_payment.external_effect_unverified_verify_before.10e2ccf8a3' => '🔎 نتیجه عملیات سرویس تأیید نشده است؛ پیش از تکرار یا جبران، آن را بررسی کنید.' . "\n" . '📄 علت بررسی‌شده: ',
     ],
 
     // ── ساخت و خرید اشتراک ──
@@ -569,7 +569,7 @@ return [
         // extensions.admin_from_id
         'extensions.admin_from_id.748897de00' => ['text' => '👤 مدیر: {from_id}' . "\n" . '', 'parameters' => ['from_id']],
         // extensions.external_effect_unverified_verify_before
-        'extensions.external_effect_unverified_verify_before.10e2ccf8a3' => '⚠️ نتیجه عملیات سرویس تأیید نشده است؛ پیش از تکرار یا جبران، آن را بررسی کنید.' . "\n" . '📄 علت بررسی‌شده: ',
+        'extensions.external_effect_unverified_verify_before.10e2ccf8a3' => '🔎 نتیجه عملیات سرویس تأیید نشده است؛ پیش از تکرار یا جبران، آن را بررسی کنید.' . "\n" . '📄 علت بررسی‌شده: ',
         // extensions.msg
         'extensions.msg.bfc1b46322' => ['text' => '' . "\n" . '🔋 افزایش زمان با (کیف پول)' . "\n" . '' . "\n" . '🎫 شناسه عددی: {from_id}' . "\n" . '👤 اسم کاربر: {first_name}' . "\n" . '🔖 نام کاربری: @{username}' . "\n" . '🎈 نام کاربری اشتراک: {remark}' . "\n" . '📅 مدت افزایش: {volume} روز' . "\n" . '💰 قیمت: {price} تومان' . "\n" . '', 'parameters' => ['from_id', 'first_name', 'username', 'remark', 'volume', 'price']],
         // extensions.admin_err
@@ -640,7 +640,7 @@ return [
         'referral_reward.give_referral_reward.text.6aaba1c235' => '' . "\n" . 'شناسه معرف: ',
         'referral_reward.give_referral_reward.text.534fd54cb9' => '' . "\n" . 'مبلغ: ',
         // checkout.user_i_d_uid_for_log
-        'checkout.user_i_d_uid_for_log.6a12f817c0' => ['text' => '🎫 شناسه عددی: {uidForLog}' . "\n" . '', 'parameters' => ['uidForLog']],
+        'checkout.user_i_d_uid_for_log.6a12f817c0' => ['text' => '👤 شناسه عددی: {uidForLog}' . "\n" . '', 'parameters' => ['uidForLog']],
         // checkout.text
         'checkout.text.0ec6de536f' => '' . "\n" . 'پرداخت و سرویس ثبت شده‌اند؛ ساخت مجدد انجام نشود.',
         // discount_administration.message
@@ -702,14 +702,14 @@ return [
         'discount_administration.add_discount_code.target_text.88c387668b' => 'دسته: ',
         'discount_administration.add_discount_code.target_text.f172411291' => 'پلن: ',
         'discount_administration.add_discount_code.text.3a4c0517b4' => ['text' => '✏️ ویرایش کد تخفیف <code>{hashId}</code>' . "\n" . '' . "\n" . '', 'parameters' => ['hashId']],
-        'discount_administration.add_discount_code.text.66fafb9fd4' => ['text' => '▪️ مقدار تخفیف: <b>{amountText}</b>' . "\n" . '', 'parameters' => ['amountText']],
+        'discount_administration.add_discount_code.text.66fafb9fd4' => ['text' => '🏷 مقدار تخفیف: <b>{amountText}</b>' . "\n" . '', 'parameters' => ['amountText']],
         'discount_administration.add_discount_code.text.d4169dd62d' => ['text' => '📅 تاریخ انقضا: <b>{dateText}</b>' . "\n" . '', 'parameters' => ['dateText']],
-        'discount_administration.add_discount_code.text.9cd9d5658f' => ['text' => '▪️ تعداد کل قابل استفاده: <b>{countText}</b>' . "\n" . '', 'parameters' => ['countText']],
-        'discount_administration.add_discount_code.text.5919cd752d' => ['text' => '▪️ محدودیت استفاده هر کاربر: <b>{canUseText}</b>' . "\n" . '', 'parameters' => ['canUseText']],
-        'discount_administration.add_discount_code.text.b7cf332a32' => ['text' => '▪️ گروه کاربران: <b>{audienceText}</b>' . "\n" . '', 'parameters' => ['audienceText']],
-        'discount_administration.add_discount_code.text.77f1958ae0' => ['text' => '▪️ هدف سرویس: <b>{targetText}</b>' . "\n" . '', 'parameters' => ['targetText']],
-        'discount_administration.add_discount_code.text.d2d2b624b9' => ['text' => '▪️ حداقل مبلغ: <b>{minPriceText}</b>' . "\n" . '', 'parameters' => ['minPriceText']],
-        'discount_administration.add_discount_code.text.0b9a6e5bc7' => ['text' => '▪️ سقف تخفیف: <b>{maxDiscountText}</b>', 'parameters' => ['maxDiscountText']],
+        'discount_administration.add_discount_code.text.9cd9d5658f' => ['text' => '🔢 تعداد کل قابل استفاده: <b>{countText}</b>' . "\n" . '', 'parameters' => ['countText']],
+        'discount_administration.add_discount_code.text.5919cd752d' => ['text' => '👤 محدودیت استفاده هر کاربر: <b>{canUseText}</b>' . "\n" . '', 'parameters' => ['canUseText']],
+        'discount_administration.add_discount_code.text.b7cf332a32' => ['text' => '👥 گروه کاربران: <b>{audienceText}</b>' . "\n" . '', 'parameters' => ['audienceText']],
+        'discount_administration.add_discount_code.text.77f1958ae0' => ['text' => '🎯 هدف سرویس: <b>{targetText}</b>' . "\n" . '', 'parameters' => ['targetText']],
+        'discount_administration.add_discount_code.text.d2d2b624b9' => ['text' => '💰 حداقل مبلغ: <b>{minPriceText}</b>' . "\n" . '', 'parameters' => ['minPriceText']],
+        'discount_administration.add_discount_code.text.0b9a6e5bc7' => ['text' => '💵 سقف تخفیف: <b>{maxDiscountText}</b>', 'parameters' => ['maxDiscountText']],
         'discount_administration.add_discount_code.button.6928c28094' => '🎁 مقدار تخفیف',
         'discount_administration.add_discount_code.button.500a41c19c' => '📅 تاریخ انقضا',
         'discount_administration.add_discount_code.button.2a9c76274d' => '🔢 تعداد کل',
@@ -991,7 +991,7 @@ return [
         'manual_receipts.text.cc92486df2' => '🧾 موضوع: ',
         'manual_receipts.text.3ecde6c863' => ' ـ ',
         'manual_receipts.text.4edea352b1' => '💰 مبلغ سفارش: ',
-        'manual_receipts.text.8ec86d6a5e' => '💰 مبلغ فاکتور: ',
+        'manual_receipts.text.8ec86d6a5e' => '💵 مبلغ فاکتور: ',
         'manual_receipts.text.36ea78fe22' => '💳 درگاه: NOWPayments' . "\n" . '',
         'manual_receipts.text.15263040e4' => '🔖 سفارش: <code>',
         'manual_receipts.text.d5edc0c62b' => '🔗 فاکتور: <code>',
@@ -1044,7 +1044,7 @@ return [
         // manual_receipts.admin_messages
         'manual_receipts.admin_messages.31d90c5e69' => ['text' => '✅ تأیید دستی {methodName} و افزایش موجودی کاربر {userId} انجام شد.' . "\n" . '' . "\n" . '💰 موجودی قدیم: ', 'parameters' => ['methodName', 'userId']],
         // manual_receipts.text
-        'manual_receipts.text.c0780ce268' => ' تومان' . "\n" . '💰 موجودی جدید: ',
+        'manual_receipts.text.c0780ce268' => ' تومان' . "\n" . '💼 موجودی جدید: ',
         'manual_receipts.text.89a4910ebe' => ['text' => ' تومان' . "\n" . '🎫 شناسه پرداخت: {hash_id}', 'parameters' => ['hash_id']],
         // manual_receipts.hash__i_d_hash_id
         'manual_receipts.hash__i_d_hash_id.0ce5b30b71' => ['text' => '🎫 شناسه پیگیری: <code>{hash_id}</code>', 'parameters' => ['hash_id']],
@@ -1084,7 +1084,7 @@ return [
         'gateway_return.np_alert_operator.text.3ecde6c863' => ' ـ ',
         'gateway_return.np_alert_operator.text.ff1755f857' => '💰 <b>مبلغ سفارش:</b> ',
         'gateway_return.np_alert_operator.text.81a62ff6c6' => ' تومان' . "\n" . '',
-        'gateway_return.np_alert_operator.text.7d4d150298' => '💰 <b>مبلغ فاکتور:</b> ',
+        'gateway_return.np_alert_operator.text.7d4d150298' => '💵 <b>مبلغ فاکتور:</b> ',
         'gateway_return.np_alert_operator.text.9d6887c013' => '💳 <b>درگاه:</b> NOWPayments' . "\n" . '',
         'gateway_return.np_alert_operator.text.0a771c866b' => '🔖 <b>سفارش:</b> <code>',
         'gateway_return.np_alert_operator.text.9c71d4bcce' => '🔗 <b>فاکتور درگاه:</b> <code>',
@@ -1092,7 +1092,7 @@ return [
         'gateway_return.np_alert_operator.text.5749a86140' => 'ثبت نشده',
         'gateway_return.np_alert_operator.text.bc5958e0ae' => '📊 <b>شناسه‌های گزارش‌شده:</b> ',
         'gateway_return.np_alert_operator.text.daf218b959' => ' (شواهد وجه اضافی: ',
-        'gateway_return.np_alert_operator.text.04d4b236f8' => '⚠️ <b>علت:</b> ',
+        'gateway_return.np_alert_operator.text.04d4b236f8' => '🔎 <b>علت:</b> ',
         'gateway_return.np_alert_operator.text.283ba2c09b' => '🕓 <b>آخرین تغییر:</b> ',
         'gateway_return.np_alert_operator.text.515a991cf3' => 'برای تصمیم مالی ابتدا مبلغ و وضعیت واقعی وجوه و ',
         'gateway_return.np_alert_operator.text.30a0d023b8' => 'نتیجهٔ تحویل را تطبیق دهید؛ این اعلان به‌معنی پرداخت موفق دوم نیست.',
@@ -1960,7 +1960,7 @@ return [
         'routes.pm_noop.message.dd6f985b6d' => '❌ این ارسال پیدا نشد.',
         'routes.pm_noop.preview_text.6c87d45576' => '— (این پیام متن/کپشن ندارد)',
         'routes.pm_noop.out.94647cb3a5' => ['text' => '🧾 ارسال #{bid}' . "\n" . '', 'parameters' => ['bid']],
-        'routes.pm_noop.text.b59e6ba611' => ['text' => '📌 نوع: {tp}' . "\n" . '', 'parameters' => ['tp']],
+        'routes.pm_noop.text.b59e6ba611' => ['text' => '📂 نوع: {tp}' . "\n" . '', 'parameters' => ['tp']],
         'routes.pm_noop.text.daf77714f9' => ['text' => '👥 گروه: {g}' . "\n" . '', 'parameters' => ['g']],
         'routes.pm_noop.text.24129349bd' => ['text' => '📅 تاریخ: {dt}' . "\n" . '' . "\n" . '', 'parameters' => ['dt']],
         'routes.pm_noop.text.bca58ca580' => ['text' => '📝 پیش‌نمایش پیام:' . "\n" . '{previewText}' . "\n" . '' . "\n" . '', 'parameters' => ['previewText']],

@@ -233,7 +233,7 @@ return [
         'wallet_transfer.wallet_transfer_restart.message.e9940862a9' => ['text' => 'کد پیگیری {reference} را به پشتیبانی بدهید.', 'parameters' => ['reference']],
         'wallet_transfer.wallet_transfer_restart.text.bda050585a' => '—',
         'wallet_transfer.wallet_transfer_restart.text.ecbce64eed' => ['text' => ' تومان به کیف پول شما توسط کاربر {from_id} انتقال یافت.', 'parameters' => ['from_id']],
-        'wallet_transfer.wallet_transfer_restart.text.f7206f6d33' => ['text' => '🎫 <b>مقصد</b>: <code>{to_id}</code>' . "\n" . '', 'parameters' => ['to_id']],
+        'wallet_transfer.wallet_transfer_restart.text.f7206f6d33' => ['text' => '📥 <b>مقصد</b>: <code>{to_id}</code>' . "\n" . '', 'parameters' => ['to_id']],
         'wallet_transfer.wallet_transfer_restart.text.431f74945a' => '💰 مبلغ انتقال: <b>',
         'wallet_transfer.wallet_transfer_restart.text.b971f2d37a' => '</b> تومان',
         'wallet_transfer.wallet_transfer_restart.text.8e5e1ee663' => ' تومان به کیف پول کاربر مورد نظر شما انتقال یافت.',
@@ -344,7 +344,7 @@ return [
         'buy_helpers.build_links_and_send_qr.acc_text.a2bb8da6b7' => '' . "\n" . '' . "\n" . '💡 همیشه اکانت را با لینک اشتراک وارد کنید تا به همه کانفیگ ها دسترسی داشته باشد.',
         'buy_helpers.build_links_and_send_qr.acc_text.d5f471a600' => '' . "\n" . '⚠️ در صورتی که لینک اصلی اشتراک کار نکرد از لینک کمکی اشتراک استفاده کنید.',
         'buy_helpers.build_links_and_send_qr.start.e4bb9f1ece' => 'شروع',
-        'account_deletion.shared_effect_notice' => "⚠️ با تأیید، خود اشتراک برای همیشه حذف می‌شود و دسترسی همه افرادی که از آن استفاده می‌کنند قطع خواهد شد.",
+        'account_deletion.shared_effect_notice' => "🚫 با تأیید، خود اشتراک برای همیشه حذف می‌شود و دسترسی همه افرادی که از آن استفاده می‌کنند قطع خواهد شد.",
         // account_deletion.alert
         'account_deletion.alert.a370755120' => '⛔️ این اشتراک متعلق به حساب شما نیست.',
         // account_deletion.message
@@ -607,7 +607,7 @@ return [
         'discounts.apply_discount_to_pay.button.16e81418a3' => '❤️',
         // payment_lifecycle.pay_ux_reference
         'payment_lifecycle.pay_ux_reference.label.edb6e627ea' => '🎫 سفارش: <code>',
-        'payment_lifecycle.pay_ux_reference.text.d031212b3c' => '🎫 شناسهٔ تلگرام: <code>',
+        'payment_lifecycle.pay_ux_reference.text.d031212b3c' => '👤 شناسه عددی: <code>',
         // payment_lifecycle.pay_ux_status_text
         'payment_lifecycle.pay_ux_status_text.text.df83eb82dd' => 'پرداخت سفارش',
         'payment_lifecycle.pay_ux_status_text.text.a1026d7b85' => '⌛️ مهلت این درخواست پرداخت پایان یافته است',
@@ -635,7 +635,7 @@ return [
         // referral_reward.give_referral_reward
         'referral_reward.give_referral_reward.buyer_msg.51caba68b5' => '🎁 پاداش معرفی شما به مبلغ ',
         'referral_reward.give_referral_reward.text.b87aec1eb7' => ' تومان ثبت شد.' . "\n" . '💰 موجودی قبلی: ',
-        'referral_reward.give_referral_reward.text.c0780ce268' => ' تومان' . "\n" . '💰 موجودی جدید: ',
+        'referral_reward.give_referral_reward.text.c0780ce268' => ' تومان' . "\n" . '💼 موجودی جدید: ',
         // checkout.button
         'checkout.button.e401f3d5a2' => '🛍 خرید اشتراک جدید',
         // checkout.hash_id_local
@@ -814,7 +814,7 @@ return [
         'manual_crypto.alert.5216f25f85' => 'وضعیت سفارش قابل خواندن نیست؛ لطفاً بعداً تلاش کنید.',
         // manual_receipts.message
         'manual_receipts.message.f568baa065' => '✅ افزایش حساب شما با موفقیت تایید شد.' . "\n" . '💰 مبلغ <b>',
-        'manual_receipts.message.f6331b33af' => ['text' => ' تومان</b> به کیف پول شما اضافه شد.' . "\n" . '' . "\n" . '<blockquote>' . "\n" . '⚠️ لطفا دقت کنید شما فقط کیف پول خودتان را شارژ کرده‌اید، برای خرید یا تمدید باید از دکمه های زیر استفاده کنید:' . "\n" . '🛒 <b>خرید اشتراک جدید</b>' . "\n" . 'یا <b>🔄 تمدید یا مشاهده اشتراک ها</b>' . "\n" . 'و در مرحله پرداخت روی دکمه زیر بزنید:' . "\n" . '💰 <b>پرداخت با موجودی</b>' . "\n" . '</blockquote>' . "\n" . '📨 پشتیبانی:' . "\n" . '💬 پشتیبانی: {supportID}', 'parameters' => ['supportID']],
+        'manual_receipts.message.f6331b33af' => ['text' => ' تومان</b> به کیف پول شما اضافه شد.' . "\n" . '' . "\n" . '<blockquote>' . "\n" . '⚠️ لطفا دقت کنید شما فقط کیف پول خودتان را شارژ کرده‌اید، برای خرید یا تمدید باید از دکمه های زیر استفاده کنید:' . "\n" . '🛒 <b>خرید اشتراک جدید</b>' . "\n" . 'یا <b>🔄 تمدید یا مشاهده اشتراک ها</b>' . "\n" . 'و در مرحله پرداخت روی دکمه زیر بزنید:' . "\n" . '💳 <b>پرداخت با موجودی</b>' . "\n" . '</blockquote>' . "\n" . '📨 پشتیبانی:' . "\n" . '💬 پشتیبانی: {supportID}', 'parameters' => ['supportID']],
         // manual_receipts.button
         'manual_receipts.button.e3517e568b' => '🔄 درخواست دوباره',
         // manual_receipts.message
