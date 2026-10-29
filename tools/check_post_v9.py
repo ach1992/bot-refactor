@@ -159,6 +159,25 @@ def main():
             ('receipt_presentation','test_owner_r5_receipt_presentation.py',13,
              {'complete':True,'source_real':True,'owned_original_schema_mariadb':True,
               'baseline_red':True,'external_calls':0,'financial_mutations_by_caption':0}),
+            ('admin_fanout','test_owner_r5_admin_fanout.py',132,
+             {'complete':True,'cases':132,'source_real':True,'owned_original_schema_mariadb':True,
+              'network_calls':0,'recipient_matrix':True,'raw_text_photo_markup_preserved':True,
+              'legacy_tiers_preserved':True,'primary_owner_once':True,'options_recipient_integrity':True,
+              'recorded_refs_match_delivery':True,'fresh_role_changes':True,
+              'repeatable_read_demotion_denied':True,'no_new_transaction_across_delivery':True,
+              'actual_primary_receipt_evidence':True,'original_evidence_retry_preserved':True,
+              'approval_replay_preserved':True,'stored_followup_loops':9,
+              'stored_followup_markup_preserved':True,'historical_refs_preserved':True,
+              'atomic_history_append':True,'malformed_history_preserved':True,
+              'concurrent_confirmed_append':True,'archived_fanout_red':True,
+              'archived_stored_refs_red':True,
+              'baseline_source':'a070a47c5796e8244a3fe7fbca21e301977c3dcf'}),
+            ('destination_escaping','test_owner_destination_escaping.py',289,
+             {'result':'PASS','cases':289,'source_real':True,'actual_transport_payloads':True,
+              'read_only_original_schema':True,'no_external_calls':True,
+              'no_money_or_settings_mutation':True,'baseline_red':True,
+              'baseline_red_source':'a070a47c5796e8244a3fe7fbca21e301977c3dcf',
+              'baseline_red_sinks':['app','join','plain','manual','gateway','channel']}),
         ]
         for name,script,minimum,required in r5_suites:
             report=Path(tmp)/('owner-r5-'+name+'.json')
@@ -167,6 +186,16 @@ def main():
             proof=json.loads(report.read_text())
             if proof.get('cases',0)<minimum or any(proof.get(key)!=value for key,value in required.items()):
                 raise RuntimeError('Owner R5 merged source proof incomplete: '+name)
+            if name=='destination_escaping':
+                fragments=proof.get('source_fragment_sha256')
+                expected_fragments={'initialization','facades','sink-app','sink-join',
+                    'sink-banned','sink-import','sink-plain','sink-alert','sink-manual',
+                    'sink-gateway','sink-channel','main-keys'}
+                if not (isinstance(fragments,dict) and set(fragments)=={'current','archived'}
+                        and all(isinstance(hashes,dict) and set(hashes)==expected_fragments
+                            and all(isinstance(digest,str) and re.fullmatch('[0-9a-f]{64}',digest)
+                                for digest in hashes.values()) for hashes in fragments.values())):
+                    raise RuntimeError('Owner R5 destination source-fragment evidence incomplete')
             owner_r5[name]=proof
         copy_run=subprocess.run(['python3',str(ROOT/'tools/test_owner_r5_copy.py')],
                                 cwd=ROOT,check=True,timeout=180,capture_output=True,text=True)
@@ -176,7 +205,9 @@ def main():
                        'duplicate_heading_markers':0,'guide_provider_cases':2,'guide_JSON_examples':3,
                        'actual_HTML_transport_cases':2,'archived_wrong_parse_RED':True,
                        'receipt_PRICE_template_cases':6,'real_Telegram_rendering':'NOT_TESTED',
-                       'composed_catalog_correction_keys':21,'composed_heading_cases':42,
+                       'composed_catalog_correction_keys':22,'composed_heading_cases':42,
+                       'telegram_update_id_label_cases':1,'telegram_update_id_numeric_value_preserved':True,
+                       'archived_wrong_telegram_update_label_RED':True,
                        'composed_heading_source_paths':16,'composed_heading_archived_RED':18,
                        'composed_heading_negative_controls':6,'identical_heading_reuse_cases':1,
                        'raw_code_heading_exclusions':1,'numeric_id_variant_negative_controls':5,
