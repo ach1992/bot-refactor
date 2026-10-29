@@ -131,10 +131,17 @@ def main():
         # Current Owner R5 uses real merged source; prior immutable stages remain separate.
         owner_r5={}
         r5_suites=[
-            ('roles','test_owner_r5_roles.py',146,
+            ('roles','test_owner_r5_roles.py',206,
              {'complete':True,'real_disposable_mariadb':True,'actual_admin_keyboard':True,
               'financial_boolean_preserved':True,'no_network':True,
-              'actual_role_management_route':True,'actual_readonly_attention_hub':True,'baseline_red':True}),
+              'actual_role_management_route':True,'actual_readonly_attention_hub':True,'baseline_red':True,
+              'actual_approval_denials':True,'manager_operator_approval':True,
+              'baseline_approval_callback_red':True,'baseline_decline_escape_red':True,
+              'approval_family_coverage':['accCustom','approveRenewAcc','approveIncreaseDay','approveIncreaseVolume','accept','approvePayment','declineAction','declineActionReason'],
+              'forbidden_financial_effects':{'financial_reads':0,'sql_writes':0,'transactions':0,'native_calls':0},
+              'actual_positive_approval_levels':['manager','operator'],
+              'actual_replay_protected_levels':['manager','operator'],
+              'approval_baseline_source':'a901006736a6a75fcac29a609efff3204e1edd6b'}),
             ('instance_content','test_owner_instance_content.py',49,
              {'result':'PASS','source_real':True,'socket_only_original_schema':True,'no_external_calls':True}),
             ('user_info','test_owner_r5_user_info.py',46,
@@ -768,7 +775,9 @@ def main():
                 and text_catalog.get("presentation",{}).get("recipient_placement_cases")==12
                 and text_catalog.get("presentation",{}).get("archived_recipient_placement_RED")==12
                 and text_catalog.get("presentation",{}).get("recipient_payloads_byte_unchanged") is True
-                and text_catalog.get("presentation",{}).get("recipient_source_files")==3):
+                and text_catalog.get("presentation",{}).get("recipient_source_files")==3
+                and text_catalog.get("presentation",{}).get("recipient_authorized_role_layers")==1
+                and text_catalog.get("presentation",{}).get("recipient_source_layer_negative_controls")==3):
             raise RuntimeError("Pre-style relocation or current two-file/audience/presentation proof incomplete")
         copy_audience_output=subprocess.run(
             ["python3",str(ROOT/"tools/test_next_copy_audience.py")],
