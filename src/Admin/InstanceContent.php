@@ -5,7 +5,7 @@ require_once __DIR__ . '/../../messages/loader.php';
 require_once __DIR__ . '/../Presentation/Text.php';
 
 function achbotInstanceFields(): array {
-    return ['start_message','user_welcome_message','reached_main_menu','purchase_note','cooperationUrl','helpChannel'];
+    return ['start_message','user_welcome_message','reached_main_menu','purchase_note','cooperationUrl','helpChannel','lockChannelJoinUrl'];
 }
 function achbotInstanceMessageFields(): array {
     return ['start_message','user_welcome_message','reached_main_menu','purchase_note'];
@@ -18,7 +18,8 @@ function achbotInstanceLabel(string $field): string {
         'reached_main_menu'=>achbotMessage('instance_content.field_reached_main_menu'),
         'purchase_note'=>achbotMessage('instance_content.field_purchase_note'),
         'cooperationUrl'=>achbotMessage('instance_content.field_cooperationUrl'),
-        'helpChannel'=>achbotMessage('instance_content.field_helpChannel')
+        'helpChannel'=>achbotMessage('instance_content.field_helpChannel'),
+        'lockChannelJoinUrl'=>achbotMessage('instance_content.field_lockChannelJoinUrl')
     };
 }
 /** Telegram entities use UTF-16 offsets; literal input is always escaped. */

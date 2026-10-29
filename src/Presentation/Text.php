@@ -49,6 +49,17 @@ function configuredDestination(array $botState,string $field,bool $supportFallba
     return destinationUrl($botState[$field]??'') ?: ($supportFallback?supportUrl($botState):'');
 }
 
+/** Membership keeps its chat ID; a separate public invite destination is display-only. */
+function lockChannelJoinUrl(array $botState,string $legacyJoinLink=''): string {
+    $explicit=destinationUrl($botState['lockChannelJoinUrl']??'');
+    if ($explicit!=='') return $explicit;
+    $channel=is_string($botState['lockChannel']??null)?trim($botState['lockChannel']):'';
+    if (preg_match('/^\+[A-Za-z0-9_-]+$/D',$channel)) return 'https://t.me/'.$channel;
+    // Numeric IDs identify membership chats and are never public usernames.
+    $public=preg_match('/^-?[0-9]+$/D',$channel)?'':destinationUrl($channel);
+    return $public!==''?$public:destinationUrl($legacyJoinLink);
+}
+
 /**
  * Display-only allowance classification. Callers explicitly opt in to a known
  * zero/NULL unlimited sentinel; remaining quota uses the default finite zero.

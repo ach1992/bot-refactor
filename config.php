@@ -618,7 +618,7 @@ function setSettings($field, $value): bool {
         'walletState','updateConnectionState','remark','rewaredTime',
         'cartToCartAutoAcceptTime','gbPrice','dayPrice',
         'rewardChannel','lockChannel','supportID','lastRewardMessage',
-        'instanceMessages','cooperationUrl','helpChannel',
+        'instanceMessages','cooperationUrl','helpChannel','lockChannelJoinUrl',
         'gatewayAudience',
         'paymentDraftMinutes','paymentManualHours','paymentHostedHours',
         'receiptApprovedMinutes','receiptApprovedOtherMinutes',

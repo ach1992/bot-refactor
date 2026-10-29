@@ -117,45 +117,19 @@ if (($joniedState == "kicked" || $joniedState == "left") && $from_id != $admin) 
 
     if (!in_array($from_id, $exemptedUsers)) {
 
-        $lockChannelValue = trim($botState['lockChannel'] ?? '');
-        $joinUrl = $joinLink;
-
-        if ($lockChannelValue !== '') {
-            if (preg_match('~^https?://t\.me/~i', $lockChannelValue)) {
-                $joinUrl = $lockChannelValue;
-
-            } else {
-                if ($lockChannelValue[0] === '@') {
-                    $username = ltrim($lockChannelValue, '@');
-                    $joinUrl = "https://t.me/" . $username;
-
-                } else {
-                    if (preg_match('/^[A-Za-z0-9_]{5,32}$/', $lockChannelValue)) {
-                        $joinUrl = "https://t.me/" . $lockChannelValue;
-
-                    } else {
-                        if ($lockChannelValue[0] === '+') {
-                            $joinUrl = "https://t.me/" . $lockChannelValue;
-
-                        } else {
-                            $joinUrl = $joinLink;
-                        }
-                    }
-                }
-            }
-        }
+        $joinUrl = \AchBot\Presentation\Text\lockChannelJoinUrl($botState,(string)($joinLink??''));
 
         sendMessage(
             str_replace("CHANNEL-ID", $channelLock, $mainValues['join_channel_message']),
             json_encode([
-                'inline_keyboard' => [
-                    [
+                'inline_keyboard' => array_values(array_filter([
+                    $joinUrl!=='' ? [
                         ['text' => $buttonValues['join_channel'], 'url' => $joinUrl]
-                    ],
+                    ] : [],
                     [
                         ['text' => $buttonValues['have_joined'], 'callback_data' => 'haveJoined' . (isset($text) ? $text : '')]
                     ]
-                ]
+                ]))
             ]),
             "HTML"
         );

@@ -24,6 +24,16 @@ if(($spec['mode']??'')==='pure'){
     $check(str_contains(achbotInstanceMessage(['supportID'=>str_repeat('x',1000),'instanceMessages'=>['start_message'=>str_repeat('SUPPORTID ',5)]],'start_message',1),'تنظیمات ربات'),'expanded_template_bound');
     $check(\AchBot\Presentation\Text\destinationUrl('@support_example')==='https://t.me/support_example','telegram_destination');
     $check(\AchBot\Presentation\Text\supportUrl([],'trusted-fallback')==='trusted-fallback','explicit_support_fallback_contract');
+    $private=['lockChannel'=>'-1001234567890','lockChannelJoinUrl'=>'https://t.me/+NEW_SYNTHETIC'];
+    $check(\AchBot\Presentation\Text\lockChannelJoinUrl($private,'https://t.me/+OLD_SYNTHETIC')==='https://t.me/+NEW_SYNTHETIC','private_numeric_configured_invite');
+    $check($private['lockChannel']==='-1001234567890','resolver_preserves_membership_identity');
+    $check(\AchBot\Presentation\Text\lockChannelJoinUrl(['lockChannel'=>'@public_example'],'https://t.me/+OLD_SYNTHETIC')==='https://t.me/public_example','public_channel_derivation');
+    $check(\AchBot\Presentation\Text\lockChannelJoinUrl(['lockChannel'=>'+INVITE_SYNTHETIC'],'')==='https://t.me/+INVITE_SYNTHETIC','bare_invite_derivation');
+    $check(\AchBot\Presentation\Text\lockChannelJoinUrl(['lockChannel'=>'-1001234567890'],'https://t.me/+OLD_SYNTHETIC')==='https://t.me/+OLD_SYNTHETIC','legacy_private_invite_fallback');
+    $check(\AchBot\Presentation\Text\lockChannelJoinUrl(['lockChannel'=>'-1001234567890','lockChannelJoinUrl'=>'javascript:x'],'https://t.me/+OLD_SYNTHETIC')==='https://t.me/+OLD_SYNTHETIC','invalid_override_uses_valid_legacy');
+    $check(\AchBot\Presentation\Text\lockChannelJoinUrl(['lockChannel'=>'-1001234567890'],'javascript:x')==='','invalid_join_destinations_empty');
+    $check(\AchBot\Presentation\Text\lockChannelJoinUrl(['lockChannel'=>'@public_example','lockChannelJoinUrl'=>'https://t.me/+NEW_SYNTHETIC'],'')==='https://t.me/+NEW_SYNTHETIC','explicit_invite_precedence');
+
     foreach(['javascript:x','https://user:pass@example.com/','https://example.com/a b',"https://example.com/\nsecret"]as $url)
         $check(\AchBot\Presentation\Text\destinationUrl($url)==='','unsafe_destination_'.count($checks));
     $check(\AchBot\Presentation\Text\configuredDestination(['cooperationUrl'=>'https://partners.example/','supportID'=>'@support_example'],'cooperationUrl',true)==='https://partners.example/','independent_cooperation_destination');
@@ -53,6 +63,15 @@ if(($spec['mode']??'')==='menus'){
 $events=[];
 function sendMessage($text,$key=null,$parse='HTML') {global $events;$events[]=['send',$text,$key,$parse];}
 function editText($id,$text,$key=null,$parse='HTML') {global $events;$events[]=['edit',$text,$key,$parse];}
+if(($spec['mode']??'')==='join'){
+    $mainValues=achbotMessages('legacy_messages');
+    $channelLock=$botState['lockChannel']??'';
+    $joinLink=$spec['legacy_join']??'https://t.me/+OLD_SYNTHETIC';
+    $text='/start';
+    require $root.(($spec['baseline']??false)?'/baseline-join-ui.php':'/join-ui.php');
+    echo json_encode(['events'=>$events,'membership'=>$channelLock,'state'=>$botState],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);exit;
+}
+
 $data=$spec['data']??null;$text=($spec['use_cancel_button']??false)?$buttonValues['cancel']:($spec['text']??null);
 $actorObject=(object)['id'=>$from_id,'is_bot'=>false];$chat=(object)['id'=>$from_id,'type'=>'private'];
 if($spec['kind']==='callback'){
@@ -79,7 +98,19 @@ def main():
     a=p.parse_args();checks=[]
     def check(ok,label):
         assert ok,label;checks.append(label)
-    cfg=(ROOT/'config.php').read_text()
+    cfg=(ROOT/'config.php').read_text();bot=(ROOT/'bot.php').read_text()
+    baseline='b5b910b81e10139495047665f223a2e4ebd663c4'
+    old_bot=subprocess.check_output(['git','show',baseline+':bot.php'],cwd=ROOT).decode()
+    old_cfg=subprocess.check_output(['git','show',baseline+':config.php'],cwd=ROOT).decode()
+    def membership_block(source):
+        start=source.index("$channelLock = $botState['lockChannel'];")
+        return source[start:source.index('// Channel exemption is dispatched',start)]
+    check(membership_block(cfg)==membership_block(old_cfg),'membership_checks_byte_unchanged')
+    def join_block(source):
+        marker="        $joinUrl = \\AchBot\\Presentation\\Text\\lockChannelJoinUrl("
+        start=source.index(marker) if marker in source else source.index("        $lockChannelValue = trim($botState['lockChannel'] ?? '');")
+        return '<?php\n'+source[start:source.index('\n        exit;',start)]
+    baseline_red=False
     with owned.owned_database() as (w,e):
         fixture=w/'instance-fixture';(fixture/'src/Admin').mkdir(parents=True);(fixture/'src/Presentation').mkdir();(fixture/'messages/fa').mkdir(parents=True)
         for rel in ['src/Admin/InstanceContent.php','src/Presentation/Text.php','messages/loader.php']:
@@ -94,6 +125,8 @@ def main():
         main_keys=cfg[start:end];(fixture/'main-keys.php').write_text('<?php\n'+main_keys)
         start=cfg.index('function getBotSettingKeys()');end=cfg.index('function fetchData(',start)
         bot_settings=cfg[start:end];(fixture/'bot-settings.php').write_text('<?php\n'+bot_settings)
+        (fixture/'join-ui.php').write_text(join_block(bot))
+        (fixture/'baseline-join-ui.php').write_text(join_block(old_bot))
         client=['mariadb','--no-defaults','--protocol=SOCKET','--socket='+str(w/'mysql.sock'),'-uroot','--batch','--skip-column-names',DB]
         def sql(query):
             r=subprocess.run(client,input=query.encode(),env=e,capture_output=True,check=True);return r.stdout.decode().strip()
@@ -110,6 +143,25 @@ def main():
             r=subprocess.run(cmd,env=e,capture_output=True,timeout=15)
             assert r.returncode==0 and not r.stderr,(r.returncode,r.stdout[-800:],r.stderr,(w/'instance.log').read_text()[-1000:] if(w/'instance.log').exists()else'')
             return json.loads(r.stdout)
+        def state_update(**values):
+            doc=json.loads(sql("SELECT value FROM setting WHERE type='BOT_STATES'"));doc.update(values)
+            raw=json.dumps(doc).replace("'","''")
+            sql("UPDATE setting SET value='"+raw+"' WHERE type='BOT_STATES'")
+        def join_keyboard(result):
+            return json.loads(result['events'][0][2])['inline_keyboard']
+        private_id='-1001234567890';explicit='https://t.me/+NEW_SYNTHETIC?source=bot&name=invite'
+        state_update(lockChannel=private_id,lockChannelJoinUrl=explicit)
+        old_join=call(mode='join',baseline=True);new_join=call(mode='join')
+        baseline_red=join_keyboard(old_join)[0][0]['url']!=explicit and join_keyboard(old_join)[0][0]['url']=='https://t.me/+OLD_SYNTHETIC'
+        check(baseline_red,'baseline_private_invite_ignores_configured_destination_red')
+        keyboard=join_keyboard(new_join)
+        check(len(keyboard)==2 and keyboard[0][0]['url']==explicit and keyboard[1][0]['callback_data']=='haveJoined/start' and new_join['events'][0][3]=='HTML','production_join_keyboard_shape_and_raw_native_url')
+        check(new_join['membership']==private_id and new_join['state']['lockChannel']==private_id,'production_join_membership_unchanged')
+        state_update(lockChannelJoinUrl='javascript:x')
+        check(join_keyboard(call(mode='join'))[0][0]['url']=='https://t.me/+OLD_SYNTHETIC','production_invalid_override_falls_back')
+        missing=call(mode='join',legacy_join='javascript:x')
+        check(len(join_keyboard(missing))==1 and 'url'not in join_keyboard(missing)[0][0],'production_missing_invite_has_no_broken_url_button')
+        state_update(lockChannelJoinUrl='')
         pure=call(mode='pure');checks.extend(pure['checks'])
         menus=call(mode='menus',actor=1001)
         buttons=[button for row in menus['main']['inline_keyboard'] for button in row]
@@ -124,6 +176,19 @@ def main():
         before=r['state']
         r=call(kind='message',text='replay',cached_step='achbotInstance:start_message');check(r['state']==before,'stale_cached_step_no_write')
         call(kind='callback',data='ic|e|cooperationUrl');r=call(kind='message',text='https://partners.example.com/');check(r['state']['cooperationUrl']=='https://partners.example.com/','cooperation_destination_persisted')
+        r=call(kind='callback',data='ic|m')
+        menu=json.loads(next(event[2] for event in r['events'] if event[0]=='edit'))['inline_keyboard']
+        check(any(button.get('callback_data')=='ic|e|lockChannelJoinUrl' for row in menu for button in row),'lock_join_destination_in_existing_settings_menu')
+        call(kind='callback',data='ic|e|lockChannelJoinUrl');r=call(kind='message',text=explicit)
+        check(r['state']['lockChannelJoinUrl']==explicit and r['state']['lockChannel']==private_id,'lock_join_invite_saved_without_membership_change')
+        call(kind='callback',data='ic|e|lockChannelJoinUrl');r=call(kind='message',text='javascript:x')
+        check(r['state']['lockChannelJoinUrl']==explicit,'lock_join_invalid_edit_preserves_value')
+        call(kind='callback',data='ic|e|lockChannelJoinUrl');r=call(kind='message',text='/clear')
+        check(r['state']['lockChannelJoinUrl']=='' and r['state']['lockChannel']==private_id,'lock_join_clear_preserves_membership')
+        check(join_keyboard(call(mode='join'))[0][0]['url']=='https://t.me/+OLD_SYNTHETIC','lock_join_clear_restores_legacy_fallback')
+        state_update(lockChannel='@public_example')
+        check(join_keyboard(call(mode='join'))[0][0]['url']=='https://t.me/public_example','lock_join_clear_restores_public_derivation')
+        state_update(lockChannel=private_id)
         call(kind='callback',data='ic|e|helpChannel');r=call(kind='message',text='javascript:alert(1)');check(r['state']['helpChannel']=='@example_help','invalid_destination_not_persisted')
         r=call(kind='message',text='@example_help');check(r['state']['helpChannel']=='https://t.me/example_help','help_channel_normalized')
         call(kind='callback',data='ic|e|start_message');r=call(kind='message',text='/clear');check(r['state']['instanceMessages']['start_message']is None and 'تنظیمات ربات'in r['render']['start_message'],'clear_returns_setup_guidance')
@@ -143,7 +208,7 @@ def main():
         r=call(kind='message',text='متن مالک',actor=9001);check(r['state']['instanceMessages']['start_message']['text']=='متن مالک','owner_save')
         check(sql('SELECT userid,wallet FROM users ORDER BY id')==wallets_before and sql("SELECT value FROM setting WHERE type='PAYMENT_KEYS'")==keys_before,'wallets_and_payment_settings_unchanged')
         check(all(r['state'].get(key)==value for key,value in defaults.items() if key not in ['cooperationUrl','helpChannel']),'unrelated_bot_settings_preserved')
-    report={'result':'PASS','cases':len(checks),'checks':checks,'source_real':True,'socket_only_original_schema':True,'catalog_source':str(a.catalog_source),'catalog_source_sha256':{who:hashlib.sha256((a.catalog_source/f'messages/fa/{who}.php').read_bytes()).hexdigest()for who in ['user','admin']},'access_source_sha256':hashlib.sha256(a.access_source.read_bytes()).hexdigest(),'no_external_calls':True}
+    report={'result':'PASS','cases':len(checks),'checks':checks,'source_real':True,'socket_only_original_schema':True,'catalog_source':str(a.catalog_source),'catalog_source_sha256':{who:hashlib.sha256((a.catalog_source/f'messages/fa/{who}.php').read_bytes()).hexdigest()for who in ['user','admin']},'access_source_sha256':hashlib.sha256(a.access_source.read_bytes()).hexdigest(),'no_external_calls':True,'lock_join_baseline_red':baseline_red,'lock_join_baseline_source':baseline}
     if a.report:a.report.write_text(json.dumps(report,ensure_ascii=False,indent=2)+'\n')
     print(json.dumps(report,ensure_ascii=False))
 if __name__=='__main__':main()
