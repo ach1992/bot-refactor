@@ -46,9 +46,9 @@ $GLOBALS['r3_spec']=$spec;
 $GLOBALS['r3_notice']='';
 function alert(...$args){}
 function sendMessage(...$args) {$GLOBALS['r3_notice']=(string)($args[0]??'');return (object)['ok'=>true];}
-require $root.'/src/Purchase/Core.php';
-require $root.'/src/Finance/ReceiptHelpers.php';
-require $root.'/src/Finance/WalletSettlement.php';
+require_once $root.'/src/Purchase/Core.php';
+require_once $root.'/src/Finance/ReceiptHelpers.php';
+require_once $root.'/src/Finance/WalletSettlement.php';
 require_once $root.'/src/Finance/ServiceEffects.php';
 require_once $root.'/src/Purchase/OrderWrites.php';
 function createServerAccount(...$args) {

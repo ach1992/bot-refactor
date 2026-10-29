@@ -13,8 +13,22 @@ function achbotPaymentKeyAdminFields(): array {
     return [
         'nowpayment','nextpay','zarinpal','bankAccount','holderName','giftCardUrl',
         'manualUsdtWalletBEP20','manualUsdtWalletTRC20','manualUsdtWalletERC20',
-        'manualTrxWallet','manualUsdtRateToman','manualTrxRateToman'
+        'manualTrxWallet','manualUsdtRateToman','manualTrxRateToman','inviteReward'
     ];
+}
+
+/** Invitation gift uses managed PAYMENT_KEYS; retained private values are ignored. */
+function achbotInviteRewardValue($value): ?int {
+    if (!is_int($value) && !is_string($value)) return null;
+    $text=(string)$value;
+    return preg_match('/\A(?:0|[1-9][0-9]{0,8})\z/D',$text)===1?(int)$text:null;
+}
+function achbotInviteReward(mysqli $db): int {
+    $stmt=$db->prepare("SELECT value FROM setting WHERE type='PAYMENT_KEYS' ORDER BY id LIMIT 2");
+    $stmt->execute();$rows=$stmt->get_result()->fetch_all(MYSQLI_ASSOC);$stmt->close();
+    if (count($rows)!==1) return 0;
+    $keys=json_decode((string)$rows[0]['value'],true);
+    return is_array($keys)?(achbotInviteRewardValue($keys['inviteReward']??null)??0):0;
 }
 
 /** Hosted merchant secrets are never used as Telegram button labels. */
@@ -49,6 +63,12 @@ function achbotPaymentKeyAdminStep(string $step): ?array {
 /** Keep original network/rate semantics, with no untrusted echo of secrets. */
 function achbotPaymentKeyAdminNormalize(string $field,string $input): ?string {
     if (!in_array($field,achbotPaymentKeyAdminFields(),true)) return null;
+    if ($field==='inviteReward') {
+        $value=trim($input);
+        if ($value==='/clear') return '0';
+        $amount=achbotInviteRewardValue($value);
+        return $amount===null?null:(string)$amount;
+    }
     if ($field==='giftCardUrl') {
         require_once __DIR__.'/ReceiptHelpers.php';
         $url=trim($input);
@@ -86,6 +106,7 @@ function achbotPaymentKeyAdminNormalize(string $field,string $input): ?string {
 /** Human-friendly validation feedback without echoing merchant credentials. */
 function achbotPaymentKeyAdminInputHint(string $field,string $input): ?string {
     if (achbotPaymentKeyAdminNormalize($field,$input)!==null) return null;
+    if ($field==='inviteReward') return \achbotMessage('payment_settings.invite_reward_hint');
     if ($field==='giftCardUrl')
         return \achbotMessage('payment_settings.payment_key_admin.payment_key_admin_input_hint.label.7fa91d9aaf');
     if (str_starts_with($field,'manualUsdtWallet') || $field==='manualTrxWallet')

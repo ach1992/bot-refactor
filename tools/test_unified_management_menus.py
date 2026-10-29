@@ -17,7 +17,7 @@ set_error_handler(static function($severity,$message,$file,$line) {
 $root=$argv[1];$connection=new mysqli('localhost','root','',$argv[3],0,$argv[2]);
 $connection->set_charset('utf8mb4');
 require $root.'/messages/loader.php';
-require $root.'/src/Purchase/Core.php';
+require_once $root.'/src/Purchase/Core.php';
 require $root.'/src/Panel/ProviderAdmin.php';
 require $root.'/src/Subscription/ServerDisplaySettings.php';
 function achbotSupportsPanel($type) {return in_array($type,['marzban','pasarguard'],true);}

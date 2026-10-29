@@ -769,7 +769,7 @@ def main():
   def sql(statement):return native.sql(work,env,statement,DB).strip()
   # Optional import hooks are an all-or-none pair, not a new required
   # business contract; original-schema Marzban remains usable without 011.
-  probe=r'''require $argv[1].'/src/Purchase/Core.php';
+  probe=r'''require_once $argv[1].'/src/Purchase/Core.php';
 $db=new mysqli('localhost','root','',$argv[3],0,$argv[2]);
 $map=achbotProviderRegistry();$full=$map['marzban'];$none=$full;$one=$full;$bad=$full;
 unset($none['import_lookup'],$none['import_adopt']);unset($one['import_adopt']);

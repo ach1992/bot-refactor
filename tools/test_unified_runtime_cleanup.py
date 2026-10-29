@@ -34,14 +34,17 @@ def main():
   if not value:raise AssertionError(label)
   checks.append(label)
  yes(PHP.count('function getMarzbanUser(')==1,'composed_fixture_contains_one_native_reader')
- retired=['settings/subLink.php','settings/values.php','settings/messagewizwiz.php','settings/warnusers.php','pay/index.php','src/Finance/GatewayInitiation.php']
+ retired=['buy_helpers.php','settings/subLink.php','settings/values.php','settings/messagewizwiz.php','settings/warnusers.php','pay/index.php','src/Finance/GatewayInitiation.php']
  for rel in retired:yes(not (ROOT/rel).exists(),'obsolete_alias_removed_'+rel)
  settings={'cronRunner.php','gift2all.php','jdf.php','rewardReport.php'}
  yes({x.name for x in (ROOT/'settings').glob('*.php')}==settings,'four_actual_settings_implementations_retained')
  yes({x.name for x in (ROOT/'pay').glob('*.php')}=={'checkout.php','back.php'},'canonical_supported_public_payment_entrypoints_present')
  for rel in ['pay/back.php']:
   old=subprocess.check_output(['git','show','2c0e728:'+rel],cwd=ROOT)
-  yes((ROOT/rel).read_bytes()==old,'payment_entrypoint_preserved_'+Path(rel).name)
+  old_import=b"include_once __DIR__ . '/../buy_helpers.php';"
+  canonical=b"require_once __DIR__ . '/../src/Purchase/Core.php';"
+  yes(old.count(old_import)==1 and (ROOT/rel).read_bytes()==old.replace(old_import,canonical,1),
+      'payment_entrypoint_only_canonical_import_changed_'+Path(rel).name)
  checkout=(ROOT/'pay/checkout.php').read_text()
  yes('function achbotReserveCheckoutProvider(' in checkout and 'function achbotRecordCheckoutReference(' in checkout,'canonical_checkout_contains_actual_implementation')
  runner=(ROOT/'settings/cronRunner.php').read_text()

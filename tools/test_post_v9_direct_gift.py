@@ -210,7 +210,7 @@ function editMarzbanConfig($sid,$change,?array $target=null): object {
     return (object)['success'=>true,'verified'=>true,'uncertain'=>false,
         'applied_expire'=>$expire,'applied_bytes'=>4294967296];
 }
-require __DIR__.'/src/Purchase/Core.php';
+require_once __DIR__.'/src/Purchase/Core.php';
 require __DIR__.'/ingress-source.php';
 // The same source functions defined by the actual config.php are available
 // to every legacy administrative route in the real bot.

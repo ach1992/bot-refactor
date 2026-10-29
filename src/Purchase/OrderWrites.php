@@ -320,3 +320,43 @@ if (!function_exists('achbotImportedOrderOrigin')) {
         return $origin;
     }
 }
+
+if (!function_exists('createIncreaseOrder')) {
+    function createIncreaseOrder(
+        $connection,
+        $uid,
+        $server_id,
+        $inbound_id,
+        $remark,
+        $amount,
+        $date,
+        $volume = null,
+        $day = null,
+        $requireConfirmed = false
+    ) {
+        $stmt = $connection->prepare("
+            INSERT INTO `increase_order`
+                (`userid`, `server_id`, `inbound_id`, `remark`, `amount`, `date`, `volume`, `day`)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ");
+        $stmt->bind_param(
+            "iiisiiii",
+            $uid,
+            $server_id,
+            $inbound_id,
+            $remark,
+            $amount,
+            $date,
+            $volume,
+            $day
+        );
+        $saved=$stmt->execute();
+        $inserted=$stmt->affected_rows;
+        $stmt->close();
+        if ($requireConfirmed && ($saved!==true || $inserted!==1)) {
+            // Only explicitly gated financial paths demand strict receipt;
+            // keep other historical callers' exception contract unchanged.
+            throw new RuntimeException('increase_order_insert_unconfirmed');
+        }
+    }
+}

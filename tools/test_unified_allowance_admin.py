@@ -35,7 +35,7 @@ $connection=new AllowanceScreensMysqli('localhost','root','',$argv[3],0,$argv[2]
 $connection->set_charset('utf8mb4');
 require $root.'/messages/loader.php';
 require $root.'/src/Presentation/Text.php';
-require $root.'/src/Purchase/Core.php';
+require_once $root.'/src/Purchase/Core.php';
 require $root.'/settings/jdf.php';
 $checks=[];
 function yes(bool $ok,string $case): void {

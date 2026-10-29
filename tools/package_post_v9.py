@@ -60,6 +60,7 @@ def committed_zip_timestamp(head: str) -> tuple[int, int, int, int, int, int]:
 
 # This is a current-runtime-only retirement; historical V9 is never edited.
 RETIRED_RUNTIME_MEMBERS = frozenset({
+    "buy_helpers.php",
     "settings/tronChecker.php",
     "settings/subLink.php",
     "settings/values.php",
@@ -70,7 +71,7 @@ RETIRED_RUNTIME_MEMBERS = frozenset({
     "src/Finance/CryptoChecker.php",
     "src/Finance/Routes/CryptoAndExchange.php",
 })
-NEW_RUNTIME_MEMBERS = ("pay/checkout.php", "settings/cronRunner.php", "src/Finance/PaymentPage.php",
+NEW_RUNTIME_MEMBERS = ("src/Subscription/Delivery.php", "pay/checkout.php", "settings/cronRunner.php", "src/Finance/PaymentPage.php",
                        "src/Finance/Routes/ManualCrypto.php", "src/Finance/PaymentLifecycle.php",
                        "src/Finance/GatewayRules.php", "src/Finance/GatewayRuleAdmin.php",
                        "src/Finance/PaymentKeyAdmin.php",
@@ -96,7 +97,7 @@ def expected_current_example() -> bytes:
     old=git("show",V9+":baseInfo.example.php")
     retired=(b"$hideConnectLinkForMarzban =",b"$showIndexes =",b"$hideConfigIfMany =",
              b"$linkIndices =",b"$USDTPrice =",b"$USDTPriceagent =",
-             b"$admins_list =",b"$special_admins =")
+             b"$admins_list =",b"$special_admins =",b"$inviteReward =")
     return b"".join(line for line in old.splitlines(keepends=True)
                     if not line.startswith(retired))
 

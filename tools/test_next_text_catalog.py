@@ -117,7 +117,7 @@ def main():
     check(refs<=entries,'unknown catalog references: '+str(refs-entries))
     unused={k for k in entries-refs if not k.startswith(('legacy_messages.','legacy_buttons.'))}
     management=json.loads((ROOT/'tools/text_catalog_management_amendment.json').read_text())
-    check(unused==set(management['retained_legacy_keys']),'unrecorded legacy/orphan copy entries: '+str(unused^set(management['retained_legacy_keys'])))
+    check(unused==set(management['retained_legacy_keys'])|catalog_owner_r5.verify_retained_display_keys(),'unrecorded legacy/orphan copy entries: '+str(unused^(set(management['retained_legacy_keys'])|catalog_owner_r5.verify_retained_display_keys())))
     with tempfile.TemporaryDirectory(prefix='achbot-catalog-audit-') as scratch:
         fixture=pathlib.Path(scratch)/'fixture.php'
         fixture.write_text("<?php $message='Receipt accepted'; $message.=' Reference: '.$id; sendMessage($message); $keys=[['text'=>'Continue','callback_data'=>'keep_protocol']]; sendPhoto('file.png','Visible caption'); ?><p>Visible page title</p>")

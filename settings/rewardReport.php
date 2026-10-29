@@ -50,7 +50,7 @@ require_once __DIR__ . '/../src/Backup/Database.php';
 if (!defined('ACHBOT_NP_RECONCILE_ONLY')) define('ACHBOT_NP_RECONCILE_ONLY',true);
 // Existing browser gateway always loads these QR/subscription helpers. Cron
 // must load the same source before processing BUY_SUB or RENEW_ACCOUNT.
-require_once __DIR__ . '/../buy_helpers.php';
+require_once __DIR__.'/../src/Purchase/Core.php';
 require_once __DIR__ . '/../src/Finance/GatewayReturn.php';
 // A partially applied 003 migration may leave attempts without the child
 // transaction ledger. Skip ONLY NOWPayments work until both are available;

@@ -567,13 +567,12 @@ try {
     $connection->set_charset('utf8mb4');
     if (($spec['mysqli_report_off']??false)===true)
         mysqli_report(MYSQLI_REPORT_OFF);
-    require $root . '/src/Purchase/Core.php';
+    require_once $root . '/src/Purchase/Core.php';
     // Use the ACTUAL current wallet-credit helper; only outbound Telegram is
     // captured by the transport spy. No fake settlement implementation.
-    require $root . '/src/Finance/ReceiptHelpers.php';
-    // The hosted-renewal success path records a REAL increase_order row.
-    // Load the shipping compatibility facade instead of mocking this write.
-    require $root . '/buy_helpers.php';
+    require_once $root . '/src/Finance/ReceiptHelpers.php';
+    // The canonical purchase bootstrap above also loads the REAL
+    // increase_order writer used by hosted renewal; no persistence mock.
     require $root . '/src/Finance/GatewayClient.php';
     if ($spec['route'] === 'ipn' || $spec['route'] === 'reconcile' || $spec['route'] === 'alert') {
         define('ACHBOT_NP_RECONCILE_ONLY',true);
@@ -4422,7 +4421,7 @@ def main():
         # AutomaticReceipts modules are loaded, the latter instrumented
         # after execution to prove unrelated Cron work was reached.
         (stage/'config.php').write_text('<?php // owned test Cron bootstrap\n')
-        (stage/'buy_helpers.php').write_text('<?php // no remote work needed\n')
+        (stage/'src/Purchase/Core.php').write_text('<?php // no remote work needed\n')
         (stage/'src/Backup/Database.php').write_text(
             "<?php namespace AchBot\\Backup\\Database; "
             "function schedule($conn,$channel,$callback,$root) { "

@@ -71,7 +71,7 @@ set_error_handler(static function($level,$message){
     throw new ErrorException($message,0,$level);
 });
 $_SERVER['SCRIPT_FILENAME']=__FILE__;
-require $argv[1].'/src/Finance/ReceiptHelpers.php';
+require_once $argv[1].'/src/Finance/ReceiptHelpers.php';
 $values=json_decode($argv[2],true,512,JSON_THROW_ON_ERROR);
 $out=[];
 foreach ($values as $key=>$value) {
@@ -154,7 +154,7 @@ if (isset($spec['writer_key'])) {
     // fake setSettings() stand-in or merely the two bot.php callback routes.
     setSettings((string)$spec['writer_key'], 'on');
 } else {
-    require $root.'/src/Finance/ReceiptHelpers.php';
+    require_once $root.'/src/Finance/ReceiptHelpers.php';
     require $argv[6]; // Byte-extracted current bot.php admin handlers.
 }
 echo json_encode(['events'=>$GLOBALS['events']],JSON_THROW_ON_ERROR |

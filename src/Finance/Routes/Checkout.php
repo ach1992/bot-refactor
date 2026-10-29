@@ -204,7 +204,13 @@ if (is_string($data) && strlen($data) <= 64 && preg_match('/\ApayCustomWithWalle
     return;
 }
 
-if (preg_match('/^showQr(Sub|Config)(\d+)/', $data, $match)) {
+if (is_string($data) && strlen($data)<=64 &&
+    preg_match('/^showQr(Sub|Config)([1-9][0-9]{0,9})$/D', $data, $match)) {
+    $qrSetting=$match[1]==='Sub'?'qrSubState':'qrConfigState';
+    if (($botState[$qrSetting]??'off')!=='on') {
+        alert(\achbotMessage('payment.checkout.alert.baff5f2488'),true);
+        return;
+    }
     $stmt = $connection->prepare("SELECT * FROM `orders_list` WHERE `userid`=? AND `id`=?");
     $stmt->bind_param("ii", $from_id, $match[2]);
     $stmt->execute();
@@ -216,32 +222,16 @@ if (preg_match('/^showQr(Sub|Config)(\d+)/', $data, $match)) {
         return;
     }
 
-    include_once (stream_resolve_include_path('phpqrcode/qrlib.php') ?: dirname(__DIR__, 3) . '/phpqrcode/qrlib.php');
-
-    if (!defined('IMAGE_WIDTH'))  define('IMAGE_WIDTH', 540);
-    if (!defined('IMAGE_HEIGHT')) define('IMAGE_HEIGHT', 540);
-
     $stmt=$connection->prepare('SELECT * FROM server_config WHERE id=?');
     $stmt->bind_param('i',$order['server_id']);$stmt->execute();$panel=$stmt->get_result()->fetch_assoc();$stmt->close();
     $presentation=achbotOrderPresentation($connection,$order,$panel?:[],$botState);
     if ($match[1] == "Sub") {
-        $subLink=$presentation['subscription_url'];
+        $subLink=$presentation['qr_subscription_url'];
         if ($subLink==='') {alert(\achbotMessage('payment.checkout.alert.bfa5553444'),true);return;}
-        $file = RandomString() . ".png";
-        $ecc = 'L';
-        $pixel_Size = 11;
-        $frame_Size = 4;
-
-        QRcode::png($subLink, $file, $ecc, $pixel_Size, $frame_Size);
-
-        sendPhoto(
-            $botUrl . $file,
-            ($acc_text ?? ''),
-            json_encode(['inline_keyboard' => [[['text' => $buttonValues['back_to_main'], 'callback_data' => "mainMenu"]]]]),
-            "HTML",
-            ($uid ?? $from_id)
-        );
-        unlink($file);
+        $keys=json_encode(['inline_keyboard'=>[[['text'=>$buttonValues['back_to_main'],'callback_data'=>'mainMenu']]]]);
+        if (!sendQrFromLink($subLink,\AchBot\Subscription\Presentation\codeLinks([$subLink]),
+            $keys,(string)$botUrl,(int)$from_id))
+            alert(\achbotMessage('subscription.presentation.config_qr_delivery_unconfirmed'),true);
     }
     elseif ($match[1] == "Config") {
 
@@ -259,7 +249,7 @@ if (preg_match('/^showQr(Sub|Config)(\d+)/', $data, $match)) {
             $complete = $sent && $complete;
         }
         if (!$complete) alert(\achbotMessage('subscription.presentation.config_qr_delivery_unconfirmed'), true);
-        if (($presentation['notice_html'] ?? '') !== '') sendMessage($presentation['notice_html'], null, 'HTML');
+
     }
 }
 

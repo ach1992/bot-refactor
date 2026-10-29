@@ -1302,6 +1302,10 @@ function getGateWaysKeys(){
             ['text'=>$walletState,'callback_data'=>"changeGateWayswalletState"],
             ['text'=>\achbotMessage('admin_settings.config.get_gate_ways_keys.button.6295c35212'),'callback_data'=>"wizwizch"]
         ],
+        [
+            ['text'=>number_format(achbotInviteReward($connection)).\achbotMessage('admin_settings.config.get_gate_ways_keys.text.2cc98f7f7c'),'callback_data'=>'changePaymentKeysinviteReward'],
+            ['text'=>\achbotMessage('admin_settings.invite_reward_label'),'callback_data'=>'wizwizch']
+        ],
 		[
 			['text'=>$supportID, 'callback_data' => 'editSupportID'],
 			['text'=>\achbotMessage('admin_settings.config.get_gate_ways_keys.button.179f3c4369'),'callback_data'=>'wizwizch']
@@ -3577,7 +3581,7 @@ if (preg_match('/^(toggleAutoRenew|adminToggleAutoRenew)(\d+)$/', $data, $match)
     if (!$keys || empty($keys['msg']) || empty($keys['keyboard'])) {
         alert(\achbotMessage('admin_settings.config.get_order_detail_keys.alert.50f82fc4e9'),true);return;
     }
-    editText($message_id,$keys['msg'],$keys['keyboard'],'HTML');
+    \AchBot\Subscription\AccountDetails\showMessage($keys,(int)$message_id);
     alert(\achbotMessage('admin_settings.config.get_order_detail_keys.alert.d0438c36e0',[
         'order_remark'=>$order['remark']]).
         ($new==='on'?\achbotMessage('admin_settings.config.get_order_detail_keys.alert.be9fd3bd1b'):

@@ -42,7 +42,7 @@ $connection=new mysqli('localhost','root','',$argv[3],0,$argv[2]);
 $paymentKeys=json_decode($argv[4],true,512,JSON_THROW_ON_ERROR);
 $botState=['manualUsdtState'=>'on'];
 $USDTPrice=123456;$USDTPriceagent=654321;
-require $argv[1].'/src/Finance/ReceiptHelpers.php';
+require_once $argv[1].'/src/Finance/ReceiptHelpers.php';
 $normal=achbotUsdtRateForUser($connection,1001);
 $agent=achbotUsdtRateForUser($connection,9002);
 echo json_encode([$normal,$agent,array_keys(achbotManualCryptoOptions(1001)),

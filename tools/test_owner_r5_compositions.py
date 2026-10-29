@@ -60,6 +60,8 @@ DISPLAY_CONTEXT_ENTRIES={'admin_settings.display.delivery_configs': {'text': '�
                                           'parameters': []},
  'admin_settings.display.editing_context': {'text': 'تنظیم انتخاب کانفیگ برای {context}',
                                             'parameters': ['context']}}
+SIMPLE_DISPLAY_ENTRIES={'admin_settings.invite_reward_label': '🎁 پاداش هر دعوت', 'admin_settings.display.simple_delivery': '🛍 تنظیمات ارسال و نمایش بعد از خرید', 'admin_settings.display.simple_view': '📋 تنظیمات ارسال و نمایش صفحه سفارش', 'admin_settings.display.simple_on': '✅ روشن', 'admin_settings.display.simple_off': '⛔ خاموش', 'admin_settings.display.simple_sub': '🔗 لینک اشتراک', 'admin_settings.display.simple_cfg': '📄 کانفیگ', 'admin_settings.display.simple_aux': '🔗 لینک کمکی', 'admin_settings.display.simple_qr': '🔳 ارسال QR کد', 'admin_settings.display.simple_choose': '✏️ انتخاب کانفیگ\u200cها', 'admin_settings.display.simple_guide': '⚙️ هر بخش مستقل است؛ برای تغییر وضعیت روی دکمهٔ روبه\u200cروی عنوان بزنید.\nاگر انتخابی ذخیره نشده باشد، 3 کانفیگ اول نمایش داده می\u200cشود. دکمه\u200cهای دریافت QR در صفحه سفارش از تنظیمات ربات پیروی می\u200cکنند.', 'admin_settings.display.simple_names': '✏️ نام دقیق هر کانفیگ را در یک خط بنویسید؛ حداکثر 10 نام، به ترتیب دلخواه.\nمثال:\nآلمان\nهلند\n\nبرای بازگشت به انتخاب خودکار 3 کانفیگ اول، /auto را بفرستید.\nاگر اندازهٔ کل پیام کافی نباشد، از انتهای فهرست کانفیگ\u200cها کم می\u200cشود تا لینک اشتراک، لینک\u200cهای کمکی و اطلاعات سفارش کامل بمانند. هیچ کانفیگی ناقص ارسال نمی\u200cشود.\nدکمهٔ انصراف، انتخاب قبلی را نگه می\u200cدارد.', 'payment_settings.invite_reward_prompt': 'پاداش هر دعوت به تومان (عدد صحیح از 0 تا 999999999؛ مقدار 0 یا /clear برای غیرفعال\u200cکردن)', 'payment_settings.invite_reward_hint': '🎁 مبلغ پاداش را با عدد صحیح انگلیسی از 0 تا 999999999 به تومان وارد کنید؛ برای غیرفعال\u200cکردن 0 یا /clear را بفرستید.'}
+SIMPLE_DISPLAY_LABELS={'admin_settings.config.get_server_config_keys.button.3a95407812': ('⚙️ نمایش لینک و QR', '⚙️ نمایش کانفیگ\u200cها و لینک اشتراک'), 'provider.provider_admin.pg_server_admin_keys.button.3a95407812': ('⚙️ نمایش لینک و QR', '⚙️ نمایش کانفیگ\u200cها و لینک اشتراک')}
 @functools.lru_cache(maxsize=1)
 def display_context_baseline():
     decode='$s=stream_get_contents(STDIN);$p=strpos($s,"return [");if($p===false)throw new RuntimeException("array_missing");echo json_encode(eval(substr($s,$p)),JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);'
@@ -69,9 +71,9 @@ def display_context_followup_proof(current):
     # Existing entries, audiences, params and earlier amendment layers stay exact.
     baseline=display_context_baseline();record=r5.manifest()
     check(set(current['user'])==set(baseline['user'])
-          and set(current['admin'])==set(baseline['admin'])|set(DISPLAY_CONTEXT_ENTRIES),
+          and set(current['admin'])==set(baseline['admin'])|set(DISPLAY_CONTEXT_ENTRIES)|set(SIMPLE_DISPLAY_ENTRIES),
           'display_context_addition_or_removal_scope_drift')
-    check(all(current[a][key]==entry for a,rows in baseline.items()for key,entry in rows.items()),
+    check(all(current[a][key]==SIMPLE_DISPLAY_LABELS.get(key,(entry,entry))[1] for a,rows in baseline.items()for key,entry in rows.items()),
           'display_context_changed_existing_entry')
     for key,expected in DISPLAY_CONTEXT_ENTRIES.items():
         check(all(key not in rows for rows in baseline.values()),'display_context_key_existed:'+key)
@@ -80,6 +82,14 @@ def display_context_followup_proof(current):
               and item.get('audience')=='admin' and item.get('entry')==expected
               and item.get('source_paths')==['src/Subscription/ServerDisplaySettings.php'],
               'display_context_entry_slots_or_recipient_drift:'+key)
+    for key,expected in SIMPLE_DISPLAY_ENTRIES.items():
+        item=record['added_keys'].get(key,{})
+        check(current['admin'].get(key)==expected and key not in current['user'] and item.get('entry')==expected
+              and item.get('audience')=='admin' and item.get('source_paths'),
+              'simple_display_entry_or_recipient_drift:'+key)
+    for key,(before,after) in SIMPLE_DISPLAY_LABELS.items():
+        check(baseline['admin'].get(key)==before and current['admin'].get(key)==after and key not in current['user'],
+              'simple_display_label_drift:'+key)
 def display_context_negative_controls(current):
     mutations=[]
     key='admin_settings.display.delivery_selection'
@@ -89,6 +99,9 @@ def display_context_negative_controls(current):
     bad=copy.deepcopy(current);bad['admin'][key]['text']='متن ثبت‌نشده: {selection}';mutations.append(bad)
     bad=copy.deepcopy(current);bad['user']['legacy_messages.banned']='تغییر خارج از دامنه';mutations.append(bad)
     bad=copy.deepcopy(current);bad['admin'].pop('admin.roles.notifications_saved');mutations.append(bad)
+    bad=copy.deepcopy(current);bad['admin']['admin_settings.display.simple_names']='متن ثبت‌نشده';mutations.append(bad)
+    bad=copy.deepcopy(current);bad['user']['admin_settings.invite_reward_label']=bad['admin'].pop('admin_settings.invite_reward_label');mutations.append(bad)
+    bad=copy.deepcopy(current);bad['admin'][next(iter(SIMPLE_DISPLAY_LABELS))]='عنوان ثبت‌نشده';mutations.append(bad)
     for bad in mutations:
         try:display_context_followup_proof(bad)
         except AssertionError:continue
@@ -102,7 +115,7 @@ def staff_followup_proof(current,archived):
     # explicit lineage; they never change the 22 historical corrections.
     record=r5.manifest();r5.verify_and_restore(current,record)
     added={key for audience,rows in current.items()for key in rows if key not in archived[audience]}
-    check(added==NOTIFICATION_KEYS|set(DISPLAY_CONTEXT_ENTRIES),'notification_catalog_addition_scope_drift')
+    check(added==NOTIFICATION_KEYS|set(DISPLAY_CONTEXT_ENTRIES)|set(SIMPLE_DISPLAY_ENTRIES),'notification_catalog_addition_scope_drift')
     check(all(set(archived[a])-set(SETTINGS_RETIRED_ENTRIES)<=set(current[a])for a in archived),'staff_followup_removed_historical_entry')
     for key in NOTIFICATION_KEYS:
         item=record['added_keys'].get(key,{})
@@ -148,7 +161,7 @@ def correction_proof(current,archived):
     display_context_followup_proof(current)
     settings_label_followup_proof(current,archived)
     changed={k for a,rows in current.items()for k,e in rows.items()if k in archived[a]and e!=archived[a][k]}
-    check(changed==set(CORRECTIONS)|{STAFF_GUIDE_KEY}|set(SETTINGS_LABEL_AMENDMENTS),'composed_catalog_correction_scope_drift')
+    check(changed==set(CORRECTIONS)|{STAFF_GUIDE_KEY}|set(SETTINGS_LABEL_AMENDMENTS)|set(SIMPLE_DISPLAY_LABELS),'composed_catalog_correction_scope_drift')
     for key,(before,after)in CORRECTIONS.items():
         audience=next(a for a in current if key in current[a])
         old=archived[audience][key];now=current[audience][key]
@@ -349,7 +362,7 @@ def audit(source_root=ROOT,catalog_root=ROOT):
     preserved=['شناسه پیام تلگرام','شناسه به‌روزرسانی تلگرام','شناسه چت تلگرام']
     check(not any(numeric_id_variant(v)for v in preserved),'genuine_telegram_object_id_misclassified')
     check(not numeric_id_variant('شناسه عددی'),'requested_numeric_id_misclassified')
-    return {'composed_catalog_correction_keys':correction_count,'settings_navigation_label_amendments':len(SETTINGS_LABEL_AMENDMENTS),'settings_navigation_retired_keys':len(SETTINGS_RETIRED_ENTRIES),'display_context_catalog_additions':len(DISPLAY_CONTEXT_ENTRIES),'display_context_catalog_negative_controls':display_context_controls,'notification_catalog_additions':len(NOTIFICATION_KEYS),'staff_role_description_amendments':1,'staff_catalog_negative_controls':staff_controls,'telegram_update_id_label_cases':1,'telegram_update_id_numeric_value_preserved':True,'archived_wrong_telegram_update_label_RED':True,'composed_heading_cases':len(current),'composed_heading_source_paths':len(paths),'composed_heading_archived_RED':len(reds),'composed_heading_negative_controls':len(mutations),'identical_heading_reuse_cases':1,'raw_code_heading_exclusions':1,'numeric_id_variant_negative_controls':len(variants),'preserved_telegram_object_id_cases':len(preserved),'preserved_numeric_id_cases':1,'composition_scope':'source_expression_wallet_finance_receipt_support_admin_stats_matrix','real_Telegram_rendering':'NOT_TESTED'}
+    return {'composed_catalog_correction_keys':correction_count,'settings_navigation_label_amendments':len(SETTINGS_LABEL_AMENDMENTS),'settings_navigation_retired_keys':len(SETTINGS_RETIRED_ENTRIES),'display_context_catalog_additions':len(DISPLAY_CONTEXT_ENTRIES),'simple_display_catalog_additions':len(SIMPLE_DISPLAY_ENTRIES),'simple_display_label_changes':len(SIMPLE_DISPLAY_LABELS),'display_context_catalog_negative_controls':display_context_controls,'notification_catalog_additions':len(NOTIFICATION_KEYS),'staff_role_description_amendments':1,'staff_catalog_negative_controls':staff_controls,'telegram_update_id_label_cases':1,'telegram_update_id_numeric_value_preserved':True,'archived_wrong_telegram_update_label_RED':True,'composed_heading_cases':len(current),'composed_heading_source_paths':len(paths),'composed_heading_archived_RED':len(reds),'composed_heading_negative_controls':len(mutations),'identical_heading_reuse_cases':1,'raw_code_heading_exclusions':1,'numeric_id_variant_negative_controls':len(variants),'preserved_telegram_object_id_cases':len(preserved),'preserved_numeric_id_cases':1,'composition_scope':'source_expression_wallet_finance_receipt_support_admin_stats_matrix','real_Telegram_rendering':'NOT_TESTED'}
 def main():
     ap=argparse.ArgumentParser();ap.add_argument('--source-root',type=pathlib.Path,default=ROOT);ap.add_argument('--catalog-root',type=pathlib.Path,default=ROOT);args=ap.parse_args()
     print(json.dumps({'status':'PASS',**audit(args.source_root,args.catalog_root)},ensure_ascii=False))

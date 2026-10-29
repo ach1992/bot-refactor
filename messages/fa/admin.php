@@ -1353,6 +1353,19 @@ return [
         'management.plan_updated' => "✅ پلن به‌روزرسانی شد.",
         'management.display_context' => ['text'=>"🔗 تنظیمات نمایش سرور «{title}»\n",'parameters'=>["title"]],
         'management.display_canceled' => "✅ ویرایش لغو شد.",
+        'invite_reward_label' => "🎁 پاداش هر دعوت",
+        'display.simple_delivery' => "🛍 تنظیمات ارسال و نمایش بعد از خرید",
+        'display.simple_view' => "📋 تنظیمات ارسال و نمایش صفحه سفارش",
+        'display.simple_on' => "✅ روشن",
+        'display.simple_off' => "⛔ خاموش",
+        'display.simple_sub' => "🔗 لینک اشتراک",
+        'display.simple_cfg' => "📄 کانفیگ",
+        'display.simple_aux' => "🔗 لینک کمکی",
+        'display.simple_qr' => "🔳 ارسال QR کد",
+        'display.simple_choose' => "✏️ انتخاب کانفیگ‌ها",
+        'display.simple_guide' => "⚙️ هر بخش مستقل است؛ برای تغییر وضعیت روی دکمهٔ روبه‌روی عنوان بزنید.\nاگر انتخابی ذخیره نشده باشد، 3 کانفیگ اول نمایش داده می‌شود. دکمه‌های دریافت QR در صفحه سفارش از تنظیمات ربات پیروی می‌کنند.",
+        'display.simple_names' => "✏️ نام دقیق هر کانفیگ را در یک خط بنویسید؛ حداکثر 10 نام، به ترتیب دلخواه.\nمثال:\nآلمان\nهلند\n\nبرای بازگشت به انتخاب خودکار 3 کانفیگ اول، /auto را بفرستید.\nاگر اندازهٔ کل پیام کافی نباشد، از انتهای فهرست کانفیگ‌ها کم می‌شود تا لینک اشتراک، لینک‌های کمکی و اطلاعات سفارش کامل بمانند. هیچ کانفیگی ناقص ارسال نمی‌شود.\nدکمهٔ انصراف، انتخاب قبلی را نگه می‌دارد.",
+
 
         // config.get_main_keys
         'config.get_main_keys.button.11b0188fcb' => '🔍 جستجوی اشتراک کاربر',
@@ -1398,7 +1411,7 @@ return [
         'config.get_server_config_keys.button.f86cfd6077' => '⚠️ ظرفیت سرور',
         'config.get_server_config_keys.button.c7349637fa' => '🔅 تغییر اطلاعات ورود',
         'config.get_server_config_keys.button.7ae29940f8' => '🔗 لینک اشتراک کمکی',
-        'config.get_server_config_keys.button.3a95407812' => '⚙️ نمایش لینک و QR',
+        'config.get_server_config_keys.button.3a95407812' => '⚙️ نمایش کانفیگ‌ها و لینک اشتراک',
         'config.get_server_config_keys.button.fed5753818' => '✂️ حذف سرور',
         // config.get_server_list_keys
         'config.get_server_list_keys.button.68d7eb08ef' => 'ℹ️ وضعیت',
@@ -1770,7 +1783,7 @@ return [
         'provider_admin.pg_server_admin_keys.button.93b4ef5cbb' => 'ظرفیت: ',
         'provider_admin.pg_server_admin_keys.button.9dee35a276' => 'ریمـارک: ',
         'provider_admin.pg_server_admin_keys.button.c84bd01998' => '⚙️ گروه‌های دسترسی پیش‌فرض',
-        'provider_admin.pg_server_admin_keys.button.3a95407812' => '⚙️ نمایش لینک و QR',
+        'provider_admin.pg_server_admin_keys.button.3a95407812' => '⚙️ نمایش کانفیگ‌ها و لینک اشتراک',
         'provider_admin.pg_server_admin_keys.button.e2e7e28899' => '🔑 اتصال و کلید API',
         'provider_admin.pg_server_admin_keys.button.b233883d0d' => '🔙 بازگشت',
         // provider_admin.handle_provider_admin
@@ -1792,6 +1805,9 @@ return [
 
     // ── مدیریت روش‌های پرداخت ──
     'payment_settings' => [
+        'invite_reward_prompt' => "پاداش هر دعوت به تومان (عدد صحیح از 0 تا 999999999؛ مقدار 0 یا /clear برای غیرفعال‌کردن)",
+        'invite_reward_hint' => "🎁 مبلغ پاداش را با عدد صحیح انگلیسی از 0 تا 999999999 به تومان وارد کنید؛ برای غیرفعال‌کردن 0 یا /clear را بفرستید.",
+
         // gateway_rule_admin.gateway_admin_method_flags
         'gateway_rule_admin.gateway_admin_method_flags.text.c7cf334c78' => 'شارژ',
         'gateway_rule_admin.gateway_admin_method_flags.text.452e2203fa' => 'سایر',

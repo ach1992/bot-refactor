@@ -180,7 +180,7 @@ def main():
   origin_seed.write_text(r'''<?php
 $connection=new mysqli('localhost','root','',$argv[3],0,$argv[2]);
 $connection->set_charset('utf8mb4');
-require $argv[1].'/src/Purchase/OrderWrites.php';
+require_once $argv[1].'/src/Purchase/OrderWrites.php';
 function achbotSupportsProviderType($provider){return in_array($provider,['marzban','pasarguard'],true);}
 $connection->begin_transaction();
 $identity=['remote_created_at'=>'2026-10-26T05:00:00.123456Z','remote_username'=>'fixture_user'];

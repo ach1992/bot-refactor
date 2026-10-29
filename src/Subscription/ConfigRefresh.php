@@ -1,5 +1,5 @@
 <?php
-/** Native config refresh obeys the same per-server selection and QR bounds. */
+/** Explicit native config refresh sends every native config, independently of inline text. */
 if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) { http_response_code(404); exit; }
 require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
 
@@ -42,5 +42,5 @@ if (is_string($data) && str_starts_with($data,'sConfigUpdate')) {
         $complete = $sent && $complete;
     }
     if (!$complete) alert(\achbotMessage('subscription.presentation.config_qr_delivery_unconfirmed'),true);
-    if ($presentation['notice_html']!=='') sendMessage($presentation['notice_html']);
+
 }

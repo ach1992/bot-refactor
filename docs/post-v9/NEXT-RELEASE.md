@@ -2,6 +2,44 @@
 
 [RC18](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.18) is the current source-only prerelease. [PR #96](https://github.com/ach1992/bot-refactor/pull/96) restores the established two-button rows for cooperation URL, help channel and private mandatory-membership invite URL. The status/edit button retains its existing callback; the adjacent localized label uses the same informational callback as neighboring settings. Existing validation, BOT_STATES persistence, permissions and save/clear/cancel navigation remain unchanged. No new table, schema, setting or management mechanism is introduced. Read [RC17 → RC18](RC17-TO-RC18.md).
 
+## Unreleased source follow-up
+
+The Owner accepted one source batch for simple per-server display, complete
+buy_helpers.php removal and managed invitation gift. [Issue37](https://github.com/ach1992/bot-refactor/issues/37#issuecomment-6507182633)
+holds the scope and later QR/invitation clarifications. No new version is assigned.
+
+Selected server → **نمایش کانفیگ‌ها و لینک اشتراک** now contains independent
+purchase and order sections with subscription/config/auxiliary toggles. Config-on
+reveals an exact-name editor (one per line, maximum10; /auto restores first3).
+Only purchase delivery has the subscription/first-selected-config/off QR cycle.
+Order-page QR uses the existing two Bot Settings switches; config QR sends all
+native configs individually, independently of inline choices. The complete
+final message reserves protected facts/links before reducing inline configs.
+Read [presentation semantics](SUBSCRIPTION-PRESENTATION.md).
+
+Gateway/Channel Settings → **پاداش هر دعوت**, immediately after Wallet, edits
+PAYMENT_KEYS.inviteReward using the existing authenticated, revision-bound
+payment-settings editor. Amounts are integer Toman from0 through999999999;
+0 or /clear disables future gifts. Unset/invalid/duplicate configuration uses0,
+never a retained private value. Existing invitation messages and gift behavior
+otherwise remain. Before a separately authorized rollout, deliberately configure
+the desired gift in the managed UI; the new runtime ignores the old private
+$inviteReward assignment and does not import it. Remove that private assignment
+only as part of the paired new-runtime rollout; this source work touches only
+the synthetic example. Downgrading would revive the old private source, so
+reconcile gift settings deliberately before any approved recovery.
+
+The root buy_helpers.php is removed, with actual bodies in existing purchase
+and subscription domains and public consumers updated. A full manifest-based
+source replacement must remove the retired installed file during an authorized
+rollout; no alias wrapper, new table, migration or live operation is introduced.
+Frozen V0–V9 evidence and published RC18 assets stay unchanged.
+
+This batch still needs exact-source PHP8.1/PHP8.4 full CI, fresh independent
+review and current action-specific merge/publication approvals. Deployment and
+actual Telegram/provider acceptance remain separate; no installed target
+inspection is authorized.
+
 ## Inherited RC17 shared settings and native display selection
 
 [RC17](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.17) delivered the following shared settings and native display behavior through [PR #95](https://github.com/ach1992/bot-refactor/pull/95); RC18 preserves it. Its package contains **115 runtime members / 114 PHP files**. Read [RC16 → RC17](RC16-TO-RC17.md) and verify the official assets before rollout. Source merge/publication does not install files or certify real Telegram/provider/merchant/wallet/Cron acceptance.

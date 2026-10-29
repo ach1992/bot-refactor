@@ -95,7 +95,7 @@ function editKeys(...$args) {
     }
     return (object)['ok'=>true];
 }
-// Actual sendQrFromLink from buy_helpers.php, synthetic transport only.
+// Actual sendQrFromLink from src/Purchase/Core.php, synthetic transport only.
 class QRcode {
     public static function png($data,$path,$ecc,$pixels,$frame) {
         file_put_contents($path,'private-fixture-qr');
@@ -169,7 +169,7 @@ function buildLinksAndSendQr(...$args) {
 }
 require_once $root.'/src/Finance/ReceiptHelpers.php';
 require_once $root.'/src/Purchase/Core.php';
-require_once $root.'/buy_helpers.php'; // actual insertOrder, createIncreaseOrder and capacity
+require_once $root.'/src/Purchase/Core.php'; // actual insertOrder, createIncreaseOrder and capacity
 require_once $root.'/src/Finance/ReferralReward.php';
 require_once $root.'/src/Finance/RenewalHelper.php';
 if (($spec['op']??'route')==='capacity_helper') {

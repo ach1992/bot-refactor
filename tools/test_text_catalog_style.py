@@ -316,7 +316,7 @@ def management_amendment(sides,merged,amendment=None):
     # Current R5 declarations are independently bound to that exact stage above.
     archived_paths=set(command('git','ls-tree','-r','--name-only',catalog_owner_r5.BASE).decode().splitlines())
     runtime_sources={path:command('git','show',catalog_owner_r5.BASE+':'+path).decode()
-        for path in management_runtime_paths() if path in archived_paths}
+        for path in sorted(set(management_runtime_paths())|{'buy_helpers.php'}) if path in archived_paths}
     facade_source=runtime_sources['src/Admin/ManagementFlow.php'];facade_source=facade_source[facade_source.index('function achbotManagementText('):facade_source.index('function achbotManagementEscape(')]
     facade_keys=set(re.findall(r"achbotMessage\('([^']+)'",facade_source))
     check(facade_keys=={key for key,record in additions.items()if record.get('facade')is True},'management facade mapping scope drift')

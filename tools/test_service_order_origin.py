@@ -19,7 +19,7 @@ $_SERVER['SCRIPT_FILENAME']=__FILE__;
 $root=$argv[1];$spec=json_decode($argv[4],true,32,JSON_THROW_ON_ERROR);
 $db=new mysqli('localhost','root','',$argv[3],0,$argv[2]);$db->set_charset('utf8mb4');
 function achbotSupportsProviderType($provider){return in_array($provider,['marzban','pasarguard'],true);}
-require $root.'/src/Purchase/OrderWrites.php';
+require_once $root.'/src/Purchase/OrderWrites.php';
 $begun=false;$id=(int)($spec['id']??101);
 try {
  if($spec['op']==='locked_snapshot') {

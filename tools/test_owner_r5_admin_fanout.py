@@ -16,7 +16,7 @@ set_error_handler(static function($n,$m){if($n===E_DEPRECATED)return true;throw 
 $root=$argv[1];$connection=new mysqli('localhost','root','',$argv[3],0,$argv[2]);$connection->set_charset('utf8mb4');
 $admin=9001;$from_id=1001;$message_id=7;$special_admins=[9002,9007];$checks=[];$events=[];$messageSequence=700;
 require $root.'/tools/source_scan.php';require $root.'/messages/loader.php';require $root.'/src/Admin/Access.php';
-require $root.'/src/Purchase/Core.php';require $root.'/src/Finance/ReceiptHelpers.php';
+require_once $root.'/src/Purchase/Core.php';require_once $root.'/src/Finance/ReceiptHelpers.php';
 function yes(bool $ok,string $name):void{if(!$ok)throw new RuntimeException($name);$GLOBALS['checks'][]=$name;}
 function bot($method,$data=[]){
  global $events,$connection,$messageSequence;

@@ -42,11 +42,11 @@ same($d['qr_link'], $sub, 'marzban_purchase_many_uses_subscription');
 same(present('marzban', ['links' => array_slice($all, 0, 3)], $on, $legacy)['links'],
     array_slice($all, 0, 3), 'marzban_small_view_ignores_indexes');
 same(present('marzban', ['links' => [$one, $two]], $on, $legacy, 'delivery')['qr_link'],
-    $two, 'marzban_purchase_small_uses_second');
+    '', 'marzban_subscription_QR_never_falls_back_to_second_config');
 same(present('marzban', ['links' => [$one]], $on, $legacy, 'delivery')['qr_link'],
-    $one, 'marzban_purchase_one_uses_first');
+    '', 'marzban_subscription_QR_never_falls_back_to_first_config');
 same(present('marzban', $native, $off, $legacyHidden, 'delivery')['qr_link'],
-    $one, 'marzban_purchase_hidden_sub_many_falls_back_first');
+    $sub, 'marzban_QR_subscription_independent_of_inline_visibility');
 $hidden = present('marzban', $native, $off, $legacyHidden);
 same($hidden['config_html'], '', 'marzban_config_state_hides_inline_only');
 same($hidden['qr_config_links'], $all, 'marzban_config_state_preserves_qr_data');
@@ -64,14 +64,14 @@ check(!str_contains(present('marzban', [], $off, [], 'delivery')['config_html'],
     'marzban_empty_no_fabricated_config');
 
 // PG never adopts the legacy index settings; native URIs remain unchanged.
-same(present('pasarguard', $native, $on, ['legacy'=>$legacy['legacy']])['links'], $all, 'pg_ignores_legacy_positions');
+same(present('pasarguard', $native, $on, ['legacy'=>$legacy['legacy']])['links'], array_slice($all,0,3), 'pg_ignores_legacy_positions');
 same(present('pasarguard', $native, $on)['qr_link'], $sub, 'pg_default_native_subscription_qr');
 same(present('pasarguard', $native, ['subLinkState' => 'off'], ['policy'=>['show_subscription'=>false]])['qr_link'],
-    $one, 'pg_no_subscription_uses_selected_config');
+    $sub, 'pg_hidden_subscription_text_keeps_independent_subscription_qr');
 $policy = ['policy' => ['selectors' => [['protocol' => 'TROJAN'], ['name' => 'Fast']]]];
 $s = present('pasarguard', $native, $on, $policy);
 same($s['links'], [$two, $one], 'pg_protocol_name_selector_order');
-same($s['qr_config_links'], $s['links'], 'pg_explicit_config_qr_matches_inline_selection');
+same($s['qr_config_links'], $all, 'pg_explicit_config_qr_ignores_inline_selection');
 same(present('pasarguard', $native, $on, $policy, 'delivery'), $s,
     'pg_delivery_view_share_policy');
 same(present('marzban', $native, $on, $policy)['links'], [$two, $one],
@@ -102,10 +102,10 @@ same(present('pasarguard', $native, $on, $dedup)['links'], [$one], 'selectors_de
 same(present('pasarguard', $native, $on, ['policy' => ['max_links' => 0]])['links'],
     [], 'explicit_zero_link_limit');
 $hidden = present('pasarguard', $native, $on, ['policy' => ['show_configs' => false]]);
-same([$hidden['links'], $hidden['qr_config_links']], [[], []], 'pg_hidden_configs_hide_config_qr');
+same([$hidden['links'], $hidden['qr_config_links']], [[], $all], 'pg_hidden_configs_keep_explicit_config_qr');
 same($hidden['qr_link'], $sub, 'pg_hidden_configs_keep_visible_subscription');
 same(present('pasarguard', $native, $on, ['policy' => ['hide_if_more_than' => 3]])['qr_config_links'],
-    [], 'pg_count_policy_hides_config_qr');
+    $all, 'pg_count_policy_does_not_hide_explicit_config_qr');
 same(present('pasarguard', $native, $on, ['policy' => ['qr' => 'first_config']])['qr_link'],
     $one, 'single_qr_first_config_mode');
 same(present('pasarguard', $native, $on, ['policy' => ['qr' => 'none']])['qr_link'],
@@ -116,7 +116,7 @@ same(present('pasarguard', $native, $on, ['policy' => ['selectors' => []]])['lin
     [], 'explicit_empty_selector_list_selects_none');
 $missing = present('pasarguard', ['links' => [$one]], $on,
     ['policy' => ['selectors' => [['name' => 'Missing']]]]);
-check($missing['selection_missing'] && $missing['qr_link'] === ''
+check($missing['selection_missing'] && $missing['qr_config_links'] === [$one] && $missing['qr_link'] === ''
     && $missing['notice_html'] !== '', 'missing_selection_does_not_fallback_to_unselected');
 foreach ([
     'bad', false, ['show_configs' => 'false'], ['max_links' => -1],
@@ -151,12 +151,12 @@ foreach (['pasarguard', 'marzban'] as $provider) {
     $v = present($provider, $contextNative, $on, ['policy'=>$contextPolicy], 'view');
     same($d['links'], [$four,$two], $provider.'_disjoint_delivery_selection_order');
     same($v['links'], [$three,$one], $provider.'_disjoint_view_selection_order');
-    same([$d['qr_config_links'],$d['qr_link']], [[$four,$two],$four],
+    same([$d['qr_config_links'],$d['qr_link']], [$all,$four],
         $provider.'_delivery_qr_follows_delivery_first');
-    same([$v['qr_config_links'],$v['qr_link']], [[$three,$one],$three],
+    same([$v['qr_config_links'],$v['qr_link']], [$all,$three],
         $provider.'_order_qr_follows_view_first');
-    same($d['qr_config_names'], [$two=>'Backup',$four=>'Fourth'], $provider.'_delivery_native_names');
-    same($v['qr_config_names'], [$one=>'Fast',$three=>'Third'], $provider.'_view_native_names');
+    same($d['qr_config_names'], [$one=>'Fast',$two=>'Backup',$three=>'Third',$four=>'Fourth'], $provider.'_delivery_native_names');
+    same($v['qr_config_names'], [$one=>'Fast',$two=>'Backup',$three=>'Third',$four=>'Fourth'], $provider.'_view_native_names');
     same([$d['subscription_url'],$d['subscription_html'],$d['backup_html']],
         [$v['subscription_url'],$v['subscription_html'],$v['backup_html']],
         $provider.'_context_changes_only_configs');
@@ -186,13 +186,13 @@ foreach (['pasarguard', 'marzban'] as $provider) {
         $none = present($provider,$contextNative,$on,['policy'=>[
             'selectors'=>[['name'=>'Backup']],$key=>[],'qr'=>'first_config']],$context);
         same([$none['links'],$none['qr_config_links'],$none['qr_link'],$none['selection_missing']],
-            [[],[],'',false],$provider.'_'.$context.'_explicit_none_never_inherits');
+            [[],$all,'',false],$provider.'_'.$context.'_explicit_none_never_inherits');
         same(present($provider,$contextNative,$on,['policy'=>[$key=>[]]],$context)['qr_link'],
             $sub,$provider.'_'.$context.'_empty_configs_preserves_auto_subscription_qr');
         $missing = present($provider,['links'=>[$one]],$on,['policy'=>[
             'selectors'=>[['name'=>'Fast']],$key=>[['name'=>'Missing']]]],$context);
         check($missing['selection_missing'] && $missing['links']===[]
-            && $missing['qr_config_links']===[] && $missing['qr_link']===''
+            && $missing['qr_config_links']===[$one] && $missing['qr_link']===''
             && $missing['notice_html']!=='', $provider.'_'.$context.'_unmatched_fails_closed');
         $taggedSelection = present($provider,$contextNative,$on,['policy'=>[
             $key=>[['tag'=>'west','protocol'=>'ss'],['name'=>'Backup','tag'=>'east']]]],$context);
@@ -201,7 +201,7 @@ foreach (['pasarguard', 'marzban'] as $provider) {
         // Normalized explicit ALL leaves the opposite inherited list unchanged.
         $normalized = [$otherKey=>[['name'=>'Backup']]];
         same(present($provider,$contextNative,$on,['policy'=>$normalized],$context)['links'],
-            $all,$provider.'_'.$context.'_normalized_all_selects_every_native_config');
+            array_slice($all,0,3),$provider.'_'.$context.'_unconfigured_default_first_three');
         $otherContext = $context==='delivery' ? 'view' : 'delivery';
         same(present($provider,$contextNative,$on,['policy'=>$normalized],$otherContext)['links'],
             [$two],$provider.'_'.$context.'_normalized_all_preserves_other_selection');
@@ -209,28 +209,27 @@ foreach (['pasarguard', 'marzban'] as $provider) {
         // Limits stay on all original records and complete selected native URIs.
         $countLimited = present($provider,$contextNative,$on,['policy'=>[
             $key=>[['name'=>'Fast']],'hide_if_more_than'=>3]],$context);
-        same([$countLimited['links'],$countLimited['qr_config_links']], [[],[]],
+        same([$countLimited['links'],$countLimited['qr_config_links']], [[],$all],
             $provider.'_'.$context.'_hide_count_uses_all_native_records');
         $max = present($provider,$contextNative,$on,['policy'=>[
             $key=>[['name'=>'Backup'],['name'=>'Fast']],'max_links'=>1,'qr'=>'first_config']],$context);
-        check($max['links']===[$two] && $max['qr_config_links']===[$two]
+        check($max['links']===[$two] && $max['qr_config_links']===$all
             && $max['qr_link']===$two && $max['limited'], $provider.'_'.$context.'_limit_after_selection');
         $zero = present($provider,$contextNative,$on,['policy'=>[$key=>$deliverySelectors,'max_links'=>0]],$context);
-        same([$zero['links'],$zero['qr_config_links']], [[],[]],$provider.'_'.$context.'_zero_limit');
+        same([$zero['links'],$zero['qr_config_links']], [[],$all],$provider.'_'.$context.'_zero_limit');
         $hidden = present($provider,$contextNative,$on,['policy'=>[
             $key=>$deliverySelectors,'show_configs'=>false,'qr'=>'first_config']],$context);
-        same([$hidden['links'],$hidden['qr_config_links'],$hidden['qr_link']], [[],[],''],
-            $provider.'_'.$context.'_common_visibility_retained');
+        same([$hidden['links'],$hidden['qr_config_links'],$hidden['qr_link']], [[],$all,$four],
+            $provider.'_'.$context.'_inline_visibility_does_not_control_QR');
         $manyNative = ['links'=>array_map(static fn($i)=>'vless://native.invalid/'.$i,range(1,20))];
         $manyResult = present($provider,$manyNative,$on,['policy'=>[$key=>[['protocol'=>'vless']]]],$context);
         check($manyResult['limited'] && count($manyResult['links'])===10
-            && $manyResult['qr_config_links']===$manyResult['links'],$provider.'_'.$context.'_hard_count_bound');
+            && count($manyResult['qr_config_links'])===20,$provider.'_'.$context.'_hard_count_bound');
         $longUri = 'vless://native.invalid/'.str_repeat('x',2048-strlen('vless://native.invalid/'));
         $budget = present($provider,['links'=>[$longUri,$one],'subscription_url'=>$sub.'&padding=1'],$on,
             ['policy'=>[$key=>[['protocol'=>'vless']]]],$context);
-        check($budget['limited'] && strlen($budget['config_html'].$budget['subscription_html'])<=2200
-            && $budget['links']===[$longUri] && $budget['qr_config_links']===[$longUri],
-            $provider.'_'.$context.'_whole_uri_budget_preserved');
+        check($budget['links']===[$longUri,$one] && $budget['qr_config_links']===[$longUri,$one],
+            $provider.'_'.$context.'_final_composition_owns_budget_not_partial_fragments');
         same(present($provider,['links'=>['vless://native.invalid/'.str_repeat('x',2050),$one]],$on,
             ['policy'=>[$key=>[['protocol'=>'vless']]]],$context)['links'],[$one],
             $provider.'_'.$context.'_raw_uri_limit_not_bypassed');
@@ -298,7 +297,7 @@ check(str_contains($safe['config_html'], '&amp;type=ws') &&
 check(str_contains($safe['subscription_html'], 'token=a&amp;mode=b'), 'subscription_html_escaped');
 same(substr_count($safe['backup_html'], '<code>'), 1, 'backups_validated_deduplicated');
 same(present('pasarguard', ['backup_urls' => ['https://backup.invalid/x']], $off, ['policy'=>['show_subscription'=>false]])['backup_html'],
-    '', 'backup_respects_subscription_visibility');
+    achbotMessage('subscription.presentation.present.text.3ff0456031').'<code>https://backup.invalid/x</code>', 'auxiliary_visibility_independent_of_primary_text');
 $msg = configMessage("STATE NAME\n🔌 لینک تکی کانفیگ:\nCONNECT-LINK\nSUB-LINK",
     '<enabled>', 'NAME<&SUB-LINK', $safe['config_html'], $safe['subscription_html'], '');
 check(str_contains($msg, '&lt;enabled&gt; NAME&lt;&amp;SUB-LINK')
@@ -316,8 +315,8 @@ check($unavailable['missing_links'] && $unavailable['notice_html'] !== ''
 $largeNative = ['links' => array_map(static fn($i) => 'vless://native.invalid/'.$i, range(1, 80)),
     'subscription_url' => $sub];
 $bounded = present('pasarguard', $largeNative, $on, ['policy'=>['max_links'=>1000]]);
-check(count($bounded['links']) === 10 && count($bounded['qr_config_links']) === 10
-    && $bounded['limited'] && $bounded['notice_html'] !== '', 'bounded_native_configs_and_qr_notice');
+check(count($bounded['links']) === 10 && count($bounded['qr_config_links']) === 80
+    && $bounded['limited'] && $bounded['notice_html'] !== '', 'bounded_inline_configs_unbounded_explicit_qr_notice');
 check(strlen($bounded['config_html'].$bounded['subscription_html'].$bounded['backup_html']) <= 2200,
     'telegram_link_text_budget');
 $largeUri = 'vless://native.invalid/' . str_repeat('a', 2000);
@@ -345,7 +344,7 @@ class QRcode {
         file_put_contents($file, 'synthetic-png');
     }
 }
-require_once dirname(__DIR__) . '/buy_helpers.php';
+require_once dirname(__DIR__) . '/src/Purchase/Core.php';
 $temp = sys_get_temp_dir() . '/achbot-presentation-' . bin2hex(random_bytes(7));
 mkdir($temp, 0700);
 try {

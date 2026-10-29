@@ -15,15 +15,12 @@ PHP=r'''<?php
 error_reporting(E_ALL);
 set_error_handler(static function($n,$m){if($n===E_DEPRECATED)return true;throw new ErrorException($m,0,$n);});
 $_SERVER['SCRIPT_FILENAME']=__FILE__;define('ACHBOT_PG_TEST_LOOPBACK',true);
-require $argv[1].'/src/Purchase/Core.php';
+require_once $argv[1].'/src/Purchase/Core.php';
 require $argv[1].'/src/Finance/ServiceEffects.php';
 require $argv[1].'/src/Finance/PaymentLifecycle.php';
 require $argv[1].'/src/Panel/ProviderAdmin.php';
 require __DIR__.'/presentation-under-test.php';
-$qrSource=file_get_contents($argv[1].'/buy_helpers.php');
-$qrStart=strpos($qrSource,"if (!function_exists('sendQrFromLink'))");
-$qrEnd=strpos($qrSource,"require_once __DIR__ . '/src/Purchase/OrderWrites.php'",$qrStart);
-eval(str_replace('__DIR__',var_export($argv[1],true),substr($qrSource,$qrStart,$qrEnd-$qrStart)));
+require_once __DIR__.'/phpqrcode/qrlib.php'; // Owned encoder spy, independent of runtime CWD resolution.
 chdir(__DIR__);set_include_path(__DIR__);
 function achbotSupportsPanel($type){return in_array($type,['marzban','pasarguard'],true);}
 $GLOBALS['order_reads']=0;$GLOBALS['chat_reads']=0;
@@ -141,12 +138,12 @@ require $argv[1].'/src/Telegram/UpdateBindings.php';
 $q=$db->prepare('SELECT * FROM users WHERE userid=?');$q->bind_param('i',$from_id);$q->execute();$userInfo=$q->get_result()->fetch_assoc();$q->close();
 $mainValues=['please_wait_message'=>'منتظر بمانید','no_order_found'=>'NO_ORDER',
  'config_details_message'=>"STATE\nNAME\nCONNECT-LINK\nSUB-LINK",'config_doesnt_exist'=>'missing'];
-$botState=[];$buttonValues=array_fill_keys(array_merge($spec['buttons'],['active','deactive']),'fixture-label');
+$botState=['qrConfigState'=>'on','qrSubState'=>'on'];$buttonValues=array_fill_keys(array_merge($spec['buttons'],['active','deactive']),'fixture-label');
 $botUrl='https://bot.example.invalid/';
 require $argv[1].'/src/Subscription/CustomerRoutes.php';
 $out=['actor'=>$from_id,'events'=>$GLOBALS['events']];break;
 case 'autoreserve':
-require $argv[1].'/src/Finance/ReceiptHelpers.php';require $argv[1].'/src/Finance/AutomaticRenewal.php';
+require_once $argv[1].'/src/Finance/ReceiptHelpers.php';require $argv[1].'/src/Finance/AutomaticRenewal.php';
 $out=achbotAutoRenewReserve($db,92,1001);break;
 case 'autoedit':
 $out=achbotApplyServiceEdit($db,2,['remark'=>'trial_user','pay_id'=>$spec['pay'],'operation_key'=>'autorenew:'.$spec['attempt'],'days'=>30,'volume'=>2]);break;
@@ -234,7 +231,7 @@ def main():
   def call(op,expected_stderr="",**spec):
    if op=='route':spec.setdefault('buttons',buttons)
    out=subprocess.run(['php','-d','display_errors=0','-d','log_errors=0',str(script),str(ROOT),str(work/'mysql.sock'),db,json.dumps(dict(op=op,**spec))],capture_output=True,text=True,timeout=25)
-   if out.returncode or out.stderr!=expected_stderr:raise AssertionError((out.returncode,out.stderr))
+   if out.returncode or out.stderr!=expected_stderr:raise AssertionError((out.returncode,out.stdout[-1800:],out.stderr))
    return json.loads(out.stdout)
   def sql(s):return native.sql(work,env,s,db)
   def yes(condition,name,detail=None):

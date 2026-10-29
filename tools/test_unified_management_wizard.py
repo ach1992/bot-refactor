@@ -69,7 +69,7 @@ error_reporting(E_ALL);
 set_error_handler(static function($n,$m){if($n===E_DEPRECATED)return true;throw new ErrorException($m,0,$n);});
 $_SERVER['SCRIPT_FILENAME']=__FILE__;
 define('ACHBOT_PG_TEST_LOOPBACK',true);
-require $argv[1].'/src/Purchase/Core.php';
+require_once $argv[1].'/src/Purchase/Core.php';
 require $argv[1].'/src/Panel/Accounts.php';
 require $argv[1].'/src/Panel/ProviderAdmin.php';
 require (getenv('ACHBOT_FIXTURE_MANAGEMENT_FLOW')?:$argv[1].'/src/Admin/ManagementFlow.php');
@@ -144,7 +144,7 @@ try {
 LEGACY_CANCEL_PHP=r'''<?php
 error_reporting(E_ALL);set_error_handler(static function($n,$m){if($n===E_DEPRECATED)return true;throw new ErrorException($m,0,$n);});
 $_SERVER['SCRIPT_FILENAME']=__FILE__;
-require $argv[1].'/src/Purchase/Core.php';
+require_once $argv[1].'/src/Purchase/Core.php';
 require $argv[1].'/src/Subscription/DirectGift.php';
 require $argv[4];
 $connection=new mysqli('localhost','root','',$argv[3],0,$argv[2]);$connection->set_charset('utf8mb4');

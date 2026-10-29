@@ -91,7 +91,7 @@ def has(data: dict, name: str, status: str, code: str | None = None) -> bool:
 SOURCE_USDT_DRIVER = r"""
 $root=$argv[1];
 $GLOBALS['paymentKeys']=json_decode($argv[2],true,512,JSON_THROW_ON_ERROR);
-require $root.'/src/Finance/ReceiptHelpers.php';
+require_once $root.'/src/Finance/ReceiptHelpers.php';
 $available=[];
 foreach (['BEP20','TRC20','ERC20'] as $network)
     $available[$network]=achbotManualUsdtConfiguration($network)!==null;

@@ -24,10 +24,12 @@ $_SERVER['SCRIPT_FILENAME']=__FILE__;define('ACHBOT_PG_TEST_LOOPBACK',true);
 $root=$argv[1];chdir(__DIR__);set_include_path(__DIR__);
 $spec=json_decode($argv[4],true,64,JSON_THROW_ON_ERROR);
 $connection=new mysqli('localhost','root','',$argv[3],0,$argv[2]);$connection->set_charset('utf8mb4');
-require $root.'/buy_helpers.php';require $argv[5];
+require_once $root.'/src/Purchase/Core.php';
+if(is_file($root.'/buy_helpers.php'))require_once $root.'/buy_helpers.php'; // Archived fixture source only.
+require $argv[5];
 require_once $root.'/src/Subscription/ServerDisplaySettings.php';
 $admin=9001;$from_id=$chat_id=(int)($spec['actor']??1001);$message_id=7;$callbackId='owned-display';
-$botUrl='https://bot.example.invalid/';$botUsername='';$botState=[];$data='';$text='';
+$botUrl='https://bot.example.invalid/';$botUsername='';$botState=['qrConfigState'=>'on','qrSubState'=>'on'];$data='';$text='';
 $userInfo=$connection->query('SELECT * FROM users WHERE userid='.$from_id)->fetch_assoc()??['step'=>'none'];
 $buttonValues=['back_to_main'=>'Back'];$events=[];$qr_payloads=[];$files=[];
 class QRcode {public static function png($uri,$file,...$rest){$GLOBALS['qr_payloads'][]=$uri;$GLOBALS['files'][]=$file;file_put_contents($file,'owned-qr-placeholder');}}
@@ -136,21 +138,21 @@ def main():
             yes(d['qr_payloads']==expected_delivery[:1],provider+'_'+label+'_actual_purchase_qr')
             yes(json.loads(d['returned'][1])==links,provider+'_'+label+'_stored_delivery_native_uri_bytes_unchanged')
             yes(out['view']['links']==expected_view and code_configs(out['view']['config_html'],links)==expected_view,provider+'_'+label+'_actual_order_view')
-            yes(out['qr']['qr_payloads']==expected_view,provider+'_'+label+'_actual_checkout_config_qr')
+            yes(out['qr']['qr_payloads']==links,provider+'_'+label+'_actual_checkout_config_qr')
             qr_text=[e['text'] for e in out['qr']['events'] if e['kind']=='text']
-            yes([html.unescape(t[11:-13]) for t in qr_text]==expected_view,provider+'_'+label+'_actual_qr_copy_text_bytes')
+            yes([html.unescape(t[11:-13]) for t in qr_text]==links,provider+'_'+label+'_actual_qr_copy_text_bytes')
             yes(before==snapshot() and panel.write_count==writes and out['temp_files_remaining']==0,provider+'_'+label+'_read_only_money_peers_and_temp_cleanup')
             return out
         for provider,sid,order,links in [('pasarguard',2,91,PG_LINKS),('marzban',3,92,MB_LINKS)]:
             for label,policy,di,vi in matrix:
                 save(sid,{'mode':'native','policy':dict(policy,qr='first_config')})
-                draw(provider,order,links,links if di is None else [links[i] for i in di],links if vi is None else [links[i] for i in vi],label)
+                draw(provider,order,links,links[:3] if di is None else [links[i] for i in di],links[:3] if vi is None else [links[i] for i in vi],label)
             # ALL must clear only this context's effective filter, preserving its peer.
             revision=save(sid,{'mode':'native','policy':{'selectors':[{'protocol':'vmess'}],'qr':'first_config'}})
             source+=10;before=financial();peers=sql("SELECT * FROM setting WHERE BINARY type<>"+display_type(sid)+' ORDER BY id')
             out=call(op='set',sid=sid,actor=9001,source=source,field='dselect',input='all',revision=revision)
             yes(out['saved'] and before==financial() and peers==sql("SELECT * FROM setting WHERE BINARY type<>"+display_type(sid)+' ORDER BY id'),provider+'_actual_all_control_keeps_other_rows')
-            draw(provider,order,links,links,[links[1]],'all_preserves_inherited_view')
+            draw(provider,order,links,links[:3],[links[1]],'all_preserves_inherited_view')
             before=snapshot();out=call(op='set',sid=sid,actor=9001,source=source+1,field='vselect',input='none',revision=revision)
             yes(not out['saved'] and snapshot()==before,provider+'_stale_revision_cannot_reselect_other_context')
             before=snapshot();requests=len(panel.trace)
@@ -168,7 +170,7 @@ def main():
             before=snapshot();out=call(op='save',sid=2,actor=actor,source=source+100,document={'mode':'native','policy':{'delivery_selectors':[]}})
             yes(not out['saved'] and snapshot()==before,'unauthorized_context_writer_no_effect_'+str(actor))
         save(2,{'mode':'native','policy':{'selectors':[{'protocol':'vless'}],'qr':'first_config'}})
-        archived=work/'archived';archived.mkdir();members=set(package.members())
+        archived=work/'archived';archived.mkdir();members=set(package.members())|{'buy_helpers.php'}
         with tarfile.open(fileobj=io.BytesIO(subprocess.check_output(['git','archive',BASE],cwd=ROOT))) as archive:
             archive.extractall(archived,members=[m for m in archive.getmembers() if m.name in members],filter='data')
         old_facade=facades(archived,'archived-facades.php');before=snapshot()
@@ -185,9 +187,9 @@ def main():
         yes(re.sub(r'AUTO_INCREMENT=[0-9]+','AUTO_INCREMENT=fixture',sql('SHOW TABLES;SHOW CREATE TABLE setting'))==re.sub(r'AUTO_INCREMENT=[0-9]+','AUTO_INCREMENT=fixture',schema),'original_schema_tables_unchanged')
         yes(panel.write_count==0 and panel.trace and all(row[0]=='GET' for row in panel.trace),'owned_native_fixture_only_GET_no_create_or_mutation')
     report={'complete':True,'cases':len(checks),'checks':checks,'source_real':True,'owned_original_schema_mariadb':True,
-        'actual_buy_helpers_delivery':True,'actual_order_presentation':True,'actual_checkout_config_qr':True,
+        'actual_canonical_delivery':True,'actual_order_presentation':True,'actual_checkout_config_qr':True,
         'loopback_native_pasarguard_readonly':True,'native_providers':['pasarguard','marzban'],
-        'disjoint_delivery_view':True,'explicit_none_isolated':True,'shared_selector_fallback':True,'absent_selectors_all':True,
+        'disjoint_delivery_view':True,'explicit_none_isolated':True,'shared_selector_fallback':True,'absent_selectors_first_three':True,
         'context_all_preserves_other_effective_selection':True,'single_existing_setting_row':True,
         'other_rows_and_financial_state_unchanged':True,'current_authority_revision_guards':True,
         'native_uri_bytes_preserved':True,'legacy_marzban_indices_unchanged':True,

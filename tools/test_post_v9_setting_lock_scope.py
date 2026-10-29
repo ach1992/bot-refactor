@@ -40,7 +40,7 @@ $db->query("SET SESSION innodb_lock_wait_timeout=3");
 if ($spec['iso']==='READ-COMMITTED')
     $db->query('SET SESSION TRANSACTION ISOLATION LEVEL READ COMMITTED');
 require $root.'/src/Finance/PaymentLifecycle.php';
-require $root.'/src/Purchase/Core.php';
+require_once $root.'/src/Purchase/Core.php';
 $result=['authorized'=>false,'subject'=>false,'error'=>null,'errno'=>0];
 $started=false;
 try {
@@ -88,7 +88,7 @@ $spec=json_decode($argv[4],true,512,JSON_THROW_ON_ERROR);
 $db=new mysqli('localhost','root','',$database,0,$socket);
 $db->set_charset('utf8mb4');
 $db->query("SET SESSION innodb_lock_wait_timeout=3");
-require $root.'/src/Purchase/Core.php';
+require_once $root.'/src/Purchase/Core.php';
 $result=['committed'=>false,'error'=>null,'errno'=>0];
 $started=false;
 try {
