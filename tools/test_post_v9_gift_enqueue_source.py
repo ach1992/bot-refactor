@@ -131,7 +131,7 @@ def prepare(work,env):
                "VALUES(2,'Fixture','0','fixture','','1',1) "
                "ON DUPLICATE KEY UPDATE title='Fixture'")
     stage=work/'owned-gift-enqueue'
-    for file in ['src/Subscription/GiftBatch.php','src/Telegram/UpdateBindings.php',
+    for file in ['src/Admin/Access.php','src/Subscription/GiftBatch.php','src/Telegram/UpdateBindings.php',
                  'src/Panel/ProviderRuntime.php','src/Panel/ProviderImport.php','src/Panel/ProviderStorage.php','src/Panel/PasarGuard.php']:
         dst=stage/file;dst.parent.mkdir(parents=True,exist_ok=True)
         dst.write_bytes((ROOT/file).read_bytes())
@@ -147,7 +147,7 @@ def prepare(work,env):
     (stage/'gift-route.php').write_text('<?php\n'+route+'\n')
     (stage/'driver.php').write_text(PHP)
     worker=work/'owned-gift-worker'
-    for file in ['src/Subscription/GiftBatch.php','settings/gift2all.php',
+    for file in ['src/Admin/Access.php','src/Subscription/GiftBatch.php','settings/gift2all.php',
                  'src/Panel/ProviderRuntime.php','src/Panel/ProviderImport.php','src/Panel/ProviderStorage.php','src/Panel/PasarGuard.php']:
         dst=worker/file;dst.parent.mkdir(parents=True,exist_ok=True)
         dst.write_bytes((ROOT/file).read_bytes())

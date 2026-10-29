@@ -383,6 +383,8 @@ def main():
         (stage/'src/Panel').mkdir(parents=True)
         shutil.copyfile(ROOT/'src/Panel/ProviderRuntime.php',stage/'src/Panel/ProviderRuntime.php')
         shutil.copyfile(ROOT/'src/Panel/ProviderImport.php',stage/'src/Panel/ProviderImport.php')
+        (stage/'src/Admin').mkdir(parents=True)
+        shutil.copyfile(ROOT/'src/Admin/Access.php',stage/'src/Admin/Access.php')
         (stage/'src/Subscription').mkdir(parents=True)
         shutil.copyfile(ROOT/'src/Subscription/GiftBatch.php',
                         stage/'src/Subscription/GiftBatch.php')

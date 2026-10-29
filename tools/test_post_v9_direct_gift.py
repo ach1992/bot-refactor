@@ -262,6 +262,7 @@ def setup(work: Path, env: dict) -> Path:
     native.seed(work, env, 'http://127.0.0.1:9')
     stage=work/'owned-direct-gift'
     for rel in [
+        'src/Admin/Access.php',
         'src/Subscription/DirectGift.php',
         'src/Subscription/GiftBatch.php',
         'src/Purchase/Core.php',
@@ -269,7 +270,8 @@ def setup(work: Path, env: dict) -> Path:
         'src/Panel/ProviderImport.php',
         'src/Panel/ProviderStorage.php',
         'src/Panel/PasarGuard.php',
-        'src/Telegram/UpdateBindings.php'
+        'src/Telegram/UpdateBindings.php',
+        'src/Telegram/UserProfile.php'
     ]:
         dst=stage/rel
         dst.parent.mkdir(parents=True,exist_ok=True)
