@@ -99,7 +99,8 @@ def main():
     def check(ok,label):
         assert ok,label;checks.append(label)
     cfg=(ROOT/'config.php').read_text();bot=(ROOT/'bot.php').read_text()
-    baseline='b5b910b81e10139495047665f223a2e4ebd663c4'
+    # Integrated ancestor retains the exact old membership/join blocks after worker cleanup.
+    baseline='4548705609518f741d14375c9d47739eb302c3b6'
     old_bot=subprocess.check_output(['git','show',baseline+':bot.php'],cwd=ROOT).decode()
     old_cfg=subprocess.check_output(['git','show',baseline+':config.php'],cwd=ROOT).decode()
     def membership_block(source):

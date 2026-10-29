@@ -422,7 +422,8 @@ def main():
         shutil.copytree(a.catalog_source/'messages',app/'messages')
         for name in ['config.php','bot.php','buy_helpers.php']:shutil.copy2(ROOT/name,app/name)
         baseline=work/'archived-current-admin-menu.php';baseline.write_text('<?php\n'+policy+'\n'+menu)
-        prior='a901006736a6a75fcac29a609efff3204e1edd6b'
+        # Integrated ancestor: approval body is byte-identical to the worker RED checkpoint.
+        prior='82861ac0b17aa7a0c494c564cdf4674cb6eb505d'
         archived=[]
         for filename in ['Checkout.php','ManualReceipts.php']:
             raw=subprocess.check_output(['git','show',prior+':src/Finance/Routes/'+filename],cwd=ROOT,text=True)
@@ -430,7 +431,7 @@ def main():
             path=work/('archived-'+filename);path.write_text(rebased);archived.append(str(path))
         raw=subprocess.check_output(['git','show',prior+':src/Admin/Access.php'],cwd=ROOT,text=True)
         path=work/'archived-access.php';path.write_text(raw.replace('achbotAdmin','baselineAdmin'));archived.append(str(path))
-        public_prior='86a1ea4c42d78389b0795700ad83764828b94844'
+        public_prior='d6a2ce01626fb3e707e062a099d051bce4c5ae63'
         raw=subprocess.check_output(['git','show',public_prior+':src/Admin/Access.php'],cwd=ROOT,text=True)
         path=work/'archived-public-access.php';path.write_text(raw.replace('achbotAdmin','publicBaselineAdmin'));archived.append(str(path))
         driver=work/'r5-roles.php';driver.write_text(PHP)
