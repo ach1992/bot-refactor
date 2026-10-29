@@ -201,8 +201,8 @@ def main():
               'staff_reintroduction_red':['admins_list','special_admins'],
               'unrelated_template_mutation_red':['primary_owner','synthetic_database_user'],
               'runtime_members':115,'private_config_read':False,'external_calls':0}),
-            ('instance_content','test_owner_instance_content.py',69,
-             {'result':'PASS','source_real':True,'socket_only_original_schema':True,'no_external_calls':True,
+            ('instance_content','test_owner_instance_content.py',99,
+             {'result':'PASS','cases':99,'source_real':True,'socket_only_original_schema':True,'no_external_calls':True,
               'lock_join_baseline_red':True,'lock_join_baseline_source':'4548705609518f741d14375c9d47739eb302c3b6'}),
             ('user_info','test_owner_r5_user_info.py',46,
              {'result':'PASS','source_real':True,'owned_socket_mariadb':True,'baseline_missing_refresh_red':True}),
@@ -269,12 +269,13 @@ def main():
         copy_run=subprocess.run(['python3',str(ROOT/'tools/test_owner_r5_copy.py')],
                                 cwd=ROOT,check=True,timeout=180,capture_output=True,text=True)
         copy_proof=json.loads(copy_run.stdout)
-        required_copy={'status':'PASS','changes':271,'retired':9,'added':42,'current_keys':2668,
+        required_copy={'status':'PASS','changes':271,'retired':10,'added':39,'current_keys':2664,
                        'r5_negative_controls':5,'persian_prose_start_violations':0,
                        'duplicate_heading_markers':0,'guide_provider_cases':2,'guide_JSON_examples':3,
                        'actual_HTML_transport_cases':2,'archived_wrong_parse_RED':True,
                        'receipt_PRICE_template_cases':6,'real_Telegram_rendering':'NOT_TESTED',
                        'composed_catalog_correction_keys':22,'composed_heading_cases':42,
+                       'settings_navigation_label_amendments':3,'settings_navigation_retired_keys':4,
                        'notification_catalog_additions':4,'staff_role_description_amendments':1,
                        'staff_catalog_negative_controls':6,
                        'telegram_update_id_label_cases':1,'telegram_update_id_numeric_value_preserved':True,
@@ -861,10 +862,10 @@ def main():
                 and text_catalog.get("retired_parser_tokens")==23
                 and text_catalog.get("relocation_source_ref")=="ecd30ba9192ed374703118a6c131be8809cc7b06"
                 and text_catalog.get("native",{}).get("current_retired_feature_keys")==3
-                and text_catalog.get("catalog_keys")==2668
+                and text_catalog.get("catalog_keys")==2664
                 and text_catalog.get("native",{}).get("editable_catalog_files")==2
                 and text_catalog.get("native",{}).get("logical_topics")==26
-                and text_catalog.get("native",{}).get("current_catalog_keys")==2668
+                and text_catalog.get("native",{}).get("current_catalog_keys")==2664
                 and text_catalog.get("native",{}).get("current_management_added_keys")==112
                 and text_catalog.get("native",{}).get("current_catalog_binding_paths")==2
                 and text_catalog.get("native",{}).get("current_catalog_binding_entries")==4
@@ -878,18 +879,18 @@ def main():
                 and text_catalog["native"]["current_byte_preserved_keys"]
                     +text_catalog["native"]["current_style_changes"]
                     +text_catalog["native"]["current_added_admin_keys"]==2523
-                and text_catalog.get("native",{}).get("current_native_template_assertions")==3953
+                and text_catalog.get("native",{}).get("current_native_template_assertions")==3949
                 and text_catalog.get("native",{}).get("current_object_conversion_templates")==257
                 and text_catalog.get("native",{}).get("current_shared_multi_parameter_templates")==61
                 and text_catalog.get("native",{}).get("current_one_pass_templates")==257
                 and text_catalog.get("native",{}).get("current_r5_changes")==271
-                and text_catalog.get("native",{}).get("current_r5_retired_keys")==9
-                and text_catalog.get("native",{}).get("current_r5_added_keys")==42
+                and text_catalog.get("native",{}).get("current_r5_retired_keys")==10
+                and text_catalog.get("native",{}).get("current_r5_added_keys")==39
                 and text_catalog.get("presentation",{}).get("r5_negative_controls")==5
                 and text_catalog.get("native",{}).get("current_non_ascii_digit_templates")==0
                 and text_catalog.get("presentation",{}).get("status")=="PASS"
                 and text_catalog.get("presentation",{}).get("editable_files")==2
-                and text_catalog.get("presentation",{}).get("current_keys")==2668
+                and text_catalog.get("presentation",{}).get("current_keys")==2664
                 and text_catalog.get("presentation",{}).get("numeric_template_changes")==23
                 and text_catalog.get("presentation",{}).get("adjacent_emoji_violations")==0
                 and text_catalog.get("presentation",{}).get("parameter_exception_count")==3
