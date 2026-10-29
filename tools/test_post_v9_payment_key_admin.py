@@ -95,6 +95,7 @@ function setUser($step='none') {
 }
 require $webhook;
 require $menu;
+require $root.'/src/Admin/InstanceContent.php';
 require $root.'/src/Finance/PaymentKeyAdmin.php';
 require $root.'/src/Finance/GatewayRuleAdmin.php';
 if ($kind==='menu') {

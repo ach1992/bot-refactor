@@ -7,7 +7,7 @@ Separate keyboard labels and mutually exclusive branches are separate surfaces;
 identical heading labels may repeat within a rendered message.
 """
 from __future__ import annotations
-import argparse, copy, html, json, pathlib, re, subprocess, tempfile, unicodedata
+import argparse, copy, functools, html, json, pathlib, re, subprocess, tempfile, unicodedata
 import catalog_owner_r5 as r5
 ROOT=pathlib.Path(__file__).resolve().parents[1]
 REFERENCE='9dab78bac830184818b5b0c899e530c9a2069c93'
@@ -45,6 +45,55 @@ NOTIFICATION_KEYS={
     'admin.roles.notifications_on','admin.roles.notifications_off',
     'admin.roles.notifications_saved','admin.roles.notifications_failed',
 }
+DISPLAY_CONTEXT_BASE='748994636f9fc2cf4c0ea4c7c810093c0dd108ef'
+DISPLAY_CONTEXT_ENTRIES={'admin_settings.display.delivery_configs': {'text': '🛒 کانفیگ\u200cهای بعد از خرید', 'parameters': []},
+ 'admin_settings.display.view_configs': {'text': '📋 کانفیگ\u200cهای صفحهٔ سفارش', 'parameters': []},
+ 'admin_settings.display.delivery_selection': {'text': '🛒 کانفیگ\u200cهای بعد از خرید: {selection}',
+                                               'parameters': ['selection']},
+ 'admin_settings.display.view_selection': {'text': '📋 کانفیگ\u200cهای صفحهٔ سفارش: {selection}',
+                                           'parameters': ['selection']},
+ 'admin_settings.display.choose_context': {'text': 'بخش موردنظر را برای انتخاب کانفیگ مشخص کنید.',
+                                           'parameters': []},
+ 'admin_settings.display.context_guide': {'text': 'انتخاب کانفیگ\u200cهای بعد از خرید و صفحهٔ سفارش مستقل '
+                                                  'است. تا زمان ویرایش هر بخش، انتخاب فعلی آن حفظ '
+                                                  'می\u200cشود.',
+                                          'parameters': []},
+ 'admin_settings.display.editing_context': {'text': 'تنظیم انتخاب کانفیگ برای {context}',
+                                            'parameters': ['context']}}
+@functools.lru_cache(maxsize=1)
+def display_context_baseline():
+    decode='$s=stream_get_contents(STDIN);$p=strpos($s,"return [");if($p===false)throw new RuntimeException("array_missing");echo json_encode(eval(substr($s,$p)),JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);'
+    return {a:r5.flatten(json.loads(command('php','-r',decode,input=command('git','show',DISPLAY_CONTEXT_BASE+':messages/fa/'+a+'.php'))))for a in ['user','admin']}
+def display_context_followup_proof(current):
+    # Exactly seven new admin entries relative to the accepted 7489946 source.
+    # Existing entries, audiences, params and earlier amendment layers stay exact.
+    baseline=display_context_baseline();record=r5.manifest()
+    check(set(current['user'])==set(baseline['user'])
+          and set(current['admin'])==set(baseline['admin'])|set(DISPLAY_CONTEXT_ENTRIES),
+          'display_context_addition_or_removal_scope_drift')
+    check(all(current[a][key]==entry for a,rows in baseline.items()for key,entry in rows.items()),
+          'display_context_changed_existing_entry')
+    for key,expected in DISPLAY_CONTEXT_ENTRIES.items():
+        check(all(key not in rows for rows in baseline.values()),'display_context_key_existed:'+key)
+        item=record['added_keys'].get(key,{})
+        check(current['admin'].get(key)==expected and key not in current['user']
+              and item.get('audience')=='admin' and item.get('entry')==expected
+              and item.get('source_paths')==['src/Subscription/ServerDisplaySettings.php'],
+              'display_context_entry_slots_or_recipient_drift:'+key)
+def display_context_negative_controls(current):
+    mutations=[]
+    key='admin_settings.display.delivery_selection'
+    bad=copy.deepcopy(current);bad['admin']['admin_settings.display.unlisted']='ناشناخته';mutations.append(bad)
+    bad=copy.deepcopy(current);bad['user'][key]=bad['admin'].pop(key);mutations.append(bad)
+    bad=copy.deepcopy(current);bad['admin'][key]['parameters']=['context'];mutations.append(bad)
+    bad=copy.deepcopy(current);bad['admin'][key]['text']='متن ثبت‌نشده: {selection}';mutations.append(bad)
+    bad=copy.deepcopy(current);bad['user']['legacy_messages.banned']='تغییر خارج از دامنه';mutations.append(bad)
+    bad=copy.deepcopy(current);bad['admin'].pop('admin.roles.notifications_saved');mutations.append(bad)
+    for bad in mutations:
+        try:display_context_followup_proof(bad)
+        except AssertionError:continue
+        raise AssertionError('display_context_addition_negative_control_missed')
+    return len(mutations)
 STAFF_GUIDE_KEY='admin.roles.choose_level'
 STAFF_GUIDE_BEFORE='پشتیبان: اطلاعات کاربر، مسدودسازی و ویرایش سفارش'
 STAFF_GUIDE_AFTER='پشتیبان: اطلاعات کاربر، مسدودسازی، ویرایش سفارش و بررسی رسید پرداخت (تأیید یا رد)'
@@ -53,8 +102,8 @@ def staff_followup_proof(current,archived):
     # explicit lineage; they never change the 22 historical corrections.
     record=r5.manifest();r5.verify_and_restore(current,record)
     added={key for audience,rows in current.items()for key in rows if key not in archived[audience]}
-    check(added==NOTIFICATION_KEYS,'notification_catalog_addition_scope_drift')
-    check(all(set(archived[a])<=set(current[a])for a in archived),'staff_followup_removed_historical_entry')
+    check(added==NOTIFICATION_KEYS|set(DISPLAY_CONTEXT_ENTRIES),'notification_catalog_addition_scope_drift')
+    check(all(set(archived[a])-set(SETTINGS_RETIRED_ENTRIES)<=set(current[a])for a in archived),'staff_followup_removed_historical_entry')
     for key in NOTIFICATION_KEYS:
         item=record['added_keys'].get(key,{})
         check(item.get('audience')=='admin'and current['admin'].get(key)==item.get('entry')
@@ -63,10 +112,43 @@ def staff_followup_proof(current,archived):
     check(r5.text(before).count(STAFF_GUIDE_BEFORE)==1,'staff_guide_original_sentence_drift')
     check(r5.text(after)==r5.text(before).replace(STAFF_GUIDE_BEFORE,STAFF_GUIDE_AFTER,1)
           and r5.params(after)==r5.params(before),'staff_guide_other_words_slots_or_markup_changed')
+SETTINGS_LABEL_AMENDMENTS={'instance_content.settings_button': ('admin', '📝 متن\u200cها و نشانی\u200cها', '📝 متن\u200cهای ربات'), 'instance_content.title': ('admin', '📝 متن\u200cها و نشانی\u200cهای ربات\nبخش موردنظر را برای ویرایش انتخاب کنید.', '📝 متن\u200cهای ربات\nمتن موردنظر را برای ویرایش انتخاب کنید.'), 'instance_content.unconfigured': ('user', {'text': '📝 متن این بخش هنوز تنظیم نشده است.\nمدیر ربات می\u200cتواند آن را از «تنظیمات ربات ← متن\u200cها و نشانی\u200cها» تنظیم کند.\n🎫 شناسه عددی: {userId}', 'parameters': ['userId']}, {'text': '📝 متن این بخش هنوز تنظیم نشده است.\nمدیر ربات می\u200cتواند آن را از «تنظیمات ربات ← متن\u200cهای ربات» تنظیم کند.\n🎫 شناسه عددی: {userId}', 'parameters': ['userId']})}
+SETTINGS_NAVIGATION_BASE='54975245d6358f5d4e7fde720e09da945803ae17'
+SETTINGS_RETIRED_ENTRIES={'admin_settings.config.get_bot_setting_keys.button.ce5bb2416c': ('admin', '⚙️ نمایش لینک و QR برای هر سرور'),
+ 'instance_content.support': ('admin', '📨 نشانی پشتیبانی'),
+ 'instance_content.reward_channel': ('admin', '📢 کانال گزارش\u200cها'),
+ 'instance_content.lock_channel': ('admin', '🔐 کانال عضویت اجباری')}
+@functools.lru_cache(maxsize=1)
+def settings_navigation_baseline():
+    decode='$s=stream_get_contents(STDIN);$p=strpos($s,"return [");if($p===false)throw new RuntimeException("array_missing");echo json_encode(eval(substr($s,$p)),JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);'
+    return {a:r5.flatten(json.loads(command('php','-r',decode,input=command('git','show',SETTINGS_NAVIGATION_BASE+':messages/fa/'+a+'.php'))))for a in ['user','admin']}
+def settings_label_followup_proof(current,archived):
+    # Exact post-RC16 label/path and four known retirement deltas, separate
+    # from the 22 heading corrections and staff follow-up; no generic exemption.
+    baseline=settings_navigation_baseline()
+    for key,(audience,before,after)in SETTINGS_LABEL_AMENDMENTS.items():
+        other='user'if audience=='admin'else'admin'
+        check(baseline[audience].get(key)==before and archived[audience].get(key)==before
+              and key not in baseline[other] and key not in archived[other],
+              'settings_label_original_or_recipient_drift:'+key)
+        check(current[audience].get(key)==after and key not in current[other]
+              and r5.params(after)==r5.params(before),
+              'settings_label_other_words_slots_or_recipient_changed:'+key)
+    removed={key for audience,rows in archived.items()for key in rows if key not in current[audience]}
+    check(removed==set(SETTINGS_RETIRED_ENTRIES),'settings_navigation_retirement_scope_drift')
+    for key,(audience,before)in SETTINGS_RETIRED_ENTRIES.items():
+        other='user'if audience=='admin'else'admin'
+        check(baseline[audience].get(key)==before and archived[audience].get(key)==before
+              and key not in baseline[other] and key not in archived[other],
+              'settings_retired_original_or_recipient_drift:'+key)
+        check(key not in current[audience] and key not in current[other],
+              'settings_retired_entry_reintroduced:'+key)
 def correction_proof(current,archived):
     staff_followup_proof(current,archived)
+    display_context_followup_proof(current)
+    settings_label_followup_proof(current,archived)
     changed={k for a,rows in current.items()for k,e in rows.items()if k in archived[a]and e!=archived[a][k]}
-    check(changed==set(CORRECTIONS)|{STAFF_GUIDE_KEY},'composed_catalog_correction_scope_drift')
+    check(changed==set(CORRECTIONS)|{STAFF_GUIDE_KEY}|set(SETTINGS_LABEL_AMENDMENTS),'composed_catalog_correction_scope_drift')
     for key,(before,after)in CORRECTIONS.items():
         audience=next(a for a in current if key in current[a])
         old=archived[audience][key];now=current[audience][key]
@@ -238,6 +320,7 @@ def audit(source_root=ROOT,catalog_root=ROOT):
         current_catalogs=load_catalogs(catalog_root);archived_catalogs=load_catalogs(stage)
         correction_count=correction_proof(current_catalogs,archived_catalogs)
         staff_controls=staff_followup_negative_controls(current_catalogs,archived_catalogs)
+        display_context_controls=display_context_negative_controls(current_catalogs)
     # Existing private-failure composition: this value comes from update_id,
     # not message_id. The copy correction must preserve the supplied number.
     update_expr=expression(tokenized['src/Finance/Routes/WalletTransfer.php'],'assign','$transferUpdateId',"'update_id'")
@@ -266,7 +349,7 @@ def audit(source_root=ROOT,catalog_root=ROOT):
     preserved=['شناسه پیام تلگرام','شناسه به‌روزرسانی تلگرام','شناسه چت تلگرام']
     check(not any(numeric_id_variant(v)for v in preserved),'genuine_telegram_object_id_misclassified')
     check(not numeric_id_variant('شناسه عددی'),'requested_numeric_id_misclassified')
-    return {'composed_catalog_correction_keys':correction_count,'notification_catalog_additions':len(NOTIFICATION_KEYS),'staff_role_description_amendments':1,'staff_catalog_negative_controls':staff_controls,'telegram_update_id_label_cases':1,'telegram_update_id_numeric_value_preserved':True,'archived_wrong_telegram_update_label_RED':True,'composed_heading_cases':len(current),'composed_heading_source_paths':len(paths),'composed_heading_archived_RED':len(reds),'composed_heading_negative_controls':len(mutations),'identical_heading_reuse_cases':1,'raw_code_heading_exclusions':1,'numeric_id_variant_negative_controls':len(variants),'preserved_telegram_object_id_cases':len(preserved),'preserved_numeric_id_cases':1,'composition_scope':'source_expression_wallet_finance_receipt_support_admin_stats_matrix','real_Telegram_rendering':'NOT_TESTED'}
+    return {'composed_catalog_correction_keys':correction_count,'settings_navigation_label_amendments':len(SETTINGS_LABEL_AMENDMENTS),'settings_navigation_retired_keys':len(SETTINGS_RETIRED_ENTRIES),'display_context_catalog_additions':len(DISPLAY_CONTEXT_ENTRIES),'display_context_catalog_negative_controls':display_context_controls,'notification_catalog_additions':len(NOTIFICATION_KEYS),'staff_role_description_amendments':1,'staff_catalog_negative_controls':staff_controls,'telegram_update_id_label_cases':1,'telegram_update_id_numeric_value_preserved':True,'archived_wrong_telegram_update_label_RED':True,'composed_heading_cases':len(current),'composed_heading_source_paths':len(paths),'composed_heading_archived_RED':len(reds),'composed_heading_negative_controls':len(mutations),'identical_heading_reuse_cases':1,'raw_code_heading_exclusions':1,'numeric_id_variant_negative_controls':len(variants),'preserved_telegram_object_id_cases':len(preserved),'preserved_numeric_id_cases':1,'composition_scope':'source_expression_wallet_finance_receipt_support_admin_stats_matrix','real_Telegram_rendering':'NOT_TESTED'}
 def main():
     ap=argparse.ArgumentParser();ap.add_argument('--source-root',type=pathlib.Path,default=ROOT);ap.add_argument('--catalog-root',type=pathlib.Path,default=ROOT);args=ap.parse_args()
     print(json.dumps({'status':'PASS',**audit(args.source_root,args.catalog_root)},ensure_ascii=False))

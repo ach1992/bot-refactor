@@ -146,7 +146,7 @@ function validPolicy(array $policy): bool {
             if (!is_int($value) || $value < 0) return false;
         } elseif ($key === 'qr') {
             if (!in_array($value, ['auto', 'subscription', 'first_config', 'none'], true)) return false;
-        } elseif ($key === 'selectors') {
+        } elseif (in_array($key, ['selectors', 'delivery_selectors', 'view_selectors'], true)) {
             if (!is_array($value) || !array_is_list($value)) return false;
             foreach ($value as $selector) {
                 if (!is_array($selector) || $selector === []) return false;
@@ -167,7 +167,9 @@ function validPolicy(array $policy): bool {
  * native = {links: array|string, subscription_url: absolute URL, backup_urls?:array}
  * options = {policy?: array, mode?: native|marzban_legacy, legacy?: managed values}
  * Legacy compatibility requires an explicit validated per-server mode.
- * A configured policy uses the same selection for view, delivery and config QR.
+ * Native context selectors override shared selectors, including an empty list.
+ * Missing context and shared selectors retain all native configs. Config QR
+ * follows the current view or delivery selection; legacy indices stay separate.
  * These are display choices only. Panel Groups remain the access authority.
  */
 function present(string $provider, array $native, array $botState, array $options = [], string $context = 'view'): array {
@@ -230,16 +232,16 @@ function present(string $provider, array $native, array $botState, array $option
     } else {
         $records = nativeLinks($native['links'] ?? []);
         $selected = [];
-        if (array_key_exists('selectors', $policy)) {
-            if (is_array($policy['selectors'])) {
-                // Selector order first, native order within each selector.
-                foreach ($policy['selectors'] as $selector) {
-                    foreach ($records as $record) {
-                        if (selectorMatches($record, $selector)) $selected[] = $record['uri'];
-                    }
+        $contextKey = $context === 'delivery' ? 'delivery_selectors' : 'view_selectors';
+        $selectorKey = array_key_exists($contextKey, $policy) ? $contextKey : 'selectors';
+        if (array_key_exists($selectorKey, $policy)) {
+            // Selector order first, native order within each selector.
+            foreach ($policy[$selectorKey] as $selector) {
+                foreach ($records as $record) {
+                    if (selectorMatches($record, $selector)) $selected[] = $record['uri'];
                 }
             }
-            $result['selection_missing'] = $selected === [] && $policy['selectors'] !== [];
+            $result['selection_missing'] = $selected === [] && $policy[$selectorKey] !== [];
         } else {
             $selected = array_column($records, 'uri');
         }

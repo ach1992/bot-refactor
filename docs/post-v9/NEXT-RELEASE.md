@@ -1,8 +1,12 @@
-# RC16 administrator, instance-content and Telegram copy scope
+# RC17 shared settings and native display selection scope
 
-[RC16](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.16) is the current published source-only prerelease, merged through [PR #93](https://github.com/ach1992/bot-refactor/pull/93). Verify the published assets before rollout. The package contains **115 runtime members / 114 PHP files**, including the complete two-file audience catalog and the new administrator, instance-content and profile helpers. Read [RC15 → RC16](RC15-TO-RC16.md) for exact source/package identity, paired private-staff configuration and recovery.
+[RC17](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.17) is the current source-only release line, integrated through [PR #95](https://github.com/ach1992/bot-refactor/pull/95). Its package contains **115 runtime members / 114 PHP files**. Read [RC16 → RC17](RC16-TO-RC17.md) and verify the official assets before rollout. Source merge/publication does not install files or certify real Telegram/provider/merchant/wallet/Cron acceptance.
 
-This release improves the existing bot without a new schema: four administrator tiers, independent staff-notification preferences, settings-backed instance messages/destinations, clearer Persian Telegram text, receipt-review layout, user-info/profile updates and PasarGuard auxiliary links. A compatible RC15 installation needs **no new SQL**; do not rerun completed012/013. Preserve private configuration and financial/native evidence. Source merge/publication does not install the runtime or certify Telegram/provider/merchant/wallet/Cron acceptance.
+The release consolidates destination editors in gateway/channel settings and keeps only four message bodies in Bot Settings. Native Marzban and PasarGuard share independent purchase-delivery/order-view config selection through the same renderer, editor and existing per-server JSON in setting. Existing choices/defaults remain until edited; managed Marzban positional compatibility is unchanged. A compatible RC16 installation needs **no new SQL**; do not rerun completed012/013. Inherited RC16 staff, receipt, profile, Persian-copy and private-configuration boundaries below remain.
+
+## Independent native display contexts
+
+Open the selected server’s display settings and choose purchase delivery or order details before selecting configs by the existing protocol/name controls. Each explicit context list overrides the shared selectors, including an empty list selecting none. Otherwise the shared list and then the existing all-config default apply. Visibility, subscription and limits remain common. The editor preserves the other effective choice when explicitly selecting ALL; reads perform no backfill. The same code/storage/management serves both native providers. See [presentation semantics](SUBSCRIPTION-PRESENTATION.md) and the [RC16 downgrade boundary](RC16-TO-RC17.md#recovery).
 
 ## Administrator scope and downgrade boundary
 
@@ -19,6 +23,8 @@ For a separately authorized upgrade to this new runtime, verify the database sta
 On MariaDB snapshot-isolation conflicts, a caller holding an older repeatable-read transaction may have secondary fan-out deferred safely until its next ordinary delivery. Normal delivery remains outside a newly introduced transaction; no caller transaction or isolation mode is changed.
 
 ## Bot Settings and copy
+
+Bot Settings → متن‌های ربات contains only the four message bodies. Support, report-channel, forced-membership identity, private invite URL, help and cooperation destinations are managed once in the existing gateway/channel settings; destination save/clear/cancel returns there. Existing stored values are retained; published RC16 assets remain immutable.
 
 Use Bot Settings to edit welcome/home messages and the shared purchase note. Unset content gives neutral setup guidance. Enter normal text or Telegram-formatted text; do not paste escaped HTML. Existing valid per-instance content and custom buttons are retained. Support, help-channel, mandatory-channel join and cooperation-panel destinations are configurable; unset optional destinations do not create fabricated external links. For a private channel, keep its numeric membership identifier and edit the join/invite URL separately. Clearing that URL restores public-channel derivation or the existing valid private-config joinLink fallback.
 

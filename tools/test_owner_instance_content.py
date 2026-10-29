@@ -52,13 +52,14 @@ if(($spec['mode']??'')==='pure'){
 }
 $connection=new mysqli('localhost','root','',$dbName,0,$socket);$connection->set_charset('utf8mb4');
 $from_id=(int)($spec['actor']??9002);$admin=9001;$message_id=77;$first_name='Synthetic';$username='synthetic';
-$buttonValues=achbotMessages('legacy_buttons');$cancelKey='CANCEL';$mainValues=[];
+$buttonValues=achbotMessages('legacy_buttons');$cancelKey='CANCEL';$mainValues=achbotMessages('legacy_messages');
 $botState=json_decode($connection->query("SELECT value FROM setting WHERE type='BOT_STATES'")->fetch_assoc()['value'],true);
-require $root.'/Access.php';require $root.'/writer.php';require $root.'/set-user.php';
+require $root.'/src/Admin/Access.php';require $root.'/writer.php';require $root.'/set-user.php';
+require $root.'/src/Finance/PaymentKeyAdmin.php';require $root.'/gateways.php';
 $userInfo=$connection->query('SELECT * FROM users WHERE userid='.(int)$from_id)->fetch_assoc();
 if(($spec['mode']??'')==='menus'){
     require $root.'/main-keys.php';require $root.'/bot-settings.php';
-    echo json_encode(['main'=>json_decode(getMainKeys(),true),'settings'=>json_decode(getBotSettingKeys(),true)],JSON_THROW_ON_ERROR);exit;
+    echo json_encode(['main'=>json_decode(getMainKeys(),true),'settings'=>json_decode(getBotSettingKeys(),true),'gateways'=>json_decode(getGateWaysKeys(),true)],JSON_THROW_ON_ERROR);exit;
 }
 $events=[];
 function sendMessage($text,$key=null,$parse='HTML') {global $events;$events[]=['send',$text,$key,$parse];}
@@ -114,10 +115,13 @@ def main():
     baseline_red=False
     with owned.owned_database() as (w,e):
         fixture=w/'instance-fixture';(fixture/'src/Admin').mkdir(parents=True);(fixture/'src/Presentation').mkdir();(fixture/'messages/fa').mkdir(parents=True)
-        for rel in ['src/Admin/InstanceContent.php','src/Presentation/Text.php','messages/loader.php']:
+        for rel in ['src/Admin/InstanceContent.php','src/Presentation/Text.php','messages/loader.php',
+                    'src/Finance/ReceiptHelpers.php','src/Finance/PaymentKeyAdmin.php',
+                    'src/Panel/ProviderRuntime.php','src/Panel/ProviderImport.php','src/Purchase/OrderWrites.php']:
+            (fixture/rel).parent.mkdir(parents=True,exist_ok=True)
             shutil.copy2(ROOT/rel,fixture/rel)
         for who in ['user','admin']:shutil.copy2(a.catalog_source/f'messages/fa/{who}.php',fixture/f'messages/fa/{who}.php')
-        shutil.copy2(a.access_source,fixture/'Access.php')
+        shutil.copy2(a.access_source,fixture/'src/Admin/Access.php')
         start=cfg.index('function achbotMutateBotStates(');end=cfg.index('function achbotAdminGatewayChange(',start)
         (fixture/'writer.php').write_text('<?php\n'+cfg[start:end])
         start=cfg.index('function setUser(');end=cfg.index('function generateRandomString(',start)
@@ -126,13 +130,15 @@ def main():
         main_keys=cfg[start:end];(fixture/'main-keys.php').write_text('<?php\n'+main_keys)
         start=cfg.index('function getBotSettingKeys()');end=cfg.index('function fetchData(',start)
         bot_settings=cfg[start:end];(fixture/'bot-settings.php').write_text('<?php\n'+bot_settings)
+        start=cfg.index('function getGateWaysKeys(){');end=cfg.index('function getBotSettingKeys()',start)
+        gateways=cfg[start:end];(fixture/'gateways.php').write_text('<?php\n'+gateways)
         (fixture/'join-ui.php').write_text(join_block(bot))
         (fixture/'baseline-join-ui.php').write_text(join_block(old_bot))
         client=['mariadb','--no-defaults','--protocol=SOCKET','--socket='+str(w/'mysql.sock'),'-uroot','--batch','--skip-column-names',DB]
         def sql(query):
             r=subprocess.run(client,input=query.encode(),env=e,capture_output=True,check=True);return r.stdout.decode().strip()
-        defaults={key:'off' for key in re.findall(r"\$botState\['([^']+)'\]",main_keys+bot_settings)}
-        defaults.update({'supportID':'@support_example','cooperationUrl':'https://partners.example.com/start','helpChannel':'@example_help'})
+        defaults={key:'off' for key in re.findall(r"\$botState\['([^']+)'\]",main_keys+bot_settings+gateways)}
+        defaults.update({'supportID':'@support_example','cooperationUrl':'https://partners.example.com/start','helpChannel':'@example_help','lockChannel':'-1001234567890'})
         state_json=json.dumps(defaults).replace("'","''")
         sql("INSERT INTO setting(type,value)VALUES('BOT_STATES','"+state_json+"'),('ADMIN_ROLE_9002','manager'),('PAYMENT_KEYS','{}');")
         wallets_before=sql('SELECT userid,wallet FROM users ORDER BY id')
@@ -169,34 +175,68 @@ def main():
         check(any(button.get('url')=='https://partners.example.com/start' for button in buttons),'main_menu_uses_cooperation_destination')
         check(any(button.get('url')=='https://t.me/example_help' for button in buttons),'main_menu_uses_help_channel')
         check(any(button.get('callback_data')=='ic|m' for row in menus['settings']['inline_keyboard'] for button in row),'bot_settings_reaches_instance_editor')
+        def callback_list(keyboard):
+            return [button.get('callback_data') for row in keyboard['inline_keyboard'] for button in row]
+        text_callbacks=['ic|e|'+field for field in ['start_message','user_welcome_message','reached_main_menu','purchase_note']]
+        destination_callbacks=['ic|e|'+field for field in ['cooperationUrl','helpChannel','lockChannelJoinUrl']]
+        old_destinations=['editSupportID','editRewardChannel','editLockChannel']
+        gateway_callbacks=callback_list(menus['gateways'])
+        check(all(gateway_callbacks.count(cb)==1 for cb in destination_callbacks+old_destinations),'one_destination_entry_each_in_existing_gateway_menu')
+        check(not any(cb in gateway_callbacks for cb in text_callbacks),'gateway_menu_excludes_message_bodies')
         r=call(kind='callback',data='ic|m');check(any(x[0]=='edit'for x in r['events']),'manager_settings_menu')
+        text_menu=json.loads(next(event[2] for event in r['events'] if event[0]=='edit'))
+        check(callback_list(text_menu)==text_callbacks+['botSettings'],'text_menu_only_four_message_bodies_and_back')
+        def check_return(result,destination,label):
+            event=result['events'][-1];keyboard=json.loads(event[2]);callbacks=callback_list(keyboard)
+            check(event[0]=='send' and event[3]=='HTML' and result['step']=='none' and
+                  (all(cb in callbacks for cb in destination_callbacks+old_destinations) and 'managePanel' in callbacks and not any(cb in callbacks for cb in text_callbacks)
+                   if destination else callbacks==text_callbacks+['botSettings']),label)
         r=call(kind='callback',data='ic|e|start_message');check(r['step']=='achbotInstance:start_message','message_editor_opens')
         r=call(kind='message',text='🔥 سلام SUPPORTID userid',entities=[{'type':'bold','offset':3,'length':4}])
         check(r['state']['instanceMessages']['start_message']['text']=='🔥 <b>سلام</b> SUPPORTID userid' and r['step']=='none','formatted_message_persisted')
         check(r['render']['start_message']=='🔥 <b>سلام</b> @support_example 9002','fresh_render_uses_persisted_text')
+        check_return(r,False,'text_save_returns_text_menu')
         before=r['state']
         r=call(kind='message',text='replay',cached_step='achbotInstance:start_message');check(r['state']==before,'stale_cached_step_no_write')
         call(kind='callback',data='ic|e|cooperationUrl');r=call(kind='message',text='https://partners.example.com/');check(r['state']['cooperationUrl']=='https://partners.example.com/','cooperation_destination_persisted')
         r=call(kind='callback',data='ic|m')
         menu=json.loads(next(event[2] for event in r['events'] if event[0]=='edit'))['inline_keyboard']
-        check(any(button.get('callback_data')=='ic|e|lockChannelJoinUrl' for row in menu for button in row),'lock_join_destination_in_existing_settings_menu')
+        check(not any(button.get('callback_data') in destination_callbacks+old_destinations for row in menu for button in row),'no_destination_duplicate_in_text_menu')
+        for field,value in [('cooperationUrl','https://partners.example.com/'),('helpChannel','@example_help'),('lockChannelJoinUrl',explicit)]:
+            call(kind='callback',data='ic|e|'+field);r=call(kind='message',text=value)
+            check_return(r,True,field+'_save_returns_gateway_menu')
+            retained=r['state']
+            for cancel in [{'text':'/cancel'},{'use_cancel_button':True}]:
+                call(kind='callback',data='ic|e|'+field);r=call(kind='message',**cancel)
+                check_return(r,True,field+('_button_cancel' if 'use_cancel_button'in cancel else '_command_cancel')+'_returns_gateway_menu')
+                check(r['state']==retained,field+'_cancel_preserves_persisted_value_'+str(len(checks)))
         call(kind='callback',data='ic|e|lockChannelJoinUrl');r=call(kind='message',text=explicit)
         check(r['state']['lockChannelJoinUrl']==explicit and r['state']['lockChannel']==private_id,'lock_join_invite_saved_without_membership_change')
         call(kind='callback',data='ic|e|lockChannelJoinUrl');r=call(kind='message',text='javascript:x')
         check(r['state']['lockChannelJoinUrl']==explicit,'lock_join_invalid_edit_preserves_value')
         call(kind='callback',data='ic|e|lockChannelJoinUrl');r=call(kind='message',text='/clear')
         check(r['state']['lockChannelJoinUrl']=='' and r['state']['lockChannel']==private_id,'lock_join_clear_preserves_membership')
+        check_return(r,True,'destination_clear_returns_gateway_menu')
         check(join_keyboard(call(mode='join'))[0][0]['url']=='https://t.me/+OLD_SYNTHETIC','lock_join_clear_restores_legacy_fallback')
         state_update(lockChannel='@public_example')
         check(join_keyboard(call(mode='join'))[0][0]['url']=='https://t.me/public_example','lock_join_clear_restores_public_derivation')
         state_update(lockChannel=private_id)
+        state_update(helpChannel='@example_help')
         call(kind='callback',data='ic|e|helpChannel');r=call(kind='message',text='javascript:alert(1)');check(r['state']['helpChannel']=='@example_help','invalid_destination_not_persisted')
         r=call(kind='message',text='@example_help');check(r['state']['helpChannel']=='https://t.me/example_help','help_channel_normalized')
         call(kind='callback',data='ic|e|start_message');r=call(kind='message',text='/clear');check(r['state']['instanceMessages']['start_message']is None and 'تنظیمات ربات'in r['render']['start_message'],'clear_returns_setup_guidance')
         call(kind='callback',data='ic|e|purchase_note');r=call(kind='message',text='x'*1201);check('purchase_note'not in r['state'].get('instanceMessages',{}),'purchase_note_bound')
         r=call(kind='message',text='Cancel');check(r['step']=='none' and r['state']['instanceMessages']['purchase_note']['text']=='Cancel','ordinary_text_saved_not_assumed_cancel')
         call(kind='callback',data='ic|e|purchase_note');r=call(kind='message',text='/cancel');check(r['step']=='none','cancel_consumes_step')
+        check_return(r,False,'text_cancel_returns_text_menu')
         call(kind='callback',data='ic|e|purchase_note');r=call(kind='message',use_cancel_button=True);check(r['step']=='none','actual_cancel_button_consumes_step')
+        for level in ['operator','support']:
+            sql("UPDATE setting SET value='"+level+"' WHERE type='ADMIN_ROLE_9002'")
+            before=call(kind='callback',data='ic|m')['state']
+            for field in ['cooperationUrl','helpChannel','lockChannelJoinUrl']:
+                r=call(kind='callback',data='ic|e|'+field)
+                check(not r['events'] and r['state']==before and r['step']=='none',level+'_'+field+'_open_denied')
+        sql("UPDATE setting SET value='manager' WHERE type='ADMIN_ROLE_9002'")
         call(kind='callback',data='ic|e|start_message');sql("UPDATE setting SET value='support' WHERE type='ADMIN_ROLE_9002'")
         before=call(kind='callback',data='ic|m')['state'];r=call(kind='message',text='forbidden');check(r['state']==before,'demotion_during_editor_denies_write')
         sql("UPDATE setting SET value='manager' WHERE type='ADMIN_ROLE_9002'")
@@ -207,8 +247,12 @@ def main():
         sql("UPDATE users SET step='none' WHERE userid=9001")
         r=call(kind='callback',data='ic|e|start_message',actor=9001);check(r['step']=='achbotInstance:start_message','owner_without_admin_bit_editor')
         r=call(kind='message',text='متن مالک',actor=9001);check(r['state']['instanceMessages']['start_message']['text']=='متن مالک','owner_save')
+        check_return(r,False,'owner_text_save_returns_text_menu')
+        call(kind='callback',data='ic|e|lockChannelJoinUrl',actor=9001);r=call(kind='message',text=explicit,actor=9001)
+        check_return(r,True,'owner_destination_save_returns_gateway_menu')
+        check(r['state']['lockChannel']==private_id,'owner_invite_preserves_numeric_membership')
         check(sql('SELECT userid,wallet FROM users ORDER BY id')==wallets_before and sql("SELECT value FROM setting WHERE type='PAYMENT_KEYS'")==keys_before,'wallets_and_payment_settings_unchanged')
-        check(all(r['state'].get(key)==value for key,value in defaults.items() if key not in ['cooperationUrl','helpChannel']),'unrelated_bot_settings_preserved')
+        check(all(r['state'].get(key)==value for key,value in defaults.items() if key not in ['cooperationUrl','helpChannel','lockChannelJoinUrl']),'unrelated_bot_settings_preserved')
     report={'result':'PASS','cases':len(checks),'checks':checks,'source_real':True,'socket_only_original_schema':True,'catalog_source':str(a.catalog_source),'catalog_source_sha256':{who:hashlib.sha256((a.catalog_source/f'messages/fa/{who}.php').read_bytes()).hexdigest()for who in ['user','admin']},'access_source_sha256':hashlib.sha256(a.access_source.read_bytes()).hexdigest(),'no_external_calls':True,'lock_join_baseline_red':baseline_red,'lock_join_baseline_source':baseline}
     if a.report:a.report.write_text(json.dumps(report,ensure_ascii=False,indent=2)+'\n')
     print(json.dumps(report,ensure_ascii=False))

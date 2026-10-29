@@ -1,6 +1,6 @@
 # Subscription presentation and per-server settings
 
-Current source contract for Issue #81 / Issue #26 revision 3. This does not
+Current shared presentation contract for supported Marzban and PasarGuard. This does not
 establish installed provider acceptance or authorize tenant/config/schema,
 deployment, payment, or real provider changes.
 
@@ -8,7 +8,7 @@ deployment, payment, or real provider changes.
 
 Open **server settings → نمایش لینک و QR** for the desired logical Marzban or
 PasarGuard server, then use the config/subscription toggles, QR choices, link limits and guided
-protocol/name selections. Marzban compatibility has guided index lists. A concise
+protocol/name selections. Native selection first chooses **کانفیگ‌های بعد از خرید** or **کانفیگ‌های صفحهٔ سفارش** through the same editor for both providers. Marzban compatibility has guided index lists. A concise
 Persian summary shows current values. Optional **ویرایش پیشرفته** accepts a full
 JSON document in the administrator's private chat.
 Logical servers sharing a physical panel have independent display documents.
@@ -17,7 +17,9 @@ Logical servers sharing a physical panel have independent display documents.
 {
   "mode": "native",
   "policy": {
-    "selectors": [{"protocol": "vless", "name": "Fast"}, {"protocol": "trojan"}],
+    "selectors": [{"protocol": "vless"}],
+    "delivery_selectors": [{"protocol": "vless", "name": "Fast"}],
+    "view_selectors": [{"protocol": "trojan"}],
     "show_configs": true,
     "show_subscription": true,
     "max_links": 4,
@@ -29,25 +31,43 @@ Logical servers sharing a physical panel have independent display documents.
 
 An absent setting defaults to native mode, visible configs and subscription,
 at most ten configs, and automatic QR selection. Defaults do not read/import
-old private globals or global bot display switches. The retired global display
-controls link administrators to server settings; old callbacks and persistence
-keys are rejected. Other bot/service/payment availability controls are unchanged.
+old private globals or global bot display switches. Open display management
+inside the selected server; Bot Settings has no display shortcut. Retired global display callbacks and persistence
+keys remain rejected. Other bot/service/payment availability controls are unchanged.
 
 All fields in one selector must match; records are alternatives, processed in
 configured order with native order within a match. Protocol is case insensitive;
 name/tag are exact. Tags require upstream metadata, never an inferred name or
 provider Group. The pinned PasarGuard client supplies native links without tags.
-Duplicate native URIs are removed. Omitted selectors select all native configs;
-an empty list selects none. A miss never falls back to an unselected config.
+Duplicate native URIs are removed. The active context uses delivery_selectors
+for purchase delivery or view_selectors for order details/config QR. An explicit
+context list wins, including an empty list selecting none; otherwise selectors
+applies, then the existing all-config default. A miss never falls back to an
+unselected config. The same matching code, grammar and limits serve both native
+providers. Reads do not rewrite existing documents.
+
+On an explicit context ALL edit with an old shared list, the editor first copies
+that list to the other context if it was inheriting, then removes the shared list
+and selected-context override. This preserves the other effective choice using
+the same selector grammar; no sentinel, new table or startup migration is used.
 
 | Native policy field | Valid values |
 | --- | --- |
-| selectors | Up to 50 records with protocol/name/tag; bounded nonempty strings |
+| selectors | Shared fallback: up to 50 records with protocol/name/tag; bounded nonempty strings |
+| delivery_selectors | Optional purchase-delivery override, same grammar and bounds |
+| view_selectors | Optional order-page/config-QR override, same grammar and bounds |
 | show_configs | Boolean; inline configs and native config QR data |
 | show_subscription | Boolean; subscription, backups and named subscription QR |
 | max_links | Integer 0–1000; zero selects none |
 | hide_if_more_than | Integer 0–1000; hide configs above native-count threshold |
 | qr | auto, subscription, first_config, none |
+
+A first-config QR uses the active context’s selected configs; named
+subscription QR still uses the subscription.
+The configuration expands the existing version1 JSON policy without DDL. RC16
+does not understand the new keys: preserve paired runtime/display settings or
+roll forward instead of downgrading source or stripping keys blindly. Read
+[RC16 → RC17 recovery](RC16-TO-RC17.md#recovery).
 
 The qr field controls the single delivery QR. Automatic selection uses the
 visible subscription then first visible config; subscription mode has no config
