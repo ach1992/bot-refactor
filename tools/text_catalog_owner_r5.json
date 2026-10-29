@@ -3106,6 +3106,14 @@
         "src/Admin/InstanceContent.php"
       ],
       "reason": "Owner revision5 settings-backed instance content and destinations interface."
+    },
+    "instance_content.field_lockChannelJoinUrl": {
+      "audience": "admin",
+      "entry": "پیوند عضویت کانال اجباری",
+      "source_paths": [
+        "src/Admin/InstanceContent.php"
+      ],
+      "reason": "Owner revision5: independently configurable join/invite URL for mandatory-channel membership; numeric channel identity remains separate."
     }
   }
 }

@@ -2085,6 +2085,7 @@ return [
         'field_purchase_note' => 'راهنمای خرید و توضیحات فروشگاه',
         'field_cooperationUrl' => 'نشانی دریافت پنل همکاری',
         'field_helpChannel' => 'نشانی کانال آموزش',
+        'field_lockChannelJoinUrl' => 'پیوند عضویت کانال اجباری',
         'configured' => 'تنظیم شده',
         'unset' => 'تنظیم نشده',
         'support' => '📨 نشانی پشتیبانی',
