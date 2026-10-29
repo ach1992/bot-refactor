@@ -15,6 +15,12 @@ require_once __DIR__ . '/../Admin/Access.php';
 if (!achbotAdminRequestAllowed(is_string($data??null)?$data:null,is_string($text??null)?$text:null,(string)($userInfo['step']??''))) {achbotAdminDeny();return;}
 
 
+if (preg_match('/^(?:closeTicket_|latestMsg_)/',(string)($data??'')) &&
+    (preg_match('/^(?:closeTicket_|latestMsg_)([1-9][0-9]*)$/D',(string)$data,$ticketMatch)!==1 ||
+     !achbotAdminTicketAllowed($connection,(int)$from_id,(int)$admin,(int)$ticketMatch[1]))) {
+    achbotAdminDeny();return;
+}
+
 if(($data=="openTickets" || $data=="newTickets" || $data == "allTickets") && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'operations')){
     if($data=="openTickets"){
         $stmt = $connection->prepare("SELECT * FROM `chats` WHERE `state` != 2 ORDER BY `state` ASC, `create_date` DESC");
@@ -38,11 +44,11 @@ if(($data=="openTickets" || $data=="newTickets" || $data == "allTickets") && ach
 		    $current++;
 		    
             $rowId = $row['id'];
-            $admin = $row['user_id'];
+            $ticketUserId = $row['user_id'];
             $title = $row['title'];
             $category = $row['category'];
 	        $state = $row['state'];
-	        $username = bot('getChat',['chat_id'=>$admin])->result->first_name ?? " ";
+	        $username = bot('getChat',['chat_id'=>$ticketUserId])->result->first_name ?? " ";
 
             $stmt = $connection->prepare("SELECT * FROM `chats_info` WHERE `chat_id` = ? ORDER BY `sent_date` DESC");
             $stmt->bind_param("i",$rowId);
@@ -52,6 +58,7 @@ if(($data=="openTickets" || $data=="newTickets" || $data == "allTickets") && ach
             $lastmsg = $ticketInfo['text'];
             $sentType = $ticketInfo['msg_type']=="USER"?\achbotMessage('support.customer_conversation.user_all_tickets.text.5bf4b36161'):\achbotMessage('support.customer_conversation.user_all_tickets.text.13ad0eef28');
             
+            $rate='';
             if($state !=2){
                 $keys = [
                         [['text'=>\achbotMessage('support.queue_and_history.all_tickets.button.12e9251ccb'),'callback_data'=>"closeTicket_$rowId"],['text'=>\achbotMessage('support.create_ticket.button.3b90dccc67'),'callback_data'=>"reply_{$rowId}"]],
@@ -63,7 +70,7 @@ if(($data=="openTickets" || $data=="newTickets" || $data == "allTickets") && ach
                 $rate = \achbotMessage('support.queue_and_history.all_tickets.rate.c5509cf4dc'). $row['rate'];
             }
             
-            sendMessage(\achbotMessage('support.queue_and_history.all_tickets.message.abf3f55cac', ['admin' => $admin, 'username' => $username, 'category' => $category, 'rate' => $rate, 'title' => $title, 'sentType' => $sentType, 'lastmsg' => $lastmsg]),
+            sendMessage(\achbotMessage('support.queue_and_history.all_tickets.message.abf3f55cac', ['admin' => $ticketUserId, 'username' => $username, 'category' => $category, 'rate' => $rate, 'title' => $title, 'sentType' => $sentType, 'lastmsg' => $lastmsg]),
                 json_encode(['inline_keyboard'=>$keys]),"html");
 
 			if($current>=$cont){
@@ -81,14 +88,15 @@ if(($data=="openTickets" || $data=="newTickets" || $data == "allTickets") && ach
         alert(\achbotMessage('support.queue_and_history.all_tickets.alert.5974314756'));
 	}
 }
-if(preg_match('/^moreTicket_(.+)_(.+)/',$data, $match) and  achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'operations')){
+if(preg_match('/^moreTicket_(2|0|all)_([0-9]+)$/D',$data, $match)){
     editText($message_id,$mainValues['please_wait_message']);
     $type = $match[1];
     $offset = $match[2];
-    if($type=="2") $stmt = $connection->prepare("SELECT * FROM `chats` WHERE `state` != 2 ORDER BY `state` ASC, `create_date` DESC");
-    elseif($type=="0") $stmt = $connection->prepare("SELECT * FROM `chats` WHERE `state` = 0 ORDER BY `create_date` DESC");
-    elseif($type=="all") $stmt = $connection->prepare("SELECT * FROM `chats` ORDER BY `state` ASC, `create_date` DESC");
-    
+    $ticketStaff=achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'operations');
+    $ticketWhere=$type==='2'?'`state` != 2':($type==='0'?'`state` = 0':'1=1');
+    if (!$ticketStaff) $ticketWhere.=' AND `user_id` = ?';
+    $stmt=$connection->prepare('SELECT * FROM `chats` WHERE '.$ticketWhere.' ORDER BY `state` ASC, `create_date` DESC');
+    if (!$ticketStaff) $stmt->bind_param('i',$from_id);
     $stmt->execute();
     $ticketList = $stmt->get_result();
     $stmt->close();
@@ -105,11 +113,11 @@ if(preg_match('/^moreTicket_(.+)_(.+)/',$data, $match) and  achbotAdminCanFor($c
     		    $current++;
     		    
                 $rowId = $row['id'];
-                $admin = $row['user_id'];
+                $ticketUserId = $row['user_id'];
                 $title = $row['title'];
                 $category = $row['category'];
     	        $state = $row['state'];
-    	        $username = bot('getChat',['chat_id'=>$admin])->result->first_name ?? " ";
+                $username = $ticketStaff ? (bot('getChat',['chat_id'=>$ticketUserId])->result->first_name ?? " ") : ($first_name ?? ' ');
     
                 $stmt = $connection->prepare("SELECT * FROM `chats_info` WHERE `chat_id` = ? ORDER BY `sent_date` DESC");
                 $stmt->bind_param("i",$rowId);
@@ -119,9 +127,10 @@ if(preg_match('/^moreTicket_(.+)_(.+)/',$data, $match) and  achbotAdminCanFor($c
                 $lastmsg = $ticketInfo['text'];
                 $sentType = $ticketInfo['msg_type']=="USER"?\achbotMessage('support.customer_conversation.user_all_tickets.text.5bf4b36161'):\achbotMessage('support.customer_conversation.user_all_tickets.text.13ad0eef28');
                 
+                $rate='';
                 if($state !=2){
                     $keys = [
-                            [['text'=>\achbotMessage('support.queue_and_history.all_tickets.button.12e9251ccb'),'callback_data'=>"closeTicket_$rowId"],['text'=>\achbotMessage('support.create_ticket.button.3b90dccc67'),'callback_data'=>"reply_{$rowId}"]],
+                            [['text'=>\achbotMessage('support.queue_and_history.all_tickets.button.12e9251ccb'),'callback_data'=>"closeTicket_$rowId"],['text'=>\achbotMessage('support.create_ticket.button.3b90dccc67'),'callback_data'=>($ticketStaff?"reply_{$rowId}":"replySupport_{$rowId}")]],
                             [['text'=>\achbotMessage('support.queue_and_history.all_tickets.button.ce4f25e31b'),'callback_data'=>"latestMsg_$rowId"]]
                             ];
                 }
@@ -130,7 +139,7 @@ if(preg_match('/^moreTicket_(.+)_(.+)/',$data, $match) and  achbotAdminCanFor($c
                     $rate = \achbotMessage('support.queue_and_history.all_tickets.rate.c5509cf4dc'). $row['rate'];
                 }
                 
-                sendMessage(\achbotMessage('support.queue_and_history.all_tickets.message.abf3f55cac', ['admin' => $admin, 'username' => $username, 'category' => $category, 'rate' => $rate, 'title' => $title, 'sentType' => $sentType, 'lastmsg' => $lastmsg]),
+                sendMessage(\achbotMessage('support.queue_and_history.all_tickets.message.abf3f55cac', ['admin' => $ticketUserId, 'username' => $username, 'category' => $category, 'rate' => $rate, 'title' => $title, 'sentType' => $sentType, 'lastmsg' => $lastmsg]),
                     json_encode(['inline_keyboard'=>$keys]),"html");
 
 
@@ -150,7 +159,7 @@ if(preg_match('/^moreTicket_(.+)_(.+)/',$data, $match) and  achbotAdminCanFor($c
         alert(\achbotMessage('support.queue_and_history.all_tickets.alert.5974314756'));
 	}
 }
-if(preg_match('/^closeTicket_(\d+)/',$data,$match) and  achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'operations')){
+if(preg_match('/^closeTicket_([1-9][0-9]*)$/D',$data,$match) and  achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'operations')){
     $chatRowId = $match[1];
     $stmt = $connection->prepare("SELECT * FROM `chats` WHERE `id` = ?");
     $stmt->bind_param("i", $chatRowId);
@@ -183,7 +192,7 @@ if(preg_match('/^closeTicket_(\d+)/',$data,$match) and  achbotAdminCanFor($conne
         ]]));
 
 }
-if(preg_match('/^latestMsg_(.*)/',$data,$match)){
+if(preg_match('/^latestMsg_([1-9][0-9]*)$/D',$data,$match)){
     $stmt = $connection->prepare("SELECT * FROM `chats_info` WHERE `chat_id` = ? ORDER BY `sent_date` DESC LIMIT 10");
     $stmt->bind_param("i", $match[1]);
     $stmt->execute();
@@ -220,6 +229,6 @@ if(preg_match('/^\/dlPic(\d+)/',$text,$match)){
         
         $userid = $info['user_id'];
         
-        if($userid == $from_id || $from_id == $admin || $userInfo['isAdmin'] == true) sendPhoto($fileid, $caption);
+        if(achbotAdminTicketAllowed($connection,(int)$from_id,(int)$admin,(int)$chatInfoId)) sendPhoto($fileid, $caption);
     }
 }

@@ -24,11 +24,12 @@ $admin=9001;$from_id=9001;$special_admins=[9002];$data='';$text='';$userInfo=['s
 require $root.'/messages/loader.php';require $root.'/src/Admin/Access.php';
 $buttonValues=achbotMessages('legacy_buttons');
 $GLOBALS['events']=[];$callbackId='fixture';$message_id=77;$chat_id=9001;$cancelKey='{}';$removeKeyboard='{}';
-function sendMessage(...$a){$GLOBALS['events'][]=['kind'=>'send','body'=>$a[0]??'','keys'=>$a[1]??null,'chat'=>$a[3]??$GLOBALS['from_id']];return(object)['ok'=>true];}
+function sendMessage(...$a){$GLOBALS['events'][]=['kind'=>'send','body'=>$a[0]??'','keys'=>$a[1]??null,'chat'=>$a[3]??$GLOBALS['from_id']];return(object)['ok'=>true,'result'=>(object)['message_id'=>888]];}
 function editText(...$a){$GLOBALS['events'][]=['kind'=>'edit','body'=>$a[1]??'','keys'=>$a[2]??null,'chat'=>$a[4]??$GLOBALS['from_id']];return(object)['ok'=>true];}
+function sendPhoto(...$a){$GLOBALS['events'][]=['kind'=>'photo','file'=>$a[0]??''];return(object)['ok'=>true];}
 function answerCallbackQuery(...$a){$GLOBALS['events'][]=['kind'=>'ack','body'=>$a[1]??''];}
 function alert(...$a){$GLOBALS['events'][]=['kind'=>'alert','body'=>$a[0]??''];}
-function delMessage(...$a){throw new RuntimeException('administrator input deletion forbidden');}
+function delMessage(...$a){if(!empty($GLOBALS['allow_prompt_delete'])){$GLOBALS['events'][]=['kind'=>'delete'];return;}throw new RuntimeException('administrator input deletion forbidden');}
 function editKeys(...$a){$GLOBALS['events'][]=['kind'=>'keys'];}
 function sendToAllAdmins(...$a){$GLOBALS['events'][]=['kind'=>'staff_notice'];}
 function bot(...$a){$GLOBALS['native_attempts'][]=$a[0]??'unknown';throw new RuntimeException('unexpected native/Telegram operation');}
@@ -152,11 +153,171 @@ $connection->query("INSERT INTO setting(type,value) VALUES('ADMIN_ROLE_9005','ma
 yes(achbotAdminLevel(9005)==='none','duplicate role fails closed');
 yes(!achbotAdminAssignLevel($connection,9001,9001,9005,'support'),'ambiguous role assignment rejected');
 
+yes(achbotAdminAssignLevel($connection,9001,9001,9002,'manager'),'manual route explicit manager fixture');
+yes(achbotAdminAssignLevel($connection,9001,9001,9003,'operator'),'manual route explicit operator fixture');
+// Evaluate the exact production ingress block, not a module-only bypass.
+$botSource=file_get_contents($root.'/bot.php');$guardStart=strpos($botSource,'if (!achbotAdminRequestAllowed(');$guardEnd=strpos($botSource,"\n\nrequire_once",$guardStart);
+yes($guardStart!==false&&$guardEnd!==false,'actual production bot ingress block located');
+$ingress=substr($botSource,$guardStart,$guardEnd-$guardStart)."\n\$GLOBALS['ingress_admitted']=true;";
+$enter=static function()use($ingress):bool{global $data,$text,$userInfo;$GLOBALS['ingress_admitted']=false;eval($ingress);return $GLOBALS['ingress_admitted'];};
+$bootstrapStart=strpos($config,"// Enforce the same staff level");$bootstrapEnd=strpos($config,"\n\$supportID",$bootstrapStart);$bootstrapGuard=substr($config,$bootstrapStart,$bootstrapEnd-$bootstrapStart);
+yes(str_contains($bootstrapGuard,'achbotAdminRequestAllowed('),'actual config bootstrap uses the same fresh request helper');
+define('ACHBOT_VERIFIED_WEBHOOK_ENTRYPOINT',true);
+$enterPublic=static function()use($bootstrapGuard,$enter):bool{global $data,$text,$userInfo;eval($bootstrapGuard);return $enter();};
+foreach([['getMainKeys','function getAgentKeys('],['RandomString','function generateUID(']] as [$fn,$endMarker]){
+ $start=strpos($config,'function '.$fn.'(');$end=strpos($config,$endMarker,$start);eval(substr($config,$start,$end-$start));
+}
+$start=strpos($config,'function getSupportUrl(');$end=strpos($config,"\nif (isset(\$update",$start);eval(str_replace('__DIR__',var_export($root,true),substr($config,$start,$end-$start)));
+$connection->query("INSERT INTO users(userid,name,username,refcode,wallet,date,isAdmin,is_agent,first_start) VALUES(1002,'Agent','agent','0',0,'1700000000',0,1,'sent')");
+$botState=['agencyState'=>'on','sellState'=>'on','testAccount'=>'on','sharedExistence'=>'on','individualExistence'=>'on','searchState'=>'on','supportID'=>'fixture_support','nowPaymentWallet'=>'off','zarinpal'=>'off','nextpay'=>'off'];
+$mainValues=achbotMessages('legacy_messages');$supportID='fixture_support';$GLOBALS['native_attempts']=[];
+$publicMain=[];
+foreach([1001,1002] as $actor){
+ $from_id=$chat_id=$actor;$userInfo=$connection->query('SELECT * FROM users WHERE userid='.$actor)->fetch_assoc();$userInfo['step']='none';$text=null;
+ $menu=json_decode(getMainKeys(),true);$callbacks=[];
+ foreach($menu['inline_keyboard'] as $row)foreach($row as $button)if(isset($button['callback_data'])){
+  $data=$button['callback_data'];yes($enterPublic(),'actual public main menu survives production ingress '.$actor.' '.$data);$callbacks[]=$data;
+ }
+ yes(in_array('reciveApplications',$callbacks,true)&&in_array('increaseMyWallet',$callbacks,true),'actual public menu includes app downloads and wallet '.$actor);$publicMain[$actor]=$callbacks;
+}
+$from_id=$chat_id=1001;$data='reciveApplications';$text=null;$userInfo=$connection->query('SELECT * FROM users WHERE userid=1001')->fetch_assoc();$GLOBALS['events']=[];
+yes($enterPublic(),'actual app downloads pass config and bot ingress');
+$start=strpos($botSource,"if(\$data == 'reciveApplications') {");$end=strpos($botSource,"\nif (\$text ==",$start);eval(substr($botSource,$start,$end-$start));
+yes(count($GLOBALS['events'])===1&&$GLOBALS['events'][0]['kind']==='edit','actual app download route returns its existing screen');
+// Source-linked callback and pending-state families cover the full public path.
+$publicJourneys=[
+ ['buy','src/Purchase/Catalogue.php','selectServer','selectServer1_none','callback'],
+ ['buy','src/Purchase/Catalogue.php','selectCategory','selectCategory1_1_none','callback'],
+ ['buy','src/Purchase/Catalogue.php','selectPlan','selectPlan1_1_none','callback'],
+ ['buy','src/Purchase/Catalogue.php','selectCustomPlanGB','selectCustomPlanGB1_1_none','step'],
+ ['buy','src/Purchase/Catalogue.php','selectCustomPlanDay','selectCustomPlanDay1_1_1_none','step'],
+ ['buy','src/Purchase/Catalogue.php','enterCustomPlanName','enterCustomPlanName1_1_1_1_none','step'],
+ ['buy','src/Purchase/SelectPlan.php','enterAccountName','enterAccountName1_1_none','step'],
+ ['bulk','src/Purchase/EntryAndBulk.php','agentMuchBuy','agentMuchBuy','callback'],
+ ['bulk','src/Purchase/SelectPlan.php','enterAccountName','enterAccountName1_1_much','step'],
+ ['trial','src/Purchase/TrialCatalogue.php','getTestAccount','getTestAccount','callback'],
+ ['trial','src/Purchase/TrialCatalogue.php','freeTrial','freeTrial1_normal','callback'],
+ ['own_orders','src/Subscription/CustomerRoutes.php','mySubscriptions','mySubscriptions','callback'],
+ ['own_orders','src/Subscription/CustomerRoutes.php','agentConfigsList','agentConfigsList','callback'],
+ ['own_orders','src/Subscription/CustomerRoutes.php','orderDetails','orderDetails1','callback'],
+ ['own_orders','src/Subscription/CustomerRoutes.php','searchMyConfig','searchMyConfig','step'],
+ ['own_orders','src/Subscription/CustomerRoutes.php','searchAgentConfig','searchAgentConfig','step'],
+ ['own_orders','src/Subscription/CustomerRoutes.php','changeUserConfigState','changeUserConfigState1','callback'],
+ ['import','src/Subscription/ExternalAccounts.php','showUUIDLeft','showUUIDLeft','callback'],
+ ['import','src/Subscription/ManualAccounts.php','addToOrders','addToOrders1','callback'],
+ ['renew','src/Finance/Routes/RenewalCheckout.php','renewAccount','renewAccount1','callback'],
+ ['renew','src/Finance/Routes/RenewalCheckout.php','waitRenewCartReceipt','waitRenewCartReceiptfixture','step'],
+ ['renew','src/Finance/Routes/RenewalSelection.php','sConfigRenewPlan','sConfigRenewPlan1_1','callback'],
+ ['addon','src/Finance/Routes/Extensions.php','selectPlanDayIncrease','selectPlanDayIncrease1_1','callback'],
+ ['addon','src/Finance/Routes/Extensions.php','increaseVolumePlan','increaseVolumePlan1_1','callback'],
+ ['addon','src/Finance/Routes/Extensions.php','waitIncreaseDayReceipt','waitIncreaseDayReceiptfixture','step'],
+ ['wallet','src/Finance/Routes/WalletRecharge.php','increaseWallet_100000','increaseWallet_100000','callback'],
+ ['wallet','src/Finance/Routes/WalletRecharge.php','increaseWalletCustom','increaseWalletCustom','callback'],
+ ['wallet','src/Finance/WalletStart.php','achbotWalletTopup:','achbotWalletTopup:choose:1:77:1700000000','step'],
+ ['wallet','src/Finance/WalletStart.php','achbotWalletTopup:','achbotWalletTopup:amount:1:77:1700000000','step'],
+ ['wallet','src/Finance/WalletTransferFlow.php','achbotTransferRecipient:','achbotTransferRecipient:1:77','step'],
+ ['wallet','src/Finance/WalletTransferFlow.php','achbotTransferAmount:','achbotTransferAmount:1002:2:78:1:77','step'],
+ ['status','src/Finance/Routes/PrePayment.php','ps_','ps_fixture','callback'],
+ ['status','src/Finance/Routes/PrePayment.php','ph_','ph_fixture','callback'],
+ ['support','src/Support/Entry.php','usersNewTicket','usersNewTicket','callback'],
+ ['support','src/Support/CreateTicket.php','newTicket_','newTicket_fixture','step'],
+ ['support','src/Support/CreateTicket.php','sendTicket_','sendTicket_fixture','step'],
+ ['support','src/Support/CustomerConversation.php','replySupport_','replySupport_1','callback'],
+ ['support','src/Support/CustomerConversation.php','sendMsg_','sendMsg_1','step'],
+ ['support','src/Support/CustomerConversation.php','closeTicket_','closeTicket_1','callback'],
+ ['support','src/Support/CustomerConversation.php','latestMsg_','latestMsg_1','callback'],
+ ['support','src/Support/CustomerConversation.php','moreTicket_','moreTicket_all_5','callback'],
+ ['agency','src/Agent/Applications.php','requestAgency','requestAgency','callback'],
+ ['downloads','bot.php','reciveApplications','reciveApplications','callback'],
+ ['agency','config.php','agencySettings','agencySettings','callback'],
+];
+$publicFamilies=[];$pendingFamilies=[];
+foreach($publicJourneys as [$family,$source,$marker,$value,$kind]){
+ yes(str_contains(file_get_contents($root.'/'.$source),$marker),'public journey tied to current source '.$family.' '.$value);
+ foreach([1001,1002] as $actor){
+  $from_id=$chat_id=$actor;$data=$kind==='callback'?$value:'';$text=$kind==='step'?'customer input':null;$userInfo=['step'=>$kind==='step'?$value:'none'];
+  yes($enterPublic(),'current public '.$kind.' passes actual ingress '.$actor.' '.$value);
+ }
+ $publicFamilies[$family]=true;if($kind==='step')$pendingFamilies[$family]=true;
+}
+// Actual current wallet route after the extracted ingress: fixed amount and
+// custom amount become owned SQL drafts; no credit/provider action is performed.
+require_once $root.'/src/Finance/ReceiptHelpers.php';require_once $root.'/src/Purchase/Core.php';require_once $root.'/src/Finance/WalletStart.php';
+$GLOBALS['allow_prompt_delete']=true;$publicWallet=[];$event=5000;$botUrl='https://fixture.invalid/';
+foreach([1001,1002] as $actor)foreach(['increaseWallet_100000','increaseWalletCustom'] as $selection){
+ $from_id=$chat_id=$actor;$message_id=77;$data=$selection;$text=null;$event++;
+ $stage=achbotWalletTopupStage('choose',$event-1,$message_id);$q=$connection->prepare('UPDATE users SET step=? WHERE userid=?');$q->bind_param('si',$stage,$actor);$q->execute();$q->close();
+ $userInfo=$connection->query('SELECT * FROM users WHERE userid='.$actor)->fetch_assoc();
+ $update=(object)['update_id'=>$event,'callback_query'=>(object)['id'=>'fixture-'.$event,'from'=>(object)['id'=>$actor,'is_bot'=>false],'message'=>(object)['message_id'=>$message_id,'chat'=>(object)['id'=>$actor,'type'=>'private']],'data'=>$data]];
+ yes($enterPublic(),'actual wallet selection passes production ingress '.$actor.' '.$selection);require $root.'/src/Finance/Routes/WalletRecharge.php';
+ if($selection==='increaseWalletCustom'){
+  $userInfo=$connection->query('SELECT * FROM users WHERE userid='.$actor)->fetch_assoc();
+  yes(str_starts_with($userInfo['step'],'achbotWalletTopup:amount:'),'actual custom selection reaches existing amount stage '.$actor);
+  $data='';$text='150000';$message_id=889;$event++;
+  $update=(object)['update_id'=>$event,'message'=>(object)['message_id'=>$message_id,'from'=>(object)['id'=>$actor,'is_bot'=>false],'chat'=>(object)['id'=>$actor,'type'=>'private'],'text'=>$text]];
+  yes($enterPublic(),'actual custom pending amount passes production ingress '.$actor);require $root.'/src/Finance/Routes/WalletRecharge.php';
+ }
+ $pay=$connection->query("SELECT user_id,price,state FROM pays WHERE user_id=$actor AND type='INCREASE_WALLET' AND state='pending' ORDER BY id DESC LIMIT 1")->fetch_assoc();
+ yes($pay&&(int)$pay['user_id']===$actor&&(int)$pay['price']===($selection==='increaseWalletCustom'?150000:100000),'actual admitted public wallet creates correct owned draft '.$actor.' '.$selection);$publicWallet[]=$actor.':'.$selection;
+}
+$GLOBALS['allow_prompt_delete']=false;$from_id=$chat_id=9004;$supportWalletDenied=[];$walletDeniedTotals=['financial_reads'=>0,'sql_writes'=>0,'transactions'=>0,'native_calls'=>0];
+foreach(['increaseUserWallet','decreaseUserWallet','createUserWalletDebt','increaseWalletUser1001','decreaseWalletUser1001','debtWalletUser1001','achbotWalletReason:credit:1001:100:7:77','achbotWalletDebt:1001:100:0:7:77:nonce:reason','walletDebtYes:nonce'] as $stage){
+ $data='';$text='100000';$userInfo=['step'=>$stage,'isAdmin'=>true,'userid'=>9004];$connection->resetAudit();
+ yes(!$enter(),'Support admin wallet stage rejected at actual ingress '.$stage);
+ require $root.'/src/Finance/Routes/AdminWallet.php';
+ $walletDeniedTotals['financial_reads']+=count($connection->financialReads);$walletDeniedTotals['sql_writes']+=count($connection->writes);$walletDeniedTotals['transactions']+=$connection->transactions;
+ yes($connection->writes===[]&&$connection->financialReads===[]&&$connection->transactions===0,'Support admin wallet stage has no effects '.$stage);$supportWalletDenied[]=$stage;
+}
+
+// Shared ticket callbacks retain customer ownership and staff capability.
+$first_name='Fixture';$username='fixture';$ticketIds=[];
+foreach([1001,1002,9004] as $ticketActor)for($i=0;$i<6;$i++){
+ $q=$connection->prepare("INSERT INTO chats(user_id,create_date,title,category,state,rate) VALUES(?,1700000000,?,'fixture',0,0)");$title='owned-'.$ticketActor.'-'.$i;$q->bind_param('is',$ticketActor,$title);$q->execute();$ticketId=(int)$q->insert_id;$q->close();$ticketIds[$ticketActor][]=$ticketId;
+ $q=$connection->prepare("INSERT INTO chats_info(chat_id,sent_date,msg_type,text) VALUES(?,1700000000,'USER',?)");$body='private-'.$ticketActor.'-'.$i;$q->bind_param('is',$ticketId,$body);$q->execute();$q->close();
+}
+$publicTicketActors=[];
+foreach([1001,1002,9004] as $actor){
+ $from_id=$chat_id=$actor;$data='userAllTickets';$text=null;$userInfo=$connection->query('SELECT * FROM users WHERE userid='.$actor)->fetch_assoc();$GLOBALS['events']=[];
+ yes($enterPublic(),'actual customer ticket list passes both ingress guards '.$actor);require $root.'/src/Support/CustomerConversation.php';
+ $buttons=[];foreach($GLOBALS['events'] as $ev)if(isset($ev['keys'])&&is_string($ev['keys']))foreach((json_decode($ev['keys'],true)['inline_keyboard']??[]) as $row)foreach($row as $button)if(isset($button['callback_data']))$buttons[]=$button['callback_data'];
+ yes(in_array('moreTicket_all_5',$buttons,true)&&in_array('replySupport_'.$ticketIds[$actor][0],$buttons,true),'actual customer list preserves shared callback bytes '.$actor);
+ $data='moreTicket_all_5';$GLOBALS['events']=[];yes($enterPublic(),'customer ticket pagination passes both ingress guards '.$actor);require $root.'/src/Support/QueueAndHistory.php';
+ $body=json_encode($GLOBALS['events']);yes(str_contains($body,'private-'.$actor.'-5')&&!preg_match('/private-(?!'.(int)$actor.'-)[0-9]+-/',$body),'actual customer pagination reads only own tickets '.$actor);
+ yes(str_contains($body,'replySupport_')&&!preg_match('/"callback_data":"reply_[0-9]/',$body),'customer ticket page keeps customer reply callbacks '.$actor);
+ $ticket=$ticketIds[$actor][0];$data='latestMsg_'.$ticket;$GLOBALS['events']=[];yes($enterPublic(),'customer history passes both ingress guards '.$actor);require $root.'/src/Support/QueueAndHistory.php';
+ yes(str_contains(json_encode($GLOBALS['events']),'private-'.$actor.'-0'),'actual shared history serves owned ticket '.$actor);
+ $GLOBALS['allow_prompt_delete']=true;$data='replySupport_'.$ticket;$GLOBALS['events']=[];yes($enterPublic(),'customer reply passes both ingress guards '.$actor);require $root.'/src/Support/CustomerConversation.php';
+ yes($connection->query('SELECT step FROM users WHERE userid='.$actor)->fetch_assoc()['step']==='sendMsg_'.$ticket,'actual customer reply stores owned message editor '.$actor);
+ $data='';$text='fresh owned reply';$userInfo=$connection->query('SELECT * FROM users WHERE userid='.$actor)->fetch_assoc();$GLOBALS['events']=[];yes($enterPublic(),'customer pending reply passes both ingress guards '.$actor);require $root.'/src/Support/CustomerConversation.php';
+ yes((int)$connection->query("SELECT COUNT(*) n FROM chats_info WHERE chat_id=$ticket AND text='fresh owned reply' AND msg_type='USER'")->fetch_assoc()['n']===1,'actual pending customer reply writes only owned ticket '.$actor);
+ $GLOBALS['allow_prompt_delete']=false;$data='closeTicket_'.$ticket;$text=null;$userInfo=$connection->query('SELECT * FROM users WHERE userid='.$actor)->fetch_assoc();yes($enterPublic(),'customer close passes both ingress guards '.$actor);require $root.'/src/Support/CustomerConversation.php';require $root.'/src/Support/QueueAndHistory.php';
+ yes((int)$connection->query('SELECT state FROM chats WHERE id='.$ticket)->fetch_assoc()['state']===2&&$from_id===$actor&&$admin===9001,'actual customer closes own ticket without replacing actor/owner '.$actor);$data='rate_'.$ticket.'_5';$text=null;$userInfo=$connection->query('SELECT * FROM users WHERE userid='.$actor)->fetch_assoc();yes($enterPublic(),'customer rating passes both ingress guards '.$actor);require $root.'/src/Support/CustomerConversation.php';
+ yes((int)$connection->query('SELECT rate FROM chats WHERE id='.$ticket)->fetch_assoc()['rate']===5,'actual customer rating retains full numeric ticket ID '.$actor);$publicTicketActors[]=$actor;
+}
+$foreignTicket=$ticketIds[1002][1];$ticketDenials=[];
+foreach([1001,9004] as $actor)foreach(['replySupport_'.$foreignTicket,'closeTicket_'.$foreignTicket,'latestMsg_'.$foreignTicket,'sendMsg_'.$foreignTicket,'rate_'.$foreignTicket.'_5','replySupport_'.$foreignTicket.'suffix','closeTicket_'.$foreignTicket.'suffix','latestMsg_'.$foreignTicket.'suffix','sendMsg_'.$foreignTicket.'suffix'] as $action){
+ $from_id=$chat_id=$actor;$data=str_starts_with($action,'sendMsg_')?'':$action;$text='forged customer text';$userInfo=['step'=>str_starts_with($action,'sendMsg_')?$action:'none','isAdmin'=>true,'userid'=>$actor];$GLOBALS['events']=[];$connection->resetAudit();
+ require $root.'/src/Support/CustomerConversation.php';require $root.'/src/Support/QueueAndHistory.php';
+ yes($connection->writes===[]&&count(array_filter($GLOBALS['events'],fn($e)=>$e['kind']==='ack'))>0,'actual foreign ticket callback/stale editor denied without write '.$actor.' '.$action);$ticketDenials[]=$actor.':'.$action;
+}
+foreach([9002,9003] as $actor){
+ $ticket=$ticketIds[1002][$actor===9002?2:3];$from_id=$chat_id=$actor;$data='closeTicket_'.$ticket;$text=null;$userInfo=['step'=>'none','isAdmin'=>true,'userid'=>$actor];
+ yes($enter(),'Manager/Operator retains staff ticket close '.$actor);require $root.'/src/Support/CustomerConversation.php';require $root.'/src/Support/QueueAndHistory.php';
+ yes((int)$connection->query('SELECT state FROM chats WHERE id='.$ticket)->fetch_assoc()['state']===2&&$from_id===$actor&&$admin===9001,'actual Manager/Operator closes foreign ticket with original actor/owner '.$actor);
+}
+$q=$connection->prepare("INSERT INTO chats_info(chat_id,sent_date,msg_type,text) VALUES(?,1700000001,'USER',?)");$attachment=json_encode(['file_id'=>'synthetic-attachment','caption'=>'fixture']);$q->bind_param('is',$foreignTicket,$attachment);$q->execute();$attachmentId=(int)$q->insert_id;$q->close();
+foreach([1001,1002,9002,9003,9004] as $actor){
+ $from_id=$chat_id=$actor;$data='';$text='/dlPic'.$attachmentId;$userInfo=['step'=>'none','isAdmin'=>true,'userid'=>$actor];$GLOBALS['events']=[];require $root.'/src/Support/QueueAndHistory.php';
+ yes((count(array_filter($GLOBALS['events'],fn($e)=>$e['kind']==='photo'))===1)===in_array($actor,[1002,9002,9003],true),'actual ticket attachment enforces ownership or staff operations '.$actor);
+}
+yes($GLOBALS['native_attempts']===[],'public wallet and ticket checks make no external calls');
+require $argv[8];$from_id=$chat_id=1001;
+foreach(['increaseWallet_100000','increaseWalletCustom','reciveApplications','replySupport_1','latestMsg_1'] as $cb)
+ yes(!publicBaselineAdminRequestAllowed($cb,null,'none'),'archived 86 checkpoint RED blocks real customer callback '.$cb);
+
 // Actual approval modules must reject Support before any financial query or write.
 require_once $root.'/src/Finance/ReceiptHelpers.php';require_once $root.'/src/Purchase/Core.php';
 $mainValues=achbotMessages('legacy_messages');$supportID='fixture_support';$botUsername='FixtureBot';$GLOBALS['native_attempts']=[];
-yes(achbotAdminAssignLevel($connection,9001,9001,9002,'manager'),'manual route explicit manager fixture');
-yes(achbotAdminAssignLevel($connection,9001,9001,9003,'operator'),'manual route explicit operator fixture');
 $makeReceipt=static function(string $hash,string $type='INCREASE_WALLET')use($connection):void{
  $q=$connection->prepare("INSERT INTO pays(hash_id,description,payid,user_id,type,plan_id,server_id,volume,day,price,request_date,state,message_id,chat_id,admins_messages) VALUES(?,'fixture','',1001,?,0,0,5,3,100,1700000000,'have_sent',111,'9001','[]')");
  $q->bind_param('ss',$hash,$type);$q->execute();$q->close();
@@ -243,7 +404,7 @@ yes($connection->query("SELECT state FROM pays WHERE hash_id='$hash'")->fetch_as
 yes($GLOBALS['native_attempts']===[],'approval regression makes no external calls even for archived RED');
 
 foreach($schema as $table=>$ddl)yes(preg_replace('/AUTO_INCREMENT=[0-9]+/','AUTO_INCREMENT=fixture',$connection->query('SHOW CREATE TABLE '.$table)->fetch_row()[1])===$ddl,'original schema preserved '.$table);
-echo json_encode(['complete'=>true,'cases'=>count($checks),'checks'=>$checks,'real_disposable_mariadb'=>true,'actual_admin_keyboard'=>true,'financial_boolean_preserved'=>true,'no_network'=>true,'actual_role_management_route'=>true,'actual_readonly_attention_hub'=>true,'baseline_red'=>true,'actual_approval_denials'=>true,'manager_operator_approval'=>true,'baseline_approval_callback_red'=>true,'baseline_decline_escape_red'=>true,'approval_family_coverage'=>['accCustom','approveRenewAcc','approveIncreaseDay','approveIncreaseVolume','accept','approvePayment','declineAction','declineActionReason'],'forbidden_financial_effects'=>$forbiddenTotals,'actual_positive_approval_levels'=>$positiveLevels,'actual_replay_protected_levels'=>$replayLevels],JSON_THROW_ON_ERROR);
+echo json_encode(['complete'=>true,'cases'=>count($checks),'checks'=>$checks,'real_disposable_mariadb'=>true,'actual_admin_keyboard'=>true,'financial_boolean_preserved'=>true,'no_network'=>true,'actual_role_management_route'=>true,'actual_readonly_attention_hub'=>true,'baseline_red'=>true,'actual_approval_denials'=>true,'manager_operator_approval'=>true,'baseline_approval_callback_red'=>true,'baseline_decline_escape_red'=>true,'approval_family_coverage'=>['accCustom','approveRenewAcc','approveIncreaseDay','approveIncreaseVolume','accept','approvePayment','declineAction','declineActionReason'],'forbidden_financial_effects'=>$forbiddenTotals,'actual_positive_approval_levels'=>$positiveLevels,'actual_replay_protected_levels'=>$replayLevels,'actual_production_bot_ingress'=>true,'actual_config_bootstrap_ingress'=>true,'actual_customer_app_downloads'=>true,'actual_customer_pagination_reply'=>true,'actual_ticket_attachment_authorization'=>true,'forbidden_admin_wallet_effects'=>$walletDeniedTotals,'actual_customer_ticket_actors'=>$publicTicketActors,'actual_foreign_ticket_denials'=>$ticketDenials,'public_callback_collision_baseline_red'=>true,'actual_public_main_menus'=>$publicMain,'public_customer_journey_families'=>array_keys($publicFamilies),'public_pending_stage_families'=>array_keys($pendingFamilies),'actual_customer_wallet_draft_paths'=>$publicWallet,'support_admin_wallet_stages_denied'=>$supportWalletDenied],JSON_THROW_ON_ERROR);
 '''
 def main():
     p=argparse.ArgumentParser();p.add_argument('--run-disposable',action='store_true',required=True);p.add_argument('--report',type=Path)
@@ -268,10 +429,13 @@ def main():
             path=work/('archived-'+filename);path.write_text(rebased);archived.append(str(path))
         raw=subprocess.check_output(['git','show',prior+':src/Admin/Access.php'],cwd=ROOT,text=True)
         path=work/'archived-access.php';path.write_text(raw.replace('achbotAdmin','baselineAdmin'));archived.append(str(path))
+        public_prior='86a1ea4c42d78389b0795700ad83764828b94844'
+        raw=subprocess.check_output(['git','show',public_prior+':src/Admin/Access.php'],cwd=ROOT,text=True)
+        path=work/'archived-public-access.php';path.write_text(raw.replace('achbotAdmin','publicBaselineAdmin'));archived.append(str(path))
         driver=work/'r5-roles.php';driver.write_text(PHP)
         r=subprocess.run(['php','-d','disable_functions=curl_init,curl_exec',str(driver),str(app),str(work/'mysql.sock'),owned.NAMES[1],str(baseline),*archived],env=env,capture_output=True,text=True,timeout=45)
         if r.returncode:raise RuntimeError(r.stdout[-1000:]+'\n'+r.stderr[-4000:])
-        report=json.loads(r.stdout);report['baseline_source']=BASE;report['approval_baseline_source']=prior
+        report=json.loads(r.stdout);report['baseline_source']=BASE;report['approval_baseline_source']=prior;report['public_collision_baseline_source']=public_prior
     if a.report:a.report.write_text(json.dumps(report,ensure_ascii=False,indent=2)+'\n')
     print(json.dumps({k:v for k,v in report.items() if k!='checks'}))
 if __name__=='__main__':main()

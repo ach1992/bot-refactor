@@ -79,11 +79,11 @@ function achbotAdminRequestCapability(string $value): ?string {
         'stats'=>'~^(?:botReports|show_stats_menu|stats_|top_50_|agent_users_list|plan_sales|server_sales|custom_sales_date|awaitingDateRange)~D',
         'servers'=>'~^(?:serversSetting|nextServerPage|showServerSettings|toggleServerState|addNewServer|addManagedServer|addNewMarzbanPanel|pgConnections|pgAddConnection|pgNewServer|manageMarzbanPanelGroups|addMarzbanPanelGroup|newMarzbanPanelGroup|deleteMarzbanPanelGroup_|editMarzbanGroup|setServerPanelGroup_|changesServer|editServer|editsServer|changeServerType|chhangeServerType|changePortType|changeRealityState|wizwizdeleteserver|yesDeleteServer|marzbanHostSettings|selectHost|saveServerHost|editSubLinks|subLinksInput|serverDisplay|achbotDisplay\\||achbotManage\\||achbotField\\||am\\||addserverName|addServer|pg:|pgRotate|pgServerGroups)~D',
         'plans'=>'~^(?:backplan|planDetails|plansList|addNewPlan|addNewRahgozarPlan|editDestName|editSpiderX|editFlow|newPlanForServer|addManagedPlan|addNewMarzbanPlan|planDays|planVolume|pgPlanGroups|categoriesSetting|nextCategoryPage|addNewCategory|wizwizcategory|wizwizplan|editCustom|editPFlow|volumePlanSettings|dayPlanSettings|addNewDayPlan|addNewVolumePlan|deleteDayPlan|deleteVolumePlan|changeDayPlan|changeVolumePlan)~D',
-        'agents'=>'~^(?:agentsList|nextAgentList|agentDetails|removeAgent|toggleAgent_|agentPercentDetails|editAgentDiscount|nextAgentDiscount|addDiscountServerAgent|addDiscountPlanAgent|removePercentOfAgent|reciveApplications|agencyApprove|agencyDecline|rejectedAgentList|releaseRejectedAgent)~D',
+        'agents'=>'~^(?:agentsList|nextAgentList|agentDetails|removeAgent|toggleAgent_|agentPercentDetails|editAgentDiscount|nextAgentDiscount|addDiscountServerAgent|addDiscountPlanAgent|removePercentOfAgent|agencyApprove|agencyDecline|rejectedAgentList|releaseRejectedAgent)~D',
         'customers'=>'~^(?:userReports|userInfoDetails|quickUserDetails)~D',
         'moderation'=>'~^(?:banUser|unbanUser|toggleBan_)~D',
         'orders'=>'~^(?:manageorderdatabase|showUserSubscriptions|selectOrderByRemark_userid_|returnToPanel_|deleteOrder_|confirmDeleteOrder_|toggleNotif_|orderWarningStatus_|changeExpireDate_|changeToken_|changeUUID_|changeServerId_|selectServerId_|changeFileId_|selectFileId_|quickUserOrderDetails_|userOrderDetails|searchUsersConfig|adminToggleAutoRenew|awaitingOrderRemarkOnly|awaitingUserIdSelection_|manageOrderById_|awaitingExpireChange_|awaitingToken_|awaitingUUID_)~D',
-        'operations'=>'~^(?:managePanel|messageToSpeceficUser|sendMessageToUser|increaseUserWallet|decreaseUserWallet|achbotWalletAdmin|increaseWallet|decreaseWallet|createUserWalletDebt|walletDebt|addSubscriptionToCustomer|createMultipleAccounts|createAcc|awaiting_userid_input|giftVolumeAndDay|giftTo|giftServer|achbotDirectGift|mainMenuButtons|delMainButton|addNewMainButton|setMainButtonAnswer|discount_codes|addDiscount|editDiscount|delDiscount|editD|setDiscount|removeDiscountUser|toggleDiscount|copyHash|message2All|broadcast|editBroadcastAsk_|chooseSendGroup_|cancelBroadcast|noDontSend2all|yesSend2All|pinManageAll|pinManageSelect_|jobCancel_|jobCreate_|jobsStatus|s2a_|bc_edit_|ticketsList|ticketsCategory|addTicketCategory|delTicketCat_|allTickets|newTickets|openTickets|replySupport_|reply_|answer_|closeTicket_|moreTicket_|latestMsg_|accept[A-Za-z0-9_-]|accCustom|approveRenewAcc|approveIncreaseDay|approveIncreaseVolume|approvePayment|declineAction|changeCustomPort|changeCustomSni|changeCustomPath|pgResetAccount)~D',
+        'operations'=>'~^(?:managePanel|messageToSpeceficUser|sendMessageToUser|increaseUserWallet|decreaseUserWallet|achbotWalletAdmin|increaseWalletUser|decreaseWalletUser|debtWalletUser|achbotWalletReason:|achbotWalletDebt:|createUserWalletDebt|walletDebt|addSubscriptionToCustomer|createMultipleAccounts|createAcc|awaiting_userid_input|giftVolumeAndDay|giftTo|giftServer|achbotDirectGift|mainMenuButtons|delMainButton|addNewMainButton|setMainButtonAnswer|discount_codes|addDiscount|editDiscount|delDiscount|editD|setDiscount|removeDiscountUser|toggleDiscount|copyHash|message2All|broadcast|editBroadcastAsk_|chooseSendGroup_|cancelBroadcast|noDontSend2all|yesSend2All|pinManageAll|pinManageSelect_|jobCancel_|jobCreate_|jobsStatus|s2a_|bc_edit_|ticketsList|ticketsCategory|addTicketCategory|delTicketCat_|allTickets|newTickets|openTickets|reply_|answer_|accept[A-Za-z0-9_-]|accCustom|approveRenewAcc|approveIncreaseDay|approveIncreaseVolume|approvePayment|declineAction|changeCustomPort|changeCustomSni|changeCustomPath|pgResetAccount)~D',
     ];
     foreach ($groups as $capability=>$pattern) if (preg_match($pattern,$value)) return $capability;
     return null;
@@ -103,6 +103,17 @@ function achbotAdminRequestAllowed(?string $callback,?string $text,string $step)
         } elseif (!achbotAdminCan($capability)) return false;
     }
     return true;
+}
+/** Shared ticket buttons are customer routes; only their own ticket or a
+ * current operations-capable staff actor may inspect/manage another ticket. */
+function achbotAdminTicketAllowed(mysqli $db,int $actor,int $primary,int $ticket,bool $staff=true): bool {
+    if ($actor<=0 || $ticket<=0) return false;
+    if ($staff && achbotAdminCanFor($db,$actor,$primary,'operations')) return true;
+    try {
+        $q=$db->prepare('SELECT user_id FROM chats WHERE id=?');
+        $q->bind_param('i',$ticket);$q->execute();$rows=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
+        return count($rows)===1 && (int)$rows[0]['user_id']===$actor;
+    } catch (Throwable $ignored) {return false;}
 }
 function achbotAdminDeny(): void {
     $message=achbotMessage('admin.roles.denied');
