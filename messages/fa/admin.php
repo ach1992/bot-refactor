@@ -1241,6 +1241,13 @@ return [
 
     // ── منوها و گزارش‌های مدیریت ──
     'admin_settings' => [
+        'display.delivery_configs' => ['text' => '🛒 کانفیگ‌های بعد از خرید', 'parameters' => []],
+        'display.view_configs' => ['text' => '📋 کانفیگ‌های صفحهٔ سفارش', 'parameters' => []],
+        'display.delivery_selection' => ['text' => '🛒 کانفیگ‌های بعد از خرید: {selection}', 'parameters' => ['selection']],
+        'display.view_selection' => ['text' => '📋 کانفیگ‌های صفحهٔ سفارش: {selection}', 'parameters' => ['selection']],
+        'display.choose_context' => ['text' => 'بخش موردنظر را برای انتخاب کانفیگ مشخص کنید.', 'parameters' => []],
+        'display.context_guide' => ['text' => 'انتخاب کانفیگ‌های بعد از خرید و صفحهٔ سفارش مستقل است. تا زمان ویرایش هر بخش، انتخاب فعلی آن حفظ می‌شود.', 'parameters' => []],
+        'display.editing_context' => ['text' => 'تنظیم انتخاب کانفیگ برای {context}', 'parameters' => ['context']],
         'management.plan_days_unlimited' => "📅 مدت: نامحدود",
         'management.plan_volume_unlimited' => "📦 حجم: نامحدود",
         'management.plan_days_unknown' => "📅 مدت: نامشخص",

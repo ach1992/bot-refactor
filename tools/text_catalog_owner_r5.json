@@ -3325,6 +3325,89 @@
       "source_paths": [
         "src/Admin/Roles.php"
       ]
+    },
+    "admin_settings.display.delivery_configs": {
+      "audience": "admin",
+      "entry": {
+        "text": "🛒 کانفیگ‌های بعد از خرید",
+        "parameters": []
+      },
+      "source_paths": [
+        "src/Subscription/ServerDisplaySettings.php"
+      ],
+      "reason": "Owner shared-selection follow-up: independent optional after-purchase and order-page config selections reuse the existing native selectors and shared fallback."
+    },
+    "admin_settings.display.view_configs": {
+      "audience": "admin",
+      "entry": {
+        "text": "📋 کانفیگ‌های صفحهٔ سفارش",
+        "parameters": []
+      },
+      "source_paths": [
+        "src/Subscription/ServerDisplaySettings.php"
+      ],
+      "reason": "Owner shared-selection follow-up: independent optional after-purchase and order-page config selections reuse the existing native selectors and shared fallback."
+    },
+    "admin_settings.display.delivery_selection": {
+      "audience": "admin",
+      "entry": {
+        "text": "🛒 کانفیگ‌های بعد از خرید: {selection}",
+        "parameters": [
+          "selection"
+        ]
+      },
+      "source_paths": [
+        "src/Subscription/ServerDisplaySettings.php"
+      ],
+      "reason": "Owner shared-selection follow-up: independent optional after-purchase and order-page config selections reuse the existing native selectors and shared fallback."
+    },
+    "admin_settings.display.view_selection": {
+      "audience": "admin",
+      "entry": {
+        "text": "📋 کانفیگ‌های صفحهٔ سفارش: {selection}",
+        "parameters": [
+          "selection"
+        ]
+      },
+      "source_paths": [
+        "src/Subscription/ServerDisplaySettings.php"
+      ],
+      "reason": "Owner shared-selection follow-up: independent optional after-purchase and order-page config selections reuse the existing native selectors and shared fallback."
+    },
+    "admin_settings.display.choose_context": {
+      "audience": "admin",
+      "entry": {
+        "text": "بخش موردنظر را برای انتخاب کانفیگ مشخص کنید.",
+        "parameters": []
+      },
+      "source_paths": [
+        "src/Subscription/ServerDisplaySettings.php"
+      ],
+      "reason": "Owner shared-selection follow-up: independent optional after-purchase and order-page config selections reuse the existing native selectors and shared fallback."
+    },
+    "admin_settings.display.context_guide": {
+      "audience": "admin",
+      "entry": {
+        "text": "انتخاب کانفیگ‌های بعد از خرید و صفحهٔ سفارش مستقل است. تا زمان ویرایش هر بخش، انتخاب فعلی آن حفظ می‌شود.",
+        "parameters": []
+      },
+      "source_paths": [
+        "src/Subscription/ServerDisplaySettings.php"
+      ],
+      "reason": "Owner shared-selection follow-up: independent optional after-purchase and order-page config selections reuse the existing native selectors and shared fallback."
+    },
+    "admin_settings.display.editing_context": {
+      "audience": "admin",
+      "entry": {
+        "text": "تنظیم انتخاب کانفیگ برای {context}",
+        "parameters": [
+          "context"
+        ]
+      },
+      "source_paths": [
+        "src/Subscription/ServerDisplaySettings.php"
+      ],
+      "reason": "Owner shared-selection follow-up: independent optional after-purchase and order-page config selections reuse the existing native selectors and shared fallback."
     }
   }
 }
