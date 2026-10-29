@@ -461,7 +461,7 @@ if (preg_match('/wait(?:CustomCart|CustomGift|CustomUsdt)Receipt(.*)/', $userInf
 }
 
 if (preg_match('/^accCustom(.+)$/D', $data, $match) && $text != $buttonValues['cancel']) {
-    if (!achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'operations')) {
+    if (!achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'payments')) {
         alert(\achbotMessage('payment.checkout.alert.873a4950ab'), true);
         return;
     }
@@ -673,7 +673,7 @@ if (preg_match('/^accCustom(.+)$/D', $data, $match) && $text != $buttonValues['c
             if (
                 isset($msgInfo['chat_id'], $msgInfo['message_id']) &&
                 $msgInfo['chat_id'] != $payInfo['chat_id'] &&
-                achbotAdminRecipientAllowed($connection,$msgInfo['chat_id'],(int)$admin)
+                achbotAdminRecipientAllowed($connection,$msgInfo['chat_id'],(int)$admin,'payments')
             ) {
                 editKeys($keys, $msgInfo['message_id'], $msgInfo['chat_id']);
             }

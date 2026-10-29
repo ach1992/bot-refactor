@@ -343,7 +343,7 @@ if (preg_match('/wait(?:RenewCart|RenewGift|RenewUsdt)Receipt(.*)/', $userInfo['
     exit;
 }
 
-if(preg_match('/approveRenewAcc(.*)/',$data,$match) && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'operations')){
+if(preg_match('/^approveRenewAcc(.*)/',$data,$match) && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'payments')){
     $connection->begin_transaction();
     $localCommitted=false;
     try {
@@ -498,7 +498,7 @@ if(preg_match('/approveRenewAcc(.*)/',$data,$match) && achbotAdminCanFor($connec
         if (is_array($adminMessages)) { 
             foreach ($adminMessages as $msgInfo) { 
                 if (isset($msgInfo['chat_id'], $msgInfo['message_id']) && $msgInfo['chat_id'] != $deferredAdminKeys['chat_id'] &&
-                    achbotAdminRecipientAllowed($connection,$msgInfo['chat_id'],(int)$admin)) {
+                    achbotAdminRecipientAllowed($connection,$msgInfo['chat_id'],(int)$admin,'payments')) {
                     editKeys($deferredAdminKeys['keys'], $msgInfo['message_id'], $msgInfo['chat_id']); 
                 } 
             } 

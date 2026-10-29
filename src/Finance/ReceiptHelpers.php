@@ -1033,7 +1033,7 @@ function achbotAutoBankFinishEdit(mysqli $db, array $pay,
  */
 function achbotApproveManualWalletTopup(mysqli $connection, string $hashId, int $adminId, ?int $primary=null): ?array {
     if ($adminId <= 0 || !preg_match('/^[A-Za-z0-9_-]{1,50}$/D', $hashId)) return null;
-    if (!achbotAdminCanFor($connection,$adminId,$primary??(int)($GLOBALS['admin']??0),'operations')) return null;
+    if (!achbotAdminCanFor($connection,$adminId,$primary??(int)($GLOBALS['admin']??0),'payments')) return null;
     try {
         $connection->begin_transaction();
         $stmt = $connection->prepare('SELECT id,user_id,type,price,state FROM pays
@@ -2054,7 +2054,7 @@ function sendReceiptToAdminsAndUpdatePay(
             'caption' => $caption,
             'reply_markup' => $adminKeyboard,
             'parse_mode' => 'HTML'
-        ], $hashId);
+        ], $hashId, ['capability'=>'payments']);
     } catch (Throwable $ignored) {
         // The primary operator message and protected DB transition succeeded.
     }

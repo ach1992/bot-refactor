@@ -300,7 +300,7 @@ if (preg_match('/wait(?:IncreaseDay|IncreaseDayGift|IncreaseDayUsdt)Receipt(.*)/
     exit;
 }
 
-if (preg_match('/approveIncreaseDay(.*)/', $data, $match) && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'operations')) {
+if (preg_match('/^approveIncreaseDay(.*)/', $data, $match) && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'payments')) {
     $connection->begin_transaction();
     $localCommitted=false;
     try {
@@ -461,7 +461,7 @@ if (preg_match('/approveIncreaseDay(.*)/', $data, $match) && achbotAdminCanFor($
         if (is_array($adminMessages)) {
             foreach ($adminMessages as $msgInfo) {
                 if (isset($msgInfo['chat_id'], $msgInfo['message_id']) && $msgInfo['chat_id'] != $payParam['chat_id'] &&
-                    achbotAdminRecipientAllowed($connection,$msgInfo['chat_id'],(int)$admin)) {
+                    achbotAdminRecipientAllowed($connection,$msgInfo['chat_id'],(int)$admin,'payments')) {
                     editKeys($keys, $msgInfo['message_id'], $msgInfo['chat_id']);
                 }
             }
@@ -1123,7 +1123,7 @@ if (preg_match('/wait(?:IncreaseVolume|IncreaseVolumeGift|IncreaseVolumeUsdt)Rec
     exit;
 }
 
-if (preg_match('/approveIncreaseVolume(.*)/', $data, $match) && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'operations')) {
+if (preg_match('/^approveIncreaseVolume(.*)/', $data, $match) && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'payments')) {
     $connection->begin_transaction();
     $localCommitted=false;
     try {
@@ -1284,7 +1284,7 @@ if (preg_match('/approveIncreaseVolume(.*)/', $data, $match) && achbotAdminCanFo
         if (is_array($adminMessages)) {
             foreach ($adminMessages as $msgInfo) {
                 if (isset($msgInfo['chat_id'], $msgInfo['message_id']) && $msgInfo['chat_id'] != $payParam['chat_id'] &&
-                    achbotAdminRecipientAllowed($connection,$msgInfo['chat_id'],(int)$admin)) {
+                    achbotAdminRecipientAllowed($connection,$msgInfo['chat_id'],(int)$admin,'payments')) {
                     editKeys($keys, $msgInfo['message_id'], $msgInfo['chat_id']);
                 }
             }
