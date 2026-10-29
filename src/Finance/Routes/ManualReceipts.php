@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__.'/../../Admin/Access.php';
 /** AChBot V8: source-pinned financial compatibility module. */
 if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     http_response_code(404);
@@ -6,12 +7,14 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
 }
 require_once __DIR__ . '/../../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
 
+if (!achbotAdminRequestAllowed(is_string($data??null)?$data:null,is_string($text??null)?$text:null,(string)($userInfo['step']??''))) {achbotAdminDeny();return;}
+
 
 // Unified read-only attention hub. Existing NP child inquiry and exact
 // BUY_SUB CREATE readback remain specialized, separately gated tools.
 $attentionMatch=[];
 if (preg_match('/^attention(Inbox|Case)(?:_([1-9][0-9]{0,17}))?$/D',(string)$data,$attentionMatch)) {
-    if ((int)$admin<=0 || (int)$from_id!==(int)$admin || (int)($chat_id??0)!==(int)$admin) {
+    if (!achbotAdminCan('review',(int)$from_id) || (int)($chat_id??0)!==(int)$from_id) {
         answerCallbackQuery($callbackId,\achbotMessage('manual_payment.manual_receipts.alert.0a23f88410'),true);
         return;
     }
@@ -46,12 +49,12 @@ if (preg_match('/^attention(Inbox|Case)(?:_([1-9][0-9]{0,17}))?$/D',(string)$dat
                 \achbotMessage('manual_payment.manual_receipts.text.11acfb8b65').$escAttention($a['stage']??\achbotMessage('manual_payment.manual_receipts.text.8e25fa8b4c')).\achbotMessage('manual_payment.manual_receipts.text.57895a27e1').$escAttention($a['provider_status']??\achbotMessage('manual_payment.manual_receipts.text.5749a86140'))."</code>\n\n".
                 achbotRecoveryEvidenceText($pay,$a).achbotRecoverySubjectText($pay);
             if ($a && (string)($a['payment_id']??'')!=='') $body.=\achbotMessage('manual_payment.manual_receipts.body.5c0b1f20fc').$escAttention($a['payment_id'])."</code>\n";
-            if (($a['provider']??'')==='nowpayments') {
+            if ((int)$from_id===(int)$admin && ($a['provider']??'')==='nowpayments') {
                 $stmt=$connection->prepare('SELECT id FROM payment_attempts WHERE pay_row_id=? LIMIT 1');
                 $stmt->bind_param('i',$id);$stmt->execute();$attemptId=(int)($stmt->get_result()->fetch_assoc()['id']??0);$stmt->close();
                 if ($attemptId>0) $rows[]=[['text'=>\achbotMessage('manual_payment.manual_receipts.button.8b5b783029'),'callback_data'=>'npReviewCase_'.$attemptId]];
             }
-            if ($pay['type']==='BUY_SUB' && in_array($pay['state'],['processing','processing_wallet','paid'],true))
+            if ((int)$from_id===(int)$admin && $pay['type']==='BUY_SUB' && in_array($pay['state'],['processing','processing_wallet','paid'],true))
                 $rows[]=[['text'=>\achbotMessage('manual_payment.manual_receipts.button.ea309dff23'),'callback_data'=>'bankReviewCase_'.$id]];
             $manual=achbotPayUxManualProvider((string)($a['provider']??''));
             if ($manual && $pay['state']==='have_sent') $body.=\achbotMessage('manual_payment.manual_receipts.body.189e0e519d');
@@ -64,15 +67,15 @@ if (preg_match('/^attention(Inbox|Case)(?:_([1-9][0-9]{0,17}))?$/D',(string)$dat
             !achbotPayUxTable($connection,'automatic_renewal_attempts'))
             $body.=\achbotMessage('manual_payment.manual_receipts.body.75381485c2');
         $body.=\achbotMessage('manual_payment.manual_receipts.body.2d8dc82a81');
-        $rows[]=[['text'=>\achbotMessage('manual_payment.manual_receipts.button.3d941bcb15'),'callback_data'=>'npReviewInbox']];
+        if ((int)$from_id===(int)$admin) $rows[]=[['text'=>\achbotMessage('manual_payment.manual_receipts.button.3d941bcb15'),'callback_data'=>'npReviewInbox']];
         $rows[]=[['text'=>\achbotMessage('manual_payment.manual_crypto.button.1121ffbf88'),'callback_data'=>'evidenceHome']];
         answerCallbackQuery($callbackId,\achbotMessage('manual_payment.manual_receipts.alert.c3fb4bd548'));
         $markup=json_encode(['inline_keyboard'=>$rows],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
-        $result=editText($message_id,$body,$markup,'HTML',$admin);
-        if (!is_object($result) || ($result->ok??false)!==true) sendMessage($body,$markup,'HTML',$admin);
+        $result=editText($message_id,$body,$markup,'HTML',(int)$from_id);
+        if (!is_object($result) || ($result->ok??false)!==true) sendMessage($body,$markup,'HTML',(int)$from_id);
     } catch (Throwable $error) {
         error_log('achbot_attention_inspection_unavailable class='.get_class($error));
-        sendMessage(\achbotMessage('manual_payment.manual_receipts.message.c46e102fab'),null,'HTML',$admin);
+        sendMessage(\achbotMessage('manual_payment.manual_receipts.message.c46e102fab'),null,'HTML',(int)$from_id);
     }
     return;
 }
@@ -508,7 +511,7 @@ if ($isInbox ||
     return;
 }
 
-if (preg_match('/^approvePayment(.*)/', $data, $match) && ($from_id == $admin || $userInfo['isAdmin'] == true)) {
+if (preg_match('/^approvePayment(.*)/', $data, $match) && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'payments')) {
     $hash_id = $match[1];
     // Keep the existing receipt display identifiers for post-commit updates.
     $stmt = $connection->prepare('SELECT * FROM pays WHERE hash_id=? LIMIT 1');
@@ -520,7 +523,7 @@ if (preg_match('/^approvePayment(.*)/', $data, $match) && ($from_id == $admin ||
         alert(\achbotMessage('manual_payment.manual_receipts.alert.9e5ae0bfa1'));
         return;
     }
-    $approved = achbotApproveManualWalletTopup($connection, $hash_id, (int)$from_id);
+    $approved = achbotApproveManualWalletTopup($connection, $hash_id, (int)$from_id, (int)$admin);
     if ($approved === null) {
         alert(\achbotMessage('manual_payment.manual_receipts.alert.2d252fd96f'));
         return;
@@ -556,7 +559,8 @@ if (preg_match('/^approvePayment(.*)/', $data, $match) && ($from_id == $admin ||
         foreach ($adminMessages as $msgInfo) {
             if (
                 isset($msgInfo['chat_id'], $msgInfo['message_id']) &&
-                $msgInfo['chat_id'] != $payInfo['chat_id']
+                $msgInfo['chat_id'] != $payInfo['chat_id'] &&
+                achbotAdminStoredRecipientAllowed($connection,$msgInfo['chat_id'],(int)$admin)
             ) {
                 try {
                     editKeys($keys, $msgInfo['message_id'], $msgInfo['chat_id']);
@@ -575,7 +579,7 @@ if (preg_match('/^approvePayment(.*)/', $data, $match) && ($from_id == $admin ||
     sendMessage($adminMessages, null, "html", $admin);
 
     // ارسال پیام به کاربر
-    sendMessage(\achbotMessage('manual_payment.manual_receipts.message.f568baa065') . number_format($price) . \achbotMessage('manual_payment.manual_receipts.message.f6331b33af', ['supportID' => $supportID]), null, "HTML", $userId);
+    sendMessage(\achbotMessage('manual_payment.manual_receipts.message.f568baa065') . number_format($price) . \achbotMessageHtml('manual_payment.manual_receipts.message.f6331b33af', ['supportID' => $supportID]), null, "HTML", $userId);
 }
 
 // Decline Cart To Cart by ACh
@@ -586,7 +590,7 @@ if (preg_match('/^noop_(.+)$/', $data, $m)) {
 	exit;
 }
 
-if (preg_match('/^declineAction_(.+)$/', $data, $match) && ($from_id == $admin || !empty($userInfo['isAdmin']))) {
+if (preg_match('/^declineAction_(.+)$/', $data, $match) && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'payments')) {
     $hash_id = $match[1];
 
     // بررسی وجود و وضعیت پرداخت
@@ -612,7 +616,7 @@ if (preg_match('/^declineAction_(.+)$/', $data, $match) && ($from_id == $admin |
 
 if (preg_match('/^declineActionReason_(.+)_(\d+)$/', $userInfo['step'], $match) &&
     $text != $buttonValues['cancel'] &&
-    ($from_id == $admin || !empty($userInfo['isAdmin']))) {
+    achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'payments')) {
     setUser();
     $hash_id = $match[1];
     $message_id = $match[2];
@@ -679,7 +683,8 @@ if (preg_match('/^declineActionReason_(.+)_(\d+)$/', $userInfo['step'], $match) 
         foreach ($adminMessages as $msgInfo) {
             if (
                 isset($msgInfo['chat_id'], $msgInfo['message_id']) &&
-                $msgInfo['chat_id'] != $payInfo['chat_id']
+                $msgInfo['chat_id'] != $payInfo['chat_id'] &&
+                achbotAdminStoredRecipientAllowed($connection,$msgInfo['chat_id'],(int)$admin)
             ) {
                 editKeys($keys, $msgInfo['message_id'], $msgInfo['chat_id']);
             }

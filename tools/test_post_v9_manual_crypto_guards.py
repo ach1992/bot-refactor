@@ -271,6 +271,11 @@ def check() -> dict:
                    [str(ROOT),json.dumps({'evm':'0x'+'1'*40})])['evm']['bep20'] is True
         cases.append('unrelated_evm_validation_preserved')
 
+        # The delegated positive gateway writer needs the explicit Manager
+        # tier; ordinary legacy staff correctly resolve to Operator now.
+        sql(work,env,"INSERT INTO setting (type,value) VALUES "
+                     "('ADMIN_ROLE_9002','manager')")
+
         toggles={
             'weSwapState':'on', 'tronWallet':'on',
             'agencyState':'off','cartToCartAutoAcceptType':'0',

@@ -12,6 +12,17 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
 require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
 
 
+require_once __DIR__.'/../Admin/Access.php';
+// Customer reply/rating stages never become staff authority, even for a cached
+// isAdmin marker. Shared close/history buttons are checked at their handlers.
+foreach ([(string)($data??''),(string)($userInfo['step']??'')] as $ticketAction) {
+    if (preg_match('/^(?:replySupport_|sendMsg_|rate_)/',$ticketAction) &&
+        (preg_match('/^(?:(?:replySupport_|sendMsg_)([1-9][0-9]*)|rate_([1-9][0-9]*)_[1-5])$/D',$ticketAction,$ticketMatch)!==1 ||
+         !achbotAdminTicketAllowed($connection,(int)$from_id,(int)$admin,(int)($ticketMatch[1]?:$ticketMatch[2]),false))) {
+        achbotAdminDeny();return;
+    }
+}
+
 if($data== "usersOpenTickets" || $data == "userAllTickets"){
     if($data== "usersOpenTickets"){
         $stmt = $connection->prepare("SELECT * FROM `chats` WHERE `state` != 2 AND `user_id` = ? ORDER BY `state` ASC, `create_date` DESC");
@@ -89,7 +100,9 @@ if($data== "usersOpenTickets" || $data == "userAllTickets"){
         exit();
 	}
 }
-if(preg_match('/^closeTicket_(\d+)/',$data,$match) and  $from_id != $admin){
+if(preg_match('/^closeTicket_([1-9][0-9]*)$/D',$data,$match) &&
+   !achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'operations') &&
+   achbotAdminTicketAllowed($connection,(int)$from_id,(int)$admin,(int)$match[1],false)){
     $chatRowId = $match[1];
     $stmt = $connection->prepare("SELECT * FROM `chats` WHERE `id` = ?");
     $stmt->bind_param("i", $chatRowId);
@@ -97,7 +110,6 @@ if(preg_match('/^closeTicket_(\d+)/',$data,$match) and  $from_id != $admin){
     $ticketInfo = $stmt->get_result()->fetch_assoc();
     $stmt->close();
     
-    $from_id = $ticketInfo['user_id'];
     $title = $ticketInfo['title'];
     $category = $ticketInfo['category'];
         
@@ -142,12 +154,12 @@ if(preg_match('/^closeTicket_(\d+)/',$data,$match) and  $from_id != $admin){
     sendToAllAdmins('sendMessage', ['text' => \achbotMessage('support.customer_conversation.user_all_tickets.message.2baf15e3c0'), 'reply_markup' => $keys, 'parse_mode' => "HTML"]);
 
 }
-if(preg_match('/^replySupport_(.*)/',$data,$match)){
+if(preg_match('/^replySupport_([1-9][0-9]*)$/D',$data,$match)){
     delMessage();
     sendMessage(\achbotMessage('support.customer_conversation.user_all_tickets.message.13e7a1cdbb'),$cancelKey);
 	setUser("sendMsg_" . $match[1]);
 }
-if(preg_match('/^sendMsg_(.*)/',$userInfo['step'],$match)  and $text!=$buttonValues['cancel']){
+if(preg_match('/^sendMsg_([1-9][0-9]*)$/D',$userInfo['step'],$match)  and $text!=$buttonValues['cancel']){
     $ticketRowId = $match[1];
 
     $stmt = $connection->prepare("SELECT * FROM `chats` WHERE `id` = ?");
@@ -205,7 +217,7 @@ if(preg_match('/^sendMsg_(.*)/',$userInfo['step'],$match)  and $text!=$buttonVal
     sendMessage(\achbotMessage('support.create_ticket.message.5c9c3dda00'),getMainKeys(),"HTML");
 	setUser("none");
 }
-if(preg_match("/^rate_+([0-9])+_+([0-9])/",$data,$match)){
+if(preg_match('/^rate_([1-9][0-9]*)_([1-5])$/D',$data,$match)){
     $rowChatId = $match[1];
     $rate = $match[2];
     

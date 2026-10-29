@@ -32,6 +32,7 @@ require_once __DIR__ . '/src/Purchase/Core.php';
 require_once __DIR__ . '/src/Finance/PaymentLifecycle.php';
 require_once __DIR__ . '/src/Finance/GatewayRuleAdmin.php';
 require_once __DIR__ . '/src/Finance/PaymentKeyAdmin.php';
+require_once __DIR__.'/src/Admin/Access.php';
 
 function tgRetryAfter($res){
     require_once __DIR__ . '/src/Telegram/Response.php';
@@ -315,6 +316,12 @@ if(!is_null($botState)) $botState = json_decode($botState,true);
 else $botState = array();
 $stmt->close();
 
+// Enforce the same staff level before bootstrap callbacks or outgoing reads.
+if (defined('ACHBOT_VERIFIED_WEBHOOK_ENTRYPOINT') &&
+    !achbotAdminRequestAllowed(is_string($data??null)?$data:null,is_string($text??null)?$text:null,(string)($userInfo['step']??''))) {
+    achbotAdminDeny();exit;
+}
+
 $supportID = $botState['supportID'];
 $channelLock = $botState['lockChannel'];
 $joniedState= bot('getChatMember', ['chat_id' => $channelLock,'user_id' => $from_id])->result->status;
@@ -326,9 +333,20 @@ $joniedState= bot('getChatMember', ['chat_id' => $channelLock,'user_id' => $from
 require_once __DIR__ . '/src/Finance/WalletStart.php';
 function replaceAllPlaceholdersInMainValues(array $mainValues, array $botState, $userId = '') {
     require_once __DIR__ . '/src/Presentation/Text.php';
-    return \AchBot\Presentation\Text\replacePlaceholders($mainValues, $botState, $userId);
+    // Canonicalize the historical join slot while it is still template source.
+    // Never replace CHANNEL-ID after a literal destination has been inserted.
+    if (is_string($mainValues['join_channel_message']??null))
+        $mainValues['join_channel_message']=str_replace('CHANNEL-ID','LOCKCHANNEL',$mainValues['join_channel_message']);
+    // Match the actual current consumers: two legacy Markdown messages,
+    // HTML mandatory-join delivery, and plain agency notices/alerts.
+    return \AchBot\Presentation\Text\replacePlaceholders($mainValues, $botState, $userId, [
+        'banned'=>'Markdown','send_config_uuid'=>'Markdown',
+        'join_channel_message'=>'HTML','agency_request_declined'=>null
+    ]);
 }
 $mainValues = replaceAllPlaceholdersInMainValues($mainValues, $botState, $from_id ?? '');
+require_once __DIR__ . '/src/Admin/InstanceContent.php';
+$mainValues = achbotInstanceContentValues($mainValues, $botState, $from_id ?? '');
 
 function getSupportUrl(array $botState, string $fallback = '') {
     require_once __DIR__ . '/src/Presentation/Text.php';
@@ -373,6 +391,8 @@ function getMainKeys(){
     global $connection, $userInfo, $from_id, $admin, $botState, $buttonValues;
     $mainKeys = array();
     $temp = array();
+    $cooperationUrl = \AchBot\Presentation\Text\configuredDestination($botState,'cooperationUrl',true);
+    $helpChannelUrl = \AchBot\Presentation\Text\configuredDestination($botState,'helpChannel');
 
     if($botState['agencyState'] == "on" && $userInfo['is_agent'] == 1){
 		$mainKeys = array_merge($mainKeys, [
@@ -419,9 +439,8 @@ function getMainKeys(){
         (($botState['sharedExistence'] != "on" && $botState['individualExistence'] == "on")?
             [['text'=>$buttonValues['individual_existence'],'callback_data'=>"availableServers2"]] : []
         ),
-		(($from_id != $admin && $userInfo['isAdmin'] != true) ?
-			[['text' => \achbotMessage('admin_settings.config.get_main_keys.button.b7d6aa7173'), 'url' => getSupportUrl($botState)]] : []
-			// [['text' => "👋 پشتیبانی ربات", 'url' => 'https://t.me/+xiKk-5AhNZ5mMWU0']] : []
+		(($from_id != $admin && $userInfo['isAdmin'] != true && $cooperationUrl!=='') ?
+			[['text' => \achbotMessage('admin_settings.config.get_main_keys.button.b7d6aa7173'), 'url' => $cooperationUrl]] : []
 		),
 		(($from_id != $admin && $userInfo['isAdmin'] != true) ?
 			[['text'=>$buttonValues['invite_friends'],'callback_data'=>"inviteFriends"]] : []
@@ -430,6 +449,8 @@ function getMainKeys(){
             [['text'=>$buttonValues['search_config'],'callback_data'=>"showUUIDLeft"]] : []
         ),
     ]);
+
+    if ($helpChannelUrl!=='') $mainKeys[]=[['text'=>achbotMessage('instance_content.help_button'),'url'=>$helpChannelUrl]];
 
     $stmt = $connection->prepare("SELECT * FROM `setting` WHERE `type` LIKE '%MAIN_BUTTONS%'");
     $stmt->execute();
@@ -476,56 +497,39 @@ function getAgentKeys(){
 }
 
 function getAdminKeys(){
-    global $buttonValues, $from_id, $admin;
-
-    $btn = fn($k,$c)=>['text'=>$buttonValues[$k],'callback_data'=>$c];
-
-    $rows = [
-        [[['bot_reports','botReports',fn()=>canSeeButton('bot_reports',$from_id)]]],
-        [[['user_reports','userReports'],['message_to_user','messageToSpeceficUser']]],
-        [[['increase_wallet','increaseUserWallet'],['decrease_wallet','decreaseUserWallet']]],
-        [[['create_account','createMultipleAccounts'],['gift_volume_day','giftVolumeAndDay']]],
-        [[['ban_user','banUser'],['unban_user','unbanUser']]],
-        [[['manage_order_database','manageorderdatabase']]],
-        [[['server_settings','serversSetting',fn()=>canSeeButton('server_settings',$from_id)]]],
-        [[['categories_settings','categoriesSetting',fn()=>canSeeButton('categories_settings',$from_id)],['plan_settings','backplan',fn()=>canSeeButton('plan_settings',$from_id)]]],
-        [[['discount_settings','discount_codes'],['main_button_settings','mainMenuButtons']]],
-        [[['tickets_list','ticketsList'],['message_to_all','message2All']]],
-        [[['agent_list','agentsList'],['pin_manage_all','pinManageAll']]],
-		//[[['agent_list','agentsList'],['rejected_agent_list','rejectedAgentList']]],
-		[[['admins_list','adminsList',fn()=> $from_id==$admin]]],
-		[[['gateways_settings','gateWays_Channels',fn()=>canSeeButton('gateways_settings',$from_id)],['bot_settings','botSettings',fn()=>canSeeButton('bot_settings',$from_id)]]],
-        [[['back_to_main','mainMenu']]],
+    global $buttonValues;
+    $level=achbotAdminLevel();
+    $rows=[
+        [['bot_reports','botReports']],
+        [['user_reports','userReports'],['message_to_user','messageToSpeceficUser']],
+        [['increase_wallet','increaseUserWallet'],['decrease_wallet','decreaseUserWallet']],
+        [['create_account','createMultipleAccounts'],['gift_volume_day','giftVolumeAndDay']],
+        [['ban_user','banUser'],['unban_user','unbanUser']],
+        [['manage_order_database','manageorderdatabase']],
+        [['server_settings','serversSetting']],
+        [['categories_settings','categoriesSetting'],['plan_settings','backplan']],
+        [['discount_settings','discount_codes'],['main_button_settings','mainMenuButtons']],
+        [['tickets_list','ticketsList'],['message_to_all','message2All']],
+        [['agent_list','agentsList'],['pin_manage_all','pinManageAll']],
+        [['admins_list','adminsList']],
+        [['__review','attentionInbox']],
+        [['gateways_settings','gateWays_Channels'],['bot_settings','botSettings']],
     ];
-
-    $keyboard = [];
-
-    foreach ($rows as $rowWrap) {
-        $buttons = $rowWrap[0];
-        $line = [];
-
-        foreach ($buttons as $b) {
-            $key  = $b[0];
-            $cb   = $b[1];
-            $when = $b[2] ?? null;
-
-            if (is_callable($when) && !$when()) continue;
-            $line[] = $btn($key,$cb);
+    $keyboard=[];
+    foreach ($rows as $row) {
+        $line=[];
+        foreach ($row as [$key,$callback]) {
+            $capability=$key==='__review'?'review':achbotAdminButtonCapability($key);
+            if (!achbotAdminLevelCan($level,$capability)) continue;
+            $line[]=['text'=>$key==='__review'?achbotMessage('admin_settings.config.get_admin_keys.button.f5a816a832'):$buttonValues[$key],
+                'callback_data'=>$callback];
         }
-
-        if (!empty($line)) $keyboard[] = $line;
+        if ($line) $keyboard[]=$line;
     }
-
-    // The finance review inbox is strictly owner-only: privileged payment
-    // identities must never be revealed in ordinary staff/user menus.
-    if ((int)$from_id === (int)$admin) {
-        array_unshift($keyboard, [[
-            'text'=>\achbotMessage('admin_settings.config.get_admin_keys.button.f5a816a832'),
-            'callback_data'=>'attentionInbox'
-        ]]);
-    }
-    return json_encode(['inline_keyboard'=>$keyboard]);
+    $keyboard[]=[['text'=>$buttonValues['back_to_main'],'callback_data'=>'mainMenu']];
+    return json_encode(['inline_keyboard'=>$keyboard],JSON_UNESCAPED_UNICODE);
 }
+
 
 /**
  * Legacy BOT_STATES.type is not unique. Serialize all application writes,
@@ -623,6 +627,7 @@ function setSettings($field, $value): bool {
         'walletState','updateConnectionState','remark','rewaredTime',
         'cartToCartAutoAcceptTime','gbPrice','dayPrice',
         'rewardChannel','lockChannel','supportID','lastRewardMessage',
+        'instanceMessages','cooperationUrl','helpChannel','lockChannelJoinUrl',
         'gatewayAudience',
         'paymentDraftMinutes','paymentManualHours','paymentHostedHours',
         'receiptApprovedMinutes','receiptApprovedOtherMinutes',
@@ -706,6 +711,8 @@ function achbotAdminGatewayChange($update,int $actor,int $chat,int $message,
                 ($actor!==$primary && (int)$current['isAdmin']!==1) ||
                 (string)$current['step']==='banned' ||
                 $findActor($db,$actor)!==$pk)
+                throw new RuntimeException('gateway_actor_no_longer_authorized');
+            if (!achbotAdminCanLocked($db,$actor,$primary,'gateways'))
                 throw new RuntimeException('gateway_actor_no_longer_authorized');
             $currentStep=(string)$current['step'];
         };
@@ -1360,6 +1367,7 @@ function getBotSettingKeys(){
     else $paymentKeys = array();
     $stmt->close();
     return json_encode(['inline_keyboard'=>[
+        [['text'=>achbotMessage('instance_content.settings_button'),'callback_data'=>'ic|m']],
         [
             ['text'=>\achbotMessage('admin_settings.config.get_bot_setting_keys.button.f386be17f5'),'callback_data'=>"inviteSetting"]
             ],
@@ -2300,30 +2308,43 @@ if ($data == 'cancel_operation') {
 }
 // انتهای بخش آمار ربات
 
+function achbotAdminRoleKeys(int $target): string {
+    global $buttonValues;
+    $rows=[];
+    foreach (['manager','operator','support'] as $level)
+        $rows[]=[['text'=>achbotAdminLevelLabel($level),'callback_data'=>'adminAssign|'.$target.'|'.$level]];
+    $rows[]=[['text'=>$buttonValues['back_button'],'callback_data'=>'adminsList']];
+    return json_encode(['inline_keyboard'=>$rows],JSON_UNESCAPED_UNICODE);
+}
 function getAdminsKeys(){
-    global $connection, $mainValues, $buttonValues;
-    $keys = array();
-    
-    $stmt = $connection->prepare("SELECT * FROM `users` WHERE `isAdmin` = true");
-    $stmt->execute();
-    $usersList = $stmt->get_result();
-    $stmt->close();
-    if($usersList->num_rows > 0){
-        while($user = $usersList->fetch_assoc()){
-            $keys[] = [['text'=>\achbotMessage('admin_settings.config.get_agents_list.button.2b2966a54e'),'callback_data'=>"delAdmin" . $user['userid']],['text'=>$user['name'], "callback_data"=>"wizwizch"]];
-        }
-    }else{
-        $keys[] = [['text'=>\achbotMessage('admin_settings.config.get_admins_keys.button.612ffac236'),'callback_data'=>"wizwizch"]];
+    global $connection,$buttonValues,$admin;
+    if (!achbotAdminCan('admins')) return json_encode(['inline_keyboard'=>[]]);
+    $keys=[[['text'=>achbotMessage('admin.roles.owner_row',['userId'=>(string)$admin]),'callback_data'=>'wizwizch']]];
+    $stmt=$connection->prepare('SELECT userid,name FROM users WHERE isAdmin=1 AND userid<>? ORDER BY id');
+    $owner=(int)$admin;$stmt->bind_param('i',$owner);$stmt->execute();$users=$stmt->get_result()->fetch_all(MYSQLI_ASSOC);$stmt->close();
+    foreach ($users as $user) {
+        $target=(int)$user['userid'];$level=achbotAdminLevel($target);
+        $label=achbotAdminLevelLabel($level);
+        $keys[]=[
+            ['text'=>achbotMessage('admin_settings.config.get_agents_list.button.2b2966a54e'),'callback_data'=>'delAdmin'.$target],
+            ['text'=>$label,'callback_data'=>'adminRole|'.$target],
+            ['text'=>(string)($user['name']?:$target),'callback_data'=>'adminRole|'.$target],
+        ];
+        $notify=achbotAdminNotifyEnabled($connection,$target,(int)$admin);
+        $keys[]=[['text'=>$notify?achbotMessage('admin.roles.notifications_on'):achbotMessage('admin.roles.notifications_off'),
+            'callback_data'=>'adminNotify|'.$target.'|'.($notify?'off':'on')]];
     }
-    $keys[] = [['text'=>\achbotMessage('admin_settings.config.get_admins_keys.button.bc56086ddd'),'callback_data'=>"addNewAdmin"]];
-    $keys[] = [['text'=>$buttonValues['back_button'],'callback_data'=>"managePanel"]];
-    return json_encode(['inline_keyboard'=>$keys]);
+    $keys[]=[['text'=>achbotMessage('admin_settings.config.get_admins_keys.button.bc56086ddd'),'callback_data'=>'addNewAdmin']];
+    $keys[]=[['text'=>$buttonValues['back_button'],'callback_data'=>'managePanel']];
+    return json_encode(['inline_keyboard'=>$keys],JSON_UNESCAPED_UNICODE);
 }
 
 // BEGIN By ACh
 
 function getUserInfoKeys($userId) { 
-    global $connection, $mainValues, $buttonValues;
+    global $connection, $mainValues, $buttonValues, $from_id, $admin;
+    if (function_exists('achbotAdminCan') &&
+        !achbotAdminCan('customers', (int)$from_id)) return null;
     require_once __DIR__.'/src/Presentation/Text.php';
  
     // گرفتن اطلاعات کاربر از جدول users 
@@ -2341,10 +2362,21 @@ function getUserInfoKeys($userId) {
         $isAgent = $userInfos['is_agent'] ?? 0;
         $step = $userInfos['step'] ?? 'none';
         $agentStatus = ($isAgent == 1) ? \achbotMessage('admin_settings.config.get_user_info_keys.text.e0b20b49a2') : \achbotMessage('admin_settings.config.get_user_info_keys.text.3a66d0d476');
+        $canManageAgents = function_exists('achbotAdminCan')
+            ? achbotAdminCan('agents', (int)$from_id)
+            : ((int)$from_id === (int)$admin || !empty($GLOBALS['userInfo']['isAdmin']));
+        $rawDiscounts = trim((string)($userInfos['discount_percent'] ?? ''));
+        $discounts = $rawDiscounts === '' ? [] : json_decode($rawDiscounts, true);
+        $normal = is_array($discounts) ? ($discounts['normal'] ?? 0) : null;
+        $normalValid = (is_int($normal) || is_string($normal)) &&
+            preg_match('/\A(?:0|[1-9][0-9]?|100)\z/D', (string)$normal) === 1;
+        $agentPercent = $normalValid
+            ? \achbotMessage('admin_settings.user_info.agent_percent_value', ['percent'=>(string)$normal])
+            : \achbotMessage('admin_settings.user_info.agent_percent_unset');
         $banStatus = ($step == 'banned') ? \achbotMessage('admin_settings.config.get_user_info_keys.text.160244c35f') : \achbotMessage('admin_settings.config.get_user_info_keys.text.0173cd6574');
  
         // گرفتن تعداد و مجموع خرید از جدول orders_list 
-        $stmt = $connection->prepare("SELECT COUNT(amount) as count, SUM(amount) as total FROM orders_list WHERE userid = ?"); 
+        $stmt = $connection->prepare("SELECT COUNT(*) as count, SUM(amount) as total FROM orders_list WHERE userid = ?");
         $stmt->bind_param("i", $userId); 
         $stmt->execute(); 
         $info = $stmt->get_result()->fetch_assoc(); 
@@ -2354,13 +2386,20 @@ function getUserInfoKeys($userId) {
         $totalBoughtPrice = $info['total'] ?? 0; 
  
         // گرفتن اطلاعات کاربر از تلگرام 
-        $userDetail = bot('getChat', ['chat_id' => $userId])->result; 
-        $userUserName = $userDetail->username ?? ''; 
-        $first = $userDetail->first_name ?? ''; 
-        $last = $userDetail->last_name ?? ''; 
-        $fullName = trim($first . ' ' . $last); 
+        $chatResponse = bot('getChat', ['chat_id' => $userId]);
+        $userDetail = is_object($chatResponse) && is_object($chatResponse->result ?? null)
+            ? $chatResponse->result : null;
+        $userUserName = $userDetail->username ?? ($userInfos['username'] ?? '');
+        $userUserName = preg_match('/\A[A-Za-z0-9_]{1,100}\z/D', (string)$userUserName)
+            ? (string)$userUserName : '';
+        $fullName = $userDetail !== null
+            ? trim(($userDetail->first_name ?? '') . ' ' . ($userDetail->last_name ?? ''))
+            : html_entity_decode((string)($userInfos['name'] ?? ''), ENT_QUOTES | ENT_HTML5, 'UTF-8');
  
-        // تعداد پرداخت تأیید شده 
+        // Incoming paid funds only: wallet spending was already funded by a
+        // top-up and must not be counted again as another customer payment.
+        // The three external-success states remain current; pending/review,
+        // failed/expired and paid_with_wallet are deliberately excluded.
         $stmt = $connection->prepare("SELECT COUNT(*) as approvedPayments FROM pays WHERE user_id = ? AND state IN ('approved', 'paid', 'auto_cart_approved')"); 
         $stmt->bind_param("i", $userId); 
         $stmt->execute(); 
@@ -2444,7 +2483,9 @@ function getUserInfoKeys($userId) {
         return [ 
             'inline_keyboard' => [ 
                 [ 
-                    ['text' => $userUserName ?: " ", 'url' => "t.me/$userUserName"], 
+                    $userUserName !== ''
+                        ? ['text' => $userUserName, 'url' => "https://t.me/$userUserName"]
+                        : ['text' => trim(\achbotMessage('telegram.update_bindings.text.32f665d21c')), 'callback_data' => "wizwizch"],
                     ['text' => \achbotMessage('admin_settings.config.get_user_info_keys.button.173fec6019'), 'callback_data' => "wizwizch"]
                 ], 
                 [ 
@@ -2504,9 +2545,13 @@ function getUserInfoKeys($userId) {
                     ['text' => \achbotMessage('admin_settings.config.get_user_info_keys.button.88bf6cf5c6'), 'callback_data' => "wizwizch"]
                 ],
                 [
-                    ['text' => $agentStatus, 'callback_data' => "toggleAgent_{$userId}"],
+                    ['text' => $agentStatus, 'callback_data' => $canManageAgents ? "toggleAgent_{$userId}" : "wizwizch"],
                     ['text' => \achbotMessage('admin_settings.config.get_bot_setting_keys.text.62c92fb90c'), 'callback_data' => "wizwizch"]
                 ],
+                ...($canManageAgents ? [[
+                    ['text' => $agentPercent, 'callback_data' => "editAgentDiscountNormal{$userId}_userinfo"],
+                    ['text' => \achbotMessage('admin_settings.user_info.agent_percent'), 'callback_data' => "wizwizch"]
+                ]] : []),
                 [
                     ['text' => $banStatus, 'callback_data' => "toggleBan_{$userId}"],
                     ['text' => \achbotMessage('admin_settings.config.get_user_info_keys.button.05b7dda9cc'), 'callback_data' => "wizwizch"]
@@ -3704,12 +3749,13 @@ function changeMarzbanState($server_id,$remark) {
 // Added by ACh
 
 function sendToAllAdmins($method, $data, $pay_hash_id = null, $options = []){
-    global $admins_list, $admin, $connection;
+    global $admin, $connection;
 
     $adminMessages = [];
 
-    foreach ($admins_list as $adminId) {
-        if ($adminId != $admin) {
+    foreach (achbotAdminRecipientCandidates($connection,(int)$admin) as $adminId) {
+        if ($adminId != $admin &&
+            achbotAdminRecipientAllowed($connection,$adminId,(int)$admin)) {
             $data['chat_id'] = $adminId;
 
             // اگر بخوایم پیام ریپلای باشه (اختیاری)
@@ -3724,13 +3770,14 @@ function sendToAllAdmins($method, $data, $pay_hash_id = null, $options = []){
                 }
             }
 
-            // ارسال پیام
+            // Options never redirect privileged content outside the checked recipient.
+            $data['chat_id'] = (int)$adminId;
             $res = bot($method, $data);
 
             // ذخیره پیام اگر نیاز باشه
             if ($pay_hash_id && $res && isset($res->result->message_id)) {
                 $adminMessages[] = [
-                    'chat_id' => $adminId,
+                    'chat_id' => $data['chat_id'],
                     'message_id' => $res->result->message_id
                 ];
             }
@@ -3740,8 +3787,16 @@ function sendToAllAdmins($method, $data, $pay_hash_id = null, $options = []){
     // ذخیره در دیتابیس اگر hash_id داده شده
     if ($pay_hash_id && !empty($adminMessages)) {
         $json = json_encode($adminMessages, JSON_UNESCAPED_UNICODE);
-        $stmt = $connection->prepare("UPDATE `pays` SET `admins_messages` = ? WHERE `hash_id` = ?");
-        $stmt->bind_param("ss", $json, $pay_hash_id);
+        // Keep prior delivery evidence, including refs to subsequently demoted staff.
+        // The existing UPDATE appends atomically; no transaction spans Telegram.
+        $stmt = $connection->prepare("UPDATE `pays` SET `admins_messages` = CASE
+            WHEN admins_messages IS NULL OR admins_messages='' THEN ?
+            WHEN JSON_VALID(admins_messages) THEN CASE
+                WHEN JSON_TYPE(admins_messages)='ARRAY'
+                THEN JSON_MERGE_PRESERVE(admins_messages,?)
+                ELSE admins_messages END
+            ELSE admins_messages END WHERE `hash_id` = ?");
+        $stmt->bind_param("sss", $json, $json, $pay_hash_id);
         $stmt->execute();
         $stmt->close();
     }
@@ -3758,12 +3813,7 @@ $buttons_only_for_special_admins = [
 ];
 
 function canSeeButton($key, $userId) {
-    global $buttons_only_for_special_admins, $special_admins;
-
-    if (in_array($key, $buttons_only_for_special_admins)) {
-        return in_array($userId, $special_admins);
-    }
-    return true;
+    return achbotAdminCan(achbotAdminButtonCapability((string)$key),(int)$userId);
 }
 
 ?>

@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Owner revision4: two editable audiences; bounded style and native copy proof."""
 from __future__ import annotations
-import collections, copy, functools, io, json, pathlib, re, socket, subprocess, tarfile, tempfile, time, urllib.error, urllib.request
+import collections, copy, functools, hashlib, io, json, pathlib, re, socket, subprocess, tarfile, tempfile, time, urllib.error, urllib.request
+import catalog_owner_r5
 ROOT=pathlib.Path(__file__).resolve().parents[1]
 BASE='7faac9b067f8a171e5e26d6aea5aaf9f4088a3e7'
 DIGITS=str.maketrans('\u06f0\u06f1\u06f2\u06f3\u06f4\u06f5\u06f6\u06f7\u06f8\u06f9\u0660\u0661\u0662\u0663\u0664\u0665\u0666\u0667\u0668\u0669','01234567890123456789')
@@ -52,6 +53,108 @@ def context_cue(entries,key):
 def recipient_side(sides,key,target):
     other='admin'if target=='user'else'user'
     check(key in sides[target]and key not in sides[other],'recipient_placement_mismatch:'+key)
+# Exact Owner-R5 source layer: permission enforcement is added before the
+# immutable support-reply body. Recipient placement remains a separate proof.
+R5_ADMIN_REPLY_PREFACE="\nrequire_once __DIR__.'/../Admin/Access.php';\nif (!achbotAdminRequestAllowed(is_string($data??null)?$data:null,is_string($text??null)?$text:null,(string)($userInfo['step']??''))) {achbotAdminDeny();return;}\n"
+R5_ADMIN_REPLY_ANCHOR="require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG\n"
+# These two exact reviewed R5 variants repair ownership/canonical callbacks,
+# preserve configured Owner/actor IDs and scope customer ticket pagination.
+# They do not replace the original recipient-history reference.
+R5_TICKET_SOURCE_REF='e728ec50151df9ceb2ce66f79acc6c1d9c0a345c'
+R5_TICKET_SOURCE_LAYERS={
+ 'CustomerConversation.php':{
+  'before':'6268232024d842d61b23afdbd417e9630648e51dcd6c5b59101e43056d8539d8',
+  'after':'55d496ad3aae388b9d1f45ff64dc4239debcb08985aa9921cd5dddf62ae9d169',
+  'diff':'9488417483adcfce9e9e9c064a7966e25c8a58c487b27c29d6a77b6f7e21e929'},
+ 'QueueAndHistory.php':{
+  'before':'46cf7dcf45f05b040084e2c7b643f545897ec474b6fe9fd2922f3f4eecf6e5ef',
+  'after':'3d139f95217f95ce2d90de9a23676bea4398b62d91b3449596ab1ed02ee19689',
+  'diff':'76552cf70ecc1621756305efcf187f5bfc81b20039eab7d5468e1c016a385b59'},
+}
+@functools.lru_cache(maxsize=None)
+def recipient_ticket_variant(name,reference):
+    record=R5_TICKET_SOURCE_LAYERS[name];path='src/Support/'+name
+    check(hashlib.sha256(reference.encode()).hexdigest()==record['before'],'recipient ticket layer baseline drift:'+name)
+    accepted=command('git','show',R5_TICKET_SOURCE_REF+':'+path)
+    delta=command('git','diff',CONTEXT_REFERENCE,R5_TICKET_SOURCE_REF,'--',path)
+    check(hashlib.sha256(accepted).hexdigest()==record['after'] and hashlib.sha256(delta).hexdigest()==record['diff'],
+          'recipient ticket exact accepted source/delta drift:'+name)
+    return accepted.decode()
+R5_ADMIN_REPLY_STAFF_CONDITIONS=[["if(preg_match(\"/^reply_(.*)/\",$data,$match) and  ($from_id == $admin || $userInfo['isAdmin'] == true)){","if(preg_match(\"/^reply_(.*)/\",$data,$match) and  achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'operations')){"],["if(preg_match('/^answer_(.*)/', $userInfo['step'], $match) && ($from_id == $admin || $userInfo['isAdmin'] == true) && $text != $buttonValues['cancel']){","if(preg_match('/^answer_(.*)/', $userInfo['step'], $match) && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'operations') && $text != $buttonValues['cancel']){"]]
+def recipient_staff_variant(prefaced):
+    for before,after in R5_ADMIN_REPLY_STAFF_CONDITIONS:
+        check(prefaced.count(before)==1,'recipient exact staff condition anchor drift')
+        prefaced=prefaced.replace(before,after,1)
+    return prefaced
+def recipient_source_layer(name,source,reference):
+    if source==reference:return 0
+    if name in R5_TICKET_SOURCE_LAYERS:
+        check(source==recipient_ticket_variant(name,reference),'recipient source changed:'+name)
+        return 1
+    check(name=='AdminReply.php','recipient source changed:'+name)
+    check(reference.count(R5_ADMIN_REPLY_ANCHOR)==1,'recipient role layer anchor drift')
+    expected=reference.replace(R5_ADMIN_REPLY_ANCHOR,R5_ADMIN_REPLY_ANCHOR+R5_ADMIN_REPLY_PREFACE,1)
+    if source==expected:return 1
+    check(source==recipient_staff_variant(expected),'recipient source changed:'+name)
+    return 2
+def recipient_source_layer_negative_controls():
+    reference=command('git','show',CONTEXT_REFERENCE+':src/Support/AdminReply.php').decode()
+    allowed=reference.replace(R5_ADMIN_REPLY_ANCHOR,R5_ADMIN_REPLY_ANCHOR+R5_ADMIN_REPLY_PREFACE,1)
+    check(recipient_source_layer('AdminReply.php',allowed,reference)==1,'recipient role layer not accepted')
+    check('"MarkDown", $userId)'in allowed and '$text,json_encode'in allowed,'recipient mutation fixture boundary drift')
+    controls=[allowed.replace('"MarkDown", $userId)','"MarkDown", $admin)',1),
+        allowed.replace('$text,json_encode','$caption,json_encode',1),
+        allowed.replace('if (!achbotAdminRequestAllowed(', 'if (achbotAdminRequestAllowed(',1)]
+    for candidate in controls:
+        try:recipient_source_layer('AdminReply.php',candidate,reference)
+        except AssertionError as error:
+            check(str(error)=='recipient source changed:AdminReply.php','recipient source negative rejected wrong property')
+            continue
+        raise AssertionError('recipient role layer masked a recipient/body/policy mutation')
+    return len(controls)
+def recipient_ticket_source_negative_controls():
+    edits={
+      'CustomerConversation.php':[
+        ('sendMessage($txt, $keys, "HTML", $admin)','sendMessage($txt, $keys, "HTML", $from_id)'),
+        ('support.customer_conversation.user_all_tickets.txt.54b5fecc08','support.customer_conversation.user_all_tickets.txt.changed'),
+        ('!achbotAdminTicketAllowed(','achbotAdminTicketAllowed(')],
+      'QueueAndHistory.php':[
+        ('sendMessage($output, null, "html")','sendMessage($output, null, "html", $admin)'),
+        ('support.queue_and_history.all_tickets.text.61cf036058','support.queue_and_history.all_tickets.text.changed'),
+        ('!achbotAdminTicketAllowed(','achbotAdminTicketAllowed('),
+        ("$ticketUserId = $row['user_id'];","$admin = $row['user_id'];")],
+    }
+    rejected=0
+    for name,changes in edits.items():
+        reference=command('git','show',CONTEXT_REFERENCE+':src/Support/'+name).decode()
+        accepted=recipient_ticket_variant(name,reference)
+        check(recipient_source_layer(name,accepted,reference)==1,'recipient ticket layer not accepted:'+name)
+        for old,new in changes:
+            check(old in accepted and old!=new,'recipient ticket mutation fixture boundary drift:'+name)
+            candidate=accepted.replace(old,new,1)
+            try:recipient_source_layer(name,candidate,reference)
+            except AssertionError as error:
+                check(str(error)=='recipient source changed:'+name,'recipient ticket mutation rejected wrong property')
+                rejected+=1
+            else:raise AssertionError('recipient ticket layer masked recipient/body/ownership mutation:'+name)
+    return rejected
+def recipient_staff_source_negative_controls():
+    reference=command('git','show',CONTEXT_REFERENCE+':src/Support/AdminReply.php').decode()
+    prefaced=reference.replace(R5_ADMIN_REPLY_ANCHOR,R5_ADMIN_REPLY_ANCHOR+R5_ADMIN_REPLY_PREFACE,1)
+    accepted=recipient_staff_variant(prefaced)
+    check(recipient_source_layer('AdminReply.php',accepted,reference)==2,'recipient staff layer not accepted')
+    rejected=0
+    for before,after in R5_ADMIN_REPLY_STAFF_CONDITIONS:
+        inverted=after.replace('achbotAdminCanFor(','!achbotAdminCanFor(',1)
+        for mutation in [before,inverted]:
+            candidate=accepted.replace(after,mutation,1)
+            check(candidate!=accepted,'recipient staff mutation fixture drift')
+            try:recipient_source_layer('AdminReply.php',candidate,reference)
+            except AssertionError as error:
+                check(str(error)=='recipient source changed:AdminReply.php','recipient staff mutation rejected wrong property')
+                rejected+=1
+            else:raise AssertionError('recipient staff layer masked restored/inverted capability guard')
+    return rejected
 def reviewed_context_proof(sides,merged,manifest):
     check(manifest.get('semantic_context_reference')==CONTEXT_REFERENCE,'context reference drift')
     archived={}
@@ -83,22 +186,33 @@ def reviewed_context_proof(sides,merged,manifest):
             check(str(error)=='recipient_placement_mismatch:'+key,'recipient RED rejected wrong property')
             role_red+=1
         else:raise AssertionError('actual archived misplaced entry accepted:'+key)
-    # Bind recipient reasoning to the three unchanged real route sources. These
-    # checks concern editing placement, not a general authorization proof.
+    # All three recipient bodies remain byte-pinned. Only AdminReply may
+    # additionally carry the exact separately accepted R5 permission preface.
     sources={name:(ROOT/('src/Support/'+name)).read_text()for name in ['CustomerConversation.php','AdminReply.php','QueueAndHistory.php']}
+    role_layers=ticket_layers=staff_conditions=0
     for name,source in sources.items():
-        check(source==command('git','show',CONTEXT_REFERENCE+':src/Support/'+name).decode(),'recipient source changed:'+name)
+        reference=command('git','show',CONTEXT_REFERENCE+':src/Support/'+name).decode()
+        layer=recipient_source_layer(name,source,reference)
+        if name in R5_TICKET_SOURCE_LAYERS:ticket_layers+=layer
+        else:
+            role_layers+=int(layer>0)
+            if layer==2:staff_conditions+=2
+    source_controls=recipient_source_layer_negative_controls()
+    ticket_controls=recipient_ticket_source_negative_controls()
+    staff_controls=recipient_staff_source_negative_controls()
     customer=sources['CustomerConversation.php'];admin=sources['AdminReply.php'];history=sources['QueueAndHistory.php']
     close=customer[customer.index("if(preg_match('/^closeTicket_"):customer.index("if(preg_match('/^replySupport_")]
     check(all(key in close for key in PRIVATE_SUPPORT if key.endswith(('2baf15e3c0','2dc9dcf8cd','c9b4331f4f','74190f4bb0')))
           and 'sendMessage(\\achbotMessage(\'support.customer_conversation.user_all_tickets.message.2baf15e3c0\'),$keys,"HTML",$admin)'in close
           and "sendToAllAdmins('sendMessage'"in close,'actual administrator closure recipients drift')
-    incoming=customer[customer.index("if(preg_match('/^sendMsg_"):customer.index('if(preg_match("/^rate_')]
+    rating_marker='if(preg_match("/^rate_' if 'if(preg_match("/^rate_' in customer else "if(preg_match('/^rate_"
+    check(customer.count(rating_marker)==1,'actual rating handler boundary drift')
+    incoming=customer[customer.index("if(preg_match('/^sendMsg_"):customer.index(rating_marker)]
     check(all(key in incoming for key in PRIVATE_SUPPORT if key.endswith(('54b5fecc08','a79a2fa69e','46d8580795')))
           and 'sendMessage($txt, $keys, "HTML", $admin)'in incoming
           and 'sendPhoto($fileid, $txt,$keys, "HTML", $admin)'in incoming
           and "'text' => $txt"in incoming and "'caption' => $txt"in incoming,'actual administrator incoming recipients drift')
-    rating=customer[customer.index('if(preg_match("/^rate_'):]
+    rating=customer[customer.index(rating_marker):]
     check(all(key in rating for key in PRIVATE_SUPPORT if key.endswith(('497743bb13','105e0409bc')))
           and 'sendMessage($text, $keys, "HTML", $admin)'in rating
           and "sendToAllAdmins('sendMessage'"in rating,'actual administrator rating recipients drift')
@@ -111,7 +225,7 @@ def reviewed_context_proof(sides,merged,manifest):
           and '"latestMsg_$rowId"'in listing,'actual customer shared history label drift')
     return {'reviewed_semantic_context_cases':len(CONTEXT_CUES),'archived_semantic_context_RED':rejected,
             'recipient_placement_cases':len(expected),'archived_recipient_placement_RED':role_red,
-            'recipient_payloads_byte_unchanged':True,'recipient_source_files':len(sources)}
+            'recipient_payloads_byte_unchanged':True,'recipient_source_files':len(sources),'recipient_authorized_role_layers':role_layers,'recipient_source_layer_negative_controls':source_controls,'recipient_authorized_ticket_layers':ticket_layers,'recipient_ticket_layer_negative_controls':ticket_controls,'recipient_staff_capability_conditions':staff_conditions,'recipient_staff_layer_negative_controls':staff_controls,'recipient_total_source_layer_negative_controls':source_controls+ticket_controls+staff_controls}
 
 MANAGEMENT_BASE='2c0e728dcd71c38e20d176fe2577bc264d3faa1a'
 MANAGEMENT_CONTRACT='docs/post-v9/UNIFIED-SERVICE-MANAGEMENT.md'
@@ -198,7 +312,11 @@ def management_amendment(sides,merged,amendment=None):
         check(merged[key]==followups.get(key,{}).get('after',entry),'pre-management copy changed:'+key)
         audience='user'if key in archived['user']else'admin'
         check(key in sides[audience],'pre-management recipient changed:'+key)
-    runtime_sources={path:(ROOT/path).read_text()for path in management_runtime_paths()}
+    # The earlier management/relocation proof belongs to its accepted stage.
+    # Current R5 declarations are independently bound to that exact stage above.
+    archived_paths=set(command('git','ls-tree','-r','--name-only',catalog_owner_r5.BASE).decode().splitlines())
+    runtime_sources={path:command('git','show',catalog_owner_r5.BASE+':'+path).decode()
+        for path in management_runtime_paths() if path in archived_paths}
     facade_source=runtime_sources['src/Admin/ManagementFlow.php'];facade_source=facade_source[facade_source.index('function achbotManagementText('):facade_source.index('function achbotManagementEscape(')]
     facade_keys=set(re.findall(r"achbotMessage\('([^']+)'",facade_source))
     check(facade_keys=={key for key,record in additions.items()if record.get('facade')is True},'management facade mapping scope drift')
@@ -306,12 +424,15 @@ def main():
     current=json.loads(command('php','-r','$r=[];foreach(["user","admin"]as$a)$r[$a]=require "messages/fa/".$a.".php";echo json_encode($r,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);'))
     sides={a:flatten(v)for a,v in current.items()}
     check(not set(sides['user'])&set(sides['admin']),'duplicate key across audiences')
+    current_sides=sides;current_merged={**sides['user'],**sides['admin']}
+    sides,r5_proof=catalog_owner_r5.verify_and_restore(current_sides)
+    r5_controls=catalog_owner_r5.negative_controls(current_sides)
     merged={**sides['user'],**sides['admin']};management=management_amendment(sides,merged)
     management_controls=management_negative_controls(sides,merged,management)
     owner_changes=owner_followup(sides,merged);owner_controls=owner_followup_negative_controls(sides,merged)
     management_facades=management_facade_proof(management['added_keys'])
     provider_labels=management_provider_labels()
-    all_merged=merged;merged={k:owner_changes.get(k,{}).get('before',v) for k,v in merged.items()if k not in management['added_keys']};old=baseline()
+    all_merged=current_merged;merged={k:owner_changes.get(k,{}).get('before',v) for k,v in merged.items()if k not in management['added_keys']};old=baseline()
     chars=sorted({c for entry in[*old.values(),*merged.values()]for c in text(entry)if c.isalpha()})
     glyphs='$r=[];foreach(json_decode(file_get_contents("php://stdin"),true)as$c)if(preg_match("/\\\\p{Extended_Pictographic}/u",$c))$r[]=$c;echo json_encode($r,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);'
     EMOJI_LETTERS.update(json.loads(command('php','-r',glyphs,input=json.dumps(chars).encode())))
@@ -418,7 +539,7 @@ $gift=achbotMessage('jobs.gift2all.gift_text.8f714dee13',['volume'=>512]).achbot
 $notice=achbotMessage('jobs.gift2all.message.1bf0942a3d',['remark'=>'fixture_account','giftText'=>$gift]);
 if(!str_contains($notice,'512 مگابایت حجم و  3 روز زمان')||adjacentEmoji($notice))throw new RuntimeException('gift_fragment_composition');
 $sample=achbotMessage('purchase.order_writes.ensure_account_creation_succeeded.admin_message.inbound_missing',['title'=>'Synthetic service','inbound_id'=>123]);
-if(!str_contains($sample,'inbound_not_found')||!str_contains($sample,'Inbound ID: 123'))throw new RuntimeException('administrator_diagnostic_incomplete');
+if(!str_contains($sample,'inbound_not_found')||!str_contains($sample,'شناسه ورودی: 123'))throw new RuntimeException('administrator_diagnostic_incomplete');
 $private=achbotMessage('purchase.order_writes.ensure_account_creation_succeeded.user_message.7a64d65208');
 if(str_contains($private,'123')||str_contains($private,'inbound'))throw new RuntimeException('customer_inbound_disclosure');
 require 'tools/catalog_bindings.php';$bindingProof=catalogAssertCurrentBindings(__DIR__);$bindingNegatives=catalogBindingNegativeControls();$mainValues=$bindingProof['main'];$buttonValues=$bindingProof['buttons'];
@@ -427,8 +548,8 @@ require 'tools/catalog_bindings.php';$bindingProof=catalogAssertCurrentBindings(
 $userQuote=str_replace(['PLAN-NAME','VOLUME','DAYS','PRICE','DESCRIPTION'],['Fixture plan','10','30','100000','Fixture description'],$mainValues['buy_custom_subscription_detail']);
 $adminRequest=strtr($mainValues['buy_new_account_request'],['TYPE'=>'bank','USER-ID'=>'1001','NAME'=>'Fixture customer','USERNAME'=>'fixture_user','PRICE'=>'100000','SERVERNAME'=>'Fixture service','REMARK'=>'fixture_account','VOLUME'=>'10','DAYS'=>'30']);
 $fields=[
- [$adminRequest,'🆔','شناسه عددی:'],[$adminRequest,'👤','اسم کاربر:'],
- [$adminRequest,'👤','نام کاربری:'],[$adminRequest,'💰','مبلغ پرداختی:'],
+ [$adminRequest,'🎫','شناسه عددی:'],[$adminRequest,'👤','اسم کاربر:'],
+ [$adminRequest,'🔖','نام کاربری:'],[$adminRequest,'💰','مبلغ پرداختی:'],
  [$adminRequest,'📦','حجم اشتراک:'],[$adminRequest,'📅','مدت اشتراک:'],
  [$userQuote,'📦','حجم اختصاصی:'],[$userQuote,'📅','مدت اختصاصی:'],[$userQuote,'💰','قیمت پلن:'],
  [$buttonValues['volume_left'],'📦','حجم باقیمانده:'],
@@ -449,7 +570,7 @@ if(!str_starts_with(achbotMessage('wallet.wallet_transfer.wallet_transfer_restar
 echo json_encode(['violations'=>$violations,'topics'=>count(achbotMessageTopics()),'native_compositions'=>6,'emoji_negative_controls'=>7,'semantic_label_icon_cases'=>count($fields),'semantic_context_icon_cases'=>$contexts,'canonical_binding_paths'=>count($bindingProof['paths']),'canonical_binding_entries'=>$bindingProof['entries'],'canonical_binding_negative_controls'=>$bindingNegatives],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);'''
     native=json.loads(command('php','-r',php))
     check(not native['violations'],'adjacent emoji: '+str(native['violations']))
-    check(native['topics']==25,'logical topics changed')
+    check(native['topics']==26,'R5 instance-content topic missing or unexpected topic')
     # A mistaken cross-file move/copy must fail closed, never silently let
     # one audience override the other's value. Poison only an owned temporary
     # copy; the actual source and catalog remain untouched.
@@ -481,5 +602,5 @@ echo json_encode(['violations'=>$violations,'topics'=>count(achbotMessageTopics(
             except urllib.error.HTTPError as error:status=error.code;body=error.read()
             check(status==404 and not body,'direct copy source leaked '+file)
     finally:listener.terminate();listener.wait(timeout=5)
-    print(json.dumps({'status':'PASS','editable_files':2,'current_keys':len(all_merged),'management_added_keys':len(management['added_keys']),'management_retained_legacy_keys':len(management['retained_legacy_keys']),'management_baseline_keys':management['baseline_keys'],'management_negative_controls':management_controls,'owner_followup_changes':len(owner_changes),'owner_followup_negative_controls':owner_controls,'management_facade_cases':management_facades,'management_provider_label_cases':provider_labels,'logical_topics':native['topics'],'canonical_binding_paths':native['canonical_binding_paths'],'canonical_binding_entries':native['canonical_binding_entries'],'canonical_binding_negative_controls':native['canonical_binding_negative_controls'],'style_changes':len(changes),'numeric_template_changes':sum('ascii_digits'in v['reasons']for v in changes.values()),'retired_keys':len(retired),'retired_feature_keys':len(feature_retired),'added_keys':len(added),'current_entry_assertions':assertions,'parameter_exception_count':len(param_keys),'adjacent_emoji_violations':0,'emoji_negative_controls':native['emoji_negative_controls'],'audience_admin_diagnostic_cases':len(admin_cases),'audience_customer_cases':len(user_cases),'preserved_shared_fragments':len(fragments),'native_compositions':native['native_compositions'],'semantic_label_icon_cases':native['semantic_label_icon_cases'],'semantic_context_icon_cases':native['semantic_context_icon_cases'],'direct_http_guards':len(guarded),'loader_negative_controls':2,**reviewed},ensure_ascii=False))
+    print(json.dumps({'status':'PASS','editable_files':2,'current_keys':len(all_merged),'management_added_keys':len(management['added_keys']),'management_retained_legacy_keys':len(management['retained_legacy_keys']),'management_baseline_keys':management['baseline_keys'],'management_negative_controls':management_controls,'owner_followup_changes':len(owner_changes),'owner_followup_negative_controls':owner_controls,'r5_changes':r5_proof['changes'],'r5_retired_keys':r5_proof['retired'],'r5_added_keys':r5_proof['added'],'r5_negative_controls':r5_controls,'management_facade_cases':management_facades,'management_provider_label_cases':provider_labels,'logical_topics':native['topics'],'canonical_binding_paths':native['canonical_binding_paths'],'canonical_binding_entries':native['canonical_binding_entries'],'canonical_binding_negative_controls':native['canonical_binding_negative_controls'],'style_changes':len(changes),'numeric_template_changes':sum('ascii_digits'in v['reasons']for v in changes.values()),'retired_keys':len(retired),'retired_feature_keys':len(feature_retired),'added_keys':len(added),'current_entry_assertions':assertions,'parameter_exception_count':len(param_keys),'adjacent_emoji_violations':0,'emoji_negative_controls':native['emoji_negative_controls'],'audience_admin_diagnostic_cases':len(admin_cases),'audience_customer_cases':len(user_cases),'preserved_shared_fragments':len(fragments),'native_compositions':native['native_compositions'],'semantic_label_icon_cases':native['semantic_label_icon_cases'],'semantic_context_icon_cases':native['semantic_context_icon_cases'],'direct_http_guards':len(guarded),'loader_negative_controls':2,**reviewed},ensure_ascii=False))
 if __name__=='__main__':main()

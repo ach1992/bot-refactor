@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__.'/../../Admin/Access.php';
 /**
  * AChBot post-V9: audited operator wallet adjustments in the shared movement journal.
  *
@@ -131,6 +132,7 @@ if (!function_exists('achbotApplyAdminWalletAdjustment')) {
         ?array &$operation = null, ?int $expectedBefore = null
     ): string {
         $operation = null;
+        if (!achbotAdminLevelCan(achbotAdminLevel($operatorId,$db,$primaryAdmin),'operations')) return 'unavailable';
         if ($operatorId <= 0 || $targetId <= 0 || $updateId <= 0 ||
             $messageId <= 0 || $chatId === 0 ||
             !in_array($kind, ['credit', 'debit', 'debt'], true) ||
@@ -164,7 +166,8 @@ if (!function_exists('achbotApplyAdminWalletAdjustment')) {
             // Never select an arbitrary wallet or operator from duplicates.
             if ($duplicateIdentity || !isset($users[$operatorId], $users[$targetId]) ||
                 ($operatorId !== $primaryAdmin &&
-                 (int)$users[$operatorId]['isAdmin'] !== 1)) {
+                 (int)$users[$operatorId]['isAdmin'] !== 1) ||
+                !achbotAdminCanLocked($db,$operatorId,$primaryAdmin,'operations')) {
                 $db->rollback();
                 return 'invalid';
             }
@@ -408,7 +411,7 @@ if (!function_exists('achbotAdminWalletReportResult')) {
                     \achbotMessage('wallet.admin_wallet.admin_wallet_report_result.text.dff0fbb433') . number_format($operation['before']) .
                     \achbotMessage('wallet.admin_wallet.admin_wallet_report_result.text.a3e128be40') . number_format($operation['after']) .
                     \achbotMessage('wallet.admin_wallet.admin_wallet_report_result.text.4a74d658e8') . $operation['correlation'], $removeKeyboard]],
-                ['operator_menu', [$mainValues['reached_main_menu'], getMainKeys()]],
+                ['operator_menu', [$mainValues['reached_main_menu'], getMainKeys(), 'HTML']],
                 ['target_notice', [$customer, null, null, $operation['target']]]
             ];
             foreach ($notices as [$stage, $args]) {
@@ -438,7 +441,7 @@ if (!function_exists('achbotAdminWalletReportResult')) {
     }
 }
 
-$achbotWalletCanAdmin = ($from_id == $admin || ($userInfo['isAdmin'] ?? false) == true);
+$achbotWalletCanAdmin = achbotAdminCan('operations',(int)$from_id);
 $achbotWalletModes = [
     'increaseUserWallet' => ['credit', 'increaseWalletUser', 'enter_increase_amount'],
     'decreaseUserWallet' => ['debit', 'decreaseWalletUser', 'enter_decrease_amount'],
@@ -483,7 +486,7 @@ if ($achbotWalletCanAdmin && isset($achbotWalletModes[$achbotWalletStep]) &&
             sendMessage($matches > 1 ?
                 \achbotMessage('wallet.admin_wallet.admin_wallet_report_result.message.840dca2362') :
                 $mainValues['user_not_found'], $removeKeyboard);
-            sendMessage($mainValues['reached_main_menu'], getMainKeys());
+            sendMessage($mainValues['reached_main_menu'], getMainKeys(), 'HTML');
         } else {
             [$kind, $prefix, $prompt] = $achbotWalletModes[$achbotWalletStep];
             setUser($prefix . $achbotWalletTarget);

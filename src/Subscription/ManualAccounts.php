@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__.'/../Admin/Access.php';
 /** AChBot V6: original Telegram account/subscription routes; keep caller scope. */
 if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     http_response_code(404);
@@ -21,7 +22,8 @@ if (preg_match('/^addSubscriptionToCustomer([1-9][0-9]*)$/D',(string)$data,$matc
         $q=$connection->prepare('SELECT id,userid,isAdmin,step,temp FROM users WHERE userid=? LIMIT 2 FOR UPDATE');
         $q->bind_param('i',$actor);$q->execute();$rows=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
         if (count($rows)!==1 || $rows[0]['step']==='banned' || $rows[0]['temp']!==($userInfo['temp']??null) ||
-            ($actor!==(int)$admin && (int)$rows[0]['isAdmin']!==1)) {
+            ($actor!==(int)$admin && (int)$rows[0]['isAdmin']!==1) ||
+            !achbotAdminCanLocked($connection,$actor,(int)$admin,'operations')) {
             $connection->rollback();alert(\achbotMessage('subscription.manual_accounts.alert.03aea25611'),true);return;
         }
         $tempData['awaiting_userid_for_add']=true;$tempData['selected_server_id']=$serverId;$tempData['addToCustomerClicked']=true;
@@ -80,7 +82,8 @@ function achbotManualAccountConsumeSelection(mysqli $db,int $actorId,
         if (!$current || (int)$current['userid']!==$actorId ||
             $current['step']!=='awaiting_userid_input' ||
             $current['temp']!==($cached['temp']??null) ||
-            ($actorId!==$primary && (int)$current['isAdmin']!==1)) {
+            ($actorId!==$primary && (int)$current['isAdmin']!==1) ||
+            !achbotAdminCanLocked($db,$actorId,$primary,'operations')) {
             $db->rollback();
             return false;
         }
@@ -236,7 +239,7 @@ if (preg_match('/^addToOrders([1-9][0-9]*)$/D',(string)$data,$match)) {
         $role->bind_param('i',$actor);$role->execute();$actors=$role->get_result()->fetch_all(MYSQLI_ASSOC);$role->close();
         if (count($actors)!==1 || $actors[0]['step']==='banned' ||
             $actors[0]['temp']!==($userInfo['temp']??null)) throw new RuntimeException('import_stale');
-        $adminActor=$actor===(int)$admin || (int)$actors[0]['isAdmin']===1;
+        $adminActor=achbotAdminCan('operations',$actor);
         $finalUserId=isset($tempData['custom_userid'])?(int)$tempData['custom_userid']:$actor;
         if ($finalUserId<=0 || ($finalUserId!==$actor && !$adminActor)) throw new RuntimeException('import_actor');
         $q=$connection->prepare("SELECT c.* FROM server_config c JOIN server_info i ON i.id=c.id WHERE c.id=? AND i.active=1 AND c.type IN (".achbotProviderSqlTypes().")");
@@ -251,7 +254,8 @@ if (preg_match('/^addToOrders([1-9][0-9]*)$/D',(string)$data,$match)) {
         $q=$connection->prepare('SELECT id,userid,isAdmin,step,temp FROM users WHERE id=? FOR UPDATE');
         $id=(int)$actors[0]['id'];$q->bind_param('i',$id);$q->execute();$current=$q->get_result()->fetch_assoc();$q->close();
         if (!$current || (int)$current['userid']!==$actor || $current['step']!==$actors[0]['step'] ||
-            $current['temp']!==$actors[0]['temp'] || ($finalUserId!==$actor && $actor!==(int)$admin && (int)$current['isAdmin']!==1))
+            $current['temp']!==$actors[0]['temp'] || ($finalUserId!==$actor &&
+             !achbotAdminCanLocked($connection,$actor,(int)$admin,'operations')))
             throw new RuntimeException('import_stale');
         $q=$connection->prepare('SELECT id FROM users WHERE userid=? LIMIT 2 FOR UPDATE');
         $q->bind_param('i',$finalUserId);$q->execute();$targetCount=$q->get_result()->num_rows;$q->close();

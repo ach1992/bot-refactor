@@ -174,6 +174,9 @@ def main():
         def sql(query):return native.sql(work,env,query,DB)
         for name in ['001_marzban_panel_group_id.sql','004_automatic_renewal_attempts.sql','007_service_effects.sql','011_provider_identity.sql','012_shared_provider_storage.sql']:
             sql((ROOT/'migrations/post-v9'/name).read_text())
+        # Delegated positive server/plan scenarios explicitly use the Manager
+        # tier. Revocation cases still remove users.isAdmin and must fail.
+        sql("INSERT INTO setting(type,value) VALUES ('ADMIN_ROLE_9002','manager')")
         # A historical inactive draft belongs to nobody in the new workflow.
         sql("INSERT INTO server_plans(fileid,catid,server_id,inbound_id,acount,title,protocol,days,volume,type,price,descr,pic,active,step,date) VALUES('orphan',1,2,0,0,'SENTINEL-INACTIVE','',30,1,'ws',1,'sentinel','',0,4,'fixture')")
         script=work/'unified-wizard.php';script.write_text(PHP)
@@ -530,8 +533,11 @@ def main():
             refused=call(callback='yesDeleteServer'+str(clean_id),field=pending!='addNewMarzbanPlan')
             yes(all_state()==before_busy and not any(e.get('keys')=='{"remove_keyboard":true}'for e in refused['events']),'busy_'+pending.split('|')[0]+'_delete_has_no_user_or_entity_mutation')
             sql("UPDATE users SET step='none',temp=NULL WHERE userid=9001")
+        # This negative deliberately removes the Manager's server capability.
+        sql("UPDATE setting SET value='operator' WHERE type='ADMIN_ROLE_9002'")
         r=call(callback='yesDeleteServer'+str(clean_id),actor=9002,field=True)
         yes(rows()==before,'delegate_without_server_permission_cannot_delete')
+        sql("UPDATE setting SET value='manager' WHERE type='ADMIN_ROLE_9002'")
         effects_before=sql("SELECT COUNT(*) FROM service_effects")
         r=call(callback='yesDeleteServer'+str(clean_id),field=True)
         yes(sql('SELECT COUNT(*) FROM server_info WHERE id='+str(clean_id)).strip()=='0' and sql('SELECT COUNT(*) FROM server_config WHERE id='+str(clean_id)).strip()=='0','unreferenced_server_delete_is_atomic')

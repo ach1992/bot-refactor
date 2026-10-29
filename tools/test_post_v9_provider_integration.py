@@ -37,6 +37,7 @@ $connection=new OrderReadTraceMysqli('localhost','root','',$argv[3],0,$argv[2]);
 $spec=json_decode($argv[4],true);$db=$connection;
 $GLOBALS['events']=[];
 function alert(...$args){$GLOBALS['events'][]=['alert'=>(string)($args[0]??'')];}
+function answerCallbackQuery($id,$text='',...$rest){$GLOBALS['events'][]=['callback_answer'=>(string)$text,'callback_id'=>(string)$id];return (object)['ok'=>true];}
 function sendMessage(...$args){$GLOBALS['events'][]=['message'=>(string)($args[0]??'')];return (object)['ok'=>true];}
 function editText(...$args){$GLOBALS['events'][]=['edit'=>(string)($args[1]??'')];return (object)['ok'=>true];}
 function getServerListKeys(...$args){return '{}';}

@@ -6,6 +6,9 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
 }
 require_once __DIR__ . '/../../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
 
+require_once __DIR__ . '/../../Admin/Access.php';
+if (!achbotAdminRequestAllowed(is_string($data??null)?$data:null,is_string($text??null)?$text:null,(string)($userInfo['step']??''))) {achbotAdminDeny();return;}
+
 
 require_once __DIR__ . '/../PaymentLifecycle.php';
 
@@ -274,7 +277,7 @@ if (preg_match('/wait(?:IncreaseDay|IncreaseDayGift|IncreaseDayUsdt)Receipt(.*)/
     $msg = str_replace(
         ['INCREASE', 'TYPE', "USER-ID", "USERNAME", "NAME", "PRICE", "REMARK"],
         [$volume, \achbotMessage('renewal.extensions.text.9699c34220'), $from_id, $username, $first_name, $price, $remark],
-        $mainValues['increase_account_request_message']
+        achbotManualCaption($connection, $receiptPay, $mainValues['increase_account_request_message'])
     );
 
     $adminKeyboard = buildAdminKeyboardWithStats(
@@ -287,7 +290,7 @@ if (preg_match('/wait(?:IncreaseDay|IncreaseDayGift|IncreaseDayUsdt)Receipt(.*)/
     );
 
     if (sendReceiptToAdminsAndUpdatePay($connection, $fileid,
-        achbotManualCaption($connection, $receiptPay, $msg), $adminKeyboard, $admin, $match[1],
+        $msg, $adminKeyboard, $admin, $match[1],
         $deliveryToken)) {
         setUser();
         sendWithStartButton(achbotManualAcknowledgement($receiptPay, $method), $buttonValues['start_bot'], $botUsername, 'mainMenu', 'HTML', (string)$receiptPay['hash_id']);
@@ -297,7 +300,7 @@ if (preg_match('/wait(?:IncreaseDay|IncreaseDayGift|IncreaseDayUsdt)Receipt(.*)/
     exit;
 }
 
-if (preg_match('/approveIncreaseDay(.*)/', $data, $match) && ($from_id == $admin || $userInfo['isAdmin'] == true)) {
+if (preg_match('/^approveIncreaseDay(.*)/', $data, $match) && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'payments')) {
     $connection->begin_transaction();
     $localCommitted=false;
     try {
@@ -457,7 +460,8 @@ if (preg_match('/approveIncreaseDay(.*)/', $data, $match) && ($from_id == $admin
         $adminMessages = json_decode($payParam['admins_messages'], true);
         if (is_array($adminMessages)) {
             foreach ($adminMessages as $msgInfo) {
-                if (isset($msgInfo['chat_id'], $msgInfo['message_id']) && $msgInfo['chat_id'] != $payParam['chat_id']) {
+                if (isset($msgInfo['chat_id'], $msgInfo['message_id']) && $msgInfo['chat_id'] != $payParam['chat_id'] &&
+                    achbotAdminStoredRecipientAllowed($connection,$msgInfo['chat_id'],(int)$admin)) {
                     editKeys($keys, $msgInfo['message_id'], $msgInfo['chat_id']);
                 }
             }
@@ -1096,7 +1100,7 @@ if (preg_match('/wait(?:IncreaseVolume|IncreaseVolumeGift|IncreaseVolumeUsdt)Rec
     $msg = str_replace(
         ['INCREASE', 'TYPE', "USER-ID", "USERNAME", "NAME", "PRICE", "REMARK"],
         [$volume, \achbotMessage('renewal.extensions.text.4123904480'), $from_id, $username, $first_name, $price, $remark],
-        $mainValues['increase_account_request_message']
+        achbotManualCaption($connection, $receiptPay, $mainValues['increase_account_request_message'])
     );
 
     $adminKeyboard = buildAdminKeyboardWithStats(
@@ -1109,7 +1113,7 @@ if (preg_match('/wait(?:IncreaseVolume|IncreaseVolumeGift|IncreaseVolumeUsdt)Rec
     );
 
     if (sendReceiptToAdminsAndUpdatePay($connection, $fileid,
-        achbotManualCaption($connection, $receiptPay, $msg), $adminKeyboard, $admin, $match[1],
+        $msg, $adminKeyboard, $admin, $match[1],
         $deliveryToken)) {
         setUser();
         sendWithStartButton(achbotManualAcknowledgement($receiptPay, $method), $buttonValues['start_bot'], $botUsername, 'mainMenu', 'HTML', (string)$receiptPay['hash_id']);
@@ -1119,7 +1123,7 @@ if (preg_match('/wait(?:IncreaseVolume|IncreaseVolumeGift|IncreaseVolumeUsdt)Rec
     exit;
 }
 
-if (preg_match('/approveIncreaseVolume(.*)/', $data, $match) && ($from_id == $admin || $userInfo['isAdmin'] == true)) {
+if (preg_match('/^approveIncreaseVolume(.*)/', $data, $match) && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'payments')) {
     $connection->begin_transaction();
     $localCommitted=false;
     try {
@@ -1279,7 +1283,8 @@ if (preg_match('/approveIncreaseVolume(.*)/', $data, $match) && ($from_id == $ad
         $adminMessages = json_decode($payParam['admins_messages'], true);
         if (is_array($adminMessages)) {
             foreach ($adminMessages as $msgInfo) {
-                if (isset($msgInfo['chat_id'], $msgInfo['message_id']) && $msgInfo['chat_id'] != $payParam['chat_id']) {
+                if (isset($msgInfo['chat_id'], $msgInfo['message_id']) && $msgInfo['chat_id'] != $payParam['chat_id'] &&
+                    achbotAdminStoredRecipientAllowed($connection,$msgInfo['chat_id'],(int)$admin)) {
                     editKeys($keys, $msgInfo['message_id'], $msgInfo['chat_id']);
                 }
             }

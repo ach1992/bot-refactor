@@ -31,6 +31,8 @@ define('ACHBOT_VERIFIED_WEBHOOK_ENTRYPOINT', true);
 require_once 'config.php';
 require_once 'buy_helpers.php';
 check();
+if (!achbotAdminRequestAllowed(is_string($data??null)?$data:null,is_string($text??null)?$text:null,(string)($userInfo['step']??''))) {achbotAdminDeny();return;}
+
 require_once __DIR__.'/src/Panel/ProviderAdmin.php';
 require_once __DIR__.'/src/Admin/ManagementFlow.php';
 if (achbotHandleManagement()) return;
@@ -115,45 +117,19 @@ if (($joniedState == "kicked" || $joniedState == "left") && $from_id != $admin) 
 
     if (!in_array($from_id, $exemptedUsers)) {
 
-        $lockChannelValue = trim($botState['lockChannel'] ?? '');
-        $joinUrl = $joinLink;
-
-        if ($lockChannelValue !== '') {
-            if (preg_match('~^https?://t\.me/~i', $lockChannelValue)) {
-                $joinUrl = $lockChannelValue;
-
-            } else {
-                if ($lockChannelValue[0] === '@') {
-                    $username = ltrim($lockChannelValue, '@');
-                    $joinUrl = "https://t.me/" . $username;
-
-                } else {
-                    if (preg_match('/^[A-Za-z0-9_]{5,32}$/', $lockChannelValue)) {
-                        $joinUrl = "https://t.me/" . $lockChannelValue;
-
-                    } else {
-                        if ($lockChannelValue[0] === '+') {
-                            $joinUrl = "https://t.me/" . $lockChannelValue;
-
-                        } else {
-                            $joinUrl = $joinLink;
-                        }
-                    }
-                }
-            }
-        }
+        $joinUrl = \AchBot\Presentation\Text\lockChannelJoinUrl($botState,(string)($joinLink??''));
 
         sendMessage(
-            str_replace("CHANNEL-ID", $channelLock, $mainValues['join_channel_message']),
+            $mainValues['join_channel_message'],
             json_encode([
-                'inline_keyboard' => [
-                    [
+                'inline_keyboard' => array_values(array_filter([
+                    $joinUrl!=='' ? [
                         ['text' => $buttonValues['join_channel'], 'url' => $joinUrl]
-                    ],
+                    ] : [],
                     [
                         ['text' => $buttonValues['have_joined'], 'callback_data' => 'haveJoined' . (isset($text) ? $text : '')]
                     ]
-                ]
+                ]))
             ]),
             "HTML"
         );
@@ -288,6 +264,9 @@ if (preg_match('/^\/([Ss]tart)/', $text) || $text == $buttonValues['back_to_main
         str_starts_with((string)$menuRows[0]['step'],'achbotDirectGift') ||
         str_starts_with((string)$menuRows[0]['step'],'achbotExempt:')) return;
 
+    require_once __DIR__.'/src/Telegram/UserProfile.php';
+    achbotRefreshUserProfile($connection, $update ?? null, (int)$from_id);
+
     setUser();
     setUser("", "temp");
 
@@ -299,7 +278,7 @@ if (preg_match('/^\/([Ss]tart)/', $text) || $text == $buttonValues['back_to_main
         // Legacy Home buttons can be on untracked financial/support evidence.
         // Always send the actor's own menu; never edit/delete the source or
         // read another customer's invoice merely to navigate Home.
-        sendMessage($mainValues['start_message'], getMainKeys());
+        sendMessage($mainValues['start_message'], getMainKeys(), 'HTML');
 
     } else {
 
@@ -334,7 +313,7 @@ if (preg_match('/^\/([Ss]tart)/', $text) || $text == $buttonValues['back_to_main
             }
         }
 
-        sendMessage($mainValues['start_message'], getMainKeys());
+        sendMessage($mainValues['start_message'], getMainKeys(), 'HTML');
 
         if ($isFirstStart) {
 
@@ -370,7 +349,7 @@ if(preg_match('/^sendMessageToUser(\d+)/',$data,$match) && ($from_id == $admin |
 if(preg_match('/^sendMessageToUser(\d+)/',$userInfo['step'],$match) && ($from_id == $admin || $userInfo['isAdmin'] == true) && $text != $buttonValues['cancel']){
     sendMessage($text,null,null,$match[1]);
 	sendMessage(\achbotMessage('bot.bot.webhook_ingress_authenticated.message.21095e090c', ['match_1' => $match[1]]), $removeKeyboard, "html");
-    sendMessage($mainValues['reached_main_menu'],getAdminKeys());
+    sendMessage($mainValues['reached_main_menu'], getAdminKeys(), 'HTML');
     setUser();
 }
 
@@ -474,6 +453,7 @@ if (in_array($data, $statOptions) && ($from_id == $admin || $userInfo['isAdmin']
 }
 
 require __DIR__ . '/src/Admin/Roles.php';
+if (achbotHandleInstanceContent($update ?? null,$data ?? null,$text ?? null,$userInfo ?? [])) return;
 if(($data=="botSettings" or preg_match('/^changeBot([A-Za-z0-9_]+)$/D',$data,$match)) && ($from_id == $admin || $userInfo['isAdmin'] == true)){
     if($data!="botSettings"){
         // Never persist callback-provided arbitrary BOT_STATES keys.
@@ -1154,7 +1134,16 @@ if($data=="editSupportID" && ($from_id == $admin || $userInfo['isAdmin'] == true
 }
 
 if($userInfo['step'] == "editSupportID" && ($from_id == $admin || $userInfo['isAdmin'] == true) && $text != $buttonValues['cancel']){
-    setSettings('supportID', $text);
+    $supportText=is_string($text)?trim($text):'';
+    $supportUrl=\AchBot\Presentation\Text\destinationUrl($supportText);
+    if ($supportText!=='/clear' && $supportUrl==='') {
+        sendMessage(achbotMessage('instance_content.invalid_destination'),$cancelKey,'HTML');
+        return;
+    }
+    if (!setSettings('supportID',$supportText==='/clear'?'':$supportText)) {
+        sendMessage(achbotMessage('instance_content.save_unavailable'),$cancelKey,'HTML');
+        return;
+    }
     sendMessage(\achbotMessage('bot.bot.edit_support_i_d.message.6279ae207e'), getGateWaysKeys());
     setUser();
     exit();
@@ -1740,7 +1729,7 @@ if (is_string($userInfo['step']??null) &&
         try {
             sendMessage(\achbotMessage('bot.bot.gift_volume_and_day.message.df8d2180ae').
                 $directClaim['id'].').',$removeKeyboard);
-            sendMessage($mainValues['reached_main_menu'],getMainKeys());
+            sendMessage($mainValues['reached_main_menu'], getMainKeys(), 'HTML');
         } catch (Throwable $noticeFailure) {
             error_log('direct_gift_success_notice_unconfirmed');
         }
@@ -1830,7 +1819,7 @@ if(preg_match('/^giftServerVolume(\d+)_(\d+)/',$userInfo['step'],$match) && ($fr
                         sendMessage(\achbotMessage('bot.bot.gift_volume_and_day.message.b155540ffb'),
                                     $removeKeyboard);
                     }
-                    sendMessage($mainValues['reached_main_menu'],getMainKeys());
+                    sendMessage($mainValues['reached_main_menu'], getMainKeys(), 'HTML');
                 } catch (Throwable $giftNoticeError) {
                     error_log('gift_enqueue_telegram_notice_unconfirmed');
                 }
@@ -2124,12 +2113,12 @@ if(preg_match('/^editServerPanePassword(.*)/',$userInfo['step'],$match) and $tex
 
 if ((require __DIR__ . '/src/Subscription/SubLinkSettings.php') === null) return;
 
-if(preg_match('/^wizwizdeleteserver(\d+)/',$data,$match) and ($from_id == $admin || ($userInfo['isAdmin'] == true && $permissions['servers']))){
+if(preg_match('/^wizwizdeleteserver(\d+)/',$data,$match) and ($from_id == $admin || ($userInfo['isAdmin'] == true && achbotAdminCan('servers')))){
     editText($message_id,\achbotMessage('admin_settings.management.server_delete_confirm'),json_encode(['inline_keyboard'=>[
         [['text'=>\achbotMessage('bot.bot.addserver_name.button.13159f8c74'),'callback_data'=>"yesDeleteServer" . $match[1]],['text'=>\achbotMessage('bot.bot.addserver_name.button.f47dddc181'),'callback_data'=>"showServerSettings" . $match[1] . "_0"]]
         ]]));
 }
-if(preg_match('/^yesDeleteServer(\d+)/',$data,$match) && ($from_id == $admin || ($userInfo['isAdmin'] == true && $permissions['servers']))){
+if(preg_match('/^yesDeleteServer(\d+)/',$data,$match) && ($from_id == $admin || ($userInfo['isAdmin'] == true && achbotAdminCan('servers')))){
     $stmt = $connection->prepare("DELETE FROM `server_info` WHERE `id`=?");
     $stmt->bind_param("i", $match[1]);
     $stmt->execute();
@@ -2339,7 +2328,7 @@ if($data == 'reciveApplications') {
     }
 	$keyboard[] = ['text'=>$buttonValues['back_to_main'],'callback_data'=>"mainMenu"];
     $keyboard = array_chunk($keyboard,1);
-    editText($message_id, \achbotMessage('bot.bot.recive_applications.message.ec86dead1a', ['supportID' => $supportID]), json_encode(['inline_keyboard'=>$keyboard]), "html");
+    editText($message_id, \achbotMessageHtml('bot.bot.recive_applications.message.ec86dead1a', ['supportID' => $supportID]), json_encode(['inline_keyboard'=>$keyboard]), "html");
 }
 if ($text == $buttonValues['cancel']) {
     // config.php loaded userInfo before any concurrent direct-gift callback.
@@ -2357,6 +2346,6 @@ if ($text == $buttonValues['cancel']) {
     }
     // Cancellation never deletes other administrators' plan rows.
     sendMessage($mainValues['waiting_message'], $removeKeyboard);
-    sendMessage($mainValues['reached_main_menu'],getMainKeys());
+    sendMessage($mainValues['reached_main_menu'], getMainKeys(), 'HTML');
 }
 ?>

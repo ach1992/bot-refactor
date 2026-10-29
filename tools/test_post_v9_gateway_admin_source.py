@@ -63,6 +63,7 @@ function editText(...$args) { $GLOBALS['events'][]=['edit',$args[0]??null]; }
 function answerCallbackQuery(...$args) {$GLOBALS['events'][]=['denied',$args[1]??null];}
 function getGateWaysKeys(){return 'payment settings';}
 function achbotGatewayAudienceKeyboard(){return 'cohort settings';}
+require $root.'/src/Admin/Access.php'; // actual bootstrap dependency for extracted writers
 require $root.'/src/Finance/PaymentLifecycle.php';
 require $root.'/src/Subscription/DirectGift.php';
 require $argv[7];
@@ -91,6 +92,11 @@ def reset(w,e,states: dict,role=1):
     sql(w,e,"DELETE FROM setting WHERE type IN ('BOT_STATES','ACHBOT_ADMIN_GATEWAY_SOURCE'); "
             f"INSERT INTO setting (type,value) VALUES ('BOT_STATES','{raw}'); "
             f"UPDATE users SET isAdmin={role},step='none' WHERE userid=9002;")
+
+    # The positive delegated writer is explicitly a Manager. users.isAdmin=0
+    # still revokes it in every existing stale/cached-authority negative.
+    sql(w,e,"DELETE FROM setting WHERE type='ADMIN_ROLE_9002'; "
+        "INSERT INTO setting(type,value) VALUES ('ADMIN_ROLE_9002','manager')")
 
 def read(w,e):
     r=sql(w,e,"SELECT value FROM setting WHERE type='BOT_STATES' LIMIT 1")

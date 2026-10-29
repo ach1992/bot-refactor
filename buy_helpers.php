@@ -80,6 +80,7 @@ if (!function_exists('buildLinksAndSendQr')) {
             // vendor config; provider identity is retained in existing service-effect evidence.
             $token = '';
             $mainSubLink = $response['subscription_url'] ?? '';
+            $backupUrls = \AchBot\Subscription\Presentation\subscriptionAliases($mainSubLink, $subLinksRaw);
         } else {
             throw new \UnexpectedValueException('unsupported_panel');
         }

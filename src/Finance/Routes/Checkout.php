@@ -6,6 +6,9 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
 }
 require_once __DIR__ . '/../../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
 
+require_once __DIR__ . '/../../Admin/Access.php';
+if (!achbotAdminRequestAllowed(is_string($data??null)?$data:null,is_string($text??null)?$text:null,(string)($userInfo['step']??''))) {achbotAdminDeny();return;}
+
 
 require_once __DIR__ . '/../PaymentLifecycle.php';
 
@@ -434,7 +437,7 @@ if (preg_match('/wait(?:CustomCart|CustomGift|CustomUsdt)Receipt(.*)/', $userInf
     $msg = str_replace(
         ['TYPE', 'USER-ID', 'USERNAME', 'NAME', 'PRICE', 'REMARK', 'VOLUME', 'DAYS'],
         [\achbotMessage('payment.checkout.text.04029e7ea7'), $from_id, $username, $first_name, $fileprice, $remark, $volume, $days],
-        $mainValues['buy_custom_account_request']
+        achbotManualCaption($connection, $receiptPay, $mainValues['buy_custom_account_request'])
     );
 
     $adminKeyboard = buildAdminKeyboardWithStats(
@@ -447,7 +450,7 @@ if (preg_match('/wait(?:CustomCart|CustomGift|CustomUsdt)Receipt(.*)/', $userInf
     );
 
     if (sendReceiptToAdminsAndUpdatePay($connection, $fileid,
-        achbotManualCaption($connection, $receiptPay, $msg), $adminKeyboard, $admin, $match[1],
+        $msg, $adminKeyboard, $admin, $match[1],
         $deliveryToken)) {
         setUser();
         sendWithStartButton(achbotManualAcknowledgement($receiptPay, $method), $buttonValues['start_bot'], $botUsername, 'mainMenu', 'HTML', (string)$receiptPay['hash_id']);
@@ -458,7 +461,7 @@ if (preg_match('/wait(?:CustomCart|CustomGift|CustomUsdt)Receipt(.*)/', $userInf
 }
 
 if (preg_match('/^accCustom(.+)$/D', $data, $match) && $text != $buttonValues['cancel']) {
-    if ((int)$from_id <= 0 || ((int)$from_id !== (int)$admin && empty($userInfo['isAdmin']))) {
+    if (!achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'payments')) {
         alert(\achbotMessage('payment.checkout.alert.873a4950ab'), true);
         return;
     }
@@ -669,7 +672,8 @@ if (preg_match('/^accCustom(.+)$/D', $data, $match) && $text != $buttonValues['c
         foreach ($adminMessages as $msgInfo) {
             if (
                 isset($msgInfo['chat_id'], $msgInfo['message_id']) &&
-                $msgInfo['chat_id'] != $payInfo['chat_id']
+                $msgInfo['chat_id'] != $payInfo['chat_id'] &&
+                achbotAdminStoredRecipientAllowed($connection,$msgInfo['chat_id'],(int)$admin)
             ) {
                 editKeys($keys, $msgInfo['message_id'], $msgInfo['chat_id']);
             }
@@ -1300,13 +1304,13 @@ if (preg_match('/wait(?:BuyCart|BuyGift|BuyUsdt)Receipt(.*)/', $userInfo['step']
         $msg = str_replace(
             ['ACCOUNT-COUNT', 'TYPE', 'USER-ID', "USERNAME", "NAME", "PRICE", "REMARK"],
             [$payInfo['agent_count'], achbotManualLabel($method), $from_id, $username, $name, $fileprice, $filename],
-            $mainValues['buy_new_much_account_request']
+            achbotManualCaption($connection, $receiptPay, $mainValues['buy_new_much_account_request'])
         );
     } else {
         $msg = str_replace(
             ['SERVERNAME', 'TYPE', 'USER-ID', "USERNAME", "NAME", "PRICE", "REMARK", "VOLUME", "DAYS"],
             [$serverTitle, achbotManualLabel($method), $from_id, $username, $name, $fileprice, $filename, $volume, $days],
-            $mainValues['buy_new_account_request']
+            achbotManualCaption($connection, $receiptPay, $mainValues['buy_new_account_request'])
         );
     }
 
@@ -1320,7 +1324,7 @@ if (preg_match('/wait(?:BuyCart|BuyGift|BuyUsdt)Receipt(.*)/', $userInfo['step']
     );
 
 if (sendReceiptToAdminsAndUpdatePay($connection, $fileid,
-        achbotManualCaption($connection, $receiptPay, $msg), $adminKeyboard, $admin, $match[1],
+        $msg, $adminKeyboard, $admin, $match[1],
         $deliveryToken)) {
         setUser();
         sendWithStartButton(achbotManualAcknowledgement($receiptPay, $method), $buttonValues['start_bot'], $botUsername, 'mainMenu', 'HTML', (string)$receiptPay['hash_id']);

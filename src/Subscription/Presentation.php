@@ -18,6 +18,36 @@ function subscriptionUrl($value): string {
         ? $value : '';
 }
 
+/**
+ * Configured alternate origins for an observed native subscription URL.
+ * Preserve its opaque path, query and fragment; never fetch or rewrite the
+ * primary URL, its bearer bytes, or any config URI.
+ */
+function subscriptionAliases($nativeUrl, $configuredBases): array {
+    $native = subscriptionUrl($nativeUrl);
+    if ($native === '' || !is_string($configuredBases)) return [];
+    $parts = parse_url($native);
+    $nativePath = (string)($parts['path'] ?? '/');
+    if ($nativePath === '') $nativePath = '/';
+    $tail = (array_key_exists('query', $parts) ? '?' . $parts['query'] : '')
+        . (array_key_exists('fragment', $parts) ? '#' . $parts['fragment'] : '');
+    $out = [];
+    foreach (array_filter(array_map('trim', explode(',', $configuredBases))) as $base) {
+        if (subscriptionUrl($base) === '') continue;
+        $alias = parse_url($base);
+        if (isset($alias['query']) || isset($alias['fragment']) ||
+            str_contains($alias['host'], '*')) continue;
+        $prefix = rtrim((string)($alias['path'] ?? ''), '/');
+        // An alternate may already include the native deployment prefix.
+        $path = $prefix !== '' && ($nativePath === $prefix || str_starts_with($nativePath, $prefix . '/'))
+            ? $nativePath : $prefix . $nativePath;
+        $url = $alias['scheme'] . '://' . $alias['host']
+            . (isset($alias['port']) ? ':' . $alias['port'] : '') . $path . $tail;
+        if ($url !== $native && subscriptionUrl($url) !== '') $out[] = $url;
+    }
+    return array_values(array_unique($out));
+}
+
 function codeLinks(array $links): string {
     return implode("\n\n", array_map(static function ($link) {
         return '<code>' . escape($link) . '</code>';

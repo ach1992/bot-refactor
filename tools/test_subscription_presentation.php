@@ -131,6 +131,29 @@ foreach ([
 }
 same(present('retired', $native, $on)['reason'], 'unsupported_provider', 'unsupported_provider_boundary');
 
+// Alternate origins retain all opaque native URL bytes and are display-only.
+$opaqueSub='https://native.invalid/deployment/sub/token%2D%3D?client=x%2By&flag=1#format';
+$opaqueSuffix='/deployment/sub/token%2D%3D?client=x%2By&flag=1#format';
+same(\AchBot\Subscription\Presentation\subscriptionAliases($opaqueSub,
+    'https://backup.invalid, https://backup.invalid/, https://backup.invalid/deployment'),
+    ['https://backup.invalid'.$opaqueSuffix], 'auxiliary_origins_deduplicated_without_opaque_rewrite');
+same(\AchBot\Subscription\Presentation\subscriptionAliases($opaqueSub,
+    'https://backup.invalid/custom'), ['https://backup.invalid/custom'.$opaqueSuffix],
+    'auxiliary_explicit_prefix_retains_native_path');
+same(\AchBot\Subscription\Presentation\subscriptionAliases($opaqueSub,
+    'https://backup.invalid:8443'), ['https://backup.invalid:8443'.$opaqueSuffix],
+    'auxiliary_explicit_port_preserved');
+foreach (['', 'javascript://bad.invalid', 'https://user:secret@bad.invalid',
+    'https://bad.invalid/?other=token', 'https://bad.invalid/#other',
+    'https://bad.invalid/<tag>', 'https://*.bad.invalid'] as $invalidBase) {
+    same(\AchBot\Subscription\Presentation\subscriptionAliases($opaqueSub,$invalidBase),
+        [], 'invalid_or_unset_auxiliary_origin_omitted');
+}
+same(\AchBot\Subscription\Presentation\subscriptionAliases('/sub/untrusted',
+    'https://backup.invalid'), [], 'relative_native_url_cannot_fabricate_auxiliary');
+same(\AchBot\Subscription\Presentation\subscriptionAliases([], 'https://backup.invalid'),
+    [], 'non_string_native_auxiliary_input_safe');
+
 // Subscription URLs and customer HTML are safe; diagnostics stay out of copy.
 foreach (['https://', '/sub/path', 'javascript://host', "https://bad.invalid/\nleak",
     'https://user:secret@native.invalid/sub', 'https://bad.invalid/<tag>', []] as $badUrl) {

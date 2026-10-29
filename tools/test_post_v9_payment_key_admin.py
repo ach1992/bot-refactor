@@ -152,6 +152,10 @@ def setup(w,e):
         "(9003,'Delegate2','third','0','1700000000',1)")
     sql(w,e,"INSERT INTO setting(type,value) VALUES ('PAYMENT_KEYS','{}')")
 
+    # Deliberately privileged delegated editors, not untyped legacy Operators.
+    sql(w,e,"INSERT INTO setting(type,value) VALUES "
+        "('ADMIN_ROLE_9002','manager'),('ADMIN_ROLE_9003','manager')")
+
 def store(w,e,doc):
     raw=json.dumps(doc,ensure_ascii=False,separators=(',',':')).replace("'","''")
     sql(w,e,"DELETE FROM setting WHERE type='PAYMENT_KEYS'; "

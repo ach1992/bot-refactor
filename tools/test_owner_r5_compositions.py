@@ -1,0 +1,273 @@
+#!/usr/bin/env python3
+"""Source-linked native message expressions: distinct bot-owned heading icons.
+
+The bounded matrix evaluates current PHP presentation expressions with synthetic
+values and the actual loader. It does not dispatch routes, SQL or outbound calls.
+Separate keyboard labels and mutually exclusive branches are separate surfaces;
+identical heading labels may repeat within a rendered message.
+"""
+from __future__ import annotations
+import argparse, copy, html, json, pathlib, re, subprocess, tempfile, unicodedata
+import catalog_owner_r5 as r5
+ROOT=pathlib.Path(__file__).resolve().parents[1]
+REFERENCE='9dab78bac830184818b5b0c899e530c9a2069c93'
+CORRECTIONS={
+    'wallet.wallet_transfer.wallet_transfer_restart.telegram_update_transfer_update_id.9ccad7d18e':('شناسه پیام تلگرام', 'شناسه به‌روزرسانی تلگرام'),
+    'wallet.wallet_transfer.wallet_transfer_restart.text.f7206f6d33':('🎫', '📥'),
+    'payment.referral_reward.give_referral_reward.text.c0780ce268':('💰', '💼'),
+    'payment.payment_lifecycle.pay_ux_reference.text.d031212b3c':('🎫 شناسهٔ تلگرام', '👤 شناسه عددی'),
+    'subscription.account_deletion.shared_effect_notice':('⚠️', '🚫'),
+    'manual_payment.manual_receipts.message.f6331b33af':('💰 <b>پرداخت با موجودی</b>', '💳 <b>پرداخت با موجودی</b>'),
+    'wallet.wallet_transfer.wallet_transfer_restart.text.77d4a377ae':('💼', '🔄'),
+    'wallet.wallet_settlement.process_wallet_payment.external_effect_unverified_verify_before.10e2ccf8a3':('⚠️', '🔎'),
+    'renewal.extensions.external_effect_unverified_verify_before.10e2ccf8a3':('⚠️', '🔎'),
+    'gateway.gateway_return.np_alert_operator.text.7d4d150298':('💰', '💵'),
+    'gateway.gateway_return.np_alert_operator.text.04d4b236f8':('⚠️', '🔎'),
+    'broadcast.routes.pm_noop.text.b59e6ba611':('📌', '📂'),
+    'manual_payment.manual_receipts.text.8ec86d6a5e':('💰', '💵'),
+    'manual_payment.manual_receipts.text.c0780ce268':('💰', '💼'),
+    'payment.checkout.user_i_d_uid_for_log.6a12f817c0':('🎫', '👤'),
+    'payment.discount_administration.add_discount_code.text.66fafb9fd4':('▪️', '🏷'),
+    'payment.discount_administration.add_discount_code.text.9cd9d5658f':('▪️', '🔢'),
+    'payment.discount_administration.add_discount_code.text.5919cd752d':('▪️', '👤'),
+    'payment.discount_administration.add_discount_code.text.b7cf332a32':('▪️', '👥'),
+    'payment.discount_administration.add_discount_code.text.77f1958ae0':('▪️', '🎯'),
+    'payment.discount_administration.add_discount_code.text.d2d2b624b9':('▪️', '💰'),
+    'payment.discount_administration.add_discount_code.text.0b9a6e5bc7':('▪️', '💵'),
+}
+def check(ok,message):
+    if not ok:raise AssertionError(message)
+def command(*args,root=ROOT,**kwargs):return subprocess.check_output(args,cwd=root,**kwargs)
+def load_catalogs(root):
+    raw=command('php','-r','$r=[];foreach(["user","admin"]as$a)$r[$a]=require "messages/fa/".$a.".php";echo json_encode($r,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);',root=root)
+    return {a:r5.flatten(g)for a,g in json.loads(raw).items()}
+NOTIFICATION_KEYS={
+    'admin.roles.notifications_on','admin.roles.notifications_off',
+    'admin.roles.notifications_saved','admin.roles.notifications_failed',
+}
+STAFF_GUIDE_KEY='admin.roles.choose_level'
+STAFF_GUIDE_BEFORE='پشتیبان: اطلاعات کاربر، مسدودسازی و ویرایش سفارش'
+STAFF_GUIDE_AFTER='پشتیبان: اطلاعات کاربر، مسدودسازی، ویرایش سفارش و بررسی رسید پرداخت (تأیید یا رد)'
+def staff_followup_proof(current,archived):
+    # New notification entries and this one role sentence have separate,
+    # explicit lineage; they never change the 22 historical corrections.
+    record=r5.manifest();r5.verify_and_restore(current,record)
+    added={key for audience,rows in current.items()for key in rows if key not in archived[audience]}
+    check(added==NOTIFICATION_KEYS,'notification_catalog_addition_scope_drift')
+    check(all(set(archived[a])<=set(current[a])for a in archived),'staff_followup_removed_historical_entry')
+    for key in NOTIFICATION_KEYS:
+        item=record['added_keys'].get(key,{})
+        check(item.get('audience')=='admin'and current['admin'].get(key)==item.get('entry')
+              and r5.params(current['admin'][key])==[],'notification_catalog_lineage_or_recipient:'+key)
+    before=archived['admin'][STAFF_GUIDE_KEY];after=current['admin'][STAFF_GUIDE_KEY]
+    check(r5.text(before).count(STAFF_GUIDE_BEFORE)==1,'staff_guide_original_sentence_drift')
+    check(r5.text(after)==r5.text(before).replace(STAFF_GUIDE_BEFORE,STAFF_GUIDE_AFTER,1)
+          and r5.params(after)==r5.params(before),'staff_guide_other_words_slots_or_markup_changed')
+def correction_proof(current,archived):
+    staff_followup_proof(current,archived)
+    changed={k for a,rows in current.items()for k,e in rows.items()if k in archived[a]and e!=archived[a][k]}
+    check(changed==set(CORRECTIONS)|{STAFF_GUIDE_KEY},'composed_catalog_correction_scope_drift')
+    for key,(before,after)in CORRECTIONS.items():
+        audience=next(a for a in current if key in current[a])
+        old=archived[audience][key];now=current[audience][key]
+        check(r5.text(old).count(before)==1,'composed_catalog_literal_anchor_drift:'+key)
+        expected=r5.text(old).replace(before,after)
+        check(r5.text(now)==expected and r5.params(now)==r5.params(old),'composed_catalog_words_slots_or_markup_changed:'+key)
+    return len(CORRECTIONS)
+def staff_followup_negative_controls(current,archived):
+    mutations=[]
+    bad=copy.deepcopy(current);bad['admin']['admin.roles.unlisted_notification']='ناشناخته';mutations.append(bad)
+    key=sorted(NOTIFICATION_KEYS)[0]
+    bad=copy.deepcopy(current);bad['user'][key]=bad['admin'].pop(key);mutations.append(bad)
+    bad=copy.deepcopy(current);bad['admin'][key]={'text':'تغییر ثبت‌نشده','parameters':[]};mutations.append(bad)
+    bad=copy.deepcopy(current);bad['admin'].pop(key);mutations.append(bad)
+    bad=copy.deepcopy(current);bad['admin'][STAFF_GUIDE_KEY]['text']=r5.text(bad['admin'][STAFF_GUIDE_KEY]).replace('مدیر:','مدیر ارشد:',1);mutations.append(bad)
+    bad=copy.deepcopy(current);bad['admin'][STAFF_GUIDE_KEY]['parameters']=[];mutations.append(bad)
+    for index,bad in enumerate(mutations):
+        try:correction_proof(bad,archived)
+        except AssertionError:continue
+        raise AssertionError('staff_followup_negative_control_missed:'+str(index))
+    return len(mutations)
+def numeric_id_variant(value):
+    value=unicodedata.normalize('NFKD',value)
+    value=''.join(c for c in value if not unicodedata.combining(c) and c!='ـ')
+    value=re.sub('[\u200c\u200d\u200e\u200f]',' ',value)
+    return re.search(r'شناسه\s*(?:ی\s*)?تلگرام',value) is not None
+def heading_collisions(message):
+    seen={};bad=[];pre=False
+    for raw in message.splitlines():
+        if '<pre>' in raw:pre=True
+        if not pre:
+            line=html.unescape(re.sub('<[^>]+>','',raw)).strip()
+            match=re.match(r'^([^\w\s]+)\s+(.+)',line)
+            if match and any(ord(c)>9000 for c in match[1]):
+                marker=match[1];label=re.split('[:←]',match[2],maxsplit=1)[0].strip()
+                if marker in seen and seen[marker]!=label:bad.append((marker,seen[marker],label))
+                seen[marker]=label
+        if '</pre>' in raw:pre=False
+    return bad
+TOKENIZE=r'''$r=[];foreach(json_decode(stream_get_contents(STDIN),true,512,JSON_THROW_ON_ERROR)as$p=>$s){$r[$p]=[];foreach(token_get_all($s)as$t){if(is_array($t)){if(in_array($t[0],[T_WHITESPACE,T_COMMENT,T_DOC_COMMENT,T_OPEN_TAG]))continue;$r[$p][]=[$t[0],$t[1]];}else$r[$p][]=[0,$t];}}echo json_encode($r,JSON_THROW_ON_ERROR);'''
+def expression(tokens,kind,target,anchor,arg=0,operator='='):
+    matches=[]
+    for i,(_,token) in enumerate(tokens):
+        if token!=target:continue
+        start=i+1
+        if kind=='assign':
+            if start>=len(tokens)or tokens[start][1]!=operator:continue
+            start+=1
+        elif kind=='call':
+            if start>=len(tokens)or tokens[start][1]!='(':continue
+            start+=1
+        depth=[];part=[];arguments=[]
+        for token_id,value in tokens[start:]:
+            # Punctuation inside quoted/interpolated tokens is never a boundary.
+            if token_id==0:
+                if value in '([{':depth.append(value)
+                elif value in ')]}':
+                    if not depth:
+                        if kind=='call'and value==')':arguments.append(''.join(part));break
+                        break
+                    check('([{'.index(depth.pop())==')]}'.index(value),'expression_unbalanced')
+                elif not depth and value==';':
+                    arguments.append(''.join(part));break
+                elif not depth and kind=='call'and value==',':
+                    arguments.append(''.join(part));part=[];continue
+            part.append(value)
+        if len(arguments)>arg and anchor in arguments[arg]:matches.append(arguments[arg])
+    # A duplicated exact expression in two loops is the same presentation proof.
+    matches=list(dict.fromkeys(matches))
+    check(len(matches)==1,'expression_anchor_missing_or_ambiguous:'+anchor)
+    return matches[0]
+def spec(name,path,kind,target,anchor,arg=0):return dict(name=name,path=path,kind=kind,target=target,anchor=anchor,arg=arg)
+SPECS=[
+ spec('wallet_transfer_report','src/Finance/Routes/WalletTransfer.php','assign','$channelMessage','wallet_transfer_restart.channel_message.4dcd886908'),
+ spec('referral_customer_balances','src/Finance/ReferralReward.php','assign','$buyerMsg','give_referral_reward.buyer_msg.51caba68b5'),
+ spec('referral_operator','src/Finance/ReferralReward.php','assign','$operatorMsg','give_referral_reward.operator_msg.7c8cfd9d4f'),
+ spec('payment_reference','src/Finance/PaymentLifecycle.php','return','return','pay_ux_reference.label.edb6e627ea'),
+ spec('merchant_operator_review','src/Finance/GatewayReturn.php','assign','$message','np_alert_operator.message.00aa2f3ddb'),
+ spec('wallet_uncertain_effect','src/Finance/WalletSettlement.php','assign','$adminErr','process_wallet_payment.admin_err.51996ec850'),
+ spec('manual_operator_review','src/Finance/Routes/ManualReceipts.php','assign','$body','manual_receipts.body.8725ef87b4'),
+ spec('manual_approved_balances','src/Finance/Routes/ManualReceipts.php','assign','$adminMessages','manual_receipts.admin_messages.31d90c5e69'),
+ spec('manual_customer_wallet_credit','src/Finance/Routes/ManualReceipts.php','call','sendMessage','manual_receipts.message.f568baa065'),
+ spec('broadcast_detail','src/Broadcast/Routes.php','assign','$out','pm_noop.out.94647cb3a5'),
+ spec('checkout_review','src/Finance/Routes/Checkout.php','call','sendMessage','checkout.message.54c81d71b7'),
+ spec('discount_details','src/Finance/Routes/DiscountAdministration.php','assign','$text','add_discount_code.text.3a4c0517b4'),
+ spec('shared_delete_warning','src/Subscription/AccountDeletion.php','call','editText','account_deletion.message.acb79596be',1),
+ spec('manual_renewal_uncertain','src/Finance/Routes/RenewalCheckout.php','assign','$err','renewal_checkout.err.a6df2ab8a6'),
+ spec('wallet_renewal_uncertain','src/Finance/Routes/RenewalCheckout.php','assign','$adminErr','renewal_checkout.admin_err.7f953ff1fb'),
+ spec('manual_days_uncertain','src/Finance/Routes/Extensions.php','assign','$err','extensions.err.28163d77c1'),
+ spec('wallet_days_uncertain','src/Finance/Routes/Extensions.php','assign','$adminErr','extensions.admin_err.70cf66359f'),
+ spec('manual_volume_uncertain','src/Finance/Routes/Extensions.php','assign','$err','extensions.err.322385c9dd'),
+ spec('wallet_volume_uncertain','src/Finance/Routes/Extensions.php','assign','$adminErr','extensions.admin_err.128069a4b4'),
+ spec('new_ticket_text','src/Support/CreateTicket.php','assign','$txt','create_ticket.text.fe45cc8381'),
+ spec('new_ticket_photo','src/Support/CreateTicket.php','assign','$txt','create_ticket.text.4479736037'),
+ spec('ticket_followup_text','src/Support/CustomerConversation.php','assign','$txt','user_all_tickets.text.a79a2fa69e'),
+ spec('ticket_followup_photo','src/Support/CustomerConversation.php','assign','$txt','user_all_tickets.text.46d8580795'),
+ spec('wallet_private_failure','src/Finance/Routes/WalletTransfer.php','assign','$adminReport','wallet_transfer_failure.2e028e487d'),
+ spec('wallet_private_notice_failure','src/Finance/Routes/WalletTransfer.php','assign','$notice','wallet_transfer_notification_failure.9a285d7145'),
+ spec('wallet_customer_review','src/Finance/Routes/WalletTransfer.php','call','sendMessage','wallet_transfer_restart.message.6924ce253f'),
+ spec('wallet_recipient_credit','src/Finance/Routes/WalletTransfer.php','call','$sendTransferNotice','wallet_transfer_restart.text.ecbce64eed'),
+ spec('wallet_sender_debit','src/Finance/Routes/WalletTransfer.php','call','$sendTransferNotice','wallet_transfer_restart.text.8e5e1ee663'),
+]
+PHP=r'''error_reporting(E_ALL);set_error_handler(static function($s,$m){throw new ErrorException($m,0,$s);});
+require $argv[1].'/messages/loader.php';
+function achbotFinanceDiagnosticReason($e){return 'fixture_review_required';}
+$input=json_decode(stream_get_contents(STDIN),true,512,JSON_THROW_ON_ERROR);$out=[];
+foreach($input as$name=>$expr){$out[$name]=(static function($expr){
+ $from_id=1001;$to_id=9002;$sender_name='کاربر آزمایشی';$receiver_name='گیرنده آزمایشی';
+ $sender_username='@fixture_sender';$receiver_username='@fixture_receiver';
+ $sender_before=50000;$sender_after=49700;$receiver_before=50000;$receiver_after=50300;
+ $amount=300;$before=50000;$after=50300;$payId=701;$buyer=1001;$inviter=9002;
+ $pay=['hash_id'=>'fixture_order','user_id'=>1001];$hash='fixture_order';
+ $identity='کاربر آزمایشی';$subject='خرید اشتراک';$quote='2.50 USD';$childCount=1;
+ $a=['user_id'=>1001,'price'=>150000,'plan_title'=>'پلن نمونه','order_hash'=>'fixture_order',
+ 'provider_reference'=>'fixture_invoice','payment_id'=>'fixture_payment','extra_evidence_count'=>0,'updated_at'=>'2026-10-29 00:00:00'];
+ $reason='نیازمند بررسی';$safe=static fn($v)=>htmlspecialchars((string)$v,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8');
+ $esc=$safe;$case=$a+['user_name'=>'کاربر آزمایشی','user_handle'=>'fixture_user','quote_amount'=>'2.50','quote_currency'=>'USD','stage'=>'needs_review'];
+ $handle='fixture_user';$attemptId=702;$cursor=0;$methodName='بانکی';$userId=1001;$currentWallet=50000;$newWallet=50300;$hash_id='fixture_receipt';
+ $hashId='fixture_order';$uidForLog=1001;$price=300;$supportID='@fixture_support';
+ $bid=801;$title='پیام نمونه';$tp='پیام';$g='همه';$dt='2026-10-29';$previewText='متن آزمایشی';$total=20;$pinned=10;$deleted=0;
+ $amountText='10 درصد';$dateText='2026-11-29';$countText='10';$canUseText='1';$audienceText='همه';$targetText='همه سرویس‌ها';$minPriceText='100,000 تومان';$maxDiscountText='20,000 تومان';
+ $remark='اشتراک نمونه';$match=['fixture','fixture_order'];$e=new RuntimeException('fixture');
+ $reference='FIXTURE_REF';$transferUpdateId=9001;$sqlstate='22003';$commitStarted=false;$transactionOutcome='confirmed_rolled_back';$rollbackApi='returned_success';$noticeReference='FIXTURE_NOTICE';$failedRoles='recipient';
+ $first_name='کاربر آزمایشی';$username='fixture_user';$ticketCat='پشتیبانی';$ticketTitle='درخواست نمونه';$text='متن نمونه';$caption='شرح تصویر';
+ return eval('return '.$expr.';');})($expr);}
+echo json_encode($out,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);'''
+def render(expressions,catalog_root):
+    return json.loads(command('php','-r',PHP,str(catalog_root),input=json.dumps(expressions).encode()))
+def audit(source_root=ROOT,catalog_root=ROOT):
+    paths={s['path']for s in SPECS}|{'config.php','src/Finance/ReceiptHelpers.php'}
+    source={p:(source_root/p).read_text()for p in paths}
+    tokenized=json.loads(command('php','-r',TOKENIZE,input=json.dumps(source).encode()))
+    expressions={s['name']:expression(tokenized[s['path']],s['kind'],s['target'],s['anchor'],s['arg'])for s in SPECS}
+    # Current source's incremental stats loops: execute only the presentation
+    # expressions, twice, retaining the intentional repeated identical labels.
+    stats={
+     'admin_agent_stats':['admin_settings.config.get_bot_report_keys.text.900e008efe','admin_settings.config.send_chunked_messages.text.833406bb32','admin_settings.config.get_bot_report_keys.text.fa6bc48623','admin_settings.config.get_bot_report_keys.text.9a3a995798','admin_settings.config.get_bot_report_keys.text.8fdd85c8a9'],
+     'admin_plan_stats':['admin_settings.config.get_bot_report_keys.text.696814adc4','admin_settings.config.get_bot_report_keys.text.549ee88ce8','admin_settings.config.get_bot_report_keys.text.0ad85f8c38'],
+    }
+    for name,anchors in stats.items():
+        pieces=[]
+        for i,anchor in enumerate(anchors):
+            # The shared ID row also exists in sendChunkedMessages; identical
+            # tokenized expression bytes are deduplicated by expression().
+            pieces.append(expression(tokenized['config.php'],'assign','$text',anchor,operator='='if i==0 else'.='))
+        expressions[name]='(static function(){ $userId=1001;$totalOrders=3;$totalPaid="150,000";$formattedDate="2026-10-29";$planName="پلن نمونه";$planCount=3;return '+pieces[0]+'.('+'.'.join(pieces[1:])+').('+'.'.join(pieces[1:])+');})()'
+    current=render(expressions,catalog_root)
+    for name,value in current.items():check(not heading_collisions(value),'composed_heading_collision:'+name+':'+str(heading_collisions(value)))
+    # Pure source quote expressions plus the actual insertion tail cover all six
+    # existing receipt templates without dispatching payment or querying a DB.
+    # Ledger-pinning/recipient/mutation proof remains in the dedicated receipt test.
+    quote_tokens=tokenized['src/Finance/ReceiptHelpers.php']
+    for method,anchor in [('bank','header.12c0babe12'),('crypto','header.cc6f426145')]:
+        expr=expression(quote_tokens,'assign','$quoteLine',anchor)
+        tail=source['src/Finance/ReceiptHelpers.php'].split("    $priceAt = strpos($caption, 'PRICE');",1)
+        check(len(tail)==2,'actual_receipt_insertion_tail_missing')
+        tail="$priceAt = strpos($caption, 'PRICE');"+tail[1].split('\n}\n',1)[0]
+        for key in ['buy_custom_account_request','buy_new_account_request','buy_new_much_account_request','renew_account_request_message','increase_account_request_message','increase_wallet_request_message']:
+            name='receipt_'+method+'_'+key
+            expressions[name]="(static function(){ $details=['quote_amount'=>'150003'];$asset='USDT';$network='BEP20';$caption=achbotMessage('legacy_messages."+key+"');$quoteLine="+expr+';'+tail+'})()'
+    current=render(expressions,catalog_root)
+    for name,value in current.items():check(not heading_collisions(value),'composed_heading_collision:'+name+':'+str(heading_collisions(value)))
+    with tempfile.TemporaryDirectory(prefix='achbot-heading-reference-')as temp:
+        stage=pathlib.Path(temp);(stage/'messages/fa').mkdir(parents=True)
+        (stage/'messages/loader.php').write_bytes((catalog_root/'messages/loader.php').read_bytes())
+        for audience in ['user','admin']:
+            (stage/'messages/fa'/f'{audience}.php').write_bytes(command('git','show',REFERENCE+':messages/fa/'+audience+'.php'))
+        archived=render(expressions,stage)
+        current_catalogs=load_catalogs(catalog_root);archived_catalogs=load_catalogs(stage)
+        correction_count=correction_proof(current_catalogs,archived_catalogs)
+        staff_controls=staff_followup_negative_controls(current_catalogs,archived_catalogs)
+    # Existing private-failure composition: this value comes from update_id,
+    # not message_id. The copy correction must preserve the supplied number.
+    update_expr=expression(tokenized['src/Finance/Routes/WalletTransfer.php'],'assign','$transferUpdateId',"'update_id'")
+    check(update_expr=="$amountSource['update_id']",'wallet_transfer_update_id_source_binding_drift')
+    check('شناسه به‌روزرسانی تلگرام: <code>9001</code>\n' in current['wallet_private_failure'],'telegram_update_id_label_or_value_changed')
+    check('شناسه پیام تلگرام:' not in current['wallet_private_failure'],'telegram_update_id_mislabeled_as_message')
+    check('شناسه پیام تلگرام: <code>9001</code>\n' in archived['wallet_private_failure'],'archived_wrong_telegram_update_label_RED_missing')
+    reds=[name for name,value in archived.items()if heading_collisions(value)]
+    expected_red={s['name']for s in SPECS[:2]+SPECS[3:19]}
+    check(set(reds)==expected_red,'archived_composed_RED_scope_drift:'+str(reds))
+    # Actual combined output negatives: template-only tests cannot catch these.
+    report=current['wallet_transfer_report']
+    mutations=[('wallet_after_marker',report,report.replace('🔄 بعد:','💼 بعد:')),
+               ('wallet_destination_marker',report,report.replace('📥 <b>مقصد','🎫 <b>مقصد')),
+               ('manual_new_balance',current['manual_approved_balances'],current['manual_approved_balances'].replace('💼 موجودی جدید:','💰 موجودی جدید:')),
+               ('merchant_invoice',current['merchant_operator_review'],current['merchant_operator_review'].replace('💵 <b>مبلغ فاکتور:','💰 <b>مبلغ فاکتور:')),
+               ('discount_distinct_fields',current['discount_details'],current['discount_details'].replace('👥 گروه کاربران:','👤 گروه کاربران:')),
+               ('warning_followup',current['wallet_uncertain_effect'],current['wallet_uncertain_effect'].replace('🔎 نتیجه عملیات','⚠️ نتیجه عملیات'))]
+    for name,original,value in mutations:
+        check(value!=original,'composition_negative_fixture_drift:'+name)
+        check(heading_collisions(value),'composition_negative_missed:'+name)
+    check(not heading_collisions('🧾 نام: فرستنده\n🧾 نام: گیرنده'),'identical_heading_reuse_rejected')
+    check(not heading_collisions('📦 حجم: 10\n<pre>📦 RAW: 20</pre>'),'raw_code_misclassified_as_heading')
+    variants=['شناسه تلگرام','شناسهٔ تلگرام','شناسه\u200cتلگرام','شناسه‌ی تلگرام','شناسه  تلگرام']
+    check(all(numeric_id_variant(v)for v in variants),'numeric_id_variant_negative_missed')
+    preserved=['شناسه پیام تلگرام','شناسه به‌روزرسانی تلگرام','شناسه چت تلگرام']
+    check(not any(numeric_id_variant(v)for v in preserved),'genuine_telegram_object_id_misclassified')
+    check(not numeric_id_variant('شناسه عددی'),'requested_numeric_id_misclassified')
+    return {'composed_catalog_correction_keys':correction_count,'notification_catalog_additions':len(NOTIFICATION_KEYS),'staff_role_description_amendments':1,'staff_catalog_negative_controls':staff_controls,'telegram_update_id_label_cases':1,'telegram_update_id_numeric_value_preserved':True,'archived_wrong_telegram_update_label_RED':True,'composed_heading_cases':len(current),'composed_heading_source_paths':len(paths),'composed_heading_archived_RED':len(reds),'composed_heading_negative_controls':len(mutations),'identical_heading_reuse_cases':1,'raw_code_heading_exclusions':1,'numeric_id_variant_negative_controls':len(variants),'preserved_telegram_object_id_cases':len(preserved),'preserved_numeric_id_cases':1,'composition_scope':'source_expression_wallet_finance_receipt_support_admin_stats_matrix','real_Telegram_rendering':'NOT_TESTED'}
+def main():
+    ap=argparse.ArgumentParser();ap.add_argument('--source-root',type=pathlib.Path,default=ROOT);ap.add_argument('--catalog-root',type=pathlib.Path,default=ROOT);args=ap.parse_args()
+    print(json.dumps({'status':'PASS',**audit(args.source_root,args.catalog_root)},ensure_ascii=False))
+if __name__=='__main__':main()

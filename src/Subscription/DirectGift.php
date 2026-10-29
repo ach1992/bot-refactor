@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__.'/../Admin/Access.php';
 /**
  * Direct, single-account administrator gifts (post-V9).
  *
@@ -155,7 +156,8 @@ function achbotDirectGiftActorLocked(mysqli $db,int $actor,int $primary,array $p
         if (!$ok || count($found)!==1 || (int)$found[0]['id']!==$pks[$userid])
             throw new RuntimeException('direct_gift_actor_ambiguous');
     }
-    if ($actor!==$primary && (int)$row['isAdmin']!==1)
+    if (($actor!==$primary && (int)$row['isAdmin']!==1) ||
+        !achbotAdminCanLocked($db,$actor,$primary,'operations'))
         throw new RuntimeException('direct_gift_admin_revoked');
     return $row;
 }

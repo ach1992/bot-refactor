@@ -5,7 +5,18 @@
  */
 namespace AchBot\Presentation\Text;
 
-function replacePlaceholders(array $mainValues, array $botState, $userId = '') {
+/** Format data at its text sink; never use this for native URL/button values. */
+function destinationText($value,?string $parseMode=null): string {
+    $text=(string)$value;
+    if (strtolower($parseMode??'')==='html')
+        return htmlspecialchars($text,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8');
+    if (strtolower($parseMode??'')==='markdown')
+        return strtr($text,['_'=>'\\_','*'=>'\\*','`'=>'\\`','['=>'\\[']);
+    return $text;
+}
+/** Three-argument legacy callers retain their historical sequential behavior.
+ * Current presentation callers supply exact template modes and substitute once. */
+function replacePlaceholders(array $mainValues, array $botState, $userId = '', ?array $parseModes = null) {
     $placeholders = [
         'SUPPORTID'   => $botState['supportID']   ?? '',
         'LOCKCHANNEL' => $botState['lockChannel'] ?? '',
@@ -15,30 +26,57 @@ function replacePlaceholders(array $mainValues, array $botState, $userId = '') {
     foreach ($mainValues as $key => $value) {
         if (is_string($value)) {
 
-            foreach ($placeholders as $placeholder => $replacement) {
-                $value = str_replace($placeholder, $replacement, $value);
+            if ($parseModes===null) {
+                foreach ($placeholders as $placeholder => $replacement)
+                    $value = str_replace($placeholder, $replacement, $value);
+            } else {
+                $mode=$parseModes[$key]??null;
+                $replacements=[];
+                foreach ($placeholders as $placeholder=>$replacement)
+                    $replacements[$placeholder]=destinationText($replacement,$mode);
+                // A URL containing another placeholder word is still literal data.
+                $value=strtr($value,$replacements);
             }
-
             $mainValues[$key] = $value;
         }
         elseif (is_array($value)) {
-            $mainValues[$key] = replacePlaceholders($value, $botState, $userId);
+            $mainValues[$key] = replacePlaceholders($value, $botState, $userId, $parseModes);
         }
     }
 
     return $mainValues;
 }
 
+/** A display destination is never fetched; reject credentials and unsafe URL schemes. */
+function destinationUrl($value): string {
+    if (!is_string($value)) return '';
+    $value=trim($value);
+    if ($value==='' || strlen($value)>1000 || preg_match('/[\\x00-\\x20\\x7f]/',$value)) return '';
+    if (preg_match('/^@?([A-Za-z][A-Za-z0-9_]{0,63})$/D',$value,$m)) return 'https://t.me/'.$m[1];
+    if (str_starts_with(strtolower($value),'t.me/')) $value='https://'.$value;
+    $parts=parse_url($value);
+    if (!$parts || !in_array(strtolower($parts['scheme']??''),['http','https'],true) ||
+        empty($parts['host']) || isset($parts['user']) || isset($parts['pass']) ||
+        filter_var($value,FILTER_VALIDATE_URL)===false) return '';
+    return $value;
+}
 function supportUrl(array $botState, string $fallback = '') {
-    $support = trim($botState['supportID'] ?? '');
-
-    if ($support === '') return $fallback;
-    if (preg_match('~^https?://t\.me/~i', $support)) {
-        return $support;
-    }
-    return 'https://t.me/' . ltrim($support, '@');
+    return destinationUrl($botState['supportID']??'') ?: $fallback;
+}
+function configuredDestination(array $botState,string $field,bool $supportFallback=false): string {
+    return destinationUrl($botState[$field]??'') ?: ($supportFallback?supportUrl($botState):'');
 }
 
+/** Membership keeps its chat ID; a separate public invite destination is display-only. */
+function lockChannelJoinUrl(array $botState,string $legacyJoinLink=''): string {
+    $explicit=destinationUrl($botState['lockChannelJoinUrl']??'');
+    if ($explicit!=='') return $explicit;
+    $channel=is_string($botState['lockChannel']??null)?trim($botState['lockChannel']):'';
+    if (preg_match('/^\+[A-Za-z0-9_-]+$/D',$channel)) return 'https://t.me/'.$channel;
+    // Numeric IDs identify membership chats and are never public usernames.
+    $public=preg_match('/^-?[0-9]+$/D',$channel)?'':destinationUrl($channel);
+    return $public!==''?$public:destinationUrl($legacyJoinLink);
+}
 
 /**
  * Display-only allowance classification. Callers explicitly opt in to a known

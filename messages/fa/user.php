@@ -11,31 +11,29 @@ return [
 
     // ── پیام‌های اصلی و متن‌های قابل سفارشی‌سازی قدیمی ──
     'legacy_messages' => [
-        'banned' => '⛔️ شما مسدود شدید.' . "\n" . '🛑 برای آزادسازی به پشتیبانی پیام دهید.' . "\n" . '' . "\n" . '🆔 SUPPORTID',
+        'banned' => '⛔️ شما مسدود شدید.' . "\n" . '🛑 برای آزادسازی به پشتیبانی پیام دهید.' . "\n" . '' . "\n" . '💬 پشتیبانی: SUPPORTID',
         'customer_custome_plan_day' => '📅 لطفا  تعداد روز اشتراک را وارد کنید.' . "\n" . '💰 هزینه هر روز: DAY-PRICE',
         'customer_custome_plan_volume' => '📦 لطفا مقدار گیگابایت سرویس رو وارد کنید.' . "\n" . '💰 هزینه هر گیگ: VOLUME-PRICE',
         'customer_custome_plan_name' => '🔢 اسم اشتراک رو وارد کنید (حروف انگیلیسی و عدد باهم وارد کنید)',
         'amount_decreased_from_your_wallet' => '✅ مبلغ AMOUNT تومان از حساب شما کم شد.',
-        'brw_cart_to_cart_detail' => '💳 <b>کارت‌به‌کارت بانکی</b>' . "\n" . 'لطفا مبلغ را به شماره کارت زیر واریز کنید.' . "\n" . '⚠️ <b>مبلغ دقیق و غیر رند زیر را کپی و واریز کنید در غیر این صورت رسید تایید نمی شود.</b>' . "\n" . '' . "\n" . '💰 مبلغ به تومان ← <code>PRICE-TOMAN</code>' . "\n" . '💰 مبلغ به ریال ← <code>PRICE-RIAL</code>' . "\n" . '' . "\n" . '💳 شماره کارت:' . "\n" . '<code>ACCOUNT-NUMBER</code>' . "\n" . '🔑 HOLDER-NAME' . "\n" . '' . "\n" . '⏰ <b>بعد پرداخت فقط تا 30 دقیقه فرصت دارید رسید را بفرستید.</b>' . "\n" . '🛑 <b>به هیچ وجه رسیدی که قبلا ارسال شده را دوباره ارسال نکنید اکانت شما مسدود می شود.</b>' . "\n" . '<b>📤 ارسال رسید</b> را بزنید و بعد رسید را بفرستید.',
-        'brw_cart_to_cart_gift' => '🎁 <b>پرداخت با گیفت‌کارت</b>' . "\n" . '' . "\n" . '💰 مبلغ سفارش: <code>PRICE-TOMAN-ROUND</code> تومان' . "\n" . '1️⃣ از طریق دکمه «خرید گیفت‌کارت»، گیفت‌کارت مطابق مبلغ سفارش تهیه کنید.' . "\n" . '2️⃣ پس از خرید، تصویر واضح گیفت‌کارت را با «ارسال تصویر گیفت‌کارت» در ربات ثبت کنید.' . "\n" . '' . "\n" . '⏳ ارسال تصویر به معنی تأیید یا تکمیل پرداخت نیست. نتیجه پس از بررسی مدیر اعلام می‌شود.' . "\n" . '⚠️ تصویر یا کد گیفت‌کارت را در جای دیگری منتشر نکنید.',
-        'brw_cart_to_cart_usdt' => '💎 <b>تتر دستی (USDT)</b>' . "\n" . '' . "\n" . '💰 مبلغ سفارش: <code>PRICE-TOMAN-ROUND</code> تومان' . "\n" . '💰 مبلغ تتر: <code>PRICE-USDT USDT</code>' . "\n" . '🌐 شبکه: <b>USDT-NETWORK</b>' . "\n" . '' . "\n" . '📋 آدرس کیف پول مقصد:' . "\n" . '<code>USDT-WALLET</code>' . "\n" . '' . "\n" . '⚠️ فقط توکن USDT را روی شبکهٔ اعلام‌شده ارسال کنید. شبکه یا آدرس اشتباه ممکن است باعث از دست رفتن وجه شود.' . "\n" . '✅ پس از انتقال، از تأییدیهٔ انتقال همراه با هش تراکنش عکس بگیرید و دکمهٔ «ارسال رسید تتر» را بزنید.' . "\n" . '' . "\n" . '⏳ ارسال عکس به معنی تأیید تراکنش یا تحویل سرویس نیست؛ بررسی دستی انجام می‌شود.',
-        'brw_cart_to_cart_trx' => '🔴 <b>پرداخت دستی TRX روی شبکهٔ TRON</b>' . "\n" . '' . "\n" . '💰 مبلغ سفارش: <code>PRICE-TOMAN-ROUND</code> تومان' . "\n" . '💰 مبلغ قابل انتقال: <code>PRICE-TRX TRX</code>' . "\n" . '🌐 شبکه: <b>TRON</b>' . "\n" . '' . "\n" . '📋 آدرس کیف پول مقصد:' . "\n" . '<code>TRX-WALLET</code>' . "\n" . '' . "\n" . '⚠️ فقط ارز اصلی TRX را روی شبکهٔ TRON منتقل کنید؛ تتر TRC20 یا ارز دیگری به این آدرس واریز نکنید.' . "\n" . '✅ پس از انتقال، تصویر رسید شامل مبلغ، شبکه و هش تراکنش را در ربات ارسال کنید.' . "\n" . '' . "\n" . '⏳ بررسی و تأیید کاملاً دستی است؛ ارسال رسید به معنی پرداخت نهایی یا تحویل سرویس نیست.',
+        'brw_cart_to_cart_detail' => '💳 <b>کارت‌به‌کارت بانکی</b>' . "\n" . 'لطفا مبلغ را به شماره کارت زیر واریز کنید.' . "\n" . '⚠️ <b>مبلغ دقیق و غیر رند زیر را کپی و واریز کنید در غیر این صورت رسید تایید نمی شود.</b>' . "\n" . '' . "\n" . '💰 مبلغ به تومان ← <code>PRICE-TOMAN</code>' . "\n" . '💵 مبلغ به ریال ← <code>PRICE-RIAL</code>' . "\n" . '' . "\n" . 'شماره کارت:' . "\n" . '<code>ACCOUNT-NUMBER</code>' . "\n" . '👤 صاحب حساب: HOLDER-NAME' . "\n" . '' . "\n" . '⏰ <b>بعد پرداخت فقط تا 30 دقیقه فرصت دارید رسید را بفرستید.</b>' . "\n" . '🛑 <b>به هیچ وجه رسیدی که قبلا ارسال شده را دوباره ارسال نکنید اکانت شما مسدود می شود.</b>' . "\n" . '<b>📤 ارسال رسید</b> را بزنید و بعد رسید را بفرستید.',
+        'brw_cart_to_cart_gift' => '🎁 <b>پرداخت با گیفت‌کارت</b>' . "\n" . '' . "\n" . '💰 مبلغ سفارش: <code>PRICE-TOMAN-ROUND</code> تومان' . "\n" . 'ابتدا از طریق دکمه «خرید گیفت‌کارت»، گیفت‌کارت مطابق مبلغ سفارش تهیه کنید.' . "\n" . 'سپس پس از خرید، تصویر واضح گیفت‌کارت را با «ارسال تصویر گیفت‌کارت» در ربات ثبت کنید.' . "\n" . '' . "\n" . '⏳ ارسال تصویر به معنی تأیید یا تکمیل پرداخت نیست. نتیجه پس از بررسی مدیر اعلام می‌شود.' . "\n" . '⚠️ تصویر یا کد گیفت‌کارت را در جای دیگری منتشر نکنید.',
+        'brw_cart_to_cart_usdt' => '💎 <b>تتر دستی (USDT)</b>' . "\n" . '' . "\n" . '💰 مبلغ سفارش: <code>PRICE-TOMAN-ROUND</code> تومان' . "\n" . 'مبلغ تتر: <code>PRICE-USDT USDT</code>' . "\n" . '🌐 شبکه: <b>USDT-NETWORK</b>' . "\n" . '' . "\n" . '📋 آدرس کیف پول مقصد:' . "\n" . '<code>USDT-WALLET</code>' . "\n" . '' . "\n" . '⚠️ فقط توکن USDT را روی شبکهٔ اعلام‌شده ارسال کنید. شبکه یا آدرس اشتباه ممکن است باعث از دست رفتن وجه شود.' . "\n" . '✅ پس از انتقال، از تأییدیهٔ انتقال همراه با هش تراکنش عکس بگیرید و دکمهٔ «ارسال رسید تتر» را بزنید.' . "\n" . '' . "\n" . '⏳ ارسال عکس به معنی تأیید تراکنش یا تحویل سرویس نیست؛ بررسی دستی انجام می‌شود.',
+        'brw_cart_to_cart_trx' => '🔴 <b>پرداخت دستی TRX روی شبکهٔ TRON</b>' . "\n" . '' . "\n" . '💰 مبلغ سفارش: <code>PRICE-TOMAN-ROUND</code> تومان' . "\n" . 'مبلغ قابل انتقال: <code>PRICE-TRX TRX</code>' . "\n" . '🌐 شبکه: <b>TRON</b>' . "\n" . '' . "\n" . '📋 آدرس کیف پول مقصد:' . "\n" . '<code>TRX-WALLET</code>' . "\n" . '' . "\n" . '⚠️ فقط ارز اصلی TRX را روی شبکهٔ TRON منتقل کنید؛ تتر TRC20 یا ارز دیگری به این آدرس واریز نکنید.' . "\n" . '✅ پس از انتقال، تصویر رسید شامل مبلغ، شبکه و هش تراکنش را در ربات ارسال کنید.' . "\n" . '' . "\n" . '⏳ بررسی و تأیید کاملاً دستی است؛ ارسال رسید به معنی پرداخت نهایی یا تحویل سرویس نیست.',
         'please_send_trx_image' => '🔴 تصویر واضح رسید انتقال TRX روی شبکهٔ TRON، همراه مبلغ و هش تراکنش را ارسال کنید؛ بررسی دستی انجام می‌شود.',
         'please_send_usdt_image' => '💎 تصویر واضح رسید انتقال USDT شامل شبکه، مبلغ و هش تراکنش را ارسال کنید. این رسید به‌صورت دستی بررسی می‌شود.',
         'please_send_receipt_image' => '📤 تصویر واضح رسید کارت‌به‌کارت بانکی را ارسال کنید. رسید برای بررسی ثبت خواهد شد.',
         'please_send_gift_card_image' => '🎁 تصویر واضح گیفت‌کارت خریداری‌شده را ارسال کنید. بررسی و تأیید آن توسط مدیر انجام می‌شود.',
         'operation_canceled' => '❌ عملیات مورد نظر لغو شد.',
         'invite_second_text' => '🔰 پیام یا لینک بالا رو برای دوستتون بفرستید، هر کسی با استفاده از اون ربات را <b>استارت</b> یا <b>شروع</b> کند، به عنوان <b>زیرمجموعه شما</b> ثبت می‌شود.' . "\n" . '' . "\n" . '💎 همین که دوست شما ربات رو استارت کنه شما <b>{INVITE_REWARD}</b> تومان هدیه دعوت دریافت می کنید.' . "\n" . '⚠️ ربات به صورت دوره ای افراد دعوت شده را بررسی می کند در صورتی که فیک تشخیص داده شوند مبلغ هدیه از کیف پول شما کسر می شود یا اکانت خریدای شده غیرفعال می شود.' . "\n" . '' . "\n" . '💵 همچنین <b>به ازای هر خرید</b> دوست شما مبلغ <b>{INVITE_AMOUNT}</b> کیف پول شما شارژ می شود.' . "\n" . '' . "\n" . '💡 هرچی <b>تعداد زیرمجموعه های شما بیشتر</b> باشه، <b>سود شما هم بیشتره!</b> ' . "\n" . '' . "\n" . '♾️ <b>هیچ محدودیتی</b> در <b>تعداد خرید</b> یا <b>زیرمجموعه گیری</b> وجود ندارد و با هر دعوت و خرید دوستتان این <b>مبالغ برای شما شارژ می شود</b>.',
-        'order_submitted' => '✅ ممنون از اعتمادتون، درخواست شما با موفقیت ثبت شد.' . "\n" . '🔰 لطفا کمی صبر کنید تا تایید شود. 🌹' . "\n" . '🚫 ارسال درخواست تکراری باعث مسدودی اکانت می شود.' . "\n" . '<blockquote>' . "\n" . '⏳ معمولا در کمتر از 3 دقیقه تایید می شود، در ساعات غیر کاری ممکن است تا 30 دقیقه و بیشتر طول بکشد.' . "\n" . '❌ لطفا قبل از 45 دقیقه برای تایید رسید به پشتیبانی پیام ندهید رسید شما رد می شود.' . "\n" . '</blockquote>' . "\n" . '📨 پشتیبانی:' . "\n" . '🆔 SUPPORTID',
+        'order_submitted' => '✅ ممنون از اعتمادتون، درخواست شما با موفقیت ثبت شد.' . "\n" . '🔰 لطفا کمی صبر کنید تا تایید شود. 🌹' . "\n" . '🚫 ارسال درخواست تکراری باعث مسدودی اکانت می شود.' . "\n" . '<blockquote>' . "\n" . '⏳ معمولا در کمتر از 3 دقیقه تایید می شود، در ساعات غیر کاری ممکن است تا 30 دقیقه و بیشتر طول بکشد.' . "\n" . '❌ لطفا قبل از 45 دقیقه برای تایید رسید به پشتیبانی پیام ندهید رسید شما رد می شود.' . "\n" . '</blockquote>' . "\n" . '📨 پشتیبانی:' . "\n" . '💬 پشتیبانی: SUPPORTID',
         'please_send_only_image' => '⚠️ لطفاً فقط تصویر (عکس) را داخل ربات بفرستید متن یا فایل مورد تایید نیست.',
-        'reached_main_menu' => '🔥 با Hell Service اینترنت محدود میره به جهنم!' . "\n" . '' . "\n" . '♾️ مناسب اینترنت ملی و نیم بها' . "\n" . '⚡️ سرعت و پایداری بالا به همراه پایینترین پینگ' . "\n" . '🚀 مناسب بازی و Game' . "\n" . '🏳️‍🌈 مولتی لوکیشن' . "\n" . '📶 مناسب ترید و دارای IP ثابت' . "\n" . '' . "\n" . '🔰 لطفا یکی از دکمه های زیر را انتخاب کنید.' . "\n" . '' . "\n" . '🆔 شناسه عددی: userid',
-        'user_welcome_message' => '👋 درود، خوش آمدید🌹' . "\n" . '' . "\n" . '🔥 با Hell Service اینترنت محدود میره به جهنم!' . "\n" . '' . "\n" . '♾️ مناسب اینترنت ملی و نیم بها' . "\n" . '⚡️ سرعت و پایداری بالا به همراه پایینترین پینگ' . "\n" . '🚀 مناسب بازی و Game' . "\n" . '🏳️‍🌈 مولتی لوکیشن' . "\n" . '📶 مناسب ترید و دارای IP ثابت' . "\n" . '' . "\n" . '🛒 جهت پشتیبانی یا سوال در مورد خرید به آی دی زیر پیام دهید:' . "\n" . '' . "\n" . '🆔 SUPPORTID' . "\n" . '🆔 شناسه عددی: userid',
         'out_of_connection_capacity' => '⚠️ ظرفیت این کانکشن پر شده است.',
         'out_of_server_capacity' => '⚠️ ظرفیت این سرور پر شده است.',
         'can_create_specific_account' => '📋 روی این پلن فقط AMOUNT اکانت میشه ساخت',
-        'invite_buy_new_account' => ' 💳 خرید کارت به کارت توسط زیرمجموعه' . "\n" . '' . "\n" . '🆔 شناسه عددی: USER-ID' . "\n" . '👤 اسم کاربر: NAME' . "\n" . '👤 نام کاربری: @USERNAME' . "\n" . '💰 مبلغ پرداختی: PRICE تومان' . "\n" . '✏️ نام اشتراک یا پلن: REMARK' . "\n" . '🆔 شناسه پرداخت: HASHID',
+        'invite_buy_new_account' => ' 💳 خرید کارت به کارت توسط زیرمجموعه' . "\n" . '' . "\n" . '🎫 شناسه عددی: USER-ID' . "\n" . '👤 اسم کاربر: NAME' . "\n" . '🔖 نام کاربری: @USERNAME' . "\n" . '💰 مبلغ پرداختی: PRICE تومان' . "\n" . '✏️ نام اشتراک یا پلن: REMARK' . "\n" . 'شناسه پرداخت: HASHID',
         'waiting_message' => '⏳ در حال انتظار ...',
-        'join_channel_message' => '⭕️ لطفا اول در کانال زیر عضو شوید و بعد روی دکمه عضو شدم بزنید.' . "\n" . '⚠️ برای عضویت روی دکمه <b>عضویت در کانال</b> بزنید.' . "\n" . '' . "\n" . '⁉️ آیدی پشتیبانی:' . "\n" . '🆔 SUPPORTID' . "\n" . '',
+        'join_channel_message' => '⭕️ لطفا اول در کانال زیر عضو شوید و بعد روی دکمه عضو شدم بزنید.' . "\n" . '⚠️ برای عضویت روی دکمه <b>عضویت در کانال</b> بزنید.' . "\n" . '' . "\n" . '⁉️ آیدی پشتیبانی:' . "\n" . '💬 پشتیبانی: SUPPORTID' . "\n" . '',
         'bot_is_updating' => '⏳ ربات در حال بروزرسانی می باشد ...',
         'select_one_to_show_detail' => '🔅 یکی از اشتراک های زیر را انتخاب کنید.' . "\n" . '💡 پیشنهاد می کنیم همیشه کیف پول خودتون رو قبل از پایان اشتراک یا تمام شدن حجم شارژ کنید تا هر زمان که خواستید بدون نیاز به تایید ادمین بتوانید اشتراک خود را تمدید کنید.',
         'you_dont_have_config' => '📋 هیچ سفارشی ندارید 🙁 باید یه اشتراک خریداری کنید.',
@@ -49,7 +47,6 @@ return [
         'use_iranian_number_only' => '📱 لطفا فقط با شماره ایرانی اقدام کنید.',
         'phone_confirmed' => '✅ شماره شما با موفقیت تایید شد.',
         'send_your_phone_number' => '📱 سلام عزیزم، برای استفاده از ربات شماره تماس خود را با استفاده از کلید زیر ارسال کنید 👇',
-        'start_message' => '🔥 با Hell Service اینترنت محدود میره به جهنم!' . "\n" . '' . "\n" . '♾️ مناسب اینترنت ملی و نیم بها' . "\n" . '⚡️ سرعت و پایداری بالا به همراه پایینترین پینگ' . "\n" . '🚀 مناسب بازی و Game' . "\n" . '🏳️‍🌈 مولتی لوکیشن' . "\n" . '📶 مناسب ترید و دارای IP ثابت' . "\n" . '' . "\n" . '🔰 لطفا یکی از دکمه های زیر را انتخاب کنید.' . "\n" . '' . "\n" . '🆔 شناسه عددی: userid',
         'not_joine_yet' => '📢 هنوز عضو کانال نشدید.',
         'insert_discount_code' => '🎁 کد تخفیف را وارد کنید:',
         'not_valid_discount_code' => '⚠️ کد تخفیف نامعتبر است.',
@@ -59,29 +56,29 @@ return [
         'discount_min_price' => '⚠️ این کد فقط برای سفارش‌های بالاتر از MINPRICE قابل استفاده است.',
         'discount_user_limit' => '⚠️ از این کد به حداکثر تعداد مجاز استفاده کرده‌اید.',
         'valid_discount_code' => '✅ کد تخفیف با موفقیت استفاده شد.' . "\n" . '🎁 مقدار تخفیف AMOUNT',
-        'send_config_uuid' => '🔰 از این بخش می توانید اشتراکی که خارج از ربات خریداری کرده اید را به ربات اضافه کنید، تمدید کنید یا مشخصات آن را ببینید.' . "\n" . '❗️ لینک اشتراک را بفرستید، نام کاربری قبول نیست. بعد از ارسال کمی صبر کنید تا اطلاعات برایتان ارسال شود.' . "\n" . '' . "\n" . '⚠️ لطفا قبل از ادامه مراحل اول بزنید روی آی دی زیر تا آموزش برایتان ارسال شود.' . "\n" . '' . "\n" . '🆔 SUPPORTID',
+        'send_config_uuid' => '🔰 از این بخش می توانید اشتراکی که خارج از ربات خریداری کرده اید را به ربات اضافه کنید، تمدید کنید یا مشخصات آن را ببینید.' . "\n" . '❗️ لینک اشتراک را بفرستید، نام کاربری قبول نیست. بعد از ارسال کمی صبر کنید تا اطلاعات برایتان ارسال شود.' . "\n" . '' . "\n" . '⚠️ لطفا قبل از ادامه مراحل اول بزنید روی آی دی زیر تا آموزش برایتان ارسال شود.' . "\n" . '' . "\n" . '💬 پشتیبانی: SUPPORTID',
         'not_correct_text' => '⚠️ متن وارد شده معتبر نمی باشد.',
         'receving_information' => '♻️ در حال دریافت جزییات ... ',
         'agency_request_sent' => '✅ درخواست شما با موفقیت ارسال شد، لطفا به پشتیبانی پیام دهید!',
         'agency_request_already_sent' => '⏳ درخواست شما قبلاً ارسال شده، لطفا منتظر باشید!',
-        'agency_request_declined' => '❌ درخواست شما برای همکاری رد گردید.' . "\n" . '' . "\n" . '⭕️ لطفا برای دریافت شرایط همکاری با پشتیبانی ارتباط بگیرید.' . "\n" . '' . "\n" . '🆔 SUPPORTID',
+        'agency_request_declined' => '❌ درخواست شما برای همکاری رد گردید.' . "\n" . '' . "\n" . '⭕️ لطفا برای دریافت شرایط همکاری با پشتیبانی ارتباط بگیرید.' . "\n" . '' . "\n" . '💬 پشتیبانی: SUPPORTID',
         'agency_request_approved' => '✅ درخواست شما برای همکاری تایید شد. تخفیف همکاری به طور خودکار برای شما هنگام خرید اعمال می شود.' . "\n" . '💳 توصیه می کنیم همیشه قبل از خرید یا تمدید اکانت کیف پول خود را در ساعات کاری شارژ کنید تا برای تایید رسیدها منتظر نمایند.' . "\n" . '⚠️  ربات را دوباره /start کنید.',
         'agent_setting_message' => '🧚🏻 همکار محترم:' . "\n" . '' . "\n" . '💡از این بخش میتوانید تعداد خریدهای همکاری خود را ببینید و همچنین تاریخ عضویت خودتان را مشاهده کنید.' . "\n" . '🎁 تخفیف شما در هر خرید به صورت خودکار محاسبه می شود.' . "\n" . '💳 توصیه می کنیم همیشه قبل از خرید یا تمدید اکانت کیف پول خود را در ساعات کاری شارژ کنید تا برای تایید رسیدها منتظر نمایند.',
         'selling_is_off' => '⛔️ فعلا فروش نداریم',
         'no_server_available' => '⚠️ در حال حاضر هیچ سرور فعالی نداریم لطفا بعدا مجدد تست کنید.',
-        'buy_sub_select_location' => '1️⃣ مرحله یک' . "\n" . '' . "\n" . '➕ لطفا یک مورد را انتخاب کنید.' . "\n" . '💡 شما می توانید کیف پول خودتون رو قبل از پایان اکانت یا اتمام حجم شارژ کنید تا هر زمان که خواستید بدون نیاز به تایید ادمین بتوانید اکانت جدید خریداری کنید یا تمدید کنید.',
+        'buy_sub_select_location' => '🧭 مرحلهٔ اول' . "\n" . '' . "\n" . '➕ لطفا یک مورد را انتخاب کنید.' . "\n" . '💡 شما می توانید کیف پول خودتون رو قبل از پایان اکانت یا اتمام حجم شارژ کنید تا هر زمان که خواستید بدون نیاز به تایید ادمین بتوانید اکانت جدید خریداری کنید یا تمدید کنید.',
         'category_not_avilable' => '⚠️ هیچ دسته بندی برای این سرور وجود ندارد.',
         'receive_categories' => '♻️ دریافت دسته بندی ...',
-        'buy_sub_select_category' => '2️⃣ مرحله دوم' . "\n" . '' . "\n" . '📅 لطفا یک مورد را انتخاب کنید:',
+        'buy_sub_select_category' => '📂 مرحلهٔ دوم' . "\n" . '' . "\n" . '📅 لطفا یک مورد را انتخاب کنید:',
         'no_plan_available' => '💡 پلنی در این سرویس وجود ندارد.',
         'receive_plans' => '📍 در حال دریافت لیست پلن ها',
-        'buy_sub_select_plan' => '3️⃣ مرحله سه' . "\n" . '' . "\n" . '🔰 یکی از پلن هارو انتخاب کنید:',
+        'buy_sub_select_plan' => '📋 مرحلهٔ سوم' . "\n" . '' . "\n" . '🔰 یکی از پلن هارو انتخاب کنید:',
         'buy_custom_plan' => '➕ پلن دلخواه خودتو بخر',
         'enter_account_amount' => '♻️ تعداد اکانت درخواستی رو وارد کن حداکثر در هر بار 5 عدد می توانید دریافت کنید.' . "\n" . '' . "\n" . '⚠️ نکته: در صورت وارد کردن عددی بالاتر از 5 و ایجاد اختلال مسئولیت هزینه کسر شده از حساب شما به عهده خودتان می باشد.',
         'send_positive_number' => '🔢 لطفا عددی بزرگتر از 0 وارد کنید',
-        'buy_subscription_detail' => '〽️ نام پلن: PLAN-NAME' . "\n" . '        ➖' . "\n" . '        💰 قیمت پلن: PRICE' . "\n" . '        ➖' . "\n" . '' . "\n" . '💳 برای شرایط بازگشت وجه کانال را بررسی کنید.' . "\n" . '' . "\n" . '        DESCRIPTION' . "\n" . '		' . "\n" . '🔰 لطفا یکی از روش های زیر را انتخاب کنید و روی آن بزنید.' . "\n" . '',
-        'buy_much_subscription_detail' => '〽️ نام پلن: PLAN-NAME' . "\n" . '        🔢 تعداد اکانت: ACCOUNT-COUNT' . "\n" . '        💰 قیمت پلن: PRICE' . "\n" . '        ➖' . "\n" . '        💰 قیمت کل: TOTAL-PRICE' . "\n" . '        ➖' . "\n" . '✅ سرویس با بالاترین کیفیت و اتصال تضمینی روی تمام اپراتورها در تمام روزهای سال، جهت استفاده از سرویس بخش آموزش ها را ببینید.' . "\n" . '' . "\n" . '💳 برای شرایط بازگشت وجه کانال را بررسی کنید.' . "\n" . '' . "\n" . '        DESCRIPTION' . "\n" . '		' . "\n" . '🔰 لطفا یکی از روش های زیر را انتخاب کنید و روی آن بزنید.' . "\n" . '',
-        'buy_custom_subscription_detail' => '〽️ نام پلن: PLAN-NAME' . "\n" . '        📦 حجم اختصاصی: VOLUME GB' . "\n" . '        📅 مدت اختصاصی: DAYS روز' . "\n" . '        ➖' . "\n" . '        💰 قیمت پلن: PRICE' . "\n" . '        ➖' . "\n" . '✅ سرویس با بالاترین کیفیت و اتصال تضمینی روی تمام اپراتورها در تمام روزهای سال، جهت استفاده از سرویس بخش آموزش ها را ببینید.' . "\n" . '' . "\n" . '💳 برای شرایط بازگشت وجه کانال را بررسی کنید.' . "\n" . '' . "\n" . '        DESCRIPTION' . "\n" . '		' . "\n" . '🔰 لطفا یکی از روش های زیر را انتخاب کنید و روی آن بزنید.' . "\n" . '',
+        'buy_subscription_detail' => '〽️ نام پلن: PLAN-NAME' . "\n" . '        ➖' . "\n" . '        💰 قیمت پلن: PRICE' . "\n" . '        ➖' . "\n" . '' . "\n" . '' . "\n" . 'توضیحات: DESCRIPTION' . "\n" . '		' . "\n" . '🔰 لطفا یکی از روش های زیر را انتخاب کنید و روی آن بزنید.' . "\n" . '',
+        'buy_much_subscription_detail' => '〽️ نام پلن: PLAN-NAME' . "\n" . '        🔢 تعداد اکانت: ACCOUNT-COUNT' . "\n" . '        💰 قیمت پلن: PRICE' . "\n" . '        ➖' . "\n" . '        🧮 قیمت کل: TOTAL-PRICE' . "\n" . '        ➖' . "\n" . '' . "\n" . '' . "\n" . '' . "\n" . 'توضیحات: DESCRIPTION' . "\n" . '		' . "\n" . '🔰 لطفا یکی از روش های زیر را انتخاب کنید و روی آن بزنید.' . "\n" . '',
+        'buy_custom_subscription_detail' => '〽️ نام پلن: PLAN-NAME' . "\n" . '        📦 حجم اختصاصی: VOLUME GB' . "\n" . '        📅 مدت اختصاصی: DAYS روز' . "\n" . '        ➖' . "\n" . '        💰 قیمت پلن: PRICE' . "\n" . '        ➖' . "\n" . '' . "\n" . '' . "\n" . '' . "\n" . 'توضیحات: DESCRIPTION' . "\n" . '		' . "\n" . '🔰 لطفا یکی از روش های زیر را انتخاب کنید و روی آن بزنید.' . "\n" . '',
         'send_config_remark' => '🔄 لطفا نام کاربری اشتراک را وارد کنید.',
         'enter_ticket_title' => '<b>⁉️ لطفا موضوع تیکت را ارسال کنید!</b>' . "\n" . '	' . "\n" . '🛑 از ارسال درخواست های نامفهوم و بیجا خودداری کنید، بدون اخطار اکانت شما مسدود می شود.' . "\n" . '🚫 فقط به درخواست هایی که به زبان فارسی تایپ می شوند پاسخ داده می شود.',
         'enter_ticket_description' => '💠 لطفا متن و یا عکس تیکت را بصورت ساده و مختصر ارسال کنید!',
@@ -170,14 +167,14 @@ return [
         // bot.my_info
         'bot.my_info.button.3d0ddff816' => '💰 شارژ کیف پول',
         'bot.my_info.button.2aa445c2af' => '🔀 جابجایی موجودی',
-        'bot.my_info.message.4fb6af58ae' => ['text' => '' . "\n" . '📊 اطلاعات حساب شما:' . "\n" . '' . "\n" . '🆔 شناسه عددی: <code>{from_id}</code>' . "\n" . '👤 نام کاربری: @{username}' . "\n" . '👤 اسم: {first_name}' . "\n" . '💰 موجودی: <b>{myWallet}</b>' . "\n" . '' . "\n" . '🌐 تعداد کل اشتراک ها: <b>{totalBuys}</b> عدد' . "\n" . '' . "\n" . '💡 پیشنهاد می کنیم همیشه کیف پول خودتون رو قبل از پایان اکانت یا تمام شدن حجم شارژ کنید تا هر زمان که خواستید بدون نیاز به تایید ادمین بتوانید اکانت خود را تمدید کنید.' . "\n" . '', 'parameters' => ['from_id', 'username', 'first_name', 'myWallet', 'totalBuys']],
+        'bot.my_info.message.4fb6af58ae' => ['text' => '' . "\n" . '📊 اطلاعات حساب شما:' . "\n" . '' . "\n" . '🎫 شناسه عددی: <code>{from_id}</code>' . "\n" . '🔖 نام کاربری: @{username}' . "\n" . '👤 اسم: {first_name}' . "\n" . '💰 موجودی: <b>{myWallet}</b>' . "\n" . '' . "\n" . '🌐 تعداد کل اشتراک ها: <b>{totalBuys}</b> عدد' . "\n" . '' . "\n" . '💡 پیشنهاد می کنیم همیشه کیف پول خودتون رو قبل از پایان اکانت یا تمام شدن حجم شارژ کنید تا هر زمان که خواستید بدون نیاز به تایید ادمین بتوانید اکانت خود را تمدید کنید.' . "\n" . '', 'parameters' => ['from_id', 'username', 'first_name', 'myWallet', 'totalBuys']],
         // bot.process_callback_query
         'bot.process_callback_query.message.616c172303' => '⛔️ سیستم فروش غیرفعال است.',
         'bot.process_callback_query.message.dda719f1cb' => '🟢 موجودی پلن اشتراکی:',
         'bot.process_callback_query.message.8386c28679' => '📋 نام کاربری اشتراک موردنظر را وارد کنید:',
         'bot.process_callback_query.message.a4712f82bb' => 'ℹ️ این درخواست قبلاً ثبت شده است. برای شروع جدید دوباره دکمه را انتخاب کنید.',
         // bot.recive_applications
-        'bot.recive_applications.message.ec86dead1a' => ['text' => '' . "\n" . '⁉️  <b>نرم افزارها و آموزش های لازم جهت اتصال 🔌 به سرویس</b>' . "\n" . '' . "\n" . '🌐 برای اتصال به کمک لینک اشتراک باید از نرم افزارهایی که کانال معرفی شده اند استفاده کنید.' . "\n" . '' . "\n" . '⭕️ لطفا <b>حداقل 2 تا</b> از نرم افزارهای گفته شده را نصب داشته باشید، با توجه به محدودیت هایی که از سمت اپراتورها گذاشته شده و تفاوت تکنولوژی عبور از تحریم نرم افزارها، ممکن است یک کانفیگ روی یک نرم افزار مشکل داشته باشد ولی روی نرم افزار بعدی بدون مشکل و با سرعت بسیار خوب متصل شود.' . "\n" . '' . "\n" . '💡تمامی نرم افزارها <b>رایگان</b> هستند.' . "\n" . '' . "\n" . '📥 برای <b>مشاهد آموزش ها و دانلود نرم افزارها</b> لطفا یکی از دکمه های زیر را انتخاب کنید.' . "\n" . '' . "\n" . '🛒 جهت پشتیبانی یا سوال در مورد خرید به آی دی زیر پیام دهید:' . "\n" . '' . "\n" . '🆔 {supportID}' . "\n" . '', 'parameters' => ['supportID']],
+        'bot.recive_applications.message.ec86dead1a' => ['text' => '📱 <b>نرم‌افزارها و آموزش اتصال</b>' . "\n" . '' . "\n" . 'نرم‌افزار مناسب دستگاه خود را از دکمه‌های زیر انتخاب کنید. اگر اتصال در یک نرم‌افزار برقرار نشد، آموزش را بررسی کنید و یک نرم‌افزار دیگر را امتحان کنید.' . "\n" . '' . "\n" . '📥 برای مشاهده آموزش و دریافت نرم‌افزار، یکی از گزینه‌های زیر را بزنید.' . "\n" . '' . "\n" . '💬 پشتیبانی: {supportID}' . "\n" . '', 'parameters' => ['supportID']],
         // bootstrap.unavailable
         'bootstrap.unavailable' => 'این بخش فعلاً در دسترس نیست؛ کمی بعد دوباره تلاش کنید یا با پشتیبانی تماس بگیرید.',
     ],
@@ -197,18 +194,18 @@ return [
         'wallet_recharge.wallet_topup_amount_problem.label.2ee8d817fc' => '⚠️ حداکثر مبلغ قابل شارژ کیف پول 10,000,000 تومان می‌باشد.',
         'wallet_recharge.wallet_topup_amount_problem.label.9185f287a6' => '⚠️ مبلغ واردشده باید مضربی از 50,000 تومان باشد.',
         'wallet_recharge.wallet_topup_amount_problem.text_msg.a8d7f77dea' => '✅ با شارژ کیف پول می‌توانید هنگام خرید از <b>دکمه پرداخت با موجودی</b> استفاده کنید و منتظر تأیید ادمین <b>نمانید</b>.' . "\n" . '' . "\n" . '❇️ لطفاً مبلغ شارژ کیف پول را انتخاب کنید:',
-        'wallet_recharge.wallet_topup_amount_problem.button.e0736904e5' => '💰 100,000 تومان',
-        'wallet_recharge.wallet_topup_amount_problem.button.15bec8537a' => '💰 200,000 تومان',
-        'wallet_recharge.wallet_topup_amount_problem.button.c18668d617' => '💰 300,000 تومان',
-        'wallet_recharge.wallet_topup_amount_problem.button.d960e787a3' => '💰 500,000 تومان',
-        'wallet_recharge.wallet_topup_amount_problem.button.79fa13dc2b' => '💰 1,000,000 تومان',
-        'wallet_recharge.wallet_topup_amount_problem.button.1f4dbe4fcb' => '💰 2,000,000 تومان',
-        'wallet_recharge.wallet_topup_amount_problem.button.f4f1019c8d' => '💰 5,000,000 تومان',
+        'wallet_recharge.wallet_topup_amount_problem.button.e0736904e5' => '💰 مبلغ 100,000 تومان',
+        'wallet_recharge.wallet_topup_amount_problem.button.15bec8537a' => '💰 مبلغ 200,000 تومان',
+        'wallet_recharge.wallet_topup_amount_problem.button.c18668d617' => '💰 مبلغ 300,000 تومان',
+        'wallet_recharge.wallet_topup_amount_problem.button.d960e787a3' => '💰 مبلغ 500,000 تومان',
+        'wallet_recharge.wallet_topup_amount_problem.button.79fa13dc2b' => '💰 مبلغ 1,000,000 تومان',
+        'wallet_recharge.wallet_topup_amount_problem.button.1f4dbe4fcb' => '💰 مبلغ 2,000,000 تومان',
+        'wallet_recharge.wallet_topup_amount_problem.button.f4f1019c8d' => '💰 مبلغ 5,000,000 تومان',
         'wallet_recharge.wallet_topup_amount_problem.button.5e7e50f6fe' => '✏️ مبلغ دلخواه',
         'wallet_recharge.wallet_topup_amount_problem.message.778b5776b6' => '⚠️ این گزینه مربوط به درخواست فعلی نیست. شارژ کیف پول را دوباره از منو آغاز کنید.',
         'wallet_recharge.wallet_topup_amount_problem.message.983d706c66' => '⚠️ وضعیت درخواست شارژ نیازمند بررسی است؛ قبل از تلاش مجدد، وضعیت را بررسی کنید.',
         'wallet_recharge.wallet_topup_amount_problem.message.d0531e17b9' => '⚠️ این درخواست قبلاً پردازش یا جایگزین شده است. شارژ کیف پول را دوباره از منو آغاز کنید.',
-        'wallet_recharge.wallet_topup_amount_problem.message.ae69d93a89' => '💰 لطفاً مبلغ شارژ را وارد کنید.' . "\n" . '✅ حداقل مبلغ قابل شارژ <b>100,000 تومان</b> می باشد.' . "\n" . '✅ حداکثر مبلغ قابل شارژ <b>10,000,000 تومان</b> می باشد.' . "\n" . '✅ مبلغ باید فقط مضربی از <b>50,000 تومان</b> باشد.' . "\n" . '🔢 لطفاً فقط اعداد انگلیسی وارد کنید.',
+        'wallet_recharge.wallet_topup_amount_problem.message.ae69d93a89' => '💰 لطفاً مبلغ شارژ را وارد کنید.' . "\n" . '✅ حداقل مبلغ قابل شارژ <b>100,000 تومان</b> می باشد.' . "\n" . 'حداکثر مبلغ قابل شارژ <b>10,000,000 تومان</b> می باشد.' . "\n" . 'مبلغ باید فقط مضربی از <b>50,000 تومان</b> باشد.' . "\n" . '🔢 لطفاً فقط اعداد انگلیسی وارد کنید.',
         'wallet_recharge.wallet_topup_amount_problem.alert.1a885aaca4' => '⚠️ پرداخت این سفارش با این روش مجاز نیست یا قبلاً به روش دیگری آغاز شده است.',
         'wallet_recharge.wallet_topup_amount_problem.alert.07ee06b4bc' => '⚠️ اطلاعات این پرداخت قابل بازیابی نیست؛ با پشتیبانی تماس بگیرید.',
         'wallet_recharge.wallet_topup_amount_problem.alert.7a9c30e938' => '⚠️ نمایش اطلاعات پرداخت تأیید نشد. از همان دکمه دوباره تلاش کنید و وجهی ارسال نکنید.',
@@ -236,7 +233,7 @@ return [
         'wallet_transfer.wallet_transfer_restart.message.e9940862a9' => ['text' => 'کد پیگیری {reference} را به پشتیبانی بدهید.', 'parameters' => ['reference']],
         'wallet_transfer.wallet_transfer_restart.text.bda050585a' => '—',
         'wallet_transfer.wallet_transfer_restart.text.ecbce64eed' => ['text' => ' تومان به کیف پول شما توسط کاربر {from_id} انتقال یافت.', 'parameters' => ['from_id']],
-        'wallet_transfer.wallet_transfer_restart.text.f7206f6d33' => ['text' => '🎫 <b>مقصد</b>: <code>{to_id}</code>' . "\n" . '', 'parameters' => ['to_id']],
+        'wallet_transfer.wallet_transfer_restart.text.f7206f6d33' => ['text' => '📥 <b>مقصد</b>: <code>{to_id}</code>' . "\n" . '', 'parameters' => ['to_id']],
         'wallet_transfer.wallet_transfer_restart.text.431f74945a' => '💰 مبلغ انتقال: <b>',
         'wallet_transfer.wallet_transfer_restart.text.b971f2d37a' => '</b> تومان',
         'wallet_transfer.wallet_transfer_restart.text.8e5e1ee663' => ' تومان به کیف پول کاربر مورد نظر شما انتقال یافت.',
@@ -290,10 +287,10 @@ return [
         // entry_and_bulk.create_multiple_accounts
         'entry_and_bulk.create_multiple_accounts.alert.de33518bf8' => '⚠️ هیچ دسته بندی برای این سرور وجود ندارد.',
         'entry_and_bulk.create_multiple_accounts.alert.174c6a61d7' => '♻️ دریافت دسته بندی ...',
-        'entry_and_bulk.create_multiple_accounts.message.2f3dfcbe8e' => '2️⃣ مرحله دو' . "\n" . '' . "\n" . 'دسته بندی مورد نظرت رو انتخاب کن 🤭',
+        'entry_and_bulk.create_multiple_accounts.message.2f3dfcbe8e' => '📂 مرحلهٔ دوم' . "\n" . '' . "\n" . 'دسته بندی مورد نظرت رو انتخاب کن 🤭',
         'entry_and_bulk.create_multiple_accounts.alert.5223e5a747' => '💡 پلنی در این دسته بندی وجود ندارد. ',
         'entry_and_bulk.create_multiple_accounts.alert.465c2a0af9' => '📍 در حال دریافت لیست پلن ها',
-        'entry_and_bulk.create_multiple_accounts.message.7f4d98ab9b' => '3️⃣ مرحله سه' . "\n" . '' . "\n" . 'یکی از پلن هارو انتخاب کن و برو برای پرداختش 🤲',
+        'entry_and_bulk.create_multiple_accounts.message.7f4d98ab9b' => '📋 مرحلهٔ سوم' . "\n" . '' . "\n" . 'یکی از پلن هارو انتخاب کن و برو برای پرداختش 🤲',
         'entry_and_bulk.create_multiple_accounts.alert.d3fb64c4d9' => '⛔️ طرح انتخابی در حال حاضر قابل خرید نیست.',
         'entry_and_bulk.create_multiple_accounts.message.c754e347bf' => '❗️ لطفا مدت زمان اکانت را به ( روز ) وارد کن:',
         'entry_and_bulk.create_multiple_accounts.message.f018216ab3' => '❕ حجم اکانت ها رو به گیگابایت ( GB ) وارد کن:',
@@ -346,8 +343,8 @@ return [
         'buy_helpers.build_links_and_send_qr.acc_text.8eb803f6b0' => '🌐 لینک اصلی اشتراک:' . "\n" . '',
         'buy_helpers.build_links_and_send_qr.acc_text.a2bb8da6b7' => '' . "\n" . '' . "\n" . '💡 همیشه اکانت را با لینک اشتراک وارد کنید تا به همه کانفیگ ها دسترسی داشته باشد.',
         'buy_helpers.build_links_and_send_qr.acc_text.d5f471a600' => '' . "\n" . '⚠️ در صورتی که لینک اصلی اشتراک کار نکرد از لینک کمکی اشتراک استفاده کنید.',
-        'buy_helpers.build_links_and_send_qr.start.e4bb9f1ece' => 'Start',
-        'account_deletion.shared_effect_notice' => "⚠️ با تأیید، خود اشتراک برای همیشه حذف می‌شود و دسترسی همه افرادی که از آن استفاده می‌کنند قطع خواهد شد.",
+        'buy_helpers.build_links_and_send_qr.start.e4bb9f1ece' => 'شروع',
+        'account_deletion.shared_effect_notice' => "🚫 با تأیید، خود اشتراک برای همیشه حذف می‌شود و دسترسی همه افرادی که از آن استفاده می‌کنند قطع خواهد شد.",
         // account_deletion.alert
         'account_deletion.alert.a370755120' => '⛔️ این اشتراک متعلق به حساب شما نیست.',
         // account_deletion.message
@@ -408,9 +405,9 @@ return [
         'customer_routes.cancel_search_keyboard.success_message.6d1ad0af39' => '<b>✅ بروزرسانی موفق بود!</b>' . "\n" . '' . "\n" . '',
         'customer_routes.cancel_search_keyboard.text.02845d07de' => '⭕️ دقت کنید باید لینک اشتراک را دوباره وارد برنامه کنید یا داخل برنامه نیز بروزرسانی بزنید.' . "\n" . '' . "\n" . '',
         'customer_routes.cancel_search_keyboard.text.672ff8ac41' => '🔄 <b>در صورتی که کانفیگ ها با لینک اشتراک اصلی یا کمکی برای شما لود نمی شوند، لطفاً مراحل زیر را انجام دهید:</b>' . "\n" . '' . "\n" . '',
-        'customer_routes.cancel_search_keyboard.text.caaf926e2a' => '1. کانفیگ های قدیمی را از نرم‌افزار خود حذف کنید.' . "\n" . '',
-        'customer_routes.cancel_search_keyboard.text.0aa0ee1c1f' => '2. کانفیگ های جدید را از قسمت بالا کپی کنید.' . "\n" . '',
-        'customer_routes.cancel_search_keyboard.text.1ed8d0a6cf' => '3. کانفیگ ها را به نرم‌افزار اضافه کنید.' . "\n" . '' . "\n" . '',
+        'customer_routes.cancel_search_keyboard.text.caaf926e2a' => 'ابتدا کانفیگ های قدیمی را از نرم‌افزار خود حذف کنید.' . "\n" . '',
+        'customer_routes.cancel_search_keyboard.text.0aa0ee1c1f' => 'سپس کانفیگ های جدید را از قسمت بالا کپی کنید.' . "\n" . '',
+        'customer_routes.cancel_search_keyboard.text.1ed8d0a6cf' => 'در پایان کانفیگ ها را به نرم‌افزار اضافه کنید.' . "\n" . '' . "\n" . '',
         'customer_routes.cancel_search_keyboard.text.47dcd18697' => '📱 <i>برای اتصال موفق، حتماً از آخرین نسخه نرم‌افزار استفاده نمایید.</i>' . "\n" . '',
         'customer_routes.cancel_search_keyboard.text.0bd7d3c032' => '⚠️ <b>بعد اتصال به کمک کانفیگ های تکی، برای اینکه همه کانفیگ ها را داشته باشید حتما دوباره با لینک اشتراک وارد کنید.</b>',
         'customer_routes.cancel_search_keyboard.error_message.496a7eede8' => '<b>❌ خطا در بروزرسانی</b>' . "\n" . '' . "\n" . '',
@@ -420,9 +417,9 @@ return [
         'customer_routes.cancel_search_keyboard.success_message.eb1ae135ff' => '<b>✅ لینک اشتراک شما با موفقیت تغییر کرد!</b>' . "\n" . '' . "\n" . '',
         'customer_routes.cancel_search_keyboard.text.36244c21e0' => '♻️ لینک اشتراک و کانفیگ‌های شما مجدد ساخته شد.' . "\n" . '' . "\n" . '',
         'customer_routes.cancel_search_keyboard.text.f82d5bd5ad' => '🔄 <b>برای استفاده از لینک جدید این مراحل را انجام دهید:</b>' . "\n" . '' . "\n" . '',
-        'customer_routes.cancel_search_keyboard.text.97f8afa554' => '1) لینک اشتراک قبلی و کانفیگ‌های قبلی را از نرم‌افزار کامل حذف کنید.' . "\n" . '',
-        'customer_routes.cancel_search_keyboard.text.f3bed97abc' => '2) لینک اشتراک جدید را از پیام بالا که شامل اطلاعات اشتراک هست کپی کنید.' . "\n" . '',
-        'customer_routes.cancel_search_keyboard.text.4267d2ca77' => '3) لینک را وارد نرم افزار کنید تا کانفیگ ها لود شوند اگر لینک اصلی کار نکرد از لینک کمکی استفاده کنید.' . "\n" . '' . "\n" . '',
+        'customer_routes.cancel_search_keyboard.text.97f8afa554' => 'ابتدا لینک اشتراک قبلی و کانفیگ‌های قبلی را از نرم‌افزار کامل حذف کنید.' . "\n" . '',
+        'customer_routes.cancel_search_keyboard.text.f3bed97abc' => 'سپس لینک اشتراک جدید را از پیام بالا که شامل اطلاعات اشتراک هست کپی کنید.' . "\n" . '',
+        'customer_routes.cancel_search_keyboard.text.4267d2ca77' => 'در پایان لینک را وارد نرم افزار کنید تا کانفیگ ها لود شوند اگر لینک اصلی کار نکرد از لینک کمکی استفاده کنید.' . "\n" . '' . "\n" . '',
         'customer_routes.cancel_search_keyboard.text.30d20d2a47' => '📱 <i>پیشنهاد می کنیم از نرم‌افزار Karing استفاده کنید.</i>' . "\n" . '',
         'customer_routes.cancel_search_keyboard.text.3c4d2c9dc6' => '⚠️ <b>اگر می‌خواهید همه کانفیگ‌ها را تک تک داشته باشید، بزنید روی دکمه کیوآر کانفیگ تا تک تک ارسال شود.</b>',
         'customer_routes.cancel_search_keyboard.alert.627f7fad2f' => '⛔️ اشتراک معتبر نیست.',
@@ -435,7 +432,7 @@ return [
         'external_accounts.extract_username_from_link.message.4c80cbd8b8' => '🔍 در حال بررسی اکانت، لطفاً صبر کنید...',
         'external_accounts.extract_username_from_link.message.bb8dfc256d' => '❌ اشتراک موردنظر پیدا نشد. اگر اعتبار آن تمام شده و بیش از 15 روز گذشته باشد، ممکن است حذف شده باشد.',
         'external_accounts.extract_username_from_link.button.e2fee6e8d7' => '🔘 وضعیت اکانت',
-        'external_accounts.extract_username_from_link.button.da22eb1607' => '👤 نام کاربری',
+        'external_accounts.extract_username_from_link.button.da22eb1607' => '🔖 نام کاربری',
         'external_accounts.extract_username_from_link.button.ba58ec87db' => '↕️ آپلود + دانلود',
         'external_accounts.extract_username_from_link.button.4ab7460a09' => '📦 حجم کلی',
         'external_accounts.extract_username_from_link.button.ae4f062fc5' => '📦 حجم باقیمانده ',
@@ -449,7 +446,7 @@ return [
         'presentation.present.text.d60293ba07' => '🔎 لینک‌های اتصال این اشتراک در حال حاضر در دسترس نیست؛ از بخش اشتراک‌های من دوباره بررسی کنید.',
         'presentation.present.text.3ff0456031' => '' . "\n" . '🔁 لینک کمکی اشتراک:' . "\n" . '',
         'presentation.config_qr_name_suffix' => '…',
-        'presentation.config_qr_delivery_unconfirmed' => '⚠️ ارسال کامل QR یا متن کانفیگ تأیید نشد. پیام‌های دریافت‌شده را بررسی کنید و در صورت نیاز دوباره دکمهٔ QR کانفیگ را بزنید.',
+        'presentation.config_qr_delivery_unconfirmed' => '⚠️ ارسال کامل QR یا متن کانفیگ تأیید نشد. پیام‌های دریافت‌شده را بررسی کنید و در صورت نیاز دوباره دکمهٔ کد QR کانفیگ را بزنید.',
         'presentation.present.text.6b058a11c6' => 'ℹ️ تعداد یا طول لینک‌ها از ظرفیت نمایش بیشتر است؛ برای دریافت همه تنظیمات از لینک اشتراک استفاده کنید یا با پشتیبانی تماس بگیرید.',
         // presentation.config_message
         'presentation.config_message.text.2953f9a4ad' => '' . "\n" . '🔌 لینک تکی کانفیگ:' . "\n" . 'CONNECT-LINK' . "\n" . '',
@@ -477,7 +474,7 @@ return [
         // extensions.text
         'extensions.text.2cc98f7f7c' => ' تومان',
         // extensions.button
-        'extensions.button.fbb9f61105' => ['text' => '{title} روز {price}', 'parameters' => ['title', 'price']],
+        'extensions.button.fbb9f61105' => ['text' => 'مدت: {title} روز؛ قیمت: {price}', 'parameters' => ['title', 'price']],
         // extensions.message
         'extensions.message.c2bde2a3e0' => 'لطفا یکی از پلن های افزایشی را انتخاب کنید:',
         // extensions.alert
@@ -504,9 +501,9 @@ return [
         // extensions.button
         'extensions.button.139c829462' => ['text' => '✅ تایید شد توسط {from_id}', 'parameters' => ['from_id']],
         // extensions.hash_id
-        'extensions.hash_id.2899228604' => ['text' => '🆔 {hash_id}', 'parameters' => ['hash_id']],
+        'extensions.hash_id.2899228604' => ['text' => '🎫 شناسه پیگیری: {hash_id}', 'parameters' => ['hash_id']],
         // extensions.message
-        'extensions.message.24dea9b122' => ['text' => '✅ <b>{volume}</b> روز به مدت زمان اشتراک <code>{remark}</code> اضافه شد.', 'parameters' => ['volume', 'remark']],
+        'extensions.message.24dea9b122' => ['text' => '✅ مدت <b>{volume}</b> روز به مدت زمان اشتراک <code>{remark}</code> اضافه شد.', 'parameters' => ['volume', 'remark']],
         // extensions.alert
         'extensions.alert.ba92f03500' => '⚠️ نتیجه افزایش زمان نیاز به بررسی دارد. وضعیت اشتراک و پرداخت را کنترل کنید؛ از اجرای مجدد خودکار خودداری کنید.',
         'extensions.alert.9b6f1fa91f' => '⛔️ این سفارش متعلق به شما نیست یا روش پرداخت دیگری برای آن ثبت شده است؛ دوباره پرداخت نکنید.',
@@ -514,7 +511,7 @@ return [
         'extensions.alert.39c72d8044' => '❌ موجودی کیف پول کافی نیست.' . "\n" . '💰 موجودی فعلی: ',
         'extensions.alert.71a2507661' => ' تومان' . "\n" . '🔺 مورد نیاز: ',
         // extensions.message
-        'extensions.message.cce260f97e' => ['text' => '✅ {volume} روز به مدت زمان اشتراک شما اضافه شد.', 'parameters' => ['volume']],
+        'extensions.message.cce260f97e' => ['text' => '✅ مدت {volume} روز به مدت زمان اشتراک شما اضافه شد.', 'parameters' => ['volume']],
         // extensions.button
         'extensions.button.aba3054570' => '⏳ افزایش زمان اشتراک',
         // extensions.message
@@ -531,7 +528,7 @@ return [
         'extensions.alert.96762b5a42' => '📆 اشتراک شما منقضی شده است. لطفاً آن را تمدید کنید تا بتوانید افزایش حجم دهید.',
         'extensions.alert.e6c27b8039' => '⚠️ در حال حاضر هیچ پلن حجمی وجود ندارد.',
         // extensions.button
-        'extensions.button.249377f2b7' => ['text' => '{title} گیگ {price}', 'parameters' => ['title', 'price']],
+        'extensions.button.249377f2b7' => ['text' => 'حجم: {title} گیگ؛ قیمت: {price}', 'parameters' => ['title', 'price']],
         'extensions.button.8405a4154f' => '⤵️ برگرد به منوی اصلی',
         // extensions.message
         'extensions.message.ab954c63e6' => 'لطفا یکی از پلن های حجمی را انتخاب کنید:',
@@ -547,11 +544,11 @@ return [
         // extensions.alert
         'extensions.alert.733308c9fe' => '⛔️ این افزایش حجم رسید دستی معتبر و در انتظار تأیید ندارد.',
         // extensions.message
-        'extensions.message.d5b6a4e6e7' => ['text' => '✅ <b>{volume}</b> گیگ به حجم حجم اشتراک <code>{remark}</code> اضافه شد.', 'parameters' => ['volume', 'remark']],
+        'extensions.message.d5b6a4e6e7' => ['text' => '✅ حجم <b>{volume}</b> گیگ به حجم اشتراک <code>{remark}</code> اضافه شد.', 'parameters' => ['volume', 'remark']],
         // extensions.alert
         'extensions.alert.36f9c089de' => '⚠️ نتیجه افزایش حجم نیاز به بررسی دارد. وضعیت اشتراک و پرداخت را کنترل کنید؛ از اجرای مجدد خودکار خودداری کنید.',
         // extensions.message
-        'extensions.message.2d27ba4eea' => ['text' => '✅ {volume} گیگ به حجم حجم اشتراک شما اضافه شد.', 'parameters' => ['volume']],
+        'extensions.message.2d27ba4eea' => ['text' => '✅ حجم {volume} گیگ به حجم اشتراک شما اضافه شد.', 'parameters' => ['volume']],
         // extensions.button
         'extensions.button.9a3cb8176f' => '⏳ افزایش حجم اشتراک',
         // renewal_checkout.button
@@ -593,7 +590,7 @@ return [
         // renewal_selection.text
         'renewal_selection.text.bfb7221456' => ' تومان ',
         // renewal_selection.message
-        'renewal_selection.message.51ab077156' => '3️⃣ مرحله سه' . "\n" . '' . "\n" . '🤲 یکی از پلن هارو انتخاب کنید.' . "\n" . '➕ اگر سرویس مورد نظر شما در لیست زیر نیست لازم هست اول اشتراک را به لیست اشتراک های خودتان اضافه کنید و بعد با زدن دکمه ← 🔄 تغییر پلن، پلن انتخاب کنید تا بتوانید اشتراک خودتان را تمدید و یا شارژ کنید. ',
+        'renewal_selection.message.51ab077156' => '📋 مرحلهٔ سوم' . "\n" . '' . "\n" . '🤲 یکی از پلن هارو انتخاب کنید.' . "\n" . '➕ اگر سرویس مورد نظر شما در لیست زیر نیست لازم هست اول اشتراک را به لیست اشتراک های خودتان اضافه کنید و بعد با زدن دکمه ← 🔄 تغییر پلن، پلن انتخاب کنید تا بتوانید اشتراک خودتان را تمدید و یا شارژ کنید. ',
         'renewal_selection.message.5223e5a747' => '💡 پلنی در این دسته بندی وجود ندارد. ',
     ],
 
@@ -609,8 +606,8 @@ return [
         'discounts.apply_discount_to_pay.message.e3c216313a' => 'کد تخفیف با موفقیت اعمال شد. مبلغ تخفیف: ',
         'discounts.apply_discount_to_pay.button.16e81418a3' => '❤️',
         // payment_lifecycle.pay_ux_reference
-        'payment_lifecycle.pay_ux_reference.label.edb6e627ea' => '🆔 سفارش: <code>',
-        'payment_lifecycle.pay_ux_reference.text.d031212b3c' => '🆔 شناسهٔ تلگرام: <code>',
+        'payment_lifecycle.pay_ux_reference.label.edb6e627ea' => '🎫 سفارش: <code>',
+        'payment_lifecycle.pay_ux_reference.text.d031212b3c' => '👤 شناسه عددی: <code>',
         // payment_lifecycle.pay_ux_status_text
         'payment_lifecycle.pay_ux_status_text.text.df83eb82dd' => 'پرداخت سفارش',
         'payment_lifecycle.pay_ux_status_text.text.a1026d7b85' => '⌛️ مهلت این درخواست پرداخت پایان یافته است',
@@ -638,11 +635,11 @@ return [
         // referral_reward.give_referral_reward
         'referral_reward.give_referral_reward.buyer_msg.51caba68b5' => '🎁 پاداش معرفی شما به مبلغ ',
         'referral_reward.give_referral_reward.text.b87aec1eb7' => ' تومان ثبت شد.' . "\n" . '💰 موجودی قبلی: ',
-        'referral_reward.give_referral_reward.text.c0780ce268' => ' تومان' . "\n" . '💰 موجودی جدید: ',
+        'referral_reward.give_referral_reward.text.c0780ce268' => ' تومان' . "\n" . '💼 موجودی جدید: ',
         // checkout.button
         'checkout.button.e401f3d5a2' => '🛍 خرید اشتراک جدید',
         // checkout.hash_id_local
-        'checkout.hash_id_local.09f20c4022' => ['text' => '🆔 {hashIdLocal}', 'parameters' => ['hashIdLocal']],
+        'checkout.hash_id_local.09f20c4022' => ['text' => '🎫 شناسه پیگیری: {hashIdLocal}', 'parameters' => ['hashIdLocal']],
         // checkout.message
         'checkout.message.2a6cba0152' => '⚠️ تحویل خرید سفارشی کیف پول نیازمند بررسی است. ',
         'checkout.message.4f5582ec37' => 'پرداخت و سرویس ثبت شده‌اند؛ ساخت مجدد خودکار ممنوع است.',
@@ -666,7 +663,7 @@ return [
         'checkout.alert.e733abf9ba' => '⛔️ این خرید رسید دستی معتبر و در انتظار تأیید ندارد.',
         // checkout.message
         'checkout.message.3b8e6e3a15' => '⚠️ تأیید خرید دستی نیازمند بررسی سرویس و پرداخت است. از اجرای دوباره خودکار خودداری کنید.',
-        'checkout.message.eccb64d3cb' => '' . "\n" . '🆔 ',
+        'checkout.message.eccb64d3cb' => '' . "\n" . '🎫 ',
         // checkout.alert
         'checkout.alert.6fa04cd4c0' => '⚠️ نتیجه تأیید نیاز به بررسی دستی دارد؛ وضعیت سرویس را پیش از اقدام مجدد کنترل کنید.',
         // checkout.message
@@ -678,7 +675,7 @@ return [
         // checkout.remark
         'checkout.remark.4348a3fd9b' => ['text' => '🔄 {remark}', 'parameters' => ['remark']],
         // checkout.hash_id
-        'checkout.hash_id.2899228604' => ['text' => '🆔 {hash_id}', 'parameters' => ['hash_id']],
+        'checkout.hash_id.2899228604' => ['text' => '🎫 شناسه پیگیری: {hash_id}', 'parameters' => ['hash_id']],
         // checkout.message
         'checkout.message.3f598b595a' => '⚠️ پرداخت و سفارش ثبت شده‌اند، اما اطلاع‌رسانی نیازمند بررسی است.',
         'checkout.message.cfed3110bf' => '' . "\n" . 'سرویس یا پاداش را بدون تطبیق دوباره صادر نکنید.',
@@ -687,7 +684,7 @@ return [
         // checkout.message
         'checkout.message.54c81d71b7' => '⚠️ پرداخت هنوز نهایی نشده؛ ارسال انجام نشد.' . "\n" . '',
         // checkout.hash_id
-        'checkout.hash_id.286c7d3faf' => ['text' => '🆔 {hashId}', 'parameters' => ['hashId']],
+        'checkout.hash_id.286c7d3faf' => ['text' => '🎫 شناسه پیگیری: {hashId}', 'parameters' => ['hashId']],
         // checkout.message
         'checkout.message.c150d2e039' => '⚠️ تحویل اشتراک کیف پول نیاز به بررسی دارد.',
         'checkout.message.e09fe6fd6b' => '' . "\n" . '🔢 موارد: ',
@@ -701,9 +698,9 @@ return [
         'pre_payment.text.ace4b5ad89' => 'کارت‌به‌کارت بانکی',
         'pre_payment.text.46daee8b43' => 'پرداخت رمزارزی',
         // pre_payment.next_pay
-        'pre_payment.next_pay.68fdcf6af2' => 'NextPay',
+        'pre_payment.next_pay.68fdcf6af2' => 'درگاه نکست‌پی',
         // pre_payment.zarinpal
-        'pre_payment.zarinpal.4497ba648f' => 'Zarinpal',
+        'pre_payment.zarinpal.4497ba648f' => 'درگاه زرین‌پال',
         // pre_payment.text
         'pre_payment.text.f07a81a062' => 'نامشخص',
         'pre_payment.text.c8886e46d5' => '' . "\n" . 'روش: ',
@@ -769,9 +766,9 @@ return [
         'automatic_receipts.message.c0b5e951d8' => 'برای بررسی با پشتیبانی تماس بگیرید؛ خرید را تکرار نکنید.',
         'automatic_receipts.message.cca1075329' => ['text' => '✅ اشتراک {remark} با موفقیت تمدید شد.', 'parameters' => ['remark']],
         'automatic_receipts.message.ca1eaa01e6' => '⚠️ نتیجهٔ تمدید هنوز قطعی نیست. پرداخت ثبت شده و سرویس نیازمند تطبیق است؛ پرداخت یا تمدید را تکرار نکنید.',
-        'automatic_receipts.message.7c7851027c' => ['text' => '✅ {volume} روز به مدت اشتراک شما اضافه شد.', 'parameters' => ['volume']],
+        'automatic_receipts.message.7c7851027c' => ['text' => '✅ مدت {volume} روز به مدت اشتراک شما اضافه شد.', 'parameters' => ['volume']],
         'automatic_receipts.message.6223bac2fc' => '⚠️ نتیجهٔ افزایش روز هنوز قطعی نیست. پرداخت محفوظ است؛ درخواست را تکرار نکنید.',
-        'automatic_receipts.message.1660fa3e00' => ['text' => '✅ {volume} گیگ به حجم اشتراک شما اضافه شد.', 'parameters' => ['volume']],
+        'automatic_receipts.message.1660fa3e00' => ['text' => '✅ حجم {volume} گیگ به حجم اشتراک شما اضافه شد.', 'parameters' => ['volume']],
         'automatic_receipts.message.530f1966b8' => '⚠️ نتیجهٔ افزایش حجم هنوز قطعی نیست. پرداخت محفوظ است؛ درخواست را تکرار نکنید.',
         'automatic_receipts.message.16c2ec4018' => '⚠️ نتیجهٔ تمدید هنوز قطعی نیست. وضعیت پرداخت محفوظ است؛ درخواست را تکرار نکنید.',
         'automatic_receipts.message.39254abe63' => '⚠️ پرداخت شما محفوظ است، اما نتیجهٔ ساخت اشتراک قطعی نیست. برای بررسی با پشتیبانی تماس بگیرید؛ پرداخت را تکرار نکنید.',
@@ -783,8 +780,8 @@ return [
         'receipt_helpers.manual_label.text.ea9faa7b63' => 'ترون دستی (TRX)',
         'receipt_helpers.manual_label.text.ace4b5ad89' => 'کارت‌به‌کارت بانکی',
         // receipt_helpers.manual_crypto_options
-        'receipt_helpers.manual_crypto_options.u_s_d_t.1974a6095a' => '💎 USDT — ',
-        'receipt_helpers.manual_crypto_options.t_r_x__t_r_o_n.e3a2653517' => '🔴 TRX — TRON',
+        'receipt_helpers.manual_crypto_options.u_s_d_t.1974a6095a' => '💎 تتر (USDT) — ',
+        'receipt_helpers.manual_crypto_options.t_r_x__t_r_o_n.e3a2653517' => '🔴 ترون (TRX) — TRON',
         // receipt_helpers.manual_acknowledgement
         'receipt_helpers.manual_acknowledgement.label.a5f27211f7' => '📥 تصویر ',
         'receipt_helpers.manual_acknowledgement.text.29e14cf62e' => ' دریافت شد.' . "\n" . '',
@@ -801,7 +798,7 @@ return [
         'manual_crypto.alert.4d788a75be' => 'این سفارش قبلاً با روشی دیگر ثبت یا وارد بررسی شده است.',
         'manual_crypto.alert.5ce97176e4' => 'اطلاعات پرداخت قبلی نیازمند بررسی است.',
         // manual_crypto.t_r_x
-        'manual_crypto.t_r_x.a23d6fad8d' => '🔴 TRX — ',
+        'manual_crypto.t_r_x.a23d6fad8d' => '🔴 ترون (TRX) — ',
         // manual_crypto.alert
         'manual_crypto.alert.26fc4467a8' => 'هیچ شبکه‌ای با آدرس و نرخ معتبر فعال نیست.',
         // manual_crypto.button
@@ -817,14 +814,14 @@ return [
         'manual_crypto.alert.5216f25f85' => 'وضعیت سفارش قابل خواندن نیست؛ لطفاً بعداً تلاش کنید.',
         // manual_receipts.message
         'manual_receipts.message.f568baa065' => '✅ افزایش حساب شما با موفقیت تایید شد.' . "\n" . '💰 مبلغ <b>',
-        'manual_receipts.message.f6331b33af' => ['text' => ' تومان</b> به کیف پول شما اضافه شد.' . "\n" . '' . "\n" . '<blockquote>' . "\n" . '⚠️ لطفا دقت کنید شما فقط کیف پول خودتان را شارژ کرده‌اید، برای خرید یا تمدید باید از دکمه های زیر استفاده کنید:' . "\n" . '🛒 <b>خرید اشتراک جدید</b>' . "\n" . 'یا <b>🔄 تمدید یا مشاهده اشتراک ها</b>' . "\n" . 'و در مرحله پرداخت روی دکمه زیر بزنید:' . "\n" . '💰 <b>پرداخت با موجودی</b>' . "\n" . '</blockquote>' . "\n" . '📨 پشتیبانی:' . "\n" . '🆔 {supportID}', 'parameters' => ['supportID']],
+        'manual_receipts.message.f6331b33af' => ['text' => ' تومان</b> به کیف پول شما اضافه شد.' . "\n" . '' . "\n" . '<blockquote>' . "\n" . '⚠️ لطفا دقت کنید شما فقط کیف پول خودتان را شارژ کرده‌اید، برای خرید یا تمدید باید از دکمه های زیر استفاده کنید:' . "\n" . '🛒 <b>خرید اشتراک جدید</b>' . "\n" . 'یا <b>🔄 تمدید یا مشاهده اشتراک ها</b>' . "\n" . 'و در مرحله پرداخت روی دکمه زیر بزنید:' . "\n" . '💳 <b>پرداخت با موجودی</b>' . "\n" . '</blockquote>' . "\n" . '📨 پشتیبانی:' . "\n" . '💬 پشتیبانی: {supportID}', 'parameters' => ['supportID']],
         // manual_receipts.button
         'manual_receipts.button.e3517e568b' => '🔄 درخواست دوباره',
         // manual_receipts.message
         'manual_receipts.message.bc0155976d' => ['text' => '❌ درخواست شما به دلایل زیر رد شد:' . "\n" . '' . "\n" . '<blockquote>{reason}</blockquote>' . "\n" . '' . "\n" . '⚠️ اطلاعات درخواست:' . "\n" . '', 'parameters' => ['reason']],
         'manual_receipts.message.c4d810a7d3' => ['text' => '💰 مبلغ: <b>{price}</b>' . "\n" . '', 'parameters' => ['price']],
         'manual_receipts.message.61d75413a2' => ['text' => '♾️ نام اشتراک: <code>{remark}</code>' . "\n" . '', 'parameters' => ['remark']],
-        'manual_receipts.message.df4f415ed5' => ['text' => '🆔 شناسه پرداخت: <code>{hash_id}</code>', 'parameters' => ['hash_id']],
+        'manual_receipts.message.df4f415ed5' => ['text' => '🎫 شناسه پرداخت: <code>{hash_id}</code>', 'parameters' => ['hash_id']],
     ],
 
     // ── درگاه‌ها و صفحه وضعیت پرداخت ──
@@ -922,9 +919,9 @@ return [
         'gateway_return.perform_payment_effect.message.a0b19d8503' => ' تومان به کیف پولت اضافه شد.',
         'gateway_return.perform_payment_effect.message.effdee0c2d' => '✅ پرداخت تأیید شد؛ وضعیت تحویل سرویس را در ربات بررسی کنید.',
         'gateway_return.perform_payment_effect.button.b9d052f74c' => ['text' => '💳 خرید از درگاه {gateType}', 'parameters' => ['gateType']],
-        'gateway_return.perform_payment_effect.hash_id.2899228604' => ['text' => '🆔 {hash_id}', 'parameters' => ['hash_id']],
+        'gateway_return.perform_payment_effect.hash_id.2899228604' => ['text' => '🎫 شناسه پیگیری: {hash_id}', 'parameters' => ['hash_id']],
         'gateway_return.perform_payment_effect.message.bbf27ebefd' => '✅ پرداخت شما با موفقیت انجام شد، مبلغ ',
-        'gateway_return.perform_payment_effect.message.dd866497c7' => ['text' => ' تومان به حساب شما اضافه شد.' . "\n" . '' . "\n" . '<blockquote>' . "\n" . '⚠️ لطفا دقت کنید شما فقط کیف پول خودتان را شارژ کرده‌اید، برای خرید یا تمدید باید از دکمه های زیر استفاده کنید:' . "\n" . '' . "\n" . '🛒 <b>خرید اشتراک جدید</b>' . "\n" . 'یا <b>🔄 تمدید یا مشاهده اشتراک ها</b>' . "\n" . '' . "\n" . 'و در مرحله پرداخت روی دکمه زیر بزنید:' . "\n" . '' . "\n" . '💰 <b>پرداخت با موجودی</b>' . "\n" . '' . "\n" . '</blockquote>' . "\n" . '📨 پشتیبانی:' . "\n" . '' . "\n" . '🆔 {supportID}', 'parameters' => ['supportID']],
+        'gateway_return.perform_payment_effect.message.dd866497c7' => ['text' => ' تومان به حساب شما اضافه شد.' . "\n" . '' . "\n" . '<blockquote>' . "\n" . '⚠️ لطفا دقت کنید شما فقط کیف پول خودتان را شارژ کرده‌اید، برای خرید یا تمدید باید از دکمه های زیر استفاده کنید:' . "\n" . '' . "\n" . '🛒 <b>خرید اشتراک جدید</b>' . "\n" . 'یا <b>🔄 تمدید یا مشاهده اشتراک ها</b>' . "\n" . '' . "\n" . 'و در مرحله پرداخت روی دکمه زیر بزنید:' . "\n" . '' . "\n" . '💰 <b>پرداخت با موجودی</b>' . "\n" . '' . "\n" . '</blockquote>' . "\n" . '📨 پشتیبانی:' . "\n" . '' . "\n" . '💬 پشتیبانی: {supportID}', 'parameters' => ['supportID']],
         'gateway_return.perform_payment_effect.message.a3b46e7d37' => ['text' => '✅ پرداخت شما با موفقیت انجام شد. اشتراک {remark} با موفقیت تمدید شد.', 'parameters' => ['remark']],
         'gateway_return.perform_payment_effect.message.8ab1d455cf' => ['text' => '✅ پرداخت شما با موفقیت انجام شد. {plusDays} روز به مدت زمان اشتراک شما اضافه شد.', 'parameters' => ['plusDays']],
         'gateway_return.perform_payment_effect.message.9f4f326fa4' => '⚠️ پرداخت شما با موفقیت انجام شد ولی به دلیل مشکل فنی امکان افزایش حجم نیست. لطفا به مدیریت اطلاع بدید یا 5 دقیقه دیگر دوباره تست کنید مبلغ ',
@@ -983,7 +980,7 @@ return [
         'customer_conversation.user_all_tickets.text.7555aab9b2' => '📄 موارد بیشتر',
         'customer_conversation.user_all_tickets.button.29582a35e0' => '📥 دریافت',
         'customer_conversation.user_all_tickets.alert.69716a6209' => '⚠️ تیکتی یافت نشد',
-        'customer_conversation.user_all_tickets.title_category.f58d7d9818' => ['text' => ' {title} 🟰 {category} ' . "\n" . '' . "\n" . '', 'parameters' => ['title', 'category']],
+        'customer_conversation.user_all_tickets.title_category.f58d7d9818' => ['text' => 'موضوع: {title} 🟰 {category} ' . "\n" . '' . "\n" . '', 'parameters' => ['title', 'category']],
         'customer_conversation.user_all_tickets.text.54487cb6cb' => 'این تیکت بسته شد' . "\n" . ' به این تیکت رأی بدهید',
         'customer_conversation.user_all_tickets.button.67c753a13d' => 'بسیار بد',
         'customer_conversation.user_all_tickets.button.6f4e0b97a2' => 'بد',
@@ -1156,7 +1153,7 @@ return [
     // ── منوها و گزارش‌های مدیریت ──
     'admin_settings' => [
         // config.check
-        'config.check.you_do_not_have_access.816f78fb2c' => 'You do not have access',
+        'config.check.you_do_not_have_access.816f78fb2c' => 'شما به این بخش دسترسی ندارید.',
         // config.get_main_keys
         'config.get_main_keys.button.b7d6aa7173' => '🔰 دریافت پنل همکاری',
         // config.get_gate_ways_keys
@@ -1188,10 +1185,15 @@ return [
         // gift2all.message
         'gift2all.message.1bf0942a3d' => ['text' => '🎁 به اشتراک {remark} شما {giftText} اضافه شد', 'parameters' => ['remark', 'giftText']],
         // sub_link.method_not_allowed
-        'sub_link.method_not_allowed.371b26886b' => 'Method not allowed',
+        'sub_link.method_not_allowed.371b26886b' => 'این روش درخواست مجاز نیست.',
         // sub_link.wrong_token
-        'sub_link.wrong_token.9730d4c268' => 'Wrong token',
+        'sub_link.wrong_token.9730d4c268' => 'توکن معتبر نیست.',
         // sub_link.legacy_subscription_link_retired_use
-        'sub_link.legacy_subscription_link_retired_use.6e4eb03e96' => 'Legacy subscription link retired; use the current subscription URL.',
+        'sub_link.legacy_subscription_link_retired_use.6e4eb03e96' => 'این لینک قدیمی دیگر فعال نیست؛ از لینک فعلی اشتراک استفاده کنید.',
+    ],
+    // متن‌ها و نشانی‌های قابل تنظیم هر ربات
+    'instance_content' => [
+        'unconfigured' => ['text' => '📝 متن این بخش هنوز تنظیم نشده است.' . "\n" . 'مدیر ربات می‌تواند آن را از «تنظیمات ربات ← متن‌ها و نشانی‌ها» تنظیم کند.' . "\n" . '🎫 شناسه عددی: {userId}', 'parameters' => ['userId']],
+        'help_button' => '📚 کانال آموزش و راهنما',
     ],
 ];

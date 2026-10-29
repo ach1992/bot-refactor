@@ -32,6 +32,32 @@ def cmd(*args: str) -> bytes:
     return subprocess.check_output(["git", "-C", str(ROOT), *args])
 
 
+def owner_r5_proof_mismatches(name: str, proof: dict, minimum: int, required: dict) -> dict:
+    """Keep exact proof fields; accept only both native-asserted safe RR outcomes."""
+    def bounded(value):
+        if value is None or type(value) in (bool, int):
+            return value
+        if isinstance(value, str) and re.fullmatch(r"[A-Za-z0-9_.:-]{1,80}", value):
+            return value
+        return '<unexpected '+type(value).__name__+'>'
+
+    mismatches={key:{'expected':bounded(value),'actual':bounded(proof.get(key))}
+                for key,value in required.items() if proof.get(key)!=value}
+    cases=proof.get('cases')
+    if type(cases) is not int or cases<minimum:
+        mismatches['cases']={'expected_minimum':minimum,'actual':bounded(cases)}
+    if name=='admin_fanout':
+        # MariaDB snapshot-isolation versions can either defer a conflicting
+        # current read or see the new member. The native probe proves safety
+        # and next-normal delivery in both cases; every other field stays exact.
+        modes=('deferred_current_read_conflict','current_member_observed')
+        mode=proof.get('old_snapshot_membership_mode')
+        if mode not in modes:
+            mismatches['old_snapshot_membership_mode']={
+                'expected_one_of':list(modes),'actual':bounded(mode)}
+    return mismatches
+
+
 def source_checks():
     if cmd("rev-parse", V9 + "^{tree}").decode().strip() != V9_TREE:
         raise RuntimeError("Frozen historical V9 reference changed")
@@ -58,6 +84,9 @@ def source_checks():
     # Current runtime must never write administrator identifiers to a web-root debug artifact.
     for rel in php_files:
         php_source=(ROOT/rel).read_text()
+        if rel in {'src/Admin/Access.php','config.php'} and re.search(
+                r'\$(?:admins_list|special_admins)\b',php_source):
+            raise RuntimeError('Retired private staff variable remains in authority/delivery source: '+rel)
         if ("admins_list_check.txt" in php_source or
                 re.search(r"print_r\s*\(\s*\$admins_list\b", php_source)):
             raise RuntimeError("Unsafe administrator-list debug dump in runtime: "+rel)
@@ -104,6 +133,7 @@ def source_checks():
             "original_historical_schema_file_unchanged":True,
             "current_additive_migration_separately_tested":True,
             "synthetic_baseinfo_example_current_settings_removed":True,
+            "obsolete_private_staff_authority_absent":True,
             "historic_contract_changed":False,"retired_provider_api_removed":True,
             "admin_list_debug_artifact_writer_absent":True,
             "pasarguard_native_implemented":True, "new_xui_implemented":False}
@@ -128,6 +158,135 @@ def main():
         raise RuntimeError("Payment capability randomness/bounds incomplete")
     audience=customer_errors.verify(ROOT)
     with tempfile.TemporaryDirectory(prefix="achbot-post-v9-acceptance-") as tmp:
+        # Current Owner R5 uses real merged source; prior immutable stages remain separate.
+        owner_r5={}
+        r5_suites=[
+            ('roles','test_owner_r5_roles.py',635,
+             {'complete':True,'cases':635,'real_disposable_mariadb':True,'actual_admin_keyboard':True,
+              'db_only_staff_authority':True,'legacy_roleless_operator':True,
+              'obsolete_staff_arrays_ignored':True,'obsolete_array_denials':3,
+              'no_obsolete_array_import':True,'explicit_manager_assignment':True,
+              'archived_private_manager_fallback_red':True,
+              'staff_configuration_baseline_source':'f570db225beac9e429f11fbc73d84acaf3750cf6',
+              'financial_boolean_preserved':True,'no_network':True,
+              'actual_role_management_route':True,'actual_readonly_attention_hub':True,'baseline_red':True,
+              'actual_approval_denials':True,'manager_operator_approval':True,
+              'support_receipt_approval':True,'support_other_operations_denied':True,
+              'direct_receipt_helper_levels':['manager','operator','support'],
+              'unauthorized_approval_actors':[1001,9005,9006,9999],
+              'support_unclassified_prefix_denials':3,'notification_action_independence':True,
+              'notification_ui_owner_only':True,'notification_on_cannot_grant_staff':True,
+              'approved_notification_off_levels':['manager','operator','support'],
+              'support_payment_family_coverage':['accCustom','approveRenewAcc','approveIncreaseDay','approveIncreaseVolume','accept','approvePayment','declineAction','declineActionReason'],
+              'baseline_approval_callback_red':True,'baseline_decline_escape_red':True,
+              'approval_family_coverage':['accCustom','approveRenewAcc','approveIncreaseDay','approveIncreaseVolume','accept','approvePayment','declineAction','declineActionReason'],
+              'forbidden_financial_effects':{'financial_reads':0,'sql_writes':0,'transactions':0,'native_calls':0},
+              'actual_positive_approval_levels':['manager','operator','support'],
+              'actual_replay_protected_levels':['manager','operator','support'],
+              'approval_baseline_source':'82861ac0b17aa7a0c494c564cdf4674cb6eb505d',
+              'actual_production_bot_ingress':True,'actual_config_bootstrap_ingress':True,
+              'actual_customer_app_downloads':True,'actual_customer_pagination_reply':True,
+              'actual_ticket_attachment_authorization':True,'public_callback_collision_baseline_red':True,
+              'public_collision_baseline_source':'d6a2ce01626fb3e707e062a099d051bce4c5ae63',
+              'public_customer_journey_families':['buy','bulk','trial','own_orders','import','renew','addon','wallet','status','support','agency','downloads'],
+              'public_pending_stage_families':['buy','bulk','own_orders','renew','addon','wallet','support'],
+              'actual_customer_wallet_draft_paths':['1001:increaseWallet_100000','1001:increaseWalletCustom','1002:increaseWallet_100000','1002:increaseWalletCustom'],
+              'actual_customer_ticket_actors':[1001,1002,9004],
+              'forbidden_admin_wallet_effects':{'financial_reads':0,'sql_writes':0,'transactions':0,'native_calls':0}}),
+            ('staff_example','test_owner_db_staff_example.py',6,
+             {'complete':True,'cases':6,'actual_package_members':True,'source_real':True,
+              'authorized_assignment_removals':8,'additional_staff_assignment_removals':2,
+              'baseline_source':'f570db225beac9e429f11fbc73d84acaf3750cf6',
+              'archived_two_staff_assignments_red':True,
+              'staff_reintroduction_red':['admins_list','special_admins'],
+              'unrelated_template_mutation_red':['primary_owner','synthetic_database_user'],
+              'runtime_members':115,'private_config_read':False,'external_calls':0}),
+            ('instance_content','test_owner_instance_content.py',69,
+             {'result':'PASS','source_real':True,'socket_only_original_schema':True,'no_external_calls':True,
+              'lock_join_baseline_red':True,'lock_join_baseline_source':'4548705609518f741d14375c9d47739eb302c3b6'}),
+            ('user_info','test_owner_r5_user_info.py',46,
+             {'result':'PASS','source_real':True,'owned_socket_mariadb':True,'baseline_missing_refresh_red':True}),
+            ('receipt_presentation','test_owner_r5_receipt_presentation.py',13,
+             {'complete':True,'source_real':True,'owned_original_schema_mariadb':True,
+              'baseline_red':True,'external_calls':0,'financial_mutations_by_caption':0}),
+            ('admin_fanout','test_owner_r5_admin_fanout.py',272,
+             {'complete':True,'cases':272,'source_real':True,'owned_original_schema_mariadb':True,
+              'network_calls':0,'recipient_matrix':True,'raw_text_photo_markup_preserved':True,
+              'notification_recipient_matrix':True,'notifications_independent_of_role':True,
+              'notification_default_on':True,'owner_only_notification_ui':True,
+              'notification_preference_preserved':True,'uniform_receipt_authority_all_tiers':True,
+              'notification_never_grants_or_revokes_actions':True,
+              'notification_off_suppresses_new_copies':True,
+              'stored_receipt_maintenance_ignores_notification_preference':True,
+              'stored_receipt_maintenance_requires_current_staff':True,
+              'archived_notification_coupling_red':True,
+              'receipt_maintenance_baseline_source':'add6948fd0720c0fed454d5c2db2f06d1d5d8b24',
+              'malformed_duplicate_notifications_denied':True,'support_receipt_approval_replay':True,
+              'support_payment_followups':True,'support_operations_still_denied':True,
+              'db_only_staff_authority':True,'legacy_roleless_operator':True,
+              'obsolete_staff_arrays_ignored':True,'explicit_manager_assignment':True,
+              'actual_admin_ui_membership_delivery':True,'old_snapshot_membership_safe':True,
+              'next_normal_delivery_includes_added_staff':True,'no_private_bootstrap_import':True,
+              'db_only_baseline_red':True,'private_staff_baseline_source':'4a28474fdba41e17ebadab29ece1c17d18038437',
+              'finance_source_ref':'current-source','catalog_source_ref':'current-source',
+              'persisted_tiers_preserved':True,'primary_owner_once':True,'options_recipient_integrity':True,
+              'recorded_refs_match_delivery':True,'fresh_role_changes':True,
+              'repeatable_read_notification_off_denied':True,'no_new_transaction_across_delivery':True,
+              'actual_primary_receipt_evidence':True,'original_evidence_retry_preserved':True,
+              'approval_replay_preserved':True,'stored_followup_loops':9,
+              'stored_followup_markup_preserved':True,'historical_refs_preserved':True,
+              'atomic_history_append':True,'malformed_history_preserved':True,
+              'concurrent_confirmed_append':True,'archived_fanout_red':True,
+              'archived_stored_refs_red':True,
+              'baseline_source':'a070a47c5796e8244a3fe7fbca21e301977c3dcf'}),
+            ('destination_escaping','test_owner_destination_escaping.py',289,
+             {'result':'PASS','cases':289,'source_real':True,'actual_transport_payloads':True,
+              'read_only_original_schema':True,'no_external_calls':True,
+              'no_money_or_settings_mutation':True,'baseline_red':True,
+              'baseline_red_source':'a070a47c5796e8244a3fe7fbca21e301977c3dcf',
+              'baseline_red_sinks':['app','join','plain','manual','gateway','channel']}),
+        ]
+        for name,script,minimum,required in r5_suites:
+            report=Path(tmp)/('owner-r5-'+name+'.json')
+            subprocess.run(['python3',str(ROOT/'tools'/script),'--run-disposable','--report',str(report)],
+                           cwd=ROOT,check=True,timeout=180,capture_output=True)
+            proof=json.loads(report.read_text())
+            mismatches=owner_r5_proof_mismatches(name,proof,minimum,required)
+            if mismatches:
+                raise RuntimeError('Owner R5 merged source proof incomplete: '+name+' '+
+                                   json.dumps(mismatches,sort_keys=True))
+            if name=='destination_escaping':
+                fragments=proof.get('source_fragment_sha256')
+                expected_fragments={'initialization','facades','sink-app','sink-join',
+                    'sink-banned','sink-import','sink-plain','sink-alert','sink-manual',
+                    'sink-gateway','sink-channel','main-keys'}
+                if not (isinstance(fragments,dict) and set(fragments)=={'current','archived'}
+                        and all(isinstance(hashes,dict) and set(hashes)==expected_fragments
+                            and all(isinstance(digest,str) and re.fullmatch('[0-9a-f]{64}',digest)
+                                for digest in hashes.values()) for hashes in fragments.values())):
+                    raise RuntimeError('Owner R5 destination source-fragment evidence incomplete')
+            owner_r5[name]=proof
+        copy_run=subprocess.run(['python3',str(ROOT/'tools/test_owner_r5_copy.py')],
+                                cwd=ROOT,check=True,timeout=180,capture_output=True,text=True)
+        copy_proof=json.loads(copy_run.stdout)
+        required_copy={'status':'PASS','changes':271,'retired':9,'added':42,'current_keys':2668,
+                       'r5_negative_controls':5,'persian_prose_start_violations':0,
+                       'duplicate_heading_markers':0,'guide_provider_cases':2,'guide_JSON_examples':3,
+                       'actual_HTML_transport_cases':2,'archived_wrong_parse_RED':True,
+                       'receipt_PRICE_template_cases':6,'real_Telegram_rendering':'NOT_TESTED',
+                       'composed_catalog_correction_keys':22,'composed_heading_cases':42,
+                       'notification_catalog_additions':4,'staff_role_description_amendments':1,
+                       'staff_catalog_negative_controls':6,
+                       'telegram_update_id_label_cases':1,'telegram_update_id_numeric_value_preserved':True,
+                       'archived_wrong_telegram_update_label_RED':True,
+                       'composed_heading_source_paths':16,'composed_heading_archived_RED':18,
+                       'composed_heading_negative_controls':6,'identical_heading_reuse_cases':1,
+                       'raw_code_heading_exclusions':1,'numeric_id_variant_negative_controls':5,
+                       'preserved_telegram_object_id_cases':3,'preserved_numeric_id_cases':1,
+                       'composition_scope':'source_expression_wallet_finance_receipt_support_admin_stats_matrix'}
+        if any(copy_proof.get(key)!=value for key,value in required_copy.items()):
+            raise RuntimeError('Owner R5 Persian copy/HTML proof incomplete')
+        owner_r5['copy']=copy_proof
         unified={}
         suites=[
             ('management_wizard','test_unified_management_wizard.py','cases',362,
@@ -394,7 +553,7 @@ def main():
                         "--run-disposable","--report",str(purchase_path)],
                        cwd=ROOT,check=True,timeout=300,capture_output=True)
         purchases=json.loads(purchase_path.read_text())
-        # Seven unchanged scenarios retain exact financial/provider parity.
+        # Seven scenarios retain exact financial/provider parity; one has the explicit R5 denial notice.
         # The owner-requested actor draft replaces the old global scratch row;
         # require its actual historical/current proof instead of claiming parity.
         draft_amendments=purchases.get("intentional_behavior_amendments",[])
@@ -414,15 +573,23 @@ def main():
                 purchases.get("sql_provider_wire_exact") is False and
                 purchases.get("unchanged_differential_scenarios")==7 and
                 purchases.get("unchanged_differential_sql_provider_wire_exact") is True and
-                purchases.get("unchanged_differential_telegram_comparison")=="exact_except_explicit_authorized_ui_text_fields" and
-                purchases.get("telegram_comparison")=="seven_exact_style_scoped_cases_and_one_explicit_actor_draft_amendment" and
+                purchases.get("unchanged_differential_telegram_comparison")=="exact_except_authorized_literal_UI_and_one_actor_local_denial_notice" and
+                purchases.get("telegram_comparison")=="six_style_scoped_cases_one_actor_local_denial_notice_and_one_actor_draft_amendment" and
                 purchases.get("actor_owned_plan_draft_entry_verified") is True and
                 draft_amendments==[draft_proof] and
                 purchases.get("ui_projection_baseline")=="7faac9b067f8a171e5e26d6aea5aaf9f4088a3e7" and
-                purchases.get("verified_literal_style_pairs")==487 and
+                purchases.get("verified_literal_style_pairs")==581 and
                 purchases.get("authorized_ui_field_differences")==3 and
                 purchases.get("ui_projection_negative_controls")==17 and
                 len(purchases.get("rejected_projection_mutations",[]))==17 and
+                purchases.get("r5_ui_lineage_negative_controls")==5 and
+                purchases.get("r5_denial_notice_amendment_count")==1 and
+                purchases.get("r5_denial_notice_negative_controls")==12 and
+                purchases.get("r5_denial_notice_amendments")==[{
+                    "case":"nonadmin_bulk_denied","step":0,"route":"entryandbulk",
+                    "catalog_key":"admin.roles.denied",
+                    "delivery":"one_actor_local_sendMessage_null_keys_HTML",
+                    "archived_events_empty":True,"sql_provider_wire_exact":True}] and
                 {(f.get("case"),f.get("step"),f.get("event_name"),f.get("argument_index"),tuple(f.get("field_path",[])))
                  for f in purchases.get("authorized_ui_fields",[])}=={
                     ("admin_plan_price_edit",1,"sendMessage",0,()),
@@ -675,6 +842,7 @@ def main():
                 and text_catalog.get("ascii_ui_violations")==0
                 and text_catalog.get("ascii_audit_negative_controls")==8
                 and text_catalog.get("management_ascii_audit_controls")==2
+                and text_catalog.get("machine_predicate_audit_controls")==2
                 and text_catalog.get("presentation",{}).get("management_provider_label_cases")==11
                 and text_catalog.get("migrated_machine_fields_or_sql_arguments")==0
                 and text_catalog.get("direct_http_guards")==4
@@ -688,15 +856,15 @@ def main():
                 and text_catalog.get("native",{}).get("pre_style_privacy_corrections")==3
                 and text_catalog.get("native",{}).get("actual_traffic_helper_parity_cases")==18
                 and text_catalog.get("editable_catalog_files")==2
-                and text_catalog.get("logical_topics")==25
+                and text_catalog.get("logical_topics")==26
                 and text_catalog.get("current_authorized_source_edits")==26
                 and text_catalog.get("retired_parser_tokens")==23
                 and text_catalog.get("relocation_source_ref")=="ecd30ba9192ed374703118a6c131be8809cc7b06"
                 and text_catalog.get("native",{}).get("current_retired_feature_keys")==3
-                and text_catalog.get("catalog_keys")==2635
+                and text_catalog.get("catalog_keys")==2668
                 and text_catalog.get("native",{}).get("editable_catalog_files")==2
-                and text_catalog.get("native",{}).get("logical_topics")==25
-                and text_catalog.get("native",{}).get("current_catalog_keys")==2635
+                and text_catalog.get("native",{}).get("logical_topics")==26
+                and text_catalog.get("native",{}).get("current_catalog_keys")==2668
                 and text_catalog.get("native",{}).get("current_management_added_keys")==112
                 and text_catalog.get("native",{}).get("current_catalog_binding_paths")==2
                 and text_catalog.get("native",{}).get("current_catalog_binding_entries")==4
@@ -710,14 +878,18 @@ def main():
                 and text_catalog["native"]["current_byte_preserved_keys"]
                     +text_catalog["native"]["current_style_changes"]
                     +text_catalog["native"]["current_added_admin_keys"]==2523
-                and text_catalog.get("native",{}).get("current_native_template_assertions")==3890
-                and text_catalog.get("native",{}).get("current_object_conversion_templates")==251
+                and text_catalog.get("native",{}).get("current_native_template_assertions")==3953
+                and text_catalog.get("native",{}).get("current_object_conversion_templates")==257
                 and text_catalog.get("native",{}).get("current_shared_multi_parameter_templates")==61
-                and text_catalog.get("native",{}).get("current_one_pass_templates")==251
+                and text_catalog.get("native",{}).get("current_one_pass_templates")==257
+                and text_catalog.get("native",{}).get("current_r5_changes")==271
+                and text_catalog.get("native",{}).get("current_r5_retired_keys")==9
+                and text_catalog.get("native",{}).get("current_r5_added_keys")==42
+                and text_catalog.get("presentation",{}).get("r5_negative_controls")==5
                 and text_catalog.get("native",{}).get("current_non_ascii_digit_templates")==0
                 and text_catalog.get("presentation",{}).get("status")=="PASS"
                 and text_catalog.get("presentation",{}).get("editable_files")==2
-                and text_catalog.get("presentation",{}).get("current_keys")==2635
+                and text_catalog.get("presentation",{}).get("current_keys")==2668
                 and text_catalog.get("presentation",{}).get("numeric_template_changes")==23
                 and text_catalog.get("presentation",{}).get("adjacent_emoji_violations")==0
                 and text_catalog.get("presentation",{}).get("parameter_exception_count")==3
@@ -729,7 +901,14 @@ def main():
                 and text_catalog.get("presentation",{}).get("recipient_placement_cases")==12
                 and text_catalog.get("presentation",{}).get("archived_recipient_placement_RED")==12
                 and text_catalog.get("presentation",{}).get("recipient_payloads_byte_unchanged") is True
-                and text_catalog.get("presentation",{}).get("recipient_source_files")==3):
+                and text_catalog.get("presentation",{}).get("recipient_source_files")==3
+                and text_catalog.get("presentation",{}).get("recipient_authorized_role_layers")==1
+                and text_catalog.get("presentation",{}).get("recipient_source_layer_negative_controls")==3
+                and text_catalog.get("presentation",{}).get("recipient_authorized_ticket_layers")==2
+                and text_catalog.get("presentation",{}).get("recipient_ticket_layer_negative_controls")==7
+                and text_catalog.get("presentation",{}).get("recipient_staff_capability_conditions")==2
+                and text_catalog.get("presentation",{}).get("recipient_staff_layer_negative_controls")==4
+                and text_catalog.get("presentation",{}).get("recipient_total_source_layer_negative_controls")==14):
             raise RuntimeError("Pre-style relocation or current two-file/audience/presentation proof incomplete")
         copy_audience_output=subprocess.run(
             ["python3",str(ROOT/"tools/test_next_copy_audience.py")],
@@ -802,9 +981,9 @@ def main():
         presentation_output=subprocess.check_output(
             ["php",str(ROOT/"tools/test_subscription_presentation.php")],
             cwd=ROOT,text=True,timeout=60)
-        if not re.search(r"PASS subscription presentation: 81 checks;",presentation_output):
+        if not re.search(r"PASS subscription presentation: 93 checks;",presentation_output):
             raise RuntimeError("Native subscription presentation proof incomplete")
-        presentation={"complete":True,"checks":81,"real_network":False}
+        presentation={"complete":True,"checks":93,"real_network":False}
         provider_path=Path(tmp)/"provider-integration.json"
         subprocess.run(["python3",str(ROOT/"tools/test_post_v9_provider_integration.py"),
                         "--run-disposable","--report",str(provider_path)],
@@ -3221,7 +3400,7 @@ def main():
                 and swap.get("synthetic_private_files_untouched")):
             raise RuntimeError("Physical post-V9/V9 source-only overlay or private-state check failed")
         if a.report:a.report.write_text(json.dumps({"complete":True,
-                    "source":result,"marzban":marzban,"purchases":purchases,
+                    "source":result,"owner_ux_r5":owner_r5,"marzban":marzban,"purchases":purchases,
                      "unsupported_wallet_preflight":wallet_guard,
                      "wallet_transfer_safety":wallet_transfer,
                      "wallet_replay_freshness_and_operation_identity":wallet_replay,

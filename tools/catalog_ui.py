@@ -101,6 +101,14 @@ def ui_candidates(root,paths):
             'achbotMessage','achbotMessageHtml','achbotMessages','achbotManagementText'}]
         def catalog_key_argument(index):
             return next(((a,b)for a,b in catalog_keys if a<=index<b),None)
+        # Predicate arguments determine control flow; their field/enum lists
+        # are not themselves displayed. Keep this contextual: the same helper
+        # used as visible data must still be traced and audited.
+        predicate_names={'in_array','array_key_exists'}
+        predicate_arguments=[span for _,_,name,spans in calls
+            if name in predicate_names for span in spans]
+        def predicate_argument(index):
+            return next(((a,b)for a,b in predicate_arguments if a<=index<b),None)
         # A demand keeps its selected record field through assignments and
         # same-file named function returns. Other record fields stay machine data.
         queue=[(a,b,origin,()) for a,b,origin in ranges];seen=set(queue)
@@ -120,7 +128,8 @@ def ui_candidates(root,paths):
                         key=tokens[start]['raw'].strip("'\"")
                         if key==selected[0]:enqueue(start+2,end,'array_field',selected[1:])
                 continue
-            known=[c for c in calls if a<=c[0]<b and c[2] in functions and catalog_key_argument(c[0])is None]
+            known=[c for c in calls if a<=c[0]<b and c[2] in functions and
+                catalog_key_argument(c[0])is None and predicate_argument(c[0])is None]
             for start,end,name,_ in known:
                 # Ambiguous duplicate/anonymous definitions are not guessed.
                 if len(functions[name])==1:
@@ -129,7 +138,7 @@ def ui_candidates(root,paths):
             references=[]
             i=a
             while i<b:
-                key_span=catalog_key_argument(i)
+                key_span=catalog_key_argument(i)or predicate_argument(i)
                 if key_span is not None:i=key_span[1];continue
                 if tokens[i]['kind']=='T_VARIABLE':
                     key,j=access(i,b);references.append(key+selected);i=j

@@ -163,7 +163,7 @@ function sendToAllAdmins(...$args){return true;}
 def prepare(work):
     stage=work/'real-gift'
     (stage/'settings').mkdir(parents=True)
-    for filename in ['settings/gift2all.php','src/Subscription/GiftBatch.php',
+    for filename in ['src/Admin/Access.php','settings/gift2all.php','src/Subscription/GiftBatch.php',
                      'src/Panel/Accounts.php','src/Purchase/Core.php',
                      'src/Panel/ProviderRuntime.php','src/Panel/ProviderImport.php','src/Panel/ProviderStorage.php','src/Panel/PasarGuard.php']:
         target=stage/filename

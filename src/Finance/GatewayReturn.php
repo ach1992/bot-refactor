@@ -1458,7 +1458,7 @@ function achbotPerformPaymentEffect($payRowId, $gateType, &$effectStage = null) 
         // Repeating it here would double-credit on the same verified event.
         showForm(\achbotMessage('gateway.gateway_return.perform_payment_effect.message.bbf27ebefd') . number_format($amount) . \achbotMessage('gateway.gateway_return.perform_payment_effect.message.606f350948'), $payDescription, true, 'completed');
 
-        sendMessage(\achbotMessage('gateway.gateway_return.perform_payment_effect.message.a5b15e454e') . number_format($amount) . \achbotMessage('gateway.gateway_return.perform_payment_effect.message.dd866497c7', ['supportID' => $supportID]), null, "html", $user_id);
+        sendMessage(\achbotMessage('gateway.gateway_return.perform_payment_effect.message.a5b15e454e') . number_format($amount) . \achbotMessageHtml('gateway.gateway_return.perform_payment_effect.message.dd866497c7', ['supportID' => $supportID]), null, "html", $user_id);
 
         $adminText = \achbotMessage('gateway.gateway_return.perform_payment_effect.message.a5b15e454e') . number_format($amount) . \achbotMessage('gateway.gateway_return.perform_payment_effect.text.3908dcee07', ['user_id' => $user_id, 'gateType' => $gateType]);
 		notifyAllAdminsSimple($adminText, $admin, "html", null, $rewardChannel);

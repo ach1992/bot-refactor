@@ -129,13 +129,16 @@ def admin_menu(source):
     code=r'''require $argv[1].'/tools/source_scan.php';
 if (realpath($argv[2])===realpath($argv[1])) {
  require_once $argv[2].'/messages/loader.php';
- $mainValues=achbotMessages('legacy_messages');$buttonValues=achbotMessages('legacy_buttons');
+ // getAdminKeys uses the actual current level resolver, not home templates.
+ require_once $argv[2].'/src/Admin/Access.php';
+ $buttonValues=achbotMessages('legacy_buttons');
 } else {
  // The pinned archived RC11 baseline retains its original facade unchanged.
  require $argv[2].'/settings/values.php';
+ // Historical owner-menu fixture only; current source uses Access.php above.
+ function canSeeButton(...$args){return true;}
 }
 $from_id=9001;$admin=9001;
-function canSeeButton(...$args){return true;}
 eval(achbotExtractFunction($argv[2].'/config.php','getAdminKeys'));
 echo getAdminKeys();'''
     return json.loads(subprocess.check_output(['php','-n','-d','extension=tokenizer',

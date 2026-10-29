@@ -53,7 +53,12 @@ function achbotApplyServiceEdit($db,$server,$change) {
 }
 
 require_once $root.'/messages/loader.php';
-$mainValues=achbotMessages('legacy_messages');$buttonValues=achbotMessages('legacy_buttons');
+// Mirror the current runtime overlay: instance-owned home bodies are not
+// members of the static audience catalog.
+require_once $root.'/src/Admin/InstanceContent.php';
+$mainValues=achbotInstanceContentValues(achbotMessages('legacy_messages'),$botState,
+    $from_id??($spec['user']??''));
+$buttonValues=achbotMessages('legacy_buttons');
 $stmt=$connection->prepare('SELECT * FROM pays WHERE hash_id=? LIMIT 1');
 $stmt->bind_param('s',$hash);$stmt->execute();
 $payInfo=$stmt->get_result()->fetch_assoc();$stmt->close();
@@ -181,7 +186,12 @@ $paymentKeys=$spec['keys']??[
     'manualUsdtNetwork'=>'BEP20','manualUsdtRateToman'=>'100000',
 ];
 require_once $root.'/messages/loader.php';
-$mainValues=achbotMessages('legacy_messages');$buttonValues=achbotMessages('legacy_buttons');
+// Mirror the current runtime overlay: instance-owned home bodies are not
+// members of the static audience catalog.
+require_once $root.'/src/Admin/InstanceContent.php';
+$mainValues=achbotInstanceContentValues(achbotMessages('legacy_messages'),$botState,
+    $from_id??($spec['user']??''));
+$buttonValues=achbotMessages('legacy_buttons');
 require $root.'/src/Finance/ReceiptHelpers.php';
 function achbotSupportsPaymentSubject(...$args){return true;}
 function achbotFinanceDiagnosticReason(Throwable $e){return get_class($e);}
@@ -245,7 +255,7 @@ function editKeys(...$args){
     return (object)['ok'=>true];
 }
 function editText(...$args){$GLOBALS['events'][]=['name'=>'editText','args'=>$args];return (object)['ok'=>true];}
-function answerCallbackQuery(...$args){$GLOBALS['events'][]=['name'=>'answerCallbackQuery'];}
+function answerCallbackQuery(...$args){$GLOBALS['events'][]=['name'=>'answerCallbackQuery','args'=>$args];}
 // Native payment-authorization tests never contact real fulfillment servers.
 // Record every attempted external effect, including mistaken authorization.
 $linkIndices=[];$hideConfigIfMany=false;$markup=[];
@@ -753,8 +763,19 @@ def check():
 
             wallet_before=query(work,env,'SELECT userid,wallet FROM users ORDER BY userid')
             received=run_route(work,env,route_driver,step=wait+key)
-            assert any(e['name']=='sendPhoto' and any(label in str(arg) for arg in e['args'])
-                       for e in received),repr((key,received))
+            photos=[e for e in received if e['name']=='sendPhoto']
+            assert len(photos)==1,repr((key,received))
+            caption=photos[0]['args'][1]
+            assert 'مبلغ پرداختی:' in caption and 'شناسه عددی:' in caption,repr((key,caption))
+            assert all(removed not in caption for removed in
+                ['روش پرداخت:','مقصد:','سفارش:','شناسه تلگرام:']),repr((key,caption))
+            # Method identity remains pinned in the ledger, not duplicated
+            # in the simplified administrator-facing caption header.
+            assert query(work,env,"SELECT provider FROM payment_attempts "
+                f"WHERE order_hash='{key}'")==wanted
+            buttons=json.loads(photos[0]['args'][2])['inline_keyboard']
+            callbacks=[b.get('callback_data') for row in buttons for b in row]
+            assert 'approvePayment'+key in callbacks and 'declineAction_'+key in callbacks
             assert query(work,env,"SELECT state FROM pays "
                          f"WHERE hash_id='{key}'")=='have_sent'
             assert query(work,env,"SELECT stage FROM payment_attempts "
@@ -1132,7 +1153,8 @@ def check():
         service_pay('customvalid',method='gift_card')
         assert base('customvalid','service_guard',subject='custom') is True
         rejected=reject_service('customvalid','checkout','accCustom',actor=1001)
-        assert any(event['name']=='alert' for event in rejected),repr(rejected)
+        denied=[event['args'] for event in rejected if event['name']=='answerCallbackQuery']
+        assert len(denied)==1 and denied[0][0]=='fixture-callback' and isinstance(denied[0][1],str) and denied[0][1].strip() and denied[0][2] is True,repr(rejected)
         cases.append('real_custom_nonadmin_cannot_approve_submitted_gift_receipt')
         positive=run_route(work,env,route_driver,data='accCustomcustomvalid',
                            actor=9001,route='checkout')

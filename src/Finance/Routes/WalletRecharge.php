@@ -398,7 +398,7 @@ if (preg_match('/wait(?:IncreaseWallet|IncreaseWalletGift|IncreaseWalletUsdt)Rec
     $msg = str_replace(
         ['PRICE', 'USERNAME', 'NAME', 'USER-ID'],
         [$price, $username, $name, $from_id],
-        $mainValues['increase_wallet_request_message']
+        achbotManualCaption($connection, $receiptPay, $mainValues['increase_wallet_request_message'])
     );
 
     $adminKeyboard = buildAdminKeyboardWithStats(
@@ -411,7 +411,7 @@ if (preg_match('/wait(?:IncreaseWallet|IncreaseWalletGift|IncreaseWalletUsdt)Rec
     );
 
     if (sendReceiptToAdminsAndUpdatePay($connection, $fileid,
-        achbotManualCaption($connection, $receiptPay, $msg), $adminKeyboard, $admin, $match[1],
+        $msg, $adminKeyboard, $admin, $match[1],
         $deliveryToken)) {
         setUser();
         sendWithStartButton(achbotManualAcknowledgement($receiptPay, $method), $buttonValues['start_bot'], $botUsername, 'mainMenu', 'HTML', (string)$receiptPay['hash_id']);

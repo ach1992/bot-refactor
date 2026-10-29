@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__.'/Access.php';
 /** AChBot actor-owned management drafts; no global inactive server/plan rows. */
 if (realpath($_SERVER['SCRIPT_FILENAME']??'')===__FILE__) {http_response_code(404);exit;}
 require_once __DIR__.'/../../messages/loader.php';
@@ -146,7 +147,8 @@ function achbotManagementDraft(array $user): ?array {
 function achbotManagementActor(mysqli $db,int $actor,int $primary,bool $lock=true): array {
     $rows=achbotManagementRows($db,'SELECT id,userid,isAdmin,step,temp FROM users FORCE INDEX (idx_users_userid_v1) WHERE userid=? LIMIT 2'.($lock?' FOR UPDATE':''),'i',[$actor]);
     if (count($rows)!==1 || (int)$rows[0]['id']<=0 || (int)$rows[0]['userid']!==$actor ||
-        ($actor!==$primary && (int)$rows[0]['isAdmin']!==1))
+        ($actor!==$primary && (int)$rows[0]['isAdmin']!==1) ||
+        !achbotAdminCanLocked($db,$actor,$primary,'servers'))
         throw new RuntimeException('management_admin_required');
     return $rows[0];
 }
@@ -337,7 +339,7 @@ function achbotHandleManagementFields(): bool {
         if ($active && (!is_array($d) || $u['step']!=='achbotField|'.($d['nonce']??'') ||
             $source<=(int)($d['source']??PHP_INT_MAX))) throw new RuntimeException('management_stale');
         if ($delete) {
-            if ($actor!==(int)$admin && empty($GLOBALS['permissions']['servers'])) throw new RuntimeException('management_admin_required');
+            if (!achbotAdminCanLocked($connection,$actor,(int)$admin,'servers')) throw new RuntimeException('management_admin_required');
             $entity=(int)$deletion[1];
             $server=achbotManagementRow($connection,'SELECT i.id,c.type FROM server_info i JOIN server_config c ON c.id=i.id WHERE i.id=? FOR UPDATE','i',[$entity]);
             if (!$server || !achbotSupportsAccount($server['type'],0)) throw new RuntimeException('management_targets');

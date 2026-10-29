@@ -1455,7 +1455,7 @@ def main():
         sent=[e for e in notices['events'] if e['name']=='sendMessage']
         if notices['events'][-1]['result']['notified']!=1 or len(sent)!=1 or (
             'پرداخت نیازمند بررسی مالی' not in sent[0]['args'][0] or
-            '🆔' not in sent[0]['args'][0] or
+            '🎫' not in sent[0]['args'][0] or
             'مبلغ سفارش' not in sent[0]['args'][0] or
             'npReviewCase_' not in sent[0]['args'][1] or
             sent[0]['args'][2]!='HTML' or sent[0]['args'][3]!=9001):
@@ -1485,7 +1485,7 @@ def main():
             admin_get={'nowpayment_ipn':''}))
         cards=[e for e in details['events'] if e['name']=='editText']
         if (len(cards)!=1 or
-            'شناسه تلگرام' not in cards[0]['args'][1] or
+            'شناسه عددی' not in cards[0]['args'][1] or
             'مبلغ سفارش' not in cards[0]['args'][1] or
             'npReviewVerify_'+str(admin_case)+'_0' not in cards[0]['args'][2] or
             details['network_calls']):
@@ -1637,7 +1637,7 @@ def main():
         selected=run_php(work,env,stage,dict(admin_identity,
             callback_data='npReviewCase_'+str(expected[-1])))
         if selected['network_calls'] or not any(
-            x['name']=='editText' and 'شناسه تلگرام' in x['args'][1]
+            x['name']=='editText' and 'شناسه عددی' in x['args'][1]
             for x in selected['events']):
             raise RuntimeError('Older case did not open read-only details')
         for actor,chat in ((1001,1001),(9001,1001)):

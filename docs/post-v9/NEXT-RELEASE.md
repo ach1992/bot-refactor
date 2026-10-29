@@ -1,10 +1,40 @@
-# Pending shared-order simplification after RC14
+# Pending administrator, instance-content and Telegram copy follow-up
 
-The current source follow-up in [PR92](https://github.com/ach1992/bot-refactor/pull/92) keeps the familiar shared order flows while consolidating PasarGuard connection/native-operation evidence into existing tables. It also removes obsolete `orders_list.protocol` and `orders_list.rahgozar`. This follow-up is not yet a published or installed release.
+This source batch improves the existing bot without a new schema: four administrator tiers, settings-backed instance messages/destinations, clearer Persian Telegram text, receipt-review layout, user-info/profile updates and PasarGuard auxiliary links. A compatible RC15 installation retains its current schema, private configuration and financial/native evidence. Source acceptance does not authorize integration, publication or installation.
 
-This version requires reviewed database preparation: [012_shared_provider_storage.sql](../../migrations/post-v9/012_shared_provider_storage.sql) transfers and verifies populated native evidence before removing the two provider tables; [013_remove_obsolete_order_columns.sql](../../migrations/post-v9/013_remove_obsolete_order_columns.sql) removes the two unused order columns. The runtime ZIP does not execute SQL. Read the [shared-storage migration and recovery contract](SHARED-PROVIDER-STORAGE.md) and [accepted workflow decisions](UNIFIED-SERVICE-MANAGEMENT.md#owner-simplification-follow-up-2026-10-28-revision-2) before rollout. Quiesce matching writers, verify a restorable full backup and use the paired source/schema. After012, reverting only runtime to RC14 is unsupported; recovery must restore the paired database/runtime or use an audited roll-forward. No tenant migration, release, or installation is implied by source acceptance.
+## Administrator scope and downgrade boundary
 
-The RC13/RC12 scope below is historical release context. Its no-new-SQL and011-only descriptions do not apply to this pending follow-up.
+Owner is the administrator configured in private baseInfo and appears in the existing administrator list. That list adds or changes Manager, Operator and Support. Manager has ordinary admin functions except administrator management; Operator additionally excludes statistics, servers, plans/categories, bot settings and gateway/channel settings; Support has customer information, ban/unban, the order database editor, and human payment-receipt review, approval and rejection. This payment permission does not allow independent wallet adjustments/debt, foreign-ticket management or native/server administration. Menu visibility and actual requests agree. Payment review follows administrator-list placement and permits inspection to all four tiers; consequential owner-only reconciliation stays separate.
+
+All genuine Owner, Manager, Operator and Support administrators keep the same existing human receipt review, approval and rejection workflow. Management tiers do not change that process or add a per-administrator payment grant or a new permission step. The independent notification switch controls new message copies only; receipt keyboards already delivered retain their usual completion updates.
+
+Receiving administrator messages is a separate on/off preference beside each non-owner administrator in the existing list. It defaults to on for active staff and applies independently of Manager, Operator or Support level; only Owner can change it. A current valid database staff identity and an enabled preference are both required for new secondary copies. Existing receipt-keyboard status updates require current valid staff authority, regardless of notification preference; stored references alone never authorize delivery. Private staff arrays do not select or authorize recipients. Receiving a message does not grant any action permission: Support may review, approve or reject payment receipts, while foreign-ticket routes and independent wallet/native administration remain restricted. Changing a level preserves the notification preference; explicit off stops new copies while retaining existing receipt-button maintenance and historical references. Revoked, banned, ambiguous or nonstaff recipients receive neither new copies nor receipt-status updates. Missing preferences enable new copies; malformed or duplicate preferences suppress new copies without changing prior receipt-keyboard maintenance. Owner primary receipt/evidence delivery has no disabling toggle. Confirmed new references append atomically; malformed historical metadata is preserved rather than repaired or discarded. Primary Owner delivery and financial evidence/replay remain separate and unchanged.
+
+The existing boolean admin marker remains for compatibility and the assigned level uses existing settings. Existing staff without an explicit persisted level receive Operator scope. Valid persisted Manager, Operator and Support levels remain authoritative; Owner assigns Manager or changes levels through the existing administrator list. Only the primary `$admin` Owner identity belongs in private baseInfo among staff settings. Retained `$admins_list` or `$special_admins` variables are ignored, without importing them into the database or inferring Manager access. An old runtime does not understand new tier restrictions: after assigning tiers, do not roll back source blindly and assume the old code preserves them. Reconcile administrator access before any separately authorized downgrade.
+
+For a separately authorized upgrade to this new runtime, verify the database staff list and assign the required levels from the Owner account, then remove the obsolete `$admins_list` and `$special_admins` assignments as part of that paired runtime/private-config rollout. Keep the primary `$admin` setting. Installed RC15 still uses the old fields: do not remove them from an RC15 installation alone. This source change neither reads nor edits any actual private file and does not authorize a rollout.
+
+On MariaDB snapshot-isolation conflicts, a caller holding an older repeatable-read transaction may have secondary fan-out deferred safely until its next ordinary delivery. Normal delivery remains outside a newly introduced transaction; no caller transaction or isolation mode is changed.
+
+## Bot Settings and copy
+
+Use Bot Settings to edit welcome/home messages and the shared purchase note. Unset content gives neutral setup guidance. Enter normal text or Telegram-formatted text; do not paste escaped HTML. Existing valid per-instance content and custom buttons are retained. Support, help-channel, mandatory-channel join and cooperation-panel destinations are configurable; unset optional destinations do not create fabricated external links. For a private channel, keep its numeric membership identifier and edit the join/invite URL separately. Clearing that URL restores public-channel derivation or the existing valid private-config joinLink fallback.
+
+Destination values are encoded at each actual HTML, legacy Markdown or plain-text consumer. Stored settings and native keyboard URLs keep their original bytes. Current template substitution is a single pass so placeholder-like words inside a destination remain literal data.
+
+Static interface copy remains in exactly two audience files, while instance marketing/message bodies are persisted configuration. Persian prose starts with Persian wording around Latin terms/numbers; raw copyable URLs, configs, code and parser tokens retain their bytes. The display-policy guide uses supported HTML/code presentation.
+
+## Receipts, profiles and links
+
+Administrator receipt captions retain useful customer/service facts, omit duplicated metadata, and place the pinned exact bank amount immediately after paid amount. Original payment/attempt evidence and guarded approval callbacks remain unchanged. User-info counters preserve incoming-payment and service-value meanings; agent percentage is next to agent status for permitted staff. A genuine private /start refreshes the name and a supplied nonempty username, retaining the previous username if absent. Configured auxiliary links are displayed for PasarGuard after purchase and in account details without modifying native subscription/config URIs.
+
+## Previous RC15 shared-order release and migration boundary
+
+[RC15](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.15) is published and PR92 is merged. It consolidated PasarGuard connection/native-operation evidence into existing tables and retired obsolete order columns. The rules below concern that release, not new SQL for this presentation/administration follow-up.
+
+RC15 requires reviewed database preparation: [012_shared_provider_storage.sql](../../migrations/post-v9/012_shared_provider_storage.sql) transfers and verifies populated native evidence before removing the two provider tables; [013_remove_obsolete_order_columns.sql](../../migrations/post-v9/013_remove_obsolete_order_columns.sql) removes the two unused order columns. The runtime ZIP does not execute SQL. Read the [shared-storage migration and recovery contract](SHARED-PROVIDER-STORAGE.md) and [accepted workflow decisions](UNIFIED-SERVICE-MANAGEMENT.md#owner-simplification-follow-up-2026-10-28-revision-2) before rollout. Quiesce matching writers, verify a restorable full backup and use the paired source/schema. After012, reverting only runtime to RC14 is unsupported; recovery must restore the paired database/runtime or use an audited roll-forward. No tenant migration, release, or installation is implied by source acceptance.
+
+The RC13/RC12 scope below is historical release context. Its no-new-SQL and011-only descriptions do not apply to RC15.
 
 ## Previous RC13 release scope and delivery contract
 
@@ -89,8 +119,10 @@ diagnostic codes remain implementation contracts.
 The actual private `baseInfo.php` remains untouched. The six obsolete globals
 `hideConnectLinkForMarzban`, `showIndexes`, `hideConfigIfMany`, `linkIndices`,
 `USDTPrice` and `USDTPriceagent` are ignored as runtime configuration sources,
-not imported. Only those six assignments are removed from the current synthetic
-example; secrets remain per installation.
+not imported. Those six assignments were removed from the synthetic example in
+the earlier release. The current staff follow-up additionally removes only
+`admins_list` and `special_admins` from that example; primary Owner and per-installation
+secrets remain. Actual private cleanup follows the paired-runtime boundary above.
 
 ## Schema and package boundaries
 

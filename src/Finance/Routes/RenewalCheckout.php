@@ -6,6 +6,9 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
 }
 require_once __DIR__ . '/../../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
 
+require_once __DIR__ . '/../../Admin/Access.php';
+if (!achbotAdminRequestAllowed(is_string($data??null)?$data:null,is_string($text??null)?$text:null,(string)($userInfo['step']??''))) {achbotAdminDeny();return;}
+
 
 require_once __DIR__ . '/../PaymentLifecycle.php';
 
@@ -268,7 +271,7 @@ if (preg_match('/wait(?:RenewCart|RenewGift|RenewUsdt)Receipt(.*)/', $userInfo['
         delMessage();
         sendMessage(\achbotMessage('renewal.renewal_checkout.message.2c9a5e948c'));
 
-        sendMessage($mainValues['reached_main_menu'], getMainKeys());
+        sendMessage($mainValues['reached_main_menu'], getMainKeys(), 'HTML');
         exit;
     }
 
@@ -295,7 +298,7 @@ if (preg_match('/wait(?:RenewCart|RenewGift|RenewUsdt)Receipt(.*)/', $userInfo['
         delMessage();
         sendMessage(\achbotMessage('renewal.renewal_checkout.message.aaa858e3e6'));
 
-        sendMessage($mainValues['reached_main_menu'], getMainKeys());
+        sendMessage($mainValues['reached_main_menu'], getMainKeys(), 'HTML');
         exit;
     }
 
@@ -316,7 +319,7 @@ if (preg_match('/wait(?:RenewCart|RenewGift|RenewUsdt)Receipt(.*)/', $userInfo['
     $msg = str_replace(
         ['TYPE', "USER-ID", "USERNAME", "NAME", "PRICE", "REMARK", "VOLUME", "DAYS"],
         [achbotManualLabel($method), $from_id, $username, $first_name, $price, $remark, $volume, $days],
-        $mainValues['renew_account_request_message']
+        achbotManualCaption($connection, $receiptPay, $mainValues['renew_account_request_message'])
     );
 
     $adminKeyboard = buildAdminKeyboardWithStats(
@@ -329,7 +332,7 @@ if (preg_match('/wait(?:RenewCart|RenewGift|RenewUsdt)Receipt(.*)/', $userInfo['
     );
 
     if (sendReceiptToAdminsAndUpdatePay($connection, $fileid,
-        achbotManualCaption($connection, $receiptPay, $msg), $adminKeyboard, $admin, $match[1],
+        $msg, $adminKeyboard, $admin, $match[1],
         $deliveryToken)) {
         setUser();
         sendWithStartButton(achbotManualAcknowledgement($receiptPay, $method), $buttonValues['start_bot'], $botUsername, 'mainMenu', 'HTML', (string)$receiptPay['hash_id']);
@@ -340,7 +343,7 @@ if (preg_match('/wait(?:RenewCart|RenewGift|RenewUsdt)Receipt(.*)/', $userInfo['
     exit;
 }
 
-if(preg_match('/approveRenewAcc(.*)/',$data,$match) && ($from_id == $admin || $userInfo['isAdmin'] == true)){ 
+if(preg_match('/^approveRenewAcc(.*)/',$data,$match) && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'payments')){
     $connection->begin_transaction();
     $localCommitted=false;
     try {
@@ -494,7 +497,8 @@ if(preg_match('/approveRenewAcc(.*)/',$data,$match) && ($from_id == $admin || $u
         $adminMessages = json_decode($deferredAdminKeys['admins_messages'], true); 
         if (is_array($adminMessages)) { 
             foreach ($adminMessages as $msgInfo) { 
-                if (isset($msgInfo['chat_id'], $msgInfo['message_id']) && $msgInfo['chat_id'] != $deferredAdminKeys['chat_id']) { 
+                if (isset($msgInfo['chat_id'], $msgInfo['message_id']) && $msgInfo['chat_id'] != $deferredAdminKeys['chat_id'] &&
+                    achbotAdminStoredRecipientAllowed($connection,$msgInfo['chat_id'],(int)$admin)) {
                     editKeys($deferredAdminKeys['keys'], $msgInfo['message_id'], $msgInfo['chat_id']); 
                 } 
             } 

@@ -6,6 +6,9 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
 }
 require_once __DIR__ . '/../../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
 
+require_once __DIR__ . '/../../Admin/Access.php';
+if (!achbotAdminRequestAllowed(is_string($data??null)?$data:null,is_string($text??null)?$text:null,(string)($userInfo['step']??''))) {achbotAdminDeny();return;}
+
 
 // Telegram may return ok=false or null without throwing an exception.
 if (!function_exists('achbotManualStandardRequireTelegramResult')) {
@@ -69,7 +72,7 @@ if (!function_exists('achbotManualStandardReportDelivery')) {
 if (
     preg_match('/^accept([A-Za-z0-9_-]{1,50})$/D', (string)$data, $match) &&
     $text != $buttonValues['cancel'] &&
-    ($from_id == $admin || ($userInfo['isAdmin'] ?? false) == true)
+    achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'payments')
 ) {
     require_once __DIR__ . '/../ServiceEffects.php';
     $hash_id = $match[1];
@@ -257,7 +260,8 @@ if (
             $adminMessages = json_decode($payInfo['admins_messages'], true);
             if (is_array($adminMessages)) {
                 foreach ($adminMessages as $msgInfo) {
-                    if (isset($msgInfo['chat_id'], $msgInfo['message_id']) && $msgInfo['chat_id'] != $payInfo['chat_id']) {
+                    if (isset($msgInfo['chat_id'], $msgInfo['message_id']) && $msgInfo['chat_id'] != $payInfo['chat_id'] &&
+                        achbotAdminStoredRecipientAllowed($connection,$msgInfo['chat_id'],(int)$admin)) {
                         achbotManualStandardNotice(
                             static fn()=>editKeys($keys,$msgInfo['message_id'],$msgInfo['chat_id']),
                             'renewal_additional_operator_buttons',$payId,$deliveryIssues,0,
@@ -492,7 +496,8 @@ if (
         $adminMessages = json_decode($payInfo['admins_messages'], true);
         if (is_array($adminMessages)) {
             foreach ($adminMessages as $msgInfo) {
-                if (isset($msgInfo['chat_id'], $msgInfo['message_id']) && $msgInfo['chat_id'] != $payInfo['chat_id']) {
+                if (isset($msgInfo['chat_id'], $msgInfo['message_id']) && $msgInfo['chat_id'] != $payInfo['chat_id'] &&
+                    achbotAdminStoredRecipientAllowed($connection,$msgInfo['chat_id'],(int)$admin)) {
                     achbotManualStandardNotice(
                         static fn()=>editKeys($keys,$msgInfo['message_id'],$msgInfo['chat_id']),
                         'purchase_additional_operator_buttons',$payId,$deliveryIssues,0,

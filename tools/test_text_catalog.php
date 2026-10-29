@@ -248,6 +248,40 @@ foreach (catalogImmutableTopics() as $topic=>$entries)
 $current=[];
 foreach (achbotMessageTopics() as $topic)
     foreach (achbotMessages($topic) as $key=>$entry) $current[$topic.'.'.$key]=$entry;
+$shipping=$current;
+// R5 has explicit current edits, additions and retired editable instance bodies.
+// Reconstruct the accepted pre-R5 stage for older amendment proofs; every
+// actual shipping template still executes in the adversarial loop below.
+$r5=json_decode(file_get_contents(__DIR__.'/text_catalog_owner_r5.json'),true,512,JSON_THROW_ON_ERROR);
+if(($r5['version']??null)!==1||($r5['baseline_commit']??null)!=='64feca4b777a442023676122e315c68ad26e902d'||
+ ($r5['authorization']??null)!=='https://github.com/ach1992/bot-refactor/issues/26#issuecomment-6486592777')
+ throw new RuntimeException('r5_definition_identity');
+$r5BaseGroups=[];$r5Expected=[];
+foreach(['user','admin']as$audience){
+ $source=shell_exec('git -C '.escapeshellarg(dirname(__DIR__)).' show '.escapeshellarg($r5['baseline_commit'].':messages/fa/'.$audience.'.php'));
+ $begin=is_string($source)?strpos($source,'return ['):false;if($begin===false)throw new RuntimeException('r5_baseline_source_missing');
+ $r5BaseGroups[$audience]=eval(substr($source,$begin));$r5Expected[$audience]=[];
+ foreach($r5BaseGroups[$audience]as$topic=>$entries)foreach($entries as$name=>$value)$r5Expected[$audience][$topic.'.'.$name]=$value;
+}
+$current=$r5Expected['user']+$r5Expected['admin'];
+foreach($r5['changes']as$key=>$record){$audience=$record['audience'];
+ if(($r5Expected[$audience][$key]??null)!==$record['before']||empty($record['reason']))throw new RuntimeException('r5_change_before_or_reason');
+ $r5Expected[$audience][$key]=$record['after'];
+}
+foreach($r5['retired_keys']as$key=>$record){$audience=$record['audience'];
+ if(($r5Expected[$audience][$key]??null)!==$record['before']||empty($record['reason']))throw new RuntimeException('r5_retirement_before_or_reason');
+ unset($r5Expected[$audience][$key]);
+}
+foreach($r5['added_keys']as$key=>$record){$audience=$record['audience'];
+ if(isset($current[$key])||empty($record['source_paths'])||empty($record['reason']))throw new RuntimeException('r5_addition_identity');
+ $r5Expected[$audience][$key]=$record['entry'];
+}
+foreach(['user','admin']as$audience){$actual=[];$groups=require dirname(__DIR__).'/messages/fa/'.$audience.'.php';
+ foreach($groups as$topic=>$entries)foreach($entries as$name=>$value)$actual[$topic.'.'.$name]=$value;
+ ksort($actual);$expected=$r5Expected[$audience];ksort($expected);
+ if($actual!==$expected)throw new RuntimeException('r5_undeclared_copy_or_recipient_change');
+}
+
 $management=json_decode(file_get_contents(__DIR__.'/text_catalog_management_amendment.json'),true,512,JSON_THROW_ON_ERROR);
 if (($management['version']??null)!==1||($management['baseline_commit']??null)!==CATALOG_MANAGEMENT_BASE||
     ($management['authorization']??null)!=='docs/post-v9/UNIFIED-SERVICE-MANAGEMENT.md')
@@ -257,7 +291,7 @@ foreach ($managementAdded as $key=>$record) {
     if (!str_starts_with($key,'admin_settings.management.')&&!in_array($key,['subscription.account_details.auto_renew_update_unverified','subscription.account_deletion.shared_effect_notice','subscription.account_details.status_on_hold','subscription.manual_accounts.import_unverified','subscription.manual_accounts.import_under_review','subscription.manual_accounts.import_completed','renewal.extensions.plan_selection_unavailable','renewal.extensions.plan_selection_review','subscription.presentation.config_qr_delivery_unconfirmed','subscription.presentation.config_qr_name_suffix','subscription.manual_accounts.customer_not_found','subscription.account_deletion.report'],true))
         throw new RuntimeException('management_catalog_addition_scope_drift');
     $audience=in_array($key,['subscription.account_details.auto_renew_update_unverified','subscription.account_deletion.shared_effect_notice','subscription.account_details.status_on_hold','subscription.manual_accounts.import_unverified','subscription.manual_accounts.import_under_review','subscription.manual_accounts.import_completed','renewal.extensions.plan_selection_unavailable','renewal.extensions.plan_selection_review','subscription.presentation.config_qr_delivery_unconfirmed','subscription.presentation.config_qr_name_suffix'],true)?'user':'admin';
-    $sides=require dirname(__DIR__).'/messages/fa/'.$audience.'.php';
+    $sides=$r5BaseGroups[$audience];
     [$topic,$name]=explode('.',$key,2);
     if (($record['audience']??null)!==$audience||($sides[$topic][$name]??null)!==($record['entry']??null)||empty($record['reason']))
         throw new RuntimeException('management_catalog_recipient_or_payload_drift:'.$key);
@@ -293,7 +327,7 @@ foreach ($ownerSides['baseline_commit']as$key=>$record) {
         if(!is_array($change)||($change['before']??null)!==$record['entry']||($change['after']??null)!==$expected['entry']||
             ($change['audience']??null)!==$record['audience']||empty($change['reason']))
             throw new RuntimeException('owner_followup_exact_definition_drift:'.$key);
-        $declared=require dirname(__DIR__).'/messages/fa/'.$record['audience'].'.php';
+        $declared=$r5BaseGroups[$record['audience']];
         [$topic,$name]=explode('.',$key,2);
         if(($declared[$topic][$name]??null)!==$expected['entry'])
             throw new RuntimeException('owner_followup_recipient_drift:'.$key);
@@ -378,6 +412,11 @@ foreach ($current as $key=>$entry) {
             $preserved++;
         }
     }
+}
+// Full current native loader coverage after all independently declared R5 changes.
+foreach ($shipping as $key=>$entry) {
+    $text=is_array($entry)?$entry['text']:$entry;
+    $parameters=is_array($entry)?$entry['parameters']:[];
     // Every shipping template executes through the real loader with inert,
     // adversarial display values; substitutions remain one-pass and exact.
     $slotPayload='<&> '.implode(' ',array_map(static fn($name)=>'{'.$name.'}',$parameters));
@@ -422,9 +461,10 @@ echo json_encode(['status'=>'PASS',
     'repeated_interpolation_string_conversion'=>'PASS','actual_traffic_helper_parity_cases'=>$trafficCases,
     'traffic_relocation_source_ref'=>CATALOG_MANAGEMENT_BASE,'current_traffic_shared_observation_cases'=>$currentTrafficCases,
     'editable_catalog_files'=>count($files),'logical_topics'=>count(achbotMessageTopics()),
-    'current_catalog_keys'=>count($current),'current_byte_preserved_keys'=>$preserved,
+    'current_catalog_keys'=>count($shipping),'current_byte_preserved_keys'=>$preserved,
     'current_style_changes'=>count($changes),'current_retired_implementation_keys'=>count($retired),'current_retired_feature_keys'=>count($featureRetired),
     'current_added_admin_keys'=>count($added),'current_management_added_keys'=>count($managementAdded),'current_owner_followup_changes'=>count($ownerChanges),'current_parameter_privacy_changes'=>$parameterChanges,
+    'current_r5_changes'=>count($r5['changes']),'current_r5_retired_keys'=>count($r5['retired_keys']),'current_r5_added_keys'=>count($r5['added_keys']),
     'current_native_template_assertions'=>$currentChecks,'current_non_ascii_digit_templates'=>0,
     'current_object_conversion_templates'=>$currentObjectTemplates,
     'current_shared_multi_parameter_templates'=>$currentMultiParameterObjects,

@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__.'/../Admin/Access.php';
 /** Native PasarGuard administrative configuration. Loaded only after webhook authentication. */
 if (realpath($_SERVER['SCRIPT_FILENAME']??'')===__FILE__) {http_response_code(404);exit;}
 require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
@@ -73,7 +74,8 @@ function achbotPgAdminActor(mysqli $db,string $step,bool $lock=false): void {
     $actor=(int)$from_id;$s->bind_param('i',$actor);$s->execute();
     $current=$s->get_result()->fetch_assoc();$s->close();
     if (!$current || $current['step']!==$step ||
-        ($actor!==(int)$admin && (int)$current['isAdmin']!==1))
+        ($actor!==(int)$admin && (int)$current['isAdmin']!==1) ||
+        !achbotAdminCanLocked($db,$actor,(int)$admin,'servers'))
         throw new RuntimeException('pg_admin_stale_or_denied');
 }
 function achbotPgAdminFinish(mysqli $db,string $step): void {

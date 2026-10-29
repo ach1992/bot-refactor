@@ -83,6 +83,8 @@ NEW_RUNTIME_MEMBERS = ("pay/checkout.php", "settings/cronRunner.php", "src/Finan
                        "src/Subscription/ServerDisplaySettings.php",
                        "src/Admin/ManagementFlow.php", "src/Admin/ServerWizard.php",
                        "src/Plans/Wizard.php", "src/Panel/ServiceLifecycle.php",
+                       "src/Admin/Access.php", "src/Admin/InstanceContent.php",
+                       "src/Telegram/UserProfile.php",
                        "messages/loader.php",
                        "messages/fa/admin.php",
                        "messages/fa/user.php")
@@ -93,7 +95,8 @@ def expected_current_example() -> bytes:
     """Owner-authorized current removal; immutable original V9 remains intact."""
     old=git("show",V9+":baseInfo.example.php")
     retired=(b"$hideConnectLinkForMarzban =",b"$showIndexes =",b"$hideConfigIfMany =",
-             b"$linkIndices =",b"$USDTPrice =",b"$USDTPriceagent =")
+             b"$linkIndices =",b"$USDTPrice =",b"$USDTPriceagent =",
+             b"$admins_list =",b"$special_admins =")
     return b"".join(line for line in old.splitlines(keepends=True)
                     if not line.startswith(retired))
 

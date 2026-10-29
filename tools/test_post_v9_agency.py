@@ -177,7 +177,11 @@ def main() -> None:
 
         baseline = state(work, env)
         denied = run(1003, 'agencyDecline1001')
-        passed('nonadmin_decline_denied', state(work, env) == baseline and not denied['events'])
+        # The real access guard now sends one actor-local denial. No explicit
+        # destination may turn this notice into an applicant notification.
+        passed('nonadmin_decline_denied', state(work, env) == baseline
+               and denied['events'] == [['sendMessage',
+                   ['این بخش برای سطح دسترسی شما فعال نیست.', None, 'HTML']]])
         for malformed in ('agencyDecline1001extra', 'agencyDecline0', 'agencyDecline-1',
                           'agencyDecline999999999999999999999999999999',
                           'agencyDecline1001\n'):

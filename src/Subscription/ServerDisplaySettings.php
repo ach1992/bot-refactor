@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__.'/../Admin/Access.php';
 /** AChBot per-logical-server subscription display settings; existing setting storage only. */
 if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) { http_response_code(404); exit; }
 require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
@@ -95,6 +96,7 @@ function achbotServerDisplayActor(mysqli $db,int $actor,int $primary,bool $lock=
     $rows=$s->get_result()->fetch_all(MYSQLI_ASSOC);$s->close();
     if ($actor<=0 || $primary<=0 || count($rows)!==1 ||
         ($actor!==$primary && (int)$rows[0]['isAdmin']!==1) ||
+        !achbotAdminCanLocked($db,$actor,$primary,'servers') ||
         $rows[0]['step']==='banned') throw new RuntimeException('display_admin_required');
     return $rows[0];
 }
@@ -388,7 +390,8 @@ function achbotHandleServerDisplayAdmin(): bool {
                 $prompt=$field==='document'?achbotServerDisplayGuide($server['type']):achbotServerDisplayPrompt($field);
                 achbotServerDisplayEdit($connection,$sid,(int)$from_id,(int)$admin,$source,'start',
                     null,$field,$action==='Edit'?null:$revision);
-                sendMessage($prompt,$cancelKey);
+                if ($field==='document') sendMessage($prompt,$cancelKey,'HTML');
+                else sendMessage($prompt,$cancelKey);
             } elseif ($action==='Set') {
                 achbotServerDisplayEdit($connection,$sid,(int)$from_id,(int)$admin,$source,'set',$choice,$field,$revision);
                 achbotServerDisplayShow($connection,$sid,\achbotMessage('subscription.server_display_settings.handle_server_display_admin.text.ed95738546'));

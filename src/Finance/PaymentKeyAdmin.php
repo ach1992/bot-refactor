@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__.'/../Admin/Access.php';
 /** AChBot administrative PAYMENT_KEYS editor.
  * Source-only, no schema or provider operation; logs never contain key values.
  */
@@ -159,6 +160,7 @@ function achbotAdminPaymentKeyChange($update,int $actor,int $chat,int $message,
         if (!$ok || !$user || (int)$user['id']!==$pk ||
             (int)$user['userid']!==$actor ||
             ($actor!==$primary && (int)$user['isAdmin']!==1) ||
+            !achbotAdminCanLocked($connection,$actor,$primary,'gateways') ||
             (string)$user['step']==='banned' || $findActor()!==$pk)
             throw new RuntimeException('payment_key_actor_revoked');
         $previousStep=(string)$user['step'];

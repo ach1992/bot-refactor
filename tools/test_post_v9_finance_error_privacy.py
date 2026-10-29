@@ -228,10 +228,16 @@ def assert_privacy(result, audience, expected_code, require_sql_secret=False):
     for secret in (SQL_SECRET, PROVIDER_SECRET):
         if secret in all_text:
             raise RuntimeError("Sensitive synthetic provider/SQL sentinel leaked: " + secret)
-    if not any("Hash ID:" in m and "Reason (sanitized):" in m
-               and expected_code in m and "External effect: unverified" in m
-               for m in operator):
+    unverified = "نتیجه عملیات سرویس تأیید نشده است؛ پیش از تکرار یا جبران، آن را بررسی کنید."
+    if not any("شناسه پیگیری: privacyhash\n" in m
+               and m.endswith("علت بررسی‌شده: " + expected_code)
+               and unverified in m for m in operator):
         raise RuntimeError("No actionable redacted operator report: " + repr(operator))
+    private_diagnostics = ("Hash ID:", "Reason (sanitized):",
+                           "External effect: unverified", "شناسه پیگیری: privacyhash",
+                           "علت بررسی‌شده:", unverified, expected_code)
+    if any(label in message for message in customer for label in private_diagnostics):
+        raise RuntimeError("Private diagnostics leaked to customer")
     if not any("بررسی" in m and ("اشتراک" in m or "پرداخت" in m) for m in customer):
         raise RuntimeError("Customer lacks review/check status guidance: " + repr(customer))
     if any("دوباره تلاش" in m or "۳۰ ثانیه" in m or "انجام نشد" in m

@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__.'/../Admin/Access.php';
 /**
  * Source-only Post-V9 bulk gift batch identity.
  *
@@ -251,7 +252,8 @@ if (!function_exists('achbotGiftPhysicalTarget')) {
                 $actorStmt->close();
             }
             if (count($actors)!==1 || (int)$actors[0]['userid']!==$actor ||
-                ($actor!==$primaryAdminId && (int)$actors[0]['isAdmin']!==1))
+                ($actor!==$primaryAdminId && (int)$actors[0]['isAdmin']!==1) ||
+                !achbotAdminCanLocked($db,$actor,$primaryAdminId,'operations'))
                 throw new RuntimeException('gift_source_actor_unauthorized_or_ambiguous');
             $claim=$db->prepare('SELECT id,value FROM setting WHERE type=? LIMIT 2');
             if (!$claim) throw new RuntimeException('gift_source_claim_prepare');

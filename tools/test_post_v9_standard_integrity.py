@@ -85,7 +85,8 @@ function sendMessage($body=null,$keys=null,$parse=null,$to=null) {
     return (object)['ok'=>true];
 }
 function editKeys(...$args) {
-    $GLOBALS['events'][]=['name'=>'EDIT','to'=>$args[2]??null];
+    $GLOBALS['events'][]=['name'=>'EDIT','to'=>$args[2]??null,
+        'message_id'=>$args[1]??null,'keys'=>$args[0]??null];
     if (($GLOBALS['spec']['telegram']??'')==='edit_false') return (object)['ok'=>false];
     if (($GLOBALS['spec']['telegram']??'')==='edit_null') return null;
     if (($GLOBALS['spec']['telegram']??'')==='edit_second_false') {
@@ -434,18 +435,51 @@ def check():
         cases.append('r3_three_accounts_second_text_failed_third_still_attempted_and_reward_credited')
 
         key=seed(work,env,'multiple_admin_edits',inviter=True)
-        sql(work,env,"UPDATE pays SET admins_messages='"
-            '[{\"chat_id\":9002,\"message_id\":222},'
-            '{\"chat_id\":9003,\"message_id\":333}]'
-            "' WHERE hash_id='multiple_admin_edits'")
-        ev=call(key,telegram='edit_second_false')
-        assert state(key)=='approved'
-        assert len(named(ev,'EDIT'))==3,(ev)
-        assert any('purchase_additional_operator_buttons' in x['text']
-                   for x in named(ev,'MESSAGE') if x['to']==9001)
-        assert sql(work,env,'SELECT wallet FROM users WHERE userid=9002')=='51000'
-        assert not named(call(key),'CREATE')
-        cases.append('r3_multiple_admin_refs_one_edit_fails_later_edit_still_attempted')
+        # Stored receipt follow-up requires current valid staff, independent of new copies.
+        # The frozen seed has no user 9003; provide that intended secondary Operator
+        # and a revoked Support ref retained as history without maintenance authority.
+        assert sql(work,env,'SELECT COUNT(*) FROM users WHERE userid IN(9003,9004)')=='0'
+        assert sql(work,env,"SELECT COUNT(*) FROM setting WHERE type IN('ADMIN_ROLE_9003','ADMIN_ROLE_9004')")=='0'
+        sql(work,env,"INSERT INTO users(userid,name,username,refcode,wallet,date,isAdmin,step,first_start) VALUES "
+            "(9003,'Fixture operator','fixture_operator','0',50000,'1700000000',1,'none','sent'),"
+            "(9004,'Revoked fixture support','fixture_support','0',50000,'1700000000',0,'none','sent');"
+            "INSERT INTO setting(type,value) VALUES ('ADMIN_ROLE_9003','operator'),('ADMIN_ROLE_9004','support')")
+        refs=json.dumps([{'chat_id':9002,'message_id':222},
+                         {'chat_id':9003,'message_id':333},
+                         {'chat_id':9004,'message_id':444}],separators=(',',':'))
+        try:
+            sql(work,env,"UPDATE pays SET admins_messages='"+refs+"' WHERE hash_id='multiple_admin_edits'")
+            ev=call(key,telegram='edit_second_false')
+            assert state(key)=='approved'
+            edits=named(ev,'EDIT')
+            assert len(edits)==3,ev
+            assert [(int(x['to']),int(x['message_id']))for x in edits]==[
+                (9001,211),(9002,222),(9003,333)],edits
+            assert all(x['keys']==edits[0]['keys']for x in edits),edits
+            callbacks=[button['callback_data']for row in json.loads(edits[0]['keys'])['inline_keyboard']for button in row]
+            assert callbacks==['wizwizch','noop','noop_'+key],callbacks
+            assert sql(work,env,"SELECT admins_messages FROM pays WHERE hash_id='multiple_admin_edits'")==refs
+            assert any('purchase_additional_operator_buttons گفت‌وگو:9002' in x['text']
+                       for x in named(ev,'MESSAGE') if x['to']==9001)
+            assert len(named(ev,'CREATE'))==1 and orders()==1 and capacity()==9
+            assert sql(work,env,'SELECT wallet FROM users WHERE userid=1001')=='50000'
+            assert sql(work,env,'SELECT wallet FROM users WHERE userid=9002')=='51000'
+            assert sql(work,env,"SELECT state,amount_toman FROM referral_awards "
+                       "WHERE pay_row_id=(SELECT id FROM pays WHERE hash_id='multiple_admin_edits')")=='CONFIRMED\t1000'
+            before_replay=(purchase.snapshot(work,env,DB),
+                sql(work,env,'SELECT * FROM service_effects ORDER BY id'),
+                sql(work,env,'SELECT * FROM referral_awards ORDER BY id'))
+            replay=call(key)
+            assert not any(named(replay,name)for name in ['CREATE','READBACK','EDIT_REMOTE'])
+            assert (purchase.snapshot(work,env,DB),
+                sql(work,env,'SELECT * FROM service_effects ORDER BY id'),
+                sql(work,env,'SELECT * FROM referral_awards ORDER BY id'))==before_replay
+            cases.append('r3_multiple_admin_refs_one_edit_fails_later_edit_still_attempted')
+        finally:
+            sql(work,env,"DELETE FROM setting WHERE type IN('ADMIN_ROLE_9003','ADMIN_ROLE_9004');"
+                "DELETE FROM users WHERE userid IN(9003,9004)")
+        assert sql(work,env,'SELECT COUNT(*) FROM users WHERE userid IN(9003,9004)')=='0'
+        assert sql(work,env,"SELECT COUNT(*) FROM setting WHERE type IN('ADMIN_ROLE_9003','ADMIN_ROLE_9004')")=='0'
 
         key=seed(work,env,'reward_on_qr_failure',inviter=True)
         ev=call(key,telegram='qr_false')

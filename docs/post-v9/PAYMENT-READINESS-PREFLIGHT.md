@@ -18,8 +18,8 @@ cannot compensate for unnecessarily privileged credentials.
 
 It checks:
 
-- All 112 listed runtime files' byte lengths and SHA-256 against the
-  **provided** manifest, and an independently pinned 112-member filename
+- All 115 listed runtime files' byte lengths and SHA-256 against the
+  **provided** manifest, and an independently pinned 115-member filename
   inventory (canonical sorted-set SHA-256 from `package_post_v9.members()`),
   with no retired automatic TRON/WeSwap PHP files. The locally
   executed policy and wallet validation helpers must also match the supplied runtime
