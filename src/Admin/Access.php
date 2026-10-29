@@ -24,13 +24,13 @@ function achbotAdminLevel(?int $actor=null,?mysqli $db=null,?int $primary=null,b
 }
 function achbotAdminLevelCan(string $level,string $capability): bool {
     if (!in_array($capability,['admin','admins','stats','servers','plans','bot_settings','gateways',
-        'customers','moderation','orders','agents','operations','review'],true)) return false;
+        'customers','moderation','orders','agents','operations','payments','review'],true)) return false;
     if ($level==='owner') return true;
     if ($capability==='admins') return false;
     if ($level==='manager') return true;
     if ($level==='operator') return in_array($capability,
-        ['admin','customers','moderation','orders','agents','operations','review'],true);
-    return $level==='support' && in_array($capability,['admin','customers','moderation','orders'],true);
+        ['admin','customers','moderation','orders','agents','operations','payments','review'],true);
+    return $level==='support' && in_array($capability,['admin','customers','moderation','orders','payments','review'],true);
 }
 function achbotAdminLevelLabel(string $level): string {
     return match($level) {
@@ -65,13 +65,14 @@ function achbotAdminRecipientCandidates(mysqli $db,int $primary): array {
 }
 /** Privileged outbound copies follow the recipient's current authority, never
  * a cached staff list or stored message reference. */
-function achbotAdminRecipientAllowed(mysqli $db,$recipient,int $primary): bool {
+function achbotAdminRecipientAllowed(mysqli $db,$recipient,int $primary,string $capability='operations'): bool {
+    if (!in_array($capability,['operations','payments'],true)) return false;
     if (is_int($recipient)) $actor=$recipient;
     elseif (is_string($recipient) && preg_match('/^[1-9][0-9]*$/D',$recipient))
         $actor=filter_var($recipient,FILTER_VALIDATE_INT,['options'=>['min_range'=>1]]);
     else return false;
     return is_int($actor) && $actor>0 &&
-        achbotAdminCanLocked($db,$actor,$primary,'operations');
+        achbotAdminCanLocked($db,$actor,$primary,$capability);
 }
 function achbotAdminButtonCapability(string $key): string {
     return match($key) {
@@ -101,7 +102,8 @@ function achbotAdminRequestCapability(string $value): ?string {
         'customers'=>'~^(?:userReports|userInfoDetails|quickUserDetails)~D',
         'moderation'=>'~^(?:banUser|unbanUser|toggleBan_)~D',
         'orders'=>'~^(?:manageorderdatabase|showUserSubscriptions|selectOrderByRemark_userid_|returnToPanel_|deleteOrder_|confirmDeleteOrder_|toggleNotif_|orderWarningStatus_|changeExpireDate_|changeToken_|changeUUID_|changeServerId_|selectServerId_|changeFileId_|selectFileId_|quickUserOrderDetails_|userOrderDetails|searchUsersConfig|adminToggleAutoRenew|awaitingOrderRemarkOnly|awaitingUserIdSelection_|manageOrderById_|awaitingExpireChange_|awaitingToken_|awaitingUUID_)~D',
-        'operations'=>'~^(?:managePanel|messageToSpeceficUser|sendMessageToUser|increaseUserWallet|decreaseUserWallet|achbotWalletAdmin|increaseWalletUser|decreaseWalletUser|debtWalletUser|achbotWalletReason:|achbotWalletDebt:|createUserWalletDebt|walletDebt|addSubscriptionToCustomer|createMultipleAccounts|createAcc|awaiting_userid_input|giftVolumeAndDay|giftTo|giftServer|achbotDirectGift|mainMenuButtons|delMainButton|addNewMainButton|setMainButtonAnswer|discount_codes|addDiscount|editDiscount|delDiscount|editD|setDiscount|removeDiscountUser|toggleDiscount|copyHash|message2All|broadcast|editBroadcastAsk_|chooseSendGroup_|cancelBroadcast|noDontSend2all|yesSend2All|pinManageAll|pinManageSelect_|jobCancel_|jobCreate_|jobsStatus|s2a_|bc_edit_|ticketsList|ticketsCategory|addTicketCategory|delTicketCat_|allTickets|newTickets|openTickets|reply_|answer_|accept[A-Za-z0-9_-]|accCustom|approveRenewAcc|approveIncreaseDay|approveIncreaseVolume|approvePayment|declineAction|changeCustomPort|changeCustomSni|changeCustomPath|pgResetAccount)~D',
+        'payments'=>'~^(?:accept[A-Za-z0-9_-]|accCustom|approveRenewAcc|approveIncreaseDay|approveIncreaseVolume|approvePayment|declineAction)~D',
+        'operations'=>'~^(?:managePanel|messageToSpeceficUser|sendMessageToUser|increaseUserWallet|decreaseUserWallet|achbotWalletAdmin|increaseWalletUser|decreaseWalletUser|debtWalletUser|achbotWalletReason:|achbotWalletDebt:|createUserWalletDebt|walletDebt|addSubscriptionToCustomer|createMultipleAccounts|createAcc|awaiting_userid_input|giftVolumeAndDay|giftTo|giftServer|achbotDirectGift|mainMenuButtons|delMainButton|addNewMainButton|setMainButtonAnswer|discount_codes|addDiscount|editDiscount|delDiscount|editD|setDiscount|removeDiscountUser|toggleDiscount|copyHash|message2All|broadcast|editBroadcastAsk_|chooseSendGroup_|cancelBroadcast|noDontSend2all|yesSend2All|pinManageAll|pinManageSelect_|jobCancel_|jobCreate_|jobsStatus|s2a_|bc_edit_|ticketsList|ticketsCategory|addTicketCategory|delTicketCat_|allTickets|newTickets|openTickets|reply_|answer_|changeCustomPort|changeCustomSni|changeCustomPath|pgResetAccount)~D',
     ];
     foreach ($groups as $capability=>$pattern) if (preg_match($pattern,$value)) return $capability;
     return null;

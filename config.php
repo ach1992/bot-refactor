@@ -3748,11 +3748,13 @@ function changeMarzbanState($server_id,$remark) {
 function sendToAllAdmins($method, $data, $pay_hash_id = null, $options = []){
     global $admin, $connection;
 
+    $capability=$options['capability']??'operations';
+    if (!in_array($capability,['operations','payments'],true)) return;
     $adminMessages = [];
 
     foreach (achbotAdminRecipientCandidates($connection,(int)$admin) as $adminId) {
         if ($adminId != $admin &&
-            achbotAdminRecipientAllowed($connection,$adminId,(int)$admin)) {
+            achbotAdminRecipientAllowed($connection,$adminId,(int)$admin,$capability)) {
             $data['chat_id'] = $adminId;
 
             // اگر بخوایم پیام ریپلای باشه (اختیاری)
