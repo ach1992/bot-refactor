@@ -28,10 +28,10 @@ $s=$db->prepare('SELECT * FROM pays WHERE hash_id=?');$s->bind_param('s',$argv[4
 $s->execute();$pay=$s->get_result()->fetch_assoc();$s->close();
 $templates=achbotMessages('legacy_messages');$key=$argv[5];
 $template=$templates[$key];$composed=achbotManualCaption($db,$pay,$template);
-$vars=['USER-ID'=>'1001','USERNAME'=>'fixture_user','NAME'=>'کاربر آزمایشی',
+$vars=['USER-ID'=>'1001','USERNAME'=>'fixture_user','NAME'=>($argv[6]??'کاربر آزمایشی'),
 'PRICE'=>(string)$pay['price'],'TYPE'=>'بانکی','REMARK'=>'اشتراک نمونه',
 'SERVERNAME'=>'سرور نمونه','ACCOUNT-COUNT'=>'3','VOLUME'=>'10','DAYS'=>'30','INCREASE'=>'5'];
-echo json_encode(['template'=>$template,'composed'=>$composed,'rendered'=>strtr($composed,$vars)],
+echo json_encode(['template'=>$template,'composed'=>$composed,'rendered'=>str_replace(array_keys($vars),array_values($vars),$composed)],
 JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
 '''
 def main():
@@ -46,9 +46,9 @@ def main():
         sql("INSERT INTO setting(type,value) VALUES ('BOT_STATES','{\"walletState\":\"on\",\"cartToCartState\":\"on\",\"giftCardState\":\"on\",\"manualUsdtState\":\"on\"}')")
         manual_driver=work/'claim.php';manual_driver.write_text(manual.PHP)
         driver=work/'caption.php';driver.write_text(PHP)
-        def caption(hash_id,key,root=ROOT):
+        def caption(hash_id,key,root=ROOT,name='کاربر آزمایشی'):
             r=subprocess.run(['php','-d','allow_url_fopen=0',str(driver),str(root),
-                str(work/'mysql.sock'),manual.DB,hash_id,key],capture_output=True,text=True,env=env,timeout=15)
+                str(work/'mysql.sock'),manual.DB,hash_id,key,name],capture_output=True,text=True,env=env,timeout=15)
             assert r.returncode==0 and not r.stderr,(r.returncode,r.stderr,r.stdout)
             return json.loads(r.stdout)
         def row_fingerprint():
@@ -71,6 +71,13 @@ def main():
             assert 'MANUAL-QUOTE' not in value['rendered']
             assert 'شناسه عددی' in value['rendered']
             cases.append('pinned_bank_quote_after_paid_line_'+key)
+        tricky=caption('r5bank','buy_new_account_request',name='PRICE NAME USER-ID')
+        actual=tricky['rendered'].splitlines()
+        quote_at=next(i for i,l in enumerate(actual) if 'مبلغ دقیق حواله' in l)
+        paid_at=next(i for i,l in enumerate(actual) if 'مبلغ پرداختی' in l)
+        assert quote_at==paid_at+1
+        assert sum('مبلغ دقیق حواله' in line for line in actual)==1
+        cases.append('actual_sequential_replacement_customer_parser_words_do_not_move_pinned_quote')
         assert row_fingerprint()==before
         cases.append('caption_reads_do_not_change_users_pay_or_attempt_rows')
         # Original source produces the rejected duplicate metadata header.
