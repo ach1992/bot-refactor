@@ -139,6 +139,15 @@ def main():
         fixture.write_text("<?php $draft=['stage'=>'url'];$prompt=match($draft['stage']){'url'=>'server_url',default=>'error'};sendMessage(achbotManagementText($prompt));")
         found={t['raw']for t in catalog_ui.ui_candidates(ROOT,[str(fixture)])}
         check(not found,'management lookup state misclassified as UI copy:'+str(found))
+        # Named return values used solely in a comparison are implementation
+        # fields, but nearby actual labels and the same helper rendered directly
+        # must remain observable. Never whitelist a source file/helper name.
+        fixture.write_text("<?php function fields(){return ['start_message','user_welcome_message','reached_main_menu','purchase_note'];} function label(){return 'Visible English UI';} $field='start_message';$text=in_array($field,fields(),true)?label():'Fallback English UI';sendMessage($text);")
+        found={t['raw']for t in catalog_ui.ui_candidates(ROOT,[str(fixture)])}
+        check(found=={"'Visible English UI'","'Fallback English UI'"},'predicate field/visible label audit boundary failed:'+str(found))
+        fixture.write_text("<?php function fields(){return ['start_message','user_welcome_message','reached_main_menu','purchase_note'];} sendMessage(implode(', ',fields()));")
+        found={t['raw']for t in catalog_ui.ui_candidates(ROOT,[str(fixture)])}
+        check({"'user_welcome_message'","'reached_main_menu'","'purchase_note'"}<=found,'rendered machine-looking fields escaped UI audit:'+str(found))
 
     import test_post_v9_customer_errors as privacy
     import catalog_source
@@ -198,7 +207,7 @@ def main():
     finally:
         process.terminate();process.wait(timeout=5)
     print(json.dumps({'status':'PASS','pre_style_source_equivalent_occurrences':reverse,'source_files':len(inventory['files']),
-      'catalog_keys':len(entries),'management_added_keys':len(management['added_keys']),'management_retained_legacy_keys':len(management['retained_legacy_keys']),'runtime_references':len(refs),'static_ui_violations':len(violations),'ascii_ui_violations':len(ascii_ui),'ascii_audit_negative_controls':8,'management_ascii_audit_controls':2,'migrated_machine_fields_or_sql_arguments':0,
+      'catalog_keys':len(entries),'management_added_keys':len(management['added_keys']),'management_retained_legacy_keys':len(management['retained_legacy_keys']),'runtime_references':len(refs),'static_ui_violations':len(violations),'ascii_ui_violations':len(ascii_ui),'ascii_audit_negative_controls':8,'management_ascii_audit_controls':2,'machine_predicate_audit_controls':2,'migrated_machine_fields_or_sql_arguments':0,
       'authorized_source_dependency_files':len(amendments['source_dependencies']),'authorized_bootstrap_flow_changes':1,'approved_public_copy_corrections':len(amendments['approved_copy']),
       'direct_http_guards':len(guarded),'editable_catalog_files':2,'logical_topics':26,
       'current_authorized_source_edits':len(style_source['edits']),'retired_parser_tokens':len(style_source['retired_keys']),'relocation_source_ref':RELOCATION_SOURCE,'presentation':presentation,'native':native},ensure_ascii=False))
