@@ -2,7 +2,7 @@
 """Canonical checkout: real public PHP HTTP ingress with owned SQL/loopback only.
 
 The complete issuance body is compared with its immutable pre-move source.
-Provider callback/IPN bytes remain unchanged; no real provider is contacted.
+Provider callback/IPN boundaries are unchanged except the canonical purchase import.
 """
 from __future__ import annotations
 import argparse,contextlib,hashlib,json,socket,subprocess,time,urllib.error,urllib.request
@@ -64,7 +64,11 @@ def main():
  ]:new_body=new_body.replace(current,original)
  yes(new_body==old[old.index(marker):],'complete_issuance_logic_unchanged_except_location_and_retired_URL')
  callback=(ROOT/'pay/back.php').read_bytes()
- yes(callback==subprocess.check_output(['git','show',BASE+':pay/back.php'],cwd=ROOT),'browser_callback_and_POST_IPN_file_exact_bytes_unchanged')
+ original_callback=subprocess.check_output(['git','show',BASE+':pay/back.php'],cwd=ROOT)
+ old_import=b"include_once __DIR__ . '/../buy_helpers.php';"
+ canonical_import=b"require_once __DIR__ . '/../src/Purchase/Core.php';"
+ yes(original_callback.count(old_import)==1 and callback==original_callback.replace(old_import,canonical_import,1),
+     'browser_callback_and_POST_IPN_only_canonical_import_change')
  yes(not(ROOT/'pay/index.php').exists()and not(ROOT/'src/Finance/GatewayInitiation.php').exists(),'two_obsolete_initiation_files_deleted_without_alias')
  for rel in package.members():
   if rel.endswith('.php'):yes(b'pay/?'not in(ROOT/rel).read_bytes(),'runtime_has_no_retired_initiation_URL_'+rel)
@@ -143,7 +147,7 @@ require_once __DIR__.'/src/Finance/GatewayClient.php';
   logs='\n'.join(path.read_text()for path in work.glob('checkout-http-*.log'))
   yes('PRIVATE_CHECKOUT_DB_CANARY'not in logs and'PRIVATE_CHECKOUT_IPN_CANARY'not in logs,'HTTP_logs_contain_no_private_canary')
  report={'complete':True,'cases':len(checks),'checks':checks,'actual_public_controller':True,'native_http':True,
-  'owned_socket_mariadb':True,'complete_issuance_body_preserved':True,'pay_back_bytes_unchanged':True,
+  'owned_socket_mariadb':True,'complete_issuance_body_preserved':True,'pay_back_only_canonical_import_changed':True,
   'callback_sha256':hashlib.sha256(callback).hexdigest(),'retired_routes_absent':True,'GET_only':True,
   'no_database_failure_private':True,'indirect_include_preserved':True,'external_requests':0,'production_mutations':0}
  if args.report:args.report.write_text(json.dumps(report,ensure_ascii=False,indent=2)+'\n')

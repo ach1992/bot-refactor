@@ -71,6 +71,23 @@ foreach(['marzban','pasarguard'] as $provider){
     $offKeys=json_decode(achbotServerDisplayKeys(1,$off,1),true)['inline_keyboard'];
     verify(!str_contains(json_encode($offKeys),'_vconfigs_') && str_contains(json_encode($offKeys),'_dconfigs_'),$provider.'_conditional_editor_own_context_only');
 }
+// Upgrading an old policy: explicit ON cannot remain hidden by removed knobs.
+foreach(['marzban','pasarguard'] as $provider){
+    $old=['mode'=>'native','policy'=>['show_configs'=>false,'max_links'=>0,'hide_if_more_than'=>0,
+        'delivery_selectors'=>[['name'=>'نام 4']],'view_selectors'=>[['name'=>'نام 8']]]];
+    $peer=present($provider,$native,[],$old,'view');
+    $on=achbotServerDisplayChange($old,$provider,'dcfg','flip');
+    equal(present($provider,$native,[],$on,'delivery')['links'],[$links[3]],$provider.'_new_ON_overrides_retired_zero_and_hide');
+    equal(present($provider,$native,[],$on,'view'),$peer,$provider.'_new_ON_keeps_peer_legacy_choice');
+}
+foreach(['delivery'=>'d','view'=>'v'] as $context=>$prefix){
+    $old=['mode'=>'marzban_legacy','policy'=>['show_configs'=>false],'legacy'=>[
+        'showIndexes'=>[1],'linkIndices'=>[0],'hideConfigIfMany'=>true,'hideConnectLinkForMarzban'=>true]];
+    $peerContext=$context==='delivery'?'view':'delivery';$peer=present('marzban',$native,[],$old,$peerContext);
+    $on=achbotServerDisplayChange($old,'marzban',$prefix.'cfg','flip');
+    equal(present('marzban',$native,[],$on,$context)['links'],[$links[0]],'legacy_'.$context.'_explicit_ON_not_hidden');
+    equal(present('marzban',$native,[],$on,$peerContext),$peer,'legacy_'.$context.'_ON_preserves_peer');
+}
 // Complete-message budget, not a fragment-byte bound.
 $long=array_map(static fn($i)=>'vless://native.invalid/'.str_repeat(chr(97+$i),1600).'#'.$i,range(0,9));
 $p=present('pasarguard',['links'=>$long,'subscription_url'=>$sub,'backup_urls'=>[$backup]],[],

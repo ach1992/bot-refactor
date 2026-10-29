@@ -369,7 +369,7 @@ def main():
             ('allowance_admin','test_unified_allowance_admin.py','cases',89,
                 {'actual_plan_screen':True,'actual_admin_subscription_report':True,'actual_order_management_screen':True,'real_disposable_mariadb':True,'real_JDF':True,'finite_remaining_zero_not_unlimited':True,'read_only_screens':True,'archived_current_baseline_RED':3,'network_calls':0,'production_mutations':0,'display_baseline':'f4731de2922adb96d005e523f75ec067907b2e05'}),
             ('canonical_checkout','test_canonical_checkout.py','cases',143,
-                {'native_http':True,'actual_public_controller':True,'owned_socket_mariadb':True,'complete_issuance_body_preserved':True,'pay_back_bytes_unchanged':True,'retired_routes_absent':True,'GET_only':True,'no_database_failure_private':True,'indirect_include_preserved':True,'external_requests':0,'production_mutations':0}),
+                {'native_http':True,'actual_public_controller':True,'owned_socket_mariadb':True,'complete_issuance_body_preserved':True,'pay_back_only_canonical_import_changed':True,'retired_routes_absent':True,'GET_only':True,'no_database_failure_private':True,'indirect_include_preserved':True,'external_requests':0,'production_mutations':0}),
         ]
         for name,script,counter,minimum,proofs in suites:
             path=Path(tmp)/(name+'.json')
@@ -1001,7 +1001,7 @@ def main():
         presentation={"complete":True,"checks":251,"retained_checks":93,"context_checks":158,"real_network":False}
         simple_display=json.loads(subprocess.check_output(
             ["php",str(ROOT/"tools/test_simple_server_display.php")],cwd=ROOT,text=True,timeout=30))
-        if simple_display!={"complete":True,"cases":137,"source_real":True,"two_native_providers":True,
+        if simple_display!={"complete":True,"cases":145,"source_real":True,"two_native_providers":True,
                 "whole_message_budget":True,"all_explicit_config_qrs":True,"production_effects":0}:
             raise RuntimeError("Simple display/context/complete-message boundary proof incomplete")
         # Reproduce the new behavioral RED against the unchanged RC18/main source.

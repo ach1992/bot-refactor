@@ -197,6 +197,12 @@ function contextPolicy(array $policy, string $context): array {
     }
     foreach (['show_configs', 'show_subscription', 'show_auxiliary', 'qr'] as $key)
         if (array_key_exists($key, $local)) $policy[$key] = $local[$key];
+    // An explicit new ON must override retired invisible hide/zero controls
+    // in this context, without changing the peer's stored/effective settings.
+    if (array_key_exists('show_configs',$local)) {
+        unset($policy['hide_if_more_than']);
+        if ($local['show_configs'] && ($policy['max_links']??null)===0) unset($policy['max_links']);
+    }
     // Retire the former automatic/fallback choice in the three-state UI.
     if (($policy['qr']??'auto')==='auto') $policy['qr']='subscription';
     return $policy;
@@ -245,6 +251,7 @@ function present(string $provider, array $native, array $botState, array $option
     $subscriptionVisible = ($policy['show_subscription'] ?? true) === true;
     $visibleUrl = $subscriptionVisible ? $url : '';
     $configsVisible = ($policy['show_configs'] ?? true) === true;
+    $explicitConfigSwitch=array_key_exists('show_configs',($rawPolicy??[])[$context]??[]);
     if ($compat) {
         $all = legacyLinks($native['links'] ?? []);
         $selected = [];
@@ -257,13 +264,13 @@ function present(string $provider, array $native, array $botState, array $option
             }
             if ($selected === []) $selected[] = $delivery[0];
             $selected = array_values(array_filter($selected, static function ($uri) { return $uri !== ''; }));
-            if (!empty($legacy['hideConfigIfMany']) && count($delivery) > 10) $configsVisible = false;
+            if (!$explicitConfigSwitch && !empty($legacy['hideConfigIfMany']) && count($delivery) > 10) $configsVisible = false;
         } else {
             // Original view uses one-based showIndexes only above three links.
             foreach ($all as $i => $link) {
                 if (count($all) <= 3 || in_array($i + 1, is_array($legacy['showIndexes'] ?? null) ? $legacy['showIndexes'] : [])) $selected[] = $link;
             }
-            if (!empty($legacy['hideConnectLinkForMarzban'])) $configsVisible = false;
+            if (!$explicitConfigSwitch && !empty($legacy['hideConnectLinkForMarzban'])) $configsVisible = false;
         }
         // Existing explicit config QR actions include every Marzban config,
         // even when inline text is hidden. Preserve this intentional boundary.
