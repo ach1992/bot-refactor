@@ -128,6 +128,40 @@ def main():
         raise RuntimeError("Payment capability randomness/bounds incomplete")
     audience=customer_errors.verify(ROOT)
     with tempfile.TemporaryDirectory(prefix="achbot-post-v9-acceptance-") as tmp:
+        # Current Owner R5 uses real merged source; prior immutable stages remain separate.
+        owner_r5={}
+        r5_suites=[
+            ('roles','test_owner_r5_roles.py',146,
+             {'complete':True,'real_disposable_mariadb':True,'actual_admin_keyboard':True,
+              'financial_boolean_preserved':True,'no_network':True,
+              'actual_role_management_route':True,'actual_readonly_attention_hub':True,'baseline_red':True}),
+            ('instance_content','test_owner_instance_content.py',49,
+             {'result':'PASS','source_real':True,'socket_only_original_schema':True,'no_external_calls':True}),
+            ('user_info','test_owner_r5_user_info.py',46,
+             {'result':'PASS','source_real':True,'owned_socket_mariadb':True,'baseline_missing_refresh_red':True}),
+            ('receipt_presentation','test_owner_r5_receipt_presentation.py',13,
+             {'complete':True,'source_real':True,'owned_original_schema_mariadb':True,
+              'baseline_red':True,'external_calls':0,'financial_mutations_by_caption':0}),
+        ]
+        for name,script,minimum,required in r5_suites:
+            report=Path(tmp)/('owner-r5-'+name+'.json')
+            subprocess.run(['python3',str(ROOT/'tools'/script),'--run-disposable','--report',str(report)],
+                           cwd=ROOT,check=True,timeout=180,capture_output=True)
+            proof=json.loads(report.read_text())
+            if proof.get('cases',0)<minimum or any(proof.get(key)!=value for key,value in required.items()):
+                raise RuntimeError('Owner R5 merged source proof incomplete: '+name)
+            owner_r5[name]=proof
+        copy_run=subprocess.run(['python3',str(ROOT/'tools/test_owner_r5_copy.py')],
+                                cwd=ROOT,check=True,timeout=180,capture_output=True,text=True)
+        copy_proof=json.loads(copy_run.stdout)
+        required_copy={'status':'PASS','changes':255,'retired':7,'added':37,'current_keys':2665,
+                       'r5_negative_controls':5,'persian_prose_start_violations':0,
+                       'duplicate_heading_markers':0,'guide_provider_cases':2,'guide_JSON_examples':3,
+                       'actual_HTML_transport_cases':2,'archived_wrong_parse_RED':True,
+                       'receipt_PRICE_template_cases':6,'real_Telegram_rendering':'NOT_TESTED'}
+        if any(copy_proof.get(key)!=value for key,value in required_copy.items()):
+            raise RuntimeError('Owner R5 Persian copy/HTML proof incomplete')
+        owner_r5['copy']=copy_proof
         unified={}
         suites=[
             ('management_wizard','test_unified_management_wizard.py','cases',362,
@@ -688,15 +722,15 @@ def main():
                 and text_catalog.get("native",{}).get("pre_style_privacy_corrections")==3
                 and text_catalog.get("native",{}).get("actual_traffic_helper_parity_cases")==18
                 and text_catalog.get("editable_catalog_files")==2
-                and text_catalog.get("logical_topics")==25
+                and text_catalog.get("logical_topics")==26
                 and text_catalog.get("current_authorized_source_edits")==26
                 and text_catalog.get("retired_parser_tokens")==23
                 and text_catalog.get("relocation_source_ref")=="ecd30ba9192ed374703118a6c131be8809cc7b06"
                 and text_catalog.get("native",{}).get("current_retired_feature_keys")==3
-                and text_catalog.get("catalog_keys")==2635
+                and text_catalog.get("catalog_keys")==2665
                 and text_catalog.get("native",{}).get("editable_catalog_files")==2
-                and text_catalog.get("native",{}).get("logical_topics")==25
-                and text_catalog.get("native",{}).get("current_catalog_keys")==2635
+                and text_catalog.get("native",{}).get("logical_topics")==26
+                and text_catalog.get("native",{}).get("current_catalog_keys")==2665
                 and text_catalog.get("native",{}).get("current_management_added_keys")==112
                 and text_catalog.get("native",{}).get("current_catalog_binding_paths")==2
                 and text_catalog.get("native",{}).get("current_catalog_binding_entries")==4
@@ -710,14 +744,18 @@ def main():
                 and text_catalog["native"]["current_byte_preserved_keys"]
                     +text_catalog["native"]["current_style_changes"]
                     +text_catalog["native"]["current_added_admin_keys"]==2523
-                and text_catalog.get("native",{}).get("current_native_template_assertions")==3890
-                and text_catalog.get("native",{}).get("current_object_conversion_templates")==251
+                and text_catalog.get("native",{}).get("current_native_template_assertions")==3950
+                and text_catalog.get("native",{}).get("current_object_conversion_templates")==257
                 and text_catalog.get("native",{}).get("current_shared_multi_parameter_templates")==61
-                and text_catalog.get("native",{}).get("current_one_pass_templates")==251
+                and text_catalog.get("native",{}).get("current_one_pass_templates")==257
+                and text_catalog.get("native",{}).get("current_r5_changes")==255
+                and text_catalog.get("native",{}).get("current_r5_retired_keys")==7
+                and text_catalog.get("native",{}).get("current_r5_added_keys")==37
+                and text_catalog.get("presentation",{}).get("r5_negative_controls")==5
                 and text_catalog.get("native",{}).get("current_non_ascii_digit_templates")==0
                 and text_catalog.get("presentation",{}).get("status")=="PASS"
                 and text_catalog.get("presentation",{}).get("editable_files")==2
-                and text_catalog.get("presentation",{}).get("current_keys")==2635
+                and text_catalog.get("presentation",{}).get("current_keys")==2665
                 and text_catalog.get("presentation",{}).get("numeric_template_changes")==23
                 and text_catalog.get("presentation",{}).get("adjacent_emoji_violations")==0
                 and text_catalog.get("presentation",{}).get("parameter_exception_count")==3
@@ -3221,7 +3259,7 @@ def main():
                 and swap.get("synthetic_private_files_untouched")):
             raise RuntimeError("Physical post-V9/V9 source-only overlay or private-state check failed")
         if a.report:a.report.write_text(json.dumps({"complete":True,
-                    "source":result,"marzban":marzban,"purchases":purchases,
+                    "source":result,"owner_ux_r5":owner_r5,"marzban":marzban,"purchases":purchases,
                      "unsupported_wallet_preflight":wallet_guard,
                      "wallet_transfer_safety":wallet_transfer,
                      "wallet_replay_freshness_and_operation_identity":wallet_replay,

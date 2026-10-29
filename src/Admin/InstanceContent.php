@@ -112,7 +112,7 @@ function achbotInstanceMenu(array $state): string {
         $set=in_array($field,achbotInstanceMessageFields(),true)
             ? achbotInstanceStored($state,$field)!==null
             : \AchBot\Presentation\Text\destinationUrl($state[$field]??'')!=='';
-        $rows[]=[['text'=>achbotInstanceLabel($field).' — '.($set?achbotMessage('instance_content.configured'):achbotMessage('instance_content.unset')),
+        $rows[]=[['text'=>achbotInstanceLabel($field).' | '.($set?achbotMessage('instance_content.configured'):achbotMessage('instance_content.unset')),
                   'callback_data'=>'ic|e|'.$field]];
     }
     $rows[]=[['text'=>achbotMessage('instance_content.support'),'callback_data'=>'editSupportID']];

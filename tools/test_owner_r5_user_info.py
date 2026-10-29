@@ -39,7 +39,7 @@ function editText(...$args){$GLOBALS['events'][]=['edit',$args[1]??null,$args[2]
 function delMessage(...$args){$GLOBALS['events'][]=['delete'];}
 function alert(...$args){$GLOBALS['events'][]=['alert',$args[0]??null];}
 require $app.'/messages/loader.php';
-require $app.'/Access.php';
+require $app.'/src/Admin/Access.php';
 require $app.'/functions.php';
 $s=$connection->prepare('SELECT * FROM users WHERE userid=? LIMIT 1');$s->bind_param('i',$from_id);$s->execute();$userInfo=$s->get_result()->fetch_assoc();$s->close();
 if($spec['action']==='profile') {
@@ -95,7 +95,8 @@ def main():
     with owned.owned_database() as (w,e):
         app=w/'user-app';(app/'src/Agent').mkdir(parents=True)
         shutil.copytree(catalog/'messages',app/'messages')
-        shutil.copyfile(access,app/'Access.php')
+        (app/'src/Admin').mkdir(parents=True)
+        shutil.copyfile(access,app/'src/Admin/Access.php')
         shutil.copyfile(ROOT/'src/Agent/Discounts.php',app/'src/Agent/Discounts.php')
         (app/'src/Telegram').mkdir(parents=True)
         shutil.copyfile(ROOT/'src/Telegram/UpdateBindings.php',app/'src/Telegram/UpdateBindings.php')

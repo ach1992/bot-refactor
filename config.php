@@ -2473,7 +2473,7 @@ function getUserInfoKeys($userId) {
                 [ 
                     $userUserName !== ''
                         ? ['text' => $userUserName, 'url' => "https://t.me/$userUserName"]
-                        : ['text' => "—", 'callback_data' => "wizwizch"],
+                        : ['text' => trim(\achbotMessage('telegram.update_bindings.text.32f665d21c')), 'callback_data' => "wizwizch"],
                     ['text' => \achbotMessage('admin_settings.config.get_user_info_keys.button.173fec6019'), 'callback_data' => "wizwizch"]
                 ], 
                 [ 
