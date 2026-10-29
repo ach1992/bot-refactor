@@ -164,6 +164,7 @@ $bootstrapStart=strpos($config,"// Enforce the same staff level");$bootstrapEnd=
 yes(str_contains($bootstrapGuard,'achbotAdminRequestAllowed('),'actual config bootstrap uses the same fresh request helper');
 define('ACHBOT_VERIFIED_WEBHOOK_ENTRYPOINT',true);
 $enterPublic=static function()use($bootstrapGuard,$enter):bool{global $data,$text,$userInfo;eval($bootstrapGuard);return $enter();};
+require_once $root.'/src/Presentation/Text.php';
 foreach([['getMainKeys','function getAgentKeys('],['RandomString','function generateUID(']] as [$fn,$endMarker]){
  $start=strpos($config,'function '.$fn.'(');$end=strpos($config,$endMarker,$start);eval(substr($config,$start,$end-$start));
 }
