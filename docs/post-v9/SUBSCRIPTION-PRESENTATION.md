@@ -101,10 +101,13 @@ The simple controls overlay only their own context/field. Valid previous flat
 visibility, protocol/name/tag selectors, delivery_selectors/view_selectors and
 explicit limits remain readable until deliberately replaced. Explicit empty
 old selectors still select no inline configs. Old shared-selector fallback and
-peer preservation remain, without startup rewrites or a second settings registry.\nAn explicit new config switch overrides retired hide/zero controls only in that\ncontext, so ON cannot remain hidden by an obsolete invisible setting.
+peer preservation remain, without startup rewrites or a second settings registry.
+An explicit new config switch overrides retired hide/zero controls only in that
+context, so ON cannot remain hidden by an obsolete invisible setting.
 Native matching and final rendering are shared by both providers.
 
-The retired automatic QR choice maps to subscription QR in the three-state UI.\nStored managed Marzban positional mode remains a read-compatibility path;
+The retired automatic QR choice maps to subscription QR in the three-state UI.
+Stored managed Marzban positional mode remains a read-compatibility path;
 PasarGuard never consumes those indices. Editing names explicitly replaces the
 positional selection for that context, leaving the other context intact.
 Ordinary screens expose neither legacy mode/index/protocol/threshold menus nor

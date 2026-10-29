@@ -47,7 +47,9 @@ inspection is authorized.
 
 The release consolidates destination editors in gateway/channel settings and keeps only four message bodies in Bot Settings. Native Marzban and PasarGuard share independent purchase-delivery/order-view config selection through the same renderer, editor and existing per-server JSON in setting. Existing choices/defaults remain until edited; managed Marzban positional compatibility is unchanged. A compatible RC16 installation needs **no new SQL**; do not rerun completed012/013. Inherited RC16 staff, receipt, profile, Persian-copy and private-configuration boundaries below remain.
 
-## Independent native display contexts
+## Published RC17/RC18 display contexts
+
+The following describes the published RC17/RC18 UI. The unreleased simple controls above supersede this journey in the current candidate.
 
 Open the selected server’s display settings and choose purchase delivery or order details before selecting configs by the existing protocol/name controls. Each explicit context list overrides the shared selectors, including an empty list selecting none. Otherwise the shared list and then the existing all-config default apply. Visibility, subscription and limits remain common. The editor preserves the other effective choice when explicitly selecting ALL; reads perform no backfill. The same code/storage/management serves both native providers. See [presentation semantics](SUBSCRIPTION-PRESENTATION.md) and the [RC16 downgrade boundary](RC16-TO-RC17.md#recovery).
 
