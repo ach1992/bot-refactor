@@ -331,7 +331,7 @@ return [
         // wallet_transfer.wallet_transfer_restart
         'wallet_transfer.wallet_transfer_restart.a_ch_bot_wallet_transfer_failure.2e028e487d' => '⚠️ <b>خطا در انتقال کیف پول AChBot</b>' . "\n" . '',
         'wallet_transfer.wallet_transfer_restart.reference_reference.f5ec5fabf8' => ['text' => 'شناسه پیگیری: <code>{reference}</code>' . "\n" . '', 'parameters' => ['reference']],
-        'wallet_transfer.wallet_transfer_restart.telegram_update_transfer_update_id.9ccad7d18e' => ['text' => 'شناسه پیام تلگرام: <code>{transferUpdateId}</code>' . "\n" . '', 'parameters' => ['transferUpdateId']],
+        'wallet_transfer.wallet_transfer_restart.telegram_update_transfer_update_id.9ccad7d18e' => ['text' => 'شناسه به‌روزرسانی تلگرام: <code>{transferUpdateId}</code>' . "\n" . '', 'parameters' => ['transferUpdateId']],
         'wallet_transfer.wallet_transfer_restart.reason_reason.2ef4e18461' => ['text' => 'علت: <code>{reason}</code>' . "\n" . '', 'parameters' => ['reason']],
         'wallet_transfer.wallet_transfer_restart.exception_class.bed555cfab' => 'نوع خطای داخلی: <code>',
         'wallet_transfer.wallet_transfer_restart.s_q_l_s_t_a_t_e.e54fa53e31' => 'وضعیت SQL: <code>',

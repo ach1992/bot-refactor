@@ -12,6 +12,7 @@ import catalog_owner_r5 as r5
 ROOT=pathlib.Path(__file__).resolve().parents[1]
 REFERENCE='9dab78bac830184818b5b0c899e530c9a2069c93'
 CORRECTIONS={
+    'wallet.wallet_transfer.wallet_transfer_restart.telegram_update_transfer_update_id.9ccad7d18e':('شناسه پیام تلگرام', 'شناسه به‌روزرسانی تلگرام'),
     'wallet.wallet_transfer.wallet_transfer_restart.text.f7206f6d33':('🎫', '📥'),
     'payment.referral_reward.give_referral_reward.text.c0780ce268':('💰', '💼'),
     'payment.payment_lifecycle.pay_ux_reference.text.d031212b3c':('🎫 شناسهٔ تلگرام', '👤 شناسه عددی'),
@@ -198,6 +199,13 @@ def audit(source_root=ROOT,catalog_root=ROOT):
             (stage/'messages/fa'/f'{audience}.php').write_bytes(command('git','show',REFERENCE+':messages/fa/'+audience+'.php'))
         archived=render(expressions,stage)
         correction_count=correction_proof(load_catalogs(catalog_root),load_catalogs(stage))
+    # Existing private-failure composition: this value comes from update_id,
+    # not message_id. The copy correction must preserve the supplied number.
+    update_expr=expression(tokenized['src/Finance/Routes/WalletTransfer.php'],'assign','$transferUpdateId',"'update_id'")
+    check(update_expr=="$amountSource['update_id']",'wallet_transfer_update_id_source_binding_drift')
+    check('شناسه به‌روزرسانی تلگرام: <code>9001</code>\n' in current['wallet_private_failure'],'telegram_update_id_label_or_value_changed')
+    check('شناسه پیام تلگرام:' not in current['wallet_private_failure'],'telegram_update_id_mislabeled_as_message')
+    check('شناسه پیام تلگرام: <code>9001</code>\n' in archived['wallet_private_failure'],'archived_wrong_telegram_update_label_RED_missing')
     reds=[name for name,value in archived.items()if heading_collisions(value)]
     expected_red={s['name']for s in SPECS[:2]+SPECS[3:19]}
     check(set(reds)==expected_red,'archived_composed_RED_scope_drift:'+str(reds))
@@ -219,7 +227,7 @@ def audit(source_root=ROOT,catalog_root=ROOT):
     preserved=['شناسه پیام تلگرام','شناسه به‌روزرسانی تلگرام','شناسه چت تلگرام']
     check(not any(numeric_id_variant(v)for v in preserved),'genuine_telegram_object_id_misclassified')
     check(not numeric_id_variant('شناسه عددی'),'requested_numeric_id_misclassified')
-    return {'composed_catalog_correction_keys':correction_count,'composed_heading_cases':len(current),'composed_heading_source_paths':len(paths),'composed_heading_archived_RED':len(reds),'composed_heading_negative_controls':len(mutations),'identical_heading_reuse_cases':1,'raw_code_heading_exclusions':1,'numeric_id_variant_negative_controls':len(variants),'preserved_telegram_object_id_cases':len(preserved),'preserved_numeric_id_cases':1,'composition_scope':'source_expression_wallet_finance_receipt_support_admin_stats_matrix','real_Telegram_rendering':'NOT_TESTED'}
+    return {'composed_catalog_correction_keys':correction_count,'telegram_update_id_label_cases':1,'telegram_update_id_numeric_value_preserved':True,'archived_wrong_telegram_update_label_RED':True,'composed_heading_cases':len(current),'composed_heading_source_paths':len(paths),'composed_heading_archived_RED':len(reds),'composed_heading_negative_controls':len(mutations),'identical_heading_reuse_cases':1,'raw_code_heading_exclusions':1,'numeric_id_variant_negative_controls':len(variants),'preserved_telegram_object_id_cases':len(preserved),'preserved_numeric_id_cases':1,'composition_scope':'source_expression_wallet_finance_receipt_support_admin_stats_matrix','real_Telegram_rendering':'NOT_TESTED'}
 def main():
     ap=argparse.ArgumentParser();ap.add_argument('--source-root',type=pathlib.Path,default=ROOT);ap.add_argument('--catalog-root',type=pathlib.Path,default=ROOT);args=ap.parse_args()
     print(json.dumps({'status':'PASS',**audit(args.source_root,args.catalog_root)},ensure_ascii=False))

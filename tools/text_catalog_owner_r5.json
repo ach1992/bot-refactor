@@ -718,12 +718,12 @@
         ]
       },
       "after": {
-        "text": "شناسه پیام تلگرام: <code>{transferUpdateId}</code>\n",
+        "text": "شناسه به‌روزرسانی تلگرام: <code>{transferUpdateId}</code>\n",
         "parameters": [
           "transferUpdateId"
         ]
       },
-      "reason": "Owner revision5: Persian-first readable Telegram copy, distinct semantic markers, correct terminology/formatting, and instance-content separation."
+      "reason": "Owner revision5: identify the genuine Telegram update_id accurately; preserve transferUpdateId, numeric value and administrator-only diagnostic scope."
     },
     "wallet.wallet_transfer.wallet_transfer_restart.reason_reason.2ef4e18461": {
       "audience": "admin",
