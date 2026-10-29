@@ -204,6 +204,19 @@ def main():
             ('instance_content','test_owner_instance_content.py',99,
              {'result':'PASS','cases':99,'source_real':True,'socket_only_original_schema':True,'no_external_calls':True,
               'lock_join_baseline_red':True,'lock_join_baseline_source':'4548705609518f741d14375c9d47739eb302c3b6'}),
+            ('display_contexts','test_server_display_contexts.py',216,
+             {'complete':True,'cases':216,'source_real':True,'owned_original_schema_mariadb':True,
+              'actual_buy_helpers_delivery':True,'actual_order_presentation':True,
+              'actual_checkout_config_qr':True,'loopback_native_pasarguard_readonly':True,
+              'native_providers':['pasarguard','marzban'],'disjoint_delivery_view':True,
+              'explicit_none_isolated':True,'shared_selector_fallback':True,'absent_selectors_all':True,
+              'context_all_preserves_other_effective_selection':True,'single_existing_setting_row':True,
+              'other_rows_and_financial_state_unchanged':True,'current_authority_revision_guards':True,
+              'native_uri_bytes_preserved':True,'legacy_marzban_indices_unchanged':True,
+              'archived_shared_selection_red':True,'archived_context_document_red':True,
+              'baseline_source':'748994636f9fc2cf4c0ea4c7c810093c0dd108ef',
+              'real_provider_calls':0,'real_telegram_calls':0,'native_mutations':0,
+              'runtime_schema_mutations':0,'runtime_automatic_data_writes':0}),
             ('user_info','test_owner_r5_user_info.py',46,
              {'result':'PASS','source_real':True,'owned_socket_mariadb':True,'baseline_missing_refresh_red':True}),
             ('receipt_presentation','test_owner_r5_receipt_presentation.py',13,
@@ -269,13 +282,14 @@ def main():
         copy_run=subprocess.run(['python3',str(ROOT/'tools/test_owner_r5_copy.py')],
                                 cwd=ROOT,check=True,timeout=180,capture_output=True,text=True)
         copy_proof=json.loads(copy_run.stdout)
-        required_copy={'status':'PASS','changes':271,'retired':10,'added':39,'current_keys':2664,
+        required_copy={'status':'PASS','changes':271,'retired':10,'added':46,'current_keys':2671,
                        'r5_negative_controls':5,'persian_prose_start_violations':0,
                        'duplicate_heading_markers':0,'guide_provider_cases':2,'guide_JSON_examples':3,
                        'actual_HTML_transport_cases':2,'archived_wrong_parse_RED':True,
                        'receipt_PRICE_template_cases':6,'real_Telegram_rendering':'NOT_TESTED',
                        'composed_catalog_correction_keys':22,'composed_heading_cases':42,
                        'settings_navigation_label_amendments':3,'settings_navigation_retired_keys':4,
+                       'display_context_catalog_additions':7,'display_context_catalog_negative_controls':6,
                        'notification_catalog_additions':4,'staff_role_description_amendments':1,
                        'staff_catalog_negative_controls':6,
                        'telegram_update_id_label_cases':1,'telegram_update_id_numeric_value_preserved':True,
@@ -862,10 +876,10 @@ def main():
                 and text_catalog.get("retired_parser_tokens")==23
                 and text_catalog.get("relocation_source_ref")=="ecd30ba9192ed374703118a6c131be8809cc7b06"
                 and text_catalog.get("native",{}).get("current_retired_feature_keys")==3
-                and text_catalog.get("catalog_keys")==2664
+                and text_catalog.get("catalog_keys")==2671
                 and text_catalog.get("native",{}).get("editable_catalog_files")==2
                 and text_catalog.get("native",{}).get("logical_topics")==26
-                and text_catalog.get("native",{}).get("current_catalog_keys")==2664
+                and text_catalog.get("native",{}).get("current_catalog_keys")==2671
                 and text_catalog.get("native",{}).get("current_management_added_keys")==112
                 and text_catalog.get("native",{}).get("current_catalog_binding_paths")==2
                 and text_catalog.get("native",{}).get("current_catalog_binding_entries")==4
@@ -879,18 +893,18 @@ def main():
                 and text_catalog["native"]["current_byte_preserved_keys"]
                     +text_catalog["native"]["current_style_changes"]
                     +text_catalog["native"]["current_added_admin_keys"]==2523
-                and text_catalog.get("native",{}).get("current_native_template_assertions")==3949
-                and text_catalog.get("native",{}).get("current_object_conversion_templates")==257
+                and text_catalog.get("native",{}).get("current_native_template_assertions")==3971
+                and text_catalog.get("native",{}).get("current_object_conversion_templates")==260
                 and text_catalog.get("native",{}).get("current_shared_multi_parameter_templates")==61
-                and text_catalog.get("native",{}).get("current_one_pass_templates")==257
+                and text_catalog.get("native",{}).get("current_one_pass_templates")==260
                 and text_catalog.get("native",{}).get("current_r5_changes")==271
                 and text_catalog.get("native",{}).get("current_r5_retired_keys")==10
-                and text_catalog.get("native",{}).get("current_r5_added_keys")==39
+                and text_catalog.get("native",{}).get("current_r5_added_keys")==46
                 and text_catalog.get("presentation",{}).get("r5_negative_controls")==5
                 and text_catalog.get("native",{}).get("current_non_ascii_digit_templates")==0
                 and text_catalog.get("presentation",{}).get("status")=="PASS"
                 and text_catalog.get("presentation",{}).get("editable_files")==2
-                and text_catalog.get("presentation",{}).get("current_keys")==2664
+                and text_catalog.get("presentation",{}).get("current_keys")==2671
                 and text_catalog.get("presentation",{}).get("numeric_template_changes")==23
                 and text_catalog.get("presentation",{}).get("adjacent_emoji_violations")==0
                 and text_catalog.get("presentation",{}).get("parameter_exception_count")==3
@@ -982,9 +996,9 @@ def main():
         presentation_output=subprocess.check_output(
             ["php",str(ROOT/"tools/test_subscription_presentation.php")],
             cwd=ROOT,text=True,timeout=60)
-        if not re.search(r"PASS subscription presentation: 93 checks;",presentation_output):
+        if not re.search(r"PASS subscription presentation: 251 checks \(158 context checks\);",presentation_output):
             raise RuntimeError("Native subscription presentation proof incomplete")
-        presentation={"complete":True,"checks":93,"real_network":False}
+        presentation={"complete":True,"checks":251,"retained_checks":93,"context_checks":158,"real_network":False}
         provider_path=Path(tmp)/"provider-integration.json"
         subprocess.run(["python3",str(ROOT/"tools/test_post_v9_provider_integration.py"),
                         "--run-disposable","--report",str(provider_path)],
@@ -1059,8 +1073,12 @@ def main():
                         "--run-disposable","--report",str(display_path)],
                        cwd=ROOT,check=True,timeout=180,capture_output=True)
         server_display=json.loads(display_path.read_text())
-        if not (server_display.get("pass") is True and server_display.get("checks",0)>=131
-                and server_display.get("network_calls")==0):
+        if not (server_display.get("pass") is True and server_display.get("checks")==519
+                and server_display.get("database")=="owned socket only"
+                and server_display.get("network_calls")==0
+                and server_display.get("native_context_editor")=={
+                    'providers':['marzban','pasarguard'],'checks':377}
+                and server_display.get("summary_baseline_source")=="748994636f9fc2cf4c0ea4c7c810093c0dd108ef"):
             raise RuntimeError("Per-server managed display and admin authorization proof incomplete")
         subject_path=Path(tmp)/"payment-subjects.json"
         subprocess.run(["python3",str(ROOT/"tools/test_post_v9_subjects.py"),
