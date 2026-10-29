@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__.'/../../Admin/Access.php';
 /**
  * AChBot post-V9: audited operator wallet adjustments in the shared movement journal.
  *
@@ -131,6 +132,7 @@ if (!function_exists('achbotApplyAdminWalletAdjustment')) {
         ?array &$operation = null, ?int $expectedBefore = null
     ): string {
         $operation = null;
+        if (!achbotAdminLevelCan(achbotAdminLevel($operatorId,$db,$primaryAdmin),'operations')) return 'unavailable';
         if ($operatorId <= 0 || $targetId <= 0 || $updateId <= 0 ||
             $messageId <= 0 || $chatId === 0 ||
             !in_array($kind, ['credit', 'debit', 'debt'], true) ||
@@ -164,7 +166,8 @@ if (!function_exists('achbotApplyAdminWalletAdjustment')) {
             // Never select an arbitrary wallet or operator from duplicates.
             if ($duplicateIdentity || !isset($users[$operatorId], $users[$targetId]) ||
                 ($operatorId !== $primaryAdmin &&
-                 (int)$users[$operatorId]['isAdmin'] !== 1)) {
+                 (int)$users[$operatorId]['isAdmin'] !== 1) ||
+                !achbotAdminCanLocked($db,$operatorId,$primaryAdmin,'operations')) {
                 $db->rollback();
                 return 'invalid';
             }
@@ -438,7 +441,7 @@ if (!function_exists('achbotAdminWalletReportResult')) {
     }
 }
 
-$achbotWalletCanAdmin = ($from_id == $admin || ($userInfo['isAdmin'] ?? false) == true);
+$achbotWalletCanAdmin = achbotAdminCan('operations',(int)$from_id);
 $achbotWalletModes = [
     'increaseUserWallet' => ['credit', 'increaseWalletUser', 'enter_increase_amount'],
     'decreaseUserWallet' => ['debit', 'decreaseWalletUser', 'enter_decrease_amount'],

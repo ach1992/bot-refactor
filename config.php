@@ -32,6 +32,7 @@ require_once __DIR__ . '/src/Purchase/Core.php';
 require_once __DIR__ . '/src/Finance/PaymentLifecycle.php';
 require_once __DIR__ . '/src/Finance/GatewayRuleAdmin.php';
 require_once __DIR__ . '/src/Finance/PaymentKeyAdmin.php';
+require_once __DIR__.'/src/Admin/Access.php';
 
 function tgRetryAfter($res){
     require_once __DIR__ . '/src/Telegram/Response.php';
@@ -315,6 +316,12 @@ if(!is_null($botState)) $botState = json_decode($botState,true);
 else $botState = array();
 $stmt->close();
 
+// Enforce the same staff level before bootstrap callbacks or outgoing reads.
+if (defined('ACHBOT_VERIFIED_WEBHOOK_ENTRYPOINT') &&
+    !achbotAdminRequestAllowed(is_string($data??null)?$data:null,is_string($text??null)?$text:null,(string)($userInfo['step']??''))) {
+    achbotAdminDeny();exit;
+}
+
 $supportID = $botState['supportID'];
 $channelLock = $botState['lockChannel'];
 $joniedState= bot('getChatMember', ['chat_id' => $channelLock,'user_id' => $from_id])->result->status;
@@ -481,56 +488,39 @@ function getAgentKeys(){
 }
 
 function getAdminKeys(){
-    global $buttonValues, $from_id, $admin;
-
-    $btn = fn($k,$c)=>['text'=>$buttonValues[$k],'callback_data'=>$c];
-
-    $rows = [
-        [[['bot_reports','botReports',fn()=>canSeeButton('bot_reports',$from_id)]]],
-        [[['user_reports','userReports'],['message_to_user','messageToSpeceficUser']]],
-        [[['increase_wallet','increaseUserWallet'],['decrease_wallet','decreaseUserWallet']]],
-        [[['create_account','createMultipleAccounts'],['gift_volume_day','giftVolumeAndDay']]],
-        [[['ban_user','banUser'],['unban_user','unbanUser']]],
-        [[['manage_order_database','manageorderdatabase']]],
-        [[['server_settings','serversSetting',fn()=>canSeeButton('server_settings',$from_id)]]],
-        [[['categories_settings','categoriesSetting',fn()=>canSeeButton('categories_settings',$from_id)],['plan_settings','backplan',fn()=>canSeeButton('plan_settings',$from_id)]]],
-        [[['discount_settings','discount_codes'],['main_button_settings','mainMenuButtons']]],
-        [[['tickets_list','ticketsList'],['message_to_all','message2All']]],
-        [[['agent_list','agentsList'],['pin_manage_all','pinManageAll']]],
-		//[[['agent_list','agentsList'],['rejected_agent_list','rejectedAgentList']]],
-		[[['admins_list','adminsList',fn()=> $from_id==$admin]]],
-		[[['gateways_settings','gateWays_Channels',fn()=>canSeeButton('gateways_settings',$from_id)],['bot_settings','botSettings',fn()=>canSeeButton('bot_settings',$from_id)]]],
-        [[['back_to_main','mainMenu']]],
+    global $buttonValues;
+    $level=achbotAdminLevel();
+    $rows=[
+        [['bot_reports','botReports']],
+        [['user_reports','userReports'],['message_to_user','messageToSpeceficUser']],
+        [['increase_wallet','increaseUserWallet'],['decrease_wallet','decreaseUserWallet']],
+        [['create_account','createMultipleAccounts'],['gift_volume_day','giftVolumeAndDay']],
+        [['ban_user','banUser'],['unban_user','unbanUser']],
+        [['manage_order_database','manageorderdatabase']],
+        [['server_settings','serversSetting']],
+        [['categories_settings','categoriesSetting'],['plan_settings','backplan']],
+        [['discount_settings','discount_codes'],['main_button_settings','mainMenuButtons']],
+        [['tickets_list','ticketsList'],['message_to_all','message2All']],
+        [['agent_list','agentsList'],['pin_manage_all','pinManageAll']],
+        [['admins_list','adminsList']],
+        [['__review','attentionInbox']],
+        [['gateways_settings','gateWays_Channels'],['bot_settings','botSettings']],
     ];
-
-    $keyboard = [];
-
-    foreach ($rows as $rowWrap) {
-        $buttons = $rowWrap[0];
-        $line = [];
-
-        foreach ($buttons as $b) {
-            $key  = $b[0];
-            $cb   = $b[1];
-            $when = $b[2] ?? null;
-
-            if (is_callable($when) && !$when()) continue;
-            $line[] = $btn($key,$cb);
+    $keyboard=[];
+    foreach ($rows as $row) {
+        $line=[];
+        foreach ($row as [$key,$callback]) {
+            $capability=$key==='__review'?'review':achbotAdminButtonCapability($key);
+            if (!achbotAdminLevelCan($level,$capability)) continue;
+            $line[]=['text'=>$key==='__review'?achbotMessage('admin_settings.config.get_admin_keys.button.f5a816a832'):$buttonValues[$key],
+                'callback_data'=>$callback];
         }
-
-        if (!empty($line)) $keyboard[] = $line;
+        if ($line) $keyboard[]=$line;
     }
-
-    // The finance review inbox is strictly owner-only: privileged payment
-    // identities must never be revealed in ordinary staff/user menus.
-    if ((int)$from_id === (int)$admin) {
-        array_unshift($keyboard, [[
-            'text'=>\achbotMessage('admin_settings.config.get_admin_keys.button.f5a816a832'),
-            'callback_data'=>'attentionInbox'
-        ]]);
-    }
-    return json_encode(['inline_keyboard'=>$keyboard]);
+    $keyboard[]=[['text'=>$buttonValues['back_to_main'],'callback_data'=>'mainMenu']];
+    return json_encode(['inline_keyboard'=>$keyboard],JSON_UNESCAPED_UNICODE);
 }
+
 
 /**
  * Legacy BOT_STATES.type is not unique. Serialize all application writes,
@@ -712,6 +702,8 @@ function achbotAdminGatewayChange($update,int $actor,int $chat,int $message,
                 ($actor!==$primary && (int)$current['isAdmin']!==1) ||
                 (string)$current['step']==='banned' ||
                 $findActor($db,$actor)!==$pk)
+                throw new RuntimeException('gateway_actor_no_longer_authorized');
+            if (!achbotAdminCanLocked($db,$actor,$primary,'gateways'))
                 throw new RuntimeException('gateway_actor_no_longer_authorized');
             $currentStep=(string)$current['step'];
         };
@@ -2307,24 +2299,32 @@ if ($data == 'cancel_operation') {
 }
 // انتهای بخش آمار ربات
 
+function achbotAdminRoleKeys(int $target): string {
+    global $buttonValues;
+    $rows=[];
+    foreach (['manager','operator','support'] as $level)
+        $rows[]=[['text'=>achbotAdminLevelLabel($level),'callback_data'=>'adminAssign|'.$target.'|'.$level]];
+    $rows[]=[['text'=>$buttonValues['back_button'],'callback_data'=>'adminsList']];
+    return json_encode(['inline_keyboard'=>$rows],JSON_UNESCAPED_UNICODE);
+}
 function getAdminsKeys(){
-    global $connection, $mainValues, $buttonValues;
-    $keys = array();
-    
-    $stmt = $connection->prepare("SELECT * FROM `users` WHERE `isAdmin` = true");
-    $stmt->execute();
-    $usersList = $stmt->get_result();
-    $stmt->close();
-    if($usersList->num_rows > 0){
-        while($user = $usersList->fetch_assoc()){
-            $keys[] = [['text'=>\achbotMessage('admin_settings.config.get_agents_list.button.2b2966a54e'),'callback_data'=>"delAdmin" . $user['userid']],['text'=>$user['name'], "callback_data"=>"wizwizch"]];
-        }
-    }else{
-        $keys[] = [['text'=>\achbotMessage('admin_settings.config.get_admins_keys.button.612ffac236'),'callback_data'=>"wizwizch"]];
+    global $connection,$buttonValues,$admin;
+    if (!achbotAdminCan('admins')) return json_encode(['inline_keyboard'=>[]]);
+    $keys=[[['text'=>achbotMessage('admin.roles.owner_row',['userId'=>(string)$admin]),'callback_data'=>'wizwizch']]];
+    $stmt=$connection->prepare('SELECT userid,name FROM users WHERE isAdmin=1 AND userid<>? ORDER BY id');
+    $owner=(int)$admin;$stmt->bind_param('i',$owner);$stmt->execute();$users=$stmt->get_result()->fetch_all(MYSQLI_ASSOC);$stmt->close();
+    foreach ($users as $user) {
+        $target=(int)$user['userid'];$level=achbotAdminLevel($target);
+        $label=achbotAdminLevelLabel($level);
+        $keys[]=[
+            ['text'=>achbotMessage('admin_settings.config.get_agents_list.button.2b2966a54e'),'callback_data'=>'delAdmin'.$target],
+            ['text'=>$label,'callback_data'=>'adminRole|'.$target],
+            ['text'=>(string)($user['name']?:$target),'callback_data'=>'adminRole|'.$target],
+        ];
     }
-    $keys[] = [['text'=>\achbotMessage('admin_settings.config.get_admins_keys.button.bc56086ddd'),'callback_data'=>"addNewAdmin"]];
-    $keys[] = [['text'=>$buttonValues['back_button'],'callback_data'=>"managePanel"]];
-    return json_encode(['inline_keyboard'=>$keys]);
+    $keys[]=[['text'=>achbotMessage('admin_settings.config.get_admins_keys.button.bc56086ddd'),'callback_data'=>'addNewAdmin']];
+    $keys[]=[['text'=>$buttonValues['back_button'],'callback_data'=>'managePanel']];
+    return json_encode(['inline_keyboard'=>$keys],JSON_UNESCAPED_UNICODE);
 }
 
 // BEGIN By ACh
@@ -3791,12 +3791,7 @@ $buttons_only_for_special_admins = [
 ];
 
 function canSeeButton($key, $userId) {
-    global $buttons_only_for_special_admins, $special_admins;
-
-    if (in_array($key, $buttons_only_for_special_admins)) {
-        return in_array($userId, $special_admins);
-    }
-    return true;
+    return achbotAdminCan(achbotAdminButtonCapability((string)$key),(int)$userId);
 }
 
 ?>

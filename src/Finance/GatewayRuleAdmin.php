@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__.'/../Admin/Access.php';
 /** AChBot Telegram administration for validated eligibility rules. */
 if (realpath($_SERVER['SCRIPT_FILENAME']??'')===__FILE__) {
     http_response_code(404);exit;
@@ -348,6 +349,6 @@ function achbotGatewayAdminCanView($update,int $actor,int $chat,int $message,
         if (!$stmt->execute()) return false;
         $rows=$stmt->get_result()->fetch_all(MYSQLI_ASSOC);$stmt->close();
         return count($rows)===1 && $rows[0]['step']!=='banned' &&
-            ($actor===$primary || (int)$rows[0]['isAdmin']===1);
+            ($actor===$primary || (int)$rows[0]['isAdmin']===1) && achbotAdminCan('gateways',$actor);
     } catch (Throwable $ignored) { return false;}
 }

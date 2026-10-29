@@ -10,6 +10,10 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
 }
 require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
 
+require_once __DIR__.'/../Admin/Access.php';
+if (!achbotAdminRequestAllowed(is_string($data??null)?$data:null,is_string($text??null)?$text:null,(string)($userInfo['step']??''))) {achbotAdminDeny();return;}
+
+
 // Match the same fresh administrator capability that makes these controls visible.
 $agentDiscountAccess = function_exists('achbotAdminCan')
     ? achbotAdminCan('agents', (int)$from_id)

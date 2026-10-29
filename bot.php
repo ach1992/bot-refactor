@@ -31,6 +31,8 @@ define('ACHBOT_VERIFIED_WEBHOOK_ENTRYPOINT', true);
 require_once 'config.php';
 require_once 'buy_helpers.php';
 check();
+if (!achbotAdminRequestAllowed(is_string($data??null)?$data:null,is_string($text??null)?$text:null,(string)($userInfo['step']??''))) {achbotAdminDeny();return;}
+
 require_once __DIR__.'/src/Panel/ProviderAdmin.php';
 require_once __DIR__.'/src/Admin/ManagementFlow.php';
 if (achbotHandleManagement()) return;
@@ -2137,12 +2139,12 @@ if(preg_match('/^editServerPanePassword(.*)/',$userInfo['step'],$match) and $tex
 
 if ((require __DIR__ . '/src/Subscription/SubLinkSettings.php') === null) return;
 
-if(preg_match('/^wizwizdeleteserver(\d+)/',$data,$match) and ($from_id == $admin || ($userInfo['isAdmin'] == true && $permissions['servers']))){
+if(preg_match('/^wizwizdeleteserver(\d+)/',$data,$match) and ($from_id == $admin || ($userInfo['isAdmin'] == true && achbotAdminCan('servers')))){
     editText($message_id,\achbotMessage('admin_settings.management.server_delete_confirm'),json_encode(['inline_keyboard'=>[
         [['text'=>\achbotMessage('bot.bot.addserver_name.button.13159f8c74'),'callback_data'=>"yesDeleteServer" . $match[1]],['text'=>\achbotMessage('bot.bot.addserver_name.button.f47dddc181'),'callback_data'=>"showServerSettings" . $match[1] . "_0"]]
         ]]));
 }
-if(preg_match('/^yesDeleteServer(\d+)/',$data,$match) && ($from_id == $admin || ($userInfo['isAdmin'] == true && $permissions['servers']))){
+if(preg_match('/^yesDeleteServer(\d+)/',$data,$match) && ($from_id == $admin || ($userInfo['isAdmin'] == true && achbotAdminCan('servers')))){
     $stmt = $connection->prepare("DELETE FROM `server_info` WHERE `id`=?");
     $stmt->bind_param("i", $match[1]);
     $stmt->execute();

@@ -6,6 +6,9 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
 }
 require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
 
+require_once __DIR__ . '/../Admin/Access.php';
+if (!achbotAdminRequestAllowed(is_string($data??null)?$data:null,is_string($text??null)?$text:null,(string)($userInfo['step']??''))) {achbotAdminDeny();return;}
+
 /** Shared add-on catalogue: no provider-specific plan or pricing branches. */
 function achbotIntervalPrice($raw): ?int {
     if (!is_string($raw) || preg_match('/^(?:0|[1-9][0-9]{0,9})$/D',trim($raw))!==1)
