@@ -5,7 +5,18 @@
  */
 namespace AchBot\Presentation\Text;
 
-function replacePlaceholders(array $mainValues, array $botState, $userId = '') {
+/** Format data at its text sink; never use this for native URL/button values. */
+function destinationText($value,?string $parseMode=null): string {
+    $text=(string)$value;
+    if (strtolower($parseMode??'')==='html')
+        return htmlspecialchars($text,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8');
+    if (strtolower($parseMode??'')==='markdown')
+        return strtr($text,['_'=>'\\_','*'=>'\\*','`'=>'\\`','['=>'\\[']);
+    return $text;
+}
+/** Three-argument legacy callers retain their historical sequential behavior.
+ * Current presentation callers supply exact template modes and substitute once. */
+function replacePlaceholders(array $mainValues, array $botState, $userId = '', ?array $parseModes = null) {
     $placeholders = [
         'SUPPORTID'   => $botState['supportID']   ?? '',
         'LOCKCHANNEL' => $botState['lockChannel'] ?? '',
@@ -15,14 +26,21 @@ function replacePlaceholders(array $mainValues, array $botState, $userId = '') {
     foreach ($mainValues as $key => $value) {
         if (is_string($value)) {
 
-            foreach ($placeholders as $placeholder => $replacement) {
-                $value = str_replace($placeholder, $replacement, $value);
+            if ($parseModes===null) {
+                foreach ($placeholders as $placeholder => $replacement)
+                    $value = str_replace($placeholder, $replacement, $value);
+            } else {
+                $mode=$parseModes[$key]??null;
+                $replacements=[];
+                foreach ($placeholders as $placeholder=>$replacement)
+                    $replacements[$placeholder]=destinationText($replacement,$mode);
+                // A URL containing another placeholder word is still literal data.
+                $value=strtr($value,$replacements);
             }
-
             $mainValues[$key] = $value;
         }
         elseif (is_array($value)) {
-            $mainValues[$key] = replacePlaceholders($value, $botState, $userId);
+            $mainValues[$key] = replacePlaceholders($value, $botState, $userId, $parseModes);
         }
     }
 

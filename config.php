@@ -333,7 +333,16 @@ $joniedState= bot('getChatMember', ['chat_id' => $channelLock,'user_id' => $from
 require_once __DIR__ . '/src/Finance/WalletStart.php';
 function replaceAllPlaceholdersInMainValues(array $mainValues, array $botState, $userId = '') {
     require_once __DIR__ . '/src/Presentation/Text.php';
-    return \AchBot\Presentation\Text\replacePlaceholders($mainValues, $botState, $userId);
+    // Canonicalize the historical join slot while it is still template source.
+    // Never replace CHANNEL-ID after a literal destination has been inserted.
+    if (is_string($mainValues['join_channel_message']??null))
+        $mainValues['join_channel_message']=str_replace('CHANNEL-ID','LOCKCHANNEL',$mainValues['join_channel_message']);
+    // Match the actual current consumers: two legacy Markdown messages,
+    // HTML mandatory-join delivery, and plain agency notices/alerts.
+    return \AchBot\Presentation\Text\replacePlaceholders($mainValues, $botState, $userId, [
+        'banned'=>'Markdown','send_config_uuid'=>'Markdown',
+        'join_channel_message'=>'HTML','agency_request_declined'=>null
+    ]);
 }
 $mainValues = replaceAllPlaceholdersInMainValues($mainValues, $botState, $from_id ?? '');
 require_once __DIR__ . '/src/Admin/InstanceContent.php';

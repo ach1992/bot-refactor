@@ -120,7 +120,7 @@ if (($joniedState == "kicked" || $joniedState == "left") && $from_id != $admin) 
         $joinUrl = \AchBot\Presentation\Text\lockChannelJoinUrl($botState,(string)($joinLink??''));
 
         sendMessage(
-            str_replace("CHANNEL-ID", $channelLock, $mainValues['join_channel_message']),
+            $mainValues['join_channel_message'],
             json_encode([
                 'inline_keyboard' => array_values(array_filter([
                     $joinUrl!=='' ? [
@@ -2328,7 +2328,7 @@ if($data == 'reciveApplications') {
     }
 	$keyboard[] = ['text'=>$buttonValues['back_to_main'],'callback_data'=>"mainMenu"];
     $keyboard = array_chunk($keyboard,1);
-    editText($message_id, \achbotMessage('bot.bot.recive_applications.message.ec86dead1a', ['supportID' => $supportID]), json_encode(['inline_keyboard'=>$keyboard]), "html");
+    editText($message_id, \achbotMessageHtml('bot.bot.recive_applications.message.ec86dead1a', ['supportID' => $supportID]), json_encode(['inline_keyboard'=>$keyboard]), "html");
 }
 if ($text == $buttonValues['cancel']) {
     // config.php loaded userInfo before any concurrent direct-gift callback.

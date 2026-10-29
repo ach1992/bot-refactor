@@ -156,7 +156,7 @@ if(preg_match('/^wizwizplanacclist(\d+)/',$data,$match) and achbotAdminCanFor($c
         $presentation=achbotOrderPresentation($connection,$order,$server,$botState);
         $txt .= "\n".$presentation['config_html']."\n".$presentation['subscription_html'].
             $presentation['backup_html']."\n".$presentation['notice_html'];
-        $txt .= \achbotMessage('plans.administration.edit_custom_plan.channel_lock.5d72dee564', ['channelLock' => $channelLock]);
+        $txt .= \achbotMessageHtml('plans.administration.edit_custom_plan.channel_lock.5d72dee564', ['channelLock' => $channelLock]);
         sendMessage($txt, null, "HTML");
     }
 }

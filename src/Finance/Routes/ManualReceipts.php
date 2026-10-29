@@ -579,7 +579,7 @@ if (preg_match('/^approvePayment(.*)/', $data, $match) && achbotAdminCanFor($con
     sendMessage($adminMessages, null, "html", $admin);
 
     // ارسال پیام به کاربر
-    sendMessage(\achbotMessage('manual_payment.manual_receipts.message.f568baa065') . number_format($price) . \achbotMessage('manual_payment.manual_receipts.message.f6331b33af', ['supportID' => $supportID]), null, "HTML", $userId);
+    sendMessage(\achbotMessage('manual_payment.manual_receipts.message.f568baa065') . number_format($price) . \achbotMessageHtml('manual_payment.manual_receipts.message.f6331b33af', ['supportID' => $supportID]), null, "HTML", $userId);
 }
 
 // Decline Cart To Cart by ACh
