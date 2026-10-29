@@ -154,7 +154,7 @@ def main():
         copy_run=subprocess.run(['python3',str(ROOT/'tools/test_owner_r5_copy.py')],
                                 cwd=ROOT,check=True,timeout=180,capture_output=True,text=True)
         copy_proof=json.loads(copy_run.stdout)
-        required_copy={'status':'PASS','changes':255,'retired':7,'added':37,'current_keys':2665,
+        required_copy={'status':'PASS','changes':255,'retired':9,'added':37,'current_keys':2663,
                        'r5_negative_controls':5,'persian_prose_start_violations':0,
                        'duplicate_heading_markers':0,'guide_provider_cases':2,'guide_JSON_examples':3,
                        'actual_HTML_transport_cases':2,'archived_wrong_parse_RED':True,
@@ -709,6 +709,7 @@ def main():
                 and text_catalog.get("ascii_ui_violations")==0
                 and text_catalog.get("ascii_audit_negative_controls")==8
                 and text_catalog.get("management_ascii_audit_controls")==2
+                and text_catalog.get("machine_predicate_audit_controls")==2
                 and text_catalog.get("presentation",{}).get("management_provider_label_cases")==11
                 and text_catalog.get("migrated_machine_fields_or_sql_arguments")==0
                 and text_catalog.get("direct_http_guards")==4
@@ -727,10 +728,10 @@ def main():
                 and text_catalog.get("retired_parser_tokens")==23
                 and text_catalog.get("relocation_source_ref")=="ecd30ba9192ed374703118a6c131be8809cc7b06"
                 and text_catalog.get("native",{}).get("current_retired_feature_keys")==3
-                and text_catalog.get("catalog_keys")==2665
+                and text_catalog.get("catalog_keys")==2663
                 and text_catalog.get("native",{}).get("editable_catalog_files")==2
                 and text_catalog.get("native",{}).get("logical_topics")==26
-                and text_catalog.get("native",{}).get("current_catalog_keys")==2665
+                and text_catalog.get("native",{}).get("current_catalog_keys")==2663
                 and text_catalog.get("native",{}).get("current_management_added_keys")==112
                 and text_catalog.get("native",{}).get("current_catalog_binding_paths")==2
                 and text_catalog.get("native",{}).get("current_catalog_binding_entries")==4
@@ -744,18 +745,18 @@ def main():
                 and text_catalog["native"]["current_byte_preserved_keys"]
                     +text_catalog["native"]["current_style_changes"]
                     +text_catalog["native"]["current_added_admin_keys"]==2523
-                and text_catalog.get("native",{}).get("current_native_template_assertions")==3950
+                and text_catalog.get("native",{}).get("current_native_template_assertions")==3948
                 and text_catalog.get("native",{}).get("current_object_conversion_templates")==257
                 and text_catalog.get("native",{}).get("current_shared_multi_parameter_templates")==61
                 and text_catalog.get("native",{}).get("current_one_pass_templates")==257
                 and text_catalog.get("native",{}).get("current_r5_changes")==255
-                and text_catalog.get("native",{}).get("current_r5_retired_keys")==7
+                and text_catalog.get("native",{}).get("current_r5_retired_keys")==9
                 and text_catalog.get("native",{}).get("current_r5_added_keys")==37
                 and text_catalog.get("presentation",{}).get("r5_negative_controls")==5
                 and text_catalog.get("native",{}).get("current_non_ascii_digit_templates")==0
                 and text_catalog.get("presentation",{}).get("status")=="PASS"
                 and text_catalog.get("presentation",{}).get("editable_files")==2
-                and text_catalog.get("presentation",{}).get("current_keys")==2665
+                and text_catalog.get("presentation",{}).get("current_keys")==2663
                 and text_catalog.get("presentation",{}).get("numeric_template_changes")==23
                 and text_catalog.get("presentation",{}).get("adjacent_emoji_violations")==0
                 and text_catalog.get("presentation",{}).get("parameter_exception_count")==3
