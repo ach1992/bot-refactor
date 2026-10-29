@@ -787,7 +787,12 @@ def main():
                 and text_catalog.get("presentation",{}).get("recipient_payloads_byte_unchanged") is True
                 and text_catalog.get("presentation",{}).get("recipient_source_files")==3
                 and text_catalog.get("presentation",{}).get("recipient_authorized_role_layers")==1
-                and text_catalog.get("presentation",{}).get("recipient_source_layer_negative_controls")==3):
+                and text_catalog.get("presentation",{}).get("recipient_source_layer_negative_controls")==3
+                and text_catalog.get("presentation",{}).get("recipient_authorized_ticket_layers")==2
+                and text_catalog.get("presentation",{}).get("recipient_ticket_layer_negative_controls")==7
+                and text_catalog.get("presentation",{}).get("recipient_staff_capability_conditions")==2
+                and text_catalog.get("presentation",{}).get("recipient_staff_layer_negative_controls")==4
+                and text_catalog.get("presentation",{}).get("recipient_total_source_layer_negative_controls")==14):
             raise RuntimeError("Pre-style relocation or current two-file/audience/presentation proof incomplete")
         copy_audience_output=subprocess.run(
             ["python3",str(ROOT/"tools/test_next_copy_audience.py")],
