@@ -99,16 +99,20 @@ function achbotAdminSetNotify(mysqli $db,int $owner,int $primary,int $target,boo
         return false;
     }
 }
-/** Receiving a copy never grants action authority. Each recipient must still be
- * a current valid staff member with notifications enabled. */
-function achbotAdminRecipientAllowed(mysqli $db,$recipient,int $primary): bool {
+/** Previously delivered receipt keyboards stay current for genuine staff;
+ * the notification preference only filters new copies. */
+function achbotAdminStoredRecipientAllowed(mysqli $db,$recipient,int $primary): bool {
     if (is_int($recipient)) $actor=$recipient;
     elseif (is_string($recipient) && preg_match('/^[1-9][0-9]*$/D',$recipient))
         $actor=filter_var($recipient,FILTER_VALIDATE_INT,['options'=>['min_range'=>1]]);
     else return false;
     return is_int($actor) && $actor>0 &&
-        in_array(achbotAdminLevel($actor,$db,$primary,true),['owner','manager','operator','support'],true) &&
-        achbotAdminNotifyEnabled($db,$actor,$primary,true);
+        in_array(achbotAdminLevel($actor,$db,$primary,true),['owner','manager','operator','support'],true);
+}
+/** New copies require both genuine current staff and an enabled preference. */
+function achbotAdminRecipientAllowed(mysqli $db,$recipient,int $primary): bool {
+    return achbotAdminStoredRecipientAllowed($db,$recipient,$primary) &&
+        achbotAdminNotifyEnabled($db,(int)$recipient,$primary,true);
 }
 function achbotAdminButtonCapability(string $key): string {
     return match($key) {
