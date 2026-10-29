@@ -4,7 +4,7 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) { http_response_co
 require_once __DIR__.'/../../messages/loader.php';
 require_once __DIR__.'/Access.php';
 
-$achbotRoleCallback=is_string($data??null) && preg_match('/^(?:adminsList$|addNewAdmin$|delAdmin[1-9][0-9]*$|adminRole\\||adminAssign\\|)/D',$data);
+$achbotRoleCallback=is_string($data??null) && preg_match('/^(?:adminsList$|addNewAdmin$|delAdmin[1-9][0-9]*$|adminRole\\||adminAssign\\||adminNotify\\|)/D',$data);
 $achbotRoleInput=($userInfo['step']??'')==='addNewAdmin';
 if (($achbotRoleCallback || $achbotRoleInput) &&
     (!achbotAdminCan('admins') || (int)($chat_id??0)!==(int)$from_id)) {
@@ -21,6 +21,13 @@ if (preg_match('/^delAdmin([1-9][0-9]{0,18})$/D',(string)($data??''),$match)) {
 if (($data??null)==='addNewAdmin') {
     sendMessage(achbotMessage('admin.roles.add_new_admin.message.026acb2e69'),$cancelKey);
     setUser('addNewAdmin');
+}
+if (preg_match('/^adminNotify\\|([1-9][0-9]{0,18})\\|(on|off)$/D',(string)($data??''),$match)) {
+    if (!achbotAdminSetNotify($connection,(int)$from_id,(int)$admin,(int)$match[1],$match[2]==='on')) {
+        alert(achbotMessage('admin.roles.notifications_failed'),true);return;
+    }
+    editText($message_id,achbotMessage('admin.roles.notifications_saved'),getAdminsKeys(),'HTML');
+    return;
 }
 if (preg_match('/^adminRole\\|([1-9][0-9]{0,18})$/D',(string)($data??''),$match)) {
     if ((int)$match[1]===(int)$admin) {achbotAdminDeny();return;}

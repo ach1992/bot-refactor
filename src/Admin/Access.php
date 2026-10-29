@@ -63,16 +63,52 @@ function achbotAdminRecipientCandidates(mysqli $db,int $primary): array {
         return array_values(array_unique(array_column($rows,'userid'),SORT_STRING));
     } catch (Throwable $ignored) {return [];}
 }
-/** Privileged outbound copies follow the recipient's current authority, never
- * a cached staff list or stored message reference. */
-function achbotAdminRecipientAllowed(mysqli $db,$recipient,int $primary,string $capability='operations'): bool {
-    if (!in_array($capability,['operations','payments'],true)) return false;
+/** Missing preferences default ON; ambiguous or malformed values deny copies. */
+function achbotAdminNotifyEnabled(mysqli $db,int $target,int $primary,bool $lock=false): bool {
+    if ($target<=0 || $primary<=0) return false;
+    if ($target===$primary) return true;
+    try {
+        $key='ADMIN_NOTIFY_'.$target;
+        $q=$db->prepare('SELECT value FROM setting WHERE type=? LIMIT 2'.($lock?' FOR UPDATE':''));
+        $q->bind_param('s',$key);$q->execute();$rows=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
+        return $rows===[] || (count($rows)===1 && $rows[0]['value']==='on');
+    } catch (Throwable $ignored) {return false;}
+}
+/** Owner-only notification preference, independent of the target's role. */
+function achbotAdminSetNotify(mysqli $db,int $owner,int $primary,int $target,bool $enabled): bool {
+    if ($owner<=0 || $owner!==$primary || $target<=0 || $target===$primary) return false;
+    $begun=false;
+    try {
+        if (!$db->begin_transaction()) return false;$begun=true;
+        if (!in_array(achbotAdminLevel($target,$db,$primary,true),['manager','operator','support'],true))
+            throw new RuntimeException('admin_notify_target_unavailable');
+        $key='ADMIN_NOTIFY_'.$target;$value=$enabled?'on':'off';
+        $q=$db->prepare('SELECT id FROM setting WHERE type=? LIMIT 2 FOR UPDATE');
+        $q->bind_param('s',$key);$q->execute();$rows=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
+        if (count($rows)>1) throw new RuntimeException('admin_notify_ambiguous');
+        if ($rows) {
+            $id=(int)$rows[0]['id'];$q=$db->prepare('UPDATE setting SET value=? WHERE id=? AND type=?');$q->bind_param('sis',$value,$id,$key);
+        } else {
+            $q=$db->prepare('INSERT INTO setting(type,value) VALUES(?,?)');$q->bind_param('ss',$key,$value);
+        }
+        if (!$q->execute()) throw new RuntimeException('admin_notify_write_unconfirmed');$q->close();
+        if (!$db->commit()) throw new RuntimeException('admin_notify_commit_unconfirmed');
+        return true;
+    } catch (Throwable $ignored) {
+        if ($begun) try {$db->rollback();} catch (Throwable $ignoredRollback) {}
+        return false;
+    }
+}
+/** Receiving a copy never grants action authority. Each recipient must still be
+ * a current valid staff member with notifications enabled. */
+function achbotAdminRecipientAllowed(mysqli $db,$recipient,int $primary): bool {
     if (is_int($recipient)) $actor=$recipient;
     elseif (is_string($recipient) && preg_match('/^[1-9][0-9]*$/D',$recipient))
         $actor=filter_var($recipient,FILTER_VALIDATE_INT,['options'=>['min_range'=>1]]);
     else return false;
     return is_int($actor) && $actor>0 &&
-        achbotAdminCanLocked($db,$actor,$primary,$capability);
+        in_array(achbotAdminLevel($actor,$db,$primary,true),['owner','manager','operator','support'],true) &&
+        achbotAdminNotifyEnabled($db,$actor,$primary,true);
 }
 function achbotAdminButtonCapability(string $key): string {
     return match($key) {
@@ -90,7 +126,7 @@ function achbotAdminRequestCapability(string $value): ?string {
     if ($value==='' || in_array($value,['none','mainMenu','evidenceHome','wizwizch'],true)) return null;
     $groups=[
         'admin'=>'~^managePanel$~D',
-        'admins'=>'~^(?:adminsList|addNewAdmin|delAdmin|adminRole\\||adminAssign\\|)~D',
+        'admins'=>'~^(?:adminsList|addNewAdmin|delAdmin|adminRole\\||adminAssign\\||adminNotify\\|)~D',
         'review'=>'~^attention(?:Inbox|Case)~D',
         'owner_recovery'=>'~^(?:npReview|bankReview)~D',
         'gateways'=>'~^(?:gateWays_Channels|changeGateWays|changePaymentKeys|achbotPaymentKey\\||gatewayAudienceSettings|cycleGatewayAudience_|paymentPolicy|editPaymentPolicy_|gr\\||editcartToCartAutoAcceptTime)~D',
