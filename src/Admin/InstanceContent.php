@@ -109,16 +109,11 @@ function achbotInstanceContentValues(array $values,array $state,$userId=''): arr
 function achbotInstanceMenu(array $state): string {
     global $buttonValues;
     $rows=[];
-    foreach(achbotInstanceFields() as $field){
-        $set=in_array($field,achbotInstanceMessageFields(),true)
-            ? achbotInstanceStored($state,$field)!==null
-            : \AchBot\Presentation\Text\destinationUrl($state[$field]??'')!=='';
+    foreach(achbotInstanceMessageFields() as $field){
+        $set=achbotInstanceStored($state,$field)!==null;
         $rows[]=[['text'=>achbotInstanceLabel($field).' | '.($set?achbotMessage('instance_content.configured'):achbotMessage('instance_content.unset')),
                   'callback_data'=>'ic|e|'.$field]];
     }
-    $rows[]=[['text'=>achbotMessage('instance_content.support'),'callback_data'=>'editSupportID']];
-    $rows[]=[['text'=>achbotMessage('instance_content.reward_channel'),'callback_data'=>'editRewardChannel']];
-    $rows[]=[['text'=>achbotMessage('instance_content.lock_channel'),'callback_data'=>'editLockChannel']];
     $rows[]=[['text'=>$buttonValues['back_button'],'callback_data'=>'botSettings']];
     return json_encode(['inline_keyboard'=>$rows],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
 }
@@ -179,7 +174,10 @@ function achbotHandleInstanceContent($update,$data,$text,array $cachedUser): boo
     if(!preg_match('/^achbotInstance:([A-Za-z_]+)$/D',$step,$m)||!in_array($m[1],achbotInstanceFields(),true))return true;
     $field=$m[1];
     if($text===($buttonValues['cancel']??null)||$text==='/cancel'){
-        setUser();sendMessage(achbotMessage('instance_content.title'),achbotInstanceMenu($GLOBALS['botState']??[]),'HTML');return true;
+        setUser();
+        $isMessage=in_array($field,achbotInstanceMessageFields(),true);
+        sendMessage($isMessage?achbotMessage('instance_content.title'):$mainValues['change_bot_settings_message'],
+            $isMessage?achbotInstanceMenu($GLOBALS['botState']??[]):getGateWaysKeys(),'HTML');return true;
     }
     if(!is_string($text))return true;
     if($text==='/clear')$value=in_array($field,achbotInstanceMessageFields(),true)?null:'';
@@ -197,6 +195,7 @@ function achbotHandleInstanceContent($update,$data,$text,array $cachedUser): boo
         sendMessage(achbotMessage('instance_content.save_unavailable'),$cancelKey,'HTML');return true;
     }
     setUser();
-    sendMessage(achbotMessage('instance_content.saved'),achbotInstanceMenu($GLOBALS['botState']??[]),'HTML');
+    sendMessage(achbotMessage('instance_content.saved'),
+        in_array($field,achbotInstanceMessageFields(),true)?achbotInstanceMenu($GLOBALS['botState']??[]):getGateWaysKeys(),'HTML');
     return true;
 }

@@ -1215,6 +1215,12 @@ function getGateWaysKeys(){
             ['text'=>\achbotMessage('admin_settings.config.get_gate_ways_keys.button.e1971f4d7a').$network,'callback_data'=>'wizwizch']
         ];
     }
+    $destinationRows=[];
+    foreach (['cooperationUrl','helpChannel','lockChannelJoinUrl'] as $field) {
+        $set=\AchBot\Presentation\Text\destinationUrl($botState[$field]??'')!=='';
+        $destinationRows[]=[['text'=>achbotInstanceLabel($field).' | '.($set?achbotMessage('instance_content.configured'):achbotMessage('instance_content.unset')),
+                             'callback_data'=>'ic|e|'.$field]];
+    }
     $trxWallet=trim((string)($paymentKeys['manualTrxWallet']??''));
     $cryptoRows[]=[
         ['text'=>achbotManualTronAddressValid($trxWallet) ? $trxWallet : \achbotMessage('admin_settings.config.get_gate_ways_keys.text.9fec3d676e'),
@@ -1305,6 +1311,7 @@ function getGateWaysKeys(){
             ['text'=>$lockChannel,'callback_data'=>'editLockChannel'],
             ['text'=>\achbotMessage('admin_settings.config.get_gate_ways_keys.button.ea01411739'),'callback_data'=>'wizwizch']
 		],
+        ...$destinationRows,
 		[
 			['text'=>\achbotMessage('admin_settings.config.get_gate_ways_keys.button.16aec30ea0'),'callback_data'=>"addExemptUser"]
 		],
