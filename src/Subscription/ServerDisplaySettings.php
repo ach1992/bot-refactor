@@ -388,7 +388,8 @@ function achbotHandleServerDisplayAdmin(): bool {
                 $prompt=$field==='document'?achbotServerDisplayGuide($server['type']):achbotServerDisplayPrompt($field);
                 achbotServerDisplayEdit($connection,$sid,(int)$from_id,(int)$admin,$source,'start',
                     null,$field,$action==='Edit'?null:$revision);
-                sendMessage($prompt,$cancelKey);
+                if ($field==='document') sendMessage($prompt,$cancelKey,'HTML');
+                else sendMessage($prompt,$cancelKey);
             } elseif ($action==='Set') {
                 achbotServerDisplayEdit($connection,$sid,(int)$from_id,(int)$admin,$source,'set',$choice,$field,$revision);
                 achbotServerDisplayShow($connection,$sid,\achbotMessage('subscription.server_display_settings.handle_server_display_admin.text.ed95738546'));

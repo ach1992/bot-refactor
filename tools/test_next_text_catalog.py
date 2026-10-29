@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib, json, pathlib, re, socket, subprocess, sys, tempfile, time, urllib.error, urllib.request
 import catalog_ui
 import test_text_catalog_style as management_catalog
+import catalog_owner_r5
 ROOT=pathlib.Path(__file__).resolve().parents[1]
 def command(*args,**kw):return subprocess.check_output(args,cwd=ROOT,**kw)
 def check(ok,message):
@@ -157,13 +158,13 @@ def main():
     presentation=json.loads(command('python3','tools/test_text_catalog_style.py'))
     check(presentation.get('status')=='PASS' and presentation.get('editable_files')==2
           and presentation.get('canonical_binding_paths')==2 and presentation.get('canonical_binding_entries')==4 and presentation.get('canonical_binding_negative_controls')==4
-          and presentation.get('current_keys')==2523+len(management['added_keys'])
+          and presentation.get('current_keys')==2523+len(management['added_keys'])-len(catalog_owner_r5.manifest()['retired_keys'])+len(catalog_owner_r5.manifest()['added_keys'])
           and presentation.get('management_added_keys')==len(management['added_keys'])
           and presentation.get('management_baseline_keys')==2523
           and presentation.get('management_negative_controls')==5
           and presentation.get('management_provider_label_cases')==11
           and presentation.get('management_facade_cases')==sum(record.get('facade')is True for record in management['added_keys'].values()) and presentation.get('retired_keys')==23
-          and presentation.get('added_keys')==1 and presentation.get('logical_topics')==25
+          and presentation.get('added_keys')==1 and presentation.get('logical_topics')==26
           and presentation.get('numeric_template_changes')==23
           and presentation.get('adjacent_emoji_violations')==0
           and presentation.get('parameter_exception_count')==3
@@ -199,6 +200,6 @@ def main():
     print(json.dumps({'status':'PASS','pre_style_source_equivalent_occurrences':reverse,'source_files':len(inventory['files']),
       'catalog_keys':len(entries),'management_added_keys':len(management['added_keys']),'management_retained_legacy_keys':len(management['retained_legacy_keys']),'runtime_references':len(refs),'static_ui_violations':len(violations),'ascii_ui_violations':len(ascii_ui),'ascii_audit_negative_controls':8,'management_ascii_audit_controls':2,'migrated_machine_fields_or_sql_arguments':0,
       'authorized_source_dependency_files':len(amendments['source_dependencies']),'authorized_bootstrap_flow_changes':1,'approved_public_copy_corrections':len(amendments['approved_copy']),
-      'direct_http_guards':len(guarded),'editable_catalog_files':2,'logical_topics':25,
+      'direct_http_guards':len(guarded),'editable_catalog_files':2,'logical_topics':26,
       'current_authorized_source_edits':len(style_source['edits']),'retired_parser_tokens':len(style_source['retired_keys']),'relocation_source_ref':RELOCATION_SOURCE,'presentation':presentation,'native':native},ensure_ascii=False))
 if __name__=='__main__':main()
