@@ -1218,8 +1218,11 @@ function getGateWaysKeys(){
     $destinationRows=[];
     foreach (['cooperationUrl','helpChannel','lockChannelJoinUrl'] as $field) {
         $set=\AchBot\Presentation\Text\destinationUrl($botState[$field]??'')!=='';
-        $destinationRows[]=[['text'=>achbotInstanceLabel($field).' | '.($set?achbotMessage('instance_content.configured'):achbotMessage('instance_content.unset')),
-                             'callback_data'=>'ic|e|'.$field]];
+        $destinationRows[]=[
+            ['text'=>\achbotMessage($set?'admin_settings.config.get_gate_ways_keys.text.ad271ae97c':
+                'admin_settings.config.get_gate_ways_keys.text.9fec3d676e'),'callback_data'=>'ic|e|'.$field],
+            ['text'=>achbotInstanceLabel($field),'callback_data'=>'wizwizch']
+        ];
     }
     $trxWallet=trim((string)($paymentKeys['manualTrxWallet']??''));
     $cryptoRows[]=[
