@@ -190,7 +190,7 @@ if($achbotIntervalMessage && $userInfo['step'] == "addNewDayPlan" and $text != $
     if (!achbotIntervalWrite($connection,"INSERT INTO `increase_day` VALUES (NULL, ?, ?)",'ii',[$volume,$price],true)) {achbotIntervalWriteNotice();return;}
 
     sendMessage(\achbotMessage('plans.intervals.add_new_day_plan.message.9acd097b34'),$removeKeyboard);
-    sendMessage($mainValues['reached_main_menu'],getAdminKeys());
+    sendMessage($mainValues['reached_main_menu'], getAdminKeys(), 'HTML');
 }
 if(preg_match('/^deleteDayPlan([1-9][0-9]*)$/D',$data,$match) and ($from_id == $admin || $userInfo['isAdmin'] == true)){
     if (!achbotIntervalWrite($connection,"DELETE FROM `increase_day` WHERE `id` = ?",'i',[(int)$match[1]],false)) {achbotIntervalWriteNotice();return;}
@@ -373,7 +373,7 @@ if($achbotIntervalMessage && $userInfo['step'] == "addNewVolumePlan" and $text !
     if (!achbotIntervalWrite($connection,"INSERT INTO `increase_plan` VALUES (NULL, ? ,?)",'ii',[$volume,$price],true)) {achbotIntervalWriteNotice();return;}
 
     sendMessage(\achbotMessage('plans.intervals.add_new_volume_plan.message.b003cdcfab'),$removeKeyboard);
-    sendMessage($mainValues['reached_main_menu'],getAdminKeys());
+    sendMessage($mainValues['reached_main_menu'], getAdminKeys(), 'HTML');
 }
 if(preg_match('/^deleteVolumePlan([1-9][0-9]*)$/D',$data,$match) and ($from_id == $admin || $userInfo['isAdmin'] == true)){
     if (!achbotIntervalWrite($connection,"DELETE FROM `increase_plan` WHERE `id` = ?",'i',[(int)$match[1]],false)) {achbotIntervalWriteNotice();return;}

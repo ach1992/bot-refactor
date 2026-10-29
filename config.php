@@ -329,6 +329,8 @@ function replaceAllPlaceholdersInMainValues(array $mainValues, array $botState, 
     return \AchBot\Presentation\Text\replacePlaceholders($mainValues, $botState, $userId);
 }
 $mainValues = replaceAllPlaceholdersInMainValues($mainValues, $botState, $from_id ?? '');
+require_once __DIR__ . '/src/Admin/InstanceContent.php';
+$mainValues = achbotInstanceContentValues($mainValues, $botState, $from_id ?? '');
 
 function getSupportUrl(array $botState, string $fallback = '') {
     require_once __DIR__ . '/src/Presentation/Text.php';
@@ -373,6 +375,8 @@ function getMainKeys(){
     global $connection, $userInfo, $from_id, $admin, $botState, $buttonValues;
     $mainKeys = array();
     $temp = array();
+    $cooperationUrl = \AchBot\Presentation\Text\configuredDestination($botState,'cooperationUrl',true);
+    $helpChannelUrl = \AchBot\Presentation\Text\configuredDestination($botState,'helpChannel');
 
     if($botState['agencyState'] == "on" && $userInfo['is_agent'] == 1){
 		$mainKeys = array_merge($mainKeys, [
@@ -419,9 +423,8 @@ function getMainKeys(){
         (($botState['sharedExistence'] != "on" && $botState['individualExistence'] == "on")?
             [['text'=>$buttonValues['individual_existence'],'callback_data'=>"availableServers2"]] : []
         ),
-		(($from_id != $admin && $userInfo['isAdmin'] != true) ?
-			[['text' => \achbotMessage('admin_settings.config.get_main_keys.button.b7d6aa7173'), 'url' => getSupportUrl($botState)]] : []
-			// [['text' => "👋 پشتیبانی ربات", 'url' => 'https://t.me/+xiKk-5AhNZ5mMWU0']] : []
+		(($from_id != $admin && $userInfo['isAdmin'] != true && $cooperationUrl!=='') ?
+			[['text' => \achbotMessage('admin_settings.config.get_main_keys.button.b7d6aa7173'), 'url' => $cooperationUrl]] : []
 		),
 		(($from_id != $admin && $userInfo['isAdmin'] != true) ?
 			[['text'=>$buttonValues['invite_friends'],'callback_data'=>"inviteFriends"]] : []
@@ -430,6 +433,8 @@ function getMainKeys(){
             [['text'=>$buttonValues['search_config'],'callback_data'=>"showUUIDLeft"]] : []
         ),
     ]);
+
+    if ($helpChannelUrl!=='') $mainKeys[]=[['text'=>achbotMessage('instance_content.help_button'),'url'=>$helpChannelUrl]];
 
     $stmt = $connection->prepare("SELECT * FROM `setting` WHERE `type` LIKE '%MAIN_BUTTONS%'");
     $stmt->execute();
@@ -623,6 +628,7 @@ function setSettings($field, $value): bool {
         'walletState','updateConnectionState','remark','rewaredTime',
         'cartToCartAutoAcceptTime','gbPrice','dayPrice',
         'rewardChannel','lockChannel','supportID','lastRewardMessage',
+        'instanceMessages','cooperationUrl','helpChannel',
         'gatewayAudience',
         'paymentDraftMinutes','paymentManualHours','paymentHostedHours',
         'receiptApprovedMinutes','receiptApprovedOtherMinutes',
@@ -1360,6 +1366,7 @@ function getBotSettingKeys(){
     else $paymentKeys = array();
     $stmt->close();
     return json_encode(['inline_keyboard'=>[
+        [['text'=>achbotMessage('instance_content.settings_button'),'callback_data'=>'ic|m']],
         [
             ['text'=>\achbotMessage('admin_settings.config.get_bot_setting_keys.button.f386be17f5'),'callback_data'=>"inviteSetting"]
             ],

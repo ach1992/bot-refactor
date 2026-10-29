@@ -43,7 +43,7 @@ if(preg_match('/^addNewCategory/',$userInfo['step']) and $text!=$buttonValues['c
 
         $msg = \achbotMessage('plans.categories.add_new_category.msg.5ba2f5c693');
         sendMessage($msg,$removeKeyboard);
-        sendMessage($mainValues['reached_main_menu'],getCategoriesKeys());
+        sendMessage($mainValues['reached_main_menu'], getCategoriesKeys(), 'HTML');
     }
 }
 if(preg_match('/^wizwizcategorydelete(\d+)_(\d+)/',$data, $match) and ($from_id == $admin || $userInfo['isAdmin'] == true)){

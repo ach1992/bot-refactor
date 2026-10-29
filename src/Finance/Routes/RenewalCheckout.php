@@ -268,7 +268,7 @@ if (preg_match('/wait(?:RenewCart|RenewGift|RenewUsdt)Receipt(.*)/', $userInfo['
         delMessage();
         sendMessage(\achbotMessage('renewal.renewal_checkout.message.2c9a5e948c'));
 
-        sendMessage($mainValues['reached_main_menu'], getMainKeys());
+        sendMessage($mainValues['reached_main_menu'], getMainKeys(), 'HTML');
         exit;
     }
 
@@ -295,7 +295,7 @@ if (preg_match('/wait(?:RenewCart|RenewGift|RenewUsdt)Receipt(.*)/', $userInfo['
         delMessage();
         sendMessage(\achbotMessage('renewal.renewal_checkout.message.aaa858e3e6'));
 
-        sendMessage($mainValues['reached_main_menu'], getMainKeys());
+        sendMessage($mainValues['reached_main_menu'], getMainKeys(), 'HTML');
         exit;
     }
 

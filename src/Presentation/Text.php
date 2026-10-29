@@ -29,16 +29,25 @@ function replacePlaceholders(array $mainValues, array $botState, $userId = '') {
     return $mainValues;
 }
 
-function supportUrl(array $botState, string $fallback = '') {
-    $support = trim($botState['supportID'] ?? '');
-
-    if ($support === '') return $fallback;
-    if (preg_match('~^https?://t\.me/~i', $support)) {
-        return $support;
-    }
-    return 'https://t.me/' . ltrim($support, '@');
+/** A display destination is never fetched; reject credentials and unsafe URL schemes. */
+function destinationUrl($value): string {
+    if (!is_string($value)) return '';
+    $value=trim($value);
+    if ($value==='' || strlen($value)>1000 || preg_match('/[\\x00-\\x20\\x7f]/',$value)) return '';
+    if (preg_match('/^@?([A-Za-z][A-Za-z0-9_]{0,63})$/D',$value,$m)) return 'https://t.me/'.$m[1];
+    if (str_starts_with(strtolower($value),'t.me/')) $value='https://'.$value;
+    $parts=parse_url($value);
+    if (!$parts || !in_array(strtolower($parts['scheme']??''),['http','https'],true) ||
+        empty($parts['host']) || isset($parts['user']) || isset($parts['pass']) ||
+        filter_var($value,FILTER_VALIDATE_URL)===false) return '';
+    return $value;
 }
-
+function supportUrl(array $botState, string $fallback = '') {
+    return destinationUrl($botState['supportID']??'') ?: $fallback;
+}
+function configuredDestination(array $botState,string $field,bool $supportFallback=false): string {
+    return destinationUrl($botState[$field]??'') ?: ($supportFallback?supportUrl($botState):'');
+}
 
 /**
  * Display-only allowance classification. Callers explicitly opt in to a known

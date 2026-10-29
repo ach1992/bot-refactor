@@ -31,7 +31,7 @@ if ($achbotOrderAdminStep && ($text??null)===($buttonValues['cancel']??null)) {
     sendMessage(\achbotMessage('admin_settings.management.canceled'),$removeKeyboard);
     $order=$id>0?\AchBot\Subscription\AccountDetails\findOrder($id):null;
     if ($order) showOrderManagementPanel($order);
-    else sendMessage($mainValues['reached_main_menu'],getAdminKeys());
+    else sendMessage($mainValues['reached_main_menu'], getAdminKeys(), 'HTML');
     return;
 }
 

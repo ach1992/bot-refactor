@@ -42,7 +42,7 @@ if (($userInfo['step']??null)==='banUser' && $text!==$buttonValues['cancel']) {
             sendMessage(\achbotMessage('admin.bans.unban_user.message.8764ea2164'));
         }
         if ($status==='changed' || $status==='already')
-            sendMessage($mainValues['reached_main_menu'],getAdminKeys());
+            sendMessage($mainValues['reached_main_menu'], getAdminKeys(), 'HTML');
     } else {
         sendMessage($mainValues['send_only_number']);
     }

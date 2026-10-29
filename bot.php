@@ -302,7 +302,7 @@ if (preg_match('/^\/([Ss]tart)/', $text) || $text == $buttonValues['back_to_main
         // Legacy Home buttons can be on untracked financial/support evidence.
         // Always send the actor's own menu; never edit/delete the source or
         // read another customer's invoice merely to navigate Home.
-        sendMessage($mainValues['start_message'], getMainKeys());
+        sendMessage($mainValues['start_message'], getMainKeys(), 'HTML');
 
     } else {
 
@@ -337,7 +337,7 @@ if (preg_match('/^\/([Ss]tart)/', $text) || $text == $buttonValues['back_to_main
             }
         }
 
-        sendMessage($mainValues['start_message'], getMainKeys());
+        sendMessage($mainValues['start_message'], getMainKeys(), 'HTML');
 
         if ($isFirstStart) {
 
@@ -373,7 +373,7 @@ if(preg_match('/^sendMessageToUser(\d+)/',$data,$match) && ($from_id == $admin |
 if(preg_match('/^sendMessageToUser(\d+)/',$userInfo['step'],$match) && ($from_id == $admin || $userInfo['isAdmin'] == true) && $text != $buttonValues['cancel']){
     sendMessage($text,null,null,$match[1]);
 	sendMessage(\achbotMessage('bot.bot.webhook_ingress_authenticated.message.21095e090c', ['match_1' => $match[1]]), $removeKeyboard, "html");
-    sendMessage($mainValues['reached_main_menu'],getAdminKeys());
+    sendMessage($mainValues['reached_main_menu'], getAdminKeys(), 'HTML');
     setUser();
 }
 
@@ -477,6 +477,7 @@ if (in_array($data, $statOptions) && ($from_id == $admin || $userInfo['isAdmin']
 }
 
 require __DIR__ . '/src/Admin/Roles.php';
+if (achbotHandleInstanceContent($update ?? null,$data ?? null,$text ?? null,$userInfo ?? [])) return;
 if(($data=="botSettings" or preg_match('/^changeBot([A-Za-z0-9_]+)$/D',$data,$match)) && ($from_id == $admin || $userInfo['isAdmin'] == true)){
     if($data!="botSettings"){
         // Never persist callback-provided arbitrary BOT_STATES keys.
@@ -1157,7 +1158,16 @@ if($data=="editSupportID" && ($from_id == $admin || $userInfo['isAdmin'] == true
 }
 
 if($userInfo['step'] == "editSupportID" && ($from_id == $admin || $userInfo['isAdmin'] == true) && $text != $buttonValues['cancel']){
-    setSettings('supportID', $text);
+    $supportText=is_string($text)?trim($text):'';
+    $supportUrl=\AchBot\Presentation\Text\destinationUrl($supportText);
+    if ($supportText!=='/clear' && $supportUrl==='') {
+        sendMessage(achbotMessage('instance_content.invalid_destination'),$cancelKey,'HTML');
+        return;
+    }
+    if (!setSettings('supportID',$supportText==='/clear'?'':$supportText)) {
+        sendMessage(achbotMessage('instance_content.save_unavailable'),$cancelKey,'HTML');
+        return;
+    }
     sendMessage(\achbotMessage('bot.bot.edit_support_i_d.message.6279ae207e'), getGateWaysKeys());
     setUser();
     exit();
@@ -1743,7 +1753,7 @@ if (is_string($userInfo['step']??null) &&
         try {
             sendMessage(\achbotMessage('bot.bot.gift_volume_and_day.message.df8d2180ae').
                 $directClaim['id'].').',$removeKeyboard);
-            sendMessage($mainValues['reached_main_menu'],getMainKeys());
+            sendMessage($mainValues['reached_main_menu'], getMainKeys(), 'HTML');
         } catch (Throwable $noticeFailure) {
             error_log('direct_gift_success_notice_unconfirmed');
         }
@@ -1833,7 +1843,7 @@ if(preg_match('/^giftServerVolume(\d+)_(\d+)/',$userInfo['step'],$match) && ($fr
                         sendMessage(\achbotMessage('bot.bot.gift_volume_and_day.message.b155540ffb'),
                                     $removeKeyboard);
                     }
-                    sendMessage($mainValues['reached_main_menu'],getMainKeys());
+                    sendMessage($mainValues['reached_main_menu'], getMainKeys(), 'HTML');
                 } catch (Throwable $giftNoticeError) {
                     error_log('gift_enqueue_telegram_notice_unconfirmed');
                 }
@@ -2360,6 +2370,6 @@ if ($text == $buttonValues['cancel']) {
     }
     // Cancellation never deletes other administrators' plan rows.
     sendMessage($mainValues['waiting_message'], $removeKeyboard);
-    sendMessage($mainValues['reached_main_menu'],getMainKeys());
+    sendMessage($mainValues['reached_main_menu'], getMainKeys(), 'HTML');
 }
 ?>

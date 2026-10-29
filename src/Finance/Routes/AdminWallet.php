@@ -408,7 +408,7 @@ if (!function_exists('achbotAdminWalletReportResult')) {
                     \achbotMessage('wallet.admin_wallet.admin_wallet_report_result.text.dff0fbb433') . number_format($operation['before']) .
                     \achbotMessage('wallet.admin_wallet.admin_wallet_report_result.text.a3e128be40') . number_format($operation['after']) .
                     \achbotMessage('wallet.admin_wallet.admin_wallet_report_result.text.4a74d658e8') . $operation['correlation'], $removeKeyboard]],
-                ['operator_menu', [$mainValues['reached_main_menu'], getMainKeys()]],
+                ['operator_menu', [$mainValues['reached_main_menu'], getMainKeys(), 'HTML']],
                 ['target_notice', [$customer, null, null, $operation['target']]]
             ];
             foreach ($notices as [$stage, $args]) {
@@ -483,7 +483,7 @@ if ($achbotWalletCanAdmin && isset($achbotWalletModes[$achbotWalletStep]) &&
             sendMessage($matches > 1 ?
                 \achbotMessage('wallet.admin_wallet.admin_wallet_report_result.message.840dca2362') :
                 $mainValues['user_not_found'], $removeKeyboard);
-            sendMessage($mainValues['reached_main_menu'], getMainKeys());
+            sendMessage($mainValues['reached_main_menu'], getMainKeys(), 'HTML');
         } else {
             [$kind, $prefix, $prompt] = $achbotWalletModes[$achbotWalletStep];
             setUser($prefix . $achbotWalletTarget);

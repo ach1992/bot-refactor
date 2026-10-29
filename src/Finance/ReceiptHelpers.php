@@ -1828,7 +1828,7 @@ function handleCancelFlow(array $mainValues, $removeKeyboard) {
     delMessage();
     setUser();
     sendMessage($mainValues['operation_canceled'], $removeKeyboard, "HTML");
-    sendMessage($mainValues['reached_main_menu'], getMainKeys());
+    sendMessage($mainValues['reached_main_menu'], getMainKeys(), 'HTML');
     exit;
 }
 

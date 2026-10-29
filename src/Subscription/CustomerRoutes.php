@@ -22,7 +22,7 @@ function cancelSearchKeyboard() {
 if ($data == "cancelSearchConfig") {
     delMessage();
     setUser();
-    sendMessage($mainValues['reached_main_menu'], getMainKeys());
+    sendMessage($mainValues['reached_main_menu'], getMainKeys(), 'HTML');
     exit;
 }
 
