@@ -171,11 +171,17 @@ def main():
         copy_run=subprocess.run(['python3',str(ROOT/'tools/test_owner_r5_copy.py')],
                                 cwd=ROOT,check=True,timeout=180,capture_output=True,text=True)
         copy_proof=json.loads(copy_run.stdout)
-        required_copy={'status':'PASS','changes':255,'retired':9,'added':38,'current_keys':2664,
+        required_copy={'status':'PASS','changes':271,'retired':9,'added':38,'current_keys':2664,
                        'r5_negative_controls':5,'persian_prose_start_violations':0,
                        'duplicate_heading_markers':0,'guide_provider_cases':2,'guide_JSON_examples':3,
                        'actual_HTML_transport_cases':2,'archived_wrong_parse_RED':True,
-                       'receipt_PRICE_template_cases':6,'real_Telegram_rendering':'NOT_TESTED'}
+                       'receipt_PRICE_template_cases':6,'real_Telegram_rendering':'NOT_TESTED',
+                       'composed_catalog_correction_keys':21,'composed_heading_cases':42,
+                       'composed_heading_source_paths':16,'composed_heading_archived_RED':18,
+                       'composed_heading_negative_controls':6,'identical_heading_reuse_cases':1,
+                       'raw_code_heading_exclusions':1,'numeric_id_variant_negative_controls':5,
+                       'preserved_telegram_object_id_cases':3,'preserved_numeric_id_cases':1,
+                       'composition_scope':'source_expression_wallet_finance_receipt_support_admin_stats_matrix'}
         if any(copy_proof.get(key)!=value for key,value in required_copy.items()):
             raise RuntimeError('Owner R5 Persian copy/HTML proof incomplete')
         owner_r5['copy']=copy_proof
@@ -470,7 +476,7 @@ def main():
                 purchases.get("actor_owned_plan_draft_entry_verified") is True and
                 draft_amendments==[draft_proof] and
                 purchases.get("ui_projection_baseline")=="7faac9b067f8a171e5e26d6aea5aaf9f4088a3e7" and
-                purchases.get("verified_literal_style_pairs")==579 and
+                purchases.get("verified_literal_style_pairs")==581 and
                 purchases.get("authorized_ui_field_differences")==3 and
                 purchases.get("ui_projection_negative_controls")==17 and
                 len(purchases.get("rejected_projection_mutations",[]))==17 and
@@ -774,7 +780,7 @@ def main():
                 and text_catalog.get("native",{}).get("current_object_conversion_templates")==257
                 and text_catalog.get("native",{}).get("current_shared_multi_parameter_templates")==61
                 and text_catalog.get("native",{}).get("current_one_pass_templates")==257
-                and text_catalog.get("native",{}).get("current_r5_changes")==255
+                and text_catalog.get("native",{}).get("current_r5_changes")==271
                 and text_catalog.get("native",{}).get("current_r5_retired_keys")==9
                 and text_catalog.get("native",{}).get("current_r5_added_keys")==38
                 and text_catalog.get("presentation",{}).get("r5_negative_controls")==5
