@@ -53,6 +53,32 @@ def context_cue(entries,key):
 def recipient_side(sides,key,target):
     other='admin'if target=='user'else'user'
     check(key in sides[target]and key not in sides[other],'recipient_placement_mismatch:'+key)
+# Exact Owner-R5 source layer: permission enforcement is added before the
+# immutable support-reply body. Recipient placement remains a separate proof.
+R5_ADMIN_REPLY_PREFACE="\nrequire_once __DIR__.'/../Admin/Access.php';\nif (!achbotAdminRequestAllowed(is_string($data??null)?$data:null,is_string($text??null)?$text:null,(string)($userInfo['step']??''))) {achbotAdminDeny();return;}\n"
+R5_ADMIN_REPLY_ANCHOR="require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG\n"
+def recipient_source_layer(name,source,reference):
+    if source==reference:return 0
+    check(name=='AdminReply.php','recipient source changed:'+name)
+    check(reference.count(R5_ADMIN_REPLY_ANCHOR)==1,'recipient role layer anchor drift')
+    expected=reference.replace(R5_ADMIN_REPLY_ANCHOR,R5_ADMIN_REPLY_ANCHOR+R5_ADMIN_REPLY_PREFACE,1)
+    check(source==expected,'recipient source changed:'+name)
+    return 1
+def recipient_source_layer_negative_controls():
+    reference=command('git','show',CONTEXT_REFERENCE+':src/Support/AdminReply.php').decode()
+    allowed=reference.replace(R5_ADMIN_REPLY_ANCHOR,R5_ADMIN_REPLY_ANCHOR+R5_ADMIN_REPLY_PREFACE,1)
+    check(recipient_source_layer('AdminReply.php',allowed,reference)==1,'recipient role layer not accepted')
+    check('"MarkDown", $userId)'in allowed and '$text,json_encode'in allowed,'recipient mutation fixture boundary drift')
+    controls=[allowed.replace('"MarkDown", $userId)','"MarkDown", $admin)',1),
+        allowed.replace('$text,json_encode','$caption,json_encode',1),
+        allowed.replace('if (!achbotAdminRequestAllowed(', 'if (achbotAdminRequestAllowed(',1)]
+    for candidate in controls:
+        try:recipient_source_layer('AdminReply.php',candidate,reference)
+        except AssertionError as error:
+            check(str(error)=='recipient source changed:AdminReply.php','recipient source negative rejected wrong property')
+            continue
+        raise AssertionError('recipient role layer masked a recipient/body/policy mutation')
+    return len(controls)
 def reviewed_context_proof(sides,merged,manifest):
     check(manifest.get('semantic_context_reference')==CONTEXT_REFERENCE,'context reference drift')
     archived={}
@@ -84,11 +110,14 @@ def reviewed_context_proof(sides,merged,manifest):
             check(str(error)=='recipient_placement_mismatch:'+key,'recipient RED rejected wrong property')
             role_red+=1
         else:raise AssertionError('actual archived misplaced entry accepted:'+key)
-    # Bind recipient reasoning to the three unchanged real route sources. These
-    # checks concern editing placement, not a general authorization proof.
+    # All three recipient bodies remain byte-pinned. Only AdminReply may
+    # additionally carry the exact separately accepted R5 permission preface.
     sources={name:(ROOT/('src/Support/'+name)).read_text()for name in ['CustomerConversation.php','AdminReply.php','QueueAndHistory.php']}
+    role_layers=0
     for name,source in sources.items():
-        check(source==command('git','show',CONTEXT_REFERENCE+':src/Support/'+name).decode(),'recipient source changed:'+name)
+        reference=command('git','show',CONTEXT_REFERENCE+':src/Support/'+name).decode()
+        role_layers+=recipient_source_layer(name,source,reference)
+    source_controls=recipient_source_layer_negative_controls()
     customer=sources['CustomerConversation.php'];admin=sources['AdminReply.php'];history=sources['QueueAndHistory.php']
     close=customer[customer.index("if(preg_match('/^closeTicket_"):customer.index("if(preg_match('/^replySupport_")]
     check(all(key in close for key in PRIVATE_SUPPORT if key.endswith(('2baf15e3c0','2dc9dcf8cd','c9b4331f4f','74190f4bb0')))
@@ -112,7 +141,7 @@ def reviewed_context_proof(sides,merged,manifest):
           and '"latestMsg_$rowId"'in listing,'actual customer shared history label drift')
     return {'reviewed_semantic_context_cases':len(CONTEXT_CUES),'archived_semantic_context_RED':rejected,
             'recipient_placement_cases':len(expected),'archived_recipient_placement_RED':role_red,
-            'recipient_payloads_byte_unchanged':True,'recipient_source_files':len(sources)}
+            'recipient_payloads_byte_unchanged':True,'recipient_source_files':len(sources),'recipient_authorized_role_layers':role_layers,'recipient_source_layer_negative_controls':source_controls}
 
 MANAGEMENT_BASE='2c0e728dcd71c38e20d176fe2577bc264d3faa1a'
 MANAGEMENT_CONTRACT='docs/post-v9/UNIFIED-SERVICE-MANAGEMENT.md'
