@@ -32,6 +32,32 @@ def cmd(*args: str) -> bytes:
     return subprocess.check_output(["git", "-C", str(ROOT), *args])
 
 
+def owner_r5_proof_mismatches(name: str, proof: dict, minimum: int, required: dict) -> dict:
+    """Keep exact proof fields; accept only both native-asserted safe RR outcomes."""
+    def bounded(value):
+        if value is None or type(value) in (bool, int):
+            return value
+        if isinstance(value, str) and re.fullmatch(r"[A-Za-z0-9_.:-]{1,80}", value):
+            return value
+        return '<unexpected '+type(value).__name__+'>'
+
+    mismatches={key:{'expected':bounded(value),'actual':bounded(proof.get(key))}
+                for key,value in required.items() if proof.get(key)!=value}
+    cases=proof.get('cases')
+    if type(cases) is not int or cases<minimum:
+        mismatches['cases']={'expected_minimum':minimum,'actual':bounded(cases)}
+    if name=='admin_fanout':
+        # MariaDB snapshot-isolation versions can either defer a conflicting
+        # current read or see the new member. The native probe proves safety
+        # and next-normal delivery in both cases; every other field stays exact.
+        modes=('deferred_current_read_conflict','current_member_observed')
+        mode=proof.get('old_snapshot_membership_mode')
+        if mode not in modes:
+            mismatches['old_snapshot_membership_mode']={
+                'expected_one_of':list(modes),'actual':bounded(mode)}
+    return mismatches
+
+
 def source_checks():
     if cmd("rev-parse", V9 + "^{tree}").decode().strip() != V9_TREE:
         raise RuntimeError("Frozen historical V9 reference changed")
@@ -200,7 +226,6 @@ def main():
               'db_only_staff_authority':True,'legacy_roleless_operator':True,
               'obsolete_staff_arrays_ignored':True,'explicit_manager_assignment':True,
               'actual_admin_ui_membership_delivery':True,'old_snapshot_membership_safe':True,
-              'old_snapshot_membership_mode':'deferred_current_read_conflict',
               'next_normal_delivery_includes_added_staff':True,'no_private_bootstrap_import':True,
               'db_only_baseline_red':True,'private_staff_baseline_source':'4a28474fdba41e17ebadab29ece1c17d18038437',
               'finance_source_ref':'current-source','catalog_source_ref':'current-source',
@@ -226,8 +251,10 @@ def main():
             subprocess.run(['python3',str(ROOT/'tools'/script),'--run-disposable','--report',str(report)],
                            cwd=ROOT,check=True,timeout=180,capture_output=True)
             proof=json.loads(report.read_text())
-            if proof.get('cases',0)<minimum or any(proof.get(key)!=value for key,value in required.items()):
-                raise RuntimeError('Owner R5 merged source proof incomplete: '+name)
+            mismatches=owner_r5_proof_mismatches(name,proof,minimum,required)
+            if mismatches:
+                raise RuntimeError('Owner R5 merged source proof incomplete: '+name+' '+
+                                   json.dumps(mismatches,sort_keys=True))
             if name=='destination_escaping':
                 fragments=proof.get('source_fragment_sha256')
                 expected_fragments={'initialization','facades','sink-app','sink-join',
