@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Current source settings/renderer/admin/delivery against an owned socket-only DB."""
 import argparse
+import hashlib
 import json
 import subprocess
 from pathlib import Path
@@ -22,6 +23,7 @@ $connection->query("INSERT INTO setting(type,value) VALUES ('ADMIN_ROLE_9002','m
 
 require_once $root.'/src/Subscription/ServerDisplaySettings.php';
 use function AchBot\Subscription\Presentation\present;
+require $argv[4];
 $checks=0;
 function verify($ok,$case) {
     global $checks;if (!$ok) throw new RuntimeException($case);$checks++;
@@ -389,22 +391,191 @@ $tooMany=['links'=>array_map(static fn($i)=>'vless://native.invalid/'.$i,range(1
 $bounded=present('pasarguard',$tooMany,$on,achbotServerDisplayDefault());
 verify(count($bounded['qr_config_links'])<=10 && strlen($bounded['config_html'].$bounded['subscription_html'].$bounded['backup_html'])<=2200
     && $bounded['limited'] && $bounded['notice_html']!=='','large_native_result_bounded_without_uri_truncation');
+// Context selections share the existing document, writer and native controls.
+$beforeContextChecks=$checks;$contextSource=10000;
+function contextSource() {return ++$GLOBALS['contextSource'];}
+function currentDisplay($sid) {
+    global $connection;
+    $server=achbotServerDisplayServer($connection,$sid);
+    return achbotServerDisplayDocument(achbotServerDisplayRow($connection,$sid),$sid,$server['type']);
+}
+function contextSet($sid,$field,$choice,$actor=9001) {
+    global $connection;
+    $revision=achbotServerDisplayRevision(achbotServerDisplayRow($connection,$sid));
+    callback("serverDisplaySet{$sid}_{$field}_{$choice}_{$revision}",contextSource(),$actor);
+}
+function contextInput($sid,$field,$body,$actor=9001) {
+    global $connection;
+    $revision=achbotServerDisplayRevision(achbotServerDisplayRow($connection,$sid));
+    callback("serverDisplayValue{$sid}_{$field}_{$revision}",contextSource(),$actor);
+    verify(str_ends_with($connection->query('SELECT step FROM users WHERE userid='.(int)$actor)->fetch_assoc()['step'],'|'.$field),'context_input_owns_exact_field');
+    message($body,contextSource(),$actor);
+}
+function menuCallbacks() {
+    $keys=json_decode($GLOBALS['events'][0][1],true,512,JSON_THROW_ON_ERROR);
+    $callbacks=[];
+    foreach ($keys['inline_keyboard'] as $row) foreach ($row as $button) {
+        $value=$button['callback_data'];verify(strlen($value)<=64,'context_callback_telegram_bound');$callbacks[]=$value;
+    }
+    return $callbacks;
+}
+function protectedRows() {
+    global $connection;$rows=[];
+    foreach($connection->query('SHOW TABLES')->fetch_all(MYSQLI_NUM)as $table){
+        $name=$table[0];$values=$connection->query('SELECT * FROM `'.str_replace('`','``',$name).'`')->fetch_all(MYSQLI_ASSOC);
+        if($name==='setting')$values=array_values(array_filter($values,static fn($r)=>!in_array($r['type'],['ACHBOT_SERVER_DISPLAY_1','ACHBOT_SERVER_DISPLAY_3'],true)));
+        if($name==='users')foreach($values as &$row)unset($row['step']);unset($row);
+        $rows[$name]=$values;
+    }
+    return $rows;
+}
+$protectedBefore=protectedRows();
+foreach ([achbotServerDisplayDefault(),$policyA,$policyB,
+    ['mode'=>'native','policy'=>['selectors'=>[]]],
+    ['mode'=>'marzban_legacy','policy'=>[],'legacy'=>['showIndexes'=>[2],'linkIndices'=>[0]]]]as $document)
+    equal(achbotServerDisplaySummary($document),achbotServerDisplayBaselineSummary($document),'old_no_override_summary_byte_parity');
+foreach ([1=>'marzban',3=>'pasarguard']as $sid=>$provider){
+    removeSetting($sid);
+    noChange(static fn()=>callback('serverDisplaySelect'.$sid,contextSource()),'context_picker_no_automatic_setting_backfill');
+    equal(menuCallbacks(),['serverDisplaySelectD'.$sid,'serverDisplaySelectV'.$sid,'serverDisplay'.$sid],'native_select_opens_only_two_contexts');
+    noChange(static fn()=>callback('serverDisplaySelectD'.$sid,contextSource()),'delivery_picker_read_only_without_setting');
+    noChange(static fn()=>callback('serverDisplaySelectV'.$sid,contextSource()),'view_picker_read_only_without_setting');
+    $seed=['mode'=>'native','policy'=>['selectors'=>[['protocol'=>'trojan']],'max_links'=>4,'hide_if_more_than'=>8,'qr'=>'none','show_configs'=>true,'show_subscription'=>false]];
+    settingRow($sid,$seed,$provider,contextSource());
+    foreach(['D'=>'d','V'=>'v']as $action=>$prefix){
+        callback('serverDisplaySelect'.$action.$sid,contextSource());
+        $revision=achbotServerDisplayRevision(achbotServerDisplayRow($connection,$sid));
+        equal(menuCallbacks(),["serverDisplayValue{$sid}_{$prefix}protocols_{$revision}","serverDisplayValue{$sid}_{$prefix}names_{$revision}",
+            "serverDisplaySet{$sid}_{$prefix}select_all_{$revision}","serverDisplaySet{$sid}_{$prefix}select_none_{$revision}",'serverDisplaySelect'.$sid],
+            'context_picker_uses_only_specific_fields');
+    }
+    contextSet($sid,'dselect','none');$document=currentDisplay($sid);
+    equal($document['policy']['delivery_selectors'],[],'explicit_delivery_none_stored');
+    equal(present($provider,$native,$on,$document,'delivery')['links'],[],'delivery_none_is_not_inherit');
+    equal(present($provider,$native,$on,$document,'view')['links'],[$two],'view_still_uses_shared_fallback');
+    foreach(['dprotocols'=>'vless,ss','vprotocols'=>'trojan','dnames'=>"Fast\nBackup",'vnames'=>'Fourth']as $field=>$input){
+        $before=currentDisplay($sid);contextInput($sid,$field,$input);$after=currentDisplay($sid);
+        $key=$field[0]==='d'?'delivery_selectors':'view_selectors';
+        $protocols=str_ends_with($field,'protocols');
+        $expected=array_map(static fn($v)=>[$protocols?'protocol':'name'=>$v],$protocols?explode(',',$input):explode("\n",$input));
+        equal($after['policy'][$key],$expected,'context_typed_selection_persisted');
+        unset($before['policy'][$key],$after['policy'][$key]);equal($after,$before,'context_input_preserves_peer_and_other_fields');
+    }
+    $document=currentDisplay($sid);
+    equal(present($provider,$native,$on,$document,'delivery')['links'],[$one,$two],'delivery_named_selection_independent');
+    equal(present($provider,$native,$on,$document,'view')['links'],[$four],'view_named_selection_independent');
+    $summary=achbotServerDisplaySummary($document);
+    verify(str_contains($summary,achbotMessage('admin_settings.display.delivery_selection',['selection'=>'2'.achbotMessage('subscription.server_display_settings.server_display_summary.text.2496192b9b')])) &&
+        str_contains($summary,achbotMessage('admin_settings.display.view_selection',['selection'=>'1'.achbotMessage('subscription.server_display_settings.server_display_summary.text.2496192b9b')])),'both_effective_context_summaries_shown');
+    foreach(['dprotocols','vprotocols','dnames','vnames']as $field)
+        verify(str_contains(achbotServerDisplayPrompt($field),achbotMessage('admin_settings.display.editing_context',['context'=>achbotMessage($field[0]==='d'?'admin_settings.display.delivery_configs':'admin_settings.display.view_configs')])),'context_title_in_reused_input_prompt');
+    foreach(['d'=>'delivery','v'=>'view']as $prefix=>$context){
+        $chosen=$prefix==='d'?'delivery_selectors':'view_selectors';$other=$prefix==='d'?'view_selectors':'delivery_selectors';
+        $peerContext=$context==='delivery'?'view':'delivery';
+        foreach(['shared_list'=>[[['protocol'=>'trojan']],null], 'shared_empty'=>[[],null],
+                 'explicit_peer_none'=>[[['protocol'=>'trojan']],[]], 'explicit_peer_list'=>[[['protocol'=>'trojan']],[['name'=>'Fast']]]]as $case=>$values){
+            [$shared,$peer]=$values;$document=$seed;$document['policy']['selectors']=$shared;
+            $document['policy'][$chosen]=[['protocol'=>'ss']];
+            if($peer!==null)$document['policy'][$other]=$peer;
+            removeSetting($sid);settingRow($sid,$document,$provider,contextSource());
+            $rowId=achbotServerDisplayRow($connection,$sid)['id'];$peerBefore=present($provider,$native,$on,$document,$peerContext);
+            contextSet($sid,$prefix.'select','all');$after=currentDisplay($sid);
+            verify(!array_key_exists($chosen,$after['policy'])&&!array_key_exists('selectors',$after['policy']),'explicit_all_removes_only_chosen_and_shared_keys_'.$case);
+            equal($after['policy'][$other],$peer??$shared,'explicit_all_preserves_effective_peer_list_'.$case);
+            equal(present($provider,$native,$on,$after,$context)['links'],$all,'all_really_means_all_'.$case);
+            equal(present($provider,$native,$on,$after,$peerContext),$peerBefore,'all_preserves_entire_peer_render_'.$case);
+            $expected=$seed['policy'];unset($expected['selectors']);$expected[$other]=$peer??$shared;
+            equal($after['policy'],$expected,'all_preserves_unrelated_policy_'.$case);
+            equal(achbotServerDisplayRow($connection,$sid)['id'],$rowId,'all_updates_same_existing_document_'.$case);
+        }
+    }
+    // Full JSON accepts the same three strict selector lists, without new storage.
+    $valid=$seed;$valid['policy']['delivery_selectors']=[['protocol'=>'vless','name'=>'Fast']];$valid['policy']['view_selectors']=[];
+    callback('serverDisplayEdit'.$sid,contextSource());message(json_encode($valid),contextSource());
+    equal(currentDisplay($sid),$valid,'advanced_json_keeps_independent_context_lists');
+    $badSelectors=[null,'all',[[]],[['index'=>'2']],[['name'=>'']],['name'=>'Fast'],array_fill(0,51,['name'=>'Fast']),[['name'=>str_repeat('x',301)]],[['name'=>"Fast\x00"]],[['name'=>"Fast\nBackup"]]];
+    foreach(['selectors','delivery_selectors','view_selectors']as $key){
+        callback('serverDisplayEdit'.$sid,contextSource());
+        foreach($badSelectors as $invalid){
+            $bad=$valid;$bad['policy'][$key]=$invalid;
+            noChange(static fn()=>message(json_encode($bad),contextSource()),'selector_array_limits_and_grammar_no_write_'.$key);
+        }
+        message('Cancel',contextSource());
+        $boundary=$valid;$boundary['policy'][$key]=array_fill(0,50,['name'=>'Fast']);
+        callback('serverDisplayEdit'.$sid,contextSource());message(json_encode($boundary),contextSource());
+        equal(currentDisplay($sid),$boundary,'fifty_selectors_accepted_'.$key);
+        $boundary['policy'][$key]=[['name'=>str_repeat('x',300)]];
+        callback('serverDisplayEdit'.$sid,contextSource());message(json_encode($boundary),contextSource());
+        equal(currentDisplay($sid),$boundary,'three_hundred_byte_selector_accepted_'.$key);
+    }
+    $revision=achbotServerDisplayRevision(achbotServerDisplayRow($connection,$sid));
+    contextSet($sid,'dselect','none');
+    noChange(static fn()=>callback("serverDisplaySet{$sid}_vselect_all_{$revision}",contextSource()),'stale_context_revision_denied');
+    foreach(['sender','group']as $forged)
+        noChange(static fn()=>callback('serverDisplaySelectD'.$sid,contextSource(),9001,$forged),'new_context_callback_frame_denied');
+    noChange(static fn()=>callback('serverDisplaySelectD'.$sid.'garbage',contextSource()),'malformed_context_callback_denied');
+    $revision=achbotServerDisplayRevision(achbotServerDisplayRow($connection,$sid));
+    callback("serverDisplayValue{$sid}_dnames_{$revision}",contextSource());
+    $source=contextSource();noChange(static fn()=>message('Fast',$source,9001,'sender'),'context_forged_message_denied');
+    message('Fast',contextSource());
+    noChange(static fn()=>message('Fast',$source),'context_replayed_input_denied');
+    // A second real administrator changes the same document while input is pending.
+    $revision=achbotServerDisplayRevision(achbotServerDisplayRow($connection,$sid));
+    callback("serverDisplayValue{$sid}_dnames_{$revision}",contextSource());contextSet($sid,'vselect','none',9002);
+    noChange(static fn()=>message('Backup',contextSource()),'context_other_writer_baseline_denied');
+    $connection->query("UPDATE users SET step='none' WHERE userid=9001");
+    $revision=achbotServerDisplayRevision(achbotServerDisplayRow($connection,$sid));
+    callback("serverDisplayValue{$sid}_vnames_{$revision}",contextSource(),9002);
+    $connection->query('UPDATE users SET isAdmin=0 WHERE userid=9002');
+    noChange(static fn()=>message('Fast',contextSource(),9002),'context_revoked_manager_input_denied');
+    $connection->query("UPDATE users SET isAdmin=1,step='none' WHERE userid=9002");
+    foreach(['operator','support']as $level){
+        $connection->query("UPDATE setting SET value='".$level."' WHERE type='ADMIN_ROLE_9002'");
+        noChange(static fn()=>callback('serverDisplaySelectV'.$sid,contextSource(),9002),'context_lower_tier_denied');
+    }
+    $connection->query("UPDATE setting SET value='manager' WHERE type='ADMIN_ROLE_9002'");
+    $staleRevision=$revision-1;
+    noChange(static fn()=>callback("serverDisplayValue{$sid}_vnames_{$staleRevision}",contextSource()),'context_stale_input_button_denied');
+    verify((int)$connection->query("SELECT COUNT(*) AS n FROM setting WHERE type='".achbotServerDisplayType($sid)."'")->fetch_assoc()['n']===1,'one_existing_setting_row_per_server');
+}
+// Native context callbacks cannot change legacy positional Marzban settings.
+contextSet(1,'mode','marzban_legacy');$legacyBefore=currentDisplay(1);
+foreach(['serverDisplaySelectD1','serverDisplaySelectV1']as $bound)
+    noChange(static fn()=>callback($bound,contextSource()),'legacy_rejects_native_context_menu');
+$revision=achbotServerDisplayRevision(achbotServerDisplayRow($connection,1));
+foreach(['dprotocols','vnames']as $field)
+    noChange(static fn()=>callback("serverDisplayValue1_{$field}_{$revision}",contextSource()),'legacy_rejects_context_input_step');
+noChange(static fn()=>callback("serverDisplaySet1_dselect_none_{$revision}",contextSource()),'legacy_rejects_context_choice');
+equal(currentDisplay(1),$legacyBefore,'native_contexts_do_not_change_legacy_indices');
+contextSet(1,'mode','native');equal(currentDisplay(1)['policy']['max_links'],10,'existing_mode_change_resets_native_defaults');
+verify(!array_key_exists('delivery_selectors',currentDisplay(1)['policy'])&&!array_key_exists('view_selectors',currentDisplay(1)['policy']),'existing_mode_change_does_not_invent_context_state');
+equal(protectedRows(),$protectedBefore,'context_editing_preserves_all_other_table_rows_and_fields');
+$contextChecks=$checks-$beforeContextChecks;
 equal(preg_replace("/AUTO_INCREMENT=[0-9]+/", "", $connection->query("SHOW CREATE TABLE setting")->fetch_row()[1]),$beforeSchema,'no_ddl_or_schema_change');
-echo json_encode(['pass'=>true,'checks'=>$checks,'database'=>'owned socket only','network_calls'=>0],JSON_THROW_ON_ERROR);
+echo json_encode(['pass'=>true,'checks'=>$checks,'database'=>'owned socket only','network_calls'=>0,'native_context_editor'=>['providers'=>['marzban','pasarguard'],'checks'=>$contextChecks]],JSON_THROW_ON_ERROR);
 '''
 def main():
     p=argparse.ArgumentParser()
     p.add_argument('--run-disposable',action='store_true',required=True)
     p.add_argument('--report',type=Path)
+    p.add_argument('--source-root',type=Path,default=ROOT)
     args=p.parse_args()
     with owned.owned_database() as (work,env):
         runner=work/'server-display.php'
         runner.write_text(PHP)
-        result=subprocess.run(['php',str(runner),str(ROOT),str(work/'mysql.sock'),owned.NAMES[1]],
+        baseline='748994636f9fc2cf4c0ea4c7c810093c0dd108ef'
+        old=subprocess.check_output(['git','show',baseline+':src/Subscription/ServerDisplaySettings.php'],cwd=ROOT).decode()
+        start=old.index('function achbotServerDisplaySummary(');end=old.index('function achbotServerDisplayShow(',start)
+        summary=work/'baseline-summary.php'
+        summary.write_text('<?php\n'+old[start:end].replace('function achbotServerDisplaySummary(','function achbotServerDisplayBaselineSummary(',1))
+        result=subprocess.run(['php',str(runner),str(args.source_root),str(work/'mysql.sock'),owned.NAMES[1],str(summary)],
             env=env,capture_output=True,text=True,timeout=45)
         if result.returncode:
             raise RuntimeError(result.stdout[-1000:]+'\n'+result.stderr[-2500:])
         report=json.loads(result.stdout)
+        report['source_root']=str(args.source_root)
+        report['source_sha256']={rel:hashlib.sha256((args.source_root/rel).read_bytes()).hexdigest()for rel in ['src/Subscription/ServerDisplaySettings.php','src/Subscription/Presentation.php','messages/fa/admin.php']}
+        report['summary_baseline_source']=baseline
     if args.report:
         args.report.write_text(json.dumps(report,indent=2)+'\n')
     print(json.dumps(report))

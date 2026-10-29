@@ -18,10 +18,12 @@ function achbotServerDisplayValid(array $document,string $provider): bool {
     $policy=$document['policy'];
     foreach (['max_links','hide_if_more_than'] as $key)
         if (isset($policy[$key]) && $policy[$key]>1000) return false;
-    if (count($policy['selectors']??[])>50) return false;
-    foreach ($policy['selectors']??[] as $selector)
-        foreach ($selector as $value)
-            if (strlen($value)>300 || preg_match('/[\x00-\x1f\x7f]/',$value)) return false;
+    foreach (['selectors','delivery_selectors','view_selectors'] as $key) {
+        if (count($policy[$key]??[])>50) return false;
+        foreach ($policy[$key]??[] as $selector)
+            foreach ($selector as $value)
+                if (strlen($value)>300 || preg_match('/[\x00-\x1f\x7f]/',$value)) return false;
+    }
     if ($document['mode']==='native') return !array_key_exists('legacy',$document);
     if ($provider!=='marzban' || array_diff(array_keys($policy),['show_configs','show_subscription','qr']) || !is_array($document['legacy']??null)) return false;
     foreach ($document['legacy'] as $key=>$value) {
@@ -155,18 +157,32 @@ function achbotServerDisplayChange(array $document,string $provider,string $fiel
                 throw new RuntimeException('display_number_invalid');
             $policy[$key]=(int)$input;
         }
-    } elseif ($document['mode']==='native' && $field==='select') {
-        if ($input==='all') unset($policy['selectors']);
-        elseif ($input==='none') $policy['selectors']=[];
+    } elseif ($document['mode']==='native' && in_array($field,['select','dselect','vselect'],true)) {
+        $key=['select'=>'selectors','dselect'=>'delivery_selectors','vselect'=>'view_selectors'][$field];
+        if ($input==='all') {
+            // Explicit ALL edits preserve the peer's effective inherited list.
+            // Reads never normalize old documents or introduce an ALL sentinel.
+            if ($field!=='select' && array_key_exists('selectors',$policy)) {
+                $other=$field==='dselect'?'view_selectors':'delivery_selectors';
+                if (!array_key_exists($other,$policy)) $policy[$other]=$policy['selectors'];
+                unset($policy['selectors']);
+            }
+            unset($policy[$key]);
+        } elseif ($input==='none') $policy[$key]=[];
         else throw new RuntimeException('display_choice_invalid');
-    } elseif ($document['mode']==='native' && in_array($field,['protocols','names'],true)) {
-        $values=$field==='protocols'?explode(',',$input):preg_split('/\R/',trim($input));
-        $policy['selectors']=[];
+    } elseif ($document['mode']==='native' && in_array($field,['protocols','names','dprotocols','vprotocols','dnames','vnames'],true)) {
+        $key=match($field) {
+            'dprotocols','dnames'=>'delivery_selectors',
+            'vprotocols','vnames'=>'view_selectors', default=>'selectors'
+        };
+        $protocols=str_ends_with($field,'protocols');
+        $values=$protocols?explode(',',$input):preg_split('/\R/',trim($input));
+        $policy[$key]=[];
         foreach ($values as $value) {
             $value=trim($value);
-            if ($value==='' || ($field==='protocols' && !preg_match('/^[a-z][a-z0-9+.-]{0,30}$/iD',$value)))
+            if ($value==='' || ($protocols && !preg_match('/^[a-z][a-z0-9+.-]{0,30}$/iD',$value)))
                 throw new RuntimeException('display_selector_invalid');
-            $policy['selectors'][]=[$field==='protocols'?'protocol':'name'=>$value];
+            $policy[$key][]=[$protocols?'protocol':'name'=>$value];
         }
     } else throw new RuntimeException('display_field_invalid');
     $document['policy']=$policy;
@@ -185,7 +201,7 @@ function achbotServerDisplayEdit(mysqli $db,int $serverId,int $actor,int $primar
     if ($source<=0 || !in_array($kind,['start','save','cancel','set'],true))
         throw new RuntimeException('display_edit_invalid');
     if (!in_array($field,['document','cfg','sub','qr','mode','many','viewhide','view','delivery',
-        'max','threshold','select','protocols','names'],true)) throw new RuntimeException('display_field_invalid');
+        'max','threshold','select','protocols','names','dselect','vselect','dprotocols','vprotocols','dnames','vnames'],true)) throw new RuntimeException('display_field_invalid');
     $name='achbot_server_display_writer';$owns=false;$begun=false;
     try {
         $s=$db->prepare('SELECT GET_LOCK(?,5) AS acquired');$s->bind_param('s',$name);$s->execute();
@@ -202,6 +218,8 @@ function achbotServerDisplayEdit(mysqli $db,int $serverId,int $actor,int $primar
             // require a valid document and the revision shown on their button.
             if ($field!=='document' || $kind==='set') {
                 $document=achbotServerDisplayDocument($row,$serverId,$provider);
+                if (in_array($field,['dselect','vselect','dprotocols','vprotocols','dnames','vnames'],true) && $document['mode']!=='native')
+                    throw new RuntimeException('display_field_invalid');
                 $revision=achbotServerDisplayRevision($row);
                 if ($expected===null || $expected!==$revision || $source<=$revision)
                     throw new RuntimeException('display_control_stale');
@@ -306,9 +324,16 @@ function achbotServerDisplaySummary(array $document): string {
         \achbotMessage('subscription.server_display_settings.server_display_summary.text.3623a042e1').$yes($p['show_subscription']??true).
         \achbotMessage('subscription.server_display_settings.server_display_summary.text.5f5512eac0').achbotServerDisplayQrLabel($p['qr']??'auto');
     if ($document['mode']==='native') {
-        $selected=!array_key_exists('selectors',$p)?\achbotMessage('subscription.server_display_settings.server_display_summary.text.704a2e9016'):
-            ($p['selectors']===[]?\achbotMessage('subscription.server_display_settings.server_display_summary.text.571525117a'):count($p['selectors']).\achbotMessage('subscription.server_display_settings.server_display_summary.text.2496192b9b'));
-        $body.=\achbotMessage('subscription.server_display_settings.server_display_summary.body.8fc24cefa6').$selected.\achbotMessage('subscription.server_display_settings.server_display_summary.text.3305f8a04f').($p['max_links']??10).
+        $selection=static function(string $key) use($p): string {
+            if (!array_key_exists($key,$p)) $key='selectors';
+            return !array_key_exists($key,$p)?\achbotMessage('subscription.server_display_settings.server_display_summary.text.704a2e9016'):
+                ($p[$key]===[]?\achbotMessage('subscription.server_display_settings.server_display_summary.text.571525117a'):count($p[$key]).\achbotMessage('subscription.server_display_settings.server_display_summary.text.2496192b9b'));
+        };
+        if (array_key_exists('delivery_selectors',$p) || array_key_exists('view_selectors',$p)) {
+            $body.="\n\n".\achbotMessage('admin_settings.display.delivery_selection',['selection'=>$selection('delivery_selectors')]).
+                "\n".\achbotMessage('admin_settings.display.view_selection',['selection'=>$selection('view_selectors')]);
+        } else $body.=\achbotMessage('subscription.server_display_settings.server_display_summary.body.8fc24cefa6').$selection('selectors');
+        $body.=\achbotMessage('subscription.server_display_settings.server_display_summary.text.3305f8a04f').($p['max_links']??10).
             \achbotMessage('subscription.server_display_settings.server_display_summary.text.ae2383a123').($p['hide_if_more_than']??\achbotMessage('subscription.server_display_settings.server_display_summary.text.4e67bd8e34'));
     } else {
         $body.=\achbotMessage('subscription.server_display_settings.server_display_summary.body.f97693c9e9').
@@ -338,6 +363,12 @@ function achbotServerDisplayShow(mysqli $db,int $serverId,string $prefix=''): vo
     sendMessage($prefix.\achbotMessage('admin_settings.management.display_context',['title'=>htmlspecialchars((string)$server['title'],ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8')]).$body,$keys,'HTML');
 }
 function achbotServerDisplayPrompt(string $field): string {
+    $contextFields=['dprotocols'=>'protocols','vprotocols'=>'protocols','dnames'=>'names','vnames'=>'names'];
+    if (isset($contextFields[$field])) {
+        $context=\achbotMessage($field[0]==='d'?'admin_settings.display.delivery_configs':'admin_settings.display.view_configs');
+        return \achbotMessage('admin_settings.display.editing_context',['context'=>$context])."\n\n".
+            achbotServerDisplayPrompt($contextFields[$field]);
+    }
     return [
         'max'=>\achbotMessage('subscription.server_display_settings.server_display_prompt.text.9314449c88'),
         'threshold'=>\achbotMessage('subscription.server_display_settings.server_display_prompt.text.dc76b33303'),
@@ -374,7 +405,7 @@ function achbotHandleServerDisplayAdmin(): bool {
     try {
         if ($callback) {
             if (strlen($data)>64) throw new RuntimeException('display_callback_invalid');
-            $basic=preg_match('/^serverDisplay(Edit|Qr|Select|Mode)?([1-9][0-9]{0,9})$/D',$data,$m);
+            $basic=preg_match('/^serverDisplay(Edit|Qr|SelectD|SelectV|Select|Mode)?([1-9][0-9]{0,9})$/D',$data,$m);
             $value=$set=false;
             if ($basic) {$action=$m[1];$sid=(int)$m[2];}
             elseif ($value=preg_match('/^serverDisplayValue([1-9][0-9]{0,9})_([a-z]{1,12})_(0|[1-9][0-9]*)$/D',$data,$m)) {
@@ -395,7 +426,7 @@ function achbotHandleServerDisplayAdmin(): bool {
             } elseif ($action==='Set') {
                 achbotServerDisplayEdit($connection,$sid,(int)$from_id,(int)$admin,$source,'set',$choice,$field,$revision);
                 achbotServerDisplayShow($connection,$sid,\achbotMessage('subscription.server_display_settings.handle_server_display_admin.text.ed95738546'));
-            } elseif (in_array($action,['Qr','Select','Mode'],true)) {
+            } elseif (in_array($action,['Qr','Select','SelectD','SelectV','Mode'],true)) {
                 $row=achbotServerDisplayRow($connection,$sid);
                 $document=achbotServerDisplayDocument($row,$sid,$server['type']);
                 $revision=achbotServerDisplayRevision($row);$keys=[];
@@ -406,18 +437,27 @@ function achbotHandleServerDisplayAdmin(): bool {
                     $body=\achbotMessage('subscription.server_display_settings.handle_server_display_admin.body.97ea2ac3c4');
                 } elseif ($action==='Select' && $document['mode']==='native') {
                     $keys=[
-                        [['text'=>\achbotMessage('subscription.server_display_settings.handle_server_display_admin.button.ddeef82ae5'),'callback_data'=>"serverDisplayValue{$sid}_protocols_{$revision}"]],
-                        [['text'=>\achbotMessage('subscription.server_display_settings.handle_server_display_admin.button.9397b410f0'),'callback_data'=>"serverDisplayValue{$sid}_names_{$revision}"]],
-                        [['text'=>\achbotMessage('subscription.server_display_settings.server_display_summary.text.704a2e9016'),'callback_data'=>"serverDisplaySet{$sid}_select_all_{$revision}"],
-                         ['text'=>\achbotMessage('subscription.server_display_settings.server_display_summary.text.571525117a'),'callback_data'=>"serverDisplaySet{$sid}_select_none_{$revision}"]],
+                        [['text'=>\achbotMessage('admin_settings.display.delivery_configs'),'callback_data'=>'serverDisplaySelectD'.$sid]],
+                        [['text'=>\achbotMessage('admin_settings.display.view_configs'),'callback_data'=>'serverDisplaySelectV'.$sid]],
                     ];
-                    $body=\achbotMessage('subscription.server_display_settings.handle_server_display_admin.body.dc1a09d9ef');
+                    $body=\achbotMessage('admin_settings.display.choose_context')."\n\n".\achbotMessage('admin_settings.display.context_guide');
+                } elseif (in_array($action,['SelectD','SelectV'],true) && $document['mode']==='native') {
+                    $prefix=$action==='SelectD'?'d':'v';
+                    $keys=[
+                        [['text'=>\achbotMessage('subscription.server_display_settings.handle_server_display_admin.button.ddeef82ae5'),'callback_data'=>"serverDisplayValue{$sid}_{$prefix}protocols_{$revision}"]],
+                        [['text'=>\achbotMessage('subscription.server_display_settings.handle_server_display_admin.button.9397b410f0'),'callback_data'=>"serverDisplayValue{$sid}_{$prefix}names_{$revision}"]],
+                        [['text'=>\achbotMessage('subscription.server_display_settings.server_display_summary.text.704a2e9016'),'callback_data'=>"serverDisplaySet{$sid}_{$prefix}select_all_{$revision}"],
+                         ['text'=>\achbotMessage('subscription.server_display_settings.server_display_summary.text.571525117a'),'callback_data'=>"serverDisplaySet{$sid}_{$prefix}select_none_{$revision}"]],
+                    ];
+                    $context=\achbotMessage($prefix==='d'?'admin_settings.display.delivery_configs':'admin_settings.display.view_configs');
+                    $body=\achbotMessage('admin_settings.display.editing_context',['context'=>$context])."\n\n".
+                        \achbotMessage('subscription.server_display_settings.handle_server_display_admin.body.dc1a09d9ef');
                 } elseif ($action==='Mode' && $server['type']==='marzban') {
                     foreach (['native'=>\achbotMessage('subscription.server_display_settings.handle_server_display_admin.text.50539a0548'),'marzban_legacy'=>\achbotMessage('subscription.server_display_settings.handle_server_display_admin.text.19adf0f6e6')] as $choice=>$label)
                         $keys[]=[['text'=>$label,'callback_data'=>"serverDisplaySet{$sid}_mode_{$choice}_{$revision}"]];
                     $body=\achbotMessage('subscription.server_display_settings.handle_server_display_admin.body.fccad7f96a');
                 } else throw new RuntimeException('display_action_invalid');
-                $keys[]=[['text'=>\achbotMessage('subscription.server_display_settings.handle_server_display_admin.button.63b4398cc3'),'callback_data'=>'serverDisplay'.$sid]];
+                $keys[]=[['text'=>\achbotMessage('subscription.server_display_settings.handle_server_display_admin.button.63b4398cc3'),'callback_data'=>(in_array($action,['SelectD','SelectV'],true)?'serverDisplaySelect':'serverDisplay').$sid]];
                 sendMessage($body,json_encode(['inline_keyboard'=>$keys],JSON_UNESCAPED_UNICODE));
             } else achbotServerDisplayShow($connection,$sid);
         } else {
