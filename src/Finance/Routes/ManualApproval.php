@@ -72,7 +72,7 @@ if (!function_exists('achbotManualStandardReportDelivery')) {
 if (
     preg_match('/^accept([A-Za-z0-9_-]{1,50})$/D', (string)$data, $match) &&
     $text != $buttonValues['cancel'] &&
-    ($from_id == $admin || ($userInfo['isAdmin'] ?? false) == true)
+    achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'operations')
 ) {
     require_once __DIR__ . '/../ServiceEffects.php';
     $hash_id = $match[1];

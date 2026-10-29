@@ -6,6 +6,9 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
 }
 require_once __DIR__ . '/../../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
 
+require_once __DIR__ . '/../../Admin/Access.php';
+if (!achbotAdminRequestAllowed(is_string($data??null)?$data:null,is_string($text??null)?$text:null,(string)($userInfo['step']??''))) {achbotAdminDeny();return;}
+
 
 require_once __DIR__ . '/../PaymentLifecycle.php';
 
@@ -458,7 +461,7 @@ if (preg_match('/wait(?:CustomCart|CustomGift|CustomUsdt)Receipt(.*)/', $userInf
 }
 
 if (preg_match('/^accCustom(.+)$/D', $data, $match) && $text != $buttonValues['cancel']) {
-    if ((int)$from_id <= 0 || ((int)$from_id !== (int)$admin && empty($userInfo['isAdmin']))) {
+    if (!achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'operations')) {
         alert(\achbotMessage('payment.checkout.alert.873a4950ab'), true);
         return;
     }

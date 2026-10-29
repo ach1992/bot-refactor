@@ -6,6 +6,9 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
 }
 require_once __DIR__ . '/../../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
 
+require_once __DIR__ . '/../../Admin/Access.php';
+if (!achbotAdminRequestAllowed(is_string($data??null)?$data:null,is_string($text??null)?$text:null,(string)($userInfo['step']??''))) {achbotAdminDeny();return;}
+
 
 require_once __DIR__ . '/../PaymentLifecycle.php';
 
@@ -340,7 +343,7 @@ if (preg_match('/wait(?:RenewCart|RenewGift|RenewUsdt)Receipt(.*)/', $userInfo['
     exit;
 }
 
-if(preg_match('/approveRenewAcc(.*)/',$data,$match) && ($from_id == $admin || $userInfo['isAdmin'] == true)){ 
+if(preg_match('/approveRenewAcc(.*)/',$data,$match) && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'operations')){
     $connection->begin_transaction();
     $localCommitted=false;
     try {

@@ -7,6 +7,7 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
 require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
 
 
+require_once __DIR__.'/../Admin/Access.php';
 require_once __DIR__.'/../Panel/ProviderRuntime.php';
 require_once __DIR__.'/../Purchase/OrderWrites.php';
 
@@ -1030,8 +1031,9 @@ function achbotAutoBankFinishEdit(mysqli $db, array $pay,
  * The local pays row lock serializes competing administrators; the wallet and
  * approved state commit together. Existing signed administrator debt is kept.
  */
-function achbotApproveManualWalletTopup(mysqli $connection, string $hashId, int $adminId): ?array {
+function achbotApproveManualWalletTopup(mysqli $connection, string $hashId, int $adminId, ?int $primary=null): ?array {
     if ($adminId <= 0 || !preg_match('/^[A-Za-z0-9_-]{1,50}$/D', $hashId)) return null;
+    if (!achbotAdminCanFor($connection,$adminId,$primary??(int)($GLOBALS['admin']??0),'operations')) return null;
     try {
         $connection->begin_transaction();
         $stmt = $connection->prepare('SELECT id,user_id,type,price,state FROM pays

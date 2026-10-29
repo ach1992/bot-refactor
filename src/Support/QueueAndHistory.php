@@ -11,8 +11,11 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
 }
 require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
 
+require_once __DIR__ . '/../Admin/Access.php';
+if (!achbotAdminRequestAllowed(is_string($data??null)?$data:null,is_string($text??null)?$text:null,(string)($userInfo['step']??''))) {achbotAdminDeny();return;}
 
-if(($data=="openTickets" || $data=="newTickets" || $data == "allTickets") && ($from_id == $admin || $userInfo['isAdmin'] == true)){
+
+if(($data=="openTickets" || $data=="newTickets" || $data == "allTickets") && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'operations')){
     if($data=="openTickets"){
         $stmt = $connection->prepare("SELECT * FROM `chats` WHERE `state` != 2 ORDER BY `state` ASC, `create_date` DESC");
         $type = 2;
@@ -78,7 +81,7 @@ if(($data=="openTickets" || $data=="newTickets" || $data == "allTickets") && ($f
         alert(\achbotMessage('support.queue_and_history.all_tickets.alert.5974314756'));
 	}
 }
-if(preg_match('/^moreTicket_(.+)_(.+)/',$data, $match) and  ($from_id == $admin || $userInfo['isAdmin'] == true)){
+if(preg_match('/^moreTicket_(.+)_(.+)/',$data, $match) and  achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'operations')){
     editText($message_id,$mainValues['please_wait_message']);
     $type = $match[1];
     $offset = $match[2];
@@ -147,7 +150,7 @@ if(preg_match('/^moreTicket_(.+)_(.+)/',$data, $match) and  ($from_id == $admin 
         alert(\achbotMessage('support.queue_and_history.all_tickets.alert.5974314756'));
 	}
 }
-if(preg_match('/^closeTicket_(\d+)/',$data,$match) and  ($from_id == $admin || $userInfo['isAdmin'] == true)){
+if(preg_match('/^closeTicket_(\d+)/',$data,$match) and  achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'operations')){
     $chatRowId = $match[1];
     $stmt = $connection->prepare("SELECT * FROM `chats` WHERE `id` = ?");
     $stmt->bind_param("i", $chatRowId);

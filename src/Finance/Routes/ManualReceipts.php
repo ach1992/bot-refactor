@@ -511,7 +511,7 @@ if ($isInbox ||
     return;
 }
 
-if (preg_match('/^approvePayment(.*)/', $data, $match) && ($from_id == $admin || $userInfo['isAdmin'] == true)) {
+if (preg_match('/^approvePayment(.*)/', $data, $match) && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'operations')) {
     $hash_id = $match[1];
     // Keep the existing receipt display identifiers for post-commit updates.
     $stmt = $connection->prepare('SELECT * FROM pays WHERE hash_id=? LIMIT 1');
@@ -523,7 +523,7 @@ if (preg_match('/^approvePayment(.*)/', $data, $match) && ($from_id == $admin ||
         alert(\achbotMessage('manual_payment.manual_receipts.alert.9e5ae0bfa1'));
         return;
     }
-    $approved = achbotApproveManualWalletTopup($connection, $hash_id, (int)$from_id);
+    $approved = achbotApproveManualWalletTopup($connection, $hash_id, (int)$from_id, (int)$admin);
     if ($approved === null) {
         alert(\achbotMessage('manual_payment.manual_receipts.alert.2d252fd96f'));
         return;
@@ -589,7 +589,7 @@ if (preg_match('/^noop_(.+)$/', $data, $m)) {
 	exit;
 }
 
-if (preg_match('/^declineAction_(.+)$/', $data, $match) && ($from_id == $admin || !empty($userInfo['isAdmin']))) {
+if (preg_match('/^declineAction_(.+)$/', $data, $match) && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'operations')) {
     $hash_id = $match[1];
 
     // بررسی وجود و وضعیت پرداخت
@@ -615,7 +615,7 @@ if (preg_match('/^declineAction_(.+)$/', $data, $match) && ($from_id == $admin |
 
 if (preg_match('/^declineActionReason_(.+)_(\d+)$/', $userInfo['step'], $match) &&
     $text != $buttonValues['cancel'] &&
-    ($from_id == $admin || !empty($userInfo['isAdmin']))) {
+    achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'operations')) {
     setUser();
     $hash_id = $match[1];
     $message_id = $match[2];

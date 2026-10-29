@@ -15,11 +15,11 @@ require_once __DIR__.'/../Admin/Access.php';
 if (!achbotAdminRequestAllowed(is_string($data??null)?$data:null,is_string($text??null)?$text:null,(string)($userInfo['step']??''))) {achbotAdminDeny();return;}
 
 
-if(preg_match("/^reply_(.*)/",$data,$match) and  ($from_id == $admin || $userInfo['isAdmin'] == true)){
+if(preg_match("/^reply_(.*)/",$data,$match) and  achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'operations')){
     setUser("answer_" . $match[1]);
     sendMessage(\achbotMessage('support.admin_reply.message.8da2c2756b'),$cancelKey);
 }
-if(preg_match('/^answer_(.*)/', $userInfo['step'], $match) && ($from_id == $admin || $userInfo['isAdmin'] == true) && $text != $buttonValues['cancel']){
+if(preg_match('/^answer_(.*)/', $userInfo['step'], $match) && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'operations') && $text != $buttonValues['cancel']){
     $chatRowId = $match[1];
     $stmt = $connection->prepare("SELECT * FROM `chats` WHERE `id` = ?");
     $stmt->bind_param("i", $chatRowId);
