@@ -593,7 +593,7 @@ def main():
                 purchases.get("actor_owned_plan_draft_entry_verified") is True and
                 draft_amendments==[draft_proof] and
                 purchases.get("ui_projection_baseline")=="7faac9b067f8a171e5e26d6aea5aaf9f4088a3e7" and
-                purchases.get("verified_literal_style_pairs")==581 and
+                purchases.get("verified_literal_style_pairs")==582 and
                 purchases.get("authorized_ui_field_differences")==3 and
                 purchases.get("ui_projection_negative_controls")==17 and
                 len(purchases.get("rejected_projection_mutations",[]))==17 and
