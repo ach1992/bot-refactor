@@ -131,6 +131,134 @@ foreach ([
 }
 same(present('retired', $native, $on)['reason'], 'unsupported_provider', 'unsupported_provider_boundary');
 
+// Context selectors are independent only in native mode, for both providers.
+$contextChecksStart = $checks;
+$deliverySelectors = [['name'=>'Fourth'], ['protocol'=>'TROJAN']];
+$viewSelectors = [['name'=>'Third'], ['protocol'=>'VLESS']];
+$contextNative = ['links'=>[
+    ['uri'=>$one, 'name'=>'Fast', 'tags'=>['west']],
+    ['uri'=>$two, 'name'=>'Backup', 'tags'=>['east']],
+    ['uri'=>$three, 'name'=>'Third', 'tags'=>['west']],
+    ['uri'=>$four, 'name'=>'Fourth', 'tags'=>['east']],
+], 'subscription_url'=>$sub, 'backup_urls'=>['https://backup.invalid/native?id=a&b=c']];
+foreach (['pasarguard', 'marzban'] as $provider) {
+    $contextPolicy = ['selectors'=>[['name'=>'Backup']],
+        'delivery_selectors'=>$deliverySelectors, 'view_selectors'=>$viewSelectors,
+        'qr'=>'first_config'];
+    $nativeBefore = serialize($contextNative);
+    $policyBefore = serialize($contextPolicy);
+    $d = present($provider, $contextNative, $on, ['policy'=>$contextPolicy], 'delivery');
+    $v = present($provider, $contextNative, $on, ['policy'=>$contextPolicy], 'view');
+    same($d['links'], [$four,$two], $provider.'_disjoint_delivery_selection_order');
+    same($v['links'], [$three,$one], $provider.'_disjoint_view_selection_order');
+    same([$d['qr_config_links'],$d['qr_link']], [[$four,$two],$four],
+        $provider.'_delivery_qr_follows_delivery_first');
+    same([$v['qr_config_links'],$v['qr_link']], [[$three,$one],$three],
+        $provider.'_order_qr_follows_view_first');
+    same($d['qr_config_names'], [$two=>'Backup',$four=>'Fourth'], $provider.'_delivery_native_names');
+    same($v['qr_config_names'], [$one=>'Fast',$three=>'Third'], $provider.'_view_native_names');
+    same([$d['subscription_url'],$d['subscription_html'],$d['backup_html']],
+        [$v['subscription_url'],$v['subscription_html'],$v['backup_html']],
+        $provider.'_context_changes_only_configs');
+    same(serialize($contextNative), $nativeBefore, $provider.'_native_metadata_uri_bytes_not_mutated');
+    same(serialize($contextPolicy), $policyBefore, $provider.'_policy_not_mutated_or_migrated');
+    same(present($provider,$contextNative,$on,['policy'=>$contextPolicy]), $v,
+        $provider.'_default_context_is_order_view');
+
+    $overlap = ['delivery_selectors'=>[['name'=>'Backup'],['protocol'=>'vless'],['name'=>'Fast']],
+        'view_selectors'=>[['name'=>'Fast'],['protocol'=>'trojan']], 'qr'=>'first_config'];
+    same(present($provider,$contextNative,$on,['policy'=>$overlap],'delivery')['links'],
+        [$two,$one],$provider.'_overlap_dedup_keeps_selector_order');
+    same(present($provider,$contextNative,$on,['policy'=>$overlap],'view')['links'],
+        [$one,$two],$provider.'_other_context_order_independent');
+
+    // Missing context inherits shared selectors, and without shared selects all.
+    foreach (['delivery'=>'view_selectors','view'=>'delivery_selectors'] as $context=>$otherKey) {
+        $fallback = ['selectors'=>[['name'=>'Backup']],$otherKey=>[], 'qr'=>'first_config'];
+        $shared = ['selectors'=>[['name'=>'Backup']], 'qr'=>'first_config'];
+        same(present($provider,$contextNative,$on,['policy'=>$fallback],$context),
+            present($provider,$contextNative,$on,['policy'=>$shared],$context),
+            $provider.'_'.$context.'_missing_key_exact_shared_output');
+        same(present($provider,$contextNative,$on,['policy'=>[$otherKey=>[]]],$context),
+            present($provider,$contextNative,$on,[],$context),
+            $provider.'_'.$context.'_missing_key_exact_default_output');
+        $key = $context.'_selectors';
+        $none = present($provider,$contextNative,$on,['policy'=>[
+            'selectors'=>[['name'=>'Backup']],$key=>[],'qr'=>'first_config']],$context);
+        same([$none['links'],$none['qr_config_links'],$none['qr_link'],$none['selection_missing']],
+            [[],[],'',false],$provider.'_'.$context.'_explicit_none_never_inherits');
+        same(present($provider,$contextNative,$on,['policy'=>[$key=>[]]],$context)['qr_link'],
+            $sub,$provider.'_'.$context.'_empty_configs_preserves_auto_subscription_qr');
+        $missing = present($provider,['links'=>[$one]],$on,['policy'=>[
+            'selectors'=>[['name'=>'Fast']],$key=>[['name'=>'Missing']]]],$context);
+        check($missing['selection_missing'] && $missing['links']===[]
+            && $missing['qr_config_links']===[] && $missing['qr_link']===''
+            && $missing['notice_html']!=='', $provider.'_'.$context.'_unmatched_fails_closed');
+        $taggedSelection = present($provider,$contextNative,$on,['policy'=>[
+            $key=>[['tag'=>'west','protocol'=>'ss'],['name'=>'Backup','tag'=>'east']]]],$context);
+        same($taggedSelection['links'],[$three,$two],$provider.'_'.$context.'_same_tag_and_field_matching');
+
+        // Normalized explicit ALL leaves the opposite inherited list unchanged.
+        $normalized = [$otherKey=>[['name'=>'Backup']]];
+        same(present($provider,$contextNative,$on,['policy'=>$normalized],$context)['links'],
+            $all,$provider.'_'.$context.'_normalized_all_selects_every_native_config');
+        $otherContext = $context==='delivery' ? 'view' : 'delivery';
+        same(present($provider,$contextNative,$on,['policy'=>$normalized],$otherContext)['links'],
+            [$two],$provider.'_'.$context.'_normalized_all_preserves_other_selection');
+
+        // Limits stay on all original records and complete selected native URIs.
+        $countLimited = present($provider,$contextNative,$on,['policy'=>[
+            $key=>[['name'=>'Fast']],'hide_if_more_than'=>3]],$context);
+        same([$countLimited['links'],$countLimited['qr_config_links']], [[],[]],
+            $provider.'_'.$context.'_hide_count_uses_all_native_records');
+        $max = present($provider,$contextNative,$on,['policy'=>[
+            $key=>[['name'=>'Backup'],['name'=>'Fast']],'max_links'=>1,'qr'=>'first_config']],$context);
+        check($max['links']===[$two] && $max['qr_config_links']===[$two]
+            && $max['qr_link']===$two && $max['limited'], $provider.'_'.$context.'_limit_after_selection');
+        $zero = present($provider,$contextNative,$on,['policy'=>[$key=>$deliverySelectors,'max_links'=>0]],$context);
+        same([$zero['links'],$zero['qr_config_links']], [[],[]],$provider.'_'.$context.'_zero_limit');
+        $hidden = present($provider,$contextNative,$on,['policy'=>[
+            $key=>$deliverySelectors,'show_configs'=>false,'qr'=>'first_config']],$context);
+        same([$hidden['links'],$hidden['qr_config_links'],$hidden['qr_link']], [[],[],''],
+            $provider.'_'.$context.'_common_visibility_retained');
+        $manyNative = ['links'=>array_map(static fn($i)=>'vless://native.invalid/'.$i,range(1,20))];
+        $manyResult = present($provider,$manyNative,$on,['policy'=>[$key=>[['protocol'=>'vless']]]],$context);
+        check($manyResult['limited'] && count($manyResult['links'])===10
+            && $manyResult['qr_config_links']===$manyResult['links'],$provider.'_'.$context.'_hard_count_bound');
+        $longUri = 'vless://native.invalid/'.str_repeat('x',2048-strlen('vless://native.invalid/'));
+        $budget = present($provider,['links'=>[$longUri,$one],'subscription_url'=>$sub.'&padding=1'],$on,
+            ['policy'=>[$key=>[['protocol'=>'vless']]]],$context);
+        check($budget['limited'] && strlen($budget['config_html'].$budget['subscription_html'])<=2200
+            && $budget['links']===[$longUri] && $budget['qr_config_links']===[$longUri],
+            $provider.'_'.$context.'_whole_uri_budget_preserved');
+        same(present($provider,['links'=>['vless://native.invalid/'.str_repeat('x',2050),$one]],$on,
+            ['policy'=>[$key=>[['protocol'=>'vless']]]],$context)['links'],[$one],
+            $provider.'_'.$context.'_raw_uri_limit_not_bypassed');
+    }
+
+    // Invalid even in the unused context: never fall through to shared/all.
+    foreach (['delivery_selectors','view_selectors'] as $key) {
+        foreach ([null,false,'all',[1=>['name'=>'Fast']],[[]],[['index'=>'1']],
+            [['name'=>'']],[['name'=>[]]],[['protocol'=>1]]] as $badSelectors) {
+            foreach (['delivery','view'] as $context) {
+                $bad = present($provider,$contextNative,$on,['policy'=>[
+                    'selectors'=>[['name'=>'Fast']],$key=>$badSelectors]],$context);
+                check($bad['reason']==='invalid_policy' && $bad['links']===[]
+                    && $bad['qr_config_links']===[] && $bad['qr_link']===''
+                    && $bad['config_html']==='' && $bad['subscription_html']==='',
+                    $provider.'_'.$key.'_'.$context.'_invalid_context_list_fails_closed');
+            }
+        }
+    }
+}
+foreach (['delivery','view'] as $context) {
+    $legacyContexts = $legacy;
+    $legacyContexts['policy']=['delivery_selectors'=>[], 'view_selectors'=>[['name'=>'Missing']]];
+    same(present('marzban',$native,$on,$legacyContexts,$context),
+        present('marzban',$native,$on,$legacy,$context), 'legacy_context_lists_do_not_change_positions_or_qr');
+}
+$contextChecks = $checks - $contextChecksStart;
+
 // Alternate origins retain all opaque native URL bytes and are display-only.
 $opaqueSub='https://native.invalid/deployment/sub/token%2D%3D?client=x%2By&flag=1#format';
 $opaqueSuffix='/deployment/sub/token%2D%3D?client=x%2By&flag=1#format';
@@ -245,4 +373,4 @@ try {
     foreach (glob($temp . '/*') as $file) unlink($file);
     rmdir($temp);
 }
-echo "PASS subscription presentation: $checks checks; real renderer/transport; no DB/network\n";
+echo "PASS subscription presentation: $checks checks ($contextChecks context checks); real renderer/transport; no DB/network\n";
