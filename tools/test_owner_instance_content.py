@@ -181,7 +181,24 @@ def main():
         destination_callbacks=['ic|e|'+field for field in ['cooperationUrl','helpChannel','lockChannelJoinUrl']]
         old_destinations=['editSupportID','editRewardChannel','editLockChannel']
         gateway_callbacks=callback_list(menus['gateways'])
-        check(all(gateway_callbacks.count(cb)==1 for cb in destination_callbacks+old_destinations),'one_destination_entry_each_in_existing_gateway_menu')
+        expected_destination_rows=[
+            ('cooperationUrl','نشانی دریافت پنل همکاری','✅ تنظیم‌شده'),
+            ('helpChannel','نشانی کانال آموزش','✅ تنظیم‌شده'),
+            ('lockChannelJoinUrl','پیوند عضویت کانال اجباری','⚠️ تنظیم‌نشده')
+        ]
+        gateway_rows=menus['gateways']['inline_keyboard']
+        matched_destination_rows=[
+            row for row in gateway_rows if row and row[0].get('callback_data') in destination_callbacks
+        ]
+        check(
+            all(gateway_callbacks.count(cb)==1 for cb in destination_callbacks+old_destinations)
+            and len(matched_destination_rows)==3
+            and all(len(row)==2 and row[0]['callback_data']=='ic|e|'+field
+                    and row[0]['text']==status and row[1]['text']==label
+                    and row[1]['callback_data']=='wizwizch'
+                    for row,(field,label,status) in zip(matched_destination_rows,expected_destination_rows)),
+            'one_existing_gateway_destination_entry_each_with_paired_status_and_label'
+        )
         check(not any(cb in gateway_callbacks for cb in text_callbacks),'gateway_menu_excludes_message_bodies')
         r=call(kind='callback',data='ic|m');check(any(x[0]=='edit'for x in r['events']),'manager_settings_menu')
         text_menu=json.loads(next(event[2] for event in r['events'] if event[0]=='edit'))
