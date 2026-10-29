@@ -1,8 +1,9 @@
 <?php
-/** AChBot V6: exact V5 internal src/Subscription/AccountDetails.php bodies; keep legacy effects. */
+/** Shared native order details and guarded customer/administrator actions. */
 namespace AchBot\Subscription\AccountDetails;
 require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
 require_once __DIR__.'/../Purchase/OrderWrites.php';
+require_once __DIR__.'/Presentation.php';
 
 
 if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {

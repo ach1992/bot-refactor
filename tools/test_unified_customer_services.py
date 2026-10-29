@@ -50,9 +50,11 @@ function achbotOrderPresentation(...$args){
  ++$GLOBALS['presentations'];
  if (($args[4]??null)!==($GLOBALS['last_packet']??null))throw new RuntimeException('presentation_must_reuse_current_render_packet');
  $hide=$GLOBALS['spec']['hidden_links']??false;
- return ['config_html'=>$hide?'':'vless://fixture-config','subscription_html'=>$hide?'':'https://sub.example.invalid/fixture',
+ $available=!($GLOBALS['spec']['native_links_missing']??false);
+ return ['config_html'=>$hide||!$available?'':'vless://fixture-config','subscription_html'=>$hide||!$available?'':'https://sub.example.invalid/fixture',
   'backup_html'=>'','notice_html'=>'','subscription_url'=>$hide?'':'https://sub.example.invalid/fixture',
-  'qr_config_links'=>$hide?[]:['vless://fixture-config']];
+  'qr_subscription_url'=>$available?'https://sub.example.invalid/fixture':'',
+  'qr_config_links'=>$available?['vless://fixture-config']:[]];
 }
 function buildConfigMessage($state,$remark,$links,$sub,$backup,$type){return $state."\n".$remark."\n".$links."\n".$sub;}
 require_once $root.'/settings/jdf.php';
@@ -293,7 +295,9 @@ echo json_encode($out,JSON_THROW_ON_ERROR);
     r=call('view',remote=malformed);shown=r['out']['msg']+r['out']['keyboard']
     yes('قابل تأیید نیست' in shown and 'در حال بررسی' in shown and 'renewAccountAsk91' not in shown and 'deleteMyConfig91' not in shown and 'vless://' not in shown and r['presentations']==0,provider+'_invalid_observation_'+str(len(checks)))
    hidden=call('view',remote=finite,hidden_links=True)['out']['keyboard']
-   yes('showQrConfig91' not in hidden and 'showQrSub91' not in hidden,provider+'_hidden_data_no_dead_QR')
+   yes('showQrConfig91' in hidden and 'showQrSub91' in hidden,provider+'_hidden_inline_text_keeps_independent_QR')
+   absent=call('view',remote=finite,native_links_missing=True)['out']['keyboard']
+   yes('showQrConfig91' not in absent and 'showQrSub91' not in absent,provider+'_absent_native_data_no_dead_QR')
    no_targets=call('view',remote=finite)['out']['keyboard'];yes('switchLocation91' not in no_targets,provider+'_no_relocation_no_dead_button')
    targets=call('view',remote=finite,relocations=[{'id':3}])['out']['keyboard'];yes('switchLocation91' not in targets,provider+'_ordinary_customer_never_sees_relocation_button')
    sql("UPDATE users SET is_agent=1 WHERE userid=1001;UPDATE orders_list SET agent_bought=0 WHERE id=91")

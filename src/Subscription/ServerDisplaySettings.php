@@ -5,6 +5,7 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) { http_response_co
 require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
 
 require_once __DIR__.'/Presentation.php';
+require_once __DIR__.'/../Panel/ProviderRuntime.php';
 
 function achbotServerDisplayDefault(): array {
     return ['mode'=>'native','policy'=>[]];

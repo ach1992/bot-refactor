@@ -2,7 +2,7 @@
 /** AChBot pure subscription presentation; no bootstrap, database or network. */
 namespace AchBot\Subscription\Presentation;
 require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
-require_once __DIR__.'/../Panel/ProviderRuntime.php';
+
 
 
 function escape($value): string {
@@ -213,6 +213,7 @@ function contextPolicy(array $policy, string $context): array {
  * These are display choices only. Panel Groups remain the access authority.
  */
 function present(string $provider, array $native, array $botState, array $options = [], string $context = 'view'): array {
+    require_once __DIR__.'/../Panel/ProviderRuntime.php';
     $result = [
         'links' => [], 'config_html' => '', 'subscription_url' => '',
         'subscription_html' => '', 'backup_html' => '', 'qr_link' => '',

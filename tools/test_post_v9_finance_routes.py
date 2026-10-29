@@ -568,6 +568,7 @@ try {
     if (($spec['mysqli_report_off']??false)===true)
         mysqli_report(MYSQLI_REPORT_OFF);
     require_once $root . '/src/Purchase/Core.php';
+    require_once $root . '/src/Finance/PaymentKeyAdmin.php';
     // Use the ACTUAL current wallet-credit helper; only outbound Telegram is
     // captured by the transport spy. No fake settlement implementation.
     require_once $root . '/src/Finance/ReceiptHelpers.php';
