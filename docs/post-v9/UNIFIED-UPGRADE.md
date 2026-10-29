@@ -1,5 +1,7 @@
 # Unified management upgrade from RC13
 
+**Historical upgrade boundary:** The 112-file, 011-only/no-new-SQL and RC13 rollback descriptions below belong to the earlier unified-management transition, before migrations012/013. For the current published 115-member RC16 source, use [RC15 → RC16](RC15-TO-RC16.md), the [shared-storage migration/recovery contract](SHARED-PROVIDER-STORAGE.md) and the [README](../../README.md). Their paired source/schema recovery rules supersede the older rollback guidance below.
+
 This is source-candidate guidance, not evidence of a production rollout. Use the exact reviewed commit, runtime ZIP and its trusted all-file manifest. No new SQL migration is required for a correctly migrated RC13 installation; migration 011 and existing payment/effect/identity records stay intact.
 
 ## Runtime changes

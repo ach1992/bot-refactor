@@ -1,5 +1,7 @@
 # Direct administrator gift — source safety and recovery (Issue #78)
 
+**Published source status (2026-10-29):** This direct-gift source is already included in the published runtime; current [RC16](RC15-TO-RC16.md) is integrated through PR #93 following completed source acceptance and publication. The pending source-review/merge language below records an earlier development stage. Installed/operator acceptance and activation remain separate; publication supplies no new live financial or provider acceptance. See the [README](../../README.md) for current scope.
+
 **Scope:** new post-V9 single-account administrator gift. Source-only, pending
 fresh independent high-assurance review, separate Owner merge authorization,
 operator installation acceptance, and separate activation authorization. This
