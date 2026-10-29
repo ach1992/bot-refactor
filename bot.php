@@ -288,6 +288,9 @@ if (preg_match('/^\/([Ss]tart)/', $text) || $text == $buttonValues['back_to_main
         str_starts_with((string)$menuRows[0]['step'],'achbotDirectGift') ||
         str_starts_with((string)$menuRows[0]['step'],'achbotExempt:')) return;
 
+    require_once __DIR__.'/src/Telegram/UserProfile.php';
+    achbotRefreshUserProfile($connection, $update ?? null, (int)$from_id);
+
     setUser();
     setUser("", "temp");
 

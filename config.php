@@ -2323,7 +2323,9 @@ function getAdminsKeys(){
 // BEGIN By ACh
 
 function getUserInfoKeys($userId) { 
-    global $connection, $mainValues, $buttonValues;
+    global $connection, $mainValues, $buttonValues, $from_id, $admin;
+    if (function_exists('achbotAdminCan') &&
+        !achbotAdminCan('customers', (int)$from_id)) return null;
     require_once __DIR__.'/src/Presentation/Text.php';
  
     // گرفتن اطلاعات کاربر از جدول users 
@@ -2341,10 +2343,21 @@ function getUserInfoKeys($userId) {
         $isAgent = $userInfos['is_agent'] ?? 0;
         $step = $userInfos['step'] ?? 'none';
         $agentStatus = ($isAgent == 1) ? \achbotMessage('admin_settings.config.get_user_info_keys.text.e0b20b49a2') : \achbotMessage('admin_settings.config.get_user_info_keys.text.3a66d0d476');
+        $canManageAgents = function_exists('achbotAdminCan')
+            ? achbotAdminCan('agents', (int)$from_id)
+            : ((int)$from_id === (int)$admin || !empty($GLOBALS['userInfo']['isAdmin']));
+        $rawDiscounts = trim((string)($userInfos['discount_percent'] ?? ''));
+        $discounts = $rawDiscounts === '' ? [] : json_decode($rawDiscounts, true);
+        $normal = is_array($discounts) ? ($discounts['normal'] ?? 0) : null;
+        $normalValid = (is_int($normal) || is_string($normal)) &&
+            preg_match('/\A(?:0|[1-9][0-9]?|100)\z/D', (string)$normal) === 1;
+        $agentPercent = $normalValid
+            ? \achbotMessage('admin_settings.user_info.agent_percent_value', ['percent'=>(string)$normal])
+            : \achbotMessage('admin_settings.user_info.agent_percent_unset');
         $banStatus = ($step == 'banned') ? \achbotMessage('admin_settings.config.get_user_info_keys.text.160244c35f') : \achbotMessage('admin_settings.config.get_user_info_keys.text.0173cd6574');
  
         // گرفتن تعداد و مجموع خرید از جدول orders_list 
-        $stmt = $connection->prepare("SELECT COUNT(amount) as count, SUM(amount) as total FROM orders_list WHERE userid = ?"); 
+        $stmt = $connection->prepare("SELECT COUNT(*) as count, SUM(amount) as total FROM orders_list WHERE userid = ?");
         $stmt->bind_param("i", $userId); 
         $stmt->execute(); 
         $info = $stmt->get_result()->fetch_assoc(); 
@@ -2354,13 +2367,20 @@ function getUserInfoKeys($userId) {
         $totalBoughtPrice = $info['total'] ?? 0; 
  
         // گرفتن اطلاعات کاربر از تلگرام 
-        $userDetail = bot('getChat', ['chat_id' => $userId])->result; 
-        $userUserName = $userDetail->username ?? ''; 
-        $first = $userDetail->first_name ?? ''; 
-        $last = $userDetail->last_name ?? ''; 
-        $fullName = trim($first . ' ' . $last); 
+        $chatResponse = bot('getChat', ['chat_id' => $userId]);
+        $userDetail = is_object($chatResponse) && is_object($chatResponse->result ?? null)
+            ? $chatResponse->result : null;
+        $userUserName = $userDetail->username ?? ($userInfos['username'] ?? '');
+        $userUserName = preg_match('/\A[A-Za-z0-9_]{1,100}\z/D', (string)$userUserName)
+            ? (string)$userUserName : '';
+        $fullName = $userDetail !== null
+            ? trim(($userDetail->first_name ?? '') . ' ' . ($userDetail->last_name ?? ''))
+            : html_entity_decode((string)($userInfos['name'] ?? ''), ENT_QUOTES | ENT_HTML5, 'UTF-8');
  
-        // تعداد پرداخت تأیید شده 
+        // Incoming paid funds only: wallet spending was already funded by a
+        // top-up and must not be counted again as another customer payment.
+        // The three external-success states remain current; pending/review,
+        // failed/expired and paid_with_wallet are deliberately excluded.
         $stmt = $connection->prepare("SELECT COUNT(*) as approvedPayments FROM pays WHERE user_id = ? AND state IN ('approved', 'paid', 'auto_cart_approved')"); 
         $stmt->bind_param("i", $userId); 
         $stmt->execute(); 
@@ -2444,7 +2464,9 @@ function getUserInfoKeys($userId) {
         return [ 
             'inline_keyboard' => [ 
                 [ 
-                    ['text' => $userUserName ?: " ", 'url' => "t.me/$userUserName"], 
+                    $userUserName !== ''
+                        ? ['text' => $userUserName, 'url' => "https://t.me/$userUserName"]
+                        : ['text' => "—", 'callback_data' => "wizwizch"],
                     ['text' => \achbotMessage('admin_settings.config.get_user_info_keys.button.173fec6019'), 'callback_data' => "wizwizch"]
                 ], 
                 [ 
@@ -2504,9 +2526,13 @@ function getUserInfoKeys($userId) {
                     ['text' => \achbotMessage('admin_settings.config.get_user_info_keys.button.88bf6cf5c6'), 'callback_data' => "wizwizch"]
                 ],
                 [
-                    ['text' => $agentStatus, 'callback_data' => "toggleAgent_{$userId}"],
+                    ['text' => $agentStatus, 'callback_data' => $canManageAgents ? "toggleAgent_{$userId}" : "wizwizch"],
                     ['text' => \achbotMessage('admin_settings.config.get_bot_setting_keys.text.62c92fb90c'), 'callback_data' => "wizwizch"]
                 ],
+                ...($canManageAgents ? [[
+                    ['text' => $agentPercent, 'callback_data' => "editAgentDiscountNormal{$userId}_userinfo"],
+                    ['text' => \achbotMessage('admin_settings.user_info.agent_percent'), 'callback_data' => "wizwizch"]
+                ]] : []),
                 [
                     ['text' => $banStatus, 'callback_data' => "toggleBan_{$userId}"],
                     ['text' => \achbotMessage('admin_settings.config.get_user_info_keys.button.05b7dda9cc'), 'callback_data' => "wizwizch"]
