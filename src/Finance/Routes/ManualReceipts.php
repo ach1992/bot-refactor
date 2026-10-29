@@ -560,7 +560,7 @@ if (preg_match('/^approvePayment(.*)/', $data, $match) && achbotAdminCanFor($con
             if (
                 isset($msgInfo['chat_id'], $msgInfo['message_id']) &&
                 $msgInfo['chat_id'] != $payInfo['chat_id'] &&
-                achbotAdminRecipientAllowed($connection,$msgInfo['chat_id'],(int)$admin)
+                achbotAdminStoredRecipientAllowed($connection,$msgInfo['chat_id'],(int)$admin)
             ) {
                 try {
                     editKeys($keys, $msgInfo['message_id'], $msgInfo['chat_id']);
@@ -684,7 +684,7 @@ if (preg_match('/^declineActionReason_(.+)_(\d+)$/', $userInfo['step'], $match) 
             if (
                 isset($msgInfo['chat_id'], $msgInfo['message_id']) &&
                 $msgInfo['chat_id'] != $payInfo['chat_id'] &&
-                achbotAdminRecipientAllowed($connection,$msgInfo['chat_id'],(int)$admin)
+                achbotAdminStoredRecipientAllowed($connection,$msgInfo['chat_id'],(int)$admin)
             ) {
                 editKeys($keys, $msgInfo['message_id'], $msgInfo['chat_id']);
             }

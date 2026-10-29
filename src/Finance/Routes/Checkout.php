@@ -673,7 +673,7 @@ if (preg_match('/^accCustom(.+)$/D', $data, $match) && $text != $buttonValues['c
             if (
                 isset($msgInfo['chat_id'], $msgInfo['message_id']) &&
                 $msgInfo['chat_id'] != $payInfo['chat_id'] &&
-                achbotAdminRecipientAllowed($connection,$msgInfo['chat_id'],(int)$admin)
+                achbotAdminStoredRecipientAllowed($connection,$msgInfo['chat_id'],(int)$admin)
             ) {
                 editKeys($keys, $msgInfo['message_id'], $msgInfo['chat_id']);
             }

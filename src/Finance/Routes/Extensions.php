@@ -461,7 +461,7 @@ if (preg_match('/^approveIncreaseDay(.*)/', $data, $match) && achbotAdminCanFor(
         if (is_array($adminMessages)) {
             foreach ($adminMessages as $msgInfo) {
                 if (isset($msgInfo['chat_id'], $msgInfo['message_id']) && $msgInfo['chat_id'] != $payParam['chat_id'] &&
-                    achbotAdminRecipientAllowed($connection,$msgInfo['chat_id'],(int)$admin)) {
+                    achbotAdminStoredRecipientAllowed($connection,$msgInfo['chat_id'],(int)$admin)) {
                     editKeys($keys, $msgInfo['message_id'], $msgInfo['chat_id']);
                 }
             }
@@ -1284,7 +1284,7 @@ if (preg_match('/^approveIncreaseVolume(.*)/', $data, $match) && achbotAdminCanF
         if (is_array($adminMessages)) {
             foreach ($adminMessages as $msgInfo) {
                 if (isset($msgInfo['chat_id'], $msgInfo['message_id']) && $msgInfo['chat_id'] != $payParam['chat_id'] &&
-                    achbotAdminRecipientAllowed($connection,$msgInfo['chat_id'],(int)$admin)) {
+                    achbotAdminStoredRecipientAllowed($connection,$msgInfo['chat_id'],(int)$admin)) {
                     editKeys($keys, $msgInfo['message_id'], $msgInfo['chat_id']);
                 }
             }
