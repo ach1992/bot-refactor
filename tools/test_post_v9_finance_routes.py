@@ -4422,7 +4422,7 @@ def main():
         # AutomaticReceipts modules are loaded, the latter instrumented
         # after execution to prove unrelated Cron work was reached.
         (stage/'config.php').write_text('<?php // owned test Cron bootstrap\n')
-        (stage/'src/Purchase/Core.php').write_text('<?php // no remote work needed\n')
+        # Keep canonical Core real: later HTTP cases reuse this same stage.
         (stage/'src/Backup/Database.php').write_text(
             "<?php namespace AchBot\\Backup\\Database; "
             "function schedule($conn,$channel,$callback,$root) { "
