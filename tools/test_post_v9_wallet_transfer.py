@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import subprocess
 import time
 from pathlib import Path
@@ -127,6 +128,14 @@ def assert_events(result, successful):
     if customer_success != successful:
         raise RuntimeError("Unexpected transfer success messages: " + repr(events)[:1400])
     return events
+
+
+def private_reference(messages):
+    references = [reference for message in messages for reference in re.findall(
+        r"شناسه پیگیری: <code>([0-9A-F]{12})</code>", str(message))]
+    if len(references) != 1:
+        raise RuntimeError("Private diagnostics lack one bounded tracking reference")
+    return references[0]
 
 
 def worker_cmd(root, work):
@@ -339,12 +348,15 @@ def main():
         customer_messages = [str(e["args"][0]) for e in events
                              if e["name"] == "sendMessage" and
                              (len(e["args"]) < 4 or e["args"][3] != 9001)]
-        if not private_reports or not any("SQLSTATE:" in str(x) and "Reference:" in str(x)
-                                           for x in private_reports):
+        reference = private_reference(private_reports)
+        if not any("وضعیت SQL: <code>22003</code>" in str(x)
+                   and "شناسه پیگیری: <code>" + reference + "</code>" in str(x)
+                   for x in private_reports):
             raise RuntimeError("Failure has no traceable private operator diagnostics")
-        if not any("کد پیگیری" in m for m in customer_messages):
-            raise RuntimeError("Customer did not receive generic tracking reference")
-        if any(any(leak in m for leak in ("SQLSTATE", "mysqli", "MariaDB", "Marzban",
+        if not any("کد پیگیری " + reference + " را به پشتیبانی بدهید." in m
+                   for m in customer_messages):
+            raise RuntimeError("Customer did not receive correlated safe tracking reference")
+        if any(any(leak in m for leak in ("SQLSTATE", "وضعیت SQL", "mysqli", "MariaDB", "Marzban",
                                          "مرزبان", "پنل", "database"))
                for m in customer_messages):
             raise RuntimeError("Internal diagnostics leaked in customer-facing error")
@@ -376,7 +388,7 @@ def main():
         notification_report = [str(event["args"][0]) for event in notice_run["events"]
                                if event["name"] == "sendMessage" and len(event["args"]) > 3
                                and event["args"][3] == 9001]
-        if not any("Transfer already committed:" in msg
+        if not any("انتقال قبلاً ثبت شده است: <code>yes</code>" in msg
                    and "recipient,sender_menu" in msg for msg in notification_report):
             raise RuntimeError("Lost Telegram notifications lack private recovery report")
         reports.append("transfer_postcommit_notification_failure_preserves_commit")
@@ -443,10 +455,15 @@ def main():
             users = [str(e["args"][0]) for e in events
                      if e["name"] == "sendMessage" and
                      (len(e["args"]) < 4 or e["args"][3] != 9001)]
-            if not any(identity in x and "Reference:" in x for x in private_messages):
+            reference = private_reference(private_messages)
+            if not any("علت: <code>" + identity + "</code>" in x
+                       and "وضعیت SQL: <code>n/a</code>" in x
+                       and "شناسه پیگیری: <code>" + reference + "</code>" in x
+                       for x in private_messages):
                 raise RuntimeError("Missing bounded private duplicate identity reason")
-            if not any("کد پیگیری" in x for x in users) or any(
-                    identity in x or "SQLSTATE" in x for x in users):
+            if not any("کد پیگیری " + reference + " را به پشتیبانی بدهید." in x
+                       for x in users) or any(
+                    identity in x or "SQLSTATE" in x or "وضعیت SQL" in x for x in users):
                 raise RuntimeError("Duplicate identity exposed to customer")
             reports_list = label + "_duplicate_userid_fails_closed"
             reports.append(reports_list)
@@ -553,9 +570,9 @@ def main():
         if balances(work, env) != [(1001, 49700, "none"), (9002, 50300, "none")]:
             raise RuntimeError("Ambiguous ack fixture did not really COMMIT the transfer")
         messages = [str(e["args"][0]) for e in events if e["name"] == "sendMessage"]
-        if not any("Transaction outcome: <code>unknown</code>" in m and
-                   "Rollback API: <code>returned_success</code>" in m and
-                   "Commit attempted: <code>yes</code>" in m for m in messages):
+        if not any("نتیجه تراکنش: <code>unknown</code>" in m and
+                   "نتیجه درخواست بازگردانی: <code>returned_success</code>" in m and
+                   "تلاش برای ثبت نهایی: <code>yes</code>" in m for m in messages):
             raise RuntimeError("Operator was not warned of ambiguous committed result")
         if any("provider_secret_ACK_LOST_123" in m for m in messages):
             raise RuntimeError("Raw commit exception leaked to Telegram")
@@ -574,7 +591,7 @@ def main():
         ambiguous_false = execute(work, env, false_stage, "300")
         events = assert_events(ambiguous_false, False)
         if balances(work, env) != before or not any(
-            "Transaction outcome: <code>unknown</code>" in str(e["args"][0])
+            "نتیجه تراکنش: <code>unknown</code>" in str(e["args"][0])
             for e in events if e["name"] == "sendMessage"
         ):
             raise RuntimeError("False COMMIT return was treated as confirmed failure")
@@ -592,7 +609,7 @@ def main():
         events = assert_events(begin_false, False)
         if balances(work, env) != before or not any(
             "transfer_begin_failed" in str(e["args"][0]) and
-            "Transaction outcome: <code>not_started</code>" in str(e["args"][0])
+            "نتیجه تراکنش: <code>not_started</code>" in str(e["args"][0])
             for e in events if e["name"] == "sendMessage"
         ):
             raise RuntimeError("Failed BEGIN incorrectly allowed a monetary effect")
@@ -617,8 +634,8 @@ def main():
             query(work, env, "DROP TRIGGER achbot_rollback_api_failure")
         events = assert_events(uncertain_rollback, False)
         if balances(work, env) != before or not any(
-            "Transaction outcome: <code>unknown</code>" in str(e["args"][0])
-            and "Rollback API: <code>returned_failure</code>" in str(e["args"][0])
+            "نتیجه تراکنش: <code>unknown</code>" in str(e["args"][0])
+            and "نتیجه درخواست بازگردانی: <code>returned_failure</code>" in str(e["args"][0])
             for e in events if e["name"] == "sendMessage"
         ):
             raise RuntimeError("False rollback API return was reported as proven rollback")
