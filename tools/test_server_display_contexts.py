@@ -103,14 +103,17 @@ def main():
             return json.loads(r.stdout)
         def financial():return sql('SELECT * FROM orders_list ORDER BY id;SELECT * FROM pays ORDER BY id;SELECT * FROM service_effects ORDER BY id;SELECT * FROM users ORDER BY id;SELECT * FROM server_info ORDER BY id;SELECT * FROM server_config ORDER BY id')
         def snapshot():return financial()+sql('SELECT * FROM setting ORDER BY id')
+        def display_type(sid):
+            # Compare the controlled ASCII key as bytes, independent of DB collation.
+            return "UNHEX('"+('ACHBOT_SERVER_DISPLAY_'+str(sid)).encode('ascii').hex()+"')"
         source=10
         def save(sid,document):
             nonlocal source
-            source+=10;before=financial();peers=sql("SELECT * FROM setting WHERE type<>"+storage.text('ACHBOT_SERVER_DISPLAY_'+str(sid))+' ORDER BY id')
+            source+=10;before=financial();peers=sql("SELECT * FROM setting WHERE BINARY type<>"+display_type(sid)+' ORDER BY id')
             out=call(op='save',sid=sid,document=document,source=source,actor=9001)
             yes(out['saved'],'actual_owner_document_save_'+str(source))
-            yes(before==financial() and peers==sql("SELECT * FROM setting WHERE type<>"+storage.text('ACHBOT_SERVER_DISPLAY_'+str(sid))+' ORDER BY id'),'single_server_write_no_peer_or_financial_change_'+str(source))
-            yes(sql("SELECT COUNT(*) FROM setting WHERE type="+storage.text('ACHBOT_SERVER_DISPLAY_'+str(sid)))=='1','single_existing_setting_row_'+str(source))
+            yes(before==financial() and peers==sql("SELECT * FROM setting WHERE BINARY type<>"+display_type(sid)+' ORDER BY id'),'single_server_write_no_peer_or_financial_change_'+str(source))
+            yes(sql("SELECT COUNT(*) FROM setting WHERE BINARY type="+display_type(sid))=='1','single_existing_setting_row_'+str(source))
             return source+1
         schema=sql('SHOW TABLES;SHOW CREATE TABLE setting')
         peer={'mode':'native','policy':{'selectors':[{'protocol':'vmess'}],'qr':'first_config'}}
@@ -144,9 +147,9 @@ def main():
                 draw(provider,order,links,links if di is None else [links[i] for i in di],links if vi is None else [links[i] for i in vi],label)
             # ALL must clear only this context's effective filter, preserving its peer.
             revision=save(sid,{'mode':'native','policy':{'selectors':[{'protocol':'vmess'}],'qr':'first_config'}})
-            source+=10;before=financial();peers=sql("SELECT * FROM setting WHERE type<>"+storage.text('ACHBOT_SERVER_DISPLAY_'+str(sid))+' ORDER BY id')
+            source+=10;before=financial();peers=sql("SELECT * FROM setting WHERE BINARY type<>"+display_type(sid)+' ORDER BY id')
             out=call(op='set',sid=sid,actor=9001,source=source,field='dselect',input='all',revision=revision)
-            yes(out['saved'] and before==financial() and peers==sql("SELECT * FROM setting WHERE type<>"+storage.text('ACHBOT_SERVER_DISPLAY_'+str(sid))+' ORDER BY id'),provider+'_actual_all_control_keeps_other_rows')
+            yes(out['saved'] and before==financial() and peers==sql("SELECT * FROM setting WHERE BINARY type<>"+display_type(sid)+' ORDER BY id'),provider+'_actual_all_control_keeps_other_rows')
             draw(provider,order,links,links,[links[1]],'all_preserves_inherited_view')
             before=snapshot();out=call(op='set',sid=sid,actor=9001,source=source+1,field='vselect',input='none',revision=revision)
             yes(not out['saved'] and snapshot()==before,provider+'_stale_revision_cannot_reselect_other_context')
