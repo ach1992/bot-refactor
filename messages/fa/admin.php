@@ -1229,10 +1229,14 @@ return [
         'roles.level.support' => ['text' => 'پشتیبان', 'parameters' => []],
         'roles.level.invalid' => ['text' => 'سطح نامشخص؛ انتخاب کنید', 'parameters' => []],
         'roles.owner_row' => ['text' => 'مالک ربات · شناسه عددی: {userId}', 'parameters' => ['userId']],
-        'roles.choose_level' => ['text' => 'سطح دسترسی مدیر با شناسه عددی <code>{userId}</code> را انتخاب کنید.' . "\n" . '' . "\n" . 'مدیر: همهٔ بخش‌ها به‌جز مدیریت ادمین‌ها' . "\n" . 'اپراتور: امور مشتریان و عملیات روزانه' . "\n" . 'پشتیبان: اطلاعات کاربر، مسدودسازی و ویرایش سفارش', 'parameters' => ['userId']],
+        'roles.choose_level' => ['text' => 'سطح دسترسی مدیر با شناسه عددی <code>{userId}</code> را انتخاب کنید.' . "\n" . '' . "\n" . 'مدیر: همهٔ بخش‌ها به‌جز مدیریت ادمین‌ها' . "\n" . 'اپراتور: امور مشتریان و عملیات روزانه' . "\n" . 'پشتیبان: اطلاعات کاربر، مسدودسازی، ویرایش سفارش و بررسی رسید پرداخت (تأیید یا رد)', 'parameters' => ['userId']],
         'roles.saved' => ['text' => 'سطح دسترسی ذخیره شد.', 'parameters' => []],
         'roles.target_prompt' => ['text' => 'شناسه عددی کاربری را بفرستید که قبلاً ربات را شروع کرده است. مالک از این بخش قابل تغییر نیست.', 'parameters' => []],
         'roles.assignment_failed' => ['text' => 'تغییر دسترسی انجام نشد. شناسه عددی را بررسی کنید و دوباره تلاش کنید.', 'parameters' => []],
+        'roles.notifications_on' => ['text' => 'اعلان‌ها: روشن 🔔', 'parameters' => []],
+        'roles.notifications_off' => ['text' => 'اعلان‌ها: خاموش 🔕', 'parameters' => []],
+        'roles.notifications_saved' => ['text' => 'تنظیم اعلان‌های ادمین ذخیره شد.', 'parameters' => []],
+        'roles.notifications_failed' => ['text' => 'تنظیم اعلان‌های ادمین ذخیره نشد. دوباره از فهرست ادمین‌ها تلاش کنید.', 'parameters' => []],
     ],
 
     // ── منوها و گزارش‌های مدیریت ──

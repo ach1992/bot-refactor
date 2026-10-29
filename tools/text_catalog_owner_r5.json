@@ -3002,7 +3002,7 @@
     "admin.roles.choose_level": {
       "audience": "admin",
       "entry": {
-        "text": "سطح دسترسی مدیر با شناسه عددی <code>{userId}</code> را انتخاب کنید.\n\nمدیر: همهٔ بخش‌ها به‌جز مدیریت ادمین‌ها\nاپراتور: امور مشتریان و عملیات روزانه\nپشتیبان: اطلاعات کاربر، مسدودسازی و ویرایش سفارش",
+        "text": "سطح دسترسی مدیر با شناسه عددی <code>{userId}</code> را انتخاب کنید.\n\nمدیر: همهٔ بخش‌ها به‌جز مدیریت ادمین‌ها\nاپراتور: امور مشتریان و عملیات روزانه\nپشتیبان: اطلاعات کاربر، مسدودسازی، ویرایش سفارش و بررسی رسید پرداخت (تأیید یا رد)",
         "parameters": [
           "userId"
         ]
@@ -3012,7 +3012,7 @@
         "src/Admin/Access.php",
         "config.php"
       ],
-      "reason": "Owner revision5 source-backed roles interface."
+      "reason": "Owner revision5 source-backed roles interface. Owner notification/receipt follow-up: Support also reviews human receipts and may approve or decline them; notification preference remains independent."
     },
     "admin.roles.saved": {
       "audience": "admin",
@@ -3300,6 +3300,50 @@
         "src/Admin/InstanceContent.php"
       ],
       "reason": "Owner revision5: independently configurable join/invite URL for mandatory-channel membership; numeric channel identity remains separate."
+    },
+    "admin.roles.notifications_on": {
+      "audience": "admin",
+      "entry": {
+        "text": "اعلان‌ها: روشن 🔔",
+        "parameters": []
+      },
+      "reason": "Owner revision5 notification follow-up: independent per-administrator notification preference in the existing Owner-managed staff UI; no management-level change.",
+      "source_paths": [
+        "config.php"
+      ]
+    },
+    "admin.roles.notifications_off": {
+      "audience": "admin",
+      "entry": {
+        "text": "اعلان‌ها: خاموش 🔕",
+        "parameters": []
+      },
+      "reason": "Owner revision5 notification follow-up: independent per-administrator notification preference in the existing Owner-managed staff UI; no management-level change.",
+      "source_paths": [
+        "config.php"
+      ]
+    },
+    "admin.roles.notifications_saved": {
+      "audience": "admin",
+      "entry": {
+        "text": "تنظیم اعلان‌های ادمین ذخیره شد.",
+        "parameters": []
+      },
+      "reason": "Owner revision5 notification follow-up: independent per-administrator notification preference in the existing Owner-managed staff UI; no management-level change.",
+      "source_paths": [
+        "src/Admin/Roles.php"
+      ]
+    },
+    "admin.roles.notifications_failed": {
+      "audience": "admin",
+      "entry": {
+        "text": "تنظیم اعلان‌های ادمین ذخیره نشد. دوباره از فهرست ادمین‌ها تلاش کنید.",
+        "parameters": []
+      },
+      "reason": "Owner revision5 notification follow-up: independent per-administrator notification preference in the existing Owner-managed staff UI; no management-level change.",
+      "source_paths": [
+        "src/Admin/Roles.php"
+      ]
     }
   }
 }
