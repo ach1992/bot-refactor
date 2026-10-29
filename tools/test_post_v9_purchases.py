@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Current purchase routes vs immutable V9, with an explicit actor-owned plan-draft amendment."""
+"""Current purchase routes vs immutable V9 with explicit actor-draft and R5 UI amendments."""
 from __future__ import annotations
 import argparse
 import copy
@@ -15,6 +15,7 @@ import test_v6_panels as panel_functions
 import test_v8_native as purchase
 import v9_contract as v9
 import package_post_v9 as current_runtime
+import catalog_owner_r5 as r5_catalog
 
 ROOT=Path(__file__).resolve().parents[1]
 HISTORY='7eb077fd8e6d0a303421626d1500f69e295a6664'
@@ -40,23 +41,18 @@ STYLE_BASELINE='7faac9b067f8a171e5e26d6aea5aaf9f4088a3e7'
 UI_TEXT_ARGUMENTS={'sendMessage':0,'editText':1,'alert':0}
 UI_MARKUP_ARGUMENTS={'sendMessage':1,'editText':2}
 
-def authorized_ui_pairs() -> dict[tuple[str,str],list[str]]:
-    """Validate literal display pairs against immutable and actual catalogs.
-
-    Parameterized templates are deliberately ineligible: this comparator
-    never guesses where a rendered amount, account or recipient came from.
-    """
+def _literal_ui_inputs():
     manifest=json.loads((ROOT/'tools/text_catalog_style_amendments.json').read_text())
     if manifest.get('version')!=1 or manifest.get('baseline_commit')!=STYLE_BASELINE:
         raise RuntimeError('UI parity style baseline mismatch')
     literal={key:record for key,record in manifest['changes'].items()
              if record.get('parameters')==[] and record.get('before_parameters',[])==[]}
-    topics=sorted({key.split('.',1)[0] for key in literal})
+    r5=json.loads((ROOT/'tools/text_catalog_owner_r5.json').read_text())
+    topics=sorted({key.split('.',1)[0]for key in set(literal)|set(r5['changes'])})
     archived={topic:subprocess.check_output(
         ['git','-C',str(ROOT),'show',STYLE_BASELINE+':messages/fa/'+topic+'.php']).decode()
         for topic in topics}
-    # Only inert catalog arrays from pinned Git objects are evaluated. The
-    # current loader imports its two public copy files, never private bootstrap.
+    # Inert pinned arrays and the actual two public audience files only.
     driver=r"""
 require 'messages/loader.php';
 $old=[];
@@ -65,35 +61,82 @@ foreach(json_decode(stream_get_contents(STDIN),true,512,JSON_THROW_ON_ERROR) as 
     if($start===false)throw new RuntimeException('old_copy_definition_missing');
     $old[$topic]=eval(substr($source,$start));
 }
-echo json_encode(['old'=>$old,'current'=>achbotMessageCatalog()],JSON_THROW_ON_ERROR);
+$sides=[];foreach(['user','admin']as$audience)$sides[$audience]=require 'messages/fa/'.$audience.'.php';
+echo json_encode(['old'=>$old,'sides'=>$sides],JSON_THROW_ON_ERROR);
 """
     definitions=json.loads(subprocess.check_output(['php','-r',driver],cwd=ROOT,
         input=json.dumps(archived).encode()))
     followups=json.loads((ROOT/'tools/text_catalog_owner_followup.json').read_text())
     if followups.get('baseline_commit')!='c9959811e264b5a8728f6a44376cb69c9a89b7f4' or followups.get('result_commit')!='faa9aa6502a4e24152f1fa6faad7f0ab7921652e':
         raise RuntimeError('Owner copy followup identity mismatch')
+    return manifest,followups,definitions,r5
+
+def _literal_entry(entry):
+    if isinstance(entry,str):return entry
+    if isinstance(entry,dict) and entry.get('parameters')==[] and isinstance(entry.get('text'),str):
+        return entry['text']
+    return None
+
+def _authorized_ui_pairs(manifest,followups,definitions,r5):
+    sides={audience:r5_catalog.flatten(groups)for audience,groups in definitions['sides'].items()}
+    # Verify every current R5 value/recipient/retirement before examining pairs.
+    # This also recovers the exact accepted pre-R5 catalog for prior proofs.
+    prior_sides,_=r5_catalog.verify_and_restore(sides,r5)
+    prior={**prior_sides['user'],**prior_sides['admin']}
+    current={**sides['user'],**sides['admin']}
+    literal={key:record for key,record in manifest['changes'].items()
+             if record.get('parameters')==[] and record.get('before_parameters',[])==[]}
     pairs={}
-    for key,record in literal.items():
+    for key in sorted(set(literal)|set(r5['changes'])):
         topic,name=key.split('.',1)
-        before=definitions['old'][topic][name];after=definitions['current'][topic][name]
-        old_parameters=before.get('parameters',[]) if isinstance(before,dict) else []
-        new_parameters=after.get('parameters',[]) if isinstance(after,dict) else []
-        old_text=before['text'] if isinstance(before,dict) else before
-        new_text=after['text'] if isinstance(after,dict) else after
+        old=definitions['old'].get(topic,{}).get(name)
+        # Later feature additions have no historical literal to project.
+        if key not in literal and old is None:continue
+        old_text=_literal_entry(old);prior_text=_literal_entry(prior.get(key))
+        if key not in literal and (old_text is None or prior_text is None):continue
+        if old_text is None or prior_text is None:
+            raise RuntimeError('Unverified literal UI parity pair: '+key)
+        style=manifest['changes'].get(key)
+        if style is not None:
+            # A parameterized historical/style transition never becomes eligible
+            # merely because a later revision removed or rendered a parameter.
+            if key not in literal:continue
+            if style['before']!=old_text or not style.get('reasons'):
+                raise RuntimeError('Unverified literal UI parity pair: '+key)
+            expected_after=style['after']
+        else:
+            expected_after=old_text
         followup=followups['changes'].get(key)
-        expected_after=record['after']
         if followup:
             if followup.get('before')!=expected_after or not followup.get('reason'):
                 raise RuntimeError('Owner literal followup lineage mismatch: '+key)
             expected_after=followup['after']
-        if (old_parameters or new_parameters or record['before']!=old_text
-                or expected_after!=new_text or old_text==new_text
-                or not isinstance(old_text,str) or not isinstance(new_text,str)
-                or not record.get('reasons')):
+        if expected_after!=prior_text or (key in literal and old_text==prior_text):
             raise RuntimeError('Unverified literal UI parity pair: '+key)
-        pairs.setdefault((old_text,new_text),[]).append(key)
+        # Validated retirements have no shipping counterpart. Never look up a
+        # missing key or resurrect its legacy body as a normalization rule.
+        if key in r5['retired_keys']:continue
+        new_text=_literal_entry(current.get(key))
+        if new_text is None:
+            if key in literal:raise RuntimeError('Unverified literal UI parity pair: '+key)
+            continue
+        amendment=r5['changes'].get(key)
+        if amendment:
+            if _literal_entry(amendment['before'])!=prior_text or _literal_entry(amendment['after'])!=new_text:
+                raise RuntimeError('R5 literal UI lineage mismatch: '+key)
+        elif new_text!=prior_text:
+            raise RuntimeError('Unrecorded current literal UI difference: '+key)
+        if old_text!=new_text:pairs.setdefault((old_text,new_text),[]).append(key)
     if not pairs:raise RuntimeError('No authorized literal UI pairs')
     return pairs
+
+def authorized_ui_pairs() -> dict[tuple[str,str],list[str]]:
+    """Exact literal-only style/followup/R5 lineage in recognized UI slots.
+
+    Parameterized templates, runtime values, protocols, recipients and payment
+    data are never rendered or normalized by this comparator.
+    """
+    return _authorized_ui_pairs(*_literal_ui_inputs())
 
 def project_reply_markup(before,after,pairs:dict) -> list[dict] | None:
     """Allow exact approved labels at inline_keyboard[row][button].text only.
@@ -243,6 +286,107 @@ def ui_projection_negative_controls(pairs:dict) -> list[str]:
 
     return tests
 
+
+def r5_ui_lineage_negative_controls(pairs:dict) -> list[str]:
+    inputs=_literal_ui_inputs();manifest,followups,definitions,r5=inputs
+    changed=next(key for key,item in r5['changes'].items()
+                 if _literal_entry(item['before'])is not None and _literal_entry(item['after'])is not None)
+    audience=r5['changes'][changed]['audience'];topic,name=changed.split('.',1)
+    retired=next(iter(r5['retired_keys']));retired_record=r5['retired_keys'][retired]
+    rtopic,rname=retired.split('.',1)
+    mutations=[]
+    bad=copy.deepcopy(definitions)
+    bad['sides'][audience][topic][name]='Unrecorded current UI wording'
+    mutations.append(('unrecorded_r5_current_value',(manifest,followups,bad,r5)))
+    bad=copy.deepcopy(r5);bad['retired_keys'][retired]['before']='Forged retired body'
+    mutations.append(('forged_r5_retirement_lineage',(manifest,followups,definitions,bad)))
+    bad=copy.deepcopy(definitions)
+    bad['sides'][retired_record['audience']][rtopic][rname]=retired_record['before']
+    mutations.append(('retired_key_reintroduced',(manifest,followups,bad,r5)))
+    tests=[]
+    for label,args in mutations:
+        try:_authorized_ui_pairs(*args)
+        except (AssertionError,RuntimeError):tests.append(label)
+        else:raise RuntimeError('UI literal lineage accepted '+label)
+    all_keys={key for keys in pairs.values()for key in keys}
+    if all_keys&set(r5['retired_keys']):raise RuntimeError('Retired UI pair was resurrected')
+    parameterized=next((key,item)for key,item in r5['changes'].items()
+        if isinstance(item['before'],dict)and item['before'].get('parameters'))
+    key,item=parameterized
+    def rendered(entry):
+        return re.sub(r'\{[A-Za-z_][A-Za-z0-9_]*\}','fixture1001',entry['text'])
+    before={'events':[{'name':'sendMessage','args':[rendered(item['before']),None,'HTML',1001]}]}
+    after={'events':[{'name':'sendMessage','args':[rendered(item['after']),None,'HTML',1001]}]}
+    if project_ui_observation(before,after,pairs)[0]:
+        raise RuntimeError('UI literal lineage rendered a dynamic template: '+key)
+    tests.append('rendered_r5_dynamic_template')
+    # Exercise an R5-only literal amendment, not merely the older emoji pairs.
+    selected=next(pair for pair,keys in pairs.items()
+        if any(k in r5['changes']and k not in manifest['changes']for k in keys))
+    old_text,new_text=selected
+    before={'events':[{'name':'sendMessage','args':[old_text,None,'HTML',1001]}]}
+    after=copy.deepcopy(before);after['events'][0]['args'][0]=new_text
+    if not project_ui_observation(before,after,pairs)[0]:
+        raise RuntimeError('Exact R5 literal UI transition was not accepted')
+    before={'events':[{'name':'editText','args':[71,'same',{'inline_keyboard':[[{'text':'same','callback_data':old_text}]]}]}]}
+    after=copy.deepcopy(before);after['events'][0]['args'][2]['inline_keyboard'][0][0]['callback_data']=new_text
+    if project_ui_observation(before,after,pairs)[0]:
+        raise RuntimeError('R5 literal pair normalized callback data')
+    tests.append('r5_literal_pair_in_callback_data')
+    return tests
+
+def verified_r5_denial_notice_text() -> str:
+    _,_,definitions,r5=_literal_ui_inputs()
+    sides={audience:r5_catalog.flatten(groups)for audience,groups in definitions['sides'].items()}
+    r5_catalog.verify_and_restore(sides,r5)
+    key='admin.roles.denied';record=r5['added_keys'].get(key,{})
+    value=_literal_entry(sides['admin'].get(key))
+    if record.get('audience')!='admin' or value is None or value!=_literal_entry(record.get('entry')):
+        raise RuntimeError('R5 denial notice is not an exact verified literal')
+    return value
+
+def r5_denial_notice_amendment(case,step,kind,before,after,old_wire,new_wire,old_sql,new_sql,text):
+    """One declared actor-local denial notice; no general event projection."""
+    if case!='nonadmin_bulk_denied' or type(step)is not int or step!=0 or kind!='entryandbulk':
+        return None
+    if old_wire!=[] or new_wire!=[] or old_sql!=new_sql or before.get('events')!=[]:
+        return None
+    expected=copy.deepcopy(before)
+    expected['events']=[{'name':'sendMessage','args':[text,None,'HTML']}]
+    if after!=expected:return None
+    return {'case':case,'step':step,'route':kind,'catalog_key':'admin.roles.denied',
+            'delivery':'one_actor_local_sendMessage_null_keys_HTML',
+            'archived_events_empty':True,'sql_provider_wire_exact':True}
+
+def r5_denial_notice_negative_controls(text):
+    before={'events':[],'warnings':[],'stdout':'','returned':True,'exception':None}
+    after=copy.deepcopy(before);after['events']=[{'name':'sendMessage','args':[text,None,'HTML']}]
+    sql={'users':'1001\t50000','pays':'','orders':''}
+    args=('nonadmin_bulk_denied',0,'entryandbulk',before,after,[],[],sql,sql,text)
+    if r5_denial_notice_amendment(*args)is None:
+        raise RuntimeError('Exact R5 actor-local denial amendment was not accepted')
+    controls=[]
+    for label in ['another_case','another_step','another_route','extra_event','extra_recipient',
+                  'changed_notice_body','changed_notice_markup','changed_parse_mode',
+                  'archived_events_nonempty','changed_SQL','changed_provider_wire','changed_outer_result']:
+        case,step,kind=args[:3];old=copy.deepcopy(before);new=copy.deepcopy(after)
+        old_wire=[];new_wire=[];old_sql=copy.deepcopy(sql);new_sql=copy.deepcopy(sql)
+        if label=='another_case':case='invalid_category_no_purchase'
+        elif label=='another_step':step=1
+        elif label=='another_route':kind='checkout'
+        elif label=='extra_event':new['events'].append({'name':'sendMessage','args':['extra']})
+        elif label=='extra_recipient':new['events'][0]['args'].append(1002)
+        elif label=='changed_notice_body':new['events'][0]['args'][0]+=' unrecorded'
+        elif label=='changed_notice_markup':new['events'][0]['args'][1]={'inline_keyboard':[]}
+        elif label=='changed_parse_mode':new['events'][0]['args'][2]=None
+        elif label=='archived_events_nonempty':old['events']=[{'name':'setUser','args':['none']}]
+        elif label=='changed_SQL':new_sql['users']='1001\t49000'
+        elif label=='changed_provider_wire':new_wire=[{'method':'fixture'}]
+        elif label=='changed_outer_result':new['returned']=False
+        if r5_denial_notice_amendment(case,step,kind,old,new,old_wire,new_wire,old_sql,new_sql,text)is not None:
+            raise RuntimeError('R5 denial notice amendment hid '+label)
+        controls.append(label)
+    return controls
 
 def stage_source(stage:Path,current:bool)->dict:
     stage.mkdir(parents=True,exist_ok=False)
@@ -395,9 +539,12 @@ def main():
     args=ap.parse_args()
     if subprocess.check_output(['git','-C',str(ROOT),'rev-parse',HISTORY+'^{tree}'],text=True).strip()!='7da17725c1e7f0448119b7e41c8b11b21f3e093d':
         raise RuntimeError('Original V9 TREE drift')
-    records=[];authorized_fields=[];behavior_amendments=[]
+    records=[];authorized_fields=[];behavior_amendments=[];denial_amendments=[]
     pairs=authorized_ui_pairs()
     projection_controls=ui_projection_negative_controls(pairs)
+    r5_controls=r5_ui_lineage_negative_controls(pairs)
+    denial_text=verified_r5_denial_notice_text()
+    denial_controls=r5_denial_notice_negative_controls(denial_text)
     with owned.owned_database() as (work,env),native.owned_provider() as (provider,url):
         old=work/'original-v9'
         current=work/'marzban-only'
@@ -436,6 +583,11 @@ def main():
                 equivalent,projected=compare_native_runs(
                     observations[0],observations[1],wires[0],wires[1],states[0],states[1],pairs)
                 if not equivalent:
+                    denial=r5_denial_notice_amendment(label,i,kind,observations[0],observations[1],
+                        wires[0],wires[1],states[0],states[1],denial_text)
+                    if denial is not None:
+                        denial_amendments.append(denial);equivalent=True
+                if not equivalent:
                     reason={'case':label,'step':i,'route':kind,
                             'events_equal':observations[0]==observations[1],
                             'wire_equal':wires[0]==wires[1],
@@ -460,14 +612,15 @@ def main():
             for name,hashval in private.items():
                 if hashlib.sha256((stage/name).read_bytes()).hexdigest()!=hashval:
                     raise RuntimeError('Private synthetic file changed')
+    if len(denial_amendments)!=1:raise RuntimeError('R5 denial notice amendment coverage drift')
     report={'complete':True,'historical_v9':HISTORY,'scenarios':len(CASES),
             'steps':len(records),'schema_tables':23,'mysql_socket_only':True,
             'php_sql_telegram_fake_provider_parity':False,
-            'telegram_comparison':'seven_exact_style_scoped_cases_and_one_explicit_actor_draft_amendment',
+            'telegram_comparison':'six_style_scoped_cases_one_actor_local_denial_notice_and_one_actor_draft_amendment',
             'sql_provider_wire_exact':False,
             'unchanged_differential_scenarios':len(CASES)-len(behavior_amendments),
             'unchanged_differential_sql_provider_wire_exact':True,
-            'unchanged_differential_telegram_comparison':'exact_except_explicit_authorized_ui_text_fields',
+            'unchanged_differential_telegram_comparison':'exact_except_authorized_literal_UI_and_one_actor_local_denial_notice',
             'intentional_behavior_amendments':behavior_amendments,
             'actor_owned_plan_draft_entry_verified':len(behavior_amendments)==1,
             'ui_projection_baseline':STYLE_BASELINE,
@@ -476,6 +629,12 @@ def main():
             'authorized_ui_fields':authorized_fields,
             'ui_projection_negative_controls':len(projection_controls),
             'rejected_projection_mutations':projection_controls,
+            'r5_ui_lineage_negative_controls':len(r5_controls),
+            'rejected_r5_ui_lineage_mutations':r5_controls,
+            'r5_denial_notice_amendment_count':len(denial_amendments),
+            'r5_denial_notice_amendments':denial_amendments,
+            'r5_denial_notice_negative_controls':len(denial_controls),
+            'rejected_r5_denial_notice_mutations':denial_controls,
             'changed_paid_nonpaid_source_contracts':INTENTIONALLY_CHANGED,
             'new_source_contracts_mandatory_in_full_aggregate':True,
             'historical_original_v9_requires_separate_pinned_ci':True,
