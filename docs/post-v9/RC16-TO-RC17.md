@@ -15,7 +15,7 @@ The source/tag identity and ZIP digest are in the release manifest, checksums an
 
 - **Bot Settings → متن‌های ربات:** the four start/welcome/home/purchase-note message bodies.
 - **Gateway/channel settings:** support, income/report channel, mandatory-membership identity, private invite URL, help channel and cooperation destination. Save, clear and cancel return to this same section.
-- **Selected server → نمایش لینک و QR → انتخاب کانفیگ:** choose **کانفیگ‌های بعد از خرید** or **کانفیگ‌های صفحهٔ سفارش**, then use the existing protocol/name selection or all/none controls. The Bot Settings server-display shortcut is removed.
+- **Native server → نمایش لینک و QR → انتخاب کانفیگ:** choose **کانفیگ‌های بعد از خرید** or **کانفیگ‌های صفحهٔ سفارش**, then use the existing protocol/name selection or all/none controls. The Bot Settings server-display shortcut is removed.
 
 A private channel's numeric membership identity and its invite URL remain separate. Existing destination values and the valid private `joinLink` fallback are retained. Staff roles, receiving preferences and the common receipt-review workflow are unchanged.
 
