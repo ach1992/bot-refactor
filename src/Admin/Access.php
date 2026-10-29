@@ -52,9 +52,9 @@ function achbotAdminCan(string $capability,?int $actor=null): bool {
 function achbotAdminCanLocked(mysqli $db,int $actor,int $primary,string $capability): bool {
     return achbotAdminLevelCan(achbotAdminLevel($actor,$db,$primary,true),$capability);
 }
-/** Same persisted membership as the administrator list. The current read also
- * sees newly added staff when a caller already has an older RR snapshot.
- * No transaction is opened or committed around outbound delivery. */
+/** Same persisted membership as the administrator list, using a current read.
+ * A conflicting older RR snapshot fails closed and may defer copies until the
+ * next ordinary delivery. No caller transaction or isolation mode is changed. */
 function achbotAdminRecipientCandidates(mysqli $db,int $primary): array {
     if ($primary<=0) return [];
     try {
