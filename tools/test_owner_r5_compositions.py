@@ -7,7 +7,7 @@ Separate keyboard labels and mutually exclusive branches are separate surfaces;
 identical heading labels may repeat within a rendered message.
 """
 from __future__ import annotations
-import argparse, html, json, pathlib, re, subprocess, tempfile, unicodedata
+import argparse, copy, html, json, pathlib, re, subprocess, tempfile, unicodedata
 import catalog_owner_r5 as r5
 ROOT=pathlib.Path(__file__).resolve().parents[1]
 REFERENCE='9dab78bac830184818b5b0c899e530c9a2069c93'
@@ -41,16 +41,53 @@ def command(*args,root=ROOT,**kwargs):return subprocess.check_output(args,cwd=ro
 def load_catalogs(root):
     raw=command('php','-r','$r=[];foreach(["user","admin"]as$a)$r[$a]=require "messages/fa/".$a.".php";echo json_encode($r,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);',root=root)
     return {a:r5.flatten(g)for a,g in json.loads(raw).items()}
+NOTIFICATION_KEYS={
+    'admin.roles.notifications_on','admin.roles.notifications_off',
+    'admin.roles.notifications_saved','admin.roles.notifications_failed',
+}
+STAFF_GUIDE_KEY='admin.roles.choose_level'
+STAFF_GUIDE_BEFORE='پشتیبان: اطلاعات کاربر، مسدودسازی و ویرایش سفارش'
+STAFF_GUIDE_AFTER='پشتیبان: اطلاعات کاربر، مسدودسازی، ویرایش سفارش و بررسی رسید پرداخت (تأیید یا رد)'
+def staff_followup_proof(current,archived):
+    # New notification entries and this one role sentence have separate,
+    # explicit lineage; they never change the 22 historical corrections.
+    record=r5.manifest();r5.verify_and_restore(current,record)
+    added={key for audience,rows in current.items()for key in rows if key not in archived[audience]}
+    check(added==NOTIFICATION_KEYS,'notification_catalog_addition_scope_drift')
+    check(all(set(archived[a])<=set(current[a])for a in archived),'staff_followup_removed_historical_entry')
+    for key in NOTIFICATION_KEYS:
+        item=record['added_keys'].get(key,{})
+        check(item.get('audience')=='admin'and current['admin'].get(key)==item.get('entry')
+              and r5.params(current['admin'][key])==[],'notification_catalog_lineage_or_recipient:'+key)
+    before=archived['admin'][STAFF_GUIDE_KEY];after=current['admin'][STAFF_GUIDE_KEY]
+    check(r5.text(before).count(STAFF_GUIDE_BEFORE)==1,'staff_guide_original_sentence_drift')
+    check(r5.text(after)==r5.text(before).replace(STAFF_GUIDE_BEFORE,STAFF_GUIDE_AFTER,1)
+          and r5.params(after)==r5.params(before),'staff_guide_other_words_slots_or_markup_changed')
 def correction_proof(current,archived):
-    changed={k for a,rows in current.items()for k,e in rows.items()if e!=archived[a].get(k)}
-    check(changed==set(CORRECTIONS),'composed_catalog_correction_scope_drift')
+    staff_followup_proof(current,archived)
+    changed={k for a,rows in current.items()for k,e in rows.items()if k in archived[a]and e!=archived[a][k]}
+    check(changed==set(CORRECTIONS)|{STAFF_GUIDE_KEY},'composed_catalog_correction_scope_drift')
     for key,(before,after)in CORRECTIONS.items():
         audience=next(a for a in current if key in current[a])
         old=archived[audience][key];now=current[audience][key]
         check(r5.text(old).count(before)==1,'composed_catalog_literal_anchor_drift:'+key)
         expected=r5.text(old).replace(before,after)
         check(r5.text(now)==expected and r5.params(now)==r5.params(old),'composed_catalog_words_slots_or_markup_changed:'+key)
-    return len(changed)
+    return len(CORRECTIONS)
+def staff_followup_negative_controls(current,archived):
+    mutations=[]
+    bad=copy.deepcopy(current);bad['admin']['admin.roles.unlisted_notification']='ناشناخته';mutations.append(bad)
+    key=sorted(NOTIFICATION_KEYS)[0]
+    bad=copy.deepcopy(current);bad['user'][key]=bad['admin'].pop(key);mutations.append(bad)
+    bad=copy.deepcopy(current);bad['admin'][key]={'text':'تغییر ثبت‌نشده','parameters':[]};mutations.append(bad)
+    bad=copy.deepcopy(current);bad['admin'].pop(key);mutations.append(bad)
+    bad=copy.deepcopy(current);bad['admin'][STAFF_GUIDE_KEY]['text']=r5.text(bad['admin'][STAFF_GUIDE_KEY]).replace('مدیر:','مدیر ارشد:',1);mutations.append(bad)
+    bad=copy.deepcopy(current);bad['admin'][STAFF_GUIDE_KEY]['parameters']=[];mutations.append(bad)
+    for index,bad in enumerate(mutations):
+        try:correction_proof(bad,archived)
+        except AssertionError:continue
+        raise AssertionError('staff_followup_negative_control_missed:'+str(index))
+    return len(mutations)
 def numeric_id_variant(value):
     value=unicodedata.normalize('NFKD',value)
     value=''.join(c for c in value if not unicodedata.combining(c) and c!='ـ')
@@ -198,7 +235,9 @@ def audit(source_root=ROOT,catalog_root=ROOT):
         for audience in ['user','admin']:
             (stage/'messages/fa'/f'{audience}.php').write_bytes(command('git','show',REFERENCE+':messages/fa/'+audience+'.php'))
         archived=render(expressions,stage)
-        correction_count=correction_proof(load_catalogs(catalog_root),load_catalogs(stage))
+        current_catalogs=load_catalogs(catalog_root);archived_catalogs=load_catalogs(stage)
+        correction_count=correction_proof(current_catalogs,archived_catalogs)
+        staff_controls=staff_followup_negative_controls(current_catalogs,archived_catalogs)
     # Existing private-failure composition: this value comes from update_id,
     # not message_id. The copy correction must preserve the supplied number.
     update_expr=expression(tokenized['src/Finance/Routes/WalletTransfer.php'],'assign','$transferUpdateId',"'update_id'")
@@ -227,7 +266,7 @@ def audit(source_root=ROOT,catalog_root=ROOT):
     preserved=['شناسه پیام تلگرام','شناسه به‌روزرسانی تلگرام','شناسه چت تلگرام']
     check(not any(numeric_id_variant(v)for v in preserved),'genuine_telegram_object_id_misclassified')
     check(not numeric_id_variant('شناسه عددی'),'requested_numeric_id_misclassified')
-    return {'composed_catalog_correction_keys':correction_count,'telegram_update_id_label_cases':1,'telegram_update_id_numeric_value_preserved':True,'archived_wrong_telegram_update_label_RED':True,'composed_heading_cases':len(current),'composed_heading_source_paths':len(paths),'composed_heading_archived_RED':len(reds),'composed_heading_negative_controls':len(mutations),'identical_heading_reuse_cases':1,'raw_code_heading_exclusions':1,'numeric_id_variant_negative_controls':len(variants),'preserved_telegram_object_id_cases':len(preserved),'preserved_numeric_id_cases':1,'composition_scope':'source_expression_wallet_finance_receipt_support_admin_stats_matrix','real_Telegram_rendering':'NOT_TESTED'}
+    return {'composed_catalog_correction_keys':correction_count,'notification_catalog_additions':len(NOTIFICATION_KEYS),'staff_role_description_amendments':1,'staff_catalog_negative_controls':staff_controls,'telegram_update_id_label_cases':1,'telegram_update_id_numeric_value_preserved':True,'archived_wrong_telegram_update_label_RED':True,'composed_heading_cases':len(current),'composed_heading_source_paths':len(paths),'composed_heading_archived_RED':len(reds),'composed_heading_negative_controls':len(mutations),'identical_heading_reuse_cases':1,'raw_code_heading_exclusions':1,'numeric_id_variant_negative_controls':len(variants),'preserved_telegram_object_id_cases':len(preserved),'preserved_numeric_id_cases':1,'composition_scope':'source_expression_wallet_finance_receipt_support_admin_stats_matrix','real_Telegram_rendering':'NOT_TESTED'}
 def main():
     ap=argparse.ArgumentParser();ap.add_argument('--source-root',type=pathlib.Path,default=ROOT);ap.add_argument('--catalog-root',type=pathlib.Path,default=ROOT);args=ap.parse_args()
     print(json.dumps({'status':'PASS',**audit(args.source_root,args.catalog_root)},ensure_ascii=False))

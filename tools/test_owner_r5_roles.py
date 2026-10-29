@@ -20,7 +20,7 @@ class RoleAuditMysqli extends mysqli {
  public function resetAudit():void {$this->writes=[];$this->financialReads=[];$this->transactions=0;}
 }
 $root=$argv[1];$connection=new RoleAuditMysqli('localhost','root','',$argv[3],0,$argv[2]);$connection->set_charset('utf8mb4');
-$admin=9001;$from_id=9001;$special_admins=[9002];$data='';$text='';$userInfo=['step'=>'none'];$checks=[];
+$admin=9001;$from_id=9001;$special_admins=[9002,1001,9005,9999];$admins_list=[1001,9005,9999];$data='';$text='';$userInfo=['step'=>'none'];$checks=[];
 require $root.'/messages/loader.php';require $root.'/src/Admin/Access.php';
 $buttonValues=achbotMessages('legacy_buttons');
 $GLOBALS['events']=[];$callbackId='fixture';$message_id=77;$chat_id=9001;$cancelKey='{}';$removeKeyboard='{}';
@@ -45,7 +45,17 @@ $connection->query("INSERT INTO users(userid,name,username,refcode,wallet,date,i
 (9005,'Future staff','future','0',0,'1700000000',0,'sent')");
 $schema=[];foreach(['users','setting'] as $t)$schema[$t]=preg_replace('/AUTO_INCREMENT=[0-9]+/','AUTO_INCREMENT=fixture',$connection->query('SHOW CREATE TABLE '.$t)->fetch_row()[1]);
 yes(achbotAdminLevel(9001)==='owner','configured owner needs no admin boolean');
-yes(achbotAdminLevel(9002)==='manager','legacy special admin remains manager');
+require $argv[9];
+$connection->resetAudit();
+yes(achbotAdminLevel(9002)==='operator','roleless legacy staff remains Operator despite obsolete private arrays');
+yes(staffBaselineAdminLevel(9002)==='manager','archived private special fallback RED inferred Manager');
+foreach([1001,9005,9999] as $actor)yes(achbotAdminLevel($actor)==='none','obsolete arrays cannot grant staff authority '.$actor);
+yes($connection->writes===[],'obsolete arrays cause no implicit staff or role import');
+yes(achbotAdminAssignLevel($connection,9001,9001,9002,'manager'),'Owner explicitly assigns intended Manager through actual helper');
+yes(achbotAdminLevel(9002)==='manager','explicit persisted Manager retains full delegated role');
+$special_admins=[];$admins_list=[];
+yes(achbotAdminLevel(9002)==='manager','persisted Manager authority survives absent obsolete arrays');
+$special_admins=[9002,1001,9005,9999];$admins_list=[1001,9005,9999];
 yes(achbotAdminLevel(9003)==='operator','legacy ordinary admin remains operator');
 yes(!achbotAdminAssignLevel($connection,9002,9001,9004,'manager'),'manager cannot assign staff');
 yes(!achbotAdminAssignLevel($connection,9001,9001,9001,'support'),'owner immutable');
@@ -56,7 +66,7 @@ $expected=[
 9001=>['botReports','userReports','messageToSpeceficUser','increaseUserWallet','decreaseUserWallet','createMultipleAccounts','giftVolumeAndDay','banUser','unbanUser','manageorderdatabase','serversSetting','categoriesSetting','backplan','discount_codes','mainMenuButtons','ticketsList','message2All','agentsList','pinManageAll','adminsList','attentionInbox','gateWays_Channels','botSettings','mainMenu'],
 9002=>['botReports','userReports','messageToSpeceficUser','increaseUserWallet','decreaseUserWallet','createMultipleAccounts','giftVolumeAndDay','banUser','unbanUser','manageorderdatabase','serversSetting','categoriesSetting','backplan','discount_codes','mainMenuButtons','ticketsList','message2All','agentsList','pinManageAll','attentionInbox','gateWays_Channels','botSettings','mainMenu'],
 9003=>['userReports','messageToSpeceficUser','increaseUserWallet','decreaseUserWallet','createMultipleAccounts','giftVolumeAndDay','banUser','unbanUser','manageorderdatabase','discount_codes','mainMenuButtons','ticketsList','message2All','agentsList','pinManageAll','attentionInbox','mainMenu'],
-9004=>['userReports','banUser','unbanUser','manageorderdatabase','mainMenu'],
+9004=>['userReports','banUser','unbanUser','manageorderdatabase','attentionInbox','mainMenu'],
 ];
 foreach($expected as $actor=>$callbacks){$from_id=$actor;$keys=json_decode(getAdminKeys(),true);$actual=[];foreach($keys['inline_keyboard'] as $row)foreach($row as $button)$actual[]=$button['callback_data'];yes($actual===$callbacks,'actual exact admin keyboard '.$actor);}
 
@@ -106,10 +116,18 @@ yes(achbotAdminLevel(9005)==='support','owner group callback cannot change staff
 $chat_id=9001;$data='delAdmin9001';$GLOBALS['events']=[];require $root.'/src/Admin/Roles.php';
 yes(achbotAdminLevel(9001)==='owner','actual delete owner callback cannot revoke configured owner');
 $data='delAdmin9005';require $root.'/src/Admin/Roles.php';yes(achbotAdminLevel(9005)==='none','actual staff delete revokes marker and role');
+$from_id=$chat_id=9001;$data='adminNotify|9004|off';$text=null;$userInfo=['step'=>'none'];$GLOBALS['events']=[];require $root.'/src/Admin/Roles.php';
+yes(!achbotAdminNotifyEnabled($connection,9004,9001)&&achbotAdminLevel(9004)==='support','Owner notification toggle preserves Support role');
+foreach([9002,9004,9005]as$actor){
+ $from_id=$chat_id=$actor;$data='adminNotify|9004|on';$userInfo=['step'=>'none','isAdmin'=>true];$GLOBALS['events']=[];require $root.'/src/Admin/Roles.php';
+ yes(!achbotAdminNotifyEnabled($connection,9004,9001)&&end($GLOBALS['events'])['kind']==='ack','non-Owner or revoked actor cannot forge notification toggle '.$actor);
+}
+$connection->query("INSERT INTO setting(type,value)VALUES('ADMIN_NOTIFY_1001','on')");
+yes(achbotAdminLevel(1001)==='none'&&!achbotAdminCan('payments',1001)&&!achbotAdminRecipientAllowed($connection,1001,9001),'notification on cannot grant ordinary customer staff or payment authority');
 $connection->query("INSERT INTO pays(hash_id,user_id,type,price,request_date,state) VALUES('r5-review',1001,'BUY_SUB',1000,1700000000,'processing')");
 $attentionPayId=(int)$connection->insert_id;
 $readBefore=[];foreach(['pays','users','setting'] as $table)$readBefore[$table]=$connection->query('SELECT * FROM '.$table.' ORDER BY id')->fetch_all(MYSQLI_ASSOC);
-foreach([9001,9002,9003] as $actor)foreach(['attentionInbox','attentionCase_'.$attentionPayId] as $cb){
+foreach([9001,9002,9003,9004] as $actor)foreach(['attentionInbox','attentionCase_'.$attentionPayId] as $cb){
  $from_id=$chat_id=$actor;$data=$cb;$text=null;$userInfo=['step'=>'none'];$GLOBALS['events']=[];
  require $root.'/src/Finance/Routes/ManualReceipts.php';
  $screens=array_values(array_filter($GLOBALS['events'],fn($e)=>in_array($e['kind'],['edit','send'],true)));
@@ -117,20 +135,21 @@ foreach([9001,9002,9003] as $actor)foreach(['attentionInbox','attentionCase_'.$a
  $callbacks=[];foreach(json_decode($screens[0]['keys'],true)['inline_keyboard'] as $row)foreach($row as $button)$callbacks[]=$button['callback_data'];
  yes($actor===9001?in_array('npReviewInbox',$callbacks,true):!array_filter($callbacks,fn($c)=>preg_match('/^(npReview|bankReview)/',$c)),'consequential recovery child controls remain owner-only '.$actor.' '.$cb);
 }
-$from_id=$chat_id=9004;$data='attentionInbox';$GLOBALS['events']=[];require $root.'/src/Finance/Routes/ManualReceipts.php';
-yes(count($GLOBALS['events'])===1 && $GLOBALS['events'][0]['kind']==='ack','support actual review route denied');
+$from_id=$chat_id=1001;$data='attentionInbox';$GLOBALS['events']=[];require $root.'/src/Finance/Routes/ManualReceipts.php';
+yes(count($GLOBALS['events'])===1 && $GLOBALS['events'][0]['kind']==='ack','ordinary customer actual review route denied');
 foreach($readBefore as $table=>$rows)yes($connection->query('SELECT * FROM '.$table.' ORDER BY id')->fetch_all(MYSQLI_ASSOC)===$rows,'attention reads do not mutate '.$table);
 require $argv[4];$from_id=9004;$legacy=json_decode(baselineAdminKeys(),true);$oldCallbacks=[];foreach($legacy['inline_keyboard'] as $row)foreach($row as $button)$oldCallbacks[]=$button['callback_data'];
 yes(in_array('increaseUserWallet',$oldCallbacks,true),'archived baseline RED support overexposure');
 $from_id=9001;$legacy=json_decode(baselineAdminKeys(),true);yes($legacy['inline_keyboard'][0][0]['callback_data']==='attentionInbox','archived baseline RED payment review at wrong position');
 
 $from_id=9004;
-foreach(['userReports','userInfoDetails1001','banUser','unbanUser','manageorderdatabase','showUserSubscriptions1001'] as $cb)
+foreach(['userReports','userInfoDetails1001','banUser','unbanUser','manageorderdatabase','showUserSubscriptions1001','attentionInbox','attentionCase_1','accCustomxyz','approveRenewAccxyz','approveIncreaseDayxyz','approveIncreaseVolumexyz','approvePaymentxyz','acceptxyz','declineAction_xyz'] as $cb)
  yes(achbotAdminRequestAllowed($cb,null,'none'),'support allowed route '.$cb);
-foreach(['botReports','serversSetting','am|abc|save','pgServerGroups1','achbotDisplay|1','categoriesSetting','backplan','botSettings','changeBotbotState','ic|menu','gateWays_Channels','gr|l','attentionInbox','npReviewInbox','bankReviewInbox','adminsList','delAdmin9002','adminAssign|9005|manager','createMultipleAccounts','createAccPlan1','increaseUserWallet','createUserWalletDebt','walletDebtYes:abc','approvePaymentxyz','acceptxyz','declineAction_xyz','toggleAgent_1001','editAgentDiscountNormal1001_userinfo','message2All','ticketsList'] as $cb)
+foreach(['botReports','serversSetting','am|abc|save','pgServerGroups1','achbotDisplay|1','categoriesSetting','backplan','botSettings','changeBotbotState','ic|menu','gateWays_Channels','gr|l','npReviewInbox','bankReviewInbox','adminsList','delAdmin9002','adminAssign|9005|manager','createMultipleAccounts','createAccPlan1','increaseUserWallet','createUserWalletDebt','walletDebtYes:abc','toggleAgent_1001','editAgentDiscountNormal1001_userinfo','message2All','ticketsList'] as $cb)
  yes(!achbotAdminRequestAllowed($cb,null,'none'),'support forged callback denied '.$cb);
-foreach(['editServerName1','achbotManage|abc','achbotInstance:start_message','achbotPaymentKey|abc','gr|edit|abc','createAccAmount1_1_1','declineActionReason_xyz_1','editAgentDiscountNormal1001_userinfo'] as $step)
+foreach(['editServerName1','achbotManage|abc','achbotInstance:start_message','achbotPaymentKey|abc','gr|edit|abc','createAccAmount1_1_1','editAgentDiscountNormal1001_userinfo'] as $step)
  yes(!achbotAdminRequestAllowed(null,'new value',$step),'support stale editor denied '.$step);
+yes(achbotAdminRequestAllowed(null,'a receipt decision','declineActionReason_xyz_1'),'Support genuine receipt editor follows payments capability');
 yes(!achbotAdminRequestAllowed('botSettings','/start','none'),'callback message start cannot bypass role');
 yes(!achbotAdminRequestAllowed('buySubscription',null,'editServerName1'),'public callback cannot execute forbidden pending editor');
 yes(achbotAdminRequestAllowed('mainMenu',null,'editServerName1'),'home escapes stale editor');
@@ -316,7 +335,7 @@ require $argv[8];$from_id=$chat_id=1001;
 foreach(['increaseWallet_100000','increaseWalletCustom','reciveApplications','replySupport_1','latestMsg_1'] as $cb)
  yes(!publicBaselineAdminRequestAllowed($cb,null,'none'),'archived 86 checkpoint RED blocks real customer callback '.$cb);
 
-// Actual approval modules must reject Support before any financial query or write.
+// Actual approval modules reject ordinary/revoked/ambiguous actors before financial SQL.
 require_once $root.'/src/Finance/ReceiptHelpers.php';require_once $root.'/src/Purchase/Core.php';
 $mainValues=achbotMessages('legacy_messages');$supportID='fixture_support';$botUsername='FixtureBot';$GLOBALS['native_attempts']=[];
 $makeReceipt=static function(string $hash,string $type='INCREASE_WALLET')use($connection):void{
@@ -324,6 +343,11 @@ $makeReceipt=static function(string $hash,string $type='INCREASE_WALLET')use($co
  $q->bind_param('ss',$hash,$type);$q->execute();$q->close();
 };
 $serviceHash='r5-approval-proof';$makeReceipt($serviceHash,'BUY_SUB');
+$connection->query("INSERT INTO users(userid,name,username,refcode,wallet,date,isAdmin,first_start) VALUES(9006,'Revoked receipt staff','revoked_receipts','0',0,'1700000000',0,'sent')");
+yes(achbotAdminAssignLevel($connection,9001,9001,9006,'support'),'Owner creates real Support before revocation proof');
+yes(achbotAdminAssignLevel($connection,9001,9001,9006,null),'Owner revokes receipt staff through actual helper');
+yes(achbotAdminLevel(9006)==='none','revoked receipt staff has no capability');
+$deniedApprovalActors=[1001,9005,9006,9999];
 $forbiddenTotals=['financial_reads'=>0,'sql_writes'=>0,'transactions'=>0,'native_calls'=>0];$positiveLevels=[];$replayLevels=[];
 $approvalRoutes=[
  ['Checkout.php','accCustom'.$serviceHash],
@@ -338,45 +362,66 @@ $approvalRoutes=[
  ['Extensions.php','prefixapproveIncreaseDay'.$serviceHash],
  ['Extensions.php','prefixapproveIncreaseVolume'.$serviceHash],
 ];
-foreach($approvalRoutes as [$module,$cb]){
- $from_id=$chat_id=9004;$data=$cb;$text='';$userInfo=['step'=>'none','isAdmin'=>true,'userid'=>9004];$GLOBALS['events']=[];
+foreach($deniedApprovalActors as $actor)foreach($approvalRoutes as [$module,$cb]){
+ $from_id=$chat_id=$actor;$data=$cb;$text='';$userInfo=['step'=>'none','isAdmin'=>true,'userid'=>$actor];$GLOBALS['events']=[];
  $beforePay=$connection->query("SELECT * FROM pays WHERE hash_id='$serviceHash'")->fetch_assoc();$wallet=(int)$connection->query('SELECT wallet FROM users WHERE userid=1001')->fetch_assoc()['wallet'];
  $connection->resetAudit();require $root.'/src/Finance/Routes/'.$module;
  $writes=$connection->writes;$reads=$connection->financialReads;$transactions=$connection->transactions;
  $forbiddenTotals['financial_reads']+=count($reads);$forbiddenTotals['sql_writes']+=count($writes);$forbiddenTotals['transactions']+=$transactions;
- yes($writes===[]&&$reads===[]&&$transactions===0,'actual Support approval no financial SQL '.$module.' '.$cb);
- yes($connection->query("SELECT * FROM pays WHERE hash_id='$serviceHash'")->fetch_assoc()===$beforePay&&(int)$connection->query('SELECT wallet FROM users WHERE userid=1001')->fetch_assoc()['wallet']===$wallet,'actual Support approval preserves payment and wallet '.$cb);
+ yes($writes===[]&&$reads===[]&&$transactions===0,'actual unauthorized approval no financial SQL '.$actor.' '.$module.' '.$cb);
+ yes($connection->query("SELECT * FROM pays WHERE hash_id='$serviceHash'")->fetch_assoc()===$beforePay&&(int)$connection->query('SELECT wallet FROM users WHERE userid=1001')->fetch_assoc()['wallet']===$wallet,'actual unauthorized approval preserves payment and wallet '.$actor.' '.$cb);
 }
-foreach(['declineActionReason_'.$serviceHash.'_111','approveRenewAcc'.$serviceHash,'accCustom'.$serviceHash,'approveIncreaseDay'.$serviceHash,'approveIncreaseVolume'.$serviceHash] as $step){
+foreach($deniedApprovalActors as $actor)foreach(['declineActionReason_'.$serviceHash.'_111','approveRenewAcc'.$serviceHash,'accCustom'.$serviceHash,'approveIncreaseDay'.$serviceHash,'approveIncreaseVolume'.$serviceHash] as $step){
  foreach(['a reason','/start'] as $input){
-  $from_id=$chat_id=9004;$data='';$text=$input;$userInfo=['step'=>$step,'isAdmin'=>true,'userid'=>9004];$GLOBALS['events']=[];
+  $from_id=$chat_id=$actor;$data='';$text=$input;$userInfo=['step'=>$step,'isAdmin'=>true,'userid'=>$actor];$GLOBALS['events']=[];
   $connection->resetAudit();require $root.'/src/Finance/Routes/ManualReceipts.php';
   $forbiddenTotals['financial_reads']+=count($connection->financialReads);$forbiddenTotals['sql_writes']+=count($connection->writes);$forbiddenTotals['transactions']+=$connection->transactions;
-  yes($connection->writes===[]&&$connection->financialReads===[]&&$connection->transactions===0,'actual Support stale approval/decline editor no SQL '.$step.' '.$input);
+  yes($connection->writes===[]&&$connection->financialReads===[]&&$connection->transactions===0,'actual unauthorized stale approval/decline editor no SQL '.$actor.' '.$step.' '.$input);
  }
 }
 yes($GLOBALS['native_attempts']===[],'all forbidden actual approval/editor routes have zero native calls');
-$directHash='r5-valid-support-helper';$makeReceipt($directHash);$wallet=(int)$connection->query('SELECT wallet FROM users WHERE userid=1001')->fetch_assoc()['wallet'];$connection->resetAudit();
-yes(achbotApproveManualWalletTopup($connection,$directHash,9004,9001)===null,'direct valid wallet approval helper rejects Support');
-$forbiddenTotals['financial_reads']+=count($connection->financialReads);$forbiddenTotals['sql_writes']+=count($connection->writes);$forbiddenTotals['transactions']+=$connection->transactions;
-yes($connection->writes===[]&&$connection->financialReads===[]&&$connection->transactions===0,'direct Support helper has no financial SQL or transaction');
-yes($connection->query("SELECT state FROM pays WHERE hash_id='$directHash'")->fetch_assoc()['state']==='have_sent'&&(int)$connection->query('SELECT wallet FROM users WHERE userid=1001')->fetch_assoc()['wallet']===$wallet,'direct valid Support helper preserves wallet and reviewable receipt');
+foreach($deniedApprovalActors as $actor){
+ $directHash='r5-valid-denied-helper-'.$actor;$makeReceipt($directHash);$wallet=(int)$connection->query('SELECT wallet FROM users WHERE userid=1001')->fetch_assoc()['wallet'];$connection->resetAudit();
+ yes(achbotApproveManualWalletTopup($connection,$directHash,$actor,9001)===null,'direct genuine receipt helper rejects unauthorized actor '.$actor);
+ $forbiddenTotals['financial_reads']+=count($connection->financialReads);$forbiddenTotals['sql_writes']+=count($connection->writes);$forbiddenTotals['transactions']+=$connection->transactions;
+ yes($connection->writes===[]&&$connection->financialReads===[]&&$connection->transactions===0,'direct unauthorized helper has no financial SQL or transaction '.$actor);
+ yes($connection->query("SELECT state FROM pays WHERE hash_id='$directHash'")->fetch_assoc()['state']==='have_sent'&&(int)$connection->query('SELECT wallet FROM users WHERE userid=1001')->fetch_assoc()['wallet']===$wallet,'direct unauthorized helper preserves wallet and reviewable receipt '.$actor);
+}
+foreach(array_slice($approvalRoutes,-3)as[$module,$cb]){
+ $from_id=$chat_id=9004;$data=$cb;$text='';$userInfo=['step'=>'none','isAdmin'=>true,'userid'=>9004];$connection->resetAudit();
+ require $root.'/src/Finance/Routes/'.$module;
+ yes($connection->writes===[]&&$connection->financialReads===[]&&$connection->transactions===0,'Support unclassified approval prefix cannot enter financial scope '.$cb);
+}
 $forbiddenTotals['native_calls']=count($GLOBALS['native_attempts']);
 
-foreach([9002,9003] as $actor){
+foreach([9002,9003,9004]as$actor)yes(achbotAdminSetNotify($connection,9001,9001,$actor,false),'Owner disables delivery independently of payment role '.$actor);
+foreach([9002,9003,9004] as $actor){
+ yes(!achbotAdminNotifyEnabled($connection,$actor,9001)&&achbotAdminCan('payments',$actor),'notification off keeps existing receipt approval permission '.$actor);
  $from_id=$chat_id=$actor;$data='';$text='';$userInfo=['step'=>'none','isAdmin'=>false,'userid'=>$actor];
- foreach(array_slice($approvalRoutes,0,4) as [$module,$cb]){
+ foreach(array_slice($approvalRoutes,0,5) as [$module,$cb]){
   $data=$cb;$connection->resetAudit();require $root.'/src/Finance/Routes/'.$module;
-  yes(count($connection->financialReads)>0&&$connection->writes===[],'actual Manager/Operator service approval reaches original financial proof '.$actor.' '.$module.' '.$cb);
+  yes(count($connection->financialReads)>0&&$connection->writes===[],'actual Manager/Operator/Support service approval reaches original financial proof '.$actor.' '.$module.' '.$cb);
  }
  $hash='r5-legitimate-topup-'.$actor;$makeReceipt($hash);$from_id=$chat_id=$actor;$data='approvePayment'.$hash;$text='';$userInfo=['step'=>'none','isAdmin'=>false,'userid'=>$actor];
  $wallet=(int)$connection->query('SELECT wallet FROM users WHERE userid=1001')->fetch_assoc()['wallet'];$connection->resetAudit();
  require $root.'/src/Finance/Routes/ManualReceipts.php';
  $approved=$connection->query("SELECT state,approved_by FROM pays WHERE hash_id='$hash'")->fetch_assoc();
- yes($approved['state']==='approved'&&(int)$approved['approved_by']===$actor&&(int)$connection->query('SELECT wallet FROM users WHERE userid=1001')->fetch_assoc()['wallet']===$wallet+100,'actual Manager/Operator approval commits one correct wallet credit '.$actor);
+ yes($approved['state']==='approved'&&(int)$approved['approved_by']===$actor&&(int)$connection->query('SELECT wallet FROM users WHERE userid=1001')->fetch_assoc()['wallet']===$wallet+100,'actual Manager/Operator/Support approval commits one correct wallet credit '.$actor);
  $positiveLevels[]=achbotAdminLevel($actor);
  require $root.'/src/Finance/Routes/ManualReceipts.php';
- yes((int)$connection->query('SELECT wallet FROM users WHERE userid=1001')->fetch_assoc()['wallet']===$wallet+100,'actual Manager/Operator approval replay cannot double credit '.$actor);$replayLevels[]=achbotAdminLevel($actor);
+ yes((int)$connection->query('SELECT wallet FROM users WHERE userid=1001')->fetch_assoc()['wallet']===$wallet+100,'actual Manager/Operator/Support approval replay cannot double credit '.$actor);$replayLevels[]=achbotAdminLevel($actor);
+ $hash='r5-direct-positive-'.$actor;$makeReceipt($hash);$wallet=(int)$connection->query('SELECT wallet FROM users WHERE userid=1001')->fetch_assoc()['wallet'];
+ yes(achbotApproveManualWalletTopup($connection,$hash,$actor,9001)!==null,'direct genuine receipt helper accepts current payment actor '.$actor);
+ $approved=$connection->query("SELECT state,approved_by FROM pays WHERE hash_id='$hash'")->fetch_assoc();
+ yes($approved['state']==='approved'&&(int)$approved['approved_by']===$actor&&(int)$connection->query('SELECT wallet FROM users WHERE userid=1001')->fetch_assoc()['wallet']===$wallet+100,'direct authorized helper credits once with exact approver '.$actor);
+ yes(achbotApproveManualWalletTopup($connection,$hash,$actor,9001)===null&&(int)$connection->query('SELECT wallet FROM users WHERE userid=1001')->fetch_assoc()['wallet']===$wallet+100,'direct authorized helper receipt replay cannot recredit '.$actor);
+ $hash='r5-legitimate-decline-'.$actor;$makeReceipt($hash);$wallet=(int)$connection->query('SELECT wallet FROM users WHERE userid=1001')->fetch_assoc()['wallet'];
+ $from_id=$chat_id=$actor;$data='declineAction_'.$hash;$text='';$userInfo=['step'=>'none','isAdmin'=>false,'userid'=>$actor];require $root.'/src/Finance/Routes/ManualReceipts.php';
+ $declineStep=$connection->query('SELECT step FROM users WHERE userid='.$actor)->fetch_assoc()['step'];
+ yes(str_starts_with($declineStep,'declineActionReason_'.$hash.'_'),'all staff retain original receipt decline reason step '.$actor);
+ $data='';$text='genuine human receipt decline';$userInfo=['step'=>$declineStep,'isAdmin'=>false,'userid'=>$actor];require $root.'/src/Finance/Routes/ManualReceipts.php';
+ yes($connection->query("SELECT state FROM pays WHERE hash_id='$hash'")->fetch_assoc()['state']==='declined'&&(int)$connection->query('SELECT wallet FROM users WHERE userid=1001')->fetch_assoc()['wallet']===$wallet,'all staff original receipt decline preserves customer wallet '.$actor);
+
 }
 foreach([
  ['src/Plans/Administration.php','planDetails1','none',''],
@@ -395,7 +440,7 @@ foreach([
 }
 // Pinned pre-correction source proves the actual missing-family and stale /start
 // defects, not merely a synthetic policy predicate. Every effect is disposable.
-require $argv[7];$from_id=$chat_id=9004;$data='accCustom'.$serviceHash;$text='';$userInfo=['step'=>'none','isAdmin'=>true,'userid'=>9004];$GLOBALS['events']=[];
+require $argv[7];$from_id=$chat_id=9006;$data='accCustom'.$serviceHash;$text='';$userInfo=['step'=>'none','isAdmin'=>true,'userid'=>9006];$GLOBALS['events']=[];
 yes(baselineAdminRequestAllowed($data,null,'none'),'archived checkpoint dispatcher RED admits missing custom-approval family');
 $connection->resetAudit();require $argv[5];
 yes(count($connection->financialReads)>0&&$connection->transactions>0,'archived actual Checkout RED enters forbidden payment scope');
@@ -405,7 +450,7 @@ yes($connection->query("SELECT state FROM pays WHERE hash_id='$hash'")->fetch_as
 yes($GLOBALS['native_attempts']===[],'approval regression makes no external calls even for archived RED');
 
 foreach($schema as $table=>$ddl)yes(preg_replace('/AUTO_INCREMENT=[0-9]+/','AUTO_INCREMENT=fixture',$connection->query('SHOW CREATE TABLE '.$table)->fetch_row()[1])===$ddl,'original schema preserved '.$table);
-echo json_encode(['complete'=>true,'cases'=>count($checks),'checks'=>$checks,'real_disposable_mariadb'=>true,'actual_admin_keyboard'=>true,'financial_boolean_preserved'=>true,'no_network'=>true,'actual_role_management_route'=>true,'actual_readonly_attention_hub'=>true,'baseline_red'=>true,'actual_approval_denials'=>true,'manager_operator_approval'=>true,'baseline_approval_callback_red'=>true,'baseline_decline_escape_red'=>true,'approval_family_coverage'=>['accCustom','approveRenewAcc','approveIncreaseDay','approveIncreaseVolume','accept','approvePayment','declineAction','declineActionReason'],'forbidden_financial_effects'=>$forbiddenTotals,'actual_positive_approval_levels'=>$positiveLevels,'actual_replay_protected_levels'=>$replayLevels,'actual_production_bot_ingress'=>true,'actual_config_bootstrap_ingress'=>true,'actual_customer_app_downloads'=>true,'actual_customer_pagination_reply'=>true,'actual_ticket_attachment_authorization'=>true,'forbidden_admin_wallet_effects'=>$walletDeniedTotals,'actual_customer_ticket_actors'=>$publicTicketActors,'actual_foreign_ticket_denials'=>$ticketDenials,'public_callback_collision_baseline_red'=>true,'actual_public_main_menus'=>$publicMain,'public_customer_journey_families'=>array_keys($publicFamilies),'public_pending_stage_families'=>array_keys($pendingFamilies),'actual_customer_wallet_draft_paths'=>$publicWallet,'support_admin_wallet_stages_denied'=>$supportWalletDenied],JSON_THROW_ON_ERROR);
+echo json_encode(['complete'=>true,'cases'=>count($checks),'checks'=>$checks,'real_disposable_mariadb'=>true,'actual_admin_keyboard'=>true,'db_only_staff_authority'=>true,'legacy_roleless_operator'=>true,'obsolete_staff_arrays_ignored'=>true,'obsolete_array_denials'=>3,'no_obsolete_array_import'=>true,'explicit_manager_assignment'=>true,'archived_private_manager_fallback_red'=>true,'financial_boolean_preserved'=>true,'no_network'=>true,'actual_role_management_route'=>true,'actual_readonly_attention_hub'=>true,'baseline_red'=>true,'actual_approval_denials'=>true,'manager_operator_approval'=>true,'support_receipt_approval'=>true,'support_other_operations_denied'=>true,'direct_receipt_helper_levels'=>$positiveLevels,'unauthorized_approval_actors'=>$deniedApprovalActors,'support_unclassified_prefix_denials'=>3,'notification_action_independence'=>true,'notification_ui_owner_only'=>true,'notification_on_cannot_grant_staff'=>true,'approved_notification_off_levels'=>$positiveLevels,'support_payment_family_coverage'=>['accCustom','approveRenewAcc','approveIncreaseDay','approveIncreaseVolume','accept','approvePayment','declineAction','declineActionReason'],'baseline_approval_callback_red'=>true,'baseline_decline_escape_red'=>true,'approval_family_coverage'=>['accCustom','approveRenewAcc','approveIncreaseDay','approveIncreaseVolume','accept','approvePayment','declineAction','declineActionReason'],'forbidden_financial_effects'=>$forbiddenTotals,'actual_positive_approval_levels'=>$positiveLevels,'actual_replay_protected_levels'=>$replayLevels,'actual_production_bot_ingress'=>true,'actual_config_bootstrap_ingress'=>true,'actual_customer_app_downloads'=>true,'actual_customer_pagination_reply'=>true,'actual_ticket_attachment_authorization'=>true,'forbidden_admin_wallet_effects'=>$walletDeniedTotals,'actual_customer_ticket_actors'=>$publicTicketActors,'actual_foreign_ticket_denials'=>$ticketDenials,'public_callback_collision_baseline_red'=>true,'actual_public_main_menus'=>$publicMain,'public_customer_journey_families'=>array_keys($publicFamilies),'public_pending_stage_families'=>array_keys($pendingFamilies),'actual_customer_wallet_draft_paths'=>$publicWallet,'support_admin_wallet_stages_denied'=>$supportWalletDenied],JSON_THROW_ON_ERROR);
 '''
 def main():
     p=argparse.ArgumentParser();p.add_argument('--run-disposable',action='store_true',required=True);p.add_argument('--report',type=Path)
@@ -434,10 +479,13 @@ def main():
         public_prior='d6a2ce01626fb3e707e062a099d051bce4c5ae63'
         raw=subprocess.check_output(['git','show',public_prior+':src/Admin/Access.php'],cwd=ROOT,text=True)
         path=work/'archived-public-access.php';path.write_text(raw.replace('achbotAdmin','publicBaselineAdmin'));archived.append(str(path))
+        staff_prior='f570db225beac9e429f11fbc73d84acaf3750cf6'
+        raw=subprocess.check_output(['git','show',staff_prior+':src/Admin/Access.php'],cwd=ROOT,text=True)
+        path=work/'archived-private-staff-access.php';path.write_text(raw.replace('achbotAdmin','staffBaselineAdmin'));archived.append(str(path))
         driver=work/'r5-roles.php';driver.write_text(PHP)
         r=subprocess.run(['php','-d','disable_functions=curl_init,curl_exec',str(driver),str(app),str(work/'mysql.sock'),owned.NAMES[1],str(baseline),*archived],env=env,capture_output=True,text=True,timeout=45)
         if r.returncode:raise RuntimeError(r.stdout[-1000:]+'\n'+r.stderr[-4000:])
-        report=json.loads(r.stdout);report['baseline_source']=BASE;report['approval_baseline_source']=prior;report['public_collision_baseline_source']=public_prior
+        report=json.loads(r.stdout);report['baseline_source']=BASE;report['approval_baseline_source']=prior;report['public_collision_baseline_source']=public_prior;report['staff_configuration_baseline_source']=staff_prior
     if a.report:a.report.write_text(json.dumps(report,ensure_ascii=False,indent=2)+'\n')
     print(json.dumps({k:v for k,v in report.items() if k!='checks'}))
 if __name__=='__main__':main()

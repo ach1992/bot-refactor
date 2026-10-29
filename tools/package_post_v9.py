@@ -95,7 +95,8 @@ def expected_current_example() -> bytes:
     """Owner-authorized current removal; immutable original V9 remains intact."""
     old=git("show",V9+":baseInfo.example.php")
     retired=(b"$hideConnectLinkForMarzban =",b"$showIndexes =",b"$hideConfigIfMany =",
-             b"$linkIndices =",b"$USDTPrice =",b"$USDTPriceagent =")
+             b"$linkIndices =",b"$USDTPrice =",b"$USDTPriceagent =",
+             b"$admins_list =",b"$special_admins =")
     return b"".join(line for line in old.splitlines(keepends=True)
                     if not line.startswith(retired))
 

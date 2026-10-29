@@ -58,6 +58,9 @@ def source_checks():
     # Current runtime must never write administrator identifiers to a web-root debug artifact.
     for rel in php_files:
         php_source=(ROOT/rel).read_text()
+        if rel in {'src/Admin/Access.php','config.php'} and re.search(
+                r'\$(?:admins_list|special_admins)\b',php_source):
+            raise RuntimeError('Retired private staff variable remains in authority/delivery source: '+rel)
         if ("admins_list_check.txt" in php_source or
                 re.search(r"print_r\s*\(\s*\$admins_list\b", php_source)):
             raise RuntimeError("Unsafe administrator-list debug dump in runtime: "+rel)
@@ -104,6 +107,7 @@ def source_checks():
             "original_historical_schema_file_unchanged":True,
             "current_additive_migration_separately_tested":True,
             "synthetic_baseinfo_example_current_settings_removed":True,
+            "obsolete_private_staff_authority_absent":True,
             "historic_contract_changed":False,"retired_provider_api_removed":True,
             "admin_list_debug_artifact_writer_absent":True,
             "pasarguard_native_implemented":True, "new_xui_implemented":False}
@@ -131,16 +135,28 @@ def main():
         # Current Owner R5 uses real merged source; prior immutable stages remain separate.
         owner_r5={}
         r5_suites=[
-            ('roles','test_owner_r5_roles.py',475,
-             {'complete':True,'real_disposable_mariadb':True,'actual_admin_keyboard':True,
+            ('roles','test_owner_r5_roles.py',635,
+             {'complete':True,'cases':635,'real_disposable_mariadb':True,'actual_admin_keyboard':True,
+              'db_only_staff_authority':True,'legacy_roleless_operator':True,
+              'obsolete_staff_arrays_ignored':True,'obsolete_array_denials':3,
+              'no_obsolete_array_import':True,'explicit_manager_assignment':True,
+              'archived_private_manager_fallback_red':True,
+              'staff_configuration_baseline_source':'f570db225beac9e429f11fbc73d84acaf3750cf6',
               'financial_boolean_preserved':True,'no_network':True,
               'actual_role_management_route':True,'actual_readonly_attention_hub':True,'baseline_red':True,
               'actual_approval_denials':True,'manager_operator_approval':True,
+              'support_receipt_approval':True,'support_other_operations_denied':True,
+              'direct_receipt_helper_levels':['manager','operator','support'],
+              'unauthorized_approval_actors':[1001,9005,9006,9999],
+              'support_unclassified_prefix_denials':3,'notification_action_independence':True,
+              'notification_ui_owner_only':True,'notification_on_cannot_grant_staff':True,
+              'approved_notification_off_levels':['manager','operator','support'],
+              'support_payment_family_coverage':['accCustom','approveRenewAcc','approveIncreaseDay','approveIncreaseVolume','accept','approvePayment','declineAction','declineActionReason'],
               'baseline_approval_callback_red':True,'baseline_decline_escape_red':True,
               'approval_family_coverage':['accCustom','approveRenewAcc','approveIncreaseDay','approveIncreaseVolume','accept','approvePayment','declineAction','declineActionReason'],
               'forbidden_financial_effects':{'financial_reads':0,'sql_writes':0,'transactions':0,'native_calls':0},
-              'actual_positive_approval_levels':['manager','operator'],
-              'actual_replay_protected_levels':['manager','operator'],
+              'actual_positive_approval_levels':['manager','operator','support'],
+              'actual_replay_protected_levels':['manager','operator','support'],
               'approval_baseline_source':'82861ac0b17aa7a0c494c564cdf4674cb6eb505d',
               'actual_production_bot_ingress':True,'actual_config_bootstrap_ingress':True,
               'actual_customer_app_downloads':True,'actual_customer_pagination_reply':True,
@@ -151,6 +167,14 @@ def main():
               'actual_customer_wallet_draft_paths':['1001:increaseWallet_100000','1001:increaseWalletCustom','1002:increaseWallet_100000','1002:increaseWalletCustom'],
               'actual_customer_ticket_actors':[1001,1002,9004],
               'forbidden_admin_wallet_effects':{'financial_reads':0,'sql_writes':0,'transactions':0,'native_calls':0}}),
+            ('staff_example','test_owner_db_staff_example.py',6,
+             {'complete':True,'cases':6,'actual_package_members':True,'source_real':True,
+              'authorized_assignment_removals':8,'additional_staff_assignment_removals':2,
+              'baseline_source':'f570db225beac9e429f11fbc73d84acaf3750cf6',
+              'archived_two_staff_assignments_red':True,
+              'staff_reintroduction_red':['admins_list','special_admins'],
+              'unrelated_template_mutation_red':['primary_owner','synthetic_database_user'],
+              'runtime_members':115,'private_config_read':False,'external_calls':0}),
             ('instance_content','test_owner_instance_content.py',69,
              {'result':'PASS','source_real':True,'socket_only_original_schema':True,'no_external_calls':True,
               'lock_join_baseline_red':True,'lock_join_baseline_source':'4548705609518f741d14375c9d47739eb302c3b6'}),
@@ -159,12 +183,26 @@ def main():
             ('receipt_presentation','test_owner_r5_receipt_presentation.py',13,
              {'complete':True,'source_real':True,'owned_original_schema_mariadb':True,
               'baseline_red':True,'external_calls':0,'financial_mutations_by_caption':0}),
-            ('admin_fanout','test_owner_r5_admin_fanout.py',132,
-             {'complete':True,'cases':132,'source_real':True,'owned_original_schema_mariadb':True,
+            ('admin_fanout','test_owner_r5_admin_fanout.py',246,
+             {'complete':True,'cases':246,'source_real':True,'owned_original_schema_mariadb':True,
               'network_calls':0,'recipient_matrix':True,'raw_text_photo_markup_preserved':True,
-              'legacy_tiers_preserved':True,'primary_owner_once':True,'options_recipient_integrity':True,
+              'notification_recipient_matrix':True,'notifications_independent_of_role':True,
+              'notification_default_on':True,'owner_only_notification_ui':True,
+              'notification_preference_preserved':True,'uniform_receipt_authority_all_tiers':True,
+              'notification_never_grants_or_revokes_actions':True,
+              'notification_off_suppresses_copies_and_updates':True,
+              'malformed_duplicate_notifications_denied':True,'support_receipt_approval_replay':True,
+              'support_payment_followups':True,'support_operations_still_denied':True,
+              'db_only_staff_authority':True,'legacy_roleless_operator':True,
+              'obsolete_staff_arrays_ignored':True,'explicit_manager_assignment':True,
+              'actual_admin_ui_membership_delivery':True,'old_snapshot_membership_safe':True,
+              'old_snapshot_membership_mode':'deferred_current_read_conflict',
+              'next_normal_delivery_includes_added_staff':True,'no_private_bootstrap_import':True,
+              'db_only_baseline_red':True,'private_staff_baseline_source':'4a28474fdba41e17ebadab29ece1c17d18038437',
+              'finance_source_ref':'current-source','catalog_source_ref':'current-source',
+              'persisted_tiers_preserved':True,'primary_owner_once':True,'options_recipient_integrity':True,
               'recorded_refs_match_delivery':True,'fresh_role_changes':True,
-              'repeatable_read_demotion_denied':True,'no_new_transaction_across_delivery':True,
+              'repeatable_read_notification_off_denied':True,'no_new_transaction_across_delivery':True,
               'actual_primary_receipt_evidence':True,'original_evidence_retry_preserved':True,
               'approval_replay_preserved':True,'stored_followup_loops':9,
               'stored_followup_markup_preserved':True,'historical_refs_preserved':True,
@@ -200,12 +238,14 @@ def main():
         copy_run=subprocess.run(['python3',str(ROOT/'tools/test_owner_r5_copy.py')],
                                 cwd=ROOT,check=True,timeout=180,capture_output=True,text=True)
         copy_proof=json.loads(copy_run.stdout)
-        required_copy={'status':'PASS','changes':271,'retired':9,'added':38,'current_keys':2664,
+        required_copy={'status':'PASS','changes':271,'retired':9,'added':42,'current_keys':2668,
                        'r5_negative_controls':5,'persian_prose_start_violations':0,
                        'duplicate_heading_markers':0,'guide_provider_cases':2,'guide_JSON_examples':3,
                        'actual_HTML_transport_cases':2,'archived_wrong_parse_RED':True,
                        'receipt_PRICE_template_cases':6,'real_Telegram_rendering':'NOT_TESTED',
                        'composed_catalog_correction_keys':22,'composed_heading_cases':42,
+                       'notification_catalog_additions':4,'staff_role_description_amendments':1,
+                       'staff_catalog_negative_controls':6,
                        'telegram_update_id_label_cases':1,'telegram_update_id_numeric_value_preserved':True,
                        'archived_wrong_telegram_update_label_RED':True,
                        'composed_heading_source_paths':16,'composed_heading_archived_RED':18,
@@ -790,10 +830,10 @@ def main():
                 and text_catalog.get("retired_parser_tokens")==23
                 and text_catalog.get("relocation_source_ref")=="ecd30ba9192ed374703118a6c131be8809cc7b06"
                 and text_catalog.get("native",{}).get("current_retired_feature_keys")==3
-                and text_catalog.get("catalog_keys")==2664
+                and text_catalog.get("catalog_keys")==2668
                 and text_catalog.get("native",{}).get("editable_catalog_files")==2
                 and text_catalog.get("native",{}).get("logical_topics")==26
-                and text_catalog.get("native",{}).get("current_catalog_keys")==2664
+                and text_catalog.get("native",{}).get("current_catalog_keys")==2668
                 and text_catalog.get("native",{}).get("current_management_added_keys")==112
                 and text_catalog.get("native",{}).get("current_catalog_binding_paths")==2
                 and text_catalog.get("native",{}).get("current_catalog_binding_entries")==4
@@ -807,18 +847,18 @@ def main():
                 and text_catalog["native"]["current_byte_preserved_keys"]
                     +text_catalog["native"]["current_style_changes"]
                     +text_catalog["native"]["current_added_admin_keys"]==2523
-                and text_catalog.get("native",{}).get("current_native_template_assertions")==3949
+                and text_catalog.get("native",{}).get("current_native_template_assertions")==3953
                 and text_catalog.get("native",{}).get("current_object_conversion_templates")==257
                 and text_catalog.get("native",{}).get("current_shared_multi_parameter_templates")==61
                 and text_catalog.get("native",{}).get("current_one_pass_templates")==257
                 and text_catalog.get("native",{}).get("current_r5_changes")==271
                 and text_catalog.get("native",{}).get("current_r5_retired_keys")==9
-                and text_catalog.get("native",{}).get("current_r5_added_keys")==38
+                and text_catalog.get("native",{}).get("current_r5_added_keys")==42
                 and text_catalog.get("presentation",{}).get("r5_negative_controls")==5
                 and text_catalog.get("native",{}).get("current_non_ascii_digit_templates")==0
                 and text_catalog.get("presentation",{}).get("status")=="PASS"
                 and text_catalog.get("presentation",{}).get("editable_files")==2
-                and text_catalog.get("presentation",{}).get("current_keys")==2664
+                and text_catalog.get("presentation",{}).get("current_keys")==2668
                 and text_catalog.get("presentation",{}).get("numeric_template_changes")==23
                 and text_catalog.get("presentation",{}).get("adjacent_emoji_violations")==0
                 and text_catalog.get("presentation",{}).get("parameter_exception_count")==3
