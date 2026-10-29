@@ -16,6 +16,10 @@ set_error_handler(static function($s,$m,$f,$l) {
 $root=$argv[1];chdir(dirname($argv[2]));
 $connection=new mysqli('localhost','root','',$argv[3],0,$argv[2]);
 $connection->set_charset('utf8mb4');
+// This delegated editor is a Manager; cached/revoked boolean-role negatives
+// below still exercise the actual production role resolver.
+$connection->query("INSERT INTO setting(type,value) VALUES ('ADMIN_ROLE_9002','manager')");
+
 require_once $root.'/src/Subscription/ServerDisplaySettings.php';
 use function AchBot\Subscription\Presentation\present;
 $checks=0;

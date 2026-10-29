@@ -128,6 +128,10 @@ def main():
             sql(w,e,"INSERT INTO setting(type,value) VALUES ('BOT_STATES',"+
                 quoted(json.dumps(data,ensure_ascii=False,separators=(',',':')))+")")
         store(initial)
+        # Delegated gateway editing requires an explicit Manager tier.
+        # Existing revocation/source/concurrency negatives remain unchanged.
+        sql(w,e,"INSERT INTO setting(type,value) VALUES ('ADMIN_ROLE_9002','manager')")
+
         # Native schema fixture has user1001 (non-agent), 9001 primary, 9002 delegate.
         sql(w,e,f"UPDATE users SET date='{now-140*86400}',is_agent=0 WHERE userid=1001")
         sql(w,e,f"INSERT INTO users (userid,name,username,refcode,wallet,date,is_agent) "
