@@ -26,6 +26,7 @@ register_shutdown_function(static function(){echo json_encode(['events'=>$GLOBAL
 function sendMessage($text=null,$keys=null,...$rest){$GLOBALS['events'][]=['event'=>'SEND','text'=>$text,'keys'=>json_decode($keys??'{}',true)];return (object)['ok'=>true,'result'=>(object)['message_id'=>703,'chat'=>(object)['id'=>$GLOBALS['from_id']]]];}
 function editText($id,$text,$keys=null,...$rest){$GLOBALS['events'][]=['event'=>'EDIT','text'=>$text,'keys'=>json_decode($keys??'{}',true)];return (object)['ok'=>true];}
 function alert(...$args){$GLOBALS['events'][]=['event'=>'ALERT','text'=>$args[0]??''];}
+function answerCallbackQuery($id,$text='',...$rest){$GLOBALS['events'][]=['event'=>'ALERT','text'=>$text];}
 function getMainKeys(){return '{}';}
 function getAdminKeys(){return '{}';}
 function setUser($value=null,$field='step'){global $connection,$from_id;$value=$value??'none';if($field!=='step')throw new RuntimeException('unexpected_field');$s=$connection->prepare('UPDATE users SET step=? WHERE userid=?');$s->bind_param('si',$value,$from_id);$s->execute();$s->close();}
