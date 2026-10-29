@@ -1475,7 +1475,6 @@ return [
         'config.get_bot_setting_keys.button.354012a9d5' => '📱 تایید شماره ایرانی',
         'config.get_bot_setting_keys.button.3cd98f07be' => '📊 فروش',
         'config.get_bot_setting_keys.button.5a3a8ecb3c' => 'ℹ️ وضعیت ربات',
-        'config.get_bot_setting_keys.button.ce5bb2416c' => '⚙️ نمایش لینک و QR برای هر سرور',
         'config.get_bot_setting_keys.button.c56b392566' => '📋 مشخصات اشتراک',
         'config.get_bot_setting_keys.button.242b408ae2' => '🔗 دریافت لینک جدید',
         'config.get_bot_setting_keys.button.fb0475aeb4' => '📅 بروزرسانی لینک',
@@ -2081,8 +2080,8 @@ return [
     ],
     // متن‌ها و نشانی‌های قابل تنظیم هر ربات
     'instance_content' => [
-        'title' => '📝 متن‌ها و نشانی‌های ربات' . "\n" . 'بخش موردنظر را برای ویرایش انتخاب کنید.',
-        'settings_button' => '📝 متن‌ها و نشانی‌ها',
+        'title' => '📝 متن‌های ربات' . "\n" . 'متن موردنظر را برای ویرایش انتخاب کنید.',
+        'settings_button' => '📝 متن‌های ربات',
         'field_start_message' => 'متن شروع و منوی اصلی',
         'field_user_welcome_message' => 'خوش‌آمدگویی کاربر جدید',
         'field_reached_main_menu' => 'بازگشت به منوی اصلی',
@@ -2092,9 +2091,6 @@ return [
         'field_lockChannelJoinUrl' => 'پیوند عضویت کانال اجباری',
         'configured' => 'تنظیم شده',
         'unset' => 'تنظیم نشده',
-        'support' => '📨 نشانی پشتیبانی',
-        'reward_channel' => '📢 کانال گزارش‌ها',
-        'lock_channel' => '🔐 کانال عضویت اجباری',
         'message_prompt' => ['text' => '📝 {label}' . "\n" . 'متن جدید را بفرستید. برای برجسته‌سازی یا کد از قالب‌بندی خود تلگرام استفاده کنید.' . "\n" . 'متغیرهای مجاز: <code>SUPPORTID</code>، <code>LOCKCHANNEL</code>، <code>HELPCHANNEL</code>، <code>COOPERATIONURL</code> و <code>userid</code>.' . "\n" . 'متن راهنمای خرید تا 1200 حرف و متن‌های دیگر تا 3000 حرف پذیرفته می‌شوند.' . "\n" . 'برای بازگشت به راهنمای پیش‌فرض، دستور <code>/clear</code> را بفرستید.', 'parameters' => ['label']],
         'destination_prompt' => ['text' => '🔗 {label}' . "\n" . 'نشانی کامل یا نام کاربری تلگرام را بفرستید.' . "\n" . 'نمونهٔ نشانی: <code>https://example.com/panel</code>' . "\n" . 'نمونهٔ تلگرام: <code>@example_support</code>' . "\n" . 'برای پاک کردن نشانی، دستور <code>/clear</code> را بفرستید.', 'parameters' => ['label']],
         'invalid_message' => '⚠️ متن قابل ذخیره نیست؛ متن کوتاه‌تر و قالب‌بندی معتبر تلگرام را بفرستید.',
