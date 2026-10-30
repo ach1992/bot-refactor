@@ -213,7 +213,7 @@ $freezeRoster=static function(array $members) use (
     }
 };
 
-$reserve=static function(int $index,string $remark,string $reason) use (
+$reserve=static function(int $index,string $remark,string $reason,array $referenceProof=[]) use (
     $connection,$rowId,$serverId,$volume,$day,$holdType,$rosterType,&$rosterId,$receipt
 ): array {
     if ($index<0 || $index>=2147483647)
@@ -224,7 +224,7 @@ $reserve=static function(int $index,string $remark,string $reason) use (
         'username'=>$remark,'volume_mb'=>$volume,'days'=>$day,
         'stage'=>'before_external_effect','reason'=>$reason,
         'created_at'=>gmdate('c')
-    ],JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE);
+    ]+$referenceProof,JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE);
     if (!$connection->begin_transaction())
         throw new RuntimeException('gift_hold_begin_failed');
     try {
@@ -285,8 +285,8 @@ $reserve=static function(int $index,string $remark,string $reason) use (
 };
 
 $finish=static function(
-    int $before,?int $holdId,int $next,?array $order,?int $absoluteExpire
-) use ($connection,$rowId,$serverId,$holdType,$rosterType,&$rosterId,$receipt): void {
+    int $before,?int $holdId,int $next,array $orders,?object $result,array $referenceProof=[]
+) use ($connection,$rowId,$serverId,$volume,$day,$holdType,$rosterType,&$rosterId,$receipt): void {
     if ($rosterId<=0) throw new RuntimeException('gift_roster_missing_at_finish');
     $index=$before<0 ? -$before-1 : $before;
     if ($next!==$index+1) throw new RuntimeException('gift_finish_bad_progress');
@@ -312,35 +312,10 @@ $finish=static function(
             !is_int($roster['count']??null) || $next>$roster['count'])
             throw new RuntimeException('gift_finish_roster_changed');
 
-        // Volume-only gifts have no expiry UPDATE, but their original local
-        // account/order identity must still exist at completion. Do not emit
-        // success for a deleted/reassigned order after the remote increment.
-        if ($order!==null && $absoluteExpire===null) {
-            $stmt=$connection->prepare(
-                'SELECT id FROM orders_list WHERE id=? AND userid=? AND server_id=? AND remark=? AND expire_date=? FOR UPDATE');
-            if (!$stmt) throw new RuntimeException('gift_volume_identity_prepare');
-            $oid=(int)$order['id'];$uid=(int)$order['userid'];
-            $originalExpire=(int)$order['expire_date'];
-            $remark=(string)$order['remark'];
-            $stmt->bind_param('iiisi',$oid,$uid,$serverId,$remark,$originalExpire);
-            $ok=$stmt->execute();$existing=$ok?$stmt->get_result()->fetch_all(MYSQLI_ASSOC):null;
-            $stmt->close();
-            if ($existing===null || count($existing)!==1)
-                throw new RuntimeException('gift_volume_local_identity_unconfirmed');
-        }
-        if ($order!==null && $absoluteExpire!==null) {
-            if ($absoluteExpire<=0 || $absoluteExpire>2147483647)
-                throw new RuntimeException('gift_expiry_unrepresentable');
-            $stmt=$connection->prepare(
-                'UPDATE orders_list SET expire_date=? WHERE id=? AND userid=? AND server_id=? AND remark=? AND expire_date=?');
-            if (!$stmt) throw new RuntimeException('gift_local_update_prepare');
-            $id=(int)$order['id'];$uid=(int)$order['userid'];
-            $remark=(string)$order['remark'];
-            $beforeExpire=(int)$order['expire_date'];
-            $stmt->bind_param('iiiisi',$absoluteExpire,$id,$uid,$serverId,$remark,$beforeExpire);
-            $ok=$stmt->execute();$count=$stmt->affected_rows;$stmt->close();
-            if (!$ok || $count!==1)
-                throw new RuntimeException('gift_local_update_unconfirmed');
+        if ($result!==null) {
+            if (achbotGiftIdentityHash($connection,$orders)!==($referenceProof['native_identity_sha256']??null))
+                throw new RuntimeException('gift_native_identity_changed_after_effect');
+            achbotGiftFinishReferences($connection,$orders,$day>0);
         }
 
         $stmt=$connection->prepare('UPDATE gift_list SET `offset`=? WHERE id=? AND `offset`=?');
@@ -362,9 +337,27 @@ $finish=static function(
             throw new RuntimeException('gift_finish_roster_update_unconfirmed');
 
         if ($holdId!==null) {
-            $stmt=$connection->prepare('DELETE FROM setting WHERE id=? AND type=?');
-            if (!$stmt) throw new RuntimeException('gift_finish_hold_prepare');
-            $stmt->bind_param('is',$holdId,$holdType);
+            if ($result===null) {
+                $stmt=$connection->prepare('DELETE FROM setting WHERE id=? AND type=?');
+                if (!$stmt) throw new RuntimeException('gift_finish_hold_prepare');
+                $stmt->bind_param('is',$holdId,$holdType);
+            } else {
+                // Keep successful native/readback and recipient evidence.
+                // The old uncertain HOLD remains untouched on any rollback.
+                $type='ACHBOT_GIFT_RESULT_'.$rowId.'_'.$index;
+                $record=json_encode([
+                    'version'=>1,'kind'=>'achbot_bulk_gift_v1','state'=>'completed',
+                    'gift_id'=>$rowId,'server_id'=>$serverId,'recipient_index'=>$index,
+                    'username'=>$referenceProof['username']??'',
+                    'volume_mb'=>$volume,'days'=>$day,
+                    'before_expire'=>$result->before_expire??null,
+                    'applied_expire'=>$result->applied_expire,'applied_bytes'=>$result->applied_bytes,
+                    'completed_at'=>gmdate('c')
+                ]+$referenceProof,JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE);
+                $stmt=$connection->prepare('UPDATE setting SET type=?,value=? WHERE id=? AND type=?');
+                if (!$stmt) throw new RuntimeException('gift_finish_result_prepare');
+                $stmt->bind_param('ssis',$type,$record,$holdId,$holdType);
+            }
             $ok=$stmt->execute();$count=$stmt->affected_rows;$stmt->close();
             if (!$ok || $count!==1)
                 throw new RuntimeException('gift_finish_hold_unconfirmed');
@@ -581,7 +574,7 @@ foreach ($rosterNames as $index=>$remark) {
     if (!$eligible) {
         $next=$index+1;
         try {
-            $finish($index,null,$next,null,null);
+            $finish($index,null,$next,[],null);
         } catch (Throwable $e) {
             $notifyAdmin(\achbotMessage('jobs.gift2all.message.5f467e3e2c'));
             return;
@@ -590,21 +583,18 @@ foreach ($rosterNames as $index=>$remark) {
         continue;
     }
 
-    $orderStmt=$connection->prepare(
-        'SELECT id,userid,remark,expire_date FROM orders_list WHERE server_id=? AND inbound_id=0 AND remark=? ORDER BY id LIMIT 2');
-    if (!$orderStmt) return;
-    $orderStmt->bind_param('is',$serverId,$remark);
-    $ok=$orderStmt->execute();
-    $orders=$ok?$orderStmt->get_result()->fetch_all(MYSQLI_ASSOC):null;
-    $orderStmt->close();
-    if ($orders===null || count($orders)>1) {
+    try {
+        $orders=achbotGiftReferences($connection,$serverId,$remark);
+        $referenceProof=achbotGiftReferenceProof($orders);
+        $referenceProof['native_identity_sha256']=achbotGiftIdentityHash($connection,$orders);
+        $referenceProof['username']=$remark;
+    } catch (Throwable $error) {
         $notifyAdmin(\achbotMessage('jobs.gift2all.message.f4b87a5740'));
         return;
     }
-    $order=$orders[0]??null;
 
     try {
-        [$held,$holdId]=$reserve($index,$remark,'pending_service_edit');
+        [$held,$holdId]=$reserve($index,$remark,'pending_service_edit',$referenceProof);
     } catch (Throwable $e) {
         // No outbound edit without a confirmed durable review hold.
         $notifyAdmin(\achbotMessage('jobs.gift2all.message.65625b8a59'));
@@ -614,57 +604,51 @@ foreach ($rosterNames as $index=>$remark) {
     try {
         $change['remark']=$remark;
         $change['operation_key']='gift:'.(int)$holdId;
-        $result=achbotApplyServiceEdit($connection,$serverId,$change,$target);
+        unset($change['order_id']);
+        if (($target['provider']??'marzban')==='pasarguard' && $orders)
+            $change['order_id']=$orders[0]['id'];
+        achbotGiftValidateReferences($connection,$orders);
+        if (achbotGiftIdentityHash($connection,$orders)!==$referenceProof['native_identity_sha256'])
+            throw new RuntimeException('gift_native_identity_changed_before_effect');
+        $effectTarget=achbotGiftPinNativeIdentity($connection,$orders,$target);
+        $result=achbotApplyServiceEdit($connection,$serverId,$change,$effectTarget);
         $verified=is_object($result) &&
             ($result->success??false)===true &&
             ($result->verified??false)===true &&
             ($result->uncertain??false)!==true &&
             is_int($result->applied_expire??null) &&
             is_int($result->applied_bytes??null) &&
-            $result->applied_expire>0 && $result->applied_bytes>=0;
+            $result->applied_expire>0 && $result->applied_expire<=2147483647 && $result->applied_bytes>=0;
         if (!$verified) {
             if (is_object($result) &&
                 ($result->success??null)===false &&
                 ($result->uncertain??null)===false) {
                 // A validated deterministic refusal has no remote effect.
-                $finish($held,$holdId,$index+1,null,null);
-                $notifyAdmin(\achbotMessage('jobs.gift2all.message.1ea4ee3d49', ['index' => $index]));
+                $finish($held,$holdId,$index+1,[],null);
+                try {$notifyAdmin(\achbotMessage('jobs.gift2all.message.1ea4ee3d49', ['index' => $index]));}
+                catch (Throwable $ignored) {}
                 $offset=$index+1;
                 continue;
             }
             throw new RuntimeException('gift_remote_effect_unverified');
         }
 
-        $absoluteExpire=$day>0 ? $result->applied_expire : null;
-        // Absolute verified readback, not an unchecked local +days guess.
-        $finish($held,$holdId,$index+1,$order,$absoluteExpire);
+        $finish($held,$holdId,$index+1,$orders,$result,$referenceProof);
         $offset=$index+1;
-
-        if ($order!==null) {
-            $giftText='';
-            if ($volume>0) $giftText.=\achbotMessage('jobs.gift2all.gift_text.8f714dee13', ['volume' => $volume]);
-            if ($day>0) $giftText.=($giftText===''?'':\achbotMessage('jobs.gift2all.text.1a51e219ec')).\achbotMessage('jobs.gift2all.text.b70363d685', ['day' => $day]);
-            // Telegram delivery can fail after a confirmed provider effect
-            // and local COMMIT. It cannot turn a successful gift into a
-            // pending external-effect hold or authorize another edit.
-            try {
-                $notice=sendMessage(\achbotMessage('jobs.gift2all.message.1bf0942a3d', ['remark' => $remark, 'giftText' => $giftText]),
-                    null,null,(int)$order['userid']);
-                if (!is_object($notice) || ($notice->ok??false)!==true)
-                    $notifyAdmin(\achbotMessage('jobs.gift2all.message.07c38a54a9').
-                        \achbotMessage('jobs.gift2all.message.9b87258e16', ['rowId' => $rowId, 'remark' => $remark]));
-            } catch (Throwable $notificationError) {
-                try {
-                    $notifyAdmin(\achbotMessage('jobs.gift2all.message.4ba0cee07a').
-                        \achbotMessage('jobs.gift2all.message.9b87258e16', ['rowId' => $rowId, 'remark' => $remark]));
-                } catch (Throwable $ignored) {}
-            }
-        }
     } catch (Throwable $e) {
         // The negative cursor and exact-recipient hold remain persisted.
         // Never retry an unknown external effect during the next Cron tick.
         $notifyHold($remark,$index,'gift_requires_operator_reconciliation');
         return;
+    }
+    // Notification composition/transport is outside native-effect failure handling.
+    $notices=achbotGiftDeliverNotices($connection,(int)$holdId,'batch:'.$rowId.':'.$index,
+        $orders,$remark,$volume,$day);
+    if ($notices['unconfirmed']) {
+        try {
+            $notifyAdmin(\achbotMessage('jobs.gift2all.message.07c38a54a9').
+                \achbotMessage('jobs.gift2all.message.9b87258e16',['rowId'=>$rowId,'remark'=>$remark]));
+        } catch (Throwable $ignored) {}
     }
 }
 if (!$processedThisTick && $offset===count($rosterNames)) {

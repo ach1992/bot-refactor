@@ -154,7 +154,7 @@ $GLOBALS['events']=[];
 $GLOBALS['fixture_printed']=false;
 register_shutdown_function(static function() {
     if (!$GLOBALS['fixture_printed'])
-        echo json_encode(['events'=>$GLOBALS['events'],'plan_mutations'=>$GLOBALS['plan_mutations']],JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE);
+        echo json_encode(['events'=>$GLOBALS['events'],'plan_mutations'=>$GLOBALS['plan_mutations'],'customer_notices'=>$GLOBALS['customer_notices']??[]],JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE);
 });
 function bot($method,$args=[]) {
     if ($method==='editMessageReplyMarkup') $GLOBALS['events'][]='MOD_NOTICE';
@@ -169,8 +169,9 @@ function editText($mid,$body,$keys=null) {
     $GLOBALS['events'][]='EDIT_TEXT:'.(string)$body;
     return (object)['ok'=>true];
 }
-function sendMessage($body=null,$key=null) {
+function sendMessage($body=null,$key=null,$parseMode=null,$recipient=null) {
     $GLOBALS['events'][]=(string)$body;
+    $GLOBALS['customer_notices'][]=['recipient'=>$recipient,'text'=>(string)$body,'parse_mode'=>$parseMode];
     if (($GLOBALS['spec']['mode']??'')==='notice_fail' &&
         str_contains((string)$body,'✅'))
         throw new RuntimeException('synthetic_notification_lost');
@@ -256,7 +257,7 @@ if (!achbotWebhookIngressAuthenticated()) {
     require __DIR__.'/gift-route.php';
 }
 $GLOBALS['fixture_printed']=true;
-echo json_encode(['events'=>$GLOBALS['events'],'plan_mutations'=>$GLOBALS['plan_mutations']],JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE);
+echo json_encode(['events'=>$GLOBALS['events'],'plan_mutations'=>$GLOBALS['plan_mutations'],'customer_notices'=>$GLOBALS['customer_notices']??[]],JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE);
 '''
 
 def ensure(ok: bool, why: str) -> None:
@@ -1563,7 +1564,7 @@ def main() -> None:
 
         reset(work,env);prepare_final(work,env,stage)
         positive=volume(work,env,stage)
-        ensure(len(effects(stage))==1 and row_state(work,env)==(str(NEW_EXPIRY),'none',1,1)
+        ensure(len(effects(stage))==1 and row_state(work,env)==(str(OLD_EXPIRY),'none',1,1)
                and rows(work,env,'SOURCE')[0]['state']=='completed'
                and rows(work,env,'ACCOUNT')[0]['state']=='completed'
                and any('✅' in x for x in positive['events']),
@@ -1577,7 +1578,7 @@ def main() -> None:
 
         for days,v,expected,fields in [
             ('0','1024',OLD_EXPIRY,['plus_volume']),
-            ('2','0',NEW_EXPIRY,['plus_day'])
+            ('2','0',OLD_EXPIRY,['plus_day'])
         ]:
             reset(work,env);stage.joinpath('effects.jsonl').unlink(missing_ok=True)
             prepare_final(work,env,stage,days)
@@ -1635,7 +1636,7 @@ def main() -> None:
         no_notice=volume(work,env,stage,mode='notice_fail')
         ensure(len(effects(stage))==1 and
                rows(work,env,'SOURCE')[0]['state']=='completed' and
-               row_state(work,env)[0]==str(NEW_EXPIRY),
+               row_state(work,env)[0]==str(OLD_EXPIRY),
                'Notification outage reverted a completed provider/SQL commit')
         volume(work,env,stage)
         ensure(len(effects(stage))==1, 'Notification outage replayed provider')
@@ -1845,10 +1846,19 @@ def main() -> None:
           "VALUES(92,1001,REPEAT('a',30),'fixture',7,2,0,'fixture-user',"
           "'second-uuid','vless',1800000100,'[]',100,1,'fixture')")
         r=remark(work,env,stage)
-        ensure(not any('روز' in x for x in r['events']) and
-               not effects(stage) and row_state(work,env)[2:]==(0,0),
-               'Ambiguous order was chosen for direct gift')
-        passed.append('duplicate_remark_order_rejected')
+        # Cached proxy UUIDs can differ for the same native account. The
+        # Owner allows shared references; the physical mutation stays once.
+        ensure(any('روز' in x for x in r['events']) and not effects(stage),
+               'Shared current subscription references were rejected')
+        day(work,env,stage)
+        shared=volume(work,env,stage)
+        ensure(len(effects(stage))==1 and
+               rows(work,env,'SOURCE')[0]['state']=='completed' and
+               rows(work,env,'SOURCE')[0]['reference_ids']==[91,92] and
+               rows(work,env,'SOURCE')[0]['recipient_userids']==[1001] and
+               len([n for n in shared['customer_notices'] if n['recipient']==1001])==1,
+               'Shared references repeated the physical gift/customer notice')
+        passed.append('shared_remark_distinct_cached_uuid_one_gift_one_customer_notice')
 
         reset(work,env);stage.joinpath('effects.jsonl').unlink(missing_ok=True)
         prepare_final(work,env,stage)

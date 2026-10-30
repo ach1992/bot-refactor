@@ -233,6 +233,23 @@ function getMarzbanUser($server_id, $remark, $token = null, bool $strict = false
     $response=json_decode((string)$raw);
     if ($strict && (!is_object($response) || isset($response->detail)))
         return (object)['success'=>false,'uncertain'=>true,'msg'=>'effect_get_invalid'];
+    // Imported administrator gifts pin the native incarnation through every
+    // authenticated mutation/pre-effect/readback GET. A reused username is
+    // never the imported service, even when quota, expiry and UUID look alike.
+    if ($effectTarget!==null && array_key_exists('marzban_native_identity',$effectTarget)) {
+        $identity=$effectTarget['marzban_native_identity'];
+        try {
+            if (!is_array($identity) ||
+                ($identity['remote_username']??null)!==$remark ||
+                !is_string($identity['remote_created_at']??null) ||
+                !is_object($response) || ($response->username??null)!==$remark ||
+                !is_string($response->created_at??null) ||
+                \achbotProviderImportDate($response->created_at)!==$identity['remote_created_at'])
+                throw new \RuntimeException('gift_native_incarnation_changed');
+        } catch (\Throwable $error) {
+            return (object)['success'=>false,'uncertain'=>true,'msg'=>'gift_native_incarnation_changed'];
+        }
+    }
     return $response;
 }
 

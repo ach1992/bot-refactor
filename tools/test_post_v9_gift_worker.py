@@ -169,7 +169,8 @@ def seed_notification_staff(work,env):
 
 
 def assert_private_fanout(events,expected=(9001,9101)):
-    notices=[e for e in events if e['kind']=='MESSAGE' and e['recipient'] not in (1001,1002)]
+    notices=[e for e in events if e['kind']=='MESSAGE' and e['recipient'] not in (1001,1002)\
+        and not e['text'].startswith('🎁 هدیهٔ اشتراک اعمال شد')]
     require(notices,'No administrator notices observed')
     groups={}
     for notice in notices:
@@ -213,8 +214,11 @@ def run_tick(work,env,stage,log,mode,status='active',members=None,old=False):
         env=_run_env(env,work,log,roster,mode,status),
         capture_output=True,text=True,timeout=45)
     stderr_lines=process.stderr.splitlines()
-    allowed_diagnostics=(mode=='manager_notice_fail' and stderr_lines and
-        all(notification_fixture.sanitized_exception_line(line) for line in stderr_lines))
+    allowed_diagnostics=(bool(stderr_lines) and all(
+        (mode=='manager_notice_fail' and (notification_fixture.sanitized_exception_line(line) or\
+         __import__('re').fullmatch(r'achbot_gift_completion_report_unconfirmed reference=batch:[1-9][0-9]*:[0-9]+',line))) or
+        (mode=='notify_fail' and line.strip()=='achbot_gift_customer_notice_unconfirmed order_id=91 userid=1001')
+        for line in stderr_lines))
     require(process.returncode==0 and not process.stdout and (not process.stderr or allowed_diagnostics),
             f"Worker PHP failed mode={mode}: {process.returncode} {process.stdout[-800:]} {process.stderr[-1600:]}")
     return [json.loads(line) for line in log.read_text().splitlines()] if log.exists() else []
@@ -300,7 +304,8 @@ def exercise_roster_cases(work,env,stage,log,cases):
     event=run_tick(work,env,stage,log,'verified',members=added)
     require(effect_names(event)==['bob'] and state(work,env,gift)[0]==2 and
             manifest(work,env,gift)['cursor']==2 and
-            int(q(work,env,'SELECT expire_date FROM orders_list WHERE id=92'))==VERIFIED_EXPIRY,
+            int(q(work,env,'SELECT expire_date FROM orders_list WHERE id=92'))==ORIGINAL_EXPIRY and
+            q(work,env,'SELECT notif FROM orders_list WHERE id=92')=='0',
             'Prepending a new user retargeted or repeated a completed account')
     cases.append('r1a_insert_prepend_only_original_pending_username_edited')
     require('carol' not in effect_names(event) and 'fixture-user' not in effect_names(event),
@@ -416,6 +421,9 @@ def main():
     cases=[]
     with owned.owned_database() as (work,env):
         native.seed(work,env,'http://127.0.0.1:9')
+        # Roster fixture references a second real customer; notices now verify
+        # exact persisted recipient identity instead of sending to orphan IDs.
+        q(work,env,"INSERT INTO users(userid,name,username,refcode,wallet,date) VALUES(1002,'Second','fixture-second','0',0,'1700000000')")
         # Legacy real worker dereferences server_info.title directly; the
         # original 23-table isolated native.seed fixture only populated
         # server_config and orders_list.
@@ -434,6 +442,8 @@ def main():
         (stage/'src/Subscription').mkdir(parents=True)
         shutil.copyfile(ROOT/'src/Subscription/GiftBatch.php',
                         stage/'src/Subscription/GiftBatch.php')
+        (stage/'src/Purchase').mkdir(parents=True)
+        shutil.copyfile(ROOT/'src/Purchase/OrderWrites.php',stage/'src/Purchase/OrderWrites.php')
         shutil.copytree(ROOT/'messages',stage/'messages')
         (stage/'baseInfo.php').write_text('<?php // owned test\n')
         stage_notifications(stage)
@@ -450,15 +460,15 @@ def main():
         seed_notification_staff(work,env)
 
         for mode,volume,day,want_offset,want_hold,want_expiry in [
-            ('verified',2048,2,2,0,VERIFIED_EXPIRY),
+            ('verified',2048,2,2,0,ORIGINAL_EXPIRY),
             ('refused',2048,2,2,0,ORIGINAL_EXPIRY),
             ('uncertain',2048,2,-1,1,ORIGINAL_EXPIRY),
             ('throw',2048,2,-1,1,ORIGINAL_EXPIRY),
             ('unverified',2048,2,-1,1,ORIGINAL_EXPIRY),
             ('bad_expire',2048,2,-1,1,ORIGINAL_EXPIRY),
-            ('verified',0,2,2,0,VERIFIED_EXPIRY),
+            ('verified',0,2,2,0,ORIGINAL_EXPIRY),
             ('verified',2048,0,2,0,ORIGINAL_EXPIRY),
-            ('notify_fail',2048,2,2,0,VERIFIED_EXPIRY),
+            ('notify_fail',2048,2,2,0,ORIGINAL_EXPIRY),
             ('verified',1536,2,-1,1,ORIGINAL_EXPIRY),
             ('verified',0,0,-1,1,ORIGINAL_EXPIRY),
         ]:
@@ -672,6 +682,10 @@ def main():
         gift_id=setup_gift(work,env,stage,2048,2)
         event=run_tick(work,env,stage,log,'verified')
         groups=assert_private_fanout(event)
+        summaries=[e for e in event if e['kind']=='MESSAGE' and e['text'].startswith('🎁 هدیهٔ اشتراک اعمال شد')]
+        require(sorted(str(e['recipient']) for e in summaries)==sorted(map(str,[9001,9101,'@fixture-gift-private-channel']))
+                and all(e['parse_mode']=='HTML' for e in summaries),
+                'Verified physical gift summary did not reach exact general report destinations once')
         require(len(groups)==1 and effect_names(event)==['fixture-user'] and
                 state(work,env,gift_id)[0]==2,
                 'Start fanout changed committed gift effect/cursor')
@@ -681,7 +695,7 @@ def main():
                 'Completion fanout changed cleanup or repeated effect')
         require(not run_tick(work,env,stage,log,'verified'),
                 'Empty queue repeated a completion notice')
-        cases.append('gift_private_start_completion_owner_manager_once_no_operator_support_channel')
+        cases.append('gift_private_progress_and_verified_general_summary_destinations')
 
         gift_id=setup_gift(work,env,stage,2048,2)
         event=run_tick(work,env,stage,log,'uncertain')

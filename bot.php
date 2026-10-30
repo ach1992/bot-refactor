@@ -1725,6 +1725,8 @@ if (is_string($userInfo['step']??null) &&
         return;
     }
     $directChange=['remark'=>$directClaim['order']['remark']];
+    if (($directClaim['target']['provider']??'marzban')==='pasarguard')
+        $directChange['order_id']=$directClaim['order']['id'];
     if ($directClaim['days']>0) $directChange['plus_day']=$directClaim['days'];
     if ($directClaim['volume_mb']>0)
         $directChange['plus_volume']=intdiv($directClaim['volume_mb'],1024);
@@ -1745,13 +1747,6 @@ if (is_string($userInfo['step']??null) &&
             preg_match('/\A[a-z0-9_]{1,70}\z/D',$directProviderCode)===1)
             $directFailure='provider_'.$directProviderCode;
         achbotDirectGiftComplete($connection,$directClaim,$directResult);
-        try {
-            sendMessage(\achbotMessage('bot.bot.gift_volume_and_day.message.df8d2180ae').
-                $directClaim['id'].').',$removeKeyboard);
-            sendMessage($mainValues['reached_main_menu'], getMainKeys(), 'HTML');
-        } catch (Throwable $noticeFailure) {
-            error_log('direct_gift_success_notice_unconfirmed');
-        }
     } catch (Throwable $e) {
         if ($e->getMessage()==='direct_gift_result_unverified' &&
             $directFailure!=='direct_gift_provider_unverified') {
@@ -1774,6 +1769,17 @@ if (is_string($userInfo['step']??null) &&
         } catch (Throwable $ignored) {
             error_log('direct_gift_review_notice_unconfirmed');
         }
+        return;
+    }
+    achbotGiftDeliverNotices($connection,$directClaim['id'],'direct:'.$directClaim['id'],
+        $directClaim['references'],$directClaim['order']['remark'],
+        $directClaim['volume_mb'],$directClaim['days']);
+    try {
+        sendMessage(\achbotMessage('bot.bot.gift_volume_and_day.message.df8d2180ae').
+            $directClaim['id'].').',$removeKeyboard);
+        sendMessage($mainValues['reached_main_menu'], getMainKeys(), 'HTML');
+    } catch (Throwable $noticeFailure) {
+        error_log('direct_gift_success_notice_unconfirmed');
     }
     return;
 }

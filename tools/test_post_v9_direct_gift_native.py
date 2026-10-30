@@ -283,7 +283,7 @@ def main():
                 native_user=a.accounts['fixture-user'] if provider=='marzban' else server.user
                 writes=a.put_count if provider=='marzban' else server.write_count
                 expected_expire=direct.OLD_EXPIRY+days*86400
-                expected_local=expected_expire if days else local_expire
+                expected_local=local_expire
                 expected_bytes=2147483648+(volume//1024)*1073741824
                 actual=dict(state=journals[0]['state'] if journals else None,
                     review_reason=journals[0].get('review_reason') if journals else None,
