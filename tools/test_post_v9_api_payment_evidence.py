@@ -65,6 +65,8 @@ case 'snapshot':
  $result=['valid'=>$profile!==null,'issued'=>$profile['issued_at']??null,
  'subject'=>$profile['subject']??null];break;
 case 'claim':$result=achbotPaymentEvidenceClaim($db,$id);if($result)$result=['token'=>$result['token']];break;
+case 'defer':$result=achbotPaymentEvidenceDefer($db,$id,$spec['token'],$spec['status']);break;
+case 'typed':$db->begin_transaction();$result=achbotPaymentEvidenceHasTypedReviewLocked($db,$pay);$db->rollback();break;
 case 'reserve':
  $n=achbotPaymentEvidenceSmsNormalize($spec['row'],$profile);
  $result=$n?achbotPaymentEvidenceReserve($db,$id,$n,$spec['mode']??'settle',null,
@@ -269,6 +271,9 @@ def run(module):
             assert before==sql(f"SELECT quote_amount,provider_reference,payment_id,checkout_url FROM payment_attempts WHERE pay_row_id={p1}")
             p2=seed('smsreuse')
             assert php('reserve',pay_id=p2,row=r) is None
+            claim=php('claim',pay_id=p2);assert claim
+            assert php('defer',pay_id=p2,token=claim['token'],status='manual')
+            assert sql(f'SELECT evidence_state FROM payment_attempts WHERE pay_row_id={p2}')=='manual'
             alias=seed('smsalias',keys={'smsApiUrl':'https://changed.invalid/wp-json/ach-pay-manager/v1'})
             assert php('reserve',pay_id=alias,row=r) is None
             # Distinct SQL connections cannot bind the same evidence twice.
@@ -330,6 +335,15 @@ def run(module):
             assert php('reject',pay_id=gm,code='wrong-value',reason='mismatch')
             assert php('save',pay_id=gm,method='gift_card',code='replacement')['status']=='saved'
             assert php('save',pay_id=gm,method='gift_card',code='unknown-code')['status']=='locked'
+            assert php('typed',pay_id=gm) is False
+            sql(f"UPDATE pays SET state='have_sent',message_id=222,chat_id=9001 WHERE id={gm}")
+            sql(f"UPDATE payment_attempts SET evidence_review_sent_at=NOW() WHERE pay_row_id={gm}")
+            assert php('typed',pay_id=gm) is True
+            code_cipher=sql(f"SELECT evidence_code FROM payment_attempts WHERE pay_row_id={gm}")
+            sql(f"UPDATE payment_attempts SET evidence_code=CONCAT(evidence_code,'A') WHERE pay_row_id={gm}")
+            assert php('typed',pay_id=gm) is False
+            sql(f"UPDATE payment_attempts SET evidence_code='{code_cipher}',evidence_review_sent_at=NULL WHERE pay_row_id={gm}")
+            assert php('typed',pay_id=gm) is False
             # Gift partial commit500 recovers same reference with fresh signed nonce.
             g2=seed('giftlost','gift_card');server.card=card('CARD_UUID_2');server.gift_fail_once=True
             assert php('save',pay_id=g2,method='gift_card',code='gift-code-two')['status']=='saved'
@@ -356,7 +370,7 @@ def run(module):
             return {'complete':True,'contracts':['partial_schema','encrypted_config','explicit_mapping','stable_namespace',
                 'full_exact_quote','exact_rial_conversion','ready_only','original_time',
                 'sql_collision_fence','pre_dispatch_intent','sms_same_key_recovery','sms_expired_recovery',
-                'manual_settled_evidence_only','gift_single_code','gift_exact_redeem_amount',
+                'manual_settled_evidence_only','typed_review_authenticity','gift_single_code','gift_exact_redeem_amount',
                 'gift_partial_commit','gift_nonce_reference','gift_uncertain_active_hold',
                 'bounded_transport','rotation_fails_closed'],'loopback_dispatches':server.lock_checks,
                 'exact_quote':True,'replay_and_partial_commit':True,'no_http_transaction':True,

@@ -520,7 +520,7 @@ function achbotPaymentEvidenceClaim(mysqli $db,int $payId): ?array {
 }
 function achbotPaymentEvidenceDefer(mysqli $db,int $payId,string $token,string $status='monitoring',int $seconds=60): bool {
     if (!preg_match('/\A[a-f0-9]{32}\z/D',$token) ||
-        !in_array($status,['monitoring','review','invalid_code','proven','reserved','dispatched','uncertain'],true))
+        !in_array($status,['monitoring','manual','review','invalid_code','proven','reserved','dispatched','uncertain'],true))
         return false;
     $seconds=max(1,min(3600,$seconds));
     try {
