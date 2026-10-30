@@ -641,7 +641,9 @@ def main():
                 and edits.get('null_expiry_baseline_source')=='2408982797af15bc99e1df2909c13be3976cb1f4'
                 and edits.get('null_expiry_baseline_adapter_sha256')=='a4fedde0b77ffb6a18995eda0b9309364fb9ee853a1cc951ee3e55d79d86c188'
                 and edits.get('null_expiry_invalid_no_partial_effect') is True
-                and edits.get('null_expiry_zero_semantics_preserved') is True):
+                and edits.get('null_expiry_zero_semantics_preserved') is True
+                and edits.get('verified_native_before_expire') is True
+                and edits.get('native_before_expire_negative_controls') is True):
             raise RuntimeError('Provider-neutral service edit native assurance incomplete')
         purchase_path=Path(tmp)/"marzban-purchase.json"
         subprocess.run(["python3",str(ROOT/"tools/test_post_v9_purchases.py"),
