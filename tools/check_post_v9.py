@@ -1412,7 +1412,7 @@ def main():
                 and text_catalog.get("native",{}).get("pre_style_privacy_corrections")==3
                 and text_catalog.get("native",{}).get("actual_traffic_helper_parity_cases")==18
                 and text_catalog.get("editable_catalog_files")==2
-                and text_catalog.get("logical_topics")==26
+                and text_catalog.get("logical_topics")==27
                 and text_catalog.get("current_authorized_source_edits")==26
                 and text_catalog.get("retired_parser_tokens")==23
                 and text_catalog.get("relocation_source_ref")=="ecd30ba9192ed374703118a6c131be8809cc7b06"
@@ -1421,6 +1421,12 @@ def main():
                 and text_catalog.get("native",{}).get("editable_catalog_files")==2
                 and text_catalog.get("native",{}).get("logical_topics")==27
                 and text_catalog.get("native",{}).get("current_catalog_keys")==2772
+                and text_catalog.get("native",{}).get("current_gift_admin_additions")==1
+                and text_catalog.get("native",{}).get("current_gift_catalog_negative_controls")==8
+                and text_catalog.get("native",{}).get("current_gift_catalog_negative_scenarios")==[
+                    'missing_report','wrong_audience','changed_value','missing_parameter',
+                    'reordered_parameters','unapproved_extra_key',
+                    'duplicate_cross_audience_key','prior_catalog_mutation']
                 and text_catalog.get("native",{}).get("current_management_added_keys")==112
                 and text_catalog.get("native",{}).get("current_catalog_binding_paths")==2
                 and text_catalog.get("native",{}).get("current_catalog_binding_entries")==4
@@ -1434,10 +1440,10 @@ def main():
                 and text_catalog["native"]["current_byte_preserved_keys"]
                     +text_catalog["native"]["current_style_changes"]
                     +text_catalog["native"]["current_added_admin_keys"]==2523
-                and text_catalog.get("native",{}).get("current_native_template_assertions")==4101
-                and text_catalog.get("native",{}).get("current_object_conversion_templates")==266
-                and text_catalog.get("native",{}).get("current_shared_multi_parameter_templates")==65
-                and text_catalog.get("native",{}).get("current_one_pass_templates")==266
+                and text_catalog.get("native",{}).get("current_native_template_assertions")==4107
+                and text_catalog.get("native",{}).get("current_object_conversion_templates")==267
+                and text_catalog.get("native",{}).get("current_shared_multi_parameter_templates")==66
+                and text_catalog.get("native",{}).get("current_one_pass_templates")==267
                 and text_catalog.get("native",{}).get("current_r5_changes")==273
                 and text_catalog.get("native",{}).get("current_r5_retired_keys")==10
                 and text_catalog.get("native",{}).get("current_r5_added_keys")==60
