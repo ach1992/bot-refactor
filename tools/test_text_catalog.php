@@ -276,8 +276,51 @@ foreach($r5['added_keys']as$key=>$record){$audience=$record['audience'];
  if(isset($current[$key])||empty($record['source_paths'])||empty($record['reason']))throw new RuntimeException('r5_addition_identity');
  $r5Expected[$audience][$key]=$record['entry'];
 }
+// Independently verify the exact accepted API additions before projecting back
+// to R5. The shipping array above remains complete for every native loader test.
+$api=json_decode(file_get_contents(__DIR__.'/text_catalog_owner_r6_api.json'),true,512,JSON_THROW_ON_ERROR);
+$apiBase='2d0ad0826d594adac49f5a83f0a9d47f6df5b264';
+$apiRefs=['2633ac3c21c539635c228dd31df2e07caee491d0','2c685f5a9621a808c44a4c012b04c8ccd97102af','df00c13da1e38e2ba364ab48e31db66f8705b2c2'];
+if(($api['version']??null)!==1||($api['authorization']??null)!=='https://github.com/ach1992/bot-refactor/issues/57#issuecomment-6514754219'||
+ ($api['baseline_commit']??null)!==$apiBase||($api['accepted_commits']??null)!==$apiRefs||
+ ($api['result_catalog_commit']??null)!==$apiRefs[2]||($api['scope']??null)!=='additions_only')
+ throw new RuntimeException('api_catalog_amendment_identity');
+$apiSnapshots=[];
+foreach([$apiBase,...$apiRefs]as$ref)foreach(['user','admin']as$audience){
+ $source=shell_exec('git -C '.escapeshellarg(dirname(__DIR__)).' show '.escapeshellarg($ref.':messages/fa/'.$audience.'.php'));
+ $begin=is_string($source)?strpos($source,'return ['):false;if($begin===false)throw new RuntimeException('api_catalog_source_missing');
+ $groups=eval(substr($source,$begin));$apiSnapshots[$ref][$audience]=[];
+ foreach($groups as$topic=>$entries)foreach($entries as$name=>$value)$apiSnapshots[$ref][$audience][$topic.'.'.$name]=$value;
+}
+$apiDelta=[];
+foreach(['user','admin']as$audience){
+ $prior=$apiSnapshots[$apiBase][$audience];$accepted=$apiSnapshots[$apiRefs[2]][$audience];
+ $expected=$r5Expected[$audience];ksort($prior);ksort($expected);
+ if($prior!==$expected)throw new RuntimeException('api_prior_r5_catalog_drift');
+ foreach($prior as$key=>$value)if(!array_key_exists($key,$accepted)||$accepted[$key]!==$value)throw new RuntimeException('api_changed_prior_copy');
+ foreach(array_diff_key($accepted,$prior)as$key=>$value){
+  if(isset($apiDelta[$key]))throw new RuntimeException('api_duplicate_audience_key');
+  $apiDelta[$key]=['audience'=>$audience,'entry'=>$value];
+ }
+}
+$apiAdded=$api['added_keys']??[];$apiKeys=array_keys($apiAdded);$apiExpectedKeys=array_keys($apiDelta);sort($apiKeys);sort($apiExpectedKeys);
+if(count($apiDelta)!==86||$apiKeys!==$apiExpectedKeys)throw new RuntimeException('api_exact_addition_scope');
+$apiUserCount=0;
+foreach($apiDelta as$key=>$expected){
+ $record=$apiAdded[$key];$audience=$expected['audience'];
+ if(($record['audience']??null)!==$audience||($record['entry']??null)!==$expected['entry']||empty($record['reason']))
+  throw new RuntimeException('api_accepted_copy_or_audience_drift:'.$key);
+ $introduced=null;foreach($apiRefs as$ref)if(array_key_exists($key,$apiSnapshots[$ref][$audience])){$introduced=$ref;break;}
+ if(($record['introduced_in']??null)!==$introduced)throw new RuntimeException('api_entry_lineage_drift:'.$key);
+ if($audience==='user')$apiUserCount++;
+}
+if($apiUserCount!==22)throw new RuntimeException('api_audience_counts_drift');
 foreach(['user','admin']as$audience){$actual=[];$groups=require dirname(__DIR__).'/messages/fa/'.$audience.'.php';
  foreach($groups as$topic=>$entries)foreach($entries as$name=>$value)$actual[$topic.'.'.$name]=$value;
+ foreach($apiDelta as$key=>$record)if($record['audience']===$audience){
+  if(!array_key_exists($key,$actual)||$actual[$key]!==$record['entry'])throw new RuntimeException('api_actual_copy_or_parameters_drift:'.$key);
+  unset($actual[$key]);
+ }
  ksort($actual);$expected=$r5Expected[$audience];ksort($expected);
  if($actual!==$expected)throw new RuntimeException('r5_undeclared_copy_or_recipient_change');
 }
@@ -461,7 +504,7 @@ echo json_encode(['status'=>'PASS',
     'repeated_interpolation_string_conversion'=>'PASS','actual_traffic_helper_parity_cases'=>$trafficCases,
     'traffic_relocation_source_ref'=>CATALOG_MANAGEMENT_BASE,'current_traffic_shared_observation_cases'=>$currentTrafficCases,
     'editable_catalog_files'=>count($files),'logical_topics'=>count(achbotMessageTopics()),
-    'current_catalog_keys'=>count($shipping),'current_byte_preserved_keys'=>$preserved,
+    'current_catalog_keys'=>count($shipping),'current_api_additions'=>count($apiDelta),'current_api_user_additions'=>$apiUserCount,'current_api_admin_additions'=>count($apiDelta)-$apiUserCount,'current_r5_catalog_keys'=>2685,'current_byte_preserved_keys'=>$preserved,
     'current_style_changes'=>count($changes),'current_retired_implementation_keys'=>count($retired),'current_retired_feature_keys'=>count($featureRetired),
     'current_added_admin_keys'=>count($added),'current_management_added_keys'=>count($managementAdded),'current_owner_followup_changes'=>count($ownerChanges),'current_parameter_privacy_changes'=>$parameterChanges,
     'current_r5_changes'=>count($r5['changes']),'current_r5_retired_keys'=>count($r5['retired_keys']),'current_r5_added_keys'=>count($r5['added_keys']),

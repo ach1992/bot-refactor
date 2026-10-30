@@ -69,6 +69,7 @@ def display_context_baseline():
 def display_context_followup_proof(current):
     # Exactly seven new admin entries relative to the accepted 7489946 source.
     # Existing entries, audiences, params and earlier amendment layers stay exact.
+    current,_=r5.verify_api_and_restore(current)
     baseline=display_context_baseline();record=r5.manifest()
     check(set(current['user'])==set(baseline['user'])
           and set(current['admin'])==set(baseline['admin'])|set(DISPLAY_CONTEXT_ENTRIES)|set(SIMPLE_DISPLAY_ENTRIES),
@@ -114,6 +115,7 @@ def staff_followup_proof(current,archived):
     # New notification entries and this one role sentence have separate,
     # explicit lineage; they never change the 22 historical corrections.
     record=r5.manifest();r5.verify_and_restore(current,record)
+    current,_=r5.verify_api_and_restore(current)
     added={key for audience,rows in current.items()for key in rows if key not in archived[audience]}
     check(added==NOTIFICATION_KEYS|set(DISPLAY_CONTEXT_ENTRIES)|set(SIMPLE_DISPLAY_ENTRIES),'notification_catalog_addition_scope_drift')
     check(all(set(archived[a])-set(SETTINGS_RETIRED_ENTRIES)<=set(current[a])for a in archived),'staff_followup_removed_historical_entry')
@@ -403,6 +405,8 @@ def audit(source_root=ROOT,catalog_root=ROOT):
         archived=render(expressions,stage)
         current_catalogs=load_catalogs(catalog_root);archived_catalogs=load_catalogs(stage)
         correction_count=correction_proof(current_catalogs,archived_catalogs)
+        _,api_proof=r5.verify_api_and_restore(current_catalogs)
+        api_controls=r5.api_negative_controls(current_catalogs)
         staff_controls=staff_followup_negative_controls(current_catalogs,archived_catalogs)
         display_context_controls=display_context_negative_controls(current_catalogs)
     # Existing private-failure composition: this value comes from update_id,
@@ -433,7 +437,7 @@ def audit(source_root=ROOT,catalog_root=ROOT):
     preserved=['شناسه پیام تلگرام','شناسه به‌روزرسانی تلگرام','شناسه چت تلگرام']
     check(not any(numeric_id_variant(v)for v in preserved),'genuine_telegram_object_id_misclassified')
     check(not numeric_id_variant('شناسه عددی'),'requested_numeric_id_misclassified')
-    return {'routed_message_expression_cases':router_cases,'routed_message_expression_negative_controls':router_controls,'routed_checkout_expression_preserved':True,'composed_catalog_correction_keys':correction_count,'settings_navigation_label_amendments':len(SETTINGS_LABEL_AMENDMENTS),'settings_navigation_retired_keys':len(SETTINGS_RETIRED_ENTRIES),'display_context_catalog_additions':len(DISPLAY_CONTEXT_ENTRIES),'simple_display_catalog_additions':len(SIMPLE_DISPLAY_ENTRIES),'simple_display_label_changes':len(SIMPLE_DISPLAY_LABELS),'display_context_catalog_negative_controls':display_context_controls,'notification_catalog_additions':len(NOTIFICATION_KEYS),'staff_role_description_amendments':1,'staff_catalog_negative_controls':staff_controls,'telegram_update_id_label_cases':1,'telegram_update_id_numeric_value_preserved':True,'archived_wrong_telegram_update_label_RED':True,'composed_heading_cases':len(current),'composed_heading_source_paths':len(paths),'composed_heading_archived_RED':len(reds),'composed_heading_negative_controls':len(mutations),'identical_heading_reuse_cases':1,'raw_code_heading_exclusions':1,'numeric_id_variant_negative_controls':len(variants),'preserved_telegram_object_id_cases':len(preserved),'preserved_numeric_id_cases':1,'composition_scope':'source_expression_wallet_finance_receipt_support_admin_stats_matrix','real_Telegram_rendering':'NOT_TESTED'}
+    return {**api_proof,'api_catalog_negative_controls':api_controls,'routed_message_expression_cases':router_cases,'routed_message_expression_negative_controls':router_controls,'routed_checkout_expression_preserved':True,'composed_catalog_correction_keys':correction_count,'settings_navigation_label_amendments':len(SETTINGS_LABEL_AMENDMENTS),'settings_navigation_retired_keys':len(SETTINGS_RETIRED_ENTRIES),'display_context_catalog_additions':len(DISPLAY_CONTEXT_ENTRIES),'simple_display_catalog_additions':len(SIMPLE_DISPLAY_ENTRIES),'simple_display_label_changes':len(SIMPLE_DISPLAY_LABELS),'display_context_catalog_negative_controls':display_context_controls,'notification_catalog_additions':len(NOTIFICATION_KEYS),'staff_role_description_amendments':1,'staff_catalog_negative_controls':staff_controls,'telegram_update_id_label_cases':1,'telegram_update_id_numeric_value_preserved':True,'archived_wrong_telegram_update_label_RED':True,'composed_heading_cases':len(current),'composed_heading_source_paths':len(paths),'composed_heading_archived_RED':len(reds),'composed_heading_negative_controls':len(mutations),'identical_heading_reuse_cases':1,'raw_code_heading_exclusions':1,'numeric_id_variant_negative_controls':len(variants),'preserved_telegram_object_id_cases':len(preserved),'preserved_numeric_id_cases':1,'composition_scope':'source_expression_wallet_finance_receipt_support_admin_stats_matrix','real_Telegram_rendering':'NOT_TESTED'}
 def main():
     ap=argparse.ArgumentParser();ap.add_argument('--source-root',type=pathlib.Path,default=ROOT);ap.add_argument('--catalog-root',type=pathlib.Path,default=ROOT);args=ap.parse_args()
     print(json.dumps({'status':'PASS',**audit(args.source_root,args.catalog_root)},ensure_ascii=False))
