@@ -351,7 +351,7 @@ def main():
         copy_run=subprocess.run(['python3',str(ROOT/'tools/test_owner_r5_copy.py')],
                                 cwd=ROOT,check=True,timeout=180,capture_output=True,text=True)
         copy_proof=json.loads(copy_run.stdout)
-        required_copy={'status':'PASS','changes':273,'retired':10,'added':60,'current_keys':2771,
+        required_copy={'status':'PASS','changes':273,'retired':10,'added':60,'current_keys':2772,
                        'r5_negative_controls':5,'persian_prose_start_violations':0,
                        'duplicate_heading_markers':0,'guide_provider_cases':2,'guide_JSON_examples':3,
                        'actual_HTML_transport_cases':2,'archived_wrong_parse_RED':True,
@@ -372,6 +372,12 @@ def main():
             raise RuntimeError('Owner R5 Persian copy/HTML proof incomplete')
         required_api_copy={
             'r5_current_keys':2685,
+            'gift_added_admin_keys':1,
+            'gift_catalog_baseline_keys':2771,
+            'gift_catalog_current_keys':2772,
+            'gift_report_parameter_count':7,
+            'gift_catalog_negative_controls':8,
+            'gift_report_authorization':'https://github.com/ach1992/bot-refactor/issues/57#issuecomment-6521312639',
             'api_added_keys':86,
             'api_added_user_keys':22,
             'api_added_admin_keys':64,
@@ -1332,10 +1338,10 @@ def main():
                 and text_catalog.get("retired_parser_tokens")==23
                 and text_catalog.get("relocation_source_ref")=="ecd30ba9192ed374703118a6c131be8809cc7b06"
                 and text_catalog.get("native",{}).get("current_retired_feature_keys")==3
-                and text_catalog.get("catalog_keys")==2771
+                and text_catalog.get("catalog_keys")==2772
                 and text_catalog.get("native",{}).get("editable_catalog_files")==2
-                and text_catalog.get("native",{}).get("logical_topics")==26
-                and text_catalog.get("native",{}).get("current_catalog_keys")==2771
+                and text_catalog.get("native",{}).get("logical_topics")==27
+                and text_catalog.get("native",{}).get("current_catalog_keys")==2772
                 and text_catalog.get("native",{}).get("current_management_added_keys")==112
                 and text_catalog.get("native",{}).get("current_catalog_binding_paths")==2
                 and text_catalog.get("native",{}).get("current_catalog_binding_entries")==4
@@ -1360,7 +1366,7 @@ def main():
                 and text_catalog.get("native",{}).get("current_non_ascii_digit_templates")==0
                 and text_catalog.get("presentation",{}).get("status")=="PASS"
                 and text_catalog.get("presentation",{}).get("editable_files")==2
-                and text_catalog.get("presentation",{}).get("current_keys")==2771
+                and text_catalog.get("presentation",{}).get("current_keys")==2772
                 and text_catalog.get("presentation",{}).get("numeric_template_changes")==23
                 and text_catalog.get("presentation",{}).get("adjacent_emoji_violations")==0
                 and text_catalog.get("presentation",{}).get("parameter_exception_count")==3

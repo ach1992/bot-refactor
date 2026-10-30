@@ -44,6 +44,7 @@ def verify_and_restore(sides,definition=None):
     return copy.deepcopy(old),{'changes':len(changes),'retired':len(removed),'added':len(added),'current_keys':sum(map(len,current.values())),'r5_current_keys':sum(map(len,sides.values())),**api_proof}
 def negative_controls(sides):
     definition=manifest();controls=[]
+    verify_and_restore(sides,definition)
     key=next(iter(definition['changes']));audience=definition['changes'][key]['audience']
     bad=copy.deepcopy(sides);bad[audience][key]='Unrecorded copy';controls.append((bad,definition))
     bad=copy.deepcopy(definition);bad['changes'][key]['before']='Forged baseline';controls.append((sides,bad))
@@ -87,7 +88,44 @@ def api_catalog_snapshot(ref):
     check(ref in [API_BASE,*API_COMMITS],'api_catalog_snapshot_identity')
     decode='$s=stream_get_contents(STDIN);$p=strpos($s,"return [");if($p===false)throw new RuntimeException("array_missing");echo json_encode(eval(substr($s,$p)),JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);'
     return {a:flatten(json.loads(command('php','-r',decode,input=command('git','show',ref+':messages/fa/'+a+'.php'))))for a in ['user','admin']}
+# One explicit Owner gift-report addition precedes the unchanged API/R5 layers.
+# Strip this exact key only; the API layer still compares the WHOLE remainder.
+GIFT_REPORT_AUTH='https://github.com/ach1992/bot-refactor/issues/57#issuecomment-6521312639'
+GIFT_REPORT_KEY='gifts.completed_report'
+GIFT_REPORT_ENTRY={'text': '🎁 هدیهٔ اشتراک اعمال شد\n🔖 شناسه عملیات: <code>{reference}</code>\n👤 اشتراک: <code>{remark}</code>\n📅 زمان هدیه: {days} روز\n📦 حجم هدیه: {volume_mb} مگابایت\n👥 ثبت\u200cهای مرتبط: {reference_count}\n✉️ کاربران مرتبط: {recipient_count}\n⚠️ پیام\u200cهای بدون تأیید ارسال: {notice_unconfirmed_count}', 'parameters': ['reference', 'remark', 'days', 'volume_mb', 'reference_count', 'recipient_count', 'notice_unconfirmed_count']}
+def gift_catalog_restore(sides):
+    accepted=api_catalog_snapshot(API_RESULT)
+    check(all(GIFT_REPORT_KEY not in rows for rows in accepted.values()),
+          'gift_report_key_existed_in_api_baseline')
+    check(GIFT_REPORT_KEY not in sides['user'] and
+          sides['admin'].get(GIFT_REPORT_KEY)==GIFT_REPORT_ENTRY,
+          'gift_report_value_parameter_or_audience_drift')
+    restored=copy.deepcopy(sides)
+    restored['admin'].pop(GIFT_REPORT_KEY)
+    return restored,{'gift_added_admin_keys':1,'gift_catalog_baseline_keys':2771,
+        'gift_catalog_current_keys':sum(map(len,sides.values())),
+        'gift_report_parameter_count':len(GIFT_REPORT_ENTRY['parameters']),
+        'gift_report_authorization':GIFT_REPORT_AUTH}
+def gift_catalog_negative_controls(sides):
+    # Positive admission first prevents an unrelated legitimate addition from
+    # making every rejection a false-positive proof.
+    verify_and_restore(sides)
+    controls=[]
+    bad=copy.deepcopy(sides);bad['admin'].pop(GIFT_REPORT_KEY);controls.append(bad)
+    bad=copy.deepcopy(sides);bad['user'][GIFT_REPORT_KEY]=bad['admin'].pop(GIFT_REPORT_KEY);controls.append(bad)
+    bad=copy.deepcopy(sides);bad['admin'][GIFT_REPORT_KEY]['text']+=' changed';controls.append(bad)
+    bad=copy.deepcopy(sides);bad['admin'][GIFT_REPORT_KEY]['parameters'].pop();controls.append(bad)
+    bad=copy.deepcopy(sides);bad['admin'][GIFT_REPORT_KEY]['parameters'].reverse();controls.append(bad)
+    bad=copy.deepcopy(sides);bad['admin']['gifts.unapproved']='changed';controls.append(bad)
+    bad=copy.deepcopy(sides);bad['user'][GIFT_REPORT_KEY]=copy.deepcopy(bad['admin'][GIFT_REPORT_KEY]);controls.append(bad)
+    bad=copy.deepcopy(sides);bad['user']['legacy_messages.banned']='changed';controls.append(bad)
+    for candidate in controls:
+        try:verify_and_restore(candidate)
+        except AssertionError:continue
+        raise AssertionError('gift_catalog_negative_control_missed')
+    return len(controls)
 def verify_api_and_restore(sides,definition=None):
+    sides,gift_proof=gift_catalog_restore(sides)
     record=api_manifest()if definition is None else definition
     check(record.get('version')==1 and record.get('baseline_commit')==API_BASE
           and record.get('result_catalog_commit')==API_RESULT and record.get('accepted_commits')==API_COMMITS
@@ -131,9 +169,10 @@ def verify_api_and_restore(sides,definition=None):
     # additions and changes to the earlier layers remain hard failures.
     check(sides==accepted,'api_undeclared_catalog_key_value_parameter_or_recipient')
     return copy.deepcopy(before),{'api_added_keys':len(delta),'api_added_user_keys':22,'api_added_admin_keys':64,
-        'api_baseline_keys':2685,'api_current_keys':2771,'api_retained_unreferenced_keys':len(API_RETAINED)}
+        'api_baseline_keys':2685,'api_current_keys':2771,'api_retained_unreferenced_keys':len(API_RETAINED),**gift_proof}
 def api_negative_controls(sides):
     definition=api_manifest();key='payment.api_payment.bank_invoice';controls=[]
+    verify_api_and_restore(sides,definition)
     bad=copy.deepcopy(sides);bad['user']['payment.api_payment.unapproved']='ناشناخته';controls.append((bad,definition))
     bad=copy.deepcopy(sides);bad['admin']['unapproved.extra']='ناشناخته';controls.append((bad,definition))
     bad=copy.deepcopy(sides);bad['user'][key]['text']+=' تغییر ثبت‌نشده';controls.append((bad,definition))
