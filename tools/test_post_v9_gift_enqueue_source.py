@@ -152,9 +152,11 @@ def prepare(work,env):
         dst=worker/file;dst.parent.mkdir(parents=True,exist_ok=True)
         dst.write_bytes((ROOT/file).read_bytes())
     shutil.copytree(ROOT/'messages',worker/'messages')
+    gift.stage_notifications(worker)
     (worker/'config.php').write_text(gift.CONFIG)
     (worker/'baseInfo.php').write_text('<?php // disposable\n')
     (worker/'run.php').write_text(gift.RUNNER)
+    gift.seed_notification_staff(work,env)
     return stage,worker
 
 def call(work,env,stage,**spec):
@@ -204,12 +206,12 @@ def receipt(w,e,i):
     raw=q(w,e,f"SELECT value FROM setting WHERE type='ACHBOT_GIFT_ENQUEUE_{i}'")
     return json.loads(raw) if raw else None
 
-def worker_tick(w,e,stage,label):
+def worker_tick(w,e,stage,label,mode='verified'):
     log=w/('gift-source-worker-'+label+'.jsonl')
     roster=gift._roster(stage,[gift.member('fixture-user')])
     process=subprocess.run(['php','-n','-d','extension=mysqlnd',
         '-d','extension=mysqli',str(stage/'run.php')],cwd=stage,
-        env=gift._run_env(e,w,log,roster,'verified','active'),
+        env=gift._run_env(e,w,log,roster,mode,'active'),
         capture_output=True,text=True,timeout=40)
     require(process.returncode==0 and not process.stderr and not process.stdout,
             f'Actual Cron failed: {process.returncode} {process.stdout} {process.stderr}')
@@ -320,7 +322,9 @@ def main():
         event=worker_tick(w,e,worker,'first')
         require(gift.effect_names(event)==['fixture-user'],
                 'Original sourced job could not be executed by real Cron')
-        worker_tick(w,e,worker,'cleanup')
+        gift.assert_private_fanout(event)
+        completion=worker_tick(w,e,worker,'cleanup')
+        gift.assert_private_fanout(completion)
         require(not ids(w,e) and claims(w,e)==1 and
                 receipt(w,e,completed_id) is not None,
                 'Completed Cron changed durable enqueue/source evidence')
@@ -330,10 +334,23 @@ def main():
                 any('تکراری' in x for x in replay['events']),
                 'Retry of completed source created second job')
         cases.append('f1_source_claim_survives_completed_cron_and_blocks_reenqueue')
+        cases.append('gift_source_completed_worker_private_owner_manager_once_excludes_operator_support')
         require(q(w,e,'SELECT step FROM users WHERE userid=9001')==
                     'giftServerVolume2_0',
                 'Late replay after completed Cron erased a new same-literal step')
         cases.append('f2_completed_cron_late_duplicate_preserves_rearmed_step')
+
+        reset(w,e);ready(w,e)
+        call(w,e,stage,wire_update=709,wire_message=50)
+        held_id=ids(w,e)[0]
+        event=worker_tick(w,e,worker,'uncertain',mode='uncertain')
+        require(len(gift.assert_private_fanout(event))==2 and
+                gift.effect_names(event)==['fixture-user'] and claims(w,e)==1 and
+                gift.state(w,e,held_id)[0]==-1,
+                'Sourced worker hold lost private fanout or mutation/source fence')
+        require(not worker_tick(w,e,worker,'held-replay') and claims(w,e)==1,
+                'Notification delivery replayed a held sourced gift')
+        cases.append('gift_source_uncertain_worker_private_manager_hold_preserves_source_and_no_replay')
 
         reset(w,e);ready(w,e)
         call(w,e,stage,wire_update=710,wire_message=51)
@@ -634,7 +651,8 @@ def main():
         'real_gift_batch_helper':True,'owned_original_schema_mariadb':True,
         'parallel_php_sessions':True,
         'atomic_admin_step_and_source_commit':True,
-        'production_mutations':0,'real_provider_requests':0}
+        'production_mutations':0,'actual_notification_router':True,'private_owner_manager_gift_notices':True,
+        'operator_support_gift_excluded':True,'real_provider_requests':0}
     if args.report:args.report.write_text(json.dumps(report,indent=2)+'\n')
     print(json.dumps(report))
 

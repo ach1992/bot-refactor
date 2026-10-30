@@ -16,6 +16,12 @@ include_once __DIR__ . '/../baseInfo.php';
 include_once __DIR__ . '/../config.php';
 require_once __DIR__ . '/../src/Subscription/GiftBatch.php';
 
+$notifyAdmin=static function(string $text): array {
+    return achbotNotifyAdmins('sendMessage',[
+        'text'=>$text,'reply_markup'=>null,'parse_mode'=>null
+    ],['event'=>'general','report_channel'=>null]);
+};
+
 $stmt=$connection->prepare('SELECT * FROM gift_list ORDER BY id LIMIT 1');
 if (!$stmt || !$stmt->execute()) return;
 $gift=$stmt->get_result()->fetch_assoc();$stmt->close();
@@ -55,31 +61,26 @@ $engines=$connection->query(
        AND TABLE_NAME IN ('gift_list','setting','orders_list')"
 );
 if (!$engines || $engines->num_rows!==3) {
-    sendMessage(\achbotMessage('jobs.gift2all.message.0addd1b9d4'),
-                null,null,$admin);
+    $notifyAdmin(\achbotMessage('jobs.gift2all.message.0addd1b9d4'));
     return;
 }
 foreach ($engines->fetch_all(MYSQLI_ASSOC) as $table) {
     if (strtoupper((string)$table['ENGINE'])!=='INNODB') {
-        sendMessage(\achbotMessage('jobs.gift2all.message.53c655af49'),
-                    null,null,$admin);
+        $notifyAdmin(\achbotMessage('jobs.gift2all.message.53c655af49'));
         return;
     }
 }
 $engines->free();
 
 $notifyHold=static function(string $remark,int $index,string $reason) use (
-    $admin,$rowId,$serverId,$holdType
+    $notifyAdmin,$rowId,$serverId,$holdType
 ): void {
     $who=$remark===''?\achbotMessage('jobs.gift2all.invalid_job_parameters.084a81c66e'):$remark;
     // Exact row/index/user are operator-only. Never announce unverified
     // provider effects to the customer or expose provider credentials.
-    sendMessage(
-        \achbotMessage('jobs.gift2all.message.be772b3ac0', ['rowId' => $rowId, 'serverId' => $serverId]).
+    $notifyAdmin(\achbotMessage('jobs.gift2all.message.be772b3ac0', ['rowId' => $rowId, 'serverId' => $serverId]).
         \achbotMessage('jobs.gift2all.message.90aec44bc4', ['index' => $index, 'who' => $who, 'reason' => $reason]).
-        \achbotMessage('jobs.gift2all.message.d0b68f4613', ['holdType' => $holdType]),
-        null,null,$admin
-    );
+        \achbotMessage('jobs.gift2all.message.d0b68f4613', ['holdType' => $holdType]));
 };
 
 
@@ -449,7 +450,7 @@ $serverType=(string)($stmt->get_result()->fetch_assoc()['type']??'');
 $stmt->close();
 
 if (!achbotSupportsPanel($serverType)) {
-    sendMessage(\achbotMessage('jobs.gift2all.message.5a6e527b3b'),null,null,$admin);
+    $notifyAdmin(\achbotMessage('jobs.gift2all.message.5a6e527b3b'));
     return;
 }
 
@@ -459,7 +460,7 @@ if ($volume<0 || $day<0 || ($volume===0 && $day===0) ||
         $reserve($offset,'','gift_units_unsupported');
         $notifyHold('',$offset,'gift_units_unsupported');
     } catch (Throwable $e) {
-        sendMessage(\achbotMessage('jobs.gift2all.message.3582d30e0f'),null,null,$admin);
+        $notifyAdmin(\achbotMessage('jobs.gift2all.message.3582d30e0f'));
     }
     return;
 }
@@ -474,7 +475,7 @@ if ($receipt===null) {
         $reserve($offset,'','legacy_batch_missing_enqueued_provenance');
         $notifyHold('',$offset,'legacy_batch_missing_enqueued_provenance');
     } catch (Throwable $ignored) {
-        sendMessage(\achbotMessage('jobs.gift2all.message.8f73c792e1'),null,null,$admin);
+        $notifyAdmin(\achbotMessage('jobs.gift2all.message.8f73c792e1'));
     }
     return;
 }
@@ -484,7 +485,7 @@ if ($target===null) {
         $reserve($offset,'','gift_physical_target_changed');
         $notifyHold('',$offset,'gift_physical_target_changed');
     } catch (Throwable $ignored) {
-        sendMessage(\achbotMessage('jobs.gift2all.message.4a086d03d8'),null,null,$admin);
+        $notifyAdmin(\achbotMessage('jobs.gift2all.message.4a086d03d8'));
     }
     return;
 }
@@ -502,12 +503,10 @@ if (!is_object($listed) || !is_array($listed->users??null) ||
             $reserve($offset,'','gift_physical_target_changed_during_list');
             $notifyHold('',$offset,'gift_physical_target_changed_during_list');
         } catch (Throwable $ignored) {
-            sendMessage(\achbotMessage('jobs.gift2all.message.3316d71705'),
-                        null,null,$admin);
+            $notifyAdmin(\achbotMessage('jobs.gift2all.message.3316d71705'));
         }
     } else {
-        sendMessage(\achbotMessage('jobs.gift2all.message.8fdb87d977'),
-                    null,null,$admin);
+        $notifyAdmin(\achbotMessage('jobs.gift2all.message.8fdb87d977'));
     }
     return;
 }
@@ -528,7 +527,7 @@ if ($ambiguous) {
         $reserve($offset,'','provider_membership_ambiguous');
         $notifyHold('',$offset,'provider_membership_ambiguous');
     } catch (Throwable $e) {
-        sendMessage(\achbotMessage('jobs.gift2all.message.ee040491ba'),null,null,$admin);
+        $notifyAdmin(\achbotMessage('jobs.gift2all.message.ee040491ba'));
     }
     return;
 }
@@ -537,7 +536,7 @@ if (!achbotGiftTargetMatches($connection,$serverId,$receipt['target'])) {
         $reserve($offset,'','gift_physical_target_changed_after_list');
         $notifyHold('',$offset,'gift_physical_target_changed_after_list');
     } catch (Throwable $ignored) {
-        sendMessage(\achbotMessage('jobs.gift2all.message.f575c8d1dc'),null,null,$admin);
+        $notifyAdmin(\achbotMessage('jobs.gift2all.message.f575c8d1dc'));
     }
     return;
 }
@@ -550,14 +549,12 @@ try {
         $reserve($offset,'','roster_snapshot_requires_reconciliation');
         $notifyHold('',$offset,'roster_snapshot_requires_reconciliation');
     } catch (Throwable $ignored) {
-        sendMessage(\achbotMessage('jobs.gift2all.message.b184e2ae4a'),null,null,$admin);
+        $notifyAdmin(\achbotMessage('jobs.gift2all.message.b184e2ae4a'));
     }
     return;
 }
 if ($offset===0) {
-    sendMessage(\achbotMessage('jobs.gift2all.message.e9658f3341', ['serverName' => $serverName]),null,null,$admin);
-    sendToAllAdmins('sendMessage',['text'=>\achbotMessage('jobs.gift2all.message.e9658f3341', ['serverName' => $serverName]),
-        'reply_markup'=>null,'parse_mode'=>null]);
+    $notifyAdmin(\achbotMessage('jobs.gift2all.message.e9658f3341', ['serverName' => $serverName]));
 }
 
 // One exact frozen username per position, irrespective of fresh list order.
@@ -572,7 +569,7 @@ foreach ($rosterNames as $index=>$remark) {
             $reserve($index,$remark,'snapshot_recipient_missing');
             $notifyHold($remark,$index,'snapshot_recipient_missing');
         } catch (Throwable $e) {
-            sendMessage(\achbotMessage('jobs.gift2all.message.9014385dca'),null,null,$admin);
+            $notifyAdmin(\achbotMessage('jobs.gift2all.message.9014385dca'));
         }
         return;
     }
@@ -586,7 +583,7 @@ foreach ($rosterNames as $index=>$remark) {
         try {
             $finish($index,null,$next,null,null);
         } catch (Throwable $e) {
-            sendMessage(\achbotMessage('jobs.gift2all.message.5f467e3e2c'),null,null,$admin);
+            $notifyAdmin(\achbotMessage('jobs.gift2all.message.5f467e3e2c'));
             return;
         }
         $offset=$next;
@@ -601,7 +598,7 @@ foreach ($rosterNames as $index=>$remark) {
     $orders=$ok?$orderStmt->get_result()->fetch_all(MYSQLI_ASSOC):null;
     $orderStmt->close();
     if ($orders===null || count($orders)>1) {
-        sendMessage(\achbotMessage('jobs.gift2all.message.f4b87a5740'),null,null,$admin);
+        $notifyAdmin(\achbotMessage('jobs.gift2all.message.f4b87a5740'));
         return;
     }
     $order=$orders[0]??null;
@@ -610,7 +607,7 @@ foreach ($rosterNames as $index=>$remark) {
         [$held,$holdId]=$reserve($index,$remark,'pending_service_edit');
     } catch (Throwable $e) {
         // No outbound edit without a confirmed durable review hold.
-        sendMessage(\achbotMessage('jobs.gift2all.message.65625b8a59'),null,null,$admin);
+        $notifyAdmin(\achbotMessage('jobs.gift2all.message.65625b8a59'));
         return;
     }
 
@@ -631,8 +628,7 @@ foreach ($rosterNames as $index=>$remark) {
                 ($result->uncertain??null)===false) {
                 // A validated deterministic refusal has no remote effect.
                 $finish($held,$holdId,$index+1,null,null);
-                sendMessage(\achbotMessage('jobs.gift2all.message.1ea4ee3d49', ['index' => $index]),
-                            null,null,$admin);
+                $notifyAdmin(\achbotMessage('jobs.gift2all.message.1ea4ee3d49', ['index' => $index]));
                 $offset=$index+1;
                 continue;
             }
@@ -655,12 +651,12 @@ foreach ($rosterNames as $index=>$remark) {
                 $notice=sendMessage(\achbotMessage('jobs.gift2all.message.1bf0942a3d', ['remark' => $remark, 'giftText' => $giftText]),
                     null,null,(int)$order['userid']);
                 if (!is_object($notice) || ($notice->ok??false)!==true)
-                    sendMessage(\achbotMessage('jobs.gift2all.message.07c38a54a9').
-                        \achbotMessage('jobs.gift2all.message.9b87258e16', ['rowId' => $rowId, 'remark' => $remark]),null,null,$admin);
+                    $notifyAdmin(\achbotMessage('jobs.gift2all.message.07c38a54a9').
+                        \achbotMessage('jobs.gift2all.message.9b87258e16', ['rowId' => $rowId, 'remark' => $remark]));
             } catch (Throwable $notificationError) {
                 try {
-                    sendMessage(\achbotMessage('jobs.gift2all.message.4ba0cee07a').
-                        \achbotMessage('jobs.gift2all.message.9b87258e16', ['rowId' => $rowId, 'remark' => $remark]),null,null,$admin);
+                    $notifyAdmin(\achbotMessage('jobs.gift2all.message.4ba0cee07a').
+                        \achbotMessage('jobs.gift2all.message.9b87258e16', ['rowId' => $rowId, 'remark' => $remark]));
                 } catch (Throwable $ignored) {}
             }
         }
@@ -673,12 +669,8 @@ foreach ($rosterNames as $index=>$remark) {
 }
 if (!$processedThisTick && $offset===count($rosterNames)) {
     if ($closeRoster($rosterId,$rosterMeta,count($rosterNames))) {
-        sendMessage(\achbotMessage('jobs.gift2all.message.e6f582671d', ['serverName' => $serverName]),
-                    null,null,$admin);
-        sendToAllAdmins('sendMessage',['text'=>\achbotMessage('jobs.gift2all.message.e6f582671d', ['serverName' => $serverName]),
-            'reply_markup'=>null,'parse_mode'=>null]);
+        $notifyAdmin(\achbotMessage('jobs.gift2all.message.e6f582671d', ['serverName' => $serverName]));
     } else {
-        sendMessage(\achbotMessage('jobs.gift2all.message.4d3e24cb7c'),
-                    null,null,$admin);
+        $notifyAdmin(\achbotMessage('jobs.gift2all.message.4d3e24cb7c'));
     }
 }

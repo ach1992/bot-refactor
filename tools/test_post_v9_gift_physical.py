@@ -133,6 +133,8 @@ CONFIG=r'''<?php
 $connection=new mysqli('localhost','root','',getenv('ACHBOT_GIFT_DB'),0,getenv('ACHBOT_GIFT_SOCKET'));
 $connection->set_charset('utf8mb4');
 $admin=9001;
+$botState=['rewardChannel'=>'@fixture-gift-private-channel'];
+require_once __DIR__.'/notifications-under-test.php';
 function achbotSupportsPanel($type){return $type==='marzban';}
 require_once __DIR__.'/src/Panel/Accounts.php';
 require_once __DIR__.'/src/Purchase/Core.php';
@@ -157,7 +159,6 @@ function sendMessage(...$args){
         ($args[3]??null)===1001) exit(0);
     return (object)['ok'=>true];
 }
-function sendToAllAdmins(...$args){return true;}
 '''
 
 def prepare(work):
@@ -168,6 +169,7 @@ def prepare(work):
     shutil.copytree(ROOT/'src',stage/'src')
     shutil.copyfile(ROOT/'settings/gift2all.php',stage/'settings/gift2all.php')
     shutil.copytree(ROOT/'messages',stage/'messages')
+    gift.stage_notifications(stage)
     (stage/'config.php').write_text(CONFIG)
     (stage/'baseInfo.php').write_text('<?php // disposable isolated harness\n')
     (stage/'run.php').write_text(gift.RUNNER)
