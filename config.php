@@ -3807,9 +3807,12 @@ function achbotNotifyAdmins($method, array $data, array $options = []): array {
     if ($connection instanceof mysqli) {
         $complete=false;
         $candidates=achbotAdminRecipientCandidates($connection,$primary,$complete);
-        foreach ($candidates as $recipient)
-            if (achbotAdminNotificationAllowed($connection,$recipient,$primary,$event))
+        foreach ($candidates as $recipient) {
+            $admissionComplete=true;
+            if (achbotAdminNotificationAllowed($connection,$recipient,$primary,$event,$admissionComplete))
                 $deliver((int)$recipient,'staff');
+            if (!$admissionComplete) $complete=false;
+        }
         // Keep primary acknowledgement first. Durable report callers must not
         // mistake a contended recipient read for a fully delivered fanout.
         if (!$complete) $results[]=['chat_id'=>null,'response'=>null,
