@@ -361,7 +361,7 @@ if (preg_match('/send(?:CustomCart|CustomGift|CustomUsdt)Receipt(?<hashId>.*)/',
     setUser((in_array($method, ['manual_usdt','manual_trx'], true) ? "waitCustomUsdtReceipt" : ($method === 'gift_card' ? "waitCustomGiftReceipt" : "waitCustomCartReceipt")) . $match['hashId']);
 
     $keyboard = kbOnlyCancel("cancelCustomCartReceipt", $match['hashId']);
-    $sent=sendMessage(achbotManualReceiptPrompt($mainValues, $method), $keyboard, "HTML");
+    $sent=sendMessage(achbotManualEvidencePrompt($mainValues,$connection,$payInfo,$method), $keyboard, "HTML");
     require_once __DIR__ . '/../PaymentLifecycle.php';
     achbotPayUxTrackByHash($connection,(string)$match['hashId'],(int)$from_id,$sent);
     exit;
@@ -381,10 +381,10 @@ if (preg_match('/wait(?:CustomCart|CustomGift|CustomUsdt)Receipt(.*)/', $userInf
         alert(\achbotMessage('payment.checkout.alert.882596d0f1'), true);
         return;
     }
-    $fileid = extractPhotoFileId($update);
+    $fileid = achbotManualEvidenceInput($update, $connection, $receiptPay, $method);
     if (!$fileid) {
         $keyboard = kbOnlyCancel("cancelCustomCartReceipt", $match[1]);
-        sendMessage($mainValues['please_send_only_image'], $keyboard, "HTML");
+        sendMessage(achbotManualEvidencePrompt($mainValues,$connection,$receiptPay,$method,true), $keyboard, "HTML");
         exit;
     }
 
@@ -1208,7 +1208,7 @@ if (preg_match('/send(?:BuyCart|BuyGift|BuyUsdt)Receipt(?<hashId>.*)/', $data, $
     setUser((in_array($method, ['manual_usdt','manual_trx'], true) ? "waitBuyUsdtReceipt" : ($method === 'gift_card' ? "waitBuyGiftReceipt" : "waitBuyCartReceipt")) . $match['hashId']);
 
     $keyboard = kbOnlyCancel("cancelBuyCartReceipt", $match['hashId']);
-    $sent=sendMessage(achbotManualReceiptPrompt($mainValues, $method), $keyboard, "HTML");
+    $sent=sendMessage(achbotManualEvidencePrompt($mainValues,$connection,$payInfo,$method), $keyboard, "HTML");
     require_once __DIR__ . '/../PaymentLifecycle.php';
     achbotPayUxTrackByHash($connection,(string)$match['hashId'],(int)$from_id,$sent);
     exit;
@@ -1228,10 +1228,10 @@ if (preg_match('/wait(?:BuyCart|BuyGift|BuyUsdt)Receipt(.*)/', $userInfo['step']
         alert(\achbotMessage('payment.checkout.alert.882596d0f1'), true);
         return;
     }
-    $fileid = extractPhotoFileId($update);
+    $fileid = achbotManualEvidenceInput($update, $connection, $receiptPay, $method);
     if (!$fileid) {
         $keyboard = kbOnlyCancel("cancelBuyCartReceipt", $match[1]);
-        sendMessage($mainValues['please_send_only_image'], $keyboard, "HTML");
+        sendMessage(achbotManualEvidencePrompt($mainValues,$connection,$receiptPay,$method,true), $keyboard, "HTML");
         exit;
     }
 

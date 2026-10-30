@@ -115,7 +115,7 @@ function achbotPaymentEvidenceProfile(string $method,?array $keys=null,?array $s
     if (($states[$prefix.'VerifyState']??'off')!=='on') return null;
     $url=$keys[$prefix.'Url']??'';
     if (!is_string($url) || ($url=achbotPaymentEvidenceBaseUrl($url,$method))===null) return null;
-    $profile=['v'=>1,'method'=>$method,'base_url'=>$url,
+    $profile=['v'=>1,'review_first'=>true,'method'=>$method,'base_url'=>$url,
         'source_key'=>hash('sha256','AChBot/payment-evidence/source-slot/v1/'.$method),
         'endpoint_sha256'=>hash('sha256',$url),'filters'=>[]];
     if ($method==='bank_transfer') {
@@ -501,6 +501,12 @@ function achbotPaymentEvidenceGiftNormalize(array $data,array $profile,array $at
         'fingerprint'=>hash('sha256',json_encode($semantic,JSON_THROW_ON_ERROR))];
 }
 
+/** Genuine stored staff delivery, independent from remote evidence/finality. */
+function achbotPaymentEvidenceReviewReady(array $pay,array $attempt): bool {
+    return (int)($pay['message_id']??0)>0 && (int)($pay['chat_id']??0)>0 &&
+        (($pay['state']==='have_sent' && $attempt['stage']==='review') ||
+         in_array($pay['state'],['approved','paid','auto_cart_approved','paid_with_wallet'],true));
+}
 function achbotPaymentEvidenceClaim(mysqli $db,int $payId): ?array {
     if ($payId<=0 || !achbotPaymentEvidenceSchemaReady($db)) return null;
     try {
@@ -513,6 +519,8 @@ function achbotPaymentEvidenceClaim(mysqli $db,int $payId): ?array {
         if (!$pay || !$p || !hash_equals($p['pay_sha256'],achbotPaymentEvidencePayFingerprint($pay))) {
             $db->rollback(); return null;
         }
+        if(!empty($p['review_first']) && !achbotPaymentEvidenceReviewReady($pay,$a) &&
+            !achbotPaymentEvidencePending($db,$payId) && !achbotPaymentEvidenceGetProof($db,$payId)){$db->rollback();return null;}
         $token=bin2hex(random_bytes(16)); $id=(int)$a['id'];
         $q=$db->prepare("UPDATE payment_attempts SET evidence_claim_token=?,evidence_claimed_at=NOW()
             WHERE id=? AND evidence_profile IS NOT NULL
@@ -568,7 +576,7 @@ function achbotPaymentEvidenceSaveGiftCode(mysqli $db,int $payId,int $actor,stri
             $db->rollback();
             return ['status'=>($read['code']??null)===$code?'same':'locked'];
         }
-        if ($a['evidence_code']!==null && $a['evidence_state']!=='invalid_code') {
+        if ($a['evidence_code']!==null && ($a['evidence_state']!=='invalid_code' || $a['evidence_review_sent_at']!==null)) {
             $db->rollback();return ['status'=>'locked'];
         }
         $aid=(int)$a['id'];
@@ -676,6 +684,7 @@ function achbotPaymentEvidenceReserve(mysqli $db,int $payId,array $evidence,stri
             $db->rollback();return null;
         }
         if (!$old) {
+            if(!empty($p['review_first']) && !achbotPaymentEvidenceReviewReady($pay,$a)){$db->rollback();return null;}
             $q=$db->prepare('SELECT id FROM payment_transactions WHERE attempt_id=? AND evidence_operation IS NOT NULL FOR UPDATE');
             $q->bind_param('i',$aid);$q->execute();$seen=$q->get_result()->num_rows;$q->close();
             if ($seen) {$db->rollback();return null;}

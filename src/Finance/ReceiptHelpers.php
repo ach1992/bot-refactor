@@ -1513,7 +1513,7 @@ function achbotManualReceiptAllowed(mysqli $connection, array $payInfo, string $
         require_once __DIR__ . '/PaymentLifecycle.php';
         $api=function_exists('achbotApiPaymentContext') ? achbotApiPaymentContext($connection,(string)$payInfo['hash_id'],$userId) : null;
         if (function_exists('achbotApiPaymentPinned') && achbotApiPaymentPinned($connection,(int)$payInfo['id']) && !$api) return false;
-        if ($api && ($method!=='bank_transfer' || (int)$api['attempt']['age_seconds']<600)) return false;
+
         $stmt = $connection->prepare('SELECT provider,stage,checkout_url,provider_status,
             TIMESTAMPDIFF(SECOND,created_at,NOW()) AS age_seconds
             FROM payment_attempts WHERE pay_row_id=? LIMIT 1');
@@ -1545,8 +1545,10 @@ function achbotManualReceiptAllowed(mysqli $connection, array $payInfo, string $
  */
 function achbotManualBeginEvidence(mysqli $connection, array $payInfo, string $method,
                                    int $userId, string $fileId): ?string {
-    if ($userId <= 0 || $fileId === '' || strlen($fileId) > 1200 ||
+    $typed=achbotManualTypedGift($connection,$payInfo,$method);
+    if ($userId <= 0 || $fileId === '' || strlen($fileId) > ($typed?4096:1200) ||
         !in_array($method, ['bank_transfer','gift_card','manual_usdt','manual_trx'], true)) return null;
+    if($typed){$saved=achbotPaymentEvidenceSaveGiftCode($connection,(int)$payInfo['id'],$userId,$fileId);if(!in_array($saved['status']??'',['saved','same'],true))return null;}
     try {
         $claimToken = bin2hex(random_bytes(16));
         $connection->begin_transaction();
@@ -1572,7 +1574,7 @@ function achbotManualBeginEvidence(mysqli $connection, array $payInfo, string $m
         require_once __DIR__ . '/PaymentLifecycle.php';
         $api=function_exists('achbotApiPaymentContext') ? achbotApiPaymentContext($connection,(string)$payInfo['hash_id'],$userId) : null;
         if (function_exists('achbotApiPaymentPinned') && achbotApiPaymentPinned($connection,(int)$payInfo['id']) && !$api) {$connection->rollback();return null;}
-        if ($api && ($method!=='bank_transfer' || (int)$api['attempt']['age_seconds']<600)) {$connection->rollback();return null;}
+
         if (!$api && $attempt['stage']==='pending' &&
             (string)($attempt['provider_status']??'')!== 'receipt_started' &&
             (int)$attempt['age_seconds']>=achbotPayUxManualDeadlineSeconds()) {
@@ -1580,7 +1582,9 @@ function achbotManualBeginEvidence(mysqli $connection, array $payInfo, string $m
         }
         $intent = achbotManualIntentDecode((string)$attempt['checkout_url'], $method);
         if ($intent === null) { $connection->rollback(); return null; }
-        if ($attempt['stage'] === 'receiving') {
+        if($typed) {
+            if(achbotPaymentEvidenceReadGiftCode($connection,$id)!==$fileId){$connection->rollback();return null;}
+        } elseif ($attempt['stage'] === 'receiving') {
             if (($intent['receipt_file_id'] ?? null) !== $fileId) {
                 $connection->rollback(); return null;
             }
@@ -1631,7 +1635,7 @@ function achbotManualFinishEvidence(mysqli $connection, string $hashId, string $
     if ($messageId <= 0 || $adminChatId <= 0 || $token === '') return false;
     try {
         $connection->begin_transaction();
-        $stmt = $connection->prepare('SELECT id,state,payid FROM pays WHERE hash_id=? FOR UPDATE');
+        $stmt = $connection->prepare('SELECT * FROM pays WHERE hash_id=? FOR UPDATE');
         $stmt->bind_param('s', $hashId);
         $stmt->execute();
         $pay = $stmt->get_result()->fetch_assoc();
@@ -1653,7 +1657,8 @@ function achbotManualFinishEvidence(mysqli $connection, string $hashId, string $
             $connection->rollback(); return false;
         }
         $intent = achbotManualIntentDecode((string)$attempt['checkout_url'], (string)$attempt['provider']);
-        if (!$intent || ($intent['receipt_file_id'] ?? null) !== $fileId) {
+        $typed=achbotManualTypedGift($connection,$pay,(string)$attempt['provider']);
+        if (!$intent || ($typed ? achbotPaymentEvidenceReadGiftCode($connection,$id)!==$fileId : ($intent['receipt_file_id'] ?? null) !== $fileId)) {
             $connection->rollback(); return false;
         }
         $stmt = $connection->prepare("UPDATE pays SET state='have_sent',message_id=?,chat_id=?
@@ -1671,6 +1676,7 @@ function achbotManualFinishEvidence(mysqli $connection, string $hashId, string $
         $stmt->execute();
         $changed = $stmt->affected_rows;
         $stmt->close();
+        if($typed){$q=$connection->prepare('UPDATE payment_attempts SET evidence_review_sent_at=NOW() WHERE id=?');$q->bind_param('i',$attemptId);$q->execute();$q->close();}
         if ($changed !== 1 || !$connection->commit()) throw new RuntimeException('manual_evidence_commit_failed');
         return true;
     } catch (Throwable $error) {
@@ -1730,6 +1736,21 @@ function achbotManualCaption(mysqli $connection, array $payInfo, string $caption
     return $quoteLine . $caption;
 }
 
+function achbotManualTypedGift(mysqli $db,array $pay,string $method): bool {
+    return $method==='gift_card' && function_exists('achbotApiPaymentContext') &&
+        achbotApiPaymentContext($db,(string)($pay['hash_id']??''))!==null;
+}
+function achbotManualEvidenceInput($update,mysqli $db,array $pay,string $method): ?string {
+    if(!achbotManualTypedGift($db,$pay,$method))return extractPhotoFileId($update);
+    $code=$update->message->text??null;
+    if(!is_string($code))return null;$code=trim($code);
+    return $code!=='' && strlen($code)<=4096 && !preg_match('/[\x00-\x1f\x7f]/',$code)?$code:null;
+}
+function achbotManualEvidencePrompt(array $mainValues,mysqli $db,array $pay,string $method,bool $invalid=false): string {
+    if(achbotManualTypedGift($db,$pay,$method))return achbotMessage('payment.api_payment.code_prompt');
+    return $invalid?$mainValues['please_send_only_image']:achbotManualReceiptPrompt($mainValues,$method);
+}
+
 function achbotManualReceiptPrompt(array $mainValues, string $method): string {
     $key = match ($method) {
         'gift_card' => 'please_send_gift_card_image',
@@ -1747,6 +1768,7 @@ function achbotManualAcknowledgement(array $payInfo, string $method): string {
         $api=achbotApiPaymentContext($db,(string)$payInfo['hash_id']);
         if ($api && achbotApiPaymentTerminal($api['pay'])) return achbotMessage('payment.api_payment.confirmed');
     }
+    if($db instanceof mysqli && achbotManualTypedGift($db,$payInfo,$method))return achbotMessage('payment.api_payment.code_acknowledgement',['reference'=>achbotPayUxReference($payInfo)]);
     return \achbotMessage('manual_payment.receipt_helpers.manual_acknowledgement.label.a5f27211f7') . achbotManualLabel($method) . \achbotMessage('manual_payment.receipt_helpers.manual_acknowledgement.text.29e14cf62e') .
         achbotPayUxReference($payInfo) .
         \achbotMessage('manual_payment.receipt_helpers.manual_acknowledgement.text.62e569e922');
@@ -1780,10 +1802,6 @@ function buildCartToCartInfoMessage(array $paymentKeys, array $mainValues, int $
         if (!$attempt || (int)$attempt['local_amount_toman'] !== $priceToman) return '';
         $intent = achbotManualIntentDecode((string)$attempt['checkout_url'], $method);
         if (!$intent) return '';
-        if(function_exists('achbotApiPaymentContext')) {
-            $api=achbotApiPaymentContext($connection,$hashId,$userId);
-            if($api)return achbotApiPaymentInvoiceText($api);
-        }
         if (in_array($method, ['manual_usdt','manual_trx'], true)) {
             $network = (string)($intent['network'] ?? '');
             $wallet = (string)($intent['wallet'] ?? '');
@@ -1813,6 +1831,7 @@ function buildCartToCartInfoMessage(array $paymentKeys, array $mainValues, int $
         if ($method === 'bank_transfer' &&
             (trim((string)($intent['account'] ?? '')) === '' ||
              trim((string)($intent['holder'] ?? '')) === '')) return '';
+        if(achbotManualTypedGift($connection,$pay,$method))return $reference.achbotMessageHtml('payment.api_payment.gift_invoice',['amount'=>(string)$amount])."\n\n".achbotMessage('payment.api_payment.code_prompt');
         $template = (string)($mainValues[$method === 'gift_card' ?
             'brw_cart_to_cart_gift' : 'brw_cart_to_cart_detail'] ?? '');
         return $reference.strtr($template, [
@@ -2067,7 +2086,10 @@ function sendReceiptToAdminsAndUpdatePay(
     string $claimToken
 ): bool {
     try {
-        $response = sendPhoto($fileid, $caption, $adminKeyboard, 'HTML', $adminChatId);
+        $pay=dbFetchPayByHash($connection,$hashId);
+        $typed=$pay && achbotManualTypedGift($connection,$pay,'gift_card') && achbotManualSelectedMethod($connection,$pay)==='gift_card';
+        if($typed){$code=achbotPaymentEvidenceReadGiftCode($connection,(int)$pay['id']);if($code!==$fileid)throw new RuntimeException('typed_receipt_evidence_mismatch');$caption.="\n\n".achbotMessageHtml('manual_payment.api_payment.code_evidence',['code'=>$code]);}
+        $response = $typed?sendMessage($caption,$adminKeyboard,'HTML',$adminChatId):sendPhoto($fileid, $caption, $adminKeyboard, 'HTML', $adminChatId);
         $msgId = (int)($response->result->message_id ?? 0);
         if ($msgId <= 0 ||
             !achbotManualFinishEvidence($connection, $hashId, $fileid, $claimToken,
@@ -2087,9 +2109,8 @@ function sendReceiptToAdminsAndUpdatePay(
         return false;
     }
     try {
-        sendToAllAdmins('sendPhoto', [
-            'photo' => $fileid,
-            'caption' => $caption,
+        sendToAllAdmins($typed?'sendMessage':'sendPhoto', [
+            ...($typed?['text'=>$caption]:['photo'=>$fileid,'caption'=>$caption]),
             'reply_markup' => $adminKeyboard,
             'parse_mode' => 'HTML'
         ], $hashId, ['event'=>'manual_review']);
@@ -2098,7 +2119,10 @@ function sendReceiptToAdminsAndUpdatePay(
     }
     if (function_exists('achbotApiPaymentContext')) {
         $api=achbotApiPaymentContext($connection,$hashId);
-        if ($api && achbotApiPaymentTerminal($api['pay'])) achbotApiPaymentNotice($connection,$api['pay'],'confirmed',false);
+        if ($api) {
+            if(achbotApiPaymentTerminal($api['pay']))achbotApiPaymentNotice($connection,$api['pay'],'confirmed',false);
+            else achbotApiPaymentCheck($connection,(int)$api['pay']['id']);
+        }
     }
     return true;
 }

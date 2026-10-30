@@ -345,7 +345,7 @@ if (preg_match('/send(?:IncreaseWallet|IncreaseWalletGift|IncreaseWalletUsdt)Rec
     setUser((in_array($method, ['manual_usdt','manual_trx'], true) ? "waitIncreaseWalletUsdtReceipt" : ($method === 'gift_card' ? "waitIncreaseWalletGiftReceipt" : "waitIncreaseWalletReceipt")) . $match['hashId']);
 
     $keyboard = kbOnlyCancel("cancelIncreaseWalletReceipt", $match['hashId']);
-    $sent=sendMessage(achbotManualReceiptPrompt($mainValues, $method), $keyboard, "HTML");
+    $sent=sendMessage(achbotManualEvidencePrompt($mainValues,$connection,$payInfo,$method), $keyboard, "HTML");
     require_once __DIR__ . '/../PaymentLifecycle.php';
     achbotPayUxTrackByHash($connection,(string)$match['hashId'],(int)$from_id,$sent);
     exit;
@@ -365,10 +365,10 @@ if (preg_match('/wait(?:IncreaseWallet|IncreaseWalletGift|IncreaseWalletUsdt)Rec
         alert(\achbotMessage('wallet.wallet_recharge.wallet_topup_amount_problem.alert.882596d0f1'), true);
         return;
     }
-    $fileid = extractPhotoFileId($update);
+    $fileid = achbotManualEvidenceInput($update, $connection, $receiptPay, $method);
     if (!$fileid) {
         $keyboard = kbOnlyCancel("cancelIncreaseWalletReceipt", $match[1]);
-        sendMessage($mainValues['please_send_only_image'], $keyboard, "HTML");
+        sendMessage(achbotManualEvidencePrompt($mainValues,$connection,$receiptPay,$method,true), $keyboard, "HTML");
         exit;
     }
 

@@ -617,6 +617,7 @@ return [
         'api_payment.denied' => "این درخواست پرداخت در دسترس نیست.",
         'api_payment.completed' => "سفارش تکمیل شد.",
         'api_payment.receipt_review' => "رسید دریافت شد و در انتظار بررسی است. بررسی خودکار پرداخت نیز ادامه دارد؛ وجه یا رسید را دوباره ارسال نکنید.",
+        'api_payment.code_acknowledgement' => ['text' => "کد گیفت‌کارت دریافت شد.\n{reference}درخواست در انتظار بررسی مدیر است؛ ارسال کد به معنی تأیید پرداخت یا تحویل سرویس نیست.", 'parameters' => ['reference']],
         'api_payment.code_received' => "کد دریافت شد. ثبت درخواست بررسی در حال انجام است؛ منتظر نتیجه بمانید.",
         'api_payment.single_code' => "فقط کد کامل یک گیفت‌کارت را در یک پیام بفرستید.",
         // agent_discounts.get_agent_discounts

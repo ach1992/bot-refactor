@@ -224,7 +224,7 @@ if (preg_match('/send(?:RenewCart|RenewGift|RenewUsdt)Receipt(?<hashId>.*)/', $d
     setUser((in_array($method, ['manual_usdt','manual_trx'], true) ? "waitRenewUsdtReceipt" : ($method === 'gift_card' ? "waitRenewGiftReceipt" : "waitRenewCartReceipt")) . $match['hashId']);
 
     $keyboard = kbOnlyCancel("cancelRenewCartReceipt", $match['hashId']);
-    $sent=sendMessage(achbotManualReceiptPrompt($mainValues, $method), $keyboard, "HTML");
+    $sent=sendMessage(achbotManualEvidencePrompt($mainValues,$connection,$payInfo,$method), $keyboard, "HTML");
     require_once __DIR__ . '/../PaymentLifecycle.php';
     achbotPayUxTrackByHash($connection,(string)$match['hashId'],(int)$from_id,$sent);
     exit;
@@ -244,10 +244,10 @@ if (preg_match('/wait(?:RenewCart|RenewGift|RenewUsdt)Receipt(.*)/', $userInfo['
         alert(\achbotMessage('renewal.extensions.alert.882596d0f1'), true);
         return;
     }
-    $fileid = extractPhotoFileId($update);
+    $fileid = achbotManualEvidenceInput($update, $connection, $receiptPay, $method);
     if (!$fileid) {
         $keyboard = kbOnlyCancel("cancelRenewCartReceipt", $match[1]);
-        sendMessage($mainValues['please_send_only_image'], $keyboard, "HTML");
+        sendMessage(achbotManualEvidencePrompt($mainValues,$connection,$receiptPay,$method,true), $keyboard, "HTML");
         exit;
     }
 

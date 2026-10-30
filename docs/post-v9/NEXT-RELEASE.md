@@ -1,4 +1,10 @@
-# Current RC20 source/release contract
+# Current source and published release contracts
+
+## Evidence-first source correction (unreleased)
+
+[Issue57](https://github.com/ach1992/bot-refactor/issues/57) now requires immediate bank receipt submission regardless of API state. Only after the original administrator review message is delivered may an enabled API verify/consume and settle. Gift API OFF retains the image workflow; API ON receives a code with the same private subject caption/actions and escaped Telegram code formatting. Successful API approval converges staff copies with "تایید خودکار توسط API"; errors retain human actions. Read the [current behavior and recovery contract](API-PAYMENT-EVIDENCE.md). No new SQL is introduced;014 remains unchanged. The Owner paused RC20 ZIP staging/migration pending these corrections; this candidate is not published or installed.
+
+The RC20 section below describes the immutable earlier publication; its ten-minute customer journey is superseded only in the current source candidate.
 
 ## RC20 API payments, native gifts and notification routing
 
