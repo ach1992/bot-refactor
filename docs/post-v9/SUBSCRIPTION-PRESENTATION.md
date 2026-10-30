@@ -1,6 +1,6 @@
 # Subscription presentation and per-server settings
 
-Current **unreleased source** contract for native Marzban and PasarGuard, accepted
+Current **RC19** contract for native Marzban and PasarGuard, accepted
 in [Issue37](https://github.com/ach1992/bot-refactor/issues/37#issuecomment-6507182633)
 with the [order QR correction](https://github.com/ach1992/bot-refactor/issues/37#issuecomment-6507342963).
 Published RC18 retains its original behavior. Source/isolated tests do not
