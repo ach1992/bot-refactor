@@ -313,6 +313,8 @@ $finish=static function(
             throw new RuntimeException('gift_finish_roster_changed');
 
         if ($result!==null) {
+            if (!achbotGiftTargetMatches($connection,$serverId,$receipt['target']))
+                throw new RuntimeException('gift_batch_target_changed_after_effect');
             if (achbotGiftIdentityHash($connection,$orders)!==($referenceProof['native_identity_sha256']??null))
                 throw new RuntimeException('gift_native_identity_changed_after_effect');
             achbotGiftFinishReferences($connection,$orders,$day>0);
@@ -585,7 +587,19 @@ foreach ($rosterNames as $index=>$remark) {
 
     try {
         $orders=achbotGiftReferences($connection,$serverId,$remark);
+        $dispatchOrderId=null;
+        if (($target['provider']??'marzban')==='pasarguard') {
+            // Global cohort order does not identify the selected logical server.
+            // Preserve its initial roster and missing-member hold semantics.
+            $local=array_values(array_filter($orders,static fn($order)=>$order['server_id']===$serverId));
+            if (!$local) throw new RuntimeException('gift_dispatch_reference_missing');
+            $dispatchOrderId=$local[0]['id'];
+        }
         $referenceProof=achbotGiftReferenceProof($orders);
+        $referenceProof['dispatch_server_id']=$serverId;
+        $referenceProof['dispatch_order_id']=$dispatchOrderId;
+        $referenceProof['batch_target']=achbotGiftPublicTarget($target);
+        $referenceProof['dispatch_target']=achbotGiftPublicTarget($target);
         $referenceProof['native_identity_sha256']=achbotGiftIdentityHash($connection,$orders);
         $referenceProof['username']=$remark;
     } catch (Throwable $error) {
@@ -605,8 +619,9 @@ foreach ($rosterNames as $index=>$remark) {
         $change['remark']=$remark;
         $change['operation_key']='gift:'.(int)$holdId;
         unset($change['order_id']);
-        if (($target['provider']??'marzban')==='pasarguard' && $orders)
-            $change['order_id']=$orders[0]['id'];
+        if ($dispatchOrderId!==null) $change['order_id']=$dispatchOrderId;
+        if (!achbotGiftTargetMatches($connection,$serverId,$target))
+            throw new RuntimeException('gift_dispatch_target_changed');
         achbotGiftValidateReferences($connection,$orders);
         if (achbotGiftIdentityHash($connection,$orders)!==$referenceProof['native_identity_sha256'])
             throw new RuntimeException('gift_native_identity_changed_before_effect');
@@ -633,6 +648,8 @@ foreach ($rosterNames as $index=>$remark) {
             throw new RuntimeException('gift_remote_effect_unverified');
         }
 
+        if (!achbotGiftTargetMatches($connection,$serverId,$target))
+            throw new RuntimeException('gift_dispatch_target_changed_after_effect');
         $finish($held,$holdId,$index+1,$orders,$result,$referenceProof);
         $offset=$index+1;
     } catch (Throwable $e) {

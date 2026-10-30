@@ -301,13 +301,108 @@ def main():
             check(provider+'_bulk_completion_and_replay_no_second_native',
                 writes(provider)==1,dict(writes=writes(provider)))
 
+
+        # PG's initial selected-server membership is unchanged. Additional
+        # same-panel references participate only in the admitted service cohort.
+        alias_base='a32ec0178b7e1d11a8e8191279b7ef932b93c725'
+        current_worker=(stage_bulk/'settings/gift2all.php').read_bytes()
+
+        def alias_setup():
+            direct.q(work,env,'DELETE FROM orders_list WHERE id=90')
+            reset('pasarguard')
+            direct.q(work,env,"INSERT INTO server_info(id,title,ucount,remark,flag,active,state) "+
+                "VALUES(4,'Verified alias',5,'alias','','1',1) ON DUPLICATE KEY UPDATE active=1,state=1")
+            fields=['type','panel_url','username','password','provider_connection_id',
+                'provider_instance_key','provider_version','provider_enabled']
+            direct.q(work,env,'UPDATE server_config a JOIN server_config b ON b.id=2 SET '+
+                ','.join('a.'+field+'=b.'+field for field in fields)+' WHERE a.id=4')
+            attach(work,env,90,1002,'pasarguard')
+            direct.q(work,env,'UPDATE orders_list SET server_id=4 WHERE id=90')
+            direct.q(work,env,"DELETE FROM setting WHERE type LIKE 'ACHBOT_GIFT_%'; DELETE FROM gift_list")
+
+        def enqueue_alias():
+            return int(physical.php(work,env,stage_bulk,'enqueue.php','verified',log,['1024','2']).strip())
+
+        def result_records(gid):
+            raw=direct.q(work,env,"SELECT value FROM setting WHERE type LIKE 'ACHBOT_GIFT_RESULT_"+str(gid)+"_%'")
+            return [json.loads(line) for line in raw.splitlines() if line]
+
+        alias_setup()
+        (stage_bulk/'settings/gift2all.php').write_bytes(subprocess.check_output(
+            ['git','show',alias_base+':settings/gift2all.php'],cwd=ROOT))
+        gid=enqueue_alias()
+        physical.php(work,env,stage_bulk,'run.php','verified',log)
+        state=bulk.state(work,env,gid)
+        check('baseline_pasarguard_bulk_lower_id_alias_anchor_RED',
+            server.write_count==0 and state[0]==-1 and state[2]==1 and not result_records(gid),
+            dict(writes=server.write_count,state=state,records=result_records(gid)))
+        (stage_bulk/'settings/gift2all.php').write_bytes(current_worker)
+
+        alias_setup()
+        gid=enqueue_alias()
+        before=direct.q(work,env,'SELECT id,userid,fileid,expire_date,amount FROM orders_list ORDER BY id')
+        physical.php(work,env,stage_bulk,'run.php','verified',log)
+        records=result_records(gid)
+        entries=[json.loads(line) for line in log.read_text().splitlines()]
+        recipients=[item['recipient'] for item in entries if item['kind']=='MESSAGE' and item.get('recipient') in [1001,1002]]
+        record=records[0] if len(records)==1 else {}
+        check('pasarguard_bulk_lower_id_alias_prefers_batchserver_anchor',
+            server.write_count==1 and sorted(recipients)==[1001,1002] and record.get('state')=='completed' and
+            record.get('reference_ids')==[90,91] and record.get('recipient_userids')==[1001,1002] and
+            record.get('dispatch_order_id')==91 and record.get('dispatch_server_id')==2 and
+            record.get('server_id')==2 and record.get('batch_target')==record.get('dispatch_target') and
+            record.get('applied_bytes')==3221225472 and record.get('applied_expire')==direct.OLD_EXPIRY+2*86400 and
+            direct.q(work,env,'SELECT id,userid,fileid,expire_date,amount FROM orders_list ORDER BY id')==before,
+            dict(writes=server.write_count,recipients=recipients,records=records))
+        physical.php(work,env,stage_bulk,'run.php','verified',log)
+        physical.php(work,env,stage_bulk,'run.php','verified',log)
+        check('pasarguard_bulk_lower_id_alias_completion_replay_no_second_write',
+            server.write_count==1 and bulk.state(work,env,gid)[0] is None,
+            dict(writes=server.write_count,state=bulk.state(work,env,gid)))
+
+        alias_setup()
+        direct.q(work,env,'UPDATE orders_list SET server_id=4 WHERE id=91')
+        gid=enqueue_alias()
+        physical.php(work,env,stage_bulk,'run.php','verified',log)
+        check('pasarguard_bulk_initial_alias_only_remains_outside_selected_server_roster',
+            server.write_count==0 and not result_records(gid) and bulk.state(work,env,gid)[0] is None,
+            dict(writes=server.write_count,state=bulk.state(work,env,gid),records=result_records(gid)))
+
+        alias_setup()
+        gid=enqueue_alias()
+        # Stop the actual worker after durable roster creation but before the
+        # first native claim. This fixture trigger never touches any real DB.
+        direct.q(work,env,"CREATE TRIGGER owner_alias_freeze_stop BEFORE UPDATE ON gift_list FOR EACH ROW "+
+            "SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='synthetic_stop_before_claim'")
+        try:
+            physical.php(work,env,stage_bulk,'run.php','verified',log)
+        finally:
+            direct.q(work,env,'DROP TRIGGER owner_alias_freeze_stop')
+        frozen=bulk.manifest(work,env,gid)
+        direct.ensure(server.write_count==0 and frozen is not None and frozen['count']==1 and frozen['cursor']==0,
+            'Alias-only hold fixture did not freeze original selected-server username before any claim')
+        direct.q(work,env,'UPDATE orders_list SET server_id=4 WHERE id=91')
+        physical.php(work,env,stage_bulk,'run.php','verified',log)
+        state=bulk.state(work,env,gid)
+        check('pasarguard_bulk_frozen_member_moved_to_alias_preserves_missing_member_hold',
+            server.write_count==0 and state[0]==-1 and state[2]==1 and
+            state[3]['username']=='fixture-user' and state[3]['reason']=='snapshot_recipient_missing' and
+            not result_records(gid),
+            dict(writes=server.write_count,state=state,roster=frozen))
+        direct.q(work,env,'UPDATE orders_list SET server_id=2 WHERE id=91')
+        physical.php(work,env,stage_bulk,'run.php','verified',log)
+        state=bulk.state(work,env,gid)
+        check('pasarguard_bulk_frozen_alias_hold_restored_reference_cannot_rearm',
+            server.write_count==0 and state[0]==-1 and state[2]==1 and not result_records(gid),
+            dict(writes=server.write_count,state=state))
+
     end_hashes={path:hashlib.sha256((ROOT/path).read_bytes()).hexdigest() for path in runtime_paths}
     end_head=subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip()
     end_clean=not subprocess.check_output(['git','status','--porcelain'],cwd=ROOT,text=True).strip()
     source_unchanged=start_hashes==end_hashes and start_head==end_head
     report=dict(complete=source_unchanged,cases=len(observations),scenarios=[o['scenario'] for o in observations],
         observations=observations,actual_bot_route=True,actual_bulk_worker=True,actual_native_adapters=True,
-        actual_notification_router=True,original_source=BASE,baseline_red_cases=5,real_provider_requests=0,
+        actual_notification_router=True,original_source=BASE,alias_regression_source=alias_base,baseline_red_cases=6,real_provider_requests=0,
         owned_mariadb_only=True,loopback_only=True,production_operations=0,
         source_head=start_head,source_head_after=end_head,source_unchanged=source_unchanged,
         source_clean_at_start=start_clean,source_clean_at_end=end_clean,
