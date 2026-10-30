@@ -100,6 +100,14 @@ def owner_gift_policy_scenarios() -> list[str]:
     names += [provider+'_'+label for provider in providers
         for label in ['bulk_shared_once_dedup_native_journal',
                       'bulk_completion_and_replay_no_second_native']]
+    names += [
+        'baseline_pasarguard_bulk_lower_id_alias_anchor_RED',
+        'pasarguard_bulk_lower_id_alias_prefers_batchserver_anchor',
+        'pasarguard_bulk_lower_id_alias_completion_replay_no_second_write',
+        'pasarguard_bulk_initial_alias_only_remains_outside_selected_server_roster',
+        'pasarguard_bulk_frozen_member_moved_to_alias_preserves_missing_member_hold',
+        'pasarguard_bulk_frozen_alias_hold_restored_reference_cannot_rearm',
+    ]
     return names
 
 
@@ -110,7 +118,8 @@ def owner_gift_policy_mismatches(proof: dict, source_head: str,
         'complete':True,'actual_bot_route':True,'actual_bulk_worker':True,
         'actual_native_adapters':True,'actual_notification_router':True,
         'original_source':'a0785dca3e46f031ca9a0a4500a71bf3ea11ee8e',
-        'baseline_red_cases':5,'real_provider_requests':0,
+        'baseline_red_cases':6,
+        'alias_regression_source':'a32ec0178b7e1d11a8e8191279b7ef932b93c725','real_provider_requests':0,
         'owned_mariadb_only':True,'loopback_only':True,'production_operations':0,
         'source_head':source_head,'source_head_after':source_head,
         'source_unchanged':True,'source_clean_at_start':True,'source_clean_at_end':True,
