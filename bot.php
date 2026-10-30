@@ -93,6 +93,7 @@ if (is_string($data) && preg_match(
     }
 }
 
+if (($achbotApiPaymentResult = require __DIR__.'/src/Finance/Routes/ApiPayments.php') === null) return;
 if (($achbotV8Result = require __DIR__ . '/src/Finance/Routes/PrePayment.php') === null) return;
 if (($achbotManualCryptoResult = require __DIR__ . '/src/Finance/Routes/ManualCrypto.php') === null) return;
 // END Pre Pay Check By ACh
@@ -489,7 +490,7 @@ if(($data=="gateWays_Channels" or preg_match('/^changeGateWays([A-Za-z0-9_]+)$/D
         $editableGatewayToggles=[
             'giftCardState','manualUsdtState','cartToCartState',
             'nextpay','zarinpal','nowPaymentWallet','nowPaymentOther',
-            'walletState'
+            'walletState','smsApiVerifyState','giftApiVerifyState'
         ];
         if (!in_array($match[1],$editableGatewayToggles,true)) {
             answerCallbackQuery($callbackId,\achbotMessage('bot.bot.webhook_ingress_authenticated.alert.9eac3467d5'),true);
@@ -499,7 +500,9 @@ if(($data=="gateWays_Channels" or preg_match('/^changeGateWays([A-Za-z0-9_]+)$/D
                 (int)$chat_id,(int)$message_id,(int)$admin,
                 'toggle',$match[1])) {
             answerCallbackQuery($callbackId,
-                \achbotMessage('bot.bot.webhook_ingress_authenticated.alert.31513d032b'),true);
+                in_array($match[1],['smsApiVerifyState','giftApiVerifyState'],true)
+                    ? \achbotMessage('payment_settings.api.change_unconfirmed')
+                    : \achbotMessage('bot.bot.webhook_ingress_authenticated.alert.31513d032b'),true);
             return;
         }
     }
@@ -664,6 +667,20 @@ if($data=="changeConfigRemarkType"){
     setSettings('remark', $newValue);
     editText($message_id,$mainValues['change_bot_settings_message'],getBotSettingKeys());
 }
+// Existing API settings use the same current private gateway authority.
+if (is_string($data??null) &&
+    preg_match('/\AchangePaymentKeysApi(Sms|Gift)(Advanced)?\z/D',$data,$apiPage)) {
+    if (!achbotGatewayAdminCanView($update,(int)$from_id,(int)$chat_id,
+            (int)$message_id,(int)$admin,$data)) {
+        answerCallbackQuery($callbackId,\achbotMessage('payment_settings.api.denied'),true);
+        return;
+    }
+    $page=achbotPaymentApiAdminPage($apiPage[1]==='Sms'?'bank_transfer':'gift_card',
+        isset($apiPage[2]));
+    answerCallbackQuery($callbackId);
+    editText($message_id,$page['text'],$page['keyboard'],'HTML',(int)$from_id);
+    return;
+}
 // Privileged PAYMENT_KEYS editor: signed private source + current actor
 // role, current owned step, field-level CAS, and a serialized atomic write.
 // Cached $userInfo / $paymentKeys are NEVER authorization/write authority.
@@ -680,6 +697,10 @@ if (is_string($data??null) && str_starts_with($data,'changePaymentKeys')) {
         return;
     }
     delMessage();
+    if (achbotPaymentApiAdminIsField($match[1])) {
+        sendMessage(achbotPaymentApiAdminPrompt($match[1]),$cancelKey,'HTML');
+        return;
+    }
     switch($match[1]){
         case "nextpay":
             $gate = \achbotMessage('bot.bot.change_config_remark_type.gate.44b818af28');
@@ -752,7 +773,11 @@ if (str_starts_with($paymentKeyStep,'achbotPaymentKey|') ||
     } else {
         sendMessage($mainValues['saved_successfuly'],$removeKeyboard);
     }
-    sendMessage($mainValues['change_bot_settings_message'],getGateWaysKeys());
+    if (achbotPaymentApiAdminIsField($ownedStep['field'])) {
+        achbotPaymentApiAdminReturn($ownedStep['field']);
+    } else {
+        sendMessage($mainValues['change_bot_settings_message'],getGateWaysKeys());
+    }
     return;
 }
 require __DIR__ . '/src/Agent/Discounts.php';
