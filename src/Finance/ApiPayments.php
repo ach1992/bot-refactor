@@ -75,6 +75,12 @@ function achbotApiPaymentReceiptPrefixes(array $pay): array {
     if (str_starts_with($t,'INCREASE_VOLUME_')) return ['sendIncreaseVolumeReceipt','cancelIncreaseVolumeReceipt'];
     return ((int)$pay['day']>0 || (int)$pay['volume']>0)?['sendCustomCartReceipt','cancelCustomCartReceipt']:['sendBuyCartReceipt','cancelBuyCartReceipt'];
 }
+/** The first API gift invoice accepts exactly the input its prompt requests. */
+function achbotApiPaymentInitialStep(mysqli $db,string $hash,string $legacy): string {
+    $c=achbotApiPaymentContext($db,$hash);
+    if(!$c||$c['attempt']['provider']!=='gift_card')return $legacy;
+    return empty($c['attempt']['evidence_code'])||($c['attempt']['evidence_state']??'')==='invalid_code'?'apiGiftCode_'.$hash:'none';
+}
 function achbotApiPaymentKeyboard(array $context,?string $sendPrefix=null,?string $cancelPrefix=null): string {
     $pay=$context['pay'];$a=$context['attempt'];$hash=(string)$pay['hash_id'];
     [$send,$cancel]=achbotApiPaymentReceiptPrefixes($pay);$send=$sendPrefix??$send;$cancel=$cancelPrefix??$cancel;
@@ -511,7 +517,18 @@ function achbotApiPaymentDeliverReview(mysqli $db,int $id): bool {
     }catch(Throwable $e){if($started)try{$db->rollback();}catch(Throwable $ignored){}error_log('achbot_api_typed_review_delivery_deferred pay_id='.$id);return false;}
 }
 /** Button and admitted Cron service coalesce under this durable evidence claim. */
+/** Ephemeral monotonic timing context; never seal it in financial evidence. */
+function achbotApiPaymentWithBudget(float $seconds,callable $action) {
+    $key='achbotPaymentEvidenceDeadline';$had=array_key_exists($key,$GLOBALS);$previous=$GLOBALS[$key]??null;
+    $deadline=hrtime(true)/1000000000+$seconds;
+    if((is_float($previous)||is_int($previous))&&is_finite((float)$previous))$deadline=min($deadline,(float)$previous);
+    $GLOBALS[$key]=$deadline;
+    try{return $action();}finally{if($had)$GLOBALS[$key]=$previous;else unset($GLOBALS[$key]);}
+}
 function achbotApiPaymentCheck(mysqli $db,int $id): string {
+    return achbotApiPaymentWithBudget(15.0,static fn()=>achbotApiPaymentCheckWithinBudget($db,$id));
+}
+function achbotApiPaymentCheckWithinBudget(mysqli $db,int $id): string {
     if(!achbotApiPaymentReady($db))return 'unavailable';
     $saved=achbotApiPaymentAttempt($db,$id);
     if($saved && $saved['provider']==='gift_card' && ($saved['evidence_state']??'')==='invalid_code') {
@@ -536,6 +553,9 @@ function achbotApiPaymentCheck(mysqli $db,int $id): string {
     return $status;
 }
 function achbotApiPaymentMaintain(mysqli $db,int $limit=12): array {
+    return achbotApiPaymentWithBudget(35.0,static fn()=>achbotApiPaymentMaintainWithinBudget($db,$limit));
+}
+function achbotApiPaymentMaintainWithinBudget(mysqli $db,int $limit=12): array {
     $checked=0;$edited=0;$started=microtime(true);$limit=max(1,min(12,$limit));if(!achbotApiPaymentReady($db))return ['checked'=>0,'edited'=>0];
     try {
         $q=$db->query("SELECT a.pay_row_id,p.hash_id FROM payment_attempts a JOIN pays p ON p.id=a.pay_row_id

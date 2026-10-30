@@ -302,6 +302,13 @@ function achbotPaymentEvidenceHttp(array $profile,string $method,string $path,?a
                 !preg_match('/\A[a-f0-9]{64}\z/D',$value)) return $bad;
             $headers[]=$name.': '.$value;
         }
+        // Ephemeral coordinator MONOTONIC budget; never a sealed financial pin.
+        $timeoutMs=12000;$deadline=$GLOBALS['achbotPaymentEvidenceDeadline']??null;
+        if((is_int($deadline)||is_float($deadline)) && is_finite((float)$deadline)) {
+            $remainingMs=(int)floor(((float)$deadline-hrtime(true)/1000000000)*1000);
+            if($remainingMs<=0)return $bad;
+            $timeoutMs=min($timeoutMs,$remainingMs);
+        }
         $buffer=''; $overflow=false;
         $ch=curl_init($base.$path);
         if ($ch===false) return $bad;
@@ -310,7 +317,7 @@ function achbotPaymentEvidenceHttp(array $profile,string $method,string $path,?a
             CURLOPT_CUSTOMREQUEST=>$method,CURLOPT_HTTPHEADER=>$headers,
             CURLOPT_FOLLOWLOCATION=>false,CURLOPT_MAXREDIRS=>0,
             CURLOPT_SSL_VERIFYPEER=>true,CURLOPT_SSL_VERIFYHOST=>2,
-            CURLOPT_CONNECTTIMEOUT=>4,CURLOPT_TIMEOUT=>12,
+            CURLOPT_CONNECTTIMEOUT_MS=>min(4000,$timeoutMs),CURLOPT_TIMEOUT_MS=>$timeoutMs,
             CURLOPT_PROTOCOLS=>$loopback?CURLPROTO_HTTP:CURLPROTO_HTTPS,
             CURLOPT_REDIR_PROTOCOLS=>CURLPROTO_HTTPS,
             CURLOPT_PROXY=>'',CURLOPT_HEADER=>false,
