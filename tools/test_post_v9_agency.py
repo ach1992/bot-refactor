@@ -141,6 +141,7 @@ def outgoing(results: list[dict], target: int) -> int:
                and event[1][3] == target)
 
 def main() -> None:
+    import notification_fixture
     parser = argparse.ArgumentParser()
     parser.add_argument('--run-disposable', action='store_true', required=True)
     parser.add_argument('--report', type=Path)
@@ -152,7 +153,9 @@ def main() -> None:
         checks.append(name)
 
     with owned.owned_database() as (work, env):
-        (work / 'agency-driver.php').write_text(PHP_DRIVER)
+        # Bootstrap only this current standalone run; imported PHP_DRIVER
+        # remains unchanged for fixtures that provide their own source stage.
+        (work / 'agency-driver.php').write_text(notification_fixture.with_router(PHP_DRIVER))
         extract = ("require $argv[1]; echo '<?php'.PHP_EOL."
                    "achbotExtractFunction($argv[2],'setUser');")
         original_writer = subprocess.check_output(
