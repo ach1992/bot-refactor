@@ -1326,16 +1326,14 @@ function achbotManualClaim(mysqli $connection, array $payInfo, string $method, i
                            ?string $chosenNetwork = null): bool {
     if (!in_array($method, ['bank_transfer', 'gift_card', 'manual_usdt','manual_trx'], true) ||
         (int)$payInfo['user_id'] !== $userId) return false;
-    // New API add-on admission needs a fresh native observation BEFORE the
-    // existing local issuer transaction. Under locks only recheck its exact
-    // immutable local subject; no provider HTTP may hold financial locks.
-    $apiAddonPreflight=null;
-    if (function_exists('achbotPaymentEvidenceProfile') && achbotPaymentEvidenceProfile($method)!==null &&
-        preg_match('/^INCREASE_(DAY|VOLUME)_/',(string)($payInfo['type']??''))) {
+    // API issuance observes the complete provider/native subject before the
+    // existing issuer transaction. Existing attempts keep their original pins.
+    $apiSubjectPreflight=null;
+    if (function_exists('achbotPaymentEvidenceProfile') && achbotPaymentEvidenceProfile($method)!==null) {
         try {$apiExisting=achbotApiPaymentAttempt($connection,(int)$payInfo['id']);}catch(Throwable $e){return false;}
         if ($apiExisting===null && ($payInfo['state']??'')==='pending') {
-            if (!achbotSupportsPaymentSubject($connection,$payInfo,false)) return false;
-            $apiAddonPreflight=achbotPaymentEvidencePayFingerprint($payInfo);
+            $apiSubjectPreflight=achbotApiPaymentSubjectPreflight($connection,$payInfo);
+            if(empty($apiSubjectPreflight['valid']))return false;
         }
     }
     try {
@@ -1412,8 +1410,8 @@ function achbotManualClaim(mysqli $connection, array $payInfo, string $method, i
         }
         if (!achbotManualEnabled($method) ||
             !achbotPayUxAudienceAllowed($connection,$method,$userId,true) ||
-            ($apiAddonPreflight!==null
-                ? (!hash_equals($apiAddonPreflight,achbotPaymentEvidencePayFingerprint($current)) || !achbotApiPaymentLocalSubjectAllowed($connection,$current))
+            ($apiSubjectPreflight!==null
+                ? !achbotApiPaymentLocalSubjectAllowed($connection,$current,$apiSubjectPreflight)
                 : !achbotSupportsPaymentSubject($connection,$current,true))) {
             $connection->rollback();
             return false;

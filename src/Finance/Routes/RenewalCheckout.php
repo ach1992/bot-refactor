@@ -345,6 +345,7 @@ if (preg_match('/wait(?:RenewCart|RenewGift|RenewUsdt)Receipt(.*)/', $userInfo['
 }
 
 if(preg_match('/^approveRenewAcc(.*)/',$data,$match) && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'payments')){
+    $apiManualSeen=function_exists('achbotApiPaymentManualAddonPreflight') ? achbotApiPaymentManualAddonPreflight($connection,(string)$match[1]) : null;
     $connection->begin_transaction();
     $localCommitted=false;
     try {
@@ -352,7 +353,7 @@ if(preg_match('/^approveRenewAcc(.*)/',$data,$match) && achbotAdminCanFor($conne
         $stmt->bind_param("s", $match[1]); 
         $stmt->execute(); 
         $payInfo = $stmt->get_result()->fetch_assoc();
-        if (!achbotSupportsPaymentSubject($connection, $payInfo, true)) {
+        if (!(function_exists('achbotApiPaymentManualAddonAllowedLocked') ? achbotApiPaymentManualAddonAllowedLocked($connection,$payInfo,$apiManualSeen) : achbotSupportsPaymentSubject($connection, $payInfo, true))) {
             $connection->rollback();
             alert(\achbotMessage('renewal.renewal_checkout.alert.fbaa266905'), true);
             return;

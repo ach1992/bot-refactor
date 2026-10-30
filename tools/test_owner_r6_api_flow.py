@@ -263,6 +263,25 @@ function sendPhoto(...$args){$GLOBALS['events'][]=['event'=>'PHOTO'];if(!empty($
         query(work,env,f'''UPDATE pays SET admins_messages='[{{"chat_id":9004,"message_id":333}}]' WHERE id={n}''')
         old_digest=query(work,env,f'SELECT evidence_staff_digest FROM payment_attempts WHERE pay_row_id={n}');r=call(op='notice',pay=n,fail_staff=True);assert query(work,env,f'SELECT evidence_staff_digest FROM payment_attempts WHERE pay_row_id={n}')==old_digest,r
         r=call(op='notice',pay=n);assert any(e['event']=='EDIT_KEYS' and e['chat']==9004 for e in r['events']) and query(work,env,f'SELECT evidence_staff_digest FROM payment_attempts WHERE pay_row_id={n}')!=old_digest,r;cases.append('staff_final_copy_retry_after_failure_ignores_receiving_off')
+        # Actual current-authority SQL failure must leave the stored-copy
+        # projection retryable. Rename only this owned synthetic fixture table.
+        query(work,env,f'UPDATE payment_attempts SET evidence_staff_digest=NULL WHERE pay_row_id={n}')
+        query(work,env,'RENAME TABLE users TO fixture_unreadable_users')
+        try:
+            r=call(op='notice',pay=n)
+            assert query(work,env,f'SELECT evidence_staff_digest IS NULL FROM payment_attempts WHERE pay_row_id={n}')=='1',r
+        finally:query(work,env,'RENAME TABLE fixture_unreadable_users TO users')
+        query(work,env,'UPDATE payment_attempts SET evidence_projection_checked_at=NOW()')
+        query(work,env,f'UPDATE payment_attempts SET evidence_projection_checked_at=NULL WHERE pay_row_id={n}')
+        r=call(op='maintain',pay=n,limit=1)
+        assert any(e['event']=='EDIT_KEYS' and e['chat']==9004 for e in r['events']) and query(work,env,f'SELECT evidence_staff_digest IS NOT NULL FROM payment_attempts WHERE pay_row_id={n}')=='1',r
+        cases.append('staff_unreadable_current_authority_retries_in_ordinary_maintenance_receiving_off')
+        query(work,env,"UPDATE users SET isAdmin=0 WHERE userid=9004")
+        query(work,env,f'UPDATE payment_attempts SET evidence_staff_digest=NULL WHERE pay_row_id={n}')
+        r=call(op='notice',pay=n)
+        assert not any(e['event']=='EDIT_KEYS' and e['chat']==9004 for e in r['events']) and query(work,env,f'SELECT evidence_staff_digest IS NOT NULL FROM payment_attempts WHERE pay_row_id={n}')=='1',r
+        query(work,env,"UPDATE users SET isAdmin=1 WHERE userid=9004")
+        cases.append('staff_definitive_revoked_copy_excluded_without_indefinite_retry')
         # Fair projection: more than one batch of old clean rows cannot starve later invoices.
         for i in range(15):seed('fair'+str(i))
         query(work,env,'UPDATE payment_attempts SET evidence_next_check_at=NOW()+INTERVAL 1 DAY,evidence_projection_checked_at=NULL')
