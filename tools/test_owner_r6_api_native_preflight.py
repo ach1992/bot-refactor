@@ -39,7 +39,7 @@ $op=$spec['op']??'check';
 if($op==='pin') {achbotPgPinPayment($connection,$id);$value=true;}
 elseif($op==='issue')$value=achbotManualClaim($connection,$pay,$spec['method']??'gift_card',1001);
 elseif($op==='check')$value=achbotApiPaymentCheck($connection,$id);
-elseif($op==='save')$value=achbotPaymentEvidenceSaveGiftCode($connection,$id,1001,$spec['code']);
+elseif($op==='save'){$value=achbotPaymentEvidenceSaveGiftCode($connection,$id,1001,$spec['code']);if(($value['status']??'')==='saved'){$v=achbotManualBeginEvidence($connection,$pay,'gift_card',1001,$spec['code']);if(!$v||!achbotManualFinishEvidence($connection,$pay['hash_id'],$spec['code'],$v,222,9001))throw new RuntimeException('fixture_gift_review_delivery_failed');}}
 elseif($op==='maintain')$value=achbotApiPaymentMaintain($connection);
 elseif($op==='receipt'){$v=achbotManualBeginEvidence($connection,$pay,'bank_transfer',1001,'native-photo');$value=$v?achbotManualFinishEvidence($connection,$pay['hash_id'],'native-photo',$v,222,9001):false;}
 elseif($op==='locked_drift') {

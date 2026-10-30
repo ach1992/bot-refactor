@@ -538,7 +538,7 @@ def main():
         copy_run=subprocess.run(['python3',str(ROOT/'tools/test_owner_r5_copy.py')],
                                 cwd=ROOT,check=True,timeout=180,capture_output=True,text=True)
         copy_proof=json.loads(copy_run.stdout)
-        required_copy={'status':'PASS','changes':273,'retired':10,'added':60,'current_keys':2772,
+        required_copy={'status':'PASS','changes':273,'retired':10,'added':60,'current_keys':2775,
                        'r5_negative_controls':5,'persian_prose_start_violations':0,
                        'duplicate_heading_markers':0,'guide_provider_cases':2,'guide_JSON_examples':3,
                        'actual_HTML_transport_cases':2,'archived_wrong_parse_RED':True,
@@ -837,14 +837,29 @@ def main():
                        cwd=ROOT,check=True,timeout=240,capture_output=True)
         api_flow=json.loads(api_flow_path.read_text())
         required_api_flow=[
+            'no_bank_api_or_consumption_before_receipt_delivery',
+            'failed_primary_receipt_delivery_keeps_pending_and_no_http',
+            'receipt_retry_same_evidence_delivers_before_sms_auto_approval',
+            'gift_api_off_still_requires_original_image_without_http',
+            'gift_code_original_caption_copyable_private_wallet',
+            'gift_code_original_caption_copyable_private_standard',
+            'gift_code_original_caption_copyable_private_custom',
+            'gift_code_original_caption_copyable_private_bulk',
+            'gift_code_original_caption_copyable_private_renew',
+            'gift_code_original_caption_copyable_private_day',
+            'gift_code_original_caption_copyable_private_volume',
+            'gift_code_original_caption_copyable_private_external',
+            'saved_code_and_failed_primary_delivery_never_verify_or_consume',
+            'gift_real_code_review_precedes_auto_approval_and_stale_human_no_recredit',
+            'unsubmitted_invoices_do_not_starve_reviewed_background_work',
             'off_manual_original_unpinned',
             'full_exact_quote_only_and_wallet_replay',
             'complete_report_uses_original_random_quote_and_durable_dedup',
             'proven_terminal_excluded_new_same_quote_distinct_sms',
             'full_quote_collision_no_first_match_or_consumption',
-            'exact600_fallback_original_reference_and_no_unpaid_timeout',
+            'immediate_receipt_original_reference_and_no_ten_minute_ui',
             'offline_bank_keeps_genuine_manual_receipt',
-            'bank_submitted_receipt_text_retains_check_without_new_receipt_invitation',
+            'bank_submitted_receipt_same_manual_customer_acknowledgement',
             'late_ready_sms_manual_settlement_consumption_only',
             'concurrent_real_human_api_wallet_at_most_once',
             'proof_backed_standard_existing_create_journal',
@@ -867,13 +882,13 @@ def main():
             'uncertain_create_journal_never_redispatched',
             'configured_horizon_stops_new_scans_without_financial_expiry',
             'queued_invoice_edit_human_winner_converges_final',
-            'queued_photo_copy_converges_after_api_settlement',
+            'queued_primary_photo_blocks_api_until_delivery_then_converges',
             'actual_ingress_review_owner_operator_support_current_revoked_customer',
             'staff_final_copy_retry_after_failure_ignores_receiving_off',
             'staff_unreadable_current_authority_retries_in_ordinary_maintenance_receiving_off',
             'staff_definitive_revoked_copy_excluded_without_indefinite_retry',
             'bounded_projection_fairness_more_than_one_batch',
-            'gift_canonical_redeem_exact_single_code_replacement',
+            'gift_exact_single_code_review_fences_replacement_after_delivery',
             'giftstandard_proof_uses_genuine_create_without_bank009',
             'giftcustom_proof_uses_genuine_create_without_bank009',
             'giftbulk_proof_uses_genuine_create_without_bank009',
@@ -882,9 +897,9 @@ def main():
             'gift_expired_distinct_same_code_reads_state',
             'gift_inflight_review_status_has_no_fresh_code_invitation',
             'unknown_code_encrypted_review_different_code_fenced',
-            'actual_gift_issuer_binds_initial_code_prompt',
+            'actual_gift_issuer_uses_familiar_submission_button',
             'gift_navigation_start_back_cancel_and_callbacks_never_become_code',
-            'callback_ack_precedes_slow_api_and_has_no_expired_second_answer',
+            'old_check_callback_acknowledged_without_customer_api_polling',
             'monotonic_expired_and_remaining_api_budget_no_new_http_context_restored',
         ]
         current_api_head=cmd('rev-parse','HEAD').decode().strip()
@@ -1525,10 +1540,10 @@ def main():
                 and text_catalog.get("retired_parser_tokens")==23
                 and text_catalog.get("relocation_source_ref")=="ecd30ba9192ed374703118a6c131be8809cc7b06"
                 and text_catalog.get("native",{}).get("current_retired_feature_keys")==3
-                and text_catalog.get("catalog_keys")==2772
+                and text_catalog.get("catalog_keys")==2775
                 and text_catalog.get("native",{}).get("editable_catalog_files")==2
                 and text_catalog.get("native",{}).get("logical_topics")==27
-                and text_catalog.get("native",{}).get("current_catalog_keys")==2772
+                and text_catalog.get("native",{}).get("current_catalog_keys")==2775
                 and text_catalog.get("native",{}).get("current_gift_admin_additions")==1
                 and text_catalog.get("native",{}).get("current_gift_catalog_negative_controls")==8
                 and text_catalog.get("native",{}).get("current_gift_catalog_negative_scenarios")==[
@@ -1548,10 +1563,10 @@ def main():
                 and text_catalog["native"]["current_byte_preserved_keys"]
                     +text_catalog["native"]["current_style_changes"]
                     +text_catalog["native"]["current_added_admin_keys"]==2523
-                and text_catalog.get("native",{}).get("current_native_template_assertions")==4107
-                and text_catalog.get("native",{}).get("current_object_conversion_templates")==267
+                and text_catalog.get("native",{}).get("current_native_template_assertions")==4115
+                and text_catalog.get("native",{}).get("current_object_conversion_templates")==268
                 and text_catalog.get("native",{}).get("current_shared_multi_parameter_templates")==66
-                and text_catalog.get("native",{}).get("current_one_pass_templates")==267
+                and text_catalog.get("native",{}).get("current_one_pass_templates")==268
                 and text_catalog.get("native",{}).get("current_r5_changes")==273
                 and text_catalog.get("native",{}).get("current_r5_retired_keys")==10
                 and text_catalog.get("native",{}).get("current_r5_added_keys")==60
@@ -1559,7 +1574,7 @@ def main():
                 and text_catalog.get("native",{}).get("current_non_ascii_digit_templates")==0
                 and text_catalog.get("presentation",{}).get("status")=="PASS"
                 and text_catalog.get("presentation",{}).get("editable_files")==2
-                and text_catalog.get("presentation",{}).get("current_keys")==2772
+                and text_catalog.get("presentation",{}).get("current_keys")==2775
                 and text_catalog.get("presentation",{}).get("numeric_template_changes")==23
                 and text_catalog.get("presentation",{}).get("adjacent_emoji_violations")==0
                 and text_catalog.get("presentation",{}).get("parameter_exception_count")==3
@@ -1581,11 +1596,11 @@ def main():
                 and text_catalog.get("presentation",{}).get("recipient_total_source_layer_negative_controls")==14):
             raise RuntimeError("Pre-style relocation or current two-file/audience/presentation proof incomplete")
         required_api_catalog={
-            'runtime_references':2459,
-            'api_referenced_keys':82,
-            'api_dynamic_source_paths':3,
-            'api_reference_source_commit':'67aba2527f58c0efd844b3c52cd2469143fe9113',
-            'api_retained_unreferenced_keys':4,
+            'runtime_references':2448,
+            'api_referenced_keys':68,
+            'api_dynamic_source_paths':2,
+            'api_reference_source_commit':'1e972234f0d4d3f799a39874536c342e5892a654',
+            'api_retained_unreferenced_keys':18,
             'api_reference_negative_controls':6,
         }
         required_api_native_catalog={
