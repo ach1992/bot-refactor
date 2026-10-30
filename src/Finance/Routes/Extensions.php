@@ -162,6 +162,7 @@ if (is_string($data) && (strlen($data) <= 64 || ($GLOBALS['achbotManualCryptoVer
     $delivered = sendMessage($msg, $keyboard, "HTML");
     require_once __DIR__ . '/../PaymentLifecycle.php';
     achbotPayUxTrackByHash($connection,(string)$payInfo['hash_id'],(int)$from_id,$delivered);
+    if (function_exists('achbotApiPaymentTrackInvoice')) achbotApiPaymentTrackInvoice($connection,(string)$payInfo['hash_id'],(int)$from_id,$delivered);
     if (is_object($delivered) && !empty($delivered->ok)) {
     setUser("payIncreaseDayWith" . (in_array($method, ['manual_usdt','manual_trx'], true) ? 'ManualUsdt' : ($method === 'gift_card' ? 'GiftCard' : 'CartToCart')) . $match[1]);
         delMessage();
@@ -301,6 +302,7 @@ if (preg_match('/wait(?:IncreaseDay|IncreaseDayGift|IncreaseDayUsdt)Receipt(.*)/
 }
 
 if (preg_match('/^approveIncreaseDay(.*)/', $data, $match) && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'payments')) {
+    $apiManualSeen=function_exists('achbotApiPaymentManualAddonPreflight') ? achbotApiPaymentManualAddonPreflight($connection,(string)$match[1]) : null;
     $connection->begin_transaction();
     $localCommitted=false;
     try {
@@ -310,7 +312,7 @@ if (preg_match('/^approveIncreaseDay(.*)/', $data, $match) && achbotAdminCanFor(
         $stmt->bind_param("s", $hash_id);
         $stmt->execute();
         $payParam = $stmt->get_result()->fetch_assoc();
-        if (!achbotSupportsPaymentSubject($connection, $payParam, true)) {
+        if (!(function_exists('achbotApiPaymentManualAddonAllowedLocked') ? achbotApiPaymentManualAddonAllowedLocked($connection,$payParam,$apiManualSeen) : achbotSupportsPaymentSubject($connection, $payParam, true))) {
             $connection->rollback();
             alert(\achbotMessage('renewal.extensions.alert.135aa8877f'), true);
             return;
@@ -976,6 +978,7 @@ if (is_string($data) && (strlen($data) <= 64 || ($GLOBALS['achbotManualCryptoVer
     $delivered = sendMessage($msg, $keyboard, "HTML");
     require_once __DIR__ . '/../PaymentLifecycle.php';
     achbotPayUxTrackByHash($connection,(string)$payInfo['hash_id'],(int)$from_id,$delivered);
+    if (function_exists('achbotApiPaymentTrackInvoice')) achbotApiPaymentTrackInvoice($connection,(string)$payInfo['hash_id'],(int)$from_id,$delivered);
     if (is_object($delivered) && !empty($delivered->ok)) {
     setUser("payIncreaseWith" . (in_array($method, ['manual_usdt','manual_trx'], true) ? 'ManualUsdt' : ($method === 'gift_card' ? 'GiftCard' : 'CartToCart')) . $match[1]);
         delMessage();
@@ -1115,6 +1118,7 @@ if (preg_match('/wait(?:IncreaseVolume|IncreaseVolumeGift|IncreaseVolumeUsdt)Rec
 }
 
 if (preg_match('/^approveIncreaseVolume(.*)/', $data, $match) && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'payments')) {
+    $apiManualSeen=function_exists('achbotApiPaymentManualAddonPreflight') ? achbotApiPaymentManualAddonPreflight($connection,(string)$match[1]) : null;
     $connection->begin_transaction();
     $localCommitted=false;
     try {
@@ -1124,7 +1128,7 @@ if (preg_match('/^approveIncreaseVolume(.*)/', $data, $match) && achbotAdminCanF
         $stmt->bind_param("s", $hash_id);
         $stmt->execute();
         $payParam = $stmt->get_result()->fetch_assoc();
-        if (!achbotSupportsPaymentSubject($connection, $payParam, true)) {
+        if (!(function_exists('achbotApiPaymentManualAddonAllowedLocked') ? achbotApiPaymentManualAddonAllowedLocked($connection,$payParam,$apiManualSeen) : achbotSupportsPaymentSubject($connection, $payParam, true))) {
             $connection->rollback();
             alert(\achbotMessage('renewal.extensions.alert.135aa8877f'), true);
             return;

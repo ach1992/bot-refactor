@@ -13,7 +13,7 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
  * All locally recorded account lines, capacity and payment finality must
  * commit atomically.  HTTP and Telegram are forbidden inside this transaction.
  */
-function achbotAutoBankFinishBuySub(mysqli $db, array $pay, array $lines): bool {
+function achbotAutoBankFinishBuySub(mysqli $db, array $pay, array $lines, ?array $apiProof=null): bool {
     $id=(int)($pay['id']??0); $owner=(int)($pay['user_id']??0);
     if ($id<=0 || $owner<=0 || $lines===[]) return false;
     $started=false;
@@ -33,7 +33,8 @@ function achbotAutoBankFinishBuySub(mysqli $db, array $pay, array $lines): bool 
         $stmt->bind_param('i',$id);
         if (!$stmt->execute()) throw new RuntimeException('bank_buy_invoice_read');
         $claim=$stmt->get_result()->fetch_assoc();$stmt->close();
-        if (!$locked || !achbotBankBuyClaimMatches($locked,$claim) ||
+        if ($apiProof!==null && $locked) $claim=achbotApiPaymentPurchaseIntent($db,$locked,$apiProof);
+        if (!$locked || !$claim || ($apiProof===null && !achbotBankBuyClaimMatches($locked,$claim)) ||
             !hash_equals((string)$claim['invoice_sha256'],
                          achbotBankBuyInvoiceFingerprint($pay)))
             throw new RuntimeException('bank_buy_invoice_changed');
@@ -53,7 +54,8 @@ function achbotAutoBankFinishBuySub(mysqli $db, array $pay, array $lines): bool 
         $stmt->bind_param('i',$id);
         if (!$stmt->execute()) throw new RuntimeException('bank_buy_method_read');
         $attempt=$stmt->get_result()->fetch_assoc(); $stmt->close();
-        if (!achbotBankBuyAttemptMatches($locked,$attempt,$claim))
+        if ($apiProof===null ? !achbotBankBuyAttemptMatches($locked,$attempt,$claim) :
+            !achbotPaymentEvidenceValidateProofLocked($db,$locked,$apiProof))
             throw new RuntimeException('bank_buy_original_bank_intent_changed');
 
         // Mutable plan identity still requires a fresh physical-target guard.
@@ -88,7 +90,17 @@ function achbotAutoBankFinishBuySub(mysqli $db, array $pay, array $lines): bool 
         $stmt->close();
         if (count($effects)!==$count)
             throw new RuntimeException('bank_buy_effects_incomplete');
-        if (!isset($effects[1]) || (int)$effects[1]['reserved_count']!==$count)
+        if ($apiProof!==null) {
+            // API claim uses the same ordinal-0 hold as genuine human
+            // approvals. Its first CREATE must not debit capacity again.
+            $hold=$db->prepare("SELECT state,reserved_count,target_server_id,plan_id
+                FROM service_effects WHERE pay_row_id=? AND effect_kind='manual_hold' AND ordinal=0 FOR UPDATE");
+            $hold->bind_param('i',$id);$hold->execute();$owned=$hold->get_result()->fetch_assoc();$hold->close();
+            if (!$owned || $owned['state']!=='consumed' || (int)$owned['reserved_count']!==$count ||
+                (int)$owned['target_server_id']!==$server || (int)$owned['plan_id']!==$planId ||
+                !isset($effects[1]) || (int)$effects[1]['reserved_count']!==0)
+                throw new RuntimeException('api_buy_capacity_unverified');
+        } elseif (!isset($effects[1]) || (int)$effects[1]['reserved_count']!==$count)
             throw new RuntimeException('bank_buy_capacity_unreserved');
         foreach ($lines as $index=>$line) {
             $n=$index+1; $e=$effects[$n]??null;
@@ -143,7 +155,7 @@ function achbotAutoBankFinishBuySub(mysqli $db, array $pay, array $lines): bool 
  */
 function achbotAutoBankProvisionBuySub(
     mysqli $db, array $pay, array $botState, array $buttonValues,
-    array $unusedLinkIndices, bool $unusedHideConfigIfMany, string $botUrl
+    array $unusedLinkIndices, bool $unusedHideConfigIfMany, string $botUrl, ?array $apiProof=null
 ): array {
     achbotEffectRequireAutocommit($db);
     $payId=(int)($pay['id']??0); $owner=(int)($pay['user_id']??0);
@@ -151,9 +163,7 @@ function achbotAutoBankProvisionBuySub(
     if ($payId<=0 || $owner<=0 || $planId<=0 || $server<=0)
         throw new RuntimeException('bank_buy_invalid_subject');
 
-    $stmt=$db->prepare("SELECT p.id,p.hash_id,p.order_id,p.payid,
-        p.type,p.state,p.user_id,p.plan_id,p.server_id,
-        p.volume,p.day,p.price,p.agent_count,p.agent_bought,p.description,
+    $stmt=$db->prepare("SELECT p.*,
         s.server_id AS plan_server,s.inbound_id,s.protocol,s.type AS net_type,s.rahgozar,
         s.limitip,s.custom_path,s.custom_port,s.custom_sni,
         i.ucount,i.remark AS server_remark,c.type AS panel_type,
@@ -171,7 +181,8 @@ function achbotAutoBankProvisionBuySub(
     $stmt->bind_param('i',$payId);
     if (!$stmt->execute()) throw new RuntimeException('bank_buy_claim_preflight_read');
     $claim=$stmt->get_result()->fetch_assoc();$stmt->close();
-    if (!$p || !achbotBankBuyClaimMatches($p,$claim) ||
+    if ($apiProof!==null && $p) $claim=achbotApiPaymentPurchaseIntent($db,$p,$apiProof);
+    if (!$p || !$claim || ($apiProof===null && !achbotBankBuyClaimMatches($p,$claim)) ||
         !hash_equals((string)$claim['invoice_sha256'],
                      achbotBankBuyInvoiceFingerprint($pay)))
         throw new RuntimeException('bank_buy_invoice_preflight_changed');
@@ -183,7 +194,8 @@ function achbotAutoBankProvisionBuySub(
     $stmt->bind_param('i',$payId);
     if (!$stmt->execute()) throw new RuntimeException('bank_buy_preflight_attempt_read');
     $attempt=$stmt->get_result()->fetch_assoc();$stmt->close();
-    if (!achbotBankBuyAttemptMatches($p,$attempt,$claim))
+    if ($apiProof===null ? !achbotBankBuyAttemptMatches($p,$attempt,$claim) :
+        !achbotApiPaymentValidateProof($db,$p,$apiProof))
         throw new RuntimeException('bank_buy_original_bank_intent_preflight_changed');
     $count=(int)$claim['account_count'];$price=(int)$claim['amount'];
     if ($p['type']!=='BUY_SUB' || $p['state']!=='processing' ||
@@ -191,7 +203,7 @@ function achbotAutoBankProvisionBuySub(
         (int)$p['server_id']!==$server || (int)$p['plan_server']!==$server ||
         (int)$p['inbound_id']!==0 || !achbotSupportsPanel($p['panel_type']) ||
         !achbotSupportsPanel($p['panel_type']) || $price<=0 || $count>$price ||
-        (int)$p['ucount']<$count || !is_string($p['panel_url']) ||
+        ($apiProof===null && (int)$p['ucount']<$count) || !is_string($p['panel_url']) ||
         $p['panel_url']==='')
         throw new RuntimeException('bank_buy_preflight_unavailable');
 
@@ -241,6 +253,6 @@ function achbotAutoBankProvisionBuySub(
         $deliveries[]=['qr'=>$qr,'caption'=>$caption,'keys'=>$keys,'uid'=>$owner];
     }
 
-    $committed=achbotAutoBankFinishBuySub($db,$pay,$lines);
+    $committed=achbotAutoBankFinishBuySub($db,$pay,$lines,$apiProof);
     return ['committed'=>$committed,'deliveries'=>$committed?$deliveries:[]];
 }
