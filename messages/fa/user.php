@@ -596,6 +596,8 @@ return [
 
     // ── خرید، پرداخت و تخفیف ──
     'payment' => [
+        'api_payment.bank_invoice' => ['text' => "<b>کارت‌به‌کارت بانکی</b>\nمبلغ دقیق زیر را به شماره حساب اعلام‌شده واریز کنید.\nمبلغ به تومان: <code>{amountToman}</code>\nمبلغ به ریال: <code>{amountRial}</code>\n\nشماره حساب:\n<code>{account}</code>\nدارندهٔ حساب: {holder}", 'parameters' => ["amountToman", "amountRial", "account", "holder"]],
+        'api_payment.gift_invoice' => ['text' => "<b>پرداخت با گیفت‌کارت</b>\nمبلغ دقیق فاکتور: <code>{amount}</code> تومان\nبرای این فاکتور، یک گیفت‌کارت با همین مبلغ تهیه کنید.", 'parameters' => ["amount"]],
         // Existing API-assisted payments.
         'api_payment.check' => "بررسی پرداخت",
         'api_payment.receipt' => "ارسال رسید بانکی",
