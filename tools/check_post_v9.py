@@ -76,6 +76,56 @@ def exact_current_proof_mismatches(proof: dict, required: dict,
     return mismatches
 
 
+def api_native_observation_mismatches(proof: dict, expected: list[str]) -> dict:
+    """Require successful named actual-native observations and SQL-free HTTP."""
+    observations=proof.get('observations')
+    if type(observations) is not list or len(observations)!=len(expected):
+        return {'observations':'required one actual observation per named scenario'}
+    replay={
+        'volume_expired_replay_no_second_write',
+        'volume_unreadable_replay_no_second_write',
+        'volume_live_replay_no_second_write',
+        'volume_slow_replay_no_second_write',
+    }
+    local_recovery={
+        'volume_verified_recovery_after_expired_local_only',
+        'renew_verified_recovery_after_unreadable_local_only',
+    }
+    mismatches={}
+    for name,row in zip(expected,observations):
+        if (type(row) is not dict or row.get('scenario')!=name or
+                row.get('passed') is not True or type(row.get('actual')) is not dict):
+            mismatches[name]='required ordered successful actual observation'
+            continue
+        pending=[row['actual']]
+        events=[]
+        results=[]
+        while pending:
+            value=pending.pop()
+            if type(value) is dict:
+                if value.get('event')=='PG_HTTP':
+                    events.append(value)
+                if 'events' in value and 'fatal' in value:
+                    results.append(value)
+                pending.extend(value.values())
+            elif type(value) is list:
+                pending.extend(value)
+        if not results or any(type(value['events']) is not list or
+                value['fatal'] is not None or value.get('stderr')!='' for value in results):
+            mismatches[name+'.php_result']='required clean actual PHP result'
+        if name not in replay|local_recovery and not events:
+            mismatches[name+'.native_http']='required actual native preflight HTTP'
+        if any(type(event.get('tx')) is not int or event['tx']!=0 or
+                event.get('method') not in ('GET','PUT','POST') or
+                type(event.get('path')) is not str for event in events):
+            mismatches[name+'.native_http_context']='required typed HTTP outside SQL'
+        if name in replay and any(event.get('method')!='GET' for event in events):
+            mismatches[name+'.native_replay']='replay must not repeat native writes'
+        if name in local_recovery and events:
+            mismatches[name+'.local_recovery']='verified recovery must perform no native HTTP'
+    return mismatches
+
+
 def source_checks():
     if cmd("rev-parse", V9 + "^{tree}").decode().strip() != V9_TREE:
         raise RuntimeError("Frozen historical V9 reference changed")
@@ -627,6 +677,8 @@ def main():
             'queued_photo_copy_converges_after_api_settlement',
             'actual_ingress_review_owner_operator_support_current_revoked_customer',
             'staff_final_copy_retry_after_failure_ignores_receiving_off',
+            'staff_unreadable_current_authority_retries_in_ordinary_maintenance_receiving_off',
+            'staff_definitive_revoked_copy_excluded_without_indefinite_retry',
             'bounded_projection_fairness_more_than_one_batch',
             'gift_canonical_redeem_exact_single_code_replacement',
             'giftstandard_proof_uses_genuine_create_without_bank009',
@@ -649,12 +701,56 @@ def main():
              'migrations_executed':['001','003','006','007','008','009','014'],
              'flow_head':current_api_head,'evidence_head':current_api_head,'settings_head':current_api_head},
             'scenarios',required_api_flow)
+        if api_flow.get('scenarios')!=required_api_flow:
+            api_flow_mismatches['scenario_order']='required original ordered scenarios and adopted additions'
         if (type(api_flow.get('authenticated_loopback_requests')) is not int or
                 api_flow['authenticated_loopback_requests']<80):
             api_flow_mismatches['authenticated_loopback_requests']='required at least 80 authenticated fixture requests'
         if api_flow_mismatches:
             raise RuntimeError('Existing API payment flow source proof incomplete: '+
                                json.dumps(api_flow_mismatches,sort_keys=True))
+        api_native_path=Path(tmp)/'payment-api-native-preflight.json'
+        subprocess.run(['python3',str(ROOT/'tools/test_owner_r6_api_native_preflight.py'),
+                        '--run-disposable','--report',str(api_native_path)],
+                       cwd=ROOT,check=True,timeout=240,capture_output=True)
+        api_native=json.loads(api_native_path.read_text())
+        required_api_native=[
+            'volume_issuance_native_http_outside_sql',
+            'renew_issuance_native_http_outside_sql',
+            'day_issuance_native_http_outside_sql',
+            'unreadable_issuance_no_attempt_no_locked_http',
+            'local_identity_drift_after_preflight_before_locked_claim_denied',
+            'volume_expired_native_preflight_and_no_locked_http',
+            'volume_expired_replay_no_second_write',
+            'volume_unreadable_native_preflight_and_no_locked_http',
+            'volume_unreadable_replay_no_second_write',
+            'volume_live_native_preflight_and_no_locked_http',
+            'volume_live_replay_no_second_write',
+            'volume_slow_native_preflight_and_no_locked_http',
+            'volume_slow_replay_no_second_write',
+            'human_volume_actual_route_native_http_outside_sql',
+            'human_day_actual_route_native_http_outside_sql',
+            'human_renew_live_actual_route_native_http_outside_sql',
+            'human_renew_unreadable_actual_route_native_http_outside_sql',
+            'human_renew_drift_actual_route_native_http_outside_sql',
+            'issue_coherent_native_identity_drift_during_preflight_denied',
+            'settle_coherent_native_identity_drift_during_preflight_denied',
+            'volume_verified_recovery_after_expired_local_only',
+            'renew_verified_recovery_after_unreadable_local_only',
+        ]
+        api_native_mismatches=exact_current_proof_mismatches(api_native,
+            {'complete':True,'source_real_php':True,'actual_pasarguard_http':True,
+             'socket_mariadb':True,'live_requests':0,'installed_tested':False,
+             'migrations_executed':['001_marzban_panel_group_id.sql', '003_payment_attempts.sql', '004_automatic_renewal_attempts.sql', '006_payment_message_refs.sql', '007_service_effects.sql', '008_referral_awards.sql', '009_bank_buy_invoice_claims.sql', '011_provider_identity.sql', '012_shared_provider_storage.sql', '014_api_payment_evidence.sql'],
+             'source_head':current_api_head},
+            'scenarios',required_api_native)
+        if api_native.get('scenarios')!=required_api_native:
+            api_native_mismatches['scenario_order']='required exact ordered native scenarios'
+        api_native_mismatches.update(
+            api_native_observation_mismatches(api_native,required_api_native))
+        if api_native_mismatches:
+            raise RuntimeError('Existing API actual native preflight proof incomplete: '+
+                               json.dumps(api_native_mismatches,sort_keys=True))
         unified={}
         suites=[
             ('management_wizard','test_unified_management_wizard.py','cases',362,
@@ -1289,7 +1385,7 @@ def main():
             'runtime_references':2458,
             'api_referenced_keys':82,
             'api_dynamic_source_paths':3,
-            'api_reference_source_commit':'259598e70b82bf1f144175b5fef4dd78ace25819',
+            'api_reference_source_commit':'67aba2527f58c0efd844b3c52cd2469143fe9113',
             'api_retained_unreferenced_keys':4,
             'api_reference_negative_controls':6,
         }
@@ -4069,6 +4165,7 @@ def main():
                       "payment_api_evidence_contracts":len(api_evidence["contracts"]),
                       "payment_api_evidence_negative_controls":len(api_evidence_red["expected_RED"]),
                       "payment_api_flow_cases":api_flow["cases"],
+                      "payment_api_native_preflight_cases":api_native["cases"],
                       "gift_worker_reconciliation_cases":gift["cases"],
                       "gift_physical_target_cases":physical_gift["cases"],
                       "wallet_paid_create_cases":wallet_create["cases"],

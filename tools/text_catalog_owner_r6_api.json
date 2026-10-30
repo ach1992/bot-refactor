@@ -922,5 +922,5 @@
     "manual_payment.api_payment.status_monitoring",
     "payment.api_payment.completed"
   ],
-  "source_binding_commit": "259598e70b82bf1f144175b5fef4dd78ace25819"
+  "source_binding_commit": "67aba2527f58c0efd844b3c52cd2469143fe9113"
 }

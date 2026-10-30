@@ -156,7 +156,7 @@ def api_negative_controls(sides):
 
 # Dynamic lookups are resolved only for these exact adopted consumer sources.
 # This is not a prefix exemption: source bytes and every expanded key are pinned.
-API_SOURCE='259598e70b82bf1f144175b5fef4dd78ace25819'
+API_SOURCE='67aba2527f58c0efd844b3c52cd2469143fe9113'
 API_FIELDS=['smsApiUrl','smsApiToken','smsApiHorizonHours','smsApiProvider','smsApiSender',
             'smsApiMobileSource','smsApiRuleId','smsApiBankKey','smsApiTimezone','smsApiCalendar',
             'giftApiUrl','giftApiKeyId','giftApiSecret','giftApiAmountUnit','giftApiGameKey','giftApiValueId']
