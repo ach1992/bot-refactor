@@ -67,7 +67,7 @@ Copy the selected runtime's `baseInfo.example.php` to `baseInfo.php` **only for 
 | --- | --- |
 | `$botToken` | This bot's private BotFather token |
 | `$botUsername` | This bot's username without `@` |
-| `$botUrl` | Its absolute HTTPS bot-root URL, without `/bot.php` or a trailing slash |
+| `$botUrl` | Its absolute HTTPS bot-root URL, without `/bot.php` and **with a trailing `/`**, e.g. `https://example.invalid/bot-a/` |
 | `$admin` | Owner's positive numeric Telegram ID |
 | `$dbUserName`, `$dbPassword`, `$dbName` | This installation's dedicated MariaDB credentials/database; runtime connects to `localhost` |
 | `$telegramWebhookSecret` | A unique random per-bot secret, added manually to the private file |
