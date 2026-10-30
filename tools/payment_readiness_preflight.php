@@ -22,6 +22,7 @@ $report = [
     'checks' => &$checks,
     'schema' => [],
     'methods' => [],
+    'payment_apis' => [],
     'limitations' => [
         'matching supplied manifest does not authenticate its provenance',
         'schema shapes do not prove that a migration was actually run or that historical rows are valid',
@@ -69,7 +70,7 @@ function verifyManifest(string $manifestPath, string $runtimePath): bool {
         if ($json === false || strlen($json) > 500000) return false;
         $manifest = json_decode($json, true, 512, JSON_THROW_ON_ERROR);
         if (!is_array($manifest) || !isset($manifest['files']) ||
-            !is_array($manifest['files']) || count($manifest['files']) !== 115 ||
+            !is_array($manifest['files']) || count($manifest['files']) !== 119 ||
             ($manifest['file_count'] ?? null) !== count($manifest['files']) ||
             ($manifest['schema_migration_included'] ?? null) !== false ||
             ($manifest['private_config_included'] ?? null) !== false ||
@@ -77,11 +78,11 @@ function verifyManifest(string $manifestPath, string $runtimePath): bool {
         // The expected current runtime inventory is pinned independently of
         // supplied manifest bytes. Without this guard an attacker-controlled
         // file list could request hashes of an installed private file.
-        // Canonical-path cleanup inventory: 115 explicit runtime paths.
+        // Canonical-path cleanup inventory: 119 explicit runtime paths.
         // SHA-256 of newline-joined sorted package_post_v9.members() paths.
         $members = array_keys($manifest['files']);
         sort($members, SORT_STRING);
-        if (!hash_equals('67a54debaab1d272ee910e9e07d8603bca31916eddca6ce6b8145cb99ec8b7a7',
+        if (!hash_equals('334180c196805f002df58db47e3343cacc23afdf24e798d2a18364e7a78e0246',
                          hash('sha256', implode("\n", $members))) ||
             in_array('baseInfo.php', $members, true)) return false;
         // All tool-side runtime source is bound before any helper executes.
@@ -241,6 +242,35 @@ function achbotPreflightUsdtConfiguration(array $keys): array {
         achbotUsdtRateValue($keys['manualUsdtRateToman'])===null;
     return ['configured'=>$configured,'invalid_explicit_rate'=>$address && $invalid,
             'rate_configured'=>$rateConfigured];
+}
+
+/** Report API capability only; private-key/profile validation belongs to runtime. */
+function achbotPreflightApiReadiness(mysqli $db, array $state, array $columns): void {
+    global $report;
+    require_once dirname(__DIR__) . '/src/Finance/PaymentEvidence.php';
+    $ready = achbotPaymentEvidenceSchemaReady($db);
+    $present = false;
+    foreach (['payment_attempts', 'payment_transactions'] as $table) {
+        foreach (array_keys($columns[$table] ?? []) as $column) {
+            if (str_starts_with($column, 'evidence_')) $present = true;
+        }
+    }
+    $switches = ['bank_transfer' => flag($state, 'smsApiVerifyState'),
+                 'gift_card' => flag($state, 'giftApiVerifyState')];
+    $enabled = in_array(true, $switches, true);
+    $code = $ready ? 'api_evidence_capability_detected_not_ddl_certified' :
+        ($present ? 'partial_or_incompatible_api_evidence_schema_requires_audit' : 'missing');
+    $report['schema']['014'] = $code;
+    finding('schema_014', $ready ? 'PASS' : ($enabled ? 'BLOCK' : ($present ? 'WARN' : 'INFO')), $code);
+    foreach ($switches as $method => $active) {
+        $report['payment_apis'][$method] = [
+            'switch' => $active ? 'on' : 'off',
+            'schema_capability' => $ready ? 'ready' : ($present ? 'partial_or_incompatible' : 'missing'),
+            'credentials' => 'credentials_not_decrypted',
+            'authentication' => 'not_verified',
+        ];
+        if ($active) finding('api_' . $method, 'WARN', 'credentials_not_decrypted_not_verified');
+    }
 }
 
 function methodChecks(array $state, array $keys): void {
@@ -471,6 +501,7 @@ try {
             $valid = policyCheck($state);
             finding('gateway_policies', $valid ? 'PASS' : 'BLOCK',
                 $valid ? 'current_source_parser_accepts_rules' : 'malformed_or_unknown_rule_denies');
+            achbotPreflightApiReadiness($db,$state,$columns);
             methodChecks($state,$settings['PAYMENT_KEYS']);
         }
     } else finding('settings_read', 'BLOCK', 'setting_table_missing');
