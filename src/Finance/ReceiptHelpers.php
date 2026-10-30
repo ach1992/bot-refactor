@@ -403,12 +403,16 @@ function achbotManualCryptoReceiptProviderByHash(mysqli $db, string $hashId): st
 function achbotAutoBankEligible(mysqli $connection, array $seen): bool {
     try {
         $id = (int)$seen['id'];
-        $stmt = $connection->prepare('SELECT provider FROM payment_attempts WHERE pay_row_id=? LIMIT 1');
+        $stmt = $connection->prepare('SELECT * FROM payment_attempts WHERE pay_row_id=? LIMIT 1');
         $stmt->bind_param('i', $id);
         $stmt->execute();
         $attempt = $stmt->get_result()->fetch_assoc();
         $stmt->close();
-        return $attempt === null || (string)$attempt['provider'] === 'bank_transfer';
+        // API-pinned bank receipts require SMS proof. The separate timer must
+        // never turn API unavailability/mismatch into an automatic approval.
+        // Missing014 columns remain compatible with genuine legacy attempts.
+        return $attempt === null || ((string)$attempt['provider'] === 'bank_transfer' &&
+            ($attempt['evidence_profile'] ?? null) === null);
     } catch (Throwable $error) {
         error_log('achbot_bank_auto_method_lookup_deferred pay_row_id=' . (int)($seen['id'] ?? 0));
         return false;
@@ -610,7 +614,10 @@ function achbotAutoBankClaim(mysqli $connection, array $seen): bool {
         $stmt->execute();
         $attempt = $stmt->get_result()->fetch_assoc();
         $stmt->close();
-        if ($attempt && (string)$attempt['provider'] !== 'bank_transfer') {
+        // Recheck the API ownership pin under the same settlement lock; a stale
+        // cheap eligibility result cannot authorize the legacy timer instead.
+        if ($attempt && ((string)$attempt['provider'] !== 'bank_transfer' ||
+                         ($attempt['evidence_profile'] ?? null) !== null)) {
             $connection->rollback();
             return false;
         }

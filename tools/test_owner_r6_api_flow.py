@@ -96,6 +96,7 @@ elseif($op==='review_keys')$value=json_decode(achbotApiPaymentReviewKeyboard($pa
 elseif($op==='fits')$value=achbotManualGiftReviewFits($spec['caption'],$spec['code']);
 elseif($op==='rawsave')$value=achbotPaymentEvidenceSaveGiftCode($connection,$id,1001,$spec['code']);
 elseif($op==='save'){$value=achbotPaymentEvidenceSaveGiftCode($connection,$id,1001,$spec['code']);if(($value['status']??'')==='saved'){$v=achbotManualBeginEvidence($connection,$pay,'gift_card',1001,$spec['code']);if(!$v||!achbotManualFinishEvidence($connection,$pay['hash_id'],$spec['code'],$v,222,9001))throw new RuntimeException('fixture_gift_review_delivery_failed');}}
+elseif($op==='timer')$value=['eligible'=>achbotAutoBankEligible($connection,$pay),'claimed'=>achbotAutoBankClaim($connection,$pay)];
 elseif($op==='check')$value=achbotApiPaymentCheck($connection,$id);
 elseif($op==='settle'){$proof=achbotPaymentEvidenceGetProof($connection,$id);$value=$proof?achbotApiPaymentSettle($connection,$id,$proof):'no-proof';}
 elseif($op==='human')$value=achbotApproveManualWalletTopup($connection,$pay['hash_id'],9001,9001);
@@ -195,6 +196,16 @@ return !empty($GLOBALS['spec']['fail_staff'])?null:(object)['ok'=>true];}""")
         def state(n):return query(work,env,f'SELECT state FROM pays WHERE id={n}')
         def gift(code,amount=101,status='active'):
             APIs.cards[code]={'card_uuid':'card-'+code,'status':status,'redeem_amount':str(amount),'display_amount':'999999','game_key':'fixture','redeem_value_id':1}
+        # The unrelated legacy timer cannot bypass SMS proof on an API-pinned invoice.
+        n=seed('timerapibank');before=query(work,env,'SELECT wallet FROM users WHERE userid=1001');offset=len(APIs.events)
+        r=call(op='timer',pay=n);assert r['result']=={'eligible':False,'claimed':False} and state(n)=='have_sent',r
+        assert query(work,env,'SELECT wallet FROM users WHERE userid=1001')==before and len(APIs.events)==offset
+        cases.append('legacy_timer_cannot_claim_api_pinned_bank_without_sms')
+        pinned=query(work,env,f'SELECT HEX(evidence_profile) FROM payment_attempts WHERE pay_row_id={n}')
+        query(work,env,f"UPDATE payment_attempts SET evidence_profile='' WHERE pay_row_id={n}")
+        r=call(op='timer',pay=n);assert r['result']=={'eligible':False,'claimed':False} and state(n)=='have_sent',r
+        cases.append('legacy_timer_fails_closed_for_corrupt_api_pin')
+        query(work,env,f"UPDATE payment_attempts SET evidence_profile=UNHEX('{pinned}') WHERE pay_row_id={n}")
         # Evidence first: no API request or remote consumption without a real staff review.
         n=seed('notyet',reviewed=False);rid=sms(n);before=len(APIs.events)
         assert call(pay=n)['result']=='awaiting_receipt' and len(APIs.events)==before and APIs.rows[rid]['status']=='ready'
@@ -301,6 +312,11 @@ return !empty($GLOBALS['spec']['fail_staff'])?null:(object)['ok'=>true];}""")
         query(work,env,"INSERT INTO pays(hash_id,user_id,type,price,request_date,state) VALUES('offmanual',1001,'INCREASE_WALLET',101,UNIX_TIMESTAMP(),'pending')")
         off=int(query(work,env,"SELECT id FROM pays WHERE hash_id='offmanual'"));r=call(op='issue',pay=off,off=True);assert r['result'] is True,r
         assert query(work,env,f'SELECT evidence_profile IS NULL FROM payment_attempts WHERE pay_row_id={off}')=='1';cases.append('off_manual_original_unpinned')
+        assert call(op='receipt',pay=off)['result'] is True
+        before=int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'))
+        r=call(op='timer',pay=off);assert r['result']=={'eligible':True,'claimed':True} and state(off)=='auto_cart_approved',r
+        assert int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'))==before+101
+        cases.append('legacy_timer_keeps_original_unpinned_bank_behavior')
         n=seed('exactbank');bad=sms(n,1);r=call(pay=n);assert r['result']=='monitoring' and APIs.rows[bad]['status']=='ready' and state(n)=='have_sent',r
         due(n);good=sms(n);before=int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'));r=call(pay=n);assert r['result']=='confirmed' and state(n)=='approved' and APIs.rows[good]['status']=='used',r
         assert int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'))==before+int(query(work,env,f'SELECT price FROM pays WHERE id={n}'))
