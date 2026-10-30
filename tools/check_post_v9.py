@@ -164,6 +164,105 @@ def owner_gift_policy_negative_controls(proof: dict, source_head: str,
     return len(controls)
 
 
+def gift_lock_scenarios() -> list[str]:
+    phases=['advance','claim','preeffect','complete','bulk']
+    return ([prefix+'_pg_'+phase+'_lock_scope'
+             for prefix in ['baseline','current'] for phase in phases]
+        + ['baseline_direct_bulk_completion_order','current_direct_bulk_completion_order']
+        + ['current_rr_'+mode+'_'+case for mode in ['on','off']
+           for case in ['native_id','effect_marker','notif_only','effect_timestamp_only']])
+
+
+def gift_lock_proof_mismatches(proof: dict, head: str, hashes: dict,
+                               bulk_hash: str) -> dict:
+    expected=gift_lock_scenarios()
+    errors=exact_current_proof_mismatches(proof,{
+        'complete':True,'actual_direct_phases':True,'actual_bulk_finish_closure':True,
+        'owned_socket_mariadb':True,'owned_children_cleaned':True,
+        'transports_disabled':True,'default_rr_preserved':True,
+        'explicit_snapshot_modes':[1,0],'snapshot_settings_scope':'owned_fixture_session_only',
+        'baseline_source':'a32ec0178b7e1d11a8e8191279b7ef932b93c725',
+        'baseline_red_cases':6,'native_redispatches':0,'production_operations':0,
+        'source_head':head,'source_head_after':head,'source_unchanged':True,
+        'source_clean_at_start':True,'source_clean_at_end':True,
+        'runtime_sha256':hashes,'runtime_sha256_after':hashes,
+        'bulk_finish_sha256':bulk_hash},'scenarios',expected)
+    if proof.get('scenarios')!=expected: errors['scenario_order']='required exact ordered lock cases'
+    default=proof.get('default_observation')
+    if not (type(default) is dict and type(default.get('server_version')) is str
+            and default['server_version'] and type(default.get('snapshot_mode')) is int
+            and default['snapshot_mode'] in [0,1] and default.get('tx_isolation')=='REPEATABLE-READ'
+            and default.get('sql_error_codes')==[]):
+        errors['default_observation']='required actual owned engine/isolation observation'
+    observations=proof.get('observations')
+    if type(observations) is not list or len(observations)!=len(expected):
+        errors['observations']='required complete actual lock observations'
+        return errors
+    for index,(name,observation) in enumerate(zip(expected,observations)):
+        if not (type(observation) is dict and set(observation)=={'scenario','passed','actual'}
+                and observation['scenario']==name and observation['passed'] is True
+                and type(observation['actual']) is dict):
+            errors[name]='required named successful actual observation'
+            continue
+        actual=observation['actual']
+        if index<10:
+            probes=actual.get('probes',{});result=actual.get('result',{})
+            current=index>=5;phase=index%5
+            wanted_first=91 if phase==0 or (not current and phase<4) else 90
+            valid=(actual.get('first_order')==wanted_first and result.get('ok') is True
+                   and result.get('native_redispatches')==0 and result.get('tx_isolation')=='REPEATABLE-READ')
+            for table in ['orders_list','service_effects','setting']:
+                probe=probes.get(table,{})
+                wanted_ok=current and table=='setting'
+                valid=valid and probe.get('ok') is wanted_ok and type(probe.get('code')) is int
+                valid=valid and probe.get('code')==(0 if wanted_ok else 1205)
+            if not valid: errors[name]='required retained intended locks and unrelated-setting availability'
+        elif index in [10,11]:
+            direct=actual.get('direct',{});bulk=actual.get('bulk',{})
+            valid=(actual.get('verified_native_results_supplied')==2
+                   and direct.get('native_redispatches')==0 and bulk.get('native_redispatches')==0
+                   and direct.get('snapshot_mode')==1 and bulk.get('snapshot_mode')==1)
+            if index==11:
+                valid=valid and direct.get('ok') is True and bulk.get('ok') is True
+                valid=valid and actual.get('source_state')=='completed' and actual.get('cursor')=='1'
+            else:
+                valid=valid and (direct.get('code')==1213 or bulk.get('code')==1213)
+            if not valid: errors[name]='required actual baseline deadlock or current two completed outcomes'
+        else:
+            mode=1 if index<16 else 0;material=index%4 in [0,1]
+            deferred=(actual.get('ok') is False and actual.get('sql_error_codes')==[1020]
+                      and ((actual.get('class')=='mysqli_sql_exception' and actual.get('code')==1020)
+                           or (actual.get('class')=='RuntimeException'
+                               and actual.get('reason')=='provider_storage_unavailable')))
+            rejected=(actual.get('ok') is False and actual.get('reason') in [
+                'gift_pg_current_order_changed','gift_pg_current_account_changed',
+                'gift_pg_current_identity_changed'])
+            valid=(actual.get('native_redispatches')==0 and actual.get('snapshot_mode')==mode
+                   and actual.get('tx_isolation')=='REPEATABLE-READ')
+            valid=valid and ((rejected or (mode==1 and deferred)) if material
+                             else (actual.get('ok') is True or (mode==1 and deferred)))
+            if not valid: errors[name]='required material rejection and compatible harmless-metadata handling'
+    return errors
+
+
+def gift_lock_negative_controls(proof: dict, head: str, hashes: dict, bulk_hash: str) -> int:
+    if gift_lock_proof_mismatches(proof,head,hashes,bulk_hash):
+        raise RuntimeError('Gift lock positive proof admission failed')
+    controls=[]
+    for key,value in [('native_redispatches',1),('owned_children_cleaned',False),
+                      ('snapshot_settings_scope','global'),('bulk_finish_sha256','0'*64)]:
+        bad=copy.deepcopy(proof);bad[key]=value;controls.append(bad)
+    bad=copy.deepcopy(proof);bad['runtime_sha256_after'].pop('settings/gift2all.php');controls.append(bad)
+    bad=copy.deepcopy(proof);bad['observations'][5]['actual']['probes']['setting']['ok']=False;controls.append(bad)
+    bad=copy.deepcopy(proof);bad['observations'][11]['actual']['direct']['ok']=False;controls.append(bad)
+    bad=copy.deepcopy(proof);bad['explicit_snapshot_modes']=[0,0];controls.append(bad)
+    bad=copy.deepcopy(proof);bad['observations'][16]['actual']['ok']=True;controls.append(bad)
+    for candidate in controls:
+        if not gift_lock_proof_mismatches(candidate,head,hashes,bulk_hash):
+            raise RuntimeError('Malformed gift lock proof accepted')
+    return len(controls)
+
+
 def api_native_observation_mismatches(proof: dict, expected: list[str]) -> dict:
     """Require successful named actual-native observations and SQL-free HTTP."""
     observations=proof.get('observations')
@@ -3244,6 +3343,25 @@ def main():
                                json.dumps(gift_policy_mismatches,sort_keys=True))
         gift_policy_negative_controls=owner_gift_policy_negative_controls(
             owner_gift_policy,gift_policy_head,gift_policy_hashes)
+        gift_lock_path=Path(tmp)/'owner-gift-locks.json'
+        subprocess.run(['python3',str(ROOT/'tools/test_owner_r7_gift_locking.py'),
+                        '--run-disposable','--report',str(gift_lock_path)],
+                       cwd=ROOT,check=True,timeout=300,capture_output=True)
+        gift_locks=json.loads(gift_lock_path.read_text())
+        gift_lock_hashes={path:hashlib.sha256(cmd('show','HEAD:'+path)).hexdigest()
+            for path in ['src/Subscription/GiftBatch.php','src/Subscription/DirectGift.php',
+                         'settings/gift2all.php']}
+        bulk_source=cmd('show','HEAD:settings/gift2all.php').decode()
+        bulk_body=bulk_source[bulk_source.index('$finish=static function('):
+                              bulk_source.index('$closeRoster=static function(')]
+        bulk_finish_hash=hashlib.sha256(bulk_body.encode()).hexdigest()
+        gift_lock_errors=gift_lock_proof_mismatches(
+            gift_locks,gift_policy_head,gift_lock_hashes,bulk_finish_hash)
+        if gift_lock_errors:
+            raise RuntimeError('Owner gift SQL lock proof incomplete: '+
+                               json.dumps(gift_lock_errors,sort_keys=True))
+        gift_lock_controls=gift_lock_negative_controls(
+            gift_locks,gift_policy_head,gift_lock_hashes,bulk_finish_hash)
         # Whole-main review R1: run actual owned gift worker on disposable
         # original 23-table MariaDB, no live Telegram/Marzban service.
         gift_path=Path(tmp)/"gift-worker-verified-state.json"
@@ -4216,6 +4334,8 @@ def main():
                     "direct_admin_gift_verified":direct_gift,
                     "direct_admin_gift_native":native_direct_gift,
                     "owner_gift_policy":owner_gift_policy,
+                    "owner_gift_locks":gift_locks,
+                    "owner_gift_lock_negative_controls":gift_lock_controls,
                     "owner_gift_policy_negative_controls":gift_policy_negative_controls,
                     "gift_worker_safe_continuation":gift,
                     "gift_physical_target_continuity":physical_gift,
@@ -4281,6 +4401,8 @@ def main():
                       "direct_admin_gift_cases":direct_gift["cases"],
                       "direct_admin_gift_native_cases":native_direct_gift["cases"],
                       "owner_gift_policy_cases":owner_gift_policy["cases"],
+                      "owner_gift_lock_cases":gift_locks["cases"],
+                      "owner_gift_lock_negative_controls":gift_lock_controls,
                       "owner_gift_policy_negative_controls":gift_policy_negative_controls,
                       "owner_r6_notification_cases":notifications["cases"],
                       "owner_r6_financial_alert_cases":financial_alerts["cases"],
