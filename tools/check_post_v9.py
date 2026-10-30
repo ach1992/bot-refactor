@@ -643,6 +643,8 @@ def main():
                        cwd=ROOT,check=True,timeout=65,capture_output=True)
         cron=json.loads(cron_path.read_text())
         required_cron_cases = {
+            "api_payment_maintenance_precedes_payux",
+            "api_payment_failure_preserves_payux_finally",
             "per_installation_private_lock_created",
             "first_create_then_reuse_same_inode",
             "later_run_reuses_stable_lock_inode",
@@ -667,10 +669,13 @@ def main():
             "permissive_lock_file_fails_closed",
             "unavailable_php_flock_fails_closed",
         }
-        if not (cron.get("complete") and cron.get("cases")>=50
+        if not (cron.get("complete") and cron.get("cases")>=52
                 and required_cron_cases.issubset(cron.get("scenarios", []))
                 and cron.get("actual_current_runner_executed")
                 and cron.get("isolated_child_php_processes")
+                and cron.get("actual_api_maintenance_boundary") is True
+                and cron.get("api_before_payux") is True
+                and cron.get("api_failure_payux_finally") is True
                 and cron.get("actual_cron_or_bot_job_executed") is False
                 and cron.get("production_database_or_service_modified") is False):
             raise RuntimeError("Optional CLI Cron coordinator native execution assurance incomplete")
