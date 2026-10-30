@@ -1,10 +1,14 @@
 # Current source and published release contracts
 
-## Evidence-first source correction (unreleased)
+## RC21 evidence-first payment review
 
-[Issue57](https://github.com/ach1992/bot-refactor/issues/57) now requires immediate bank receipt submission regardless of API state. Only after the original administrator review message is delivered may an enabled API verify/consume and settle. Gift API OFF retains the image workflow; API ON receives a code with the same private subject caption/actions and escaped Telegram code formatting. Successful API approval converges staff copies with "تایید خودکار توسط API"; errors retain human actions. Read the [current behavior and recovery contract](API-PAYMENT-EVIDENCE.md). No new SQL is introduced;014 remains unchanged. The Owner paused RC20 ZIP staging/migration pending these corrections; this candidate is not published or installed.
+[RC21](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.21) carries the [Issue57](https://github.com/ach1992/bot-refactor/issues/57) correction through [PR102](https://github.com/ach1992/bot-refactor/pull/102). The release record and manifest establish publication/source identity; they do not establish installation. Bank transfers always offer immediate receipt submission. API verification/consumption follows delivery of the original actionable administrator evidence. Gift API OFF retains images; API ON receives a code with the same subject caption/actions and escaped Telegram code formatting. Successful API approval converges staff copies with "تایید خودکار توسط API"; errors preserve human review.
 
-The RC20 section below describes the immutable earlier publication; its ten-minute customer journey is superseded only in the current source candidate.
+The separate legacy timer cannot settle API-pinned bank invoices; eligibility and the locked claim enforce that ownership. Unpinned legacy receipts retain their existing timer behavior. Original full amounts, native/financial journals, human/API races and late evidence-only handling remain protected. The customer has no Check payment / ten-minute fallback distinction for new issuance.
+
+RC21 keeps **119 runtime members / 118 PHP files** and adds no SQL relative to RC20. Migration014 is unchanged and must already be correct before API enablement; never replay completed012/013 or blindly rerun014. Follow [RC20 → RC21](RC20-TO-RC21.md) for older-source, schema and in-flight-operation boundaries and [the current payment contract](API-PAYMENT-EVIDENCE.md) for behavior/recovery. The Owner authorizes source merge/publication and completed-resource cleanup; Chili transfer/migration/installation/API/live acceptance remain on hold.
+
+The RC20 section below is historical publication behavior. Its ten-minute customer journey is superseded by RC21; RC20's published assets remain unchanged.
 
 ## RC20 API payments, native gifts and notification routing
 
