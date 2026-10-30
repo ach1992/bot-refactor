@@ -69,14 +69,20 @@ class ObservedPG(pg.Handler):
         hook=self.server.hook
         if hook and self.command=='GET' and '/api/user/' in self.path:
             self.server.hook=None
-            # The original handler takes its response after this hook. The
-            # hook is only used to install a post-response callback below.
-            self.server.after_response=hook
-        super().handle_request()
-        hook=getattr(self.server,'after_response',None)
-        if hook:
-            self.server.after_response=None
+            # Freeze the authenticated observation, perform local drift, THEN
+            # publish the old observation. The client cannot finish preflight
+            # or claim SQL before the fixture's drift has actually committed.
+            before=copy.deepcopy(self.server.user)
+            assert self.headers.get('X-Api-Key')=='fixture-private-key'
+            self.server.trace.append((self.command,self.path,None))
             hook()
+            raw=json.dumps(before).encode()
+            self.send_response(200);self.send_header('Content-Type','application/json')
+            self.send_header('Content-Length',str(len(raw)));self.end_headers()
+            try:self.wfile.write(raw)
+            except (BrokenPipeError,ConnectionResetError):pass
+            return
+        super().handle_request()
 
 def driver_source():
     php=bank.PHP[:bank.PHP.index("$op=$spec['op']??'auto';")]
@@ -142,7 +148,7 @@ def check(progress_path=None):
             q("INSERT INTO orders_list(id,userid,token,transid,fileid,server_id,inbound_id,remark,uuid,expire_date,link,amount,status,date) VALUES(91,1001,'fixture-token','',7,2,0,'fixture_user','fixture-uuid',1900000000,'[]',101,1,'1700000000')")
             panel.user=copy.deepcopy(pg.USER);panel.user['expire']=int(time.time())+3600
             panel.mode='ok';panel.trace=[];panel.write_count=0;panel.links_requested=False
-            panel.delay=0;panel.hook=None;panel.after_response=None
+            panel.delay=0;panel.hook=None
             q(storage.identity(1,91,1,pg_url,17,'2026-10-26T05:00:00.123456Z','fixture_user',pg.MARKER,
                 dict(data_limit=2147483648,expire=panel.user['expire'],group_ids=[2,5],status='active')))
             typ={'volume':'INCREASE_VOLUME_91_1','day':'INCREASE_DAY_91_1','renew':'RENEW_ACCOUNT','buy':'BUY_SUB'}[kind]
