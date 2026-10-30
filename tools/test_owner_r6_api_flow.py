@@ -16,10 +16,12 @@ ROOT=Path(__file__).resolve().parents[1]
 DB=purchase.SIDE[1]
 
 class APIs(BaseHTTPRequestHandler):
-    rows={}; cards={}; cache={}; events=[]; next_id=0; mode='ok'; lock=threading.Lock()
+    rows={}; cards={}; cache={}; events=[]; received=[]; next_id=0; mode='ok'; lock=threading.Lock()
     def log_message(self,*a): pass
     def reply(self,data,status=200):
-        raw=json.dumps(data).encode();self.send_response(status);self.send_header('Content-Type','application/json');self.send_header('Content-Length',str(len(raw)));self.end_headers();self.wfile.write(raw)
+        raw=json.dumps(data).encode();self.send_response(status);self.send_header('Content-Type','application/json');self.send_header('Content-Length',str(len(raw)));self.end_headers();
+        try:self.wfile.write(raw)
+        except (BrokenPipeError,ConnectionResetError):pass
     def auth(self,body=b''):
         if '/ach-pay-manager/' in self.path:return self.headers.get('Authorization')=='Bearer synthetic-bank-token'
         route='/ach-gcw/v2'+self.path.split('/ach-gcw/v2',1)[1]
@@ -30,6 +32,8 @@ class APIs(BaseHTTPRequestHandler):
         from urllib.parse import urlparse,parse_qs
         if not self.auth():return self.reply({},401)
         if self.mode=='offline':return self.reply({},503)
+        self.received.append(time.monotonic())
+        if self.mode=='slow':time.sleep(1)
         path=urlparse(self.path).path; q=parse_qs(urlparse(self.path).query)
         with self.lock:
             self.events.append(('GET',self.path))
@@ -76,13 +80,16 @@ $paymentKeys=['bankAccount'=>'6037999999999999','holderName'=>'Fixture','giftCar
 $botState=array_replace($botState,['cartToCartState'=>'on','giftCardState'=>'on','smsApiVerifyState'=>'on','giftApiVerifyState'=>'on']);
 if(!empty($spec['off'])){$botState['smsApiVerifyState']='off';$botState['giftApiVerifyState']='off';}
 if(isset($spec['seller_override']))$paymentKeys['giftCardUrl']=$spec['seller_override'];
-$mainValues=achbotMessages('legacy_messages');
+$mainValues=achbotMessages('legacy_messages');$buttonValues=achbotMessages('legacy_buttons');
 require_once $root.'/src/Finance/ApiPayments.php';
 require_once $root.'/src/Finance/ReferralReward.php';
 '''
 OPS=r'''
 $op=$spec['op']??'check';$id=(int)$spec['pay'];$pay=achbotApiPaymentRow($connection,$id);
 if($op==='issue')$value=achbotManualClaim($connection,$pay,$spec['method']??'bank_transfer',1001);
+elseif($op==='route'){$from_id=(int)($spec['actor']??1001);$chat_id=(int)($spec['chat']??$from_id);$data=(string)($spec['data']??'');$text=$spec['text']??null;$callbackId='fixture-callback';$userInfo=['step'=>$spec['step']??'none'];$value=require $root.'/src/Finance/Routes/ApiPayments.php';}
+elseif($op==='initial_step')$value=achbotApiPaymentInitialStep($connection,$pay['hash_id'],'legacy-gift-step');
+elseif($op==='budget'){$deadline=hrtime(true)/1000000000+(float)$spec['seconds'];$GLOBALS['achbotPaymentEvidenceDeadline']=$deadline;$value=['status'=>achbotApiPaymentCheck($connection,$id),'restored'=>($GLOBALS['achbotPaymentEvidenceDeadline']??null)===$deadline];unset($GLOBALS['achbotPaymentEvidenceDeadline']);}
 elseif($op==='save')$value=achbotPaymentEvidenceSaveGiftCode($connection,$id,1001,$spec['code']);
 elseif($op==='check')$value=achbotApiPaymentCheck($connection,$id);
 elseif($op==='settle'){$proof=achbotPaymentEvidenceGetProof($connection,$id);$value=$proof?achbotApiPaymentSettle($connection,$id,$proof):'no-proof';}
@@ -134,6 +141,9 @@ function bot($method,$data){
     if(!empty($GLOBALS['spec']['queued_human'])&&empty($GLOBALS['queue_once'])){$GLOBALS['queue_once']=true;$p=achbotApiPaymentRow($GLOBALS['connection'],(int)$GLOBALS['spec']['pay']);achbotApproveManualWalletTopup($GLOBALS['connection'],$p['hash_id'],9001,9001);}
     return(object)['ok'=>true];
 }
+function answerCallbackQuery(...$args){$GLOBALS['events'][]=['event'=>'ACK','at'=>hrtime(true)/1000000000];}
+function alert(...$args){answerCallbackQuery(...$args);}
+function setUser($step='none',$field='step'){$GLOBALS['events'][]=['event'=>'STATE','step'=>$step];}
 function sendPhoto(...$args){$GLOBALS['events'][]=['event'=>'PHOTO'];if(!empty($GLOBALS['spec']['photo_api']))achbotApiPaymentCheck($GLOBALS['connection'],(int)$GLOBALS['spec']['pay']);return(object)['ok'=>true,'result'=>(object)['message_id'=>456]];}
 """)
         php=php.replace("function editKeys(...$args) {\n    $GLOBALS['events'][]=['event'=>'EDIT_KEYS','state'=>fixtureState()];\n}","function editKeys(...$args){$GLOBALS['events'][]=['event'=>'EDIT_KEYS','state'=>fixtureState(),'chat'=>$args[2]??null];return !empty($GLOBALS['spec']['fail_staff'])?null:(object)['ok'=>true];}")
@@ -229,11 +239,11 @@ function sendPhoto(...$args){$GLOBALS['events'][]=['event'=>'PHOTO'];if(!empty($
         # Crash after funded local claim before any CREATE uses its existing hold once.
         APIs.rows={};n=seed('restartcreate','BUY_SUB');sms(n);capacity=int(query(work,env,'SELECT ucount FROM server_info WHERE id=2'));r=call(pay=n,crash_before_native=True);assert r['result']=='review' and state(n)=='processing',r
         assert int(query(work,env,'SELECT ucount FROM server_info WHERE id=2'))==capacity-1
-        due(n);r=call(pay=n);assert r['result']=='confirmed' and sum(e['event']=='POST' for e in r['events'])==1,r
+        due(n);r=call(op='maintain',pay=n);assert state(n)=='auto_cart_approved' and sum(e['event']=='POST' for e in r['events'])==1,r
         assert int(query(work,env,'SELECT ucount FROM server_info WHERE id=2'))==capacity-1;cases.append('restart_after_local_claim_reuses_capacity_hold_once')
         # Verified native edit survives process loss before SQL finish; restart only finishes locally.
         APIs.rows={};n=seed('restartedit','RENEW_ACCOUNT',order=oid);sms(n);r=call(pay=n,crash_after_verified=True);assert r['result']=='review' and state(n)=='processing',r
-        due(n);r=call(pay=n);assert r['result']=='confirmed' and not any(e['event']=='EDIT' for e in r['events']),r;cases.append('restart_verified_edit_finishes_without_native_redispatch')
+        due(n);r=call(op='maintain',pay=n);assert state(n)=='auto_cart_approved' and not any(e['event']=='EDIT' for e in r['events']),r;cases.append('restart_verified_edit_finishes_without_native_redispatch');cases.append('admitted_maintenance_recovers_proven_processing_reserved_and_verified')
         # Unknown CREATE keeps existing no-replay journal and no false refund/success.
         APIs.rows={};n=seed('unknowncreate','BUY_SUB');sms(n);r=call(pay=n,mode='lost');assert r['result']=='review' and state(n)=='processing',r
         r=call(op='settle',pay=n);assert r['result']=='review' and not any(e['event']=='POST' for e in r['events']),r;cases.append('uncertain_create_journal_never_redispatched')
@@ -271,6 +281,19 @@ function sendPhoto(...$args){$GLOBALS['events'][]=['event'=>'PHOTO'];if(!empty($
         # Real typed text evidence has an acknowledged current staff delivery and no fake photo.
         view=call(op='view',pay=n)['result'];assert view['keys']['inline_keyboard'][0][0]['text']=='بررسی پرداخت' and 'تصویر' not in view['text'];cases.append('gift_inflight_review_status_has_no_fresh_code_invitation')
         assert state(n)=='have_sent' and query(work,env,f'SELECT evidence_code IS NOT NULL AND evidence_review_sent_at IS NOT NULL FROM payment_attempts WHERE pay_row_id={n}')=='1';assert 'receipt_file_id' not in query(work,env,f'SELECT checkout_url FROM payment_attempts WHERE pay_row_id={n}');assert call(op='save',pay=n,code='different')['result']['status']=='locked';cases.append('unknown_code_encrypted_review_different_code_fenced')
+        # The real issuer step accepts its initial code prompt without another button press.
+        n=seed('directgiftinput',method='gift_card');key=query(work,env,f'SELECT hash_id FROM pays WHERE id={n}');r=run(work,env,app,human_driver,url,route='wallet',data='payIncreaseWalletWithGiftCard'+key,actor=1001)
+        assert any(e.get('name')=='setUser' and e.get('step')=='apiGiftCode_'+key for e in r['events']),r;cases.append('actual_gift_issuer_binds_initial_code_prompt')
+        for text,data in [('/start',''),('/start Fixture',''),('↩️ برگشت',''),('', 'mainMenu'),('', 'cancelIncreaseWalletReceipt'+key),('', 'unrelatedCustomerCallback')]:
+            if text=='↩️ برگشت':text=subprocess.check_output(['php','-r',"require $argv[1];echo achbotMessages('legacy_buttons')['back_to_main'];",str(app/'messages/loader.php')],text=True)
+            before=len(APIs.received);r=call(op='route',pay=n,step='apiGiftCode_'+key,text=text,data=data)
+            assert r['result']==1 and len(APIs.received)==before and query(work,env,f'SELECT evidence_code IS NULL AND evidence_review_sent_at IS NULL FROM payment_attempts WHERE pay_row_id={n}')=='1',r
+        cases.append('gift_navigation_start_back_cancel_and_callbacks_never_become_code')
+        # The authenticated callback is acknowledged once BEFORE slow API HTTP.
+        n=seed('slowbutton');key=query(work,env,f'SELECT hash_id FROM pays WHERE id={n}');APIs.mode='slow';offset=len(APIs.received);r=call(op='route',pay=n,data='apiCheck_'+key)
+        ack=[e for e in r['events'] if e['event']=='ACK'];assert len(ack)==1 and APIs.received[offset:] and ack[0]['at']<APIs.received[offset],r;cases.append('callback_ack_precedes_slow_api_and_has_no_expired_second_answer')
+        n=seed('deadline');start=time.monotonic();r=call(op='budget',pay=n,seconds=.15);elapsed=time.monotonic()-start;assert elapsed<.9 and r['result']['restored'] and r['result']['status']=='unavailable',(elapsed,r)
+        APIs.mode='ok';due(n);offset=len(APIs.received);r=call(op='budget',pay=n,seconds=-1);assert r['result']['status']=='unavailable' and r['result']['restored'] and len(APIs.received)==offset,r;cases.append('monotonic_expired_and_remaining_api_budget_no_new_http_context_restored')
         return {'complete':True,'cases':len(cases),'scenarios':cases,'source_real_php':True,'socket_mariadb':True,'authenticated_loopback_requests':len(APIs.events),'live_requests':0,'migrations_executed':['001','003','006','007','008','009','014'],'installed_tested':False,'flow_head':subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip(),'evidence_head':subprocess.check_output(['git','rev-parse','HEAD'],cwd=evidence_root,text=True).strip(),'settings_head':subprocess.check_output(['git','rev-parse','HEAD'],cwd=settings_root,text=True).strip()}
     finally:srv.shutdown();srv.server_close();thread.join()
 

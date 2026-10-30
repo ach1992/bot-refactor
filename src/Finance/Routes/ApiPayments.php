@@ -7,8 +7,9 @@ if(preg_match('/^apiReview_([A-Za-z0-9_-]{1,50})$/D',(string)($data??''),$apiCal
     if((int)($chat_id??0)!==(int)$from_id || !achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'payments')) {alert(achbotMessage('payment.api_payment.denied'),true);return;}
     $c=achbotApiPaymentContext($connection,$apiCallback[1]);
     if(!$c || !achbotPaymentEvidenceHasTypedReviewLocked($connection,$c['pay'])) {alert(achbotMessage('payment.api_payment.denied'),true);return;}
+    answerCallbackQuery($callbackId,achbotMessage('payment.api_payment.pending'));
     $code=achbotPaymentEvidenceReadGiftCode($connection,(int)$c['pay']['id']);
-    if($code===null){alert(achbotMessage('payment.api_payment.unavailable'),true);return;}
+    if($code===null){sendMessage(achbotMessage('payment.api_payment.unavailable'),null,'HTML',(int)$from_id);return;}
     sendMessage(achbotMessage('payment.api_payment.code_received')."\n<code>".htmlspecialchars($code,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8').'</code>',achbotApiPaymentReviewKeyboard($c['pay']),'HTML',(int)$from_id);
     return;
 }
@@ -16,18 +17,26 @@ if(preg_match('/^api(Check|Gift)_([A-Za-z0-9_-]{1,50})$/D',(string)($data??''),$
     $c=achbotApiPaymentContext($connection,$apiCallback[2],(int)$from_id);
     if(!$c || (int)($chat_id??0)!==(int)$from_id) {alert(achbotMessage('payment.api_payment.denied'),true);return;}
     if(achbotApiPaymentTerminal($c['pay'])){alert(achbotMessage('payment.api_payment.confirmed'));return;}
+    answerCallbackQuery($callbackId,achbotMessage('payment.api_payment.pending'));
     if($apiCallback[1]==='Gift' && $c['attempt']['provider']==='gift_card') {
         if(!empty($c['attempt']['evidence_code']) && ($c['attempt']['evidence_state']??'')!=='invalid_code') {
-            $status=achbotApiPaymentCheck($connection,(int)$c['pay']['id']);$key=match($status){'confirmed','settled'=>'confirmed','review'=>'review','unavailable'=>'unavailable',default=>'pending'};alert(achbotMessage('payment.api_payment.'.$key));return;
+            $status=achbotApiPaymentCheck($connection,(int)$c['pay']['id']);$key=match($status){'confirmed','settled'=>'confirmed','review'=>'review','unavailable'=>'unavailable',default=>'pending'};sendMessage(achbotMessage('payment.api_payment.'.$key),null,'HTML',(int)$from_id);return;
         }
         setUser('apiGiftCode_'.$apiCallback[2]);sendMessage(achbotMessage('payment.api_payment.code_prompt'),achbotApiPaymentKeyboard($c),'HTML',(int)$from_id);return;
     }
-    if($apiCallback[1]!=='Check'||$c['attempt']['provider']!=='bank_transfer'){alert(achbotMessage('payment.api_payment.denied'),true);return;}
+    if($apiCallback[1]!=='Check'||$c['attempt']['provider']!=='bank_transfer'){sendMessage(achbotMessage('payment.api_payment.denied'),null,'HTML',(int)$from_id);return;}
     $status=achbotApiPaymentCheck($connection,(int)$c['pay']['id']);
-    alert(achbotMessage('payment.api_payment.'.(in_array($status,['confirmed','settled'],true)?'confirmed':($status==='review'?'review':'bank_pending'))));return;
+    $key=in_array($status,['confirmed','settled'],true)?'confirmed':($status==='review'?'review':($status==='unavailable'?'unavailable':'bank_pending'));
+    if(!in_array($status,['confirmed','settled'],true))sendMessage(achbotMessage('payment.api_payment.'.$key),null,'HTML',(int)$from_id);return;
 }
 if(preg_match('/^apiGiftCode_([A-Za-z0-9_-]{1,50})$/D',(string)($userInfo['step']??''),$apiStep)) {
-    if(($text??'')===($buttonValues['cancel']??null) || str_starts_with((string)($data??''),'cancel')) {setUser();return 1;}
+    $apiNavigationText=in_array((string)($text??''),array_filter([$buttonValues['cancel']??null,$buttonValues['back_to_main']??null,$buttonValues['back_button']??null],static fn($v)=>is_string($v)&&$v!==''),true) || preg_match('/^\/[Ss]tart(?:@[A-Za-z0-9_]+)?(?:\s|$)/D',(string)($text??''));
+    if((string)($data??'')!=='' || $apiNavigationText) {
+        if((string)($data??'')!=='')answerCallbackQuery($callbackId);
+        setUser();$userInfo['step']='none';
+        if($apiNavigationText && !preg_match('/^\/[Ss]tart/',(string)($text??'')))$text='/start';
+        return 1;
+    }
     $c=achbotApiPaymentContext($connection,$apiStep[1],(int)$from_id);
     if(!$c||$c['attempt']['provider']!=='gift_card'||!in_array($c['pay']['state'],['pending','have_sent'],true)){setUser();sendMessage(achbotMessage('payment.api_payment.denied'));return;}
     $code=trim((string)($text??''));
