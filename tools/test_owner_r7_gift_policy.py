@@ -228,7 +228,7 @@ def main():
                     attach(work,env,92,1002,provider,uuid='different-cached-proxy')
                     if provider=='marzban':
                         origin(work,env,91,1001,provider);origin(work,env,92,1002,provider)
-                        direct.q(work,env,"UPDATE setting SET value=REPLACE(value,"+storage.text(CREATED)+","+
+                        direct.q(work,env,"UPDATE setting SET value=REPLACE(BINARY value,BINARY "+storage.text(CREATED)+",BINARY "+
                             storage.text('2026-10-25T05:00:00.123456Z')+") WHERE type='ACHBOT_SERVICE_ORIGIN:92'")
                     if provider=='pasarguard':
                         direct.q(work,env,'UPDATE orders_list SET provider_remote_user_id=18 WHERE id=92')
