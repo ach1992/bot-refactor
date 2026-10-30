@@ -1,6 +1,6 @@
 # API-assisted manual payments
 
-This is the current source-development contract for [Issue57](https://github.com/ach1992/bot-refactor/issues/57), alongside [Issue26](https://github.com/ach1992/bot-refactor/issues/26) and [Issue51](https://github.com/ach1992/bot-refactor/issues/51). Implementation and composed acceptance are in progress on `feature/existing-payment-apis`. This document does not establish installed behavior, authorize a migration, or enable an integration.
+This is the current source-development contract for [Issue57](https://github.com/ach1992/bot-refactor/issues/57), alongside [Issue26](https://github.com/ach1992/bot-refactor/issues/26) and [Issue51](https://github.com/ach1992/bot-refactor/issues/51). Source implementation is prepared on `feature/existing-payment-apis`; full composed acceptance and independent review remain pending. This document does not establish installed behavior, authorize a migration, or enable an integration.
 
 ## Scope and existing contracts
 
