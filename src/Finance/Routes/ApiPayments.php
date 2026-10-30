@@ -20,8 +20,7 @@ if(preg_match('/^api(Check|Gift)_([A-Za-z0-9_-]{1,50})$/D',(string)($data??''),$
     if(achbotApiPaymentTerminal($c['pay']) || $c['pay']['state']==='have_sent') {
         achbotApiPaymentSyncInvoice($connection,$c);return;
     }
-    [$send]=achbotApiPaymentReceiptPrefixes($c['pay']);
-    if($c['attempt']['provider']==='gift_card'){$send=str_replace('CartReceipt','GiftReceipt',$send);if($send==='sendIncreaseWalletReceipt')$send='sendIncreaseWalletGiftReceipt';}
+    [$send]=achbotApiPaymentReceiptPrefixes($c['pay'],(string)$c['attempt']['provider']);
     $data=$send.$apiCallback[2];return 1;
 }
 if(preg_match('/^apiGiftCode_([A-Za-z0-9_-]{1,50})$/D',(string)($userInfo['step']??''),$apiStep)) {
@@ -29,7 +28,7 @@ if(preg_match('/^apiGiftCode_([A-Za-z0-9_-]{1,50})$/D',(string)($userInfo['step'
     if((string)($data??'')!=='' || $navigation){setUser();$userInfo['step']='none';if($navigation&&!preg_match('/^\/[Ss]tart/',(string)($text??'')))$text='/start';return 1;}
     $c=achbotApiPaymentContext($connection,$apiStep[1],(int)$from_id);
     if(!$c || $c['attempt']['provider']!=='gift_card' || !achbotManualReceiptAllowed($connection,$c['pay'],'gift_card',(int)$from_id)){setUser();sendMessage(achbotMessage('payment.api_payment.denied'));return;}
-    [$send]=achbotApiPaymentReceiptPrefixes($c['pay']);$send=str_replace('CartReceipt','GiftReceipt',$send);if($send==='sendIncreaseWalletReceipt')$send='sendIncreaseWalletGiftReceipt';
+    [$send]=achbotApiPaymentReceiptPrefixes($c['pay'],'gift_card');
     $userInfo['step']='wait'.substr($send,4).$apiStep[1];
     setUser($userInfo['step']);return 1;
 }

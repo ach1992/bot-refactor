@@ -226,17 +226,12 @@ if (preg_match('/wait(?:IncreaseDay|IncreaseDayGift|IncreaseDayUsdt)Receipt(.*)/
         return;
     }
     $fileid = achbotManualEvidenceInput($update, $connection, $receiptPay, $method);
-    if (!$fileid) {
+    if ($fileid === null) {
         $keyboard = kbOnlyCancel("cancelIncreaseDayReceipt", $match[1]);
         sendMessage(achbotManualEvidencePrompt($mainValues,$connection,$receiptPay,$method,true), $keyboard, "HTML");
         exit;
     }
 
-    $deliveryToken = achbotManualBeginEvidence($connection, $receiptPay, $method, (int)$from_id, $fileid);
-    if ($deliveryToken === null) {
-        alert(\achbotMessage('renewal.extensions.alert.795c4bddb8'), true);
-        return;
-    }
 
     $payInfoRes = dbFetchPayByHash($connection, $match[1]);
     if (!$payInfoRes) {
@@ -280,6 +275,15 @@ if (preg_match('/wait(?:IncreaseDay|IncreaseDayGift|IncreaseDayUsdt)Receipt(.*)/
         [$volume, \achbotMessage('renewal.extensions.text.9699c34220'), $from_id, $username, $first_name, $price, $remark],
         achbotManualCaption($connection, $receiptPay, $mainValues['increase_account_request_message'])
     );
+
+    if(achbotManualTypedGift($connection,$receiptPay,$method) && !achbotManualGiftReviewFits($msg,$fileid)){
+        sendMessage(achbotMessage('payment.api_payment.code_too_long'),null,'HTML');return;
+    }
+    $deliveryToken = achbotManualBeginEvidence($connection, $receiptPay, $method, (int)$from_id, $fileid);
+    if ($deliveryToken === null) {
+        alert(\achbotMessage('renewal.extensions.alert.795c4bddb8'), true);
+        return;
+    }
 
     $adminKeyboard = buildAdminKeyboardWithStats(
         $connection,
@@ -1042,17 +1046,12 @@ if (preg_match('/wait(?:IncreaseVolume|IncreaseVolumeGift|IncreaseVolumeUsdt)Rec
         return;
     }
     $fileid = achbotManualEvidenceInput($update, $connection, $receiptPay, $method);
-    if (!$fileid) {
+    if ($fileid === null) {
         $keyboard = kbOnlyCancel("cancelIncreaseVolumeReceipt", $match[1]);
         sendMessage(achbotManualEvidencePrompt($mainValues,$connection,$receiptPay,$method,true), $keyboard, "HTML");
         exit;
     }
 
-    $deliveryToken = achbotManualBeginEvidence($connection, $receiptPay, $method, (int)$from_id, $fileid);
-    if ($deliveryToken === null) {
-        alert(\achbotMessage('renewal.extensions.alert.795c4bddb8'), true);
-        return;
-    }
 
     $payParam = dbFetchPayByHash($connection, $match[1]);
     if (!$payParam) {
@@ -1096,6 +1095,15 @@ if (preg_match('/wait(?:IncreaseVolume|IncreaseVolumeGift|IncreaseVolumeUsdt)Rec
         [$volume, \achbotMessage('renewal.extensions.text.4123904480'), $from_id, $username, $first_name, $price, $remark],
         achbotManualCaption($connection, $receiptPay, $mainValues['increase_account_request_message'])
     );
+
+    if(achbotManualTypedGift($connection,$receiptPay,$method) && !achbotManualGiftReviewFits($msg,$fileid)){
+        sendMessage(achbotMessage('payment.api_payment.code_too_long'),null,'HTML');return;
+    }
+    $deliveryToken = achbotManualBeginEvidence($connection, $receiptPay, $method, (int)$from_id, $fileid);
+    if ($deliveryToken === null) {
+        alert(\achbotMessage('renewal.extensions.alert.795c4bddb8'), true);
+        return;
+    }
 
     $adminKeyboard = buildAdminKeyboardWithStats(
         $connection,

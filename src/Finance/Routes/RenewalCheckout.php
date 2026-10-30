@@ -245,17 +245,12 @@ if (preg_match('/wait(?:RenewCart|RenewGift|RenewUsdt)Receipt(.*)/', $userInfo['
         return;
     }
     $fileid = achbotManualEvidenceInput($update, $connection, $receiptPay, $method);
-    if (!$fileid) {
+    if ($fileid === null) {
         $keyboard = kbOnlyCancel("cancelRenewCartReceipt", $match[1]);
         sendMessage(achbotManualEvidencePrompt($mainValues,$connection,$receiptPay,$method,true), $keyboard, "HTML");
         exit;
     }
 
-    $deliveryToken = achbotManualBeginEvidence($connection, $receiptPay, $method, (int)$from_id, $fileid);
-    if ($deliveryToken === null) {
-        alert(\achbotMessage('renewal.extensions.alert.795c4bddb8'), true);
-        return;
-    }
 
     $payInfo = dbFetchPayByHash($connection, $match[1]);
     if (!$payInfo) {
@@ -322,6 +317,15 @@ if (preg_match('/wait(?:RenewCart|RenewGift|RenewUsdt)Receipt(.*)/', $userInfo['
         [achbotManualLabel($method), $from_id, $username, $first_name, $price, $remark, $volume, $days],
         achbotManualCaption($connection, $receiptPay, $mainValues['renew_account_request_message'])
     );
+
+    if(achbotManualTypedGift($connection,$receiptPay,$method) && !achbotManualGiftReviewFits($msg,$fileid)){
+        sendMessage(achbotMessage('payment.api_payment.code_too_long'),null,'HTML');return;
+    }
+    $deliveryToken = achbotManualBeginEvidence($connection, $receiptPay, $method, (int)$from_id, $fileid);
+    if ($deliveryToken === null) {
+        alert(\achbotMessage('renewal.extensions.alert.795c4bddb8'), true);
+        return;
+    }
 
     $adminKeyboard = buildAdminKeyboardWithStats(
         $connection,

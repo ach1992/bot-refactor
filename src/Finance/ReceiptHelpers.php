@@ -1736,6 +1736,16 @@ function achbotManualCaption(mysqli $connection, array $payInfo, string $caption
     return $quoteLine . $caption;
 }
 
+/** Keep the whole code and original caption in one Telegram text message. */
+function achbotManualGiftReviewText(string $caption,string $code): string {
+    return $caption."\n\n".achbotMessageHtml('manual_payment.api_payment.code_evidence',['code'=>$code]);
+}
+function achbotManualGiftReviewFits(string $caption,string $code): bool {
+    $plain=html_entity_decode(strip_tags(achbotManualGiftReviewText($caption,$code)),ENT_QUOTES|ENT_HTML5,'UTF-8');
+    $characters=preg_match_all('/./us',$plain);
+    $supplementary=preg_match_all('/[\x{10000}-\x{10ffff}]/u',$plain);
+    return $characters!==false && $supplementary!==false && $characters+$supplementary<=4096;
+}
 function achbotManualTypedGift(mysqli $db,array $pay,string $method): bool {
     return $method==='gift_card' && function_exists('achbotApiPaymentContext') &&
         achbotApiPaymentContext($db,(string)($pay['hash_id']??''))!==null;
@@ -2088,7 +2098,7 @@ function sendReceiptToAdminsAndUpdatePay(
     try {
         $pay=dbFetchPayByHash($connection,$hashId);
         $typed=$pay && achbotManualTypedGift($connection,$pay,'gift_card') && achbotManualSelectedMethod($connection,$pay)==='gift_card';
-        if($typed){$code=achbotPaymentEvidenceReadGiftCode($connection,(int)$pay['id']);if($code!==$fileid)throw new RuntimeException('typed_receipt_evidence_mismatch');$caption.="\n\n".achbotMessageHtml('manual_payment.api_payment.code_evidence',['code'=>$code]);}
+        if($typed){$code=achbotPaymentEvidenceReadGiftCode($connection,(int)$pay['id']);if($code!==$fileid)throw new RuntimeException('typed_receipt_evidence_mismatch');if(!achbotManualGiftReviewFits($caption,$code))throw new RuntimeException('typed_receipt_message_too_long');$caption=achbotManualGiftReviewText($caption,$code);}
         $response = $typed?sendMessage($caption,$adminKeyboard,'HTML',$adminChatId):sendPhoto($fileid, $caption, $adminKeyboard, 'HTML', $adminChatId);
         $msgId = (int)($response->result->message_id ?? 0);
         if ($msgId <= 0 ||

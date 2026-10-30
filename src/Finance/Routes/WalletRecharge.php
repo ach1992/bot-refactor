@@ -366,17 +366,12 @@ if (preg_match('/wait(?:IncreaseWallet|IncreaseWalletGift|IncreaseWalletUsdt)Rec
         return;
     }
     $fileid = achbotManualEvidenceInput($update, $connection, $receiptPay, $method);
-    if (!$fileid) {
+    if ($fileid === null) {
         $keyboard = kbOnlyCancel("cancelIncreaseWalletReceipt", $match[1]);
         sendMessage(achbotManualEvidencePrompt($mainValues,$connection,$receiptPay,$method,true), $keyboard, "HTML");
         exit;
     }
 
-    $deliveryToken = achbotManualBeginEvidence($connection, $receiptPay, $method, (int)$from_id, $fileid);
-    if ($deliveryToken === null) {
-        alert(\achbotMessage('wallet.wallet_recharge.wallet_topup_amount_problem.alert.795c4bddb8'), true);
-        return;
-    }
 
 
     $uid = $userInfo['userid'];
@@ -401,6 +396,15 @@ if (preg_match('/wait(?:IncreaseWallet|IncreaseWalletGift|IncreaseWalletUsdt)Rec
         [$price, $username, $name, $from_id],
         achbotManualCaption($connection, $receiptPay, $mainValues['increase_wallet_request_message'])
     );
+
+    if(achbotManualTypedGift($connection,$receiptPay,$method) && !achbotManualGiftReviewFits($msg,$fileid)){
+        sendMessage(achbotMessage('payment.api_payment.code_too_long'),null,'HTML');return;
+    }
+    $deliveryToken = achbotManualBeginEvidence($connection, $receiptPay, $method, (int)$from_id, $fileid);
+    if ($deliveryToken === null) {
+        alert(\achbotMessage('wallet.wallet_recharge.wallet_topup_amount_problem.alert.795c4bddb8'), true);
+        return;
+    }
 
     $adminKeyboard = buildAdminKeyboardWithStats(
         $connection,

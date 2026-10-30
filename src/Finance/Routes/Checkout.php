@@ -382,17 +382,12 @@ if (preg_match('/wait(?:CustomCart|CustomGift|CustomUsdt)Receipt(.*)/', $userInf
         return;
     }
     $fileid = achbotManualEvidenceInput($update, $connection, $receiptPay, $method);
-    if (!$fileid) {
+    if ($fileid === null) {
         $keyboard = kbOnlyCancel("cancelCustomCartReceipt", $match[1]);
         sendMessage(achbotManualEvidencePrompt($mainValues,$connection,$receiptPay,$method,true), $keyboard, "HTML");
         exit;
     }
 
-    $deliveryToken = achbotManualBeginEvidence($connection, $receiptPay, $method, (int)$from_id, $fileid);
-    if ($deliveryToken === null) {
-        alert(\achbotMessage('payment.checkout.alert.795c4bddb8'), true);
-        return;
-    }
 
     $payInfo = dbFetchPayByHash($connection, $match[1]);
     if (!$payInfo) {
@@ -433,6 +428,15 @@ if (preg_match('/wait(?:CustomCart|CustomGift|CustomUsdt)Receipt(.*)/', $userInf
         [\achbotMessage('payment.checkout.text.04029e7ea7'), $from_id, $username, $first_name, $fileprice, $remark, $volume, $days],
         achbotManualCaption($connection, $receiptPay, $mainValues['buy_custom_account_request'])
     );
+
+    if(achbotManualTypedGift($connection,$receiptPay,$method) && !achbotManualGiftReviewFits($msg,$fileid)){
+        sendMessage(achbotMessage('payment.api_payment.code_too_long'),null,'HTML');return;
+    }
+    $deliveryToken = achbotManualBeginEvidence($connection, $receiptPay, $method, (int)$from_id, $fileid);
+    if ($deliveryToken === null) {
+        alert(\achbotMessage('payment.checkout.alert.795c4bddb8'), true);
+        return;
+    }
 
     $adminKeyboard = buildAdminKeyboardWithStats(
         $connection,
@@ -1229,17 +1233,12 @@ if (preg_match('/wait(?:BuyCart|BuyGift|BuyUsdt)Receipt(.*)/', $userInfo['step']
         return;
     }
     $fileid = achbotManualEvidenceInput($update, $connection, $receiptPay, $method);
-    if (!$fileid) {
+    if ($fileid === null) {
         $keyboard = kbOnlyCancel("cancelBuyCartReceipt", $match[1]);
         sendMessage(achbotManualEvidencePrompt($mainValues,$connection,$receiptPay,$method,true), $keyboard, "HTML");
         exit;
     }
 
-    $deliveryToken = achbotManualBeginEvidence($connection, $receiptPay, $method, (int)$from_id, $fileid);
-    if ($deliveryToken === null) {
-        alert(\achbotMessage('payment.checkout.alert.795c4bddb8'), true);
-        return;
-    }
 
     $payInfo = dbFetchPayByHash($connection, $match[1]);
     if (!$payInfo) {
@@ -1300,6 +1299,15 @@ if (preg_match('/wait(?:BuyCart|BuyGift|BuyUsdt)Receipt(.*)/', $userInfo['step']
             [$serverTitle, achbotManualLabel($method), $from_id, $username, $name, $fileprice, $filename, $volume, $days],
             achbotManualCaption($connection, $receiptPay, $mainValues['buy_new_account_request'])
         );
+    }
+
+    if(achbotManualTypedGift($connection,$receiptPay,$method) && !achbotManualGiftReviewFits($msg,$fileid)){
+        sendMessage(achbotMessage('payment.api_payment.code_too_long'),null,'HTML');return;
+    }
+    $deliveryToken = achbotManualBeginEvidence($connection, $receiptPay, $method, (int)$from_id, $fileid);
+    if ($deliveryToken === null) {
+        alert(\achbotMessage('payment.checkout.alert.795c4bddb8'), true);
+        return;
     }
 
     $adminKeyboard = buildAdminKeyboardWithStats(
