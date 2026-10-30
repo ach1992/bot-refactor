@@ -3813,9 +3813,15 @@ function achbotNotifyAdmins($method, array $data, array $options = []): array {
     };
     $deliver($primary,'owner');
     if ($connection instanceof mysqli) {
-        foreach (achbotAdminRecipientCandidates($connection,$primary) as $recipient)
+        $complete=false;
+        $candidates=achbotAdminRecipientCandidates($connection,$primary,$complete);
+        foreach ($candidates as $recipient)
             if (achbotAdminNotificationAllowed($connection,$recipient,$primary,$event))
                 $deliver((int)$recipient,'staff');
+        // Keep primary acknowledgement first. Durable report callers must not
+        // mistake a contended recipient read for a fully delivered fanout.
+        if (!$complete) $results[]=['chat_id'=>null,'response'=>null,
+            'deferred'=>'recipient_discovery'];
     }
     if (is_int($channel) || is_string($channel)) {
         if (trim((string)$channel)!=='') {

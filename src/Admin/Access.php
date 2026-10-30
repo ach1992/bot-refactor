@@ -54,12 +54,16 @@ function achbotAdminCanLocked(mysqli $db,int $actor,int $primary,string $capabil
 }
 /** Same persisted membership as the administrator list, using a current read.
  * A conflicting older RR snapshot fails closed and may defer copies until the
- * next ordinary delivery. No caller transaction or isolation mode is changed. */
-function achbotAdminRecipientCandidates(mysqli $db,int $primary): array {
+ * next ordinary delivery. NOWAIT prevents unrelated customer locks from
+ * stalling financial error handling. Callers can observe deferred discovery;
+ * no caller transaction, financial lock or isolation mode is changed. */
+function achbotAdminRecipientCandidates(mysqli $db,int $primary,?bool &$complete=null): array {
+    $complete=false;
     if ($primary<=0) return [];
     try {
-        $q=$db->prepare('SELECT userid FROM users WHERE isAdmin=1 AND userid<>? ORDER BY id FOR UPDATE');
+        $q=$db->prepare('SELECT userid FROM users WHERE isAdmin=1 AND userid<>? ORDER BY id FOR UPDATE NOWAIT');
         $q->bind_param('i',$primary);$q->execute();$rows=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
+        $complete=true;
         return array_values(array_unique(array_column($rows,'userid'),SORT_STRING));
     } catch (Throwable $ignored) {return [];}
 }
@@ -149,7 +153,7 @@ function achbotAdminRequestCapability(string $value): ?string {
         'customers'=>'~^(?:userReports|userInfoDetails|quickUserDetails)~D',
         'moderation'=>'~^(?:banUser|unbanUser|toggleBan_)~D',
         'orders'=>'~^(?:manageorderdatabase|showUserSubscriptions|selectOrderByRemark_userid_|returnToPanel_|deleteOrder_|confirmDeleteOrder_|toggleNotif_|orderWarningStatus_|changeExpireDate_|changeToken_|changeUUID_|changeServerId_|selectServerId_|changeFileId_|selectFileId_|quickUserOrderDetails_|userOrderDetails|searchUsersConfig|adminToggleAutoRenew|awaitingOrderRemarkOnly|awaitingUserIdSelection_|manageOrderById_|awaitingExpireChange_|awaitingToken_|awaitingUUID_)~D',
-        'payments'=>'~^(?:accept[A-Za-z0-9_-]|accCustom|approveRenewAcc|approveIncreaseDay|approveIncreaseVolume|approvePayment|declineAction)~D',
+        'payments'=>'~^(?:accept[A-Za-z0-9_-]|accCustom|approveRenewAcc|approveIncreaseDay|approveIncreaseVolume|approvePayment|declineAction|apiReview_)~D',
         'operations'=>'~^(?:managePanel|messageToSpeceficUser|sendMessageToUser|increaseUserWallet|decreaseUserWallet|achbotWalletAdmin|increaseWalletUser|decreaseWalletUser|debtWalletUser|achbotWalletReason:|achbotWalletDebt:|createUserWalletDebt|walletDebt|addSubscriptionToCustomer|createMultipleAccounts|createAcc|awaiting_userid_input|giftVolumeAndDay|giftTo|giftServer|achbotDirectGift|mainMenuButtons|delMainButton|addNewMainButton|setMainButtonAnswer|discount_codes|addDiscount|editDiscount|delDiscount|editD|setDiscount|removeDiscountUser|toggleDiscount|copyHash|message2All|broadcast|editBroadcastAsk_|chooseSendGroup_|cancelBroadcast|noDontSend2all|yesSend2All|pinManageAll|pinManageSelect_|jobCancel_|jobCreate_|jobsStatus|s2a_|bc_edit_|ticketsList|ticketsCategory|addTicketCategory|delTicketCat_|allTickets|newTickets|openTickets|reply_|answer_|changeCustomPort|changeCustomSni|changeCustomPath|pgResetAccount)~D',
     ];
     foreach ($groups as $capability=>$pattern) if (preg_match($pattern,$value)) return $capability;
