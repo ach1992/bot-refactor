@@ -2,24 +2,26 @@
 
 AChBot is a PHP Telegram bot for VPN subscriptions, plans, customer support, administrator management and scheduled service operations. It supports Marzban and native PasarGuard 5.5.1.
 
-**Published release:** [v0.10.0-rc.19](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.19), a source-only prerelease. Download the official [runtime ZIP](https://github.com/ach1992/bot-refactor/releases/download/v0.10.0-rc.19/achbot-v0.10.0-rc.19-runtime.zip), [manifest](https://github.com/ach1992/bot-refactor/releases/download/v0.10.0-rc.19/achbot-v0.10.0-rc.19-runtime.zip.manifest.json) and [SHA256SUMS](https://github.com/ach1992/bot-refactor/releases/download/v0.10.0-rc.19/SHA256SUMS). The package contains **115 runtime members / 114 PHP files**; it excludes private configuration and does not install the database.
+**Version covered here:** [v0.10.0-rc.20](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.20), a source-only prerelease. The release page is authoritative for publication status and assets. Use its [runtime ZIP](https://github.com/ach1992/bot-refactor/releases/download/v0.10.0-rc.20/achbot-v0.10.0-rc.20-runtime.zip), [manifest](https://github.com/ach1992/bot-refactor/releases/download/v0.10.0-rc.20/achbot-v0.10.0-rc.20-runtime.zip.manifest.json) and [SHA256SUMS](https://github.com/ach1992/bot-refactor/releases/download/v0.10.0-rc.20/SHA256SUMS) together. The runtime contains **119 members / 118 PHP files**; it excludes private configuration, SQL and installation tools.
 
-**RC19 changes:** simple independent purchase/order display sections, ordered exact-name configs (automatic first 3; maximum 10 inline), complete-message fitting, independent explicit order QR actions, managed invitation gift after Wallet, and complete retirement of root `buy_helpers.php`. Published RC18 remains unchanged. See the [current scope](docs/post-v9/NEXT-RELEASE.md#rc19-source-contract).
+**RC20 changes:** optional bank-SMS and gift-card API verification within the existing manual methods, independent default-OFF switches, ten-minute bank-receipt fallback, shared payment/effect recovery, plan-independent administrator gifts applied once per physical subscription with notices to every current linked customer, and event-aware staff/report routing. The separate legacy automatic card-transfer path remains unchanged. Read [payment behavior and recovery](docs/post-v9/API-PAYMENT-EVIDENCE.md).
 
-**Unreleased source:** [Issue57](https://github.com/ach1992/bot-refactor/issues/57) prepares native-gift corrections, event-aware administrator notifications and optional bank-SMS/gift-code verification through the existing plugin APIs. The API candidate adds four runtime modules and source-only additive migration014; both switches default OFF. This is separate from published RC19. Exact-candidate validation/review and any migration, activation or rollout remain gated. Read [API payment behavior and recovery](docs/post-v9/API-PAYMENT-EVIDENCE.md).
+**Upgrade:** RC20 adds [source migration 014](migrations/post-v9/014_api_payment_evidence.sql) to the existing shared payment ledger. It must be applied manually to an authorized target and verified before either API mode is enabled; publication or ZIP extraction applies no SQL. Follow [RC19 → RC20](docs/post-v9/RC19-TO-RC20.md). Completed012/013 must never be rerun. RC19 and its published display/QR/invitation behavior remain immutable historical release facts; RC20 retains those features.
 
 ## Features
 
 - Server and plan management for Marzban and native PasarGuard; shared customer order, renewal and support journeys.
 - Per-server purchase-delivery and order-page presentation, subscription/auxiliary links and QR actions.
 - Four administrator levels, separate notification preferences, editable instance messages and configurable channel/support destinations.
-- Wallets, supported hosted gateways and manual payments with persisted payment/effect evidence. Manual crypto uses human receipt review; automatic TRON/TXID and WeSwap are retired.
+- Wallets, supported hosted gateways and manual payments with persisted payment/effect evidence. Optional exact-amount SMS and exact-value gift-code verification reuse the manual methods; manual crypto retains human receipt review.
+- Administrator gifts work independently of purchase plans, including genuine planless imports. Shared registrations receive one native change and one notice per current linked customer; displayed quota/expiry come from the panel.
+- Automatic TRON/TXID and WeSwap are retired.
 
 ## Requirements
 
 - A Linux host with HTTPS, a PHP web handler and PHP CLI. Compatibility CI runs on **PHP 8.1 and 8.4** with `mysqli`/mysqlnd, `curl`, `zip` and `gd`.
 - MariaDB and a dedicated database/account for each bot. Prepare the matching current schema; the historical 23-table DDL alone is insufficient.
-- A Telegram bot token, its numeric Owner ID and a unique per-bot webhook secret.
+- A Telegram bot token, its numeric Owner ID and a unique per-bot webhook secret. API evidence additionally needs OpenSSL AES-256-GCM support; preserve the existing secret on upgrades because it protects pinned credentials and recoverable codes.
 - A supported panel. Native PasarGuard **5.5.1** needs its [Group/Host, subscription URL and API prerequisites](docs/post-v9/PASARGUARD-CONTRACT.md); other versions and retired X-UI variants are not implied.
 - For scheduled operations: a one-minute Cron task, CLI `posix_geteuid`, `flock`, `proc_open`, Linux `/proc`, and a private lock directory outside all served webroots.
 
@@ -29,10 +31,10 @@ Follow the complete [fresh installation guide](docs/post-v9/FRESH-INSTALL.md). I
 
 1. Choose one exact runtime release and its matching private setup-source checkout. Verify the ZIP/manifest; do not combine an older ZIP with newer migrations or tools.
 2. Prepare a separate HTTPS installation directory, database/account and Telegram bot identity. Keep setup sources, SQL, backups and logs outside the webroot.
-3. For a genuinely empty database, import the schema and apply the guide's ordered sidecars once. **Existing installations use their upgrade guide instead; never rerun completed012/013.**
+3. For a genuinely empty database, import the schema and apply the guide's ordered sidecars once. **Existing installations use their upgrade guide instead; never rerun completed 012/013.**
 4. Create private `baseInfo.php` from that version's example. Fill its bot/database/Owner fields and add a unique `$telegramWebhookSecret` (the example does not supply it).
 5. Register the HTTPS `<bot-url>/bot.php` webhook using the same `secret_token`. Opening that URL in a browser is not a webhook health test.
-6. Start the bot as Owner and configure servers, plans, instance text, destinations and intended payment methods through the administrator UI. RC19 manages invitation gifts there; unset or zero disables them.
+6. Start the bot as Owner and configure servers, plans, instance text, destinations and intended payment methods through the administrator UI. Configure invitation gifts there; unset or zero disables them. Keep both API switches OFF until 014 and their actual profiles are verified; see the [API setup requirements](docs/post-v9/API-PAYMENT-EVIDENCE.md#configuration-before-api-enablement).
 7. Provision the private Cron lock directory, then schedule **one** `settings/cronRunner.php` invocation per minute using the correct PHP CLI and bot working directory.
 8. Verify source/schema readiness, Owner access, ordinary-user behavior, webhook delivery and scheduled operations on the selected isolated installation before customer use.
 
@@ -50,10 +52,11 @@ The coordinator runs `gift2all.php`, its admitted `broadcast` mode, `rewardRepor
 
 Use Bot Settings for instance welcome/home/purchase text and the two explicit order QR switches. Gateway/channel settings own payment configuration and support/report/membership/help/cooperation destinations. Owner manages staff levels and receiving preferences in the administrator list. Each server owns its display settings; static interface copy remains in the two [audience catalogs](messages/README.md).
 
-For upgrades, inventory the actual source, schema, private configuration and active schedules first. Replace the complete runtime together, reconcile retired files, preserve payment/native evidence and the active Cron lock, and verify a restorable backup. ZIP extraction never applies SQL. Follow [RC18 → RC19](docs/post-v9/RC18-TO-RC19.md), [RC17 → RC18](docs/post-v9/RC17-TO-RC18.md), [RC16 → RC17](docs/post-v9/RC16-TO-RC17.md), or the matching earlier transition in the [scope guide](docs/post-v9/NEXT-RELEASE.md). RC19 additionally needs its documented invitation-setting and root-helper rollout steps; it adds no SQL migration.
+For upgrades, inventory the actual source, schema, private configuration and active schedules first. Replace the complete runtime together, reconcile retired files, preserve payment/native evidence and the active Cron lock, and verify a restorable backup. ZIP extraction never applies SQL. Follow [RC19 → RC20](docs/post-v9/RC19-TO-RC20.md), [RC18 → RC19](docs/post-v9/RC18-TO-RC19.md), [RC17 → RC18](docs/post-v9/RC17-TO-RC18.md), [RC16 → RC17](docs/post-v9/RC16-TO-RC17.md), or the matching earlier transition in the [scope guide](docs/post-v9/NEXT-RELEASE.md). RC20 needs the additive014 schema before API enablement; RC19's invitation-setting and root-helper rollout requirements still apply when upgrading from an older version. After API issuance or other new writes, use the documented evidence-preserving roll-forward plan rather than a blind source/database downgrade.
 
 ## Documentation
 
+- [RC19 → RC20 upgrade, API prerequisites and recovery](docs/post-v9/RC19-TO-RC20.md)
 - [RC18 → RC19 upgrade and recovery](docs/post-v9/RC18-TO-RC19.md)
 - [Fresh installation: private configuration, ordered SQL, webhook and Cron](docs/post-v9/FRESH-INSTALL.md)
 - [Current source/release scope and configuration boundaries](docs/post-v9/NEXT-RELEASE.md)

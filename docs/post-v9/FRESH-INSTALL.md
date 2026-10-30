@@ -2,7 +2,7 @@
 
 This guide is for a **new bot with a new, empty database**. An existing bot, a copied live database or a partly migrated database must use its exact release's upgrade/recovery guide instead. There is no browser installer or automatic schema upgrade.
 
-RC19 and earlier RC18 share the setup prerequisites below. Their runtime/configuration behavior is not interchangeable: RC19 introduces the simplified display UI, managed invitation gift and root-helper retirement. Use one exact version throughout; [current scope](NEXT-RELEASE.md) and [RC18 → RC19](RC18-TO-RC19.md) identify the boundary.
+This guide covers RC20 and its 119-member runtime. It adds source 014 for optional API evidence to the inherited RC19 display, invitation and root-helper behavior. Use one exact release, manifest, setup checkout and SQL set throughout; [current scope](NEXT-RELEASE.md) and [RC19 → RC20](RC19-TO-RC20.md) identify the boundary. Publication does not authorize a target installation, migration or API activation.
 
 ## 1. Prepare the installation
 
@@ -24,7 +24,7 @@ python3 tools/package_post_v9.py verify \
   --manifest /private/setup/runtime.zip.manifest.json
 ```
 
-Expected: `verified:true`, the intended candidate/tree and 115 runtime members. Verify every extracted runtime member against the same manifest using the [installed-runtime verifier](INSTALL-DIAGNOSTICS.md), not just a file count. The runtime ZIP has no `baseInfo.php` or database installer. CI migration sidecars are source files, not instructions to run every attached SQL against an existing tenant.
+Expected: `verified:true`, the intended candidate/tree and 119 runtime members / 118 PHP files. Verify every extracted runtime member against the same manifest using the [installed-runtime verifier](INSTALL-DIAGNOSTICS.md), not just a file count. The runtime ZIP has no `baseInfo.php` or database installer. CI migration sidecars are source files, not instructions to run every attached SQL against an existing tenant.
 
 ## 3. Initialize only the new empty database
 
@@ -46,6 +46,7 @@ Import `database/legacy-schema.sql` exactly once into that empty database, then 
 | 9 | `migrations/post-v9/011_provider_identity.sql` | Identity prerequisites for012 |
 | 10 | `migrations/post-v9/012_shared_provider_storage.sql` | Current shared native storage |
 | 11 | `migrations/post-v9/013_remove_obsolete_order_columns.sql` | Retire unused order columns |
+| 12 | `migrations/post-v9/014_api_payment_evidence.sql` | Nullable API evidence fields/indexes on the shared ledger; required before either API mode is enabled |
 
 For example, the MariaDB client can import the baseline with a prompted password:
 
@@ -53,11 +54,11 @@ For example, the MariaDB client can import the baseline with a prompted password
 mariadb --user=INSTALL_DB_USER --password NEW_EMPTY_DB < database/legacy-schema.sql
 ```
 
-Replace the account/database placeholders and repeat the import form for each subsequent table entry. These paths are relative to the private checkout, not the runtime ZIP. The release may name001 `panel-group-migration.sql` and003 `payment-attempt-migration.sql`; use the contents/checksums matching the selected source. Do not use `--force` to ignore errors or a wildcard SQL loop.
+Replace the account/database placeholders and repeat the import form for each subsequent table entry. These paths are relative to the private checkout, not the runtime ZIP. The release may name001 `panel-group-migration.sql` and003 `payment-attempt-migration.sql`; use the contents/checksums matching the selected source. Do not use `--force` to ignore errors or a wildcard SQL loop. Migration 014 has two ALTER TABLE statements and no IF NOT EXISTS guards; it is not a retry script. A partly applied file requires an exact schema audit and an authorized completion plan.
 
 Do **not** run historical002, `legacy_rc4_nowpayments_import.sql`, or optional cleanup010 for a fresh installation. Cleanup010 is separate guarded maintenance, not a startup requirement; original unused tables may remain. Do not insert another bot's settings/users or synthetic test fixtures. The ordinary Owner settings journeys initialize the intended configuration.
 
-If a step fails or any expected object already exists, keep the error and inspect the state before continuing. MariaDB DDL can commit independently; replaying the whole sequence is not recovery. Never run this fresh sequence against an existing installation, and never rerun its completed012/013. Existing-data consolidation and paired restore are documented in [shared storage](SHARED-PROVIDER-STORAGE.md).
+If a step fails or any expected object already exists, keep the error and inspect the state before continuing. MariaDB DDL can commit independently; replaying the whole sequence is not recovery. Never run this fresh sequence against an existing installation, and never rerun its completed 012/013. Existing-data consolidation and paired restore are documented in [shared storage](SHARED-PROVIDER-STORAGE.md).
 
 ## 4. Create private per-bot configuration
 
@@ -80,7 +81,7 @@ $telegramWebhookSecret = 'REPLACE_WITH_YOUR_UNIQUE_64_CHARACTER_HEX_SECRET';
 
 The placeholder is not usable. AChBot requires 16–256 ASCII letters, digits, `_` or `-`; no shared PHP environment fallback is read. Keep the secret and token out of public outputs, Git and shared logs. Run PHP syntax checking locally without printing the file. Restrict file access to the accounts that actually need it.
 
-Only primary `$admin` belongs in private staff configuration; use the administrator list for other staff. Use the gateway/channel UI for destinations, credentials and rates. `$joinLink` is an optional retained private-channel join fallback; do not leave the example's fake link as a configured destination. RC19 ignores private `$inviteReward`: configure it after Wallet in gateway/channel settings; unset/invalid/zero disables future invitation gifts. Published RC18 keeps its version's older invitation configuration, so follow its matching example instead of mixing these contracts.
+Only primary `$admin` belongs in private staff configuration; use the administrator list for other staff. Use the gateway/channel UI for destinations, credentials and rates. `$joinLink` is an optional retained private-channel join fallback; do not leave the example's fake link as a configured destination. RC20 retains RC19's rule and ignores private `$inviteReward`: configure it after Wallet in gateway/channel settings; unset/invalid/zero disables future invitation gifts. Published RC18 keeps its version's older invitation configuration, so follow its matching example instead of mixing these contracts.
 
 ## 5. Register the webhook and configure the bot
 
@@ -100,8 +101,9 @@ Before public use, configure:
 - Owner's administrator list, intended levels and message-receiving preferences.
 - Bot Settings instance messages and explicit config/subscription QR switches; gateway/channel support, reports, membership and optional private invite URL.
 - Supported servers and plans. PasarGuard 5.5.1 requires actual Groups/Hosts, scoped API access and an absolute subscription URL prefix before account admission; see its [contract](PASARGUARD-CONTRACT.md).
-- Each server's purchase-delivery and order-page display choices. RC19 has subscription/config/auxiliary toggles, ordered exact-name selections (default 3/max 10 inline), purchase-only QR cycling and separate explicit order QR actions; see [presentation](SUBSCRIPTION-PRESENTATION.md).
-- Intended payment credentials, destinations, rates and eligibility before enabling a method. Shared `manualUsdtRateToman` covers USDT/NOWPayments; TRX has its own rate. Manual crypto still needs human receipt verification. RC19 invitation gift starts disabled until deliberately set in the same gateway/channel editor.
+- Each server's purchase-delivery and order-page display choices. RC20 retains subscription/config/auxiliary toggles, ordered exact-name selections (default 3/max 10 inline), purchase-only QR cycling and separate explicit order QR actions; see [presentation](SUBSCRIPTION-PRESENTATION.md).
+- Intended payment credentials, destinations, rates and eligibility before enabling a method. Shared `manualUsdtRateToman` covers USDT/NOWPayments; TRX has its own rate. Manual crypto still needs human receipt verification. The managed invitation gift starts disabled until deliberately set in the same gateway/channel editor.
+- Keep `smsApiVerifyState` and `giftApiVerifyState` OFF until the complete 014 schema, OpenSSL AES-256-GCM support and the existing per-bot webhook secret are verified. Then configure the actual SMS API URL/token and positive monitoring horizon, or gift API URL/key ID/secret and explicit rial/toman unit, through the administrator UI. Optional filters remain optional. See [API setup](API-PAYMENT-EVIDENCE.md#configuration-before-api-enablement); configuration alone does not test a remote credential or consume evidence.
 
 ## 6. Configure Cron and its private lock
 
@@ -137,7 +139,7 @@ The coordinator runs four separate processes, in order: `gift2all.php`, admitted
 
 ## 7. Verify before customer use
 
-Confirm the exact runtime/manifest, expected schema and intended settings. The [read-only readiness preflight](PAYMENT-READINESS-PREFLIGHT.md) uses a dedicated SELECT-only account and does not load private configuration or invoke workers/providers. It expects configured `BOT_STATES`/`PAYMENT_KEYS` documents and a potentially usable payment method; an untouched new database is not yet payment-ready. Its PASS is local readiness, not proof of a real payment.
+Confirm the exact runtime/manifest, expected schema and intended settings. The [read-only readiness preflight](PAYMENT-READINESS-PREFLIGHT.md) uses a dedicated SELECT-only account and does not load private configuration or invoke workers/providers. It expects configured `BOT_STATES`/`PAYMENT_KEYS` documents and a potentially usable payment method; an untouched new database is not yet payment-ready. Its PASS is local readiness, not proof of a real payment. For 014 it reports runtime schema capability rather than full DDL certification; it never decrypts API credentials or verifies their live authentication. Audit exact column/index definitions and target history separately before API activation.
 
 On the selected isolated bot, verify Owner access, ordinary-user restrictions, current server/config display, explicit QR actions, cancellation and safe invalid-input behavior. Observe the actual scheduler's private logs and absence of overlapping batches. Follow the [operator acceptance checklist](MARZBAN-OPERATOR-ACCEPTANCE.md) for provider/payment tests with their own controlled accounts and funds. A successful browser payment return is not settlement proof; never automatically retry a transaction or provider mutation after an ambiguous result.
 

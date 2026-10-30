@@ -18,8 +18,8 @@ cannot compensate for unnecessarily privileged credentials.
 
 It checks:
 
-- All 115 listed runtime files' byte lengths and SHA-256 against the
-  **provided** manifest, and an independently pinned 115-member filename
+- All 119 RC20 runtime files' byte lengths and SHA-256 against the
+  **provided** manifest, and an independently pinned 119-member filename
   inventory (canonical sorted-set SHA-256 from `package_post_v9.members()`),
   with no retired automatic TRON/WeSwap PHP files. The locally
   executed policy and wallet validation helpers must also match the supplied runtime
@@ -32,6 +32,17 @@ It checks:
   Existing tables with partial/mismatched structures are **blocked**; no
   existing object is replaced. `002` is the retired historical RC4 path,
   not an instruction to install it. No sidecar SQL is executed.
+- RC20 additionally reports014 evidence capability on the existing shared
+  ledger. Missing014 with both API switches OFF is informational; a partial
+  or incompatible capability with APIs OFF is a warning. An enabled API
+  without usable014 capability is blocked. Even a capability PASS explicitly
+  means `api_evidence_capability_detected_not_ddl_certified`: it checks the
+  runtime-required fields/unique indexes and InnoDB, not complete migration
+  DDL, every field definition/index, real row compatibility or applied history.
+  The tool never decrypts API profiles/codes or authenticates a live client;
+  enabled profiles remain `credentials_not_decrypted_not_verified`. Follow
+  [RC19 → RC20](RC19-TO-RC20.md) and [API setup](API-PAYMENT-EVIDENCE.md#configuration-before-api-enablement)
+  for the separately authorized schema/profile/activation gates.
 - Exactly one valid JSON-object `BOT_STATES` and `PAYMENT_KEYS` document,
   dynamic `gatewayRules` decoded with the **current production PHP parser**,
   legacy method audience modes and each method's switch. A method is
