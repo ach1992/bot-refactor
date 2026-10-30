@@ -313,6 +313,8 @@ $finish=static function(
             throw new RuntimeException('gift_finish_roster_changed');
 
         if ($result!==null) {
+            // Take current cohort locks before any consistent-read snapshot.
+            achbotGiftLockReferences($connection,$orders);
             if (!achbotGiftTargetMatches($connection,$serverId,$receipt['target']))
                 throw new RuntimeException('gift_batch_target_changed_after_effect');
             if (achbotGiftIdentityHash($connection,$orders)!==($referenceProof['native_identity_sha256']??null))

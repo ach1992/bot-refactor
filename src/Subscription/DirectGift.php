@@ -494,8 +494,12 @@ function achbotDirectGiftClaim(mysqli $db,array $source,int $primary,
         }
         if ($actor['step']!==$step)
             throw new RuntimeException('direct_gift_step_stale');
+        if (!is_string($expected['remark']??null))
+            throw new RuntimeException('direct_gift_order_changed');
+        $references=achbotGiftReferences($db,$payload['server_id'],$expected['remark'],true);
         $order=achbotDirectGiftOrder($db,$expected['id'],true);
-        if ($order!==$expected || $order['server_id']!==$payload['server_id'])
+        if ($order!==$expected || $order['server_id']!==$payload['server_id'] ||
+            !$references || !in_array($order,$references,true))
             throw new RuntimeException('direct_gift_order_changed');
         // A physical account can appear in multiple local order rows. Use
         // the shared panel-group ID when explicitly configured; otherwise
@@ -526,9 +530,6 @@ function achbotDirectGiftClaim(mysqli $db,array $source,int $primary,
                         'id'=>(int)($marker['source_id']??0)];
             }
         }
-        $references=achbotGiftReferences($db,$order['server_id'],$order['remark'],true);
-        if (!$references || !in_array($order,$references,true))
-            throw new RuntimeException('direct_gift_order_changed');
         $referenceProof=achbotGiftReferenceProof($references);
         $referenceProof['native_identity_sha256']=achbotGiftIdentityHash($db,$references);
         $target=achbotGiftPinNativeIdentity($db,$references,$target);
@@ -601,11 +602,11 @@ function achbotDirectGiftPreEffect(mysqli $db,array $claim,
         throw new RuntimeException('direct_gift_preflight_begin_failed');
     try {
         achbotDirectGiftActorLocked($db,$actorId,$primary,$actorPks);
+        achbotGiftValidateReferences($db,$claim['references'],true);
         $order=achbotDirectGiftOrder($db,$claim['order']['id'],true);
         if ($order!==$claim['order'])
             throw new RuntimeException('direct_gift_preflight_order_changed');
         achbotDirectGiftJournalLocked($db,$claim);
-        achbotGiftValidateReferences($db,$claim['references'],true);
         if (achbotGiftIdentityHash($db,$claim['references'])!==$claim['native_identity_sha256'])
             throw new RuntimeException('direct_gift_preflight_native_identity_changed');
         if (!achbotGiftTargetMatches($db,$order['server_id'],$claim['target']))
@@ -640,6 +641,9 @@ function achbotDirectGiftComplete(mysqli $db,array $claim,object $result): void 
     achbotDirectGiftEngines($db);
     if (!$db->begin_transaction()) throw new RuntimeException('direct_gift_begin_failed');
     try {
+        // Lock/update the complete sorted cohort atomically before the
+        // selected anchor and source journal; rollback preserves all markers.
+        achbotGiftFinishReferences($db,$claim['references'],$claim['days']>0);
         $order=achbotDirectGiftOrder($db,$claim['order']['id'],true);
         if ($order!==$claim['order'] ||
             !achbotGiftTargetMatches($db,$order['server_id'],$claim['target']))
@@ -647,7 +651,6 @@ function achbotDirectGiftComplete(mysqli $db,array $claim,object $result): void 
         [$record,$marker,$markerId]=achbotDirectGiftJournalLocked($db,$claim);
         if (achbotGiftIdentityHash($db,$claim['references'])!==$claim['native_identity_sha256'])
             throw new RuntimeException('direct_gift_local_native_identity_changed');
-        achbotGiftFinishReferences($db,$claim['references'],$claim['days']>0);
         $record['state']='completed';
         if ($claim['days']>0) $record['before_expire']=$before;
         $record['applied_expire']=$new;

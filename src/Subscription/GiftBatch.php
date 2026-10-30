@@ -50,6 +50,63 @@ function achbotGiftReferenceOrigin(mysqli $db,array $order): ?array {
     return $origin;
 }
 
+/** Lock every reference PK before an anchor, journal or provider identity row.
+ * The cohort may contain older aliases than the selected logical anchor.
+ */
+function achbotGiftLockReferences(mysqli $db,array $expected): void {
+    $ordered=[];foreach ($expected as $order) {
+        $id=$order['id']??null;
+        if (!is_int($id) || $id<=0 || isset($ordered[$id]))
+            throw new RuntimeException('gift_reference_lock_identity_invalid');
+        $ordered[$id]=$order;
+    }
+    ksort($ordered,SORT_NUMERIC);
+    foreach ($ordered as $order)
+        if (achbotGiftOrder($db,$order['id'],true)!==$order)
+            throw new RuntimeException('gift_reference_changed_after_claim');
+}
+
+/** Keep the existing complete PG validation without its unindexed origin lock.
+ * Origin is immutable adoption evidence written with the new order. Mutable
+ * order, connection and native effect identities are fenced by CURRENT PK
+ * reads; a stale consistent-read context fails closed instead of replacing it.
+ */
+function achbotGiftPgOrderContext(mysqli $db,int $orderId,bool $lock=false): array {
+    if (!$lock) return achbotPgOrderContext($db,$orderId);
+    achbotPgLoad();
+    $order=achbotProviderRow($db,'SELECT * FROM orders_list WHERE id=? FOR UPDATE','i',[$orderId]);
+    if (!$order || $order['provider_effect_id']===null)
+        throw new RuntimeException('gift_pg_reference_missing');
+    $server=achbotProviderRow($db,'SELECT * FROM server_config WHERE id=? LOCK IN SHARE MODE',
+        'i',[(int)$order['server_id']]);
+    $account=achbotProviderAccountRow(achbotProviderRow($db,
+        'SELECT * FROM service_effects WHERE id=? LOCK IN SHARE MODE',
+        'i',[achbotProviderPositiveInt($order['provider_effect_id'])]));
+    if (!$server || !$account || ($server['type']??null)!=='pasarguard')
+        throw new RuntimeException('gift_pg_identity_changed');
+    $context=achbotPgOrderContext($db,$orderId);
+    foreach (['id','userid','server_id','inbound_id','fileid','remark','uuid','status',
+              'expire_date','provider_effect_id','provider_remote_user_id',
+              'provider_remote_created_at'] as $key)
+        if (($context['order'][$key]??null)!==($order[$key]??null))
+            throw new RuntimeException('gift_pg_current_order_changed');
+    foreach (['id','effect_id','order_id','provider','panel_id','instance_key',
+              'endpoint_sha256','remote_user_id','remote_created_at','remote_username',
+              'operation_marker','state','entitlement_snapshot'] as $key)
+        if (($context['account'][$key]??null)!==($account[$key]??null))
+            throw new RuntimeException('gift_pg_current_account_changed');
+    $panel=$context['panel'];
+    if ((int)$server['provider_connection_id']!==$panel['id'] ||
+        $server['provider_instance_key']!==$panel['instance_key'] ||
+        rtrim($server['panel_url'],'/')!==rtrim($panel['api_url'],'/') ||
+        $server['password']!==$panel['api_key'] ||
+        $server['provider_version']!==$panel['version'] ||
+        (int)$server['provider_enabled']!==$panel['enabled'] ||
+        $context['identity']!==achbotProviderAccountIdentity($db,$account,true))
+        throw new RuntimeException('gift_pg_current_identity_changed');
+    return $context;
+}
+
 /** No count cap and no broad FOR UPDATE scan on unindexed customer/name fields. */
 function achbotGiftReferences(mysqli $db,int $serverId,string $remark,bool $lock=false,bool $aliases=true): array {
     $stmt=$db->prepare('SELECT id,server_id FROM orders_list
@@ -64,12 +121,16 @@ function achbotGiftReferences(mysqli $db,int $serverId,string $remark,bool $lock
     foreach ($ids as $id) {
         $sid=(int)$id['server_id'];
         if ($sid!==$serverId && (!$aliases || !achbotSameProviderPanel($db,$serverId,$sid))) continue;
-        $order=achbotGiftOrder($db,(int)$id['id'],$lock);
+        $order=achbotGiftOrder($db,(int)$id['id']);
         if ($order['server_id']!==$sid || $order['remark']!==$remark)
             throw new RuntimeException('gift_reference_changed');
+        $orders[]=$order;
+    }
+    if ($lock) achbotGiftLockReferences($db,$orders);
+    foreach ($orders as $order) {
         $origin=achbotGiftReferenceOrigin($db,$order);
         if ($provider==='pasarguard') {
-            $ctx=achbotPgOrderContext($db,$order['id'],$lock);
+            $ctx=achbotGiftPgOrderContext($db,$order['id'],$lock);
             $candidate=[$ctx['account']['id'],$ctx['identity']];
         } else {
             $candidate=[$order['remark']];
@@ -81,7 +142,7 @@ function achbotGiftReferences(mysqli $db,int $serverId,string $remark,bool $lock
         }
         if ($identity!==null && $identity!==$candidate)
             throw new RuntimeException('gift_native_identity_conflict');
-        $identity=$candidate;$orders[]=$order;
+        $identity=$candidate;
     }
     return $orders;
 }
@@ -95,13 +156,14 @@ function achbotGiftReferenceProof(array $orders): array {
 }
 
 function achbotGiftValidateReferences(mysqli $db,array $expected,bool $lock=false): void {
+    if ($lock) achbotGiftLockReferences($db,$expected);
     $identity=null;$originIdentity=null;
     foreach ($expected as $order) {
         if (achbotGiftOrder($db,$order['id'],$lock)!==$order)
             throw new RuntimeException('gift_reference_changed_after_claim');
         $origin=achbotGiftReferenceOrigin($db,$order);
         if (achbotProviderType($db,$order['server_id'])==='pasarguard') {
-            $ctx=achbotPgOrderContext($db,$order['id'],$lock);
+            $ctx=achbotGiftPgOrderContext($db,$order['id'],$lock);
             $candidate=[$ctx['account']['id'],$ctx['identity']];
         } else {
             $candidate=[$order['remark']];
