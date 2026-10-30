@@ -92,6 +92,12 @@ The current Owner request changes unsolicited fanout, without granting extra act
 
 Current valid stored receipt recipients still get final status/button maintenance when their new-copy preference is OFF. Revoked, banned or ambiguous identities remain excluded. Direct responses to the actor currently using an authorized screen and customer messages are not unsolicited staff fanout.
 
+## Current source package and retained exceptions
+
+The current source package prepares event-aware staff routing and evidenced direct native gift corrections; it does not implement API payment acceptance. The separate legacy automatic card-transfer implementation remains byte-identical, including its three existing Owner-only diagnostics. Its financial path is outside the current change. Backup scheduling/destination also remains unchanged.
+
+Native gift corrections preserve transient credential pins without persisting raw credentials, retain local time/notification metadata on quota-only gifts, and validate time increases against the adapter's already-verified native baseline. They do not prove the cause or outcome of any installed request. Shared-reference anchor/notification policy and planless-import gift admission remain unresolved; existing refusals are not silently removed.
+
 ## Open activation decisions
 
 - Exact redeem_amount unit and eligible card/game/value mapping; excess, partial or multiple-card policy.
