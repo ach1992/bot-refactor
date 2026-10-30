@@ -1,4 +1,14 @@
-# RC19 simple display, QR and invitation settings
+# Current source development and published RC19
+
+## Unreleased API payments, native gifts and notification routing
+
+The Owner resumed source work under [Issue57](https://github.com/ach1992/bot-refactor/issues/57). Native-gift and event-aware notification changes are isolated in [draft PR100](https://github.com/ach1992/bot-refactor/pull/100); existing-API bank/gift payment implementation is on `feature/existing-payment-apis`. These branches are not merged, published or installed. Composed exact-candidate checks and independent review remain pending.
+
+The API increment adds four runtime modules and source-only additive migration014 on the shared payment ledger. It adds no provider-specific table or automatic migration. Both API switches default OFF; missing/partial API schema must fail that path closed while preserving legacy manual behavior. Follow [the current contract](API-PAYMENT-EVIDENCE.md) for exact full-amount SMS matching, ten-minute receipt fallback, code review, consumption-only late evidence and notification recipients. No plugin changes are prerequisites. The unrelated legacy automatic bank path and backup destination remain unchanged.
+
+Preparing source014 is not permission to run it. A future rollout must pair the exact reviewed source/schema, backup/restore proof and recovery plan with action-specific Owner authorization. Existing completed012/013 must never be replayed. RC19 remains the published release; its prior ZIP staging did not establish installation.
+
+## Published RC19 simple display, QR and invitation settings
 
 [RC19](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.19) publishes reviewed source `9451ef306be34bc224d57645d7b7394b8bea3a99` through merged [PR98](https://github.com/ach1992/bot-refactor/pull/98). It keeps 115 runtime members / 114 PHP files, retires root buy_helpers.php in favor of canonical domain implementations, and adds no SQL migration. Follow [RC18 → RC19](RC18-TO-RC19.md). Publication does not install or certify a live bot.
 
