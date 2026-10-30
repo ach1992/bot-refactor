@@ -2,6 +2,12 @@
 
 **Current supported scope:** shared settings navigation, familiar paired gateway destination controls and independent native delivery/order config selection. See the [current release contract](post-v9/NEXT-RELEASE.md) and [README](../README.md) for release-specific details; publication does not establish installed or live acceptance.
 
+## API-assisted manual payments and notification routing
+
+The Owner accepted optional authenticated SMS evidence and gift-card-code verification within the current manual payment journeys, independently switched per method. Bank API mode adds receipt submission after600 seconds while verification continues. The existing legacy automatic bank acceptance path remains separate. Source design, unresolved monetary/interoperability decisions and activation gates live in [the evidence contract](post-v9/API-PAYMENT-EVIDENCE.md); this is not an implemented or enabled feature claim.
+
+Unsolicited general reports go to Owner and receiving-on Manager; Operator/Support receive actionable manual receipt/review requests only. Backup keeps its established destination without new Owner/staff copies. Stored valid receipt copies retain final-status maintenance independently of the new-copy preference; operational permissions remain unchanged.
+
 ## Current administration and instance presentation
 
 Reuse common application logic, existing persistence and the same management journey wherever provider semantics permit. Provider-specific adapters own genuine native API/authentication/identity/Group differences; do not create a separate table, editor or workflow for every provider. Native display selection uses one renderer/editor and one existing per-server setting document. The RC19 Owner contract provides independent purchase-delivery and order-page subscription/config/auxiliary switches, ordered exact-name selection (automatic first3; maximum10 inline), and complete-message fitting that preserves facts and subscription/auxiliary links. Only purchase delivery has a QR selector. Order-page QR uses the two existing Bot Settings switches and sends every valid native config individually, independently of inline selection. Previous shared/context selector documents remain readable until deliberately edited; display choices never change provider access. See [presentation semantics](post-v9/SUBSCRIPTION-PRESENTATION.md).
