@@ -6,6 +6,7 @@ import test_access_state as owned
 
 ROOT=Path(__file__).resolve().parents[1]
 BASE='68e94b5f90b13cab88835421d83afb78eb573c0d'
+EXCLUSIVE_READ_BASE='463c2593e86d717f5fd54886f23d4d54a3606c9c'
 PHP=r'''<?php
 error_reporting(E_ALL & ~E_DEPRECATED);
 set_error_handler(static function($n,$m){if($n===E_DEPRECATED)return true;throw new ErrorException($m,0,$n);});
@@ -56,6 +57,58 @@ $text='پیام گزارش <b>مشتری</b> & PRICE';$targets=static fn()=>arra
 notifyAllAdminsSimple($text,$admin,'HTML',$markup,-100123);
 yes($targets()===[9001,9003,-100123],'general helper delivers Owner Manager channel, excludes Operator and Support');
 foreach($events as $e)yes($e['data']['text']===$text&&$e['data']['reply_markup']===$markup,'general raw body and markup preserved');
+$events=[];
+// Deterministic overlap holds only owned read transactions. Every lock is
+// released before outbound events in this proof; no financial transaction is altered.
+require $argv[5];
+$connection->query("INSERT INTO setting(type,value) VALUES('ADMIN_NOTIFY_9003','on')");
+$rolePk=(int)$connection->query("SELECT id FROM setting WHERE type='ADMIN_ROLE_9003'")->fetch_row()[0];
+$notifyPk=(int)$connection->query("SELECT id FROM setting WHERE type='ADMIN_NOTIFY_9003'")->fetch_row()[0];
+$left=new mysqli('localhost','root','',$argv[3],0,$argv[2]);$right=new mysqli('localhost','root','',$argv[3],0,$argv[2]);
+$left->begin_transaction();$right->begin_transaction();$firstDone=$secondDone=false;
+$first=archivedExclusiveAdminRecipientCandidates($left,9001,$firstDone);
+$second=archivedExclusiveAdminRecipientCandidates($right,9001,$secondDone);
+yes($firstDone&&$first!==[]&&!$secondDone&&$second===[],'archived exclusive discovery RED suppresses overlapping current reader');
+$left->rollback();$right->rollback();
+$left->begin_transaction();$admitted=archivedExclusiveAdminRecipientAllowed($left,9003,9001);$secondDone=false;
+$second=archivedExclusiveAdminRecipientCandidates($right,9001,$secondDone);
+yes($admitted&&!$secondDone&&$second===[],'archived notification admission RED conflicts with overlapping discovery');
+$left->rollback();
+$left->begin_transaction();$right->begin_transaction();$firstDone=$secondDone=false;
+$first=achbotAdminRecipientCandidates($left,9001,$firstDone);
+$second=achbotAdminRecipientCandidates($right,9001,$secondDone);
+yes($firstDone&&$secondDone&&$first!==[]&&$first===$second,'overlapping actual current discovery readers both return complete membership');
+$left->rollback();$right->rollback();
+$left->begin_transaction();$right->begin_transaction();
+$one=achbotAdminRecipientAllowed($left,9003,9001);$two=achbotAdminRecipientAllowed($right,9003,9001);$secondDone=false;
+$second=achbotAdminRecipientCandidates($right,9001,$secondDone);
+yes($one&&$two&&$secondDone&&$second===$first,'overlapping actual role preference admission and discovery remain compatible');
+$left->rollback();$right->rollback();
+$left->begin_transaction();$left->query('SELECT id FROM users WHERE userid=9003 FOR UPDATE');
+$started=microtime(true);$admitted=achbotAdminRecipientAllowed($right,9003,9001);
+yes(!$admitted&&microtime(true)-$started<1.0,'notification membership read fails closed without waiting for writer');
+$left->rollback();
+$left->begin_transaction();$left->query('SELECT id FROM setting WHERE id='.$rolePk.' FOR UPDATE');
+$started=microtime(true);$level=achbotAdminLevel(9003,$right,9001,true,true);
+yes($level==='none'&&microtime(true)-$started<1.0,'notification role read fails closed without waiting for writer');
+$left->rollback();
+$left->begin_transaction();$left->query('SELECT id FROM setting WHERE id='.$notifyPk.' FOR UPDATE');
+$started=microtime(true);$enabled=achbotAdminNotifyEnabled($right,9003,9001,true,true);
+yes(!$enabled&&microtime(true)-$started<1.0,'notification preference read fails closed without waiting for writer');
+$left->rollback();
+yes(achbotAdminRecipientAllowed($right,9003,9001),'notification admission observes current committed values after writer releases');
+$left->begin_transaction();$level=achbotAdminLevel(9003,$left,9001,true);$secondDone=false;
+$second=achbotAdminRecipientCandidates($right,9001,$secondDone);
+yes($level==='manager'&&!$secondDone&&$second===[],'financial and administrator current-lock default remains exclusive');
+$left->rollback();
+$left->begin_transaction();$stored=achbotAdminStoredRecipientAllowed($left,9003,9001);$secondDone=false;
+$second=achbotAdminRecipientCandidates($right,9001,$secondDone);
+yes($stored&&!$secondDone&&$second===[],'stored receipt maintenance lock default remains exclusive');
+$left->rollback();
+yes((int)$left->query('SELECT @@in_transaction')->fetch_row()[0]===0&&(int)$right->query('SELECT @@in_transaction')->fetch_row()[0]===0&&$events===[],'all overlap proof locks released before any outbound delivery');
+$left->close();$right->close();
+$connection->query("DELETE FROM setting WHERE id=".$notifyPk);
+
 $events=[];achbotNotifyAdmins('sendMessage',['text'=>$text,'reply_markup'=>$markup],['event'=>'manual_review']);yes($targets()===[9001,9002,9003,9004],'full actionable review preserves Owner and staff without adding a report-channel receipt');
 $events=[];sendToAllAdmins('sendMessage',['text'=>$text]);yes($targets()===[9003],'secondary helper defaults to informational Manager-only event');
 $events=[];sendToAllAdmins('sendPhoto',['photo'=>'fixture','caption'=>$text],null,['event'=>'manual_review']);
@@ -101,6 +154,34 @@ yes(microtime(true)-$started<1.0&&$targets()===[9001,-100123], 'contended custom
 yes(($notices[0]['response']->ok??false)&&count(array_filter($notices,static fn($r)=>($r['deferred']??'')==='recipient_discovery'&&$r['response']===null))===1, 'incomplete recipient discovery remains observable after primary acknowledgement');
 $held->rollback();$held->close();$events=[];$notices=achbotNotifyAdmins('sendMessage',['text'=>$text]);
 yes($targets()===[9001,9003,-100123]&&!array_filter($notices,static fn($r)=>isset($r['deferred'])), 'next ordinary delivery retries fresh membership after contention clears');
+// Discovery can succeed while a role/preference writer makes admission
+// unreadable. This is incomplete delivery, distinct from a complete exclusion.
+$connection->query("INSERT INTO setting(type,value) VALUES('ADMIN_NOTIFY_9003','on')");
+$admissionWriter=new mysqli('localhost','root','',$argv[3],0,$argv[2]);
+$allAck=static fn(array $rows):bool=>$rows!==[]&&!array_filter($rows,static fn($r)=>!($r['response']->ok??false));
+foreach(['role'=>'ADMIN_ROLE_9003','preference'=>'ADMIN_NOTIFY_9003'] as $kind=>$key){
+ $pk=(int)$connection->query("SELECT id FROM setting WHERE type='".$key."'")->fetch_row()[0];
+ $admissionWriter->begin_transaction();$admissionWriter->query('SELECT id FROM setting WHERE id='.$pk.' FOR UPDATE');
+ $membershipComplete=false;$members=achbotAdminRecipientCandidates($connection,9001,$membershipComplete);
+ $events=[];$started=microtime(true);$notices=achbotNotifyAdmins('sendMessage',['text'=>$text]);
+ yes($membershipComplete&&in_array('9003',array_map('strval',$members),true)&&microtime(true)-$started<1.0&&$targets()===[9001,-100123]&&!array_filter($events,static fn($e)=>$e['tx']!==0),
+  'actual router '.$kind.' writer preserves complete discovery and nonblocking independent delivery');
+ yes(($notices[0]['response']->ok??false)&&($notices[count($notices)-1]['response']->ok??false)&&!$allAck($notices)&&count(array_filter($notices,static fn($r)=>($r['deferred']??'')==='recipient_discovery'&&$r['response']===null))===1,
+  'actual router '.$kind.' admission contention defers aggregate delivery acknowledgement');
+ $admissionWriter->rollback();$events=[];$notices=achbotNotifyAdmins('sendMessage',['text'=>$text]);
+ yes($targets()===[9001,9003,-100123]&&$allAck($notices)&&!array_filter($notices,static fn($r)=>isset($r['deferred'])),
+  'next ordinary router delivery includes Manager after '.$kind.' writer releases');
+}
+$admissionWriter->close();
+$connection->query("UPDATE setting SET value='off' WHERE type='ADMIN_NOTIFY_9003'");
+$events=[];$notices=achbotNotifyAdmins('sendMessage',['text'=>$text]);
+yes($targets()===[9001,-100123]&&$allAck($notices)&&!array_filter($notices,static fn($r)=>isset($r['deferred'])),'explicit notification OFF is a complete exclusion with successful acknowledgement');
+$connection->query("UPDATE setting SET value='on' WHERE type='ADMIN_NOTIFY_9003'");
+$connection->query('UPDATE users SET isAdmin=0 WHERE userid=9003');
+$events=[];$notices=achbotNotifyAdmins('sendMessage',['text'=>$text]);
+yes($targets()===[9001,-100123]&&$allAck($notices)&&!array_filter($notices,static fn($r)=>isset($r['deferred'])),'revoked staff is a complete exclusion with successful acknowledgement');
+$connection->query('UPDATE users SET isAdmin=1 WHERE userid=9003');
+$connection->query("DELETE FROM setting WHERE type='ADMIN_NOTIFY_9003'");
 // Genuine receipt evidence/lease and once-only approval are unchanged.
 $connection->query("INSERT INTO setting(type,value) VALUES('BOT_STATES','{\"cartToCartState\":\"on\"}')");
 $botState=['cartToCartState'=>'on','rewardChannel'=>-100123];$paymentKeys=['bankAccount'=>'6037999999999999','holderName'=>'Fixture'];
@@ -166,8 +247,10 @@ def main():
                 (app/name).write_bytes(subprocess.check_output(['git','show',a.source_ref+':'+name],cwd=ROOT))
         client=['mariadb','--no-defaults','--protocol=SOCKET','--socket='+str(work/'mysql.sock'),'-uroot',owned.NAMES[1]]
         subprocess.run(client,input=(ROOT/'migrations/post-v9/003_payment_attempts.sql').read_bytes(),env=env,capture_output=True,check=True,timeout=15)
+        archived=work/'archived-exclusive-access.php'
+        archived.write_text(subprocess.check_output(['git','show',EXCLUSIVE_READ_BASE+':src/Admin/Access.php'],cwd=ROOT,text=True).replace('achbotAdmin','archivedExclusiveAdmin'))
         driver=work/'notifications.php';driver.write_text(PHP);notice_log=work/'sanitized-notices.log'
-        result=subprocess.run(['php','-d','allow_url_fopen=0','-d','disable_functions=curl_init,curl_exec',str(driver),str(app),str(work/'mysql.sock'),owned.NAMES[1],str(notice_log)],env=env,capture_output=True,text=True,timeout=40)
+        result=subprocess.run(['php','-d','allow_url_fopen=0','-d','disable_functions=curl_init,curl_exec',str(driver),str(app),str(work/'mysql.sock'),owned.NAMES[1],str(notice_log),str(archived)],env=env,capture_output=True,text=True,timeout=40)
         if result.returncode or result.stderr:
             raise RuntimeError(result.stdout[-1000:]+'\n'+result.stderr[-4000:]+'\n'+(notice_log.read_text()[-4000:] if notice_log.exists() else ''))
         lines=notice_log.read_text().splitlines()
@@ -177,6 +260,12 @@ def main():
         report=json.loads(result.stdout);report['source_ref']=a.source_ref or 'current-source'
         report['checks']+=['actual thrown transport continues to independent targets with sanitized structured metadata','exception diagnostics contain no outgoing payload or raw exception text']
         report['cases']=len(report['checks']);report['sanitized_exception_metadata']=True;report['exception_continuation']=True
+        report.update({'concurrent_current_discovery_readers':True,'concurrent_notification_admission_discovery':True,
+            'notification_writer_contention_nonblocking':True,'exclusive_financial_admin_lock_defaults_preserved':True,
+            'exclusive_stored_receipt_lock_default_preserved':True,'archived_exclusive_reader_red':True,
+            'exclusive_reader_baseline_source':EXCLUSIVE_READ_BASE,
+            'unreadable_admission_defers_ack':True,'role_preference_writer_deferred_fanout':True,
+            'next_ordinary_delivery_after_admission_contention':True,'definitive_exclusion_complete':True})
     if a.report:a.report.write_text(json.dumps(report,ensure_ascii=False,indent=2)+'\n')
     print(json.dumps({k:v for k,v in report.items() if k!='checks'}))
 if __name__=='__main__':main()
