@@ -332,8 +332,8 @@ foreach(['user','admin']as$audience){$groups=require dirname(__DIR__).'/messages
  $shippingSides[$audience]=[];
  foreach($groups as$topic=>$entries)foreach($entries as$name=>$value)$shippingSides[$audience][$topic.'.'.$name]=$value;
 }
-$reviewSource='1e972234f0d4d3f799a39874536c342e5892a654';$reviewEntries=[];
-foreach(['user'=>['payment.api_payment.code_acknowledgement'],'admin'=>['manual_payment.api_payment.auto_approved','manual_payment.api_payment.code_evidence']]as$audience=>$keys){
+$reviewSource='16c1558322b578b8ca817f3c4b42818d57dcf161';$reviewEntries=[];
+foreach(['user'=>['payment.api_payment.code_acknowledgement','payment.api_payment.code_too_long'],'admin'=>['manual_payment.api_payment.auto_approved','manual_payment.api_payment.code_evidence','manual_payment.api_payment.code_used','manual_payment.api_payment.code_revoked','manual_payment.api_payment.code_expired','manual_payment.api_payment.code_mismatch']]as$audience=>$keys){
  $source=shell_exec('git show '.escapeshellarg($reviewSource.':messages/fa/'.$audience.'.php'));
  $begin=is_string($source)?strpos($source,'return ['):false;if($begin===false)throw new RuntimeException('review_catalog_source_missing');
  $groups=eval(substr($source,$begin));$flat=[];foreach($groups as$topic=>$entries)foreach($entries as$name=>$value)$flat[$topic.'.'.$name]=$value;

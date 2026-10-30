@@ -538,7 +538,7 @@ def main():
         copy_run=subprocess.run(['python3',str(ROOT/'tools/test_owner_r5_copy.py')],
                                 cwd=ROOT,check=True,timeout=180,capture_output=True,text=True)
         copy_proof=json.loads(copy_run.stdout)
-        required_copy={'status':'PASS','changes':273,'retired':10,'added':60,'current_keys':2775,
+        required_copy={'status':'PASS','changes':273,'retired':10,'added':60,'current_keys':2780,
                        'r5_negative_controls':5,'persian_prose_start_violations':0,
                        'duplicate_heading_markers':0,'guide_provider_cases':2,'guide_JSON_examples':3,
                        'actual_HTML_transport_cases':2,'archived_wrong_parse_RED':True,
@@ -841,14 +841,18 @@ def main():
             'failed_primary_receipt_delivery_keeps_pending_and_no_http',
             'receipt_retry_same_evidence_delivers_before_sms_auto_approval',
             'gift_api_off_still_requires_original_image_without_http',
-            'gift_code_original_caption_copyable_private_wallet',
-            'gift_code_original_caption_copyable_private_standard',
-            'gift_code_original_caption_copyable_private_custom',
-            'gift_code_original_caption_copyable_private_bulk',
-            'gift_code_original_caption_copyable_private_renew',
-            'gift_code_original_caption_copyable_private_day',
-            'gift_code_original_caption_copyable_private_volume',
-            'gift_code_original_caption_copyable_private_external',
+            'gift_generated_button_original_caption_copyable_private_wallet',
+            'gift_generated_button_original_caption_copyable_private_standard',
+            'gift_generated_button_original_caption_copyable_private_custom',
+            'gift_generated_button_original_caption_copyable_private_bulk',
+            'gift_generated_button_original_caption_copyable_private_renew',
+            'gift_generated_button_original_caption_copyable_private_day',
+            'gift_generated_button_original_caption_copyable_private_volume',
+            'gift_generated_button_original_caption_copyable_private_external',
+            'external_renewal_bank_generated_button_uses_buy_receipt_route',
+            'gift_zero_string_is_valid_text_evidence',
+            'oversized_code_rejected_before_storage_or_delivery_claim',
+            'whole_message_capacity_entities_and_supplementary_boundary',
             'saved_code_and_failed_primary_delivery_never_verify_or_consume',
             'gift_real_code_review_precedes_auto_approval_and_stale_human_no_recredit',
             'unsubmitted_invoices_do_not_starve_reviewed_background_work',
@@ -895,6 +899,8 @@ def main():
             'gift_used_distinct_same_code_reads_state',
             'gift_revoked_distinct_same_code_reads_state',
             'gift_expired_distinct_same_code_reads_state',
+            'invalid_code_projection_real_human_approve_wins_without_stale_actions',
+            'invalid_code_projection_real_human_decline_wins_without_stale_actions',
             'gift_inflight_review_status_has_no_fresh_code_invitation',
             'unknown_code_encrypted_review_different_code_fenced',
             'actual_gift_issuer_uses_familiar_submission_button',
@@ -1540,10 +1546,10 @@ def main():
                 and text_catalog.get("retired_parser_tokens")==23
                 and text_catalog.get("relocation_source_ref")=="ecd30ba9192ed374703118a6c131be8809cc7b06"
                 and text_catalog.get("native",{}).get("current_retired_feature_keys")==3
-                and text_catalog.get("catalog_keys")==2775
+                and text_catalog.get("catalog_keys")==2780
                 and text_catalog.get("native",{}).get("editable_catalog_files")==2
                 and text_catalog.get("native",{}).get("logical_topics")==27
-                and text_catalog.get("native",{}).get("current_catalog_keys")==2775
+                and text_catalog.get("native",{}).get("current_catalog_keys")==2780
                 and text_catalog.get("native",{}).get("current_gift_admin_additions")==1
                 and text_catalog.get("native",{}).get("current_gift_catalog_negative_controls")==8
                 and text_catalog.get("native",{}).get("current_gift_catalog_negative_scenarios")==[
@@ -1563,7 +1569,7 @@ def main():
                 and text_catalog["native"]["current_byte_preserved_keys"]
                     +text_catalog["native"]["current_style_changes"]
                     +text_catalog["native"]["current_added_admin_keys"]==2523
-                and text_catalog.get("native",{}).get("current_native_template_assertions")==4115
+                and text_catalog.get("native",{}).get("current_native_template_assertions")==4120
                 and text_catalog.get("native",{}).get("current_object_conversion_templates")==268
                 and text_catalog.get("native",{}).get("current_shared_multi_parameter_templates")==66
                 and text_catalog.get("native",{}).get("current_one_pass_templates")==268
@@ -1574,7 +1580,7 @@ def main():
                 and text_catalog.get("native",{}).get("current_non_ascii_digit_templates")==0
                 and text_catalog.get("presentation",{}).get("status")=="PASS"
                 and text_catalog.get("presentation",{}).get("editable_files")==2
-                and text_catalog.get("presentation",{}).get("current_keys")==2775
+                and text_catalog.get("presentation",{}).get("current_keys")==2780
                 and text_catalog.get("presentation",{}).get("numeric_template_changes")==23
                 and text_catalog.get("presentation",{}).get("adjacent_emoji_violations")==0
                 and text_catalog.get("presentation",{}).get("parameter_exception_count")==3
@@ -1596,10 +1602,10 @@ def main():
                 and text_catalog.get("presentation",{}).get("recipient_total_source_layer_negative_controls")==14):
             raise RuntimeError("Pre-style relocation or current two-file/audience/presentation proof incomplete")
         required_api_catalog={
-            'runtime_references':2448,
+            'runtime_references':2453,
             'api_referenced_keys':68,
             'api_dynamic_source_paths':2,
-            'api_reference_source_commit':'1e972234f0d4d3f799a39874536c342e5892a654',
+            'api_reference_source_commit':'16c1558322b578b8ca817f3c4b42818d57dcf161',
             'api_retained_unreferenced_keys':18,
             'api_reference_negative_controls':6,
         }

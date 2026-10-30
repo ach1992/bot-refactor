@@ -91,6 +91,8 @@ if($op==='issue')$value=achbotManualClaim($connection,$pay,$spec['method']??'ban
 elseif($op==='route'){$from_id=(int)($spec['actor']??1001);$chat_id=(int)($spec['chat']??$from_id);$data=(string)($spec['data']??'');$text=$spec['text']??null;$callbackId='fixture-callback';$userInfo=['step'=>$spec['step']??'none'];$value=require $root.'/src/Finance/Routes/ApiPayments.php';}
 elseif($op==='initial_step')$value=achbotApiPaymentInitialStep($connection,$pay['hash_id'],'legacy-gift-step');
 elseif($op==='budget'){$deadline=hrtime(true)/1000000000+(float)$spec['seconds'];$GLOBALS['achbotPaymentEvidenceDeadline']=$deadline;$value=['status'=>achbotApiPaymentCheck($connection,$id),'restored'=>($GLOBALS['achbotPaymentEvidenceDeadline']??null)===$deadline];unset($GLOBALS['achbotPaymentEvidenceDeadline']);}
+elseif($op==='review_keys')$value=json_decode(achbotApiPaymentReviewKeyboard($pay),true);
+elseif($op==='fits')$value=achbotManualGiftReviewFits($spec['caption'],$spec['code']);
 elseif($op==='rawsave')$value=achbotPaymentEvidenceSaveGiftCode($connection,$id,1001,$spec['code']);
 elseif($op==='save'){$value=achbotPaymentEvidenceSaveGiftCode($connection,$id,1001,$spec['code']);if(($value['status']??'')==='saved'){$v=achbotManualBeginEvidence($connection,$pay,'gift_card',1001,$spec['code']);if(!$v||!achbotManualFinishEvidence($connection,$pay['hash_id'],$spec['code'],$v,222,9001))throw new RuntimeException('fixture_gift_review_delivery_failed');}}
 elseif($op==='check')$value=achbotApiPaymentCheck($connection,$id);
@@ -149,7 +151,17 @@ function alert(...$args){answerCallbackQuery(...$args);}
 function setUser($step='none',$field='step'){$GLOBALS['events'][]=['event'=>'STATE','step'=>$step];}
 function sendPhoto(...$args){$GLOBALS['events'][]=['event'=>'PHOTO'];if(!empty($GLOBALS['spec']['photo_api']))achbotApiPaymentCheck($GLOBALS['connection'],(int)$GLOBALS['spec']['pay']);return(object)['ok'=>true,'result'=>(object)['message_id'=>456]];}
 """)
-        php=php.replace("function editKeys(...$args) {\n    $GLOBALS['events'][]=['event'=>'EDIT_KEYS','state'=>fixtureState()];\n}","function editKeys(...$args){$GLOBALS['events'][]=['event'=>'EDIT_KEYS','state'=>fixtureState(),'chat'=>$args[2]??null,'keys'=>$args[0]??null];return !empty($GLOBALS['spec']['fail_staff'])?null:(object)['ok'=>true];}")
+        php=php.replace("function editKeys(...$args) {\n    $GLOBALS['events'][]=['event'=>'EDIT_KEYS','state'=>fixtureState()];\n}","""function editKeys(...$args){$GLOBALS['events'][]=['event'=>'EDIT_KEYS','state'=>fixtureState(),'chat'=>$args[2]??null,'keys'=>$args[0]??null];if(!empty($GLOBALS['spec']['staff_decision']) && empty($GLOBALS['staff_decision_once'])){
+ $GLOBALS['staff_decision_once']=true;$p=achbotApiPaymentRow($GLOBALS['connection'],(int)$GLOBALS['spec']['pay']);
+ if($GLOBALS['spec']['staff_decision']==='approve')achbotApproveManualWalletTopup($GLOBALS['connection'],$p['hash_id'],9001,9001);
+ else {
+  $connection=$GLOBALS['connection'];$admin=9001;$buttonValues=$GLOBALS['buttonValues'];$mainValues=$GLOBALS['mainValues'];$botUsername='FixtureBot';
+  $hadActor=array_key_exists('from_id',$GLOBALS);$oldActor=$GLOBALS['from_id']??null;$GLOBALS['from_id']=9001;
+  $from_id=9001;$chat_id=9001;$message_id=222;$data='';$text='Synthetic administrator rejection';$userInfo=['step'=>'declineActionReason_'.$p['hash_id'].'_222'];
+  try{require $GLOBALS['root'].'/src/Finance/Routes/ManualReceipts.php';}finally{if($hadActor)$GLOBALS['from_id']=$oldActor;else unset($GLOBALS['from_id']);}
+ }
+}
+return !empty($GLOBALS['spec']['fail_staff'])?null:(object)['ok'=>true];}""")
         php=php.replace("return (object)['ok'=>true];\n}\nfunction editKeys", "return (object)['ok'=>true,'result'=>(object)['message_id'=>456]];\n}\nfunction editKeys")
         php=php.replace("    if ($strict!==true) throw new RuntimeException('non_strict_remote_get');", "    if((int)$GLOBALS['connection']->query('SELECT @@in_transaction')->fetch_row()[0]!==0)throw new RuntimeException('fixture_native_get_under_financial_lock');\n    if(str_starts_with($name,'api_edit'))return(object)['username'=>$name,'status'=>'active','expire'=>1900000000,'data_limit'=>10737418240,'used_traffic'=>0];\n    if ($strict!==true) throw new RuntimeException('non_strict_remote_get');")
         # Controlled process-loss injection in disposable source, never runtime hooks.
@@ -211,6 +223,14 @@ function sendPhoto(...$args){$GLOBALS['events'][]=['event'=>'PHOTO'];if(!empty($
         gift_subjects=[('wallet','INCREASE_WALLET',0,0,0,1,'wallet','waitIncreaseWalletGiftReceipt'),('standard','BUY_SUB',0,0,0,1,'checkout','waitBuyGiftReceipt'),('custom','BUY_SUB',0,12,3,1,'checkout','waitCustomGiftReceipt'),('bulk','BUY_SUB',0,0,0,2,'checkout','waitBuyGiftReceipt'),('renew','RENEW_ACCOUNT',caption_oid,0,0,1,'renewal','waitRenewGiftReceipt'),('day',f'INCREASE_DAY_{caption_oid}_1',caption_oid,4,0,1,'extension','waitIncreaseDayGiftReceipt'),('volume',f'INCREASE_VOLUME_{caption_oid}_1',caption_oid,0,5,1,'extension','waitIncreaseVolumeGiftReceipt'),('external','RENEW_SCONFIG',0,0,0,1,'checkout','waitBuyGiftReceipt')]
         for label,kind,order,days,volume,count,route,step in gift_subjects:
             key='caption'+label;n=seed(key,kind,method='gift_card',days=days,volume=volume,count=count,order=order)
+            query(work,env,f"UPDATE pays SET request_date=UNIX_TIMESTAMP()-172800 WHERE id<>{n}")
+            tracked=call(op='track',pay=n)
+            invoices=[e['data'] for e in tracked['events'] if e.get('event')=='BOT' and e.get('method')=='editMessageText']
+            assert invoices,(label,tracked)
+            callback=json.loads(invoices[-1]['reply_markup'])['inline_keyboard'][0][0]['callback_data']
+            clicked=run(work,env,app,human_driver,url,route=route,data=callback,actor=1001)
+            steps=[e['step'] for e in clicked['events'] if e.get('name')=='setUser']
+            assert not clicked.get('fatal') and step+key in steps,(label,callback,clicked)
             code='CODE<&>'+label;offset=len(APIs.received);APIs.mode='offline'
             r=run(work,env,app,human_driver,url,route=route,step=step+key,actor=1001,update={'message':{'text':code}})
             assert not r.get('fatal') and state(n)=='have_sent', (label,r)
@@ -219,7 +239,31 @@ function sendPhoto(...$args){$GLOBALS['events'][]=['event'=>'PHOTO'];if(!empty($
             keys=json.loads(reviews[0]['args'][1]);assert any('declineAction_'+key==b.get('callback_data') for row in keys['inline_keyboard'] for b in row),(label,r)
             assert not any(e.get('name')=='sendPhoto' for e in r['events']) and 'receipt_file_id' not in query(work,env,f'SELECT checkout_url FROM payment_attempts WHERE pay_row_id={n}'),(label,r)
             assert code not in query(work,env,f'SELECT evidence_code FROM payment_attempts WHERE pay_row_id={n}')
-            cases.append('gift_code_original_caption_copyable_private_'+label)
+            cases.append('gift_generated_button_original_caption_copyable_private_'+label)
+        # External renewal uses the Buy receipt route for both evidence types.
+        n=seed('externalbankbutton','RENEW_SCONFIG',reviewed=False);key='externalbankbutton'
+        tracked=call(op='track',pay=n);invoices=[e['data'] for e in tracked['events'] if e.get('event')=='BOT' and e.get('method')=='editMessageText']
+        callback=json.loads(invoices[-1]['reply_markup'])['inline_keyboard'][0][0]['callback_data']
+        query(work,env,f"UPDATE pays SET request_date=UNIX_TIMESTAMP()-172800 WHERE id<>{n}")
+        clicked=run(work,env,app,human_driver,url,route='checkout',data=callback,actor=1001)
+        assert not clicked.get('fatal') and any(e.get('step')=='waitBuyCartReceipt'+key for e in clicked['events']),clicked
+        cases.append('external_renewal_bank_generated_button_uses_buy_receipt_route')
+        # Numeric zero follows the nullable text contract, with no fake photo.
+        n=seed('zerocode',method='gift_card');APIs.mode='offline'
+        r=run(work,env,app,human_driver,url,route='wallet',step='waitIncreaseWalletGiftReceiptzerocode',actor=1001,update={'message':{'text':'0'}})
+        assert not r.get('fatal') and state(n)=='have_sent' and any('<code>0</code>' in str(e.get('args')) for e in r['events']),r
+        cases.append('gift_zero_string_is_valid_text_evidence')
+        n=seed('oversizedcode',method='gift_card');offset=len(APIs.received)
+        r=run(work,env,app,human_driver,url,route='wallet',step='waitIncreaseWalletGiftReceiptoversizedcode',actor=1001,update={'message':{'text':'A'*4096}})
+        assert not r.get('fatal') and state(n)=='pending' and len(APIs.received)==offset,r
+        assert query(work,env,f"SELECT evidence_code IS NULL AND stage='pending' AND review_notice_claim_token IS NULL FROM payment_attempts WHERE pay_row_id={n}")=='1'
+        assert any('در یک پیام جا نمی' in str(e.get('args')) for e in r['events']),r
+        cases.append('oversized_code_rejected_before_storage_or_delivery_claim')
+        caption='<b>سفارش 😀</b>';label='کد گیفت‌کارت:'
+        limit=4096-len(('سفارش 😀'+'\n\n'+label+'\n').encode('utf-16-le'))//2
+        assert call(op='fits',pay=n,caption=caption,code='&'*limit)['result'] is True
+        assert call(op='fits',pay=n,caption=caption,code='&'*(limit+1))['result'] is False
+        cases.append('whole_message_capacity_entities_and_supplementary_boundary')
         APIs.mode='ok';APIs.rows={}
         n=seed('giftlivecaption',method='gift_card');gift('valid-route-code');offset=len(APIs.received)
         assert call(op='rawsave',pay=n,code='valid-route-code')['result']['status']=='saved'
@@ -359,8 +403,26 @@ function sendPhoto(...$args){$GLOBALS['events'][]=['event'=>'PHOTO'];if(!empty($
             n=seed(label,'BUY_SUB',method='gift_card',days=days,volume=vol,count=count);gift(label);assert call(op='save',pay=n,code=label)['result']['status']=='saved';r=call(pay=n);assert r['result']=='confirmed',(label,r)
             assert int(query(work,env,f"SELECT COUNT(*) FROM service_effects WHERE pay_row_id={n} AND effect_kind='create' AND state='local_recorded'"))==count;assert query(work,env,f'SELECT COUNT(*) FROM bank_buy_invoice_claims WHERE pay_row_id={n}')=='0';cases.append(label+'_proof_uses_genuine_create_without_bank009')
         for label in ['used','revoked','expired']:
-            n=seed('gift'+label,method='gift_card');gift(label,status='redeemed' if label=='used' else label);assert call(op='save',pay=n,code=label)['result']['status']=='saved';assert call(pay=n)['result']==label
-            before=len(APIs.events);assert call(pay=n)['result']==label and len(APIs.events)==before;assert APIs.cards[label]['status']==('redeemed' if label=='used' else label);cases.append('gift_'+label+'_distinct_same_code_reads_state')
+            n=seed('gift'+label,method='gift_card');gift(label,status='redeemed' if label=='used' else label);assert call(op='save',pay=n,code=label)['result']['status']=='saved';invalid=call(pay=n);assert invalid['result']==label
+            rendered=[json.loads(e['keys']) for e in invalid['events'] if e.get('event')=='EDIT_KEYS']
+            assert rendered and any(b.get('callback_data')=='approvePaymentgift'+label for row in rendered[-1]['inline_keyboard'] for b in row),invalid
+            assert any(b.get('callback_data')=='declineAction_gift'+label for row in rendered[-1]['inline_keyboard'] for b in row),invalid
+            reason={'used':'قبلاً مصرف','revoked':'باطل','expired':'منقضی'}[label];assert reason in json.dumps(rendered[-1],ensure_ascii=False),invalid
+            before=len(APIs.events);invalid=call(pay=n);assert invalid['result']==label and len(APIs.events)==before;keys=[e.get('keys','') for e in invalid['events'] if e.get('event')=='EDIT_KEYS'];assert keys or query(work,env,f'SELECT evidence_staff_digest IS NOT NULL FROM payment_attempts WHERE pay_row_id={n}')=='1';assert APIs.cards[label]['status']==('redeemed' if label=='used' else label);cases.append('gift_'+label+'_distinct_same_code_reads_state')
+        for decision in ['approve','decline']:
+            key='staffrace'+decision;n=seed(key,method='gift_card');gift(key,status='redeemed');assert call(op='save',pay=n,code=key)['result']['status']=='saved'
+            before=int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'));r=call(pay=n,staff_decision=decision)
+            assert state(n)==('approved' if decision=='approve' else 'declined'),r
+            projected=[json.loads(e['keys']) for e in r['events'] if e.get('event')=='EDIT_KEYS']
+            assert projected and not any(str(b.get('callback_data','')).startswith(('approvePayment','declineAction_')) for row in projected[-1]['inline_keyboard'] for b in row),r
+            assert int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'))==before+(101 if decision=='approve' else 0),r
+            assert query(work,env,f'SELECT evidence_staff_digest IS NOT NULL FROM payment_attempts WHERE pay_row_id={n}')=='1'
+            stale=call(op='route',pay=n,data='apiReview_'+key,actor=9001)
+            messages=[e['text'] for e in stale['events'] if e.get('event')=='MESSAGE']
+            # The shared keyboard is independently inspected, since the narrow
+            # MESSAGE spy records text only; no financial action may be rebuilt.
+            assert call(op='review_keys',pay=n)['result']['inline_keyboard'] and 'approvePayment' not in json.dumps(call(op='review_keys',pay=n)['result'])
+            cases.append('invalid_code_projection_real_human_'+decision+'_wins_without_stale_actions')
         n=seed('giftunknown',method='gift_card');assert call(op='save',pay=n,code='unknown')['result']['status']=='saved';r=call(pay=n);assert r['result']=='review',r
         # Real typed text evidence has an acknowledged current staff delivery and no fake photo.
         view=call(op='view',pay=n)['result'];assert 'apiGift_' not in json.dumps(view['keys']) and 'تصویر' not in view['text'];cases.append('gift_inflight_review_status_has_no_fresh_code_invitation')

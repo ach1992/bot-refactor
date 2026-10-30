@@ -79,7 +79,7 @@ API_RESULT='df00c13da1e38e2ba364ab48e31db66f8705b2c2'
 API_COMMITS=['2633ac3c21c539635c228dd31df2e07caee491d0',
              '2c685f5a9621a808c44a4c012b04c8ccd97102af',API_RESULT]
 API_AUTH='https://github.com/ach1992/bot-refactor/issues/57#issuecomment-6514754219'
-REVIEW_SOURCE='1e972234f0d4d3f799a39874536c342e5892a654'
+REVIEW_SOURCE='16c1558322b578b8ca817f3c4b42818d57dcf161'
 API_RETAINED={'payment.api_payment.completed',
               'manual_payment.api_payment.review_staff','manual_payment.api_payment.automatic_status',
               'manual_payment.api_payment.status_monitoring'}
@@ -127,7 +127,7 @@ def gift_catalog_negative_controls(sides):
     return len(controls)
 def review_catalog_restore(sides):
     before=api_catalog_snapshot(API_RESULT);after=api_catalog_snapshot(REVIEW_SOURCE)
-    keys={'user':{'payment.api_payment.code_acknowledgement'},'admin':{'manual_payment.api_payment.auto_approved','manual_payment.api_payment.code_evidence'}}
+    keys={'user':{'payment.api_payment.code_acknowledgement','payment.api_payment.code_too_long'},'admin':{'manual_payment.api_payment.auto_approved','manual_payment.api_payment.code_evidence','manual_payment.api_payment.code_used','manual_payment.api_payment.code_revoked','manual_payment.api_payment.code_expired','manual_payment.api_payment.code_mismatch'}}
     restored=copy.deepcopy(sides)
     for audience,added in keys.items():
         # The gift-report layer is independently admitted below.
@@ -135,7 +135,7 @@ def review_catalog_restore(sides):
         for key in added:
             check(sides[audience].get(key)==after[audience][key] and key not in sides['admin'if audience=='user'else'user'],'review_catalog_value_parameters_or_audience_drift:'+key)
             restored[audience].pop(key)
-    return restored,{'review_added_keys':3,'review_added_user_keys':1,'review_added_admin_keys':2,'review_source':REVIEW_SOURCE}
+    return restored,{'review_added_keys':8,'review_added_user_keys':2,'review_added_admin_keys':6,'review_source':REVIEW_SOURCE}
 
 def verify_api_and_restore(sides,definition=None):
     sides,review_proof=review_catalog_restore(sides)
@@ -235,7 +235,7 @@ def api_consumer_snapshot(path,ref=API_SOURCE):
     return command('git','show',ref+':'+path).decode()
 REVIEW_DYNAMIC={
  'src/Finance/PaymentApiAdmin.php':API_DYNAMIC['src/Finance/PaymentApiAdmin.php'],
- 'src/Finance/ApiPayments.php':{'manual_payment.api_payment.status_':['manual_payment.api_payment.status_'+s for s in ['confirmed','settled','review','uncertain','evidence_only']]},
+ 'src/Finance/ApiPayments.php':{'manual_payment.api_payment.code_':['manual_payment.api_payment.code_'+s for s in ['used','revoked','expired','mismatch']],'manual_payment.api_payment.status_':['manual_payment.api_payment.status_'+s for s in ['confirmed','settled','review','uncertain','evidence_only']]},
  'src/Finance/Routes/ApiPayments.php':{},
 }
 def api_source_references(path,source):
