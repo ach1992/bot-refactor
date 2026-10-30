@@ -430,8 +430,7 @@ function achbotAutoRenewAlertReview(mysqli $db, $adminChatId): void {
             $sent=false;
             try {
                 $notices=achbotNotifyAdmins('sendMessage', ['text'=>$msg], ['primary'=>$adminChatId,'report_channel'=>null]);
-                $reply=$notices[0]['response']??null;
-                $sent=is_object($reply) && ($reply->ok??false)===true;
+                $sent=achbotAdminFanoutAcknowledged($notices);
             } catch (Throwable $ignored) {}
             if ($sent) {
                 $stmt=$db->prepare("UPDATE automatic_renewal_attempts

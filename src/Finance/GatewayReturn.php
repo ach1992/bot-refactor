@@ -287,8 +287,7 @@ function achbotNpAlertOperator(mysqli $connection, $adminChatId,
         ]]],JSON_UNESCAPED_UNICODE);
         try {
             $notices=achbotNotifyAdmins('sendMessage', ['text'=>$message,'reply_markup'=>$keyboard,'parse_mode'=>'HTML'], ['primary'=>$adminChatId,'report_channel'=>null]);
-            $sent=$notices[0]['response']??null;
-            if (!is_object($sent) || empty($sent->ok)) {
+            if (!achbotAdminFanoutAcknowledged($notices)) {
                 $counts['failed']++;
             } else {
                 // The old notification must NOT acknowledge a later child

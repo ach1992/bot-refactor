@@ -11,7 +11,7 @@ ROOT=Path(__file__).resolve().parents[1]
 def router_definition() -> str:
     return subprocess.check_output([
         'php','-r',
-        "require $argv[1]; echo achbotExtractFunction($argv[2], 'achbotNotifyAdmins');",
+        "require $argv[1]; echo achbotExtractFunction($argv[2], 'achbotAdminFanoutAcknowledged'), \"\\n\", achbotExtractFunction($argv[2], 'achbotNotifyAdmins');",
         str(ROOT/'tools/source_scan.php'),str(ROOT/'config.php')
     ],cwd=ROOT,text=True)
 

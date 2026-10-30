@@ -3836,6 +3836,16 @@ function achbotNotifyAdmins($method, array $data, array $options = []): array {
     return $results;
 }
 
+/** Durable notice markers acknowledge only the complete eligible fanout. */
+function achbotAdminFanoutAcknowledged(array $notices): bool {
+    if ($notices===[]) return false;
+    foreach ($notices as $notice) {
+        $response=$notice['response']??null;
+        if (!is_object($response) || ($response->ok??false)!==true) return false;
+    }
+    return true;
+}
+
 function sendToAllAdmins($method, $data, $pay_hash_id = null, $options = []){
     global $admin, $connection;
 
