@@ -301,7 +301,7 @@ def main():
         copy_run=subprocess.run(['python3',str(ROOT/'tools/test_owner_r5_copy.py')],
                                 cwd=ROOT,check=True,timeout=180,capture_output=True,text=True)
         copy_proof=json.loads(copy_run.stdout)
-        required_copy={'status':'PASS','changes':273,'retired':10,'added':60,'current_keys':2685,
+        required_copy={'status':'PASS','changes':273,'retired':10,'added':60,'current_keys':2771,
                        'r5_negative_controls':5,'persian_prose_start_violations':0,
                        'duplicate_heading_markers':0,'guide_provider_cases':2,'guide_JSON_examples':3,
                        'actual_HTML_transport_cases':2,'archived_wrong_parse_RED':True,
@@ -320,6 +320,22 @@ def main():
                        'composition_scope':'source_expression_wallet_finance_receipt_support_admin_stats_matrix'}
         if any(copy_proof.get(key)!=value for key,value in required_copy.items()):
             raise RuntimeError('Owner R5 Persian copy/HTML proof incomplete')
+        required_api_copy={
+            'r5_current_keys':2685,
+            'api_added_keys':86,
+            'api_added_user_keys':22,
+            'api_added_admin_keys':64,
+            'api_baseline_keys':2685,
+            'api_current_keys':2771,
+            'api_retained_unreferenced_keys':4,
+            'api_catalog_negative_controls':14,
+            'routed_message_expression_cases':6,
+            'routed_message_expression_negative_controls':12,
+            'routed_checkout_expression_preserved':True,
+        }
+        if any(type(copy_proof.get(key)) is not type(value) or copy_proof.get(key)!=value
+               for key,value in required_api_copy.items()):
+            raise RuntimeError('Current API catalog additions or retained R5 copy proof incomplete')
         owner_r5['copy']=copy_proof
         # Issue #57: current event-aware notification routing and existing
         # receipt convergence, after every unaffected Owner R5 proof above.
@@ -1106,10 +1122,10 @@ def main():
                 and text_catalog.get("retired_parser_tokens")==23
                 and text_catalog.get("relocation_source_ref")=="ecd30ba9192ed374703118a6c131be8809cc7b06"
                 and text_catalog.get("native",{}).get("current_retired_feature_keys")==3
-                and text_catalog.get("catalog_keys")==2685
+                and text_catalog.get("catalog_keys")==2771
                 and text_catalog.get("native",{}).get("editable_catalog_files")==2
                 and text_catalog.get("native",{}).get("logical_topics")==26
-                and text_catalog.get("native",{}).get("current_catalog_keys")==2685
+                and text_catalog.get("native",{}).get("current_catalog_keys")==2771
                 and text_catalog.get("native",{}).get("current_management_added_keys")==112
                 and text_catalog.get("native",{}).get("current_catalog_binding_paths")==2
                 and text_catalog.get("native",{}).get("current_catalog_binding_entries")==4
@@ -1123,10 +1139,10 @@ def main():
                 and text_catalog["native"]["current_byte_preserved_keys"]
                     +text_catalog["native"]["current_style_changes"]
                     +text_catalog["native"]["current_added_admin_keys"]==2523
-                and text_catalog.get("native",{}).get("current_native_template_assertions")==3985
-                and text_catalog.get("native",{}).get("current_object_conversion_templates")==260
-                and text_catalog.get("native",{}).get("current_shared_multi_parameter_templates")==61
-                and text_catalog.get("native",{}).get("current_one_pass_templates")==260
+                and text_catalog.get("native",{}).get("current_native_template_assertions")==4101
+                and text_catalog.get("native",{}).get("current_object_conversion_templates")==266
+                and text_catalog.get("native",{}).get("current_shared_multi_parameter_templates")==65
+                and text_catalog.get("native",{}).get("current_one_pass_templates")==266
                 and text_catalog.get("native",{}).get("current_r5_changes")==273
                 and text_catalog.get("native",{}).get("current_r5_retired_keys")==10
                 and text_catalog.get("native",{}).get("current_r5_added_keys")==60
@@ -1134,7 +1150,7 @@ def main():
                 and text_catalog.get("native",{}).get("current_non_ascii_digit_templates")==0
                 and text_catalog.get("presentation",{}).get("status")=="PASS"
                 and text_catalog.get("presentation",{}).get("editable_files")==2
-                and text_catalog.get("presentation",{}).get("current_keys")==2685
+                and text_catalog.get("presentation",{}).get("current_keys")==2771
                 and text_catalog.get("presentation",{}).get("numeric_template_changes")==23
                 and text_catalog.get("presentation",{}).get("adjacent_emoji_violations")==0
                 and text_catalog.get("presentation",{}).get("parameter_exception_count")==3
@@ -1155,6 +1171,25 @@ def main():
                 and text_catalog.get("presentation",{}).get("recipient_staff_layer_negative_controls")==4
                 and text_catalog.get("presentation",{}).get("recipient_total_source_layer_negative_controls")==14):
             raise RuntimeError("Pre-style relocation or current two-file/audience/presentation proof incomplete")
+        required_api_catalog={
+            'runtime_references':2458,
+            'api_referenced_keys':82,
+            'api_dynamic_source_paths':3,
+            'api_reference_source_commit':'259598e70b82bf1f144175b5fef4dd78ace25819',
+            'api_retained_unreferenced_keys':4,
+            'api_reference_negative_controls':6,
+        }
+        required_api_native_catalog={
+            'current_api_additions':86,
+            'current_api_user_additions':22,
+            'current_api_admin_additions':64,
+            'current_r5_catalog_keys':2685,
+        }
+        for section,proof,required in [('references',text_catalog,required_api_catalog),
+                ('native',text_catalog.get('native',{}),required_api_native_catalog)]:
+            if any(type(proof.get(key)) is not type(value) or proof.get(key)!=value
+                   for key,value in required.items()):
+                raise RuntimeError('Current API catalog source proof incomplete: '+section)
         copy_audience_output=subprocess.run(
             ["python3",str(ROOT/"tools/test_next_copy_audience.py")],
             cwd=ROOT,check=True,timeout=60,capture_output=True,text=True)
