@@ -1473,7 +1473,7 @@ def main():
                 and text_catalog.get("presentation",{}).get("recipient_total_source_layer_negative_controls")==14):
             raise RuntimeError("Pre-style relocation or current two-file/audience/presentation proof incomplete")
         required_api_catalog={
-            'runtime_references':2458,
+            'runtime_references':2459,
             'api_referenced_keys':82,
             'api_dynamic_source_paths':3,
             'api_reference_source_commit':'67aba2527f58c0efd844b3c52cd2469143fe9113',
