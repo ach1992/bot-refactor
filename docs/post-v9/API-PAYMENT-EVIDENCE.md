@@ -44,6 +44,8 @@ Protect credentials, policy snapshots and codes with purpose-separated authentic
 
 A real authenticated stored API proof supports the automatic local actor; actor0 alone never grants financial authority. Restarted processing must reuse the existing native journals. An uncertain dispatched native effect cannot be replayed as a new operation.
 
+Capture authenticated provider and native add-on eligibility outside SQL transactions, then compare the relevant local quote, connection and incarnation before and after the observation and under the financial claim. A stale local expiry cannot authorize an expired native volume add-on. Unknown/ineligible observations retain truthful review without a new native dispatch. A sealed, verified effect recovers locally without requiring a new native read or repeating its mutation.
+
 ## Notifications and message maintenance
 
 | Event | Owner | Manager receiving ON | Operator/Support receiving ON | Report channel |
@@ -58,13 +60,17 @@ Automatic reports identify customer, invoice, exact amount/unit, method, relevan
 
 Edit existing valid staff receipt copies to remove stale actions after either winner settles, even when their new-copy receiving preference is OFF. Exclude revoked, banned or ambiguous members. Direct responses to a currently authorized actor do not constitute unsolicited fanout. Financial action permissions remain unchanged.
 
+A temporarily unreadable staff authority record leaves its projection unacknowledged for the next ordinary maintenance pass. Definitively excluded recipients do not prevent completion. Durable renewal/gateway uncertainty alerts acknowledge the complete eligible fanout, including deferred admission and transport failures, while preserving their evidence-generation CAS and lease ownership.
+
 Use the two existing Persian catalogs. Separate payment verified/effect pending from completed service or wallet delivery. Show precise customer actions and avoid asking for another payment when the outcome is unknown. Projection maintenance must make bounded fair progress across invoices and survive Telegram failures/restarts.
 
 ## Native gift correction and remaining boundaries
 
 The companion source slice fixes direct gifts by retaining transient transport credentials without persisting them, preserving local expiry/notification metadata for quota-only changes and comparing time increases with the adapter's verified native baseline. This does not identify the cause, provider, installed version or actual outcome of the Owner's screenshots/request69. Never replay that uncertain gift or erase its evidence.
 
-Shared-local-reference gift anchor/notification policy and planless imported gift eligibility remain unresolved. Existing refusals are not relaxed by this payment feature.
+Verified numeric-zero Marzban expiry is supported for a pinned, finite-quota, volume-only gift; local expiry/notif are preserved and replay performs no second mutation. Duration edits and non-gift result validation retain their existing guards. PasarGuard zero-to-NULL semantics are unchanged. Existing held records are not cleared or replayed by this source correction.
+
+Shared registration is already accepted. Direct gifts for verified imported fileid0 and local checkpoints/customer notices for multiple references remain bounded source holds; eligible single-reference imports already use the bulk gift path. These remaining choices are not resolved by the payment feature.
 
 ## Acceptance and activation
 

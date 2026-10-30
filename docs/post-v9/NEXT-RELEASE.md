@@ -2,7 +2,7 @@
 
 ## Unreleased API payments, native gifts and notification routing
 
-The Owner resumed source work under [Issue57](https://github.com/ach1992/bot-refactor/issues/57). Native-gift and event-aware notification changes are isolated in [draft PR100](https://github.com/ach1992/bot-refactor/pull/100); existing-API bank/gift payment implementation is on `feature/existing-payment-apis`. These branches are not merged, published or installed. Composed exact-candidate checks and independent review remain pending.
+The Owner resumed source work under [Issue57](https://github.com/ach1992/bot-refactor/issues/57). [PR101](https://github.com/ach1992/bot-refactor/pull/101) combines native-gift corrections, event-aware notification routing and existing-API bank/gift payments on `feature/existing-payment-apis`; PR100 retains the superseded component history. This source is not merged, published or installed. Corrected composed exact-candidate checks and independent review remain pending.
 
 The API increment adds four runtime modules and source-only additive migration014 on the shared payment ledger. It adds no provider-specific table or automatic migration. Both API switches default OFF; missing/partial API schema must fail that path closed while preserving legacy manual behavior. Follow [the current contract](API-PAYMENT-EVIDENCE.md) for exact full-amount SMS matching, ten-minute receipt fallback, code review, consumption-only late evidence and notification recipients. No plugin changes are prerequisites. The unrelated legacy automatic bank path and backup destination remain unchanged.
 
