@@ -1,112 +1,75 @@
-# API-assisted manual payment evidence
+# API-assisted manual payments
 
-This is the accepted source-development contract for [Issue57](https://github.com/ach1992/bot-refactor/issues/57), alongside financial acceptance [Issue26](https://github.com/ach1992/bot-refactor/issues/26) and payment UX [Issue51](https://github.com/ach1992/bot-refactor/issues/51). The API integration described here is **not implemented or enabled**. Published RC19 and installed acceptance remain separate.
+This is the current source-development contract for [Issue57](https://github.com/ach1992/bot-refactor/issues/57), alongside [Issue26](https://github.com/ach1992/bot-refactor/issues/26) and [Issue51](https://github.com/ach1992/bot-refactor/issues/51). Implementation and composed acceptance are in progress on `feature/existing-payment-apis`. This document does not establish installed behavior, authorize a migration, or enable an integration.
 
-## Outcome and boundaries
+## Scope and existing contracts
 
-Retain the existing manual bank-transfer and gift-card methods. Each gets an independent API verification switch and private connection settings in the existing Gateway/Channel Settings journey. OFF preserves the existing manual path. Do not repurpose or change the existing legacy card-transfer automatic acceptance path.
+Add optional verification to the existing manual bank-transfer and gift-card methods. Each has separate private API settings and an adjacent independent switch, absent/default OFF. OFF retains the original manual journey. The unrelated legacy automatic bank acceptance implementation remains unchanged.
 
-Use authenticated ACh Pay Manager SMS evidence and ACh Gift Cards for Woo code verification. Reuse the bot's shared payment attempts, transaction evidence and subject-specific settlement/effect pipeline. Neither an HTTP success nor a received code is proof of completed native service or wallet credit.
+Use the existing authenticated ACh Pay Manager v1 and ACh Gift Cards for Woo v2 APIs. Their ready/active-to-used/redeemed persistence is the selected consumption contract. No plugin change, new external invoice registry, exclusivity declaration, or mandatory filter wizard is a prerequisite. The bot remains the invoice authority. Dependency repositories and Blinko are read-only during this development.
 
-The dependency repositories and Blinko remain read-only during bot development. Live code verification itself can update external audit metadata; it is not a passive connectivity test. Actual client creation, configuration, real financial acceptance, installation, migrations, integration and publication keep their action-specific gates. Never replay completed012/013.
+Reuse shared `payment_attempts`, child `payment_transactions`, the real subject-specific local settlement claim and existing service-effect journals. An HTTP response, verified code, or payment confirmation is not proof of completed native delivery.
 
-## Bank-transfer journey
+## Bank-transfer matching and journey
 
-- Pin the API mode, nonsecret logical source/destination configuration and policy when the invoice is issued. Preserve the original exact transfer quote, account/holder, user, subject and order identity.
-- Initially show **Check payment**, without receipt submission. Both the bounded worker and an explicit customer check use the same persisted verification operation and lease.
-- At elapsed600 seconds from durable issuance, add **Submit bank receipt** to that existing invoice if no payment was recognized. Retain Check payment and continue automatic reconciliation after receipt upload.
-- The ten-minute fallback is not invoice expiry, proof of nonpayment or a retry deadline. Queued Telegram edits may arrive later; always render the latest financial state before editing.
-- Human approval and verified API settlement compete for the same authoritative local financial claim. A later matched SMS after human approval is evidence-only: no second wallet credit, service effect, capacity change or referral reward.
-- A late contradictory payment after human rejection remains reviewable. No silent reversal, refund or fulfillment is authorized without an accepted rule.
-- Require one admissible evidence item and one invoice across the complete eligible retained set, including receipt-submitted and manually approved invoices. Exact amount alone is insufficient: destination/source, units, reliable payment time, immutable identity, external reservation conflicts and consumption provenance matter.
+The original full invoice amount, including its randomized trailing three digits, is immutable. A candidate must equal that complete amount after exact, explicit rial/toman conversion. Never match only the suffix, regenerate the quote, round, or tolerate a difference. A different amount does not enter the invoice candidate list and must cause zero remote mutation.
 
-A generic external **used** status never proves that this invoice was paid. Unattributed manual consumption, missing reliable time, amount/source collisions or incomplete operation recovery must go to review.
+Read ready SMS only for new matching. Preserve immutable remote identity, configured source filters and reliable transfer time within the invoice's explicitly configured monitoring horizon. Missing/unparseable time, unsupported units and ambiguous same-amount local invoices remain unconfirmed. Optional timezone/calendar settings permit interpreting timestamps without an offset; ingestion time is not a substitute for transfer time. A used status alone never confirms an invoice.
 
-## Gift-card journey
+Initially show **Check payment** without receipt submission. At elapsed600 seconds from durable issuance, add **Submit bank receipt** by editing the existing invoice and retain checking. The fallback is not invoice expiry or evidence of nonpayment. Continue automatic reconciliation after receipt submission. UI projection must preserve the pinned exact amount and destination and must render the latest financial state after queued edits.
 
-- API ON replaces screenshot submission with **Submit gift-card code**. Inform the customer that sending the code authorizes consuming it for that invoice under the configured value policy.
-- Accept one immutable submission; repeat of the same code reads its status. A different code cannot replace an in-flight or uncertain operation.
-- Authenticate the exact signed request, verify card identity, effective status and the explicitly configured denomination/unit, then reserve and consume once. A verify result is not settlement.
-- Used, revoked and expired cards receive distinct clear messages. Unknown/not-found and unavailable verification use the support-review path without misrepresenting an outage as an invalid card.
-- A code-review case is genuine typed evidence. Never fabricate a photo/receipt ID to satisfy the existing image-only approval guard.
-- Protect a recoverable submitted bearer code until resolution; a digest alone cannot reproduce a lost consume request. Keep raw codes out of public diagnostics and general reports.
-- Mismatch, multiple-card, partial-value, excess-value and currency/denomination rules remain Owner decisions; do not infer them from the visible face-value label.
+Human approval and verified API settlement compete for the same authoritative local claim. A manually settled invoice is terminal for wallet credit, native effects, capacity and referral rewards. A later exact ready SMS can be consumed for evidence only; it must not reopen confirmation or repeat any effect. Already-used SMS do not re-enter new matching. Preserve records of original dispatch and consumption even after configuration changes.
 
-## Independent evidence and receipt state
+A manually rejected invoice followed by contradictory payment is reviewable. Do not silently reverse rejection, refund or fulfill it. After automatic monitoring ends, retain the manual invoice/review journey; monitoring policy is separate from the ten-minute fallback.
 
-The receipt workflow and API verification run concurrently. Preserve separate persisted axes rather than overwriting receipt delivery stage, its claim token or its lease with polling state.
+## Gift-card matching and journey
 
-Before an external mutation, durably save the unique evidence identity, immutable expected snapshot, exact operation key/reference and dispatched intent. A timeout, HTTP5xx or lease expiry is not permission to create a new key or consume a second time. Recovery must distinguish the original committed operation from the evidence's current externally editable status.
+API ON replaces screenshot submission with **Submit gift-card code**. Explain that sending the code permits its consumption for the current invoice. Persist the recoverable code encrypted before verification. Do not log or include it in general reports or channel notifications.
 
-The existing bank-buy009 fingerprint includes the attempt's payment_id, provider_reference and stable destination intent. Adding an SMS ID to those fields later or inserting mutable API fields into checkout_url would invalidate issued evidence. New source evidence belongs in child transactions or separately pinned additive fields, with no historical backfill.
+The monetary field is canonical `redeem_amount` only. `display_amount`, `face_value` and a label are not funding evidence. Require an explicitly configured rial/toman unit. The conservative source implementation accepts one exact-value card; partial funding, multiple cards and excess wallet credit are not inferred. Optional game/value filters restrict eligible products without replacing the exact amount check.
 
-Existing shared table uniqueness is reusable, but durable verification-policy, operation/outcome/snapshot and protected code recovery are real persistence gaps. Any justified additive migration must be reviewed and rehearsed separately; no new provider-specific invoice/account registry is assumed.
+Used, revoked and expired codes receive distinct messages. A definitely invalid or mismatched unconsumed code may be replaced. A different code cannot overwrite an in-flight, uncertain or manually reviewable submission. A repeated identical code reads the existing result.
 
-## Interoperability requirements
+Unknown/not-found or unavailable verification enters genuine typed-code manual review. Distinguish saved/queued evidence from delivered staff review, and do not misrepresent an outage as a known invalid card. Authorized current receipt-review staff can retrieve the protected code privately and use the existing human approval/rejection authority. Never invent `receipt_file_id` or impersonate an administrator to satisfy a photo-only guard.
 
-The existing external APIs provide useful authenticated read/consume operations, but their current contracts do not establish all required shared-destination and lifecycle-recovery guarantees.
+## Durable consumption and recovery
 
-Before enabling a shared bank destination, the external consumption boundary must coordinate with active WooCommerce reservations and all other consumption channels. It must bind the exact bot business/operation reference and immutable evidence expectations, retain attributable original operation proof, and refuse ambiguous conflicts. Prefer a conditional-consume extension with explicit conflict quarantine. It must check retained historical eligibility/assignment windows as well as active reservations, and synchronize all allocation/manual-consumption paths. Registering every external invoice in a new shared allocator is not necessary for safety when ambiguous collisions remain manual; do not create a second invoice authority merely for automatic-acceptance availability.
+Source-only additive migration014 extends the existing shared ledger with nullable evidence fields. It does not backfill old invoices, replace receipt stages/leases, create a provider registry, or alter issued009 identity pins. In particular, original `payment_id`, `provider_reference` and stable `checkout_url` facts remain immutable. API absence/partial schema fails the API path closed; unpinned manual paths remain usable.
 
-For gift recovery across manual unredeem/restore, bind operation identity to the authenticated client, card and consumption epoch, and retain original consumption proof separately from current card status. Without that proof, keep the outcome under review instead of retrying a new epoch.
+Before an external mutation, commit evidence identity, original expected snapshot, operation key/reference and dispatched intent. Perform network requests outside SQL transactions. Same-operation retries keep the original identity. Timeout, HTTP5xx, lease expiry or process restart is not permission to create a new consume operation.
 
-Normal bot credentials need read/verify/consume authority only. Undo, revoke, restore and privileged manual association are separate authorities. Keep secrets out of URLs, Git and logs; pin trusted HTTPS origins, validate redirects/response identity, use exact integer/decimal arithmetic and explicit unit conversion.
+Pay Manager saves action-idempotency responses for24 hours. Recovery outside the proven replay window remains reviewable instead of blindly executing an old uncertain action. For gift cards, use a new transport nonce for each request and retain the business reference. A card restored active after an uncertain consume is not permission to consume again; existing APIs cannot prove the original consumption epoch in that case.
 
-### Optional future dependency work — not a current prerequisite
+Protect credentials, policy snapshots and codes with purpose-separated authenticated encryption using the existing webhook secret. Credential edits affect new invoices; old invoices retain their pinned recovery configuration. Webhook-secret rotation requires a deliberate recovery plan: failed decryption does not silently turn a pinned invoice into a legacy one or discard its evidence. Validate trusted HTTPS endpoints, disable redirects, bound transport/response size, authenticate the exact signed request and use integer arithmetic.
 
-The bot remains the invoice authority. Extend the SMS consume contract with an explicitly versioned conditional mode: immutable business/operation reference and request digest; expected public evidence identity, monotonic revision, deposit direction, exact normalized amount/currency, destination/source mapping and reliable time snapshot. Under a common consumption/allocation fence, atomically refuse conflicting active **and retained historical** financial claims, then commit status, binding, audit and original operation result together. Add own-operation proof lookup. A restored-ready status or expired response cache must never let an old operation execute as a new payment.
+A real authenticated stored API proof supports the automatic local actor; actor0 alone never grants financial authority. Restarted processing must reuse the existing native journals. An uncertain dispatched native effect cannot be replayed as a new operation.
 
-For gift cards, scope durable operation identity to the authenticated stable client and bind card UUID, actor, business reference, expected denomination and consumption epoch. Return the original committed proof separately from current card status, including after an undo. Keep existing integrations compatible; no normal bot undo/override privilege is implied.
+## Notifications and message maintenance
 
-The Owner selected integration through the existing APIs; do not make these optional dependency enhancements a prerequisite for that integration. These are proposed additive dependency changes, not existing capabilities or authorization to modify either plugin. A new external invoice registry/shared quote allocator is unnecessary for the conservative implementation; conflicting or unprovable historical evidence remains manual.
-
-## Interface projections and message convergence
-
-Use complete Persian templates in messages/fa/user.php and operational/settings templates in messages/fa/admin.php. Preserve the existing simple sequential editor, current actor/revision guards, ASCII digits, escaping and exact copyable technical bytes.
-
-| State | Customer action / truthful outcome |
-| --- | --- |
-| Bank monitoring | Check payment; original invoice facts and exact transfer amount remain visible. |
-| Bank fallback due | Add Submit receipt, retain Check payment. |
-| Code received | Show processing only after durable acceptance; do not claim a screenshot was received. |
-| Support delivery queued | Distinguish saved evidence from delivered review request. |
-| Verification unavailable | Outcome is not yet known; never advise paying again. |
-| Money proven, effect pending | Payment verified; order completion under review. Remove payment/code submission actions. |
-| Effect completed | Show the proven subject-specific service or wallet result. |
-
-Current generic status synchronization skips awaiting-payment invoices and can replace full bank instructions with a price-only card. API waiting/fallback therefore needs an explicit projection preserving pinned facts, not an arbitrary provider_status string.
-
-Preserve stored customer message identities and existing staff receipt copies. A stale queued fallback cannot overwrite a later successful state. Failed Telegram delivery never rolls back a committed financial result; retry delivery with the current projection. Editing an existing receipt to remove stale actions is distinct from sending a new general notification.
-
-## Notification contract
-
-The current Owner request changes unsolicited fanout, without granting extra action permissions.
-
-| Event | Primary Owner | Manager with receiving ON | Operator/Support with receiving ON | Report channel |
+| Event | Owner | Manager receiving ON | Operator/Support receiving ON | Report channel |
 | --- | --- | --- | --- | --- |
-| General outcome/report | Yes | Yes | No | Where the event is intended for reports |
-| Automatic financial change | Yes | Yes | No | Yes, safe complete outcome report |
-| Actionable manual receipt/code review | Yes | Yes | Yes | Preserve the established evidence privacy boundary |
-| Private operational diagnostic | Yes | Yes | No | No private diagnostic leakage |
+| General report | Yes | Yes | No | Where intended |
+| Automatic financial change or evidence reconciliation | Yes | Yes | No | Safe complete report |
+| Actionable manual receipt/code review | Yes | Yes | Yes | Existing evidence privacy boundary |
+| Private diagnostic | Yes | Yes | No | No |
 | Backup archive | No new copy | No new copy | No new copy | Existing backup destination only |
 
-Current valid stored receipt recipients still get final status/button maintenance when their new-copy preference is OFF. Revoked, banned or ambiguous identities remain excluded. Direct responses to the actor currently using an authorized screen and customer messages are not unsolicited staff fanout.
+Automatic reports identify customer, invoice, exact amount/unit, method, relevant safe evidence/operation reference and truthful outcome. Report substantive state changes rather than every unchanged poll. Never leak bearer codes or credentials. Delivery failure cannot roll back a committed payment; retain retryable notification/projection state.
 
-## Current source package and retained exceptions
+Edit existing valid staff receipt copies to remove stale actions after either winner settles, even when their new-copy receiving preference is OFF. Exclude revoked, banned or ambiguous members. Direct responses to a currently authorized actor do not constitute unsolicited fanout. Financial action permissions remain unchanged.
 
-The current source package prepares event-aware staff routing and evidenced direct native gift corrections; it does not implement API payment acceptance. The separate legacy automatic card-transfer implementation remains byte-identical, including its three existing Owner-only diagnostics. Its financial path is outside the current change. Backup scheduling/destination also remains unchanged.
+Use the two existing Persian catalogs. Separate payment verified/effect pending from completed service or wallet delivery. Show precise customer actions and avoid asking for another payment when the outcome is unknown. Projection maintenance must make bounded fair progress across invoices and survive Telegram failures/restarts.
 
-Native gift corrections preserve transient credential pins without persisting raw credentials, retain local time/notification metadata on quota-only gifts, and validate time increases against the adapter's already-verified native baseline. They do not prove the cause or outcome of any installed request. Shared-reference anchor/notification policy and planless-import gift admission remain unresolved; existing refusals are not silently removed.
+## Native gift correction and remaining boundaries
 
-## Open activation decisions
+The companion source slice fixes direct gifts by retaining transient transport credentials without persisting them, preserving local expiry/notification metadata for quota-only changes and comparing time increases with the adapter's verified native baseline. This does not identify the cause, provider, installed version or actual outcome of the Owner's screenshots/request69. Never replay that uncertain gift or erase its evidence.
 
-- Exact redeem_amount unit and eligible card/game/value mapping; excess, partial or multiple-card policy.
-- Reliable SMS time/source admission and monitoring/reconciliation horizons, separately from the600-second receipt fallback.
-- Privileged association of externally pre-used evidence and treatment of later funds after manual rejection.
-- Whether the bank destination is shared with WooCommerce/other invoice issuers, and how its evidence can be attributed. Use existing APIs with conservative review; optional dependency enhancements are outside the selected scope. No dependency mutation or live activation has been authorized.
+Shared-local-reference gift anchor/notification policy and planless imported gift eligibility remain unresolved. Existing refusals are not relaxed by this payment feature.
 
-## Required evidence
+## Acceptance and activation
 
-Prove source behavior on owned disposable PHP/MariaDB/loopback fixtures: exact units/quotes, cross-invoice and cross-actor collisions, concurrent human/API winners, delayed SMS, credential/config changes, invalid signatures, expired idempotency/replayed references, lifecycle resets, restarts, partial commits, unknown native effects, ten-minute queued edits and current role/receiving behavior.
+Validate actual PHP/socket-MariaDB/loopback behavior: exact quotes and units, mismatch exclusion, cross-invoice/actor collisions, human/API races, delayed SMS, configuration changes, uncertain consume responses, old replay windows, restarts/partial commits, all supported subjects, native-effect identity, ten-minute queued edits, code review and role/receiving routing. Preserve frozen original V0–V9, the legacy automatic bank path, backup behavior and all current financial negative controls.
 
-Keep legacy automatic acceptance and frozen original V0–V9 unchanged. Stabilized source still requires full exact-candidate PHP8.1/PHP8.4 current and detached-history gates, runtime/package inventory verification and author-separated review. These checks do not establish installed acceptance.
+A stable candidate requires full exact-HEAD PHP8.1/PHP8.4 current and detached-history gates, independent runtime/package inventory verification and author-separated review. Source checks do not establish installed acceptance.
+
+Before activation the Owner must configure the actual SMS client/horizon/time interpretation and gift client/value unit, then authorize the specific rollout and live acceptance. No installed target, private configuration, real API verify/redeem, provider/Telegram operation, production database query/migration, Cron/PHP/OPcache change or file installation is part of this source work. Prior RC19 grants are fulfilled; staging did not establish installation. Never rerun completed012/013.
