@@ -52,13 +52,13 @@ For gift recovery across manual unredeem/restore, bind operation identity to the
 
 Normal bot credentials need read/verify/consume authority only. Undo, revoke, restore and privileged manual association are separate authorities. Keep secrets out of URLs, Git and logs; pin trusted HTTPS origins, validate redirects/response identity, use exact integer/decimal arithmetic and explicit unit conversion.
 
-### Minimal dependency work proposed for Owner approval
+### Optional future dependency work — not a current prerequisite
 
 The bot remains the invoice authority. Extend the SMS consume contract with an explicitly versioned conditional mode: immutable business/operation reference and request digest; expected public evidence identity, monotonic revision, deposit direction, exact normalized amount/currency, destination/source mapping and reliable time snapshot. Under a common consumption/allocation fence, atomically refuse conflicting active **and retained historical** financial claims, then commit status, binding, audit and original operation result together. Add own-operation proof lookup. A restored-ready status or expired response cache must never let an old operation execute as a new payment.
 
 For gift cards, scope durable operation identity to the authenticated stable client and bind card UUID, actor, business reference, expected denomination and consumption epoch. Return the original committed proof separately from current card status, including after an undo. Keep existing integrations compatible; no normal bot undo/override privilege is implied.
 
-These are proposed additive dependency changes, not existing capabilities or authorization to modify either plugin. A new external invoice registry/shared quote allocator is unnecessary for the conservative implementation; conflicting or unprovable historical evidence remains manual.
+The Owner selected integration through the existing APIs; do not make these optional dependency enhancements a prerequisite for that integration. These are proposed additive dependency changes, not existing capabilities or authorization to modify either plugin. A new external invoice registry/shared quote allocator is unnecessary for the conservative implementation; conflicting or unprovable historical evidence remains manual.
 
 ## Interface projections and message convergence
 
@@ -103,7 +103,7 @@ Native gift corrections preserve transient credential pins without persisting ra
 - Exact redeem_amount unit and eligible card/game/value mapping; excess, partial or multiple-card policy.
 - Reliable SMS time/source admission and monitoring/reconciliation horizons, separately from the600-second receipt fallback.
 - Privileged association of externally pre-used evidence and treatment of later funds after manual rejection.
-- Dependency API changes versus a demonstrably dedicated source with conservative review. No dependency mutation or live activation has been authorized.
+- Whether the bank destination is shared with WooCommerce/other invoice issuers, and how its evidence can be attributed. Use existing APIs with conservative review; optional dependency enhancements are outside the selected scope. No dependency mutation or live activation has been authorized.
 
 ## Required evidence
 
