@@ -1,0 +1,926 @@
+{
+  "version": 1,
+  "authorization": "https://github.com/ach1992/bot-refactor/issues/57#issuecomment-6514754219",
+  "baseline_commit": "2d0ad0826d594adac49f5a83f0a9d47f6df5b264",
+  "result_catalog_commit": "df00c13da1e38e2ba364ab48e31db66f8705b2c2",
+  "accepted_commits": [
+    "2633ac3c21c539635c228dd31df2e07caee491d0",
+    "2c685f5a9621a808c44a4c012b04c8ccd97102af",
+    "df00c13da1e38e2ba364ab48e31db66f8705b2c2"
+  ],
+  "scope": "additions_only",
+  "added_keys": {
+    "payment.api_payment.bank_fallback": {
+      "audience": "user",
+      "entry": "پرداخت هنوز شناسایی نشده است. اگر واریز کرده‌اید، می‌توانید رسید را برای بررسی بفرستید؛ بررسی خودکار نیز ادامه دارد.",
+      "introduced_in": "2633ac3c21c539635c228dd31df2e07caee491d0",
+      "source_paths": [
+        "src/Finance/ApiPayments.php"
+      ],
+      "usage": "flow_source",
+      "reason": "Accepted API invoice/payment/report label bound to the exact adopted source consumer inventory."
+    },
+    "payment.api_payment.bank_invoice": {
+      "audience": "user",
+      "entry": {
+        "text": "<b>کارت‌به‌کارت بانکی</b>\nمبلغ دقیق زیر را به شماره حساب اعلام‌شده واریز کنید.\nمبلغ به تومان: <code>{amountToman}</code>\nمبلغ به ریال: <code>{amountRial}</code>\n\nشماره حساب:\n<code>{account}</code>\nدارندهٔ حساب: {holder}",
+        "parameters": [
+          "amountToman",
+          "amountRial",
+          "account",
+          "holder"
+        ]
+      },
+      "introduced_in": "df00c13da1e38e2ba364ab48e31db66f8705b2c2",
+      "source_paths": [
+        "src/Finance/ApiPayments.php"
+      ],
+      "usage": "flow_source",
+      "reason": "Accepted API invoice/payment/report label bound to the exact adopted source consumer inventory."
+    },
+    "payment.api_payment.bank_pending": {
+      "audience": "user",
+      "entry": "پرداخت هنوز شناسایی نشده است. بررسی خودکار ادامه دارد؛ پس از 10 دقیقه می‌توانید رسید را هم ارسال کنید.",
+      "introduced_in": "2633ac3c21c539635c228dd31df2e07caee491d0",
+      "source_paths": [
+        "src/Finance/ApiPayments.php",
+        "src/Finance/Routes/ApiPayments.php"
+      ],
+      "usage": "flow_source",
+      "reason": "Accepted API invoice/payment/report label bound to the exact adopted source consumer inventory."
+    },
+    "payment.api_payment.check": {
+      "audience": "user",
+      "entry": "بررسی پرداخت",
+      "introduced_in": "2633ac3c21c539635c228dd31df2e07caee491d0",
+      "source_paths": [
+        "src/Finance/ApiPayments.php"
+      ],
+      "usage": "flow_source",
+      "reason": "Accepted API invoice/payment/report label bound to the exact adopted source consumer inventory."
+    },
+    "payment.api_payment.code": {
+      "audience": "user",
+      "entry": "ارسال کد گیفت‌کارت",
+      "introduced_in": "2633ac3c21c539635c228dd31df2e07caee491d0",
+      "source_paths": [
+        "src/Finance/ApiPayments.php"
+      ],
+      "usage": "flow_source",
+      "reason": "Accepted API invoice/payment/report label bound to the exact adopted source consumer inventory."
+    },
+    "payment.api_payment.code_prompt": {
+      "audience": "user",
+      "entry": "کد کامل یک گیفت‌کارت با مبلغ دقیق این فاکتور را در یک پیام بفرستید. با ارسال کد، اجازهٔ مصرف آن برای همین سفارش را می‌دهید.",
+      "introduced_in": "2633ac3c21c539635c228dd31df2e07caee491d0",
+      "source_paths": [
+        "src/Finance/ApiPayments.php",
+        "src/Finance/Routes/ApiPayments.php"
+      ],
+      "usage": "flow_source",
+      "reason": "Accepted API invoice/payment/report label bound to the exact adopted source consumer inventory."
+    },
+    "payment.api_payment.code_received": {
+      "audience": "user",
+      "entry": "کد دریافت شد. ثبت درخواست بررسی در حال انجام است؛ منتظر نتیجه بمانید.",
+      "introduced_in": "2633ac3c21c539635c228dd31df2e07caee491d0",
+      "source_paths": [
+        "src/Finance/ApiPayments.php",
+        "src/Finance/Routes/ApiPayments.php"
+      ],
+      "usage": "flow_source",
+      "reason": "Accepted API invoice/payment/report label bound to the exact adopted source consumer inventory."
+    },
+    "payment.api_payment.completed": {
+      "audience": "user",
+      "entry": "سفارش تکمیل شد.",
+      "introduced_in": "2633ac3c21c539635c228dd31df2e07caee491d0",
+      "source_paths": [],
+      "usage": "retained_accepted",
+      "reason": "Preserve this exact accepted initial API label without claiming an active consumer."
+    },
+    "payment.api_payment.confirmed": {
+      "audience": "user",
+      "entry": "پرداخت تأیید شد. ثبت پرداخت به‌تنهایی به معنی تکمیل یا تحویل سفارش نیست؛ وضعیت سفارش را بررسی کنید.",
+      "introduced_in": "2633ac3c21c539635c228dd31df2e07caee491d0",
+      "source_paths": [
+        "src/Finance/ApiPayments.php",
+        "src/Finance/Routes/ApiPayments.php",
+        "src/Finance/ReceiptHelpers.php"
+      ],
+      "usage": "flow_source",
+      "reason": "Accepted API invoice/payment/report label bound to the exact adopted source consumer inventory."
+    },
+    "payment.api_payment.denied": {
+      "audience": "user",
+      "entry": "این درخواست پرداخت در دسترس نیست.",
+      "introduced_in": "2633ac3c21c539635c228dd31df2e07caee491d0",
+      "source_paths": [
+        "src/Finance/Routes/ApiPayments.php"
+      ],
+      "usage": "flow_source",
+      "reason": "Accepted API invoice/payment/report label bound to the exact adopted source consumer inventory."
+    },
+    "payment.api_payment.expired": {
+      "audience": "user",
+      "entry": "مهلت این گیفت‌کارت پایان یافته است. برای پیگیری با پشتیبانی تماس بگیرید.",
+      "introduced_in": "2633ac3c21c539635c228dd31df2e07caee491d0",
+      "source_paths": [
+        "src/Finance/ApiPayments.php",
+        "src/Finance/Routes/ApiPayments.php"
+      ],
+      "usage": "flow_source",
+      "reason": "Accepted API invoice/payment/report label bound to the exact adopted source consumer inventory."
+    },
+    "payment.api_payment.gift_invoice": {
+      "audience": "user",
+      "entry": {
+        "text": "<b>پرداخت با گیفت‌کارت</b>\nمبلغ دقیق فاکتور: <code>{amount}</code> تومان\nبرای این فاکتور، یک گیفت‌کارت با همین مبلغ تهیه کنید.",
+        "parameters": [
+          "amount"
+        ]
+      },
+      "introduced_in": "df00c13da1e38e2ba364ab48e31db66f8705b2c2",
+      "source_paths": [
+        "src/Finance/ApiPayments.php"
+      ],
+      "usage": "flow_source",
+      "reason": "Accepted API invoice/payment/report label bound to the exact adopted source consumer inventory."
+    },
+    "payment.api_payment.locked_code": {
+      "audience": "user",
+      "entry": "کد قبلی هنوز در حال بررسی است. تا روشن‌شدن نتیجه، کد دیگری ثبت نکنید.",
+      "introduced_in": "2633ac3c21c539635c228dd31df2e07caee491d0",
+      "source_paths": [
+        "src/Finance/Routes/ApiPayments.php"
+      ],
+      "usage": "flow_source",
+      "reason": "Accepted API invoice/payment/report label bound to the exact adopted source consumer inventory."
+    },
+    "payment.api_payment.mismatch": {
+      "audience": "user",
+      "entry": "مبلغ گیفت‌کارت با مبلغ کامل فاکتور برابر نیست. کارت مصرف نشد؛ می‌توانید کد دیگری بفرستید.",
+      "introduced_in": "2633ac3c21c539635c228dd31df2e07caee491d0",
+      "source_paths": [
+        "src/Finance/ApiPayments.php",
+        "src/Finance/Routes/ApiPayments.php"
+      ],
+      "usage": "flow_source",
+      "reason": "Accepted API invoice/payment/report label bound to the exact adopted source consumer inventory."
+    },
+    "payment.api_payment.pending": {
+      "audience": "user",
+      "entry": "بررسی پرداخت ادامه دارد. کد، رسید یا وجه را دوباره ارسال نکنید.",
+      "introduced_in": "2633ac3c21c539635c228dd31df2e07caee491d0",
+      "source_paths": [
+        "src/Finance/ApiPayments.php",
+        "src/Finance/Routes/ApiPayments.php"
+      ],
+      "usage": "flow_source",
+      "reason": "Accepted API invoice/payment/report label bound to the exact adopted source consumer inventory."
+    },
+    "payment.api_payment.receipt": {
+      "audience": "user",
+      "entry": "ارسال رسید بانکی",
+      "introduced_in": "2633ac3c21c539635c228dd31df2e07caee491d0",
+      "source_paths": [
+        "src/Finance/ApiPayments.php"
+      ],
+      "usage": "flow_source",
+      "reason": "Accepted API invoice/payment/report label bound to the exact adopted source consumer inventory."
+    },
+    "payment.api_payment.receipt_review": {
+      "audience": "user",
+      "entry": "رسید دریافت شد و در انتظار بررسی است. بررسی خودکار پرداخت نیز ادامه دارد؛ وجه یا رسید را دوباره ارسال نکنید.",
+      "introduced_in": "2633ac3c21c539635c228dd31df2e07caee491d0",
+      "source_paths": [
+        "src/Finance/ApiPayments.php"
+      ],
+      "usage": "flow_source",
+      "reason": "Accepted API invoice/payment/report label bound to the exact adopted source consumer inventory."
+    },
+    "payment.api_payment.review": {
+      "audience": "user",
+      "entry": "اطلاعات پرداخت برای بررسی مدیر ثبت شد. نتیجه در همین بخش اعلام می‌شود؛ دوباره پرداخت نکنید.",
+      "introduced_in": "2633ac3c21c539635c228dd31df2e07caee491d0",
+      "source_paths": [
+        "src/Finance/ApiPayments.php",
+        "src/Finance/Routes/ApiPayments.php"
+      ],
+      "usage": "flow_source",
+      "reason": "Accepted API invoice/payment/report label bound to the exact adopted source consumer inventory."
+    },
+    "payment.api_payment.revoked": {
+      "audience": "user",
+      "entry": "این گیفت‌کارت باطل شده است. برای پیگیری با پشتیبانی تماس بگیرید.",
+      "introduced_in": "2633ac3c21c539635c228dd31df2e07caee491d0",
+      "source_paths": [
+        "src/Finance/ApiPayments.php",
+        "src/Finance/Routes/ApiPayments.php"
+      ],
+      "usage": "flow_source",
+      "reason": "Accepted API invoice/payment/report label bound to the exact adopted source consumer inventory."
+    },
+    "payment.api_payment.single_code": {
+      "audience": "user",
+      "entry": "فقط کد کامل یک گیفت‌کارت را در یک پیام بفرستید.",
+      "introduced_in": "2633ac3c21c539635c228dd31df2e07caee491d0",
+      "source_paths": [
+        "src/Finance/Routes/ApiPayments.php"
+      ],
+      "usage": "flow_source",
+      "reason": "Accepted API invoice/payment/report label bound to the exact adopted source consumer inventory."
+    },
+    "payment.api_payment.unavailable": {
+      "audience": "user",
+      "entry": "بررسی پرداخت فعلاً کامل نشد و نتیجه هنوز مشخص نیست. اطلاعات دریافت‌شده برای بررسی نگه داشته شد؛ دوباره پرداخت نکنید.",
+      "introduced_in": "2633ac3c21c539635c228dd31df2e07caee491d0",
+      "source_paths": [
+        "src/Finance/Routes/ApiPayments.php"
+      ],
+      "usage": "flow_source",
+      "reason": "Accepted API invoice/payment/report label bound to the exact adopted source consumer inventory."
+    },
+    "payment.api_payment.used": {
+      "audience": "user",
+      "entry": "این گیفت‌کارت قبلاً استفاده شده است. وضعیت سفارش را بررسی کنید؛ برای پیگیری با پشتیبانی تماس بگیرید.",
+      "introduced_in": "2633ac3c21c539635c228dd31df2e07caee491d0",
+      "source_paths": [
+        "src/Finance/ApiPayments.php",
+        "src/Finance/Routes/ApiPayments.php"
+      ],
+      "usage": "flow_source",
+      "reason": "Accepted API invoice/payment/report label bound to the exact adopted source consumer inventory."
+    },
+    "manual_payment.api_payment.automatic_status": {
+      "audience": "admin",
+      "entry": {
+        "text": "وضعیت بررسی خودکار پرداخت\nشناسه پیگیری: {reference}\nنتیجه: {status}",
+        "parameters": [
+          "reference",
+          "status"
+        ]
+      },
+      "introduced_in": "2633ac3c21c539635c228dd31df2e07caee491d0",
+      "source_paths": [],
+      "usage": "retained_accepted",
+      "reason": "Preserve this exact accepted initial API label without claiming an active consumer."
+    },
+    "manual_payment.api_payment.report": {
+      "audience": "admin",
+      "entry": {
+        "text": "گزارش بررسی پرداخت\nشناسه پیگیری: {reference}\nمشتری: {userId}\nمبلغ دقیق: {amount} {unit}\nروش پرداخت: {method}\nمرجع بررسی: {evidence}\nموضوع: {subject}\nنتیجه: {status}",
+        "parameters": [
+          "reference",
+          "userId",
+          "amount",
+          "unit",
+          "method",
+          "evidence",
+          "subject",
+          "status"
+        ]
+      },
+      "introduced_in": "2c685f5a9621a808c44a4c012b04c8ccd97102af",
+      "source_paths": [
+        "src/Finance/ApiPayments.php"
+      ],
+      "usage": "flow_source",
+      "reason": "Accepted API invoice/payment/report label bound to the exact adopted source consumer inventory."
+    },
+    "manual_payment.api_payment.review_staff": {
+      "audience": "admin",
+      "entry": {
+        "text": "پرداخت نیازمند بررسی کد یا نتیجهٔ نامشخص است.\nشناسه پیگیری: {reference}",
+        "parameters": [
+          "reference"
+        ]
+      },
+      "introduced_in": "2633ac3c21c539635c228dd31df2e07caee491d0",
+      "source_paths": [],
+      "usage": "retained_accepted",
+      "reason": "Preserve this exact accepted initial API label without claiming an active consumer."
+    },
+    "manual_payment.api_payment.status_confirmed": {
+      "audience": "admin",
+      "entry": "پرداخت و عملیات مربوط تأیید شد",
+      "introduced_in": "2c685f5a9621a808c44a4c012b04c8ccd97102af",
+      "source_paths": [
+        "src/Finance/ApiPayments.php"
+      ],
+      "usage": "flow_source",
+      "reason": "Accepted API invoice/payment/report label bound to the exact adopted source consumer inventory."
+    },
+    "manual_payment.api_payment.status_evidence_only": {
+      "audience": "admin",
+      "entry": "پیامک دیررس ثبت شد؛ پرداخت قبلاً نهایی بود و عملیات مالی تکرار نشد",
+      "introduced_in": "2c685f5a9621a808c44a4c012b04c8ccd97102af",
+      "source_paths": [
+        "src/Finance/ApiPayments.php"
+      ],
+      "usage": "flow_source",
+      "reason": "Accepted API invoice/payment/report label bound to the exact adopted source consumer inventory."
+    },
+    "manual_payment.api_payment.status_monitoring": {
+      "audience": "admin",
+      "entry": "بررسی ادامه دارد",
+      "introduced_in": "2c685f5a9621a808c44a4c012b04c8ccd97102af",
+      "source_paths": [],
+      "usage": "retained_accepted",
+      "reason": "Preserve this exact accepted initial API label without claiming an active consumer."
+    },
+    "manual_payment.api_payment.status_review": {
+      "audience": "admin",
+      "entry": "نیازمند بررسی مدیر",
+      "introduced_in": "2c685f5a9621a808c44a4c012b04c8ccd97102af",
+      "source_paths": [
+        "src/Finance/ApiPayments.php"
+      ],
+      "usage": "flow_source",
+      "reason": "Accepted API invoice/payment/report label bound to the exact adopted source consumer inventory."
+    },
+    "manual_payment.api_payment.status_settled": {
+      "audience": "admin",
+      "entry": "پرداخت قبلاً نهایی شده است",
+      "introduced_in": "2c685f5a9621a808c44a4c012b04c8ccd97102af",
+      "source_paths": [
+        "src/Finance/ApiPayments.php"
+      ],
+      "usage": "flow_source",
+      "reason": "Accepted API invoice/payment/report label bound to the exact adopted source consumer inventory."
+    },
+    "manual_payment.api_payment.status_uncertain": {
+      "audience": "admin",
+      "entry": "نتیجهٔ عملیات بیرونی نامشخص است",
+      "introduced_in": "2c685f5a9621a808c44a4c012b04c8ccd97102af",
+      "source_paths": [
+        "src/Finance/ApiPayments.php"
+      ],
+      "usage": "flow_source",
+      "reason": "Accepted API invoice/payment/report label bound to the exact adopted source consumer inventory."
+    },
+    "manual_payment.api_payment.typed_evidence": {
+      "audience": "admin",
+      "entry": {
+        "text": "درخواست بررسی گیفت‌کارت\nشناسه پیگیری: {reference}\nکد به‌صورت امن نگه‌داری شده است.\nنتیجهٔ بررسی: {status}",
+        "parameters": [
+          "reference",
+          "status"
+        ]
+      },
+      "introduced_in": "2633ac3c21c539635c228dd31df2e07caee491d0",
+      "source_paths": [
+        "src/Finance/ApiPayments.php"
+      ],
+      "usage": "flow_source",
+      "reason": "Accepted API invoice/payment/report label bound to the exact adopted source consumer inventory."
+    },
+    "manual_payment.api_payment.view_code": {
+      "audience": "admin",
+      "entry": "مشاهده کد گیفت‌کارت",
+      "introduced_in": "2c685f5a9621a808c44a4c012b04c8ccd97102af",
+      "source_paths": [
+        "src/Finance/ApiPayments.php"
+      ],
+      "usage": "flow_source",
+      "reason": "Accepted API invoice/payment/report label bound to the exact adopted source consumer inventory."
+    },
+    "payment_settings.api.advanced": {
+      "audience": "admin",
+      "entry": "تنظیمات پیشرفته و فیلترهای اختیاری",
+      "introduced_in": "2633ac3c21c539635c228dd31df2e07caee491d0",
+      "source_paths": [
+        "src/Finance/PaymentApiAdmin.php"
+      ],
+      "usage": "settings_source",
+      "reason": "Accepted existing-API settings/editor label; preserve exact text, audience and declared parameters."
+    },
+    "payment_settings.api.back": {
+      "audience": "admin",
+      "entry": "بازگشت",
+      "introduced_in": "2633ac3c21c539635c228dd31df2e07caee491d0",
+      "source_paths": [
+        "src/Finance/PaymentApiAdmin.php"
+      ],
+      "usage": "settings_source",
+      "reason": "Accepted existing-API settings/editor label; preserve exact text, audience and declared parameters."
+    },
+    "payment_settings.api.change_unconfirmed": {
+      "audience": "admin",
+      "entry": "تغییر ثبت نشد. تنظیمات لازم را کامل کنید و صفحه را دوباره باز کنید.",
+      "introduced_in": "2633ac3c21c539635c228dd31df2e07caee491d0",
+      "source_paths": [
+        "bot.php"
+      ],
+      "usage": "settings_source",
+      "reason": "Accepted existing-API settings/editor label; preserve exact text, audience and declared parameters."
+    },
+    "payment_settings.api.clear_hint": {
+      "audience": "admin",
+      "entry": "برای پاک‌کردن این مقدار <code>/clear</code> بفرستید؛ برای برگشت، لغو را بزنید.",
+      "introduced_in": "2633ac3c21c539635c228dd31df2e07caee491d0",
+      "source_paths": [
+        "src/Finance/PaymentApiAdmin.php"
+      ],
+      "usage": "settings_source",
+      "reason": "Accepted existing-API settings/editor label; preserve exact text, audience and declared parameters."
+    },
+    "payment_settings.api.complete_guidance": {
+      "audience": "admin",
+      "entry": "تنظیمات لازم کامل است. روشن یا خاموش بودن بررسی را از صفحهٔ درگاه‌ها تغییر دهید؛ فاکتورهای قبلی با تنظیمات ثبت‌شدهٔ خود پیگیری می‌شوند.",
+      "introduced_in": "2633ac3c21c539635c228dd31df2e07caee491d0",
+      "source_paths": [
+        "src/Finance/PaymentApiAdmin.php"
+      ],
+      "usage": "settings_source",
+      "reason": "Accepted existing-API settings/editor label; preserve exact text, audience and declared parameters."
+    },
+    "payment_settings.api.configured": {
+      "audience": "admin",
+      "entry": "تنظیم‌شده",
+      "introduced_in": "2633ac3c21c539635c228dd31df2e07caee491d0",
+      "source_paths": [
+        "src/Finance/PaymentApiAdmin.php"
+      ],
+      "usage": "settings_source",
+      "reason": "Accepted existing-API settings/editor label; preserve exact text, audience and declared parameters."
+    },
+    "payment_settings.api.denied": {
+      "audience": "admin",
+      "entry": "این بخش برای شما در دسترس نیست.",
+      "introduced_in": "2633ac3c21c539635c228dd31df2e07caee491d0",
+      "source_paths": [
+        "bot.php"
+      ],
+      "usage": "settings_source",
+      "reason": "Accepted existing-API settings/editor label; preserve exact text, audience and declared parameters."
+    },
+    "payment_settings.api.field.giftApiAmountUnit": {
+      "audience": "admin",
+      "entry": "واحد مبلغ گیفت‌کارت",
+      "introduced_in": "2633ac3c21c539635c228dd31df2e07caee491d0",
+      "source_paths": [
+        "src/Finance/PaymentApiAdmin.php"
+      ],
+      "usage": "settings_source",
+      "reason": "Accepted existing-API settings/editor label; preserve exact text, audience and declared parameters."
+    },
+    "payment_settings.api.field.giftApiGameKey": {
+      "audience": "admin",
+      "entry": "فیلتر محصول گیفت‌کارت",
+      "introduced_in": "2633ac3c21c539635c228dd31df2e07caee491d0",
+      "source_paths": [
+        "src/Finance/PaymentApiAdmin.php"
+      ],
+      "usage": "settings_source",
+      "reason": "Accepted existing-API settings/editor label; preserve exact text, audience and declared parameters."
+    },
+    "payment_settings.api.field.giftApiKeyId": {
+      "audience": "admin",
+      "entry": "شناسه کلید گیفت‌کارت",
+      "introduced_in": "2633ac3c21c539635c228dd31df2e07caee491d0",
+      "source_paths": [
+        "src/Finance/PaymentApiAdmin.php"
+      ],
+      "usage": "settings_source",
+      "reason": "Accepted existing-API settings/editor label; preserve exact text, audience and declared parameters."
+    },
+    "payment_settings.api.field.giftApiSecret": {
+      "audience": "admin",
+      "entry": "کلید محرمانه گیفت‌کارت",
+      "introduced_in": "2633ac3c21c539635c228dd31df2e07caee491d0",
+      "source_paths": [
+        "src/Finance/PaymentApiAdmin.php"
+      ],
+      "usage": "settings_source",
+      "reason": "Accepted existing-API settings/editor label; preserve exact text, audience and declared parameters."
+    },
+    "payment_settings.api.field.giftApiUrl": {
+      "audience": "admin",
+      "entry": "نشانی اتصال گیفت‌کارت",
+      "introduced_in": "2633ac3c21c539635c228dd31df2e07caee491d0",
+      "source_paths": [
+        "src/Finance/PaymentApiAdmin.php"
+      ],
+      "usage": "settings_source",
+      "reason": "Accepted existing-API settings/editor label; preserve exact text, audience and declared parameters."
+    },
+    "payment_settings.api.field.giftApiValueId": {
+      "audience": "admin",
+      "entry": "فیلتر شناسه ارزش",
+      "introduced_in": "2633ac3c21c539635c228dd31df2e07caee491d0",
+      "source_paths": [
+        "src/Finance/PaymentApiAdmin.php"
+      ],
+      "usage": "settings_source",
+      "reason": "Accepted existing-API settings/editor label; preserve exact text, audience and declared parameters."
+    },
+    "payment_settings.api.field.smsApiBankKey": {
+      "audience": "admin",
+      "entry": "فیلتر بانک",
+      "introduced_in": "2633ac3c21c539635c228dd31df2e07caee491d0",
+      "source_paths": [
+        "src/Finance/PaymentApiAdmin.php"
+      ],
+      "usage": "settings_source",
+      "reason": "Accepted existing-API settings/editor label; preserve exact text, audience and declared parameters."
+    },
+    "payment_settings.api.field.smsApiCalendar": {
+      "audience": "admin",
+      "entry": "تقویم پیامک",
+      "introduced_in": "2633ac3c21c539635c228dd31df2e07caee491d0",
+      "source_paths": [
+        "src/Finance/PaymentApiAdmin.php"
+      ],
+      "usage": "settings_source",
+      "reason": "Accepted existing-API settings/editor label; preserve exact text, audience and declared parameters."
+    },
+    "payment_settings.api.field.smsApiHorizonHours": {
+      "audience": "admin",
+      "entry": "مهلت پیگیری پیامک (ساعت)",
+      "introduced_in": "2633ac3c21c539635c228dd31df2e07caee491d0",
+      "source_paths": [
+        "src/Finance/PaymentApiAdmin.php"
+      ],
+      "usage": "settings_source",
+      "reason": "Accepted existing-API settings/editor label; preserve exact text, audience and declared parameters."
+    },
+    "payment_settings.api.field.smsApiMobileSource": {
+      "audience": "admin",
+      "entry": "فیلتر خط دریافت‌کننده",
+      "introduced_in": "2633ac3c21c539635c228dd31df2e07caee491d0",
+      "source_paths": [
+        "src/Finance/PaymentApiAdmin.php"
+      ],
+      "usage": "settings_source",
+      "reason": "Accepted existing-API settings/editor label; preserve exact text, audience and declared parameters."
+    },
+    "payment_settings.api.field.smsApiProvider": {
+      "audience": "admin",
+      "entry": "فیلتر سرویس پیامک",
+      "introduced_in": "2633ac3c21c539635c228dd31df2e07caee491d0",
+      "source_paths": [
+        "src/Finance/PaymentApiAdmin.php"
+      ],
+      "usage": "settings_source",
+      "reason": "Accepted existing-API settings/editor label; preserve exact text, audience and declared parameters."
+    },
+    "payment_settings.api.field.smsApiRuleId": {
+      "audience": "admin",
+      "entry": "فیلتر شناسه قانون",
+      "introduced_in": "2633ac3c21c539635c228dd31df2e07caee491d0",
+      "source_paths": [
+        "src/Finance/PaymentApiAdmin.php"
+      ],
+      "usage": "settings_source",
+      "reason": "Accepted existing-API settings/editor label; preserve exact text, audience and declared parameters."
+    },
+    "payment_settings.api.field.smsApiSender": {
+      "audience": "admin",
+      "entry": "فیلتر فرستنده",
+      "introduced_in": "2633ac3c21c539635c228dd31df2e07caee491d0",
+      "source_paths": [
+        "src/Finance/PaymentApiAdmin.php"
+      ],
+      "usage": "settings_source",
+      "reason": "Accepted existing-API settings/editor label; preserve exact text, audience and declared parameters."
+    },
+    "payment_settings.api.field.smsApiTimezone": {
+      "audience": "admin",
+      "entry": "منطقه زمانی پیامک",
+      "introduced_in": "2633ac3c21c539635c228dd31df2e07caee491d0",
+      "source_paths": [
+        "src/Finance/PaymentApiAdmin.php"
+      ],
+      "usage": "settings_source",
+      "reason": "Accepted existing-API settings/editor label; preserve exact text, audience and declared parameters."
+    },
+    "payment_settings.api.field.smsApiToken": {
+      "audience": "admin",
+      "entry": "توکن اتصال پیامک",
+      "introduced_in": "2633ac3c21c539635c228dd31df2e07caee491d0",
+      "source_paths": [
+        "src/Finance/PaymentApiAdmin.php"
+      ],
+      "usage": "settings_source",
+      "reason": "Accepted existing-API settings/editor label; preserve exact text, audience and declared parameters."
+    },
+    "payment_settings.api.field.smsApiUrl": {
+      "audience": "admin",
+      "entry": "نشانی اتصال پیامک بانکی",
+      "introduced_in": "2633ac3c21c539635c228dd31df2e07caee491d0",
+      "source_paths": [
+        "src/Finance/PaymentApiAdmin.php"
+      ],
+      "usage": "settings_source",
+      "reason": "Accepted existing-API settings/editor label; preserve exact text, audience and declared parameters."
+    },
+    "payment_settings.api.gift_guidance": {
+      "audience": "admin",
+      "entry": "نشانی، اطلاعات کلید و واحد واقعی مبلغ مصرف گیفت‌کارت را تکمیل کنید. فقط یک گیفت‌کارت با مبلغ دقیق فاکتور قابل پذیرش خودکار است؛ کسری، مبلغ اضافه یا چند کارت تأیید خودکار نمی‌شود.",
+      "introduced_in": "2633ac3c21c539635c228dd31df2e07caee491d0",
+      "source_paths": [
+        "src/Finance/PaymentApiAdmin.php"
+      ],
+      "usage": "settings_source",
+      "reason": "Accepted existing-API settings/editor label; preserve exact text, audience and declared parameters."
+    },
+    "payment_settings.api.gift_settings": {
+      "audience": "admin",
+      "entry": "تنظیمات اتصال گیفت‌کارت",
+      "introduced_in": "2633ac3c21c539635c228dd31df2e07caee491d0",
+      "source_paths": [
+        "src/Finance/PaymentApiAdmin.php"
+      ],
+      "usage": "settings_source",
+      "reason": "Accepted existing-API settings/editor label; preserve exact text, audience and declared parameters."
+    },
+    "payment_settings.api.gift_title": {
+      "audience": "admin",
+      "entry": "تنظیمات اتصال گیفت‌کارت",
+      "introduced_in": "2633ac3c21c539635c228dd31df2e07caee491d0",
+      "source_paths": [
+        "src/Finance/PaymentApiAdmin.php"
+      ],
+      "usage": "settings_source",
+      "reason": "Accepted existing-API settings/editor label; preserve exact text, audience and declared parameters."
+    },
+    "payment_settings.api.gift_verify": {
+      "audience": "admin",
+      "entry": "بررسی خودکار گیفت‌کارت",
+      "introduced_in": "2633ac3c21c539635c228dd31df2e07caee491d0",
+      "source_paths": [
+        "src/Finance/PaymentApiAdmin.php"
+      ],
+      "usage": "settings_source",
+      "reason": "Accepted existing-API settings/editor label; preserve exact text, audience and declared parameters."
+    },
+    "payment_settings.api.hint.giftApiAmountUnit": {
+      "audience": "admin",
+      "entry": "واحد مبلغ مصرف گیفت‌کارت را صریحاً مشخص کنید: <code>toman</code> برای تومان یا <code>rial</code> برای ریال. تبدیل حدسی یا اعتبار اضافه انجام نمی‌شود.",
+      "introduced_in": "2633ac3c21c539635c228dd31df2e07caee491d0",
+      "source_paths": [
+        "src/Finance/PaymentApiAdmin.php"
+      ],
+      "usage": "settings_source",
+      "reason": "Accepted existing-API settings/editor label; preserve exact text, audience and declared parameters."
+    },
+    "payment_settings.api.hint.giftApiGameKey": {
+      "audience": "admin",
+      "entry": "کلید دقیق محصول را برای محدودکردن گیفت‌کارت‌های قابل بررسی وارد کنید. این فیلتر اختیاری است.",
+      "introduced_in": "2633ac3c21c539635c228dd31df2e07caee491d0",
+      "source_paths": [
+        "src/Finance/PaymentApiAdmin.php"
+      ],
+      "usage": "settings_source",
+      "reason": "Accepted existing-API settings/editor label; preserve exact text, audience and declared parameters."
+    },
+    "payment_settings.api.hint.giftApiKeyId": {
+      "audience": "admin",
+      "entry": "شناسهٔ کلید HMAC مربوط به دسترسی گیفت‌کارت را ارسال کنید.",
+      "introduced_in": "2633ac3c21c539635c228dd31df2e07caee491d0",
+      "source_paths": [
+        "src/Finance/PaymentApiAdmin.php"
+      ],
+      "usage": "settings_source",
+      "reason": "Accepted existing-API settings/editor label; preserve exact text, audience and declared parameters."
+    },
+    "payment_settings.api.hint.giftApiSecret": {
+      "audience": "admin",
+      "entry": "کلید محرمانهٔ HMAC مربوط به همان شناسه را ارسال کنید.",
+      "introduced_in": "2633ac3c21c539635c228dd31df2e07caee491d0",
+      "source_paths": [
+        "src/Finance/PaymentApiAdmin.php"
+      ],
+      "usage": "settings_source",
+      "reason": "Accepted existing-API settings/editor label; preserve exact text, audience and declared parameters."
+    },
+    "payment_settings.api.hint.giftApiUrl": {
+      "audience": "admin",
+      "entry": "نشانی کامل پایهٔ رابط گیفت‌کارت را با HTTPS وارد کنید. مثال:\n<code>https://example.com/wp-json/ach-gcw/v2</code>",
+      "introduced_in": "2633ac3c21c539635c228dd31df2e07caee491d0",
+      "source_paths": [
+        "src/Finance/PaymentApiAdmin.php"
+      ],
+      "usage": "settings_source",
+      "reason": "Accepted existing-API settings/editor label; preserve exact text, audience and declared parameters."
+    },
+    "payment_settings.api.hint.giftApiValueId": {
+      "audience": "admin",
+      "entry": "شناسهٔ عددی مثبت ارزش گیفت‌کارت را وارد کنید. این فیلتر اختیاری است و جای بررسی مبلغ کامل فاکتور را نمی‌گیرد.",
+      "introduced_in": "2633ac3c21c539635c228dd31df2e07caee491d0",
+      "source_paths": [
+        "src/Finance/PaymentApiAdmin.php"
+      ],
+      "usage": "settings_source",
+      "reason": "Accepted existing-API settings/editor label; preserve exact text, audience and declared parameters."
+    },
+    "payment_settings.api.hint.smsApiBankKey": {
+      "audience": "admin",
+      "entry": "کلید دقیق بانک را مطابق دادهٔ پیامک وارد کنید. این فیلتر اختیاری است.",
+      "introduced_in": "2633ac3c21c539635c228dd31df2e07caee491d0",
+      "source_paths": [
+        "src/Finance/PaymentApiAdmin.php"
+      ],
+      "usage": "settings_source",
+      "reason": "Accepted existing-API settings/editor label; preserve exact text, audience and declared parameters."
+    },
+    "payment_settings.api.hint.smsApiCalendar": {
+      "audience": "admin",
+      "entry": "برای تقویم میلادی <code>gregorian</code> و برای هجری شمسی <code>jalali</code> را ارسال کنید. این تنظیم اختیاری است.",
+      "introduced_in": "2633ac3c21c539635c228dd31df2e07caee491d0",
+      "source_paths": [
+        "src/Finance/PaymentApiAdmin.php"
+      ],
+      "usage": "settings_source",
+      "reason": "Accepted existing-API settings/editor label; preserve exact text, audience and declared parameters."
+    },
+    "payment_settings.api.hint.smsApiHorizonHours": {
+      "audience": "admin",
+      "entry": "مدت پیگیری هر فاکتور را به ساعت، با یک عدد صحیح مثبت وارد کنید. این مقدار باید آگاهانه تعیین شود؛ مقدار پیش‌فرضی انتخاب نمی‌شود.",
+      "introduced_in": "2633ac3c21c539635c228dd31df2e07caee491d0",
+      "source_paths": [
+        "src/Finance/PaymentApiAdmin.php"
+      ],
+      "usage": "settings_source",
+      "reason": "Accepted existing-API settings/editor label; preserve exact text, audience and declared parameters."
+    },
+    "payment_settings.api.hint.smsApiMobileSource": {
+      "audience": "admin",
+      "entry": "شماره یا شناسهٔ دقیق خط دریافت‌کننده را وارد کنید. این فیلتر اختیاری است.",
+      "introduced_in": "2633ac3c21c539635c228dd31df2e07caee491d0",
+      "source_paths": [
+        "src/Finance/PaymentApiAdmin.php"
+      ],
+      "usage": "settings_source",
+      "reason": "Accepted existing-API settings/editor label; preserve exact text, audience and declared parameters."
+    },
+    "payment_settings.api.hint.smsApiProvider": {
+      "audience": "admin",
+      "entry": "نام دقیق سرویس را برای محدودکردن پیامک‌های قابل بررسی وارد کنید. این فیلتر اختیاری است.",
+      "introduced_in": "2633ac3c21c539635c228dd31df2e07caee491d0",
+      "source_paths": [
+        "src/Finance/PaymentApiAdmin.php"
+      ],
+      "usage": "settings_source",
+      "reason": "Accepted existing-API settings/editor label; preserve exact text, audience and declared parameters."
+    },
+    "payment_settings.api.hint.smsApiRuleId": {
+      "audience": "admin",
+      "entry": "شناسهٔ عددی مثبت قانون پردازش پیامک را وارد کنید. این فیلتر اختیاری است.",
+      "introduced_in": "2633ac3c21c539635c228dd31df2e07caee491d0",
+      "source_paths": [
+        "src/Finance/PaymentApiAdmin.php"
+      ],
+      "usage": "settings_source",
+      "reason": "Accepted existing-API settings/editor label; preserve exact text, audience and declared parameters."
+    },
+    "payment_settings.api.hint.smsApiSender": {
+      "audience": "admin",
+      "entry": "فرستندهٔ دقیق پیامک را برای محدودکردن بررسی وارد کنید. این فیلتر اختیاری است.",
+      "introduced_in": "2633ac3c21c539635c228dd31df2e07caee491d0",
+      "source_paths": [
+        "src/Finance/PaymentApiAdmin.php"
+      ],
+      "usage": "settings_source",
+      "reason": "Accepted existing-API settings/editor label; preserve exact text, audience and declared parameters."
+    },
+    "payment_settings.api.hint.smsApiTimezone": {
+      "audience": "admin",
+      "entry": "نام استاندارد منطقه زمانی پیامک، مانند <code>Asia/Tehran</code> را وارد کنید. این تنظیم اختیاری است؛ زمان نامطمئن برای تأیید خودکار استفاده نمی‌شود.",
+      "introduced_in": "2633ac3c21c539635c228dd31df2e07caee491d0",
+      "source_paths": [
+        "src/Finance/PaymentApiAdmin.php"
+      ],
+      "usage": "settings_source",
+      "reason": "Accepted existing-API settings/editor label; preserve exact text, audience and declared parameters."
+    },
+    "payment_settings.api.hint.smsApiToken": {
+      "audience": "admin",
+      "entry": "توکن Bearer کلاینت مربوط به حساب بانکی مورد نظر را ارسال کنید. دسترسی‌های خواندن پیامک و ثبت مصرف باید برای همان کلاینت تنظیم شده باشد.",
+      "introduced_in": "2633ac3c21c539635c228dd31df2e07caee491d0",
+      "source_paths": [
+        "src/Finance/PaymentApiAdmin.php"
+      ],
+      "usage": "settings_source",
+      "reason": "Accepted existing-API settings/editor label; preserve exact text, audience and declared parameters."
+    },
+    "payment_settings.api.hint.smsApiUrl": {
+      "audience": "admin",
+      "entry": "نشانی کامل پایهٔ رابط پیامک را با HTTPS وارد کنید. مثال:\n<code>https://example.com/wp-json/ach-pay-manager/v1</code>",
+      "introduced_in": "2633ac3c21c539635c228dd31df2e07caee491d0",
+      "source_paths": [
+        "src/Finance/PaymentApiAdmin.php"
+      ],
+      "usage": "settings_source",
+      "reason": "Accepted existing-API settings/editor label; preserve exact text, audience and declared parameters."
+    },
+    "payment_settings.api.incomplete": {
+      "audience": "admin",
+      "entry": "ناقص",
+      "introduced_in": "2633ac3c21c539635c228dd31df2e07caee491d0",
+      "source_paths": [
+        "src/Finance/PaymentApiAdmin.php"
+      ],
+      "usage": "settings_source",
+      "reason": "Accepted existing-API settings/editor label; preserve exact text, audience and declared parameters."
+    },
+    "payment_settings.api.incomplete_guidance": {
+      "audience": "admin",
+      "entry": "تنظیمات لازم کامل نیست. پیش از روشن‌کردن بررسی خودکار، موارد لازم را تکمیل کنید.",
+      "introduced_in": "2633ac3c21c539635c228dd31df2e07caee491d0",
+      "source_paths": [
+        "src/Finance/PaymentApiAdmin.php"
+      ],
+      "usage": "settings_source",
+      "reason": "Accepted existing-API settings/editor label; preserve exact text, audience and declared parameters."
+    },
+    "payment_settings.api.invalid": {
+      "audience": "admin",
+      "entry": "نامعتبر",
+      "introduced_in": "2633ac3c21c539635c228dd31df2e07caee491d0",
+      "source_paths": [
+        "src/Finance/PaymentApiAdmin.php"
+      ],
+      "usage": "settings_source",
+      "reason": "Accepted existing-API settings/editor label; preserve exact text, audience and declared parameters."
+    },
+    "payment_settings.api.no_live_test": {
+      "audience": "admin",
+      "entry": "تنظیم‌شده بودن فقط کامل بودن تنظیمات را نشان می‌دهد؛ اتصال واقعی از این صفحه آزمایش نمی‌شود.",
+      "introduced_in": "2633ac3c21c539635c228dd31df2e07caee491d0",
+      "source_paths": [
+        "src/Finance/PaymentApiAdmin.php"
+      ],
+      "usage": "settings_source",
+      "reason": "Accepted existing-API settings/editor label; preserve exact text, audience and declared parameters."
+    },
+    "payment_settings.api.read_unavailable": {
+      "audience": "admin",
+      "entry": "خواندن تنظیمات فعلاً ممکن نیست. صفحه را دوباره باز کنید.",
+      "introduced_in": "2633ac3c21c539635c228dd31df2e07caee491d0",
+      "source_paths": [
+        "src/Finance/PaymentApiAdmin.php"
+      ],
+      "usage": "settings_source",
+      "reason": "Accepted existing-API settings/editor label; preserve exact text, audience and declared parameters."
+    },
+    "payment_settings.api.sms_guidance": {
+      "audience": "admin",
+      "entry": "نشانی، توکن و مهلت پیگیری را تکمیل کنید. کلاینت باید برای پیامک‌های حساب بانکی مورد نظر تنظیم شده باشد؛ فیلترهای بیشتر در تنظیمات پیشرفته اختیاری‌اند.",
+      "introduced_in": "2633ac3c21c539635c228dd31df2e07caee491d0",
+      "source_paths": [
+        "src/Finance/PaymentApiAdmin.php"
+      ],
+      "usage": "settings_source",
+      "reason": "Accepted existing-API settings/editor label; preserve exact text, audience and declared parameters."
+    },
+    "payment_settings.api.sms_settings": {
+      "audience": "admin",
+      "entry": "تنظیمات اتصال پیامک بانکی",
+      "introduced_in": "2633ac3c21c539635c228dd31df2e07caee491d0",
+      "source_paths": [
+        "src/Finance/PaymentApiAdmin.php"
+      ],
+      "usage": "settings_source",
+      "reason": "Accepted existing-API settings/editor label; preserve exact text, audience and declared parameters."
+    },
+    "payment_settings.api.sms_title": {
+      "audience": "admin",
+      "entry": "تنظیمات اتصال پیامک بانکی",
+      "introduced_in": "2633ac3c21c539635c228dd31df2e07caee491d0",
+      "source_paths": [
+        "src/Finance/PaymentApiAdmin.php"
+      ],
+      "usage": "settings_source",
+      "reason": "Accepted existing-API settings/editor label; preserve exact text, audience and declared parameters."
+    },
+    "payment_settings.api.sms_verify": {
+      "audience": "admin",
+      "entry": "بررسی خودکار پیامک بانکی",
+      "introduced_in": "2633ac3c21c539635c228dd31df2e07caee491d0",
+      "source_paths": [
+        "src/Finance/PaymentApiAdmin.php"
+      ],
+      "usage": "settings_source",
+      "reason": "Accepted existing-API settings/editor label; preserve exact text, audience and declared parameters."
+    },
+    "payment_settings.api.unset": {
+      "audience": "admin",
+      "entry": "تنظیم‌نشده",
+      "introduced_in": "2633ac3c21c539635c228dd31df2e07caee491d0",
+      "source_paths": [
+        "src/Finance/PaymentApiAdmin.php"
+      ],
+      "usage": "settings_source",
+      "reason": "Accepted existing-API settings/editor label; preserve exact text, audience and declared parameters."
+    }
+  },
+  "retained_unreferenced_keys": [
+    "manual_payment.api_payment.automatic_status",
+    "manual_payment.api_payment.review_staff",
+    "manual_payment.api_payment.status_monitoring",
+    "payment.api_payment.completed"
+  ],
+  "source_binding_commit": "259598e70b82bf1f144175b5fef4dd78ace25819"
+}
