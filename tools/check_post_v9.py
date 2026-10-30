@@ -2442,6 +2442,8 @@ def main():
             "f2_zero_row_step_transition_rolls_back_all_records",
             "f2_delegated_admin_consumes_only_own_step",
             "f2_parallel_distinct_actors_consumed_only_respective_steps",
+            "gift_source_completed_worker_private_owner_manager_once_excludes_operator_support",
+            "gift_source_uncertain_worker_private_manager_hold_preserves_source_and_no_replay",
         }
         if not (gift_source.get("complete") is True and
                 gift_source.get("cases")==len(required_gift_source) and
@@ -2452,6 +2454,9 @@ def main():
                 gift_source.get("owned_original_schema_mariadb") is True and
                 gift_source.get("parallel_php_sessions") is True and
                 gift_source.get("atomic_admin_step_and_source_commit") is True and
+                gift_source.get("actual_notification_router") is True and
+                gift_source.get("private_owner_manager_gift_notices") is True and
+                gift_source.get("operator_support_gift_excluded") is True and
                 gift_source.get("production_mutations")==0 and
                 gift_source.get("real_provider_requests")==0):
             raise RuntimeError("Gift Telegram source idempotency contract incomplete")
@@ -2716,11 +2721,19 @@ def main():
             "r1a3_invalid_total_negative_no_roster_no_false_completion",
             "r1a3_invalid_total_float_no_roster_no_false_completion",
             "r1a3_empty_bad_total_no_roster_no_false_completion",
+            "gift_private_start_completion_owner_manager_once_no_operator_support_channel",
+            "gift_private_hold_owner_manager_no_replay",
+            "gift_private_hold_manager_receiving_off_owner_only",
+            "gift_private_manager_notice_failure_preserves_effect_cursor_and_cleanup",
         }
         if not (gift.get("complete") is True and
                 set(gift.get("scenarios",[]))==required_gift and
                 gift.get("cases")==len(required_gift) and
                 gift.get("actual_gift_worker") is True and
+                gift.get("actual_notification_router") is True and
+                gift.get("actual_admin_access") is True and
+                gift.get("private_owner_manager_gift_notices") is True and
+                gift.get("operator_support_gift_excluded") is True and
                 gift.get("owned_mariadb_only") is True and
                 gift.get("real_provider_requests")==0 and
                 gift.get("customer_money_effects")==0):
