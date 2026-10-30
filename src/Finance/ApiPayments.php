@@ -185,8 +185,13 @@ function achbotApiPaymentNotice(mysqli $db,array $pay,string $status,bool $repor
         $ack=true;
         foreach($refs as $ref) {
             $chat=(int)($ref['chat_id']??0);$msg=(int)($ref['message_id']??0);$key=$chat.':'.$msg;
-            if($msg<=0||isset($seen[$key])||!achbotAdminStoredRecipientAllowed($db,$chat,(int)($GLOBALS['admin']??0)))continue;
-            $seen[$key]=true;try{if(!achbotApiPaymentAck(editKeys($keys,$msg,$chat)))$ack=false;}catch(Throwable $e){$ack=false;}
+            if($msg<=0||isset($seen[$key]))continue;
+            $seen[$key]=true;$complete=true;
+            // API projection uses the existing bounded current read. Legacy
+            // stored-receipt callers retain their default locking semantics.
+            $allowed=achbotAdminStoredRecipientAllowed($db,$chat,(int)($GLOBALS['admin']??0),true,$complete);
+            if(!$complete)$ack=false;
+            if(!$allowed)continue;try{if(!achbotApiPaymentAck(editKeys($keys,$msg,$chat)))$ack=false;}catch(Throwable $e){$ack=false;}
         }
         if($ack){$q=$db->prepare('UPDATE payment_attempts SET evidence_staff_digest=? WHERE pay_row_id=?');$q->bind_param('si',$staffDigest,$id);$q->execute();$q->close();}
     }
@@ -229,30 +234,123 @@ function achbotApiPaymentPurchaseIntent(mysqli $db,array $pay,array $proof): ?ar
         'amount'=>(int)$pay['price'],'server_id'=>(int)$pay['server_id'],'plan_id'=>(int)$pay['plan_id'],
         'entitled_days'=>(int)$s['days'],'entitled_volume'=>(int)$s['volume']];
 }
-/** Local admission only; fresh native eligibility belongs outside SQL locks. */
-function achbotApiPaymentLocalSubjectAllowed(mysqli $db,array $pay): bool {
-    if(preg_match('/^INCREASE_(?:DAY|VOLUME)_([1-9][0-9]*)_[1-9][0-9]*$/D',(string)$pay['type'],$m)) {
-        $oid=(int)$m[1];return achbotPinnedAddonUnits($pay)!==null &&
-            ((int)($pay['order_id']??0)===0||(int)$pay['order_id']===$oid) &&
-            achbotProviderQuoteEligible($db,$pay,true) && achbotSupportsOrder($db,$oid,(int)$pay['plan_id'],(int)$pay['user_id'],true);
-    }
-    return achbotSupportsPaymentSubject($db,$pay,true);
+/** SQL-only snapshot of the exact local quote, target and native incarnation.
+ * The common provider validators below perform storage reads only. In
+ * particular, achbotPgQuote/achbotSupportsPaymentSubject are NOT called here:
+ * both may perform authenticated native HTTP even when their lock flag is true.
+ */
+function achbotApiPaymentLocalSubjectContext(mysqli $db,array $pay,bool $locked=false): ?string {
+    try {
+        $type=(string)($pay['type']??'');
+        $context=['pay'=>achbotPaymentEvidencePayFingerprint($pay),
+            'provider_quote'=>(string)($pay['provider_snapshot']??'')];
+        if($type==='INCREASE_WALLET')return hash('sha256',json_encode($context,JSON_THROW_ON_ERROR));
+        $sid=achbotProviderPaymentSubjectServer($db,$pay,$locked);
+        if($sid===null)return null;
+        $lock=$locked?' FOR UPDATE':'';
+        $read=static function(string $table,int $id) use($db,$lock):?array {
+            // All identifiers are fixed by this function, never user input.
+            $q=$db->prepare('SELECT * FROM '.$table.' WHERE id=?'.$lock);
+            $q->bind_param('i',$id);$q->execute();$row=$q->get_result()->fetch_assoc();$q->close();return $row?:null;
+        };
+        $server=$read('server_config',$sid);$info=$read('server_info',$sid);
+        $pid=(int)($pay['plan_id']??0);$uid=(int)($pay['user_id']??0);
+        $plan=$pid>0?$read('server_plans',$pid):null;$order=null;$oid=0;
+        if(!$server||!$info||!achbotSupportsAccount($server['type'],0))return null;
+        if($type==='BUY_SUB') {
+            if($pid<=0||!achbotSupportsPlan($db,$pid,0,$sid,$locked))return null;
+        } elseif($type==='RENEW_SCONFIG') {
+            $source=json_decode((string)($pay['description']??''),true);
+            if($pid<=0||$uid<=0||(int)($pay['volume']??-1)!==0||
+                !is_array($source)||($source['marzban']??null)!==true||
+                empty($source['remark'])||(int)($source['server_id']??0)!==$sid||
+                !achbotSupportsMarzbanPlan($db,$pid,0,$sid,$locked))return null;
+        } elseif($type==='RENEW_ACCOUNT'||
+            preg_match('/^INCREASE_(DAY|VOLUME)_([1-9][0-9]*)_[1-9][0-9]*$/D',$type,$m)) {
+            $oid=$type==='RENEW_ACCOUNT'?(int)($pay['order_id']??0):(int)$m[2];
+            if($oid<=0||($type==='RENEW_ACCOUNT'&&$pid<=0)||
+                (!empty($pay['order_id'])&&(int)$pay['order_id']!==$oid)||
+                ($type!=='RENEW_ACCOUNT'&&achbotPinnedAddonUnits($pay)===null)||
+                !achbotSupportsOrder($db,$oid,$pid>0?$pid:null,$uid>0?$uid:null,$locked))return null;
+            $order=$read('orders_list',$oid);if(!$order)return null;
+        } else return null;
+        $context['server']=$server;
+        // Capacity and display metadata are not provider/quote identity.
+        $context['server_identity']=array_intersect_key($info,array_flip(['id','panel_group_id','provider_group_ids']));
+        $context['plan']=$plan;
+        $context['order']=$order;
+        if($server['type']==='pasarguard') {
+            achbotPgLoad();
+            $snap=json_decode((string)($pay['provider_snapshot']??''),true,64,JSON_THROW_ON_ERROR);
+            $target=achbotProviderCanonicalSnapshot($snap);
+            $panel=achbotProviderPanel($db,$target['panel_id'],$locked);
+            if($panel['id']!==(int)$server['provider_connection_id']||
+                $panel['instance_key']!==$server['provider_instance_key']||
+                $target['instance_key']!==$panel['instance_key']||
+                $target['endpoint_sha256']!==hash('sha256',rtrim($panel['api_url'],'/'))||
+                rtrim($server['panel_url'],'/')!==rtrim($panel['api_url'],'/'))return null;
+            $context['panel']=$panel;
+            if($type!=='BUY_SUB') {
+                $ctx=achbotPgOrderContext($db,$oid,$locked);
+                foreach($ctx['identity'] as $key=>$value)
+                    if((string)($snap[$key]??'')!==(string)$value)return null;
+                $history=achbotPgMutationHistory($ctx['account']);
+                if(count($history['consumed_keys'])>=4096&&
+                    !in_array('pay:'.(int)$pay['id'],$history['consumed_keys'],true))return null;
+                $context['native_identity']=$ctx['identity'];
+                $context['account']=$ctx['account'];
+            }
+        }
+        return hash('sha256',json_encode($context,JSON_THROW_ON_ERROR));
+    }catch(Throwable $e){return null;}
+}
+/** Authenticated provider/native eligibility is captured without SQL locks.
+ * Comparing both sides of HTTP prevents a mixed observation of two local
+ * identities from authorizing a later financial claim.
+ */
+function achbotApiPaymentSubjectPreflight(mysqli $db,array $pay): array {
+    $out=['valid'=>false,'fingerprint'=>achbotPaymentEvidencePayFingerprint($pay),'context'=>null];
+    try {
+        if((int)$db->query('SELECT @@in_transaction')->fetch_row()[0]!==0)return $out;
+        $before=achbotApiPaymentLocalSubjectContext($db,$pay);
+        if($before===null||!achbotSupportsPaymentSubject($db,$pay,false))return $out;
+        $fresh=achbotApiPaymentRow($db,(int)$pay['id']);
+        if(!$fresh||!hash_equals($out['fingerprint'],achbotPaymentEvidencePayFingerprint($fresh)))return $out;
+        $after=achbotApiPaymentLocalSubjectContext($db,$fresh);
+        if($after===null||!hash_equals($before,$after))return $out;
+        return ['valid'=>true,'fingerprint'=>$out['fingerprint'],'context'=>$after];
+    }catch(Throwable $e){return $out;}
+}
+/** Current locked local context only; never native HTTP. */
+function achbotApiPaymentLocalSubjectAllowed(mysqli $db,array $pay,?array $seen=null): bool {
+    $context=achbotApiPaymentLocalSubjectContext($db,$pay,true);
+    return $context!==null&&($seen===null||(($seen['valid']??false)===true&&
+        hash_equals((string)$seen['fingerprint'],achbotPaymentEvidencePayFingerprint($pay))&&
+        hash_equals((string)$seen['context'],$context)));
 }
 /** Fresh native eligibility for a pinned API invoice's genuine human review. */
 function achbotApiPaymentManualAddonPreflight(mysqli $db,string $hash): ?array {
     $pay=dbFetchPayByHash($db,$hash);
     if(!$pay||!achbotApiPaymentPinned($db,(int)$pay['id']))return null;
-    if($pay['state']!=='have_sent')return ['valid'=>false,'fingerprint'=>achbotPaymentEvidencePayFingerprint($pay)];
-    return ['valid'=>achbotSupportsPaymentSubject($db,$pay,false),'fingerprint'=>achbotPaymentEvidencePayFingerprint($pay)];
+    if($pay['state']!=='have_sent')return ['valid'=>false];
+    return achbotApiPaymentSubjectPreflight($db,$pay);
 }
 function achbotApiPaymentManualAddonAllowedLocked(mysqli $db,?array $pay,?array $seen): bool {
     if($pay===null)return false;
     if($seen===null)return achbotSupportsPaymentSubject($db,$pay,true);
-    return $seen['valid']===true && hash_equals($seen['fingerprint'],achbotPaymentEvidencePayFingerprint($pay)) && achbotApiPaymentLocalSubjectAllowed($db,$pay);
+    return achbotApiPaymentLocalSubjectAllowed($db,$pay,$seen);
 }
 /** Exclusive real local financial claim. No provider or Telegram HTTP inside. */
 function achbotApiPaymentSettle(mysqli $db,int $id,array $proof): string {
     require_once __DIR__.'/ServiceEffects.php';require_once __DIR__.'/BankPurchase.php';
+    $before=achbotApiPaymentRow($db,$id);if(!$before)return 'review';
+    if(achbotApiPaymentTerminal($before))return 'settled';
+    $attempt=achbotApiPaymentAttempt($db,$id);
+    // Already verified native effects recover solely from their sealed result.
+    $verified=$before['state']==='processing'&&(int)($before['approved_by']??-1)===0&&
+        ($attempt['evidence_fulfillment_state']??'')==='verified';
+    $seen=$verified?null:achbotApiPaymentSubjectPreflight($db,$before);
+    if($seen!==null&&empty($seen['valid']))return 'review';
     try {
         if (!$db->begin_transaction()) return 'review';
         $pay=achbotApiPaymentRow($db,$id,true);
@@ -261,7 +359,7 @@ function achbotApiPaymentSettle(mysqli $db,int $id,array $proof): string {
         $resuming=$pay['state']==='processing' && (int)($pay['approved_by']??-1)===0;
         if ((!in_array($pay['state'],['pending','have_sent'],true) && !$resuming) || (string)($pay['payid']??'')!=='' ||
             ($proof['mode']??'')!=='settle' || !achbotPaymentEvidenceValidateProofLocked($db,$pay,$proof) ||
-            !achbotApiPaymentLocalSubjectAllowed($db,$pay)) {$db->rollback();return 'review';}
+            !achbotApiPaymentLocalSubjectAllowed($db,$pay,$seen)) {$db->rollback();return 'review';}
         $type=(string)$pay['type'];
         if (!$resuming && $type==='BUY_SUB') {
             $intent=achbotApiPaymentPurchaseIntent($db,$pay,$proof);if(!$intent)throw new RuntimeException('api_purchase_pin_invalid');
@@ -305,10 +403,11 @@ function achbotApiPaymentSettle(mysqli $db,int $id,array $proof): string {
     } catch(Throwable $e) {error_log('achbot_api_effect_review pay_id='.$id);$fresh=achbotApiPaymentRow($db,$id);if($fresh)achbotApiPaymentNotice($db,$fresh,'review');return 'review';}
 }
 /** Reuse actual panel edit and exact local finisher, with pinned quantities. */
-function achbotApiPaymentStoreFulfillment(mysqli $db,int $id,array $proof,string $state,array $payload,string $expected): bool {
+function achbotApiPaymentStoreFulfillment(mysqli $db,int $id,array $proof,string $state,array $payload,string $expected,?array $seen=null): bool {
     try {
         if(!$db->begin_transaction())return false;$pay=achbotApiPaymentRow($db,$id,true);
-        if(!$pay||$pay['state']!=='processing'||!achbotPaymentEvidenceValidateProofLocked($db,$pay,$proof)){$db->rollback();return false;}
+        if(!$pay||$pay['state']!=='processing'||!achbotPaymentEvidenceValidateProofLocked($db,$pay,$proof)||
+            ($seen!==null&&!achbotApiPaymentLocalSubjectAllowed($db,$pay,$seen))){$db->rollback();return false;}
         $payload['pay_sha256']=achbotPaymentEvidencePayFingerprint($pay);$payload['operation']=$proof['operation'];
         $sealed=achbotPaymentEvidenceProtect('fulfillment:'.$id.':'.$proof['operation'],$payload);
         $q=$db->prepare('UPDATE payment_attempts SET evidence_fulfillment_state=?,evidence_fulfillment_payload=? WHERE pay_row_id=? AND evidence_fulfillment_state=?');
@@ -330,13 +429,14 @@ function achbotApiPaymentFulfillEdit(mysqli $db,array $pay,array $proof): bool {
             if($kind==='day'||$kind==='volume'){preg_match('/^INCREASE_(?:DAY|VOLUME)_([1-9][0-9]*)_/',$type,$m);$oid=(int)($m[1]??0);$units=(int)($subject['units']??0);if($units!==achbotPinnedAddonUnits($pay))return false;}
             $q=$db->prepare('SELECT * FROM orders_list WHERE id=?');$q->bind_param('i',$oid);$q->execute();$order=$q->get_result()->fetch_assoc();$q->close();if(!$order)return false;$remark=(string)$order['remark'];$server=(int)$order['server_id'];
         }
-        if(!achbotAutoBankEditPreflight($db,$pay,$kind,$server,$oid,$remark,$units))return false;
+        $seen=achbotApiPaymentSubjectPreflight($db,$pay);
+        if(empty($seen['valid'])||!achbotAutoBankEditPreflight($db,$pay,$kind,$server,$oid,$remark,$units))return false;
         $params=['pay_id'=>$id,'remark'=>$remark];
         if($kind==='day')$params['plus_day']=$units;
         elseif($kind==='volume')$params['plus_volume']=$units;
         else {$params['days']=(int)($subject['days']??0);$params['volume']=(int)($subject['volume']??-1);if($params['days']<=0||$params['volume']<0)return false;}
         $payload=['kind'=>$kind,'server'=>$server,'order'=>$oid,'remark'=>$remark,'units'=>$units,'expiry'=>$order?(int)$order['expire_date']:null,'params'=>$params];
-        if(!achbotApiPaymentStoreFulfillment($db,$id,$proof,'dispatched',$payload,'reserved'))return false;
+        if(!achbotApiPaymentStoreFulfillment($db,$id,$proof,'dispatched',$payload,'reserved',$seen))return false;
         // Only the winner of the persisted dispatch transition may call the
         // native adapter. A crash/timeout here stays reviewable, never replayed.
         $response=achbotApplyServiceEdit($db,$server,$params);
