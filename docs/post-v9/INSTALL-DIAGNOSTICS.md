@@ -4,7 +4,7 @@
 
 For a new installation, start with [fresh installation](FRESH-INSTALL.md). Use
 the **selected release's own** trusted manifest and matching verification tool.
-Published RC18 and current unreleased runtime each have 115 members; their
+Published RC18 and RC19 each have 115 members; their
 source hashes differ. Do not use the historical RC1/RC2 hashes below for them.
 
 Obtain the expected source commit and manifest SHA256 through a trusted

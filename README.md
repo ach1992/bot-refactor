@@ -2,9 +2,9 @@
 
 AChBot is a PHP Telegram bot for VPN subscriptions, plans, customer support, administrator management and scheduled service operations. It supports Marzban and native PasarGuard 5.5.1.
 
-**Published release:** [v0.10.0-rc.18](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.18), a source-only prerelease. Download the official [runtime ZIP](https://github.com/ach1992/bot-refactor/releases/download/v0.10.0-rc.18/achbot-v0.10.0-rc.18-runtime.zip), [manifest](https://github.com/ach1992/bot-refactor/releases/download/v0.10.0-rc.18/achbot-v0.10.0-rc.18-runtime.zip.manifest.json) and [SHA256SUMS](https://github.com/ach1992/bot-refactor/releases/download/v0.10.0-rc.18/SHA256SUMS). The package contains **115 runtime members / 114 PHP files**; it excludes private configuration and does not install the database.
+**Published release:** [v0.10.0-rc.19](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.19), a source-only prerelease. Download the official [runtime ZIP](https://github.com/ach1992/bot-refactor/releases/download/v0.10.0-rc.19/achbot-v0.10.0-rc.19-runtime.zip), [manifest](https://github.com/ach1992/bot-refactor/releases/download/v0.10.0-rc.19/achbot-v0.10.0-rc.19-runtime.zip.manifest.json) and [SHA256SUMS](https://github.com/ach1992/bot-refactor/releases/download/v0.10.0-rc.19/SHA256SUMS). The package contains **115 runtime members / 114 PHP files**; it excludes private configuration and does not install the database.
 
-**Unreleased source:** simple independent purchase/order display sections, ordered exact-name configs (automatic first 3; maximum 10 inline), complete-message fitting, independent explicit order QR actions, managed invitation gift after Wallet, and complete retirement of root `buy_helpers.php`. These changes are not in the published RC18 ZIP. See the [current scope](docs/post-v9/NEXT-RELEASE.md#unreleased-source-follow-up).
+**RC19 changes:** simple independent purchase/order display sections, ordered exact-name configs (automatic first 3; maximum 10 inline), complete-message fitting, independent explicit order QR actions, managed invitation gift after Wallet, and complete retirement of root `buy_helpers.php`. Published RC18 remains unchanged. See the [current scope](docs/post-v9/NEXT-RELEASE.md#rc19-source-contract).
 
 ## Features
 
@@ -30,7 +30,7 @@ Follow the complete [fresh installation guide](docs/post-v9/FRESH-INSTALL.md). I
 3. For a genuinely empty database, import the schema and apply the guide's ordered sidecars once. **Existing installations use their upgrade guide instead; never rerun completed012/013.**
 4. Create private `baseInfo.php` from that version's example. Fill its bot/database/Owner fields and add a unique `$telegramWebhookSecret` (the example does not supply it).
 5. Register the HTTPS `<bot-url>/bot.php` webhook using the same `secret_token`. Opening that URL in a browser is not a webhook health test.
-6. Start the bot as Owner and configure servers, plans, instance text, destinations and intended payment methods through the administrator UI. Current unreleased source manages invitation gifts there; unset or zero disables them.
+6. Start the bot as Owner and configure servers, plans, instance text, destinations and intended payment methods through the administrator UI. RC19 manages invitation gifts there; unset or zero disables them.
 7. Provision the private Cron lock directory, then schedule **one** `settings/cronRunner.php` invocation per minute using the correct PHP CLI and bot working directory.
 8. Verify source/schema readiness, Owner access, ordinary-user behavior, webhook delivery and scheduled operations on the selected isolated installation before customer use.
 
@@ -48,10 +48,11 @@ The coordinator runs `gift2all.php`, its admitted `broadcast` mode, `rewardRepor
 
 Use Bot Settings for instance welcome/home/purchase text and the two explicit order QR switches. Gateway/channel settings own payment configuration and support/report/membership/help/cooperation destinations. Owner manages staff levels and receiving preferences in the administrator list. Each server owns its display settings; static interface copy remains in the two [audience catalogs](messages/README.md).
 
-For upgrades, inventory the actual source, schema, private configuration and active schedules first. Replace the complete runtime together, reconcile retired files, preserve payment/native evidence and the active Cron lock, and verify a restorable backup. ZIP extraction never applies SQL. Follow [RC17 → RC18](docs/post-v9/RC17-TO-RC18.md), [RC16 → RC17](docs/post-v9/RC16-TO-RC17.md), or the matching earlier transition in the [scope guide](docs/post-v9/NEXT-RELEASE.md). Unreleased source additionally needs its documented invitation-setting and root-helper rollout steps.
+For upgrades, inventory the actual source, schema, private configuration and active schedules first. Replace the complete runtime together, reconcile retired files, preserve payment/native evidence and the active Cron lock, and verify a restorable backup. ZIP extraction never applies SQL. Follow [RC18 → RC19](docs/post-v9/RC18-TO-RC19.md), [RC17 → RC18](docs/post-v9/RC17-TO-RC18.md), [RC16 → RC17](docs/post-v9/RC16-TO-RC17.md), or the matching earlier transition in the [scope guide](docs/post-v9/NEXT-RELEASE.md). RC19 additionally needs its documented invitation-setting and root-helper rollout steps; it adds no SQL migration.
 
 ## Documentation
 
+- [RC18 → RC19 upgrade and recovery](docs/post-v9/RC18-TO-RC19.md)
 - [Fresh installation: private configuration, ordered SQL, webhook and Cron](docs/post-v9/FRESH-INSTALL.md)
 - [Current source/release scope and configuration boundaries](docs/post-v9/NEXT-RELEASE.md)
 - [Per-server display and QR settings](docs/post-v9/SUBSCRIPTION-PRESENTATION.md)

@@ -1,12 +1,12 @@
-# RC18 gateway destination keyboard scope
+# RC19 simple display, QR and invitation settings
 
-[RC18](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.18) is the current source-only prerelease. [PR #96](https://github.com/ach1992/bot-refactor/pull/96) restores the established two-button rows for cooperation URL, help channel and private mandatory-membership invite URL. The status/edit button retains its existing callback; the adjacent localized label uses the same informational callback as neighboring settings. Existing validation, BOT_STATES persistence, permissions and save/clear/cancel navigation remain unchanged. No new table, schema, setting or management mechanism is introduced. Read [RC17 → RC18](RC17-TO-RC18.md).
+[RC19](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.19) publishes reviewed source `9451ef306be34bc224d57645d7b7394b8bea3a99` through merged [PR98](https://github.com/ach1992/bot-refactor/pull/98). It keeps 115 runtime members / 114 PHP files, retires root buy_helpers.php in favor of canonical domain implementations, and adds no SQL migration. Follow [RC18 → RC19](RC18-TO-RC19.md). Publication does not install or certify a live bot.
 
-## Unreleased source follow-up
+## RC19 source contract
 
 The Owner accepted one source batch for simple per-server display, complete
 buy_helpers.php removal and managed invitation gift. [Issue37](https://github.com/ach1992/bot-refactor/issues/37#issuecomment-6507182633)
-holds the scope and later QR/invitation clarifications. No new version is assigned.
+holds the scope and later QR/invitation clarifications, delivered in RC19.
 
 Selected server → **نمایش کانفیگ‌ها و لینک اشتراک** now contains independent
 purchase and order sections with subscription/config/auxiliary toggles. Config-on
@@ -60,6 +60,10 @@ current runner's four processes are gift2all.php, admitted broadcast,
 rewardReport.php and admitted services; old standalone broadcast/warning paths
 are retired. Do not delete or replace an active lock inode.
 
+## Published RC18 gateway destination keyboards
+
+[RC18](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.18) is the previous immutable source-only prerelease. [PR #96](https://github.com/ach1992/bot-refactor/pull/96) restores the established two-button rows for cooperation URL, help channel and private mandatory-membership invite URL. The status/edit button retains its existing callback; the adjacent localized label uses the same informational callback as neighboring settings. Existing validation, BOT_STATES persistence, permissions and save/clear/cancel navigation remain unchanged. No new table, schema, setting or management mechanism is introduced. Read [RC17 → RC18](RC17-TO-RC18.md).
+
 ## Inherited RC17 shared settings and native display selection
 
 [RC17](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.17) delivered the following shared settings and native display behavior through [PR #95](https://github.com/ach1992/bot-refactor/pull/95); RC18 preserves it. Its package contains **115 runtime members / 114 PHP files**. Read [RC16 → RC17](RC16-TO-RC17.md) and verify the official assets before rollout. Source merge/publication does not install files or certify real Telegram/provider/merchant/wallet/Cron acceptance.
@@ -68,7 +72,7 @@ The release consolidates destination editors in gateway/channel settings and kee
 
 ## Published RC17/RC18 display contexts
 
-The following describes the published RC17/RC18 UI. The unreleased simple controls above supersede this journey in the current candidate.
+The following describes the published RC17/RC18 UI. The RC19 simple controls above supersede this historical journey.
 
 Open the selected server’s display settings and choose purchase delivery or order details before selecting configs by the existing protocol/name controls. Each explicit context list overrides the shared selectors, including an empty list selecting none. Otherwise the shared list and then the existing all-config default apply. Visibility, subscription and limits remain common. The editor preserves the other effective choice when explicitly selecting ALL; reads perform no backfill. The same code/storage/management serves both native providers. See [presentation semantics](SUBSCRIPTION-PRESENTATION.md) and the [RC16 downgrade boundary](RC16-TO-RC17.md#recovery).
 
