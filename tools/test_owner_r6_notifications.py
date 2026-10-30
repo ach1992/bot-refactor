@@ -93,6 +93,14 @@ $GLOBALS['after_send']=static function($method,$data)use($connection){if((int)$d
 $events=[];achbotNotifyAdmins('sendMessage',['text'=>$text]);unset($GLOBALS['after_send']);
 yes($targets()===[9001,9003,-100123]&&achbotAdminLevel(9020)==='support','later recipient role refreshed after candidate list and earlier staff delivery');
 $connection->query('UPDATE users SET isAdmin=0 WHERE userid=9020');
+// A locked nonstaff customer must not block financial error notification.
+$held=new mysqli('localhost','root','',$argv[3],0,$argv[2]);$held->begin_transaction();
+$held->query('SELECT id FROM users WHERE userid=1001 FOR UPDATE');
+$events=[];$started=microtime(true);$notices=achbotNotifyAdmins('sendMessage',['text'=>$text]);
+yes(microtime(true)-$started<1.0&&$targets()===[9001,-100123], 'contended customer row cannot block Owner or channel delivery');
+yes(($notices[0]['response']->ok??false)&&count(array_filter($notices,static fn($r)=>($r['deferred']??'')==='recipient_discovery'&&$r['response']===null))===1, 'incomplete recipient discovery remains observable after primary acknowledgement');
+$held->rollback();$held->close();$events=[];$notices=achbotNotifyAdmins('sendMessage',['text'=>$text]);
+yes($targets()===[9001,9003,-100123]&&!array_filter($notices,static fn($r)=>isset($r['deferred'])), 'next ordinary delivery retries fresh membership after contention clears');
 // Genuine receipt evidence/lease and once-only approval are unchanged.
 $connection->query("INSERT INTO setting(type,value) VALUES('BOT_STATES','{\"cartToCartState\":\"on\"}')");
 $botState=['cartToCartState'=>'on','rewardChannel'=>-100123];$paymentKeys=['bankAccount'=>'6037999999999999','holderName'=>'Fixture'];
