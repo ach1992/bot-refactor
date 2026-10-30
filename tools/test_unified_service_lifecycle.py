@@ -656,4 +656,9 @@ def main():
             'production_mutations':0,'external_provider_calls':0}
     if args.report:args.report.write_text(json.dumps(report,indent=2))
     print(json.dumps(report))
+
+# Current domain fixture imports the real event-aware notification router.
+import notification_fixture
+PHP=notification_fixture.with_router(PHP)
+
 if __name__=='__main__':main()

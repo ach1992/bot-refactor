@@ -195,12 +195,7 @@ if(strstr($text, "/start ")){
 						. \achbotMessage('bot.bot.webhook_ingress_authenticated.text.5f8f2b70e9') . number_format($inviteReward) . \achbotMessage('bot.bot.webhook_ingress_authenticated.text.81a62ff6c6')
 						. \achbotMessage('bot.bot.webhook_ingress_authenticated.text.87d0794e8e') . number_format($oldWallet) . \achbotMessage('bot.bot.webhook_ingress_authenticated.text.81a62ff6c6')
 						. \achbotMessage('bot.bot.webhook_ingress_authenticated.text.447278518a') . number_format($newWallet) . \achbotMessage('bot.bot.webhook_ingress_authenticated.text.2cc98f7f7c');
-					sendMessage($adminMsg, null, "html", $admin);
-
-					// ارسال به کانال گزارشات
-				if (!empty($botState['rewardChannel'])) {
-					sendMessage($adminMsg, null, "html", $botState['rewardChannel']);
-				}
+					achbotNotifyAdmins('sendMessage', ['text'=>$adminMsg,'parse_mode'=>'HTML']);
 			}
 
             setUser("referedBy" . $inviter);
@@ -306,13 +301,7 @@ if (preg_match('/^\/([Ss]tart)/', $text) || $text == $buttonValues['back_to_main
                 $mainValues['new_member_joined']
             );
 
-            sendMessage($msg, $keys, "html", $admin);
-			//sendToAllAdmins('sendMessage', ['text' => $msg,'reply_markup' => $keys,'parse_mode' => "html"]);
-
-            $rewardChannel = $botState['rewardChannel'] ?? '';
-            if (!empty($rewardChannel)) {
-                sendMessage($msg, $keys, "html", $rewardChannel);
-            }
+            achbotNotifyAdmins('sendMessage', ['text'=>$msg, 'reply_markup'=>$keys, 'parse_mode'=>'HTML']);
         }
 
         sendMessage($mainValues['start_message'], getMainKeys(), 'HTML');

@@ -158,9 +158,10 @@ if (preg_match('/freeTrial(\d+)_(?<buyType>\w+)/', $data, $match)) {
             preg_replace('/[^A-Za-z0-9_:]/','',$trialSource).
             ' class='.get_class($error));
         try {
-            sendMessage(\achbotMessage('purchase.trial_provision.message.30b8933da5').
+            (achbotNotifyAdmins('sendMessage', ['text'=>\achbotMessage('purchase.trial_provision.message.30b8933da5').
                 \achbotMessage('purchase.trial_provision.message.922f2b9906'),
-                null,null,$admin);
+                    'reply_markup'=>null,'parse_mode'=>null],
+                    ['primary'=>$admin,'report_channel'=>null])[0]['response']??null);
         } catch (Throwable $ignored) {}
         alert(\achbotMessage('purchase.trial_provision.alert.cf3893b9c0'),true);
         return;
@@ -183,13 +184,7 @@ if (preg_match('/freeTrial(\d+)_(?<buyType>\w+)/', $data, $match)) {
     $channelMessage = \achbotMessage('purchase.trial_provision.channel_message.d22e3c7448', ['userId' => $userId, 'fullName' => $fullName, 'usernameText' => $usernameText, 'remark' => $remark, 'volume' => $volume, 'days' => $days]);
 
     // ارسال پیام به ادمین اصلی
-    sendMessage($channelMessage, null, "html", $admin);
-
-    // ارسال پیام به کانال گزارشات (در صورت تنظیم)
-    $reportChannel = $botState['rewardChannel'] ?? null;
-    if (!empty($reportChannel)) {
-        sendMessage($channelMessage, null, "html", $reportChannel);
-    }
+    achbotNotifyAdmins('sendMessage', ['text'=>$channelMessage, 'reply_markup'=>null, 'parse_mode'=>'HTML']);
 
     setUser('used', 'freetrial');
 }

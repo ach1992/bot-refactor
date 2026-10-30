@@ -106,9 +106,8 @@ foreach ($deletions as $order) {
     sendMessage($msg,json_encode(['inline_keyboard'=>[[[
         'text'=>$buttonValues['back_to_main'],'callback_data'=>'mainMenu'
     ]]]]),'HTML',(int)$order['userid']);
-    $channel=$botState['rewardChannel']??'';
-    if ($channel!=='') sendMessage(achbotMessage('notifications.warnings.channel_message.5e59a4a33e',[
-        'from_id'=>(int)$order['userid'],'remark'=>htmlspecialchars($remark,ENT_QUOTES,'UTF-8')]),null,'HTML',$channel);
+    achbotNotifyAdmins('sendMessage', ['text'=>achbotMessage('notifications.warnings.channel_message.5e59a4a33e',[
+        'from_id'=>(int)$order['userid'],'remark'=>htmlspecialchars($remark,ENT_QUOTES,'UTF-8')]),'parse_mode'=>'HTML']);
 }
 
 // This is traversal metadata only: a cursor never authorizes a deletion.

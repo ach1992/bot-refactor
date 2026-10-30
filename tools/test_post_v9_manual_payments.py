@@ -508,9 +508,12 @@ def run_route(work,env,driver,data='',step='none',actor=1001,update=None,route='
             accepted_log_codes.append('achbot_manual_standard_postcommit_notice_failed')
         if 'achbot_manual_standard_delivery_needs_review' in accepted_log_codes:
             accepted_log_codes.append('achbot_manual_standard_delivery_summary_failed')
+    intentional_notice_failure=(expected_warning and
+        spec.get('message_transport') in ('throw','throw_once'))
     safe_review=(accepted_log_codes and p.stderr and all(
-        any(code in line for code in accepted_log_codes) and
-        'fixture_' not in line and 'SQL' not in line
+        ((any(code in line for code in accepted_log_codes) and
+          'fixture_' not in line and 'SQL' not in line) or
+         (intentional_notice_failure and notification_fixture.sanitized_exception_line(line)))
         for line in p.stderr.splitlines()))
     if p.returncode or (p.stderr and not safe_review):
         raise RuntimeError('isolated wallet payment route failed: '+
@@ -3173,5 +3176,11 @@ def main():
     if args.report:
         args.report.write_text(json.dumps(res,ensure_ascii=False,indent=2)+'\n')
     print(json.dumps(res,ensure_ascii=False))
+
+
+# Current domain fixture imports the real event-aware notification router.
+import notification_fixture
+PHP=notification_fixture.with_router(PHP)
+PHP_ROUTE=notification_fixture.with_router(PHP_ROUTE)
 
 if __name__=='__main__':main()

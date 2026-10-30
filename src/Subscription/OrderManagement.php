@@ -349,13 +349,7 @@ if (preg_match('/^confirmDeleteOrder_([1-9][0-9]*)$/D', (string)$data, $match)) 
 
     // پیام برای ادمین ها
     $adminMessage = \achbotMessage('subscription.order_management.show_order_management_panel.admin_message.c7c4748cee', ['userid' => $userid, 'remark' => $remark, 'from_id' => $from_id]);
-    //sendToAllAdmins('sendMessage', ['text' => $adminMessage,'parse_mode' => 'html']);
-	
-	// ارسال پیام به کانال گزارشات
-	$rewardChannel = $botState['rewardChannel'];
-		if (!empty($rewardChannel)) {
-		sendMessage($adminMessage, null, "html", $rewardChannel);
-	}
+    achbotNotifyAdmins('sendMessage', ['text'=>$adminMessage,'parse_mode'=>'HTML']);
 
     setUser();
 }

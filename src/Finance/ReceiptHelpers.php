@@ -51,15 +51,9 @@ if (!function_exists('notifyAllAdminsSimple')) {
             $rewardChannel = $botState['rewardChannel'] ?? null;
         }
 
-        if (!empty($admin)) {
-            sendMessage($text, $replyMarkup, $parseMode, $admin);
-        }
-
-        // sendToAllAdmins('sendMessage', ['text' => $text, 'reply_markup' => $replyMarkup, 'parse_mode' => $parseMode]);
-
-        if (!empty($rewardChannel)) {
-            sendMessage($text, $replyMarkup, $parseMode, $rewardChannel);
-        }
+        achbotNotifyAdmins('sendMessage', [
+            'text'=>$text,'reply_markup'=>$replyMarkup,'parse_mode'=>$parseMode
+        ], ['primary'=>$admin,'report_channel'=>$rewardChannel]);
     }
 }
 
@@ -2054,7 +2048,7 @@ function sendReceiptToAdminsAndUpdatePay(
             'caption' => $caption,
             'reply_markup' => $adminKeyboard,
             'parse_mode' => 'HTML'
-        ], $hashId);
+        ], $hashId, ['event'=>'manual_review']);
     } catch (Throwable $ignored) {
         // The primary operator message and protected DB transition succeeded.
     }

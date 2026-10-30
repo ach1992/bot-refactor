@@ -304,7 +304,7 @@ if (preg_match('/^addToOrders([1-9][0-9]*)$/D',(string)$data,$match)) {
             $adminMessage=\achbotMessage('subscription.manual_accounts.detect_server_id_from_remark.admin_message.7e7a367cc0',[
                 'finalUserId'=>$finalUserId,'first_name'=>htmlspecialchars((string)$first_name,ENT_QUOTES,'UTF-8'),
                 'username'=>htmlspecialchars((string)$username,ENT_QUOTES,'UTF-8'),'remark'=>htmlspecialchars($remark,ENT_QUOTES,'UTF-8')]);
-            sendMessage($adminMessage,$keys,'HTML',$admin);
+            achbotNotifyAdmins('sendMessage', ['text'=>$adminMessage,'reply_markup'=>$keys,'parse_mode'=>'HTML'], ['report_channel'=>null]);
         }
     } catch (Throwable $error) {
         if ($begun) {try {$connection->rollback();} catch (Throwable $ignored) {}}

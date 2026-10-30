@@ -114,6 +114,13 @@ function achbotAdminRecipientAllowed(mysqli $db,$recipient,int $primary): bool {
     return achbotAdminStoredRecipientAllowed($db,$recipient,$primary) &&
         achbotAdminNotifyEnabled($db,(int)$recipient,$primary,true);
 }
+/** Unsolicited delivery policy; it never grants the recipient action rights. */
+function achbotAdminNotificationAllowed(mysqli $db,$recipient,int $primary,string $event='general'): bool {
+    if (!in_array($event,['general','manual_review'],true) ||
+        !achbotAdminRecipientAllowed($db,$recipient,$primary)) return false;
+    return $event==='manual_review' ||
+        in_array(achbotAdminLevel((int)$recipient,$db,$primary,true),['owner','manager'],true);
+}
 function achbotAdminButtonCapability(string $key): string {
     return match($key) {
         'bot_reports'=>'stats','server_settings'=>'servers',

@@ -330,8 +330,10 @@ if (
             preg_replace('/[^A-Za-z0-9_:]/','',$bulkSource).
             ' class='.get_class($error));
         try {
-            sendMessage(\achbotMessage('purchase.entry_and_bulk.create_multiple_accounts.message.76499f65f3').
-                \achbotMessage('purchase.entry_and_bulk.create_multiple_accounts.message.fbde023d57'),null,null,$admin);
+            (achbotNotifyAdmins('sendMessage', ['text'=>\achbotMessage('purchase.entry_and_bulk.create_multiple_accounts.message.76499f65f3').
+                \achbotMessage('purchase.entry_and_bulk.create_multiple_accounts.message.fbde023d57'),
+                    'reply_markup'=>null,'parse_mode'=>null],
+                    ['primary'=>$admin,'report_channel'=>null])[0]['response']??null);
         } catch (Throwable $ignored) {}
         alert(\achbotMessage('purchase.entry_and_bulk.create_multiple_accounts.alert.c7ce33a4eb'),true);
         return;

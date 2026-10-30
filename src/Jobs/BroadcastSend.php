@@ -98,7 +98,7 @@ $group      = $info['target_group'] ?? 'all';
 
 if ($offset == 0) {
     $msg = ($type == "forwardall") ? \achbotMessage('jobs.broadcast_send.text.5168e99d1c') : \achbotMessage('jobs.broadcast_send.text.afcd1bb579');
-    bot('sendMessage', ['chat_id' => $admin, 'text' => $msg]);
+    achbotNotifyAdmins('sendMessage', ['text' => $msg], ['report_channel'=>null]);
 }
 
 $keys = json_encode([
@@ -207,10 +207,8 @@ if (!$usersList || $usersList->num_rows == 0) {
         ? \achbotMessage('jobs.broadcast_send.text.2c23963c7c')
         : \achbotMessage('jobs.broadcast_send.text.684e7d6efc');
 
-    bot('sendMessage', [
-        'chat_id' => $admin,
-        'text'    => $msg . \achbotMessage('jobs.broadcast_send.text.f9f933d21b') . $processedCount . \achbotMessage('jobs.broadcast_send.text.2e434e30b2')
-    ]);
+    achbotNotifyAdmins('sendMessage', ['text'    => $msg . \achbotMessage('jobs.broadcast_send.text.f9f933d21b') . $processedCount . \achbotMessage('jobs.broadcast_send.text.2e434e30b2')
+    ], ['report_channel'=>null]);
 
     markFinished($connection, "send_list", $sendId, $offset);
 
@@ -354,10 +352,8 @@ while ($user = $usersList->fetch_assoc()) {
         if (isCancelled($connection, "send_list", $sendId)) {
             markCancelled($connection, "send_list", $sendId, $offset);
 
-            bot('sendMessage', [
-                'chat_id' => $admin,
-                'text'    => \achbotMessage('jobs.broadcast_send.button.488a04a1e0', ['offset' => $offset])
-            ]);
+            achbotNotifyAdmins('sendMessage', ['text'    => \achbotMessage('jobs.broadcast_send.button.488a04a1e0', ['offset' => $offset])
+            ], ['report_channel'=>null]);
 
             $finished = true;
             return;

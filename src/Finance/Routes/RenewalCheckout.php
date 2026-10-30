@@ -522,7 +522,7 @@ if(preg_match('/^approveRenewAcc(.*)/',$data,$match) && achbotAdminCanFor($conne
              . \achbotMessage('renewal.extensions.hash__i_d_match_1.3abb834966', ['match_1' => $match[1]])
              . \achbotMessage('renewal.extensions.admin_from_id.748897de00', ['from_id' => $from_id])
              . \achbotMessage('renewal.extensions.external_effect_unverified_verify_before.10e2ccf8a3') . achbotFinanceDiagnosticReason($e);
-        sendMessage($err, null, null, $admin);
+        achbotNotifyAdmins('sendMessage', ['text'=>$err], ['report_channel'=>null]);
 
         alert(\achbotMessage('renewal.renewal_checkout.alert.3955ffc5de'), true);
         return;
@@ -744,14 +744,7 @@ if(is_string($data) && strlen($data) <= 64 && preg_match('/\ApayRenewWithWallet(
             [\achbotMessage('renewal.renewal_checkout.text.6295c35212'), $from_id, $username, $first_name, $price, $remark, $volume, $days],
             $mainValues['renew_account_request_message']
         );
-        sendMessage($msg, $keys, "html", $admin);
-		//sendToAllAdmins('sendMessage', ['text' => $msg, 'reply_markup' => $keys, 'parse_mode' => "html"]);
-		
-		// ارسال پیام به کانال گزارشات
-        $rewardChannel = $botState['rewardChannel'];
-        if (!empty($rewardChannel)) {
-            sendMessage($msg, $keys, "html", $rewardChannel);
-        }
+        achbotNotifyAdmins('sendMessage', ['text'=>$msg, 'reply_markup'=>$keys, 'parse_mode'=>'HTML']);
 
         return;
 
@@ -767,7 +760,7 @@ if(is_string($data) && strlen($data) <= 64 && preg_match('/\ApayRenewWithWallet(
                   . \achbotMessage('renewal.extensions.hash__i_d_match_1.3abb834966', ['match_1' => $match[1]])
                   . \achbotMessage('renewal.extensions.user_from_id.45aa9ea684', ['from_id' => $from_id])
                   . \achbotMessage('renewal.extensions.external_effect_unverified_verify_before.10e2ccf8a3').achbotFinanceDiagnosticReason($e);
-        sendMessage($adminErr, null, null, $admin);
+        achbotNotifyAdmins('sendMessage', ['text'=>$adminErr], ['report_channel'=>null]);
 
         sendMessage(\achbotMessage('renewal.extensions.message.ba8adc7121'), null, null, $uid);
 

@@ -57,10 +57,11 @@ if (!function_exists('achbotManualStandardReportDelivery')) {
         if (count($issues)>24) $lines[]=\achbotMessage('manual_payment.manual_approval.manual_standard_report_delivery.additional_targets.83d6318b6e').(count($issues)-24);
         try {
             achbotManualStandardRequireTelegramResult(
-                sendMessage(\achbotMessage('manual_payment.manual_approval.manual_standard_report_delivery.message.7c3a3ec221')
+                (achbotNotifyAdmins('sendMessage', ['text'=>\achbotMessage('manual_payment.manual_approval.manual_standard_report_delivery.message.7c3a3ec221')
                     .$hashId."\n".implode("\n",$lines).
                     \achbotMessage('manual_payment.manual_approval.manual_standard_report_delivery.message.be6b530354'),
-                    null,null,$admin),
+                    'reply_markup'=>null,'parse_mode'=>null],
+                    ['primary'=>$admin,'report_channel'=>null])[0]['response']??null),
                 'delivery_summary');
         } catch (Throwable $error) {
             error_log('achbot_manual_standard_delivery_summary_failed pay_id='.$payId.
@@ -221,7 +222,7 @@ if (
             } catch (Throwable $e) {
                 try { $connection->rollback(); } catch (Throwable $ignored) {}
                 error_log('achbot_manual_standard_remote_finish_review pay_id='.$payId.' subject=renewal exception='.get_class($e).' code='.(int)$e->getCode());
-                sendMessage(\achbotMessage('manual_payment.manual_approval.manual_standard_report_delivery.message.4194effbee', ['hash_id' => $hash_id]), null, null, $admin);
+                (achbotNotifyAdmins('sendMessage', ['text'=>\achbotMessage('manual_payment.manual_approval.manual_standard_report_delivery.message.4194effbee', ['hash_id' => $hash_id])], ['report_channel'=>null])[0]['response']??null);
                 return;
             }
 
@@ -253,7 +254,7 @@ if (
                 $deliveryIssues[]=['stage'=>'renewal_operator_buttons',
                     'ordinal'=>0,'target'=>(int)$payInfo['chat_id']];
                 achbotManualStandardNotice(
-                    static fn()=>sendMessage(\achbotMessage('manual_payment.manual_approval.manual_standard_report_delivery.message.60d43de4f9', ['hash_id' => $hash_id]),null,null,$admin),
+                    static fn()=>(achbotNotifyAdmins('sendMessage', ['text'=>\achbotMessage('manual_payment.manual_approval.manual_standard_report_delivery.message.60d43de4f9', ['hash_id' => $hash_id])], ['report_channel'=>null])[0]['response']??null),
                     'renewal_buttons_operator_alert',$payId,$deliveryIssues,0,$admin);
             }
 
@@ -395,7 +396,7 @@ if (
 
         if (count($toInsertOrders) === 0) {
             error_log('achbot_manual_standard_empty_remote_result pay_id='.$payId);
-            sendMessage(\achbotMessage('manual_payment.manual_approval.manual_standard_report_delivery.message.5eb93029eb', ['hash_id' => $hash_id]), null, null, $admin);
+            (achbotNotifyAdmins('sendMessage', ['text'=>\achbotMessage('manual_payment.manual_approval.manual_standard_report_delivery.message.5eb93029eb', ['hash_id' => $hash_id])], ['report_channel'=>null])[0]['response']??null);
             return;
         }
 
@@ -441,8 +442,9 @@ if (
             try { $connection->rollback(); } catch (Throwable $ignored) {}
             // One or more remote accounts may exist without local orders.
             error_log('achbot_manual_standard_remote_finish_review pay_id='.$payId.' subject=purchase exception='.get_class($e).' code='.(int)$e->getCode());
-            sendMessage(\achbotMessage('manual_payment.manual_approval.manual_standard_report_delivery.message.6f4a274426', ['hash_id' => $hash_id]),
-                        null, null, $admin);
+            (achbotNotifyAdmins('sendMessage', ['text'=>\achbotMessage('manual_payment.manual_approval.manual_standard_report_delivery.message.6f4a274426', ['hash_id' => $hash_id]),
+                    'reply_markup'=>null,'parse_mode'=>null],
+                    ['primary'=>$admin,'report_channel'=>null])[0]['response']??null);
             return;
         }
 
@@ -489,7 +491,7 @@ if (
             $deliveryIssues[]=['stage'=>'purchase_operator_buttons',
                 'ordinal'=>0,'target'=>(int)$payInfo['chat_id']];
             achbotManualStandardNotice(
-                static fn()=>sendMessage(\achbotMessage('manual_payment.manual_approval.manual_standard_report_delivery.message.76fb0b9a90', ['hash_id' => $hash_id]),null,null,$admin),
+                static fn()=>(achbotNotifyAdmins('sendMessage', ['text'=>\achbotMessage('manual_payment.manual_approval.manual_standard_report_delivery.message.76fb0b9a90', ['hash_id' => $hash_id])], ['report_channel'=>null])[0]['response']??null),
                 'purchase_buttons_operator_alert',$payId,$deliveryIssues,0,$admin);
         }
 
@@ -519,15 +521,11 @@ if (
                 [$uid,$user_name,$uname,$price,$lastRemarkForAdminMsg,$hash_id],
                 $mainValues['invite_buy_new_account']
             );
-            achbotManualStandardNotice(
-                static fn()=>sendMessage($msg,$keys2,'html',$admin),
-                'referral_purchase_operator_notice',$payId,$deliveryIssues,0,(int)$admin);
-            $rewardChannel=$botState['rewardChannel']??null;
-            if ($rewardChannel) {
+            foreach (achbotNotifyAdmins('sendMessage', ['text'=>$msg,'reply_markup'=>$keys2,'parse_mode'=>'html']) as $notice) {
                 achbotManualStandardNotice(
-                    static fn()=>sendMessage($msg,$keys2,'html',$rewardChannel),
-                    'referral_purchase_channel_notice',$payId,$deliveryIssues,0,
-                    (int)$rewardChannel);
+                    static fn()=>$notice['response'],
+                    'referral_purchase_operator_notice',$payId,$deliveryIssues,0,
+                    (int)$notice['chat_id']);
             }
         }
         achbotManualStandardReportDelivery(
@@ -555,11 +553,12 @@ if (
                     default=>\achbotMessage('manual_payment.manual_approval.manual_standard_report_delivery.text.1b5f3e9a80'),
                 };
                 achbotManualStandardRequireTelegramResult(
-                    sendMessage(\achbotMessage('manual_payment.manual_approval.manual_standard_report_delivery.message.797f106a46')
+                    (achbotNotifyAdmins('sendMessage', ['text'=>\achbotMessage('manual_payment.manual_approval.manual_standard_report_delivery.message.797f106a46')
                         .$phaseText.\achbotMessage('manual_payment.manual_approval.manual_standard_report_delivery.message.67ca045c30', ['hash_id' => $hash_id])
                         .$accountContext.$rewardContext.
                         \achbotMessage('manual_payment.manual_approval.manual_standard_report_delivery.text.c46767b99f'),
-                        null,null,$admin),
+                    'reply_markup'=>null,'parse_mode'=>null],
+                    ['primary'=>$admin,'report_channel'=>null])[0]['response']??null),
                     'postcommit_operator_alert');
             } catch (Throwable $notifyError) {
                 error_log('achbot_manual_standard_postcommit_notice_failed pay_id='.$payId.
@@ -570,8 +569,9 @@ if (
         // Remote effects and SQL are not one transaction. Never re-arm a claim.
         error_log('achbot_manual_standard_effect_needs_review pay_id='.$payId.' exception='.get_class($e).' code='.(int)$e->getCode());
         try {
-            sendMessage(\achbotMessage('manual_payment.manual_approval.manual_standard_report_delivery.message.79749fa46e', ['hash_id' => $hash_id]),
-                        null, null, $admin);
+            (achbotNotifyAdmins('sendMessage', ['text'=>\achbotMessage('manual_payment.manual_approval.manual_standard_report_delivery.message.79749fa46e', ['hash_id' => $hash_id]),
+                    'reply_markup'=>null,'parse_mode'=>null],
+                    ['primary'=>$admin,'report_channel'=>null])[0]['response']??null);
         } catch (Throwable $notifyError) {
             error_log('achbot_manual_standard_review_notice_failed pay_id='.$payId.
                 ' exception='.get_class($notifyError).' code='.(int)$notifyError->getCode());

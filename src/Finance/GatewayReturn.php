@@ -286,7 +286,8 @@ function achbotNpAlertOperator(mysqli $connection, $adminChatId,
              'callback_data'=>'npReviewCase_'.$id],
         ]]],JSON_UNESCAPED_UNICODE);
         try {
-            $sent=sendMessage($message,$keyboard,'HTML',(int)$adminChatId);
+            $notices=achbotNotifyAdmins('sendMessage', ['text'=>$message,'reply_markup'=>$keyboard,'parse_mode'=>'HTML'], ['primary'=>$adminChatId,'report_channel'=>null]);
+            $sent=$notices[0]['response']??null;
             if (!is_object($sent) || empty($sent->ok)) {
                 $counts['failed']++;
             } else {
