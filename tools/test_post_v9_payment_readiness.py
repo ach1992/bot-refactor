@@ -218,6 +218,77 @@ def source_failure_regressions(d: Path) -> list[dict]:
     return records
 
 
+def api_readiness_regressions(d: Path, state: dict, keys: dict) -> list[str]:
+    """Use the actual capability helper under the existing SELECT-only account."""
+    cases=[]
+    missing='missing'
+    partial='partial_or_incompatible_api_evidence_schema_requires_audit'
+    ready='api_evidence_capability_detected_not_ddl_certified'
+    historical=sql(d,'SELECT userid,wallet FROM users ORDER BY id;SELECT * FROM pays ORDER BY id;')
+    private=(d/'runtime/baseInfo.php').read_bytes()
+    def inspect(name, switches, status, code, expected_exit):
+        seed(d,{**state,**switches},keys)
+        query=all_row_snapshot_query(d)
+        before=tuple(sorted(sql(d,query).splitlines()))
+        exit_code,result,raw=report_run(d)
+        require(exit_code==expected_exit and has(result,'schema_014',status,code),name)
+        require(result['schema']['014']==code,name+'_reported_shape')
+        for method,flag_name in [('bank_transfer','smsApiVerifyState'),('gift_card','giftApiVerifyState')]:
+            api=result['payment_apis'][method]
+            expected_switch='on' if switches.get(flag_name)=='on' else 'off'
+            require(api['switch']==expected_switch and api['credentials']=='credentials_not_decrypted'
+                    and api['authentication']=='not_verified',name+'_no_authentication_claim_'+method)
+            if expected_switch=='on':
+                require(has(result,'api_'+method,'WARN','credentials_not_decrypted_not_verified'),name+'_explicit_credentials_status_'+method)
+        require(tuple(sorted(sql(d,query).splitlines()))==before,name+'_all_rows_unchanged')
+        require((d/'runtime/baseInfo.php').read_bytes()==private,name+'_private_sentinel_unchanged')
+        cases.append(name)
+    inspect('api014_missing_switches_off_legacy_pass',{},'INFO',missing,0)
+    inspect('api014_missing_bank_on_blocks',{'smsApiVerifyState':'on'},'BLOCK',missing,2)
+    inspect('api014_missing_gift_on_blocks',{'giftApiVerifyState':'on'},'BLOCK',missing,2)
+    statement(d,'ALTER TABLE payment_attempts ADD evidence_state VARCHAR(32) DEFAULT NULL')
+    inspect('api014_partial_switches_off_legacy_warn',{},'WARN',partial,0)
+    inspect('api014_partial_bank_on_blocks',{'smsApiVerifyState':'on'},'BLOCK',partial,2)
+    inspect('api014_partial_gift_on_blocks',{'giftApiVerifyState':'on'},'BLOCK',partial,2)
+    statement(d,'ALTER TABLE payment_attempts DROP COLUMN evidence_state')
+    statement(d,(ROOT/'migrations/post-v9/014_api_payment_evidence.sql').read_text())
+    inspect('api014_complete_switches_off_detected',{},'PASS',ready,0)
+    inspect('api014_complete_bank_on_credentials_not_verified',{'smsApiVerifyState':'on'},'PASS',ready,0)
+    inspect('api014_complete_gift_on_credentials_not_verified',{'giftApiVerifyState':'on'},'PASS',ready,0)
+    statement(d,'ALTER TABLE payment_transactions DROP INDEX uq_payment_evidence_operation')
+    inspect('api014_missing_unique_switches_off_legacy_warn',{},'WARN',partial,0)
+    inspect('api014_missing_unique_bank_on_blocks',{'smsApiVerifyState':'on'},'BLOCK',partial,2)
+    statement(d,'ALTER TABLE payment_transactions ADD UNIQUE KEY uq_payment_evidence_operation(evidence_operation)')
+    statement(d,'ALTER TABLE payment_attempts CHANGE evidence_fulfillment_payload evidence_fulfillment_payload_missing LONGTEXT COLLATE utf8mb4_bin DEFAULT NULL')
+    inspect('api014_missing_fulfillment_switches_off_legacy_warn',{},'WARN',partial,0)
+    inspect('api014_missing_fulfillment_gift_on_blocks',{'giftApiVerifyState':'on'},'BLOCK',partial,2)
+    statement(d,'ALTER TABLE payment_attempts CHANGE evidence_fulfillment_payload_missing evidence_fulfillment_payload LONGTEXT COLLATE utf8mb4_bin DEFAULT NULL')
+    inspect('api014_restored_complete_both_switches_on',{'smsApiVerifyState':'on','giftApiVerifyState':'on'},'PASS',ready,0)
+    inspect('api014_non_on_switch_values_remain_off',{'smsApiVerifyState':True,'giftApiVerifyState':'ON'},'PASS',ready,0)
+    seed(d,state,keys)
+    manifest=d/'manifest.json'
+    original=manifest.read_text()
+    for member in ['src/Finance/PaymentEvidence.php','src/Finance/PaymentApiAdmin.php',
+                   'src/Finance/ApiPayments.php','src/Finance/Routes/ApiPayments.php']:
+        for mode in ['omission','substitution']:
+            data=json.loads(original)
+            entry=data['files'].pop(member)
+            if mode=='substitution':data['files']['src/Finance/unlisted_api_fixture.php']=entry
+            data['file_count']=len(data['files'])
+            manifest.write_text(json.dumps(data))
+            exit_code,result,_=report_run(d)
+            name='api_inventory_'+mode+'_blocks__'+member.replace('/','_').replace('.','_')
+            require(exit_code==2 and result['checks']==[{'id':'source_identity','status':'BLOCK',
+                    'code':'manifest_mismatch_or_untrusted_shape'}],name)
+            cases.append(name)
+    manifest.write_text(original)
+    require(sql(d,'SELECT userid,wallet FROM users ORDER BY id;SELECT * FROM pays ORDER BY id;')==historical,
+            'api_readiness_historical_financial_rows_preserved')
+    require((d/'runtime/baseInfo.php').read_bytes()==private,'api_readiness_private_sentinel_preserved')
+    cases.append('api_readiness_historical_financial_rows_and_private_sentinel_unchanged')
+    return cases
+
+
 def main() -> dict:
     cases = []
     retired_path_cases = []
@@ -289,6 +360,7 @@ def main() -> dict:
                                   "SELECT type,value FROM setting ORDER BY id;")), 'line_149')
         require(((runtime/'baseInfo.php').read_bytes() == private_before), 'line_151')
         cases.append('complete_migration_shapes_and_wallet_only_pass_no_sql_mutation')
+        api_cases=api_readiness_regressions(d,state,keys)
 
         require(has(result,'current_core_tables','PASS'), 'current_core_tables_pass')
         require(has(result,'schema_010','INFO'), 'cleanup_optional')
@@ -695,6 +767,7 @@ def main() -> dict:
         require(len(retired_path_cases)==len(package.RETIRED_RUNTIME_MEMBERS)-1,
                 'all_retired_compatibility_paths_exercised')
         cases.extend(retired_path_cases)
+        cases.extend(api_cases)
     return {
         'complete':True, 'cases':len(cases), 'details':cases,
         'original_cases_preserved':54,
@@ -713,6 +786,10 @@ def main() -> dict:
         'source_members_verified':package.EXPECTED_RUNTIME_COUNT,
         'original_23_table_schema_used':True,
         'all_eight_additive_shapes_exercised':True,
+        'api_schema_capability_compared':True,
+        'api_credentials_not_decrypted':True,
+        'api_schema_014_disposable_only':True,
+        'api_readiness_cases':len(api_cases),
         'no_real_provider_or_telegram_calls':True,
         'installed_operator_acceptance':False,
     }
