@@ -238,6 +238,8 @@ def run(module):
                     f"'{issued:%Y-%m-%d %H:%M:%S}')")
                 expected_pin=pinargs.pop('expected_pin',True)
                 assert php('pin',pay_id=ident,method=method,**pinargs) is expected_pin
+                if expected_pin:
+                    sql(f"UPDATE pays SET state='have_sent',message_id=222,chat_id=9001 WHERE id={ident};UPDATE payment_attempts SET stage='review' WHERE pay_row_id={ident}")
                 return ident
             def sms(ident,amount=100001,unit='toman'):
                 return dict(id=ident,public_uid='UID'+str(ident),provider='BANK_FIXTURE',

@@ -2124,6 +2124,13 @@ def check():
         # merely the isolated bank-finisher. The normalized service adapter
         # boundary is substituted with a deterministic test-only verified
         # result, while all PHP payment/order/accounting SQL remains real.
+        # This include scans the entire table, not only the driver's hash.
+        # Earlier intentionally invalid receipts remain have_sent. Keep them
+        # outside this scenario's timer window even on a slow/shared runner;
+        # each scheduler target below is explicitly made due. Do not suppress
+        # genuine deferred diagnostics or delete the negative-control rows.
+        query(work,env,"UPDATE pays SET request_date=UNIX_TIMESTAMP()+86400 "
+              "WHERE state='have_sent'")
         for outcome in ('verified','unconfirmed'):
             key='realschedulerday'+outcome
             seed(work,env,key)
@@ -2244,7 +2251,7 @@ def check():
               "(9921,5,100) ON DUPLICATE KEY UPDATE volume=5,price=100")
         query(work,env,"INSERT INTO increase_plan(id,volume,price) VALUES "
               "(9922,4,100) ON DUPLICATE KEY UPDATE volume=4,price=100")
-        query(work,env,"UPDATE pays SET request_date=UNIX_TIMESTAMP() "
+        query(work,env,"UPDATE pays SET request_date=UNIX_TIMESTAMP()+86400 "
               "WHERE state='have_sent'")
 
         bank_native={}
@@ -2583,7 +2590,7 @@ def check():
 
         # Execute the actual scheduler include (not only its claim helper)
         # with an isolated eligible bank receipt, twice, checking money and state.
-        query(work,env,"UPDATE pays SET request_date=UNIX_TIMESTAMP() WHERE state='have_sent'")
+        query(work,env,"UPDATE pays SET request_date=UNIX_TIMESTAMP()+86400 WHERE state='have_sent'")
         seed(work,env,'schedulerrealbank')
         assert base('schedulerrealbank','claim')
         query(work,env,"UPDATE pays SET state='have_sent',"
@@ -2602,7 +2609,7 @@ def check():
         # F3: injected method lookup outage while the rest of the database
         # remains healthy must NOT authorize a legacy bank settlement.
         seed(work,env,'lookupfailure')
-        query(work,env,"UPDATE pays SET state='have_sent' WHERE hash_id='lookupfailure'")
+        query(work,env,"UPDATE pays SET state='have_sent',request_date=UNIX_TIMESTAMP()-120 WHERE hash_id='lookupfailure'")
         before=int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'))
         seed(work,env,'partialwallet')
         query(work,env,'RENAME TABLE payment_attempts TO payment_attempts_unavailable')

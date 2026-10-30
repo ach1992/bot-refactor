@@ -761,6 +761,12 @@ return [
     // ── رسیدهای پرداخت دستی ──
     'manual_payment' => [
         'api_payment.report' => ['text' => "گزارش بررسی پرداخت\nشناسه پیگیری: {reference}\nمشتری: {userId}\nمبلغ دقیق: {amount} {unit}\nروش پرداخت: {method}\nمرجع بررسی: {evidence}\nموضوع: {subject}\nنتیجه: {status}", 'parameters' => ["reference", "userId", "amount", "unit", "method", "evidence", "subject", "status"]],
+        'api_payment.code_used' => 'کد گیفت‌کارت طبق API قبلاً مصرف شده است',
+        'api_payment.code_revoked' => 'کد گیفت‌کارت طبق API باطل شده است',
+        'api_payment.code_expired' => 'کد گیفت‌کارت طبق API منقضی شده است',
+        'api_payment.code_mismatch' => 'مبلغ گیفت‌کارت طبق API با فاکتور برابر نیست؛ کد مصرف نشد',
+        'api_payment.auto_approved' => 'تایید خودکار توسط API',
+        'api_payment.code_evidence' => ['text' => "کد گیفت‌کارت:\n<code>{code}</code>", 'parameters' => ['code']],
         'api_payment.status_confirmed' => "پرداخت و عملیات مربوط تأیید شد",
         'api_payment.status_settled' => "پرداخت قبلاً نهایی شده است",
         'api_payment.status_review' => "نیازمند بررسی مدیر",

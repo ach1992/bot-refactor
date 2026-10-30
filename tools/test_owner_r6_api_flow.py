@@ -48,6 +48,7 @@ class APIs(BaseHTTPRequestHandler):
         if not self.auth(body):return self.reply({},401)
         data=json.loads(body)
         if self.mode=='offline':return self.reply({},503)
+        self.received.append(time.monotonic())
         with self.lock:
             self.events.append(('POST',self.path,data))
             if self.path.endswith('/actions'):
@@ -90,11 +91,16 @@ if($op==='issue')$value=achbotManualClaim($connection,$pay,$spec['method']??'ban
 elseif($op==='route'){$from_id=(int)($spec['actor']??1001);$chat_id=(int)($spec['chat']??$from_id);$data=(string)($spec['data']??'');$text=$spec['text']??null;$callbackId='fixture-callback';$userInfo=['step'=>$spec['step']??'none'];$value=require $root.'/src/Finance/Routes/ApiPayments.php';}
 elseif($op==='initial_step')$value=achbotApiPaymentInitialStep($connection,$pay['hash_id'],'legacy-gift-step');
 elseif($op==='budget'){$deadline=hrtime(true)/1000000000+(float)$spec['seconds'];$GLOBALS['achbotPaymentEvidenceDeadline']=$deadline;$value=['status'=>achbotApiPaymentCheck($connection,$id),'restored'=>($GLOBALS['achbotPaymentEvidenceDeadline']??null)===$deadline];unset($GLOBALS['achbotPaymentEvidenceDeadline']);}
-elseif($op==='save')$value=achbotPaymentEvidenceSaveGiftCode($connection,$id,1001,$spec['code']);
+elseif($op==='ack'){if(!empty($spec['pre_check']))achbotApiPaymentCheck($connection,$id);try{achbotManualAcknowledgeAndVerify($connection,$pay,(string)achbotApiPaymentAttempt($connection,$id)['provider'],'Start','FixtureBot');$value=['threw'=>false];}catch(Throwable $e){$value=['threw'=>true];}}
+elseif($op==='review_keys')$value=json_decode(achbotApiPaymentReviewKeyboard($pay),true);
+elseif($op==='fits')$value=achbotManualGiftReviewFits($spec['caption'],$spec['code']);
+elseif($op==='rawsave')$value=achbotPaymentEvidenceSaveGiftCode($connection,$id,1001,$spec['code']);
+elseif($op==='save'){$value=achbotPaymentEvidenceSaveGiftCode($connection,$id,1001,$spec['code']);if(($value['status']??'')==='saved'){$v=achbotManualBeginEvidence($connection,$pay,'gift_card',1001,$spec['code']);if(!$v||!achbotManualFinishEvidence($connection,$pay['hash_id'],$spec['code'],$v,222,9001))throw new RuntimeException('fixture_gift_review_delivery_failed');}}
+elseif($op==='timer')$value=['eligible'=>achbotAutoBankEligible($connection,$pay),'claimed'=>achbotAutoBankClaim($connection,$pay)];
 elseif($op==='check')$value=achbotApiPaymentCheck($connection,$id);
 elseif($op==='settle'){$proof=achbotPaymentEvidenceGetProof($connection,$id);$value=$proof?achbotApiPaymentSettle($connection,$id,$proof):'no-proof';}
 elseif($op==='human')$value=achbotApproveManualWalletTopup($connection,$pay['hash_id'],9001,9001);
-elseif($op==='receipt'){$v=achbotManualBeginEvidence($connection,$pay,'bank_transfer',1001,'fixture-photo');$value=$v?achbotManualFinishEvidence($connection,$pay['hash_id'],'fixture-photo',$v,222,9001):false;}
+elseif($op==='receipt'){if($pay['state']==='have_sent')$value=true;else{$v=achbotManualBeginEvidence($connection,$pay,'bank_transfer',1001,'fixture-photo');$value=$v?achbotManualFinishEvidence($connection,$pay['hash_id'],'fixture-photo',$v,222,9001):false;}}
 elseif($op==='view'){$c=achbotApiPaymentContext($connection,$pay['hash_id'],1001);$value=['keys'=>$c?json_decode(achbotApiPaymentKeyboard($c),true):null,'text'=>$c?achbotApiPaymentInvoiceText($c):null,'allowed'=>achbotManualReceiptAllowed($connection,$pay,'bank_transfer',1001)];}
 elseif($op==='track'){achbotApiPaymentTrackInvoice($connection,$pay['hash_id'],1001,(object)['ok'=>true,'result'=>(object)['message_id'=>567]]);$value=true;}
 elseif($op==='expire')$value=achbotPayUxExpireUnstartedManual($connection,$id);
@@ -103,7 +109,7 @@ elseif($op==='notice'){achbotApiPaymentNotice($connection,$pay,$spec['status']??
 elseif($op==='access'){$from_id=(int)$spec['actor'];$value=achbotAdminRequestAllowed('apiReview_'.$pay['hash_id'],null,'none');}
 elseif($op==='attention'){require_once $root.'/src/Finance/RecoveryInspection.php';$q=$connection->query('SELECT p.id FROM pays p WHERE p.id='.$id.' AND '.achbotRecoveryAttentionSql($connection));$value=$q->num_rows===1;}
 elseif($op==='profile_shift'){$a=achbotApiPaymentAttempt($connection,$id);$p=achbotPaymentEvidenceSnapshot($a);$p['issued_at']=time()-(int)($spec['age']??90000);unset($p['profile_sha256']);$sealed=achbotPaymentEvidenceProtect('profile:'.$a['id'].':'.$id,$p);$q=$connection->prepare('UPDATE payment_attempts SET evidence_profile=? WHERE id=?');$q->bind_param('si',$sealed,$a['id']);$q->execute();$q->close();$value=true;}
-elseif($op==='photo_race'){$v=achbotManualBeginEvidence($connection,$pay,'bank_transfer',1001,'race-photo');$value=$v?sendReceiptToAdminsAndUpdatePay($connection,'race-photo','رسید تست',achbotApiPaymentReviewKeyboard($pay),9001,$pay['hash_id'],$v):false;}
+elseif($op==='photo_race'){$v=achbotManualBeginEvidence($connection,$pay,'bank_transfer',1001,'race-photo');$value=$v?sendReceiptToAdminsAndUpdatePay($connection,'race-photo','رسید تست',achbotApiPaymentReviewKeyboard($pay),9001,$pay['hash_id'],$v):false;if($value)achbotManualAcknowledgeAndVerify($connection,$pay,'bank_transfer','Start','FixtureBot');}
 else throw new RuntimeException('unknown fixture op');
 echo json_encode(['result'=>$value,'events'=>$GLOBALS['events']],JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE);
 '''
@@ -118,7 +124,8 @@ def run(work,env,app,driver,url,**spec):
     except ValueError as e:raise AssertionError((p.stdout,p.stderr)) from e
     r['stderr']=p.stderr;return r
 
-def check(evidence_root,settings_root):
+def check(evidence_root,settings_root,source_root=ROOT):
+    ROOT=source_root
     cases=[];srv=ThreadingHTTPServer(('127.0.0.1',0),APIs);thread=threading.Thread(target=srv.serve_forever,daemon=True);thread.start();url=f'http://127.0.0.1:{srv.server_port}'
     try:
       with owned.owned_database() as (work,env):
@@ -146,28 +153,41 @@ function alert(...$args){answerCallbackQuery(...$args);}
 function setUser($step='none',$field='step'){$GLOBALS['events'][]=['event'=>'STATE','step'=>$step];}
 function sendPhoto(...$args){$GLOBALS['events'][]=['event'=>'PHOTO'];if(!empty($GLOBALS['spec']['photo_api']))achbotApiPaymentCheck($GLOBALS['connection'],(int)$GLOBALS['spec']['pay']);return(object)['ok'=>true,'result'=>(object)['message_id'=>456]];}
 """)
-        php=php.replace("function editKeys(...$args) {\n    $GLOBALS['events'][]=['event'=>'EDIT_KEYS','state'=>fixtureState()];\n}","function editKeys(...$args){$GLOBALS['events'][]=['event'=>'EDIT_KEYS','state'=>fixtureState(),'chat'=>$args[2]??null];return !empty($GLOBALS['spec']['fail_staff'])?null:(object)['ok'=>true];}")
+        php=php.replace("function editKeys(...$args) {\n    $GLOBALS['events'][]=['event'=>'EDIT_KEYS','state'=>fixtureState()];\n}","""function editKeys(...$args){$GLOBALS['events'][]=['event'=>'EDIT_KEYS','state'=>fixtureState(),'chat'=>$args[2]??null,'keys'=>$args[0]??null];if(!empty($GLOBALS['spec']['staff_decision']) && empty($GLOBALS['staff_decision_once'])){
+ $GLOBALS['staff_decision_once']=true;$p=achbotApiPaymentRow($GLOBALS['connection'],(int)$GLOBALS['spec']['pay']);
+ if($GLOBALS['spec']['staff_decision']==='approve')achbotApproveManualWalletTopup($GLOBALS['connection'],$p['hash_id'],9001,9001);
+ else {
+  $connection=$GLOBALS['connection'];$admin=9001;$buttonValues=$GLOBALS['buttonValues'];$mainValues=$GLOBALS['mainValues'];$botUsername='FixtureBot';
+  $hadActor=array_key_exists('from_id',$GLOBALS);$oldActor=$GLOBALS['from_id']??null;$GLOBALS['from_id']=9001;
+  $from_id=9001;$chat_id=9001;$message_id=222;$data='';$text='Synthetic administrator rejection';$userInfo=['step'=>'declineActionReason_'.$p['hash_id'].'_222'];
+  try{require $GLOBALS['root'].'/src/Finance/Routes/ManualReceipts.php';}finally{if($hadActor)$GLOBALS['from_id']=$oldActor;else unset($GLOBALS['from_id']);}
+ }
+}
+return !empty($GLOBALS['spec']['fail_staff'])?null:(object)['ok'=>true];}""")
+        php=php.replace("function sendMessage($text=null,$keys=null,$mode=null,$to=null) {","function sendMessage($text=null,$keys=null,$mode=null,$to=null) {if(!empty($GLOBALS['spec']['fail_customer_ack']) && $to===null)throw new RuntimeException('fixture_customer_ack_failure');")
         php=php.replace("return (object)['ok'=>true];\n}\nfunction editKeys", "return (object)['ok'=>true,'result'=>(object)['message_id'=>456]];\n}\nfunction editKeys")
         php=php.replace("    if ($strict!==true) throw new RuntimeException('non_strict_remote_get');", "    if((int)$GLOBALS['connection']->query('SELECT @@in_transaction')->fetch_row()[0]!==0)throw new RuntimeException('fixture_native_get_under_financial_lock');\n    if(str_starts_with($name,'api_edit'))return(object)['username'=>$name,'status'=>'active','expire'=>1900000000,'data_limit'=>10737418240,'used_traffic'=>0];\n    if ($strict!==true) throw new RuntimeException('non_strict_remote_get');")
         # Controlled process-loss injection in disposable source, never runtime hooks.
         flow=app/'src/Finance/ApiPayments.php';flow.write_text(flow.read_text().replace('$delivery=achbotAutoBankProvisionBuySub(',"if(!empty($GLOBALS['spec']['crash_before_native']))throw new RuntimeException('fixture_crash_after_claim');\n            $delivery=achbotAutoBankProvisionBuySub(").replace("$result=(object)($payload['result']??[]);","if(!empty($GLOBALS['spec']['crash_after_verified']))throw new RuntimeException('fixture_crash_after_verified');\n    $result=(object)($payload['result']??[]);"))
 
         driver=work/'api-flow.php';driver.write_text(php)
-        human_driver=work/'human-flow.php';human_driver.write_text(manual.PHP_ROUTE.replace("$GLOBALS['spec']=$spec;","$GLOBALS['spec']=$spec;\n"+PREP))
+        human_driver=work/'human-flow.php';human_driver.write_text(manual.PHP_ROUTE.replace("$GLOBALS['spec']=$spec;","$GLOBALS['spec']=$spec;\n"+PREP).replace("['name'=>'sendMessage','args'=>$args]","['name'=>'sendMessage','args'=>$args,'at'=>hrtime(true)/1000000000]").replace("['name'=>'sendPhoto','args'=>$args]","['name'=>'sendPhoto','args'=>$args,'at'=>hrtime(true)/1000000000]").replace("['name'=>'editKeys']","['name'=>'editKeys','args'=>$args]"))
         def call(**s):return run(work,env,app,driver,url,**s)
         def human(route,data):
             r=run(work,env,app,human_driver,url,route=route,data=data,actor=9001)
             assert not r.get('fatal'),r
             return r
         seed_index=0
-        def seed(key,kind='INCREASE_WALLET',method='bank_transfer',days=0,volume=0,count=1,order=0):
+        def seed(key,kind='INCREASE_WALLET',method='bank_transfer',days=0,volume=0,count=1,order=0,reviewed=True):
             nonlocal seed_index
             if key not in ['collision2','sequential2']:seed_index+=1
             price=101 if method=='gift_card' else 101+seed_index*1000
             query(work,env,f"INSERT INTO pays(hash_id,user_id,type,plan_id,server_id,order_id,price,day,volume,agent_count,description,request_date,state) VALUES('{key}',1001,'{kind}',7,2,{order},{price},{days},{volume},{count},'api_{key}',UNIX_TIMESTAMP(),'pending')")
             n=int(query(work,env,f"SELECT id FROM pays WHERE hash_id='{key}'"))
             if kind=='RENEW_SCONFIG':query(work,env,f"UPDATE pays SET description='{{\"remark\":\"api_edit_external\",\"uuid\":\"fixture-uuid\",\"marzban\":true,\"server_id\":2}}' WHERE id={n}")
-            assert call(op='issue',pay=n,method=method)['result'] is True,(key,call(op='issue',pay=n,method=method));return n
+            assert call(op='issue',pay=n,method=method)['result'] is True,(key,call(op='issue',pay=n,method=method))
+            if reviewed and method=='bank_transfer':assert call(op='receipt',pay=n)['result'] is True
+            return n
         def sms(n,extra=0):
             a=int(query(work,env,f'SELECT quote_amount FROM payment_attempts WHERE pay_row_id={n}').split('.')[0]);APIs.next_id+=1;rid=APIs.next_id
             APIs.rows[rid]={'id':rid,'public_uid':'uid'+str(rid),'status':'ready','amount':str(a+extra),'display_unit':'toman','received_at':time.strftime('%Y-%m-%dT%H:%M:%S+00:00'),'transfer_at':int(time.time()),'sms_date':time.strftime('%Y-%m-%d'),'sms_time':time.strftime('%H:%M:%S'),'provider':'fixture','sender':'bank','bank_key':'fixture'}
@@ -176,11 +196,128 @@ function sendPhoto(...$args){$GLOBALS['events'][]=['event'=>'PHOTO'];if(!empty($
         def state(n):return query(work,env,f'SELECT state FROM pays WHERE id={n}')
         def gift(code,amount=101,status='active'):
             APIs.cards[code]={'card_uuid':'card-'+code,'status':status,'redeem_amount':str(amount),'display_amount':'999999','game_key':'fixture','redeem_value_id':1}
+        # The unrelated legacy timer cannot bypass SMS proof on an API-pinned invoice.
+        n=seed('timerapibank');before=query(work,env,'SELECT wallet FROM users WHERE userid=1001');offset=len(APIs.events)
+        r=call(op='timer',pay=n);assert r['result']=={'eligible':False,'claimed':False} and state(n)=='have_sent',r
+        assert query(work,env,'SELECT wallet FROM users WHERE userid=1001')==before and len(APIs.events)==offset
+        cases.append('legacy_timer_cannot_claim_api_pinned_bank_without_sms')
+        pinned=query(work,env,f'SELECT HEX(evidence_profile) FROM payment_attempts WHERE pay_row_id={n}')
+        query(work,env,f"UPDATE payment_attempts SET evidence_profile='' WHERE pay_row_id={n}")
+        r=call(op='timer',pay=n);assert r['result']=={'eligible':False,'claimed':False} and state(n)=='have_sent',r
+        cases.append('legacy_timer_fails_closed_for_corrupt_api_pin')
+        query(work,env,f"UPDATE payment_attempts SET evidence_profile=UNHEX('{pinned}') WHERE pay_row_id={n}")
+        # Evidence first: no API request or remote consumption without a real staff review.
+        n=seed('notyet',reviewed=False);rid=sms(n);before=len(APIs.events)
+        assert call(pay=n)['result']=='awaiting_receipt' and len(APIs.events)==before and APIs.rows[rid]['status']=='ready'
+        assert query(work,env,f'SELECT COUNT(*) FROM payment_transactions t JOIN payment_attempts a ON a.id=t.attempt_id WHERE a.pay_row_id={n}')=='0'
+        cases.append('no_bank_api_or_consumption_before_receipt_delivery')
+        key='notyet';offset=len(APIs.received)
+        r=run(work,env,app,human_driver,url,route='wallet',step='waitIncreaseWalletReceipt'+key,actor=1001,photo_mode='no_id')
+        assert not r.get('fatal') and state(n)=='pending' and len(APIs.received)==offset and APIs.rows[rid]['status']=='ready',r
+        cases.append('failed_primary_receipt_delivery_keeps_pending_and_no_http')
+        r=run(work,env,app,human_driver,url,route='wallet',step='waitIncreaseWalletReceipt'+key,actor=1001)
+        assert not r.get('fatal') and state(n)=='approved' and APIs.rows[rid]['status']=='used',r
+        photos=[e for e in r['events'] if e.get('name')=='sendPhoto' and e['args'][4]==9001]
+        assert len(photos)==1 and APIs.received[offset:] and photos[0]['at']<APIs.received[offset],r
+        customer=[e for e in r['events'] if e.get('name')=='sendMessage' and (len(e['args'])<4 or e['args'][3] in [None,1001])]
+        assert customer and customer[0]['at']<APIs.received[offset] and len([e['args'][0] for e in customer])==len(set(e['args'][0] for e in customer)),r
+        cases.append('customer_manual_ack_precedes_api_without_duplicate_confirmation')
+        assert any(e.get('name')=='editKeys' and 'تایید خودکار توسط API' in str(e.get('args')) for e in r['events']),r
+        cases.append('receipt_retry_same_evidence_delivers_before_sms_auto_approval')
+        APIs.rows={}
+        # API OFF keeps original gift image; typed text cannot become a photo.
+        query(work,env,"INSERT INTO pays(hash_id,user_id,type,price,request_date,state) VALUES('giftoffimage',1001,'INCREASE_WALLET',101,UNIX_TIMESTAMP(),'pending')")
+        offgift=int(query(work,env,"SELECT id FROM pays WHERE hash_id='giftoffimage'"));assert call(op='issue',pay=offgift,method='gift_card',off=True)['result']
+        offset=len(APIs.events);r=run(work,env,app,human_driver,url,route='wallet',step='waitIncreaseWalletGiftReceiptgiftoffimage',actor=1001,off=True,update={'message':{'text':'not-an-image'}})
+        assert not r.get('fatal') and state(offgift)=='pending' and len(APIs.events)==offset and not any(e.get('name')=='sendPhoto' for e in r['events']),r
+        r=run(work,env,app,human_driver,url,route='wallet',step='waitIncreaseWalletGiftReceiptgiftoffimage',actor=1001,off=True)
+        assert not r.get('fatal') and state(offgift)=='have_sent' and len(APIs.events)==offset and any(e.get('name')=='sendPhoto' for e in r['events']),r
+        cases.append('gift_api_off_still_requires_original_image_without_http')
+        # Each existing subject builds its original caption; only API gift evidence becomes text.
+        query(work,env,"INSERT INTO orders_list(userid,token,transid,fileid,server_id,inbound_id,remark,uuid,expire_date,link,amount,status,date) VALUES(1001,'caption-token','',7,2,0,'api_edit_caption','fixture-uuid',1900000000,'[]',101,1,'1700000000')")
+        caption_oid=int(query(work,env,"SELECT id FROM orders_list WHERE remark='api_edit_caption'"))
+        gift_subjects=[('wallet','INCREASE_WALLET',0,0,0,1,'wallet','waitIncreaseWalletGiftReceipt'),('standard','BUY_SUB',0,0,0,1,'checkout','waitBuyGiftReceipt'),('custom','BUY_SUB',0,12,3,1,'checkout','waitCustomGiftReceipt'),('bulk','BUY_SUB',0,0,0,2,'checkout','waitBuyGiftReceipt'),('renew','RENEW_ACCOUNT',caption_oid,0,0,1,'renewal','waitRenewGiftReceipt'),('day',f'INCREASE_DAY_{caption_oid}_1',caption_oid,4,0,1,'extension','waitIncreaseDayGiftReceipt'),('volume',f'INCREASE_VOLUME_{caption_oid}_1',caption_oid,0,5,1,'extension','waitIncreaseVolumeGiftReceipt'),('external','RENEW_SCONFIG',0,0,0,1,'checkout','waitBuyGiftReceipt')]
+        for label,kind,order,days,volume,count,route,step in gift_subjects:
+            key='caption'+label;n=seed(key,kind,method='gift_card',days=days,volume=volume,count=count,order=order)
+            query(work,env,f"UPDATE pays SET request_date=UNIX_TIMESTAMP()-172800 WHERE id<>{n}")
+            tracked=call(op='track',pay=n)
+            invoices=[e['data'] for e in tracked['events'] if e.get('event')=='BOT' and e.get('method')=='editMessageText']
+            assert invoices,(label,tracked)
+            callback=json.loads(invoices[-1]['reply_markup'])['inline_keyboard'][0][0]['callback_data']
+            clicked=run(work,env,app,human_driver,url,route=route,data=callback,actor=1001)
+            steps=[e['step'] for e in clicked['events'] if e.get('name')=='setUser']
+            assert not clicked.get('fatal') and step+key in steps,(label,callback,clicked)
+            code='CODE<&>'+label;offset=len(APIs.received);APIs.mode='offline'
+            r=run(work,env,app,human_driver,url,route=route,step=step+key,actor=1001,update={'message':{'text':code}})
+            assert not r.get('fatal') and state(n)=='have_sent', (label,r)
+            reviews=[e for e in r['events'] if e.get('name')=='sendMessage' and len(e['args'])>3 and e['args'][3]==9001 and '<code>CODE&lt;&amp;&gt;'+label+'</code>' in e['args'][0]]
+            assert len(reviews)==1 and '101' in reviews[0]['args'][0] and 'synthetic_user' in reviews[0]['args'][0],(label,r)
+            keys=json.loads(reviews[0]['args'][1]);assert any('declineAction_'+key==b.get('callback_data') for row in keys['inline_keyboard'] for b in row),(label,r)
+            assert not any(e.get('name')=='sendPhoto' for e in r['events']) and 'receipt_file_id' not in query(work,env,f'SELECT checkout_url FROM payment_attempts WHERE pay_row_id={n}'),(label,r)
+            assert code not in query(work,env,f'SELECT evidence_code FROM payment_attempts WHERE pay_row_id={n}')
+            cases.append('gift_generated_button_original_caption_copyable_private_'+label)
+        # External renewal uses the Buy receipt route for both evidence types.
+        n=seed('externalbankbutton','RENEW_SCONFIG',reviewed=False);key='externalbankbutton'
+        tracked=call(op='track',pay=n);invoices=[e['data'] for e in tracked['events'] if e.get('event')=='BOT' and e.get('method')=='editMessageText']
+        callback=json.loads(invoices[-1]['reply_markup'])['inline_keyboard'][0][0]['callback_data']
+        query(work,env,f"UPDATE pays SET request_date=UNIX_TIMESTAMP()-172800 WHERE id<>{n}")
+        clicked=run(work,env,app,human_driver,url,route='checkout',data=callback,actor=1001)
+        assert not clicked.get('fatal') and any(e.get('step')=='waitBuyCartReceipt'+key for e in clicked['events']),clicked
+        cases.append('external_renewal_bank_generated_button_uses_buy_receipt_route')
+        # Numeric zero follows the nullable text contract, with no fake photo.
+        n=seed('zerocode',method='gift_card');APIs.mode='offline'
+        r=run(work,env,app,human_driver,url,route='wallet',step='waitIncreaseWalletGiftReceiptzerocode',actor=1001,update={'message':{'text':'0'}})
+        assert not r.get('fatal') and state(n)=='have_sent' and any('<code>0</code>' in str(e.get('args')) for e in r['events']),r
+        cases.append('gift_zero_string_is_valid_text_evidence')
+        n=seed('oversizedcode',method='gift_card');offset=len(APIs.received)
+        r=run(work,env,app,human_driver,url,route='wallet',step='waitIncreaseWalletGiftReceiptoversizedcode',actor=1001,update={'message':{'text':'A'*4096}})
+        assert not r.get('fatal') and state(n)=='pending' and len(APIs.received)==offset,r
+        assert query(work,env,f"SELECT evidence_code IS NULL AND stage='pending' AND review_notice_claim_token IS NULL FROM payment_attempts WHERE pay_row_id={n}")=='1'
+        assert any('در یک پیام جا نمی' in str(e.get('args')) for e in r['events']),r
+        cases.append('oversized_code_rejected_before_storage_or_delivery_claim')
+        caption='<b>سفارش 😀</b>';label='کد گیفت‌کارت:'
+        limit=4096-len(('سفارش 😀'+'\n\n'+label+'\n').encode('utf-16-le'))//2
+        assert call(op='fits',pay=n,caption=caption,code='&'*limit)['result'] is True
+        assert call(op='fits',pay=n,caption=caption,code='&'*(limit+1))['result'] is False
+        cases.append('whole_message_capacity_entities_and_supplementary_boundary')
+        APIs.mode='ok';APIs.rows={}
+        n=seed('giftlivecaption',method='gift_card');gift('valid-route-code');offset=len(APIs.received)
+        assert call(op='rawsave',pay=n,code='valid-route-code')['result']['status']=='saved'
+        assert call(pay=n)['result']=='awaiting_receipt' and len(APIs.received)==offset
+        r=run(work,env,app,human_driver,url,route='wallet',step='waitIncreaseWalletGiftReceiptgiftlivecaption',actor=1001,message_transport='no_id',update={'message':{'text':'valid-route-code'}})
+        assert not r.get('fatal') and state(n)=='pending' and len(APIs.received)==offset and APIs.cards['valid-route-code']['status']=='active',r
+        assert call(pay=n)['result']=='awaiting_receipt' and len(APIs.received)==offset
+        cases.append('saved_code_and_failed_primary_delivery_never_verify_or_consume')
+        before=int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'))
+        r=run(work,env,app,human_driver,url,route='wallet',step='waitIncreaseWalletGiftReceiptgiftlivecaption',actor=1001,update={'message':{'text':'valid-route-code'}})
+        assert not r.get('fatal') and state(n)=='approved' and APIs.cards['valid-route-code']['status']=='redeemed',r
+        reviews=[e for e in r['events'] if e.get('name')=='sendMessage' and '<code>valid-route-code</code>' in str(e.get('args'))]
+        assert reviews and reviews[0]['at']<APIs.received[offset] and all(e['args'][3] in [9001,9002,9003] for e in reviews),r
+        assert int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'))==before+101
+        assert any(e.get('name')=='editKeys' and 'تایید خودکار توسط API' in str(e.get('args')) for e in r['events']),r
+        assert call(op='human',pay=n)['result'] is None and int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'))==before+101
+        cases.append('gift_real_code_review_precedes_auto_approval_and_stale_human_no_recredit')
+        for i in range(14):seed('unsubmitted'+str(i),reviewed=False)
+        APIs.rows={};n=seed('batchready');rid=sms(n);r=call(op='maintain',pay=n)
+        assert state(n)=='approved' and APIs.rows[rid]['status']=='used',r
+        cases.append('unsubmitted_invoices_do_not_starve_reviewed_background_work')
+        n=seed('ackfailure');sms(n);r=call(op='ack',pay=n,fail_customer_ack=True)
+        assert r['result']['threw'] and state(n)=='approved',r
+        cases.append('customer_ack_exception_does_not_block_api_settlement')
+        APIs.rows={};n=seed('ackwinner');sms(n);r=call(op='ack',pay=n,pre_check=True)
+        customer=[e['text'] for e in r['events'] if e.get('event')=='MESSAGE' and e.get('to') in [None,1001]]
+        assert state(n)=='approved' and len(customer)==len(set(customer))==1,r
+        cases.append('cron_winner_before_ack_does_not_repeat_customer_confirmation')
         # OFF preserves original screenshot choice and no pin.
         query(work,env,"INSERT INTO pays(hash_id,user_id,type,price,request_date,state) VALUES('offmanual',1001,'INCREASE_WALLET',101,UNIX_TIMESTAMP(),'pending')")
         off=int(query(work,env,"SELECT id FROM pays WHERE hash_id='offmanual'"));r=call(op='issue',pay=off,off=True);assert r['result'] is True,r
         assert query(work,env,f'SELECT evidence_profile IS NULL FROM payment_attempts WHERE pay_row_id={off}')=='1';cases.append('off_manual_original_unpinned')
-        n=seed('exactbank');bad=sms(n,1);r=call(pay=n);assert r['result']=='monitoring' and APIs.rows[bad]['status']=='ready' and state(n)=='pending',r
+        assert call(op='receipt',pay=off)['result'] is True
+        before=int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'))
+        r=call(op='timer',pay=off);assert r['result']=={'eligible':True,'claimed':True} and state(off)=='auto_cart_approved',r
+        assert int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'))==before+101
+        cases.append('legacy_timer_keeps_original_unpinned_bank_behavior')
+        n=seed('exactbank');bad=sms(n,1);r=call(pay=n);assert r['result']=='monitoring' and APIs.rows[bad]['status']=='ready' and state(n)=='have_sent',r
         due(n);good=sms(n);before=int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'));r=call(pay=n);assert r['result']=='confirmed' and state(n)=='approved' and APIs.rows[good]['status']=='used',r
         assert int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'))==before+int(query(work,env,f'SELECT price FROM pays WHERE id={n}'))
         assert call(op='settle',pay=n)['result']=='settled';assert APIs.rows[bad]['status']=='ready';cases.append('full_exact_quote_only_and_wallet_replay')
@@ -196,18 +333,18 @@ function sendPhoto(...$args){$GLOBALS['events'][]=['event'=>'PHOTO'];if(!empty($
         n=seed('collision1');m=seed('collision2');quote=query(work,env,f'SELECT quote_amount FROM payment_attempts WHERE pay_row_id={n}')
         # Same original quote is created legitimately by deterministic PHP seed.
         assert query(work,env,f'SELECT quote_amount FROM payment_attempts WHERE pay_row_id={m}')==quote
-        rid=sms(n);r=call(pay=n);assert r['result']=='review' and APIs.rows[rid]['status']=='ready' and state(n)=='pending',r;cases.append('full_quote_collision_no_first_match_or_consumption')
+        rid=sms(n);r=call(pay=n);assert r['result']=='review' and APIs.rows[rid]['status']=='ready' and state(n)=='have_sent',r;cases.append('full_quote_collision_no_first_match_or_consumption')
         # Fresh timestamp windows prevent prior collision rows from later fixtures.
         APIs.rows={};query(work,env,"UPDATE payment_attempts SET evidence_profile=NULL WHERE order_hash IN ('collision1','collision2')")
-        n=seed('fallback');v=call(op='view',pay=n)['result'];assert not v['allowed'] and len(v['keys']['inline_keyboard'])==2
-        query(work,env,f'UPDATE payment_attempts SET created_at=NOW()-INTERVAL 600 SECOND WHERE pay_row_id={n}');v=call(op='view',pay=n)['result'];assert v['allowed'] and len(v['keys']['inline_keyboard'])==3
-        call(op='track',pay=n);query(work,env,f'UPDATE payment_attempts SET created_at=NOW()-INTERVAL 90 DAY WHERE pay_row_id={n}');assert call(op='expire',pay=n)['result'] is False;assert state(n)=='pending';cases.append('exact600_fallback_original_reference_and_no_unpaid_timeout')
-        APIs.mode='offline';due(n);assert call(pay=n)['result']=='unavailable';assert state(n)=='pending';assert call(op='attention',pay=n)['result'] is True;assert call(op='receipt',pay=n)['result'] is True;APIs.mode='ok';cases.append('offline_bank_keeps_genuine_manual_receipt')
-        view=call(op='view',pay=n)['result'];assert 'انتظار بررسی' in view['text'] and '30 دقیقه' not in view['text'] and len(view['keys']['inline_keyboard'])==2;cases.append('bank_submitted_receipt_text_retains_check_without_new_receipt_invitation')
+        n=seed('fallback',reviewed=False);v=call(op='view',pay=n)['result'];assert v['allowed'] and len(v['keys']['inline_keyboard'])==2 and 'apiCheck_' not in json.dumps(v)
+        query(work,env,f'UPDATE payment_attempts SET created_at=NOW()-INTERVAL 600 SECOND WHERE pay_row_id={n}');v=call(op='view',pay=n)['result'];assert v['allowed'] and len(v['keys']['inline_keyboard'])==2
+        call(op='track',pay=n);query(work,env,f'UPDATE payment_attempts SET created_at=NOW()-INTERVAL 90 DAY WHERE pay_row_id={n}');assert call(op='expire',pay=n)['result'] is False;assert state(n)=='pending';cases.append('immediate_receipt_original_reference_and_no_ten_minute_ui')
+        APIs.mode='offline';due(n);before=len(APIs.events);assert call(pay=n)['result']=='awaiting_receipt' and len(APIs.events)==before;assert call(op='receipt',pay=n)['result'] is True;assert call(pay=n)['result']=='unavailable';APIs.mode='ok';cases.append('offline_bank_keeps_genuine_manual_receipt')
+        view=call(op='view',pay=n)['result'];assert 'بررسی' in view['text'] and 'خودکار' not in view['text'] and 'apiCheck_' not in json.dumps(view);cases.append('bank_submitted_receipt_same_manual_customer_acknowledgement')
         # Late SMS after real manual approval consumes only, never credits again.
         assert call(op='human',pay=n)['result'] is not None;balance=query(work,env,'SELECT wallet FROM users WHERE userid=1001');rid=sms(n);due(n);assert call(pay=n)['result']=='settled';assert APIs.rows[rid]['status']=='used' and query(work,env,'SELECT wallet FROM users WHERE userid=1001')==balance;cases.append('late_ready_sms_manual_settlement_consumption_only')
         # Real simultaneous human/API wallet claim on one pays row.
-        APIs.rows={};n=seed('racewallet');query(work,env,f'UPDATE payment_attempts SET created_at=NOW()-INTERVAL 601 SECOND WHERE pay_row_id={n}');assert call(op='receipt',pay=n)['result'];rid=sms(n);before=int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'))
+        APIs.rows={};n=seed('racewallet',reviewed=False);query(work,env,f'UPDATE payment_attempts SET created_at=NOW()-INTERVAL 601 SECOND WHERE pay_row_id={n}');assert call(op='receipt',pay=n)['result'];rid=sms(n);before=int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'))
         with ThreadPoolExecutor(2) as pool:out=list(pool.map(lambda op:call(pay=n,op=op),['human','check']))
         assert int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'))==before+int(query(work,env,f'SELECT price FROM pays WHERE id={n}')) and state(n)=='approved',out
         due(n);r=call(pay=n);assert APIs.rows[rid]['status']=='used',r;cases.append('concurrent_real_human_api_wallet_at_most_once')
@@ -249,12 +386,12 @@ function sendPhoto(...$args){$GLOBALS['events'][]=['event'=>'PHOTO'];if(!empty($
         r=call(op='settle',pay=n);assert r['result']=='review' and not any(e['event']=='POST' for e in r['events']),r;cases.append('uncertain_create_journal_never_redispatched')
         # Durable monitoring horizon stops NEW API scans, while the original invoice stays manual.
         APIs.rows={};n=seed('horizon');call(op='profile_shift',pay=n,age=90000);before=len(APIs.events);assert call(pay=n)['result']=='manual' and len(APIs.events)==before
-        query(work,env,f'UPDATE payment_attempts SET created_at=NOW()-INTERVAL 90000 SECOND WHERE pay_row_id={n}');assert call(op='view',pay=n)['result']['allowed'];assert call(op='expire',pay=n)['result'] is False;cases.append('configured_horizon_stops_new_scans_without_financial_expiry')
+        query(work,env,f'UPDATE payment_attempts SET created_at=NOW()-INTERVAL 90000 SECOND WHERE pay_row_id={n}');assert not call(op='view',pay=n)['result']['allowed'];assert call(op='expire',pay=n)['result'] is False;cases.append('configured_horizon_stops_new_scans_without_financial_expiry')
         # An in-flight invoice edit rechecks a real human settlement after Telegram returns.
         APIs.rows={};n=seed('queuededit');query(work,env,f'UPDATE payment_attempts SET created_at=NOW()-INTERVAL 601 SECOND WHERE pay_row_id={n}');assert call(op='receipt',pay=n)['result'];r=call(op='track',pay=n,queued_human=True)
         bodies=[e for e in r['events'] if e['event']=='BOT' and e['method']=='editMessageText'];assert state(n)=='approved' and len(bodies)>=2 and 'apiCheck_' not in json.dumps(bodies[-1]),r;cases.append('queued_invoice_edit_human_winner_converges_final')
         # Genuine photo delivery after API wins updates the just-created staff copy.
-        APIs.rows={};n=seed('queuedphoto');query(work,env,f'UPDATE payment_attempts SET created_at=NOW()-INTERVAL 601 SECOND WHERE pay_row_id={n}');sms(n);r=call(op='photo_race',pay=n,photo_api=True);assert r['result'] is True and state(n)=='approved' and any(e['event']=='EDIT_KEYS' for e in r['events']),r;cases.append('queued_photo_copy_converges_after_api_settlement')
+        APIs.rows={};n=seed('queuedphoto',reviewed=False);query(work,env,f'UPDATE payment_attempts SET created_at=NOW()-INTERVAL 601 SECOND WHERE pay_row_id={n}');sms(n);r=call(op='photo_race',pay=n,photo_api=True);assert r['result'] is True and state(n)=='approved' and any(e['event']=='EDIT_KEYS' for e in r['events']),r;cases.append('queued_primary_photo_blocks_api_until_delivery_then_converges')
         # Actual bot ingress capability check retains all existing human review levels.
         query(work,env,"INSERT INTO users(userid,name,username,refcode,wallet,date,isAdmin) VALUES(9004,'Support','support','0',0,'1700000000',1),(9005,'Revoked','revoked','0',0,'1700000000',0)")
         query(work,env,"INSERT INTO setting(type,value) VALUES('ADMIN_ROLE_9004','support'),('ADMIN_ROLE_9005','support'),('ADMIN_NOTIFY_9004','off')")
@@ -285,24 +422,42 @@ function sendPhoto(...$args){$GLOBALS['events'][]=['event'=>'PHOTO'];if(!empty($
         # Fair projection: more than one batch of old clean rows cannot starve later invoices.
         for i in range(15):seed('fair'+str(i))
         query(work,env,'UPDATE payment_attempts SET evidence_next_check_at=NOW()+INTERVAL 1 DAY,evidence_projection_checked_at=NULL')
-        for _ in range(10):call(op='maintain',pay=n,limit=5)
+        for _ in range((int(query(work,env,'SELECT COUNT(*) FROM payment_attempts WHERE evidence_profile IS NOT NULL'))+4)//5+1):call(op='maintain',pay=n,limit=5)
         assert query(work,env,"SELECT COUNT(*) FROM payment_attempts WHERE order_hash LIKE 'fair%' AND evidence_projection_checked_at IS NULL")=='0';cases.append('bounded_projection_fairness_more_than_one_batch')
         # Gift exact single card; clear definite no-effect replacement; unknown is typed review.
         n=seed('giftvalue',method='gift_card');view=call(op='view',pay=n,seller_override='https://changed.invalid/new')['result'];assert any(button.get('url')=='https://example.org/gift-card' for row in view['keys']['inline_keyboard'] for button in row);gift('wrong',102);assert call(op='save',pay=n,code='wrong')['result']['status']=='saved';assert call(pay=n)['result']=='mismatch' and APIs.cards['wrong']['status']=='active'
-        gift('right');assert call(op='save',pay=n,code='right')['result']['status']=='saved';due(n);r=call(pay=n);assert r['result']=='confirmed' and APIs.cards['right']['status']=='redeemed',r;cases.append('gift_canonical_redeem_exact_single_code_replacement')
+        assert call(op='save',pay=n,code='right')['result']['status']=='locked';n=seed('giftcorrect',method='gift_card');gift('right');assert call(op='save',pay=n,code='right')['result']['status']=='saved';due(n);r=call(pay=n);assert r['result']=='confirmed' and APIs.cards['right']['status']=='redeemed',r;cases.append('gift_exact_single_code_review_fences_replacement_after_delivery')
         for label,days,vol,count in [('giftstandard',0,0,1),('giftcustom',12,3,1),('giftbulk',0,0,2)]:
             n=seed(label,'BUY_SUB',method='gift_card',days=days,volume=vol,count=count);gift(label);assert call(op='save',pay=n,code=label)['result']['status']=='saved';r=call(pay=n);assert r['result']=='confirmed',(label,r)
             assert int(query(work,env,f"SELECT COUNT(*) FROM service_effects WHERE pay_row_id={n} AND effect_kind='create' AND state='local_recorded'"))==count;assert query(work,env,f'SELECT COUNT(*) FROM bank_buy_invoice_claims WHERE pay_row_id={n}')=='0';cases.append(label+'_proof_uses_genuine_create_without_bank009')
         for label in ['used','revoked','expired']:
-            n=seed('gift'+label,method='gift_card');gift(label,status='redeemed' if label=='used' else label);assert call(op='save',pay=n,code=label)['result']['status']=='saved';assert call(pay=n)['result']==label
-            before=len(APIs.events);assert call(pay=n)['result']==label and len(APIs.events)==before;assert APIs.cards[label]['status']==('redeemed' if label=='used' else label);cases.append('gift_'+label+'_distinct_same_code_reads_state')
+            n=seed('gift'+label,method='gift_card');gift(label,status='redeemed' if label=='used' else label);assert call(op='save',pay=n,code=label)['result']['status']=='saved';invalid=call(pay=n);assert invalid['result']==label
+            rendered=[json.loads(e['keys']) for e in invalid['events'] if e.get('event')=='EDIT_KEYS']
+            assert rendered and any(b.get('callback_data')=='approvePaymentgift'+label for row in rendered[-1]['inline_keyboard'] for b in row),invalid
+            assert any(b.get('callback_data')=='declineAction_gift'+label for row in rendered[-1]['inline_keyboard'] for b in row),invalid
+            reason={'used':'قبلاً مصرف','revoked':'باطل','expired':'منقضی'}[label];assert reason in json.dumps(rendered[-1],ensure_ascii=False),invalid
+            before=len(APIs.events);invalid=call(pay=n);assert invalid['result']==label and len(APIs.events)==before;keys=[e.get('keys','') for e in invalid['events'] if e.get('event')=='EDIT_KEYS'];assert keys or query(work,env,f'SELECT evidence_staff_digest IS NOT NULL FROM payment_attempts WHERE pay_row_id={n}')=='1';assert APIs.cards[label]['status']==('redeemed' if label=='used' else label);cases.append('gift_'+label+'_distinct_same_code_reads_state')
+        for decision in ['approve','decline']:
+            key='staffrace'+decision;n=seed(key,method='gift_card');gift(key,status='redeemed');assert call(op='save',pay=n,code=key)['result']['status']=='saved'
+            before=int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'));r=call(pay=n,staff_decision=decision)
+            assert state(n)==('approved' if decision=='approve' else 'declined'),r
+            projected=[json.loads(e['keys']) for e in r['events'] if e.get('event')=='EDIT_KEYS']
+            assert projected and not any(str(b.get('callback_data','')).startswith(('approvePayment','declineAction_')) for row in projected[-1]['inline_keyboard'] for b in row),r
+            assert int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'))==before+(101 if decision=='approve' else 0),r
+            assert query(work,env,f'SELECT evidence_staff_digest IS NOT NULL FROM payment_attempts WHERE pay_row_id={n}')=='1'
+            stale=call(op='route',pay=n,data='apiReview_'+key,actor=9001)
+            messages=[e['text'] for e in stale['events'] if e.get('event')=='MESSAGE']
+            # The shared keyboard is independently inspected, since the narrow
+            # MESSAGE spy records text only; no financial action may be rebuilt.
+            assert call(op='review_keys',pay=n)['result']['inline_keyboard'] and 'approvePayment' not in json.dumps(call(op='review_keys',pay=n)['result'])
+            cases.append('invalid_code_projection_real_human_'+decision+'_wins_without_stale_actions')
         n=seed('giftunknown',method='gift_card');assert call(op='save',pay=n,code='unknown')['result']['status']=='saved';r=call(pay=n);assert r['result']=='review',r
         # Real typed text evidence has an acknowledged current staff delivery and no fake photo.
-        view=call(op='view',pay=n)['result'];assert view['keys']['inline_keyboard'][0][0]['text']=='بررسی پرداخت' and 'تصویر' not in view['text'];cases.append('gift_inflight_review_status_has_no_fresh_code_invitation')
+        view=call(op='view',pay=n)['result'];assert 'apiGift_' not in json.dumps(view['keys']) and 'تصویر' not in view['text'];cases.append('gift_inflight_review_status_has_no_fresh_code_invitation')
         assert state(n)=='have_sent' and query(work,env,f'SELECT evidence_code IS NOT NULL AND evidence_review_sent_at IS NOT NULL FROM payment_attempts WHERE pay_row_id={n}')=='1';assert 'receipt_file_id' not in query(work,env,f'SELECT checkout_url FROM payment_attempts WHERE pay_row_id={n}');assert call(op='save',pay=n,code='different')['result']['status']=='locked';cases.append('unknown_code_encrypted_review_different_code_fenced')
         # The real issuer step accepts its initial code prompt without another button press.
         n=seed('directgiftinput',method='gift_card');key=query(work,env,f'SELECT hash_id FROM pays WHERE id={n}');r=run(work,env,app,human_driver,url,route='wallet',data='payIncreaseWalletWithGiftCard'+key,actor=1001)
-        assert any(e.get('name')=='setUser' and e.get('step')=='apiGiftCode_'+key for e in r['events']),r;cases.append('actual_gift_issuer_binds_initial_code_prompt')
+        assert any(e.get('name')=='setUser' and e.get('step')=='payIncreaseWalletWithGiftCard'+key for e in r['events']),r;cases.append('actual_gift_issuer_uses_familiar_submission_button')
         for text,data in [('/start',''),('/start Fixture',''),('↩️ برگشت',''),('', 'mainMenu'),('', 'cancelIncreaseWalletReceipt'+key),('', 'unrelatedCustomerCallback')]:
             if text=='↩️ برگشت':text=subprocess.check_output(['php','-r',"require $argv[1];echo achbotMessages('legacy_buttons')['back_to_main'];",str(app/'messages/loader.php')],text=True)
             before=len(APIs.received);r=call(op='route',pay=n,step='apiGiftCode_'+key,text=text,data=data)
@@ -310,13 +465,13 @@ function sendPhoto(...$args){$GLOBALS['events'][]=['event'=>'PHOTO'];if(!empty($
         cases.append('gift_navigation_start_back_cancel_and_callbacks_never_become_code')
         # The authenticated callback is acknowledged once BEFORE slow API HTTP.
         n=seed('slowbutton');key=query(work,env,f'SELECT hash_id FROM pays WHERE id={n}');APIs.mode='slow';offset=len(APIs.received);r=call(op='route',pay=n,data='apiCheck_'+key)
-        ack=[e for e in r['events'] if e['event']=='ACK'];assert len(ack)==1 and APIs.received[offset:] and ack[0]['at']<APIs.received[offset],r;cases.append('callback_ack_precedes_slow_api_and_has_no_expired_second_answer')
+        ack=[e for e in r['events'] if e['event']=='ACK'];assert len(ack)==1 and len(APIs.received)==offset,r;cases.append('old_check_callback_acknowledged_without_customer_api_polling')
         n=seed('deadline');start=time.monotonic();r=call(op='budget',pay=n,seconds=.15);elapsed=time.monotonic()-start;assert elapsed<.9 and r['result']['restored'] and r['result']['status']=='unavailable',(elapsed,r)
         APIs.mode='ok';due(n);offset=len(APIs.received);r=call(op='budget',pay=n,seconds=-1);assert r['result']['status']=='unavailable' and r['result']['restored'] and len(APIs.received)==offset,r;cases.append('monotonic_expired_and_remaining_api_budget_no_new_http_context_restored')
         return {'complete':True,'cases':len(cases),'scenarios':cases,'source_real_php':True,'socket_mariadb':True,'authenticated_loopback_requests':len(APIs.events),'live_requests':0,'migrations_executed':['001','003','006','007','008','009','014'],'installed_tested':False,'flow_head':subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip(),'evidence_head':subprocess.check_output(['git','rev-parse','HEAD'],cwd=evidence_root,text=True).strip(),'settings_head':subprocess.check_output(['git','rev-parse','HEAD'],cwd=settings_root,text=True).strip()}
     finally:srv.shutdown();srv.server_close();thread.join()
 
 def main():
-    p=argparse.ArgumentParser();p.add_argument('--run-disposable',action='store_true',required=True);p.add_argument('--evidence-root',type=Path,default=ROOT);p.add_argument('--settings-root',type=Path,default=ROOT);p.add_argument('--report',type=Path);a=p.parse_args();r=check(a.evidence_root,a.settings_root);raw=json.dumps(r,ensure_ascii=False);print(raw)
+    p=argparse.ArgumentParser();p.add_argument('--run-disposable',action='store_true',required=True);p.add_argument('--evidence-root',type=Path,default=ROOT);p.add_argument('--settings-root',type=Path,default=ROOT);p.add_argument('--report',type=Path);p.add_argument('--source-root',type=Path,default=ROOT);a=p.parse_args();r=check(a.evidence_root,a.settings_root,a.source_root);raw=json.dumps(r,ensure_ascii=False);print(raw)
     if a.report:a.report.write_text(raw+'\n')
 if __name__=='__main__':main()

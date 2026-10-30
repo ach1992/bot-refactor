@@ -2,7 +2,7 @@
 
 This guide is for a **new bot with a new, empty database**. An existing bot, a copied live database or a partly migrated database must use its exact release's upgrade/recovery guide instead. There is no browser installer or automatic schema upgrade.
 
-This guide covers RC20 and its 119-member runtime. It adds source 014 for optional API evidence to the inherited RC19 display, invitation and root-helper behavior. Use one exact release, manifest, setup checkout and SQL set throughout; [current scope](NEXT-RELEASE.md) and [RC19 → RC20](RC19-TO-RC20.md) identify the boundary. Publication does not authorize a target installation, migration or API activation.
+This guide covers RC21 and its 119-member runtime. It retains unchanged source014 from RC20 for optional API evidence, alongside the inherited display, invitation, native gift and notification behavior. Bank receipts are submitted immediately; gift API OFF uses images and ON uses codes, with administrator evidence delivered before new API checks. Use one exact release, manifest, setup checkout and SQL set throughout; [current scope](NEXT-RELEASE.md) and [RC20 → RC21](RC20-TO-RC21.md) identify the boundary. Publication does not authorize a target installation, migration or API activation.
 
 ## 1. Prepare the installation
 
@@ -81,7 +81,7 @@ $telegramWebhookSecret = 'REPLACE_WITH_YOUR_UNIQUE_64_CHARACTER_HEX_SECRET';
 
 The placeholder is not usable. AChBot requires 16–256 ASCII letters, digits, `_` or `-`; no shared PHP environment fallback is read. Keep the secret and token out of public outputs, Git and shared logs. Run PHP syntax checking locally without printing the file. Restrict file access to the accounts that actually need it.
 
-Only primary `$admin` belongs in private staff configuration; use the administrator list for other staff. Use the gateway/channel UI for destinations, credentials and rates. `$joinLink` is an optional retained private-channel join fallback; do not leave the example's fake link as a configured destination. RC20 retains RC19's rule and ignores private `$inviteReward`: configure it after Wallet in gateway/channel settings; unset/invalid/zero disables future invitation gifts. Published RC18 keeps its version's older invitation configuration, so follow its matching example instead of mixing these contracts.
+Only primary `$admin` belongs in private staff configuration; use the administrator list for other staff. Use the gateway/channel UI for destinations, credentials and rates. `$joinLink` is an optional retained private-channel join fallback; do not leave the example's fake link as a configured destination. RC21 retains RC19's rule and ignores private `$inviteReward`: configure it after Wallet in gateway/channel settings; unset/invalid/zero disables future invitation gifts. Published RC18 keeps its version's older invitation configuration, so follow its matching example instead of mixing these contracts.
 
 ## 5. Register the webhook and configure the bot
 
@@ -101,7 +101,7 @@ Before public use, configure:
 - Owner's administrator list, intended levels and message-receiving preferences.
 - Bot Settings instance messages and explicit config/subscription QR switches; gateway/channel support, reports, membership and optional private invite URL.
 - Supported servers and plans. PasarGuard 5.5.1 requires actual Groups/Hosts, scoped API access and an absolute subscription URL prefix before account admission; see its [contract](PASARGUARD-CONTRACT.md).
-- Each server's purchase-delivery and order-page display choices. RC20 retains subscription/config/auxiliary toggles, ordered exact-name selections (default 3/max 10 inline), purchase-only QR cycling and separate explicit order QR actions; see [presentation](SUBSCRIPTION-PRESENTATION.md).
+- Each server's purchase-delivery and order-page display choices. RC21 retains subscription/config/auxiliary toggles, ordered exact-name selections (default 3/max 10 inline), purchase-only QR cycling and separate explicit order QR actions; see [presentation](SUBSCRIPTION-PRESENTATION.md).
 - Intended payment credentials, destinations, rates and eligibility before enabling a method. Shared `manualUsdtRateToman` covers USDT/NOWPayments; TRX has its own rate. Manual crypto still needs human receipt verification. The managed invitation gift starts disabled until deliberately set in the same gateway/channel editor.
 - Keep `smsApiVerifyState` and `giftApiVerifyState` OFF until the complete 014 schema, OpenSSL AES-256-GCM support and the existing per-bot webhook secret are verified. Then configure the actual SMS API URL/token and positive monitoring horizon, or gift API URL/key ID/secret and explicit rial/toman unit, through the administrator UI. Optional filters remain optional. See [API setup](API-PAYMENT-EVIDENCE.md#configuration-before-api-enablement); configuration alone does not test a remote credential or consume evidence.
 

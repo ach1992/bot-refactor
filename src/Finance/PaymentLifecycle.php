@@ -366,7 +366,6 @@ function achbotPayUxStartManualReceipt(mysqli $db, int $payId,
         $api=function_exists('achbotApiPaymentReady') && achbotApiPaymentReady($db)
             ? achbotPaymentEvidenceSnapshot(achbotApiPaymentAttempt($db,$payId,true)??[]) : null;
         if (function_exists('achbotApiPaymentPinned') && achbotApiPaymentPinned($db,$payId) && $api===null) {$db->rollback();return false;}
-        if ($api!==null && ($method!=='bank_transfer' || (int)$a['age_seconds']<600)) {$db->rollback();return false;}
         if ((string)($a['provider_status']??'')==='receipt_started') {
             $db->commit();return true;
         }

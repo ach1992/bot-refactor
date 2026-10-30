@@ -332,7 +332,19 @@ foreach(['user','admin']as$audience){$groups=require dirname(__DIR__).'/messages
  $shippingSides[$audience]=[];
  foreach($groups as$topic=>$entries)foreach($entries as$name=>$value)$shippingSides[$audience][$topic.'.'.$name]=$value;
 }
-$verifyCurrentAudienceCatalogs=static function(array $sides) use($giftKey,$giftEntry,$apiDelta,$r5Expected): void {
+$reviewSource='16c1558322b578b8ca817f3c4b42818d57dcf161';$reviewEntries=[];
+foreach(['user'=>['payment.api_payment.code_acknowledgement','payment.api_payment.code_too_long'],'admin'=>['manual_payment.api_payment.auto_approved','manual_payment.api_payment.code_evidence','manual_payment.api_payment.code_used','manual_payment.api_payment.code_revoked','manual_payment.api_payment.code_expired','manual_payment.api_payment.code_mismatch']]as$audience=>$keys){
+ $source=shell_exec('git show '.escapeshellarg($reviewSource.':messages/fa/'.$audience.'.php'));
+ $begin=is_string($source)?strpos($source,'return ['):false;if($begin===false)throw new RuntimeException('review_catalog_source_missing');
+ $groups=eval(substr($source,$begin));$flat=[];foreach($groups as$topic=>$entries)foreach($entries as$name=>$value)$flat[$topic.'.'.$name]=$value;
+ foreach($keys as$key)$reviewEntries[$audience][$key]=$flat[$key];
+}
+$verifyCurrentAudienceCatalogs=static function(array $sides) use($giftKey,$giftEntry,$apiDelta,$r5Expected,$reviewEntries): void {
+ foreach($reviewEntries as$audience=>$entries)foreach($entries as$key=>$value){
+  if(($sides[$audience][$key]??null)!==$value || array_key_exists($key,$sides[$audience==='user'?'admin':'user']))throw new RuntimeException('review_catalog_value_parameters_or_audience_drift');
+  unset($sides[$audience][$key]);
+ }
+
  if(array_key_exists($giftKey,$sides['user'])||($sides['admin'][$giftKey]??null)!==$giftEntry)
   throw new RuntimeException('gift_report_value_parameter_or_audience_drift');
  unset($sides['admin'][$giftKey]);

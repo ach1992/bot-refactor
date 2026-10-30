@@ -15,36 +15,21 @@ if(preg_match('/^apiReview_([A-Za-z0-9_-]{1,50})$/D',(string)($data??''),$apiCal
 }
 if(preg_match('/^api(Check|Gift)_([A-Za-z0-9_-]{1,50})$/D',(string)($data??''),$apiCallback)) {
     $c=achbotApiPaymentContext($connection,$apiCallback[2],(int)$from_id);
-    if(!$c || (int)($chat_id??0)!==(int)$from_id) {alert(achbotMessage('payment.api_payment.denied'),true);return;}
-    if(achbotApiPaymentTerminal($c['pay'])){alert(achbotMessage('payment.api_payment.confirmed'));return;}
-    answerCallbackQuery($callbackId,achbotMessage('payment.api_payment.pending'));
-    if($apiCallback[1]==='Gift' && $c['attempt']['provider']==='gift_card') {
-        if(!empty($c['attempt']['evidence_code']) && ($c['attempt']['evidence_state']??'')!=='invalid_code') {
-            $status=achbotApiPaymentCheck($connection,(int)$c['pay']['id']);$key=match($status){'confirmed','settled'=>'confirmed','review'=>'review','unavailable'=>'unavailable',default=>'pending'};sendMessage(achbotMessage('payment.api_payment.'.$key),null,'HTML',(int)$from_id);return;
-        }
-        setUser('apiGiftCode_'.$apiCallback[2]);sendMessage(achbotMessage('payment.api_payment.code_prompt'),achbotApiPaymentKeyboard($c),'HTML',(int)$from_id);return;
+    if(!$c || (int)($chat_id??0)!==(int)$from_id){alert(achbotMessage('payment.api_payment.denied'),true);return;}
+    answerCallbackQuery($callbackId);
+    if(achbotApiPaymentTerminal($c['pay']) || $c['pay']['state']==='have_sent') {
+        achbotApiPaymentSyncInvoice($connection,$c);return;
     }
-    if($apiCallback[1]!=='Check'||$c['attempt']['provider']!=='bank_transfer'){sendMessage(achbotMessage('payment.api_payment.denied'),null,'HTML',(int)$from_id);return;}
-    $status=achbotApiPaymentCheck($connection,(int)$c['pay']['id']);
-    $key=in_array($status,['confirmed','settled'],true)?'confirmed':($status==='review'?'review':($status==='unavailable'?'unavailable':'bank_pending'));
-    if(!in_array($status,['confirmed','settled'],true))sendMessage(achbotMessage('payment.api_payment.'.$key),null,'HTML',(int)$from_id);return;
+    [$send]=achbotApiPaymentReceiptPrefixes($c['pay'],(string)$c['attempt']['provider']);
+    $data=$send.$apiCallback[2];return 1;
 }
 if(preg_match('/^apiGiftCode_([A-Za-z0-9_-]{1,50})$/D',(string)($userInfo['step']??''),$apiStep)) {
-    $apiNavigationText=in_array((string)($text??''),array_filter([$buttonValues['cancel']??null,$buttonValues['back_to_main']??null,$buttonValues['back_button']??null],static fn($v)=>is_string($v)&&$v!==''),true) || preg_match('/^\/[Ss]tart(?:@[A-Za-z0-9_]+)?(?:\s|$)/D',(string)($text??''));
-    if((string)($data??'')!=='' || $apiNavigationText) {
-        if((string)($data??'')!=='')answerCallbackQuery($callbackId);
-        setUser();$userInfo['step']='none';
-        if($apiNavigationText && !preg_match('/^\/[Ss]tart/',(string)($text??'')))$text='/start';
-        return 1;
-    }
+    $navigation=in_array((string)($text??''),array_filter([$buttonValues['cancel']??null,$buttonValues['back_to_main']??null,$buttonValues['back_button']??null],static fn($v)=>is_string($v)&&$v!==''),true) || preg_match('/^\/[Ss]tart(?:@[A-Za-z0-9_]+)?(?:\s|$)/D',(string)($text??''));
+    if((string)($data??'')!=='' || $navigation){setUser();$userInfo['step']='none';if($navigation&&!preg_match('/^\/[Ss]tart/',(string)($text??'')))$text='/start';return 1;}
     $c=achbotApiPaymentContext($connection,$apiStep[1],(int)$from_id);
-    if(!$c||$c['attempt']['provider']!=='gift_card'||!in_array($c['pay']['state'],['pending','have_sent'],true)){setUser();sendMessage(achbotMessage('payment.api_payment.denied'));return;}
-    $code=trim((string)($text??''));
-    $saved=achbotPaymentEvidenceSaveGiftCode($connection,(int)$c['pay']['id'],(int)$from_id,$code);
-    if(!in_array($saved['status']??'',['saved','same'],true)) {sendMessage(achbotMessage('payment.api_payment.'.(($saved['status']??'')==='locked'?'locked_code':'single_code')));return;}
-    $status=achbotApiPaymentCheck($connection,(int)$c['pay']['id']);
-    $key=match($status){'confirmed','settled'=>'confirmed','used'=>'used','revoked'=>'revoked','expired'=>'expired','mismatch'=>'mismatch','review'=>'review','unavailable'=>'unavailable',default=>'pending'};
-    if(!in_array($status,['used','revoked','expired','mismatch'],true))setUser();
-    sendMessage(achbotMessage('payment.api_payment.'.$key),achbotApiPaymentKeyboard(achbotApiPaymentContext($connection,$apiStep[1],(int)$from_id)??$c),'HTML',(int)$from_id);return;
+    if(!$c || $c['attempt']['provider']!=='gift_card' || !achbotManualReceiptAllowed($connection,$c['pay'],'gift_card',(int)$from_id)){setUser();sendMessage(achbotMessage('payment.api_payment.denied'));return;}
+    [$send]=achbotApiPaymentReceiptPrefixes($c['pay'],'gift_card');
+    $userInfo['step']='wait'.substr($send,4).$apiStep[1];
+    setUser($userInfo['step']);return 1;
 }
 return 1;

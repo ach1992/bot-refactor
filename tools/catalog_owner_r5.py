@@ -79,13 +79,14 @@ API_RESULT='df00c13da1e38e2ba364ab48e31db66f8705b2c2'
 API_COMMITS=['2633ac3c21c539635c228dd31df2e07caee491d0',
              '2c685f5a9621a808c44a4c012b04c8ccd97102af',API_RESULT]
 API_AUTH='https://github.com/ach1992/bot-refactor/issues/57#issuecomment-6514754219'
+REVIEW_SOURCE='16c1558322b578b8ca817f3c4b42818d57dcf161'
 API_RETAINED={'payment.api_payment.completed',
               'manual_payment.api_payment.review_staff','manual_payment.api_payment.automatic_status',
               'manual_payment.api_payment.status_monitoring'}
 def api_manifest():return json.loads((ROOT/'tools/text_catalog_owner_r6_api.json').read_text())
 @functools.lru_cache(maxsize=None)
 def api_catalog_snapshot(ref):
-    check(ref in [API_BASE,*API_COMMITS],'api_catalog_snapshot_identity')
+    check(ref in [API_BASE,*API_COMMITS,REVIEW_SOURCE],'api_catalog_snapshot_identity')
     decode='$s=stream_get_contents(STDIN);$p=strpos($s,"return [");if($p===false)throw new RuntimeException("array_missing");echo json_encode(eval(substr($s,$p)),JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);'
     return {a:flatten(json.loads(command('php','-r',decode,input=command('git','show',ref+':messages/fa/'+a+'.php'))))for a in ['user','admin']}
 # One explicit Owner gift-report addition precedes the unchanged API/R5 layers.
@@ -124,7 +125,20 @@ def gift_catalog_negative_controls(sides):
         except AssertionError:continue
         raise AssertionError('gift_catalog_negative_control_missed')
     return len(controls)
+def review_catalog_restore(sides):
+    before=api_catalog_snapshot(API_RESULT);after=api_catalog_snapshot(REVIEW_SOURCE)
+    keys={'user':{'payment.api_payment.code_acknowledgement','payment.api_payment.code_too_long'},'admin':{'manual_payment.api_payment.auto_approved','manual_payment.api_payment.code_evidence','manual_payment.api_payment.code_used','manual_payment.api_payment.code_revoked','manual_payment.api_payment.code_expired','manual_payment.api_payment.code_mismatch'}}
+    restored=copy.deepcopy(sides)
+    for audience,added in keys.items():
+        # The gift-report layer is independently admitted below.
+        check(set(after[audience])-set(before[audience])==added|({'gifts.completed_report'}if audience=='admin'else set()),'review_catalog_scope_drift')
+        for key in added:
+            check(sides[audience].get(key)==after[audience][key] and key not in sides['admin'if audience=='user'else'user'],'review_catalog_value_parameters_or_audience_drift:'+key)
+            restored[audience].pop(key)
+    return restored,{'review_added_keys':8,'review_added_user_keys':2,'review_added_admin_keys':6,'review_source':REVIEW_SOURCE}
+
 def verify_api_and_restore(sides,definition=None):
+    sides,review_proof=review_catalog_restore(sides)
     sides,gift_proof=gift_catalog_restore(sides)
     record=api_manifest()if definition is None else definition
     check(record.get('version')==1 and record.get('baseline_commit')==API_BASE
@@ -169,7 +183,7 @@ def verify_api_and_restore(sides,definition=None):
     # additions and changes to the earlier layers remain hard failures.
     check(sides==accepted,'api_undeclared_catalog_key_value_parameter_or_recipient')
     return copy.deepcopy(before),{'api_added_keys':len(delta),'api_added_user_keys':22,'api_added_admin_keys':64,
-        'api_baseline_keys':2685,'api_current_keys':2771,'api_retained_unreferenced_keys':len(API_RETAINED),**gift_proof}
+        'api_baseline_keys':2685,'api_current_keys':2771,'api_retained_unreferenced_keys':len(API_RETAINED),**gift_proof,**review_proof}
 def api_negative_controls(sides):
     definition=api_manifest();key='payment.api_payment.bank_invoice';controls=[]
     verify_api_and_restore(sides,definition)
@@ -215,34 +229,42 @@ API_CONDITIONAL_REFS={'src/Finance/PaymentApiAdmin.php':[
     'payment_settings.api.complete_guidance','payment_settings.api.incomplete_guidance']}
 API_REFERENCE_PATHS=[*API_DYNAMIC,'bot.php','src/Finance/ReceiptHelpers.php']
 @functools.lru_cache(maxsize=None)
-def api_consumer_snapshot(path):
+def api_consumer_snapshot(path,ref=API_SOURCE):
     check(path in API_REFERENCE_PATHS,'api_consumer_source_identity')
-    return command('git','show',API_SOURCE+':'+path).decode()
+    check(ref in [API_SOURCE,REVIEW_SOURCE],'api_consumer_revision_identity')
+    return command('git','show',ref+':'+path).decode()
+REVIEW_DYNAMIC={
+ 'src/Finance/PaymentApiAdmin.php':API_DYNAMIC['src/Finance/PaymentApiAdmin.php'],
+ 'src/Finance/ApiPayments.php':{'manual_payment.api_payment.code_':['manual_payment.api_payment.code_'+s for s in ['used','revoked','expired','mismatch']],'manual_payment.api_payment.status_':['manual_payment.api_payment.status_'+s for s in ['confirmed','settled','review','uncertain','evidence_only']]},
+ 'src/Finance/Routes/ApiPayments.php':{},
+}
 def api_source_references(path,source):
     refs=set(re.findall(r"\\?achbotMessage(?:Html)?\('([^']+)'",source))
     if path in API_DYNAMIC:
-        check(source==api_consumer_snapshot(path),'api_dynamic_consumer_source_drift:'+path)
+        original=source==api_consumer_snapshot(path)
+        check(original or source==api_consumer_snapshot(path,REVIEW_SOURCE),'api_dynamic_consumer_source_drift:'+path)
         for key in API_CONDITIONAL_REFS.get(path,[]):
             check(repr(key) in source,'api_conditional_literal_missing:'+path+':'+key)
             refs.add(key)
-        for literal,expanded in API_DYNAMIC[path].items():
+        for literal,expanded in (API_DYNAMIC if original else REVIEW_DYNAMIC)[path].items():
             check(literal in refs,'api_dynamic_literal_missing:'+path+':'+literal)
             refs.remove(literal);refs.update(expanded)
     return refs
+API_REVIEW_RETAINED={'manual_payment.api_payment.review_staff', 'payment.api_payment.bank_invoice', 'manual_payment.api_payment.automatic_status', 'payment.api_payment.bank_fallback', 'payment.api_payment.expired', 'payment.api_payment.receipt_review', 'manual_payment.api_payment.typed_evidence', 'payment.api_payment.single_code', 'payment.api_payment.revoked', 'manual_payment.api_payment.status_monitoring', 'payment.api_payment.receipt', 'payment.api_payment.mismatch', 'payment.api_payment.used', 'payment.api_payment.check', 'payment.api_payment.bank_pending', 'payment.api_payment.completed', 'payment.api_payment.review', 'payment.api_payment.locked_code'}
 def api_reference_proof(sources,entries):
     check(set(API_DYNAMIC)<=set(sources),'api_consumer_source_missing')
     refs=set()
     for path,source in sources.items():refs.update(api_source_references(path,source))
     check(refs<=set(entries),'unknown_catalog_reference:'+str(sorted(refs-set(entries))))
     added=set(api_manifest()['added_keys'])
-    check(added-refs==API_RETAINED,'api_unreferenced_key_inventory_drift:'+str(sorted(added-refs)))
-    return refs,{'api_referenced_keys':len(added&refs),'api_dynamic_source_paths':len(API_DYNAMIC),
-                 'api_reference_source_commit':API_SOURCE,'api_retained_unreferenced_keys':len(API_RETAINED)}
+    check(added-refs==API_REVIEW_RETAINED,'api_unreferenced_key_inventory_drift:'+str(sorted(added-refs)))
+    return refs,{'api_referenced_keys':len(added&refs),'api_dynamic_source_paths':2,
+                 'api_reference_source_commit':REVIEW_SOURCE,'api_retained_unreferenced_keys':len(API_REVIEW_RETAINED)}
 def api_reference_negative_controls(sources,entries):
     controls=[]
     path='src/Finance/ApiPayments.php'
     bad=dict(sources);bad[path]+="\nachbotMessage('payment.api_payment.unapproved');";controls.append(bad)
-    bad=dict(sources);bad[path]=bad[path].replace("'bank_pending'","'unapproved_state'");controls.append(bad)
+    bad=dict(sources);bad[path]=bad[path].replace("'confirmed'","'unapproved_state'");controls.append(bad)
     bad=dict(sources);bad['unapproved.php']="<?php achbotMessage('payment.api_payment.unapproved');";controls.append(bad)
     bad=dict(sources);bad['unapproved.php']="<?php achbotMessage('payment.api_payment.'.$state);";controls.append(bad)
     bad=dict(sources);bad.pop('src/Finance/PaymentApiAdmin.php');controls.append(bad)
