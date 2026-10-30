@@ -837,6 +837,8 @@ def main():
                        cwd=ROOT,check=True,timeout=240,capture_output=True)
         api_flow=json.loads(api_flow_path.read_text())
         required_api_flow=[
+            'legacy_timer_cannot_claim_api_pinned_bank_without_sms',
+            'legacy_timer_fails_closed_for_corrupt_api_pin',
             'no_bank_api_or_consumption_before_receipt_delivery',
             'failed_primary_receipt_delivery_keeps_pending_and_no_http',
             'customer_manual_ack_precedes_api_without_duplicate_confirmation',
@@ -860,6 +862,7 @@ def main():
             'customer_ack_exception_does_not_block_api_settlement',
             'cron_winner_before_ack_does_not_repeat_customer_confirmation',
             'off_manual_original_unpinned',
+            'legacy_timer_keeps_original_unpinned_bank_behavior',
             'full_exact_quote_only_and_wallet_replay',
             'complete_report_uses_original_random_quote_and_durable_dedup',
             'proven_terminal_excluded_new_same_quote_distinct_sms',
