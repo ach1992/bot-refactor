@@ -32,6 +32,7 @@ require_once __DIR__ . '/src/Purchase/Core.php';
 require_once __DIR__ . '/src/Finance/PaymentLifecycle.php';
 require_once __DIR__ . '/src/Finance/GatewayRuleAdmin.php';
 require_once __DIR__ . '/src/Finance/PaymentKeyAdmin.php';
+require_once __DIR__.'/src/Finance/ApiPayments.php';
 require_once __DIR__.'/src/Admin/Access.php';
 
 function tgRetryAfter($res){
@@ -655,7 +656,8 @@ function achbotAdminGatewayChange($update,int $actor,int $chat,int $message,
     global $connection;
     static $flags=[
         'giftCardState','manualUsdtState','cartToCartState','nextpay',
-        'zarinpal','nowPaymentWallet','nowPaymentOther','walletState'
+        'zarinpal','nowPaymentWallet','nowPaymentOther','walletState',
+        'smsApiVerifyState','giftApiVerifyState'
     ];
     try {
         if ($actor<=0 || $primary<=0 || $chat!==$actor || $message<=0 ||
@@ -743,6 +745,10 @@ function achbotAdminGatewayChange($update,int $actor,int $chat,int $message,
                 $current=$state[$key]??'off';
                 if (!in_array($current,['on','off'],true))
                     throw new RuntimeException('gateway_flag_invalid');
+                if ($current==='off' && in_array($key,
+                    ['smsApiVerifyState','giftApiVerifyState'],true) &&
+                    !achbotPaymentApiAdminToggleAllowed($connection,$key))
+                    throw new RuntimeException('payment_api_configuration_incomplete');
                 $state[$key]=$current==='on'?'off':'on';
             } elseif ($kind==='audience') {
                 if (isset($state['gatewayRules'])) {
@@ -1274,6 +1280,7 @@ function getGateWaysKeys(){
             ['text'=>$giftCardState,'callback_data'=>"changeGateWaysgiftCardState"],
             ['text'=>\achbotMessage('admin_settings.config.get_gate_ways_keys.button.d71108ddb3'),'callback_data'=>"wizwizch"]
         ],
+        ...achbotPaymentApiAdminRows('gift_card',$paymentKeys,$botState),
         [
             ['text'=>$manualUsdtState,'callback_data'=>"changeGateWaysmanualUsdtState"],
             ['text'=>\achbotMessage('admin_settings.config.get_gate_ways_keys.button.986ea8b25b'),'callback_data'=>"wizwizch"]
@@ -1282,6 +1289,7 @@ function getGateWaysKeys(){
             ['text'=>$cartToCartState,'callback_data'=>"changeGateWayscartToCartState"],
             ['text'=>\achbotMessage('admin_settings.config.get_gate_ways_keys.button.04029e7ea7'),'callback_data'=>"wizwizch"]
         ],
+        ...achbotPaymentApiAdminRows('bank_transfer',$paymentKeys,$botState),
         [
             ['text'=>$nextpay,'callback_data'=>"changeGateWaysnextpay"],
             ['text'=>\achbotMessage('admin_settings.config.get_gate_ways_keys.button.26003a476f'),'callback_data'=>"wizwizch"]
