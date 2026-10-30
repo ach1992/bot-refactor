@@ -54,12 +54,16 @@ function achbotAdminCanLocked(mysqli $db,int $actor,int $primary,string $capabil
 }
 /** Same persisted membership as the administrator list, using a current read.
  * A conflicting older RR snapshot fails closed and may defer copies until the
- * next ordinary delivery. No caller transaction or isolation mode is changed. */
-function achbotAdminRecipientCandidates(mysqli $db,int $primary): array {
+ * next ordinary delivery. NOWAIT prevents unrelated customer locks from
+ * stalling financial error handling. Callers can observe deferred discovery;
+ * no caller transaction, financial lock or isolation mode is changed. */
+function achbotAdminRecipientCandidates(mysqli $db,int $primary,?bool &$complete=null): array {
+    $complete=false;
     if ($primary<=0) return [];
     try {
-        $q=$db->prepare('SELECT userid FROM users WHERE isAdmin=1 AND userid<>? ORDER BY id FOR UPDATE');
+        $q=$db->prepare('SELECT userid FROM users WHERE isAdmin=1 AND userid<>? ORDER BY id FOR UPDATE NOWAIT');
         $q->bind_param('i',$primary);$q->execute();$rows=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
+        $complete=true;
         return array_values(array_unique(array_column($rows,'userid'),SORT_STRING));
     } catch (Throwable $ignored) {return [];}
 }
