@@ -60,10 +60,12 @@ def owner_r5_proof_mismatches(name: str, proof: dict, minimum: int, required: di
 
 
 def exact_current_proof_mismatches(proof: dict, required: dict,
-                                   scenario_key: str, expected: list[str]) -> dict:
+                                   scenario_key: str, expected: list[str],
+                                   count_key: str | None = 'cases') -> dict:
     """Bind new current-source suites to named proofs and typed risk fields."""
+    fields={**required,**({count_key:len(expected)} if count_key else {})}
     mismatches={key:'required exact '+repr(value)
-                for key,value in {**required,'cases':len(expected)}.items()
+                for key,value in fields.items()
                 if type(proof.get(key)) is not type(value) or proof.get(key)!=value}
     scenarios=proof.get(scenario_key)
     # Notification checks deliberately repeat per-recipient payload/transaction
@@ -216,7 +218,7 @@ def main():
               'archived_two_staff_assignments_red':True,
               'staff_reintroduction_red':['admins_list','special_admins'],
               'unrelated_template_mutation_red':['primary_owner','synthetic_database_user'],
-              'runtime_members':115,'private_config_read':False,'external_calls':0}),
+              'runtime_members':119,'private_config_read':False,'external_calls':0}),
             ('instance_content','test_owner_instance_content.py',99,
              {'result':'PASS','cases':99,'source_real':True,'socket_only_original_schema':True,'no_external_calls':True,
               'lock_join_baseline_red':True,'lock_join_baseline_source':'4548705609518f741d14375c9d47739eb302c3b6'}),
@@ -385,6 +387,149 @@ def main():
         if notification_mismatches:
             raise RuntimeError('Owner R6 notification source proof incomplete: '+
                                json.dumps(notification_mismatches,sort_keys=True))
+        # Issue #57 existing-API proof: use this integrated source only, with
+        # actual guarded routes and owned socket/loopback fixtures, never live APIs.
+        api_settings_path=Path(tmp)/'payment-api-settings.json'
+        subprocess.run(['python3',str(ROOT/'tools/test_post_v9_payment_api_admin.py'),
+                        '--run-disposable','--report',str(api_settings_path)],
+                       cwd=ROOT,check=True,timeout=180,capture_output=True)
+        api_settings=json.loads(api_settings_path.read_text())
+        required_api_settings=[
+            'off_existing_manual_bank_and_gift_photo_prompts_and_buttons_preserved',
+            'absent_modes_off_adjacent_rows_incomplete_activation_denied',
+            'encrypted_token_explicit_horizon_guarded_enable_disable_preserves_other_flags',
+            'gift_canonical_amount_only_explicit_unit_required_optional_scope_unset',
+            'actual_private_pages_mask_secrets_and_bound_callbacks',
+            'cancel_one_action_returns_to_api_page_without_deleting_admin_input',
+            'real_normalizer_rejects_bad_money_horizon_urls_clear_blocks_enable',
+            'current_manager_authority_required_revocation_forged_frames_malformed_denied',
+            'field_revision_conflict_and_replayed_message_cannot_overwrite',
+            'clear_secret_unsets_status_no_payment_rows_or_external_effects',
+            'malformed_stored_secret_invalid_owner_allowed_duplicate_toggle_unknown_flag_denied',
+        ]
+        api_settings_mismatches=exact_current_proof_mismatches(api_settings,
+            {'status':'PASS','evidence_module':str((ROOT/'src/Finance/PaymentEvidence.php').resolve()),
+             'evidence_sha256':hashlib.sha256((ROOT/'src/Finance/PaymentEvidence.php').read_bytes()).hexdigest()},
+            'checks',required_api_settings,count_key=None)
+        if api_settings_mismatches:
+            raise RuntimeError('Existing API settings source proof incomplete: '+
+                               json.dumps(api_settings_mismatches,sort_keys=True))
+        api_evidence_run=subprocess.run(
+            ['python3',str(ROOT/'tools/test_post_v9_api_payment_evidence.py')],
+            cwd=ROOT,check=True,timeout=180,capture_output=True,text=True)
+        api_evidence=json.loads(api_evidence_run.stdout)
+        required_api_evidence=[
+            'partial_schema',
+            'encrypted_config',
+            'explicit_mapping',
+            'stable_namespace',
+            'full_exact_quote',
+            'exact_rial_conversion',
+            'ready_only',
+            'original_time',
+            'sql_collision_fence',
+            'pre_dispatch_intent',
+            'sms_same_key_recovery',
+            'sms_expired_recovery',
+            'manual_settled_evidence_only',
+            'typed_review_authenticity',
+            'gift_single_code',
+            'gift_exact_redeem_amount',
+            'gift_partial_commit',
+            'gift_nonce_reference',
+            'gift_uncertain_active_hold',
+            'bounded_transport',
+            'rotation_fails_closed',
+        ]
+        api_evidence_mismatches=exact_current_proof_mismatches(api_evidence,
+            {'complete':True,'exact_quote':True,'replay_and_partial_commit':True,
+             'no_http_transaction':True,'scope':'owned socket MariaDB and loopback only'},
+            'contracts',required_api_evidence,count_key=None)
+        # The suite proves a transaction-free native observation at each request;
+        # require its meaningful coverage floor, not a timing-sensitive call total.
+        if (type(api_evidence.get('loopback_dispatches')) is not int or
+                api_evidence['loopback_dispatches']<10):
+            api_evidence_mismatches['loopback_dispatches']='required at least 10 native observations'
+        if api_evidence_mismatches:
+            raise RuntimeError('Existing API evidence source proof incomplete: '+
+                               json.dumps(api_evidence_mismatches,sort_keys=True))
+        api_evidence_red_run=subprocess.run(
+            ['python3',str(ROOT/'tools/test_post_v9_api_payment_evidence.py'),'--negative-controls'],
+            cwd=ROOT,check=True,timeout=240,capture_output=True,text=True)
+        api_evidence_red=json.loads(api_evidence_red_run.stdout)
+        api_evidence_red_mismatches=exact_current_proof_mismatches(api_evidence_red,
+            {'complete':True,'source_unchanged':True},'expected_RED',
+            ['suffix_only','fresh_retry_key','gift_active_retry'],count_key=None)
+        if api_evidence_red_mismatches:
+            raise RuntimeError('Existing API evidence regression controls incomplete: '+
+                               json.dumps(api_evidence_red_mismatches,sort_keys=True))
+        api_flow_path=Path(tmp)/'payment-api-flow.json'
+        subprocess.run(['python3',str(ROOT/'tools/test_owner_r6_api_flow.py'),
+                        '--run-disposable','--report',str(api_flow_path)],
+                       cwd=ROOT,check=True,timeout=240,capture_output=True)
+        api_flow=json.loads(api_flow_path.read_text())
+        required_api_flow=[
+            'off_manual_original_unpinned',
+            'full_exact_quote_only_and_wallet_replay',
+            'complete_report_uses_original_random_quote_and_durable_dedup',
+            'proven_terminal_excluded_new_same_quote_distinct_sms',
+            'full_quote_collision_no_first_match_or_consumption',
+            'exact600_fallback_original_reference_and_no_unpaid_timeout',
+            'offline_bank_keeps_genuine_manual_receipt',
+            'bank_submitted_receipt_text_retains_check_without_new_receipt_invitation',
+            'late_ready_sms_manual_settlement_consumption_only',
+            'concurrent_real_human_api_wallet_at_most_once',
+            'proof_backed_standard_existing_create_journal',
+            'proof_backed_custom_existing_create_journal',
+            'proof_backed_bulk_existing_create_journal',
+            'proof_backed_renew_existing_edit_finisher',
+            'proof_backed_day_existing_edit_finisher',
+            'proof_backed_volume_existing_edit_finisher',
+            'proof_backed_external_existing_edit_finisher',
+            'concurrent_real_human_api_rstandard_at_most_once',
+            'concurrent_real_human_api_rcustom_at_most_once',
+            'concurrent_real_human_api_rbulk_at_most_once',
+            'concurrent_real_human_api_rrenew_at_most_once',
+            'concurrent_real_human_api_rday_at_most_once',
+            'concurrent_real_human_api_rvolume_at_most_once',
+            'concurrent_real_human_api_rexternal_at_most_once',
+            'restart_after_local_claim_reuses_capacity_hold_once',
+            'restart_verified_edit_finishes_without_native_redispatch',
+            'admitted_maintenance_recovers_proven_processing_reserved_and_verified',
+            'uncertain_create_journal_never_redispatched',
+            'configured_horizon_stops_new_scans_without_financial_expiry',
+            'queued_invoice_edit_human_winner_converges_final',
+            'queued_photo_copy_converges_after_api_settlement',
+            'actual_ingress_review_owner_operator_support_current_revoked_customer',
+            'staff_final_copy_retry_after_failure_ignores_receiving_off',
+            'bounded_projection_fairness_more_than_one_batch',
+            'gift_canonical_redeem_exact_single_code_replacement',
+            'giftstandard_proof_uses_genuine_create_without_bank009',
+            'giftcustom_proof_uses_genuine_create_without_bank009',
+            'giftbulk_proof_uses_genuine_create_without_bank009',
+            'gift_used_distinct_same_code_reads_state',
+            'gift_revoked_distinct_same_code_reads_state',
+            'gift_expired_distinct_same_code_reads_state',
+            'gift_inflight_review_status_has_no_fresh_code_invitation',
+            'unknown_code_encrypted_review_different_code_fenced',
+            'actual_gift_issuer_binds_initial_code_prompt',
+            'gift_navigation_start_back_cancel_and_callbacks_never_become_code',
+            'callback_ack_precedes_slow_api_and_has_no_expired_second_answer',
+            'monotonic_expired_and_remaining_api_budget_no_new_http_context_restored',
+        ]
+        current_api_head=cmd('rev-parse','HEAD').decode().strip()
+        api_flow_mismatches=exact_current_proof_mismatches(api_flow,
+            {'complete':True,'source_real_php':True,'socket_mariadb':True,
+             'live_requests':0,'installed_tested':False,
+             'migrations_executed':['001','003','006','007','008','009','014'],
+             'flow_head':current_api_head,'evidence_head':current_api_head,'settings_head':current_api_head},
+            'scenarios',required_api_flow)
+        if (type(api_flow.get('authenticated_loopback_requests')) is not int or
+                api_flow['authenticated_loopback_requests']<80):
+            api_flow_mismatches['authenticated_loopback_requests']='required at least 80 authenticated fixture requests'
+        if api_flow_mismatches:
+            raise RuntimeError('Existing API payment flow source proof incomplete: '+
+                               json.dumps(api_flow_mismatches,sort_keys=True))
         unified={}
         suites=[
             ('management_wizard','test_unified_management_wizard.py','cases',362,
@@ -1874,6 +2019,32 @@ def main():
             'mismatched_source_precedes_invalid_database_environment',
             'missing_manifest_precedes_invalid_database_environment',
         })
+        required_readiness.update([
+            'api014_missing_switches_off_legacy_pass',
+            'api014_missing_bank_on_blocks',
+            'api014_missing_gift_on_blocks',
+            'api014_partial_switches_off_legacy_warn',
+            'api014_partial_bank_on_blocks',
+            'api014_partial_gift_on_blocks',
+            'api014_complete_switches_off_detected',
+            'api014_complete_bank_on_credentials_not_verified',
+            'api014_complete_gift_on_credentials_not_verified',
+            'api014_missing_unique_switches_off_legacy_warn',
+            'api014_missing_unique_bank_on_blocks',
+            'api014_missing_fulfillment_switches_off_legacy_warn',
+            'api014_missing_fulfillment_gift_on_blocks',
+            'api014_restored_complete_both_switches_on',
+            'api014_non_on_switch_values_remain_off',
+            'api_inventory_omission_blocks__src_Finance_PaymentEvidence_php',
+            'api_inventory_substitution_blocks__src_Finance_PaymentEvidence_php',
+            'api_inventory_omission_blocks__src_Finance_PaymentApiAdmin_php',
+            'api_inventory_substitution_blocks__src_Finance_PaymentApiAdmin_php',
+            'api_inventory_omission_blocks__src_Finance_ApiPayments_php',
+            'api_inventory_substitution_blocks__src_Finance_ApiPayments_php',
+            'api_inventory_omission_blocks__src_Finance_Routes_ApiPayments_php',
+            'api_inventory_substitution_blocks__src_Finance_Routes_ApiPayments_php',
+            'api_readiness_historical_financial_rows_and_private_sentinel_unchanged',
+        ])
         if not (readiness.get('complete') is True and
                 readiness.get('cases')==len(required_readiness) and
                 set(readiness.get('details',[]))==required_readiness and
@@ -1887,6 +2058,10 @@ def main():
                 readiness.get('source_policy_production_helper_compared') is True and
                 readiness.get('source_members_verified')==package.EXPECTED_RUNTIME_COUNT and
                 readiness.get('all_eight_additive_shapes_exercised') is True and
+                readiness.get('api_schema_capability_compared') is True and
+                readiness.get('api_credentials_not_decrypted') is True and
+                readiness.get('api_schema_014_disposable_only') is True and
+                type(readiness.get('api_readiness_cases')) is int and readiness['api_readiness_cases']==24 and
                 readiness.get('no_real_provider_or_telegram_calls') is True and
                 readiness.get('installed_operator_acceptance') is False):
             raise RuntimeError('Payment readiness read-only native preflight incomplete')
@@ -3600,6 +3775,8 @@ def main():
         if a.report:a.report.write_text(json.dumps({"complete":True,
                     "source":result,"owner_ux_r5":owner_r5,
                     "owner_r6_notifications":notifications,"marzban":marzban,"purchases":purchases,
+                    "existing_payment_apis":{"settings":api_settings,"evidence":api_evidence,
+                        "evidence_negative_controls":api_evidence_red,"flow":api_flow},
                      "unsupported_wallet_preflight":wallet_guard,
                      "wallet_transfer_safety":wallet_transfer,
                      "wallet_replay_freshness_and_operation_identity":wallet_replay,
@@ -3703,6 +3880,10 @@ def main():
                       "direct_admin_gift_cases":direct_gift["cases"],
                       "direct_admin_gift_native_cases":native_direct_gift["cases"],
                       "owner_r6_notification_cases":notifications["cases"],
+                      "payment_api_settings_cases":len(api_settings["checks"]),
+                      "payment_api_evidence_contracts":len(api_evidence["contracts"]),
+                      "payment_api_evidence_negative_controls":len(api_evidence_red["expected_RED"]),
+                      "payment_api_flow_cases":api_flow["cases"],
                       "gift_worker_reconciliation_cases":gift["cases"],
                       "gift_physical_target_cases":physical_gift["cases"],
                       "wallet_paid_create_cases":wallet_create["cases"],
