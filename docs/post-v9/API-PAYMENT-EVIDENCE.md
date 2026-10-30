@@ -64,13 +64,13 @@ A temporarily unreadable staff authority record leaves its projection unacknowle
 
 Use the two existing Persian catalogs. Separate payment verified/effect pending from completed service or wallet delivery. Show precise customer actions and avoid asking for another payment when the outcome is unknown. Projection maintenance must make bounded fair progress across invoices and survive Telegram failures/restarts.
 
-## Native gift correction and remaining boundaries
+## Native gift correction and Owner policy
 
 The companion source slice fixes direct gifts by retaining transient transport credentials without persisting them, preserving local expiry/notification metadata for quota-only changes and comparing time increases with the adapter's verified native baseline. This does not identify the cause, provider, installed version or actual outcome of the Owner's screenshots/request69. Never replay that uncertain gift or erase its evidence.
 
 Verified numeric-zero Marzban expiry is supported for a pinned, finite-quota, volume-only gift; local expiry/notif are preserved and replay performs no second mutation. Duration edits and non-gift result validation retain their existing guards. PasarGuard zero-to-NULL semantics are unchanged. Existing held records are not cleared or replayed by this source correction.
 
-Shared registration is already accepted. Direct gifts for verified imported fileid0 and local checkpoints/customer notices for multiple references remain bounded source holds; eligible single-reference imports already use the bulk gift path. These remaining choices are not resolved by the payment feature.
+The Owner resolved the remaining gift choices on2026-10-30 ([Issue57 revision5](https://github.com/ach1992/bot-refactor/issues/57#issuecomment-6521175942)). Administrator gifts do not depend on the purchase plan, including genuine planless imports. Apply the gift ONCE to the physical native account and send one notice to each current linked customer; multiple customer references must not multiply the native change. Expiry/quota displayed to customers come from the panel. Preserve purchase history and financial records, validated current account identity, replay/uncertainty controls and only necessary internal lifecycle state. This source extension requires focused shared/import regressions, current exact-candidate checks and independent delta review.
 
 ## Acceptance and activation
 
