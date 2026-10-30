@@ -689,4 +689,9 @@ def main():
     if a.report:a.report.write_text(json.dumps(result,ensure_ascii=False,indent=2)+'\n')
     print(json.dumps(result,ensure_ascii=False))
 
+# Isolated source routes use the actual current notification router, as
+# config.php does in normal runtime; transport spies above remain unchanged.
+import notification_fixture
+PHP=notification_fixture.with_router(PHP)
+
 if __name__=='__main__':main()
