@@ -167,7 +167,7 @@ function achbotApiPaymentNotice(mysqli $db,array $pay,string $status,bool $repor
     $label=achbotMessage('manual_payment.api_payment.status_'.$status);
     $amount=achbotPaymentEvidenceIntegralQuote($a['quote_amount'])??(string)$a['quote_amount'];
     $body=achbotMessageHtml('manual_payment.api_payment.report',[
-        'reference'=>$hash,'userId'=>(string)$pay['user_id'],'amount'=>$amount,'unit'=>'تومان',
+        'reference'=>$hash,'userId'=>(string)$pay['user_id'],'amount'=>$amount,'unit'=>trim(achbotMessage('bot.bot.webhook_ingress_authenticated.text.2cc98f7f7c')),
         'method'=>achbotManualLabel((string)$a['provider']),'evidence'=>$evidence,
         'subject'=>payTypeToDescription((string)$pay['type']),'status'=>$label]);
     $digest=hash('sha256',$body);
@@ -477,8 +477,8 @@ function achbotApiPaymentReviewKeyboard(array $pay): string {
     };
     return inlineKeyboard([
         [['text'=>achbotMessage('manual_payment.api_payment.view_code'),'callback_data'=>'apiReview_'.$hash]],
-        [['text'=>($GLOBALS['buttonValues']['approve']??'تأیید پرداخت'),'callback_data'=>$prefix.$hash],
-         ['text'=>($GLOBALS['buttonValues']['decline']??'رد پرداخت'),'callback_data'=>'declineAction_'.$hash]]
+        [['text'=>achbotMessage('legacy_buttons.approve'),'callback_data'=>$prefix.$hash],
+         ['text'=>achbotMessage('legacy_buttons.decline'),'callback_data'=>'declineAction_'.$hash]]
     ]);
 }
 function achbotApiPaymentDeliverReview(mysqli $db,int $id): bool {

@@ -6,6 +6,8 @@ AChBot is a PHP Telegram bot for VPN subscriptions, plans, customer support, adm
 
 **RC19 changes:** simple independent purchase/order display sections, ordered exact-name configs (automatic first 3; maximum 10 inline), complete-message fitting, independent explicit order QR actions, managed invitation gift after Wallet, and complete retirement of root `buy_helpers.php`. Published RC18 remains unchanged. See the [current scope](docs/post-v9/NEXT-RELEASE.md#rc19-source-contract).
 
+**Unreleased source:** [Issue57](https://github.com/ach1992/bot-refactor/issues/57) prepares native-gift corrections, event-aware administrator notifications and optional bank-SMS/gift-code verification through the existing plugin APIs. The API candidate adds four runtime modules and source-only additive migration014; both switches default OFF. This is separate from published RC19. Exact-candidate validation/review and any migration, activation or rollout remain gated. Read [API payment behavior and recovery](docs/post-v9/API-PAYMENT-EVIDENCE.md).
+
 ## Features
 
 - Server and plan management for Marzban and native PasarGuard; shared customer order, renewal and support journeys.

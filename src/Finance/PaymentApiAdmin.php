@@ -81,7 +81,7 @@ function achbotPaymentApiAdminRows(string $method,array $keys,array $states): ar
             ['text'=>achbotMessage('payment_settings.api.'.$suffix.'_verify'),
              'callback_data'=>'wizwizch']
         ],
-        [['text'=>achbotMessage('payment_settings.api.'.$suffix.'_settings').' · '.
+        [['text'=>achbotMessage('payment_settings.api.'.$suffix.'_settings').' - '.
              achbotMessage(achbotPaymentEvidenceSettingsValid($method,$keys)
                  ? 'payment_settings.api.configured' : 'payment_settings.api.incomplete'),
           'callback_data'=>$sms?'changePaymentKeysApiSms':'changePaymentKeysApiGift']]
