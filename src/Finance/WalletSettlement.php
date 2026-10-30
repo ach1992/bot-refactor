@@ -383,7 +383,7 @@ if (!function_exists('processWalletPayment')) {
                 . \achbotMessage('wallet.wallet_settlement.process_wallet_payment.external_effect_unverified_verify_before.10e2ccf8a3') . (function_exists('achbotFinanceDiagnosticReason')
                 ? achbotFinanceDiagnosticReason($e)
                 : 'wallet_transaction_guard_error_' . (int)$e->getCode());
-            try { sendMessage($adminErr, null, null, $admin); }
+            try { achbotNotifyAdmins('sendMessage', ['text'=>$adminErr], ['report_channel'=>null]); }
             catch (Throwable $ignored) {
                 error_log('achbot_wallet_failure_operator_notice_deferred');
             }

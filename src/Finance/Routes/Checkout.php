@@ -186,16 +186,19 @@ if (is_string($data) && strlen($data) <= 64 && preg_match('/\ApayCustomWithWalle
             error_log('achbot_custom_wallet_delivery_review pay_id='.
                 $reviewPay.' class='.get_class($error));
             try {
-                sendMessage(\achbotMessage('payment.checkout.message.2a6cba0152').
+                (achbotNotifyAdmins('sendMessage', ['text'=>\achbotMessage('payment.checkout.message.2a6cba0152').
                     \achbotMessage('payment.checkout.message.4f5582ec37').
-                    \achbotMessage('payment.referral_reward.referral_warn_operator.pay__i_d.9ac91aa748').$reviewPay,null,null,$admin);
+                    \achbotMessage('payment.referral_reward.referral_warn_operator.pay__i_d.9ac91aa748').$reviewPay,
+                    'reply_markup'=>null,'parse_mode'=>null],
+                    ['primary'=>$admin,'report_channel'=>null])[0]['response']??null);
             } catch (Throwable $ignored) {
                 error_log('achbot_custom_wallet_owner_notice_failed pay_id='.$reviewPay);
             }
         }
         try {
-            sendMessage($pendingCustomDelivery['admin_msg'],
-                $pendingCustomDelivery['admin_keys'],"html",$admin);
+            (achbotNotifyAdmins('sendMessage', ['text'=>$pendingCustomDelivery['admin_msg'],
+                    'reply_markup'=>$pendingCustomDelivery['admin_keys'],'parse_mode'=>"html"],
+                    ['primary'=>$admin])[0]['response']??null);
         } catch (Throwable $error) {
             error_log('achbot_custom_wallet_admin_notice_failed pay_id='.
                 (int)($result['payInfo']['id']??0));
@@ -613,8 +616,9 @@ if (preg_match('/^accCustom(.+)$/D', $data, $match) && $text != $buttonValues['c
             ' class='.get_class($e));
         // A remote operation could have succeeded before the local rollback.
         // Never retry it blindly; an operator must reconcile the real service.
-        sendMessage(\achbotMessage('payment.checkout.message.3b8e6e3a15') . \achbotMessage('payment.checkout.message.eccb64d3cb') . $hash_id,
-            null, null, $admin);
+        (achbotNotifyAdmins('sendMessage', ['text'=>\achbotMessage('payment.checkout.message.3b8e6e3a15') . \achbotMessage('payment.checkout.message.eccb64d3cb') . $hash_id,
+                    'reply_markup'=>null,'parse_mode'=>null],
+                    ['primary'=>$admin,'report_channel'=>null])[0]['response']??null);
         alert(\achbotMessage('payment.checkout.alert.6fa04cd4c0'), true);
         return;
     }
@@ -635,9 +639,11 @@ if (preg_match('/^accCustom(.+)$/D', $data, $match) && $text != $buttonValues['c
         error_log('achbot_custom_receipt_delivery_review pay_id='.$payRowId.
             ' class='.get_class($error));
         try {
-            sendMessage(\achbotMessage('payment.checkout.message.c97c0eb0f0').
+            (achbotNotifyAdmins('sendMessage', ['text'=>\achbotMessage('payment.checkout.message.c97c0eb0f0').
                 \achbotMessage('payment.referral_reward.referral_warn_operator.pay__i_d.9ac91aa748').$payRowId.
-                \achbotMessage('payment.checkout.message.6cee937835'),null,null,$admin);
+                \achbotMessage('payment.checkout.message.6cee937835'),
+                    'reply_markup'=>null,'parse_mode'=>null],
+                    ['primary'=>$admin,'report_channel'=>null])[0]['response']??null);
         } catch (Throwable $ignored) {
             error_log('achbot_custom_receipt_owner_notice_failed pay_id='.$payRowId);
         }
@@ -690,22 +696,18 @@ if (preg_match('/^accCustom(.+)$/D', $data, $match) && $text != $buttonValues['c
                 $mainValues['invite_buy_new_account']
             );
 
-            sendMessage($msg, $keys2, "html", $admin);
-
-            $rewardChannel = $botState['rewardChannel'] ?? null;
-            if (!empty($rewardChannel)) {
-                sendMessage($msg, $keys2, "html", $rewardChannel);
-            }
+            achbotNotifyAdmins('sendMessage', ['text'=>$msg, 'reply_markup'=>$keys2, 'parse_mode'=>'HTML']);
         }
     }
     } catch (Throwable $error) {
         error_log('achbot_custom_receipt_postcommit_notice_review pay_id='.$payRowId.
             ' class='.get_class($error));
         try {
-            sendMessage(\achbotMessage('payment.checkout.message.3f598b595a').
+            (achbotNotifyAdmins('sendMessage', ['text'=>\achbotMessage('payment.checkout.message.3f598b595a').
                 \achbotMessage('payment.referral_reward.referral_warn_operator.pay__i_d.9ac91aa748').$payRowId.
                 \achbotMessage('payment.checkout.message.cfed3110bf'),
-                null,null,$admin);
+                    'reply_markup'=>null,'parse_mode'=>null],
+                    ['primary'=>$admin,'report_channel'=>null])[0]['response']??null);
         } catch (Throwable $ignored) {
             error_log('achbot_custom_receipt_postcommit_owner_notice_failed pay_id='.$payRowId);
         }
@@ -985,14 +987,11 @@ if (is_string($data) && strlen($data) <= 64 && preg_match('/\ApayBuyWithWallet([
     if (($payInfo['state'] ?? '') !== 'paid_with_wallet') {
 		$uidForLog = (int)($payInfo['user_id'] ?? $from_id);
 
-		sendMessage(
-			\achbotMessage('payment.checkout.message.54c81d71b7') .
+		(achbotNotifyAdmins('sendMessage', ['text'=>\achbotMessage('payment.checkout.message.54c81d71b7') .
 			\achbotMessage('payment.checkout.user_i_d_uid_for_log.6a12f817c0', ['uidForLog' => $uidForLog]) .
 			\achbotMessage('payment.checkout.hash_id.286c7d3faf', ['hashId' => $hashId]),
-			null,
-			null,
-			$admin
-		);
+                    'reply_markup'=>null,'parse_mode'=>null],
+                    ['primary'=>$admin,'report_channel'=>null])[0]['response']??null);
 		return;
 	}
 
@@ -1022,11 +1021,12 @@ if (is_string($data) && strlen($data) <= 64 && preg_match('/\ApayBuyWithWallet([
         }
         if ($deliveryReview) {
             try {
-                sendMessage(\achbotMessage('payment.checkout.message.c150d2e039').
+                (achbotNotifyAdmins('sendMessage', ['text'=>\achbotMessage('payment.checkout.message.c150d2e039').
                     \achbotMessage('payment.referral_reward.referral_warn_operator.pay__i_d.9ac91aa748').(int)$payInfo['id'].
                     \achbotMessage('payment.checkout.message.e09fe6fd6b').implode(',',$deliveryReview).
                     \achbotMessage('payment.checkout.text.0ec6de536f'),
-                    null,null,$admin);
+                    'reply_markup'=>null,'parse_mode'=>null],
+                    ['primary'=>$admin,'report_channel'=>null])[0]['response']??null);
             } catch (Throwable $error) {
                 error_log('achbot_wallet_checkout_owner_notice_failed pay_id='.
                     (int)$payInfo['id'].' class='.get_class($error));
@@ -1055,10 +1055,11 @@ if (is_string($data) && strlen($data) <= 64 && preg_match('/\ApayBuyWithWallet([
             error_log('achbot_wallet_paid_report_quote_unavailable pay_id='.
                 (int)$payInfo['id']);
             try {
-                sendMessage(\achbotMessage('payment.checkout.message.7aa67614a5').
+                (achbotNotifyAdmins('sendMessage', ['text'=>\achbotMessage('payment.checkout.message.7aa67614a5').
                     \achbotMessage('payment.referral_reward.referral_warn_operator.pay__i_d.9ac91aa748').(int)$payInfo['id'].
                     \achbotMessage('payment.checkout.message.f8ec758aca'),
-                    null,null,$admin);
+                    'reply_markup'=>null,'parse_mode'=>null],
+                    ['primary'=>$admin,'report_channel'=>null])[0]['response']??null);
             } catch (Throwable $ignored) {
                 error_log('achbot_wallet_paid_report_owner_notice_failed pay_id='.
                     (int)$payInfo['id']);
@@ -1095,12 +1096,7 @@ if (is_string($data) && strlen($data) <= 64 && preg_match('/\ApayBuyWithWallet([
         );
     }
 
-    sendMessage($msg, $keys, "html", $admin);
-
-    $rewardChannel = $botState['rewardChannel'] ?? null;
-    if (!empty($rewardChannel)) {
-        sendMessage($msg, $keys, "html", $rewardChannel);
-    }
+    achbotNotifyAdmins('sendMessage', ['text'=>$msg, 'reply_markup'=>$keys, 'parse_mode'=>'HTML']);
 }
 
 if (is_string($data) && (strlen($data) <= 64 || ($GLOBALS['achbotManualCryptoVerifiedDispatch'] ?? null) === $data) && preg_match('/\ApayBuyWith(?:CartToCart|GiftCard|ManualUsdt)([A-Za-z0-9_-]{1,50})\z/D', $data, $match)) {

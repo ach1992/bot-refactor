@@ -266,6 +266,11 @@ def check():
     return dict(complete=True,cases=len(cases),scenarios=cases,source_real_php=True,
         socket_only=True,production_mutations=0,provider_requests=0)
 
+
+# Current domain fixture imports the real event-aware notification router.
+import notification_fixture
+PHP=notification_fixture.with_router(PHP)
+
 if __name__=='__main__':
     p=argparse.ArgumentParser()
     p.add_argument('--run-disposable',action='store_true',required=True)

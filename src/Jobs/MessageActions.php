@@ -71,10 +71,8 @@ if ($aff == 0) {
 }
 
 if ($bc_offsetJ == 0) {
-    bot('sendMessage', [
-        'chat_id' => $admin,
-        'text'    => \achbotMessage('jobs.message_actions.button.5d55dfe1f8', ['bc_jobId' => $bc_jobId, 'action' => $action, 'broadcastId' => $broadcastId])
-    ]);
+    achbotNotifyAdmins('sendMessage', ['text'    => \achbotMessage('jobs.message_actions.button.5d55dfe1f8', ['bc_jobId' => $bc_jobId, 'action' => $action, 'broadcastId' => $broadcastId])
+    ], ['report_channel'=>null]);
 }
 
 /* detect send type for edit */
@@ -142,7 +140,7 @@ if ($rows && $rows->num_rows > 0) {
 
             if (isCancelled($connection, "bc_jobs", $bc_jobId)) {
                 markCancelled($connection, "bc_jobs", $bc_jobId, $bc_offsetJ);
-                bot('sendMessage', ['chat_id'=>$admin,'text'=>\achbotMessage('jobs.message_actions.button.76bf7d1a9d', ['bc_jobId' => $bc_jobId])]);
+                achbotNotifyAdmins('sendMessage', ['text'=>\achbotMessage('jobs.message_actions.button.76bf7d1a9d', ['bc_jobId' => $bc_jobId])], ['report_channel'=>null]);
                 $bc_finished = true;
                 return;
             }
@@ -233,10 +231,8 @@ if ($rows && $rows->num_rows > 0) {
 } else {
 
     markFinished($connection, "bc_jobs", $bc_jobId, $bc_offsetJ);
-    bot('sendMessage', [
-        'chat_id'=>$admin,
-        'text'=>\achbotMessage('jobs.message_actions.button.8ece62920c', ['bc_jobId' => $bc_jobId, 'action' => $action, 'broadcastId' => $broadcastId])
-    ]);
+    achbotNotifyAdmins('sendMessage', ['text'=>\achbotMessage('jobs.message_actions.button.8ece62920c', ['bc_jobId' => $bc_jobId, 'action' => $action, 'broadcastId' => $broadcastId])
+    ], ['report_channel'=>null]);
 }
 
 $bc_finished = true;

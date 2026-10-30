@@ -330,13 +330,9 @@ function applyDiscountToPay($connection, $rowId, $discountCode, $from_id, $usern
     );
 
     // ارسال پیام به ادمین خاص
-    sendMessage($msg, $keys, null, $admin);
+    achbotNotifyAdmins('sendMessage', ['text'=>$msg,'reply_markup'=>$keys],
+        ['report_parse_mode'=>'html']);
 
-    // ارسال پیام به کانال گزارشات
-    $rewardChannel = $botState['rewardChannel'];
-    if (!empty($rewardChannel)) {
-        sendMessage($msg, $keys, "html", $rewardChannel);
-    }
 
     return [
         'success'        => true,

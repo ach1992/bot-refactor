@@ -162,7 +162,7 @@ if (!function_exists('ensureAccountCreationSucceeded')) {
         }
 
         if (!empty($adminMessage) && !empty($admin)) {
-            sendMessage($adminMessage, null, null, $admin);
+            achbotNotifyAdmins('sendMessage', ['text'=>$adminMessage], ['report_channel'=>null]);
             // sendToAllAdmins(...)
         }
 

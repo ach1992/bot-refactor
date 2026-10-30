@@ -429,7 +429,8 @@ function achbotAutoRenewAlertReview(mysqli $db, $adminChatId): void {
                 \achbotMessage('renewal.automatic_renewal.auto_renew_alert_review.do_not_replay_remote_renewal.962be3fe3d');
             $sent=false;
             try {
-                $reply=sendMessage($msg,null,null,(int)$adminChatId);
+                $notices=achbotNotifyAdmins('sendMessage', ['text'=>$msg], ['primary'=>$adminChatId,'report_channel'=>null]);
+                $reply=$notices[0]['response']??null;
                 $sent=is_object($reply) && ($reply->ok??false)===true;
             } catch (Throwable $ignored) {}
             if ($sent) {

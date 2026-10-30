@@ -72,12 +72,13 @@ if (!function_exists('achbotReferralWarnOperator')) {
     function achbotReferralWarnOperator(int $admin, int $payId): void {
         if ($admin<=0 || $payId<=0 || !function_exists('sendMessage')) return;
         try {
-            $ack=sendMessage(
+            $message=
                 \achbotMessage('payment.referral_reward.referral_warn_operator.message.5365cd589c').
                 \achbotMessage('payment.referral_reward.referral_warn_operator.pay__i_d.9ac91aa748').$payId.
                 \achbotMessage('payment.referral_reward.referral_warn_operator.message.69ec1d7580').
-                \achbotMessage('payment.referral_reward.referral_warn_operator.text.3ad839e956'),
-                null,null,$admin);
+                \achbotMessage('payment.referral_reward.referral_warn_operator.text.3ad839e956');
+            $notices=achbotNotifyAdmins('sendMessage', ['text'=>$message], ['primary'=>$admin,'report_channel'=>null]);
+            $ack=$notices[0]['response']??null;
             if (!is_object($ack) || ($ack->ok??false)!==true)
                 throw new RuntimeException('referral_review_notice_unconfirmed');
         } catch (Throwable $error) {
@@ -323,10 +324,7 @@ if (!function_exists('giveReferralReward')) {
         $operatorMsg=\achbotMessage('payment.referral_reward.give_referral_reward.operator_msg.7c8cfd9d4f').$payId.
             \achbotMessage('payment.referral_reward.give_referral_reward.text.23d0786d9b').$buyer.\achbotMessage('payment.referral_reward.give_referral_reward.text.6aaba1c235').$inviter.
             \achbotMessage('payment.referral_reward.give_referral_reward.text.534fd54cb9').number_format($amount).\achbotMessage('payment.discounts.apply_discount_to_pay.text.2cc98f7f7c');
-        $targets=[['inviter',$inviter,$buyerMsg,null],
-                  ['admin',$admin,$operatorMsg,'html']];
-        $channel=$botState['rewardChannel']??null;
-        if ($channel) $targets[]=['channel',$channel,$operatorMsg,'html'];
+        $targets=[['inviter',$inviter,$buyerMsg,null]];
         foreach ($targets as [$role,$recipient,$message,$format]) {
             if (!$recipient) continue;
             try {
@@ -339,6 +337,10 @@ if (!function_exists('giveReferralReward')) {
                 error_log('achbot_referral_notice_failed pay_id='.$payId.
                     ' target='.$role.' class='.get_class($error));
             }
+        }
+        foreach (achbotNotifyAdmins('sendMessage', ['text'=>$operatorMsg,'parse_mode'=>'html']) as $notice) {
+            if (!is_object($notice['response']) || ($notice['response']->ok??false)!==true)
+                error_log('achbot_referral_notice_failed pay_id='.$payId.' target=administrator');
         }
         return true;
     }

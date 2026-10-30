@@ -33,7 +33,7 @@ function loadFacade(string $name):void{
  $body=achbotExtractFunction($root.'/config.php',$name);
  eval(str_replace('__DIR__',var_export($root,true),$body));
 }
-foreach(['sendToAllAdmins','sendPhoto','sendMessage','editKeys'] as $fn)loadFacade($fn);
+foreach(['achbotNotifyAdmins','sendToAllAdmins','sendPhoto','sendMessage','editKeys'] as $fn)loadFacade($fn);
 require $argv[4];
 $connection->query("INSERT INTO users(userid,name,username,refcode,wallet,date,isAdmin,first_start) VALUES
  (9003,'Legacy operator','legacy_operator','0',0,'1700000000',1,'sent'),
@@ -73,24 +73,25 @@ $payloads=static function(array $expected,string $name,?array $recipients=null)u
  foreach($events as $event){$want=$expected;$want['chat_id']=$event['data']['chat_id'];$actual=$event['data'];ksort($actual);ksort($want);yes($actual===$want,$name.' raw payload unchanged '.$event['data']['chat_id']);yes($event['in_transaction']===0,$name.' no new transaction held across delivery '.$event['data']['chat_id']);}
 };
 foreach(['sendMessage'=>['text'=>$text,'reply_markup'=>$markup,'parse_mode'=>'HTML'],'sendPhoto'=>$photo] as $method=>$data){
- $events=[];sendToAllAdmins($method,$data);yes($targets()===$allowed,'current recipient matrix '.$method);$payloads($data,$method);
+ $recipients=$method==='sendPhoto'?$allowed:[9005];$options=$method==='sendPhoto'?['event'=>'manual_review']:[];
+ $events=[];sendToAllAdmins($method,$data,null,$options);yes($targets()===$recipients,'current recipient matrix '.$method);$payloads($data,$method,$recipients);
  foreach($excluded as $id)yes(!in_array($id,$targets(),true),'excluded recipient gets zero payload '.$method.' '.$id);
 }
-$events=[];$savedObsolete=$admins_list;$admins_list=[];sendToAllAdmins('sendPhoto',$photo);yes($targets()===$allowed,'empty obsolete recipient list does not omit DB staff');
+$events=[];$savedObsolete=$admins_list;$admins_list=[];sendToAllAdmins('sendPhoto',$photo,null,['event'=>'manual_review']);yes($targets()===$allowed,'empty obsolete recipient list does not omit DB staff');
 $events=[];archivedPrivateListSendToAllAdmins('sendPhoto',$photo);yes($events===[],'archived private recipient selection RED omits genuine DB staff');
-unset($admins_list,$special_admins);$events=[];sendToAllAdmins('sendPhoto',$photo);yes($targets()===$allowed,'absent obsolete globals do not alter database-selected delivery');
+unset($admins_list,$special_admins);$events=[];sendToAllAdmins('sendPhoto',$photo,null,['event'=>'manual_review']);yes($targets()===$allowed,'absent obsolete globals do not alter database-selected delivery');
 $admins_list=$savedObsolete;$special_admins=[9002,9007];
 $events=[];archivedSendToAllAdmins('sendPhoto',$photo);yes(in_array(9007,$targets(),true)&&in_array(9008,$targets(),true),'archived a070 RED leaks revoked/ambiguous payloads');
-$events=[];sendToAllAdmins('sendPhoto',$photo,null,['reply_to_message_id'=>88,'extra'=>['chat_id'=>9004,'disable_notification'=>true]]);
+$events=[];sendToAllAdmins('sendPhoto',$photo,null,['event'=>'manual_review','reply_to_message_id'=>88,'extra'=>['chat_id'=>9004,'disable_notification'=>true]]);
 yes($targets()===$allowed,'extra chat_id cannot redirect to excluded recipient');$payloads($photo+['reply_to_message_id'=>88,'disable_notification'=>true],'options');
 $connection->query("INSERT INTO pays(hash_id,user_id,type,price,request_date,state,message_id,chat_id,admins_messages) VALUES('fanoutrefs',1001,'INCREASE_WALLET',100000,UNIX_TIMESTAMP(),'have_sent',51,'9001','[]')");
-$events=[];sendToAllAdmins('sendPhoto',$photo,'fanoutrefs',['extra'=>['chat_id'=>9004]]);
+$events=[];sendToAllAdmins('sendPhoto',$photo,'fanoutrefs',['event'=>'manual_review','extra'=>['chat_id'=>9004]]);
 $row=$connection->query("SELECT message_id,chat_id,admins_messages FROM pays WHERE hash_id='fanoutrefs'")->fetch_assoc();$refs=json_decode($row['admins_messages'],true);
 yes(array_column($refs,'chat_id')===$targets()&&$targets()===$allowed,'recorded refs equal actual checked outgoing recipients');
 yes((int)$row['message_id']===51&&(int)$row['chat_id']===9001,'secondary evidence preserves explicit primary reference');
 $savedRecipients=$admins_list;$admins_list=[9002];
 foreach([null,'','not valid historical JSON','{"legacy":"untouched"}'] as $index=>$rawHistory){
- $hash='fanouthistory'.$index;$q=$connection->prepare("INSERT INTO pays(hash_id,user_id,type,price,request_date,state,admins_messages) VALUES(?,1001,'INCREASE_WALLET',100000,UNIX_TIMESTAMP(),'have_sent',?)");$q->bind_param('ss',$hash,$rawHistory);$q->execute();$q->close();$events=[];sendToAllAdmins('sendPhoto',$photo,$hash);
+ $hash='fanouthistory'.$index;$q=$connection->prepare("INSERT INTO pays(hash_id,user_id,type,price,request_date,state,admins_messages) VALUES(?,1001,'INCREASE_WALLET',100000,UNIX_TIMESTAMP(),'have_sent',?)");$q->bind_param('ss',$hash,$rawHistory);$q->execute();$q->close();$events=[];sendToAllAdmins('sendPhoto',$photo,$hash,['event'=>'manual_review']);
  $stored=dbFetchPayByHash($connection,$hash)['admins_messages'];
  if($index<2)yes(array_column(json_decode($stored,true),'chat_id')===$allowed,'null/empty history stores confirmed recipient refs '.$index);
  else yes($stored===$rawHistory,'malformed/non-array historical bytes retained '.$index);
@@ -98,12 +99,12 @@ foreach([null,'','not valid historical JSON','{"legacy":"untouched"}'] as $index
 }
 $admins_list=$savedRecipients;
 $historical=$row['admins_messages'];$connection->query("UPDATE setting SET value='support' WHERE type='ADMIN_ROLE_9005'");$events=[];sendToAllAdmins('sendMessage',['text'=>$text]);
-yes(in_array(9005,$targets(),true),'level change to Support preserves enabled notification delivery');
+yes(!in_array(9005,$targets(),true)&&achbotAdminNotifyEnabled($connection,9005,9001),'Support keeps enabled preference but receives no new general report');
 $connection->query('UPDATE users SET isAdmin=0 WHERE userid=9002');$events=[];sendToAllAdmins('sendMessage',['text'=>$text]);yes(!in_array(9002,$targets(),true),'revoked legacy special immediately excluded');
 yes($connection->query("SELECT admins_messages FROM pays WHERE hash_id='fanoutrefs'")->fetch_assoc()['admins_messages']===$historical,'role changes retain all historical receipt refs');
 $priorRefs=[...$refs,['chat_id'=>9004,'message_id'=>600],['chat_id'=>9007,'message_id'=>601]];
 $q=$connection->prepare("UPDATE pays SET admins_messages=? WHERE hash_id='fanoutrefs'");$priorJson=json_encode($priorRefs);$q->bind_param('s',$priorJson);$q->execute();$q->close();
-$events=[];sendToAllAdmins('sendPhoto',$photo,'fanoutrefs');$merged=json_decode(dbFetchPayByHash($connection,'fanoutrefs')['admins_messages'],true);
+$events=[];sendToAllAdmins('sendPhoto',$photo,'fanoutrefs',['event'=>'manual_review']);$merged=json_decode(dbFetchPayByHash($connection,'fanoutrefs')['admins_messages'],true);
 yes(array_slice($merged,0,count($priorRefs))===$priorRefs,'later fan-out atomically preserves historical Support/revoked delivery refs');
 yes(array_column(array_slice($merged,count($priorRefs)),'chat_id')===$targets(),'history append records only new actual checked deliveries');
 $connection->query('UPDATE users SET isAdmin=1 WHERE userid=9002');
@@ -115,7 +116,7 @@ yes(!in_array(9005,$targets(),true),'existing RR snapshot cannot retain notifica
 yes(achbotAdminSetNotify($connection,9001,9001,9005,true),'restore notification ON after stale snapshot proof');
 $connection->query("UPDATE setting SET value='manager' WHERE type='ADMIN_ROLE_9005'");
 $admins_list=[9002,9006];$events=[];$GLOBALS['after_send']=static function($m,$d)use($connection){if((int)$d['chat_id']===9002)achbotAdminSetNotify($connection,9001,9001,9006,false);};
-sendToAllAdmins('sendMessage',['text'=>$text]);unset($GLOBALS['after_send']);yes($targets()===[9002,9003,9004,9005],'each later recipient rechecked after earlier delivery changes preference');
+sendToAllAdmins('sendPhoto',$photo,null,['event'=>'manual_review']);unset($GLOBALS['after_send']);yes($targets()===[9002,9003,9004,9005],'each later recipient rechecked after earlier delivery changes preference');
 $connection->query("UPDATE setting SET value='operator' WHERE type='ADMIN_ROLE_9006'");
 yes(achbotAdminSetNotify($connection,9001,9001,9006,true),'restore next-recipient notification after mid-delivery proof');
 
@@ -131,7 +132,7 @@ yes(achbotAdminLevel(9014)==='operator'&&!achbotAdminRecipientAllowed($connectio
 yes(!achbotAdminSetNotify($connection,9001,9001,9014,true),'ambiguous preference cannot be silently replaced');
 yes(!archivedStaffAdminRecipientAllowed($connection,9004,9001)&&achbotAdminRecipientAllowed($connection,9004,9001),'archived role-coupled recipient RED wrongly excludes notification-enabled Support');
 yes(achbotAdminSetNotify($connection,9001,9001,9005,false),'Owner can disable notification separately from Manager level');
-$events=[];sendToAllAdmins('sendPhoto',$photo);yes(!in_array(9005,$targets(),true)&&achbotAdminLevel(9005)==='manager','notification OFF suppresses copies without changing level');
+$events=[];sendToAllAdmins('sendPhoto',$photo,null,['event'=>'manual_review']);yes(!in_array(9005,$targets(),true)&&achbotAdminLevel(9005)==='manager','notification OFF suppresses copies without changing level');
 yes(archivedStaffAdminRecipientAllowed($connection,9005,9001),'archived recipient RED ignores independent OFF preference');
 yes(achbotAdminSetNotify($connection,9001,9001,9005,true),'Owner can restore notification preference');
 
@@ -145,18 +146,18 @@ $data='';$text='9020';$userInfo=['step'=>'addNewAdmin'];require $root.'/src/Admi
 yes((int)$connection->query('SELECT isAdmin FROM users WHERE userid=9020')->fetch_row()[0]===0,'actual UI target alone grants no staff authority');
 $data='adminAssign|9020|operator';$text=null;$userInfo=['step'=>'none'];require $root.'/src/Admin/Roles.php';
 yes(achbotAdminLevel(9020)==='operator','actual Owner UI adds persisted Operator');
-$admins_list=[];$special_admins=[9004,9007];$events=[];sendToAllAdmins('sendPhoto',$photo);yes(in_array(9020,$targets(),true),'new DB staff receives next copy without private-list membership');
+$admins_list=[];$special_admins=[9004,9007];$events=[];sendToAllAdmins('sendPhoto',$photo,null,['event'=>'manual_review']);yes(in_array(9020,$targets(),true),'new DB staff receives next copy without private-list membership');
 $data='adminAssign|9020|manager';require $root.'/src/Admin/Roles.php';yes(achbotAdminCan('bot_settings',9020)&&achbotAdminLevel(9020)==='manager','actual Owner UI assigns explicit Manager authority');
 $events=[];sendToAllAdmins('sendMessage',['text'=>'پیام آزمایشی']);yes(in_array(9020,$targets(),true),'explicit Manager receives next database-selected delivery');
-$data='adminAssign|9020|support';require $root.'/src/Admin/Roles.php';$events=[];sendToAllAdmins('sendMessage',['text'=>'پیام آزمایشی']);yes(in_array(9020,$targets(),true),'level downgrade to Support preserves default notification ON');
+$data='adminAssign|9020|support';require $root.'/src/Admin/Roles.php';$events=[];sendToAllAdmins('sendMessage',['text'=>'پیام آزمایشی']);yes(!in_array(9020,$targets(),true)&&achbotAdminNotifyEnabled($connection,9020,9001),'level downgrade to Support keeps preference ON but excludes general reports');
 // Actual Owner UI edits notification preferences independently of assignment.
-$data='adminNotify|9020|off';require $root.'/src/Admin/Roles.php';$events=[];sendToAllAdmins('sendPhoto',$photo);
+$data='adminNotify|9020|off';require $root.'/src/Admin/Roles.php';$events=[];sendToAllAdmins('sendPhoto',$photo,null,['event'=>'manual_review']);
 yes(!in_array(9020,$targets(),true)&&achbotAdminLevel(9020)==='support'&&achbotAdminCan('payments',9020),'actual notification OFF suppresses copies but keeps Support receipt authority');
-$data='adminAssign|9020|manager';require $root.'/src/Admin/Roles.php';$events=[];sendToAllAdmins('sendPhoto',$photo);
+$data='adminAssign|9020|manager';require $root.'/src/Admin/Roles.php';$events=[];sendToAllAdmins('sendPhoto',$photo,null,['event'=>'manual_review']);
 yes(!in_array(9020,$targets(),true)&&achbotAdminLevel(9020)==='manager','level change preserves independent OFF preference');
-$data='adminAssign|9020|operator';require $root.'/src/Admin/Roles.php';$events=[];sendToAllAdmins('sendPhoto',$photo);
+$data='adminAssign|9020|operator';require $root.'/src/Admin/Roles.php';$events=[];sendToAllAdmins('sendPhoto',$photo,null,['event'=>'manual_review']);
 yes(!in_array(9020,$targets(),true)&&!achbotAdminNotifyEnabled($connection,9020,9001),'second level change still preserves OFF');
-$data='adminNotify|9020|on';require $root.'/src/Admin/Roles.php';$events=[];sendToAllAdmins('sendPhoto',$photo);yes(in_array(9020,$targets(),true),'actual Owner toggle ON resumes next delivery');
+$data='adminNotify|9020|on';require $root.'/src/Admin/Roles.php';$events=[];sendToAllAdmins('sendPhoto',$photo,null,['event'=>'manual_review']);yes(in_array(9020,$targets(),true),'actual Owner toggle ON resumes next delivery');
 $notifyButtons=[];foreach(json_decode(getAdminsKeys(),true)['inline_keyboard'] as $row)foreach($row as $button)if(str_starts_with($button['callback_data'],'adminNotify|'))$notifyButtons[]=$button['callback_data'];
 yes(in_array('adminNotify|9020|off',$notifyButtons,true)&&!array_filter($notifyButtons,static fn($v)=>str_starts_with($v,'adminNotify|9001|')),'actual list has independent non-owner toggle and no primary Owner toggle');
 foreach([9002,9004,9005] as $actor){$from_id=$chat_id=$actor;$data='adminNotify|9020|off';$userInfo=['step'=>'none'];$events=[];require $root.'/src/Admin/Roles.php';yes(achbotAdminNotifyEnabled($connection,9020,9001),'non-owner cannot change notification preferences '.$actor);yes(!achbotAdminSetNotify($connection,$actor,9001,9020,false),'direct setter rejects non-owner '.$actor);}
@@ -165,7 +166,7 @@ $from_id=9001;$chat_id=-100;$data='adminNotify|9020|off';require $root.'/src/Adm
 $chat_id=9001;$data='adminNotify|9001|off';require $root.'/src/Admin/Roles.php';yes(!achbotAdminSetNotify($connection,9001,9001,9001,false)&&achbotAdminRecipientAllowed($connection,9001,9001),'mandatory primary Owner delivery cannot be toggled off');
 $connection->query("INSERT INTO setting(type,value) VALUES('ADMIN_NOTIFY_9001','off')");yes(achbotAdminRecipientAllowed($connection,9001,9001),'unsupported retained Owner OFF metadata cannot suppress mandatory primary');
 
-$data='adminAssign|9020|operator';require $root.'/src/Admin/Roles.php';$events=[];sendToAllAdmins('sendMessage',['text'=>'پیام آزمایشی']);yes(in_array(9020,$targets(),true),'actual UI Operator restoration resumes next delivery');
+$data='adminAssign|9020|operator';require $root.'/src/Admin/Roles.php';$events=[];sendToAllAdmins('sendMessage',['text'=>'پیام آزمایشی']);yes(!in_array(9020,$targets(),true),'actual UI Operator restoration does not admit general reports');
 $data='delAdmin9020';require $root.'/src/Admin/Roles.php';$events=[];sendToAllAdmins('sendMessage',['text'=>'پیام آزمایشی']);yes(!in_array(9020,$targets(),true)&&achbotAdminLevel(9020)==='none','actual UI removal stops next delivery despite retained obsolete arrays');yes(achbotAdminNotifyEnabled($connection,9020,9001)&&!achbotAdminRecipientAllowed($connection,9020,9001),'revocation excludes delivery despite retained ON preference');
 $data='adminAssign|9001|support';require $root.'/src/Admin/Roles.php';yes(achbotAdminLevel(9001)==='owner','configured Owner remains immutable in actual UI');
 $ownerKeys=json_decode(getAdminsKeys(),true);yes(($ownerKeys['inline_keyboard'][0][0]['callback_data']??null)==='wizwizch','configured immutable Owner remains listed');
@@ -176,7 +177,7 @@ yes(achbotAdminAssignLevel($other,9001,9001,9021,'operator'),'source-real concur
 $candidates=achbotAdminRecipientCandidates($connection,9001);
 $oldSnapshotMode=$candidates===[]?'deferred_current_read_conflict':'current_member_observed';
 yes($candidates===[] || (in_array('9021',array_map('strval',$candidates),true)&&achbotAdminRecipientAllowed($connection,9021,9001)),'old RR membership either fails closed or observes current addition');
-$connection->rollback();$other->close();$events=[];sendToAllAdmins('sendPhoto',$photo);yes(in_array(9021,$targets(),true),'next normal delivery includes concurrent DB addition');
+$connection->rollback();$other->close();$events=[];sendToAllAdmins('sendPhoto',$photo,null,['event'=>'manual_review']);yes(in_array(9021,$targets(),true),'next normal delivery includes concurrent DB addition');
 $data='delAdmin9021';$userInfo=['step'=>'none'];require $root.'/src/Admin/Roles.php';
 // Isolate the original receipt/evidence/replay cases with two operations recipients and one Support
 // recipient by removing genuine unused staff through the real UI, never private selection.
@@ -242,14 +243,14 @@ foreach($files as $file)foreach(storedLoops($root.'/src/Finance/'.$file) as $ord
  foreach($events as $event)yes($event['in_transaction']===0,'stored-ref delivery introduces no transaction '.$file.' '.$ordinal.' '.$event['data']['chat_id']);
  yes(achbotAdminSetNotify($connection,9001,9001,9004,false),'disable Support notification before stored followup '.$file.' '.$ordinal);$events=[];eval($body);yes($targets()===[9002,9003,9004]&&achbotAdminCan('payments',9004),'actual prior receipt status remains current with notifications OFF '.$file.' '.$ordinal);
  $oldMaintenanceBodies=storedLoops($argv[8].'/'.$file);$oldMaintenance=str_replace('achbotAdminRecipientAllowed','archivedNotifyAdminRecipientAllowed',$oldMaintenanceBodies[$ordinal]);$events=[];eval($oldMaintenance);yes($targets()===[9002,9003],'archived notification-coupled status RED strands OFF recipient '.$file.' '.$ordinal);
- $events=[];sendToAllAdmins('sendPhoto',$photo);yes($targets()===[9002,9003],'notifications OFF still suppresses only new copies '.$file.' '.$ordinal);
+ $events=[];sendToAllAdmins('sendPhoto',$photo,null,['event'=>'manual_review']);yes($targets()===[9002,9003],'notifications OFF still suppresses only new copies '.$file.' '.$ordinal);
  yes(achbotAdminSetNotify($connection,9001,9001,9004,true),'restore Support notification after stored followup '.$file.' '.$ordinal);
  $connection->query("UPDATE users SET isAdmin=0 WHERE userid=9002");$events=[];eval($body);yes($targets()===[9003,9004],'stored-ref loop observes fresh revocation '.$file.' '.$ordinal);$connection->query('UPDATE users SET isAdmin=1 WHERE userid=9002');
 }
 yes($loopCount===9,'all nine actual stored-ref consumers covered');
 yes($connection->query('SELECT * FROM pays ORDER BY id')->fetch_all(MYSQLI_ASSOC)===$financialBefore,'role-filtered followups preserve every historical pay/ref row');
 $legacyLoops=storedLoops($argv[5].'/Routes/ManualReceipts.php');yes(count($legacyLoops)===2,'archived source has actual manual-receipt followups');$adminMessages=$historicalRefs;$payInfo=['chat_id'=>9001];$events=[];eval($legacyLoops[0]);yes(in_array(9007,$targets(),true)&&in_array(9008,$targets(),true),'archived a070 stored-ref RED sends new markup to revoked/ambiguous staff');
-echo json_encode(['complete'=>true,'cases'=>count($checks),'checks'=>$checks,'source_real'=>true,'owned_original_schema_mariadb'=>true,'network_calls'=>0,'recipient_matrix'=>true,'notification_recipient_matrix'=>true,'notifications_independent_of_role'=>true,'notification_default_on'=>true,'owner_only_notification_ui'=>true,'notification_preference_preserved'=>true,'uniform_receipt_authority_all_tiers'=>true,'notification_never_grants_or_revokes_actions'=>true,'notification_off_suppresses_new_copies'=>true,'stored_receipt_maintenance_ignores_notification_preference'=>true,'stored_receipt_maintenance_requires_current_staff'=>true,'archived_notification_coupling_red'=>true,'malformed_duplicate_notifications_denied'=>true,'support_receipt_approval_replay'=>true,'support_payment_followups'=>true,'support_operations_still_denied'=>true,'raw_text_photo_markup_preserved'=>true,'persisted_tiers_preserved'=>true,'db_only_staff_authority'=>true,'legacy_roleless_operator'=>true,'obsolete_staff_arrays_ignored'=>true,'explicit_manager_assignment'=>true,'actual_admin_ui_membership_delivery'=>true,'old_snapshot_membership_safe'=>true,'old_snapshot_membership_mode'=>$oldSnapshotMode,'next_normal_delivery_includes_added_staff'=>true,'no_private_bootstrap_import'=>true,'db_only_baseline_red'=>true,'primary_owner_once'=>true,'options_recipient_integrity'=>true,'recorded_refs_match_delivery'=>true,'fresh_role_changes'=>true,'repeatable_read_notification_off_denied'=>true,'no_new_transaction_across_delivery'=>true,'actual_primary_receipt_evidence'=>true,'original_evidence_retry_preserved'=>true,'approval_replay_preserved'=>true,'stored_followup_loops'=>$loopCount,'stored_followup_markup_preserved'=>true,'historical_refs_preserved'=>true,'atomic_history_append'=>true,'malformed_history_preserved'=>true,'archived_fanout_red'=>true,'archived_stored_refs_red'=>true],JSON_THROW_ON_ERROR);
+echo json_encode(['complete'=>true,'cases'=>count($checks),'checks'=>$checks,'source_real'=>true,'owned_original_schema_mariadb'=>true,'network_calls'=>0,'recipient_matrix'=>true,'notification_recipient_matrix'=>true,'receiving_preference_independent_of_role'=>true,'general_reports_manager_only'=>true,'manual_review_all_staff'=>true,'notification_default_on'=>true,'owner_only_notification_ui'=>true,'notification_preference_preserved'=>true,'uniform_receipt_authority_all_tiers'=>true,'notification_never_grants_or_revokes_actions'=>true,'notification_off_suppresses_new_copies'=>true,'stored_receipt_maintenance_ignores_notification_preference'=>true,'stored_receipt_maintenance_requires_current_staff'=>true,'archived_notification_coupling_red'=>true,'malformed_duplicate_notifications_denied'=>true,'support_receipt_approval_replay'=>true,'support_payment_followups'=>true,'support_operations_still_denied'=>true,'raw_text_photo_markup_preserved'=>true,'persisted_tiers_preserved'=>true,'db_only_staff_authority'=>true,'legacy_roleless_operator'=>true,'obsolete_staff_arrays_ignored'=>true,'explicit_manager_assignment'=>true,'actual_admin_ui_membership_delivery'=>true,'old_snapshot_membership_safe'=>true,'old_snapshot_membership_mode'=>$oldSnapshotMode,'next_normal_delivery_includes_added_staff'=>true,'no_private_bootstrap_import'=>true,'db_only_baseline_red'=>true,'primary_owner_once'=>true,'options_recipient_integrity'=>true,'recorded_refs_match_delivery'=>true,'fresh_role_changes'=>true,'repeatable_read_notification_off_denied'=>true,'no_new_transaction_across_delivery'=>true,'actual_primary_receipt_evidence'=>true,'original_evidence_retry_preserved'=>true,'approval_replay_preserved'=>true,'stored_followup_loops'=>$loopCount,'stored_followup_markup_preserved'=>true,'historical_refs_preserved'=>true,'atomic_history_append'=>true,'malformed_history_preserved'=>true,'archived_fanout_red'=>true,'archived_stored_refs_red'=>true],JSON_THROW_ON_ERROR);
 '''
 
 PARALLEL=r'''<?php
@@ -273,7 +274,7 @@ function bot($method,$data){
  return(object)['ok'=>true,'result'=>(object)['message_id'=>10000+$GLOBALS['actor']*10+(int)$data['chat_id']]];
 }
 eval(achbotExtractFunction($root.'/config.php','sendToAllAdmins'));
-sendToAllAdmins('sendPhoto',['photo'=>'parallel-confirmed','caption'=>'پیام آزمایشی'],'fanoutparallel');
+sendToAllAdmins('sendPhoto',['photo'=>'parallel-confirmed','caption'=>'پیام آزمایشی'],'fanoutparallel',['event'=>'manual_review']);
 echo json_encode($sent,JSON_THROW_ON_ERROR);
 '''
 

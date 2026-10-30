@@ -677,6 +677,11 @@ def check():
             'actual_checkout_php':True,'isolated_mariadb':True,
             'remote_calls':0,'production_financial_mutations':0}
 
+
+# Current domain fixture imports the real event-aware notification router.
+import notification_fixture
+PHP=notification_fixture.with_router(PHP)
+
 if __name__=='__main__':
     parser=argparse.ArgumentParser()
     parser.add_argument('--run-disposable',action='store_true',required=True)

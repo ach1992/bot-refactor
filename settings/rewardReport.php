@@ -12,7 +12,7 @@ $searchState=$botState['searchState']=="off"?\achbotMessage('jobs.reward_report.
 $rewaredTime = ($botState['rewaredTime']??0);
 $rewaredChannel = $botState['rewardChannel'];
 
-if($rewaredTime>0 && $rewaredChannel != null){
+if($rewaredTime>0){
     $lastTime = $botState['lastRewardMessage']??0;
     if(time() > $lastTime){
         $time = time() - ($rewaredTime * 60 * 60);
@@ -29,7 +29,7 @@ if($rewaredTime>0 && $rewaredChannel != null){
         $nextRewardMessage = time() + ($rewaredTime * 60 * 60);
         if (setSettings('lastRewardMessage', $nextRewardMessage)) {
             $txt = \achbotMessage('jobs.reward_report.txt.1bceb49379', ['rewaredTime' => $rewaredTime, 'totalRewards' => $totalRewards, 'channelLock' => $channelLock]);
-            sendMessage($txt, null, null, $rewaredChannel);
+            achbotNotifyAdmins('sendMessage', ['text'=>$txt], ['report_channel'=>$rewaredChannel]);
         } else {
             // Avoid a misleading success/sent state when persistence failed.
             error_log('achbot_reward_report_settings_update_deferred');

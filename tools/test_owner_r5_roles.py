@@ -488,4 +488,9 @@ def main():
         report=json.loads(r.stdout);report['baseline_source']=BASE;report['approval_baseline_source']=prior;report['public_collision_baseline_source']=public_prior;report['staff_configuration_baseline_source']=staff_prior
     if a.report:a.report.write_text(json.dumps(report,ensure_ascii=False,indent=2)+'\n')
     print(json.dumps({k:v for k,v in report.items() if k!='checks'}))
+
+# Current domain fixture imports the real event-aware notification router.
+import notification_fixture
+PHP=notification_fixture.with_router(PHP)
+
 if __name__=='__main__':main()

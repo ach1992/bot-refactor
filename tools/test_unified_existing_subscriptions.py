@@ -1249,4 +1249,9 @@ echo json_encode(['required'=>count(achbotProviderRequiredOperations()),
      malformed_replay_exhausted_history_no_HTTP_or_claim=True)
  if args.report:args.report.write_text(json.dumps(report,indent=2)+'\n')
  print(json.dumps(report))
+
+# Current domain fixture imports the real event-aware notification router.
+import notification_fixture
+PHP=notification_fixture.with_router(PHP)
+
 if __name__=='__main__':main()

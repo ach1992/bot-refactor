@@ -1212,4 +1212,9 @@ echo json_encode(['success'=>$out->success??false,
                 synthetic_local_http_delete_cases=11)
     if a.report:a.report.write_text(json.dumps(report,indent=2)+'\n')
     print(json.dumps({k:v for k,v in report.items() if k!='scenarios'}))
+
+# Current domain fixture imports the real event-aware notification router.
+import notification_fixture
+PHP=notification_fixture.with_router(PHP)
+
 if __name__=='__main__': main()

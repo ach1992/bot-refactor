@@ -147,15 +147,7 @@ $reportUsername=is_string($reportSender->username??null)?$reportSender->username
 $channelMessage = \achbotMessageHtml('subscription.account_deletion.report', ['from_id' => $from_id, 'first_name' => $reportFirstName, 'username' => $reportUsername, 'remark' => $remark, 'volumeDisplay' => $volume, 'daysDisplay' => $days]);
 
 // ارسال پیام به ادمین خاص
-sendMessage($channelMessage, null, "html", $admin);
-
-// ارسال پیام به تمام ادمین‌ها
-//sendToAllAdmins('sendMessage', ['text' => $channelMessage,'reply_markup' => null,'parse_mode' => "html"]);
-	// ارسال پیام به کانال گزارشات
-	$rewardChannel = $botState['rewardChannel'];
-		if (!empty($rewardChannel)) {
-		sendMessage($channelMessage, null, "html", $rewardChannel);
-	}
+achbotNotifyAdmins('sendMessage', ['text'=>$channelMessage, 'reply_markup'=>null, 'parse_mode'=>'HTML']);
     exit();
 }
 elseif(preg_match('/^delUserConfig(\d+)/',$data,$match) && ($from_id == $admin || $userInfo['isAdmin'] == true)){
