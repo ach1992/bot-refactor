@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import copy
 from collections import Counter
 import hashlib
 import json
@@ -74,6 +75,84 @@ def exact_current_proof_mismatches(proof: dict, required: dict,
             and Counter(scenarios)==Counter(expected)):
         mismatches[scenario_key]='required exact known checks, including multiplicity'
     return mismatches
+
+
+def owner_gift_policy_scenarios() -> list[str]:
+    """Owner revision5: one native gift, genuine references and separate notices."""
+    providers=['marzban','pasarguard']
+    names=['baseline_'+provider+'_'+label+'_RED'
+           for provider in providers for label in ['shared','planless']]
+    for provider in providers:
+        names += [provider+'_'+label+suffix
+            for label in ['shared','same_user_dedup','planless','planless_shared',
+                          'archived_reference','large_cohort','customer_fail',
+                          'report_fail','quota_only']
+            for suffix in ['_one_native_gift_preserves_purchase',
+                           '_authenticated_replay_no_second_native',
+                           '_repeat_sql_finish_cannot_reopen']]
+        names += [provider+'_'+label+'_no_native_write'
+            for label in ['unproven_planless','foreign_current_reference',
+                          'native_incarnation_changed','noncanonical_userid']]
+    names += ['marzban_getter_baseline_race_RED']
+    names += ['marzban_'+label+suffix
+        for label in ['before_effect_incarnation_race','readback_incarnation_race',
+                      'late_attachment'] for suffix in ['','_no_replay']]
+    names += [provider+'_'+label for provider in providers
+        for label in ['bulk_shared_once_dedup_native_journal',
+                      'bulk_completion_and_replay_no_second_native']]
+    return names
+
+
+def owner_gift_policy_mismatches(proof: dict, source_head: str,
+                                 runtime_hashes: dict) -> dict:
+    expected=owner_gift_policy_scenarios()
+    mismatches=exact_current_proof_mismatches(proof,{
+        'complete':True,'actual_bot_route':True,'actual_bulk_worker':True,
+        'actual_native_adapters':True,'actual_notification_router':True,
+        'original_source':'a0785dca3e46f031ca9a0a4500a71bf3ea11ee8e',
+        'baseline_red_cases':5,'real_provider_requests':0,
+        'owned_mariadb_only':True,'loopback_only':True,'production_operations':0,
+        'source_head':source_head,'source_head_after':source_head,
+        'source_unchanged':True,'source_clean_at_start':True,'source_clean_at_end':True,
+        'runtime_sha256':runtime_hashes,'runtime_sha256_after':runtime_hashes,
+    },'scenarios',expected)
+    if proof.get('scenarios')!=expected:
+        mismatches['scenario_order']='required exact ordered Owner gift scenarios'
+    observations=proof.get('observations')
+    if type(observations) is not list or len(observations)!=len(expected):
+        mismatches['observations']='required complete actual observations'
+    else:
+        for index,(name,observation) in enumerate(zip(expected,observations)):
+            if not (type(observation) is dict
+                    and set(observation)=={'scenario','passed','actual'}
+                    and observation['scenario']==name
+                    and observation['passed'] is True
+                    and type(observation['actual']) is dict
+                    and observation['actual']):
+                mismatches['observation_'+str(index)]='required named successful actual observation'
+    return mismatches
+
+
+def owner_gift_policy_negative_controls(proof: dict, source_head: str,
+                                        runtime_hashes: dict) -> int:
+    if owner_gift_policy_mismatches(proof,source_head,runtime_hashes):
+        raise RuntimeError('Gift proof positive admission failed before negative controls')
+    controls=[]
+    for key,value in [('complete',False),('cases',True),('actual_native_adapters',False),
+                      ('baseline_red_cases',4),('real_provider_requests',1),
+                      ('source_head_after','0'*40),('source_unchanged',False),
+                      ('source_clean_at_end',False)]:
+        bad=copy.deepcopy(proof);bad[key]=value;controls.append(bad)
+    bad=copy.deepcopy(proof);bad['runtime_sha256_after'].pop('bot.php');controls.append(bad)
+    bad=copy.deepcopy(proof);bad['runtime_sha256']['bot.php']='0'*64;controls.append(bad)
+    bad=copy.deepcopy(proof);bad['scenarios'].reverse();controls.append(bad)
+    bad=copy.deepcopy(proof);bad['observations'].pop();controls.append(bad)
+    bad=copy.deepcopy(proof);bad['observations'][0]['passed']=1;controls.append(bad)
+    bad=copy.deepcopy(proof);bad['observations'][0]['actual']=[];controls.append(bad)
+    for bad in controls:
+        if not owner_gift_policy_mismatches(bad,source_head,runtime_hashes):
+            raise RuntimeError('Malformed Owner gift proof accepted')
+    return len(controls)
 
 
 def api_native_observation_mismatches(proof: dict, expected: list[str]) -> dict:
@@ -2921,7 +3000,7 @@ def main():
             'provider_or_local_failure_hold_config_drift',
             'delegated_admin_revoked_before_step',
             'fresh_delegated_admin_private_gift',
-            'duplicate_remark_order_rejected',
+            'shared_remark_distinct_cached_uuid_one_gift_one_customer_notice',
             'changed_order_identity_before_claim_denied',
             'callback_text_never_used_as_gift_input',
             'concurrent_workers_one_unique_durable_claim',
@@ -3132,6 +3211,24 @@ def main():
         if native_direct_mismatches:
             raise RuntimeError('Owner R6 native direct gift proof incomplete: '+
                                json.dumps(native_direct_mismatches,sort_keys=True))
+        # Owner revision5: actual direct/bulk/native shared and planless gifts.
+        owner_gift_policy_path=Path(tmp)/'owner-gift-policy.json'
+        subprocess.run(['python3',str(ROOT/'tools/test_owner_r7_gift_policy.py'),
+                        '--run-disposable','--report',str(owner_gift_policy_path)],
+                       cwd=ROOT,check=True,timeout=300,capture_output=True)
+        owner_gift_policy=json.loads(owner_gift_policy_path.read_text())
+        gift_policy_head=cmd('rev-parse','HEAD').decode().strip()
+        gift_policy_hashes={path:hashlib.sha256(cmd('show','HEAD:'+path)).hexdigest()
+            for path in ['bot.php','src/Subscription/GiftBatch.php',
+                         'src/Subscription/DirectGift.php','settings/gift2all.php',
+                         'src/Panel/Accounts.php']}
+        gift_policy_mismatches=owner_gift_policy_mismatches(
+            owner_gift_policy,gift_policy_head,gift_policy_hashes)
+        if gift_policy_mismatches:
+            raise RuntimeError('Owner revision5 gift proof incomplete: '+
+                               json.dumps(gift_policy_mismatches,sort_keys=True))
+        gift_policy_negative_controls=owner_gift_policy_negative_controls(
+            owner_gift_policy,gift_policy_head,gift_policy_hashes)
         # Whole-main review R1: run actual owned gift worker on disposable
         # original 23-table MariaDB, no live Telegram/Marzban service.
         gift_path=Path(tmp)/"gift-worker-verified-state.json"
@@ -3187,7 +3284,7 @@ def main():
             "r1a3_invalid_total_negative_no_roster_no_false_completion",
             "r1a3_invalid_total_float_no_roster_no_false_completion",
             "r1a3_empty_bad_total_no_roster_no_false_completion",
-            "gift_private_start_completion_owner_manager_once_no_operator_support_channel",
+            "gift_private_progress_and_verified_general_summary_destinations",
             "gift_private_hold_owner_manager_no_replay",
             "gift_private_hold_manager_receiving_off_owner_only",
             "gift_private_manager_notice_failure_preserves_effect_cursor_and_cleanup",
@@ -4103,6 +4200,8 @@ def main():
                     "gift_source_enqueue_idempotency":gift_source,
                     "direct_admin_gift_verified":direct_gift,
                     "direct_admin_gift_native":native_direct_gift,
+                    "owner_gift_policy":owner_gift_policy,
+                    "owner_gift_policy_negative_controls":gift_policy_negative_controls,
                     "gift_worker_safe_continuation":gift,
                     "gift_physical_target_continuity":physical_gift,
                     "wallet_paid_create":wallet_create,
@@ -4166,6 +4265,8 @@ def main():
                       "gift_source_enqueue_cases":gift_source["cases"],
                       "direct_admin_gift_cases":direct_gift["cases"],
                       "direct_admin_gift_native_cases":native_direct_gift["cases"],
+                      "owner_gift_policy_cases":owner_gift_policy["cases"],
+                      "owner_gift_policy_negative_controls":gift_policy_negative_controls,
                       "owner_r6_notification_cases":notifications["cases"],
                       "owner_r6_financial_alert_cases":financial_alerts["cases"],
                       "payment_api_settings_cases":len(api_settings["checks"]),
